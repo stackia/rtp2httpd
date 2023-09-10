@@ -1,4 +1,24 @@
-Multicast RTP to Unicast HTTP stream convertor
+# IPTV 组播转单播，支持 FCC 快速换台
+
+本 fork 在原版 run2httpd 基础上增加了 [FCC 协议支持](https://blog.csdn.net/yangzex/article/details/131328837?fcc=10.255.14.152:15970)，可以实现像原生 IPTV 盒子一样的快速换台。
+
+https://github.com/stackia/rtp2httpd/assets/5107241/fe390221-ad0f-4f10-8cec-fb32793aaca0
+
+使用方法：
+
+暂时没有开箱即用，需要自己编译构建这个项目。
+
+```
+git clone https://github.com/stackia/rtp2httpd.git
+cd rtp2httpd
+autoreconf -i
+./configure
+make && make install
+```
+
+启动 rtp2httpd 后，即可使用类似 `http://10.0.0.2:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970` 这样的地址将组播源转换为单播源。这里的 FCC 服务器地址需要在自己所在地的 IPTV 盒子上抓包获得，并在路由器上添加静态路由走 IPTV 网络出站。
+
+Multicast RTP to Unicast HTTP stream convertor with FCC support!
 ==============================================
 
 Copyright (c) 2008-2020 Ondřej Caletka
