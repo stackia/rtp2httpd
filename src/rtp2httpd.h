@@ -36,6 +36,8 @@
 
 #define CONFIGFILE SYSCONFDIR "/rtp2httpd.conf"
 
+#define max(a,b) ((a)>(b) ? (a):(b))
+#define min(a,b) ((a)<(b) ? (a):(b))
 
 enum loglevel {
 	LOG_FATAL = 0, /* Always shown */
@@ -67,6 +69,7 @@ struct services_s {
 	enum service_type service_type;
 	struct addrinfo *addr;
 	struct addrinfo *msrc_addr;
+	struct addrinfo *fcc_addr;
 	struct services_s *next;
 };
 
@@ -102,7 +105,7 @@ int logger(enum loglevel level, const char *format, ...);
 /*
  * Service for connected client.
  * Run in forked thread.
- * 
+ *
  * @params s connected socket
  */
 void clientService(int s);

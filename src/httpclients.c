@@ -37,7 +37,7 @@
 #include "config.h"
 #endif /* HAVE_CONFIG_H */
 
-#define BUFLEN 50
+#define BUFLEN 100
 #define UDPBUFLEN 2000
 
 static const char unimplemented[] =
@@ -124,6 +124,13 @@ static const char staticHeaders[] =
 
 struct services_s *services = NULL;
 
+#define RECV_STATE_INIT 0
+#define RECV_STATE_FCC_REQUESTED 1
+#define RECV_STATE_MCAST_REQUESTED 2
+#define RECV_STATE_MCAST_ACCEPTED 3
+
+#define FCC_PK_LEN_REQ 40
+#define FCC_PK_LEN_TERM 16
 
 /*
  * Ensures that all data are written to the socket
@@ -168,13 +175,13 @@ void sigpipe_handler(int signum) {
 
 static struct services_s* udpxy_parse(char* url) {
 	static struct services_s serv;
-	static struct addrinfo res_ai, msrc_res_ai;
-	static struct sockaddr_storage res_addr, msrc_res_addr;
+	static struct addrinfo res_ai, msrc_res_ai, fcc_res_ai;
+	static struct sockaddr_storage res_addr, msrc_res_addr, fcc_res_addr;
 
-	char *addrstr, *portstr, *msrc="", *msaddr="", *msport="";
-	int i, r, rr;
+	char *addrstr, *portstr, *msrc="", *msaddr="", *msport="", *fccaddr, *fccport;
+	int i, r, rr, rrr;
 	char c;
-	struct addrinfo hints, *res, *msrc_res;
+	struct addrinfo hints, *res, *msrc_res, *fcc_res;
 
 
 	if (strncmp("/rtp/", url, 5) == 0)
@@ -195,6 +202,25 @@ static struct services_s* udpxy_parse(char* url) {
 		}
 	}
 	logger(LOG_DEBUG, "decoded addr: %s\n", addrstr);
+	fccaddr = rindex(addrstr, '?');
+	if (fccaddr) {
+		*fccaddr = '\0';
+		fccaddr++;
+		fccaddr = strcasestr(fccaddr, "fcc=");
+		if (fccaddr) {
+			fccaddr += 4;
+			fccport = rindex(fccaddr, ':');
+			if (fccport) {
+				*fccport = '\0';
+				fccport++;
+			}
+		}
+	} else {
+		fccaddr = "";
+	}
+	if (!fccport) {
+		fccport = "";
+	}
 	if (addrstr[1] == '[') {
 		portstr = index(addrstr, ']');
 		addrstr += 2;
@@ -245,16 +271,20 @@ static struct services_s* udpxy_parse(char* url) {
 	} else
 		portstr = "1234";
 
-	logger(LOG_DEBUG, "addrstr: %s portstr: %s msrc: %s\n", addrstr, portstr, msrc);
+	logger(LOG_DEBUG, "addrstr: %s portstr: %s msrc: %s fccaddr: %s fccport: %s\n", addrstr, portstr, msrc, fccaddr, fccport);
 
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_socktype = SOCK_DGRAM;
 	r = getaddrinfo(addrstr, portstr, &hints, &res);
 	rr = 0;
+	rrr = 0;
 	if (strcmp(msrc, "") != 0 && msrc != NULL) {
 		rr = getaddrinfo(msrc, 0, &hints, &msrc_res);
 	}
-	if (r | rr) {
+	if (strcmp(fccaddr, "") != 0 && fccaddr != NULL) {
+		rrr = getaddrinfo(fccaddr, fccport, &hints, &fcc_res);
+	}
+	if (r | rr | rrr) {
 		if (r) {
 			logger(LOG_ERROR, "Cannot resolve Multicast address. GAI: %s\n",
 				   gai_strerror(r));
@@ -262,6 +292,10 @@ static struct services_s* udpxy_parse(char* url) {
 		if (rr) {
 			logger(LOG_ERROR, "Cannot resolve Multicast source address. GAI: %s\n",
 				   gai_strerror(rr));
+		}
+		if (rrr) {
+			logger(LOG_ERROR, "Cannot resolve FCC server address. GAI: %s\n",
+				   gai_strerror(rrr));
 		}
 
 		free(msrc);
@@ -275,6 +309,11 @@ static struct services_s* udpxy_parse(char* url) {
 			logger(LOG_ERROR, "Warning: msrc is ambiguos.\n");
 		}
 	}
+  if (strcmp(fccaddr, "") != 0 && fccaddr != NULL) {
+		if (fcc_res->ai_next != NULL) {
+			logger(LOG_ERROR, "Warning: fcc is ambiguos.\n");
+		}
+	}
 
 	/* Copy result into statically allocated structs */
 	memcpy(&res_addr, res->ai_addr, res->ai_addrlen);
@@ -284,6 +323,7 @@ static struct services_s* udpxy_parse(char* url) {
 	res_ai.ai_next = NULL;
 	serv.addr = &res_ai;
 
+  serv.msrc_addr = NULL;
 	if (strcmp(msrc, "") != 0 && msrc != NULL) {
 		/* Copy result into statically allocated structs */
 		memcpy(&msrc_res_addr, msrc_res->ai_addr, msrc_res->ai_addrlen);
@@ -296,21 +336,24 @@ static struct services_s* udpxy_parse(char* url) {
 
 	serv.msrc = strdup(msrc);
 
+	serv.fcc_addr = NULL;
+	if (strcmp(fccaddr, "") != 0 && fccaddr != NULL) {
+		/* Copy result into statically allocated structs */
+		memcpy(&fcc_res_addr, fcc_res->ai_addr, fcc_res->ai_addrlen);
+		memcpy(&fcc_res_ai, fcc_res, sizeof(struct addrinfo));
+		fcc_res_ai.ai_addr = (struct sockaddr*) &fcc_res_addr;
+		fcc_res_ai.ai_canonname = NULL;
+		fcc_res_ai.ai_next = NULL;
+		serv.fcc_addr = &fcc_res_ai;
+	}
+
 	return &serv;
 }
 
-
-static void startRTPstream(int client, struct services_s *service){
-	int sock, level;
-	int r;
+static int join_mcast_group(struct services_s *service) {
 	struct group_req gr;
 	struct group_source_req gsr;
-	uint8_t buf[UDPBUFLEN];
-	int actualr;
-	uint16_t seqn, oldseqn, notfirst=0;
-	int payloadstart, payloadlength;
-	fd_set rfds;
-	struct timeval timeout;
+	int sock, r, level;
 	int on = 1;
 
 	sock = socket(service->addr->ai_family, service->addr->ai_socktype,
@@ -364,71 +407,301 @@ static void startRTPstream(int client, struct services_s *service){
 		exit(RETVAL_RTP_FAILED);
 	}
 
+	return sock;
+}
 
+static uint8_t* build_fcc_request_pk(struct addrinfo *maddr, int fcc_sock) {
+	struct sockaddr_in *maddr_sin = (struct sockaddr_in *)maddr->ai_addr;
+	socklen_t slen;
+	struct sockaddr_in fcc_sin;
+
+	static uint8_t pk[FCC_PK_LEN_REQ];
+	memset(&pk, 0, sizeof(pk));
+	uint8_t *p = pk;
+	*(p++) = 0x82; // Version 2, Padding 0, FMT 2
+	*(p++) = 205; // Type: Generic RTP Feedback (205)
+	*(uint16_t*)p = htons(sizeof(pk)/4 - 1); // Length
+	p += 2;
+	p += 4; // Sender SSRC
+	*(uint32_t*)p = maddr_sin->sin_addr.s_addr; // Media source SSRC
+	p += 4;
+
+	// FCI
+	p += 4; // Version 0, Reserved 3 bytes
+	slen = sizeof(fcc_sin);
+	getsockname(fcc_sock, (struct sockaddr *)&fcc_sin, &slen);
+	*(uint16_t*)p = fcc_sin.sin_port; // FCC client port
+	p += 2;
+	*(uint16_t*)p = maddr_sin->sin_port; // Mcast group port
+	p += 2;
+	*(uint32_t*)p = maddr_sin->sin_addr.s_addr; // Mcast group IP
+	p += 4;
+
+	return pk;
+}
+
+static uint8_t* build_fcc_term_pk(struct addrinfo *maddr, uint16_t seqn) {
+	struct sockaddr_in *maddr_sin = (struct sockaddr_in *)maddr->ai_addr;
+
+	static uint8_t pk[FCC_PK_LEN_TERM];
+	memset(&pk, 0, sizeof(pk));
+	uint8_t *p = pk;
+	*(p++) = 0x85; // Version 2, Padding 0, FMT 5
+	*(p++) = 205; // Type: Generic RTP Feedback (205)
+	*(uint16_t*)p = htons(sizeof(pk)/4 - 1); // Length
+	p += 2;
+	p += 4; // Sender SSRC
+	*(uint32_t*)p = maddr_sin->sin_addr.s_addr; // Media source SSRC
+	p += 4;
+
+	// FCI
+	*(p++) = seqn ? 0 : 1; // Stop bit, 0 = normal, 1 = force
+	p++; // Reserved
+	*(uint16_t*)p = htons(seqn); // First multicast packet sequence
+	p += 2;
+
+	return pk;
+}
+
+static int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size) {
+	int payloadstart, payloadlength;
+
+	if (recv_len < 12 || (buf[0]&0xC0) != 0x80) {
+		/*malformed RTP/UDP/IP packet*/
+		logger(LOG_DEBUG,"Malformed RTP packet received\n");
+		return -1;
+	}
+
+	payloadstart = 12; /* basic RTP header length */
+	payloadstart += (buf[0]&0x0F) * 4; /*CRSC headers*/
+	if (buf[0]&0x10) { /*Extension header*/
+		payloadstart += 4 + 4*ntohs(*((uint16_t *)(buf+payloadstart+2)));
+	}
+	payloadlength = recv_len - payloadstart;
+	if (buf[0]&0x20) { /*Padding*/
+		payloadlength -= buf[recv_len];
+		/*last octet indicate padding length*/
+	}
+	if(payloadlength<0) {
+		logger(LOG_DEBUG,"Malformed RTP packet received\n");
+		return -1;
+	}
+
+	*payload = buf+payloadstart;
+	*size = payloadlength;
+	return 0;
+}
+
+static void write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf, uint16_t *oldseqn, uint16_t *notfirst) {
+	int payloadlength;
+	uint8_t *payload;
+	uint16_t seqn;
+
+	get_rtp_payload(buf, recv_len, &payload, &payloadlength);
+
+	seqn = ntohs(*(uint16_t *)(buf+2));
+	if (*notfirst && seqn==*oldseqn) {
+		logger(LOG_DEBUG,"Duplicated RTP packet "
+			"received (seqn %d)\n", seqn);
+		return;
+	}
+	if (*notfirst && (seqn != ((*oldseqn+1)&0xFFFF))) {
+		logger(LOG_DEBUG,"Congestion - expected %d, "
+			"received %d\n", (*oldseqn+1)&0xFFFF, seqn);
+	}
+	*oldseqn=seqn;
+	*notfirst=1;
+
+	writeToClient(client, payload, payloadlength);
+}
+
+static void startRTPstream(int client, struct services_s *service){
+	int recv_state = RECV_STATE_INIT;
+	int mcast_sock = 0, fcc_sock = 0, max_sock;
+	int r;
+	struct sockaddr_in *fcc_server;
+	struct sockaddr_in peer_addr;
+	socklen_t slen = sizeof(peer_addr);
+	uint8_t buf[UDPBUFLEN];
+	uint8_t *mcast_pending_buf = NULL, *mcast_pbuf_c, *rtp_payload, mcast_pbuf_full;
+	uint mcast_pbuf_len;
+	int actualr;
+	uint16_t fcc_client_port, media_port = 0, seqn, mcast_pbuf_lsqen, notfirst=0, fcc_term_sent = 0, fcc_term_seqn = 0;
+	int payloadlength;
+	fd_set rfds;
+	struct timeval timeout;
 
 	while(1) {
-		FD_ZERO(&rfds);
-		FD_SET(sock, &rfds);
-		FD_SET(client, &rfds); /* Will be set if connection to client lost.*/
-		timeout.tv_sec = 5;
-		timeout.tv_usec = 0;
+		if (recv_state == RECV_STATE_INIT) {
+			if (service->service_type == SERVICE_MRTP && service->fcc_addr) {
+				struct sockaddr_in sin;
+				if (!fcc_sock) {
+					fcc_sock = socket(AF_INET, service->fcc_addr->ai_socktype, service->fcc_addr->ai_protocol);
+					sin.sin_family = AF_INET;
+					sin.sin_addr.s_addr = INADDR_ANY;
+					sin.sin_port = 0;
+					r = bind(fcc_sock, (struct sockaddr *)&sin, sizeof(sin));
+					if (r) {
+						logger(LOG_ERROR, "Cannot bind: %s\n", strerror(errno));
+						exit(RETVAL_RTP_FAILED);
+					}
+					fcc_server = (struct sockaddr_in*) service->fcc_addr->ai_addr;
+				}
+				r = sendto(fcc_sock, build_fcc_request_pk(service->addr, fcc_sock), FCC_PK_LEN_REQ, 0, fcc_server, sizeof(*fcc_server));
+				if (r < 0){
+					logger(LOG_ERROR, "Unable to send FCC req message: %s\n", strerror(errno));
+					exit(RETVAL_RTP_FAILED);
+    		}
+				logger(LOG_DEBUG, "FCC server requested.\n");
+				recv_state = RECV_STATE_FCC_REQUESTED;
+			} else {
+				mcast_sock = join_mcast_group(service);
+				recv_state = RECV_STATE_MCAST_ACCEPTED;
+			}
+		} else {
+			FD_ZERO(&rfds);
+			max_sock = client;
+			FD_SET(client, &rfds); /* Will be set if connection to client lost.*/
+			if (fcc_sock && recv_state != RECV_STATE_MCAST_ACCEPTED) {
+				FD_SET(fcc_sock, &rfds);
+				if (fcc_sock > max_sock) max_sock = fcc_sock;
+			}
+			if (mcast_sock && recv_state != RECV_STATE_FCC_REQUESTED) {
+				FD_SET(mcast_sock, &rfds);
+				if (mcast_sock > max_sock) max_sock = mcast_sock;
+			}
+			timeout.tv_sec = 5;
+			timeout.tv_usec = 0;
 
-		/* We use select to get rid of recv stuck if
-		 * multicast group is unoperated.
-		 */
-		r=select(sock+1, &rfds, NULL, NULL, &timeout);
-		if (r<0 && errno==EINTR)
-			continue;
-		if (r==0) { /* timeout reached */
-			exit(RETVAL_SOCK_READ_FAILED);
+			/* We use select to get rid of recv stuck if
+			* multicast group is unoperated.
+			*/
+			r=select(max_sock+1, &rfds, NULL, NULL, &timeout);
+			if (r<0 && errno==EINTR) {
+				continue;
+			}
+			if (r==0) { /* timeout reached */
+				if (fcc_sock) sendto(fcc_sock, build_fcc_term_pk(service->addr, 0), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
+				exit(RETVAL_SOCK_READ_FAILED);
+			}
+			if (FD_ISSET(client, &rfds)) { /* client written stg, or conn. lost	 */
+			  if (fcc_sock) sendto(fcc_sock, build_fcc_term_pk(service->addr, 0), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
+				exit(RETVAL_WRITE_FAILED);
+			} else if (fcc_sock && FD_ISSET(fcc_sock, &rfds)) {
+				actualr = recvfrom(fcc_sock, buf, sizeof(buf), 0, &peer_addr, &slen);
+				if (actualr < 0){
+					logger(LOG_ERROR, "FCC recv failed: %s\n", strerror(errno));
+					continue;
+				}
+				if (peer_addr.sin_addr.s_addr == fcc_server->sin_addr.s_addr && peer_addr.sin_port == fcc_server->sin_port) { // RTCP signal command
+					if (buf[1] != 205) {
+						logger(LOG_DEBUG, "Unrecognized FCC payload type: %u\n", buf[1]);
+						continue;
+					}
+					if (buf[0] == 0x83) { // FMT 3
+						if (buf[12] != 0) { // Result not success
+							logger(LOG_DEBUG, "FCC (FMT 3) gives an error result code: %u\n", buf[12]);
+							mcast_sock = join_mcast_group(service);
+							recv_state = RECV_STATE_MCAST_ACCEPTED;
+							continue;
+						}
+						uint16_t new_signal_port = *(uint16_t*)(buf+14);
+						int fcc_addr_changed = 0;
+						if (new_signal_port && new_signal_port != fcc_server->sin_port) {
+							logger(LOG_DEBUG, "FCC (FMT 3) gives a new signal port: %u\n", ntohs(new_signal_port));
+							fcc_server->sin_port = new_signal_port;
+							fcc_addr_changed = 1;
+						}
+						uint32_t new_fcc_ip = *(uint32_t*)(buf+20);
+						if (new_fcc_ip && new_fcc_ip != fcc_server->sin_addr.s_addr) {
+							fcc_server->sin_addr.s_addr = new_fcc_ip;
+							logger(LOG_DEBUG, "FCC (FMT 3) gives a new FCC ip: %s\n", inet_ntoa(fcc_server->sin_addr));
+							fcc_addr_changed = 1;
+						}
+						uint16_t new_media_port = *(uint16_t*)(buf+16);
+						if (new_media_port && new_media_port != media_port) {
+							media_port = new_media_port;
+							logger(LOG_DEBUG, "FCC (FMT 3) gives a new media port: %u\n", ntohs(new_media_port));
+							fcc_addr_changed = 1;
+						}
+						if (fcc_addr_changed) {
+							// Send empty packet to make NAT happy
+							sendto(fcc_sock, NULL, 0, 0, fcc_server, sizeof(*fcc_server));
+							if (new_media_port) {
+								struct sockaddr_in sintmp = *fcc_server;
+								sintmp.sin_port = new_media_port;
+								sendto(fcc_sock, NULL, 0, 0, &sintmp, sizeof(sintmp));
+							}
+						}
+						if (buf[13] == 3) { // Redirect to new FCC server
+							logger(LOG_DEBUG, "FCC (FMT 3) requests a redirection to a new server\n");
+							recv_state = RECV_STATE_INIT;
+						} else if (buf[13] != 2) { // Join mcast group instantly
+							logger(LOG_DEBUG, "FCC (FMT 3) requests immediate mcast join, code: %u\n", buf[13]);
+							mcast_sock = join_mcast_group(service);
+							recv_state = RECV_STATE_MCAST_ACCEPTED;
+						} else {
+							logger(LOG_DEBUG, "FCC server accepted the req. \n");
+						}
+					} else if (buf[0] == 0x84) { // FMT 4
+						logger(LOG_DEBUG, "FCC (FMT 4) indicates we can now join mcast\n");
+						mcast_sock = join_mcast_group(service);
+						recv_state = RECV_STATE_MCAST_REQUESTED;
+					}
+				} else if (peer_addr.sin_addr.s_addr == fcc_server->sin_addr.s_addr && peer_addr.sin_port == media_port) { // RTP media packet
+					write_rtp_payload_to_client(client, actualr, buf, &seqn, &notfirst);
+					if (fcc_term_sent && seqn >= fcc_term_seqn - 1) {
+						recv_state = RECV_STATE_MCAST_ACCEPTED;
+					}
+				}
+			} else if (mcast_sock && FD_ISSET(mcast_sock, &rfds)) {
+				actualr = recv(mcast_sock, buf, sizeof(buf), 0);
+				if (actualr < 0){
+					logger(LOG_DEBUG, "Mcast recv fail: %s", strerror(errno));
+					continue;
+				}
+				if (service->service_type == SERVICE_MUDP) {
+					writeToClient(client, buf, sizeof(buf));
+					continue;
+				}
+				if (recv_state == RECV_STATE_MCAST_ACCEPTED) {
+					if (mcast_pending_buf) {
+						writeToClient(client, mcast_pending_buf, mcast_pbuf_len);
+						free(mcast_pending_buf);
+						mcast_pending_buf = NULL;
+						seqn = mcast_pbuf_lsqen;
+						logger(LOG_DEBUG, "Flushed mcast pending buffer to client. Term seqn: %u, mcast pending buffer last sqen: %u\n", fcc_term_seqn, mcast_pbuf_lsqen);
+					}
+					write_rtp_payload_to_client(client, actualr, buf, &seqn, &notfirst);
+				} else if (recv_state == RECV_STATE_MCAST_REQUESTED) {
+					mcast_pbuf_lsqen = ntohs(*(uint16_t *)(buf+2));
+					if (!fcc_term_sent) {
+						fcc_term_seqn = mcast_pbuf_lsqen;
+						r = sendto(fcc_sock, build_fcc_term_pk(service->addr, fcc_term_seqn), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
+						if (r < 0){
+							logger(LOG_ERROR, "Unable to send FCC termination message: %s\n", strerror(errno));
+						}
+						mcast_pbuf_len = (max(fcc_term_seqn - seqn, 10) + 10) * 2000;
+						mcast_pending_buf = malloc(mcast_pbuf_len);
+						mcast_pbuf_c = mcast_pending_buf;
+						mcast_pbuf_full = 0;
+						fcc_term_sent = 1;
+						logger(LOG_DEBUG, "FCC term message sent. Mcast pending buffer size: %u\n", mcast_pbuf_len);
+					}
+					if (mcast_pbuf_full) continue;
+					if (get_rtp_payload(buf, actualr, &rtp_payload, &payloadlength) < 0) {
+						continue;
+					}
+					if (mcast_pbuf_c + payloadlength > mcast_pending_buf + mcast_pbuf_len) {
+						logger(LOG_ERROR, "Mcast pending buffer is full, video quality may suffer.\n", strerror(errno));
+						mcast_pbuf_full = 1;
+						continue;
+					}
+					memcpy(mcast_pbuf_c, rtp_payload, payloadlength);
+					mcast_pbuf_c += payloadlength;
+				}
+			}
 		}
-		if (FD_ISSET(client, &rfds)) { /* client written stg, or conn. lost	 */
-			exit(RETVAL_WRITE_FAILED);
-		}
-
-		actualr = recv(sock, buf, sizeof(buf), 0);
-		if (actualr < 0){
-			exit(RETVAL_SOCK_READ_FAILED);
-		}
-		if (service->service_type == SERVICE_MUDP) {
-			writeToClient(client, buf, sizeof(buf));
-			continue;
-		}
-
-		if (actualr < 12 || (buf[0]&0xC0) != 0x80) {
-			/*malformed RTP/UDP/IP packet*/
-			logger(LOG_DEBUG,"Malformed RTP packet received\n");
-			continue;
-		}
-
-		payloadstart = 12; /* basic RTP header length */
-		payloadstart += (buf[0]&0x0F) * 4; /*CRSC headers*/
-		if (buf[0]&0x10) { /*Extension header*/
-			payloadstart += 4 + 4*ntohs(*((uint16_t *)(buf+payloadstart+2)));
-		}
-		payloadlength = actualr - payloadstart;
-		if (buf[0]&0x20) { /*Padding*/
-			payloadlength -= buf[actualr];
-			/*last octet indicate padding length*/
-		}
-		if(payloadlength<0) {
-			logger(LOG_DEBUG,"Malformed RTP packet received\n");
-			continue;
-		}
-		seqn = ntohs(*((uint16_t *)(buf+2)));
-		if (notfirst && seqn==oldseqn) {
-			logger(LOG_DEBUG,"Duplicated RTP packet "
-				"received (seqn %d)\n", seqn);
-			continue;
-		}
-		if (notfirst && (seqn != ((oldseqn+1)&0xFFFF))) {
-			logger(LOG_DEBUG,"Congestion - expected %d, "
-				"received %d\n", (oldseqn+1)&0xFFFF, seqn);
-		}
-		oldseqn=seqn;
-		notfirst=1;
-
-		writeToClient(client, buf+payloadstart, payloadlength);
 	}
 
 	/*SHOULD NEVER REACH THIS*/
