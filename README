@@ -18,6 +18,8 @@ make && make install
 
 启动 rtp2httpd 后，即可使用类似 `http://10.0.0.2:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970` 这样的地址将组播源转换为单播源。这里的 FCC 服务器地址需要在自己所在地的 IPTV 盒子上抓包获得，并在路由器上添加静态路由走 IPTV 网络出站。
 
+建议在路由器上开启 NAT-PMP 功能（通常在 UPnP 相关设置下面），这样可以确保播放的稳定性。rtp2httpd 会利用 NAT-PMP 自动映射端口从而避免 NAT 打洞失败造成的播放卡顿。
+
 Multicast RTP to Unicast HTTP stream convertor with FCC support!
 ==============================================
 
