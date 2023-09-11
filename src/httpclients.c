@@ -515,6 +515,17 @@ static void write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf, 
 	writeToClient(client, payload, payloadlength);
 }
 
+static ssize_t sendto_triple(int __fd, const void *__buf, size_t __n,
+	int __flags, __CONST_SOCKADDR_ARG __addr, socklen_t __addr_len) {
+	static uint8_t i;
+	for (i = 0; i < 3; i++) {
+		if (sendto(__fd, __buf, __n, __flags, __addr, __addr_len) < 0) {
+			return -1;
+		}
+	}
+	return __n;
+}
+
 static void startRTPstream(int client, struct services_s *service){
 	int recv_state = RECV_STATE_INIT;
 	int mcast_sock = 0, fcc_sock = 0, max_sock;
@@ -547,7 +558,7 @@ static void startRTPstream(int client, struct services_s *service){
 					}
 					fcc_server = (struct sockaddr_in*) service->fcc_addr->ai_addr;
 				}
-				r = sendto(fcc_sock, build_fcc_request_pk(service->addr, fcc_sock), FCC_PK_LEN_REQ, 0, fcc_server, sizeof(*fcc_server));
+				r = sendto_triple(fcc_sock, build_fcc_request_pk(service->addr, fcc_sock), FCC_PK_LEN_REQ, 0, fcc_server, sizeof(*fcc_server));
 				if (r < 0){
 					logger(LOG_ERROR, "Unable to send FCC req message: %s\n", strerror(errno));
 					exit(RETVAL_RTP_FAILED);
@@ -581,11 +592,11 @@ static void startRTPstream(int client, struct services_s *service){
 				continue;
 			}
 			if (r==0) { /* timeout reached */
-				if (fcc_sock) sendto(fcc_sock, build_fcc_term_pk(service->addr, 0), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
+				if (fcc_sock) sendto_triple(fcc_sock, build_fcc_term_pk(service->addr, 0), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
 				exit(RETVAL_SOCK_READ_FAILED);
 			}
 			if (FD_ISSET(client, &rfds)) { /* client written stg, or conn. lost	 */
-			  if (fcc_sock) sendto(fcc_sock, build_fcc_term_pk(service->addr, 0), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
+			  if (fcc_sock) sendto_triple(fcc_sock, build_fcc_term_pk(service->addr, 0), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
 				exit(RETVAL_WRITE_FAILED);
 			} else if (fcc_sock && FD_ISSET(fcc_sock, &rfds)) {
 				actualr = recvfrom(fcc_sock, buf, sizeof(buf), 0, &peer_addr, &slen);
@@ -606,32 +617,24 @@ static void startRTPstream(int client, struct services_s *service){
 							continue;
 						}
 						uint16_t new_signal_port = *(uint16_t*)(buf+14);
-						int fcc_addr_changed = 0;
+						int signal_port_changed = 0, media_port_changed = 0;
 						if (new_signal_port && new_signal_port != fcc_server->sin_port) {
 							logger(LOG_DEBUG, "FCC (FMT 3) gives a new signal port: %u\n", ntohs(new_signal_port));
 							fcc_server->sin_port = new_signal_port;
-							fcc_addr_changed = 1;
-						}
-						uint32_t new_fcc_ip = *(uint32_t*)(buf+20);
-						if (new_fcc_ip && new_fcc_ip != fcc_server->sin_addr.s_addr) {
-							fcc_server->sin_addr.s_addr = new_fcc_ip;
-							logger(LOG_DEBUG, "FCC (FMT 3) gives a new FCC ip: %s\n", inet_ntoa(fcc_server->sin_addr));
-							fcc_addr_changed = 1;
+							signal_port_changed = 1;
 						}
 						uint16_t new_media_port = *(uint16_t*)(buf+16);
 						if (new_media_port && new_media_port != media_port) {
 							media_port = new_media_port;
 							logger(LOG_DEBUG, "FCC (FMT 3) gives a new media port: %u\n", ntohs(new_media_port));
-							fcc_addr_changed = 1;
+							media_port_changed = 1;
 						}
-						if (fcc_addr_changed) {
-							// Send empty packet to make NAT happy
-							sendto(fcc_sock, NULL, 0, 0, fcc_server, sizeof(*fcc_server));
-							if (new_media_port) {
-								struct sockaddr_in sintmp = *fcc_server;
-								sintmp.sin_port = new_media_port;
-								sendto(fcc_sock, NULL, 0, 0, &sintmp, sizeof(sintmp));
-							}
+						uint32_t new_fcc_ip = *(uint32_t*)(buf+20);
+						if (new_fcc_ip && new_fcc_ip != fcc_server->sin_addr.s_addr) {
+							fcc_server->sin_addr.s_addr = new_fcc_ip;
+							logger(LOG_DEBUG, "FCC (FMT 3) gives a new FCC ip: %s\n", inet_ntoa(fcc_server->sin_addr));
+							signal_port_changed = 1;
+							media_port_changed = 1;
 						}
 						if (buf[13] == 3) { // Redirect to new FCC server
 							logger(LOG_DEBUG, "FCC (FMT 3) requests a redirection to a new server\n");
@@ -641,6 +644,15 @@ static void startRTPstream(int client, struct services_s *service){
 							mcast_sock = join_mcast_group(service);
 							recv_state = RECV_STATE_MCAST_ACCEPTED;
 						} else {
+							// Send empty packet to make NAT happy
+							if (media_port_changed && media_port) {
+								struct sockaddr_in sintmp = *fcc_server;
+								sintmp.sin_port = media_port;
+								sendto_triple(fcc_sock, NULL, 0, 0, &sintmp, sizeof(sintmp));
+							}
+							if (signal_port_changed) {
+								sendto_triple(fcc_sock, NULL, 0, 0, fcc_server, sizeof(*fcc_server));
+							}
 							logger(LOG_DEBUG, "FCC server accepted the req. \n");
 						}
 					} else if (buf[0] == 0x84) { // FMT 4
@@ -677,7 +689,7 @@ static void startRTPstream(int client, struct services_s *service){
 					mcast_pbuf_lsqen = ntohs(*(uint16_t *)(buf+2));
 					if (!fcc_term_sent) {
 						fcc_term_seqn = mcast_pbuf_lsqen;
-						r = sendto(fcc_sock, build_fcc_term_pk(service->addr, fcc_term_seqn), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
+						r = sendto_triple(fcc_sock, build_fcc_term_pk(service->addr, fcc_term_seqn + 2), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
 						if (r < 0){
 							logger(LOG_ERROR, "Unable to send FCC termination message: %s\n", strerror(errno));
 						}
