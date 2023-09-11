@@ -410,10 +410,9 @@ static int join_mcast_group(struct services_s *service) {
 	return sock;
 }
 
-static uint8_t* build_fcc_request_pk(struct addrinfo *maddr, int fcc_sock) {
-	struct sockaddr_in *maddr_sin = (struct sockaddr_in *)maddr->ai_addr;
-	socklen_t slen;
-	struct sockaddr_in fcc_sin;
+static uint8_t* build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client_nport) {
+	struct sockaddr_in *maddr_sin = (struct sockaddr_in *)
+	maddr->ai_addr;
 
 	static uint8_t pk[FCC_PK_LEN_REQ];
 	memset(&pk, 0, sizeof(pk));
@@ -428,9 +427,7 @@ static uint8_t* build_fcc_request_pk(struct addrinfo *maddr, int fcc_sock) {
 
 	// FCI
 	p += 4; // Version 0, Reserved 3 bytes
-	slen = sizeof(fcc_sin);
-	getsockname(fcc_sock, (struct sockaddr *)&fcc_sin, &slen);
-	*(uint16_t*)p = fcc_sin.sin_port; // FCC client port
+	*(uint16_t*)p = fcc_client_nport; // FCC client port
 	p += 2;
 	*(uint16_t*)p = maddr_sin->sin_port; // Mcast group port
 	p += 2;
@@ -438,6 +435,60 @@ static uint8_t* build_fcc_request_pk(struct addrinfo *maddr, int fcc_sock) {
 	p += 4;
 
 	return pk;
+}
+
+static int get_gw_ip(in_addr_t *addr) {
+	long destination, gateway;
+	char buf[4096];
+	FILE * file;
+
+	memset(buf, 0, sizeof(buf));
+
+	file = fopen("/proc/net/route", "r");
+	if (!file) {
+		return -1;
+	}
+
+	while (fgets(buf, sizeof(buf), file)) {
+		if (sscanf(buf, "%*s %lx %lx", &destination, &gateway) == 2) {
+			if (destination == 0) { /* default */
+				*addr = gateway;
+				fclose(file);
+				return 0;
+			}
+		}
+	}
+
+	/* default route not found */
+	if (file)
+		fclose(file);
+	return -1;
+}
+
+static uint16_t nat_pmp(uint16_t nport, uint32_t lifetime) {
+	struct sockaddr_in gw_addr = { .sin_family = AF_INET, .sin_port = htons(5351) };
+	uint8_t pk[12];
+	uint8_t buf[16];
+	struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
+
+	if (get_gw_ip(&gw_addr.sin_addr.s_addr) < 0) return 0;
+	int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+	pk[0] = 0; // Version
+	pk[1] = 1; // UDP
+	*(uint16_t*)(pk+2) = 0; // Reserved
+	*(uint16_t*)(pk+4) = nport; // Private port
+	*(uint16_t*)(pk+6) = 0; // Public port
+	*(uint32_t*)(pk+8) = htonl(lifetime);
+  sendto(sock, pk, sizeof(pk), 0, &gw_addr, sizeof(gw_addr));
+	if (recv(sock, buf, sizeof(buf), 0) > 0) {
+		if (*(uint16_t*)(buf+2) == 0) { // Result code
+		  close(sock);
+			return *(uint16_t*)(buf+10); // Mapped public port
+		}
+	}
+	close(sock);
+	return 0;
 }
 
 static uint8_t* build_fcc_term_pk(struct addrinfo *maddr, uint16_t seqn) {
@@ -526,18 +577,24 @@ static ssize_t sendto_triple(int __fd, const void *__buf, size_t __n,
 	return __n;
 }
 
+static void fcc_cleanup(int fcc_sock, struct sockaddr_in *fcc_server, struct services_s *service, uint16_t mapped_pub_port, struct sockaddr_in *fcc_client) {
+	sendto_triple(fcc_sock, build_fcc_term_pk(service->addr, 0), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
+	if (mapped_pub_port) nat_pmp(fcc_client->sin_port, 0);
+}
+
 static void startRTPstream(int client, struct services_s *service){
 	int recv_state = RECV_STATE_INIT;
 	int mcast_sock = 0, fcc_sock = 0, max_sock;
 	int r;
 	struct sockaddr_in *fcc_server;
+	struct sockaddr_in fcc_client;
 	struct sockaddr_in peer_addr;
 	socklen_t slen = sizeof(peer_addr);
 	uint8_t buf[UDPBUFLEN];
 	uint8_t *mcast_pending_buf = NULL, *mcast_pbuf_c, *rtp_payload, mcast_pbuf_full;
 	uint mcast_pbuf_len;
 	int actualr;
-	uint16_t fcc_client_port, media_port = 0, seqn, mcast_pbuf_lsqen, notfirst=0, fcc_term_sent = 0, fcc_term_seqn = 0;
+	uint16_t mapped_pub_port = 0, media_port = 0, seqn, mcast_pbuf_lsqen, notfirst=0, fcc_term_sent = 0, fcc_term_seqn = 0;
 	int payloadlength;
 	fd_set rfds;
 	struct timeval timeout;
@@ -556,9 +613,13 @@ static void startRTPstream(int client, struct services_s *service){
 						logger(LOG_ERROR, "Cannot bind: %s\n", strerror(errno));
 						exit(RETVAL_RTP_FAILED);
 					}
+					slen = sizeof(fcc_client);
+					getsockname(fcc_sock, (struct sockaddr *)&fcc_client, &slen);
+					mapped_pub_port = nat_pmp(fcc_client.sin_port, 86400);
+					logger(LOG_DEBUG, "NAT PMP result: %u\n", ntohs(mapped_pub_port));
 					fcc_server = (struct sockaddr_in*) service->fcc_addr->ai_addr;
 				}
-				r = sendto_triple(fcc_sock, build_fcc_request_pk(service->addr, fcc_sock), FCC_PK_LEN_REQ, 0, fcc_server, sizeof(*fcc_server));
+				r = sendto_triple(fcc_sock, build_fcc_request_pk(service->addr, mapped_pub_port ? mapped_pub_port : fcc_client.sin_port), FCC_PK_LEN_REQ, 0, fcc_server, sizeof(*fcc_server));
 				if (r < 0){
 					logger(LOG_ERROR, "Unable to send FCC req message: %s\n", strerror(errno));
 					exit(RETVAL_RTP_FAILED);
@@ -592,11 +653,11 @@ static void startRTPstream(int client, struct services_s *service){
 				continue;
 			}
 			if (r==0) { /* timeout reached */
-				if (fcc_sock) sendto_triple(fcc_sock, build_fcc_term_pk(service->addr, 0), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
+				if (fcc_sock) fcc_cleanup(fcc_sock, fcc_server, service, mapped_pub_port, &fcc_client);
 				exit(RETVAL_SOCK_READ_FAILED);
 			}
 			if (FD_ISSET(client, &rfds)) { /* client written stg, or conn. lost	 */
-			  if (fcc_sock) sendto_triple(fcc_sock, build_fcc_term_pk(service->addr, 0), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
+			  if (fcc_sock) fcc_cleanup(fcc_sock, fcc_server, service, mapped_pub_port, &fcc_client);
 				exit(RETVAL_WRITE_FAILED);
 			} else if (fcc_sock && FD_ISSET(fcc_sock, &rfds)) {
 				actualr = recvfrom(fcc_sock, buf, sizeof(buf), 0, &peer_addr, &slen);
@@ -604,7 +665,10 @@ static void startRTPstream(int client, struct services_s *service){
 					logger(LOG_ERROR, "FCC recv failed: %s\n", strerror(errno));
 					continue;
 				}
-				if (peer_addr.sin_addr.s_addr == fcc_server->sin_addr.s_addr && peer_addr.sin_port == fcc_server->sin_port) { // RTCP signal command
+				if (peer_addr.sin_addr.s_addr != fcc_server->sin_addr.s_addr) {
+					continue;
+				}
+				if (peer_addr.sin_port == fcc_server->sin_port) { // RTCP signal command
 					if (buf[1] != 205) {
 						logger(LOG_DEBUG, "Unrecognized FCC payload type: %u\n", buf[1]);
 						continue;
@@ -645,22 +709,24 @@ static void startRTPstream(int client, struct services_s *service){
 							recv_state = RECV_STATE_MCAST_ACCEPTED;
 						} else {
 							// Send empty packet to make NAT happy
-							if (media_port_changed && media_port) {
+							if (!mapped_pub_port && media_port_changed && media_port) {
 								struct sockaddr_in sintmp = *fcc_server;
 								sintmp.sin_port = media_port;
 								sendto_triple(fcc_sock, NULL, 0, 0, &sintmp, sizeof(sintmp));
+								logger(LOG_DEBUG, "Tried to setup NAT passthrough for media port %u\n", media_port);
 							}
-							if (signal_port_changed) {
+							if (!mapped_pub_port && signal_port_changed) {
 								sendto_triple(fcc_sock, NULL, 0, 0, fcc_server, sizeof(*fcc_server));
+								logger(LOG_DEBUG, "Tried to setup NAT passthrough for signal port %u\n", fcc_server->sin_port);
 							}
-							logger(LOG_DEBUG, "FCC server accepted the req. \n");
+							logger(LOG_DEBUG, "FCC server accepted the req.\n");
 						}
 					} else if (buf[0] == 0x84) { // FMT 4
 						logger(LOG_DEBUG, "FCC (FMT 4) indicates we can now join mcast\n");
 						mcast_sock = join_mcast_group(service);
 						recv_state = RECV_STATE_MCAST_REQUESTED;
 					}
-				} else if (peer_addr.sin_addr.s_addr == fcc_server->sin_addr.s_addr && peer_addr.sin_port == media_port) { // RTP media packet
+				} else if (peer_addr.sin_port == media_port) { // RTP media packet
 					write_rtp_payload_to_client(client, actualr, buf, &seqn, &notfirst);
 					if (fcc_term_sent && seqn >= fcc_term_seqn - 1) {
 						recv_state = RECV_STATE_MCAST_ACCEPTED;
