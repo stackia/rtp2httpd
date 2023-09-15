@@ -75,11 +75,11 @@ int clientcount = 0;
 int logger(enum loglevel level, const char *format, ...) {
 	va_list ap;
 	int r=0;
-	//if (conf_verbosity >= level) {
+	if (conf_verbosity >= level) {
 		va_start(ap, format);
 		r=vfprintf(stderr,format, ap);
 		va_end(ap);
-	//}
+	}
 	return r;
 }
 
