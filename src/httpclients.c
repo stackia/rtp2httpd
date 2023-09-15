@@ -298,7 +298,7 @@ static struct services_s* udpxy_parse(char* url) {
 				   gai_strerror(rrr));
 		}
 
-		free(msrc);
+		free(msrc); msrc = NULL;
 		return NULL;
 	}
 	if (res->ai_next != NULL) {
@@ -745,8 +745,7 @@ static void startRTPstream(int client, struct services_s *service){
 				if (recv_state == RECV_STATE_MCAST_ACCEPTED) {
 					if (mcast_pending_buf) {
 						writeToClient(client, mcast_pending_buf, mcast_pbuf_len);
-						free(mcast_pending_buf);
-						mcast_pending_buf = NULL;
+						free(mcast_pending_buf); mcast_pending_buf = NULL;
 						seqn = mcast_pbuf_lsqen;
 						logger(LOG_DEBUG, "Flushed mcast pending buffer to client. Term seqn: %u, mcast pending buffer last sqen: %u\n", fcc_term_seqn, mcast_pbuf_lsqen);
 					}
@@ -824,13 +823,12 @@ void clientService(int s) {
 			}
 		}
 
-	if (strcmp(method, "GET") != 0) {
+	if (strcmp(method, "GET") != 0 && strcmp(method, "HEAD") != 0) {
 		if (numfields == 3)
 			headers(s, STATUS_501, CONTENT_HTML);
 		writeToClient(s, (uint8_t*) unimplemented, sizeof(unimplemented)-1);
 		exit(RETVAL_UNKNOWN_METHOD);
 	}
-	free(method); method=NULL;
 
 	urlfrom = rindex(url, '/');
 	if (urlfrom == NULL || (conf_hostname && strcasecmp(conf_hostname, hostname)!=0)) {
@@ -863,6 +861,13 @@ void clientService(int s) {
 		writeToClient(s, (uint8_t*) serviceUnavailable, sizeof(serviceUnavailable)-1);
 		exit(RETVAL_CLEAN);
 	}
+
+	if (strcmp(method, "HEAD") == 0) {
+		if (numfields == 3)
+			headers(s, STATUS_200, CONTENT_OSTREAM);
+		exit(RETVAL_CLEAN);
+	}
+	free(method); method=NULL;
 
 	if (numfields == 3)
 		headers(s, STATUS_200, CONTENT_OSTREAM);
