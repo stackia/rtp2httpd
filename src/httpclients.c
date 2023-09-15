@@ -631,8 +631,10 @@ static void startRTPstream(int client, struct services_s *service){
 					}
 					slen = sizeof(fcc_client);
 					getsockname(fcc_sock, (struct sockaddr *)&fcc_client, &slen);
-					mapped_pub_port = nat_pmp(fcc_client.sin_port, 86400);
-					logger(LOG_DEBUG, "NAT PMP result: %u\n", ntohs(mapped_pub_port));
+					if (conf_fcc_nat_traversal == FCC_NAT_T_NAT_PMP) {
+						mapped_pub_port = nat_pmp(fcc_client.sin_port, 86400);
+						logger(LOG_DEBUG, "NAT PMP result: %u\n", ntohs(mapped_pub_port));
+					}
 					fcc_server = (struct sockaddr_in*) service->fcc_addr->ai_addr;
 				}
 				r = sendto_triple(fcc_sock, build_fcc_request_pk(service->addr, mapped_pub_port ? mapped_pub_port : fcc_client.sin_port), FCC_PK_LEN_REQ, 0, fcc_server, sizeof(*fcc_server));
@@ -723,15 +725,17 @@ static void startRTPstream(int client, struct services_s *service){
 							recv_state = RECV_STATE_MCAST_ACCEPTED;
 						} else {
 							// Send empty packet to make NAT happy
-							if (!mapped_pub_port && media_port_changed && media_port) {
-								struct sockaddr_in sintmp = *fcc_server;
-								sintmp.sin_port = media_port;
-								sendto_triple(fcc_sock, NULL, 0, 0, &sintmp, sizeof(sintmp));
-								logger(LOG_DEBUG, "Tried to setup NAT passthrough for media port %u\n", media_port);
-							}
-							if (!mapped_pub_port && signal_port_changed) {
-								sendto_triple(fcc_sock, NULL, 0, 0, fcc_server, sizeof(*fcc_server));
-								logger(LOG_DEBUG, "Tried to setup NAT passthrough for signal port %u\n", fcc_server->sin_port);
+							if (conf_fcc_nat_traversal == FCC_NAT_T_PUNCHHOLE) {
+								if (media_port_changed && media_port) {
+									struct sockaddr_in sintmp = *fcc_server;
+									sintmp.sin_port = media_port;
+									sendto_triple(fcc_sock, NULL, 0, 0, &sintmp, sizeof(sintmp));
+									logger(LOG_DEBUG, "Tried to NAT punch hole for media port %u\n", media_port);
+								}
+								if (signal_port_changed) {
+									sendto_triple(fcc_sock, NULL, 0, 0, fcc_server, sizeof(*fcc_server));
+									logger(LOG_DEBUG, "Tried to setup NAT punch hole for signal port %u\n", fcc_server->sin_port);
+								}
 							}
 							logger(LOG_DEBUG, "FCC server accepted the req.\n");
 						}

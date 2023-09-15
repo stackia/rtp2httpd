@@ -46,6 +46,12 @@ enum loglevel {
 	LOG_DEBUG
 };
 
+enum fcc_nat_traversal {
+	FCC_NAT_T_DISABLED = 0,
+	FCC_NAT_T_PUNCHHOLE,
+	FCC_NAT_T_NAT_PMP
+};
+
 enum service_type {
 	SERVICE_MRTP = 0,
 	SERVICE_MUDP
@@ -80,6 +86,7 @@ extern int conf_daemonise;
 extern int conf_udpxy;
 extern int conf_maxclients;
 extern char *conf_hostname;
+extern enum fcc_nat_traversal conf_fcc_nat_traversal;
 
 /* GLOBALS */
 extern struct services_s *services;
