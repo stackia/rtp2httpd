@@ -49,6 +49,7 @@ int conf_daemonise;
 int conf_udpxy;
 int conf_maxclients;
 char *conf_hostname = NULL;
+enum fcc_nat_traversal conf_fcc_nat_traversal;
 
 /* *** */
 
@@ -57,6 +58,7 @@ int cmd_daemonise_set;
 int cmd_udpxy_set;
 int cmd_maxclients_set;
 int cmd_bind_set;
+int cmd_fcc_nat_traversal_set;
 
 enum section_e {
 	SEC_NONE = 0,
@@ -299,6 +301,14 @@ void parseGlobalSec(char *line){
 		conf_hostname = strdup(value);
 		return;
 	}
+	if (strcasecmp("fcc-nat-traversal", param) == 0) {
+		if (!cmd_fcc_nat_traversal_set) {
+			conf_fcc_nat_traversal = atoi(value);
+		} else {
+			logger(LOG_INFO, "Warning: Config file value \"fcc-nat-traversal\" ignored. It's already set on CmdLine.\n");
+		}
+		return;
+	}
 
 	logger(LOG_ERROR,"Unknown config parameter: %s\n", param);
 }
@@ -410,6 +420,8 @@ void restoreConfDefaults() {
 	conf_udpxy = 1;
 	cmd_udpxy_set = 0;
 	cmd_bind_set = 0;
+	conf_fcc_nat_traversal = FCC_NAT_T_DISABLED;
+	cmd_fcc_nat_traversal_set = 0;
 
 	while (services != NULL) {
 		servtmp = services;
@@ -458,6 +470,7 @@ PACKAGE " - Multicast RTP to Unicast HTTP stream convertor\n"
 "\t-m --maxclients <n>  Serve max n requests simultaneously (dfl 5)\n"
 "\t-l --listen [addr:]port  Address/port to bind (default ANY:8080)\n"
 "\t-c --config <file>   Read this file, instead of\n"
+"\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole, 2=NAT-PMP (default 0)\n"
 "\t                     default " CONFIGFILE "\n", prog);
 }
 
@@ -503,10 +516,11 @@ void parseCmdLine(int argc, char *argv[]) {
 		{ "maxclients",	required_argument, 0, 'm' },
 		{ "listen",	required_argument, 0, 'l' },
 		{ "config",	required_argument, 0, 'c' },
+		{ "fcc-nat-traversal",	no_argument, 0, 'n' },
 		{ 0,		0, 0, 0}
 	};
 
-	const char shortopts[] = "vqhdDUm:c:l:";
+	const char shortopts[] = "vqhdDUm:c:l:n:";
 	int option_index, opt;
 	int configfile_failed = 1;
 
@@ -555,6 +569,10 @@ void parseCmdLine(int argc, char *argv[]) {
 			case 'l':
 				parseBindCmd(optarg);
 				cmd_bind_set = 1;
+				break;
+			case 'n':
+				conf_fcc_nat_traversal = atoi(optarg);
+				cmd_fcc_nat_traversal_set = 1;
 				break;
 			default:
 				logger(LOG_FATAL, "Unknown option! %d \n",opt);
