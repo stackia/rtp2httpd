@@ -291,6 +291,7 @@ int main(int argc, char *argv[]) {
 					sigprocmask(SIG_UNBLOCK, &childset, NULL);
 
 				} else { /* CHILD */
+					sigprocmask(SIG_UNBLOCK, &childset, NULL);
 					for (j = 0; j < maxs; j++) close(s[j]);
 					clientService(cls);
 					exit(EXIT_SUCCESS);

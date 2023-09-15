@@ -578,8 +578,10 @@ static ssize_t sendto_triple(int __fd, const void *__buf, size_t __n,
 }
 
 static void fcc_cleanup(int fcc_sock, struct sockaddr_in *fcc_server, struct services_s *service, uint16_t mapped_pub_port, struct sockaddr_in *fcc_client) {
-	sendto_triple(fcc_sock, build_fcc_term_pk(service->addr, 0), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
-	if (mapped_pub_port) nat_pmp(fcc_client->sin_port, 0);
+	if (fcc_sock)
+		sendto_triple(fcc_sock, build_fcc_term_pk(service->addr, 0), FCC_PK_LEN_TERM, 0, fcc_server, sizeof(*fcc_server));
+	if (mapped_pub_port)
+		nat_pmp(fcc_client->sin_port, 0);
 }
 
 static void startRTPstream(int client, struct services_s *service){
@@ -598,6 +600,20 @@ static void startRTPstream(int client, struct services_s *service){
 	int payloadlength;
 	fd_set rfds;
 	struct timeval timeout;
+
+	void sig_handler(int signum) {
+		fcc_cleanup(fcc_sock, fcc_server, service, mapped_pub_port, &fcc_client);
+		if (signum) exit(RETVAL_CLEAN);
+	}
+
+	void exit_handler() {
+		sig_handler(0);
+	}
+
+	atexit(exit_handler);
+	signal(SIGTERM, sig_handler);
+	signal(SIGINT, sig_handler);
+	signal(SIGPIPE, sig_handler);
 
 	while(1) {
 		if (recv_state == RECV_STATE_INIT) {
@@ -653,11 +669,9 @@ static void startRTPstream(int client, struct services_s *service){
 				continue;
 			}
 			if (r==0) { /* timeout reached */
-				if (fcc_sock) fcc_cleanup(fcc_sock, fcc_server, service, mapped_pub_port, &fcc_client);
 				exit(RETVAL_SOCK_READ_FAILED);
 			}
 			if (FD_ISSET(client, &rfds)) { /* client written stg, or conn. lost	 */
-			  if (fcc_sock) fcc_cleanup(fcc_sock, fcc_server, service, mapped_pub_port, &fcc_client);
 				exit(RETVAL_WRITE_FAILED);
 			} else if (fcc_sock && FD_ISSET(fcc_sock, &rfds)) {
 				actualr = recvfrom(fcc_sock, buf, sizeof(buf), 0, &peer_addr, &slen);
