@@ -480,7 +480,7 @@ static uint16_t nat_pmp(uint16_t nport, uint32_t lifetime) {
 	*(uint16_t*)(pk+4) = nport; // Private port
 	*(uint16_t*)(pk+6) = 0; // Public port
 	*(uint32_t*)(pk+8) = htonl(lifetime);
-  sendto(sock, pk, sizeof(pk), 0, &gw_addr, sizeof(gw_addr));
+  sendto(sock, pk, sizeof(pk), 0, (struct sockaddr *)&gw_addr, sizeof(gw_addr));
 	if (recv(sock, buf, sizeof(buf), 0) > 0) {
 		if (*(uint16_t*)(buf+2) == 0) { // Result code
 		  close(sock);
@@ -567,10 +567,10 @@ static void write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf, 
 }
 
 static ssize_t sendto_triple(int __fd, const void *__buf, size_t __n,
-	int __flags, __CONST_SOCKADDR_ARG __addr, socklen_t __addr_len) {
+	int __flags, struct sockaddr_in *__addr, socklen_t __addr_len) {
 	static uint8_t i;
 	for (i = 0; i < 3; i++) {
-		if (sendto(__fd, __buf, __n, __flags, __addr, __addr_len) < 0) {
+		if (sendto(__fd, __buf, __n, __flags, (struct sockaddr *)__addr, __addr_len) < 0) {
 			return -1;
 		}
 	}
@@ -676,7 +676,7 @@ static void startRTPstream(int client, struct services_s *service){
 			if (FD_ISSET(client, &rfds)) { /* client written stg, or conn. lost	 */
 				exit(RETVAL_WRITE_FAILED);
 			} else if (fcc_sock && FD_ISSET(fcc_sock, &rfds)) {
-				actualr = recvfrom(fcc_sock, buf, sizeof(buf), 0, &peer_addr, &slen);
+				actualr = recvfrom(fcc_sock, buf, sizeof(buf), 0, (struct sockaddr *)&peer_addr, &slen);
 				if (actualr < 0){
 					logger(LOG_ERROR, "FCC recv failed: %s\n", strerror(errno));
 					continue;
