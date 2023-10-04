@@ -26,7 +26,7 @@
 #include <string.h>
 #include <strings.h>
 #include <errno.h>
-#include <sys/signal.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
