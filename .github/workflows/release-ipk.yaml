@@ -1,0 +1,34 @@
+name: IPK Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: ${{ matrix.arch }} build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch:
+          - x86_64
+        sdk:
+          - "22.03"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        uses: openwrt/gh-action-sdk@v7
+        env:
+          ARCH: ${{ matrix.arch }}-${{ matrix.sdk }}-SNAPSHOT
+          FEED_DIR: ${{ github.workspace }}/openwrt-support
+          NO_DEFAULT_FEEDS: true
+          PACKAGES: rtp2httpd
+
+      - name: Store packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.arch}}-packages
+          path: bin/packages/${{ matrix.arch }}/packages/*.ipk
