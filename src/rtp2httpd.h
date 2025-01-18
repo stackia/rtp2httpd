@@ -40,43 +40,43 @@
 #define min(a,b) ((a)<(b) ? (a):(b))
 
 enum loglevel {
-	LOG_FATAL = 0, /* Always shown */
-	LOG_ERROR,     /* Could be silenced */
-	LOG_INFO,      /* Default verbosity */
-	LOG_DEBUG
+  LOG_FATAL = 0, /* Always shown */
+  LOG_ERROR,     /* Could be silenced */
+  LOG_INFO,      /* Default verbosity */
+  LOG_DEBUG
 };
 
 enum fcc_nat_traversal {
-	FCC_NAT_T_DISABLED = 0,
-	FCC_NAT_T_PUNCHHOLE,
-	FCC_NAT_T_NAT_PMP
+  FCC_NAT_T_DISABLED = 0,
+  FCC_NAT_T_PUNCHHOLE,
+  FCC_NAT_T_NAT_PMP
 };
 
 enum service_type {
-	SERVICE_MRTP = 0,
-	SERVICE_MUDP
+  SERVICE_MRTP = 0,
+  SERVICE_MUDP
 };
 
 /*
  * Linked list of adresses to bind
  */
 struct bindaddr_s {
-	char *node;
-	char *service;
-	struct bindaddr_s *next;
+  char *node;
+  char *service;
+  struct bindaddr_s *next;
 };
 
 /*
  * Linked list of allowed services
  */
 struct services_s {
-	char *url;
-	char *msrc;
-	enum service_type service_type;
-	struct addrinfo *addr;
-	struct addrinfo *msrc_addr;
-	struct addrinfo *fcc_addr;
-	struct services_s *next;
+  char *url;
+  char *msrc;
+  enum service_type service_type;
+  struct addrinfo *addr;
+  struct addrinfo *msrc_addr;
+  struct addrinfo *fcc_addr;
+  struct services_s *next;
 };
 
 /* GLOBAL CONFIGURATION VARIABLES */
