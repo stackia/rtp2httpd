@@ -1,0 +1,13 @@
+{
+  "admin/services/rtp2httpd": {
+    "title": "rtp2httpd",
+    "action": {
+      "type": "view",
+      "path": "rtp2httpd"
+    },
+    "depends": {
+      "acl": ["luci-app-rtp2httpd"],
+      "uci": { "rtp2httpd": true }
+    }
+  }
+}
