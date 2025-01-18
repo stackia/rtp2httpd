@@ -12,11 +12,21 @@ https://github.com/stackia/rtp2httpd/assets/5107241/54da27fc-ca3a-438b-bd67-11ed
 
 ## 使用方法
 
-对于 OpenWrt，可以在 [Releases](https://github.com/stackia/rtp2httpd/releases) 页面下载编译好的 ipk 包直接使用。
+### OpenWrt
+
+可以在 [Releases](https://github.com/stackia/rtp2httpd/releases) 页面下载编译好的 ipk 包直接使用。
 
 下载并安装 `rtp2httpd_x.y.z-1_<arch>.ipk` / `luci-app-rtp2httpd_x.y.z_all.ipk` / `luci-i18n-rtp2httpd-en_x.y.z_all.ipk` / `luci-i18n-rtp2httpd-zh-cn_x.y.z_all.ipk` 四个包。然后在 LuCI 中配置 rtp2httpd 的启动参数即可。
 
 <img width="925" alt="Image" src="https://github.com/user-attachments/assets/7f5dfc55-b00a-4f8f-b589-56fac0235061" />
+
+### Docker
+
+仅支持运行在 host 网络模式下。
+
+```
+docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest --noconfig --verbose 3 --listen 5140 --maxclients 50
+```
 
 启动 rtp2httpd 后，可以使用类似 `http://10.0.0.2:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970` 这样的地址将组播源转换为单播源。这里的 FCC 服务器地址需要在自己所在地的 IPTV 盒子上抓包获得（关键词 `ChannelFCCIP` / `ChannelFCCPort`，通常和直播源 `ChannelURL` 一起出现），并在路由器上添加静态路由走 IPTV 网络出站。
 
@@ -28,7 +38,7 @@ https://github.com/stackia/rtp2httpd/assets/5107241/54da27fc-ca3a-438b-bd67-11ed
 
 ### rtp2httpd README
 
-```
+```rst
 Multicast RTP to Unicast HTTP stream convertor with FCC support!
 ==============================================
 
