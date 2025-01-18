@@ -1,0 +1,48 @@
+#!/bin/sh /etc/rc.common
+
+START=50
+USE_PROCD=1
+
+append_arg() {
+	local cfg="$1"
+	local var="$2"
+	local opt="$3"
+	local def="$4"
+	local val
+
+	config_get val "$cfg" "$var"
+	[ -n "$val" -o -n "$def" ] && procd_append_param command $opt "${val:-$def}"
+}
+
+start_instance() {
+	local cfg="$1"
+	local aux
+
+	config_get_bool aux "$cfg" 'disabled' '0'
+	[ "$aux" = 1 ] && return 1
+
+	procd_open_instance
+
+	procd_set_param command /usr/bin/rtp2httpd
+	procd_append_param command "--noconfig"
+
+	append_arg "$cfg" verbose "--verbose"
+	append_arg "$cfg" port "--listen"
+	append_arg "$cfg" maxclients "--maxclients"
+	append_arg "$cfg" hostname "--hostname"
+	append_arg "$cfg" fcc-nat-traversal "--fcc-nat-traversal"
+
+	config_get_bool aux "$cfg" 'respawn' '0'
+	[ "$aux" = 1 ] && procd_set_param respawn
+
+	procd_close_instance
+}
+
+service_triggers() { 
+	procd_add_reload_trigger "rtp2httpd" 
+}
+
+start_service() {
+	config_load rtp2httpd
+	config_foreach start_instance rtp2httpd
+}

@@ -25,7 +25,14 @@ define Package/rtp2httpd/description
 	incoming RTP data to HTTP stream.
 endef
 
+define Package/rtp2httpd/conffiles
+/etc/config/rtp2httpd
+endef
+
 define Package/rtp2httpd/install
+	$(INSTALL_DIR) $(1)/etc/init.d $(1)/etc/config
+	$(INSTALL_CONF) ./files/rtp2httpd.conf $(1)/etc/config/rtp2httpd
+	$(INSTALL_BIN) ./files/rtp2httpd.init $(1)/etc/init.d/rtp2httpd
 	$(INSTALL_DIR) $(1)/usr/bin/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/src/rtp2httpd $(1)/usr/bin
 endef

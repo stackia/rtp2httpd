@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([rtp2httpd], [1.5], [ondrej@caletka.cz])
+AC_INIT([rtp2httpd-fcc], [1.0.0], [jsq2627@gmail.com])
 AC_CONFIG_SRCDIR([src/rtp2httpd.h])
 AC_CONFIG_HEADERS([src/config.h])
 AM_INIT_AUTOMAKE
