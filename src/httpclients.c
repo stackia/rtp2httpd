@@ -30,6 +30,7 @@
 #include <signal.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <net/if.h>
 
 #include "rtp2httpd.h"
 
@@ -391,6 +392,17 @@ static struct services_s *udpxy_parse(char *url)
   return &serv;
 }
 
+static void bind_to_upstream_interface(int sock)
+{
+  if (conf_upstream_interface.ifr_name != NULL)
+  {
+    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, (void *)&conf_upstream_interface, sizeof(struct ifreq)) < 0)
+    {
+      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s\n", conf_upstream_interface.ifr_name, strerror(errno));
+    }
+  }
+}
+
 static int join_mcast_group(struct services_s *service)
 {
   struct group_req gr;
@@ -433,6 +445,11 @@ static int join_mcast_group(struct services_s *service)
   default:
     logger(LOG_ERROR, "Address family don't support mcast.\n");
     exit(RETVAL_SOCK_READ_FAILED);
+  }
+
+  if (conf_upstream_interface.ifr_name != NULL)
+  {
+    gr.gr_interface = conf_upstream_interface.ifr_ifindex;
   }
 
   if (strcmp(service->msrc, "") != 0 && service->msrc != NULL)
@@ -530,6 +547,7 @@ static uint16_t nat_pmp(uint16_t nport, uint32_t lifetime)
   if (get_gw_ip(&gw_addr.sin_addr.s_addr) < 0)
     return 0;
   int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  bind_to_upstream_interface(sock);
   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
   pk[0] = 0;                     // Version
   pk[1] = 1;                     // UDP
@@ -703,6 +721,7 @@ static void startRTPstream(int client, struct services_s *service)
         if (!fcc_sock)
         {
           fcc_sock = socket(AF_INET, service->fcc_addr->ai_socktype, service->fcc_addr->ai_protocol);
+          bind_to_upstream_interface(fcc_sock);
           sin.sin_family = AF_INET;
           sin.sin_addr.s_addr = INADDR_ANY;
           sin.sin_port = 0;

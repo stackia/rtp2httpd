@@ -41,6 +41,12 @@ msgstr "Info"
 msgid "rtp2httpd_Debug"
 msgstr "Debug"
 
+msgid "rtp2httpd_Upstream Interface"
+msgstr "Upstream Interface"
+
+msgid "rtp2httpd_Interface to use for requesting upstream media stream (default none, which follows the routing table)"
+msgstr "Interface to use for requesting upstream media stream (default none, which follows the routing table)"
+
 msgid "rtp2httpd_Max clients"
 msgstr "Max clients allowed"
 

@@ -43,6 +43,16 @@ return view.extend({
     o.value("3", _("rtp2httpd_Debug"));
     o.default = "1";
 
+    o = s.option(
+      form.Value,
+      "upstream-interface",
+      _("rtp2httpd_Upstream Interface"),
+      _(
+        "rtp2httpd_Interface to use for requesting upstream media stream (default none, which follows the routing table)"
+      )
+    );
+    o.datatype = "interface";
+
     o = s.option(form.Value, "maxclients", _("rtp2httpd_Max clients"));
     o.datatype = "range(1, 5000)";
     o.default = "5";
