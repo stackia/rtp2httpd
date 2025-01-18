@@ -56,9 +56,6 @@ msgstr "FCC NAT 穿透模式"
 msgid "rtp2httpd_Only needed when used as a downstream router"
 msgstr "仅当作为二级路由并需要使用 FCC（快速频道切换）时启用"
 
-msgid "rtp2httpd_Disabled"
-msgstr "禁用"
-
 msgid "rtp2httpd_Don't use NAT traversal"
 msgstr "不使用 NAT 穿透"
 
