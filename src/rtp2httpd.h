@@ -25,7 +25,6 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
-
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif /* HAVE_CONFIG_H */
@@ -36,23 +35,26 @@
 
 #define CONFIGFILE SYSCONFDIR "/rtp2httpd.conf"
 
-#define max(a,b) ((a)>(b) ? (a):(b))
-#define min(a,b) ((a)<(b) ? (a):(b))
+#define max(a, b) ((a) > (b) ? (a) : (b))
+#define min(a, b) ((a) < (b) ? (a) : (b))
 
-enum loglevel {
+enum loglevel
+{
   LOG_FATAL = 0, /* Always shown */
   LOG_ERROR,     /* Could be silenced */
   LOG_INFO,      /* Default verbosity */
   LOG_DEBUG
 };
 
-enum fcc_nat_traversal {
+enum fcc_nat_traversal
+{
   FCC_NAT_T_DISABLED = 0,
   FCC_NAT_T_PUNCHHOLE,
   FCC_NAT_T_NAT_PMP
 };
 
-enum service_type {
+enum service_type
+{
   SERVICE_MRTP = 0,
   SERVICE_MUDP
 };
@@ -60,7 +62,8 @@ enum service_type {
 /*
  * Linked list of adresses to bind
  */
-struct bindaddr_s {
+struct bindaddr_s
+{
   char *node;
   char *service;
   struct bindaddr_s *next;
@@ -69,7 +72,8 @@ struct bindaddr_s {
 /*
  * Linked list of allowed services
  */
-struct services_s {
+struct services_s
+{
   char *url;
   char *msrc;
   enum service_type service_type;
@@ -93,7 +97,6 @@ extern struct services_s *services;
 extern struct bindaddr_s *bindaddr;
 extern int clientcount;
 
-
 /* rtp2httpd.c INTERFACE */
 
 /**
@@ -105,7 +108,6 @@ extern int clientcount;
  * @returns Whatever printf returns
  */
 int logger(enum loglevel level, const char *format, ...);
-
 
 /* httpclients.c INTERFACE */
 
@@ -129,16 +131,16 @@ void clientService(int s);
 /* configfile.c INTERFACE */
 
 void parseCmdLine(int argc, char *argv[]);
-struct bindaddr_s* newEmptyBindaddr();
-void freeBindaddr(struct bindaddr_s*);
+struct bindaddr_s *newEmptyBindaddr();
+void freeBindaddr(struct bindaddr_s *);
 
 #endif /* __RTP2HTTPD_H__*/
 
 #ifndef strndupa
 #define strndupa(s, n) \
-       (__extension__ ({const char *__in = (s); \
+  (__extension__({const char *__in = (s); \
                         size_t __len = strnlen (__in, (n)) + 1; \
                         char *__out = (char *) alloca (__len); \
                         __out[__len-1] = '\0'; \
-                        (char *) memcpy (__out, __in, __len-1);}))
+                        (char *) memcpy (__out, __in, __len-1); }))
 #endif
