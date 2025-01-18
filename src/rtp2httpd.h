@@ -91,6 +91,7 @@ extern int conf_udpxy;
 extern int conf_maxclients;
 extern char *conf_hostname;
 extern enum fcc_nat_traversal conf_fcc_nat_traversal;
+extern struct ifreq conf_upstream_interface;
 
 /* GLOBALS */
 extern struct services_s *services;

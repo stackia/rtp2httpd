@@ -41,6 +41,12 @@ msgstr "Info"
 msgid "rtp2httpd_Debug"
 msgstr "Debug"
 
+msgid "rtp2httpd_Upstream Interface"
+msgstr "上游接口"
+
+msgid "rtp2httpd_Interface to use for requesting upstream media stream (default none, which follows the routing table)"
+msgstr "用于请求上游媒体流（组播流或 FCC 单播流）的接口（默认不指定，跟随路由表）"
+
 msgid "rtp2httpd_Max clients"
 msgstr "最大客户端数"
 

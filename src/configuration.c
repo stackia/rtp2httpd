@@ -32,6 +32,7 @@
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <getopt.h>
+#include <net/if.h>
 
 #include "rtp2httpd.h"
 
@@ -48,6 +49,7 @@ int conf_daemonise;
 int conf_udpxy;
 int conf_maxclients;
 char *conf_hostname = NULL;
+struct ifreq conf_upstream_interface;
 enum fcc_nat_traversal conf_fcc_nat_traversal;
 
 /* *** */
@@ -59,6 +61,7 @@ int cmd_maxclients_set;
 int cmd_bind_set;
 int cmd_fcc_nat_traversal_set;
 int cmd_hostname_set;
+int cmd_upstream_interface_set;
 
 enum section_e
 {
@@ -357,6 +360,19 @@ void parseGlobalSec(char *line)
     }
     return;
   }
+  if (strcasecmp("upstream-interface", param) == 0)
+  {
+    if (!cmd_upstream_interface_set)
+    {
+      strncpy(conf_upstream_interface.ifr_name, value, IFNAMSIZ - 1);
+      conf_upstream_interface.ifr_ifindex = if_nametoindex(conf_upstream_interface.ifr_name);
+    }
+    else
+    {
+      logger(LOG_INFO, "Warning: Config file value \"upstream-interface\" ignored. It's already set on CmdLine.\n");
+    }
+    return;
+  }
   if (strcasecmp("fcc-nat-traversal", param) == 0)
   {
     if (!cmd_fcc_nat_traversal_set)
@@ -500,8 +516,15 @@ void restoreConfDefaults()
   if (conf_hostname != NULL)
   {
     free(conf_hostname);
+    conf_hostname = NULL;
   }
   cmd_hostname_set = 0;
+
+  if (conf_upstream_interface.ifr_name != NULL)
+  {
+    memset(&conf_upstream_interface, 0, sizeof(struct ifreq));
+  }
+  cmd_upstream_interface_set = 0;
 
   while (services != NULL)
   {
@@ -557,6 +580,7 @@ void usage(FILE *f, char *progname)
           "\t-C --noconfig        Do not read the default config\n"
           "\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole, 2=NAT-PMP (default 0)\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)\n"
+          "\t-i --upstream-interface <interface> Interface to use for requesting upstream media stream (default none, which follows the routing table)\n"
           "\t                     default " CONFIGFILE "\n",
           prog);
 }
@@ -614,9 +638,10 @@ void parseCmdLine(int argc, char *argv[])
       {"noconfig", no_argument, 0, 'C'},
       {"fcc-nat-traversal", required_argument, 0, 'n'},
       {"hostname", required_argument, 0, 'H'},
+      {"upstream-interface", required_argument, 0, 'i'},
       {0, 0, 0, 0}};
 
-  const char shortopts[] = "v:qhdDUm:c:l:n:H:C";
+  const char shortopts[] = "v:qhdDUm:c:l:n:H:i:C";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -681,6 +706,11 @@ void parseCmdLine(int argc, char *argv[])
     case 'H':
       conf_hostname = strdup(optarg);
       cmd_hostname_set = 1;
+      break;
+    case 'i':
+      strncpy(conf_upstream_interface.ifr_name, optarg, IFNAMSIZ - 1);
+      conf_upstream_interface.ifr_ifindex = if_nametoindex(conf_upstream_interface.ifr_name);
+      cmd_upstream_interface_set = 1;
       break;
     default:
       logger(LOG_FATAL, "Unknown option! %d \n", opt);
