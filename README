@@ -24,7 +24,7 @@ https://github.com/stackia/rtp2httpd/assets/5107241/54da27fc-ca3a-438b-bd67-11ed
 
 仅支持运行在 host 网络模式下。
 
-```
+```sh
 docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest --noconfig --verbose 3 --listen 5140 --maxclients 50
 ```
 
@@ -35,6 +35,27 @@ docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest --noconfig --ver
 如果不是直接运行在路由器上，需要开启 `fcc-nat-traversal` 选项。如果路由器支持 NAT-PMP 功能（通常在 UPnP 相关设置下面），建议设置为 `fcc-nat-traversal=2`，播放最稳定。如果不支持 NAT-PMP，则设置为 `fcc-nat-traversal=1`，此时某些情况下播放会不稳定，如果发现不能播放，需要重试几次。
 
 如果直接运行在路由器上，则无需开启 `fcc-nat-traversal`（或者设置为 `0`）。
+
+### 参数说明
+
+```text
+Usage: rtp2httpd [options]
+
+Options:
+        -h --help            Show this help
+        -v --verbose         Increase verbosity
+        -q --quiet           Report only fatal errors
+        -d --daemon          Fork to background (implies -q)
+        -D --nodaemon        Do not daemonise. (default)
+        -U --noudpxy         Disable UDPxy compatibility
+        -m --maxclients <n>  Serve max n requests simultaneously (dfl 5)
+        -l --listen [addr:]port  Address/port to bind (default ANY:8080)
+        -c --config <file>   Read this file, instead of
+        -C --noconfig        Do not read the default config
+        -n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole, 2=NAT-PMP (default 0)
+        -H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)
+        -i --upstream-interface <interface> Interface to use for requesting upstream media stream (default none, which follows the routing table)
+```
 
 ### rtp2httpd README
 
