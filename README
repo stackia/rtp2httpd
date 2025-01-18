@@ -12,24 +12,23 @@ https://github.com/stackia/rtp2httpd/assets/5107241/54da27fc-ca3a-438b-bd67-11ed
 
 ## 使用方法
 
-暂时没有开箱即用，需要自己编译构建这个项目。
+对于 OpenWrt，可以在 [Releases](https://github.com/stackia/rtp2httpd/releases) 页面下载编译好的 ipk 包直接使用。
+
+下载并安装 `rtp2httpd_x.y.z-1_<arch>.ipk` / `luci-app-rtp2httpd_x.y.z_all.ipk` / `luci-i18n-rtp2httpd-en_x.y.z_all.ipk` / `luci-i18n-rtp2httpd-zh-cn_x.y.z_all.ipk` 四个包。然后在 LuCI 中配置 rtp2httpd 的启动参数即可。
+
+<img width="925" alt="Image" src="https://github.com/user-attachments/assets/7f5dfc55-b00a-4f8f-b589-56fac0235061" />
+
+启动 rtp2httpd 后，可以使用类似 `http://10.0.0.2:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970` 这样的地址将组播源转换为单播源。这里的 FCC 服务器地址需要在自己所在地的 IPTV 盒子上抓包获得（关键词 `ChannelFCCIP` / `ChannelFCCPort`，通常和直播源 `ChannelURL` 一起出现），并在路由器上添加静态路由走 IPTV 网络出站。
+
+并非所有地区都有 FCC 服务器，如果抓不到，那么很可能当地运营商没有部署 IPTV FCC 服务器。去掉链接里的 `?fcc=<addr>` 可以只使用组播转单播功能。
+
+如果不是直接运行在路由器上，需要开启 `fcc-nat-traversal` 选项。如果路由器支持 NAT-PMP 功能（通常在 UPnP 相关设置下面），建议设置为 `fcc-nat-traversal=2`，播放最稳定。如果不支持 NAT-PMP，则设置为 `fcc-nat-traversal=1`，此时某些情况下播放会不稳定，如果发现不能播放，需要重试几次。
+
+如果直接运行在路由器上，则无需开启 `fcc-nat-traversal`（或者设置为 `0`）。
+
+### rtp2httpd README
 
 ```
-git clone https://github.com/stackia/rtp2httpd.git
-cd rtp2httpd
-autoreconf -i
-./configure
-make && make install
-```
-
-启动 rtp2httpd 后，即可使用类似 `http://10.0.0.2:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970` 这样的地址将组播源转换为单播源。这里的 FCC 服务器地址需要在自己所在地的 IPTV 盒子上抓包获得（关键词 `ChannelFCCIP` / `ChannelFCCPort`，通常和直播源 `ChannelURL` 一起出现），并在路由器上添加静态路由走 IPTV 网络出站。
-
-并非所有地区都有 FCC 服务器，如果抓不到，那么很可能当地运营商没有部署 IPTV FCC 服务器。
-
-如果不是直接运行在路由器上，需要开启 `fcc-nat-traversal` 选项。如果路由器支持 NAT-PMP 功能（通常在 UPnP 相关设置下面），建议设置为 `fcc-nat-traversal=2`，播放最稳定。如果不支持 NAT-PMP，则设置为 `fcc-nat-traversal=1`，此时某些情况下播放会不稳定，如果发现不能播放，需要重试1-2次。
-
-如果直接运行在路由器上，则无需开启 `fcc-nat-traversal`（或者设置为 `0`）。路由器 CPU 如果不够强大，不建议直接运行在路由器上，以免影响整个局域网。
-
 Multicast RTP to Unicast HTTP stream convertor with FCC support!
 ==============================================
 
@@ -74,4 +73,4 @@ a list of command line switches.
 
 __Do not run rtp2httpd as root. Choose some unprivileged port number and run
 it under unprivileged user account.__
-
+```
