@@ -34,28 +34,25 @@
 #include <signal.h>
 #include <sys/wait.h>
 
-
 #include "rtp2httpd.h"
-
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif /* HAVE_CONFIG_H */
-
 
 #define MAX_S 10
 
 /**
  * Linked list of clients
  */
-struct client_s {
+struct client_s
+{
   struct sockaddr_storage ss; /* Client host-port */
   pid_t pid;
   struct client_s *next;
 };
 
 static struct client_s *clients;
-
 
 /* GLOBALS */
 struct bindaddr_s *bindaddr = NULL;
@@ -72,61 +69,75 @@ int clientcount = 0;
  * @param format printf style format string
  * @returns Whatever printf returns
  */
-int logger(enum loglevel level, const char *format, ...) {
+int logger(enum loglevel level, const char *format, ...)
+{
   va_list ap;
-  int r=0;
-  if (conf_verbosity >= level) {
+  int r = 0;
+  if (conf_verbosity >= level)
+  {
     va_start(ap, format);
-    r=vfprintf(stderr,format, ap);
+    r = vfprintf(stderr, format, ap);
     va_end(ap);
   }
   return r;
 }
 
-
-void childhandler(int signum) { /* SIGCHLD handler */
+void childhandler(int signum)
+{ /* SIGCHLD handler */
   int child;
   int status;
   struct client_s *cli, *cli2;
   int r;
   char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
 
+  while ((child = waitpid(-1, &status, WNOHANG)) > 0)
+  {
 
-  while ( (child = waitpid (-1, &status, WNOHANG)) > 0){
-
-    for (cli = clients; cli; cli = cli->next) {
+    for (cli = clients; cli; cli = cli->next)
+    {
       if (child == cli->pid)
         break;
     }
-    if (cli != NULL) {
-      r = getnameinfo((struct sockaddr *) &(cli->ss), sizeof(cli->ss),
-        hbuf, sizeof(hbuf),
-        sbuf, sizeof(sbuf),
-        NI_NUMERICHOST | NI_NUMERICSERV);
-      if (r) {
+    if (cli != NULL)
+    {
+      r = getnameinfo((struct sockaddr *)&(cli->ss), sizeof(cli->ss),
+                      hbuf, sizeof(hbuf),
+                      sbuf, sizeof(sbuf),
+                      NI_NUMERICHOST | NI_NUMERICSERV);
+      if (r)
+      {
         logger(LOG_ERROR, "getnameinfo failed: %s\n",
-          gai_strerror(r));
-      } else {
+               gai_strerror(r));
+      }
+      else
+      {
         logger(LOG_DEBUG, "Client %s port %s disconnected (%d, %d)\n",
-          hbuf, sbuf, WEXITSTATUS(status),
-          WIFSIGNALED(status));
+               hbuf, sbuf, WEXITSTATUS(status),
+               WIFSIGNALED(status));
       }
 
       /* remove client from the list */
-      if (cli == clients) {
-        clients=cli->next;
+      if (cli == clients)
+      {
+        clients = cli->next;
         free(cli);
-      } else {
-        for (cli2=clients; cli2 != NULL; cli2=cli2->next) {
-          if (cli2->next == cli) {
+      }
+      else
+      {
+        for (cli2 = clients; cli2 != NULL; cli2 = cli2->next)
+        {
+          if (cli2->next == cli)
+          {
             cli2->next = cli->next;
             free(cli);
             break;
           }
         }
       }
-    } else {
-      if( child != 1 )
+    }
+    else
+    {
+      if (child != 1)
         logger(LOG_ERROR, "Unknown child finished - pid %d\n", child);
     }
 
@@ -135,8 +146,8 @@ void childhandler(int signum) { /* SIGCHLD handler */
   }
 }
 
-
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
   struct addrinfo hints, *res, *ai;
   struct bindaddr_s *bai;
   struct sockaddr_storage client;
@@ -162,65 +173,79 @@ int main(int argc, char *argv[]) {
   maxs = 0;
   nfds = -1;
 
-  if (bindaddr == NULL) {
+  if (bindaddr == NULL)
+  {
     bindaddr = newEmptyBindaddr();
   }
 
-  for (bai=bindaddr; bai; bai=bai->next) {
+  for (bai = bindaddr; bai; bai = bai->next)
+  {
     r = getaddrinfo(bai->node, bai->service,
-        &hints, &res);
-    if (r) {
+                    &hints, &res);
+    if (r)
+    {
       logger(LOG_FATAL, "GAI: %s\n", gai_strerror(r));
       exit(EXIT_FAILURE);
     }
 
-    for (ai = res; ai && maxs < MAX_S; ai = ai->ai_next) {
+    for (ai = res; ai && maxs < MAX_S; ai = ai->ai_next)
+    {
       s[maxs] = socket(ai->ai_family, ai->ai_socktype,
-          ai->ai_protocol);
+                       ai->ai_protocol);
       if (s[maxs] < 0)
         continue;
       r = setsockopt(s[maxs], SOL_SOCKET,
-          SO_REUSEADDR, &on, sizeof(on));
-      if (r) {
+                     SO_REUSEADDR, &on, sizeof(on));
+      if (r)
+      {
         logger(LOG_ERROR, "SO_REUSEADDR "
-        "failed: %s\n", strerror(errno));
+                          "failed: %s\n",
+               strerror(errno));
       }
 
 #ifdef IPV6_V6ONLY
-      if (ai->ai_family == AF_INET6) {
+      if (ai->ai_family == AF_INET6)
+      {
         r = setsockopt(s[maxs], IPPROTO_IPV6,
-          IPV6_V6ONLY, &on, sizeof(on));
-        if (r) {
+                       IPV6_V6ONLY, &on, sizeof(on));
+        if (r)
+        {
           logger(LOG_ERROR, "IPV6_V6ONLY "
-          "failed: %s\n", strerror(errno));
+                            "failed: %s\n",
+                 strerror(errno));
         }
       }
 #endif /* IPV6_V6ONLY */
 
       r = bind(s[maxs], ai->ai_addr, ai->ai_addrlen);
-      if (r) {
+      if (r)
+      {
         logger(LOG_ERROR, "Cannot bind: %s\n",
-            strerror(errno));
+               strerror(errno));
         close(s[maxs]);
         continue;
       }
       r = listen(s[maxs], 0);
-      if (r) {
+      if (r)
+      {
         logger(LOG_ERROR, "Cannot listen: %s\n",
-            strerror(errno));
+               strerror(errno));
         close(s[maxs]);
         continue;
       }
       r = getnameinfo(ai->ai_addr, ai->ai_addrlen,
-          hbuf, sizeof(hbuf),
-          sbuf, sizeof(sbuf),
-          NI_NUMERICHOST | NI_NUMERICSERV);
-      if (r) {
+                      hbuf, sizeof(hbuf),
+                      sbuf, sizeof(sbuf),
+                      NI_NUMERICHOST | NI_NUMERICSERV);
+      if (r)
+      {
         logger(LOG_ERROR, "getnameinfo failed: %s\n",
-            gai_strerror(r));
-      } else {
+               gai_strerror(r));
+      }
+      else
+      {
         logger(LOG_INFO, "Listening on %s port %s\n",
-            hbuf, sbuf);
+               hbuf, sbuf);
       }
 
       if (s[maxs] > nfds)
@@ -231,45 +256,54 @@ int main(int argc, char *argv[]) {
   }
   freeBindaddr(bindaddr);
 
-  if (maxs == 0) {
+  if (maxs == 0)
+  {
     logger(LOG_FATAL, "No socket to listen!\n");
     exit(EXIT_FAILURE);
   }
 
   FD_ZERO(&rfd0);
-  for (i = 0; i < maxs; i++) {
+  for (i = 0; i < maxs; i++)
+  {
     FD_SET(s[i], &rfd0);
   }
 
-  if (conf_daemonise) {
+  if (conf_daemonise)
+  {
     logger(LOG_INFO, "Forking to background...\n");
-    if (daemon(1, 0) != 0) {
+    if (daemon(1, 0) != 0)
+    {
       logger(LOG_FATAL, "Cannot fork: %s\n", strerror(errno));
       exit(EXIT_FAILURE);
     }
   }
 
   signal(SIGCHLD, &childhandler);
-  while (1) {
+  while (1)
+  {
     rfd = rfd0;
-    r = select(nfds+1, &rfd, NULL, NULL, NULL);
-    if (r<0) {
+    r = select(nfds + 1, &rfd, NULL, NULL, NULL);
+    if (r < 0)
+    {
       if (errno == EINTR)
         continue;
-      logger(LOG_FATAL,"select() failed: %s\n",
-          strerror(errno));
+      logger(LOG_FATAL, "select() failed: %s\n",
+             strerror(errno));
       exit(EXIT_FAILURE);
     }
-    for (i = 0; i < maxs; i++) {
-      if (FD_ISSET(s[i], &rfd)) {
+    for (i = 0; i < maxs; i++)
+    {
+      if (FD_ISSET(s[i], &rfd))
+      {
         cls = accept(s[i],
-          (struct sockaddr*) &client,
-          &client_len);
+                     (struct sockaddr *)&client,
+                     &client_len);
 
         /* We have to mask SIGCHLD before we add child to the list*/
         sigprocmask(SIG_BLOCK, &childset, NULL);
         clientcount++;
-        if ((child = fork())) { /* PARENT */
+        if ((child = fork()))
+        { /* PARENT */
           close(cls);
           newc = malloc(sizeof(struct client_s));
           newc->ss = client;
@@ -277,22 +311,27 @@ int main(int argc, char *argv[]) {
           newc->next = clients;
           clients = newc;
 
-          r = getnameinfo((struct sockaddr *) &client, client_len,
-              hbuf, sizeof(hbuf),
-              sbuf, sizeof(sbuf),
-              NI_NUMERICHOST | NI_NUMERICSERV);
-          if (r) {
+          r = getnameinfo((struct sockaddr *)&client, client_len,
+                          hbuf, sizeof(hbuf),
+                          sbuf, sizeof(sbuf),
+                          NI_NUMERICHOST | NI_NUMERICSERV);
+          if (r)
+          {
             logger(LOG_ERROR, "getnameinfo failed: %s\n",
-                gai_strerror(r));
-          } else {
+                   gai_strerror(r));
+          }
+          else
+          {
             logger(LOG_INFO, "Connection from %s port %s\n",
-                hbuf, sbuf);
+                   hbuf, sbuf);
           }
           sigprocmask(SIG_UNBLOCK, &childset, NULL);
-
-        } else { /* CHILD */
+        }
+        else
+        { /* CHILD */
           sigprocmask(SIG_UNBLOCK, &childset, NULL);
-          for (j = 0; j < maxs; j++) close(s[j]);
+          for (j = 0; j < maxs; j++)
+            close(s[j]);
           clientService(cls);
           exit(EXIT_SUCCESS);
         }
@@ -302,13 +341,3 @@ int main(int argc, char *argv[]) {
   /* Should never reach this */
   return 0;
 }
-
-
-
-
-
-
-
-
-
-
