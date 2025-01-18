@@ -554,6 +554,7 @@ void usage(FILE *f, char *progname)
           "\t-m --maxclients <n>  Serve max n requests simultaneously (dfl 5)\n"
           "\t-l --listen [addr:]port  Address/port to bind (default ANY:8080)\n"
           "\t-c --config <file>   Read this file, instead of\n"
+          "\t-C --noconfig        Do not read the default config\n"
           "\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole, 2=NAT-PMP (default 0)\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)\n"
           "\t                     default " CONFIGFILE "\n",

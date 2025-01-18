@@ -2,6 +2,7 @@ Makefile
 rtp2httpd
 !openwrt-support/rtp2httpd
 !openwrt-support/rtp2httpd/Makefile
+!openwrt-support/luci-app-rtp2httpd/Makefile
 *.o
 *.in
 config.*

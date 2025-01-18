@@ -1,0 +1,11 @@
+{
+  "luci-app-rtp2httpd": {
+    "description": "Grant UCI access for luci-app-rtp2httpd",
+    "read": {
+      "uci": ["rtp2httpd"]
+    },
+    "write": {
+      "uci": ["rtp2httpd"]
+    }
+  }
+}

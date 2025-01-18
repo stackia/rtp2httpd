@@ -1,0 +1,69 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: PACKAGE VERSION\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: zh_Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "rtp2httpd"
+msgstr "rtp2httpd"
+
+msgid "rtp2httpd converts multicast RTP/UDP media into http stream. Here you can configure the settings."
+msgstr "rtp2httpd 将组播 RTP/UDP 媒体转换为 HTTP 流。在这里进行配置。"
+
+msgid "rtp2httpd_Enabled"
+msgstr "启用"
+
+msgid "rtp2httpd_Respawn"
+msgstr "自动重启"
+
+msgid "rtp2httpd_Auto restart after crash"
+msgstr "程序崩溃后自动重启"
+
+msgid "rtp2httpd_Port"
+msgstr "端口"
+
+msgid "rtp2httpd_Verbose"
+msgstr "日志级别"
+
+msgid "rtp2httpd_Quiet"
+msgstr "Quiet"
+
+msgid "rtp2httpd_Error"
+msgstr "Error"
+
+msgid "rtp2httpd_Info"
+msgstr "Info"
+
+msgid "rtp2httpd_Debug"
+msgstr "Debug"
+
+msgid "rtp2httpd_Max clients"
+msgstr "最大客户端数"
+
+msgid "rtp2httpd_Hostname"
+msgstr "仅允许使用域名连接"
+
+msgid "rtp2httpd_Hostname to check in the Host: HTTP header"
+msgstr "开启后，只有 HTTP Host 头匹配指定域名时，rtp2httpd 才会允许连接"
+
+msgid "rtp2httpd_FCC NAT traversal"
+msgstr "FCC NAT 穿透模式"
+
+msgid "rtp2httpd_Only needed when used as a downstream router"
+msgstr "仅当作为二级路由并需要使用 FCC（快速频道切换）时启用"
+
+msgid "rtp2httpd_Disabled"
+msgstr "禁用"
+
+msgid "rtp2httpd_Don't use NAT traversal"
+msgstr "不使用 NAT 穿透"
+
+msgid "rtp2httpd_NAT punch hole"
+msgstr "NAT 打洞（可靠性较低）"
+
+msgid "rtp2httpd_NAT-PMP"
+msgstr "NAT-PMP（需要上级路由器支持）"

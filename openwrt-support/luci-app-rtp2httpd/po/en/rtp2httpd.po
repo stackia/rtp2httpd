@@ -1,0 +1,70 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: PACKAGE VERSION\n"
+"Last-Translator: Automatically generated\n"
+"Language-Team: none\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "rtp2httpd"
+msgstr "rtp2httpd"
+
+msgid "rtp2httpd converts multicast RTP/UDP media into http stream. Here you can configure the settings."
+msgstr "rtp2httpd converts multicast RTP/UDP media into http stream. Here you can configure the settings."
+
+msgid "rtp2httpd_Enabled"
+msgstr "Enabled"
+
+msgid "rtp2httpd_Respawn"
+msgstr "Respawn"
+
+msgid "rtp2httpd_Auto restart after crash"
+msgstr "Auto restart after crash"
+
+msgid "rtp2httpd_Port"
+msgstr "Port"
+
+msgid "rtp2httpd_Verbose"
+msgstr "Logging level"
+
+msgid "rtp2httpd_Quiet"
+msgstr "Quiet"
+
+msgid "rtp2httpd_Error"
+msgstr "Error"
+
+msgid "rtp2httpd_Info"
+msgstr "Info"
+
+msgid "rtp2httpd_Debug"
+msgstr "Debug"
+
+msgid "rtp2httpd_Max clients"
+msgstr "Max clients allowed"
+
+msgid "rtp2httpd_Hostname"
+msgstr "Hostname"
+
+msgid "rtp2httpd_Hostname to check in the Host: HTTP header"
+msgstr "If enabled, rtp2httpd will only allow connections if the 'Host:' HTTP header matches the hostname"
+
+msgid "rtp2httpd_FCC NAT traversal"
+msgstr "FCC NAT traversal mode"
+
+msgid "rtp2httpd_Only needed when used as a downstream router"
+msgstr "Only needed when used as a downstream router"
+
+msgid "rtp2httpd_Disabled"
+msgstr "Disabled"
+
+msgid "rtp2httpd_Don't use NAT traversal"
+msgstr "Don't use NAT traversal"
+
+msgid "rtp2httpd_NAT punch hole"
+msgstr "NAT punch hole (Low reliability)"
+
+msgid "rtp2httpd_NAT-PMP"
+msgstr "NAT-PMP (Requires upstream router support)"
+
