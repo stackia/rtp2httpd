@@ -1,14 +1,16 @@
 name: IPK Release
 
 on:
-  push:
-    branches:
-      - main
+  release:
+    types:
+      - published
 
 jobs:
   build:
     name: ${{ matrix.arch }}-${{ matrix.sdk }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     strategy:
       matrix:
         arch:
@@ -18,6 +20,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Override version number
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          RELEASE_VERSION="${RELEASE_TAG#v}"
+          sed -i "s/1\.0\.0/${RELEASE_VERSION}/g" openwrt-support/rtp2httpd/Makefile configure.ac
 
       - name: Move src to openwrt-support
         run: mv openwrt-support ../ && mkdir ../openwrt-support/rtp2httpd/src && mv ./* ../openwrt-support/rtp2httpd/src && mv ../openwrt-support ./
@@ -31,8 +39,7 @@ jobs:
           NO_SHFMT_CHECK: true
           PACKAGES: rtp2httpd
 
-      - name: Store packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.arch }}-${{ matrix.sdk }}-packages
-          path: bin/packages/${{ matrix.arch }}/action/*.ipk
+      - name: Upload to release assets
+        run: gh release upload --repo ${{ github.repository }} ${{ github.event.release.tag_name }} bin/packages/${{ matrix.arch }}/action/*.ipk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
