@@ -15,6 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         arch:
+          - x86_64
           - aarch64_cortex-a53
           - aarch64_cortex-a72
           - aarch64_generic
@@ -41,7 +42,6 @@ jobs:
           - mipsel_24kc_24kf
           - mipsel_74kc
           - mipsel_mips32
-          - x86_64
         sdk:
           - "22.03.6"
           - "23.05.4"
