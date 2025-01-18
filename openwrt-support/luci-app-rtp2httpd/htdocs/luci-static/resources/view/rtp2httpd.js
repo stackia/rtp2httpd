@@ -1,6 +1,7 @@
 "use strict";
 "require form";
 "require view";
+"require tools.widgets as widgets";
 
 return view.extend({
   render: function () {
@@ -44,13 +45,14 @@ return view.extend({
     o.default = "1";
 
     o = s.option(
-      form.Value,
-      "upstream-interface",
+      widgets.DeviceSelect,
+      "upstream_interface",
       _("rtp2httpd_Upstream Interface"),
       _(
         "rtp2httpd_Interface to use for requesting upstream media stream (default none, which follows the routing table)"
       )
     );
+    o.noaliases = true;
     o.datatype = "interface";
 
     o = s.option(form.Value, "maxclients", _("rtp2httpd_Max clients"));
