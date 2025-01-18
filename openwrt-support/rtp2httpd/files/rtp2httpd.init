@@ -30,8 +30,8 @@ start_instance() {
   append_arg "$cfg" port "--listen"
   append_arg "$cfg" maxclients "--maxclients"
   append_arg "$cfg" hostname "--hostname"
-  append_arg "$cfg" fcc-nat-traversal "--fcc-nat-traversal"
-  append_arg "$cfg" upstream-interface "--upstream-interface"
+  append_arg "$cfg" fcc_nat_traversal "--fcc-nat-traversal"
+  append_arg "$cfg" upstream_interface "--upstream-interface"
 
   config_get_bool aux "$cfg" 'respawn' '0'
   [ "$aux" = 1 ] && procd_set_param respawn
