@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Move src to openwrt-support
-        run: mv openwrt-support ../ && mkdir ../openwrt-support/rtp2httpd/src && mv ./* ../openwrt-support/rtp2httpd/src && mv ../openwrt-support ./ && mv ./openwrt-support/rtp2httpd/src/.git* ./
+        run: mv openwrt-support ../ && mkdir ../openwrt-support/rtp2httpd/src && mv ./* ../openwrt-support/rtp2httpd/src && mv ../openwrt-support ./
 
       - name: Build
         uses: openwrt/gh-action-sdk@v7
