@@ -56,9 +56,6 @@ msgstr "FCC NAT traversal mode"
 msgid "rtp2httpd_Only needed when used as a downstream router"
 msgstr "Only needed when used as a downstream router"
 
-msgid "rtp2httpd_Disabled"
-msgstr "Disabled"
-
 msgid "rtp2httpd_Don't use NAT traversal"
 msgstr "Don't use NAT traversal"
 
