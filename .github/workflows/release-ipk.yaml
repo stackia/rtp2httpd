@@ -28,6 +28,7 @@ jobs:
           ARCH: ${{ matrix.arch }}-${{ matrix.sdk }}-SNAPSHOT
           FEED_DIR: ${{ github.workspace }}/openwrt-support
           NO_DEFAULT_FEEDS: true
+          NO_SHFMT_CHECK: true
           PACKAGES: rtp2httpd
 
       - name: Store packages
