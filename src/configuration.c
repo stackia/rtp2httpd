@@ -71,7 +71,7 @@ enum section_e
   SEC_GLOBAL
 };
 
-void parseBindSec(char *line)
+void parse_bind_sec(char *line)
 {
   int i, j;
   char *node, *service;
@@ -100,11 +100,11 @@ void parseBindSec(char *line)
   ba = malloc(sizeof(struct bindaddr_s));
   ba->node = node;
   ba->service = service;
-  ba->next = bindaddr;
-  bindaddr = ba;
+  ba->next = bind_addresses;
+  bind_addresses = ba;
 }
 
-void parseServicesSec(char *line)
+void parse_services_sec(char *line)
 {
   int i, j, r, rr;
   struct addrinfo hints;
@@ -249,7 +249,7 @@ void parseServicesSec(char *line)
   services = service;
 }
 
-void parseGlobalSec(char *line)
+void parse_global_sec(char *line)
 {
   int i, j;
   char *param, *value;
@@ -389,11 +389,11 @@ void parseGlobalSec(char *line)
   logger(LOG_ERROR, "Unknown config parameter: %s\n", param);
 }
 
-int parseConfigFile(char *path)
+int parse_config_file(char *path)
 {
   FILE *cfile;
   char line[MAX_LINE];
-  int i, bindMsgDone = 0;
+  int i, bind_msg_done = 0;
   enum section_e section = SEC_NONE;
 
   logger(LOG_DEBUG, "Opening %s\n", path);
@@ -416,23 +416,23 @@ int parseConfigFile(char *path)
       char *end = index(line + i, ']');
       if (end)
       {
-        char *secname = strndupa(line + i + 1, end - line - i - 1);
-        if (strcasecmp("bind", secname) == 0)
+        char *section_name = strndupa(line + i + 1, end - line - i - 1);
+        if (strcasecmp("bind", section_name) == 0)
         {
           section = SEC_BIND;
           continue;
         }
-        if (strcasecmp("services", secname) == 0)
+        if (strcasecmp("services", section_name) == 0)
         {
           section = SEC_SERVICES;
           continue;
         }
-        if (strcasecmp("global", secname) == 0)
+        if (strcasecmp("global", section_name) == 0)
         {
           section = SEC_GLOBAL;
           continue;
         }
-        logger(LOG_ERROR, "Invalid section name: %s\n", secname);
+        logger(LOG_ERROR, "Invalid section name: %s\n", section_name);
         continue;
       }
       else
@@ -444,10 +444,10 @@ int parseConfigFile(char *path)
 
     if (cmd_bind_set && section == SEC_BIND)
     {
-      if (!bindMsgDone)
+      if (!bind_msg_done)
       {
         logger(LOG_INFO, "Warning: Config file section \"[bind]\" ignored. It's already set on CmdLine.\n");
-        bindMsgDone = 1;
+        bind_msg_done = 1;
       }
       continue;
     }
@@ -455,13 +455,13 @@ int parseConfigFile(char *path)
     switch (section)
     {
     case SEC_BIND:
-      parseBindSec(line + i);
+      parse_bind_sec(line + i);
       break;
     case SEC_SERVICES:
-      parseServicesSec(line + i);
+      parse_services_sec(line + i);
       break;
     case SEC_GLOBAL:
-      parseGlobalSec(line + i);
+      parse_global_sec(line + i);
       break;
     default:
       logger(LOG_ERROR, "Unrecognised config line: %s\n", line);
@@ -471,7 +471,7 @@ int parseConfigFile(char *path)
   return 0;
 }
 
-struct bindaddr_s *newEmptyBindaddr()
+struct bindaddr_s *new_empty_bindaddr()
 {
   struct bindaddr_s *ba;
   ba = malloc(sizeof(struct bindaddr_s));
@@ -480,7 +480,7 @@ struct bindaddr_s *newEmptyBindaddr()
   return ba;
 }
 
-void freeBindaddr(struct bindaddr_s *ba)
+void free_bindaddr(struct bindaddr_s *ba)
 {
   struct bindaddr_s *bat;
   while (ba)
@@ -496,10 +496,10 @@ void freeBindaddr(struct bindaddr_s *ba)
 }
 
 /* Setup configuration defaults */
-void restoreConfDefaults()
+void restore_conf_defaults()
 {
-  struct services_s *servtmp;
-  struct bindaddr_s *bindtmp;
+  struct services_s *service_tmp;
+  struct bindaddr_s *bind_tmp;
 
   conf_verbosity = LOG_ERROR;
   cmd_verbosity_set = 0;
@@ -528,26 +528,26 @@ void restoreConfDefaults()
 
   while (services != NULL)
   {
-    servtmp = services;
+    service_tmp = services;
     services = services->next;
-    if (servtmp->url != NULL)
+    if (service_tmp->url != NULL)
     {
-      free(servtmp->url);
+      free(service_tmp->url);
     }
-    if (servtmp->addr != NULL)
+    if (service_tmp->addr != NULL)
     {
-      freeaddrinfo(servtmp->addr);
+      freeaddrinfo(service_tmp->addr);
     }
   }
 
-  while (bindaddr != NULL)
+  while (bind_addresses != NULL)
   {
-    bindtmp = bindaddr;
-    bindaddr = bindaddr->next;
-    if (bindtmp->node != NULL)
-      free(bindtmp->node);
-    if (bindtmp->service != NULL)
-      free(bindtmp->service);
+    bind_tmp = bind_addresses;
+    bind_addresses = bind_addresses->next;
+    if (bind_tmp->node != NULL)
+      free(bind_tmp->node);
+    if (bind_tmp->service != NULL)
+      free(bind_tmp->service);
   }
 }
 
@@ -585,7 +585,7 @@ void usage(FILE *f, char *progname)
           prog);
 }
 
-void parseBindCmd(char *optarg)
+void parse_bind_cmd(char *optarg)
 {
   char *p, *node, *service;
   struct bindaddr_s *ba;
@@ -619,11 +619,11 @@ void parseBindCmd(char *optarg)
   ba = malloc(sizeof(struct bindaddr_s));
   ba->node = node;
   ba->service = service;
-  ba->next = bindaddr;
-  bindaddr = ba;
+  ba->next = bind_addresses;
+  bind_addresses = ba;
 }
 
-void parseCmdLine(int argc, char *argv[])
+void parse_cmd_line(int argc, char *argv[])
 {
   const struct option longopts[] = {
       {"verbose", required_argument, 0, 'v'},
@@ -641,13 +641,13 @@ void parseCmdLine(int argc, char *argv[])
       {"upstream-interface", required_argument, 0, 'i'},
       {0, 0, 0, 0}};
 
-  const char shortopts[] = "v:qhdDUm:c:l:n:H:i:C";
+  const char short_opts[] = "v:qhdDUm:c:l:n:H:i:C";
   int option_index, opt;
   int configfile_failed = 1;
 
-  restoreConfDefaults();
+  restore_conf_defaults();
 
-  while ((opt = getopt_long(argc, argv, shortopts,
+  while ((opt = getopt_long(argc, argv, short_opts,
                             longopts, &option_index)) != -1)
   {
     switch (opt)
@@ -690,13 +690,13 @@ void parseCmdLine(int argc, char *argv[])
       }
       break;
     case 'c':
-      configfile_failed = parseConfigFile(optarg);
+      configfile_failed = parse_config_file(optarg);
       break;
     case 'C':
       configfile_failed = 0;
       break;
     case 'l':
-      parseBindCmd(optarg);
+      parse_bind_cmd(optarg);
       cmd_bind_set = 1;
       break;
     case 'n':
@@ -720,7 +720,7 @@ void parseCmdLine(int argc, char *argv[])
   }
   if (configfile_failed)
   {
-    configfile_failed = parseConfigFile(CONFIGFILE);
+    configfile_failed = parse_config_file(CONFIGFILE);
   }
   if (configfile_failed)
   {

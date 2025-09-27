@@ -55,9 +55,9 @@ struct client_s
 static struct client_s *clients;
 
 /* GLOBALS */
-struct bindaddr_s *bindaddr = NULL;
+struct bindaddr_s *bind_addresses = NULL;
 
-int clientcount = 0;
+int client_count = 0;
 
 /* *** */
 
@@ -82,25 +82,25 @@ int logger(enum loglevel level, const char *format, ...)
   return r;
 }
 
-void childhandler(int signum)
+void child_handler(int signum)
 { /* SIGCHLD handler */
   int child;
   int status;
-  struct client_s *cli, *cli2;
+  struct client_s *client, *next_client;
   int r;
   char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
 
   while ((child = waitpid(-1, &status, WNOHANG)) > 0)
   {
 
-    for (cli = clients; cli; cli = cli->next)
+    for (client = clients; client; client = client->next)
     {
-      if (child == cli->pid)
+      if (child == client->pid)
         break;
     }
-    if (cli != NULL)
+    if (client != NULL)
     {
-      r = getnameinfo((struct sockaddr *)&(cli->ss), sizeof(cli->ss),
+      r = getnameinfo((struct sockaddr *)&(client->ss), sizeof(client->ss),
                       hbuf, sizeof(hbuf),
                       sbuf, sizeof(sbuf),
                       NI_NUMERICHOST | NI_NUMERICSERV);
@@ -117,19 +117,19 @@ void childhandler(int signum)
       }
 
       /* remove client from the list */
-      if (cli == clients)
+      if (client == clients)
       {
-        clients = cli->next;
-        free(cli);
+        clients = client->next;
+        free(client);
       }
       else
       {
-        for (cli2 = clients; cli2 != NULL; cli2 = cli2->next)
+        for (next_client = clients; next_client != NULL; next_client = next_client->next)
         {
-          if (cli2->next == cli)
+          if (next_client->next == client)
           {
-            cli2->next = cli->next;
-            free(cli);
+            next_client->next = client->next;
+            free(client);
             break;
           }
         }
@@ -141,31 +141,31 @@ void childhandler(int signum)
         logger(LOG_ERROR, "Unknown child finished - pid %d\n", child);
     }
 
-    clientcount--;
-    signal(signum, &childhandler);
+    client_count--;
+    signal(signum, &child_handler);
   }
 }
 
 int main(int argc, char *argv[])
 {
   struct addrinfo hints, *res, *ai;
-  struct bindaddr_s *bai;
+  struct bindaddr_s *bind_addr;
   struct sockaddr_storage client;
   socklen_t client_len = sizeof(client);
-  int cls;
+  int client_socket;
   int r, i, j;
   int s[MAX_S];
   int maxs, nfds;
   char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
   fd_set rfd, rfd0;
   pid_t child;
-  struct client_s *newc;
+  struct client_s *new_client;
   const int on = 1;
   sigset_t childset;
 
   sigaddset(&childset, SIGCHLD);
 
-  parseCmdLine(argc, argv);
+  parse_cmd_line(argc, argv);
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_socktype = SOCK_STREAM;
@@ -173,14 +173,14 @@ int main(int argc, char *argv[])
   maxs = 0;
   nfds = -1;
 
-  if (bindaddr == NULL)
+  if (bind_addresses == NULL)
   {
-    bindaddr = newEmptyBindaddr();
+    bind_addresses = new_empty_bindaddr();
   }
 
-  for (bai = bindaddr; bai; bai = bai->next)
+  for (bind_addr = bind_addresses; bind_addr; bind_addr = bind_addr->next)
   {
-    r = getaddrinfo(bai->node, bai->service,
+    r = getaddrinfo(bind_addr->node, bind_addr->service,
                     &hints, &res);
     if (r)
     {
@@ -254,7 +254,7 @@ int main(int argc, char *argv[])
     }
     freeaddrinfo(res);
   }
-  freeBindaddr(bindaddr);
+  free_bindaddr(bind_addresses);
 
   if (maxs == 0)
   {
@@ -278,7 +278,7 @@ int main(int argc, char *argv[])
     }
   }
 
-  signal(SIGCHLD, &childhandler);
+  signal(SIGCHLD, &child_handler);
   while (1)
   {
     rfd = rfd0;
@@ -295,21 +295,21 @@ int main(int argc, char *argv[])
     {
       if (FD_ISSET(s[i], &rfd))
       {
-        cls = accept(s[i],
+        client_socket = accept(s[i],
                      (struct sockaddr *)&client,
                      &client_len);
 
         /* We have to mask SIGCHLD before we add child to the list*/
         sigprocmask(SIG_BLOCK, &childset, NULL);
-        clientcount++;
+        client_count++;
         if ((child = fork()))
         { /* PARENT */
-          close(cls);
-          newc = malloc(sizeof(struct client_s));
-          newc->ss = client;
-          newc->pid = child;
-          newc->next = clients;
-          clients = newc;
+          close(client_socket);
+          new_client = malloc(sizeof(struct client_s));
+          new_client->ss = client;
+          new_client->pid = child;
+          new_client->next = clients;
+          clients = new_client;
 
           r = getnameinfo((struct sockaddr *)&client, client_len,
                           hbuf, sizeof(hbuf),
@@ -332,7 +332,7 @@ int main(int argc, char *argv[])
           sigprocmask(SIG_UNBLOCK, &childset, NULL);
           for (j = 0; j < maxs; j++)
             close(s[j]);
-          clientService(cls);
+          client_service(client_socket);
           exit(EXIT_SUCCESS);
         }
       }

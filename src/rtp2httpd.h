@@ -95,8 +95,8 @@ extern struct ifreq conf_upstream_interface;
 
 /* GLOBALS */
 extern struct services_s *services;
-extern struct bindaddr_s *bindaddr;
-extern int clientcount;
+extern struct bindaddr_s *bind_addresses;
+extern int client_count;
 
 /* rtp2httpd.c INTERFACE */
 
@@ -116,11 +116,11 @@ int logger(enum loglevel level, const char *format, ...);
  * Service for connected client.
  * Run in forked thread.
  *
- * @params s connected socket
+ * @param s connected socket
  */
-void clientService(int s);
+void client_service(int s);
 
-/* Return values of clientService() */
+/* Return values of client_service() */
 #define RETVAL_CLEAN 0
 #define RETVAL_WRITE_FAILED 1
 #define RETVAL_READ_FAILED 2
@@ -131,9 +131,9 @@ void clientService(int s);
 
 /* configfile.c INTERFACE */
 
-void parseCmdLine(int argc, char *argv[]);
-struct bindaddr_s *newEmptyBindaddr();
-void freeBindaddr(struct bindaddr_s *);
+void parse_cmd_line(int argc, char *argv[]);
+struct bindaddr_s *new_empty_bindaddr();
+void free_bindaddr(struct bindaddr_s *);
 
 #endif /* __RTP2HTTPD_H__*/
 
