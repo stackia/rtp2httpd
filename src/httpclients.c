@@ -1,4 +1,6 @@
-#define _GNU_SOURCE
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif /* HAVE_CONFIG_H */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,14 +9,9 @@
 #include <signal.h>
 
 #include "rtp2httpd.h"
+#include "httpclients.h"
 #include "http.h"
 #include "stream.h"
-
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif /* HAVE_CONFIG_H */
-
-#define BUFLEN 100
 
 static const char unimplemented[] =
     "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n"
@@ -73,7 +70,7 @@ struct services_s *services = NULL;
  */
 void client_service(int s)
 {
-  char buf[BUFLEN];
+  char buf[HTTP_CLIENT_BUFFER_SIZE];
   FILE *client;
   int numfields;
   char *method, *url, httpver;
@@ -115,7 +112,7 @@ void client_service(int s)
   {
     if (numfields == 3)
       send_http_headers(s, STATUS_501, CONTENT_HTML);
-    write_to_client(s, (uint8_t *)unimplemented, sizeof(unimplemented) - 1);
+    write_to_client(s, (const uint8_t *)unimplemented, sizeof(unimplemented) - 1);
     exit(RETVAL_UNKNOWN_METHOD);
   }
 
@@ -124,7 +121,7 @@ void client_service(int s)
   {
     if (numfields == 3)
       send_http_headers(s, STATUS_400, CONTENT_HTML);
-    write_to_client(s, (uint8_t *)badrequest, sizeof(badrequest) - 1);
+    write_to_client(s, (const uint8_t *)badrequest, sizeof(badrequest) - 1);
     exit(RETVAL_BAD_REQUEST);
   }
 
@@ -135,7 +132,9 @@ void client_service(int s)
   }
 
   if (service == NULL && conf_udpxy)
+  {
     service = parse_udpxy_url(url);
+  }
 
   free(url);
   url = NULL;
@@ -144,7 +143,7 @@ void client_service(int s)
   {
     if (numfields == 3)
       send_http_headers(s, STATUS_404, CONTENT_HTML);
-    write_to_client(s, (uint8_t *)service_not_found, sizeof(service_not_found) - 1);
+    write_to_client(s, (const uint8_t *)service_not_found, sizeof(service_not_found) - 1);
     exit(RETVAL_CLEAN);
   }
 
@@ -152,7 +151,8 @@ void client_service(int s)
   { /*Too much clients*/
     if (numfields == 3)
       send_http_headers(s, STATUS_503, CONTENT_HTML);
-    write_to_client(s, (uint8_t *)service_unavailable, sizeof(service_unavailable) - 1);
+    write_to_client(s, (const uint8_t *)service_unavailable, sizeof(service_unavailable) - 1);
+    free_service(service);
     exit(RETVAL_CLEAN);
   }
 
@@ -160,6 +160,7 @@ void client_service(int s)
   {
     if (numfields == 3)
       send_http_headers(s, STATUS_200, CONTENT_OSTREAM);
+    free_service(service);
     exit(RETVAL_CLEAN);
   }
   free(method);
@@ -167,7 +168,7 @@ void client_service(int s)
 
   if (numfields == 3)
     send_http_headers(s, STATUS_200, CONTENT_OSTREAM);
-  start_rtp_stream(s, service);
+  start_media_stream(s, service);
   /* SHOULD NEVER REACH HERE */
   exit(RETVAL_CLEAN);
 }

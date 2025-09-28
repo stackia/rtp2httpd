@@ -1,4 +1,6 @@
-#define _GNU_SOURCE
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif /* HAVE_CONFIG_H */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,10 +17,8 @@
 #include <sys/wait.h>
 
 #include "rtp2httpd.h"
-
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif /* HAVE_CONFIG_H */
+#include "configuration.h"
+#include "httpclients.h"
 
 #define MAX_S 10
 
@@ -281,8 +281,8 @@ int main(int argc, char *argv[])
       if (FD_ISSET(s[i], &rfd))
       {
         client_socket = accept(s[i],
-                     (struct sockaddr *)&client,
-                     &client_len);
+                               (struct sockaddr *)&client,
+                               &client_len);
 
         /* We have to mask SIGCHLD before we add child to the list*/
         sigprocmask(SIG_BLOCK, &childset, NULL);

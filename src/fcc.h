@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include "rtp2httpd.h"
+#include "buffer_config.h"
 
 #define FCC_PK_LEN_REQ 40
 #define FCC_PK_LEN_TERM 16

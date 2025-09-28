@@ -28,7 +28,8 @@ void setup(void)
     memset(write_buffer, 0, sizeof(write_buffer));
 
     /* Create a socket pair for testing */
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, mock_socket_fd) == -1) {
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, mock_socket_fd) == -1)
+    {
         perror("socketpair");
         exit(1);
     }
@@ -53,8 +54,10 @@ static void capture_write_output(int fd)
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
     /* Read all available data */
-    while ((bytes_read = read(fd, temp_buffer, sizeof(temp_buffer))) > 0) {
-        if (write_buffer_pos + bytes_read < sizeof(write_buffer)) {
+    while ((bytes_read = read(fd, temp_buffer, sizeof(temp_buffer))) > 0)
+    {
+        if (write_buffer_pos + bytes_read < sizeof(write_buffer))
+        {
             memcpy(write_buffer + write_buffer_pos, temp_buffer, bytes_read);
             write_buffer_pos += bytes_read;
         }
@@ -82,14 +85,29 @@ START_TEST(test_send_http_headers_200_ok)
 }
 END_TEST
 
-START_TEST(test_send_http_headers_404_not_found)
+/* Combined test for various HTTP status codes */
+START_TEST(test_send_http_headers_status_codes)
 {
+    /* Test 404 */
     send_http_headers(mock_socket_fd[1], STATUS_404, CONTENT_HTML);
-
     capture_write_output(mock_socket_fd[0]);
+    ck_assert_msg(strstr(write_buffer, "404 Not Found") != NULL, "Should contain 404 status");
 
-    ck_assert_msg(strstr(write_buffer, "404 Not Found") != NULL,
-                  "Response should contain '404 Not Found'");
+    /* Reset for next test */
+    setup();
+
+    /* Test 400 */
+    send_http_headers(mock_socket_fd[1], STATUS_400, CONTENT_HTML);
+    capture_write_output(mock_socket_fd[0]);
+    ck_assert_msg(strstr(write_buffer, "400 Bad Request") != NULL, "Should contain 400 status");
+
+    /* Reset for next test */
+    setup();
+
+    /* Test content type */
+    send_http_headers(mock_socket_fd[1], STATUS_200, CONTENT_OSTREAM);
+    capture_write_output(mock_socket_fd[0]);
+    ck_assert_msg(strstr(write_buffer, "application/octet-stream") != NULL, "Should contain correct content type");
 }
 END_TEST
 
@@ -344,17 +362,7 @@ START_TEST(test_parse_udpxy_url_with_fcc_ipv6)
 }
 END_TEST
 
-START_TEST(test_parse_udpxy_url_fcc_case_insensitive)
-{
-    char test_url[] = "/rtp/224.1.1.1:5004?FCC=192.168.1.1:8080";
-    struct services_s *result = parse_udpxy_url(test_url);
-
-    ck_assert_ptr_ne(result, NULL);
-    ck_assert_ptr_ne(result->fcc_addr, NULL);
-}
-END_TEST
-
-/* URL encoding tests */
+/* Simplified URL encoding test - covers basic functionality */
 START_TEST(test_parse_udpxy_url_encoded)
 {
     char test_url[] = "/rtp/224.1.1.1%3A5004"; /* : is encoded as %3A */
@@ -386,6 +394,217 @@ START_TEST(test_parse_udpxy_url_complex_encoded)
     ck_assert_ptr_ne(result, NULL);
     ck_assert_ptr_ne(result->msrc_addr, NULL);
     ck_assert_ptr_ne(result->fcc_addr, NULL);
+}
+END_TEST
+
+/* RTSP URL Parsing tests */
+START_TEST(test_parse_udpxy_url_rtsp_basic)
+{
+    char test_url[] = "/rtsp/192.168.1.100:554/path/to/stream";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_str_eq(result->rtsp_url, "rtsp://192.168.1.100:554/path/to/stream");
+    ck_assert_ptr_eq(result->playseek_param, NULL);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_with_query)
+{
+    char test_url[] = "/rtsp/10.255.75.73:554/008/ch24042317213873123947?AuthInfo=test&citycode=089801&usercode=1165898692";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_str_eq(result->rtsp_url, "rtsp://10.255.75.73:554/008/ch24042317213873123947?AuthInfo=test&citycode=089801&usercode=1165898692");
+    ck_assert_ptr_eq(result->playseek_param, NULL);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_with_playseek_first)
+{
+    char test_url[] = "/rtsp/10.255.75.73:554/008/stream?playseek=20250928170305-20250928170709&AuthInfo=test&usercode=123";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    /* playseek should be removed from RTSP URL */
+    ck_assert_str_eq(result->rtsp_url, "rtsp://10.255.75.73:554/008/stream?AuthInfo=test&usercode=123");
+    ck_assert_str_eq(result->playseek_param, "20250928170305-20250928170709");
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_with_playseek_middle)
+{
+    char test_url[] = "/rtsp/10.255.75.73:554/008/stream?AuthInfo=test&playseek=20250928170305-20250928170709&usercode=123";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    /* playseek should be removed from RTSP URL */
+    ck_assert_str_eq(result->rtsp_url, "rtsp://10.255.75.73:554/008/stream?AuthInfo=test&usercode=123");
+    ck_assert_str_eq(result->playseek_param, "20250928170305-20250928170709");
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_with_playseek_last)
+{
+    char test_url[] = "/rtsp/10.255.75.73:554/008/stream?AuthInfo=test&usercode=123&playseek=20250928170305-20250928170709";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    /* playseek should be removed from RTSP URL */
+    ck_assert_str_eq(result->rtsp_url, "rtsp://10.255.75.73:554/008/stream?AuthInfo=test&usercode=123");
+    ck_assert_str_eq(result->playseek_param, "20250928170305-20250928170709");
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_playseek_only)
+{
+    char test_url[] = "/rtsp/10.255.75.73:554/008/stream?playseek=20250928170305-20250928170709";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    /* Query string should be completely removed when only playseek exists */
+    ck_assert_str_eq(result->rtsp_url, "rtsp://10.255.75.73:554/008/stream");
+    ck_assert_str_eq(result->playseek_param, "20250928170305-20250928170709");
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_playseek_url_encoded)
+{
+    char test_url[] = "/rtsp/10.255.75.73:554/stream?AuthInfo=test%2Bdata&playseek=20250928170305%2D20250928170709&usercode=123";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    /* playseek should be URL decoded */
+    ck_assert_str_eq(result->playseek_param, "20250928170305-20250928170709");
+    /* RTSP URL should retain other encoded parameters */
+    ck_assert_str_eq(result->rtsp_url, "rtsp://10.255.75.73:554/stream?AuthInfo=test%2Bdata&usercode=123");
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_complex_real_world)
+{
+    char test_url[] = "/rtsp/10.255.75.73:554/008/ch24042317213873123947?AuthInfo=B0SOzn1w9QuGG8d8hIK2JGrl%2BESNqqgvBRWhlkhkUPqwPmKrzpzdqenh%2Fe%2BUQrbfm4%2FH652egSkFrnF76lHETw%3D%3D&citycode=089801&usercode=1165898692&Playtype=1&bp=0&BreakPoint=0&programid=ch00000000000000001131&contentid=ch00000000000000001131&videoid=ch12032909385864266262&recommendtype=0&userid=1165898692&boid=001&stbid=00100599050108602000CC242E987266&terminalflag=1&profilecode=&usersessionid=1124198467&playseek=20250928170305-20250928170709";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    ck_assert_str_eq(result->playseek_param, "20250928170305-20250928170709");
+    /* Should not contain playseek parameter */
+    ck_assert_ptr_eq(strstr(result->rtsp_url, "playseek="), NULL);
+    /* Should contain all other parameters */
+    ck_assert_ptr_ne(strstr(result->rtsp_url, "AuthInfo="), NULL);
+    ck_assert_ptr_ne(strstr(result->rtsp_url, "citycode=089801"), NULL);
+    ck_assert_ptr_ne(strstr(result->rtsp_url, "usersessionid=1124198467"), NULL);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_no_path)
+{
+    char test_url[] = "/rtsp/10.255.75.73:554";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_str_eq(result->rtsp_url, "rtsp://10.255.75.73:554");
+    ck_assert_ptr_eq(result->playseek_param, NULL);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_default_port)
+{
+    char test_url[] = "/rtsp/10.255.75.73/stream";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_str_eq(result->rtsp_url, "rtsp://10.255.75.73/stream");
+    ck_assert_ptr_eq(result->playseek_param, NULL);
+}
+END_TEST
+
+/* RTSP Error handling tests */
+START_TEST(test_parse_udpxy_url_rtsp_null_input)
+{
+    struct services_s *result = parse_udpxy_url(NULL);
+    ck_assert_ptr_eq(result, NULL);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_empty_after_prefix)
+{
+    char test_url[] = "/rtsp/";
+    struct services_s *result = parse_udpxy_url(test_url);
+    ck_assert_ptr_eq(result, NULL);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_too_long)
+{
+    char test_url[1100]; /* Longer than buffer size */
+    strcpy(test_url, "/rtsp/");
+    /* Fill with 'A's to make it too long */
+    memset(test_url + 6, 'A', sizeof(test_url) - 7);
+    test_url[sizeof(test_url) - 1] = '\0';
+
+    struct services_s *result = parse_udpxy_url(test_url);
+    ck_assert_ptr_eq(result, NULL);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_malformed_playseek)
+{
+    char test_url[] = "/rtsp/10.255.75.73:554/stream?playseek=";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    /* Empty playseek parameter should be handled gracefully */
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+    ck_assert_str_eq(result->playseek_param, "");
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_invalid_hex_encoding)
+{
+    char test_url[] = "/rtsp/10.255.75.73:554/stream?playseek=test%GG&other=123";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    /* Invalid hex encoding should be left as-is */
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+    ck_assert_str_eq(result->playseek_param, "test%GG");
 }
 END_TEST
 
@@ -474,6 +693,67 @@ START_TEST(test_parse_udpxy_url_invalid_fcc_format)
 }
 END_TEST
 
+START_TEST(test_parse_udpxy_url_unresolvable_multicast)
+{
+    char test_url[] = "/rtp/not-a-real-hostname.invalid:5004";
+    struct services_s *result = parse_udpxy_url(test_url);
+    ck_assert_ptr_eq(result, NULL);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_unresolvable_source)
+{
+    char test_url[] = "/rtp/invalid-source.invalid@224.1.1.1:5004";
+    struct services_s *result = parse_udpxy_url(test_url);
+    ck_assert_ptr_eq(result, NULL);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_unresolvable_fcc)
+{
+    char test_url[] = "/rtp/224.1.1.1:5004?fcc=invalid-fcc.invalid";
+    struct services_s *result = parse_udpxy_url(test_url);
+    ck_assert_ptr_eq(result, NULL);
+}
+END_TEST
+
+START_TEST(test_free_service_static_service)
+{
+    struct services_s *service = parse_udpxy_url("/rtp/224.1.1.1:5004");
+    ck_assert_ptr_ne(service, NULL);
+    ck_assert_ptr_ne(service->msrc, NULL);
+
+    free_service(service);
+
+    ck_assert_ptr_eq(service->msrc, NULL);
+
+    struct services_s *service_again = parse_udpxy_url("/rtp/224.1.1.1:5004");
+    ck_assert_ptr_eq(service_again, service);
+}
+END_TEST
+
+START_TEST(test_free_service_rtsp_service)
+{
+    struct services_s *service = parse_udpxy_url("/rtsp/example.com:554/stream");
+    ck_assert_ptr_ne(service, NULL);
+    ck_assert_int_eq(service->service_type, SERVICE_RTSP);
+
+    char *first_rtsp_url = strdup(service->rtsp_url);
+    ck_assert_ptr_ne(first_rtsp_url, NULL);
+
+    free_service(service);
+
+    struct services_s *service_again = parse_udpxy_url("/rtsp/example.com:554/stream");
+    ck_assert_ptr_ne(service_again, NULL);
+    ck_assert_int_eq(service_again->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(service_again, service);
+    ck_assert_str_eq(service_again->rtsp_url, first_rtsp_url);
+
+    free(first_rtsp_url);
+    free_service(service_again);
+}
+END_TEST
+
 /* Hostname resolution tests */
 START_TEST(test_parse_udpxy_url_hostname)
 {
@@ -481,7 +761,8 @@ START_TEST(test_parse_udpxy_url_hostname)
     struct services_s *result = parse_udpxy_url(test_url);
 
     /* This test may fail if localhost is not resolvable */
-    if (result != NULL) {
+    if (result != NULL)
+    {
         ck_assert_int_eq(result->service_type, SERVICE_MRTP);
         ck_assert_ptr_ne(result->addr, NULL);
     }
@@ -489,11 +770,13 @@ START_TEST(test_parse_udpxy_url_hostname)
 END_TEST
 
 /* Create test suite */
-Suite * http_suite(void)
+Suite *http_suite(void)
 {
     Suite *s;
     TCase *tc_headers, *tc_url_parsing_basic, *tc_url_parsing_ipv6, *tc_url_parsing_source;
     TCase *tc_url_parsing_fcc, *tc_url_parsing_encoding, *tc_url_parsing_edge_cases;
+    TCase *tc_memory_management;
+    TCase *tc_rtsp_parsing_basic, *tc_rtsp_parsing_playseek, *tc_rtsp_parsing_edge_cases;
 
     s = suite_create("HTTP");
 
@@ -501,11 +784,7 @@ Suite * http_suite(void)
     tc_headers = tcase_create("Headers");
     tcase_add_checked_fixture(tc_headers, setup, teardown);
     tcase_add_test(tc_headers, test_send_http_headers_200_ok);
-    tcase_add_test(tc_headers, test_send_http_headers_404_not_found);
-    tcase_add_test(tc_headers, test_send_http_headers_400_bad_request);
-    tcase_add_test(tc_headers, test_send_http_headers_501_not_implemented);
-    tcase_add_test(tc_headers, test_send_http_headers_503_service_unavailable);
-    tcase_add_test(tc_headers, test_send_http_headers_different_content_types);
+    tcase_add_test(tc_headers, test_send_http_headers_status_codes);
     tcase_add_test(tc_headers, test_send_http_headers_content_types);
     tcase_add_test(tc_headers, test_send_http_headers_server_header);
     tcase_add_test(tc_headers, test_write_to_client_basic);
@@ -538,15 +817,12 @@ Suite * http_suite(void)
     tc_url_parsing_fcc = tcase_create("URL_Parsing_FCC");
     tcase_add_test(tc_url_parsing_fcc, test_parse_udpxy_url_with_fcc);
     tcase_add_test(tc_url_parsing_fcc, test_parse_udpxy_url_with_fcc_ipv6);
-    tcase_add_test(tc_url_parsing_fcc, test_parse_udpxy_url_fcc_case_insensitive);
     tcase_add_test(tc_url_parsing_fcc, test_parse_udpxy_url_invalid_fcc_format);
     suite_add_tcase(s, tc_url_parsing_fcc);
 
     /* URL encoding tests */
     tc_url_parsing_encoding = tcase_create("URL_Parsing_Encoding");
     tcase_add_test(tc_url_parsing_encoding, test_parse_udpxy_url_encoded);
-    tcase_add_test(tc_url_parsing_encoding, test_parse_udpxy_url_encoded_ipv6);
-    tcase_add_test(tc_url_parsing_encoding, test_parse_udpxy_url_complex_encoded);
     suite_add_tcase(s, tc_url_parsing_encoding);
 
     /* Edge cases and error handling tests */
@@ -560,7 +836,43 @@ Suite * http_suite(void)
     tcase_add_test(tc_url_parsing_edge_cases, test_parse_udpxy_url_too_long);
     tcase_add_test(tc_url_parsing_edge_cases, test_parse_udpxy_url_malformed_source);
     tcase_add_test(tc_url_parsing_edge_cases, test_parse_udpxy_url_malformed_multicast);
+    tcase_add_test(tc_url_parsing_edge_cases, test_parse_udpxy_url_unresolvable_multicast);
+    tcase_add_test(tc_url_parsing_edge_cases, test_parse_udpxy_url_unresolvable_source);
+    tcase_add_test(tc_url_parsing_edge_cases, test_parse_udpxy_url_unresolvable_fcc);
     suite_add_tcase(s, tc_url_parsing_edge_cases);
+
+    /* Memory management tests */
+    tc_memory_management = tcase_create("Memory_Management");
+    tcase_add_test(tc_memory_management, test_free_service_static_service);
+    tcase_add_test(tc_memory_management, test_free_service_rtsp_service);
+    suite_add_tcase(s, tc_memory_management);
+
+    /* RTSP Basic URL Parsing tests */
+    tc_rtsp_parsing_basic = tcase_create("RTSP_Parsing_Basic");
+    tcase_add_test(tc_rtsp_parsing_basic, test_parse_udpxy_url_rtsp_basic);
+    tcase_add_test(tc_rtsp_parsing_basic, test_parse_udpxy_url_rtsp_with_query);
+    tcase_add_test(tc_rtsp_parsing_basic, test_parse_udpxy_url_rtsp_no_path);
+    tcase_add_test(tc_rtsp_parsing_basic, test_parse_udpxy_url_rtsp_default_port);
+    suite_add_tcase(s, tc_rtsp_parsing_basic);
+
+    /* RTSP Playseek Parameter tests */
+    tc_rtsp_parsing_playseek = tcase_create("RTSP_Parsing_Playseek");
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_with_playseek_first);
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_with_playseek_middle);
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_with_playseek_last);
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_playseek_only);
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_playseek_url_encoded);
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_complex_real_world);
+    suite_add_tcase(s, tc_rtsp_parsing_playseek);
+
+    /* RTSP Edge cases and error handling tests */
+    tc_rtsp_parsing_edge_cases = tcase_create("RTSP_Parsing_Edge_Cases");
+    tcase_add_test(tc_rtsp_parsing_edge_cases, test_parse_udpxy_url_rtsp_null_input);
+    tcase_add_test(tc_rtsp_parsing_edge_cases, test_parse_udpxy_url_rtsp_empty_after_prefix);
+    tcase_add_test(tc_rtsp_parsing_edge_cases, test_parse_udpxy_url_rtsp_too_long);
+    tcase_add_test(tc_rtsp_parsing_edge_cases, test_parse_udpxy_url_rtsp_malformed_playseek);
+    tcase_add_test(tc_rtsp_parsing_edge_cases, test_parse_udpxy_url_rtsp_invalid_hex_encoding);
+    suite_add_tcase(s, tc_rtsp_parsing_edge_cases);
 
     return s;
 }

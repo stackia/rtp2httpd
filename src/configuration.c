@@ -1,13 +1,12 @@
-#define _GNU_SOURCE
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif /* HAVE_CONFIG_H */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <string.h>
 #include <strings.h>
-#include <errno.h>
-#include <signal.h>
-#include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <ctype.h>
@@ -15,10 +14,7 @@
 #include <net/if.h>
 
 #include "rtp2httpd.h"
-
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif /* HAVE_CONFIG_H */
+#include "configuration.h"
 
 #define MAX_LINE 150
 
@@ -88,11 +84,16 @@ void parse_services_sec(char *line)
 {
   int i, j, r, rr;
   struct addrinfo hints;
-  char *servname, *type, *maddr, *mport, *msrc = "", *msaddr = "", *msport = "";
+  char *servname, *type, *maddr, *mport, *msrc, *msaddr, *msport;
   struct services_s *service;
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_socktype = SOCK_DGRAM;
+
+  /* Initialize string pointers */
+  msrc = strdup("");
+  msaddr = strdup("");
+  msport = strdup("");
 
   j = i = 0;
   while (!isspace(line[j]))
@@ -222,11 +223,20 @@ void parse_services_sec(char *line)
   {
     service->service_type = SERVICE_MUDP;
   }
+  else if (strcasecmp("RTSP", type) == 0)
+  {
+    service->service_type = SERVICE_RTSP;
+  }
 
   service->url = servname;
   service->msrc = strdup(msrc);
   service->next = services;
   services = service;
+
+  /* Free allocated temporary strings */
+  free(msrc);
+  free(msaddr);
+  free(msport);
 }
 
 void parse_global_sec(char *line)
@@ -369,7 +379,7 @@ void parse_global_sec(char *line)
   logger(LOG_ERROR, "Unknown config parameter: %s", param);
 }
 
-int parse_config_file(char *path)
+int parse_config_file(const char *path)
 {
   FILE *cfile;
   char line[MAX_LINE];
@@ -451,7 +461,7 @@ int parse_config_file(char *path)
   return 0;
 }
 
-struct bindaddr_s *new_empty_bindaddr()
+struct bindaddr_s *new_empty_bindaddr(void)
 {
   struct bindaddr_s *ba;
   ba = malloc(sizeof(struct bindaddr_s));
@@ -476,7 +486,7 @@ void free_bindaddr(struct bindaddr_s *ba)
 }
 
 /* Setup configuration defaults */
-void restore_conf_defaults()
+void restore_conf_defaults(void)
 {
   struct services_s *service_tmp;
   struct bindaddr_s *bind_tmp;
