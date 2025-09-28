@@ -1,23 +1,3 @@
-/*
- *  RTP2HTTP Proxy - Multicast RTP stream to UNICAST HTTP translator
- *
- *  Copyright (C) 2008-2010 Ondrej Caletka <o.caletka@sh.cvut.cz>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2
- *  as published by the Free Software Foundation.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program (see the file COPYING included with this
- *  distribution); if not, write to the Free Software Foundation, Inc.,
- *  59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
-
 #define _GNU_SOURCE
 
 #include <stdio.h>
@@ -95,7 +75,7 @@ void parse_bind_sec(char *line)
     free(node);
     node = NULL;
   }
-  logger(LOG_DEBUG, "node: %s, port: %s\n", node, service);
+  logger(LOG_DEBUG, "node: %s, port: %s", node, service);
 
   ba = malloc(sizeof(struct bindaddr_s));
   ba->node = node;
@@ -185,12 +165,12 @@ void parse_services_sec(char *line)
     }
   }
 
-  logger(LOG_DEBUG, "serv: %s, type: %s, maddr: %s, mport: %s, msaddr: %s, msport: %s\n",
+  logger(LOG_DEBUG, "serv: %s, type: %s, maddr: %s, mport: %s, msaddr: %s, msport: %s",
          servname, type, maddr, mport, msaddr, msport);
 
   if ((strcasecmp("MRTP", type) != 0) && (strcasecmp("MUDP", type) != 0))
   {
-    logger(LOG_ERROR, "Unsupported service type: %s\n", type);
+    logger(LOG_ERROR, "Unsupported service type: %s", type);
     free(servname);
     free(msrc);
     return;
@@ -209,12 +189,12 @@ void parse_services_sec(char *line)
   {
     if (r)
     {
-      logger(LOG_ERROR, "Cannot init service %s. GAI: %s\n",
+      logger(LOG_ERROR, "Cannot init service %s. GAI: %s",
              servname, gai_strerror(r));
     }
     if (rr)
     {
-      logger(LOG_ERROR, "Cannot init service %s. GAI: %s\n",
+      logger(LOG_ERROR, "Cannot init service %s. GAI: %s",
              servname, gai_strerror(rr));
     }
     free(servname);
@@ -224,13 +204,13 @@ void parse_services_sec(char *line)
   }
   if (service->addr->ai_next != NULL)
   {
-    logger(LOG_ERROR, "Warning: maddr is ambiguos.\n");
+    logger(LOG_ERROR, "Warning: maddr is ambiguos.");
   }
   if (strcmp(msrc, "") != 0 && msrc != NULL)
   {
     if (service->msrc_addr->ai_next != NULL)
     {
-      logger(LOG_ERROR, "Warning: msrc is ambiguos.\n");
+      logger(LOG_ERROR, "Warning: msrc is ambiguos.");
     }
   }
 
@@ -263,7 +243,7 @@ void parse_global_sec(char *line)
   ind = index(line + j, '=');
   if (ind == NULL)
   {
-    logger(LOG_ERROR, "Unrecognised config line: %s\n", line);
+    logger(LOG_ERROR, "Unrecognised config line: %s", line);
     return;
   }
 
@@ -283,7 +263,7 @@ void parse_global_sec(char *line)
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"verbosity\" ignored. It's already set on CmdLine.\n");
+      logger(LOG_INFO, "Warning: Config file value \"verbosity\" ignored. It's already set on CmdLine.");
     }
     return;
   }
@@ -305,7 +285,7 @@ void parse_global_sec(char *line)
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"daemonise\" ignored. It's already set on CmdLine.\n");
+      logger(LOG_INFO, "Warning: Config file value \"daemonise\" ignored. It's already set on CmdLine.");
     }
     return;
   }
@@ -315,14 +295,14 @@ void parse_global_sec(char *line)
     {
       if (atoi(value) < 1)
       {
-        logger(LOG_ERROR, "Invalid maxclients! Ignoring.\n");
+        logger(LOG_ERROR, "Invalid maxclients! Ignoring.");
         return;
       }
       conf_maxclients = atoi(value);
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"maxclients\" ignored. It's already set on CmdLine.\n");
+      logger(LOG_INFO, "Warning: Config file value \"maxclients\" ignored. It's already set on CmdLine.");
     }
     return;
   }
@@ -344,7 +324,7 @@ void parse_global_sec(char *line)
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"udpxy\" ignored. It's already set on CmdLine.\n");
+      logger(LOG_INFO, "Warning: Config file value \"udpxy\" ignored. It's already set on CmdLine.");
     }
     return;
   }
@@ -356,7 +336,7 @@ void parse_global_sec(char *line)
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"hostname\" ignored. It's already set on CmdLine.\n");
+      logger(LOG_INFO, "Warning: Config file value \"hostname\" ignored. It's already set on CmdLine.");
     }
     return;
   }
@@ -369,7 +349,7 @@ void parse_global_sec(char *line)
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"upstream-interface\" ignored. It's already set on CmdLine.\n");
+      logger(LOG_INFO, "Warning: Config file value \"upstream-interface\" ignored. It's already set on CmdLine.");
     }
     return;
   }
@@ -381,12 +361,12 @@ void parse_global_sec(char *line)
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"fcc-nat-traversal\" ignored. It's already set on CmdLine.\n");
+      logger(LOG_INFO, "Warning: Config file value \"fcc-nat-traversal\" ignored. It's already set on CmdLine.");
     }
     return;
   }
 
-  logger(LOG_ERROR, "Unknown config parameter: %s\n", param);
+  logger(LOG_ERROR, "Unknown config parameter: %s", param);
 }
 
 int parse_config_file(char *path)
@@ -396,7 +376,7 @@ int parse_config_file(char *path)
   int i, bind_msg_done = 0;
   enum section_e section = SEC_NONE;
 
-  logger(LOG_DEBUG, "Opening %s\n", path);
+  logger(LOG_DEBUG, "Opening %s", path);
   cfile = fopen(path, "r");
   if (cfile == NULL)
     return -1;
@@ -432,12 +412,12 @@ int parse_config_file(char *path)
           section = SEC_GLOBAL;
           continue;
         }
-        logger(LOG_ERROR, "Invalid section name: %s\n", section_name);
+        logger(LOG_ERROR, "Invalid section name: %s", section_name);
         continue;
       }
       else
       {
-        logger(LOG_ERROR, "Unterminated section: %s\n", line + i);
+        logger(LOG_ERROR, "Unterminated section: %s", line + i);
         continue;
       }
     }
@@ -446,7 +426,7 @@ int parse_config_file(char *path)
     {
       if (!bind_msg_done)
       {
-        logger(LOG_INFO, "Warning: Config file section \"[bind]\" ignored. It's already set on CmdLine.\n");
+        logger(LOG_INFO, "Warning: Config file section \"[bind]\" ignored. It's already set on CmdLine.");
         bind_msg_done = 1;
       }
       continue;
@@ -464,7 +444,7 @@ int parse_config_file(char *path)
       parse_global_sec(line + i);
       break;
     default:
-      logger(LOG_ERROR, "Unrecognised config line: %s\n", line);
+      logger(LOG_ERROR, "Unrecognised config line: %s", line);
     }
   }
   fclose(cfile);
@@ -520,7 +500,7 @@ void restore_conf_defaults()
   }
   cmd_hostname_set = 0;
 
-  if (conf_upstream_interface.ifr_name != NULL)
+  if (conf_upstream_interface.ifr_name[0] != '\0')
   {
     memset(&conf_upstream_interface, 0, sizeof(struct ifreq));
   }
@@ -615,7 +595,7 @@ void parse_bind_cmd(char *optarg)
     service = strdup(optarg);
   }
 
-  logger(LOG_DEBUG, "node: %s, port: %s\n", node, service);
+  logger(LOG_DEBUG, "node: %s, port: %s", node, service);
   ba = malloc(sizeof(struct bindaddr_s));
   ba->node = node;
   ba->service = service;
@@ -681,7 +661,7 @@ void parse_cmd_line(int argc, char *argv[])
     case 'm':
       if (atoi(optarg) < 1)
       {
-        logger(LOG_ERROR, "Invalid maxclients! Ignoring.\n");
+        logger(LOG_ERROR, "Invalid maxclients! Ignoring.");
       }
       else
       {
@@ -713,7 +693,7 @@ void parse_cmd_line(int argc, char *argv[])
       cmd_upstream_interface_set = 1;
       break;
     default:
-      logger(LOG_FATAL, "Unknown option! %d \n", opt);
+      logger(LOG_FATAL, "Unknown option! %d ", opt);
       usage(stderr, argv[0]);
       exit(EXIT_FAILURE);
     }
@@ -724,8 +704,8 @@ void parse_cmd_line(int argc, char *argv[])
   }
   if (configfile_failed)
   {
-    logger(LOG_INFO, "Warning: No configfile found.\n");
+    logger(LOG_INFO, "Warning: No configfile found.");
   }
-  logger(LOG_DEBUG, "Verbosity: %d, Daemonise: %d, Maxclients: %d\n",
+  logger(LOG_DEBUG, "Verbosity: %d, Daemonise: %d, Maxclients: %d",
          conf_verbosity, conf_daemonise, conf_maxclients);
 }

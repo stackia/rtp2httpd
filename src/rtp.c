@@ -1,23 +1,3 @@
-/*
- *  RTP2HTTP Proxy - RTP packet processing module
- *
- *  Copyright (C) 2008-2010 Ondrej Caletka <o.caletka@sh.cvut.cz>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2
- *  as published by the Free Software Foundation.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program (see the file COPYING included with this
- *  distribution); if not, write to the Free Software Foundation, Inc.,
- *  59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
-
 #include <stdint.h>
 #include <arpa/inet.h>
 #include "rtp.h"
@@ -31,7 +11,7 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size)
   if (recv_len < 12 || (buf[0] & 0xC0) != 0x80)
   {
     /*malformed RTP/UDP/IP packet*/
-    logger(LOG_DEBUG, "Malformed RTP packet received\n");
+    logger(LOG_DEBUG, "Malformed RTP packet received");
     return -1;
   }
 
@@ -49,7 +29,7 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size)
   }
   if (payloadlength < 0)
   {
-    logger(LOG_DEBUG, "Malformed RTP packet received\n");
+    logger(LOG_DEBUG, "Malformed RTP packet received");
     return -1;
   }
 
@@ -70,14 +50,14 @@ void write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf, uint16_
   if (*not_first && seqn == *old_seqn)
   {
     logger(LOG_DEBUG, "Duplicated RTP packet "
-                      "received (seqn %d)\n",
+                      "received (seqn %d)",
            seqn);
     return;
   }
   if (*not_first && (seqn != ((*old_seqn + 1) & 0xFFFF)))
   {
     logger(LOG_DEBUG, "Congestion - expected %d, "
-                      "received %d\n",
+                      "received %d",
            (*old_seqn + 1) & 0xFFFF, seqn);
   }
   *old_seqn = seqn;

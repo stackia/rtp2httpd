@@ -1,23 +1,3 @@
-/*
- *  RTP2HTTP Proxy - HTTP protocol handling module
- *
- *  Copyright (C) 2008-2010 Ondrej Caletka <o.caletka@sh.cvut.cz>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2
- *  as published by the Free Software Foundation.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program (see the file COPYING included with this
- *  distribution); if not, write to the Free Software Foundation, Inc.,
- *  59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,6 +64,286 @@ void sigpipe_handler(int signum)
   exit(RETVAL_WRITE_FAILED);
 }
 
+/* URL parsing helper structure */
+struct url_components {
+    char multicast_addr[256];
+    char multicast_port[16];
+    char source_addr[256];
+    char source_port[16];
+    char fcc_addr[256];
+    char fcc_port[16];
+    int has_source;
+    int has_fcc;
+};
+
+/**
+ * URL decode a string in place
+ * @param str String to decode
+ * @return 0 on success, -1 on error
+ */
+static int url_decode(char *str)
+{
+    char *src = str, *dst = str;
+    unsigned int hex_value;
+
+    while (*src) {
+        if (*src == '%') {
+            /* Check if we have at least 2 more characters for hex digits */
+            if (strlen(src) >= 3 && sscanf(src + 1, "%2x", &hex_value) == 1) {
+                *dst++ = (char)hex_value;
+                src += 3;
+            } else {
+                return -1; /* Invalid hex encoding */
+            }
+        } else {
+            *dst++ = *src++;
+        }
+    }
+    *dst = '\0';
+    return 0;
+}
+
+/**
+ * Parse IPv6 address from URL component
+ * @param input Input string starting with '['
+ * @param addr Output buffer for address
+ * @param addr_size Size of address buffer
+ * @param remainder Pointer to set to remainder of string
+ * @return 0 on success, -1 on error
+ */
+static int parse_ipv6_address(const char *input, char *addr, size_t addr_size, const char **remainder)
+{
+    const char *end = strchr(input + 1, ']');
+    if (!end) {
+        return -1; /* No closing bracket */
+    }
+
+    size_t addr_len = end - input - 1;
+    if (addr_len >= addr_size) {
+        return -1; /* Address too long */
+    }
+
+    strncpy(addr, input + 1, addr_len);
+    addr[addr_len] = '\0';
+    *remainder = end + 1;
+    return 0;
+}
+
+/**
+ * Parse address:port component
+ * @param input Input string
+ * @param addr Output buffer for address
+ * @param addr_size Size of address buffer
+ * @param port Output buffer for port
+ * @param port_size Size of port buffer
+ * @return 0 on success, -1 on error
+ */
+static int parse_address_port(const char *input, char *addr, size_t addr_size,
+                             char *port, size_t port_size)
+{
+    const char *port_start;
+    size_t addr_len;
+
+    if (input[0] == '[') {
+        /* IPv6 address */
+        if (parse_ipv6_address(input, addr, addr_size, &port_start) != 0) {
+            return -1;
+        }
+        if (*port_start == ':') {
+            port_start++;
+        } else if (*port_start != '\0') {
+            return -1; /* Invalid format after IPv6 address */
+        }
+    } else {
+        /* IPv4 address or hostname */
+        port_start = strrchr(input, ':');
+        if (port_start) {
+            addr_len = port_start - input;
+            port_start++;
+        } else {
+            addr_len = strlen(input);
+        }
+
+        if (addr_len >= addr_size) {
+            return -1; /* Address too long */
+        }
+
+        memcpy(addr, input, addr_len);
+        addr[addr_len] = '\0';
+    }
+
+    /* Copy port if present */
+    if (port_start && *port_start) {
+        if (strlen(port_start) >= port_size) {
+            return -1; /* Port too long */
+        }
+        strncpy(port, port_start, port_size - 1);
+        port[port_size - 1] = '\0';
+    } else {
+        port[0] = '\0';
+    }
+
+    return 0;
+}
+
+/**
+ * Find parameter in query string (case-insensitive)
+ * @param query_string Query string to search in
+ * @param param_name Parameter name to search for
+ * @param param_len Length of parameter name
+ * @return Pointer to parameter start, or NULL if not found
+ */
+static const char *find_query_param(const char *query_string, const char *param_name, size_t param_len)
+{
+    const char *pos = query_string;
+
+    while (pos && *pos) {
+        /* Check if this position matches our parameter */
+        if (strncasecmp(pos, param_name, param_len) == 0 && pos[param_len] == '=') {
+            return pos;
+        }
+
+        /* Move to next parameter (find next &) */
+        pos = strchr(pos, '&');
+        if (pos) {
+            pos++; /* Skip the & */
+        }
+    }
+
+    return NULL;
+}
+
+/**
+ * Parse query parameter value from query string (case-insensitive parameter names)
+ * @param query_string Query string (without leading ?)
+ * @param param_name Parameter name to search for (case-insensitive)
+ * @param value_buf Buffer to store parameter value
+ * @param value_size Size of value buffer
+ * @return 0 if parameter found, -1 if not found or error
+ */
+static int parse_query_param(const char *query_string, const char *param_name,
+                            char *value_buf, size_t value_size)
+{
+    const char *param_start, *value_start, *value_end;
+    size_t param_len = strlen(param_name);
+    size_t value_len;
+
+    if (!query_string || !param_name || !value_buf) {
+        return -1;
+    }
+
+    /* Find parameter in query string (case-insensitive) */
+    param_start = find_query_param(query_string, param_name, param_len);
+    if (!param_start) {
+        return -1; /* Parameter not found */
+    }
+
+    /* Find value start */
+    value_start = param_start + param_len + 1; /* Skip "param=" */
+
+    /* Find value end (next & or end of string) */
+    value_end = strchr(value_start, '&');
+    if (!value_end) {
+        value_end = value_start + strlen(value_start);
+    }
+
+    /* Check value length */
+    value_len = value_end - value_start;
+    if (value_len >= value_size) {
+        return -1; /* Value too long */
+    }
+
+    /* Copy value */
+    strncpy(value_buf, value_start, value_len);
+    value_buf[value_len] = '\0';
+
+    return 0;
+}
+
+/**
+ * Parse URL components from UDPxy format URL
+ * @param url_part URL part after /rtp/ or /udp/
+ * @param components Output structure for parsed components
+ * @return 0 on success, -1 on error
+ */
+static int parse_url_components(char *url_part, struct url_components *components)
+{
+    char *query_start, *at_pos;
+    char main_part[512];
+    char fcc_value[512];
+
+    /* Initialize components */
+    memset(components, 0, sizeof(*components));
+
+    /* URL decode the input */
+    if (url_decode(url_part) != 0) {
+        return -1;
+    }
+
+    /* Split URL and query string */
+    query_start = strchr(url_part, '?');
+    if (query_start) {
+        *query_start = '\0'; /* Terminate main part */
+        query_start++;       /* Point to query string */
+
+        /* Parse FCC parameter from query string */
+        if (parse_query_param(query_start, "fcc", fcc_value, sizeof(fcc_value)) == 0) {
+            if (parse_address_port(fcc_value, components->fcc_addr,
+                                  sizeof(components->fcc_addr),
+                                  components->fcc_port,
+                                  sizeof(components->fcc_port)) != 0) {
+                return -1;
+            }
+            components->has_fcc = 1;
+        }
+    }
+
+    /* Copy main part for parsing */
+    if (strlen(url_part) >= sizeof(main_part)) {
+        return -1; /* URL too long */
+    }
+    strncpy(main_part, url_part, sizeof(main_part) - 1);
+    main_part[sizeof(main_part) - 1] = '\0';
+
+    /* Check for source address (format: source@multicast) */
+    at_pos = strrchr(main_part, '@');
+    if (at_pos) {
+        *at_pos = '\0'; /* Split at @ */
+
+        /* Parse source address */
+        if (parse_address_port(main_part, components->source_addr,
+                              sizeof(components->source_addr),
+                              components->source_port,
+                              sizeof(components->source_port)) != 0) {
+            return -1;
+        }
+        components->has_source = 1;
+
+        /* Parse multicast address */
+        if (parse_address_port(at_pos + 1, components->multicast_addr,
+                              sizeof(components->multicast_addr),
+                              components->multicast_port,
+                              sizeof(components->multicast_port)) != 0) {
+            return -1;
+        }
+    } else {
+        /* No source, only multicast address */
+        if (parse_address_port(main_part, components->multicast_addr,
+                              sizeof(components->multicast_addr),
+                              components->multicast_port,
+                              sizeof(components->multicast_port)) != 0) {
+            return -1;
+        }
+    }
+
+    /* Set default port if not specified */
+    if (components->multicast_port[0] == '\0') {
+        strcpy(components->multicast_port, "1234");
+    }
+
+    return 0;
+}
+
 /**
  * Parses URL in UDPxy format, i.e. /rtp/<maddr>:port
  * returns a pointer to statically allocated service struct if success,
@@ -91,214 +351,155 @@ void sigpipe_handler(int signum)
  */
 struct services_s *parse_udpxy_url(char *url)
 {
-  static struct services_s serv;
-  static struct addrinfo res_ai, msrc_res_ai, fcc_res_ai;
-  static struct sockaddr_storage res_addr, msrc_res_addr, fcc_res_addr;
+    static struct services_s serv;
+    static struct addrinfo res_ai, msrc_res_ai, fcc_res_ai;
+    static struct sockaddr_storage res_addr, msrc_res_addr, fcc_res_addr;
 
-  char *addrstr, *portstr, *msrc = "", *msaddr = "", *msport = "", *fccaddr, *fccport;
-  int i, r, rr, rrr;
-  char c;
-  struct addrinfo hints, *res, *msrc_res, *fcc_res;
+    struct url_components components;
+    struct addrinfo hints, *res = NULL, *msrc_res = NULL, *fcc_res = NULL;
+    char *url_part;
+    char working_url[1024];
+    int r = 0, rr = 0, rrr = 0;
 
-  if (strncmp("/rtp/", url, 5) == 0)
-    serv.service_type = SERVICE_MRTP;
-  else if (strncmp("/udp/", url, 5) == 0)
-    serv.service_type = SERVICE_MUDP;
-  else
-    return NULL;
-  addrstr = rindex(url, '/');
-  if (!addrstr)
-    return NULL;
-  /* Decode URL encoded strings */
-  for (i = 0; i < (strlen(addrstr) - 2); i++)
-  {
-    if (addrstr[i] == '%' &&
-        sscanf(addrstr + i + 1, "%2hhx", (unsigned char *)&c) > 0)
-    {
-      addrstr[i] = c;
-      memmove(addrstr + i + 1, addrstr + i + 3, 1 + strlen(addrstr + i + 3));
-    }
-  }
-  logger(LOG_DEBUG, "decoded addr: %s\n", addrstr);
-  fccaddr = rindex(addrstr, '?');
-  if (fccaddr)
-  {
-    *fccaddr = '\0';
-    fccaddr++;
-    fccaddr = strcasestr(fccaddr, "fcc=");
-    if (fccaddr)
-    {
-      fccaddr += 4;
-      fccport = rindex(fccaddr, ':');
-      if (fccport)
-      {
-        *fccport = '\0';
-        fccport++;
-      }
-    }
-  }
-  else
-  {
-    fccaddr = "";
-  }
-  if (!fccport)
-  {
-    fccport = "";
-  }
-  if (addrstr[1] == '[')
-  {
-    portstr = index(addrstr, ']');
-    addrstr += 2;
-    if (portstr)
-    {
-      *portstr = '\0';
-      portstr = rindex(++portstr, ':');
-    }
-  }
-  else
-  {
-    portstr = rindex(addrstr++, ':');
-  }
-
-  if (strstr(addrstr, "@") != NULL)
-  {
-    char *split;
-    char *current;
-    int cnt = 0;
-    split = strtok(addrstr, "@");
-    while (split != NULL)
-    {
-      current = split;
-      if (cnt == 0)
-        msrc = current;
-      split = strtok(NULL, "@");
-      if (cnt > 0 && split != NULL)
-      {
-        strcat(msrc, "@");
-        strcat(msrc, current);
-      }
-      if (cnt > 0 && split == NULL)
-        addrstr = current;
-      cnt++;
+    /* Free previously allocated memory to prevent leaks */
+    if (serv.msrc) {
+        free(serv.msrc);
+        serv.msrc = NULL;
     }
 
-    cnt = 0;
-    msaddr = msrc;
-    split = strtok(msrc, ":");
-    while (split != NULL)
-    {
-      current = split;
-      if (cnt == 0)
-        msaddr = current;
-      split = strtok(NULL, ":");
-      if (cnt > 0 && split != NULL)
-      {
-        strcat(msaddr, ":");
-        strcat(msaddr, current);
-      }
-      if (cnt > 0 && split == NULL)
-        msport = current;
-      cnt++;
-    }
-  }
-
-  if (portstr)
-  {
-    *portstr = '\0';
-    portstr++;
-  }
-  else
-    portstr = "1234";
-
-  logger(LOG_DEBUG, "addrstr: %s portstr: %s msrc: %s fccaddr: %s fccport: %s\n", addrstr, portstr, msrc, fccaddr, fccport);
-
-  memset(&hints, 0, sizeof(hints));
-  hints.ai_socktype = SOCK_DGRAM;
-  r = getaddrinfo(addrstr, portstr, &hints, &res);
-  rr = 0;
-  rrr = 0;
-  if (strcmp(msrc, "") != 0 && msrc != NULL)
-  {
-    rr = getaddrinfo(msrc, 0, &hints, &msrc_res);
-  }
-  if (strcmp(fccaddr, "") != 0 && fccaddr != NULL)
-  {
-    rrr = getaddrinfo(fccaddr, fccport, &hints, &fcc_res);
-  }
-  if (r | rr | rrr)
-  {
-    if (r)
-    {
-      logger(LOG_ERROR, "Cannot resolve Multicast address. GAI: %s\n",
-             gai_strerror(r));
-    }
-    if (rr)
-    {
-      logger(LOG_ERROR, "Cannot resolve Multicast source address. GAI: %s\n",
-             gai_strerror(rr));
-    }
-    if (rrr)
-    {
-      logger(LOG_ERROR, "Cannot resolve FCC server address. GAI: %s\n",
-             gai_strerror(rrr));
+    /* Validate input */
+    if (!url || strlen(url) >= sizeof(working_url)) {
+        logger(LOG_ERROR, "Invalid or too long URL");
+        return NULL;
     }
 
-    free(msrc);
-    msrc = NULL;
-    return NULL;
-  }
-  if (res->ai_next != NULL)
-  {
-    logger(LOG_ERROR, "Warning: maddr is ambiguos.\n");
-  }
-  if (strcmp(msrc, "") != 0 && msrc != NULL)
-  {
-    if (msrc_res->ai_next != NULL)
-    {
-      logger(LOG_ERROR, "Warning: msrc is ambiguos.\n");
+    /* Copy URL to avoid modifying original */
+    strncpy(working_url, url, sizeof(working_url) - 1);
+    working_url[sizeof(working_url) - 1] = '\0';
+
+    /* Determine service type */
+    if (strncmp(working_url, "/rtp/", 5) == 0) {
+        serv.service_type = SERVICE_MRTP;
+        url_part = working_url + 5;
+    } else if (strncmp(working_url, "/udp/", 5) == 0) {
+        serv.service_type = SERVICE_MUDP;
+        url_part = working_url + 5;
+    } else {
+        logger(LOG_ERROR, "URL must start with /rtp/ or /udp/");
+        return NULL;
     }
-  }
-  if (strcmp(fccaddr, "") != 0 && fccaddr != NULL)
-  {
-    if (fcc_res->ai_next != NULL)
-    {
-      logger(LOG_ERROR, "Warning: fcc is ambiguos.\n");
+
+    /* Parse URL components */
+    if (parse_url_components(url_part, &components) != 0) {
+        logger(LOG_ERROR, "Failed to parse URL components");
+        return NULL;
     }
-  }
 
-  /* Copy result into statically allocated structs */
-  memcpy(&res_addr, res->ai_addr, res->ai_addrlen);
-  memcpy(&res_ai, res, sizeof(struct addrinfo));
-  res_ai.ai_addr = (struct sockaddr *)&res_addr;
-  res_ai.ai_canonname = NULL;
-  res_ai.ai_next = NULL;
-  serv.addr = &res_ai;
+    logger(LOG_DEBUG, "Parsed URL: mcast=%s:%s",
+           components.multicast_addr, components.multicast_port);
+    if (components.has_source) {
+        logger(LOG_DEBUG, " src=%s:%s", components.source_addr, components.source_port);
+    }
+    if (components.has_fcc) {
+        logger(LOG_DEBUG, " fcc=%s:%s", components.fcc_addr, components.fcc_port);
+    }
 
-  serv.msrc_addr = NULL;
-  if (strcmp(msrc, "") != 0 && msrc != NULL)
-  {
-    /* Copy result into statically allocated structs */
-    memcpy(&msrc_res_addr, msrc_res->ai_addr, msrc_res->ai_addrlen);
-    memcpy(&msrc_res_ai, msrc_res, sizeof(struct addrinfo));
-    msrc_res_ai.ai_addr = (struct sockaddr *)&msrc_res_addr;
-    msrc_res_ai.ai_canonname = NULL;
-    msrc_res_ai.ai_next = NULL;
-    serv.msrc_addr = &msrc_res_ai;
-  }
+    /* Resolve addresses */
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_DGRAM;
 
-  serv.msrc = strdup(msrc);
+    /* Resolve multicast address */
+    r = getaddrinfo(components.multicast_addr, components.multicast_port, &hints, &res);
+    if (r != 0) {
+        logger(LOG_ERROR, "Cannot resolve multicast address %s:%s. GAI: %s",
+               components.multicast_addr, components.multicast_port, gai_strerror(r));
+        return NULL;
+    }
 
-  serv.fcc_addr = NULL;
-  if (strcmp(fccaddr, "") != 0 && fccaddr != NULL)
-  {
-    /* Copy result into statically allocated structs */
-    memcpy(&fcc_res_addr, fcc_res->ai_addr, fcc_res->ai_addrlen);
-    memcpy(&fcc_res_ai, fcc_res, sizeof(struct addrinfo));
-    fcc_res_ai.ai_addr = (struct sockaddr *)&fcc_res_addr;
-    fcc_res_ai.ai_canonname = NULL;
-    fcc_res_ai.ai_next = NULL;
-    serv.fcc_addr = &fcc_res_ai;
-  }
+    /* Resolve source address if present */
+    if (components.has_source) {
+        const char *src_port = components.source_port[0] ? components.source_port : NULL;
+        rr = getaddrinfo(components.source_addr, src_port, &hints, &msrc_res);
+        if (rr != 0) {
+            logger(LOG_ERROR, "Cannot resolve source address %s. GAI: %s",
+                   components.source_addr, gai_strerror(rr));
+            freeaddrinfo(res);
+            return NULL;
+        }
+    }
 
-  return &serv;
+    /* Resolve FCC address if present */
+    if (components.has_fcc) {
+        const char *fcc_port = components.fcc_port[0] ? components.fcc_port : NULL;
+        rrr = getaddrinfo(components.fcc_addr, fcc_port, &hints, &fcc_res);
+        if (rrr != 0) {
+            logger(LOG_ERROR, "Cannot resolve FCC address %s. GAI: %s",
+                   components.fcc_addr, gai_strerror(rrr));
+            freeaddrinfo(res);
+            if (msrc_res) freeaddrinfo(msrc_res);
+            return NULL;
+        }
+    }
+
+    /* Warn about ambiguous addresses */
+    if (res->ai_next != NULL) {
+        logger(LOG_ERROR, "Warning: multicast address is ambiguous.");
+    }
+    if (msrc_res && msrc_res->ai_next != NULL) {
+        logger(LOG_ERROR, "Warning: source address is ambiguous.");
+    }
+    if (fcc_res && fcc_res->ai_next != NULL) {
+        logger(LOG_ERROR, "Warning: FCC address is ambiguous.");
+    }
+
+    /* Copy results into static structures */
+    memcpy(&res_addr, res->ai_addr, res->ai_addrlen);
+    memcpy(&res_ai, res, sizeof(struct addrinfo));
+    res_ai.ai_addr = (struct sockaddr *)&res_addr;
+    res_ai.ai_canonname = NULL;
+    res_ai.ai_next = NULL;
+    serv.addr = &res_ai;
+
+    /* Set up source address */
+    serv.msrc_addr = NULL;
+    serv.msrc = NULL;
+    if (components.has_source) {
+        memcpy(&msrc_res_addr, msrc_res->ai_addr, msrc_res->ai_addrlen);
+        memcpy(&msrc_res_ai, msrc_res, sizeof(struct addrinfo));
+        msrc_res_ai.ai_addr = (struct sockaddr *)&msrc_res_addr;
+        msrc_res_ai.ai_canonname = NULL;
+        msrc_res_ai.ai_next = NULL;
+        serv.msrc_addr = &msrc_res_ai;
+
+        /* Create source string for compatibility */
+        char source_str[300];
+        if (components.source_port[0]) {
+            snprintf(source_str, sizeof(source_str), "%s:%s",
+                    components.source_addr, components.source_port);
+        } else {
+            strncpy(source_str, components.source_addr, sizeof(source_str) - 1);
+            source_str[sizeof(source_str) - 1] = '\0';
+        }
+        serv.msrc = strdup(source_str);
+    } else {
+        serv.msrc = strdup("");
+    }
+
+    /* Set up FCC address */
+    serv.fcc_addr = NULL;
+    if (components.has_fcc) {
+        memcpy(&fcc_res_addr, fcc_res->ai_addr, fcc_res->ai_addrlen);
+        memcpy(&fcc_res_ai, fcc_res, sizeof(struct addrinfo));
+        fcc_res_ai.ai_addr = (struct sockaddr *)&fcc_res_addr;
+        fcc_res_ai.ai_canonname = NULL;
+        fcc_res_ai.ai_next = NULL;
+        serv.fcc_addr = &fcc_res_ai;
+    }
+
+    /* Free temporary addrinfo structures */
+    freeaddrinfo(res);
+    if (msrc_res) freeaddrinfo(msrc_res);
+    if (fcc_res) freeaddrinfo(fcc_res);
+
+    return &serv;
 }

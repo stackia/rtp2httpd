@@ -1,23 +1,3 @@
-/*
- *  RTP2HTTP Proxy - Multicast networking module
- *
- *  Copyright (C) 2008-2010 Ondrej Caletka <o.caletka@sh.cvut.cz>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2
- *  as published by the Free Software Foundation.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program (see the file COPYING included with this
- *  distribution); if not, write to the Free Software Foundation, Inc.,
- *  59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
-
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -30,11 +10,11 @@
 
 void bind_to_upstream_interface(int sock)
 {
-  if (conf_upstream_interface.ifr_name != NULL)
+  if (conf_upstream_interface.ifr_name[0] != '\0')
   {
     if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, (void *)&conf_upstream_interface, sizeof(struct ifreq)) < 0)
     {
-      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s\n", conf_upstream_interface.ifr_name, strerror(errno));
+      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s", conf_upstream_interface.ifr_name, strerror(errno));
     }
   }
 }
@@ -53,14 +33,14 @@ int join_mcast_group(struct services_s *service)
   if (r)
   {
     logger(LOG_ERROR, "SO_REUSEADDR "
-                      "failed: %s\n",
+                      "failed: %s",
            strerror(errno));
   }
 
   r = bind(sock, (struct sockaddr *)service->addr->ai_addr, service->addr->ai_addrlen);
   if (r)
   {
-    logger(LOG_ERROR, "Cannot bind: %s\n",
+    logger(LOG_ERROR, "Cannot bind: %s",
            strerror(errno));
     exit(RETVAL_RTP_FAILED);
   }
@@ -79,11 +59,11 @@ int join_mcast_group(struct services_s *service)
     gr.gr_interface = ((const struct sockaddr_in6 *)(service->addr->ai_addr))->sin6_scope_id;
     break;
   default:
-    logger(LOG_ERROR, "Address family don't support mcast.\n");
+    logger(LOG_ERROR, "Address family don't support mcast.");
     exit(RETVAL_SOCK_READ_FAILED);
   }
 
-  if (conf_upstream_interface.ifr_name != NULL)
+  if (conf_upstream_interface.ifr_name[0] != '\0')
   {
     gr.gr_interface = conf_upstream_interface.ifr_ifindex;
   }
@@ -104,7 +84,7 @@ int join_mcast_group(struct services_s *service)
 
   if (r)
   {
-    logger(LOG_ERROR, "Cannot join mcast group: %s\n",
+    logger(LOG_ERROR, "Cannot join mcast group: %s",
            strerror(errno));
     exit(RETVAL_RTP_FAILED);
   }

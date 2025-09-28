@@ -4,7 +4,9 @@ rtp2httpd
 !openwrt-support/rtp2httpd/Makefile
 !openwrt-support/luci-app-rtp2httpd/Makefile
 *.o
-*.in
+# Automake/autoconf generated files
+Makefile.in
+*.pc
 config.*
 stamp-h1
 .deps
@@ -16,3 +18,15 @@ configure~
 depcomp
 install-sh
 missing
+.dirstamp
+
+# Test framework files
+test-driver
+
+# Test generated files
+tests/check_*
+!tests/check_*.c
+tests/*.log
+tests/*.trs
+tests/test-suite.log
+*-check_*.o
