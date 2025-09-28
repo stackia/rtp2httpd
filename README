@@ -1,107 +1,262 @@
-# IPTV 组播转单播，支持 FCC 快速换台
+# rtp2httpd - IPTV 流媒体转发服务器
 
-本 fork 在原版 run2httpd 基础上增加了 [FCC 协议支持](https://blog.csdn.net/yangzex/article/details/131328837)，可以实现像原生 IPTV 盒子一样的快速换台。
+rtp2httpd 是一个多媒体流转发服务器。本项目是 [oskar456/rtp2httpd](https://github.com/oskar456/rtp2httpd) 的完全重构版本，在原项目基础上加入了许多新功能，包括 RTSP 协议支持、FCC 快速换台、NAT 穿透等特性，专为中国大陆 IPTV 环境设计。
 
-## 快速换台效果
+它支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并实现了运营商级的 FCC（[Fast Channel Change](https://blog.csdn.net/yangzex/article/details/131328837)）快速换台协议，为 IPTV 用户提供接近原生机顶盒的观看体验。
+
+## 🚀 核心功能特性
+
+### 🎯 多协议支持
+
+- **组播 RTP 转单播 HTTP**：将组播 RTP/UDP 流转换为标准 HTTP 流
+- **原始 UDP 流转发**：支持非 RTP 封装的 UDP 流直接转发
+- **RTSP 转 HTTP 视频流**：完整支持 RTSP/RTP 协议栈，包括 TCP 和 UDP 传输模式
+  - 可以实现 IPTV 时移源的回看
+  - 可以把家庭摄像机的 RTSP 流转换为 HTTP 流，方便在 IPTV 播放器中观看
+- **UDPxy 兼容性**：完全兼容 UDPxy URL 格式，可无缝替换
+
+### ⚡ FCC 快速换台技术
+
+- **运营商级 FCC 协议**：实现毫秒级换台响应，媲美原生 IPTV 机顶盒
+- **智能流缓存**：预加载关键帧，确保换台时立即提供可解码视频流
+- **NAT 穿透支持**：支持 NAT-PMP 和打洞技术，适应复杂网络环境
+- **多客户端并发**：支持多个客户端同时快速换台
+
+## 📺 快速换台演示效果
 
 https://github.com/stackia/rtp2httpd/assets/5107241/fe390221-ad0f-4f10-8cec-fb32793aaca0
 
 https://github.com/stackia/rtp2httpd/assets/5107241/54da27fc-ca3a-438b-bd67-11ed2405a018
 
-注：rtp2httpd 搭配 FCC server 后，仅保证可以快速提供可立即解码的视频流给客户端。具体换台速度能有多快，还取决于视频客户端的实现，客户端的 buffer 越小，换台速度越快。
+> **提示**：建议搭配专门针对 IPTV 直播优化的播放器使用，例如 [APTV](https://aptv.wegic.app) / [TiviMate](https://tivimate.com) 等。
 
-## 使用方法
+## 📦 部署方式
 
-### OpenWrt
+### OpenWrt 路由器部署（推荐）
 
-可以在 [Releases](https://github.com/stackia/rtp2httpd/releases) 页面下载编译好的 ipk 包直接使用。
+OpenWrt 是 rtp2httpd 的最佳运行环境。在完成 IPTV 网络融合后（可以搜索教程 `OpenWrt IPTV 融合`），通过 DHCP 获取到 IPTV 内网 IP，可直接访问整个 IPTV 网络，无需 NAT 穿透。
 
-下载并安装 `rtp2httpd_x.y.z-1_<arch>.ipk` / `luci-app-rtp2httpd_x.y.z_all.ipk` / `luci-i18n-rtp2httpd-en_x.y.z_all.ipk` / `luci-i18n-rtp2httpd-zh-cn_x.y.z_all.ipk` 四个包。然后在 LuCI 中配置 rtp2httpd 的启动参数即可。
+#### 软件包安装
 
-<img width="925" alt="Image" src="https://github.com/user-attachments/assets/7f5dfc55-b00a-4f8f-b589-56fac0235061" />
+在 [Releases](https://github.com/stackia/rtp2httpd/releases) 页面下载对应架构的软件包：
 
-### Docker
+- `rtp2httpd_x.y.z-1_<arch>.ipk` - 主程序包
+- `luci-app-rtp2httpd_x.y.z_all.ipk` - LuCI Web 界面
+- `luci-i18n-rtp2httpd-en_x.y.z_all.ipk` - 英文语言包
+- `luci-i18n-rtp2httpd-zh-cn_x.y.z_all.ipk` - 中文语言包
 
-仅支持运行在 host 网络模式下。
-
-```sh
-docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest --noconfig --verbose 3 --listen 5140 --maxclients 50
+```bash
+opkg install rtp2httpd_*.ipk luci-app-rtp2httpd_*.ipk luci-i18n-rtp2httpd-*.ipk
 ```
 
-启动 rtp2httpd 后，可以使用类似 `http://10.0.0.2:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970` 这样的地址将组播源转换为单播源。这里的 FCC 服务器地址需要在自己所在地的 IPTV 盒子上抓包获得（关键词 `ChannelFCCIP` / `ChannelFCCPort`，通常和直播源 `ChannelURL` 一起出现），并在路由器上添加静态路由走 IPTV 网络出站。
+#### LuCI 配置界面
 
-并非所有地区都有 FCC 服务器，如果抓不到，那么很可能当地运营商没有部署 IPTV FCC 服务器。去掉链接里的 `?fcc=<addr>` 可以只使用组播转单播功能。
+安装完成后，在 LuCI 管理界面的 "服务" 菜单中找到 "rtp2httpd" 进行配置：
 
-如果不是直接运行在路由器上，需要开启 `fcc-nat-traversal` 选项。如果路由器支持 NAT-PMP 功能（通常在 UPnP 相关设置下面），建议设置为 `fcc-nat-traversal=2`，播放最稳定。如果不支持 NAT-PMP，则设置为 `fcc-nat-traversal=1`，此时某些情况下播放会不稳定，如果发现不能播放，需要重试几次。
+<img width="925" alt="LuCI 配置界面" src="https://github.com/user-attachments/assets/7f5dfc55-b00a-4f8f-b589-56fac0235061" />
 
-如果直接运行在路由器上，则无需开启 `fcc-nat-traversal`（或者设置为 `0`）。
+### Docker 容器部署
 
-### 参数说明
+适用于支持 Docker 的设备。**必须使用 host 网络模式**以接收组播流。
 
-```text
-Usage: rtp2httpd [options]
+```bash
+# 基础运行
+docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest \
+  --noconfig --verbose 2 --listen 8080 --maxclients 20
 
-Options:
-        -h --help            Show this help
-        -v --verbose         Increase verbosity
-        -q --quiet           Report only fatal errors
-        -d --daemon          Fork to background (implies -q)
-        -D --nodaemon        Do not daemonise. (default)
-        -U --noudpxy         Disable UDPxy compatibility
-        -m --maxclients <n>  Serve max n requests simultaneously (dfl 5)
-        -l --listen [addr:]port  Address/port to bind (default ANY:8080)
-        -c --config <file>   Read this file, instead of
-        -C --noconfig        Do not read the default config
-        -n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole, 2=NAT-PMP (default 0)
-        -H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)
-        -i --upstream-interface <interface> Interface to use for requesting upstream media stream (default none, which follows the routing table)
+# 启用 FCC 和 NAT 穿透
+docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest \
+  --noconfig --verbose 2 --listen 8080 --maxclients 20 \
+  --fcc-nat-traversal 2 --upstream-interface eth0
 ```
 
-### rtp2httpd README
+### 编译安装
 
-```rst
-Multicast RTP to Unicast HTTP stream convertor with FCC support!
-==============================================
+```bash
+# 安装依赖（Ubuntu/Debian）
+sudo apt-get install build-essential autoconf automake
 
-Copyright (c) 2008-2020 Ondřej Caletka
-
-What is it
-----------
-
-This program converts multicast RTP/UDP media into http stream.
-It acts as a tiny HTTP server. When client connect,
-pre-configured multicast RTP service is choosen by URL.
-Program then join pre-configured multicast address and translate
-incoming RTP data to HTTP stream.
-
-As an alternative to pre-configured address, there is also a [UDPxy][1]
-compatibility mode. If URL looks like `/<rtp|udp>/<multicast address>:<port>`
-and UDPxy mode is enabled (which is default), the program joins address
-contained in the URL.
-
-It's main purpose is to remotely watch multicast video and audio
-broadcast, when your internet connection in the first-mile
-(e.g. broadband router) does not support multicast routing.
-
-Main advantage over translating streams in vlc (http://www.videolan.org)
-is that multicast group is joined _after_ the HTTP client connects,
-and is leaved immediately after HTTP client disconnects. So,
-server can be run all the time and consume almost no bandwidth nor CPU
-power, until HTTP client connects.
-
-[1]: http://www.udpxy.com/index-en.html
-
-Installation
-------------
-
-The package uses GNU autotools. See the file `INSTALL` for details.
-
-Configuration
--------------
-
-See provided configfile for example, run program with `--help` for
-a list of command line switches.
-
-__Do not run rtp2httpd as root. Choose some unprivileged port number and run
-it under unprivileged user account.__
+# 编译安装
+./configure
+make
+sudo make install
 ```
+
+## 🔗 URL 格式与协议支持
+
+rtp2httpd 支持多种流媒体协议，通过不同的 URL 前缀进行区分：
+
+### 组播 RTP 流转换
+
+```url
+http://服务器地址:端口/rtp/组播地址:端口[?fcc=FCC服务器:端口]
+```
+
+**示例**：
+
+```url
+http://192.168.1.1:8080/rtp/239.253.64.120:5140
+http://192.168.1.1:8080/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970
+```
+
+### RTSP 流代理
+
+```url
+http://服务器地址:端口/rtsp/RTSP服务器:端口/路径[?参数][&playseek=时间范围]
+```
+
+**示例**：
+
+```url
+http://192.168.1.1:8080/rtsp/192.168.1.100:554/live/stream1
+http://192.168.1.1:8080/rtsp/camera.local:554/h264/ch1/main/av_stream?playseek=20240101120000-20240101130000
+```
+
+**RTSP 功能特性**：
+
+- **传输模式**：自动协商 TCP/UDP 传输，优先使用 TCP 交织模式确保稳定性
+- **协议兼容**：支持 RTP 和 MP2T（MPEG-2 TS）封装格式
+- **时间范围播放**：支持 playseek 参数指定播放时间段
+- **连接管理**：自动处理 RTSP 会话生命周期和重连
+- **流媒体优化**：智能缓冲和数据包去 RTP 封装
+
+### 原始 UDP 流转发
+
+通常在大陆 IPTV 网络应该不会用到这个模式。
+
+```url
+http://服务器地址:端口/udp/组播地址:端口
+```
+
+**示例**：
+
+```url
+http://192.168.1.1:8080/udp/239.253.64.121:5140
+```
+
+## ⚙️ 配置参数详解
+
+### 命令行参数
+
+```bash
+rtp2httpd [选项]
+
+网络配置：
+  -l, --listen [地址:]端口        绑定监听地址和端口 (默认: *:8080)
+  -m, --maxclients <数量>        最大并发客户端数 (默认: 5)
+  -i, --upstream-interface <接口> 上游媒体流使用的网络接口，需要指定为 IPTV 网络接口
+
+FCC 快速换台：
+  -n, --fcc-nat-traversal <0/1/2>  FCC NAT 穿透模式
+                                  0=禁用, 1=打洞, 2=NAT-PMP (默认: 0)
+
+服务控制：
+  -d, --daemon                   后台守护进程模式
+  -D, --nodaemon                 前台运行模式 (默认)
+  -c, --config <文件>            指定配置文件路径
+  -C, --noconfig                 不读取配置文件
+
+日志控制：
+  -v, --verbose                  增加日志详细程度
+  -q, --quiet                    仅显示致命错误
+  -H, --hostname <主机名>        检查 HTTP Host 头的主机名
+
+兼容性：
+  -U, --noudpxy                  禁用 UDPxy 兼容模式
+
+其他：
+  -h, --help                     显示帮助信息
+```
+
+### 配置文件格式
+
+配置文件路径：`/etc/rtp2httpd.conf`
+
+```ini
+[global]
+# 日志详细程度: 0=静默 1=错误 2=信息 3=调试
+verbosity = 2
+
+# 最大并发客户端数
+maxclients = 20
+
+# 是否后台运行
+daemonise = no
+
+# UDPxy 兼容性
+udpxy = yes
+
+# FCC NAT 穿透模式
+fcc-nat-traversal = 0
+
+# 上游网络接口
+upstream-interface = eth3
+
+[bind]
+# 绑定地址和端口
+* 8080
+192.168.1.1 8081
+
+[services]
+# 预定义服务 (可选)
+# 格式: 服务名 类型 组播地址 端口
+# 类型: MRTP(RTP 流) MUDP(UDP 流)
+cctv1    MRTP 239.253.64.120 5140
+cctv2    MRTP 239.253.64.121 5140
+```
+
+## 🚄 FCC 快速换台配置指南
+
+### FCC 服务器获取方法
+
+可以 [先看看这里](https://github.com/stackia/rtp2httpd/issues/5)，也许有网友分享过当地的 FCC 服务器地址。否则就需要从 IPTV 机顶盒抓包获取。
+
+1. **抓包方法**：使用 Wireshark 等工具抓取当地机顶盒网络包
+2. **关键字段**：查找 `ChannelFCCIP` 和 `ChannelFCCPort` 字段
+
+### NAT 穿透模式选择
+
+如果 rtp2httpd 并非直接运行在路由器上，而是运行在局域网内其他设备（例如 NAS、PC 等），则需要启用 NAT 穿透功能以确保 FCC 正常工作。
+
+当 rtp2httpd 运行在局域网内设备时，你需要确保上级路由器可以正确路由 IPTV 所在网段（需要设置静态路由或路由规则），并转发 IGMP 组播流（可以使用 `igmpproxy` / `omcproxy` 等组播代理工具）。
+
+仅适用于理解网络拓扑的高级用户。
+
+| 模式     | 数值 | 适用场景          | 稳定性     |
+| -------- | ---- | ----------------- | ---------- |
+| 禁用     | 0    | 路由器直接运行    | ⭐⭐⭐⭐⭐ |
+| 打洞模式 | 1    | 无 NAT-PMP 支持   | ⭐⭐       |
+| NAT-PMP  | 2    | 支持 NAT-PMP/UPnP | ⭐⭐⭐⭐   |
+
+## 🤝 开发贡献
+
+### 编译开发环境
+
+```bash
+# 安装开发依赖
+sudo apt-get install build-essential autoconf automake libtool pkg-config
+
+# 从源码编译
+git clone https://github.com/stackia/rtp2httpd.git
+cd rtp2httpd
+
+# 生成构建脚本
+autoreconf -fi
+
+# 配置和编译
+./configure
+make
+
+# 运行单元测试
+make check
+```
+
+## 📄 开源许可
+
+本项目基于 GNU General Public License v2.0 开源协议发布。
+
+## 🙏 致谢
+
+- 原始项目 rtp2httpd 的开发者们
+- 为 FCC 协议实现提供技术支持的社区贡献者
+- 所有测试和反馈用户
