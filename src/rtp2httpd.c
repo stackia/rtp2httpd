@@ -1,23 +1,3 @@
-/*
- *  RTP2HTTP Proxy - Multicast RTP stream to UNICAST HTTP translator
- *
- *  Copyright (C) 2008-2010 Ondrej Caletka <o.caletka@sh.cvut.cz>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2
- *  as published by the Free Software Foundation.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program (see the file COPYING included with this
- *  distribution); if not, write to the Free Software Foundation, Inc.,
- *  59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
-
 #define _GNU_SOURCE
 
 #include <stdio.h>
@@ -78,6 +58,11 @@ int logger(enum loglevel level, const char *format, ...)
     va_start(ap, format);
     r = vfprintf(stderr, format, ap);
     va_end(ap);
+    // Automatically add newline if format doesn't end with one
+    if (format && strlen(format) > 0 && format[strlen(format) - 1] != '\n')
+    {
+      fputc('\n', stderr);
+    }
   }
   return r;
 }
@@ -106,12 +91,12 @@ void child_handler(int signum)
                       NI_NUMERICHOST | NI_NUMERICSERV);
       if (r)
       {
-        logger(LOG_ERROR, "getnameinfo failed: %s\n",
+        logger(LOG_ERROR, "getnameinfo failed: %s",
                gai_strerror(r));
       }
       else
       {
-        logger(LOG_DEBUG, "Client %s port %s disconnected (%d, %d)\n",
+        logger(LOG_DEBUG, "Client %s port %s disconnected (%d, %d)",
                hbuf, sbuf, WEXITSTATUS(status),
                WIFSIGNALED(status));
       }
@@ -138,7 +123,7 @@ void child_handler(int signum)
     else
     {
       if (child != 1)
-        logger(LOG_ERROR, "Unknown child finished - pid %d\n", child);
+        logger(LOG_ERROR, "Unknown child finished - pid %d", child);
     }
 
     client_count--;
@@ -184,7 +169,7 @@ int main(int argc, char *argv[])
                     &hints, &res);
     if (r)
     {
-      logger(LOG_FATAL, "GAI: %s\n", gai_strerror(r));
+      logger(LOG_FATAL, "GAI: %s", gai_strerror(r));
       exit(EXIT_FAILURE);
     }
 
@@ -199,7 +184,7 @@ int main(int argc, char *argv[])
       if (r)
       {
         logger(LOG_ERROR, "SO_REUSEADDR "
-                          "failed: %s\n",
+                          "failed: %s",
                strerror(errno));
       }
 
@@ -211,7 +196,7 @@ int main(int argc, char *argv[])
         if (r)
         {
           logger(LOG_ERROR, "IPV6_V6ONLY "
-                            "failed: %s\n",
+                            "failed: %s",
                  strerror(errno));
         }
       }
@@ -220,7 +205,7 @@ int main(int argc, char *argv[])
       r = bind(s[maxs], ai->ai_addr, ai->ai_addrlen);
       if (r)
       {
-        logger(LOG_ERROR, "Cannot bind: %s\n",
+        logger(LOG_ERROR, "Cannot bind: %s",
                strerror(errno));
         close(s[maxs]);
         continue;
@@ -228,7 +213,7 @@ int main(int argc, char *argv[])
       r = listen(s[maxs], 0);
       if (r)
       {
-        logger(LOG_ERROR, "Cannot listen: %s\n",
+        logger(LOG_ERROR, "Cannot listen: %s",
                strerror(errno));
         close(s[maxs]);
         continue;
@@ -239,12 +224,12 @@ int main(int argc, char *argv[])
                       NI_NUMERICHOST | NI_NUMERICSERV);
       if (r)
       {
-        logger(LOG_ERROR, "getnameinfo failed: %s\n",
+        logger(LOG_ERROR, "getnameinfo failed: %s",
                gai_strerror(r));
       }
       else
       {
-        logger(LOG_INFO, "Listening on %s port %s\n",
+        logger(LOG_INFO, "Listening on %s port %s",
                hbuf, sbuf);
       }
 
@@ -258,7 +243,7 @@ int main(int argc, char *argv[])
 
   if (maxs == 0)
   {
-    logger(LOG_FATAL, "No socket to listen!\n");
+    logger(LOG_FATAL, "No socket to listen!");
     exit(EXIT_FAILURE);
   }
 
@@ -270,10 +255,10 @@ int main(int argc, char *argv[])
 
   if (conf_daemonise)
   {
-    logger(LOG_INFO, "Forking to background...\n");
+    logger(LOG_INFO, "Forking to background...");
     if (daemon(1, 0) != 0)
     {
-      logger(LOG_FATAL, "Cannot fork: %s\n", strerror(errno));
+      logger(LOG_FATAL, "Cannot fork: %s", strerror(errno));
       exit(EXIT_FAILURE);
     }
   }
@@ -287,7 +272,7 @@ int main(int argc, char *argv[])
     {
       if (errno == EINTR)
         continue;
-      logger(LOG_FATAL, "select() failed: %s\n",
+      logger(LOG_FATAL, "select() failed: %s",
              strerror(errno));
       exit(EXIT_FAILURE);
     }
@@ -317,12 +302,12 @@ int main(int argc, char *argv[])
                           NI_NUMERICHOST | NI_NUMERICSERV);
           if (r)
           {
-            logger(LOG_ERROR, "getnameinfo failed: %s\n",
+            logger(LOG_ERROR, "getnameinfo failed: %s",
                    gai_strerror(r));
           }
           else
           {
-            logger(LOG_INFO, "Connection from %s port %s\n",
+            logger(LOG_INFO, "Connection from %s port %s",
                    hbuf, sbuf);
           }
           sigprocmask(SIG_UNBLOCK, &childset, NULL);

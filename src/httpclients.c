@@ -1,23 +1,3 @@
-/*
- *  RTP2HTTP Proxy - HTTP Client Service Coordinator
- *
- *  Copyright (C) 2008-2010 Ondrej Caletka <o.caletka@sh.cvut.cz>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2
- *  as published by the Free Software Foundation.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program (see the file COPYING included with this
- *  distribution); if not, write to the Free Software Foundation, Inc.,
- *  59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
-
 #define _GNU_SOURCE
 
 #include <stdio.h>
@@ -97,7 +77,7 @@ void client_service(int s)
   FILE *client;
   int numfields;
   char *method, *url, httpver;
-  char *hostname;
+  char *hostname = NULL;
   char *urlfrom;
   struct services_s *service;
 
@@ -112,9 +92,9 @@ void client_service(int s)
   numfields = sscanf(buf, "%ms %ms %c", &method, &url, &httpver);
   if (numfields < 2)
   {
-    logger(LOG_DEBUG, "Non-HTTP input.\n");
+    logger(LOG_DEBUG, "Non-HTTP input.");
   }
-  logger(LOG_INFO, "request: %s %s \n", method, url);
+  logger(LOG_INFO, "request: %s %s", method, url);
 
   if (numfields == 3)
   { /* Read and discard all headers before replying */
@@ -126,7 +106,7 @@ void client_service(int s)
         hostname = strpbrk(buf + 6, ":\r\n");
         if (hostname)
           hostname = strndup(buf + 6, hostname - buf - 6);
-        logger(LOG_DEBUG, "Host header: %s\n", hostname);
+        logger(LOG_DEBUG, "Host header: %s", hostname);
       }
     }
   }

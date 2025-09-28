@@ -1,9 +1,30 @@
 
+# Main program
 bin_PROGRAMS = rtp2httpd
 
-rtp2httpd_SOURCES = rtp2httpd.c httpclients.c configuration.c \
-		    http.c rtp.c multicast.c fcc.c stream.c
+# Program sources
+rtp2httpd_SOURCES = \
+	rtp2httpd.c \
+	httpclients.c \
+	configuration.c \
+	http.c \
+	rtp.c \
+	multicast.c \
+	fcc.c \
+	stream.c
 
-noinst_HEADERS = rtp2httpd.h http.h rtp.h multicast.h fcc.h stream.h
+# Private headers (not installed)
+noinst_HEADERS = \
+	rtp2httpd.h \
+	http.h \
+	rtp.h \
+	multicast.h \
+	fcc.h \
+	stream.h
 
-AM_CFLAGS= -DSYSCONFDIR=\"@sysconfdir@\"
+# Compiler flags
+AM_CPPFLAGS = -DSYSCONFDIR=\"@sysconfdir@\"
+AM_CFLAGS = @WARN_CFLAGS@
+
+# Link with required libraries
+rtp2httpd_LDADD = 

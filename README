@@ -1,6 +1,6 @@
 # IPTV 组播转单播，支持 FCC 快速换台
 
-本 fork 在原版 run2httpd 基础上增加了 [FCC 协议支持](https://blog.csdn.net/yangzex/article/details/131328837?fcc=10.255.14.152:15970)，可以实现像原生 IPTV 盒子一样的快速换台。
+本 fork 在原版 run2httpd 基础上增加了 [FCC 协议支持](https://blog.csdn.net/yangzex/article/details/131328837)，可以实现像原生 IPTV 盒子一样的快速换台。
 
 ## 快速换台效果
 
