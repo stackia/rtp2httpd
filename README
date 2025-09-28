@@ -1,8 +1,8 @@
 # rtp2httpd - IPTV 流媒体转发服务器
 
-rtp2httpd 是一个多媒体流转发服务器。本项目是 [oskar456/rtp2httpd](https://github.com/oskar456/rtp2httpd) 的完全重构版本，在原项目基础上加入了许多新功能，包括 RTSP 协议支持、FCC 快速换台、NAT 穿透等特性，专为中国大陆 IPTV 环境设计。
+rtp2httpd 是一个多媒体流转发服务器。本项目是 [oskar456/rtp2httpd](https://github.com/oskar456/rtp2httpd) 的完全重构版本，在原项目基础上加入了许多新功能，专为中国大陆 IPTV 环境设计。
 
-它支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并实现了运营商级的 FCC（[Fast Channel Change](https://blog.csdn.net/yangzex/article/details/131328837)）快速换台协议，为 IPTV 用户提供接近原生机顶盒的观看体验。
+rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并实现了运营商级的 FCC（[Fast Channel Change](https://blog.csdn.net/yangzex/article/details/131328837)）快速换台协议，为 IPTV 用户提供接近原生机顶盒的观看体验。
 
 ## 🚀 核心功能特性
 
@@ -11,7 +11,7 @@ rtp2httpd 是一个多媒体流转发服务器。本项目是 [oskar456/rtp2http
 - **组播 RTP 转单播 HTTP**：将组播 RTP/UDP 流转换为标准 HTTP 流
 - **原始 UDP 流转发**：支持非 RTP 封装的 UDP 流直接转发
 - **RTSP 转 HTTP 视频流**：完整支持 RTSP/RTP 协议栈，包括 TCP 和 UDP 传输模式
-  - 可以实现 IPTV 时移源的回看
+  - 可以实现 IPTV RTSP 时移源的回看
   - 可以把家庭摄像机的 RTSP 流转换为 HTTP 流，方便在 IPTV 播放器中观看
 - **UDPxy 兼容性**：完全兼容 UDPxy URL 格式，可无缝替换
 
@@ -22,11 +22,9 @@ rtp2httpd 是一个多媒体流转发服务器。本项目是 [oskar456/rtp2http
 - **NAT 穿透支持**：支持 NAT-PMP 和打洞技术，适应复杂网络环境
 - **多客户端并发**：支持多个客户端同时快速换台
 
-## 📺 快速换台演示效果
+## 📺 快速换台 + 时移回看 演示效果
 
-https://github.com/stackia/rtp2httpd/assets/5107241/fe390221-ad0f-4f10-8cec-fb32793aaca0
-
-https://github.com/stackia/rtp2httpd/assets/5107241/54da27fc-ca3a-438b-bd67-11ed2405a018
+https://github.com/user-attachments/assets/a8c9c60f-ebc3-49a8-b374-f579f8e34d92
 
 > **提示**：建议搭配专门针对 IPTV 直播优化的播放器使用，例如 [APTV](https://aptv.wegic.app) / [TiviMate](https://tivimate.com) 等。
 
@@ -213,6 +211,10 @@ cctv2    MRTP 239.253.64.121 5140
 
 1. **抓包方法**：使用 Wireshark 等工具抓取当地机顶盒网络包
 2. **关键字段**：查找 `ChannelFCCIP` 和 `ChannelFCCPort` 字段
+
+### 开启 BBR
+
+建议修改内核参数，[开启 BBR](https://blog.clash-plus.com/post/openwrt-bbr/) 后可以进一步降低换台延迟。
 
 ### NAT 穿透模式选择
 

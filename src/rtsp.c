@@ -11,7 +11,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <time.h>
 #include "rtsp.h"
 #include "rtp2httpd.h"
 #include "http.h"
@@ -153,7 +152,6 @@ int rtsp_parse_url(rtsp_session_t *session, const char *rtsp_url, const char *pl
     }
 
     /* Handle playseek parameter for RTSP Range header */
-    logger(LOG_DEBUG, "RTSP: Processing playseek parameter: '%s'", playseek_param ? playseek_param : "NULL");
     if (playseek_param && strlen(playseek_param) > 0)
     {
         /* Check for dash separator indicating time range */
@@ -221,10 +219,6 @@ int rtsp_parse_url(rtsp_session_t *session, const char *rtsp_url, const char *pl
             }
         }
         logger(LOG_DEBUG, "RTSP: Final playseek_range: '%s'", session->playseek_range);
-    }
-    else
-    {
-        logger(LOG_DEBUG, "RTSP: No playseek parameter provided");
     }
 
     logger(LOG_DEBUG, "RTSP: Parsed URL - host=%s, port=%d, path=%s",
@@ -950,8 +944,7 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location)
 }
 
 /*
- * Convert time from yyyyMMddHHmmss format (local timezone) to yyyyMMddTHHmmssZ format (UTC)
- * Example: "20250928101100" (local) -> "20250928T021100Z" (UTC, assuming +8 timezone)
+ * Convert time from yyyyMMddHHmmss format to yyyyMMddTHHmmssZ format
  */
 static void rtsp_format_time_to_iso8601(const char *input_time, char *output_time, size_t output_size)
 {
@@ -967,49 +960,9 @@ static void rtsp_format_time_to_iso8601(const char *input_time, char *output_tim
     /* Check if input is exactly 14 digits (yyyyMMddHHmmss) */
     if (strlen(input_time) == 14 && strspn(input_time, "0123456789") == 14)
     {
-        /* Parse the input time string */
-        struct tm local_tm = {0};
-        int year, month, day, hour, minute, second;
-
-        if (sscanf(input_time, "%4d%2d%2d%2d%2d%2d",
-                   &year, &month, &day, &hour, &minute, &second) == 6)
-        {
-
-            /* Fill the tm structure (note: tm_mon is 0-based) */
-            local_tm.tm_year = year - 1900;
-            local_tm.tm_mon = month - 1;
-            local_tm.tm_mday = day;
-            local_tm.tm_hour = hour;
-            local_tm.tm_min = minute;
-            local_tm.tm_sec = second;
-            local_tm.tm_isdst = -1; /* Let mktime() determine DST */
-
-            /* Convert local time to UTC timestamp */
-            time_t local_timestamp = mktime(&local_tm);
-            if (local_timestamp != (time_t)-1)
-            {
-                /* Convert timestamp back to UTC time structure */
-                struct tm *utc_tm = gmtime(&local_timestamp);
-                if (utc_tm)
-                {
-                    /* Format as ISO8601 UTC time */
-                    snprintf(output_time, output_size, "%04d%02d%02dT%02d%02d%02dZ",
-                             utc_tm->tm_year + 1900,
-                             utc_tm->tm_mon + 1,
-                             utc_tm->tm_mday,
-                             utc_tm->tm_hour,
-                             utc_tm->tm_min,
-                             utc_tm->tm_sec);
-                    logger(LOG_DEBUG, "RTSP: Converted local time '%s' to UTC '%s'",
-                           input_time, output_time);
-                    return;
-                }
-            }
-        }
-
-        /* Fallback: if parsing/conversion failed, use original format without timezone conversion */
-        logger(LOG_ERROR, "RTSP: Failed to convert time '%s' from local to UTC, using as-is", input_time);
         snprintf(output_time, output_size, "%.8sT%.6sZ", input_time, input_time + 8);
+        logger(LOG_DEBUG, "RTSP: Formatted time '%s' to ISO8601 '%s'",
+               input_time, output_time);
     }
     else
     {

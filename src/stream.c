@@ -214,17 +214,6 @@ void start_media_stream(int client, struct services_s *service)
     fd_set rfds;
     struct timeval timeout;
     int max_sock, r;
-    int nodelay_flag = 1;
-
-    /* Enable TCP_NODELAY to reduce latency - disable Nagle algorithm */
-    if (setsockopt(client, IPPROTO_TCP, TCP_NODELAY, (char *)&nodelay_flag, sizeof(int)) < 0)
-    {
-        logger(LOG_DEBUG, "Warning: Failed to set TCP_NODELAY: %s", strerror(errno));
-    }
-    else
-    {
-        logger(LOG_DEBUG, "TCP_NODELAY enabled for low latency");
-    }
 
     /* Initialize stream context */
     memset(&ctx, 0, sizeof(ctx));
