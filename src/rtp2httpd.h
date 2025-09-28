@@ -1,13 +1,14 @@
 #ifndef __RTP2HTTPD_H__
 #define __RTP2HTTPD_H__
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netdb.h>
-
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif /* HAVE_CONFIG_H */
+
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 #ifndef SYSCONFDIR
 #define SYSCONFDIR "."
@@ -36,7 +37,8 @@ enum fcc_nat_traversal
 enum service_type
 {
   SERVICE_MRTP = 0,
-  SERVICE_MUDP
+  SERVICE_MUDP,
+  SERVICE_RTSP
 };
 
 /*
@@ -60,6 +62,8 @@ struct services_s
   struct addrinfo *addr;
   struct addrinfo *msrc_addr;
   struct addrinfo *fcc_addr;
+  char *rtsp_url;       /* Full RTSP URL for SERVICE_RTSP */
+  char *playseek_param; /* playseek parameter for time range */
   struct services_s *next;
 };
 
@@ -90,30 +94,20 @@ extern int client_count;
  */
 int logger(enum loglevel level, const char *format, ...);
 
-/* httpclients.c INTERFACE */
+/* Signal handlers */
+void child_handler(int signum);
 
-/*
- * Service for connected client.
- * Run in forked thread.
- *
- * @param s connected socket
- */
-void client_service(int s);
-
-/* Return values of client_service() */
-#define RETVAL_CLEAN 0
-#define RETVAL_WRITE_FAILED 1
-#define RETVAL_READ_FAILED 2
-#define RETVAL_UNKNOWN_METHOD 3
-#define RETVAL_BAD_REQUEST 4
-#define RETVAL_RTP_FAILED 5
-#define RETVAL_SOCK_READ_FAILED 6
-
-/* configfile.c INTERFACE */
-
-void parse_cmd_line(int argc, char *argv[]);
-struct bindaddr_s *new_empty_bindaddr();
-void free_bindaddr(struct bindaddr_s *);
+/* Return values used across multiple modules */
+typedef enum
+{
+  RETVAL_CLEAN = 0,
+  RETVAL_WRITE_FAILED = 1,
+  RETVAL_READ_FAILED = 2,
+  RETVAL_UNKNOWN_METHOD = 3,
+  RETVAL_BAD_REQUEST = 4,
+  RETVAL_RTP_FAILED = 5,
+  RETVAL_SOCK_READ_FAILED = 6
+} retval_t;
 
 #endif /* __RTP2HTTPD_H__*/
 

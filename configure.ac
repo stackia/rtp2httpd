@@ -13,9 +13,21 @@ AC_PROG_INSTALL
 
 # Check for compiler warning flags
 if test "x$GCC" = "xyes"; then
-    WARN_CFLAGS="-Wall -Wextra -Wno-unused-parameter"
+    WARN_CFLAGS="-std=c99 -Wall -Wextra -Wno-unused-parameter"
+    WARN_CFLAGS="$WARN_CFLAGS -Wformat=2 -Wformat-security"
+    WARN_CFLAGS="$WARN_CFLAGS -Wstrict-prototypes -Wmissing-prototypes"
+    WARN_CFLAGS="$WARN_CFLAGS -Wold-style-definition -Wpointer-arith"
+    WARN_CFLAGS="$WARN_CFLAGS -Wcast-align -Wcast-qual -Wshadow"
+    WARN_CFLAGS="$WARN_CFLAGS -Wwrite-strings -Wredundant-decls"
 fi
 AC_SUBST([WARN_CFLAGS])
+
+# Security and hardening flags
+if test "x$GCC" = "xyes"; then
+    SECURITY_CFLAGS="-D_FORTIFY_SOURCE=2 -fstack-protector-strong"
+    AC_SUBST([SECURITY_CFLAGS])
+fi
+AC_USE_SYSTEM_EXTENSIONS
 
 # Checks for libraries.
 # Check for Check framework for unit testing
@@ -26,7 +38,7 @@ PKG_CHECK_MODULES([CHECK], [check >= 0.9.4],
 AM_CONDITIONAL([HAVE_CHECK], [test "x$have_check" = "xyes"])
 
 # Checks for header files.
-AC_CHECK_HEADERS([arpa/inet.h fcntl.h netdb.h netinet/in.h stdlib.h string.h strings.h sys/socket.h unistd.h])
+AC_CHECK_HEADERS([arpa/inet.h ctype.h errno.h fcntl.h getopt.h netdb.h net/if.h netinet/in.h netinet/tcp.h signal.h stdarg.h stdint.h stdlib.h string.h strings.h sys/select.h sys/socket.h sys/time.h sys/types.h sys/wait.h time.h unistd.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_INLINE
@@ -37,7 +49,7 @@ AC_TYPE_UINT8_T
 
 # Checks for library functions.
 AC_FUNC_FORK
-AC_CHECK_FUNCS([memmove memset select socket strcasecmp strdup strerror strndup getopt_long getaddrinfo getnameinfo])
+AC_CHECK_FUNCS([getaddrinfo getnameinfo getopt_long memmove memset select socket strcasecmp strdup strerror strndup])
 
 AC_CONFIG_FILES([Makefile
                  src/Makefile

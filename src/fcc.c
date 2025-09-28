@@ -1,3 +1,7 @@
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif /* HAVE_CONFIG_H */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,178 +18,185 @@
 #include "http.h"
 
 /* Forward declaration - stream_context_s is defined in stream.c */
-struct stream_context_s {
+struct stream_context_s
+{
     int client_fd;
     struct services_s *service;
     fcc_session_t fcc;
     int mcast_sock;
-    uint8_t recv_buffer[1500];
+    uint8_t recv_buffer[FCC_RECV_BUFFER_SIZE];
 };
 
 /* Forward declarations for internal functions */
 static int fcc_send_term_packet(fcc_session_t *fcc, struct services_s *service,
-                               uint16_t seqn, const char *reason);
+                                uint16_t seqn, const char *reason);
 
 uint8_t *build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client_nport)
 {
-  struct sockaddr_in *maddr_sin = (struct sockaddr_in *)
-                                      maddr->ai_addr;
+    struct sockaddr_in *maddr_sin = (struct sockaddr_in *)
+                                        maddr->ai_addr;
 
-  static uint8_t pk[FCC_PK_LEN_REQ];
-  memset(&pk, 0, sizeof(pk));
-  uint8_t *p = pk;
-  *(p++) = 0x82;                              // Version 2, Padding 0, FMT 2
-  *(p++) = 205;                               // Type: Generic RTP Feedback (205)
-  *(uint16_t *)p = htons(sizeof(pk) / 4 - 1); // Length
-  p += 2;
-  p += 4;                                      // Sender SSRC
-  *(uint32_t *)p = maddr_sin->sin_addr.s_addr; // Media source SSRC
-  p += 4;
+    static uint8_t pk[FCC_PK_LEN_REQ];
+    memset(&pk, 0, sizeof(pk));
+    uint8_t *p = pk;
+    *(p++) = 0x82;                              // Version 2, Padding 0, FMT 2
+    *(p++) = 205;                               // Type: Generic RTP Feedback (205)
+    *(uint16_t *)p = htons(sizeof(pk) / 4 - 1); // Length
+    p += 2;
+    p += 4;                                      // Sender SSRC
+    *(uint32_t *)p = maddr_sin->sin_addr.s_addr; // Media source SSRC
+    p += 4;
 
-  // FCI
-  p += 4;                            // Version 0, Reserved 3 bytes
-  *(uint16_t *)p = fcc_client_nport; // FCC client port
-  p += 2;
-  *(uint16_t *)p = maddr_sin->sin_port; // Mcast group port
-  p += 2;
-  *(uint32_t *)p = maddr_sin->sin_addr.s_addr; // Mcast group IP
-  p += 4;
+    // FCI
+    p += 4;                            // Version 0, Reserved 3 bytes
+    *(uint16_t *)p = fcc_client_nport; // FCC client port
+    p += 2;
+    *(uint16_t *)p = maddr_sin->sin_port; // Mcast group port
+    p += 2;
+    *(uint32_t *)p = maddr_sin->sin_addr.s_addr; // Mcast group IP
+    p += 4;
 
-  return pk;
+    return pk;
 }
 
 int get_gw_ip(in_addr_t *addr)
 {
-  long destination, gateway;
-  char buf[4096];
-  FILE *file;
+    long destination, gateway;
+    char buf[FCC_RESPONSE_BUFFER_SIZE];
+    FILE *file;
 
-  memset(buf, 0, sizeof(buf));
+    memset(buf, 0, sizeof(buf));
 
-  file = fopen("/proc/net/route", "r");
-  if (!file)
-  {
-    return -1;
-  }
-
-  while (fgets(buf, sizeof(buf), file))
-  {
-    if (sscanf(buf, "%*s %lx %lx", &destination, &gateway) == 2)
+    file = fopen("/proc/net/route", "r");
+    if (!file)
     {
-      if (destination == 0)
-      { /* default */
-        *addr = gateway;
-        fclose(file);
-        return 0;
-      }
+        return -1;
     }
-  }
 
-  /* default route not found */
-  if (file)
-    fclose(file);
-  return -1;
+    while (fgets(buf, sizeof(buf), file))
+    {
+        if (sscanf(buf, "%*s %lx %lx", &destination, &gateway) == 2)
+        {
+            if (destination == 0)
+            { /* default */
+                *addr = gateway;
+                fclose(file);
+                return 0;
+            }
+        }
+    }
+
+    /* default route not found */
+    if (file)
+        fclose(file);
+    return -1;
 }
 
 uint16_t nat_pmp(uint16_t nport, uint32_t lifetime)
 {
-  struct sockaddr_in gw_addr = {.sin_family = AF_INET, .sin_port = htons(5351)};
-  uint8_t pk[12];
-  uint8_t buf[16];
-  struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
+    struct sockaddr_in gw_addr = {.sin_family = AF_INET, .sin_port = htons(5351)};
+    uint8_t pk[12];
+    uint8_t buf[FCC_PACKET_BUFFER_SIZE];
+    struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
 
-  if (get_gw_ip(&gw_addr.sin_addr.s_addr) < 0)
-    return 0;
-  int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  bind_to_upstream_interface(sock);
-  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
-  pk[0] = 0;                     // Version
-  pk[1] = 1;                     // UDP
-  *(uint16_t *)(pk + 2) = 0;     // Reserved
-  *(uint16_t *)(pk + 4) = nport; // Private port
-  *(uint16_t *)(pk + 6) = 0;     // Public port
-  *(uint32_t *)(pk + 8) = htonl(lifetime);
-  sendto(sock, pk, sizeof(pk), 0, (struct sockaddr *)&gw_addr, sizeof(gw_addr));
-  if (recv(sock, buf, sizeof(buf), 0) > 0)
-  {
-    if (*(uint16_t *)(buf + 2) == 0)
-    { // Result code
-      close(sock);
-      return *(uint16_t *)(buf + 10); // Mapped public port
+    if (get_gw_ip(&gw_addr.sin_addr.s_addr) < 0)
+        return 0;
+    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    bind_to_upstream_interface(sock);
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
+    pk[0] = 0;                     // Version
+    pk[1] = 1;                     // UDP
+    *(uint16_t *)(pk + 2) = 0;     // Reserved
+    *(uint16_t *)(pk + 4) = nport; // Private port
+    *(uint16_t *)(pk + 6) = 0;     // Public port
+    *(uint32_t *)(pk + 8) = htonl(lifetime);
+    sendto(sock, pk, sizeof(pk), 0, (struct sockaddr *)&gw_addr, sizeof(gw_addr));
+    if (recv(sock, buf, sizeof(buf), 0) > 0)
+    {
+        if (*(uint16_t *)(buf + 2) == 0)
+        { // Result code
+            close(sock);
+            return *(uint16_t *)(buf + 10); // Mapped public port
+        }
     }
-  }
-  close(sock);
-  return 0;
+    close(sock);
+    return 0;
 }
 
 uint8_t *build_fcc_term_pk(struct addrinfo *maddr, uint16_t seqn)
 {
-  struct sockaddr_in *maddr_sin = (struct sockaddr_in *)maddr->ai_addr;
+    struct sockaddr_in *maddr_sin = (struct sockaddr_in *)maddr->ai_addr;
 
-  static uint8_t pk[FCC_PK_LEN_TERM];
-  memset(&pk, 0, sizeof(pk));
-  uint8_t *p = pk;
-  *(p++) = 0x85;                              // Version 2, Padding 0, FMT 5
-  *(p++) = 205;                               // Type: Generic RTP Feedback (205)
-  *(uint16_t *)p = htons(sizeof(pk) / 4 - 1); // Length
-  p += 2;
-  p += 4;                                      // Sender SSRC
-  *(uint32_t *)p = maddr_sin->sin_addr.s_addr; // Media source SSRC
-  p += 4;
+    static uint8_t pk[FCC_PK_LEN_TERM];
+    memset(&pk, 0, sizeof(pk));
+    uint8_t *p = pk;
+    *(p++) = 0x85;                              // Version 2, Padding 0, FMT 5
+    *(p++) = 205;                               // Type: Generic RTP Feedback (205)
+    *(uint16_t *)p = htons(sizeof(pk) / 4 - 1); // Length
+    p += 2;
+    p += 4;                                      // Sender SSRC
+    *(uint32_t *)p = maddr_sin->sin_addr.s_addr; // Media source SSRC
+    p += 4;
 
-  // FCI
-  *(p++) = seqn ? 0 : 1;        // Stop bit, 0 = normal, 1 = force
-  p++;                          // Reserved
-  *(uint16_t *)p = htons(seqn); // First multicast packet sequence
-  p += 2;
+    // FCI
+    *(p++) = seqn ? 0 : 1;        // Stop bit, 0 = normal, 1 = force
+    p++;                          // Reserved
+    *(uint16_t *)p = htons(seqn); // First multicast packet sequence
+    p += 2;
 
-  return pk;
+    return pk;
 }
 
 ssize_t sendto_triple(int fd, const void *buf, size_t n,
-                     int flags, struct sockaddr_in *addr, socklen_t addr_len)
+                      int flags, struct sockaddr_in *addr, socklen_t addr_len)
 {
-  static uint8_t i;
-  for (i = 0; i < 3; i++)
-  {
-    if (sendto(fd, buf, n, flags, (struct sockaddr *)addr, addr_len) < 0)
+    static uint8_t i;
+    for (i = 0; i < 3; i++)
     {
-      return -1;
+        if (sendto(fd, buf, n, flags, (struct sockaddr *)addr, addr_len) < 0)
+        {
+            return -1;
+        }
     }
-  }
-  return n;
+    return n;
 }
 
 void fcc_session_cleanup(fcc_session_t *fcc, struct services_s *service)
 {
-    if (!fcc) {
+    if (!fcc)
+    {
         return;
     }
 
     /* Send termination message ONLY if not sent before */
-    if (!fcc->fcc_term_sent && fcc->fcc_sock && fcc->fcc_server && service) {
+    if (!fcc->fcc_term_sent && fcc->fcc_sock && fcc->fcc_server && service)
+    {
         logger(LOG_DEBUG, "FCC: Sending termination packet (cleanup)");
-        if (fcc_send_term_packet(fcc, service, 0, "cleanup") == 0) {
+        if (fcc_send_term_packet(fcc, service, 0, "cleanup") == 0)
+        {
             fcc->fcc_term_sent = 1;
         }
     }
 
     /* Clean up NAT-PMP mapping if active */
-    if (fcc->mapped_pub_port) {
+    if (fcc->mapped_pub_port)
+    {
         logger(LOG_DEBUG, "FCC: Cleaning up NAT-PMP mapping");
         nat_pmp(fcc->fcc_client.sin_port, 0);
         fcc->mapped_pub_port = 0;
     }
 
     /* Clean up session resources */
-    if (fcc->mcast_pending_buf) {
+    if (fcc->mcast_pending_buf)
+    {
         free(fcc->mcast_pending_buf);
         fcc->mcast_pending_buf = NULL;
         logger(LOG_DEBUG, "FCC: Multicast pending buffer freed");
     }
 
     /* Close FCC socket */
-    if (fcc->fcc_sock > 0) {
+    if (fcc->fcc_sock > 0)
+    {
         close(fcc->fcc_sock);
         fcc->fcc_sock = 0;
         logger(LOG_DEBUG, "FCC: Socket closed");
@@ -193,13 +204,13 @@ void fcc_session_cleanup(fcc_session_t *fcc, struct services_s *service)
 
     /* Reset all session state to clean state */
     fcc->state = FCC_STATE_INIT;
-    fcc->fcc_server = NULL;  /* This was pointing to service memory, safe to NULL */
+    fcc->fcc_server = NULL; /* This was pointing to service memory, safe to NULL */
     fcc->media_port = 0;
     fcc->current_seqn = 0;
     fcc->fcc_term_seqn = 0;
     fcc->fcc_term_sent = 0;
     fcc->not_first_packet = 0;
-    fcc->mcast_pbuf_current = NULL;  /* Already freed buffer, clear pointer */
+    fcc->mcast_pbuf_current = NULL; /* Already freed buffer, clear pointer */
     fcc->mcast_pbuf_len = 0;
     fcc->mcast_pbuf_last_seqn = 0;
     fcc->mcast_pbuf_full = 0;
@@ -236,7 +247,8 @@ void fcc_session_init(fcc_session_t *fcc)
 
 int fcc_session_set_state(fcc_session_t *fcc, fcc_state_t new_state, const char *reason)
 {
-    if (fcc->state == new_state) {
+    if (fcc->state == new_state)
+    {
         return 0; /* No change */
     }
 
@@ -262,10 +274,12 @@ int fcc_initialize_and_request(struct stream_context_s *ctx)
 
     logger(LOG_DEBUG, "FCC: Initializing FCC session and sending request");
 
-    if (!fcc->fcc_sock) {
+    if (!fcc->fcc_sock)
+    {
         /* Create and configure FCC socket */
         fcc->fcc_sock = socket(AF_INET, service->fcc_addr->ai_socktype, service->fcc_addr->ai_protocol);
-        if (fcc->fcc_sock < 0) {
+        if (fcc->fcc_sock < 0)
+        {
             logger(LOG_ERROR, "FCC: Failed to create socket: %s", strerror(errno));
             return -1;
         }
@@ -277,7 +291,8 @@ int fcc_initialize_and_request(struct stream_context_s *ctx)
         sin.sin_addr.s_addr = INADDR_ANY;
         sin.sin_port = 0;
         r = bind(fcc->fcc_sock, (struct sockaddr *)&sin, sizeof(sin));
-        if (r) {
+        if (r)
+        {
             logger(LOG_ERROR, "FCC: Cannot bind socket: %s", strerror(errno));
             return -1;
         }
@@ -287,7 +302,8 @@ int fcc_initialize_and_request(struct stream_context_s *ctx)
         getsockname(fcc->fcc_sock, (struct sockaddr *)&fcc->fcc_client, &slen);
 
         /* Handle NAT traversal if needed */
-        if (conf_fcc_nat_traversal == FCC_NAT_T_NAT_PMP) {
+        if (conf_fcc_nat_traversal == FCC_NAT_T_NAT_PMP)
+        {
             fcc->mapped_pub_port = nat_pmp(fcc->fcc_client.sin_port, 86400);
             logger(LOG_DEBUG, "FCC NAT-PMP result: %u", ntohs(fcc->mapped_pub_port));
         }
@@ -299,7 +315,8 @@ int fcc_initialize_and_request(struct stream_context_s *ctx)
     uint16_t port_to_use = fcc->mapped_pub_port ? fcc->mapped_pub_port : fcc->fcc_client.sin_port;
     r = sendto_triple(fcc->fcc_sock, build_fcc_request_pk(service->addr, port_to_use),
                       FCC_PK_LEN_REQ, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
-    if (r < 0) {
+    if (r < 0)
+    {
         logger(LOG_ERROR, "FCC: Unable to send request message: %s", strerror(errno));
         return -1;
     }
@@ -315,16 +332,18 @@ int fcc_initialize_and_request(struct stream_context_s *ctx)
  * FCC Protocol Stage 2: Handle server response (FMT 3)
  */
 int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int buf_len,
-                              struct sockaddr_in *peer_addr)
+                               struct sockaddr_in *peer_addr)
 {
     fcc_session_t *fcc = &ctx->fcc;
 
-    if (buf[1] != 205) {
+    if (buf[1] != 205)
+    {
         logger(LOG_DEBUG, "FCC: Unrecognized payload type: %u", buf[1]);
         return 0;
     }
 
-    if (buf[0] == 0x83) { /* FMT 3 - Server Response */
+    if (buf[0] == 0x83)
+    { /* FMT 3 - Server Response */
         uint8_t result_code = buf[12];
         uint8_t action_code = buf[13];
         uint16_t new_signal_port = *(uint16_t *)(buf + 14);
@@ -333,7 +352,8 @@ int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int b
 
         log_fcc_server_response(3, result_code, new_signal_port, new_media_port);
 
-        if (result_code != 0) {
+        if (result_code != 0)
+        {
             logger(LOG_DEBUG, "FCC: Server response error code: %u, falling back to multicast", result_code);
             fcc_session_set_state(fcc, FCC_STATE_ERROR, "Server error response");
             return -1; /* Fallback to multicast */
@@ -342,19 +362,22 @@ int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int b
         /* Update server endpoints if provided */
         int signal_port_changed = 0, media_port_changed = 0;
 
-        if (new_signal_port && new_signal_port != fcc->fcc_server->sin_port) {
+        if (new_signal_port && new_signal_port != fcc->fcc_server->sin_port)
+        {
             logger(LOG_DEBUG, "FCC: Server provided new signal port: %u", ntohs(new_signal_port));
             fcc->fcc_server->sin_port = new_signal_port;
             signal_port_changed = 1;
         }
 
-        if (new_media_port && new_media_port != fcc->media_port) {
+        if (new_media_port && new_media_port != fcc->media_port)
+        {
             fcc->media_port = new_media_port;
             logger(LOG_DEBUG, "FCC: Server provided new media port: %u", ntohs(new_media_port));
             media_port_changed = 1;
         }
 
-        if (new_fcc_ip && new_fcc_ip != fcc->fcc_server->sin_addr.s_addr) {
+        if (new_fcc_ip && new_fcc_ip != fcc->fcc_server->sin_addr.s_addr)
+        {
             fcc->fcc_server->sin_addr.s_addr = new_fcc_ip;
             logger(LOG_DEBUG, "FCC: Server provided new IP: %s", inet_ntoa(fcc->fcc_server->sin_addr));
             signal_port_changed = 1;
@@ -362,27 +385,35 @@ int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int b
         }
 
         /* Handle different action codes */
-        if (action_code == 3) {
+        if (action_code == 3)
+        {
             /* Redirect to new FCC server */
             logger(LOG_DEBUG, "FCC: Server requests redirection to new server");
             fcc_session_set_state(fcc, FCC_STATE_INIT, "Server redirect");
             return 1;
-        } else if (action_code != 2) {
+        }
+        else if (action_code != 2)
+        {
             /* Join multicast immediately */
             logger(LOG_DEBUG, "FCC: Server requests immediate multicast join, code: %u", action_code);
             fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Immediate multicast join");
             return -1; /* Signal to join multicast */
-        } else {
+        }
+        else
+        {
             /* Normal FCC flow - server will start unicast stream */
             /* Handle NAT punch hole if needed */
-            if (conf_fcc_nat_traversal == FCC_NAT_T_PUNCHHOLE) {
-                if (media_port_changed && fcc->media_port) {
+            if (conf_fcc_nat_traversal == FCC_NAT_T_PUNCHHOLE)
+            {
+                if (media_port_changed && fcc->media_port)
+                {
                     struct sockaddr_in sintmp = *fcc->fcc_server;
                     sintmp.sin_port = fcc->media_port;
                     sendto_triple(fcc->fcc_sock, NULL, 0, 0, &sintmp, sizeof(sintmp));
                     logger(LOG_DEBUG, "FCC: NAT punch hole sent for media port %u", ntohs(fcc->media_port));
                 }
-                if (signal_port_changed) {
+                if (signal_port_changed)
+                {
                     sendto_triple(fcc->fcc_sock, NULL, 0, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
                     logger(LOG_DEBUG, "FCC: NAT punch hole sent for signal port %u", ntohs(fcc->fcc_server->sin_port));
                 }
@@ -420,7 +451,8 @@ int fcc_handle_unicast_media(struct stream_context_s *ctx, uint8_t *buf, int buf
     write_rtp_payload_to_client(ctx->client_fd, buf_len, buf, &fcc->current_seqn, &fcc->not_first_packet);
 
     /* Check if we should terminate FCC based on sequence number */
-    if (fcc->fcc_term_sent && fcc->current_seqn >= fcc->fcc_term_seqn - 1) {
+    if (fcc->fcc_term_sent && fcc->current_seqn >= fcc->fcc_term_seqn - 1)
+    {
         logger(LOG_DEBUG, "FCC: Reached termination sequence, switching to multicast");
         fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Reached termination sequence");
     }
@@ -432,18 +464,20 @@ int fcc_handle_unicast_media(struct stream_context_s *ctx, uint8_t *buf, int buf
  * Internal helper: Send FCC termination packet to server
  */
 static int fcc_send_term_packet(fcc_session_t *fcc, struct services_s *service,
-                               uint16_t seqn, const char *reason)
+                                uint16_t seqn, const char *reason)
 {
     int r;
 
-    if (!fcc->fcc_sock || !fcc->fcc_server || !service) {
+    if (!fcc->fcc_sock || !fcc->fcc_server || !service)
+    {
         logger(LOG_DEBUG, "FCC: Cannot send termination - missing socket/server/service");
         return -1;
     }
 
     r = sendto_triple(fcc->fcc_sock, build_fcc_term_pk(service->addr, seqn),
-                     FCC_PK_LEN_TERM, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
-    if (r < 0) {
+                      FCC_PK_LEN_TERM, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
+    if (r < 0)
+    {
         logger(LOG_ERROR, "FCC: Unable to send termination packet (%s): %s", reason, strerror(errno));
         return -1;
     }
@@ -459,12 +493,16 @@ int fcc_send_termination_message(struct stream_context_s *ctx, uint16_t mcast_se
 {
     fcc_session_t *fcc = &ctx->fcc;
 
-    if (!fcc->fcc_term_sent) {
+    if (!fcc->fcc_term_sent)
+    {
         fcc->fcc_term_seqn = mcast_seqn;
-        if (fcc_send_term_packet(fcc, ctx->service, fcc->fcc_term_seqn + 2, "normal flow") == 0) {
+        if (fcc_send_term_packet(fcc, ctx->service, fcc->fcc_term_seqn + 2, "normal flow") == 0)
+        {
             fcc->fcc_term_sent = 1;
             logger(LOG_DEBUG, "FCC: Normal termination message sent, term_seqn=%u", fcc->fcc_term_seqn);
-        } else {
+        }
+        else
+        {
             return -1;
         }
     }
@@ -479,13 +517,15 @@ int fcc_init_pending_buffer(struct stream_context_s *ctx)
 {
     fcc_session_t *fcc = &ctx->fcc;
 
-    if (!fcc->mcast_pending_buf) {
+    if (!fcc->mcast_pending_buf)
+    {
         /* Calculate buffer size based on expected packet count */
         uint32_t expected_packets = max(fcc->fcc_term_seqn - fcc->current_seqn, FCC_MIN_BUFFER_PACKETS);
         fcc->mcast_pbuf_len = (expected_packets + FCC_MIN_BUFFER_PACKETS) * FCC_PENDING_BUFFER_MULTIPLIER;
 
         fcc->mcast_pending_buf = malloc(fcc->mcast_pbuf_len);
-        if (!fcc->mcast_pending_buf) {
+        if (!fcc->mcast_pending_buf)
+        {
             logger(LOG_ERROR, "FCC: Failed to allocate pending buffer");
             return -1;
         }
@@ -513,27 +553,32 @@ int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int 
     fcc->mcast_pbuf_last_seqn = mcast_seqn;
 
     /* Send termination message if not sent yet */
-    if (fcc_send_termination_message(ctx, mcast_seqn) < 0) {
+    if (fcc_send_termination_message(ctx, mcast_seqn) < 0)
+    {
         return -1;
     }
 
     /* Initialize pending buffer if not done yet */
-    if (fcc_init_pending_buffer(ctx) < 0) {
+    if (fcc_init_pending_buffer(ctx) < 0)
+    {
         return -1;
     }
 
     /* Skip buffering if buffer is full */
-    if (fcc->mcast_pbuf_full) {
+    if (fcc->mcast_pbuf_full)
+    {
         return 0;
     }
 
     /* Extract RTP payload */
-    if (get_rtp_payload(buf, buf_len, &rtp_payload, &payloadlength) < 0) {
+    if (get_rtp_payload(buf, buf_len, &rtp_payload, &payloadlength) < 0)
+    {
         return 0;
     }
 
     /* Check if we have enough space in the buffer */
-    if (fcc->mcast_pbuf_current + payloadlength > fcc->mcast_pending_buf + fcc->mcast_pbuf_len) {
+    if (fcc->mcast_pbuf_current + payloadlength > fcc->mcast_pending_buf + fcc->mcast_pbuf_len)
+    {
         logger(LOG_ERROR, "FCC: Multicast pending buffer full, video quality may suffer");
         fcc->mcast_pbuf_full = 1;
         return 0;
@@ -554,9 +599,11 @@ int fcc_handle_mcast_active(struct stream_context_s *ctx, uint8_t *buf, int buf_
     fcc_session_t *fcc = &ctx->fcc;
 
     /* Flush pending buffer first if available */
-    if (fcc->mcast_pending_buf) {
+    if (fcc->mcast_pending_buf)
+    {
         size_t pending_len = fcc->mcast_pbuf_current - fcc->mcast_pending_buf;
-        if (pending_len > 0) {
+        if (pending_len > 0)
+        {
             write_to_client(ctx->client_fd, fcc->mcast_pending_buf, pending_len);
             fcc->current_seqn = fcc->mcast_pbuf_last_seqn;
             logger(LOG_DEBUG, "FCC: Flushed %zu bytes from pending buffer, last_seqn=%u",
