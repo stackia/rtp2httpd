@@ -15,7 +15,7 @@
 
 /* RTP/UDP packet buffers - based on network MTU */
 #ifndef RTP_PACKET_BUFFER_SIZE
-#define RTP_PACKET_BUFFER_SIZE 1500  /* Standard Ethernet MTU */
+#define RTP_PACKET_BUFFER_SIZE 1500 /* Standard Ethernet MTU */
 #endif
 
 /* RTCP buffer size - same as RTP for consistency */

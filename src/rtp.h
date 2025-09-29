@@ -25,6 +25,6 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size);
  * @param not_first Pointer to track if this is not the first packet
  */
 void write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf,
-                                uint16_t *old_seqn, uint16_t *not_first);
+                                 uint16_t *old_seqn, uint16_t *not_first);
 
 #endif /* __RTP_H__ */

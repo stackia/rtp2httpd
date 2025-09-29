@@ -14,17 +14,19 @@
 #define FCC_MIN_BUFFER_PACKETS 10
 
 /* FCC State Machine - Based on Fast Channel Change Protocol */
-typedef enum {
-    FCC_STATE_INIT = 0,           /* Initial state - prepare FCC request or join multicast */
-    FCC_STATE_REQUESTED,          /* FCC request sent, waiting for server response */
-    FCC_STATE_UNICAST_ACTIVE,     /* Receiving FCC unicast stream (fast push at 1.3x speed) */
-    FCC_STATE_MCAST_REQUESTED,    /* Server notified to join multicast, transitioning */
-    FCC_STATE_MCAST_ACTIVE,       /* Fully switched to multicast reception */
-    FCC_STATE_ERROR               /* Error state */
+typedef enum
+{
+    FCC_STATE_INIT = 0,        /* Initial state - prepare FCC request or join multicast */
+    FCC_STATE_REQUESTED,       /* FCC request sent, waiting for server response */
+    FCC_STATE_UNICAST_ACTIVE,  /* Receiving FCC unicast stream (fast push at 1.3x speed) */
+    FCC_STATE_MCAST_REQUESTED, /* Server notified to join multicast, transitioning */
+    FCC_STATE_MCAST_ACTIVE,    /* Fully switched to multicast reception */
+    FCC_STATE_ERROR            /* Error state */
 } fcc_state_t;
 
 /* FCC Session Context - encapsulates all FCC-related state */
-typedef struct {
+typedef struct
+{
     fcc_state_t state;
     int fcc_sock;
     struct sockaddr_in *fcc_server;
@@ -77,8 +79,7 @@ uint8_t *build_fcc_term_pk(struct addrinfo *maddr, uint16_t seqn);
  * @return Number of bytes sent or -1 on error
  */
 ssize_t sendto_triple(int fd, const void *buf, size_t n, int flags,
-                     struct sockaddr_in *addr, socklen_t addr_len);
-
+                      struct sockaddr_in *addr, socklen_t addr_len);
 
 /**
  * NAT-PMP port mapping
@@ -155,7 +156,7 @@ int fcc_initialize_and_request(struct stream_context_s *ctx);
  * @return 0 on success, -1 for fallback to multicast, 1 for state restart
  */
 int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int buf_len,
-                              struct sockaddr_in *peer_addr);
+                               struct sockaddr_in *peer_addr);
 
 /**
  * Stage 3: Handle synchronization notification (FMT 4)
