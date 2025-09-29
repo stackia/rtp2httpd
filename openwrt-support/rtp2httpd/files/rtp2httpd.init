@@ -17,24 +17,34 @@ append_arg() {
 start_instance() {
   local cfg="$1"
   local aux
+  local use_config_file
 
   config_get_bool aux "$cfg" 'disabled' '0'
   [ "$aux" = 1 ] && return 1
 
+  config_get_bool use_config_file "$cfg" 'use_config_file' '0'
+
   procd_open_instance
 
   procd_set_param command /usr/bin/rtp2httpd
-  procd_append_param command "--noconfig"
 
-  append_arg "$cfg" verbose "--verbose"
-  append_arg "$cfg" port "--listen"
-  append_arg "$cfg" maxclients "--maxclients"
-  append_arg "$cfg" hostname "--hostname"
-  append_arg "$cfg" fcc_nat_traversal "--fcc-nat-traversal"
-  append_arg "$cfg" upstream_interface "--upstream-interface"
+  # If use_config_file is enabled, don't use --noconfig and let it read /etc/rtp2httpd.conf
+  if [ "$use_config_file" = "0" ]; then
+    procd_append_param command "--noconfig"
+
+    append_arg "$cfg" verbose "--verbose"
+    append_arg "$cfg" port "--listen"
+    append_arg "$cfg" maxclients "--maxclients"
+    append_arg "$cfg" hostname "--hostname"
+    append_arg "$cfg" fcc_nat_traversal "--fcc-nat-traversal"
+    append_arg "$cfg" upstream_interface "--upstream-interface"
+  fi
 
   config_get_bool aux "$cfg" 'respawn' '0'
   [ "$aux" = 1 ] && procd_set_param respawn
+
+  config_get config_update_time "$cfg" 'config_update_time' '0'
+  [ "$config_update_time" != 0 ] && procd_set_param env CONFIG_UPDATE_TIME=$config_update_time
 
   procd_set_param stdout 1
   procd_set_param stderr 1

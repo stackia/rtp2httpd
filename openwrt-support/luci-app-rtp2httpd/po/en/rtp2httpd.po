@@ -71,3 +71,15 @@ msgstr "NAT punch hole (Low reliability)"
 msgid "rtp2httpd_NAT-PMP"
 msgstr "NAT-PMP (Requires upstream router support)"
 
+msgid "rtp2httpd_Use Config File"
+msgstr "Use Config File"
+
+msgid "rtp2httpd_Use config file instead of individual options"
+msgstr "Use config file instead of individual options"
+
+msgid "rtp2httpd_Config File Content"
+msgstr "Config File Content"
+
+msgid "rtp2httpd_Edit the content of /etc/rtp2httpd.conf"
+msgstr "Edit the content of /etc/rtp2httpd.conf"
+
