@@ -15,6 +15,7 @@
 #include "rtp2httpd.h"
 #include "http.h"
 #include "rtp.h"
+#include "multicast.h"
 
 /*
  * RTSP Client Implementation
@@ -247,6 +248,7 @@ int rtsp_connect(rtsp_session_t *session)
         logger(LOG_ERROR, "RTSP: Failed to create socket: %s", strerror(errno));
         return -1;
     }
+    bind_to_upstream_interface(session->socket);
 
     /* Connect to server */
     memset(&server_addr, 0, sizeof(server_addr));
@@ -730,6 +732,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session)
         logger(LOG_ERROR, "RTSP: Failed to create RTP socket: %s", strerror(errno));
         return -1;
     }
+    bind_to_upstream_interface(session->rtp_socket);
 
     /* Bind RTP socket to even port */
     memset(&local_addr, 0, sizeof(local_addr));
@@ -763,6 +766,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session)
         session->rtp_socket = -1; /* Reset socket to prevent double-close */
         return -1;
     }
+    bind_to_upstream_interface(session->rtcp_socket);
 
     /* Bind RTCP socket to odd port */
     local_addr.sin_port = htons(session->local_rtp_port + 1);
