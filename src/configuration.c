@@ -16,7 +16,7 @@
 #include "rtp2httpd.h"
 #include "configuration.h"
 
-#define MAX_LINE 150
+#define MAX_LINE 1024
 
 /* GLOBAL CONFIGURATION VARIABLES */
 
@@ -108,6 +108,48 @@ void parse_services_sec(char *line)
     j++;
   type = strndupa(line + i, j - i);
 
+  /* Check if this is an RTSP service - different parsing logic */
+  if (strcasecmp("RTSP", type) == 0)
+  {
+    /* For RTSP: SERVICE_NAME RTSP RTSP_URL */
+    i = j;
+    while (isspace(line[i]))
+      i++;
+    /* Rest of the line is the RTSP URL */
+    char *rtsp_url = strdup(line + i);
+    /* Remove trailing whitespace */
+    char *end = rtsp_url + strlen(rtsp_url) - 1;
+    while (end > rtsp_url && isspace(*end))
+      *end-- = '\0';
+
+    if (strlen(rtsp_url) == 0)
+    {
+      logger(LOG_ERROR, "RTSP service %s: missing RTSP URL", servname);
+      free(servname);
+      free(msrc);
+      free(rtsp_url);
+      return;
+    }
+
+    service = malloc(sizeof(struct services_s));
+    memset(service, 0, sizeof(*service));
+    service->service_type = SERVICE_RTSP;
+    service->url = servname;
+    service->rtsp_url = rtsp_url;
+    service->msrc = strdup(msrc);
+    service->next = services;
+    services = service;
+
+    logger(LOG_DEBUG, "RTSP service: %s, URL: %s", servname, rtsp_url);
+
+    /* Free allocated temporary strings */
+    free(msrc);
+    free(msaddr);
+    free(msport);
+    return;
+  }
+
+  /* Parsing logic for MRTP/MUDP services */
   i = j;
   while (isspace(line[i]))
     i++;
@@ -222,10 +264,6 @@ void parse_services_sec(char *line)
   else if (strcasecmp("MUDP", type) == 0)
   {
     service->service_type = SERVICE_MUDP;
-  }
-  else if (strcasecmp("RTSP", type) == 0)
-  {
-    service->service_type = SERVICE_RTSP;
   }
 
   service->url = servname;
@@ -528,6 +566,27 @@ void restore_conf_defaults(void)
     {
       freeaddrinfo(service_tmp->addr);
     }
+    if (service_tmp->msrc_addr != NULL)
+    {
+      freeaddrinfo(service_tmp->msrc_addr);
+    }
+    if (service_tmp->fcc_addr != NULL)
+    {
+      freeaddrinfo(service_tmp->fcc_addr);
+    }
+    if (service_tmp->rtsp_url != NULL)
+    {
+      free(service_tmp->rtsp_url);
+    }
+    if (service_tmp->playseek_param != NULL)
+    {
+      free(service_tmp->playseek_param);
+    }
+    if (service_tmp->msrc != NULL)
+    {
+      free(service_tmp->msrc);
+    }
+    free(service_tmp);
   }
 
   while (bind_addresses != NULL)
@@ -566,7 +625,7 @@ void usage(FILE *f, char *progname)
           "\t-U --noudpxy         Disable UDPxy compatibility\n"
           "\t-m --maxclients <n>  Serve max n requests simultaneously (dfl 5)\n"
           "\t-l --listen [addr:]port  Address/port to bind (default ANY:8080)\n"
-          "\t-c --config <file>   Read this file, instead of\n"
+          "\t-c --config <file>   Read this file for configuration, instead of the default one\n"
           "\t-C --noconfig        Do not read the default config\n"
           "\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole, 2=NAT-PMP (default 0)\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)\n"

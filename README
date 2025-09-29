@@ -197,10 +197,15 @@ upstream-interface = eth3
 
 [services]
 # 预定义服务 (可选)
-# 格式: 服务名 类型 组播地址 端口
-# 类型: MRTP(RTP 流) MUDP(UDP 流)
+# 格式:
+#   RTP/UDP 流: 服务名 MRTP 组播地址 端口
+#   RAW UDP 流: 服务名 MUDP 组播地址 端口
+#   RTSP 流:    服务名 RTSP RTSP_URL
+# 类型: MRTP(RTP 流) MUDP(UDP 流) RTSP(RTSP 流)
 cctv1    MRTP 239.253.64.120 5140
 cctv2    MRTP 239.253.64.121 5140
+rtsp1    RTSP rtsp://192.168.1.100:554/stream1
+rtsp2    RTSP rtsp://10.0.0.50:8554/live/channel1?auth=token123
 ```
 
 ## 🚄 FCC 快速换台配置指南

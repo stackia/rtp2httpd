@@ -38,41 +38,6 @@ int logger(enum loglevel level, const char *format, ...)
     return r;
 }
 
-/* Mock function to create a simple bindaddr for testing */
-struct bindaddr_s *new_empty_bindaddr(void)
-{
-    struct bindaddr_s *ba = malloc(sizeof(struct bindaddr_s));
-    if (ba)
-    {
-        ba->node = NULL;
-        ba->service = strdup("8080"); /* Default test port */
-        ba->next = NULL;
-    }
-    return ba;
-}
-
-/* Mock function to free bindaddr */
-void free_bindaddr(struct bindaddr_s *ba)
-{
-    struct bindaddr_s *current = ba;
-    struct bindaddr_s *next;
-
-    while (current != NULL)
-    {
-        next = current->next;
-        if (current->node)
-        {
-            free(current->node);
-        }
-        if (current->service)
-        {
-            free(current->service);
-        }
-        free(current);
-        current = next;
-    }
-}
-
 #ifdef MOCK_NETWORK_FUNCTIONS
 
 /* Simplified getaddrinfo mock - only handles basic cases needed for testing */
