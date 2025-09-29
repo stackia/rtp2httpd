@@ -7,6 +7,7 @@
 #include <string.h>
 #include <strings.h>
 #include <signal.h>
+#include <netinet/tcp.h>
 
 #include "rtp2httpd.h"
 #include "httpclients.h"
@@ -79,6 +80,13 @@ void client_service(int s)
   struct services_s *service;
 
   signal(SIGPIPE, &sigpipe_handler);
+
+  /* Enable TCP_NODELAY to reduce send latency */
+  int tcp_nodelay_flag = 1;
+  if (setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &tcp_nodelay_flag, sizeof(tcp_nodelay_flag)) < 0)
+  {
+    logger(LOG_ERROR, "Failed to set TCP_NODELAY");
+  }
 
   client = fdopen(s, "r");
   /*read only one line*/
@@ -159,7 +167,7 @@ void client_service(int s)
   if (strcmp(method, "HEAD") == 0)
   {
     if (numfields == 3)
-      send_http_headers(s, STATUS_200, CONTENT_OSTREAM);
+      send_http_headers(s, STATUS_200, CONTENT_MP2T);
     free_service(service);
     exit(RETVAL_CLEAN);
   }
@@ -167,7 +175,7 @@ void client_service(int s)
   method = NULL;
 
   if (numfields == 3)
-    send_http_headers(s, STATUS_200, CONTENT_OSTREAM);
+    send_http_headers(s, STATUS_200, CONTENT_MP2T);
   start_media_stream(s, service);
   /* SHOULD NEVER REACH HERE */
   exit(RETVAL_CLEAN);
