@@ -32,7 +32,8 @@ void setup(void)
     memset(write_buffer, 0, sizeof(write_buffer));
 
     /* Create a socket pair for testing */
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, mock_socket_fd) == -1) {
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, mock_socket_fd) == -1)
+    {
         perror("socketpair");
         exit(1);
     }
@@ -63,8 +64,10 @@ static void capture_write_output(int fd)
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 
     /* Read all available data */
-    while ((bytes_read = read(fd, temp_buffer, sizeof(temp_buffer))) > 0) {
-        if (write_buffer_pos + bytes_read < sizeof(write_buffer)) {
+    while ((bytes_read = read(fd, temp_buffer, sizeof(temp_buffer))) > 0)
+    {
+        if (write_buffer_pos + bytes_read < sizeof(write_buffer))
+        {
             memcpy(write_buffer + write_buffer_pos, temp_buffer, bytes_read);
             write_buffer_pos += bytes_read;
         }
@@ -399,13 +402,13 @@ START_TEST(test_rtsp_playseek_complex)
 
     /* Test various playseek formats */
     const char *playseek_formats[] = {
-        "20250928101100-20250928102200",  /* Range with end */
-        "20250928101100-",                /* Open-ended range */
-        "20250928101100",                 /* Single time */
-        NULL
-    };
+        "20250928101100-20250928102200", /* Range with end */
+        "20250928101100-",               /* Open-ended range */
+        "20250928101100",                /* Single time */
+        NULL};
 
-    for (int i = 0; playseek_formats[i] != NULL; i++) {
+    for (int i = 0; playseek_formats[i] != NULL; i++)
+    {
         rtsp_session_init(&session);
         int result = rtsp_parse_url(&session, rtsp_url, playseek_formats[i]);
 
@@ -472,7 +475,7 @@ START_TEST(test_rtsp_hostname_edge_cases)
 END_TEST
 
 /* Create test suite */
-Suite * rtsp_suite(void)
+Suite *rtsp_suite(void)
 {
     Suite *s;
     TCase *tc_init, *tc_url_parsing, *tc_state_management, *tc_transport;
