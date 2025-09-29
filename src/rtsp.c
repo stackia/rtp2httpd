@@ -559,6 +559,7 @@ void rtsp_session_cleanup(rtsp_session_t *session)
         snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\n", session->session_id);
         rtsp_send_request(session, RTSP_METHOD_TEARDOWN, extra_headers);
         /* Don't wait for response during cleanup */
+        logger(LOG_DEBUG, "RTSP: Sent TEARDOWN request");
     }
 
     /* Close sockets */
@@ -566,24 +567,25 @@ void rtsp_session_cleanup(rtsp_session_t *session)
     {
         close(session->socket);
         session->socket = -1;
+        logger(LOG_DEBUG, "RTSP: Main socket closed");
     }
     if (session->rtp_socket >= 0)
     {
         close(session->rtp_socket);
         session->rtp_socket = -1;
+        logger(LOG_DEBUG, "RTSP: RTP socket closed");
     }
     if (session->rtcp_socket >= 0)
     {
         close(session->rtcp_socket);
         session->rtcp_socket = -1;
+        logger(LOG_DEBUG, "RTSP: RTCP socket closed");
     }
 
     /* Reset TCP buffer position */
     session->tcp_buffer_pos = 0;
 
     session->state = RTSP_STATE_INIT;
-    logger(LOG_DEBUG, "RTSP: Session cleaned up (%s transport mode)",
-           session->transport_mode == RTSP_TRANSPORT_TCP ? "TCP" : "UDP");
 }
 
 /* Helper functions */
