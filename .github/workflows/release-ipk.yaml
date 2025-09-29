@@ -64,6 +64,7 @@ jobs:
           FEED_DIR: ${{ github.workspace }}/openwrt-support
           NO_SHFMT_CHECK: true
           PACKAGES: ${{ matrix.arch == 'x86_64' && 'luci-app-rtp2httpd' || 'rtp2httpd' }}
+          V: vs
 
       - name: Upload to release assets
         run: gh release upload --repo ${{ github.repository }} ${{ github.event.release.tag_name }} bin/packages/${{ matrix.arch }}/action/*.ipk
