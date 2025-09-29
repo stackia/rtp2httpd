@@ -14,9 +14,6 @@
 #include "http.h"
 #include "rtp2httpd.h"
 
-/* Function declarations */
-static struct services_s *parse_rtsp_url(const char *http_url);
-
 static const char *response_codes[] = {
     "HTTP/1.1 200 OK\r\n",                  /* 0 */
     "HTTP/1.1 404 Not Found\r\n",           /* 1 */
@@ -668,7 +665,7 @@ struct services_s *parse_udpxy_url(char *url)
  * Parse RTSP URL from HTTP request
  * Format: /rtsp/server:port/path?query&playseek=...
  */
-static struct services_s *parse_rtsp_url(const char *http_url)
+struct services_s *parse_rtsp_url(const char *http_url)
 {
     struct services_s *result;
     char working_url[HTTP_URL_BUFFER_SIZE];

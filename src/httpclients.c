@@ -124,7 +124,8 @@ void client_service(int s)
     exit(RETVAL_UNKNOWN_METHOD);
   }
 
-  urlfrom = rindex(url, '/');
+  urlfrom = index(url, '/');
+
   if (urlfrom == NULL || (conf_hostname && strcasecmp(conf_hostname, hostname) != 0))
   {
     if (numfields == 3)
@@ -133,13 +134,82 @@ void client_service(int s)
     exit(RETVAL_BAD_REQUEST);
   }
 
+  char *service_path = urlfrom + 1; // Skip the leading '/'
+  char *query_start = strchr(service_path, '?');
+  size_t path_len;
+
+  if (query_start)
+  {
+    path_len = query_start - service_path;
+  }
+  else
+  {
+    path_len = strlen(service_path);
+  }
+
+  // Remove trailing slash if present
+  if (path_len > 0 && service_path[path_len - 1] == '/')
+  {
+    path_len--;
+  }
+
   for (service = services; service; service = service->next)
   {
-    if (strcmp(urlfrom + 1, service->url) == 0)
+    if (strncmp(service_path, service->url, path_len) == 0 &&
+        strlen(service->url) == path_len)
       break;
   }
 
-  if (service == NULL && conf_udpxy)
+  if (service && service->service_type == SERVICE_RTSP)
+  {
+    // For RTSP services, append query parameters to rtsp_url and reparse
+    if (query_start)
+    {
+      char *rtsp_url_with_params;
+      int rtsp_url_len = strlen(service->rtsp_url);
+      char *query_params = query_start + 1; // Skip the '?' character
+      int query_len = strlen(query_params);
+      char connector = '?';
+
+      // Check if rtsp_url already contains query parameters
+      if (strchr(service->rtsp_url, '?') != NULL)
+      {
+        connector = '&';
+      }
+
+      // Allocate memory for the combined URL (rtsp_url + connector + query_params)
+      rtsp_url_with_params = malloc(rtsp_url_len + 1 + query_len + 1);
+      strcpy(rtsp_url_with_params, service->rtsp_url);
+      rtsp_url_with_params[rtsp_url_len] = connector;
+      strcpy(rtsp_url_with_params + rtsp_url_len + 1, query_params);
+
+      // Convert rtsp://server:port/path?query format to /rtsp/server:port/path?query format
+      char *http_format_url = NULL;
+      if (strncmp(rtsp_url_with_params, "rtsp://", 7) == 0)
+      {
+        int new_url_len = strlen(rtsp_url_with_params) - 7 + 6 + 1; // -7 for "rtsp://", +6 for "/rtsp/", +1 for null terminator
+        http_format_url = malloc(new_url_len);
+        strcpy(http_format_url, "/rtsp/");
+        strcat(http_format_url, rtsp_url_with_params + 7);
+      }
+      else
+      {
+        // If it doesn't start with rtsp://, assume it's already in the right format
+        http_format_url = strdup(rtsp_url_with_params);
+      }
+
+      // Parse the new URL to get updated service with playseek params
+      struct services_s *new_service = parse_rtsp_url(http_format_url);
+      if (new_service)
+      {
+        service = new_service;
+      }
+
+      free(rtsp_url_with_params);
+      free(http_format_url);
+    }
+  }
+  else if (service == NULL && conf_udpxy)
   {
     service = parse_udpxy_url(url);
   }
