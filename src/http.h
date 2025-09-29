@@ -23,7 +23,8 @@ typedef enum
   CONTENT_HTML = 1,
   CONTENT_HTMLUTF = 2,
   CONTENT_MPEGV = 3,
-  CONTENT_MPEGA = 4
+  CONTENT_MPEGA = 4,
+  CONTENT_MP2T = 5
 } content_type_t;
 
 /**

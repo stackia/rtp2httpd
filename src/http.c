@@ -31,6 +31,7 @@ static const char *content_types[] = {
     "Content-Type: text/html; charset=utf-8\r\n", /* 2 */
     "Content-Type: video/mpeg\r\n",               /* 3 */
     "Content-Type: audio/mpeg\r\n",               /* 4 */
+    "Content-Type: video/mp2t\r\n"                /* 5 */
 };
 
 static const char static_headers[] =
