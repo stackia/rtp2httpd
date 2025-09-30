@@ -146,7 +146,7 @@ PKG_CHECK_MODULES([CHECK], [check >= 0.9.4],
 AM_CONDITIONAL([HAVE_CHECK], [test "x$have_check" = "xyes"])
 
 # Checks for header files.
-AC_CHECK_HEADERS([arpa/inet.h ctype.h errno.h fcntl.h getopt.h netdb.h net/if.h netinet/in.h netinet/tcp.h signal.h stdarg.h stdint.h stdlib.h string.h strings.h sys/select.h sys/socket.h sys/time.h sys/types.h sys/wait.h time.h unistd.h])
+AC_CHECK_HEADERS([arpa/inet.h ctype.h errno.h fcntl.h getopt.h netdb.h net/if.h netinet/in.h netinet/tcp.h signal.h stdarg.h stdint.h stdlib.h string.h strings.h sys/epoll.h sys/socket.h sys/time.h sys/types.h sys/wait.h time.h unistd.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_INLINE
@@ -157,7 +157,7 @@ AC_TYPE_UINT8_T
 
 # Checks for library functions.
 AC_FUNC_FORK
-AC_CHECK_FUNCS([getaddrinfo getnameinfo getopt_long memmove memset select socket strcasecmp strdup strerror strndup])
+AC_CHECK_FUNCS([epoll_create1 epoll_ctl epoll_wait getaddrinfo getnameinfo getopt_long memmove memset socket strcasecmp strdup strerror strndup])
 
 AC_CONFIG_FILES([Makefile
                  src/Makefile

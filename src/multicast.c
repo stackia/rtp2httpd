@@ -6,6 +6,7 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/socket.h>
+#include <sys/epoll.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <net/if.h>
@@ -23,7 +24,7 @@ void bind_to_upstream_interface(int sock)
   }
 }
 
-int join_mcast_group(struct services_s *service)
+int join_mcast_group(struct services_s *service, int epoll_fd)
 {
   struct group_req gr;
   struct group_source_req gsr;
@@ -92,6 +93,18 @@ int join_mcast_group(struct services_s *service)
            strerror(errno));
     exit(RETVAL_RTP_FAILED);
   }
+
+  /* Register socket with epoll immediately after creation */
+  struct epoll_event ev;
+  ev.events = EPOLLIN; /* Level-triggered mode for read events */
+  ev.data.fd = sock;
+  if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock, &ev) < 0)
+  {
+    logger(LOG_ERROR, "Multicast: Failed to add socket to epoll: %s", strerror(errno));
+    close(sock);
+    exit(RETVAL_SOCK_READ_FAILED);
+  }
+  logger(LOG_DEBUG, "Multicast: Socket registered with epoll");
 
   return sock;
 }

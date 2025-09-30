@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/epoll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -47,6 +48,7 @@ void rtsp_session_init(rtsp_session_t *session)
     memset(session, 0, sizeof(rtsp_session_t));
     session->state = RTSP_STATE_INIT;
     session->socket = -1;
+    session->epoll_fd = -1;
     session->rtp_socket = -1;
     session->rtcp_socket = -1;
     session->cseq = 1;
@@ -260,6 +262,22 @@ int rtsp_connect(rtsp_session_t *session)
         close(session->socket);
         session->socket = -1;
         return -1;
+    }
+
+    /* Register socket with epoll immediately after creation (if epoll_fd provided) */
+    if (session->epoll_fd >= 0)
+    {
+        struct epoll_event ev;
+        ev.events = EPOLLIN; /* Level-triggered mode for read events */
+        ev.data.fd = session->socket;
+        if (epoll_ctl(session->epoll_fd, EPOLL_CTL_ADD, session->socket, &ev) < 0)
+        {
+            logger(LOG_ERROR, "RTSP: Failed to add socket to epoll: %s", strerror(errno));
+            close(session->socket);
+            session->socket = -1;
+            return -1;
+        }
+        logger(LOG_DEBUG, "RTSP: Socket registered with epoll");
     }
 
     session->state = RTSP_STATE_CONNECTED;
@@ -754,6 +772,22 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session)
         return -1;
     }
 
+    /* Register RTP socket with epoll immediately after creation (if epoll_fd provided) */
+    if (session->epoll_fd >= 0)
+    {
+        struct epoll_event ev;
+        ev.events = EPOLLIN; /* Level-triggered mode for read events */
+        ev.data.fd = session->rtp_socket;
+        if (epoll_ctl(session->epoll_fd, EPOLL_CTL_ADD, session->rtp_socket, &ev) < 0)
+        {
+            logger(LOG_ERROR, "RTSP: Failed to add RTP socket to epoll: %s", strerror(errno));
+            close(session->rtp_socket);
+            session->rtp_socket = -1;
+            return -1;
+        }
+        logger(LOG_DEBUG, "RTSP: RTP socket registered with epoll");
+    }
+
     /* Create RTCP socket */
     session->rtcp_socket = socket(AF_INET, SOCK_DGRAM, 0);
     if (session->rtcp_socket < 0)
@@ -775,6 +809,24 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session)
         session->rtp_socket = -1; /* Reset sockets to prevent double-close */
         session->rtcp_socket = -1;
         return -1;
+    }
+
+    /* Register RTCP socket with epoll immediately after creation (if epoll_fd provided) */
+    if (session->epoll_fd >= 0)
+    {
+        struct epoll_event ev;
+        ev.events = EPOLLIN; /* Level-triggered mode for read events */
+        ev.data.fd = session->rtcp_socket;
+        if (epoll_ctl(session->epoll_fd, EPOLL_CTL_ADD, session->rtcp_socket, &ev) < 0)
+        {
+            logger(LOG_ERROR, "RTSP: Failed to add RTCP socket to epoll: %s", strerror(errno));
+            close(session->rtp_socket);
+            close(session->rtcp_socket);
+            session->rtp_socket = -1;
+            session->rtcp_socket = -1;
+            return -1;
+        }
+        logger(LOG_DEBUG, "RTSP: RTCP socket registered with epoll");
     }
 
     session->local_rtcp_port = session->local_rtp_port + 1;
@@ -932,7 +984,7 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location)
         return -1;
     }
 
-    /* Connect to new server */
+    /* Connect to new server (socket will be registered with epoll using session->epoll_fd) */
     if (rtsp_connect(session) < 0)
     {
         logger(LOG_ERROR, "RTSP: Failed to connect to redirected server");
