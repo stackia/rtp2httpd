@@ -25,6 +25,9 @@ define Package/rtp2httpd/description
 	incoming RTP data to HTTP stream.
 endef
 
+CONFIGURE_ARGS += \
+	--enable-optimization=-O3
+
 define Package/rtp2httpd/conffiles
 /etc/config/rtp2httpd
 endef
