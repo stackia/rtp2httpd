@@ -465,7 +465,7 @@ int fcc_handle_unicast_media(struct stream_context_s *ctx, uint8_t *buf, int buf
     write_rtp_payload_to_client(ctx->client_fd, buf_len, buf, &fcc->current_seqn, &fcc->not_first_packet);
 
     /* Check if we should terminate FCC based on sequence number */
-    if (fcc->fcc_term_sent && fcc->current_seqn >= fcc->fcc_term_seqn - 1)
+    if (fcc->fcc_term_sent && fcc->current_seqn >= fcc->fcc_term_seqn - 1 && fcc->state != FCC_STATE_MCAST_ACTIVE)
     {
         logger(LOG_DEBUG, "FCC: Reached termination sequence, switching to multicast");
         fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Reached termination sequence");

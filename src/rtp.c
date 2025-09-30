@@ -11,29 +11,47 @@
 int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size)
 {
   int payloadstart, payloadlength;
+  uint8_t flags;
 
-  if (recv_len < 12 || (buf[0] & 0xC0) != 0x80)
+  /* Check minimum packet size and RTP version (v2 = 0x80) */
+  if (unlikely(recv_len < 12) || unlikely((buf[0] & 0xC0) != 0x80))
   {
     /*malformed RTP/UDP/IP packet*/
     logger(LOG_DEBUG, "Malformed RTP packet received");
     return -1;
   }
 
-  payloadstart = 12;                   /* basic RTP header length */
-  payloadstart += (buf[0] & 0x0F) * 4; /*CRSC headers*/
-  if (buf[0] & 0x10)
+  /* Cache first byte to reduce memory access */
+  flags = buf[0];
+
+  payloadstart = 12;                  /* basic RTP header length */
+  payloadstart += (flags & 0x0F) * 4; /*CSRC headers*/
+
+  /* Extension header is uncommon in most RTP streams */
+  if (unlikely(flags & 0x10))
   { /*Extension header*/
+    /* Validate extension header doesn't exceed packet bounds */
+    if (unlikely(payloadstart + 4 > recv_len))
+    {
+      logger(LOG_DEBUG, "Malformed RTP packet: extension header truncated");
+      return -1;
+    }
     payloadstart += 4 + 4 * ntohs(*((uint16_t *)(buf + payloadstart + 2)));
   }
+
   payloadlength = recv_len - payloadstart;
-  if (buf[0] & 0x20)
+
+  /* Padding is uncommon in most RTP streams */
+  if (unlikely(flags & 0x20))
   { /*Padding*/
-    payloadlength -= buf[recv_len];
+    payloadlength -= buf[recv_len - 1];
     /*last octet indicate padding length*/
   }
-  if (payloadlength < 0)
+
+  /* Validate final payload bounds */
+  if (unlikely(payloadlength <= 0) || unlikely(payloadstart + payloadlength > recv_len))
   {
-    logger(LOG_DEBUG, "Malformed RTP packet received");
+    logger(LOG_DEBUG, "Malformed RTP packet: invalid payload length");
     return -1;
   }
 
@@ -48,22 +66,32 @@ void write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf, uint16_
   uint8_t *payload;
   uint16_t seqn;
 
-  get_rtp_payload(buf, recv_len, &payload, &payloadlength);
+  /* Extract payload - most packets are well-formed */
+  if (unlikely(get_rtp_payload(buf, recv_len, &payload, &payloadlength) != 0))
+  {
+    return; /* Malformed packet, already logged */
+  }
 
+  /* Read sequence number */
   seqn = ntohs(*(uint16_t *)(buf + 2));
-  if (*not_first && seqn == *old_seqn)
+
+  /* Duplicate detection - duplicates are rare */
+  if (unlikely(*not_first && seqn == *old_seqn))
   {
     logger(LOG_DEBUG, "Duplicated RTP packet "
                       "received (seqn %d)",
            seqn);
     return;
   }
-  if (*not_first && (seqn != ((*old_seqn + 1) & 0xFFFF)))
+
+  /* Out-of-order detection - packets are usually in order */
+  if (unlikely(*not_first && (seqn != ((*old_seqn + 1) & 0xFFFF))))
   {
     logger(LOG_DEBUG, "Congestion - expected %d, "
                       "received %d",
            (*old_seqn + 1) & 0xFFFF, seqn);
   }
+
   *old_seqn = seqn;
   *not_first = 1;
 
