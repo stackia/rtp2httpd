@@ -274,3 +274,11 @@ void setup_mock_rtsp_error_response(int error_code, const char *error_message)
     snprintf(status_line, sizeof(status_line), "RTSP/1.0 %d %s", error_code, error_message);
     setup_mock_rtsp_response(status_line, "CSeq: 1", NULL);
 }
+
+/* Mock bind_to_upstream_interface function */
+int bind_to_upstream_interface(int sockfd)
+{
+    (void)sockfd;
+    /* Mock implementation - just return success */
+    return 0;
+}

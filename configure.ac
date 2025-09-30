@@ -11,23 +11,61 @@ AM_INIT_AUTOMAKE([subdir-objects parallel-tests color-tests foreign -Wall -Werro
 AC_PROG_CC
 AC_PROG_INSTALL
 
+# Enable system extensions
+AC_USE_SYSTEM_EXTENSIONS
+
 # Check for compiler warning flags
 if test "x$GCC" = "xyes"; then
+    # Basic warning flags (no performance impact)
     WARN_CFLAGS="-std=c99 -Wall -Wextra -Wno-unused-parameter"
     WARN_CFLAGS="$WARN_CFLAGS -Wformat=2 -Wformat-security"
     WARN_CFLAGS="$WARN_CFLAGS -Wstrict-prototypes -Wmissing-prototypes"
     WARN_CFLAGS="$WARN_CFLAGS -Wold-style-definition -Wpointer-arith"
     WARN_CFLAGS="$WARN_CFLAGS -Wcast-align -Wcast-qual -Wshadow"
     WARN_CFLAGS="$WARN_CFLAGS -Wwrite-strings -Wredundant-decls"
+
+    # Additional useful warnings for embedded systems
+    WARN_CFLAGS="$WARN_CFLAGS -Wnull-dereference"
+    WARN_CFLAGS="$WARN_CFLAGS -Wundef -Wvla"
+
+    # GCC-specific warnings (check GCC version >= 6.0)
+    AC_MSG_CHECKING([for GCC version >= 6.0])
+    GCC_VERSION=$(${CC} -dumpversion | cut -d. -f1)
+    if test "${GCC_VERSION}" -ge 6 2>/dev/null; then
+        AC_MSG_RESULT([yes (${GCC_VERSION})])
+        WARN_CFLAGS="$WARN_CFLAGS -Wduplicated-cond"
+        WARN_CFLAGS="$WARN_CFLAGS -Wlogical-op -Wjump-misses-init"
+
+        # GCC 7+ specific warnings
+        if test "${GCC_VERSION}" -ge 7 2>/dev/null; then
+            WARN_CFLAGS="$WARN_CFLAGS -Wduplicated-branches"
+        fi
+    else
+        AC_MSG_RESULT([no (${GCC_VERSION})])
+    fi
 fi
 AC_SUBST([WARN_CFLAGS])
 
-# Security and hardening flags
+# Security and hardening flags (optimized for embedded systems)
 if test "x$GCC" = "xyes"; then
+    # Essential security flags with minimal performance impact
+    # _FORTIFY_SOURCE=2: Buffer overflow detection (~1-2% overhead, essential for network services)
+    # fstack-protector-strong: Stack canary protection (~1-3% overhead, prevents buffer overflows)
     SECURITY_CFLAGS="-D_FORTIFY_SOURCE=2 -fstack-protector-strong"
+
+    # Explicitly disable PIE for embedded systems (5-10% performance overhead)
+    # Modern GCC enables PIE by default, but it's less useful on embedded systems
+    SECURITY_CFLAGS="$SECURITY_CFLAGS -fno-PIE"
+
     AC_SUBST([SECURITY_CFLAGS])
+
+    # Linker hardening flags (minimal performance impact)
+    # -Wl,-z,relro: Read-only relocations (no runtime overhead, hardens GOT)
+    # -no-pie: Disable position independent executable (better performance on embedded)
+    # Note: Removed -Wl,-z,now (increases startup time, lazy binding acceptable for embedded)
+    SECURITY_LDFLAGS="-no-pie -Wl,-z,relro"
+    AC_SUBST([SECURITY_LDFLAGS])
 fi
-AC_USE_SYSTEM_EXTENSIONS
 
 # Checks for libraries.
 # Check for Check framework for unit testing

@@ -91,13 +91,15 @@ typedef struct
 void rtsp_session_init(rtsp_session_t *session);
 
 /**
- * Parse RTSP URL and extract server info, path, and playseek parameter
- * @param session RTSP session
- * @param rtsp_url Full RTSP URL from HTTP request
+ * Parse RTSP server URL and initialize session (RTSP protocol layer)
+ * Parses RTSP URL components (host, port, path) and converts playseek to Range header format
+ * @param session RTSP session to populate
+ * @param rtsp_url Full RTSP URL (rtsp://host:port/path)
  * @param playseek_param Optional playseek parameter for time range
+ * @param user_agent Optional User-Agent header for timezone detection
  * @return 0 on success, -1 on error
  */
-int rtsp_parse_url(rtsp_session_t *session, const char *rtsp_url, const char *playseek_param);
+int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const char *playseek_param, const char *user_agent);
 
 /**
  * Connect to RTSP server
