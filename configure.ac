@@ -8,6 +8,8 @@ AC_CONFIG_HEADERS([src/config.h])
 AM_INIT_AUTOMAKE([subdir-objects parallel-tests color-tests foreign -Wall -Werror])
 
 # Checks for programs.
+# Prevent AC_PROG_CC from adding default -g -O2 flags
+: ${CFLAGS=""}
 AC_PROG_CC
 AC_PROG_INSTALL
 
@@ -46,6 +48,68 @@ if test "x$GCC" = "xyes"; then
 fi
 AC_SUBST([WARN_CFLAGS])
 
+# Performance optimization flags
+AC_ARG_ENABLE([optimization],
+    [AS_HELP_STRING([--enable-optimization@<:@=LEVEL@:>@],
+        [enable compiler optimizations (default: -O2, options: -O0, -O1, -O2, -O3, -Os)])],
+    [opt_level=$enableval],
+    [opt_level="-O2"])
+
+if test "x$GCC" = "xyes"; then
+    # Set optimization level
+    case "$opt_level" in
+        no|-O0)
+            OPT_CFLAGS="-O0"
+            AC_MSG_NOTICE([Optimization disabled (-O0)])
+            ;;
+        -O1)
+            OPT_CFLAGS="-O1"
+            AC_MSG_NOTICE([Using optimization level -O1])
+            ;;
+        yes|-O2)
+            OPT_CFLAGS="-O2"
+            AC_MSG_NOTICE([Using optimization level -O2 (default)])
+            ;;
+        -O3)
+            OPT_CFLAGS="-O3"
+            AC_MSG_NOTICE([Using optimization level -O3 (maximum speed)])
+            ;;
+        -Os)
+            OPT_CFLAGS="-Os"
+            AC_MSG_NOTICE([Using optimization level -Os (size optimization)])
+            ;;
+        *)
+            OPT_CFLAGS="$opt_level"
+            AC_MSG_NOTICE([Using custom optimization: $opt_level])
+            ;;
+    esac
+
+    # Additional performance optimizations for -O3
+    if test "x$opt_level" = "x-O3"; then
+        # Link-Time Optimization (LTO) - enables cross-file optimizations
+        OPT_CFLAGS="$OPT_CFLAGS -flto"
+        OPT_LDFLAGS="-flto"
+
+        # Function inlining optimizations
+        OPT_CFLAGS="$OPT_CFLAGS -finline-functions -finline-limit=600"
+
+        # Loop optimizations
+        OPT_CFLAGS="$OPT_CFLAGS -funroll-loops -ftree-vectorize"
+
+        # Fast math (safe for media streaming, not for precise calculations)
+        # Benefit: 5-10% improvement in floating point operations
+        OPT_CFLAGS="$OPT_CFLAGS -ffast-math"
+
+        # Omit frame pointer for better register usage (x86/x64)
+        OPT_CFLAGS="$OPT_CFLAGS -fomit-frame-pointer"
+
+        AC_MSG_NOTICE([Enabled advanced optimizations: LTO, loop unrolling, vectorization])
+    fi
+
+    AC_SUBST([OPT_CFLAGS])
+    AC_SUBST([OPT_LDFLAGS])
+fi
+
 # Security and hardening flags (optimized for embedded systems)
 if test "x$GCC" = "xyes"; then
     # Essential security flags with minimal performance impact
@@ -64,6 +128,12 @@ if test "x$GCC" = "xyes"; then
     # -no-pie: Disable position independent executable (better performance on embedded)
     # Note: Removed -Wl,-z,now (increases startup time, lazy binding acceptable for embedded)
     SECURITY_LDFLAGS="-no-pie -Wl,-z,relro"
+
+    # Add optimization flags to linker if LTO is enabled
+    if test "x$OPT_LDFLAGS" != "x"; then
+        SECURITY_LDFLAGS="$SECURITY_LDFLAGS $OPT_LDFLAGS"
+    fi
+
     AC_SUBST([SECURITY_LDFLAGS])
 fi
 

@@ -75,7 +75,7 @@ docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest \
 sudo apt-get install build-essential autoconf automake
 
 # 编译安装
-./configure
+./configure --enable-optimization=-O3
 make
 sudo make install
 ```
