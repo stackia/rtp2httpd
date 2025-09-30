@@ -21,15 +21,15 @@ TMP_DIR="/tmp/rtp2httpd_install"
 
 # 打印信息函数
 print_info() {
-    printf "${GREEN}[INFO]${NC} %s\n" "$1"
+    printf "${GREEN}[INFO]${NC} %s\n" "$1" >&2
 }
 
 print_warn() {
-    printf "${YELLOW}[WARN]${NC} %s\n" "$1"
+    printf "${YELLOW}[WARN]${NC} %s\n" "$1" >&2
 }
 
 print_error() {
-    printf "${RED}[ERROR]${NC} %s\n" "$1"
+    printf "${RED}[ERROR]${NC} %s\n" "$1" >&2
 }
 
 # 检查命令是否存在
