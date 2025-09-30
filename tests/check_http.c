@@ -525,6 +525,157 @@ START_TEST(test_parse_udpxy_url_rtsp_complex_real_world)
 }
 END_TEST
 
+/* Tests for multiple playseek parameters */
+START_TEST(test_parse_udpxy_url_rtsp_multiple_playseek_first_valid)
+{
+    /* First playseek is valid, should use it */
+    char test_url[] = "/rtsp/10.255.75.73:554/stream?playseek=20250929110000-20250929120000&playseek=invalid&AuthInfo=test";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    /* Should use the first valid playseek */
+    ck_assert_str_eq(result->playseek_param, "20250929110000-20250929120000");
+    /* All playseek parameters should be removed from URL */
+    ck_assert_ptr_eq(strstr(result->rtsp_url, "playseek="), NULL);
+    /* Other parameters should remain */
+    ck_assert_ptr_ne(strstr(result->rtsp_url, "AuthInfo=test"), NULL);
+
+    free_service(result);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_multiple_playseek_second_valid)
+{
+    /* First playseek is invalid, second is valid, should use second */
+    char test_url[] = "/rtsp/10.255.75.73:554/stream?playseek=invalid-invalid&playseek=20250929110000-20250929120000&AuthInfo=test";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    /* Should use the second (first valid) playseek */
+    ck_assert_str_eq(result->playseek_param, "20250929110000-20250929120000");
+    /* All playseek parameters should be removed from URL */
+    ck_assert_ptr_eq(strstr(result->rtsp_url, "playseek="), NULL);
+    /* Other parameters should remain */
+    ck_assert_ptr_ne(strstr(result->rtsp_url, "AuthInfo=test"), NULL);
+
+    free_service(result);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_multiple_playseek_all_invalid)
+{
+    /* All playseek parameters are invalid, should use first as fallback */
+    char test_url[] = "/rtsp/10.255.75.73:554/stream?playseek=abc&playseek=xyz&playseek=def&AuthInfo=test";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    /* Should use the first playseek as fallback */
+    ck_assert_str_eq(result->playseek_param, "abc");
+    /* All playseek parameters should be removed from URL */
+    ck_assert_ptr_eq(strstr(result->rtsp_url, "playseek="), NULL);
+    /* Other parameters should remain */
+    ck_assert_ptr_ne(strstr(result->rtsp_url, "AuthInfo=test"), NULL);
+
+    free_service(result);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_multiple_playseek_unix_timestamp)
+{
+    /* Test with Unix timestamp format */
+    char test_url[] = "/rtsp/10.255.75.73:554/stream?playseek=invalid&playseek=1704096000-1704099600&AuthInfo=test";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    /* Should use the valid Unix timestamp playseek */
+    ck_assert_str_eq(result->playseek_param, "1704096000-1704099600");
+    /* All playseek parameters should be removed from URL */
+    ck_assert_ptr_eq(strstr(result->rtsp_url, "playseek="), NULL);
+
+    free_service(result);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_multiple_playseek_mixed_positions)
+{
+    /* Test with playseek parameters at different positions */
+    char test_url[] = "/rtsp/10.255.75.73:554/stream?AuthInfo=test&playseek=invalid&usercode=123&playseek=20250929110000-20250929120000&other=param";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    /* Should use the second (first valid) playseek */
+    ck_assert_str_eq(result->playseek_param, "20250929110000-20250929120000");
+    /* All playseek parameters should be removed from URL */
+    ck_assert_ptr_eq(strstr(result->rtsp_url, "playseek="), NULL);
+    /* Other parameters should remain in correct order */
+    ck_assert_ptr_ne(strstr(result->rtsp_url, "AuthInfo=test"), NULL);
+    ck_assert_ptr_ne(strstr(result->rtsp_url, "usercode=123"), NULL);
+    ck_assert_ptr_ne(strstr(result->rtsp_url, "other=param"), NULL);
+
+    free_service(result);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_multiple_playseek_open_ended)
+{
+    /* Test with open-ended time range (no end time) */
+    char test_url[] = "/rtsp/10.255.75.73:554/stream?playseek=invalid&playseek=20250929110000-&AuthInfo=test";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    /* Should use the valid open-ended playseek */
+    ck_assert_str_eq(result->playseek_param, "20250929110000-");
+    /* All playseek parameters should be removed from URL */
+    ck_assert_ptr_eq(strstr(result->rtsp_url, "playseek="), NULL);
+
+    free_service(result);
+}
+END_TEST
+
+START_TEST(test_parse_udpxy_url_rtsp_multiple_playseek_url_encoded)
+{
+    /* Test with URL-encoded playseek parameters */
+    char test_url[] = "/rtsp/10.255.75.73:554/stream?playseek=invalid%2Dinvalid&playseek=20250929110000%2D20250929120000&AuthInfo=test";
+    struct services_s *result = parse_udpxy_url(test_url);
+
+    ck_assert_ptr_ne(result, NULL);
+    ck_assert_int_eq(result->service_type, SERVICE_RTSP);
+    ck_assert_ptr_ne(result->rtsp_url, NULL);
+    ck_assert_ptr_ne(result->playseek_param, NULL);
+
+    /* Should use the second (first valid) playseek after URL decoding */
+    ck_assert_str_eq(result->playseek_param, "20250929110000-20250929120000");
+    /* All playseek parameters should be removed from URL */
+    ck_assert_ptr_eq(strstr(result->rtsp_url, "playseek="), NULL);
+
+    free_service(result);
+}
+END_TEST
+
 START_TEST(test_parse_udpxy_url_rtsp_no_path)
 {
     char test_url[] = "/rtsp/10.255.75.73:554";
@@ -717,18 +868,28 @@ START_TEST(test_parse_udpxy_url_unresolvable_fcc)
 }
 END_TEST
 
-START_TEST(test_free_service_static_service)
+START_TEST(test_free_service_udpxy_service)
 {
     struct services_s *service = parse_udpxy_url("/rtp/224.1.1.1:5004");
     ck_assert_ptr_ne(service, NULL);
     ck_assert_ptr_ne(service->msrc, NULL);
+    ck_assert_ptr_ne(service->addr, NULL);
 
+    /* Store pointer for comparison */
+    struct services_s *first_service = service;
+
+    /* Free the service - this should free all allocated memory */
     free_service(service);
 
-    ck_assert_ptr_eq(service->msrc, NULL);
-
+    /* Parse again - should return a different pointer (new allocation) */
     struct services_s *service_again = parse_udpxy_url("/rtp/224.1.1.1:5004");
-    ck_assert_ptr_eq(service_again, service);
+    ck_assert_ptr_ne(service_again, NULL);
+    ck_assert_ptr_ne(service_again, first_service); /* Different pointer now */
+    ck_assert_ptr_ne(service_again->msrc, NULL);
+    ck_assert_ptr_ne(service_again->addr, NULL);
+
+    /* Clean up */
+    free_service(service_again);
 }
 END_TEST
 
@@ -843,7 +1004,7 @@ Suite *http_suite(void)
 
     /* Memory management tests */
     tc_memory_management = tcase_create("Memory_Management");
-    tcase_add_test(tc_memory_management, test_free_service_static_service);
+    tcase_add_test(tc_memory_management, test_free_service_udpxy_service);
     tcase_add_test(tc_memory_management, test_free_service_rtsp_service);
     suite_add_tcase(s, tc_memory_management);
 
@@ -863,6 +1024,13 @@ Suite *http_suite(void)
     tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_playseek_only);
     tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_playseek_url_encoded);
     tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_complex_real_world);
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_multiple_playseek_first_valid);
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_multiple_playseek_second_valid);
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_multiple_playseek_all_invalid);
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_multiple_playseek_unix_timestamp);
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_multiple_playseek_mixed_positions);
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_multiple_playseek_open_ended);
+    tcase_add_test(tc_rtsp_parsing_playseek, test_parse_udpxy_url_rtsp_multiple_playseek_url_encoded);
     suite_add_tcase(s, tc_rtsp_parsing_playseek);
 
     /* RTSP Edge cases and error handling tests */

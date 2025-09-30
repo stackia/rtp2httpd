@@ -25,6 +25,7 @@ int conf_daemonise;
 int conf_udpxy;
 int conf_maxclients;
 char *conf_hostname = NULL;
+char *conf_clock_format = NULL;
 struct ifreq conf_upstream_interface;
 enum fcc_nat_traversal conf_fcc_nat_traversal;
 
@@ -37,6 +38,7 @@ int cmd_maxclients_set;
 int cmd_bind_set;
 int cmd_fcc_nat_traversal_set;
 int cmd_hostname_set;
+int cmd_clock_format_set;
 int cmd_upstream_interface_set;
 
 enum section_e
@@ -388,6 +390,18 @@ void parse_global_sec(char *line)
     }
     return;
   }
+  if (strcasecmp("clock-format", param) == 0)
+  {
+    if (!cmd_clock_format_set)
+    {
+      conf_clock_format = strdup(value);
+    }
+    else
+    {
+      logger(LOG_INFO, "Warning: Config file value \"clock-format\" ignored. It's already set on CmdLine.");
+    }
+    return;
+  }
   if (strcasecmp("upstream-interface", param) == 0)
   {
     if (!cmd_upstream_interface_set)
@@ -548,6 +562,15 @@ void restore_conf_defaults(void)
   }
   cmd_hostname_set = 0;
 
+  if (conf_clock_format != NULL)
+  {
+    free(conf_clock_format);
+    conf_clock_format = NULL;
+  }
+  /* Set default clock format */
+  conf_clock_format = strdup("yyyyMMddTHHmmssZ");
+  cmd_clock_format_set = 0;
+
   if (conf_upstream_interface.ifr_name[0] != '\0')
   {
     memset(&conf_upstream_interface, 0, sizeof(struct ifreq));
@@ -581,6 +604,10 @@ void restore_conf_defaults(void)
     if (service_tmp->playseek_param != NULL)
     {
       free(service_tmp->playseek_param);
+    }
+    if (service_tmp->user_agent != NULL)
+    {
+      free(service_tmp->user_agent);
     }
     if (service_tmp->msrc != NULL)
     {
@@ -629,6 +656,7 @@ void usage(FILE *f, char *progname)
           "\t-C --noconfig        Do not read the default config\n"
           "\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole, 2=NAT-PMP (default 0)\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)\n"
+          "\t-f --clock-format <format> Clock format for RTSP Range timestamps (default yyyyMMddTHHmmssZ)\n"
           "\t-i --upstream-interface <interface> Interface to use for requesting upstream media stream (default none, which follows the routing table)\n"
           "\t                     default " CONFIGFILE "\n",
           prog);
@@ -687,10 +715,11 @@ void parse_cmd_line(int argc, char *argv[])
       {"noconfig", no_argument, 0, 'C'},
       {"fcc-nat-traversal", required_argument, 0, 'n'},
       {"hostname", required_argument, 0, 'H'},
+      {"clock-format", required_argument, 0, 'f'},
       {"upstream-interface", required_argument, 0, 'i'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:c:l:n:H:i:C";
+  const char short_opts[] = "v:qhdDUm:c:l:n:H:f:i:C";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -755,6 +784,10 @@ void parse_cmd_line(int argc, char *argv[])
     case 'H':
       conf_hostname = strdup(optarg);
       cmd_hostname_set = 1;
+      break;
+    case 'f':
+      conf_clock_format = strdup(optarg);
+      cmd_clock_format_set = 1;
       break;
     case 'i':
       strncpy(conf_upstream_interface.ifr_name, optarg, IFNAMSIZ - 1);

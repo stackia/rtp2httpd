@@ -43,7 +43,7 @@ START_TEST(test_rtsp_complete_workflow)
     int result;
 
     /* Step 1: Parse URL */
-    result = rtsp_parse_url(&test_session, "rtsp://test.example.com:554/stream", NULL);
+    result = rtsp_parse_server_url(&test_session, "rtsp://test.example.com:554/stream", NULL, NULL);
     ck_assert_int_eq(result, 0);
     ck_assert_str_eq(test_session.server_host, "test.example.com");
     ck_assert_int_eq(test_session.server_port, 554);
@@ -105,8 +105,8 @@ START_TEST(test_rtsp_workflow_with_playseek)
     int result;
 
     /* Parse URL with playseek parameter */
-    result = rtsp_parse_url(&test_session, "rtsp://test.example.com:554/stream",
-                            "20250928101100-20250928102200");
+    result = rtsp_parse_server_url(&test_session, "rtsp://test.example.com:554/stream",
+                                   "20250928101100-20250928102200", NULL);
     ck_assert_int_eq(result, 0);
     ck_assert_str_ne(test_session.playseek_range, "");
 
@@ -140,7 +140,7 @@ START_TEST(test_rtsp_redirect_workflow)
     int result;
 
     /* Parse initial URL */
-    result = rtsp_parse_url(&test_session, "rtsp://old.example.com:554/stream", NULL);
+    result = rtsp_parse_server_url(&test_session, "rtsp://old.example.com:554/stream", NULL, NULL);
     ck_assert_int_eq(result, 0);
 
     /* Mock connection to initial server */
@@ -175,7 +175,7 @@ START_TEST(test_rtsp_error_handling)
     int result;
 
     /* Parse URL */
-    result = rtsp_parse_url(&test_session, "rtsp://test.example.com:554/stream", NULL);
+    result = rtsp_parse_server_url(&test_session, "rtsp://test.example.com:554/stream", NULL, NULL);
     ck_assert_int_eq(result, 0);
 
     /* Test connection failure by setting socket creation to fail */
@@ -268,7 +268,7 @@ START_TEST(test_rtsp_redirect_limit)
     /* Set up session with maximum redirects */
     test_session.redirect_count = 5; /* MAX_REDIRECTS is 5 */
 
-    result = rtsp_parse_url(&test_session, "rtsp://test.example.com:554/stream", NULL);
+    result = rtsp_parse_server_url(&test_session, "rtsp://test.example.com:554/stream", NULL, NULL);
     ck_assert_int_eq(result, 0);
 
     mock_set_socket_return(10);

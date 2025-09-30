@@ -255,7 +255,7 @@ void start_media_stream(int client, struct services_s *service)
                     exit(RETVAL_RTP_FAILED);
                 }
 
-                if (rtsp_parse_url(&ctx.rtsp, service->rtsp_url, service->playseek_param) < 0 ||
+                if (rtsp_parse_server_url(&ctx.rtsp, service->rtsp_url, service->playseek_param, service->user_agent) < 0 ||
                     rtsp_connect(&ctx.rtsp) < 0 ||
                     rtsp_describe(&ctx.rtsp) < 0 ||
                     rtsp_setup(&ctx.rtsp) < 0 ||

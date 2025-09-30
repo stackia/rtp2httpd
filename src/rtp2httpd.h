@@ -64,6 +64,7 @@ struct services_s
   struct addrinfo *fcc_addr;
   char *rtsp_url;       /* Full RTSP URL for SERVICE_RTSP */
   char *playseek_param; /* playseek parameter for time range */
+  char *user_agent;     /* User-Agent header for timezone detection */
   struct services_s *next;
 };
 

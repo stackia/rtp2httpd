@@ -110,13 +110,69 @@ http://192.168.1.1:8080/rtsp/192.168.1.100:554/live/stream1
 http://192.168.1.1:8080/rtsp/camera.local:554/h264/ch1/main/av_stream?playseek=20240101120000-20240101130000
 ```
 
-**RTSP 功能特性**：
+**playseek 参数格式**：
 
-- **传输模式**：自动协商 TCP/UDP 传输，优先使用 TCP 交织模式确保稳定性
-- **协议兼容**：支持 RTP 和 MP2T（MPEG-2 TS）封装格式
-- **时间范围播放**：支持 playseek 参数指定播放时间段
-- **连接管理**：自动处理 RTSP 会话生命周期和重连
-- **流媒体优化**：智能缓冲和数据包去 RTP 封装
+`playseek` 参数用于指定时移回看的时间范围，支持多种时间格式：
+
+- **yyyyMMddHHmmss 格式**（14 位数字）
+
+  - 示例：`playseek=20240101120000-20240101130000`
+  - 表示从 2024 年 1 月 1 日 12:00:00 到 13:00:00
+  - 会根据 User-Agent 中的时区信息自动转换为 UTC
+
+- **Unix 时间戳格式**（10 位以内数字）
+
+  - 示例：`playseek=1704096000-1704099600`
+  - 直接使用 Unix 时间戳（秒）
+  - 已经是 UTC 时间，无需时区转换
+
+- **时间范围格式**
+  - `开始时间-结束时间`：指定时间段
+  - `开始时间-`：从指定时间开始到当前（开放式范围）
+  - `开始时间`：等同于 `开始时间-`
+
+#### RTSP 时区处理说明
+
+rtp2httpd 在处理 RTSP 时移回看功能时，会根据 HTTP 请求中的 **User-Agent** 头自动识别客户端时区，确保时间参数正确转换。
+
+**时区识别机制**：
+
+- 服务器会解析 User-Agent 中的 `TZ/` 标记来获取客户端时区信息
+- 支持的时区格式：
+  - `TZ/UTC+8` - UTC 偏移格式（东八区）
+  - `TZ/UTC-5` - UTC 偏移格式（西五区）
+  - `TZ/UTC` - 标准 UTC 时区
+- 如果 User-Agent 中没有时区信息，默认使用 UTC 时区
+
+**使用场景**：
+
+当使用 `playseek` 参数进行时移回看时：
+
+- **yyyyMMddHHmmss 格式**：客户端可以使用本地时区的时间格式（如 `20240101120000`），服务器会根据 User-Agent 中的时区信息自动转换为 UTC 时间，然后按照 `--clock-format` 配置的格式发送给 RTSP 服务器
+- **Unix 时间戳格式**：直接使用 UTC 时间戳，无需时区转换，服务器会直接按照 `--clock-format` 配置的格式转换后发送给 RTSP 服务器
+
+**示例**：
+
+```bash
+# 示例 1: 使用 yyyyMMddHHmmss 格式 + 时区
+# 客户端在东八区（UTC+8），User-Agent 包含 TZ/UTC+8
+# 请求 2024年1月1日 12:00:00（本地时间）的视频
+curl -H "User-Agent: MyPlayer/1.0 TZ/UTC+8" \
+  "http://192.168.1.1:8080/rtsp/camera.local:554/stream?playseek=20240101120000-20240101130000"
+# 服务器会自动将本地时间转换为 UTC 时间（04:00:00）
+# 并按照 clock-format 格式发送 RTSP Range 请求
+
+# 示例 2: 使用 Unix 时间戳格式（无需时区）
+# 请求 2024年1月1日 04:00:00 UTC 到 05:00:00 UTC 的视频
+curl "http://192.168.1.1:8080/rtsp/camera.local:554/stream?playseek=1704085200-1704088800"
+# Unix 时间戳已经是 UTC 时间，直接转换为 clock-format 格式发送
+```
+
+**注意事项**：
+
+- 不同的 User-Agent 可能导致不同的时区解析结果
+- 建议在播放器中明确指定时区信息以确保时间转换准确
+- 时区设置主要影响 RTSP 时移回看功能，对直播流无影响
 
 ### 原始 UDP 流转发
 
@@ -163,7 +219,42 @@ FCC 快速换台：
   -U, --noudpxy                  禁用 UDPxy 兼容模式
 
 其他：
+  -f, --clock-format <格式>      RTSP Range 时间戳格式 (默认: yyyyMMddTHHmmssZ)
   -h, --help                     显示帮助信息
+```
+
+#### clock-format 时间格式说明
+
+`--clock-format` 选项用于配置 RTSP 时移回看功能中 Range 头的时间戳格式。当客户端通过 `playseek` 参数请求特定时间段的视频时，服务器会将时间转换为 UTC 并按照此格式发送给 RTSP 服务器。
+
+**支持的格式**：
+
+- **yyyyMMddTHHmmssZ**（默认）- ISO 8601 紧凑格式
+
+  - 示例：`20240101T120000Z`
+  - 适用于大多数 RTSP 服务器
+
+- **yyyy-MM-dd'T'HH:mm:ss'Z'** - ISO 8601 扩展格式
+
+  - 示例：`2024-01-01T12:00:00Z`
+  - 更易读的格式，部分服务器要求使用此格式
+
+- **自定义格式** - 使用类似 strftime 的模式字符串
+  - 支持常见的日期时间占位符（yyyy, MM, dd, HH, mm, ss 等）
+  - 可以包含分隔符和字面字符
+
+**使用场景**：
+
+不同的 RTSP 服务器可能要求不同的时间格式。如果默认格式无法正常工作，可以尝试调整此选项以匹配目标 RTSP 服务器的要求。
+
+**配置示例**：
+
+```bash
+# 使用默认格式
+rtp2httpd --clock-format yyyyMMddTHHmmssZ
+
+# 使用扩展格式
+rtp2httpd --clock-format "yyyy-MM-dd'T'HH:mm:ss'Z'"
 ```
 
 ### 配置文件格式
@@ -189,6 +280,17 @@ fcc-nat-traversal = 0
 
 # 上游网络接口
 upstream-interface = eth3
+
+# RTSP Range 时间戳格式（默认: yyyyMMddTHHmmssZ）
+# 用于 RTSP 时移回看功能，将 playseek 参数转换为 UTC 时间时使用
+# 支持的格式：
+#   - yyyyMMddTHHmmssZ (默认，ISO 8601 紧凑格式)
+#   - yyyy-MM-dd'T'HH:mm:ss'Z' (ISO 8601 扩展格式)
+#   - 自定义格式（使用类似 strftime 的模式）
+# 示例：
+#   clock-format = yyyyMMddTHHmmssZ        # 输出: 20240101T120000Z
+#   clock-format = yyyy-MM-dd'T'HH:mm:ss'Z' # 输出: 2024-01-01T12:00:00Z
+;clock-format = yyyyMMddTHHmmssZ
 
 [bind]
 # 绑定地址和端口

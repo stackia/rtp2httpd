@@ -317,7 +317,7 @@ int main(int argc, char *argv[])
           sigprocmask(SIG_UNBLOCK, &childset, NULL);
           for (j = 0; j < maxs; j++)
             close(s[j]);
-          client_service(client_socket);
+          handle_http_client(client_socket);
           exit(EXIT_SUCCESS);
         }
       }

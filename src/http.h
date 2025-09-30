@@ -54,10 +54,13 @@ void send_http_headers(int s, http_status_t status, content_type_t type);
 struct services_s *parse_udpxy_url(char *url);
 
 /*
- * Parse RTSP URL from HTTP request
+ * Parse RTSP URL from HTTP request (HTTP layer)
+ * Translates HTTP request URL format to RTSP URL and extracts playseek parameter
  * Format: /rtsp/server:port/path?query&playseek=...
+ * @param http_url HTTP URL to parse
+ * @return Pointer to dynamically allocated service structure or NULL on failure
  */
-struct services_s *parse_rtsp_url(const char *http_url);
+struct services_s *http_parse_rtsp_request_url(const char *http_url);
 
 /**
  * Free service structure allocated by parse functions

@@ -33,7 +33,7 @@ START_TEST(test_rtsp_parse_url_basic)
     rtsp_session_init(&session);
 
     const char *rtsp_url = "rtsp://192.168.1.100:554/stream";
-    int result = rtsp_parse_url(&session, rtsp_url, NULL);
+    int result = rtsp_parse_server_url(&session, rtsp_url, NULL, NULL);
 
     ck_assert_int_eq(result, 0);
     ck_assert_str_eq(session.server_host, "192.168.1.100");
@@ -50,7 +50,7 @@ START_TEST(test_rtsp_parse_url_default_port)
     rtsp_session_init(&session);
 
     const char *rtsp_url = "rtsp://192.168.1.100/stream";
-    int result = rtsp_parse_url(&session, rtsp_url, NULL);
+    int result = rtsp_parse_server_url(&session, rtsp_url, NULL, NULL);
 
     ck_assert_int_eq(result, 0);
     ck_assert_str_eq(session.server_host, "192.168.1.100");
@@ -65,7 +65,7 @@ START_TEST(test_rtsp_parse_url_no_path)
     rtsp_session_init(&session);
 
     const char *rtsp_url = "rtsp://192.168.1.100:554";
-    int result = rtsp_parse_url(&session, rtsp_url, NULL);
+    int result = rtsp_parse_server_url(&session, rtsp_url, NULL, NULL);
 
     ck_assert_int_eq(result, 0);
     ck_assert_str_eq(session.server_host, "192.168.1.100");
@@ -80,7 +80,7 @@ START_TEST(test_rtsp_parse_url_with_query)
     rtsp_session_init(&session);
 
     const char *rtsp_url = "rtsp://192.168.1.100:554/stream?auth=test&user=123";
-    int result = rtsp_parse_url(&session, rtsp_url, NULL);
+    int result = rtsp_parse_server_url(&session, rtsp_url, NULL, NULL);
 
     ck_assert_int_eq(result, 0);
     ck_assert_str_eq(session.server_host, "192.168.1.100");
@@ -95,7 +95,7 @@ START_TEST(test_rtsp_parse_url_invalid_format)
     rtsp_session_init(&session);
 
     const char *invalid_url = "http://192.168.1.100:554/stream";
-    int result = rtsp_parse_url(&session, invalid_url, NULL);
+    int result = rtsp_parse_server_url(&session, invalid_url, NULL, NULL);
 
     ck_assert_int_eq(result, -1);
 }
@@ -108,7 +108,7 @@ START_TEST(test_rtsp_parse_url_with_playseek_range)
 
     const char *rtsp_url = "rtsp://192.168.1.100:554/stream";
     const char *playseek = "20250928101100-20250928102200";
-    int result = rtsp_parse_url(&session, rtsp_url, playseek);
+    int result = rtsp_parse_server_url(&session, rtsp_url, playseek, NULL);
 
     ck_assert_int_eq(result, 0);
     ck_assert_str_ne(session.playseek_range, "");
@@ -124,7 +124,7 @@ START_TEST(test_rtsp_parse_url_with_playseek_single_time)
 
     const char *rtsp_url = "rtsp://192.168.1.100:554/stream";
     const char *playseek = "20250928101100";
-    int result = rtsp_parse_url(&session, rtsp_url, playseek);
+    int result = rtsp_parse_server_url(&session, rtsp_url, playseek, NULL);
 
     ck_assert_int_eq(result, 0);
     ck_assert_str_ne(session.playseek_range, "");
@@ -141,7 +141,7 @@ START_TEST(test_rtsp_parse_url_with_playseek_open_ended)
 
     const char *rtsp_url = "rtsp://192.168.1.100:554/stream";
     const char *playseek = "20250928101100-";
-    int result = rtsp_parse_url(&session, rtsp_url, playseek);
+    int result = rtsp_parse_server_url(&session, rtsp_url, playseek, NULL);
 
     ck_assert_int_eq(result, 0);
     ck_assert_str_ne(session.playseek_range, "");
@@ -157,7 +157,7 @@ START_TEST(test_rtsp_url_components)
     rtsp_session_init(&session);
 
     const char *rtsp_url = "rtsp://example.com:8554/path/to/stream?param=value";
-    int result = rtsp_parse_url(&session, rtsp_url, NULL);
+    int result = rtsp_parse_server_url(&session, rtsp_url, NULL, NULL);
 
     ck_assert_int_eq(result, 0);
     ck_assert_str_eq(session.server_host, "example.com");
@@ -182,7 +182,7 @@ START_TEST(test_rtsp_playseek_complex)
     for (int i = 0; playseek_formats[i] != NULL; i++)
     {
         rtsp_session_init(&session);
-        int result = rtsp_parse_url(&session, rtsp_url, playseek_formats[i]);
+        int result = rtsp_parse_server_url(&session, rtsp_url, playseek_formats[i], NULL);
 
         ck_assert_int_eq(result, 0);
         ck_assert_str_ne(session.playseek_range, "");
@@ -197,21 +197,21 @@ START_TEST(test_rtsp_hostname_edge_cases)
 
     /* Test hostname with no port */
     rtsp_session_init(&session);
-    int result = rtsp_parse_url(&session, "rtsp://example.com/stream", NULL);
+    int result = rtsp_parse_server_url(&session, "rtsp://example.com/stream", NULL, NULL);
     ck_assert_int_eq(result, 0);
     ck_assert_str_eq(session.server_host, "example.com");
     ck_assert_int_eq(session.server_port, 554);
 
     /* Test IP address */
     rtsp_session_init(&session);
-    result = rtsp_parse_url(&session, "rtsp://192.168.1.1:8080/stream", NULL);
+    result = rtsp_parse_server_url(&session, "rtsp://192.168.1.1:8080/stream", NULL, NULL);
     ck_assert_int_eq(result, 0);
     ck_assert_str_eq(session.server_host, "192.168.1.1");
     ck_assert_int_eq(session.server_port, 8080);
 
     /* Test localhost */
     rtsp_session_init(&session);
-    result = rtsp_parse_url(&session, "rtsp://localhost:1234/stream", NULL);
+    result = rtsp_parse_server_url(&session, "rtsp://localhost:1234/stream", NULL, NULL);
     ck_assert_int_eq(result, 0);
     ck_assert_str_eq(session.server_host, "localhost");
     ck_assert_int_eq(session.server_port, 1234);
@@ -225,22 +225,22 @@ START_TEST(test_rtsp_error_conditions)
 
     /* Test NULL URL */
     rtsp_session_init(&session);
-    int result = rtsp_parse_url(&session, NULL, NULL);
+    int result = rtsp_parse_server_url(&session, NULL, NULL, NULL);
     ck_assert_int_eq(result, -1);
 
     /* Test empty URL */
     rtsp_session_init(&session);
-    result = rtsp_parse_url(&session, "", NULL);
+    result = rtsp_parse_server_url(&session, "", NULL, NULL);
     ck_assert_int_eq(result, -1);
 
     /* Test invalid protocol */
     rtsp_session_init(&session);
-    result = rtsp_parse_url(&session, "http://example.com/stream", NULL);
+    result = rtsp_parse_server_url(&session, "http://example.com/stream", NULL, NULL);
     ck_assert_int_eq(result, -1);
 
     /* Test malformed URL */
     rtsp_session_init(&session);
-    result = rtsp_parse_url(&session, "rtsp://", NULL);
+    result = rtsp_parse_server_url(&session, "rtsp://", NULL, NULL);
     ck_assert_int_eq(result, -1);
 }
 END_TEST

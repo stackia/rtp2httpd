@@ -11,11 +11,17 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <time.h>
+#include <ctype.h>
 #include "rtsp.h"
 #include "rtp2httpd.h"
 #include "http.h"
 #include "rtp.h"
 #include "multicast.h"
+#include "timezone.h"
+
+/* External configuration variables */
+extern char *conf_clock_format;
 
 /*
  * RTSP Client Implementation
@@ -34,7 +40,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session);
 static char *rtsp_find_header(const char *response, const char *header_name);
 static void rtsp_parse_transport_header(rtsp_session_t *session, const char *transport);
 static int rtsp_handle_redirect(rtsp_session_t *session, const char *location);
-static void rtsp_format_time_to_iso8601(const char *input_time, char *output_time, size_t output_size);
+static int rtsp_convert_time_string(const char *time_str, int tz_offset_seconds, char *output, size_t output_size);
 
 void rtsp_session_init(rtsp_session_t *session)
 {
@@ -62,16 +68,23 @@ void rtsp_session_init(rtsp_session_t *session)
            sizeof(session->tcp_buffer), sizeof(session->response_buffer));
 }
 
-int rtsp_parse_url(rtsp_session_t *session, const char *rtsp_url, const char *playseek_param)
+int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const char *playseek_param, const char *user_agent)
 {
     char url_copy[RTSP_URL_COPY_SIZE];
     char *host_start, *port_start, *path_start;
+    int tz_offset_seconds = 0;
 
     /* Check for NULL parameters */
     if (!session || !rtsp_url)
     {
-        logger(LOG_ERROR, "RTSP: Invalid parameters to rtsp_parse_url");
+        logger(LOG_ERROR, "RTSP: Invalid parameters to rtsp_parse_server_url");
         return -1;
+    }
+
+    /* Parse timezone from User-Agent if provided */
+    if (user_agent)
+    {
+        timezone_parse_from_user_agent(user_agent, &tz_offset_seconds);
     }
 
     /* Copy URL to avoid modifying original */
@@ -156,68 +169,52 @@ int rtsp_parse_url(rtsp_session_t *session, const char *rtsp_url, const char *pl
     if (playseek_param && strlen(playseek_param) > 0)
     {
         /* Check for dash separator indicating time range */
+        /* Parse playseek parameter: could be "begin-end", "begin-", or "begin" */
+        char begin_str[RTSP_TIME_COMPONENT_SIZE] = {0};
+        char end_str[RTSP_TIME_COMPONENT_SIZE] = {0};
+        char begin_iso[RTSP_TIME_STRING_SIZE];
+        char end_iso[RTSP_TIME_STRING_SIZE];
         char *dash_pos = strchr(playseek_param, '-');
+
+        /* Extract begin and end times */
         if (dash_pos)
         {
-            /* Time range format: yyyyMMddHHmmss-yyyyMMddHHmmss or yyyyMMddHHmmss- */
-            char begin_str[RTSP_TIME_COMPONENT_SIZE], end_str[RTSP_TIME_COMPONENT_SIZE];
-            char begin_iso[RTSP_TIME_STRING_SIZE], end_iso[RTSP_TIME_STRING_SIZE];
-
-            /* Extract begin time */
+            /* Has dash: "begin-end" or "begin-" */
             size_t begin_len = dash_pos - playseek_param;
             if (begin_len < sizeof(begin_str))
             {
                 strncpy(begin_str, playseek_param, begin_len);
                 begin_str[begin_len] = '\0';
-
-                /* Extract end time (if present) */
-                strcpy(end_str, dash_pos + 1);
-
-                logger(LOG_DEBUG, "RTSP: Extracted time range - begin='%s', end='%s'", begin_str, end_str);
-
-                /* Convert begin time to ISO8601 */
-                rtsp_format_time_to_iso8601(begin_str, begin_iso, sizeof(begin_iso));
-
-                if (strlen(end_str) > 0)
-                {
-                    /* Has end time - convert it too */
-                    rtsp_format_time_to_iso8601(end_str, end_iso, sizeof(end_iso));
-                    snprintf(session->playseek_range, sizeof(session->playseek_range),
-                             "clock=%s-%s", begin_iso, end_iso);
-                    logger(LOG_DEBUG, "RTSP: Range with end time: 'clock=%s-%s'", begin_iso, end_iso);
-                }
-                else
-                {
-                    /* No end time - open-ended range */
-                    snprintf(session->playseek_range, sizeof(session->playseek_range),
-                             "clock=%s-", begin_iso);
-                    logger(LOG_DEBUG, "RTSP: Open-ended range: 'clock=%s-'", begin_iso);
-                }
+                strcpy(end_str, dash_pos + 1); /* end_str may be empty */
             }
         }
         else
         {
-            /* Single time without dash */
-            char formatted_time[RTSP_TIME_STRING_SIZE];
-            logger(LOG_DEBUG, "RTSP: Single time format - length=%zu, digits_only=%s",
-                   strlen(playseek_param),
-                   (strspn(playseek_param, "0123456789-") == strlen(playseek_param)) ? "YES" : "NO");
+            /* No dash: treat as "begin-" (open-ended range) */
+            strncpy(begin_str, playseek_param, sizeof(begin_str) - 1);
+            begin_str[sizeof(begin_str) - 1] = '\0';
+            /* end_str remains empty */
+        }
 
-            if (strlen(playseek_param) == 14 && strspn(playseek_param, "0123456789") == 14)
-            {
-                /* Input is in yyyyMMddHHmmss format, convert to ISO8601 */
-                rtsp_format_time_to_iso8601(playseek_param, formatted_time, sizeof(formatted_time));
-                snprintf(session->playseek_range, sizeof(session->playseek_range),
-                         "clock=%s-", formatted_time);
-                logger(LOG_DEBUG, "RTSP: Converted single time '%s' to 'clock=%s-'", playseek_param, formatted_time);
-            }
-            else
-            {
-                /* Use playseek parameter directly with clock format */
-                snprintf(session->playseek_range, sizeof(session->playseek_range),
-                         "clock=%s", playseek_param);
-                logger(LOG_DEBUG, "RTSP: Using playseek parameter directly: 'clock=%s'", playseek_param);
-            }
+        logger(LOG_DEBUG, "RTSP: Parsed playseek - begin='%s', end='%s'", begin_str, end_str);
+
+        /* Convert begin time */
+        rtsp_convert_time_string(begin_str, tz_offset_seconds, begin_iso, sizeof(begin_iso));
+
+        /* Convert end time if present */
+        if (strlen(end_str) > 0)
+        {
+            rtsp_convert_time_string(end_str, tz_offset_seconds, end_iso, sizeof(end_iso));
+            snprintf(session->playseek_range, sizeof(session->playseek_range),
+                     "clock=%s-%s", begin_iso, end_iso);
+            logger(LOG_DEBUG, "RTSP: Range with end time: 'clock=%s-%s'", begin_iso, end_iso);
+        }
+        else
+        {
+            /* Open-ended range */
+            snprintf(session->playseek_range, sizeof(session->playseek_range),
+                     "clock=%s-", begin_iso);
+            logger(LOG_DEBUG, "RTSP: Open-ended range: 'clock=%s-'", begin_iso);
         }
         logger(LOG_DEBUG, "RTSP: Final playseek_range: '%s'", session->playseek_range);
     }
@@ -929,7 +926,7 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location)
     }
 
     /* Parse new URL and update session */
-    if (rtsp_parse_url(session, location, NULL) < 0)
+    if (rtsp_parse_server_url(session, location, NULL, NULL) < 0)
     {
         logger(LOG_ERROR, "RTSP: Failed to parse redirect URL");
         return -1;
@@ -950,30 +947,59 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location)
 }
 
 /*
- * Convert time from yyyyMMddHHmmss format to yyyyMMddTHHmmssZ format
+ * Helper function to convert time string to UTC format
+ * Handles Unix timestamps and yyyyMMddHHmmss format with timezone conversion
+ * Returns 0 on success, -1 on error
  */
-static void rtsp_format_time_to_iso8601(const char *input_time, char *output_time, size_t output_size)
+static int rtsp_convert_time_string(const char *time_str, int tz_offset_seconds, char *output, size_t output_size)
 {
-    if (!input_time || !output_time || output_size < 16)
+    size_t len;
+    size_t digit_count;
+
+    if (!time_str || !output || output_size < RTSP_TIME_STRING_SIZE)
     {
-        if (output_time && output_size > 0)
-        {
-            output_time[0] = '\0';
-        }
-        return;
+        return -1;
     }
 
-    /* Check if input is exactly 14 digits (yyyyMMddHHmmss) */
-    if (strlen(input_time) == 14 && strspn(input_time, "0123456789") == 14)
+    len = strlen(time_str);
+    digit_count = strspn(time_str, "0123456789");
+
+    /* Check if it's a Unix timestamp (all digits, length <= 10) */
+    if (len <= 10 && digit_count == len)
     {
-        snprintf(output_time, output_size, "%.8sT%.6sZ", input_time, input_time + 8);
-        logger(LOG_DEBUG, "RTSP: Formatted time '%s' to ISO8601 '%s'",
-               input_time, output_time);
+        time_t timestamp = (time_t)atol(time_str);
+        if (timezone_convert_unix_timestamp_to_utc(timestamp, conf_clock_format, output, output_size) == 0)
+        {
+            logger(LOG_DEBUG, "RTSP: Converted Unix timestamp '%s' to UTC '%s'", time_str, output);
+            return 0;
+        }
+        /* Fallback to original string */
+        strncpy(output, time_str, output_size - 1);
+        output[output_size - 1] = '\0';
+        return -1;
     }
-    else
+
+    /* Check if it's yyyyMMddHHmmss format (exactly 14 digits) */
+    if (len == 14 && digit_count == 14)
     {
-        /* Input doesn't match expected format, copy as-is */
-        strncpy(output_time, input_time, output_size - 1);
-        output_time[output_size - 1] = '\0';
+        /* Apply timezone conversion (tz_offset_seconds can be 0 for UTC) */
+        if (timezone_convert_time_with_offset(time_str, tz_offset_seconds, conf_clock_format, output, output_size) == 0)
+        {
+            if (tz_offset_seconds != 0)
+            {
+                logger(LOG_DEBUG, "RTSP: Converted time '%s' with TZ offset %d to UTC '%s'",
+                       time_str, tz_offset_seconds, output);
+            }
+            return 0;
+        }
+        /* Fallback to original string */
+        strncpy(output, time_str, output_size - 1);
+        output[output_size - 1] = '\0';
+        return -1;
     }
+
+    /* Unknown format, use as-is */
+    strncpy(output, time_str, output_size - 1);
+    output[output_size - 1] = '\0';
+    return 0;
 }

@@ -20,6 +20,7 @@ struct bindaddr_s *bind_addresses = NULL;
 struct services_s *services = NULL;
 int client_count = 0;
 enum loglevel conf_verbosity = LOG_DEBUG;
+char *conf_clock_format = NULL;
 
 /* Mock logger function */
 int logger(enum loglevel level, const char *format, ...)

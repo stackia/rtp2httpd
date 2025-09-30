@@ -1,12 +1,12 @@
 #ifndef __HTTPCLIENTS_H__
 #define __HTTPCLIENTS_H__
 
-/*
- * Service for connected client.
- * Run in forked thread.
+/**
+ * Handle HTTP client connection in forked process.
+ * Parses HTTP request, validates it, finds matching service, and starts streaming.
  *
- * @param s connected socket
+ * @param client_socket Connected client socket descriptor
  */
-void client_service(int s);
+void handle_http_client(int client_socket);
 
 #endif /* __HTTPCLIENTS_H__ */
