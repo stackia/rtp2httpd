@@ -4,7 +4,7 @@
 
 #include <stdlib.h>
 #include <signal.h>
-#include <sys/select.h>
+#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <errno.h>
 #include <string.h>
@@ -20,16 +20,8 @@
 #include "http.h"
 #include "rtsp.h"
 
-/* Stream processing context */
-typedef struct stream_context_s
-{
-    int client_fd;
-    struct services_s *service;
-    fcc_session_t fcc;
-    int mcast_sock;
-    uint8_t recv_buffer[STREAM_RECV_BUFFER_SIZE];
-    rtsp_session_t rtsp; /* RTSP session for SERVICE_RTSP */
-} stream_context_t;
+/* Maximum number of epoll events to process per iteration */
+#define MAX_EPOLL_EVENTS 8
 
 /* Static cleanup context - safe since each client runs in its own process */
 static struct
@@ -73,22 +65,48 @@ static void stream_cleanup(stream_context_t *ctx, struct services_s *service)
 
 /*
  * Process socket file descriptors and handle appropriate protocol stages
+ * @param ctx Stream context
+ * @param fd File descriptor that has an event
+ * @return 0 on success (continue processing other events),
+ *         -1 to exit (client disconnect or fatal error),
+ *         1 for state change requiring immediate loop restart (e.g., FCC redirect)
  */
-static int stream_process_sockets(stream_context_t *ctx, fd_set *rfds)
+static int stream_process_socket(stream_context_t *ctx, int fd)
 {
     int actualr;
     struct sockaddr_in peer_addr;
     socklen_t slen = sizeof(peer_addr);
 
-    /* Check for client disconnect */
-    if (FD_ISSET(ctx->client_fd, rfds))
+    /* Check for client disconnect or incoming data */
+    if (fd == ctx->client_fd)
     {
-        logger(LOG_DEBUG, "Client disconnected or sent data");
-        return -1; /* Exit */
+        char discard_buffer[1024];
+        int bytes = recv(ctx->client_fd, discard_buffer, sizeof(discard_buffer), 0);
+
+        if (bytes <= 0)
+        {
+            /* Client disconnected (bytes == 0) or error (bytes < 0) */
+            if (bytes == 0)
+            {
+                logger(LOG_DEBUG, "Client disconnected gracefully");
+            }
+            else
+            {
+                logger(LOG_DEBUG, "Client socket error: %s", strerror(errno));
+            }
+            return -1; /* Exit and cleanup */
+        }
+        else
+        {
+            /* Client sent unexpected data (e.g., additional HTTP request, keep-alive ping)
+             * This is normal for HTTP/1.1 connections - just discard the data */
+            logger(LOG_DEBUG, "Client sent %d bytes of data (discarded)", bytes);
+            return 0; /* Continue streaming */
+        }
     }
 
     /* Process FCC socket events */
-    if (ctx->fcc.fcc_sock && FD_ISSET(ctx->fcc.fcc_sock, rfds))
+    if (ctx->fcc.fcc_sock > 0 && fd == ctx->fcc.fcc_sock)
     {
         actualr = recvfrom(ctx->fcc.fcc_sock, ctx->recv_buffer, sizeof(ctx->recv_buffer),
                            0, (struct sockaddr *)&peer_addr, &slen);
@@ -110,21 +128,12 @@ static int stream_process_sockets(stream_context_t *ctx, fd_set *rfds)
             /* RTCP control message */
             if (ctx->recv_buffer[0] == 0x83)
             {
-                int result = fcc_handle_server_response(ctx, ctx->recv_buffer, actualr, &peer_addr);
-                if (result < 0)
-                {
-                    /* Fallback to multicast */
-                    ctx->mcast_sock = join_mcast_group(ctx->service);
-                    fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "Fallback to multicast");
-                }
-                return result;
+                return fcc_handle_server_response(ctx, ctx->recv_buffer, actualr, &peer_addr);
             }
             else if (ctx->recv_buffer[0] == 0x84)
             {
                 /* Sync notification (FMT 4) */
-                fcc_handle_sync_notification(ctx);
-                ctx->mcast_sock = join_mcast_group(ctx->service);
-                return 0;
+                return fcc_handle_sync_notification(ctx);
             }
         }
         else if (peer_addr.sin_port == ctx->fcc.media_port)
@@ -135,7 +144,7 @@ static int stream_process_sockets(stream_context_t *ctx, fd_set *rfds)
     }
 
     /* Process multicast socket events */
-    if (ctx->mcast_sock && FD_ISSET(ctx->mcast_sock, rfds))
+    if (ctx->mcast_sock > 0 && fd == ctx->mcast_sock)
     {
         actualr = recv(ctx->mcast_sock, ctx->recv_buffer, sizeof(ctx->recv_buffer), 0);
         if (actualr < 0)
@@ -168,13 +177,19 @@ static int stream_process_sockets(stream_context_t *ctx, fd_set *rfds)
     }
 
     /* Process RTSP socket events */
-    if ((ctx->rtsp.socket > 0 && FD_ISSET(ctx->rtsp.socket, rfds)) || (ctx->rtsp.rtp_socket > 0 && FD_ISSET(ctx->rtsp.rtp_socket, rfds)))
+    if ((ctx->rtsp.socket > 0 && fd == ctx->rtsp.socket) ||
+        (ctx->rtsp.rtp_socket > 0 && fd == ctx->rtsp.rtp_socket))
     {
-        return rtsp_handle_rtp_data(&ctx->rtsp, ctx->client_fd);
+        int result = rtsp_handle_rtp_data(&ctx->rtsp, ctx->client_fd);
+        if (result < 0)
+        {
+            return -1; /* Error */
+        }
+        return 0; /* Success - processed data, continue with other events */
     }
 
     /* Handle UDP RTCP socket (for future RTCP processing) */
-    if (ctx->rtsp.rtcp_socket > 0 && FD_ISSET(ctx->rtsp.rtcp_socket, rfds))
+    if (ctx->rtsp.rtcp_socket > 0 && fd == ctx->rtsp.rtcp_socket)
     {
         /* RTCP data processing could be added here in the future */
         /* For now, just consume the data to prevent buffer overflow */
@@ -211,9 +226,8 @@ static void stream_exit_handler(void)
 void start_media_stream(int client, struct services_s *service)
 {
     stream_context_t ctx;
-    fd_set rfds;
-    struct timeval timeout;
-    int max_sock, r;
+    struct epoll_event events[MAX_EPOLL_EVENTS];
+    int nfds, i;
 
     /* Initialize stream context */
     memset(&ctx, 0, sizeof(ctx));
@@ -221,6 +235,27 @@ void start_media_stream(int client, struct services_s *service)
     ctx.service = service;
     fcc_session_init(&ctx.fcc);
     rtsp_session_init(&ctx.rtsp);
+
+    /* Create epoll instance */
+    ctx.epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    if (ctx.epoll_fd < 0)
+    {
+        logger(LOG_ERROR, "Failed to create epoll instance: %s", strerror(errno));
+        stream_cleanup(&ctx, service);
+        exit(RETVAL_SOCK_READ_FAILED);
+    }
+
+    /* Add client socket to epoll (always monitored for disconnect detection) */
+    struct epoll_event client_ev;
+    client_ev.events = EPOLLIN; /* Level-triggered mode for read events */
+    client_ev.data.fd = ctx.client_fd;
+    if (epoll_ctl(ctx.epoll_fd, EPOLL_CTL_ADD, ctx.client_fd, &client_ev) < 0)
+    {
+        logger(LOG_ERROR, "Failed to add client_fd to epoll: %s", strerror(errno));
+        close(ctx.epoll_fd);
+        stream_cleanup(&ctx, service);
+        exit(RETVAL_SOCK_READ_FAILED);
+    }
 
     /* Set cleanup context for signal handlers */
     cleanup_state.current_context = &ctx;
@@ -251,9 +286,13 @@ void start_media_stream(int client, struct services_s *service)
                 if (!service->rtsp_url)
                 {
                     logger(LOG_ERROR, "RTSP URL not found in service configuration");
+                    close(ctx.epoll_fd);
                     stream_cleanup(&ctx, service);
                     exit(RETVAL_RTP_FAILED);
                 }
+
+                /* Set epoll_fd in RTSP session for socket registration */
+                ctx.rtsp.epoll_fd = ctx.epoll_fd;
 
                 if (rtsp_parse_server_url(&ctx.rtsp, service->rtsp_url, service->playseek_param, service->user_agent) < 0 ||
                     rtsp_connect(&ctx.rtsp) < 0 ||
@@ -262,6 +301,7 @@ void start_media_stream(int client, struct services_s *service)
                     rtsp_play(&ctx.rtsp) < 0)
                 {
                     logger(LOG_ERROR, "RTSP initialization failed, cleaning up and exiting");
+                    close(ctx.epoll_fd);
                     stream_cleanup(&ctx, service);
                     exit(RETVAL_RTP_FAILED);
                 }
@@ -272,6 +312,7 @@ void start_media_stream(int client, struct services_s *service)
                 if (fcc_initialize_and_request(&ctx) < 0)
                 {
                     logger(LOG_ERROR, "FCC initialization failed, cleaning up and exiting");
+                    close(ctx.epoll_fd);
                     stream_cleanup(&ctx, service);
                     exit(RETVAL_RTP_FAILED);
                 }
@@ -280,109 +321,57 @@ void start_media_stream(int client, struct services_s *service)
             {
                 /* Direct multicast join */
                 logger(LOG_DEBUG, "Service doesn't support FCC, joining multicast directly");
-                ctx.mcast_sock = join_mcast_group(service);
+                ctx.mcast_sock = join_mcast_group(service, ctx.epoll_fd);
                 fcc_session_set_state(&ctx.fcc, FCC_STATE_MCAST_ACTIVE, "Direct multicast");
             }
             continue;
         }
 
-        /* Prepare file descriptor sets */
-        FD_ZERO(&rfds);
-        max_sock = client;
-        FD_SET(client, &rfds); /* Detect client disconnect */
+        /* Wait for socket events with timeout */
+        nfds = epoll_wait(ctx.epoll_fd, events, MAX_EPOLL_EVENTS, FCC_SELECT_TIMEOUT_SEC * 1000);
 
-        /* Add FCC socket if active and not in pure multicast state */
-        if (ctx.fcc.fcc_sock && ctx.fcc.state != FCC_STATE_MCAST_ACTIVE)
-        {
-            FD_SET(ctx.fcc.fcc_sock, &rfds);
-            if (ctx.fcc.fcc_sock > max_sock)
-            {
-                max_sock = ctx.fcc.fcc_sock;
-            }
-        }
-
-        /* Add multicast socket if available and needed */
-        if (ctx.mcast_sock && ctx.fcc.state != FCC_STATE_REQUESTED)
-        {
-            FD_SET(ctx.mcast_sock, &rfds);
-            if (ctx.mcast_sock > max_sock)
-            {
-                max_sock = ctx.mcast_sock;
-            }
-        }
-
-        /* Add RTSP control socket if active */
-        if (ctx.rtsp.socket > 0)
-        {
-            FD_SET(ctx.rtsp.socket, &rfds);
-            if (ctx.rtsp.socket > max_sock)
-            {
-                max_sock = ctx.rtsp.socket;
-            }
-        }
-
-        /* Add RTSP RTP socket if using UDP transport */
-        if (ctx.rtsp.rtp_socket > 0)
-        {
-            FD_SET(ctx.rtsp.rtp_socket, &rfds);
-            if (ctx.rtsp.rtp_socket > max_sock)
-            {
-                max_sock = ctx.rtsp.rtp_socket;
-            }
-        }
-
-        /* Add RTSP RTCP socket if using UDP transport */
-        if (ctx.rtsp.rtcp_socket > 0)
-        {
-            FD_SET(ctx.rtsp.rtcp_socket, &rfds);
-            if (ctx.rtsp.rtcp_socket > max_sock)
-            {
-                max_sock = ctx.rtsp.rtcp_socket;
-            }
-        }
-
-        /* Setup timeout */
-        timeout.tv_sec = FCC_SELECT_TIMEOUT_SEC;
-        timeout.tv_usec = 0;
-
-        /* Wait for socket events */
-        r = select(max_sock + 1, &rfds, NULL, NULL, &timeout);
-
-        if (r < 0)
+        if (nfds < 0)
         {
             if (errno == EINTR)
             {
                 continue; /* Interrupted by signal, retry */
             }
-            logger(LOG_ERROR, "Select failed: %s, cleaning up and exiting", strerror(errno));
+            logger(LOG_ERROR, "epoll_wait failed: %s, cleaning up and exiting", strerror(errno));
+            close(ctx.epoll_fd);
             stream_cleanup(&ctx, service);
             exit(RETVAL_SOCK_READ_FAILED);
         }
 
-        if (r == 0)
+        if (nfds == 0)
         {
             /* Timeout - indicates no data available, possibly stream issue */
             logger(LOG_ERROR, "Stream timeout - no data received within %d seconds, cleaning up and exiting",
                    FCC_SELECT_TIMEOUT_SEC);
+            close(ctx.epoll_fd);
             stream_cleanup(&ctx, service);
             exit(RETVAL_SOCK_READ_FAILED);
         }
 
-        /* Process socket events */
-        int process_result = stream_process_sockets(&ctx, &rfds);
-        if (process_result < 0)
+        /* Process all ready file descriptors */
+        for (i = 0; i < nfds; i++)
         {
-            /* Exit requested (client disconnect or fatal error) */
-            break;
-        }
-        else if (process_result > 0)
-        {
-            /* State change requested - restart loop */
-            continue;
+            int process_result = stream_process_socket(&ctx, events[i].data.fd);
+            if (process_result < 0)
+            {
+                /* Exit requested (client disconnect or fatal error) */
+                close(ctx.epoll_fd);
+                logger(LOG_DEBUG, "Stream processing ended, performing cleanup");
+                stream_cleanup(&ctx, service);
+                return;
+            }
+            else if (process_result == 1)
+            {
+                /* State change requested (e.g., FCC redirect) - restart loop immediately
+                 * Note: Unprocessed events are safe to skip because we use level-triggered
+                 * epoll mode - any remaining data will trigger events again on next iteration */
+                break;
+            }
+            /* process_result == 0: continue processing remaining events */
         }
     }
-
-    /* Cleanup */
-    logger(LOG_DEBUG, "Stream processing ended, performing cleanup");
-    stream_cleanup(&ctx, service);
 }

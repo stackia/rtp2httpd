@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <sys/epoll.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "fcc.h"
@@ -16,16 +17,7 @@
 #include "multicast.h"
 #include "rtp.h"
 #include "http.h"
-
-/* Forward declaration - stream_context_s is defined in stream.c */
-struct stream_context_s
-{
-    int client_fd;
-    struct services_s *service;
-    fcc_session_t fcc;
-    int mcast_sock;
-    uint8_t recv_buffer[FCC_RECV_BUFFER_SIZE];
-};
+#include "stream.h"
 
 /* Forward declarations for internal functions */
 static int fcc_send_term_packet(fcc_session_t *fcc, struct services_s *service,
@@ -309,6 +301,19 @@ int fcc_initialize_and_request(struct stream_context_s *ctx)
         }
 
         fcc->fcc_server = (struct sockaddr_in *)service->fcc_addr->ai_addr;
+
+        /* Register socket with epoll immediately after creation */
+        struct epoll_event ev;
+        ev.events = EPOLLIN; /* Level-triggered mode for read events */
+        ev.data.fd = fcc->fcc_sock;
+        if (epoll_ctl(ctx->epoll_fd, EPOLL_CTL_ADD, fcc->fcc_sock, &ev) < 0)
+        {
+            logger(LOG_ERROR, "FCC: Failed to add socket to epoll: %s", strerror(errno));
+            close(fcc->fcc_sock);
+            fcc->fcc_sock = 0;
+            return -1;
+        }
+        logger(LOG_DEBUG, "FCC: Socket registered with epoll");
     }
 
     /* Send FCC request */
@@ -397,7 +402,8 @@ int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int b
             /* Join multicast immediately */
             logger(LOG_DEBUG, "FCC: Server requests immediate multicast join, code: %u", action_code);
             fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Immediate multicast join");
-            return -1; /* Signal to join multicast */
+            ctx->mcast_sock = join_mcast_group(ctx->service, ctx->epoll_fd);
+            return 0;
         }
         else
         {
@@ -434,8 +440,16 @@ int fcc_handle_sync_notification(struct stream_context_s *ctx)
 {
     fcc_session_t *fcc = &ctx->fcc;
 
+    if (fcc->state == FCC_STATE_MCAST_REQUESTED || fcc->state == FCC_STATE_MCAST_ACTIVE)
+    {
+        logger(LOG_DEBUG, "FCC: Ignored duplicate sync notification");
+        return 0;
+    }
+
     logger(LOG_DEBUG, "FCC: Received sync notification (FMT 4) - can join multicast now");
     fcc_session_set_state(fcc, FCC_STATE_MCAST_REQUESTED, "Sync notification received");
+
+    ctx->mcast_sock = join_mcast_group(ctx->service, ctx->epoll_fd);
 
     return 0; /* Signal to join multicast */
 }

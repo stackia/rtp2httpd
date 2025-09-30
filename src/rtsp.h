@@ -45,6 +45,7 @@ typedef enum
 typedef struct
 {
     int socket;                                    /* TCP socket to RTSP server */
+    int epoll_fd;                                  /* Epoll file descriptor for socket registration */
     rtsp_state_t state;                            /* Current RTSP state */
     uint32_t cseq;                                 /* RTSP sequence number */
     char session_id[RTSP_SESSION_ID_SIZE];         /* RTSP session ID */
@@ -103,7 +104,7 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
 
 /**
  * Connect to RTSP server
- * @param session RTSP session
+ * @param session RTSP session (must have epoll_fd set)
  * @return 0 on success, -1 on error
  */
 int rtsp_connect(rtsp_session_t *session);
@@ -117,7 +118,7 @@ int rtsp_describe(rtsp_session_t *session);
 
 /**
  * Send RTSP SETUP request
- * @param session RTSP session
+ * @param session RTSP session (must have epoll_fd set)
  * @return 0 on success, -1 on error
  */
 int rtsp_setup(rtsp_session_t *session);

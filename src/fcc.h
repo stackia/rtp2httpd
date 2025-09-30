@@ -7,6 +7,9 @@
 #include "rtp2httpd.h"
 #include "buffer_config.h"
 
+/* Forward declaration for stream context - full definition in stream.h */
+struct stream_context_s;
+
 #define FCC_PK_LEN_REQ 40
 #define FCC_PK_LEN_TERM 16
 #define FCC_SELECT_TIMEOUT_SEC 1
@@ -45,9 +48,6 @@ typedef struct
     uint16_t mcast_pbuf_last_seqn;
     int mcast_pbuf_full;
 } fcc_session_t;
-
-/* Forward declaration for stream context */
-struct stream_context_s;
 
 /**
  * Build FCC request packet
