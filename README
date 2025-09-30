@@ -34,9 +34,23 @@ https://github.com/user-attachments/assets/a8c9c60f-ebc3-49a8-b374-f579f8e34d92
 
 OpenWrt 是 rtp2httpd 的最佳运行环境。在完成 IPTV 网络融合后（可以搜索教程 `OpenWrt IPTV 融合`），通过 DHCP 获取到 IPTV 内网 IP，可直接访问整个 IPTV 网络，无需 NAT 穿透。
 
-#### 软件包安装
+#### 一键安装脚本（推荐）
 
-在 [Releases](https://github.com/stackia/rtp2httpd/releases) 页面下载对应架构的软件包：
+使用一键安装脚本自动下载并安装最新版本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/openwrt-support/install.sh | sh
+```
+
+脚本会自动：
+
+- 检测设备的 CPU 架构
+- 从 GitHub Release 获取最新版本
+- 下载并安装所有必需的软件包（主程序 + LuCI 界面 + 语言包）
+
+#### 手动安装
+
+如果无法使用一键脚本，可以手动在 [Releases](https://github.com/stackia/rtp2httpd/releases) 页面下载对应架构的软件包：
 
 - `rtp2httpd_x.y.z-1_<arch>.ipk` - 主程序包
 - `luci-app-rtp2httpd_x.y.z_all.ipk` - LuCI Web 界面
