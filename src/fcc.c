@@ -360,8 +360,9 @@ int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int b
         if (result_code != 0)
         {
             logger(LOG_DEBUG, "FCC: Server response error code: %u, falling back to multicast", result_code);
-            fcc_session_set_state(fcc, FCC_STATE_ERROR, "Server error response");
-            return -1; /* Fallback to multicast */
+            fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Fallback to multicast join");
+            ctx->mcast_sock = join_mcast_group(ctx->service, ctx->epoll_fd);
+            return 0;
         }
 
         /* Update server endpoints if provided */
