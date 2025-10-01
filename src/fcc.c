@@ -409,21 +409,15 @@ int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int b
         else
         {
             /* Normal FCC flow - server will start unicast stream */
-            /* Handle NAT punch hole if needed */
-            if (conf_fcc_nat_traversal == FCC_NAT_T_PUNCHHOLE)
+            if (media_port_changed && fcc->media_port)
             {
-                if (media_port_changed && fcc->media_port)
-                {
-                    struct sockaddr_in sintmp = *fcc->fcc_server;
-                    sintmp.sin_port = fcc->media_port;
-                    sendto_triple(fcc->fcc_sock, NULL, 0, 0, &sintmp, sizeof(sintmp));
-                    logger(LOG_DEBUG, "FCC: NAT punch hole sent for media port %u", ntohs(fcc->media_port));
-                }
-                if (signal_port_changed)
-                {
-                    sendto_triple(fcc->fcc_sock, NULL, 0, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
-                    logger(LOG_DEBUG, "FCC: NAT punch hole sent for signal port %u", ntohs(fcc->fcc_server->sin_port));
-                }
+                struct sockaddr_in sintmp = *fcc->fcc_server;
+                sintmp.sin_port = fcc->media_port;
+                sendto_triple(fcc->fcc_sock, NULL, 0, 0, &sintmp, sizeof(sintmp));
+            }
+            if (signal_port_changed)
+            {
+                sendto_triple(fcc->fcc_sock, NULL, 0, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
             }
 
             fcc_session_set_state(fcc, FCC_STATE_UNICAST_ACTIVE, "Server accepted request");

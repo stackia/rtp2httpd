@@ -654,7 +654,7 @@ void usage(FILE *f, char *progname)
           "\t-l --listen [addr:]port  Address/port to bind (default ANY:8080)\n"
           "\t-c --config <file>   Read this file for configuration, instead of the default one\n"
           "\t-C --noconfig        Do not read the default config\n"
-          "\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole, 2=NAT-PMP (default 0)\n"
+          "\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole (deprecated), 2=NAT-PMP (default 0)\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)\n"
           "\t-f --clock-format <format> Clock format for RTSP Range timestamps (default yyyyMMddTHHmmssZ)\n"
           "\t-i --upstream-interface <interface> Interface to use for requesting upstream media stream (default none, which follows the routing table)\n"
