@@ -66,7 +66,7 @@ msgid "rtp2httpd_Don't use NAT traversal"
 msgstr "不使用 NAT 穿透"
 
 msgid "rtp2httpd_NAT punch hole"
-msgstr "NAT 打洞（可靠性较低）"
+msgstr "NAT 打洞（已废弃，不要使用）"
 
 msgid "rtp2httpd_NAT-PMP"
 msgstr "NAT-PMP（需要上级路由器支持）"
