@@ -473,7 +473,7 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, int client_fd)
     session->tcp_buffer_pos += bytes_received;
 
     /* Process interleaved data packets */
-    int processed = 0;
+    int bytes_forwarded = 0;
     while (session->tcp_buffer_pos >= 4)
     {
         /* Check for interleaved data packet: $ + channel + length(2 bytes) + data */
@@ -511,14 +511,16 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, int client_fd)
             {
                 /* MP2T - write MPEG-2 TS data directly to client (no RTP unwrapping) */
                 write_to_client(client_fd, &session->tcp_buffer[4], packet_length);
+                bytes_forwarded += packet_length;
             }
             else
             {
                 /* RTP - extract RTP payload and forward to client */
-                write_rtp_payload_to_client(client_fd, packet_length, &session->tcp_buffer[4],
-                                            &session->current_seqn, &session->not_first_packet);
+                int pb = write_rtp_payload_to_client(client_fd, packet_length, &session->tcp_buffer[4],
+                                                     &session->current_seqn, &session->not_first_packet);
+                if (pb > 0)
+                    bytes_forwarded += pb;
             }
-            processed += packet_length;
         }
         else if (channel == session->rtcp_channel)
         {
@@ -532,7 +534,7 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, int client_fd)
         session->tcp_buffer_pos -= total_packet_size;
     }
 
-    return processed;
+    return bytes_forwarded;
 }
 
 int rtsp_handle_udp_rtp_data(rtsp_session_t *session, int client_fd)
@@ -549,19 +551,23 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, int client_fd)
 
     if (bytes_received > 0)
     {
+        int bytes_written = 0;
         /* Handle RTP data based on transport protocol */
         if (session->transport_protocol == RTSP_PROTOCOL_MP2T)
         {
             /* MP2T - write MPEG-2 TS data directly to client (no RTP unwrapping) */
             write_to_client(client_fd, session->rtp_buffer, bytes_received);
+            bytes_written = bytes_received;
         }
         else
         {
             /* RTP - extract RTP payload and forward to client */
-            write_rtp_payload_to_client(client_fd, bytes_received, session->rtp_buffer,
-                                        &session->current_seqn, &session->not_first_packet);
+            int pb = write_rtp_payload_to_client(client_fd, bytes_received, session->rtp_buffer,
+                                                 &session->current_seqn, &session->not_first_packet);
+            if (pb > 0)
+                bytes_written = pb;
         }
-        return bytes_received;
+        return bytes_written;
     }
 
     return 0;

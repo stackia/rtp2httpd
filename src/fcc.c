@@ -503,8 +503,16 @@ int fcc_handle_unicast_media(struct stream_context_s *ctx, uint8_t *buf, int buf
         return 0;
     }
 
-    /* Forward RTP payload to client - function will update fcc->current_seqn */
-    write_rtp_payload_to_client(ctx->client_fd, buf_len, buf, &fcc->current_seqn, &fcc->not_first_packet);
+    /* Forward RTP payload to client - function returns bytes forwarded */
+    {
+        int payload_bytes = write_rtp_payload_to_client(ctx->client_fd, buf_len, buf,
+                                                        &fcc->current_seqn, &fcc->not_first_packet);
+        if (payload_bytes > 0)
+        {
+            ctx->total_bytes_sent += (uint64_t)payload_bytes;
+            ctx->total_packets_sent += 1;
+        }
+    }
 
     /* Check if we should terminate FCC based on sequence number */
     if (fcc->fcc_term_sent && fcc->current_seqn >= fcc->fcc_term_seqn - 1 && fcc->state != FCC_STATE_MCAST_ACTIVE)
@@ -661,6 +669,7 @@ int fcc_handle_mcast_active(struct stream_context_s *ctx, uint8_t *buf, int buf_
         if (pending_len > 0)
         {
             write_to_client(ctx->client_fd, fcc->mcast_pending_buf, pending_len);
+            ctx->total_bytes_sent += (uint64_t)pending_len;
             fcc->current_seqn = fcc->mcast_pbuf_last_seqn;
             logger(LOG_DEBUG, "FCC: Flushed %zu bytes from pending buffer, last_seqn=%u",
                    pending_len, fcc->mcast_pbuf_last_seqn);
@@ -672,8 +681,16 @@ int fcc_handle_mcast_active(struct stream_context_s *ctx, uint8_t *buf, int buf_
         fcc->mcast_pbuf_current = NULL;
     }
 
-    /* Forward multicast data directly to client - function will update fcc->current_seqn */
-    write_rtp_payload_to_client(ctx->client_fd, buf_len, buf, &fcc->current_seqn, &fcc->not_first_packet);
+    /* Forward multicast data directly to client - function returns bytes forwarded */
+    {
+        int payload_bytes = write_rtp_payload_to_client(ctx->client_fd, buf_len, buf,
+                                                        &fcc->current_seqn, &fcc->not_first_packet);
+        if (payload_bytes > 0)
+        {
+            ctx->total_bytes_sent += (uint64_t)payload_bytes;
+            ctx->total_packets_sent += 1;
+        }
+    }
 
     return 0;
 }
