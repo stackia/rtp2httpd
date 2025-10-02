@@ -5,6 +5,7 @@
 #include "buffer_config.h"
 #include "fcc.h"
 #include "rtsp.h"
+#include "status.h"
 
 /* Stream processing context */
 typedef struct stream_context_s
@@ -16,6 +17,12 @@ typedef struct stream_context_s
   int mcast_sock;
   uint8_t recv_buffer[STREAM_RECV_BUFFER_SIZE];
   rtsp_session_t rtsp; /* RTSP session for SERVICE_RTSP */
+
+  /* Statistics tracking */
+  uint64_t total_bytes_sent;
+  uint64_t total_packets_sent;
+  time_t last_status_update;
+  client_state_type_t last_reported_state; /* Last state reported to status system */
 } stream_context_t;
 
 /**

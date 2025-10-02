@@ -23,8 +23,9 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size);
  * @param buf Buffer containing RTP packet
  * @param old_seqn Pointer to store/track previous sequence number
  * @param not_first Pointer to track if this is not the first packet
+ * @return number of payload bytes forwarded to the client (>=0)
  */
-void write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf,
-                                 uint16_t *old_seqn, uint16_t *not_first);
+int write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf,
+                                uint16_t *old_seqn, uint16_t *not_first);
 
 #endif /* __RTP_H__ */

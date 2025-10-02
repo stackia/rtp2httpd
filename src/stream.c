@@ -19,6 +19,7 @@
 #include "fcc.h"
 #include "http.h"
 #include "rtsp.h"
+#include "status.h"
 
 /* Maximum number of epoll events to process per iteration */
 #define MAX_EPOLL_EVENTS 8
@@ -28,6 +29,131 @@ static struct
 {
     stream_context_t *current_context; /* Current active stream context */
 } cleanup_state = {0};
+
+/*
+ * Update status tracking periodically and on state changes
+ */
+static void update_stream_status(stream_context_t *ctx)
+{
+    time_t now = time(NULL);
+    client_state_type_t state;
+    int state_changed = 0;
+
+    /* Determine current state based on FCC and RTSP states */
+    if (ctx->service->service_type == SERVICE_RTSP)
+    {
+        switch (ctx->rtsp.state)
+        {
+        case RTSP_STATE_INIT:
+            state = CLIENT_STATE_RTSP_INIT;
+            break;
+        case RTSP_STATE_CONNECTED:
+            state = CLIENT_STATE_RTSP_CONNECTED;
+            break;
+        case RTSP_STATE_DESCRIBED:
+            state = CLIENT_STATE_RTSP_DESCRIBED;
+            break;
+        case RTSP_STATE_SETUP:
+            state = CLIENT_STATE_RTSP_SETUP;
+            break;
+        case RTSP_STATE_PLAYING:
+            state = CLIENT_STATE_RTSP_PLAYING;
+            break;
+        default:
+            state = CLIENT_STATE_ERROR;
+            break;
+        }
+    }
+    else
+    {
+        switch (ctx->fcc.state)
+        {
+        case FCC_STATE_INIT:
+            state = CLIENT_STATE_FCC_INIT;
+            break;
+        case FCC_STATE_REQUESTED:
+            state = CLIENT_STATE_FCC_REQUESTED;
+            break;
+        case FCC_STATE_UNICAST_ACTIVE:
+            state = CLIENT_STATE_FCC_UNICAST_ACTIVE;
+            break;
+        case FCC_STATE_MCAST_REQUESTED:
+            state = CLIENT_STATE_FCC_MCAST_TRANSITION;
+            break;
+        case FCC_STATE_MCAST_ACTIVE:
+            state = CLIENT_STATE_FCC_MCAST_ACTIVE;
+            break;
+        default:
+            state = CLIENT_STATE_ERROR;
+            break;
+        }
+    }
+
+    /* Check if state changed since last update */
+    if (state != ctx->last_reported_state)
+    {
+        state_changed = 1;
+        ctx->last_reported_state = state;
+    }
+
+    /* Update status every 1 second for bandwidth tracking, or immediately on state change */
+    if (state_changed || (now - ctx->last_status_update >= 1))
+    {
+        const char *desc;
+        switch (state)
+        {
+        case CLIENT_STATE_FCC_INIT:
+            desc = "FCC_INIT";
+            break;
+        case CLIENT_STATE_FCC_REQUESTED:
+            desc = "FCC_REQUESTED";
+            break;
+        case CLIENT_STATE_FCC_UNICAST_ACTIVE:
+            desc = "FCC_UNICAST_ACTIVE";
+            break;
+        case CLIENT_STATE_FCC_MCAST_TRANSITION:
+            desc = "FCC_MCAST_TRANSITION";
+            break;
+        case CLIENT_STATE_FCC_MCAST_ACTIVE:
+            desc = "FCC_MCAST_ACTIVE";
+            break;
+        case CLIENT_STATE_RTSP_INIT:
+            desc = "RTSP_INIT";
+            break;
+        case CLIENT_STATE_RTSP_CONNECTED:
+            desc = "RTSP_CONNECTED";
+            break;
+        case CLIENT_STATE_RTSP_DESCRIBED:
+            desc = "RTSP_DESCRIBE";
+            break;
+        case CLIENT_STATE_RTSP_SETUP:
+            desc = "RTSP_SETUP";
+            break;
+        case CLIENT_STATE_RTSP_PLAYING:
+            desc = "RTSP_PLAYING";
+            break;
+        case CLIENT_STATE_MULTICAST_ACTIVE:
+            desc = "MULTICAST_ACTIVE";
+            break;
+        case CLIENT_STATE_CONNECTING:
+            desc = "CONNECTING";
+            break;
+        case CLIENT_STATE_DISCONNECTED:
+            desc = "Disconnected";
+            break;
+        case CLIENT_STATE_ERROR:
+            desc = "ERROR";
+            break;
+        default:
+            desc = "Streaming";
+            break;
+        }
+        status_update_client(state, desc, ctx->total_bytes_sent, ctx->total_packets_sent);
+        ctx->last_status_update = now;
+    }
+}
+
+/* Removed track_bytes_sent - not currently used as we track at packet level */
 
 /*
  * Unified cleanup function
@@ -157,6 +283,7 @@ static int stream_process_socket(stream_context_t *ctx, int fd)
         if (ctx->service->service_type == SERVICE_MUDP)
         {
             write_to_client(ctx->client_fd, ctx->recv_buffer, actualr);
+            ctx->total_bytes_sent += (uint64_t)actualr;
             return 0;
         }
 
@@ -184,6 +311,10 @@ static int stream_process_socket(stream_context_t *ctx, int fd)
         if (result < 0)
         {
             return -1; /* Error */
+        }
+        if (result > 0)
+        {
+            ctx->total_bytes_sent += (uint64_t)result;
         }
         return 0; /* Success - processed data, continue with other events */
     }
@@ -235,6 +366,10 @@ void start_media_stream(int client, struct services_s *service)
     ctx.service = service;
     fcc_session_init(&ctx.fcc);
     rtsp_session_init(&ctx.rtsp);
+    ctx.total_bytes_sent = 0;
+    ctx.total_packets_sent = 0;
+    ctx.last_status_update = time(NULL);
+    ctx.last_reported_state = CLIENT_STATE_CONNECTING;
 
     /* Create epoll instance */
     ctx.epoll_fd = epoll_create1(EPOLL_CLOEXEC);
@@ -397,5 +532,8 @@ void start_media_stream(int client, struct services_s *service)
             }
             /* process_result == 0: continue processing remaining events */
         }
+
+        /* Update status tracking periodically */
+        update_stream_status(&ctx);
     }
 }

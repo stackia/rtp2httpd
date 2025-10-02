@@ -19,6 +19,7 @@
 #include "rtp2httpd.h"
 #include "configuration.h"
 #include "httpclients.h"
+#include "status.h"
 
 #define MAX_S 10
 
@@ -53,11 +54,27 @@ int logger(enum loglevel level, const char *format, ...)
 {
   va_list ap;
   int r = 0;
-  if (conf_verbosity >= level)
+  char message[1024];
+
+  /* Check log level from shared memory if available, otherwise use config */
+  enum loglevel current_level = conf_verbosity;
+  if (status_shared)
+  {
+    current_level = status_shared->current_log_level;
+  }
+
+  if (current_level >= level)
   {
     va_start(ap, format);
     r = vfprintf(stderr, format, ap);
     va_end(ap);
+
+    /* Also store in status log buffer */
+    va_start(ap, format);
+    vsnprintf(message, sizeof(message), format, ap);
+    va_end(ap);
+    status_add_log_entry(level, message);
+
     // Automatically add newline if format doesn't end with one
     if (format && strlen(format) > 0 && format[strlen(format) - 1] != '\n')
     {
@@ -100,6 +117,9 @@ void child_handler(int signum)
                hbuf, sbuf, WEXITSTATUS(status),
                WIFSIGNALED(status));
       }
+
+      /* Unregister from status tracking */
+      status_unregister_client(child);
 
       /* remove client from the list */
       if (client == clients)
@@ -151,6 +171,13 @@ int main(int argc, char *argv[])
   sigaddset(&childset, SIGCHLD);
 
   parse_cmd_line(argc, argv);
+
+  /* Initialize status tracking system */
+  if (status_init() != 0)
+  {
+    logger(LOG_ERROR, "Failed to initialize status tracking");
+    /* Continue anyway - status page won't work but streaming will */
+  }
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_socktype = SOCK_STREAM;
@@ -310,6 +337,10 @@ int main(int argc, char *argv[])
             logger(LOG_INFO, "Connection from %s port %s",
                    hbuf, sbuf);
           }
+
+          /* Register client in status tracking */
+          status_register_client(child, &client, client_len);
+
           sigprocmask(SIG_UNBLOCK, &childset, NULL);
         }
         else

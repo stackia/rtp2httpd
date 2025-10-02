@@ -13,7 +13,8 @@ rtp2httpd_SOURCES = \
 	fcc.c \
 	stream.c \
 	rtsp.c \
-	timezone.c
+	timezone.c \
+	status.c
 
 # Private headers (not installed)
 noinst_HEADERS = \
@@ -26,7 +27,9 @@ noinst_HEADERS = \
 	fcc.h \
 	stream.h \
 	rtsp.h \
-	timezone.h
+	timezone.h \
+	status.h \
+	status_page.h
 
 # Compiler flags
 AM_CPPFLAGS = -DSYSCONFDIR=\"@sysconfdir@\"
@@ -36,4 +39,4 @@ AM_CFLAGS = @OPT_CFLAGS@ @WARN_CFLAGS@ @SECURITY_CFLAGS@
 AM_LDFLAGS = @SECURITY_LDFLAGS@
 
 # Link with required libraries
-rtp2httpd_LDADD =
+rtp2httpd_LDADD = -lrt

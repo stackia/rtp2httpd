@@ -17,10 +17,14 @@
 
 /* Mock global variables */
 struct bindaddr_s *bind_addresses = NULL;
-struct services_s *services = NULL;
 int client_count = 0;
 enum loglevel conf_verbosity = LOG_DEBUG;
 char *conf_clock_format = NULL;
+
+int conf_daemonise = 0;
+int conf_udpxy = 0;
+int conf_maxclients = 100;
+char *conf_hostname = NULL;
 
 /* Mock logger function */
 int logger(enum loglevel level, const char *format, ...)

@@ -60,7 +60,7 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size)
   return 0;
 }
 
-void write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf, uint16_t *old_seqn, uint16_t *not_first)
+int write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf, uint16_t *old_seqn, uint16_t *not_first)
 {
   int payloadlength;
   uint8_t *payload;
@@ -69,7 +69,7 @@ void write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf, uint16_
   /* Extract payload - most packets are well-formed */
   if (unlikely(get_rtp_payload(buf, recv_len, &payload, &payloadlength) != 0))
   {
-    return; /* Malformed packet, already logged */
+    return 0; /* Malformed packet, already logged */
   }
 
   /* Read sequence number */
@@ -81,7 +81,7 @@ void write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf, uint16_
     logger(LOG_DEBUG, "Duplicated RTP packet "
                       "received (seqn %d)",
            seqn);
-    return;
+    return 0;
   }
 
   /* Out-of-order detection - packets are usually in order */
@@ -96,4 +96,5 @@ void write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf, uint16_
   *not_first = 1;
 
   write_to_client(client, payload, payloadlength);
+  return payloadlength;
 }
