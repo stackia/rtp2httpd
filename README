@@ -67,6 +67,8 @@ opkg install rtp2httpd_*.ipk luci-app-rtp2httpd_*.ipk luci-i18n-rtp2httpd-*.ipk
 
 <img width="925" alt="LuCI 配置界面" src="https://github.com/user-attachments/assets/7f5dfc55-b00a-4f8f-b589-56fac0235061" />
 
+可以在 "状态" -> "系统日志" 查看日志。或者 ssh 手动运行 `logread -e rtp2httpd` 查看日志。
+
 ### Docker 容器部署
 
 适用于支持 Docker 的设备。**必须使用 host 网络模式**以接收组播流。
