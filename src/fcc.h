@@ -14,7 +14,7 @@ struct stream_context_s;
 #define FCC_PK_LEN_TERM 16
 #define FCC_SELECT_TIMEOUT_SEC 1
 #define FCC_PENDING_BUFFER_MULTIPLIER 1500
-#define FCC_MIN_BUFFER_PACKETS 10
+#define FCC_MIN_BUFFER_PACKETS 80
 
 /* FCC State Machine - Based on Fast Channel Change Protocol */
 typedef enum
