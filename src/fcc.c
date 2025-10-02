@@ -20,10 +20,21 @@
 #include "stream.h"
 
 /* Forward declarations for internal functions */
+static uint8_t *build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client_nport);
+static uint8_t *build_fcc_term_pk(struct addrinfo *maddr, uint16_t seqn);
+static ssize_t sendto_triple(int fd, const void *buf, size_t n, int flags,
+                             struct sockaddr_in *addr, socklen_t addr_len);
+static uint16_t nat_pmp(uint16_t nport, uint32_t lifetime);
+static int get_gw_ip(in_addr_t *addr);
+static void log_fcc_state_transition(fcc_state_t from, fcc_state_t to, const char *reason);
+static void log_fcc_server_response(uint8_t fmt, uint8_t result_code, uint16_t signal_port, uint16_t media_port,
+                                    uint32_t valid_time, uint32_t speed, uint32_t speed_after_sync);
 static int fcc_send_term_packet(fcc_session_t *fcc, struct services_s *service,
                                 uint16_t seqn, const char *reason);
+static int fcc_send_termination_message(struct stream_context_s *ctx, uint16_t mcast_seqn);
+static int fcc_init_pending_buffer(struct stream_context_s *ctx);
 
-uint8_t *build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client_nport)
+static uint8_t *build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client_nport)
 {
     struct sockaddr_in *maddr_sin = (struct sockaddr_in *)
                                         maddr->ai_addr;
@@ -51,7 +62,7 @@ uint8_t *build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client_nport)
     return pk;
 }
 
-int get_gw_ip(in_addr_t *addr)
+static int get_gw_ip(in_addr_t *addr)
 {
     long destination, gateway;
     char buf[FCC_RESPONSE_BUFFER_SIZE];
@@ -84,7 +95,7 @@ int get_gw_ip(in_addr_t *addr)
     return -1;
 }
 
-uint16_t nat_pmp(uint16_t nport, uint32_t lifetime)
+static uint16_t nat_pmp(uint16_t nport, uint32_t lifetime)
 {
     struct sockaddr_in gw_addr = {.sin_family = AF_INET, .sin_port = htons(5351)};
     uint8_t pk[12];
@@ -115,7 +126,7 @@ uint16_t nat_pmp(uint16_t nport, uint32_t lifetime)
     return 0;
 }
 
-uint8_t *build_fcc_term_pk(struct addrinfo *maddr, uint16_t seqn)
+static uint8_t *build_fcc_term_pk(struct addrinfo *maddr, uint16_t seqn)
 {
     struct sockaddr_in *maddr_sin = (struct sockaddr_in *)maddr->ai_addr;
 
@@ -139,8 +150,8 @@ uint8_t *build_fcc_term_pk(struct addrinfo *maddr, uint16_t seqn)
     return pk;
 }
 
-ssize_t sendto_triple(int fd, const void *buf, size_t n,
-                      int flags, struct sockaddr_in *addr, socklen_t addr_len)
+static ssize_t sendto_triple(int fd, const void *buf, size_t n,
+                             int flags, struct sockaddr_in *addr, socklen_t addr_len)
 {
     static uint8_t i;
     for (i = 0; i < 3; i++)
@@ -214,17 +225,43 @@ void fcc_session_cleanup(fcc_session_t *fcc, struct services_s *service)
 /*
  * FCC Logging Functions
  */
-void log_fcc_state_transition(fcc_state_t from, fcc_state_t to, const char *reason)
+static void log_fcc_state_transition(fcc_state_t from, fcc_state_t to, const char *reason)
 {
     const char *state_names[] = {"INIT", "REQUESTED", "UNICAST_ACTIVE", "MCAST_REQUESTED", "MCAST_ACTIVE", "ERROR"};
     logger(LOG_DEBUG, "FCC State: %s -> %s (%s)",
            state_names[from], state_names[to], reason ? reason : "");
 }
 
-void log_fcc_server_response(uint8_t fmt, uint8_t result_code, uint16_t signal_port, uint16_t media_port)
+/*
+ * Helper function to format bitrate with human-readable units
+ */
+static void format_bitrate(uint32_t bps, char *output, size_t output_size)
 {
-    logger(LOG_DEBUG, "FCC Response: FMT=%u, result=%u, signal_port=%u, media_port=%u",
-           fmt, result_code, ntohs(signal_port), ntohs(media_port));
+    if (bps >= 1048576) // 1024 * 1024
+    {
+        snprintf(output, output_size, "%.2f Mbps", bps / 1048576.0);
+    }
+    else if (bps >= 1024)
+    {
+        snprintf(output, output_size, "%.2f Kbps", bps / 1024.0);
+    }
+    else
+    {
+        snprintf(output, output_size, "%u bps", bps);
+    }
+}
+
+static void log_fcc_server_response(uint8_t fmt, uint8_t result_code, uint16_t signal_port, uint16_t media_port,
+                                    uint32_t valid_time, uint32_t speed, uint32_t speed_after_sync)
+{
+    char speed_str[32];
+    char speed_after_sync_str[32];
+
+    format_bitrate(speed, speed_str, sizeof(speed_str));
+    format_bitrate(speed_after_sync, speed_after_sync_str, sizeof(speed_after_sync_str));
+
+    logger(LOG_DEBUG, "FCC Response: FMT=%u, result=%u, signal_port=%u, media_port=%u, valid_time=%u, speed=%s, speed_after_sync=%s",
+           fmt, result_code, ntohs(signal_port), ntohs(media_port), valid_time, speed_str, speed_after_sync_str);
 }
 
 /*
@@ -354,8 +391,11 @@ int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int b
         uint16_t new_signal_port = *(uint16_t *)(buf + 14);
         uint16_t new_media_port = *(uint16_t *)(buf + 16);
         uint32_t new_fcc_ip = *(uint32_t *)(buf + 20);
+        uint32_t valid_time = ntohl(*(uint32_t *)(buf + 24));
+        uint32_t speed = ntohl(*(uint32_t *)(buf + 28));            // bitrate in bps
+        uint32_t speed_after_sync = ntohl(*(uint32_t *)(buf + 32)); // bitrate in bps
 
-        log_fcc_server_response(3, result_code, new_signal_port, new_media_port);
+        log_fcc_server_response(3, result_code, new_signal_port, new_media_port, valid_time, speed, speed_after_sync);
 
         if (result_code != 0)
         {
@@ -456,6 +496,13 @@ int fcc_handle_unicast_media(struct stream_context_s *ctx, uint8_t *buf, int buf
 {
     fcc_session_t *fcc = &ctx->fcc;
 
+    /* Drop unicast packets if we've already switched to multicast */
+    if (fcc->state == FCC_STATE_MCAST_ACTIVE)
+    {
+        logger(LOG_DEBUG, "FCC: Dropping late unicast packet (already on multicast)");
+        return 0;
+    }
+
     /* Forward RTP payload to client - function will update fcc->current_seqn */
     write_rtp_payload_to_client(ctx->client_fd, buf_len, buf, &fcc->current_seqn, &fcc->not_first_packet);
 
@@ -498,7 +545,7 @@ static int fcc_send_term_packet(fcc_session_t *fcc, struct services_s *service,
 /*
  * FCC Protocol Stage 5: Send termination message to server (normal flow)
  */
-int fcc_send_termination_message(struct stream_context_s *ctx, uint16_t mcast_seqn)
+static int fcc_send_termination_message(struct stream_context_s *ctx, uint16_t mcast_seqn)
 {
     fcc_session_t *fcc = &ctx->fcc;
 
@@ -522,7 +569,7 @@ int fcc_send_termination_message(struct stream_context_s *ctx, uint16_t mcast_se
 /*
  * FCC Protocol Stage 6: Initialize pending buffer for smooth transition
  */
-int fcc_init_pending_buffer(struct stream_context_s *ctx)
+static int fcc_init_pending_buffer(struct stream_context_s *ctx)
 {
     fcc_session_t *fcc = &ctx->fcc;
 
