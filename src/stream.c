@@ -344,12 +344,36 @@ void start_media_stream(int client, struct services_s *service)
 
         if (nfds == 0)
         {
-            /* Timeout - indicates no data available, possibly stream issue */
-            logger(LOG_ERROR, "Stream timeout - no data received within %d seconds, cleaning up and exiting",
-                   FCC_SELECT_TIMEOUT_SEC);
-            close(ctx.epoll_fd);
-            stream_cleanup(&ctx, service);
-            exit(RETVAL_SOCK_READ_FAILED);
+            /* Timeout - handle based on current FCC state */
+            if (ctx.fcc.state == FCC_STATE_REQUESTED ||
+                ctx.fcc.state == FCC_STATE_UNICAST_ACTIVE ||
+                ctx.fcc.state == FCC_STATE_MCAST_REQUESTED)
+            {
+                /* FCC unicast stream failed to arrive or timed out - fall back to multicast */
+                logger(LOG_ERROR, "FCC timeout in state %d - no unicast data received within %d seconds, falling back to multicast",
+                       ctx.fcc.state, FCC_SELECT_TIMEOUT_SEC);
+
+                /* Transition to multicast active state */
+                fcc_session_set_state(&ctx.fcc, FCC_STATE_MCAST_ACTIVE, "FCC unicast timeout - fallback to multicast");
+
+                /* Join multicast group if not already joined */
+                if (ctx.mcast_sock <= 0)
+                {
+                    ctx.mcast_sock = join_mcast_group(ctx.service, ctx.epoll_fd);
+                }
+
+                /* Continue processing - multicast should now provide data */
+                continue;
+            }
+            else
+            {
+                /* Timeout in other states (multicast active, RTSP, etc.) is a real error */
+                logger(LOG_ERROR, "Stream timeout - no data received within %d seconds, cleaning up and exiting",
+                       FCC_SELECT_TIMEOUT_SEC);
+                close(ctx.epoll_fd);
+                stream_cleanup(&ctx, service);
+                exit(RETVAL_SOCK_READ_FAILED);
+            }
         }
 
         /* Process all ready file descriptors */
