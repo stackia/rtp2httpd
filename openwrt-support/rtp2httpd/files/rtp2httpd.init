@@ -35,6 +35,7 @@ start_instance() {
     append_arg "$cfg" verbose "--verbose"
     append_arg "$cfg" port "--listen"
     append_arg "$cfg" maxclients "--maxclients"
+    append_arg "$cfg" workers "--workers"
     append_arg "$cfg" hostname "--hostname"
     append_arg "$cfg" fcc_nat_traversal "--fcc-nat-traversal"
     append_arg "$cfg" upstream_interface "--upstream-interface"

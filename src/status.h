@@ -6,11 +6,11 @@
 #include <time.h>
 #include "rtp2httpd.h"
 
+/* Forward declaration */
+struct connection_s;
+
 /* Maximum number of clients we can track in shared memory */
 #define STATUS_MAX_CLIENTS 256
-
-/* Maximum length of state description string */
-#define STATUS_STATE_DESC_LEN 64
 
 /* Maximum number of log entries to keep in circular buffer */
 #define STATUS_MAX_LOG_ENTRIES 1000
@@ -22,6 +22,7 @@ typedef enum
   CLIENT_STATE_CONNECTING = 0,
   CLIENT_STATE_FCC_INIT,
   CLIENT_STATE_FCC_REQUESTED,
+  CLIENT_STATE_FCC_UNICAST_PENDING,
   CLIENT_STATE_FCC_UNICAST_ACTIVE,
   CLIENT_STATE_FCC_MCAST_TRANSITION,
   CLIENT_STATE_FCC_MCAST_ACTIVE,
@@ -38,24 +39,22 @@ typedef enum
 /* Per-client statistics stored in shared memory */
 typedef struct
 {
-  pid_t pid;                              /* Process ID of client handler */
-  int active;                             /* 1 if slot is active, 0 if free */
-  time_t connect_time;                    /* Connection timestamp */
-  char client_addr[64];                   /* Client IP address */
-  char client_port[16];                   /* Client port */
-  char service_url[256];                  /* Service URL being accessed */
-  client_state_type_t state;              /* Current connection state */
-  char state_desc[STATUS_STATE_DESC_LEN]; /* Human-readable state description */
-  uint64_t bytes_sent;                    /* Total bytes sent to client */
-  uint64_t packets_sent;                  /* Total packets sent */
-  uint32_t current_bandwidth;             /* Current bandwidth in bytes/sec */
-  time_t last_update;                     /* Last statistics update time */
+  pid_t pid;                  /* Synthetic connection ID (for internal tracking) */
+  pid_t worker_pid;           /* Actual worker thread/process PID */
+  int active;                 /* 1 if slot is active, 0 if free */
+  int64_t connect_time;       /* Connection timestamp in milliseconds */
+  char client_addr[64];       /* Client IP address */
+  char client_port[16];       /* Client port */
+  char service_url[256];      /* Service URL being accessed */
+  client_state_type_t state;  /* Current connection state */
+  uint64_t bytes_sent;        /* Total bytes sent to client */
+  uint32_t current_bandwidth; /* Current bandwidth in bytes/sec */
 } client_stats_t;
 
 /* Log entry structure for circular buffer */
 typedef struct
 {
-  time_t timestamp;
+  int64_t timestamp; /* Timestamp in milliseconds */
   enum loglevel level;
   char message[STATUS_LOG_ENTRY_LEN];
 } log_entry_t;
@@ -67,7 +66,7 @@ typedef struct
   int total_clients;
   uint64_t total_bytes_sent;
   uint32_t total_bandwidth;
-  time_t server_start_time;
+  int64_t server_start_time; /* Server start time in milliseconds */
 
   /* Log level control */
   enum loglevel current_log_level;
@@ -119,22 +118,31 @@ int status_register_client(pid_t pid, struct sockaddr_storage *client_addr, sock
 void status_unregister_client(pid_t pid);
 
 /**
- * Update client state and statistics
- * Called by child process to update its status
- * @param state Current state
- * @param state_desc Human-readable state description
+ * Update client bytes and bandwidth by synthetic connection id (pid field)
+ * Use this in multi-connection-per-process model.
+ * Always triggers status event notification.
+ * @param pid Synthetic id used at registration time
  * @param bytes_sent Total bytes sent
- * @param packets_sent Total packets sent
+ * @param current_bandwidth Current bandwidth in bytes/sec
  */
-void status_update_client(client_state_type_t state, const char *state_desc,
-                          uint64_t bytes_sent, uint64_t packets_sent);
+void status_update_client_bytes(pid_t pid, uint64_t bytes_sent, uint32_t current_bandwidth);
 
 /**
- * Update client service URL
- * Called by child process when service is determined
+ * Update client state by synthetic connection id (pid field)
+ * Use this in multi-connection-per-process model.
+ * Always triggers status event notification.
+ * @param pid Synthetic id used at registration time
+ * @param state Current state
+ */
+void status_update_client_state(pid_t pid, client_state_type_t state);
+
+/**
+ * Update client service URL by synthetic connection id (pid field)
+ * Use this in multi-connection-per-process model.
+ * @param pid Synthetic id used at registration time
  * @param service_url Service URL string
  */
-void status_update_service(const char *service_url);
+void status_update_service_by_pid(pid_t pid, const char *service_url);
 
 /**
  * Add log entry to circular buffer
@@ -147,45 +155,81 @@ void status_add_log_entry(enum loglevel level, const char *message);
 /**
  * Handle HTTP request for status page
  * Serves the HTML/CSS/JavaScript status page
- * @param client_socket Client socket descriptor
- * @param is_http_1_1 Whether request is HTTP/1.1
+ * @param c Connection object
  */
-void handle_status_page(int client_socket, int is_http_1_1);
-
-/**
- * Handle SSE (Server-Sent Events) endpoint for real-time updates
- * Streams status updates to connected clients
- * @param client_socket Client socket descriptor
- * @param is_http_1_1 Whether request is HTTP/1.1
- */
-void handle_status_sse(int client_socket, int is_http_1_1);
+void handle_status_page(struct connection_s *c);
 
 /**
  * Handle API request to disconnect a client
- * @param client_socket Client socket descriptor
- * @param is_http_1_1 Whether request is HTTP/1.1
- * @param pid_str PID of client to disconnect (as string)
+ * RESTful: POST/DELETE /api/disconnect with form data body "pid=12345"
+ * @param c Connection object
  */
-void handle_disconnect_client(int client_socket, int is_http_1_1, const char *pid_str);
+void handle_disconnect_client(struct connection_s *c);
 
 /**
  * Handle API request to change log level
- * @param client_socket Client socket descriptor
- * @param is_http_1_1 Whether request is HTTP/1.1
- * @param level_str New log level (as string)
+ * RESTful: PUT/PATCH /api/loglevel with form data body "level=2"
+ * @param c Connection object
  */
-void handle_set_log_level(int client_socket, int is_http_1_1, const char *level_str);
-
-/**
- * Get current process's client slot index
- * @return Client slot index, or -1 if not found
- */
-int status_get_my_slot(void);
+void handle_set_log_level(struct connection_s *c);
 
 /**
  * Trigger an event notification to wake up SSE handlers
  * Called when significant events occur (connect/disconnect/state change)
  */
 void status_trigger_event(void);
+
+/**
+ * Get log level name string
+ * @param level Log level enum value
+ * @return String representation of log level
+ */
+const char *status_get_log_level_name(enum loglevel level);
+
+/**
+ * Build SSE JSON payload with status information (for event-driven SSE)
+ * This function is used by worker.c to build SSE payloads for connections.
+ *
+ * @param buffer Output buffer
+ * @param buffer_capacity Buffer size
+ * @param p_sent_initial Pointer to sent_initial flag (in/out)
+ * @param p_last_write_index Pointer to last write index (in/out)
+ * @param p_last_log_count Pointer to last log count (in/out)
+ * @return Number of bytes written to buffer
+ */
+int status_build_sse_json(char *buffer, size_t buffer_capacity,
+                          int *p_sent_initial,
+                          int *p_last_write_index,
+                          int *p_last_log_count);
+
+/**
+ * Initialize SSE connection for a client
+ * Sends SSE headers and sets up connection state for SSE streaming
+ *
+ * @param c Connection object
+ * @return 0 on success, -1 on error
+ */
+int status_handle_sse_init(struct connection_s *c);
+
+/**
+ * Handle SSE notification event
+ * Builds and enqueues SSE payloads for all active SSE connections
+ *
+ * @param conn_head Head of connection list
+ * @return Number of connections updated
+ */
+int status_handle_sse_notification(struct connection_s *conn_head);
+
+/**
+ * Handle SSE heartbeat for a connection
+ * Triggers status update to keep connection alive and update frontend
+ * Only sends heartbeat when there are no active media clients (every 1s)
+ * When clients are active, relies on event-driven updates
+ *
+ * @param c Connection object
+ * @param now Current timestamp in milliseconds
+ * @return 0 if processed, -1 if not needed
+ */
+int status_handle_sse_heartbeat(struct connection_s *c, int64_t now);
 
 #endif /* __STATUS_H__ */

@@ -84,9 +84,10 @@ return view.extend({
     o = s.option(form.ListValue, "verbose", _("rtp2httpd_Verbose"));
     o.value("0", _("rtp2httpd_Quiet"));
     o.value("1", _("rtp2httpd_Error"));
-    o.value("2", _("rtp2httpd_Info"));
-    o.value("3", _("rtp2httpd_Debug"));
-    o.default = "1";
+    o.value("2", _("rtp2httpd_Warn"));
+    o.value("3", _("rtp2httpd_Info"));
+    o.value("4", _("rtp2httpd_Debug"));
+    o.default = "2";
     o.depends("use_config_file", "0");
 
     o = s.option(
@@ -104,6 +105,18 @@ return view.extend({
     o = s.option(form.Value, "maxclients", _("rtp2httpd_Max clients"));
     o.datatype = "range(1, 5000)";
     o.default = "5";
+    o.depends("use_config_file", "0");
+
+    o = s.option(
+      form.Value,
+      "workers",
+      _("rtp2httpd_Workers"),
+      _(
+        "rtp2httpd_Number of worker processes (SO_REUSEPORT sharded). Set to CPU cores for best perf."
+      )
+    );
+    o.datatype = "range(1, 64)";
+    o.placeholder = "1";
     o.depends("use_config_file", "0");
 
     o = s.option(

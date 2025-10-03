@@ -7,46 +7,70 @@
 #include <unistd.h>
 #include <stdarg.h>
 #include <errno.h>
-#include <sys/select.h>
+#include <string.h>
+#include <signal.h>
+#include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
-#include <fcntl.h>
-#include <string.h>
-#include <signal.h>
-#include <sys/wait.h>
+#include <time.h>
+#include <stdint.h>
 
 #include "rtp2httpd.h"
 #include "configuration.h"
-#include "httpclients.h"
 #include "status.h"
+#include "worker.h"
 
 #define MAX_S 10
 
-/**
- * Linked list of clients
- */
-struct client_s
-{
-  struct sockaddr_storage ss; /* Client host-port */
-  pid_t pid;
-  struct client_s *next;
-};
-
-static struct client_s *clients;
-
 /* GLOBALS */
+service_t *services = NULL;
 struct bindaddr_s *bind_addresses = NULL;
-
 int client_count = 0;
 
-/* *** */
+/**
+ * Get current monotonic time in milliseconds.
+ * Uses CLOCK_MONOTONIC for high precision and immunity to system clock changes.
+ * Thread-safe.
+ *
+ * @return Current time in milliseconds since an unspecified starting point
+ */
+int64_t get_time_ms(void)
+{
+  struct timespec ts;
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+  {
+    /* Fallback to CLOCK_REALTIME if MONOTONIC is not available */
+    if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+    {
+      return 0;
+    }
+  }
+  return (int64_t)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+}
+
+/**
+ * Get current real time in milliseconds since Unix epoch.
+ * Uses CLOCK_REALTIME for wall clock time.
+ * Thread-safe.
+ *
+ * @return Current time in milliseconds since Unix epoch (1970-01-01 00:00:00 UTC)
+ */
+int64_t get_realtime_ms(void)
+{
+  struct timespec ts;
+  if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+  {
+    return 0;
+  }
+  return (int64_t)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+}
 
 /**
  * Logger function. Show the message if current verbosity is above
  * logged level.
  *
- * @param levem Message log level
+ * @param level Message log level
  * @param format printf style format string
  * @returns Whatever printf returns
  */
@@ -57,7 +81,7 @@ int logger(enum loglevel level, const char *format, ...)
   char message[1024];
 
   /* Check log level from shared memory if available, otherwise use config */
-  enum loglevel current_level = conf_verbosity;
+  enum loglevel current_level = config.verbosity;
   if (status_shared)
   {
     current_level = status_shared->current_log_level;
@@ -84,91 +108,16 @@ int logger(enum loglevel level, const char *format, ...)
   return r;
 }
 
-void child_handler(int signum)
-{ /* SIGCHLD handler */
-  int child;
-  int status;
-  struct client_s *client, *next_client;
-  int r;
-  char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-
-  while ((child = waitpid(-1, &status, WNOHANG)) > 0)
-  {
-
-    for (client = clients; client; client = client->next)
-    {
-      if (child == client->pid)
-        break;
-    }
-    if (client != NULL)
-    {
-      r = getnameinfo((struct sockaddr *)&(client->ss), sizeof(client->ss),
-                      hbuf, sizeof(hbuf),
-                      sbuf, sizeof(sbuf),
-                      NI_NUMERICHOST | NI_NUMERICSERV);
-      if (r)
-      {
-        logger(LOG_ERROR, "getnameinfo failed: %s",
-               gai_strerror(r));
-      }
-      else
-      {
-        logger(LOG_DEBUG, "Client %s port %s disconnected (%d, %d)",
-               hbuf, sbuf, WEXITSTATUS(status),
-               WIFSIGNALED(status));
-      }
-
-      /* Unregister from status tracking */
-      status_unregister_client(child);
-
-      /* remove client from the list */
-      if (client == clients)
-      {
-        clients = client->next;
-        free(client);
-      }
-      else
-      {
-        for (next_client = clients; next_client != NULL; next_client = next_client->next)
-        {
-          if (next_client->next == client)
-          {
-            next_client->next = client->next;
-            free(client);
-            break;
-          }
-        }
-      }
-    }
-    else
-    {
-      if (child != 1)
-        logger(LOG_ERROR, "Unknown child finished - pid %d", child);
-    }
-
-    client_count--;
-    signal(signum, &child_handler);
-  }
-}
-
 int main(int argc, char *argv[])
 {
   struct addrinfo hints, *res, *ai;
   struct bindaddr_s *bind_addr;
-  struct sockaddr_storage client;
-  socklen_t client_len = sizeof(client);
-  int client_socket;
-  int r, i, j;
+  int r;
   int s[MAX_S];
   int maxs, nfds;
   char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-  fd_set rfd, rfd0;
-  pid_t child;
-  struct client_s *new_client;
   const int on = 1;
-  sigset_t childset;
-
-  sigaddset(&childset, SIGCHLD);
+  int notif_fd = -1;
 
   parse_cmd_line(argc, argv);
 
@@ -179,6 +128,51 @@ int main(int argc, char *argv[])
     /* Continue anyway - status page won't work but streaming will */
   }
 
+  if (config.daemonise)
+  {
+    logger(LOG_INFO, "Forking to background...");
+
+    if (daemon(1, 0) != 0)
+    {
+      logger(LOG_FATAL, "Cannot fork: %s", strerror(errno));
+      exit(EXIT_FAILURE);
+    }
+  }
+
+  /* Register status notification pipe (event-driven SSE) */
+  if (status_shared && status_shared->notification_pipe[0] != -1)
+  {
+    notif_fd = status_shared->notification_pipe[0];
+  }
+
+  /* Prefork N-1 additional workers for SO_REUSEPORT sharding (the original process is also a worker) */
+  if (config.workers > 1)
+  {
+    int k;
+    logger(LOG_INFO, "Starting %d worker threads with SO_REUSEPORT", config.workers);
+    for (k = 1; k < config.workers; k++)
+    {
+      pid_t w = fork();
+      if (w < 0)
+      {
+        logger(LOG_ERROR, "Failed to fork worker: %s", strerror(errno));
+        continue;
+      }
+      if (w == 0)
+      {
+        /* Child becomes a worker: ensure it dies when parent exits */
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        break;
+      }
+    }
+    logger(LOG_INFO, "Worker started: pid=%d", (int)getpid());
+  }
+  else
+  {
+    logger(LOG_INFO, "Starting single worker (pid=%d)", (int)getpid());
+  }
+
+  /* Per-worker listener setup (SO_REUSEPORT allows multiple binds) */
   memset(&hints, 0, sizeof(hints));
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE;
@@ -210,10 +204,16 @@ int main(int argc, char *argv[])
                      SO_REUSEADDR, &on, sizeof(on));
       if (r)
       {
-        logger(LOG_ERROR, "SO_REUSEADDR "
-                          "failed: %s",
+        logger(LOG_ERROR, "SO_REUSEADDR failed: %s",
                strerror(errno));
       }
+#ifdef SO_REUSEPORT
+      r = setsockopt(s[maxs], SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
+      if (r)
+      {
+        logger(LOG_ERROR, "SO_REUSEPORT failed: %s", strerror(errno));
+      }
+#endif
 
 #ifdef IPV6_V6ONLY
       if (ai->ai_family == AF_INET6)
@@ -237,7 +237,7 @@ int main(int argc, char *argv[])
         close(s[maxs]);
         continue;
       }
-      r = listen(s[maxs], 0);
+      r = listen(s[maxs], 128);
       if (r)
       {
         logger(LOG_ERROR, "Cannot listen: %s",
@@ -274,86 +274,8 @@ int main(int argc, char *argv[])
     exit(EXIT_FAILURE);
   }
 
-  FD_ZERO(&rfd0);
-  for (i = 0; i < maxs; i++)
-  {
-    FD_SET(s[i], &rfd0);
-  }
+  logger(LOG_INFO, "Server initialization complete, ready to accept connections");
 
-  if (conf_daemonise)
-  {
-    logger(LOG_INFO, "Forking to background...");
-    if (daemon(1, 0) != 0)
-    {
-      logger(LOG_FATAL, "Cannot fork: %s", strerror(errno));
-      exit(EXIT_FAILURE);
-    }
-  }
-
-  signal(SIGCHLD, &child_handler);
-  while (1)
-  {
-    rfd = rfd0;
-    r = select(nfds + 1, &rfd, NULL, NULL, NULL);
-    if (r < 0)
-    {
-      if (errno == EINTR)
-        continue;
-      logger(LOG_FATAL, "select() failed: %s",
-             strerror(errno));
-      exit(EXIT_FAILURE);
-    }
-    for (i = 0; i < maxs; i++)
-    {
-      if (FD_ISSET(s[i], &rfd))
-      {
-        client_socket = accept(s[i],
-                               (struct sockaddr *)&client,
-                               &client_len);
-
-        /* We have to mask SIGCHLD before we add child to the list*/
-        sigprocmask(SIG_BLOCK, &childset, NULL);
-        client_count++;
-        if ((child = fork()))
-        { /* PARENT */
-          close(client_socket);
-          new_client = malloc(sizeof(struct client_s));
-          new_client->ss = client;
-          new_client->pid = child;
-          new_client->next = clients;
-          clients = new_client;
-
-          r = getnameinfo((struct sockaddr *)&client, client_len,
-                          hbuf, sizeof(hbuf),
-                          sbuf, sizeof(sbuf),
-                          NI_NUMERICHOST | NI_NUMERICSERV);
-          if (r)
-          {
-            logger(LOG_ERROR, "getnameinfo failed: %s",
-                   gai_strerror(r));
-          }
-          else
-          {
-            logger(LOG_INFO, "Connection from %s port %s",
-                   hbuf, sbuf);
-          }
-
-          /* Register client in status tracking */
-          status_register_client(child, &client, client_len);
-
-          sigprocmask(SIG_UNBLOCK, &childset, NULL);
-        }
-        else
-        { /* CHILD */
-          sigprocmask(SIG_UNBLOCK, &childset, NULL);
-          for (j = 0; j < maxs; j++)
-            close(s[j]);
-          handle_http_client(client_socket);
-          exit(EXIT_SUCCESS);
-        }
-      }
-    }
-  }
-  /* Should never reach this */
-  return 0;
+  /* Run worker event loop */
+  return worker_run_event_loop(s, maxs, notif_fd);
 }

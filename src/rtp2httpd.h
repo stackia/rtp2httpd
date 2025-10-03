@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <net/if.h> /* For struct ifreq */
 
 #ifndef SYSCONFDIR
 #define SYSCONFDIR "."
@@ -18,6 +19,9 @@
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
+
+/* Array size calculation macro */
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 /* Branch prediction hints for compiler optimization */
 #ifdef __GNUC__
@@ -31,9 +35,10 @@
 enum loglevel
 {
   LOG_FATAL = 0, /* Always shown */
-  LOG_ERROR,     /* Could be silenced */
-  LOG_INFO,      /* Default verbosity */
-  LOG_DEBUG
+  LOG_ERROR,     /* Critical failures that prevent functionality */
+  LOG_WARN,      /* Recoverable issues or unexpected conditions */
+  LOG_INFO,      /* Important operational events (default verbosity) */
+  LOG_DEBUG      /* Detailed diagnostic information */
 };
 
 enum fcc_nat_traversal
@@ -41,13 +46,6 @@ enum fcc_nat_traversal
   FCC_NAT_T_DISABLED = 0,
   FCC_NAT_T_PUNCHHOLE,
   FCC_NAT_T_NAT_PMP
-};
-
-enum service_type
-{
-  SERVICE_MRTP = 0,
-  SERVICE_MUDP,
-  SERVICE_RTSP
 };
 
 /*
@@ -60,35 +58,42 @@ struct bindaddr_s
   struct bindaddr_s *next;
 };
 
-/*
- * Linked list of allowed services
+/* Forward declaration - full definition in service.h */
+typedef struct service_s service_t;
+
+/**
+ * Global configuration structure
+ * Centralizes all runtime configuration parameters
  */
-struct services_s
+typedef struct
 {
-  char *url;
-  char *msrc;
-  enum service_type service_type;
-  struct addrinfo *addr;
-  struct addrinfo *msrc_addr;
-  struct addrinfo *fcc_addr;
-  char *rtsp_url;       /* Full RTSP URL for SERVICE_RTSP */
-  char *playseek_param; /* playseek parameter for time range */
-  char *user_agent;     /* User-Agent header for timezone detection */
-  struct services_s *next;
-};
+  /* Logging and daemon settings */
+  enum loglevel verbosity; /* Log verbosity level (LOG_FATAL to LOG_DEBUG) */
+  int daemonise;           /* Run as daemon in background (0=no, 1=yes) */
 
-/* GLOBAL CONFIGURATION VARIABLES */
+  /* Network and service settings */
+  int udpxy;      /* Enable UDPxy URL format support (0=no, 1=yes) */
+  int maxclients; /* Maximum concurrent client connections */
+  char *hostname; /* Server hostname for URL generation (NULL=auto) */
 
-extern enum loglevel conf_verbosity;
-extern int conf_daemonise;
-extern int conf_udpxy;
-extern int conf_maxclients;
-extern char *conf_hostname;
-extern enum fcc_nat_traversal conf_fcc_nat_traversal;
-extern struct ifreq conf_upstream_interface;
+  /* Worker and performance settings */
+  int workers; /* Number of worker threads (SO_REUSEPORT sharded), default 1 */
+
+  /* FCC (Fast Channel Change) settings */
+  enum fcc_nat_traversal fcc_nat_traversal; /* NAT traversal method for FCC */
+
+  /* Network interface settings */
+  struct ifreq upstream_interface; /* Interface for upstream media requests */
+
+  /* Time format settings */
+  char *clock_format; /* Clock format string for RTSP time conversion */
+} config_t;
+
+/* GLOBAL CONFIGURATION */
+extern config_t config;
 
 /* GLOBALS */
-extern struct services_s *services;
+extern service_t *services;
 extern struct bindaddr_s *bind_addresses;
 extern int client_count;
 
@@ -103,6 +108,24 @@ extern int client_count;
  * @returns Whatever printf returns
  */
 int logger(enum loglevel level, const char *format, ...);
+
+/**
+ * Get current monotonic time in milliseconds.
+ * Uses CLOCK_MONOTONIC for high precision and immunity to system clock changes.
+ * Thread-safe.
+ *
+ * @return Current time in milliseconds since an unspecified starting point
+ */
+int64_t get_time_ms(void);
+
+/**
+ * Get current real time in milliseconds since Unix epoch.
+ * Uses CLOCK_REALTIME for wall clock time.
+ * Thread-safe.
+ *
+ * @return Current time in milliseconds since Unix epoch (1970-01-01 00:00:00 UTC)
+ */
+int64_t get_realtime_ms(void);
 
 /* Signal handlers */
 void child_handler(int signum);

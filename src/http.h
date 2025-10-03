@@ -6,6 +6,9 @@
 #include "rtp2httpd.h"
 #include "buffer_config.h"
 
+/* Forward declaration */
+struct connection_s;
+
 /* HTTP Status Codes */
 typedef enum
 {
@@ -24,56 +27,71 @@ typedef enum
   CONTENT_HTMLUTF = 2,
   CONTENT_MPEGV = 3,
   CONTENT_MPEGA = 4,
-  CONTENT_MP2T = 5
+  CONTENT_MP2T = 5,
+  CONTENT_SSE = 6
 } content_type_t;
 
-/**
- * Ensures that all data are written to the socket
- *
- * @param s Socket file descriptor
- * @param buf Buffer to write
- * @param buflen Buffer length
- */
-void write_to_client(int s, const uint8_t *buf, const size_t buflen);
+/* HTTP request parsing state */
+typedef enum
+{
+  HTTP_PARSE_REQ_LINE = 0,
+  HTTP_PARSE_HEADERS,
+  HTTP_PARSE_BODY,
+  HTTP_PARSE_COMPLETE
+} http_parse_state_t;
+
+/* HTTP request structure */
+typedef struct
+{
+  char method[16];
+  char url[1024];
+  char hostname[256];
+  char user_agent[256];
+  int is_http_1_1;
+  http_parse_state_t parse_state;
+  int content_length;
+  char body[1024];
+  int body_len;
+} http_request_t;
 
 /**
- * Send HTTP response headers
+ * Initialize HTTP request structure
+ * @param req Request structure to initialize
+ */
+void http_request_init(http_request_t *req);
+
+/**
+ * Parse HTTP request from buffer (incremental parsing)
+ * Modifies inbuf and in_len as data is consumed.
  *
- * @param s Socket file descriptor
+ * @param inbuf Input buffer containing HTTP request data
+ * @param in_len Pointer to current buffer length (updated as data is consumed)
+ * @param req Request structure to fill (maintains state across calls)
+ * @return 0 = need more data, 1 = request complete, -1 = parse error
+ */
+int http_parse_request(char *inbuf, int *in_len, http_request_t *req);
+
+/**
+ * Send HTTP response headers via connection output buffer
+ * For SSE (Server-Sent Events), use CONTENT_SSE type which includes
+ * Cache-Control and Connection headers automatically.
+ *
+ * @param c Connection object
  * @param status Status code
  * @param type Content type
  */
-void send_http_headers(int s, http_status_t status, content_type_t type);
+void send_http_headers(struct connection_s *c, http_status_t status, content_type_t type);
 
 /**
- * Parse UDPxy format URLs
- *
- * @param url URL string to parse
- * @return Pointer to service structure or NULL on failure
+ * Parse query parameter value from query/form string (case-insensitive parameter names)
+ * Works for both URL query strings and application/x-www-form-urlencoded body data
+ * @param query_string Query or form data string (without leading ?)
+ * @param param_name Parameter name to search for (case-insensitive)
+ * @param value_buf Buffer to store parameter value
+ * @param value_size Size of value buffer
+ * @return 0 if parameter found, -1 if not found or error
  */
-struct services_s *parse_udpxy_url(char *url);
-
-/*
- * Parse RTSP URL from HTTP request (HTTP layer)
- * Translates HTTP request URL format to RTSP URL and extracts playseek parameter
- * Format: /rtsp/server:port/path?query&playseek=...
- * @param http_url HTTP URL to parse
- * @return Pointer to dynamically allocated service structure or NULL on failure
- */
-struct services_s *http_parse_rtsp_request_url(const char *http_url);
-
-/**
- * Free service structure allocated by parse functions
- *
- * @param service Service structure to free
- */
-void free_service(struct services_s *service);
-
-/**
- * Signal handler for broken pipe
- *
- * @param signum Signal number
- */
-void sigpipe_handler(int signum);
+int http_parse_query_param(const char *query_string, const char *param_name,
+                           char *value_buf, size_t value_size);
 
 #endif /* __HTTP_H__ */

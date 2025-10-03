@@ -9,6 +9,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/select.h>
+#include <sys/epoll.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <time.h>
@@ -18,7 +19,40 @@
 
 #include "status.h"
 #include "rtp2httpd.h"
+#include "connection.h"
 #include "http.h"
+
+/* State description lookup table */
+static const char *client_state_descriptions[] = {
+    [CLIENT_STATE_CONNECTING] = "Connecting",
+    [CLIENT_STATE_FCC_INIT] = "FCC_INIT",
+    [CLIENT_STATE_FCC_REQUESTED] = "FCC_REQUESTED",
+    [CLIENT_STATE_FCC_UNICAST_PENDING] = "FCC_UNICAST_PENDING",
+    [CLIENT_STATE_FCC_UNICAST_ACTIVE] = "FCC_UNICAST_ACTIVE",
+    [CLIENT_STATE_FCC_MCAST_TRANSITION] = "FCC_MCAST_TRANSITION",
+    [CLIENT_STATE_FCC_MCAST_ACTIVE] = "FCC_MCAST_ACTIVE",
+    [CLIENT_STATE_RTSP_INIT] = "RTSP_INIT",
+    [CLIENT_STATE_RTSP_CONNECTED] = "RTSP_CONNECTED",
+    [CLIENT_STATE_RTSP_DESCRIBED] = "RTSP_DESCRIBE",
+    [CLIENT_STATE_RTSP_SETUP] = "RTSP_SETUP",
+    [CLIENT_STATE_RTSP_PLAYING] = "RTSP_PLAYING",
+    [CLIENT_STATE_MULTICAST_ACTIVE] = "Multicast Active",
+    [CLIENT_STATE_ERROR] = "Error",
+    [CLIENT_STATE_DISCONNECTED] = "Disconnected"};
+
+/**
+ * Get state description string from state enum
+ * @param state Client state enum value
+ * @return String representation of state
+ */
+static const char *status_get_state_description(client_state_type_t state)
+{
+  if (state < ARRAY_SIZE(client_state_descriptions) && client_state_descriptions[state])
+  {
+    return client_state_descriptions[state];
+  }
+  return "Unknown";
+}
 
 /* Helper: escape JSON string into out buffer */
 static void json_escape_string(const char *in, char *out, size_t out_sz)
@@ -110,8 +144,8 @@ int status_init(void)
 
   /* Initialize shared memory structure */
   memset(status_shared, 0, sizeof(status_shared_t));
-  status_shared->server_start_time = time(NULL);
-  status_shared->current_log_level = conf_verbosity;
+  status_shared->server_start_time = get_realtime_ms();
+  status_shared->current_log_level = config.verbosity;
   status_shared->event_counter = 0;
 
   /* Create notification pipe for event-driven SSE updates */
@@ -128,7 +162,7 @@ int status_init(void)
   int flags = fcntl(status_shared->notification_pipe[0], F_GETFL, 0);
   fcntl(status_shared->notification_pipe[0], F_SETFL, flags | O_NONBLOCK);
 
-  logger(LOG_DEBUG, "Status tracking initialized");
+  logger(LOG_INFO, "Status tracking initialized");
   return 0;
 }
 
@@ -189,12 +223,21 @@ int status_register_client(pid_t pid, struct sockaddr_storage *client_addr, sock
       memset(&status_shared->clients[i], 0, sizeof(client_stats_t));
       status_shared->clients[i].active = 1;
       status_shared->clients[i].pid = pid;
-      status_shared->clients[i].connect_time = time(NULL);
-      strncpy(status_shared->clients[i].client_addr, hbuf, sizeof(status_shared->clients[i].client_addr) - 1);
-      strncpy(status_shared->clients[i].client_port, sbuf, sizeof(status_shared->clients[i].client_port) - 1);
+      status_shared->clients[i].worker_pid = getpid(); /* Store actual worker PID */
+      status_shared->clients[i].connect_time = get_realtime_ms();
+      /* Copy client address and port, truncating if necessary (intentional for storage) */
+      size_t addr_str_len = strlen(hbuf);
+      if (addr_str_len >= sizeof(status_shared->clients[i].client_addr))
+        addr_str_len = sizeof(status_shared->clients[i].client_addr) - 1;
+      memcpy(status_shared->clients[i].client_addr, hbuf, addr_str_len);
+      status_shared->clients[i].client_addr[addr_str_len] = '\0';
+
+      size_t port_str_len = strlen(sbuf);
+      if (port_str_len >= sizeof(status_shared->clients[i].client_port))
+        port_str_len = sizeof(status_shared->clients[i].client_port) - 1;
+      memcpy(status_shared->clients[i].client_port, sbuf, port_str_len);
+      status_shared->clients[i].client_port[port_str_len] = '\0';
       status_shared->clients[i].state = CLIENT_STATE_CONNECTING;
-      strncpy(status_shared->clients[i].state_desc, "Connecting", sizeof(status_shared->clients[i].state_desc) - 1);
-      status_shared->clients[i].last_update = time(NULL);
 
       status_shared->total_clients++;
 
@@ -223,6 +266,10 @@ void status_unregister_client(pid_t pid)
   {
     if (status_shared->clients[i].active && status_shared->clients[i].pid == pid)
     {
+      /* Accumulate this client's bytes_sent to global total before unregistering
+       * This ensures total_bytes_sent persists even after client disconnects */
+      status_shared->total_bytes_sent += status_shared->clients[i].bytes_sent;
+
       status_shared->clients[i].active = 0;
       status_shared->clients[i].state = CLIENT_STATE_DISCONNECTED;
       status_shared->total_clients--;
@@ -235,25 +282,17 @@ void status_unregister_client(pid_t pid)
   }
 }
 
-/**
- * Get current process's client slot index
- */
-int status_get_my_slot(void)
+/* Helper: find slot index by pid-like identifier */
+static int status_find_slot_by_pid(pid_t pid)
 {
   int i;
-  pid_t my_pid = getpid();
-
   if (!status_shared)
     return -1;
-
   for (i = 0; i < STATUS_MAX_CLIENTS; i++)
   {
-    if (status_shared->clients[i].active && status_shared->clients[i].pid == my_pid)
-    {
+    if (status_shared->clients[i].active && status_shared->clients[i].pid == pid)
       return i;
-    }
   }
-
   return -1;
 }
 
@@ -280,69 +319,61 @@ void status_trigger_event(void)
 }
 
 /**
- * Update client state and statistics
+ * Update client bytes and bandwidth by pid-like identifier
+ * Always triggers status event notification.
  */
-void status_update_client(client_state_type_t state, const char *state_desc,
-                          uint64_t bytes_sent, uint64_t packets_sent)
+void status_update_client_bytes(pid_t pid, uint64_t bytes_sent, uint32_t current_bandwidth)
 {
   int slot;
-  time_t now;
-  client_state_type_t old_state;
-  int state_changed = 0;
 
   if (!status_shared)
     return;
 
-  slot = status_get_my_slot();
+  slot = status_find_slot_by_pid(pid);
   if (slot < 0)
     return;
 
-  now = time(NULL);
-  old_state = status_shared->clients[slot].state;
-
-  /* Calculate bandwidth if enough time has passed */
-  if (status_shared->clients[slot].last_update > 0)
-  {
-    time_t elapsed = now - status_shared->clients[slot].last_update;
-    if (elapsed > 0)
-    {
-      uint64_t bytes_diff = bytes_sent - status_shared->clients[slot].bytes_sent;
-      status_shared->clients[slot].current_bandwidth = (uint32_t)(bytes_diff / elapsed);
-    }
-  }
-
-  /* Check if state changed */
-  if (state != old_state)
-    state_changed = 1;
-
   /* Update client statistics */
-  status_shared->clients[slot].state = state;
-  if (state_desc)
-  {
-    strncpy(status_shared->clients[slot].state_desc, state_desc,
-            sizeof(status_shared->clients[slot].state_desc) - 1);
-    status_shared->clients[slot].state_desc[sizeof(status_shared->clients[slot].state_desc) - 1] = '\0';
-  }
   status_shared->clients[slot].bytes_sent = bytes_sent;
-  status_shared->clients[slot].packets_sent = packets_sent;
-  status_shared->clients[slot].last_update = now;
+  status_shared->clients[slot].current_bandwidth = current_bandwidth;
 
-  /* Trigger event if state changed */
-  if (state_changed)
-    status_trigger_event();
+  /* Always trigger event notification */
+  status_trigger_event();
 }
 
 /**
- * Update client service URL
+ * Update client state by pid-like identifier
+ * Always triggers status event notification.
  */
-void status_update_service(const char *service_url)
+void status_update_client_state(pid_t pid, client_state_type_t state)
+{
+  int slot;
+
+  if (!status_shared)
+    return;
+
+  slot = status_find_slot_by_pid(pid);
+  if (slot < 0)
+    return;
+
+  /* Update client state */
+  status_shared->clients[slot].state = state;
+
+  /* Always trigger event notification */
+  status_trigger_event();
+}
+
+/**
+ * Update client service URL by pid-like identifier
+ */
+void status_update_service_by_pid(pid_t pid, const char *service_url)
 {
   int slot;
 
   if (!status_shared || !service_url)
     return;
 
-  slot = status_get_my_slot();
+  slot = status_find_slot_by_pid(pid);
   if (slot < 0)
     return;
 
@@ -365,7 +396,7 @@ void status_add_log_entry(enum loglevel level, const char *message)
   index = status_shared->log_write_index;
 
   /* Store log entry */
-  status_shared->log_entries[index].timestamp = time(NULL);
+  status_shared->log_entries[index].timestamp = get_realtime_ms();
   status_shared->log_entries[index].level = level;
   strncpy(status_shared->log_entries[index].message, message,
           sizeof(status_shared->log_entries[index].message) - 1);
@@ -379,14 +410,17 @@ void status_add_log_entry(enum loglevel level, const char *message)
   {
     status_shared->log_count++;
   }
+
+  /* Trigger SSE event for new log entries */
+  status_trigger_event();
 }
 
 /* Removed format_bytes and format_bandwidth - formatting is done in JavaScript on the frontend */
 
 /**
- * Get log level name
+ * Get log level name (public function for SSE)
  */
-static const char *get_log_level_name(enum loglevel level)
+const char *status_get_log_level_name(enum loglevel level)
 {
   switch (level)
   {
@@ -394,6 +428,8 @@ static const char *get_log_level_name(enum loglevel level)
     return "FATAL";
   case LOG_ERROR:
     return "ERROR";
+  case LOG_WARN:
+    return "WARN";
   case LOG_INFO:
     return "INFO";
   case LOG_DEBUG:
@@ -404,21 +440,223 @@ static const char *get_log_level_name(enum loglevel level)
 }
 
 /**
- * Handle API request to disconnect a client
+ * Build SSE JSON payload with status information (for event-driven SSE)
+ * This function is used by worker.c to build SSE payloads for connections.
+ *
+ * @param buffer Output buffer
+ * @param buffer_capacity Buffer size
+ * @param p_sent_initial Pointer to sent_initial flag (in/out)
+ * @param p_last_write_index Pointer to last write index (in/out)
+ * @param p_last_log_count Pointer to last log count (in/out)
+ * @return Number of bytes written to buffer
  */
-void handle_disconnect_client(int client_socket, int is_http_1_1, const char *pid_str)
+int status_build_sse_json(char *buffer, size_t buffer_capacity,
+                          int *p_sent_initial,
+                          int *p_last_write_index,
+                          int *p_last_log_count)
+{
+  if (!status_shared)
+    return 0;
+
+  int sent_initial = *p_sent_initial;
+  int last_write_index = *p_last_write_index;
+  int last_log_count = *p_last_log_count;
+  int i, log_start, log_idx;
+  uint64_t total_bytes = 0;
+  uint32_t total_bw = 0;
+  int streams_count = 0;
+
+  int len = snprintf(buffer, buffer_capacity,
+                     "data: {\"server_start_time\":%lld,\"current_log_level\":%d,\"max_clients\":%d,\"clients\":[",
+                     (long long)status_shared->server_start_time,
+                     status_shared->current_log_level,
+                     config.maxclients);
+
+  /* Add client data (only real media streams: have a service_url) */
+  int first_client = 1;
+  for (i = 0; i < STATUS_MAX_CLIENTS; i++)
+  {
+    if (status_shared->clients[i].active && status_shared->clients[i].service_url[0] != '\0')
+    {
+      if (!first_client)
+        len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",");
+      first_client = 0;
+
+      /* Get state description from lookup table */
+      const char *state_desc = status_get_state_description(status_shared->clients[i].state);
+
+      len += snprintf(buffer + len, buffer_capacity - (size_t)len,
+                      "{\"pid\":%d,\"worker_pid\":%d,\"connect_time\":%lld,\"client_addr\":\"%s\",\"client_port\":\"%s\","
+                      "\"service_url\":\"%s\",\"state_desc\":\"%s\",\"bytes_sent\":%llu,"
+                      "\"current_bandwidth\":%u}",
+                      status_shared->clients[i].pid,
+                      status_shared->clients[i].worker_pid,
+                      (long long)status_shared->clients[i].connect_time,
+                      status_shared->clients[i].client_addr,
+                      status_shared->clients[i].client_port,
+                      status_shared->clients[i].service_url,
+                      state_desc,
+                      (unsigned long long)status_shared->clients[i].bytes_sent,
+                      status_shared->clients[i].current_bandwidth);
+
+      streams_count++;
+      total_bytes += status_shared->clients[i].bytes_sent;
+      total_bw += status_shared->clients[i].current_bandwidth;
+    }
+  }
+
+  /* Close clients array and add computed totals
+   * total_bytes_sent = accumulated bytes from disconnected clients + current active clients */
+  uint64_t cumulative_total_bytes = status_shared->total_bytes_sent + total_bytes;
+  len += snprintf(buffer + len, buffer_capacity - (size_t)len,
+                  "],\"total_clients\":%d,\"total_bytes_sent\":%llu,\"total_bandwidth\":%u",
+                  streams_count,
+                  (unsigned long long)cumulative_total_bytes,
+                  total_bw);
+
+  /* Decide logs mode */
+  const char *logs_mode = "none";
+  int cur_wi = status_shared->log_write_index;
+  int cur_count = status_shared->log_count;
+  int new_entries = 0;
+  if (!sent_initial)
+  {
+    logs_mode = "full";
+  }
+  else
+  {
+    int delta_idx = (cur_wi - last_write_index + STATUS_MAX_LOG_ENTRIES) % STATUS_MAX_LOG_ENTRIES;
+    new_entries = delta_idx;
+    if (cur_count < STATUS_MAX_LOG_ENTRIES)
+    {
+      int count_delta = cur_count - last_log_count;
+      if (count_delta < 0)
+        count_delta = 0;
+      if (new_entries > count_delta)
+        new_entries = count_delta;
+    }
+    logs_mode = (new_entries > 0) ? "incremental" : "none";
+  }
+
+  /* Add logs section */
+  len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",\"logs_mode\":\"%s\",\"logs\":[", logs_mode);
+
+  /* Add logs according to mode */
+  if (!sent_initial)
+  {
+    /* Full dump: all available logs */
+    int full_count = cur_count;
+    if (full_count > 0)
+    {
+      if (cur_count < STATUS_MAX_LOG_ENTRIES)
+        log_start = 0;
+      else
+        log_start = cur_wi;
+
+      int first_log = 1;
+      for (i = 0; i < full_count; i++)
+      {
+        log_idx = (log_start + cur_count - full_count + i) % STATUS_MAX_LOG_ENTRIES;
+        if (!first_log)
+          len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",");
+        first_log = 0;
+
+        char escaped[STATUS_LOG_ENTRY_LEN * 2];
+        json_escape_string(status_shared->log_entries[log_idx].message, escaped, sizeof(escaped));
+
+        len += snprintf(buffer + len, buffer_capacity - (size_t)len,
+                        "{\"timestamp\":%lld,\"level\":%d,\"level_name\":\"%s\",\"message\":\"%s\"}",
+                        (long long)status_shared->log_entries[log_idx].timestamp,
+                        status_shared->log_entries[log_idx].level,
+                        status_get_log_level_name(status_shared->log_entries[log_idx].level),
+                        escaped);
+      }
+    }
+    sent_initial = 1;
+    last_write_index = cur_wi;
+    last_log_count = cur_count;
+  }
+  else if (new_entries > 0)
+  {
+    /* Incremental: only new entries since last_write_index */
+    int first_log = 1;
+    int start_idx = (cur_wi - new_entries + STATUS_MAX_LOG_ENTRIES) % STATUS_MAX_LOG_ENTRIES;
+    for (i = 0; i < new_entries; i++)
+    {
+      log_idx = (start_idx + i) % STATUS_MAX_LOG_ENTRIES;
+      if (!first_log)
+        len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",");
+      first_log = 0;
+
+      char escaped[STATUS_LOG_ENTRY_LEN * 2];
+      json_escape_string(status_shared->log_entries[log_idx].message, escaped, sizeof(escaped));
+
+      len += snprintf(buffer + len, buffer_capacity - (size_t)len,
+                      "{\"timestamp\":%ld,\"level\":%d,\"level_name\":\"%s\",\"message\":\"%s\"}",
+                      (long)status_shared->log_entries[log_idx].timestamp,
+                      status_shared->log_entries[log_idx].level,
+                      status_get_log_level_name(status_shared->log_entries[log_idx].level),
+                      escaped);
+    }
+    last_write_index = cur_wi;
+    last_log_count = cur_count;
+  }
+
+  len += snprintf(buffer + len, buffer_capacity - (size_t)len, "]}\n\n");
+
+  /* Update output parameters */
+  *p_sent_initial = sent_initial;
+  *p_last_write_index = last_write_index;
+  *p_last_log_count = last_log_count;
+
+  /* Update global bandwidth statistics */
+  status_shared->total_bandwidth = total_bw;
+
+  return len;
+}
+
+/**
+ * Handle API request to disconnect a client
+ * RESTful: POST /api/disconnect with form data body "pid=12345"
+ */
+void handle_disconnect_client(connection_t *c)
 {
   pid_t target_pid;
   int found = 0;
   char response[512];
+  char pid_str[32] = {0};
 
-  if (!pid_str)
+  /* Check HTTP method */
+  if (strcasecmp(c->http_req.method, "POST") != 0 && strcasecmp(c->http_req.method, "DELETE") != 0)
   {
-    if (is_http_1_1)
-      send_http_headers(client_socket, STATUS_400, CONTENT_HTML);
+    if (c->http_req.is_http_1_1)
+      send_http_headers(c, STATUS_400, CONTENT_HTML);
     snprintf(response, sizeof(response),
-             "{\"success\":false,\"error\":\"Missing PID parameter\"}");
-    write_to_client(client_socket, (const uint8_t *)response, strlen(response));
+             "{\"success\":false,\"error\":\"Method not allowed. Use POST or DELETE\"}");
+    connection_queue_output(c, (const uint8_t *)response, strlen(response));
+    return;
+  }
+
+  /* Parse form data body to get PID */
+  if (c->http_req.body_len > 0)
+  {
+    if (http_parse_query_param(c->http_req.body, "pid", pid_str, sizeof(pid_str)) != 0)
+    {
+      if (c->http_req.is_http_1_1)
+        send_http_headers(c, STATUS_400, CONTENT_HTML);
+      snprintf(response, sizeof(response),
+               "{\"success\":false,\"error\":\"Missing 'pid' parameter in request body\"}");
+      connection_queue_output(c, (const uint8_t *)response, strlen(response));
+      return;
+    }
+  }
+  else
+  {
+    if (c->http_req.is_http_1_1)
+      send_http_headers(c, STATUS_400, CONTENT_HTML);
+    snprintf(response, sizeof(response),
+             "{\"success\":false,\"error\":\"Missing request body\"}");
+    connection_queue_output(c, (const uint8_t *)response, strlen(response));
     return;
   }
 
@@ -430,8 +668,8 @@ void handle_disconnect_client(int client_socket, int is_http_1_1, const char *pi
     found = 1;
   }
 
-  if (is_http_1_1)
-    send_http_headers(client_socket, STATUS_200, CONTENT_HTML);
+  if (c->http_req.is_http_1_1)
+    send_http_headers(c, STATUS_200, CONTENT_HTML);
 
   if (found)
   {
@@ -444,24 +682,50 @@ void handle_disconnect_client(int client_socket, int is_http_1_1, const char *pi
              "{\"success\":false,\"error\":\"Client not found or already disconnected\"}");
   }
 
-  write_to_client(client_socket, (const uint8_t *)response, strlen(response));
+  connection_queue_output(c, (const uint8_t *)response, strlen(response));
 }
 
 /**
  * Handle API request to change log level
+ * RESTful: PUT /api/loglevel with form data body "level=2"
  */
-void handle_set_log_level(int client_socket, int is_http_1_1, const char *level_str)
+void handle_set_log_level(connection_t *c)
 {
   int new_level;
   char response[512];
+  char level_str[32] = {0};
 
-  if (!level_str)
+  /* Check HTTP method */
+  if (strcasecmp(c->http_req.method, "PUT") != 0 && strcasecmp(c->http_req.method, "PATCH") != 0)
   {
-    if (is_http_1_1)
-      send_http_headers(client_socket, STATUS_400, CONTENT_HTML);
+    if (c->http_req.is_http_1_1)
+      send_http_headers(c, STATUS_400, CONTENT_HTML);
     snprintf(response, sizeof(response),
-             "{\"success\":false,\"error\":\"Missing level parameter\"}");
-    write_to_client(client_socket, (const uint8_t *)response, strlen(response));
+             "{\"success\":false,\"error\":\"Method not allowed. Use PUT or PATCH\"}");
+    connection_queue_output(c, (const uint8_t *)response, strlen(response));
+    return;
+  }
+
+  /* Parse form data body to get level */
+  if (c->http_req.body_len > 0)
+  {
+    if (http_parse_query_param(c->http_req.body, "level", level_str, sizeof(level_str)) != 0)
+    {
+      if (c->http_req.is_http_1_1)
+        send_http_headers(c, STATUS_400, CONTENT_HTML);
+      snprintf(response, sizeof(response),
+               "{\"success\":false,\"error\":\"Missing 'level' parameter in request body\"}");
+      connection_queue_output(c, (const uint8_t *)response, strlen(response));
+      return;
+    }
+  }
+  else
+  {
+    if (c->http_req.is_http_1_1)
+      send_http_headers(c, STATUS_400, CONTENT_HTML);
+    snprintf(response, sizeof(response),
+             "{\"success\":false,\"error\":\"Missing request body\"}");
+    connection_queue_output(c, (const uint8_t *)response, strlen(response));
     return;
   }
 
@@ -469,11 +733,11 @@ void handle_set_log_level(int client_socket, int is_http_1_1, const char *level_
 
   if (new_level < LOG_FATAL || new_level > LOG_DEBUG)
   {
-    if (is_http_1_1)
-      send_http_headers(client_socket, STATUS_400, CONTENT_HTML);
+    if (c->http_req.is_http_1_1)
+      send_http_headers(c, STATUS_400, CONTENT_HTML);
     snprintf(response, sizeof(response),
-             "{\"success\":false,\"error\":\"Invalid log level (must be 0-3)\"}");
-    write_to_client(client_socket, (const uint8_t *)response, strlen(response));
+             "{\"success\":false,\"error\":\"Invalid log level (must be 0-4)\"}");
+    connection_queue_output(c, (const uint8_t *)response, strlen(response));
     return;
   }
 
@@ -482,264 +746,145 @@ void handle_set_log_level(int client_socket, int is_http_1_1, const char *level_
   {
     status_shared->current_log_level = new_level;
   }
-  conf_verbosity = new_level;
+  config.verbosity = new_level;
 
-  if (is_http_1_1)
-    send_http_headers(client_socket, STATUS_200, CONTENT_HTML);
+  if (c->http_req.is_http_1_1)
+    send_http_headers(c, STATUS_200, CONTENT_HTML);
 
   snprintf(response, sizeof(response),
            "{\"success\":true,\"message\":\"Log level changed to %s\"}",
-           get_log_level_name(new_level));
-  write_to_client(client_socket, (const uint8_t *)response, strlen(response));
+           status_get_log_level_name(new_level));
+  connection_queue_output(c, (const uint8_t *)response, strlen(response));
 }
 
 /**
  * Handle HTTP request for status page
  */
-void handle_status_page(int client_socket, int is_http_1_1)
+void handle_status_page(connection_t *c)
 {
 /* Include the HTML content */
 #include "status_page.h"
 
-  if (is_http_1_1)
+  if (c->http_req.is_http_1_1)
   {
     const char *headers =
         "HTTP/1.1 200 OK\r\n"
         "Content-Type: text/html; charset=utf-8\r\n"
         "Server: " PACKAGE "/" VERSION "\r\n"
         "\r\n";
-    write_to_client(client_socket, (const uint8_t *)headers, strlen(headers));
+    connection_queue_output(c, (const uint8_t *)headers, strlen(headers));
   }
 
-  write_to_client(client_socket, (const uint8_t *)status_page_html, strlen(status_page_html));
+  connection_queue_output(c, (const uint8_t *)status_page_html, strlen(status_page_html));
 }
 
 /**
- * Handle SSE endpoint for real-time updates
+ * Initialize SSE connection for a client
+ * Sends SSE headers and sets up connection state for SSE streaming
  */
-void handle_status_sse(int client_socket, int is_http_1_1)
+int status_handle_sse_init(connection_t *c)
 {
-  size_t buffer_capacity = (size_t)STATUS_MAX_LOG_ENTRIES * STATUS_LOG_ENTRY_LEN * 2 + 65536;
-  char *buffer = (char *)malloc(buffer_capacity);
-  int allocated = 1;
-  if (!buffer)
-  {
-    static char fallback[65536];
-    buffer = fallback;
-    buffer_capacity = sizeof(fallback);
-    allocated = 0;
-  }
-  int i, log_start, log_idx;
-  int last_write_index = -1;
-  int last_log_count = 0;
-  int sent_initial = 0;
-  uint64_t total_bytes = 0;
-  uint32_t total_bw = 0;
-  (void)is_http_1_1; /* Unused parameter */
-
-  if (!status_shared)
-  {
-    logger(LOG_ERROR, "Status shared memory not initialized");
-    return;
-  }
+  if (!c)
+    return -1;
 
   /* Send SSE headers */
-  const char *headers =
-      "HTTP/1.1 200 OK\r\n"
-      "Content-Type: text/event-stream\r\n"
-      "Cache-Control: no-cache\r\n"
-      "Connection: keep-alive\r\n"
-      "Server: " PACKAGE "/" VERSION "\r\n"
-      "\r\n";
-  write_to_client(client_socket, (const uint8_t *)headers, strlen(headers));
+  send_http_headers(c, STATUS_200, CONTENT_SSE);
 
-  /* Send updates every 2 seconds */
-  while (1)
+  c->sse_active = 1;
+  c->sse_sent_initial = 0;
+  c->sse_last_write_index = -1;
+  c->sse_last_log_count = 0;
+  c->next_sse_ts = get_time_ms();
+
+  /* Build and send initial SSE payload immediately */
+  char tmp[1048576];
+  int len = status_build_sse_json(tmp, sizeof(tmp),
+                                  &c->sse_sent_initial,
+                                  &c->sse_last_write_index,
+                                  &c->sse_last_log_count);
+
+  if (len > 0)
   {
-    total_bytes = 0;
-    total_bw = 0;
-    int streams_count = 0;
+    connection_queue_output(c, (const uint8_t *)tmp, (size_t)len);
+  }
 
-    /* Build JSON response - start with fields we already know, then clients */
-    int len = snprintf(buffer, buffer_capacity,
-                       "data: {\"server_start_time\":%ld,\"current_log_level\":%d,\"max_clients\":%d,\"clients\":[",
-                       (long)status_shared->server_start_time,
-                       status_shared->current_log_level,
-                       conf_maxclients);
+  c->state = CONN_SSE;
 
-    /* Add client data (only real media streams: have a service_url) */
-    int first_client = 1;
-    for (i = 0; i < STATUS_MAX_CLIENTS; i++)
+  return 0;
+}
+
+/**
+ * Handle SSE notification event
+ * Builds and enqueues SSE payloads for all active SSE connections
+ */
+int status_handle_sse_notification(connection_t *conn_head)
+{
+  int updated_count = 0;
+
+  if (!status_shared)
+    return 0;
+
+  /* Build and enqueue SSE payloads for all SSE connections */
+  for (connection_t *cc = conn_head; cc; cc = cc->next)
+  {
+    if (!cc->sse_active)
+      continue;
+
+    char tmp[1048576];
+    int len = status_build_sse_json(tmp, sizeof(tmp),
+                                    &cc->sse_sent_initial,
+                                    &cc->sse_last_write_index,
+                                    &cc->sse_last_log_count);
+
+    if (len > 0)
+    {
+      if (connection_queue_output(cc, (const uint8_t *)tmp, (size_t)len) == 0)
+      {
+        updated_count++;
+      }
+    }
+  }
+
+  return updated_count;
+}
+
+/**
+ * Handle SSE heartbeat for a connection
+ * Triggers status update to keep connection alive and update frontend
+ * Only sends heartbeat when there are no active media clients
+ * This ensures uptime is updated even when idle, while relying on event-driven
+ * updates when clients are active
+ */
+int status_handle_sse_heartbeat(connection_t *c, int64_t now)
+{
+  if (!c || !c->sse_active)
+    return -1;
+
+  /* Check if heartbeat is needed */
+  if (c->next_sse_ts > now)
+    return -1;
+
+  /* Count active media streaming clients (those with service_url) */
+  int streams_count = 0;
+  if (status_shared)
+  {
+    for (int i = 0; i < STATUS_MAX_CLIENTS; i++)
     {
       if (status_shared->clients[i].active && status_shared->clients[i].service_url[0] != '\0')
       {
-        if (!first_client)
-        {
-          len += snprintf(buffer + len, buffer_capacity - len, ",");
-        }
-        first_client = 0;
-
-        len += snprintf(buffer + len, buffer_capacity - len,
-                        "{\"pid\":%d,\"connect_time\":%ld,\"client_addr\":\"%s\",\"client_port\":\"%s\","
-                        "\"service_url\":\"%s\",\"state_desc\":\"%s\",\"bytes_sent\":%llu,"
-                        "\"packets_sent\":%llu,\"current_bandwidth\":%u}",
-                        status_shared->clients[i].pid,
-                        (long)status_shared->clients[i].connect_time,
-                        status_shared->clients[i].client_addr,
-                        status_shared->clients[i].client_port,
-                        status_shared->clients[i].service_url,
-                        status_shared->clients[i].state_desc,
-                        (unsigned long long)status_shared->clients[i].bytes_sent,
-                        (unsigned long long)status_shared->clients[i].packets_sent,
-                        status_shared->clients[i].current_bandwidth);
-
         streams_count++;
-        total_bytes += status_shared->clients[i].bytes_sent;
-        total_bw += status_shared->clients[i].current_bandwidth;
       }
     }
-
-    /* Close clients array and add computed totals (count only media streams) */
-    len += snprintf(buffer + len, buffer_capacity - len,
-                    "],\"total_clients\":%d,\"total_bytes_sent\":%llu,\"total_bandwidth\":%u",
-                    streams_count,
-                    (unsigned long long)total_bytes,
-                    total_bw);
-
-    /* Decide logs mode and open logs array */
-    const char *logs_mode = "none";
-    int cur_wi = status_shared->log_write_index;
-    int cur_count = status_shared->log_count;
-    int new_entries = 0;
-    if (!sent_initial)
-    {
-      logs_mode = "full";
-    }
-    else
-    {
-      int delta_idx = (cur_wi - last_write_index + STATUS_MAX_LOG_ENTRIES) % STATUS_MAX_LOG_ENTRIES;
-      new_entries = delta_idx;
-      if (cur_count < STATUS_MAX_LOG_ENTRIES)
-      {
-        int count_delta = cur_count - last_log_count;
-        if (count_delta < 0)
-          count_delta = 0;
-        if (new_entries > count_delta)
-          new_entries = count_delta;
-      }
-      logs_mode = (new_entries > 0) ? "incremental" : "none";
-    }
-
-    /* Add logs section */
-    len += snprintf(buffer + len, buffer_capacity - len, ",\"logs_mode\":\"%s\",\"logs\":[", logs_mode);
-
-    /* Add logs according to mode */
-    if (!sent_initial)
-    {
-      /* Full dump: all available logs */
-      int full_count = cur_count;
-      if (full_count > 0)
-      {
-        if (cur_count < STATUS_MAX_LOG_ENTRIES)
-          log_start = 0;
-        else
-          log_start = cur_wi;
-
-        int first_log = 1;
-        for (i = 0; i < full_count; i++)
-        {
-          log_idx = (log_start + cur_count - full_count + i) % STATUS_MAX_LOG_ENTRIES;
-
-          if (!first_log)
-          {
-            len += snprintf(buffer + len, buffer_capacity - len, ",");
-          }
-          first_log = 0;
-
-          /* Escape JSON-breaking characters in log message */
-          char escaped_msg[STATUS_LOG_ENTRY_LEN * 2];
-          json_escape_string(status_shared->log_entries[log_idx].message, escaped_msg, sizeof(escaped_msg));
-
-          len += snprintf(buffer + len, buffer_capacity - len,
-                          "{\"timestamp\":%ld,\"level\":%d,\"level_name\":\"%s\",\"message\":\"%s\"}",
-                          (long)status_shared->log_entries[log_idx].timestamp,
-                          status_shared->log_entries[log_idx].level,
-                          get_log_level_name(status_shared->log_entries[log_idx].level),
-                          escaped_msg);
-        }
-      }
-      sent_initial = 1;
-      last_write_index = cur_wi;
-      last_log_count = cur_count;
-    }
-    else if (new_entries > 0)
-    {
-      /* Incremental: only new entries since last_write_index */
-      int first_log = 1;
-      int start_idx = (cur_wi - new_entries + STATUS_MAX_LOG_ENTRIES) % STATUS_MAX_LOG_ENTRIES;
-      for (i = 0; i < new_entries; i++)
-      {
-        log_idx = (start_idx + i) % STATUS_MAX_LOG_ENTRIES;
-
-        if (!first_log)
-        {
-          len += snprintf(buffer + len, buffer_capacity - len, ",");
-        }
-        first_log = 0;
-
-        /* Escape JSON-breaking characters in log message */
-        char escaped_msg[STATUS_LOG_ENTRY_LEN * 2];
-        json_escape_string(status_shared->log_entries[log_idx].message, escaped_msg, sizeof(escaped_msg));
-
-        len += snprintf(buffer + len, buffer_capacity - len,
-                        "{\"timestamp\":%ld,\"level\":%d,\"level_name\":\"%s\",\"message\":\"%s\"}",
-                        (long)status_shared->log_entries[log_idx].timestamp,
-                        status_shared->log_entries[log_idx].level,
-                        get_log_level_name(status_shared->log_entries[log_idx].level),
-                        escaped_msg);
-      }
-      last_write_index = cur_wi;
-      last_log_count = cur_count;
-    }
-
-    len += snprintf(buffer + len, buffer_capacity - len, "]}\n\n");
-
-    /* Update global statistics */
-    status_shared->total_bytes_sent = total_bytes;
-    status_shared->total_bandwidth = total_bw;
-
-    /* Send the event */
-    if (write(client_socket, buffer, len) <= 0)
-    {
-      /* Client disconnected */
-      break;
-    }
-
-    /* Wait for next event or timeout (1 second for bandwidth updates) */
-    fd_set readfds;
-    struct timeval timeout;
-    int max_fd;
-    char drain_buf[256];
-
-    FD_ZERO(&readfds);
-    FD_SET(status_shared->notification_pipe[0], &readfds);
-    max_fd = status_shared->notification_pipe[0];
-
-    timeout.tv_sec = 1; /* 1 second timeout for regular bandwidth updates */
-    timeout.tv_usec = 0;
-
-    int ret = select(max_fd + 1, &readfds, NULL, NULL, &timeout);
-
-    if (ret > 0 && FD_ISSET(status_shared->notification_pipe[0], &readfds))
-    {
-      /* Drain the pipe */
-      while (read(status_shared->notification_pipe[0], drain_buf, sizeof(drain_buf)) > 0)
-        ;
-    }
-    /* If ret == 0, timeout occurred - send update anyway for bandwidth stats */
-    /* If ret < 0, error occurred but we'll continue anyway */
   }
-  /* Cleanup allocated buffer */
-  if (allocated)
-    free(buffer);
+
+  /* Only trigger status update when there are no active media clients
+   * When clients are active, rely on event-driven updates (connect/disconnect/state changes) */
+  if (streams_count == 0)
+  {
+    /* Trigger status update event - this will update all SSE connections via notification pipe */
+    status_trigger_event();
+    c->next_sse_ts = now + 1000;
+  }
+
+  return 0;
 }

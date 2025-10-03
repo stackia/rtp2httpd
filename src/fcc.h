@@ -12,15 +12,17 @@ struct stream_context_s;
 
 #define FCC_PK_LEN_REQ 40
 #define FCC_PK_LEN_TERM 16
-#define FCC_SELECT_TIMEOUT_SEC 1
 #define FCC_PENDING_BUFFER_MULTIPLIER 1500
 #define FCC_MIN_BUFFER_PACKETS 80
+#define FCC_MAX_REDIRECTS 5
+#define FCC_TIMEOUT_SEC 1
 
 /* FCC State Machine - Based on Fast Channel Change Protocol */
 typedef enum
 {
     FCC_STATE_INIT = 0,        /* Initial state - prepare FCC request or join multicast */
     FCC_STATE_REQUESTED,       /* FCC request sent, waiting for server response */
+    FCC_STATE_UNICAST_PENDING, /* Server accepted, waiting for first unicast packet */
     FCC_STATE_UNICAST_ACTIVE,  /* Receiving FCC unicast stream (fast push at 1.3x speed) */
     FCC_STATE_MCAST_REQUESTED, /* Server notified to join multicast, transitioning */
     FCC_STATE_MCAST_ACTIVE,    /* Fully switched to multicast reception */
@@ -31,6 +33,7 @@ typedef enum
 typedef struct
 {
     fcc_state_t state;
+    pid_t status_id; /* Status tracking ID for state updates */
     int fcc_sock;
     struct sockaddr_in *fcc_server;
     struct sockaddr_in fcc_client;
@@ -40,6 +43,7 @@ typedef struct
     uint16_t fcc_term_seqn;
     int fcc_term_sent;
     uint16_t not_first_packet;
+    int redirect_count; /* Number of redirects followed */
 
     /* Multicast pending buffer for smooth transition */
     uint8_t *mcast_pending_buf;
@@ -72,11 +76,12 @@ void fcc_session_init(fcc_session_t *fcc);
  *
  * @param fcc FCC session structure to terminate and cleanup
  * @param service Service structure for termination message
+ * @param epoll_fd Epoll file descriptor for socket cleanup
  */
-void fcc_session_cleanup(fcc_session_t *fcc, struct services_s *service);
+void fcc_session_cleanup(fcc_session_t *fcc, service_t *service, int epoll_fd);
 
 /**
- * Set FCC session state with logging
+ * Set FCC session state with logging and status update
  *
  * @param fcc FCC session structure
  * @param new_state New state to set

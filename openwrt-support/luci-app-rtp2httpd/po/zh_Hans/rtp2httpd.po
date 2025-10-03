@@ -35,6 +35,9 @@ msgstr "Quiet"
 msgid "rtp2httpd_Error"
 msgstr "Error"
 
+msgid "rtp2httpd_Warn"
+msgstr "Warn"
+
 msgid "rtp2httpd_Info"
 msgstr "Info"
 
@@ -49,6 +52,12 @@ msgstr "用于请求上游媒体流（组播流或 FCC 单播流）的接口（�
 
 msgid "rtp2httpd_Max clients"
 msgstr "最大客户端数"
+
+msgid "rtp2httpd_Workers"
+msgstr "工作进程数"
+
+msgid "rtp2httpd_Number of worker processes (SO_REUSEPORT sharded). Set to CPU cores for best perf."
+msgstr "工作进程数量。资源紧凑设备建议设置为 1，最佳吞吐量可以设置为 CPU 核心数。"
 
 msgid "rtp2httpd_Hostname"
 msgstr "仅允许使用域名连接"

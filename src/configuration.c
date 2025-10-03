@@ -15,19 +15,13 @@
 
 #include "rtp2httpd.h"
 #include "configuration.h"
+#include "service.h"
 
 #define MAX_LINE 1024
 
-/* GLOBAL CONFIGURATION VARIABLES */
+/* GLOBAL CONFIGURATION */
 
-enum loglevel conf_verbosity;
-int conf_daemonise;
-int conf_udpxy;
-int conf_maxclients;
-char *conf_hostname = NULL;
-char *conf_clock_format = NULL;
-struct ifreq conf_upstream_interface;
-enum fcc_nat_traversal conf_fcc_nat_traversal;
+config_t config;
 
 /* *** */
 
@@ -87,7 +81,7 @@ void parse_services_sec(char *line)
   int i, j, r, rr;
   struct addrinfo hints;
   char *servname, *type, *maddr, *mport, *msrc, *msaddr, *msport;
-  struct services_s *service;
+  service_t *service;
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_socktype = SOCK_DGRAM;
@@ -133,7 +127,7 @@ void parse_services_sec(char *line)
       return;
     }
 
-    service = malloc(sizeof(struct services_s));
+    service = malloc(sizeof(service_t));
     memset(service, 0, sizeof(*service));
     service->service_type = SERVICE_RTSP;
     service->url = servname;
@@ -142,6 +136,7 @@ void parse_services_sec(char *line)
     service->next = services;
     services = service;
 
+    logger(LOG_INFO, "Service created: %s (RTSP)", servname);
     logger(LOG_DEBUG, "RTSP service: %s, URL: %s", servname, rtsp_url);
 
     /* Free allocated temporary strings */
@@ -221,7 +216,7 @@ void parse_services_sec(char *line)
     return;
   }
 
-  service = malloc(sizeof(struct services_s));
+  service = malloc(sizeof(service_t));
   memset(service, 0, sizeof(*service));
 
   r = getaddrinfo(maddr, mport, &hints, &(service->addr));
@@ -249,13 +244,13 @@ void parse_services_sec(char *line)
   }
   if (service->addr->ai_next != NULL)
   {
-    logger(LOG_ERROR, "Warning: maddr is ambiguos.");
+    logger(LOG_WARN, "Multicast address is ambiguous (multiple results)");
   }
   if (strcmp(msrc, "") != 0 && msrc != NULL)
   {
     if (service->msrc_addr->ai_next != NULL)
     {
-      logger(LOG_ERROR, "Warning: msrc is ambiguos.");
+      logger(LOG_WARN, "Source address is ambiguous (multiple results)");
     }
   }
 
@@ -272,6 +267,9 @@ void parse_services_sec(char *line)
   service->msrc = strdup(msrc);
   service->next = services;
   services = service;
+
+  logger(LOG_INFO, "Service created: %s (%s %s:%s)", servname, type, maddr, mport);
+  logger(LOG_DEBUG, "Service details: %s, Type: %s, Addr: %s, Port: %s", servname, type, maddr, mport);
 
   /* Free allocated temporary strings */
   free(msrc);
@@ -309,11 +307,11 @@ void parse_global_sec(char *line)
   {
     if (!cmd_verbosity_set)
     {
-      conf_verbosity = atoi(value);
+      config.verbosity = atoi(value);
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"verbosity\" ignored. It's already set on CmdLine.");
+      logger(LOG_WARN, "Config file value \"verbosity\" ignored (already set on command line)");
     }
     return;
   }
@@ -326,16 +324,16 @@ void parse_global_sec(char *line)
           (strcasecmp("yes", value) == 0) ||
           (strcasecmp("1", value) == 0))
       {
-        conf_daemonise = 1;
+        config.daemonise = 1;
       }
       else
       {
-        conf_daemonise = 0;
+        config.daemonise = 0;
       }
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"daemonise\" ignored. It's already set on CmdLine.");
+      logger(LOG_WARN, "Config file value \"daemonise\" ignored (already set on command line)");
     }
     return;
   }
@@ -348,12 +346,23 @@ void parse_global_sec(char *line)
         logger(LOG_ERROR, "Invalid maxclients! Ignoring.");
         return;
       }
-      conf_maxclients = atoi(value);
+      config.maxclients = atoi(value);
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"maxclients\" ignored. It's already set on CmdLine.");
+      logger(LOG_WARN, "Config file value \"maxclients\" ignored (already set on command line)");
     }
+    return;
+  }
+  if (strcasecmp("workers", param) == 0)
+  {
+    int n = atoi(value);
+    if (n < 1)
+    {
+      logger(LOG_ERROR, "Invalid workers value! Must be >= 1. Ignoring.");
+      return;
+    }
+    config.workers = n;
     return;
   }
   if (strcasecmp("udpxy", param) == 0)
@@ -365,16 +374,16 @@ void parse_global_sec(char *line)
           (strcasecmp("yes", value) == 0) ||
           (strcasecmp("1", value) == 0))
       {
-        conf_udpxy = 1;
+        config.udpxy = 1;
       }
       else
       {
-        conf_udpxy = 0;
+        config.udpxy = 0;
       }
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"udpxy\" ignored. It's already set on CmdLine.");
+      logger(LOG_WARN, "Config file value \"udpxy\" ignored (already set on command line)");
     }
     return;
   }
@@ -382,11 +391,11 @@ void parse_global_sec(char *line)
   {
     if (!cmd_hostname_set)
     {
-      conf_hostname = strdup(value);
+      config.hostname = strdup(value);
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"hostname\" ignored. It's already set on CmdLine.");
+      logger(LOG_WARN, "Config file value \"hostname\" ignored (already set on command line)");
     }
     return;
   }
@@ -394,11 +403,11 @@ void parse_global_sec(char *line)
   {
     if (!cmd_clock_format_set)
     {
-      conf_clock_format = strdup(value);
+      config.clock_format = strdup(value);
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"clock-format\" ignored. It's already set on CmdLine.");
+      logger(LOG_WARN, "Config file value \"clock-format\" ignored (already set on command line)");
     }
     return;
   }
@@ -406,12 +415,12 @@ void parse_global_sec(char *line)
   {
     if (!cmd_upstream_interface_set)
     {
-      strncpy(conf_upstream_interface.ifr_name, value, IFNAMSIZ - 1);
-      conf_upstream_interface.ifr_ifindex = if_nametoindex(conf_upstream_interface.ifr_name);
+      strncpy(config.upstream_interface.ifr_name, value, IFNAMSIZ - 1);
+      config.upstream_interface.ifr_ifindex = if_nametoindex(config.upstream_interface.ifr_name);
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"upstream-interface\" ignored. It's already set on CmdLine.");
+      logger(LOG_WARN, "Config file value \"upstream-interface\" ignored (already set on command line)");
     }
     return;
   }
@@ -419,11 +428,11 @@ void parse_global_sec(char *line)
   {
     if (!cmd_fcc_nat_traversal_set)
     {
-      conf_fcc_nat_traversal = atoi(value);
+      config.fcc_nat_traversal = atoi(value);
     }
     else
     {
-      logger(LOG_INFO, "Warning: Config file value \"fcc-nat-traversal\" ignored. It's already set on CmdLine.");
+      logger(LOG_WARN, "Config file value \"fcc-nat-traversal\" ignored (already set on command line)");
     }
     return;
   }
@@ -488,7 +497,7 @@ int parse_config_file(const char *path)
     {
       if (!bind_msg_done)
       {
-        logger(LOG_INFO, "Warning: Config file section \"[bind]\" ignored. It's already set on CmdLine.");
+        logger(LOG_WARN, "Config file section \"[bind]\" ignored (already set on command line)");
         bind_msg_done = 1;
       }
       continue;
@@ -540,40 +549,44 @@ void free_bindaddr(struct bindaddr_s *ba)
 /* Setup configuration defaults */
 void restore_conf_defaults(void)
 {
-  struct services_s *service_tmp;
+  service_t *service_tmp;
   struct bindaddr_s *bind_tmp;
 
-  conf_verbosity = LOG_ERROR;
+  /* Initialize configuration structure with defaults */
+  memset(&config, 0, sizeof(config_t));
+
+  config.verbosity = LOG_INFO;
   cmd_verbosity_set = 0;
-  conf_daemonise = 0;
+  config.daemonise = 0;
   cmd_daemonise_set = 0;
-  conf_maxclients = 5;
+  config.maxclients = 5;
   cmd_maxclients_set = 0;
-  conf_udpxy = 1;
+  config.udpxy = 1;
   cmd_udpxy_set = 0;
   cmd_bind_set = 0;
-  conf_fcc_nat_traversal = FCC_NAT_T_DISABLED;
+  config.fcc_nat_traversal = FCC_NAT_T_DISABLED;
   cmd_fcc_nat_traversal_set = 0;
+  config.workers = 1; /* default single worker for low-end OpenWrt */
 
-  if (conf_hostname != NULL)
+  if (config.hostname != NULL)
   {
-    free(conf_hostname);
-    conf_hostname = NULL;
+    free(config.hostname);
+    config.hostname = NULL;
   }
   cmd_hostname_set = 0;
 
-  if (conf_clock_format != NULL)
+  if (config.clock_format != NULL)
   {
-    free(conf_clock_format);
-    conf_clock_format = NULL;
+    free(config.clock_format);
+    config.clock_format = NULL;
   }
   /* Set default clock format */
-  conf_clock_format = strdup("yyyyMMddTHHmmssZ");
+  config.clock_format = strdup("yyyyMMddTHHmmssZ");
   cmd_clock_format_set = 0;
 
-  if (conf_upstream_interface.ifr_name[0] != '\0')
+  if (config.upstream_interface.ifr_name[0] != '\0')
   {
-    memset(&conf_upstream_interface, 0, sizeof(struct ifreq));
+    memset(&config.upstream_interface, 0, sizeof(struct ifreq));
   }
   cmd_upstream_interface_set = 0;
 
@@ -645,12 +658,13 @@ void usage(FILE *f, char *progname)
           "\n"
           "Options:\n"
           "\t-h --help            Show this help\n"
-          "\t-v --verbose         Increase verbosity\n"
+          "\t-v --verbose         Increase verbosity (0=FATAL, 1=ERROR, 2=WARN, 3=INFO, 4=DEBUG)\n"
           "\t-q --quiet           Report only fatal errors\n"
           "\t-d --daemon          Fork to background (implies -q)\n"
           "\t-D --nodaemon        Do not daemonise. (default)\n"
           "\t-U --noudpxy         Disable UDPxy compatibility\n"
           "\t-m --maxclients <n>  Serve max n requests simultaneously (dfl 5)\n"
+          "\t-w --workers <n>     Number of worker processes with SO_REUSEPORT (dfl 1)\n"
           "\t-l --listen [addr:]port  Address/port to bind (default ANY:8080)\n"
           "\t-c --config <file>   Read this file for configuration, instead of the default one\n"
           "\t-C --noconfig        Do not read the default config\n"
@@ -710,6 +724,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"nodaemon", no_argument, 0, 'D'},
       {"noudpxy", no_argument, 0, 'U'},
       {"maxclients", required_argument, 0, 'm'},
+      {"workers", required_argument, 0, 'w'},
       {"listen", required_argument, 0, 'l'},
       {"config", required_argument, 0, 'c'},
       {"noconfig", no_argument, 0, 'C'},
@@ -719,7 +734,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"upstream-interface", required_argument, 0, 'i'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:c:l:n:H:f:i:C";
+  const char short_opts[] = "v:qhdDUm:w:c:l:n:H:f:i:C";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -733,11 +748,11 @@ void parse_cmd_line(int argc, char *argv[])
     case 0:
       break;
     case 'v':
-      conf_verbosity = atoi(optarg);
+      config.verbosity = atoi(optarg);
       cmd_verbosity_set = 1;
       break;
     case 'q':
-      conf_verbosity = 0;
+      config.verbosity = 0;
       cmd_verbosity_set = 1;
       break;
     case 'h':
@@ -745,15 +760,15 @@ void parse_cmd_line(int argc, char *argv[])
       exit(EXIT_SUCCESS);
       break;
     case 'd':
-      conf_daemonise = 1;
+      config.daemonise = 1;
       cmd_daemonise_set = 1;
       break;
     case 'D':
-      conf_daemonise = 0;
+      config.daemonise = 0;
       cmd_daemonise_set = 1;
       break;
     case 'U':
-      conf_udpxy = 0;
+      config.udpxy = 0;
       cmd_udpxy_set = 1;
       break;
     case 'm':
@@ -763,8 +778,18 @@ void parse_cmd_line(int argc, char *argv[])
       }
       else
       {
-        conf_maxclients = atoi(optarg);
+        config.maxclients = atoi(optarg);
         cmd_maxclients_set = 1;
+      }
+      break;
+    case 'w':
+      if (atoi(optarg) < 1)
+      {
+        logger(LOG_ERROR, "Invalid workers! Ignoring.");
+      }
+      else
+      {
+        config.workers = atoi(optarg);
       }
       break;
     case 'c':
@@ -778,20 +803,20 @@ void parse_cmd_line(int argc, char *argv[])
       cmd_bind_set = 1;
       break;
     case 'n':
-      conf_fcc_nat_traversal = atoi(optarg);
+      config.fcc_nat_traversal = atoi(optarg);
       cmd_fcc_nat_traversal_set = 1;
       break;
     case 'H':
-      conf_hostname = strdup(optarg);
+      config.hostname = strdup(optarg);
       cmd_hostname_set = 1;
       break;
     case 'f':
-      conf_clock_format = strdup(optarg);
+      config.clock_format = strdup(optarg);
       cmd_clock_format_set = 1;
       break;
     case 'i':
-      strncpy(conf_upstream_interface.ifr_name, optarg, IFNAMSIZ - 1);
-      conf_upstream_interface.ifr_ifindex = if_nametoindex(conf_upstream_interface.ifr_name);
+      strncpy(config.upstream_interface.ifr_name, optarg, IFNAMSIZ - 1);
+      config.upstream_interface.ifr_ifindex = if_nametoindex(config.upstream_interface.ifr_name);
       cmd_upstream_interface_set = 1;
       break;
     default:
@@ -806,8 +831,8 @@ void parse_cmd_line(int argc, char *argv[])
   }
   if (configfile_failed)
   {
-    logger(LOG_INFO, "Warning: No configfile found.");
+    logger(LOG_WARN, "No config file found");
   }
-  logger(LOG_DEBUG, "Verbosity: %d, Daemonise: %d, Maxclients: %d",
-         conf_verbosity, conf_daemonise, conf_maxclients);
+  logger(LOG_DEBUG, "Verbosity: %d, Daemonise: %d, Maxclients: %d, Workers: %d",
+         config.verbosity, config.daemonise, config.maxclients, config.workers);
 }

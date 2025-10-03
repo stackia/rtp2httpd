@@ -4,9 +4,10 @@
 
 #include <stdint.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
 #include "rtp.h"
 #include "rtp2httpd.h"
-#include "http.h"
+#include "connection.h"
 
 int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size)
 {
@@ -60,7 +61,7 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size)
   return 0;
 }
 
-int write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf, uint16_t *old_seqn, uint16_t *not_first)
+int write_rtp_payload_to_client(struct connection_s *conn, int recv_len, uint8_t *buf, uint16_t *old_seqn, uint16_t *not_first)
 {
   int payloadlength;
   uint8_t *payload;
@@ -95,6 +96,15 @@ int write_rtp_payload_to_client(int client, int recv_len, uint8_t *buf, uint16_t
   *old_seqn = seqn;
   *not_first = 1;
 
-  write_to_client(client, payload, payloadlength);
-  return payloadlength;
+  /* Queue payload to connection output buffer for reliable delivery */
+  if (connection_queue_output(conn, payload, payloadlength) == 0)
+  {
+    return payloadlength;
+  }
+  else
+  {
+    /* Buffer full - backpressure */
+    logger(LOG_DEBUG, "RTP: Output buffer full, backpressure");
+    return -1;
+  }
 }
