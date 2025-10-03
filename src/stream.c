@@ -18,218 +18,53 @@
 #include "multicast.h"
 #include "fcc.h"
 #include "http.h"
+#include "connection.h"
 #include "rtsp.h"
+#include "service.h"
 #include "status.h"
-
-/* Maximum number of epoll events to process per iteration */
-#define MAX_EPOLL_EVENTS 8
-
-/* Static cleanup context - safe since each client runs in its own process */
-static struct
-{
-    stream_context_t *current_context; /* Current active stream context */
-} cleanup_state = {0};
+#include "worker.h"
 
 /*
- * Update status tracking periodically and on state changes
+ * Wrapper for join_mcast_group that also resets the multicast data timeout timer.
+ * This ensures that every time we join/rejoin a multicast group, the timeout
+ * detection starts fresh, preventing false timeout triggers.
+ * This function should be used instead of join_mcast_group() directly in all
+ * stream-related code to ensure proper timeout handling.
  */
-static void update_stream_status(stream_context_t *ctx)
+int stream_join_mcast_group(stream_context_t *ctx)
 {
-    time_t now = time(NULL);
-    client_state_type_t state;
-    int state_changed = 0;
-
-    /* Determine current state based on FCC and RTSP states */
-    if (ctx->service->service_type == SERVICE_RTSP)
+    int sock = join_mcast_group(ctx->service);
+    if (sock > 0)
     {
-        switch (ctx->rtsp.state)
+        /* Register socket with epoll immediately after creation */
+        struct epoll_event ev;
+        ev.events = EPOLLIN; /* Level-triggered mode for read events */
+        ev.data.fd = sock;
+        if (epoll_ctl(ctx->epoll_fd, EPOLL_CTL_ADD, sock, &ev) < 0)
         {
-        case RTSP_STATE_INIT:
-            state = CLIENT_STATE_RTSP_INIT;
-            break;
-        case RTSP_STATE_CONNECTED:
-            state = CLIENT_STATE_RTSP_CONNECTED;
-            break;
-        case RTSP_STATE_DESCRIBED:
-            state = CLIENT_STATE_RTSP_DESCRIBED;
-            break;
-        case RTSP_STATE_SETUP:
-            state = CLIENT_STATE_RTSP_SETUP;
-            break;
-        case RTSP_STATE_PLAYING:
-            state = CLIENT_STATE_RTSP_PLAYING;
-            break;
-        default:
-            state = CLIENT_STATE_ERROR;
-            break;
+            logger(LOG_ERROR, "Multicast: Failed to add socket to epoll: %s", strerror(errno));
+            close(sock);
+            exit(RETVAL_SOCK_READ_FAILED);
         }
+        fdmap_set(sock, ctx->conn);
+        logger(LOG_DEBUG, "Multicast: Socket registered with epoll");
+
+        /* Reset timeout timer when joining multicast group */
+        ctx->last_mcast_data_time = get_time_ms();
     }
-    else
-    {
-        switch (ctx->fcc.state)
-        {
-        case FCC_STATE_INIT:
-            state = CLIENT_STATE_FCC_INIT;
-            break;
-        case FCC_STATE_REQUESTED:
-            state = CLIENT_STATE_FCC_REQUESTED;
-            break;
-        case FCC_STATE_UNICAST_ACTIVE:
-            state = CLIENT_STATE_FCC_UNICAST_ACTIVE;
-            break;
-        case FCC_STATE_MCAST_REQUESTED:
-            state = CLIENT_STATE_FCC_MCAST_TRANSITION;
-            break;
-        case FCC_STATE_MCAST_ACTIVE:
-            state = CLIENT_STATE_FCC_MCAST_ACTIVE;
-            break;
-        default:
-            state = CLIENT_STATE_ERROR;
-            break;
-        }
-    }
-
-    /* Check if state changed since last update */
-    if (state != ctx->last_reported_state)
-    {
-        state_changed = 1;
-        ctx->last_reported_state = state;
-    }
-
-    /* Update status every 1 second for bandwidth tracking, or immediately on state change */
-    if (state_changed || (now - ctx->last_status_update >= 1))
-    {
-        const char *desc;
-        switch (state)
-        {
-        case CLIENT_STATE_FCC_INIT:
-            desc = "FCC_INIT";
-            break;
-        case CLIENT_STATE_FCC_REQUESTED:
-            desc = "FCC_REQUESTED";
-            break;
-        case CLIENT_STATE_FCC_UNICAST_ACTIVE:
-            desc = "FCC_UNICAST_ACTIVE";
-            break;
-        case CLIENT_STATE_FCC_MCAST_TRANSITION:
-            desc = "FCC_MCAST_TRANSITION";
-            break;
-        case CLIENT_STATE_FCC_MCAST_ACTIVE:
-            desc = "FCC_MCAST_ACTIVE";
-            break;
-        case CLIENT_STATE_RTSP_INIT:
-            desc = "RTSP_INIT";
-            break;
-        case CLIENT_STATE_RTSP_CONNECTED:
-            desc = "RTSP_CONNECTED";
-            break;
-        case CLIENT_STATE_RTSP_DESCRIBED:
-            desc = "RTSP_DESCRIBE";
-            break;
-        case CLIENT_STATE_RTSP_SETUP:
-            desc = "RTSP_SETUP";
-            break;
-        case CLIENT_STATE_RTSP_PLAYING:
-            desc = "RTSP_PLAYING";
-            break;
-        case CLIENT_STATE_MULTICAST_ACTIVE:
-            desc = "MULTICAST_ACTIVE";
-            break;
-        case CLIENT_STATE_CONNECTING:
-            desc = "CONNECTING";
-            break;
-        case CLIENT_STATE_DISCONNECTED:
-            desc = "Disconnected";
-            break;
-        case CLIENT_STATE_ERROR:
-            desc = "ERROR";
-            break;
-        default:
-            desc = "Streaming";
-            break;
-        }
-        status_update_client(state, desc, ctx->total_bytes_sent, ctx->total_packets_sent);
-        ctx->last_status_update = now;
-    }
-}
-
-/* Removed track_bytes_sent - not currently used as we track at packet level */
-
-/*
- * Unified cleanup function
- */
-static void stream_cleanup(stream_context_t *ctx, struct services_s *service)
-{
-    if (!ctx)
-    {
-        return;
-    }
-
-    /* Clear cleanup context to prevent recursive cleanup */
-    cleanup_state.current_context = NULL;
-
-    /* Clean up FCC session */
-    fcc_session_cleanup(&ctx->fcc, service);
-
-    /* Clean up RTSP session */
-    rtsp_session_cleanup(&ctx->rtsp);
-
-    /* Close multicast socket if active */
-    if (ctx->mcast_sock)
-    {
-        close(ctx->mcast_sock);
-        ctx->mcast_sock = 0;
-        logger(LOG_DEBUG, "Multicast socket closed");
-    }
-
-    /* Free service structure (handles both dynamic and static services safely) */
-    if (service)
-    {
-        free_service(service);
-    }
+    return sock;
 }
 
 /*
- * Process socket file descriptors and handle appropriate protocol stages
- * @param ctx Stream context
- * @param fd File descriptor that has an event
- * @return 0 on success (continue processing other events),
- *         -1 to exit (client disconnect or fatal error),
- *         1 for state change requiring immediate loop restart (e.g., FCC redirect)
+ * Handle an event-ready fd that belongs to this stream context
+ * Note: Client socket events are handled by worker.c,
+ * this function only handles media stream sockets (multicast, FCC, RTSP)
  */
-static int stream_process_socket(stream_context_t *ctx, int fd)
+int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events)
 {
     int actualr;
     struct sockaddr_in peer_addr;
     socklen_t slen = sizeof(peer_addr);
-
-    /* Check for client disconnect or incoming data */
-    if (fd == ctx->client_fd)
-    {
-        char discard_buffer[1024];
-        int bytes = recv(ctx->client_fd, discard_buffer, sizeof(discard_buffer), 0);
-
-        if (bytes <= 0)
-        {
-            /* Client disconnected (bytes == 0) or error (bytes < 0) */
-            if (bytes == 0)
-            {
-                logger(LOG_DEBUG, "Client disconnected gracefully");
-            }
-            else
-            {
-                logger(LOG_DEBUG, "Client socket error: %s", strerror(errno));
-            }
-            return -1; /* Exit and cleanup */
-        }
-        else
-        {
-            /* Client sent unexpected data (e.g., additional HTTP request, keep-alive ping)
-             * This is normal for HTTP/1.1 connections - just discard the data */
-            logger(LOG_DEBUG, "Client sent %d bytes of data (discarded)", bytes);
-            return 0; /* Continue streaming */
-        }
-    }
 
     /* Process FCC socket events */
     if (ctx->fcc.fcc_sock > 0 && fd == ctx->fcc.fcc_sock)
@@ -248,13 +83,26 @@ static int stream_process_socket(stream_context_t *ctx, int fd)
             return 0;
         }
 
+        ctx->last_fcc_data_time = get_time_ms();
+
         /* Handle different types of FCC packets */
         if (peer_addr.sin_port == ctx->fcc.fcc_server->sin_port)
         {
             /* RTCP control message */
             if (ctx->recv_buffer[0] == 0x83)
             {
-                return fcc_handle_server_response(ctx, ctx->recv_buffer, actualr, &peer_addr);
+                int res = fcc_handle_server_response(ctx, ctx->recv_buffer, actualr, &peer_addr);
+                if (res == 1)
+                {
+                    /* FCC redirect - retry request with new server */
+                    if (fcc_initialize_and_request(ctx) < 0)
+                    {
+                        logger(LOG_ERROR, "FCC redirect retry failed");
+                        return -1;
+                    }
+                    return 0; /* Redirect handled successfully */
+                }
+                return res;
             }
             else if (ctx->recv_buffer[0] == 0x84)
             {
@@ -279,11 +127,22 @@ static int stream_process_socket(stream_context_t *ctx, int fd)
             return 0;
         }
 
+        /* Update last data receive timestamp for timeout detection */
+        ctx->last_mcast_data_time = get_time_ms();
+
         /* Handle non-RTP multicast data (MUDP service) */
         if (ctx->service->service_type == SERVICE_MUDP)
         {
-            write_to_client(ctx->client_fd, ctx->recv_buffer, actualr);
-            ctx->total_bytes_sent += (uint64_t)actualr;
+            /* Queue data to connection output buffer for reliable delivery */
+            if (connection_queue_output(ctx->conn, ctx->recv_buffer, actualr) == 0)
+            {
+                ctx->total_bytes_sent += (uint64_t)actualr;
+            }
+            else
+            {
+                /* Buffer full - this indicates backpressure, data will be retried */
+                logger(LOG_DEBUG, "MUDP: Output buffer full, backpressure");
+            }
             return 0;
         }
 
@@ -304,10 +163,33 @@ static int stream_process_socket(stream_context_t *ctx, int fd)
     }
 
     /* Process RTSP socket events */
-    if ((ctx->rtsp.socket > 0 && fd == ctx->rtsp.socket) ||
-        (ctx->rtsp.rtp_socket > 0 && fd == ctx->rtsp.rtp_socket))
+    if (ctx->rtsp.socket > 0 && fd == ctx->rtsp.socket)
     {
-        int result = rtsp_handle_rtp_data(&ctx->rtsp, ctx->client_fd);
+        /* Handle RTSP socket events (handshake and RTP data in PLAYING state) */
+        int result = rtsp_handle_socket_event(&ctx->rtsp, events);
+        if (result < 0)
+        {
+            /* -2 indicates graceful TEARDOWN completion, not an error */
+            if (result == -2)
+            {
+                logger(LOG_DEBUG, "RTSP: Graceful TEARDOWN completed");
+                return -1; /* Signal connection should be closed */
+            }
+            /* Real error */
+            logger(LOG_ERROR, "RTSP: Socket event handling failed");
+            return -1;
+        }
+        if (result > 0)
+        {
+            ctx->total_bytes_sent += (uint64_t)result;
+        }
+        return 0; /* Success - processed data, continue with other events */
+    }
+
+    /* Process RTSP RTP socket events (UDP mode) */
+    if (ctx->rtsp.rtp_socket > 0 && fd == ctx->rtsp.rtp_socket)
+    {
+        int result = rtsp_handle_rtp_data(&ctx->rtsp, ctx->conn);
         if (result < 0)
         {
             return -1; /* Error */
@@ -332,208 +214,176 @@ static int stream_process_socket(stream_context_t *ctx, int fd)
     return 0;
 }
 
-/* Static signal handler - uses static cleanup_state */
-static void stream_signal_handler(int signum)
+/* Initialize context for unified worker epoll (non-blocking, no own loop) */
+int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *conn, service_t *service,
+                                   int epoll_fd, pid_t status_id)
 {
-    if (cleanup_state.current_context)
+    if (!ctx || !conn || !service)
+        return -1;
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->conn = conn;
+    ctx->service = service;
+    ctx->epoll_fd = epoll_fd;
+    ctx->status_id = status_id;
+    fcc_session_init(&ctx->fcc);
+    ctx->fcc.status_id = status_id;
+    rtsp_session_init(&ctx->rtsp);
+    ctx->rtsp.status_id = status_id;
+    ctx->total_bytes_sent = 0;
+    ctx->last_bytes_sent = 0;
+    ctx->last_status_update = get_time_ms();
+    ctx->last_mcast_data_time = get_time_ms();
+    ctx->last_fcc_data_time = get_time_ms();
+
+    /* Initialize media path depending on service type */
+    if (service->service_type == SERVICE_RTSP)
     {
-        logger(LOG_DEBUG, "Signal %d received, performing cleanup", signum);
-        stream_cleanup(cleanup_state.current_context,
-                       cleanup_state.current_context->service);
+        ctx->rtsp.epoll_fd = ctx->epoll_fd;
+        ctx->rtsp.conn = conn;
+        if (!service->rtsp_url)
+        {
+            logger(LOG_ERROR, "RTSP URL not found in service configuration");
+            return -1;
+        }
+
+        /* Parse URL and initiate connection */
+        if (rtsp_parse_server_url(&ctx->rtsp, service->rtsp_url, service->playseek_param, service->user_agent) < 0)
+        {
+            logger(LOG_ERROR, "RTSP: Failed to parse URL");
+            return -1;
+        }
+
+        if (rtsp_connect(&ctx->rtsp) < 0)
+        {
+            logger(LOG_ERROR, "RTSP: Failed to initiate connection");
+            return -1;
+        }
+
+        /* Connection initiated - handshake will proceed asynchronously via event loop */
+        logger(LOG_DEBUG, "RTSP: Async connection initiated, state=%d", ctx->rtsp.state);
     }
-    if (signum)
-        exit(RETVAL_CLEAN);
+    else if (service->service_type == SERVICE_MRTP && service->fcc_addr)
+    {
+        if (fcc_initialize_and_request(ctx) < 0)
+        {
+            logger(LOG_ERROR, "FCC initialization failed");
+            return -1;
+        }
+    }
+    else
+    {
+        /* Direct multicast join */
+        ctx->mcast_sock = stream_join_mcast_group(ctx);
+        fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "Direct multicast");
+    }
+
+    return 0;
 }
 
-/* Static exit handler */
-static void stream_exit_handler(void)
+int stream_tick(stream_context_t *ctx, int64_t now)
 {
-    stream_signal_handler(0);
+    if (!ctx)
+        return 0;
+    /* Periodic status update */
+    /* Use by-pid variant to support multi-connection-per-process */
+
+    /* Check for multicast stream timeout */
+    if (ctx->mcast_sock > 0)
+    {
+        int64_t elapsed_ms = now - ctx->last_mcast_data_time;
+        if (elapsed_ms >= MCAST_TIMEOUT_SEC * 1000)
+        {
+            logger(LOG_ERROR, "Multicast: No data received for %d seconds, closing connection",
+                   MCAST_TIMEOUT_SEC);
+            return -1; /* Signal connection should be closed */
+        }
+    }
+
+    /* Check for FCC timeouts */
+    if (ctx->fcc.fcc_sock > 0)
+    {
+        int64_t elapsed_ms = now - ctx->last_fcc_data_time;
+
+        if (elapsed_ms >= FCC_TIMEOUT_SEC * 1000)
+        {
+            /* Timeout waiting for server response after sending request */
+            if (ctx->fcc.state == FCC_STATE_REQUESTED)
+            {
+                logger(LOG_ERROR, "FCC: Server response timeout (%d seconds), falling back to multicast",
+                       FCC_TIMEOUT_SEC);
+                fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "Request timeout");
+                ctx->mcast_sock = stream_join_mcast_group(ctx);
+            }
+            /* Timeout waiting for unicast packet after server accepts */
+            else if (ctx->fcc.state == FCC_STATE_UNICAST_PENDING || ctx->fcc.state == FCC_STATE_UNICAST_ACTIVE)
+            {
+                logger(LOG_ERROR, "FCC: Unicast stream timeout (%d seconds), falling back to multicast",
+                       FCC_TIMEOUT_SEC);
+                fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "Unicast timeout");
+                ctx->mcast_sock = stream_join_mcast_group(ctx);
+            }
+        }
+    }
+
+    /* Update bandwidth calculation every second */
+    if (now - ctx->last_status_update >= 1000)
+    {
+        /* Calculate bandwidth based on bytes sent since last update */
+        uint64_t bytes_diff = ctx->total_bytes_sent - ctx->last_bytes_sent;
+        int64_t elapsed_ms = now - ctx->last_status_update;
+        uint32_t current_bandwidth = 0;
+
+        if (elapsed_ms > 0)
+        {
+            /* Convert to bytes per second: (bytes * 1000) / elapsed_ms */
+            current_bandwidth = (uint32_t)((bytes_diff * 1000) / elapsed_ms);
+        }
+
+        /* Update bytes and bandwidth in status */
+        status_update_client_bytes(ctx->status_id, ctx->total_bytes_sent, current_bandwidth);
+
+        /* Save current bytes for next calculation */
+        ctx->last_bytes_sent = ctx->total_bytes_sent;
+        ctx->last_status_update = now;
+    }
+
+    return 0; /* Success */
 }
 
-/*
- * Main media streaming function
- */
-void start_media_stream(int client, struct services_s *service)
+int stream_context_cleanup(stream_context_t *ctx)
 {
-    stream_context_t ctx;
-    struct epoll_event events[MAX_EPOLL_EVENTS];
-    int nfds, i;
+    if (!ctx)
+        return 0;
 
-    /* Initialize stream context */
-    memset(&ctx, 0, sizeof(ctx));
-    ctx.client_fd = client;
-    ctx.service = service;
-    fcc_session_init(&ctx.fcc);
-    rtsp_session_init(&ctx.rtsp);
-    ctx.total_bytes_sent = 0;
-    ctx.total_packets_sent = 0;
-    ctx.last_status_update = time(NULL);
-    ctx.last_reported_state = CLIENT_STATE_CONNECTING;
+    /* Clean up FCC session (always safe to cleanup immediately) */
+    fcc_session_cleanup(&ctx->fcc, ctx->service, ctx->epoll_fd);
 
-    /* Create epoll instance */
-    ctx.epoll_fd = epoll_create1(EPOLL_CLOEXEC);
-    if (ctx.epoll_fd < 0)
+    /* Clean up RTSP session - this may initiate async TEARDOWN */
+    int rtsp_async = rtsp_session_cleanup(&ctx->rtsp);
+
+    /* Close multicast socket if active (always safe to cleanup immediately) */
+    if (ctx->mcast_sock)
     {
-        logger(LOG_ERROR, "Failed to create epoll instance: %s", strerror(errno));
-        stream_cleanup(&ctx, service);
-        exit(RETVAL_SOCK_READ_FAILED);
+        worker_cleanup_socket_from_epoll(ctx->epoll_fd, ctx->mcast_sock);
+        ctx->mcast_sock = 0;
+        logger(LOG_DEBUG, "Multicast socket closed");
     }
 
-    /* Add client socket to epoll (always monitored for disconnect detection) */
-    struct epoll_event client_ev;
-    client_ev.events = EPOLLIN; /* Level-triggered mode for read events */
-    client_ev.data.fd = ctx.client_fd;
-    if (epoll_ctl(ctx.epoll_fd, EPOLL_CTL_ADD, ctx.client_fd, &client_ev) < 0)
+    if (rtsp_async)
     {
-        logger(LOG_ERROR, "Failed to add client_fd to epoll: %s", strerror(errno));
-        close(ctx.epoll_fd);
-        stream_cleanup(&ctx, service);
-        exit(RETVAL_SOCK_READ_FAILED);
+        /* RTSP async TEARDOWN initiated - defer final cleanup */
+        logger(LOG_DEBUG, "Stream: RTSP async TEARDOWN initiated, deferring final cleanup");
+        /* Do NOT clear ctx->service - still needed for RTSP */
+        return 1; /* Indicate async cleanup in progress */
     }
 
-    /* Set cleanup context for signal handlers */
-    cleanup_state.current_context = &ctx;
+    /* NOTE: Do NOT free ctx->service here!
+     * The service pointer is shared with the parent connection (c->service).
+     * The connection owns the service and will free it in connection_free()
+     * based on the c->service_owned flag.
+     * Freeing it here would cause double-free when connection_free() is called.
+     */
+    ctx->service = NULL; /* Clear pointer but don't free */
 
-    /* Register signal and exit handlers */
-    atexit(stream_exit_handler);
-    signal(SIGTERM, stream_signal_handler);
-    signal(SIGINT, stream_signal_handler);
-    signal(SIGPIPE, stream_signal_handler);
-
-    logger(LOG_DEBUG, "Starting media stream processing for service type %d (%s)",
-           service->service_type,
-           service->service_type == SERVICE_MRTP ? "MRTP" : service->service_type == SERVICE_MUDP ? "MUDP"
-                                                                                                  : "RTSP");
-
-    /* Main processing loop */
-    while (1)
-    {
-        /* Handle initial state - decide between FCC, direct multicast, or RTSP */
-        if (ctx.fcc.state == FCC_STATE_INIT && ctx.rtsp.state == RTSP_STATE_INIT)
-        {
-            if (service->service_type == SERVICE_RTSP)
-            {
-                /* Initialize RTSP connection */
-                logger(LOG_DEBUG, "Initializing RTSP connection");
-
-                /* Parse RTSP URL and setup session */
-                if (!service->rtsp_url)
-                {
-                    logger(LOG_ERROR, "RTSP URL not found in service configuration");
-                    close(ctx.epoll_fd);
-                    stream_cleanup(&ctx, service);
-                    exit(RETVAL_RTP_FAILED);
-                }
-
-                /* Set epoll_fd in RTSP session for socket registration */
-                ctx.rtsp.epoll_fd = ctx.epoll_fd;
-
-                if (rtsp_parse_server_url(&ctx.rtsp, service->rtsp_url, service->playseek_param, service->user_agent) < 0 ||
-                    rtsp_connect(&ctx.rtsp) < 0 ||
-                    rtsp_describe(&ctx.rtsp) < 0 ||
-                    rtsp_setup(&ctx.rtsp) < 0 ||
-                    rtsp_play(&ctx.rtsp) < 0)
-                {
-                    logger(LOG_ERROR, "RTSP initialization failed, cleaning up and exiting");
-                    close(ctx.epoll_fd);
-                    stream_cleanup(&ctx, service);
-                    exit(RETVAL_RTP_FAILED);
-                }
-            }
-            else if (service->service_type == SERVICE_MRTP && service->fcc_addr)
-            {
-                /* Try FCC fast channel change */
-                if (fcc_initialize_and_request(&ctx) < 0)
-                {
-                    logger(LOG_ERROR, "FCC initialization failed, cleaning up and exiting");
-                    close(ctx.epoll_fd);
-                    stream_cleanup(&ctx, service);
-                    exit(RETVAL_RTP_FAILED);
-                }
-            }
-            else
-            {
-                /* Direct multicast join */
-                logger(LOG_DEBUG, "Service doesn't support FCC, joining multicast directly");
-                ctx.mcast_sock = join_mcast_group(service, ctx.epoll_fd);
-                fcc_session_set_state(&ctx.fcc, FCC_STATE_MCAST_ACTIVE, "Direct multicast");
-            }
-            continue;
-        }
-
-        /* Wait for socket events with timeout */
-        nfds = epoll_wait(ctx.epoll_fd, events, MAX_EPOLL_EVENTS, FCC_SELECT_TIMEOUT_SEC * 1000);
-
-        if (nfds < 0)
-        {
-            if (errno == EINTR)
-            {
-                continue; /* Interrupted by signal, retry */
-            }
-            logger(LOG_ERROR, "epoll_wait failed: %s, cleaning up and exiting", strerror(errno));
-            close(ctx.epoll_fd);
-            stream_cleanup(&ctx, service);
-            exit(RETVAL_SOCK_READ_FAILED);
-        }
-
-        if (nfds == 0)
-        {
-            /* Timeout - handle based on current FCC state */
-            if (ctx.fcc.state == FCC_STATE_REQUESTED ||
-                ctx.fcc.state == FCC_STATE_UNICAST_ACTIVE ||
-                ctx.fcc.state == FCC_STATE_MCAST_REQUESTED)
-            {
-                /* FCC unicast stream failed to arrive or timed out - fall back to multicast */
-                logger(LOG_ERROR, "FCC timeout in state %d - no unicast data received within %d seconds, falling back to multicast",
-                       ctx.fcc.state, FCC_SELECT_TIMEOUT_SEC);
-
-                /* Transition to multicast active state */
-                fcc_session_set_state(&ctx.fcc, FCC_STATE_MCAST_ACTIVE, "FCC unicast timeout - fallback to multicast");
-
-                /* Join multicast group if not already joined */
-                if (ctx.mcast_sock <= 0)
-                {
-                    ctx.mcast_sock = join_mcast_group(ctx.service, ctx.epoll_fd);
-                }
-
-                /* Continue processing - multicast should now provide data */
-                continue;
-            }
-            else
-            {
-                /* Timeout in other states (multicast active, RTSP, etc.) is a real error */
-                logger(LOG_ERROR, "Stream timeout - no data received within %d seconds, cleaning up and exiting",
-                       FCC_SELECT_TIMEOUT_SEC);
-                close(ctx.epoll_fd);
-                stream_cleanup(&ctx, service);
-                exit(RETVAL_SOCK_READ_FAILED);
-            }
-        }
-
-        /* Process all ready file descriptors */
-        for (i = 0; i < nfds; i++)
-        {
-            int process_result = stream_process_socket(&ctx, events[i].data.fd);
-            if (process_result < 0)
-            {
-                /* Exit requested (client disconnect or fatal error) */
-                close(ctx.epoll_fd);
-                logger(LOG_DEBUG, "Stream processing ended, performing cleanup");
-                stream_cleanup(&ctx, service);
-                return;
-            }
-            else if (process_result == 1)
-            {
-                /* State change requested (e.g., FCC redirect) - restart loop immediately
-                 * Note: Unprocessed events are safe to skip because we use level-triggered
-                 * epoll mode - any remaining data will trigger events again on next iteration */
-                break;
-            }
-            /* process_result == 0: continue processing remaining events */
-        }
-
-        /* Update status tracking periodically */
-        update_stream_status(&ctx);
-    }
+    return 0; /* Cleanup completed */
 }

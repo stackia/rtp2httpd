@@ -12,19 +12,21 @@
 #include <net/if.h>
 #include "multicast.h"
 #include "rtp2httpd.h"
+#include "service.h"
+#include "connection.h"
 
 void bind_to_upstream_interface(int sock)
 {
-  if (conf_upstream_interface.ifr_name[0] != '\0')
+  if (config.upstream_interface.ifr_name[0] != '\0')
   {
-    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, (void *)&conf_upstream_interface, sizeof(struct ifreq)) < 0)
+    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, (void *)&config.upstream_interface, sizeof(struct ifreq)) < 0)
     {
-      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s", conf_upstream_interface.ifr_name, strerror(errno));
+      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s", config.upstream_interface.ifr_name, strerror(errno));
     }
   }
 }
 
-int join_mcast_group(struct services_s *service, int epoll_fd)
+int join_mcast_group(service_t *service)
 {
   struct group_req gr;
   struct group_source_req gsr;
@@ -33,6 +35,15 @@ int join_mcast_group(struct services_s *service, int epoll_fd)
 
   sock = socket(service->addr->ai_family, service->addr->ai_socktype,
                 service->addr->ai_protocol);
+
+  /* Set socket to non-blocking mode for epoll */
+  if (connection_set_nonblocking(sock) < 0)
+  {
+    logger(LOG_ERROR, "Failed to set multicast socket non-blocking: %s", strerror(errno));
+    close(sock);
+    exit(RETVAL_SOCK_READ_FAILED);
+  }
+
   r = setsockopt(sock, SOL_SOCKET,
                  SO_REUSEADDR, &on, sizeof(on));
   if (r)
@@ -68,9 +79,9 @@ int join_mcast_group(struct services_s *service, int epoll_fd)
     exit(RETVAL_SOCK_READ_FAILED);
   }
 
-  if (conf_upstream_interface.ifr_name[0] != '\0')
+  if (config.upstream_interface.ifr_name[0] != '\0')
   {
-    gr.gr_interface = conf_upstream_interface.ifr_ifindex;
+    gr.gr_interface = config.upstream_interface.ifr_ifindex;
   }
 
   if (strcmp(service->msrc, "") != 0 && service->msrc != NULL)
@@ -94,17 +105,6 @@ int join_mcast_group(struct services_s *service, int epoll_fd)
     exit(RETVAL_RTP_FAILED);
   }
 
-  /* Register socket with epoll immediately after creation */
-  struct epoll_event ev;
-  ev.events = EPOLLIN; /* Level-triggered mode for read events */
-  ev.data.fd = sock;
-  if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock, &ev) < 0)
-  {
-    logger(LOG_ERROR, "Multicast: Failed to add socket to epoll: %s", strerror(errno));
-    close(sock);
-    exit(RETVAL_SOCK_READ_FAILED);
-  }
-  logger(LOG_DEBUG, "Multicast: Socket registered with epoll");
-
+  logger(LOG_INFO, "Multicast: Successfully joined group");
   return sock;
 }

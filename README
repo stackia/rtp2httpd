@@ -22,6 +22,13 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 - **NAT 穿透支持**：支持 NAT-PMP 和打洞技术，适应复杂网络环境
 - **多客户端并发**：支持多个客户端同时快速换台
 
+### 📊 实时状态监控
+
+- **Web 状态页面**：通过浏览器访问 `/status` 查看实时运行状态
+- **客户端连接统计**：显示每个连接的 IP、状态、带宽使用、传输数据量
+- **系统日志查看**：实时查看服务器日志，支持动态调整日志级别
+- **远程管理功能**：可通过 Web 界面强制断开指定客户端连接
+
 ## 📺 快速换台 + 时移回看 演示效果
 
 https://github.com/user-attachments/assets/a8c9c60f-ebc3-49a8-b374-f579f8e34d92
@@ -279,8 +286,8 @@ rtp2httpd --clock-format "yyyy-MM-dd'T'HH:mm:ss'Z'"
 
 ```ini
 [global]
-# 日志详细程度: 0=静默 1=错误 2=信息 3=调试
-verbosity = 2
+# 日志详细程度: 0=致命错误 1=错误 2=警告 3=信息 4=调试
+verbosity = 3
 
 # 最大并发客户端数
 maxclients = 20

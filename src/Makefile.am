@@ -5,23 +5,25 @@ bin_PROGRAMS = rtp2httpd
 # Program sources
 rtp2httpd_SOURCES = \
 	rtp2httpd.c \
-	httpclients.c \
 	configuration.c \
 	http.c \
+	service.c \
 	rtp.c \
 	multicast.c \
 	fcc.c \
 	stream.c \
 	rtsp.c \
 	timezone.c \
-	status.c
+	status.c \
+	connection.c \
+	worker.c
 
 # Private headers (not installed)
 noinst_HEADERS = \
 	rtp2httpd.h \
 	configuration.h \
-	httpclients.h \
 	http.h \
+	service.h \
 	rtp.h \
 	multicast.h \
 	fcc.h \
@@ -29,7 +31,9 @@ noinst_HEADERS = \
 	rtsp.h \
 	timezone.h \
 	status.h \
-	status_page.h
+	status_page.h \
+	connection.h \
+	worker.h
 
 # Compiler flags
 AM_CPPFLAGS = -DSYSCONFDIR=\"@sysconfdir@\"
