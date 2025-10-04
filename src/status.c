@@ -478,9 +478,13 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
   uint32_t total_bw = 0;
   int streams_count = 0;
 
+  int64_t current_time = get_realtime_ms();
+  int64_t uptime_ms = current_time - status_shared->server_start_time;
+
   int len = snprintf(buffer, buffer_capacity,
-                     "data: {\"server_start_time\":%lld,\"current_log_level\":%d,\"max_clients\":%d,\"clients\":[",
+                     "data: {\"server_start_time\":%lld,\"uptime_ms\":%lld,\"current_log_level\":%d,\"max_clients\":%d,\"clients\":[",
                      (long long)status_shared->server_start_time,
+                     (long long)uptime_ms,
                      status_shared->current_log_level,
                      config.maxclients);
 
@@ -497,13 +501,16 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
       /* Get state description from lookup table */
       const char *state_desc = status_get_state_description(status_shared->clients[i].state);
 
+      int64_t duration_ms = current_time - status_shared->clients[i].connect_time;
+
       len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                      "{\"pid\":%d,\"worker_pid\":%d,\"connect_time\":%lld,\"client_addr\":\"%s\",\"client_port\":\"%s\","
+                      "{\"pid\":%d,\"worker_pid\":%d,\"connect_time\":%lld,\"duration_ms\":%lld,\"client_addr\":\"%s\",\"client_port\":\"%s\","
                       "\"service_url\":\"%s\",\"state_desc\":\"%s\",\"bytes_sent\":%llu,"
                       "\"current_bandwidth\":%u}",
                       status_shared->clients[i].pid,
                       status_shared->clients[i].worker_pid,
                       (long long)status_shared->clients[i].connect_time,
+                      (long long)duration_ms,
                       status_shared->clients[i].client_addr,
                       status_shared->clients[i].client_port,
                       status_shared->clients[i].service_url,
