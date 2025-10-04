@@ -8,6 +8,7 @@
 #include "status.h"
 #include "stream.h"
 #include "rtsp.h"
+#include "zerocopy.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -255,10 +256,14 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 
   /* Unified event loop: accept + clients + stream fds */
   int64_t last_tick = get_time_ms();
+  int64_t last_flush_check = get_time_ms();
 
   while (!stop_flag)
   {
-    int timeout_ms = 1000; /* 1s tick */
+    /* Use shorter timeout to check for batched send timeouts
+     * 5ms matches ZEROCOPY_BATCH_TIMEOUT_US for timely flushing
+     */
+    int timeout_ms = 15;
     int n = epoll_wait(epfd, events, (int)(sizeof(events) / sizeof(events[0])), timeout_ms);
     if (n < 0)
     {
@@ -356,67 +361,102 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
         if (fd_ready == c->fd)
         {
           /* Client socket events */
-          if (events[e].events & (EPOLLHUP | EPOLLRDHUP | EPOLLERR))
+
+          /* First, handle EPOLLERR for MSG_ZEROCOPY completions before checking for real errors */
+          if (events[e].events & EPOLLERR)
           {
-            /* Client disconnected or error */
-            if (events[e].events & EPOLLERR)
+            /* EPOLLERR can indicate either:
+             * 1. MSG_ZEROCOPY completion notification (normal operation)
+             * 2. Actual socket error
+             * We need to check MSG_ERRQUEUE first to distinguish between them.
+             */
+            int had_zerocopy_completions = 0;
+            if (c->zerocopy_enabled)
             {
-              logger(LOG_DEBUG, "Client connection error detected");
+              int completions = zerocopy_handle_completions(c->fd, &c->zc_queue);
+              if (completions > 0)
+              {
+                had_zerocopy_completions = 1;
+              }
+              else if (completions < 0)
+              {
+                /* Error reading MSG_ERRQUEUE - treat as real socket error */
+                logger(LOG_DEBUG, "Failed to read MSG_ERRQUEUE: %s", strerror(errno));
+                worker_close_and_free_connection(c);
+                continue;
+              }
+              /* completions == 0: no zerocopy completions, check for real error below */
             }
-            else
+
+            /* If EPOLLERR is set but we didn't get zerocopy completions,
+             * check if it's a real socket error by trying to get SO_ERROR */
+            if (!had_zerocopy_completions)
             {
-              logger(LOG_INFO, "Client disconnected");
+              int socket_error = 0;
+              socklen_t errlen = sizeof(socket_error);
+              if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &socket_error, &errlen) == 0 && socket_error != 0)
+              {
+                /* Real socket error */
+                logger(LOG_DEBUG, "Client connection error: %s", strerror(socket_error));
+                worker_close_and_free_connection(c);
+                continue; /* Skip further processing for this connection */
+              }
+              /* Otherwise, EPOLLERR might be spurious or already handled by zerocopy */
             }
+          }
+
+          /* Handle disconnect events */
+          if (events[e].events & (EPOLLHUP | EPOLLRDHUP))
+          {
+            logger(LOG_INFO, "Client disconnected");
             worker_close_and_free_connection(c);
             continue; /* Skip further processing for this connection */
           }
-          else
+
+          /* Handle EPOLLIN and EPOLLOUT independently (not mutually exclusive) */
+          if (events[e].events & EPOLLIN)
           {
-            /* Handle EPOLLIN and EPOLLOUT independently (not mutually exclusive) */
-            if (events[e].events & EPOLLIN)
+            /* For streaming connections, client socket is monitored for disconnect detection */
+            if (c->streaming)
             {
-              /* For streaming connections, client socket is monitored for disconnect detection */
-              if (c->streaming)
+              /* Client sent data or disconnected during streaming */
+              char discard_buffer[1024];
+              int bytes = recv(c->fd, discard_buffer, sizeof(discard_buffer), 0);
+              if (bytes <= 0)
               {
-                /* Client sent data or disconnected during streaming */
-                char discard_buffer[1024];
-                int bytes = recv(c->fd, discard_buffer, sizeof(discard_buffer), 0);
-                if (bytes <= 0)
-                {
-                  /* Client disconnected (bytes == 0) or error (bytes < 0) */
-                  if (bytes == 0)
-                    logger(LOG_DEBUG, "Client disconnected gracefully during streaming");
-                  else
-                    logger(LOG_DEBUG, "Client socket error during streaming: %s", strerror(errno));
-                  worker_close_and_free_connection(c);
-                  continue; /* Skip further processing for this connection */
-                }
+                /* Client disconnected (bytes == 0) or error (bytes < 0) */
+                if (bytes == 0)
+                  logger(LOG_DEBUG, "Client disconnected gracefully during streaming");
                 else
-                {
-                  /* Client sent unexpected data (e.g., additional HTTP request) - discard */
-                  logger(LOG_DEBUG, "Client sent %d bytes during streaming (discarded)", bytes);
-                }
+                  logger(LOG_DEBUG, "Client socket error during streaming: %s", strerror(errno));
+                worker_close_and_free_connection(c);
+                continue; /* Skip further processing for this connection */
               }
               else
               {
-                /* Normal HTTP request handling */
-                connection_handle_read(c);
-                if (c->state == CONN_CLOSING && c->out_len == c->out_off)
-                {
-                  worker_close_and_free_connection(c);
-                  continue; /* Skip further processing for this connection */
-                }
+                /* Client sent unexpected data (e.g., additional HTTP request) - discard */
+                logger(LOG_DEBUG, "Client sent %d bytes during streaming (discarded)", bytes);
               }
             }
-
-            if (events[e].events & EPOLLOUT)
+            else
             {
-              connection_handle_write(c);
-              if (c->state == CONN_CLOSING && c->out_len == c->out_off && !c->streaming && !c->sse_active)
+              /* Normal HTTP request handling */
+              connection_handle_read(c);
+              if (c->state == CONN_CLOSING && c->out_len == c->out_off)
               {
                 worker_close_and_free_connection(c);
                 continue; /* Skip further processing for this connection */
               }
+            }
+          }
+
+          if (events[e].events & EPOLLOUT)
+          {
+            connection_handle_write(c);
+            if (c->state == CONN_CLOSING && c->out_len == c->out_off && !c->streaming && !c->sse_active)
+            {
+              worker_close_and_free_connection(c);
+              continue; /* Skip further processing for this connection */
             }
           }
         }
@@ -432,8 +472,26 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
       }
     }
 
-    /* 2) Periodic tick (~1s): update streams and SSE heartbeats */
+    /* 2) Check for batched send timeouts */
     int64_t now = get_time_ms();
+    if (now - last_flush_check >= ZEROCOPY_BATCH_TIMEOUT_US / 1000)
+    {
+      last_flush_check = now;
+      connection_t *c = conn_head;
+      while (c)
+      {
+        connection_t *next = c->next;
+        /* Check if zerocopy queue has timed out data waiting to be sent */
+        if (c->zerocopy_enabled && zerocopy_should_flush(&c->zc_queue))
+        {
+          /* Enable EPOLLOUT to trigger flush */
+          connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+        }
+        c = next;
+      }
+    }
+
+    /* 3) Periodic tick (~1s): update streams and SSE heartbeats */
     if (now - last_tick >= 1000) /* Check if at least 1 second has passed */
     {
       last_tick = now;

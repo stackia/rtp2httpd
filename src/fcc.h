@@ -5,10 +5,11 @@
 #include <netinet/in.h>
 #include <netdb.h>
 #include "rtp2httpd.h"
-#include "buffer_config.h"
 
-/* Forward declaration for stream context - full definition in stream.h */
-struct stream_context_s;
+/* Forward declarations */
+struct stream_context_s; /* Full definition in stream.h */
+struct buffer_ref_s;     /* Full definition in zerocopy.h */
+typedef struct buffer_ref_s buffer_ref_t;
 
 #define FCC_PK_LEN_REQ 40
 #define FCC_PK_LEN_TERM 16
@@ -16,6 +17,15 @@ struct stream_context_s;
 #define FCC_MIN_BUFFER_PACKETS 80
 #define FCC_MAX_REDIRECTS 5
 #define FCC_TIMEOUT_SEC 1
+
+/* Pending buffer node for zero-copy chain */
+typedef struct pending_buffer_node_s
+{
+    buffer_ref_t *buf_ref; /* Reference to pool buffer */
+    uint8_t *data_start;   /* Start of actual data in buffer */
+    size_t data_len;       /* Length of data in this buffer */
+    struct pending_buffer_node_s *next;
+} pending_buffer_node_t;
 
 /* FCC State Machine - Based on Fast Channel Change Protocol */
 typedef enum
@@ -45,10 +55,11 @@ typedef struct
     uint16_t not_first_packet;
     int redirect_count; /* Number of redirects followed */
 
-    /* Multicast pending buffer for smooth transition */
-    uint8_t *mcast_pending_buf;
-    uint8_t *mcast_pbuf_current;
-    uint32_t mcast_pbuf_len;
+    /* Multicast pending buffer for smooth transition - zero-copy chain */
+    pending_buffer_node_t *pending_list_head;
+    pending_buffer_node_t *pending_list_tail;
+    uint32_t pending_total_bytes; /* Total bytes in pending list */
+    uint32_t pending_max_bytes;   /* Maximum bytes allowed */
     uint16_t mcast_pbuf_last_seqn;
     int mcast_pbuf_full;
 } fcc_session_t;
@@ -126,30 +137,33 @@ int fcc_handle_sync_notification(struct stream_context_s *ctx);
  * Stage 4: Handle RTP media packets from unicast stream
  *
  * @param ctx Stream context
- * @param buf Data buffer
+ * @param buf Data buffer (from buffer pool)
  * @param buf_len Buffer length
+ * @param buf_ref Buffer reference for zero-copy
  * @return 0 on success
  */
-int fcc_handle_unicast_media(struct stream_context_s *ctx, uint8_t *buf, int buf_len);
+int fcc_handle_unicast_media(struct stream_context_s *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref);
 
 /**
  * Handle multicast data during transition period
  *
  * @param ctx Stream context
- * @param buf Data buffer
+ * @param buf Data buffer (from buffer pool)
  * @param buf_len Buffer length
+ * @param buf_ref Buffer reference for zero-copy
  * @return 0 on success
  */
-int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int buf_len);
+int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref);
 
 /**
  * Handle multicast data in active state
  *
  * @param ctx Stream context
- * @param buf Data buffer
+ * @param buf Data buffer (from buffer pool)
  * @param buf_len Buffer length
+ * @param buf_ref Buffer reference for zero-copy
  * @return 0 on success
  */
-int fcc_handle_mcast_active(struct stream_context_s *ctx, uint8_t *buf, int buf_len);
+int fcc_handle_mcast_active(struct stream_context_s *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref);
 
 #endif /* __FCC_H__ */

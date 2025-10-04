@@ -8,6 +8,7 @@
 #include "http.h"
 #include "service.h"
 #include "status.h"
+#include "zerocopy.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -15,6 +16,11 @@
 #include <fcntl.h>
 #include <netinet/tcp.h>
 #include <sys/epoll.h>
+#include <sys/socket.h>
+
+#ifndef SO_ZEROCOPY
+#define SO_ZEROCOPY 60
+#endif
 
 int connection_set_nonblocking(int fd)
 {
@@ -53,6 +59,21 @@ connection_t *connection_create(int fd, int epfd, pid_t status_id)
   c->sse_active = 0;
   c->status_id = status_id;
   c->next = NULL;
+
+  /* Initialize zero-copy queue */
+  zerocopy_queue_init(&c->zc_queue);
+  c->zerocopy_enabled = 0;
+
+  /* Enable SO_ZEROCOPY on socket if supported */
+  if (zerocopy_state.features & ZEROCOPY_MSG_ZEROCOPY)
+  {
+    int one = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one)) == 0)
+    {
+      c->zerocopy_enabled = 1;
+    }
+  }
+
   /* Initialize HTTP request parser */
   http_request_init(&c->http_req);
   return c;
@@ -68,9 +89,12 @@ void connection_free(connection_t *c)
    * for streaming connections, so this is a safety fallback */
   if (c->streaming)
   {
-    logger(LOG_ERROR, "connection_free: streaming flag still set, cleaning up stream");
+    logger(LOG_WARN, "connection_free: streaming flag still set, cleaning up stream");
     stream_context_cleanup(&c->stream);
   }
+
+  /* Cleanup zero-copy queue */
+  zerocopy_queue_cleanup(&c->zc_queue);
 
   /* Free service if owned */
   if (c->service_owned && c->service)
@@ -118,6 +142,35 @@ void connection_handle_write(connection_t *c)
 {
   if (!c)
     return;
+
+  /* First, try to send from zero-copy queue */
+  if (c->zc_queue.head)
+  {
+    size_t bytes_sent = 0;
+    int ret = zerocopy_send(c->fd, &c->zc_queue, &bytes_sent);
+
+    if (ret < 0 && ret != -2)
+    {
+      /* Error (not EAGAIN/ENOBUFS) */
+      c->state = CONN_CLOSING;
+      return;
+    }
+
+    /* Proactively check for MSG_ZEROCOPY completions after send
+     * This prevents completion queue buildup and reduces optmem pressure
+     * Especially important for high-frequency small packet sends (RTP)
+     */
+    if (c->zerocopy_enabled && c->zc_queue.num_pending > 0)
+    {
+      zerocopy_handle_completions(c->fd, &c->zc_queue);
+    }
+
+    /* If queue still has data, keep EPOLLOUT enabled */
+    if (c->zc_queue.head)
+      return;
+  }
+
+  /* Then send from legacy buffer (for small data/headers) */
   if (c->out_off < c->out_len)
   {
     /* Non-blocking write logic */
@@ -135,8 +188,6 @@ void connection_handle_write(connection_t *c)
       if (c->out_off >= c->out_len)
       {
         c->out_off = c->out_len = 0;
-        /* stop EPOLLOUT until more data */
-        connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
       }
     }
     else if (w < 0)
@@ -148,12 +199,19 @@ void connection_handle_write(connection_t *c)
       }
     }
   }
-  /* For SSE: if active and no pending outbuf, just wait for event notifications */
-  if (c->sse_active && c->out_len == c->out_off)
+
+  /* If both queues are empty, stop EPOLLOUT */
+  if (!c->zc_queue.head && c->out_off >= c->out_len)
+  {
+    connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+  }
+
+  /* For SSE: if active and no pending data, just wait for event notifications */
+  if (c->sse_active && !c->zc_queue.head && c->out_len == c->out_off)
   {
     /* nothing to do */
   }
-  if (c->state == CONN_CLOSING && c->out_len == c->out_off && !c->streaming && !c->sse_active)
+  if (c->state == CONN_CLOSING && !c->zc_queue.head && c->out_len == c->out_off && !c->streaming && !c->sse_active)
   {
     /* Ready to close */
   }
@@ -349,4 +407,32 @@ int connection_route_and_start(connection_t *c)
     c->state = CONN_CLOSING;
     return -1;
   }
+}
+
+int connection_queue_zerocopy(connection_t *c, void *data, size_t len, buffer_ref_t *buf_ref, size_t offset)
+{
+  if (!c || !data || len == 0)
+    return 0;
+
+  /* Add to zero-copy queue with offset information */
+  int ret = zerocopy_queue_add(&c->zc_queue, data, len, buf_ref, offset);
+  if (ret < 0)
+    return -1; /* Queue full */
+
+  /* Batching optimization: Only enable EPOLLOUT when flush threshold is reached
+   * This accumulates small RTP packets (200-1400 bytes) before sending:
+   * - Flush when accumulated >= 10KB (ZEROCOPY_BATCH_BYTES)
+   * - Flush when timeout >= 5ms (ZEROCOPY_BATCH_TIMEOUT_US)
+   * Benefits:
+   * - Reduces sendmsg() syscall overhead (fewer calls)
+   * - Reduces MSG_ZEROCOPY optmem consumption (fewer operations)
+   * - Better batching with iovec (up to 64 packets per sendmsg)
+   * - Lower latency impact (5ms is acceptable for streaming)
+   */
+  if (zerocopy_should_flush(&c->zc_queue))
+  {
+    connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+  }
+
+  return 0;
 }

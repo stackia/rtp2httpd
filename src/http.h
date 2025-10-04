@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include "rtp2httpd.h"
-#include "buffer_config.h"
 
 /* Forward declaration */
 struct connection_s;

@@ -3,6 +3,35 @@
 
 #include <netdb.h>
 
+/* ========== HTTP/SERVICE BUFFER SIZE CONFIGURATION ========== */
+
+/* HTTP URL working buffer - for URL manipulation */
+#ifndef HTTP_URL_BUFFER_SIZE
+#define HTTP_URL_BUFFER_SIZE 1024
+#endif
+
+/* HTTP URL component buffers - for parsing multicast URLs */
+#ifndef HTTP_ADDR_COMPONENT_SIZE
+#define HTTP_ADDR_COMPONENT_SIZE 256
+#endif
+
+#ifndef HTTP_PORT_COMPONENT_SIZE
+#define HTTP_PORT_COMPONENT_SIZE 16
+#endif
+
+/* HTTP URL parsing buffers - for complex URL operations */
+#ifndef HTTP_URL_MAIN_PART_SIZE
+#define HTTP_URL_MAIN_PART_SIZE 512
+#endif
+
+#ifndef HTTP_URL_FCC_VALUE_SIZE
+#define HTTP_URL_FCC_VALUE_SIZE 512
+#endif
+
+#ifndef HTTP_SOURCE_STRING_SIZE
+#define HTTP_SOURCE_STRING_SIZE 300
+#endif
+
 /* Service type enumeration */
 typedef enum
 {

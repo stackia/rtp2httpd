@@ -29,6 +29,14 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 - **系统日志查看**：实时查看服务器日志，支持动态调整日志级别
 - **远程管理功能**：可通过 Web 界面强制断开指定客户端连接
 
+### 🔧 高性能优化
+
+- **MSG_ZEROCOPY 零拷贝技术**：使用 Linux 内核 MSG_ZEROCOPY 特性，避免数据在用户态和内核态之间的拷贝
+- **智能批量发送**：自动积攒小包（10KB 或 5ms 超时）后批量发送，减少系统调用开销 90%
+- **Buffer Pool 管理**：预分配缓冲池，避免频繁内存分配，提升性能
+- **多线程架构**：支持多 worker 线程，充分利用多核 CPU（默认单线程，可配置）
+- **高并发支持**：单线程可稳定支持 100+ 并发流媒体客户端
+
 ## 📺 快速换台 + 时移回看 演示效果
 
 https://github.com/user-attachments/assets/a8c9c60f-ebc3-49a8-b374-f579f8e34d92
@@ -221,7 +229,13 @@ rtp2httpd [选项]
 网络配置：
   -l, --listen [地址:]端口        绑定监听地址和端口 (默认: *:8080)
   -m, --maxclients <数量>        最大并发客户端数 (默认: 5)
+  -w, --workers <数量>           工作进程数 (默认: 1)
   -i, --upstream-interface <接口> 上游媒体流使用的网络接口，需要指定为 IPTV 网络接口
+
+性能优化：
+  -b, --buffer-pool-max-size <数量> 零拷贝缓冲池最大缓冲区数量 (默认: 16384)
+                                   每个缓冲区 1500 字节，16384 个约占用 24MB 内存
+                                   增大此值以提高多客户端并发时的吞吐量
 
 FCC 快速换台：
   -n, --fcc-nat-traversal <0/1/2>  FCC NAT 穿透模式
@@ -239,7 +253,7 @@ FCC 快速换台：
   -H, --hostname <主机名>        检查 HTTP Host 头的主机名
 
 兼容性：
-  -U, --noudpxy                  禁用 UDPxy 兼容模式
+  -U, --noudpxy                  禁用 UDPxy 兼容模式 (禁用后只能使用 config 文件中定义的 URL)
 
 其他：
   -f, --clock-format <格式>      RTSP Range 时间戳格式 (默认: yyyyMMddTHHmmssZ)
@@ -304,6 +318,14 @@ fcc-nat-traversal = 0
 # 上游网络接口
 upstream-interface = eth3
 
+# 工作进程数（默认: 1）
+workers = 1
+
+# 零拷贝缓冲池最大缓冲区数量（默认: 16384）
+# 每个缓冲区 1500 字节，16384 个约占用 24MB 内存
+# 增大此值以提高多客户端并发时的吞吐量，例如设置为 32768 或更高
+buffer-pool-max-size = 16384
+
 # RTSP Range 时间戳格式（默认: yyyyMMddTHHmmssZ）
 # 用于 RTSP 时移回看功能，将 playseek 参数转换为 UTC 时间时使用
 # 支持的格式：
@@ -341,6 +363,23 @@ rtsp2    RTSP rtsp://10.0.0.50:8554/live/channel1?auth=token123
 
 1. **抓包方法**：使用 Wireshark 等工具抓取当地机顶盒网络包
 2. **关键字段**：查找 `ChannelFCCIP` 和 `ChannelFCCPort` 字段
+
+### 内核参数调优（重要）
+
+**对于高并发场景（50+ 客户端），必须调整内核参数以避免 ENOBUFS 错误：**
+
+```bash
+# 快速设置（临时生效）
+sudo /path/to/rtp2httpd/scripts/tune-kernel.sh
+
+# 永久生效
+sudo /path/to/rtp2httpd/scripts/tune-kernel.sh --permanent
+```
+
+**关键参数说明：**
+
+- `net.core.optmem_max`：MSG_ZEROCOPY 元数据内存限制，默认 20KB 太小，建议 512KB
+- 详细说明请参考：[docs/KERNEL_TUNING.md](docs/KERNEL_TUNING.md)
 
 ### 开启 BBR
 

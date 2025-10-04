@@ -3,11 +3,13 @@
 #endif /* HAVE_CONFIG_H */
 
 #include <stdint.h>
+#include <string.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include "rtp.h"
 #include "rtp2httpd.h"
 #include "connection.h"
+#include "zerocopy.h"
 
 int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size)
 {
@@ -61,7 +63,8 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size)
   return 0;
 }
 
-int write_rtp_payload_to_client(struct connection_s *conn, int recv_len, uint8_t *buf, uint16_t *old_seqn, uint16_t *not_first)
+int write_rtp_payload_to_client(struct connection_s *conn, int recv_len, uint8_t *buf,
+                                buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first)
 {
   int payloadlength;
   uint8_t *payload;
@@ -96,15 +99,21 @@ int write_rtp_payload_to_client(struct connection_s *conn, int recv_len, uint8_t
   *old_seqn = seqn;
   *not_first = 1;
 
-  /* Queue payload to connection output buffer for reliable delivery */
-  if (connection_queue_output(conn, payload, payloadlength) == 0)
+  /* True zero-copy send - payload is in buffer pool, send directly without memcpy */
+  /* Calculate offset of payload in the buffer */
+  size_t payload_offset = payload - (uint8_t *)buf_ref->data;
+
+  /* Queue for zero-copy send */
+  /* Note: zerocopy_queue_add() will automatically increment refcount */
+  if (connection_queue_zerocopy(conn, payload, payloadlength, buf_ref, payload_offset) == 0)
   {
+    /* Successfully queued - send queue now holds a reference */
     return payloadlength;
   }
   else
   {
-    /* Buffer full - backpressure */
-    logger(LOG_DEBUG, "RTP: Output buffer full, backpressure");
+    /* Queue full - backpressure */
+    logger(LOG_DEBUG, "RTP: Zero-copy queue full, backpressure");
     return -1;
   }
 }

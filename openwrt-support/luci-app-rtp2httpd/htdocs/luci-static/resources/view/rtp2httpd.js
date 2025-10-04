@@ -87,7 +87,7 @@ return view.extend({
     o.value("2", _("rtp2httpd_Warn"));
     o.value("3", _("rtp2httpd_Info"));
     o.value("4", _("rtp2httpd_Debug"));
-    o.default = "2";
+    o.default = "1";
     o.depends("use_config_file", "0");
 
     o = s.option(
@@ -117,6 +117,18 @@ return view.extend({
     );
     o.datatype = "range(1, 64)";
     o.placeholder = "1";
+    o.depends("use_config_file", "0");
+
+    o = s.option(
+      form.Value,
+      "buffer_pool_max_size",
+      _("rtp2httpd_Buffer Pool Max Size"),
+      _(
+        "rtp2httpd_Maximum number of buffers in zero-copy pool. Each buffer is 1500 bytes. Increase to improve throughput for multi-client concurrency."
+      )
+    );
+    o.datatype = "range(1024, 1048576)";
+    o.placeholder = "16384";
     o.depends("use_config_file", "0");
 
     o = s.option(
