@@ -20,28 +20,40 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 - **运营商级 FCC 协议**：实现毫秒级换台响应，媲美原生 IPTV 机顶盒
 - **智能流缓存**：预加载关键帧，确保换台时立即提供可解码视频流
 - **NAT 穿透支持**：支持 NAT-PMP 和打洞技术，适应复杂网络环境
-- **多客户端并发**：支持多个客户端同时快速换台
 
 ### 📊 实时状态监控
 
 - **Web 状态页面**：通过浏览器访问 `/status` 查看实时运行状态
 - **客户端连接统计**：显示每个连接的 IP、状态、带宽使用、传输数据量
 - **系统日志查看**：实时查看服务器日志，支持动态调整日志级别
-- **远程管理功能**：可通过 Web 界面强制断开指定客户端连接
+- **远程管理功能**：通过 Web 界面强制断开客户端连接
 
 ### 🔧 高性能优化
 
+- **非阻塞 IO 模型**：使用 epoll 事件驱动，高效处理大量并发连接
 - **MSG_ZEROCOPY 零拷贝技术**：使用 Linux 内核 MSG_ZEROCOPY 特性，避免数据在用户态和内核态之间的拷贝
-- **智能批量发送**：自动积攒小包（10KB 或 5ms 超时）后批量发送，减少系统调用开销 90%
-- **Buffer Pool 管理**：预分配缓冲池，避免频繁内存分配，提升性能
-- **多线程架构**：支持多 worker 线程，充分利用多核 CPU（默认单线程，可配置）
-- **高并发支持**：单线程可稳定支持 100+ 并发流媒体客户端
+- **多核优化**：支持多 worker 进程，充分利用多核 CPU 提高最大吞吐量（默认单 worker，可配置）
+- **智能批量发送**：自动积攒小包后批量发送，减少系统调用开销 90%，同时兼顾低延时
+- **Buffer Pool 管理**：预分配缓冲池，避免频繁内存分配，内存总用量可控
+- **高并发支持**：单个 worker 可支持 100+ 并发流媒体客户端
 
-## 📺 快速换台 + 时移回看 演示效果
+## 📺 演示效果
+
+### 快速换台 + 时移回看
 
 https://github.com/user-attachments/assets/a8c9c60f-ebc3-49a8-b374-f579f8e34d92
 
 > **提示**：建议搭配专门针对 IPTV 直播优化的播放器使用，例如 [APTV](https://aptv.wegic.app) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) 等。
+
+### 25条 1080p 组播流同时播放
+
+https://github.com/user-attachments/assets/fedc0c28-f9ac-4675-9b19-a8efdd062506
+
+> 仅占用 25% CPU 单核 (i3-N305)，消耗 4MB 内存
+
+### Web UI 实时状态监控
+
+<img width="1488" height="998" alt="Image" src="https://github.com/user-attachments/assets/f6ca5aa7-55f8-4b06-9ea8-3502892e9dc1" />
 
 ## 📦 部署方式
 
