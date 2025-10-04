@@ -6,11 +6,7 @@
 #include <sys/types.h>
 #include "stream.h"
 #include "http.h"
-
-/* HTTP URL buffer size */
-#ifndef HTTP_URL_BUFFER_SIZE
-#define HTTP_URL_BUFFER_SIZE 2048
-#endif
+#include "zerocopy.h"
 
 /* Per-connection HTTP state (unified event-driven within each worker) */
 typedef enum
@@ -24,7 +20,7 @@ typedef enum
 } conn_state_t;
 
 #define INBUF_SIZE 8192
-#define OUTBUF_SIZE 1048576
+#define OUTBUF_SIZE 131072
 
 typedef struct connection_s
 {
@@ -34,10 +30,13 @@ typedef struct connection_s
   /* input parsing */
   char inbuf[INBUF_SIZE];
   int in_len;
-  /* output buffering */
+  /* output buffering - legacy buffer for small data */
   uint8_t outbuf[OUTBUF_SIZE];
   size_t out_len; /* bytes valid in outbuf */
   size_t out_off; /* next byte to send */
+  /* zero-copy send queue */
+  zerocopy_queue_t zc_queue;
+  int zerocopy_enabled; /* Whether SO_ZEROCOPY is enabled on this socket */
   /* HTTP request parser */
   http_request_t http_req;
   /* service/stream */
@@ -122,5 +121,17 @@ void connection_epoll_update_events(int epfd, int fd, uint32_t events);
  * @return 0 on success, -1 if buffer full
  */
 int connection_queue_output(connection_t *c, const uint8_t *data, size_t len);
+
+/**
+ * Queue data for zero-copy send (no memcpy)
+ * Takes ownership of the buffer via reference counting
+ * @param c Connection
+ * @param data Data pointer (can be in middle of buffer)
+ * @param len Data length
+ * @param buf_ref Buffer reference (NULL for static data)
+ * @param offset Offset in buffer where data starts (for partial buffer sends)
+ * @return 0 on success, -1 if queue full
+ */
+int connection_queue_zerocopy(connection_t *c, void *data, size_t len, buffer_ref_t *buf_ref, size_t offset);
 
 #endif /* CONNECTION_H */

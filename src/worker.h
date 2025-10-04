@@ -6,7 +6,7 @@
 /**
  * fd -> connection map to avoid O(N) scans
  */
-#define FD_MAP_SIZE 65536 /* power of two */
+#define FD_MAP_SIZE 16384 /* power of two */
 
 typedef struct
 {

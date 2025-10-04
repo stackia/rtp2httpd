@@ -34,6 +34,7 @@ int cmd_fcc_nat_traversal_set;
 int cmd_hostname_set;
 int cmd_clock_format_set;
 int cmd_upstream_interface_set;
+int cmd_buffer_pool_max_size_set;
 
 enum section_e
 {
@@ -437,6 +438,27 @@ void parse_global_sec(char *line)
     return;
   }
 
+  if (strcasecmp("buffer-pool-max-size", param) == 0)
+  {
+    if (!cmd_buffer_pool_max_size_set)
+    {
+      int val = atoi(value);
+      if (val < 1)
+      {
+        logger(LOG_ERROR, "Invalid buffer-pool-max-size! Must be >= 1. Ignoring.");
+      }
+      else
+      {
+        config.buffer_pool_max_size = val;
+      }
+    }
+    else
+    {
+      logger(LOG_WARN, "Config file value \"buffer-pool-max-size\" ignored (already set on command line)");
+    }
+    return;
+  }
+
   logger(LOG_ERROR, "Unknown config parameter: %s", param);
 }
 
@@ -555,7 +577,7 @@ void restore_conf_defaults(void)
   /* Initialize configuration structure with defaults */
   memset(&config, 0, sizeof(config_t));
 
-  config.verbosity = LOG_INFO;
+  config.verbosity = LOG_ERROR;
   cmd_verbosity_set = 0;
   config.daemonise = 0;
   cmd_daemonise_set = 0;
@@ -567,6 +589,8 @@ void restore_conf_defaults(void)
   config.fcc_nat_traversal = FCC_NAT_T_DISABLED;
   cmd_fcc_nat_traversal_set = 0;
   config.workers = 1; /* default single worker for low-end OpenWrt */
+  config.buffer_pool_max_size = 16384;
+  cmd_buffer_pool_max_size_set = 0;
 
   if (config.hostname != NULL)
   {
@@ -663,8 +687,9 @@ void usage(FILE *f, char *progname)
           "\t-d --daemon          Fork to background (implies -q)\n"
           "\t-D --nodaemon        Do not daemonise. (default)\n"
           "\t-U --noudpxy         Disable UDPxy compatibility\n"
-          "\t-m --maxclients <n>  Serve max n requests simultaneously (dfl 5)\n"
-          "\t-w --workers <n>     Number of worker processes with SO_REUSEPORT (dfl 1)\n"
+          "\t-m --maxclients <n>  Serve max n requests simultaneously (default 5)\n"
+          "\t-w --workers <n>     Number of worker processes with SO_REUSEPORT (default 1)\n"
+          "\t-b --buffer-pool-max-size <n> Maximum number of buffers in zero-copy pool (default 16384)\n"
           "\t-l --listen [addr:]port  Address/port to bind (default ANY:8080)\n"
           "\t-c --config <file>   Read this file for configuration, instead of the default one\n"
           "\t-C --noconfig        Do not read the default config\n"
@@ -725,6 +750,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"noudpxy", no_argument, 0, 'U'},
       {"maxclients", required_argument, 0, 'm'},
       {"workers", required_argument, 0, 'w'},
+      {"buffer-pool-max-size", required_argument, 0, 'b'},
       {"listen", required_argument, 0, 'l'},
       {"config", required_argument, 0, 'c'},
       {"noconfig", no_argument, 0, 'C'},
@@ -734,7 +760,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"upstream-interface", required_argument, 0, 'i'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:c:l:n:H:f:i:C";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:f:i:C";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -790,6 +816,17 @@ void parse_cmd_line(int argc, char *argv[])
       else
       {
         config.workers = atoi(optarg);
+      }
+      break;
+    case 'b':
+      if (atoi(optarg) < 1)
+      {
+        logger(LOG_ERROR, "Invalid buffer-pool-max-size! Ignoring.");
+      }
+      else
+      {
+        config.buffer_pool_max_size = atoi(optarg);
+        cmd_buffer_pool_max_size_set = 1;
       }
       break;
     case 'c':

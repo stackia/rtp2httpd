@@ -59,6 +59,12 @@ msgstr "Workers"
 msgid "rtp2httpd_Number of worker processes (SO_REUSEPORT sharded). Set to CPU cores for best perf."
 msgstr "Number of worker processes. Set to 1 for resource-constrained devices, or CPU cores for best performance."
 
+msgid "rtp2httpd_Buffer Pool Max Size"
+msgstr "Buffer Pool Max Size"
+
+msgid "rtp2httpd_Maximum number of buffers in zero-copy pool. Each buffer is 1500 bytes. Increase to improve throughput for multi-client concurrency."
+msgstr "Maximum number of buffers in zero-copy pool. Each buffer is 1500 bytes. Default is 16384 (~24MB). Increase to improve throughput for multi-client concurrency."
+
 msgid "rtp2httpd_Hostname"
 msgstr "Hostname"
 

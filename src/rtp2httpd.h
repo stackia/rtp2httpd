@@ -77,7 +77,8 @@ typedef struct
   char *hostname; /* Server hostname for URL generation (NULL=auto) */
 
   /* Worker and performance settings */
-  int workers; /* Number of worker threads (SO_REUSEPORT sharded), default 1 */
+  int workers;              /* Number of worker threads (SO_REUSEPORT sharded), default 1 */
+  int buffer_pool_max_size; /* Maximum number of buffers in zero-copy buffer pool, default 16384 */
 
   /* FCC (Fast Channel Change) settings */
   enum fcc_nat_traversal fcc_nat_traversal; /* NAT traversal method for FCC */

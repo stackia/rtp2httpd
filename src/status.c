@@ -21,22 +21,34 @@
 #include "rtp2httpd.h"
 #include "connection.h"
 #include "http.h"
+#include "zerocopy.h"
 
 /* State description lookup table */
 static const char *client_state_descriptions[] = {
     [CLIENT_STATE_CONNECTING] = "Connecting",
-    [CLIENT_STATE_FCC_INIT] = "FCC_INIT",
-    [CLIENT_STATE_FCC_REQUESTED] = "FCC_REQUESTED",
-    [CLIENT_STATE_FCC_UNICAST_PENDING] = "FCC_UNICAST_PENDING",
-    [CLIENT_STATE_FCC_UNICAST_ACTIVE] = "FCC_UNICAST_ACTIVE",
-    [CLIENT_STATE_FCC_MCAST_TRANSITION] = "FCC_MCAST_TRANSITION",
-    [CLIENT_STATE_FCC_MCAST_ACTIVE] = "FCC_MCAST_ACTIVE",
-    [CLIENT_STATE_RTSP_INIT] = "RTSP_INIT",
-    [CLIENT_STATE_RTSP_CONNECTED] = "RTSP_CONNECTED",
-    [CLIENT_STATE_RTSP_DESCRIBED] = "RTSP_DESCRIBE",
-    [CLIENT_STATE_RTSP_SETUP] = "RTSP_SETUP",
-    [CLIENT_STATE_RTSP_PLAYING] = "RTSP_PLAYING",
-    [CLIENT_STATE_MULTICAST_ACTIVE] = "Multicast Active",
+    [CLIENT_STATE_FCC_INIT] = "FCC Init",
+    [CLIENT_STATE_FCC_REQUESTED] = "FCC Requested",
+    [CLIENT_STATE_FCC_UNICAST_PENDING] = "FCC Unicast Pending",
+    [CLIENT_STATE_FCC_UNICAST_ACTIVE] = "FCC Unicast Active",
+    [CLIENT_STATE_FCC_MCAST_REQUESTED] = "FCC Multicast Requested",
+    [CLIENT_STATE_FCC_MCAST_ACTIVE] = "FCC Multicast Active",
+    [CLIENT_STATE_RTSP_INIT] = "RTSP Init",
+    [CLIENT_STATE_RTSP_CONNECTING] = "RTSP Connecting",
+    [CLIENT_STATE_RTSP_CONNECTED] = "RTSP Connected",
+    [CLIENT_STATE_RTSP_SENDING_DESCRIBE] = "RTSP Sending DESCRIBE",
+    [CLIENT_STATE_RTSP_AWAITING_DESCRIBE] = "RTSP Awaiting DESCRIBE",
+    [CLIENT_STATE_RTSP_DESCRIBED] = "RTSP Described",
+    [CLIENT_STATE_RTSP_SENDING_SETUP] = "RTSP Sending SETUP",
+    [CLIENT_STATE_RTSP_AWAITING_SETUP] = "RTSP Awaiting SETUP",
+    [CLIENT_STATE_RTSP_SETUP] = "RTSP Setup",
+    [CLIENT_STATE_RTSP_SENDING_PLAY] = "RTSP Sending PLAY",
+    [CLIENT_STATE_RTSP_AWAITING_PLAY] = "RTSP Awaiting PLAY",
+    [CLIENT_STATE_RTSP_PLAYING] = "RTSP Playing",
+    [CLIENT_STATE_RTSP_RECONNECTING] = "RTSP Reconnecting",
+    [CLIENT_STATE_RTSP_SENDING_TEARDOWN] = "RTSP Sending TEARDOWN",
+    [CLIENT_STATE_RTSP_AWAITING_TEARDOWN] = "RTSP Awaiting TEARDOWN",
+    [CLIENT_STATE_RTSP_TEARDOWN_COMPLETE] = "RTSP Teardown Complete",
+    [CLIENT_STATE_RTSP_PAUSED] = "RTSP Paused",
     [CLIENT_STATE_ERROR] = "Error",
     [CLIENT_STATE_DISCONNECTED] = "Disconnected"};
 
@@ -514,6 +526,32 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
                   (unsigned long long)cumulative_total_bytes,
                   total_bw);
 
+  /* Add buffer pool statistics */
+  size_t pool_total = 0, pool_free = 0, pool_max = 0, pool_expansions = 0, pool_exhaustions = 0;
+  buffer_pool_get_stats(&pool_total, &pool_free, &pool_max, &pool_expansions, &pool_exhaustions);
+  len += snprintf(buffer + len, buffer_capacity - (size_t)len,
+                  ",\"buffer_pool\":{\"total\":%zu,\"free\":%zu,\"used\":%zu,\"max\":%zu,"
+                  "\"expansions\":%zu,\"exhaustions\":%zu,\"utilization\":%.1f}",
+                  pool_total, pool_free, pool_total - pool_free, pool_max,
+                  pool_expansions, pool_exhaustions,
+                  pool_total > 0 ? (100.0 * (pool_total - pool_free) / pool_total) : 0.0);
+
+  /* Add zero-copy statistics */
+  zerocopy_stats_t zc_stats;
+  zerocopy_get_detailed_stats(&zc_stats);
+  len += snprintf(buffer + len, buffer_capacity - (size_t)len,
+                  ",\"zerocopy\":{\"total_sends\":%llu,"
+                  "\"total_completions\":%llu,\"total_copied\":%llu,"
+                  "\"eagain_count\":%llu,\"enobufs_count\":%llu,"
+                  "\"batch_sends\":%llu,\"timeout_flushes\":%llu}",
+                  (unsigned long long)zc_stats.total_sends,
+                  (unsigned long long)zc_stats.total_completions,
+                  (unsigned long long)zc_stats.total_copied,
+                  (unsigned long long)zc_stats.eagain_count,
+                  (unsigned long long)zc_stats.enobufs_count,
+                  (unsigned long long)zc_stats.batch_sends,
+                  (unsigned long long)zc_stats.timeout_flushes);
+
   /* Decide logs mode */
   const char *logs_mode = "none";
   int cur_wi = status_shared->log_write_index;
@@ -797,7 +835,7 @@ int status_handle_sse_init(connection_t *c)
   c->next_sse_ts = get_time_ms();
 
   /* Build and send initial SSE payload immediately */
-  char tmp[1048576];
+  char tmp[OUTBUF_SIZE];
   int len = status_build_sse_json(tmp, sizeof(tmp),
                                   &c->sse_sent_initial,
                                   &c->sse_last_write_index,
@@ -830,7 +868,7 @@ int status_handle_sse_notification(connection_t *conn_head)
     if (!cc->sse_active)
       continue;
 
-    char tmp[1048576];
+    char tmp[OUTBUF_SIZE];
     int len = status_build_sse_json(tmp, sizeof(tmp),
                                     &cc->sse_sent_initial,
                                     &cc->sse_last_write_index,

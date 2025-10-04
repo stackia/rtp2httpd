@@ -19,6 +19,7 @@
 #include "http.h"
 #include "rtp.h"
 #include "multicast.h"
+#include "zerocopy.h"
 #include "timezone.h"
 #include "connection.h"
 #include "status.h"
@@ -98,25 +99,25 @@ void rtsp_session_init(rtsp_session_t *session)
  */
 static void rtsp_session_set_state(rtsp_session_t *session, rtsp_state_t new_state)
 {
-    /* State mapping lookup table - map async states to user-visible states */
+    /* State mapping lookup table - one-to-one mapping between RTSP and client states */
     static const client_state_type_t rtsp_to_client_state[] = {
         [RTSP_STATE_INIT] = CLIENT_STATE_RTSP_INIT,
-        [RTSP_STATE_CONNECTING] = CLIENT_STATE_CONNECTING,
+        [RTSP_STATE_CONNECTING] = CLIENT_STATE_RTSP_CONNECTING,
         [RTSP_STATE_CONNECTED] = CLIENT_STATE_RTSP_CONNECTED,
-        [RTSP_STATE_SENDING_DESCRIBE] = CLIENT_STATE_RTSP_CONNECTED,
-        [RTSP_STATE_AWAITING_DESCRIBE] = CLIENT_STATE_RTSP_CONNECTED,
+        [RTSP_STATE_SENDING_DESCRIBE] = CLIENT_STATE_RTSP_SENDING_DESCRIBE,
+        [RTSP_STATE_AWAITING_DESCRIBE] = CLIENT_STATE_RTSP_AWAITING_DESCRIBE,
         [RTSP_STATE_DESCRIBED] = CLIENT_STATE_RTSP_DESCRIBED,
-        [RTSP_STATE_SENDING_SETUP] = CLIENT_STATE_RTSP_DESCRIBED,
-        [RTSP_STATE_AWAITING_SETUP] = CLIENT_STATE_RTSP_DESCRIBED,
+        [RTSP_STATE_SENDING_SETUP] = CLIENT_STATE_RTSP_SENDING_SETUP,
+        [RTSP_STATE_AWAITING_SETUP] = CLIENT_STATE_RTSP_AWAITING_SETUP,
         [RTSP_STATE_SETUP] = CLIENT_STATE_RTSP_SETUP,
-        [RTSP_STATE_SENDING_PLAY] = CLIENT_STATE_RTSP_SETUP,
-        [RTSP_STATE_AWAITING_PLAY] = CLIENT_STATE_RTSP_SETUP,
+        [RTSP_STATE_SENDING_PLAY] = CLIENT_STATE_RTSP_SENDING_PLAY,
+        [RTSP_STATE_AWAITING_PLAY] = CLIENT_STATE_RTSP_AWAITING_PLAY,
         [RTSP_STATE_PLAYING] = CLIENT_STATE_RTSP_PLAYING,
-        [RTSP_STATE_RECONNECTING] = CLIENT_STATE_CONNECTING,
-        [RTSP_STATE_SENDING_TEARDOWN] = CLIENT_STATE_RTSP_PLAYING,
-        [RTSP_STATE_AWAITING_TEARDOWN] = CLIENT_STATE_RTSP_PLAYING,
-        [RTSP_STATE_TEARDOWN_COMPLETE] = CLIENT_STATE_RTSP_PLAYING,
-        [RTSP_STATE_PAUSED] = CLIENT_STATE_ERROR,
+        [RTSP_STATE_RECONNECTING] = CLIENT_STATE_RTSP_RECONNECTING,
+        [RTSP_STATE_SENDING_TEARDOWN] = CLIENT_STATE_RTSP_SENDING_TEARDOWN,
+        [RTSP_STATE_AWAITING_TEARDOWN] = CLIENT_STATE_RTSP_AWAITING_TEARDOWN,
+        [RTSP_STATE_TEARDOWN_COMPLETE] = CLIENT_STATE_RTSP_TEARDOWN_COMPLETE,
+        [RTSP_STATE_PAUSED] = CLIENT_STATE_RTSP_PAUSED,
         [RTSP_STATE_ERROR] = CLIENT_STATE_ERROR};
 
     if (session->state == new_state)
@@ -790,7 +791,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
         if (session->transport_mode == RTSP_TRANSPORT_TCP && extra_data_len > 0)
         {
             /* Move extra data to tcp_buffer for processing */
-            if (extra_data_len <= sizeof(session->tcp_buffer))
+            if (extra_data_len <= BUFFER_POOL_BUFFER_SIZE)
             {
                 memcpy(session->tcp_buffer, end_of_headers + 4, extra_data_len);
                 session->tcp_buffer_pos = extra_data_len;
@@ -957,12 +958,12 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, struct connection_
 {
     int bytes_received;
 
-    if (session->tcp_buffer_pos < sizeof(session->tcp_buffer))
+    if (session->tcp_buffer_pos < BUFFER_POOL_BUFFER_SIZE)
     {
-        /* Read data from RTSP socket */
+        /* Read data into local buffer (will be copied to zero-copy buffers later) */
         bytes_received = recv(session->socket,
                               session->tcp_buffer + session->tcp_buffer_pos,
-                              sizeof(session->tcp_buffer) - session->tcp_buffer_pos, 0);
+                              BUFFER_POOL_BUFFER_SIZE - session->tcp_buffer_pos, 0);
         if (bytes_received < 0)
         {
             /* Check if it's a non-blocking would-block error */
@@ -971,6 +972,7 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, struct connection_
                 return 0; /* No data available, not an error */
             }
             logger(LOG_ERROR, "RTSP: TCP receive failed: %s", strerror(errno));
+            return -1;
         }
 
         session->tcp_buffer_pos += bytes_received;
@@ -998,10 +1000,10 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, struct connection_
         }
 
         /* Sanity check: prevent processing packets that are too large */
-        if (packet_length > sizeof(session->tcp_buffer) - 4)
+        if (packet_length > BUFFER_POOL_BUFFER_SIZE - 4)
         {
             logger(LOG_ERROR, "RTSP: Received packet too large (%d bytes, max %zu), attempting resync",
-                   packet_length, sizeof(session->tcp_buffer) - 4);
+                   packet_length, BUFFER_POOL_BUFFER_SIZE - 4);
             /* Try to find next '$' marker to resync stream */
             uint8_t *next_marker = memchr(session->tcp_buffer + 1, '$', session->tcp_buffer_pos - 1);
             if (next_marker)
@@ -1026,35 +1028,57 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, struct connection_
             /* Handle RTP data based on transport protocol */
             if (session->transport_protocol == RTSP_PROTOCOL_MP2T)
             {
-                /* MP2T - write MPEG-2 TS data to client via connection output buffer (no RTP unwrapping) */
+                /* MP2T - copy to a new zero-copy buffer for queuing */
+                buffer_ref_t *packet_buf = buffer_pool_alloc(packet_length);
+                if (packet_buf)
                 {
-                    if (connection_queue_output(conn, &session->tcp_buffer[4], packet_length) == 0)
+                    memcpy(packet_buf->data, session->tcp_buffer + 4, packet_length);
+                    if (connection_queue_zerocopy(conn, packet_buf->data, packet_length, packet_buf, 0) == 0)
                     {
                         bytes_forwarded += packet_length;
                     }
                     else
                     {
-                        /* Buffer full - backpressure */
+                        /* Queue full - backpressure */
                         session->packets_dropped++;
                         if (session->packets_dropped % 100 == 0)
                         {
-                            logger(LOG_INFO, "RTSP TCP: Dropped %llu packets due to backpressure",
+                            logger(LOG_INFO, "RTSP TCP: Dropped %llu packets (queue full)",
                                    (unsigned long long)session->packets_dropped);
                         }
-                        else
-                        {
-                            logger(LOG_DEBUG, "RTSP TCP: Output buffer full, backpressure");
-                        }
                     }
+                    /* Release our reference - zerocopy queue now owns it */
+                    buffer_ref_put(packet_buf);
+                }
+                else
+                {
+                    /* Buffer pool exhausted */
+                    session->packets_dropped++;
+                    logger(LOG_DEBUG, "RTSP TCP: Buffer pool exhausted, dropping packet");
                 }
             }
             else
             {
-                /* RTP - extract RTP payload and forward to client via connection output buffer */
-                int pb = write_rtp_payload_to_client(conn, packet_length, &session->tcp_buffer[4],
-                                                     &session->current_seqn, &session->not_first_packet);
-                if (pb > 0)
-                    bytes_forwarded += pb;
+                /* RTP - extract RTP payload and forward to client
+                 * write_rtp_payload_to_client will allocate a new buffer for the payload */
+                buffer_ref_t *packet_buf = buffer_pool_alloc(packet_length);
+                if (packet_buf)
+                {
+                    memcpy(packet_buf->data, &session->tcp_buffer[4], packet_length);
+                    int pb = write_rtp_payload_to_client(conn, packet_length, packet_buf->data,
+                                                         packet_buf,
+                                                         &session->current_seqn, &session->not_first_packet);
+                    if (pb > 0)
+                        bytes_forwarded += pb;
+                    /* Release our reference */
+                    buffer_ref_put(packet_buf);
+                }
+                else
+                {
+                    /* Buffer pool exhausted */
+                    session->packets_dropped++;
+                    logger(LOG_DEBUG, "RTSP TCP: Buffer pool exhausted, dropping packet");
+                }
             }
         }
         else if (channel == session->rtcp_channel)
@@ -1076,11 +1100,27 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, struct connection_s *conn)
 {
     int bytes_received;
 
-    bytes_received = recv(session->rtp_socket, session->rtp_buffer,
-                          sizeof(session->rtp_buffer), 0);
+    /* Allocate a fresh buffer from pool for this receive operation */
+    buffer_ref_t *rtp_buf = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+    if (!rtp_buf)
+    {
+        /* Buffer pool exhausted - drop this packet */
+        logger(LOG_DEBUG, "RTSP UDP: Buffer pool exhausted, dropping packet");
+        /* Drain the socket to prevent event loop spinning */
+        uint8_t dummy[1];
+        recv(session->rtp_socket, dummy, sizeof(dummy), 0);
+        return 0;
+    }
+
+    uint8_t *rtp_buffer = (uint8_t *)rtp_buf->data;
+
+    /* Receive directly into zero-copy buffer (true zero-copy receive) */
+    bytes_received = recv(session->rtp_socket, rtp_buffer,
+                          BUFFER_POOL_BUFFER_SIZE, 0);
     if (bytes_received < 0)
     {
         logger(LOG_ERROR, "RTSP: RTP receive failed: %s", strerror(errno));
+        buffer_ref_put(rtp_buf);
         return -1;
     }
 
@@ -1090,40 +1130,39 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, struct connection_s *conn)
         /* Handle RTP data based on transport protocol */
         if (session->transport_protocol == RTSP_PROTOCOL_MP2T)
         {
-            /* MP2T - write MPEG-2 TS data to client via connection output buffer (no RTP unwrapping) */
+            /* MP2T - zero-copy send (data already in pool buffer, just queue it) */
+            /* Note: zerocopy_queue_add() will automatically increment refcount */
+            if (connection_queue_zerocopy(conn, rtp_buffer, bytes_received, rtp_buf, 0) == 0)
             {
-                if (connection_queue_output(conn, session->rtp_buffer, bytes_received) == 0)
+                bytes_written = bytes_received;
+            }
+            else
+            {
+                /* Queue full - backpressure */
+                session->packets_dropped++;
+                if (session->packets_dropped % 100 == 0)
                 {
-                    bytes_written = bytes_received;
+                    logger(LOG_INFO, "RTSP UDP: Dropped %llu packets (queue full)",
+                           (unsigned long long)session->packets_dropped);
                 }
-                else
-                {
-                    /* Buffer full - backpressure */
-                    session->packets_dropped++;
-                    if (session->packets_dropped % 100 == 0)
-                    {
-                        logger(LOG_INFO, "RTSP UDP: Dropped %llu packets due to backpressure",
-                               (unsigned long long)session->packets_dropped);
-                    }
-                    else
-                    {
-                        logger(LOG_DEBUG, "RTSP UDP: Output buffer full, backpressure");
-                    }
-                    bytes_written = 0;
-                }
+                bytes_written = 0;
             }
         }
         else
         {
-            /* RTP - extract RTP payload and forward to client via connection output buffer */
-            int pb = write_rtp_payload_to_client(conn, bytes_received, session->rtp_buffer,
+            /* RTP - extract RTP payload and forward to client (true zero-copy) */
+            int pb = write_rtp_payload_to_client(conn, bytes_received, rtp_buffer,
+                                                 rtp_buf,
                                                  &session->current_seqn, &session->not_first_packet);
             if (pb > 0)
                 bytes_written = pb;
         }
+        /* Release our reference to the buffer */
+        buffer_ref_put(rtp_buf);
         return bytes_written;
     }
 
+    buffer_ref_put(rtp_buf);
     return 0;
 }
 

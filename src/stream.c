@@ -23,6 +23,7 @@
 #include "service.h"
 #include "status.h"
 #include "worker.h"
+#include "zerocopy.h"
 
 /*
  * Wrapper for join_mcast_group that also resets the multicast data timeout timer.
@@ -69,80 +70,122 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events)
     /* Process FCC socket events */
     if (ctx->fcc.fcc_sock > 0 && fd == ctx->fcc.fcc_sock)
     {
-        actualr = recvfrom(ctx->fcc.fcc_sock, ctx->recv_buffer, sizeof(ctx->recv_buffer),
+        /* Allocate a fresh buffer from pool for this receive operation */
+        buffer_ref_t *recv_buf = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+        if (!recv_buf)
+        {
+            /* Buffer pool exhausted - drop this packet */
+            logger(LOG_DEBUG, "FCC: Buffer pool exhausted, dropping packet");
+            /* Drain the socket to prevent event loop spinning */
+            uint8_t dummy[1];
+            recvfrom(ctx->fcc.fcc_sock, dummy, sizeof(dummy), 0, NULL, NULL);
+            return 0;
+        }
+
+        /* Receive directly into zero-copy buffer (true zero-copy receive) */
+        actualr = recvfrom(ctx->fcc.fcc_sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE,
                            0, (struct sockaddr *)&peer_addr, &slen);
         if (actualr < 0)
         {
             logger(LOG_ERROR, "FCC: Receive failed: %s", strerror(errno));
+            buffer_ref_put(recv_buf);
             return 0;
         }
 
         /* Verify packet comes from expected FCC server */
         if (peer_addr.sin_addr.s_addr != ctx->fcc.fcc_server->sin_addr.s_addr)
         {
+            buffer_ref_put(recv_buf);
             return 0;
         }
 
         ctx->last_fcc_data_time = get_time_ms();
 
         /* Handle different types of FCC packets */
+        uint8_t *recv_data = (uint8_t *)recv_buf->data;
+        int result = 0;
         if (peer_addr.sin_port == ctx->fcc.fcc_server->sin_port)
         {
             /* RTCP control message */
-            if (ctx->recv_buffer[0] == 0x83)
+            if (recv_data[0] == 0x83)
             {
-                int res = fcc_handle_server_response(ctx, ctx->recv_buffer, actualr, &peer_addr);
+                int res = fcc_handle_server_response(ctx, recv_data, actualr, &peer_addr);
                 if (res == 1)
                 {
                     /* FCC redirect - retry request with new server */
                     if (fcc_initialize_and_request(ctx) < 0)
                     {
                         logger(LOG_ERROR, "FCC redirect retry failed");
+                        buffer_ref_put(recv_buf);
                         return -1;
                     }
+                    buffer_ref_put(recv_buf);
                     return 0; /* Redirect handled successfully */
                 }
-                return res;
+                result = res;
             }
-            else if (ctx->recv_buffer[0] == 0x84)
+            else if (recv_data[0] == 0x84)
             {
                 /* Sync notification (FMT 4) */
-                return fcc_handle_sync_notification(ctx);
+                result = fcc_handle_sync_notification(ctx);
             }
         }
         else if (peer_addr.sin_port == ctx->fcc.media_port)
         {
             /* RTP media packet from FCC unicast stream */
-            return fcc_handle_unicast_media(ctx, ctx->recv_buffer, actualr);
+            result = fcc_handle_unicast_media(ctx, recv_data, actualr, recv_buf);
         }
+
+        /* Release our reference to the buffer */
+        buffer_ref_put(recv_buf);
+        return result;
     }
 
     /* Process multicast socket events */
     if (ctx->mcast_sock > 0 && fd == ctx->mcast_sock)
     {
-        actualr = recv(ctx->mcast_sock, ctx->recv_buffer, sizeof(ctx->recv_buffer), 0);
+        /* Allocate a fresh buffer from pool for this receive operation */
+        buffer_ref_t *recv_buf = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+        if (!recv_buf)
+        {
+            /* Buffer pool exhausted - drop this packet */
+            logger(LOG_DEBUG, "Multicast: Buffer pool exhausted, dropping packet");
+            /* Drain the socket to prevent event loop spinning */
+            uint8_t dummy[1];
+            recv(ctx->mcast_sock, dummy, sizeof(dummy), 0);
+            return 0;
+        }
+
+        /* Receive directly into zero-copy buffer (true zero-copy receive) */
+        uint8_t *recv_data = (uint8_t *)recv_buf->data;
+        actualr = recv(ctx->mcast_sock, recv_data, BUFFER_POOL_BUFFER_SIZE, 0);
         if (actualr < 0)
         {
             logger(LOG_DEBUG, "Multicast receive failed: %s", strerror(errno));
+            buffer_ref_put(recv_buf);
             return 0;
         }
 
         /* Update last data receive timestamp for timeout detection */
         ctx->last_mcast_data_time = get_time_ms();
 
+        int result = 0;
         /* Handle non-RTP multicast data (MUDP service) */
         if (ctx->service->service_type == SERVICE_MUDP)
         {
-            /* Queue data to connection output buffer for reliable delivery */
-            if (connection_queue_output(ctx->conn, ctx->recv_buffer, actualr) == 0)
+            /* Zero-copy send (mandatory) - data already in pool buffer, just queue it */
+            /* Note: zerocopy_queue_add() will automatically increment refcount */
+            if (connection_queue_zerocopy(ctx->conn, recv_data, actualr, recv_buf, 0) == 0)
             {
                 ctx->total_bytes_sent += (uint64_t)actualr;
             }
             else
             {
-                /* Buffer full - this indicates backpressure, data will be retried */
-                logger(LOG_DEBUG, "MUDP: Output buffer full, backpressure");
+                /* Queue full - backpressure */
+                logger(LOG_DEBUG, "MUDP: Zero-copy queue full, backpressure");
             }
+            /* Release our reference - zerocopy queue now owns it */
+            buffer_ref_put(recv_buf);
             return 0;
         }
 
@@ -150,16 +193,22 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events)
         switch (ctx->fcc.state)
         {
         case FCC_STATE_MCAST_ACTIVE:
-            return fcc_handle_mcast_active(ctx, ctx->recv_buffer, actualr);
+            result = fcc_handle_mcast_active(ctx, recv_data, actualr, recv_buf);
+            break;
 
         case FCC_STATE_MCAST_REQUESTED:
-            return fcc_handle_mcast_transition(ctx, ctx->recv_buffer, actualr);
+            result = fcc_handle_mcast_transition(ctx, recv_data, actualr, recv_buf);
+            break;
 
         default:
             /* Shouldn't receive multicast in other states */
             logger(LOG_DEBUG, "Received multicast data in unexpected state: %d", ctx->fcc.state);
-            return 0;
+            break;
         }
+
+        /* Release our reference to the buffer */
+        buffer_ref_put(recv_buf);
+        return result;
     }
 
     /* Process RTSP socket events */
@@ -309,7 +358,7 @@ int stream_tick(stream_context_t *ctx, int64_t now)
             /* Timeout waiting for server response after sending request */
             if (ctx->fcc.state == FCC_STATE_REQUESTED)
             {
-                logger(LOG_ERROR, "FCC: Server response timeout (%d seconds), falling back to multicast",
+                logger(LOG_WARN, "FCC: Server response timeout (%d seconds), falling back to multicast",
                        FCC_TIMEOUT_SEC);
                 fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "Request timeout");
                 ctx->mcast_sock = stream_join_mcast_group(ctx);
@@ -317,7 +366,7 @@ int stream_tick(stream_context_t *ctx, int64_t now)
             /* Timeout waiting for unicast packet after server accepts */
             else if (ctx->fcc.state == FCC_STATE_UNICAST_PENDING || ctx->fcc.state == FCC_STATE_UNICAST_ACTIVE)
             {
-                logger(LOG_ERROR, "FCC: Unicast stream timeout (%d seconds), falling back to multicast",
+                logger(LOG_WARN, "FCC: Unicast stream timeout (%d seconds), falling back to multicast",
                        FCC_TIMEOUT_SEC);
                 fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "Unicast timeout");
                 ctx->mcast_sock = stream_join_mcast_group(ctx);

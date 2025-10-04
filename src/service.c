@@ -13,11 +13,6 @@
 #include "service.h"
 #include "rtp2httpd.h"
 #include "http.h"
-#include "buffer_config.h"
-
-/* URL component sizes */
-#define HTTP_ADDR_COMPONENT_SIZE 256
-#define HTTP_PORT_COMPONENT_SIZE 16
 
 /* URL parsing helper structure */
 struct url_components

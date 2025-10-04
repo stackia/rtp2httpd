@@ -20,6 +20,7 @@
 #include "configuration.h"
 #include "status.h"
 #include "worker.h"
+#include "zerocopy.h"
 
 #define MAX_S 10
 
@@ -120,6 +121,14 @@ int main(int argc, char *argv[])
   int notif_fd = -1;
 
   parse_cmd_line(argc, argv);
+
+  /* Initialize zero-copy infrastructure (mandatory) */
+  if (zerocopy_init() != 0)
+  {
+    logger(LOG_FATAL, "Failed to initialize zero-copy infrastructure");
+    logger(LOG_FATAL, "MSG_ZEROCOPY support is required (kernel 4.14+)");
+    exit(EXIT_FAILURE);
+  }
 
   /* Initialize status tracking system */
   if (status_init() != 0)

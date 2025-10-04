@@ -2,7 +2,6 @@
 #define __STREAM_H__
 
 #include "rtp2httpd.h"
-#include "buffer_config.h"
 #include "fcc.h"
 #include "rtsp.h"
 #include "status.h"
@@ -21,7 +20,6 @@ typedef struct stream_context_s
   service_t *service;
   fcc_session_t fcc;
   int mcast_sock;
-  uint8_t recv_buffer[STREAM_RECV_BUFFER_SIZE];
   rtsp_session_t rtsp; /* RTSP session for SERVICE_RTSP */
   pid_t status_id;     /* Synthetic id used for status updates */
 
