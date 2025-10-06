@@ -187,7 +187,7 @@ static int buffer_pool_expand(buffer_pool_t *pool)
         buffers_to_add = pool->max_buffers - pool->num_buffers;
     }
 
-    logger(LOG_INFO, "Buffer pool: Expanding by %zu buffers (current: %zu, free: %zu, max: %zu)",
+    logger(LOG_DEBUG, "Buffer pool: Expanding by %zu buffers (current: %zu, free: %zu, max: %zu)",
            buffers_to_add, pool->num_buffers, pool->num_free, pool->max_buffers);
 
     /* Create new segment */
@@ -210,7 +210,7 @@ static int buffer_pool_expand(buffer_pool_t *pool)
     WORKER_STATS_INC(pool_expansions);
     update_pool_state_shared();
 
-    logger(LOG_INFO, "Buffer pool: Expansion successful (total: %zu buffers, free: %zu)",
+    logger(LOG_DEBUG, "Buffer pool: Expansion successful (total: %zu buffers, free: %zu)",
            pool->num_buffers, pool->num_free);
 
     return 0;
@@ -421,7 +421,7 @@ buffer_ref_t *buffer_pool_alloc(size_t size)
     /* Check if we're running low and should proactively expand */
     else if (pool->num_free <= pool->low_watermark && pool->num_buffers < pool->max_buffers)
     {
-        logger(LOG_INFO, "Buffer pool: Low watermark reached (free: %zu, watermark: %zu), expanding proactively",
+        logger(LOG_DEBUG, "Buffer pool: Low watermark reached (free: %zu, watermark: %zu), expanding proactively",
                pool->num_free, pool->low_watermark);
 
         /* Try to expand proactively (non-critical if it fails) */
