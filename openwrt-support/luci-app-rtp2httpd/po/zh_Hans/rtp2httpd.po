@@ -68,8 +68,8 @@ msgstr "工作进程数量。资源紧凑设备建议设置为 1，最佳吞吐�
 msgid "rtp2httpd_Buffer Pool Max Size"
 msgstr "缓冲池最大容量"
 
-msgid "rtp2httpd_Maximum number of buffers in zero-copy pool. Each buffer is 1500 bytes. Increase to improve throughput for multi-client concurrency."
-msgstr "零拷贝缓冲池的最大缓冲区数量。每个缓冲区 1500 字节，默认 16384 个（约 24MB）。增大此值以提高多客户端并发时的吞吐量。"
+msgid "rtp2httpd_Maximum number of buffers in zero-copy pool. Each buffer is 1536 bytes. Increase to improve throughput for multi-client concurrency."
+msgstr "零拷贝缓冲池的最大缓冲区数量。每个缓冲区 1536 字节，默认 16384 个（约 24MB）。增大此值以提高多客户端并发时的吞吐量。"
 
 msgid "rtp2httpd_Hostname"
 msgstr "仅允许使用域名连接"

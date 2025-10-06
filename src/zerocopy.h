@@ -27,13 +27,14 @@ struct connection_s;
 #define ZEROCOPY_MAX_IOVECS 64 /* Maximum iovec entries per sendmsg() */
 
 /* Batching configuration - accumulate small packets before sending */
-#define ZEROCOPY_BATCH_BYTES 10240      /* Send when accumulated >= 15KB */
-#define ZEROCOPY_BATCH_TIMEOUT_US 15000 /* Send after 15ms timeout */
+#define ZEROCOPY_BATCH_BYTES 65536       /* Send when accumulated >= 64KB */
+#define ZEROCOPY_BATCH_TIMEOUT_US 100000 /* Send after 100ms timeout */
 
-/* Buffer pool configuration - optimized for RTP packets (< 1500 bytes) */
+/* Buffer pool configuration - optimized for RTP packets with cache alignment */
+#define BUFFER_POOL_ALIGNMENT 64      /* Cache line alignment for DMA efficiency */
 #define BUFFER_POOL_INITIAL_SIZE 1024 /* Initial number of buffers in pool */
 #define BUFFER_POOL_EXPAND_SIZE 512   /* Number of buffers to add when expanding */
-#define BUFFER_POOL_BUFFER_SIZE 1500  /* Size of each pooled buffer */
+#define BUFFER_POOL_BUFFER_SIZE 1536  /* Size of each pooled buffer (1536 = 24*64, cache-aligned, fits max RTP packet) */
 #define BUFFER_POOL_LOW_WATERMARK 256 /* Trigger expansion when free buffers < this */
 
 /**
