@@ -106,11 +106,15 @@ static uint16_t nat_pmp(uint16_t nport, uint32_t lifetime)
     uint8_t pk[12];
     uint8_t buf[16];
     struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
+    const struct ifreq *upstream_if;
 
     if (get_gw_ip(&gw_addr.sin_addr.s_addr) < 0)
         return 0;
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    bind_to_upstream_interface(sock);
+
+    upstream_if = &config.upstream_interface_fcc;
+    bind_to_upstream_interface(sock, upstream_if);
+
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
     pk[0] = 0;                     // Version
     pk[1] = 1;                     // UDP
@@ -333,6 +337,7 @@ int fcc_initialize_and_request(struct stream_context_s *ctx)
     struct sockaddr_in sin;
     socklen_t slen;
     int r;
+    const struct ifreq *upstream_if;
 
     logger(LOG_DEBUG, "FCC: Initializing FCC session and sending request");
 
@@ -355,7 +360,8 @@ int fcc_initialize_and_request(struct stream_context_s *ctx)
             return -1;
         }
 
-        bind_to_upstream_interface(fcc->fcc_sock);
+        upstream_if = &config.upstream_interface_fcc;
+        bind_to_upstream_interface(fcc->fcc_sock, upstream_if);
 
         /* Bind to any available port */
         sin.sin_family = AF_INET;

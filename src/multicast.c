@@ -15,13 +15,13 @@
 #include "service.h"
 #include "connection.h"
 
-void bind_to_upstream_interface(int sock)
+void bind_to_upstream_interface(int sock, const struct ifreq *ifr)
 {
-  if (config.upstream_interface.ifr_name[0] != '\0')
+  if (ifr && ifr->ifr_name[0] != '\0')
   {
-    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, (void *)&config.upstream_interface, sizeof(struct ifreq)) < 0)
+    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, (void *)ifr, sizeof(struct ifreq)) < 0)
     {
-      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s", config.upstream_interface.ifr_name, strerror(errno));
+      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s", ifr->ifr_name, strerror(errno));
     }
   }
 }
@@ -32,6 +32,7 @@ int join_mcast_group(service_t *service)
   struct group_source_req gsr;
   int sock, r, level;
   int on = 1;
+  const struct ifreq *upstream_if;
 
   sock = socket(service->addr->ai_family, service->addr->ai_socktype,
                 service->addr->ai_protocol);
@@ -52,6 +53,11 @@ int join_mcast_group(service_t *service)
                       "failed: %s",
            strerror(errno));
   }
+
+  /* Determine which interface to use */
+  upstream_if = &config.upstream_interface_rtp;
+
+  bind_to_upstream_interface(sock, upstream_if);
 
   r = bind(sock, (struct sockaddr *)service->addr->ai_addr, service->addr->ai_addrlen);
   if (r)
@@ -79,9 +85,9 @@ int join_mcast_group(service_t *service)
     exit(RETVAL_SOCK_READ_FAILED);
   }
 
-  if (config.upstream_interface.ifr_name[0] != '\0')
+  if (upstream_if->ifr_name[0] != '\0')
   {
-    gr.gr_interface = config.upstream_interface.ifr_ifindex;
+    gr.gr_interface = upstream_if->ifr_ifindex;
   }
 
   if (strcmp(service->msrc, "") != 0 && service->msrc != NULL)
