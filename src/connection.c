@@ -93,8 +93,13 @@ void connection_free(connection_t *c)
     stream_context_cleanup(&c->stream);
   }
 
-  /* Cleanup zero-copy queue */
+  /* Cleanup zero-copy queue - this releases all buffer references */
   zerocopy_queue_cleanup(&c->zc_queue);
+
+  /* Try to shrink buffer pool after connection cleanup
+   * This is an ideal time to reclaim memory as buffers are likely freed
+   * The function is lightweight and only acts if conditions are met */
+  buffer_pool_try_shrink();
 
   /* Free service if owned */
   if (c->service_owned && c->service)
