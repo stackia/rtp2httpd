@@ -19,7 +19,7 @@ void bind_to_upstream_interface(int sock, const struct ifreq *ifr)
 {
   if (ifr && ifr->ifr_name[0] != '\0')
   {
-    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, (void *)ifr, sizeof(struct ifreq)) < 0)
+    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, ifr, sizeof(struct ifreq)) < 0)
     {
       logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s", ifr->ifr_name, strerror(errno));
     }

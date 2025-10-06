@@ -116,9 +116,6 @@ typedef struct buffer_pool_s
     size_t expand_size;              /* Number of buffers to add per expansion */
     size_t low_watermark;            /* Trigger expansion when free < this */
     size_t high_watermark;           /* Trigger shrink when free > this */
-    size_t total_expansions;         /* Statistics: number of times pool expanded */
-    size_t total_exhaustions;        /* Statistics: number of times pool was exhausted */
-    size_t total_shrinks;            /* Statistics: number of times pool shrank */
 } buffer_pool_t;
 
 /**
@@ -128,7 +125,6 @@ typedef struct zerocopy_state_s
 {
     int features;       /* Enabled features (ZEROCOPY_* flags) */
     buffer_pool_t pool; /* Global buffer pool */
-    int worker_id;      /* This worker's ID for accessing shared stats */
     int initialized;    /* Whether initialized */
 } zerocopy_state_t;
 
@@ -138,10 +134,10 @@ extern zerocopy_state_t zerocopy_state;
 /**
  * Initialize zero-copy infrastructure
  * Detects kernel support and initializes buffer pool
- * @param worker_id Worker ID for per-worker statistics (0-based)
+ * Uses global worker_id for per-worker statistics
  * @return 0 on success, -1 on error
  */
-int zerocopy_init(int worker_id);
+int zerocopy_init(void);
 
 /**
  * Cleanup zero-copy infrastructure
@@ -215,17 +211,6 @@ void buffer_ref_put(buffer_ref_t *ref);
  * @return Buffer reference, or NULL if pool exhausted
  */
 buffer_ref_t *buffer_pool_alloc(size_t size);
-
-/**
- * Get detailed buffer pool statistics
- * @param total_buffers Output: total number of buffers in pool
- * @param free_buffers Output: number of free buffers
- * @param max_buffers Output: maximum allowed buffers
- * @param expansions Output: number of times pool expanded
- * @param exhaustions Output: number of times pool was exhausted
- */
-void buffer_pool_get_stats(size_t *total_buffers, size_t *free_buffers, size_t *max_buffers,
-                           size_t *expansions, size_t *exhaustions);
 
 /**
  * Try to shrink buffer pool by freeing completely idle segments
