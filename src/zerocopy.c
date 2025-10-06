@@ -4,6 +4,7 @@
 
 #include "zerocopy.h"
 #include "rtp2httpd.h"
+#include "status.h"
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -28,6 +29,20 @@
 
 /* Global zero-copy state */
 zerocopy_state_t zerocopy_state = {0};
+
+/**
+ * Helper macro to access this worker's statistics in shared memory
+ * Falls back to no-op if shared memory not available
+ */
+#define WORKER_STATS_INC(field)                                            \
+    do                                                                     \
+    {                                                                      \
+        if (status_shared && zerocopy_state.worker_id >= 0 &&              \
+            zerocopy_state.worker_id < STATUS_MAX_WORKERS)                 \
+        {                                                                  \
+            status_shared->worker_stats[zerocopy_state.worker_id].field++; \
+        }                                                                  \
+    } while (0)
 
 /**
  * Get current time in microseconds
@@ -206,15 +221,19 @@ static void buffer_pool_cleanup(buffer_pool_t *pool)
     pool->num_buffers = 0;
 }
 
-int zerocopy_init(void)
+int zerocopy_init(int worker_id)
 {
     if (zerocopy_state.initialized)
         return 0;
 
     zerocopy_state.features = ZEROCOPY_DISABLED;
+    zerocopy_state.worker_id = worker_id;
 
-    /* Initialize statistics */
-    memset(&zerocopy_state.stats, 0, sizeof(zerocopy_state.stats));
+    /* Initialize per-worker statistics in shared memory */
+    if (status_shared && worker_id >= 0 && worker_id < STATUS_MAX_WORKERS)
+    {
+        memset(&status_shared->worker_stats[worker_id], 0, sizeof(worker_zerocopy_stats_t));
+    }
 
     /* MSG_ZEROCOPY is mandatory - detect support */
     if (!detect_msg_zerocopy_support())
@@ -226,7 +245,7 @@ int zerocopy_init(void)
 
     /* Enable both sendmsg() scatter-gather and MSG_ZEROCOPY */
     zerocopy_state.features = ZEROCOPY_SENDMSG | ZEROCOPY_MSG_ZEROCOPY;
-    logger(LOG_INFO, "Zero-copy: MSG_ZEROCOPY support detected and enabled");
+    logger(LOG_INFO, "Zero-copy: MSG_ZEROCOPY support detected and enabled (worker %d)", worker_id);
 
     /* Initialize buffer pool with dynamic expansion support */
     if (buffer_pool_init(&zerocopy_state.pool,
@@ -443,17 +462,6 @@ void buffer_pool_get_stats(size_t *total_buffers, size_t *free_buffers, size_t *
         *exhaustions = pool->total_exhaustions;
 }
 
-/**
- * Get detailed zero-copy statistics
- */
-void zerocopy_get_detailed_stats(zerocopy_stats_t *stats)
-{
-    if (stats)
-    {
-        *stats = zerocopy_state.stats;
-    }
-}
-
 int zerocopy_should_flush(zerocopy_queue_t *queue)
 {
     if (!queue || !queue->head)
@@ -462,7 +470,7 @@ int zerocopy_should_flush(zerocopy_queue_t *queue)
     /* Flush if accumulated bytes >= threshold */
     if (queue->total_bytes >= ZEROCOPY_BATCH_BYTES)
     {
-        zerocopy_state.stats.batch_sends++;
+        WORKER_STATS_INC(batch_sends);
         return 1;
     }
 
@@ -471,7 +479,7 @@ int zerocopy_should_flush(zerocopy_queue_t *queue)
     uint64_t elapsed_us = now_us - queue->first_queued_time_us;
     if (elapsed_us >= ZEROCOPY_BATCH_TIMEOUT_US)
     {
-        zerocopy_state.stats.timeout_flushes++;
+        WORKER_STATS_INC(timeout_flushes);
         return 1;
     }
 
@@ -524,7 +532,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
     {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
         {
-            zerocopy_state.stats.eagain_count++;
+            WORKER_STATS_INC(eagain_count);
             *bytes_sent = 0;
             return -2; /* Would block */
         }
@@ -539,7 +547,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
          */
         if (errno == ENOBUFS)
         {
-            zerocopy_state.stats.enobufs_count++;
+            WORKER_STATS_INC(enobufs_count);
             *bytes_sent = 0;
             return -2; /* Treat as would-block - caller should retry later */
         }
@@ -550,7 +558,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
     }
 
     /* Update statistics */
-    zerocopy_state.stats.total_sends++;
+    WORKER_STATS_INC(total_sends);
 
     *bytes_sent = (size_t)sent;
 
@@ -790,13 +798,13 @@ int zerocopy_handle_completions(int fd, zerocopy_queue_t *queue)
                     uint32_t hi = serr->ee_data;
 
                     /* Update statistics */
-                    zerocopy_state.stats.total_completions++;
+                    WORKER_STATS_INC(total_completions);
 
                     /* Check if data was copied (fallback) instead of zero-copy */
                     if (serr->ee_code & SO_EE_CODE_ZEROCOPY_COPIED)
                     {
                         logger(LOG_DEBUG, "Zero-copy: Kernel copied data (fallback) for IDs %u-%u", lo, hi);
-                        zerocopy_state.stats.total_copied++;
+                        WORKER_STATS_INC(total_copied);
                     }
 
                     /* Update last completed ID */

@@ -119,18 +119,11 @@ int main(int argc, char *argv[])
   char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
   const int on = 1;
   int notif_fd = -1;
+  int worker_id = 0; /* Worker ID for this process (0-based) */
 
   parse_cmd_line(argc, argv);
 
-  /* Initialize zero-copy infrastructure (mandatory) */
-  if (zerocopy_init() != 0)
-  {
-    logger(LOG_FATAL, "Failed to initialize zero-copy infrastructure");
-    logger(LOG_FATAL, "MSG_ZEROCOPY support is required (kernel 4.14+)");
-    exit(EXIT_FAILURE);
-  }
-
-  /* Initialize status tracking system */
+  /* Initialize status tracking system (before fork, shared memory) */
   if (status_init() != 0)
   {
     logger(LOG_ERROR, "Failed to initialize status tracking");
@@ -171,10 +164,11 @@ int main(int argc, char *argv[])
       {
         /* Child becomes a worker: ensure it dies when parent exits */
         prctl(PR_SET_PDEATHSIG, SIGTERM);
+        worker_id = k; /* Assign worker ID to child */
         break;
       }
     }
-    logger(LOG_INFO, "Worker started: pid=%d", (int)getpid());
+    logger(LOG_INFO, "Worker started: pid=%d, worker_id=%d", (int)getpid(), worker_id);
   }
   else
   {
@@ -280,6 +274,14 @@ int main(int argc, char *argv[])
   if (maxs == 0)
   {
     logger(LOG_FATAL, "No socket to listen!");
+    exit(EXIT_FAILURE);
+  }
+
+  /* Initialize zero-copy infrastructure for this worker (mandatory) */
+  if (zerocopy_init(worker_id) != 0)
+  {
+    logger(LOG_FATAL, "Failed to initialize zero-copy infrastructure");
+    logger(LOG_FATAL, "MSG_ZEROCOPY support is required (kernel 4.14+)");
     exit(EXIT_FAILURE);
   }
 

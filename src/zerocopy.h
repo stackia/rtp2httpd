@@ -140,10 +140,10 @@ typedef struct zerocopy_stats_s
  */
 typedef struct zerocopy_state_s
 {
-    int features;           /* Enabled features (ZEROCOPY_* flags) */
-    buffer_pool_t pool;     /* Global buffer pool */
-    zerocopy_stats_t stats; /* Zero-copy statistics */
-    int initialized;        /* Whether initialized */
+    int features;       /* Enabled features (ZEROCOPY_* flags) */
+    buffer_pool_t pool; /* Global buffer pool */
+    int worker_id;      /* This worker's ID for accessing shared stats */
+    int initialized;    /* Whether initialized */
 } zerocopy_state_t;
 
 /* Global zero-copy state */
@@ -152,9 +152,10 @@ extern zerocopy_state_t zerocopy_state;
 /**
  * Initialize zero-copy infrastructure
  * Detects kernel support and initializes buffer pool
+ * @param worker_id Worker ID for per-worker statistics (0-based)
  * @return 0 on success, -1 on error
  */
-int zerocopy_init(void);
+int zerocopy_init(int worker_id);
 
 /**
  * Cleanup zero-copy infrastructure
@@ -246,12 +247,6 @@ void zerocopy_get_stats(size_t *queue_bytes, size_t *pool_free);
  */
 void buffer_pool_get_stats(size_t *total_buffers, size_t *free_buffers, size_t *max_buffers,
                            size_t *expansions, size_t *exhaustions);
-
-/**
- * Get detailed zero-copy statistics
- * @param stats Output: pointer to zerocopy_stats_t structure to fill
- */
-void zerocopy_get_detailed_stats(zerocopy_stats_t *stats);
 
 /**
  * Try to shrink buffer pool by freeing completely idle segments
