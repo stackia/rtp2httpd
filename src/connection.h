@@ -118,6 +118,16 @@ void connection_epoll_update_events(int epfd, int fd, uint32_t events);
 int connection_queue_output(connection_t *c, const uint8_t *data, size_t len);
 
 /**
+ * Queue data to connection output buffer and flush immediately
+ * Data will be sent via connection_handle_write() with proper flow control
+ * @param c Connection
+ * @param data Data to send
+ * @param len Length of data
+ * @return 0 on success, -1 if buffer full
+ */
+int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len);
+
+/**
  * Queue data for zero-copy send (no memcpy)
  * Takes ownership of the buffer via reference counting
  * @param c Connection

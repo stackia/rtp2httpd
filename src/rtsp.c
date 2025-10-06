@@ -1045,7 +1045,7 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, struct connection_
                         session->packets_dropped++;
                         if (session->packets_dropped % 100 == 0)
                         {
-                            logger(LOG_INFO, "RTSP TCP: Dropped %llu packets (queue full)",
+                            logger(LOG_DEBUG, "RTSP TCP: Dropped %llu packets (queue full)",
                                    (unsigned long long)session->packets_dropped);
                         }
                     }
@@ -1144,7 +1144,7 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, struct connection_s *conn)
                 session->packets_dropped++;
                 if (session->packets_dropped % 100 == 0)
                 {
-                    logger(LOG_INFO, "RTSP UDP: Dropped %llu packets (queue full)",
+                    logger(LOG_DEBUG, "RTSP UDP: Dropped %llu packets (queue full)",
                            (unsigned long long)session->packets_dropped);
                 }
                 bytes_written = 0;
