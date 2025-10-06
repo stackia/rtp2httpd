@@ -34,15 +34,33 @@ zerocopy_state_t zerocopy_state = {0};
  * Helper macro to access this worker's statistics in shared memory
  * Falls back to no-op if shared memory not available
  */
-#define WORKER_STATS_INC(field)                                            \
-    do                                                                     \
-    {                                                                      \
-        if (status_shared && zerocopy_state.worker_id >= 0 &&              \
-            zerocopy_state.worker_id < STATUS_MAX_WORKERS)                 \
-        {                                                                  \
-            status_shared->worker_stats[zerocopy_state.worker_id].field++; \
-        }                                                                  \
+#define WORKER_STATS_INC(field)                             \
+    do                                                      \
+    {                                                       \
+        if (status_shared && worker_id >= 0 &&              \
+            worker_id < STATUS_MAX_WORKERS)                 \
+        {                                                   \
+            status_shared->worker_stats[worker_id].field++; \
+        }                                                   \
     } while (0)
+
+/**
+ * Update buffer pool state in shared memory
+ * Called after buffer pool operations that change pool size
+ */
+static inline void update_pool_state_shared(void)
+{
+    if (status_shared && worker_id >= 0 &&
+        worker_id < STATUS_MAX_WORKERS)
+    {
+        buffer_pool_t *pool = &zerocopy_state.pool;
+        worker_stats_t *stats = &status_shared->worker_stats[worker_id];
+
+        stats->pool_total_buffers = pool->num_buffers;
+        stats->pool_free_buffers = pool->num_free;
+        stats->pool_max_buffers = pool->max_buffers;
+    }
+}
 
 /**
  * Get current time in microseconds
@@ -136,9 +154,6 @@ static int buffer_pool_init(buffer_pool_t *pool, size_t buffer_size, size_t init
     pool->segments = NULL;
     pool->num_buffers = 0;
     pool->num_free = 0;
-    pool->total_expansions = 0;
-    pool->total_exhaustions = 0;
-    pool->total_shrinks = 0;
 
     /* Create initial segment */
     buffer_pool_segment_t *initial_segment = buffer_pool_segment_create(buffer_size, initial_buffers, pool);
@@ -190,10 +205,13 @@ static int buffer_pool_expand(buffer_pool_t *pool)
     /* Update pool statistics */
     pool->num_buffers += buffers_to_add;
     pool->num_free += buffers_to_add;
-    pool->total_expansions++;
 
-    logger(LOG_INFO, "Buffer pool: Expansion successful (total: %zu buffers, free: %zu, expansions: %zu)",
-           pool->num_buffers, pool->num_free, pool->total_expansions);
+    /* Update shared memory */
+    WORKER_STATS_INC(pool_expansions);
+    update_pool_state_shared();
+
+    logger(LOG_INFO, "Buffer pool: Expansion successful (total: %zu buffers, free: %zu)",
+           pool->num_buffers, pool->num_free);
 
     return 0;
 }
@@ -221,18 +239,17 @@ static void buffer_pool_cleanup(buffer_pool_t *pool)
     pool->num_buffers = 0;
 }
 
-int zerocopy_init(int worker_id)
+int zerocopy_init(void)
 {
     if (zerocopy_state.initialized)
         return 0;
 
     zerocopy_state.features = ZEROCOPY_DISABLED;
-    zerocopy_state.worker_id = worker_id;
 
     /* Initialize per-worker statistics in shared memory */
     if (status_shared && worker_id >= 0 && worker_id < STATUS_MAX_WORKERS)
     {
-        memset(&status_shared->worker_stats[worker_id], 0, sizeof(worker_zerocopy_stats_t));
+        memset(&status_shared->worker_stats[worker_id], 0, sizeof(worker_stats_t));
     }
 
     /* MSG_ZEROCOPY is mandatory - detect support */
@@ -258,6 +275,9 @@ int zerocopy_init(int worker_id)
         logger(LOG_FATAL, "Zero-copy: Failed to initialize buffer pool");
         return -1;
     }
+
+    /* Sync initial buffer pool state to shared memory */
+    update_pool_state_shared();
 
     zerocopy_state.initialized = 1;
 
@@ -363,6 +383,9 @@ void buffer_ref_put(buffer_ref_t *ref)
         ref->free_next = pool->free_list;
         pool->free_list = ref;
         pool->num_free++;
+
+        /* Update shared memory */
+        update_pool_state_shared();
     }
 }
 
@@ -376,14 +399,15 @@ buffer_ref_t *buffer_pool_alloc(size_t size)
     /* Check if pool is exhausted */
     if (!pool->free_list)
     {
-        pool->total_exhaustions++;
+        /* Increment exhaustion counter in shared memory */
+        WORKER_STATS_INC(pool_exhaustions);
 
         /* Try to expand the pool */
         if (buffer_pool_expand(pool) < 0)
         {
             /* Expansion failed - pool is at maximum or allocation failed */
-            logger(LOG_WARN, "Buffer pool: Exhausted and cannot expand (total: %zu, max: %zu, exhaustions: %zu)",
-                   pool->num_buffers, pool->max_buffers, pool->total_exhaustions);
+            logger(LOG_WARN, "Buffer pool: Exhausted and cannot expand (total: %zu, max: %zu)",
+                   pool->num_buffers, pool->max_buffers);
             return NULL;
         }
 
@@ -422,32 +446,10 @@ buffer_ref_t *buffer_pool_alloc(size_t size)
     ref->size = size;
     ref->send_next = NULL; /* Clear send_next when allocating */
 
+    /* Update shared memory */
+    update_pool_state_shared();
+
     return ref;
-}
-
-/**
- * Get detailed buffer pool statistics
- * @param total_buffers Output: total number of buffers in pool
- * @param free_buffers Output: number of free buffers
- * @param max_buffers Output: maximum allowed buffers
- * @param expansions Output: number of times pool expanded
- * @param exhaustions Output: number of times pool was exhausted
- */
-void buffer_pool_get_stats(size_t *total_buffers, size_t *free_buffers, size_t *max_buffers,
-                           size_t *expansions, size_t *exhaustions)
-{
-    buffer_pool_t *pool = &zerocopy_state.pool;
-
-    if (total_buffers)
-        *total_buffers = pool->num_buffers;
-    if (free_buffers)
-        *free_buffers = pool->num_free;
-    if (max_buffers)
-        *max_buffers = pool->max_buffers;
-    if (expansions)
-        *expansions = pool->total_expansions;
-    if (exhaustions)
-        *exhaustions = pool->total_exhaustions;
 }
 
 int zerocopy_should_flush(zerocopy_queue_t *queue)
@@ -518,7 +520,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
 
     if (sent < 0)
     {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
+        if (errno == EAGAIN)
         {
             WORKER_STATS_INC(eagain_count);
             *bytes_sent = 0;
@@ -711,7 +713,9 @@ void buffer_pool_try_shrink(void)
             free(seg);
 
             segments_freed++;
-            pool->total_shrinks++;
+
+            /* Increment shrink counter in shared memory */
+            WORKER_STATS_INC(pool_shrinks);
 
             /* Don't update prev since we removed current segment */
             seg = next;
@@ -732,8 +736,11 @@ void buffer_pool_try_shrink(void)
 
     if (segments_freed > 0)
     {
-        logger(LOG_DEBUG, "Buffer pool: Shrink completed - freed %zu segments (total: %zu buffers, free: %zu, shrinks: %zu)",
-               segments_freed, pool->num_buffers, pool->num_free, pool->total_shrinks);
+        logger(LOG_DEBUG, "Buffer pool: Shrink completed - freed %zu segments (total: %zu buffers, free: %zu)",
+               segments_freed, pool->num_buffers, pool->num_free);
+
+        /* Update shared memory */
+        update_pool_state_shared();
     }
 }
 
@@ -763,7 +770,7 @@ int zerocopy_handle_completions(int fd, zerocopy_queue_t *queue)
         ssize_t ret = recvmsg(fd, &msg, MSG_ERRQUEUE | MSG_DONTWAIT);
         if (ret < 0)
         {
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            if (errno == EAGAIN)
                 break; /* No more completions */
             if (errno == EINTR)
                 continue;

@@ -286,7 +286,7 @@ int main(int argc, char *argv[])
   }
 
   /* Initialize zero-copy infrastructure for this worker (mandatory) */
-  if (zerocopy_init(worker_id) != 0)
+  if (zerocopy_init() != 0)
   {
     logger(LOG_FATAL, "Failed to initialize zero-copy infrastructure");
     logger(LOG_FATAL, "MSG_ZEROCOPY support is required (kernel 4.14+)");

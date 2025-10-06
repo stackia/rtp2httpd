@@ -75,12 +75,13 @@ typedef struct
 } log_entry_t;
 
 /**
- * Per-worker zero-copy statistics
+ * Per-worker statistics
  * Each worker writes to its own slot to avoid contention
  * No atomic operations needed - readers aggregate all workers
  */
 typedef struct
 {
+  /* Zero-copy send statistics */
   uint64_t total_sends;       /* Total number of sendmsg() calls */
   uint64_t total_completions; /* Total MSG_ZEROCOPY completions */
   uint64_t total_copied;      /* Times kernel copied instead of zero-copy */
@@ -88,7 +89,15 @@ typedef struct
   uint64_t enobufs_count;     /* Number of ENOBUFS errors */
   uint64_t batch_sends;       /* Number of batched sends (size threshold) */
   uint64_t timeout_flushes;   /* Number of timeout-triggered flushes */
-} worker_zerocopy_stats_t;
+
+  /* Buffer pool statistics */
+  uint64_t pool_total_buffers; /* Total number of buffers in pool */
+  uint64_t pool_free_buffers;  /* Number of free buffers */
+  uint64_t pool_max_buffers;   /* Maximum allowed buffers */
+  uint64_t pool_expansions;    /* Number of times pool expanded */
+  uint64_t pool_exhaustions;   /* Number of times pool was exhausted */
+  uint64_t pool_shrinks;       /* Number of times pool shrank */
+} worker_stats_t;
 
 /* Shared memory structure for status information */
 typedef struct
@@ -112,8 +121,8 @@ typedef struct
   int log_count;
   log_entry_t log_entries[STATUS_MAX_LOG_ENTRIES];
 
-  /* Per-worker zero-copy statistics (lock-free, each worker writes to its own slot) */
-  worker_zerocopy_stats_t worker_stats[STATUS_MAX_WORKERS]; /* Per-worker statistics */
+  /* Per-worker statistics (lock-free, each worker writes to its own slot) */
+  worker_stats_t worker_stats[STATUS_MAX_WORKERS]; /* Per-worker statistics */
 
   /* Per-client statistics array */
   client_stats_t clients[STATUS_MAX_CLIENTS];
@@ -268,10 +277,10 @@ int status_handle_sse_notification(struct connection_s *conn_head);
 int status_handle_sse_heartbeat(struct connection_s *c, int64_t now);
 
 /**
- * Get aggregated zero-copy statistics from all workers
+ * Get aggregated worker statistics from all workers
  * This function aggregates per-worker statistics from shared memory
- * @param stats Output: pointer to worker_zerocopy_stats_t structure to fill
+ * @param stats Output: pointer to worker_stats_t structure to fill
  */
-void status_get_zerocopy_stats(worker_zerocopy_stats_t *stats);
+void status_get_worker_stats(worker_stats_t *stats);
 
 #endif /* __STATUS_H__ */

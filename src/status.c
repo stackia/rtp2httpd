@@ -549,31 +549,39 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
                   (unsigned long long)cumulative_total_bytes,
                   total_bw);
 
-  /* Add buffer pool statistics */
-  size_t pool_total = 0, pool_free = 0, pool_max = 0, pool_expansions = 0, pool_exhaustions = 0;
-  buffer_pool_get_stats(&pool_total, &pool_free, &pool_max, &pool_expansions, &pool_exhaustions);
-  len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                  ",\"buffer_pool\":{\"total\":%zu,\"free\":%zu,\"used\":%zu,\"max\":%zu,"
-                  "\"expansions\":%zu,\"exhaustions\":%zu,\"utilization\":%.1f}",
-                  pool_total, pool_free, pool_total - pool_free, pool_max,
-                  pool_expansions, pool_exhaustions,
-                  pool_total > 0 ? (100.0 * (pool_total - pool_free) / pool_total) : 0.0);
+  /* Get aggregated worker statistics from shared memory */
+  worker_stats_t stats;
+  status_get_worker_stats(&stats);
 
-  /* Add zero-copy statistics */
-  worker_zerocopy_stats_t zc_stats;
-  status_get_zerocopy_stats(&zc_stats);
+  /* Add buffer pool statistics (aggregated from all workers) */
+  uint64_t pool_total = stats.pool_total_buffers;
+  uint64_t pool_free = stats.pool_free_buffers;
+  uint64_t pool_used = pool_total > pool_free ? pool_total - pool_free : 0;
   len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                  ",\"zerocopy\":{\"total_sends\":%llu,"
-                  "\"total_completions\":%llu,\"total_copied\":%llu,"
-                  "\"eagain_count\":%llu,\"enobufs_count\":%llu,"
-                  "\"batch_sends\":%llu,\"timeout_flushes\":%llu}",
-                  (unsigned long long)zc_stats.total_sends,
-                  (unsigned long long)zc_stats.total_completions,
-                  (unsigned long long)zc_stats.total_copied,
-                  (unsigned long long)zc_stats.eagain_count,
-                  (unsigned long long)zc_stats.enobufs_count,
-                  (unsigned long long)zc_stats.batch_sends,
-                  (unsigned long long)zc_stats.timeout_flushes);
+                  ",\"pool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,"
+                  "\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,\"utilization\":%.1f}",
+                  (unsigned long long)pool_total,
+                  (unsigned long long)pool_free,
+                  (unsigned long long)pool_used,
+                  (unsigned long long)stats.pool_max_buffers,
+                  (unsigned long long)stats.pool_expansions,
+                  (unsigned long long)stats.pool_exhaustions,
+                  (unsigned long long)stats.pool_shrinks,
+                  pool_total > 0 ? (100.0 * pool_used / pool_total) : 0.0);
+
+  /* Add zero-copy send statistics */
+  len += snprintf(buffer + len, buffer_capacity - (size_t)len,
+                  ",\"send\":{\"total\":%llu,"
+                  "\"completions\":%llu,\"copied\":%llu,"
+                  "\"eagain\":%llu,\"enobufs\":%llu,"
+                  "\"batch\":%llu,\"timeout_flush\":%llu}",
+                  (unsigned long long)stats.total_sends,
+                  (unsigned long long)stats.total_completions,
+                  (unsigned long long)stats.total_copied,
+                  (unsigned long long)stats.eagain_count,
+                  (unsigned long long)stats.enobufs_count,
+                  (unsigned long long)stats.batch_sends,
+                  (unsigned long long)stats.timeout_flushes);
 
   /* Decide logs mode */
   const char *logs_mode = "none";
@@ -951,10 +959,10 @@ int status_handle_sse_heartbeat(connection_t *c, int64_t now)
 }
 
 /**
- * Get aggregated zero-copy statistics from all workers
+ * Get aggregated worker statistics from all workers
  * This function aggregates per-worker statistics from shared memory
  */
-void status_get_zerocopy_stats(worker_zerocopy_stats_t *stats)
+void status_get_worker_stats(worker_stats_t *stats)
 {
   if (!stats)
     return;
@@ -966,6 +974,7 @@ void status_get_zerocopy_stats(worker_zerocopy_stats_t *stats)
   {
     for (int i = 0; i < config.workers && i < STATUS_MAX_WORKERS; i++)
     {
+      /* Zero-copy send statistics */
       stats->total_sends += status_shared->worker_stats[i].total_sends;
       stats->total_completions += status_shared->worker_stats[i].total_completions;
       stats->total_copied += status_shared->worker_stats[i].total_copied;
@@ -973,6 +982,14 @@ void status_get_zerocopy_stats(worker_zerocopy_stats_t *stats)
       stats->enobufs_count += status_shared->worker_stats[i].enobufs_count;
       stats->batch_sends += status_shared->worker_stats[i].batch_sends;
       stats->timeout_flushes += status_shared->worker_stats[i].timeout_flushes;
+
+      /* Buffer pool statistics */
+      stats->pool_total_buffers += status_shared->worker_stats[i].pool_total_buffers;
+      stats->pool_free_buffers += status_shared->worker_stats[i].pool_free_buffers;
+      stats->pool_max_buffers = status_shared->worker_stats[i].pool_max_buffers;
+      stats->pool_expansions += status_shared->worker_stats[i].pool_expansions;
+      stats->pool_exhaustions += status_shared->worker_stats[i].pool_exhaustions;
+      stats->pool_shrinks += status_shared->worker_stats[i].pool_shrinks;
     }
   }
 }
