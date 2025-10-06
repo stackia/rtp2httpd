@@ -172,6 +172,15 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len)
   return 0;
 }
 
+int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len)
+{
+  int result = connection_queue_output(c, data, len);
+  if (result < 0)
+    return result;
+  connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+  return 0;
+}
+
 void connection_handle_write(connection_t *c)
 {
   if (!c)
@@ -275,10 +284,13 @@ int connection_route_and_start(connection_t *c)
 {
   /* Ensure URL begins with '/' */
   const char *url = c->http_req.url;
+
+  logger(LOG_INFO, "New client requested URL: %s", url);
+
   if (url[0] != '/')
   {
     static const char resp[] = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
-    connection_queue_output(c, (const uint8_t *)resp, sizeof(resp) - 1);
+    connection_queue_output_and_flush(c, (const uint8_t *)resp, sizeof(resp) - 1);
     c->state = CONN_CLOSING;
     return 0;
   }
@@ -358,7 +370,7 @@ int connection_route_and_start(connection_t *c)
       connection_queue_output(c, (const uint8_t *)headers, sizeof(headers) - 1);
     }
     static const char body[] = "<!doctype html><title>404</title>Service Not Found";
-    connection_queue_output(c, (const uint8_t *)body, sizeof(body) - 1);
+    connection_queue_output_and_flush(c, (const uint8_t *)body, sizeof(body) - 1);
     c->state = CONN_CLOSING;
     return 0;
   }
@@ -381,7 +393,7 @@ int connection_route_and_start(connection_t *c)
       connection_queue_output(c, (const uint8_t *)headers, sizeof(headers) - 1);
     }
     static const char body503[] = "<!doctype html><title>503</title>Service Unavailable";
-    connection_queue_output(c, (const uint8_t *)body503, sizeof(body503) - 1);
+    connection_queue_output_and_flush(c, (const uint8_t *)body503, sizeof(body503) - 1);
     if (owned)
       service_free(service);
     c->state = CONN_CLOSING;

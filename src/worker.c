@@ -209,7 +209,6 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 {
   int i;
   struct sockaddr_storage client;
-  char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
   static unsigned int conn_id_counter = 1;
 
   /* Initialize fd map */
@@ -313,13 +312,6 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
           connection_set_nonblocking(cfd);
           connection_set_tcp_nodelay(cfd);
 
-          /* Log remote */
-          int r = getnameinfo((struct sockaddr *)&client, alen,
-                              hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
-                              NI_NUMERICHOST | NI_NUMERICSERV);
-          if (!r)
-            logger(LOG_INFO, "Client connected: %s port %s", hbuf, sbuf);
-
           /* Create connection */
           pid_t status_id = ((pid_t)getpid() << 16) ^ (pid_t)(conn_id_counter++);
           connection_t *c = connection_create(cfd, epfd, status_id);
@@ -408,7 +400,6 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
           /* Handle disconnect events */
           if (events[e].events & (EPOLLHUP | EPOLLRDHUP))
           {
-            logger(LOG_INFO, "Client disconnected");
             worker_close_and_free_connection(c);
             continue; /* Skip further processing for this connection */
           }

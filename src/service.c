@@ -300,7 +300,6 @@ service_t *service_create_from_udpxy_url(char *url)
     }
     else
     {
-        logger(LOG_ERROR, "URL must start with /rtp/, /udp/, or /rtsp/");
         free(serv);
         return NULL;
     }
