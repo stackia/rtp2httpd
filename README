@@ -108,7 +108,7 @@ docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest \
 # 启用 FCC 和 NAT 穿透
 docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest \
   --noconfig --verbose 2 --listen 8080 --maxclients 20 \
-  --fcc-nat-traversal 2 --upstream-interface eth0
+  --fcc-nat-traversal 2 --upstream-interface-fcc eth0 --upstream-interface-rtp eth0
 ```
 
 ### 编译安装
@@ -242,7 +242,8 @@ rtp2httpd [选项]
   -l, --listen [地址:]端口        绑定监听地址和端口 (默认: *:8080)
   -m, --maxclients <数量>        最大并发客户端数 (默认: 5)
   -w, --workers <数量>           工作进程数 (默认: 1)
-  -i, --upstream-interface <接口> 上游媒体流使用的网络接口，需要指定为 IPTV 网络接口
+  --upstream-interface-fcc <接口>   用于 FCC/RTSP 控制流量的上游网络接口
+  --upstream-interface-rtp <接口>   用于 RTP 组播流量的上游网络接口
 
 性能优化：
   -b, --buffer-pool-max-size <数量> 零拷贝缓冲池最大缓冲区数量 (默认: 16384)
@@ -327,8 +328,11 @@ udpxy = yes
 # FCC NAT 穿透模式
 fcc-nat-traversal = 0
 
-# 上游网络接口
-upstream-interface = eth3
+# 上游网络接口 (可选)
+# 用于 FCC/RTSP 控制流量的接口
+;upstream-interface-fcc = eth1
+# 用于 RTP 组播流量的接口
+;upstream-interface-rtp = eth0
 
 # 工作进程数（默认: 1）
 workers = 1

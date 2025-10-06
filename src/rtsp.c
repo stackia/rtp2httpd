@@ -303,6 +303,7 @@ int rtsp_connect(rtsp_session_t *session)
     struct sockaddr_in server_addr;
     struct hostent *he;
     int connect_result;
+    const struct ifreq *upstream_if;
 
     /* Resolve hostname */
     he = gethostbyname(session->server_host);
@@ -337,7 +338,8 @@ int rtsp_connect(rtsp_session_t *session)
         return -1;
     }
 
-    bind_to_upstream_interface(session->socket);
+    upstream_if = &config.upstream_interface_fcc;
+    bind_to_upstream_interface(session->socket, upstream_if);
 
     /* Connect to server (non-blocking) */
     memset(&server_addr, 0, sizeof(server_addr));
@@ -1468,8 +1470,11 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session)
     struct sockaddr_in local_addr;
     /* socklen_t addr_len; // Unused variable */
     int port_base = 10000 + (getpid() % 20000); /* Semi-random port base */
+    const struct ifreq *upstream_if;
 
     logger(LOG_DEBUG, "RTSP: Setting up UDP sockets");
+
+    upstream_if = &config.upstream_interface_fcc;
 
     /* Create RTP socket */
     session->rtp_socket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -1488,7 +1493,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session)
         return -1;
     }
 
-    bind_to_upstream_interface(session->rtp_socket);
+    bind_to_upstream_interface(session->rtp_socket, upstream_if);
 
     /* Bind RTP socket to even port */
     memset(&local_addr, 0, sizeof(local_addr));
@@ -1556,7 +1561,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session)
         return -1;
     }
 
-    bind_to_upstream_interface(session->rtcp_socket);
+    bind_to_upstream_interface(session->rtcp_socket, upstream_if);
 
     /* Bind RTCP socket to odd port */
     local_addr.sin_port = htons(session->local_rtp_port + 1);
