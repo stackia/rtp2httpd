@@ -159,6 +159,7 @@ int status_init(void)
   status_shared->server_start_time = get_realtime_ms();
   status_shared->current_log_level = config.verbosity;
   status_shared->event_counter = 0;
+  status_shared->num_workers = config.workers;
 
   /* Create notification pipe for event-driven SSE updates */
   if (pipe(status_shared->notification_pipe) == -1)
@@ -545,7 +546,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
 
   /* Add zero-copy statistics */
   zerocopy_stats_t zc_stats;
-  zerocopy_get_detailed_stats(&zc_stats);
+  status_get_zerocopy_stats(&zc_stats);
   len += snprintf(buffer + len, buffer_capacity - (size_t)len,
                   ",\"zerocopy\":{\"total_sends\":%llu,"
                   "\"total_completions\":%llu,\"total_copied\":%llu,"
@@ -932,4 +933,31 @@ int status_handle_sse_heartbeat(connection_t *c, int64_t now)
   }
 
   return 0;
+}
+
+/**
+ * Get aggregated zero-copy statistics from all workers
+ * This function aggregates per-worker statistics from shared memory
+ */
+void status_get_zerocopy_stats(zerocopy_stats_t *stats)
+{
+  if (!stats)
+    return;
+
+  memset(stats, 0, sizeof(*stats));
+
+  /* Aggregate statistics from all workers */
+  if (status_shared)
+  {
+    for (int i = 0; i < status_shared->num_workers && i < STATUS_MAX_WORKERS; i++)
+    {
+      stats->total_sends += status_shared->worker_stats[i].total_sends;
+      stats->total_completions += status_shared->worker_stats[i].total_completions;
+      stats->total_copied += status_shared->worker_stats[i].total_copied;
+      stats->eagain_count += status_shared->worker_stats[i].eagain_count;
+      stats->enobufs_count += status_shared->worker_stats[i].enobufs_count;
+      stats->batch_sends += status_shared->worker_stats[i].batch_sends;
+      stats->timeout_flushes += status_shared->worker_stats[i].timeout_flushes;
+    }
+  }
 }

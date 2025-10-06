@@ -6,11 +6,15 @@
 #include <time.h>
 #include "rtp2httpd.h"
 
-/* Forward declaration */
+/* Forward declarations */
 struct connection_s;
+struct zerocopy_stats_s;
 
 /* Maximum number of clients we can track in shared memory */
 #define STATUS_MAX_CLIENTS 256
+
+/* Maximum number of workers for per-worker statistics */
+#define STATUS_MAX_WORKERS 32
 
 /* Maximum number of log entries to keep in circular buffer */
 #define STATUS_MAX_LOG_ENTRIES 100
@@ -70,6 +74,22 @@ typedef struct
   char message[STATUS_LOG_ENTRY_LEN];
 } log_entry_t;
 
+/**
+ * Per-worker zero-copy statistics
+ * Each worker writes to its own slot to avoid contention
+ * No atomic operations needed - readers aggregate all workers
+ */
+typedef struct
+{
+  uint64_t total_sends;       /* Total number of sendmsg() calls */
+  uint64_t total_completions; /* Total MSG_ZEROCOPY completions */
+  uint64_t total_copied;      /* Times kernel copied instead of zero-copy */
+  uint64_t eagain_count;      /* Number of EAGAIN/EWOULDBLOCK errors */
+  uint64_t enobufs_count;     /* Number of ENOBUFS errors */
+  uint64_t batch_sends;       /* Number of batched sends (size threshold) */
+  uint64_t timeout_flushes;   /* Number of timeout-triggered flushes */
+} worker_zerocopy_stats_t;
+
 /* Shared memory structure for status information */
 typedef struct
 {
@@ -90,6 +110,10 @@ typedef struct
   int log_write_index;
   int log_count;
   log_entry_t log_entries[STATUS_MAX_LOG_ENTRIES];
+
+  /* Per-worker zero-copy statistics (lock-free, each worker writes to its own slot) */
+  int num_workers;                                          /* Number of active workers */
+  worker_zerocopy_stats_t worker_stats[STATUS_MAX_WORKERS]; /* Per-worker statistics */
 
   /* Per-client statistics array */
   client_stats_t clients[STATUS_MAX_CLIENTS];
@@ -242,5 +266,18 @@ int status_handle_sse_notification(struct connection_s *conn_head);
  * @return 0 if processed, -1 if not needed
  */
 int status_handle_sse_heartbeat(struct connection_s *c, int64_t now);
+
+/**
+ * Zero-copy statistics structure (from zerocopy.h)
+ * Defined here to avoid circular dependency
+ */
+typedef struct zerocopy_stats_s zerocopy_stats_t;
+
+/**
+ * Get aggregated zero-copy statistics from all workers
+ * This function aggregates per-worker statistics from shared memory
+ * @param stats Output: pointer to zerocopy_stats_t structure to fill
+ */
+void status_get_zerocopy_stats(zerocopy_stats_t *stats);
 
 #endif /* __STATUS_H__ */
