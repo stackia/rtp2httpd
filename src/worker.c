@@ -442,7 +442,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
             {
               /* Normal HTTP request handling */
               connection_handle_read(c);
-              if (c->state == CONN_CLOSING && c->out_len == c->out_off)
+              if (c->state == CONN_CLOSING && !c->zc_queue.head)
               {
                 worker_close_and_free_connection(c);
                 continue; /* Skip further processing for this connection */
@@ -453,7 +453,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
           if (events[e].events & EPOLLOUT)
           {
             connection_handle_write(c);
-            if (c->state == CONN_CLOSING && c->out_len == c->out_off && !c->streaming && !c->sse_active)
+            if (c->state == CONN_CLOSING && !c->zc_queue.head && !c->streaming && !c->sse_active)
             {
               worker_close_and_free_connection(c);
               continue; /* Skip further processing for this connection */

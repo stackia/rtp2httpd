@@ -866,7 +866,7 @@ int status_handle_sse_init(connection_t *c)
   c->next_sse_ts = get_time_ms();
 
   /* Build and send initial SSE payload immediately */
-  char tmp[OUTBUF_SIZE];
+  char tmp[SSE_BUFFER_SIZE];
   int len = status_build_sse_json(tmp, sizeof(tmp),
                                   &c->sse_sent_initial,
                                   &c->sse_last_write_index,
@@ -899,7 +899,7 @@ int status_handle_sse_notification(connection_t *conn_head)
     if (!cc->sse_active)
       continue;
 
-    char tmp[OUTBUF_SIZE];
+    char tmp[SSE_BUFFER_SIZE];
     int len = status_build_sse_json(tmp, sizeof(tmp),
                                     &cc->sse_sent_initial,
                                     &cc->sse_last_write_index,

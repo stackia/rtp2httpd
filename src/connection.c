@@ -122,23 +122,52 @@ void connection_free(connection_t *c)
 }
 
 /**
- * Queue data to connection output buffer for reliable delivery
+ * Queue data to connection output buffer
  */
 int connection_queue_output(connection_t *c, const uint8_t *data, size_t len)
 {
   if (!c || !data || len == 0)
     return 0;
 
-  /* Check if buffer has space */
-  if (c->out_len + len > OUTBUF_SIZE)
-    return -1; /* Buffer full */
+  size_t remaining = len;
+  const uint8_t *src = data;
 
-  /* Append to output buffer */
-  memcpy(c->outbuf + c->out_len, data, len);
-  c->out_len += len;
+  /* Allocate multiple buffers until we satisfy the entire length */
+  while (remaining > 0)
+  {
+    /* Allocate a buffer from the pool */
+    buffer_ref_t *buf_ref = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+    if (!buf_ref)
+    {
+      /* Pool exhausted - this is a critical error for small data sends */
+      logger(LOG_ERROR, "connection_queue_output: Buffer pool exhausted, cannot queue %zu bytes", remaining);
+      return -1;
+    }
 
-  /* Enable EPOLLOUT to trigger write */
-  connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+    /* Calculate how much data to copy into this buffer */
+    size_t chunk_size = remaining;
+    if (chunk_size > BUFFER_POOL_BUFFER_SIZE)
+      chunk_size = BUFFER_POOL_BUFFER_SIZE;
+
+    /* Copy data into the buffer */
+    memcpy(buf_ref->data, src, chunk_size);
+
+    /* Queue this buffer for zero-copy send */
+    if (connection_queue_zerocopy(c, buf_ref->data, chunk_size, buf_ref, 0) < 0)
+    {
+      /* Queue full - release the buffer and fail */
+      buffer_ref_put(buf_ref);
+      logger(LOG_ERROR, "connection_queue_output: Zero-copy queue full, cannot queue %zu bytes", remaining);
+      return -1;
+    }
+
+    /* Release our reference - the queue now owns it */
+    buffer_ref_put(buf_ref);
+
+    /* Move to next chunk */
+    src += chunk_size;
+    remaining -= chunk_size;
+  }
 
   return 0;
 }
@@ -148,7 +177,7 @@ void connection_handle_write(connection_t *c)
   if (!c)
     return;
 
-  /* First, try to send from zero-copy queue */
+  /* Send from zero-copy queue */
   if (c->zc_queue.head)
   {
     size_t bytes_sent = 0;
@@ -175,48 +204,18 @@ void connection_handle_write(connection_t *c)
       return;
   }
 
-  /* Then send from legacy buffer (for small data/headers) */
-  if (c->out_off < c->out_len)
-  {
-    /* Non-blocking write logic */
-    size_t remaining = c->out_len - c->out_off;
-#ifdef MSG_NOSIGNAL
-    int flags = MSG_DONTWAIT | MSG_NOSIGNAL;
-#else
-    int flags = MSG_DONTWAIT;
-#endif
-    ssize_t w = send(c->fd, c->outbuf + c->out_off, remaining, flags);
-
-    if (w > 0)
-    {
-      c->out_off += (size_t)w;
-      if (c->out_off >= c->out_len)
-      {
-        c->out_off = c->out_len = 0;
-      }
-    }
-    else if (w < 0)
-    {
-      if (errno != EAGAIN && errno != EINTR)
-      {
-        c->state = CONN_CLOSING;
-        return;
-      }
-    }
-  }
-
-  /* If both queues are empty, stop EPOLLOUT */
-  if (!c->zc_queue.head && c->out_off >= c->out_len)
+  /* If queue is empty, stop EPOLLOUT */
+  if (!c->zc_queue.head)
   {
     connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
   }
 
   /* For SSE: if active and no pending data, just wait for event notifications */
-  if (c->sse_active && !c->zc_queue.head && c->out_len == c->out_off)
+  if (c->sse_active && !c->zc_queue.head)
   {
     /* nothing to do */
   }
-  if (c->state == CONN_CLOSING && !c->zc_queue.head && c->out_len == c->out_off && !c->streaming && !c->sse_active)
+  if (c->state == CONN_CLOSING && !c->zc_queue.head && !c->streaming && !c->sse_active)
   {
     /* Ready to close */
   }
