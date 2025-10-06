@@ -122,20 +122,6 @@ typedef struct buffer_pool_s
 } buffer_pool_t;
 
 /**
- * Zero-copy statistics
- */
-typedef struct zerocopy_stats_s
-{
-    uint64_t total_sends;       /* Total number of sendmsg() calls */
-    uint64_t total_completions; /* Total MSG_ZEROCOPY completions */
-    uint64_t total_copied;      /* Times kernel copied instead of zero-copy */
-    uint64_t eagain_count;      /* Number of EAGAIN/EWOULDBLOCK errors */
-    uint64_t enobufs_count;     /* Number of ENOBUFS errors */
-    uint64_t batch_sends;       /* Number of batched sends (size threshold) */
-    uint64_t timeout_flushes;   /* Number of timeout-triggered flushes */
-} zerocopy_stats_t;
-
-/**
  * Global zero-copy state
  */
 typedef struct zerocopy_state_s
@@ -229,13 +215,6 @@ void buffer_ref_put(buffer_ref_t *ref);
  * @return Buffer reference, or NULL if pool exhausted
  */
 buffer_ref_t *buffer_pool_alloc(size_t size);
-
-/**
- * Get statistics about zero-copy usage
- * @param queue_bytes Output: bytes currently queued
- * @param pool_free Output: free buffers in pool
- */
-void zerocopy_get_stats(size_t *queue_bytes, size_t *pool_free);
 
 /**
  * Get detailed buffer pool statistics

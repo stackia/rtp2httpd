@@ -245,7 +245,6 @@ int zerocopy_init(int worker_id)
 
     /* Enable both sendmsg() scatter-gather and MSG_ZEROCOPY */
     zerocopy_state.features = ZEROCOPY_SENDMSG | ZEROCOPY_MSG_ZEROCOPY;
-    logger(LOG_INFO, "Zero-copy: MSG_ZEROCOPY support detected and enabled (worker %d)", worker_id);
 
     /* Initialize buffer pool with dynamic expansion support */
     if (buffer_pool_init(&zerocopy_state.pool,
@@ -261,9 +260,6 @@ int zerocopy_init(int worker_id)
     }
 
     zerocopy_state.initialized = 1;
-    logger(LOG_INFO, "Zero-copy: Initialized with %zu buffers of %zu bytes (max: %d, expand: %zu, watermark: %zu)",
-           BUFFER_POOL_INITIAL_SIZE, BUFFER_POOL_BUFFER_SIZE,
-           config.buffer_pool_max_size, BUFFER_POOL_EXPAND_SIZE, BUFFER_POOL_LOW_WATERMARK);
 
     return 0;
 }
@@ -427,14 +423,6 @@ buffer_ref_t *buffer_pool_alloc(size_t size)
     ref->send_next = NULL; /* Clear send_next when allocating */
 
     return ref;
-}
-
-void zerocopy_get_stats(size_t *queue_bytes, size_t *pool_free)
-{
-    if (queue_bytes)
-        *queue_bytes = 0; /* Per-connection stat */
-    if (pool_free)
-        *pool_free = zerocopy_state.pool.num_free;
 }
 
 /**

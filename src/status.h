@@ -4,11 +4,11 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <time.h>
+#include <pthread.h>
 #include "rtp2httpd.h"
 
 /* Forward declarations */
 struct connection_s;
-struct zerocopy_stats_s;
 
 /* Maximum number of clients we can track in shared memory */
 #define STATUS_MAX_CLIENTS 256
@@ -107,12 +107,12 @@ typedef struct
   int notification_pipe[2];   /* Pipe for waking up SSE handlers */
 
   /* Log circular buffer */
+  pthread_mutex_t log_mutex; /* Mutex to protect log buffer writes */
   int log_write_index;
   int log_count;
   log_entry_t log_entries[STATUS_MAX_LOG_ENTRIES];
 
   /* Per-worker zero-copy statistics (lock-free, each worker writes to its own slot) */
-  int num_workers;                                          /* Number of active workers */
   worker_zerocopy_stats_t worker_stats[STATUS_MAX_WORKERS]; /* Per-worker statistics */
 
   /* Per-client statistics array */
@@ -268,16 +268,10 @@ int status_handle_sse_notification(struct connection_s *conn_head);
 int status_handle_sse_heartbeat(struct connection_s *c, int64_t now);
 
 /**
- * Zero-copy statistics structure (from zerocopy.h)
- * Defined here to avoid circular dependency
- */
-typedef struct zerocopy_stats_s zerocopy_stats_t;
-
-/**
  * Get aggregated zero-copy statistics from all workers
  * This function aggregates per-worker statistics from shared memory
- * @param stats Output: pointer to zerocopy_stats_t structure to fill
+ * @param stats Output: pointer to worker_zerocopy_stats_t structure to fill
  */
-void status_get_zerocopy_stats(zerocopy_stats_t *stats);
+void status_get_zerocopy_stats(worker_zerocopy_stats_t *stats);
 
 #endif /* __STATUS_H__ */

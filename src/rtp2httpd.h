@@ -98,6 +98,7 @@ extern config_t config;
 extern service_t *services;
 extern struct bindaddr_s *bind_addresses;
 extern int client_count;
+extern int worker_id;
 
 /* rtp2httpd.c INTERFACE */
 
