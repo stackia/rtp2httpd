@@ -41,6 +41,13 @@ struct connection_s;
 /**
  * Buffer reference counting for zero-copy lifecycle management
  * All buffers are pool-managed, no external buffers supported
+ *
+ * This structure serves dual purpose:
+ * 1. When buffer is free: linked via free_next in pool's free list
+ * 2. When buffer is in use: can be queued for sending via send_next
+ *
+ * The send queue fields (iov, buf_offset, zerocopy_id) are only valid
+ * when the buffer is in a send queue or pending completion queue.
  */
 typedef struct buffer_ref_s
 {
@@ -48,37 +55,38 @@ typedef struct buffer_ref_s
     size_t size;                           /* Size of buffer */
     int refcount;                          /* Reference count */
     struct buffer_pool_segment_s *segment; /* Segment this buffer belongs to */
-    struct buffer_ref_s *next;             /* For free list */
+
+    /* Union: buffer is either in free list OR in send queue, never both */
+    union
+    {
+        struct buffer_ref_s *free_next; /* For free list linkage */
+        struct buffer_ref_s *send_next; /* For send/pending queue linkage */
+    };
+
+    /* Send queue fields - only valid when buffer is queued for sending */
+    struct iovec iov;     /* Data pointer and length for sendmsg() */
+    size_t buf_offset;    /* Offset in buffer where data starts (for partial sends) */
+    uint32_t zerocopy_id; /* ID for tracking MSG_ZEROCOPY completions */
 } buffer_ref_t;
 
-/**
- * Send queue entry for zero-copy transmission
- * Each entry represents a buffer to be sent without copying
- */
-typedef struct send_queue_entry_s
-{
-    struct iovec iov;      /* Data pointer and length */
-    buffer_ref_t *buf_ref; /* Reference to buffer (NULL for inline data) */
-    size_t buf_offset;     /* Offset in buffer where data starts (for partial sends) */
-    uint32_t zerocopy_id;  /* ID for tracking MSG_ZEROCOPY completions */
-    struct send_queue_entry_s *next;
-} send_queue_entry_t;
+/* send_queue_entry_t has been removed - functionality merged into buffer_ref_t */
 
 /**
  * Zero-copy send queue for a connection
+ * Now uses buffer_ref_t directly instead of separate send_queue_entry_t
  */
 typedef struct zerocopy_queue_s
 {
-    send_queue_entry_t *head;         /* First entry to send */
-    send_queue_entry_t *tail;         /* Last entry in queue */
-    send_queue_entry_t *pending_head; /* First entry pending completion */
-    send_queue_entry_t *pending_tail; /* Last entry pending completion */
-    size_t total_bytes;               /* Total bytes queued */
-    size_t num_entries;               /* Number of entries in send queue */
-    size_t num_pending;               /* Number of entries pending completion */
-    uint32_t next_zerocopy_id;        /* Next ID for MSG_ZEROCOPY tracking */
-    uint32_t last_completed_id;       /* Last completed MSG_ZEROCOPY ID */
-    uint64_t first_queued_time_us;    /* Timestamp of first queued entry (microseconds) */
+    buffer_ref_t *head;            /* First buffer to send */
+    buffer_ref_t *tail;            /* Last buffer in queue */
+    buffer_ref_t *pending_head;    /* First buffer pending completion */
+    buffer_ref_t *pending_tail;    /* Last buffer pending completion */
+    size_t total_bytes;            /* Total bytes queued */
+    size_t num_entries;            /* Number of buffers in send queue */
+    size_t num_pending;            /* Number of buffers pending completion */
+    uint32_t next_zerocopy_id;     /* Next ID for MSG_ZEROCOPY tracking */
+    uint32_t last_completed_id;    /* Last completed MSG_ZEROCOPY ID */
+    uint64_t first_queued_time_us; /* Timestamp of first queued entry (microseconds) */
 } zerocopy_queue_t;
 
 /**
