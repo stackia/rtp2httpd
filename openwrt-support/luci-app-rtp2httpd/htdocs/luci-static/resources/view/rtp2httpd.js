@@ -136,7 +136,7 @@ return view.extend({
       "buffer_pool_max_size",
       _("rtp2httpd_Buffer Pool Max Size"),
       _(
-        "rtp2httpd_Maximum number of buffers in zero-copy pool. Each buffer is 1500 bytes. Increase to improve throughput for multi-client concurrency."
+        "rtp2httpd_Maximum number of buffers in zero-copy pool. Each buffer is 1536 bytes. Increase to improve throughput for multi-client concurrency."
       )
     );
     o.datatype = "range(1024, 1048576)";

@@ -13,9 +13,9 @@ struct buffer_ref_s;
 
 /* ========== RTSP BUFFER SIZE CONFIGURATION ========== */
 
-/* RTCP buffer size - same as RTP for consistency */
+/* RTCP buffer size - same as RTP buffer pool for consistency */
 #ifndef RTCP_BUFFER_SIZE
-#define RTCP_BUFFER_SIZE 1500
+#define RTCP_BUFFER_SIZE 1536
 #endif
 
 /* RTSP response buffer - for server responses and SDP descriptions */

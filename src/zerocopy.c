@@ -56,7 +56,7 @@ static int detect_msg_zerocopy_support(void)
 }
 
 /**
- * Create a new buffer pool segment
+ * Create a new buffer pool segment with cache-aligned buffers
  */
 static buffer_pool_segment_t *buffer_pool_segment_create(size_t buffer_size, size_t num_buffers, buffer_pool_t *pool)
 {
@@ -67,10 +67,12 @@ static buffer_pool_segment_t *buffer_pool_segment_create(size_t buffer_size, siz
     segment->num_buffers = num_buffers;
     segment->next = NULL;
 
-    /* Allocate buffer array */
-    segment->buffers = malloc(buffer_size * num_buffers);
-    if (!segment->buffers)
+    /* Allocate buffer array with cache line alignment for optimal DMA performance
+     * posix_memalign ensures each buffer starts at a cache-aligned address,
+     * improving both receive (recvfrom) and send (MSG_ZEROCOPY) performance */
+    if (posix_memalign((void **)&segment->buffers, BUFFER_POOL_ALIGNMENT, buffer_size * num_buffers) != 0)
     {
+        logger(LOG_ERROR, "Buffer pool: Failed to allocate aligned memory for %zu buffers", num_buffers);
         free(segment);
         return NULL;
     }
