@@ -159,7 +159,13 @@ int status_init(void)
   status_shared->server_start_time = get_realtime_ms();
   status_shared->current_log_level = config.verbosity;
   status_shared->event_counter = 0;
-  status_shared->num_workers = config.workers;
+
+  /* Initialize log mutex for multi-process safety */
+  pthread_mutexattr_t mutex_attr;
+  pthread_mutexattr_init(&mutex_attr);
+  pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
+  pthread_mutex_init(&status_shared->log_mutex, &mutex_attr);
+  pthread_mutexattr_destroy(&mutex_attr);
 
   /* Create notification pipe for event-driven SSE updates */
   if (pipe(status_shared->notification_pipe) == -1)
@@ -191,6 +197,9 @@ void status_cleanup(void)
       close(status_shared->notification_pipe[0]);
     if (status_shared->notification_pipe[1] != -1)
       close(status_shared->notification_pipe[1]);
+
+    /* Destroy log mutex */
+    pthread_mutex_destroy(&status_shared->log_mutex);
 
     munmap(status_shared, sizeof(status_shared_t));
     status_shared = NULL;
@@ -405,6 +414,9 @@ void status_add_log_entry(enum loglevel level, const char *message)
   if (!status_shared || !message)
     return;
 
+  /* Lock mutex to prevent race conditions in multi-worker environment */
+  pthread_mutex_lock(&status_shared->log_mutex);
+
   /* Get next write index */
   index = status_shared->log_write_index;
 
@@ -423,6 +435,9 @@ void status_add_log_entry(enum loglevel level, const char *message)
   {
     status_shared->log_count++;
   }
+
+  /* Unlock mutex */
+  pthread_mutex_unlock(&status_shared->log_mutex);
 
   /* Trigger SSE event for new log entries */
   status_trigger_event();
@@ -545,7 +560,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
                   pool_total > 0 ? (100.0 * (pool_total - pool_free) / pool_total) : 0.0);
 
   /* Add zero-copy statistics */
-  zerocopy_stats_t zc_stats;
+  worker_zerocopy_stats_t zc_stats;
   status_get_zerocopy_stats(&zc_stats);
   len += snprintf(buffer + len, buffer_capacity - (size_t)len,
                   ",\"zerocopy\":{\"total_sends\":%llu,"
@@ -939,7 +954,7 @@ int status_handle_sse_heartbeat(connection_t *c, int64_t now)
  * Get aggregated zero-copy statistics from all workers
  * This function aggregates per-worker statistics from shared memory
  */
-void status_get_zerocopy_stats(zerocopy_stats_t *stats)
+void status_get_zerocopy_stats(worker_zerocopy_stats_t *stats)
 {
   if (!stats)
     return;
@@ -949,7 +964,7 @@ void status_get_zerocopy_stats(zerocopy_stats_t *stats)
   /* Aggregate statistics from all workers */
   if (status_shared)
   {
-    for (int i = 0; i < status_shared->num_workers && i < STATUS_MAX_WORKERS; i++)
+    for (int i = 0; i < config.workers && i < STATUS_MAX_WORKERS; i++)
     {
       stats->total_sends += status_shared->worker_stats[i].total_sends;
       stats->total_completions += status_shared->worker_stats[i].total_completions;

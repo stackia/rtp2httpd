@@ -28,6 +28,7 @@
 service_t *services = NULL;
 struct bindaddr_s *bind_addresses = NULL;
 int client_count = 0;
+int worker_id = 0; /* Worker ID for this process (0-based) */
 
 /**
  * Get current monotonic time in milliseconds.
@@ -80,6 +81,7 @@ int logger(enum loglevel level, const char *format, ...)
   va_list ap;
   int r = 0;
   char message[1024];
+  int prefix_len = 0;
 
   /* Check log level from shared memory if available, otherwise use config */
   enum loglevel current_level = config.verbosity;
@@ -90,14 +92,21 @@ int logger(enum loglevel level, const char *format, ...)
 
   if (current_level >= level)
   {
+    /* Add worker_id prefix only if multiple workers */
+    if (config.workers > 1)
+    {
+      prefix_len = snprintf(message, sizeof(message), "[Worker %d] ", worker_id);
+    }
+
+    /* Format the actual message after the prefix (if any) */
     va_start(ap, format);
-    r = vfprintf(stderr, format, ap);
+    vsnprintf(message + prefix_len, sizeof(message) - prefix_len, format, ap);
     va_end(ap);
 
-    /* Also store in status log buffer */
-    va_start(ap, format);
-    vsnprintf(message, sizeof(message), format, ap);
-    va_end(ap);
+    /* Output to stderr */
+    r = fputs(message, stderr);
+
+    /* Store in status log buffer */
     status_add_log_entry(level, message);
 
     // Automatically add newline if format doesn't end with one
@@ -119,7 +128,6 @@ int main(int argc, char *argv[])
   char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
   const int on = 1;
   int notif_fd = -1;
-  int worker_id = 0; /* Worker ID for this process (0-based) */
 
   parse_cmd_line(argc, argv);
 
@@ -168,7 +176,7 @@ int main(int argc, char *argv[])
         break;
       }
     }
-    logger(LOG_INFO, "Worker started: pid=%d, worker_id=%d", (int)getpid(), worker_id);
+    logger(LOG_INFO, "Worker started: pid=%d", (int)getpid());
   }
   else
   {
