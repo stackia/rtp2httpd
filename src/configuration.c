@@ -33,7 +33,6 @@ int cmd_bind_set;
 int cmd_fcc_nat_traversal_set;
 int cmd_hostname_set;
 int cmd_clock_format_set;
-int cmd_upstream_interface_set;
 int cmd_buffer_pool_max_size_set;
 
 enum section_e
@@ -412,17 +411,16 @@ void parse_global_sec(char *line)
     }
     return;
   }
-  if (strcasecmp("upstream-interface", param) == 0)
+  if (strcasecmp("upstream-interface-fcc", param) == 0)
   {
-    if (!cmd_upstream_interface_set)
-    {
-      strncpy(config.upstream_interface.ifr_name, value, IFNAMSIZ - 1);
-      config.upstream_interface.ifr_ifindex = if_nametoindex(config.upstream_interface.ifr_name);
-    }
-    else
-    {
-      logger(LOG_WARN, "Config file value \"upstream-interface\" ignored (already set on command line)");
-    }
+    strncpy(config.upstream_interface_fcc.ifr_name, value, IFNAMSIZ - 1);
+    config.upstream_interface_fcc.ifr_ifindex = if_nametoindex(config.upstream_interface_fcc.ifr_name);
+    return;
+  }
+  if (strcasecmp("upstream-interface-rtp", param) == 0)
+  {
+    strncpy(config.upstream_interface_rtp.ifr_name, value, IFNAMSIZ - 1);
+    config.upstream_interface_rtp.ifr_ifindex = if_nametoindex(config.upstream_interface_rtp.ifr_name);
     return;
   }
   if (strcasecmp("fcc-nat-traversal", param) == 0)
@@ -608,11 +606,14 @@ void restore_conf_defaults(void)
   config.clock_format = strdup("yyyyMMddTHHmmssZ");
   cmd_clock_format_set = 0;
 
-  if (config.upstream_interface.ifr_name[0] != '\0')
+  if (config.upstream_interface_fcc.ifr_name[0] != '\0')
   {
-    memset(&config.upstream_interface, 0, sizeof(struct ifreq));
+    memset(&config.upstream_interface_fcc, 0, sizeof(struct ifreq));
   }
-  cmd_upstream_interface_set = 0;
+  if (config.upstream_interface_rtp.ifr_name[0] != '\0')
+  {
+    memset(&config.upstream_interface_rtp, 0, sizeof(struct ifreq));
+  }
 
   while (services != NULL)
   {
@@ -696,7 +697,8 @@ void usage(FILE *f, char *progname)
           "\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole (deprecated), 2=NAT-PMP (default 0)\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)\n"
           "\t-f --clock-format <format> Clock format for RTSP Range timestamps (default yyyyMMddTHHmmssZ)\n"
-          "\t-i --upstream-interface <interface> Interface to use for requesting upstream media stream (default none, which follows the routing table)\n"
+          "\t-i --upstream-interface-fcc <interface>  Interface for FCC and RTSP control traffic\n"
+          "\t-r --upstream-interface-rtp <interface>  Interface for RTP multicast traffic\n"
           "\t                     default " CONFIGFILE "\n",
           prog);
 }
@@ -757,10 +759,11 @@ void parse_cmd_line(int argc, char *argv[])
       {"fcc-nat-traversal", required_argument, 0, 'n'},
       {"hostname", required_argument, 0, 'H'},
       {"clock-format", required_argument, 0, 'f'},
-      {"upstream-interface", required_argument, 0, 'i'},
+      {"upstream-interface-fcc", required_argument, 0, 'i'},
+      {"upstream-interface-rtp", required_argument, 0, 'r'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:f:i:C";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:f:i:r:C";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -852,9 +855,12 @@ void parse_cmd_line(int argc, char *argv[])
       cmd_clock_format_set = 1;
       break;
     case 'i':
-      strncpy(config.upstream_interface.ifr_name, optarg, IFNAMSIZ - 1);
-      config.upstream_interface.ifr_ifindex = if_nametoindex(config.upstream_interface.ifr_name);
-      cmd_upstream_interface_set = 1;
+      strncpy(config.upstream_interface_fcc.ifr_name, optarg, IFNAMSIZ - 1);
+      config.upstream_interface_fcc.ifr_ifindex = if_nametoindex(config.upstream_interface_fcc.ifr_name);
+      break;
+    case 'r':
+      strncpy(config.upstream_interface_rtp.ifr_name, optarg, IFNAMSIZ - 1);
+      config.upstream_interface_rtp.ifr_ifindex = if_nametoindex(config.upstream_interface_rtp.ifr_name);
       break;
     default:
       logger(LOG_FATAL, "Unknown option! %d ", opt);

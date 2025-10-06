@@ -7,8 +7,9 @@
  * Bind socket to upstream interface if configured
  *
  * @param sock Socket file descriptor to bind
+ * @param ifr Pointer to interface request structure for binding
  */
-void bind_to_upstream_interface(int sock);
+void bind_to_upstream_interface(int sock, const struct ifreq *ifr);
 
 /**
  * Join a multicast group and return socket

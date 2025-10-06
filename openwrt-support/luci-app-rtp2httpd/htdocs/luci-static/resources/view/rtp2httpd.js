@@ -92,10 +92,22 @@ return view.extend({
 
     o = s.option(
       widgets.DeviceSelect,
-      "upstream_interface",
-      _("rtp2httpd_Upstream Interface"),
+      "upstream_interface_fcc",
+      _("rtp2httpd_Upstream FCC Interface"),
       _(
-        "rtp2httpd_Interface to use for requesting upstream media stream (default none, which follows the routing table)"
+        "rtp2httpd_Interface_fcc to use for requesting fcc upstream media stream (default none, which follows the routing table)"
+      )
+    );
+    o.noaliases = true;
+    o.datatype = "interface";
+    o.depends("use_config_file", "0");
+
+    o = s.option(
+      widgets.DeviceSelect,
+      "upstream_interface_rtp",
+      _("rtp2httpd_Upstream RTP Interface"),
+      _(
+        "rtp2httpd_Interface_rtp to use for requesting RTP upstream media stream (default none, which follows the routing table)"
       )
     );
     o.noaliases = true;
