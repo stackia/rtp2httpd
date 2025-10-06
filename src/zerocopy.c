@@ -96,7 +96,7 @@ static buffer_pool_segment_t *buffer_pool_segment_create(size_t buffer_size, siz
         ref->size = buffer_size;
         ref->refcount = 0;
         ref->segment = segment; /* Direct reference to owning segment */
-        ref->next = pool->free_list;
+        ref->free_next = pool->free_list;
         pool->free_list = ref;
     }
 
@@ -266,26 +266,22 @@ void zerocopy_queue_init(zerocopy_queue_t *queue)
 
 void zerocopy_queue_cleanup(zerocopy_queue_t *queue)
 {
-    /* Clean up send queue */
-    send_queue_entry_t *entry = queue->head;
-    while (entry)
+    /* Clean up send queue - buffers are now directly in the queue */
+    buffer_ref_t *buf = queue->head;
+    while (buf)
     {
-        send_queue_entry_t *next = entry->next;
-        if (entry->buf_ref)
-            buffer_ref_put(entry->buf_ref);
-        free(entry);
-        entry = next;
+        buffer_ref_t *next = buf->send_next;
+        buffer_ref_put(buf);
+        buf = next;
     }
 
     /* Clean up pending completion queue */
-    entry = queue->pending_head;
-    while (entry)
+    buf = queue->pending_head;
+    while (buf)
     {
-        send_queue_entry_t *next = entry->next;
-        if (entry->buf_ref)
-            buffer_ref_put(entry->buf_ref);
-        free(entry);
-        entry = next;
+        buffer_ref_t *next = buf->send_next;
+        buffer_ref_put(buf);
+        buf = next;
     }
 
     zerocopy_queue_init(queue);
@@ -293,35 +289,30 @@ void zerocopy_queue_cleanup(zerocopy_queue_t *queue)
 
 int zerocopy_queue_add(zerocopy_queue_t *queue, void *data, size_t len, buffer_ref_t *buf_ref, size_t offset)
 {
-    if (!data || len == 0)
+    if (!data || len == 0 || !buf_ref)
         return 0;
 
-    /* Allocate queue entry */
-    send_queue_entry_t *entry = malloc(sizeof(send_queue_entry_t));
-    if (!entry)
-        return -1;
+    /* No malloc needed! Use the buffer_ref directly as queue entry */
+    /* Setup send queue fields in the buffer */
+    buf_ref->iov.iov_base = data;
+    buf_ref->iov.iov_len = len;
+    buf_ref->buf_offset = offset; /* Store offset for partial buffer sends */
+    buf_ref->zerocopy_id = 0;
+    buf_ref->send_next = NULL;
 
-    entry->iov.iov_base = data;
-    entry->iov.iov_len = len;
-    entry->buf_ref = buf_ref;
-    entry->buf_offset = offset; /* Store offset for partial buffer sends */
-    entry->zerocopy_id = 0;
-    entry->next = NULL;
-
-    /* Increment reference count if buffer provided */
-    if (buf_ref)
-        buffer_ref_get(buf_ref);
+    /* Increment reference count - queue now holds a reference */
+    buffer_ref_get(buf_ref);
 
     /* Add to queue */
     if (queue->tail)
     {
-        queue->tail->next = entry;
-        queue->tail = entry;
+        queue->tail->send_next = buf_ref;
+        queue->tail = buf_ref;
     }
     else
     {
         /* First entry - record timestamp for batching timeout */
-        queue->head = queue->tail = entry;
+        queue->head = queue->tail = buf_ref;
         queue->first_queued_time_us = get_time_us();
     }
 
@@ -354,7 +345,7 @@ void buffer_ref_put(buffer_ref_t *ref)
             ref->segment->num_free++;
         }
 
-        ref->next = pool->free_list;
+        ref->free_next = pool->free_list;
         pool->free_list = ref;
         pool->num_free++;
     }
@@ -403,7 +394,7 @@ buffer_ref_t *buffer_pool_alloc(size_t size)
 
     /* Pop from free list */
     buffer_ref_t *ref = pool->free_list;
-    pool->free_list = ref->next;
+    pool->free_list = ref->free_next;
     pool->num_free--;
 
     /* Update segment free count using direct reference */
@@ -414,7 +405,7 @@ buffer_ref_t *buffer_pool_alloc(size_t size)
 
     ref->refcount = 1;
     ref->size = size;
-    ref->next = NULL;
+    ref->send_next = NULL; /* Clear send_next when allocating */
 
     return ref;
 }
@@ -495,20 +486,20 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
         return 0;
     }
 
-    /* Build iovec array from queue entries */
+    /* Build iovec array from queue buffers */
     struct iovec iovecs[ZEROCOPY_MAX_IOVECS];
-    send_queue_entry_t *entries[ZEROCOPY_MAX_IOVECS];
+    buffer_ref_t *buffers[ZEROCOPY_MAX_IOVECS];
     int iov_count = 0;
     size_t total_len = 0;
 
-    send_queue_entry_t *entry = queue->head;
-    while (entry && iov_count < ZEROCOPY_MAX_IOVECS)
+    buffer_ref_t *buf = queue->head;
+    while (buf && iov_count < ZEROCOPY_MAX_IOVECS)
     {
-        iovecs[iov_count] = entry->iov;
-        entries[iov_count] = entry;
-        total_len += entry->iov.iov_len;
+        iovecs[iov_count] = buf->iov;
+        buffers[iov_count] = buf;
+        total_len += buf->iov.iov_len;
         iov_count++;
-        entry = entry->next;
+        buf = buf->send_next;
     }
 
     if (iov_count == 0)
@@ -571,34 +562,34 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
     uint32_t zerocopy_id = queue->next_zerocopy_id++;
     for (int i = 0; i < iov_count; i++)
     {
-        entries[i]->zerocopy_id = zerocopy_id;
+        buffers[i]->zerocopy_id = zerocopy_id;
     }
 
-    /* Move sent entries from send queue to pending completion queue
+    /* Move sent buffers from send queue to pending completion queue
      * Note: With MSG_ZEROCOPY, the kernel tracks what was actually sent,
      * and the completion notification will arrive for the sent data only.
      */
     size_t remaining = (size_t)sent;
     while (remaining > 0 && queue->head)
     {
-        send_queue_entry_t *current = queue->head;
+        buffer_ref_t *current = queue->head;
 
         if (current->iov.iov_len <= remaining)
         {
-            /* Entire entry sent - move to pending queue */
+            /* Entire buffer sent - move to pending queue */
             remaining -= current->iov.iov_len;
             queue->total_bytes -= current->iov.iov_len;
             queue->num_entries--;
-            queue->head = current->next;
+            queue->head = current->send_next;
 
             if (!queue->head)
                 queue->tail = NULL;
 
             /* Add to pending completion queue */
-            current->next = NULL;
+            current->send_next = NULL;
             if (queue->pending_tail)
             {
-                queue->pending_tail->next = current;
+                queue->pending_tail->send_next = current;
                 queue->pending_tail = current;
             }
             else
@@ -611,7 +602,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
         }
         else
         {
-            /* Partial send within an entry - this is tricky with MSG_ZEROCOPY
+            /* Partial send within a buffer - this is tricky with MSG_ZEROCOPY
              * The kernel will send a completion for what was sent, but we need to
              * track the unsent portion separately. We'll reset the zerocopy_id to 0
              * so it gets a new ID on the next send attempt.
@@ -681,13 +672,13 @@ void buffer_pool_try_shrink(void)
                 if (buf_addr >= seg_start && buf_addr < seg_end)
                 {
                     /* Remove from free list */
-                    *free_ptr = ref->next;
+                    *free_ptr = ref->free_next;
                     removed_count++;
                 }
                 else
                 {
                     /* Move to next entry */
-                    free_ptr = &(ref->next);
+                    free_ptr = &(ref->free_next);
                 }
             }
 
@@ -813,37 +804,37 @@ int zerocopy_handle_completions(int fd, zerocopy_queue_t *queue)
 
                     /* Free buffers for completed entries */
                     /* Note: lo and hi are the range of zerocopy_id that completed */
-                    send_queue_entry_t *entry = queue->pending_head;
-                    send_queue_entry_t *prev = NULL;
+                    buffer_ref_t *buf = queue->pending_head;
+                    buffer_ref_t *prev = NULL;
                     int matched = 0;
                     int unmatched = 0;
 
-                    while (entry)
+                    while (buf)
                     {
-                        send_queue_entry_t *next = entry->next;
+                        buffer_ref_t *next = buf->send_next;
 
-                        /* Check if this entry's zerocopy_id is in the completed range */
+                        /* Check if this buffer's zerocopy_id is in the completed range */
                         /* Handle wraparound: if lo <= hi, check [lo, hi]; otherwise check [lo, MAX] or [0, hi] */
                         int completed = 0;
                         if (lo <= hi)
                         {
-                            completed = (entry->zerocopy_id >= lo && entry->zerocopy_id <= hi);
+                            completed = (buf->zerocopy_id >= lo && buf->zerocopy_id <= hi);
                         }
                         else
                         {
                             /* Wraparound case */
-                            completed = (entry->zerocopy_id >= lo || entry->zerocopy_id <= hi);
+                            completed = (buf->zerocopy_id >= lo || buf->zerocopy_id <= hi);
                         }
 
                         if (completed)
                         {
                             /* Remove from pending queue */
                             if (prev)
-                                prev->next = next;
+                                prev->send_next = next;
                             else
                                 queue->pending_head = next;
 
-                            if (entry == queue->pending_tail)
+                            if (buf == queue->pending_tail)
                                 queue->pending_tail = prev;
 
                             queue->num_pending--;
@@ -851,24 +842,22 @@ int zerocopy_handle_completions(int fd, zerocopy_queue_t *queue)
                             matched++;
 
                             /* Release buffer reference - kernel is done with the data */
-                            if (entry->buf_ref)
-                                buffer_ref_put(entry->buf_ref);
+                            buffer_ref_put(buf);
 
-                            free(entry);
-                            entry = next;
+                            buf = next;
                         }
                         else
                         {
                             unmatched++;
-                            prev = entry;
-                            entry = next;
+                            prev = buf;
+                            buf = next;
                         }
                     }
 
-                    /* Log if we didn't find any matching entries - this indicates a bug */
+                    /* Log if we didn't find any matching buffers - this indicates a bug */
                     if (matched == 0)
                     {
-                        logger(LOG_ERROR, "Zero-copy: Completion for IDs %u-%u but no matching entries in pending queue (unmatched: %d, pending: %zu)",
+                        logger(LOG_ERROR, "Zero-copy: Completion for IDs %u-%u but no matching buffers in pending queue (unmatched: %d, pending: %zu)",
                                lo, hi, unmatched, queue->num_pending);
                     }
                 }
