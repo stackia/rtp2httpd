@@ -55,7 +55,7 @@ int join_mcast_group(service_t *service)
   }
 
   /* Determine which interface to use */
-  upstream_if = &config.upstream_interface_rtp;
+  upstream_if = &config.upstream_interface_multicast;
 
   bind_to_upstream_interface(sock, upstream_if);
 

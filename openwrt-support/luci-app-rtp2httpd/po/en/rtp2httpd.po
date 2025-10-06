@@ -44,17 +44,17 @@ msgstr "Info"
 msgid "rtp2httpd_Debug"
 msgstr "Debug"
 
-msgid "rtp2httpd_Upstream FCC Interface"
-msgstr "Upstream FCC Interface"
+msgid "rtp2httpd_Upstream Unicast Interface"
+msgstr "Upstream Unicast Interface"
 
-msgid "rtp2httpd_Upstream RTP Interface"
-msgstr "Upstream RTP Interface"
+msgid "rtp2httpd_Upstream Multicast Interface"
+msgstr "Upstream Multicast Interface"
 
-msgid "rtp2httpd_Interface_rtp to use for requesting RTP upstream media stream (default none, which follows the routing table)"
-msgstr "Interface to use for requesting RTP upstream media stream (default none, which follows the routing table)"
+msgid "rtp2httpd_Interface_multicast to use for requesting multicast upstream media stream (default none, which follows the routing table)"
+msgstr "Interface to use for requesting multicast (RTP/UDP) upstream media stream (default none, which follows the routing table)"
 
-msgid "rtp2httpd_Interface_fcc to use for requesting FCC upstream media stream (default none, which follows the routing table)"
-msgstr "Interface to use for requesting FCC upstream media stream (default none, which follows the routing table)"
+msgid "rtp2httpd_Interface_unicast to use for requesting unicast upstream media stream (default none, which follows the routing table)"
+msgstr "Interface to use for requesting unicast (FCC/RTSP) upstream media stream (default none, which follows the routing table)"
 
 msgid "rtp2httpd_Max clients"
 msgstr "Max clients allowed"
