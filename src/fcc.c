@@ -112,7 +112,7 @@ static uint16_t nat_pmp(uint16_t nport, uint32_t lifetime)
         return 0;
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
-    upstream_if = &config.upstream_interface_fcc;
+    upstream_if = &config.upstream_interface_unicast;
     bind_to_upstream_interface(sock, upstream_if);
 
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
@@ -360,7 +360,7 @@ int fcc_initialize_and_request(struct stream_context_s *ctx)
             return -1;
         }
 
-        upstream_if = &config.upstream_interface_fcc;
+        upstream_if = &config.upstream_interface_unicast;
         bind_to_upstream_interface(fcc->fcc_sock, upstream_if);
 
         /* Bind to any available port */

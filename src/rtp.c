@@ -91,9 +91,11 @@ int write_rtp_payload_to_client(struct connection_s *conn, int recv_len, uint8_t
   /* Out-of-order detection - packets are usually in order */
   if (unlikely(*not_first && (seqn != ((*old_seqn + 1) & 0xFFFF))))
   {
-    logger(LOG_DEBUG, "Congestion - expected %d, "
-                      "received %d",
-           (*old_seqn + 1) & 0xFFFF, seqn);
+    int expected = (*old_seqn + 1) & 0xFFFF;
+    int gap = (seqn - expected) & 0xFFFF;
+    /* This indicates upstream packet loss (network or source), NOT local send congestion */
+    logger(LOG_DEBUG, "RTP packet loss detected - expected seq %d, received %d (gap: %d packets)",
+           expected, seqn, gap);
   }
 
   *old_seqn = seqn;

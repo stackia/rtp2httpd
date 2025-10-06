@@ -84,8 +84,8 @@ typedef struct
   enum fcc_nat_traversal fcc_nat_traversal; /* NAT traversal method for FCC */
 
   /* Network interface settings */
-  struct ifreq upstream_interface_fcc; /* Interface for upstream media requests (FCC/RTSP) */
-  struct ifreq upstream_interface_rtp; /* Interface for upstream media requests (RTP) */
+  struct ifreq upstream_interface_unicast;   /* Interface for upstream unicast media requests (FCC/RTSP) */
+  struct ifreq upstream_interface_multicast; /* Interface for upstream multicast media requests (RTP/UDP) */
 
   /* Time format settings */
   char *clock_format; /* Clock format string for RTSP time conversion */

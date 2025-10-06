@@ -44,17 +44,17 @@ msgstr "Info"
 msgid "rtp2httpd_Debug"
 msgstr "Debug"
 
-msgid "rtp2httpd_Upstream FCC Interface"
-msgstr "上游FCC接口"
+msgid "rtp2httpd_Upstream Unicast Interface"
+msgstr "上游单播接口"
 
-msgid "rtp2httpd_Upstream RTP Interface"
-msgstr "上游RTP接口"
+msgid "rtp2httpd_Upstream Multicast Interface"
+msgstr "上游组播接口"
 
-msgid "rtp2httpd_Interface_fcc to use for requesting FCC upstream media stream (default none, which follows the routing table)"
-msgstr "用于请求上游媒体流（FCC 单播流）的接口（默认不指定，跟随路由表）"
+msgid "rtp2httpd_Interface_unicast to use for requesting unicast upstream media stream (default none, which follows the routing table)"
+msgstr "用于请求上游单播媒体流（FCC/RTSP）的接口（默认不指定，跟随路由表）"
 
-msgid "rtp2httpd_Interface_rtp to use for requesting RTP upstream media stream (default none, which follows the routing table)"
-msgstr "用于请求上游媒体流（组播流）的接口（默认不指定，跟随路由表）"
+msgid "rtp2httpd_Interface_multicast to use for requesting multicast upstream media stream (default none, which follows the routing table)"
+msgstr "用于请求上游组播媒体流（RTP/UDP）的接口（默认不指定，跟随路由表）"
 
 msgid "rtp2httpd_Max clients"
 msgstr "最大客户端数"

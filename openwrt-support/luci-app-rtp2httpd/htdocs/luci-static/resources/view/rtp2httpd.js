@@ -92,10 +92,10 @@ return view.extend({
 
     o = s.option(
       widgets.DeviceSelect,
-      "upstream_interface_fcc",
-      _("rtp2httpd_Upstream FCC Interface"),
+      "upstream_interface_unicast",
+      _("rtp2httpd_Upstream Unicast Interface"),
       _(
-        "rtp2httpd_Interface_fcc to use for requesting fcc upstream media stream (default none, which follows the routing table)"
+        "rtp2httpd_Interface_unicast to use for requesting unicast upstream media stream (default none, which follows the routing table)"
       )
     );
     o.noaliases = true;
@@ -104,10 +104,10 @@ return view.extend({
 
     o = s.option(
       widgets.DeviceSelect,
-      "upstream_interface_rtp",
-      _("rtp2httpd_Upstream RTP Interface"),
+      "upstream_interface_multicast",
+      _("rtp2httpd_Upstream Multicast Interface"),
       _(
-        "rtp2httpd_Interface_rtp to use for requesting RTP upstream media stream (default none, which follows the routing table)"
+        "rtp2httpd_Interface_multicast to use for requesting multicast upstream media stream (default none, which follows the routing table)"
       )
     );
     o.noaliases = true;

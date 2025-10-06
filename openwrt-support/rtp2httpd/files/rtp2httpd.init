@@ -34,8 +34,8 @@ start_instance() {
 
         append_arg "$cfg" verbose "--verbose"
         append_arg "$cfg" port "--listen"
-        append_arg "$cfg" upstream_interface_fcc "--upstream-interface-fcc"
-        append_arg "$cfg" upstream_interface_rtp "--upstream-interface-rtp"
+        append_arg "$cfg" upstream_interface_unicast "--upstream-interface-unicast"
+        append_arg "$cfg" upstream_interface_multicast "--upstream-interface-multicast"
         append_arg "$cfg" maxclients "--maxclients"
         append_arg "$cfg" workers "--workers"
         append_arg "$cfg" buffer_pool_max_size "--buffer-pool-max-size"

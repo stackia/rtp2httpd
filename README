@@ -45,7 +45,7 @@ https://github.com/user-attachments/assets/a8c9c60f-ebc3-49a8-b374-f579f8e34d92
 
 > **提示**：建议搭配专门针对 IPTV 直播优化的播放器使用，例如 [APTV](https://aptv.wegic.app) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) 等。
 
-### 25条 1080p 组播流同时播放
+### 25 条 1080p 组播流同时播放
 
 https://github.com/user-attachments/assets/fedc0c28-f9ac-4675-9b19-a8efdd062506
 
@@ -108,7 +108,7 @@ docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest \
 # 启用 FCC 和 NAT 穿透
 docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest \
   --noconfig --verbose 2 --listen 8080 --maxclients 20 \
-  --fcc-nat-traversal 2 --upstream-interface-fcc eth0 --upstream-interface-rtp eth0
+  --fcc-nat-traversal 2 --upstream-interface-unicast eth0 --upstream-interface-multicast eth0
 ```
 
 ### 编译安装
@@ -242,8 +242,8 @@ rtp2httpd [选项]
   -l, --listen [地址:]端口        绑定监听地址和端口 (默认: *:8080)
   -m, --maxclients <数量>        最大并发客户端数 (默认: 5)
   -w, --workers <数量>           工作进程数 (默认: 1)
-  --upstream-interface-fcc <接口>   用于 FCC/RTSP 控制流量的上游网络接口
-  --upstream-interface-rtp <接口>   用于 RTP 组播流量的上游网络接口
+  --upstream-interface-unicast <接口>   用于单播流量 (FCC/RTSP) 的上游网络接口
+  --upstream-interface-multicast <接口>   用于组播流量 (RTP/UDP) 的上游网络接口
 
 性能优化：
   -b, --buffer-pool-max-size <数量> 零拷贝缓冲池最大缓冲区数量 (默认: 16384)
@@ -329,10 +329,10 @@ udpxy = yes
 fcc-nat-traversal = 0
 
 # 上游网络接口 (可选)
-# 用于 FCC/RTSP 控制流量的接口
-;upstream-interface-fcc = eth1
-# 用于 RTP 组播流量的接口
-;upstream-interface-rtp = eth0
+# 用于单播流量 (FCC/RTSP) 的接口
+;upstream-interface-unicast = eth1
+# 用于组播流量 (RTP/UDP) 的接口
+;upstream-interface-multicast = eth0
 
 # 工作进程数（默认: 1）
 workers = 1
@@ -380,26 +380,15 @@ rtsp2    RTSP rtsp://10.0.0.50:8554/live/channel1?auth=token123
 1. **抓包方法**：使用 Wireshark 等工具抓取当地机顶盒网络包
 2. **关键字段**：查找 `ChannelFCCIP` 和 `ChannelFCCPort` 字段
 
-### 内核参数调优（重要）
+### 内核参数调优
 
-**对于高并发场景（50+ 客户端），必须调整内核参数以避免 ENOBUFS 错误：**
-
-```bash
-# 快速设置（临时生效）
-sudo /path/to/rtp2httpd/scripts/tune-kernel.sh
-
-# 永久生效
-sudo /path/to/rtp2httpd/scripts/tune-kernel.sh --permanent
-```
-
-**关键参数说明：**
-
-- `net.core.optmem_max`：MSG_ZEROCOPY 元数据内存限制，默认 20KB 太小，建议 512KB
-- 详细说明请参考：[docs/KERNEL_TUNING.md](docs/KERNEL_TUNING.md)
-
-### 开启 BBR
+#### 开启 BBR
 
 建议修改内核参数，[开启 BBR](https://blog.clash-plus.com/post/openwrt-bbr/) 后可以进一步降低换台延迟。
+
+#### 调整 optmem_max
+
+- `net.core.optmem_max`：MSG_ZEROCOPY 元数据内存限制，如遇播放卡顿可尝试增大到 512KB (`net.core.optmem_max=524288`)
 
 ### NAT 穿透模式选择
 
