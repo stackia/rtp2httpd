@@ -31,23 +31,24 @@ struct connection_s;
 #define ZEROCOPY_BATCH_TIMEOUT_US 100000 /* Send after 100ms timeout */
 
 /* Buffer pool configuration - optimized for RTP packets with cache alignment */
-#define BUFFER_POOL_ALIGNMENT 64      /* Cache line alignment for DMA efficiency */
-#define BUFFER_POOL_INITIAL_SIZE 1024 /* Initial number of buffers in pool */
-#define BUFFER_POOL_EXPAND_SIZE 512   /* Number of buffers to add when expanding */
-#define BUFFER_POOL_BUFFER_SIZE 1536  /* Size of each pooled buffer (1536 = 24*64, cache-aligned, fits max RTP packet) */
-#define BUFFER_POOL_LOW_WATERMARK 256 /* Trigger expansion when free buffers < this */
+#define BUFFER_POOL_ALIGNMENT 64                                  /* Cache line alignment for DMA efficiency */
+#define BUFFER_POOL_INITIAL_SIZE 1024                             /* Initial number of buffers in pool */
+#define BUFFER_POOL_EXPAND_SIZE 512                               /* Number of buffers to add when expanding */
+#define BUFFER_POOL_BUFFER_SIZE 1536                              /* Size of each pooled buffer (1536 = 24*64, cache-aligned, fits max RTP packet) */
+#define BUFFER_POOL_LOW_WATERMARK 256                             /* Trigger expansion when free buffers < this */
+#define BUFFER_POOL_HIGH_WATERMARK (BUFFER_POOL_INITIAL_SIZE * 3) /* Trigger shrink when free > this (3072) */
 
 /**
  * Buffer reference counting for zero-copy lifecycle management
+ * All buffers are pool-managed, no external buffers supported
  */
 typedef struct buffer_ref_s
 {
-    void *data;                    /* Pointer to buffer data */
-    size_t size;                   /* Size of buffer */
-    int refcount;                  /* Reference count */
-    void (*free_callback)(void *); /* Callback to free buffer */
-    void *owner;                   /* Owner context (for callback) */
-    struct buffer_ref_s *next;     /* For free list */
+    void *data;                            /* Pointer to buffer data */
+    size_t size;                           /* Size of buffer */
+    int refcount;                          /* Reference count */
+    struct buffer_pool_segment_s *segment; /* Segment this buffer belongs to */
+    struct buffer_ref_s *next;             /* For free list */
 } buffer_ref_t;
 
 /**
@@ -88,6 +89,8 @@ typedef struct buffer_pool_segment_s
     uint8_t *buffers;                   /* Pre-allocated buffer array for this segment */
     buffer_ref_t *refs;                 /* Buffer reference structures for this segment */
     size_t num_buffers;                 /* Number of buffers in this segment */
+    size_t num_free;                    /* Number of free buffers in this segment */
+    uint64_t create_time_us;            /* Creation timestamp (for age-based reclaim) */
     struct buffer_pool_segment_s *next; /* Next segment in chain */
 } buffer_pool_segment_t;
 
@@ -104,8 +107,10 @@ typedef struct buffer_pool_s
     size_t max_buffers;              /* Maximum allowed buffers (expansion limit) */
     size_t expand_size;              /* Number of buffers to add per expansion */
     size_t low_watermark;            /* Trigger expansion when free < this */
+    size_t high_watermark;           /* Trigger shrink when free > this */
     size_t total_expansions;         /* Statistics: number of times pool expanded */
     size_t total_exhaustions;        /* Statistics: number of times pool was exhausted */
+    size_t total_shrinks;            /* Statistics: number of times pool shrank */
 } buffer_pool_t;
 
 /**
@@ -198,16 +203,6 @@ int zerocopy_should_flush(zerocopy_queue_t *queue);
 int zerocopy_handle_completions(int fd, zerocopy_queue_t *queue);
 
 /**
- * Create a buffer reference for zero-copy
- * @param data Data pointer
- * @param size Data size
- * @param owner Owner context
- * @param free_callback Callback to free buffer
- * @return Buffer reference, or NULL on error
- */
-buffer_ref_t *buffer_ref_create(void *data, size_t size, void *owner, void (*free_callback)(void *));
-
-/**
  * Increment buffer reference count
  * @param ref Buffer reference
  */
@@ -249,5 +244,12 @@ void buffer_pool_get_stats(size_t *total_buffers, size_t *free_buffers, size_t *
  * @param stats Output: pointer to zerocopy_stats_t structure to fill
  */
 void zerocopy_get_detailed_stats(zerocopy_stats_t *stats);
+
+/**
+ * Try to shrink buffer pool by freeing completely idle segments
+ * Called when connections are freed to reclaim memory
+ * This is a lightweight operation that only frees segments where all buffers are free
+ */
+void buffer_pool_try_shrink(void);
 
 #endif /* ZEROCOPY_H */
