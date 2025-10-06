@@ -20,6 +20,8 @@ struct connection_s;
 #define STATUS_MAX_LOG_ENTRIES 100
 #define STATUS_LOG_ENTRY_LEN 1024
 
+#define SSE_BUFFER_SIZE 131072 /* 128k */
+
 /* Client state types for status display */
 typedef enum
 {
