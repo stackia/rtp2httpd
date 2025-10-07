@@ -124,10 +124,11 @@ typedef struct
   volatile int event_counter; /* Incremented when events occur (connect/disconnect/state change) */
 
   /* Per-worker notification pipes for SSE updates
-   * Each worker creates its own pipe and stores the write end at worker_notification_pipes[worker_id]
-   * When an event occurs, we write to all active worker pipes
-   * Lock-free design: Each worker only writes to its own slot, status_trigger_event() only reads */
-  int worker_notification_pipes[STATUS_MAX_WORKERS]; /* Write ends of worker pipes, -1 if inactive */
+   * Pipes are created BEFORE fork so all workers can access all write ends
+   * When an event occurs, any worker can write to all other workers' pipes
+   * Read ends are used by each worker in their epoll loop */
+  int worker_notification_pipe_read_fds[STATUS_MAX_WORKERS]; /* Read ends of worker pipes, -1 if closed */
+  int worker_notification_pipes[STATUS_MAX_WORKERS];         /* Write ends of worker pipes, -1 if inactive */
 
   /* Log circular buffer */
   pthread_mutex_t log_mutex; /* Mutex to protect log buffer writes */
@@ -227,12 +228,11 @@ void handle_disconnect_client(struct connection_s *c);
 void handle_set_log_level(struct connection_s *c);
 
 /**
- * Initialize worker-specific status resources
- * Each worker must call this after fork to create its own notification pipe
- * @param worker_id Worker ID (0-based)
+ * Get the notification pipe read fd for current worker (called after fork)
+ * Also closes read fds for other workers to avoid fd leaks
  * @return notification pipe read fd on success, -1 on error
  */
-int status_worker_init(void);
+int status_worker_get_notif_fd(void);
 
 /**
  * Trigger an event notification to wake up workers

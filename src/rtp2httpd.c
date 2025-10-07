@@ -173,14 +173,14 @@ int main(int argc, char *argv[])
     logger(LOG_INFO, "Worker started: pid=%d", (int)getpid());
   }
 
-  /* Initialize worker-specific notification pipe (event-driven SSE)
-   * Each worker creates its own pipe to receive notifications */
+  /* Get notification pipe read fd for this worker (after fork)
+   * This also closes read fds for other workers to avoid fd leaks */
   if (status_shared)
   {
-    notif_fd = status_worker_init();
+    notif_fd = status_worker_get_notif_fd();
     if (notif_fd < 0)
     {
-      logger(LOG_ERROR, "Failed to initialize worker notification pipe");
+      logger(LOG_ERROR, "Failed to get worker notification pipe");
     }
   }
   else

@@ -166,6 +166,56 @@ int status_init(void)
   status_shared->current_log_level = config.verbosity;
   status_shared->event_counter = 0;
 
+  /* Initialize pipe fds to -1 (invalid) */
+  for (int i = 0; i < STATUS_MAX_WORKERS; i++)
+  {
+    status_shared->worker_notification_pipe_read_fds[i] = -1;
+    status_shared->worker_notification_pipes[i] = -1;
+  }
+
+  /* Create notification pipes for all workers BEFORE fork
+   * This ensures all workers can access all pipe write ends for cross-worker notification */
+  if (config.workers > 0)
+  {
+    int num_workers = config.workers;
+    if (num_workers > STATUS_MAX_WORKERS)
+    {
+      logger(LOG_WARN, "Requested %d workers exceeds maximum %d, limiting to %d",
+             num_workers, STATUS_MAX_WORKERS, STATUS_MAX_WORKERS);
+      num_workers = STATUS_MAX_WORKERS;
+    }
+
+    for (int i = 0; i < num_workers; i++)
+    {
+      int pipe_fds[2];
+      if (pipe(pipe_fds) == -1)
+      {
+        logger(LOG_ERROR, "Failed to create notification pipe for worker %d: %s", i, strerror(errno));
+        /* Clean up already created pipes */
+        for (int j = 0; j < i; j++)
+        {
+          if (status_shared->worker_notification_pipe_read_fds[j] != -1)
+            close(status_shared->worker_notification_pipe_read_fds[j]);
+          if (status_shared->worker_notification_pipes[j] != -1)
+            close(status_shared->worker_notification_pipes[j]);
+        }
+        munmap(status_shared, sizeof(status_shared_t));
+        shm_unlink(SHM_NAME);
+        return -1;
+      }
+
+      /* Set read end to non-blocking mode */
+      int flags = fcntl(pipe_fds[0], F_GETFL, 0);
+      fcntl(pipe_fds[0], F_SETFL, flags | O_NONBLOCK);
+
+      /* Store both ends in shared memory
+       * Read ends will be used by each worker after fork
+       * Write ends are accessible by all workers for cross-worker notification */
+      status_shared->worker_notification_pipe_read_fds[i] = pipe_fds[0];
+      status_shared->worker_notification_pipes[i] = pipe_fds[1];
+    }
+  }
+
   /* Initialize mutexes for multi-process safety */
   pthread_mutexattr_t mutex_attr;
   pthread_mutexattr_init(&mutex_attr);
@@ -188,11 +238,27 @@ void status_cleanup(void)
 {
   if (status_shared != NULL && status_shared != MAP_FAILED)
   {
-    /* Each worker closes its own notification pipe */
-    if (status_shared->worker_notification_pipes[worker_id] != -1)
+    /* Close all pipe write ends (shared across all workers)
+     * Only worker 0 should do this to avoid closing pipes other workers might still use */
+    if (worker_id == 0)
     {
-      close(status_shared->worker_notification_pipes[worker_id]);
-      status_shared->worker_notification_pipes[worker_id] = -1;
+      for (int i = 0; i < STATUS_MAX_WORKERS; i++)
+      {
+        if (status_shared->worker_notification_pipes[i] != -1)
+        {
+          close(status_shared->worker_notification_pipes[i]);
+          status_shared->worker_notification_pipes[i] = -1;
+        }
+      }
+    }
+
+    /* Each worker closes its own notification pipe read end
+     * (Other workers' read ends were already closed in status_worker_get_notif_fd) */
+    if (worker_id >= 0 && worker_id < STATUS_MAX_WORKERS &&
+        status_shared->worker_notification_pipe_read_fds[worker_id] != -1)
+    {
+      close(status_shared->worker_notification_pipe_read_fds[worker_id]);
+      status_shared->worker_notification_pipe_read_fds[worker_id] = -1;
     }
 
     /* Only worker 0 destroys shared mutexes
@@ -328,6 +394,7 @@ void status_unregister_client(int status_index)
 
   status_shared->clients[status_index].active = 0;
   status_shared->clients[status_index].state = CLIENT_STATE_DISCONNECTED;
+  status_shared->clients[status_index].disconnect_requested = 0;
   status_shared->total_clients--;
 
   /* Trigger event notification for client disconnect */
@@ -335,13 +402,13 @@ void status_unregister_client(int status_index)
 }
 
 /**
- * Initialize worker-specific status resources
- * Each worker must call this after fork to create its own notification pipe
+ * Get the notification pipe read fd for current worker (called after fork)
+ * Also closes read fds for other workers to avoid fd leaks
  * @return notification pipe read fd on success, -1 on error
  */
-int status_worker_init(void)
+int status_worker_get_notif_fd(void)
 {
-  int pipe_fds[2];
+  int i;
 
   if (!status_shared)
     return -1;
@@ -352,22 +419,18 @@ int status_worker_init(void)
     return -1;
   }
 
-  /* Create notification pipe for this worker */
-  if (pipe(pipe_fds) == -1)
+  int notif_fd = status_shared->worker_notification_pipe_read_fds[worker_id];
+
+  /* Close read ends of pipes for other workers (we only need our own) */
+  for (i = 0; i < STATUS_MAX_WORKERS; i++)
   {
-    logger(LOG_ERROR, "Failed to create worker notification pipe: %s", strerror(errno));
-    return -1;
+    if (i != worker_id && status_shared->worker_notification_pipe_read_fds[i] != -1)
+    {
+      close(status_shared->worker_notification_pipe_read_fds[i]);
+    }
   }
 
-  /* Set read end to non-blocking mode */
-  int flags = fcntl(pipe_fds[0], F_GETFL, 0);
-  fcntl(pipe_fds[0], F_SETFL, flags | O_NONBLOCK);
-
-  /* Store write end in shared memory (lock-free: each worker writes to its own slot) */
-  status_shared->worker_notification_pipes[worker_id] = pipe_fds[1];
-
-  /* Return read end for worker to add to epoll */
-  return pipe_fds[0];
+  return notif_fd;
 }
 
 /**
