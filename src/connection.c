@@ -153,8 +153,8 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len)
     buffer_ref_t *buf_ref = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
     if (!buf_ref)
     {
-      /* Pool exhausted - this is a critical error for small data sends */
-      logger(LOG_ERROR, "connection_queue_output: Buffer pool exhausted, cannot queue %zu bytes", remaining);
+      /* Pool exhausted */
+      logger(LOG_WARN, "connection_queue_output: Buffer pool exhausted, cannot queue %zu bytes", remaining);
       return -1;
     }
 
