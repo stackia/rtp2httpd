@@ -21,7 +21,7 @@ typedef struct stream_context_s
   fcc_session_t fcc;
   int mcast_sock;
   rtsp_session_t rtsp; /* RTSP session for SERVICE_RTSP */
-  pid_t status_id;     /* Synthetic id used for status updates */
+  int status_index;    /* Index in status_shared->clients array for status updates */
 
   /* Statistics tracking */
   uint64_t total_bytes_sent;
@@ -55,7 +55,7 @@ int stream_join_mcast_group(stream_context_t *ctx);
  * @return 0 on success, -1 on error
  */
 int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *conn, service_t *service,
-                                   int epoll_fd, pid_t status_id);
+                                   int epoll_fd, int status_index);
 
 /**
  * Handle an event-ready fd that belongs to this stream context.

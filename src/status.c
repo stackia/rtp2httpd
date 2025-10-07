@@ -115,44 +115,50 @@ static void json_escape_string(const char *in, char *out, size_t out_sz)
 /* Global pointer to shared memory */
 status_shared_t *status_shared = NULL;
 
-/* Shared memory file descriptor */
-static int shm_fd = -1;
-
 /* Name for shared memory object */
 #define SHM_NAME "/rtp2httpd_status"
 
 /**
  * Initialize status tracking system
+ * Creates and maps shared memory, then immediately closes the file descriptor.
+ * The mmap() mapping remains valid after close() per POSIX specification.
  */
 int status_init(void)
 {
+  int fd;
+
   /* Create shared memory object */
-  shm_fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0600);
-  if (shm_fd == -1)
+  fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0600);
+  if (fd == -1)
   {
     logger(LOG_ERROR, "Failed to create shared memory: %s", strerror(errno));
     return -1;
   }
 
   /* Set size of shared memory */
-  if (ftruncate(shm_fd, sizeof(status_shared_t)) == -1)
+  if (ftruncate(fd, sizeof(status_shared_t)) == -1)
   {
     logger(LOG_ERROR, "Failed to set shared memory size: %s", strerror(errno));
-    close(shm_fd);
+    close(fd);
     shm_unlink(SHM_NAME);
     return -1;
   }
 
   /* Map shared memory */
   status_shared = mmap(NULL, sizeof(status_shared_t),
-                       PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+                       PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (status_shared == MAP_FAILED)
   {
     logger(LOG_ERROR, "Failed to map shared memory: %s", strerror(errno));
-    close(shm_fd);
+    close(fd);
     shm_unlink(SHM_NAME);
     return -1;
   }
+
+  /* Close file descriptor immediately after mmap()
+   * Per POSIX: "closing the file descriptor does not unmap the region"
+   * This is best practice and avoids fd management issues after fork() */
+  close(fd);
 
   /* Initialize shared memory structure */
   memset(status_shared, 0, sizeof(status_shared_t));
@@ -160,26 +166,13 @@ int status_init(void)
   status_shared->current_log_level = config.verbosity;
   status_shared->event_counter = 0;
 
-  /* Initialize log mutex for multi-process safety */
+  /* Initialize mutexes for multi-process safety */
   pthread_mutexattr_t mutex_attr;
   pthread_mutexattr_init(&mutex_attr);
   pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
   pthread_mutex_init(&status_shared->log_mutex, &mutex_attr);
+  pthread_mutex_init(&status_shared->clients_mutex, &mutex_attr);
   pthread_mutexattr_destroy(&mutex_attr);
-
-  /* Create notification pipe for event-driven SSE updates */
-  if (pipe(status_shared->notification_pipe) == -1)
-  {
-    logger(LOG_ERROR, "Failed to create notification pipe: %s", strerror(errno));
-    munmap(status_shared, sizeof(status_shared_t));
-    close(shm_fd);
-    shm_unlink(SHM_NAME);
-    return -1;
-  }
-
-  /* Set pipe to non-blocking mode */
-  int flags = fcntl(status_shared->notification_pipe[0], F_GETFL, 0);
-  fcntl(status_shared->notification_pipe[0], F_SETFL, flags | O_NONBLOCK);
 
   logger(LOG_INFO, "Status tracking initialized");
   return 0;
@@ -187,40 +180,60 @@ int status_init(void)
 
 /**
  * Cleanup status tracking system
+ * IMPORTANT: This function is called by each worker process on exit.
+ * Some cleanup operations must only be performed by worker 0 to avoid
+ * race conditions and undefined behavior in multi-worker environments.
  */
 void status_cleanup(void)
 {
   if (status_shared != NULL && status_shared != MAP_FAILED)
   {
-    /* Close notification pipe */
-    if (status_shared->notification_pipe[0] != -1)
-      close(status_shared->notification_pipe[0]);
-    if (status_shared->notification_pipe[1] != -1)
-      close(status_shared->notification_pipe[1]);
+    /* Each worker closes its own notification pipe */
+    if (status_shared->worker_notification_pipes[worker_id] != -1)
+    {
+      close(status_shared->worker_notification_pipes[worker_id]);
+      status_shared->worker_notification_pipes[worker_id] = -1;
+    }
 
-    /* Destroy log mutex */
-    pthread_mutex_destroy(&status_shared->log_mutex);
+    /* Only worker 0 destroys shared mutexes
+     * Destroying a mutex that other workers might still be using causes undefined behavior.
+     * In the fork model, worker 0 is the main process and exits last. */
+    if (worker_id == 0)
+    {
+      pthread_mutex_destroy(&status_shared->log_mutex);
+      pthread_mutex_destroy(&status_shared->clients_mutex);
+    }
 
+    /* Each worker unmaps its own view of shared memory
+     * This is safe - munmap() only affects the current process's address space */
     munmap(status_shared, sizeof(status_shared_t));
     status_shared = NULL;
   }
 
-  if (shm_fd != -1)
+  /* Only worker 0 unlinks shared memory object
+   * shm_unlink() removes the shared memory object from the filesystem.
+   * If called by a non-last worker, other workers would lose access to shared memory.
+   * In the fork model, worker 0 is the main process and exits last. */
+  if (worker_id == 0)
   {
-    close(shm_fd);
-    shm_fd = -1;
+    shm_unlink(SHM_NAME);
+    logger(LOG_DEBUG, "Status tracking cleaned up (worker 0 - shared resources destroyed)");
   }
-
-  shm_unlink(SHM_NAME);
-  logger(LOG_DEBUG, "Status tracking cleaned up");
+  else
+  {
+    logger(LOG_DEBUG, "Status tracking cleaned up (worker %d)", worker_id);
+  }
 }
 
 /**
- * Register a new client connection
+ * Register a new streaming client connection
+ * Only called for media streaming clients, not for status/API requests
+ * Allocates a free slot under mutex protection and returns the slot index
  */
-int status_register_client(pid_t pid, struct sockaddr_storage *client_addr, socklen_t addr_len)
+int status_register_client(struct sockaddr_storage *client_addr, socklen_t addr_len,
+                           const char *service_url)
 {
-  int i;
+  int status_index = -1;
   char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
 
   if (!status_shared)
@@ -236,17 +249,21 @@ int status_register_client(pid_t pid, struct sockaddr_storage *client_addr, sock
     snprintf(sbuf, sizeof(sbuf), "0");
   }
 
+  /* Lock mutex to protect client slot allocation */
+  pthread_mutex_lock(&status_shared->clients_mutex);
+
   /* Find free slot */
-  for (i = 0; i < STATUS_MAX_CLIENTS; i++)
+  for (int i = 0; i < STATUS_MAX_CLIENTS; i++)
   {
     if (!status_shared->clients[i].active)
     {
       /* Initialize client slot */
       memset(&status_shared->clients[i], 0, sizeof(client_stats_t));
       status_shared->clients[i].active = 1;
-      status_shared->clients[i].pid = pid;
       status_shared->clients[i].worker_pid = getpid(); /* Store actual worker PID */
       status_shared->clients[i].connect_time = get_realtime_ms();
+      status_shared->clients[i].disconnect_requested = 0;
+
       /* Copy client address and port, truncating if necessary (intentional for storage) */
       size_t addr_str_len = strlen(hbuf);
       if (addr_str_len >= sizeof(status_shared->clients[i].client_addr))
@@ -261,70 +278,106 @@ int status_register_client(pid_t pid, struct sockaddr_storage *client_addr, sock
       status_shared->clients[i].client_port[port_str_len] = '\0';
       status_shared->clients[i].state = CLIENT_STATE_CONNECTING;
 
+      /* Copy service URL */
+      if (service_url)
+      {
+        strncpy(status_shared->clients[i].service_url, service_url,
+                sizeof(status_shared->clients[i].service_url) - 1);
+        status_shared->clients[i].service_url[sizeof(status_shared->clients[i].service_url) - 1] = '\0';
+      }
+
       status_shared->total_clients++;
-
-      /* Trigger event notification for new client */
-      status_trigger_event();
-
-      return i;
+      status_index = i;
+      break;
     }
   }
 
-  logger(LOG_ERROR, "No free client slots in status tracking");
-  return -1;
+  /* Unlock mutex */
+  pthread_mutex_unlock(&status_shared->clients_mutex);
+
+  if (status_index < 0)
+  {
+    logger(LOG_ERROR, "No free client slots in status tracking");
+    return -1;
+  }
+
+  /* Trigger event notification for new client */
+  status_trigger_event(STATUS_EVENT_SSE_UPDATE);
+
+  return status_index;
 }
 
 /**
- * Unregister a client connection
+ * Unregister a streaming client connection
+ * Only called for media streaming clients that were previously registered
  */
-void status_unregister_client(pid_t pid)
+void status_unregister_client(int status_index)
 {
-  int i;
-
   if (!status_shared)
     return;
 
-  for (i = 0; i < STATUS_MAX_CLIENTS; i++)
-  {
-    if (status_shared->clients[i].active && status_shared->clients[i].pid == pid)
-    {
-      /* Accumulate this client's bytes_sent to global total before unregistering
-       * This ensures total_bytes_sent persists even after client disconnects */
-      status_shared->total_bytes_sent += status_shared->clients[i].bytes_sent;
+  if (status_index < 0 || status_index >= STATUS_MAX_CLIENTS)
+    return;
 
-      status_shared->clients[i].active = 0;
-      status_shared->clients[i].state = CLIENT_STATE_DISCONNECTED;
-      status_shared->total_clients--;
+  if (!status_shared->clients[status_index].active)
+    return;
 
-      /* Trigger event notification for client disconnect */
-      status_trigger_event();
+  /* Accumulate this client's bytes_sent to global total before unregistering
+   * This ensures total_bytes_sent persists even after client disconnects */
+  status_shared->total_bytes_sent += status_shared->clients[status_index].bytes_sent;
 
-      return;
-    }
-  }
-}
+  status_shared->clients[status_index].active = 0;
+  status_shared->clients[status_index].state = CLIENT_STATE_DISCONNECTED;
+  status_shared->total_clients--;
 
-/* Helper: find slot index by pid-like identifier */
-static int status_find_slot_by_pid(pid_t pid)
-{
-  int i;
-  if (!status_shared)
-    return -1;
-  for (i = 0; i < STATUS_MAX_CLIENTS; i++)
-  {
-    if (status_shared->clients[i].active && status_shared->clients[i].pid == pid)
-      return i;
-  }
-  return -1;
+  /* Trigger event notification for client disconnect */
+  status_trigger_event(STATUS_EVENT_SSE_UPDATE);
 }
 
 /**
- * Trigger an event notification to wake up SSE handlers
+ * Initialize worker-specific status resources
+ * Each worker must call this after fork to create its own notification pipe
+ * @return notification pipe read fd on success, -1 on error
  */
-void status_trigger_event(void)
+int status_worker_init(void)
 {
-  char byte = 1;
-  ssize_t ret;
+  int pipe_fds[2];
+
+  if (!status_shared)
+    return -1;
+
+  if (worker_id < 0 || worker_id >= STATUS_MAX_WORKERS)
+  {
+    logger(LOG_ERROR, "Invalid worker_id %d", worker_id);
+    return -1;
+  }
+
+  /* Create notification pipe for this worker */
+  if (pipe(pipe_fds) == -1)
+  {
+    logger(LOG_ERROR, "Failed to create worker notification pipe: %s", strerror(errno));
+    return -1;
+  }
+
+  /* Set read end to non-blocking mode */
+  int flags = fcntl(pipe_fds[0], F_GETFL, 0);
+  fcntl(pipe_fds[0], F_SETFL, flags | O_NONBLOCK);
+
+  /* Store write end in shared memory (lock-free: each worker writes to its own slot) */
+  status_shared->worker_notification_pipes[worker_id] = pipe_fds[1];
+
+  /* Return read end for worker to add to epoll */
+  return pipe_fds[0];
+}
+
+/**
+ * Trigger an event notification to wake up workers
+ * @param event_type Type of event to trigger
+ */
+void status_trigger_event(status_event_type_t event_type)
+{
+  uint8_t event_byte = (uint8_t)event_type;
+  int i;
 
   if (!status_shared)
     return;
@@ -332,76 +385,64 @@ void status_trigger_event(void)
   /* Increment event counter */
   status_shared->event_counter++;
 
-  /* Write to pipe to wake up any waiting SSE handlers */
-  if (status_shared->notification_pipe[1] != -1)
+  /* Write event type to all active worker pipes to wake up workers */
+  for (i = 0; i < config.workers && i < STATUS_MAX_WORKERS; i++)
   {
-    ret = write(status_shared->notification_pipe[1], &byte, 1);
-    (void)ret; /* Ignore return value - notification is best-effort */
+    int pipe_fd = status_shared->worker_notification_pipes[i];
+    if (pipe_fd != -1)
+    {
+      ssize_t ret = write(pipe_fd, &event_byte, 1);
+      /* Ignore return value - notification is best-effort
+       * EAGAIN/EWOULDBLOCK is acceptable if pipe buffer is full
+       * EBADF is acceptable if worker just cleaned up */
+      (void)ret;
+    }
   }
 }
 
 /**
- * Update client bytes and bandwidth by pid-like identifier
+ * Update client bytes and bandwidth by status index
  * Always triggers status event notification.
  */
-void status_update_client_bytes(pid_t pid, uint64_t bytes_sent, uint32_t current_bandwidth)
+void status_update_client_bytes(int status_index, uint64_t bytes_sent, uint32_t current_bandwidth)
 {
-  int slot;
-
   if (!status_shared)
     return;
 
-  slot = status_find_slot_by_pid(pid);
-  if (slot < 0)
+  if (status_index < 0 || status_index >= STATUS_MAX_CLIENTS)
+    return;
+
+  if (!status_shared->clients[status_index].active)
     return;
 
   /* Update client statistics */
-  status_shared->clients[slot].bytes_sent = bytes_sent;
-  status_shared->clients[slot].current_bandwidth = current_bandwidth;
+  status_shared->clients[status_index].bytes_sent = bytes_sent;
+  status_shared->clients[status_index].current_bandwidth = current_bandwidth;
 
   /* Always trigger event notification */
-  status_trigger_event();
+  status_trigger_event(STATUS_EVENT_SSE_UPDATE);
 }
 
 /**
- * Update client state by pid-like identifier
+ * Update client state by status index
  * Always triggers status event notification.
  */
-void status_update_client_state(pid_t pid, client_state_type_t state)
+void status_update_client_state(int status_index, client_state_type_t state)
 {
-  int slot;
-
   if (!status_shared)
     return;
 
-  slot = status_find_slot_by_pid(pid);
-  if (slot < 0)
+  if (status_index < 0 || status_index >= STATUS_MAX_CLIENTS)
+    return;
+
+  if (!status_shared->clients[status_index].active)
     return;
 
   /* Update client state */
-  status_shared->clients[slot].state = state;
+  status_shared->clients[status_index].state = state;
 
   /* Always trigger event notification */
-  status_trigger_event();
-}
-
-/**
- * Update client service URL by pid-like identifier
- */
-void status_update_service_by_pid(pid_t pid, const char *service_url)
-{
-  int slot;
-
-  if (!status_shared || !service_url)
-    return;
-
-  slot = status_find_slot_by_pid(pid);
-  if (slot < 0)
-    return;
-
-  strncpy(status_shared->clients[slot].service_url, service_url,
-          sizeof(status_shared->clients[slot].service_url) - 1);
-  status_shared->clients[slot].service_url[sizeof(status_shared->clients[slot].service_url) - 1] = '\0';
+  status_trigger_event(STATUS_EVENT_SSE_UPDATE);
 }
 
 /**
@@ -440,7 +481,7 @@ void status_add_log_entry(enum loglevel level, const char *message)
   pthread_mutex_unlock(&status_shared->log_mutex);
 
   /* Trigger SSE event for new log entries */
-  status_trigger_event();
+  status_trigger_event(STATUS_EVENT_SSE_UPDATE);
 }
 
 /* Removed format_bytes and format_bandwidth - formatting is done in JavaScript on the frontend */
@@ -520,12 +561,11 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
       int64_t duration_ms = current_time - status_shared->clients[i].connect_time;
 
       len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                      "{\"pid\":%d,\"worker_pid\":%d,\"connect_time\":%lld,\"duration_ms\":%lld,\"client_addr\":\"%s\",\"client_port\":\"%s\","
+                      "{\"client_id\":%d,\"worker_pid\":%d,\"duration_ms\":%lld,\"client_addr\":\"%s\",\"client_port\":\"%s\","
                       "\"service_url\":\"%s\",\"state_desc\":\"%s\",\"bytes_sent\":%llu,"
                       "\"current_bandwidth\":%u}",
-                      status_shared->clients[i].pid,
+                      i, /* client_id is the status_index */
                       status_shared->clients[i].worker_pid,
-                      (long long)status_shared->clients[i].connect_time,
                       (long long)duration_ms,
                       status_shared->clients[i].client_addr,
                       status_shared->clients[i].client_port,
@@ -686,14 +726,27 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
 
 /**
  * Handle API request to disconnect a client
- * RESTful: POST /api/disconnect with form data body "pid=12345"
+ * RESTful: POST /api/disconnect with form data body "client_id=123"
+ *
+ * In multi-worker architecture, this sets a disconnect flag in shared memory
+ * and notifies the worker owning the connection to gracefully close it.
  */
 void handle_disconnect_client(connection_t *c)
 {
-  pid_t target_pid;
+  int client_id;
   int found = 0;
   char response[512];
-  char pid_str[32] = {0};
+  char client_id_str[32] = {0};
+
+  if (!status_shared)
+  {
+    if (c->http_req.is_http_1_1)
+      send_http_headers(c, STATUS_503, CONTENT_HTML);
+    snprintf(response, sizeof(response),
+             "{\"success\":false,\"error\":\"Status system not initialized\"}");
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+    return;
+  }
 
   /* Check HTTP method */
   if (strcasecmp(c->http_req.method, "POST") != 0 && strcasecmp(c->http_req.method, "DELETE") != 0)
@@ -706,15 +759,15 @@ void handle_disconnect_client(connection_t *c)
     return;
   }
 
-  /* Parse form data body to get PID */
+  /* Parse form data body to get client_id */
   if (c->http_req.body_len > 0)
   {
-    if (http_parse_query_param(c->http_req.body, "pid", pid_str, sizeof(pid_str)) != 0)
+    if (http_parse_query_param(c->http_req.body, "client_id", client_id_str, sizeof(client_id_str)) != 0)
     {
       if (c->http_req.is_http_1_1)
         send_http_headers(c, STATUS_400, CONTENT_HTML);
       snprintf(response, sizeof(response),
-               "{\"success\":false,\"error\":\"Missing 'pid' parameter in request body\"}");
+               "{\"success\":false,\"error\":\"Missing 'client_id' parameter in request body\"}");
       connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
       return;
     }
@@ -729,12 +782,27 @@ void handle_disconnect_client(connection_t *c)
     return;
   }
 
-  target_pid = (pid_t)atoi(pid_str);
+  client_id = atoi(client_id_str);
 
-  /* Send kill signal to target process */
-  if (kill(target_pid, SIGTERM) == 0)
+  /* Validate client_id range */
+  if (client_id < 0 || client_id >= STATUS_MAX_CLIENTS)
+  {
+    if (c->http_req.is_http_1_1)
+      send_http_headers(c, STATUS_400, CONTENT_HTML);
+    snprintf(response, sizeof(response),
+             "{\"success\":false,\"error\":\"Invalid client_id\"}");
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+    return;
+  }
+
+  if (status_shared->clients[client_id].active)
   {
     found = 1;
+    /* Set disconnect flag - worker will check this and close the connection */
+    status_shared->clients[client_id].disconnect_requested = 1;
+
+    /* Trigger disconnect request event to wake up workers */
+    status_trigger_event(STATUS_EVENT_DISCONNECT_REQUEST);
   }
 
   if (c->http_req.is_http_1_1)
@@ -743,7 +811,7 @@ void handle_disconnect_client(connection_t *c)
   if (found)
   {
     snprintf(response, sizeof(response),
-             "{\"success\":true,\"message\":\"Client disconnected\"}");
+             "{\"success\":true,\"message\":\"Disconnect request sent\"}");
   }
   else
   {
@@ -893,7 +961,9 @@ int status_handle_sse_notification(connection_t *conn_head)
   if (!status_shared)
     return 0;
 
-  /* Build and enqueue SSE payloads for all SSE connections */
+  /* Build and enqueue SSE payloads for all SSE connections
+   * Note: Each connection has its own state (sse_sent_initial, sse_last_write_index, sse_last_log_count)
+   * so we must build a separate payload for each connection */
   for (connection_t *cc = conn_head; cc; cc = cc->next)
   {
     if (!cc->sse_active)
@@ -951,7 +1021,7 @@ int status_handle_sse_heartbeat(connection_t *c, int64_t now)
   if (streams_count == 0)
   {
     /* Trigger status update event - this will update all SSE connections via notification pipe */
-    status_trigger_event();
+    status_trigger_event(STATUS_EVENT_SSE_UPDATE);
     c->next_sse_ts = now + 1000;
   }
 

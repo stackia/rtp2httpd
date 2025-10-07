@@ -58,7 +58,7 @@ void rtsp_session_init(rtsp_session_t *session)
     session->state = RTSP_STATE_INIT;
     session->socket = -1;
     session->epoll_fd = -1;
-    session->status_id = 0;
+    session->status_index = -1;
     session->rtp_socket = -1;
     session->rtcp_socket = -1;
     session->cseq = 1;
@@ -127,10 +127,10 @@ static void rtsp_session_set_state(rtsp_session_t *session, rtsp_state_t new_sta
 
     session->state = new_state;
 
-    /* Update client status immediately if status_id is set */
-    if (session->status_id && new_state < ARRAY_SIZE(rtsp_to_client_state))
+    /* Update client status immediately if status_index is valid */
+    if (session->status_index >= 0 && new_state < ARRAY_SIZE(rtsp_to_client_state))
     {
-        status_update_client_state(session->status_id, rtsp_to_client_state[new_state]);
+        status_update_client_state(session->status_index, rtsp_to_client_state[new_state]);
     }
 
     /* Auto-cleanup on ERROR state transition (if not already done) */

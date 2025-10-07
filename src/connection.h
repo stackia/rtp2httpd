@@ -45,8 +45,11 @@ typedef struct connection_s
   int sse_sent_initial;
   int sse_last_write_index;
   int sse_last_log_count;
-  /* status tracking synthetic id */
-  pid_t status_id;
+  /* status tracking */
+  int status_index; /* Index in status_shared->clients array, -1 if not registered */
+  /* client address for status tracking (only used for streaming clients) */
+  struct sockaddr_storage client_addr;
+  socklen_t client_addr_len;
   /* linkage */
   struct connection_s *next;
 } connection_t;
@@ -55,10 +58,12 @@ typedef struct connection_s
  * Create a new connection structure
  * @param fd Client socket file descriptor
  * @param epfd epoll file descriptor
- * @param status_id Synthetic status tracking ID
+ * @param client_addr Client address structure (for status tracking)
+ * @param addr_len Address structure length
  * @return Pointer to new connection or NULL on failure
  */
-connection_t *connection_create(int fd, int epfd, pid_t status_id);
+connection_t *connection_create(int fd, int epfd,
+                                struct sockaddr_storage *client_addr, socklen_t addr_len);
 
 /**
  * Free a connection and all associated resources

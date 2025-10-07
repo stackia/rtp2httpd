@@ -82,7 +82,7 @@ typedef struct zerocopy_queue_s
     buffer_ref_t *pending_head;    /* First buffer pending completion */
     buffer_ref_t *pending_tail;    /* Last buffer pending completion */
     size_t total_bytes;            /* Total bytes queued */
-    size_t num_entries;            /* Number of buffers in send queue */
+    size_t num_queued;             /* Number of buffers in send queue */
     size_t num_pending;            /* Number of buffers pending completion */
     uint32_t next_zerocopy_id;     /* Next ID for MSG_ZEROCOPY tracking */
     uint32_t last_completed_id;    /* Last completed MSG_ZEROCOPY ID */
