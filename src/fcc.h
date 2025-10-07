@@ -43,7 +43,7 @@ typedef enum
 typedef struct
 {
     fcc_state_t state;
-    pid_t status_id; /* Status tracking ID for state updates */
+    int status_index; /* Index in status_shared->clients array for state updates */
     int fcc_sock;
     struct sockaddr_in *fcc_server;
     struct sockaddr_in fcc_client;

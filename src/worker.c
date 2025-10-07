@@ -209,7 +209,6 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 {
   int i;
   struct sockaddr_storage client;
-  static unsigned int conn_id_counter = 1;
 
   /* Initialize fd map */
   fdmap_init();
@@ -286,12 +285,52 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 
       if (notif_fd >= 0 && fd_ready == notif_fd)
       {
-        /* Drain notification pipe and schedule SSE updates */
-        char drain_buf[256];
-        while (read(notif_fd, drain_buf, sizeof(drain_buf)) > 0)
-          ;
-        /* Delegate SSE notification handling to status module */
-        status_handle_sse_notification(conn_head);
+        /* Read event notifications from pipe */
+        uint8_t event_buf[256];
+        ssize_t bytes_read;
+        int has_sse_update = 0;
+        int has_disconnect_request = 0;
+
+        while ((bytes_read = read(notif_fd, event_buf, sizeof(event_buf))) > 0)
+        {
+          /* Check event types in the buffer */
+          for (ssize_t j = 0; j < bytes_read; j++)
+          {
+            if (event_buf[j] == STATUS_EVENT_SSE_UPDATE)
+              has_sse_update = 1;
+            else if (event_buf[j] == STATUS_EVENT_DISCONNECT_REQUEST)
+              has_disconnect_request = 1;
+          }
+        }
+
+        /* Handle SSE updates */
+        if (has_sse_update)
+        {
+          status_handle_sse_notification(conn_head);
+        }
+
+        /* Handle disconnect requests */
+        if (has_disconnect_request && status_shared)
+        {
+          connection_t *c = conn_head;
+          while (c)
+          {
+            connection_t *next = c->next;
+
+            /* Check if disconnect was requested for this client */
+            if (c->status_index >= 0 &&
+                status_shared->clients[c->status_index].disconnect_requested)
+            {
+              logger(LOG_INFO, "Disconnect requested for client %s:%s via API",
+                     status_shared->clients[c->status_index].client_addr,
+                     status_shared->clients[c->status_index].client_port);
+              worker_close_and_free_connection(c);
+            }
+
+            c = next;
+          }
+        }
+
         continue;
       }
 
@@ -312,9 +351,9 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
           connection_set_nonblocking(cfd);
           connection_set_tcp_nodelay(cfd);
 
-          /* Create connection */
-          pid_t status_id = ((pid_t)getpid() << 16) ^ (pid_t)(conn_id_counter++);
-          connection_t *c = connection_create(cfd, epfd, status_id);
+          /* Create connection
+           * status_index will be assigned later by status_register_client() if this is a streaming client */
+          connection_t *c = connection_create(cfd, epfd, &client, alen);
           if (!c)
           {
             close(cfd);
@@ -324,9 +363,6 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
           /* link */
           c->next = conn_head;
           conn_head = c;
-
-          /* Register in status */
-          status_register_client(c->status_id, &client, alen);
 
           /* Add client fd to epoll and map */
           struct epoll_event cev;
@@ -369,6 +405,11 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
               if (completions > 0)
               {
                 had_zerocopy_completions = 1;
+                if (c->state == CONN_CLOSING && !c->zc_queue.head && !c->zc_queue.pending_head)
+                {
+                  worker_close_and_free_connection(c);
+                  continue; /* Skip further processing for this connection */
+                }
               }
               else if (completions < 0)
               {
@@ -400,6 +441,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
           /* Handle disconnect events */
           if (events[e].events & (EPOLLHUP | EPOLLRDHUP))
           {
+            logger(LOG_DEBUG, "Client disconnected");
             worker_close_and_free_connection(c);
             continue; /* Skip further processing for this connection */
           }
@@ -433,7 +475,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
             {
               /* Normal HTTP request handling */
               connection_handle_read(c);
-              if (c->state == CONN_CLOSING && !c->zc_queue.head)
+              if (!c->zc_queue.head)
               {
                 worker_close_and_free_connection(c);
                 continue; /* Skip further processing for this connection */
@@ -444,7 +486,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
           if (events[e].events & EPOLLOUT)
           {
             connection_handle_write(c);
-            if (c->state == CONN_CLOSING && !c->zc_queue.head && !c->streaming && !c->sse_active)
+            if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
             {
               worker_close_and_free_connection(c);
               continue; /* Skip further processing for this connection */
@@ -509,6 +551,12 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
   /* Cleanup: close all active connections */
   while (conn_head)
     worker_close_and_free_connection(conn_head);
+
+  /* Close notification pipe read end */
+  if (notif_fd >= 0)
+  {
+    close(notif_fd);
+  }
 
   /* Close epoll and listeners */
   close(epfd);

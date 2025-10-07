@@ -265,7 +265,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events)
 
 /* Initialize context for unified worker epoll (non-blocking, no own loop) */
 int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *conn, service_t *service,
-                                   int epoll_fd, pid_t status_id)
+                                   int epoll_fd, int status_index)
 {
     if (!ctx || !conn || !service)
         return -1;
@@ -273,11 +273,11 @@ int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *c
     ctx->conn = conn;
     ctx->service = service;
     ctx->epoll_fd = epoll_fd;
-    ctx->status_id = status_id;
+    ctx->status_index = status_index;
     fcc_session_init(&ctx->fcc);
-    ctx->fcc.status_id = status_id;
+    ctx->fcc.status_index = status_index;
     rtsp_session_init(&ctx->rtsp);
-    ctx->rtsp.status_id = status_id;
+    ctx->rtsp.status_index = status_index;
     ctx->total_bytes_sent = 0;
     ctx->last_bytes_sent = 0;
     ctx->last_status_update = get_time_ms();
@@ -389,7 +389,7 @@ int stream_tick(stream_context_t *ctx, int64_t now)
         }
 
         /* Update bytes and bandwidth in status */
-        status_update_client_bytes(ctx->status_id, ctx->total_bytes_sent, current_bandwidth);
+        status_update_client_bytes(ctx->status_index, ctx->total_bytes_sent, current_bandwidth);
 
         /* Save current bytes for next calculation */
         ctx->last_bytes_sent = ctx->total_bytes_sent;

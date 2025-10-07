@@ -290,7 +290,7 @@ void fcc_session_init(fcc_session_t *fcc)
 {
     memset(fcc, 0, sizeof(fcc_session_t));
     fcc->state = FCC_STATE_INIT;
-    fcc->status_id = 0;
+    fcc->status_index = -1;
     fcc->redirect_count = 0;
 }
 
@@ -314,10 +314,10 @@ int fcc_session_set_state(fcc_session_t *fcc, fcc_state_t new_state, const char 
     log_fcc_state_transition(fcc->state, new_state, reason);
     fcc->state = new_state;
 
-    /* Update client status immediately if status_id is set */
-    if (fcc->status_id && new_state < ARRAY_SIZE(fcc_to_client_state))
+    /* Update client status immediately if status_index is valid */
+    if (fcc->status_index >= 0 && new_state < ARRAY_SIZE(fcc_to_client_state))
     {
-        status_update_client_state(fcc->status_id, fcc_to_client_state[new_state]);
+        status_update_client_state(fcc->status_index, fcc_to_client_state[new_state]);
     }
 
     return 1;

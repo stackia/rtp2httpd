@@ -45,7 +45,8 @@ void connection_epoll_update_events(int epfd, int fd, uint32_t events)
   epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
 }
 
-connection_t *connection_create(int fd, int epfd, pid_t status_id)
+connection_t *connection_create(int fd, int epfd,
+                                struct sockaddr_storage *client_addr, socklen_t addr_len)
 {
   connection_t *c = calloc(1, sizeof(*c));
   if (!c)
@@ -57,8 +58,18 @@ connection_t *connection_create(int fd, int epfd, pid_t status_id)
   c->service_owned = 0;
   c->streaming = 0;
   c->sse_active = 0;
-  c->status_id = status_id;
+  c->status_index = -1; /* Not registered yet */
   c->next = NULL;
+
+  if (client_addr && addr_len > 0)
+  {
+    memcpy(&c->client_addr, client_addr, addr_len);
+    c->client_addr_len = addr_len;
+  }
+  else
+  {
+    c->client_addr_len = 0;
+  }
 
   /* Initialize zero-copy queue */
   zerocopy_queue_init(&c->zc_queue);
@@ -108,8 +119,11 @@ void connection_free(connection_t *c)
     c->service = NULL;
   }
 
-  /* Unregister from status */
-  status_unregister_client(c->status_id);
+  /* Unregister from status (only if registered as streaming client) */
+  if (c->status_index >= 0)
+  {
+    status_unregister_client(c->status_index);
+  }
 
   /* Close socket */
   if (c->fd >= 0)
@@ -199,15 +213,6 @@ void connection_handle_write(connection_t *c)
       return;
     }
 
-    /* Proactively check for MSG_ZEROCOPY completions after send
-     * This prevents completion queue buildup and reduces optmem pressure
-     * Especially important for high-frequency small packet sends (RTP)
-     */
-    if (c->zerocopy_enabled && c->zc_queue.num_pending > 0)
-    {
-      zerocopy_handle_completions(c->fd, &c->zc_queue);
-    }
-
     /* If queue still has data, keep EPOLLOUT enabled */
     if (c->zc_queue.head)
       return;
@@ -217,16 +222,6 @@ void connection_handle_write(connection_t *c)
   if (!c->zc_queue.head)
   {
     connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
-  }
-
-  /* For SSE: if active and no pending data, just wait for event notifications */
-  if (c->sse_active && !c->zc_queue.head)
-  {
-    /* nothing to do */
-  }
-  if (c->state == CONN_CLOSING && !c->zc_queue.head && !c->streaming && !c->sse_active)
-  {
-    /* Ready to close */
   }
 }
 
@@ -400,15 +395,22 @@ int connection_route_and_start(connection_t *c)
     return 0;
   }
 
-  /* Update service URL in status */
-  status_update_service_by_pid(c->status_id, c->http_req.url);
+  /* Register streaming client in status tracking with service URL */
+  if (c->client_addr_len > 0)
+  {
+    c->status_index = status_register_client(&c->client_addr, c->client_addr_len, c->http_req.url);
+    if (c->status_index < 0)
+    {
+      logger(LOG_ERROR, "Failed to register streaming client in status tracking");
+    }
+  }
 
   /* Send success headers */
   if (c->http_req.is_http_1_1)
     send_http_headers(c, STATUS_200, CONTENT_MP2T);
 
   /* Initialize stream in unified epoll */
-  if (stream_context_init_for_worker(&c->stream, c, service, c->epfd, c->status_id) == 0)
+  if (stream_context_init_for_worker(&c->stream, c, service, c->epfd, c->status_index) == 0)
   {
     c->streaming = 1;
     c->service = service;

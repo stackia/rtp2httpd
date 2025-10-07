@@ -13,6 +13,13 @@ struct connection_s;
 /* Maximum number of clients we can track in shared memory */
 #define STATUS_MAX_CLIENTS 256
 
+/* Event types for worker notification */
+typedef enum
+{
+  STATUS_EVENT_SSE_UPDATE = 1,        /* SSE update event (client connect/disconnect/state change) */
+  STATUS_EVENT_DISCONNECT_REQUEST = 2 /* Disconnect request from API */
+} status_event_type_t;
+
 /* Maximum number of workers for per-worker statistics */
 #define STATUS_MAX_WORKERS 32
 
@@ -56,16 +63,16 @@ typedef enum
 /* Per-client statistics stored in shared memory */
 typedef struct
 {
-  pid_t pid;                  /* Synthetic connection ID (for internal tracking) */
-  pid_t worker_pid;           /* Actual worker thread/process PID */
-  int active;                 /* 1 if slot is active, 0 if free */
-  int64_t connect_time;       /* Connection timestamp in milliseconds */
-  char client_addr[64];       /* Client IP address */
-  char client_port[16];       /* Client port */
-  char service_url[256];      /* Service URL being accessed */
-  client_state_type_t state;  /* Current connection state */
-  uint64_t bytes_sent;        /* Total bytes sent to client */
-  uint32_t current_bandwidth; /* Current bandwidth in bytes/sec */
+  int active;                        /* 1 if slot is active, 0 if free */
+  pid_t worker_pid;                  /* Actual worker thread/process PID */
+  int64_t connect_time;              /* Connection timestamp in milliseconds */
+  char client_addr[64];              /* Client IP address */
+  char client_port[16];              /* Client port */
+  char service_url[256];             /* Service URL being accessed */
+  client_state_type_t state;         /* Current connection state */
+  uint64_t bytes_sent;               /* Total bytes sent to client */
+  uint32_t current_bandwidth;        /* Current bandwidth in bytes/sec */
+  volatile int disconnect_requested; /* Set to 1 when disconnect is requested from API */
 } client_stats_t;
 
 /* Log entry structure for circular buffer */
@@ -115,7 +122,12 @@ typedef struct
 
   /* Event notification for SSE updates */
   volatile int event_counter; /* Incremented when events occur (connect/disconnect/state change) */
-  int notification_pipe[2];   /* Pipe for waking up SSE handlers */
+
+  /* Per-worker notification pipes for SSE updates
+   * Each worker creates its own pipe and stores the write end at worker_notification_pipes[worker_id]
+   * When an event occurs, we write to all active worker pipes
+   * Lock-free design: Each worker only writes to its own slot, status_trigger_event() only reads */
+  int worker_notification_pipes[STATUS_MAX_WORKERS]; /* Write ends of worker pipes, -1 if inactive */
 
   /* Log circular buffer */
   pthread_mutex_t log_mutex; /* Mutex to protect log buffer writes */
@@ -127,6 +139,7 @@ typedef struct
   worker_stats_t worker_stats[STATUS_MAX_WORKERS]; /* Per-worker statistics */
 
   /* Per-client statistics array */
+  pthread_mutex_t clients_mutex; /* Mutex to protect client slot allocation */
   client_stats_t clients[STATUS_MAX_CLIENTS];
 } status_shared_t;
 
@@ -147,48 +160,41 @@ int status_init(void);
 void status_cleanup(void);
 
 /**
- * Register a new client connection in shared memory
- * Called by parent process when accepting a new client
- * @param pid Child process ID
+ * Register a new streaming client connection in shared memory
+ * Only called for media streaming clients, not for status/API requests
+ * Called after routing determines the connection is for a media service
+ * Allocates a free slot in the clients array under mutex protection
  * @param client_addr Client address structure
  * @param addr_len Address structure length
- * @return Client slot index, or -1 on error
+ * @param service_url Service URL string (e.g., HTTP request path)
+ * @return Client slot index (status_index) on success, -1 on error
  */
-int status_register_client(pid_t pid, struct sockaddr_storage *client_addr, socklen_t addr_len);
+int status_register_client(struct sockaddr_storage *client_addr, socklen_t addr_len,
+                           const char *service_url);
 
 /**
- * Unregister a client connection from shared memory
- * Called by parent process when child exits
- * @param pid Child process ID
+ * Unregister a streaming client connection from shared memory
+ * Only called for media streaming clients that were previously registered
+ * @param status_index Client slot index returned by status_register_client()
  */
-void status_unregister_client(pid_t pid);
+void status_unregister_client(int status_index);
 
 /**
- * Update client bytes and bandwidth by synthetic connection id (pid field)
- * Use this in multi-connection-per-process model.
+ * Update client bytes and bandwidth by status index
  * Always triggers status event notification.
- * @param pid Synthetic id used at registration time
+ * @param status_index Client slot index returned by status_register_client()
  * @param bytes_sent Total bytes sent
  * @param current_bandwidth Current bandwidth in bytes/sec
  */
-void status_update_client_bytes(pid_t pid, uint64_t bytes_sent, uint32_t current_bandwidth);
+void status_update_client_bytes(int status_index, uint64_t bytes_sent, uint32_t current_bandwidth);
 
 /**
- * Update client state by synthetic connection id (pid field)
- * Use this in multi-connection-per-process model.
+ * Update client state by status index
  * Always triggers status event notification.
- * @param pid Synthetic id used at registration time
+ * @param status_index Client slot index returned by status_register_client()
  * @param state Current state
  */
-void status_update_client_state(pid_t pid, client_state_type_t state);
-
-/**
- * Update client service URL by synthetic connection id (pid field)
- * Use this in multi-connection-per-process model.
- * @param pid Synthetic id used at registration time
- * @param service_url Service URL string
- */
-void status_update_service_by_pid(pid_t pid, const char *service_url);
+void status_update_client_state(int status_index, client_state_type_t state);
 
 /**
  * Add log entry to circular buffer
@@ -207,7 +213,8 @@ void handle_status_page(struct connection_s *c);
 
 /**
  * Handle API request to disconnect a client
- * RESTful: POST/DELETE /api/disconnect with form data body "pid=12345"
+ * RESTful: POST/DELETE /api/disconnect with form data body "client_id=123"
+ * Sets disconnect flag in shared memory and notifies worker to close connection
  * @param c Connection object
  */
 void handle_disconnect_client(struct connection_s *c);
@@ -220,10 +227,19 @@ void handle_disconnect_client(struct connection_s *c);
 void handle_set_log_level(struct connection_s *c);
 
 /**
- * Trigger an event notification to wake up SSE handlers
- * Called when significant events occur (connect/disconnect/state change)
+ * Initialize worker-specific status resources
+ * Each worker must call this after fork to create its own notification pipe
+ * @param worker_id Worker ID (0-based)
+ * @return notification pipe read fd on success, -1 on error
  */
-void status_trigger_event(void);
+int status_worker_init(void);
+
+/**
+ * Trigger an event notification to wake up workers
+ * Called when significant events occur (connect/disconnect/state change/disconnect request)
+ * @param event_type Type of event to trigger
+ */
+void status_trigger_event(status_event_type_t event_type);
 
 /**
  * Get log level name string

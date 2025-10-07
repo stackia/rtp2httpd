@@ -149,12 +149,6 @@ int main(int argc, char *argv[])
     }
   }
 
-  /* Register status notification pipe (event-driven SSE) */
-  if (status_shared && status_shared->notification_pipe[0] != -1)
-  {
-    notif_fd = status_shared->notification_pipe[0];
-  }
-
   /* Prefork N-1 additional workers for SO_REUSEPORT sharding (the original process is also a worker) */
   if (config.workers > 1)
   {
@@ -177,6 +171,17 @@ int main(int argc, char *argv[])
       }
     }
     logger(LOG_INFO, "Worker started: pid=%d", (int)getpid());
+  }
+
+  /* Initialize worker-specific notification pipe (event-driven SSE)
+   * Each worker creates its own pipe to receive notifications */
+  if (status_shared)
+  {
+    notif_fd = status_worker_init();
+    if (notif_fd < 0)
+    {
+      logger(LOG_ERROR, "Failed to initialize worker notification pipe");
+    }
   }
   else
   {
@@ -296,5 +301,9 @@ int main(int argc, char *argv[])
   logger(LOG_INFO, "Server initialization complete, ready to accept connections");
 
   /* Run worker event loop */
-  return worker_run_event_loop(s, maxs, notif_fd);
+  int result = worker_run_event_loop(s, maxs, notif_fd);
+
+  status_cleanup();
+
+  return result;
 }

@@ -135,7 +135,7 @@ typedef struct
     int epoll_fd;                                  /* Epoll file descriptor for socket registration */
     struct connection_s *conn;                     /* Connection pointer for fdmap registration */
     rtsp_state_t state;                            /* Current RTSP state */
-    pid_t status_id;                               /* Status tracking ID for state updates */
+    int status_index;                              /* Index in status_shared->clients array for state updates */
     uint32_t cseq;                                 /* RTSP sequence number */
     char session_id[RTSP_SESSION_ID_SIZE];         /* RTSP session ID */
     char server_url[RTSP_SERVER_URL_SIZE];         /* Full RTSP URL */
