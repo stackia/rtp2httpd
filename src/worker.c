@@ -319,6 +319,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 
             /* Check if disconnect was requested for this client */
             if (c->status_index >= 0 &&
+                status_shared->clients[c->status_index].active &&
                 status_shared->clients[c->status_index].disconnect_requested)
             {
               logger(LOG_INFO, "Disconnect requested for client %s:%s via API",
