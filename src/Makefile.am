@@ -45,4 +45,4 @@ AM_CFLAGS = @OPT_CFLAGS@ @WARN_CFLAGS@ @SECURITY_CFLAGS@
 AM_LDFLAGS = @SECURITY_LDFLAGS@
 
 # Link with required libraries
-rtp2httpd_LDADD = -lrt
+rtp2httpd_LDADD = -lpthread -lrt
