@@ -138,9 +138,17 @@ if test "x$GCC" = "xyes"; then
 fi
 
 # Checks for libraries.
+# Check for pthread (required for multi-threading)
+AC_SEARCH_LIBS([pthread_create], [pthread], [],
+    [AC_MSG_ERROR([pthread library is required but not found])])
+
+# Check for rt library (required for clock_gettime, etc.)
+AC_SEARCH_LIBS([clock_gettime], [rt], [],
+    [AC_MSG_ERROR([rt library is required but not found])])
+
 # Check for Check framework for unit testing
-PKG_CHECK_MODULES([CHECK], [check >= 0.9.4], 
-    [have_check=yes], 
+PKG_CHECK_MODULES([CHECK], [check >= 0.9.4],
+    [have_check=yes],
     [have_check=no
      AC_MSG_WARN([Check framework not found, unit tests will be disabled])])
 AM_CONDITIONAL([HAVE_CHECK], [test "x$have_check" = "xyes"])
