@@ -78,7 +78,7 @@ return view.extend({
 
     o = s.option(form.Value, "port", _("rtp2httpd_Port"));
     o.datatype = "port";
-    o.default = "8080";
+    o.default = "5140";
     o.depends("use_config_file", "0");
 
     o = s.option(form.ListValue, "verbose", _("rtp2httpd_Verbose"));
