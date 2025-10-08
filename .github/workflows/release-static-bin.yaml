@@ -1,0 +1,111 @@
+name: Static Binary Release
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+          - armv7-unknown-linux-musleabihf
+          - armv7-unknown-linux-musleabi
+          - arm-unknown-linux-musleabihf
+          - arm-unknown-linux-musleabi
+          - mipsel-unknown-linux-musl
+          - mips-unknown-linux-musl
+          - mips64-unknown-linux-musl
+          - i686-unknown-linux-musl
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf \
+            automake \
+            build-essential \
+            pkg-config \
+            wget \
+            xz-utils
+
+      - name: Override version number
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          RELEASE_VERSION="${RELEASE_TAG#v}"
+          sed -i "s/1\.0\.0/${RELEASE_VERSION}/g" configure.ac
+
+      - name: Generate configure script
+        run: autoreconf -fi
+
+      - name: Build static binary
+        env:
+          TOOLCHAIN_PREFIX: ${{ matrix.arch }}
+        run: ./build-static.sh
+
+      - name: Prepare release artifact
+        id: prepare
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          RELEASE_VERSION="${RELEASE_TAG#v}"
+          ARCH="${{ matrix.arch }}"
+
+          # Extract architecture name with ABI variant for ARM
+          # Examples:
+          #   x86_64-unknown-linux-musl -> x86_64
+          #   arm-unknown-linux-musleabihf -> arm-eabihf
+          #   armv7-unknown-linux-musleabi -> armv7-eabi
+          if [[ "$ARCH" == arm* ]]; then
+            # Extract base arch (arm or armv7)
+            BASE_ARCH="${ARCH%%-*}"
+            # Extract ABI variant (eabi or eabihf)
+            if [[ "$ARCH" == *"eabihf"* ]]; then
+              ARCH_SHORT="${BASE_ARCH}-eabihf"
+            elif [[ "$ARCH" == *"eabi"* ]]; then
+              ARCH_SHORT="${BASE_ARCH}-eabi"
+            else
+              ARCH_SHORT="${BASE_ARCH}"
+            fi
+          else
+            # For non-ARM architectures, just use the first part
+            ARCH_SHORT="${ARCH%%-*}"
+          fi
+
+          # Find the built binary
+          BINARY_PATH="build-${ARCH}-static/src/rtp2httpd"
+
+          if [ ! -f "$BINARY_PATH" ]; then
+            echo "Error: Binary not found at $BINARY_PATH"
+            exit 1
+          fi
+
+          # Rename binary
+          OUTPUT_NAME="rtp2httpd-${RELEASE_VERSION}-${ARCH_SHORT}"
+          cp "$BINARY_PATH" "$OUTPUT_NAME"
+
+          # Verify binary
+          file "$OUTPUT_NAME"
+          ls -lh "$OUTPUT_NAME"
+
+          echo "binary_name=$OUTPUT_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload to release assets
+        run: |
+          gh release upload \
+            --repo ${{ github.repository }} \
+            ${{ github.event.release.tag_name }} \
+            ${{ steps.prepare.outputs.binary_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
