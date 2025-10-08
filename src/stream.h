@@ -62,9 +62,10 @@ int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *c
  * @param ctx Stream context
  * @param fd File descriptor that has events
  * @param events Epoll event mask (EPOLLIN, EPOLLOUT, etc.)
+ * @param now Current timestamp in milliseconds (from get_time_ms())
  * Returns -1 on fatal/cleanup, 1 on state-change (e.g. restart), 0 to continue.
  */
-int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events);
+int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64_t now);
 
 /**
  * Periodic maintenance: update status, manage timers. Should be called ~1s.
