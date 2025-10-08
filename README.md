@@ -100,6 +100,12 @@ opkg install rtp2httpd_*.ipk luci-app-rtp2httpd_*.ipk luci-i18n-rtp2httpd-*.ipk
 
 可以在 "状态" -> "系统日志" 查看日志。或者 ssh 手动运行 `logread -e rtp2httpd` 查看日志。
 
+### 静态二进制文件部署
+
+从 [Releases](https://github.com/stackia/rtp2httpd/releases) 页面下载对应架构的静态二进制文件 `rtp2httpd-<版本号>-<架构>`，上传到设备并 `chmod +x` 后即可运行。
+
+默认从 `/etc/rtp2httpd.conf` 读取配置文件。可用 `--config` 或 `--noconfig` 参数覆盖。
+
 ### Docker 容器部署
 
 适用于支持 Docker 的设备。**必须使用 host 网络模式**以接收组播流。
