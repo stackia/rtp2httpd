@@ -112,7 +112,7 @@ opkg install rtp2httpd_*.ipk luci-app-rtp2httpd_*.ipk luci-i18n-rtp2httpd-*.ipk
 
 ```bash
 docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest \
-  --noconfig --verbose 2 --listen 8080 --maxclients 20
+  --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
 
 ### 编译安装
@@ -141,8 +141,8 @@ http://服务器地址:端口/rtp/组播地址:端口[?fcc=FCC服务器:端口]
 **示例**：
 
 ```url
-http://192.168.1.1:8080/rtp/239.253.64.120:5140
-http://192.168.1.1:8080/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970
+http://192.168.1.1:5140/rtp/239.253.64.120:5140
+http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970
 ```
 
 ### RTSP 流代理
@@ -154,8 +154,8 @@ http://服务器地址:端口/rtsp/RTSP服务器:端口/路径[?参数][&playsee
 **示例**：
 
 ```url
-http://192.168.1.1:8080/rtsp/192.168.1.100:554/live/stream1
-http://192.168.1.1:8080/rtsp/camera.local:554/h264/ch1/main/av_stream?playseek=20240101120000-20240101130000
+http://192.168.1.1:5140/rtsp/192.168.1.100:554/live/stream1
+http://192.168.1.1:5140/rtsp/camera.local:554/h264/ch1/main/av_stream?playseek=20240101120000-20240101130000
 ```
 
 **playseek 参数格式**：
@@ -208,13 +208,13 @@ rtp2httpd 在处理 RTSP 时移回看功能时，会根据 HTTP 请求中的 **U
 # 客户端在东八区（UTC+8），User-Agent 包含 TZ/UTC+8
 # 请求 2024年1月1日 12:00:00（本地时间）的视频
 curl -H "User-Agent: MyPlayer/1.0 TZ/UTC+8" \
-  "http://192.168.1.1:8080/rtsp/camera.local:554/stream?playseek=20240101120000-20240101130000"
+  "http://192.168.1.1:5140/rtsp/camera.local:554/stream?playseek=20240101120000-20240101130000"
 # 服务器会自动将本地时间转换为 UTC 时间（04:00:00）
 # 并按照 clock-format 格式发送 RTSP Range 请求
 
 # 示例 2: 使用 Unix 时间戳格式（无需时区）
 # 请求 2024年1月1日 04:00:00 UTC 到 05:00:00 UTC 的视频
-curl "http://192.168.1.1:8080/rtsp/camera.local:554/stream?playseek=1704085200-1704088800"
+curl "http://192.168.1.1:5140/rtsp/camera.local:554/stream?playseek=1704085200-1704088800"
 # Unix 时间戳已经是 UTC 时间，直接转换为 clock-format 格式发送
 ```
 
@@ -229,7 +229,7 @@ http://服务器地址:端口/udp/组播地址:端口
 **示例**：
 
 ```url
-http://192.168.1.1:8080/udp/239.253.64.121:5140
+http://192.168.1.1:5140/udp/239.253.64.121:5140
 ```
 
 ## ⚙️ 配置参数详解
@@ -240,7 +240,7 @@ http://192.168.1.1:8080/udp/239.253.64.121:5140
 rtp2httpd [选项]
 
 网络配置：
-  -l, --listen [地址:]端口        绑定监听地址和端口 (默认: *:8080)
+  -l, --listen [地址:]端口        绑定监听地址和端口 (默认: *:5140)
   -m, --maxclients <数量>        最大并发客户端数 (默认: 5)
   -w, --workers <数量>           工作进程数 (默认: 1)
   --upstream-interface-unicast <接口>   用于单播流量 (FCC/RTSP) 的上游网络接口
@@ -356,7 +356,7 @@ buffer-pool-max-size = 16384
 
 [bind]
 # 绑定地址和端口
-* 8080
+* 5140
 192.168.1.1 8081
 
 [services]

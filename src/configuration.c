@@ -548,7 +548,7 @@ struct bindaddr_s *new_empty_bindaddr(void)
   struct bindaddr_s *ba;
   ba = malloc(sizeof(struct bindaddr_s));
   memset(ba, 0, sizeof(*ba));
-  ba->service = strdup("8080");
+  ba->service = strdup("5140");
   return ba;
 }
 
@@ -692,7 +692,7 @@ void usage(FILE *f, char *progname)
           "\t-m --maxclients <n>  Serve max n requests simultaneously (default 5)\n"
           "\t-w --workers <n>     Number of worker processes with SO_REUSEPORT (default 1)\n"
           "\t-b --buffer-pool-max-size <n> Maximum number of buffers in zero-copy pool (default 16384)\n"
-          "\t-l --listen [addr:]port  Address/port to bind (default ANY:8080)\n"
+          "\t-l --listen [addr:]port  Address/port to bind (default ANY:5140)\n"
           "\t-c --config <file>   Read this file for configuration, instead of the default one\n"
           "\t-C --noconfig        Do not read the default config\n"
           "\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole (deprecated), 2=NAT-PMP (default 0)\n"

@@ -60,7 +60,7 @@ COPY --from=builder /workdir/src/rtp2httpd /usr/local/bin/
 COPY --from=builder /workdir/rtp2httpd.conf /usr/local/etc/
 
 # Expose the default port
-EXPOSE 8080
+EXPOSE 5140
 
 # Run the application
 ENTRYPOINT ["/usr/local/bin/rtp2httpd"]
