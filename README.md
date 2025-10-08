@@ -49,7 +49,7 @@ https://github.com/user-attachments/assets/a8c9c60f-ebc3-49a8-b374-f579f8e34d92
 
 https://github.com/user-attachments/assets/fedc0c28-f9ac-4675-9b19-a8efdd062506
 
-> 仅占用 25% CPU 单核 (i3-N305)，消耗 4MB 内存
+> 单流码率 8 Mbps。总仅占用 25% CPU 单核 (i3-N305)，消耗 4MB 内存。
 
 ### Web UI 实时状态监控
 
@@ -61,7 +61,7 @@ https://github.com/user-attachments/assets/fedc0c28-f9ac-4675-9b19-a8efdd062506
 
 OpenWrt 是 rtp2httpd 的最佳运行环境。在完成 IPTV 网络融合后（可以搜索教程 `OpenWrt IPTV 融合`），通过 DHCP 获取到 IPTV 内网 IP，可直接访问整个 IPTV 网络，无需 NAT 穿透。
 
-本项目支持的最低 OpenWrt 版本为 21.02，在更低版本上 LuCI 配置界面可能无法使用，但通过手动编辑 `/etc/config/rtp2httpd` 文件并运行 `/etc/init.d/rtp2httpd restart` 仍然可以使用。
+本项目支持的最低 OpenWrt 版本为 21.02，在更低版本上 LuCI 配置界面可能无法加载，但通过手动编辑 `/etc/config/rtp2httpd` 文件并运行 `/etc/init.d/rtp2httpd restart` 仍然可以使用。
 
 支持的最低 Linux 内核版本为 4.14，因为依赖 `MSG_ZEROCOPY` 特性，低于此版本将无法运行。
 
@@ -105,14 +105,8 @@ opkg install rtp2httpd_*.ipk luci-app-rtp2httpd_*.ipk luci-i18n-rtp2httpd-*.ipk
 适用于支持 Docker 的设备。**必须使用 host 网络模式**以接收组播流。
 
 ```bash
-# 基础运行
 docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest \
   --noconfig --verbose 2 --listen 8080 --maxclients 20
-
-# 启用 FCC 和 NAT 穿透
-docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest \
-  --noconfig --verbose 2 --listen 8080 --maxclients 20 \
-  --fcc-nat-traversal 2 --upstream-interface-unicast eth0 --upstream-interface-multicast eth0
 ```
 
 ### 编译安装
@@ -182,6 +176,8 @@ http://192.168.1.1:8080/rtsp/camera.local:554/h264/ch1/main/av_stream?playseek=2
 
 rtp2httpd 在处理 RTSP 时移回看功能时，会根据 HTTP 请求中的 **User-Agent** 头自动识别客户端时区，确保时间参数正确转换。
 
+时区设置只影响 RTSP 时移回看功能，对直播流无影响。
+
 **时区识别机制**：
 
 - 服务器会解析 User-Agent 中的 `TZ/` 标记来获取客户端时区信息
@@ -214,12 +210,6 @@ curl -H "User-Agent: MyPlayer/1.0 TZ/UTC+8" \
 curl "http://192.168.1.1:8080/rtsp/camera.local:554/stream?playseek=1704085200-1704088800"
 # Unix 时间戳已经是 UTC 时间，直接转换为 clock-format 格式发送
 ```
-
-**注意事项**：
-
-- 不同的 User-Agent 可能导致不同的时区解析结果
-- 建议在播放器中明确指定时区信息以确保时间转换准确
-- 时区设置主要影响 RTSP 时移回看功能，对直播流无影响
 
 ### 原始 UDP 流转发
 
@@ -384,29 +374,23 @@ rtsp2    RTSP rtsp://10.0.0.50:8554/live/channel1?auth=token123
 1. **抓包方法**：使用 Wireshark 等工具抓取当地机顶盒网络包
 2. **关键字段**：查找 `ChannelFCCIP` 和 `ChannelFCCPort` 字段
 
-### 内核参数调优
-
-#### 开启 BBR
-
-建议修改内核参数，[开启 BBR](https://blog.clash-plus.com/post/openwrt-bbr/) 后可以进一步降低换台延迟。
-
-#### 调整 optmem_max
-
-- `net.core.optmem_max`：MSG_ZEROCOPY 元数据内存限制，如遇播放卡顿可尝试增大到 512KB (`net.core.optmem_max=524288`)
-
-### NAT 穿透模式选择
+### NAT 穿透
 
 如果 rtp2httpd 并非直接运行在路由器上，而是运行在局域网内其他设备（例如 NAS、PC 等），则需要启用 NAT 穿透功能以确保 FCC 正常工作。
 
-当 rtp2httpd 运行在局域网内设备时，你需要确保上级路由器可以正确路由 IPTV 所在网段（需要设置静态路由或路由规则），并转发 IGMP 组播流（可以使用 `igmpproxy` / `omcproxy` 等组播代理工具）。
+不使用 FCC 则不受影响。
 
-仅适用于理解网络拓扑的高级用户。
+运行在局域网内设备时，要求上级路由器启用全追锥形 NAT，并转发 IGMP 组播流（可以使用 `igmpproxy` / `omcproxy` 等组播代理工具）。如遇不可播放请尝试不同的 `--fcc-nat-traversal` 参数。
 
-| 模式     | 数值 | 适用场景          | 稳定性     |
-| -------- | ---- | ----------------- | ---------- |
-| 禁用     | 0    | 路由器直接运行    | ⭐⭐⭐⭐⭐ |
-| 打洞模式 | 1    | 无 NAT-PMP 支持   | ⭐⭐       |
-| NAT-PMP  | 2    | 支持 NAT-PMP/UPnP | ⭐⭐⭐⭐   |
+## 内核参数调优
+
+### 开启 BBR
+
+建议修改内核参数，[开启 BBR](https://blog.clash-plus.com/post/openwrt-bbr/) 后可以进一步降低换台延迟。
+
+### 调整 optmem_max
+
+- `net.core.optmem_max`：MSG_ZEROCOPY 元数据内存限制，如遇播放卡顿可尝试增大到 512KB (`net.core.optmem_max=524288`)
 
 ## 🤝 开发贡献
 
