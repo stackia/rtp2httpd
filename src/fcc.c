@@ -756,7 +756,7 @@ int fcc_handle_mcast_active(struct stream_context_s *ctx, uint8_t *buf, int buf_
     fcc_session_t *fcc = &ctx->fcc;
 
     /* Flush pending buffer chain first if available - TRUE ZERO-COPY */
-    if (fcc->pending_list_head)
+    if (unlikely(fcc->pending_list_head != NULL))
     {
         pending_buffer_node_t *node = fcc->pending_list_head;
         pending_buffer_node_t *prev = NULL;

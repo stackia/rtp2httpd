@@ -261,7 +261,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
     /* Use shorter timeout to check for batched send timeouts
      * 5ms matches ZEROCOPY_BATCH_TIMEOUT_US for timely flushing
      */
-    int timeout_ms = 15;
+    int timeout_ms = 100;
     int n = epoll_wait(epfd, events, (int)(sizeof(events) / sizeof(events[0])), timeout_ms);
     if (n < 0)
     {
@@ -270,6 +270,8 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
       logger(LOG_FATAL, "epoll_wait failed: %s", strerror(errno));
       break;
     }
+
+    int64_t now = get_time_ms();
 
     /* 1) Handle all ready events */
     for (int e = 0; e < n; e++)
@@ -496,7 +498,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
         }
         else
         {
-          int res = stream_handle_fd_event(&c->stream, fd_ready, events[e].events);
+          int res = stream_handle_fd_event(&c->stream, fd_ready, events[e].events, now);
           if (res < 0)
           {
             worker_close_and_free_connection(c);
@@ -507,7 +509,6 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
     }
 
     /* 2) Check for batched send timeouts */
-    int64_t now = get_time_ms();
     if (now - last_flush_check >= ZEROCOPY_BATCH_TIMEOUT_US / 1000)
     {
       last_flush_check = now;

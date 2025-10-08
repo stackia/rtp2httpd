@@ -61,7 +61,7 @@ int stream_join_mcast_group(stream_context_t *ctx)
  * Note: Client socket events are handled by worker.c,
  * this function only handles media stream sockets (multicast, FCC, RTSP)
  */
-int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events)
+int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64_t now)
 {
     int actualr;
     struct sockaddr_in peer_addr;
@@ -99,7 +99,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events)
             return 0;
         }
 
-        ctx->last_fcc_data_time = get_time_ms();
+        ctx->last_fcc_data_time = now;
 
         /* Handle different types of FCC packets */
         uint8_t *recv_data = (uint8_t *)recv_buf->data;
@@ -167,7 +167,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events)
         }
 
         /* Update last data receive timestamp for timeout detection */
-        ctx->last_mcast_data_time = get_time_ms();
+        ctx->last_mcast_data_time = now;
 
         int result = 0;
         /* Handle non-RTP multicast data (MUDP service) */
