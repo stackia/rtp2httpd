@@ -12,6 +12,7 @@
 #include <ctype.h>
 #include <getopt.h>
 #include <net/if.h>
+#include <libgen.h>
 
 #include "rtp2httpd.h"
 #include "configuration.h"

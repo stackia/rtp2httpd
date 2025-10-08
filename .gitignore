@@ -30,3 +30,9 @@ tests/*.log
 tests/*.trs
 tests/test-suite.log
 *-check_*.o
+
+# Build directories
+build-*-static/
+
+# Toolchain directory (auto-downloaded)
+toolchain/
