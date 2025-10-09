@@ -103,3 +103,9 @@ msgstr "配置文件内容"
 
 msgid "rtp2httpd_Edit the content of /etc/rtp2httpd.conf"
 msgstr "编辑 /etc/rtp2httpd.conf 的内容"
+
+msgid "rtp2httpd_Status Dashboard"
+msgstr "状态面板"
+
+msgid "rtp2httpd_Open Status Dashboard"
+msgstr "打开状态面板"

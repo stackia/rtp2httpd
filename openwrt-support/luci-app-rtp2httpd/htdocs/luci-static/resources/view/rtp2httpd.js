@@ -35,6 +35,49 @@ return view.extend({
     );
     o.default = "0";
 
+    o = s.option(
+      form.Button,
+      "_status_dashboard",
+      _("rtp2httpd_Status Dashboard")
+    );
+    o.inputtitle = _("rtp2httpd_Open Status Dashboard");
+    o.inputstyle = "apply";
+    o.onclick = function (ev, section_id) {
+      return Promise.all([
+        uci.load("rtp2httpd"),
+        fs.read("/etc/rtp2httpd.conf").catch(function () {
+          return "";
+        }),
+      ]).then(function (results) {
+        var port = "5140"; // default port
+        var use_config_file = uci.get(
+          "rtp2httpd",
+          section_id,
+          "use_config_file"
+        );
+
+        if (use_config_file === "1") {
+          // Parse port from config file content
+          var configContent = results[1];
+          var portMatch = configContent.match(/^\s*\*\s+(\d+)\s*$/m);
+          if (!portMatch) {
+            // Try alternative format: hostname port
+            portMatch = configContent.match(/^\s*[^\s]+\s+(\d+)\s*$/m);
+          }
+          if (portMatch && portMatch[1]) {
+            port = portMatch[1];
+          }
+        } else {
+          // Get port from UCI config
+          port = uci.get("rtp2httpd", section_id, "port") || "5140";
+        }
+
+        var statusUrl =
+          "http://" + window.location.hostname + ":" + port + "/status";
+        window.open(statusUrl, "_blank");
+      });
+    };
+
     // Add "Use Config File" option
     o = s.option(
       form.Flag,
