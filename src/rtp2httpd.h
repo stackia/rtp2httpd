@@ -89,6 +89,9 @@ typedef struct
 
   /* Time format settings */
   char *clock_format; /* Clock format string for RTSP time conversion */
+
+  /* Playseek pass through */
+  int playseek_passthrough; /* Enable playseek pass through (0=off, 1=on) */
 } config_t;
 
 /* GLOBAL CONFIGURATION */

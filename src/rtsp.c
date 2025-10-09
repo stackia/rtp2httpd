@@ -891,9 +891,18 @@ static int rtsp_state_machine_advance(rtsp_session_t *session)
         /* Ready to send PLAY */
         if (session->playseek_range[0] != '\0')
         {
-            snprintf(extra_headers, sizeof(extra_headers),
-                     "Session: %s\r\nRange: %s\r\n",
-                     session->session_id, session->playseek_range);
+            if (config.playseek_passthrough) {
+                snprintf(extra_headers, sizeof(extra_headers),
+                        "Session: %s\r\n",
+                        session->session_id);
+            }
+            else
+            {
+                snprintf(extra_headers, sizeof(extra_headers),
+                        "Session: %s\r\nRange: %s\r\n",
+                        session->session_id, session->playseek_range);
+            }
+
         }
         else
         {
