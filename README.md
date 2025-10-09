@@ -96,7 +96,7 @@ opkg install rtp2httpd_*.ipk luci-app-rtp2httpd_*.ipk luci-i18n-rtp2httpd-*.ipk
 
 安装完成后，在 LuCI 管理界面的 "服务" 菜单中找到 "rtp2httpd" 进行配置：
 
-<img width="925" alt="LuCI 配置界面" src="https://github.com/user-attachments/assets/7f5dfc55-b00a-4f8f-b589-56fac0235061" />
+<img width="925" alt="LuCI 配置界面" src="https://github.com/user-attachments/assets/b62fa304-6602-4c03-9a5d-8973e06ed466" />
 
 可以在 "状态" -> "系统日志" 查看日志。或者 ssh 手动运行 `logread -e rtp2httpd` 查看日志。
 
