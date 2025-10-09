@@ -791,7 +791,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"upstream-interface-multicast", required_argument, 0, 'r'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:f:P:i:r:C";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:f:Pi:r:C";
   int option_index, opt;
   int configfile_failed = 1;
 
