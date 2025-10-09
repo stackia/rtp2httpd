@@ -103,3 +103,9 @@ msgstr "Config File Content"
 
 msgid "rtp2httpd_Edit the content of /etc/rtp2httpd.conf"
 msgstr "Edit the content of /etc/rtp2httpd.conf"
+
+msgid "rtp2httpd_Status Dashboard"
+msgstr "Status Dashboard"
+
+msgid "rtp2httpd_Open Status Dashboard"
+msgstr "Open Status Dashboard"
