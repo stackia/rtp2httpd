@@ -170,26 +170,8 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
         ctx->last_mcast_data_time = now;
 
         int result = 0;
-        /* Handle non-RTP multicast data (MUDP service) */
-        if (ctx->service->service_type == SERVICE_MUDP)
-        {
-            /* Zero-copy send (mandatory) - data already in pool buffer, just queue it */
-            /* Note: zerocopy_queue_add() will automatically increment refcount */
-            if (connection_queue_zerocopy(ctx->conn, recv_data, actualr, recv_buf, 0) == 0)
-            {
-                ctx->total_bytes_sent += (uint64_t)actualr;
-            }
-            else
-            {
-                /* Queue full - backpressure */
-                logger(LOG_DEBUG, "MUDP: Zero-copy queue full, backpressure");
-            }
-            /* Release our reference - zerocopy queue now owns it */
-            buffer_ref_put(recv_buf);
-            return 0;
-        }
 
-        /* Handle RTP multicast data based on FCC state */
+        /* Handle multicast data based on FCC state */
         switch (ctx->fcc.state)
         {
         case FCC_STATE_MCAST_ACTIVE:
@@ -311,8 +293,9 @@ int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *c
         /* Connection initiated - handshake will proceed asynchronously via event loop */
         logger(LOG_DEBUG, "RTSP: Async connection initiated, state=%d", ctx->rtsp.state);
     }
-    else if (service->service_type == SERVICE_MRTP && service->fcc_addr)
+    else if (service->fcc_addr)
     {
+        /* use Fast Channel Change for quick stream startup */
         if (fcc_initialize_and_request(ctx) < 0)
         {
             logger(LOG_ERROR, "FCC initialization failed");
@@ -322,6 +305,8 @@ int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *c
     else
     {
         /* Direct multicast join */
+        /* Note: Both /rtp/ and /udp/ endpoints now use unified packet detection */
+        /* Packets are automatically detected as RTP or raw UDP at receive time */
         ctx->mcast_sock = stream_join_mcast_group(ctx);
         fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "Direct multicast");
     }

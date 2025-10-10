@@ -667,8 +667,17 @@ int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int 
     uint8_t *rtp_payload;
     int payloadlength;
     uint16_t mcast_seqn;
+    int is_rtp;
 
-    mcast_seqn = ntohs(*(uint16_t *)(buf + 2));
+    /* Extract RTP payload and sequence number */
+    is_rtp = get_rtp_payload(buf, buf_len, &rtp_payload, &payloadlength, &mcast_seqn);
+
+    /* FCC transition only works with RTP packets */
+    if (is_rtp != 1)
+    {
+        return 0;
+    }
+
     fcc->mcast_pbuf_last_seqn = mcast_seqn;
 
     /* Send termination message if not sent yet */
@@ -685,12 +694,6 @@ int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int 
 
     /* Skip buffering if buffer is full */
     if (fcc->mcast_pbuf_full)
-    {
-        return 0;
-    }
-
-    /* Extract RTP payload */
-    if (get_rtp_payload(buf, buf_len, &rtp_payload, &payloadlength) < 0)
     {
         return 0;
     }
