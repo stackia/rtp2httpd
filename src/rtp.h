@@ -10,15 +10,20 @@ struct buffer_ref_s;
 typedef struct buffer_ref_s buffer_ref_t;
 
 /**
- * Extract RTP payload from an RTP packet
+ * Extract payload from a packet with automatic RTP detection
  *
- * @param buf Buffer containing RTP packet
+ * This function automatically detects whether the packet is RTP or raw UDP:
+ * - If RTP packet (version 2): Strips RTP header and returns only the payload (and optionally sequence number)
+ * - If non-RTP packet: Returns the entire packet as payload
+ *
+ * @param buf Buffer containing packet data
  * @param recv_len Length of received data
  * @param payload Pointer to store payload location
  * @param size Pointer to store payload size
- * @return 0 on success, -1 on malformed packet
+ * @param seqn Pointer to store RTP sequence number (can be NULL if not needed, only valid if return value is 1)
+ * @return 1 if RTP packet, 0 if non-RTP packet, -1 on malformed RTP packet
  */
-int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size);
+int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, uint16_t *seqn);
 
 /**
  * Write RTP payload to client via connection output buffer, handling sequence numbers and duplicates
