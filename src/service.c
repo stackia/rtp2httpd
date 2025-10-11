@@ -774,7 +774,7 @@ service_t *service_create_from_rtsp_url(const char *http_url)
         }
 
         /* Remove all playseek parameters from URL */
-        if (playseek_param && !config.playseek_passthrough)
+        if (playseek_param)
         {
             char *remove_pos = query_start;
             while ((playseek_start = strstr(remove_pos, "playseek=")) != NULL)

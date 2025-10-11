@@ -199,8 +199,8 @@ rtp2httpd 在处理 RTSP 时移回看功能时，会根据 HTTP 请求中的 **U
 
 当使用 `playseek` 参数进行时移回看时：
 
-- **yyyyMMddHHmmss 格式**：客户端可以使用本地时区的时间格式（如 `20240101120000`），服务器会根据 User-Agent 中的时区信息自动转换为 UTC 时间，然后按照 `--clock-format` 配置的格式发送给 RTSP 服务器
-- **Unix 时间戳格式**：直接使用 UTC 时间戳，无需时区转换，服务器会直接按照 `--clock-format` 配置的格式转换后发送给 RTSP 服务器
+- **yyyyMMddHHmmss 格式**：客户端可以使用本地时区的时间格式（如 `20240101120000`），服务器会根据 User-Agent 中的时区信息自动转换为 UTC 时间，然后在 RTSP DESCRIBE 请求中将转换后的 UTC 时间作为 `playseek` 查询参数附加到 URL 上（保持 yyyyMMddHHmmss 格式）
+- **Unix 时间戳格式**：直接使用 UTC 时间戳，无需时区转换，服务器会直接在 RTSP DESCRIBE 请求中将时间戳作为 `playseek` 查询参数附加到 URL 上（保持时间戳格式）
 
 **示例**：
 
@@ -211,12 +211,13 @@ rtp2httpd 在处理 RTSP 时移回看功能时，会根据 HTTP 请求中的 **U
 curl -H "User-Agent: MyPlayer/1.0 TZ/UTC+8" \
   "http://192.168.1.1:5140/rtsp/camera.local:554/stream?playseek=20240101120000-20240101130000"
 # 服务器会自动将本地时间转换为 UTC 时间（04:00:00）
-# 并按照 clock-format 格式发送 RTSP Range 请求
+# RTSP DESCRIBE 请求: DESCRIBE rtsp://camera.local:554/stream?playseek=20240101040000-20240101050000
 
 # 示例 2: 使用 Unix 时间戳格式（无需时区）
 # 请求 2024年1月1日 04:00:00 UTC 到 05:00:00 UTC 的视频
 curl "http://192.168.1.1:5140/rtsp/camera.local:554/stream?playseek=1704085200-1704088800"
-# Unix 时间戳已经是 UTC 时间，直接转换为 clock-format 格式发送
+# Unix 时间戳已经是 UTC 时间，直接附加到 RTSP URL
+# RTSP DESCRIBE 请求: DESCRIBE rtsp://camera.local:554/stream?playseek=1704085200-1704088800
 ```
 
 ## ⚙️ 配置参数详解
@@ -257,45 +258,10 @@ FCC 快速换台：
   -U, --noudpxy                  禁用 UDPxy 兼容模式 (禁用后只能使用 config 文件中定义的 URL)
 
 其他：
-  -f, --clock-format <格式>      RTSP Range 时间戳格式 (默认: yyyyMMddTHHmmssZ)
   -S, --video-snapshot           启用视频快照功能 (默认: 关闭)
   -F, --ffmpeg-path <路径>       FFmpeg 可执行文件路径 (默认: ffmpeg)
   -A, --ffmpeg-args <参数>       FFmpeg 额外参数 (默认: -hwaccel none)
   -h, --help                     显示帮助信息
-```
-
-#### clock-format 时间格式说明
-
-`--clock-format` 选项用于配置 RTSP 时移回看功能中 Range 头的时间戳格式。当客户端通过 `playseek` 参数请求特定时间段的视频时，服务器会将时间转换为 UTC 并按照此格式发送给 RTSP 服务器。
-
-**支持的格式**：
-
-- **yyyyMMddTHHmmssZ**（默认）- ISO 8601 紧凑格式
-
-  - 示例：`20240101T120000Z`
-  - 适用于大多数 RTSP 服务器
-
-- **yyyy-MM-dd'T'HH:mm:ss'Z'** - ISO 8601 扩展格式
-
-  - 示例：`2024-01-01T12:00:00Z`
-  - 更易读的格式，部分服务器要求使用此格式
-
-- **自定义格式** - 使用类似 strftime 的模式字符串
-  - 支持常见的日期时间占位符（yyyy, MM, dd, HH, mm, ss 等）
-  - 可以包含分隔符和字面字符
-
-**使用场景**：
-
-不同的 RTSP 服务器可能要求不同的时间格式。如果默认格式无法正常工作，可以尝试调整此选项以匹配目标 RTSP 服务器的要求。
-
-**配置示例**：
-
-```bash
-# 使用默认格式
-rtp2httpd --clock-format yyyyMMddTHHmmssZ
-
-# 使用扩展格式
-rtp2httpd --clock-format "yyyy-MM-dd'T'HH:mm:ss'Z'"
 ```
 
 ### 配置文件格式
@@ -345,17 +311,6 @@ buffer-pool-max-size = 16384
 # 这些参数在生成快照时传递给 ffmpeg
 # 常用选项: -hwaccel none, -hwaccel auto, -hwaccel vaapi, -hwaccel qsv
 ;ffmpeg-args = -hwaccel none
-
-# RTSP Range 时间戳格式（默认: yyyyMMddTHHmmssZ）
-# 用于 RTSP 时移回看功能，将 playseek 参数转换为 UTC 时间时使用
-# 支持的格式：
-#   - yyyyMMddTHHmmssZ (默认，ISO 8601 紧凑格式)
-#   - yyyy-MM-dd'T'HH:mm:ss'Z' (ISO 8601 扩展格式)
-#   - 自定义格式（使用类似 strftime 的模式）
-# 示例：
-#   clock-format = yyyyMMddTHHmmssZ        # 输出: 20240101T120000Z
-#   clock-format = yyyy-MM-dd'T'HH:mm:ss'Z' # 输出: 2024-01-01T12:00:00Z
-;clock-format = yyyyMMddTHHmmssZ
 
 [bind]
 # 绑定地址和端口

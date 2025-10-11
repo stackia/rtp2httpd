@@ -87,12 +87,6 @@ typedef struct
   struct ifreq upstream_interface_unicast;   /* Interface for upstream unicast media requests (FCC/RTSP) */
   struct ifreq upstream_interface_multicast; /* Interface for upstream multicast media requests (RTP/UDP) */
 
-  /* Time format settings */
-  char *clock_format; /* Clock format string for RTSP time conversion */
-
-  /* Playseek pass through */
-  int playseek_passthrough; /* Enable playseek pass through (0=off, 1=on) */
-
   /* FFmpeg settings */
   char *ffmpeg_path; /* Path to ffmpeg executable (NULL=use system default "ffmpeg") */
   char *ffmpeg_args; /* Additional ffmpeg arguments (default: "-hwaccel none") */
