@@ -252,7 +252,10 @@ FCC 快速换台：
 日志控制：
   -v, --verbose                  增加日志详细程度
   -q, --quiet                    仅显示致命错误
+
+安全控制：
   -H, --hostname <主机名>        检查 HTTP Host 头的主机名
+  -T, --r2h-token <令牌>         HTTP 请求认证令牌 (所有请求必须携带 r2h-token 查询参数)
 
 兼容性：
   -U, --noudpxy                  禁用 UDPxy 兼容模式 (禁用后只能使用 config 文件中定义的 URL)
@@ -284,6 +287,11 @@ udpxy = yes
 
 # FCC NAT 穿透模式
 fcc-nat-traversal = 0
+
+# HTTP 请求认证令牌（可选，默认: 无）
+# 设置后，所有 HTTP 请求必须携带 r2h-token 查询参数，且值与此配置匹配
+# 例如: http://server:5140/service?r2h-token=your-secret-token
+;r2h-token = your-secret-token-here
 
 # 上游网络接口 (可选)
 # 用于单播流量 (FCC/RTSP) 的接口

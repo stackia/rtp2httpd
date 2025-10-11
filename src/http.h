@@ -16,7 +16,8 @@ typedef enum
   STATUS_400 = 2,
   STATUS_501 = 3,
   STATUS_503 = 4,
-  STATUS_500 = 5
+  STATUS_500 = 5,
+  STATUS_401 = 6
 } http_status_t;
 
 /* Content Types */
@@ -121,5 +122,11 @@ void http_send_500(struct connection_s *conn);
  * @param conn Connection object
  */
 void http_send_503(struct connection_s *conn);
+
+/**
+ * Send HTTP 401 Unauthorized response
+ * @param conn Connection object
+ */
+void http_send_401(struct connection_s *conn);
 
 #endif /* __HTTP_H__ */
