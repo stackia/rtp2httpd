@@ -111,208 +111,47 @@ int timezone_parse_from_user_agent(const char *user_agent, int *tz_offset_second
 }
 
 /*
- * Format time according to clock-format configuration
- * Supports format string like "yyyyMMddTHHmmssZ"
+ * Format time in yyyyMMddHHmmss format
  */
-int timezone_format_time(const struct tm *utc_time, const char *clock_format,
-                         char *output_time, size_t output_size)
+int timezone_format_time_yyyyMMddHHmmss(const struct tm *utc_time,
+                                        char *output_time, size_t output_size)
 {
     /* Validate inputs */
     if (!utc_time || !output_time)
     {
-        logger(LOG_ERROR, "Timezone: NULL pointer in timezone_format_time");
+        logger(LOG_ERROR, "Timezone: NULL pointer in timezone_format_time_yyyyMMddHHmmss");
         return -1;
     }
 
-    if (output_size < TIMEZONE_MIN_BUFFER_SIZE)
+    if (output_size < 15)
     {
-        logger(LOG_ERROR, "Timezone: Output buffer too small (%zu bytes, need at least %d)",
-               output_size, TIMEZONE_MIN_BUFFER_SIZE);
+        logger(LOG_ERROR, "Timezone: Output buffer too small (%zu bytes, need at least 15)",
+               output_size);
         return -1;
     }
 
-    /* Use provided clock_format or default */
-    const char *format = clock_format ? clock_format : "yyyyMMddTHHmmssZ";
+    /* Format as yyyyMMddHHmmss */
+    int written = snprintf(output_time, output_size, "%04d%02d%02d%02d%02d%02d",
+                           utc_time->tm_year + 1900,
+                           utc_time->tm_mon + 1,
+                           utc_time->tm_mday,
+                           utc_time->tm_hour,
+                           utc_time->tm_min,
+                           utc_time->tm_sec);
 
-    /* Validate format string length */
-    size_t format_len = strlen(format);
-    if (format_len > TIMEZONE_FORMAT_MAX_LEN)
+    if (written < 0 || (size_t)written >= output_size)
     {
-        logger(LOG_ERROR, "Timezone: Format string too long (%zu bytes, max %d)",
-               format_len, TIMEZONE_FORMAT_MAX_LEN);
+        logger(LOG_ERROR, "Timezone: Output buffer too small for formatted time");
         return -1;
-    }
-
-    /* Simple format parser for common patterns */
-    if (strcmp(format, "yyyyMMddTHHmmssZ") == 0)
-    {
-        /* Default format: yyyyMMddTHHmmssZ */
-        int written = snprintf(output_time, output_size, "%04d%02d%02dT%02d%02d%02dZ",
-                               utc_time->tm_year + 1900,
-                               utc_time->tm_mon + 1,
-                               utc_time->tm_mday,
-                               utc_time->tm_hour,
-                               utc_time->tm_min,
-                               utc_time->tm_sec);
-
-        if (written < 0 || (size_t)written >= output_size)
-        {
-            logger(LOG_ERROR, "Timezone: Output buffer too small for formatted time");
-            return -1;
-        }
-    }
-    else
-    {
-        /* For other formats, convert to strftime format */
-        char strftime_format[TIMEZONE_FORMAT_MAX_LEN + 1];
-        const char *src = format;
-        char *dst = strftime_format;
-        size_t dst_left = sizeof(strftime_format) - 1;
-
-        while (*src && dst_left > 2) /* Need room for 2 chars + null */
-        {
-            if (strncmp(src, "yyyy", 4) == 0)
-            {
-                if (dst_left < 3)
-                    break; /* Not enough space */
-                *dst++ = '%';
-                *dst++ = 'Y';
-                src += 4;
-                dst_left -= 2;
-            }
-            else if (strncmp(src, "MM", 2) == 0)
-            {
-                if (dst_left < 3)
-                    break;
-                *dst++ = '%';
-                *dst++ = 'm';
-                src += 2;
-                dst_left -= 2;
-            }
-            else if (strncmp(src, "dd", 2) == 0)
-            {
-                if (dst_left < 3)
-                    break;
-                *dst++ = '%';
-                *dst++ = 'd';
-                src += 2;
-                dst_left -= 2;
-            }
-            else if (strncmp(src, "HH", 2) == 0)
-            {
-                if (dst_left < 3)
-                    break;
-                *dst++ = '%';
-                *dst++ = 'H';
-                src += 2;
-                dst_left -= 2;
-            }
-            else if (strncmp(src, "mm", 2) == 0)
-            {
-                if (dst_left < 3)
-                    break;
-                *dst++ = '%';
-                *dst++ = 'M';
-                src += 2;
-                dst_left -= 2;
-            }
-            else if (strncmp(src, "ss", 2) == 0)
-            {
-                if (dst_left < 3)
-                    break;
-                *dst++ = '%';
-                *dst++ = 'S';
-                src += 2;
-                dst_left -= 2;
-            }
-            else
-            {
-                if (dst_left < 2)
-                    break;
-                *dst++ = *src++;
-                dst_left--;
-            }
-        }
-        *dst = '\0';
-
-        /* Check if we processed the entire format string */
-        if (*src != '\0')
-        {
-            logger(LOG_ERROR, "Timezone: Format string too complex or buffer overflow prevented");
-            return -1;
-        }
-
-        /* Suppress -Wformat-nonliteral warning: strftime_format is safely constructed
-         * from validated input with buffer overflow protection above */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-        if (strftime(output_time, output_size, strftime_format, utc_time) == 0)
-        {
-#pragma GCC diagnostic pop
-            logger(LOG_ERROR, "Timezone: Failed to format time with clock-format: %s", format);
-            return -1;
-        }
     }
 
     return 0;
 }
 
 /*
- * Convert Unix timestamp to UTC time string using clock-format
- */
-int timezone_convert_unix_timestamp_to_utc(time_t timestamp, const char *clock_format,
-                                           char *output_time, size_t output_size)
-{
-    struct tm *utc_time;
-    struct tm utc_time_copy;
-
-    /* Validate inputs */
-    if (!output_time)
-    {
-        logger(LOG_ERROR, "Timezone: NULL output buffer in timezone_convert_unix_timestamp_to_utc");
-        return -1;
-    }
-
-    if (output_size < TIMEZONE_MIN_BUFFER_SIZE)
-    {
-        logger(LOG_ERROR, "Timezone: Output buffer too small (%zu bytes, need at least %d)",
-               output_size, TIMEZONE_MIN_BUFFER_SIZE);
-        return -1;
-    }
-
-    /* Validate timestamp is reasonable (not negative, not too far in future) */
-    if (timestamp < 0)
-    {
-        logger(LOG_ERROR, "Timezone: Invalid negative timestamp: %ld", (long)timestamp);
-        return -1;
-    }
-
-    /* Convert to UTC - gmtime returns pointer to static storage, so copy it */
-    utc_time = gmtime(&timestamp);
-    if (!utc_time)
-    {
-        logger(LOG_ERROR, "Timezone: Failed to convert Unix timestamp %ld to UTC", (long)timestamp);
-        return -1;
-    }
-
-    /* Make a copy since gmtime returns static storage */
-    utc_time_copy = *utc_time;
-
-    /* Format according to clock-format configuration */
-    if (timezone_format_time(&utc_time_copy, clock_format, output_time, output_size) < 0)
-    {
-        return -1;
-    }
-
-    logger(LOG_DEBUG, "Timezone: Converted Unix timestamp %ld to UTC: %s", (long)timestamp, output_time);
-    return 0;
-}
-
-/*
- * Convert time from yyyyMMddHHmmss format with timezone offset to UTC
+ * Convert time from yyyyMMddHHmmss format with timezone offset to UTC yyyyMMddHHmmss
  */
 int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seconds,
-                                      const char *clock_format,
                                       char *output_time, size_t output_size)
 {
     struct tm local_time;
@@ -326,10 +165,10 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
         return -1;
     }
 
-    if (output_size < TIMEZONE_MIN_BUFFER_SIZE)
+    if (output_size < 15)
     {
-        logger(LOG_ERROR, "Timezone: Output buffer too small (%zu bytes, need at least %d)",
-               output_size, TIMEZONE_MIN_BUFFER_SIZE);
+        logger(LOG_ERROR, "Timezone: Output buffer too small (%zu bytes, need at least 15)",
+               output_size);
         return -1;
     }
 
@@ -443,6 +282,14 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
     /* If input is in UTC+8, we need to subtract 8 hours to get UTC */
     timestamp -= tz_offset_seconds;
 
-    /* Convert back to UTC time string */
-    return timezone_convert_unix_timestamp_to_utc(timestamp, clock_format, output_time, output_size);
+    /* Convert back to UTC time string in yyyyMMddHHmmss format */
+    struct tm *utc_time = gmtime(&timestamp);
+    if (!utc_time)
+    {
+        logger(LOG_ERROR, "Timezone: Failed to convert timestamp to UTC");
+        return -1;
+    }
+
+    struct tm utc_time_copy = *utc_time;
+    return timezone_format_time_yyyyMMddHHmmss(&utc_time_copy, output_time, output_size);
 }

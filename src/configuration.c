@@ -33,8 +33,6 @@ int cmd_maxclients_set;
 int cmd_bind_set;
 int cmd_fcc_nat_traversal_set;
 int cmd_hostname_set;
-int cmd_clock_format_set;
-int cmd_playseek_passthrough_set;
 int cmd_buffer_pool_max_size_set;
 int cmd_ffmpeg_path_set;
 int cmd_ffmpeg_args_set;
@@ -404,40 +402,6 @@ void parse_global_sec(char *line)
     }
     return;
   }
-  if (strcasecmp("clock-format", param) == 0)
-  {
-    if (!cmd_clock_format_set)
-    {
-      config.clock_format = strdup(value);
-    }
-    else
-    {
-      logger(LOG_WARN, "Config file value \"clock-format\" ignored (already set on command line)");
-    }
-    return;
-  }
-  if (strcasecmp("playseek-passthrough", param) == 0)
-  {
-    if (!cmd_playseek_passthrough_set)
-    {
-      if ((strcasecmp("on", value) == 0) ||
-          (strcasecmp("true", value) == 0) ||
-          (strcasecmp("yes", value) == 0) ||
-          (strcasecmp("1", value) == 0))
-      {
-        config.playseek_passthrough = 1;
-      }
-      else
-      {
-        config.playseek_passthrough = 0;
-      }
-    }
-    else
-    {
-      logger(LOG_WARN, "Config file value \"playseek-passthrough\" ignored (already set on command line)");
-    }
-    return;
-  }
   if (strcasecmp("upstream-interface-unicast", param) == 0)
   {
     strncpy(config.upstream_interface_unicast.ifr_name, value, IFNAMSIZ - 1);
@@ -673,17 +637,6 @@ void restore_conf_defaults(void)
   }
   cmd_hostname_set = 0;
 
-  if (config.clock_format != NULL)
-  {
-    free(config.clock_format);
-    config.clock_format = NULL;
-  }
-  /* Set default clock format */
-  config.clock_format = strdup("yyyyMMddTHHmmssZ");
-  cmd_clock_format_set = 0;
-  config.playseek_passthrough = 0;
-  cmd_playseek_passthrough_set = 0;
-
   if (config.ffmpeg_path != NULL)
   {
     free(config.ffmpeg_path);
@@ -793,8 +746,6 @@ void usage(FILE *f, char *progname)
           "\t-C --noconfig        Do not read the default config\n"
           "\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole (deprecated), 2=NAT-PMP (default 0)\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)\n"
-          "\t-f --clock-format <format> Clock format for RTSP Range timestamps (default yyyyMMddTHHmmssZ)\n"
-          "\t-P --playseek-passthrough  Enable playseek pass through (default off)\n"
           "\t-i --upstream-interface-unicast <interface>  Interface for unicast traffic (FCC/RTSP)\n"
           "\t-r --upstream-interface-multicast <interface>  Interface for multicast traffic (RTP/UDP)\n"
           "\t-F --ffmpeg-path <path>  Path to ffmpeg executable (default: ffmpeg)\n"
@@ -859,8 +810,6 @@ void parse_cmd_line(int argc, char *argv[])
       {"noconfig", no_argument, 0, 'C'},
       {"fcc-nat-traversal", required_argument, 0, 'n'},
       {"hostname", required_argument, 0, 'H'},
-      {"clock-format", required_argument, 0, 'f'},
-      {"playseek-passthrough", no_argument, 0, 'P'},
       {"upstream-interface-unicast", required_argument, 0, 'i'},
       {"upstream-interface-multicast", required_argument, 0, 'r'},
       {"ffmpeg-path", required_argument, 0, 'F'},
@@ -868,7 +817,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"video-snapshot", no_argument, 0, 'S'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:f:Pi:r:F:A:SC";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:i:r:F:A:SC";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -954,14 +903,6 @@ void parse_cmd_line(int argc, char *argv[])
     case 'H':
       config.hostname = strdup(optarg);
       cmd_hostname_set = 1;
-      break;
-    case 'f':
-      config.clock_format = strdup(optarg);
-      cmd_clock_format_set = 1;
-      break;
-    case 'P':
-      config.playseek_passthrough = 1;
-      cmd_playseek_passthrough_set = 1;
       break;
     case 'i':
       strncpy(config.upstream_interface_unicast.ifr_name, optarg, IFNAMSIZ - 1);

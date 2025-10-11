@@ -44,57 +44,28 @@
 int timezone_parse_from_user_agent(const char *user_agent, int *tz_offset_seconds);
 
 /*
- * Format time according to clock-format configuration
+ * Format time in yyyyMMddHHmmss format
  *
- * Supports format patterns like:
- * - yyyyMMddTHHmmssZ (default, ISO 8601 basic format)
- * - yyyy-MM-dd HH:mm:ss (human-readable format)
- * - Custom patterns using yyyy, MM, dd, HH, mm, ss
- *
- * Thread Safety: NOT thread-safe (uses strftime with static locale data)
+ * Thread Safety: Thread-safe
  *
  * @param utc_time Pointer to tm structure with UTC time (must not be NULL)
- * @param clock_format Format string (NULL uses default "yyyyMMddTHHmmssZ")
- *                     Maximum length: 127 characters
  * @param output_time Output buffer for formatted time (must not be NULL)
- * @param output_size Size of output buffer (minimum 17 bytes recommended)
- * @return 0 on success, -1 on error (invalid input, buffer too small, format error)
+ * @param output_size Size of output buffer (minimum 15 bytes required)
+ * @return 0 on success, -1 on error (invalid input, buffer too small)
  *
  * Example:
  *   struct tm utc_time;
  *   char output[32];
  *   // ... initialize utc_time ...
- *   if (timezone_format_time(&utc_time, "yyyy-MM-dd HH:mm:ss", output, sizeof(output)) == 0) {
- *       printf("Formatted: %s\n", output);
+ *   if (timezone_format_time_yyyyMMddHHmmss(&utc_time, output, sizeof(output)) == 0) {
+ *       printf("Formatted: %s\n", output);  // Output: 20240101120000
  *   }
  */
-int timezone_format_time(const struct tm *utc_time, const char *clock_format,
-                         char *output_time, size_t output_size);
+int timezone_format_time_yyyyMMddHHmmss(const struct tm *utc_time,
+                                        char *output_time, size_t output_size);
 
 /*
- * Convert Unix timestamp to UTC time string
- *
- * Thread Safety: NOT thread-safe (uses gmtime which returns static storage)
- *
- * @param timestamp Unix timestamp (seconds since epoch, typically >= 0)
- * @param clock_format Format string (NULL uses default "yyyyMMddTHHmmssZ")
- *                     Maximum length: 127 characters
- * @param output_time Output buffer for formatted time (must not be NULL)
- * @param output_size Size of output buffer (minimum 17 bytes recommended)
- * @return 0 on success, -1 on error (invalid timestamp, buffer too small, format error)
- *
- * Example:
- *   char output[32];
- *   time_t now = time(NULL);
- *   if (timezone_convert_unix_timestamp_to_utc(now, NULL, output, sizeof(output)) == 0) {
- *       printf("UTC time: %s\n", output);
- *   }
- */
-int timezone_convert_unix_timestamp_to_utc(time_t timestamp, const char *clock_format,
-                                           char *output_time, size_t output_size);
-
-/*
- * Convert time from yyyyMMddHHmmss format with timezone offset to UTC
+ * Convert time from yyyyMMddHHmmss format with timezone offset to UTC yyyyMMddHHmmss
  *
  * Validates date/time components (month 1-12, day 1-31, hour 0-23, etc.)
  *
@@ -105,21 +76,18 @@ int timezone_convert_unix_timestamp_to_utc(time_t timestamp, const char *clock_f
  * @param tz_offset_seconds Timezone offset in seconds from UTC
  *                          (positive for east, negative for west)
  *                          Range: [-43200, 50400] seconds
- * @param clock_format Format string (NULL uses default "yyyyMMddTHHmmssZ")
- *                     Maximum length: 127 characters
- * @param output_time Output buffer for UTC time (must not be NULL)
- * @param output_size Size of output buffer (minimum 17 bytes recommended)
+ * @param output_time Output buffer for UTC time in yyyyMMddHHmmss format (must not be NULL)
+ * @param output_size Size of output buffer (minimum 15 bytes required)
  * @return 0 on success, -1 on error (invalid format, invalid date/time, buffer too small)
  *
  * Example:
  *   char output[32];
  *   int offset = 8 * 3600;  // UTC+8
- *   if (timezone_convert_time_with_offset("20250930150000", offset, NULL, output, sizeof(output)) == 0) {
- *       printf("UTC time: %s\n", output);  // Prints: 20250930T070000Z
+ *   if (timezone_convert_time_with_offset("20250930150000", offset, output, sizeof(output)) == 0) {
+ *       printf("UTC time: %s\n", output);  // Prints: 20250930070000
  *   }
  */
 int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seconds,
-                                      const char *clock_format,
                                       char *output_time, size_t output_size);
 
 #endif /* TIMEZONE_H */

@@ -26,8 +26,6 @@
 #include "status.h"
 #include "worker.h"
 
-/* No external configuration variables needed - use config.clock_format directly */
-
 /*
  * RTSP Client Implementation
  */
@@ -47,7 +45,7 @@ static void rtsp_close_udp_sockets(rtsp_session_t *session, const char *reason);
 static char *rtsp_find_header(const char *response, const char *header_name);
 static void rtsp_parse_transport_header(rtsp_session_t *session, const char *transport);
 static int rtsp_handle_redirect(rtsp_session_t *session, const char *location);
-static int rtsp_convert_time_string(const char *time_str, int tz_offset_seconds, char *output, size_t output_size);
+static int rtsp_convert_time_to_utc(const char *time_str, int tz_offset_seconds, char *output, size_t output_size);
 static int rtsp_state_machine_advance(rtsp_session_t *session);
 static int rtsp_initiate_teardown(rtsp_session_t *session);
 static int rtsp_reconnect_for_teardown(rtsp_session_t *session);
@@ -147,6 +145,7 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
     char url_copy[RTSP_URL_COPY_SIZE];
     char *host_start, *port_start, *path_start;
     int tz_offset_seconds = 0;
+    char playseek_utc[256] = {0}; /* Buffer for UTC-converted playseek parameter */
 
     /* Check for NULL parameters */
     if (!session || !rtsp_url)
@@ -239,15 +238,14 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
         strcpy(session->server_path, "/");
     }
 
-    /* Handle playseek parameter for RTSP Range header */
+    /* Handle playseek parameter - convert to UTC for URL query parameter */
     if (playseek_param && strlen(playseek_param) > 0)
     {
-        /* Check for dash separator indicating time range */
         /* Parse playseek parameter: could be "begin-end", "begin-", or "begin" */
         char begin_str[RTSP_TIME_COMPONENT_SIZE] = {0};
         char end_str[RTSP_TIME_COMPONENT_SIZE] = {0};
-        char begin_iso[RTSP_TIME_STRING_SIZE];
-        char end_iso[RTSP_TIME_STRING_SIZE];
+        char begin_utc[RTSP_TIME_STRING_SIZE] = {0};
+        char end_utc[RTSP_TIME_STRING_SIZE] = {0};
         char *dash_pos = strchr(playseek_param, '-');
 
         /* Extract begin and end times */
@@ -272,25 +270,75 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
 
         logger(LOG_DEBUG, "RTSP: Parsed playseek - begin='%s', end='%s'", begin_str, end_str);
 
-        /* Convert begin time */
-        rtsp_convert_time_string(begin_str, tz_offset_seconds, begin_iso, sizeof(begin_iso));
+        /* Convert begin time to UTC (keep original format) */
+        if (rtsp_convert_time_to_utc(begin_str, tz_offset_seconds, begin_utc, sizeof(begin_utc)) == 0)
+        {
+            logger(LOG_DEBUG, "RTSP: Converted begin time '%s' to UTC '%s'", begin_str, begin_utc);
+        }
+        else
+        {
+            /* Conversion failed, use original */
+            strncpy(begin_utc, begin_str, sizeof(begin_utc) - 1);
+            begin_utc[sizeof(begin_utc) - 1] = '\0';
+        }
 
-        /* Convert end time if present */
+        /* Convert end time to UTC if present */
         if (strlen(end_str) > 0)
         {
-            rtsp_convert_time_string(end_str, tz_offset_seconds, end_iso, sizeof(end_iso));
-            snprintf(session->playseek_range, sizeof(session->playseek_range),
-                     "clock=%s-%s", begin_iso, end_iso);
-            logger(LOG_DEBUG, "RTSP: Range with end time: 'clock=%s-%s'", begin_iso, end_iso);
+            if (rtsp_convert_time_to_utc(end_str, tz_offset_seconds, end_utc, sizeof(end_utc)) == 0)
+            {
+                logger(LOG_DEBUG, "RTSP: Converted end time '%s' to UTC '%s'", end_str, end_utc);
+            }
+            else
+            {
+                /* Conversion failed, use original */
+                strncpy(end_utc, end_str, sizeof(end_utc) - 1);
+                end_utc[sizeof(end_utc) - 1] = '\0';
+            }
+            snprintf(playseek_utc, sizeof(playseek_utc), "%s-%s", begin_utc, end_utc);
         }
         else
         {
             /* Open-ended range */
-            snprintf(session->playseek_range, sizeof(session->playseek_range),
-                     "clock=%s-", begin_iso);
-            logger(LOG_DEBUG, "RTSP: Open-ended range: 'clock=%s-'", begin_iso);
+            snprintf(playseek_utc, sizeof(playseek_utc), "%s-", begin_utc);
         }
-        logger(LOG_DEBUG, "RTSP: Final playseek_range: '%s'", session->playseek_range);
+        logger(LOG_DEBUG, "RTSP: UTC playseek parameter: '%s'", playseek_utc);
+
+        /* Append playseek parameter to server_url for DESCRIBE request */
+        /* Check if URL already has query parameters */
+        char *query_marker = strchr(session->server_url, '?');
+        size_t current_len = strlen(session->server_url);
+        size_t playseek_len = strlen(playseek_utc);
+
+        if (query_marker)
+        {
+            /* URL already has query parameters, append with & */
+            if (current_len + 10 + playseek_len < sizeof(session->server_url))
+            {
+                snprintf(session->server_url + current_len,
+                         sizeof(session->server_url) - current_len,
+                         "&playseek=%s", playseek_utc);
+            }
+            else
+            {
+                logger(LOG_ERROR, "RTSP: URL too long to append playseek parameter");
+            }
+        }
+        else
+        {
+            /* No query parameters yet, append with ? */
+            if (current_len + 10 + playseek_len < sizeof(session->server_url))
+            {
+                snprintf(session->server_url + current_len,
+                         sizeof(session->server_url) - current_len,
+                         "?playseek=%s", playseek_utc);
+            }
+            else
+            {
+                logger(LOG_ERROR, "RTSP: URL too long to append playseek parameter");
+            }
+        }
+        logger(LOG_DEBUG, "RTSP: Updated server_url with playseek: %s", session->server_url);
     }
 
     logger(LOG_DEBUG, "RTSP: Parsed URL - host=%s, port=%d, path=%s",
@@ -889,27 +937,8 @@ static int rtsp_state_machine_advance(rtsp_session_t *session)
         return 0;
 
     case RTSP_STATE_SETUP:
-        /* Ready to send PLAY */
-        if (session->playseek_range[0] != '\0')
-        {
-            if (config.playseek_passthrough)
-            {
-                snprintf(extra_headers, sizeof(extra_headers),
-                         "Session: %s\r\n",
-                         session->session_id);
-            }
-            else
-            {
-                snprintf(extra_headers, sizeof(extra_headers),
-                         "Session: %s\r\nRange: %s\r\n",
-                         session->session_id, session->playseek_range);
-            }
-        }
-        else
-        {
-            snprintf(extra_headers, sizeof(extra_headers),
-                     "Session: %s\r\n", session->session_id);
-        }
+        snprintf(extra_headers, sizeof(extra_headers),
+                 "Session: %s\r\n", session->session_id);
         if (rtsp_prepare_request(session, RTSP_METHOD_PLAY, extra_headers) < 0)
         {
             logger(LOG_ERROR, "RTSP: Failed to prepare PLAY request");
@@ -1821,11 +1850,11 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location)
 }
 
 /*
- * Helper function to convert time string to UTC format
- * Handles Unix timestamps and yyyyMMddHHmmss format with timezone conversion
+ * Helper function to convert time string to UTC (keeping original format)
+ * Handles Unix timestamps (no conversion needed) and yyyyMMddHHmmss format with timezone conversion
  * Returns 0 on success, -1 on error
  */
-static int rtsp_convert_time_string(const char *time_str, int tz_offset_seconds, char *output, size_t output_size)
+static int rtsp_convert_time_to_utc(const char *time_str, int tz_offset_seconds, char *output, size_t output_size)
 {
     size_t len;
     size_t digit_count;
@@ -1841,28 +1870,27 @@ static int rtsp_convert_time_string(const char *time_str, int tz_offset_seconds,
     /* Check if it's a Unix timestamp (all digits, length <= 10) */
     if (len <= 10 && digit_count == len)
     {
-        time_t timestamp = (time_t)atol(time_str);
-        if (timezone_convert_unix_timestamp_to_utc(timestamp, config.clock_format, output, output_size) == 0)
-        {
-            logger(LOG_DEBUG, "RTSP: Converted Unix timestamp '%s' to UTC '%s'", time_str, output);
-            return 0;
-        }
-        /* Fallback to original string */
+        /* Unix timestamp is already in UTC, no conversion needed */
         strncpy(output, time_str, output_size - 1);
         output[output_size - 1] = '\0';
-        return -1;
+        logger(LOG_DEBUG, "RTSP: Unix timestamp '%s' is already UTC", time_str);
+        return 0;
     }
 
     /* Check if it's yyyyMMddHHmmss format (exactly 14 digits) */
     if (len == 14 && digit_count == 14)
     {
-        /* Apply timezone conversion (tz_offset_seconds can be 0 for UTC) */
-        if (timezone_convert_time_with_offset(time_str, tz_offset_seconds, config.clock_format, output, output_size) == 0)
+        /* Apply timezone conversion to UTC, keep yyyyMMddHHmmss format */
+        if (timezone_convert_time_with_offset(time_str, tz_offset_seconds, output, output_size) == 0)
         {
             if (tz_offset_seconds != 0)
             {
                 logger(LOG_DEBUG, "RTSP: Converted time '%s' with TZ offset %d to UTC '%s'",
                        time_str, tz_offset_seconds, output);
+            }
+            else
+            {
+                logger(LOG_DEBUG, "RTSP: Time '%s' is already in UTC", time_str);
             }
             return 0;
         }
