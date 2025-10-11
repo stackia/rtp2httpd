@@ -366,7 +366,7 @@ rtp2httpd 支持使用 FFmpeg 来生成视频流的快照 (snapshot) 功能。�
 1. 在 HTTP URL 加上查询参数 `snapshot=1`
 2. 请求 Header 加上 `Accept: image/jpeg`
 
-当 rtp2httpd 处理快照请求时，会从视频流中截取关键帧 (I 帧) 并使用 FFmpeg 转码为 JPEG 格式返回给客户端。
+当 rtp2httpd 处理快照请求时，会从视频流中截取关键帧 (I 帧) 并使用 FFmpeg 转码为 JPEG 格式返回给客户端。在未开启 `--video-snapshot` 时，快照请求将正常返回普通媒体流数据。
 
 在搭配 FCC 使用时，通常在 0.3 秒内即可返回快照。在不使用 FCC 时，由于大多数运营商组播流是每秒发送一个 I 帧，因此快照请求最长会在 1 秒返回。
 
