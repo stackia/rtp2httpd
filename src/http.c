@@ -23,6 +23,7 @@ static const char *response_codes[] = {
     "HTTP/1.1 501 Not Implemented\r\n",       /* 3 */
     "HTTP/1.1 503 Service Unavailable\r\n",   /* 4 */
     "HTTP/1.1 500 Internal Server Error\r\n", /* 5 */
+    "HTTP/1.1 401 Unauthorized\r\n",          /* 6 */
 };
 
 static const char *content_types[] = {
@@ -68,9 +69,8 @@ void send_http_headers(connection_t *c, http_status_t status, content_type_t typ
         len += snprintf(headers + len, sizeof(headers) - len, "%s", extra_headers);
     }
 
-    /* Server header and final CRLF */
-    len += snprintf(headers + len, sizeof(headers) - len,
-                    "Server: " PACKAGE "/" VERSION "\r\n\r\n");
+    /* Final CRLF */
+    len += snprintf(headers + len, sizeof(headers) - len, "\r\n");
 
     connection_queue_output(c, (const uint8_t *)headers, len);
 }
@@ -379,6 +379,24 @@ void http_send_503(connection_t *conn)
 
     /* Send headers */
     send_http_headers(conn, STATUS_503, CONTENT_HTML, NULL);
+
+    /* Send body and flush */
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
+
+    /* Set connection to closing state */
+    conn->state = CONN_CLOSING;
+}
+
+/**
+ * Send HTTP 401 Unauthorized response
+ * @param conn Connection object
+ */
+void http_send_401(connection_t *conn)
+{
+    static const char body[] = "<!doctype html><title>401</title>Unauthorized";
+
+    /* Send headers with WWW-Authenticate */
+    send_http_headers(conn, STATUS_401, CONTENT_HTML, "WWW-Authenticate: Bearer\r\n");
 
     /* Send body and flush */
     connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);

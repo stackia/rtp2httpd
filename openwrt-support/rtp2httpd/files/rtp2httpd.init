@@ -40,6 +40,7 @@ start_instance() {
         append_arg "$cfg" workers "--workers"
         append_arg "$cfg" buffer_pool_max_size "--buffer-pool-max-size"
         append_arg "$cfg" hostname "--hostname"
+        append_arg "$cfg" r2h_token "--r2h-token"
         append_arg "$cfg" fcc_nat_traversal "--fcc-nat-traversal"
   fi
 

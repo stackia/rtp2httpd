@@ -33,6 +33,7 @@ int cmd_maxclients_set;
 int cmd_bind_set;
 int cmd_fcc_nat_traversal_set;
 int cmd_hostname_set;
+int cmd_r2h_token_set;
 int cmd_buffer_pool_max_size_set;
 int cmd_ffmpeg_path_set;
 int cmd_ffmpeg_args_set;
@@ -427,6 +428,13 @@ void parse_global_sec(char *line)
     return;
   }
 
+  if (strcasecmp("r2h-token", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_r2h_token_set, "r2h-token"))
+      config.r2h_token = strdup(value);
+    return;
+  }
+
   if (strcasecmp("ffmpeg-path", param) == 0)
   {
     if (set_if_not_cmd_override(cmd_ffmpeg_path_set, "ffmpeg-path"))
@@ -630,6 +638,9 @@ void restore_conf_defaults(void)
   safe_free_string(&config.hostname);
   cmd_hostname_set = 0;
 
+  safe_free_string(&config.r2h_token);
+  cmd_r2h_token_set = 0;
+
   safe_free_string(&config.ffmpeg_path);
   cmd_ffmpeg_path_set = 0;
 
@@ -699,6 +710,7 @@ void usage(FILE *f, char *progname)
           "\t-C --noconfig        Do not read the default config\n"
           "\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole (deprecated), 2=NAT-PMP (default 0)\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)\n"
+          "\t-T --r2h-token <token>   Authentication token for HTTP requests (default none)\n"
           "\t-i --upstream-interface-unicast <interface>  Interface for unicast traffic (FCC/RTSP)\n"
           "\t-r --upstream-interface-multicast <interface>  Interface for multicast traffic (RTP/UDP)\n"
           "\t-F --ffmpeg-path <path>  Path to ffmpeg executable (default: ffmpeg)\n"
@@ -763,6 +775,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"noconfig", no_argument, 0, 'C'},
       {"fcc-nat-traversal", required_argument, 0, 'n'},
       {"hostname", required_argument, 0, 'H'},
+      {"r2h-token", required_argument, 0, 'T'},
       {"upstream-interface-unicast", required_argument, 0, 'i'},
       {"upstream-interface-multicast", required_argument, 0, 'r'},
       {"ffmpeg-path", required_argument, 0, 'F'},
@@ -770,7 +783,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"video-snapshot", no_argument, 0, 'S'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:i:r:F:A:SC";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:T:i:r:F:A:SC";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -856,6 +869,10 @@ void parse_cmd_line(int argc, char *argv[])
     case 'H':
       config.hostname = strdup(optarg);
       cmd_hostname_set = 1;
+      break;
+    case 'T':
+      config.r2h_token = strdup(optarg);
+      cmd_r2h_token_set = 1;
       break;
     case 'i':
       strncpy(config.upstream_interface_unicast.ifr_name, optarg, IFNAMSIZ - 1);

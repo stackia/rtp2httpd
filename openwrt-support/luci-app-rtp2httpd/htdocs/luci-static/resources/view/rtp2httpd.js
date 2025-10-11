@@ -50,6 +50,7 @@ return view.extend({
         }),
       ]).then(function (results) {
         var port = "5140"; // default port
+        var token = null;
         var use_config_file = uci.get(
           "rtp2httpd",
           section_id,
@@ -57,7 +58,7 @@ return view.extend({
         );
 
         if (use_config_file === "1") {
-          // Parse port from config file content
+          // Parse port and token from config file content
           var configContent = results[1];
           var portMatch = configContent.match(/^\s*\*\s+(\d+)\s*$/m);
           if (!portMatch) {
@@ -67,13 +68,22 @@ return view.extend({
           if (portMatch && portMatch[1]) {
             port = portMatch[1];
           }
+          // Parse r2h-token from config file
+          var tokenMatch = configContent.match(/^\s*r2h-token\s+(.+?)\s*$/m);
+          if (tokenMatch && tokenMatch[1]) {
+            token = tokenMatch[1];
+          }
         } else {
-          // Get port from UCI config
+          // Get port and token from UCI config
           port = uci.get("rtp2httpd", section_id, "port") || "5140";
+          token = uci.get("rtp2httpd", section_id, "r2h_token");
         }
 
         var statusUrl =
           "http://" + window.location.hostname + ":" + port + "/status";
+        if (token) {
+          statusUrl += "?r2h-token=" + encodeURIComponent(token);
+        }
         window.open(statusUrl, "_blank");
       });
     };
@@ -193,6 +203,15 @@ return view.extend({
       _("rtp2httpd_Hostname to check in the Host: HTTP header")
     );
     o.datatype = "hostname";
+    o.depends("use_config_file", "0");
+
+    o = s.option(
+      form.Value,
+      "r2h_token",
+      _("rtp2httpd_R2H Token"),
+      _("rtp2httpd_Authentication token for HTTP requests")
+    );
+    o.password = true;
     o.depends("use_config_file", "0");
 
     o = s.option(

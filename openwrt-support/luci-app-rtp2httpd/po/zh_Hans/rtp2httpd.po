@@ -77,6 +77,12 @@ msgstr "仅允许使用域名连接"
 msgid "rtp2httpd_Hostname to check in the Host: HTTP header"
 msgstr "开启后，只有 HTTP Host 头匹配指定域名时，rtp2httpd 才会允许连接"
 
+msgid "rtp2httpd_R2H Token"
+msgstr "HTTP 请求认证令牌"
+
+msgid "rtp2httpd_Authentication token for HTTP requests"
+msgstr "设置后，所有 HTTP 请求必须携带 r2h-token 查询参数，且值与此配置匹配（例如：http://server:5140/service?r2h-token=your-token）"
+
 msgid "rtp2httpd_FCC NAT traversal"
 msgstr "FCC NAT 穿透模式"
 

@@ -334,6 +334,38 @@ int connection_route_and_start(connection_t *c)
   const char *service_path = url + 1; /* skip leading '/' */
   const char *query_start = strchr(service_path, '?');
   size_t path_len = query_start ? (size_t)(query_start - service_path) : strlen(service_path);
+
+  /* Check r2h-token if configured */
+  if (config.r2h_token != NULL && config.r2h_token[0] != '\0')
+  {
+    if (!query_start)
+    {
+      logger(LOG_WARN, "Client request rejected: missing r2h-token parameter");
+      http_send_401(c);
+      return 0;
+    }
+
+    /* Parse r2h-token parameter from query string */
+    char token_value[256];
+    if (http_parse_query_param(query_start + 1, "r2h-token", token_value, sizeof(token_value)) != 0)
+    {
+      logger(LOG_WARN, "Client request rejected: missing r2h-token parameter");
+      http_send_401(c);
+      return 0;
+    }
+
+    /* Compare token value with configured token */
+    if (strcmp(token_value, config.r2h_token) != 0)
+    {
+      logger(LOG_WARN, "Client request rejected: invalid r2h-token (got: %s)", token_value);
+      http_send_401(c);
+      return 0;
+    }
+
+    logger(LOG_DEBUG, "r2h-token validated");
+  }
+
+  /* Adjust path_len to exclude trailing slash */
   if (path_len > 0 && service_path[path_len - 1] == '/')
     path_len--;
 
