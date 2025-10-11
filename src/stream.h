@@ -31,8 +31,9 @@ typedef struct stream_context_s
   int64_t last_status_update; /* Last status update time in milliseconds */
 
   /* Stream health monitoring */
-  int64_t last_mcast_data_time; /* Timestamp of last received multicast data in milliseconds */
-  int64_t last_fcc_data_time;   /* Timestamp of last received FCC data for timeout detection */
+  int64_t last_mcast_data_time;   /* Timestamp of last received multicast data in milliseconds */
+  int64_t last_fcc_data_time;     /* Timestamp of last received FCC data for timeout detection */
+  int64_t last_mcast_rejoin_time; /* Timestamp of last multicast rejoin for periodic refresh */
 
   /* Snapshot context */
   snapshot_context_t snapshot;

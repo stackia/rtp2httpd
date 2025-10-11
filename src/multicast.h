@@ -19,4 +19,15 @@ void bind_to_upstream_interface(int sock, const struct ifreq *ifr);
  */
 int join_mcast_group(service_t *service);
 
+/**
+ * Rejoin a multicast group on an existing socket
+ * This performs MCAST_LEAVE_GROUP followed by MCAST_JOIN_GROUP to force
+ * the kernel to send a new IGMP Report message, refreshing membership.
+ *
+ * @param sock Existing multicast socket file descriptor
+ * @param service Service structure containing multicast address info
+ * @return 0 on success, -1 on failure
+ */
+int rejoin_mcast_group(int sock, service_t *service);
+
 #endif /* __MULTICAST_H__ */

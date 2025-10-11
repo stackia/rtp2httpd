@@ -35,6 +35,7 @@ int cmd_fcc_nat_traversal_set;
 int cmd_hostname_set;
 int cmd_r2h_token_set;
 int cmd_buffer_pool_max_size_set;
+int cmd_mcast_rejoin_interval_set;
 int cmd_ffmpeg_path_set;
 int cmd_ffmpeg_args_set;
 int cmd_video_snapshot_set;
@@ -470,6 +471,27 @@ void parse_global_sec(char *line)
     return;
   }
 
+  if (strcasecmp("mcast-rejoin-interval", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_mcast_rejoin_interval_set, "mcast-rejoin-interval"))
+    {
+      int interval = atoi(value);
+      if (interval < 0)
+      {
+        logger(LOG_ERROR, "Invalid mcast-rejoin-interval value: %s (must be >= 0)", value);
+      }
+      else
+      {
+        config.mcast_rejoin_interval = interval;
+        if (interval > 0)
+        {
+          logger(LOG_INFO, "Multicast rejoin interval set to %d seconds", interval);
+        }
+      }
+    }
+    return;
+  }
+
   logger(LOG_ERROR, "Unknown config parameter: %s", param);
 }
 
@@ -651,6 +673,9 @@ void restore_conf_defaults(void)
   config.video_snapshot = 0;
   cmd_video_snapshot_set = 0;
 
+  config.mcast_rejoin_interval = 0; /* default disabled */
+  cmd_mcast_rejoin_interval_set = 0;
+
   if (config.upstream_interface_unicast.ifr_name[0] != '\0')
     memset(&config.upstream_interface_unicast, 0, sizeof(struct ifreq));
   cmd_upstream_interface_unicast_set = 0;
@@ -713,6 +738,7 @@ void usage(FILE *f, char *progname)
           "\t-T --r2h-token <token>   Authentication token for HTTP requests (default none)\n"
           "\t-i --upstream-interface-unicast <interface>  Interface for unicast traffic (FCC/RTSP)\n"
           "\t-r --upstream-interface-multicast <interface>  Interface for multicast traffic (RTP/UDP)\n"
+          "\t-R --mcast-rejoin-interval <seconds>  Periodic multicast rejoin interval (0=disabled, default 0)\n"
           "\t-F --ffmpeg-path <path>  Path to ffmpeg executable (default: ffmpeg)\n"
           "\t-A --ffmpeg-args <args>  Additional ffmpeg arguments (default: -hwaccel none)\n"
           "\t-S --video-snapshot      Enable video snapshot feature (default: off)\n"
@@ -778,12 +804,13 @@ void parse_cmd_line(int argc, char *argv[])
       {"r2h-token", required_argument, 0, 'T'},
       {"upstream-interface-unicast", required_argument, 0, 'i'},
       {"upstream-interface-multicast", required_argument, 0, 'r'},
+      {"mcast-rejoin-interval", required_argument, 0, 'R'},
       {"ffmpeg-path", required_argument, 0, 'F'},
       {"ffmpeg-args", required_argument, 0, 'A'},
       {"video-snapshot", no_argument, 0, 'S'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:T:i:r:F:A:SC";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:T:i:r:R:F:A:SC";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -883,6 +910,21 @@ void parse_cmd_line(int argc, char *argv[])
       strncpy(config.upstream_interface_multicast.ifr_name, optarg, IFNAMSIZ - 1);
       config.upstream_interface_multicast.ifr_ifindex = if_nametoindex(config.upstream_interface_multicast.ifr_name);
       cmd_upstream_interface_multicast_set = 1;
+      break;
+    case 'R':
+      if (atoi(optarg) < 0)
+      {
+        logger(LOG_ERROR, "Invalid mcast-rejoin-interval! Ignoring.");
+      }
+      else
+      {
+        config.mcast_rejoin_interval = atoi(optarg);
+        cmd_mcast_rejoin_interval_set = 1;
+        if (config.mcast_rejoin_interval > 0)
+        {
+          logger(LOG_INFO, "Multicast rejoin interval set to %d seconds", config.mcast_rejoin_interval);
+        }
+      }
       break;
     case 'F':
       config.ffmpeg_path = strdup(optarg);
