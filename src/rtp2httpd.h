@@ -96,6 +96,9 @@ typedef struct
   /* FFmpeg settings */
   char *ffmpeg_path; /* Path to ffmpeg executable (NULL=use system default "ffmpeg") */
   char *ffmpeg_args; /* Additional ffmpeg arguments (default: "-hwaccel none") */
+
+  /* Video snapshot settings */
+  int video_snapshot; /* Enable video snapshot feature (0=off, 1=on) */
 } config_t;
 
 /* GLOBAL CONFIGURATION */

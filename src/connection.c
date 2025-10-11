@@ -415,26 +415,30 @@ int connection_route_and_start(connection_t *c)
 
   /* Check if this is a snapshot request (Accept: image/jpeg or snapshot=1 query param) */
   int is_snapshot_request = 0;
-  if (c->http_req.accept[0] != '\0')
-  {
-    /* Check if Accept header contains "image/jpeg" */
-    if (strstr(c->http_req.accept, "image/jpeg") != NULL)
-    {
-      is_snapshot_request = 1;
-      logger(LOG_INFO, "Snapshot request detected via Accept header for URL: %s", c->http_req.url);
-    }
-  }
 
-  /* Also check for snapshot=1 query parameter */
-  if (!is_snapshot_request && query_start != NULL)
+  if (config.video_snapshot)
   {
-    char snapshot_value[16];
-    if (http_parse_query_param(query_start + 1, "snapshot", snapshot_value, sizeof(snapshot_value)) == 0)
+    if (c->http_req.accept[0] != '\0')
     {
-      if (strcmp(snapshot_value, "1") == 0)
+      /* Check if Accept header contains "image/jpeg" */
+      if (strstr(c->http_req.accept, "image/jpeg") != NULL)
       {
         is_snapshot_request = 1;
-        logger(LOG_INFO, "Snapshot request detected via query parameter for URL: %s", c->http_req.url);
+        logger(LOG_INFO, "Snapshot request detected via Accept header for URL: %s", c->http_req.url);
+      }
+    }
+
+    /* Also check for snapshot=1 query parameter */
+    if (!is_snapshot_request && query_start != NULL)
+    {
+      char snapshot_value[16];
+      if (http_parse_query_param(query_start + 1, "snapshot", snapshot_value, sizeof(snapshot_value)) == 0)
+      {
+        if (strcmp(snapshot_value, "1") == 0)
+        {
+          is_snapshot_request = 1;
+          logger(LOG_INFO, "Snapshot request detected via query parameter for URL: %s", c->http_req.url);
+        }
       }
     }
   }
