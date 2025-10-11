@@ -144,4 +144,15 @@ int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size
  */
 int connection_queue_zerocopy(connection_t *c, void *data, size_t len, buffer_ref_t *buf_ref, size_t offset);
 
+/**
+ * Queue a file descriptor for zero-copy send using sendfile()
+ * Takes ownership of the file descriptor (will close it when done)
+ * @param c Connection
+ * @param file_fd File descriptor to send (must be seekable)
+ * @param file_offset Starting offset in file
+ * @param file_size Number of bytes to send from file
+ * @return 0 on success, -1 on error
+ */
+int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_t file_size);
+
 #endif /* CONNECTION_H */

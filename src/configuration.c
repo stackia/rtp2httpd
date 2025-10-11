@@ -36,6 +36,8 @@ int cmd_hostname_set;
 int cmd_clock_format_set;
 int cmd_playseek_passthrough_set;
 int cmd_buffer_pool_max_size_set;
+int cmd_ffmpeg_path_set;
+int cmd_ffmpeg_args_set;
 
 enum section_e
 {
@@ -481,6 +483,32 @@ void parse_global_sec(char *line)
     return;
   }
 
+  if (strcasecmp("ffmpeg-path", param) == 0)
+  {
+    if (!cmd_ffmpeg_path_set)
+    {
+      config.ffmpeg_path = strdup(value);
+    }
+    else
+    {
+      logger(LOG_WARN, "Config file value \"ffmpeg-path\" ignored (already set on command line)");
+    }
+    return;
+  }
+
+  if (strcasecmp("ffmpeg-args", param) == 0)
+  {
+    if (!cmd_ffmpeg_args_set)
+    {
+      config.ffmpeg_args = strdup(value);
+    }
+    else
+    {
+      logger(LOG_WARN, "Config file value \"ffmpeg-args\" ignored (already set on command line)");
+    }
+    return;
+  }
+
   logger(LOG_ERROR, "Unknown config parameter: %s", param);
 }
 
@@ -632,6 +660,22 @@ void restore_conf_defaults(void)
   config.playseek_passthrough = 0;
   cmd_playseek_passthrough_set = 0;
 
+  if (config.ffmpeg_path != NULL)
+  {
+    free(config.ffmpeg_path);
+    config.ffmpeg_path = NULL;
+  }
+  cmd_ffmpeg_path_set = 0;
+
+  if (config.ffmpeg_args != NULL)
+  {
+    free(config.ffmpeg_args);
+    config.ffmpeg_args = NULL;
+  }
+  /* Set default ffmpeg args */
+  config.ffmpeg_args = strdup("-hwaccel none");
+  cmd_ffmpeg_args_set = 0;
+
   if (config.upstream_interface_unicast.ifr_name[0] != '\0')
   {
     memset(&config.upstream_interface_unicast, 0, sizeof(struct ifreq));
@@ -726,6 +770,8 @@ void usage(FILE *f, char *progname)
           "\t-P --playseek-passthrough  Enable playseek pass through (default off)\n"
           "\t-i --upstream-interface-unicast <interface>  Interface for unicast traffic (FCC/RTSP)\n"
           "\t-r --upstream-interface-multicast <interface>  Interface for multicast traffic (RTP/UDP)\n"
+          "\t-F --ffmpeg-path <path>  Path to ffmpeg executable (default: ffmpeg)\n"
+          "\t-A --ffmpeg-args <args>  Additional ffmpeg arguments (default: -hwaccel none)\n"
           "\t                     default " CONFIGFILE "\n",
           prog);
 }
@@ -789,9 +835,11 @@ void parse_cmd_line(int argc, char *argv[])
       {"playseek-passthrough", no_argument, 0, 'P'},
       {"upstream-interface-unicast", required_argument, 0, 'i'},
       {"upstream-interface-multicast", required_argument, 0, 'r'},
+      {"ffmpeg-path", required_argument, 0, 'F'},
+      {"ffmpeg-args", required_argument, 0, 'A'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:f:Pi:r:C";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:f:Pi:r:F:A:C";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -893,6 +941,14 @@ void parse_cmd_line(int argc, char *argv[])
     case 'r':
       strncpy(config.upstream_interface_multicast.ifr_name, optarg, IFNAMSIZ - 1);
       config.upstream_interface_multicast.ifr_ifindex = if_nametoindex(config.upstream_interface_multicast.ifr_name);
+      break;
+    case 'F':
+      config.ffmpeg_path = strdup(optarg);
+      cmd_ffmpeg_path_set = 1;
+      break;
+    case 'A':
+      config.ffmpeg_args = strdup(optarg);
+      cmd_ffmpeg_args_set = 1;
       break;
     default:
       logger(LOG_FATAL, "Unknown option! %d ", opt);

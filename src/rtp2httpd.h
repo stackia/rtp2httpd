@@ -92,6 +92,10 @@ typedef struct
 
   /* Playseek pass through */
   int playseek_passthrough; /* Enable playseek pass through (0=off, 1=on) */
+
+  /* FFmpeg settings */
+  char *ffmpeg_path; /* Path to ffmpeg executable (NULL=use system default "ffmpeg") */
+  char *ffmpeg_args; /* Additional ffmpeg arguments (default: "-hwaccel none") */
 } config_t;
 
 /* GLOBAL CONFIGURATION */

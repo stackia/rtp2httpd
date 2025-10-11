@@ -39,8 +39,17 @@ struct connection_s;
 #define BUFFER_POOL_HIGH_WATERMARK (BUFFER_POOL_INITIAL_SIZE * 3) /* Trigger shrink when free > this (3072) */
 
 /**
+ * Buffer reference type - identifies what kind of data this buffer represents
+ */
+typedef enum
+{
+    BUFFER_TYPE_MEMORY = 0, /* Normal memory buffer from pool */
+    BUFFER_TYPE_FILE = 1    /* File descriptor for sendfile() */
+} buffer_type_t;
+
+/**
  * Buffer reference counting for zero-copy lifecycle management
- * All buffers are pool-managed, no external buffers supported
+ * Supports both memory buffers (pool-managed) and file descriptors (for sendfile)
  *
  * This structure serves dual purpose:
  * 1. When buffer is free: linked via free_next in pool's free list
@@ -51,10 +60,11 @@ struct connection_s;
  */
 typedef struct buffer_ref_s
 {
-    void *data;                            /* Pointer to buffer data */
-    size_t size;                           /* Size of buffer */
+    buffer_type_t type;                    /* Buffer type: memory or file */
+    void *data;                            /* Pointer to buffer data (only for BUFFER_TYPE_MEMORY) */
+    size_t size;                           /* Size of buffer (only for BUFFER_TYPE_MEMORY) */
     int refcount;                          /* Reference count */
-    struct buffer_pool_segment_s *segment; /* Segment this buffer belongs to */
+    struct buffer_pool_segment_s *segment; /* Segment this buffer belongs to (only for BUFFER_TYPE_MEMORY) */
 
     /* Union: buffer is either in free list OR in send queue, never both */
     union
@@ -64,8 +74,18 @@ typedef struct buffer_ref_s
     };
 
     /* Send queue fields - only valid when buffer is queued for sending */
-    struct iovec iov;     /* Data pointer and length for sendmsg() */
-    size_t buf_offset;    /* Offset in buffer where data starts (for partial sends) */
+    union
+    {
+        struct iovec iov; /* Data pointer and length for sendmsg() (BUFFER_TYPE_MEMORY) */
+        struct
+        {
+            int file_fd;       /* File descriptor for sendfile() (BUFFER_TYPE_FILE) */
+            off_t file_offset; /* Current offset in file */
+            size_t file_size;  /* Total size to send from file */
+            size_t file_sent;  /* Bytes already sent from this file */
+        };
+    };
+    size_t buf_offset;    /* Offset in buffer where data starts (for partial sends, BUFFER_TYPE_MEMORY only) */
     uint32_t zerocopy_id; /* ID for tracking MSG_ZEROCOPY completions */
 } buffer_ref_t;
 
@@ -167,6 +187,18 @@ void zerocopy_queue_cleanup(zerocopy_queue_t *queue);
  * @return 0 on success, -1 if queue full
  */
 int zerocopy_queue_add(zerocopy_queue_t *queue, void *data, size_t len, buffer_ref_t *buf_ref, size_t offset);
+
+/**
+ * Queue a file descriptor for zero-copy send using sendfile()
+ * Creates a special buffer_ref_t to represent the file
+ * Takes ownership of the file descriptor (will close it when done)
+ * @param queue Send queue
+ * @param file_fd File descriptor to send (must be seekable)
+ * @param file_offset Starting offset in file
+ * @param file_size Number of bytes to send from file
+ * @return 0 on success, -1 on error
+ */
+int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd, off_t file_offset, size_t file_size);
 
 /**
  * Send queued data using zero-copy techniques

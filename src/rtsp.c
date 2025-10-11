@@ -22,6 +22,7 @@
 #include "zerocopy.h"
 #include "timezone.h"
 #include "connection.h"
+#include "stream.h"
 #include "status.h"
 #include "worker.h"
 
@@ -891,18 +892,18 @@ static int rtsp_state_machine_advance(rtsp_session_t *session)
         /* Ready to send PLAY */
         if (session->playseek_range[0] != '\0')
         {
-            if (config.playseek_passthrough) {
+            if (config.playseek_passthrough)
+            {
                 snprintf(extra_headers, sizeof(extra_headers),
-                        "Session: %s\r\n",
-                        session->session_id);
+                         "Session: %s\r\n",
+                         session->session_id);
             }
             else
             {
                 snprintf(extra_headers, sizeof(extra_headers),
-                        "Session: %s\r\nRange: %s\r\n",
-                        session->session_id, session->playseek_range);
+                         "Session: %s\r\nRange: %s\r\n",
+                         session->session_id, session->playseek_range);
             }
-
         }
         else
         {
@@ -1070,15 +1071,15 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, struct connection_
             }
             else
             {
-                /* RTP - extract RTP payload and forward to client
-                 * write_rtp_payload_to_client will allocate a new buffer for the payload */
+                /* RTP - extract RTP payload and forward to client (or capture snapshot)
+                 * stream_process_rtp_payload will allocate a new buffer for the payload */
                 buffer_ref_t *packet_buf = buffer_pool_alloc(packet_length);
                 if (packet_buf)
                 {
                     memcpy(packet_buf->data, &session->tcp_buffer[4], packet_length);
-                    int pb = write_rtp_payload_to_client(conn, packet_length, packet_buf->data,
-                                                         packet_buf,
-                                                         &session->current_seqn, &session->not_first_packet);
+                    int pb = stream_process_rtp_payload(&conn->stream, packet_length, packet_buf->data,
+                                                        packet_buf,
+                                                        &session->current_seqn, &session->not_first_packet);
                     if (pb > 0)
                         bytes_forwarded += pb;
                     /* Release our reference */
@@ -1161,10 +1162,10 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, struct connection_s *conn)
         }
         else
         {
-            /* RTP - extract RTP payload and forward to client (true zero-copy) */
-            int pb = write_rtp_payload_to_client(conn, bytes_received, rtp_buffer,
-                                                 rtp_buf,
-                                                 &session->current_seqn, &session->not_first_packet);
+            /* RTP - extract RTP payload and forward to client or capture snapshot (true zero-copy) */
+            int pb = stream_process_rtp_payload(&conn->stream, bytes_received, rtp_buffer,
+                                                rtp_buf,
+                                                &session->current_seqn, &session->not_first_packet);
             if (pb > 0)
                 bytes_written = pb;
         }

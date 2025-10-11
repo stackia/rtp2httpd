@@ -21,6 +21,7 @@
 #include "connection.h"
 #include "rtsp.h"
 #include "service.h"
+#include "snapshot.h"
 #include "status.h"
 #include "worker.h"
 #include "zerocopy.h"
@@ -54,6 +55,25 @@ int stream_join_mcast_group(stream_context_t *ctx)
         ctx->last_mcast_data_time = get_time_ms();
     }
     return sock;
+}
+
+/*
+ * Process RTP payload - either forward to client (streaming) or capture I-frame (snapshot)
+ * Returns: bytes forwarded (>= 0) for streaming, 1 if I-frame captured for snapshot, -1 on error
+ */
+int stream_process_rtp_payload(stream_context_t *ctx, int recv_len, uint8_t *buf,
+                               buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first)
+{
+    /* In snapshot mode, delegate to snapshot module */
+    if (ctx->snapshot.enabled)
+    {
+        return snapshot_process_packet(&ctx->snapshot, recv_len, buf, ctx->conn);
+    }
+    else
+    {
+        /* Normal streaming mode - forward to client */
+        return write_rtp_payload_to_client(ctx->conn, recv_len, buf, buf_ref, old_seqn, not_first);
+    }
 }
 
 /*
@@ -247,7 +267,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
 
 /* Initialize context for unified worker epoll (non-blocking, no own loop) */
 int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *conn, service_t *service,
-                                   int epoll_fd, int status_index)
+                                   int epoll_fd, int status_index, int is_snapshot)
 {
     if (!ctx || !conn || !service)
         return -1;
@@ -265,6 +285,16 @@ int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *c
     ctx->last_status_update = get_time_ms();
     ctx->last_mcast_data_time = get_time_ms();
     ctx->last_fcc_data_time = get_time_ms();
+
+    /* Initialize snapshot context if this is a snapshot request */
+    if (is_snapshot)
+    {
+        if (snapshot_init(&ctx->snapshot) < 0)
+        {
+            logger(LOG_ERROR, "Snapshot: Failed to initialize snapshot context");
+            return -1;
+        }
+    }
 
     /* Initialize media path depending on service type */
     if (service->service_type == SERVICE_RTSP)
@@ -359,8 +389,20 @@ int stream_tick(stream_context_t *ctx, int64_t now)
         }
     }
 
-    /* Update bandwidth calculation every second */
-    if (now - ctx->last_status_update >= 1000)
+    /* Check snapshot timeout (5 seconds) */
+    if (ctx->snapshot.enabled)
+    {
+        int64_t snapshot_elapsed = now - ctx->snapshot.start_time;
+        if (snapshot_elapsed > SNAPSHOT_TIMEOUT_SEC * 1000) /* 5 seconds */
+        {
+            logger(LOG_WARN, "Snapshot: Timeout waiting for I-frame (%lld ms)",
+                   (long long)snapshot_elapsed);
+            return -1; /* Timeout - close connection */
+        }
+    }
+
+    /* Update bandwidth calculation every second (skip for snapshot mode) */
+    if (!ctx->snapshot.enabled && now - ctx->last_status_update >= 1000)
     {
         /* Calculate bandwidth based on bytes sent since last update */
         uint64_t bytes_diff = ctx->total_bytes_sent - ctx->last_bytes_sent;
@@ -388,6 +430,12 @@ int stream_context_cleanup(stream_context_t *ctx)
 {
     if (!ctx)
         return 0;
+
+    /* Clean up snapshot resources if in snapshot mode */
+    if (ctx->snapshot.enabled)
+    {
+        snapshot_free(&ctx->snapshot);
+    }
 
     /* Clean up FCC session (always safe to cleanup immediately) */
     fcc_session_cleanup(&ctx->fcc, ctx->service, ctx->epoll_fd);

@@ -13,6 +13,7 @@ rtp2httpd_SOURCES = \
 	fcc.c \
 	stream.c \
 	rtsp.c \
+	snapshot.c \
 	timezone.c \
 	status.c \
 	connection.c \
@@ -30,6 +31,7 @@ noinst_HEADERS = \
 	fcc.h \
 	stream.h \
 	rtsp.h \
+	snapshot.h \
 	timezone.h \
 	status.h \
 	status_page.h \
