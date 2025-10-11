@@ -37,6 +37,8 @@ int cmd_buffer_pool_max_size_set;
 int cmd_ffmpeg_path_set;
 int cmd_ffmpeg_args_set;
 int cmd_video_snapshot_set;
+int cmd_upstream_interface_unicast_set;
+int cmd_upstream_interface_multicast_set;
 
 enum section_e
 {
@@ -46,24 +48,75 @@ enum section_e
   SEC_GLOBAL
 };
 
-void parse_bind_sec(char *line)
+/* Helper functions for parsing */
+
+/* Skip whitespace and extract next token */
+static char *extract_token(char *line, int *pos)
 {
-  int i, j;
-  char *node, *service;
-  struct bindaddr_s *ba;
+  int i = *pos;
+  int j = i;
 
-  j = i = 0;
-  while (!isspace(line[j]))
-    j++;
-  node = strndup(line, j);
-
-  i = j;
   while (isspace(line[i]))
     i++;
   j = i;
-  while (!isspace(line[j]))
+  while (line[j] != '\0' && !isspace(line[j]))
     j++;
-  service = strndup(line + i, j - i);
+
+  *pos = j;
+  return strndup(line + i, j - i);
+}
+
+/* Parse boolean value from string */
+static int parse_bool(const char *value)
+{
+  return (strcasecmp("on", value) == 0) ||
+         (strcasecmp("true", value) == 0) ||
+         (strcasecmp("yes", value) == 0) ||
+         (strcasecmp("1", value) == 0);
+}
+
+/* Set config value if not already set by command line */
+static int set_if_not_cmd_override(int cmd_flag, const char *param_name)
+{
+  if (cmd_flag)
+  {
+    logger(LOG_WARN, "Config file value \"%s\" ignored (already set on command line)", param_name);
+    return 0;
+  }
+  return 1;
+}
+
+/* Free a string pointer if not NULL */
+static void safe_free_string(char **str)
+{
+  if (*str != NULL)
+  {
+    free(*str);
+    *str = NULL;
+  }
+}
+
+/* Cleanup helper for parse_services_sec */
+static void cleanup_service_parse_temps(char *servname, char *msrc, char *msaddr, char *msport)
+{
+  if (servname)
+    free(servname);
+  if (msrc)
+    free(msrc);
+  if (msaddr)
+    free(msaddr);
+  if (msport)
+    free(msport);
+}
+
+void parse_bind_sec(char *line)
+{
+  int pos = 0;
+  char *node, *service;
+  struct bindaddr_s *ba;
+
+  node = extract_token(line, &pos);
+  service = extract_token(line, &pos);
 
   if (strcmp("*", node) == 0)
   {
@@ -85,6 +138,7 @@ void parse_services_sec(char *line)
   struct addrinfo hints;
   char *servname, *type, *maddr, *mport, *msrc, *msaddr, *msport;
   service_t *service;
+  int pos = 0;
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_socktype = SOCK_DGRAM;
@@ -94,28 +148,28 @@ void parse_services_sec(char *line)
   msaddr = strdup("");
   msport = strdup("");
 
-  j = i = 0;
-  while (!isspace(line[j]))
-    j++;
-  servname = strndup(line, j);
+  /* Extract service name and type */
+  servname = extract_token(line, &pos);
+  type = strndupa(line + pos, strcspn(line + pos, " \t\n\r"));
 
-  i = j;
-  while (isspace(line[i]))
-    i++;
-  j = i;
-  while (!isspace(line[j]))
+  /* Skip whitespace after type */
+  while (isspace(line[pos]))
+    pos++;
+  j = pos;
+  while (!isspace(line[j]) && line[j] != '\0')
     j++;
-  type = strndupa(line + i, j - i);
+  type = strndupa(line + pos, j - pos);
+  pos = j;
 
   /* Check if this is an RTSP service - different parsing logic */
   if (strcasecmp("RTSP", type) == 0)
   {
     /* For RTSP: SERVICE_NAME RTSP RTSP_URL */
-    i = j;
-    while (isspace(line[i]))
-      i++;
-    /* Rest of the line is the RTSP URL */
-    char *rtsp_url = strdup(line + i);
+    /* Skip whitespace and get rest of line as RTSP URL */
+    while (isspace(line[pos]))
+      pos++;
+    char *rtsp_url = strdup(line + pos);
+
     /* Remove trailing whitespace */
     char *end = rtsp_url + strlen(rtsp_url) - 1;
     while (end > rtsp_url && isspace(*end))
@@ -124,8 +178,7 @@ void parse_services_sec(char *line)
     if (strlen(rtsp_url) == 0)
     {
       logger(LOG_ERROR, "RTSP service %s: missing RTSP URL", servname);
-      free(servname);
-      free(msrc);
+      cleanup_service_parse_temps(servname, msrc, msaddr, msport);
       free(rtsp_url);
       return;
     }
@@ -143,28 +196,25 @@ void parse_services_sec(char *line)
     logger(LOG_DEBUG, "RTSP service: %s, URL: %s", servname, rtsp_url);
 
     /* Free allocated temporary strings */
-    free(msrc);
-    free(msaddr);
-    free(msport);
+    cleanup_service_parse_temps(NULL, msrc, msaddr, msport);
     return;
   }
 
   /* Parsing logic for MRTP/MUDP services */
-  i = j;
-  while (isspace(line[i]))
-    i++;
-  j = i;
-  while (!isspace(line[j]))
-    j++;
-  maddr = strndupa(line + i, j - i);
+  /* Extract multicast address and port */
+  while (isspace(line[pos]))
+    pos++;
+  i = pos;
+  while (!isspace(line[pos]) && line[pos] != '\0')
+    pos++;
+  maddr = strndupa(line + i, pos - i);
 
-  i = j;
-  while (isspace(line[i]))
-    i++;
-  j = i;
-  while (!isspace(line[j]))
-    j++;
-  mport = strndupa(line + i, j - i);
+  while (isspace(line[pos]))
+    pos++;
+  i = pos;
+  while (!isspace(line[pos]) && line[pos] != '\0')
+    pos++;
+  mport = strndupa(line + i, pos - i);
 
   if (strstr(maddr, "@") != NULL)
   {
@@ -214,8 +264,7 @@ void parse_services_sec(char *line)
   if ((strcasecmp("MRTP", type) != 0) && (strcasecmp("MUDP", type) != 0))
   {
     logger(LOG_ERROR, "Unsupported service type: %s", type);
-    free(servname);
-    free(msrc);
+    cleanup_service_parse_temps(servname, msrc, msaddr, msport);
     return;
   }
 
@@ -231,40 +280,26 @@ void parse_services_sec(char *line)
   if (r || rr)
   {
     if (r)
-    {
-      logger(LOG_ERROR, "Cannot init service %s. GAI: %s",
-             servname, gai_strerror(r));
-    }
+      logger(LOG_ERROR, "Cannot init service %s. GAI: %s", servname, gai_strerror(r));
     if (rr)
-    {
-      logger(LOG_ERROR, "Cannot init service %s. GAI: %s",
-             servname, gai_strerror(rr));
-    }
-    free(servname);
-    free(msrc);
+      logger(LOG_ERROR, "Cannot init service %s. GAI: %s", servname, gai_strerror(rr));
+
+    cleanup_service_parse_temps(servname, msrc, msaddr, msport);
     free(service);
     return;
   }
-  if (service->addr->ai_next != NULL)
-  {
-    logger(LOG_WARN, "Multicast address is ambiguous (multiple results)");
-  }
-  if (strcmp(msrc, "") != 0 && msrc != NULL)
-  {
-    if (service->msrc_addr->ai_next != NULL)
-    {
-      logger(LOG_WARN, "Source address is ambiguous (multiple results)");
-    }
-  }
 
+  if (service->addr->ai_next != NULL)
+    logger(LOG_WARN, "Multicast address is ambiguous (multiple results)");
+
+  if (strcmp(msrc, "") != 0 && msrc != NULL && service->msrc_addr->ai_next != NULL)
+    logger(LOG_WARN, "Source address is ambiguous (multiple results)");
+
+  /* Set service type */
   if (strcasecmp("MRTP", type) == 0)
-  {
     service->service_type = SERVICE_MRTP;
-  }
   else if (strcasecmp("MUDP", type) == 0)
-  {
     service->service_type = SERVICE_MUDP;
-  }
 
   service->url = servname;
   service->msrc = strdup(msrc);
@@ -274,10 +309,8 @@ void parse_services_sec(char *line)
   logger(LOG_INFO, "Service created: %s (%s %s:%s)", servname, type, maddr, mport);
   logger(LOG_DEBUG, "Service details: %s, Type: %s, Addr: %s, Port: %s", servname, type, maddr, mport);
 
-  /* Free allocated temporary strings */
-  free(msrc);
-  free(msaddr);
-  free(msport);
+  /* Free allocated temporary strings (servname is now owned by service) */
+  cleanup_service_parse_temps(NULL, msrc, msaddr, msport);
 }
 
 void parse_global_sec(char *line)
@@ -306,43 +339,17 @@ void parse_global_sec(char *line)
     j++;
   value = strndupa(line + i, j - i);
 
+  /* Integer parameters with command line override */
   if (strcasecmp("verbosity", param) == 0)
   {
-    if (!cmd_verbosity_set)
-    {
+    if (set_if_not_cmd_override(cmd_verbosity_set, "verbosity"))
       config.verbosity = atoi(value);
-    }
-    else
-    {
-      logger(LOG_WARN, "Config file value \"verbosity\" ignored (already set on command line)");
-    }
     return;
   }
-  if (strcasecmp("daemonise", param) == 0)
-  {
-    if (!cmd_daemonise_set)
-    {
-      if ((strcasecmp("on", value) == 0) ||
-          (strcasecmp("true", value) == 0) ||
-          (strcasecmp("yes", value) == 0) ||
-          (strcasecmp("1", value) == 0))
-      {
-        config.daemonise = 1;
-      }
-      else
-      {
-        config.daemonise = 0;
-      }
-    }
-    else
-    {
-      logger(LOG_WARN, "Config file value \"daemonise\" ignored (already set on command line)");
-    }
-    return;
-  }
+
   if (strcasecmp("maxclients", param) == 0)
   {
-    if (!cmd_maxclients_set)
+    if (set_if_not_cmd_override(cmd_maxclients_set, "maxclients"))
     {
       if (atoi(value) < 1)
       {
@@ -351,12 +358,9 @@ void parse_global_sec(char *line)
       }
       config.maxclients = atoi(value);
     }
-    else
-    {
-      logger(LOG_WARN, "Config file value \"maxclients\" ignored (already set on command line)");
-    }
     return;
   }
+
   if (strcasecmp("workers", param) == 0)
   {
     int n = atoi(value);
@@ -368,68 +372,17 @@ void parse_global_sec(char *line)
     config.workers = n;
     return;
   }
-  if (strcasecmp("udpxy", param) == 0)
-  {
-    if (!cmd_udpxy_set)
-    {
-      if ((strcasecmp("on", value) == 0) ||
-          (strcasecmp("true", value) == 0) ||
-          (strcasecmp("yes", value) == 0) ||
-          (strcasecmp("1", value) == 0))
-      {
-        config.udpxy = 1;
-      }
-      else
-      {
-        config.udpxy = 0;
-      }
-    }
-    else
-    {
-      logger(LOG_WARN, "Config file value \"udpxy\" ignored (already set on command line)");
-    }
-    return;
-  }
-  if (strcasecmp("hostname", param) == 0)
-  {
-    if (!cmd_hostname_set)
-    {
-      config.hostname = strdup(value);
-    }
-    else
-    {
-      logger(LOG_WARN, "Config file value \"hostname\" ignored (already set on command line)");
-    }
-    return;
-  }
-  if (strcasecmp("upstream-interface-unicast", param) == 0)
-  {
-    strncpy(config.upstream_interface_unicast.ifr_name, value, IFNAMSIZ - 1);
-    config.upstream_interface_unicast.ifr_ifindex = if_nametoindex(config.upstream_interface_unicast.ifr_name);
-    return;
-  }
-  if (strcasecmp("upstream-interface-multicast", param) == 0)
-  {
-    strncpy(config.upstream_interface_multicast.ifr_name, value, IFNAMSIZ - 1);
-    config.upstream_interface_multicast.ifr_ifindex = if_nametoindex(config.upstream_interface_multicast.ifr_name);
-    return;
-  }
+
   if (strcasecmp("fcc-nat-traversal", param) == 0)
   {
-    if (!cmd_fcc_nat_traversal_set)
-    {
+    if (set_if_not_cmd_override(cmd_fcc_nat_traversal_set, "fcc-nat-traversal"))
       config.fcc_nat_traversal = atoi(value);
-    }
-    else
-    {
-      logger(LOG_WARN, "Config file value \"fcc-nat-traversal\" ignored (already set on command line)");
-    }
     return;
   }
 
   if (strcasecmp("buffer-pool-max-size", param) == 0)
   {
-    if (!cmd_buffer_pool_max_size_set)
+    if (set_if_not_cmd_override(cmd_buffer_pool_max_size_set, "buffer-pool-max-size"))
     {
       int val = atoi(value);
       if (val < 1)
@@ -441,58 +394,70 @@ void parse_global_sec(char *line)
         config.buffer_pool_max_size = val;
       }
     }
-    else
-    {
-      logger(LOG_WARN, "Config file value \"buffer-pool-max-size\" ignored (already set on command line)");
-    }
     return;
   }
 
-  if (strcasecmp("ffmpeg-path", param) == 0)
+  /* Boolean parameters with command line override */
+  if (strcasecmp("daemonise", param) == 0)
   {
-    if (!cmd_ffmpeg_path_set)
-    {
-      config.ffmpeg_path = strdup(value);
-    }
-    else
-    {
-      logger(LOG_WARN, "Config file value \"ffmpeg-path\" ignored (already set on command line)");
-    }
+    if (set_if_not_cmd_override(cmd_daemonise_set, "daemonise"))
+      config.daemonise = parse_bool(value);
     return;
   }
 
-  if (strcasecmp("ffmpeg-args", param) == 0)
+  if (strcasecmp("udpxy", param) == 0)
   {
-    if (!cmd_ffmpeg_args_set)
-    {
-      config.ffmpeg_args = strdup(value);
-    }
-    else
-    {
-      logger(LOG_WARN, "Config file value \"ffmpeg-args\" ignored (already set on command line)");
-    }
+    if (set_if_not_cmd_override(cmd_udpxy_set, "udpxy"))
+      config.udpxy = parse_bool(value);
     return;
   }
 
   if (strcasecmp("video-snapshot", param) == 0)
   {
-    if (!cmd_video_snapshot_set)
+    if (set_if_not_cmd_override(cmd_video_snapshot_set, "video-snapshot"))
+      config.video_snapshot = parse_bool(value);
+    return;
+  }
+
+  /* String parameters with command line override */
+  if (strcasecmp("hostname", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_hostname_set, "hostname"))
+      config.hostname = strdup(value);
+    return;
+  }
+
+  if (strcasecmp("ffmpeg-path", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_ffmpeg_path_set, "ffmpeg-path"))
+      config.ffmpeg_path = strdup(value);
+    return;
+  }
+
+  if (strcasecmp("ffmpeg-args", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_ffmpeg_args_set, "ffmpeg-args"))
+      config.ffmpeg_args = strdup(value);
+    return;
+  }
+
+  /* Interface parameters with command line override */
+  if (strcasecmp("upstream-interface-unicast", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_upstream_interface_unicast_set, "upstream-interface-unicast"))
     {
-      if ((strcasecmp("on", value) == 0) ||
-          (strcasecmp("true", value) == 0) ||
-          (strcasecmp("yes", value) == 0) ||
-          (strcasecmp("1", value) == 0))
-      {
-        config.video_snapshot = 1;
-      }
-      else
-      {
-        config.video_snapshot = 0;
-      }
+      strncpy(config.upstream_interface_unicast.ifr_name, value, IFNAMSIZ - 1);
+      config.upstream_interface_unicast.ifr_ifindex = if_nametoindex(config.upstream_interface_unicast.ifr_name);
     }
-    else
+    return;
+  }
+
+  if (strcasecmp("upstream-interface-multicast", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_upstream_interface_multicast_set, "upstream-interface-multicast"))
     {
-      logger(LOG_WARN, "Config file value \"video-snapshot\" ignored (already set on command line)");
+      strncpy(config.upstream_interface_multicast.ifr_name, value, IFNAMSIZ - 1);
+      config.upstream_interface_multicast.ifr_ifindex = if_nametoindex(config.upstream_interface_multicast.ifr_name);
     }
     return;
   }
@@ -606,6 +571,30 @@ void free_bindaddr(struct bindaddr_s *ba)
   }
 }
 
+/*
+ * Free service structure created from configuration file
+ */
+static void free_config_service(service_t *service)
+{
+  if (service->url != NULL)
+    free(service->url);
+  if (service->addr != NULL)
+    freeaddrinfo(service->addr);
+  if (service->msrc_addr != NULL)
+    freeaddrinfo(service->msrc_addr);
+  if (service->fcc_addr != NULL)
+    freeaddrinfo(service->fcc_addr);
+  if (service->rtsp_url != NULL)
+    free(service->rtsp_url);
+  if (service->playseek_param != NULL)
+    free(service->playseek_param);
+  if (service->user_agent != NULL)
+    free(service->user_agent);
+  if (service->msrc != NULL)
+    free(service->msrc);
+  free(service);
+}
+
 /* Setup configuration defaults */
 void restore_conf_defaults(void)
 {
@@ -615,95 +604,59 @@ void restore_conf_defaults(void)
   /* Initialize configuration structure with defaults */
   memset(&config, 0, sizeof(config_t));
 
+  /* Set default values and reset command line flags */
   config.verbosity = LOG_ERROR;
   cmd_verbosity_set = 0;
+
   config.daemonise = 0;
   cmd_daemonise_set = 0;
+
   config.maxclients = 5;
   cmd_maxclients_set = 0;
+
   config.udpxy = 1;
   cmd_udpxy_set = 0;
+
   cmd_bind_set = 0;
+
   config.fcc_nat_traversal = FCC_NAT_T_DISABLED;
   cmd_fcc_nat_traversal_set = 0;
+
   config.workers = 1; /* default single worker for low-end OpenWrt */
+
   config.buffer_pool_max_size = 16384;
   cmd_buffer_pool_max_size_set = 0;
 
-  if (config.hostname != NULL)
-  {
-    free(config.hostname);
-    config.hostname = NULL;
-  }
+  safe_free_string(&config.hostname);
   cmd_hostname_set = 0;
 
-  if (config.ffmpeg_path != NULL)
-  {
-    free(config.ffmpeg_path);
-    config.ffmpeg_path = NULL;
-  }
+  safe_free_string(&config.ffmpeg_path);
   cmd_ffmpeg_path_set = 0;
 
-  if (config.ffmpeg_args != NULL)
-  {
-    free(config.ffmpeg_args);
-    config.ffmpeg_args = NULL;
-  }
-  /* Set default ffmpeg args */
-  config.ffmpeg_args = strdup("-hwaccel none");
+  safe_free_string(&config.ffmpeg_args);
+  config.ffmpeg_args = strdup("-hwaccel none"); /* Set default ffmpeg args */
   cmd_ffmpeg_args_set = 0;
 
   config.video_snapshot = 0;
   cmd_video_snapshot_set = 0;
 
   if (config.upstream_interface_unicast.ifr_name[0] != '\0')
-  {
     memset(&config.upstream_interface_unicast, 0, sizeof(struct ifreq));
-  }
-  if (config.upstream_interface_multicast.ifr_name[0] != '\0')
-  {
-    memset(&config.upstream_interface_multicast, 0, sizeof(struct ifreq));
-  }
+  cmd_upstream_interface_unicast_set = 0;
 
+  if (config.upstream_interface_multicast.ifr_name[0] != '\0')
+    memset(&config.upstream_interface_multicast, 0, sizeof(struct ifreq));
+  cmd_upstream_interface_multicast_set = 0;
+
+  /* Free all services */
   while (services != NULL)
   {
     service_tmp = services;
     services = services->next;
-    if (service_tmp->url != NULL)
-    {
-      free(service_tmp->url);
-    }
-    if (service_tmp->addr != NULL)
-    {
-      freeaddrinfo(service_tmp->addr);
-    }
-    if (service_tmp->msrc_addr != NULL)
-    {
-      freeaddrinfo(service_tmp->msrc_addr);
-    }
-    if (service_tmp->fcc_addr != NULL)
-    {
-      freeaddrinfo(service_tmp->fcc_addr);
-    }
-    if (service_tmp->rtsp_url != NULL)
-    {
-      free(service_tmp->rtsp_url);
-    }
-    if (service_tmp->playseek_param != NULL)
-    {
-      free(service_tmp->playseek_param);
-    }
-    if (service_tmp->user_agent != NULL)
-    {
-      free(service_tmp->user_agent);
-    }
-    if (service_tmp->msrc != NULL)
-    {
-      free(service_tmp->msrc);
-    }
-    free(service_tmp);
+    free_config_service(service_tmp);
   }
 
+  /* Free all bind addresses */
   while (bind_addresses != NULL)
   {
     bind_tmp = bind_addresses;
@@ -907,10 +860,12 @@ void parse_cmd_line(int argc, char *argv[])
     case 'i':
       strncpy(config.upstream_interface_unicast.ifr_name, optarg, IFNAMSIZ - 1);
       config.upstream_interface_unicast.ifr_ifindex = if_nametoindex(config.upstream_interface_unicast.ifr_name);
+      cmd_upstream_interface_unicast_set = 1;
       break;
     case 'r':
       strncpy(config.upstream_interface_multicast.ifr_name, optarg, IFNAMSIZ - 1);
       config.upstream_interface_multicast.ifr_ifindex = if_nametoindex(config.upstream_interface_multicast.ifr_name);
+      cmd_upstream_interface_multicast_set = 1;
       break;
     case 'F':
       config.ffmpeg_path = strdup(optarg);
