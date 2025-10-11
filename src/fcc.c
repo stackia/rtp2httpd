@@ -37,7 +37,6 @@ static void log_fcc_server_response(uint8_t fmt, uint8_t result_code, uint16_t s
 static int fcc_send_term_packet(fcc_session_t *fcc, service_t *service,
                                 uint16_t seqn, const char *reason);
 static int fcc_send_termination_message(struct stream_context_s *ctx, uint16_t mcast_seqn);
-static int fcc_init_pending_buffer(struct stream_context_s *ctx);
 
 static uint8_t *build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client_nport)
 {
@@ -216,7 +215,6 @@ void fcc_session_cleanup(fcc_session_t *fcc, service_t *service, int epoll_fd)
     }
     fcc->pending_list_head = NULL;
     fcc->pending_list_tail = NULL;
-    fcc->pending_total_bytes = 0;
 
     /* Close FCC socket */
     if (fcc->fcc_sock > 0)
@@ -640,26 +638,7 @@ static int fcc_send_termination_message(struct stream_context_s *ctx, uint16_t m
 }
 
 /*
- * FCC Protocol Stage 6: Initialize pending buffer for smooth transition
- */
-static int fcc_init_pending_buffer(struct stream_context_s *ctx)
-{
-    fcc_session_t *fcc = &ctx->fcc;
-
-    if (fcc->pending_max_bytes == 0)
-    {
-        /* Calculate maximum buffer size based on expected packet count */
-        uint32_t expected_packets = max(fcc->fcc_term_seqn - fcc->current_seqn, FCC_MIN_BUFFER_PACKETS);
-        fcc->pending_max_bytes = (expected_packets + FCC_MIN_BUFFER_PACKETS) * FCC_PENDING_BUFFER_MULTIPLIER;
-
-        logger(LOG_DEBUG, "FCC: Pending buffer initialized, max_bytes=%u", fcc->pending_max_bytes);
-    }
-
-    return 0;
-}
-
-/*
- * FCC Protocol Stage 7: Handle multicast data during transition period
+ * FCC Protocol Stage 6: Handle multicast data during transition period
  */
 int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref)
 {
@@ -686,23 +665,9 @@ int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int 
         return -1;
     }
 
-    /* Initialize pending buffer if not done yet */
-    if (fcc_init_pending_buffer(ctx) < 0)
-    {
-        return -1;
-    }
-
     /* Skip buffering if buffer is full */
     if (fcc->mcast_pbuf_full)
     {
-        return 0;
-    }
-
-    /* Check if we have enough space in the pending list */
-    if (fcc->pending_total_bytes + payloadlength > fcc->pending_max_bytes)
-    {
-        logger(LOG_WARN, "FCC: Multicast pending buffer full, video quality may suffer");
-        fcc->mcast_pbuf_full = 1;
         return 0;
     }
 
@@ -745,8 +710,6 @@ int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int 
         fcc->pending_list_head = node;
         fcc->pending_list_tail = node;
     }
-
-    fcc->pending_total_bytes += payloadlength;
 
     return 0;
 }
@@ -792,8 +755,7 @@ int fcc_handle_mcast_active(struct stream_context_s *ctx, uint8_t *buf, int buf_
             else
             {
                 /* Queue full - keep remaining buffers for next attempt */
-                logger(LOG_DEBUG, "FCC: Zero-copy queue full, keeping %u pending bytes",
-                       fcc->pending_total_bytes);
+                logger(LOG_DEBUG, "FCC: Zero-copy queue full, keeping pending buffers");
                 return 0;
             }
         }
@@ -801,7 +763,6 @@ int fcc_handle_mcast_active(struct stream_context_s *ctx, uint8_t *buf, int buf_
         /* All buffers flushed successfully */
         fcc->pending_list_head = NULL;
         fcc->pending_list_tail = NULL;
-        fcc->pending_total_bytes = 0;
         fcc->current_seqn = fcc->mcast_pbuf_last_seqn;
 
         logger(LOG_DEBUG, "FCC: Flushed pending buffer chain, last_seqn=%u", fcc->mcast_pbuf_last_seqn);

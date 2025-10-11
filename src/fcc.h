@@ -13,8 +13,6 @@ typedef struct buffer_ref_s buffer_ref_t;
 
 #define FCC_PK_LEN_REQ 40
 #define FCC_PK_LEN_TERM 16
-#define FCC_PENDING_BUFFER_MULTIPLIER 1500
-#define FCC_MIN_BUFFER_PACKETS 80
 #define FCC_MAX_REDIRECTS 5
 #define FCC_TIMEOUT_SEC 1
 
@@ -58,8 +56,6 @@ typedef struct
     /* Multicast pending buffer for smooth transition - zero-copy chain */
     pending_buffer_node_t *pending_list_head;
     pending_buffer_node_t *pending_list_tail;
-    uint32_t pending_total_bytes; /* Total bytes in pending list */
-    uint32_t pending_max_bytes;   /* Maximum bytes allowed */
     uint16_t mcast_pbuf_last_seqn;
     int mcast_pbuf_full;
 } fcc_session_t;
