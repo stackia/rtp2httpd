@@ -62,5 +62,13 @@ COPY --from=builder /workdir/rtp2httpd.conf /usr/local/etc/
 # Expose the default port
 EXPOSE 5140
 
+# Important: This application requires MSG_ZEROCOPY support which needs locked memory.
+# Docker containers must be run with --ulimit memlock=-1:-1 to allow MSG_ZEROCOPY to work.
+#
+# Example:
+#   docker run --network=host --ulimit memlock=-1:-1 --rm ghcr.io/stackia/rtp2httpd:latest
+#
+# Without this ulimit setting, you will experience ENOBUFS errors and clients won't receive data.
+
 # Run the application
 ENTRYPOINT ["/usr/local/bin/rtp2httpd"]

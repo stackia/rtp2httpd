@@ -111,9 +111,34 @@ opkg install rtp2httpd_*.ipk luci-app-rtp2httpd_*.ipk luci-i18n-rtp2httpd-*.ipk
 
 适用于支持 Docker 的设备。**必须使用 host 网络模式**以接收组播流。
 
+**⚠️ 重要：必须添加 `--ulimit memlock=-1:-1` 参数**
+
+rtp2httpd 使用 MSG_ZEROCOPY 技术需要锁定内存页。Docker 容器默认的 locked memory 限制（64KB）太小，会导致 ENOBUFS 错误，表现为：
+
+- 客户端无法播放
+- 服务端 buffer pool 疯狂增长
+- 统计数字中的 ENOBUFS 错误飙升
+
+**正确的启动方式：**
+
 ```bash
-docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest \
+docker run --network=host --ulimit memlock=-1:-1 --rm \
+  ghcr.io/stackia/rtp2httpd:latest \
   --noconfig --verbose 2 --listen 5140 --maxclients 20
+```
+
+**使用 docker-compose：**
+
+```yaml
+services:
+  rtp2httpd:
+    image: ghcr.io/stackia/rtp2httpd:latest
+    network_mode: host
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    command: --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
 
 ### 编译安装
@@ -407,15 +432,43 @@ ffmpeg-path = /usr/local/bin/ffmpeg
 ffmpeg-args = -hwaccel auto
 ```
 
+## 🔧 故障排查
+
+### Docker 容器中 ENOBUFS 错误
+
+**症状**：
+
+- 客户端无法播放，但服务端 buffer pool 持续增长
+- 日志中出现频繁的 `ENOBUFS` 错误
+- Web UI 显示 `ENOBUFS` 计数持续增加
+
+**原因**：Docker 容器默认的 locked memory 限制（64KB）太小，MSG_ZEROCOPY 无法锁定足够的内存页。
+
+**解决方案**：启动容器时添加 `--ulimit memlock=-1:-1` 参数（见上方 Docker 部署章节）。
+
+**为什么宿主机上运行没问题？**
+
+- 宿主机上的进程通常拥有 `CAP_IPC_LOCK` capability，可以绕过 `ulimit -l` 限制
+- Docker 容器默认会 drop 掉这个 capability，因此严格受 `ulimit -l` 限制
+
+**诊断命令**：
+
+```bash
+# 检查容器内的 locked memory 限制
+docker exec <container> ulimit -l
+
+# 查看实时 ENOBUFS 错误计数
+curl http://localhost:5140/status | grep enobufs
+
+# 查看 socket 缓冲区状态
+docker exec <container> ss -tm 'sport = :5140'
+```
+
 ## 内核参数调优
 
 ### 开启 BBR
 
 建议修改内核参数，[开启 BBR](https://blog.clash-plus.com/post/openwrt-bbr/) 后可以进一步降低换台延迟。
-
-### 调整 optmem_max
-
-- `net.core.optmem_max`：MSG_ZEROCOPY 元数据内存限制，如遇播放卡顿可尝试增大到 512KB (`net.core.optmem_max=524288`)
 
 ## 🤝 开发贡献
 
