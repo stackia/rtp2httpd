@@ -16,6 +16,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Override version number
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          RELEASE_VERSION="${RELEASE_TAG#v}"
+          sed -i "s/1\.0\.0/${RELEASE_VERSION}/g" configure.ac
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
