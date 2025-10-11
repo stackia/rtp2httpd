@@ -17,11 +17,12 @@
 #include "connection.h"
 
 static const char *response_codes[] = {
-    "HTTP/1.1 200 OK\r\n",                  /* 0 */
-    "HTTP/1.1 404 Not Found\r\n",           /* 1 */
-    "HTTP/1.1 400 Bad Request\r\n",         /* 2 */
-    "HTTP/1.1 501 Not Implemented\r\n",     /* 3 */
-    "HTTP/1.1 503 Service Unavailable\r\n", /* 4 */
+    "HTTP/1.1 200 OK\r\n",                    /* 0 */
+    "HTTP/1.1 404 Not Found\r\n",             /* 1 */
+    "HTTP/1.1 400 Bad Request\r\n",           /* 2 */
+    "HTTP/1.1 501 Not Implemented\r\n",       /* 3 */
+    "HTTP/1.1 503 Service Unavailable\r\n",   /* 4 */
+    "HTTP/1.1 500 Internal Server Error\r\n", /* 5 */
 };
 
 static const char *content_types[] = {
@@ -31,33 +32,47 @@ static const char *content_types[] = {
     "Content-Type: video/mpeg\r\n",               /* 3 */
     "Content-Type: audio/mpeg\r\n",               /* 4 */
     "Content-Type: video/mp2t\r\n",               /* 5 */
-    "Content-Type: text/event-stream\r\n"         /* 6 */
+    "Content-Type: text/event-stream\r\n",        /* 6 */
+    "Content-Type: image/jpeg\r\n"                /* 7 */
 };
 
-static const char static_headers[] =
-    "Server: " PACKAGE "/" VERSION "\r\n"
-    "\r\n";
-
-void send_http_headers(connection_t *c, http_status_t status, content_type_t type)
+void send_http_headers(connection_t *c, http_status_t status, content_type_t type, const char *extra_headers)
 {
-    /* Queue headers to output buffer for reliable delivery */
-    connection_queue_output(c, (const uint8_t *)response_codes[status],
-                            strlen(response_codes[status]));
-    connection_queue_output(c, (const uint8_t *)content_types[type],
-                            strlen(content_types[type]));
+    char headers[2048];
+    int len = 0;
 
-    /* Add extra headers for SSE */
+    /* Build complete header in one buffer */
+    /* Status line */
+    len += snprintf(headers + len, sizeof(headers) - len, "%s", response_codes[status]);
+
+    /* Content-Type */
+    len += snprintf(headers + len, sizeof(headers) - len, "%s", content_types[type]);
+
+    /* Connection header */
     if (type == CONTENT_SSE)
     {
-        static const char sse_extra_headers[] =
-            "Cache-Control: no-cache\r\n"
-            "Connection: keep-alive\r\n";
-        connection_queue_output(c, (const uint8_t *)sse_extra_headers,
-                                sizeof(sse_extra_headers) - 1);
+        /* SSE needs keep-alive and cache control */
+        len += snprintf(headers + len, sizeof(headers) - len,
+                        "Cache-Control: no-cache\r\n"
+                        "Connection: keep-alive\r\n");
+    }
+    else
+    {
+        /* For non-SSE responses, always close the connection (no keep-alive support) */
+        len += snprintf(headers + len, sizeof(headers) - len, "Connection: close\r\n");
     }
 
-    connection_queue_output(c, (const uint8_t *)static_headers,
-                            sizeof(static_headers) - 1);
+    /* Extra headers if provided */
+    if (extra_headers && extra_headers[0])
+    {
+        len += snprintf(headers + len, sizeof(headers) - len, "%s", extra_headers);
+    }
+
+    /* Server header and final CRLF */
+    len += snprintf(headers + len, sizeof(headers) - len,
+                    "Server: " PACKAGE "/" VERSION "\r\n\r\n");
+
+    connection_queue_output(c, (const uint8_t *)headers, len);
 }
 
 /**
@@ -170,6 +185,11 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req)
                 {
                     strncpy(req->user_agent, value, sizeof(req->user_agent) - 1);
                     req->user_agent[sizeof(req->user_agent) - 1] = '\0';
+                }
+                else if (strcasecmp(inbuf, "Accept") == 0)
+                {
+                    strncpy(req->accept, value, sizeof(req->accept) - 1);
+                    req->accept[sizeof(req->accept) - 1] = '\0';
                 }
                 else if (strcasecmp(inbuf, "Content-Length") == 0)
                 {
@@ -293,4 +313,76 @@ int http_parse_query_param(const char *query_string, const char *param_name,
     value_buf[value_len] = '\0';
 
     return 0;
+}
+
+/**
+ * Send HTTP 400 Bad Request response
+ * @param conn Connection object
+ */
+void http_send_400(connection_t *conn)
+{
+    static const char body[] = "<!doctype html><title>400</title>Bad Request";
+
+    /* Send headers */
+    send_http_headers(conn, STATUS_400, CONTENT_HTML, NULL);
+
+    /* Send body and flush */
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
+
+    /* Set connection to closing state */
+    conn->state = CONN_CLOSING;
+}
+
+/**
+ * Send HTTP 404 Not Found response
+ * @param conn Connection object
+ */
+void http_send_404(connection_t *conn)
+{
+    static const char body[] = "<!doctype html><title>404</title>Not Found";
+
+    /* Send headers */
+    send_http_headers(conn, STATUS_404, CONTENT_HTML, NULL);
+
+    /* Send body and flush */
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
+
+    /* Set connection to closing state */
+    conn->state = CONN_CLOSING;
+}
+
+/**
+ * Send HTTP 500 Internal Server Error response
+ * @param conn Connection object
+ */
+void http_send_500(connection_t *conn)
+{
+    static const char body[] = "<!doctype html><title>500</title>Internal Server Error";
+
+    /* Send headers */
+    send_http_headers(conn, STATUS_500, CONTENT_HTML, NULL);
+
+    /* Send body and flush */
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
+
+    /* Set connection to closing state */
+    conn->state = CONN_CLOSING;
+}
+
+/**
+ * Send HTTP 503 Service Unavailable response
+ * @param conn Connection object
+ */
+void http_send_503(connection_t *conn)
+{
+    static const char body[] = "<!doctype html><title>503</title>Service Unavailable";
+
+    /* Send headers */
+    send_http_headers(conn, STATUS_503, CONTENT_HTML, NULL);
+
+    /* Send body and flush */
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
+
+    /* Set connection to closing state */
+    conn->state = CONN_CLOSING;
 }

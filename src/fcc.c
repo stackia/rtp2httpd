@@ -569,10 +569,10 @@ int fcc_handle_unicast_media(struct stream_context_s *ctx, uint8_t *buf, int buf
         logger(LOG_INFO, "FCC: Unicast stream started successfully");
     }
 
-    /* Forward RTP payload to client (true zero-copy) */
+    /* Forward RTP payload to client (true zero-copy) or capture I-frame (snapshot) */
     {
-        int payload_bytes = write_rtp_payload_to_client(ctx->conn, buf_len, buf, buf_ref,
-                                                        &fcc->current_seqn, &fcc->not_first_packet);
+        int payload_bytes = stream_process_rtp_payload(ctx, buf_len, buf, buf_ref,
+                                                       &fcc->current_seqn, &fcc->not_first_packet);
         if (payload_bytes > 0)
         {
             ctx->total_bytes_sent += (uint64_t)payload_bytes;
@@ -807,9 +807,9 @@ int fcc_handle_mcast_active(struct stream_context_s *ctx, uint8_t *buf, int buf_
         logger(LOG_DEBUG, "FCC: Flushed pending buffer chain, last_seqn=%u", fcc->mcast_pbuf_last_seqn);
     }
 
-    /* Forward multicast data to client (true zero-copy) */
-    int payload_bytes = write_rtp_payload_to_client(ctx->conn, buf_len, buf, buf_ref,
-                                                    &fcc->current_seqn, &fcc->not_first_packet);
+    /* Forward multicast data to client (true zero-copy) or capture I-frame (snapshot) */
+    int payload_bytes = stream_process_rtp_payload(ctx, buf_len, buf, buf_ref,
+                                                   &fcc->current_seqn, &fcc->not_first_packet);
     if (payload_bytes > 0)
     {
         ctx->total_bytes_sent += (uint64_t)payload_bytes;

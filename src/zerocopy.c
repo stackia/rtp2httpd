@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/sendfile.h>
 #include <linux/errqueue.h>
 #include <netinet/in.h>
 #include <sys/time.h>
@@ -253,7 +254,19 @@ void buffer_ref_put(buffer_ref_t *ref)
     ref->refcount--;
     if (ref->refcount <= 0)
     {
-        /* All buffers are pool-managed, return to pool */
+        /* Check if this is a file buffer (not from pool) */
+        if (ref->type == BUFFER_TYPE_FILE)
+        {
+            /* Close file descriptor and free the buffer_ref */
+            if (ref->file_fd >= 0)
+            {
+                close(ref->file_fd);
+            }
+            free(ref);
+            return;
+        }
+
+        /* Pool-managed memory buffer - return to pool */
         buffer_pool_t *pool = &zerocopy_state.pool;
 
         /* Update segment free count using direct reference */
@@ -546,6 +559,7 @@ int zerocopy_queue_add(zerocopy_queue_t *queue, void *data, size_t len, buffer_r
 
     /* No malloc needed! Use the buffer_ref directly as queue entry */
     /* Setup send queue fields in the buffer */
+    buf_ref->type = BUFFER_TYPE_MEMORY;
     buf_ref->iov.iov_base = data;
     buf_ref->iov.iov_len = len;
     buf_ref->buf_offset = offset; /* Store offset for partial buffer sends */
@@ -570,6 +584,55 @@ int zerocopy_queue_add(zerocopy_queue_t *queue, void *data, size_t len, buffer_r
 
     queue->total_bytes += len;
     queue->num_queued++;
+
+    return 0;
+}
+
+int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd, off_t file_offset, size_t file_size)
+{
+    if (file_fd < 0 || file_size == 0)
+        return -1;
+
+    /* Allocate a buffer_ref_t to represent the file (not from pool) */
+    buffer_ref_t *buf_ref = calloc(1, sizeof(buffer_ref_t));
+    if (!buf_ref)
+    {
+        logger(LOG_ERROR, "zerocopy_queue_add_file: Failed to allocate buffer_ref");
+        return -1;
+    }
+
+    /* Setup file send fields */
+    buf_ref->type = BUFFER_TYPE_FILE;
+    buf_ref->file_fd = file_fd;
+    buf_ref->file_offset = file_offset;
+    buf_ref->file_size = file_size;
+    buf_ref->file_sent = 0;
+    buf_ref->refcount = 1;   /* Initial reference */
+    buf_ref->segment = NULL; /* Not from pool */
+    buf_ref->zerocopy_id = 0;
+    buf_ref->send_next = NULL;
+
+    /* Add to queue */
+    if (queue->tail)
+    {
+        queue->tail->send_next = buf_ref;
+        queue->tail = buf_ref;
+    }
+    else
+    {
+        /* First entry - record timestamp for batching timeout */
+        queue->head = queue->tail = buf_ref;
+        queue->first_queued_time_us = get_time_us();
+    }
+
+    /* Note: File buffers do NOT count towards total_bytes for batching logic
+     * because they are always flushed immediately and don't participate in
+     * the batching optimization designed for small RTP packets.
+     */
+    queue->num_queued++;
+
+    logger(LOG_DEBUG, "zerocopy_queue_add_file: Queued file fd=%d offset=%ld size=%zu",
+           file_fd, (long)file_offset, file_size);
 
     return 0;
 }
@@ -606,14 +669,67 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
         return 0;
     }
 
-    /* Build iovec array from queue buffers */
+    /* Check if head is a file - sendfile() must be done separately */
+    if (queue->head->type == BUFFER_TYPE_FILE)
+    {
+        buffer_ref_t *file_buf = queue->head;
+        size_t remaining = file_buf->file_size - file_buf->file_sent;
+        off_t offset = file_buf->file_offset + file_buf->file_sent;
+
+        /* Use sendfile() for non-blocking file send */
+        ssize_t sent = sendfile(fd, file_buf->file_fd, &offset, remaining);
+
+        if (sent < 0)
+        {
+            if (errno == EAGAIN)
+            {
+                WORKER_STATS_INC(eagain_count);
+                *bytes_sent = 0;
+                return -2; /* Would block */
+            }
+
+            logger(LOG_ERROR, "Zero-copy: sendfile failed: %s", strerror(errno));
+            *bytes_sent = 0;
+            return -1;
+        }
+
+        *bytes_sent = (size_t)sent;
+        file_buf->file_sent += sent;
+
+        /* Check if file send is complete */
+        if (file_buf->file_sent >= file_buf->file_size)
+        {
+            /* File completely sent - remove from queue and cleanup */
+            size_t total_file_size = file_buf->file_size; /* Save before put */
+
+            queue->head = file_buf->send_next;
+            if (!queue->head)
+                queue->tail = NULL;
+
+            /* Note: File buffers don't count towards total_bytes, so no need to update it */
+            queue->num_queued--;
+
+            /* Release reference - this will close fd and free buffer_ref */
+            buffer_ref_put(file_buf);
+
+            logger(LOG_DEBUG, "Zero-copy: sendfile complete (%zu bytes)", total_file_size);
+        }
+        /* Note: Partial sends for files don't update total_bytes (files don't count) */
+
+        /* Update statistics */
+        WORKER_STATS_INC(total_sends);
+
+        return 0;
+    }
+
+    /* Build iovec array from queue buffers (memory buffers only) */
     struct iovec iovecs[ZEROCOPY_MAX_IOVECS];
     buffer_ref_t *buffers[ZEROCOPY_MAX_IOVECS];
     int iov_count = 0;
     size_t total_len = 0;
 
     buffer_ref_t *buf = queue->head;
-    while (buf && iov_count < ZEROCOPY_MAX_IOVECS)
+    while (buf && iov_count < ZEROCOPY_MAX_IOVECS && buf->type == BUFFER_TYPE_MEMORY)
     {
         iovecs[iov_count] = buf->iov;
         buffers[iov_count] = buf;
@@ -688,11 +804,16 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
     /* Move sent buffers from send queue to pending completion queue
      * Note: With MSG_ZEROCOPY, the kernel tracks what was actually sent,
      * and the completion notification will arrive for the sent data only.
+     * IMPORTANT: Only process BUFFER_TYPE_MEMORY buffers here, stop at file buffers.
      */
     size_t remaining = (size_t)sent;
     while (remaining > 0 && queue->head)
     {
         buffer_ref_t *current = queue->head;
+
+        /* Stop if we hit a file buffer - we only sent memory buffers */
+        if (current->type != BUFFER_TYPE_MEMORY)
+            break;
 
         if (current->iov.iov_len <= remaining)
         {

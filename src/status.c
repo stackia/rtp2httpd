@@ -22,6 +22,7 @@
 #include "connection.h"
 #include "http.h"
 #include "zerocopy.h"
+#include "status_page.h"
 
 /* State description lookup table */
 static const char *client_state_descriptions[] = {
@@ -804,7 +805,7 @@ void handle_disconnect_client(connection_t *c)
   if (!status_shared)
   {
     if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_503, CONTENT_HTML);
+      send_http_headers(c, STATUS_503, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Status system not initialized\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -815,7 +816,7 @@ void handle_disconnect_client(connection_t *c)
   if (strcasecmp(c->http_req.method, "POST") != 0 && strcasecmp(c->http_req.method, "DELETE") != 0)
   {
     if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_400, CONTENT_HTML);
+      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Method not allowed. Use POST or DELETE\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -828,7 +829,7 @@ void handle_disconnect_client(connection_t *c)
     if (http_parse_query_param(c->http_req.body, "client_id", client_id_str, sizeof(client_id_str)) != 0)
     {
       if (c->http_req.is_http_1_1)
-        send_http_headers(c, STATUS_400, CONTENT_HTML);
+        send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
       snprintf(response, sizeof(response),
                "{\"success\":false,\"error\":\"Missing 'client_id' parameter in request body\"}");
       connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -838,7 +839,7 @@ void handle_disconnect_client(connection_t *c)
   else
   {
     if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_400, CONTENT_HTML);
+      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Missing request body\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -851,7 +852,7 @@ void handle_disconnect_client(connection_t *c)
   if (client_id < 0 || client_id >= STATUS_MAX_CLIENTS)
   {
     if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_400, CONTENT_HTML);
+      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Invalid client_id\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -869,7 +870,7 @@ void handle_disconnect_client(connection_t *c)
   }
 
   if (c->http_req.is_http_1_1)
-    send_http_headers(c, STATUS_200, CONTENT_HTML);
+    send_http_headers(c, STATUS_200, CONTENT_HTML, NULL);
 
   if (found)
   {
@@ -899,7 +900,7 @@ void handle_set_log_level(connection_t *c)
   if (strcasecmp(c->http_req.method, "PUT") != 0 && strcasecmp(c->http_req.method, "PATCH") != 0)
   {
     if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_400, CONTENT_HTML);
+      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Method not allowed. Use PUT or PATCH\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -912,7 +913,7 @@ void handle_set_log_level(connection_t *c)
     if (http_parse_query_param(c->http_req.body, "level", level_str, sizeof(level_str)) != 0)
     {
       if (c->http_req.is_http_1_1)
-        send_http_headers(c, STATUS_400, CONTENT_HTML);
+        send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
       snprintf(response, sizeof(response),
                "{\"success\":false,\"error\":\"Missing 'level' parameter in request body\"}");
       connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -922,7 +923,7 @@ void handle_set_log_level(connection_t *c)
   else
   {
     if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_400, CONTENT_HTML);
+      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Missing request body\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -934,7 +935,7 @@ void handle_set_log_level(connection_t *c)
   if (new_level < LOG_FATAL || new_level > LOG_DEBUG)
   {
     if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_400, CONTENT_HTML);
+      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Invalid log level (must be 0-4)\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -949,7 +950,7 @@ void handle_set_log_level(connection_t *c)
   config.verbosity = new_level;
 
   if (c->http_req.is_http_1_1)
-    send_http_headers(c, STATUS_200, CONTENT_HTML);
+    send_http_headers(c, STATUS_200, CONTENT_HTML, NULL);
 
   snprintf(response, sizeof(response),
            "{\"success\":true,\"message\":\"Log level changed to %s\"}",
@@ -962,19 +963,7 @@ void handle_set_log_level(connection_t *c)
  */
 void handle_status_page(connection_t *c)
 {
-/* Include the HTML content */
-#include "status_page.h"
-
-  if (c->http_req.is_http_1_1)
-  {
-    const char *headers =
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: text/html; charset=utf-8\r\n"
-        "Server: " PACKAGE "/" VERSION "\r\n"
-        "\r\n";
-    connection_queue_output(c, (const uint8_t *)headers, strlen(headers));
-  }
-
+  send_http_headers(c, STATUS_200, CONTENT_HTML, NULL);
   connection_queue_output_and_flush(c, (const uint8_t *)status_page_html, strlen(status_page_html));
 }
 
@@ -988,7 +977,7 @@ int status_handle_sse_init(connection_t *c)
     return -1;
 
   /* Send SSE headers */
-  send_http_headers(c, STATUS_200, CONTENT_SSE);
+  send_http_headers(c, STATUS_200, CONTENT_SSE, NULL);
 
   c->sse_active = 1;
   c->sse_sent_initial = 0;

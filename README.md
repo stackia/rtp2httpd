@@ -14,6 +14,7 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
   - 可以实现 IPTV RTSP 时移源的回看
   - 可以把家庭摄像机的 RTSP 流转换为 HTTP 流，方便在 IPTV 播放器中观看
 - **UDPxy 兼容性**：完全兼容 UDPxy URL 格式，可无缝替换
+- **频道快照**：支持通过 HTTP 请求快速获取频道的快照图片，降低播放端解码压力
 
 ### ⚡ FCC 快速换台技术
 
@@ -257,6 +258,8 @@ FCC 快速换台：
 
 其他：
   -f, --clock-format <格式>      RTSP Range 时间戳格式 (默认: yyyyMMddTHHmmssZ)
+  -F, --ffmpeg-path <路径>       FFmpeg 可执行文件路径 (默认: ffmpeg)
+  -A, --ffmpeg-args <参数>       FFmpeg 额外参数 (默认: -hwaccel none)
   -h, --help                     显示帮助信息
 ```
 
@@ -329,6 +332,15 @@ workers = 1
 # 增大此值以提高多客户端并发时的吞吐量，例如设置为 32768 或更高
 buffer-pool-max-size = 16384
 
+# FFmpeg 可执行文件路径（默认: ffmpeg，使用系统 PATH）
+# 如果 ffmpeg 不在 PATH 中或想使用特定版本，请指定完整路径
+;ffmpeg-path = /usr/bin/ffmpeg
+
+# FFmpeg 额外参数（默认: -hwaccel none）
+# 这些参数在生成快照时传递给 ffmpeg
+# 常用选项: -hwaccel none, -hwaccel auto, -hwaccel vaapi, -hwaccel qsv
+;ffmpeg-args = -hwaccel none
+
 # RTSP Range 时间戳格式（默认: yyyyMMddTHHmmssZ）
 # 用于 RTSP 时移回看功能，将 playseek 参数转换为 UTC 时间时使用
 # 支持的格式：
@@ -374,6 +386,55 @@ rtsp2    RTSP rtsp://10.0.0.50:8554/live/channel1?auth=token123
 不使用 FCC 则不受影响。
 
 运行在局域网内设备时，要求上级路由器启用全追锥形 NAT，并转发 IGMP 组播流（可以使用 `igmpproxy` / `omcproxy` 等组播代理工具）。如遇不可播放请尝试不同的 `--fcc-nat-traversal` 参数。
+
+## 📸 频道快照（预览图）配置 / 用法
+
+rtp2httpd 支持使用 FFmpeg 来生成视频流的快照 (snapshot) 功能。如果播放器集成了此功能，将会获得极快的频道预览图的加载速度。
+
+请求视频 JPEG 快照有两种方式，任选一种即可：
+
+1. 在 HTTP URL 加上查询参数 `snapshot=1`
+2. 请求 Header 加上 `Accept: image/jpeg`
+
+当 rtp2httpd 处理快照请求时，会从视频流中截取关键帧 (I 帧) 并使用 FFmpeg 转码为 JPEG 格式返回给客户端。
+
+在搭配 FCC 使用时，通常在 0.3 秒内即可返回快照。在不使用 FCC 时，由于大多数运营商组播流是每秒发送一个 I 帧，因此快照请求最长会在 1 秒返回。
+
+**不要使用 OpenWrt 官方源的 `ffmpeg` 包，它阉割了 h264 / hevc 编解码器，将导致无法解码视频流。**
+
+最简易得获得 FFmpeg 的方法是从 <https://johnvansickle.com/ffmpeg/> 下载静态编译的可执行文件（但这个版本并非支持所有硬件加速）。
+
+你可以通过以下参数自定义 FFmpeg 的行为：
+
+**ffmpeg-path**：指定 FFmpeg 可执行文件的路径
+
+- 默认值：`ffmpeg`（使用系统 PATH 中的 ffmpeg）
+- 使用场景：
+  - FFmpeg 不在系统 PATH 中
+  - 需要使用特定版本的 FFmpeg
+  - 使用自定义编译的 FFmpeg
+
+**ffmpeg-args**：指定传递给 FFmpeg 的额外参数
+
+- 默认值：`-hwaccel none`（禁用硬件加速）
+- 常用选项：
+  - `-hwaccel none`：禁用硬件加速（兼容性最好）
+  - `-hwaccel vaapi`：使用 VA-API 硬件加速（Intel GPU）
+  - `-hwaccel v4l2m2m`：使用 V4L2 硬件加速（多见于一些嵌入式 SoC）
+
+在一些不支持硬件解码、CPU 规格较低的设备上，访问快照可能会产生很大的 CPU 占用。
+
+**配置示例**：
+
+```bash
+# 使用特定路径的 FFmpeg 并启用硬件加速
+rtp2httpd --ffmpeg-path /opt/ffmpeg/bin/ffmpeg --ffmpeg-args "-hwaccel vaapi"
+
+# 在配置文件中设置
+# /etc/rtp2httpd.conf
+ffmpeg-path = /usr/local/bin/ffmpeg
+ffmpeg-args = -hwaccel auto
+```
 
 ## 内核参数调优
 

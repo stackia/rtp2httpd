@@ -5,12 +5,14 @@
 #include "fcc.h"
 #include "rtsp.h"
 #include "status.h"
+#include "snapshot.h"
 
 /* Forward declaration */
 struct connection_s;
 
 /* Multicast stream timeout (seconds) - if no data received for this duration, close connection */
 #define MCAST_TIMEOUT_SEC 1
+#define SNAPSHOT_TIMEOUT_SEC 2
 
 /* Stream processing context */
 typedef struct stream_context_s
@@ -31,6 +33,9 @@ typedef struct stream_context_s
   /* Stream health monitoring */
   int64_t last_mcast_data_time; /* Timestamp of last received multicast data in milliseconds */
   int64_t last_fcc_data_time;   /* Timestamp of last received FCC data for timeout detection */
+
+  /* Snapshot context */
+  snapshot_context_t snapshot;
 } stream_context_t;
 
 /**
@@ -52,10 +57,11 @@ int stream_join_mcast_group(stream_context_t *ctx);
  * @param service Service configuration
  * @param epoll_fd epoll file descriptor
  * @param status_id Status tracking ID
+ * @param is_snapshot 1 if this is a snapshot request, 0 for normal streaming
  * @return 0 on success, -1 on error
  */
 int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *conn, service_t *service,
-                                   int epoll_fd, int status_index);
+                                   int epoll_fd, int status_index, int is_snapshot);
 
 /**
  * Handle an event-ready fd that belongs to this stream context.
@@ -79,5 +85,19 @@ int stream_tick(stream_context_t *ctx, int64_t now);
  * @return 0 if cleanup completed, 1 if async TEARDOWN in progress (cleanup deferred)
  */
 int stream_context_cleanup(stream_context_t *ctx);
+
+/**
+ * Process RTP payload - either forward to client (streaming) or capture I-frame (snapshot)
+ * This function should be used instead of write_rtp_payload_to_client() for stream contexts
+ * @param ctx Stream context
+ * @param recv_len Length of received RTP packet
+ * @param buf Buffer containing RTP packet
+ * @param buf_ref Buffer reference
+ * @param old_seqn Pointer to previous sequence number
+ * @param not_first Pointer to first packet flag
+ * @return bytes forwarded (>= 0) for streaming, 1 if I-frame captured for snapshot, -1 on error
+ */
+int stream_process_rtp_payload(stream_context_t *ctx, int recv_len, uint8_t *buf,
+                               buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first);
 
 #endif /* __STREAM_H__ */

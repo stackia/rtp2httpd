@@ -7,6 +7,7 @@
 #include "rtp2httpd.h"
 #include "http.h"
 #include "service.h"
+#include "snapshot.h"
 #include "status.h"
 #include "zerocopy.h"
 #include <stdlib.h>
@@ -284,9 +285,7 @@ int connection_route_and_start(connection_t *c)
 
   if (url[0] != '/')
   {
-    static const char resp[] = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
-    connection_queue_output_and_flush(c, (const uint8_t *)resp, sizeof(resp) - 1);
-    c->state = CONN_CLOSING;
+    http_send_400(c);
     return 0;
   }
 
@@ -297,9 +296,7 @@ int connection_route_and_start(connection_t *c)
     if (c->http_req.hostname[0] == '\0')
     {
       logger(LOG_WARN, "Client request rejected: missing Host header (expected: %s)", config.hostname);
-      static const char resp[] = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
-      connection_queue_output_and_flush(c, (const uint8_t *)resp, sizeof(resp) - 1);
-      c->state = CONN_CLOSING;
+      http_send_400(c);
       return 0;
     }
 
@@ -326,9 +323,7 @@ int connection_route_and_start(connection_t *c)
     {
       logger(LOG_WARN, "Client request rejected: Host header mismatch (got: %s, expected: %s)",
              host_without_port, config.hostname);
-      static const char resp[] = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
-      connection_queue_output_and_flush(c, (const uint8_t *)resp, sizeof(resp) - 1);
-      c->state = CONN_CLOSING;
+      http_send_400(c);
       return 0;
     }
 
@@ -400,18 +395,7 @@ int connection_route_and_start(connection_t *c)
 
   if (!service)
   {
-    /* Queue 404 response to output buffer for reliable delivery */
-    if (c->http_req.is_http_1_1)
-    {
-      static const char headers[] = "HTTP/1.1 404 Not Found\r\n"
-                                    "Content-Type: text/html\r\n"
-                                    "Server: rtp2httpd\r\n"
-                                    "\r\n";
-      connection_queue_output(c, (const uint8_t *)headers, sizeof(headers) - 1);
-    }
-    static const char body[] = "<!doctype html><title>404</title>Service Not Found";
-    connection_queue_output_and_flush(c, (const uint8_t *)body, sizeof(body) - 1);
-    c->state = CONN_CLOSING;
+    http_send_404(c);
     return 0;
   }
 
@@ -423,25 +407,40 @@ int connection_route_and_start(connection_t *c)
   /* Capacity check */
   if (status_shared && status_shared->total_clients >= config.maxclients)
   {
-    /* Queue 503 response to output buffer for reliable delivery */
-    if (c->http_req.is_http_1_1)
-    {
-      static const char headers[] = "HTTP/1.1 503 Service Unavailable\r\n"
-                                    "Content-Type: text/html\r\n"
-                                    "Server: rtp2httpd\r\n"
-                                    "\r\n";
-      connection_queue_output(c, (const uint8_t *)headers, sizeof(headers) - 1);
-    }
-    static const char body503[] = "<!doctype html><title>503</title>Service Unavailable";
-    connection_queue_output_and_flush(c, (const uint8_t *)body503, sizeof(body503) - 1);
+    http_send_503(c);
     if (owned)
       service_free(service);
-    c->state = CONN_CLOSING;
     return 0;
   }
 
-  /* Register streaming client in status tracking with service URL */
-  if (c->client_addr_len > 0)
+  /* Check if this is a snapshot request (Accept: image/jpeg or snapshot=1 query param) */
+  int is_snapshot_request = 0;
+  if (c->http_req.accept[0] != '\0')
+  {
+    /* Check if Accept header contains "image/jpeg" */
+    if (strstr(c->http_req.accept, "image/jpeg") != NULL)
+    {
+      is_snapshot_request = 1;
+      logger(LOG_INFO, "Snapshot request detected via Accept header for URL: %s", c->http_req.url);
+    }
+  }
+
+  /* Also check for snapshot=1 query parameter */
+  if (!is_snapshot_request && query_start != NULL)
+  {
+    char snapshot_value[16];
+    if (http_parse_query_param(query_start + 1, "snapshot", snapshot_value, sizeof(snapshot_value)) == 0)
+    {
+      if (strcmp(snapshot_value, "1") == 0)
+      {
+        is_snapshot_request = 1;
+        logger(LOG_INFO, "Snapshot request detected via query parameter for URL: %s", c->http_req.url);
+      }
+    }
+  }
+
+  /* Register streaming client in status tracking with service URL (skip for snapshots) */
+  if (!is_snapshot_request && c->client_addr_len > 0)
   {
     c->status_index = status_register_client(&c->client_addr, c->client_addr_len, c->http_req.url);
     if (c->status_index < 0)
@@ -449,13 +448,17 @@ int connection_route_and_start(connection_t *c)
       logger(LOG_ERROR, "Failed to register streaming client in status tracking");
     }
   }
+  else
+  {
+    c->status_index = -1;
+  }
 
-  /* Send success headers */
-  if (c->http_req.is_http_1_1)
-    send_http_headers(c, STATUS_200, CONTENT_MP2T);
+  /* Send success headers (skip for snapshots - will send after JPEG conversion) */
+  if (!is_snapshot_request)
+    send_http_headers(c, STATUS_200, CONTENT_MP2T, NULL);
 
-  /* Initialize stream in unified epoll */
-  if (stream_context_init_for_worker(&c->stream, c, service, c->epfd, c->status_index) == 0)
+  /* Initialize stream in unified epoll (works for both streaming and snapshot) */
+  if (stream_context_init_for_worker(&c->stream, c, service, c->epfd, c->status_index, is_snapshot_request) == 0)
   {
     c->streaming = 1;
     c->service = service;
@@ -496,6 +499,22 @@ int connection_queue_zerocopy(connection_t *c, void *data, size_t len, buffer_re
   {
     connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
   }
+
+  return 0;
+}
+
+int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_t file_size)
+{
+  if (!c || file_fd < 0 || file_size == 0)
+    return -1;
+
+  /* Add file to zero-copy queue */
+  int ret = zerocopy_queue_add_file(&c->zc_queue, file_fd, file_offset, file_size);
+  if (ret < 0)
+    return -1;
+
+  /* Always flush immediately for file sends (no batching) */
+  connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
 
   return 0;
 }
