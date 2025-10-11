@@ -919,7 +919,6 @@ int zerocopy_handle_completions(int fd, zerocopy_queue_t *queue)
                     /* Check if data was copied (fallback) instead of zero-copy */
                     if (serr->ee_code & SO_EE_CODE_ZEROCOPY_COPIED)
                     {
-                        logger(LOG_DEBUG, "Zero-copy: Kernel copied data (fallback) for IDs %u-%u", lo, hi);
                         WORKER_STATS_INC(total_copied);
                     }
 
