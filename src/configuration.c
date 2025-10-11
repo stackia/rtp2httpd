@@ -38,6 +38,7 @@ int cmd_playseek_passthrough_set;
 int cmd_buffer_pool_max_size_set;
 int cmd_ffmpeg_path_set;
 int cmd_ffmpeg_args_set;
+int cmd_video_snapshot_set;
 
 enum section_e
 {
@@ -509,6 +510,29 @@ void parse_global_sec(char *line)
     return;
   }
 
+  if (strcasecmp("video-snapshot", param) == 0)
+  {
+    if (!cmd_video_snapshot_set)
+    {
+      if ((strcasecmp("on", value) == 0) ||
+          (strcasecmp("true", value) == 0) ||
+          (strcasecmp("yes", value) == 0) ||
+          (strcasecmp("1", value) == 0))
+      {
+        config.video_snapshot = 1;
+      }
+      else
+      {
+        config.video_snapshot = 0;
+      }
+    }
+    else
+    {
+      logger(LOG_WARN, "Config file value \"video-snapshot\" ignored (already set on command line)");
+    }
+    return;
+  }
+
   logger(LOG_ERROR, "Unknown config parameter: %s", param);
 }
 
@@ -676,6 +700,9 @@ void restore_conf_defaults(void)
   config.ffmpeg_args = strdup("-hwaccel none");
   cmd_ffmpeg_args_set = 0;
 
+  config.video_snapshot = 0;
+  cmd_video_snapshot_set = 0;
+
   if (config.upstream_interface_unicast.ifr_name[0] != '\0')
   {
     memset(&config.upstream_interface_unicast, 0, sizeof(struct ifreq));
@@ -772,6 +799,7 @@ void usage(FILE *f, char *progname)
           "\t-r --upstream-interface-multicast <interface>  Interface for multicast traffic (RTP/UDP)\n"
           "\t-F --ffmpeg-path <path>  Path to ffmpeg executable (default: ffmpeg)\n"
           "\t-A --ffmpeg-args <args>  Additional ffmpeg arguments (default: -hwaccel none)\n"
+          "\t-S --video-snapshot      Enable video snapshot feature (default: off)\n"
           "\t                     default " CONFIGFILE "\n",
           prog);
 }
@@ -837,9 +865,10 @@ void parse_cmd_line(int argc, char *argv[])
       {"upstream-interface-multicast", required_argument, 0, 'r'},
       {"ffmpeg-path", required_argument, 0, 'F'},
       {"ffmpeg-args", required_argument, 0, 'A'},
+      {"video-snapshot", no_argument, 0, 'S'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:f:Pi:r:F:A:C";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:f:Pi:r:F:A:SC";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -949,6 +978,10 @@ void parse_cmd_line(int argc, char *argv[])
     case 'A':
       config.ffmpeg_args = strdup(optarg);
       cmd_ffmpeg_args_set = 1;
+      break;
+    case 'S':
+      config.video_snapshot = 1;
+      cmd_video_snapshot_set = 1;
       break;
     default:
       logger(LOG_FATAL, "Unknown option! %d ", opt);

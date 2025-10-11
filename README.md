@@ -258,6 +258,7 @@ FCC 快速换台：
 
 其他：
   -f, --clock-format <格式>      RTSP Range 时间戳格式 (默认: yyyyMMddTHHmmssZ)
+  -S, --video-snapshot           启用视频快照功能 (默认: 关闭)
   -F, --ffmpeg-path <路径>       FFmpeg 可执行文件路径 (默认: ffmpeg)
   -A, --ffmpeg-args <参数>       FFmpeg 额外参数 (默认: -hwaccel none)
   -h, --help                     显示帮助信息
@@ -332,6 +333,10 @@ workers = 1
 # 增大此值以提高多客户端并发时的吞吐量，例如设置为 32768 或更高
 buffer-pool-max-size = 16384
 
+# 启用视频快照功能（默认: no）
+# 启用后可通过 `snapshot=1` 查询参数获取视频流的实时快照
+;video-snapshot = no
+
 # FFmpeg 可执行文件路径（默认: ffmpeg，使用系统 PATH）
 # 如果 ffmpeg 不在 PATH 中或想使用特定版本，请指定完整路径
 ;ffmpeg-path = /usr/bin/ffmpeg
@@ -391,6 +396,8 @@ rtsp2    RTSP rtsp://10.0.0.50:8554/live/channel1?auth=token123
 
 rtp2httpd 支持使用 FFmpeg 来生成视频流的快照 (snapshot) 功能。如果播放器集成了此功能，将会获得极快的频道预览图的加载速度。
 
+这个功能默认是关闭的，需要通过 `--video-snapshot` 选项开启。
+
 请求视频 JPEG 快照有两种方式，任选一种即可：
 
 1. 在 HTTP URL 加上查询参数 `snapshot=1`
@@ -428,10 +435,11 @@ rtp2httpd 支持使用 FFmpeg 来生成视频流的快照 (snapshot) 功能。�
 
 ```bash
 # 使用特定路径的 FFmpeg 并启用硬件加速
-rtp2httpd --ffmpeg-path /opt/ffmpeg/bin/ffmpeg --ffmpeg-args "-hwaccel vaapi"
+rtp2httpd --video-snapshot --ffmpeg-path /opt/ffmpeg/bin/ffmpeg --ffmpeg-args "-hwaccel vaapi"
 
 # 在配置文件中设置
 # /etc/rtp2httpd.conf
+video-snapshot = yes
 ffmpeg-path = /usr/local/bin/ffmpeg
 ffmpeg-args = -hwaccel auto
 ```
