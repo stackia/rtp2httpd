@@ -88,6 +88,9 @@ typedef struct
   struct ifreq upstream_interface_unicast;   /* Interface for upstream unicast media requests (FCC/RTSP) */
   struct ifreq upstream_interface_multicast; /* Interface for upstream multicast media requests (RTP/UDP) */
 
+  /* Multicast settings */
+  int mcast_rejoin_interval; /* Periodic multicast rejoin interval in seconds (0=disabled, default 0) */
+
   /* FFmpeg settings */
   char *ffmpeg_path; /* Path to ffmpeg executable (NULL=use system default "ffmpeg") */
   char *ffmpeg_args; /* Additional ffmpeg arguments (default: "-hwaccel none") */

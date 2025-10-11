@@ -115,3 +115,9 @@ msgstr "Status Dashboard"
 
 msgid "rtp2httpd_Open Status Dashboard"
 msgstr "Open Status Dashboard"
+
+msgid "rtp2httpd_Multicast Rejoin Interval"
+msgstr "Multicast Rejoin Interval"
+
+msgid "rtp2httpd_Multicast rejoin interval description"
+msgstr "Periodic multicast rejoin interval in seconds (0=disabled, default 0). Enable this (e.g., 120-180 seconds) if your network switches timeout multicast memberships due to missing IGMP Query messages. Only needed for problematic network environments."

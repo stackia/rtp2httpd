@@ -324,6 +324,15 @@ fcc-nat-traversal = 0
 # 用于组播流量 (RTP/UDP) 的接口
 ;upstream-interface-multicast = eth0
 
+# 组播周期性重新加入间隔（秒，默认: 0 禁用）
+# 设置为正值（如 150）以周期性重新加入组播组
+# 这是针对以下网络环境的兼容性解决方案：
+# - 启用 IGMP snooping 的交换机在没有路由器 IGMP Query 时超时
+# - 配置不当的网络设备会丢弃组播成员关系
+# 推荐值: 120-180 秒（小于典型交换机超时 260 秒）
+# 仅在遇到组播流中断时启用
+;mcast-rejoin-interval = 0
+
 # 工作进程数（默认: 1）
 workers = 1
 
@@ -430,38 +439,6 @@ rtp2httpd --video-snapshot --ffmpeg-path /opt/ffmpeg/bin/ffmpeg --ffmpeg-args "-
 video-snapshot = yes
 ffmpeg-path = /usr/local/bin/ffmpeg
 ffmpeg-args = -hwaccel auto
-```
-
-## 🔧 故障排查
-
-### Docker 容器中 ENOBUFS 错误
-
-**症状**：
-
-- 客户端无法播放，但服务端 buffer pool 持续增长
-- 日志中出现频繁的 `ENOBUFS` 错误
-- Web UI 显示 `ENOBUFS` 计数持续增加
-
-**原因**：Docker 容器默认的 locked memory 限制（64KB）太小，MSG_ZEROCOPY 无法锁定足够的内存页。
-
-**解决方案**：启动容器时添加 `--ulimit memlock=-1:-1` 参数（见上方 Docker 部署章节）。
-
-**为什么宿主机上运行没问题？**
-
-- 宿主机上的进程通常拥有 `CAP_IPC_LOCK` capability，可以绕过 `ulimit -l` 限制
-- Docker 容器默认会 drop 掉这个 capability，因此严格受 `ulimit -l` 限制
-
-**诊断命令**：
-
-```bash
-# 检查容器内的 locked memory 限制
-docker exec <container> ulimit -l
-
-# 查看实时 ENOBUFS 错误计数
-curl http://localhost:5140/status | grep enobufs
-
-# 查看 socket 缓冲区状态
-docker exec <container> ss -tm 'sport = :5140'
 ```
 
 ## 内核参数调优

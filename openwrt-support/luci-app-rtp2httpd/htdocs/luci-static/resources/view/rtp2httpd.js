@@ -226,6 +226,16 @@ return view.extend({
     o.default = "0";
     o.depends("use_config_file", "0");
 
+    o = s.option(
+      form.Value,
+      "mcast_rejoin_interval",
+      _("rtp2httpd_Multicast Rejoin Interval"),
+      _("rtp2httpd_Multicast rejoin interval description")
+    );
+    o.datatype = "range(0, 86400)";
+    o.placeholder = "0";
+    o.depends("use_config_file", "0");
+
     return m.render();
   },
 });

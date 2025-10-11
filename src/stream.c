@@ -51,8 +51,10 @@ int stream_join_mcast_group(stream_context_t *ctx)
         fdmap_set(sock, ctx->conn);
         logger(LOG_DEBUG, "Multicast: Socket registered with epoll");
 
-        /* Reset timeout timer when joining multicast group */
-        ctx->last_mcast_data_time = get_time_ms();
+        /* Reset timeout and rejoin timers when joining multicast group */
+        int64_t now = get_time_ms();
+        ctx->last_mcast_data_time = now;
+        ctx->last_mcast_rejoin_time = now;
     }
     return sock;
 }
@@ -285,6 +287,7 @@ int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *c
     ctx->last_status_update = get_time_ms();
     ctx->last_mcast_data_time = get_time_ms();
     ctx->last_fcc_data_time = get_time_ms();
+    ctx->last_mcast_rejoin_time = get_time_ms();
 
     /* Initialize snapshot context if this is a snapshot request */
     if (is_snapshot)
@@ -348,8 +351,26 @@ int stream_tick(stream_context_t *ctx, int64_t now)
 {
     if (!ctx)
         return 0;
-    /* Periodic status update */
-    /* Use by-pid variant to support multi-connection-per-process */
+
+    /* Periodic multicast rejoin (if enabled) */
+    if (config.mcast_rejoin_interval > 0 && ctx->mcast_sock > 0)
+    {
+        int64_t elapsed_ms = now - ctx->last_mcast_rejoin_time;
+        if (elapsed_ms >= config.mcast_rejoin_interval * 1000)
+        {
+            logger(LOG_DEBUG, "Multicast: Periodic rejoin (interval: %d seconds)", config.mcast_rejoin_interval);
+
+            /* Rejoin multicast group on existing socket (LEAVE + JOIN to send IGMP Report) */
+            if (rejoin_mcast_group(ctx->mcast_sock, ctx->service) == 0)
+            {
+                ctx->last_mcast_rejoin_time = now;
+            }
+            else
+            {
+                logger(LOG_ERROR, "Multicast: Failed to rejoin group, will retry next interval");
+            }
+        }
+    }
 
     /* Check for multicast stream timeout */
     if (ctx->mcast_sock > 0)

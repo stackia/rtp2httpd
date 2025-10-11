@@ -115,3 +115,9 @@ msgstr "状态面板"
 
 msgid "rtp2httpd_Open Status Dashboard"
 msgstr "打开状态面板"
+
+msgid "rtp2httpd_Multicast Rejoin Interval"
+msgstr "组播周期性重新加入间隔"
+
+msgid "rtp2httpd_Multicast rejoin interval description"
+msgstr "周期性重新加入组播组的间隔时间（秒），0 表示禁用（默认 0）。如果您的网络交换机因缺少 IGMP Query 消息而导致组播成员关系超时，可以启用此功能（建议 120-180 秒）。仅在网络环境有问题时需要启用。"
