@@ -424,6 +424,7 @@ rtp2httpd 支持使用 FFmpeg 来生成视频流的快照 (snapshot) 功能。�
 - 常用选项：
   - `-hwaccel none`：禁用硬件加速（兼容性最好）
   - `-hwaccel vaapi`：使用 VA-API 硬件加速（Intel GPU）
+    - 针对 Intel GPU 的预编译 FFmpeg：<https://github.com/stackia/rtp2httpd/issues/37>
   - `-hwaccel v4l2m2m`：使用 V4L2 硬件加速（多见于一些嵌入式 SoC）
 
 在一些不支持硬件解码、CPU 规格较低的设备上，访问快照可能会产生很大的 CPU 占用。
