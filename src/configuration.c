@@ -337,8 +337,12 @@ void parse_global_sec(char *line)
   while (isspace(line[i]))
     i++;
   j = i;
-  while (!isspace(line[j]))
+  /* Find end of line (excluding trailing whitespace and newline) */
+  while (line[j] != '\0' && line[j] != '\n' && line[j] != '\r')
     j++;
+  /* Trim trailing whitespace */
+  while (j > i && isspace(line[j - 1]))
+    j--;
   value = strndupa(line + i, j - i);
 
   /* Integer parameters with command line override */
