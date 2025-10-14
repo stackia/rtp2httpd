@@ -552,15 +552,27 @@ void zerocopy_queue_cleanup(zerocopy_queue_t *queue)
     zerocopy_queue_init(queue);
 }
 
-int zerocopy_queue_add(zerocopy_queue_t *queue, void *data, size_t len, buffer_ref_t *buf_ref, size_t offset)
+int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref, size_t offset, size_t len)
 {
-    if (!data || len == 0 || !buf_ref)
+    if (!queue || !buf_ref || len == 0)
         return 0;
+
+    uint8_t *base = (uint8_t *)buf_ref->data;
+    size_t buf_size = buf_ref->size;
+
+    if (!base || offset > buf_size || len > buf_size - offset)
+    {
+        logger(LOG_ERROR, "zerocopy_queue_add: Invalid buffer parameters (offset=%zu len=%zu size=%zu)",
+               offset, len, buf_size);
+        return -1;
+    }
+
+    uint8_t *data_ptr = base + offset;
 
     /* No malloc needed! Use the buffer_ref directly as queue entry */
     /* Setup send queue fields in the buffer */
     buf_ref->type = BUFFER_TYPE_MEMORY;
-    buf_ref->iov.iov_base = data;
+    buf_ref->iov.iov_base = data_ptr;
     buf_ref->iov.iov_len = len;
     buf_ref->buf_offset = offset; /* Store offset for partial buffer sends */
     buf_ref->zerocopy_id = 0;

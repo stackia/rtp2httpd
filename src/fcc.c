@@ -671,32 +671,26 @@ int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int 
         return 0;
     }
 
-    /* Allocate a pool buffer for this payload - zero-copy approach */
-    buffer_ref_t *new_buf_ref = buffer_pool_alloc(payloadlength);
-    if (!new_buf_ref)
+    if (payloadlength <= 0)
     {
-        /* Buffer pool exhausted - mark as full and skip */
-        logger(LOG_DEBUG, "FCC: Buffer pool exhausted during transition");
-        fcc->mcast_pbuf_full = 1;
         return 0;
     }
-
-    /* Copy payload to pool buffer (unavoidable - need to extract from RTP packet) */
-    memcpy(new_buf_ref->data, rtp_payload, payloadlength);
 
     /* Create pending buffer node */
     pending_buffer_node_t *node = malloc(sizeof(pending_buffer_node_t));
     if (!node)
     {
-        buffer_ref_put(new_buf_ref);
         logger(LOG_ERROR, "FCC: Failed to allocate pending buffer node");
         fcc->mcast_pbuf_full = 1;
         return 0;
     }
 
-    node->buf_ref = new_buf_ref;
-    node->data_start = new_buf_ref->data;
-    node->data_len = payloadlength;
+    /* Keep original receive buffer alive for deferred zero-copy send */
+    buffer_ref_get(buf_ref);
+
+    node->buf_ref = buf_ref;
+    node->data_len = (size_t)payloadlength;
+    node->data_offset = (size_t)(rtp_payload - (uint8_t *)buf_ref->data);
     node->next = NULL;
 
     /* Add to pending list */
@@ -730,7 +724,7 @@ int fcc_handle_mcast_active(struct stream_context_s *ctx, uint8_t *buf, int buf_
         while (node)
         {
             /* Queue each buffer for zero-copy send */
-            if (connection_queue_zerocopy(ctx->conn, node->data_start, node->data_len, node->buf_ref, 0) == 0)
+            if (connection_queue_zerocopy(ctx->conn, node->buf_ref, node->data_offset, node->data_len) == 0)
             {
                 ctx->total_bytes_sent += (uint64_t)node->data_len;
 

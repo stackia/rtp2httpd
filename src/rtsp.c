@@ -1074,7 +1074,7 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, struct connection_
                 if (packet_buf)
                 {
                     memcpy(packet_buf->data, session->tcp_buffer + 4, packet_length);
-                    if (connection_queue_zerocopy(conn, packet_buf->data, packet_length, packet_buf, 0) == 0)
+                    if (connection_queue_zerocopy(conn, packet_buf, 0, (size_t)packet_length) == 0)
                     {
                         bytes_forwarded += packet_length;
                     }
@@ -1178,7 +1178,7 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, struct connection_s *conn)
         {
             /* MP2T - zero-copy send (data already in pool buffer, just queue it) */
             /* Note: zerocopy_queue_add() will automatically increment refcount */
-            if (connection_queue_zerocopy(conn, rtp_buffer, bytes_received, rtp_buf, 0) == 0)
+            if (connection_queue_zerocopy(conn, rtp_buf, 0, (size_t)bytes_received) == 0)
             {
                 bytes_written = bytes_received;
             }

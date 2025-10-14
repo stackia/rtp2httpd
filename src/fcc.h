@@ -20,7 +20,7 @@ typedef struct buffer_ref_s buffer_ref_t;
 typedef struct pending_buffer_node_s
 {
     buffer_ref_t *buf_ref; /* Reference to pool buffer */
-    uint8_t *data_start;   /* Start of actual data in buffer */
+    size_t data_offset;    /* Offset of RTP payload within buffer */
     size_t data_len;       /* Length of data in this buffer */
     struct pending_buffer_node_s *next;
 } pending_buffer_node_t;
