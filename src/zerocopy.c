@@ -301,7 +301,7 @@ buffer_ref_t *buffer_pool_alloc(size_t size)
         if (buffer_pool_expand(pool) < 0)
         {
             /* Expansion failed - pool is at maximum or allocation failed */
-            logger(LOG_WARN, "Buffer pool: Exhausted and cannot expand (total: %zu, max: %zu)",
+            logger(LOG_DEBUG, "Buffer pool: Exhausted and cannot expand (total: %zu, max: %zu)",
                    pool->num_buffers, pool->max_buffers);
             return NULL;
         }
