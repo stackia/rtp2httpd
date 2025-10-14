@@ -1147,9 +1147,14 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, struct connection_s *conn)
     {
         /* Buffer pool exhausted - drop this packet */
         logger(LOG_DEBUG, "RTSP UDP: Buffer pool exhausted, dropping packet");
+        session->packets_dropped++;
         /* Drain the socket to prevent event loop spinning */
-        uint8_t dummy[1];
-        recv(session->rtp_socket, dummy, sizeof(dummy), 0);
+        uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
+        ssize_t drained = recv(session->rtp_socket, dummy, sizeof(dummy), 0);
+        if (drained < 0 && errno != EAGAIN)
+        {
+            logger(LOG_DEBUG, "RTSP UDP: Dummy recv failed while dropping packet: %s", strerror(errno));
+        }
         return 0;
     }
 

@@ -98,9 +98,14 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
         {
             /* Buffer pool exhausted - drop this packet */
             logger(LOG_DEBUG, "FCC: Buffer pool exhausted, dropping packet");
+            ctx->last_fcc_data_time = now;
             /* Drain the socket to prevent event loop spinning */
-            uint8_t dummy[1];
-            recvfrom(ctx->fcc.fcc_sock, dummy, sizeof(dummy), 0, NULL, NULL);
+            uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
+            ssize_t drained = recvfrom(ctx->fcc.fcc_sock, dummy, sizeof(dummy), 0, NULL, NULL);
+            if (drained < 0 && errno != EAGAIN)
+            {
+                logger(LOG_DEBUG, "FCC: Dummy recv failed while dropping packet: %s", strerror(errno));
+            }
             return 0;
         }
 
@@ -172,9 +177,14 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
         {
             /* Buffer pool exhausted - drop this packet */
             logger(LOG_DEBUG, "Multicast: Buffer pool exhausted, dropping packet");
+            ctx->last_mcast_data_time = now;
             /* Drain the socket to prevent event loop spinning */
-            uint8_t dummy[1];
-            recv(ctx->mcast_sock, dummy, sizeof(dummy), 0);
+            uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
+            ssize_t drained = recv(ctx->mcast_sock, dummy, sizeof(dummy), 0);
+            if (drained < 0 && errno != EAGAIN)
+            {
+                logger(LOG_DEBUG, "Multicast: Dummy recv failed while dropping packet: %s", strerror(errno));
+            }
             return 0;
         }
 
