@@ -177,7 +177,7 @@ static int buffer_pool_expand(buffer_pool_t *pool)
     /* Check if we've reached the maximum size */
     if (pool->num_buffers >= pool->max_buffers)
     {
-        logger(LOG_WARN, "Buffer pool: Cannot expand beyond maximum size (%zu buffers)", pool->max_buffers);
+        logger(LOG_DEBUG, "Buffer pool: Cannot expand beyond maximum size (%zu buffers)", pool->max_buffers);
         return -1;
     }
 
@@ -322,7 +322,7 @@ buffer_ref_t *buffer_pool_alloc(size_t size)
         /* Try to expand proactively (non-critical if it fails) */
         if (buffer_pool_expand(pool) < 0)
         {
-            logger(LOG_WARN, "Buffer pool: Proactive expansion failed, continuing with current buffers");
+            logger(LOG_DEBUG, "Buffer pool: Proactive expansion failed, continuing with current buffers");
         }
     }
 
