@@ -122,7 +122,7 @@ int write_rtp_payload_to_client(struct connection_s *conn, int recv_len, uint8_t
 
   /* Queue for zero-copy send */
   /* Note: zerocopy_queue_add() will automatically increment refcount */
-  if (connection_queue_zerocopy(conn, payload, payloadlength, buf_ref, payload_offset) == 0)
+  if (connection_queue_zerocopy(conn, buf_ref, payload_offset, (size_t)payloadlength) == 0)
   {
     /* Successfully queued - send queue now holds a reference */
     return payloadlength;

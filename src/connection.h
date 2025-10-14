@@ -136,13 +136,12 @@ int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size
  * Queue data for zero-copy send (no memcpy)
  * Takes ownership of the buffer via reference counting
  * @param c Connection
- * @param data Data pointer (can be in middle of buffer)
- * @param len Data length
- * @param buf_ref Buffer reference (NULL for static data)
+ * @param buf_ref Buffer reference (must not be NULL)
  * @param offset Offset in buffer where data starts (for partial buffer sends)
- * @return 0 on success, -1 if queue full
+ * @param len Data length
+ * @return 0 on success, -1 if queue full or invalid parameters
  */
-int connection_queue_zerocopy(connection_t *c, void *data, size_t len, buffer_ref_t *buf_ref, size_t offset);
+int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref, size_t offset, size_t len);
 
 /**
  * Queue a file descriptor for zero-copy send using sendfile()

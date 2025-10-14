@@ -168,7 +168,7 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len)
     memcpy(buf_ref->data, src, chunk_size);
 
     /* Queue this buffer for zero-copy send */
-    if (connection_queue_zerocopy(c, buf_ref->data, chunk_size, buf_ref, 0) < 0)
+    if (connection_queue_zerocopy(c, buf_ref, 0, chunk_size) < 0)
     {
       /* Queue full - release the buffer and fail */
       buffer_ref_put(buf_ref);
@@ -511,13 +511,13 @@ int connection_route_and_start(connection_t *c)
   }
 }
 
-int connection_queue_zerocopy(connection_t *c, void *data, size_t len, buffer_ref_t *buf_ref, size_t offset)
+int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref, size_t offset, size_t len)
 {
-  if (!c || !data || len == 0)
+  if (!c || !buf_ref || len == 0)
     return 0;
 
   /* Add to zero-copy queue with offset information */
-  int ret = zerocopy_queue_add(&c->zc_queue, data, len, buf_ref, offset);
+  int ret = zerocopy_queue_add(&c->zc_queue, buf_ref, offset, len);
   if (ret < 0)
     return -1; /* Queue full */
 

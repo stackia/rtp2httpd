@@ -179,14 +179,14 @@ void zerocopy_queue_cleanup(zerocopy_queue_t *queue);
 /**
  * Queue data for zero-copy send (no memcpy)
  * Takes ownership of the buffer via reference counting
+ * Data pointer is derived from buffer_ref and offset
  * @param queue Send queue
- * @param data Data pointer (can be in middle of buffer)
- * @param len Data length
- * @param buf_ref Buffer reference (NULL for static data)
+ * @param buf_ref Buffer reference (must not be NULL)
  * @param offset Offset in buffer where data starts (for partial buffer sends)
- * @return 0 on success, -1 if queue full
+ * @param len Data length
+ * @return 0 on success, -1 if queue full or invalid parameters
  */
-int zerocopy_queue_add(zerocopy_queue_t *queue, void *data, size_t len, buffer_ref_t *buf_ref, size_t offset);
+int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref, size_t offset, size_t len);
 
 /**
  * Queue a file descriptor for zero-copy send using sendfile()
