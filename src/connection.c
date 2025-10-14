@@ -172,7 +172,7 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len)
     {
       /* Queue full - release the buffer and fail */
       buffer_ref_put(buf_ref);
-      logger(LOG_ERROR, "connection_queue_output: Zero-copy queue full, cannot queue %zu bytes", remaining);
+      logger(LOG_WARN, "connection_queue_output: Zero-copy queue full, cannot queue %zu bytes", remaining);
       return -1;
     }
 
@@ -445,12 +445,18 @@ int connection_route_and_start(connection_t *c)
     return 0;
   }
 
-  /* Check if this is a snapshot request (Accept: image/jpeg or snapshot=1 query param) */
+  /* Check if this is a snapshot request (X-Request-Snapshot, Accept: image/jpeg, or snapshot=1) */
   int is_snapshot_request = 0;
 
   if (config.video_snapshot)
   {
-    if (c->http_req.accept[0] != '\0')
+    if (c->http_req.x_request_snapshot)
+    {
+      is_snapshot_request = 1;
+      logger(LOG_INFO, "Snapshot request detected via X-Request-Snapshot header for URL: %s", c->http_req.url);
+    }
+
+    if (!is_snapshot_request && c->http_req.accept[0] != '\0')
     {
       /* Check if Accept header contains "image/jpeg" */
       if (strstr(c->http_req.accept, "image/jpeg") != NULL)

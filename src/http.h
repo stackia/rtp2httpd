@@ -50,6 +50,7 @@ typedef struct
   char hostname[256];
   char user_agent[256];
   char accept[256];
+  int x_request_snapshot;
   int is_http_1_1;
   http_parse_state_t parse_state;
   int content_length;

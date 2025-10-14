@@ -191,6 +191,10 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req)
                     strncpy(req->accept, value, sizeof(req->accept) - 1);
                     req->accept[sizeof(req->accept) - 1] = '\0';
                 }
+                else if (strcasecmp(inbuf, "X-Request-Snapshot") == 0)
+                {
+                    req->x_request_snapshot = (value[0] == '1');
+                }
                 else if (strcasecmp(inbuf, "Content-Length") == 0)
                 {
                     req->content_length = atoi(value);
