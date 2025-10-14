@@ -44,6 +44,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session);
 static void rtsp_close_udp_sockets(rtsp_session_t *session, const char *reason);
 static char *rtsp_find_header(const char *response, const char *header_name);
 static void rtsp_parse_transport_header(rtsp_session_t *session, const char *transport);
+static void rtsp_send_udp_nat_probe(int socket_fd, const char *addr, int port, const char *label);
 static int rtsp_handle_redirect(rtsp_session_t *session, const char *location);
 static int rtsp_convert_time_to_utc(const char *time_str, int tz_offset_seconds, char *output, size_t output_size);
 static int rtsp_state_machine_advance(rtsp_session_t *session);
@@ -907,26 +908,26 @@ static int rtsp_state_machine_advance(rtsp_session_t *session)
         }
         else
         {
-            snprintf(extra_headers, sizeof(extra_headers),
-                     "Transport: MP2T/RTP/TCP;unicast;interleaved=%d-%d,"
-                     "MP2T/TCP;unicast;interleaved=%d-%d,"
-                     "RTP/AVP/TCP;unicast;interleaved=%d-%d,"
-                     "MP2T/RTP/UDP;unicast;client_port=%d-%d,"
-                     "MP2T/UDP;unicast;client_port=%d-%d,"
-                     "RTP/AVP;unicast;client_port=%d-%d\r\n",
-                     session->rtp_channel, session->rtcp_channel,
-                     session->rtp_channel, session->rtcp_channel,
-                     session->rtp_channel, session->rtcp_channel,
-                     session->local_rtp_port, session->local_rtcp_port,
-                     session->local_rtp_port, session->local_rtcp_port,
-                     session->local_rtp_port, session->local_rtcp_port);
             // snprintf(extra_headers, sizeof(extra_headers),
-            //          "Transport: MP2T/RTP/UDP;unicast;client_port=%d-%d,"
+            //          "Transport: MP2T/RTP/TCP;unicast;interleaved=%d-%d,"
+            //          "MP2T/TCP;unicast;interleaved=%d-%d,"
+            //          "RTP/AVP/TCP;unicast;interleaved=%d-%d,"
+            //          "MP2T/RTP/UDP;unicast;client_port=%d-%d,"
             //          "MP2T/UDP;unicast;client_port=%d-%d,"
             //          "RTP/AVP;unicast;client_port=%d-%d\r\n",
+            //          session->rtp_channel, session->rtcp_channel,
+            //          session->rtp_channel, session->rtcp_channel,
+            //          session->rtp_channel, session->rtcp_channel,
             //          session->local_rtp_port, session->local_rtcp_port,
             //          session->local_rtp_port, session->local_rtcp_port,
             //          session->local_rtp_port, session->local_rtcp_port);
+            snprintf(extra_headers, sizeof(extra_headers),
+                     "Transport: MP2T/RTP/UDP;unicast;client_port=%d-%d,"
+                     "MP2T/UDP;unicast;client_port=%d-%d,"
+                     "RTP/AVP;unicast;client_port=%d-%d\r\n",
+                     session->local_rtp_port, session->local_rtcp_port,
+                     session->local_rtp_port, session->local_rtcp_port,
+                     session->local_rtp_port, session->local_rtcp_port);
         }
         if (rtsp_prepare_request(session, RTSP_METHOD_SETUP, extra_headers) < 0)
         {
@@ -1707,11 +1708,79 @@ static char *rtsp_find_header(const char *response, const char *header_name)
     return result;
 }
 
+static void rtsp_send_udp_nat_probe(int socket_fd, const char *addr, int port, const char *label)
+{
+    char port_str[RTSP_PORT_STRING_SIZE];
+    struct addrinfo hints;
+    struct addrinfo *result = NULL;
+    struct addrinfo *rp;
+    int ret;
+    int sent_any = 0;
+    int last_errno = 0;
+
+    if (socket_fd < 0 || !addr || !*addr || port <= 0)
+    {
+        return;
+    }
+
+    snprintf(port_str, sizeof(port_str), "%d", port);
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_protocol = IPPROTO_UDP;
+
+    ret = getaddrinfo(addr, port_str, &hints, &result);
+    if (ret != 0)
+    {
+        logger(LOG_WARN, "RTSP: Failed to resolve NAT probe target %s:%s: %s",
+               addr, port_str, gai_strerror(ret));
+        return;
+    }
+
+    for (rp = result; rp != NULL; rp = rp->ai_next)
+    {
+        int attempt_success = 0;
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            if (sendto(socket_fd, NULL, 0, 0, rp->ai_addr, rp->ai_addrlen) < 0)
+            {
+                last_errno = errno;
+                logger(LOG_WARN, "RTSP: NAT probe send failed on %s socket to %s:%d (attempt %d): %s",
+                       label, addr, port, attempt + 1, strerror(last_errno));
+            }
+            else
+            {
+                attempt_success = 1;
+                sent_any = 1;
+            }
+        }
+        if (attempt_success)
+        {
+            break;
+        }
+    }
+
+    if (sent_any)
+    {
+        logger(LOG_DEBUG, "RTSP: Sent NAT probe packets on %s socket to %s:%d",
+               label, addr, port);
+    }
+    else if (last_errno)
+    {
+        logger(LOG_WARN, "RTSP: No NAT probe packets sent on %s socket to %s:%d: %s",
+               label, addr, port, strerror(last_errno));
+    }
+
+    freeaddrinfo(result);
+}
+
 static void rtsp_parse_transport_header(rtsp_session_t *session, const char *transport)
 {
     char *server_port_param;
     char *interleaved_param;
     char *client_port_param;
+    char *source_param;
+    char source_address[RTSP_SERVER_HOST_SIZE] = {0};
 
     logger(LOG_DEBUG, "RTSP: Parsing server transport response: %s", transport);
 
@@ -1763,6 +1832,31 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
         session->transport_mode = RTSP_TRANSPORT_UDP;
         logger(LOG_INFO, "RTSP: Using UDP transport");
 
+        /* Parse source parameter if provided */
+        source_param = strstr(transport, "source=");
+        if (source_param)
+        {
+            const char *value = source_param + strlen("source=");
+            if (*value == '"')
+            {
+                value++;
+            }
+            size_t idx = 0;
+            while (*value && *value != ';' && *value != '\r' && *value != '\n' && *value != '"')
+            {
+                if (idx < sizeof(source_address) - 1)
+                {
+                    source_address[idx++] = *value;
+                }
+                value++;
+            }
+            source_address[idx] = '\0';
+            if (source_address[0] != '\0')
+            {
+                logger(LOG_DEBUG, "RTSP: Server UDP source address: %s", source_address);
+            }
+        }
+
         /* Parse server port parameters */
         server_port_param = strstr(transport, "server_port=");
         if (server_port_param)
@@ -1788,6 +1882,19 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
             {
                 logger(LOG_DEBUG, "RTSP: Server confirmed client ports: %d/%d",
                        client_rtp_port, client_rtcp_port);
+            }
+        }
+
+        /* Send NAT probe packets if server provided source address and ports */
+        if (source_address[0] != '\0')
+        {
+            if (session->server_rtp_port > 0 && session->rtp_socket >= 0)
+            {
+                rtsp_send_udp_nat_probe(session->rtp_socket, source_address, session->server_rtp_port, "RTP");
+            }
+            if (session->server_rtcp_port > 0 && session->rtcp_socket >= 0)
+            {
+                rtsp_send_udp_nat_probe(session->rtcp_socket, source_address, session->server_rtcp_port, "RTCP");
             }
         }
     }
