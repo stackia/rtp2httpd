@@ -45,27 +45,6 @@ zerocopy_state_t zerocopy_state = {0};
         }                                                   \
     } while (0)
 
-/**
- * Update buffer pool state in shared memory
- * Called after buffer pool operations that change pool size
- */
-static inline void update_pool_state_shared(void)
-{
-    if (status_shared && worker_id >= 0 &&
-        worker_id < STATUS_MAX_WORKERS)
-    {
-        buffer_pool_t *pool = &zerocopy_state.pool;
-        worker_stats_t *stats = &status_shared->worker_stats[worker_id];
-
-        stats->pool_total_buffers = pool->num_buffers;
-        stats->pool_free_buffers = pool->num_free;
-        stats->pool_max_buffers = pool->max_buffers;
-    }
-}
-
-/**
- * Get current time in microseconds
- */
 static uint64_t get_time_us(void)
 {
     struct timeval tv;
@@ -89,384 +68,20 @@ static int detect_msg_zerocopy_support(void)
     return (ret == 0) ? 1 : 0;
 }
 
-/**
- * Create a new buffer pool segment with cache-aligned buffers
- */
-static buffer_pool_segment_t *buffer_pool_segment_create(size_t buffer_size, size_t num_buffers, buffer_pool_t *pool)
+void zerocopy_register_stream_client(void)
 {
-    buffer_pool_segment_t *segment = malloc(sizeof(buffer_pool_segment_t));
-    if (!segment)
-        return NULL;
-
-    segment->num_buffers = num_buffers;
-    segment->num_free = num_buffers;
-    segment->create_time_us = get_time_us();
-    segment->next = NULL;
-
-    /* Allocate buffer array with cache line alignment for optimal DMA performance
-     * posix_memalign ensures each buffer starts at a cache-aligned address,
-     * improving both receive (recvfrom) and send (MSG_ZEROCOPY) performance */
-    if (posix_memalign((void **)&segment->buffers, BUFFER_POOL_ALIGNMENT, buffer_size * num_buffers) != 0)
-    {
-        logger(LOG_ERROR, "Buffer pool: Failed to allocate aligned memory for %zu buffers", num_buffers);
-        free(segment);
-        return NULL;
-    }
-
-    /* Allocate reference structures */
-    segment->refs = calloc(num_buffers, sizeof(buffer_ref_t));
-    if (!segment->refs)
-    {
-        free(segment->buffers);
-        free(segment);
-        return NULL;
-    }
-
-    /* Initialize buffer references and add to pool's free list */
-    for (size_t i = 0; i < num_buffers; i++)
-    {
-        buffer_ref_t *ref = &segment->refs[i];
-        ref->data = segment->buffers + (i * buffer_size);
-        ref->size = buffer_size;
-        ref->refcount = 0;
-        ref->segment = segment; /* Direct reference to owning segment */
-        ref->free_next = pool->free_list;
-        pool->free_list = ref;
-    }
-
-    return segment;
+    zerocopy_state.active_streams++;
 }
 
-/**
- * Initialize buffer pool with dynamic expansion support
- */
-static int buffer_pool_init(buffer_pool_t *pool, size_t buffer_size, size_t initial_buffers,
-                            size_t max_buffers, size_t expand_size, size_t low_watermark,
-                            size_t high_watermark)
+void zerocopy_unregister_stream_client(void)
 {
-    memset(pool, 0, sizeof(*pool));
-
-    pool->buffer_size = buffer_size;
-    pool->max_buffers = max_buffers;
-    pool->expand_size = expand_size;
-    pool->low_watermark = low_watermark;
-    pool->high_watermark = high_watermark;
-    pool->free_list = NULL;
-    pool->segments = NULL;
-    pool->num_buffers = 0;
-    pool->num_free = 0;
-
-    /* Create initial segment */
-    buffer_pool_segment_t *initial_segment = buffer_pool_segment_create(buffer_size, initial_buffers, pool);
-    if (!initial_segment)
-        return -1;
-
-    pool->segments = initial_segment;
-    pool->num_buffers = initial_buffers;
-    pool->num_free = initial_buffers;
-
-    return 0;
+    if (zerocopy_state.active_streams > 0)
+        zerocopy_state.active_streams--;
 }
 
-/**
- * Expand buffer pool by adding a new segment
- * Returns 0 on success, -1 on failure
- */
-static int buffer_pool_expand(buffer_pool_t *pool)
+size_t zerocopy_active_streams(void)
 {
-    /* Check if we've reached the maximum size */
-    if (pool->num_buffers >= pool->max_buffers)
-    {
-        logger(LOG_DEBUG, "Buffer pool: Cannot expand beyond maximum size (%zu buffers)", pool->max_buffers);
-        return -1;
-    }
-
-    /* Calculate how many buffers to add (don't exceed max) */
-    size_t buffers_to_add = pool->expand_size;
-    if (pool->num_buffers + buffers_to_add > pool->max_buffers)
-    {
-        buffers_to_add = pool->max_buffers - pool->num_buffers;
-    }
-
-    logger(LOG_DEBUG, "Buffer pool: Expanding by %zu buffers (current: %zu, free: %zu, max: %zu)",
-           buffers_to_add, pool->num_buffers, pool->num_free, pool->max_buffers);
-
-    /* Create new segment */
-    buffer_pool_segment_t *new_segment = buffer_pool_segment_create(pool->buffer_size, buffers_to_add, pool);
-    if (!new_segment)
-    {
-        logger(LOG_ERROR, "Buffer pool: Failed to allocate new segment");
-        return -1;
-    }
-
-    /* Add segment to the front of the list */
-    new_segment->next = pool->segments;
-    pool->segments = new_segment;
-
-    /* Update pool statistics */
-    pool->num_buffers += buffers_to_add;
-    pool->num_free += buffers_to_add;
-
-    /* Update shared memory */
-    WORKER_STATS_INC(pool_expansions);
-    update_pool_state_shared();
-
-    logger(LOG_DEBUG, "Buffer pool: Expansion successful (total: %zu buffers, free: %zu)",
-           pool->num_buffers, pool->num_free);
-
-    return 0;
-}
-
-/**
- * Cleanup buffer pool and all segments
- */
-static void buffer_pool_cleanup(buffer_pool_t *pool)
-{
-    buffer_pool_segment_t *segment = pool->segments;
-    while (segment)
-    {
-        buffer_pool_segment_t *next = segment->next;
-        if (segment->buffers)
-            free(segment->buffers);
-        if (segment->refs)
-            free(segment->refs);
-        free(segment);
-        segment = next;
-    }
-
-    pool->segments = NULL;
-    pool->free_list = NULL;
-    pool->num_free = 0;
-    pool->num_buffers = 0;
-}
-
-void buffer_ref_get(buffer_ref_t *ref)
-{
-    if (ref)
-        ref->refcount++;
-}
-
-void buffer_ref_put(buffer_ref_t *ref)
-{
-    if (!ref)
-        return;
-
-    ref->refcount--;
-    if (ref->refcount <= 0)
-    {
-        /* Check if this is a file buffer (not from pool) */
-        if (ref->type == BUFFER_TYPE_FILE)
-        {
-            /* Close file descriptor and free the buffer_ref */
-            if (ref->file_fd >= 0)
-            {
-                close(ref->file_fd);
-            }
-            free(ref);
-            return;
-        }
-
-        /* Pool-managed memory buffer - return to pool */
-        buffer_pool_t *pool = &zerocopy_state.pool;
-
-        /* Update segment free count using direct reference */
-        if (ref->segment)
-        {
-            ref->segment->num_free++;
-        }
-
-        ref->free_next = pool->free_list;
-        pool->free_list = ref;
-        pool->num_free++;
-
-        /* Update shared memory */
-        update_pool_state_shared();
-    }
-}
-
-buffer_ref_t *buffer_pool_alloc(size_t size)
-{
-    buffer_pool_t *pool = &zerocopy_state.pool;
-
-    if (size > pool->buffer_size)
-        return NULL;
-
-    /* Check if pool is exhausted */
-    if (!pool->free_list)
-    {
-        /* Increment exhaustion counter in shared memory */
-        WORKER_STATS_INC(pool_exhaustions);
-
-        /* Try to expand the pool */
-        if (buffer_pool_expand(pool) < 0)
-        {
-            /* Expansion failed - pool is at maximum or allocation failed */
-            logger(LOG_DEBUG, "Buffer pool: Exhausted and cannot expand (total: %zu, max: %zu)",
-                   pool->num_buffers, pool->max_buffers);
-            return NULL;
-        }
-
-        /* After expansion, free_list should have buffers */
-        if (!pool->free_list)
-        {
-            logger(LOG_ERROR, "Buffer pool: Expansion succeeded but free_list is still empty");
-            return NULL;
-        }
-    }
-    /* Check if we're running low and should proactively expand */
-    else if (pool->num_free <= pool->low_watermark && pool->num_buffers < pool->max_buffers)
-    {
-        logger(LOG_DEBUG, "Buffer pool: Low watermark reached (free: %zu, watermark: %zu), expanding proactively",
-               pool->num_free, pool->low_watermark);
-
-        /* Try to expand proactively (non-critical if it fails) */
-        if (buffer_pool_expand(pool) < 0)
-        {
-            logger(LOG_DEBUG, "Buffer pool: Proactive expansion failed, continuing with current buffers");
-        }
-    }
-
-    /* Pop from free list */
-    buffer_ref_t *ref = pool->free_list;
-    pool->free_list = ref->free_next;
-    pool->num_free--;
-
-    /* Update segment free count using direct reference */
-    if (ref->segment)
-    {
-        ref->segment->num_free--;
-    }
-
-    ref->refcount = 1;
-    ref->size = size;
-    ref->send_next = NULL; /* Clear send_next when allocating */
-
-    /* Update shared memory */
-    update_pool_state_shared();
-
-    return ref;
-}
-
-/**
- * Try to shrink buffer pool by freeing completely idle segments
- * This function is called when connections are freed to reclaim memory
- * Strategy: Free oldest segments that are completely idle (all buffers free)
- * Keep at least BUFFER_POOL_INITIAL_SIZE buffers to avoid thrashing
- */
-void buffer_pool_try_shrink(void)
-{
-    buffer_pool_t *pool = &zerocopy_state.pool;
-
-    /* Fast path: Don't shrink if we're not above high watermark or at minimum size */
-    if (pool->num_free <= pool->high_watermark || pool->num_buffers <= BUFFER_POOL_INITIAL_SIZE)
-    {
-        return;
-    }
-
-    logger(LOG_DEBUG, "Buffer pool: Checking for shrink opportunity (free: %zu, high_watermark: %zu, total: %zu)",
-           pool->num_free, pool->high_watermark, pool->num_buffers);
-
-    /* Find and free completely idle segments (oldest first) */
-    buffer_pool_segment_t *prev = NULL;
-    buffer_pool_segment_t *seg = pool->segments;
-    size_t segments_freed = 0;
-
-    while (seg != NULL)
-    {
-        buffer_pool_segment_t *next = seg->next;
-
-        /* Check if this segment is completely idle and we can afford to free it */
-        if (seg->num_free == seg->num_buffers &&
-            pool->num_buffers - seg->num_buffers >= BUFFER_POOL_INITIAL_SIZE)
-        {
-            /* Remove all buffers from this segment from the free list */
-            buffer_ref_t **free_ptr = &pool->free_list;
-            size_t removed_count = 0;
-
-            while (*free_ptr != NULL)
-            {
-                buffer_ref_t *ref = *free_ptr;
-
-                /* Check if this buffer belongs to the segment we're freeing */
-                uint8_t *buf_addr = (uint8_t *)ref->data;
-                uint8_t *seg_start = seg->buffers;
-                uint8_t *seg_end = seg->buffers + (seg->num_buffers * pool->buffer_size);
-
-                if (buf_addr >= seg_start && buf_addr < seg_end)
-                {
-                    /* Remove from free list */
-                    *free_ptr = ref->free_next;
-                    removed_count++;
-                }
-                else
-                {
-                    /* Move to next entry */
-                    free_ptr = &(ref->free_next);
-                }
-            }
-
-            /* Verify we removed all buffers from this segment */
-            if (removed_count != seg->num_buffers)
-            {
-                logger(LOG_ERROR, "Buffer pool: Shrink inconsistency - expected %zu free buffers, found %zu",
-                       seg->num_buffers, removed_count);
-            }
-
-            /* Update pool statistics */
-            pool->num_buffers -= seg->num_buffers;
-            pool->num_free -= removed_count;
-
-            /* Remove segment from list */
-            if (prev)
-            {
-                prev->next = next;
-            }
-            else
-            {
-                pool->segments = next;
-            }
-
-            /* Free segment memory */
-            logger(LOG_DEBUG, "Buffer pool: Freeing idle segment with %zu buffers (age: %.1fs, total: %zu -> %zu)",
-                   seg->num_buffers,
-                   (get_time_us() - seg->create_time_us) / 1000000.0,
-                   pool->num_buffers + seg->num_buffers,
-                   pool->num_buffers);
-
-            free(seg->refs);
-            free(seg->buffers);
-            free(seg);
-
-            segments_freed++;
-
-            /* Increment shrink counter in shared memory */
-            WORKER_STATS_INC(pool_shrinks);
-
-            /* Don't update prev since we removed current segment */
-            seg = next;
-
-            /* Stop if we've shrunk enough */
-            if (pool->num_free <= pool->high_watermark)
-            {
-                break;
-            }
-        }
-        else
-        {
-            /* Keep this segment, move to next */
-            prev = seg;
-            seg = next;
-        }
-    }
-
-    if (segments_freed > 0)
-    {
-        logger(LOG_DEBUG, "Buffer pool: Shrink completed - freed %zu segments (total: %zu buffers, free: %zu)",
-               segments_freed, pool->num_buffers, pool->num_free);
-
-        /* Update shared memory */
-        update_pool_state_shared();
-    }
+    return zerocopy_state.active_streams;
 }
 
 int zerocopy_init(void)
@@ -506,8 +121,25 @@ int zerocopy_init(void)
         return -1;
     }
 
+    /* Initialize control plane pool */
+    if (buffer_pool_init(&zerocopy_state.control_pool,
+                         BUFFER_POOL_BUFFER_SIZE,
+                         CONTROL_POOL_INITIAL_SIZE,
+                         CONTROL_POOL_MAX_BUFFERS,
+                         CONTROL_POOL_EXPAND_SIZE,
+                         CONTROL_POOL_LOW_WATERMARK,
+                         CONTROL_POOL_HIGH_WATERMARK) < 0)
+    {
+        logger(LOG_FATAL, "Zero-copy: Failed to initialize control buffer pool");
+        buffer_pool_cleanup(&zerocopy_state.pool);
+        return -1;
+    }
+
+    zerocopy_state.active_streams = 0;
+
     /* Sync initial buffer pool state to shared memory */
-    update_pool_state_shared();
+    buffer_pool_update_stats(&zerocopy_state.pool);
+    buffer_pool_update_stats(&zerocopy_state.control_pool);
 
     zerocopy_state.initialized = 1;
 
@@ -520,8 +152,12 @@ void zerocopy_cleanup(void)
         return;
 
     buffer_pool_cleanup(&zerocopy_state.pool);
+    buffer_pool_cleanup(&zerocopy_state.control_pool);
+    buffer_pool_update_stats(&zerocopy_state.pool);
+    buffer_pool_update_stats(&zerocopy_state.control_pool);
     zerocopy_state.initialized = 0;
     zerocopy_state.features = ZEROCOPY_DISABLED;
+    zerocopy_state.active_streams = 0;
 }
 
 void zerocopy_queue_init(zerocopy_queue_t *queue)

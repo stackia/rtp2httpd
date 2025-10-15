@@ -4,12 +4,7 @@
 #include <stdint.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include "rtp2httpd.h"
 #include "zerocopy.h"
-
-/* Forward declarations */
-struct connection_s;
-struct buffer_ref_s;
 
 /* ========== RTSP BUFFER SIZE CONFIGURATION ========== */
 

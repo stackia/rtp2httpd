@@ -5,8 +5,7 @@
 #include <sys/types.h>
 
 /* Forward declarations */
-struct connection_s;
-struct buffer_ref_s;
+typedef struct connection_s connection_t;
 typedef struct buffer_ref_s buffer_ref_t;
 
 /**
@@ -37,7 +36,7 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, ui
  * @param not_first Pointer to track if this is not the first packet
  * @return number of payload bytes queued to the client (>=0), or -1 if buffer full
  */
-int write_rtp_payload_to_client(struct connection_s *conn, int recv_len, uint8_t *buf,
+int write_rtp_payload_to_client(connection_t *conn, int recv_len, uint8_t *buf,
                                 buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first);
 
 #endif /* __RTP_H__ */

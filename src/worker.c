@@ -24,8 +24,14 @@ static fdmap_entry_t fd_map[FD_MAP_SIZE];
 /* Connection list head */
 static connection_t *conn_head = NULL;
 
+/* Round-robin write queue */
+static connection_t *write_queue_head = NULL;
+static connection_t *write_queue_tail = NULL;
+
 /* Stop flag for graceful shutdown */
 static volatile sig_atomic_t stop_flag = 0;
+
+#define WORKER_MAX_WRITE_BATCH 128
 
 static inline unsigned fd_hash(int fd) { return (unsigned)fd & (FD_MAP_SIZE - 1); }
 
@@ -120,6 +126,88 @@ void worker_set_conn_head(connection_t *head)
   conn_head = head;
 }
 
+static void worker_enqueue_writable(connection_t *c)
+{
+  if (!c || c->write_queue_pending)
+    return;
+
+  c->write_queue_pending = 1;
+  c->write_queue_next = NULL;
+
+  if (write_queue_tail)
+  {
+    write_queue_tail->write_queue_next = c;
+  }
+  else
+  {
+    write_queue_head = c;
+  }
+
+  write_queue_tail = c;
+}
+
+static void worker_remove_from_write_queue(connection_t *c)
+{
+  if (!c || !c->write_queue_pending)
+    return;
+
+  connection_t *prev = NULL;
+  connection_t *cur = write_queue_head;
+
+  while (cur)
+  {
+    if (cur == c)
+    {
+      if (prev)
+        prev->write_queue_next = cur->write_queue_next;
+      else
+        write_queue_head = cur->write_queue_next;
+
+      if (write_queue_tail == cur)
+        write_queue_tail = prev;
+
+      c->write_queue_next = NULL;
+      c->write_queue_pending = 0;
+      return;
+    }
+
+    prev = cur;
+    cur = cur->write_queue_next;
+  }
+
+  c->write_queue_pending = 0;
+  c->write_queue_next = NULL;
+}
+
+static void worker_drain_write_queue(void)
+{
+  int processed = 0;
+
+  while (write_queue_head && processed < WORKER_MAX_WRITE_BATCH)
+  {
+    connection_t *c = write_queue_head;
+    write_queue_head = c->write_queue_next;
+    if (!write_queue_head)
+      write_queue_tail = NULL;
+
+    c->write_queue_next = NULL;
+    c->write_queue_pending = 0;
+
+    connection_write_status_t status = connection_handle_write(c);
+
+    if (status == CONNECTION_WRITE_PENDING)
+    {
+      worker_enqueue_writable(c);
+    }
+    else if (status == CONNECTION_WRITE_CLOSED)
+    {
+      worker_close_and_free_connection(c);
+    }
+
+    processed++;
+  }
+}
+
 static void remove_connection_from_list(connection_t *c)
 {
   if (!c)
@@ -143,6 +231,8 @@ void worker_close_and_free_connection(connection_t *c)
 {
   if (!c)
     return;
+
+  worker_remove_from_write_queue(c);
 
   /* CRITICAL: For streaming connections, initiate cleanup first to check if async TEARDOWN will be started
    * This prevents use-after-free when TEARDOWN response arrives after connection is freed. */
@@ -258,6 +348,8 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 
   while (!stop_flag)
   {
+    worker_drain_write_queue();
+
     /* Use shorter timeout to check for batched send timeouts
      * 5ms matches ZEROCOPY_BATCH_TIMEOUT_US for timely flushing
      */
@@ -488,12 +580,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 
           if (events[e].events & EPOLLOUT)
           {
-            connection_handle_write(c);
-            if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
-            {
-              worker_close_and_free_connection(c);
-              continue; /* Skip further processing for this connection */
-            }
+            worker_enqueue_writable(c);
           }
         }
         else
@@ -507,6 +594,8 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
         }
       }
     }
+
+    worker_drain_write_queue();
 
     /* 2) Check for batched send timeouts */
     if (now - last_flush_check >= ZEROCOPY_BATCH_TIMEOUT_US / 1000)

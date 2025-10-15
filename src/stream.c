@@ -278,7 +278,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
 }
 
 /* Initialize context for unified worker epoll (non-blocking, no own loop) */
-int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *conn, service_t *service,
+int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, service_t *service,
                                    int epoll_fd, int status_index, int is_snapshot)
 {
     if (!ctx || !conn || !service)

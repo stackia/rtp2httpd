@@ -74,7 +74,7 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, ui
   }
 }
 
-int write_rtp_payload_to_client(struct connection_s *conn, int recv_len, uint8_t *buf,
+int write_rtp_payload_to_client(connection_t *conn, int recv_len, uint8_t *buf,
                                 buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first)
 {
   int payloadlength;

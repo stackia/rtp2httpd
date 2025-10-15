@@ -18,6 +18,7 @@ rtp2httpd_SOURCES = \
 	status.c \
 	connection.c \
 	worker.c \
+	buffer_pool.c \
 	zerocopy.c
 
 # Private headers (not installed)
@@ -37,6 +38,7 @@ noinst_HEADERS = \
 	status_page.h \
 	connection.h \
 	worker.h \
+	buffer_pool.h \
 	zerocopy.h
 
 # Compiler flags
