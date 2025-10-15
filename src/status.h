@@ -27,7 +27,7 @@ typedef enum
 #define STATUS_MAX_LOG_ENTRIES 100
 #define STATUS_LOG_ENTRY_LEN 1024
 
-#define SSE_BUFFER_SIZE 131072 /* 128k */
+#define SSE_BUFFER_SIZE 262144 /* 256k */
 
 /* Client state types for status display */
 typedef enum
@@ -99,7 +99,7 @@ typedef struct
  */
 typedef struct
 {
-  pid_t worker_pid;            /* Worker process PID */
+  pid_t worker_pid; /* Worker process PID */
 
   /* Zero-copy send statistics */
   uint64_t total_sends;       /* Total number of sendmsg() calls */
@@ -252,7 +252,7 @@ void handle_disconnect_client(connection_t *c);
 
 /**
  * Handle API request to change log level
- * RESTful: PUT/PATCH /api/loglevel with form data body "level=2"
+ * RESTful: PUT/PATCH /api/log-level with form data body "level=2"
  * @param c Connection object
  */
 void handle_set_log_level(connection_t *c);

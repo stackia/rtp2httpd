@@ -1,6 +1,5 @@
 export interface SendStats {
   total: number;
-  completions: number;
   copied: number;
   eagain: number;
   enobufs: number;
@@ -15,7 +14,6 @@ export interface PoolStats {
   max: number;
   expansions: number;
   exhaustions: number;
-  shrinks: number;
   utilization: number;
 }
 
@@ -29,9 +27,37 @@ export interface WorkerEntry {
 
 export interface LogEntry {
   timestamp: number;
-  level: number;
   levelName: string;
   message: string;
+}
+
+export enum ClientState {
+  Connecting = 0,
+  FccInit = 1,
+  FccRequested = 2,
+  FccUnicastPending = 3,
+  FccUnicastActive = 4,
+  FccMcastRequested = 5,
+  FccMcastActive = 6,
+  RtspInit = 7,
+  RtspConnecting = 8,
+  RtspConnected = 9,
+  RtspSendingDescribe = 10,
+  RtspAwaitingDescribe = 11,
+  RtspDescribed = 12,
+  RtspSendingSetup = 13,
+  RtspAwaitingSetup = 14,
+  RtspSetup = 15,
+  RtspSendingPlay = 16,
+  RtspAwaitingPlay = 17,
+  RtspPlaying = 18,
+  RtspReconnecting = 19,
+  RtspSendingTeardown = 20,
+  RtspAwaitingTeardown = 21,
+  RtspTeardownComplete = 22,
+  RtspPaused = 23,
+  Error = 24,
+  Disconnected = 25,
 }
 
 export interface ClientEntry {
@@ -41,17 +67,13 @@ export interface ClientEntry {
   clientAddr: string;
   clientPort: string;
   serviceUrl: string;
-  stateDesc: string;
+  state: ClientState;
   bytesSent: number;
   currentBandwidth: number;
   queueBytes: number;
-  queueBuffers: number;
   queueLimitBytes: number;
   queueBytesHighwater: number;
-  queueBuffersHighwater: number;
-  droppedPackets: number;
   droppedBytes: number;
-  backpressureEvents: number;
   slow: boolean;
 }
 
@@ -77,6 +99,9 @@ export interface ClientRow extends ClientEntry {
   isDisconnected: boolean;
   disconnectDurationMs?: number;
   lastSeen: number;
+  connectionKey: string;
+  baseKey: string;
+  firstSeen: number;
 }
 
 export interface WorkerSummary extends WorkerEntry {

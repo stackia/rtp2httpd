@@ -5,12 +5,4 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), viteSingleFile()],
-  build: {
-    target: "es2018",
-    cssTarget: "chrome61",
-    outDir: "dist",
-    assetsDir: "",
-    emptyOutDir: true,
-    reportCompressedSize: false,
-  },
 });

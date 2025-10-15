@@ -11,32 +11,22 @@
     "format": "prettier --write ."
   },
   "dependencies": {
-    "@radix-ui/react-scroll-area": "^1.2.10",
-    "@radix-ui/react-select": "^2.2.6",
-    "@radix-ui/react-switch": "^1.2.6",
-    "@radix-ui/react-tooltip": "^1.2.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^0.545.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "tailwind-merge": "^3.3.1",
-    "@radix-ui/react-slot": "^1.2.3",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.14",
     "@types/node": "^24.7.2",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react-swc": "^4.1.0",
-    "autoprefixer": "^10.4.21",
-    "postcss": "^8.5.6",
-    "@tailwindcss/postcss": "^4.1.14",
     "eslint": "^9.17.0",
     "neostandard": "^0.12.2",
     "prettier": "^3.4.2",
     "tailwindcss": "^4.1.14",
-    "@tailwindcss/vite": "^4.1.14",
     "typescript": "^5.9.3",
     "vite": "^7.1.10",
     "vite-plugin-singlefile": "^2.3.0"
