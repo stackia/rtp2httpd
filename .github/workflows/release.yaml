@@ -1,0 +1,321 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: web-ui
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: web-ui
+
+      - name: Embed status page asset
+        run: node scripts/embed-status-page.js web-ui/dist/index.html src/status_page.h
+
+      - name: Save generated status page
+        run: cp src/status_page.h /tmp/status_page.h
+
+      - name: Upload status page artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: status-page
+          path: src/status_page.h
+          if-no-files-found: error
+
+      - name: Determine branch to update
+        id: push_branch
+        run: |
+          set -euo pipefail
+          TARGET="${{ github.event.release.target_commitish }}"
+          DEFAULT="${{ github.event.repository.default_branch }}"
+          if [ -z "$TARGET" ]; then
+            TARGET="$DEFAULT"
+          fi
+          if git ls-remote --exit-code --heads origin "$TARGET" >/dev/null 2>&1; then
+            echo "branch=$TARGET" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Branch $TARGET not found; defaulting to $DEFAULT"
+            echo "branch=$DEFAULT" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit updated status page
+        if: steps.push_branch.outputs.branch != ''
+        env:
+          PUSH_BRANCH: ${{ steps.push_branch.outputs.branch }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$PUSH_BRANCH"
+          git checkout -B "$PUSH_BRANCH" "origin/$PUSH_BRANCH"
+          cp /tmp/status_page.h src/status_page.h
+          if git diff --quiet --exit-code src/status_page.h; then
+            echo "Status page unchanged; skipping commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/status_page.h
+          git commit -m "chore: update status_page.h for ${{ github.event.release.tag_name }}"
+          git push origin "HEAD:$PUSH_BRANCH"
+
+  docker:
+    name: Docker Release
+    needs: frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Download status page artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: status-page
+          path: artifacts
+
+      - name: Use generated status page
+        run: cp artifacts/status_page.h src/status_page.h
+
+      - name: Override version number
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          RELEASE_VERSION="${RELEASE_TAG#v}"
+          sed -i "s/1\.0\.0/${RELEASE_VERSION}/g" configure.ac
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  ipk:
+    name: IPK ${{ matrix.arch }}-${{ matrix.sdk }}
+    needs: frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - x86_64
+          - aarch64_cortex-a53
+          - aarch64_cortex-a72
+          - aarch64_generic
+          - arm_arm1176jzf-s_vfp
+          - arm_arm926ej-s
+          - arm_cortex-a15_neon-vfpv4
+          - arm_cortex-a5_vfpv4
+          - arm_cortex-a7
+          - arm_cortex-a7_neon-vfpv4
+          - arm_cortex-a8_vfpv3
+          - arm_cortex-a9
+          - arm_cortex-a9_neon
+          - arm_cortex-a9_vfpv3-d16
+          - arm_fa526
+          - arm_mpcore
+          - arm_xscale
+          - i386_pentium-mmx
+          - i386_pentium4
+          - mips64_octeonplus
+          - mips_24kc
+          - mips_4kec
+          - mips_mips32
+          - mipsel_24kc
+          - mipsel_24kc_24kf
+          - mipsel_74kc
+          - mipsel_mips32
+        sdk:
+          - "22.03.6"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Download status page artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: status-page
+          path: artifacts
+
+      - name: Use generated status page
+        run: cp artifacts/status_page.h src/status_page.h
+
+      - name: Override version number
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          RELEASE_VERSION="${RELEASE_TAG#v}"
+          sed -i "s/1\.0\.0/${RELEASE_VERSION}/g" openwrt-support/rtp2httpd/Makefile openwrt-support/luci-app-rtp2httpd/Makefile configure.ac
+
+      - name: Move src to openwrt-support
+        run: mv openwrt-support ../ && mkdir ../openwrt-support/rtp2httpd/src && mv ./* ../openwrt-support/rtp2httpd/src && mv ../openwrt-support ./
+
+      - name: Build
+        uses: openwrt/gh-action-sdk@v7
+        env:
+          ARCH: ${{ matrix.arch }}-${{ matrix.sdk }}
+          FEED_DIR: ${{ github.workspace }}/openwrt-support
+          NO_SHFMT_CHECK: true
+          PACKAGES: ${{ matrix.arch == 'x86_64' && 'luci-app-rtp2httpd' || 'rtp2httpd' }}
+          V: sc
+
+      - name: Upload to release assets
+        run: gh release upload --repo ${{ github.repository }} ${{ github.event.release.tag_name }} bin/packages/${{ matrix.arch }}/action/*.ipk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  static-bin:
+    name: Static Binary ${{ matrix.arch }}
+    needs: frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+          - armv7-unknown-linux-musleabihf
+          - armv7-unknown-linux-musleabi
+          - arm-unknown-linux-musleabihf
+          - arm-unknown-linux-musleabi
+          - mipsel-unknown-linux-musl
+          - mips-unknown-linux-musl
+          - mips64-unknown-linux-musl
+          - i686-unknown-linux-musl
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            autoconf \
+            automake \
+            build-essential \
+            pkg-config \
+            wget \
+            xz-utils
+
+      - name: Download status page artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: status-page
+          path: artifacts
+
+      - name: Use generated status page
+        run: cp artifacts/status_page.h src/status_page.h
+
+      - name: Override version number
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          RELEASE_VERSION="${RELEASE_TAG#v}"
+          sed -i "s/1\.0\.0/${RELEASE_VERSION}/g" configure.ac
+
+      - name: Generate configure script
+        run: autoreconf -fi
+
+      - name: Build static binary
+        env:
+          TOOLCHAIN_PREFIX: ${{ matrix.arch }}
+        run: ./scripts/build-static.sh
+
+      - name: Prepare release artifact
+        id: prepare
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          RELEASE_VERSION="${RELEASE_TAG#v}"
+          ARCH="${{ matrix.arch }}"
+
+          if [[ "$ARCH" == arm* ]]; then
+            BASE_ARCH="${ARCH%%-*}"
+            if [[ "$ARCH" == *"eabihf"* ]]; then
+              ARCH_SHORT="${BASE_ARCH}-eabihf"
+            elif [[ "$ARCH" == *"eabi"* ]]; then
+              ARCH_SHORT="${BASE_ARCH}-eabi"
+            else
+              ARCH_SHORT="$BASE_ARCH"
+            fi
+          else
+            ARCH_SHORT="${ARCH%%-*}"
+          fi
+
+          BINARY_PATH="build-${ARCH}-static/src/rtp2httpd"
+
+          if [ ! -f "$BINARY_PATH" ]; then
+            echo "Error: Binary not found at $BINARY_PATH"
+            exit 1
+          fi
+
+          OUTPUT_NAME="rtp2httpd-${RELEASE_VERSION}-${ARCH_SHORT}"
+          cp "$BINARY_PATH" "$OUTPUT_NAME"
+
+          file "$OUTPUT_NAME"
+          ls -lh "$OUTPUT_NAME"
+
+          echo "binary_name=$OUTPUT_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload to release assets
+        run: |
+          gh release upload \
+            --repo ${{ github.repository }} \
+            ${{ github.event.release.tag_name }} \
+            ${{ steps.prepare.outputs.binary_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
