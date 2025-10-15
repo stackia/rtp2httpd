@@ -1,16 +1,9 @@
-import type {
-  ClientEntry,
-  ClientRow,
-  WorkerEntry,
-  WorkerSummary,
-} from "../types";
+import type { ClientEntry, ClientRow, WorkerEntry, WorkerSummary } from "../types";
 import { ClientState } from "../types";
 import type { Locale, TranslationKey } from "../i18n";
 import { translations } from "../i18n";
 
-export function stateToVariant(
-  state: ClientState,
-): "default" | "secondary" | "destructive" | "outline" {
+export function stateToVariant(state: ClientState): "default" | "secondary" | "destructive" | "outline" {
   switch (state) {
     case ClientState.FccUnicastActive:
     case ClientState.FccMcastActive:
@@ -68,18 +61,11 @@ export function stateToLabel(locale: Locale, state: ClientState): string {
   return fallbackTable[key] ?? fallbackTable[FALLBACK_STATE_KEY];
 }
 
-function clientBaseKey(client: {
-  clientAddr: string;
-  clientPort: string;
-  workerPid: number;
-}): string {
+function clientBaseKey(client: { clientAddr: string; clientPort: string; workerPid: number }): string {
   return `${client.clientAddr}:${client.clientPort}-${client.workerPid}`;
 }
 
-export function mergeClients(
-  previous: Map<string, ClientRow>,
-  clients: ClientEntry[],
-): Map<string, ClientRow> {
+export function mergeClients(previous: Map<string, ClientRow>, clients: ClientEntry[]): Map<string, ClientRow> {
   const now = Date.now();
   const next = new Map(previous);
   const activeByBaseKey = new Map<string, string>();
@@ -99,8 +85,7 @@ export function mergeClients(
   for (const client of clients) {
     const baseKey = clientBaseKey(client);
     const reuseKey = activeByBaseKey.get(baseKey);
-    const key =
-      reuseKey ?? `${baseKey}-${client.clientAddr}:${client.clientPort}-${now}`;
+    const key = reuseKey ?? `${baseKey}-${client.clientAddr}:${client.clientPort}-${now}`;
     const previousEntry = reuseKey ? next.get(reuseKey) : undefined;
     const entry: ClientRow = {
       ...(previousEntry ?? client),
@@ -134,15 +119,9 @@ export function mergeClients(
   return next;
 }
 
-export function computeWorkerSummaries(
-  workers: WorkerEntry[] | undefined,
-  clients: ClientRow[],
-): WorkerSummary[] {
+export function computeWorkerSummaries(workers: WorkerEntry[] | undefined, clients: ClientRow[]): WorkerSummary[] {
   if (!workers || workers.length === 0) return [];
-  const grouped = new Map<
-    number,
-    { active: number; bytes: number; bandwidth: number }
-  >();
+  const grouped = new Map<number, { active: number; bytes: number; bandwidth: number }>();
   for (const client of clients) {
     if (!client.isDisconnected) {
       const bucket = grouped.get(client.workerPid) ?? {

@@ -4,13 +4,7 @@ import { formatBandwidth, formatBytes } from "../../lib/format";
 import { cn } from "../../lib/utils";
 import type { WorkerSummary } from "../../types";
 import { Badge } from "../ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "../ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Separator } from "../ui/separator";
 import { Progress } from "../ui/progress";
 
@@ -25,19 +19,13 @@ export function WorkersSection({ workers, locale }: WorkersSectionProps) {
     <section className="rounded-3xl border border-border/60 bg-card/90 p-6 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight text-card-foreground">
-            {t("workerStats")}
-          </h2>
+          <h2 className="text-xl font-semibold tracking-tight text-card-foreground">{t("workerStats")}</h2>
         </div>
       </div>
       {workers.length === 0 ? (
-        <div className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">
-          {t("noWorkerStats")}
-        </div>
+        <div className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">{t("noWorkerStats")}</div>
       ) : (
-        <div
-          className={cn("grid gap-6", workers.length > 1 && "lg:grid-cols-2")}
-        >
+        <div className={cn("grid gap-6", workers.length > 1 && "lg:grid-cols-2")}>
           {workers.map((worker) => {
             const metrics = [
               {
@@ -82,16 +70,11 @@ export function WorkersSection({ workers, locale }: WorkersSectionProps) {
               },
             ];
             return (
-              <Card
-                key={worker.id}
-                className="border border-border/60 bg-card/95"
-              >
+              <Card key={worker.id} className="border border-border/60 bg-card/95">
                 <CardHeader className="pb-4">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <CardTitle className="text-lg">
-                        Worker #{worker.id}
-                      </CardTitle>
+                      <CardTitle className="text-lg">Worker #{worker.id}</CardTitle>
                       <CardDescription>
                         {t("workerPid")}: {worker.pid}
                       </CardDescription>
@@ -108,27 +91,15 @@ export function WorkersSection({ workers, locale }: WorkersSectionProps) {
                         key={metric.key}
                         className="flex items-center justify-between gap-2 rounded-lg bg-muted/20 px-3 py-2"
                       >
-                        <span className="font-medium text-muted-foreground/80">
-                          {metric.label}
-                        </span>
-                        <span className="text-right font-medium text-card-foreground">
-                          {metric.value}
-                        </span>
+                        <span className="font-medium text-muted-foreground/80">{metric.label}</span>
+                        <span className="text-right font-medium text-card-foreground">{metric.value}</span>
                       </div>
                     ))}
                   </div>
                   <Separator />
                   <div className="grid gap-4 md:grid-cols-2">
-                    <PoolCard
-                      title={t("bufferPool")}
-                      pool={worker.pool}
-                      locale={locale}
-                    />
-                    <PoolCard
-                      title={t("controlPool")}
-                      pool={worker.controlPool}
-                      locale={locale}
-                    />
+                    <PoolCard title={t("bufferPool")} pool={worker.pool} locale={locale} />
+                    <PoolCard title={t("controlPool")} pool={worker.controlPool} locale={locale} />
                   </div>
                 </CardContent>
               </Card>
@@ -155,10 +126,7 @@ function PoolCard({ title, pool, locale }: PoolCardProps) {
         <span>{title}</span>
         <span>{utilization.toFixed(1)}%</span>
       </div>
-      <Progress
-        value={utilization}
-        indicatorClassName="bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500"
-      />
+      <Progress value={utilization} indicatorClassName="bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500" />
       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
         <span>
           {t("poolTotal")}: {pool.total}
