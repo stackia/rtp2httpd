@@ -47,7 +47,9 @@ export function detectBrowserLocale(
   return "en";
 }
 
-export function ensureSupportedLocale(locale: string | null | undefined): Locale {
+export function ensureSupportedLocale(
+  locale: string | null | undefined,
+): Locale {
   if (locale && (SUPPORTED_LOCALES as string[]).includes(locale)) {
     return locale as Locale;
   }
@@ -56,7 +58,9 @@ export function ensureSupportedLocale(locale: string | null | undefined): Locale
 
 export function detectInitialLocale(
   storageKey = "status-locale",
-  navigatorObject: Navigator | undefined = typeof navigator !== "undefined" ? navigator : undefined,
+  navigatorObject: Navigator | undefined = typeof navigator !== "undefined"
+    ? navigator
+    : undefined,
 ): Locale {
   if (typeof window === "undefined") {
     return "en";

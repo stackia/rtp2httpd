@@ -29,7 +29,7 @@ const buttonVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
+  },
 );
 
 export interface ButtonProps
@@ -41,12 +41,12 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       className={cn(
         "cursor-pointer disabled:cursor-not-allowed",
-        buttonVariants({ variant, size, className })
+        buttonVariants({ variant, size, className }),
       )}
       ref={ref}
       {...props}
     />
-  )
+  ),
 );
 Button.displayName = "Button";
 

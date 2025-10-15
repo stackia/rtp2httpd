@@ -10,13 +10,15 @@ export function useStatusApi() {
     });
     const data = await response.json().catch(() => undefined);
     if (!response.ok) {
-      throw new Error(data?.error ?? `Request failed with status ${response.status}`);
+      throw new Error(
+        data?.error ?? `Request failed with status ${response.status}`,
+      );
     }
   }, []);
 
   const setLogLevel = useCallback(async (level: string) => {
     const response = await fetch(buildUrl("/api/log-level"), {
-      method: "POST",
+      method: "PUT",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ level }).toString(),
     });

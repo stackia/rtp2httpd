@@ -749,7 +749,6 @@ int fcc_handle_mcast_active(stream_context_t *ctx, uint8_t *buf, int buf_len, bu
             else
             {
                 /* Queue full - keep remaining buffers for next attempt */
-                logger(LOG_DEBUG, "FCC: Zero-copy queue full, keeping pending buffers");
                 return 0;
             }
         }

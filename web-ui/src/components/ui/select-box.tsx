@@ -17,13 +17,13 @@ export function SelectBox({
     <div
       className={cn(
         "relative inline-flex min-w-[120px] items-center justify-end",
-        containerClassName
+        containerClassName,
       )}
     >
       <select
         className={cn(
           "peer h-9 w-full appearance-none rounded-lg border border-input bg-background/90 px-3 pr-10 text-sm font-medium text-foreground shadow-sm transition focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer disabled:cursor-not-allowed disabled:opacity-50",
-          className
+          className,
         )}
         {...props}
       >
