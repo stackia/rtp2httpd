@@ -11,20 +11,10 @@ interface QueueUsageProps {
   droppedBytes: number;
 }
 
-export function QueueUsage({
-  locale,
-  queueBytes,
-  queueLimit,
-  queueHighwater,
-  droppedBytes,
-}: QueueUsageProps) {
+export function QueueUsage({ locale, queueBytes, queueLimit, queueHighwater, droppedBytes }: QueueUsageProps) {
   const t = useTranslation(locale);
-  const usage =
-    queueLimit > 0 ? Math.min(100, (queueBytes / queueLimit) * 100) : 0;
-  const highwaterPercent =
-    queueLimit > 0
-      ? Math.min(100, (queueHighwater / queueLimit) * 100)
-      : undefined;
+  const usage = queueLimit > 0 ? Math.min(100, (queueBytes / queueLimit) * 100) : 0;
+  const highwaterPercent = queueLimit > 0 ? Math.min(100, (queueHighwater / queueLimit) * 100) : undefined;
 
   return (
     <div className="space-y-3 rounded-xl border border-border/40 bg-card/60 p-3 text-xs text-muted-foreground">
@@ -32,10 +22,7 @@ export function QueueUsage({
         <span>{t("queueUsage")}</span>
         <span>{usage.toFixed(1)}%</span>
       </div>
-      <Progress
-        value={usage}
-        indicatorClassName="bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500"
-      />
+      <Progress value={usage} indicatorClassName="bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500" />
       <div className="grid grid-cols-2 gap-2">
         <span>
           {t("queueCurrent")}: {formatBytes(queueBytes)}
@@ -45,9 +32,7 @@ export function QueueUsage({
         </span>
         <span>
           {t("queuePeak")}: {formatBytes(queueHighwater)}
-          {typeof highwaterPercent === "number"
-            ? ` (${highwaterPercent.toFixed(1)}%)`
-            : ""}
+          {typeof highwaterPercent === "number" ? ` (${highwaterPercent.toFixed(1)}%)` : ""}
         </span>
         <span>
           {t("queueDroppedBytes")}: {formatBytes(droppedBytes)}

@@ -9,11 +9,8 @@
         try {
           const storageKey = "status-theme";
           const stored = localStorage.getItem(storageKey);
-          const theme =
-            stored === "light" || stored === "dark" ? stored : "auto";
-          const prefersDark = window.matchMedia(
-            "(prefers-color-scheme: dark)",
-          ).matches;
+          const theme = stored === "light" || stored === "dark" ? stored : "auto";
+          const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
           const isDark = theme === "dark" || (theme === "auto" && prefersDark);
           const root = document.documentElement;
           if (isDark) {

@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIcon,
-  GaugeIcon,
-  LayersIcon,
-  UsersIcon,
-} from "./components/icons";
+import { ActivityIcon, GaugeIcon, LayersIcon, UsersIcon } from "./components/icons";
 import { ConnectionsSection } from "./components/status/connections-section";
 import { LogsSection } from "./components/status/logs-section";
 import { StatusHeader } from "./components/status/status-header";
@@ -51,17 +46,12 @@ function App() {
   const { theme, setTheme } = useTheme(THEME_STORAGE_KEY);
   const { disconnectClient, setLogLevel } = useStatusApi();
 
-  const [connectionState, setConnectionState] =
-    useState<ConnectionState>("reconnecting");
+  const [connectionState, setConnectionState] = useState<ConnectionState>("reconnecting");
   const [payload, setPayload] = useState<StatusPayload | null>(null);
-  const [clientsMap, setClientsMap] = useState<Map<string, ClientRow>>(
-    new Map(),
-  );
+  const [clientsMap, setClientsMap] = useState<Map<string, ClientRow>>(new Map());
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [showDisconnected, setShowDisconnected] = useState(false);
-  const [disconnectingKeys, setDisconnectingKeys] = useState<Set<string>>(
-    new Set(),
-  );
+  const [disconnectingKeys, setDisconnectingKeys] = useState<Set<string>>(new Set());
   const [lastUpdated, setLastUpdated] = useState<string>("--");
 
   const handlePayload = useCallback((incoming: StatusPayload) => {
@@ -97,14 +87,11 @@ function App() {
       }
       return b.lastSeen - a.lastSeen;
     });
-    return showDisconnected
-      ? values
-      : values.filter((client) => !client.isDisconnected);
+    return showDisconnected ? values : values.filter((client) => !client.isDisconnected);
   }, [clientsMap, showDisconnected]);
 
   const workerSummaries = useMemo(
-    () =>
-      computeWorkerSummaries(payload?.workers, Array.from(clientsMap.values())),
+    () => computeWorkerSummaries(payload?.workers, Array.from(clientsMap.values())),
     [payload, clientsMap],
   );
 
@@ -139,12 +126,8 @@ function App() {
 
   const uptime = payload ? formatDuration(payload.uptimeMs) : "--";
 
-  const totalBandwidthDisplay = payload
-    ? formatBandwidth(payload.totalBandwidth)
-    : "--";
-  const totalTrafficDisplay = payload
-    ? formatBytes(payload.totalBytesSent)
-    : "--";
+  const totalBandwidthDisplay = payload ? formatBandwidth(payload.totalBandwidth) : "--";
+  const totalTrafficDisplay = payload ? formatBytes(payload.totalBytesSent) : "--";
   const totalClients = payload ? payload.totalClients : 0;
   const maxClientsDisplay = payload ? String(payload.maxClients) : "--";
   const logLevelValue = payload ? String(payload.currentLogLevel) : undefined;
@@ -194,20 +177,14 @@ function App() {
         tone: "amber" as const,
       },
     ],
-    [
-      t,
-      totalClients,
-      totalBandwidthDisplay,
-      totalTrafficDisplay,
-      maxClientsDisplay,
-    ],
+    [t, totalClients, totalBandwidthDisplay, totalTrafficDisplay, maxClientsDisplay],
   );
 
   return (
     <>
       <title>{t("title")}</title>
       <div className="min-h-screen bg-background pb-12">
-        <div className="mx-auto flex w-full flex-col gap-6 px-6 py-8">
+        <div className="mx-auto flex w-full flex-col gap-4 sm:gap-6 p-3 sm:p-6">
           <StatusHeader
             statusAccent={statusAccent}
             statusLabel={statusLabel}
@@ -225,30 +202,26 @@ function App() {
 
           <SummaryStats stats={stats} />
 
-          <div className="flex flex-col gap-8">
-            <ConnectionsSection
-              clients={clients}
-              locale={locale}
-              showDisconnected={showDisconnected}
-              onShowDisconnectedChange={(checked) =>
-                setShowDisconnected(checked)
-              }
-              disconnectingKeys={disconnectingKeys}
-              onDisconnect={handleDisconnect}
-            />
+          <ConnectionsSection
+            clients={clients}
+            locale={locale}
+            showDisconnected={showDisconnected}
+            onShowDisconnectedChange={(checked) => setShowDisconnected(checked)}
+            disconnectingKeys={disconnectingKeys}
+            onDisconnect={handleDisconnect}
+          />
 
-            <LogsSection
-              logs={logs}
-              options={LOG_LEVELS.map((level) => ({
-                value: String(level.value),
-                label: level.label,
-              }))}
-              logLevelValue={logLevelValue}
-              onLogLevelChange={handleLogLevelChange}
-              disabled={!logLevelValue}
-              locale={locale}
-            />
-          </div>
+          <LogsSection
+            logs={logs}
+            options={LOG_LEVELS.map((level) => ({
+              value: String(level.value),
+              label: level.label,
+            }))}
+            logLevelValue={logLevelValue}
+            onLogLevelChange={handleLogLevelChange}
+            disabled={!logLevelValue}
+            locale={locale}
+          />
 
           <WorkersSection workers={workerSummaries} locale={locale} />
         </div>

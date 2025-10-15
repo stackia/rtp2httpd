@@ -7,14 +7,7 @@ import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Switch } from "../ui/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { QueueUsage } from "./queue-usage";
 
 interface ConnectionsSectionProps {
@@ -38,13 +31,9 @@ export function ConnectionsSection({
   return (
     <section className="flex flex-col rounded-3xl border border-border/60 bg-card/90 p-6 shadow-sm">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <h2 className="text-xl font-semibold tracking-tight text-card-foreground">
-          {t("connections")}
-        </h2>
+        <h2 className="text-xl font-semibold tracking-tight text-card-foreground">{t("connections")}</h2>
         <label className="flex items-center gap-3 text-sm text-muted-foreground">
-          <span className="font-medium text-card-foreground">
-            {t("showDisconnected")}
-          </span>
+          <span className="font-medium text-card-foreground">{t("showDisconnected")}</span>
           <Switch
             checked={showDisconnected}
             onCheckedChange={onShowDisconnectedChange}
@@ -75,10 +64,7 @@ export function ConnectionsSection({
               </TableHeader>
               <TableBody>
                 {clients.map((client) => (
-                  <TableRow
-                    key={client.connectionKey}
-                    className={client.isDisconnected ? "opacity-60" : undefined}
-                  >
+                  <TableRow key={client.connectionKey} className={client.isDisconnected ? "opacity-60" : undefined}>
                     <TableCell>
                       <div className="font-medium">
                         {client.clientAddr}:{client.clientPort}
@@ -87,32 +73,17 @@ export function ConnectionsSection({
                         {t("workerPid")}: {client.workerPid}
                       </div>
                     </TableCell>
-                    <TableCell className="max-w-[240px] break-words text-sm">
-                      {client.serviceUrl || "-"}
-                    </TableCell>
+                    <TableCell className="max-w-[240px] break-words text-sm">{client.serviceUrl || "-"}</TableCell>
                     <TableCell>
-                      <Badge
-                        variant={stateToVariant(client.state)}
-                        className="px-3"
-                      >
+                      <Badge variant={stateToVariant(client.state)} className="px-3">
                         {stateToLabel(locale, client.state)}
                       </Badge>
-                      {client.slow ? (
-                        <div className="mt-2 text-xs text-destructive">
-                          {t("slowClient")}
-                        </div>
-                      ) : null}
+                      {client.slow ? <div className="mt-2 text-xs text-destructive">{t("slowClient")}</div> : null}
                     </TableCell>
                     <TableCell>
-                      {formatDuration(
-                        client.isDisconnected
-                          ? (client.disconnectDurationMs ?? 0)
-                          : client.durationMs,
-                      )}
+                      {formatDuration(client.isDisconnected ? (client.disconnectDurationMs ?? 0) : client.durationMs)}
                     </TableCell>
-                    <TableCell>
-                      {formatBandwidth(client.currentBandwidth)}
-                    </TableCell>
+                    <TableCell>{formatBandwidth(client.currentBandwidth)}</TableCell>
                     <TableCell>{formatBytes(client.bytesSent)}</TableCell>
                     <TableCell>
                       <QueueUsage
@@ -125,21 +96,15 @@ export function ConnectionsSection({
                     </TableCell>
                     <TableCell className="text-center">
                       {client.isDisconnected ? (
-                        <span className="text-xs text-muted-foreground">
-                          --
-                        </span>
+                        <span className="text-xs text-muted-foreground">--</span>
                       ) : (
                         <Button
                           size="sm"
                           variant="destructive"
                           disabled={disconnectingKeys.has(client.connectionKey)}
-                          onClick={() =>
-                            onDisconnect(client.clientId, client.connectionKey)
-                          }
+                          onClick={() => onDisconnect(client.clientId, client.connectionKey)}
                         >
-                          {disconnectingKeys.has(client.connectionKey)
-                            ? t("disconnecting")
-                            : t("disconnect")}
+                          {disconnectingKeys.has(client.connectionKey) ? t("disconnecting") : t("disconnect")}
                         </Button>
                       )}
                     </TableCell>
@@ -159,10 +124,7 @@ export function ConnectionsSection({
                     <div className="text-sm font-medium">
                       {client.clientAddr}:{client.clientPort}
                     </div>
-                    <Badge
-                      variant={stateToVariant(client.state)}
-                      className="px-3"
-                    >
+                    <Badge variant={stateToVariant(client.state)} className="px-3">
                       {stateToLabel(locale, client.state)}
                     </Badge>
                   </div>
@@ -172,15 +134,10 @@ export function ConnectionsSection({
                     </span>
                     <span>
                       {t("duration")}:{" "}
-                      {formatDuration(
-                        client.isDisconnected
-                          ? (client.disconnectDurationMs ?? 0)
-                          : client.durationMs,
-                      )}
+                      {formatDuration(client.isDisconnected ? (client.disconnectDurationMs ?? 0) : client.durationMs)}
                     </span>
                     <span>
-                      {t("bandwidth")}:{" "}
-                      {formatBandwidth(client.currentBandwidth)}
+                      {t("bandwidth")}: {formatBandwidth(client.currentBandwidth)}
                     </span>
                     <span>
                       {t("dataSent")}: {formatBytes(client.bytesSent)}
@@ -202,13 +159,9 @@ export function ConnectionsSection({
                         size="sm"
                         variant="destructive"
                         disabled={disconnectingKeys.has(client.connectionKey)}
-                        onClick={() =>
-                          onDisconnect(client.clientId, client.connectionKey)
-                        }
+                        onClick={() => onDisconnect(client.clientId, client.connectionKey)}
                       >
-                        {disconnectingKeys.has(client.connectionKey)
-                          ? t("disconnecting")
-                          : t("disconnect")}
+                        {disconnectingKeys.has(client.connectionKey) ? t("disconnecting") : t("disconnect")}
                       </Button>
                     )}
                   </div>

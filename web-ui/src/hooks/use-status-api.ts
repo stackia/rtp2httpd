@@ -10,9 +10,7 @@ export function useStatusApi() {
     });
     const data = await response.json().catch(() => undefined);
     if (!response.ok) {
-      throw new Error(
-        data?.error ?? `Request failed with status ${response.status}`,
-      );
+      throw new Error(data?.error ?? `Request failed with status ${response.status}`);
     }
   }, []);
 

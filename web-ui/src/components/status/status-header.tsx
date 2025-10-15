@@ -40,9 +40,7 @@ export function StatusHeader({
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <span
-              className={`inline-flex items-center gap-2 font-medium ${statusAccent}`}
-            >
+            <span className={`inline-flex items-center gap-2 font-medium ${statusAccent}`}>
               <SignalIcon className="h-4 w-4" />
               {statusLabel}
             </span>
@@ -62,9 +60,7 @@ export function StatusHeader({
         <div className="flex flex-col gap-3 text-sm text-muted-foreground md:flex-row md:items-start">
           <label className="flex items-center gap-3">
             <GlobeIcon className="h-4 w-4 text-muted-foreground" />
-            <span className="hidden text-xs font-semibold uppercase tracking-wide md:inline">
-              {t("language")}
-            </span>
+            <span className="hidden text-xs font-semibold uppercase tracking-wide md:inline">{t("language")}</span>
             <SelectBox
               value={locale}
               onChange={(event) => onLocaleChange(event.target.value as Locale)}
@@ -84,14 +80,10 @@ export function StatusHeader({
             ) : (
               <SunIcon className="h-4 w-4 text-muted-foreground" />
             )}
-            <span className="hidden text-xs font-semibold uppercase tracking-wide md:inline">
-              {t("appearance")}
-            </span>
+            <span className="hidden text-xs font-semibold uppercase tracking-wide md:inline">{t("appearance")}</span>
             <SelectBox
               value={theme}
-              onChange={(event) =>
-                onThemeChange(event.target.value as ThemeMode)
-              }
+              onChange={(event) => onThemeChange(event.target.value as ThemeMode)}
               containerClassName="min-w-[140px]"
               aria-label={t("appearance")}
             >

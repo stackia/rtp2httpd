@@ -14,14 +14,7 @@ interface LogsSectionProps {
   locale: Locale;
 }
 
-export function LogsSection({
-  logs,
-  logLevelValue,
-  onLogLevelChange,
-  disabled,
-  options,
-  locale,
-}: LogsSectionProps) {
+export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, options, locale }: LogsSectionProps) {
   const t = useTranslation(locale);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
@@ -30,8 +23,7 @@ export function LogsSection({
     const viewport = viewportRef.current;
     if (!viewport) return;
     const { scrollTop, scrollHeight, clientHeight } = viewport;
-    shouldStickToBottomRef.current =
-      scrollHeight - (scrollTop + clientHeight) < 16;
+    shouldStickToBottomRef.current = scrollHeight - (scrollTop + clientHeight) < 16;
   }, []);
 
   useEffect(() => {
@@ -54,9 +46,7 @@ export function LogsSection({
   return (
     <section className="flex flex-col rounded-3xl border border-border/60 bg-card/90 p-5 shadow-sm">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-xl font-semibold tracking-tight text-card-foreground">
-          {t("logs")}
-        </h2>
+        <h2 className="text-xl font-semibold tracking-tight text-card-foreground">{t("logs")}</h2>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <LogsIcon className="h-4 w-4" />
           <span>{t("logLevel")}:</span>
@@ -83,9 +73,7 @@ export function LogsSection({
         className="scrollbar-thin mt-5 h-[400px] overflow-y-auto rounded-2xl border border-border/50 bg-muted/20 p-4 backdrop-blur-sm"
       >
         {logs.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            --
-          </div>
+          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">--</div>
         ) : (
           <div className="space-y-2 font-mono text-sm">
             {logs.map((log) => (
@@ -96,12 +84,8 @@ export function LogsSection({
                 <span className="w-24 shrink-0 text-sm text-muted-foreground">
                   {new Date(log.timestamp).toLocaleTimeString()}
                 </span>
-                <span className="text-sm font-semibold uppercase tracking-wide text-primary">
-                  {log.levelName}
-                </span>
-                <span className="flex-1 text-sm text-card-foreground whitespace-pre">
-                  {log.message}
-                </span>
+                <span className="text-sm font-semibold uppercase tracking-wide text-primary">{log.levelName}</span>
+                <span className="flex-1 text-sm text-card-foreground whitespace-pre">{log.message}</span>
               </div>
             ))}
           </div>

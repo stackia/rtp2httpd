@@ -2,24 +2,13 @@ import type { SelectHTMLAttributes } from "react";
 import { ChevronDownIcon } from "../icons";
 import { cn } from "../../lib/utils";
 
-export interface SelectBoxProps
-  extends SelectHTMLAttributes<HTMLSelectElement> {
+export interface SelectBoxProps extends SelectHTMLAttributes<HTMLSelectElement> {
   containerClassName?: string;
 }
 
-export function SelectBox({
-  containerClassName,
-  className,
-  children,
-  ...props
-}: SelectBoxProps) {
+export function SelectBox({ containerClassName, className, children, ...props }: SelectBoxProps) {
   return (
-    <div
-      className={cn(
-        "relative inline-flex min-w-[120px] items-center justify-end",
-        containerClassName,
-      )}
-    >
+    <div className={cn("relative inline-flex min-w-[120px] items-center justify-end", containerClassName)}>
       <select
         className={cn(
           "peer h-9 w-full appearance-none rounded-lg border border-input bg-background/90 px-3 pr-10 text-sm font-medium text-foreground shadow-sm transition focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer disabled:cursor-not-allowed disabled:opacity-50",

@@ -12,34 +12,29 @@ function readStoredTheme(storageKey: string): ThemeMode {
 }
 
 export function useTheme(storageKey = DEFAULT_STORAGE_KEY) {
-  const [theme, setTheme] = useState<ThemeMode>(() =>
-    readStoredTheme(storageKey),
-  );
+  const [theme, setTheme] = useState<ThemeMode>(() => readStoredTheme(storageKey));
 
-  const applyTheme = useCallback(
-    (mode: ThemeMode, systemDarkOverride?: boolean) => {
-      if (typeof document === "undefined") return;
+  const applyTheme = useCallback((mode: ThemeMode, systemDarkOverride?: boolean) => {
+    if (typeof document === "undefined") return;
 
-      const prefersDark =
-        typeof systemDarkOverride === "boolean"
-          ? systemDarkOverride
-          : typeof window !== "undefined" &&
-            typeof window.matchMedia === "function" &&
-            window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const prefersDark =
+      typeof systemDarkOverride === "boolean"
+        ? systemDarkOverride
+        : typeof window !== "undefined" &&
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches;
 
-      const isDark = mode === "dark" || (mode === "auto" && prefersDark);
-      const root = document.documentElement;
+    const isDark = mode === "dark" || (mode === "auto" && prefersDark);
+    const root = document.documentElement;
 
-      if (isDark) {
-        root.classList.add("dark");
-        root.style.colorScheme = "dark";
-      } else {
-        root.classList.remove("dark");
-        root.style.colorScheme = "light";
-      }
-    },
-    [],
-  );
+    if (isDark) {
+      root.classList.add("dark");
+      root.style.colorScheme = "dark";
+    } else {
+      root.classList.remove("dark");
+      root.style.colorScheme = "light";
+    }
+  }, []);
 
   useEffect(() => {
     applyTheme(theme);
@@ -49,10 +44,7 @@ export function useTheme(storageKey = DEFAULT_STORAGE_KEY) {
   }, [theme, storageKey, applyTheme]);
 
   useEffect(() => {
-    if (
-      typeof window === "undefined" ||
-      typeof window.matchMedia !== "function"
-    ) {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
       return;
     }
     const media = window.matchMedia("(prefers-color-scheme: dark)");

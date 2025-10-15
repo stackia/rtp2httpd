@@ -2,10 +2,7 @@ import type { JSX, SVGProps } from "react";
 
 export type IconProps = SVGProps<SVGSVGElement>;
 
-function createIcon(
-  paths: (props: { className?: string }) => JSX.Element,
-  viewBox = "0 0 24 24",
-) {
+function createIcon(paths: (props: { className?: string }) => JSX.Element, viewBox = "0 0 24 24") {
   return function Icon({ className, ...props }: IconProps) {
     return (
       <svg
@@ -60,9 +57,7 @@ export const SunIcon = createIcon(() => (
   </>
 ));
 
-export const MoonIcon = createIcon(() => (
-  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
-));
+export const MoonIcon = createIcon(() => <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />);
 
 export const UsersIcon = createIcon(() => (
   <>
@@ -73,9 +68,7 @@ export const UsersIcon = createIcon(() => (
   </>
 ));
 
-export const ActivityIcon = createIcon(() => (
-  <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-));
+export const ActivityIcon = createIcon(() => <path d="M22 12h-4l-3 9L9 3l-3 9H2" />);
 
 export const LayersIcon = createIcon(() => (
   <>

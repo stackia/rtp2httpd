@@ -18,40 +18,32 @@ const STAT_CARD_TONES: Record<
     iconColor: "hsl(262 83% 62%)",
     iconBackground: "hsla(262, 83%, 62%, 0.14)",
     iconShadow: "0 12px 30px -24px rgba(139, 92, 246, 0.45)",
-    gradient:
-      "radial-gradient(120% 120% at 0% 0%, rgba(139, 92, 246, 0.18), transparent 70%)",
-    spotlight:
-      "radial-gradient(80% 80% at 85% 120%, rgba(139, 92, 246, 0.14), transparent 70%)",
+    gradient: "radial-gradient(120% 120% at 0% 0%, rgba(139, 92, 246, 0.18), transparent 70%)",
+    spotlight: "radial-gradient(80% 80% at 85% 120%, rgba(139, 92, 246, 0.14), transparent 70%)",
     cardShadow: "0 9px 36px -30px rgba(139, 92, 246, 0.5)",
   },
   emerald: {
     iconColor: "hsl(152 76% 38%)",
     iconBackground: "hsla(152, 76%, 38%, 0.14)",
     iconShadow: "0 12px 30px -22px rgba(16, 185, 129, 0.45)",
-    gradient:
-      "radial-gradient(120% 120% at 0% 0%, rgba(16, 185, 129, 0.18), transparent 70%)",
-    spotlight:
-      "radial-gradient(80% 80% at 85% 120%, rgba(16, 185, 129, 0.14), transparent 70%)",
+    gradient: "radial-gradient(120% 120% at 0% 0%, rgba(16, 185, 129, 0.18), transparent 70%)",
+    spotlight: "radial-gradient(80% 80% at 85% 120%, rgba(16, 185, 129, 0.14), transparent 70%)",
     cardShadow: "0 9px 36px -30px rgba(16, 185, 129, 0.45)",
   },
   sky: {
     iconColor: "hsl(197 92% 45%)",
     iconBackground: "hsla(197, 92%, 45%, 0.16)",
     iconShadow: "0 12px 30px -22px rgba(14, 165, 233, 0.45)",
-    gradient:
-      "radial-gradient(120% 120% at 0% 0%, rgba(14, 165, 233, 0.18), transparent 70%)",
-    spotlight:
-      "radial-gradient(80% 80% at 85% 120%, rgba(14, 165, 233, 0.14), transparent 70%)",
+    gradient: "radial-gradient(120% 120% at 0% 0%, rgba(14, 165, 233, 0.18), transparent 70%)",
+    spotlight: "radial-gradient(80% 80% at 85% 120%, rgba(14, 165, 233, 0.14), transparent 70%)",
     cardShadow: "0 9px 36px -30px rgba(14, 165, 233, 0.45)",
   },
   amber: {
     iconColor: "hsl(38 92% 50%)",
     iconBackground: "hsla(38, 92%, 50%, 0.18)",
     iconShadow: "0 12px 30px -22px rgba(245, 158, 11, 0.45)",
-    gradient:
-      "radial-gradient(120% 120% at 0% 0%, rgba(245, 158, 11, 0.18), transparent 70%)",
-    spotlight:
-      "radial-gradient(80% 80% at 85% 120%, rgba(245, 158, 11, 0.16), transparent 70%)",
+    gradient: "radial-gradient(120% 120% at 0% 0%, rgba(245, 158, 11, 0.18), transparent 70%)",
+    spotlight: "radial-gradient(80% 80% at 85% 120%, rgba(245, 158, 11, 0.16), transparent 70%)",
     cardShadow: "0 9px 36px -30px rgba(245, 158, 11, 0.45)",
   },
 } as const;
@@ -63,12 +55,7 @@ interface StatCardProps {
   tone?: StatTone;
 }
 
-export function StatCard({
-  title,
-  value,
-  icon: Icon,
-  tone = "violet",
-}: StatCardProps) {
+export function StatCard({ title, value, icon: Icon, tone = "violet" }: StatCardProps) {
   const palette = STAT_CARD_TONES[tone];
   return (
     <Card
@@ -86,9 +73,7 @@ export function StatCard({
         style={{ background: palette.spotlight }}
       />
       <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardDescription className="text-sm font-medium text-muted-foreground">
-          {title}
-        </CardDescription>
+        <CardDescription className="text-sm font-medium text-muted-foreground">{title}</CardDescription>
         <span
           className="flex h-10 w-10 items-center justify-center rounded-full backdrop-blur-sm"
           style={{
@@ -101,9 +86,7 @@ export function StatCard({
         </span>
       </CardHeader>
       <CardContent className="relative">
-        <p className="text-3xl font-semibold tracking-tight text-card-foreground">
-          {value}
-        </p>
+        <p className="text-3xl font-semibold tracking-tight text-card-foreground">{value}</p>
       </CardContent>
     </Card>
   );
