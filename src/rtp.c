@@ -130,7 +130,6 @@ int write_rtp_payload_to_client(connection_t *conn, int recv_len, uint8_t *buf,
   else
   {
     /* Queue full - backpressure */
-    logger(LOG_DEBUG, "Zero-copy queue full, backpressure");
     return -1;
   }
 }

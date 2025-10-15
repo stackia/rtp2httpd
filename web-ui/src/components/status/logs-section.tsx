@@ -48,7 +48,7 @@ export function LogsSection({
         value: option.value,
         label: option.label,
       })),
-    [options]
+    [options],
   );
 
   return (

@@ -1083,11 +1083,6 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, connection_t *conn
                     {
                         /* Queue full - backpressure */
                         session->packets_dropped++;
-                        if (session->packets_dropped % 100 == 0)
-                        {
-                            logger(LOG_DEBUG, "RTSP TCP: Dropped %llu packets (queue full)",
-                                   (unsigned long long)session->packets_dropped);
-                        }
                     }
                     /* Release our reference - zerocopy queue now owns it */
                     buffer_ref_put(packet_buf);
@@ -1187,11 +1182,6 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn)
             {
                 /* Queue full - backpressure */
                 session->packets_dropped++;
-                if (session->packets_dropped % 100 == 0)
-                {
-                    logger(LOG_DEBUG, "RTSP UDP: Dropped %llu packets (queue full)",
-                           (unsigned long long)session->packets_dropped);
-                }
                 bytes_written = 0;
             }
         }

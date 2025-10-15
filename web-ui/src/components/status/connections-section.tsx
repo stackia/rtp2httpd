@@ -107,7 +107,7 @@ export function ConnectionsSection({
                       {formatDuration(
                         client.isDisconnected
                           ? (client.disconnectDurationMs ?? 0)
-                          : client.durationMs
+                          : client.durationMs,
                       )}
                     </TableCell>
                     <TableCell>
@@ -175,7 +175,7 @@ export function ConnectionsSection({
                       {formatDuration(
                         client.isDisconnected
                           ? (client.disconnectDurationMs ?? 0)
-                          : client.durationMs
+                          : client.durationMs,
                       )}
                     </span>
                     <span>

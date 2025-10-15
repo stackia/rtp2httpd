@@ -35,10 +35,12 @@
 #define CONN_QUEUE_EWMA_ALPHA 0.2
 #define CONN_QUEUE_SLOW_FACTOR 1.5
 #define CONN_QUEUE_SLOW_EXIT_FACTOR 1.1
-#define CONN_QUEUE_SLOW_CLAMP_FACTOR 1.2
 #define CONN_QUEUE_SLOW_DEBOUNCE_MS 3000
 #define CONN_QUEUE_HIGH_UTIL_THRESHOLD 0.85
 #define CONN_QUEUE_DRAIN_UTIL_THRESHOLD 0.95
+#define CONN_QUEUE_SLOW_LIMIT_RATIO 0.9
+#define CONN_QUEUE_SLOW_EXIT_LIMIT_RATIO 0.75
+#define CONN_QUEUE_SLOW_CLAMP_FACTOR 0.8
 
 static inline buffer_ref_t *connection_alloc_output_buffer(connection_t *c)
 {
@@ -56,6 +58,33 @@ static inline buffer_ref_t *connection_alloc_output_buffer(connection_t *c)
   }
 
   return buf_ref;
+}
+
+static size_t connection_compute_limit_bytes(buffer_pool_t *pool, size_t fair_bytes, double burst_factor)
+{
+  size_t limit_bytes = (size_t)((double)fair_bytes * burst_factor);
+
+  if (pool->max_buffers > 0)
+  {
+    size_t global_cap = pool->max_buffers * pool->buffer_size;
+    size_t reserve = CONN_QUEUE_MIN_BUFFERS * pool->buffer_size;
+    if (global_cap > reserve)
+    {
+      size_t hard_cap = global_cap - reserve;
+      if (limit_bytes > hard_cap)
+        limit_bytes = hard_cap;
+    }
+    else
+    {
+      if (limit_bytes > global_cap)
+        limit_bytes = global_cap;
+    }
+  }
+
+  if (limit_bytes < BUFFER_POOL_BUFFER_SIZE * 4)
+    limit_bytes = BUFFER_POOL_BUFFER_SIZE * 4;
+
+  return limit_bytes;
 }
 
 static size_t connection_calculate_queue_limit(connection_t *c, int64_t now_ms)
@@ -85,15 +114,29 @@ static size_t connection_calculate_queue_limit(connection_t *c, int64_t now_ms)
   if (pool->num_free < pool->low_watermark / 2 || utilization >= CONN_QUEUE_DRAIN_UTIL_THRESHOLD)
     burst_factor = CONN_QUEUE_BURST_FACTOR_DRAIN;
 
-  double current_bytes = (double)c->zc_queue.total_bytes;
-  if (c->queue_avg_bytes <= 0.0)
-    c->queue_avg_bytes = current_bytes;
-  else
-    c->queue_avg_bytes = (1.0 - CONN_QUEUE_EWMA_ALPHA) * c->queue_avg_bytes + CONN_QUEUE_EWMA_ALPHA * current_bytes;
-
   size_t fair_bytes = share_buffers * pool->buffer_size;
+  double queue_mem_bytes = (double)c->zc_queue.num_queued * (double)pool->buffer_size;
+
+  if (c->queue_avg_bytes <= 0.0)
+    c->queue_avg_bytes = queue_mem_bytes;
+  else
+    c->queue_avg_bytes = (1.0 - CONN_QUEUE_EWMA_ALPHA) * c->queue_avg_bytes + CONN_QUEUE_EWMA_ALPHA * queue_mem_bytes;
+
+  size_t bursted_bytes = connection_compute_limit_bytes(pool, fair_bytes, burst_factor);
+
   double slow_threshold = (double)fair_bytes * CONN_QUEUE_SLOW_FACTOR;
+
+  double limit_based_threshold = (double)bursted_bytes * CONN_QUEUE_SLOW_LIMIT_RATIO;
+  if (slow_threshold > limit_based_threshold)
+    slow_threshold = limit_based_threshold;
+
   double slow_exit_threshold = (double)fair_bytes * CONN_QUEUE_SLOW_EXIT_FACTOR;
+  double limit_exit_threshold = (double)bursted_bytes * CONN_QUEUE_SLOW_EXIT_LIMIT_RATIO;
+  if (slow_exit_threshold > limit_exit_threshold)
+    slow_exit_threshold = limit_exit_threshold;
+
+  if (slow_exit_threshold >= slow_threshold)
+    slow_exit_threshold = slow_threshold * CONN_QUEUE_SLOW_EXIT_LIMIT_RATIO;
 
   if (c->queue_avg_bytes > slow_threshold)
   {
@@ -117,29 +160,7 @@ static size_t connection_calculate_queue_limit(connection_t *c, int64_t now_ms)
   if (c->slow_active && burst_factor > CONN_QUEUE_SLOW_CLAMP_FACTOR)
     burst_factor = CONN_QUEUE_SLOW_CLAMP_FACTOR;
 
-  size_t limit_bytes = (size_t)((double)fair_bytes * burst_factor);
-  if (limit_bytes < fair_bytes)
-    limit_bytes = fair_bytes;
-
-  if (pool->max_buffers > 0)
-  {
-    size_t global_cap = pool->max_buffers * pool->buffer_size;
-    size_t reserve = CONN_QUEUE_MIN_BUFFERS * pool->buffer_size;
-    if (global_cap > reserve)
-    {
-      size_t hard_cap = global_cap - reserve;
-      if (limit_bytes > hard_cap)
-        limit_bytes = hard_cap;
-    }
-    else
-    {
-      if (limit_bytes > global_cap)
-        limit_bytes = global_cap;
-    }
-  }
-
-  if (limit_bytes < BUFFER_POOL_BUFFER_SIZE * 4)
-    limit_bytes = BUFFER_POOL_BUFFER_SIZE * 4;
+  size_t limit_bytes = connection_compute_limit_bytes(pool, fair_bytes, burst_factor);
 
   return limit_bytes;
 }
@@ -156,8 +177,8 @@ static void connection_maybe_report_queue(connection_t *c, int64_t now_ms, int f
   if (c->status_index < 0)
     return;
 
-  size_t queue_bytes = c->zc_queue.total_bytes;
   size_t queue_buffers = c->zc_queue.num_queued;
+  size_t queue_bytes = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
 
   int need_report = 0;
 
@@ -750,7 +771,8 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref, size_t off
 
   int64_t now_ms = get_time_ms();
   size_t limit_bytes = connection_calculate_queue_limit(c, now_ms);
-  size_t projected_bytes = c->zc_queue.total_bytes + len;
+  size_t queued_bytes = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
+  size_t projected_bytes = queued_bytes + len;
 
   c->queue_limit_bytes = limit_bytes;
 
@@ -758,10 +780,10 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref, size_t off
   {
     connection_record_drop(c, len);
 
-    if (c->backpressure_events == 1 || (c->backpressure_events % 50) == 0)
+    if (c->backpressure_events == 1 || (c->backpressure_events % 200) == 0)
     {
-      logger(LOG_WARN, "Backpressure: dropping %zu bytes for client fd=%d (queued=%zu limit=%zu drops=%llu)",
-             len, c->fd, c->zc_queue.total_bytes, limit_bytes, (unsigned long long)c->dropped_packets);
+      logger(LOG_DEBUG, "Backpressure: dropping %zu bytes for client fd=%d (queued=%zu limit=%zu drops=%llu)",
+             len, c->fd, queued_bytes, limit_bytes, (unsigned long long)c->dropped_packets);
     }
 
     connection_maybe_report_queue(c, now_ms, 1);
@@ -773,8 +795,8 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref, size_t off
   if (ret < 0)
     return -1; /* Queue full */
 
-  if (c->zc_queue.total_bytes > c->queue_bytes_highwater)
-    c->queue_bytes_highwater = c->zc_queue.total_bytes;
+  if (queued_bytes > c->queue_bytes_highwater)
+    c->queue_bytes_highwater = queued_bytes;
 
   if (c->zc_queue.num_queued > c->queue_buffers_highwater)
     c->queue_buffers_highwater = c->zc_queue.num_queued;

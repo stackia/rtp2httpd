@@ -100,8 +100,7 @@ export function mergeClients(
     const baseKey = clientBaseKey(client);
     const reuseKey = activeByBaseKey.get(baseKey);
     const key =
-      reuseKey ??
-      `${baseKey}-${client.clientAddr}:${client.clientPort}-${now}`;
+      reuseKey ?? `${baseKey}-${client.clientAddr}:${client.clientPort}-${now}`;
     const previousEntry = reuseKey ? next.get(reuseKey) : undefined;
     const entry: ClientRow = {
       ...(previousEntry ?? client),

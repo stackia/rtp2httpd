@@ -111,6 +111,4 @@ export const TerminalIcon = createIcon(() => (
   </>
 ));
 
-export const ChevronDownIcon = createIcon(() => (
-  <path d="m7 10 5 5 5-5" />
-));
+export const ChevronDownIcon = createIcon(() => <path d="m7 10 5 5 5-5" />);

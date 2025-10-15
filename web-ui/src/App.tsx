@@ -55,12 +55,12 @@ function App() {
     useState<ConnectionState>("reconnecting");
   const [payload, setPayload] = useState<StatusPayload | null>(null);
   const [clientsMap, setClientsMap] = useState<Map<string, ClientRow>>(
-    new Map()
+    new Map(),
   );
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [showDisconnected, setShowDisconnected] = useState(false);
   const [disconnectingKeys, setDisconnectingKeys] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   const [lastUpdated, setLastUpdated] = useState<string>("--");
 
@@ -105,7 +105,7 @@ function App() {
   const workerSummaries = useMemo(
     () =>
       computeWorkerSummaries(payload?.workers, Array.from(clientsMap.values())),
-    [payload, clientsMap]
+    [payload, clientsMap],
   );
 
   const handleDisconnect = useCallback(
@@ -123,7 +123,7 @@ function App() {
         });
       }
     },
-    [disconnectClient]
+    [disconnectClient],
   );
 
   const handleLogLevelChange = useCallback(
@@ -134,7 +134,7 @@ function App() {
         window.alert(`Failed to change log level: ${error}`);
       }
     },
-    [setLogLevel]
+    [setLogLevel],
   );
 
   const uptime = payload ? formatDuration(payload.uptimeMs) : "--";
@@ -200,7 +200,7 @@ function App() {
       totalBandwidthDisplay,
       totalTrafficDisplay,
       maxClientsDisplay,
-    ]
+    ],
   );
 
   return (
