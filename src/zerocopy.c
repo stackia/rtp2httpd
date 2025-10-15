@@ -96,6 +96,10 @@ int zerocopy_init(void)
     {
         memset(&status_shared->worker_stats[worker_id], 0, sizeof(worker_stats_t));
     }
+    if (status_shared && worker_id >= 0 && worker_id < STATUS_MAX_WORKERS)
+    {
+        status_shared->worker_stats[worker_id].worker_pid = getpid();
+    }
 
     /* MSG_ZEROCOPY is mandatory - detect support */
     if (!detect_msg_zerocopy_support())

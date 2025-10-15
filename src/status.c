@@ -630,11 +630,18 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
   int64_t current_time = get_realtime_ms();
   int64_t uptime_ms = current_time - status_shared->server_start_time;
 
+#ifdef PACKAGE_VERSION
+  const char *version = PACKAGE_VERSION;
+#else
+  const char *version = "unknown";
+#endif
+
   int len = snprintf(buffer, buffer_capacity,
-                     "data: {\"server_start_time\":%lld,\"uptime_ms\":%lld,\"current_log_level\":%d,\"max_clients\":%d,\"clients\":[",
+                     "data: {\"serverStartTime\":%lld,\"uptimeMs\":%lld,\"currentLogLevel\":%d,\"version\":\"%s\",\"maxClients\":%d,\"clients\":[",
                      (long long)status_shared->server_start_time,
                      (long long)uptime_ms,
                      status_shared->current_log_level,
+                     version,
                      config.maxclients);
 
   /* Add client data (only real media streams: have a service_url) */
@@ -653,11 +660,11 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
       int64_t duration_ms = current_time - status_shared->clients[i].connect_time;
 
       len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                      "{\"client_id\":%d,\"worker_pid\":%d,\"duration_ms\":%lld,\"client_addr\":\"%s\",\"client_port\":\"%s\","
-                      "\"service_url\":\"%s\",\"state_desc\":\"%s\",\"bytes_sent\":%llu,"
-                      "\"current_bandwidth\":%u,\"queue_bytes\":%zu,\"queue_buffers\":%u,"
-                      "\"queue_limit_bytes\":%zu,\"queue_bytes_highwater\":%zu,\"queue_buffers_highwater\":%u,"
-                      "\"dropped_packets\":%llu,\"dropped_bytes\":%llu,\"backpressure_events\":%u,\"slow\":%d}",
+                      "{\"clientId\":%d,\"workerPid\":%d,\"durationMs\":%lld,\"clientAddr\":\"%s\",\"clientPort\":\"%s\","
+                      "\"serviceUrl\":\"%s\",\"stateDesc\":\"%s\",\"bytesSent\":%llu,"
+                      "\"currentBandwidth\":%u,\"queueBytes\":%zu,\"queueBuffers\":%u,"
+                      "\"queueLimitBytes\":%zu,\"queueBytesHighwater\":%zu,\"queueBuffersHighwater\":%u,"
+                      "\"droppedPackets\":%llu,\"droppedBytes\":%llu,\"backpressureEvents\":%u,\"slow\":%d}",
                       i, /* client_id is the status_index */
                       status_shared->clients[i].worker_pid,
                       (long long)duration_ms,
@@ -687,7 +694,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
    * total_bytes_sent = accumulated bytes from disconnected clients + current active clients */
   uint64_t cumulative_total_bytes = status_shared->total_bytes_sent + total_bytes;
   len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                  "],\"total_clients\":%d,\"total_bytes_sent\":%llu,\"total_bandwidth\":%u",
+                  "],\"totalClients\":%d,\"totalBytesSent\":%llu,\"totalBandwidth\":%u",
                   streams_count,
                   (unsigned long long)cumulative_total_bytes,
                   total_bw);
@@ -716,7 +723,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
   uint64_t control_free = stats.control_pool_free_buffers;
   uint64_t control_used = control_total > control_free ? control_total - control_free : 0;
   len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                  ",\"control_pool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,"
+                  ",\"controlPool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,"
                   "\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,\"utilization\":%.1f}",
                   (unsigned long long)control_total,
                   (unsigned long long)control_free,
@@ -732,7 +739,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
                   ",\"send\":{\"total\":%llu,"
                   "\"completions\":%llu,\"copied\":%llu,"
                   "\"eagain\":%llu,\"enobufs\":%llu,"
-                  "\"batch\":%llu,\"timeout_flush\":%llu}",
+                  "\"batch\":%llu,\"timeoutFlush\":%llu}",
                   (unsigned long long)stats.total_sends,
                   (unsigned long long)stats.total_completions,
                   (unsigned long long)stats.total_copied,
@@ -740,6 +747,54 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
                   (unsigned long long)stats.enobufs_count,
                   (unsigned long long)stats.batch_sends,
                   (unsigned long long)stats.timeout_flushes);
+
+  /* Add per-worker breakdown */
+  len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",\"workers\":[");
+  int first_worker_entry = 1;
+  for (i = 0; i < config.workers && i < STATUS_MAX_WORKERS; i++)
+  {
+    worker_stats_t *ws = &status_shared->worker_stats[i];
+    if (!first_worker_entry)
+      len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",");
+    first_worker_entry = 0;
+
+    uint64_t w_pool_total = ws->pool_total_buffers;
+    uint64_t w_pool_free = ws->pool_free_buffers;
+    uint64_t w_pool_used = w_pool_total > w_pool_free ? w_pool_total - w_pool_free : 0;
+    uint64_t w_ctrl_total = ws->control_pool_total_buffers;
+    uint64_t w_ctrl_free = ws->control_pool_free_buffers;
+    uint64_t w_ctrl_used = w_ctrl_total > w_ctrl_free ? w_ctrl_total - w_ctrl_free : 0;
+
+    len += snprintf(buffer + len, buffer_capacity - (size_t)len,
+                    "{\"id\":%d,\"pid\":%d,\"send\":{\"total\":%llu,\"completions\":%llu,\"copied\":%llu,\"eagain\":%llu,\"enobufs\":%llu,\"batch\":%llu,\"timeoutFlush\":%llu},\"pool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,\"utilization\":%.1f},\"controlPool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,\"utilization\":%.1f}}",
+                    i,
+                    (int)ws->worker_pid,
+                    (unsigned long long)ws->total_sends,
+                    (unsigned long long)ws->total_completions,
+                    (unsigned long long)ws->total_copied,
+                    (unsigned long long)ws->eagain_count,
+                    (unsigned long long)ws->enobufs_count,
+                    (unsigned long long)ws->batch_sends,
+                    (unsigned long long)ws->timeout_flushes,
+                    (unsigned long long)w_pool_total,
+                    (unsigned long long)w_pool_free,
+                    (unsigned long long)w_pool_used,
+                    (unsigned long long)ws->pool_max_buffers,
+                    (unsigned long long)ws->pool_expansions,
+                    (unsigned long long)ws->pool_exhaustions,
+                    (unsigned long long)ws->pool_shrinks,
+                    w_pool_total > 0 ? (100.0 * w_pool_used / w_pool_total) : 0.0,
+                    (unsigned long long)w_ctrl_total,
+                    (unsigned long long)w_ctrl_free,
+                    (unsigned long long)w_ctrl_used,
+                    (unsigned long long)ws->control_pool_max_buffers,
+                    (unsigned long long)ws->control_pool_expansions,
+                    (unsigned long long)ws->control_pool_exhaustions,
+                    (unsigned long long)ws->control_pool_shrinks,
+                    w_ctrl_total > 0 ? (100.0 * w_ctrl_used / w_ctrl_total) : 0.0);
+  }
+  len += snprintf(buffer + len, buffer_capacity - (size_t)len, "]");
+
 
   /* Decide logs mode */
   const char *logs_mode = "none";
@@ -766,7 +821,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
   }
 
   /* Add logs section */
-  len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",\"logs_mode\":\"%s\",\"logs\":[", logs_mode);
+  len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",\"logsMode\":\"%s\",\"logs\":[", logs_mode);
 
   /* Add logs according to mode */
   if (!sent_initial)
@@ -792,7 +847,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
         json_escape_string(status_shared->log_entries[log_idx].message, escaped, sizeof(escaped));
 
         len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                        "{\"timestamp\":%lld,\"level\":%d,\"level_name\":\"%s\",\"message\":\"%s\"}",
+                        "{\"timestamp\":%lld,\"level\":%d,\"levelName\":\"%s\",\"message\":\"%s\"}",
                         (long long)status_shared->log_entries[log_idx].timestamp,
                         status_shared->log_entries[log_idx].level,
                         status_get_log_level_name(status_shared->log_entries[log_idx].level),
@@ -819,7 +874,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
       json_escape_string(status_shared->log_entries[log_idx].message, escaped, sizeof(escaped));
 
       len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                      "{\"timestamp\":%ld,\"level\":%d,\"level_name\":\"%s\",\"message\":\"%s\"}",
+                      "{\"timestamp\":%ld,\"level\":%d,\"levelName\":\"%s\",\"message\":\"%s\"}",
                       (long)status_shared->log_entries[log_idx].timestamp,
                       status_shared->log_entries[log_idx].level,
                       status_get_log_level_name(status_shared->log_entries[log_idx].level),

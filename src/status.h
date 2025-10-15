@@ -99,6 +99,8 @@ typedef struct
  */
 typedef struct
 {
+  pid_t worker_pid;            /* Worker process PID */
+
   /* Zero-copy send statistics */
   uint64_t total_sends;       /* Total number of sendmsg() calls */
   uint64_t total_completions; /* Total MSG_ZEROCOPY completions */
