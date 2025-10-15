@@ -1067,13 +1067,94 @@ void handle_set_log_level(connection_t *c)
   connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
 }
 
+static int status_if_none_match_matches(const char *header)
+{
+  if (!header || !header[0])
+    return 0;
+
+  if (header[0] == '*' && header[1] == '\0')
+    return 1;
+
+  const char *p = header;
+  size_t etag_len = strlen(status_page_etag);
+
+  while (*p)
+  {
+    while (*p == ' ' || *p == '\t' || *p == ',')
+      p++;
+
+    if (*p == '\0')
+      break;
+
+    const char *token_start = p;
+    while (*p && *p != ',')
+      p++;
+    const char *token_end = p;
+
+    while (token_end > token_start && (token_end[-1] == ' ' || token_end[-1] == '\t'))
+      token_end--;
+
+    size_t token_len = (size_t)(token_end - token_start);
+    if (token_len == 0)
+      continue;
+
+    if (token_len == 1 && token_start[0] == '*')
+      return 1;
+
+    const char *candidate = token_start;
+    size_t candidate_len = token_len;
+
+    if (candidate_len > 2 && candidate[0] == 'W' && candidate[1] == '/')
+    {
+      candidate += 2;
+      candidate_len -= 2;
+
+      while (candidate_len > 0 && (*candidate == ' ' || *candidate == '\t'))
+      {
+        candidate++;
+        candidate_len--;
+      }
+    }
+
+    if (candidate_len == etag_len &&
+        strncmp(candidate, status_page_etag, etag_len) == 0)
+      return 1;
+  }
+
+  return 0;
+}
+
 /**
  * Handle HTTP request for status page
  */
 void handle_status_page(connection_t *c)
 {
-  send_http_headers(c, STATUS_200, CONTENT_HTML, NULL);
-  connection_queue_output_and_flush(c, (const uint8_t *)status_page_html, strlen(status_page_html));
+  if (!c)
+    return;
+
+  char extra_headers[192];
+  size_t body_len = sizeof(status_page_html);
+
+  if (status_if_none_match_matches(c->http_req.if_none_match))
+  {
+    snprintf(extra_headers, sizeof(extra_headers),
+             "ETag: %s\r\n"
+             "Content-Length: 0\r\n",
+             status_page_etag);
+    send_http_headers(c, STATUS_304, CONTENT_HTML, extra_headers);
+    connection_queue_output_and_flush(c, NULL, 0);
+    return;
+  }
+
+  snprintf(extra_headers, sizeof(extra_headers),
+           "Content-Encoding: gzip\r\n"
+           "Content-Length: %zu\r\n"
+           "ETag: %s\r\n",
+           body_len,
+           status_page_etag);
+
+  send_http_headers(c, STATUS_200, CONTENT_HTML, extra_headers);
+  connection_queue_output_and_flush(c, status_page_html, body_len);
 }
 
 /**

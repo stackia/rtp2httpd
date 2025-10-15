@@ -8,15 +8,9 @@ ARG BUILDPLATFORM
 RUN set -ex; \
   apt-get update; \
   apt-get install -y \
-  ca-certificates \
-  curl \
-  gnupg; \
-  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -; \
-  apt-get install -y \
   autoconf \
   automake \
-  pkg-config \
-  nodejs; \
+  pkg-config; \
   case "$TARGETPLATFORM" in \
   "$BUILDPLATFORM") apt-get install -y build-essential ;; \
   "linux/arm64") \
@@ -41,14 +35,6 @@ RUN set -ex; \
 # Copy source code
 WORKDIR /workdir
 COPY . .
-
-RUN set -ex; \
-  cd web-ui; \
-  npm ci; \
-  npm run build; \
-  cd ..; \
-  node scripts/embed_status_page.js web-ui/dist/index.html src/status_page.h; \
-  rm -rf web-ui/node_modules web-ui/dist
 
 RUN case "$TARGETPLATFORM" in \
   "$BUILDPLATFORM") ARCH_FLAGS="" ;; \

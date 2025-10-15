@@ -62,7 +62,7 @@ jobs:
         working-directory: web-ui
 
       - name: Embed status page asset
-        run: node scripts/embed_status_page.js web-ui/dist/index.html src/status_page.h
+        run: node scripts/embed-status-page.js web-ui/dist/index.html src/status_page.h
 
       - name: Override version number
         run: |

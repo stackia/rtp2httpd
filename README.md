@@ -154,7 +154,7 @@ sudo apt-get install -y nodejs
 # 构建前端并嵌入静态资源
 npm ci --prefix web-ui
 npm run build --prefix web-ui
-node scripts/embed_status_page.js web-ui/dist/index.html src/status_page.h
+node scripts/embed-status-page.js web-ui/dist/index.html src/status_page.h
 
 # 编译安装
 autoreconf -fi

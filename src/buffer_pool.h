@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <netinet/in.h>
+#include <sys/types.h>
 
 /* Buffer pool configuration - optimized for RTP packets with cache alignment */
 #define BUFFER_POOL_ALIGNMENT 64
