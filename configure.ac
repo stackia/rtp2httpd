@@ -160,6 +160,7 @@ AC_CHECK_HEADERS([arpa/inet.h ctype.h errno.h fcntl.h getopt.h netdb.h net/if.h 
 AC_C_INLINE
 AC_TYPE_PID_T
 AC_TYPE_SIZE_T
+AC_TYPE_OFF_T
 AC_TYPE_UINT16_T
 AC_TYPE_UINT8_T
 
