@@ -23,6 +23,175 @@
 #define SO_ZEROCOPY 60
 #endif
 
+#ifndef TCP_USER_TIMEOUT
+#define TCP_USER_TIMEOUT 18
+#endif
+
+#define CONNECTION_TCP_USER_TIMEOUT_MS 10000
+#define CONN_QUEUE_MIN_BUFFERS 64
+#define CONN_QUEUE_BURST_FACTOR 3.0
+#define CONN_QUEUE_BURST_FACTOR_CONGESTED 1.5
+#define CONN_QUEUE_BURST_FACTOR_DRAIN 1.0
+#define CONN_QUEUE_EWMA_ALPHA 0.2
+#define CONN_QUEUE_SLOW_FACTOR 1.5
+#define CONN_QUEUE_SLOW_EXIT_FACTOR 1.1
+#define CONN_QUEUE_SLOW_CLAMP_FACTOR 1.2
+#define CONN_QUEUE_SLOW_DEBOUNCE_MS 3000
+#define CONN_QUEUE_HIGH_UTIL_THRESHOLD 0.85
+#define CONN_QUEUE_DRAIN_UTIL_THRESHOLD 0.95
+
+static inline buffer_ref_t *connection_alloc_output_buffer(connection_t *c)
+{
+  buffer_ref_t *buf_ref = NULL;
+
+  if (c->buffer_class == CONNECTION_BUFFER_CONTROL)
+  {
+    buf_ref = buffer_pool_alloc_control(BUFFER_POOL_BUFFER_SIZE);
+    if (!buf_ref)
+      buf_ref = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+  }
+  else
+  {
+    buf_ref = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+  }
+
+  return buf_ref;
+}
+
+static size_t connection_calculate_queue_limit(connection_t *c, int64_t now_ms)
+{
+  buffer_pool_t *pool = &zerocopy_state.pool;
+  size_t active = zerocopy_active_streams();
+
+  if (active == 0)
+    active = 1;
+
+  size_t total_buffers = pool->num_buffers ? pool->num_buffers : BUFFER_POOL_INITIAL_SIZE;
+
+  size_t share_buffers = total_buffers / active;
+  if (share_buffers < CONN_QUEUE_MIN_BUFFERS)
+    share_buffers = CONN_QUEUE_MIN_BUFFERS;
+
+  double utilization = 0.0;
+  if (pool->max_buffers > 0)
+  {
+    size_t used_buffers = (pool->num_buffers > pool->num_free) ? (pool->num_buffers - pool->num_free) : 0;
+    utilization = (double)used_buffers / (double)pool->max_buffers;
+  }
+
+  double burst_factor = CONN_QUEUE_BURST_FACTOR;
+  if (pool->num_buffers >= pool->max_buffers || utilization >= CONN_QUEUE_HIGH_UTIL_THRESHOLD)
+    burst_factor = CONN_QUEUE_BURST_FACTOR_CONGESTED;
+  if (pool->num_free < pool->low_watermark / 2 || utilization >= CONN_QUEUE_DRAIN_UTIL_THRESHOLD)
+    burst_factor = CONN_QUEUE_BURST_FACTOR_DRAIN;
+
+  double current_bytes = (double)c->zc_queue.total_bytes;
+  if (c->queue_avg_bytes <= 0.0)
+    c->queue_avg_bytes = current_bytes;
+  else
+    c->queue_avg_bytes = (1.0 - CONN_QUEUE_EWMA_ALPHA) * c->queue_avg_bytes + CONN_QUEUE_EWMA_ALPHA * current_bytes;
+
+  size_t fair_bytes = share_buffers * pool->buffer_size;
+  double slow_threshold = (double)fair_bytes * CONN_QUEUE_SLOW_FACTOR;
+  double slow_exit_threshold = (double)fair_bytes * CONN_QUEUE_SLOW_EXIT_FACTOR;
+
+  if (c->queue_avg_bytes > slow_threshold)
+  {
+    if (c->slow_candidate_since == 0)
+      c->slow_candidate_since = now_ms;
+    else if (!c->slow_active && now_ms >= c->slow_candidate_since &&
+             now_ms - c->slow_candidate_since >= CONN_QUEUE_SLOW_DEBOUNCE_MS)
+      c->slow_active = 1;
+  }
+  else
+  {
+    c->slow_candidate_since = 0;
+  }
+
+  if (c->slow_active && c->queue_avg_bytes < slow_exit_threshold)
+  {
+    c->slow_active = 0;
+    c->slow_candidate_since = 0;
+  }
+
+  if (c->slow_active && burst_factor > CONN_QUEUE_SLOW_CLAMP_FACTOR)
+    burst_factor = CONN_QUEUE_SLOW_CLAMP_FACTOR;
+
+  size_t limit_bytes = (size_t)((double)fair_bytes * burst_factor);
+  if (limit_bytes < fair_bytes)
+    limit_bytes = fair_bytes;
+
+  if (pool->max_buffers > 0)
+  {
+    size_t global_cap = pool->max_buffers * pool->buffer_size;
+    size_t reserve = CONN_QUEUE_MIN_BUFFERS * pool->buffer_size;
+    if (global_cap > reserve)
+    {
+      size_t hard_cap = global_cap - reserve;
+      if (limit_bytes > hard_cap)
+        limit_bytes = hard_cap;
+    }
+    else
+    {
+      if (limit_bytes > global_cap)
+        limit_bytes = global_cap;
+    }
+  }
+
+  if (limit_bytes < BUFFER_POOL_BUFFER_SIZE * 4)
+    limit_bytes = BUFFER_POOL_BUFFER_SIZE * 4;
+
+  return limit_bytes;
+}
+
+static inline void connection_record_drop(connection_t *c, size_t len)
+{
+  c->dropped_packets++;
+  c->dropped_bytes += len;
+  c->backpressure_events++;
+}
+
+static void connection_maybe_report_queue(connection_t *c, int64_t now_ms, int force)
+{
+  if (c->status_index < 0)
+    return;
+
+  size_t queue_bytes = c->zc_queue.total_bytes;
+  size_t queue_buffers = c->zc_queue.num_queued;
+
+  int need_report = 0;
+
+  if (c->last_queue_report_ts == 0)
+  {
+    need_report = 1;
+  }
+  else if (now_ms - c->last_queue_report_ts >= CONNECTION_QUEUE_REPORT_INTERVAL_MS)
+  {
+    need_report = 1;
+  }
+  else if (force && queue_bytes == 0 && queue_buffers == 0)
+  {
+    need_report = 1;
+  }
+
+  if (!need_report)
+    return;
+
+  status_update_client_queue(c->status_index,
+                             queue_bytes,
+                             queue_buffers,
+                             c->queue_limit_bytes,
+                             c->queue_bytes_highwater,
+                             c->queue_buffers_highwater,
+                             c->dropped_packets,
+                             c->dropped_bytes,
+                             c->backpressure_events,
+                             c->slow_active);
+
+  c->last_queue_report_ts = now_ms;
+  c->last_reported_queue_bytes = queue_bytes;
+  c->last_reported_drops = c->dropped_packets;
+}
 int connection_set_nonblocking(int fd)
 {
   int flags = fcntl(fd, F_GETFL, 0);
@@ -75,6 +244,31 @@ connection_t *connection_create(int fd, int epfd,
   /* Initialize zero-copy queue */
   zerocopy_queue_init(&c->zc_queue);
   c->zerocopy_enabled = 0;
+  c->buffer_class = CONNECTION_BUFFER_CONTROL;
+  c->write_queue_next = NULL;
+  c->write_queue_pending = 0;
+  c->queue_limit_bytes = 0;
+  c->queue_bytes_highwater = 0;
+  c->queue_buffers_highwater = 0;
+  c->dropped_packets = 0;
+  c->dropped_bytes = 0;
+  c->last_reported_queue_bytes = 0;
+  c->last_reported_drops = 0;
+  c->last_queue_report_ts = 0;
+  c->backpressure_events = 0;
+  c->stream_registered = 0;
+  c->queue_avg_bytes = 0.0;
+  c->slow_active = 0;
+  c->slow_candidate_since = 0;
+
+  /* Enforce TCP user timeout so unacknowledged data fails quickly */
+#ifdef TCP_USER_TIMEOUT
+  int tcp_user_timeout = CONNECTION_TCP_USER_TIMEOUT_MS;
+  if (setsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &tcp_user_timeout, sizeof(tcp_user_timeout)) < 0)
+  {
+    logger(LOG_DEBUG, "connection_create: Failed to set TCP_USER_TIMEOUT: %s", strerror(errno));
+  }
+#endif
 
   /* Enable SO_ZEROCOPY on socket if supported */
   if (zerocopy_state.features & ZEROCOPY_MSG_ZEROCOPY)
@@ -95,6 +289,12 @@ void connection_free(connection_t *c)
 {
   if (!c)
     return;
+
+  if (c->stream_registered)
+  {
+    zerocopy_unregister_stream_client();
+    c->stream_registered = 0;
+  }
 
   /* Clean up stream context if still marked as streaming
    * Note: worker_close_and_free_connection should have already called stream_context_cleanup
@@ -151,7 +351,7 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len)
   while (remaining > 0)
   {
     /* Allocate a buffer from the pool */
-    buffer_ref_t *buf_ref = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+    buffer_ref_t *buf_ref = connection_alloc_output_buffer(c);
     if (!buf_ref)
     {
       /* Pool exhausted */
@@ -196,34 +396,50 @@ int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size
   return 0;
 }
 
-void connection_handle_write(connection_t *c)
+connection_write_status_t connection_handle_write(connection_t *c)
 {
   if (!c)
-    return;
+    return CONNECTION_WRITE_IDLE;
 
-  /* Send from zero-copy queue */
-  if (c->zc_queue.head)
-  {
-    size_t bytes_sent = 0;
-    int ret = zerocopy_send(c->fd, &c->zc_queue, &bytes_sent);
+  int64_t now_ms = get_time_ms();
 
-    if (ret < 0 && ret != -2)
-    {
-      /* Error (not EAGAIN/ENOBUFS) */
-      c->state = CONN_CLOSING;
-      return;
-    }
-
-    /* If queue still has data, keep EPOLLOUT enabled */
-    if (c->zc_queue.head)
-      return;
-  }
-
-  /* If queue is empty, stop EPOLLOUT */
   if (!c->zc_queue.head)
   {
-    connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+    connection_maybe_report_queue(c, now_ms, 0);
+    if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
+      return CONNECTION_WRITE_CLOSED;
+    return CONNECTION_WRITE_IDLE;
   }
+
+  size_t bytes_sent = 0;
+  int ret = zerocopy_send(c->fd, &c->zc_queue, &bytes_sent);
+
+  if (ret < 0 && ret != -2)
+  {
+    c->state = CONN_CLOSING;
+    connection_maybe_report_queue(c, now_ms, 1);
+    return CONNECTION_WRITE_CLOSED;
+  }
+
+  if (ret == -2)
+  {
+    connection_maybe_report_queue(c, now_ms, 0);
+    return CONNECTION_WRITE_BLOCKED;
+  }
+
+  if (c->zc_queue.head)
+  {
+    connection_maybe_report_queue(c, now_ms, 0);
+    return CONNECTION_WRITE_PENDING;
+  }
+
+  connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+  connection_maybe_report_queue(c, now_ms, 1);
+
+  if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
+    return CONNECTION_WRITE_CLOSED;
+
+  return CONNECTION_WRITE_IDLE;
 }
 
 void connection_handle_read(connection_t *c)
@@ -502,6 +718,16 @@ int connection_route_and_start(connection_t *c)
   /* Initialize stream in unified epoll (works for both streaming and snapshot) */
   if (stream_context_init_for_worker(&c->stream, c, service, c->epfd, c->status_index, is_snapshot_request) == 0)
   {
+    if (!is_snapshot_request)
+    {
+      c->buffer_class = CONNECTION_BUFFER_MEDIA;
+      if (!c->stream_registered)
+      {
+        zerocopy_register_stream_client();
+        c->stream_registered = 1;
+      }
+    }
+
     c->streaming = 1;
     c->service = service;
     c->service_owned = owned;
@@ -522,10 +748,38 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref, size_t off
   if (!c || !buf_ref || len == 0)
     return 0;
 
+  int64_t now_ms = get_time_ms();
+  size_t limit_bytes = connection_calculate_queue_limit(c, now_ms);
+  size_t projected_bytes = c->zc_queue.total_bytes + len;
+
+  c->queue_limit_bytes = limit_bytes;
+
+  if (projected_bytes > limit_bytes)
+  {
+    connection_record_drop(c, len);
+
+    if (c->backpressure_events == 1 || (c->backpressure_events % 50) == 0)
+    {
+      logger(LOG_WARN, "Backpressure: dropping %zu bytes for client fd=%d (queued=%zu limit=%zu drops=%llu)",
+             len, c->fd, c->zc_queue.total_bytes, limit_bytes, (unsigned long long)c->dropped_packets);
+    }
+
+    connection_maybe_report_queue(c, now_ms, 1);
+    return -1;
+  }
+
   /* Add to zero-copy queue with offset information */
   int ret = zerocopy_queue_add(&c->zc_queue, buf_ref, offset, len);
   if (ret < 0)
     return -1; /* Queue full */
+
+  if (c->zc_queue.total_bytes > c->queue_bytes_highwater)
+    c->queue_bytes_highwater = c->zc_queue.total_bytes;
+
+  if (c->zc_queue.num_queued > c->queue_buffers_highwater)
+    c->queue_buffers_highwater = c->zc_queue.num_queued;
+
+  connection_maybe_report_queue(c, now_ms, 0);
 
   /* Batching optimization: Only enable EPOLLOUT when flush threshold is reached
    * This accumulates small RTP packets (200-1400 bytes) before sending:

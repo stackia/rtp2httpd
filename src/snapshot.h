@@ -5,8 +5,6 @@
 #include <sys/types.h>
 
 /* Forward declarations */
-struct connection_s;
-struct service_s;
 typedef struct connection_s connection_t;
 
 /**

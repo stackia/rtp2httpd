@@ -482,9 +482,6 @@ void status_update_client_bytes(int status_index, uint64_t bytes_sent, uint32_t 
   /* Update client statistics */
   status_shared->clients[status_index].bytes_sent = bytes_sent;
   status_shared->clients[status_index].current_bandwidth = current_bandwidth;
-
-  /* Always trigger event notification */
-  status_trigger_event(STATUS_EVENT_SSE_UPDATE);
 }
 
 /**
@@ -507,6 +504,37 @@ void status_update_client_state(int status_index, client_state_type_t state)
 
   /* Always trigger event notification */
   status_trigger_event(STATUS_EVENT_SSE_UPDATE);
+}
+
+void status_update_client_queue(int status_index,
+                                size_t queue_bytes,
+                                size_t queue_buffers,
+                                size_t queue_limit_bytes,
+                                size_t queue_bytes_highwater,
+                                size_t queue_buffers_highwater,
+                                uint64_t dropped_packets,
+                                uint64_t dropped_bytes,
+                                uint32_t backpressure_events,
+                                int slow_active)
+{
+  if (!status_shared)
+    return;
+
+  if (status_index < 0 || status_index >= STATUS_MAX_CLIENTS)
+    return;
+
+  if (!status_shared->clients[status_index].active)
+    return;
+
+  status_shared->clients[status_index].queue_bytes = queue_bytes;
+  status_shared->clients[status_index].queue_buffers = (uint32_t)queue_buffers;
+  status_shared->clients[status_index].queue_limit_bytes = queue_limit_bytes;
+  status_shared->clients[status_index].queue_bytes_highwater = queue_bytes_highwater;
+  status_shared->clients[status_index].queue_buffers_highwater = (uint32_t)queue_buffers_highwater;
+  status_shared->clients[status_index].dropped_packets = dropped_packets;
+  status_shared->clients[status_index].dropped_bytes = dropped_bytes;
+  status_shared->clients[status_index].backpressure_events = backpressure_events;
+  status_shared->clients[status_index].slow_active = slow_active;
 }
 
 /**
@@ -627,7 +655,9 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
       len += snprintf(buffer + len, buffer_capacity - (size_t)len,
                       "{\"client_id\":%d,\"worker_pid\":%d,\"duration_ms\":%lld,\"client_addr\":\"%s\",\"client_port\":\"%s\","
                       "\"service_url\":\"%s\",\"state_desc\":\"%s\",\"bytes_sent\":%llu,"
-                      "\"current_bandwidth\":%u}",
+                      "\"current_bandwidth\":%u,\"queue_bytes\":%zu,\"queue_buffers\":%u,"
+                      "\"queue_limit_bytes\":%zu,\"queue_bytes_highwater\":%zu,\"queue_buffers_highwater\":%u,"
+                      "\"dropped_packets\":%llu,\"dropped_bytes\":%llu,\"backpressure_events\":%u,\"slow\":%d}",
                       i, /* client_id is the status_index */
                       status_shared->clients[i].worker_pid,
                       (long long)duration_ms,
@@ -636,7 +666,16 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
                       status_shared->clients[i].service_url,
                       state_desc,
                       (unsigned long long)status_shared->clients[i].bytes_sent,
-                      status_shared->clients[i].current_bandwidth);
+                      status_shared->clients[i].current_bandwidth,
+                      status_shared->clients[i].queue_bytes,
+                      status_shared->clients[i].queue_buffers,
+                      status_shared->clients[i].queue_limit_bytes,
+                      status_shared->clients[i].queue_bytes_highwater,
+                      status_shared->clients[i].queue_buffers_highwater,
+                      (unsigned long long)status_shared->clients[i].dropped_packets,
+                      (unsigned long long)status_shared->clients[i].dropped_bytes,
+                      status_shared->clients[i].backpressure_events,
+                      status_shared->clients[i].slow_active);
 
       streams_count++;
       total_bytes += status_shared->clients[i].bytes_sent;
@@ -672,6 +711,21 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
                   (unsigned long long)stats.pool_exhaustions,
                   (unsigned long long)stats.pool_shrinks,
                   pool_total > 0 ? (100.0 * pool_used / pool_total) : 0.0);
+
+  uint64_t control_total = stats.control_pool_total_buffers;
+  uint64_t control_free = stats.control_pool_free_buffers;
+  uint64_t control_used = control_total > control_free ? control_total - control_free : 0;
+  len += snprintf(buffer + len, buffer_capacity - (size_t)len,
+                  ",\"control_pool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,"
+                  "\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,\"utilization\":%.1f}",
+                  (unsigned long long)control_total,
+                  (unsigned long long)control_free,
+                  (unsigned long long)control_used,
+                  (unsigned long long)stats.control_pool_max_buffers,
+                  (unsigned long long)stats.control_pool_expansions,
+                  (unsigned long long)stats.control_pool_exhaustions,
+                  (unsigned long long)stats.control_pool_shrinks,
+                  control_total > 0 ? (100.0 * control_used / control_total) : 0.0);
 
   /* Add zero-copy send statistics */
   len += snprintf(buffer + len, buffer_capacity - (size_t)len,
@@ -1055,27 +1109,9 @@ int status_handle_sse_heartbeat(connection_t *c, int64_t now)
   if (c->next_sse_ts > now)
     return -1;
 
-  /* Count active media streaming clients (those with service_url) */
-  int streams_count = 0;
-  if (status_shared)
-  {
-    for (int i = 0; i < STATUS_MAX_CLIENTS; i++)
-    {
-      if (status_shared->clients[i].active && status_shared->clients[i].service_url[0] != '\0')
-      {
-        streams_count++;
-      }
-    }
-  }
-
-  /* Only trigger status update when there are no active media clients
-   * When clients are active, rely on event-driven updates (connect/disconnect/state changes) */
-  if (streams_count == 0)
-  {
-    /* Trigger status update event - this will update all SSE connections via notification pipe */
-    status_trigger_event(STATUS_EVENT_SSE_UPDATE);
-    c->next_sse_ts = now + 1000;
-  }
+  /* Trigger periodic SSE update (once per second) */
+  status_trigger_event(STATUS_EVENT_SSE_UPDATE);
+  c->next_sse_ts = now + 1000;
 
   return 0;
 }
@@ -1112,6 +1148,13 @@ void status_get_worker_stats(worker_stats_t *stats)
       stats->pool_expansions += status_shared->worker_stats[i].pool_expansions;
       stats->pool_exhaustions += status_shared->worker_stats[i].pool_exhaustions;
       stats->pool_shrinks += status_shared->worker_stats[i].pool_shrinks;
+
+      stats->control_pool_total_buffers += status_shared->worker_stats[i].control_pool_total_buffers;
+      stats->control_pool_free_buffers += status_shared->worker_stats[i].control_pool_free_buffers;
+      stats->control_pool_max_buffers = status_shared->worker_stats[i].control_pool_max_buffers;
+      stats->control_pool_expansions += status_shared->worker_stats[i].control_pool_expansions;
+      stats->control_pool_exhaustions += status_shared->worker_stats[i].control_pool_exhaustions;
+      stats->control_pool_shrinks += status_shared->worker_stats[i].control_pool_shrinks;
     }
   }
 }

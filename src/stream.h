@@ -7,9 +7,6 @@
 #include "status.h"
 #include "snapshot.h"
 
-/* Forward declaration */
-struct connection_s;
-
 /* Multicast stream timeout (seconds) - if no data received for this duration, close connection */
 #define MCAST_TIMEOUT_SEC 1
 #define SNAPSHOT_TIMEOUT_SEC 2
@@ -18,7 +15,7 @@ struct connection_s;
 typedef struct stream_context_s
 {
   int epoll_fd;
-  struct connection_s *conn; /* Pointer to parent connection for output buffering */
+  connection_t *conn; /* Pointer to parent connection for output buffering */
   service_t *service;
   fcc_session_t fcc;
   int mcast_sock;
@@ -61,7 +58,7 @@ int stream_join_mcast_group(stream_context_t *ctx);
  * @param is_snapshot 1 if this is a snapshot request, 0 for normal streaming
  * @return 0 on success, -1 on error
  */
-int stream_context_init_for_worker(stream_context_t *ctx, struct connection_s *conn, service_t *service,
+int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, service_t *service,
                                    int epoll_fd, int status_index, int is_snapshot);
 
 /**

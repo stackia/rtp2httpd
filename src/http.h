@@ -6,7 +6,7 @@
 #include "rtp2httpd.h"
 
 /* Forward declaration */
-struct connection_s;
+typedef struct connection_s connection_t;
 
 /* HTTP Status Codes */
 typedef enum
@@ -86,7 +86,7 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req);
  * @param extra_headers Optional extra headers to include (NULL or empty string if none)
  *                      Should NOT include trailing CRLF as it will be added automatically
  */
-void send_http_headers(struct connection_s *c, http_status_t status, content_type_t type, const char *extra_headers);
+void send_http_headers(connection_t *c, http_status_t status, content_type_t type, const char *extra_headers);
 
 /**
  * Parse query parameter value from query/form string (case-insensitive parameter names)
@@ -104,30 +104,30 @@ int http_parse_query_param(const char *query_string, const char *param_name,
  * Send HTTP 400 Bad Request response
  * @param conn Connection object
  */
-void http_send_400(struct connection_s *conn);
+void http_send_400(connection_t *conn);
 
 /**
  * Send HTTP 404 Not Found response
  * @param conn Connection object
  */
-void http_send_404(struct connection_s *conn);
+void http_send_404(connection_t *conn);
 
 /**
  * Send HTTP 500 Internal Server Error response
  * @param conn Connection object
  */
-void http_send_500(struct connection_s *conn);
+void http_send_500(connection_t *conn);
 
 /**
  * Send HTTP 503 Service Unavailable response
  * @param conn Connection object
  */
-void http_send_503(struct connection_s *conn);
+void http_send_503(connection_t *conn);
 
 /**
  * Send HTTP 401 Unauthorized response
  * @param conn Connection object
  */
-void http_send_401(struct connection_s *conn);
+void http_send_401(connection_t *conn);
 
 #endif /* __HTTP_H__ */

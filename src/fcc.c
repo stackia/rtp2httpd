@@ -36,7 +36,7 @@ static void log_fcc_server_response(uint8_t fmt, uint8_t result_code, uint16_t s
                                     uint32_t valid_time, uint32_t speed, uint32_t speed_after_sync);
 static int fcc_send_term_packet(fcc_session_t *fcc, service_t *service,
                                 uint16_t seqn, const char *reason);
-static int fcc_send_termination_message(struct stream_context_s *ctx, uint16_t mcast_seqn);
+static int fcc_send_termination_message(stream_context_t *ctx, uint16_t mcast_seqn);
 
 static uint8_t *build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client_nport)
 {
@@ -328,7 +328,7 @@ int fcc_session_set_state(fcc_session_t *fcc, fcc_state_t new_state, const char 
 /*
  * FCC Protocol Stage 1: Initialize FCC socket and send request
  */
-int fcc_initialize_and_request(struct stream_context_s *ctx)
+int fcc_initialize_and_request(stream_context_t *ctx)
 {
     fcc_session_t *fcc = &ctx->fcc;
     service_t *service = ctx->service;
@@ -421,7 +421,7 @@ int fcc_initialize_and_request(struct stream_context_s *ctx)
 /*
  * FCC Protocol Stage 2: Handle server response (FMT 3)
  */
-int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int buf_len,
+int fcc_handle_server_response(stream_context_t *ctx, uint8_t *buf, int buf_len,
                                struct sockaddr_in *peer_addr)
 {
     fcc_session_t *fcc = &ctx->fcc;
@@ -531,7 +531,7 @@ int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int b
 /*
  * FCC Protocol Stage 3: Handle synchronization notification (FMT 4)
  */
-int fcc_handle_sync_notification(struct stream_context_s *ctx)
+int fcc_handle_sync_notification(stream_context_t *ctx)
 {
     fcc_session_t *fcc = &ctx->fcc;
 
@@ -550,7 +550,7 @@ int fcc_handle_sync_notification(struct stream_context_s *ctx)
 /*
  * FCC Protocol Stage 4: Handle RTP media packets from unicast stream
  */
-int fcc_handle_unicast_media(struct stream_context_s *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref)
+int fcc_handle_unicast_media(stream_context_t *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref)
 {
     fcc_session_t *fcc = &ctx->fcc;
 
@@ -616,7 +616,7 @@ static int fcc_send_term_packet(fcc_session_t *fcc, service_t *service,
 /*
  * FCC Protocol Stage 5: Send termination message to server (normal flow)
  */
-static int fcc_send_termination_message(struct stream_context_s *ctx, uint16_t mcast_seqn)
+static int fcc_send_termination_message(stream_context_t *ctx, uint16_t mcast_seqn)
 {
     fcc_session_t *fcc = &ctx->fcc;
 
@@ -640,7 +640,7 @@ static int fcc_send_termination_message(struct stream_context_s *ctx, uint16_t m
 /*
  * FCC Protocol Stage 6: Handle multicast data during transition period
  */
-int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref)
+int fcc_handle_mcast_transition(stream_context_t *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref)
 {
     fcc_session_t *fcc = &ctx->fcc;
     uint8_t *rtp_payload;
@@ -711,7 +711,7 @@ int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int 
 /*
  * FCC Protocol Stage 8: Handle multicast data in active state
  */
-int fcc_handle_mcast_active(struct stream_context_s *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref)
+int fcc_handle_mcast_active(stream_context_t *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref)
 {
     fcc_session_t *fcc = &ctx->fcc;
 

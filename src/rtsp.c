@@ -984,7 +984,7 @@ static int rtsp_state_machine_advance(rtsp_session_t *session)
     }
 }
 
-int rtsp_handle_rtp_data(rtsp_session_t *session, struct connection_s *conn)
+int rtsp_handle_rtp_data(rtsp_session_t *session, connection_t *conn)
 {
     if (session->transport_mode == RTSP_TRANSPORT_TCP)
     {
@@ -996,7 +996,7 @@ int rtsp_handle_rtp_data(rtsp_session_t *session, struct connection_s *conn)
     }
 }
 
-int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, struct connection_s *conn)
+int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, connection_t *conn)
 {
     int bytes_received;
 
@@ -1138,7 +1138,7 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, struct connection_
     return bytes_forwarded;
 }
 
-int rtsp_handle_udp_rtp_data(rtsp_session_t *session, struct connection_s *conn)
+int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn)
 {
     int bytes_received;
 

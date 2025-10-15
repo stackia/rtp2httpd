@@ -21,6 +21,14 @@ typedef enum
 
 #define INBUF_SIZE 8192
 
+typedef enum
+{
+  CONNECTION_BUFFER_CONTROL = 0,
+  CONNECTION_BUFFER_MEDIA = 1
+} connection_buffer_class_t;
+
+#define CONNECTION_QUEUE_REPORT_INTERVAL_MS 1000
+
 typedef struct connection_s
 {
   int fd;
@@ -32,6 +40,7 @@ typedef struct connection_s
   /* zero-copy send queue - all output goes through this */
   zerocopy_queue_t zc_queue;
   int zerocopy_enabled; /* Whether SO_ZEROCOPY is enabled on this socket */
+  connection_buffer_class_t buffer_class;
   /* HTTP request parser */
   http_request_t http_req;
   /* service/stream */
@@ -52,7 +61,32 @@ typedef struct connection_s
   socklen_t client_addr_len;
   /* linkage */
   struct connection_s *next;
+  struct connection_s *write_queue_next;
+  int write_queue_pending;
+
+  /* Backpressure and monitoring */
+  size_t queue_limit_bytes;
+  size_t queue_bytes_highwater;
+  size_t queue_buffers_highwater;
+  uint64_t dropped_packets;
+  uint64_t dropped_bytes;
+  size_t last_reported_queue_bytes;
+  uint64_t last_reported_drops;
+  int64_t last_queue_report_ts;
+  uint32_t backpressure_events;
+  int stream_registered;
+  double queue_avg_bytes;
+  int slow_active;
+  int64_t slow_candidate_since;
 } connection_t;
+
+typedef enum
+{
+  CONNECTION_WRITE_IDLE = 0,
+  CONNECTION_WRITE_PENDING,
+  CONNECTION_WRITE_BLOCKED,
+  CONNECTION_WRITE_CLOSED
+} connection_write_status_t;
 
 /**
  * Create a new connection structure
@@ -81,7 +115,7 @@ void connection_handle_read(connection_t *c);
  * Handle write event on client connection
  * @param c Connection
  */
-void connection_handle_write(connection_t *c);
+connection_write_status_t connection_handle_write(connection_t *c);
 
 /**
  * Route HTTP request and start appropriate handler

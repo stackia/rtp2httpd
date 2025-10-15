@@ -7,8 +7,7 @@
 #include "rtp2httpd.h"
 
 /* Forward declarations */
-struct stream_context_s; /* Full definition in stream.h */
-struct buffer_ref_s;     /* Full definition in zerocopy.h */
+typedef struct stream_context_s stream_context_t;
 typedef struct buffer_ref_s buffer_ref_t;
 
 #define FCC_PK_LEN_REQ 40
@@ -107,7 +106,7 @@ int fcc_session_set_state(fcc_session_t *fcc, fcc_state_t new_state, const char 
  * @param ctx Stream context containing FCC session and service info
  * @return 0 on success, -1 on error
  */
-int fcc_initialize_and_request(struct stream_context_s *ctx);
+int fcc_initialize_and_request(stream_context_t *ctx);
 
 /**
  * Stage 2: Handle server response (FMT 3)
@@ -118,7 +117,7 @@ int fcc_initialize_and_request(struct stream_context_s *ctx);
  * @param peer_addr Peer address
  * @return 0 on success, -1 for fallback to multicast, 1 for state restart
  */
-int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int buf_len,
+int fcc_handle_server_response(stream_context_t *ctx, uint8_t *buf, int buf_len,
                                struct sockaddr_in *peer_addr);
 
 /**
@@ -127,7 +126,7 @@ int fcc_handle_server_response(struct stream_context_s *ctx, uint8_t *buf, int b
  * @param ctx Stream context
  * @return 0 on success
  */
-int fcc_handle_sync_notification(struct stream_context_s *ctx);
+int fcc_handle_sync_notification(stream_context_t *ctx);
 
 /**
  * Stage 4: Handle RTP media packets from unicast stream
@@ -138,7 +137,7 @@ int fcc_handle_sync_notification(struct stream_context_s *ctx);
  * @param buf_ref Buffer reference for zero-copy
  * @return 0 on success
  */
-int fcc_handle_unicast_media(struct stream_context_s *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref);
+int fcc_handle_unicast_media(stream_context_t *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref);
 
 /**
  * Handle multicast data during transition period
@@ -149,7 +148,7 @@ int fcc_handle_unicast_media(struct stream_context_s *ctx, uint8_t *buf, int buf
  * @param buf_ref Buffer reference for zero-copy
  * @return 0 on success
  */
-int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref);
+int fcc_handle_mcast_transition(stream_context_t *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref);
 
 /**
  * Handle multicast data in active state
@@ -160,6 +159,6 @@ int fcc_handle_mcast_transition(struct stream_context_s *ctx, uint8_t *buf, int 
  * @param buf_ref Buffer reference for zero-copy
  * @return 0 on success
  */
-int fcc_handle_mcast_active(struct stream_context_s *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref);
+int fcc_handle_mcast_active(stream_context_t *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref);
 
 #endif /* __FCC_H__ */
