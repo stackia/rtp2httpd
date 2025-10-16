@@ -1,4 +1,4 @@
-import type { ClientEntry, ClientRow, WorkerEntry, WorkerSummary } from "../types";
+import type { ClientEntry, ClientRow } from "../types";
 import { ClientState } from "../types";
 import type { Locale, TranslationKey } from "../i18n";
 import { translations } from "../i18n";
@@ -117,36 +117,4 @@ export function mergeClients(previous: Map<string, ClientRow>, clients: ClientEn
   }
 
   return next;
-}
-
-export function computeWorkerSummaries(workers: WorkerEntry[] | undefined, clients: ClientRow[]): WorkerSummary[] {
-  if (!workers || workers.length === 0) return [];
-  const grouped = new Map<number, { active: number; bytes: number; bandwidth: number }>();
-  for (const client of clients) {
-    if (!client.isDisconnected) {
-      const bucket = grouped.get(client.workerPid) ?? {
-        active: 0,
-        bytes: 0,
-        bandwidth: 0,
-      };
-      bucket.active += 1;
-      bucket.bytes += client.bytesSent;
-      bucket.bandwidth += client.currentBandwidth;
-      grouped.set(client.workerPid, bucket);
-    }
-  }
-
-  return workers.map((worker) => {
-    const metrics = grouped.get(worker.pid) ?? {
-      active: 0,
-      bytes: 0,
-      bandwidth: 0,
-    };
-    return {
-      ...worker,
-      activeClients: metrics.active,
-      totalBytes: metrics.bytes,
-      totalBandwidth: metrics.bandwidth,
-    };
-  });
 }

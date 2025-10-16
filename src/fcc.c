@@ -613,13 +613,11 @@ int fcc_handle_unicast_media(stream_context_t *ctx, uint8_t *buf, int buf_len, b
     }
 
     /* Forward RTP payload to client (true zero-copy) or capture I-frame (snapshot) */
+    int payload_bytes = stream_process_rtp_payload(ctx, buf_len, buf, buf_ref,
+                                                   &fcc->current_seqn, &fcc->not_first_packet);
+    if (payload_bytes > 0)
     {
-        int payload_bytes = stream_process_rtp_payload(ctx, buf_len, buf, buf_ref,
-                                                       &fcc->current_seqn, &fcc->not_first_packet);
-        if (payload_bytes > 0)
-        {
-            ctx->total_bytes_sent += (uint64_t)payload_bytes;
-        }
+        ctx->total_bytes_sent += (uint64_t)payload_bytes;
     }
 
     /* Check if we should terminate FCC based on sequence number */

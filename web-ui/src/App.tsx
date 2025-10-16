@@ -12,7 +12,7 @@ import { useStatusApi } from "./hooks/use-status-api";
 import type { Locale, TranslationKey } from "./i18n";
 import { detectInitialLocale } from "./lib/locale";
 import { formatBandwidth, formatBytes, formatDuration } from "./lib/format";
-import { mergeClients, computeWorkerSummaries } from "./lib/status";
+import { mergeClients } from "./lib/status";
 import type { ClientRow, LogEntry, StatusPayload } from "./types";
 import type { ConnectionState, ThemeMode } from "./types/ui";
 
@@ -89,11 +89,6 @@ function App() {
     });
     return showDisconnected ? values : values.filter((client) => !client.isDisconnected);
   }, [clientsMap, showDisconnected]);
-
-  const workerSummaries = useMemo(
-    () => computeWorkerSummaries(payload?.workers, Array.from(clientsMap.values())),
-    [payload, clientsMap],
-  );
 
   const handleDisconnect = useCallback(
     async (clientId: number, connectionKey: string) => {
@@ -223,7 +218,7 @@ function App() {
             locale={locale}
           />
 
-          <WorkersSection workers={workerSummaries} locale={locale} />
+          <WorkersSection workers={payload?.workers ?? []} locale={locale} />
         </div>
       </div>
     </>
