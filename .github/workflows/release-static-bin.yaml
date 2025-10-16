@@ -30,6 +30,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -40,6 +45,17 @@ jobs:
             pkg-config \
             wget \
             xz-utils
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: web-ui
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: web-ui
+
+      - name: Embed status page asset
+        run: node scripts/embed-status-page.js web-ui/dist/index.html src/status_page.h
 
       - name: Override version number
         run: |
@@ -53,7 +69,7 @@ jobs:
       - name: Build static binary
         env:
           TOOLCHAIN_PREFIX: ${{ matrix.arch }}
-        run: ./build-static.sh
+        run: ./scripts/build-static.sh
 
       - name: Prepare release artifact
         id: prepare

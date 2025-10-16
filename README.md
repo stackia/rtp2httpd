@@ -71,7 +71,7 @@ OpenWrt 是 rtp2httpd 的最佳运行环境。在完成 IPTV 网络融合后（�
 使用一键安装脚本自动下载并安装最新版本：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/openwrt-support/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
 ```
 
 脚本会自动：
@@ -145,7 +145,16 @@ services:
 
 ```bash
 # 安装依赖（Ubuntu/Debian）
-sudo apt-get install build-essential autoconf automake pkg-config
+sudo apt-get install build-essential autoconf automake pkg-config curl
+
+# 安装 Node.js LTS（用于构建 Web UI）
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# 构建前端并嵌入静态资源
+npm ci --prefix web-ui
+npm run build --prefix web-ui
+node scripts/embed-status-page.js web-ui/dist/index.html src/status_page.h
 
 # 编译安装
 autoreconf -fi

@@ -603,7 +603,7 @@ int connection_route_and_start(connection_t *c)
     c->state = CONN_CLOSING;
     return 0;
   }
-  if (strncmp(service_path, "api/loglevel", 12) == 0 && path_len == 12)
+  if (strncmp(service_path, "api/log-level", 13) == 0 && path_len == 13)
   {
     handle_set_log_level(c);
     c->state = CONN_CLOSING;

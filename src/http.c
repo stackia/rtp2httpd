@@ -24,6 +24,7 @@ static const char *response_codes[] = {
     "HTTP/1.1 503 Service Unavailable\r\n",   /* 4 */
     "HTTP/1.1 500 Internal Server Error\r\n", /* 5 */
     "HTTP/1.1 401 Unauthorized\r\n",          /* 6 */
+    "HTTP/1.1 304 Not Modified\r\n",          /* 7 */
 };
 
 static const char *content_types[] = {
@@ -46,8 +47,11 @@ void send_http_headers(connection_t *c, http_status_t status, content_type_t typ
     /* Status line */
     len += snprintf(headers + len, sizeof(headers) - len, "%s", response_codes[status]);
 
-    /* Content-Type */
-    len += snprintf(headers + len, sizeof(headers) - len, "%s", content_types[type]);
+    /* Content-Type (skip for 304 responses which have no body) */
+    if (status != STATUS_304)
+    {
+        len += snprintf(headers + len, sizeof(headers) - len, "%s", content_types[type]);
+    }
 
     /* Connection header */
     if (type == CONTENT_SSE)
@@ -175,6 +179,14 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req)
                 while (*value == ' ' || *value == '\t')
                     value++;
 
+                /* Trim trailing whitespace */
+                char *value_end = value + strlen(value);
+                while (value_end > value && (value_end[-1] == ' ' || value_end[-1] == '\t'))
+                {
+                    value_end--;
+                    *value_end = '\0';
+                }
+
                 /* Extract interesting headers */
                 if (strcasecmp(inbuf, "Host") == 0)
                 {
@@ -190,6 +202,11 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req)
                 {
                     strncpy(req->accept, value, sizeof(req->accept) - 1);
                     req->accept[sizeof(req->accept) - 1] = '\0';
+                }
+                else if (strcasecmp(inbuf, "If-None-Match") == 0)
+                {
+                    strncpy(req->if_none_match, value, sizeof(req->if_none_match) - 1);
+                    req->if_none_match[sizeof(req->if_none_match) - 1] = '\0';
                 }
                 else if (strcasecmp(inbuf, "X-Request-Snapshot") == 0)
                 {

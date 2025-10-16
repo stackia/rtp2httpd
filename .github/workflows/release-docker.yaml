@@ -16,6 +16,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: web-ui
+
+      - name: Build frontend
+        run: npm run build
+        working-directory: web-ui
+
+      - name: Embed status page asset
+        run: node scripts/embed-status-page.js web-ui/dist/index.html src/status_page.h
+
       - name: Override version number
         run: |
           RELEASE_TAG="${{ github.event.release.tag_name }}"
