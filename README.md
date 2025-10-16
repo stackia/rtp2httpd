@@ -54,7 +54,7 @@ https://github.com/user-attachments/assets/fedc0c28-f9ac-4675-9b19-a8efdd062506
 
 ### Web UI 实时状态监控
 
-<img width="1488" height="998" alt="Image" src="https://github.com/user-attachments/assets/f6ca5aa7-55f8-4b06-9ea8-3502892e9dc1" />
+<img width="2586" height="1814" alt="Image" src="https://github.com/user-attachments/assets/8838ee26-aa97-4d31-8031-afe8998a7fba" />
 
 ## 📦 部署方式
 
@@ -321,11 +321,8 @@ daemonise = no
 # UDPxy 兼容性
 udpxy = yes
 
-# FCC NAT 穿透模式
-fcc-nat-traversal = 0
-
-# FCC 监听媒体流端口范围（可选，格式: 起始-结束，默认随机端口）
-;fcc-listen-port-range = 40000-40100
+# 工作进程数（默认: 1）
+workers = 1
 
 # 状态页路径（默认: /status）
 ;status-page-path = /status
@@ -350,8 +347,11 @@ fcc-nat-traversal = 0
 # 仅在遇到组播流中断时启用
 ;mcast-rejoin-interval = 0
 
-# 工作进程数（默认: 1）
-workers = 1
+# FCC NAT 穿透模式
+fcc-nat-traversal = 0
+
+# FCC 监听媒体流端口范围（可选，格式: 起始-结束，默认随机端口）
+;fcc-listen-port-range = 40000-40100
 
 # 零拷贝缓冲池最大缓冲区数量（默认: 16384）
 # 每个缓冲区 1536 字节，16384 个约占用 24MB 内存
@@ -405,6 +405,8 @@ rtsp2    RTSP rtsp://10.0.0.50:8554/live/channel1?auth=token123
 不使用 FCC 则不受影响。
 
 运行在局域网内设备时，要求上级路由器启用全追锥形 NAT，并转发 IGMP 组播流（可以使用 `igmpproxy` / `omcproxy` 等组播代理工具）。如遇不可播放请尝试不同的 `--fcc-nat-traversal` 参数。
+
+还可以尝试手动指定 `--fcc-listen-port-range` 参数，并在上级路由器把这个端口范围转发到此设备。
 
 ## 📸 频道快照（预览图）配置 / 用法
 
