@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "../../i18n";
 import { useTranslation } from "../../hooks/use-translation";
 import type { LogEntry } from "../../types";
 import { LogsIcon } from "../icons";
 import { SelectBox } from "../ui/select-box";
+import { Switch } from "../ui/switch";
 
 interface LogsSectionProps {
   logs: LogEntry[];
@@ -17,22 +18,14 @@ interface LogsSectionProps {
 export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, options, locale }: LogsSectionProps) {
   const t = useTranslation(locale);
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const shouldStickToBottomRef = useRef(true);
-
-  const handleScroll = useCallback(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    const { scrollTop, scrollHeight, clientHeight } = viewport;
-    shouldStickToBottomRef.current = scrollHeight - (scrollTop + clientHeight) < 16;
-  }, []);
+  const [autoScroll, setAutoScroll] = useState(true);
 
   useEffect(() => {
+    if (!autoScroll) return;
     const viewport = viewportRef.current;
-    if (!viewport || !shouldStickToBottomRef.current) {
-      return;
-    }
+    if (!viewport) return;
     viewport.scrollTop = viewport.scrollHeight;
-  }, [logs]);
+  }, [logs, autoScroll]);
 
   const selectOptions = useMemo(
     () =>
@@ -47,29 +40,39 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
     <section className="flex flex-col rounded-3xl border border-border/60 bg-card/90 p-5 shadow-sm">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-xl font-semibold tracking-tight text-card-foreground">{t("logs")}</h2>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          <LogsIcon className="h-4 w-4" />
-          <span>{t("logLevel")}:</span>
-          <SelectBox
-            value={logLevelValue ?? ""}
-            onChange={(event) => onLogLevelChange(event.target.value)}
-            disabled={disabled}
-            containerClassName="min-w-[120px]"
-            className="text-sm font-medium"
-            aria-label={t("logLevel")}
-          >
-            {!logLevelValue && <option value="">--</option>}
-            {selectOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </SelectBox>
-        </label>
+        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+          <label className="flex items-center gap-2">
+            <LogsIcon className="h-4 w-4" />
+            <span>{t("logLevel")}:</span>
+            <SelectBox
+              value={logLevelValue ?? ""}
+              onChange={(event) => onLogLevelChange(event.target.value)}
+              disabled={disabled}
+              containerClassName="min-w-[120px]"
+              className="text-sm font-medium"
+              aria-label={t("logLevel")}
+            >
+              {!logLevelValue && <option value="">--</option>}
+              {selectOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </SelectBox>
+          </label>
+          <div className="flex items-center gap-2">
+            <span>{t("autoScroll")}:</span>
+            <Switch
+              checked={autoScroll}
+              onCheckedChange={setAutoScroll}
+              disabled={disabled}
+              aria-label={t("autoScroll")}
+            />
+          </div>
+        </div>
       </div>
       <div
         ref={viewportRef}
-        onScroll={handleScroll}
         className="scrollbar-thin mt-5 h-[400px] overflow-y-auto rounded-2xl border border-border/50 bg-muted/20 p-4 backdrop-blur-sm"
       >
         {logs.length === 0 ? (
