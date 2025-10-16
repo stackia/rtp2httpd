@@ -10,6 +10,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <getopt.h>
 #include <net/if.h>
 #include <libgen.h>
@@ -41,6 +43,8 @@ int cmd_ffmpeg_args_set;
 int cmd_video_snapshot_set;
 int cmd_upstream_interface_unicast_set;
 int cmd_upstream_interface_multicast_set;
+int cmd_fcc_listen_port_range_set;
+int cmd_status_page_path_set;
 
 enum section_e
 {
@@ -95,6 +99,112 @@ static void safe_free_string(char **str)
   {
     free(*str);
     *str = NULL;
+  }
+}
+
+static int parse_port_range_value(const char *value, int *min_port, int *max_port)
+{
+  char *endptr = NULL;
+  long start = 0;
+  long end = 0;
+
+  if (!value || !min_port || !max_port)
+    return -1;
+
+  errno = 0;
+  start = strtol(value, &endptr, 10);
+  if (endptr == value)
+    return -1;
+
+  while (*endptr && isspace((unsigned char)*endptr))
+    endptr++;
+
+  if (*endptr == '\0')
+  {
+    end = start;
+  }
+  else if (*endptr == '-')
+  {
+    const char *end_str = endptr + 1;
+    while (*end_str && isspace((unsigned char)*end_str))
+      end_str++;
+    if (*end_str == '\0')
+    {
+      return -1;
+    }
+    errno = 0;
+    end = strtol(end_str, &endptr, 10);
+    if (endptr == end_str || *endptr != '\0')
+      return -1;
+  }
+  else
+  {
+    return -1;
+  }
+
+  if (errno != 0 || start < 1 || start > 65535 || end < 1 || end > 65535)
+    return -1;
+
+  if (end < start)
+    return -1;
+
+  *min_port = (int)start;
+  *max_port = (int)end;
+  return 0;
+}
+
+static void set_status_page_path_value(const char *value)
+{
+  char normalized[HTTP_URL_BUFFER_SIZE];
+  size_t len = 0;
+  const char *src;
+
+  if (!value || value[0] == '\0')
+  {
+    logger(LOG_ERROR, "status-page-path cannot be empty, keeping previous value");
+    return;
+  }
+
+  src = value;
+  while (*src == '/')
+    src++;
+
+  normalized[len++] = '/';
+
+  while (*src && len < sizeof(normalized) - 1)
+    normalized[len++] = *src++;
+
+  if (*src != '\0')
+  {
+    logger(LOG_ERROR, "status-page-path is too long, keeping previous value");
+    return;
+  }
+
+  while (len > 1 && normalized[len - 1] == '/')
+    len--;
+
+  normalized[len] = '\0';
+
+  safe_free_string(&config.status_page_path);
+  safe_free_string(&config.status_page_route);
+
+  config.status_page_path = strdup(normalized);
+  if (!config.status_page_path)
+  {
+    logger(LOG_ERROR, "Failed to allocate status-page-path");
+    config.status_page_route = NULL;
+    return;
+  }
+
+  if (normalized[1] != '\0')
+    config.status_page_route = strdup(normalized + 1);
+  else
+    config.status_page_route = strdup("");
+
+  if (!config.status_page_route)
+  {
+    logger(LOG_ERROR, "Failed to allocate status-page-path route");
+    safe_free_string(&config.status_page_path);
   }
 }
 
@@ -386,6 +496,25 @@ void parse_global_sec(char *line)
     return;
   }
 
+  if (strcasecmp("fcc-listen-port-range", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_fcc_listen_port_range_set, "fcc-listen-port-range"))
+    {
+      int min_port = 0, max_port = 0;
+      if (parse_port_range_value(value, &min_port, &max_port) == 0)
+      {
+        config.fcc_listen_port_min = min_port;
+        config.fcc_listen_port_max = max_port;
+        logger(LOG_INFO, "FCC listen port range set to %d-%d", min_port, max_port);
+      }
+      else
+      {
+        logger(LOG_ERROR, "Invalid fcc-listen-port-range value: %s", value);
+      }
+    }
+    return;
+  }
+
   if (strcasecmp("buffer-pool-max-size", param) == 0)
   {
     if (set_if_not_cmd_override(cmd_buffer_pool_max_size_set, "buffer-pool-max-size"))
@@ -430,6 +559,13 @@ void parse_global_sec(char *line)
   {
     if (set_if_not_cmd_override(cmd_hostname_set, "hostname"))
       config.hostname = strdup(value);
+    return;
+  }
+
+  if (strcasecmp("status-page-path", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_status_page_path_set, "status-page-path"))
+      set_status_page_path_value(value);
     return;
   }
 
@@ -655,6 +791,9 @@ void restore_conf_defaults(void)
 
   config.fcc_nat_traversal = FCC_NAT_T_DISABLED;
   cmd_fcc_nat_traversal_set = 0;
+  config.fcc_listen_port_min = 0;
+  config.fcc_listen_port_max = 0;
+  cmd_fcc_listen_port_range_set = 0;
 
   config.workers = 1; /* default single worker for low-end OpenWrt */
 
@@ -679,6 +818,9 @@ void restore_conf_defaults(void)
 
   config.mcast_rejoin_interval = 0; /* default disabled */
   cmd_mcast_rejoin_interval_set = 0;
+
+  set_status_page_path_value("/status");
+  cmd_status_page_path_set = 0;
 
   if (config.upstream_interface_unicast.ifr_name[0] != '\0')
     memset(&config.upstream_interface_unicast, 0, sizeof(struct ifreq));
@@ -738,6 +880,7 @@ void usage(FILE *f, char *progname)
           "\t-c --config <file>   Read this file for configuration, instead of the default one\n"
           "\t-C --noconfig        Do not read the default config\n"
           "\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole (deprecated), 2=NAT-PMP (default 0)\n"
+          "\t-P --fcc-listen-port-range <start[-end]>  Restrict FCC UDP listen sockets to specific ports\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)\n"
           "\t-T --r2h-token <token>   Authentication token for HTTP requests (default none)\n"
           "\t-i --upstream-interface-unicast <interface>  Interface for unicast traffic (FCC/RTSP)\n"
@@ -746,6 +889,7 @@ void usage(FILE *f, char *progname)
           "\t-F --ffmpeg-path <path>  Path to ffmpeg executable (default: ffmpeg)\n"
           "\t-A --ffmpeg-args <args>  Additional ffmpeg arguments (default: -hwaccel none)\n"
           "\t-S --video-snapshot      Enable video snapshot feature (default: off)\n"
+          "\t-s --status-page-path <path>  HTTP path for status UI (default: /status)\n"
           "\t                     default " CONFIGFILE "\n",
           prog);
 }
@@ -804,6 +948,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"config", required_argument, 0, 'c'},
       {"noconfig", no_argument, 0, 'C'},
       {"fcc-nat-traversal", required_argument, 0, 'n'},
+      {"fcc-listen-port-range", required_argument, 0, 'P'},
       {"hostname", required_argument, 0, 'H'},
       {"r2h-token", required_argument, 0, 'T'},
       {"upstream-interface-unicast", required_argument, 0, 'i'},
@@ -812,9 +957,10 @@ void parse_cmd_line(int argc, char *argv[])
       {"ffmpeg-path", required_argument, 0, 'F'},
       {"ffmpeg-args", required_argument, 0, 'A'},
       {"video-snapshot", no_argument, 0, 'S'},
+      {"status-page-path", required_argument, 0, 's'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:H:T:i:r:R:F:A:SC";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:P:H:T:i:r:R:F:A:s:SC";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -897,6 +1043,23 @@ void parse_cmd_line(int argc, char *argv[])
       config.fcc_nat_traversal = atoi(optarg);
       cmd_fcc_nat_traversal_set = 1;
       break;
+    case 'P':
+    {
+      int min_port = 0;
+      int max_port = 0;
+      if (parse_port_range_value(optarg, &min_port, &max_port) == 0)
+      {
+        config.fcc_listen_port_min = min_port;
+        config.fcc_listen_port_max = max_port;
+        cmd_fcc_listen_port_range_set = 1;
+        logger(LOG_INFO, "FCC listen port range set to %d-%d", min_port, max_port);
+      }
+      else
+      {
+        logger(LOG_ERROR, "Invalid fcc-listen-port-range value: %s", optarg);
+      }
+      break;
+    }
     case 'H':
       config.hostname = strdup(optarg);
       cmd_hostname_set = 1;
@@ -904,6 +1067,10 @@ void parse_cmd_line(int argc, char *argv[])
     case 'T':
       config.r2h_token = strdup(optarg);
       cmd_r2h_token_set = 1;
+      break;
+    case 's':
+      set_status_page_path_value(optarg);
+      cmd_status_page_path_set = 1;
       break;
     case 'i':
       strncpy(config.upstream_interface_unicast.ifr_name, optarg, IFNAMSIZ - 1);

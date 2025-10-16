@@ -48,6 +48,10 @@
 #define RTSP_SERVER_PATH_SIZE 1024
 #endif
 
+#ifndef RTSP_CREDENTIAL_SIZE
+#define RTSP_CREDENTIAL_SIZE 128
+#endif
+
 /* RTSP playseek range - for Range header in PLAY command */
 #ifndef RTSP_PLAYSEEK_RANGE_SIZE
 #define RTSP_PLAYSEEK_RANGE_SIZE 256
@@ -138,6 +142,10 @@ typedef struct
     char server_host[RTSP_SERVER_HOST_SIZE];       /* RTSP server hostname */
     int server_port;                               /* RTSP server port */
     char server_path[RTSP_SERVER_PATH_SIZE];       /* RTSP path with query string */
+    char username[RTSP_CREDENTIAL_SIZE];           /* RTSP username for Basic auth */
+    char password[RTSP_CREDENTIAL_SIZE];           /* RTSP password for Basic auth */
+    int has_basic_auth;                            /* Flag: include Authorization header */
+    char authorization_header[RTSP_HEADERS_BUFFER_SIZE]; /* Cached Authorization header */
     char playseek_range[RTSP_PLAYSEEK_RANGE_SIZE]; /* Range for RTSP PLAY command */
     int redirect_count;                            /* Number of redirects followed */
 
@@ -206,9 +214,13 @@ void rtsp_session_init(rtsp_session_t *session);
  * @param rtsp_url Full RTSP URL (rtsp://host:port/path)
  * @param playseek_param Optional playseek parameter for time range
  * @param user_agent Optional User-Agent header for timezone detection
+ * @param fallback_username Optional username to reuse when URL lacks credentials
+ * @param fallback_password Optional password to reuse when URL lacks credentials
  * @return 0 on success, -1 on error
  */
-int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const char *playseek_param, const char *user_agent);
+int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
+                          const char *playseek_param, const char *user_agent,
+                          const char *fallback_username, const char *fallback_password);
 
 /**
  * Connect to RTSP server (non-blocking)

@@ -11,9 +11,13 @@
 #include "status.h"
 #include "zerocopy.h"
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <errno.h>
+#include <ctype.h>
+#include <stdint.h>
 #include <fcntl.h>
 #include <netinet/tcp.h>
 #include <sys/epoll.h>
@@ -591,6 +595,13 @@ int connection_route_and_start(connection_t *c)
       return 0;
     }
 
+    if (http_url_decode(token_value) != 0)
+    {
+      logger(LOG_WARN, "Client request rejected: invalid r2h-token encoding");
+      http_send_401(c);
+      return 0;
+    }
+
     /* Compare token value with configured token */
     if (strcmp(token_value, config.r2h_token) != 0)
     {
@@ -606,27 +617,57 @@ int connection_route_and_start(connection_t *c)
   if (path_len > 0 && service_path[path_len - 1] == '/')
     path_len--;
 
-  /* Route status endpoints */
-  if (path_len == 0 || (strncmp(service_path, "status", 6) == 0 && path_len == 6))
+  const char *status_route = config.status_page_route ? config.status_page_route : "status";
+  size_t status_route_len = strlen(status_route);
+  char status_sse_route[HTTP_URL_BUFFER_SIZE];
+  char status_api_prefix[HTTP_URL_BUFFER_SIZE];
+
+  if (status_route_len > 0)
+  {
+    snprintf(status_sse_route, sizeof(status_sse_route), "%s/sse", status_route);
+    snprintf(status_api_prefix, sizeof(status_api_prefix), "%s/api/", status_route);
+  }
+  else
+  {
+    strncpy(status_sse_route, "sse", sizeof(status_sse_route) - 1);
+    status_sse_route[sizeof(status_sse_route) - 1] = '\0';
+    strncpy(status_api_prefix, "api/", sizeof(status_api_prefix) - 1);
+    status_api_prefix[sizeof(status_api_prefix) - 1] = '\0';
+  }
+
+  if (status_route_len == path_len && strncmp(service_path, status_route, path_len) == 0)
   {
     handle_status_page(c);
     c->state = CONN_CLOSING;
     return 0;
   }
-  if (strncmp(service_path, "status/sse", 10) == 0 && path_len == 10)
+  size_t status_sse_len = strlen(status_sse_route);
+  if (status_sse_len == path_len && strncmp(service_path, status_sse_route, path_len) == 0)
   {
     /* Delegate SSE initialization to status module */
     return status_handle_sse_init(c);
   }
-  if (strncmp(service_path, "api/disconnect", 14) == 0 && path_len == 14)
+  size_t status_api_prefix_len = strlen(status_api_prefix);
+  if (path_len >= status_api_prefix_len &&
+      strncmp(service_path, status_api_prefix, status_api_prefix_len) == 0)
   {
-    handle_disconnect_client(c);
-    c->state = CONN_CLOSING;
-    return 0;
-  }
-  if (strncmp(service_path, "api/log-level", 13) == 0 && path_len == 13)
-  {
-    handle_set_log_level(c);
+    const char *api_name = service_path + status_api_prefix_len;
+    size_t api_name_len = path_len - status_api_prefix_len;
+
+    if (api_name_len == strlen("disconnect") && strncmp(api_name, "disconnect", api_name_len) == 0)
+    {
+      handle_disconnect_client(c);
+      c->state = CONN_CLOSING;
+      return 0;
+    }
+    if (api_name_len == strlen("log-level") && strncmp(api_name, "log-level", api_name_len) == 0)
+    {
+      handle_set_log_level(c);
+      c->state = CONN_CLOSING;
+      return 0;
+    }
+
+    http_send_404(c);
     c->state = CONN_CLOSING;
     return 0;
   }

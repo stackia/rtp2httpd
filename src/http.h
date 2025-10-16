@@ -91,6 +91,13 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req);
 void send_http_headers(connection_t *c, http_status_t status, content_type_t type, const char *extra_headers);
 
 /**
+ * Decode percent-encoded sequences in-place within a URL component
+ * @param str String to decode
+ * @return 0 on success, -1 on invalid encoding
+ */
+int http_url_decode(char *str);
+
+/**
  * Parse query parameter value from query/form string (case-insensitive parameter names)
  * Works for both URL query strings and application/x-www-form-urlencoded body data
  * @param query_string Query or form data string (without leading ?)

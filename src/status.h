@@ -244,7 +244,7 @@ void handle_status_page(connection_t *c);
 
 /**
  * Handle API request to disconnect a client
- * RESTful: POST/DELETE /api/disconnect with form data body "client_id=123"
+ * RESTful: POST/DELETE <status-path>/api/disconnect with form data body "client_id=123"
  * Sets disconnect flag in shared memory and notifies worker to close connection
  * @param c Connection object
  */
@@ -252,7 +252,7 @@ void handle_disconnect_client(connection_t *c);
 
 /**
  * Handle API request to change log level
- * RESTful: PUT/PATCH /api/log-level with form data body "level=2"
+ * RESTful: PUT/PATCH <status-path>/api/log-level with form data body "level=2"
  * @param c Connection object
  */
 void handle_set_log_level(connection_t *c);

@@ -321,7 +321,9 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, se
         }
 
         /* Parse URL and initiate connection */
-        if (rtsp_parse_server_url(&ctx->rtsp, service->rtsp_url, service->playseek_param, service->user_agent) < 0)
+        if (rtsp_parse_server_url(&ctx->rtsp, service->rtsp_url,
+                                  service->playseek_param, service->user_agent,
+                                  NULL, NULL) < 0)
         {
             logger(LOG_ERROR, "RTSP: Failed to parse URL");
             return -1;

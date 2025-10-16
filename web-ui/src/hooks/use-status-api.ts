@@ -1,9 +1,9 @@
 import { useCallback } from "react";
-import { buildUrl } from "../lib/url";
+import { buildStatusPath, buildUrl } from "../lib/url";
 
 export function useStatusApi() {
   const disconnectClient = useCallback(async (clientId: number) => {
-    const response = await fetch(buildUrl("/api/disconnect"), {
+    const response = await fetch(buildUrl(buildStatusPath("/api/disconnect")), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ client_id: String(clientId) }).toString(),
@@ -15,7 +15,7 @@ export function useStatusApi() {
   }, []);
 
   const setLogLevel = useCallback(async (level: string) => {
-    const response = await fetch(buildUrl("/api/log-level"), {
+    const response = await fetch(buildUrl(buildStatusPath("/api/log-level")), {
       method: "PUT",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ level }).toString(),

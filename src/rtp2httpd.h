@@ -83,6 +83,8 @@ typedef struct
 
   /* FCC (Fast Channel Change) settings */
   enum fcc_nat_traversal fcc_nat_traversal; /* NAT traversal method for FCC */
+  int fcc_listen_port_min;                 /* Minimum UDP port for FCC sockets (0=any) */
+  int fcc_listen_port_max;                 /* Maximum UDP port for FCC sockets (0=any) */
 
   /* Network interface settings */
   struct ifreq upstream_interface_unicast;   /* Interface for upstream unicast media requests (FCC/RTSP) */
@@ -97,6 +99,10 @@ typedef struct
 
   /* Video snapshot settings */
   int video_snapshot; /* Enable video snapshot feature (0=off, 1=on) */
+
+  /* Status page settings */
+  char *status_page_path;  /* Absolute HTTP path for status page (leading slash) */
+  char *status_page_route; /* Status page path without leading slash (may be empty) */
 } config_t;
 
 /* GLOBAL CONFIGURATION */

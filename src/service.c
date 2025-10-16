@@ -27,34 +27,6 @@ struct url_components
     int has_fcc;
 };
 
-static int url_decode(char *str)
-{
-    char *src = str, *dst = str;
-    unsigned int hex_value;
-
-    while (*src)
-    {
-        if (*src == '%')
-        {
-            /* Check if we have at least 2 more characters for hex digits */
-            if (strlen(src) >= 3 && sscanf(src + 1, "%2x", &hex_value) == 1)
-            {
-                *dst++ = (char)hex_value;
-                src += 3;
-            }
-            else
-            {
-                return -1; /* Invalid hex encoding */
-            }
-        }
-        else
-        {
-            *dst++ = *src++;
-        }
-    }
-    *dst = '\0';
-    return 0;
-}
 static int parse_ipv6_address(const char *input, char *addr, size_t addr_size, const char **remainder)
 {
     const char *end = strchr(input + 1, ']');
@@ -148,7 +120,7 @@ static int parse_url_components(char *url_part, struct url_components *component
     memset(components, 0, sizeof(*components));
 
     /* URL decode the input */
-    if (url_decode(url_part) != 0)
+    if (http_url_decode(url_part) != 0)
     {
         return -1;
     }
