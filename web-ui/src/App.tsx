@@ -206,6 +206,8 @@ function App() {
             onDisconnect={handleDisconnect}
           />
 
+          <WorkersSection workers={payload?.workers ?? []} locale={locale} />
+
           <LogsSection
             logs={logs}
             options={LOG_LEVELS.map((level) => ({
@@ -217,8 +219,6 @@ function App() {
             disabled={!logLevelValue}
             locale={locale}
           />
-
-          <WorkersSection workers={payload?.workers ?? []} locale={locale} />
         </div>
       </div>
     </>
