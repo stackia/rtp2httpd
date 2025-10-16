@@ -15,19 +15,6 @@
 #include <netinet/in.h>
 #include <sys/time.h>
 
-/* MSG_ZEROCOPY support detection */
-#ifndef MSG_ZEROCOPY
-#define MSG_ZEROCOPY 0x4000000
-#endif
-
-#ifndef SO_ZEROCOPY
-#define SO_ZEROCOPY 60
-#endif
-
-#ifndef SOL_IPV6
-#define SOL_IPV6 41
-#endif
-
 /* Global zero-copy state */
 zerocopy_state_t zerocopy_state = {0};
 
@@ -555,8 +542,8 @@ int zerocopy_handle_completions(int fd, zerocopy_queue_t *queue)
         for (cmsg = CMSG_FIRSTHDR(&msg); cmsg; cmsg = CMSG_NXTHDR(&msg, cmsg))
         {
             /* Check for both IPv4 and IPv6 error messages */
-            if ((cmsg->cmsg_level == SOL_IP || cmsg->cmsg_level == SOL_IPV6) &&
-                cmsg->cmsg_type == IP_RECVERR)
+            if ((cmsg->cmsg_level == SOL_IP && cmsg->cmsg_type == IP_RECVERR) ||
+                (cmsg->cmsg_level == SOL_IPV6 && cmsg->cmsg_type == IPV6_RECVERR))
             {
                 struct sock_extended_err *serr = (struct sock_extended_err *)CMSG_DATA(cmsg);
 

@@ -22,14 +22,7 @@
 #include <netinet/tcp.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
-
-#ifndef SO_ZEROCOPY
-#define SO_ZEROCOPY 60
-#endif
-
-#ifndef TCP_USER_TIMEOUT
-#define TCP_USER_TIMEOUT 18
-#endif
+#include <netinet/in.h>
 
 #define CONNECTION_TCP_USER_TIMEOUT_MS 10000
 #define CONN_QUEUE_MIN_BUFFERS 64
