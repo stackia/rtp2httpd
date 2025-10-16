@@ -34,6 +34,10 @@
 #define RTSP_VERSION "RTSP/1.0"
 #define USER_AGENT "rtp2httpd/" VERSION
 #define MAX_REDIRECTS 5
+#define RTSP_KEEPALIVE_INTERVAL_MS 30000
+
+#define RTSP_RESPONSE_ADVANCE 1
+#define RTSP_RESPONSE_KEEPALIVE 2
 
 /* Helper function prototypes */
 static int rtsp_prepare_request(rtsp_session_t *session, const char *method, const char *extra_headers);
@@ -87,6 +91,12 @@ void rtsp_session_init(rtsp_session_t *session)
     session->pending_request_sent = 0;
     session->response_buffer_pos = 0;
     session->awaiting_response = 0;
+
+    /* Initialize keepalive state */
+    session->keepalive_interval_ms = 0;
+    session->last_keepalive_ms = 0;
+    session->keepalive_pending = 0;
+    session->awaiting_keepalive_response = 0;
 
     /* Initialize teardown state */
     session->teardown_requested = 0;
@@ -607,20 +617,10 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events)
     /* Handle readable socket - try to receive response */
     if (events & EPOLLIN)
     {
-        if (session->state == RTSP_STATE_PLAYING)
-        {
-            result = rtsp_handle_rtp_data(session, session->conn);
-            if (result < 0)
-            {
-                rtsp_session_set_state(session, RTSP_STATE_ERROR);
-                return -1; /* Error */
-            }
-            return result; /* Return number of bytes forwarded to client */
-        }
         if (session->awaiting_response)
         {
-            result = rtsp_try_receive_response(session);
-            if (result < 0)
+            int response_result = rtsp_try_receive_response(session);
+            if (response_result < 0)
             {
                 logger(LOG_ERROR, "RTSP: Failed to receive response");
                 rtsp_session_set_state(session, RTSP_STATE_ERROR);
@@ -628,7 +628,7 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events)
             }
 
             /* Re-enable EPOLLOUT for next request */
-            if (result == 1 && session->epoll_fd >= 0)
+            if (response_result == RTSP_RESPONSE_ADVANCE && session->epoll_fd >= 0)
             {
                 struct epoll_event ev;
                 ev.events = EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR | EPOLLRDHUP;
@@ -639,6 +639,11 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events)
                     rtsp_session_set_state(session, RTSP_STATE_ERROR);
                     return -1;
                 }
+            }
+
+            if (response_result == RTSP_RESPONSE_KEEPALIVE)
+            {
+                return 0; /* Keepalive handled */
             }
 
             /* Advance state machine to prepare next request (or enter PLAYING state) */
@@ -653,6 +658,17 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events)
                 }
             }
             return result;
+        }
+
+        if (session->state == RTSP_STATE_PLAYING)
+        {
+            result = rtsp_handle_tcp_interleaved_data(session, session->conn);
+            if (result < 0)
+            {
+                rtsp_session_set_state(session, RTSP_STATE_ERROR);
+                return -1; /* Error */
+            }
+            return result; /* Return number of bytes forwarded to client */
         }
     }
 
@@ -692,6 +708,63 @@ static int rtsp_prepare_request(rtsp_session_t *session, const char *method, con
     return 0;
 }
 
+int rtsp_send_keepalive(rtsp_session_t *session)
+{
+    if (!session || session->socket < 0)
+    {
+        return -1;
+    }
+
+    if (session->transport_mode != RTSP_TRANSPORT_UDP || session->keepalive_interval_ms <= 0)
+    {
+        return 1; /* Keepalive not required */
+    }
+
+    if (session->session_id[0] == '\0')
+    {
+        return 1; /* Session not fully established yet */
+    }
+
+    if (session->pending_request_len > 0 || session->awaiting_response ||
+        session->keepalive_pending || session->awaiting_keepalive_response)
+    {
+        return 1; /* Busy with another request */
+    }
+
+    char extra_headers[RTSP_HEADERS_BUFFER_SIZE];
+    if (snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\n", session->session_id) >= (int)sizeof(extra_headers))
+    {
+        logger(LOG_ERROR, "RTSP: Failed to format OPTIONS keepalive headers");
+        return -1;
+    }
+
+    if (rtsp_prepare_request(session, RTSP_METHOD_OPTIONS, extra_headers) < 0)
+    {
+        logger(LOG_ERROR, "RTSP: Failed to prepare OPTIONS keepalive request");
+        return -1;
+    }
+
+    session->keepalive_pending = 1;
+
+    if (session->epoll_fd >= 0)
+    {
+        struct epoll_event ev;
+        ev.events = EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR | EPOLLRDHUP;
+        ev.data.fd = session->socket;
+        if (epoll_ctl(session->epoll_fd, EPOLL_CTL_MOD, session->socket, &ev) < 0)
+        {
+            logger(LOG_ERROR, "RTSP: Failed to enable EPOLLOUT for OPTIONS keepalive: %s", strerror(errno));
+            session->pending_request_len = 0;
+            session->pending_request_sent = 0;
+            session->keepalive_pending = 0;
+            return -1;
+        }
+    }
+
+    logger(LOG_DEBUG, "RTSP: Queued OPTIONS keepalive request");
+    return 0;
+}
+
 /**
  * Try to send pending request (non-blocking)
  * Returns: 0 = complete, -1 = error, EAGAIN = would block (handled internally)
@@ -716,6 +789,8 @@ static int rtsp_try_send_pending(rtsp_session_t *session)
             return 0;
         }
         logger(LOG_ERROR, "RTSP: Failed to send request: %s", strerror(errno));
+        session->keepalive_pending = 0;
+        session->awaiting_keepalive_response = 0;
         return -1;
     }
 
@@ -729,6 +804,12 @@ static int rtsp_try_send_pending(rtsp_session_t *session)
         session->pending_request_sent = 0;
         session->awaiting_response = 1;
         session->response_buffer_pos = 0;
+
+        if (session->keepalive_pending)
+        {
+            session->awaiting_keepalive_response = 1;
+            session->keepalive_pending = 0;
+        }
 
         /* Update state to awaiting response */
         if (session->state == RTSP_STATE_SENDING_DESCRIBE)
@@ -783,6 +864,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
     if (received == 0)
     {
         logger(LOG_ERROR, "RTSP: Connection closed by server");
+        session->awaiting_keepalive_response = 0;
         return -1;
     }
 
@@ -793,10 +875,12 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
     logger(LOG_DEBUG, "RTSP: Received complete response:\n%s", session->response_buffer);
 
     session->awaiting_response = 0;
+    int was_keepalive = session->awaiting_keepalive_response;
     int parse_result = rtsp_parse_response(session, (char *)session->response_buffer);
 
     if (parse_result < 0)
     {
+        session->awaiting_keepalive_response = 0;
         return -1;
     }
 
@@ -804,9 +888,12 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
     if (parse_result == 2)
     {
         /* Redirect in progress - state machine will handle it */
+        session->awaiting_keepalive_response = 0;
         session->response_buffer_pos = 0;
         return 0;
     }
+
+    session->awaiting_keepalive_response = 0;
 
     /* Check if there's data after the response headers (e.g., RTP data after PLAY response) */
     size_t extra_data_len = 0;
@@ -819,6 +906,13 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
             extra_data_len = session->response_buffer_pos - headers_len;
             logger(LOG_DEBUG, "RTSP: Found %zu bytes of data after response headers", extra_data_len);
         }
+    }
+
+    if (was_keepalive)
+    {
+        session->response_buffer_pos = 0;
+        logger(LOG_DEBUG, "RTSP: OPTIONS keepalive acknowledged");
+        return RTSP_RESPONSE_KEEPALIVE;
     }
 
     /* Advance to next state based on current state */
@@ -908,26 +1002,28 @@ static int rtsp_state_machine_advance(rtsp_session_t *session)
         }
         else
         {
-            // snprintf(extra_headers, sizeof(extra_headers),
-            //          "Transport: MP2T/RTP/TCP;unicast;interleaved=%d-%d,"
-            //          "MP2T/TCP;unicast;interleaved=%d-%d,"
-            //          "RTP/AVP/TCP;unicast;interleaved=%d-%d,"
-            //          "MP2T/RTP/UDP;unicast;client_port=%d-%d,"
-            //          "MP2T/UDP;unicast;client_port=%d-%d,"
-            //          "RTP/AVP;unicast;client_port=%d-%d\r\n",
-            //          session->rtp_channel, session->rtcp_channel,
-            //          session->rtp_channel, session->rtcp_channel,
-            //          session->rtp_channel, session->rtcp_channel,
-            //          session->local_rtp_port, session->local_rtcp_port,
-            //          session->local_rtp_port, session->local_rtcp_port,
-            //          session->local_rtp_port, session->local_rtcp_port);
             snprintf(extra_headers, sizeof(extra_headers),
-                     "Transport: MP2T/RTP/UDP;unicast;client_port=%d-%d,"
+                     "Transport: MP2T/RTP/TCP;unicast;interleaved=%d-%d,"
+                     "MP2T/TCP;unicast;interleaved=%d-%d,"
+                     "RTP/AVP/TCP;unicast;interleaved=%d-%d,"
+                     "MP2T/RTP/UDP;unicast;client_port=%d-%d,"
                      "MP2T/UDP;unicast;client_port=%d-%d,"
                      "RTP/AVP;unicast;client_port=%d-%d\r\n",
+                     session->rtp_channel, session->rtcp_channel,
+                     session->rtp_channel, session->rtcp_channel,
+                     session->rtp_channel, session->rtcp_channel,
                      session->local_rtp_port, session->local_rtcp_port,
                      session->local_rtp_port, session->local_rtcp_port,
                      session->local_rtp_port, session->local_rtcp_port);
+
+            // To temporarily disable TCP transport offer for testing:
+            // snprintf(extra_headers, sizeof(extra_headers),
+            //          "Transport: MP2T/RTP/UDP;unicast;client_port=%d-%d,"
+            //          "MP2T/UDP;unicast;client_port=%d-%d,"
+            //          "RTP/AVP;unicast;client_port=%d-%d\r\n",
+            //          session->local_rtp_port, session->local_rtcp_port,
+            //          session->local_rtp_port, session->local_rtcp_port,
+            //          session->local_rtp_port, session->local_rtcp_port);
         }
         if (rtsp_prepare_request(session, RTSP_METHOD_SETUP, extra_headers) < 0)
         {
@@ -950,6 +1046,11 @@ static int rtsp_state_machine_advance(rtsp_session_t *session)
 
     case RTSP_STATE_PLAYING:
         /* Streaming active - nothing to do */
+        if (session->transport_mode == RTSP_TRANSPORT_UDP &&
+            session->keepalive_interval_ms > 0 && session->last_keepalive_ms == 0)
+        {
+            session->last_keepalive_ms = get_time_ms();
+        }
         logger(LOG_INFO, "RTSP: Stream started successfully");
         return 0;
 
@@ -981,18 +1082,6 @@ static int rtsp_state_machine_advance(rtsp_session_t *session)
     default:
         /* Other states don't need automatic advancement */
         return 0;
-    }
-}
-
-int rtsp_handle_rtp_data(rtsp_session_t *session, connection_t *conn)
-{
-    if (session->transport_mode == RTSP_TRANSPORT_TCP)
-    {
-        return rtsp_handle_tcp_interleaved_data(session, conn);
-    }
-    else
-    {
-        return rtsp_handle_udp_rtp_data(session, conn);
     }
 }
 
@@ -1161,6 +1250,11 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn)
                           BUFFER_POOL_BUFFER_SIZE, 0);
     if (bytes_received < 0)
     {
+        if (errno == EAGAIN)
+        {
+            buffer_ref_put(rtp_buf);
+            return 0; /* No data available right now */
+        }
         logger(LOG_ERROR, "RTSP: RTP receive failed: %s", strerror(errno));
         buffer_ref_put(rtp_buf);
         return -1;
@@ -1230,6 +1324,10 @@ static void rtsp_force_cleanup(rtsp_session_t *session)
     session->pending_request_len = 0;
     session->pending_request_sent = 0;
     session->awaiting_response = 0;
+    session->keepalive_interval_ms = 0;
+    session->last_keepalive_ms = 0;
+    session->keepalive_pending = 0;
+    session->awaiting_keepalive_response = 0;
 
     /* Reset teardown state */
     session->teardown_requested = 0;
@@ -1799,6 +1897,10 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
     {
         /* TCP transport mode */
         session->transport_mode = RTSP_TRANSPORT_TCP;
+        session->keepalive_interval_ms = 0;
+        session->last_keepalive_ms = 0;
+        session->keepalive_pending = 0;
+        session->awaiting_keepalive_response = 0;
         logger(LOG_INFO, "RTSP: Using TCP interleaved transport");
 
         /* Parse interleaved channels */
@@ -1820,6 +1922,10 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
     {
         /* UDP transport mode */
         session->transport_mode = RTSP_TRANSPORT_UDP;
+        session->keepalive_interval_ms = RTSP_KEEPALIVE_INTERVAL_MS;
+        session->last_keepalive_ms = 0;
+        session->keepalive_pending = 0;
+        session->awaiting_keepalive_response = 0;
         logger(LOG_INFO, "RTSP: Using UDP transport");
 
         /* Parse source parameter if provided */

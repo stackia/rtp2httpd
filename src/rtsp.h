@@ -79,6 +79,7 @@
 
 /* ========== RTSP MESSAGE TYPES ========== */
 
+#define RTSP_METHOD_OPTIONS "OPTIONS"
 #define RTSP_METHOD_DESCRIBE "DESCRIBE"
 #define RTSP_METHOD_SETUP "SETUP"
 #define RTSP_METHOD_PLAY "PLAY"
@@ -173,6 +174,12 @@ typedef struct
     size_t response_buffer_pos;                     /* Current position in response buffer */
     int awaiting_response;                          /* Flag: waiting for response */
 
+    /* Keepalive tracking */
+    int keepalive_interval_ms;       /* OPTIONS keepalive interval (0 = disabled) */
+    int64_t last_keepalive_ms;       /* Timestamp of last OPTIONS keepalive */
+    int keepalive_pending;           /* Pending keepalive request queued for send */
+    int awaiting_keepalive_response; /* Awaiting OPTIONS keepalive response */
+
     /* Teardown and cleanup state */
     int teardown_requested;             /* Flag: TEARDOWN has been requested (cleanup initiated) */
     int teardown_reconnect_done;        /* Flag: Already attempted reconnect for TEARDOWN */
@@ -242,14 +249,6 @@ int rtsp_setup(rtsp_session_t *session);
 int rtsp_play(rtsp_session_t *session);
 
 /**
- * Handle incoming RTP data and forward to HTTP client via connection output buffer
- * @param session RTSP session
- * @param conn Connection object for output buffering
- * @return Number of bytes forwarded, -1 on error
- */
-int rtsp_handle_rtp_data(rtsp_session_t *session, struct connection_s *conn);
-
-/**
  * Handle TCP interleaved RTP data and forward to HTTP client via connection output buffer
  * @param session RTSP session
  * @param conn Connection object for output buffering
@@ -278,5 +277,12 @@ int rtsp_session_cleanup(rtsp_session_t *session);
  * @return 1 if in async TEARDOWN, 0 otherwise
  */
 int rtsp_session_is_async_teardown(rtsp_session_t *session);
+
+/**
+ * Schedule an RTSP OPTIONS keepalive request if the session is idle.
+ * @param session RTSP session
+ * @return 0 on success, -1 if keepalive could not be queued
+ */
+int rtsp_send_keepalive(rtsp_session_t *session);
 
 #endif /* __RTSP_H__ */
