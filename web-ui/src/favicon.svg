@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#5b8def;" />
+      <stop offset="100%" style="stop-color:#8b5cf6;" />
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect x="0" y="0" width="128" height="128" rx="24" fill="url(#bgGradient)" />
+
+  <!-- Bold, iconic "forward/stream" symbol -->
+  <!-- Left side: multiple lines representing multicast streams -->
+  <g stroke="#ffffff" stroke-width="8" stroke-linecap="round" fill="none">
+    <path d="M 18 42 L 48 42" />
+    <path d="M 18 64 L 48 64" />
+    <path d="M 18 86 L 48 86" />
+  </g>
+
+  <!-- Right side: large forward arrow representing unicast output -->
+  <path d="M 68 36 L 68 92 L 110 64 Z" fill="#ffffff" stroke="#ffffff"
+    stroke-width="4" stroke-linejoin="round" stroke-linecap="round" />
+</svg>

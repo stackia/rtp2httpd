@@ -106,7 +106,8 @@ static void rtsp_update_authorization_header(rtsp_session_t *session)
         return;
     }
 
-    char encoded[RTSP_HEADERS_BUFFER_SIZE];
+    /* Reserve space for "Authorization: Basic \r\n" (23 bytes) plus null terminator */
+    char encoded[RTSP_HEADERS_BUFFER_SIZE - 24];
     if (rtsp_base64_encode((const uint8_t *)combined, (size_t)len, encoded, sizeof(encoded)) < 0)
     {
         logger(LOG_ERROR, "RTSP: Failed to base64 encode credentials");
