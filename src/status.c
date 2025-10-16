@@ -837,7 +837,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
 
 /**
  * Handle API request to disconnect a client
- * RESTful: POST /api/disconnect with form data body "client_id=123"
+ * RESTful: POST <status-path>/api/disconnect with form data body "client_id=123"
  *
  * In multi-worker architecture, this sets a disconnect flag in shared memory
  * and notifies the worker owning the connection to gracefully close it.
@@ -935,7 +935,7 @@ void handle_disconnect_client(connection_t *c)
 
 /**
  * Handle API request to change log level
- * RESTful: PUT /api/log-level with form data body "level=2"
+ * RESTful: PUT <status-path>/api/log-level with form data body "level=2"
  */
 void handle_set_log_level(connection_t *c)
 {

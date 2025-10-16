@@ -79,6 +79,39 @@ void send_http_headers(connection_t *c, http_status_t status, content_type_t typ
     connection_queue_output(c, (const uint8_t *)headers, len);
 }
 
+int http_url_decode(char *str)
+{
+    char *src = str;
+    char *dst = str;
+    unsigned int hex_value;
+
+    if (!str)
+        return -1;
+
+    while (*src)
+    {
+        if (*src == '%')
+        {
+            if (strlen(src) >= 3 && sscanf(src + 1, "%2x", &hex_value) == 1)
+            {
+                *dst++ = (char)hex_value;
+                src += 3;
+            }
+            else
+            {
+                return -1;
+            }
+        }
+        else
+        {
+            *dst++ = *src++;
+        }
+    }
+
+    *dst = '\0';
+    return 0;
+}
+
 /**
  * Initialize HTTP request structure
  */

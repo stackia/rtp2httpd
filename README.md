@@ -276,6 +276,7 @@ rtp2httpd [选项]
 FCC 快速换台：
   -n, --fcc-nat-traversal <0/1/2>  FCC NAT 穿透模式
                                   0=禁用, 1=打洞 (已废弃，不要用), 2=NAT-PMP (默认: 0)
+  -P, --fcc-listen-port-range <起始[-结束]>  FCC UDP 监听端口范围 (默认: 随机端口)
 
 服务控制：
   -d, --daemon                   后台守护进程模式
@@ -290,6 +291,7 @@ FCC 快速换台：
 安全控制：
   -H, --hostname <主机名>        检查 HTTP Host 头的主机名
   -T, --r2h-token <令牌>         HTTP 请求认证令牌 (所有请求必须携带 r2h-token 查询参数)
+  -s, --status-page-path <路径>  状态页面与 API 根路径 (默认: /status)
 
 兼容性：
   -U, --noudpxy                  禁用 UDPxy 兼容模式 (禁用后只能使用 config 文件中定义的 URL)
@@ -321,6 +323,12 @@ udpxy = yes
 
 # FCC NAT 穿透模式
 fcc-nat-traversal = 0
+
+# FCC 监听媒体流端口范围（可选，格式: 起始-结束，默认随机端口）
+;fcc-listen-port-range = 40000-40100
+
+# 状态页路径（默认: /status）
+;status-page-path = /status
 
 # HTTP 请求认证令牌（可选，默认: 无）
 # 设置后，所有 HTTP 请求必须携带 r2h-token 查询参数，且值与此配置匹配

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { StatusPayload } from "../types";
 import type { ConnectionState } from "../types/ui";
-import { buildUrl } from "../lib/url";
+import { buildStatusPath, buildUrl } from "../lib/url";
 
 export function useSse(
   onPayload: (payload: StatusPayload) => void,
@@ -16,7 +16,9 @@ export function useSse(
       sourceRef.current = null;
     }
 
-    const source = new EventSource(buildUrl("/status/sse"));
+    const ssePath = buildStatusPath("/sse");
+
+    const source = new EventSource(buildUrl(ssePath));
     sourceRef.current = source;
 
     source.onopen = () => {

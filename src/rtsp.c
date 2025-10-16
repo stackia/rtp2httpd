@@ -14,6 +14,7 @@
 #include <netdb.h>
 #include <time.h>
 #include <ctype.h>
+#include <stdint.h>
 #include "rtsp.h"
 #include "rtp2httpd.h"
 #include "http.h"
@@ -55,6 +56,66 @@ static int rtsp_state_machine_advance(rtsp_session_t *session);
 static int rtsp_initiate_teardown(rtsp_session_t *session);
 static int rtsp_reconnect_for_teardown(rtsp_session_t *session);
 static void rtsp_force_cleanup(rtsp_session_t *session);
+static int rtsp_base64_encode(const uint8_t *input, size_t input_len, char *output, size_t output_size);
+static void rtsp_update_authorization_header(rtsp_session_t *session);
+
+static int rtsp_base64_encode(const uint8_t *input, size_t input_len, char *output, size_t output_size)
+{
+    static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    size_t required = 4 * ((input_len + 2) / 3);
+    size_t j = 0;
+
+    if (!input || !output)
+        return -1;
+
+    if (output_size <= required)
+        return -1;
+
+    for (size_t i = 0; i < input_len; i += 3)
+    {
+        uint32_t octet_a = input[i];
+        uint32_t octet_b = (i + 1 < input_len) ? input[i + 1] : 0;
+        uint32_t octet_c = (i + 2 < input_len) ? input[i + 2] : 0;
+        uint32_t triple = (octet_a << 16) | (octet_b << 8) | octet_c;
+
+        output[j++] = table[(triple >> 18) & 0x3F];
+        output[j++] = table[(triple >> 12) & 0x3F];
+        output[j++] = (i + 1 < input_len) ? table[(triple >> 6) & 0x3F] : '=';
+        output[j++] = (i + 2 < input_len) ? table[triple & 0x3F] : '=';
+    }
+
+    output[required] = '\0';
+    return (int)required;
+}
+
+static void rtsp_update_authorization_header(rtsp_session_t *session)
+{
+    if (!session)
+        return;
+
+    session->authorization_header[0] = '\0';
+
+    if (!session->has_basic_auth)
+        return;
+
+    char combined[RTSP_CREDENTIAL_SIZE * 2 + 2];
+    int len = snprintf(combined, sizeof(combined), "%s:%s", session->username, session->password);
+    if (len < 0 || len >= (int)sizeof(combined))
+    {
+        logger(LOG_ERROR, "RTSP: Credentials too long for Authorization header");
+        return;
+    }
+
+    char encoded[RTSP_HEADERS_BUFFER_SIZE];
+    if (rtsp_base64_encode((const uint8_t *)combined, (size_t)len, encoded, sizeof(encoded)) < 0)
+    {
+        logger(LOG_ERROR, "RTSP: Failed to base64 encode credentials");
+        return;
+    }
+
+    snprintf(session->authorization_header, sizeof(session->authorization_header),
+             "Authorization: Basic %s\r\n", encoded);
+}
 
 void rtsp_session_init(rtsp_session_t *session)
 {
@@ -151,10 +212,23 @@ static void rtsp_session_set_state(rtsp_session_t *session, rtsp_state_t new_sta
     }
 }
 
-int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const char *playseek_param, const char *user_agent)
+int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
+                          const char *playseek_param, const char *user_agent,
+                          const char *fallback_username, const char *fallback_password)
 {
     char url_copy[RTSP_URL_COPY_SIZE];
-    char *host_start, *port_start, *path_start;
+    char host_buffer[RTSP_SERVER_HOST_SIZE];
+    char decoded_user[RTSP_CREDENTIAL_SIZE];
+    char decoded_pass[RTSP_CREDENTIAL_SIZE];
+    char *authority;
+    char *path_start;
+    char *hostport;
+    char *userinfo;
+    char *port_str = NULL;
+    char fallback_user_copy[RTSP_CREDENTIAL_SIZE];
+    char fallback_pass_copy[RTSP_CREDENTIAL_SIZE];
+    const char *fallback_user_source = NULL;
+    const char *fallback_pass_source = NULL;
     int tz_offset_seconds = 0;
     char playseek_utc[256] = {0}; /* Buffer for UTC-converted playseek parameter */
 
@@ -178,6 +252,48 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
     strncpy(session->server_url, rtsp_url, sizeof(session->server_url) - 1);
     session->server_url[sizeof(session->server_url) - 1] = '\0';
 
+    if (fallback_username)
+    {
+        strncpy(fallback_user_copy, fallback_username, sizeof(fallback_user_copy) - 1);
+        fallback_user_copy[sizeof(fallback_user_copy) - 1] = '\0';
+        fallback_user_source = fallback_user_copy;
+
+        if (fallback_password)
+        {
+            strncpy(fallback_pass_copy, fallback_password, sizeof(fallback_pass_copy) - 1);
+            fallback_pass_copy[sizeof(fallback_pass_copy) - 1] = '\0';
+            fallback_pass_source = fallback_pass_copy;
+        }
+        else
+        {
+            fallback_pass_copy[0] = '\0';
+            fallback_pass_source = fallback_pass_copy;
+        }
+    }
+
+    session->has_basic_auth = 0;
+    session->username[0] = '\0';
+    session->password[0] = '\0';
+    session->authorization_header[0] = '\0';
+
+    if (fallback_user_source)
+    {
+        strncpy(session->username, fallback_user_source, sizeof(session->username) - 1);
+        session->username[sizeof(session->username) - 1] = '\0';
+
+        if (fallback_pass_source)
+        {
+            strncpy(session->password, fallback_pass_source, sizeof(session->password) - 1);
+            session->password[sizeof(session->password) - 1] = '\0';
+        }
+        else
+        {
+            session->password[0] = '\0';
+        }
+
+        session->has_basic_auth = 1;
+    }
+
     /* Parse rtsp://host:port/path?query format */
     if (strncmp(url_copy, "rtsp://", 7) != 0)
     {
@@ -185,57 +301,147 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
         return -1;
     }
 
-    host_start = url_copy + 7;
-
-    /* Check if there's anything after rtsp:// */
-    if (*host_start == '\0')
+    authority = url_copy + 7;
+    if (*authority == '\0')
     {
         logger(LOG_ERROR, "RTSP: No hostname specified in URL");
         return -1;
     }
 
-    /* Find port separator */
-    port_start = strchr(host_start, ':');
-    path_start = strchr(host_start, '/');
-
-    /* Extract hostname and port */
-    if (port_start && (!path_start || port_start < path_start))
+    path_start = strchr(authority, '/');
+    if (path_start)
     {
-        /* Port specified */
-        size_t host_len = port_start - host_start;
-        strncpy(session->server_host, host_start, min(host_len, sizeof(session->server_host) - 1));
-        session->server_host[min(host_len, sizeof(session->server_host) - 1)] = '\0';
+        *path_start = '\0';
+    }
 
-        /* Extract port number */
-        if (path_start)
+    userinfo = NULL;
+    hostport = authority;
+    char *at_sign = strrchr(authority, '@');
+    if (at_sign)
+    {
+        *at_sign = '\0';
+        userinfo = authority;
+        hostport = at_sign + 1;
+        if (*hostport == '\0')
         {
-            /* Port with path: extract port between : and / */
-            size_t port_len = path_start - (port_start + 1);
-            char port_str[RTSP_PORT_STRING_SIZE];
-            strncpy(port_str, port_start + 1, min(port_len, sizeof(port_str) - 1));
-            port_str[min(port_len, sizeof(port_str) - 1)] = '\0';
-            session->server_port = atoi(port_str);
-        }
-        else
-        {
-            /* Port without path: use everything after : */
-            session->server_port = atoi(port_start + 1);
+            logger(LOG_ERROR, "RTSP: Host missing after credentials in URL");
+            return -1;
         }
     }
-    else if (path_start)
+
+    if (hostport[0] == '\0')
     {
-        /* No port, default to 554 */
-        size_t host_len = path_start - host_start;
-        strncpy(session->server_host, host_start, min(host_len, sizeof(session->server_host) - 1));
-        session->server_host[min(host_len, sizeof(session->server_host) - 1)] = '\0';
-        session->server_port = 554;
+        logger(LOG_ERROR, "RTSP: Missing host in URL");
+        return -1;
+    }
+
+    if (hostport[0] == '[')
+    {
+        char *closing = strchr(hostport, ']');
+        if (!closing)
+        {
+            logger(LOG_ERROR, "RTSP: Invalid IPv6 literal in URL");
+            return -1;
+        }
+        size_t host_len = (size_t)(closing - hostport - 1);
+        if (host_len >= sizeof(host_buffer))
+        {
+            logger(LOG_ERROR, "RTSP: Hostname too long");
+            return -1;
+        }
+        memcpy(host_buffer, hostport + 1, host_len);
+        host_buffer[host_len] = '\0';
+
+        if (*(closing + 1) == ':')
+        {
+            port_str = closing + 2;
+        }
+        hostport = host_buffer;
     }
     else
     {
-        /* No path, just hostname */
-        strncpy(session->server_host, host_start, sizeof(session->server_host) - 1);
-        session->server_host[sizeof(session->server_host) - 1] = '\0';
+        char *colon = strrchr(hostport, ':');
+        if (colon)
+        {
+            *colon = '\0';
+            port_str = colon + 1;
+        }
+    }
+
+    if (strlen(hostport) >= sizeof(session->server_host))
+    {
+        logger(LOG_ERROR, "RTSP: Hostname too long");
+        return -1;
+    }
+    strncpy(session->server_host, hostport, sizeof(session->server_host) - 1);
+    session->server_host[sizeof(session->server_host) - 1] = '\0';
+
+    if (port_str && *port_str)
+    {
+        session->server_port = atoi(port_str);
+    }
+    else
+    {
         session->server_port = 554;
+    }
+
+    if (userinfo)
+    {
+        char *password_part = strchr(userinfo, ':');
+        char *user_part = userinfo;
+        char *pass_part = NULL;
+
+        if (password_part)
+        {
+            *password_part = '\0';
+            pass_part = password_part + 1;
+        }
+
+        if (http_url_decode(user_part) != 0)
+        {
+            logger(LOG_ERROR, "RTSP: Failed to decode username in URL");
+            return -1;
+        }
+        if (strlen(user_part) >= sizeof(decoded_user))
+        {
+            logger(LOG_ERROR, "RTSP: Decoded username too long");
+            return -1;
+        }
+        strncpy(decoded_user, user_part, sizeof(decoded_user) - 1);
+        decoded_user[sizeof(decoded_user) - 1] = '\0';
+
+        if (pass_part)
+        {
+            if (http_url_decode(pass_part) != 0)
+            {
+                logger(LOG_ERROR, "RTSP: Failed to decode password in URL");
+                return -1;
+            }
+            if (strlen(pass_part) >= sizeof(decoded_pass))
+            {
+                logger(LOG_ERROR, "RTSP: Decoded password too long");
+                return -1;
+            }
+            strncpy(decoded_pass, pass_part, sizeof(decoded_pass) - 1);
+            decoded_pass[sizeof(decoded_pass) - 1] = '\0';
+        }
+        else
+        {
+            decoded_pass[0] = '\0';
+        }
+
+        strncpy(session->username, decoded_user, sizeof(session->username) - 1);
+        session->username[sizeof(session->username) - 1] = '\0';
+        strncpy(session->password, decoded_pass, sizeof(session->password) - 1);
+        session->password[sizeof(session->password) - 1] = '\0';
+        session->has_basic_auth = 1;
+    }
+
+    rtsp_update_authorization_header(session);
+
+    if (path_start)
+    {
+        *path_start = '/';
     }
 
     /* Extract path and query string (playseek already removed by http.c) */
@@ -683,17 +889,22 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events)
  */
 static int rtsp_prepare_request(rtsp_session_t *session, const char *method, const char *extra_headers)
 {
+    const char *auth_header = session->authorization_header[0] ? session->authorization_header : "";
+    const char *extra = extra_headers ? extra_headers : "";
+
     /* Build RTSP request */
     int len = snprintf(session->pending_request, sizeof(session->pending_request),
                        "%s %s %s\r\n"
                        "CSeq: %u\r\n"
                        "User-Agent: %s\r\n"
                        "%s"
+                       "%s"
                        "\r\n",
                        method, session->server_url, RTSP_VERSION,
                        session->cseq++,
                        USER_AGENT,
-                       extra_headers ? extra_headers : "");
+                       auth_header,
+                       extra);
 
     if (len < 0 || len >= (int)sizeof(session->pending_request))
     {
@@ -2022,8 +2233,12 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location)
         session->socket = -1;
     }
 
+    const char *redirect_username = session->has_basic_auth ? session->username : NULL;
+    const char *redirect_password = session->has_basic_auth ? session->password : NULL;
+
     /* Parse new URL and update session */
-    if (rtsp_parse_server_url(session, location, NULL, NULL) < 0)
+    if (rtsp_parse_server_url(session, location, NULL, NULL,
+                              redirect_username, redirect_password) < 0)
     {
         logger(LOG_ERROR, "RTSP: Failed to parse redirect URL");
         return -1;

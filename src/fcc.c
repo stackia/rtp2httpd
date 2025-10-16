@@ -38,6 +38,53 @@ static int fcc_send_term_packet(fcc_session_t *fcc, service_t *service,
                                 uint16_t seqn, const char *reason);
 static int fcc_send_termination_message(stream_context_t *ctx, uint16_t mcast_seqn);
 
+static int fcc_bind_socket_with_range(int sock, struct sockaddr_in *sin)
+{
+    if (!sin)
+        return -1;
+
+    if (config.fcc_listen_port_min <= 0 || config.fcc_listen_port_max <= 0)
+    {
+        sin->sin_port = 0;
+        return bind(sock, (struct sockaddr *)sin, sizeof(*sin));
+    }
+
+    int min_port = config.fcc_listen_port_min;
+    int max_port = config.fcc_listen_port_max;
+    if (max_port < min_port)
+    {
+        int tmp = min_port;
+        min_port = max_port;
+        max_port = tmp;
+    }
+
+    int range = max_port - min_port + 1;
+    if (range <= 0)
+        range = 1;
+
+    int start_offset = (int)(get_time_ms() % range);
+
+    for (int i = 0; i < range; i++)
+    {
+        int port = min_port + ((start_offset + i) % range);
+        sin->sin_port = htons((uint16_t)port);
+        if (bind(sock, (struct sockaddr *)sin, sizeof(*sin)) == 0)
+        {
+            logger(LOG_DEBUG, "FCC: Bound client socket to port %d", port);
+            return 0;
+        }
+
+        if (errno != EADDRINUSE && errno != EACCES)
+        {
+            logger(LOG_DEBUG, "FCC: Failed to bind port %d: %s", port, strerror(errno));
+        }
+    }
+
+    logger(LOG_ERROR, "FCC: Unable to bind socket within configured port range %d-%d",
+           min_port, max_port);
+    return -1;
+}
+
 static uint8_t *build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client_nport)
 {
     struct sockaddr_in *maddr_sin = (struct sockaddr_in *)
@@ -361,14 +408,12 @@ int fcc_initialize_and_request(stream_context_t *ctx)
         upstream_if = &config.upstream_interface_unicast;
         bind_to_upstream_interface(fcc->fcc_sock, upstream_if);
 
-        /* Bind to any available port */
+        /* Bind to configured or ephemeral port */
         sin.sin_family = AF_INET;
         sin.sin_addr.s_addr = INADDR_ANY;
-        sin.sin_port = 0;
-        r = bind(fcc->fcc_sock, (struct sockaddr *)&sin, sizeof(sin));
-        if (r)
+        if (fcc_bind_socket_with_range(fcc->fcc_sock, &sin) != 0)
         {
-            logger(LOG_ERROR, "FCC: Cannot bind socket: %s", strerror(errno));
+            logger(LOG_ERROR, "FCC: Cannot bind socket within configured range");
             return -1;
         }
 
