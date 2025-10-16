@@ -40,9 +40,17 @@ start_instance() {
         append_arg "$cfg" workers "--workers"
         append_arg "$cfg" buffer_pool_max_size "--buffer-pool-max-size"
         append_arg "$cfg" hostname "--hostname"
+        append_arg "$cfg" status_page_path "--status-page-path"
         append_arg "$cfg" r2h_token "--r2h-token"
-        append_arg "$cfg" fcc_nat_traversal "--fcc-nat-traversal"
         append_arg "$cfg" mcast_rejoin_interval "--mcast-rejoin-interval"
+        append_arg "$cfg" fcc_nat_traversal "--fcc-nat-traversal"
+        append_arg "$cfg" fcc_listen_port_range "--fcc-listen-port-range"
+        append_arg "$cfg" ffmpeg_path "--ffmpeg-path"
+        append_arg "$cfg" ffmpeg_args "--ffmpeg-args"
+
+        # Handle video_snapshot flag
+        config_get_bool aux "$cfg" 'video_snapshot' '0'
+        [ "$aux" = 1 ] && procd_append_param command "--video-snapshot"
   fi
 
   config_get_bool aux "$cfg" 'respawn' '0'

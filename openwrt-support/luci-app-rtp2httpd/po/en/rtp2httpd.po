@@ -121,3 +121,33 @@ msgstr "Multicast Rejoin Interval"
 
 msgid "rtp2httpd_Multicast rejoin interval description"
 msgstr "Periodic multicast rejoin interval in seconds (0=disabled, default 0). Enable this (e.g., 120-180 seconds) if your network switches timeout multicast memberships due to missing IGMP Query messages. Only needed for problematic network environments."
+
+msgid "rtp2httpd_FCC Listen Port Range"
+msgstr "FCC Listen Port Range"
+
+msgid "rtp2httpd_FCC listen port range description"
+msgstr "Local UDP port range for FCC client sockets (format: start-end, e.g., 40000-40100). Leave empty to use random ports."
+
+msgid "rtp2httpd_Status Page Path"
+msgstr "Status Page Path"
+
+msgid "rtp2httpd_Status page path description"
+msgstr "URL path for the status page (default: /status)"
+
+msgid "rtp2httpd_Video Snapshot"
+msgstr "Video Snapshot"
+
+msgid "rtp2httpd_Video snapshot description"
+msgstr "Enable video snapshot feature. When enabled, clients can request snapshots with snapshot=1 query parameter"
+
+msgid "rtp2httpd_FFmpeg Path"
+msgstr "FFmpeg Path"
+
+msgid "rtp2httpd_FFmpeg path description"
+msgstr "Path to FFmpeg executable. Leave empty to use system PATH (default: ffmpeg)"
+
+msgid "rtp2httpd_FFmpeg Arguments"
+msgstr "FFmpeg Arguments"
+
+msgid "rtp2httpd_FFmpeg arguments description"
+msgstr "Additional FFmpeg arguments for snapshot generation. Common options: -hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)"

@@ -121,3 +121,33 @@ msgstr "组播周期性重新加入间隔"
 
 msgid "rtp2httpd_Multicast rejoin interval description"
 msgstr "周期性重新加入组播组的间隔时间（秒），0 表示禁用（默认 0）。如果您的网络交换机因缺少 IGMP Query 消息而导致组播成员关系超时，可以启用此功能（建议 120-180 秒）。仅在网络环境有问题时需要启用。"
+
+msgid "rtp2httpd_FCC Listen Port Range"
+msgstr "FCC 监听端口范围"
+
+msgid "rtp2httpd_FCC listen port range description"
+msgstr "FCC 客户端套接字使用的本地 UDP 端口范围（格式：起始端口-结束端口，例如：40000-40100）。留空则使用随机端口。"
+
+msgid "rtp2httpd_Status Page Path"
+msgstr "状态页面路径"
+
+msgid "rtp2httpd_Status page path description"
+msgstr "状态页面的 URL 路径（默认：/status）"
+
+msgid "rtp2httpd_Video Snapshot"
+msgstr "视频快照"
+
+msgid "rtp2httpd_Video snapshot description"
+msgstr "启用视频快照功能。启用后，客户端可以通过 snapshot=1 查询参数请求视频快照"
+
+msgid "rtp2httpd_FFmpeg Path"
+msgstr "FFmpeg 路径"
+
+msgid "rtp2httpd_FFmpeg path description"
+msgstr "FFmpeg 可执行文件的路径。留空则使用系统 PATH（默认：ffmpeg）"
+
+msgid "rtp2httpd_FFmpeg Arguments"
+msgstr "FFmpeg 参数"
+
+msgid "rtp2httpd_FFmpeg arguments description"
+msgstr "生成快照时传递给 FFmpeg 的额外参数。常用选项：-hwaccel none（无硬件加速）、-hwaccel vaapi（Intel GPU）"
