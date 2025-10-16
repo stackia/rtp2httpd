@@ -182,6 +182,8 @@ int main(int argc, char *argv[])
     {
       logger(LOG_ERROR, "Failed to get worker notification pipe");
     }
+    if (worker_id >= 0 && worker_id < STATUS_MAX_WORKERS)
+      status_shared->worker_stats[worker_id].worker_pid = getpid();
   }
   else
   {

@@ -33,7 +33,9 @@ TOOLCHAIN_PREFIX="${TOOLCHAIN_PREFIX:-x86_64-unknown-linux-musl}"
 TOOLCHAIN_BASE_URL="https://github.com/cross-tools/musl-cross/releases/download"
 
 # Derived paths
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${PROJECT_ROOT}"
 TOOLCHAIN_ROOT="${PROJECT_ROOT}/toolchain"
 TOOLCHAIN_DIR="${TOOLCHAIN_ROOT}/${TOOLCHAIN_PREFIX}"
 TOOLCHAIN_ARCHIVE="${TOOLCHAIN_PREFIX}.tar.xz"
@@ -131,7 +133,7 @@ echo_info "Optimization level: -Os (optimize for size)"
 # -ffunction-sections -fdata-sections: Allow linker to remove unused code
 # -Wl,--gc-sections: Remove unused sections
 # -Wl,-s: Strip symbols (smaller binary)
-../configure \
+"${PROJECT_ROOT}/configure" \
     --host=${TOOLCHAIN_PREFIX} \
     --prefix=/usr \
     --sysconfdir=/etc \

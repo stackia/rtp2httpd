@@ -17,7 +17,8 @@ typedef enum
   STATUS_501 = 3,
   STATUS_503 = 4,
   STATUS_500 = 5,
-  STATUS_401 = 6
+  STATUS_401 = 6,
+  STATUS_304 = 7
 } http_status_t;
 
 /* Content Types */
@@ -50,6 +51,7 @@ typedef struct
   char hostname[256];
   char user_agent[256];
   char accept[256];
+  char if_none_match[256];
   int x_request_snapshot;
   int is_http_1_1;
   http_parse_state_t parse_state;
