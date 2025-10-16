@@ -550,7 +550,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
               /* Client sent data or disconnected during streaming */
               char discard_buffer[1024];
               int bytes = recv(c->fd, discard_buffer, sizeof(discard_buffer), 0);
-              if (bytes <= 0)
+              if (bytes <= 0 && errno != EAGAIN)
               {
                 /* Client disconnected (bytes == 0) or error (bytes < 0) */
                 if (bytes == 0)

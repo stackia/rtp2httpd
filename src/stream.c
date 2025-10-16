@@ -112,7 +112,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
         /* Receive directly into zero-copy buffer (true zero-copy receive) */
         actualr = recvfrom(ctx->fcc.fcc_sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE,
                            0, (struct sockaddr *)&peer_addr, &slen);
-        if (actualr < 0)
+        if (actualr < 0 && errno != EAGAIN)
         {
             logger(LOG_ERROR, "FCC: Receive failed: %s", strerror(errno));
             buffer_ref_put(recv_buf);
@@ -191,7 +191,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
         /* Receive directly into zero-copy buffer (true zero-copy receive) */
         uint8_t *recv_data = (uint8_t *)recv_buf->data;
         actualr = recv(ctx->mcast_sock, recv_data, BUFFER_POOL_BUFFER_SIZE, 0);
-        if (actualr < 0)
+        if (actualr < 0 && errno != EAGAIN)
         {
             logger(LOG_DEBUG, "Multicast receive failed: %s", strerror(errno));
             buffer_ref_put(recv_buf);
@@ -252,7 +252,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
     /* Process RTSP RTP socket events (UDP mode) */
     if (ctx->rtsp.rtp_socket > 0 && fd == ctx->rtsp.rtp_socket)
     {
-        int result = rtsp_handle_rtp_data(&ctx->rtsp, ctx->conn);
+        int result = rtsp_handle_udp_rtp_data(&ctx->rtsp, ctx->conn);
         if (result < 0)
         {
             return -1; /* Error */
@@ -416,6 +416,32 @@ int stream_tick(stream_context_t *ctx, int64_t now)
                        FCC_TIMEOUT_SEC);
                 fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "Unicast timeout");
                 ctx->mcast_sock = stream_join_mcast_group(ctx);
+            }
+        }
+    }
+
+    /* Send periodic RTSP OPTIONS keepalive when using UDP transport */
+    if (ctx->rtsp.state == RTSP_STATE_PLAYING &&
+        ctx->rtsp.transport_mode == RTSP_TRANSPORT_UDP &&
+        ctx->rtsp.keepalive_interval_ms > 0 &&
+        ctx->rtsp.session_id[0] != '\0')
+    {
+        if (ctx->rtsp.last_keepalive_ms == 0)
+        {
+            ctx->rtsp.last_keepalive_ms = now;
+        }
+
+        int64_t keepalive_elapsed = now - ctx->rtsp.last_keepalive_ms;
+        if (keepalive_elapsed >= ctx->rtsp.keepalive_interval_ms)
+        {
+            int ka_status = rtsp_send_keepalive(&ctx->rtsp);
+            if (ka_status == 0)
+            {
+                ctx->rtsp.last_keepalive_ms = now;
+            }
+            else if (ka_status < 0)
+            {
+                logger(LOG_WARN, "RTSP: Failed to queue OPTIONS keepalive");
             }
         }
     }
