@@ -51,6 +51,7 @@ return view.extend({
       ]).then(function (results) {
         var port = "5140"; // default port
         var token = null;
+        var statusPath = "/status"; // default status page path
         var use_config_file = uci.get(
           "rtp2httpd",
           section_id,
@@ -58,7 +59,7 @@ return view.extend({
         );
 
         if (use_config_file === "1") {
-          // Parse port and token from config file content
+          // Parse port, token and status-page-path from config file content
           var configContent = results[1];
           var portMatch = configContent.match(/^\s*\*\s+(\d+)\s*$/m);
           if (!portMatch) {
@@ -69,18 +70,34 @@ return view.extend({
             port = portMatch[1];
           }
           // Parse r2h-token from config file
-          var tokenMatch = configContent.match(/^\s*r2h-token\s+(.+?)\s*$/m);
+          var tokenMatch = configContent.match(
+            /^\s*r2h-token\s*=?\s*(.+?)\s*$/m
+          );
           if (tokenMatch && tokenMatch[1]) {
             token = tokenMatch[1];
           }
+          // Parse status-page-path from config file
+          var statusPathMatch = configContent.match(
+            /^\s*status-page-path\s*=?\s*(.+?)\s*$/m
+          );
+          if (statusPathMatch && statusPathMatch[1]) {
+            statusPath = statusPathMatch[1];
+          }
         } else {
-          // Get port and token from UCI config
+          // Get port, token and status_page_path from UCI config
           port = uci.get("rtp2httpd", section_id, "port") || "5140";
           token = uci.get("rtp2httpd", section_id, "r2h_token");
+          statusPath =
+            uci.get("rtp2httpd", section_id, "status_page_path") || "/status";
+        }
+
+        // Ensure statusPath starts with /
+        if (statusPath && !statusPath.startsWith("/")) {
+          statusPath = "/" + statusPath;
         }
 
         var statusUrl =
-          "http://" + window.location.hostname + ":" + port + "/status";
+          "http://" + window.location.hostname + ":" + port + statusPath;
         if (token) {
           statusUrl += "?r2h-token=" + encodeURIComponent(token);
         }
@@ -207,11 +224,30 @@ return view.extend({
 
     o = s.option(
       form.Value,
+      "status_page_path",
+      _("rtp2httpd_Status Page Path"),
+      _("rtp2httpd_Status page path description")
+    );
+    o.placeholder = "/status";
+    o.depends("use_config_file", "0");
+
+    o = s.option(
+      form.Value,
       "r2h_token",
       _("rtp2httpd_R2H Token"),
       _("rtp2httpd_Authentication token for HTTP requests")
     );
     o.password = true;
+    o.depends("use_config_file", "0");
+
+    o = s.option(
+      form.Value,
+      "mcast_rejoin_interval",
+      _("rtp2httpd_Multicast Rejoin Interval"),
+      _("rtp2httpd_Multicast rejoin interval description")
+    );
+    o.datatype = "range(0, 86400)";
+    o.placeholder = "0";
     o.depends("use_config_file", "0");
 
     o = s.option(
@@ -228,12 +264,38 @@ return view.extend({
 
     o = s.option(
       form.Value,
-      "mcast_rejoin_interval",
-      _("rtp2httpd_Multicast Rejoin Interval"),
-      _("rtp2httpd_Multicast rejoin interval description")
+      "fcc_listen_port_range",
+      _("rtp2httpd_FCC Listen Port Range"),
+      _("rtp2httpd_FCC listen port range description")
     );
-    o.datatype = "range(0, 86400)";
-    o.placeholder = "0";
+    o.placeholder = "40000-40100";
+    o.depends("use_config_file", "0");
+
+    o = s.option(
+      form.Flag,
+      "video_snapshot",
+      _("rtp2httpd_Video Snapshot"),
+      _("rtp2httpd_Video snapshot description")
+    );
+    o.default = "0";
+    o.depends("use_config_file", "0");
+
+    o = s.option(
+      form.Value,
+      "ffmpeg_path",
+      _("rtp2httpd_FFmpeg Path"),
+      _("rtp2httpd_FFmpeg path description")
+    );
+    o.placeholder = "ffmpeg";
+    o.depends("use_config_file", "0");
+
+    o = s.option(
+      form.Value,
+      "ffmpeg_args",
+      _("rtp2httpd_FFmpeg Arguments"),
+      _("rtp2httpd_FFmpeg arguments description")
+    );
+    o.placeholder = "-hwaccel none";
     o.depends("use_config_file", "0");
 
     return m.render();
