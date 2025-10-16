@@ -20,6 +20,9 @@ export interface PoolStats {
 export interface WorkerEntry {
   id: number;
   pid: number;
+  activeClients: number;
+  totalBandwidth: number;
+  totalBytes: number;
   send: SendStats;
   pool: PoolStats;
   controlPool: PoolStats;
@@ -102,10 +105,4 @@ export interface ClientRow extends ClientEntry {
   connectionKey: string;
   baseKey: string;
   firstSeen: number;
-}
-
-export interface WorkerSummary extends WorkerEntry {
-  activeClients: number;
-  totalBandwidth: number;
-  totalBytes: number;
 }

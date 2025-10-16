@@ -285,6 +285,7 @@ int status_register_client(struct sockaddr_storage *client_addr, socklen_t addr_
       memset(&status_shared->clients[i], 0, sizeof(client_stats_t));
       status_shared->clients[i].active = 1;
       status_shared->clients[i].worker_pid = getpid(); /* Store actual worker PID */
+      status_shared->clients[i].worker_index = worker_id;
       status_shared->clients[i].connect_time = get_realtime_ms();
       status_shared->clients[i].disconnect_requested = 0;
 
@@ -346,13 +347,20 @@ void status_unregister_client(int status_index)
   if (!status_shared->clients[status_index].active)
     return;
 
-  /* Accumulate this client's bytes_sent to global total before unregistering
-   * This ensures total_bytes_sent persists even after client disconnects */
-  status_shared->total_bytes_sent += status_shared->clients[status_index].bytes_sent;
+  client_stats_t *client = &status_shared->clients[status_index];
 
-  status_shared->clients[status_index].active = 0;
-  status_shared->clients[status_index].state = CLIENT_STATE_DISCONNECTED;
-  status_shared->clients[status_index].disconnect_requested = 0;
+  /* Accumulate this client's bytes_sent to global total before unregistering */
+  status_shared->total_bytes_sent_cumulative += client->bytes_sent;
+
+  if (client->worker_index >= 0 && client->worker_index < STATUS_MAX_WORKERS)
+  {
+    status_shared->worker_stats[client->worker_index].client_bytes_cumulative += client->bytes_sent;
+  }
+
+  client->active = 0;
+  client->state = CLIENT_STATE_DISCONNECTED;
+  client->disconnect_requested = 0;
+  client->worker_index = -1;
   status_shared->total_clients--;
 
   /* Trigger event notification for client disconnect */
@@ -583,6 +591,13 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
   uint64_t total_bytes = 0;
   uint32_t total_bw = 0;
   int streams_count = 0;
+  uint64_t worker_active_bytes[STATUS_MAX_WORKERS];
+  uint64_t worker_bandwidth_sum[STATUS_MAX_WORKERS];
+  uint32_t worker_active_clients[STATUS_MAX_WORKERS];
+
+  memset(worker_active_bytes, 0, sizeof(worker_active_bytes));
+  memset(worker_bandwidth_sum, 0, sizeof(worker_bandwidth_sum));
+  memset(worker_active_clients, 0, sizeof(worker_active_clients));
 
   int64_t current_time = get_realtime_ms();
   int64_t uptime_ms = current_time - status_shared->server_start_time;
@@ -630,63 +645,25 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
       streams_count++;
       total_bytes += status_shared->clients[i].bytes_sent;
       total_bw += status_shared->clients[i].current_bandwidth;
+
+      int worker_index = status_shared->clients[i].worker_index;
+      if (worker_index >= 0 && worker_index < STATUS_MAX_WORKERS)
+      {
+        worker_active_clients[worker_index]++;
+        worker_active_bytes[worker_index] += status_shared->clients[i].bytes_sent;
+        worker_bandwidth_sum[worker_index] += status_shared->clients[i].current_bandwidth;
+      }
     }
   }
 
   /* Close clients array and add computed totals
    * total_bytes_sent = accumulated bytes from disconnected clients + current active clients */
-  uint64_t cumulative_total_bytes = status_shared->total_bytes_sent + total_bytes;
+  uint64_t total_bytes_sent = status_shared->total_bytes_sent_cumulative + total_bytes;
   len += snprintf(buffer + len, buffer_capacity - (size_t)len,
                   "],\"totalClients\":%d,\"totalBytesSent\":%llu,\"totalBandwidth\":%u",
                   streams_count,
-                  (unsigned long long)cumulative_total_bytes,
+                  (unsigned long long)total_bytes_sent,
                   total_bw);
-
-  /* Get aggregated worker statistics from shared memory */
-  worker_stats_t stats;
-  status_get_worker_stats(&stats);
-
-  /* Add buffer pool statistics (aggregated from all workers) */
-  uint64_t pool_total = stats.pool_total_buffers;
-  uint64_t pool_free = stats.pool_free_buffers;
-  uint64_t pool_used = pool_total > pool_free ? pool_total - pool_free : 0;
-  len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                  ",\"pool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,"
-                  "\"expansions\":%llu,\"exhaustions\":%llu,\"utilization\":%.1f}",
-                  (unsigned long long)pool_total,
-                  (unsigned long long)pool_free,
-                  (unsigned long long)pool_used,
-                  (unsigned long long)stats.pool_max_buffers,
-                  (unsigned long long)stats.pool_expansions,
-                  (unsigned long long)stats.pool_exhaustions,
-                  pool_total > 0 ? (100.0 * pool_used / pool_total) : 0.0);
-
-  uint64_t control_total = stats.control_pool_total_buffers;
-  uint64_t control_free = stats.control_pool_free_buffers;
-  uint64_t control_used = control_total > control_free ? control_total - control_free : 0;
-  len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                  ",\"controlPool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,"
-                  "\"expansions\":%llu,\"exhaustions\":%llu,\"utilization\":%.1f}",
-                  (unsigned long long)control_total,
-                  (unsigned long long)control_free,
-                  (unsigned long long)control_used,
-                  (unsigned long long)stats.control_pool_max_buffers,
-                  (unsigned long long)stats.control_pool_expansions,
-                  (unsigned long long)stats.control_pool_exhaustions,
-                  control_total > 0 ? (100.0 * control_used / control_total) : 0.0);
-
-  /* Add zero-copy send statistics */
-  len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                  ",\"send\":{\"total\":%llu,"
-                  "\"copied\":%llu,"
-                  "\"eagain\":%llu,\"enobufs\":%llu,"
-                  "\"batch\":%llu,\"timeoutFlush\":%llu}",
-                  (unsigned long long)stats.total_sends,
-                  (unsigned long long)stats.total_copied,
-                  (unsigned long long)stats.eagain_count,
-                  (unsigned long long)stats.enobufs_count,
-                  (unsigned long long)stats.batch_sends,
-                  (unsigned long long)stats.timeout_flushes);
 
   /* Add per-worker breakdown */
   len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",\"workers\":[");
@@ -704,11 +681,20 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
     uint64_t w_ctrl_total = ws->control_pool_total_buffers;
     uint64_t w_ctrl_free = ws->control_pool_free_buffers;
     uint64_t w_ctrl_used = w_ctrl_total > w_ctrl_free ? w_ctrl_total - w_ctrl_free : 0;
+    uint32_t w_active = worker_active_clients[i];
+    uint64_t w_bandwidth = worker_bandwidth_sum[i];
+    uint64_t w_total_bytes = ws->client_bytes_cumulative + worker_active_bytes[i];
 
     len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                    "{\"id\":%d,\"pid\":%d,\"send\":{\"total\":%llu,\"completions\":%llu,\"copied\":%llu,\"eagain\":%llu,\"enobufs\":%llu,\"batch\":%llu,\"timeoutFlush\":%llu},\"pool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,\"utilization\":%.1f},\"controlPool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,\"utilization\":%.1f}}",
+                    "{\"id\":%d,\"pid\":%d,\"activeClients\":%u,\"totalBandwidth\":%llu,\"totalBytes\":%llu,"
+                    "\"send\":{\"total\":%llu,\"completions\":%llu,\"copied\":%llu,\"eagain\":%llu,\"enobufs\":%llu,\"batch\":%llu,\"timeoutFlush\":%llu},"
+                    "\"pool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,\"utilization\":%.1f},"
+                    "\"controlPool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,\"utilization\":%.1f}}",
                     i,
                     (int)ws->worker_pid,
+                    (unsigned int)w_active,
+                    (unsigned long long)w_bandwidth,
+                    (unsigned long long)w_total_bytes,
                     (unsigned long long)ws->total_sends,
                     (unsigned long long)ws->total_completions,
                     (unsigned long long)ws->total_copied,
@@ -1188,47 +1174,4 @@ int status_handle_sse_heartbeat(connection_t *c, int64_t now)
   c->next_sse_ts = now + 1000;
 
   return 0;
-}
-
-/**
- * Get aggregated worker statistics from all workers
- * This function aggregates per-worker statistics from shared memory
- */
-void status_get_worker_stats(worker_stats_t *stats)
-{
-  if (!stats)
-    return;
-
-  memset(stats, 0, sizeof(*stats));
-
-  /* Aggregate statistics from all workers */
-  if (status_shared)
-  {
-    for (int i = 0; i < config.workers && i < STATUS_MAX_WORKERS; i++)
-    {
-      /* Zero-copy send statistics */
-      stats->total_sends += status_shared->worker_stats[i].total_sends;
-      stats->total_completions += status_shared->worker_stats[i].total_completions;
-      stats->total_copied += status_shared->worker_stats[i].total_copied;
-      stats->eagain_count += status_shared->worker_stats[i].eagain_count;
-      stats->enobufs_count += status_shared->worker_stats[i].enobufs_count;
-      stats->batch_sends += status_shared->worker_stats[i].batch_sends;
-      stats->timeout_flushes += status_shared->worker_stats[i].timeout_flushes;
-
-      /* Buffer pool statistics */
-      stats->pool_total_buffers += status_shared->worker_stats[i].pool_total_buffers;
-      stats->pool_free_buffers += status_shared->worker_stats[i].pool_free_buffers;
-      stats->pool_max_buffers = status_shared->worker_stats[i].pool_max_buffers;
-      stats->pool_expansions += status_shared->worker_stats[i].pool_expansions;
-      stats->pool_exhaustions += status_shared->worker_stats[i].pool_exhaustions;
-      stats->pool_shrinks += status_shared->worker_stats[i].pool_shrinks;
-
-      stats->control_pool_total_buffers += status_shared->worker_stats[i].control_pool_total_buffers;
-      stats->control_pool_free_buffers += status_shared->worker_stats[i].control_pool_free_buffers;
-      stats->control_pool_max_buffers = status_shared->worker_stats[i].control_pool_max_buffers;
-      stats->control_pool_expansions += status_shared->worker_stats[i].control_pool_expansions;
-      stats->control_pool_exhaustions += status_shared->worker_stats[i].control_pool_exhaustions;
-      stats->control_pool_shrinks += status_shared->worker_stats[i].control_pool_shrinks;
-    }
-  }
 }

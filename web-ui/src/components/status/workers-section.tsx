@@ -2,14 +2,14 @@ import type { Locale } from "../../i18n";
 import { useTranslation } from "../../hooks/use-translation";
 import { formatBandwidth, formatBytes } from "../../lib/format";
 import { cn } from "../../lib/utils";
-import type { WorkerSummary } from "../../types";
+import type { PoolStats, WorkerEntry } from "../../types";
 import { Badge } from "../ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Separator } from "../ui/separator";
 import { Progress } from "../ui/progress";
 
 interface WorkersSectionProps {
-  workers: WorkerSummary[];
+  workers: WorkerEntry[];
   locale: Locale;
 }
 
@@ -113,7 +113,7 @@ export function WorkersSection({ workers, locale }: WorkersSectionProps) {
 
 interface PoolCardProps {
   title: string;
-  pool: WorkerSummary["pool"];
+  pool: PoolStats;
   locale: Locale;
 }
 

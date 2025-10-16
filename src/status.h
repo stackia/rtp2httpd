@@ -65,6 +65,7 @@ typedef struct
 {
   int active;                        /* 1 if slot is active, 0 if free */
   pid_t worker_pid;                  /* Actual worker thread/process PID */
+  int worker_index;                  /* Worker index (0-based, matches worker_id) */
   int64_t connect_time;              /* Connection timestamp in milliseconds */
   char client_addr[64];              /* Client IP address */
   char client_port[16];              /* Client port */
@@ -101,6 +102,9 @@ typedef struct
 {
   pid_t worker_pid; /* Worker process PID */
 
+  /* Client traffic statistics */
+  uint64_t client_bytes_cumulative; /* Bytes sent to clients that have disconnected */
+
   /* Zero-copy send statistics */
   uint64_t total_sends;       /* Total number of sendmsg() calls */
   uint64_t total_completions; /* Total MSG_ZEROCOPY completions */
@@ -132,7 +136,7 @@ typedef struct
 {
   /* Global statistics */
   int total_clients;
-  uint64_t total_bytes_sent;
+  uint64_t total_bytes_sent_cumulative; /* Bytes sent to clients that have disconnected */
   uint32_t total_bandwidth;
   int64_t server_start_time; /* Server start time in milliseconds */
 
@@ -323,12 +327,5 @@ int status_handle_sse_notification(connection_t *conn_head);
  * @return 0 if processed, -1 if not needed
  */
 int status_handle_sse_heartbeat(connection_t *c, int64_t now);
-
-/**
- * Get aggregated worker statistics from all workers
- * This function aggregates per-worker statistics from shared memory
- * @param stats Output: pointer to worker_stats_t structure to fill
- */
-void status_get_worker_stats(worker_stats_t *stats);
 
 #endif /* __STATUS_H__ */
