@@ -393,7 +393,7 @@ rtsp2    RTSP rtsp://10.0.0.50:8554/live/channel1?auth=token123
 
 ### FCC 服务器获取方法
 
-可以 [先看看这里](https://github.com/stackia/rtp2httpd/issues/5)，也许有网友分享过当地的 FCC 服务器地址。否则就需要从 IPTV 机顶盒抓包获取。
+可以 [先看看这里](./cn-fcc-collection.md)，尝试能否找到自己本地可用的地址。否则就需要从 IPTV 机顶盒抓包获取。
 
 1. **抓包方法**：使用 Wireshark 等工具抓取当地机顶盒网络包
 
