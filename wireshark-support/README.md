@@ -6,7 +6,7 @@
 
 ### 1. 安装插件
 
-将 `fcc_dissector.lua` 文件复制到 Wireshark 插件目录：
+将 [fcc_dissector.lua](./fcc_dissector.lua) 文件复制到 Wireshark 插件目录：
 
 **Linux / macOS:**
 
