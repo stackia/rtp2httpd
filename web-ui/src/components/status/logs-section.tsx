@@ -82,13 +82,11 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
             {logs.map((log) => (
               <div
                 key={`${log.timestamp}-${log.message}`}
-                className="flex gap-3 rounded-lg border border-transparent bg-card/40 p-3 transition hover:border-border/60"
+                className="rounded-lg border border-transparent bg-card/40 p-3 transition hover:border-border/60 text-sm text-card-foreground whitespace-pre-wrap"
               >
-                <span className="w-24 shrink-0 text-sm text-muted-foreground">
-                  {new Date(log.timestamp).toLocaleTimeString()}
-                </span>
-                <span className="text-sm font-semibold uppercase tracking-wide text-primary">{log.levelName}</span>
-                <span className="flex-1 text-sm text-card-foreground whitespace-pre">{log.message}</span>
+                <span className="text-muted-foreground">{new Date(log.timestamp).toLocaleTimeString()}</span>{" "}
+                <span className="font-semibold uppercase tracking-wide text-primary">{log.levelName}</span>{" "}
+                {log.message}
               </div>
             ))}
           </div>
