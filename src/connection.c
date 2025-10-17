@@ -717,13 +717,14 @@ int connection_route_and_start(connection_t *c)
   }
 
   /* Check if this is a snapshot request (X-Request-Snapshot, Accept: image/jpeg, or snapshot=1) */
+  /* 1 = snapshot=1, 2 = X-Request-Snapshot or Accept: image/jpeg */
   int is_snapshot_request = 0;
 
   if (config.video_snapshot)
   {
     if (c->http_req.x_request_snapshot)
     {
-      is_snapshot_request = 1;
+      is_snapshot_request = 2;
       logger(LOG_INFO, "Snapshot request detected via X-Request-Snapshot header for URL: %s", c->http_req.url);
     }
 
@@ -732,7 +733,7 @@ int connection_route_and_start(connection_t *c)
       /* Check if Accept header contains "image/jpeg" */
       if (strstr(c->http_req.accept, "image/jpeg") != NULL)
       {
-        is_snapshot_request = 1;
+        is_snapshot_request = 2;
         logger(LOG_INFO, "Snapshot request detected via Accept header for URL: %s", c->http_req.url);
       }
     }
@@ -753,7 +754,7 @@ int connection_route_and_start(connection_t *c)
   }
 
   /* Register streaming client in status tracking with service URL (skip for snapshots) */
-  if (!is_snapshot_request && c->client_addr_len > 0)
+  if (c->client_addr_len > 0)
   {
     c->status_index = status_register_client(&c->client_addr, c->client_addr_len, c->http_req.url);
     if (c->status_index < 0)
@@ -773,20 +774,17 @@ int connection_route_and_start(connection_t *c)
   /* Initialize stream in unified epoll (works for both streaming and snapshot) */
   if (stream_context_init_for_worker(&c->stream, c, service, c->epfd, c->status_index, is_snapshot_request) == 0)
   {
-    if (!is_snapshot_request)
+    if (!is_snapshot_request && !c->stream_registered)
     {
-      c->buffer_class = CONNECTION_BUFFER_MEDIA;
-      if (!c->stream_registered)
-      {
-        zerocopy_register_stream_client();
-        c->stream_registered = 1;
-      }
+      zerocopy_register_stream_client();
+      c->stream_registered = 1;
     }
 
     c->streaming = 1;
     c->service = service;
     c->service_owned = owned;
     c->state = CONN_STREAMING;
+    c->buffer_class = CONNECTION_BUFFER_MEDIA;
     return 0;
   }
   else

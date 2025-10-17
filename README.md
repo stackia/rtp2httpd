@@ -420,9 +420,13 @@ rtp2httpd 支持使用 FFmpeg 来生成视频流的快照 (snapshot) 功能。�
 2. 请求 Header 加上 `Accept: image/jpeg`
 3. 请求 Header 加上 `X-Request-Snapshot: 1`
 
-当 rtp2httpd 处理快照请求时，会从视频流中截取关键帧 (I 帧) 并使用 FFmpeg 转码为 JPEG 格式返回给客户端。在未开启 `--video-snapshot` 时，快照请求将正常返回普通媒体流数据。
+当 rtp2httpd 处理快照请求时，会从视频流中截取关键帧 (I 帧) 并使用 FFmpeg 转码为 JPEG 格式返回给客户端。
 
 在搭配 FCC 使用时，通常在 0.3 秒内即可返回快照。在不使用 FCC 时，由于大多数运营商组播流是每秒发送一个 I 帧，因此快照请求最长会在 1 秒返回。
+
+> 在未开启 `--video-snapshot` 时，或者通过上面方式 2 和方式 3 请求快照但解码失败时，快照请求将正常返回普通媒体流数据。
+>
+> 播放器在集成预览图功能时，建议在请求预览图时都带上 `X-Request-Snapshot: 1`，根据响应是否包含 `Content-Type: image/jpeg` 来决定渲染 JPEG 还是尝试解码媒体流，这样可以同时兼容 rtp2httpd 和普通不支持快照能力的服务器。
 
 **不要使用 OpenWrt 官方源的 `ffmpeg` 包，它阉割了 h264 / hevc 编解码器，将导致无法解码视频流。**
 
