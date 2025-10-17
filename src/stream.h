@@ -9,6 +9,8 @@
 
 /* Multicast stream timeout (seconds) - if no data received for this duration, close connection */
 #define MCAST_TIMEOUT_SEC 1
+
+/* Snapshot timeout (seconds) - if no I-frame received for this duration, fallback to streaming */
 #define SNAPSHOT_TIMEOUT_SEC 2
 
 /* Stream processing context */

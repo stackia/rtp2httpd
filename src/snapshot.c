@@ -24,7 +24,7 @@
 #define TS_SYNC_BYTE 0x47
 #define TS_PAT_PID 0x0000
 
-/* Reserve space for PAT + PMT at the beginning of iframe_mmap */
+/* Reserve space for PAT + PMT at the beginning of idr_frame_mmap */
 #define TS_HEADER_RESERVE (2 * TS_PACKET_SIZE) /* 376 bytes */
 
 /* Default snapshot buffer capacity (1MB) */
@@ -40,10 +40,10 @@ int snapshot_init(snapshot_context_t *ctx)
 
     memset(ctx, 0, sizeof(snapshot_context_t));
 
-    /* Create tmpfs mmap file for I-frame accumulation */
-    char tmpfs_path[] = "/dev/shm/rtp2httpd_iframe_XXXXXX";
-    ctx->iframe_fd = mkstemp(tmpfs_path);
-    if (ctx->iframe_fd < 0)
+    /* Create tmpfs mmap file for IDR frame accumulation */
+    char tmpfs_path[] = "/dev/shm/rtp2httpd_idr_frame_XXXXXX";
+    ctx->idr_frame_fd = mkstemp(tmpfs_path);
+    if (ctx->idr_frame_fd < 0)
     {
         logger(LOG_ERROR, "Snapshot: Failed to create tmpfs file: %s", strerror(errno));
         return -1;
@@ -53,30 +53,31 @@ int snapshot_init(snapshot_context_t *ctx)
     unlink(tmpfs_path);
 
     /* Set buffer capacity */
-    ctx->iframe_capacity = SNAPSHOT_BUFFER_CAPACITY;
+    ctx->idr_frame_capacity = SNAPSHOT_BUFFER_CAPACITY;
 
     /* Allocate mmap buffer */
-    if (ftruncate(ctx->iframe_fd, ctx->iframe_capacity) < 0)
+    if (ftruncate(ctx->idr_frame_fd, ctx->idr_frame_capacity) < 0)
     {
         logger(LOG_ERROR, "Snapshot: Failed to truncate tmpfs file: %s", strerror(errno));
-        close(ctx->iframe_fd);
+        close(ctx->idr_frame_fd);
         return -1;
     }
 
-    ctx->iframe_mmap = mmap(NULL, ctx->iframe_capacity,
-                            PROT_READ | PROT_WRITE, MAP_SHARED,
-                            ctx->iframe_fd, 0);
-    if (ctx->iframe_mmap == MAP_FAILED)
+    ctx->idr_frame_mmap = mmap(NULL, ctx->idr_frame_capacity,
+                               PROT_READ | PROT_WRITE, MAP_SHARED,
+                               ctx->idr_frame_fd, 0);
+    if (ctx->idr_frame_mmap == MAP_FAILED)
     {
         logger(LOG_ERROR, "Snapshot: Failed to mmap tmpfs file: %s", strerror(errno));
-        close(ctx->iframe_fd);
+        close(ctx->idr_frame_fd);
         return -1;
     }
 
     ctx->enabled = 1;
-    ctx->iframe_size = 0;
-    ctx->iframe_complete = 0;
-    ctx->iframe_started = 0;
+    ctx->fallback_to_streaming = 0;
+    ctx->idr_frame_size = 0;
+    ctx->idr_frame_complete = 0;
+    ctx->idr_frame_started = 0;
     ctx->video_pid = 0;
     ctx->start_time = get_time_ms();
 
@@ -86,7 +87,7 @@ int snapshot_init(snapshot_context_t *ctx)
     ctx->pmt_pid = 0;
     ctx->ts_header_size = 0;
 
-    logger(LOG_DEBUG, "Snapshot: Initialized (%zu bytes buffer)", ctx->iframe_capacity);
+    logger(LOG_DEBUG, "Snapshot: Initialized (%zu bytes buffer)", ctx->idr_frame_capacity);
     return 0;
 }
 
@@ -98,16 +99,16 @@ void snapshot_free(snapshot_context_t *ctx)
     if (!ctx)
         return;
 
-    if (ctx->iframe_mmap && ctx->iframe_mmap != MAP_FAILED)
+    if (ctx->idr_frame_mmap && ctx->idr_frame_mmap != MAP_FAILED)
     {
-        munmap(ctx->iframe_mmap, ctx->iframe_capacity);
-        ctx->iframe_mmap = NULL;
+        munmap(ctx->idr_frame_mmap, ctx->idr_frame_capacity);
+        ctx->idr_frame_mmap = NULL;
     }
 
-    if (ctx->iframe_fd >= 0)
+    if (ctx->idr_frame_fd >= 0)
     {
-        close(ctx->iframe_fd);
-        ctx->iframe_fd = -1;
+        close(ctx->idr_frame_fd);
+        ctx->idr_frame_fd = -1;
     }
 
     ctx->enabled = 0;
@@ -191,7 +192,7 @@ static uint16_t extract_pmt_pid_from_pat(const uint8_t *pat_packet)
 }
 
 /**
- * Cache PAT or PMT packet in iframe_mmap header area
+ * Cache PAT or PMT packet in idr_frame_mmap header area
  * @param ctx Snapshot context
  * @param ts_packet TS packet to cache (188 bytes)
  * @param pid PID of the packet
@@ -204,7 +205,7 @@ static void cache_ts_header_packet(snapshot_context_t *ctx, const uint8_t *ts_pa
     /* Cache PAT (PID 0x0000) */
     if (pid == TS_PAT_PID && !ctx->has_pat)
     {
-        memcpy(ctx->iframe_mmap, ts_packet, TS_PACKET_SIZE);
+        memcpy(ctx->idr_frame_mmap, ts_packet, TS_PACKET_SIZE);
         ctx->has_pat = 1;
 
         /* Extract PMT PID from PAT */
@@ -215,7 +216,7 @@ static void cache_ts_header_packet(snapshot_context_t *ctx, const uint8_t *ts_pa
     /* Cache PMT (if we know the PMT PID) */
     else if (ctx->pmt_pid != 0 && pid == ctx->pmt_pid && !ctx->has_pmt)
     {
-        memcpy(ctx->iframe_mmap + TS_PACKET_SIZE, ts_packet, TS_PACKET_SIZE);
+        memcpy(ctx->idr_frame_mmap + TS_PACKET_SIZE, ts_packet, TS_PACKET_SIZE);
         ctx->has_pmt = 1;
 
         logger(LOG_DEBUG, "Snapshot: Cached PMT packet (PID: 0x%04x)", pid);
@@ -230,18 +231,18 @@ static void cache_ts_header_packet(snapshot_context_t *ctx, const uint8_t *ts_pa
 }
 
 /**
- * Convert I-frame to JPEG using external ffmpeg
+ * Convert IDR frame to JPEG using external ffmpeg
  * Uses existing tmpfs mmap fd for input (MPEG2-TS format) and returns new fd for JPEG output
- * @param iframe_fd File descriptor containing MPEG2-TS data with I-frame (already in tmpfs)
- * @param iframe_size MPEG2-TS data size
+ * @param idr_frame_fd File descriptor containing MPEG2-TS data with IDR frame (already in tmpfs)
+ * @param idr_frame_size MPEG2-TS data size
  * @param jpeg_fd Output: file descriptor for JPEG file (caller must close)
  * @param jpeg_size Output: JPEG file size
  * @return 0 on success, -1 on error
  */
-static int snapshot_convert_to_jpeg(int iframe_fd, size_t iframe_size,
+static int snapshot_convert_to_jpeg(int idr_frame_fd, size_t idr_frame_size,
                                     int *jpeg_fd, size_t *jpeg_size)
 {
-    if (iframe_fd < 0 || iframe_size == 0 || !jpeg_fd || !jpeg_size)
+    if (idr_frame_fd < 0 || idr_frame_size == 0 || !jpeg_fd || !jpeg_size)
         return -1;
 
     *jpeg_fd = -1;
@@ -269,7 +270,7 @@ static int snapshot_convert_to_jpeg(int iframe_fd, size_t iframe_size,
     char command[1024];
     snprintf(command, sizeof(command),
              "%s %s -loglevel error -f mpegts -i /proc/self/fd/%d -frames:v 1 -q:v 8 -f image2 -y /proc/self/fd/%d 2>&1",
-             ffmpeg_path, ffmpeg_args, iframe_fd, output_fd);
+             ffmpeg_path, ffmpeg_args, idr_frame_fd, output_fd);
 
     logger(LOG_DEBUG, "Snapshot: Executing ffmpeg: %s", command);
 
@@ -289,9 +290,15 @@ static int snapshot_convert_to_jpeg(int iframe_fd, size_t iframe_size,
 
     int status = pclose(fp);
 
+    /* Always log ffmpeg output if there's any */
+    if (error_len > 0)
+    {
+        logger(LOG_DEBUG, "Snapshot: ffmpeg output: %s", error_buf);
+    }
+
     if (status != 0)
     {
-        logger(LOG_ERROR, "Snapshot: ffmpeg failed (exit code %d): %s", status, error_buf);
+        logger(LOG_ERROR, "Snapshot: ffmpeg failed (exit code %d)", status);
         close(output_fd);
         return -1;
     }
@@ -301,6 +308,13 @@ static int snapshot_convert_to_jpeg(int iframe_fd, size_t iframe_size,
     if (fstat(output_fd, &st) < 0)
     {
         logger(LOG_ERROR, "Snapshot: Failed to stat output file: %s", strerror(errno));
+        close(output_fd);
+        return -1;
+    }
+
+    if (st.st_size == 0)
+    {
+        logger(LOG_ERROR, "Snapshot: ffmpeg produced empty JPEG file");
         close(output_fd);
         return -1;
     }
@@ -317,14 +331,14 @@ static int snapshot_convert_to_jpeg(int iframe_fd, size_t iframe_size,
 
 /**
  * Process RTP payload for snapshot mode
- * Detects and accumulates I-frame TS packets, then converts to JPEG and sends to client
+ * Detects and accumulates IDR frame TS packets, then converts to JPEG and sends to client
  */
 int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf, connection_t *conn)
 {
     if (!ctx || !ctx->enabled)
         return -1;
 
-    if (ctx->iframe_complete)
+    if (ctx->idr_frame_complete)
         return 0;
 
     /* Extract RTP payload (or use entire packet if not RTP-encapsulated) */
@@ -366,14 +380,14 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
         int has_adaptation = (ts_packet[3] & 0x20) != 0;
         int has_payload = (ts_packet[3] & 0x10) != 0;
 
-        /* Cache PAT/PMT packets before I-frame starts (stored in mmap header area) */
-        if (!ctx->iframe_started)
+        /* Cache PAT/PMT packets before IDR frame starts (stored in mmap header area) */
+        if (!ctx->idr_frame_started)
         {
             cache_ts_header_packet(ctx, ts_packet, pid);
         }
 
-        /* If we haven't found I-frame yet, check if this packet contains it */
-        if (!ctx->iframe_started)
+        /* If we haven't found IDR frame yet, check if this packet contains it */
+        if (!ctx->idr_frame_started)
         {
             if (has_payload && payload_unit_start)
             {
@@ -417,18 +431,18 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
                                             uint8_t h264_type = nal_header & 0x1F;
                                             uint8_t hevc_type = (nal_header >> 1) & 0x3F;
 
-                                            /* Check if this is an I-frame */
+                                            /* Check if this is an IDR frame */
                                             if (h264_type == 5 ||                                      /* H.264 IDR */
                                                 hevc_type == 19 || hevc_type == 20 || hevc_type == 21) /* HEVC IDR */
                                             {
-                                                /* Found I-frame! Start capturing from this packet */
-                                                ctx->iframe_started = 1;
+                                                /* Found IDR frame! Start capturing from this packet */
+                                                ctx->idr_frame_started = 1;
                                                 ctx->video_pid = pid;
 
-                                                /* Initialize iframe_size to skip PAT/PMT header area */
-                                                ctx->iframe_size = ctx->ts_header_size;
+                                                /* Initialize idr_frame_size to skip PAT/PMT header area */
+                                                ctx->idr_frame_size = ctx->ts_header_size;
 
-                                                logger(LOG_DEBUG, "Snapshot: I-frame start detected (PID: 0x%04x, header size: %zu)",
+                                                logger(LOG_DEBUG, "Snapshot: IDR frame start detected (PID: 0x%04x, header size: %zu)",
                                                        pid, ctx->ts_header_size);
                                                 break;
                                             }
@@ -442,27 +456,27 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
             }
 
             /* If still not started, skip this packet */
-            if (!ctx->iframe_started)
+            if (!ctx->idr_frame_started)
             {
                 offset += TS_PACKET_SIZE;
                 continue;
             }
 
-            /* I-frame just started - fall through to save this packet */
+            /* IDR frame just started - fall through to save this packet */
         }
 
-        /* If I-frame started, check if this packet belongs to the I-frame */
-        if (ctx->iframe_started)
+        /* If IDR frame started, check if this packet belongs to the IDR frame */
+        if (ctx->idr_frame_started)
         {
-            /* Check if this is the end of I-frame (next PES start on same PID) */
-            if (pid == ctx->video_pid && payload_unit_start && ctx->iframe_size > ctx->ts_header_size)
+            /* Check if this is the end of IDR frame (next PES start on same PID) */
+            if (pid == ctx->video_pid && payload_unit_start && ctx->idr_frame_size > ctx->ts_header_size)
             {
-                /* I-frame complete */
-                ctx->iframe_complete = 1;
+                /* IDR frame complete */
+                ctx->idr_frame_complete = 1;
 
-                size_t video_size = ctx->iframe_size - ctx->ts_header_size;
-                logger(LOG_DEBUG, "Snapshot: Complete I-frame captured (%zu bytes total, %zu header + %zu video, %zu video packets)",
-                       ctx->iframe_size, ctx->ts_header_size, video_size, video_size / TS_PACKET_SIZE);
+                size_t video_size = ctx->idr_frame_size - ctx->ts_header_size;
+                logger(LOG_DEBUG, "Snapshot: Complete IDR frame captured (%zu bytes total, %zu header + %zu video, %zu video packets)",
+                       ctx->idr_frame_size, ctx->ts_header_size, video_size, video_size / TS_PACKET_SIZE);
 
                 /* Warn if PAT/PMT not captured (ffmpeg may fail) */
                 if (!ctx->has_pat || !ctx->has_pmt)
@@ -472,19 +486,19 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
                 }
 
                 /* Truncate to actual size */
-                if (ftruncate(ctx->iframe_fd, ctx->iframe_size) < 0)
+                if (ftruncate(ctx->idr_frame_fd, ctx->idr_frame_size) < 0)
                 {
                     logger(LOG_WARN, "Snapshot: Failed to truncate mmap file: %s", strerror(errno));
                 }
 
                 /* Reset file position for ffmpeg to read from beginning */
-                lseek(ctx->iframe_fd, 0, SEEK_SET);
+                lseek(ctx->idr_frame_fd, 0, SEEK_SET);
 
                 /* Convert to JPEG and send immediately */
                 int jpeg_fd = -1;
                 size_t jpeg_size = 0;
 
-                if (snapshot_convert_to_jpeg(ctx->iframe_fd, ctx->iframe_size,
+                if (snapshot_convert_to_jpeg(ctx->idr_frame_fd, ctx->idr_frame_size,
                                              &jpeg_fd, &jpeg_size) == 0)
                 {
                     /* Send HTTP headers with Content-Length */
@@ -508,26 +522,26 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
                 else
                 {
                     /* Conversion failed */
-                    http_send_500(conn);
                     logger(LOG_ERROR, "Snapshot: JPEG conversion failed");
+                    snapshot_fallback_to_streaming(ctx, conn);
                 }
 
-                return 0; /* I-frame captured and sent */
+                return 0; /* IDR frame captured and sent */
             }
 
             /* Only accumulate packets from the video PID */
             if (pid == ctx->video_pid)
             {
                 /* Check buffer capacity */
-                if (ctx->iframe_size + TS_PACKET_SIZE > ctx->iframe_capacity)
+                if (ctx->idr_frame_size + TS_PACKET_SIZE > ctx->idr_frame_capacity)
                 {
-                    logger(LOG_WARN, "Snapshot: I-frame too large, buffer full");
+                    logger(LOG_WARN, "Snapshot: IDR frame too large, buffer full");
                     return -1;
                 }
 
                 /* Copy this TS packet */
-                memcpy(ctx->iframe_mmap + ctx->iframe_size, ts_packet, TS_PACKET_SIZE);
-                ctx->iframe_size += TS_PACKET_SIZE;
+                memcpy(ctx->idr_frame_mmap + ctx->idr_frame_size, ts_packet, TS_PACKET_SIZE);
+                ctx->idr_frame_size += TS_PACKET_SIZE;
             }
         }
 
@@ -535,4 +549,27 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
     }
 
     return 0; /* Continue accumulating */
+}
+
+void snapshot_fallback_to_streaming(snapshot_context_t *ctx, connection_t *conn)
+{
+    if (!ctx || !ctx->enabled || !conn)
+        return;
+
+    if (!ctx->fallback_to_streaming)
+    {
+        http_send_500(conn);
+        return;
+    }
+
+    logger(LOG_INFO, "Snapshot: Falling back to normal streaming");
+
+    /* Send normal streaming headers */
+    send_http_headers(conn, STATUS_200, CONTENT_MP2T, NULL);
+
+    /* Free snapshot context */
+    snapshot_free(ctx);
+
+    zerocopy_register_stream_client();
+    conn->stream_registered = 1;
 }

@@ -307,6 +307,10 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, se
             logger(LOG_ERROR, "Snapshot: Failed to initialize snapshot context");
             return -1;
         }
+        if (is_snapshot == 2) /* X-Request-Snapshot or Accept: image/jpeg */
+        {
+            ctx->snapshot.fallback_to_streaming = 1;
+        }
     }
 
     /* Initialize media path depending on service type */
@@ -456,7 +460,7 @@ int stream_tick(stream_context_t *ctx, int64_t now)
         {
             logger(LOG_WARN, "Snapshot: Timeout waiting for I-frame (%lld ms)",
                    (long long)snapshot_elapsed);
-            return -1; /* Timeout - close connection */
+            snapshot_fallback_to_streaming(&ctx->snapshot, ctx->conn);
         }
     }
 
