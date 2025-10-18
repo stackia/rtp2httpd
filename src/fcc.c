@@ -565,6 +565,8 @@ int fcc_handle_server_response(stream_context_t *ctx, uint8_t *buf, int buf_len,
                 sendto_triple(fcc->fcc_sock, NULL, 0, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
             }
 
+            /* Record start time for unicast phase (for sync wait timeout) */
+            fcc->unicast_start_time = get_time_ms();
             fcc_session_set_state(fcc, FCC_STATE_UNICAST_PENDING, "Server accepted request");
             logger(LOG_DEBUG, "FCC: Server accepted request, waiting for unicast stream");
         }
@@ -576,7 +578,7 @@ int fcc_handle_server_response(stream_context_t *ctx, uint8_t *buf, int buf_len,
 /*
  * FCC Protocol Stage 3: Handle synchronization notification (FMT 4)
  */
-int fcc_handle_sync_notification(stream_context_t *ctx)
+int fcc_handle_sync_notification(stream_context_t *ctx, int timeout_ms)
 {
     fcc_session_t *fcc = &ctx->fcc;
 
@@ -584,8 +586,15 @@ int fcc_handle_sync_notification(stream_context_t *ctx)
     if (fcc->state == FCC_STATE_MCAST_REQUESTED || fcc->state == FCC_STATE_MCAST_ACTIVE)
         return 0;
 
-    logger(LOG_DEBUG, "FCC: Received sync notification (FMT 4) - can join multicast now");
-    fcc_session_set_state(fcc, FCC_STATE_MCAST_REQUESTED, "Sync notification received");
+    if (timeout_ms)
+    {
+        logger(LOG_DEBUG, "FCC: Sync notification timeout reached (%.1f seconds) - joining multicast", timeout_ms / 1000.0);
+    }
+    else
+    {
+        logger(LOG_DEBUG, "FCC: Sync notification received - joining multicast");
+    }
+    fcc_session_set_state(fcc, FCC_STATE_MCAST_REQUESTED, timeout_ms ? "Sync notification timeout" : "Sync notification received");
 
     ctx->mcast_sock = stream_join_mcast_group(ctx);
 
