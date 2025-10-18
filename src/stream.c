@@ -154,7 +154,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
             else if (recv_data[0] == 0x84)
             {
                 /* Sync notification (FMT 4) */
-                result = fcc_handle_sync_notification(ctx);
+                result = fcc_handle_sync_notification(ctx, 0);
             }
         }
         else if (peer_addr.sin_port == ctx->fcc.media_port)
@@ -404,24 +404,55 @@ int stream_tick(stream_context_t *ctx, int64_t now)
     if (ctx->fcc.fcc_sock > 0)
     {
         int64_t elapsed_ms = now - ctx->last_fcc_data_time;
+        int timeout_ms = 0;
 
-        if (elapsed_ms >= FCC_TIMEOUT_SEC * 1000)
+        /* Different timeouts for different FCC states */
+        if (ctx->fcc.state == FCC_STATE_REQUESTED || ctx->fcc.state == FCC_STATE_UNICAST_PENDING)
         {
-            /* Timeout waiting for server response after sending request */
-            if (ctx->fcc.state == FCC_STATE_REQUESTED)
+            /* Signaling phase - waiting for server response */
+            timeout_ms = FCC_TIMEOUT_SIGNALING_MS;
+
+            if (elapsed_ms >= timeout_ms)
             {
-                logger(LOG_WARN, "FCC: Server response timeout (%d seconds), falling back to multicast",
-                       FCC_TIMEOUT_SEC);
-                fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "Request timeout");
+                logger(LOG_WARN, "FCC: Server response timeout (%d ms), falling back to multicast",
+                       FCC_TIMEOUT_SIGNALING_MS);
+                if (ctx->fcc.state == FCC_STATE_REQUESTED)
+                {
+                    fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "Signaling timeout");
+                }
+                else
+                {
+                    fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "First unicast packet timeout");
+                }
                 ctx->mcast_sock = stream_join_mcast_group(ctx);
             }
-            /* Timeout waiting for unicast packet after server accepts */
-            else if (ctx->fcc.state == FCC_STATE_UNICAST_PENDING || ctx->fcc.state == FCC_STATE_UNICAST_ACTIVE)
+        }
+        else if (ctx->fcc.state == FCC_STATE_UNICAST_ACTIVE || ctx->fcc.state == FCC_STATE_MCAST_REQUESTED)
+        {
+            /* Already receiving unicast, check for stream interruption */
+            timeout_ms = (int)(FCC_TIMEOUT_UNICAST_SEC * 1000);
+
+            if (elapsed_ms >= timeout_ms)
             {
-                logger(LOG_WARN, "FCC: Unicast stream timeout (%d seconds), falling back to multicast",
-                       FCC_TIMEOUT_SEC);
-                fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "Unicast timeout");
-                ctx->mcast_sock = stream_join_mcast_group(ctx);
+                logger(LOG_WARN, "FCC: Unicast stream interrupted (%.1f seconds), falling back to multicast",
+                       FCC_TIMEOUT_UNICAST_SEC);
+                fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE, "Unicast interrupted");
+                if (!ctx->mcast_sock)
+                {
+                    ctx->mcast_sock = stream_join_mcast_group(ctx);
+                }
+            }
+
+            /* Check if we've been waiting too long for sync notification */
+            if (ctx->fcc.state == FCC_STATE_UNICAST_ACTIVE && ctx->fcc.unicast_start_time > 0)
+            {
+                int64_t unicast_duration_ms = now - ctx->fcc.unicast_start_time;
+                int64_t sync_wait_timeout_ms = (int64_t)(FCC_TIMEOUT_SYNC_WAIT_SEC * 1000);
+
+                if (unicast_duration_ms >= sync_wait_timeout_ms)
+                {
+                    fcc_handle_sync_notification(ctx, FCC_TIMEOUT_SYNC_WAIT_SEC * 1000); /* Indicate timeout */
+                }
             }
         }
     }

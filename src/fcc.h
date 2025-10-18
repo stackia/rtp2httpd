@@ -13,7 +13,11 @@ typedef struct buffer_ref_s buffer_ref_t;
 #define FCC_PK_LEN_REQ 40
 #define FCC_PK_LEN_TERM 16
 #define FCC_MAX_REDIRECTS 5
-#define FCC_TIMEOUT_SEC 0.1
+
+/* FCC Timeout Configuration */
+#define FCC_TIMEOUT_SIGNALING_MS 80    /* Timeout for signaling phase (FCC_STATE_REQUESTED or FCC_STATE_UNICAST_PENDING) */
+#define FCC_TIMEOUT_UNICAST_SEC 1.0    /* Timeout for unicast media packets (FCC_STATE_UNICAST_ACTIVE) */
+#define FCC_TIMEOUT_SYNC_WAIT_SEC 15.0 /* Max wait time for server sync notification before joining multicast */
 
 /* Pending buffer node for zero-copy chain */
 typedef struct pending_buffer_node_s
@@ -50,7 +54,8 @@ typedef struct
     uint16_t fcc_term_seqn;
     int fcc_term_sent;
     uint16_t not_first_packet;
-    int redirect_count; /* Number of redirects followed */
+    int redirect_count;         /* Number of redirects followed */
+    int64_t unicast_start_time; /* Timestamp when unicast started (for sync wait timeout) */
 
     /* Multicast pending buffer for smooth transition - zero-copy chain */
     pending_buffer_node_t *pending_list_head;
@@ -124,9 +129,10 @@ int fcc_handle_server_response(stream_context_t *ctx, uint8_t *buf, int buf_len,
  * Stage 3: Handle synchronization notification (FMT 4)
  *
  * @param ctx Stream context
+ * @param timeout_ms If non-zero, indicates this is called due to timeout
  * @return 0 on success
  */
-int fcc_handle_sync_notification(stream_context_t *ctx);
+int fcc_handle_sync_notification(stream_context_t *ctx, int timeout_ms);
 
 /**
  * Stage 4: Handle RTP media packets from unicast stream
