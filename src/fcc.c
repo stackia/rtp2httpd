@@ -280,7 +280,6 @@ void fcc_session_cleanup(fcc_session_t *fcc, service_t *service, int epoll_fd)
     fcc->fcc_term_sent = 0;
     fcc->not_first_packet = 0;
     fcc->mcast_pbuf_last_seqn = 0;
-    fcc->mcast_pbuf_full = 0;
 
     /* Clear client address structure */
     memset(&fcc->fcc_client, 0, sizeof(fcc->fcc_client));
@@ -717,12 +716,6 @@ int fcc_handle_mcast_transition(stream_context_t *ctx, uint8_t *buf, int buf_len
         return -1;
     }
 
-    /* Skip buffering if buffer is full */
-    if (fcc->mcast_pbuf_full)
-    {
-        return 0;
-    }
-
     if (payloadlength <= 0)
     {
         return 0;
@@ -733,7 +726,6 @@ int fcc_handle_mcast_transition(stream_context_t *ctx, uint8_t *buf, int buf_len
     if (!node)
     {
         logger(LOG_ERROR, "FCC: Failed to allocate pending buffer node");
-        fcc->mcast_pbuf_full = 1;
         return 0;
     }
 

@@ -61,7 +61,6 @@ typedef struct
     pending_buffer_node_t *pending_list_head;
     pending_buffer_node_t *pending_list_tail;
     uint16_t mcast_pbuf_last_seqn;
-    int mcast_pbuf_full;
 } fcc_session_t;
 
 /*
