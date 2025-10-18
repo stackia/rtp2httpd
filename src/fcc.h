@@ -13,7 +13,7 @@ typedef struct buffer_ref_s buffer_ref_t;
 #define FCC_PK_LEN_REQ 40
 #define FCC_PK_LEN_TERM 16
 #define FCC_MAX_REDIRECTS 5
-#define FCC_TIMEOUT_SEC 1
+#define FCC_TIMEOUT_SEC 0.1
 
 /* Pending buffer node for zero-copy chain */
 typedef struct pending_buffer_node_s
