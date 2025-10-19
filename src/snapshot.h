@@ -6,6 +6,7 @@
 
 /* Forward declarations */
 typedef struct connection_s connection_t;
+typedef struct buffer_ref_s buffer_ref_t;
 
 /**
  * Snapshot context - encapsulates all state for snapshot mode
@@ -47,12 +48,12 @@ void snapshot_free(snapshot_context_t *ctx);
  * Process RTP payload for snapshot mode
  * Detects and accumulates IDR frame TS packets, then converts to JPEG and sends to client
  * @param ctx Snapshot context
- * @param recv_len Length of received packet
  * @param buf Buffer containing packet data
+ * @param recv_len Length of received packet
  * @param conn Connection
  * @return 0 on success, -1 on error
  */
-int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf, connection_t *conn);
+int snapshot_process_packet(snapshot_context_t *ctx, buffer_ref_t *buf_ref_list, connection_t *conn);
 
 /**
  * Fallback to normal streaming mode

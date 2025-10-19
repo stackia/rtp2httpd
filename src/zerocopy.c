@@ -179,50 +179,66 @@ void zerocopy_queue_cleanup(zerocopy_queue_t *queue)
     zerocopy_queue_init(queue);
 }
 
-int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref, size_t offset, size_t len)
+int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref_list)
 {
-    if (!queue || !buf_ref || len == 0)
+    if (!queue || !buf_ref_list)
         return 0;
 
-    uint8_t *base = (uint8_t *)buf_ref->data;
-    size_t buf_size = buf_ref->size;
+    buffer_ref_t *current = buf_ref_list;
+    buffer_ref_t *list_tail = NULL;
+    size_t total_bytes_added = 0;
+    size_t num_buffers_added = 0;
 
-    if (!base || offset > buf_size || len > buf_size - offset)
+    /* Process each buffer in the linked list */
+    while (current)
     {
-        logger(LOG_ERROR, "zerocopy_queue_add: Invalid buffer parameters (offset=%zu len=%zu size=%zu)",
-               offset, len, buf_size);
-        return -1;
+        uint8_t *base = (uint8_t *)current->data;
+        size_t offset = (size_t)current->data_offset;
+        size_t len = current->data_len;
+        size_t buffer_size = current->segment->parent->buffer_size;
+
+        if (!base || offset > buffer_size || len > buffer_size - offset)
+        {
+            logger(LOG_ERROR, "zerocopy_queue_add: Invalid buffer parameters (offset=%zu len=%zu size=%zu)",
+                   offset, len, buffer_size);
+            return -1;
+        }
+
+        uint8_t *data_ptr = base + offset;
+
+        /* Setup send queue fields in the buffer */
+        current->sendmsg_info.iov.iov_base = data_ptr;
+        current->sendmsg_info.iov.iov_len = len;
+        current->zerocopy_id = 0;
+
+        /* Increment reference count - queue now holds a reference */
+        buffer_ref_get(current);
+
+        total_bytes_added += len;
+        num_buffers_added++;
+        list_tail = current;
+
+        /* Note: send_next and process_next are union, so we don't need to modify the linkage */
+        current = current->send_next;
     }
 
-    uint8_t *data_ptr = base + offset;
-
-    /* No malloc needed! Use the buffer_ref directly as queue entry */
-    /* Setup send queue fields in the buffer */
-    buf_ref->type = BUFFER_TYPE_MEMORY;
-    buf_ref->iov.iov_base = data_ptr;
-    buf_ref->iov.iov_len = len;
-    buf_ref->buf_offset = offset; /* Store offset for partial buffer sends */
-    buf_ref->zerocopy_id = 0;
-    buf_ref->send_next = NULL;
-
-    /* Increment reference count - queue now holds a reference */
-    buffer_ref_get(buf_ref);
-
-    /* Add to queue */
+    /* Add the entire list to queue */
     if (queue->tail)
     {
-        queue->tail->send_next = buf_ref;
-        queue->tail = buf_ref;
+        /* Connect existing queue tail to new list head */
+        queue->tail->send_next = buf_ref_list;
+        queue->tail = list_tail;
     }
     else
     {
         /* First entry - record timestamp for batching timeout */
-        queue->head = queue->tail = buf_ref;
+        queue->head = buf_ref_list;
+        queue->tail = list_tail;
         queue->first_queued_time_us = get_time_us();
     }
 
-    queue->total_bytes += len;
-    queue->num_queued++;
+    queue->total_bytes += total_bytes_added;
+    queue->num_queued += num_buffers_added;
 
     return 0;
 }
@@ -242,10 +258,10 @@ int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd, off_t file_off
 
     /* Setup file send fields */
     buf_ref->type = BUFFER_TYPE_FILE;
-    buf_ref->file_fd = file_fd;
-    buf_ref->file_offset = file_offset;
-    buf_ref->file_size = file_size;
-    buf_ref->file_sent = 0;
+    buf_ref->fd = file_fd;
+    buf_ref->data_offset = file_offset;
+    buf_ref->data_len = file_size;
+    buf_ref->sendfile_info.sent = 0;
     buf_ref->refcount = 1;   /* Initial reference */
     buf_ref->segment = NULL; /* Not from pool */
     buf_ref->zerocopy_id = 0;
@@ -312,11 +328,11 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
     if (queue->head->type == BUFFER_TYPE_FILE)
     {
         buffer_ref_t *file_buf = queue->head;
-        size_t remaining = file_buf->file_size - file_buf->file_sent;
-        off_t offset = file_buf->file_offset + file_buf->file_sent;
+        size_t remaining = file_buf->data_len - file_buf->sendfile_info.sent;
+        off_t offset = file_buf->data_offset + file_buf->sendfile_info.sent;
 
         /* Use sendfile() for non-blocking file send */
-        ssize_t sent = sendfile(fd, file_buf->file_fd, &offset, remaining);
+        ssize_t sent = sendfile(fd, file_buf->fd, &offset, remaining);
 
         if (sent < 0)
         {
@@ -333,13 +349,13 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
         }
 
         *bytes_sent = (size_t)sent;
-        file_buf->file_sent += sent;
+        file_buf->sendfile_info.sent += sent;
 
         /* Check if file send is complete */
-        if (file_buf->file_sent >= file_buf->file_size)
+        if (file_buf->sendfile_info.sent >= file_buf->data_len)
         {
             /* File completely sent - remove from queue and cleanup */
-            size_t total_file_size = file_buf->file_size; /* Save before put */
+            size_t total_file_size = file_buf->data_len; /* Save before put */
 
             queue->head = file_buf->send_next;
             if (!queue->head)
@@ -370,9 +386,9 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
     buffer_ref_t *buf = queue->head;
     while (buf && iov_count < ZEROCOPY_MAX_IOVECS && buf->type == BUFFER_TYPE_MEMORY)
     {
-        iovecs[iov_count] = buf->iov;
+        iovecs[iov_count] = buf->sendmsg_info.iov;
         buffers[iov_count] = buf;
-        total_len += buf->iov.iov_len;
+        total_len += buf->sendmsg_info.iov.iov_len;
         iov_count++;
         buf = buf->send_next;
     }
@@ -454,11 +470,11 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
         if (current->type != BUFFER_TYPE_MEMORY)
             break;
 
-        if (current->iov.iov_len <= remaining)
+        if (current->sendmsg_info.iov.iov_len <= remaining)
         {
             /* Entire buffer sent - move to pending queue */
-            remaining -= current->iov.iov_len;
-            queue->total_bytes -= current->iov.iov_len;
+            remaining -= current->sendmsg_info.iov.iov_len;
+            queue->total_bytes -= current->sendmsg_info.iov.iov_len;
             queue->num_queued--;
             queue->head = current->send_next;
 
@@ -487,8 +503,8 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
              * track the unsent portion separately. We'll reset the zerocopy_id to 0
              * so it gets a new ID on the next send attempt.
              */
-            current->iov.iov_base = (uint8_t *)current->iov.iov_base + remaining;
-            current->iov.iov_len -= remaining;
+            current->sendmsg_info.iov.iov_base = (uint8_t *)current->sendmsg_info.iov.iov_base + remaining;
+            current->sendmsg_info.iov.iov_len -= remaining;
             current->zerocopy_id = 0; /* Reset ID for next send */
             queue->total_bytes -= remaining;
             remaining = 0;
