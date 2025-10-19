@@ -131,23 +131,23 @@ typedef enum
 /* RTSP session structure */
 typedef struct
 {
-    int socket;                                    /* TCP socket to RTSP server */
-    int epoll_fd;                                  /* Epoll file descriptor for socket registration */
-    struct connection_s *conn;                     /* Connection pointer for fdmap registration */
-    rtsp_state_t state;                            /* Current RTSP state */
-    int status_index;                              /* Index in status_shared->clients array for state updates */
-    uint32_t cseq;                                 /* RTSP sequence number */
-    char session_id[RTSP_SESSION_ID_SIZE];         /* RTSP session ID */
-    char server_url[RTSP_SERVER_URL_SIZE];         /* Full RTSP URL */
-    char server_host[RTSP_SERVER_HOST_SIZE];       /* RTSP server hostname */
-    int server_port;                               /* RTSP server port */
-    char server_path[RTSP_SERVER_PATH_SIZE];       /* RTSP path with query string */
-    char username[RTSP_CREDENTIAL_SIZE];           /* RTSP username for Basic auth */
-    char password[RTSP_CREDENTIAL_SIZE];           /* RTSP password for Basic auth */
-    int has_basic_auth;                            /* Flag: include Authorization header */
+    int socket;                                          /* TCP socket to RTSP server */
+    int epoll_fd;                                        /* Epoll file descriptor for socket registration */
+    struct connection_s *conn;                           /* Connection pointer for fdmap registration */
+    rtsp_state_t state;                                  /* Current RTSP state */
+    int status_index;                                    /* Index in status_shared->clients array for state updates */
+    uint32_t cseq;                                       /* RTSP sequence number */
+    char session_id[RTSP_SESSION_ID_SIZE];               /* RTSP session ID */
+    char server_url[RTSP_SERVER_URL_SIZE];               /* Full RTSP URL */
+    char server_host[RTSP_SERVER_HOST_SIZE];             /* RTSP server hostname */
+    int server_port;                                     /* RTSP server port */
+    char server_path[RTSP_SERVER_PATH_SIZE];             /* RTSP path with query string */
+    char username[RTSP_CREDENTIAL_SIZE];                 /* RTSP username for Basic auth */
+    char password[RTSP_CREDENTIAL_SIZE];                 /* RTSP password for Basic auth */
+    int has_basic_auth;                                  /* Flag: include Authorization header */
     char authorization_header[RTSP_HEADERS_BUFFER_SIZE]; /* Cached Authorization header */
-    char playseek_range[RTSP_PLAYSEEK_RANGE_SIZE]; /* Range for RTSP PLAY command */
-    int redirect_count;                            /* Number of redirects followed */
+    char playseek_range[RTSP_PLAYSEEK_RANGE_SIZE];       /* Range for RTSP PLAY command */
+    int redirect_count;                                  /* Number of redirects followed */
 
     /* Transport mode configuration */
     rtsp_transport_mode_t transport_mode;         /* Current transport mode */
@@ -166,8 +166,8 @@ typedef struct
     int server_rtcp_port; /* Server RTCP port */
 
     /* RTP packet tracking for loss detection */
-    uint16_t current_seqn;     /* Last received RTP sequence number */
-    uint16_t not_first_packet; /* Flag indicating first packet received */
+    uint16_t current_seqn; /* Last received RTP sequence number */
+    int not_first_packet;  /* Flag indicating first packet received */
 
     /* Statistics */
     uint64_t packets_dropped; /* Packets dropped due to backpressure */
@@ -195,8 +195,8 @@ typedef struct
 
     /* Buffering */
     uint8_t response_buffer[RTSP_RESPONSE_BUFFER_SIZE]; /* Buffer for RTSP responses (control plane, not media) */
-    uint8_t tcp_buffer[4 * BUFFER_POOL_BUFFER_SIZE];    /* Local buffer for TCP interleaved data (data will be copied to zero-copy buffers for send) */
     size_t tcp_buffer_pos;                              /* Current position in TCP buffer */
+    buffer_ref_t *tcp_pending_list;                     /* List of buffers with partial packets pending processing */
 } rtsp_session_t;
 
 /* Function prototypes */
@@ -272,7 +272,7 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, struct connection_
  * Handle UDP RTP data and forward to HTTP client via connection output buffer
  * @param session RTSP session
  * @param conn Connection object for output buffering
- * @return Number of bytes forwarded, -1 on error
+ * @return Number of bytes forwarded
  */
 int rtsp_handle_udp_rtp_data(rtsp_session_t *session, struct connection_s *conn);
 

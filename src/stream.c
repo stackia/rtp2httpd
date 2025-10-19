@@ -59,22 +59,18 @@ int stream_join_mcast_group(stream_context_t *ctx)
     return sock;
 }
 
-/*
- * Process RTP payload - either forward to client (streaming) or capture I-frame (snapshot)
- * Returns: bytes forwarded (>= 0) for streaming, 1 if I-frame captured for snapshot, -1 on error
- */
-int stream_process_rtp_payload(stream_context_t *ctx, int recv_len, uint8_t *buf,
-                               buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first)
+int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref_list,
+                               uint16_t *last_seqn, int *not_first)
 {
     /* In snapshot mode, delegate to snapshot module */
     if (ctx->snapshot.enabled)
     {
-        return snapshot_process_packet(&ctx->snapshot, recv_len, buf, ctx->conn);
+        return snapshot_process_packet(&ctx->snapshot, buf_ref_list, ctx->conn);
     }
     else
     {
         /* Normal streaming mode - forward to client */
-        return write_rtp_payload_to_client(ctx->conn, recv_len, buf, buf_ref, old_seqn, not_first);
+        return rtp_queue_payload_to_client(ctx->conn, buf_ref_list, last_seqn, not_first);
     }
 }
 
@@ -85,144 +81,152 @@ int stream_process_rtp_payload(stream_context_t *ctx, int recv_len, uint8_t *buf
  */
 int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64_t now)
 {
-    int actualr;
-    struct sockaddr_in peer_addr;
-    socklen_t slen = sizeof(peer_addr);
-
     /* Process FCC socket events */
     if (ctx->fcc.fcc_sock > 0 && fd == ctx->fcc.fcc_sock)
     {
-        /* Allocate a fresh buffer from pool for this receive operation */
-        buffer_ref_t *recv_buf = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
-        if (!recv_buf)
-        {
-            /* Buffer pool exhausted - drop this packet */
-            logger(LOG_DEBUG, "FCC: Buffer pool exhausted, dropping packet");
-            ctx->last_fcc_data_time = now;
-            /* Drain the socket to prevent event loop spinning */
-            uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
-            ssize_t drained = recvfrom(ctx->fcc.fcc_sock, dummy, sizeof(dummy), 0, NULL, NULL);
-            if (drained < 0 && errno != EAGAIN)
-            {
-                logger(LOG_DEBUG, "FCC: Dummy recv failed while dropping packet: %s", strerror(errno));
-            }
-            return 0;
-        }
+        /* Batch receive all available packets */
+        buffer_ref_t *buf_list = buffer_pool_batch_recv(ctx->fcc.fcc_sock, 1, "FCC", NULL, NULL);
 
-        /* Receive directly into zero-copy buffer (true zero-copy receive) */
-        actualr = recvfrom(ctx->fcc.fcc_sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE,
-                           0, (struct sockaddr *)&peer_addr, &slen);
-        if (actualr < 0 && errno != EAGAIN)
-        {
-            logger(LOG_ERROR, "FCC: Receive failed: %s", strerror(errno));
-            buffer_ref_put(recv_buf);
-            return 0;
-        }
-
-        /* Verify packet comes from expected FCC server */
-        if (peer_addr.sin_addr.s_addr != ctx->fcc.fcc_server->sin_addr.s_addr)
-        {
-            buffer_ref_put(recv_buf);
-            return 0;
-        }
-
-        ctx->last_fcc_data_time = now;
-
-        /* Handle different types of FCC packets */
-        uint8_t *recv_data = (uint8_t *)recv_buf->data;
+        /* Separate control packets from media packets */
+        buffer_ref_t *media_list_head = NULL;
+        buffer_ref_t *media_list_tail = NULL;
+        buffer_ref_t *current = buf_list;
         int result = 0;
-        if (peer_addr.sin_port == ctx->fcc.fcc_server->sin_port)
+
+        while (current)
         {
-            /* RTCP control message */
-            if (recv_data[0] == 0x83)
+            buffer_ref_t *next = current->process_next;
+
+            /* Get peer address from buffer */
+            struct sockaddr_in *peer_addr = &current->recv_info.peer_addr;
+
+            /* Verify packet comes from expected FCC server */
+            if (peer_addr->sin_addr.s_addr == ctx->fcc.fcc_server->sin_addr.s_addr)
             {
-                int res = fcc_handle_server_response(ctx, recv_data, actualr, &peer_addr);
-                if (res == 1)
+                ctx->last_fcc_data_time = now;
+
+                /* Handle different types of FCC packets */
+                uint8_t *recv_data = (uint8_t *)current->data;
+                int recv_len = (int)current->data_len;
+
+                if (peer_addr->sin_port == ctx->fcc.fcc_server->sin_port)
                 {
-                    /* FCC redirect - retry request with new server */
-                    if (fcc_initialize_and_request(ctx) < 0)
+                    /* RTCP control message - process immediately */
+                    if (recv_data[0] == 0x83)
                     {
-                        logger(LOG_ERROR, "FCC redirect retry failed");
-                        buffer_ref_put(recv_buf);
-                        return -1;
+                        int res = fcc_handle_server_response(ctx, recv_data, recv_len);
+                        if (res == 1)
+                        {
+                            /* FCC redirect - retry request with new server */
+                            if (fcc_initialize_and_request(ctx) < 0)
+                            {
+                                logger(LOG_ERROR, "FCC redirect retry failed");
+                                result = -1;
+                            }
+                            else
+                            {
+                                result = 0;
+                            }
+                            buffer_ref_put(current);
+                            current = next;
+                            break; /* Skip remaining packets */
+                        }
                     }
-                    buffer_ref_put(recv_buf);
-                    return 0; /* Redirect handled successfully */
+                    else if (recv_data[0] == 0x84)
+                    {
+                        /* Sync notification (FMT 4) */
+                        fcc_handle_sync_notification(ctx, 0);
+                    }
+                    /* Release control packet buffer */
+                    buffer_ref_put(current);
                 }
-                result = res;
+                else if (peer_addr->sin_port == ctx->fcc.media_port)
+                {
+                    /* RTP media packet from FCC unicast stream - add to media list */
+                    if (media_list_tail)
+                    {
+                        media_list_tail->process_next = current;
+                    }
+                    else
+                    {
+                        media_list_head = current;
+                    }
+                    media_list_tail = current;
+                }
+                else
+                {
+                    /* Unknown port - release buffer */
+                    buffer_ref_put(current);
+                }
             }
-            else if (recv_data[0] == 0x84)
+            else
             {
-                /* Sync notification (FMT 4) */
-                result = fcc_handle_sync_notification(ctx, 0);
+                /* Not from FCC server - release buffer */
+                buffer_ref_put(current);
             }
-        }
-        else if (peer_addr.sin_port == ctx->fcc.media_port)
-        {
-            /* RTP media packet from FCC unicast stream */
-            result = fcc_handle_unicast_media(ctx, recv_data, actualr, recv_buf);
+
+            current = next;
         }
 
-        /* Release our reference to the buffer */
-        buffer_ref_put(recv_buf);
+        /* Terminate media list */
+        if (media_list_tail)
+        {
+            media_list_tail->process_next = NULL;
+        }
+
+        /* Process all media packets in one batch */
+        if (media_list_head)
+        {
+            ctx->total_bytes_sent += (uint64_t)fcc_handle_unicast_media(ctx, media_list_head);
+
+            /* Release media packet buffers */
+            current = media_list_head;
+            while (current)
+            {
+                buffer_ref_t *next = current->process_next;
+                buffer_ref_put(current);
+                current = next;
+            }
+        }
+
         return result;
     }
 
     /* Process multicast socket events */
     if (ctx->mcast_sock > 0 && fd == ctx->mcast_sock)
     {
-        /* Allocate a fresh buffer from pool for this receive operation */
-        buffer_ref_t *recv_buf = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
-        if (!recv_buf)
-        {
-            /* Buffer pool exhausted - drop this packet */
-            logger(LOG_DEBUG, "Multicast: Buffer pool exhausted, dropping packet");
-            ctx->last_mcast_data_time = now;
-            /* Drain the socket to prevent event loop spinning */
-            uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
-            ssize_t drained = recv(ctx->mcast_sock, dummy, sizeof(dummy), 0);
-            if (drained < 0 && errno != EAGAIN)
-            {
-                logger(LOG_DEBUG, "Multicast: Dummy recv failed while dropping packet: %s", strerror(errno));
-            }
+        /* Batch receive all available packets */
+        buffer_ref_t *buf_list = buffer_pool_batch_recv(ctx->mcast_sock, 0, "Multicast", NULL, NULL);
+        if (!buf_list)
             return 0;
-        }
 
-        /* Receive directly into zero-copy buffer (true zero-copy receive) */
-        uint8_t *recv_data = (uint8_t *)recv_buf->data;
-        actualr = recv(ctx->mcast_sock, recv_data, BUFFER_POOL_BUFFER_SIZE, 0);
-        if (actualr < 0 && errno != EAGAIN)
-        {
-            logger(LOG_DEBUG, "Multicast receive failed: %s", strerror(errno));
-            buffer_ref_put(recv_buf);
-            return 0;
-        }
-
-        /* Update last data receive timestamp for timeout detection */
         ctx->last_mcast_data_time = now;
-
-        int result = 0;
 
         /* Handle multicast data based on FCC state */
         switch (ctx->fcc.state)
         {
         case FCC_STATE_MCAST_ACTIVE:
-            result = fcc_handle_mcast_active(ctx, recv_data, actualr, recv_buf);
+            ctx->total_bytes_sent += (uint64_t)fcc_handle_mcast_active(ctx, buf_list);
             break;
 
         case FCC_STATE_MCAST_REQUESTED:
-            result = fcc_handle_mcast_transition(ctx, recv_data, actualr, recv_buf);
+            fcc_handle_mcast_transition(ctx, buf_list);
             break;
 
         default:
-            /* Shouldn't receive multicast in other states */
             logger(LOG_DEBUG, "Received multicast data in unexpected state: %d", ctx->fcc.state);
             break;
         }
 
-        /* Release our reference to the buffer */
-        buffer_ref_put(recv_buf);
-        return result;
+        buffer_ref_t *current = buf_list;
+        while (current)
+        {
+            buffer_ref_t *next = current->process_next;
+            buffer_ref_put(current);
+            current = next;
+        }
+
+        return 0;
     }
 
     /* Process RTSP socket events */
@@ -252,15 +256,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
     /* Process RTSP RTP socket events (UDP mode) */
     if (ctx->rtsp.rtp_socket > 0 && fd == ctx->rtsp.rtp_socket)
     {
-        int result = rtsp_handle_udp_rtp_data(&ctx->rtsp, ctx->conn);
-        if (result < 0)
-        {
-            return -1; /* Error */
-        }
-        if (result > 0)
-        {
-            ctx->total_bytes_sent += (uint64_t)result;
-        }
+        ctx->total_bytes_sent += (uint64_t)rtsp_handle_udp_rtp_data(&ctx->rtsp, ctx->conn);
         return 0; /* Success - processed data, continue with other events */
     }
 
@@ -268,9 +264,8 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
     if (ctx->rtsp.rtcp_socket > 0 && fd == ctx->rtsp.rtcp_socket)
     {
         /* RTCP data processing could be added here in the future */
-        /* For now, just consume the data to prevent buffer overflow */
-        uint8_t rtcp_buffer[RTCP_BUFFER_SIZE];
-        recv(ctx->rtsp.rtcp_socket, rtcp_buffer, sizeof(rtcp_buffer), 0);
+        uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
+        recv(ctx->rtsp.rtcp_socket, dummy, sizeof(dummy), MSG_DONTWAIT);
         return 0;
     }
 

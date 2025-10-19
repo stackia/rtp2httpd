@@ -11,6 +11,8 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/time.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 #define WORKER_STATS_INC(field)                             \
     do                                                      \
@@ -81,9 +83,9 @@ static buffer_pool_segment_t *buffer_pool_segment_create(size_t buffer_size, siz
     {
         buffer_ref_t *ref = &segment->refs[i];
         ref->data = segment->buffers + (i * buffer_size);
-        ref->size = buffer_size;
-        ref->refcount = 0;
         ref->segment = segment;
+        ref->type = BUFFER_TYPE_MEMORY;
+        ref->parent_ref = NULL;
         ref->free_next = pool->free_list;
         pool->free_list = ref;
     }
@@ -207,11 +209,22 @@ void buffer_ref_put(buffer_ref_t *ref)
     ref->refcount--;
     if (ref->refcount <= 0)
     {
+        if (ref->type == BUFFER_TYPE_MEMORY_SLICE)
+        {
+            buffer_ref_t *parent = ref->parent_ref;
+            if (parent)
+            {
+                buffer_ref_put(parent);
+            }
+            free(ref);
+            return;
+        }
+
         if (ref->type == BUFFER_TYPE_FILE)
         {
-            if (ref->file_fd >= 0)
+            if (ref->fd >= 0)
             {
-                close(ref->file_fd);
+                close(ref->fd);
             }
             free(ref);
             return;
@@ -232,34 +245,76 @@ void buffer_ref_put(buffer_ref_t *ref)
     }
 }
 
-buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool, size_t size)
+/**
+ * Allocate one or more buffers from the pool (with partial allocation support)
+ *
+ * @param pool The buffer pool to allocate from
+ * @param num_buffers Desired number of buffers to allocate
+ * @param allocated [out] Optional pointer to receive actual number of buffers allocated
+ * @return Head of linked list of allocated buffers (linked via process_next/send_next/free_next union)
+ *         Returns NULL if no buffers available at all
+ *
+ * Note: This function supports partial allocation. If fewer than num_buffers are available,
+ *       it will allocate as many as possible (minimum 1). Check *allocated for actual count.
+ *       Buffers are pre-linked together using the union field.
+ */
+buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool, size_t num_buffers, size_t *allocated)
 {
-    if (!pool || size > pool->buffer_size)
-        return NULL;
-
-    if (!pool->free_list)
+    if (!pool || num_buffers == 0)
     {
-        if (pool == &zerocopy_state.pool)
+        if (allocated)
+            *allocated = 0;
+        return NULL;
+    }
+
+    /* Try to expand if we don't have enough buffers */
+    if (pool->num_free < num_buffers)
+    {
+        if (pool->num_free == 0)
         {
-            WORKER_STATS_INC(pool_exhaustions);
-        }
-        else if (pool == &zerocopy_state.control_pool)
-        {
-            WORKER_STATS_INC(control_pool_exhaustions);
+            /* No buffers at all - must expand */
+            if (pool == &zerocopy_state.pool)
+            {
+                WORKER_STATS_INC(pool_exhaustions);
+            }
+            else if (pool == &zerocopy_state.control_pool)
+            {
+                WORKER_STATS_INC(control_pool_exhaustions);
+            }
+
+            if (buffer_pool_expand(pool) < 0)
+            {
+                logger(LOG_DEBUG, "%s: Cannot allocate any buffers (pool exhausted, max: %zu)",
+                       buffer_pool_name(pool), pool->max_buffers);
+                if (allocated)
+                    *allocated = 0;
+                return NULL;
+            }
+
+            /* After expansion, we should have at least some buffers */
+            if (pool->num_free == 0)
+            {
+                logger(LOG_ERROR, "%s: Expansion succeeded but still no free buffers",
+                       buffer_pool_name(pool));
+                if (allocated)
+                    *allocated = 0;
+                return NULL;
+            }
         }
 
-        if (buffer_pool_expand(pool) < 0)
-        {
-            logger(LOG_DEBUG, "%s: Exhausted and cannot expand (total: %zu, max: %zu)",
-                   buffer_pool_name(pool), pool->num_buffers, pool->max_buffers);
-            return NULL;
-        }
+        /* We have some buffers but not enough - try to expand to meet demand */
+        size_t needed = num_buffers - pool->num_free;
+        size_t expansions_needed = (needed + pool->expand_size - 1) / pool->expand_size;
 
-        if (!pool->free_list)
+        for (size_t i = 0; i < expansions_needed && pool->num_free < num_buffers; i++)
         {
-            logger(LOG_ERROR, "%s: Expansion succeeded but free_list is still empty",
-                   buffer_pool_name(pool));
-            return NULL;
+            if (buffer_pool_expand(pool) < 0)
+            {
+                /* Expansion failed, but we can still use what we have */
+                logger(LOG_DEBUG, "%s: Partial allocation - requested %zu, have %zu",
+                       buffer_pool_name(pool), num_buffers, pool->num_free);
+                break;
+            }
         }
     }
     else if (pool->num_free <= pool->low_watermark && pool->num_buffers < pool->max_buffers)
@@ -274,32 +329,89 @@ buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool, size_t size)
         }
     }
 
-    buffer_ref_t *ref = pool->free_list;
-    pool->free_list = ref->free_next;
-    pool->num_free--;
+    /* Allocate as many buffers as available (up to num_buffers) */
+    size_t to_allocate = (pool->num_free < num_buffers) ? pool->num_free : num_buffers;
 
-    if (ref->segment)
+    if (to_allocate == 0)
     {
-        ref->segment->num_free--;
+        if (allocated)
+            *allocated = 0;
+        return NULL;
     }
 
-    ref->refcount = 1;
-    ref->size = size;
-    ref->send_next = NULL;
+    /* Allocate buffers by taking the first to_allocate from free_list
+     * Since free_next and process_next are union, the list is already linked! */
+    buffer_ref_t *head = pool->free_list;
+    buffer_ref_t *tail = head;
+
+    /* Traverse to find the tail and initialize each buffer */
+    for (size_t i = 0; i < to_allocate; i++)
+    {
+        /* Initialize buffer */
+        tail->data_offset = 0;
+        tail->data_len = 0;
+        tail->refcount = 1;
+        tail->type = BUFFER_TYPE_MEMORY;
+        tail->parent_ref = NULL;
+
+        if (tail->segment)
+        {
+            tail->segment->num_free--;
+        }
+
+        /* Move to next, but remember current tail for cutting */
+        if (i < to_allocate - 1)
+        {
+            tail = tail->process_next; /* Using union: free_next == process_next */
+        }
+    }
+
+    /* Cut the list: update pool's free_list to point after our allocated chunk */
+    pool->free_list = tail->process_next; /* The rest of free list */
+    tail->process_next = NULL;            /* Terminate our allocated list */
+
+    pool->num_free -= to_allocate;
 
     buffer_pool_update_stats(pool);
 
-    return ref;
+    if (allocated)
+        *allocated = to_allocate;
+
+    return head;
 }
 
-buffer_ref_t *buffer_pool_alloc(size_t size)
+buffer_ref_t *buffer_pool_alloc(void)
 {
-    return buffer_pool_alloc_from(&zerocopy_state.pool, size);
+    return buffer_pool_alloc_from(&zerocopy_state.pool, 1, NULL);
 }
 
-buffer_ref_t *buffer_pool_alloc_control(size_t size)
+buffer_ref_t *buffer_ref_create_slice(buffer_ref_t *source, size_t offset, size_t length)
 {
-    return buffer_pool_alloc_from(&zerocopy_state.control_pool, size);
+    if (!source)
+        return NULL;
+
+    size_t available = 0;
+    if (source->data_len >= (size_t)source->data_offset)
+        available = source->data_len - (size_t)source->data_offset;
+
+    if (offset > available || length > available - offset)
+        return NULL;
+
+    buffer_ref_t *slice = calloc(1, sizeof(buffer_ref_t));
+    if (!slice)
+        return NULL;
+
+    buffer_ref_get(source);
+
+    slice->type = BUFFER_TYPE_MEMORY_SLICE;
+    slice->data = source->data;
+    slice->data_offset = source->data_offset + (off_t)offset;
+    slice->data_len = length;
+    slice->segment = source->segment;
+    slice->parent_ref = source;
+    slice->refcount = 1;
+
+    return slice;
 }
 
 static void buffer_pool_try_shrink_pool(buffer_pool_t *pool, size_t min_buffers)
@@ -411,4 +523,115 @@ void buffer_pool_try_shrink(void)
 {
     buffer_pool_try_shrink_pool(&zerocopy_state.pool, BUFFER_POOL_INITIAL_SIZE);
     buffer_pool_try_shrink_pool(&zerocopy_state.control_pool, CONTROL_POOL_INITIAL_SIZE);
+}
+
+/*
+ * Batch receive packets from a socket into a linked list
+ * Uses recvmmsg() to receive multiple packets in a single system call
+ */
+buffer_ref_t *buffer_pool_batch_recv(int sock, int save_peer_info, const char *drain_label,
+                                     int *packets_received, int *packets_dropped)
+{
+    int dropped = 0;
+
+    /* Pre-allocate buffers - supports partial allocation if pool is low */
+    size_t buf_count = 0;
+    buffer_ref_t *bufs_head = buffer_pool_alloc_from(&zerocopy_state.pool,
+                                                     MAX_RECV_PACKETS_PER_BATCH,
+                                                     &buf_count);
+
+    if (!bufs_head || buf_count == 0)
+    {
+        /* No buffers available - drain socket to avoid blocking sender */
+        logger(LOG_DEBUG, "%s: No buffers available, draining socket", drain_label);
+        uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
+        while (1)
+        {
+            ssize_t drained = recv(sock, dummy, sizeof(dummy), MSG_DONTWAIT);
+            if (drained < 0)
+                break;
+            dropped++;
+        }
+
+        if (packets_received)
+            *packets_received = 0;
+        if (packets_dropped)
+            *packets_dropped = dropped;
+        return NULL;
+    }
+
+    /* Build array of buffer pointers from linked list for recvmmsg */
+    buffer_ref_t *bufs[MAX_RECV_PACKETS_PER_BATCH];
+    struct mmsghdr msgs[MAX_RECV_PACKETS_PER_BATCH];
+    struct iovec iovecs[MAX_RECV_PACKETS_PER_BATCH];
+
+    memset(msgs, 0, sizeof(msgs));
+
+    /* Convert linked list to array and setup mmsghdr structures */
+    buffer_ref_t *cur = bufs_head;
+
+    for (size_t i = 0; i < buf_count && cur; i++)
+    {
+        bufs[i] = cur;
+
+        /* Setup iovec */
+        iovecs[i].iov_base = cur->data;
+        iovecs[i].iov_len = cur->segment->parent->buffer_size;
+
+        /* Setup mmsghdr */
+        msgs[i].msg_hdr.msg_iov = &iovecs[i];
+        msgs[i].msg_hdr.msg_iovlen = 1;
+
+        if (save_peer_info)
+        {
+            /* Direct write to buffer's recv_info - no memcpy needed later */
+            msgs[i].msg_hdr.msg_name = &cur->recv_info.peer_addr;
+            msgs[i].msg_hdr.msg_namelen = sizeof(struct sockaddr_in);
+        }
+
+        cur = cur->process_next;
+    }
+
+    /* Receive multiple messages in ONE system call */
+    struct timespec timeout = {0, 0}; /* Non-blocking */
+    int received = recvmmsg(sock, msgs, buf_count, MSG_DONTWAIT, &timeout);
+    buffer_ref_t *result = NULL;
+
+    if (received < 0)
+    {
+        if (errno != EAGAIN)
+        {
+            logger(LOG_DEBUG, "%s: recvmmsg failed: %s", drain_label, strerror(errno));
+        }
+        received = 0; /* Treat error as 0 packets received */
+    }
+    else if (received > 0)
+    {
+        /* Update data length for received packets */
+        for (int i = 0; i < received; i++)
+        {
+            bufs[i]->data_len = msgs[i].msg_len;
+        }
+        result = bufs_head;
+    }
+
+    /* Free unused buffers (allocated but not received) */
+    if ((size_t)received < buf_count)
+    {
+        buffer_ref_t *unused = (received > 0) ? bufs[received] : bufs_head;
+        while (unused)
+        {
+            buffer_ref_t *next = unused->process_next;
+            buffer_ref_put(unused);
+            unused = next;
+        }
+    }
+
+    /* Write output parameters once at the end */
+    if (packets_received)
+        *packets_received = received;
+    if (packets_dropped)
+        *packets_dropped = dropped;
+
+    return result;
 }

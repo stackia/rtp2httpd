@@ -11,13 +11,14 @@
 #include "connection.h"
 #include "zerocopy.h"
 
-int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, uint16_t *seqn)
+int rtp_get_payload(uint8_t *buf, size_t len, uint8_t **payload, size_t *size, uint16_t *seqn)
 {
-  int payloadstart, payloadlength;
+  size_t payloadstart;
+  size_t payloadlength;
   uint8_t flags;
 
   /* Check if this is an RTP packet (version 2, minimum size 12 bytes) */
-  if (likely(recv_len >= 12) && likely((buf[0] & 0xC0) == 0x80))
+  if (likely(len >= 12) && likely((buf[0] & 0xC0) == 0x80))
   {
     /* RTP packet detected - strip RTP header and return payload */
 
@@ -37,7 +38,7 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, ui
     if (unlikely(flags & 0x10))
     { /*Extension header*/
       /* Validate extension header doesn't exceed packet bounds */
-      if (unlikely(payloadstart + 4 > recv_len))
+      if (unlikely(payloadstart + 4 > len))
       {
         logger(LOG_DEBUG, "Malformed RTP packet: extension header truncated");
         return -1;
@@ -45,17 +46,17 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, ui
       payloadstart += 4 + 4 * ntohs(*((uint16_t *)(buf + payloadstart + 2)));
     }
 
-    payloadlength = recv_len - payloadstart;
+    payloadlength = len - payloadstart;
 
     /* Padding is uncommon in most RTP streams */
     if (unlikely(flags & 0x20))
     { /*Padding*/
-      payloadlength -= buf[recv_len - 1];
+      payloadlength -= buf[len - 1];
       /*last octet indicate padding length*/
     }
 
     /* Validate final payload bounds */
-    if (unlikely(payloadlength <= 0) || unlikely(payloadstart + payloadlength > recv_len))
+    if (unlikely(payloadlength <= 0) || unlikely(payloadstart + payloadlength > len))
     {
       logger(LOG_DEBUG, "Malformed RTP packet: invalid payload length");
       return -1;
@@ -69,67 +70,129 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, ui
   {
     /* Not an RTP packet - treat entire packet as payload */
     *payload = buf;
-    *size = recv_len;
+    *size = len;
     return 0; /* Non-RTP packet */
   }
 }
 
-int write_rtp_payload_to_client(connection_t *conn, int recv_len, uint8_t *buf,
-                                buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first)
+buffer_ref_t *rtp_clip_buffer_to_valid_payload(buffer_ref_t *buf_ref_list, uint16_t *last_seqn, int *not_first, size_t *total_payload_length, const char *log_label)
 {
-  int payloadlength;
-  uint8_t *payload;
-  uint16_t seqn;
-  int is_rtp;
+  buffer_ref_t *list_head = NULL;
+  buffer_ref_t *list_tail = NULL;
+  buffer_ref_t *current = buf_ref_list;
 
-  /* Extract payload and sequence number - automatically handles RTP and non-RTP packets */
-  is_rtp = get_rtp_payload(buf, recv_len, &payload, &payloadlength, &seqn);
-  if (unlikely(is_rtp < 0))
+  /* Process each buffer in the list, filtering out invalid ones */
+  while (current)
   {
-    return 0; /* Malformed packet, already logged */
-  }
+    buffer_ref_t *next = current->process_next;
+    size_t payload_length;
+    uint8_t *payload;
+    uint16_t seqn;
+    int is_rtp;
+    uint8_t *data_ptr = (uint8_t *)current->data + current->data_offset;
+    int skip_buffer = 0;
 
-  /* Perform sequence number tracking only for RTP packets (is_rtp == 1) */
-  if (likely(is_rtp == 1))
-  {
-    /* Duplicate detection - duplicates are rare */
-    if (unlikely(*not_first && seqn == *old_seqn))
+    /* Extract payload and sequence number - automatically handles RTP and non-RTP packets */
+    is_rtp = rtp_get_payload(data_ptr, current->data_len, &payload, &payload_length, &seqn);
+    if (unlikely(is_rtp < 0))
     {
-      logger(LOG_DEBUG, "Duplicated RTP packet "
-                        "received (seqn %d)",
-             seqn);
-      return 0;
+      skip_buffer = 1;
+    }
+    else if (likely(is_rtp == 1))
+    {
+      /* Perform sequence number tracking only for RTP packets (is_rtp == 1) */
+
+      /* Duplicate detection - duplicates are rare */
+      if (unlikely(*not_first && seqn == *last_seqn))
+      {
+        logger(LOG_DEBUG, "RTP: Duplicated RTP packet "
+                          "received (seqn %d) (%s)",
+               seqn, log_label);
+        skip_buffer = 1;
+      }
+      else
+      {
+        /* Out-of-order detection - packets are usually in order */
+        if (unlikely(*not_first && (seqn != ((*last_seqn + 1) & 0xFFFF))))
+        {
+          int expected = (*last_seqn + 1) & 0xFFFF;
+          int gap = (seqn - expected) & 0xFFFF;
+          /* This indicates upstream packet loss (network or source), NOT local send congestion */
+          logger(LOG_DEBUG, "RTP: Packet loss detected - expected seq %d, received %d (gap: %d packets) (%s)",
+                 expected, seqn, gap, log_label);
+        }
+
+        *last_seqn = seqn;
+        *not_first = 1;
+      }
+    }
+    /* For non-RTP packets (is_rtp == 0), skip sequence number tracking */
+
+    /* Handle skipped buffers - release reference since we're removing them from the chain */
+    if (skip_buffer)
+    {
+      if (!list_tail)
+      {
+        /* We modified the chain by not including this buffer, so we take ownership and must release it */
+        buffer_ref_put(current);
+      }
+      current = next;
+      continue;
     }
 
-    /* Out-of-order detection - packets are usually in order */
-    if (unlikely(*not_first && (seqn != ((*old_seqn + 1) & 0xFFFF))))
+    /* Calculate offset of payload in the buffer */
+    off_t payload_offset = payload - data_ptr;
+    current->data_offset += payload_offset;
+    current->data_len = payload_length;
+
+    /* Keep this buffer in the list by linking it */
+    if (list_tail)
     {
-      int expected = (*old_seqn + 1) & 0xFFFF;
-      int gap = (seqn - expected) & 0xFFFF;
-      /* This indicates upstream packet loss (network or source), NOT local send congestion */
-      logger(LOG_DEBUG, "RTP packet loss detected - expected seq %d, received %d (gap: %d packets)",
-             expected, seqn, gap);
+      list_tail->process_next = current;
     }
+    else
+    {
+      list_head = current;
+    }
+    list_tail = current;
 
-    *old_seqn = seqn;
-    *not_first = 1;
+    if (total_payload_length)
+    {
+      *total_payload_length += payload_length;
+    }
+    current = next;
   }
-  /* For non-RTP packets (is_rtp == 0), skip sequence number tracking */
 
-  /* True zero-copy send - payload is in buffer pool, send directly without memcpy */
-  /* Calculate offset of payload in the buffer */
-  size_t payload_offset = payload - (uint8_t *)buf_ref->data;
-
-  /* Queue for zero-copy send */
-  /* Note: zerocopy_queue_add() will automatically increment refcount */
-  if (connection_queue_zerocopy(conn, buf_ref, payload_offset, (size_t)payloadlength) == 0)
+  /* Terminate the list */
+  if (list_tail)
   {
-    /* Successfully queued - send queue now holds a reference */
-    return payloadlength;
+    list_tail->process_next = NULL;
+  }
+
+  return list_head;
+}
+
+int rtp_queue_payload_to_client(connection_t *conn, buffer_ref_t *buf_ref_list, uint16_t *last_seqn, int *not_first)
+{
+  size_t total_payload_length = 0;
+  buffer_ref_t *clipped_buf_list = rtp_clip_buffer_to_valid_payload(buf_ref_list, last_seqn, not_first, &total_payload_length, "instant queue");
+
+  if (!clipped_buf_list)
+  {
+    /* No valid payload to send */
+    return 0;
+  }
+
+  int num_queued = 0;
+  connection_queue_zerocopy(conn, clipped_buf_list, &num_queued);
+  if (num_queued > 0)
+  {
+    /* Successfully queued (full or partial) - send queue now holds a reference */
+    return (int)total_payload_length;
   }
   else
   {
-    /* Queue full - backpressure */
+    /* Queue full or error - backpressure */
     return -1;
   }
 }
