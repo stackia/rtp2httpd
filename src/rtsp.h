@@ -6,80 +6,51 @@
 #include <netinet/in.h>
 #include "zerocopy.h"
 
+#define RTSP_DISABLE_TCP_TRANSPORT 0 /* To debug UDP transport, set to 1 */
+
 /* ========== RTSP BUFFER SIZE CONFIGURATION ========== */
 
 /* RTCP buffer size - same as RTP buffer pool for consistency */
-#ifndef RTCP_BUFFER_SIZE
 #define RTCP_BUFFER_SIZE 1536
-#endif
 
 /* RTSP response buffer - for server responses and SDP descriptions */
-#ifndef RTSP_RESPONSE_BUFFER_SIZE
 #define RTSP_RESPONSE_BUFFER_SIZE 4096
-#endif
 
 /* RTSP request buffer - for building outgoing requests */
-#ifndef RTSP_REQUEST_BUFFER_SIZE
 #define RTSP_REQUEST_BUFFER_SIZE 4096
-#endif
 
 /* RTSP headers buffer - for extra headers in requests */
-#ifndef RTSP_HEADERS_BUFFER_SIZE
 #define RTSP_HEADERS_BUFFER_SIZE 1024
-#endif
 
 /* RTSP session ID - server-generated session identifier */
-#ifndef RTSP_SESSION_ID_SIZE
 #define RTSP_SESSION_ID_SIZE 128
-#endif
 
 /* RTSP server URL - complete RTSP URL */
-#ifndef RTSP_SERVER_URL_SIZE
 #define RTSP_SERVER_URL_SIZE 1024
-#endif
 
 /* RTSP server hostname - DNS name or IP address */
-#ifndef RTSP_SERVER_HOST_SIZE
 #define RTSP_SERVER_HOST_SIZE 256
-#endif
 
 /* RTSP server path - path component of URL with query string */
-#ifndef RTSP_SERVER_PATH_SIZE
 #define RTSP_SERVER_PATH_SIZE 1024
-#endif
 
-#ifndef RTSP_CREDENTIAL_SIZE
 #define RTSP_CREDENTIAL_SIZE 128
-#endif
 
 /* RTSP playseek range - for Range header in PLAY command */
-#ifndef RTSP_PLAYSEEK_RANGE_SIZE
 #define RTSP_PLAYSEEK_RANGE_SIZE 256
-#endif
 
 /* URL copy buffer - for URL parsing operations */
-#ifndef RTSP_URL_COPY_SIZE
 #define RTSP_URL_COPY_SIZE 1024
-#endif
 
 /* Time conversion buffers - for playseek time formatting */
-#ifndef RTSP_TIME_STRING_SIZE
 #define RTSP_TIME_STRING_SIZE 64
-#endif
-
-#ifndef RTSP_TIME_COMPONENT_SIZE
 #define RTSP_TIME_COMPONENT_SIZE 32
-#endif
 
 /* Port string buffer - for port number conversion */
-#ifndef RTSP_PORT_STRING_SIZE
 #define RTSP_PORT_STRING_SIZE 16
-#endif
 
 /* Header parsing buffer - for individual header values */
-#ifndef RTSP_HEADER_PREFIX_SIZE
 #define RTSP_HEADER_PREFIX_SIZE 64
-#endif
 
 /* ========== RTSP MESSAGE TYPES ========== */
 
@@ -194,9 +165,7 @@ typedef struct
     rtsp_state_t state_before_teardown; /* State before TEARDOWN was initiated */
 
     /* Buffering */
-    uint8_t response_buffer[RTSP_RESPONSE_BUFFER_SIZE]; /* Buffer for RTSP responses (control plane, not media) */
-    size_t tcp_buffer_pos;                              /* Current position in TCP buffer */
-    buffer_ref_t *tcp_pending_list;                     /* List of buffers with partial packets pending processing */
+    uint8_t response_buffer[RTSP_RESPONSE_BUFFER_SIZE]; /* Buffer for RTSP TCP responses */
 } rtsp_session_t;
 
 /* Function prototypes */

@@ -879,19 +879,13 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref_list, int *
       accumulated_bytes += current->data_len;
       last_accepted = current;
       num_accepted++;
-      current = current->send_next;
     }
     else
     {
       /* This buffer and remaining buffers exceed limit - drop them */
-      buffer_ref_t *drop_current = current;
-      while (drop_current)
-      {
-        dropped_bytes += drop_current->data_len;
-        drop_current = drop_current->send_next;
-      }
-      break;
+      dropped_bytes += current->data_len;
     }
+    current = current->send_next;
   }
 
   /* Split the list if we're doing partial send */
