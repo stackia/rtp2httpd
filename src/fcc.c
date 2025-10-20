@@ -701,11 +701,16 @@ void fcc_handle_mcast_transition(stream_context_t *ctx, buffer_ref_t *buf_ref_li
     }
 
     buffer_ref_t *current = clipped_buf_list;
+    buffer_ref_t *tail = NULL;
     while (current)
     {
         /* Increment reference count to allow us send the buffer later */
         buffer_ref_t *next = current->process_next;
         buffer_ref_get(current);
+        if (!next)
+        {
+            tail = current;
+        }
         current = next;
     }
 
@@ -717,7 +722,7 @@ void fcc_handle_mcast_transition(stream_context_t *ctx, buffer_ref_t *buf_ref_li
     {
         fcc->pending_list_head = clipped_buf_list;
     }
-    fcc->pending_list_tail = current;
+    fcc->pending_list_tail = tail;
     fcc->pending_bytes += total_payload_bytes;
 }
 
@@ -735,6 +740,8 @@ int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref_list)
         int num_queued = 0;
         connection_queue_zerocopy(ctx->conn, fcc->pending_list_head, &num_queued);
 
+        logger(LOG_DEBUG, "FCC: Flushed pending buffer, bytes=%zu, num_queued=%d, last_seqn=%u", fcc->pending_bytes, num_queued, fcc->mcast_pbuf_last_seqn);
+
         buffer_ref_t *current = fcc->pending_list_head;
         while (current)
         {
@@ -742,8 +749,6 @@ int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref_list)
             buffer_ref_put(current);
             current = next;
         }
-
-        logger(LOG_DEBUG, "FCC: Flushed pending buffer, bytes=%zu, num_queued=%d, last_seqn=%u", fcc->pending_bytes, num_queued, fcc->mcast_pbuf_last_seqn);
 
         fcc->pending_list_head = NULL;
         fcc->pending_list_tail = NULL;

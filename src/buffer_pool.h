@@ -26,9 +26,8 @@
 
 typedef enum
 {
-    BUFFER_TYPE_MEMORY = 0,      /* Normal memory buffer from pool */
-    BUFFER_TYPE_FILE = 1,        /* File descriptor for sendfile() */
-    BUFFER_TYPE_MEMORY_SLICE = 2 /* View into another memory buffer */
+    BUFFER_TYPE_MEMORY = 0, /* Normal memory buffer from pool */
+    BUFFER_TYPE_FILE = 1,   /* File descriptor for sendfile() */
 } buffer_type_t;
 
 /**
@@ -56,7 +55,6 @@ typedef struct buffer_ref_s
     size_t data_len;                       /* Size of data */
     int refcount;                          /* Reference count */
     struct buffer_pool_segment_s *segment; /* Segment this buffer belongs to (only for BUFFER_TYPE_MEMORY) */
-    struct buffer_ref_s *parent_ref;       /* Parent buffer when acting as slice */
 
     /* Union: buffer is either in free list OR in send queue OR in process list, never multiple */
     union
@@ -124,7 +122,6 @@ void buffer_ref_get(buffer_ref_t *ref);
 void buffer_ref_put(buffer_ref_t *ref);
 buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool, size_t num_buffers, size_t *allocated);
 buffer_ref_t *buffer_pool_alloc(void);
-buffer_ref_t *buffer_ref_create_slice(buffer_ref_t *source, size_t offset, size_t length);
 
 /**
  * Batch receive packets from a socket into a linked list
