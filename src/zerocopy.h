@@ -25,24 +25,22 @@
 #define ZEROCOPY_MAX_IOVECS 64 /* Maximum iovec entries per sendmsg() */
 
 /* Batching configuration - accumulate small packets before sending */
-#define ZEROCOPY_BATCH_BYTES 65536       /* Send when accumulated >= 64KB */
-#define ZEROCOPY_BATCH_TIMEOUT_US 100000 /* Send after 100ms timeout */
+#define ZEROCOPY_BATCH_BYTES 65536 /* Send when accumulated >= 64KB */
 
 /**
  * Zero-copy send queue for a connection
  */
 typedef struct zerocopy_queue_s
 {
-    buffer_ref_t *head;            /* First buffer to send */
-    buffer_ref_t *tail;            /* Last buffer in queue */
-    buffer_ref_t *pending_head;    /* First buffer pending completion */
-    buffer_ref_t *pending_tail;    /* Last buffer pending completion */
-    size_t total_bytes;            /* Total bytes queued */
-    size_t num_queued;             /* Number of buffers in send queue */
-    size_t num_pending;            /* Number of buffers pending completion */
-    uint32_t next_zerocopy_id;     /* Next ID for MSG_ZEROCOPY tracking */
-    uint32_t last_completed_id;    /* Last completed MSG_ZEROCOPY ID */
-    uint64_t first_queued_time_us; /* Timestamp of first queued entry (microseconds) */
+    buffer_ref_t *head;         /* First buffer to send */
+    buffer_ref_t *tail;         /* Last buffer in queue */
+    buffer_ref_t *pending_head; /* First buffer pending completion */
+    buffer_ref_t *pending_tail; /* Last buffer pending completion */
+    size_t total_bytes;         /* Total bytes queued */
+    size_t num_queued;          /* Number of buffers in send queue */
+    size_t num_pending;         /* Number of buffers pending completion */
+    uint32_t next_zerocopy_id;  /* Next ID for MSG_ZEROCOPY tracking */
+    uint32_t last_completed_id; /* Last completed MSG_ZEROCOPY ID */
 } zerocopy_queue_t;
 
 /**
@@ -91,11 +89,9 @@ void zerocopy_queue_cleanup(zerocopy_queue_t *queue);
  * Data pointer is derived from buffer_ref and offset
  * @param queue Send queue
  * @param buf_ref Buffer reference (must not be NULL)
- * @param offset Offset in buffer where data starts (for partial buffer sends)
- * @param len Data length
  * @return 0 on success, -1 if queue full or invalid parameters
  */
-int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref, size_t offset, size_t len);
+int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref);
 
 /**
  * Queue a file descriptor for zero-copy send using sendfile()

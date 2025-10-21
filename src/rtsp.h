@@ -6,80 +6,51 @@
 #include <netinet/in.h>
 #include "zerocopy.h"
 
+#define RTSP_DISABLE_TCP_TRANSPORT 0 /* To debug UDP transport, set to 1 */
+
 /* ========== RTSP BUFFER SIZE CONFIGURATION ========== */
 
 /* RTCP buffer size - same as RTP buffer pool for consistency */
-#ifndef RTCP_BUFFER_SIZE
 #define RTCP_BUFFER_SIZE 1536
-#endif
 
 /* RTSP response buffer - for server responses and SDP descriptions */
-#ifndef RTSP_RESPONSE_BUFFER_SIZE
 #define RTSP_RESPONSE_BUFFER_SIZE 4096
-#endif
 
 /* RTSP request buffer - for building outgoing requests */
-#ifndef RTSP_REQUEST_BUFFER_SIZE
 #define RTSP_REQUEST_BUFFER_SIZE 4096
-#endif
 
 /* RTSP headers buffer - for extra headers in requests */
-#ifndef RTSP_HEADERS_BUFFER_SIZE
 #define RTSP_HEADERS_BUFFER_SIZE 1024
-#endif
 
 /* RTSP session ID - server-generated session identifier */
-#ifndef RTSP_SESSION_ID_SIZE
 #define RTSP_SESSION_ID_SIZE 128
-#endif
 
 /* RTSP server URL - complete RTSP URL */
-#ifndef RTSP_SERVER_URL_SIZE
 #define RTSP_SERVER_URL_SIZE 1024
-#endif
 
 /* RTSP server hostname - DNS name or IP address */
-#ifndef RTSP_SERVER_HOST_SIZE
 #define RTSP_SERVER_HOST_SIZE 256
-#endif
 
 /* RTSP server path - path component of URL with query string */
-#ifndef RTSP_SERVER_PATH_SIZE
 #define RTSP_SERVER_PATH_SIZE 1024
-#endif
 
-#ifndef RTSP_CREDENTIAL_SIZE
 #define RTSP_CREDENTIAL_SIZE 128
-#endif
 
 /* RTSP playseek range - for Range header in PLAY command */
-#ifndef RTSP_PLAYSEEK_RANGE_SIZE
 #define RTSP_PLAYSEEK_RANGE_SIZE 256
-#endif
 
 /* URL copy buffer - for URL parsing operations */
-#ifndef RTSP_URL_COPY_SIZE
 #define RTSP_URL_COPY_SIZE 1024
-#endif
 
 /* Time conversion buffers - for playseek time formatting */
-#ifndef RTSP_TIME_STRING_SIZE
 #define RTSP_TIME_STRING_SIZE 64
-#endif
-
-#ifndef RTSP_TIME_COMPONENT_SIZE
 #define RTSP_TIME_COMPONENT_SIZE 32
-#endif
 
 /* Port string buffer - for port number conversion */
-#ifndef RTSP_PORT_STRING_SIZE
 #define RTSP_PORT_STRING_SIZE 16
-#endif
 
 /* Header parsing buffer - for individual header values */
-#ifndef RTSP_HEADER_PREFIX_SIZE
 #define RTSP_HEADER_PREFIX_SIZE 64
-#endif
 
 /* ========== RTSP MESSAGE TYPES ========== */
 
@@ -131,23 +102,23 @@ typedef enum
 /* RTSP session structure */
 typedef struct
 {
-    int socket;                                    /* TCP socket to RTSP server */
-    int epoll_fd;                                  /* Epoll file descriptor for socket registration */
-    struct connection_s *conn;                     /* Connection pointer for fdmap registration */
-    rtsp_state_t state;                            /* Current RTSP state */
-    int status_index;                              /* Index in status_shared->clients array for state updates */
-    uint32_t cseq;                                 /* RTSP sequence number */
-    char session_id[RTSP_SESSION_ID_SIZE];         /* RTSP session ID */
-    char server_url[RTSP_SERVER_URL_SIZE];         /* Full RTSP URL */
-    char server_host[RTSP_SERVER_HOST_SIZE];       /* RTSP server hostname */
-    int server_port;                               /* RTSP server port */
-    char server_path[RTSP_SERVER_PATH_SIZE];       /* RTSP path with query string */
-    char username[RTSP_CREDENTIAL_SIZE];           /* RTSP username for Basic auth */
-    char password[RTSP_CREDENTIAL_SIZE];           /* RTSP password for Basic auth */
-    int has_basic_auth;                            /* Flag: include Authorization header */
+    int socket;                                          /* TCP socket to RTSP server */
+    int epoll_fd;                                        /* Epoll file descriptor for socket registration */
+    struct connection_s *conn;                           /* Connection pointer for fdmap registration */
+    rtsp_state_t state;                                  /* Current RTSP state */
+    int status_index;                                    /* Index in status_shared->clients array for state updates */
+    uint32_t cseq;                                       /* RTSP sequence number */
+    char session_id[RTSP_SESSION_ID_SIZE];               /* RTSP session ID */
+    char server_url[RTSP_SERVER_URL_SIZE];               /* Full RTSP URL */
+    char server_host[RTSP_SERVER_HOST_SIZE];             /* RTSP server hostname */
+    int server_port;                                     /* RTSP server port */
+    char server_path[RTSP_SERVER_PATH_SIZE];             /* RTSP path with query string */
+    char username[RTSP_CREDENTIAL_SIZE];                 /* RTSP username for Basic auth */
+    char password[RTSP_CREDENTIAL_SIZE];                 /* RTSP password for Basic auth */
+    int has_basic_auth;                                  /* Flag: include Authorization header */
     char authorization_header[RTSP_HEADERS_BUFFER_SIZE]; /* Cached Authorization header */
-    char playseek_range[RTSP_PLAYSEEK_RANGE_SIZE]; /* Range for RTSP PLAY command */
-    int redirect_count;                            /* Number of redirects followed */
+    char playseek_range[RTSP_PLAYSEEK_RANGE_SIZE];       /* Range for RTSP PLAY command */
+    int redirect_count;                                  /* Number of redirects followed */
 
     /* Transport mode configuration */
     rtsp_transport_mode_t transport_mode;         /* Current transport mode */

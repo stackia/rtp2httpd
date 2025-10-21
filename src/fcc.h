@@ -19,15 +19,6 @@ typedef struct buffer_ref_s buffer_ref_t;
 #define FCC_TIMEOUT_UNICAST_SEC 1.0    /* Timeout for unicast media packets (FCC_STATE_UNICAST_ACTIVE) */
 #define FCC_TIMEOUT_SYNC_WAIT_SEC 15.0 /* Max wait time for server sync notification before joining multicast */
 
-/* Pending buffer node for zero-copy chain */
-typedef struct pending_buffer_node_s
-{
-    buffer_ref_t *buf_ref; /* Reference to pool buffer */
-    size_t data_offset;    /* Offset of RTP payload within buffer */
-    size_t data_len;       /* Length of data in this buffer */
-    struct pending_buffer_node_s *next;
-} pending_buffer_node_t;
-
 /* FCC State Machine - Based on Fast Channel Change Protocol */
 typedef enum
 {
@@ -58,8 +49,8 @@ typedef struct
     int64_t unicast_start_time; /* Timestamp when unicast started (for sync wait timeout) */
 
     /* Multicast pending buffer for smooth transition - zero-copy chain */
-    pending_buffer_node_t *pending_list_head;
-    pending_buffer_node_t *pending_list_tail;
+    buffer_ref_t *pending_list_head;
+    buffer_ref_t *pending_list_tail;
     uint16_t mcast_pbuf_last_seqn;
 } fcc_session_t;
 
@@ -137,33 +128,27 @@ int fcc_handle_sync_notification(stream_context_t *ctx, int timeout_ms);
  * Stage 4: Handle RTP media packets from unicast stream
  *
  * @param ctx Stream context
- * @param buf Data buffer (from buffer pool)
- * @param buf_len Buffer length
  * @param buf_ref Buffer reference for zero-copy
  * @return 0 on success
  */
-int fcc_handle_unicast_media(stream_context_t *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref);
+int fcc_handle_unicast_media(stream_context_t *ctx, buffer_ref_t *buf_ref);
 
 /**
  * Handle multicast data during transition period
  *
  * @param ctx Stream context
- * @param buf Data buffer (from buffer pool)
- * @param buf_len Buffer length
  * @param buf_ref Buffer reference for zero-copy
  * @return 0 on success
  */
-int fcc_handle_mcast_transition(stream_context_t *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref);
+int fcc_handle_mcast_transition(stream_context_t *ctx, buffer_ref_t *buf_ref);
 
 /**
  * Handle multicast data in active state
  *
  * @param ctx Stream context
- * @param buf Data buffer (from buffer pool)
- * @param buf_len Buffer length
  * @param buf_ref Buffer reference for zero-copy
  * @return 0 on success
  */
-int fcc_handle_mcast_active(stream_context_t *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref);
+int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref);
 
 #endif /* __FCC_H__ */

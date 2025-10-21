@@ -245,15 +245,11 @@ void fcc_session_cleanup(fcc_session_t *fcc, service_t *service, int epoll_fd)
     }
 
     /* Clean up session resources - free pending buffer chain */
-    pending_buffer_node_t *node = fcc->pending_list_head;
+    buffer_ref_t *node = fcc->pending_list_head;
     while (node)
     {
-        pending_buffer_node_t *next = node->next;
-        if (node->buf_ref)
-        {
-            buffer_ref_put(node->buf_ref);
-        }
-        free(node);
+        buffer_ref_t *next = node->send_next;
+        buffer_ref_put(node);
         node = next;
     }
     if (fcc->pending_list_head)
@@ -279,7 +275,6 @@ void fcc_session_cleanup(fcc_session_t *fcc, service_t *service, int epoll_fd)
     fcc->fcc_term_seqn = 0;
     fcc->fcc_term_sent = 0;
     fcc->not_first_packet = 0;
-    fcc->mcast_pbuf_last_seqn = 0;
 
     /* Clear client address structure */
     memset(&fcc->fcc_client, 0, sizeof(fcc->fcc_client));
@@ -603,7 +598,7 @@ int fcc_handle_sync_notification(stream_context_t *ctx, int timeout_ms)
 /*
  * FCC Protocol Stage 4: Handle RTP media packets from unicast stream
  */
-int fcc_handle_unicast_media(stream_context_t *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref)
+int fcc_handle_unicast_media(stream_context_t *ctx, buffer_ref_t *buf_ref)
 {
     fcc_session_t *fcc = &ctx->fcc;
 
@@ -621,11 +616,10 @@ int fcc_handle_unicast_media(stream_context_t *ctx, uint8_t *buf, int buf_len, b
     }
 
     /* Forward RTP payload to client (true zero-copy) or capture I-frame (snapshot) */
-    int payload_bytes = stream_process_rtp_payload(ctx, buf_len, buf, buf_ref,
-                                                   &fcc->current_seqn, &fcc->not_first_packet);
-    if (payload_bytes > 0)
+    int processed_bytes = stream_process_rtp_payload(ctx, buf_ref, &fcc->current_seqn, &fcc->not_first_packet);
+    if (processed_bytes > 0)
     {
-        ctx->total_bytes_sent += (uint64_t)payload_bytes;
+        ctx->total_bytes_sent += (uint64_t)processed_bytes;
     }
 
     /* Check if we should terminate FCC based on sequence number */
@@ -677,7 +671,7 @@ static int fcc_send_termination_message(stream_context_t *ctx, uint16_t mcast_se
         if (fcc_send_term_packet(fcc, ctx->service, fcc->fcc_term_seqn + 2, "normal flow") == 0)
         {
             fcc->fcc_term_sent = 1;
-            logger(LOG_DEBUG, "FCC: Normal termination message sent, term_seqn=%u", fcc->fcc_term_seqn);
+            logger(LOG_DEBUG, "FCC: Normal termination message sent, term_seqn=%u (+2)", mcast_seqn);
         }
         else
         {
@@ -691,63 +685,42 @@ static int fcc_send_termination_message(stream_context_t *ctx, uint16_t mcast_se
 /*
  * FCC Protocol Stage 6: Handle multicast data during transition period
  */
-int fcc_handle_mcast_transition(stream_context_t *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref)
+int fcc_handle_mcast_transition(stream_context_t *ctx, buffer_ref_t *buf_ref)
 {
     fcc_session_t *fcc = &ctx->fcc;
-    uint8_t *rtp_payload;
     int payloadlength;
-    uint16_t mcast_seqn;
+    uint8_t *payload;
+    uint16_t seqn;
     int is_rtp;
+    uint8_t *data_ptr = (uint8_t *)buf_ref->data + buf_ref->data_offset;
 
-    /* Extract RTP payload and sequence number */
-    is_rtp = get_rtp_payload(buf, buf_len, &rtp_payload, &payloadlength, &mcast_seqn);
-
-    /* FCC transition only works with RTP packets */
-    if (is_rtp != 1)
+    is_rtp = rtp_get_payload(data_ptr, buf_ref->data_size, &payload, &payloadlength, &seqn);
+    if (unlikely(is_rtp < 0))
     {
-        return 0;
+        return 0; /* Malformed packet, already logged */
     }
-
-    fcc->mcast_pbuf_last_seqn = mcast_seqn;
 
     /* Send termination message if not sent yet */
-    if (fcc_send_termination_message(ctx, mcast_seqn) < 0)
+    if (!fcc->fcc_term_sent && fcc_send_termination_message(ctx, seqn) < 0)
     {
         return -1;
-    }
-
-    if (payloadlength <= 0)
-    {
-        return 0;
-    }
-
-    /* Create pending buffer node */
-    pending_buffer_node_t *node = malloc(sizeof(pending_buffer_node_t));
-    if (!node)
-    {
-        logger(LOG_ERROR, "FCC: Failed to allocate pending buffer node");
-        return 0;
     }
 
     /* Keep original receive buffer alive for deferred zero-copy send */
     buffer_ref_get(buf_ref);
 
-    node->buf_ref = buf_ref;
-    node->data_len = (size_t)payloadlength;
-    node->data_offset = (size_t)(rtp_payload - (uint8_t *)buf_ref->data);
-    node->next = NULL;
+    buf_ref->send_next = NULL;
 
     /* Add to pending list */
     if (fcc->pending_list_tail)
     {
-        fcc->pending_list_tail->next = node;
-        fcc->pending_list_tail = node;
+        fcc->pending_list_tail->send_next = buf_ref;
     }
     else
     {
-        fcc->pending_list_head = node;
-        fcc->pending_list_tail = node;
+        fcc->pending_list_head = buf_ref;
     }
+    fcc->pending_list_tail = buf_ref;
 
     return 0;
 }
@@ -755,62 +728,42 @@ int fcc_handle_mcast_transition(stream_context_t *ctx, uint8_t *buf, int buf_len
 /*
  * FCC Protocol Stage 8: Handle multicast data in active state
  */
-int fcc_handle_mcast_active(stream_context_t *ctx, uint8_t *buf, int buf_len, buffer_ref_t *buf_ref)
+int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref)
 {
     fcc_session_t *fcc = &ctx->fcc;
 
     /* Flush pending buffer chain first if available - TRUE ZERO-COPY */
     if (unlikely(fcc->pending_list_head != NULL))
     {
-        pending_buffer_node_t *node = fcc->pending_list_head;
-        pending_buffer_node_t *prev = NULL;
+        buffer_ref_t *node = fcc->pending_list_head;
+        uint64_t flushed_bytes = 0;
 
         while (node)
         {
             /* Queue each buffer for zero-copy send */
-            if (connection_queue_zerocopy(ctx->conn, node->buf_ref, node->data_offset, node->data_len) == 0)
+            buffer_ref_t *next = node->send_next;
+            int processed_bytes = stream_process_rtp_payload(ctx, node, &fcc->current_seqn, &fcc->not_first_packet);
+            if (likely(processed_bytes > 0))
             {
-                ctx->total_bytes_sent += (uint64_t)node->data_len;
-
-                /* Successfully queued - move to next */
-                pending_buffer_node_t *next = node->next;
-
-                /* Free the node (buffer_ref will be released by zerocopy queue) */
-                buffer_ref_put(node->buf_ref);
-                free(node);
-
-                if (prev)
-                {
-                    prev->next = next;
-                }
-                else
-                {
-                    fcc->pending_list_head = next;
-                }
-
-                node = next;
+                ctx->total_bytes_sent += (uint64_t)processed_bytes;
+                flushed_bytes += (uint64_t)processed_bytes;
             }
-            else
-            {
-                /* Queue full - keep remaining buffers for next attempt */
-                return 0;
-            }
+            buffer_ref_put(node);
+            node = next;
         }
 
         /* All buffers flushed successfully */
         fcc->pending_list_head = NULL;
         fcc->pending_list_tail = NULL;
-        fcc->current_seqn = fcc->mcast_pbuf_last_seqn;
 
-        logger(LOG_DEBUG, "FCC: Flushed pending buffer chain, last_seqn=%u", fcc->mcast_pbuf_last_seqn);
+        logger(LOG_DEBUG, "FCC: Flushed pending buffer chain, total_flushed_bytes=%llu", flushed_bytes);
     }
 
     /* Forward multicast data to client (true zero-copy) or capture I-frame (snapshot) */
-    int payload_bytes = stream_process_rtp_payload(ctx, buf_len, buf, buf_ref,
-                                                   &fcc->current_seqn, &fcc->not_first_packet);
-    if (payload_bytes > 0)
+    int processed_bytes = stream_process_rtp_payload(ctx, buf_ref, &fcc->current_seqn, &fcc->not_first_packet);
+    if (likely(processed_bytes > 0))
     {
-        ctx->total_bytes_sent += (uint64_t)payload_bytes;
+        ctx->total_bytes_sent += (uint64_t)processed_bytes;
     }
 
     return 0;

@@ -687,7 +687,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
 
     len += snprintf(buffer + len, buffer_capacity - (size_t)len,
                     "{\"id\":%d,\"pid\":%d,\"activeClients\":%u,\"totalBandwidth\":%llu,\"totalBytes\":%llu,"
-                    "\"send\":{\"total\":%llu,\"completions\":%llu,\"copied\":%llu,\"eagain\":%llu,\"enobufs\":%llu,\"batch\":%llu,\"timeoutFlush\":%llu},"
+                    "\"send\":{\"total\":%llu,\"completions\":%llu,\"copied\":%llu,\"eagain\":%llu,\"enobufs\":%llu,\"batch\":%llu},"
                     "\"pool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,\"utilization\":%.1f},"
                     "\"controlPool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,\"utilization\":%.1f}}",
                     i,
@@ -701,7 +701,6 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
                     (unsigned long long)ws->eagain_count,
                     (unsigned long long)ws->enobufs_count,
                     (unsigned long long)ws->batch_sends,
-                    (unsigned long long)ws->timeout_flushes,
                     (unsigned long long)w_pool_total,
                     (unsigned long long)w_pool_free,
                     (unsigned long long)w_pool_used,

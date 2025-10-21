@@ -152,7 +152,7 @@ return view.extend({
     o.depends("use_config_file", "0");
 
     o = s.option(form.ListValue, "verbose", _("rtp2httpd_Verbose"));
-    o.value("0", _("rtp2httpd_Quiet"));
+    o.value("0", _("rtp2httpd_Fatal"));
     o.value("1", _("rtp2httpd_Error"));
     o.value("2", _("rtp2httpd_Warn"));
     o.value("3", _("rtp2httpd_Info"));

@@ -344,7 +344,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
     /* Extract RTP payload (or use entire packet if not RTP-encapsulated) */
     uint8_t *payload;
     int payload_size;
-    int is_rtp = get_rtp_payload(buf, recv_len, &payload, &payload_size, NULL);
+    int is_rtp = rtp_get_payload(buf, recv_len, &payload, &payload_size, NULL);
 
     if (is_rtp < 0)
         return 0; /* Malformed RTP, skip */
@@ -518,6 +518,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
 
                     /* File descriptor ownership transferred to queue, don't close it here */
                     logger(LOG_INFO, "Snapshot: Sent JPEG response (%zu bytes)", jpeg_size);
+                    conn->state = CONN_CLOSING;
                 }
                 else
                 {

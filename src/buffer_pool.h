@@ -36,16 +36,24 @@ typedef enum
  * 1. When buffer is free: linked via free_next in pool's free list
  * 2. When buffer is in use: can be queued for sending via send_next
  *
- * The send queue fields (iov, buf_offset, zerocopy_id) are only valid
+ * The send queue fields (iov, zerocopy_id) are only valid
  * when the buffer is in a send queue or pending completion queue.
  */
 typedef struct buffer_ref_s
 {
-    buffer_type_t type;                    /* Buffer type: memory or file */
-    void *data;                            /* Pointer to buffer data (only for BUFFER_TYPE_MEMORY) */
-    size_t size;                           /* Size of buffer (only for BUFFER_TYPE_MEMORY) */
+    buffer_type_t type; /* Buffer type: memory or file */
+    union
+    {
+        void *data;  /* Pointer to buffer data (BUFFER_TYPE_MEMORY) */
+        int file_fd; /* File descriptor for sendfile() (BUFFER_TYPE_FILE) */
+    };
+    union
+    {
+        size_t data_size; /* Size of buffer data (BUFFER_TYPE_MEMORY) */
+        size_t file_size; /* Total size to send from file (BUFFER_TYPE_FILE) */
+    };
     int refcount;                          /* Reference count */
-    struct buffer_pool_segment_s *segment; /* Segment this buffer belongs to (only for BUFFER_TYPE_MEMORY) */
+    struct buffer_pool_segment_s *segment; /* Segment this buffer belongs to (BUFFER_TYPE_MEMORY) */
 
     /* Union: buffer is either in free list OR in send queue, never both */
     union
@@ -54,19 +62,16 @@ typedef struct buffer_ref_s
         struct buffer_ref_s *send_next; /* For send/pending queue linkage */
     };
 
-    /* Send queue fields - only valid when buffer is queued for sending */
     union
     {
         struct iovec iov; /* Data pointer and length for sendmsg() (BUFFER_TYPE_MEMORY) */
-        struct
-        {
-            int file_fd;       /* File descriptor for sendfile() (BUFFER_TYPE_FILE) */
-            off_t file_offset; /* Current offset in file */
-            size_t file_size;  /* Total size to send from file */
-            size_t file_sent;  /* Bytes already sent from this file */
-        };
+        size_t file_sent; /* Bytes already sent from this file (BUFFER_TYPE_FILE) */
     };
-    size_t buf_offset;    /* Offset in buffer where data starts (for partial sends, BUFFER_TYPE_MEMORY only) */
+    union
+    {
+        size_t data_offset; /* Offset in buffer where data starts (for partial sends, BUFFER_TYPE_MEMORY only) */
+        off_t file_offset;  /* Current offset in file */
+    };
     uint32_t zerocopy_id; /* ID for tracking MSG_ZEROCOPY completions */
 } buffer_ref_t;
 
@@ -107,9 +112,9 @@ void buffer_pool_cleanup(buffer_pool_t *pool);
 void buffer_pool_update_stats(buffer_pool_t *pool);
 void buffer_ref_get(buffer_ref_t *ref);
 void buffer_ref_put(buffer_ref_t *ref);
-buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool, size_t size);
-buffer_ref_t *buffer_pool_alloc(size_t size);
-buffer_ref_t *buffer_pool_alloc_control(size_t size);
+buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool);
+buffer_ref_t *buffer_pool_alloc(void);
+buffer_ref_t *buffer_pool_alloc_control(void);
 void buffer_pool_try_shrink(void);
 
 #endif /* BUFFER_POOL_H */

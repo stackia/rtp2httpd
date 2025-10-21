@@ -29,8 +29,8 @@ msgstr "Port"
 msgid "rtp2httpd_Verbose"
 msgstr "Logging level"
 
-msgid "rtp2httpd_Quiet"
-msgstr "Quiet"
+msgid "rtp2httpd_Fatal"
+msgstr "Fatal"
 
 msgid "rtp2httpd_Error"
 msgstr "Error"
