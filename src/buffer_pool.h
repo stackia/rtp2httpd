@@ -22,13 +22,10 @@
 #define CONTROL_POOL_LOW_WATERMARK 64
 #define CONTROL_POOL_HIGH_WATERMARK (CONTROL_POOL_INITIAL_SIZE * 2)
 
-#define MAX_RECV_PACKETS_PER_BATCH 32
-
 typedef enum
 {
-    BUFFER_TYPE_MEMORY = 0,      /* Normal memory buffer from pool */
-    BUFFER_TYPE_FILE = 1,        /* File descriptor for sendfile() */
-    BUFFER_TYPE_MEMORY_SLICE = 2 /* View into another memory buffer */
+    BUFFER_TYPE_MEMORY = 0, /* Normal memory buffer from pool */
+    BUFFER_TYPE_FILE = 1    /* File descriptor for sendfile() */
 } buffer_type_t;
 
 /**
@@ -44,44 +41,32 @@ typedef enum
  */
 typedef struct buffer_ref_s
 {
-    buffer_type_t type; /* Buffer type: memory or file */
-
-    union
-    {
-        void *data; /* Pointer to buffer data (only for BUFFER_TYPE_MEMORY) */
-        int fd;     /* File descriptor (only for BUFFER_TYPE_FILE) */
-    };
-
-    off_t data_offset;                     /* Offset in buffer where data starts (for partial sends, BUFFER_TYPE_MEMORY only) */
-    size_t data_len;                       /* Size of data */
+    buffer_type_t type;                    /* Buffer type: memory or file */
+    void *data;                            /* Pointer to buffer data (only for BUFFER_TYPE_MEMORY) */
+    size_t size;                           /* Size of buffer (only for BUFFER_TYPE_MEMORY) */
     int refcount;                          /* Reference count */
     struct buffer_pool_segment_s *segment; /* Segment this buffer belongs to (only for BUFFER_TYPE_MEMORY) */
-    struct buffer_ref_s *parent_ref;       /* Parent buffer when acting as slice */
 
-    /* Union: buffer is either in free list OR in send queue OR in process list, never multiple */
+    /* Union: buffer is either in free list OR in send queue, never both */
     union
     {
-        struct buffer_ref_s *free_next;    /* For free list linkage */
-        struct buffer_ref_s *send_next;    /* For send/pending queue linkage */
-        struct buffer_ref_s *process_next; /* For batch processing linkage */
+        struct buffer_ref_s *free_next; /* For free list linkage */
+        struct buffer_ref_s *send_next; /* For send/pending queue linkage */
     };
 
     /* Send queue fields - only valid when buffer is queued for sending */
     union
     {
+        struct iovec iov; /* Data pointer and length for sendmsg() (BUFFER_TYPE_MEMORY) */
         struct
         {
-            struct iovec iov; /* Data pointer and length for sendmsg() (BUFFER_TYPE_MEMORY) */
-        } sendmsg_info;
-        struct
-        {
-            size_t sent; /* Bytes already sent from this file */
-        } sendfile_info;
-        struct
-        {
-            struct sockaddr_in peer_addr; /* Peer address (for recvmsg batch processing) */
-        } recv_info;
+            int file_fd;       /* File descriptor for sendfile() (BUFFER_TYPE_FILE) */
+            off_t file_offset; /* Current offset in file */
+            size_t file_size;  /* Total size to send from file */
+            size_t file_sent;  /* Bytes already sent from this file */
+        };
     };
+    size_t buf_offset;    /* Offset in buffer where data starts (for partial sends, BUFFER_TYPE_MEMORY only) */
     uint32_t zerocopy_id; /* ID for tracking MSG_ZEROCOPY completions */
 } buffer_ref_t;
 
@@ -122,34 +107,9 @@ void buffer_pool_cleanup(buffer_pool_t *pool);
 void buffer_pool_update_stats(buffer_pool_t *pool);
 void buffer_ref_get(buffer_ref_t *ref);
 void buffer_ref_put(buffer_ref_t *ref);
-buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool, size_t num_buffers, size_t *allocated);
-buffer_ref_t *buffer_pool_alloc(void);
-buffer_ref_t *buffer_ref_create_slice(buffer_ref_t *source, size_t offset, size_t length);
-
-/**
- * Batch receive packets from a socket into a linked list
- *
- * Returns: head of buffer list (linked via process_next), or NULL on error/no data
- *
- * Parameters:
- *   sock              - Socket to receive from
- *   save_peer_info    - If true, save peer address in buffer->recv_info.peer_addr
- *   drain_label       - Label for logging (e.g., "FCC", "Multicast", "RTSP UDP")
- *   packets_received  - [out] Number of packets successfully received
- *   packets_dropped   - [out] Number of packets dropped due to buffer pool exhaustion
- *
- * For each received buffer:
- *   - buffer->data_len contains the received data length
- *   - If save_peer_info is true:
- *     - buffer->recv_info.peer_addr contains the peer's address
- *
- * Caller is responsible for:
- *   1. Processing all buffers in the returned list
- *   2. Calling buffer_ref_put() on each buffer after processing
- *   3. If needed, filtering packets by source address
- */
-buffer_ref_t *buffer_pool_batch_recv(int sock, int save_peer_info, const char *drain_label,
-                                     int *packets_received, int *packets_dropped);
+buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool, size_t size);
+buffer_ref_t *buffer_pool_alloc(size_t size);
+buffer_ref_t *buffer_pool_alloc_control(size_t size);
 void buffer_pool_try_shrink(void);
 
 #endif /* BUFFER_POOL_H */

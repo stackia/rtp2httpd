@@ -21,6 +21,12 @@ typedef enum
 
 #define INBUF_SIZE 8192
 
+typedef enum
+{
+  CONNECTION_BUFFER_CONTROL = 0,
+  CONNECTION_BUFFER_MEDIA = 1
+} connection_buffer_class_t;
+
 #define CONNECTION_QUEUE_REPORT_INTERVAL_MS 1000
 
 typedef struct connection_s
@@ -34,7 +40,7 @@ typedef struct connection_s
   /* zero-copy send queue - all output goes through this */
   zerocopy_queue_t zc_queue;
   int zerocopy_enabled; /* Whether SO_ZEROCOPY is enabled on this socket */
-  buffer_pool_t *buffer_pool;
+  connection_buffer_class_t buffer_class;
   /* HTTP request parser */
   http_request_t http_req;
   /* service/stream */
@@ -161,15 +167,15 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len);
 int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len);
 
 /**
- * Queue buffer references for zero-copy send
- * Supports partial send - will queue as many buffers as fit within limit
- * 
- * @param c Connection to queue to
- * @param buf_ref_list List of buffer references to queue (linked via send_next)
- * @param out_num_queued Output parameter for number of buffers queued (can be NULL)
- * @return 0 if all buffers queued, -1 if partial queue (some dropped), -2 on error
+ * Queue data for zero-copy send (no memcpy)
+ * Takes ownership of the buffer via reference counting
+ * @param c Connection
+ * @param buf_ref Buffer reference (must not be NULL)
+ * @param offset Offset in buffer where data starts (for partial buffer sends)
+ * @param len Data length
+ * @return 0 on success, -1 if queue full or invalid parameters
  */
-int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref_list, int *out_num_queued);
+int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref, size_t offset, size_t len);
 
 /**
  * Queue a file descriptor for zero-copy send using sendfile()
