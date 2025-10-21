@@ -6,7 +6,7 @@
 2. 有些地区 FCC IP 和 RTSP 单播源的 IP 是一样的，只是端口不一样。如果你能找到当地 RTSP 单播地址，可以把端口换成 8027 或 15970 作为 FCC 地址试试看。
 3. 可以根据 rtp2httpd 的日志判断 FCC 是否生效。
    - 出现 `FCC: Unicast stream started successfully` 表示 FCC 地址有效，并且成功收到单播流。
-   - 出现 `FCC: Server response timeout (1 seconds), falling back to multicast` 有两种可能
+   - 出现 `FCC: Server response timeout (80 ms), falling back to multicast` 有两种可能
      1. FCC 地址无效。
      2. 你的网络配置不正确，导致无法连接到 FCC 服务器。一般来说必须通过 DHCP/IPoE/PPPoE 获得 IPTV 内网 IP 后，并启用 rtp2httpd `--upstream-interface-unicast` 选项指定 IPTV 接口后，才能访问 FCC。请结合 ping / traceroute 等工具判断。
 4. 在一些地区，不同的组播地址需要使用不同的 FCC IP，也可能存在一些组播频道未启用 FCC 的情况。
