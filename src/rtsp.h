@@ -67,7 +67,9 @@ typedef enum
 {
     RTSP_STATE_INIT = 0,
     RTSP_STATE_CONNECTING,        /* Async TCP connection in progress */
-    RTSP_STATE_CONNECTED,         /* Connected, ready to send DESCRIBE */
+    RTSP_STATE_CONNECTED,         /* Connected, ready to send OPTIONS */
+    RTSP_STATE_SENDING_OPTIONS,   /* Sending OPTIONS request */
+    RTSP_STATE_AWAITING_OPTIONS,  /* Waiting for OPTIONS response */
     RTSP_STATE_SENDING_DESCRIBE,  /* Sending DESCRIBE request */
     RTSP_STATE_AWAITING_DESCRIBE, /* Waiting for DESCRIBE response */
     RTSP_STATE_DESCRIBED,         /* DESCRIBE complete, ready to send SETUP */
@@ -154,10 +156,11 @@ typedef struct
     int awaiting_response;                          /* Flag: waiting for response */
 
     /* Keepalive tracking */
-    int keepalive_interval_ms;       /* OPTIONS keepalive interval (0 = disabled) */
-    int64_t last_keepalive_ms;       /* Timestamp of last OPTIONS keepalive */
+    int keepalive_interval_ms;       /* Keepalive interval (0 = disabled) */
+    int64_t last_keepalive_ms;       /* Timestamp of last keepalive */
     int keepalive_pending;           /* Pending keepalive request queued for send */
-    int awaiting_keepalive_response; /* Awaiting OPTIONS keepalive response */
+    int awaiting_keepalive_response; /* Awaiting keepalive response */
+    int use_get_parameter;           /* Use GET_PARAMETER for keepalive (1), fallback to OPTIONS (0) */
 
     /* Teardown and cleanup state */
     int teardown_requested;             /* Flag: TEARDOWN has been requested (cleanup initiated) */
