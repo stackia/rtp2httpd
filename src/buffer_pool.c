@@ -85,6 +85,7 @@ static buffer_pool_segment_t *buffer_pool_segment_create(size_t buffer_size, siz
         ref->data = segment->buffers + (i * buffer_size);
         ref->segment = segment;
         ref->type = BUFFER_TYPE_MEMORY;
+        ref->parent_ref = NULL;
         ref->free_next = pool->free_list;
         pool->free_list = ref;
     }
@@ -208,6 +209,17 @@ void buffer_ref_put(buffer_ref_t *ref)
     ref->refcount--;
     if (ref->refcount <= 0)
     {
+        if (ref->type == BUFFER_TYPE_MEMORY_SLICE)
+        {
+            buffer_ref_t *parent = ref->parent_ref;
+            if (parent)
+            {
+                buffer_ref_put(parent);
+            }
+            free(ref);
+            return;
+        }
+
         if (ref->type == BUFFER_TYPE_FILE)
         {
             if (ref->fd >= 0)
@@ -339,6 +351,8 @@ buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool, size_t num_buffers, si
         tail->data_offset = 0;
         tail->data_len = 0;
         tail->refcount = 1;
+        tail->type = BUFFER_TYPE_MEMORY;
+        tail->parent_ref = NULL;
 
         if (tail->segment)
         {
@@ -369,6 +383,35 @@ buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool, size_t num_buffers, si
 buffer_ref_t *buffer_pool_alloc(void)
 {
     return buffer_pool_alloc_from(&zerocopy_state.pool, 1, NULL);
+}
+
+buffer_ref_t *buffer_ref_create_slice(buffer_ref_t *source, size_t offset, size_t length)
+{
+    if (!source)
+        return NULL;
+
+    size_t available = 0;
+    if (source->data_len >= (size_t)source->data_offset)
+        available = source->data_len - (size_t)source->data_offset;
+
+    if (offset > available || length > available - offset)
+        return NULL;
+
+    buffer_ref_t *slice = calloc(1, sizeof(buffer_ref_t));
+    if (!slice)
+        return NULL;
+
+    buffer_ref_get(source);
+
+    slice->type = BUFFER_TYPE_MEMORY_SLICE;
+    slice->data = source->data;
+    slice->data_offset = source->data_offset + (off_t)offset;
+    slice->data_len = length;
+    slice->segment = source->segment;
+    slice->parent_ref = source;
+    slice->refcount = 1;
+
+    return slice;
 }
 
 static void buffer_pool_try_shrink_pool(buffer_pool_t *pool, size_t min_buffers)
@@ -575,11 +618,6 @@ buffer_ref_t *buffer_pool_batch_recv(int sock, int save_peer_info, const char *d
     /* Free unused buffers (allocated but not received) */
     if ((size_t)received < buf_count)
     {
-        if (received > 0)
-        {
-            bufs[received - 1]->process_next = NULL; /* Terminate received list */
-        }
-
         buffer_ref_t *unused = (received > 0) ? bufs[received] : bufs_head;
         while (unused)
         {
