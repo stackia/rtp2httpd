@@ -158,6 +158,7 @@ void rtsp_session_init(rtsp_session_t *session)
     session->last_keepalive_ms = 0;
     session->keepalive_pending = 0;
     session->awaiting_keepalive_response = 0;
+    session->use_get_parameter = 1; /* Start with GET_PARAMETER, fallback to OPTIONS if not supported */
 
     /* Initialize teardown state */
     session->teardown_requested = 0;
@@ -175,6 +176,8 @@ static void rtsp_session_set_state(rtsp_session_t *session, rtsp_state_t new_sta
         [RTSP_STATE_INIT] = CLIENT_STATE_RTSP_INIT,
         [RTSP_STATE_CONNECTING] = CLIENT_STATE_RTSP_CONNECTING,
         [RTSP_STATE_CONNECTED] = CLIENT_STATE_RTSP_CONNECTED,
+        [RTSP_STATE_SENDING_OPTIONS] = CLIENT_STATE_RTSP_SENDING_OPTIONS,
+        [RTSP_STATE_AWAITING_OPTIONS] = CLIENT_STATE_RTSP_AWAITING_OPTIONS,
         [RTSP_STATE_SENDING_DESCRIBE] = CLIENT_STATE_RTSP_SENDING_DESCRIBE,
         [RTSP_STATE_AWAITING_DESCRIBE] = CLIENT_STATE_RTSP_AWAITING_DESCRIBE,
         [RTSP_STATE_DESCRIBED] = CLIENT_STATE_RTSP_DESCRIBED,
@@ -945,13 +948,15 @@ int rtsp_send_keepalive(rtsp_session_t *session)
     char extra_headers[RTSP_HEADERS_BUFFER_SIZE];
     if (snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\n", session->session_id) >= (int)sizeof(extra_headers))
     {
-        logger(LOG_ERROR, "RTSP: Failed to format OPTIONS keepalive headers");
+        logger(LOG_ERROR, "RTSP: Failed to format keepalive headers");
         return -1;
     }
 
-    if (rtsp_prepare_request(session, RTSP_METHOD_OPTIONS, extra_headers) < 0)
+    /* Use GET_PARAMETER if supported, otherwise use OPTIONS */
+    const char *method = session->use_get_parameter ? RTSP_METHOD_GET_PARAMETER : RTSP_METHOD_OPTIONS;
+    if (rtsp_prepare_request(session, method, extra_headers) < 0)
     {
-        logger(LOG_ERROR, "RTSP: Failed to prepare OPTIONS keepalive request");
+        logger(LOG_ERROR, "RTSP: Failed to prepare %s keepalive request", method);
         return -1;
     }
 
@@ -964,7 +969,7 @@ int rtsp_send_keepalive(rtsp_session_t *session)
         ev.data.fd = session->socket;
         if (epoll_ctl(session->epoll_fd, EPOLL_CTL_MOD, session->socket, &ev) < 0)
         {
-            logger(LOG_ERROR, "RTSP: Failed to enable EPOLLOUT for OPTIONS keepalive: %s", strerror(errno));
+            logger(LOG_ERROR, "RTSP: Failed to enable EPOLLOUT for %s keepalive: %s", method, strerror(errno));
             session->pending_request_len = 0;
             session->pending_request_sent = 0;
             session->keepalive_pending = 0;
@@ -972,7 +977,7 @@ int rtsp_send_keepalive(rtsp_session_t *session)
         }
     }
 
-    logger(LOG_DEBUG, "RTSP: Queued OPTIONS keepalive request");
+    logger(LOG_DEBUG, "RTSP: Queued %s keepalive request", method);
     return 0;
 }
 
@@ -1023,7 +1028,11 @@ static int rtsp_try_send_pending(rtsp_session_t *session)
         }
 
         /* Update state to awaiting response */
-        if (session->state == RTSP_STATE_SENDING_DESCRIBE)
+        if (session->state == RTSP_STATE_SENDING_OPTIONS)
+        {
+            rtsp_session_set_state(session, RTSP_STATE_AWAITING_OPTIONS);
+        }
+        else if (session->state == RTSP_STATE_SENDING_DESCRIBE)
         {
             rtsp_session_set_state(session, RTSP_STATE_AWAITING_DESCRIBE);
         }
@@ -1122,11 +1131,19 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
     if (was_keepalive)
     {
         session->response_buffer_pos = 0;
-        logger(LOG_DEBUG, "RTSP: OPTIONS keepalive acknowledged");
+        const char *method = session->use_get_parameter ? "GET_PARAMETER" : "OPTIONS";
+        logger(LOG_DEBUG, "RTSP: %s keepalive acknowledged", method);
         return RTSP_RESPONSE_KEEPALIVE;
     }
 
     /* Advance to next state based on current state */
+    if (session->state == RTSP_STATE_AWAITING_OPTIONS)
+    {
+        /* OPTIONS response received - keep state as AWAITING_OPTIONS,
+         * state machine will transition to SENDING_DESCRIBE */
+        session->response_buffer_pos = 0;
+        return RTSP_RESPONSE_ADVANCE;
+    }
     if (session->state == RTSP_STATE_AWAITING_DESCRIBE)
     {
         rtsp_session_set_state(session, RTSP_STATE_DESCRIBED);
@@ -1179,7 +1196,19 @@ static int rtsp_state_machine_advance(rtsp_session_t *session)
     switch (session->state)
     {
     case RTSP_STATE_CONNECTED:
-        /* Ready to send DESCRIBE */
+        /* Ready to send OPTIONS (RFC 2326 requires OPTIONS before DESCRIBE) */
+        extra_headers[0] = '\0'; /* No extra headers needed for OPTIONS */
+        if (rtsp_prepare_request(session, RTSP_METHOD_OPTIONS, extra_headers) < 0)
+        {
+            logger(LOG_ERROR, "RTSP: Failed to prepare OPTIONS request");
+            return -1;
+        }
+        rtsp_session_set_state(session, RTSP_STATE_SENDING_OPTIONS);
+        /* Will send when socket becomes writable */
+        return 0;
+
+    case RTSP_STATE_AWAITING_OPTIONS:
+        /* OPTIONS response received, ready to send DESCRIBE */
         snprintf(extra_headers, sizeof(extra_headers), "Accept: application/sdp\r\n");
         if (rtsp_prepare_request(session, RTSP_METHOD_DESCRIBE, extra_headers) < 0)
         {
@@ -1496,6 +1525,7 @@ static void rtsp_force_cleanup(rtsp_session_t *session)
     session->last_keepalive_ms = 0;
     session->keepalive_pending = 0;
     session->awaiting_keepalive_response = 0;
+    session->use_get_parameter = 1;
 
     /* Reset teardown state */
     session->teardown_requested = 0;
@@ -1694,6 +1724,7 @@ static int rtsp_parse_response(rtsp_session_t *session, const char *response)
     char *session_header = NULL;
     char *transport_header = NULL;
     char *location_header = NULL;
+    char *public_header = NULL;
     int status_code;
     int result = 0;
 
@@ -1725,9 +1756,46 @@ static int rtsp_parse_response(rtsp_session_t *session, const char *response)
     }
     else if (status_code != 200)
     {
+        /* Check if this is a GET_PARAMETER not supported error during keepalive */
+        if ((status_code == 454 || status_code == 501) &&
+            session->awaiting_keepalive_response && session->use_get_parameter)
+        {
+            logger(LOG_DEBUG, "RTSP: GET_PARAMETER not supported (code %d), falling back to OPTIONS for keepalive", status_code);
+            session->use_get_parameter = 0;
+            session->awaiting_keepalive_response = 0;
+            result = 0; /* Treat as success, will use OPTIONS next time */
+            goto cleanup;
+        }
+
         logger(LOG_ERROR, "RTSP: Server returned error code %d", status_code);
         result = -1;
         goto cleanup;
+    }
+
+    /* Parse Public header from OPTIONS response to determine supported methods */
+    if (session->state == RTSP_STATE_AWAITING_OPTIONS)
+    {
+        public_header = rtsp_find_header(response, "Public");
+        if (public_header)
+        {
+            /* Check if GET_PARAMETER is supported */
+            if (strstr(public_header, "GET_PARAMETER"))
+            {
+                session->use_get_parameter = 1;
+                logger(LOG_DEBUG, "RTSP: Server supports GET_PARAMETER for keepalive");
+            }
+            else
+            {
+                session->use_get_parameter = 0;
+                logger(LOG_DEBUG, "RTSP: Server does not advertise GET_PARAMETER, will use OPTIONS for keepalive");
+            }
+            logger(LOG_DEBUG, "RTSP: Server advertised methods: %s", public_header);
+        }
+        else
+        {
+            /* No Public header - try GET_PARAMETER anyway, fallback on error */
+            logger(LOG_DEBUG, "RTSP: No Public header in OPTIONS response, will try GET_PARAMETER with fallback");
+        }
     }
 
     /* Extract Session header if present */
@@ -1758,6 +1826,8 @@ cleanup:
         free(transport_header);
     if (location_header)
         free(location_header);
+    if (public_header)
+        free(public_header);
 
     return result;
 }
@@ -2128,6 +2198,7 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
         session->last_keepalive_ms = 0;
         session->keepalive_pending = 0;
         session->awaiting_keepalive_response = 0;
+        session->use_get_parameter = 1; /* Try GET_PARAMETER first, fallback to OPTIONS */
         logger(LOG_INFO, "RTSP: Using UDP transport");
 
         /* Parse source parameter if provided */

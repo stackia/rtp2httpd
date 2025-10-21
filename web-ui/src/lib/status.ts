@@ -31,6 +31,8 @@ const STATE_TRANSLATIONS: Record<ClientState, TranslationKey> = {
   [ClientState.RtspInit]: "clientStateRtspInit",
   [ClientState.RtspConnecting]: "clientStateRtspConnecting",
   [ClientState.RtspConnected]: "clientStateRtspConnected",
+  [ClientState.RtspSendingOptions]: "clientStateRtspSendingOptions",
+  [ClientState.RtspAwaitingOptions]: "clientStateRtspAwaitingOptions",
   [ClientState.RtspSendingDescribe]: "clientStateRtspSendingDescribe",
   [ClientState.RtspAwaitingDescribe]: "clientStateRtspAwaitingDescribe",
   [ClientState.RtspDescribed]: "clientStateRtspDescribed",
