@@ -333,7 +333,7 @@ static int snapshot_convert_to_jpeg(int idr_frame_fd, size_t idr_frame_size,
  * Process RTP payload for snapshot mode
  * Detects and accumulates IDR frame TS packets, then converts to JPEG and sends to client
  */
-int snapshot_process_packet(snapshot_context_t *ctx, buffer_ref_t *buf_ref_list, connection_t *conn)
+int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf, connection_t *conn)
 {
     if (!ctx || !ctx->enabled)
         return -1;
@@ -341,127 +341,110 @@ int snapshot_process_packet(snapshot_context_t *ctx, buffer_ref_t *buf_ref_list,
     if (ctx->idr_frame_complete)
         return 0;
 
-    /* Process each buffer in the list */
-    buffer_ref_t *current = buf_ref_list;
-    while (current)
+    /* Extract RTP payload (or use entire packet if not RTP-encapsulated) */
+    uint8_t *payload;
+    int payload_size;
+    int is_rtp = get_rtp_payload(buf, recv_len, &payload, &payload_size, NULL);
+
+    if (is_rtp < 0)
+        return 0; /* Malformed RTP, skip */
+
+    if (payload_size <= 0)
+        return 0; /* Empty payload */
+
+    /* We only handle MPEG2-TS streams (RTP-encapsulated or raw) */
+    int is_ts = payload_size >= TS_PACKET_SIZE && payload[0] == TS_SYNC_BYTE;
+
+    if (!is_ts)
     {
-        uint8_t *buf = (uint8_t *)current->data + current->data_offset;
-        int recv_len = (int)current->data_len;
+        /* Not TS format, skip */
+        return 0;
+    }
 
-        /* Extract RTP payload (or use entire packet if not RTP-encapsulated) */
-        uint8_t *payload;
-        size_t payload_size;
-        int is_rtp = rtp_get_payload(buf, recv_len, &payload, &payload_size, NULL);
+    /* Process each TS packet in the payload */
+    size_t offset = 0;
+    while (offset + TS_PACKET_SIZE <= (size_t)payload_size)
+    {
+        const uint8_t *ts_packet = payload + offset;
 
-        if (is_rtp < 0)
+        /* Verify sync byte */
+        if (ts_packet[0] != TS_SYNC_BYTE)
         {
-            /* Malformed RTP, skip this buffer and continue with next */
-            current = current->process_next;
+            offset++;
             continue;
         }
 
-        if (payload_size <= 0)
+        /* Parse TS header */
+        uint16_t pid = ((ts_packet[1] & 0x1F) << 8) | ts_packet[2];
+        int payload_unit_start = (ts_packet[1] & 0x40) != 0;
+        int has_adaptation = (ts_packet[3] & 0x20) != 0;
+        int has_payload = (ts_packet[3] & 0x10) != 0;
+
+        /* Cache PAT/PMT packets before IDR frame starts (stored in mmap header area) */
+        if (!ctx->idr_frame_started)
         {
-            /* Empty payload, skip this buffer and continue with next */
-            current = current->process_next;
-            continue;
+            cache_ts_header_packet(ctx, ts_packet, pid);
         }
 
-        /* We only handle MPEG2-TS streams (RTP-encapsulated or raw) */
-        int is_ts = payload_size >= TS_PACKET_SIZE && payload[0] == TS_SYNC_BYTE;
-
-        if (!is_ts)
+        /* If we haven't found IDR frame yet, check if this packet contains it */
+        if (!ctx->idr_frame_started)
         {
-            /* Not TS format, skip this buffer and continue with next */
-            current = current->process_next;
-            continue;
-        }
-
-        /* Process each TS packet in the payload */
-        size_t offset = 0;
-        while (offset + TS_PACKET_SIZE <= payload_size)
-        {
-            const uint8_t *ts_packet = payload + offset;
-
-            /* Verify sync byte */
-            if (ts_packet[0] != TS_SYNC_BYTE)
+            if (has_payload && payload_unit_start)
             {
-                offset++;
-                continue;
-            }
-
-            /* Parse TS header */
-            uint16_t pid = ((ts_packet[1] & 0x1F) << 8) | ts_packet[2];
-            int payload_unit_start = (ts_packet[1] & 0x40) != 0;
-            int has_adaptation = (ts_packet[3] & 0x20) != 0;
-            int has_payload = (ts_packet[3] & 0x10) != 0;
-
-            /* Cache PAT/PMT packets before IDR frame starts (stored in mmap header area) */
-            if (!ctx->idr_frame_started)
-            {
-                cache_ts_header_packet(ctx, ts_packet, pid);
-            }
-
-            /* If we haven't found IDR frame yet, check if this packet contains it */
-            if (!ctx->idr_frame_started)
-            {
-                if (has_payload && payload_unit_start)
+                /* Calculate payload start */
+                int ts_payload_start = 4;
+                if (has_adaptation)
                 {
-                    /* Calculate payload start */
-                    int ts_payload_start = 4;
-                    if (has_adaptation)
-                    {
-                        int adaptation_length = ts_packet[4];
-                        ts_payload_start += 1 + adaptation_length;
-                    }
+                    int adaptation_length = ts_packet[4];
+                    ts_payload_start += 1 + adaptation_length;
+                }
 
-                    if (ts_payload_start < TS_PACKET_SIZE)
-                    {
-                        const uint8_t *ts_payload = ts_packet + ts_payload_start;
-                        int ts_payload_len = TS_PACKET_SIZE - ts_payload_start;
+                if (ts_payload_start < TS_PACKET_SIZE)
+                {
+                    const uint8_t *ts_payload = ts_packet + ts_payload_start;
+                    int ts_payload_len = TS_PACKET_SIZE - ts_payload_start;
 
-                        /* Check for PES header with video stream */
-                        if (ts_payload_len >= 6 &&
-                            ts_payload[0] == 0x00 && ts_payload[1] == 0x00 && ts_payload[2] == 0x01)
+                    /* Check for PES header with video stream */
+                    if (ts_payload_len >= 6 &&
+                        ts_payload[0] == 0x00 && ts_payload[1] == 0x00 && ts_payload[2] == 0x01)
+                    {
+                        uint8_t stream_id = ts_payload[3];
+                        if (stream_id >= 0xE0 && stream_id <= 0xEF) /* Video stream */
                         {
-                            uint8_t stream_id = ts_payload[3];
-                            if (stream_id >= 0xE0 && stream_id <= 0xEF) /* Video stream */
+                            /* Check for I-frame NAL in PES payload */
+                            int pes_header_len = 9 + ts_payload[8];
+                            if (pes_header_len < ts_payload_len)
                             {
-                                /* Check for I-frame NAL in PES payload */
-                                int pes_header_len = 9 + ts_payload[8];
-                                if (pes_header_len < ts_payload_len)
+                                const uint8_t *es_data = ts_payload + pes_header_len;
+                                int es_len = ts_payload_len - pes_header_len;
+
+                                /* Scan for NAL start code */
+                                for (int i = 0; i < es_len - 4; i++)
                                 {
-                                    const uint8_t *es_data = ts_payload + pes_header_len;
-                                    int es_len = ts_payload_len - pes_header_len;
-
-                                    /* Scan for NAL start code */
-                                    for (int i = 0; i < es_len - 4; i++)
+                                    if (es_data[i] == 0 && es_data[i + 1] == 0 &&
+                                        (es_data[i + 2] == 1 || (es_data[i + 2] == 0 && es_data[i + 3] == 1)))
                                     {
-                                        if (es_data[i] == 0 && es_data[i + 1] == 0 &&
-                                            (es_data[i + 2] == 1 || (es_data[i + 2] == 0 && es_data[i + 3] == 1)))
+                                        int nal_start = (es_data[i + 2] == 1) ? i + 3 : i + 4;
+                                        if (nal_start < es_len)
                                         {
-                                            int nal_start = (es_data[i + 2] == 1) ? i + 3 : i + 4;
-                                            if (nal_start < es_len)
+                                            uint8_t nal_header = es_data[nal_start];
+                                            uint8_t h264_type = nal_header & 0x1F;
+                                            uint8_t hevc_type = (nal_header >> 1) & 0x3F;
+
+                                            /* Check if this is an IDR frame */
+                                            if (h264_type == 5 ||                                      /* H.264 IDR */
+                                                hevc_type == 19 || hevc_type == 20 || hevc_type == 21) /* HEVC IDR */
                                             {
-                                                uint8_t nal_header = es_data[nal_start];
-                                                uint8_t h264_type = nal_header & 0x1F;
-                                                uint8_t hevc_type = (nal_header >> 1) & 0x3F;
+                                                /* Found IDR frame! Start capturing from this packet */
+                                                ctx->idr_frame_started = 1;
+                                                ctx->video_pid = pid;
 
-                                                /* Check if this is an IDR frame */
-                                                if (h264_type == 5 ||                                      /* H.264 IDR */
-                                                    hevc_type == 19 || hevc_type == 20 || hevc_type == 21) /* HEVC IDR */
-                                                {
-                                                    /* Found IDR frame! Start capturing from this packet */
-                                                    ctx->idr_frame_started = 1;
-                                                    ctx->video_pid = pid;
+                                                /* Initialize idr_frame_size to skip PAT/PMT header area */
+                                                ctx->idr_frame_size = ctx->ts_header_size;
 
-                                                    /* Initialize idr_frame_size to skip PAT/PMT header area */
-                                                    ctx->idr_frame_size = ctx->ts_header_size;
-
-                                                    logger(LOG_DEBUG, "Snapshot: IDR frame start detected (PID: 0x%04x, header size: %zu)",
-                                                           pid, ctx->ts_header_size);
-                                                    break;
-                                                }
+                                                logger(LOG_DEBUG, "Snapshot: IDR frame start detected (PID: 0x%04x, header size: %zu)",
+                                                       pid, ctx->ts_header_size);
+                                                break;
                                             }
                                         }
                                     }
@@ -470,102 +453,99 @@ int snapshot_process_packet(snapshot_context_t *ctx, buffer_ref_t *buf_ref_list,
                         }
                     }
                 }
-
-                /* If still not started, skip this packet */
-                if (!ctx->idr_frame_started)
-                {
-                    offset += TS_PACKET_SIZE;
-                    continue;
-                }
-
-                /* IDR frame just started - fall through to save this packet */
             }
 
-            /* If IDR frame started, check if this packet belongs to the IDR frame */
-            if (ctx->idr_frame_started)
+            /* If still not started, skip this packet */
+            if (!ctx->idr_frame_started)
             {
-                /* Check if this is the end of IDR frame (next PES start on same PID) */
-                if (pid == ctx->video_pid && payload_unit_start && ctx->idr_frame_size > ctx->ts_header_size)
+                offset += TS_PACKET_SIZE;
+                continue;
+            }
+
+            /* IDR frame just started - fall through to save this packet */
+        }
+
+        /* If IDR frame started, check if this packet belongs to the IDR frame */
+        if (ctx->idr_frame_started)
+        {
+            /* Check if this is the end of IDR frame (next PES start on same PID) */
+            if (pid == ctx->video_pid && payload_unit_start && ctx->idr_frame_size > ctx->ts_header_size)
+            {
+                /* IDR frame complete */
+                ctx->idr_frame_complete = 1;
+
+                size_t video_size = ctx->idr_frame_size - ctx->ts_header_size;
+                logger(LOG_DEBUG, "Snapshot: Complete IDR frame captured (%zu bytes total, %zu header + %zu video, %zu video packets)",
+                       ctx->idr_frame_size, ctx->ts_header_size, video_size, video_size / TS_PACKET_SIZE);
+
+                /* Warn if PAT/PMT not captured (ffmpeg may fail) */
+                if (!ctx->has_pat || !ctx->has_pmt)
                 {
-                    /* IDR frame complete */
-                    ctx->idr_frame_complete = 1;
-
-                    size_t video_size = ctx->idr_frame_size - ctx->ts_header_size;
-                    logger(LOG_DEBUG, "Snapshot: Complete IDR frame captured (%zu bytes total, %zu header + %zu video, %zu video packets)",
-                           ctx->idr_frame_size, ctx->ts_header_size, video_size, video_size / TS_PACKET_SIZE);
-
-                    /* Warn if PAT/PMT not captured (ffmpeg may fail) */
-                    if (!ctx->has_pat || !ctx->has_pmt)
-                    {
-                        logger(LOG_WARN, "Snapshot: Missing TS headers (PAT: %d, PMT: %d) - ffmpeg may fail",
-                               ctx->has_pat, ctx->has_pmt);
-                    }
-
-                    /* Truncate to actual size */
-                    if (ftruncate(ctx->idr_frame_fd, ctx->idr_frame_size) < 0)
-                    {
-                        logger(LOG_WARN, "Snapshot: Failed to truncate mmap file: %s", strerror(errno));
-                    }
-
-                    /* Reset file position for ffmpeg to read from beginning */
-                    lseek(ctx->idr_frame_fd, 0, SEEK_SET);
-
-                    /* Convert to JPEG and send immediately */
-                    int jpeg_fd = -1;
-                    size_t jpeg_size = 0;
-
-                    if (snapshot_convert_to_jpeg(ctx->idr_frame_fd, ctx->idr_frame_size,
-                                                 &jpeg_fd, &jpeg_size) == 0)
-                    {
-                        /* Send HTTP headers with Content-Length */
-                        char content_length_header[64];
-                        snprintf(content_length_header, sizeof(content_length_header),
-                                 "Content-Length: %zu\r\n", jpeg_size);
-
-                        send_http_headers(conn, STATUS_200, CONTENT_JPEG, content_length_header);
-
-                        /* Queue JPEG file for non-blocking sendfile() */
-                        if (connection_queue_file(conn, jpeg_fd, 0, jpeg_size) < 0)
-                        {
-                            logger(LOG_ERROR, "Snapshot: Failed to queue JPEG file");
-                            close(jpeg_fd);
-                            return -1;
-                        }
-
-                        /* File descriptor ownership transferred to queue, don't close it here */
-                        logger(LOG_INFO, "Snapshot: Sent JPEG response (%zu bytes)", jpeg_size);
-                    }
-                    else
-                    {
-                        /* Conversion failed */
-                        logger(LOG_ERROR, "Snapshot: JPEG conversion failed");
-                        snapshot_fallback_to_streaming(ctx, conn);
-                    }
-
-                    return 0; /* IDR frame captured and sent */
+                    logger(LOG_WARN, "Snapshot: Missing TS headers (PAT: %d, PMT: %d) - ffmpeg may fail",
+                           ctx->has_pat, ctx->has_pmt);
                 }
 
-                /* Only accumulate packets from the video PID */
-                if (pid == ctx->video_pid)
+                /* Truncate to actual size */
+                if (ftruncate(ctx->idr_frame_fd, ctx->idr_frame_size) < 0)
                 {
-                    /* Check buffer capacity */
-                    if (ctx->idr_frame_size + TS_PACKET_SIZE > ctx->idr_frame_capacity)
+                    logger(LOG_WARN, "Snapshot: Failed to truncate mmap file: %s", strerror(errno));
+                }
+
+                /* Reset file position for ffmpeg to read from beginning */
+                lseek(ctx->idr_frame_fd, 0, SEEK_SET);
+
+                /* Convert to JPEG and send immediately */
+                int jpeg_fd = -1;
+                size_t jpeg_size = 0;
+
+                if (snapshot_convert_to_jpeg(ctx->idr_frame_fd, ctx->idr_frame_size,
+                                             &jpeg_fd, &jpeg_size) == 0)
+                {
+                    /* Send HTTP headers with Content-Length */
+                    char content_length_header[64];
+                    snprintf(content_length_header, sizeof(content_length_header),
+                             "Content-Length: %zu\r\n", jpeg_size);
+
+                    send_http_headers(conn, STATUS_200, CONTENT_JPEG, content_length_header);
+
+                    /* Queue JPEG file for non-blocking sendfile() */
+                    if (connection_queue_file(conn, jpeg_fd, 0, jpeg_size) < 0)
                     {
-                        logger(LOG_WARN, "Snapshot: IDR frame too large, buffer full");
+                        logger(LOG_ERROR, "Snapshot: Failed to queue JPEG file");
+                        close(jpeg_fd);
                         return -1;
                     }
 
-                    /* Copy this TS packet */
-                    memcpy(ctx->idr_frame_mmap + ctx->idr_frame_size, ts_packet, TS_PACKET_SIZE);
-                    ctx->idr_frame_size += TS_PACKET_SIZE;
+                    /* File descriptor ownership transferred to queue, don't close it here */
+                    logger(LOG_INFO, "Snapshot: Sent JPEG response (%zu bytes)", jpeg_size);
                 }
+                else
+                {
+                    /* Conversion failed */
+                    logger(LOG_ERROR, "Snapshot: JPEG conversion failed");
+                    snapshot_fallback_to_streaming(ctx, conn);
+                }
+
+                return 0; /* IDR frame captured and sent */
             }
 
-            offset += TS_PACKET_SIZE;
+            /* Only accumulate packets from the video PID */
+            if (pid == ctx->video_pid)
+            {
+                /* Check buffer capacity */
+                if (ctx->idr_frame_size + TS_PACKET_SIZE > ctx->idr_frame_capacity)
+                {
+                    logger(LOG_WARN, "Snapshot: IDR frame too large, buffer full");
+                    return -1;
+                }
+
+                /* Copy this TS packet */
+                memcpy(ctx->idr_frame_mmap + ctx->idr_frame_size, ts_packet, TS_PACKET_SIZE);
+                ctx->idr_frame_size += TS_PACKET_SIZE;
+            }
         }
 
-        /* Move to next buffer in the list */
-        current = current->process_next;
+        offset += TS_PACKET_SIZE;
     }
 
     return 0; /* Continue accumulating */

@@ -39,6 +39,24 @@
 #define CONN_QUEUE_SLOW_EXIT_LIMIT_RATIO 0.75
 #define CONN_QUEUE_SLOW_CLAMP_FACTOR 0.8
 
+static inline buffer_ref_t *connection_alloc_output_buffer(connection_t *c)
+{
+  buffer_ref_t *buf_ref = NULL;
+
+  if (c->buffer_class == CONNECTION_BUFFER_CONTROL)
+  {
+    buf_ref = buffer_pool_alloc_control(BUFFER_POOL_BUFFER_SIZE);
+    if (!buf_ref)
+      buf_ref = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+  }
+  else
+  {
+    buf_ref = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+  }
+
+  return buf_ref;
+}
+
 static size_t connection_compute_limit_bytes(buffer_pool_t *pool, size_t fair_bytes, double burst_factor)
 {
   size_t limit_bytes = (size_t)((double)fair_bytes * burst_factor);
@@ -60,15 +78,15 @@ static size_t connection_compute_limit_bytes(buffer_pool_t *pool, size_t fair_by
     }
   }
 
-  if (limit_bytes < pool->buffer_size * 4)
-    limit_bytes = pool->buffer_size * 4;
+  if (limit_bytes < BUFFER_POOL_BUFFER_SIZE * 4)
+    limit_bytes = BUFFER_POOL_BUFFER_SIZE * 4;
 
   return limit_bytes;
 }
 
 static size_t connection_calculate_queue_limit(connection_t *c, int64_t now_ms)
 {
-  buffer_pool_t *pool = c->buffer_pool;
+  buffer_pool_t *pool = &zerocopy_state.pool;
   size_t active = zerocopy_active_streams();
 
   if (active == 0)
@@ -157,7 +175,7 @@ static void connection_maybe_report_queue(connection_t *c, int64_t now_ms, int f
     return;
 
   size_t queue_buffers = c->zc_queue.num_queued;
-  size_t queue_bytes = c->zc_queue.num_queued * c->buffer_pool->buffer_size;
+  size_t queue_bytes = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
 
   int need_report = 0;
 
@@ -244,7 +262,7 @@ connection_t *connection_create(int fd, int epfd,
   /* Initialize zero-copy queue */
   zerocopy_queue_init(&c->zc_queue);
   c->zerocopy_enabled = 0;
-  c->buffer_pool = &zerocopy_state.control_pool;
+  c->buffer_class = CONNECTION_BUFFER_CONTROL;
   c->write_queue_next = NULL;
   c->write_queue_pending = 0;
   c->queue_limit_bytes = 0;
@@ -344,90 +362,47 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len)
   if (!c || !data || len == 0)
     return 0;
 
-  /* Calculate how many buffers we need */
-  size_t buffer_size = c->buffer_pool->buffer_size;
-  size_t num_buffers_needed = (len + buffer_size - 1) / buffer_size;
-
-  /* Allocate all buffers at once */
-  size_t num_allocated = 0;
-  buffer_ref_t *bufs_head = buffer_pool_alloc_from(c->buffer_pool, num_buffers_needed, &num_allocated);
-
-  if (!bufs_head || num_allocated == 0)
-  {
-    /* Pool exhausted */
-    logger(LOG_WARN, "connection_queue_output: Buffer pool exhausted, cannot queue %zu bytes", len);
-    return -1;
-  }
-
-  /* If we got fewer buffers than requested, we can still use them */
   size_t remaining = len;
   const uint8_t *src = data;
-  buffer_ref_t *current_buf = bufs_head;
-  buffer_ref_t *list_tail = NULL;
 
-  /* Fill buffers with data */
-  while (remaining > 0 && current_buf)
+  /* Allocate multiple buffers until we satisfy the entire length */
+  while (remaining > 0)
   {
+    /* Allocate a buffer from the pool */
+    buffer_ref_t *buf_ref = connection_alloc_output_buffer(c);
+    if (!buf_ref)
+    {
+      /* Pool exhausted */
+      logger(LOG_WARN, "connection_queue_output: Buffer pool exhausted, cannot queue %zu bytes", remaining);
+      return -1;
+    }
+
     /* Calculate how much data to copy into this buffer */
     size_t chunk_size = remaining;
-    if (chunk_size > buffer_size)
-      chunk_size = buffer_size;
+    if (chunk_size > BUFFER_POOL_BUFFER_SIZE)
+      chunk_size = BUFFER_POOL_BUFFER_SIZE;
 
     /* Copy data into the buffer */
-    memcpy(current_buf->data, src, chunk_size);
-    current_buf->data_len = chunk_size;
+    memcpy(buf_ref->data, src, chunk_size);
 
-    /* Move to next chunk and buffer */
+    /* Queue this buffer for zero-copy send */
+    if (connection_queue_zerocopy(c, buf_ref, 0, chunk_size) < 0)
+    {
+      /* Queue full - release the buffer and fail */
+      buffer_ref_put(buf_ref);
+      logger(LOG_WARN, "connection_queue_output: Zero-copy queue full, cannot queue %zu bytes", remaining);
+      return -1;
+    }
+
+    /* Release our reference - the queue now owns it */
+    buffer_ref_put(buf_ref);
+
+    /* Move to next chunk */
     src += chunk_size;
     remaining -= chunk_size;
-
-    list_tail = current_buf;
-    current_buf = current_buf->process_next;
   }
 
-  /* Terminate the list at the last used buffer */
-  if (list_tail)
-  {
-    list_tail->process_next = NULL;
-  }
-
-  /* If we couldn't fit all data, we still try to send what we have (partial send)
-   * This is better than dropping everything */
-  size_t bytes_to_queue = len - remaining;
-
-  /* Queue the prepared list - connection_queue_zerocopy supports partial send */
-  int num_queued = 0;
-  connection_queue_zerocopy(c, bufs_head, &num_queued);
-
-  /* Release our references for all buffers (queued or not)
-   * - For queued buffers: the queue holds a reference, so buffer_ref_put decrements from 2->1
-   * - For non-queued buffers (partial send or error): buffer_ref_put decrements from 1->0 and frees them
-   */
-  current_buf = bufs_head;
-  while (current_buf)
-  {
-    buffer_ref_t *next_buf = current_buf->process_next;
-    buffer_ref_put(current_buf);
-    current_buf = next_buf;
-  }
-
-  /* Check if queueing failed */
-  if (num_queued <= 0)
-  {
-    logger(LOG_WARN, "connection_queue_output: Zero-copy queue full, cannot queue any data");
-    return -1;
-  }
-
-  /* Log if we couldn't queue all the data */
-  if (remaining > 0)
-  {
-    logger(LOG_DEBUG, "connection_queue_output: Partial send - queued %zu bytes, %zu bytes not allocated due to buffer pool exhaustion",
-           bytes_to_queue, remaining);
-    return -1;
-  }
-
-  /* Return success if at least some data was queued, otherwise error */
-  return (num_queued > 0) ? 0 : -1;
+  return 0;
 }
 
 int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len)
@@ -809,7 +784,7 @@ int connection_route_and_start(connection_t *c)
     c->service = service;
     c->service_owned = owned;
     c->state = CONN_STREAMING;
-    c->buffer_pool = &zerocopy_state.pool;
+    c->buffer_class = CONNECTION_BUFFER_MEDIA;
     return 0;
   }
   else
@@ -821,135 +796,44 @@ int connection_route_and_start(connection_t *c)
   }
 }
 
-int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref_list, int *out_num_queued)
+int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref, size_t offset, size_t len)
 {
-  if (!c || !buf_ref_list)
-  {
-    if (out_num_queued)
-      *out_num_queued = 0;
-    return -2;
-  }
+  if (!c || !buf_ref || len == 0)
+    return 0;
 
   int64_t now_ms = get_time_ms();
   size_t limit_bytes = connection_calculate_queue_limit(c, now_ms);
-  size_t queued_bytes = c->zc_queue.num_queued * c->buffer_pool->buffer_size;
+  size_t queued_bytes = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
+  size_t projected_bytes = queued_bytes + len;
 
   c->queue_limit_bytes = limit_bytes;
 
-  /* Partial send implementation: queue as many buffers as possible until limit */
-  size_t available_bytes = (limit_bytes > queued_bytes) ? (limit_bytes - queued_bytes) : 0;
-
-  if (available_bytes == 0)
+  if (projected_bytes > limit_bytes)
   {
-    /* Queue completely full - drop everything */
-    size_t list_bytes = 0;
-    buffer_ref_t *current = buf_ref_list;
-    while (current)
-    {
-      list_bytes += current->data_len;
-      current = current->send_next;
-    }
-
-    connection_record_drop(c, list_bytes);
+    connection_record_drop(c, len);
 
     if (c->backpressure_events == 1 || (c->backpressure_events % 200) == 0)
     {
       logger(LOG_DEBUG, "Backpressure: dropping %zu bytes for client fd=%d (queued=%zu limit=%zu drops=%llu)",
-             list_bytes, c->fd, queued_bytes, limit_bytes, (unsigned long long)c->dropped_packets);
+             len, c->fd, queued_bytes, limit_bytes, (unsigned long long)c->dropped_packets);
     }
 
     connection_maybe_report_queue(c, now_ms, 1);
-    if (out_num_queued)
-      *out_num_queued = 0;
     return -1;
   }
 
-  /* Walk the list and find how many buffers we can queue */
-  buffer_ref_t *current = buf_ref_list;
-  buffer_ref_t *last_accepted = NULL;
-  size_t accumulated_bytes = 0;
-  size_t dropped_bytes = 0;
-  int num_accepted = 0;
+  /* Add to zero-copy queue with offset information */
+  int ret = zerocopy_queue_add(&c->zc_queue, buf_ref, offset, len);
+  if (ret < 0)
+    return -1; /* Queue full */
 
-  while (current)
-  {
-    if (accumulated_bytes + current->data_len <= available_bytes)
-    {
-      /* This buffer fits within limit */
-      accumulated_bytes += current->data_len;
-      last_accepted = current;
-      num_accepted++;
-      current = current->send_next;
-    }
-    else
-    {
-      /* This buffer and remaining buffers exceed limit - drop them */
-      buffer_ref_t *drop_current = current;
-      while (drop_current)
-      {
-        dropped_bytes += drop_current->data_len;
-        drop_current = drop_current->send_next;
-      }
-      break;
-    }
-  }
+  if (queued_bytes > c->queue_bytes_highwater)
+    c->queue_bytes_highwater = queued_bytes;
 
-  /* Split the list if we're doing partial send */
-  buffer_ref_t *accepted_list = buf_ref_list;
+  if (c->zc_queue.num_queued > c->queue_buffers_highwater)
+    c->queue_buffers_highwater = c->zc_queue.num_queued;
 
-  if (last_accepted && last_accepted->send_next)
-  {
-    /* Split: accepted_list ends at last_accepted, remainder will be dropped */
-    /* We modified the chain by not including this buffer, so we take ownership and must release it */
-    buffer_ref_t *drop_current = last_accepted->send_next;
-    while (drop_current)
-    {
-      buffer_ref_t *drop_next = drop_current->send_next;
-      buffer_ref_put(drop_current);
-      drop_current = drop_next;
-    }
-    last_accepted->send_next = NULL;
-  }
-  else if (!last_accepted)
-  {
-    /* Nothing accepted - all dropped */
-    /* We did not modify the original list, so no need to release references */
-    accepted_list = NULL;
-  }
-
-  /* Queue accepted buffers if any */
-  if (accepted_list)
-  {
-    int ret = zerocopy_queue_add(&c->zc_queue, accepted_list);
-    if (ret < 0)
-    {
-      /* Queue add failed unexpectedly - should not happen but handle it */
-      logger(LOG_ERROR, "connection_queue_zerocopy: zerocopy_queue_add failed unexpectedly");
-      if (out_num_queued)
-        *out_num_queued = 0;
-      return -2;
-    }
-
-    if (queued_bytes > c->queue_bytes_highwater)
-      c->queue_bytes_highwater = queued_bytes;
-
-    if (c->zc_queue.num_queued > c->queue_buffers_highwater)
-      c->queue_buffers_highwater = c->zc_queue.num_queued;
-  }
-
-  /* Record dropped buffers if any */
-  if (dropped_bytes > 0)
-  {
-    connection_record_drop(c, dropped_bytes);
-
-    if (c->backpressure_events == 1 || (c->backpressure_events % 200) == 0)
-    {
-      logger(LOG_DEBUG, "Backpressure: partial send - queued %d buffers (%zu bytes), dropped %zu bytes for client fd=%d (limit=%zu drops=%llu)",
-             num_accepted, accumulated_bytes, dropped_bytes, c->fd, limit_bytes, (unsigned long long)c->dropped_packets);
-    }
-  }
-
-  connection_maybe_report_queue(c, now_ms, dropped_bytes > 0 ? 1 : 0);
+  connection_maybe_report_queue(c, now_ms, 0);
 
   /* Batching optimization: Only enable EPOLLOUT when flush threshold is reached
    * This accumulates small RTP packets (200-1400 bytes) before sending:
@@ -966,12 +850,7 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref_list, int *
     connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
   }
 
-  /* Set output parameter */
-  if (out_num_queued)
-    *out_num_queued = num_accepted;
-
-  /* Return status: 0 = all queued, -1 = partial (some dropped) */
-  return (dropped_bytes > 0) ? -1 : 0;
+  return 0;
 }
 
 int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_t file_size)

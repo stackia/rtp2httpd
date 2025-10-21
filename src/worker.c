@@ -31,7 +31,7 @@ static connection_t *write_queue_tail = NULL;
 /* Stop flag for graceful shutdown */
 static volatile sig_atomic_t stop_flag = 0;
 
-#define WORKER_MAX_WRITE_BATCH 32
+#define WORKER_MAX_WRITE_BATCH 128
 
 static inline unsigned fd_hash(int fd) { return (unsigned)fd & (FD_MAP_SIZE - 1); }
 
@@ -549,7 +549,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
             {
               /* Client sent data or disconnected during streaming */
               char discard_buffer[1024];
-              int bytes = recv(c->fd, discard_buffer, sizeof(discard_buffer), MSG_DONTWAIT);
+              int bytes = recv(c->fd, discard_buffer, sizeof(discard_buffer), 0);
               if (bytes <= 0 && errno != EAGAIN)
               {
                 /* Client disconnected (bytes == 0) or error (bytes < 0) */

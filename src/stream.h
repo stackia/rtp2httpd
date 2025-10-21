@@ -88,12 +88,16 @@ int stream_context_cleanup(stream_context_t *ctx);
 
 /**
  * Process RTP payload - either forward to client (streaming) or capture I-frame (snapshot)
+ * This function should be used instead of write_rtp_payload_to_client() for stream contexts
  * @param ctx Stream context
+ * @param recv_len Length of received RTP packet
+ * @param buf Buffer containing RTP packet
  * @param buf_ref Buffer reference
- * @param last_seqn Pointer to previous sequence number
+ * @param old_seqn Pointer to previous sequence number
  * @param not_first Pointer to first packet flag
- * @return bytes forwarded (>= 0) for streaming, -1 on error
+ * @return bytes forwarded (>= 0) for streaming, 1 if I-frame captured for snapshot, -1 on error
  */
-int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref_list, uint16_t *last_seqn, int *not_first);
+int stream_process_rtp_payload(stream_context_t *ctx, int recv_len, uint8_t *buf,
+                               buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first);
 
 #endif /* __STREAM_H__ */
