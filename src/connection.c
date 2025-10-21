@@ -45,13 +45,13 @@ static inline buffer_ref_t *connection_alloc_output_buffer(connection_t *c)
 
   if (c->buffer_class == CONNECTION_BUFFER_CONTROL)
   {
-    buf_ref = buffer_pool_alloc_control(BUFFER_POOL_BUFFER_SIZE);
+    buf_ref = buffer_pool_alloc_control();
     if (!buf_ref)
-      buf_ref = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+      buf_ref = buffer_pool_alloc();
   }
   else
   {
-    buf_ref = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+    buf_ref = buffer_pool_alloc();
   }
 
   return buf_ref;
@@ -63,8 +63,8 @@ static size_t connection_compute_limit_bytes(buffer_pool_t *pool, size_t fair_by
 
   if (pool->max_buffers > 0)
   {
-    size_t global_cap = pool->max_buffers * pool->buffer_size;
-    size_t reserve = CONN_QUEUE_MIN_BUFFERS * pool->buffer_size;
+    size_t global_cap = pool->max_buffers * BUFFER_POOL_BUFFER_SIZE;
+    size_t reserve = CONN_QUEUE_MIN_BUFFERS * BUFFER_POOL_BUFFER_SIZE;
     if (global_cap > reserve)
     {
       size_t hard_cap = global_cap - reserve;
@@ -111,8 +111,8 @@ static size_t connection_calculate_queue_limit(connection_t *c, int64_t now_ms)
   if (pool->num_free < pool->low_watermark / 2 || utilization >= CONN_QUEUE_DRAIN_UTIL_THRESHOLD)
     burst_factor = CONN_QUEUE_BURST_FACTOR_DRAIN;
 
-  size_t fair_bytes = share_buffers * pool->buffer_size;
-  double queue_mem_bytes = (double)c->zc_queue.num_queued * (double)pool->buffer_size;
+  size_t fair_bytes = share_buffers * BUFFER_POOL_BUFFER_SIZE;
+  double queue_mem_bytes = (double)c->zc_queue.num_queued * (double)BUFFER_POOL_BUFFER_SIZE;
 
   if (c->queue_avg_bytes <= 0.0)
     c->queue_avg_bytes = queue_mem_bytes;
@@ -169,31 +169,13 @@ static inline void connection_record_drop(connection_t *c, size_t len)
   c->backpressure_events++;
 }
 
-static void connection_maybe_report_queue(connection_t *c, int64_t now_ms, int force)
+static void connection_report_queue(connection_t *c)
 {
   if (c->status_index < 0)
     return;
 
   size_t queue_buffers = c->zc_queue.num_queued;
   size_t queue_bytes = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
-
-  int need_report = 0;
-
-  if (c->last_queue_report_ts == 0)
-  {
-    need_report = 1;
-  }
-  else if (now_ms - c->last_queue_report_ts >= CONNECTION_QUEUE_REPORT_INTERVAL_MS)
-  {
-    need_report = 1;
-  }
-  else if (force && queue_bytes == 0 && queue_buffers == 0)
-  {
-    need_report = 1;
-  }
-
-  if (!need_report)
-    return;
 
   status_update_client_queue(c->status_index,
                              queue_bytes,
@@ -205,10 +187,6 @@ static void connection_maybe_report_queue(connection_t *c, int64_t now_ms, int f
                              c->dropped_bytes,
                              c->backpressure_events,
                              c->slow_active);
-
-  c->last_queue_report_ts = now_ms;
-  c->last_reported_queue_bytes = queue_bytes;
-  c->last_reported_drops = c->dropped_packets;
 }
 int connection_set_nonblocking(int fd)
 {
@@ -270,9 +248,6 @@ connection_t *connection_create(int fd, int epfd,
   c->queue_buffers_highwater = 0;
   c->dropped_packets = 0;
   c->dropped_bytes = 0;
-  c->last_reported_queue_bytes = 0;
-  c->last_reported_drops = 0;
-  c->last_queue_report_ts = 0;
   c->backpressure_events = 0;
   c->stream_registered = 0;
   c->queue_avg_bytes = 0.0;
@@ -384,9 +359,10 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len)
 
     /* Copy data into the buffer */
     memcpy(buf_ref->data, src, chunk_size);
+    buf_ref->data_size = chunk_size;
 
     /* Queue this buffer for zero-copy send */
-    if (connection_queue_zerocopy(c, buf_ref, 0, chunk_size) < 0)
+    if (connection_queue_zerocopy(c, buf_ref) < 0)
     {
       /* Queue full - release the buffer and fail */
       buffer_ref_put(buf_ref);
@@ -419,11 +395,9 @@ connection_write_status_t connection_handle_write(connection_t *c)
   if (!c)
     return CONNECTION_WRITE_IDLE;
 
-  int64_t now_ms = get_time_ms();
-
   if (!c->zc_queue.head)
   {
-    connection_maybe_report_queue(c, now_ms, 0);
+    connection_report_queue(c);
     if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
       return CONNECTION_WRITE_CLOSED;
     return CONNECTION_WRITE_IDLE;
@@ -435,24 +409,24 @@ connection_write_status_t connection_handle_write(connection_t *c)
   if (ret < 0 && ret != -2)
   {
     c->state = CONN_CLOSING;
-    connection_maybe_report_queue(c, now_ms, 1);
+    connection_report_queue(c);
     return CONNECTION_WRITE_CLOSED;
   }
 
   if (ret == -2)
   {
-    connection_maybe_report_queue(c, now_ms, 0);
+    connection_report_queue(c);
     return CONNECTION_WRITE_BLOCKED;
   }
 
   if (c->zc_queue.head)
   {
-    connection_maybe_report_queue(c, now_ms, 0);
+    connection_report_queue(c);
     return CONNECTION_WRITE_PENDING;
   }
 
   connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
-  connection_maybe_report_queue(c, now_ms, 1);
+  connection_report_queue(c);
 
   if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
     return CONNECTION_WRITE_CLOSED;
@@ -796,34 +770,34 @@ int connection_route_and_start(connection_t *c)
   }
 }
 
-int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref, size_t offset, size_t len)
+int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref)
 {
-  if (!c || !buf_ref || len == 0)
+  if (!c || !buf_ref || buf_ref->data_size == 0)
     return 0;
 
   int64_t now_ms = get_time_ms();
   size_t limit_bytes = connection_calculate_queue_limit(c, now_ms);
   size_t queued_bytes = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
-  size_t projected_bytes = queued_bytes + len;
+  size_t projected_bytes = queued_bytes + buf_ref->data_size;
 
   c->queue_limit_bytes = limit_bytes;
 
   if (projected_bytes > limit_bytes)
   {
-    connection_record_drop(c, len);
+    connection_record_drop(c, buf_ref->data_size);
 
     if (c->backpressure_events == 1 || (c->backpressure_events % 200) == 0)
     {
       logger(LOG_DEBUG, "Backpressure: dropping %zu bytes for client fd=%d (queued=%zu limit=%zu drops=%llu)",
-             len, c->fd, queued_bytes, limit_bytes, (unsigned long long)c->dropped_packets);
+             buf_ref->data_size, c->fd, queued_bytes, limit_bytes, (unsigned long long)c->dropped_packets);
     }
 
-    connection_maybe_report_queue(c, now_ms, 1);
+    connection_report_queue(c);
     return -1;
   }
 
   /* Add to zero-copy queue with offset information */
-  int ret = zerocopy_queue_add(&c->zc_queue, buf_ref, offset, len);
+  int ret = zerocopy_queue_add(&c->zc_queue, buf_ref);
   if (ret < 0)
     return -1; /* Queue full */
 
@@ -833,17 +807,14 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref, size_t off
   if (c->zc_queue.num_queued > c->queue_buffers_highwater)
     c->queue_buffers_highwater = c->zc_queue.num_queued;
 
-  connection_maybe_report_queue(c, now_ms, 0);
+  connection_report_queue(c);
 
   /* Batching optimization: Only enable EPOLLOUT when flush threshold is reached
-   * This accumulates small RTP packets (200-1400 bytes) before sending:
-   * - Flush when accumulated >= 10KB (ZEROCOPY_BATCH_BYTES)
-   * - Flush when timeout >= 5ms (ZEROCOPY_BATCH_TIMEOUT_US)
    * Benefits:
    * - Reduces sendmsg() syscall overhead (fewer calls)
    * - Reduces MSG_ZEROCOPY optmem consumption (fewer operations)
    * - Better batching with iovec (up to 64 packets per sendmsg)
-   * - Lower latency impact (5ms is acceptable for streaming)
+   * - Lower latency impact (100ms is acceptable for streaming)
    */
   if (zerocopy_should_flush(&c->zc_queue))
   {

@@ -70,9 +70,6 @@ typedef struct connection_s
   size_t queue_buffers_highwater;
   uint64_t dropped_packets;
   uint64_t dropped_bytes;
-  size_t last_reported_queue_bytes;
-  uint64_t last_reported_drops;
-  int64_t last_queue_report_ts;
   uint32_t backpressure_events;
   int stream_registered;
   double queue_avg_bytes;
@@ -171,11 +168,9 @@ int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size
  * Takes ownership of the buffer via reference counting
  * @param c Connection
  * @param buf_ref Buffer reference (must not be NULL)
- * @param offset Offset in buffer where data starts (for partial buffer sends)
- * @param len Data length
  * @return 0 on success, -1 if queue full or invalid parameters
  */
-int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref, size_t offset, size_t len);
+int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref);
 
 /**
  * Queue a file descriptor for zero-copy send using sendfile()

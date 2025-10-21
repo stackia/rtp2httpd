@@ -112,7 +112,6 @@ typedef struct
   uint64_t eagain_count;      /* Number of EAGAIN/EWOULDBLOCK errors */
   uint64_t enobufs_count;     /* Number of ENOBUFS errors */
   uint64_t batch_sends;       /* Number of batched sends (size threshold) */
-  uint64_t timeout_flushes;   /* Number of timeout-triggered flushes */
 
   /* Buffer pool statistics */
   uint64_t pool_total_buffers; /* Total number of buffers in pool */

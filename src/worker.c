@@ -344,15 +344,11 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 
   /* Unified event loop: accept + clients + stream fds */
   int64_t last_tick = get_time_ms();
-  int64_t last_flush_check = get_time_ms();
 
   while (!stop_flag)
   {
     worker_drain_write_queue();
 
-    /* Use shorter timeout to check for batched send timeouts
-     * 5ms matches ZEROCOPY_BATCH_TIMEOUT_US for timely flushing
-     */
     int timeout_ms = 100;
     int n = epoll_wait(epfd, events, (int)(sizeof(events) / sizeof(events[0])), timeout_ms);
     if (n < 0)
@@ -597,25 +593,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 
     worker_drain_write_queue();
 
-    /* 2) Check for batched send timeouts */
-    if (now - last_flush_check >= ZEROCOPY_BATCH_TIMEOUT_US / 1000)
-    {
-      last_flush_check = now;
-      connection_t *c = conn_head;
-      while (c)
-      {
-        connection_t *next = c->next;
-        /* Check if zerocopy queue has timed out data waiting to be sent */
-        if (c->zerocopy_enabled && zerocopy_should_flush(&c->zc_queue))
-        {
-          /* Enable EPOLLOUT to trigger flush */
-          connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
-        }
-        c = next;
-      }
-    }
-
-    /* 3) Periodic tick (~1s): update streams and SSE heartbeats */
+    /* 2) Periodic tick (~1s): update streams and SSE heartbeats */
     if (now - last_tick >= 1000) /* Check if at least 1 second has passed */
     {
       last_tick = now;

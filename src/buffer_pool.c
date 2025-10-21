@@ -81,7 +81,6 @@ static buffer_pool_segment_t *buffer_pool_segment_create(size_t buffer_size, siz
     {
         buffer_ref_t *ref = &segment->refs[i];
         ref->data = segment->buffers + (i * buffer_size);
-        ref->size = buffer_size;
         ref->refcount = 0;
         ref->segment = segment;
         ref->free_next = pool->free_list;
@@ -232,9 +231,9 @@ void buffer_ref_put(buffer_ref_t *ref)
     }
 }
 
-buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool, size_t size)
+buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool)
 {
-    if (!pool || size > pool->buffer_size)
+    if (!pool)
         return NULL;
 
     if (!pool->free_list)
@@ -284,7 +283,8 @@ buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool, size_t size)
     }
 
     ref->refcount = 1;
-    ref->size = size;
+    ref->data_offset = 0;
+    ref->data_size = 0;
     ref->send_next = NULL;
 
     buffer_pool_update_stats(pool);
@@ -292,14 +292,14 @@ buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool, size_t size)
     return ref;
 }
 
-buffer_ref_t *buffer_pool_alloc(size_t size)
+buffer_ref_t *buffer_pool_alloc(void)
 {
-    return buffer_pool_alloc_from(&zerocopy_state.pool, size);
+    return buffer_pool_alloc_from(&zerocopy_state.pool);
 }
 
-buffer_ref_t *buffer_pool_alloc_control(size_t size)
+buffer_ref_t *buffer_pool_alloc_control(void)
 {
-    return buffer_pool_alloc_from(&zerocopy_state.control_pool, size);
+    return buffer_pool_alloc_from(&zerocopy_state.control_pool);
 }
 
 static void buffer_pool_try_shrink_pool(buffer_pool_t *pool, size_t min_buffers)

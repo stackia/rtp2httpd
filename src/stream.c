@@ -63,18 +63,17 @@ int stream_join_mcast_group(stream_context_t *ctx)
  * Process RTP payload - either forward to client (streaming) or capture I-frame (snapshot)
  * Returns: bytes forwarded (>= 0) for streaming, 1 if I-frame captured for snapshot, -1 on error
  */
-int stream_process_rtp_payload(stream_context_t *ctx, int recv_len, uint8_t *buf,
-                               buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first)
+int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first)
 {
     /* In snapshot mode, delegate to snapshot module */
     if (ctx->snapshot.enabled)
     {
-        return snapshot_process_packet(&ctx->snapshot, recv_len, buf, ctx->conn);
+        return snapshot_process_packet(&ctx->snapshot, buf_ref->data_size, (uint8_t *)buf_ref->data + buf_ref->data_offset, ctx->conn);
     }
     else
     {
         /* Normal streaming mode - forward to client */
-        return write_rtp_payload_to_client(ctx->conn, recv_len, buf, buf_ref, old_seqn, not_first);
+        return rtp_queue_buf(ctx->conn, buf_ref, old_seqn, not_first);
     }
 }
 
@@ -93,7 +92,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
     if (ctx->fcc.fcc_sock > 0 && fd == ctx->fcc.fcc_sock)
     {
         /* Allocate a fresh buffer from pool for this receive operation */
-        buffer_ref_t *recv_buf = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+        buffer_ref_t *recv_buf = buffer_pool_alloc();
         if (!recv_buf)
         {
             /* Buffer pool exhausted - drop this packet */
@@ -127,6 +126,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
         }
 
         ctx->last_fcc_data_time = now;
+        recv_buf->data_size = (size_t)actualr;
 
         /* Handle different types of FCC packets */
         uint8_t *recv_data = (uint8_t *)recv_buf->data;
@@ -160,7 +160,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
         else if (peer_addr.sin_port == ctx->fcc.media_port)
         {
             /* RTP media packet from FCC unicast stream */
-            result = fcc_handle_unicast_media(ctx, recv_data, actualr, recv_buf);
+            result = fcc_handle_unicast_media(ctx, recv_buf);
         }
 
         /* Release our reference to the buffer */
@@ -172,7 +172,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
     if (ctx->mcast_sock > 0 && fd == ctx->mcast_sock)
     {
         /* Allocate a fresh buffer from pool for this receive operation */
-        buffer_ref_t *recv_buf = buffer_pool_alloc(BUFFER_POOL_BUFFER_SIZE);
+        buffer_ref_t *recv_buf = buffer_pool_alloc();
         if (!recv_buf)
         {
             /* Buffer pool exhausted - drop this packet */
@@ -189,8 +189,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
         }
 
         /* Receive directly into zero-copy buffer (true zero-copy receive) */
-        uint8_t *recv_data = (uint8_t *)recv_buf->data;
-        actualr = recv(ctx->mcast_sock, recv_data, BUFFER_POOL_BUFFER_SIZE, 0);
+        actualr = recv(ctx->mcast_sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE, 0);
         if (actualr < 0 && errno != EAGAIN)
         {
             logger(LOG_DEBUG, "Multicast receive failed: %s", strerror(errno));
@@ -200,6 +199,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
 
         /* Update last data receive timestamp for timeout detection */
         ctx->last_mcast_data_time = now;
+        recv_buf->data_size = (size_t)actualr;
 
         int result = 0;
 
@@ -207,11 +207,11 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
         switch (ctx->fcc.state)
         {
         case FCC_STATE_MCAST_ACTIVE:
-            result = fcc_handle_mcast_active(ctx, recv_data, actualr, recv_buf);
+            result = fcc_handle_mcast_active(ctx, recv_buf);
             break;
 
         case FCC_STATE_MCAST_REQUESTED:
-            result = fcc_handle_mcast_transition(ctx, recv_data, actualr, recv_buf);
+            result = fcc_handle_mcast_transition(ctx, recv_buf);
             break;
 
         default:

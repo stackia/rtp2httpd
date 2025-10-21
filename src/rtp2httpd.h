@@ -83,8 +83,8 @@ typedef struct
 
   /* FCC (Fast Channel Change) settings */
   enum fcc_nat_traversal fcc_nat_traversal; /* NAT traversal method for FCC */
-  int fcc_listen_port_min;                 /* Minimum UDP port for FCC sockets (0=any) */
-  int fcc_listen_port_max;                 /* Maximum UDP port for FCC sockets (0=any) */
+  int fcc_listen_port_min;                  /* Minimum UDP port for FCC sockets (0=any) */
+  int fcc_listen_port_max;                  /* Maximum UDP port for FCC sockets (0=any) */
 
   /* Network interface settings */
   struct ifreq upstream_interface_unicast;   /* Interface for upstream unicast media requests (FCC/RTSP) */
@@ -143,9 +143,6 @@ int64_t get_time_ms(void);
  * @return Current time in milliseconds since Unix epoch (1970-01-01 00:00:00 UTC)
  */
 int64_t get_realtime_ms(void);
-
-/* Signal handlers */
-void child_handler(int signum);
 
 /* Return values used across multiple modules */
 typedef enum

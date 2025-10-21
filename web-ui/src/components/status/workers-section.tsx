@@ -44,9 +44,19 @@ export function WorkersSection({ workers, locale }: WorkersSectionProps) {
                 value: worker.send.total.toLocaleString(),
               },
               {
+                key: "sendCompletions",
+                label: t("sendCompletions"),
+                value: worker.send.completions.toLocaleString(),
+              },
+              {
                 key: "sendCopied",
                 label: t("sendCopied"),
                 value: worker.send.copied.toLocaleString(),
+              },
+              {
+                key: "sendBatch",
+                label: t("sendBatch"),
+                value: worker.send.batch.toLocaleString(),
               },
               {
                 key: "sendEagain",
@@ -57,16 +67,6 @@ export function WorkersSection({ workers, locale }: WorkersSectionProps) {
                 key: "sendEnobufs",
                 label: t("sendEnobufs"),
                 value: worker.send.enobufs.toLocaleString(),
-              },
-              {
-                key: "sendBatch",
-                label: t("sendBatch"),
-                value: worker.send.batch.toLocaleString(),
-              },
-              {
-                key: "sendTimeoutFlush",
-                label: t("sendTimeoutFlush"),
-                value: worker.send.timeoutFlush.toLocaleString(),
               },
             ];
             return (

@@ -29,8 +29,8 @@ msgstr "端口"
 msgid "rtp2httpd_Verbose"
 msgstr "日志级别"
 
-msgid "rtp2httpd_Quiet"
-msgstr "Quiet"
+msgid "rtp2httpd_Fatal"
+msgstr "Fatal"
 
 msgid "rtp2httpd_Error"
 msgstr "Error"

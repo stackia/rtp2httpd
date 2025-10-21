@@ -32,13 +32,6 @@ zerocopy_state_t zerocopy_state = {0};
         }                                                   \
     } while (0)
 
-static uint64_t get_time_us(void)
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return (uint64_t)tv.tv_sec * 1000000ULL + (uint64_t)tv.tv_usec;
-}
-
 /**
  * Detect MSG_ZEROCOPY support by attempting to enable it on a test socket
  */
@@ -179,29 +172,26 @@ void zerocopy_queue_cleanup(zerocopy_queue_t *queue)
     zerocopy_queue_init(queue);
 }
 
-int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref, size_t offset, size_t len)
+int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref)
 {
-    if (!queue || !buf_ref || len == 0)
+    if (!queue || !buf_ref || buf_ref->data_size == 0)
         return 0;
 
     uint8_t *base = (uint8_t *)buf_ref->data;
-    size_t buf_size = buf_ref->size;
 
-    if (!base || offset > buf_size || len > buf_size - offset)
+    if (!base || buf_ref->data_offset > BUFFER_POOL_BUFFER_SIZE || buf_ref->data_size > BUFFER_POOL_BUFFER_SIZE - buf_ref->data_offset)
     {
         logger(LOG_ERROR, "zerocopy_queue_add: Invalid buffer parameters (offset=%zu len=%zu size=%zu)",
-               offset, len, buf_size);
+               buf_ref->data_offset, buf_ref->data_size, BUFFER_POOL_BUFFER_SIZE);
         return -1;
     }
 
-    uint8_t *data_ptr = base + offset;
+    uint8_t *data_ptr = base + buf_ref->data_offset;
 
-    /* No malloc needed! Use the buffer_ref directly as queue entry */
     /* Setup send queue fields in the buffer */
     buf_ref->type = BUFFER_TYPE_MEMORY;
     buf_ref->iov.iov_base = data_ptr;
-    buf_ref->iov.iov_len = len;
-    buf_ref->buf_offset = offset; /* Store offset for partial buffer sends */
+    buf_ref->iov.iov_len = buf_ref->data_size;
     buf_ref->zerocopy_id = 0;
     buf_ref->send_next = NULL;
 
@@ -218,10 +208,9 @@ int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref, size_t of
     {
         /* First entry - record timestamp for batching timeout */
         queue->head = queue->tail = buf_ref;
-        queue->first_queued_time_us = get_time_us();
     }
 
-    queue->total_bytes += len;
+    queue->total_bytes += buf_ref->data_size;
     queue->num_queued++;
 
     return 0;
@@ -261,7 +250,6 @@ int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd, off_t file_off
     {
         /* First entry - record timestamp for batching timeout */
         queue->head = queue->tail = buf_ref;
-        queue->first_queued_time_us = get_time_us();
     }
 
     /* Note: File buffers do NOT count towards total_bytes for batching logic
@@ -285,15 +273,6 @@ int zerocopy_should_flush(zerocopy_queue_t *queue)
     if (queue->total_bytes >= ZEROCOPY_BATCH_BYTES)
     {
         WORKER_STATS_INC(batch_sends);
-        return 1;
-    }
-
-    /* Flush if timeout expired since first queued entry */
-    uint64_t now_us = get_time_us();
-    uint64_t elapsed_us = now_us - queue->first_queued_time_us;
-    if (elapsed_us >= ZEROCOPY_BATCH_TIMEOUT_US)
-    {
-        WORKER_STATS_INC(timeout_flushes);
         return 1;
     }
 
@@ -493,12 +472,6 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
             queue->total_bytes -= remaining;
             remaining = 0;
         }
-    }
-
-    /* If queue still has data, update timestamp for next batch */
-    if (queue->head)
-    {
-        queue->first_queued_time_us = get_time_us();
     }
 
     return 0;

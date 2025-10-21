@@ -11,7 +11,7 @@
 #include "connection.h"
 #include "zerocopy.h"
 
-int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, uint16_t *seqn)
+int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, uint16_t *seqn)
 {
   int payloadstart, payloadlength;
   uint8_t flags;
@@ -74,16 +74,16 @@ int get_rtp_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, ui
   }
 }
 
-int write_rtp_payload_to_client(connection_t *conn, int recv_len, uint8_t *buf,
-                                buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first)
+int rtp_queue_buf(connection_t *conn, buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first)
 {
   int payloadlength;
   uint8_t *payload;
   uint16_t seqn;
   int is_rtp;
+  uint8_t *data_ptr = (uint8_t *)buf_ref->data + buf_ref->data_offset;
 
   /* Extract payload and sequence number - automatically handles RTP and non-RTP packets */
-  is_rtp = get_rtp_payload(buf, recv_len, &payload, &payloadlength, &seqn);
+  is_rtp = rtp_get_payload(data_ptr, buf_ref->data_size, &payload, &payloadlength, &seqn);
   if (unlikely(is_rtp < 0))
   {
     return 0; /* Malformed packet, already logged */
@@ -102,10 +102,10 @@ int write_rtp_payload_to_client(connection_t *conn, int recv_len, uint8_t *buf,
     }
 
     /* Out-of-order detection - packets are usually in order */
-    if (unlikely(*not_first && (seqn != ((*old_seqn + 1) & 0xFFFF))))
+    uint16_t expected = (*old_seqn + 1) & 0xFFFF;
+    if (unlikely(*not_first && (seqn != expected)))
     {
-      int expected = (*old_seqn + 1) & 0xFFFF;
-      int gap = (seqn - expected) & 0xFFFF;
+      int gap = seqn - expected;
       /* This indicates upstream packet loss (network or source), NOT local send congestion */
       logger(LOG_DEBUG, "RTP packet loss detected - expected seq %d, received %d (gap: %d packets)",
              expected, seqn, gap);
@@ -118,11 +118,12 @@ int write_rtp_payload_to_client(connection_t *conn, int recv_len, uint8_t *buf,
 
   /* True zero-copy send - payload is in buffer pool, send directly without memcpy */
   /* Calculate offset of payload in the buffer */
-  size_t payload_offset = payload - (uint8_t *)buf_ref->data;
+  buf_ref->data_offset = payload - (uint8_t *)buf_ref->data;
+  buf_ref->data_size = (size_t)payloadlength;
 
   /* Queue for zero-copy send */
   /* Note: zerocopy_queue_add() will automatically increment refcount */
-  if (connection_queue_zerocopy(conn, buf_ref, payload_offset, (size_t)payloadlength) == 0)
+  if (connection_queue_zerocopy(conn, buf_ref) == 0)
   {
     /* Successfully queued - send queue now holds a reference */
     return payloadlength;
