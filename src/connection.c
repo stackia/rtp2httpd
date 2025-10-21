@@ -255,13 +255,11 @@ connection_t *connection_create(int fd, int epfd,
   c->slow_candidate_since = 0;
 
   /* Enforce TCP user timeout so unacknowledged data fails quickly */
-#ifdef TCP_USER_TIMEOUT
   int tcp_user_timeout = CONNECTION_TCP_USER_TIMEOUT_MS;
   if (setsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &tcp_user_timeout, sizeof(tcp_user_timeout)) < 0)
   {
     logger(LOG_DEBUG, "connection_create: Failed to set TCP_USER_TIMEOUT: %s", strerror(errno));
   }
-#endif
 
   /* Enable SO_ZEROCOPY on socket if supported */
   if (zerocopy_state.features & ZEROCOPY_MSG_ZEROCOPY)
