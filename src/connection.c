@@ -151,13 +151,31 @@ static inline void connection_record_drop(connection_t *c, size_t len)
   c->backpressure_events++;
 }
 
-static void connection_report_queue_stats(connection_t *c)
+static void connection_maybe_report_queue(connection_t *c, int64_t now_ms, int force)
 {
   if (c->status_index < 0)
     return;
 
   size_t queue_buffers = c->zc_queue.num_queued;
   size_t queue_bytes = c->zc_queue.num_queued * c->buffer_pool->buffer_size;
+
+  int need_report = 0;
+
+  if (c->last_queue_report_ts == 0)
+  {
+    need_report = 1;
+  }
+  else if (now_ms - c->last_queue_report_ts >= CONNECTION_QUEUE_REPORT_INTERVAL_MS)
+  {
+    need_report = 1;
+  }
+  else if (force && queue_bytes == 0 && queue_buffers == 0)
+  {
+    need_report = 1;
+  }
+
+  if (!need_report)
+    return;
 
   status_update_client_queue(c->status_index,
                              queue_bytes,
@@ -169,8 +187,11 @@ static void connection_report_queue_stats(connection_t *c)
                              c->dropped_bytes,
                              c->backpressure_events,
                              c->slow_active);
-}
 
+  c->last_queue_report_ts = now_ms;
+  c->last_reported_queue_bytes = queue_bytes;
+  c->last_reported_drops = c->dropped_packets;
+}
 int connection_set_nonblocking(int fd)
 {
   int flags = fcntl(fd, F_GETFL, 0);
@@ -231,6 +252,9 @@ connection_t *connection_create(int fd, int epfd,
   c->queue_buffers_highwater = 0;
   c->dropped_packets = 0;
   c->dropped_bytes = 0;
+  c->last_reported_queue_bytes = 0;
+  c->last_reported_drops = 0;
+  c->last_queue_report_ts = 0;
   c->backpressure_events = 0;
   c->stream_registered = 0;
   c->queue_avg_bytes = 0.0;
@@ -420,9 +444,11 @@ connection_write_status_t connection_handle_write(connection_t *c)
   if (!c)
     return CONNECTION_WRITE_IDLE;
 
+  int64_t now_ms = get_time_ms();
+
   if (!c->zc_queue.head)
   {
-    connection_report_queue_stats(c);
+    connection_maybe_report_queue(c, now_ms, 0);
     if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
       return CONNECTION_WRITE_CLOSED;
     return CONNECTION_WRITE_IDLE;
@@ -434,24 +460,24 @@ connection_write_status_t connection_handle_write(connection_t *c)
   if (ret < 0 && ret != -2)
   {
     c->state = CONN_CLOSING;
-    connection_report_queue_stats(c);
+    connection_maybe_report_queue(c, now_ms, 1);
     return CONNECTION_WRITE_CLOSED;
   }
 
   if (ret == -2)
   {
-    connection_report_queue_stats(c);
+    connection_maybe_report_queue(c, now_ms, 0);
     return CONNECTION_WRITE_BLOCKED;
   }
 
   if (c->zc_queue.head)
   {
-    connection_report_queue_stats(c);
+    connection_maybe_report_queue(c, now_ms, 0);
     return CONNECTION_WRITE_PENDING;
   }
 
   connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
-  connection_report_queue_stats(c);
+  connection_maybe_report_queue(c, now_ms, 1);
 
   if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
     return CONNECTION_WRITE_CLOSED;
@@ -832,7 +858,7 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref_list, int *
              list_bytes, c->fd, queued_bytes, limit_bytes, (unsigned long long)c->dropped_packets);
     }
 
-    connection_report_queue_stats(c);
+    connection_maybe_report_queue(c, now_ms, 1);
     if (out_num_queued)
       *out_num_queued = 0;
     return -1;
@@ -917,7 +943,7 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref_list, int *
     }
   }
 
-  connection_report_queue_stats(c);
+  connection_maybe_report_queue(c, now_ms, dropped_bytes > 0 ? 1 : 0);
 
   /* Batching optimization: Only enable EPOLLOUT when flush threshold is reached
    * This accumulates small RTP packets (200-1400 bytes) before sending:
