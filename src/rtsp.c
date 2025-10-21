@@ -136,7 +136,6 @@ void rtsp_session_init(rtsp_session_t *session)
     session->transport_protocol = RTSP_PROTOCOL_RTP; /* Default protocol */
     session->rtp_channel = 0;
     session->rtcp_channel = 1;
-    session->tcp_buffer_pos = 0;
 
     /* Initialize RTP packet tracking */
     session->current_seqn = 0;
@@ -1148,17 +1147,9 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
         /* For TCP interleaved mode, preserve any RTP data that came after PLAY response */
         if (session->transport_mode == RTSP_TRANSPORT_TCP && extra_data_len > 0)
         {
-            /* Move extra data to tcp_buffer for processing */
-            if (extra_data_len <= BUFFER_POOL_BUFFER_SIZE)
-            {
-                memcpy(session->tcp_buffer, end_of_headers + 4, extra_data_len);
-                session->tcp_buffer_pos = extra_data_len;
-                logger(LOG_DEBUG, "RTSP: Preserved %zu bytes of RTP data after PLAY response", extra_data_len);
-            }
-            else
-            {
-                logger(LOG_ERROR, "RTSP: Extra data after PLAY response too large (%zu bytes), discarding", extra_data_len);
-            }
+            memmove(session->response_buffer, end_of_headers + 4, extra_data_len);
+            session->response_buffer_pos = extra_data_len;
+            logger(LOG_DEBUG, "RTSP: Preserved %zu bytes of RTP data after PLAY response", extra_data_len);
         }
         session->response_buffer_pos = 0;
     }
@@ -1305,12 +1296,12 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, connection_t *conn
 {
     int bytes_received;
 
-    if (session->tcp_buffer_pos < BUFFER_POOL_BUFFER_SIZE)
+    if (session->response_buffer_pos < RTSP_RESPONSE_BUFFER_SIZE)
     {
         /* Read data into local buffer (will be copied to zero-copy buffers later) */
         bytes_received = recv(session->socket,
-                              session->tcp_buffer + session->tcp_buffer_pos,
-                              BUFFER_POOL_BUFFER_SIZE - session->tcp_buffer_pos, 0);
+                              session->response_buffer + session->response_buffer_pos,
+                              RTSP_RESPONSE_BUFFER_SIZE - session->response_buffer_pos, 0);
         if (bytes_received < 0)
         {
             /* Check if it's a non-blocking would-block error */
@@ -1322,48 +1313,48 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, connection_t *conn
             return -1;
         }
 
-        session->tcp_buffer_pos += bytes_received;
+        session->response_buffer_pos += bytes_received;
     }
 
     /* Process interleaved data packets */
     int bytes_forwarded = 0;
-    while (session->tcp_buffer_pos >= 4)
+    while (session->response_buffer_pos >= 4)
     {
         /* Check for interleaved data packet: $ + channel + length(2 bytes) + data */
-        if (session->tcp_buffer[0] != '$')
+        if (session->response_buffer[0] != '$')
         {
             /* Not interleaved data, might be RTSP response */
             logger(LOG_DEBUG, "RTSP: Received non-interleaved data on TCP connection");
             break;
         }
 
-        uint8_t channel = session->tcp_buffer[1];
-        uint16_t packet_length = (session->tcp_buffer[2] << 8) | session->tcp_buffer[3];
+        uint8_t channel = session->response_buffer[1];
+        uint16_t packet_length = (session->response_buffer[2] << 8) | session->response_buffer[3];
 
         /* Check if we have the complete packet and prevent buffer overflow */
-        if (session->tcp_buffer_pos < 4 + (size_t)packet_length)
+        if (session->response_buffer_pos < 4 + (size_t)packet_length)
         {
             break; /* Wait for more data */
         }
 
         /* Sanity check: prevent processing packets that are too large */
-        if (packet_length > BUFFER_POOL_BUFFER_SIZE - 4)
+        if (packet_length > RTSP_RESPONSE_BUFFER_SIZE - 4)
         {
             logger(LOG_ERROR, "RTSP: Received packet too large (%d bytes, max %zu), attempting resync",
-                   packet_length, BUFFER_POOL_BUFFER_SIZE - 4);
+                   packet_length, RTSP_RESPONSE_BUFFER_SIZE - 4);
             /* Try to find next '$' marker to resync stream */
-            uint8_t *next_marker = memchr(session->tcp_buffer + 1, '$', session->tcp_buffer_pos - 1);
+            uint8_t *next_marker = memchr(session->response_buffer + 1, '$', session->response_buffer_pos - 1);
             if (next_marker)
             {
-                size_t skip = next_marker - session->tcp_buffer;
-                memmove(session->tcp_buffer, next_marker, session->tcp_buffer_pos - skip);
-                session->tcp_buffer_pos -= skip;
+                size_t skip = next_marker - session->response_buffer;
+                memmove(session->response_buffer, next_marker, session->response_buffer_pos - skip);
+                session->response_buffer_pos -= skip;
                 logger(LOG_DEBUG, "RTSP: Resynced stream, skipped %zu bytes", skip);
             }
             else
             {
                 /* No marker found, reset buffer */
-                session->tcp_buffer_pos = 0;
+                session->response_buffer_pos = 0;
                 logger(LOG_DEBUG, "RTSP: No sync marker found, buffer reset");
             }
             break;
@@ -1375,7 +1366,7 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, connection_t *conn
             buffer_ref_t *packet_buf = buffer_pool_alloc();
             if (packet_buf)
             {
-                memcpy(packet_buf->data, &session->tcp_buffer[4], packet_length);
+                memcpy(packet_buf->data, &session->response_buffer[4], packet_length);
                 packet_buf->data_size = (size_t)packet_length;
                 int pb = stream_process_rtp_payload(&conn->stream, packet_buf, &session->current_seqn, &session->not_first_packet);
                 if (pb > 0)
@@ -1397,9 +1388,9 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, connection_t *conn
 
         /* Remove processed packet from buffer */
         int total_packet_size = 4 + packet_length;
-        memmove(session->tcp_buffer, &session->tcp_buffer[total_packet_size],
-                session->tcp_buffer_pos - total_packet_size);
-        session->tcp_buffer_pos -= total_packet_size;
+        memmove(session->response_buffer, &session->response_buffer[total_packet_size],
+                session->response_buffer_pos - total_packet_size);
+        session->response_buffer_pos -= total_packet_size;
     }
 
     return bytes_forwarded;
@@ -1493,9 +1484,6 @@ static void rtsp_force_cleanup(rtsp_session_t *session)
 
     /* Close and remove UDP sockets from epoll */
     rtsp_close_udp_sockets(session, "cleanup");
-
-    /* Reset TCP buffer position */
-    session->tcp_buffer_pos = 0;
 
     /* Reset response buffer position */
     session->response_buffer_pos = 0;

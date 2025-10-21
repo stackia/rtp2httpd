@@ -166,8 +166,6 @@ typedef struct
 
     /* Buffering */
     uint8_t response_buffer[RTSP_RESPONSE_BUFFER_SIZE]; /* Buffer for RTSP responses (control plane, not media) */
-    uint8_t tcp_buffer[4 * BUFFER_POOL_BUFFER_SIZE];    /* Local buffer for TCP interleaved data (data will be copied to zero-copy buffers for send) */
-    size_t tcp_buffer_pos;                              /* Current position in TCP buffer */
 } rtsp_session_t;
 
 /* Function prototypes */
