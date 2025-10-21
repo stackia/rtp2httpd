@@ -58,6 +58,12 @@ static int rtsp_reconnect_for_teardown(rtsp_session_t *session);
 static void rtsp_force_cleanup(rtsp_session_t *session);
 static int rtsp_base64_encode(const uint8_t *input, size_t input_len, char *output, size_t output_size);
 static void rtsp_update_authorization_header(rtsp_session_t *session);
+static size_t rtsp_tcp_pending_bytes(const rtsp_session_t *session);
+static size_t rtsp_tcp_peek(rtsp_session_t *session, uint8_t *out, size_t len);
+static void rtsp_tcp_consume(rtsp_session_t *session, size_t len);
+static buffer_ref_t *rtsp_tcp_extract_slices(rtsp_session_t *session, size_t len);
+static void rtsp_release_buffer_list(buffer_ref_t *head);
+static int rtsp_tcp_resync_to_marker(rtsp_session_t *session);
 
 static int rtsp_base64_encode(const uint8_t *input, size_t input_len, char *output, size_t output_size)
 {
@@ -136,6 +142,8 @@ void rtsp_session_init(rtsp_session_t *session)
     session->transport_protocol = RTSP_PROTOCOL_RTP; /* Default protocol */
     session->rtp_channel = 0;
     session->rtcp_channel = 1;
+    session->tcp_buffer_pos = 0;
+    session->tcp_pending_list = NULL;
 
     /* Initialize RTP packet tracking */
     session->current_seqn = 0;
@@ -1147,15 +1155,60 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
         /* For TCP interleaved mode, preserve any RTP data that came after PLAY response */
         if (session->transport_mode == RTSP_TRANSPORT_TCP && extra_data_len > 0)
         {
-            /* Preserve extra data for processing */
-            memmove(session->response_buffer, end_of_headers + 4, extra_data_len);
-            logger(LOG_DEBUG, "RTSP: Preserved %zu bytes of RTP data after PLAY response", extra_data_len);
-            session->response_buffer_pos = extra_data_len;
+            /* Calculate how many buffers we need */
+            size_t buffer_size = zerocopy_state.pool.buffer_size;
+            size_t num_buffers_needed = (extra_data_len + buffer_size - 1) / buffer_size;
+            size_t allocated_count = 0;
+
+            buffer_ref_t *buf_list = buffer_pool_alloc_from(&zerocopy_state.pool, num_buffers_needed, &allocated_count);
+
+            if (buf_list && allocated_count > 0)
+            {
+                /* Copy extra data into allocated buffers */
+                size_t bytes_remaining = extra_data_len;
+                uint8_t *src = (uint8_t *)(end_of_headers + 4);
+                buffer_ref_t *current = buf_list;
+                buffer_ref_t *tail = NULL;
+
+                while (current && bytes_remaining > 0)
+                {
+                    size_t copy_size = (bytes_remaining < BUFFER_POOL_BUFFER_SIZE) ? bytes_remaining : BUFFER_POOL_BUFFER_SIZE;
+                    memcpy(current->data, src, copy_size);
+                    current->data_len = copy_size;
+                    current->data_offset = 0;
+
+                    src += copy_size;
+                    bytes_remaining -= copy_size;
+                    tail = current;
+                    current = current->process_next;
+                }
+
+                /* Prepend to pending list */
+                if (tail)
+                {
+                    tail->process_next = session->tcp_pending_list;
+                    session->tcp_pending_list = buf_list;
+                }
+
+                if (bytes_remaining > 0)
+                {
+                    /* Buffer pool exhausted, couldn't allocate enough buffers */
+                    logger(LOG_WARN, "RTSP: Only allocated %zu/%zu buffers, discarded %zu bytes of RTP data after PLAY",
+                           allocated_count, num_buffers_needed, bytes_remaining);
+                }
+                else
+                {
+                    logger(LOG_DEBUG, "RTSP: Preserved %zu bytes of RTP data after PLAY response in %zu buffers",
+                           extra_data_len, allocated_count);
+                }
+            }
+            else
+            {
+                logger(LOG_WARN, "RTSP: Failed to allocate buffers for %zu bytes of extra data after PLAY, discarding",
+                       extra_data_len);
+            }
         }
-        else
-        {
-            session->response_buffer_pos = 0;
-        }
+        session->response_buffer_pos = 0;
     }
     else if (session->state == RTSP_STATE_AWAITING_TEARDOWN)
     {
@@ -1209,32 +1262,28 @@ static int rtsp_state_machine_advance(rtsp_session_t *session)
         }
         else
         {
-            if (RTSP_DISABLE_TCP_TRANSPORT)
-            {
-                snprintf(extra_headers, sizeof(extra_headers),
-                         "Transport: MP2T/RTP/UDP;unicast;client_port=%d-%d,"
-                         "MP2T/UDP;unicast;client_port=%d-%d,"
-                         "RTP/AVP;unicast;client_port=%d-%d\r\n",
-                         session->local_rtp_port, session->local_rtcp_port,
-                         session->local_rtp_port, session->local_rtcp_port,
-                         session->local_rtp_port, session->local_rtcp_port);
-            }
-            else
-            {
-                snprintf(extra_headers, sizeof(extra_headers),
-                         "Transport: MP2T/RTP/TCP;unicast;interleaved=%d-%d,"
-                         "MP2T/TCP;unicast;interleaved=%d-%d,"
-                         "RTP/AVP/TCP;unicast;interleaved=%d-%d,"
-                         "MP2T/RTP/UDP;unicast;client_port=%d-%d,"
-                         "MP2T/UDP;unicast;client_port=%d-%d,"
-                         "RTP/AVP;unicast;client_port=%d-%d\r\n",
-                         session->rtp_channel, session->rtcp_channel,
-                         session->rtp_channel, session->rtcp_channel,
-                         session->rtp_channel, session->rtcp_channel,
-                         session->local_rtp_port, session->local_rtcp_port,
-                         session->local_rtp_port, session->local_rtcp_port,
-                         session->local_rtp_port, session->local_rtcp_port);
-            }
+            snprintf(extra_headers, sizeof(extra_headers),
+                     "Transport: MP2T/RTP/TCP;unicast;interleaved=%d-%d,"
+                     "MP2T/TCP;unicast;interleaved=%d-%d,"
+                     "RTP/AVP/TCP;unicast;interleaved=%d-%d,"
+                     "MP2T/RTP/UDP;unicast;client_port=%d-%d,"
+                     "MP2T/UDP;unicast;client_port=%d-%d,"
+                     "RTP/AVP;unicast;client_port=%d-%d\r\n",
+                     session->rtp_channel, session->rtcp_channel,
+                     session->rtp_channel, session->rtcp_channel,
+                     session->rtp_channel, session->rtcp_channel,
+                     session->local_rtp_port, session->local_rtcp_port,
+                     session->local_rtp_port, session->local_rtcp_port,
+                     session->local_rtp_port, session->local_rtcp_port);
+
+            // To temporarily disable TCP transport offer for testing:
+            // snprintf(extra_headers, sizeof(extra_headers),
+            //          "Transport: MP2T/RTP/UDP;unicast;client_port=%d-%d,"
+            //          "MP2T/UDP;unicast;client_port=%d-%d,"
+            //          "RTP/AVP;unicast;client_port=%d-%d\r\n",
+            //          session->local_rtp_port, session->local_rtcp_port,
+            //          session->local_rtp_port, session->local_rtcp_port,
+            //          session->local_rtp_port, session->local_rtcp_port);
         }
         if (rtsp_prepare_request(session, RTSP_METHOD_SETUP, extra_headers) < 0)
         {
@@ -1298,107 +1347,119 @@ static int rtsp_state_machine_advance(rtsp_session_t *session)
 
 int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, connection_t *conn)
 {
-    int bytes_received;
+    int total_bytes_forwarded = 0;
+    int packets_received = 0;
+    int packets_dropped = 0;
 
-    if (session->response_buffer_pos < RTSP_RESPONSE_BUFFER_SIZE)
+    /* Step 1: Batch receive new data into buffer pool buffers */
+    buffer_ref_t *new_buffers = buffer_pool_batch_recv(session->socket, 0, "RTSP TCP",
+                                                       &packets_received, &packets_dropped);
+
+    if (packets_dropped > 0)
     {
-        /* Read data into local buffer (will be copied to zero-copy buffers later) */
-        bytes_received = recv(session->socket,
-                              session->response_buffer + session->response_buffer_pos,
-                              RTSP_RESPONSE_BUFFER_SIZE - session->response_buffer_pos, 0);
-        if (bytes_received < 0)
-        {
-            /* Check if it's a non-blocking would-block error */
-            if (errno == EAGAIN)
-            {
-                return 0; /* No data available, not an error */
-            }
-            logger(LOG_ERROR, "RTSP: TCP receive failed: %s", strerror(errno));
-            return -1;
-        }
-
-        session->response_buffer_pos += bytes_received;
+        session->packets_dropped += packets_dropped;
     }
 
-    /* Process interleaved data packets */
-    int bytes_forwarded = 0;
-    while (session->response_buffer_pos >= 4)
+    /* Step 2: Merge new buffers into processing queue */
+    if (new_buffers)
     {
-        /* Check for interleaved data packet: $ + channel + length(2 bytes) + data */
-        if (session->response_buffer[0] != '$')
+        if (!session->tcp_pending_list)
         {
-            /* Not interleaved data, might be RTSP response */
-            logger(LOG_DEBUG, "RTSP: Received non-interleaved data on TCP connection");
+            session->tcp_pending_list = new_buffers;
+        }
+        else
+        {
+            buffer_ref_t *tail = session->tcp_pending_list;
+            while (tail->process_next)
+            {
+                tail = tail->process_next;
+            }
+            tail->process_next = new_buffers;
+        }
+    }
+
+    if (!session->tcp_pending_list)
+    {
+        /* No data available and no pending data */
+        return 0;
+    }
+
+    /* Step 3: Process all complete packets in the buffer chain */
+    while (rtsp_tcp_pending_bytes(session) >= 4)
+    {
+        uint8_t header[4];
+        if (rtsp_tcp_peek(session, header, sizeof(header)) < sizeof(header))
+        {
+            /* Not enough data for header */
             break;
         }
 
-        uint8_t channel = session->response_buffer[1];
-        uint16_t packet_length = (session->response_buffer[2] << 8) | session->response_buffer[3];
-
-        /* Check if we have the complete packet and prevent buffer overflow */
-        if (session->response_buffer_pos < 4 + (size_t)packet_length)
+        if (header[0] != '$')
         {
-            break; /* Wait for more data */
+            logger(LOG_DEBUG, "RTSP TCP: Non-interleaved byte 0x%02x, attempting resync", header[0]);
+            if (!rtsp_tcp_resync_to_marker(session))
+            {
+                break;
+            }
+            continue;
         }
+
+        uint8_t channel = header[1];
+        uint16_t packet_length = (uint16_t)((header[2] << 8) | header[3]);
 
         /* Sanity check: prevent processing packets that are too large */
-        if (packet_length > RTSP_RESPONSE_BUFFER_SIZE - 4)
+        if (packet_length > BUFFER_POOL_BUFFER_SIZE - 4)
         {
-            logger(LOG_ERROR, "RTSP: Received packet too large (%d bytes, max %zu), attempting resync",
-                   packet_length, RTSP_RESPONSE_BUFFER_SIZE - 4);
-            /* Try to find next '$' marker to resync stream */
-            uint8_t *next_marker = memchr(session->response_buffer + 1, '$', session->response_buffer_pos - 1);
-            if (next_marker)
+            logger(LOG_ERROR, "RTSP TCP: Packet too large (%d bytes, max %zu), attempting resync",
+                   packet_length, BUFFER_POOL_BUFFER_SIZE - 4);
+            rtsp_tcp_consume(session, 1); /* Drop '$' */
+            if (!rtsp_tcp_resync_to_marker(session))
             {
-                size_t skip = next_marker - session->response_buffer;
-                memmove(session->response_buffer, next_marker, session->response_buffer_pos - skip);
-                session->response_buffer_pos -= skip;
-                logger(LOG_DEBUG, "RTSP: Resynced stream, skipped %zu bytes", skip);
+                break;
             }
-            else
-            {
-                /* No marker found, reset buffer */
-                session->response_buffer_pos = 0;
-                logger(LOG_DEBUG, "RTSP: No sync marker found, buffer reset");
-            }
+            continue;
+        }
+
+        size_t total_needed = 4 + (size_t)packet_length;
+        if (rtsp_tcp_pending_bytes(session) < total_needed)
+        {
+            /* Incomplete packet - wait for more data */
             break;
         }
 
-        /* Process RTP/RTCP packet based on channel */
+        /* Consume the interleaved header */
+        rtsp_tcp_consume(session, 4);
+
+        /* Extract payload as zero-copy slices */
+        buffer_ref_t *payload_list = rtsp_tcp_extract_slices(session, packet_length);
+        if (!payload_list)
+        {
+            logger(LOG_ERROR, "RTSP TCP: Failed to extract payload slices");
+            session->packets_dropped++;
+            break;
+        }
+
         if (channel == session->rtp_channel)
         {
-            buffer_ref_t *packet_buf = buffer_pool_alloc();
-            if (packet_buf)
-            {
-                memcpy(packet_buf->data, &session->response_buffer[4], packet_length);
-                packet_buf->data_len = packet_length;
-                int processed_bytes = stream_process_rtp_payload(&conn->stream, packet_buf,
-                                                                 &session->current_seqn, &session->not_first_packet);
-                if (processed_bytes > 0)
-                    bytes_forwarded += processed_bytes;
-                /* Release our reference */
-                buffer_ref_put(packet_buf);
-            }
-            else
-            {
-                /* Buffer pool exhausted */
-                session->packets_dropped++;
-                logger(LOG_DEBUG, "RTSP TCP: Buffer pool exhausted, dropping packet");
-            }
+            int processed_bytes = stream_process_rtp_payload(&conn->stream, payload_list,
+                                                             &session->current_seqn,
+                                                             &session->not_first_packet);
+            if (processed_bytes > 0)
+                total_bytes_forwarded += processed_bytes;
         }
         else if (channel == session->rtcp_channel)
         {
-            /* RTCP data - could be processed for statistics but currently ignored */
+            /* RTCP data - currently ignored for statistics */
+        }
+        else
+        {
+            logger(LOG_DEBUG, "RTSP TCP: Unknown channel %u, dropping packet", channel);
         }
 
-        /* Remove processed packet from buffer */
-        int total_packet_size = 4 + packet_length;
-        memmove(session->response_buffer, &session->response_buffer[total_packet_size],
-                session->response_buffer_pos - total_packet_size);
-        session->response_buffer_pos -= total_packet_size;
+        rtsp_release_buffer_list(payload_list);
     }
 
-    return bytes_forwarded;
+    return total_bytes_forwarded;
 }
 
 int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn)
@@ -1451,6 +1512,19 @@ static void rtsp_force_cleanup(rtsp_session_t *session)
     /* Close and remove UDP sockets from epoll */
     rtsp_close_udp_sockets(session, "cleanup");
 
+    /* Release any pending buffers in the list */
+    buffer_ref_t *current = session->tcp_pending_list;
+    while (current)
+    {
+        buffer_ref_t *next = current->process_next;
+        buffer_ref_put(current);
+        current = next;
+    }
+    session->tcp_pending_list = NULL;
+
+    /* Reset TCP buffer position */
+    session->tcp_buffer_pos = 0;
+
     /* Reset response buffer position */
     session->response_buffer_pos = 0;
 
@@ -1477,6 +1551,199 @@ static void rtsp_force_cleanup(rtsp_session_t *session)
 
     session->state = RTSP_STATE_INIT;
     logger(LOG_DEBUG, "RTSP: Session cleanup complete");
+}
+
+static size_t rtsp_tcp_pending_bytes(const rtsp_session_t *session)
+{
+    size_t total = 0;
+
+    if (!session)
+        return 0;
+
+    buffer_ref_t *current = session->tcp_pending_list;
+    while (current)
+    {
+        if (current->data_len >= (size_t)current->data_offset)
+            total += current->data_len - (size_t)current->data_offset;
+        current = current->process_next;
+    }
+
+    return total;
+}
+
+static size_t rtsp_tcp_peek(rtsp_session_t *session, uint8_t *out, size_t len)
+{
+    if (!session || !out || len == 0)
+        return 0;
+
+    size_t copied = 0;
+    buffer_ref_t *current = session->tcp_pending_list;
+
+    while (current && copied < len)
+    {
+        size_t available = (current->data_len >= (size_t)current->data_offset)
+                               ? current->data_len - (size_t)current->data_offset
+                               : 0;
+        if (available == 0)
+        {
+            current = current->process_next;
+            continue;
+        }
+
+        size_t take = (len - copied < available) ? (len - copied) : available;
+        memcpy(out + copied, (uint8_t *)current->data + current->data_offset, take);
+        copied += take;
+        current = current->process_next;
+    }
+
+    return copied;
+}
+
+static void rtsp_tcp_consume(rtsp_session_t *session, size_t len)
+{
+    while (len > 0 && session && session->tcp_pending_list)
+    {
+        buffer_ref_t *buf = session->tcp_pending_list;
+        size_t available = (buf->data_len >= (size_t)buf->data_offset)
+                               ? buf->data_len - (size_t)buf->data_offset
+                               : 0;
+
+        if (available == 0)
+        {
+            session->tcp_pending_list = buf->process_next;
+            buf->process_next = NULL;
+            buffer_ref_put(buf);
+            continue;
+        }
+
+        size_t consume = (len < available) ? len : available;
+        buf->data_offset += (off_t)consume;
+        len -= consume;
+
+        if ((size_t)buf->data_offset >= buf->data_len)
+        {
+            session->tcp_pending_list = buf->process_next;
+            buf->process_next = NULL;
+            buffer_ref_put(buf);
+        }
+    }
+}
+
+static buffer_ref_t *rtsp_tcp_extract_slices(rtsp_session_t *session, size_t len)
+{
+    buffer_ref_t *head = NULL;
+    buffer_ref_t *tail = NULL;
+    size_t remaining = len;
+
+    while (remaining > 0 && session && session->tcp_pending_list)
+    {
+        buffer_ref_t *buf = session->tcp_pending_list;
+        size_t available = (buf->data_len >= (size_t)buf->data_offset)
+                               ? buf->data_len - (size_t)buf->data_offset
+                               : 0;
+
+        if (available == 0)
+        {
+            session->tcp_pending_list = buf->process_next;
+            buf->process_next = NULL;
+            buffer_ref_put(buf);
+            continue;
+        }
+
+        size_t take = (remaining < available) ? remaining : available;
+        buffer_ref_t *slice = buffer_ref_create_slice(buf, 0, take);
+        if (!slice)
+        {
+            rtsp_release_buffer_list(head);
+            return NULL;
+        }
+
+        if (tail)
+        {
+            tail->process_next = slice;
+        }
+        else
+        {
+            head = slice;
+        }
+        tail = slice;
+
+        buf->data_offset += (off_t)take;
+        remaining -= take;
+
+        if ((size_t)buf->data_offset >= buf->data_len)
+        {
+            session->tcp_pending_list = buf->process_next;
+            buf->process_next = NULL;
+            buffer_ref_put(buf);
+        }
+    }
+
+    if (remaining > 0)
+    {
+        rtsp_release_buffer_list(head);
+        return NULL;
+    }
+
+    if (tail)
+        tail->process_next = NULL;
+
+    return head;
+}
+
+static void rtsp_release_buffer_list(buffer_ref_t *head)
+{
+    buffer_ref_t *current = head;
+    while (current)
+    {
+        buffer_ref_t *next = current->process_next;
+        current->process_next = NULL;
+        buffer_ref_put(current);
+        current = next;
+    }
+}
+
+static int rtsp_tcp_resync_to_marker(rtsp_session_t *session)
+{
+    if (!session || !session->tcp_pending_list)
+        return 0;
+
+    size_t skipped_total = 0;
+    buffer_ref_t *current = session->tcp_pending_list;
+
+    while (current)
+    {
+        size_t available = (current->data_len >= (size_t)current->data_offset)
+                               ? current->data_len - (size_t)current->data_offset
+                               : 0;
+        if (available == 0)
+        {
+            current = current->process_next;
+            continue;
+        }
+
+        uint8_t *ptr = (uint8_t *)current->data + current->data_offset;
+        uint8_t *found = memchr(ptr, '$', available);
+        if (found)
+        {
+            size_t skip = skipped_total + (size_t)(found - ptr);
+            if (skip > 0)
+            {
+                rtsp_tcp_consume(session, skip);
+            }
+            return 1;
+        }
+
+        skipped_total += available;
+        current = current->process_next;
+    }
+
+    if (skipped_total > 0)
+    {
+        rtsp_tcp_consume(session, skipped_total);
+    }
+
+    return 0;
 }
 
 /**
@@ -1734,165 +2001,129 @@ cleanup:
  */
 static int rtsp_setup_udp_sockets(rtsp_session_t *session)
 {
-    const int port_range = 10000;
-    const int port_min = 10000;
-    const int port_start_offset = (int)(get_time_ms() % port_range);
-    const struct ifreq *upstream_if;
     struct sockaddr_in local_addr;
-    int port_base;
-    int port_max;
-    int pair_count;
-    int start_pair_index;
-    int selected_rtp_port = -1;
-    int rtp_socket = -1;
-    int rtcp_socket = -1;
+    /* socklen_t addr_len; // Unused variable */
+    int port_base = 10000 + (getpid() % 20000); /* Semi-random port base */
+    const struct ifreq *upstream_if;
 
     logger(LOG_DEBUG, "RTSP: Setting up UDP sockets");
 
     upstream_if = &config.upstream_interface_unicast;
 
-    session->local_rtp_port = 0;
-    session->local_rtcp_port = 0;
-
-    if (port_range < 2)
+    /* Create RTP socket */
+    session->rtp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (session->rtp_socket < 0)
     {
-        logger(LOG_ERROR, "RTSP: UDP port range too small (range=%d)", port_range);
+        logger(LOG_ERROR, "RTSP: Failed to create RTP socket: %s", strerror(errno));
         return -1;
     }
 
-    port_max = port_min + port_range;
-    port_base = (port_min % 2 == 0) ? port_min : port_min + 1;
-
-    if (port_base + 1 >= port_max)
+    /* Set socket to non-blocking mode for epoll */
+    if (connection_set_nonblocking(session->rtp_socket) < 0)
     {
-        logger(LOG_ERROR, "RTSP: UDP port configuration invalid (min=%d range=%d)", port_min, port_range);
+        logger(LOG_ERROR, "RTSP: Failed to set RTP socket non-blocking: %s", strerror(errno));
+        close(session->rtp_socket);
+        session->rtp_socket = -1;
         return -1;
     }
 
-    pair_count = (port_max - port_base) / 2;
-    if (pair_count <= 0)
-    {
-        logger(LOG_ERROR, "RTSP: No usable RTP/RTCP port pairs available (min=%d range=%d)", port_min, port_range);
-        return -1;
-    }
+    bind_to_upstream_interface(session->rtp_socket, upstream_if);
 
-    start_pair_index = ((port_start_offset & ~1) / 2) % pair_count;
-
+    /* Bind RTP socket to even port */
     memset(&local_addr, 0, sizeof(local_addr));
     local_addr.sin_family = AF_INET;
     local_addr.sin_addr.s_addr = INADDR_ANY;
 
-    for (int attempt = 0; attempt < pair_count; attempt++)
+    for (int port = port_base; port < port_base + 100; port += 2)
     {
-        int pair_index = (start_pair_index + attempt) % pair_count;
-        int candidate_rtp_port = port_base + pair_index * 2;
-        int bind_errno = 0;
-
-        rtp_socket = socket(AF_INET, SOCK_DGRAM, 0);
-        if (rtp_socket < 0)
+        local_addr.sin_port = htons(port);
+        if (bind(session->rtp_socket, (struct sockaddr *)&local_addr, sizeof(local_addr)) == 0)
         {
-            logger(LOG_ERROR, "RTSP: Failed to create RTP socket: %s", strerror(errno));
-            return -1;
+            session->local_rtp_port = port;
+            break;
         }
-
-        if (connection_set_nonblocking(rtp_socket) < 0)
-        {
-            logger(LOG_ERROR, "RTSP: Failed to set RTP socket non-blocking: %s", strerror(errno));
-            close(rtp_socket);
-            return -1;
-        }
-        bind_to_upstream_interface(rtp_socket, upstream_if);
-
-        local_addr.sin_port = htons(candidate_rtp_port);
-        if (bind(rtp_socket, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
-        {
-            bind_errno = errno;
-            close(rtp_socket);
-            rtp_socket = -1;
-            if (bind_errno == EADDRINUSE)
-            {
-                continue;
-            }
-            logger(LOG_ERROR, "RTSP: RTP bind(%d) failed: %s", candidate_rtp_port, strerror(bind_errno));
-            return -1;
-        }
-
-        rtcp_socket = socket(AF_INET, SOCK_DGRAM, 0);
-        if (rtcp_socket < 0)
-        {
-            logger(LOG_ERROR, "RTSP: Failed to create RTCP socket: %s", strerror(errno));
-            close(rtp_socket);
-            return -1;
-        }
-
-        if (connection_set_nonblocking(rtcp_socket) < 0)
-        {
-            logger(LOG_ERROR, "RTSP: Failed to set RTCP socket non-blocking: %s", strerror(errno));
-            close(rtp_socket);
-            close(rtcp_socket);
-            return -1;
-        }
-        bind_to_upstream_interface(rtcp_socket, upstream_if);
-
-        local_addr.sin_port = htons(candidate_rtp_port + 1);
-        if (bind(rtcp_socket, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
-        {
-            bind_errno = errno;
-            close(rtp_socket);
-            close(rtcp_socket);
-            rtp_socket = -1;
-            rtcp_socket = -1;
-            if (bind_errno == EADDRINUSE)
-            {
-                continue;
-            }
-            logger(LOG_ERROR, "RTSP: RTCP bind(%d) failed: %s", candidate_rtp_port + 1, strerror(bind_errno));
-            return -1;
-        }
-
-        selected_rtp_port = candidate_rtp_port;
-        break;
     }
 
-    if (selected_rtp_port < 0)
+    if (session->local_rtp_port == 0)
     {
-        logger(LOG_ERROR, "RTSP: Unable to find free RTP/RTCP port pair in range [%d, %d)", port_min, port_max);
+        logger(LOG_ERROR, "RTSP: Failed to bind RTP socket");
+        close(session->rtp_socket);
+        session->rtp_socket = -1; /* Reset socket to prevent double-close */
         return -1;
     }
 
-    session->rtp_socket = rtp_socket;
-    session->rtcp_socket = rtcp_socket;
-    session->local_rtp_port = selected_rtp_port;
-    session->local_rtcp_port = selected_rtp_port + 1;
-
+    /* Register RTP socket with epoll immediately after creation (if epoll_fd provided) */
     if (session->epoll_fd >= 0)
     {
         struct epoll_event ev;
-
-        ev.events = EPOLLIN | EPOLLHUP | EPOLLERR;
+        ev.events = EPOLLIN | EPOLLHUP | EPOLLERR; /* Monitor read and error events */
         ev.data.fd = session->rtp_socket;
         if (epoll_ctl(session->epoll_fd, EPOLL_CTL_ADD, session->rtp_socket, &ev) < 0)
         {
             logger(LOG_ERROR, "RTSP: Failed to add RTP socket to epoll: %s", strerror(errno));
             close(session->rtp_socket);
-            close(session->rtcp_socket);
             session->rtp_socket = -1;
-            session->rtcp_socket = -1;
-            session->local_rtp_port = 0;
-            session->local_rtcp_port = 0;
             return -1;
         }
         fdmap_set(session->rtp_socket, session->conn);
         logger(LOG_DEBUG, "RTSP: RTP socket registered with epoll");
+    }
 
-        ev.events = EPOLLIN | EPOLLHUP | EPOLLERR;
+    /* Create RTCP socket */
+    session->rtcp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (session->rtcp_socket < 0)
+    {
+        logger(LOG_ERROR, "RTSP: Failed to create RTCP socket: %s", strerror(errno));
+        /* Clean up RTP socket properly */
+        worker_cleanup_socket_from_epoll(session->epoll_fd, session->rtp_socket);
+        session->rtp_socket = -1;
+        session->local_rtp_port = 0;
+        return -1;
+    }
+
+    /* Set socket to non-blocking mode for epoll */
+    if (connection_set_nonblocking(session->rtcp_socket) < 0)
+    {
+        logger(LOG_ERROR, "RTSP: Failed to set RTCP socket non-blocking: %s", strerror(errno));
+        /* Clean up RTP socket (already registered) and RTCP socket (not yet registered) */
+        worker_cleanup_socket_from_epoll(session->epoll_fd, session->rtp_socket);
+        close(session->rtcp_socket); /* RTCP not yet in fdmap, direct close is correct */
+        session->rtp_socket = -1;
+        session->rtcp_socket = -1;
+        session->local_rtp_port = 0;
+        session->local_rtcp_port = 0;
+        return -1;
+    }
+
+    bind_to_upstream_interface(session->rtcp_socket, upstream_if);
+
+    /* Bind RTCP socket to odd port */
+    local_addr.sin_port = htons(session->local_rtp_port + 1);
+    if (bind(session->rtcp_socket, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0)
+    {
+        logger(LOG_ERROR, "RTSP: Failed to bind RTCP socket: %s", strerror(errno));
+        /* Clean up RTP socket (already registered) and RTCP socket (not yet registered) */
+        worker_cleanup_socket_from_epoll(session->epoll_fd, session->rtp_socket);
+        close(session->rtcp_socket); /* RTCP not yet in fdmap, direct close is correct */
+        session->rtp_socket = -1;
+        session->rtcp_socket = -1;
+        session->local_rtp_port = 0;
+        session->local_rtcp_port = 0;
+        return -1;
+    }
+
+    /* Register RTCP socket with epoll immediately after creation (if epoll_fd provided) */
+    if (session->epoll_fd >= 0)
+    {
+        struct epoll_event ev;
+        ev.events = EPOLLIN | EPOLLHUP | EPOLLERR; /* Monitor read and error events */
         ev.data.fd = session->rtcp_socket;
         if (epoll_ctl(session->epoll_fd, EPOLL_CTL_ADD, session->rtcp_socket, &ev) < 0)
         {
             logger(LOG_ERROR, "RTSP: Failed to add RTCP socket to epoll: %s", strerror(errno));
+            /* Clean up RTP socket (already registered) and RTCP socket (not yet registered) */
             worker_cleanup_socket_from_epoll(session->epoll_fd, session->rtp_socket);
-            close(session->rtp_socket);
-            close(session->rtcp_socket);
+            close(session->rtcp_socket); /* RTCP not yet in fdmap, direct close is correct */
             session->rtp_socket = -1;
             session->rtcp_socket = -1;
             session->local_rtp_port = 0;
@@ -1900,8 +2131,10 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session)
             return -1;
         }
         fdmap_set(session->rtcp_socket, session->conn);
-        logger(LOG_DEBUG, "RTSP: RTCP socket registered with epoll");
+        logger(LOG_DEBUG, "RTCP: RTCP socket registered with epoll");
     }
+
+    session->local_rtcp_port = session->local_rtp_port + 1;
 
     logger(LOG_DEBUG, "RTSP: UDP sockets bound to ports %d (RTP) and %d (RTCP)",
            session->local_rtp_port, session->local_rtcp_port);

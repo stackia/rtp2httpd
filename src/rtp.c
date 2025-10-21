@@ -113,10 +113,10 @@ buffer_ref_t *rtp_clip_buffer_to_valid_payload(buffer_ref_t *buf_ref_list, uint1
       else
       {
         /* Out-of-order detection - packets are usually in order */
-        uint16_t expected = (*last_seqn + 1) & 0xFFFF;
-        if (unlikely(*not_first && (seqn != expected)))
+        if (unlikely(*not_first && (seqn != ((*last_seqn + 1) & 0xFFFF))))
         {
-          int gap = seqn - expected;
+          int expected = (*last_seqn + 1) & 0xFFFF;
+          int gap = (seqn - expected) & 0xFFFF;
           /* This indicates upstream packet loss (network or source), NOT local send congestion */
           logger(LOG_DEBUG, "RTP: Packet loss detected - expected seq %d, received %d (gap: %d packets) (%s)",
                  expected, seqn, gap, log_label);
