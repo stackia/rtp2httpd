@@ -11,15 +11,27 @@
 #include "connection.h"
 #include "zerocopy.h"
 
+#define FEC_PAYLOAD_TYPE_1 127
+#define FEC_PAYLOAD_TYPE_2 97
+
 int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, uint16_t *seqn)
 {
   int payloadstart, payloadlength;
   uint8_t flags;
+  uint8_t payload_type;
 
   /* Check if this is an RTP packet (version 2, minimum size 12 bytes) */
   if (likely(recv_len >= 12) && likely((buf[0] & 0xC0) == 0x80))
   {
     /* RTP packet detected - strip RTP header and return payload */
+
+    /* Extract and check payload type */
+    payload_type = buf[1] & 0x7F;
+    if (unlikely(payload_type == FEC_PAYLOAD_TYPE_1 || payload_type == FEC_PAYLOAD_TYPE_2))
+    {
+      logger(LOG_DEBUG, "FEC packet detected (payload type %d), skipping", payload_type);
+      return -1;
+    }
 
     /* Extract sequence number if requested */
     if (seqn)
