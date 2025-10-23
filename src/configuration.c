@@ -208,19 +208,6 @@ static void set_status_page_path_value(const char *value)
   }
 }
 
-/* Cleanup helper for parse_services_sec */
-static void cleanup_service_parse_temps(char *servname, char *msrc, char *msaddr, char *msport)
-{
-  if (servname)
-    free(servname);
-  if (msrc)
-    free(msrc);
-  if (msaddr)
-    free(msaddr);
-  if (msport)
-    free(msport);
-}
-
 void parse_bind_sec(char *line)
 {
   int pos = 0;
@@ -246,183 +233,217 @@ void parse_bind_sec(char *line)
 
 void parse_services_sec(char *line)
 {
-  int i, j, r, rr;
+  int r, rr;
   struct addrinfo hints;
-  char *servname, *type, *maddr, *mport, *msrc, *msaddr, *msport;
+  char *servname, *maddr, *msrc, *msaddr, *msport;
+  const char *mport;
   service_t *service;
   int pos = 0;
+  static const char default_port[] = "1234";
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_socktype = SOCK_DGRAM;
 
-  /* Initialize string pointers */
-  msrc = strdup("");
-  msaddr = strdup("");
-  msport = strdup("");
-
-  /* Extract service name and type */
+  /* Extract service name */
   servname = extract_token(line, &pos);
-  type = strndupa(line + pos, strcspn(line + pos, " \t\n\r"));
 
-  /* Skip whitespace after type */
+  /* Skip whitespace */
   while (isspace(line[pos]))
     pos++;
-  j = pos;
-  while (!isspace(line[j]) && line[j] != '\0')
-    j++;
-  type = strndupa(line + pos, j - pos);
-  pos = j;
 
-  /* Check if this is an RTSP service - different parsing logic */
-  if (strcasecmp("RTSP", type) == 0)
+  /* Parse format: <name> <protocol>://<url> */
+  char *url_start = line + pos;
+  if (strncmp(url_start, "rtp://", 6) == 0)
   {
-    /* For RTSP: SERVICE_NAME RTSP RTSP_URL */
-    /* Skip whitespace and get rest of line as RTSP URL */
-    while (isspace(line[pos]))
-      pos++;
-    char *rtsp_url = strdup(line + pos);
+    /* RTP format: rtp://[source@]mcast_addr:port[?query] */
+    /* Extract the full URL (rest of line, trimmed) */
+    char *url_end = url_start + strlen(url_start);
+    while (url_end > url_start && isspace(*(url_end - 1)))
+      url_end--;
 
-    /* Remove trailing whitespace */
-    char *end = rtsp_url + strlen(rtsp_url) - 1;
-    while (end > rtsp_url && isspace(*end))
-      *end-- = '\0';
-
-    if (strlen(rtsp_url) == 0)
+    size_t url_len = url_end - url_start;
+    char *full_url = malloc(url_len + 1);
+    if (!full_url)
     {
-      logger(LOG_ERROR, "RTSP service %s: missing RTSP URL", servname);
-      cleanup_service_parse_temps(servname, msrc, msaddr, msport);
-      free(rtsp_url);
+      logger(LOG_ERROR, "Failed to allocate memory for service URL");
+      free(servname);
       return;
     }
+    memcpy(full_url, url_start, url_len);
+    full_url[url_len] = '\0';
+
+    /* RTP multicast service: rtp://[source@]mcast_addr:port[?fcc=addr:port] */
+    char *rtp_part = full_url + 6; /* Skip "rtp://" */
+    char *query_start = strchr(rtp_part, '?');
+    char main_part[512];
+
+    /* Separate main part and query */
+    if (query_start)
+    {
+      size_t main_len = query_start - rtp_part;
+      if (main_len >= sizeof(main_part))
+        main_len = sizeof(main_part) - 1;
+      memcpy(main_part, rtp_part, main_len);
+      main_part[main_len] = '\0';
+    }
+    else
+    {
+      strncpy(main_part, rtp_part, sizeof(main_part) - 1);
+      main_part[sizeof(main_part) - 1] = '\0';
+    }
+
+    /* Parse source@multicast format */
+    char *at_pos = strchr(main_part, '@');
+    int has_source = 0;
+    if (at_pos)
+    {
+      *at_pos = '\0';
+      maddr = at_pos + 1;
+      msrc = main_part;
+      has_source = 1;
+
+      /* Remove IPv6 brackets from source if present */
+      if (msrc[0] == '[')
+      {
+        size_t len = strlen(msrc);
+        if (len > 2 && msrc[len - 1] == ']')
+        {
+          msrc[len - 1] = '\0';
+          msrc++;
+        }
+      }
+
+      /* Parse source address and port */
+      /* Count colons to detect IPv6 (IPv6 has multiple colons, IPv4:port has only one) */
+      int colon_count = 0;
+      for (const char *p = msrc; *p; p++)
+      {
+        if (*p == ':') colon_count++;
+      }
+
+      if (colon_count == 1)
+      {
+        /* IPv4 with port (exactly one colon) */
+        char *src_colon = strchr(msrc, ':');
+        *src_colon = '\0';
+        msaddr = msrc;
+        msport = src_colon + 1;
+      }
+      else
+      {
+        /* IPv6 (multiple colons) or IPv4 without port (zero colons) */
+        msaddr = msrc;
+        msport = NULL;
+      }
+    }
+    else
+    {
+      /* No source address */
+      maddr = main_part;
+      msrc = NULL;
+      msaddr = NULL;
+      msport = NULL;
+    }
+
+    /* Parse multicast address and port */
+    char *mcast_colon = strrchr(maddr, ':');
+    if (mcast_colon)
+    {
+      *mcast_colon = '\0';
+      mport = mcast_colon + 1;
+    }
+    else
+    {
+      mport = default_port; /* Default port */
+    }
+
+    /* Remove IPv6 brackets if present */
+    if (maddr[0] == '[')
+    {
+      size_t len = strlen(maddr);
+      if (len > 2 && maddr[len - 1] == ']')
+      {
+        maddr[len - 1] = '\0';
+        maddr++;
+      }
+    }
+
+    logger(LOG_DEBUG, "RTP service: %s, maddr: %s, mport: %s, msrc: %s",
+           servname, maddr, mport, has_source ? msrc : "");
+
+    service = malloc(sizeof(service_t));
+    memset(service, 0, sizeof(*service));
+
+    r = getaddrinfo(maddr, mport, &hints, &(service->addr));
+    rr = 0;
+    if (has_source)
+    {
+      rr = getaddrinfo(msaddr, msport, &hints, &(service->msrc_addr));
+    }
+
+    if (r || rr)
+    {
+      if (r)
+        logger(LOG_ERROR, "Cannot init service %s. GAI: %s", servname, gai_strerror(r));
+      if (rr)
+        logger(LOG_ERROR, "Cannot init service %s source. GAI: %s", servname, gai_strerror(rr));
+
+      free(servname);
+      free(service);
+      free(full_url);
+      return;
+    }
+
+    service->service_type = SERVICE_MRTP;
+    service->url = servname;
+    service->msrc = has_source ? strdup(msrc) : strdup("");
+    service->next = services;
+    services = service;
+
+    logger(LOG_INFO, "Service created: %s (RTP %s:%s)", servname, maddr, mport);
+
+    free(full_url);
+    return;
+  }
+  else if (strncmp(url_start, "rtsp://", 7) == 0)
+  {
+    /* RTSP format: rtsp://server:port/path[?query] */
+    /* Extract the full URL (rest of line, trimmed) */
+    char *url_end = url_start + strlen(url_start);
+    while (url_end > url_start && isspace(*(url_end - 1)))
+      url_end--;
+
+    size_t url_len = url_end - url_start;
+    char *rtsp_url = malloc(url_len + 1);
+    if (!rtsp_url)
+    {
+      logger(LOG_ERROR, "Failed to allocate memory for RTSP URL");
+      free(servname);
+      return;
+    }
+    memcpy(rtsp_url, url_start, url_len);
+    rtsp_url[url_len] = '\0';
 
     service = malloc(sizeof(service_t));
     memset(service, 0, sizeof(*service));
     service->service_type = SERVICE_RTSP;
     service->url = servname;
     service->rtsp_url = rtsp_url;
-    service->msrc = strdup(msrc);
+    service->msrc = strdup("");
     service->next = services;
     services = service;
 
     logger(LOG_INFO, "Service created: %s (RTSP)", servname);
     logger(LOG_DEBUG, "RTSP service: %s, URL: %s", servname, rtsp_url);
-
-    /* Free allocated temporary strings */
-    cleanup_service_parse_temps(NULL, msrc, msaddr, msport);
     return;
   }
-
-  /* Parsing logic for MRTP/MUDP services */
-  /* Extract multicast address and port */
-  while (isspace(line[pos]))
-    pos++;
-  i = pos;
-  while (!isspace(line[pos]) && line[pos] != '\0')
-    pos++;
-  maddr = strndupa(line + i, pos - i);
-
-  while (isspace(line[pos]))
-    pos++;
-  i = pos;
-  while (!isspace(line[pos]) && line[pos] != '\0')
-    pos++;
-  mport = strndupa(line + i, pos - i);
-
-  if (strstr(maddr, "@") != NULL)
+  else
   {
-    char *split;
-    char *current;
-    int cnt = 0;
-    split = strtok(maddr, "@");
-    while (split != NULL)
-    {
-      current = split;
-      if (cnt == 0)
-        msrc = current;
-      split = strtok(NULL, "@");
-      if (cnt > 0 && split != NULL)
-      {
-        strcat(msrc, "@");
-        strcat(msrc, current);
-      }
-      if (cnt > 0 && split == NULL)
-        maddr = current;
-      cnt++;
-    }
-
-    cnt = 0;
-    msaddr = msrc;
-    split = strtok(msrc, ":");
-    while (split != NULL)
-    {
-      current = split;
-      if (cnt == 0)
-        msaddr = current;
-      split = strtok(NULL, ":");
-      if (cnt > 0 && split != NULL)
-      {
-        strcat(msaddr, ":");
-        strcat(msaddr, current);
-      }
-      if (cnt > 0 && split == NULL)
-        msport = current;
-      cnt++;
-    }
-  }
-
-  logger(LOG_DEBUG, "serv: %s, type: %s, maddr: %s, mport: %s, msaddr: %s, msport: %s",
-         servname, type, maddr, mport, msaddr, msport);
-
-  if ((strcasecmp("MRTP", type) != 0) && (strcasecmp("MUDP", type) != 0))
-  {
-    logger(LOG_ERROR, "Unsupported service type: %s", type);
-    cleanup_service_parse_temps(servname, msrc, msaddr, msport);
+    /* Invalid format */
+    logger(LOG_ERROR, "Invalid service format for '%s': expected rtp:// or rtsp://", servname);
+    free(servname);
     return;
   }
-
-  service = malloc(sizeof(service_t));
-  memset(service, 0, sizeof(*service));
-
-  r = getaddrinfo(maddr, mport, &hints, &(service->addr));
-  rr = 0;
-  if (strcmp(msrc, "") != 0 && msrc != NULL)
-  {
-    rr = getaddrinfo(msaddr, msport, &hints, &(service->msrc_addr));
-  }
-  if (r || rr)
-  {
-    if (r)
-      logger(LOG_ERROR, "Cannot init service %s. GAI: %s", servname, gai_strerror(r));
-    if (rr)
-      logger(LOG_ERROR, "Cannot init service %s. GAI: %s", servname, gai_strerror(rr));
-
-    cleanup_service_parse_temps(servname, msrc, msaddr, msport);
-    free(service);
-    return;
-  }
-
-  if (service->addr->ai_next != NULL)
-    logger(LOG_WARN, "Multicast address is ambiguous (multiple results)");
-
-  if (strcmp(msrc, "") != 0 && msrc != NULL && service->msrc_addr->ai_next != NULL)
-    logger(LOG_WARN, "Source address is ambiguous (multiple results)");
-
-  /* Set service type */
-  if (strcasecmp("MRTP", type) == 0)
-    service->service_type = SERVICE_MRTP;
-  else if (strcasecmp("MUDP", type) == 0)
-    service->service_type = SERVICE_MUDP;
-
-  service->url = servname;
-  service->msrc = strdup(msrc);
-  service->next = services;
-  services = service;
-
-  logger(LOG_INFO, "Service created: %s (%s %s:%s)", servname, type, maddr, mport);
-  logger(LOG_DEBUG, "Service details: %s, Type: %s, Addr: %s, Port: %s", servname, type, maddr, mport);
-
-  /* Free allocated temporary strings (servname is now owned by service) */
-  cleanup_service_parse_temps(NULL, msrc, msaddr, msport);
 }
 
 void parse_global_sec(char *line)
