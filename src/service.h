@@ -36,7 +36,6 @@
 typedef enum
 {
   SERVICE_MRTP = 0,
-  SERVICE_MUDP,
   SERVICE_RTSP
 } service_type_t;
 
@@ -82,17 +81,40 @@ service_t *service_create_from_udpxy_url(char *url);
 service_t *service_create_from_rtsp_url(const char *http_url);
 
 /**
- * Create service from configured RTSP service with query parameter merging
+ * Create service from RTP/UDP URL
+ * Accepts both HTTP request format and direct URL format for RTP and UDP
+ * Parses multicast address, source address, and FCC parameter from URL
+ * Both RTP and UDP URLs are treated as SERVICE_MRTP
+ *
+ * Supported formats:
+ *   - HTTP RTP format: /rtp/multicast_addr:port[@source]?fcc=...
+ *   - HTTP UDP format: /udp/multicast_addr:port[@source]?fcc=...
+ *   - Direct RTP format: rtp://multicast_addr:port[@source]?fcc=...
+ *   - Direct UDP format: udp://multicast_addr:port[@source]?fcc=...
+ *
+ * @param http_url URL to parse (any of the above formats)
+ * @return Pointer to newly allocated service structure or NULL on failure
+ */
+service_t *service_create_from_rtp_url(const char *http_url);
+
+/**
+ * Create service from configured service with query parameter merging
  * If the request URL contains query parameters, they are merged with the
- * configured service's rtsp_url and a new service is created.
+ * configured service's URL and a new service is created.
  * If no query parameters in request, returns NULL (use original service).
  *
- * @param configured_service The configured RTSP service
+ * This function works for both RTP and RTSP services based on expected_type.
+ * For RTSP services, it merges query params with rtsp_url.
+ * For RTP services, it merges query params with url.
+ *
+ * @param configured_service The configured service (RTP or RTSP)
  * @param request_url The HTTP request URL (may contain query params)
+ * @param expected_type Expected service type (SERVICE_MRTP or SERVICE_RTSP)
  * @return Pointer to newly allocated service structure or NULL if no merge needed/on failure
  */
-service_t *service_create_from_rtsp_with_query_merge(const service_t *configured_service,
-                                                     const char *request_url);
+service_t *service_create_with_query_merge(const service_t *configured_service,
+                                           const char *request_url,
+                                           service_type_t expected_type);
 
 /**
  * Free service structure allocated by service creation functions

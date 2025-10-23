@@ -637,11 +637,33 @@ int connection_route_and_start(connection_t *c)
     return 0;
   }
 
-  /* Find configured service */
+  /* Find configured service (with URL decoding support) */
   service_t *service = NULL;
+  char decoded_path[HTTP_URL_BUFFER_SIZE];
+
+  /* Copy service_path to buffer for decoding */
+  if (path_len >= sizeof(decoded_path))
+  {
+    logger(LOG_ERROR, "Service path too long: %zu bytes", path_len);
+    http_send_400(c);
+    return 0;
+  }
+
+  memcpy(decoded_path, service_path, path_len);
+  decoded_path[path_len] = '\0';
+
+  /* URL decode the path */
+  if (http_url_decode(decoded_path) != 0)
+  {
+    logger(LOG_WARN, "Failed to URL decode service path");
+    http_send_400(c);
+    return 0;
+  }
+
+  /* Match against configured services */
   for (service = services; service; service = service->next)
   {
-    if (strncmp(service_path, service->url, path_len) == 0 && strlen(service->url) == path_len)
+    if (strcmp(decoded_path, service->url) == 0)
       break;
   }
 
@@ -656,10 +678,10 @@ int connection_route_and_start(connection_t *c)
         owned = 1;
     }
   }
-  else if (service->service_type == SERVICE_RTSP)
+  else
   {
-    /* Found configured RTSP service - try to merge query params if present */
-    service_t *merged_service = service_create_from_rtsp_with_query_merge(service, c->http_req.url);
+    /* Found configured service (RTP or RTSP) - try to merge query params if present */
+    service_t *merged_service = service_create_with_query_merge(service, c->http_req.url, service->service_type);
     if (merged_service)
     {
       service = merged_service;
@@ -728,7 +750,35 @@ int connection_route_and_start(connection_t *c)
   /* Register streaming client in status tracking with service URL (skip for snapshots) */
   if (c->client_addr_len > 0)
   {
-    c->status_index = status_register_client(&c->client_addr, c->client_addr_len, c->http_req.url);
+    /* Build display URL with decoded service name and query parameters */
+    char display_url[HTTP_URL_BUFFER_SIZE];
+    size_t url_len = 0;
+
+    /* Add leading slash */
+    display_url[url_len++] = '/';
+
+    /* Add decoded service name */
+    size_t decoded_len = strlen(decoded_path);
+    if (url_len + decoded_len < sizeof(display_url))
+    {
+      memcpy(display_url + url_len, decoded_path, decoded_len);
+      url_len += decoded_len;
+    }
+
+    /* Add query parameters if present */
+    if (query_start && url_len < sizeof(display_url))
+    {
+      size_t query_len = strlen(query_start);
+      if (url_len + query_len < sizeof(display_url))
+      {
+        memcpy(display_url + url_len, query_start, query_len);
+        url_len += query_len;
+      }
+    }
+
+    display_url[url_len] = '\0';
+
+    c->status_index = status_register_client(&c->client_addr, c->client_addr_len, display_url);
     if (c->status_index < 0)
     {
       logger(LOG_ERROR, "Failed to register streaming client in status tracking");

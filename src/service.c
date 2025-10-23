@@ -14,8 +14,8 @@
 #include "rtp2httpd.h"
 #include "http.h"
 
-/* URL parsing helper structure */
-struct url_components
+/* RTP URL parsing helper structure */
+struct rtp_url_components
 {
     char multicast_addr[HTTP_ADDR_COMPONENT_SIZE];
     char multicast_port[HTTP_PORT_COMPONENT_SIZE];
@@ -110,7 +110,7 @@ static int parse_address_port(const char *input, char *addr, size_t addr_size,
     return 0;
 }
 
-static int parse_url_components(char *url_part, struct url_components *components)
+static int parse_rtp_url_components(char *url_part, struct rtp_url_components *components)
 {
     char *query_start, *at_pos;
     char main_part[HTTP_URL_MAIN_PART_SIZE];
@@ -225,15 +225,7 @@ static int parse_url_components(char *url_part, struct url_components *component
 
 service_t *service_create_from_udpxy_url(char *url)
 {
-    service_t *serv = NULL;
-    struct addrinfo *res_ai = NULL, *msrc_res_ai = NULL, *fcc_res_ai = NULL;
-    struct sockaddr_storage *res_addr = NULL, *msrc_res_addr = NULL, *fcc_res_addr = NULL;
-
-    struct url_components components;
-    struct addrinfo hints, *res = NULL, *msrc_res = NULL, *fcc_res = NULL;
-    char *url_part;
     char working_url[HTTP_URL_BUFFER_SIZE];
-    int r = 0, rr = 0, rrr = 0;
 
     /* Validate input */
     if (!url || strlen(url) >= sizeof(working_url))
@@ -242,268 +234,26 @@ service_t *service_create_from_udpxy_url(char *url)
         return NULL;
     }
 
-    /* Allocate service structure */
-    serv = calloc(1, sizeof(service_t));
-    if (!serv)
-    {
-        logger(LOG_ERROR, "Failed to allocate memory for service structure");
-        return NULL;
-    }
-
     /* Copy URL to avoid modifying original */
     strncpy(working_url, url, sizeof(working_url) - 1);
     working_url[sizeof(working_url) - 1] = '\0';
 
-    /* Determine service type */
-    if (strncmp(working_url, "/rtp/", 5) == 0)
+    /* Determine service type and delegate to appropriate function */
+    if (strncmp(working_url, "/rtp/", 5) == 0 || strncmp(working_url, "/udp/", 5) == 0)
     {
-        serv->service_type = SERVICE_MRTP;
-        url_part = working_url + 5;
-    }
-    else if (strncmp(working_url, "/udp/", 5) == 0)
-    {
-        serv->service_type = SERVICE_MUDP;
-        url_part = working_url + 5;
+        /* RTP/UDP service - service_create_from_rtp_url handles both */
+        return service_create_from_rtp_url(url);
     }
     else if (strncmp(working_url, "/rtsp/", 6) == 0)
     {
-        serv->service_type = SERVICE_RTSP;
-        url_part = working_url + 6;
-    }
-    else
-    {
-        free(serv);
-        return NULL;
-    }
-
-    /* Handle RTSP URL parsing separately */
-    if (serv->service_type == SERVICE_RTSP)
-    {
-        free(serv);
+        /* RTSP service - use service_create_from_rtsp_url */
         return service_create_from_rtsp_url(url);
     }
-
-    /* Parse URL components for non-RTSP services */
-    if (parse_url_components(url_part, &components) != 0)
-    {
-        logger(LOG_ERROR, "Failed to parse URL components");
-        free(serv);
-        return NULL;
-    }
-
-    logger(LOG_DEBUG, "Parsed URL: mcast=%s:%s",
-           components.multicast_addr, components.multicast_port);
-    if (components.has_source)
-    {
-        logger(LOG_DEBUG, " src=%s:%s", components.source_addr, components.source_port);
-    }
-    if (components.has_fcc)
-    {
-        logger(LOG_DEBUG, " fcc=%s:%s", components.fcc_addr, components.fcc_port);
-    }
-
-    /* Resolve addresses */
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_socktype = SOCK_DGRAM;
-
-    /* Resolve multicast address */
-    r = getaddrinfo(components.multicast_addr, components.multicast_port, &hints, &res);
-    if (r != 0)
-    {
-        logger(LOG_ERROR, "Cannot resolve multicast address %s:%s. GAI: %s",
-               components.multicast_addr, components.multicast_port, gai_strerror(r));
-        free(serv);
-        return NULL;
-    }
-
-    /* Resolve source address if present */
-    if (components.has_source)
-    {
-        const char *src_port = components.source_port[0] ? components.source_port : NULL;
-        rr = getaddrinfo(components.source_addr, src_port, &hints, &msrc_res);
-        if (rr != 0)
-        {
-            logger(LOG_ERROR, "Cannot resolve source address %s. GAI: %s",
-                   components.source_addr, gai_strerror(rr));
-            freeaddrinfo(res);
-            free(serv);
-            return NULL;
-        }
-    }
-
-    /* Resolve FCC address if present */
-    if (components.has_fcc)
-    {
-        const char *fcc_port = components.fcc_port[0] ? components.fcc_port : NULL;
-        rrr = getaddrinfo(components.fcc_addr, fcc_port, &hints, &fcc_res);
-        if (rrr != 0)
-        {
-            logger(LOG_ERROR, "Cannot resolve FCC address %s. GAI: %s",
-                   components.fcc_addr, gai_strerror(rrr));
-            freeaddrinfo(res);
-            if (msrc_res)
-                freeaddrinfo(msrc_res);
-            free(serv);
-            return NULL;
-        }
-    }
-
-    /* Warn about ambiguous addresses */
-    if (res->ai_next != NULL)
-    {
-        logger(LOG_WARN, "Multicast address is ambiguous (multiple results)");
-    }
-    if (msrc_res && msrc_res->ai_next != NULL)
-    {
-        logger(LOG_WARN, "Source address is ambiguous (multiple results)");
-    }
-    if (fcc_res && fcc_res->ai_next != NULL)
-    {
-        logger(LOG_WARN, "FCC address is ambiguous (multiple results)");
-    }
-
-    /* Allocate and copy multicast address structures */
-    res_addr = malloc(sizeof(struct sockaddr_storage));
-    res_ai = malloc(sizeof(struct addrinfo));
-    if (!res_addr || !res_ai)
-    {
-        logger(LOG_ERROR, "Failed to allocate memory for address structures");
-        freeaddrinfo(res);
-        if (msrc_res)
-            freeaddrinfo(msrc_res);
-        if (fcc_res)
-            freeaddrinfo(fcc_res);
-        free(res_addr);
-        free(res_ai);
-        free(serv);
-        return NULL;
-    }
-
-    memcpy(res_addr, res->ai_addr, res->ai_addrlen);
-    memcpy(res_ai, res, sizeof(struct addrinfo));
-    res_ai->ai_addr = (struct sockaddr *)res_addr;
-    res_ai->ai_canonname = NULL;
-    res_ai->ai_next = NULL;
-    serv->addr = res_ai;
-
-    /* Set up source address */
-    serv->msrc_addr = NULL;
-    serv->msrc = NULL;
-    if (components.has_source)
-    {
-        msrc_res_addr = malloc(sizeof(struct sockaddr_storage));
-        msrc_res_ai = malloc(sizeof(struct addrinfo));
-        if (!msrc_res_addr || !msrc_res_ai)
-        {
-            logger(LOG_ERROR, "Failed to allocate memory for source address structures");
-            freeaddrinfo(res);
-            freeaddrinfo(msrc_res);
-            if (fcc_res)
-                freeaddrinfo(fcc_res);
-            free(msrc_res_addr);
-            free(msrc_res_ai);
-            free(res_addr);
-            free(res_ai);
-            free(serv);
-            return NULL;
-        }
-
-        memcpy(msrc_res_addr, msrc_res->ai_addr, msrc_res->ai_addrlen);
-        memcpy(msrc_res_ai, msrc_res, sizeof(struct addrinfo));
-        msrc_res_ai->ai_addr = (struct sockaddr *)msrc_res_addr;
-        msrc_res_ai->ai_canonname = NULL;
-        msrc_res_ai->ai_next = NULL;
-        serv->msrc_addr = msrc_res_ai;
-
-        /* Create source string for compatibility */
-        char source_str[HTTP_SOURCE_STRING_SIZE];
-        if (components.source_port[0])
-        {
-            snprintf(source_str, sizeof(source_str), "%s:%s",
-                     components.source_addr, components.source_port);
-        }
-        else
-        {
-            strncpy(source_str, components.source_addr, sizeof(source_str) - 1);
-            source_str[sizeof(source_str) - 1] = '\0';
-        }
-        serv->msrc = strdup(source_str);
-        if (!serv->msrc)
-        {
-            logger(LOG_ERROR, "Failed to allocate memory for source string");
-            freeaddrinfo(res);
-            freeaddrinfo(msrc_res);
-            if (fcc_res)
-                freeaddrinfo(fcc_res);
-            free(msrc_res_addr);
-            free(msrc_res_ai);
-            free(res_addr);
-            free(res_ai);
-            free(serv);
-            return NULL;
-        }
-    }
     else
     {
-        serv->msrc = strdup("");
-        if (!serv->msrc)
-        {
-            logger(LOG_ERROR, "Failed to allocate memory for empty source string");
-            freeaddrinfo(res);
-            if (msrc_res)
-                freeaddrinfo(msrc_res);
-            if (fcc_res)
-                freeaddrinfo(fcc_res);
-            free(res_addr);
-            free(res_ai);
-            free(serv);
-            return NULL;
-        }
+        logger(LOG_ERROR, "Invalid URL format (must start with /rtp/, /udp/, or /rtsp/)");
+        return NULL;
     }
-
-    /* Set up FCC address */
-    serv->fcc_addr = NULL;
-    if (components.has_fcc)
-    {
-        fcc_res_addr = malloc(sizeof(struct sockaddr_storage));
-        fcc_res_ai = malloc(sizeof(struct addrinfo));
-        if (!fcc_res_addr || !fcc_res_ai)
-        {
-            logger(LOG_ERROR, "Failed to allocate memory for FCC address structures");
-            freeaddrinfo(res);
-            if (msrc_res)
-                freeaddrinfo(msrc_res);
-            freeaddrinfo(fcc_res);
-            free(fcc_res_addr);
-            free(fcc_res_ai);
-            if (msrc_res_addr)
-                free(msrc_res_addr);
-            if (msrc_res_ai)
-                free(msrc_res_ai);
-            free(res_addr);
-            free(res_ai);
-            if (serv->msrc)
-                free(serv->msrc);
-            free(serv);
-            return NULL;
-        }
-
-        memcpy(fcc_res_addr, fcc_res->ai_addr, fcc_res->ai_addrlen);
-        memcpy(fcc_res_ai, fcc_res, sizeof(struct addrinfo));
-        fcc_res_ai->ai_addr = (struct sockaddr *)fcc_res_addr;
-        fcc_res_ai->ai_canonname = NULL;
-        fcc_res_ai->ai_next = NULL;
-        serv->fcc_addr = fcc_res_ai;
-    }
-
-    /* Free temporary addrinfo structures */
-    freeaddrinfo(res);
-    if (msrc_res)
-        freeaddrinfo(msrc_res);
-    if (fcc_res)
-        freeaddrinfo(fcc_res);
-
-    return serv;
 }
 static int is_valid_playseek_format(const char *playseek_value)
 {
@@ -863,31 +613,50 @@ service_t *service_create_from_rtsp_url(const char *http_url)
     return result;
 }
 
-service_t *service_create_from_rtsp_with_query_merge(const service_t *configured_service,
-                                                     const char *request_url)
+service_t *service_create_with_query_merge(const service_t *configured_service,
+                                           const char *request_url,
+                                           service_type_t expected_type)
 {
     char merged_url[2048];
-    char *query_start, *rtsp_query;
+    char *query_start, *existing_query;
+    const char *base_url;
+    const char *type_name;
 
     /* Validate inputs */
     if (!configured_service || !request_url)
     {
-        logger(LOG_ERROR, "Invalid parameters for RTSP query merge");
+        logger(LOG_ERROR, "Invalid parameters for query merge");
         return NULL;
     }
 
-    /* Check if this is an RTSP service */
-    if (configured_service->service_type != SERVICE_RTSP)
+    /* Check if this is the expected service type */
+    if (configured_service->service_type != expected_type)
     {
-        logger(LOG_ERROR, "Service is not RTSP type");
+        type_name = (expected_type == SERVICE_RTSP) ? "RTSP" : "RTP";
+        logger(LOG_ERROR, "Service is not %s type", type_name);
         return NULL;
     }
 
-    /* Check if configured service has rtsp_url */
-    if (!configured_service->rtsp_url)
+    /* Get base URL based on service type */
+    if (expected_type == SERVICE_RTSP)
     {
-        logger(LOG_ERROR, "Configured RTSP service has no rtsp_url");
-        return NULL;
+        if (!configured_service->rtsp_url)
+        {
+            logger(LOG_ERROR, "Configured RTSP service has no rtsp_url");
+            return NULL;
+        }
+        base_url = configured_service->rtsp_url;
+        type_name = "RTSP";
+    }
+    else /* SERVICE_MRTP */
+    {
+        if (!configured_service->url)
+        {
+            logger(LOG_ERROR, "Configured RTP service has no URL");
+            return NULL;
+        }
+        base_url = configured_service->url;
+        type_name = "RTP";
     }
 
     /* Find query parameters in request URL */
@@ -898,54 +667,361 @@ service_t *service_create_from_rtsp_with_query_merge(const service_t *configured
         return NULL;
     }
 
-    /* Find query parameters in configured service's rtsp_url */
-    rtsp_query = strchr(configured_service->rtsp_url, '?');
+    /* Find query parameters in configured service's URL */
+    existing_query = strchr(base_url, '?');
 
-    if (rtsp_query)
+    if (existing_query)
     {
         /* Service URL already has query params - merge them */
-        size_t base_len = rtsp_query - configured_service->rtsp_url;
+        size_t base_len = existing_query - base_url;
         if (base_len >= sizeof(merged_url))
         {
-            logger(LOG_ERROR, "RTSP URL too long for merging");
+            logger(LOG_ERROR, "%s URL too long for merging", type_name);
             return NULL;
         }
 
         /* Copy base URL (without query) */
-        strncpy(merged_url, configured_service->rtsp_url, base_len);
+        strncpy(merged_url, base_url, base_len);
         merged_url[base_len] = '\0';
 
         /* Append merged query params */
-        if (strlen(merged_url) + strlen(rtsp_query) + strlen(query_start) < sizeof(merged_url))
+        if (strlen(merged_url) + strlen(existing_query) + strlen(query_start) < sizeof(merged_url))
         {
-            strcat(merged_url, rtsp_query);      /* Existing params with '?' */
-            strcat(merged_url, "&");             /* Separator */
-            strcat(merged_url, query_start + 1); /* New params without '?' */
+            strcat(merged_url, existing_query);   /* Existing params with '?' */
+            strcat(merged_url, "&");              /* Separator */
+            strcat(merged_url, query_start + 1);  /* New params without '?' */
         }
         else
         {
-            logger(LOG_ERROR, "Merged RTSP URL too long");
+            logger(LOG_ERROR, "Merged %s URL too long", type_name);
             return NULL;
         }
     }
     else
     {
         /* Service URL has no query params - just append request params */
-        size_t url_len = strlen(configured_service->rtsp_url);
+        size_t url_len = strlen(base_url);
         size_t query_len = strlen(query_start);
         if (url_len + query_len >= sizeof(merged_url))
         {
-            logger(LOG_ERROR, "RTSP URL too long for merging");
+            logger(LOG_ERROR, "%s URL too long for merging", type_name);
             return NULL;
         }
-        memcpy(merged_url, configured_service->rtsp_url, url_len);
+        memcpy(merged_url, base_url, url_len);
         memcpy(merged_url + url_len, query_start, query_len);
         merged_url[url_len + query_len] = '\0';
     }
 
     /* Create new service from merged URL */
-    logger(LOG_DEBUG, "Creating RTSP service with merged URL: %s", merged_url);
-    return service_create_from_rtsp_url(merged_url);
+    logger(LOG_DEBUG, "Creating %s service with merged URL: %s", type_name, merged_url);
+
+    if (expected_type == SERVICE_RTSP)
+    {
+        return service_create_from_rtsp_url(merged_url);
+    }
+    else /* SERVICE_MRTP */
+    {
+        return service_create_from_rtp_url(merged_url);
+    }
+}
+
+service_t *service_create_from_rtp_url(const char *http_url)
+{
+    service_t *result = NULL;
+    char working_url[HTTP_URL_BUFFER_SIZE];
+    char *url_part;
+    struct rtp_url_components components;
+    struct addrinfo hints, *res = NULL, *msrc_res = NULL, *fcc_res = NULL;
+    struct sockaddr_storage *res_addr = NULL, *msrc_res_addr = NULL, *fcc_res_addr = NULL;
+    struct addrinfo *res_ai = NULL, *msrc_res_ai = NULL, *fcc_res_ai = NULL;
+    int r = 0, rr = 0, rrr = 0;
+
+    /* Validate input */
+    if (!http_url || strlen(http_url) >= sizeof(working_url))
+    {
+        logger(LOG_ERROR, "Invalid or too long RTP URL");
+        return NULL;
+    }
+
+    /* Copy URL to avoid modifying original */
+    strncpy(working_url, http_url, sizeof(working_url) - 1);
+    working_url[sizeof(working_url) - 1] = '\0';
+
+    /* Check URL format and extract the part after prefix */
+    if (strncmp(working_url, "rtp://", 6) == 0)
+    {
+        /* Direct RTP URL format: rtp://multicast_addr:port[@source]?query */
+        url_part = working_url + 6; /* Skip "rtp://" */
+    }
+    else if (strncmp(working_url, "/rtp/", 5) == 0)
+    {
+        /* HTTP request format: /rtp/multicast_addr:port[@source]?query */
+        url_part = working_url + 5; /* Skip "/rtp/" */
+    }
+    else if (strncmp(working_url, "udp://", 6) == 0)
+    {
+        /* Direct UDP URL format: udp://multicast_addr:port[@source]?query */
+        url_part = working_url + 6; /* Skip "udp://" */
+    }
+    else if (strncmp(working_url, "/udp/", 5) == 0)
+    {
+        /* HTTP request format: /udp/multicast_addr:port[@source]?query */
+        url_part = working_url + 5; /* Skip "/udp/" */
+    }
+    else
+    {
+        logger(LOG_ERROR, "Invalid RTP/UDP URL format (must start with rtp://, /rtp/, udp://, or /udp/)");
+        return NULL;
+    }
+
+    /* Check if URL part is empty */
+    if (strlen(url_part) == 0)
+    {
+        logger(LOG_ERROR, "RTP URL part is empty");
+        return NULL;
+    }
+
+    /* Parse RTP URL components */
+    if (parse_rtp_url_components(url_part, &components) != 0)
+    {
+        logger(LOG_ERROR, "Failed to parse RTP URL components");
+        return NULL;
+    }
+
+    logger(LOG_DEBUG, "Parsed RTP URL: mcast=%s:%s",
+           components.multicast_addr, components.multicast_port);
+    if (components.has_source)
+    {
+        logger(LOG_DEBUG, " src=%s:%s", components.source_addr, components.source_port);
+    }
+    if (components.has_fcc)
+    {
+        logger(LOG_DEBUG, " fcc=%s:%s", components.fcc_addr, components.fcc_port);
+    }
+
+    /* Allocate service structure */
+    result = calloc(1, sizeof(service_t));
+    if (!result)
+    {
+        logger(LOG_ERROR, "Failed to allocate memory for RTP service structure");
+        return NULL;
+    }
+
+    /* Set service type to RTP */
+    result->service_type = SERVICE_MRTP;
+
+    /* Resolve addresses */
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_DGRAM;
+
+    /* Resolve multicast address */
+    r = getaddrinfo(components.multicast_addr, components.multicast_port, &hints, &res);
+    if (r != 0)
+    {
+        logger(LOG_ERROR, "Cannot resolve multicast address %s:%s. GAI: %s",
+               components.multicast_addr, components.multicast_port, gai_strerror(r));
+        free(result);
+        return NULL;
+    }
+
+    /* Resolve source address if present */
+    if (components.has_source)
+    {
+        const char *src_port = components.source_port[0] ? components.source_port : NULL;
+        rr = getaddrinfo(components.source_addr, src_port, &hints, &msrc_res);
+        if (rr != 0)
+        {
+            logger(LOG_ERROR, "Cannot resolve source address %s. GAI: %s",
+                   components.source_addr, gai_strerror(rr));
+            freeaddrinfo(res);
+            free(result);
+            return NULL;
+        }
+    }
+
+    /* Resolve FCC address if present */
+    if (components.has_fcc)
+    {
+        const char *fcc_port = components.fcc_port[0] ? components.fcc_port : NULL;
+        rrr = getaddrinfo(components.fcc_addr, fcc_port, &hints, &fcc_res);
+        if (rrr != 0)
+        {
+            logger(LOG_ERROR, "Cannot resolve FCC address %s. GAI: %s",
+                   components.fcc_addr, gai_strerror(rrr));
+            freeaddrinfo(res);
+            if (msrc_res)
+                freeaddrinfo(msrc_res);
+            free(result);
+            return NULL;
+        }
+    }
+
+    /* Warn about ambiguous addresses */
+    if (res->ai_next != NULL)
+    {
+        logger(LOG_WARN, "Multicast address is ambiguous (multiple results)");
+    }
+    if (msrc_res && msrc_res->ai_next != NULL)
+    {
+        logger(LOG_WARN, "Source address is ambiguous (multiple results)");
+    }
+    if (fcc_res && fcc_res->ai_next != NULL)
+    {
+        logger(LOG_WARN, "FCC address is ambiguous (multiple results)");
+    }
+
+    /* Allocate and copy multicast address structures */
+    res_addr = malloc(sizeof(struct sockaddr_storage));
+    res_ai = malloc(sizeof(struct addrinfo));
+    if (!res_addr || !res_ai)
+    {
+        logger(LOG_ERROR, "Failed to allocate memory for address structures");
+        freeaddrinfo(res);
+        if (msrc_res)
+            freeaddrinfo(msrc_res);
+        if (fcc_res)
+            freeaddrinfo(fcc_res);
+        free(res_addr);
+        free(res_ai);
+        free(result);
+        return NULL;
+    }
+
+    memcpy(res_addr, res->ai_addr, res->ai_addrlen);
+    memcpy(res_ai, res, sizeof(struct addrinfo));
+    res_ai->ai_addr = (struct sockaddr *)res_addr;
+    res_ai->ai_canonname = NULL;
+    res_ai->ai_next = NULL;
+    result->addr = res_ai;
+
+    /* Set up source address */
+    result->msrc_addr = NULL;
+    result->msrc = NULL;
+    if (components.has_source)
+    {
+        msrc_res_addr = malloc(sizeof(struct sockaddr_storage));
+        msrc_res_ai = malloc(sizeof(struct addrinfo));
+        if (!msrc_res_addr || !msrc_res_ai)
+        {
+            logger(LOG_ERROR, "Failed to allocate memory for source address structures");
+            freeaddrinfo(res);
+            freeaddrinfo(msrc_res);
+            if (fcc_res)
+                freeaddrinfo(fcc_res);
+            free(msrc_res_addr);
+            free(msrc_res_ai);
+            free(res_addr);
+            free(res_ai);
+            free(result);
+            return NULL;
+        }
+
+        memcpy(msrc_res_addr, msrc_res->ai_addr, msrc_res->ai_addrlen);
+        memcpy(msrc_res_ai, msrc_res, sizeof(struct addrinfo));
+        msrc_res_ai->ai_addr = (struct sockaddr *)msrc_res_addr;
+        msrc_res_ai->ai_canonname = NULL;
+        msrc_res_ai->ai_next = NULL;
+        result->msrc_addr = msrc_res_ai;
+
+        /* Create source string for compatibility */
+        char source_str[HTTP_SOURCE_STRING_SIZE];
+        if (components.source_port[0])
+        {
+            snprintf(source_str, sizeof(source_str), "%s:%s",
+                     components.source_addr, components.source_port);
+        }
+        else
+        {
+            strncpy(source_str, components.source_addr, sizeof(source_str) - 1);
+            source_str[sizeof(source_str) - 1] = '\0';
+        }
+        result->msrc = strdup(source_str);
+        if (!result->msrc)
+        {
+            logger(LOG_ERROR, "Failed to allocate memory for source string");
+            freeaddrinfo(res);
+            freeaddrinfo(msrc_res);
+            if (fcc_res)
+                freeaddrinfo(fcc_res);
+            free(msrc_res_addr);
+            free(msrc_res_ai);
+            free(res_addr);
+            free(res_ai);
+            free(result);
+            return NULL;
+        }
+    }
+    else
+    {
+        result->msrc = strdup("");
+        if (!result->msrc)
+        {
+            logger(LOG_ERROR, "Failed to allocate memory for empty source string");
+            freeaddrinfo(res);
+            if (msrc_res)
+                freeaddrinfo(msrc_res);
+            if (fcc_res)
+                freeaddrinfo(fcc_res);
+            free(res_addr);
+            free(res_ai);
+            free(result);
+            return NULL;
+        }
+    }
+
+    /* Set up FCC address */
+    result->fcc_addr = NULL;
+    if (components.has_fcc)
+    {
+        fcc_res_addr = malloc(sizeof(struct sockaddr_storage));
+        fcc_res_ai = malloc(sizeof(struct addrinfo));
+        if (!fcc_res_addr || !fcc_res_ai)
+        {
+            logger(LOG_ERROR, "Failed to allocate memory for FCC address structures");
+            freeaddrinfo(res);
+            if (msrc_res)
+                freeaddrinfo(msrc_res);
+            freeaddrinfo(fcc_res);
+            free(fcc_res_addr);
+            free(fcc_res_ai);
+            if (msrc_res_addr)
+                free(msrc_res_addr);
+            if (msrc_res_ai)
+                free(msrc_res_ai);
+            free(res_addr);
+            free(res_ai);
+            if (result->msrc)
+                free(result->msrc);
+            free(result);
+            return NULL;
+        }
+
+        memcpy(fcc_res_addr, fcc_res->ai_addr, fcc_res->ai_addrlen);
+        memcpy(fcc_res_ai, fcc_res, sizeof(struct addrinfo));
+        fcc_res_ai->ai_addr = (struct sockaddr *)fcc_res_addr;
+        fcc_res_ai->ai_canonname = NULL;
+        fcc_res_ai->ai_next = NULL;
+        result->fcc_addr = fcc_res_ai;
+    }
+
+    /* Free temporary addrinfo structures */
+    freeaddrinfo(res);
+    if (msrc_res)
+        freeaddrinfo(msrc_res);
+    if (fcc_res)
+        freeaddrinfo(fcc_res);
+
+    /* Store original URL for reference */
+    result->url = strdup(http_url);
+    if (!result->url)
+    {
+        logger(LOG_ERROR, "Failed to allocate memory for URL");
+        service_free(result);
+        return NULL;
+    }
+
+    logger(LOG_DEBUG, "Created RTP service from URL: %s", http_url);
+    return result;
 }
 
 void service_free(service_t *service)
