@@ -2175,6 +2175,13 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
         session->awaiting_keepalive_response = 0;
         logger(LOG_INFO, "RTSP: Using TCP interleaved transport");
 
+        /* Disable RTP reordering for TCP interleaved mode (packets are already ordered) */
+        if (session->parent_ctx)
+        {
+            session->parent_ctx->reorder_enabled = 0;
+            logger(LOG_DEBUG, "RTSP: Disabled RTP reordering for TCP interleaved mode");
+        }
+
         /* Parse interleaved channels */
         interleaved_param = strstr(transport, "interleaved=");
         if (interleaved_param)

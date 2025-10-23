@@ -169,6 +169,9 @@ typedef struct
 
     /* Buffering */
     uint8_t response_buffer[RTSP_RESPONSE_BUFFER_SIZE]; /* Buffer for RTSP responses (control plane, not media) */
+
+    /* Parent stream context pointer (for disabling reordering in TCP mode) */
+    struct stream_context_s *parent_ctx;
 } rtsp_session_t;
 
 /* Function prototypes */

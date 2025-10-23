@@ -13,6 +13,10 @@
 /* Snapshot timeout (seconds) - if no I-frame received for this duration, fallback to streaming */
 #define SNAPSHOT_TIMEOUT_SEC 2
 
+/* RTP reordering buffer configuration */
+#define RTP_REORDER_BUFFER_SIZE 16  /* Must be power of 2 for efficient modulo */
+#define RTP_REORDER_TIMEOUT_MS 30   /* Timeout for waiting out-of-order packets */
+
 /* Stream processing context */
 typedef struct stream_context_s
 {
@@ -36,6 +40,23 @@ typedef struct stream_context_s
 
   /* Snapshot context */
   snapshot_context_t snapshot;
+
+  /* RTP reordering control */
+  uint8_t reorder_enabled; /* 0=disabled (e.g. RTSP TCP), 1=enabled */
+
+  /* RTP reordering buffer - ring buffer indexed by sequence number offset */
+  buffer_ref_t *reorder_slots[RTP_REORDER_BUFFER_SIZE];
+  uint16_t reorder_expected_seqn; /* Next expected sequence number */
+  uint16_t reorder_base_seqn;     /* Base sequence number for slot calculation */
+  uint8_t reorder_first_packet;   /* 1=haven't received first packet yet */
+  uint8_t reorder_waiting;        /* 0=normal sending, 1=waiting for missing packet */
+  int64_t reorder_wait_start;     /* Timestamp when waiting started (ms) */
+
+  /* RTP reordering statistics */
+  uint64_t reorder_drops;        /* Packets dropped due to buffer full */
+  uint64_t reorder_duplicates;   /* Duplicate packets detected */
+  uint64_t reorder_out_of_order; /* Out-of-order packets received */
+  uint64_t reorder_recovered;    /* Successfully reordered packets */
 } stream_context_t;
 
 /**

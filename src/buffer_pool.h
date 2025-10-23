@@ -66,6 +66,17 @@ typedef struct buffer_ref_s
     {
         struct iovec iov; /* Data pointer and length for sendmsg() (BUFFER_TYPE_MEMORY) */
         size_t file_sent; /* Bytes already sent from this file (BUFFER_TYPE_FILE) */
+        struct
+        {
+            /* RTP parsing cache (used in reordering flow)
+             * Safe to share union with iov because:
+             * - In reorder buffer: only rtp_seqn is read, iov not yet set
+             * - In send queue: iov is set, rtp_seqn no longer needed
+             * When rtp_parsed=1: data_offset/data_size point to RTP payload
+             * When rtp_parsed=0: data_offset/data_size point to original data */
+            uint8_t rtp_parsed; /* 1=parsed as RTP, 0=not parsed */
+            uint16_t rtp_seqn;  /* Cached RTP sequence number */
+        };
     };
     union
     {

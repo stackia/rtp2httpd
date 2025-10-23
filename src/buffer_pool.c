@@ -285,6 +285,7 @@ buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool)
     ref->refcount = 1;
     ref->data_offset = 0;
     ref->data_size = 0;
+    ref->rtp_parsed = 0;
     ref->send_next = NULL;
 
     buffer_pool_update_stats(pool);

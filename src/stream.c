@@ -72,8 +72,8 @@ int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref, uin
     }
     else
     {
-        /* Normal streaming mode - forward to client */
-        return rtp_queue_buf(ctx->conn, buf_ref, old_seqn, not_first);
+        /* Normal streaming mode - use reordering if enabled */
+        return rtp_reorder_and_queue(ctx, buf_ref);
     }
 }
 
@@ -292,12 +292,26 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, se
     ctx->fcc.status_index = status_index;
     rtsp_session_init(&ctx->rtsp);
     ctx->rtsp.status_index = status_index;
+    ctx->rtsp.parent_ctx = ctx; /* Set parent pointer for RTSP */
     ctx->total_bytes_sent = 0;
     ctx->last_bytes_sent = 0;
     ctx->last_status_update = get_time_ms();
     ctx->last_mcast_data_time = get_time_ms();
     ctx->last_fcc_data_time = get_time_ms();
     ctx->last_mcast_rejoin_time = get_time_ms();
+
+    /* Initialize RTP reordering buffer */
+    ctx->reorder_enabled = 1; /* Enabled by default, may be disabled for RTSP TCP */
+    memset(ctx->reorder_slots, 0, sizeof(ctx->reorder_slots));
+    ctx->reorder_expected_seqn = 0;
+    ctx->reorder_base_seqn = 0;
+    ctx->reorder_first_packet = 1;
+    ctx->reorder_waiting = 0;
+    ctx->reorder_wait_start = 0;
+    ctx->reorder_drops = 0;
+    ctx->reorder_duplicates = 0;
+    ctx->reorder_out_of_order = 0;
+    ctx->reorder_recovered = 0;
 
     /* Initialize snapshot context if this is a snapshot request */
     if (is_snapshot)
@@ -483,6 +497,22 @@ int stream_tick(stream_context_t *ctx, int64_t now)
         }
     }
 
+    /* Check RTP reordering wait timeout */
+    if (ctx->reorder_waiting)
+    {
+        int64_t wait_duration = now - ctx->reorder_wait_start;
+        if (wait_duration >= RTP_REORDER_TIMEOUT_MS)
+        {
+            logger(LOG_DEBUG, "RTP: Reorder timeout (%lld ms), recovering",
+                   (long long)wait_duration);
+
+            /* Timeout recovery: skip missing packet and flush available packets */
+            rtp_reorder_timeout_recovery(ctx);
+
+            ctx->reorder_waiting = 0;
+        }
+    }
+
     /* Check snapshot timeout (5 seconds) */
     if (ctx->snapshot.enabled)
     {
@@ -524,6 +554,28 @@ int stream_context_cleanup(stream_context_t *ctx)
 {
     if (!ctx)
         return 0;
+
+    /* Clean up RTP reordering buffer */
+    for (int i = 0; i < RTP_REORDER_BUFFER_SIZE; i++)
+    {
+        if (ctx->reorder_slots[i])
+        {
+            buffer_ref_put(ctx->reorder_slots[i]);
+            ctx->reorder_slots[i] = NULL;
+        }
+    }
+
+    /* Log reordering statistics if any activity occurred */
+    if (ctx->reorder_out_of_order > 0 || ctx->reorder_duplicates > 0 ||
+        ctx->reorder_drops > 0 || ctx->reorder_recovered > 0)
+    {
+        logger(LOG_DEBUG, "RTP reorder stats: out_of_order=%llu, duplicates=%llu, "
+                          "recovered=%llu, drops=%llu",
+               (unsigned long long)ctx->reorder_out_of_order,
+               (unsigned long long)ctx->reorder_duplicates,
+               (unsigned long long)ctx->reorder_recovered,
+               (unsigned long long)ctx->reorder_drops);
+    }
 
     /* Clean up snapshot resources if in snapshot mode */
     if (ctx->snapshot.enabled)

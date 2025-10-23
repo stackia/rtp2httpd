@@ -7,6 +7,7 @@
 /* Forward declarations */
 typedef struct connection_s connection_t;
 typedef struct buffer_ref_s buffer_ref_t;
+typedef struct stream_context_s stream_context_t;
 
 /**
  * Extract payload from a packet with automatic RTP detection
@@ -35,5 +36,23 @@ int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, ui
  * @return number of payload bytes queued to the client (>=0), or -1 if buffer full
  */
 int rtp_queue_buf(connection_t *conn, buffer_ref_t *buf_ref, uint16_t *old_seqn, uint16_t *not_first);
+
+/**
+ * RTP reordering and queueing with duplicate detection
+ * Parses RTP packet once, caches result, performs reordering if enabled
+ *
+ * @param ctx Stream context containing reorder buffer
+ * @param buf_ref Buffer reference for the buffer containing the packet
+ * @return number of payload bytes queued (>=0), -1 if dropped (duplicate/buffer full), -2 if queue full
+ */
+int rtp_reorder_and_queue(stream_context_t *ctx, buffer_ref_t *buf_ref);
+
+/**
+ * Timeout recovery for RTP reordering buffer
+ * Called from stream_tick when wait timeout expires
+ *
+ * @param ctx Stream context containing reorder buffer
+ */
+void rtp_reorder_timeout_recovery(stream_context_t *ctx);
 
 #endif /* __RTP_H__ */
