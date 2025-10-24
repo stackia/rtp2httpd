@@ -1070,7 +1070,7 @@ void handle_status_page(connection_t *c)
   }
 
   snprintf(extra_headers, sizeof(extra_headers),
-           "Content-Encoding: br\r\n"
+           "Content-Encoding: gzip\r\n"
            "Content-Length: %zu\r\n"
            "ETag: %s\r\n",
            body_len,
