@@ -644,7 +644,10 @@ static int build_service_url(const char *service_name, const char *query_params,
                              const char *server_addr, const char *server_port)
 {
     char *encoded_name = http_url_encode(service_name);
+    char *encoded_token = NULL;
     int result;
+    int has_query_params = (query_params && strlen(query_params) > 0);
+    int has_r2h_token = (config.r2h_token && config.r2h_token[0] != '\0');
 
     if (!encoded_name)
     {
@@ -652,11 +655,36 @@ static int build_service_url(const char *service_name, const char *query_params,
         return -1;
     }
 
-    if (query_params && strlen(query_params) > 0)
+    /* URL encode r2h-token if configured */
+    if (has_r2h_token)
     {
-        /* Include query parameters */
+        encoded_token = http_url_encode(config.r2h_token);
+        if (!encoded_token)
+        {
+            logger(LOG_ERROR, "Failed to URL encode r2h-token");
+            free(encoded_name);
+            return -1;
+        }
+    }
+
+    /* Build URL with appropriate query parameters */
+    if (has_query_params && has_r2h_token)
+    {
+        /* Include both query parameters and r2h-token */
+        result = snprintf(output, output_size, "http://%s:%s/%s?%s&r2h-token=%s",
+                          server_addr, server_port, encoded_name, query_params, encoded_token);
+    }
+    else if (has_query_params)
+    {
+        /* Include only query parameters */
         result = snprintf(output, output_size, "http://%s:%s/%s?%s",
                           server_addr, server_port, encoded_name, query_params);
+    }
+    else if (has_r2h_token)
+    {
+        /* Include only r2h-token */
+        result = snprintf(output, output_size, "http://%s:%s/%s?r2h-token=%s",
+                          server_addr, server_port, encoded_name, encoded_token);
     }
     else
     {
@@ -666,6 +694,8 @@ static int build_service_url(const char *service_name, const char *query_params,
     }
 
     free(encoded_name);
+    if (encoded_token)
+        free(encoded_token);
 
     if (result >= (int)output_size)
     {
