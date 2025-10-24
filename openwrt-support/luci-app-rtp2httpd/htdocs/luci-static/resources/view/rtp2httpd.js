@@ -322,6 +322,17 @@ return view.extend({
     o.placeholder = "-hwaccel none";
     o.depends("use_config_file", "0");
 
+    o = s.option(
+      form.Flag,
+      "zerocopy_on_send",
+      _("rtp2httpd_Zero-Copy on Send"),
+      _(
+        "rtp2httpd_Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires kernel 4.14+. Can improve throughput and reduce CPU usage on supported devices."
+      )
+    );
+    o.default = "0";
+    o.depends("use_config_file", "0");
+
     return m.render();
   },
 });

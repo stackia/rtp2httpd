@@ -266,7 +266,7 @@ connection_t *connection_create(int fd, int epfd,
   }
 
   /* Enable SO_ZEROCOPY on socket if supported */
-  if (zerocopy_state.features & ZEROCOPY_MSG_ZEROCOPY)
+  if (config.zerocopy_on_send)
   {
     int one = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one)) == 0)

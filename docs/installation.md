@@ -8,8 +8,6 @@ OpenWrt 是 rtp2httpd 的最佳运行环境。在完成 IPTV 网络融合后（�
 
 本项目支持的最低 OpenWrt 版本为 21.02，在更低版本上 LuCI 配置界面可能无法加载，但通过手动编辑 `/etc/config/rtp2httpd` 文件并运行 `/etc/init.d/rtp2httpd restart` 仍然可以使用。
 
-支持的最低 Linux 内核版本为 4.14，因为依赖 `MSG_ZEROCOPY` 特性，低于此版本将无法运行。
-
 ### 一键安装脚本
 
 使用一键安装脚本自动下载并安装最新版本。如果你已经安装了 rtp2httpd，重新运行脚本也可以一键更新到最新版。
@@ -63,13 +61,15 @@ chmod +x rtp2httpd-X.Y.Z-x86_64
 
 ### 重要说明
 
-**⚠️ 必须添加 `--ulimit memlock=-1:-1` 参数**
+**⚠️ 启用零拷贝时必须添加 `--ulimit memlock=-1:-1` 参数**
 
-rtp2httpd 使用 MSG_ZEROCOPY 技术需要锁定内存页。Docker 容器默认的 locked memory 限制（64KB）太小，会导致 ENOBUFS 错误，表现为：
+如果你通过 `--zerocopy-on-send` 参数启用了零拷贝发送，MSG_ZEROCOPY 技术需要锁定内存页。Docker 容器默认的 locked memory 限制（64KB）太小，会导致 ENOBUFS 错误，表现为：
 
 - 客户端无法播放
 - 服务端 buffer pool 疯狂增长
 - 统计数字中的 ENOBUFS 错误飙升
+
+默认情况下 rtp2httpd 不启用零拷贝，因此不需要 `--ulimit memlock=-1:-1` 参数。只有在你明确启用零拷贝发送时才需要添加此参数。
 
 ### 正确的启动方式
 

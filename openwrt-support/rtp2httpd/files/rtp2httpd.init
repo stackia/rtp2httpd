@@ -61,6 +61,10 @@ start_instance() {
         # Handle video_snapshot flag
         config_get_bool aux "$cfg" 'video_snapshot' '0'
         [ "$aux" = 1 ] && procd_append_param command "--video-snapshot"
+
+        # Handle zerocopy_on_send flag
+        config_get_bool aux "$cfg" 'zerocopy_on_send' '0'
+        [ "$aux" = 1 ] && procd_append_param command "--zerocopy-on-send"
   fi
 
   config_get_bool aux "$cfg" 'respawn' '0'
