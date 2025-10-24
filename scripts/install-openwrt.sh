@@ -23,6 +23,9 @@ GITHUB_RAW=""
 # 临时下载目录
 TMP_DIR="/tmp/rtp2httpd_install"
 
+# 是否使用 prerelease 版本
+USE_PRERELEASE=false
+
 # 打印信息函数
 print_info() {
     printf "${GREEN}[INFO]${NC} %s\n" "$1" >&2
@@ -190,7 +193,17 @@ get_cpu_arch() {
 get_latest_version() {
     print_info "获取最新版本信息..."
 
-    local version=$(curl -sSL "${GITHUB_API}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    local version=""
+
+    # 检查是否使用 prerelease 版本
+    if [ "$USE_PRERELEASE" = true ]; then
+        print_info "使用 prerelease 模式，将获取最新的预发布版本"
+        # 获取所有 releases（包括 prerelease），取第一个
+        version=$(curl -sSL "${GITHUB_API}/releases" | grep '"tag_name":' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+    else
+        # 只获取最新的正式版本
+        version=$(curl -sSL "${GITHUB_API}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    fi
 
     if [ -z "$version" ]; then
         print_error "无法获取最新版本信息"
@@ -200,6 +213,53 @@ get_latest_version() {
 
     print_info "最新版本: $version"
     echo "$version"
+}
+
+# 获取指定版本的所有 release assets
+get_release_assets() {
+    local version="$1"
+
+    print_info "获取 Release Assets 列表..."
+
+    local assets=$(curl -sSL "${GITHUB_API}/releases/tags/${version}" | grep '"name":' | sed -E 's/.*"name":\s*"([^"]+)".*/\1/')
+
+    if [ -z "$assets" ]; then
+        print_error "无法获取 Release Assets 列表"
+        exit 1
+    fi
+
+    echo "$assets"
+}
+
+# 从 assets 列表中匹配包文件名
+# 参数: $1=assets列表 $2=包名前缀 $3=架构 $4=包扩展名
+match_package_name() {
+    local assets="$1"
+    local prefix="$2"
+    local arch="$3"
+    local ext="$4"
+
+    # 根据前缀和架构匹配
+    # 对于主包: rtp2httpd_*_${arch}.${ext}
+    # 对于 luci 相关包: ${prefix}_*_all.${ext} 或 ${prefix}_*.${ext}
+
+    local matched=""
+
+    if [ "$arch" != "all" ]; then
+        # 主包需要匹配架构
+        matched=$(echo "$assets" | grep "^${prefix}_.*_${arch}\.${ext}$" | head -n 1)
+    else
+        # luci 相关包通常是 all 架构
+        matched=$(echo "$assets" | grep "^${prefix}_.*\.${ext}$" | head -n 1)
+    fi
+
+    if [ -z "$matched" ]; then
+        print_warn "未找到匹配的包: ${prefix} (架构: ${arch})"
+        return 1
+    fi
+
+    echo "$matched"
+    return 0
 }
 
 # 构建下载 URL
@@ -258,6 +318,32 @@ cleanup() {
     fi
 }
 
+# 解析命令行参数
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --prerelease)
+                USE_PRERELEASE=true
+                shift
+                ;;
+            --help|-h)
+                echo "用法: $0 [选项]"
+                echo ""
+                echo "选项:"
+                echo "  --prerelease    安装最新的预发布版本（包括 prerelease）"
+                echo "  --help, -h      显示此帮助信息"
+                echo ""
+                exit 0
+                ;;
+            *)
+                print_error "未知参数: $1"
+                echo "使用 --help 查看帮助信息"
+                exit 1
+                ;;
+        esac
+    done
+}
+
 # 主安装流程
 main() {
     print_info "=========================================="
@@ -279,7 +365,9 @@ main() {
 
     # 获取最新版本
     VERSION=$(get_latest_version)
-    VERSION_NUM="${VERSION#v}"  # 去掉 v 前缀
+
+    # 获取该版本的所有 assets
+    ASSETS=$(get_release_assets "$VERSION")
 
     # 创建临时目录
     mkdir -p "$TMP_DIR"
@@ -291,18 +379,70 @@ main() {
         PKG_EXT="ipk"
     fi
 
-    # 定义要下载的包
-    MAIN_PACKAGE="rtp2httpd_${VERSION_NUM}-1_${ARCH}.${PKG_EXT}"
-    LUCI_PACKAGE="luci-app-rtp2httpd_${VERSION_NUM}_all.${PKG_EXT}"
-    I18N_EN_PACKAGE="luci-i18n-rtp2httpd-en_${VERSION_NUM}_all.${PKG_EXT}"
-    I18N_ZH_CN_PACKAGE="luci-i18n-rtp2httpd-zh-cn_${VERSION_NUM}_all.${PKG_EXT}"
+    # 从 assets 列表中匹配包文件名
+    print_info ""
+    print_info "匹配软件包文件名..."
+    print_info "=========================================="
+
+    MAIN_PACKAGE=$(match_package_name "$ASSETS" "rtp2httpd" "$ARCH" "$PKG_EXT")
+    LUCI_PACKAGE=$(match_package_name "$ASSETS" "luci-app-rtp2httpd" "all" "$PKG_EXT")
+
+    # APK: 英文语言包已包含在主包中，只下载中文语言包
+    # IPK: 需要下载英文和中文语言包
+    I18N_EN_PACKAGE=""
+    if [ "$PKG_MANAGER" = "opkg" ]; then
+        I18N_EN_PACKAGE=$(match_package_name "$ASSETS" "luci-i18n-rtp2httpd-en" "all" "$PKG_EXT")
+    fi
+
+    I18N_ZH_CN_PACKAGE=$(match_package_name "$ASSETS" "luci-i18n-rtp2httpd-zh-cn" "all" "$PKG_EXT")
+
+    # 检查必须的包是否都匹配到了
+    if [ -z "$MAIN_PACKAGE" ]; then
+        print_error "未找到主程序包: rtp2httpd (架构: ${ARCH})"
+        print_error "请检查该版本是否支持您的架构"
+        cleanup
+        exit 1
+    fi
+
+    if [ -z "$LUCI_PACKAGE" ]; then
+        print_error "未找到 LuCI 应用包: luci-app-rtp2httpd"
+        cleanup
+        exit 1
+    fi
+
+    print_info "找到主程序包: $MAIN_PACKAGE"
+    print_info "找到 LuCI 应用包: $LUCI_PACKAGE"
+
+    if [ "$PKG_MANAGER" = "apk" ]; then
+        print_info "APK 包管理器: 英文语言包已包含在主包中"
+    else
+        if [ -n "$I18N_EN_PACKAGE" ]; then
+            print_info "找到英文语言包: $I18N_EN_PACKAGE"
+        else
+            print_warn "未找到英文语言包，将跳过"
+        fi
+    fi
+
+    if [ -n "$I18N_ZH_CN_PACKAGE" ]; then
+        print_info "找到中文语言包: $I18N_ZH_CN_PACKAGE"
+    else
+        print_warn "未找到中文语言包，将跳过"
+    fi
 
     # 下载所有包
     print_info ""
     print_info "开始下载软件包..."
     print_info "=========================================="
 
-    PACKAGES="$MAIN_PACKAGE $LUCI_PACKAGE $I18N_EN_PACKAGE $I18N_ZH_CN_PACKAGE"
+    # 构建要下载的包列表（只包含找到的包）
+    PACKAGES="$MAIN_PACKAGE $LUCI_PACKAGE"
+    if [ -n "$I18N_EN_PACKAGE" ]; then
+        PACKAGES="$PACKAGES $I18N_EN_PACKAGE"
+    fi
+    if [ -n "$I18N_ZH_CN_PACKAGE" ]; then
+        PACKAGES="$PACKAGES $I18N_ZH_CN_PACKAGE"
+    fi
+
     DOWNLOAD_SUCCESS=true
 
     for package in $PACKAGES; do
@@ -366,6 +506,9 @@ main() {
 
 # 捕获退出信号，确保清理临时文件
 trap cleanup EXIT INT TERM
+
+# 解析命令行参数
+parse_args "$@"
 
 # 执行主函数
 main
