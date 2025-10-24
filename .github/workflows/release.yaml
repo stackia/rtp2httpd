@@ -239,7 +239,7 @@ jobs:
           echo "Checking for built packages..."
           ls -la bin/packages/${{ matrix.arch }}/action/ || echo "Directory not found"
 
-          # Upload IPK files if they exist
+          # Upload IPK files if they exist (IPK already includes arch in filename)
           if ls bin/packages/${{ matrix.arch }}/action/*.ipk 1> /dev/null 2>&1; then
             echo "Uploading IPK files..."
             gh release upload --repo ${{ github.repository }} ${{ github.event.release.tag_name }} bin/packages/${{ matrix.arch }}/action/*.ipk
@@ -247,10 +247,26 @@ jobs:
             echo "No IPK files found"
           fi
 
-          # Upload APK files if they exist
+          # Upload APK files if they exist (rename to include arch suffix)
           if ls bin/packages/${{ matrix.arch }}/action/*.apk 1> /dev/null 2>&1; then
-            echo "Uploading APK files..."
-            gh release upload --repo ${{ github.repository }} ${{ github.event.release.tag_name }} bin/packages/${{ matrix.arch }}/action/*.apk
+            echo "Processing APK files..."
+            for apk_file in bin/packages/${{ matrix.arch }}/action/*.apk; do
+              filename=$(basename "$apk_file")
+
+              # Skip luci packages (keep original name)
+              if [[ "$filename" == luci-* ]]; then
+                echo "Uploading luci package: $filename"
+                gh release upload --repo ${{ github.repository }} ${{ github.event.release.tag_name }} "$apk_file"
+                continue
+              fi
+
+              # Add architecture suffix for non-luci packages
+              # e.g., rtp2httpd-3.0.0_beta3-r1.apk -> rtp2httpd-3.0.0_beta3-r1_x86_64.apk
+              new_filename="${filename%.apk}_${{ matrix.arch }}.apk"
+              echo "Renaming: $filename -> $new_filename"
+              cp "$apk_file" "/tmp/$new_filename"
+              gh release upload --repo ${{ github.repository }} ${{ github.event.release.tag_name }} "/tmp/$new_filename"
+            done
           else
             echo "No APK files found"
           fi
