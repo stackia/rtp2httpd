@@ -52,8 +52,8 @@ select_github_mirror() {
     echo ""
     printf "请输入选项 [1-2] (默认: 1): " >&2
 
-    # 读取用户输入
-    read choice
+    # 读取用户输入（从 /dev/tty 读取以支持管道环境）
+    read choice < /dev/tty
 
     # 如果输入为空，使用默认值
     if [ -z "$choice" ]; then
@@ -152,7 +152,7 @@ check_installed() {
         print_warn "本脚本将进行更新操作"
         echo ""
         printf "${YELLOW}是否继续? [Y/n]: ${NC}" >&2
-        read confirm
+        read confirm < /dev/tty
 
         # 如果用户输入 n 或 N，则退出
         if [ "$confirm" = "n" ] || [ "$confirm" = "N" ]; then
