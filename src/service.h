@@ -39,6 +39,13 @@ typedef enum
   SERVICE_RTSP
 } service_type_t;
 
+/* Service source enumeration - tracks where the service was created from */
+typedef enum
+{
+  SERVICE_SOURCE_INLINE = 0,   /* From inline M3U in config file */
+  SERVICE_SOURCE_EXTERNAL = 1  /* From external M3U URL */
+} service_source_t;
+
 /**
  * Service configuration structure
  * Represents a single media service (multicast RTP/UDP or RTSP stream)
@@ -48,6 +55,7 @@ typedef struct service_s
   char *url;
   char *msrc;
   service_type_t service_type;
+  service_source_t source;  /* Source of this service (inline or external) */
   struct addrinfo *addr;
   struct addrinfo *msrc_addr;
   struct addrinfo *fcc_addr;
@@ -117,10 +125,27 @@ service_t *service_create_with_query_merge(const service_t *configured_service,
                                            service_type_t expected_type);
 
 /**
+ * Clone a service structure (deep copy)
+ * Creates a completely independent copy of the service with all fields duplicated
+ * The cloned service is not added to the global services list
+ *
+ * @param service Service structure to clone
+ * @return Pointer to newly allocated cloned service structure or NULL on failure
+ */
+service_t *service_clone(const service_t *service);
+
+/**
  * Free service structure allocated by service creation functions
  *
  * @param service Service structure to free
  */
 void service_free(service_t *service);
+
+/**
+ * Free services from external M3U in the global services list
+ * This preserves inline services from the configuration file
+ * and only removes services loaded from external M3U URLs
+ */
+void service_free_external(void);
 
 #endif /* SERVICE_H */
