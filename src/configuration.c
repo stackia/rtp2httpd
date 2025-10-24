@@ -42,7 +42,9 @@ int cmd_mcast_rejoin_interval_set;
 int cmd_ffmpeg_path_set;
 int cmd_ffmpeg_args_set;
 int cmd_video_snapshot_set;
-int cmd_upstream_interface_unicast_set;
+int cmd_upstream_interface_set;
+int cmd_upstream_interface_fcc_set;
+int cmd_upstream_interface_rtsp_set;
 int cmd_upstream_interface_multicast_set;
 int cmd_fcc_listen_port_range_set;
 int cmd_status_page_path_set;
@@ -501,12 +503,32 @@ void parse_global_sec(char *line)
   }
 
   /* Interface parameters with command line override */
-  if (strcasecmp("upstream-interface-unicast", param) == 0)
+  if (strcasecmp("upstream-interface", param) == 0)
   {
-    if (set_if_not_cmd_override(cmd_upstream_interface_unicast_set, "upstream-interface-unicast"))
+    if (set_if_not_cmd_override(cmd_upstream_interface_set, "upstream-interface"))
     {
-      strncpy(config.upstream_interface_unicast.ifr_name, value, IFNAMSIZ - 1);
-      config.upstream_interface_unicast.ifr_ifindex = if_nametoindex(config.upstream_interface_unicast.ifr_name);
+      strncpy(config.upstream_interface.ifr_name, value, IFNAMSIZ - 1);
+      config.upstream_interface.ifr_ifindex = if_nametoindex(config.upstream_interface.ifr_name);
+    }
+    return;
+  }
+
+  if (strcasecmp("upstream-interface-fcc", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_upstream_interface_fcc_set, "upstream-interface-fcc"))
+    {
+      strncpy(config.upstream_interface_fcc.ifr_name, value, IFNAMSIZ - 1);
+      config.upstream_interface_fcc.ifr_ifindex = if_nametoindex(config.upstream_interface_fcc.ifr_name);
+    }
+    return;
+  }
+
+  if (strcasecmp("upstream-interface-rtsp", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_upstream_interface_rtsp_set, "upstream-interface-rtsp"))
+    {
+      strncpy(config.upstream_interface_rtsp.ifr_name, value, IFNAMSIZ - 1);
+      config.upstream_interface_rtsp.ifr_ifindex = if_nametoindex(config.upstream_interface_rtsp.ifr_name);
     }
     return;
   }
@@ -788,9 +810,17 @@ void restore_conf_defaults(void)
   config.external_m3u_update_interval = 86400; /* 24 hours default */
   config.last_external_m3u_update_time = 0;
 
-  if (config.upstream_interface_unicast.ifr_name[0] != '\0')
-    memset(&config.upstream_interface_unicast, 0, sizeof(struct ifreq));
-  cmd_upstream_interface_unicast_set = 0;
+  if (config.upstream_interface.ifr_name[0] != '\0')
+    memset(&config.upstream_interface, 0, sizeof(struct ifreq));
+  cmd_upstream_interface_set = 0;
+
+  if (config.upstream_interface_fcc.ifr_name[0] != '\0')
+    memset(&config.upstream_interface_fcc, 0, sizeof(struct ifreq));
+  cmd_upstream_interface_fcc_set = 0;
+
+  if (config.upstream_interface_rtsp.ifr_name[0] != '\0')
+    memset(&config.upstream_interface_rtsp, 0, sizeof(struct ifreq));
+  cmd_upstream_interface_rtsp_set = 0;
 
   if (config.upstream_interface_multicast.ifr_name[0] != '\0')
     memset(&config.upstream_interface_multicast, 0, sizeof(struct ifreq));
@@ -841,8 +871,10 @@ void usage(FILE *f, char *progname)
           "\t-P --fcc-listen-port-range <start[-end]>  Restrict FCC UDP listen sockets to specific ports\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)\n"
           "\t-T --r2h-token <token>   Authentication token for HTTP requests (default none)\n"
-          "\t-i --upstream-interface-unicast <interface>  Interface for unicast traffic (FCC/RTSP)\n"
-          "\t-r --upstream-interface-multicast <interface>  Interface for multicast traffic (RTP/UDP)\n"
+          "\t-i --upstream-interface <interface>  Default interface for all upstream traffic (lowest priority)\n"
+          "\t-f --upstream-interface-fcc <interface>  Interface for FCC unicast traffic (overrides -i)\n"
+          "\t-t --upstream-interface-rtsp <interface>  Interface for RTSP unicast traffic (overrides -i)\n"
+          "\t-r --upstream-interface-multicast <interface>  Interface for multicast traffic (overrides -i)\n"
           "\t-R --mcast-rejoin-interval <seconds>  Periodic multicast rejoin interval (0=disabled, default 0)\n"
           "\t-F --ffmpeg-path <path>  Path to ffmpeg executable (default: ffmpeg)\n"
           "\t-A --ffmpeg-args <args>  Additional ffmpeg arguments (default: -hwaccel none)\n"
@@ -910,7 +942,9 @@ void parse_cmd_line(int argc, char *argv[])
       {"fcc-listen-port-range", required_argument, 0, 'P'},
       {"hostname", required_argument, 0, 'H'},
       {"r2h-token", required_argument, 0, 'T'},
-      {"upstream-interface-unicast", required_argument, 0, 'i'},
+      {"upstream-interface", required_argument, 0, 'i'},
+      {"upstream-interface-fcc", required_argument, 0, 'f'},
+      {"upstream-interface-rtsp", required_argument, 0, 't'},
       {"upstream-interface-multicast", required_argument, 0, 'r'},
       {"mcast-rejoin-interval", required_argument, 0, 'R'},
       {"ffmpeg-path", required_argument, 0, 'F'},
@@ -921,7 +955,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"external-m3u-update-interval", required_argument, 0, 'I'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:P:H:T:i:r:R:F:A:s:M:I:SC";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:P:H:T:i:f:t:r:R:F:A:s:M:I:SC";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1032,9 +1066,19 @@ void parse_cmd_line(int argc, char *argv[])
       cmd_status_page_path_set = 1;
       break;
     case 'i':
-      strncpy(config.upstream_interface_unicast.ifr_name, optarg, IFNAMSIZ - 1);
-      config.upstream_interface_unicast.ifr_ifindex = if_nametoindex(config.upstream_interface_unicast.ifr_name);
-      cmd_upstream_interface_unicast_set = 1;
+      strncpy(config.upstream_interface.ifr_name, optarg, IFNAMSIZ - 1);
+      config.upstream_interface.ifr_ifindex = if_nametoindex(config.upstream_interface.ifr_name);
+      cmd_upstream_interface_set = 1;
+      break;
+    case 'f':
+      strncpy(config.upstream_interface_fcc.ifr_name, optarg, IFNAMSIZ - 1);
+      config.upstream_interface_fcc.ifr_ifindex = if_nametoindex(config.upstream_interface_fcc.ifr_name);
+      cmd_upstream_interface_fcc_set = 1;
+      break;
+    case 't':
+      strncpy(config.upstream_interface_rtsp.ifr_name, optarg, IFNAMSIZ - 1);
+      config.upstream_interface_rtsp.ifr_ifindex = if_nametoindex(config.upstream_interface_rtsp.ifr_name);
+      cmd_upstream_interface_rtsp_set = 1;
       break;
     case 'r':
       strncpy(config.upstream_interface_multicast.ifr_name, optarg, IFNAMSIZ - 1);

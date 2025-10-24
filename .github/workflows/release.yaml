@@ -177,8 +177,8 @@ jobs:
           - mipsel_74kc
           - mipsel_mips32
         sdk:
-          - "22.03.6"
-          - "SNAPSHOT"
+          - "22.03.6" # For IPK
+          - "SNAPSHOT" # For APK
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -198,7 +198,25 @@ jobs:
         run: |
           RELEASE_TAG="${{ github.event.release.tag_name }}"
           RELEASE_VERSION="${RELEASE_TAG#v}"
-          sed -i "s/1\.0\.0/${RELEASE_VERSION}/g" openwrt-support/rtp2httpd/Makefile openwrt-support/luci-app-rtp2httpd/Makefile configure.ac
+
+          # Determine package format based on SDK version
+          if [[ "${{ matrix.sdk }}" == "SNAPSHOT" ]]; then
+            # APK format: replace - with _ for pre-release versions
+            # e.g., 3.0.0-beta.0 -> 3.0.0_beta.0
+            PKG_VERSION="${RELEASE_VERSION//-/_}"
+            echo "Building APK package with version: $PKG_VERSION"
+          else
+            # IPK format: replace - with ~ for pre-release versions
+            # e.g., 3.0.0-beta.0 -> 3.0.0~beta.0
+            PKG_VERSION="${RELEASE_VERSION//-/~}"
+            echo "Building IPK package with version: $PKG_VERSION"
+          fi
+
+          # Use package-specific version for OpenWrt Makefiles (IPK/APK format)
+          sed -i "s/1\.0\.0/${PKG_VERSION}/g" openwrt-support/rtp2httpd/Makefile openwrt-support/luci-app-rtp2httpd/Makefile
+
+          # Use original SemVer version for configure.ac
+          sed -i "s/1\.0\.0/${RELEASE_VERSION}/g" configure.ac
 
       - name: Move src to openwrt-support
         run: mv openwrt-support ../ && mkdir ../openwrt-support/rtp2httpd/src && mv ./* ../openwrt-support/rtp2httpd/src && mv ../openwrt-support ./

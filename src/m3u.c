@@ -290,8 +290,18 @@ static char *get_server_address(void)
 
             /* Check if this is an upstream interface */
             int is_upstream = 0;
-            if (config.upstream_interface_unicast.ifr_name[0] != '\0' &&
-                strcmp(ifa->ifa_name, config.upstream_interface_unicast.ifr_name) == 0)
+            if (config.upstream_interface.ifr_name[0] != '\0' &&
+                strcmp(ifa->ifa_name, config.upstream_interface.ifr_name) == 0)
+            {
+                is_upstream = 1;
+            }
+            if (config.upstream_interface_fcc.ifr_name[0] != '\0' &&
+                strcmp(ifa->ifa_name, config.upstream_interface_fcc.ifr_name) == 0)
+            {
+                is_upstream = 1;
+            }
+            if (config.upstream_interface_rtsp.ifr_name[0] != '\0' &&
+                strcmp(ifa->ifa_name, config.upstream_interface_rtsp.ifr_name) == 0)
             {
                 is_upstream = 1;
             }

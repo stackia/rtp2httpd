@@ -44,17 +44,35 @@ msgstr "Info"
 msgid "rtp2httpd_Debug"
 msgstr "Debug"
 
-msgid "rtp2httpd_Upstream Unicast Interface"
-msgstr "上游单播接口"
+msgid "rtp2httpd_Advanced Interface Settings"
+msgstr "高级接口设置"
+
+msgid "rtp2httpd_Configure separate interfaces for multicast, FCC and RTSP"
+msgstr "分别配置组播、FCC 和 RTSP 的接口"
+
+msgid "rtp2httpd_Upstream Interface"
+msgstr "上游接口"
+
+msgid "rtp2httpd_Default interface for all upstream traffic (multicast, FCC and RTSP). Leave empty to use routing table."
+msgstr "所有上游流量（组播、FCC 和 RTSP）使用的默认接口。留空则使用路由表。"
 
 msgid "rtp2httpd_Upstream Multicast Interface"
 msgstr "上游组播接口"
 
-msgid "rtp2httpd_Interface_unicast to use for requesting unicast upstream media stream (default none, which follows the routing table)"
-msgstr "用于请求上游单播媒体流（FCC/RTSP）的接口（默认不指定，跟随路由表）"
+msgid "rtp2httpd_Interface to use for multicast (RTP/UDP) upstream media stream (default: use routing table)"
+msgstr "用于组播（RTP/UDP）上游媒体流的接口（默认：使用路由表）"
 
-msgid "rtp2httpd_Interface_multicast to use for requesting multicast upstream media stream (default none, which follows the routing table)"
-msgstr "用于请求上游组播媒体流（RTP/UDP）的接口（默认不指定，跟随路由表）"
+msgid "rtp2httpd_Upstream FCC Interface"
+msgstr "上游 FCC 接口"
+
+msgid "rtp2httpd_Interface to use for FCC unicast upstream media stream (default: use routing table)"
+msgstr "用于 FCC 单播上游媒体流的接口（默认：使用路由表）"
+
+msgid "rtp2httpd_Upstream RTSP Interface"
+msgstr "上游 RTSP 接口"
+
+msgid "rtp2httpd_Interface to use for RTSP unicast upstream media stream (default: use routing table)"
+msgstr "用于 RTSP 单播上游媒体流的接口（默认：使用路由表）"
 
 msgid "rtp2httpd_Max clients"
 msgstr "最大客户端数"

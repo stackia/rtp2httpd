@@ -13,8 +13,15 @@ rtp2httpd [选项]
 - `-l, --listen [地址:]端口` - 绑定监听地址和端口 (默认: \*:5140)
 - `-m, --maxclients <数量>` - 最大并发客户端数 (默认: 5)
 - `-w, --workers <数量>` - 工作进程数 (默认: 1)
-- `--upstream-interface-unicast <接口>` - 用于单播流量 (FCC/RTSP) 的上游网络接口
-- `--upstream-interface-multicast <接口>` - 用于组播流量 (RTP/UDP) 的上游网络接口
+
+#### 上游网络接口配置
+
+- `-i, --upstream-interface <接口>` - 默认上游接口（作用于所有流量类型，优先级最低）
+- `-f, --upstream-interface-fcc <接口>` - FCC 上游接口（覆盖 `-i` 设置）
+- `-t, --upstream-interface-rtsp <接口>` - RTSP 上游接口（覆盖 `-i` 设置）
+- `-r, --upstream-interface-multicast <接口>` - 组播上游接口（覆盖 `-i` 设置）
+
+**优先级规则**：`upstream-interface-{fcc,rtsp,multicast}` > `upstream-interface` > 系统路由表
 
 ### 性能优化
 
@@ -87,11 +94,22 @@ r2h-token = your-secret-token-here
 # 状态页路径（默认: /status）
 status-page-path = /status
 
-# 上游网络接口 (可选)
-# 用于单播流量 (FCC/RTSP) 的接口
-upstream-interface-unicast = eth1
-# 用于组播流量 (RTP/UDP) 的接口
-upstream-interface-multicast = eth0
+# 上游网络接口配置 (可选)
+#
+# 简单配置：只配置一个默认接口，所有流量类型都使用此接口
+upstream-interface = eth0
+#
+# 高级配置：为不同流量类型配置专用接口
+# 注意：专用接口配置优先级高于默认接口
+# upstream-interface-multicast = eth0  # 组播流量 (RTP/UDP)
+# upstream-interface-fcc = eth1        # FCC
+# upstream-interface-rtsp = eth2       # RTSP
+#
+# 混合配置示例：默认使用 eth0，但 FCC 使用更快的 eth1
+# upstream-interface = eth0
+# upstream-interface-fcc = eth1
+#
+# 优先级：upstream-interface-{multicast,fcc,rtsp} > upstream-interface > 系统路由表
 
 # 外部 M3U 配置（支持 file://, http://, https://）
 # 注意：HTTP/HTTPS 需要安装 curl 命令

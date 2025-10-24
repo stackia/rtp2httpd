@@ -101,7 +101,7 @@ fcc-listen-port-range = 40000-40100
    - 出现 `FCC: Unicast stream started successfully` 表示 FCC 地址有效，并且成功收到单播流。
    - 出现 `FCC: Server response timeout (80 ms), falling back to multicast` 有两种可能
      1. FCC 地址无效。
-     2. 你的网络配置不正确，导致无法连接到 FCC 服务器。一般来说必须通过 DHCP/IPoE/PPPoE 获得 IPTV 内网 IP 后，并启用 rtp2httpd `--upstream-interface-unicast` 选项指定 IPTV 接口后，才能访问 FCC。请结合 ping / traceroute 等工具判断。
+     2. 你的网络配置不正确，导致无法连接到 FCC 服务器。一般来说必须通过 DHCP/IPoE/PPPoE 获得 IPTV 内网 IP 后，并启用 rtp2httpd `--upstream-interface-fcc` 或 `--upstream-interface` 选项指定 IPTV 接口后，才能访问 FCC。请结合 ping / traceroute 等工具判断。
 
 ## 相关文档
 

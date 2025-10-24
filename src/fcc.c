@@ -321,7 +321,7 @@ int fcc_initialize_and_request(stream_context_t *ctx)
             return -1;
         }
 
-        upstream_if = &config.upstream_interface_unicast;
+        upstream_if = get_upstream_interface_for_fcc();
         bind_to_upstream_interface(fcc->fcc_sock, upstream_if);
 
         /* Bind to configured or ephemeral port */
