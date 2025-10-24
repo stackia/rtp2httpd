@@ -104,23 +104,28 @@ int rtp_queue_buf(connection_t *conn, buffer_ref_t *buf_ref, uint16_t *old_seqn,
   /* Perform sequence number tracking only for RTP packets (is_rtp == 1) */
   if (likely(is_rtp == 1))
   {
-    /* Duplicate detection - duplicates are rare */
-    if (unlikely(*not_first && seqn == *old_seqn))
+    /* Sequence number validation - discard duplicate/backward/out-of-order packets */
+    if (unlikely(*not_first))
     {
-      logger(LOG_DEBUG, "Duplicated RTP packet "
-                        "received (seqn %d)",
-             seqn);
-      return 0;
-    }
+      /* Calculate sequence number difference (handling wrap-around) */
+      int16_t seq_diff = (int16_t)(seqn - *old_seqn);
 
-    /* Out-of-order detection - packets are usually in order */
-    uint16_t expected = (*old_seqn + 1) & 0xFFFF;
-    if (unlikely(*not_first && (seqn != expected)))
-    {
-      int gap = seqn - expected;
-      /* This indicates upstream packet loss (network or source), NOT local send congestion */
-      logger(LOG_DEBUG, "RTP packet loss detected - expected seq %d, received %d (gap: %d packets)",
-             expected, seqn, gap);
+      /* Discard duplicate/backward/out-of-order packets (seq_diff <= 0) */
+      if (seq_diff <= 0)
+      {
+        logger(LOG_DEBUG, "Out-of-order RTP packet discarded - last sent seq %d, received %d (diff: %d)",
+               *old_seqn, seqn, seq_diff);
+        return 0;
+      }
+
+      /* Forward packet but detect gaps for logging */
+      uint16_t expected = (*old_seqn + 1) & 0xFFFF;
+      if (seqn != expected)
+      {
+        /* This indicates upstream packet loss (network or source), NOT local send congestion */
+        logger(LOG_DEBUG, "RTP packet loss detected - expected seq %d, received %d (gap: %d packets)",
+               expected, seqn, seq_diff - 1);
+      }
     }
 
     *old_seqn = seqn;
