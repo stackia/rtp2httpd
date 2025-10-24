@@ -83,21 +83,6 @@ msgstr "R2H Token"
 msgid "rtp2httpd_Authentication token for HTTP requests"
 msgstr "If set, all HTTP requests must include r2h-token query parameter with matching value (e.g., http://server:5140/service?r2h-token=your-token)"
 
-msgid "rtp2httpd_FCC NAT traversal"
-msgstr "FCC NAT traversal mode"
-
-msgid "rtp2httpd_Only needed when used as a downstream router"
-msgstr "Only needed when used as a downstream router"
-
-msgid "rtp2httpd_Don't use NAT traversal"
-msgstr "Don't use NAT traversal"
-
-msgid "rtp2httpd_NAT punch hole"
-msgstr "NAT punch hole (deprecated, do not use)"
-
-msgid "rtp2httpd_NAT-PMP"
-msgstr "NAT-PMP (Requires upstream router support)"
-
 msgid "rtp2httpd_Use Config File"
 msgstr "Use Config File"
 

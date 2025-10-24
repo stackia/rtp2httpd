@@ -29,8 +29,6 @@ static uint8_t *build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client
 static uint8_t *build_fcc_term_pk(struct addrinfo *maddr, uint16_t seqn);
 static ssize_t sendto_triple(int fd, const void *buf, size_t n, int flags,
                              struct sockaddr_in *addr, socklen_t addr_len);
-static uint16_t nat_pmp(uint16_t nport, uint32_t lifetime);
-static int get_gw_ip(in_addr_t *addr);
 static void log_fcc_state_transition(fcc_state_t from, fcc_state_t to, const char *reason);
 static void log_fcc_server_response(uint8_t fmt, uint8_t result_code, uint16_t signal_port, uint16_t media_port,
                                     uint32_t valid_time, uint32_t speed, uint32_t speed_after_sync);
@@ -113,74 +111,6 @@ static uint8_t *build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client
     return pk;
 }
 
-static int get_gw_ip(in_addr_t *addr)
-{
-    long destination, gateway;
-    char buf[4096];
-    FILE *file;
-
-    memset(buf, 0, sizeof(buf));
-
-    file = fopen("/proc/net/route", "r");
-    if (!file)
-    {
-        return -1;
-    }
-
-    while (fgets(buf, sizeof(buf), file))
-    {
-        if (sscanf(buf, "%*s %lx %lx", &destination, &gateway) == 2)
-        {
-            if (destination == 0)
-            { /* default */
-                *addr = gateway;
-                fclose(file);
-                return 0;
-            }
-        }
-    }
-
-    /* default route not found */
-    if (file)
-        fclose(file);
-    return -1;
-}
-
-static uint16_t nat_pmp(uint16_t nport, uint32_t lifetime)
-{
-    struct sockaddr_in gw_addr = {.sin_family = AF_INET, .sin_port = htons(5351)};
-    uint8_t pk[12];
-    uint8_t buf[16];
-    struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
-    const struct ifreq *upstream_if;
-
-    if (get_gw_ip(&gw_addr.sin_addr.s_addr) < 0)
-        return 0;
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
-    upstream_if = &config.upstream_interface_unicast;
-    bind_to_upstream_interface(sock, upstream_if);
-
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv);
-    pk[0] = 0;                     // Version
-    pk[1] = 1;                     // UDP
-    *(uint16_t *)(pk + 2) = 0;     // Reserved
-    *(uint16_t *)(pk + 4) = nport; // Private port
-    *(uint16_t *)(pk + 6) = 0;     // Public port
-    *(uint32_t *)(pk + 8) = htonl(lifetime);
-    sendto(sock, pk, sizeof(pk), 0, (struct sockaddr *)&gw_addr, sizeof(gw_addr));
-    if (recv(sock, buf, sizeof(buf), 0) > 0)
-    {
-        if (*(uint16_t *)(buf + 2) == 0)
-        { // Result code
-            close(sock);
-            return *(uint16_t *)(buf + 10); // Mapped public port
-        }
-    }
-    close(sock);
-    return 0;
-}
-
 static uint8_t *build_fcc_term_pk(struct addrinfo *maddr, uint16_t seqn)
 {
     struct sockaddr_in *maddr_sin = (struct sockaddr_in *)maddr->ai_addr;
@@ -234,14 +164,6 @@ void fcc_session_cleanup(fcc_session_t *fcc, service_t *service, int epoll_fd)
         {
             fcc->fcc_term_sent = 1;
         }
-    }
-
-    /* Clean up NAT-PMP mapping if active */
-    if (fcc->mapped_pub_port)
-    {
-        logger(LOG_DEBUG, "FCC: Cleaning up NAT-PMP mapping");
-        nat_pmp(fcc->fcc_client.sin_port, 0);
-        fcc->mapped_pub_port = 0;
     }
 
     /* Clean up session resources - free pending buffer chain */
@@ -415,13 +337,6 @@ int fcc_initialize_and_request(stream_context_t *ctx)
         slen = sizeof(fcc->fcc_client);
         getsockname(fcc->fcc_sock, (struct sockaddr *)&fcc->fcc_client, &slen);
 
-        /* Handle NAT traversal if needed */
-        if (config.fcc_nat_traversal == FCC_NAT_T_NAT_PMP)
-        {
-            fcc->mapped_pub_port = nat_pmp(fcc->fcc_client.sin_port, 86400);
-            logger(LOG_DEBUG, "FCC NAT-PMP result: %u", ntohs(fcc->mapped_pub_port));
-        }
-
         fcc->fcc_server = (struct sockaddr_in *)service->fcc_addr->ai_addr;
 
         /* Register socket with epoll immediately after creation */
@@ -440,8 +355,7 @@ int fcc_initialize_and_request(stream_context_t *ctx)
     }
 
     /* Send FCC request */
-    uint16_t port_to_use = fcc->mapped_pub_port ? fcc->mapped_pub_port : fcc->fcc_client.sin_port;
-    r = sendto_triple(fcc->fcc_sock, build_fcc_request_pk(service->addr, port_to_use),
+    r = sendto_triple(fcc->fcc_sock, build_fcc_request_pk(service->addr, fcc->fcc_client.sin_port),
                       FCC_PK_LEN_REQ, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
     if (r < 0)
     {
