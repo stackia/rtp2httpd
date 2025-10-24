@@ -251,18 +251,6 @@ return view.extend({
     o.depends("use_config_file", "0");
 
     o = s.option(
-      form.ListValue,
-      "fcc_nat_traversal",
-      _("rtp2httpd_FCC NAT traversal"),
-      _("rtp2httpd_Only needed when used as a downstream router")
-    );
-    o.value("0", _("rtp2httpd_Don't use NAT traversal"));
-    o.value("1", _("rtp2httpd_NAT punch hole"));
-    o.value("2", _("rtp2httpd_NAT-PMP"));
-    o.default = "0";
-    o.depends("use_config_file", "0");
-
-    o = s.option(
       form.Value,
       "fcc_listen_port_range",
       _("rtp2httpd_FCC Listen Port Range"),

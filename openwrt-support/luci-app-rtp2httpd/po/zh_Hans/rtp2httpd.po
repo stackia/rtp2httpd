@@ -83,21 +83,6 @@ msgstr "HTTP 请求认证令牌"
 msgid "rtp2httpd_Authentication token for HTTP requests"
 msgstr "设置后，所有 HTTP 请求必须携带 r2h-token 查询参数，且值与此配置匹配（例如：http://server:5140/service?r2h-token=your-token）"
 
-msgid "rtp2httpd_FCC NAT traversal"
-msgstr "FCC NAT 穿透模式"
-
-msgid "rtp2httpd_Only needed when used as a downstream router"
-msgstr "仅当作为二级路由并需要使用 FCC（快速频道切换）时启用"
-
-msgid "rtp2httpd_Don't use NAT traversal"
-msgstr "不使用 NAT 穿透"
-
-msgid "rtp2httpd_NAT punch hole"
-msgstr "NAT 打洞（已废弃，不要使用）"
-
-msgid "rtp2httpd_NAT-PMP"
-msgstr "NAT-PMP（需要上级路由器支持）"
-
 msgid "rtp2httpd_Use Config File"
 msgstr "使用配置文件"
 
