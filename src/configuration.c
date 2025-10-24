@@ -48,6 +48,7 @@ int cmd_upstream_interface_rtsp_set;
 int cmd_upstream_interface_multicast_set;
 int cmd_fcc_listen_port_range_set;
 int cmd_status_page_path_set;
+int cmd_zerocopy_on_send_set;
 
 enum section_e
 {
@@ -454,6 +455,13 @@ void parse_global_sec(char *line)
     return;
   }
 
+  if (strcasecmp("zerocopy-on-send", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_zerocopy_on_send_set, "zerocopy-on-send"))
+      config.zerocopy_on_send = parse_bool(value);
+    return;
+  }
+
   /* String parameters with command line override */
   if (strcasecmp("hostname", param) == 0)
   {
@@ -803,6 +811,9 @@ void restore_conf_defaults(void)
   config.mcast_rejoin_interval = 0; /* default disabled */
   cmd_mcast_rejoin_interval_set = 0;
 
+  config.zerocopy_on_send = 0; /* default: disabled for compatibility */
+  cmd_zerocopy_on_send_set = 0;
+
   set_status_page_path_value("/status");
   cmd_status_page_path_set = 0;
 
@@ -882,6 +893,7 @@ void usage(FILE *f, char *progname)
           "\t-s --status-page-path <path>  HTTP path for status UI (default: /status)\n"
           "\t-M --external-m3u <url>  External M3U playlist URL (file://, http://, https://)\n"
           "\t-I --external-m3u-update-interval <seconds>  Auto-update interval (default: 86400 = 24h, 0=disabled)\n"
+          "\t-Z --zerocopy-on-send    Enable zero-copy send with MSG_ZEROCOPY for better performance (default: off)\n"
           "\t                     default " CONFIGFILE "\n",
           prog);
 }
@@ -953,9 +965,10 @@ void parse_cmd_line(int argc, char *argv[])
       {"status-page-path", required_argument, 0, 's'},
       {"external-m3u", required_argument, 0, 'M'},
       {"external-m3u-update-interval", required_argument, 0, 'I'},
+      {"zerocopy-on-send", no_argument, 0, 'Z'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:P:H:T:i:f:t:r:R:F:A:s:M:I:SC";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:P:H:T:i:f:t:r:R:F:A:s:M:I:SCZ";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1130,6 +1143,11 @@ void parse_cmd_line(int argc, char *argv[])
         config.external_m3u_update_interval = atoi(optarg);
         logger(LOG_INFO, "External M3U update interval set to %d seconds", config.external_m3u_update_interval);
       }
+      break;
+    case 'Z':
+      config.zerocopy_on_send = 1;
+      cmd_zerocopy_on_send_set = 1;
+      logger(LOG_INFO, "Zero-copy send enabled (MSG_ZEROCOPY)");
       break;
     default:
       logger(LOG_FATAL, "Unknown option! %d ", opt);

@@ -16,11 +16,6 @@
  * - Automatic fallback for compatibility
  */
 
-/* Zero-copy feature flags */
-#define ZEROCOPY_DISABLED 0
-#define ZEROCOPY_SENDMSG (1 << 0)      /* Use sendmsg() with scatter-gather */
-#define ZEROCOPY_MSG_ZEROCOPY (1 << 1) /* Use MSG_ZEROCOPY flag (mandatory) */
-
 /* Zero-copy configuration */
 #define ZEROCOPY_MAX_IOVECS 64 /* Maximum iovec entries per sendmsg() */
 
@@ -48,7 +43,6 @@ typedef struct zerocopy_queue_s
  */
 typedef struct zerocopy_state_s
 {
-    int features;               /* Enabled features (ZEROCOPY_* flags) */
     buffer_pool_t pool;         /* Global buffer pool */
     buffer_pool_t control_pool; /* Dedicated pool for status/API control plane */
     size_t active_streams;      /* Number of active media streaming clients */
