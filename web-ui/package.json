@@ -18,17 +18,17 @@
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.1.14",
-    "@types/node": "^24.7.2",
+    "@tailwindcss/vite": "^4.1.16",
+    "@types/node": "^24.9.1",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
-    "@vitejs/plugin-react-swc": "^4.1.0",
-    "eslint": "^9.17.0",
+    "@vitejs/plugin-react-swc": "^4.2.0",
+    "eslint": "^9.38.0",
     "neostandard": "^0.12.2",
     "prettier": "^3.4.2",
-    "tailwindcss": "^4.1.14",
+    "tailwindcss": "^4.1.16",
     "typescript": "^5.9.3",
-    "vite": "^7.1.10",
+    "vite": "^7.1.12",
     "vite-plugin-singlefile": "^2.3.0"
   }
 }

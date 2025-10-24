@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { argv, exit } from "node:process";
-import { gzipSync } from "node:zlib";
+import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
 
 function usage() {
   console.error("Usage: node embed-status-page.js <input.html> <output.h>");
@@ -45,8 +45,14 @@ function main() {
   }
 
   const html = readFileSync(resolve(htmlPath), "utf8");
-  const compressed = gzipSync(html, { level: 9 });
+  const compressed = brotliCompressSync(html, {
+    params: {
+      [zlibConstants.BROTLI_PARAM_QUALITY]: 11,
+    },
+  });
   const etag = generateEtag(compressed);
+
+  console.log(`Compressed size: ${(compressed.length / 1000).toFixed(2)} KB`);
 
   const header = [
     "#ifndef __STATUS_PAGE_H__",
