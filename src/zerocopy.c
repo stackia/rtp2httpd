@@ -69,8 +69,6 @@ int zerocopy_init(void)
     if (zerocopy_state.initialized)
         return 0;
 
-    zerocopy_state.features = ZEROCOPY_DISABLED;
-
     /* Initialize per-worker statistics in shared memory */
     if (status_shared && worker_id >= 0 && worker_id < STATUS_MAX_WORKERS)
     {
@@ -81,16 +79,27 @@ int zerocopy_init(void)
         status_shared->worker_stats[worker_id].worker_pid = getpid();
     }
 
-    /* MSG_ZEROCOPY is mandatory - detect support */
-    if (!detect_msg_zerocopy_support())
+    /* Check if zerocopy is explicitly enabled by configuration */
+    if (config.zerocopy_on_send)
     {
-        logger(LOG_FATAL, "Zero-copy: MSG_ZEROCOPY not available (kernel 4.14+ required)");
-        logger(LOG_FATAL, "Zero-copy: This feature is mandatory for rtp2httpd operation");
-        return -1;
+        /* Try to detect MSG_ZEROCOPY support */
+        if (!detect_msg_zerocopy_support())
+        {
+            logger(LOG_WARN, "Zero-copy: MSG_ZEROCOPY not available (kernel 4.14+ required)");
+            logger(LOG_WARN, "Zero-copy: Falling back to regular send");
+            /* Disable zerocopy in config since it's not supported */
+            config.zerocopy_on_send = 0;
+        }
+        else
+        {
+            logger(LOG_INFO, "Zero-copy: MSG_ZEROCOPY enabled for better performance");
+        }
     }
-
-    /* Enable both sendmsg() scatter-gather and MSG_ZEROCOPY */
-    zerocopy_state.features = ZEROCOPY_SENDMSG | ZEROCOPY_MSG_ZEROCOPY;
+    else
+    {
+        /* Default: Use regular send for maximum compatibility */
+        logger(LOG_INFO, "Zero-copy: Using regular send (default). Enable zerocopy-on-send for better performance on supported devices.");
+    }
 
     /* Initialize buffer pool with dynamic expansion support */
     if (buffer_pool_init(&zerocopy_state.pool,
@@ -140,7 +149,6 @@ void zerocopy_cleanup(void)
     buffer_pool_update_stats(&zerocopy_state.pool);
     buffer_pool_update_stats(&zerocopy_state.control_pool);
     zerocopy_state.initialized = 0;
-    zerocopy_state.features = ZEROCOPY_DISABLED;
     zerocopy_state.active_streams = 0;
 }
 
@@ -368,8 +376,12 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
     msg.msg_iov = iovecs;
     msg.msg_iovlen = iov_count;
 
-    /* Determine flags - MSG_ZEROCOPY is always used (mandatory) */
-    int flags = MSG_DONTWAIT | MSG_NOSIGNAL | MSG_ZEROCOPY;
+    /* Determine flags based on zerocopy configuration */
+    int flags = MSG_DONTWAIT | MSG_NOSIGNAL;
+    if (config.zerocopy_on_send)
+    {
+        flags |= MSG_ZEROCOPY;
+    }
 
     /* Send data */
     ssize_t sent = sendmsg(fd, &msg, flags);
@@ -408,69 +420,109 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
 
     *bytes_sent = (size_t)sent;
 
-    /* Assign zerocopy ID for this sendmsg call AFTER successful send
-     * All iovecs in this call share the same ID for completion tracking
-     * IMPORTANT: Only increment the ID counter after sendmsg() succeeds,
-     * because the kernel only assigns an ID to successful sends.
-     */
-    uint32_t zerocopy_id = queue->next_zerocopy_id++;
-    for (int i = 0; i < iov_count; i++)
+    /* Handle buffer management based on whether MSG_ZEROCOPY is used */
+    if (config.zerocopy_on_send)
     {
-        buffers[i]->zerocopy_id = zerocopy_id;
-    }
-
-    /* Move sent buffers from send queue to pending completion queue
-     * Note: With MSG_ZEROCOPY, the kernel tracks what was actually sent,
-     * and the completion notification will arrive for the sent data only.
-     * IMPORTANT: Only process BUFFER_TYPE_MEMORY buffers here, stop at file buffers.
-     */
-    size_t remaining = (size_t)sent;
-    while (remaining > 0 && queue->head)
-    {
-        buffer_ref_t *current = queue->head;
-
-        /* Stop if we hit a file buffer - we only sent memory buffers */
-        if (current->type != BUFFER_TYPE_MEMORY)
-            break;
-
-        if (current->iov.iov_len <= remaining)
+        /* Assign zerocopy ID for this sendmsg call AFTER successful send
+         * All iovecs in this call share the same ID for completion tracking
+         * IMPORTANT: Only increment the ID counter after sendmsg() succeeds,
+         * because the kernel only assigns an ID to successful sends.
+         */
+        uint32_t zerocopy_id = queue->next_zerocopy_id++;
+        for (int i = 0; i < iov_count; i++)
         {
-            /* Entire buffer sent - move to pending queue */
-            remaining -= current->iov.iov_len;
-            queue->total_bytes -= current->iov.iov_len;
-            queue->num_queued--;
-            queue->head = current->send_next;
+            buffers[i]->zerocopy_id = zerocopy_id;
+        }
 
-            if (!queue->head)
-                queue->tail = NULL;
+        /* Move sent buffers from send queue to pending completion queue
+         * Note: With MSG_ZEROCOPY, the kernel tracks what was actually sent,
+         * and the completion notification will arrive for the sent data only.
+         * IMPORTANT: Only process BUFFER_TYPE_MEMORY buffers here, stop at file buffers.
+         */
+        size_t remaining = (size_t)sent;
+        while (remaining > 0 && queue->head)
+        {
+            buffer_ref_t *current = queue->head;
 
-            /* Add to pending completion queue */
-            current->send_next = NULL;
-            if (queue->pending_tail)
+            /* Stop if we hit a file buffer - we only sent memory buffers */
+            if (current->type != BUFFER_TYPE_MEMORY)
+                break;
+
+            if (current->iov.iov_len <= remaining)
             {
-                queue->pending_tail->send_next = current;
-                queue->pending_tail = current;
+                /* Entire buffer sent - move to pending queue */
+                remaining -= current->iov.iov_len;
+                queue->total_bytes -= current->iov.iov_len;
+                queue->num_queued--;
+                queue->head = current->send_next;
+
+                if (!queue->head)
+                    queue->tail = NULL;
+
+                /* Add to pending completion queue */
+                current->send_next = NULL;
+                if (queue->pending_tail)
+                {
+                    queue->pending_tail->send_next = current;
+                    queue->pending_tail = current;
+                }
+                else
+                {
+                    queue->pending_head = queue->pending_tail = current;
+                }
+                queue->num_pending++;
+
+                /* Note: Buffer will be freed when MSG_ZEROCOPY completion arrives */
             }
             else
             {
-                queue->pending_head = queue->pending_tail = current;
+                /* Partial send within a buffer - this is tricky with MSG_ZEROCOPY
+                 * The kernel will send a completion for what was sent, but we need to
+                 * track the unsent portion separately. We'll reset the zerocopy_id to 0
+                 * so it gets a new ID on the next send attempt.
+                 */
+                current->iov.iov_base = (uint8_t *)current->iov.iov_base + remaining;
+                current->iov.iov_len -= remaining;
+                current->zerocopy_id = 0; /* Reset ID for next send */
+                queue->total_bytes -= remaining;
+                remaining = 0;
             }
-            queue->num_pending++;
-
-            /* Note: Buffer will be freed when MSG_ZEROCOPY completion arrives */
         }
-        else
+    }
+    else
+    {
+        /* Regular send without MSG_ZEROCOPY - free buffers immediately */
+        size_t remaining = (size_t)sent;
+        while (remaining > 0 && queue->head)
         {
-            /* Partial send within a buffer - this is tricky with MSG_ZEROCOPY
-             * The kernel will send a completion for what was sent, but we need to
-             * track the unsent portion separately. We'll reset the zerocopy_id to 0
-             * so it gets a new ID on the next send attempt.
-             */
-            current->iov.iov_base = (uint8_t *)current->iov.iov_base + remaining;
-            current->iov.iov_len -= remaining;
-            current->zerocopy_id = 0; /* Reset ID for next send */
-            queue->total_bytes -= remaining;
-            remaining = 0;
+            buffer_ref_t *current = queue->head;
+
+            /* Stop if we hit a file buffer - we only sent memory buffers */
+            if (current->type != BUFFER_TYPE_MEMORY)
+                break;
+
+            if (current->iov.iov_len <= remaining)
+            {
+                /* Entire buffer sent - remove from queue and free immediately */
+                remaining -= current->iov.iov_len;
+                queue->total_bytes -= current->iov.iov_len;
+                queue->num_queued--;
+                queue->head = current->send_next;
+
+                if (!queue->head)
+                    queue->tail = NULL;
+
+                /* Free buffer immediately since kernel has copied the data */
+                buffer_ref_put(current);
+            }
+            else
+            {
+                /* Partial send within a buffer - update the iovec to point to remaining data */
+                current->iov.iov_base = (uint8_t *)current->iov.iov_base + remaining;
+                current->iov.iov_len -= remaining;
+                queue->total_bytes -= remaining;
+                remaining = 0;
+            }
         }
     }
 
@@ -479,7 +531,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent)
 
 int zerocopy_handle_completions(int fd, zerocopy_queue_t *queue)
 {
-    if (!(zerocopy_state.features & ZEROCOPY_MSG_ZEROCOPY))
+    if (!config.zerocopy_on_send)
         return 0;
 
     int completions = 0;

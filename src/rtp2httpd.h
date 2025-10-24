@@ -102,6 +102,9 @@ typedef struct
   char *external_m3u_url;             /* External M3U URL (NULL=none) */
   int external_m3u_update_interval;   /* Update interval in seconds (0=disabled) */
   int64_t last_external_m3u_update_time; /* Last update time in milliseconds */
+
+  /* Zero-copy settings */
+  int zerocopy_on_send; /* Enable zero-copy send with MSG_ZEROCOPY (0=disabled, 1=enabled) */
 } config_t;
 
 /* GLOBAL CONFIGURATION */

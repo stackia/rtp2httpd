@@ -154,3 +154,9 @@ msgstr "FFmpeg Arguments"
 
 msgid "rtp2httpd_FFmpeg arguments description"
 msgstr "Additional FFmpeg arguments for snapshot generation. Common options: -hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)"
+
+msgid "rtp2httpd_Zero-Copy on Send"
+msgstr "Zero-Copy on Send"
+
+msgid "rtp2httpd_Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires kernel 4.14+. Can improve throughput and reduce CPU usage on supported devices."
+msgstr "Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires kernel 4.14+ (MSG_ZEROCOPY support). On supported devices, this can improve throughput and reduce CPU usage, especially under high concurrent load."

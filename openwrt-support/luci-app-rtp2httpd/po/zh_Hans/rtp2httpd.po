@@ -154,3 +154,9 @@ msgstr "FFmpeg 参数"
 
 msgid "rtp2httpd_FFmpeg arguments description"
 msgstr "生成快照时传递给 FFmpeg 的额外参数。常用选项：-hwaccel none（无硬件加速）、-hwaccel vaapi（Intel GPU）"
+
+msgid "rtp2httpd_Zero-Copy on Send"
+msgstr "启用零拷贝发送"
+
+msgid "rtp2httpd_Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires kernel 4.14+. Can improve throughput and reduce CPU usage on supported devices."
+msgstr "启用 MSG_ZEROCOPY 零拷贝发送以提升性能。需要内核 4.14+（支持 MSG_ZEROCOPY）。在支持的设备上，可提升吞吐量并降低 CPU 占用，特别是在高并发负载下。"
