@@ -7,6 +7,7 @@ rtp2httpd_SOURCES = \
 	rtp2httpd.c \
 	configuration.c \
 	http.c \
+	http_fetch.c \
 	service.c \
 	rtp.c \
 	multicast.c \
@@ -19,13 +20,15 @@ rtp2httpd_SOURCES = \
 	connection.c \
 	worker.c \
 	buffer_pool.c \
-	zerocopy.c
+	zerocopy.c \
+	m3u.c
 
 # Private headers (not installed)
 noinst_HEADERS = \
 	rtp2httpd.h \
 	configuration.h \
 	http.h \
+	http_fetch.h \
 	service.h \
 	rtp.h \
 	multicast.h \
@@ -39,7 +42,8 @@ noinst_HEADERS = \
 	connection.h \
 	worker.h \
 	buffer_pool.h \
-	zerocopy.h
+	zerocopy.h \
+	m3u.h
 
 # Compiler flags
 AM_CPPFLAGS = -DSYSCONFDIR=\"@sysconfdir@\"

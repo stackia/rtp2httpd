@@ -9,6 +9,8 @@
 #include "stream.h"
 #include "rtsp.h"
 #include "zerocopy.h"
+#include "configuration.h"
+#include "http_fetch.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -383,6 +385,17 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
         continue;
       }
 
+      /* Check if this is an async HTTP fetch fd */
+      http_fetch_ctx_t *fetch_ctx = http_fetch_find_by_fd(fd_ready);
+      if (fetch_ctx)
+      {
+        /* Handle HTTP fetch event */
+        (void)http_fetch_handle_event(fetch_ctx);
+        /* Return value: 0 = more data expected, 1 = completed, -1 = error
+         * In all cases, the context handles cleanup internally */
+        continue;
+      }
+
       /* Non-listener: lookup by fd map */
       connection_t *c = fdmap_get(fd_ready);
       if (c)
@@ -506,8 +519,8 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
       }
     }
 
-    /* 2) Periodic tick (~1s): update streams and SSE heartbeats */
-    if (now - last_tick >= 1000) /* Check if at least 1 second has passed */
+    /* 2) Periodic tick: update streams and SSE heartbeats */
+    if (now - last_tick >= timeout_ms)
     {
       last_tick = now;
       connection_t *c = conn_head;
@@ -526,6 +539,42 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
         }
         status_handle_sse_heartbeat(c, now);
         c = next;
+      }
+
+      /* Check if external M3U needs to be reloaded (all workers perform this with staggered timing) */
+      if (config.external_m3u_update_interval > 0)
+      {
+        int64_t interval_ms = (int64_t)config.external_m3u_update_interval * 1000;
+        int64_t last_update = config.last_external_m3u_update_time;
+
+        /* Calculate staggered update time for this worker:
+         * Worker 0 updates at interval_ms, worker 1 at interval_ms + 1000ms, etc.
+         * This distributes the load and ensures each worker has updated services.
+         */
+        int64_t worker_offset_ms = (int64_t)worker_id * 1000;
+        int64_t time_since_last_update = now - last_update;
+
+        /* Check if it's time for this worker to update */
+        if (last_update > 0 && time_since_last_update >= (interval_ms + worker_offset_ms))
+        {
+          /* Also check if this update cycle hasn't been done yet by checking
+           * if enough time has passed since the interval started */
+          int64_t current_cycle = time_since_last_update / interval_ms;
+          int64_t expected_update_time = current_cycle * interval_ms + worker_offset_ms;
+
+          if (time_since_last_update >= expected_update_time)
+          {
+            logger(LOG_DEBUG, "External M3U update interval reached for worker %d, reloading...", worker_id);
+
+            /* Update timestamp immediately to prevent reentry during async operation */
+            config.last_external_m3u_update_time = now;
+
+            /* Use async reload to avoid blocking the event loop */
+            reload_external_m3u_async(epfd);
+            /* Note: We always update timestamp regardless of success/failure to avoid
+             * hammering the server with repeated requests */
+          }
+        }
       }
     }
   }

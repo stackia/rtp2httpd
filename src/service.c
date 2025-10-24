@@ -151,6 +151,15 @@ static int parse_rtp_url_components(char *url_part, struct rtp_url_components *c
         }
     }
 
+    /* Remove trailing slash from main part if present (e.g., "239.253.64.120:5140/") */
+    {
+        size_t len = strlen(url_part);
+        if (len > 0 && url_part[len - 1] == '/')
+        {
+            url_part[len - 1] = '\0';
+        }
+    }
+
     /* Copy main part for parsing */
     if (strlen(url_part) >= sizeof(main_part))
     {
@@ -1024,6 +1033,157 @@ service_t *service_create_from_rtp_url(const char *http_url)
     return result;
 }
 
+/* Clone addrinfo structure with embedded sockaddr */
+static struct addrinfo *clone_addrinfo(const struct addrinfo *src)
+{
+    struct addrinfo *cloned;
+
+    if (!src)
+    {
+        return NULL;
+    }
+
+    cloned = malloc(sizeof(struct addrinfo));
+    if (!cloned)
+    {
+        return NULL;
+    }
+
+    /* Copy all fields */
+    memcpy(cloned, src, sizeof(struct addrinfo));
+
+    /* Clone embedded sockaddr */
+    if (src->ai_addr && src->ai_addrlen > 0)
+    {
+        cloned->ai_addr = malloc(src->ai_addrlen);
+        if (!cloned->ai_addr)
+        {
+            free(cloned);
+            return NULL;
+        }
+        memcpy(cloned->ai_addr, src->ai_addr, src->ai_addrlen);
+    }
+    else
+    {
+        cloned->ai_addr = NULL;
+    }
+
+    /* Don't copy ai_next - cloned addrinfo is standalone */
+    cloned->ai_next = NULL;
+    cloned->ai_canonname = NULL;  /* Don't clone canonname */
+
+    return cloned;
+}
+
+service_t *service_clone(const service_t *service)
+{
+    service_t *cloned;
+
+    if (!service)
+    {
+        return NULL;
+    }
+
+    /* Allocate new service structure */
+    cloned = malloc(sizeof(service_t));
+    if (!cloned)
+    {
+        logger(LOG_ERROR, "Failed to allocate memory for cloned service");
+        return NULL;
+    }
+
+    /* Initialize all fields to NULL/0 */
+    memset(cloned, 0, sizeof(service_t));
+
+    /* Copy simple fields */
+    cloned->service_type = service->service_type;
+    cloned->source = service->source;
+
+    /* Clone string fields */
+    if (service->url)
+    {
+        cloned->url = strdup(service->url);
+        if (!cloned->url)
+        {
+            goto cleanup_error;
+        }
+    }
+
+    if (service->msrc)
+    {
+        cloned->msrc = strdup(service->msrc);
+        if (!cloned->msrc)
+        {
+            goto cleanup_error;
+        }
+    }
+
+    if (service->rtsp_url)
+    {
+        cloned->rtsp_url = strdup(service->rtsp_url);
+        if (!cloned->rtsp_url)
+        {
+            goto cleanup_error;
+        }
+    }
+
+    if (service->playseek_param)
+    {
+        cloned->playseek_param = strdup(service->playseek_param);
+        if (!cloned->playseek_param)
+        {
+            goto cleanup_error;
+        }
+    }
+
+    if (service->user_agent)
+    {
+        cloned->user_agent = strdup(service->user_agent);
+        if (!cloned->user_agent)
+        {
+            goto cleanup_error;
+        }
+    }
+
+    /* Clone addrinfo structures */
+    if (service->addr)
+    {
+        cloned->addr = clone_addrinfo(service->addr);
+        if (!cloned->addr)
+        {
+            goto cleanup_error;
+        }
+    }
+
+    if (service->msrc_addr)
+    {
+        cloned->msrc_addr = clone_addrinfo(service->msrc_addr);
+        if (!cloned->msrc_addr)
+        {
+            goto cleanup_error;
+        }
+    }
+
+    if (service->fcc_addr)
+    {
+        cloned->fcc_addr = clone_addrinfo(service->fcc_addr);
+        if (!cloned->fcc_addr)
+        {
+            goto cleanup_error;
+        }
+    }
+
+    /* Don't copy next pointer - cloned service is standalone */
+    cloned->next = NULL;
+
+    return cloned;
+
+cleanup_error:
+    logger(LOG_ERROR, "Failed to clone service - out of memory");
+    service_free(cloned);
+    return NULL;
+}
+
 void service_free(service_t *service)
 {
     if (!service)
@@ -1099,4 +1259,31 @@ void service_free(service_t *service)
 
     /* Free the service structure itself */
     free(service);
+}
+
+void service_free_external(void)
+{
+    service_t **current_ptr = &services;
+    service_t *current;
+    int freed_count = 0;
+
+    while (*current_ptr != NULL)
+    {
+        current = *current_ptr;
+
+        /* If this service is from external M3U, remove it */
+        if (current->source == SERVICE_SOURCE_EXTERNAL)
+        {
+            *current_ptr = current->next;  /* Remove from list */
+            service_free(current);
+            freed_count++;
+        }
+        else
+        {
+            /* Keep this service, move to next */
+            current_ptr = &(current->next);
+        }
+    }
+
+    logger(LOG_INFO, "Freed %d external M3U services", freed_count);
 }

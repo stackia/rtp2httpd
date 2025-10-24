@@ -2,6 +2,7 @@
 #define __CONFIGURATION_H__
 
 #include <stdio.h>
+#include <stdint.h>
 
 /* Configuration parsing functions */
 void parse_bind_sec(char *line);
@@ -18,5 +19,14 @@ void parse_cmd_line(int argc, char *argv[]);
 /* Memory management */
 struct bindaddr_s *new_empty_bindaddr(void);
 void free_bindaddr(struct bindaddr_s *);
+
+/* External M3U reloading */
+int reload_external_m3u(void);
+
+/* Async external M3U reloading (non-blocking, for worker processes)
+ * epfd: epoll file descriptor for async I/O
+ * Returns: 0 if async fetch started, -1 on error or if not configured
+ */
+int reload_external_m3u_async(int epfd);
 
 #endif /* __CONFIGURATION_H__ */
