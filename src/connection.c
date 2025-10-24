@@ -10,6 +10,7 @@
 #include "snapshot.h"
 #include "status.h"
 #include "zerocopy.h"
+#include "m3u.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -38,6 +39,9 @@
 #define CONN_QUEUE_SLOW_LIMIT_RATIO 0.9
 #define CONN_QUEUE_SLOW_EXIT_LIMIT_RATIO 0.75
 #define CONN_QUEUE_SLOW_CLAMP_FACTOR 0.8
+
+/* Forward declarations */
+static void handle_playlist_request(connection_t *c);
 
 static inline buffer_ref_t *connection_alloc_output_buffer(connection_t *c)
 {
@@ -606,6 +610,16 @@ int connection_route_and_start(connection_t *c)
     c->state = CONN_CLOSING;
     return 0;
   }
+
+  /* Handle /playlist.m3u request */
+  const char *playlist_route = "playlist.m3u";
+  size_t playlist_route_len = strlen(playlist_route);
+  if (playlist_route_len == path_len && strncmp(service_path, playlist_route, path_len) == 0)
+  {
+    handle_playlist_request(c);
+    c->state = CONN_CLOSING;
+    return 0;
+  }
   size_t status_sse_len = strlen(status_sse_route);
   if (status_sse_len == path_len && strncmp(service_path, status_sse_route, path_len) == 0)
   {
@@ -687,7 +701,18 @@ int connection_route_and_start(connection_t *c)
       service = merged_service;
       owned = 1;
     }
-    /* If merge returns NULL (no query params), use configured service as-is (owned = 0) */
+    else
+    {
+      /* No query params to merge - clone the configured service so connection owns its copy */
+      service = service_clone(service);
+      if (!service)
+      {
+        logger(LOG_ERROR, "Failed to clone service for connection");
+        http_send_500(c);
+        return 0;
+      }
+      owned = 1;
+    }
   }
 
   if (!service)
@@ -886,4 +911,31 @@ int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_
   connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
 
   return 0;
+}
+
+/* Handle /playlist.m3u request - serve transformed M3U playlist */
+static void handle_playlist_request(connection_t *c)
+{
+  if (!c)
+    return;
+
+  const char *playlist = m3u_get_transformed_playlist();
+
+  if (!playlist)
+  {
+    /* No playlist available */
+    http_send_404(c);
+    return;
+  }
+
+  size_t playlist_len = strlen(playlist);
+  char extra_headers[128];
+
+  snprintf(extra_headers, sizeof(extra_headers),
+           "Content-Type: audio/x-mpegurl\r\n"
+           "Content-Length: %zu\r\n",
+           playlist_len);
+
+  send_http_headers(c, STATUS_200, CONTENT_HTML, extra_headers);
+  connection_queue_output_and_flush(c, (const uint8_t *)playlist, playlist_len);
 }

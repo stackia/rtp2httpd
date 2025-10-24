@@ -284,7 +284,6 @@ int main(int argc, char *argv[])
     }
     freeaddrinfo(res);
   }
-  free_bindaddr(bind_addresses);
 
   if (maxs == 0)
   {
@@ -305,6 +304,7 @@ int main(int argc, char *argv[])
   /* Run worker event loop */
   int result = worker_run_event_loop(s, maxs, notif_fd);
 
+  free_bindaddr(bind_addresses);
   status_cleanup();
 
   return result;
