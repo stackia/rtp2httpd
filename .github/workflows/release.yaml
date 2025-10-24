@@ -201,22 +201,25 @@ jobs:
 
           # Determine package format based on SDK version
           if [[ "${{ matrix.sdk }}" == "SNAPSHOT" ]]; then
-            # APK format: replace - with _ for pre-release versions
-            # e.g., 3.0.0-beta.0 -> 3.0.0_beta.0
-            PKG_VERSION="${RELEASE_VERSION//-/_}"
+            # APK format: convert SemVer pre-release to Alpine format
+            # e.g., 3.0.0-beta.1 -> 3.0.0_beta1 (underscore prefix, no dot before number)
+            # Alpine uses formats like: 2.4_beta2, 4.2.1_p1, 3.13.0_alpha20200626
+            PKG_VERSION=$(echo "$RELEASE_VERSION" | sed -E 's/-([a-z]+)\.([0-9]+)/_\1\2/g')
             echo "Building APK package with version: $PKG_VERSION"
           else
             # IPK format: replace - with ~ for pre-release versions
             # e.g., 3.0.0-beta.0 -> 3.0.0~beta.0
-            PKG_VERSION="${RELEASE_VERSION//-/~}"
+            # The tilde (~) ensures pre-release versions sort before release versions
+            PKG_VERSION=$(echo "$RELEASE_VERSION" | sed 's/-/~/g')
             echo "Building IPK package with version: $PKG_VERSION"
           fi
 
           # Use package-specific version for OpenWrt Makefiles (IPK/APK format)
-          sed -i "s/1\.0\.0/${PKG_VERSION}/g" openwrt-support/rtp2httpd/Makefile openwrt-support/luci-app-rtp2httpd/Makefile
+          # Use | as sed delimiter to avoid conflicts with version string characters
+          sed -i "s|1\.0\.0|$PKG_VERSION|g" openwrt-support/rtp2httpd/Makefile openwrt-support/luci-app-rtp2httpd/Makefile
 
           # Use original SemVer version for configure.ac
-          sed -i "s/1\.0\.0/${RELEASE_VERSION}/g" configure.ac
+          sed -i "s|1\.0\.0|$RELEASE_VERSION|g" configure.ac
 
       - name: Move src to openwrt-support
         run: mv openwrt-support ../ && mkdir ../openwrt-support/rtp2httpd/src && mv ./* ../openwrt-support/rtp2httpd/src && mv ../openwrt-support ./
