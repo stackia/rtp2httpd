@@ -80,6 +80,48 @@ void bind_to_upstream_interface(int sock, const struct ifreq *ifr)
   }
 }
 
+const struct ifreq *get_upstream_interface_for_fcc(void)
+{
+  /* Priority: upstream_interface_fcc > upstream_interface */
+  if (config.upstream_interface_fcc.ifr_name[0] != '\0')
+  {
+    return &config.upstream_interface_fcc;
+  }
+  if (config.upstream_interface.ifr_name[0] != '\0')
+  {
+    return &config.upstream_interface;
+  }
+  return NULL;
+}
+
+const struct ifreq *get_upstream_interface_for_rtsp(void)
+{
+  /* Priority: upstream_interface_rtsp > upstream_interface */
+  if (config.upstream_interface_rtsp.ifr_name[0] != '\0')
+  {
+    return &config.upstream_interface_rtsp;
+  }
+  if (config.upstream_interface.ifr_name[0] != '\0')
+  {
+    return &config.upstream_interface;
+  }
+  return NULL;
+}
+
+const struct ifreq *get_upstream_interface_for_multicast(void)
+{
+  /* Priority: upstream_interface_multicast > upstream_interface */
+  if (config.upstream_interface_multicast.ifr_name[0] != '\0')
+  {
+    return &config.upstream_interface_multicast;
+  }
+  if (config.upstream_interface.ifr_name[0] != '\0')
+  {
+    return &config.upstream_interface;
+  }
+  return NULL;
+}
+
 /*
  * Helper function to prepare multicast group request structures
  * Returns the socket level (SOL_IP or SOL_IPV6) and fills gr/gsr structures
@@ -107,8 +149,8 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr, str
     return -1;
   }
 
-  upstream_if = &config.upstream_interface_multicast;
-  if (upstream_if->ifr_name[0] != '\0')
+  upstream_if = get_upstream_interface_for_multicast();
+  if (upstream_if && upstream_if->ifr_name[0] != '\0')
   {
     gr->gr_interface = upstream_if->ifr_ifindex;
   }
@@ -190,7 +232,7 @@ int join_mcast_group(service_t *service)
   }
 
   /* Determine which interface to use */
-  upstream_if = &config.upstream_interface_multicast;
+  upstream_if = get_upstream_interface_for_multicast();
   bind_to_upstream_interface(sock, upstream_if);
 
   r = bind(sock, (struct sockaddr *)service->addr->ai_addr, service->addr->ai_addrlen);
@@ -298,7 +340,7 @@ int rejoin_mcast_group(int sock, service_t *service)
   }
 
   /* Bind to upstream interface if specified */
-  upstream_if = &config.upstream_interface_multicast;
+  upstream_if = get_upstream_interface_for_multicast();
   bind_to_upstream_interface(raw_sock, upstream_if);
 
   /* Set IP_HDRINCL to 0 - kernel will add IP header */
@@ -309,7 +351,7 @@ int rejoin_mcast_group(int sock, service_t *service)
   }
 
   /* Set IP_MULTICAST_IF to send from correct interface */
-  if (upstream_if->ifr_name[0] != '\0')
+  if (upstream_if && upstream_if->ifr_name[0] != '\0')
   {
     struct ip_mreqn mreq;
     memset(&mreq, 0, sizeof(mreq));

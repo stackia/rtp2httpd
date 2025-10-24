@@ -12,6 +12,30 @@
 void bind_to_upstream_interface(int sock, const struct ifreq *ifr);
 
 /**
+ * Select the appropriate upstream interface for FCC with priority logic
+ * Priority: upstream_interface_fcc > upstream_interface
+ *
+ * @return Pointer to the interface to use (may be NULL if none configured)
+ */
+const struct ifreq *get_upstream_interface_for_fcc(void);
+
+/**
+ * Select the appropriate upstream interface for RTSP with priority logic
+ * Priority: upstream_interface_rtsp > upstream_interface
+ *
+ * @return Pointer to the interface to use (may be NULL if none configured)
+ */
+const struct ifreq *get_upstream_interface_for_rtsp(void);
+
+/**
+ * Select the appropriate upstream interface for multicast with priority logic
+ * Priority: upstream_interface_multicast > upstream_interface
+ *
+ * @return Pointer to the interface to use (may be NULL if none configured)
+ */
+const struct ifreq *get_upstream_interface_for_multicast(void);
+
+/**
  * Join a multicast group and return socket
  *
  * @param service Service structure containing multicast address info

@@ -8,7 +8,7 @@
    - 出现 `FCC: Unicast stream started successfully` 表示 FCC 地址有效，并且成功收到单播流。
    - 出现 `FCC: Server response timeout (80 ms), falling back to multicast` 有两种可能
      1. FCC 地址无效。
-     2. 你的网络配置不正确，导致无法连接到 FCC 服务器。一般来说必须通过 DHCP/IPoE/PPPoE 获得 IPTV 内网 IP 后，并启用 rtp2httpd `--upstream-interface-unicast` 选项指定 IPTV 接口后，才能访问 FCC。请结合 ping / traceroute 等工具判断。
+     2. 你的网络配置不正确，导致无法连接到 FCC 服务器。一般来说必须通过 DHCP/IPoE/PPPoE 获得 IPTV 内网 IP 后，并启用 rtp2httpd `--upstream-interface-fcc` 或 `--upstream-interface` 选项指定 IPTV 接口后，才能访问 FCC。请结合 ping / traceroute 等工具判断。
 4. 在一些地区，不同的组播地址需要使用不同的 FCC IP，也可能存在一些组播频道未启用 FCC 的情况。
 5. 有些地区同一运营商内同时存在中兴、华为、烽火等多个 IPTV 平台，可能也会有不同的 FCC 地址，因此可能会出现同地区 A 网友可用，B 网友不可用，因为属于不同的 IPTV 平台。
    - 通常 8027 端口是华为平台，15970 端口是中兴/烽火平台

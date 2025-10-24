@@ -44,17 +44,35 @@ msgstr "Info"
 msgid "rtp2httpd_Debug"
 msgstr "Debug"
 
-msgid "rtp2httpd_Upstream Unicast Interface"
-msgstr "Upstream Unicast Interface"
+msgid "rtp2httpd_Advanced Interface Settings"
+msgstr "Advanced Interface Settings"
+
+msgid "rtp2httpd_Configure separate interfaces for multicast, FCC and RTSP"
+msgstr "Configure separate interfaces for multicast, FCC and RTSP"
+
+msgid "rtp2httpd_Upstream Interface"
+msgstr "Upstream Interface"
+
+msgid "rtp2httpd_Default interface for all upstream traffic (multicast, FCC and RTSP). Leave empty to use routing table."
+msgstr "Default interface for all upstream traffic (multicast, FCC and RTSP). Leave empty to use routing table."
 
 msgid "rtp2httpd_Upstream Multicast Interface"
 msgstr "Upstream Multicast Interface"
 
-msgid "rtp2httpd_Interface_multicast to use for requesting multicast upstream media stream (default none, which follows the routing table)"
-msgstr "Interface to use for requesting multicast (RTP/UDP) upstream media stream (default none, which follows the routing table)"
+msgid "rtp2httpd_Interface to use for multicast (RTP/UDP) upstream media stream (default: use routing table)"
+msgstr "Interface to use for multicast (RTP/UDP) upstream media stream (default: use routing table)"
 
-msgid "rtp2httpd_Interface_unicast to use for requesting unicast upstream media stream (default none, which follows the routing table)"
-msgstr "Interface to use for requesting unicast (FCC/RTSP) upstream media stream (default none, which follows the routing table)"
+msgid "rtp2httpd_Upstream FCC Interface"
+msgstr "Upstream FCC Interface"
+
+msgid "rtp2httpd_Interface to use for FCC unicast upstream media stream (default: use routing table)"
+msgstr "Interface to use for FCC unicast upstream media stream (default: use routing table)"
+
+msgid "rtp2httpd_Upstream RTSP Interface"
+msgstr "Upstream RTSP Interface"
+
+msgid "rtp2httpd_Interface to use for RTSP unicast upstream media stream (default: use routing table)"
+msgstr "Interface to use for RTSP unicast upstream media stream (default: use routing table)"
 
 msgid "rtp2httpd_Max clients"
 msgstr "Max clients allowed"

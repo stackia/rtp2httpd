@@ -34,8 +34,19 @@ start_instance() {
 
         append_arg "$cfg" verbose "--verbose"
         append_arg "$cfg" port "--listen"
-        append_arg "$cfg" upstream_interface_unicast "--upstream-interface-unicast"
-        append_arg "$cfg" upstream_interface_multicast "--upstream-interface-multicast"
+
+        # Interface configuration - check advanced settings mode
+        config_get_bool advanced_interface_settings "$cfg" 'advanced_interface_settings' '0'
+        if [ "$advanced_interface_settings" = "1" ]; then
+            # Advanced mode - use specific interfaces
+            append_arg "$cfg" upstream_interface_multicast "--upstream-interface-multicast"
+            append_arg "$cfg" upstream_interface_fcc "--upstream-interface-fcc"
+            append_arg "$cfg" upstream_interface_rtsp "--upstream-interface-rtsp"
+        else
+            # Simple mode - use default interface for all
+            append_arg "$cfg" upstream_interface "--upstream-interface"
+        fi
+
         append_arg "$cfg" maxclients "--maxclients"
         append_arg "$cfg" workers "--workers"
         append_arg "$cfg" buffer_pool_max_size "--buffer-pool-max-size"

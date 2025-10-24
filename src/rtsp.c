@@ -607,7 +607,7 @@ int rtsp_connect(rtsp_session_t *session)
         return -1;
     }
 
-    upstream_if = &config.upstream_interface_unicast;
+    upstream_if = get_upstream_interface_for_rtsp();
     bind_to_upstream_interface(session->socket, upstream_if);
 
     /* Connect to server (non-blocking) */
@@ -1853,7 +1853,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session)
 
     logger(LOG_DEBUG, "RTSP: Setting up UDP sockets");
 
-    upstream_if = &config.upstream_interface_unicast;
+    upstream_if = get_upstream_interface_for_rtsp();
 
     session->local_rtp_port = 0;
     session->local_rtcp_port = 0;
