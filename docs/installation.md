@@ -22,6 +22,15 @@ curl -fsSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/inst
 - 从 GitHub Release 获取最新版本
 - 下载并安装所有必需的软件包（主程序 + LuCI 界面 + 语言包）
 
+<details>
+<summary>如果需要使用 prerelease 测试版本，点击查看命令</summary>
+
+```bash
+curl -sSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh -s -- --prerelease
+```
+
+</details>
+
 ### 手动安装
 
 如果无法使用一键脚本，可以手动在 [Releases](https://github.com/stackia/rtp2httpd/releases) 页面下载对应架构的软件包：
