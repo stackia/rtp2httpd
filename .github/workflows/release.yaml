@@ -140,7 +140,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   ipk:
-    name: IPK ${{ matrix.arch }}-${{ matrix.sdk }}
+    name: Package ${{ matrix.arch }}-${{ matrix.sdk }}
     needs: frontend
     runs-on: ubuntu-latest
     permissions:
@@ -178,6 +178,7 @@ jobs:
           - mipsel_mips32
         sdk:
           - "22.03.6"
+          - "SNAPSHOT"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -203,7 +204,7 @@ jobs:
         run: mv openwrt-support ../ && mkdir ../openwrt-support/rtp2httpd/src && mv ./* ../openwrt-support/rtp2httpd/src && mv ../openwrt-support ./
 
       - name: Build
-        uses: openwrt/gh-action-sdk@v7
+        uses: openwrt/gh-action-sdk@v9
         env:
           ARCH: ${{ matrix.arch }}-${{ matrix.sdk }}
           FEED_DIR: ${{ github.workspace }}/openwrt-support
@@ -212,7 +213,7 @@ jobs:
           V: sc
 
       - name: Upload to release assets
-        run: gh release upload --repo ${{ github.repository }} ${{ github.event.release.tag_name }} bin/packages/${{ matrix.arch }}/action/*.ipk
+        run: gh release upload --repo ${{ github.repository }} ${{ github.event.release.tag_name }} bin/packages/${{ matrix.arch }}/action/*.{ipk,apk} 2>/dev/null || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
