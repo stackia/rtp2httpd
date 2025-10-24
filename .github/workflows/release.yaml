@@ -234,7 +234,26 @@ jobs:
           V: sc
 
       - name: Upload to release assets
-        run: gh release upload --repo ${{ github.repository }} ${{ github.event.release.tag_name }} bin/packages/${{ matrix.arch }}/action/*.{ipk,apk} 2>/dev/null || true
+        run: |
+          set -x
+          echo "Checking for built packages..."
+          ls -la bin/packages/${{ matrix.arch }}/action/ || echo "Directory not found"
+
+          # Upload IPK files if they exist
+          if ls bin/packages/${{ matrix.arch }}/action/*.ipk 1> /dev/null 2>&1; then
+            echo "Uploading IPK files..."
+            gh release upload --repo ${{ github.repository }} ${{ github.event.release.tag_name }} bin/packages/${{ matrix.arch }}/action/*.ipk
+          else
+            echo "No IPK files found"
+          fi
+
+          # Upload APK files if they exist
+          if ls bin/packages/${{ matrix.arch }}/action/*.apk 1> /dev/null 2>&1; then
+            echo "Uploading APK files..."
+            gh release upload --repo ${{ github.repository }} ${{ github.event.release.tag_name }} bin/packages/${{ matrix.arch }}/action/*.apk
+          else
+            echo "No APK files found"
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

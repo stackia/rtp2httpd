@@ -691,8 +691,11 @@ static int is_url_recognizable(const char *url)
     if (extract_wrapped_url(test_url, extracted, sizeof(extracted)) == 0)
     {
         /* Use extracted URL for checking */
-        strncpy(test_url, extracted, sizeof(test_url) - 1);
-        test_url[sizeof(test_url) - 1] = '\0';
+        size_t len = strlen(extracted);
+        if (len >= sizeof(test_url))
+            len = sizeof(test_url) - 1;
+        memcpy(test_url, extracted, len);
+        test_url[len] = '\0';
     }
 
     /* Check if protocol is supported */
