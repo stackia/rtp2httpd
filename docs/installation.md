@@ -68,22 +68,10 @@ chmod +x rtp2httpd-X.Y.Z-x86_64
 
 适用于支持 Docker 的设备。**必须使用 host 网络模式**以接收组播流。
 
-### 重要说明
-
-**⚠️ 启用零拷贝时必须添加 `--ulimit memlock=-1:-1` 参数**
-
-如果你通过 `--zerocopy-on-send` 参数启用了零拷贝发送，MSG_ZEROCOPY 技术需要锁定内存页。Docker 容器默认的 locked memory 限制（64KB）太小，会导致 ENOBUFS 错误，表现为：
-
-- 客户端无法播放
-- 服务端 buffer pool 疯狂增长
-- 统计数字中的 ENOBUFS 错误飙升
-
-默认情况下 rtp2httpd 不启用零拷贝，因此不需要 `--ulimit memlock=-1:-1` 参数。只有在你明确启用零拷贝发送时才需要添加此参数。
-
-### 正确的启动方式
+### 基本启动方式
 
 ```bash
-docker run --network=host --ulimit memlock=-1:-1 --rm \
+docker run --network=host --rm \
   ghcr.io/stackia/rtp2httpd:latest \
   --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
@@ -95,10 +83,6 @@ services:
   rtp2httpd:
     image: ghcr.io/stackia/rtp2httpd:latest
     network_mode: host
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
     command: --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
 
@@ -107,9 +91,41 @@ services:
 如果需要使用配置文件：
 
 ```bash
-docker run --network=host --ulimit memlock=-1:-1 --rm \
+docker run --network=host --rm \
   -v /path/to/rtp2httpd.conf:/etc/rtp2httpd.conf:ro \
   ghcr.io/stackia/rtp2httpd:latest
+```
+
+### 启用零拷贝时的特殊要求
+
+**⚠️ 仅当使用 `--zerocopy-on-send` 参数启用零拷贝时，需要添加 `--ulimit memlock=-1:-1` 参数**
+
+MSG_ZEROCOPY 技术需要锁定内存页。Docker 容器默认的 locked memory 限制（64KB）太小，会导致 ENOBUFS 错误，表现为：
+
+- 客户端无法播放
+- 服务端 buffer pool 疯狂增长
+- 统计数字中的 ENOBUFS 错误飙升
+
+启用零拷贝时的正确启动方式：
+
+```bash
+docker run --network=host --ulimit memlock=-1:-1 --rm \
+  ghcr.io/stackia/rtp2httpd:latest \
+  --noconfig --verbose 2 --listen 5140 --maxclients 20 --zerocopy-on-send
+```
+
+docker-compose 配置：
+
+```yaml
+services:
+  rtp2httpd:
+    image: ghcr.io/stackia/rtp2httpd:latest
+    network_mode: host
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    command: --noconfig --verbose 2 --listen 5140 --maxclients 20 --zerocopy-on-send
 ```
 
 ## 编译安装
@@ -137,7 +153,6 @@ cd rtp2httpd
 # 构建前端并嵌入静态资源
 npm ci --prefix web-ui
 npm run build --prefix web-ui
-node scripts/embed-status-page.js web-ui/dist/index.html src/status_page.h
 
 # 生成构建脚本
 autoreconf -fi
