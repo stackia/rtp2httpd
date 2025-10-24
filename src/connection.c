@@ -491,7 +491,7 @@ int connection_route_and_start(connection_t *c)
   /* Ensure URL begins with '/' */
   const char *url = c->http_req.url;
 
-  logger(LOG_INFO, "New client requested URL: %s", url);
+  logger(LOG_INFO, "New client requested URL: %s (method: %s)", url, c->http_req.method);
 
   if (url[0] != '/')
   {
@@ -718,6 +718,18 @@ int connection_route_and_start(connection_t *c)
   if (!service)
   {
     http_send_404(c);
+    return 0;
+  }
+
+  /* Handle HEAD requests for media streams - return success without connecting upstream */
+  if (strcasecmp(c->http_req.method, "HEAD") == 0)
+  {
+    logger(LOG_INFO, "HEAD request detected, returning success without upstream connection", url);
+    send_http_headers(c, STATUS_200, CONTENT_MP2T, NULL);
+    connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+    if (owned)
+      service_free(service);
+    c->state = CONN_CLOSING;
     return 0;
   }
 
