@@ -160,29 +160,65 @@ return view.extend({
     o.default = "1";
     o.depends("use_config_file", "0");
 
+    // Add "Advanced Interface Settings" option
+    o = s.option(
+      form.Flag,
+      "advanced_interface_settings",
+      _("rtp2httpd_Advanced Interface Settings"),
+      _("rtp2httpd_Configure separate interfaces for multicast, FCC and RTSP")
+    );
+    o.default = "0";
+    o.depends("use_config_file", "0");
+
+    // Simple interface setting (when advanced is disabled)
     o = s.option(
       widgets.DeviceSelect,
-      "upstream_interface_unicast",
-      _("rtp2httpd_Upstream Unicast Interface"),
+      "upstream_interface",
+      _("rtp2httpd_Upstream Interface"),
       _(
-        "rtp2httpd_Interface_unicast to use for requesting unicast upstream media stream (default none, which follows the routing table)"
+        "rtp2httpd_Default interface for all upstream traffic (multicast, FCC and RTSP). Leave empty to use routing table."
       )
     );
     o.noaliases = true;
     o.datatype = "interface";
-    o.depends("use_config_file", "0");
+    o.depends({ use_config_file: "0", advanced_interface_settings: "0" });
 
+    // Advanced interface settings (when advanced is enabled)
     o = s.option(
       widgets.DeviceSelect,
       "upstream_interface_multicast",
       _("rtp2httpd_Upstream Multicast Interface"),
       _(
-        "rtp2httpd_Interface_multicast to use for requesting multicast upstream media stream (default none, which follows the routing table)"
+        "rtp2httpd_Interface to use for multicast (RTP/UDP) upstream media stream (default: use routing table)"
       )
     );
     o.noaliases = true;
     o.datatype = "interface";
-    o.depends("use_config_file", "0");
+    o.depends({ use_config_file: "0", advanced_interface_settings: "1" });
+
+    o = s.option(
+      widgets.DeviceSelect,
+      "upstream_interface_fcc",
+      _("rtp2httpd_Upstream FCC Interface"),
+      _(
+        "rtp2httpd_Interface to use for FCC unicast upstream media stream (default: use routing table)"
+      )
+    );
+    o.noaliases = true;
+    o.datatype = "interface";
+    o.depends({ use_config_file: "0", advanced_interface_settings: "1" });
+
+    o = s.option(
+      widgets.DeviceSelect,
+      "upstream_interface_rtsp",
+      _("rtp2httpd_Upstream RTSP Interface"),
+      _(
+        "rtp2httpd_Interface to use for RTSP unicast upstream media stream (default: use routing table)"
+      )
+    );
+    o.noaliases = true;
+    o.datatype = "interface";
+    o.depends({ use_config_file: "0", advanced_interface_settings: "1" });
 
     o = s.option(form.Value, "maxclients", _("rtp2httpd_Max clients"));
     o.datatype = "range(1, 5000)";

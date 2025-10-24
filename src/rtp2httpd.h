@@ -79,8 +79,10 @@ typedef struct
   int fcc_listen_port_max; /* Maximum UDP port for FCC sockets (0=any) */
 
   /* Network interface settings */
-  struct ifreq upstream_interface_unicast;   /* Interface for upstream unicast media requests (FCC/RTSP) */
-  struct ifreq upstream_interface_multicast; /* Interface for upstream multicast media requests (RTP/UDP) */
+  struct ifreq upstream_interface;           /* Default interface for all upstream media requests (lowest priority) */
+  struct ifreq upstream_interface_fcc;       /* Interface for FCC unicast media requests (overrides upstream_interface) */
+  struct ifreq upstream_interface_rtsp;      /* Interface for RTSP unicast media requests (overrides upstream_interface) */
+  struct ifreq upstream_interface_multicast; /* Interface for upstream multicast media requests (overrides upstream_interface) */
 
   /* Multicast settings */
   int mcast_rejoin_interval; /* Periodic multicast rejoin interval in seconds (0=disabled, default 0) */
