@@ -35,7 +35,6 @@ int cmd_daemonise_set;
 int cmd_udpxy_set;
 int cmd_maxclients_set;
 int cmd_bind_set;
-int cmd_fcc_nat_traversal_set;
 int cmd_hostname_set;
 int cmd_r2h_token_set;
 int cmd_buffer_pool_max_size_set;
@@ -392,13 +391,6 @@ void parse_global_sec(char *line)
       return;
     }
     config.workers = n;
-    return;
-  }
-
-  if (strcasecmp("fcc-nat-traversal", param) == 0)
-  {
-    if (set_if_not_cmd_override(cmd_fcc_nat_traversal_set, "fcc-nat-traversal"))
-      config.fcc_nat_traversal = atoi(value);
     return;
   }
 
@@ -761,8 +753,6 @@ void restore_conf_defaults(void)
 
   cmd_bind_set = 0;
 
-  config.fcc_nat_traversal = FCC_NAT_T_DISABLED;
-  cmd_fcc_nat_traversal_set = 0;
   config.fcc_listen_port_min = 0;
   config.fcc_listen_port_max = 0;
   cmd_fcc_listen_port_range_set = 0;
@@ -848,7 +838,6 @@ void usage(FILE *f, char *progname)
           "\t-l --listen [addr:]port  Address/port to bind (default ANY:5140)\n"
           "\t-c --config <file>   Read this file for configuration, instead of the default one\n"
           "\t-C --noconfig        Do not read the default config\n"
-          "\t-n --fcc-nat-traversal <0/1/2> NAT traversal for FCC media stream, 0=disabled, 1=punchhole (deprecated), 2=NAT-PMP (default 0)\n"
           "\t-P --fcc-listen-port-range <start[-end]>  Restrict FCC UDP listen sockets to specific ports\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)\n"
           "\t-T --r2h-token <token>   Authentication token for HTTP requests (default none)\n"
@@ -918,7 +907,6 @@ void parse_cmd_line(int argc, char *argv[])
       {"listen", required_argument, 0, 'l'},
       {"config", required_argument, 0, 'c'},
       {"noconfig", no_argument, 0, 'C'},
-      {"fcc-nat-traversal", required_argument, 0, 'n'},
       {"fcc-listen-port-range", required_argument, 0, 'P'},
       {"hostname", required_argument, 0, 'H'},
       {"r2h-token", required_argument, 0, 'T'},
@@ -933,7 +921,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"external-m3u-update-interval", required_argument, 0, 'I'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:P:H:T:i:r:R:F:A:s:M:I:SC";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:P:H:T:i:r:R:F:A:s:M:I:SC";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1011,10 +999,6 @@ void parse_cmd_line(int argc, char *argv[])
     case 'l':
       parse_bind_cmd(optarg);
       cmd_bind_set = 1;
-      break;
-    case 'n':
-      config.fcc_nat_traversal = atoi(optarg);
-      cmd_fcc_nat_traversal_set = 1;
       break;
     case 'P':
     {
