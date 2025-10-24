@@ -113,6 +113,67 @@ int http_url_decode(char *str)
 }
 
 /**
+ * URL encode a string (RFC 3986)
+ * Allocates and returns a new string with encoded characters.
+ * Unreserved characters (alphanumeric, -, _, ., ~, /) are not encoded.
+ *
+ * @param str String to encode
+ * @return Newly allocated encoded string (caller must free), or NULL on error
+ */
+char *http_url_encode(const char *str)
+{
+    static const char hex_chars[] = "0123456789ABCDEF";
+    size_t len;
+    size_t encoded_len = 0;
+    char *encoded;
+    size_t i, j;
+
+    if (!str)
+        return NULL;
+
+    len = strlen(str);
+
+    /* Calculate required buffer size */
+    for (i = 0; i < len; i++)
+    {
+        unsigned char c = (unsigned char)str[i];
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~' || c == '/')
+        {
+            encoded_len++;
+        }
+        else
+        {
+            encoded_len += 3; /* %XX */
+        }
+    }
+
+    encoded = malloc(encoded_len + 1);
+    if (!encoded)
+    {
+        return NULL;
+    }
+
+    /* Encode the string */
+    for (i = 0, j = 0; i < len; i++)
+    {
+        unsigned char c = (unsigned char)str[i];
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~' || c == '/')
+        {
+            encoded[j++] = c;
+        }
+        else
+        {
+            encoded[j++] = '%';
+            encoded[j++] = hex_chars[c >> 4];
+            encoded[j++] = hex_chars[c & 0x0F];
+        }
+    }
+    encoded[j] = '\0';
+
+    return encoded;
+}
+
+/**
  * Initialize HTTP request structure
  */
 void http_request_init(http_request_t *req)

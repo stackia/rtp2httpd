@@ -19,6 +19,8 @@
 #include "rtp2httpd.h"
 #include "configuration.h"
 #include "service.h"
+#include "m3u.h"
+#include "http_fetch.h"
 
 #define MAX_LINE 1024
 
@@ -53,6 +55,11 @@ enum section_e
   SEC_SERVICES,
   SEC_GLOBAL
 };
+
+/* M3U parsing state variables */
+static char *inline_m3u_buffer = NULL;
+static size_t inline_m3u_buffer_size = 0;
+static size_t inline_m3u_buffer_used = 0;
 
 /* Helper functions for parsing */
 
@@ -231,218 +238,96 @@ void parse_bind_sec(char *line)
   bind_addresses = ba;
 }
 
+/* process_m3u_content() removed - directly call m3u_parse_and_create_services() instead */
+
 void parse_services_sec(char *line)
 {
-  int r, rr;
-  struct addrinfo hints;
-  char *servname, *maddr, *msrc, *msaddr, *msport;
-  const char *mport;
-  service_t *service;
-  int pos = 0;
-  static const char default_port[] = "1234";
+  int i;
 
-  memset(&hints, 0, sizeof(hints));
-  hints.ai_socktype = SOCK_DGRAM;
-
-  /* Extract service name */
-  servname = extract_token(line, &pos);
-
-  /* Skip whitespace */
-  while (isspace(line[pos]))
-    pos++;
-
-  /* Parse format: <name> <protocol>://<url> */
-  char *url_start = line + pos;
-  if (strncmp(url_start, "rtp://", 6) == 0)
+  /* Check if this line is the start of M3U content (#EXTM3U header) */
+  if (m3u_is_header(line))
   {
-    /* RTP format: rtp://[source@]mcast_addr:port[?query] */
-    /* Extract the full URL (rest of line, trimmed) */
-    char *url_end = url_start + strlen(url_start);
-    while (url_end > url_start && isspace(*(url_end - 1)))
-      url_end--;
-
-    size_t url_len = url_end - url_start;
-    char *full_url = malloc(url_len + 1);
-    if (!full_url)
+    /* Allocate initial buffer for inline M3U */
+    if (!inline_m3u_buffer)
     {
-      logger(LOG_ERROR, "Failed to allocate memory for service URL");
-      free(servname);
-      return;
-    }
-    memcpy(full_url, url_start, url_len);
-    full_url[url_len] = '\0';
-
-    /* RTP multicast service: rtp://[source@]mcast_addr:port[?fcc=addr:port] */
-    char *rtp_part = full_url + 6; /* Skip "rtp://" */
-    char *query_start = strchr(rtp_part, '?');
-    char main_part[512];
-
-    /* Separate main part and query */
-    if (query_start)
-    {
-      size_t main_len = query_start - rtp_part;
-      if (main_len >= sizeof(main_part))
-        main_len = sizeof(main_part) - 1;
-      memcpy(main_part, rtp_part, main_len);
-      main_part[main_len] = '\0';
-    }
-    else
-    {
-      strncpy(main_part, rtp_part, sizeof(main_part) - 1);
-      main_part[sizeof(main_part) - 1] = '\0';
-    }
-
-    /* Parse source@multicast format */
-    char *at_pos = strchr(main_part, '@');
-    int has_source = 0;
-    if (at_pos)
-    {
-      *at_pos = '\0';
-      maddr = at_pos + 1;
-      msrc = main_part;
-      has_source = 1;
-
-      /* Remove IPv6 brackets from source if present */
-      if (msrc[0] == '[')
+      inline_m3u_buffer_size = 8192;
+      inline_m3u_buffer = malloc(inline_m3u_buffer_size);
+      if (!inline_m3u_buffer)
       {
-        size_t len = strlen(msrc);
-        if (len > 2 && msrc[len - 1] == ']')
+        logger(LOG_ERROR, "Failed to allocate M3U buffer");
+        return;
+      }
+      inline_m3u_buffer_used = 0;
+    }
+
+    /* Add this line to buffer */
+    size_t line_len = strlen(line);
+    while (inline_m3u_buffer_used + line_len + 2 > inline_m3u_buffer_size)
+    {
+      /* Grow buffer */
+      size_t new_size = inline_m3u_buffer_size * 2;
+      char *new_buf = realloc(inline_m3u_buffer, new_size);
+      if (!new_buf)
+      {
+        logger(LOG_ERROR, "Failed to grow M3U buffer");
+        return;
+      }
+      inline_m3u_buffer = new_buf;
+      inline_m3u_buffer_size = new_size;
+    }
+    memcpy(inline_m3u_buffer + inline_m3u_buffer_used, line, line_len);
+    inline_m3u_buffer_used += line_len;
+    inline_m3u_buffer[inline_m3u_buffer_used++] = '\n';
+    inline_m3u_buffer[inline_m3u_buffer_used] = '\0';
+    return;
+  }
+
+  /* If we're currently buffering M3U content, continue buffering */
+  if (inline_m3u_buffer && inline_m3u_buffer_used > 0)
+  {
+    /* Check if this is a comment line (M3U metadata) or URL line */
+    if (line[0] == '#' || strncmp(line, "rtp://", 6) == 0 ||
+        strncmp(line, "rtsp://", 7) == 0 || strncmp(line, "udp://", 6) == 0 ||
+        strncmp(line, "http://", 7) == 0 || strncmp(line, "https://", 8) == 0)
+    {
+      /* Continue buffering */
+      size_t line_len = strlen(line);
+      while (inline_m3u_buffer_used + line_len + 2 > inline_m3u_buffer_size)
+      {
+        /* Grow buffer */
+        size_t new_size = inline_m3u_buffer_size * 2;
+        char *new_buf = realloc(inline_m3u_buffer, new_size);
+        if (!new_buf)
         {
-          msrc[len - 1] = '\0';
-          msrc++;
+          logger(LOG_ERROR, "Failed to grow M3U buffer");
+          return;
         }
+        inline_m3u_buffer = new_buf;
+        inline_m3u_buffer_size = new_size;
       }
-
-      /* Parse source address and port */
-      /* Count colons to detect IPv6 (IPv6 has multiple colons, IPv4:port has only one) */
-      int colon_count = 0;
-      for (const char *p = msrc; *p; p++)
-      {
-        if (*p == ':') colon_count++;
-      }
-
-      if (colon_count == 1)
-      {
-        /* IPv4 with port (exactly one colon) */
-        char *src_colon = strchr(msrc, ':');
-        *src_colon = '\0';
-        msaddr = msrc;
-        msport = src_colon + 1;
-      }
-      else
-      {
-        /* IPv6 (multiple colons) or IPv4 without port (zero colons) */
-        msaddr = msrc;
-        msport = NULL;
-      }
+      memcpy(inline_m3u_buffer + inline_m3u_buffer_used, line, line_len);
+      inline_m3u_buffer_used += line_len;
+      inline_m3u_buffer[inline_m3u_buffer_used++] = '\n';
+      inline_m3u_buffer[inline_m3u_buffer_used] = '\0';
+      return;
     }
     else
     {
-      /* No source address */
-      maddr = main_part;
-      msrc = NULL;
-      msaddr = NULL;
-      msport = NULL;
+      /* This line doesn't look like M3U content, stop buffering and process what we have */
+      /* This will fall through to parameter parsing below */
     }
-
-    /* Parse multicast address and port */
-    char *mcast_colon = strrchr(maddr, ':');
-    if (mcast_colon)
-    {
-      *mcast_colon = '\0';
-      mport = mcast_colon + 1;
-    }
-    else
-    {
-      mport = default_port; /* Default port */
-    }
-
-    /* Remove IPv6 brackets if present */
-    if (maddr[0] == '[')
-    {
-      size_t len = strlen(maddr);
-      if (len > 2 && maddr[len - 1] == ']')
-      {
-        maddr[len - 1] = '\0';
-        maddr++;
-      }
-    }
-
-    logger(LOG_DEBUG, "RTP service: %s, maddr: %s, mport: %s, msrc: %s",
-           servname, maddr, mport, has_source ? msrc : "");
-
-    service = malloc(sizeof(service_t));
-    memset(service, 0, sizeof(*service));
-
-    r = getaddrinfo(maddr, mport, &hints, &(service->addr));
-    rr = 0;
-    if (has_source)
-    {
-      rr = getaddrinfo(msaddr, msport, &hints, &(service->msrc_addr));
-    }
-
-    if (r || rr)
-    {
-      if (r)
-        logger(LOG_ERROR, "Cannot init service %s. GAI: %s", servname, gai_strerror(r));
-      if (rr)
-        logger(LOG_ERROR, "Cannot init service %s source. GAI: %s", servname, gai_strerror(rr));
-
-      free(servname);
-      free(service);
-      free(full_url);
-      return;
-    }
-
-    service->service_type = SERVICE_MRTP;
-    service->url = servname;
-    service->msrc = has_source ? strdup(msrc) : strdup("");
-    service->next = services;
-    services = service;
-
-    logger(LOG_INFO, "Service created: %s (RTP %s:%s)", servname, maddr, mport);
-
-    free(full_url);
-    return;
   }
-  else if (strncmp(url_start, "rtsp://", 7) == 0)
+
+  /* If we reach here with non-empty line, log it for debugging */
+  /* Note: external-m3u and external-m3u-update-interval are now in [global] section */
+  /* Trim whitespace to check if line is empty */
+  i = 0;
+  while (isspace(line[i]))
+    i++;
+
+  if (line[i] != '\0' && line[i] != '\n' && line[i] != '\r')
   {
-    /* RTSP format: rtsp://server:port/path[?query] */
-    /* Extract the full URL (rest of line, trimmed) */
-    char *url_end = url_start + strlen(url_start);
-    while (url_end > url_start && isspace(*(url_end - 1)))
-      url_end--;
-
-    size_t url_len = url_end - url_start;
-    char *rtsp_url = malloc(url_len + 1);
-    if (!rtsp_url)
-    {
-      logger(LOG_ERROR, "Failed to allocate memory for RTSP URL");
-      free(servname);
-      return;
-    }
-    memcpy(rtsp_url, url_start, url_len);
-    rtsp_url[url_len] = '\0';
-
-    service = malloc(sizeof(service_t));
-    memset(service, 0, sizeof(*service));
-    service->service_type = SERVICE_RTSP;
-    service->url = servname;
-    service->rtsp_url = rtsp_url;
-    service->msrc = strdup("");
-    service->next = services;
-    services = service;
-
-    logger(LOG_INFO, "Service created: %s (RTSP)", servname);
-    logger(LOG_DEBUG, "RTSP service: %s, URL: %s", servname, rtsp_url);
-    return;
-  }
-  else
-  {
-    /* Invalid format */
-    logger(LOG_ERROR, "Invalid service format for '%s': expected rtp:// or rtsp://", servname);
-    free(servname);
-    return;
+    logger(LOG_DEBUG, "Ignoring unparsable line in [services]: '%s'", line);
   }
 }
 
@@ -579,7 +464,10 @@ void parse_global_sec(char *line)
   if (strcasecmp("hostname", param) == 0)
   {
     if (set_if_not_cmd_override(cmd_hostname_set, "hostname"))
+    {
+      safe_free_string(&config.hostname);
       config.hostname = strdup(value);
+    }
     return;
   }
 
@@ -593,21 +481,30 @@ void parse_global_sec(char *line)
   if (strcasecmp("r2h-token", param) == 0)
   {
     if (set_if_not_cmd_override(cmd_r2h_token_set, "r2h-token"))
+    {
+      safe_free_string(&config.r2h_token);
       config.r2h_token = strdup(value);
+    }
     return;
   }
 
   if (strcasecmp("ffmpeg-path", param) == 0)
   {
     if (set_if_not_cmd_override(cmd_ffmpeg_path_set, "ffmpeg-path"))
+    {
+      safe_free_string(&config.ffmpeg_path);
       config.ffmpeg_path = strdup(value);
+    }
     return;
   }
 
   if (strcasecmp("ffmpeg-args", param) == 0)
   {
     if (set_if_not_cmd_override(cmd_ffmpeg_args_set, "ffmpeg-args"))
+    {
+      safe_free_string(&config.ffmpeg_args);
       config.ffmpeg_args = strdup(value);
+    }
     return;
   }
 
@@ -653,6 +550,23 @@ void parse_global_sec(char *line)
     return;
   }
 
+  /* External M3U configuration */
+  if (strcasecmp("external-m3u", param) == 0)
+  {
+    if (config.external_m3u_url)
+      free(config.external_m3u_url);
+    config.external_m3u_url = strdup(value);
+    logger(LOG_INFO, "External M3U URL configured: %s", config.external_m3u_url);
+    return;
+  }
+
+  if (strcasecmp("external-m3u-update-interval", param) == 0)
+  {
+    config.external_m3u_update_interval = atoi(value);
+    logger(LOG_INFO, "External M3U update interval: %d seconds", config.external_m3u_update_interval);
+    return;
+  }
+
   logger(LOG_ERROR, "Unknown config parameter: %s", param);
 }
 
@@ -662,11 +576,15 @@ int parse_config_file(const char *path)
   char line[MAX_LINE];
   int i, bind_msg_done = 0;
   enum section_e section = SEC_NONE;
+  enum section_e prev_section = SEC_NONE;
 
   logger(LOG_DEBUG, "Opening %s", path);
   cfile = fopen(path, "r");
   if (cfile == NULL)
     return -1;
+
+  /* Reset transformed M3U playlist buffer at start of config parsing */
+  m3u_reset_transformed_playlist();
 
   while (fgets(line, MAX_LINE, cfile))
   {
@@ -675,27 +593,47 @@ int parse_config_file(const char *path)
     while (isspace(line[i]))
       i++;
 
-    if (line[i] == '\0' || line[i] == '#' ||
-        line[i] == ';')
+    /* Allow # comments in [services] section for M3U content, skip in other sections */
+    if ((line[i] == '#' || line[i] == ';') && section != SEC_SERVICES)
       continue;
+
+    if (line[i] == '\0')
+      continue;
+
     if (line[i] == '[')
     { /* section change */
+      /* Process any buffered M3U content before changing sections */
+      if (prev_section == SEC_SERVICES)
+      {
+        if (inline_m3u_buffer && inline_m3u_buffer_used > 0)
+        {
+          m3u_parse_and_create_services(inline_m3u_buffer, "inline");
+          free(inline_m3u_buffer);
+          inline_m3u_buffer = NULL;
+          inline_m3u_buffer_size = 0;
+          inline_m3u_buffer_used = 0;
+        }
+      }
+
       char *end = index(line + i, ']');
       if (end)
       {
         char *section_name = strndupa(line + i + 1, end - line - i - 1);
         if (strcasecmp("bind", section_name) == 0)
         {
+          prev_section = section;
           section = SEC_BIND;
           continue;
         }
         if (strcasecmp("services", section_name) == 0)
         {
+          prev_section = section;
           section = SEC_SERVICES;
           continue;
         }
         if (strcasecmp("global", section_name) == 0)
         {
+          prev_section = section;
           section = SEC_GLOBAL;
           continue;
         }
@@ -734,6 +672,20 @@ int parse_config_file(const char *path)
       logger(LOG_ERROR, "Unrecognised config line: %s", line);
     }
   }
+
+  /* Process any remaining buffered inline M3U content at end of file */
+  if (section == SEC_SERVICES)
+  {
+    if (inline_m3u_buffer && inline_m3u_buffer_used > 0)
+    {
+      m3u_parse_and_create_services(inline_m3u_buffer, "inline");
+      free(inline_m3u_buffer);
+      inline_m3u_buffer = NULL;
+      inline_m3u_buffer_size = 0;
+      inline_m3u_buffer_used = 0;
+    }
+  }
+
   fclose(cfile);
   return 0;
 }
@@ -790,7 +742,6 @@ static void free_config_service(service_t *service)
 void restore_conf_defaults(void)
 {
   service_t *service_tmp;
-  struct bindaddr_s *bind_tmp;
 
   /* Initialize configuration structure with defaults */
   memset(&config, 0, sizeof(config_t));
@@ -843,6 +794,10 @@ void restore_conf_defaults(void)
   set_status_page_path_value("/status");
   cmd_status_page_path_set = 0;
 
+  safe_free_string(&config.external_m3u_url);
+  config.external_m3u_update_interval = 86400; /* 24 hours default */
+  config.last_external_m3u_update_time = 0;
+
   if (config.upstream_interface_unicast.ifr_name[0] != '\0')
     memset(&config.upstream_interface_unicast, 0, sizeof(struct ifreq));
   cmd_upstream_interface_unicast_set = 0;
@@ -860,15 +815,8 @@ void restore_conf_defaults(void)
   }
 
   /* Free all bind addresses */
-  while (bind_addresses != NULL)
-  {
-    bind_tmp = bind_addresses;
-    bind_addresses = bind_addresses->next;
-    if (bind_tmp->node != NULL)
-      free(bind_tmp->node);
-    if (bind_tmp->service != NULL)
-      free(bind_tmp->service);
-  }
+  free_bindaddr(bind_addresses);
+  bind_addresses = NULL;
 }
 
 void usage(FILE *f, char *progname)
@@ -911,6 +859,8 @@ void usage(FILE *f, char *progname)
           "\t-A --ffmpeg-args <args>  Additional ffmpeg arguments (default: -hwaccel none)\n"
           "\t-S --video-snapshot      Enable video snapshot feature (default: off)\n"
           "\t-s --status-page-path <path>  HTTP path for status UI (default: /status)\n"
+          "\t-M --external-m3u <url>  External M3U playlist URL (file://, http://, https://)\n"
+          "\t-I --external-m3u-update-interval <seconds>  Auto-update interval (default: 86400 = 24h, 0=disabled)\n"
           "\t                     default " CONFIGFILE "\n",
           prog);
 }
@@ -979,9 +929,11 @@ void parse_cmd_line(int argc, char *argv[])
       {"ffmpeg-args", required_argument, 0, 'A'},
       {"video-snapshot", no_argument, 0, 'S'},
       {"status-page-path", required_argument, 0, 's'},
+      {"external-m3u", required_argument, 0, 'M'},
+      {"external-m3u-update-interval", required_argument, 0, 'I'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:P:H:T:i:r:R:F:A:s:SC";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:n:P:H:T:i:r:R:F:A:s:M:I:SC";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1082,10 +1034,12 @@ void parse_cmd_line(int argc, char *argv[])
       break;
     }
     case 'H':
+      safe_free_string(&config.hostname);
       config.hostname = strdup(optarg);
       cmd_hostname_set = 1;
       break;
     case 'T':
+      safe_free_string(&config.r2h_token);
       config.r2h_token = strdup(optarg);
       cmd_r2h_token_set = 1;
       break;
@@ -1119,16 +1073,35 @@ void parse_cmd_line(int argc, char *argv[])
       }
       break;
     case 'F':
+      safe_free_string(&config.ffmpeg_path);
       config.ffmpeg_path = strdup(optarg);
       cmd_ffmpeg_path_set = 1;
       break;
     case 'A':
+      safe_free_string(&config.ffmpeg_args);
       config.ffmpeg_args = strdup(optarg);
       cmd_ffmpeg_args_set = 1;
       break;
     case 'S':
       config.video_snapshot = 1;
       cmd_video_snapshot_set = 1;
+      break;
+    case 'M':
+      if (config.external_m3u_url)
+        free(config.external_m3u_url);
+      config.external_m3u_url = strdup(optarg);
+      logger(LOG_INFO, "External M3U URL set to: %s", config.external_m3u_url);
+      break;
+    case 'I':
+      if (atoi(optarg) < 0)
+      {
+        logger(LOG_ERROR, "Invalid external-m3u-update-interval! Ignoring.");
+      }
+      else
+      {
+        config.external_m3u_update_interval = atoi(optarg);
+        logger(LOG_INFO, "External M3U update interval set to %d seconds", config.external_m3u_update_interval);
+      }
       break;
     default:
       logger(LOG_FATAL, "Unknown option! %d ", opt);
@@ -1144,6 +1117,142 @@ void parse_cmd_line(int argc, char *argv[])
   {
     logger(LOG_WARN, "No config file found");
   }
+
+  /* Load external M3U if configured (from config file or command line)
+   * This happens after all config/cmdline parsing is complete, so command line
+   * arguments can override config file settings */
+  if (config.external_m3u_url)
+  {
+    logger(LOG_DEBUG, "Loading external M3U: %s", config.external_m3u_url);
+    char *m3u_content = m3u_fetch_url(config.external_m3u_url);
+    if (m3u_content)
+    {
+      m3u_parse_and_create_services(m3u_content, config.external_m3u_url);
+      free(m3u_content);
+      /* Record initial load time */
+      config.last_external_m3u_update_time = get_time_ms();
+      logger(LOG_INFO, "External M3U loaded successfully from: %s", config.external_m3u_url);
+    }
+    else
+    {
+      logger(LOG_ERROR, "Failed to fetch external M3U from: %s", config.external_m3u_url);
+    }
+  }
+
   logger(LOG_DEBUG, "Verbosity: %d, Daemonise: %d, Maxclients: %d, Workers: %d",
          config.verbosity, config.daemonise, config.maxclients, config.workers);
+}
+
+/* Reload external M3U playlist
+ * This function fetches the external M3U and creates/updates services
+ * Returns: 0 on success, -1 on error
+ */
+int reload_external_m3u(void)
+{
+  char *m3u_content;
+
+  /* Check if external M3U is configured */
+  if (!config.external_m3u_url)
+  {
+    logger(LOG_DEBUG, "No external M3U URL configured, skipping reload");
+    return -1;
+  }
+
+  /* Check if update interval is configured */
+  if (config.external_m3u_update_interval <= 0)
+  {
+    logger(LOG_DEBUG, "External M3U update interval not configured, skipping reload");
+    return -1;
+  }
+
+  logger(LOG_INFO, "Reloading external M3U from: %s", config.external_m3u_url);
+
+  /* Fetch M3U content */
+  m3u_content = m3u_fetch_url(config.external_m3u_url);
+  if (!m3u_content)
+  {
+    logger(LOG_ERROR, "Failed to fetch external M3U during reload from: %s", config.external_m3u_url);
+    return -1;
+  }
+
+  /* Clear existing external services before loading new ones */
+  service_free_external();
+
+  /* Reset external transformed playlist buffer before reloading */
+  m3u_reset_external_playlist();
+
+  /* Parse M3U content and create services */
+  m3u_parse_and_create_services(m3u_content, config.external_m3u_url);
+  free(m3u_content);
+
+  logger(LOG_INFO, "External M3U reloaded successfully");
+  return 0;
+}
+
+/* Callback for async M3U fetch completion */
+static void reload_m3u_async_callback(http_fetch_ctx_t *ctx, char *content, void *user_data)
+{
+  (void)ctx;       /* Unused */
+  (void)user_data; /* Unused */
+
+  if (!content)
+  {
+    logger(LOG_ERROR, "Async external M3U fetch failed: %s", config.external_m3u_url);
+    return;
+  }
+
+  logger(LOG_DEBUG, "Async external M3U fetch completed, processing content");
+
+  /* Clear existing external services before loading new ones */
+  service_free_external();
+
+  /* Reset external transformed playlist buffer before reloading */
+  m3u_reset_external_playlist();
+
+  /* Parse M3U content and create services */
+  m3u_parse_and_create_services(content, config.external_m3u_url);
+  free(content);
+
+  logger(LOG_INFO, "External M3U reloaded successfully (async)");
+}
+
+/* Async version of reload_external_m3u for worker processes */
+int reload_external_m3u_async(int epfd)
+{
+  http_fetch_ctx_t *fetch_ctx;
+
+  /* Check if external M3U is configured */
+  if (!config.external_m3u_url)
+  {
+    logger(LOG_DEBUG, "No external M3U URL configured, skipping async reload");
+    return -1;
+  }
+
+  /* Check if update interval is configured */
+  if (config.external_m3u_update_interval <= 0)
+  {
+    logger(LOG_DEBUG, "External M3U update interval not configured, skipping async reload");
+    return -1;
+  }
+
+  /* Check if URL is HTTP(S) - only these can be fetched asynchronously */
+  if (strncmp(config.external_m3u_url, "http://", 7) != 0 &&
+      strncmp(config.external_m3u_url, "https://", 8) != 0)
+  {
+    logger(LOG_DEBUG, "External M3U URL is not HTTP(S), using synchronous fetch");
+    return reload_external_m3u();
+  }
+
+  logger(LOG_INFO, "Starting async reload of external M3U from: %s", config.external_m3u_url);
+
+  /* Start async fetch */
+  fetch_ctx = http_fetch_start_async(config.external_m3u_url, reload_m3u_async_callback, NULL, epfd);
+  if (!fetch_ctx)
+  {
+    logger(LOG_ERROR, "Failed to start async fetch for external M3U");
+    return -1;
+  }
+
+  logger(LOG_DEBUG, "Async external M3U fetch started successfully");
+  return 0;
 }

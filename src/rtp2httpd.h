@@ -103,6 +103,11 @@ typedef struct
   /* Status page settings */
   char *status_page_path;  /* Absolute HTTP path for status page (leading slash) */
   char *status_page_route; /* Status page path without leading slash (may be empty) */
+
+  /* External M3U settings */
+  char *external_m3u_url;             /* External M3U URL (NULL=none) */
+  int external_m3u_update_interval;   /* Update interval in seconds (0=disabled) */
+  int64_t last_external_m3u_update_time; /* Last update time in milliseconds */
 } config_t;
 
 /* GLOBAL CONFIGURATION */

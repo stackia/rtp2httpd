@@ -98,6 +98,16 @@ void send_http_headers(connection_t *c, http_status_t status, content_type_t typ
 int http_url_decode(char *str);
 
 /**
+ * URL encode a string (RFC 3986)
+ * Allocates and returns a new string with encoded characters.
+ * Unreserved characters (alphanumeric, -, _, ., ~, /) are not encoded.
+ *
+ * @param str String to encode
+ * @return Newly allocated encoded string (caller must free), or NULL on error
+ */
+char *http_url_encode(const char *str);
+
+/**
  * Parse query parameter value from query/form string (case-insensitive parameter names)
  * Works for both URL query strings and application/x-www-form-urlencoded body data
  * @param query_string Query or form data string (without leading ?)
