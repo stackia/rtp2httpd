@@ -9,7 +9,7 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 ### 多协议支持
 
 - **组播 RTP/UDP 转单播 HTTP**：将组播 RTP/UDP 流转换为标准 HTTP 流
-- **UDPxy 兼容性**：完全兼容 UDPxy URL 格式
+- **UDPxy 兼容性**：完全兼容 UDPxy URL 格式，可以作为 `udpxy` 和 `msd_lite` 的无缝替代
 - **RTSP 转 HTTP 视频流**：完整支持 RTSP/RTP 协议栈，包括 TCP 和 UDP 传输模式
   - 可以实现 IPTV RTSP 时移源的回看
   - 可以把家庭摄像机的 RTSP 流转换为 HTTP 流，方便在 IPTV 播放器中观看
@@ -24,7 +24,6 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 
 - **支持运营商 FCC 协议**：搭配运营商 FCC 服务器，实现毫秒级换台响应，媲美原生 IPTV 机顶盒
 - **快速解码**：FCC 保证了换台时迅速提供 IDR 帧，可供播放器立即解码
-- **NAT 穿透支持**：支持 NAT-PMP 和打洞技术，适应复杂网络环境
 
 ### 实时状态监控
 

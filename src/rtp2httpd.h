@@ -41,13 +41,6 @@ enum loglevel
   LOG_DEBUG      /* Detailed diagnostic information */
 };
 
-enum fcc_nat_traversal
-{
-  FCC_NAT_T_DISABLED = 0,
-  FCC_NAT_T_PUNCHHOLE,
-  FCC_NAT_T_NAT_PMP
-};
-
 /*
  * Linked list of adresses to bind
  */
@@ -82,9 +75,8 @@ typedef struct
   int buffer_pool_max_size; /* Maximum number of buffers in zero-copy buffer pool, default 16384 */
 
   /* FCC (Fast Channel Change) settings */
-  enum fcc_nat_traversal fcc_nat_traversal; /* NAT traversal method for FCC */
-  int fcc_listen_port_min;                  /* Minimum UDP port for FCC sockets (0=any) */
-  int fcc_listen_port_max;                  /* Maximum UDP port for FCC sockets (0=any) */
+  int fcc_listen_port_min; /* Minimum UDP port for FCC sockets (0=any) */
+  int fcc_listen_port_max; /* Maximum UDP port for FCC sockets (0=any) */
 
   /* Network interface settings */
   struct ifreq upstream_interface_unicast;   /* Interface for upstream unicast media requests (FCC/RTSP) */

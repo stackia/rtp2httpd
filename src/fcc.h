@@ -39,7 +39,6 @@ typedef struct
     int fcc_sock;
     struct sockaddr_in *fcc_server;
     struct sockaddr_in fcc_client;
-    uint16_t mapped_pub_port;
     uint16_t media_port;
     uint16_t current_seqn;
     uint16_t fcc_term_seqn;
