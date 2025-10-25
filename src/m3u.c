@@ -21,6 +21,8 @@
 #include "service.h"
 #include "configuration.h"
 #include "http.h"
+#include "http_fetch.h"
+#include "epg.h"
 
 #define MAX_M3U_LINE 4096
 #define MAX_SERVICE_NAME 256
@@ -44,95 +46,6 @@ static size_t transformed_m3u_inline_end = 0; /* Marks end of inline content */
 
 static int transformed_m3u_has_header = 0;
 
-/* Fetch content from HTTP(S) URL using curl command line
- * Returns: malloc'd string containing content (caller must free), or NULL on error
- */
-static char *fetch_http_url(const char *url)
-{
-    char curl_cmd[MAX_URL_LENGTH + 256];
-    char temp_file[] = "/tmp/rtp2httpd_m3u_XXXXXX";
-    int temp_fd;
-    FILE *fp;
-    char *content = NULL;
-    long file_size;
-    size_t read_size;
-    int ret;
-
-    /* Create temporary file */
-    temp_fd = mkstemp(temp_file);
-    if (temp_fd == -1)
-    {
-        logger(LOG_ERROR, "Failed to create temporary file for M3U download");
-        return NULL;
-    }
-    close(temp_fd);
-
-    /* Build curl command with timeout and follow redirects */
-    ret = snprintf(curl_cmd, sizeof(curl_cmd),
-                   "curl -L -f -s -S --max-time 30 --connect-timeout 10 -o '%s' '%s' 2>&1",
-                   temp_file, url);
-
-    if (ret >= (int)sizeof(curl_cmd))
-    {
-        logger(LOG_ERROR, "Curl command too long for URL: %s", url);
-        unlink(temp_file);
-        return NULL;
-    }
-
-    logger(LOG_INFO, "Fetching M3U from URL: %s", url);
-
-    /* Execute curl command */
-    ret = system(curl_cmd);
-    if (ret != 0)
-    {
-        logger(LOG_ERROR, "Failed to fetch M3U from URL (curl exit code %d): %s", ret, url);
-        unlink(temp_file);
-        return NULL;
-    }
-
-    /* Open downloaded file */
-    fp = fopen(temp_file, "r");
-    if (!fp)
-    {
-        logger(LOG_ERROR, "Failed to open downloaded M3U file");
-        unlink(temp_file);
-        return NULL;
-    }
-
-    /* Get file size */
-    fseek(fp, 0, SEEK_END);
-    file_size = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-
-    if (file_size < 0 || file_size > MAX_M3U_CONTENT)
-    {
-        logger(LOG_ERROR, "Invalid or too large downloaded M3U file (size: %ld)", file_size);
-        fclose(fp);
-        unlink(temp_file);
-        return NULL;
-    }
-
-    /* Allocate memory for content */
-    content = malloc(file_size + 1);
-    if (!content)
-    {
-        logger(LOG_ERROR, "Failed to allocate memory for M3U content");
-        fclose(fp);
-        unlink(temp_file);
-        return NULL;
-    }
-
-    /* Read file content */
-    read_size = fread(content, 1, file_size, fp);
-    content[read_size] = '\0';
-
-    fclose(fp);
-    unlink(temp_file);
-
-    logger(LOG_INFO, "Successfully fetched M3U from URL (%zu bytes)", read_size);
-    return content;
-}
-
 /* Fetch M3U content from URL (supports file://, http://, https://)
  * Returns: malloc'd string containing content (caller must free), or NULL on error
  */
@@ -142,11 +55,31 @@ char *m3u_fetch_url(const char *url)
     char *content = NULL;
     long file_size;
     size_t read_size;
+    size_t fetch_size;
 
-    /* Handle HTTP(S) URLs using curl */
+    /* Handle HTTP(S) URLs using http_fetch_sync */
     if (strncmp(url, "http://", 7) == 0 || strncmp(url, "https://", 8) == 0)
     {
-        return fetch_http_url(url);
+        content = http_fetch_sync(url, &fetch_size);
+        if (!content)
+        {
+            return NULL;
+        }
+
+        /* Add null terminator for M3U text content */
+        char *text_content = malloc(fetch_size + 1);
+        if (!text_content)
+        {
+            logger(LOG_ERROR, "Failed to allocate memory for M3U text content");
+            free(content);
+            return NULL;
+        }
+        memcpy(text_content, content, fetch_size);
+        text_content[fetch_size] = '\0';
+        free(content);
+
+        logger(LOG_INFO, "Successfully fetched M3U from URL (%zu bytes)", fetch_size);
+        return text_content;
     }
 
     /* Handle file:// URLs */
@@ -195,6 +128,78 @@ char *m3u_fetch_url(const char *url)
 int m3u_is_header(const char *line)
 {
     return (strncmp(line, "#EXTM3U", 7) == 0);
+}
+
+/* Extract x-tvg-url attribute from #EXTM3U header line
+ * Returns: malloc'd string containing URL (caller must free), or NULL if not found
+ */
+static char *extract_tvg_url(const char *line)
+{
+    const char *attr_start;
+    const char *value_start;
+    const char *value_end;
+    size_t value_len;
+    char *result;
+
+    /* Look for x-tvg-url= attribute (case insensitive) */
+    attr_start = strcasestr(line, "x-tvg-url=");
+    if (!attr_start)
+    {
+        /* Also try url-tvg= (alternative format) */
+        attr_start = strcasestr(line, "url-tvg=");
+        if (!attr_start)
+        {
+            return NULL;
+        }
+        value_start = attr_start + 8; /* Skip "url-tvg=" */
+    }
+    else
+    {
+        value_start = attr_start + 10; /* Skip "x-tvg-url=" */
+    }
+
+    /* Skip whitespace */
+    while (*value_start && isspace(*value_start))
+    {
+        value_start++;
+    }
+
+    /* Check if value is quoted */
+    if (*value_start == '"')
+    {
+        value_start++;
+        value_end = strchr(value_start, '"');
+        if (!value_end)
+        {
+            return NULL;
+        }
+    }
+    else
+    {
+        /* Unquoted value - find next space or end of line */
+        value_end = value_start;
+        while (*value_end && !isspace(*value_end))
+        {
+            value_end++;
+        }
+    }
+
+    value_len = value_end - value_start;
+    if (value_len == 0 || value_len >= MAX_URL_LENGTH)
+    {
+        return NULL;
+    }
+
+    result = malloc(value_len + 1);
+    if (!result)
+    {
+        return NULL;
+    }
+
+    memcpy(result, value_start, value_len);
+    result[value_len] = '\0';
+
+    return result;
 }
 
 /* Check if an IPv4 address is private (RFC 1918, RFC 6598)
@@ -965,10 +970,53 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
         /* Handle M3U header */
         if (m3u_is_header(line))
         {
+            /* Extract EPG URL from header if present */
+            char *tvg_url = extract_tvg_url(line);
+            if (tvg_url)
+            {
+                logger(LOG_INFO, "Found EPG URL in M3U header: %s", tvg_url);
+
+                /* Set EPG URL directly (don't fetch yet - will be triggered after parsing) */
+                epg_set_url(tvg_url);
+                free(tvg_url);
+            }
+
             /* Only add header once to the transformed playlist */
             if (!transformed_m3u_has_header)
             {
-                append_to_transformed_m3u(line, service_source);
+                /* Build transformed header with local EPG URL */
+                char transformed_header[MAX_M3U_LINE];
+
+                if (tvg_url)
+                {
+                    /* Replace x-tvg-url with local endpoint */
+                    char *server_addr_temp = get_server_address();
+                    const char *epg_filename;
+
+                    /* Determine EPG filename based on original URL extension */
+                    if (epg_url_is_gzipped(tvg_url))
+                    {
+                        epg_filename = "epg.xml.gz";
+                    }
+                    else
+                    {
+                        epg_filename = "epg.xml";
+                    }
+
+                    snprintf(transformed_header, sizeof(transformed_header),
+                             "#EXTM3U x-tvg-url=\"http://%s:%s/%s\"",
+                             server_addr_temp, server_port, epg_filename);
+
+                    if (server_addr_temp)
+                        free(server_addr_temp);
+
+                    append_to_transformed_m3u(transformed_header, service_source);
+                }
+                else
+                {
+                    /* No EPG URL, add header as-is */
+                    append_to_transformed_m3u(line, service_source);
+                }
                 append_to_transformed_m3u("\n", service_source);
                 transformed_m3u_has_header = 1;
             }

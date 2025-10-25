@@ -1,7 +1,8 @@
 import type { ClientEntry, ClientRow } from "../types";
 import { ClientState } from "../types";
-import type { Locale, TranslationKey } from "../i18n";
-import { translations } from "../i18n";
+import type { TranslationKey } from "../i18n/status";
+import type { Locale } from "./locale";
+import { translations } from "../i18n/status";
 
 export function stateToVariant(state: ClientState): "default" | "secondary" | "destructive" | "outline" {
   switch (state) {

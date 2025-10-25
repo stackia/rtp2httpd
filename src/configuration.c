@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <sys/socket.h>
 #include <string.h>
 #include <strings.h>
@@ -21,6 +22,7 @@
 #include "service.h"
 #include "m3u.h"
 #include "http_fetch.h"
+#include "epg.h"
 
 #define MAX_LINE 1024
 
@@ -48,6 +50,7 @@ int cmd_upstream_interface_rtsp_set;
 int cmd_upstream_interface_multicast_set;
 int cmd_fcc_listen_port_range_set;
 int cmd_status_page_path_set;
+int cmd_player_page_path_set;
 int cmd_zerocopy_on_send_set;
 
 enum section_e
@@ -162,7 +165,38 @@ static int parse_port_range_value(const char *value, int *min_port, int *max_por
   return 0;
 }
 
-static void set_status_page_path_value(const char *value)
+/* Parse M3U content and trigger EPG fetch if configured
+ * This helper encapsulates the common pattern of:
+ * 1. Parse M3U content and create services
+ * 2. Trigger EPG fetch if x-tvg-url was found
+ *
+ * mode: "sync" for synchronous EPG fetch, "async" for asynchronous
+ * epfd: epoll file descriptor (only used for async mode, pass 0 for sync)
+ */
+static void process_m3u_and_fetch_epg(const char *m3u_content, const char *source, const char *mode, int epfd)
+{
+  if (!m3u_content)
+    return;
+
+  m3u_parse_and_create_services(m3u_content, source);
+
+  /* Trigger EPG fetch if x-tvg-url was found in M3U */
+  if (epg_get_url())
+  {
+    if (strcmp(mode, "async") == 0)
+    {
+      epg_fetch_async(epfd);
+    }
+    else
+    {
+      epg_fetch_sync();
+    }
+  }
+}
+
+/* Generic function to set page path and route */
+static void set_page_path_value(const char *value, const char *page_name,
+                                char **path_ptr, char **route_ptr)
 {
   char normalized[HTTP_URL_BUFFER_SIZE];
   size_t len = 0;
@@ -170,7 +204,7 @@ static void set_status_page_path_value(const char *value)
 
   if (!value || value[0] == '\0')
   {
-    logger(LOG_ERROR, "status-page-path cannot be empty, keeping previous value");
+    logger(LOG_ERROR, "%s-page-path cannot be empty, keeping previous value", page_name);
     return;
   }
 
@@ -185,7 +219,7 @@ static void set_status_page_path_value(const char *value)
 
   if (*src != '\0')
   {
-    logger(LOG_ERROR, "status-page-path is too long, keeping previous value");
+    logger(LOG_ERROR, "%s-page-path is too long, keeping previous value", page_name);
     return;
   }
 
@@ -194,27 +228,37 @@ static void set_status_page_path_value(const char *value)
 
   normalized[len] = '\0';
 
-  safe_free_string(&config.status_page_path);
-  safe_free_string(&config.status_page_route);
+  safe_free_string(path_ptr);
+  safe_free_string(route_ptr);
 
-  config.status_page_path = strdup(normalized);
-  if (!config.status_page_path)
+  *path_ptr = strdup(normalized);
+  if (!*path_ptr)
   {
-    logger(LOG_ERROR, "Failed to allocate status-page-path");
-    config.status_page_route = NULL;
+    logger(LOG_ERROR, "Failed to allocate %s-page-path", page_name);
+    *route_ptr = NULL;
     return;
   }
 
   if (normalized[1] != '\0')
-    config.status_page_route = strdup(normalized + 1);
+    *route_ptr = strdup(normalized + 1);
   else
-    config.status_page_route = strdup("");
+    *route_ptr = strdup("");
 
-  if (!config.status_page_route)
+  if (!*route_ptr)
   {
-    logger(LOG_ERROR, "Failed to allocate status-page-path route");
-    safe_free_string(&config.status_page_path);
+    logger(LOG_ERROR, "Failed to allocate %s-page-path route", page_name);
+    safe_free_string(path_ptr);
   }
+}
+
+static void set_status_page_path_value(const char *value)
+{
+  set_page_path_value(value, "status", &config.status_page_path, &config.status_page_route);
+}
+
+static void set_player_page_path_value(const char *value)
+{
+  set_page_path_value(value, "player", &config.player_page_path, &config.player_page_route);
 }
 
 void parse_bind_sec(char *line)
@@ -239,8 +283,6 @@ void parse_bind_sec(char *line)
   ba->next = bind_addresses;
   bind_addresses = ba;
 }
-
-/* process_m3u_content() removed - directly call m3u_parse_and_create_services() instead */
 
 void parse_services_sec(char *line)
 {
@@ -480,6 +522,13 @@ void parse_global_sec(char *line)
     return;
   }
 
+  if (strcasecmp("player-page-path", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_player_page_path_set, "player-page-path"))
+      set_player_page_path_value(value);
+    return;
+  }
+
   if (strcasecmp("r2h-token", param) == 0)
   {
     if (set_if_not_cmd_override(cmd_r2h_token_set, "r2h-token"))
@@ -629,7 +678,7 @@ int parse_config_file(const char *path)
       {
         if (inline_m3u_buffer && inline_m3u_buffer_used > 0)
         {
-          m3u_parse_and_create_services(inline_m3u_buffer, "inline");
+          process_m3u_and_fetch_epg(inline_m3u_buffer, "inline", "sync", 0);
           free(inline_m3u_buffer);
           inline_m3u_buffer = NULL;
           inline_m3u_buffer_size = 0;
@@ -700,7 +749,7 @@ int parse_config_file(const char *path)
   {
     if (inline_m3u_buffer && inline_m3u_buffer_used > 0)
     {
-      m3u_parse_and_create_services(inline_m3u_buffer, "inline");
+      process_m3u_and_fetch_epg(inline_m3u_buffer, "inline", "sync", 0);
       free(inline_m3u_buffer);
       inline_m3u_buffer = NULL;
       inline_m3u_buffer_size = 0;
@@ -817,6 +866,9 @@ void restore_conf_defaults(void)
   set_status_page_path_value("/status");
   cmd_status_page_path_set = 0;
 
+  set_player_page_path_value("/player");
+  cmd_player_page_path_set = 0;
+
   safe_free_string(&config.external_m3u_url);
   config.external_m3u_update_interval = 86400; /* 24 hours default */
   config.last_external_m3u_update_time = 0;
@@ -891,6 +943,7 @@ void usage(FILE *f, char *progname)
           "\t-A --ffmpeg-args <args>  Additional ffmpeg arguments (default: -hwaccel none)\n"
           "\t-S --video-snapshot      Enable video snapshot feature (default: off)\n"
           "\t-s --status-page-path <path>  HTTP path for status UI (default: /status)\n"
+          "\t-p --player-page-path <path>  HTTP path for player UI (default: /player)\n"
           "\t-M --external-m3u <url>  External M3U playlist URL (file://, http://, https://)\n"
           "\t-I --external-m3u-update-interval <seconds>  Auto-update interval (default: 86400 = 24h, 0=disabled)\n"
           "\t-Z --zerocopy-on-send    Enable zero-copy send with MSG_ZEROCOPY for better performance (default: off)\n"
@@ -963,12 +1016,13 @@ void parse_cmd_line(int argc, char *argv[])
       {"ffmpeg-args", required_argument, 0, 'A'},
       {"video-snapshot", no_argument, 0, 'S'},
       {"status-page-path", required_argument, 0, 's'},
+      {"player-page-path", required_argument, 0, 'p'},
       {"external-m3u", required_argument, 0, 'M'},
       {"external-m3u-update-interval", required_argument, 0, 'I'},
       {"zerocopy-on-send", no_argument, 0, 'Z'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:P:H:T:i:f:t:r:R:F:A:s:M:I:SCZ";
+  const char short_opts[] = "v:qhdDUm:w:b:c:l:P:H:T:i:f:t:r:R:F:A:s:p:M:I:SCZ";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1078,6 +1132,10 @@ void parse_cmd_line(int argc, char *argv[])
       set_status_page_path_value(optarg);
       cmd_status_page_path_set = 1;
       break;
+    case 'p':
+      set_player_page_path_value(optarg);
+      cmd_player_page_path_set = 1;
+      break;
     case 'i':
       strncpy(config.upstream_interface.ifr_name, optarg, IFNAMSIZ - 1);
       config.upstream_interface.ifr_ifindex = if_nametoindex(config.upstream_interface.ifr_name);
@@ -1173,7 +1231,7 @@ void parse_cmd_line(int argc, char *argv[])
     char *m3u_content = m3u_fetch_url(config.external_m3u_url);
     if (m3u_content)
     {
-      m3u_parse_and_create_services(m3u_content, config.external_m3u_url);
+      process_m3u_and_fetch_epg(m3u_content, config.external_m3u_url, "sync", 0);
       free(m3u_content);
       /* Record initial load time */
       config.last_external_m3u_update_time = get_time_ms();
@@ -1228,7 +1286,7 @@ int reload_external_m3u(void)
   m3u_reset_external_playlist();
 
   /* Parse M3U content and create services */
-  m3u_parse_and_create_services(m3u_content, config.external_m3u_url);
+  process_m3u_and_fetch_epg(m3u_content, config.external_m3u_url, "sync", 0);
   free(m3u_content);
 
   logger(LOG_INFO, "External M3U reloaded successfully");
@@ -1236,10 +1294,13 @@ int reload_external_m3u(void)
 }
 
 /* Callback for async M3U fetch completion */
-static void reload_m3u_async_callback(http_fetch_ctx_t *ctx, char *content, void *user_data)
+static void reload_m3u_async_callback(http_fetch_ctx_t *ctx, char *content, size_t content_size, void *user_data)
 {
-  (void)ctx;       /* Unused */
-  (void)user_data; /* Unused */
+  int epfd;
+
+  (void)ctx; /* Unused */
+
+  epfd = (int)(intptr_t)user_data; /* Retrieve epfd from user_data */
 
   if (!content)
   {
@@ -1256,7 +1317,7 @@ static void reload_m3u_async_callback(http_fetch_ctx_t *ctx, char *content, void
   m3u_reset_external_playlist();
 
   /* Parse M3U content and create services */
-  m3u_parse_and_create_services(content, config.external_m3u_url);
+  process_m3u_and_fetch_epg(content, config.external_m3u_url, "async", epfd);
   free(content);
 
   logger(LOG_INFO, "External M3U reloaded successfully (async)");
@@ -1291,8 +1352,9 @@ int reload_external_m3u_async(int epfd)
 
   logger(LOG_INFO, "Starting async reload of external M3U from: %s", config.external_m3u_url);
 
-  /* Start async fetch */
-  fetch_ctx = http_fetch_start_async(config.external_m3u_url, reload_m3u_async_callback, NULL, epfd);
+  /* Start async fetch - pass epfd via user_data for EPG fetch later */
+  fetch_ctx = http_fetch_start_async(config.external_m3u_url, reload_m3u_async_callback,
+                                     (void *)(intptr_t)epfd, epfd);
   if (!fetch_ctx)
   {
     logger(LOG_ERROR, "Failed to start async fetch for external M3U");

@@ -38,4 +38,5 @@ build-*-static/
 toolchain/
 # Web UI build artifacts
 web-ui/node_modules/
-web-ui/dist/
+web-ui/dist-player/
+web-ui/dist-status/

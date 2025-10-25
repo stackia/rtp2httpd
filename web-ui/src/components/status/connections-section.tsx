@@ -1,5 +1,5 @@
-import type { Locale } from "../../i18n";
-import { useTranslation } from "../../hooks/use-translation";
+import type { Locale } from "../../lib/locale";
+import { useStatusTranslation } from "../../hooks/use-status-translation";
 import { formatBandwidth, formatBytes, formatDuration } from "../../lib/format";
 import { stateToVariant, stateToLabel } from "../../lib/status";
 import type { ClientRow } from "../../types";
@@ -32,7 +32,7 @@ export function ConnectionsSection({
   disconnectingKeys,
   onDisconnect,
 }: ConnectionsSectionProps) {
-  const t = useTranslation(locale);
+  const t = useStatusTranslation(locale);
   return (
     <section className="flex flex-col rounded-3xl border border-border/60 bg-card/90 p-6 shadow-sm">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
