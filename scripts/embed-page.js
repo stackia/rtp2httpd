@@ -7,7 +7,10 @@ import { argv, exit } from "node:process";
 import { gzipSync } from "node:zlib";
 
 function usage() {
-  console.error("Usage: node embed-status-page.js <input.html> <output.h>");
+  console.error(
+    "Usage: node embed-page.js <page-type> <input.html> <output.h>",
+  );
+  console.error("  page-type: 'status' or 'player'");
 }
 
 function formatByteArray(buffer) {
@@ -38,8 +41,14 @@ function generateEtag(buffer) {
 }
 
 function main() {
-  const [, , htmlPath, outputPath] = argv;
-  if (!htmlPath || !outputPath) {
+  const [, , pageType, htmlPath, outputPath] = argv;
+  if (!pageType || !htmlPath || !outputPath) {
+    usage();
+    exit(1);
+  }
+
+  if (pageType !== "status" && pageType !== "player") {
+    console.error(`Error: Invalid page type "${pageType}"`);
     usage();
     exit(1);
   }
@@ -48,21 +57,26 @@ function main() {
   const compressed = gzipSync(html);
   const etag = generateEtag(compressed);
 
-  console.log(`Compressed size: ${(compressed.length / 1000).toFixed(2)} KB`);
+  console.log(
+    `[${pageType}] Compressed size: ${(compressed.length / 1000).toFixed(2)} KB`,
+  );
+
+  const guardName = `__${pageType.toUpperCase()}_PAGE_H__`;
+  const varPrefix = `${pageType}_page`;
 
   const header = [
-    "#ifndef __STATUS_PAGE_H__",
-    "#define __STATUS_PAGE_H__",
+    `#ifndef ${guardName}`,
+    `#define ${guardName}`,
     "",
     "#include <stdint.h>",
     "",
-    "/* Compressed HTML content for status page - generated file, do not edit manually */",
-    `static const char status_page_etag[] = ${etag};`,
-    "static const uint8_t status_page_html[] = {",
+    `/* Compressed HTML content for ${pageType} page - generated file, do not edit manually */`,
+    `static const char ${varPrefix}_etag[] = ${etag};`,
+    `static const uint8_t ${varPrefix}_html[] = {`,
     formatByteArray(compressed),
     "};",
     "",
-    "#endif /* __STATUS_PAGE_H__ */",
+    `#endif /* ${guardName} */`,
     "",
   ].join("\n");
 

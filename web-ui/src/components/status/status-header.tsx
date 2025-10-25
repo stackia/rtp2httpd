@@ -1,6 +1,7 @@
-import type { Locale, TranslationKey } from "../../i18n";
+import type { TranslationKey } from "../../i18n/status";
+import type { Locale } from "../../lib/locale";
 import type { ThemeMode } from "../../types/ui";
-import { useTranslation } from "../../hooks/use-translation";
+import { useStatusTranslation } from "../../hooks/use-status-translation";
 import { Badge } from "../ui/badge";
 import { SelectBox } from "../ui/select-box";
 import { GlobeIcon, MoonIcon, SignalIcon, SunIcon } from "../icons";
@@ -34,7 +35,7 @@ export function StatusHeader({
   themeOptions,
   themeLabels,
 }: StatusHeaderProps) {
-  const t = useTranslation(locale);
+  const t = useStatusTranslation(locale);
   return (
     <header className="rounded-3xl border border-border/60 bg-card/85 p-5 shadow-sm backdrop-blur">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">

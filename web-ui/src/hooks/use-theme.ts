@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ThemeMode } from "../types/ui";
 
-const DEFAULT_STORAGE_KEY = "status-theme";
-
 function readStoredTheme(storageKey: string): ThemeMode {
   if (typeof window === "undefined") {
     return "auto";
@@ -11,7 +9,7 @@ function readStoredTheme(storageKey: string): ThemeMode {
   return stored === "light" || stored === "dark" ? stored : "auto";
 }
 
-export function useTheme(storageKey = DEFAULT_STORAGE_KEY) {
+export function useTheme(storageKey: string) {
   const [theme, setTheme] = useState<ThemeMode>(() => readStoredTheme(storageKey));
 
   const applyTheme = useCallback((mode: ThemeMode, systemDarkOverride?: boolean) => {
@@ -55,13 +53,8 @@ export function useTheme(storageKey = DEFAULT_STORAGE_KEY) {
       }
     };
 
-    if (typeof media.addEventListener === "function") {
-      media.addEventListener("change", handleChange);
-      return () => media.removeEventListener("change", handleChange);
-    }
-
-    media.addListener(handleChange);
-    return () => media.removeListener(handleChange);
+    media.addEventListener("change", handleChange);
+    return () => media.removeEventListener("change", handleChange);
   }, [theme, applyTheme]);
 
   return useMemo(
@@ -72,5 +65,3 @@ export function useTheme(storageKey = DEFAULT_STORAGE_KEY) {
     [theme],
   );
 }
-
-export { DEFAULT_STORAGE_KEY as THEME_STORAGE_KEY };

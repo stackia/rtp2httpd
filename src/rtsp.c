@@ -34,7 +34,7 @@
 /* RTSP version and user agent */
 #define RTSP_VERSION "RTSP/1.0"
 #define USER_AGENT "rtp2httpd/" VERSION
-#define MAX_REDIRECTS 5
+#define RTSP_MAX_REDIRECTS 5
 #define RTSP_KEEPALIVE_INTERVAL_MS 30000
 
 #define RTSP_RESPONSE_ADVANCE 1
@@ -1341,6 +1341,11 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, connection_t *conn
             logger(LOG_ERROR, "RTSP: TCP receive failed: %s", strerror(errno));
             return -1;
         }
+        else if (bytes_received == 0)
+        {
+            logger(LOG_INFO, "RTSP: Server closed connection (EOF received)");
+            return -1; /* Signal connection closure */
+        }
 
         session->response_buffer_pos += bytes_received;
     }
@@ -1352,9 +1357,75 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, connection_t *conn
         /* Check for interleaved data packet: $ + channel + length(2 bytes) + data */
         if (session->response_buffer[0] != '$')
         {
-            /* Not interleaved data, might be RTSP response */
-            logger(LOG_DEBUG, "RTSP: Received non-interleaved data on TCP connection");
-            break;
+            /* Not interleaved data, check if it's an RTSP request from server */
+            /* Look for RTSP method keywords at start of buffer */
+            if (session->response_buffer_pos >= 8 &&
+                (strncmp((char *)session->response_buffer, "ANNOUNCE", 8) == 0 ||
+                 strncmp((char *)session->response_buffer, "OPTIONS", 7) == 0 ||
+                 strncmp((char *)session->response_buffer, "SET_PARAMETER", 13) == 0))
+            {
+                /* Find end of RTSP message (double CRLF) */
+                char *end_marker = strstr((char *)session->response_buffer, "\r\n\r\n");
+                if (end_marker)
+                {
+                    size_t msg_len = (end_marker - (char *)session->response_buffer) + 4;
+
+                    /* Log the received request */
+                    logger(LOG_INFO, "RTSP: Received server request: %.32s", session->response_buffer);
+
+                    /* Check if this is an ANNOUNCE (before we move the buffer) */
+                    int is_announce = (strncmp((char *)session->response_buffer, "ANNOUNCE", 8) == 0);
+
+                    /* Extract CSeq if present for response */
+                    char cseq_buf[32] = "0";
+                    char *cseq_line = strstr((char *)session->response_buffer, "CSeq:");
+                    if (cseq_line && cseq_line < end_marker)
+                    {
+                        sscanf(cseq_line, "CSeq: %31s", cseq_buf);
+                    }
+
+                    /* Send 200 OK response */
+                    char response[256];
+                    int response_len = snprintf(response, sizeof(response),
+                                                "RTSP/1.0 200 OK\r\n"
+                                                "CSeq: %s\r\n"
+                                                "\r\n",
+                                                cseq_buf);
+
+                    if (response_len > 0 && response_len < (int)sizeof(response))
+                    {
+                        ssize_t sent = send(session->socket, response, response_len, MSG_NOSIGNAL);
+                        if (sent > 0)
+                        {
+                            logger(LOG_DEBUG, "RTSP: Sent 200 OK response to server request");
+                        }
+                    }
+
+                    /* Remove processed message from buffer */
+                    memmove(session->response_buffer, session->response_buffer + msg_len,
+                            session->response_buffer_pos - msg_len);
+                    session->response_buffer_pos -= msg_len;
+
+                    /* Log if this was an ANNOUNCE */
+                    if (is_announce)
+                    {
+                        logger(LOG_INFO, "RTSP: Server sent ANNOUNCE, stream may be ending");
+                        return -2; /* Treat as stream end */
+                    }
+
+                    continue; /* Process next packet in buffer */
+                }
+                /* If we haven't received complete message yet, wait for more data */
+                logger(LOG_DEBUG, "RTSP: Incomplete server request, waiting for more data");
+                break;
+            }
+            else
+            {
+                /* Unknown non-interleaved data */
+                logger(LOG_DEBUG, "RTSP: Received non-interleaved data on TCP connection");
+                logger(LOG_DEBUG, "RTSP: Data: %.32s", session->response_buffer);
+                break;
+            }
         }
 
         uint8_t channel = session->response_buffer[1];
@@ -2280,7 +2351,7 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location)
     logger(LOG_DEBUG, "RTSP: Handling redirect to: %s", location);
 
     /* Check redirect limit */
-    if (session->redirect_count >= MAX_REDIRECTS)
+    if (session->redirect_count >= RTSP_MAX_REDIRECTS)
     {
         logger(LOG_ERROR, "RTSP: Too many redirects (%d), giving up", session->redirect_count);
         return -1;

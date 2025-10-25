@@ -1,5 +1,5 @@
-import type { Locale } from "../../i18n";
-import { useTranslation } from "../../hooks/use-translation";
+import type { Locale } from "../../lib/locale";
+import { useStatusTranslation } from "../../hooks/use-status-translation";
 import { formatBandwidth, formatBytes } from "../../lib/format";
 import { cn } from "../../lib/utils";
 import type { PoolStats, WorkerEntry } from "../../types";
@@ -14,7 +14,7 @@ interface WorkersSectionProps {
 }
 
 export function WorkersSection({ workers, locale }: WorkersSectionProps) {
-  const t = useTranslation(locale);
+  const t = useStatusTranslation(locale);
   return (
     <section className="rounded-3xl border border-border/60 bg-card/90 p-6 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
@@ -118,7 +118,7 @@ interface PoolCardProps {
 }
 
 function PoolCard({ title, pool, locale }: PoolCardProps) {
-  const t = useTranslation(locale);
+  const t = useStatusTranslation(locale);
   const utilization = Math.min(100, Math.max(0, pool.utilization));
   return (
     <div className="space-y-2 rounded-xl border border-border/40 bg-muted/20 p-4">

@@ -29,13 +29,12 @@ static const char *response_codes[] = {
 
 static const char *content_types[] = {
     "Content-Type: application/octet-stream\r\n", /* 0 */
-    "Content-Type: text/html\r\n",                /* 1 */
-    "Content-Type: text/html; charset=utf-8\r\n", /* 2 */
-    "Content-Type: video/mpeg\r\n",               /* 3 */
-    "Content-Type: audio/mpeg\r\n",               /* 4 */
-    "Content-Type: video/mp2t\r\n",               /* 5 */
-    "Content-Type: text/event-stream\r\n",        /* 6 */
-    "Content-Type: image/jpeg\r\n"                /* 7 */
+    "Content-Type: text/html; charset=utf-8\r\n", /* 1 */
+    "Content-Type: video/mpeg\r\n",               /* 2 */
+    "Content-Type: audio/mpeg\r\n",               /* 3 */
+    "Content-Type: video/mp2t\r\n",               /* 4 */
+    "Content-Type: text/event-stream\r\n",        /* 5 */
+    "Content-Type: image/jpeg\r\n"                /* 6 */
 };
 
 void send_http_headers(connection_t *c, http_status_t status, content_type_t type, const char *extra_headers)

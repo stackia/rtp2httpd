@@ -83,3 +83,14 @@ body {
   background-color: hsl(var(--muted-foreground));
   border-radius: 9999px;
 }
+
+@keyframes zoom-fade-out {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
