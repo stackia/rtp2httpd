@@ -11,6 +11,7 @@
 #include "status.h"
 #include "zerocopy.h"
 #include "m3u.h"
+#include "epg.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -42,6 +43,7 @@
 
 /* Forward declarations */
 static void handle_playlist_request(connection_t *c);
+static void handle_epg_request(connection_t *c);
 
 static inline buffer_ref_t *connection_alloc_output_buffer(connection_t *c)
 {
@@ -611,12 +613,35 @@ int connection_route_and_start(connection_t *c)
     return 0;
   }
 
+  /* Handle player page */
+  const char *player_route = config.player_page_route ? config.player_page_route : "player";
+  size_t player_route_len = strlen(player_route);
+  if (player_route_len == path_len && strncmp(service_path, player_route, path_len) == 0)
+  {
+    handle_player_page(c);
+    c->state = CONN_CLOSING;
+    return 0;
+  }
+
   /* Handle /playlist.m3u request */
   const char *playlist_route = "playlist.m3u";
   size_t playlist_route_len = strlen(playlist_route);
   if (playlist_route_len == path_len && strncmp(service_path, playlist_route, path_len) == 0)
   {
     handle_playlist_request(c);
+    c->state = CONN_CLOSING;
+    return 0;
+  }
+
+  /* Handle /epg.xml and /epg.xml.gz requests */
+  const char *epg_xml_route = "epg.xml";
+  const char *epg_xml_gz_route = "epg.xml.gz";
+  size_t epg_xml_route_len = strlen(epg_xml_route);
+  size_t epg_xml_gz_route_len = strlen(epg_xml_gz_route);
+  if ((epg_xml_route_len == path_len && strncmp(service_path, epg_xml_route, path_len) == 0) ||
+      (epg_xml_gz_route_len == path_len && strncmp(service_path, epg_xml_gz_route, path_len) == 0))
+  {
+    handle_epg_request(c);
     c->state = CONN_CLOSING;
     return 0;
   }
@@ -950,4 +975,51 @@ static void handle_playlist_request(connection_t *c)
 
   send_http_headers(c, STATUS_200, CONTENT_HTML, extra_headers);
   connection_queue_output_and_flush(c, (const uint8_t *)playlist, playlist_len);
+}
+
+/* Handle /epg.xml or /epg.xml.gz request - serve cached EPG data */
+static void handle_epg_request(connection_t *c)
+{
+  if (!c)
+    return;
+
+  int epg_fd;
+  size_t epg_size;
+  int is_gzipped;
+
+  /* Get EPG data fd from cache (zero-copy) */
+  if (epg_get_data_fd(&epg_fd, &epg_size, &is_gzipped) != 0)
+  {
+    /* No EPG data available */
+    http_send_404(c);
+    return;
+  }
+
+  char extra_headers[256];
+  const char *content_type = is_gzipped ? "application/gzip" : "application/xml";
+
+  snprintf(extra_headers, sizeof(extra_headers),
+           "Content-Type: %s\r\n"
+           "Content-Length: %zu\r\n",
+           content_type, epg_size);
+
+  send_http_headers(c, STATUS_200, CONTENT_HTML, extra_headers);
+
+  /* Use zero-copy transmission via sendfile
+   * Note: epg_fd is owned by EPG cache, so we need to dup it
+   * zerocopy_queue_add_file will close the fd when done */
+  int dup_fd = dup(epg_fd);
+  if (dup_fd < 0)
+  {
+    logger(LOG_ERROR, "Failed to dup EPG fd for zero-copy transmission: %s", strerror(errno));
+    return;
+  }
+
+  /* Queue the file for zero-copy transmission */
+  if (connection_queue_file(c, dup_fd, 0, epg_size) < 0)
+  {
+    logger(LOG_ERROR, "Failed to queue EPG file for zero-copy transmission");
+    close(dup_fd);
+    return;
+  }
 }

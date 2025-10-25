@@ -1,5 +1,5 @@
-import type { Locale } from "../../i18n";
-import { useTranslation } from "../../hooks/use-translation";
+import type { Locale } from "../../lib/locale";
+import { useStatusTranslation } from "../../hooks/use-status-translation";
 import { formatBytes } from "../../lib/format";
 import { Progress } from "../ui/progress";
 
@@ -12,7 +12,7 @@ interface QueueUsageProps {
 }
 
 export function QueueUsage({ locale, queueBytes, queueLimit, queueHighwater, droppedBytes }: QueueUsageProps) {
-  const t = useTranslation(locale);
+  const t = useStatusTranslation(locale);
   const usage = queueLimit > 0 ? Math.min(100, (queueBytes / queueLimit) * 100) : 0;
   const highwaterPercent = queueLimit > 0 ? Math.min(100, (queueHighwater / queueLimit) * 100) : undefined;
 

@@ -1,4 +1,4 @@
-export type Locale = "en" | "zh-Hans" | "zh-Hant";
+import { Locale } from "../lib/locale";
 
 type TranslationDict = Record<string, string>;
 

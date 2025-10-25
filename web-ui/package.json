@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run build:status && npm run build:player && npm run embed",
+    "build:status": "VITE_PAGE=status vite build",
+    "build:player": "VITE_PAGE=player vite build",
+    "embed": "node ../scripts/embed-page.js status dist-status/status.html ../src/status_page.h && node ../scripts/embed-page.js player dist-player/player.html ../src/player_page.h",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write ."
@@ -13,6 +16,7 @@
   "dependencies": {
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "mpegts.js": "^1.8.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwind-merge": "^3.3.1"

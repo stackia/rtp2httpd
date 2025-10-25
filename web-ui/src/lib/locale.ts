@@ -1,4 +1,4 @@
-import type { Locale } from "../i18n";
+export type Locale = "en" | "zh-Hans" | "zh-Hant";
 
 const SUPPORTED_LOCALES: Locale[] = ["en", "zh-Hans", "zh-Hant"];
 
@@ -44,10 +44,7 @@ export function ensureSupportedLocale(locale: string | null | undefined): Locale
   return "en";
 }
 
-export function detectInitialLocale(
-  storageKey = "status-locale",
-  navigatorObject: Navigator | undefined = typeof navigator !== "undefined" ? navigator : undefined,
-): Locale {
+export function detectInitialLocale(storageKey: string): Locale {
   if (typeof window === "undefined") {
     return "en";
   }
@@ -55,5 +52,5 @@ export function detectInitialLocale(
   if (stored) {
     return ensureSupportedLocale(stored);
   }
-  return detectBrowserLocale(navigatorObject);
+  return detectBrowserLocale(navigator);
 }

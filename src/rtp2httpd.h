@@ -98,6 +98,10 @@ typedef struct
   char *status_page_path;  /* Absolute HTTP path for status page (leading slash) */
   char *status_page_route; /* Status page path without leading slash (may be empty) */
 
+  /* Player page settings */
+  char *player_page_path;  /* Absolute HTTP path for player page (leading slash) */
+  char *player_page_route; /* Player page path without leading slash (may be empty) */
+
   /* External M3U settings */
   char *external_m3u_url;             /* External M3U URL (NULL=none) */
   int external_m3u_update_interval;   /* Update interval in seconds (0=disabled) */
