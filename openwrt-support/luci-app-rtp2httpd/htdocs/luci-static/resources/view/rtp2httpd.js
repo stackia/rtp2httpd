@@ -6,8 +6,74 @@
 "require uci";
 
 return view.extend({
+  // Helper function to open a page (status or player)
+  openPage: function (section_id, pageType) {
+    var pathConfigKey = pageType === "status" ? "status-page-path" : "player-page-path";
+    var uciPathKey = pageType === "status" ? "status_page_path" : "player_page_path";
+    var defaultPath = pageType === "status" ? "/status" : "/player";
+
+    return Promise.all([
+      uci.load("rtp2httpd"),
+      fs.read("/etc/rtp2httpd.conf").catch(function () {
+        return "";
+      }),
+    ]).then(function (results) {
+      var port = "5140"; // default port
+      var token = null;
+      var pagePath = defaultPath;
+      var use_config_file = uci.get(
+        "rtp2httpd",
+        section_id,
+        "use_config_file"
+      );
+
+      if (use_config_file === "1") {
+        // Parse port, token and page path from config file content
+        var configContent = results[1];
+        var portMatch = configContent.match(/^\s*\*\s+(\d+)\s*$/m);
+        if (!portMatch) {
+          // Try alternative format: hostname port
+          portMatch = configContent.match(/^\s*[^\s]+\s+(\d+)\s*$/m);
+        }
+        if (portMatch && portMatch[1]) {
+          port = portMatch[1];
+        }
+        // Parse r2h-token from config file
+        var tokenMatch = configContent.match(
+          /^\s*r2h-token\s*=?\s*(.+?)\s*$/m
+        );
+        if (tokenMatch && tokenMatch[1]) {
+          token = tokenMatch[1];
+        }
+        // Parse page path from config file
+        var pagePathRegex = new RegExp("^\\s*" + pathConfigKey + "\\s*=?\\s*(.+?)\\s*$", "m");
+        var pagePathMatch = configContent.match(pagePathRegex);
+        if (pagePathMatch && pagePathMatch[1]) {
+          pagePath = pagePathMatch[1];
+        }
+      } else {
+        // Get port, token and page path from UCI config
+        port = uci.get("rtp2httpd", section_id, "port") || "5140";
+        token = uci.get("rtp2httpd", section_id, "r2h_token");
+        pagePath = uci.get("rtp2httpd", section_id, uciPathKey) || defaultPath;
+      }
+
+      // Ensure pagePath starts with /
+      if (pagePath && !pagePath.startsWith("/")) {
+        pagePath = "/" + pagePath;
+      }
+
+      var pageUrl = "http://" + window.location.hostname + ":" + port + pagePath;
+      if (token) {
+        pageUrl += "?r2h-token=" + encodeURIComponent(token);
+      }
+      window.open(pageUrl, "_blank");
+    });
+  },
+
   render: function () {
     var m, s, o;
+    var self = this;
 
     m = new form.Map(
       "rtp2httpd",
@@ -43,66 +109,18 @@ return view.extend({
     o.inputtitle = _("rtp2httpd_Open Status Dashboard");
     o.inputstyle = "apply";
     o.onclick = function (ev, section_id) {
-      return Promise.all([
-        uci.load("rtp2httpd"),
-        fs.read("/etc/rtp2httpd.conf").catch(function () {
-          return "";
-        }),
-      ]).then(function (results) {
-        var port = "5140"; // default port
-        var token = null;
-        var statusPath = "/status"; // default status page path
-        var use_config_file = uci.get(
-          "rtp2httpd",
-          section_id,
-          "use_config_file"
-        );
+      return self.openPage(section_id, "status");
+    };
 
-        if (use_config_file === "1") {
-          // Parse port, token and status-page-path from config file content
-          var configContent = results[1];
-          var portMatch = configContent.match(/^\s*\*\s+(\d+)\s*$/m);
-          if (!portMatch) {
-            // Try alternative format: hostname port
-            portMatch = configContent.match(/^\s*[^\s]+\s+(\d+)\s*$/m);
-          }
-          if (portMatch && portMatch[1]) {
-            port = portMatch[1];
-          }
-          // Parse r2h-token from config file
-          var tokenMatch = configContent.match(
-            /^\s*r2h-token\s*=?\s*(.+?)\s*$/m
-          );
-          if (tokenMatch && tokenMatch[1]) {
-            token = tokenMatch[1];
-          }
-          // Parse status-page-path from config file
-          var statusPathMatch = configContent.match(
-            /^\s*status-page-path\s*=?\s*(.+?)\s*$/m
-          );
-          if (statusPathMatch && statusPathMatch[1]) {
-            statusPath = statusPathMatch[1];
-          }
-        } else {
-          // Get port, token and status_page_path from UCI config
-          port = uci.get("rtp2httpd", section_id, "port") || "5140";
-          token = uci.get("rtp2httpd", section_id, "r2h_token");
-          statusPath =
-            uci.get("rtp2httpd", section_id, "status_page_path") || "/status";
-        }
-
-        // Ensure statusPath starts with /
-        if (statusPath && !statusPath.startsWith("/")) {
-          statusPath = "/" + statusPath;
-        }
-
-        var statusUrl =
-          "http://" + window.location.hostname + ":" + port + statusPath;
-        if (token) {
-          statusUrl += "?r2h-token=" + encodeURIComponent(token);
-        }
-        window.open(statusUrl, "_blank");
-      });
+    o = s.option(
+      form.Button,
+      "_player_page",
+      _("rtp2httpd_Player Page")
+    );
+    o.inputtitle = _("rtp2httpd_Open Player Page");
+    o.inputstyle = "apply";
+    o.onclick = function (ev, section_id) {
+      return self.openPage(section_id, "player");
     };
 
     // Add "Use Config File" option
@@ -269,11 +287,39 @@ return view.extend({
 
     o = s.option(
       form.Value,
+      "player_page_path",
+      _("rtp2httpd_Player Page Path"),
+      _("rtp2httpd_Player page path description")
+    );
+    o.placeholder = "/player";
+    o.depends("use_config_file", "0");
+
+    o = s.option(
+      form.Value,
       "r2h_token",
       _("rtp2httpd_R2H Token"),
       _("rtp2httpd_Authentication token for HTTP requests")
     );
     o.password = true;
+    o.depends("use_config_file", "0");
+
+    o = s.option(
+      form.Value,
+      "external_m3u",
+      _("rtp2httpd_External M3U"),
+      _("rtp2httpd_External M3U description")
+    );
+    o.placeholder = "https://example.com/playlist.m3u";
+    o.depends("use_config_file", "0");
+
+    o = s.option(
+      form.Value,
+      "external_m3u_update_interval",
+      _("rtp2httpd_External M3U Update Interval"),
+      _("rtp2httpd_External M3U update interval description")
+    );
+    o.datatype = "uinteger";
+    o.placeholder = "86400";
     o.depends("use_config_file", "0");
 
     o = s.option(

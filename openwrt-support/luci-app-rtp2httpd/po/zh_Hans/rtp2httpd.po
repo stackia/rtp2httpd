@@ -160,3 +160,27 @@ msgstr "启用零拷贝发送"
 
 msgid "rtp2httpd_Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires kernel 4.14+. Can improve throughput and reduce CPU usage on supported devices."
 msgstr "启用 MSG_ZEROCOPY 零拷贝发送以提升性能。需要内核 4.14+（支持 MSG_ZEROCOPY）。在支持的设备上，可提升吞吐量并降低 CPU 占用，特别是在高并发负载下。"
+
+msgid "rtp2httpd_Player Page"
+msgstr "播放器页面"
+
+msgid "rtp2httpd_Open Player Page"
+msgstr "打开播放器页面"
+
+msgid "rtp2httpd_Player Page Path"
+msgstr "播放器页面路径"
+
+msgid "rtp2httpd_Player page path description"
+msgstr "播放器页面的 URL 路径（默认：/player）"
+
+msgid "rtp2httpd_External M3U"
+msgstr "外部 M3U"
+
+msgid "rtp2httpd_External M3U description"
+msgstr "从 URL 获取 M3U 播放列表（支持 file://、http://、https://）。示例：https://example.com/playlist.m3u 或 file:///path/to/playlist.m3u"
+
+msgid "rtp2httpd_External M3U Update Interval"
+msgstr "外部 M3U 更新间隔"
+
+msgid "rtp2httpd_External M3U update interval description"
+msgstr "外部 M3U 自动更新间隔（秒），默认 86400（24 小时）。设为 0 禁用自动更新。"
