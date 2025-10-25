@@ -160,3 +160,27 @@ msgstr "Zero-Copy on Send"
 
 msgid "rtp2httpd_Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires kernel 4.14+. Can improve throughput and reduce CPU usage on supported devices."
 msgstr "Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires kernel 4.14+ (MSG_ZEROCOPY support). On supported devices, this can improve throughput and reduce CPU usage, especially under high concurrent load."
+
+msgid "rtp2httpd_Player Page"
+msgstr "Player Page"
+
+msgid "rtp2httpd_Open Player Page"
+msgstr "Open Player Page"
+
+msgid "rtp2httpd_Player Page Path"
+msgstr "Player Page Path"
+
+msgid "rtp2httpd_Player page path description"
+msgstr "URL path for the player page (default: /player)"
+
+msgid "rtp2httpd_External M3U"
+msgstr "External M3U"
+
+msgid "rtp2httpd_External M3U description"
+msgstr "Fetch M3U playlist from a URL (file://, http://, https:// supported). Example: https://example.com/playlist.m3u or file:///path/to/playlist.m3u"
+
+msgid "rtp2httpd_External M3U Update Interval"
+msgstr "External M3U Update Interval"
+
+msgid "rtp2httpd_External M3U update interval description"
+msgstr "External M3U automatic update interval in seconds (default: 86400 = 24 hours). Set to 0 to disable automatic updates."
