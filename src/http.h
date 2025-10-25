@@ -26,12 +26,11 @@ typedef enum
 {
   CONTENT_OSTREAM = 0,
   CONTENT_HTML = 1,
-  CONTENT_HTMLUTF = 2,
-  CONTENT_MPEGV = 3,
-  CONTENT_MPEGA = 4,
-  CONTENT_MP2T = 5,
-  CONTENT_SSE = 6,
-  CONTENT_JPEG = 7
+  CONTENT_MPEGV = 2,
+  CONTENT_MPEGA = 3,
+  CONTENT_MP2T = 4,
+  CONTENT_SSE = 5,
+  CONTENT_JPEG = 6
 } content_type_t;
 
 /* HTTP request parsing state */

@@ -31,17 +31,18 @@ jobs:
         run: npm run build
         working-directory: web-ui
 
-      - name: Embed status page asset
-        run: node scripts/embed-status-page.js web-ui/dist/index.html src/status_page.h
+      - name: Save generated pages
+        run: |
+          cp src/status_page.h /tmp/status_page.h
+          cp src/player_page.h /tmp/player_page.h
 
-      - name: Save generated status page
-        run: cp src/status_page.h /tmp/status_page.h
-
-      - name: Upload status page artifact
+      - name: Upload page artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: status-page
-          path: src/status_page.h
+          name: frontend-pages
+          path: |
+            src/status_page.h
+            src/player_page.h
           if-no-files-found: error
 
       - name: Determine branch to update
@@ -60,7 +61,7 @@ jobs:
             echo "branch=$DEFAULT" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit updated status page
+      - name: Commit updated frontend pages
         if: steps.push_branch.outputs.branch != ''
         env:
           PUSH_BRANCH: ${{ steps.push_branch.outputs.branch }}
@@ -69,14 +70,15 @@ jobs:
           git fetch origin "$PUSH_BRANCH"
           git checkout -B "$PUSH_BRANCH" "origin/$PUSH_BRANCH"
           cp /tmp/status_page.h src/status_page.h
-          if git diff --quiet --exit-code src/status_page.h; then
-            echo "Status page unchanged; skipping commit."
+          cp /tmp/player_page.h src/player_page.h
+          if git diff --quiet --exit-code src/status_page.h src/player_page.h; then
+            echo "Frontend pages unchanged; skipping commit."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add src/status_page.h
-          git commit -m "chore: update status_page.h for ${{ github.event.release.tag_name }}"
+          git add src/status_page.h src/player_page.h
+          git commit -m "chore: update frontend pages for ${{ github.event.release.tag_name }}"
           git push origin "HEAD:$PUSH_BRANCH"
 
   docker:
@@ -92,14 +94,16 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      - name: Download status page artifact
+      - name: Download frontend pages artifact
         uses: actions/download-artifact@v5
         with:
-          name: status-page
+          name: frontend-pages
           path: artifacts
 
-      - name: Use generated status page
-        run: cp artifacts/status_page.h src/status_page.h
+      - name: Use generated frontend pages
+        run: |
+          cp artifacts/status_page.h src/status_page.h
+          cp artifacts/player_page.h src/player_page.h
 
       - name: Override version number
         run: |
@@ -185,14 +189,16 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      - name: Download status page artifact
+      - name: Download frontend pages artifact
         uses: actions/download-artifact@v5
         with:
-          name: status-page
+          name: frontend-pages
           path: artifacts
 
-      - name: Use generated status page
-        run: cp artifacts/status_page.h src/status_page.h
+      - name: Use generated frontend pages
+        run: |
+          cp artifacts/status_page.h src/status_page.h
+          cp artifacts/player_page.h src/player_page.h
 
       - name: Override version number
         run: |
@@ -310,14 +316,16 @@ jobs:
             wget \
             xz-utils
 
-      - name: Download status page artifact
+      - name: Download frontend pages artifact
         uses: actions/download-artifact@v5
         with:
-          name: status-page
+          name: frontend-pages
           path: artifacts
 
-      - name: Use generated status page
-        run: cp artifacts/status_page.h src/status_page.h
+      - name: Use generated frontend pages
+        run: |
+          cp artifacts/status_page.h src/status_page.h
+          cp artifacts/player_page.h src/player_page.h
 
       - name: Override version number
         run: |

@@ -1,20 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIcon, GaugeIcon, LayersIcon, UsersIcon } from "./components/icons";
-import { ConnectionsSection } from "./components/status/connections-section";
-import { LogsSection } from "./components/status/logs-section";
-import { StatusHeader } from "./components/status/status-header";
-import { SummaryStats } from "./components/status/summary-stats";
-import { WorkersSection } from "./components/status/workers-section";
-import { useSse } from "./hooks/use-sse";
-import { useTranslation } from "./hooks/use-translation";
-import { useTheme, THEME_STORAGE_KEY } from "./hooks/use-theme";
-import { useStatusApi } from "./hooks/use-status-api";
-import type { Locale, TranslationKey } from "./i18n";
-import { detectInitialLocale } from "./lib/locale";
-import { formatBandwidth, formatBytes, formatDuration } from "./lib/format";
-import { mergeClients } from "./lib/status";
-import type { ClientRow, LogEntry, StatusPayload } from "./types";
-import type { ConnectionState, ThemeMode } from "./types/ui";
+import React, { useCallback, useMemo, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { ActivityIcon, GaugeIcon, LayersIcon, UsersIcon } from "../components/icons";
+import { ConnectionsSection } from "../components/status/connections-section";
+import { LogsSection } from "../components/status/logs-section";
+import { StatusHeader } from "../components/status/status-header";
+import { SummaryStats } from "../components/status/summary-stats";
+import { WorkersSection } from "../components/status/workers-section";
+import { useSse } from "../hooks/use-sse";
+import { useStatusTranslation } from "../hooks/use-status-translation";
+import { useTheme } from "../hooks/use-theme";
+import { useStatusApi } from "../hooks/use-status-api";
+import type { TranslationKey } from "../i18n/status";
+import type { Locale } from "../lib/locale";
+import { formatBandwidth, formatBytes, formatDuration } from "../lib/format";
+import { mergeClients } from "../lib/status";
+import type { ClientRow, LogEntry, StatusPayload } from "../types";
+import type { ConnectionState, ThemeMode } from "../types/ui";
+import { useLocale } from "../hooks/use-locale";
 
 const LOG_LEVELS: Array<{ value: number; label: string }> = [
   { value: 0, label: "FATAL" },
@@ -39,11 +41,11 @@ const THEME_LABELS: Record<ThemeMode, TranslationKey> = {
 
 const MAX_LOG_ENTRIES = 500;
 
-function App() {
-  const [locale, setLocale] = useState<Locale>(detectInitialLocale);
-  const t = useTranslation(locale);
+function StatusPage() {
+  const { locale, setLocale } = useLocale("status-locale");
+  const t = useStatusTranslation(locale);
 
-  const { theme, setTheme } = useTheme(THEME_STORAGE_KEY);
+  const { theme, setTheme } = useTheme("status-theme");
   const { disconnectClient, setLogLevel } = useStatusApi();
 
   const [connectionState, setConnectionState] = useState<ConnectionState>("reconnecting");
@@ -70,12 +72,6 @@ function App() {
       return prev;
     });
   }, []);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("status-locale", locale);
-    }
-  }, [locale]);
 
   useSse(handlePayload, setConnectionState);
 
@@ -225,4 +221,9 @@ function App() {
   );
 }
 
-export default App;
+// Mount the app
+createRoot(document.getElementById("root") as HTMLElement).render(
+  <React.StrictMode>
+    <StatusPage />
+  </React.StrictMode>,
+);

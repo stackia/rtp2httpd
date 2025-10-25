@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>rtp2httpd Status</title>
+    <link rel="icon" type="image/svg+xml" href="/src/favicon.svg?inline" />
+    <script>
+      (() => {
+        try {
+          const storageKey = "status-theme";
+          const stored = localStorage.getItem(storageKey);
+          const theme = stored === "light" || stored === "dark" ? stored : "auto";
+          const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          const isDark = theme === "dark" || (theme === "auto" && prefersDark);
+          const root = document.documentElement;
+          if (isDark) {
+            root.classList.add("dark");
+            root.style.colorScheme = "dark";
+          } else {
+            root.classList.remove("dark");
+            root.style.colorScheme = "light";
+          }
+        } catch (error) {
+          console.warn("Failed to apply stored theme early", error);
+        }
+      })();
+    </script>
+    <link href="/src/index.css" rel="stylesheet" />
+  </head>
+  <body class="bg-background text-foreground">
+    <div id="root"></div>
+    <script type="module" src="/src/pages/status.tsx"></script>
+  </body>
+</html>

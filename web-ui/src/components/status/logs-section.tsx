@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Locale } from "../../i18n";
-import { useTranslation } from "../../hooks/use-translation";
+import type { Locale } from "../../lib/locale";
+import { useStatusTranslation } from "../../hooks/use-status-translation";
 import type { LogEntry } from "../../types";
 import { LogsIcon } from "../icons";
 import { SelectBox } from "../ui/select-box";
@@ -16,7 +16,7 @@ interface LogsSectionProps {
 }
 
 export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, options, locale }: LogsSectionProps) {
-  const t = useTranslation(locale);
+  const t = useStatusTranslation(locale);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 

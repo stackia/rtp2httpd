@@ -1081,6 +1081,42 @@ void handle_status_page(connection_t *c)
 }
 
 /**
+ * Handle HTTP request for player page
+ */
+void handle_player_page(connection_t *c)
+{
+#include "player_page.h"
+
+  if (!c)
+    return;
+
+  char extra_headers[192];
+  size_t body_len = sizeof(player_page_html);
+
+  /* Check If-None-Match for player page - use same helper with different etag */
+  if (c->http_req.if_none_match[0] != '\0' &&
+      strcmp(c->http_req.if_none_match, player_page_etag) == 0)
+  {
+    snprintf(extra_headers, sizeof(extra_headers),
+             "ETag: %s\r\n"
+             "Content-Length: 0\r\n",
+             player_page_etag);
+    send_http_headers(c, STATUS_304, CONTENT_HTML, extra_headers);
+    connection_queue_output_and_flush(c, NULL, 0);
+    return;
+  }
+
+  snprintf(extra_headers, sizeof(extra_headers),
+           "Content-Encoding: gzip\r\n"
+           "ETag: %s\r\n"
+           "Content-Length: %zu\r\n",
+           player_page_etag, body_len);
+
+  send_http_headers(c, STATUS_200, CONTENT_HTML, extra_headers);
+  connection_queue_output_and_flush(c, player_page_html, body_len);
+}
+
+/**
  * Initialize SSE connection for a client
  * Sends SSE headers and sets up connection state for SSE streaming
  */
