@@ -321,6 +321,14 @@ int fcc_initialize_and_request(stream_context_t *ctx)
             return -1;
         }
 
+        /* Set receive buffer size to 512KB */
+        int rcvbuf_size = UDP_RCVBUF_SIZE;
+        r = setsockopt(fcc->fcc_sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf_size, sizeof(rcvbuf_size));
+        if (r < 0)
+        {
+            logger(LOG_WARN, "FCC: Failed to set SO_RCVBUF to %d: %s", rcvbuf_size, strerror(errno));
+        }
+
         upstream_if = get_upstream_interface_for_fcc();
         bind_to_upstream_interface(fcc->fcc_sock, upstream_if);
 
