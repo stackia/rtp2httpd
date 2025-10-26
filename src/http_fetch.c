@@ -66,7 +66,7 @@ int http_fetch_fd_sync(const char *url, size_t *out_size)
 
     /* Build curl command with timeout and follow redirects */
     ret = snprintf(curl_cmd, sizeof(curl_cmd),
-                   "curl -L -f -s -S --compressed --max-time 30 --connect-timeout 30 -o '%s' '%s' 2>&1",
+                   "curl -L -f -s -S --max-time 30 --connect-timeout 30 -o '%s' '%s' 2>&1",
                    temp_file, url);
 
     if (ret >= (int)sizeof(curl_cmd))
