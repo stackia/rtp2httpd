@@ -18,17 +18,18 @@ curl -fsSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/inst
 
 安装完成后，在 LuCI 管理界面的 "服务" 菜单中找到 "rtp2httpd" 进行配置：
 
-<img width="925" alt="LuCI 配置界面" src="https://github.com/user-attachments/assets/b62fa304-6602-4c03-9a5d-8973e06ed466" />
+<img width="2048" height="1910" alt="Image" src="https://github.com/user-attachments/assets/4252d5c4-b575-4b5e-a66b-4cabcf4f2cd1" />
 
 ### 必需配置项
 
-1. **启用服务**：勾选启用 rtp2httpd
-2. **监听端口**：默认 5140，也可以自定义
+1. **启用**：勾选启用 rtp2httpd
+2. **端口**：默认 5140，也可以自定义
+3. **上游接口**：设置为 IPTV 网络接口
 
 ### 可选配置项
 
+- **外部 M3U**：如有现成的 M3U 播放列表，填入此设置项后后即可使用内置 Web 播放器（[详细说明](m3u-integration.md)）
 - **FCC 服务器**：如需快速换台，配置 FCC 服务器地址（[如何获取](fcc-setup.md)）
-- **外部 M3U**：如有现成的 M3U 播放列表，可以导入（[详细说明](m3u-integration.md)）
 - **视频快照**：如需频道预览图功能，启用视频快照（[配置方法](video-snapshot.md)）
 
 ## 测试访问
@@ -44,11 +45,32 @@ http://路由器IP:5140/status
 
 # 获取 M3U 播放列表（如已配置）
 http://路由器IP:5140/playlist.m3u
+
+# 使用内置播放器（需配置 M3U）
+http://路由器IP:5140/player
 ```
 
-## 在播放器中使用
+## 使用内置播放器
 
-将上面的 URL 添加到支持 IPTV 的播放器中即可观看。
+如果已配置 M3U 播放列表，可直接在浏览器中访问内置播放器：
+
+```bash
+http://路由器IP:5140/player
+```
+
+内置播放器提供：
+
+- 频道列表自动加载（来自配置的 M3U）
+- 在线直播观看
+- 时移回看支持（如频道支持）
+- FCC 快速换台
+- 响应式设计，支持移动设备
+
+**注意**：播放器依赖浏览器的原生解码能力，部分编码格式可能无法播放。推荐使用 Chrome/Edge/Safari 等现代浏览器。
+
+## 在其他播放器中使用
+
+将 `http://路由器IP:5140/playlist.m3u` 添加到支持 IPTV 的播放器中即可观看。
 
 ## 查看日志
 

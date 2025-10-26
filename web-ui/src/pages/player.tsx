@@ -182,8 +182,15 @@ function PlayerPage() {
             parsed.channels.filter((channel) => channel.tvgId).map((channel) => channel.tvgId!),
           );
 
+          // Build EPG URL with token if available
+          let epgUrl = parsed.tvgUrl;
+          if (token) {
+            const separator = parsed.tvgUrl.includes("?") ? "&" : "?";
+            epgUrl = `${parsed.tvgUrl}${separator}r2h-token=${encodeURIComponent(token)}`;
+          }
+
           // Load EPG and filter to only channels in M3U
-          const epg = await loadEPG(parsed.tvgUrl, validChannelIds);
+          const epg = await loadEPG(epgUrl, validChannelIds);
           setEpgData(epg);
         } catch (err) {
           console.error("Failed to load EPG:", err);

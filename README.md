@@ -35,8 +35,8 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 ### 高性能优化
 
 - **非阻塞 IO 模型**：使用 epoll 事件驱动，高效处理大量并发连接
-- **零拷贝技术**：支持 Linux 内核 MSG_ZEROCOPY 特性，避免数据在用户态和内核态之间的拷贝
 - **多核优化**：支持多 worker 进程，充分利用多核 CPU 提高最大吞吐量
+- **零拷贝技术**：支持 Linux 内核 MSG_ZEROCOPY 特性，避免数据在用户态和内核态之间的拷贝
 - **智能批量发送**：自动积攒小包后批量发送，减少系统调用开销 90%，同时兼顾低延时
 - **Buffer Pool 管理**：预分配缓冲池，避免频繁内存分配，多客户端根据负载动态共享
 - **高并发支持**：单个 worker 可支持 100+ 并发流媒体客户端
@@ -47,18 +47,26 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 
 https://github.com/user-attachments/assets/a8c9c60f-ebc3-49a8-b374-f579f8e34d92
 
-> **提示**：快速换台需要使用针对 IPTV 优化的播放器，例如 [mytv-android](https://github.com/mytv-android/mytv-android) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) / 等。
-> 常见普通播放器，例如 PotPlayer / IINA 等，没有专门优化起播速度，因此是否使用 FCC 区别不明显。
+> **提示**：快速换台需要使用针对 IPTV 优化的播放器，例如 [mytv-android](https://github.com/mytv-android/mytv-android) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) 等（视频中的播放器是 TiviMate）。
+> 常见普通播放器，例如 PotPlayer / IINA 等，没有专门优化起播速度，FCC 效果不明显。
+
+### 内置全功能播放器
+
+https://github.com/user-attachments/assets/d676b8c1-7017-48a1-814c-caab0054b361
+
+> 内置基于 Web 的现代化播放器界面，支持直播和时移回看，支持 EPG 电子节目单、FCC 快速起播。
+> 需要配置 M3U 播放列表后使用，通过浏览器访问 `/player` 即可打开。
+> 受限于浏览器解码能力，个别频道可能不支持。
+
+### 实时状态监控
+
+<img width="2586" height="1814" alt="Image" src="https://github.com/user-attachments/assets/8838ee26-aa97-4d31-8031-afe8998a7fba" />
 
 ### 25 条 1080p 组播流同时播放
 
 https://github.com/user-attachments/assets/fedc0c28-f9ac-4675-9b19-a8efdd062506
 
 > 单流码率 8 Mbps。总仅占用 25% CPU 单核 (i3-N305)，消耗 4MB 内存。
-
-### Web UI 实时状态监控
-
-<img width="2586" height="1814" alt="Image" src="https://github.com/user-attachments/assets/8838ee26-aa97-4d31-8031-afe8998a7fba" />
 
 ## 快速开始
 
