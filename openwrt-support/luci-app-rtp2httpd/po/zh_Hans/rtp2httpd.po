@@ -90,10 +90,10 @@ msgid "rtp2httpd_Maximum number of buffers in zero-copy pool. Each buffer is 153
 msgstr "零拷贝缓冲池的最大缓冲区数量。每个缓冲区 1536 字节，默认 16384 个（约 24MB）。增大此值以提高多客户端并发时的吞吐量。"
 
 msgid "rtp2httpd_Hostname"
-msgstr "仅允许使用域名连接"
+msgstr "主机名/域名"
 
-msgid "rtp2httpd_Hostname to check in the Host: HTTP header"
-msgstr "开启后，只有 HTTP Host 头匹配指定域名时，rtp2httpd 才会允许连接"
+msgid "rtp2httpd_Hostname description"
+msgstr "配置后将会检查 HTTP Host 头，必须匹配这里的值才能访问。M3U 转换时，也会使用这个值来作为转换后节目地址的域名。"
 
 msgid "rtp2httpd_R2H Token"
 msgstr "HTTP 请求认证令牌"
