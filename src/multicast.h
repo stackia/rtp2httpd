@@ -3,6 +3,9 @@
 
 #include "rtp2httpd.h"
 
+/* UDP socket receive buffer size (512KB) */
+#define UDP_RCVBUF_SIZE (512 * 1024)
+
 /**
  * Bind socket to upstream interface if configured
  *
