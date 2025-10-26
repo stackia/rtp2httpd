@@ -254,7 +254,7 @@ static int is_private_ipv4(const char *ip_str)
  * Priority: hostname config > non-upstream interface private IP > non-upstream interface public IP > upstream interface IP > localhost
  * Returns: malloc'd string (caller must free)
  */
-static char *get_server_address(void)
+char *get_server_address(void)
 {
     struct ifaddrs *ifaddr, *ifa;
     char *result = NULL;

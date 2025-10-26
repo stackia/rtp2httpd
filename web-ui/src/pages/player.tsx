@@ -169,8 +169,14 @@ function PlayerPage() {
         throw new Error(t("failedToLoadPlaylist"));
       }
 
+      // Extract server address from X-Server-Address header
+      const serverAddress = response.headers.get("X-Server-Address") || undefined;
+      if (serverAddress) {
+        console.log("Server address from header:", serverAddress);
+      }
+
       const content = await response.text();
-      const parsed = parseM3U(content);
+      const parsed = parseM3U(content, serverAddress);
       setMetadata(parsed);
 
       // Load EPG if available

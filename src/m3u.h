@@ -37,4 +37,10 @@ void m3u_reset_transformed_playlist(void);
  */
 void m3u_reset_external_playlist(void);
 
+/* Get server hostname or IP address with priority logic
+ * Priority: hostname config > non-upstream interface private IP > non-upstream interface public IP > upstream interface IP > localhost
+ * Returns: malloc'd string (caller must free)
+ */
+char *get_server_address(void);
+
 #endif /* __M3U_H__ */

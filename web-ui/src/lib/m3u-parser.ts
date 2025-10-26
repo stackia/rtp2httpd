@@ -2,9 +2,49 @@ import mpegts from "mpegts.js";
 import { M3UMetadata, Channel } from "../types/player";
 
 /**
- * Parse M3U playlist content
+ * Normalize URL by replacing protocol, hostname and port with current window.location if it matches the server address
+ * @param url - The URL to normalize
+ * @param serverAddress - The server address (hostname or IP, without port)
+ * @returns Normalized URL (with replaced protocol/hostname/port if matches server, otherwise unchanged)
  */
-export function parseM3U(content: string): M3UMetadata {
+function normalizeUrl(url: string, serverAddress?: string): string {
+  if (!serverAddress) {
+    return url;
+  }
+
+  try {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+    const protocol = urlObj.protocol;
+
+    // Only process http/https URLs
+    if (protocol !== "http:" && protocol !== "https:") {
+      return url;
+    }
+
+    // Check if hostname matches server address (ignore port)
+    // Server address from X-Server-Address header does not include port
+    if (hostname === serverAddress || hostname === window.location.hostname) {
+      // Replace protocol, hostname and port with current window.location
+      urlObj.protocol = window.location.protocol;
+      urlObj.hostname = window.location.hostname;
+      urlObj.port = window.location.port;
+      return urlObj.toString();
+    }
+  } catch (e) {
+    // If URL parsing fails, return as-is
+    console.warn("Failed to parse URL:", url, e);
+  }
+
+  return url;
+}
+
+/**
+ * Parse M3U playlist content
+ * @param content - The M3U playlist content
+ * @param serverAddress - Optional server address from X-Server-Address header
+ */
+export function parseM3U(content: string, serverAddress?: string): M3UMetadata {
   const lines = content.split("\n");
   const channels: Channel[] = [];
   const groups: string[] = [];
@@ -25,7 +65,7 @@ export function parseM3U(content: string): M3UMetadata {
     if (line.startsWith("#EXTM3U")) {
       const tvgUrlMatch = line.match(/x-tvg-url="([^"]+)"/);
       if (tvgUrlMatch) {
-        tvgUrl = tvgUrlMatch[1];
+        tvgUrl = normalizeUrl(tvgUrlMatch[1], serverAddress);
       }
       const catchupMatch = line.match(/catchup="([^"]+)"/);
       if (catchupMatch) {
@@ -60,6 +100,10 @@ export function parseM3U(content: string): M3UMetadata {
         seenGroups.add(group);
       }
 
+      // Normalize catchup source URL if present
+      const rawCatchupSource = catchupSourceMatch?.[1] || defaultCatchupSource;
+      const normalizedCatchupSource = rawCatchupSource ? normalizeUrl(rawCatchupSource, serverAddress) : undefined;
+
       currentChannel = {
         id: `${channels.length + 1}`,
         name,
@@ -68,7 +112,7 @@ export function parseM3U(content: string): M3UMetadata {
         tvgId: tvgIdMatch?.[1],
         tvgName: tvgNameMatch?.[1],
         catchup: catchupMatch?.[1] || defaultCatchup,
-        catchupSource: catchupSourceMatch?.[1] || defaultCatchupSource,
+        catchupSource: normalizedCatchupSource,
       };
       continue;
     }
@@ -82,9 +126,12 @@ export function parseM3U(content: string): M3UMetadata {
         line.startsWith("rtsp://") ||
         line.startsWith("udp://"))
     ) {
+      // Normalize URL: replace hostname/port with current window.location if it matches server address
+      const normalizedUrl = normalizeUrl(line, serverAddress);
+
       channels.push({
         ...currentChannel,
-        url: line,
+        url: normalizedUrl,
       });
       currentChannel = null;
     }
