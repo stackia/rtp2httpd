@@ -53,6 +53,7 @@ rtp2httpd [选项]
 - `-H, --hostname <主机名>` - 检查 HTTP Host 头的主机名
 - `-T, --r2h-token <令牌>` - HTTP 请求认证令牌 (所有请求必须携带 r2h-token 查询参数)
 - `-s, --status-page-path <路径>` - 状态页面与 API 根路径 (默认: /status)
+- `-p, --player-page-path <路径>` - 内置播放器页面路径 (默认: /player)
 
 ### 兼容性
 
@@ -96,6 +97,9 @@ r2h-token = your-secret-token-here
 
 # 状态页路径（默认: /status）
 status-page-path = /status
+
+# 播放器页路径（默认: /player）
+player-page-path = /player
 
 # 上游网络接口配置 (可选)
 #
@@ -187,15 +191,16 @@ rtp://239.253.64.121:5140
 
 ## 公网访问建议
 
-开放公网访问时，建议修改 `hostname` / `r2h-token` / `status-page-path` 以加强安全性。
+开放公网访问时，建议修改 `hostname` / `r2h-token` / `status-page-path` / `player-page-path` 以加强安全性。
 
 如有条件，建议前置 nginx / lucky / caddy 等工具负责转发。
 
-```ini
+````ini
 [global]
 hostname = iptv.example.com
 r2h-token = my-secret-token-12345
 status-page-path = /my-status-page
+player-page-path = /my-player
 ```
 
 ## 性能调优
@@ -208,3 +213,4 @@ status-page-path = /my-status-page
 - [M3U 播放列表集成](m3u-integration.md)：M3U 配置详解
 - [FCC 快速换台配置](fcc-setup.md)：FCC 相关配置
 - [视频快照配置](video-snapshot.md)：视频快照功能配置
+````

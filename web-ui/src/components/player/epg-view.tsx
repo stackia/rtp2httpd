@@ -208,7 +208,10 @@ export function EPGView({
                             {playing ? (
                               <div className="h-8 md:h-10 w-1 rounded-full bg-primary" title={t("nowPlaying")} />
                             ) : isPast && supportsCatchup ? (
-                              <div className="h-8 md:h-10 w-1 rounded-full bg-muted-foreground/30" title={t("replay")} />
+                              <div
+                                className="h-8 md:h-10 w-1 rounded-full bg-muted-foreground/30"
+                                title={t("replay")}
+                              />
                             ) : (
                               <div className="h-8 md:h-10 w-1 rounded-full bg-transparent" />
                             )}
@@ -239,7 +242,11 @@ export function EPGView({
                           {/* Right: Status Icon (unified position) */}
                           <div className="flex h-8 md:h-10 w-3 md:w-4 shrink-0 items-center justify-center">
                             {onAir && (
-                              <svg className="h-2.5 w-2.5 md:h-3 md:w-3 text-primary" fill="currentColor" viewBox="0 0 8 8">
+                              <svg
+                                className="h-2.5 w-2.5 md:h-3 md:w-3 text-primary"
+                                fill="currentColor"
+                                viewBox="0 0 8 8"
+                              >
                                 <circle cx="4" cy="4" r="3" />
                                 <title>{t("onAir")}</title>
                               </svg>
