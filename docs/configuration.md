@@ -25,12 +25,13 @@ rtp2httpd [选项]
 
 ### 性能优化
 
-- `-b, --buffer-pool-max-size <数量>` - 零拷贝缓冲池最大缓冲区数量 (默认: 16384)
+- `-b, --buffer-pool-max-size <数量>` - 缓冲池最大缓冲区数量 (默认: 16384)
   - 每个缓冲区 1536 字节，16384 个约占用 24MB 内存
   - 增大此值以提高多客户端并发时的吞吐量
 - `-Z, --zerocopy-on-send` - 启用零拷贝发送以提升性能 (默认: 关闭)
   - 需要内核支持 MSG_ZEROCOPY (Linux 4.14+)
   - 在支持的设备上提升吞吐量并降低 CPU 占用
+  - 如果你的 rtp2httpd 位于反向代理之后 (nginx/caddy/lucky 等)，不建议开启这个选项
 
 ### FCC 快速换台
 
@@ -140,7 +141,7 @@ mcast-rejoin-interval = 0
 # FCC 监听媒体流端口范围（可选，格式: 起始-结束，默认随机端口）
 fcc-listen-port-range = 40000-40100
 
-# 零拷贝缓冲池最大缓冲区数量（默认: 16384）
+# 缓冲池最大缓冲区数量（默认: 16384）
 # 每个缓冲区 1536 字节，16384 个约占用 24MB 内存
 # 增大此值以提高多客户端并发时的吞吐量，例如设置为 32768 或更高
 buffer-pool-max-size = 16384
@@ -149,6 +150,7 @@ buffer-pool-max-size = 16384
 # 设为 yes/true/on/1 以启用零拷贝
 # 需要内核支持 MSG_ZEROCOPY (Linux 4.14+)
 # 在支持的设备上可提升吞吐量并降低 CPU 占用，特别是在高并发负载下
+# 如果你的 rtp2httpd 位于反向代理之后 (nginx/caddy/lucky 等)，不建议开启这个选项
 zerocopy-on-send = no
 
 # 启用视频快照功能（默认: no）
