@@ -164,7 +164,7 @@ check_installed() {
         return 0
     else
         print_info "未检测到已安装的 rtp2httpd"
-        return 1
+        return 0
     fi
 }
 
