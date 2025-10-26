@@ -197,7 +197,7 @@ rtp://239.253.64.121:5140
 
 如有条件，建议前置 nginx / lucky / caddy 等工具负责转发。
 
-````ini
+```ini
 [global]
 hostname = iptv.example.com
 r2h-token = my-secret-token-12345
@@ -215,4 +215,3 @@ player-page-path = /my-player
 - [M3U 播放列表集成](m3u-integration.md)：M3U 配置详解
 - [FCC 快速换台配置](fcc-setup.md)：FCC 相关配置
 - [视频快照配置](video-snapshot.md)：视频快照功能配置
-````
