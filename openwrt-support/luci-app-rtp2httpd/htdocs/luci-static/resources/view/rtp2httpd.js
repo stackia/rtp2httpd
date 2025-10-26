@@ -21,6 +21,7 @@ return view.extend({
       var port = "5140"; // default port
       var token = null;
       var pagePath = defaultPath;
+      var hostname = null;
       var use_config_file = uci.get(
         "rtp2httpd",
         section_id,
@@ -28,7 +29,7 @@ return view.extend({
       );
 
       if (use_config_file === "1") {
-        // Parse port, token and page path from config file content
+        // Parse port, token, hostname and page path from config file content
         var configContent = results[1];
         var portMatch = configContent.match(/^\s*\*\s+(\d+)\s*$/m);
         if (!portMatch) {
@@ -37,6 +38,11 @@ return view.extend({
         }
         if (portMatch && portMatch[1]) {
           port = portMatch[1];
+        }
+        // Parse hostname from config file
+        var hostnameMatch = configContent.match(/^\s*hostname\s*=?\s*(.+?)\s*$/m);
+        if (hostnameMatch && hostnameMatch[1]) {
+          hostname = hostnameMatch[1];
         }
         // Parse r2h-token from config file
         var tokenMatch = configContent.match(
@@ -52,9 +58,10 @@ return view.extend({
           pagePath = pagePathMatch[1];
         }
       } else {
-        // Get port, token and page path from UCI config
+        // Get port, token, hostname and page path from UCI config
         port = uci.get("rtp2httpd", section_id, "port") || "5140";
         token = uci.get("rtp2httpd", section_id, "r2h_token");
+        hostname = uci.get("rtp2httpd", section_id, "hostname");
         pagePath = uci.get("rtp2httpd", section_id, uciPathKey) || defaultPath;
       }
 
@@ -63,7 +70,9 @@ return view.extend({
         pagePath = "/" + pagePath;
       }
 
-      var pageUrl = "http://" + window.location.hostname + ":" + port + pagePath;
+      // Use configured hostname or fallback to window.location.hostname
+      var targetHostname = hostname || window.location.hostname;
+      var pageUrl = "http://" + targetHostname + ":" + port + pagePath;
       if (token) {
         pageUrl += "?r2h-token=" + encodeURIComponent(token);
       }
