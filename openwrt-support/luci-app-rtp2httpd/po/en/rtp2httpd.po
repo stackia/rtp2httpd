@@ -87,7 +87,7 @@ msgid "rtp2httpd_Buffer Pool Max Size"
 msgstr "Buffer Pool Max Size"
 
 msgid "rtp2httpd_Maximum number of buffers in zero-copy pool. Each buffer is 1536 bytes. Increase to improve throughput for multi-client concurrency."
-msgstr "Maximum number of buffers in zero-copy pool. Each buffer is 1536 bytes. Default is 16384 (~24MB). Increase to improve throughput for multi-client concurrency."
+msgstr "Maximum number of buffers in zero-copy pool. Each buffer is 1536 bytes. Default is 16384 (~24MB). Increase to improve throughput for multi-client concurrency. Not recommended when running behind reverse proxies."
 
 msgid "rtp2httpd_Hostname"
 msgstr "Hostname"

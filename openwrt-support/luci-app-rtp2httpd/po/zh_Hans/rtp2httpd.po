@@ -159,7 +159,7 @@ msgid "rtp2httpd_Zero-Copy on Send"
 msgstr "启用零拷贝发送"
 
 msgid "rtp2httpd_Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires kernel 4.14+. Can improve throughput and reduce CPU usage on supported devices."
-msgstr "启用 MSG_ZEROCOPY 零拷贝发送以提升性能。需要内核 4.14+（支持 MSG_ZEROCOPY）。在支持的设备上，可提升吞吐量并降低 CPU 占用，特别是在高并发负载下。"
+msgstr "启用 MSG_ZEROCOPY 零拷贝发送以提升性能。需要内核 4.14+（支持 MSG_ZEROCOPY）。在支持的设备上，可提升吞吐量并降低 CPU 占用，特别是在高并发负载下。使用反向代理时不建议开启。"
 
 msgid "rtp2httpd_Player Page"
 msgstr "播放器页面"
