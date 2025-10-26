@@ -32,6 +32,12 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 - **系统日志查看**：实时查看服务器日志，支持动态调整日志级别
 - **远程管理功能**：通过 Web 界面强制断开客户端连接
 
+## 内置播放器
+
+- **浏览器直接使用**：内置基于 Web 的现代化播放器界面，可以在浏览器直接打开播放
+- **快速起播**：搭配 FCC 可实现快速起播、快速换台
+- **支持时移和回看**：支持 EPG 电子节目单，支持时移和回看（有 RTSP 回看源时）
+
 ### 高性能优化
 
 - **非阻塞 IO 模型**：使用 epoll 事件驱动，高效处理大量并发连接
@@ -50,11 +56,10 @@ https://github.com/user-attachments/assets/a8c9c60f-ebc3-49a8-b374-f579f8e34d92
 > **提示**：快速换台需要使用针对 IPTV 优化的播放器，例如 [mytv-android](https://github.com/mytv-android/mytv-android) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) 等（视频中的播放器是 TiviMate）。
 > 常见普通播放器，例如 PotPlayer / IINA 等，没有专门优化起播速度，FCC 效果不明显。
 
-### 内置全功能播放器
+### 内置播放器
 
 https://github.com/user-attachments/assets/d676b8c1-7017-48a1-814c-caab0054b361
 
-> 内置基于 Web 的现代化播放器界面，支持直播和时移回看，支持 EPG 电子节目单、FCC 快速起播。
 > 需要配置 M3U 播放列表后使用，通过浏览器访问 `/player` 即可打开。
 > 受限于浏览器解码能力，个别频道可能不支持。
 
