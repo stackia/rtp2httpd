@@ -1,15 +1,15 @@
-# <img src="./web-ui/src/favicon.svg" width="25" height="25"> rtp2httpd - IPTV 流媒体转发服务器
+# <img src="./web-ui/src/favicon.svg" width="24" height="24"> rtp2httpd - IPTV 流媒体转发服务器
 
 rtp2httpd 是一个多媒体流转发服务器。本项目是 [oskar456/rtp2httpd](https://github.com/oskar456/rtp2httpd) 的完全重构版本，在原项目基础上加入了许多新功能，专为中国大陆 IPTV 环境设计。
 
-rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并实现了运营商级的 FCC（[Fast Channel Change](https://blog.csdn.net/yangzex/article/details/131328837)）快速换台协议，为 IPTV 用户提供接近原生机顶盒的观看体验。
+rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并实现了运营商级的 FCC（[Fast Channel Change](https://blog.csdn.net/yangzex/article/details/131328837)）快速换台协议，可以作为 `udpxy` 和 `msd_lite` 的无缝替代，为 IPTV 用户提供接近原生机顶盒的观看体验。
 
-## 核心功能特性
+## ✨ 核心功能特性
 
-### 多协议支持
+### 📡 多协议支持
 
 - **组播 RTP/UDP 转单播 HTTP**：将组播 RTP/UDP 流转换为标准 HTTP 流
-- **UDPxy 兼容性**：完全兼容 UDPxy URL 格式，可以作为 `udpxy` 和 `msd_lite` 的无缝替代
+- **UDPxy 兼容性**：完全兼容 UDPxy URL 格式
 - **RTSP 转 HTTP 视频流**：完整支持 RTSP/RTP 协议栈，包括 TCP 和 UDP 传输模式
   - 可以实现 IPTV RTSP 时移源的回看
   - 可以把家庭摄像机的 RTSP 流转换为 HTTP 流，方便在 IPTV 播放器中观看
@@ -20,25 +20,25 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
   - 通过 `/playlist.m3u` 访问转换后的播放列表
 - **频道快照**：支持通过 HTTP 请求快速获取频道的快照图片，降低播放端解码压力
 
-### FCC 快速换台技术
+### ⚡ FCC 快速换台技术
 
 - **支持运营商 FCC 协议**：搭配运营商 FCC 服务器，实现毫秒级换台响应，媲美原生 IPTV 机顶盒
 - **快速解码**：FCC 保证了换台时迅速提供 IDR 帧，可供播放器立即解码
 
-### 实时状态监控
+### 📊 实时状态监控
 
 - **Web 状态页面**：通过浏览器访问 `/status` 查看实时运行状态
 - **客户端连接统计**：显示每个连接的 IP、状态、带宽使用、传输数据量
 - **系统日志查看**：实时查看服务器日志，支持动态调整日志级别
 - **远程管理功能**：通过 Web 界面强制断开客户端连接
 
-## 内置播放器
+### 🎬 内置播放器
 
 - **浏览器直接使用**：内置基于 Web 的现代化播放器界面，可以在浏览器直接打开播放
 - **快速起播**：搭配 FCC 可实现快速起播、快速换台
 - **支持时移和回看**：支持 EPG 电子节目单，支持时移和回看（有 RTSP 回看源时）
 
-### 高性能优化
+### 🚀 高性能优化
 
 - **非阻塞 IO 模型**：使用 epoll 事件驱动，高效处理大量并发连接
 - **多核优化**：支持多 worker 进程，充分利用多核 CPU 提高最大吞吐量
@@ -47,7 +47,7 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 - **Buffer Pool 管理**：预分配缓冲池，避免频繁内存分配，多客户端根据负载动态共享
 - **高并发支持**：单个 worker 可支持 100+ 并发流媒体客户端
 
-## 演示效果
+## 📹 演示效果
 
 ### 快速换台 + 时移回看
 
@@ -73,7 +73,7 @@ https://github.com/user-attachments/assets/fedc0c28-f9ac-4675-9b19-a8efdd062506
 
 > 单流码率 8 Mbps。总仅占用 25% CPU 单核 (i3-N305)，消耗 4MB 内存。
 
-## 快速开始
+## 🚀 快速开始
 
 ### OpenWrt 一键安装/更新
 
@@ -93,7 +93,7 @@ rtp2httpd 支持多种部署方式：
 
 详见 [安装指南](docs/installation.md)。
 
-## 文档
+## 📖 文档
 
 - **[快速上手](docs/quick-start.md)**：OpenWrt 快速配置指南
 - **[安装方式](docs/installation.md)**：各种平台的安装指南
@@ -103,7 +103,7 @@ rtp2httpd 支持多种部署方式：
 - **[FCC 快速换台配置](docs/fcc-setup.md)**：启用毫秒级换台功能
 - **[视频快照配置](docs/video-snapshot.md)**：频道预览图功能配置
 
-## 开源许可
+## 📄 开源许可
 
 本项目基于 GNU General Public License v2.0 开源协议发布。这意味着：
 
@@ -114,7 +114,7 @@ rtp2httpd 支持多种部署方式：
 - ⚠️ 如果分发二进制文件，必须同时提供源代码
 - ⚠️ 不能将其闭源后再销售
 
-## 致谢
+## 🙏 致谢
 
 - 原始项目 rtp2httpd 的开发者们
 - 为 FCC 协议实现提供技术支持的社区贡献者
