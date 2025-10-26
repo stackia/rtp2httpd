@@ -280,7 +280,7 @@ return view.extend({
       form.Value,
       "hostname",
       _("rtp2httpd_Hostname"),
-      _("rtp2httpd_Hostname to check in the Host: HTTP header")
+      _("rtp2httpd_Hostname description")
     );
     o.datatype = "hostname";
     o.depends("use_config_file", "0");

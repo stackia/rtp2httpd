@@ -92,8 +92,8 @@ msgstr "Maximum number of buffers in zero-copy pool. Each buffer is 1536 bytes. 
 msgid "rtp2httpd_Hostname"
 msgstr "Hostname"
 
-msgid "rtp2httpd_Hostname to check in the Host: HTTP header"
-msgstr "If enabled, rtp2httpd will only allow connections if the 'Host:' HTTP header matches the hostname"
+msgid "rtp2httpd_Hostname description"
+msgstr "When configured, HTTP Host header will be checked and must match this value to allow access. This value is also used as the hostname in M3U playlist conversion."
 
 msgid "rtp2httpd_R2H Token"
 msgstr "R2H Token"
