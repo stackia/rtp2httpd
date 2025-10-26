@@ -720,6 +720,7 @@ int connection_route_and_start(connection_t *c)
   else
   {
     /* Found configured service (RTP or RTSP) - try to merge query params if present */
+    logger(LOG_INFO, "Service matched: %s", service->url);
     service_t *merged_service = service_create_with_query_merge(service, c->http_req.url, service->service_type);
     if (merged_service)
     {
