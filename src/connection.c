@@ -967,12 +967,25 @@ static void handle_playlist_request(connection_t *c)
   }
 
   size_t playlist_len = strlen(playlist);
-  char extra_headers[128];
+  char *server_addr = get_server_address();
+  char extra_headers[256];
 
-  snprintf(extra_headers, sizeof(extra_headers),
-           "Content-Type: audio/x-mpegurl\r\n"
-           "Content-Length: %zu\r\n",
-           playlist_len);
+  if (server_addr)
+  {
+    snprintf(extra_headers, sizeof(extra_headers),
+             "Content-Type: audio/x-mpegurl\r\n"
+             "Content-Length: %zu\r\n"
+             "X-Server-Address: %s\r\n",
+             playlist_len, server_addr);
+    free(server_addr);
+  }
+  else
+  {
+    snprintf(extra_headers, sizeof(extra_headers),
+             "Content-Type: audio/x-mpegurl\r\n"
+             "Content-Length: %zu\r\n",
+             playlist_len);
+  }
 
   send_http_headers(c, STATUS_200, CONTENT_HTML, extra_headers);
   connection_queue_output_and_flush(c, (const uint8_t *)playlist, playlist_len);
