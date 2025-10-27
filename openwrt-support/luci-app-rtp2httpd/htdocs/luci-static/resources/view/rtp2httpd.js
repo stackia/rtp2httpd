@@ -282,7 +282,7 @@ return view.extend({
       _("rtp2httpd_Hostname"),
       _("rtp2httpd_Hostname description")
     );
-    o.datatype = "hostname";
+    o.datatype = "host";
     o.depends("use_config_file", "0");
 
     o = s.option(
