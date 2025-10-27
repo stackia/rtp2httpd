@@ -247,10 +247,10 @@ match_package_name() {
 
     if [ "$arch" != "all" ]; then
         # 主包需要匹配架构
-        matched=$(echo "$assets" | grep "^${prefix}_.*_${arch}\.${ext}$" | head -n 1)
+        matched=$(echo "$assets" | grep "^${prefix}[_-].*_${arch}\.${ext}$" | head -n 1)
     else
         # luci 相关包通常是 all 架构
-        matched=$(echo "$assets" | grep "^${prefix}_.*\.${ext}$" | head -n 1)
+        matched=$(echo "$assets" | grep "^${prefix}[_-].*\.${ext}$" | head -n 1)
     fi
 
     if [ -z "$matched" ]; then
