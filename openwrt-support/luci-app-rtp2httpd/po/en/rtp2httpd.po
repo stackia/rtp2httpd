@@ -93,7 +93,7 @@ msgid "rtp2httpd_Hostname"
 msgstr "Hostname"
 
 msgid "rtp2httpd_Hostname description"
-msgstr "When configured, HTTP Host header will be checked and must match this value to allow access. This value is also used as the hostname in M3U playlist conversion."
+msgstr "When configured, HTTP Host header will be checked and must match this value to allow access. This value is also used as the hostname in M3U playlist conversion. When using a reverse proxy, configure this with the proxied access URL (including http(s):// and path prefix), e.g., https://my-domain.com/rtp2httpd, and ensure the reverse proxy forwards the Host header."
 
 msgid "rtp2httpd_R2H Token"
 msgstr "R2H Token"

@@ -93,7 +93,7 @@ msgid "rtp2httpd_Hostname"
 msgstr "主机名/域名"
 
 msgid "rtp2httpd_Hostname description"
-msgstr "配置后将会检查 HTTP Host 头，必须匹配这里的值才能访问。M3U 转换时，也会使用这个值来作为转换后节目地址的域名。"
+msgstr "配置后将会检查 HTTP Host 头，必须匹配这里的值才能访问。M3U 转换时，也会使用这个值来作为转换后节目地址的域名。使用反向代理时，需要配置为经过反向代理后的访问地址（包括 http(s):// 和路径前缀），例如 https://my-domain.com/rtp2httpd，并且需要反向代理透传 Host 头。"
 
 msgid "rtp2httpd_R2H Token"
 msgstr "HTTP 请求认证令牌"

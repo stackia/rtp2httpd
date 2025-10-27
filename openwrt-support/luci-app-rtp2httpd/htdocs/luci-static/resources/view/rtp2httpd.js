@@ -8,8 +8,10 @@
 return view.extend({
   // Helper function to open a page (status or player)
   openPage: function (section_id, pageType) {
-    var pathConfigKey = pageType === "status" ? "status-page-path" : "player-page-path";
-    var uciPathKey = pageType === "status" ? "status_page_path" : "player_page_path";
+    var pathConfigKey =
+      pageType === "status" ? "status-page-path" : "player-page-path";
+    var uciPathKey =
+      pageType === "status" ? "status_page_path" : "player_page_path";
     var defaultPath = pageType === "status" ? "/status" : "/player";
 
     return Promise.all([
@@ -22,11 +24,7 @@ return view.extend({
       var token = null;
       var pagePath = defaultPath;
       var hostname = null;
-      var use_config_file = uci.get(
-        "rtp2httpd",
-        section_id,
-        "use_config_file"
-      );
+      var use_config_file = uci.get("rtp2httpd", section_id, "use_config_file");
 
       if (use_config_file === "1") {
         // Parse port, token, hostname and page path from config file content
@@ -40,19 +38,22 @@ return view.extend({
           port = portMatch[1];
         }
         // Parse hostname from config file
-        var hostnameMatch = configContent.match(/^\s*hostname\s*=?\s*(.+?)\s*$/m);
+        var hostnameMatch = configContent.match(
+          /^\s*hostname\s*=?\s*(.+?)\s*$/m
+        );
         if (hostnameMatch && hostnameMatch[1]) {
           hostname = hostnameMatch[1];
         }
         // Parse r2h-token from config file
-        var tokenMatch = configContent.match(
-          /^\s*r2h-token\s*=?\s*(.+?)\s*$/m
-        );
+        var tokenMatch = configContent.match(/^\s*r2h-token\s*=?\s*(.+?)\s*$/m);
         if (tokenMatch && tokenMatch[1]) {
           token = tokenMatch[1];
         }
         // Parse page path from config file
-        var pagePathRegex = new RegExp("^\\s*" + pathConfigKey + "\\s*=?\\s*(.+?)\\s*$", "m");
+        var pagePathRegex = new RegExp(
+          "^\\s*" + pathConfigKey + "\\s*=?\\s*(.+?)\\s*$",
+          "m"
+        );
         var pagePathMatch = configContent.match(pagePathRegex);
         if (pagePathMatch && pagePathMatch[1]) {
           pagePath = pagePathMatch[1];
@@ -121,11 +122,7 @@ return view.extend({
       return self.openPage(section_id, "status");
     };
 
-    o = s.option(
-      form.Button,
-      "_player_page",
-      _("rtp2httpd_Player Page")
-    );
+    o = s.option(form.Button, "_player_page", _("rtp2httpd_Player Page"));
     o.inputtitle = _("rtp2httpd_Open Player Page");
     o.inputstyle = "apply";
     o.onclick = function (ev, section_id) {
@@ -282,7 +279,6 @@ return view.extend({
       _("rtp2httpd_Hostname"),
       _("rtp2httpd_Hostname description")
     );
-    o.datatype = "host";
     o.depends("use_config_file", "0");
 
     o = s.option(
