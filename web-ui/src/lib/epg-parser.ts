@@ -91,6 +91,35 @@ function parseXMLTVTime(timeStr: string): Date | null {
 }
 
 /**
+ * Get EPG channel ID with fallback logic
+ * Tries to match in order: tvgId -> tvgName -> name
+ * @param channel - Channel object with tvgId, tvgName, and name fields
+ * @param epgData - EPG data to check against
+ * @returns The matching channel ID from EPG data, or null if no match found
+ */
+export function getEPGChannelId(
+  channel: { tvgId?: string; tvgName?: string; name: string },
+  epgData: EPGData,
+): string | null {
+  // Try tvgId first
+  if (channel.tvgId && epgData[channel.tvgId]) {
+    return channel.tvgId;
+  }
+
+  // Try tvgName second
+  if (channel.tvgName && epgData[channel.tvgName]) {
+    return channel.tvgName;
+  }
+
+  // Try name last
+  if (channel.name && epgData[channel.name]) {
+    return channel.name;
+  }
+
+  return null;
+}
+
+/**
  * Get current program for a channel
  * Uses findLast for efficient reverse search (programs are sorted by start time)
  */

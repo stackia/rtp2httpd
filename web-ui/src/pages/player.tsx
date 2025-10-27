@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import mpegts from "mpegts.js";
 import { Channel, M3UMetadata, PlayMode } from "../types/player";
 import { parseM3U, buildCatchupSegments } from "../lib/m3u-parser";
-import { loadEPG, getCurrentProgram, EPGData } from "../lib/epg-parser";
+import { loadEPG, getCurrentProgram, getEPGChannelId, EPGData } from "../lib/epg-parser";
 import { ChannelList, ChannelListRef } from "../components/player/channel-list";
 import { EPGView } from "../components/player/epg-view";
 import { VideoPlayer } from "../components/player/video-player";
@@ -184,10 +184,13 @@ function PlayerPage() {
       if (parsed.tvgUrl) {
         try {
           // Build set of valid channel IDs from M3U for filtering
-          // Only use tvgId for EPG matching
-          const validChannelIds = new Set<string>(
-            parsed.channels.filter((channel) => channel.tvgId).map((channel) => channel.tvgId!),
-          );
+          // Use tvgId, tvgName, and name for EPG matching (with fallback logic)
+          const validChannelIds = new Set<string>();
+          parsed.channels.forEach((channel) => {
+            if (channel.tvgId) validChannelIds.add(channel.tvgId);
+            if (channel.tvgName) validChannelIds.add(channel.tvgName);
+            validChannelIds.add(channel.name);
+          });
 
           // Build EPG URL with token if available
           let epgUrl = parsed.tvgUrl;
@@ -238,15 +241,19 @@ function PlayerPage() {
   }, [loadPlaylist]);
 
   // Get current program for the video player
-  // Only use tvgId for EPG matching
+  // Use tvgId / tvgName / name with fallback logic for EPG matching
   // Use streamStartTime + currentVideoTime to determine the actual time position
   const currentVideoProgram = useMemo(() => {
-    if (!currentChannel?.tvgId) return null;
+    if (!currentChannel) return null;
+
+    // Get EPG channel ID using fallback logic (tvgId -> tvgName -> name)
+    const epgChannelId = getEPGChannelId(currentChannel, epgData);
+    if (!epgChannelId) return null;
 
     // Calculate absolute time based on stream start + current video position
     const absoluteTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
-    return getCurrentProgram(currentChannel.tvgId, epgData, absoluteTime);
-  }, [currentChannel?.tvgId, epgData, streamStartTime, currentVideoTime]);
+    return getCurrentProgram(epgChannelId, epgData, absoluteTime);
+  }, [currentChannel, epgData, streamStartTime, currentVideoTime]);
 
   const handleVideoError = useCallback((err: string) => {
     setError(err);
@@ -366,7 +373,7 @@ function PlayerPage() {
               )}
               {sidebarView === "epg" && (
                 <EPGView
-                  channelId={currentChannel?.tvgId || null}
+                  channelId={currentChannel ? getEPGChannelId(currentChannel, epgData) : null}
                   epgData={epgData}
                   currentTime={currentTime}
                   onProgramSelect={handleSeek}
