@@ -512,34 +512,25 @@ int connection_route_and_start(connection_t *c)
       return 0;
     }
 
-    /* Check if Host header matches configured hostname (case-insensitive) */
-    /* Also handle Host header with port (e.g., "example.com:8080") */
-    char host_without_port[256];
-    const char *colon = strchr(c->http_req.hostname, ':');
-    if (colon)
-    {
-      /* Extract hostname without port */
-      size_t host_len = (size_t)(colon - c->http_req.hostname);
-      if (host_len >= sizeof(host_without_port))
-        host_len = sizeof(host_without_port) - 1;
-      strncpy(host_without_port, c->http_req.hostname, host_len);
-      host_without_port[host_len] = '\0';
-    }
-    else
-    {
-      strncpy(host_without_port, c->http_req.hostname, sizeof(host_without_port) - 1);
-      host_without_port[sizeof(host_without_port) - 1] = '\0';
-    }
+    /* Match Host header against configured hostname (with lenient matching) */
+    int match_result = http_match_host_header(c->http_req.hostname, config.hostname);
 
-    if (strcasecmp(host_without_port, config.hostname) != 0)
+    if (match_result < 0)
     {
-      logger(LOG_WARN, "Client request rejected: Host header mismatch (got: %s, expected: %s)",
-             host_without_port, config.hostname);
+      logger(LOG_ERROR, "Failed to parse configured hostname: %s", config.hostname);
       http_send_400(c);
       return 0;
     }
 
-    logger(LOG_DEBUG, "Host header validated: %s", host_without_port);
+    if (match_result == 0)
+    {
+      logger(LOG_WARN, "Client request rejected: Host header mismatch (got: %s, expected: %s)",
+             c->http_req.hostname, config.hostname);
+      http_send_400(c);
+      return 0;
+    }
+
+    logger(LOG_DEBUG, "Host header validated: %s", c->http_req.hostname);
   }
 
   /* Extract service_path and query */

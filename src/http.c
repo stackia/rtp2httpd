@@ -518,3 +518,203 @@ void http_send_401(connection_t *conn)
     /* Set connection to closing state */
     conn->state = CONN_CLOSING;
 }
+
+/**
+ * Parse URL and extract components (protocol, host, port, path)
+ * @param url Input URL string
+ * @param protocol Output buffer for protocol (can be NULL)
+ * @param host Output buffer for host (can be NULL)
+ * @param port Output buffer for port (can be NULL)
+ * @param path Output buffer for path (can be NULL)
+ * @return 0 on success, -1 on error
+ */
+int http_parse_url_components(const char *url, char *protocol, char *host, char *port, char *path)
+{
+    const char *p = url;
+    size_t len;
+
+    if (!url || !url[0])
+        return -1;
+
+    /* Initialize outputs */
+    if (protocol)
+        protocol[0] = '\0';
+    if (host)
+        host[0] = '\0';
+    if (port)
+        port[0] = '\0';
+    if (path)
+        path[0] = '\0';
+
+    /* Check for protocol (http:// or https://) */
+    const char *scheme_end = strstr(p, "://");
+    if (scheme_end)
+    {
+        /* Extract protocol */
+        len = scheme_end - p;
+        if (protocol && len < 16)
+        {
+            strncpy(protocol, p, len);
+            protocol[len] = '\0';
+        }
+        p = scheme_end + 3; /* Skip "://" */
+    }
+
+    /* Find end of host:port (either '/' or end of string) */
+    const char *path_start = strchr(p, '/');
+    const char *host_end = path_start ? path_start : (p + strlen(p));
+
+    /* Extract path if present */
+    if (path_start && path)
+    {
+        strncpy(path, path_start, 1023);
+        path[1023] = '\0';
+    }
+
+    /* Parse host:port */
+    const char *port_start = NULL;
+
+    /* Handle IPv6 addresses [host]:port */
+    if (*p == '[')
+    {
+        const char *bracket_end = strchr(p, ']');
+        if (!bracket_end || bracket_end >= host_end)
+            return -1;
+
+        /* Extract IPv6 host */
+        len = bracket_end - p - 1; /* Exclude brackets */
+        if (host && len < 256)
+        {
+            strncpy(host, p + 1, len);
+            host[len] = '\0';
+        }
+
+        /* Check for port after bracket */
+        if (bracket_end + 1 < host_end && bracket_end[1] == ':')
+        {
+            port_start = bracket_end + 2;
+        }
+    }
+    else
+    {
+        /* IPv4 or hostname - find last colon for port */
+        /* But be careful: IPv6 without brackets has multiple colons */
+        const char *first_colon = strchr(p, ':');
+        const char *last_colon = NULL;
+
+        if (first_colon && first_colon < host_end)
+        {
+            /* Check if there's another colon (IPv6 indicator) */
+            const char *second_colon = strchr(first_colon + 1, ':');
+            if (second_colon && second_colon < host_end)
+            {
+                /* Multiple colons = IPv6 without brackets, no port */
+                len = host_end - p;
+                if (host && len < 256)
+                {
+                    strncpy(host, p, len);
+                    host[len] = '\0';
+                }
+            }
+            else
+            {
+                /* Single colon = hostname:port or IPv4:port */
+                last_colon = first_colon;
+                len = last_colon - p;
+                if (host && len < 256)
+                {
+                    strncpy(host, p, len);
+                    host[len] = '\0';
+                }
+                port_start = last_colon + 1;
+            }
+        }
+        else
+        {
+            /* No colon, just host */
+            len = host_end - p;
+            if (host && len < 256)
+            {
+                strncpy(host, p, len);
+                host[len] = '\0';
+            }
+        }
+    }
+
+    /* Extract port if found */
+    if (port_start && port)
+    {
+        len = host_end - port_start;
+        if (len < 16)
+        {
+            strncpy(port, port_start, len);
+            port[len] = '\0';
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Match Host header against configured hostname
+ * @param request_host_header Host header from HTTP request
+ * @param config_hostname Configured hostname (can be full URL or simple hostname)
+ * @return 1 if match, 0 if not match, -1 on error
+ */
+int http_match_host_header(const char *request_host_header, const char *config_hostname)
+{
+    char expected_host[256] = {0};
+    char expected_port[16] = {0};
+    char expected_host_port[272];
+
+    if (!request_host_header || !config_hostname)
+        return -1;
+
+    /* Extract host:port from config_hostname (may contain full URL with protocol and path) */
+    if (http_parse_url_components(config_hostname, NULL, expected_host, expected_port, NULL) != 0)
+        return -1;
+
+    /* Build expected host:port string */
+    if (expected_port[0] != '\0')
+    {
+        snprintf(expected_host_port, sizeof(expected_host_port), "%s:%s", expected_host, expected_port);
+    }
+    else
+    {
+        strncpy(expected_host_port, expected_host, sizeof(expected_host_port) - 1);
+        expected_host_port[sizeof(expected_host_port) - 1] = '\0';
+    }
+
+    /* Allow lenient matching: if expected doesn't contain port, only compare hostname part */
+    const char *expected_colon = strchr(expected_host_port, ':');
+
+    if (expected_colon == NULL)
+    {
+        /* Config hostname has no port, extract hostname from Host header and compare */
+        char request_hostname[256];
+        const char *request_colon = strchr(request_host_header, ':');
+
+        if (request_colon)
+        {
+            /* Host header has port, extract hostname part */
+            size_t host_len = (size_t)(request_colon - request_host_header);
+            if (host_len >= sizeof(request_hostname))
+                host_len = sizeof(request_hostname) - 1;
+            strncpy(request_hostname, request_host_header, host_len);
+            request_hostname[host_len] = '\0';
+        }
+        else
+        {
+            /* Host header has no port */
+            strncpy(request_hostname, request_host_header, sizeof(request_hostname) - 1);
+            request_hostname[sizeof(request_hostname) - 1] = '\0';
+        }
+
+        return (strcasecmp(request_hostname, expected_host_port) == 0) ? 1 : 0;
+    }
+    else
+    {
+        /* Config hostname has port, require exact match of host:port */
+        return (strcasecmp(request_host_header, expected_host_port) == 0) ? 1 : 0;
+    }
+}

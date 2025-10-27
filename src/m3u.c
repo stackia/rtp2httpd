@@ -250,30 +250,130 @@ static int is_private_ipv4(const char *ip_str)
     return 0;
 }
 
-/* Get server hostname or IP address with priority logic
+/* Get server address as complete URL
  * Priority: hostname config > non-upstream interface private IP > non-upstream interface public IP > upstream interface IP > localhost
- * Returns: malloc'd string (caller must free)
+ * Returns: malloc'd string containing complete URL (protocol://host:port/ or protocol://host:port/path/)
+ *          Always ends with trailing slash '/'
+ *          Caller must free the returned string
+ *
+ * If config.hostname contains a full URL (with protocol and/or path), this function:
+ * 1. Extracts and constructs the full URL including protocol, host, port, and path
+ * 2. Ensures the path ends with a trailing slash
+ * 3. If no protocol specified, defaults to http://
+ *
+ * If using interface IP, this function:
+ * 1. Constructs URL as http://ip:port/ (or http://ip/ if port is 80)
+ * 2. Port is obtained from bind_addresses
  */
 char *get_server_address(void)
 {
     struct ifaddrs *ifaddr, *ifa;
-    char *result = NULL;
+    char *host_ip = NULL;
     char *non_upstream_private_ip = NULL;
     char *non_upstream_public_ip = NULL;
     char *upstream_ip = NULL;
     char addr_str[INET6_ADDRSTRLEN];
+    char server_port[16];
+    char full_url[2048];
+
+    /* Get first listening port from bind_addresses */
+    if (bind_addresses && bind_addresses->service)
+    {
+        strncpy(server_port, bind_addresses->service, sizeof(server_port) - 1);
+        server_port[sizeof(server_port) - 1] = '\0';
+    }
+    else
+    {
+        strcpy(server_port, "5140");
+    }
 
     /* Priority 1: Use configured hostname */
     if (config.hostname && strlen(config.hostname) > 0)
     {
-        return strdup(config.hostname);
+        char protocol[16] = {0};
+        char host[256] = {0};
+        char port[16] = {0};
+        char path[1024] = {0};
+
+        /* Parse URL components from config.hostname */
+        if (http_parse_url_components(config.hostname, protocol, host, port, path) != 0)
+        {
+            /* Failed to parse, build basic URL with config.hostname as host */
+            if (strcmp(server_port, "80") == 0)
+            {
+                snprintf(full_url, sizeof(full_url), "http://%s/", config.hostname);
+            }
+            else
+            {
+                snprintf(full_url, sizeof(full_url), "http://%s:%s/", config.hostname, server_port);
+            }
+            return strdup(full_url);
+        }
+
+        /* Build full URL */
+        /* Default protocol to http if not specified */
+        if (protocol[0] == '\0')
+        {
+            strcpy(protocol, "http");
+
+            /* Use port from config if specified, otherwise use server_port */
+            if (port[0] == '\0')
+            {
+                strncpy(port, server_port, sizeof(port) - 1);
+                port[sizeof(port) - 1] = '\0';
+            }
+        }
+
+        /* Build base URL: protocol://host:port or protocol://host (if port is 80 and protocol is http) */
+        if (port[0] == '\0' ||
+            (strcmp(protocol, "http") == 0 && strcmp(port, "80") == 0) ||
+            (strcmp(protocol, "https") == 0 && strcmp(port, "443") == 0))
+        {
+            snprintf(full_url, sizeof(full_url), "%s://%s", protocol, host);
+        }
+        else
+        {
+            snprintf(full_url, sizeof(full_url), "%s://%s:%s", protocol, host, port);
+        }
+
+        /* Add path if present, ensuring it ends with slash */
+        if (path[0] != '\0')
+        {
+            size_t path_len = strlen(path);
+            /* Ensure path ends with '/' */
+            if (path[path_len - 1] != '/')
+            {
+                strncat(full_url, path, sizeof(full_url) - strlen(full_url) - 2);
+                strcat(full_url, "/");
+            }
+            else
+            {
+                strncat(full_url, path, sizeof(full_url) - strlen(full_url) - 1);
+            }
+        }
+        else
+        {
+            /* No path specified, add trailing slash */
+            strcat(full_url, "/");
+        }
+
+        return strdup(full_url);
     }
 
     /* Priority 2-4: Get IP from network interfaces */
     if (getifaddrs(&ifaddr) == -1)
     {
         logger(LOG_WARN, "Failed to get network interfaces, using localhost");
-        return strdup("localhost");
+        /* Build URL with localhost */
+        if (strcmp(server_port, "80") == 0)
+        {
+            snprintf(full_url, sizeof(full_url), "http://localhost/");
+        }
+        else
+        {
+            snprintf(full_url, sizeof(full_url), "http://localhost:%s/", server_port);
+        }
+        return strdup(full_url);
     }
 
     for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next)
@@ -346,7 +446,7 @@ char *get_server_address(void)
     /* Priority: non-upstream private > non-upstream public > upstream > localhost */
     if (non_upstream_private_ip)
     {
-        result = non_upstream_private_ip;
+        host_ip = non_upstream_private_ip;
         if (non_upstream_public_ip)
             free(non_upstream_public_ip);
         if (upstream_ip)
@@ -354,20 +454,32 @@ char *get_server_address(void)
     }
     else if (non_upstream_public_ip)
     {
-        result = non_upstream_public_ip;
+        host_ip = non_upstream_public_ip;
         if (upstream_ip)
             free(upstream_ip);
     }
     else if (upstream_ip)
     {
-        result = upstream_ip;
+        host_ip = upstream_ip;
     }
     else
     {
-        result = strdup("localhost");
+        host_ip = strdup("localhost");
     }
 
-    return result;
+    /* Build complete URL with protocol, host, and port */
+    if (strcmp(server_port, "80") == 0)
+    {
+        snprintf(full_url, sizeof(full_url), "http://%s/", host_ip);
+    }
+    else
+    {
+        snprintf(full_url, sizeof(full_url), "http://%s:%s/", host_ip, server_port);
+    }
+
+    free(host_ip);
+
+    return strdup(full_url);
 }
 
 /* Extract attribute value from EXTINF line
@@ -640,13 +752,12 @@ static int extract_wrapped_url(const char *url, char *extracted, size_t extracte
  * query_params: optional query parameters (can be NULL)
  * output: buffer to store URL
  * output_size: size of output buffer
- * server_addr: server address (hostname or IP)
- * server_port: server port
+ * base_url: complete base URL from get_server_address() (e.g., "http://host:port/" or "https://host:port/path/")
  * Returns: 0 on success, -1 on error
  */
 static int build_service_url(const char *service_name, const char *query_params,
                              char *output, size_t output_size,
-                             const char *server_addr, const char *server_port)
+                             const char *base_url)
 {
     char *encoded_name = http_url_encode(service_name);
     char *encoded_token = NULL;
@@ -673,29 +784,30 @@ static int build_service_url(const char *service_name, const char *query_params,
     }
 
     /* Build URL with appropriate query parameters */
+    /* base_url already ends with '/', so we can directly append the service name */
     if (has_query_params && has_r2h_token)
     {
         /* Include both query parameters and r2h-token */
-        result = snprintf(output, output_size, "http://%s:%s/%s?%s&r2h-token=%s",
-                          server_addr, server_port, encoded_name, query_params, encoded_token);
+        result = snprintf(output, output_size, "%s%s?%s&r2h-token=%s",
+                          base_url, encoded_name, query_params, encoded_token);
     }
     else if (has_query_params)
     {
         /* Include only query parameters */
-        result = snprintf(output, output_size, "http://%s:%s/%s?%s",
-                          server_addr, server_port, encoded_name, query_params);
+        result = snprintf(output, output_size, "%s%s?%s",
+                          base_url, encoded_name, query_params);
     }
     else if (has_r2h_token)
     {
         /* Include only r2h-token */
-        result = snprintf(output, output_size, "http://%s:%s/%s?r2h-token=%s",
-                          server_addr, server_port, encoded_name, encoded_token);
+        result = snprintf(output, output_size, "%s%s?r2h-token=%s",
+                          base_url, encoded_name, encoded_token);
     }
     else
     {
         /* No query parameters */
-        result = snprintf(output, output_size, "http://%s:%s/%s",
-                          server_addr, server_port, encoded_name);
+        result = snprintf(output, output_size, "%s%s",
+                          base_url, encoded_name);
     }
 
     free(encoded_name);
@@ -887,7 +999,6 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
     int entry_count = 0;
     size_t line_len;
     char *server_addr = NULL;
-    char server_port[16];
     char proxy_url[MAX_URL_LENGTH];
     char transformed_line[MAX_M3U_LINE];
 
@@ -906,7 +1017,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
         service_source = SERVICE_SOURCE_EXTERNAL;
     }
 
-    /* Get server address and port */
+    /* Get server address as complete URL */
     server_addr = get_server_address();
     if (!server_addr)
     {
@@ -914,18 +1025,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
         return -1;
     }
 
-    /* Get first listening port from bind_addresses */
-    if (bind_addresses && bind_addresses->service)
-    {
-        strncpy(server_port, bind_addresses->service, sizeof(server_port) - 1);
-        server_port[sizeof(server_port) - 1] = '\0';
-    }
-    else
-    {
-        strcpy(server_port, "5140");
-    }
-
-    logger(LOG_INFO, "Server address: %s:%s", server_addr, server_port);
+    logger(LOG_INFO, "Server base URL: %s", server_addr);
 
     /* Don't reset transformed M3U buffer - accumulate content from multiple sources */
     /* Buffer will be cleared when configuration is reloaded */
@@ -1003,9 +1103,10 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
                         epg_filename = "epg.xml";
                     }
 
+                    /* server_addr_temp is now a complete URL ending with '/', so just append filename */
                     snprintf(transformed_header, sizeof(transformed_header),
-                             "#EXTM3U x-tvg-url=\"http://%s:%s/%s\"",
-                             server_addr_temp, server_port, epg_filename);
+                             "#EXTM3U x-tvg-url=\"%s%s\"",
+                             server_addr_temp, epg_filename);
 
                     if (server_addr_temp)
                         free(server_addr_temp);
@@ -1067,7 +1168,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
                     snprintf(catchup_service_name, sizeof(catchup_service_name), "%s/catchup", current_extinf.name);
 
                     if (build_service_url(catchup_service_name, catchup_query, proxy_url,
-                                          sizeof(proxy_url), server_addr, server_port) == 0)
+                                          sizeof(proxy_url), server_addr) == 0)
                     {
                         /* Find and replace catchup-source in line */
                         char *catchup_start = strstr(line, "catchup-source=\"");
@@ -1140,7 +1241,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
 
                 /* Build service URL using service name for transformed M3U */
                 if (build_service_url(current_extinf.name, main_query, proxy_url,
-                                      sizeof(proxy_url), server_addr, server_port) == 0)
+                                      sizeof(proxy_url), server_addr) == 0)
                 {
                     append_to_transformed_m3u(proxy_url, service_source);
                 }

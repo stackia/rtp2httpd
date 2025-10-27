@@ -148,4 +148,35 @@ void http_send_503(connection_t *conn);
  */
 void http_send_401(connection_t *conn);
 
+/**
+ * Parse URL and extract components (protocol, host, port, path)
+ * Supports various formats:
+ *   - 10.0.0.1
+ *   - example.org
+ *   - example.org:8080
+ *   - http://10.0.0.1
+ *   - https://example.org
+ *   - https://example.org:8443/prefix
+ *
+ * @param url Input URL string
+ * @param protocol Output buffer for protocol (can be NULL), size should be at least 16 bytes
+ * @param host Output buffer for host (can be NULL), size should be at least 256 bytes
+ * @param port Output buffer for port (can be NULL), size should be at least 16 bytes
+ * @param path Output buffer for path (can be NULL), size should be at least 1024 bytes
+ * @return 0 on success, -1 on error
+ */
+int http_parse_url_components(const char *url, char *protocol, char *host, char *port, char *path);
+
+/**
+ * Match Host header against configured hostname
+ * Supports lenient matching:
+ *   - If configured hostname has no port, only compares hostname part
+ *   - If configured hostname has port, requires exact host:port match
+ *
+ * @param request_host_header Host header from HTTP request (e.g., "example.org:5140" or "example.org")
+ * @param config_hostname Configured hostname (can be full URL like "http://example.org" or simple hostname "example.org")
+ * @return 1 if match, 0 if not match, -1 on error
+ */
+int http_match_host_header(const char *request_host_header, const char *config_hostname);
+
 #endif /* __HTTP_H__ */

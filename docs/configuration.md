@@ -195,14 +195,19 @@ rtp://239.253.64.121:5140
 
 开放公网访问时，建议修改 `hostname` / `r2h-token` / `status-page-path` / `player-page-path` 以加强安全性。
 
-如有条件，建议前置 nginx / lucky / caddy 等工具负责转发。
-
 ```ini
 [global]
 hostname = iptv.example.com
 r2h-token = my-secret-token-12345
 status-page-path = /my-status-page
 player-page-path = /my-player
+```
+
+如有条件，建议前置 nginx / lucky / caddy 等反向代理负责转发。使用反向代理时，需要将 hostname 配置为经过反向代理后访问的地址（包括路径前缀），并且需要反向代理透传 Host 头，例如：
+
+```ini
+[global]
+hostname = https://my-domain.com/rtp2httpd
 ```
 
 ## 性能调优

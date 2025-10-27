@@ -2,10 +2,18 @@ import mpegts from "mpegts.js";
 import { M3UMetadata, Channel } from "../types/player";
 
 /**
- * Normalize URL by replacing protocol, hostname and port with current window.location if it matches the server address
+ * Normalize URL by stripping server address prefix and resolving with current window.location
  * @param url - The URL to normalize
- * @param serverAddress - The server address (hostname or IP, without port)
- * @returns Normalized URL (with replaced protocol/hostname/port if matches server, otherwise unchanged)
+ * @param serverAddress - The server base URL from X-Server-Address header (e.g., "http://example.org:5140/" or "https://example.org/")
+ * @returns Normalized URL (resolved relative to current page location if URL starts with serverAddress, otherwise unchanged)
+ *
+ * Examples:
+ *   - If window.location is "http://example.org/player" and relativePath is "CCTV1"
+ *     → resolves to "http://example.org/CCTV1"
+ *   - If window.location is "http://example.org/prefix/player" and relativePath is "CCTV1"
+ *     → resolves to "http://example.org/prefix/CCTV1"
+ *   - If window.location is "http://example.org/prefix/player/" and relativePath is "CCTV1"
+ *     → resolves to "http://example.org/prefix/CCTV1"
  */
 function normalizeUrl(url: string, serverAddress?: string): string {
   if (!serverAddress) {
@@ -13,23 +21,18 @@ function normalizeUrl(url: string, serverAddress?: string): string {
   }
 
   try {
-    const urlObj = new URL(url);
-    const hostname = urlObj.hostname;
-    const protocol = urlObj.protocol;
+    // If URL starts with serverAddress, strip the prefix and resolve with current location
+    if (url.startsWith(serverAddress)) {
+      const relativePath = url.substring(serverAddress.length);
 
-    // Only process http/https URLs
-    if (protocol !== "http:" && protocol !== "https:") {
-      return url;
-    }
+      // Get base URL from current location (remove last path segment)
+      const currentUrl = new URL(window.location.href);
+      const pathParts = currentUrl.pathname.split('/').filter(p => p); // Remove empty parts
+      pathParts.pop(); // Remove last segment (current page)
+      const basePath = '/' + pathParts.join('/') + (pathParts.length > 0 ? '/' : '');
 
-    // Check if hostname matches server address (ignore port)
-    // Server address from X-Server-Address header does not include port
-    if (hostname === serverAddress || hostname === window.location.hostname) {
-      // Replace protocol, hostname and port with current window.location
-      urlObj.protocol = window.location.protocol;
-      urlObj.hostname = window.location.hostname;
-      urlObj.port = window.location.port;
-      return urlObj.toString();
+      const baseUrl = `${currentUrl.protocol}//${currentUrl.host}${basePath}`;
+      return new URL(relativePath, baseUrl).toString();
     }
   } catch (e) {
     // If URL parsing fails, return as-is
@@ -42,7 +45,7 @@ function normalizeUrl(url: string, serverAddress?: string): string {
 /**
  * Parse M3U playlist content
  * @param content - The M3U playlist content
- * @param serverAddress - Optional server address from X-Server-Address header
+ * @param serverAddress - Optional server base URL from X-Server-Address header (e.g., "http://example.org:5140/")
  */
 export function parseM3U(content: string, serverAddress?: string): M3UMetadata {
   const lines = content.split("\n");

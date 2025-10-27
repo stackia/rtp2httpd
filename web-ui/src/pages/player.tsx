@@ -169,10 +169,11 @@ function PlayerPage() {
         throw new Error(t("failedToLoadPlaylist"));
       }
 
-      // Extract server address from X-Server-Address header
+      // Extract server base URL from X-Server-Address header
+      // Format: complete URL like "http://example.org:5140/" or "https://example.org/"
       const serverAddress = response.headers.get("X-Server-Address") || undefined;
       if (serverAddress) {
-        console.log("Server address from header:", serverAddress);
+        console.log("Server base URL from header:", serverAddress);
       }
 
       const content = await response.text();
