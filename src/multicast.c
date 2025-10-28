@@ -226,12 +226,12 @@ int join_mcast_group(service_t *service)
   }
 
   /* Set receive buffer size to 512KB */
-  int rcvbuf_size = UDP_RCVBUF_SIZE;
-  r = setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf_size, sizeof(rcvbuf_size));
-  if (r < 0)
-  {
-    logger(LOG_WARN, "Failed to set SO_RCVBUF to %d: %s", rcvbuf_size, strerror(errno));
-  }
+  // int rcvbuf_size = UDP_RCVBUF_SIZE;
+  // r = setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf_size, sizeof(rcvbuf_size));
+  // if (r < 0)
+  // {
+  //   logger(LOG_WARN, "Failed to set SO_RCVBUF to %d: %s", rcvbuf_size, strerror(errno));
+  // }
 
   r = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
   if (r)

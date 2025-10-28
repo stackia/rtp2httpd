@@ -1978,11 +1978,11 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session)
         }
 
         /* Set receive buffer size to 512KB */
-        int rcvbuf_size = UDP_RCVBUF_SIZE;
-        if (setsockopt(rtp_socket, SOL_SOCKET, SO_RCVBUF, &rcvbuf_size, sizeof(rcvbuf_size)) < 0)
-        {
-            logger(LOG_WARN, "RTSP: Failed to set RTP SO_RCVBUF to %d: %s", rcvbuf_size, strerror(errno));
-        }
+        // int rcvbuf_size = UDP_RCVBUF_SIZE;
+        // if (setsockopt(rtp_socket, SOL_SOCKET, SO_RCVBUF, &rcvbuf_size, sizeof(rcvbuf_size)) < 0)
+        // {
+        //     logger(LOG_WARN, "RTSP: Failed to set RTP SO_RCVBUF to %d: %s", rcvbuf_size, strerror(errno));
+        // }
 
         bind_to_upstream_interface(rtp_socket, upstream_if);
 
@@ -2017,11 +2017,11 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session)
         }
 
         /* Set receive buffer size to 512KB */
-        rcvbuf_size = UDP_RCVBUF_SIZE;
-        if (setsockopt(rtcp_socket, SOL_SOCKET, SO_RCVBUF, &rcvbuf_size, sizeof(rcvbuf_size)) < 0)
-        {
-            logger(LOG_WARN, "RTSP: Failed to set RTCP SO_RCVBUF to %d: %s", rcvbuf_size, strerror(errno));
-        }
+        // rcvbuf_size = UDP_RCVBUF_SIZE;
+        // if (setsockopt(rtcp_socket, SOL_SOCKET, SO_RCVBUF, &rcvbuf_size, sizeof(rcvbuf_size)) < 0)
+        // {
+        //     logger(LOG_WARN, "RTSP: Failed to set RTCP SO_RCVBUF to %d: %s", rcvbuf_size, strerror(errno));
+        // }
 
         bind_to_upstream_interface(rtcp_socket, upstream_if);
 
