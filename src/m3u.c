@@ -1456,4 +1456,10 @@ void m3u_reset_external_playlist(void)
         transformed_m3u_used = transformed_m3u_inline_end;
         transformed_m3u[transformed_m3u_used] = '\0';
     }
+
+    /* If no inline content, reset header flag to allow external M3U header to be added */
+    if (transformed_m3u_inline_end == 0)
+    {
+        transformed_m3u_has_header = 0;
+    }
 }
