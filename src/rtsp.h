@@ -62,6 +62,14 @@
 #define RTSP_METHOD_GET_PARAMETER "GET_PARAMETER"
 #define RTSP_METHOD_SET_PARAMETER "SET_PARAMETER"
 
+/* RTSP authentication types */
+typedef enum
+{
+    RTSP_AUTH_NONE = 0,
+    RTSP_AUTH_BASIC,
+    RTSP_AUTH_DIGEST
+} rtsp_auth_type_t;
+
 /* RTSP protocol states - fully async state machine */
 typedef enum
 {
@@ -115,12 +123,17 @@ typedef struct
     char server_host[RTSP_SERVER_HOST_SIZE];             /* RTSP server hostname */
     int server_port;                                     /* RTSP server port */
     char server_path[RTSP_SERVER_PATH_SIZE];             /* RTSP path with query string */
-    char username[RTSP_CREDENTIAL_SIZE];                 /* RTSP username for Basic auth */
-    char password[RTSP_CREDENTIAL_SIZE];                 /* RTSP password for Basic auth */
-    int has_basic_auth;                                  /* Flag: include Authorization header */
-    char authorization_header[RTSP_HEADERS_BUFFER_SIZE]; /* Cached Authorization header */
     char playseek_range[RTSP_PLAYSEEK_RANGE_SIZE];       /* Range for RTSP PLAY command */
     int redirect_count;                                  /* Number of redirects followed */
+
+    /* Authentication state */
+    char username[RTSP_CREDENTIAL_SIZE];            /* RTSP username for authentication */
+    char password[RTSP_CREDENTIAL_SIZE];            /* RTSP password for authentication */
+    rtsp_auth_type_t auth_type;                     /* Authentication type required by server */
+    char auth_realm[RTSP_CREDENTIAL_SIZE];          /* Digest auth realm */
+    char auth_nonce[RTSP_CREDENTIAL_SIZE];          /* Digest auth nonce */
+    char auth_opaque[RTSP_CREDENTIAL_SIZE];         /* Digest auth opaque */
+    int auth_retry_count;                           /* Number of auth retries (prevent infinite loops) */
 
     /* Transport mode configuration */
     rtsp_transport_mode_t transport_mode;         /* Current transport mode */

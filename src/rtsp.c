@@ -26,6 +26,7 @@
 #include "stream.h"
 #include "status.h"
 #include "worker.h"
+#include "md5.h"
 
 /*
  * RTSP Client Implementation
@@ -57,7 +58,9 @@ static int rtsp_initiate_teardown(rtsp_session_t *session);
 static int rtsp_reconnect_for_teardown(rtsp_session_t *session);
 static void rtsp_force_cleanup(rtsp_session_t *session);
 static int rtsp_base64_encode(const uint8_t *input, size_t input_len, char *output, size_t output_size);
-static void rtsp_update_authorization_header(rtsp_session_t *session);
+static int rtsp_parse_www_authenticate(rtsp_session_t *session, const char *www_auth_header);
+static void rtsp_build_digest_response(rtsp_session_t *session, const char *method, const char *uri, char *response_out, size_t response_size);
+static int rtsp_build_basic_auth_header(rtsp_session_t *session, char *output, size_t output_size);
 
 static int rtsp_base64_encode(const uint8_t *input, size_t input_len, char *output, size_t output_size)
 {
@@ -88,34 +91,196 @@ static int rtsp_base64_encode(const uint8_t *input, size_t input_len, char *outp
     return (int)required;
 }
 
-static void rtsp_update_authorization_header(rtsp_session_t *session)
+/*
+ * Parse WWW-Authenticate header to extract authentication parameters
+ * Supports both Basic and Digest authentication
+ */
+static int rtsp_parse_www_authenticate(rtsp_session_t *session, const char *www_auth_header)
 {
-    if (!session)
+    if (!session || !www_auth_header)
+        return -1;
+
+    /* Check if it's Basic auth */
+    if (strncasecmp(www_auth_header, "Basic", 5) == 0)
+    {
+        session->auth_type = RTSP_AUTH_BASIC;
+        logger(LOG_DEBUG, "RTSP: Server requires Basic authentication");
+
+        /* Extract realm if present */
+        const char *realm_start = strcasestr(www_auth_header, "realm=\"");
+        if (realm_start)
+        {
+            realm_start += 7; /* Skip 'realm="' */
+            const char *realm_end = strchr(realm_start, '"');
+            if (realm_end)
+            {
+                size_t realm_len = realm_end - realm_start;
+                if (realm_len < sizeof(session->auth_realm))
+                {
+                    memcpy(session->auth_realm, realm_start, realm_len);
+                    session->auth_realm[realm_len] = '\0';
+                    logger(LOG_DEBUG, "RTSP: Basic realm: %s", session->auth_realm);
+                }
+            }
+        }
+        return 0;
+    }
+
+    /* Check if it's Digest auth */
+    if (strncasecmp(www_auth_header, "Digest", 6) == 0)
+    {
+        session->auth_type = RTSP_AUTH_DIGEST;
+        logger(LOG_DEBUG, "RTSP: Server requires Digest authentication");
+
+        /* Extract realm */
+        const char *realm_start = strcasestr(www_auth_header, "realm=\"");
+        if (realm_start)
+        {
+            realm_start += 7; /* Skip 'realm="' */
+            const char *realm_end = strchr(realm_start, '"');
+            if (realm_end)
+            {
+                size_t realm_len = realm_end - realm_start;
+                if (realm_len < sizeof(session->auth_realm))
+                {
+                    memcpy(session->auth_realm, realm_start, realm_len);
+                    session->auth_realm[realm_len] = '\0';
+                }
+            }
+        }
+
+        /* Extract nonce */
+        const char *nonce_start = strcasestr(www_auth_header, "nonce=\"");
+        if (nonce_start)
+        {
+            nonce_start += 7; /* Skip 'nonce="' */
+            const char *nonce_end = strchr(nonce_start, '"');
+            if (nonce_end)
+            {
+                size_t nonce_len = nonce_end - nonce_start;
+                if (nonce_len < sizeof(session->auth_nonce))
+                {
+                    memcpy(session->auth_nonce, nonce_start, nonce_len);
+                    session->auth_nonce[nonce_len] = '\0';
+                }
+            }
+        }
+
+        /* Extract opaque (optional) */
+        const char *opaque_start = strcasestr(www_auth_header, "opaque=\"");
+        if (opaque_start)
+        {
+            opaque_start += 8; /* Skip 'opaque="' */
+            const char *opaque_end = strchr(opaque_start, '"');
+            if (opaque_end)
+            {
+                size_t opaque_len = opaque_end - opaque_start;
+                if (opaque_len < sizeof(session->auth_opaque))
+                {
+                    memcpy(session->auth_opaque, opaque_start, opaque_len);
+                    session->auth_opaque[opaque_len] = '\0';
+                }
+            }
+        }
+
+        logger(LOG_DEBUG, "RTSP: Digest realm=%s, nonce=%s",
+               session->auth_realm, session->auth_nonce);
+
+        return 0;
+    }
+
+    logger(LOG_ERROR, "RTSP: Unsupported authentication type: %s", www_auth_header);
+    return -1;
+}
+
+/*
+ * Build Digest authentication response string
+ * Implements RFC 2617 Digest Access Authentication
+ */
+static void rtsp_build_digest_response(rtsp_session_t *session, const char *method,
+                                       const char *uri, char *response_out, size_t response_size)
+{
+    uint8_t ha1_digest[16], ha2_digest[16], response_digest[16];
+    char ha1_hex[33], ha2_hex[33], response_hex[33];
+    char ha1_input[512], ha2_input[512], response_input[512];
+
+    if (!session || !method || !uri || !response_out || response_size < 33)
         return;
 
-    session->authorization_header[0] = '\0';
+    /* Calculate HA1 = MD5(username:realm:password) */
+    snprintf(ha1_input, sizeof(ha1_input), "%s:%s:%s",
+             session->username, session->auth_realm, session->password);
+    md5String(ha1_input, ha1_digest);
 
-    if (!session->has_basic_auth)
+    /* Convert HA1 to hex */
+    for (int i = 0; i < 16; i++)
+        sprintf(&ha1_hex[i * 2], "%02x", ha1_digest[i]);
+    ha1_hex[32] = '\0';
+
+    /* Calculate HA2 = MD5(method:uri) */
+    int ha2_len = snprintf(ha2_input, sizeof(ha2_input), "%s:%s", method, uri);
+    if (ha2_len >= (int)sizeof(ha2_input))
+    {
+        logger(LOG_ERROR, "RTSP: Method and URI too long for HA2 calculation");
         return;
+    }
+    md5String(ha2_input, ha2_digest);
 
+    /* Convert HA2 to hex */
+    for (int i = 0; i < 16; i++)
+        sprintf(&ha2_hex[i * 2], "%02x", ha2_digest[i]);
+    ha2_hex[32] = '\0';
+
+    /* Calculate response = MD5(HA1:nonce:HA2) */
+    snprintf(response_input, sizeof(response_input), "%s:%s:%s",
+             ha1_hex, session->auth_nonce, ha2_hex);
+    md5String(response_input, response_digest);
+
+    /* Convert response to hex */
+    for (int i = 0; i < 16; i++)
+        sprintf(&response_hex[i * 2], "%02x", response_digest[i]);
+    response_hex[32] = '\0';
+
+    /* Copy response (response_hex is always 32 chars + null) */
+    if (response_size > 32)
+    {
+        memcpy(response_out, response_hex, 33); /* Include null terminator */
+    }
+    else
+    {
+        memcpy(response_out, response_hex, response_size - 1);
+        response_out[response_size - 1] = '\0';
+    }
+}
+
+/*
+ * Build Basic authentication header
+ * Returns 0 on success, -1 on error
+ */
+static int rtsp_build_basic_auth_header(rtsp_session_t *session, char *output, size_t output_size)
+{
     char combined[RTSP_CREDENTIAL_SIZE * 2 + 2];
-    int len = snprintf(combined, sizeof(combined), "%s:%s", session->username, session->password);
+    char encoded[512];
+    int len;
+
+    if (!session || !output || output_size < 64)
+        return -1;
+
+    len = snprintf(combined, sizeof(combined), "%s:%s", session->username, session->password);
     if (len < 0 || len >= (int)sizeof(combined))
     {
         logger(LOG_ERROR, "RTSP: Credentials too long for Authorization header");
-        return;
+        return -1;
     }
 
-    /* Reserve space for "Authorization: Basic \r\n" (23 bytes) plus null terminator */
-    char encoded[RTSP_HEADERS_BUFFER_SIZE - 24];
     if (rtsp_base64_encode((const uint8_t *)combined, (size_t)len, encoded, sizeof(encoded)) < 0)
     {
         logger(LOG_ERROR, "RTSP: Failed to base64 encode credentials");
-        return;
+        return -1;
     }
 
-    snprintf(session->authorization_header, sizeof(session->authorization_header),
-             "Authorization: Basic %s\r\n", encoded);
+    snprintf(output, output_size, "Authorization: Basic %s\r\n", encoded);
+    return 0;
 }
 
 void rtsp_session_init(rtsp_session_t *session)
@@ -136,6 +301,10 @@ void rtsp_session_init(rtsp_session_t *session)
     session->transport_protocol = RTSP_PROTOCOL_RTP; /* Default protocol */
     session->rtp_channel = 0;
     session->rtcp_channel = 1;
+
+    /* Initialize authentication state */
+    session->auth_type = RTSP_AUTH_NONE;
+    session->auth_retry_count = 0;
 
     /* Initialize RTP packet tracking */
     session->current_seqn = 0;
@@ -252,9 +421,6 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
     strncpy(url_copy, rtsp_url, sizeof(url_copy) - 1);
     url_copy[sizeof(url_copy) - 1] = '\0';
 
-    strncpy(session->server_url, rtsp_url, sizeof(session->server_url) - 1);
-    session->server_url[sizeof(session->server_url) - 1] = '\0';
-
     if (fallback_username)
     {
         strncpy(fallback_user_copy, fallback_username, sizeof(fallback_user_copy) - 1);
@@ -274,10 +440,8 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
         }
     }
 
-    session->has_basic_auth = 0;
     session->username[0] = '\0';
     session->password[0] = '\0';
-    session->authorization_header[0] = '\0';
 
     if (fallback_user_source)
     {
@@ -293,8 +457,6 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
         {
             session->password[0] = '\0';
         }
-
-        session->has_basic_auth = 1;
     }
 
     /* Parse rtsp://host:port/path?query format */
@@ -437,10 +599,7 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
         session->username[sizeof(session->username) - 1] = '\0';
         strncpy(session->password, decoded_pass, sizeof(session->password) - 1);
         session->password[sizeof(session->password) - 1] = '\0';
-        session->has_basic_auth = 1;
     }
-
-    rtsp_update_authorization_header(session);
 
     if (path_start)
     {
@@ -456,6 +615,27 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
     else
     {
         strcpy(session->server_path, "/");
+    }
+
+    /* Build server_url without credentials (for RTSP requests and Digest auth) */
+    int url_len;
+    if (session->server_port == 554)
+    {
+        /* Omit default port */
+        url_len = snprintf(session->server_url, sizeof(session->server_url),
+                           "rtsp://%s%s", session->server_host, session->server_path);
+    }
+    else
+    {
+        url_len = snprintf(session->server_url, sizeof(session->server_url),
+                           "rtsp://%s:%d%s", session->server_host, session->server_port,
+                           session->server_path);
+    }
+
+    if (url_len >= (int)sizeof(session->server_url))
+    {
+        logger(LOG_ERROR, "RTSP: Server URL too long, truncated");
+        return -1;
     }
 
     /* Handle playseek parameter - convert to UTC for URL query parameter */
@@ -892,8 +1072,54 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events)
  */
 static int rtsp_prepare_request(rtsp_session_t *session, const char *method, const char *extra_headers)
 {
-    const char *auth_header = session->authorization_header[0] ? session->authorization_header : "";
+    char auth_header_buf[RTSP_HEADERS_BUFFER_SIZE] = "";
+    const char *auth_header = "";
     const char *extra = extra_headers ? extra_headers : "";
+
+    /* Build authentication header dynamically if credentials are available */
+    if (session->username[0] != '\0' && session->password[0] != '\0')
+    {
+        if (session->auth_type == RTSP_AUTH_DIGEST && session->auth_nonce[0] != '\0')
+        {
+            /* Build Digest authentication header */
+            char digest_response[33];
+            rtsp_build_digest_response(session, method, session->server_url,
+                                       digest_response, sizeof(digest_response));
+
+            int auth_len;
+            if (session->auth_opaque[0] != '\0')
+            {
+                auth_len = snprintf(auth_header_buf, sizeof(auth_header_buf),
+                                    "Authorization: Digest username=\"%s\", realm=\"%s\", "
+                                    "nonce=\"%s\", uri=\"%s\", response=\"%s\", opaque=\"%s\"\r\n",
+                                    session->username, session->auth_realm,
+                                    session->auth_nonce, session->server_url, digest_response,
+                                    session->auth_opaque);
+            }
+            else
+            {
+                auth_len = snprintf(auth_header_buf, sizeof(auth_header_buf),
+                                    "Authorization: Digest username=\"%s\", realm=\"%s\", "
+                                    "nonce=\"%s\", uri=\"%s\", response=\"%s\"\r\n",
+                                    session->username, session->auth_realm,
+                                    session->auth_nonce, session->server_url, digest_response);
+            }
+
+            if (auth_len >= (int)sizeof(auth_header_buf))
+            {
+                logger(LOG_ERROR, "RTSP: Digest authorization header too long, truncated");
+            }
+            auth_header = auth_header_buf;
+        }
+        else if (session->auth_type == RTSP_AUTH_BASIC || session->auth_type == RTSP_AUTH_NONE)
+        {
+            /* Build Basic authentication header (also used for preemptive auth when type is NONE) */
+            if (rtsp_build_basic_auth_header(session, auth_header_buf, sizeof(auth_header_buf)) == 0)
+            {
+                auth_header = auth_header_buf;
+            }
+        }
+    }
 
     /* Build RTSP request */
     int len = snprintf(session->pending_request, sizeof(session->pending_request),
@@ -1825,6 +2051,73 @@ static int rtsp_parse_response(rtsp_session_t *session, const char *response)
         /* Note: result can be 1 (success), 2 (async), or -1 (failure) */
         goto cleanup;
     }
+    else if (status_code == 401)
+    {
+        /* Authentication required */
+        logger(LOG_DEBUG, "RTSP: Server requires authentication (401)");
+
+        /* Prevent infinite auth retry loops */
+        if (session->auth_retry_count >= 2)
+        {
+            logger(LOG_ERROR, "RTSP: Authentication failed after %d retries", session->auth_retry_count);
+            result = -1;
+            goto cleanup;
+        }
+
+        /* Extract WWW-Authenticate header */
+        char *www_auth_header = rtsp_find_header(response, "WWW-Authenticate");
+        if (!www_auth_header)
+        {
+            logger(LOG_ERROR, "RTSP: 401 response missing WWW-Authenticate header");
+            result = -1;
+            goto cleanup;
+        }
+
+        /* Parse authentication challenge */
+        if (rtsp_parse_www_authenticate(session, www_auth_header) != 0)
+        {
+            logger(LOG_ERROR, "RTSP: Failed to parse WWW-Authenticate header");
+            free(www_auth_header);
+            result = -1;
+            goto cleanup;
+        }
+        free(www_auth_header);
+
+        /* Check if we have credentials */
+        if (session->username[0] == '\0')
+        {
+            logger(LOG_ERROR, "RTSP: Authentication required but no credentials provided");
+            result = -1;
+            goto cleanup;
+        }
+
+        /* Increment retry counter */
+        session->auth_retry_count++;
+
+        /* Move state back to retry the same request */
+        if (session->state == RTSP_STATE_AWAITING_OPTIONS)
+        {
+            session->state = RTSP_STATE_CONNECTED;
+        }
+        else if (session->state == RTSP_STATE_AWAITING_DESCRIBE)
+        {
+            session->state = RTSP_STATE_AWAITING_OPTIONS; /* Will advance to DESCRIBED */
+        }
+        else if (session->state == RTSP_STATE_AWAITING_SETUP)
+        {
+            session->state = RTSP_STATE_DESCRIBED;
+        }
+        else if (session->state == RTSP_STATE_AWAITING_PLAY)
+        {
+            session->state = RTSP_STATE_SETUP;
+        }
+
+        logger(LOG_DEBUG, "RTSP: Retrying request with %s authentication",
+               session->auth_type == RTSP_AUTH_DIGEST ? "Digest" : "Basic");
+
+        result = 0; /* Return success to allow state machine to retry */
+        goto cleanup;
+    }
     else if (status_code != 200)
     {
         /* Check if this is a GET_PARAMETER not supported error during keepalive */
@@ -2382,8 +2675,9 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location)
         session->socket = -1;
     }
 
-    const char *redirect_username = session->has_basic_auth ? session->username : NULL;
-    const char *redirect_password = session->has_basic_auth ? session->password : NULL;
+    /* Preserve credentials for redirect */
+    const char *redirect_username = (session->username[0] != '\0') ? session->username : NULL;
+    const char *redirect_password = (session->password[0] != '\0') ? session->password : NULL;
 
     /* Parse new URL and update session */
     if (rtsp_parse_server_url(session, location, NULL, NULL,
