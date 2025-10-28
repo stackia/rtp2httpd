@@ -12,7 +12,6 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 - **UDPxy 兼容性**：完全兼容 UDPxy URL 格式
 - **RTSP 转 HTTP 视频流**：完整支持 RTSP/RTP 协议栈，包括 TCP 和 UDP 传输模式
   - 可以实现 IPTV RTSP 时移源的回看
-  - 可以把家庭摄像机的 RTSP 流转换为 HTTP 流，方便在 IPTV 播放器中观看
 - **M3U 播放列表集成**：支持 M3U/M3U8 格式，自动识别并转换节目地址，提供标准化的播放列表
   - 支持外部 M3U URL
   - 智能识别 RTP/RTSP URL 并转换为 HTTP 代理格式
