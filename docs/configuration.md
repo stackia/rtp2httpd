@@ -79,9 +79,6 @@ verbosity = 3
 # 最大并发客户端数
 maxclients = 20
 
-# 是否后台运行
-daemonise = no
-
 # UDPxy 兼容性
 udpxy = yes
 

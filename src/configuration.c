@@ -33,7 +33,6 @@ config_t config;
 /* *** */
 
 int cmd_verbosity_set;
-int cmd_daemonise_set;
 int cmd_udpxy_set;
 int cmd_maxclients_set;
 int cmd_bind_set;
@@ -476,13 +475,6 @@ void parse_global_sec(char *line)
   }
 
   /* Boolean parameters with command line override */
-  if (strcasecmp("daemonise", param) == 0)
-  {
-    if (set_if_not_cmd_override(cmd_daemonise_set, "daemonise"))
-      config.daemonise = parse_bool(value);
-    return;
-  }
-
   if (strcasecmp("udpxy", param) == 0)
   {
     if (set_if_not_cmd_override(cmd_udpxy_set, "udpxy"))
@@ -821,9 +813,6 @@ void restore_conf_defaults(void)
   config.verbosity = LOG_ERROR;
   cmd_verbosity_set = 0;
 
-  config.daemonise = 0;
-  cmd_daemonise_set = 0;
-
   config.maxclients = 5;
   cmd_maxclients_set = 0;
 
@@ -922,8 +911,6 @@ void usage(FILE *f, char *progname)
           "\t-h --help            Show this help\n"
           "\t-v --verbose         Increase verbosity (0=FATAL, 1=ERROR, 2=WARN, 3=INFO, 4=DEBUG)\n"
           "\t-q --quiet           Report only fatal errors\n"
-          "\t-d --daemon          Fork to background (implies -q)\n"
-          "\t-D --nodaemon        Do not daemonise. (default)\n"
           "\t-U --noudpxy         Disable UDPxy compatibility\n"
           "\t-m --maxclients <n>  Serve max n requests simultaneously (default 5)\n"
           "\t-w --workers <n>     Number of worker processes with SO_REUSEPORT (default 1)\n"
@@ -1022,7 +1009,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"zerocopy-on-send", no_argument, 0, 'Z'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhdDUm:w:b:c:l:P:H:T:i:f:t:r:R:F:A:s:p:M:I:SCZ";
+  const char short_opts[] = "v:qhUm:w:b:c:l:P:H:T:i:f:t:r:R:F:A:s:p:M:I:SCZ";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1046,14 +1033,6 @@ void parse_cmd_line(int argc, char *argv[])
     case 'h':
       usage(stdout, argv[0]);
       exit(EXIT_SUCCESS);
-      break;
-    case 'd':
-      config.daemonise = 1;
-      cmd_daemonise_set = 1;
-      break;
-    case 'D':
-      config.daemonise = 0;
-      cmd_daemonise_set = 1;
       break;
     case 'U':
       config.udpxy = 0;
@@ -1243,8 +1222,8 @@ void parse_cmd_line(int argc, char *argv[])
     }
   }
 
-  logger(LOG_DEBUG, "Verbosity: %d, Daemonise: %d, Maxclients: %d, Workers: %d",
-         config.verbosity, config.daemonise, config.maxclients, config.workers);
+  logger(LOG_DEBUG, "Verbosity: %d, Maxclients: %d, Workers: %d",
+         config.verbosity, config.maxclients, config.workers);
 }
 
 /* Reload external M3U playlist
