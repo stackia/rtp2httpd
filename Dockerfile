@@ -52,7 +52,7 @@ FROM debian:bullseye-slim
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
-  libgcc1 \
+  libgcc1 curl \
   && rm -rf /var/lib/apt/lists/*
 
 # Copy the built binary and config
