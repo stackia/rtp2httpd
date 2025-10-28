@@ -127,7 +127,6 @@ curl "http://192.168.1.1:5140/rtsp/camera.local:554/stream?playseek=1704085200-1
 ### 使用场景
 
 - 将 IPTV RTSP 时移源转换为 HTTP 流
-- 将家庭摄像机 RTSP 流转换为 HTTP 流
 - 实现时移回看功能
 
 ## 状态页面
