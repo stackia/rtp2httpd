@@ -1291,11 +1291,13 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
                 if (unique_service_name)
                 {
                     char *unique_catchup_name = NULL;
+                    int catchup_is_recognizable = 0;
 
                     /* Create catchup service if present and URL is recognizable */
                     if (current_extinf.has_catchup && strlen(current_extinf.catchup_source) > 0)
                     {
-                        if (is_url_recognizable(current_extinf.catchup_source))
+                        catchup_is_recognizable = is_url_recognizable(current_extinf.catchup_source);
+                        if (catchup_is_recognizable)
                         {
                             char catchup_name[MAX_SERVICE_NAME + 20];
                             snprintf(catchup_name, sizeof(catchup_name), "%s/catchup", unique_service_name);
@@ -1304,7 +1306,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
                     }
 
                     /* Now generate the transformed EXTINF line with unique names */
-                    if (unique_catchup_name && is_url_recognizable(current_extinf.catchup_source))
+                    if (unique_catchup_name && catchup_is_recognizable)
                     {
                         /* Replace catchup-source URL in EXTINF line */
                         char *catchup_query = extract_dynamic_params(current_extinf.catchup_source);
@@ -1349,6 +1351,42 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
 
                         if (catchup_query)
                             free(catchup_query);
+                    }
+                    else if (current_extinf.has_catchup && strlen(current_extinf.catchup_source) > 0 &&
+                             !catchup_is_recognizable &&
+                             current_extinf.catchup_source[0] == '&')
+                    {
+                        /* catchup-source is not recognizable but starts with '&', and main service was converted
+                         * Replace '&' with '?' to make it valid for append mode */
+                        char *catchup_start = strstr(transformed_line, "catchup-source=\"");
+                        if (catchup_start)
+                        {
+                            catchup_start += 16; /* Skip 'catchup-source="' */
+                            char *catchup_end = strchr(catchup_start, '"');
+                            if (catchup_end)
+                            {
+                                /* Build transformed EXTINF line with modified catchup-source */
+                                size_t prefix_len = catchup_start - transformed_line;
+                                char final_extinf[MAX_M3U_LINE];
+                                /* Replace leading '&' with '?' */
+                                snprintf(final_extinf, sizeof(final_extinf), "%.*s?%.*s%s",
+                                         (int)prefix_len, transformed_line,
+                                         (int)(catchup_end - catchup_start - 1), catchup_start + 1,
+                                         catchup_end);
+                                append_to_transformed_m3u(final_extinf, service_source);
+                                append_to_transformed_m3u("\n", service_source);
+                            }
+                            else
+                            {
+                                append_to_transformed_m3u(transformed_line, service_source);
+                                append_to_transformed_m3u("\n", service_source);
+                            }
+                        }
+                        else
+                        {
+                            append_to_transformed_m3u(transformed_line, service_source);
+                            append_to_transformed_m3u("\n", service_source);
+                        }
                     }
                     else
                     {
