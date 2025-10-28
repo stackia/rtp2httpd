@@ -141,9 +141,9 @@ echo_info "Optimization level: -Os (optimize for size)"
     AR="${TOOLCHAIN_PREFIX}-ar" \
     RANLIB="${TOOLCHAIN_PREFIX}-ranlib" \
     STRIP="${TOOLCHAIN_PREFIX}-strip" \
-    CFLAGS="-static -Os -ffunction-sections -fdata-sections --sysroot=${SYSROOT}" \
-    LDFLAGS="-static -Wl,--gc-sections -Wl,-s --sysroot=${SYSROOT}" \
-    --enable-optimization=-Os
+    CFLAGS="-static --sysroot=${SYSROOT}" \
+    LDFLAGS="-static --sysroot=${SYSROOT}" \
+    --enable-optimization=-O3
 
 echo ""
 echo_step "Building"
