@@ -227,7 +227,6 @@ connection_t *connection_create(int fd, int epfd,
   c->epfd = epfd;
   c->state = CONN_READ_REQ_LINE;
   c->service = NULL;
-  c->service_owned = 0;
   c->streaming = 0;
   c->sse_active = 0;
   c->status_index = -1; /* Not registered yet */
@@ -311,7 +310,7 @@ void connection_free(connection_t *c)
   buffer_pool_try_shrink();
 
   /* Free service if owned */
-  if (c->service_owned && c->service)
+  if (c->service)
   {
     service_free(c->service);
     c->service = NULL;
@@ -698,14 +697,11 @@ int connection_route_and_start(connection_t *c)
   }
 
   /* Dynamic parsing for RTSP and UDPxy if needed */
-  int owned = 0;
   if (service == NULL)
   {
     if (config.udpxy)
     {
       service = service_create_from_udpxy_url(c->http_req.url);
-      if (service)
-        owned = 1;
     }
   }
   else
@@ -716,7 +712,6 @@ int connection_route_and_start(connection_t *c)
     if (merged_service)
     {
       service = merged_service;
-      owned = 1;
     }
     else
     {
@@ -728,7 +723,6 @@ int connection_route_and_start(connection_t *c)
         http_send_500(c);
         return 0;
       }
-      owned = 1;
     }
   }
 
@@ -744,13 +738,12 @@ int connection_route_and_start(connection_t *c)
     logger(LOG_INFO, "HEAD request detected, returning success without upstream connection", url);
     send_http_headers(c, STATUS_200, CONTENT_MP2T, NULL);
     connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
-    if (owned)
-      service_free(service);
+    service_free(service);
     c->state = CONN_CLOSING;
     return 0;
   }
 
-  if (owned && c->http_req.user_agent[0])
+  if (c->http_req.user_agent[0])
   {
     service->user_agent = strdup(c->http_req.user_agent);
   }
@@ -759,8 +752,7 @@ int connection_route_and_start(connection_t *c)
   if (status_shared && status_shared->total_clients >= config.maxclients)
   {
     http_send_503(c);
-    if (owned)
-      service_free(service);
+    service_free(service);
     return 0;
   }
 
@@ -858,15 +850,13 @@ int connection_route_and_start(connection_t *c)
 
     c->streaming = 1;
     c->service = service;
-    c->service_owned = owned;
     c->state = CONN_STREAMING;
     c->buffer_class = CONNECTION_BUFFER_MEDIA;
     return 0;
   }
   else
   {
-    if (owned)
-      service_free(service);
+    service_free(service);
     c->state = CONN_CLOSING;
     return -1;
   }

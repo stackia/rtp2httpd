@@ -45,7 +45,6 @@ typedef struct connection_s
   http_request_t http_req;
   /* service/stream */
   service_t *service;
-  int service_owned;
   stream_context_t stream;
   int streaming;
   /* SSE */
