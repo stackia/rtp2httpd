@@ -33,6 +33,7 @@
 struct m3u_extinf
 {
     char name[MAX_SERVICE_NAME];
+    char group_title[MAX_SERVICE_NAME];
     char catchup_source[MAX_URL_LENGTH];
     int has_catchup;
 };
@@ -905,14 +906,83 @@ static int append_to_transformed_m3u(const char *str, service_source_t source)
     return 0;
 }
 
-/* Create a service from name and URL */
-static int create_service_from_url(const char *service_name, const char *url, service_source_t source)
+/* Find a unique service name by adding numeric suffix if needed
+ * Returns: malloc'd string containing unique name (caller must free), or NULL on error
+ *
+ * If service_name already exists:
+ * - First occurrence keeps original name (no modification)
+ * - Second occurrence gets name/2
+ * - Third occurrence gets name/3, etc.
+ * If service_name doesn't exist, returns copy of service_name
+ */
+static char *find_unique_service_name(const char *service_name)
+{
+    service_t *existing;
+    int max_suffix = 0;
+    char test_name[MAX_SERVICE_NAME];
+    char *result = NULL;
+    int base_exists = 0;
+
+    /* Check if base name exists and find max numbered suffix */
+    for (existing = services; existing != NULL; existing = existing->next)
+    {
+        if (!existing->url)
+            continue;
+
+        /* Check for exact base name match */
+        if (strcmp(existing->url, service_name) == 0)
+        {
+            base_exists = 1;
+            /* Don't modify existing service, just note that base name is taken */
+        }
+
+        /* Check for numbered variants (name/2, name/3, etc.) */
+        size_t base_len = strlen(service_name);
+        if (strncmp(existing->url, service_name, base_len) == 0 &&
+            existing->url[base_len] == '/')
+        {
+            /* Extract the suffix number */
+            const char *suffix_str = existing->url + base_len + 1;
+            char *endptr;
+            long suffix_num = strtol(suffix_str, &endptr, 10);
+
+            /* Valid if entire remaining string is a number */
+            if (*suffix_str != '\0' && *endptr == '\0' && suffix_num > 0 && suffix_num < 1000)
+            {
+                if (suffix_num > max_suffix)
+                {
+                    max_suffix = (int)suffix_num;
+                }
+            }
+        }
+    }
+
+    /* If no conflicts, use base name as-is */
+    if (!base_exists && max_suffix == 0)
+    {
+        return strdup(service_name);
+    }
+
+    /* Base name is taken, assign next available number */
+    /* Start from 2 (first duplicate), or max_suffix + 1 if numbered services already exist */
+    int next_suffix = (max_suffix > 0) ? max_suffix + 1 : 2;
+    snprintf(test_name, sizeof(test_name), "%s/%d", service_name, next_suffix);
+    result = strdup(test_name);
+
+    return result;
+}
+
+/* Create a service from name and URL
+ * Returns: malloc'd string containing the actual unique service name used (caller must free),
+ *          or NULL on error
+ */
+static char *create_service_from_url(const char *service_name, const char *url, service_source_t source)
 {
     char normalized_url[MAX_URL_LENGTH];
     char extracted_url[MAX_URL_LENGTH];
     service_t *new_service = NULL;
     service_t **services_tail;
-    service_t *existing;
+    char *unique_name = NULL;
 
     strncpy(normalized_url, url, sizeof(normalized_url) - 1);
     normalized_url[sizeof(normalized_url) - 1] = '\0';
@@ -925,17 +995,15 @@ static int create_service_from_url(const char *service_name, const char *url, se
         normalized_url[sizeof(normalized_url) - 1] = '\0';
     }
 
-    /* Check if service already exists */
-    for (existing = services; existing != NULL; existing = existing->next)
+    /* Find unique service name (handles duplicates automatically) */
+    unique_name = find_unique_service_name(service_name);
+    if (!unique_name)
     {
-        if (existing->url && strcmp(existing->url, service_name) == 0)
-        {
-            logger(LOG_DEBUG, "Service already exists, skipping: %s", service_name);
-            return 0;
-        }
+        logger(LOG_ERROR, "Failed to generate unique service name for: %s", service_name);
+        return NULL;
     }
 
-    logger(LOG_DEBUG, "Creating service from M3U: %s %s", service_name, normalized_url);
+    logger(LOG_DEBUG, "Creating service from M3U: %s -> %s %s", service_name, unique_name, normalized_url);
 
     /* Create service based on URL type */
     if (strncmp(normalized_url, "rtp://", 6) == 0 || strncmp(normalized_url, "udp://", 6) == 0)
@@ -949,26 +1017,30 @@ static int create_service_from_url(const char *service_name, const char *url, se
     else
     {
         logger(LOG_WARN, "Unsupported URL format in M3U: %s", normalized_url);
-        return -1;
+        free(unique_name);
+        return NULL;
     }
 
     if (!new_service)
     {
         logger(LOG_ERROR, "Failed to create service from M3U entry: %s", service_name);
-        return -1;
+        free(unique_name);
+        return NULL;
     }
 
-    /* Set service URL (name) */
+    /* Set service URL (name) to unique name */
     /* Free the URL that was set by service_create_* functions */
     if (new_service->url)
     {
         free(new_service->url);
     }
-    new_service->url = strdup(service_name);
+    new_service->url = strdup(unique_name); /* Copy unique name to service */
     if (!new_service->url)
     {
+        logger(LOG_ERROR, "Failed to allocate service URL");
         service_free(new_service);
-        return -1;
+        free(unique_name);
+        return NULL;
     }
 
     /* Set service source */
@@ -983,11 +1055,12 @@ static int create_service_from_url(const char *service_name, const char *url, se
     *services_tail = new_service;
     new_service->next = NULL;
 
-    logger(LOG_INFO, "Service created: %s (%s) [%s]", service_name,
+    logger(LOG_INFO, "Service created: %s (%s) [%s]", unique_name,
            new_service->service_type == SERVICE_MRTP ? "RTP" : "RTSP",
            source == SERVICE_SOURCE_INLINE ? "inline" : "external");
 
-    return 0;
+    /* Return the unique name for use in transformed M3U */
+    return unique_name;
 }
 
 int m3u_parse_and_create_services(const char *content, const char *source_url)
@@ -1144,11 +1217,47 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
             }
 
             /* Extract service name */
-            if (extract_service_name(line, current_extinf.name, sizeof(current_extinf.name)) != 0)
+            char base_name[MAX_SERVICE_NAME];
+            if (extract_service_name(line, base_name, sizeof(base_name)) != 0)
             {
                 logger(LOG_WARN, "Failed to extract service name from EXTINF line");
                 in_entry = 0;
                 continue;
+            }
+
+            /* Extract group-title if present */
+            if (extract_attribute(line, "group-title", current_extinf.group_title,
+                                  sizeof(current_extinf.group_title)) == 0 &&
+                current_extinf.group_title[0] != '\0')
+            {
+                /* Build service name as "group-title/service-name" */
+                size_t group_len = strlen(current_extinf.group_title);
+                size_t base_len = strlen(base_name);
+                size_t total_len = group_len + 1 + base_len;
+
+                if (total_len >= sizeof(current_extinf.name))
+                {
+                    /* Truncate group title to make it fit */
+                    size_t max_group_len = sizeof(current_extinf.name) - base_len - 2;
+                    current_extinf.group_title[max_group_len] = '\0';
+                    logger(LOG_WARN, "Group title truncated for service: %s", base_name);
+                }
+
+                /* Now safe to format */
+                int written = snprintf(current_extinf.name, sizeof(current_extinf.name),
+                                       "%s/%s", current_extinf.group_title, base_name);
+                if (written < 0 || (size_t)written >= sizeof(current_extinf.name))
+                {
+                    logger(LOG_ERROR, "Failed to format service name, using base name only");
+                    strncpy(current_extinf.name, base_name, sizeof(current_extinf.name) - 1);
+                    current_extinf.name[sizeof(current_extinf.name) - 1] = '\0';
+                }
+            }
+            else
+            {
+                /* No group-title, use base name as-is */
+                strncpy(current_extinf.name, base_name, sizeof(current_extinf.name) - 1);
+                current_extinf.name[sizeof(current_extinf.name) - 1] = '\0';
             }
 
             /* Extract catchup-source if present */
@@ -1156,70 +1265,13 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
                                   sizeof(current_extinf.catchup_source)) == 0)
             {
                 current_extinf.has_catchup = 1;
-
-                /* Check if catchup URL is recognizable */
-                int is_recognizable = is_url_recognizable(current_extinf.catchup_source);
-
-                if (is_recognizable)
-                {
-                    /* Recognizable URL: transform to proxy URL with dynamic params only */
-                    char *catchup_query = extract_dynamic_params(current_extinf.catchup_source);
-                    char catchup_service_name[MAX_SERVICE_NAME + 20];
-                    snprintf(catchup_service_name, sizeof(catchup_service_name), "%s/catchup", current_extinf.name);
-
-                    if (build_service_url(catchup_service_name, catchup_query, proxy_url,
-                                          sizeof(proxy_url), server_addr) == 0)
-                    {
-                        /* Find and replace catchup-source in line */
-                        char *catchup_start = strstr(line, "catchup-source=\"");
-                        if (catchup_start)
-                        {
-                            catchup_start += 16; /* Skip 'catchup-source="' */
-                            char *catchup_end = strchr(catchup_start, '"');
-                            if (catchup_end)
-                            {
-                                /* Build transformed EXTINF line */
-                                size_t prefix_len = catchup_start - line;
-                                snprintf(transformed_line, sizeof(transformed_line), "%.*s%s%s",
-                                         (int)prefix_len, line, proxy_url, catchup_end);
-                                append_to_transformed_m3u(transformed_line, service_source);
-                                append_to_transformed_m3u("\n", service_source);
-                            }
-                            else
-                            {
-                                append_to_transformed_m3u(line, service_source);
-                                append_to_transformed_m3u("\n", service_source);
-                            }
-                        }
-                        else
-                        {
-                            append_to_transformed_m3u(line, service_source);
-                            append_to_transformed_m3u("\n", service_source);
-                        }
-                    }
-                    else
-                    {
-                        /* Failed to build URL, keep line as-is */
-                        append_to_transformed_m3u(line, service_source);
-                        append_to_transformed_m3u("\n", service_source);
-                    }
-
-                    if (catchup_query)
-                        free(catchup_query);
-                }
-                else
-                {
-                    /* Unrecognizable URL: preserve original URL completely */
-                    append_to_transformed_m3u(line, service_source);
-                    append_to_transformed_m3u("\n", service_source);
-                }
             }
-            else
-            {
-                /* No catchup-source, add line as-is */
-                append_to_transformed_m3u(line, service_source);
-                append_to_transformed_m3u("\n", service_source);
-            }
+
+            /* Store original EXTINF line for later processing */
+            /* We'll generate the transformed EXTINF when processing the URL line,
+             * after we know the unique service name */
+            strncpy(transformed_line, line, sizeof(transformed_line) - 1);
+            transformed_line[sizeof(transformed_line) - 1] = '\0';
 
             in_entry = 1;
             continue;
@@ -1233,49 +1285,116 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
 
             if (is_recognizable)
             {
-                /* Recognizable URL: create service and transform to proxy URL */
-                create_service_from_url(current_extinf.name, line, service_source);
+                /* Recognizable URL: create service first to get unique name */
+                char *unique_service_name = create_service_from_url(current_extinf.name, line, service_source);
 
-                /* Extract only dynamic query parameters from main URL */
-                char *main_query = extract_dynamic_params(line);
-
-                /* Build service URL using service name for transformed M3U */
-                if (build_service_url(current_extinf.name, main_query, proxy_url,
-                                      sizeof(proxy_url), server_addr) == 0)
+                if (unique_service_name)
                 {
-                    append_to_transformed_m3u(proxy_url, service_source);
+                    char *unique_catchup_name = NULL;
+
+                    /* Create catchup service if present and URL is recognizable */
+                    if (current_extinf.has_catchup && strlen(current_extinf.catchup_source) > 0)
+                    {
+                        if (is_url_recognizable(current_extinf.catchup_source))
+                        {
+                            char catchup_name[MAX_SERVICE_NAME + 20];
+                            snprintf(catchup_name, sizeof(catchup_name), "%s/catchup", unique_service_name);
+                            unique_catchup_name = create_service_from_url(catchup_name, current_extinf.catchup_source, service_source);
+                        }
+                    }
+
+                    /* Now generate the transformed EXTINF line with unique names */
+                    if (unique_catchup_name && is_url_recognizable(current_extinf.catchup_source))
+                    {
+                        /* Replace catchup-source URL in EXTINF line */
+                        char *catchup_query = extract_dynamic_params(current_extinf.catchup_source);
+                        char catchup_proxy_url[MAX_URL_LENGTH];
+
+                        if (build_service_url(unique_catchup_name, catchup_query, catchup_proxy_url,
+                                              sizeof(catchup_proxy_url), server_addr) == 0)
+                        {
+                            /* Find and replace catchup-source in line */
+                            char *catchup_start = strstr(transformed_line, "catchup-source=\"");
+                            if (catchup_start)
+                            {
+                                catchup_start += 16; /* Skip 'catchup-source="' */
+                                char *catchup_end = strchr(catchup_start, '"');
+                                if (catchup_end)
+                                {
+                                    /* Build transformed EXTINF line */
+                                    size_t prefix_len = catchup_start - transformed_line;
+                                    char final_extinf[MAX_M3U_LINE];
+                                    snprintf(final_extinf, sizeof(final_extinf), "%.*s%s%s",
+                                             (int)prefix_len, transformed_line, catchup_proxy_url, catchup_end);
+                                    append_to_transformed_m3u(final_extinf, service_source);
+                                    append_to_transformed_m3u("\n", service_source);
+                                }
+                                else
+                                {
+                                    append_to_transformed_m3u(transformed_line, service_source);
+                                    append_to_transformed_m3u("\n", service_source);
+                                }
+                            }
+                            else
+                            {
+                                append_to_transformed_m3u(transformed_line, service_source);
+                                append_to_transformed_m3u("\n", service_source);
+                            }
+                        }
+                        else
+                        {
+                            append_to_transformed_m3u(transformed_line, service_source);
+                            append_to_transformed_m3u("\n", service_source);
+                        }
+
+                        if (catchup_query)
+                            free(catchup_query);
+                    }
+                    else
+                    {
+                        /* No catchup or unrecognizable catchup URL, use original EXTINF */
+                        append_to_transformed_m3u(transformed_line, service_source);
+                        append_to_transformed_m3u("\n", service_source);
+                    }
+
+                    /* Now generate the main service URL */
+                    char *main_query = extract_dynamic_params(line);
+
+                    /* Build service URL using the actual unique service name for transformed M3U */
+                    if (build_service_url(unique_service_name, main_query, proxy_url,
+                                          sizeof(proxy_url), server_addr) == 0)
+                    {
+                        append_to_transformed_m3u(proxy_url, service_source);
+                    }
+                    else
+                    {
+                        append_to_transformed_m3u(line, service_source);
+                    }
+                    append_to_transformed_m3u("\n", service_source);
+
+                    if (main_query)
+                        free(main_query);
+                    if (unique_catchup_name)
+                        free(unique_catchup_name);
+                    free(unique_service_name);
                 }
                 else
                 {
+                    /* Failed to create service, preserve original EXTINF and URL */
+                    append_to_transformed_m3u(transformed_line, service_source);
+                    append_to_transformed_m3u("\n", service_source);
                     append_to_transformed_m3u(line, service_source);
+                    append_to_transformed_m3u("\n", service_source);
                 }
-                append_to_transformed_m3u("\n", service_source);
-
-                if (main_query)
-                    free(main_query);
             }
             else
             {
-                /* Unrecognizable URL: preserve original URL completely */
+                /* Unrecognizable URL: preserve original EXTINF and URL completely */
+                append_to_transformed_m3u(transformed_line, service_source);
+                append_to_transformed_m3u("\n", service_source);
                 append_to_transformed_m3u(line, service_source);
                 append_to_transformed_m3u("\n", service_source);
                 logger(LOG_DEBUG, "Preserving unrecognizable URL: %s", line);
-            }
-
-            /* Create catchup service if present and URL is recognizable */
-            if (current_extinf.has_catchup && strlen(current_extinf.catchup_source) > 0)
-            {
-                if (is_url_recognizable(current_extinf.catchup_source))
-                {
-                    char catchup_name[MAX_SERVICE_NAME + 20];
-                    snprintf(catchup_name, sizeof(catchup_name), "%s/catchup", current_extinf.name);
-                    create_service_from_url(catchup_name, current_extinf.catchup_source, service_source);
-                }
-                else
-                {
-                    logger(LOG_DEBUG, "Skipping catchup service creation for unrecognizable URL: %s",
-                           current_extinf.catchup_source);
-                }
             }
 
             /* Add blank line after each entry */
