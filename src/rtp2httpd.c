@@ -138,17 +138,6 @@ int main(int argc, char *argv[])
     /* Continue anyway - status page won't work but streaming will */
   }
 
-  if (config.daemonise)
-  {
-    logger(LOG_INFO, "Forking to background...");
-
-    if (daemon(1, 0) != 0)
-    {
-      logger(LOG_FATAL, "Cannot fork: %s", strerror(errno));
-      exit(EXIT_FAILURE);
-    }
-  }
-
   /* Prefork N-1 additional workers for SO_REUSEPORT sharding (the original process is also a worker) */
   if (config.workers > 1)
   {
