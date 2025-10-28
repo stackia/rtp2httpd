@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from "react"
 import { createRoot } from "react-dom/client";
 import mpegts from "mpegts.js";
 import { Channel, M3UMetadata, PlayMode } from "../types/player";
-import { parseM3U, buildCatchupSegments } from "../lib/m3u-parser";
+import { parseM3U, buildCatchupSegments, normalizeUrl } from "../lib/m3u-parser";
 import { loadEPG, getCurrentProgram, getEPGChannelId, EPGData } from "../lib/epg-parser";
 import { ChannelList, ChannelListRef } from "../components/player/channel-list";
 import { EPGView } from "../components/player/epg-view";
@@ -159,7 +159,7 @@ function PlayerPage() {
       const token = urlParams.get("r2h-token");
 
       // Build playlist URL with token if available
-      let playlistUrl = "/playlist.m3u";
+      let playlistUrl = normalizeUrl("/playlist.m3u", "/");
       if (token) {
         playlistUrl += `?r2h-token=${encodeURIComponent(token)}`;
       }

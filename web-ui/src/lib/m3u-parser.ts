@@ -15,7 +15,7 @@ import { M3UMetadata, Channel } from "../types/player";
  *   - If window.location is "http://example.org/prefix/player/" and relativePath is "CCTV1"
  *     → resolves to "http://example.org/prefix/CCTV1"
  */
-function normalizeUrl(url: string, serverAddress?: string): string {
+export function normalizeUrl(url: string, serverAddress?: string): string {
   if (!serverAddress) {
     return url;
   }
@@ -27,9 +27,9 @@ function normalizeUrl(url: string, serverAddress?: string): string {
 
       // Get base URL from current location (remove last path segment)
       const currentUrl = new URL(window.location.href);
-      const pathParts = currentUrl.pathname.split('/').filter(p => p); // Remove empty parts
+      const pathParts = currentUrl.pathname.split("/").filter((p) => p); // Remove empty parts
       pathParts.pop(); // Remove last segment (current page)
-      const basePath = '/' + pathParts.join('/') + (pathParts.length > 0 ? '/' : '');
+      const basePath = "/" + pathParts.join("/") + (pathParts.length > 0 ? "/" : "");
 
       const baseUrl = `${currentUrl.protocol}//${currentUrl.host}${basePath}`;
       return new URL(relativePath, baseUrl).toString();
