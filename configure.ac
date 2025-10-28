@@ -87,7 +87,7 @@ if test "x$GCC" = "xyes"; then
     # Additional performance optimizations for -O3
     if test "x$opt_level" = "x-O3"; then
         # Link-Time Optimization (LTO) - enables cross-file optimizations
-        OPT_CFLAGS="$OPT_CFLAGS -flto"
+        OPT_CFLAGS="$OPT_CFLAGS -flto=auto"
         OPT_LDFLAGS="-flto"
 
         # Function inlining optimizations
