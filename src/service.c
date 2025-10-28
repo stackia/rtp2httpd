@@ -659,12 +659,12 @@ service_t *service_create_with_query_merge(const service_t *configured_service,
     }
     else /* SERVICE_MRTP */
     {
-        if (!configured_service->url)
+        if (!configured_service->rtp_url)
         {
             logger(LOG_ERROR, "Configured RTP service has no URL");
             return NULL;
         }
-        base_url = configured_service->url;
+        base_url = configured_service->rtp_url;
         type_name = "RTP";
     }
 
@@ -696,9 +696,9 @@ service_t *service_create_with_query_merge(const service_t *configured_service,
         /* Append merged query params */
         if (strlen(merged_url) + strlen(existing_query) + strlen(query_start) < sizeof(merged_url))
         {
-            strcat(merged_url, existing_query);   /* Existing params with '?' */
-            strcat(merged_url, "&");              /* Separator */
-            strcat(merged_url, query_start + 1);  /* New params without '?' */
+            strcat(merged_url, existing_query);  /* Existing params with '?' */
+            strcat(merged_url, "&");             /* Separator */
+            strcat(merged_url, query_start + 1); /* New params without '?' */
         }
         else
         {
@@ -790,10 +790,33 @@ service_t *service_create_from_rtp_url(const char *http_url)
         return NULL;
     }
 
+    /* Allocate service structure */
+    result = calloc(1, sizeof(service_t));
+    if (!result)
+    {
+        logger(LOG_ERROR, "Failed to allocate memory for RTP service structure");
+        return NULL;
+    }
+
+    /* Set service type to RTP */
+    result->service_type = SERVICE_MRTP;
+
+    /* Build and store full RTP URL (rtp://) */
+    char rtp_url[HTTP_URL_BUFFER_SIZE];
+    snprintf(rtp_url, sizeof(rtp_url), "rtp://%.1000s", url_part);
+    result->rtp_url = strdup(rtp_url);
+    if (!result->rtp_url)
+    {
+        logger(LOG_ERROR, "Failed to allocate memory for RTP URL");
+        service_free(result);
+        return NULL;
+    }
+
     /* Parse RTP URL components */
     if (parse_rtp_url_components(url_part, &components) != 0)
     {
         logger(LOG_ERROR, "Failed to parse RTP URL components");
+        service_free(result);
         return NULL;
     }
 
@@ -807,17 +830,6 @@ service_t *service_create_from_rtp_url(const char *http_url)
     {
         logger(LOG_DEBUG, " fcc=%s:%s", components.fcc_addr, components.fcc_port);
     }
-
-    /* Allocate service structure */
-    result = calloc(1, sizeof(service_t));
-    if (!result)
-    {
-        logger(LOG_ERROR, "Failed to allocate memory for RTP service structure");
-        return NULL;
-    }
-
-    /* Set service type to RTP */
-    result->service_type = SERVICE_MRTP;
 
     /* Resolve addresses */
     memset(&hints, 0, sizeof(hints));
@@ -1070,7 +1082,7 @@ static struct addrinfo *clone_addrinfo(const struct addrinfo *src)
 
     /* Don't copy ai_next - cloned addrinfo is standalone */
     cloned->ai_next = NULL;
-    cloned->ai_canonname = NULL;  /* Don't clone canonname */
+    cloned->ai_canonname = NULL; /* Don't clone canonname */
 
     return cloned;
 }
@@ -1113,6 +1125,15 @@ service_t *service_clone(const service_t *service)
     {
         cloned->msrc = strdup(service->msrc);
         if (!cloned->msrc)
+        {
+            goto cleanup_error;
+        }
+    }
+
+    if (service->rtp_url)
+    {
+        cloned->rtp_url = strdup(service->rtp_url);
+        if (!cloned->rtp_url)
         {
             goto cleanup_error;
         }
@@ -1189,6 +1210,16 @@ void service_free(service_t *service)
     if (!service)
     {
         return;
+    }
+
+    /* Free RTP-specific fields */
+    if (service->service_type == SERVICE_MRTP)
+    {
+        if (service->rtp_url)
+        {
+            free(service->rtp_url);
+            service->rtp_url = NULL;
+        }
     }
 
     /* Free RTSP-specific fields */
@@ -1274,7 +1305,7 @@ void service_free_external(void)
         /* If this service is from external M3U, remove it */
         if (current->source == SERVICE_SOURCE_EXTERNAL)
         {
-            *current_ptr = current->next;  /* Remove from list */
+            *current_ptr = current->next; /* Remove from list */
             service_free(current);
             freed_count++;
         }

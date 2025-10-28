@@ -42,8 +42,8 @@ typedef enum
 /* Service source enumeration - tracks where the service was created from */
 typedef enum
 {
-  SERVICE_SOURCE_INLINE = 0,   /* From inline M3U in config file */
-  SERVICE_SOURCE_EXTERNAL = 1  /* From external M3U URL */
+  SERVICE_SOURCE_INLINE = 0,  /* From inline M3U in config file */
+  SERVICE_SOURCE_EXTERNAL = 1 /* From external M3U URL */
 } service_source_t;
 
 /**
@@ -55,10 +55,11 @@ typedef struct service_s
   char *url;
   char *msrc;
   service_type_t service_type;
-  service_source_t source;  /* Source of this service (inline or external) */
+  service_source_t source; /* Source of this service (inline or external) */
   struct addrinfo *addr;
   struct addrinfo *msrc_addr;
   struct addrinfo *fcc_addr;
+  char *rtp_url;        /* Full RTP URL for SERVICE_MRTP */
   char *rtsp_url;       /* Full RTSP URL for SERVICE_RTSP */
   char *playseek_param; /* playseek parameter for time range */
   char *user_agent;     /* User-Agent header for timezone detection */
