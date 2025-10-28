@@ -664,57 +664,33 @@ int http_parse_url_components(const char *url, char *protocol, char *host, char 
 int http_match_host_header(const char *request_host_header, const char *config_hostname)
 {
     char expected_host[256] = {0};
-    char expected_port[16] = {0};
-    char expected_host_port[272];
+    char request_hostname[256];
 
     if (!request_host_header || !config_hostname)
         return -1;
 
-    /* Extract host:port from config_hostname (may contain full URL with protocol and path) */
-    if (http_parse_url_components(config_hostname, NULL, expected_host, expected_port, NULL) != 0)
+    /* Extract host from config_hostname (may contain full URL with protocol, port and path) */
+    if (http_parse_url_components(config_hostname, NULL, expected_host, NULL, NULL) != 0)
         return -1;
 
-    /* Build expected host:port string */
-    if (expected_port[0] != '\0')
+    /* Extract hostname from Host header (ignore port part) */
+    const char *request_colon = strchr(request_host_header, ':');
+    if (request_colon)
     {
-        snprintf(expected_host_port, sizeof(expected_host_port), "%s:%s", expected_host, expected_port);
+        /* Host header has port, extract hostname part only */
+        size_t host_len = (size_t)(request_colon - request_host_header);
+        if (host_len >= sizeof(request_hostname))
+            host_len = sizeof(request_hostname) - 1;
+        strncpy(request_hostname, request_host_header, host_len);
+        request_hostname[host_len] = '\0';
     }
     else
     {
-        strncpy(expected_host_port, expected_host, sizeof(expected_host_port) - 1);
-        expected_host_port[sizeof(expected_host_port) - 1] = '\0';
+        /* Host header has no port */
+        strncpy(request_hostname, request_host_header, sizeof(request_hostname) - 1);
+        request_hostname[sizeof(request_hostname) - 1] = '\0';
     }
 
-    /* Allow lenient matching: if expected doesn't contain port, only compare hostname part */
-    const char *expected_colon = strchr(expected_host_port, ':');
-
-    if (expected_colon == NULL)
-    {
-        /* Config hostname has no port, extract hostname from Host header and compare */
-        char request_hostname[256];
-        const char *request_colon = strchr(request_host_header, ':');
-
-        if (request_colon)
-        {
-            /* Host header has port, extract hostname part */
-            size_t host_len = (size_t)(request_colon - request_host_header);
-            if (host_len >= sizeof(request_hostname))
-                host_len = sizeof(request_hostname) - 1;
-            strncpy(request_hostname, request_host_header, host_len);
-            request_hostname[host_len] = '\0';
-        }
-        else
-        {
-            /* Host header has no port */
-            strncpy(request_hostname, request_host_header, sizeof(request_hostname) - 1);
-            request_hostname[sizeof(request_hostname) - 1] = '\0';
-        }
-
-        return (strcasecmp(request_hostname, expected_host_port) == 0) ? 1 : 0;
-    }
-    else
-    {
-        /* Config hostname has port, require exact match of host:port */
-        return (strcasecmp(request_host_header, expected_host_port) == 0) ? 1 : 0;
-    }
+    /* Compare only the hostname parts (case-insensitive) */
+    return (strcasecmp(request_hostname, expected_host) == 0) ? 1 : 0;
 }
