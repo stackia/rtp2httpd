@@ -73,10 +73,79 @@ return view.extend({
 
       // Use configured hostname or fallback to window.location.hostname
       var targetHostname = hostname || window.location.hostname;
-      var pageUrl = "http://" + targetHostname + ":" + port + pagePath;
+
+      // If hostname doesn't have protocol, prepend http:// for URL parsing
+      var hasProtocol = /^https?:\/\//i.test(targetHostname);
+      var urlToParse = hasProtocol ? targetHostname : "http://" + targetHostname;
+
+      var url;
+      try {
+        url = new URL(urlToParse);
+      } catch (e) {
+        // Fallback if URL parsing fails
+        var fallbackUrl = "http://" + targetHostname + ":" + port + pagePath;
+        if (token) {
+          fallbackUrl += "?r2h-token=" + encodeURIComponent(token);
+        }
+        window.open(fallbackUrl, "_blank");
+        return;
+      }
+
+      // Build URL following get_server_address logic:
+      // 1. If no protocol was in original hostname, use configured port
+      // 2. If protocol was present, keep the port from URL (if any)
+      var finalProtocol = url.protocol.replace(":", "");
+      var finalHost = url.hostname;
+      var finalPort = "";
+
+      if (!hasProtocol) {
+        // No protocol in original hostname: use configured port if URL port is empty
+        if (!url.port) {
+          finalPort = port;
+        } else {
+          finalPort = url.port;
+        }
+      } else {
+        // Protocol was present: keep URL's port (may be empty)
+        finalPort = url.port;
+      }
+
+      // Build base URL: protocol://host[:port]
+      // Omit port if it's default (http:80 or https:443) or empty
+      var pageUrl;
+      if (
+        !finalPort ||
+        (finalProtocol === "http" && finalPort === "80") ||
+        (finalProtocol === "https" && finalPort === "443")
+      ) {
+        pageUrl = finalProtocol + "://" + finalHost;
+      } else {
+        pageUrl = finalProtocol + "://" + finalHost + ":" + finalPort;
+      }
+
+      // Add base path from hostname if present
+      var basePath = url.pathname;
+      if (basePath && basePath !== "/") {
+        // Ensure base path ends with '/'
+        if (!basePath.endsWith("/")) {
+          pageUrl += basePath + "/";
+        } else {
+          pageUrl += basePath;
+        }
+        // Remove leading slash from pagePath to avoid double slash
+        if (pagePath.startsWith("/")) {
+          pagePath = pagePath.substring(1);
+        }
+      }
+
+      // Add the page path
+      pageUrl += pagePath;
+
+      // Add token if present
       if (token) {
         pageUrl += "?r2h-token=" + encodeURIComponent(token);
       }
+
       window.open(pageUrl, "_blank");
     });
   },
