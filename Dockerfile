@@ -44,7 +44,7 @@ RUN case "$TARGETPLATFORM" in \
   esac && \
   echo "Building with ARCH_FLAGS=$ARCH_FLAGS" && \
   autoreconf -fi && \
-  ./configure ${ARCH_FLAGS} && \
+  ./configure --enable-optimization=-O3 ${ARCH_FLAGS} && \
   make
 
 # Runtime stage
