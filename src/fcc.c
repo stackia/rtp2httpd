@@ -612,7 +612,7 @@ int fcc_handle_mcast_transition(stream_context_t *ctx, buffer_ref_t *buf_ref)
     fcc_session_t *fcc = &ctx->fcc;
     int payloadlength;
     uint8_t *payload;
-    uint16_t seqn;
+    uint16_t seqn = 0;
     int is_rtp;
     uint8_t *data_ptr = (uint8_t *)buf_ref->data + buf_ref->data_offset;
 
