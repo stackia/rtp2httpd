@@ -64,8 +64,8 @@ export function stateToLabel(locale: Locale, state: ClientState): string {
   return fallbackTable[key] ?? fallbackTable[FALLBACK_STATE_KEY];
 }
 
-function clientBaseKey(client: { clientAddr: string; clientPort: string; workerPid: number }): string {
-  return `${client.clientAddr}:${client.clientPort}-${client.workerPid}`;
+function clientBaseKey(client: { clientAddr: string; workerPid: number }): string {
+  return `${client.clientAddr}-${client.workerPid}`;
 }
 
 export function mergeClients(previous: Map<string, ClientRow>, clients: ClientEntry[]): Map<string, ClientRow> {
@@ -88,7 +88,7 @@ export function mergeClients(previous: Map<string, ClientRow>, clients: ClientEn
   for (const client of clients) {
     const baseKey = clientBaseKey(client);
     const reuseKey = activeByBaseKey.get(baseKey);
-    const key = reuseKey ?? `${baseKey}-${client.clientAddr}:${client.clientPort}-${now}`;
+    const key = reuseKey ?? `${baseKey}-${now}`;
     const previousEntry = reuseKey ? next.get(reuseKey) : undefined;
     const entry: ClientRow = {
       ...(previousEntry ?? client),

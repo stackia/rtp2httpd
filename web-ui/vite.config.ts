@@ -20,5 +20,14 @@ export default defineConfig(() => {
       },
       outDir: `dist-${page}`,
     },
+    server: {
+      proxy: {
+        // "/playlist.m3u": "http://router.ccca.cc:5140",
+        // "/epg.xml.gz": "http://router.ccca.cc:5140",
+        // "^/%E5%A4%AE%E8%A7%86/.*": "http://router.ccca.cc:5140",
+        // "^/%E8%B6%85%E9%AB%98%E6%B8%85/.*": "http://router.ccca.cc:5140",
+        // "^/%E9%AB%98%E6%B8%85/.*": "http://router.ccca.cc:5140",
+      },
+    },
   };
 });

@@ -69,8 +69,7 @@ export interface ClientEntry {
   clientId: number;
   workerPid: number;
   durationMs: number;
-  clientAddr: string;
-  clientPort: string;
+  clientAddr: string; /* Format: "IP:port" or "[IPv6]:port" */
   serviceUrl: string;
   state: ClientState;
   bytesSent: number;

@@ -204,6 +204,7 @@ player-page-path = /my-player
 
 ```ini
 [global]
+# 当 hostname 以 `http://` 或 `https://` 开头时，rtp2httpd 会认为自己位于反代之后，接受反代传来的 `X-Forwarded-For` 作为客户端地址（用于显示在状态面板）。
 hostname = https://my-domain.com/rtp2httpd
 ```
 

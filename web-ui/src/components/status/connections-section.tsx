@@ -19,10 +19,6 @@ interface ConnectionsSectionProps {
   onDisconnect: (clientId: number, connectionKey: string) => void;
 }
 
-// Format client address with brackets for IPv6
-function formatClientAddr(addr: string) {
-  return addr.includes(":") ? `[${addr}]` : addr;
-}
 
 export function ConnectionsSection({
   clients,
@@ -71,9 +67,7 @@ export function ConnectionsSection({
                 {clients.map((client) => (
                   <TableRow key={client.connectionKey} className={client.isDisconnected ? "opacity-60" : undefined}>
                     <TableCell>
-                      <div className="font-medium">
-                        {formatClientAddr(client.clientAddr)}:{client.clientPort}
-                      </div>
+                      <div className="font-medium">{client.clientAddr}</div>
                       <div className="text-xs text-muted-foreground">
                         {t("workerPid")}: {client.workerPid}
                       </div>
@@ -126,9 +120,7 @@ export function ConnectionsSection({
               >
                 <CardContent className="space-y-4 p-4">
                   <div className="flex items-center justify-between">
-                    <div className="text-sm font-medium">
-                      {formatClientAddr(client.clientAddr)}:{client.clientPort}
-                    </div>
+                    <div className="text-sm font-medium">{client.clientAddr}</div>
                     <Badge variant={stateToVariant(client.state)} className="px-3">
                       {stateToLabel(locale, client.state)}
                     </Badge>

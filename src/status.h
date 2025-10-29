@@ -69,8 +69,7 @@ typedef struct
   pid_t worker_pid;                  /* Actual worker thread/process PID */
   int worker_index;                  /* Worker index (0-based, matches worker_id) */
   int64_t connect_time;              /* Connection timestamp in milliseconds */
-  char client_addr[64];              /* Client IP address */
-  char client_port[16];              /* Client port */
+  char client_addr[128];             /* Client address (IP:port format, IPv6 uses []:port) */
   char service_url[256];             /* Service URL being accessed */
   client_state_type_t state;         /* Current connection state */
   uint64_t bytes_sent;               /* Total bytes sent to client */
@@ -189,13 +188,11 @@ void status_cleanup(void);
  * Only called for media streaming clients, not for status/API requests
  * Called after routing determines the connection is for a media service
  * Allocates a free slot in the clients array under mutex protection
- * @param client_addr Client address structure
- * @param addr_len Address structure length
+ * @param client_addr_str Client address string (format: "IP:port" or "[IPv6]:port")
  * @param service_url Service URL string (e.g., HTTP request path)
  * @return Client slot index (status_index) on success, -1 on error
  */
-int status_register_client(struct sockaddr_storage *client_addr, socklen_t addr_len,
-                           const char *service_url);
+int status_register_client(const char *client_addr_str, const char *service_url);
 
 /**
  * Unregister a streaming client connection from shared memory

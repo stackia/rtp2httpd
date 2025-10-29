@@ -218,9 +218,6 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req)
                 *sp2 = '\0';
                 strncpy(req->url, sp1 + 1, sizeof(req->url) - 1);
                 req->url[sizeof(req->url) - 1] = '\0';
-
-                if (strstr(sp2 + 1, "HTTP/1.1"))
-                    req->is_http_1_1 = 1;
             }
         }
 
@@ -304,6 +301,36 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req)
                 else if (strcasecmp(inbuf, "X-Request-Snapshot") == 0)
                 {
                     req->x_request_snapshot = (value[0] == '1');
+                }
+                else if (strcasecmp(inbuf, "X-Forwarded-For") == 0)
+                {
+                    /* Extract first IP from X-Forwarded-For (format: "ip1, ip2, ip3") */
+                    const char *comma = strchr(value, ',');
+                    size_t ip_len;
+                    if (comma)
+                    {
+                        ip_len = (size_t)(comma - value);
+                    }
+                    else
+                    {
+                        ip_len = strlen(value);
+                    }
+
+                    /* Copy first IP, limiting to buffer size */
+                    if (ip_len >= sizeof(req->x_forwarded_for))
+                    {
+                        ip_len = sizeof(req->x_forwarded_for) - 1;
+                    }
+                    strncpy(req->x_forwarded_for, value, ip_len);
+                    req->x_forwarded_for[ip_len] = '\0';
+
+                    /* Trim trailing whitespace */
+                    char *end = req->x_forwarded_for + ip_len;
+                    while (end > req->x_forwarded_for && (end[-1] == ' ' || end[-1] == '\t'))
+                    {
+                        end--;
+                        *end = '\0';
+                    }
                 }
                 else if (strcasecmp(inbuf, "Content-Length") == 0)
                 {
@@ -656,21 +683,16 @@ int http_parse_url_components(const char *url, char *protocol, char *host, char 
 }
 
 /**
- * Match Host header against configured hostname
+ * Match Host header against expected hostname
  * @param request_host_header Host header from HTTP request
- * @param config_hostname Configured hostname (can be full URL or simple hostname)
+ * @param expected_host Expected hostname to match against (just the hostname part)
  * @return 1 if match, 0 if not match, -1 on error
  */
-int http_match_host_header(const char *request_host_header, const char *config_hostname)
+int http_match_host_header(const char *request_host_header, const char *expected_host)
 {
-    char expected_host[256] = {0};
     char request_hostname[256];
 
-    if (!request_host_header || !config_hostname)
-        return -1;
-
-    /* Extract host from config_hostname (may contain full URL with protocol, port and path) */
-    if (http_parse_url_components(config_hostname, NULL, expected_host, NULL, NULL) != 0)
+    if (!request_host_header || !expected_host)
         return -1;
 
     /* Extract hostname from Host header (ignore port part) */

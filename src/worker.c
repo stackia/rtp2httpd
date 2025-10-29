@@ -324,9 +324,8 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
                 status_shared->clients[c->status_index].active &&
                 status_shared->clients[c->status_index].disconnect_requested)
             {
-              logger(LOG_INFO, "Disconnect requested for client %s:%s via API",
-                     status_shared->clients[c->status_index].client_addr,
-                     status_shared->clients[c->status_index].client_port);
+              logger(LOG_INFO, "Disconnect requested for client %s via API",
+                     status_shared->clients[c->status_index].client_addr);
               worker_close_and_free_connection(c);
             }
 
