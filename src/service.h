@@ -59,11 +59,12 @@ typedef struct service_s
   struct addrinfo *addr;
   struct addrinfo *msrc_addr;
   struct addrinfo *fcc_addr;
-  char *rtp_url;          /* Full RTP URL for SERVICE_MRTP */
-  char *rtsp_url;         /* Full RTSP URL for SERVICE_RTSP */
-  char *seek_param_name;  /* Name of seek parameter (e.g., "playseek", "tvdr") */
-  char *seek_param_value; /* Value of seek parameter for time range */
-  char *user_agent;       /* User-Agent header for timezone detection */
+  char *rtp_url;           /* Full RTP URL for SERVICE_MRTP */
+  char *rtsp_url;          /* Full RTSP URL for SERVICE_RTSP */
+  char *seek_param_name;   /* Name of seek parameter (e.g., "playseek", "tvdr") */
+  char *seek_param_value;  /* Value of seek parameter for time range */
+  int seek_offset_seconds; /* Additional offset in seconds from r2h-seek-offset parameter */
+  char *user_agent;        /* User-Agent header for timezone detection */
   struct service_s *next;
 } service_t;
 

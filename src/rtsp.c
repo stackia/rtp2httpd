@@ -52,7 +52,6 @@ static char *rtsp_find_header(const char *response, const char *header_name);
 static void rtsp_parse_transport_header(rtsp_session_t *session, const char *transport);
 static void rtsp_send_udp_nat_probe(int socket_fd, const char *addr, int port, const char *label);
 static int rtsp_handle_redirect(rtsp_session_t *session, const char *location);
-static int rtsp_convert_time_to_utc(const char *time_str, int tz_offset_seconds, char *output, size_t output_size);
 static int rtsp_state_machine_advance(rtsp_session_t *session);
 static int rtsp_initiate_teardown(rtsp_session_t *session);
 static int rtsp_reconnect_for_teardown(rtsp_session_t *session);
@@ -386,6 +385,7 @@ static void rtsp_session_set_state(rtsp_session_t *session, rtsp_state_t new_sta
 
 int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
                           const char *seek_param_name, const char *seek_param_value,
+                          int seek_offset_seconds,
                           const char *user_agent,
                           const char *fallback_username, const char *fallback_password)
 {
@@ -674,7 +674,7 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
                seek_param_name, begin_str, end_str);
 
         /* Convert begin time to UTC (keep original format) */
-        if (rtsp_convert_time_to_utc(begin_str, tz_offset_seconds, begin_utc, sizeof(begin_utc)) == 0)
+        if (timezone_convert_time_with_offset(begin_str, tz_offset_seconds, seek_offset_seconds, begin_utc, sizeof(begin_utc)) == 0)
         {
             logger(LOG_DEBUG, "RTSP: Converted begin time '%s' to UTC '%s'", begin_str, begin_utc);
         }
@@ -688,7 +688,7 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
         /* Convert end time to UTC if present */
         if (strlen(end_str) > 0)
         {
-            if (rtsp_convert_time_to_utc(end_str, tz_offset_seconds, end_utc, sizeof(end_utc)) == 0)
+            if (timezone_convert_time_with_offset(end_str, tz_offset_seconds, seek_offset_seconds, end_utc, sizeof(end_utc)) == 0)
             {
                 logger(LOG_DEBUG, "RTSP: Converted end time '%s' to UTC '%s'", end_str, end_utc);
             }
@@ -2684,7 +2684,7 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location)
     const char *redirect_password = (session->password[0] != '\0') ? session->password : NULL;
 
     /* Parse new URL and update session */
-    if (rtsp_parse_server_url(session, location, NULL, NULL, NULL,
+    if (rtsp_parse_server_url(session, location, NULL, NULL, 0, NULL,
                               redirect_username, redirect_password) < 0)
     {
         logger(LOG_ERROR, "RTSP: Failed to parse redirect URL");
@@ -2717,61 +2717,4 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location)
         logger(LOG_ERROR, "RTSP: Unexpected state after redirect connect: %d", session->state);
         return -1;
     }
-}
-
-/*
- * Helper function to convert time string to UTC (keeping original format)
- * Handles Unix timestamps (no conversion needed) and yyyyMMddHHmmss format with timezone conversion
- * Returns 0 on success, -1 on error
- */
-static int rtsp_convert_time_to_utc(const char *time_str, int tz_offset_seconds, char *output, size_t output_size)
-{
-    size_t len;
-    size_t digit_count;
-
-    if (!time_str || !output || output_size < RTSP_TIME_STRING_SIZE)
-    {
-        return -1;
-    }
-
-    len = strlen(time_str);
-    digit_count = strspn(time_str, "0123456789");
-
-    /* Check if it's a Unix timestamp (all digits, length <= 10) */
-    if (len <= 10 && digit_count == len)
-    {
-        /* Unix timestamp is already in UTC, no conversion needed */
-        strncpy(output, time_str, output_size - 1);
-        output[output_size - 1] = '\0';
-        logger(LOG_DEBUG, "RTSP: Unix timestamp '%s' is already UTC", time_str);
-        return 0;
-    }
-
-    /* Check if it's yyyyMMddHHmmss format (exactly 14 digits) */
-    if (len == 14 && digit_count == 14)
-    {
-        /* Apply timezone conversion to UTC, keep yyyyMMddHHmmss format */
-        if (timezone_convert_time_with_offset(time_str, tz_offset_seconds, output, output_size) == 0)
-        {
-            if (tz_offset_seconds != 0)
-            {
-                logger(LOG_DEBUG, "RTSP: Converted time '%s' with TZ offset %d to UTC '%s'",
-                       time_str, tz_offset_seconds, output);
-            }
-            else
-            {
-                logger(LOG_DEBUG, "RTSP: Time '%s' is already in UTC", time_str);
-            }
-            return 0;
-        }
-        /* Fallback to original string */
-        strncpy(output, time_str, output_size - 1);
-        output[output_size - 1] = '\0';
-        return -1;
-    }
-
-    /* Unknown format, use as-is */
-    strncpy(output, time_str, output_size - 1);
-    output[output_size - 1] = '\0';
-    return 0;
 }

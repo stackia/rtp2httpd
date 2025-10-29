@@ -112,27 +112,27 @@ typedef enum
 /* RTSP session structure */
 typedef struct
 {
-    int socket;                                          /* TCP socket to RTSP server */
-    int epoll_fd;                                        /* Epoll file descriptor for socket registration */
-    struct connection_s *conn;                           /* Connection pointer for fdmap registration */
-    rtsp_state_t state;                                  /* Current RTSP state */
-    int status_index;                                    /* Index in status_shared->clients array for state updates */
-    uint32_t cseq;                                       /* RTSP sequence number */
-    char session_id[RTSP_SESSION_ID_SIZE];               /* RTSP session ID */
-    char server_url[RTSP_SERVER_URL_SIZE];               /* Full RTSP URL */
-    char server_host[RTSP_SERVER_HOST_SIZE];             /* RTSP server hostname */
-    int server_port;                                     /* RTSP server port */
-    char server_path[RTSP_SERVER_PATH_SIZE];             /* RTSP path with query string */
-    int redirect_count;                                  /* Number of redirects followed */
+    int socket;                              /* TCP socket to RTSP server */
+    int epoll_fd;                            /* Epoll file descriptor for socket registration */
+    struct connection_s *conn;               /* Connection pointer for fdmap registration */
+    rtsp_state_t state;                      /* Current RTSP state */
+    int status_index;                        /* Index in status_shared->clients array for state updates */
+    uint32_t cseq;                           /* RTSP sequence number */
+    char session_id[RTSP_SESSION_ID_SIZE];   /* RTSP session ID */
+    char server_url[RTSP_SERVER_URL_SIZE];   /* Full RTSP URL */
+    char server_host[RTSP_SERVER_HOST_SIZE]; /* RTSP server hostname */
+    int server_port;                         /* RTSP server port */
+    char server_path[RTSP_SERVER_PATH_SIZE]; /* RTSP path with query string */
+    int redirect_count;                      /* Number of redirects followed */
 
     /* Authentication state */
-    char username[RTSP_CREDENTIAL_SIZE];            /* RTSP username for authentication */
-    char password[RTSP_CREDENTIAL_SIZE];            /* RTSP password for authentication */
-    rtsp_auth_type_t auth_type;                     /* Authentication type required by server */
-    char auth_realm[RTSP_CREDENTIAL_SIZE];          /* Digest auth realm */
-    char auth_nonce[RTSP_CREDENTIAL_SIZE];          /* Digest auth nonce */
-    char auth_opaque[RTSP_CREDENTIAL_SIZE];         /* Digest auth opaque */
-    int auth_retry_count;                           /* Number of auth retries (prevent infinite loops) */
+    char username[RTSP_CREDENTIAL_SIZE];    /* RTSP username for authentication */
+    char password[RTSP_CREDENTIAL_SIZE];    /* RTSP password for authentication */
+    rtsp_auth_type_t auth_type;             /* Authentication type required by server */
+    char auth_realm[RTSP_CREDENTIAL_SIZE];  /* Digest auth realm */
+    char auth_nonce[RTSP_CREDENTIAL_SIZE];  /* Digest auth nonce */
+    char auth_opaque[RTSP_CREDENTIAL_SIZE]; /* Digest auth opaque */
+    int auth_retry_count;                   /* Number of auth retries (prevent infinite loops) */
 
     /* Transport mode configuration */
     rtsp_transport_mode_t transport_mode;         /* Current transport mode */
@@ -205,6 +205,7 @@ void rtsp_session_init(rtsp_session_t *session);
  */
 int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
                           const char *seek_param_name, const char *seek_param_value,
+                          int seek_offset_seconds,
                           const char *user_agent,
                           const char *fallback_username, const char *fallback_password);
 
