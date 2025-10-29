@@ -7,6 +7,7 @@
 #include <string.h>
 #include <strings.h>
 #include <ctype.h>
+#include <limits.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -264,92 +265,6 @@ service_t *service_create_from_udpxy_url(char *url)
         return NULL;
     }
 }
-static int is_valid_playseek_format(const char *playseek_value)
-{
-    size_t len;
-    size_t digit_count;
-    char *dash_pos;
-
-    if (!playseek_value || strlen(playseek_value) == 0)
-    {
-        return 0;
-    }
-
-    /* Check for dash separator indicating time range */
-    dash_pos = strchr(playseek_value, '-');
-
-    if (dash_pos)
-    {
-        /* Time range format: begin-end */
-        size_t begin_len = dash_pos - playseek_value;
-        const char *end_part = dash_pos + 1;
-        size_t end_len = strlen(end_part);
-
-        /* Validate begin part */
-        if (begin_len == 0)
-        {
-            return 0; /* Empty begin part */
-        }
-
-        digit_count = 0;
-        for (size_t i = 0; i < begin_len; i++)
-        {
-            if (playseek_value[i] >= '0' && playseek_value[i] <= '9')
-            {
-                digit_count++;
-            }
-        }
-
-        /* Begin part must be all digits and either <= 10 (Unix timestamp) or exactly 14 (yyyyMMddHHmmss) */
-        if (digit_count != begin_len || (begin_len > 10 && begin_len != 14))
-        {
-            return 0;
-        }
-
-        /* Validate end part (can be empty for open-ended range) */
-        if (end_len > 0)
-        {
-            digit_count = 0;
-            for (size_t i = 0; i < end_len; i++)
-            {
-                if (end_part[i] >= '0' && end_part[i] <= '9')
-                {
-                    digit_count++;
-                }
-            }
-
-            /* End part must be all digits and either <= 10 (Unix timestamp) or exactly 14 (yyyyMMddHHmmss) */
-            if (digit_count != end_len || (end_len > 10 && end_len != 14))
-            {
-                return 0;
-            }
-        }
-
-        return 1; /* Valid time range format */
-    }
-    else
-    {
-        /* Single time value (no dash) */
-        len = strlen(playseek_value);
-        digit_count = 0;
-
-        for (size_t i = 0; i < len; i++)
-        {
-            if (playseek_value[i] >= '0' && playseek_value[i] <= '9')
-            {
-                digit_count++;
-            }
-        }
-
-        /* Must be all digits and either <= 10 (Unix timestamp) or exactly 14 (yyyyMMddHHmmss) */
-        if (digit_count == len && (len <= 10 || len == 14))
-        {
-            return 1;
-        }
-
-        return 0;
-    }
-}
 service_t *service_create_from_rtsp_url(const char *http_url)
 {
     service_t *result = NULL;
@@ -359,6 +274,7 @@ service_t *service_create_from_rtsp_url(const char *http_url)
     const char *seek_param_name = NULL;
     char *r2h_seek_name_explicit = NULL;
     char rtsp_url[HTTP_URL_BUFFER_SIZE];
+    int seek_offset_seconds = 0;
 
     /* Validate input */
     if (!http_url || strlen(http_url) >= sizeof(working_url))
@@ -408,7 +324,8 @@ service_t *service_create_from_rtsp_url(const char *http_url)
             /* Extract value */
             char *value_start = r2h_start + 14; /* Skip "r2h-seek-name=" */
             char *value_end = strchr(value_start, '&');
-            if (!value_end) {
+            if (!value_end)
+            {
                 value_end = value_start + strlen(value_start);
             }
 
@@ -435,6 +352,84 @@ service_t *service_create_from_rtsp_url(const char *http_url)
             /* Remove r2h-seek-name parameter from URL */
             char *param_start = (r2h_start > query_start + 1) ? (r2h_start - 1) : r2h_start;
             if (r2h_start == query_start + 1)
+            {
+                /* First parameter */
+                if (*value_end == '&')
+                {
+                    /* Has other params after, keep '?' and move them forward */
+                    memmove(query_start + 1, value_end + 1, strlen(value_end + 1) + 1);
+                }
+                else
+                {
+                    /* Only parameter, remove '?' */
+                    *query_start = '\0';
+                    query_start = NULL; /* Mark as no query string */
+                }
+            }
+            else
+            {
+                /* Not first parameter, remove including preceding '&' */
+                if (*value_end == '&')
+                {
+                    memmove(param_start, value_end, strlen(value_end) + 1);
+                }
+                else
+                {
+                    *param_start = '\0';
+                }
+            }
+        }
+
+        /* Step 1.5: Extract r2h-seek-offset parameter if present */
+        char *offset_start = strstr(query_start, "r2h-seek-offset=");
+
+        /* Check if at parameter boundary */
+        if (offset_start && (offset_start == query_start + 1 || *(offset_start - 1) == '&'))
+        {
+            /* Extract value */
+            char *value_start = offset_start + 16; /* Skip "r2h-seek-offset=" */
+            char *value_end = strchr(value_start, '&');
+            if (!value_end)
+            {
+                value_end = value_start + strlen(value_start);
+            }
+
+            size_t value_len = value_end - value_start;
+            char *offset_str = malloc(value_len + 1);
+            if (offset_str)
+            {
+                strncpy(offset_str, value_start, value_len);
+                offset_str[value_len] = '\0';
+
+                /* URL decode */
+                if (http_url_decode(offset_str) == 0)
+                {
+                    /* Parse signed integer (supports +8, -8, 8, +0, -0) */
+                    char *endptr;
+                    long offset_val = strtol(offset_str, &endptr, 10);
+
+                    if (*endptr == '\0' && offset_val >= INT_MIN && offset_val <= INT_MAX)
+                    {
+                        seek_offset_seconds = (int)offset_val;
+                        logger(LOG_DEBUG, "Found r2h-seek-offset parameter: %d seconds",
+                               seek_offset_seconds);
+                    }
+                    else
+                    {
+                        logger(LOG_WARN, "Invalid r2h-seek-offset value: %s", offset_str);
+                    }
+                }
+                else
+                {
+                    logger(LOG_ERROR, "Failed to decode r2h-seek-offset parameter");
+                }
+
+                free(offset_str);
+            }
+
+            /* Remove r2h-seek-offset parameter from URL */
+            char *param_start = (offset_start > query_start + 1) ? (offset_start - 1) : offset_start;
+            if (offset_start == query_start + 1)
             {
                 /* First parameter */
                 if (*value_end == '&')
@@ -552,8 +547,8 @@ service_t *service_create_from_rtsp_url(const char *http_url)
                 first_value = strdup(current_value);
             }
 
-            /* Check if this value has valid format */
-            if (!selected_value && is_valid_playseek_format(current_value))
+            /* Check if this value has valid format (no placeholders like {begin} or {end}) */
+            if (!selected_value && current_value && !strchr(current_value, '{') && !strchr(current_value, '}'))
             {
                 selected_value = strdup(current_value);
                 logger(LOG_DEBUG, "Found valid %s parameter: %s", seek_param_name, selected_value);
@@ -671,6 +666,7 @@ service_t *service_create_from_rtsp_url(const char *http_url)
     result->seek_param_name = seek_param_name ? strdup(seek_param_name) : NULL;
     result->seek_param_value = seek_param_value;
     seek_param_value = NULL; /* Transfer ownership to result */
+    result->seek_offset_seconds = seek_offset_seconds;
 
     result->url = strdup(http_url); /* Store original HTTP URL for reference */
     if (!result->url)
@@ -814,6 +810,56 @@ service_t *service_create_with_query_merge(const service_t *configured_service,
         memcpy(merged_url, base_url, url_len);
         memcpy(merged_url + url_len, query_start, query_len);
         merged_url[url_len + query_len] = '\0';
+    }
+
+    /* Append r2h-seek-name parameter if present */
+    if (configured_service->seek_param_name)
+    {
+        char seek_name_param[256];
+        const char *separator;
+
+        /* Determine separator based on whether URL already has query params */
+        separator = strchr(merged_url, '?') ? "&" : "?";
+
+        snprintf(seek_name_param, sizeof(seek_name_param),
+                 "%sr2h-seek-name=%s",
+                 separator,
+                 configured_service->seek_param_name);
+
+        if (strlen(merged_url) + strlen(seek_name_param) < sizeof(merged_url))
+        {
+            strcat(merged_url, seek_name_param);
+        }
+        else
+        {
+            logger(LOG_ERROR, "Merged %s URL with r2h-seek-name too long", type_name);
+            return NULL;
+        }
+    }
+
+    /* Append r2h-seek-offset parameter if non-zero */
+    if (configured_service->seek_offset_seconds != 0)
+    {
+        char seek_offset_param[64];
+        const char *separator;
+
+        /* Determine separator based on whether URL already has query params */
+        separator = strchr(merged_url, '?') ? "&" : "?";
+
+        snprintf(seek_offset_param, sizeof(seek_offset_param),
+                 "%sr2h-seek-offset=%d",
+                 separator,
+                 configured_service->seek_offset_seconds);
+
+        if (strlen(merged_url) + strlen(seek_offset_param) < sizeof(merged_url))
+        {
+            strcat(merged_url, seek_offset_param);
+        }
+        else
+        {
+            logger(LOG_ERROR, "Merged %s URL with r2h-seek-offset too long", type_name);
+            return NULL;
+        }
     }
 
     /* Create new service from merged URL */
@@ -1260,6 +1306,9 @@ service_t *service_clone(const service_t *service)
             goto cleanup_error;
         }
     }
+
+    /* Copy seek_offset_seconds */
+    cloned->seek_offset_seconds = service->seek_offset_seconds;
 
     if (service->user_agent)
     {

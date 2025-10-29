@@ -327,6 +327,7 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, se
         /* Parse URL and initiate connection */
         if (rtsp_parse_server_url(&ctx->rtsp, service->rtsp_url,
                                   service->seek_param_name, service->seek_param_value,
+                                  service->seek_offset_seconds,
                                   service->user_agent,
                                   NULL, NULL) < 0)
         {
