@@ -792,8 +792,6 @@ static void free_config_service(service_t *service)
     freeaddrinfo(service->fcc_addr);
   if (service->rtsp_url != NULL)
     free(service->rtsp_url);
-  if (service->playseek_param != NULL)
-    free(service->playseek_param);
   if (service->user_agent != NULL)
     free(service->user_agent);
   if (service->msrc != NULL)
