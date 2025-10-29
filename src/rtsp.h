@@ -123,7 +123,6 @@ typedef struct
     char server_host[RTSP_SERVER_HOST_SIZE];             /* RTSP server hostname */
     int server_port;                                     /* RTSP server port */
     char server_path[RTSP_SERVER_PATH_SIZE];             /* RTSP path with query string */
-    char playseek_range[RTSP_PLAYSEEK_RANGE_SIZE];       /* Range for RTSP PLAY command */
     int redirect_count;                                  /* Number of redirects followed */
 
     /* Authentication state */
@@ -194,17 +193,19 @@ void rtsp_session_init(rtsp_session_t *session);
 
 /**
  * Parse RTSP server URL and initialize session (RTSP protocol layer)
- * Parses RTSP URL components (host, port, path) and converts playseek to Range header format
+ * Parses RTSP URL components (host, port, path) and converts seek parameter to Range header format
  * @param session RTSP session to populate
  * @param rtsp_url Full RTSP URL (rtsp://host:port/path)
- * @param playseek_param Optional playseek parameter for time range
+ * @param seek_param_name Optional seek parameter name (e.g., "playseek", "tvdr")
+ * @param seek_param_value Optional seek parameter value for time range
  * @param user_agent Optional User-Agent header for timezone detection
  * @param fallback_username Optional username to reuse when URL lacks credentials
  * @param fallback_password Optional password to reuse when URL lacks credentials
  * @return 0 on success, -1 on error
  */
 int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
-                          const char *playseek_param, const char *user_agent,
+                          const char *seek_param_name, const char *seek_param_value,
+                          const char *user_agent,
                           const char *fallback_username, const char *fallback_password);
 
 /**

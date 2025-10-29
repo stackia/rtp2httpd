@@ -352,16 +352,19 @@ static int is_valid_playseek_format(const char *playseek_value)
 }
 service_t *service_create_from_rtsp_url(const char *http_url)
 {
-    service_t *result;
+    service_t *result = NULL;
     char working_url[HTTP_URL_BUFFER_SIZE];
-    char *url_part, *playseek_param = NULL;
-    char *query_start, *playseek_start, *playseek_end;
+    char *url_part, *seek_param_value = NULL;
+    char *query_start, *seek_start, *seek_end;
+    const char *seek_param_name = NULL;
+    char *r2h_seek_name_explicit = NULL;
+    char rtsp_url[HTTP_URL_BUFFER_SIZE];
 
     /* Validate input */
     if (!http_url || strlen(http_url) >= sizeof(working_url))
     {
         logger(LOG_ERROR, "Invalid or too long RTSP URL");
-        return NULL;
+        goto cleanup;
     }
 
     /* Copy URL to avoid modifying original */
@@ -382,163 +385,236 @@ service_t *service_create_from_rtsp_url(const char *http_url)
     else
     {
         logger(LOG_ERROR, "Invalid RTSP URL format (must start with rtsp:// or /rtsp/)");
-        return NULL;
+        goto cleanup;
     }
 
     /* Check if URL part is empty */
     if (strlen(url_part) == 0)
     {
         logger(LOG_ERROR, "RTSP URL part is empty");
-        return NULL;
+        goto cleanup;
     }
 
-    /* Find and extract playseek parameter, then remove it from URL */
+    /* Find and extract seek parameter, then remove it from URL */
     query_start = strchr(url_part, '?');
     if (query_start)
     {
-        char *first_playseek_value = NULL;
-        char *selected_playseek_value = NULL;
-        char *search_pos = query_start;
+        /* Step 1: Extract r2h-seek-name parameter if present */
+        char *r2h_start = strstr(query_start, "r2h-seek-name=");
 
-        /* Iterate through all playseek parameters to find the first valid one */
-        while ((playseek_start = strstr(search_pos, "playseek=")) != NULL)
+        /* Check if at parameter boundary */
+        if (r2h_start && (r2h_start == query_start + 1 || *(r2h_start - 1) == '&'))
         {
-            /* Ensure we're at a parameter boundary (after ? or &) */
-            if (playseek_start > query_start && *(playseek_start - 1) != '?' && *(playseek_start - 1) != '&')
-            {
-                search_pos = playseek_start + 9;
-                continue;
+            /* Extract value */
+            char *value_start = r2h_start + 14; /* Skip "r2h-seek-name=" */
+            char *value_end = strchr(value_start, '&');
+            if (!value_end) {
+                value_end = value_start + strlen(value_start);
             }
 
-            playseek_start += 9; /* Skip "playseek=" */
-            playseek_end = strchr(playseek_start, '&');
-            if (!playseek_end)
+            size_t value_len = value_end - value_start;
+            r2h_seek_name_explicit = malloc(value_len + 1);
+            if (r2h_seek_name_explicit)
             {
-                playseek_end = playseek_start + strlen(playseek_start);
-            }
+                strncpy(r2h_seek_name_explicit, value_start, value_len);
+                r2h_seek_name_explicit[value_len] = '\0';
 
-            /* Extract this playseek parameter value */
-            size_t param_len = playseek_end - playseek_start;
-            char *current_value = malloc(param_len + 1);
-            if (!current_value)
-            {
-                logger(LOG_ERROR, "Failed to allocate memory for playseek parameter");
-                if (first_playseek_value)
-                    free(first_playseek_value);
-                if (selected_playseek_value)
-                    free(selected_playseek_value);
-                return NULL;
-            }
-
-            strncpy(current_value, playseek_start, param_len);
-            current_value[param_len] = '\0';
-
-            /* URL decode the parameter value */
-            char *decoded = malloc(param_len + 1);
-            if (!decoded)
-            {
-                logger(LOG_ERROR, "Failed to allocate memory for decoded playseek parameter");
-                free(current_value);
-                if (first_playseek_value)
-                    free(first_playseek_value);
-                if (selected_playseek_value)
-                    free(selected_playseek_value);
-                return NULL;
-            }
-
-            int decoded_len = 0;
-            for (size_t i = 0; i < param_len; i++)
-            {
-                if (current_value[i] == '%' && i + 2 < param_len)
+                /* URL decode */
+                if (http_url_decode(r2h_seek_name_explicit) != 0)
                 {
-                    /* URL decode hex characters */
-                    int hex_val;
-                    if (sscanf(current_value + i + 1, "%2x", &hex_val) == 1)
-                    {
-                        decoded[decoded_len++] = hex_val;
-                        i += 2;
-                    }
-                    else
-                    {
-                        decoded[decoded_len++] = current_value[i];
-                    }
+                    logger(LOG_ERROR, "Failed to decode r2h-seek-name parameter");
+                    free(r2h_seek_name_explicit);
+                    r2h_seek_name_explicit = NULL;
                 }
                 else
                 {
-                    decoded[decoded_len++] = current_value[i];
+                    logger(LOG_DEBUG, "Found r2h-seek-name parameter: %s", r2h_seek_name_explicit);
                 }
             }
-            decoded[decoded_len] = '\0';
-            free(current_value);
 
-            /* Store the first playseek value as fallback */
-            if (!first_playseek_value)
+            /* Remove r2h-seek-name parameter from URL */
+            char *param_start = (r2h_start > query_start + 1) ? (r2h_start - 1) : r2h_start;
+            if (r2h_start == query_start + 1)
             {
-                first_playseek_value = strdup(decoded);
+                /* First parameter */
+                if (*value_end == '&')
+                {
+                    /* Has other params after, keep '?' and move them forward */
+                    memmove(query_start + 1, value_end + 1, strlen(value_end + 1) + 1);
+                }
+                else
+                {
+                    /* Only parameter, remove '?' */
+                    *query_start = '\0';
+                    query_start = NULL; /* Mark as no query string */
+                }
+            }
+            else
+            {
+                /* Not first parameter, remove including preceding '&' */
+                if (*value_end == '&')
+                {
+                    memmove(param_start, value_end, strlen(value_end) + 1);
+                }
+                else
+                {
+                    *param_start = '\0';
+                }
+            }
+        }
+
+        /* Step 2: Determine seek parameter name */
+        if (r2h_seek_name_explicit)
+        {
+            /* Explicitly specified */
+            seek_param_name = r2h_seek_name_explicit;
+            logger(LOG_DEBUG, "Using explicitly specified seek parameter name: %s", seek_param_name);
+        }
+        else if (query_start)
+        {
+            /* Heuristic detection with fixed priority: playseek > tvdr */
+            char *playseek_check = strstr(query_start, "playseek=");
+            if (playseek_check && (playseek_check == query_start + 1 || *(playseek_check - 1) == '&'))
+            {
+                seek_param_name = "playseek";
+                logger(LOG_DEBUG, "Heuristic: detected playseek parameter");
+            }
+            else
+            {
+                char *tvdr_check = strstr(query_start, "tvdr=");
+                if (tvdr_check && (tvdr_check == query_start + 1 || *(tvdr_check - 1) == '&'))
+                {
+                    seek_param_name = "tvdr";
+                    logger(LOG_DEBUG, "Heuristic: detected tvdr parameter");
+                }
+            }
+        }
+    }
+
+    /* Step 3: Extract seek parameter value if name is determined */
+    if (query_start && seek_param_name)
+    {
+        char search_pattern[128];
+        snprintf(search_pattern, sizeof(search_pattern), "%s=", seek_param_name);
+
+        char *first_value = NULL;
+        char *selected_value = NULL;
+        char *search_pos = query_start;
+
+        /* Iterate through all occurrences of the seek parameter */
+        while ((seek_start = strstr(search_pos, search_pattern)) != NULL)
+        {
+            /* Ensure we're at a parameter boundary (after ? or &) */
+            if (seek_start > query_start && *(seek_start - 1) != '?' && *(seek_start - 1) != '&')
+            {
+                search_pos = seek_start + strlen(search_pattern);
+                continue;
+            }
+
+            seek_start += strlen(search_pattern); /* Skip "{param_name}=" */
+            seek_end = strchr(seek_start, '&');
+            if (!seek_end)
+            {
+                seek_end = seek_start + strlen(seek_start);
+            }
+
+            /* Extract this seek parameter value */
+            size_t param_len = seek_end - seek_start;
+            char *current_value = malloc(param_len + 1);
+            if (!current_value)
+            {
+                logger(LOG_ERROR, "Failed to allocate memory for %s parameter", seek_param_name);
+                if (first_value)
+                    free(first_value);
+                if (selected_value)
+                    free(selected_value);
+                goto cleanup;
+            }
+
+            strncpy(current_value, seek_start, param_len);
+            current_value[param_len] = '\0';
+
+            /* URL decode the parameter value */
+            if (http_url_decode(current_value) != 0)
+            {
+                logger(LOG_ERROR, "Failed to decode %s parameter value", seek_param_name);
+                free(current_value);
+                if (first_value)
+                    free(first_value);
+                if (selected_value)
+                    free(selected_value);
+                goto cleanup;
+            }
+
+            /* Store the first value as fallback */
+            if (!first_value)
+            {
+                first_value = strdup(current_value);
             }
 
             /* Check if this value has valid format */
-            if (!selected_playseek_value && is_valid_playseek_format(decoded))
+            if (!selected_value && is_valid_playseek_format(current_value))
             {
-                selected_playseek_value = strdup(decoded);
-                logger(LOG_DEBUG, "Found valid playseek parameter: %s", selected_playseek_value);
+                selected_value = strdup(current_value);
+                logger(LOG_DEBUG, "Found valid %s parameter: %s", seek_param_name, selected_value);
             }
 
-            free(decoded);
+            free(current_value);
 
             /* Move search position forward */
-            search_pos = playseek_end;
+            search_pos = seek_end;
         }
 
-        /* Determine which playseek value to use */
-        if (selected_playseek_value)
+        /* Determine which value to use */
+        if (selected_value)
         {
-            playseek_param = selected_playseek_value;
-            if (first_playseek_value)
-                free(first_playseek_value);
+            seek_param_value = selected_value;
+            if (first_value)
+                free(first_value);
         }
-        else if (first_playseek_value)
+        else if (first_value)
         {
-            /* No valid format found, use first playseek as fallback */
-            playseek_param = first_playseek_value;
-            logger(LOG_DEBUG, "No valid playseek format found, using first value as fallback: %s", playseek_param);
+            /* No valid format found, use first value as fallback */
+            seek_param_value = first_value;
+            logger(LOG_DEBUG, "No valid format found for %s, using first value as fallback: %s",
+                   seek_param_name, seek_param_value);
         }
 
-        /* Remove all playseek parameters from URL */
-        if (playseek_param)
+        /* Remove all seek parameters from URL */
+        if (seek_param_value)
         {
             char *remove_pos = query_start;
-            while ((playseek_start = strstr(remove_pos, "playseek=")) != NULL)
+            while ((seek_start = strstr(remove_pos, search_pattern)) != NULL)
             {
                 /* Ensure we're at a parameter boundary */
-                if (playseek_start > query_start && *(playseek_start - 1) != '?' && *(playseek_start - 1) != '&')
+                if (seek_start > query_start && *(seek_start - 1) != '?' && *(seek_start - 1) != '&')
                 {
-                    remove_pos = playseek_start + 9;
+                    remove_pos = seek_start + strlen(search_pattern);
                     continue;
                 }
 
-                char *param_to_remove_start = playseek_start;
+                char *param_to_remove_start = seek_start;
 
-                /* Check if playseek is the first parameter or not */
-                if (playseek_start > query_start + 1)
+                /* Check if seek param is the first parameter or not */
+                if (seek_start > query_start + 1)
                 {
-                    /* playseek is not the first parameter, include preceding '&' */
-                    param_to_remove_start = playseek_start - 1; /* Point to '&' before playseek */
+                    /* Not the first parameter, include preceding '&' */
+                    param_to_remove_start = seek_start - 1; /* Point to '&' before param */
                 }
 
-                /* Find the end of the playseek parameter value */
-                char *param_value_end = strchr(playseek_start, '&');
+                /* Find the end of the seek parameter value */
+                char *param_value_end = strchr(seek_start, '&');
                 if (param_value_end)
                 {
-                    /* There are parameters after playseek */
-                    if (playseek_start == query_start + 1)
+                    /* There are parameters after seek param */
+                    if (seek_start == query_start + 1)
                     {
-                        /* playseek is first parameter, keep '?' and move other params */
+                        /* First parameter, keep '?' and move other params */
                         memmove(query_start + 1, param_value_end + 1, strlen(param_value_end + 1) + 1);
                     }
                     else
                     {
-                        /* playseek is not first, remove including preceding '&' */
+                        /* Not first, remove including preceding '&' */
                         memmove(param_to_remove_start, param_value_end, strlen(param_value_end) + 1);
                     }
                     /* Continue from the same position since we moved content */
@@ -546,15 +622,15 @@ service_t *service_create_from_rtsp_url(const char *http_url)
                 }
                 else
                 {
-                    /* playseek is the last/only parameter */
-                    if (playseek_start == query_start + 1)
+                    /* Last/only parameter */
+                    if (seek_start == query_start + 1)
                     {
                         /* Remove entire query string */
                         *query_start = '\0';
                     }
                     else
                     {
-                        /* Remove just the playseek parameter and preceding '&' */
+                        /* Remove just the seek parameter and preceding '&' */
                         *param_to_remove_start = '\0';
                     }
                     break; /* No more parameters to process */
@@ -568,9 +644,7 @@ service_t *service_create_from_rtsp_url(const char *http_url)
     if (!result)
     {
         logger(LOG_ERROR, "Failed to allocate memory for RTSP service");
-        if (playseek_param)
-            free(playseek_param);
-        return NULL;
+        goto cleanup;
     }
 
     memset(result, 0, sizeof(service_t));
@@ -578,48 +652,69 @@ service_t *service_create_from_rtsp_url(const char *http_url)
     result->user_agent = NULL;
 
     /* Build full RTSP URL */
-    char rtsp_url[HTTP_URL_BUFFER_SIZE];
     /* url_part already has prefix stripped, so always prepend rtsp:// */
     if (strlen(url_part) + 7 >= sizeof(rtsp_url))
     {
         logger(LOG_ERROR, "RTSP URL too long: %zu bytes", strlen(url_part) + 7);
-        if (playseek_param)
-            free(playseek_param);
-        free(result);
-        return NULL;
+        goto cleanup;
     }
     snprintf(rtsp_url, sizeof(rtsp_url), "rtsp://%.1000s", url_part);
 
-    /* Store RTSP URL and playseek parameter */
+    /* Store RTSP URL and seek parameters */
     result->rtsp_url = strdup(rtsp_url);
     if (!result->rtsp_url)
     {
         logger(LOG_ERROR, "Failed to allocate memory for RTSP URL");
-        if (playseek_param)
-            free(playseek_param);
-        free(result);
-        return NULL;
+        goto cleanup;
     }
 
-    result->playseek_param = playseek_param;
+    result->seek_param_name = seek_param_name ? strdup(seek_param_name) : NULL;
+    result->seek_param_value = seek_param_value;
+    seek_param_value = NULL; /* Transfer ownership to result */
+
     result->url = strdup(http_url); /* Store original HTTP URL for reference */
     if (!result->url)
     {
         logger(LOG_ERROR, "Failed to allocate memory for HTTP URL");
-        if (playseek_param)
-            free(playseek_param);
-        free(result->rtsp_url);
-        free(result);
-        return NULL;
+        goto cleanup;
     }
 
     logger(LOG_DEBUG, "Parsed RTSP URL: %s", result->rtsp_url);
-    if (result->playseek_param)
+    if (result->seek_param_value)
     {
-        logger(LOG_DEBUG, "Parsed playseek parameter: %s", result->playseek_param);
+        logger(LOG_DEBUG, "Parsed %s parameter: %s",
+               result->seek_param_name ? result->seek_param_name : "seek",
+               result->seek_param_value);
+    }
+
+    /* Cleanup temporary (only if not transferred to result) */
+    if (r2h_seek_name_explicit && seek_param_name != r2h_seek_name_explicit)
+    {
+        free(r2h_seek_name_explicit);
     }
 
     return result;
+
+cleanup:
+    /* Free temporary allocations */
+    if (seek_param_value)
+        free(seek_param_value);
+    if (r2h_seek_name_explicit)
+        free(r2h_seek_name_explicit);
+
+    /* Free partially constructed result */
+    if (result)
+    {
+        if (result->rtsp_url)
+            free(result->rtsp_url);
+        if (result->seek_param_name)
+            free(result->seek_param_name);
+        if (result->url)
+            free(result->url);
+        free(result);
+    }
+
+    return NULL;
 }
 
 service_t *service_create_with_query_merge(const service_t *configured_service,
@@ -1148,10 +1243,19 @@ service_t *service_clone(const service_t *service)
         }
     }
 
-    if (service->playseek_param)
+    if (service->seek_param_name)
     {
-        cloned->playseek_param = strdup(service->playseek_param);
-        if (!cloned->playseek_param)
+        cloned->seek_param_name = strdup(service->seek_param_name);
+        if (!cloned->seek_param_name)
+        {
+            goto cleanup_error;
+        }
+    }
+
+    if (service->seek_param_value)
+    {
+        cloned->seek_param_value = strdup(service->seek_param_value);
+        if (!cloned->seek_param_value)
         {
             goto cleanup_error;
         }
@@ -1231,10 +1335,16 @@ void service_free(service_t *service)
             service->rtsp_url = NULL;
         }
 
-        if (service->playseek_param)
+        if (service->seek_param_name)
         {
-            free(service->playseek_param);
-            service->playseek_param = NULL;
+            free(service->seek_param_name);
+            service->seek_param_name = NULL;
+        }
+
+        if (service->seek_param_value)
+        {
+            free(service->seek_param_value);
+            service->seek_param_value = NULL;
         }
 
         if (service->user_agent)

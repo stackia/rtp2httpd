@@ -385,7 +385,8 @@ static void rtsp_session_set_state(rtsp_session_t *session, rtsp_state_t new_sta
 }
 
 int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
-                          const char *playseek_param, const char *user_agent,
+                          const char *seek_param_name, const char *seek_param_value,
+                          const char *user_agent,
                           const char *fallback_username, const char *fallback_password)
 {
     char url_copy[RTSP_URL_COPY_SIZE];
@@ -638,24 +639,25 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
         return -1;
     }
 
-    /* Handle playseek parameter - convert to UTC for URL query parameter */
-    if (playseek_param && strlen(playseek_param) > 0)
+    /* Handle seek parameter - convert to UTC for URL query parameter */
+    if (seek_param_value && strlen(seek_param_value) > 0 && seek_param_name && strlen(seek_param_name) > 0)
     {
-        /* Parse playseek parameter: could be "begin-end", "begin-", or "begin" */
+        /* Parse seek parameter: could be "begin-end", "begin-", or "begin" */
         char begin_str[RTSP_TIME_COMPONENT_SIZE] = {0};
         char end_str[RTSP_TIME_COMPONENT_SIZE] = {0};
         char begin_utc[RTSP_TIME_STRING_SIZE] = {0};
         char end_utc[RTSP_TIME_STRING_SIZE] = {0};
-        char *dash_pos = strchr(playseek_param, '-');
+        char *dash_pos = strchr(seek_param_value, '-');
+        size_t seek_param_name_len = strlen(seek_param_name);
 
         /* Extract begin and end times */
         if (dash_pos)
         {
             /* Has dash: "begin-end" or "begin-" */
-            size_t begin_len = dash_pos - playseek_param;
+            size_t begin_len = dash_pos - seek_param_value;
             if (begin_len < sizeof(begin_str))
             {
-                strncpy(begin_str, playseek_param, begin_len);
+                strncpy(begin_str, seek_param_value, begin_len);
                 begin_str[begin_len] = '\0';
                 strcpy(end_str, dash_pos + 1); /* end_str may be empty */
             }
@@ -663,12 +665,13 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
         else
         {
             /* No dash: treat as "begin-" (open-ended range) */
-            strncpy(begin_str, playseek_param, sizeof(begin_str) - 1);
+            strncpy(begin_str, seek_param_value, sizeof(begin_str) - 1);
             begin_str[sizeof(begin_str) - 1] = '\0';
             /* end_str remains empty */
         }
 
-        logger(LOG_DEBUG, "RTSP: Parsed playseek - begin='%s', end='%s'", begin_str, end_str);
+        logger(LOG_DEBUG, "RTSP: Parsed %s - begin='%s', end='%s'",
+               seek_param_name, begin_str, end_str);
 
         /* Convert begin time to UTC (keep original format) */
         if (rtsp_convert_time_to_utc(begin_str, tz_offset_seconds, begin_utc, sizeof(begin_utc)) == 0)
@@ -702,9 +705,9 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
             /* Open-ended range */
             snprintf(playseek_utc, sizeof(playseek_utc), "%s-", begin_utc);
         }
-        logger(LOG_DEBUG, "RTSP: UTC playseek parameter: '%s'", playseek_utc);
+        logger(LOG_DEBUG, "RTSP: UTC %s parameter: '%s'", seek_param_name, playseek_utc);
 
-        /* Append playseek parameter to server_url for DESCRIBE request */
+        /* Append seek parameter to server_url for DESCRIBE request */
         /* Check if URL already has query parameters */
         char *query_marker = strchr(session->server_url, '?');
         size_t current_len = strlen(session->server_url);
@@ -713,32 +716,33 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
         if (query_marker)
         {
             /* URL already has query parameters, append with & */
-            if (current_len + 10 + playseek_len < sizeof(session->server_url))
+            if (current_len + 2 + seek_param_name_len + playseek_len < sizeof(session->server_url))
             {
                 snprintf(session->server_url + current_len,
                          sizeof(session->server_url) - current_len,
-                         "&playseek=%s", playseek_utc);
+                         "&%s=%s", seek_param_name, playseek_utc);
             }
             else
             {
-                logger(LOG_ERROR, "RTSP: URL too long to append playseek parameter");
+                logger(LOG_ERROR, "RTSP: URL too long to append %s parameter", seek_param_name);
             }
         }
         else
         {
             /* No query parameters yet, append with ? */
-            if (current_len + 10 + playseek_len < sizeof(session->server_url))
+            if (current_len + 2 + seek_param_name_len + playseek_len < sizeof(session->server_url))
             {
                 snprintf(session->server_url + current_len,
                          sizeof(session->server_url) - current_len,
-                         "?playseek=%s", playseek_utc);
+                         "?%s=%s", seek_param_name, playseek_utc);
             }
             else
             {
-                logger(LOG_ERROR, "RTSP: URL too long to append playseek parameter");
+                logger(LOG_ERROR, "RTSP: URL too long to append %s parameter", seek_param_name);
             }
         }
-        logger(LOG_DEBUG, "RTSP: Updated server_url with playseek: %s", session->server_url);
+        logger(LOG_DEBUG, "RTSP: Updated server_url with %s: %s",
+               seek_param_name, session->server_url);
     }
 
     logger(LOG_DEBUG, "RTSP: Parsed URL - host=%s, port=%d, path=%s",
@@ -2680,7 +2684,7 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location)
     const char *redirect_password = (session->password[0] != '\0') ? session->password : NULL;
 
     /* Parse new URL and update session */
-    if (rtsp_parse_server_url(session, location, NULL, NULL,
+    if (rtsp_parse_server_url(session, location, NULL, NULL, NULL,
                               redirect_username, redirect_password) < 0)
     {
         logger(LOG_ERROR, "RTSP: Failed to parse redirect URL");
