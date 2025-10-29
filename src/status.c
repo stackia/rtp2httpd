@@ -254,24 +254,12 @@ void status_cleanup(void)
  * Only called for media streaming clients, not for status/API requests
  * Allocates a free slot under mutex protection and returns the slot index
  */
-int status_register_client(struct sockaddr_storage *client_addr, socklen_t addr_len,
-                           const char *service_url)
+int status_register_client(const char *client_addr_str, const char *service_url)
 {
   int status_index = -1;
-  char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
 
-  if (!status_shared)
+  if (!status_shared || !client_addr_str)
     return -1;
-
-  /* Get client address string */
-  int r = getnameinfo((struct sockaddr *)client_addr, addr_len,
-                      hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
-                      NI_NUMERICHOST | NI_NUMERICSERV);
-  if (r != 0)
-  {
-    snprintf(hbuf, sizeof(hbuf), "unknown");
-    snprintf(sbuf, sizeof(sbuf), "0");
-  }
 
   /* Lock mutex to protect client slot allocation */
   pthread_mutex_lock(&status_shared->clients_mutex);
@@ -289,18 +277,10 @@ int status_register_client(struct sockaddr_storage *client_addr, socklen_t addr_
       status_shared->clients[i].connect_time = get_realtime_ms();
       status_shared->clients[i].disconnect_requested = 0;
 
-      /* Copy client address and port, truncating if necessary (intentional for storage) */
-      size_t addr_str_len = strlen(hbuf);
-      if (addr_str_len >= sizeof(status_shared->clients[i].client_addr))
-        addr_str_len = sizeof(status_shared->clients[i].client_addr) - 1;
-      memcpy(status_shared->clients[i].client_addr, hbuf, addr_str_len);
-      status_shared->clients[i].client_addr[addr_str_len] = '\0';
-
-      size_t port_str_len = strlen(sbuf);
-      if (port_str_len >= sizeof(status_shared->clients[i].client_port))
-        port_str_len = sizeof(status_shared->clients[i].client_port) - 1;
-      memcpy(status_shared->clients[i].client_port, sbuf, port_str_len);
-      status_shared->clients[i].client_port[port_str_len] = '\0';
+      /* Copy client address string (format: "IP:port" or "[IPv6]:port") */
+      strncpy(status_shared->clients[i].client_addr, client_addr_str,
+              sizeof(status_shared->clients[i].client_addr) - 1);
+      status_shared->clients[i].client_addr[sizeof(status_shared->clients[i].client_addr) - 1] = '\0';
       status_shared->clients[i].state = CLIENT_STATE_CONNECTING;
 
       /* Copy service URL */
@@ -622,7 +602,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
       int64_t duration_ms = current_time - status_shared->clients[i].connect_time;
 
       len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                      "{\"clientId\":%d,\"workerPid\":%d,\"durationMs\":%lld,\"clientAddr\":\"%s\",\"clientPort\":\"%s\","
+                      "{\"clientId\":%d,\"workerPid\":%d,\"durationMs\":%lld,\"clientAddr\":\"%s\","
                       "\"serviceUrl\":\"%s\",\"state\":%d,\"bytesSent\":%llu,"
                       "\"currentBandwidth\":%u,\"queueBytes\":%zu,"
                       "\"queueLimitBytes\":%zu,\"queueBytesHighwater\":%zu,"
@@ -631,7 +611,6 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
                       status_shared->clients[i].worker_pid,
                       (long long)duration_ms,
                       status_shared->clients[i].client_addr,
-                      status_shared->clients[i].client_port,
                       status_shared->clients[i].service_url,
                       (int)status_shared->clients[i].state,
                       (unsigned long long)status_shared->clients[i].bytes_sent,
@@ -836,8 +815,7 @@ void handle_disconnect_client(connection_t *c)
 
   if (!status_shared)
   {
-    if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_503, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_503, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Status system not initialized\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -847,8 +825,7 @@ void handle_disconnect_client(connection_t *c)
   /* Check HTTP method */
   if (strcasecmp(c->http_req.method, "POST") != 0 && strcasecmp(c->http_req.method, "DELETE") != 0)
   {
-    if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Method not allowed. Use POST or DELETE\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -860,8 +837,7 @@ void handle_disconnect_client(connection_t *c)
   {
     if (http_parse_query_param(c->http_req.body, "client_id", client_id_str, sizeof(client_id_str)) != 0)
     {
-      if (c->http_req.is_http_1_1)
-        send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
       snprintf(response, sizeof(response),
                "{\"success\":false,\"error\":\"Missing 'client_id' parameter in request body\"}");
       connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -870,8 +846,7 @@ void handle_disconnect_client(connection_t *c)
   }
   else
   {
-    if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Missing request body\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -883,8 +858,7 @@ void handle_disconnect_client(connection_t *c)
   /* Validate client_id range */
   if (client_id < 0 || client_id >= STATUS_MAX_CLIENTS)
   {
-    if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Invalid client_id\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -900,9 +874,7 @@ void handle_disconnect_client(connection_t *c)
     /* Trigger disconnect request event to wake up workers */
     status_trigger_event(STATUS_EVENT_DISCONNECT_REQUEST);
   }
-
-  if (c->http_req.is_http_1_1)
-    send_http_headers(c, STATUS_200, CONTENT_HTML, NULL);
+  send_http_headers(c, STATUS_200, CONTENT_HTML, NULL);
 
   if (found)
   {
@@ -931,8 +903,7 @@ void handle_set_log_level(connection_t *c)
   /* Check HTTP method */
   if (strcasecmp(c->http_req.method, "PUT") != 0 && strcasecmp(c->http_req.method, "PATCH") != 0)
   {
-    if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Method not allowed. Use PUT or PATCH\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -944,8 +915,7 @@ void handle_set_log_level(connection_t *c)
   {
     if (http_parse_query_param(c->http_req.body, "level", level_str, sizeof(level_str)) != 0)
     {
-      if (c->http_req.is_http_1_1)
-        send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
       snprintf(response, sizeof(response),
                "{\"success\":false,\"error\":\"Missing 'level' parameter in request body\"}");
       connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -954,8 +924,7 @@ void handle_set_log_level(connection_t *c)
   }
   else
   {
-    if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Missing request body\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -966,8 +935,7 @@ void handle_set_log_level(connection_t *c)
 
   if (new_level < LOG_FATAL || new_level > LOG_DEBUG)
   {
-    if (c->http_req.is_http_1_1)
-      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Invalid log level (must be 0-4)\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -980,9 +948,7 @@ void handle_set_log_level(connection_t *c)
     status_shared->current_log_level = new_level;
   }
   config.verbosity = new_level;
-
-  if (c->http_req.is_http_1_1)
-    send_http_headers(c, STATUS_200, CONTENT_HTML, NULL);
+  send_http_headers(c, STATUS_200, CONTENT_HTML, NULL);
 
   snprintf(response, sizeof(response),
            "{\"success\":true,\"message\":\"Log level changed to %s\"}",

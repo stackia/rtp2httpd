@@ -25,6 +25,7 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netdb.h>
 
 #define CONNECTION_TCP_USER_TIMEOUT_MS 10000
 #define CONN_QUEUE_MIN_BUFFERS 64
@@ -500,23 +501,34 @@ int connection_route_and_start(connection_t *c)
     return 0;
   }
 
-  /* Check hostname if configured */
+  /* Parse configured hostname once if needed (extract protocol and host) */
+  char protocol[16] = {0};
+  char expected_host[256] = {0};
+
   if (config.hostname != NULL && config.hostname[0] != '\0')
   {
-    /* If Host header is missing, reject the request */
-    if (c->http_req.hostname[0] == '\0')
+    /* Parse URL components from config.hostname */
+    if (http_parse_url_components(config.hostname, protocol, expected_host, NULL, NULL) != 0)
     {
-      logger(LOG_WARN, "Client request rejected: missing Host header (expected: %s)", config.hostname);
+      logger(LOG_ERROR, "Failed to parse configured hostname: %s", config.hostname);
       http_send_400(c);
       return 0;
     }
 
-    /* Match Host header against configured hostname (with lenient matching) */
-    int match_result = http_match_host_header(c->http_req.hostname, config.hostname);
+    /* If Host header is missing, reject the request */
+    if (c->http_req.hostname[0] == '\0')
+    {
+      logger(LOG_WARN, "Client request rejected: missing Host header (expected: %s)", expected_host);
+      http_send_400(c);
+      return 0;
+    }
+
+    /* Match Host header against expected hostname */
+    int match_result = http_match_host_header(c->http_req.hostname, expected_host);
 
     if (match_result < 0)
     {
-      logger(LOG_ERROR, "Failed to parse configured hostname: %s", config.hostname);
+      logger(LOG_ERROR, "Failed to match Host header");
       http_send_400(c);
       return 0;
     }
@@ -524,7 +536,7 @@ int connection_route_and_start(connection_t *c)
     if (match_result == 0)
     {
       logger(LOG_WARN, "Client request rejected: Host header mismatch (got: %s, expected: %s)",
-             c->http_req.hostname, config.hostname);
+             c->http_req.hostname, expected_host);
       http_send_400(c);
       return 0;
     }
@@ -824,7 +836,44 @@ int connection_route_and_start(connection_t *c)
 
     display_url[url_len] = '\0';
 
-    c->status_index = status_register_client(&c->client_addr, c->client_addr_len, display_url);
+    /* Format client address string
+     * If protocol was detected (http/https), use X-Forwarded-For if present
+     * Otherwise format real client address from sockaddr */
+    char client_addr_str[128];
+    if (protocol[0] != '\0' && c->http_req.x_forwarded_for[0] != '\0')
+    {
+      /* Behind proxy with X-Forwarded-For - use it directly (already formatted) */
+      logger(LOG_DEBUG, "X-Forwarded-For accepted: %s", c->http_req.x_forwarded_for);
+      snprintf(client_addr_str, sizeof(client_addr_str), "%s", c->http_req.x_forwarded_for);
+    }
+    else
+    {
+      /* Format real client address from sockaddr */
+      char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+      int r = getnameinfo((struct sockaddr *)&c->client_addr, c->client_addr_len,
+                          hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
+                          NI_NUMERICHOST | NI_NUMERICSERV);
+      if (r != 0)
+      {
+        snprintf(client_addr_str, sizeof(client_addr_str), "unknown");
+      }
+      else
+      {
+        /* Check if IPv6 address needs brackets */
+        if (strchr(hbuf, ':') != NULL)
+        {
+          /* IPv6 - wrap in brackets */
+          snprintf(client_addr_str, sizeof(client_addr_str), "[%s]:%s", hbuf, sbuf);
+        }
+        else
+        {
+          /* IPv4 - simple format */
+          snprintf(client_addr_str, sizeof(client_addr_str), "%s:%s", hbuf, sbuf);
+        }
+      }
+    }
+
+    c->status_index = status_register_client(client_addr_str, display_url);
     if (c->status_index < 0)
     {
       logger(LOG_ERROR, "Failed to register streaming client in status tracking");

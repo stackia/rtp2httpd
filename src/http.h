@@ -51,8 +51,8 @@ typedef struct
   char user_agent[256];
   char accept[256];
   char if_none_match[256];
+  char x_forwarded_for[64];
   int x_request_snapshot;
-  int is_http_1_1;
   http_parse_state_t parse_state;
   int content_length;
   char body[1024];
@@ -168,15 +168,13 @@ void http_send_401(connection_t *conn);
 int http_parse_url_components(const char *url, char *protocol, char *host, char *port, char *path);
 
 /**
- * Match Host header against configured hostname
- * Supports lenient matching:
- *   - If configured hostname has no port, only compares hostname part
- *   - If configured hostname has port, requires exact host:port match
+ * Match Host header against expected hostname
+ * Compares only the hostname parts (ignoring ports), case-insensitive.
  *
  * @param request_host_header Host header from HTTP request (e.g., "example.org:5140" or "example.org")
- * @param config_hostname Configured hostname (can be full URL like "http://example.org" or simple hostname "example.org")
+ * @param expected_host Expected hostname to match against (just the hostname part, e.g., "example.org")
  * @return 1 if match, 0 if not match, -1 on error
  */
-int http_match_host_header(const char *request_host_header, const char *config_hostname);
+int http_match_host_header(const char *request_host_header, const char *expected_host);
 
 #endif /* __HTTP_H__ */
