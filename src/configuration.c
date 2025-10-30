@@ -1020,7 +1020,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"zerocopy-on-send", no_argument, 0, 'Z'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhUm:w:b:c:l:P:H:T:i:f:t:r:R:F:A:s:p:M:I:SCZ";
+  const char short_opts[] = "v:qhUm:w:b:c:l:P:H:XT:i:f:t:r:R:F:A:s:p:M:I:SCZ";
   int option_index, opt;
   int configfile_failed = 1;
 
