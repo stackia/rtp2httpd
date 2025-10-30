@@ -76,7 +76,9 @@ return view.extend({
 
       // If hostname doesn't have protocol, prepend http:// for URL parsing
       var hasProtocol = /^https?:\/\//i.test(targetHostname);
-      var urlToParse = hasProtocol ? targetHostname : "http://" + targetHostname;
+      var urlToParse = hasProtocol
+        ? targetHostname
+        : "http://" + targetHostname;
 
       var url;
       try {
@@ -166,40 +168,31 @@ return view.extend({
     s.anonymous = true;
     s.addremove = true;
 
-    o = s.option(form.Flag, "disabled", _("rtp2httpd_Enabled"));
+    // Create tabs
+    s.tab("basic", _("rtp2httpd_Basic Settings"));
+    s.tab("network", _("rtp2httpd_Network & Performance"));
+    s.tab("player", _("rtp2httpd_Player & M3U"));
+    s.tab("advanced", _("rtp2httpd_Monitoring & Advanced"));
+
+    // ===== TAB 1: Basic Settings =====
+    o = s.taboption("basic", form.Flag, "disabled", _("rtp2httpd_Enabled"));
     o.enabled = "0";
     o.disabled = "1";
     o.default = o.enabled;
     o.rmempty = false;
 
-    o = s.option(
+    o = s.taboption(
+      "basic",
       form.Flag,
       "respawn",
       _("rtp2httpd_Respawn"),
       _("rtp2httpd_Auto restart after crash")
     );
-    o.default = "0";
-
-    o = s.option(
-      form.Button,
-      "_status_dashboard",
-      _("rtp2httpd_Status Dashboard")
-    );
-    o.inputtitle = _("rtp2httpd_Open Status Dashboard");
-    o.inputstyle = "apply";
-    o.onclick = function (ev, section_id) {
-      return self.openPage(section_id, "status");
-    };
-
-    o = s.option(form.Button, "_player_page", _("rtp2httpd_Player Page"));
-    o.inputtitle = _("rtp2httpd_Open Player Page");
-    o.inputstyle = "apply";
-    o.onclick = function (ev, section_id) {
-      return self.openPage(section_id, "player");
-    };
+    o.default = "1";
 
     // Add "Use Config File" option
-    o = s.option(
+    o = s.taboption(
+      "basic",
       form.Flag,
       "use_config_file",
       _("rtp2httpd_Use Config File"),
@@ -208,7 +201,8 @@ return view.extend({
     o.default = "0";
 
     // Config file editor
-    o = s.option(
+    o = s.taboption(
+      "basic",
       form.TextValue,
       "config_file_content",
       _("rtp2httpd_Config File Content"),
@@ -239,12 +233,12 @@ return view.extend({
       });
     };
 
-    o = s.option(form.Value, "port", _("rtp2httpd_Port"));
+    o = s.taboption("basic", form.Value, "port", _("rtp2httpd_Port"));
     o.datatype = "port";
-    o.default = "5140";
+    o.placeholder = "5140";
     o.depends("use_config_file", "0");
 
-    o = s.option(form.ListValue, "verbose", _("rtp2httpd_Verbose"));
+    o = s.taboption("basic", form.ListValue, "verbose", _("rtp2httpd_Verbose"));
     o.value("0", _("rtp2httpd_Fatal"));
     o.value("1", _("rtp2httpd_Error"));
     o.value("2", _("rtp2httpd_Warn"));
@@ -253,8 +247,19 @@ return view.extend({
     o.default = "1";
     o.depends("use_config_file", "0");
 
+    o = s.taboption(
+      "basic",
+      form.Value,
+      "hostname",
+      _("rtp2httpd_Hostname"),
+      _("rtp2httpd_Hostname description")
+    );
+    o.depends("use_config_file", "0");
+
+    // ===== TAB 2: Network & Performance =====
     // Add "Advanced Interface Settings" option
-    o = s.option(
+    o = s.taboption(
+      "network",
       form.Flag,
       "advanced_interface_settings",
       _("rtp2httpd_Advanced Interface Settings"),
@@ -264,7 +269,8 @@ return view.extend({
     o.depends("use_config_file", "0");
 
     // Simple interface setting (when advanced is disabled)
-    o = s.option(
+    o = s.taboption(
+      "network",
       widgets.DeviceSelect,
       "upstream_interface",
       _("rtp2httpd_Upstream Interface"),
@@ -277,7 +283,8 @@ return view.extend({
     o.depends({ use_config_file: "0", advanced_interface_settings: "0" });
 
     // Advanced interface settings (when advanced is enabled)
-    o = s.option(
+    o = s.taboption(
+      "network",
       widgets.DeviceSelect,
       "upstream_interface_multicast",
       _("rtp2httpd_Upstream Multicast Interface"),
@@ -289,7 +296,8 @@ return view.extend({
     o.datatype = "interface";
     o.depends({ use_config_file: "0", advanced_interface_settings: "1" });
 
-    o = s.option(
+    o = s.taboption(
+      "network",
       widgets.DeviceSelect,
       "upstream_interface_fcc",
       _("rtp2httpd_Upstream FCC Interface"),
@@ -301,7 +309,8 @@ return view.extend({
     o.datatype = "interface";
     o.depends({ use_config_file: "0", advanced_interface_settings: "1" });
 
-    o = s.option(
+    o = s.taboption(
+      "network",
       widgets.DeviceSelect,
       "upstream_interface_rtsp",
       _("rtp2httpd_Upstream RTSP Interface"),
@@ -313,12 +322,18 @@ return view.extend({
     o.datatype = "interface";
     o.depends({ use_config_file: "0", advanced_interface_settings: "1" });
 
-    o = s.option(form.Value, "maxclients", _("rtp2httpd_Max clients"));
+    o = s.taboption(
+      "network",
+      form.Value,
+      "maxclients",
+      _("rtp2httpd_Max clients")
+    );
     o.datatype = "range(1, 5000)";
-    o.default = "5";
+    o.placeholder = "5";
     o.depends("use_config_file", "0");
 
-    o = s.option(
+    o = s.taboption(
+      "network",
       form.Value,
       "workers",
       _("rtp2httpd_Workers"),
@@ -330,7 +345,8 @@ return view.extend({
     o.placeholder = "1";
     o.depends("use_config_file", "0");
 
-    o = s.option(
+    o = s.taboption(
+      "network",
       form.Value,
       "buffer_pool_max_size",
       _("rtp2httpd_Buffer Pool Max Size"),
@@ -342,118 +358,8 @@ return view.extend({
     o.placeholder = "16384";
     o.depends("use_config_file", "0");
 
-    o = s.option(
-      form.Value,
-      "hostname",
-      _("rtp2httpd_Hostname"),
-      _("rtp2httpd_Hostname description")
-    );
-    o.depends("use_config_file", "0");
-
-    o = s.option(
-      form.Flag,
-      "xff",
-      _("rtp2httpd_xff"),
-      _(
-        "rtp2httpd_xff_description"
-      )
-    );
-    o.default = "0";
-    o.depends("use_config_file", "0");
-
-    o = s.option(
-      form.Value,
-      "status_page_path",
-      _("rtp2httpd_Status Page Path"),
-      _("rtp2httpd_Status page path description")
-    );
-    o.placeholder = "/status";
-    o.depends("use_config_file", "0");
-
-    o = s.option(
-      form.Value,
-      "player_page_path",
-      _("rtp2httpd_Player Page Path"),
-      _("rtp2httpd_Player page path description")
-    );
-    o.placeholder = "/player";
-    o.depends("use_config_file", "0");
-
-    o = s.option(
-      form.Value,
-      "r2h_token",
-      _("rtp2httpd_R2H Token"),
-      _("rtp2httpd_Authentication token for HTTP requests")
-    );
-    o.password = true;
-    o.depends("use_config_file", "0");
-
-    o = s.option(
-      form.Value,
-      "external_m3u",
-      _("rtp2httpd_External M3U"),
-      _("rtp2httpd_External M3U description")
-    );
-    o.placeholder = "https://example.com/playlist.m3u";
-    o.depends("use_config_file", "0");
-
-    o = s.option(
-      form.Value,
-      "external_m3u_update_interval",
-      _("rtp2httpd_External M3U Update Interval"),
-      _("rtp2httpd_External M3U update interval description")
-    );
-    o.datatype = "uinteger";
-    o.placeholder = "86400";
-    o.depends("use_config_file", "0");
-
-    o = s.option(
-      form.Value,
-      "mcast_rejoin_interval",
-      _("rtp2httpd_Multicast Rejoin Interval"),
-      _("rtp2httpd_Multicast rejoin interval description")
-    );
-    o.datatype = "range(0, 86400)";
-    o.placeholder = "0";
-    o.depends("use_config_file", "0");
-
-    o = s.option(
-      form.Value,
-      "fcc_listen_port_range",
-      _("rtp2httpd_FCC Listen Port Range"),
-      _("rtp2httpd_FCC listen port range description")
-    );
-    o.placeholder = "40000-40100";
-    o.depends("use_config_file", "0");
-
-    o = s.option(
-      form.Flag,
-      "video_snapshot",
-      _("rtp2httpd_Video Snapshot"),
-      _("rtp2httpd_Video snapshot description")
-    );
-    o.default = "0";
-    o.depends("use_config_file", "0");
-
-    o = s.option(
-      form.Value,
-      "ffmpeg_path",
-      _("rtp2httpd_FFmpeg Path"),
-      _("rtp2httpd_FFmpeg path description")
-    );
-    o.placeholder = "ffmpeg";
-    o.depends("use_config_file", "0");
-
-    o = s.option(
-      form.Value,
-      "ffmpeg_args",
-      _("rtp2httpd_FFmpeg Arguments"),
-      _("rtp2httpd_FFmpeg arguments description")
-    );
-    o.placeholder = "-hwaccel none";
-    o.depends("use_config_file", "0");
-
-    o = s.option(
+    o = s.taboption(
+      "network",
       form.Flag,
       "zerocopy_on_send",
       _("rtp2httpd_Zero-Copy on Send"),
@@ -463,6 +369,173 @@ return view.extend({
     );
     o.default = "0";
     o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "network",
+      form.Value,
+      "mcast_rejoin_interval",
+      _("rtp2httpd_Multicast Rejoin Interval"),
+      _("rtp2httpd_Multicast rejoin interval description")
+    );
+    o.datatype = "range(0, 86400)";
+    o.placeholder = "0";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "network",
+      form.Value,
+      "fcc_listen_port_range",
+      _("rtp2httpd_FCC Listen Port Range"),
+      _("rtp2httpd_FCC listen port range description")
+    );
+    o.placeholder = "begin-end";
+    o.depends("use_config_file", "0");
+
+    // ===== TAB 3: Player & M3U =====
+    o = s.taboption(
+      "player",
+      form.Value,
+      "external_m3u",
+      _("rtp2httpd_External M3U"),
+      _("rtp2httpd_External M3U description")
+    );
+    o.placeholder = "https://example.com/playlist.m3u";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "player",
+      form.Value,
+      "external_m3u_update_interval",
+      _("rtp2httpd_External M3U Update Interval"),
+      _("rtp2httpd_External M3U update interval description")
+    );
+    o.datatype = "uinteger";
+    o.placeholder = "86400";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "player",
+      form.Value,
+      "player_page_path",
+      _("rtp2httpd_Player Page Path"),
+      _("rtp2httpd_Player page path description")
+    );
+    o.placeholder = "/player";
+    o.depends("use_config_file", "0");
+
+    // Warning message when M3U is not configured
+    o = s.taboption("player", form.DummyValue, "_player_warning");
+    o.rawhtml = true;
+    o.default =
+      '<div class="alert-message warning">' +
+      _("rtp2httpd_Player requires M3U URL") +
+      "</div>";
+    o.depends({ use_config_file: "0", external_m3u: "" });
+
+    // Player page button with M3U validation
+    o = s.taboption(
+      "player",
+      form.Button,
+      "_player_page",
+      _("rtp2httpd_Player Page")
+    );
+    o.inputtitle = _("rtp2httpd_Open Player Page");
+    o.inputstyle = "apply";
+    o.onclick = function (ev, section_id) {
+      return uci.load("rtp2httpd").then(function () {
+        var use_config_file = uci.get(
+          "rtp2httpd",
+          section_id,
+          "use_config_file"
+        );
+
+        // In config file mode, skip M3U validation (user manages config freely)
+        if (use_config_file === "1") {
+          return self.openPage(section_id, "player");
+        }
+
+        // In UCI mode, validate M3U is configured
+        var m3u = uci.get("rtp2httpd", section_id, "external_m3u");
+        if (!m3u || m3u.trim() === "") {
+          alert(_("rtp2httpd_Please configure External M3U URL first"));
+          return;
+        }
+        return self.openPage(section_id, "player");
+      });
+    };
+
+    // ===== TAB 4: Monitoring & Advanced =====
+    o = s.taboption(
+      "advanced",
+      form.Button,
+      "_status_dashboard",
+      _("rtp2httpd_Status Dashboard")
+    );
+    o.inputtitle = _("rtp2httpd_Open Status Dashboard");
+    o.inputstyle = "apply";
+    o.onclick = function (ev, section_id) {
+      return self.openPage(section_id, "status");
+    };
+
+    o = s.taboption(
+      "advanced",
+      form.Value,
+      "status_page_path",
+      _("rtp2httpd_Status Page Path"),
+      _("rtp2httpd_Status page path description")
+    );
+    o.placeholder = "/status";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "advanced",
+      form.Value,
+      "r2h_token",
+      _("rtp2httpd_R2H Token"),
+      _("rtp2httpd_Authentication token for HTTP requests")
+    );
+    o.password = true;
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "advanced",
+      form.Flag,
+      "xff",
+      _("rtp2httpd_xff"),
+      _("rtp2httpd_xff_description")
+    );
+    o.default = "0";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "advanced",
+      form.Flag,
+      "video_snapshot",
+      _("rtp2httpd_Video Snapshot"),
+      _("rtp2httpd_Video snapshot description")
+    );
+    o.default = "0";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "advanced",
+      form.Value,
+      "ffmpeg_path",
+      _("rtp2httpd_FFmpeg Path"),
+      _("rtp2httpd_FFmpeg path description")
+    );
+    o.placeholder = "ffmpeg";
+    o.depends({ use_config_file: "0", video_snapshot: "1" });
+
+    o = s.taboption(
+      "advanced",
+      form.Value,
+      "ffmpeg_args",
+      _("rtp2httpd_FFmpeg Arguments"),
+      _("rtp2httpd_FFmpeg arguments description")
+    );
+    o.placeholder = "-hwaccel none";
+    o.depends({ use_config_file: "0", video_snapshot: "1" });
 
     return m.render();
   },

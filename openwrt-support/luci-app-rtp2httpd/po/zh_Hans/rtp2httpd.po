@@ -129,7 +129,7 @@ msgid "rtp2httpd_Multicast Rejoin Interval"
 msgstr "组播周期性重新加入间隔"
 
 msgid "rtp2httpd_Multicast rejoin interval description"
-msgstr "周期性重新加入组播组的间隔时间（秒），0 表示禁用（默认 0）。如果您的网络交换机因缺少 IGMP Query 消息而导致组播成员关系超时，可以启用此功能（建议 120-180 秒）。仅在网络环境有问题时需要启用。"
+msgstr "周期性重新加入组播组的间隔时间（秒），0 表示禁用（默认 0）。如果您的网络交换机因缺少 IGMP Query 消息而导致组播成员关系超时，可以启用此功能（建议 30-120 秒）。仅在网络环境有问题时需要启用。"
 
 msgid "rtp2httpd_FCC Listen Port Range"
 msgstr "FCC 监听端口范围"
@@ -190,3 +190,21 @@ msgstr "外部 M3U 更新间隔"
 
 msgid "rtp2httpd_External M3U update interval description"
 msgstr "外部 M3U 自动更新间隔（秒），默认 86400（24 小时）。设为 0 禁用自动更新。"
+
+msgid "rtp2httpd_Basic Settings"
+msgstr "基础设置"
+
+msgid "rtp2httpd_Network & Performance"
+msgstr "网络与性能"
+
+msgid "rtp2httpd_Player & M3U"
+msgstr "播放器与 M3U"
+
+msgid "rtp2httpd_Monitoring & Advanced"
+msgstr "监控与高级功能"
+
+msgid "rtp2httpd_Player requires M3U URL"
+msgstr "注意：播放器页面需要先配置外部 M3U URL 才能使用。"
+
+msgid "rtp2httpd_Please configure External M3U URL first"
+msgstr "请先配置外部 M3U URL"
