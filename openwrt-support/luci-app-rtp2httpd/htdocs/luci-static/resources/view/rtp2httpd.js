@@ -351,6 +351,17 @@ return view.extend({
     o.depends("use_config_file", "0");
 
     o = s.option(
+      form.Flag,
+      "xff",
+      _("rtp2httpd_xff"),
+      _(
+        "rtp2httpd_Enable X-Forwarded-For header recognize"
+      )
+    );
+    o.default = "0";
+    o.depends("use_config_file", "0");
+
+    o = s.option(
       form.Value,
       "status_page_path",
       _("rtp2httpd_Status Page Path"),
