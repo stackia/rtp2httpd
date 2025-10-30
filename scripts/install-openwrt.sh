@@ -174,10 +174,22 @@ get_cpu_arch() {
 
     local arch=""
 
-    if [ "$PKG_MANAGER" = "apk" ]; then
-        arch=$(apk --print-arch 2>/dev/null)
-    else
-        arch=$(opkg print-architecture | awk '{print $2}' | grep -v "all" | grep -v "noarch" | head -n 1)
+    # 优先从 /etc/openwrt_release 读取完整架构信息
+    if [ -f /etc/openwrt_release ]; then
+        . /etc/openwrt_release
+        if [ -n "$DISTRIB_ARCH" ]; then
+            arch="$DISTRIB_ARCH"
+            print_info "从 OpenWrt 发行版信息获取架构: $arch"
+        fi
+    fi
+
+    # 如果未获取到,使用包管理器检测
+    if [ -z "$arch" ]; then
+        if [ "$PKG_MANAGER" = "apk" ]; then
+            arch=$(apk --print-arch 2>/dev/null)
+        else
+            arch=$(opkg print-architecture | awk '{print $2}' | grep -v "all" | grep -v "noarch" | head -n 1)
+        fi
     fi
 
     if [ -z "$arch" ]; then
