@@ -37,6 +37,7 @@ int cmd_udpxy_set;
 int cmd_maxclients_set;
 int cmd_bind_set;
 int cmd_hostname_set;
+int cmd_xff_set;
 int cmd_r2h_token_set;
 int cmd_buffer_pool_max_size_set;
 int cmd_mcast_rejoin_interval_set;
@@ -507,6 +508,13 @@ void parse_global_sec(char *line)
     return;
   }
 
+  if (strcasecmp("xff", param) == 0)
+  {
+    if (set_if_not_cmd_override(cmd_xff_set, "xff"))
+      config.xff = parse_bool(value);
+    return;
+  }
+
   if (strcasecmp("status-page-path", param) == 0)
   {
     if (set_if_not_cmd_override(cmd_status_page_path_set, "status-page-path"))
@@ -831,6 +839,9 @@ void restore_conf_defaults(void)
   safe_free_string(&config.hostname);
   cmd_hostname_set = 0;
 
+  config.xff = 0;
+  cmd_xff_set = 0;
+
   safe_free_string(&config.r2h_token);
   cmd_r2h_token_set = 0;
 
@@ -918,6 +929,7 @@ void usage(FILE *f, char *progname)
           "\t-C --noconfig        Do not read the default config\n"
           "\t-P --fcc-listen-port-range <start[-end]>  Restrict FCC UDP listen sockets to specific ports\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header (default none)\n"
+          "\t-X --xff             Enable X-Forwarded-For header recognize (default: off)\n"
           "\t-T --r2h-token <token>   Authentication token for HTTP requests (default none)\n"
           "\t-i --upstream-interface <interface>  Default interface for all upstream traffic (lowest priority)\n"
           "\t-f --upstream-interface-fcc <interface>  Interface for FCC unicast traffic (overrides -i)\n"
@@ -991,6 +1003,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"noconfig", no_argument, 0, 'C'},
       {"fcc-listen-port-range", required_argument, 0, 'P'},
       {"hostname", required_argument, 0, 'H'},
+      {"xff", no_argument, 0, 'X'},
       {"r2h-token", required_argument, 0, 'T'},
       {"upstream-interface", required_argument, 0, 'i'},
       {"upstream-interface-fcc", required_argument, 0, 'f'},
@@ -1099,6 +1112,11 @@ void parse_cmd_line(int argc, char *argv[])
       safe_free_string(&config.hostname);
       config.hostname = strdup(optarg);
       cmd_hostname_set = 1;
+      break;
+    case 'X':
+      config.xff = 1;
+      cmd_xff_set = 1;
+      logger(LOG_INFO, "X-Forwarded-For header recognize enabled");
       break;
     case 'T':
       safe_free_string(&config.r2h_token);

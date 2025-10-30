@@ -68,6 +68,10 @@ start_instance() {
         # Handle zerocopy_on_send flag
         config_get_bool aux "$cfg" 'zerocopy_on_send' '0'
         [ "$aux" = 1 ] && procd_append_param command "--zerocopy-on-send"
+
+        # Handle xff flag
+        config_get_bool aux "$cfg" 'xff' '0'
+        [ "$aux" = 1 ] && procd_append_param command "--xff"
   fi
 
   config_get_bool aux "$cfg" 'respawn' '0'
