@@ -96,10 +96,10 @@ msgid "rtp2httpd_Hostname description"
 msgstr "配置后将会检查 HTTP Host 头，必须匹配这里的值才能访问。M3U 转换时，也会使用这个值来作为转换后节目地址的域名。使用反向代理时，需要配置为经过反向代理后的访问地址（包括 http(s):// 和路径前缀），例如 https://my-domain.com/rtp2httpd，并且需要反向代理透传 Host 头。"
 
 msgid "rtp2httpd_xff"
-msgstr "XFF 解析"
+msgstr "X-Forwarded-For"
 
-msgid "rtp2httpd_Enable X-Forwarded-For header recognize"
-msgstr "解析 X-Forwarded-For 头作为客户端实际地址，显示在状态面板上"
+msgid "rtp2httpd_xff_description"
+msgstr "启用后，将使用 HTTP X-Forwarded-For 头作为客户端地址，用于显示在状态面板上。建议仅在使用反向代理时启用。"
 
 msgid "rtp2httpd_R2H Token"
 msgstr "HTTP 请求认证令牌"
