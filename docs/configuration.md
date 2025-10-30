@@ -52,6 +52,7 @@ rtp2httpd [选项]
 ### 安全控制
 
 - `-H, --hostname <主机名>` - 检查 HTTP Host 头的主机名
+- `-X, --xff` - 启用 X-Forwarded-For 解析
 - `-T, --r2h-token <令牌>` - HTTP 请求认证令牌 (所有请求必须携带 r2h-token 查询参数)
 - `-s, --status-page-path <路径>` - 状态页面与 API 根路径 (默认: /status)
 - `-p, --player-page-path <路径>` - 内置播放器页面路径 (默认: /player)
@@ -87,6 +88,9 @@ workers = 1
 
 # 检查 HTTP 请求的 Host 头 (默认：无)
 hostname = somehost.example.com
+
+# 启用 X-Forwarded-For 解析 (默认：0)
+xff = 1
 
 # HTTP 请求认证令牌（可选，默认: 无）
 # 设置后，所有 HTTP 请求必须携带 r2h-token 查询参数，且值与此配置匹配
@@ -190,11 +194,12 @@ rtp://239.253.64.121:5140
 
 ## 公网访问建议
 
-开放公网访问时，建议修改 `hostname` / `r2h-token` / `status-page-path` / `player-page-path` 以加强安全性。
+开放公网访问时，建议修改 `hostname` / `xff` / `r2h-token` / `status-page-path` / `player-page-path` 以加强安全性。
 
 ```ini
 [global]
 hostname = iptv.example.com
+xff = 1
 r2h-token = my-secret-token-12345
 status-page-path = /my-status-page
 player-page-path = /my-player
@@ -206,6 +211,8 @@ player-page-path = /my-player
 [global]
 # 当 hostname 以 `http://` 或 `https://` 开头时，rtp2httpd 会认为自己位于反代之后，接受反代传来的 `X-Forwarded-For` 作为客户端地址（用于显示在状态面板）。
 hostname = https://my-domain.com/rtp2httpd
+# 或者也可以直接启用 `X-Forwarded-For` 解析，内网直接 HTTP 不绑域名，外网由 Nginx / HAProxy 负责绑定域名
+xff = 1
 ```
 
 ## 性能调优
