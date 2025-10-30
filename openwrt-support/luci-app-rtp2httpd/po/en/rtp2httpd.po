@@ -129,7 +129,7 @@ msgid "rtp2httpd_Multicast Rejoin Interval"
 msgstr "Multicast Rejoin Interval"
 
 msgid "rtp2httpd_Multicast rejoin interval description"
-msgstr "Periodic multicast rejoin interval in seconds (0=disabled, default 0). Enable this (e.g., 120-180 seconds) if your network switches timeout multicast memberships due to missing IGMP Query messages. Only needed for problematic network environments."
+msgstr "Periodic multicast rejoin interval in seconds (0=disabled, default 0). Enable this (e.g., 30-120 seconds) if your network switches timeout multicast memberships due to missing IGMP Query messages. Only needed for problematic network environments."
 
 msgid "rtp2httpd_FCC Listen Port Range"
 msgstr "FCC Listen Port Range"
@@ -190,3 +190,21 @@ msgstr "External M3U Update Interval"
 
 msgid "rtp2httpd_External M3U update interval description"
 msgstr "External M3U automatic update interval in seconds (default: 86400 = 24 hours). Set to 0 to disable automatic updates."
+
+msgid "rtp2httpd_Basic Settings"
+msgstr "Basic Settings"
+
+msgid "rtp2httpd_Network & Performance"
+msgstr "Network & Performance"
+
+msgid "rtp2httpd_Player & M3U"
+msgstr "Player & M3U"
+
+msgid "rtp2httpd_Monitoring & Advanced"
+msgstr "Monitoring & Advanced"
+
+msgid "rtp2httpd_Player requires M3U URL"
+msgstr "Note: The player page requires External M3U URL to be configured first."
+
+msgid "rtp2httpd_Please configure External M3U URL first"
+msgstr "Please configure External M3U URL first"
