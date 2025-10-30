@@ -160,7 +160,7 @@ return view.extend({
       "rtp2httpd",
       _("rtp2httpd"),
       _(
-        "rtp2httpd converts multicast RTP/UDP media into http stream. Here you can configure the settings."
+        "rtp2httpd converts RTP/UDP/RTSP media into http stream. Here you can configure the settings."
       )
     );
 
