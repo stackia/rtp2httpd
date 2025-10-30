@@ -128,7 +128,27 @@ services:
     command: --noconfig --verbose 2 --listen 5140 --maxclients 20 --zerocopy-on-send
 ```
 
-## 编译安装
+## OpenWrt 编译安装
+
+如果你希望通过 OpenWrt 源码构建直接把 rtp2httpd 编译到固件里，可以把本仓库直接加入 `feeds.conf.default`：
+
+```text
+# 使用 main 分支最新代码
+src-git rtp2httpd https://github.com/stackia/rtp2httpd.git
+```
+
+或者指定版本号：
+
+```text
+# 使用 v3.1.1 版本代码
+src-git rtp2httpd https://github.com/stackia/rtp2httpd.git;v3.1.1
+```
+
+运行 `make menuconfig`，找到 `LuCI -> Applications -> luci-app-rtp2httpd`，将其勾选为 `*` (编译到固件) 或 `M` (编译成 ipk/apk 包)，保存退出。
+
+运行 `make package/feeds/rtp2httpd/luci-app-rtp2httpd/compile -j1 V=sc` 可单独编译 `luci-app-rtp2httpd` 和 `rtp2httpd` 两个包。
+
+## 传统编译安装
 
 适用于需要自定义编译或开发调试的场景。
 
