@@ -355,7 +355,7 @@ return view.extend({
       "xff",
       _("rtp2httpd_xff"),
       _(
-        "rtp2httpd_Enable X-Forwarded-For header recognize"
+        "rtp2httpd_xff_description"
       )
     );
     o.default = "0";

@@ -89,8 +89,9 @@ workers = 1
 # 检查 HTTP 请求的 Host 头 (默认：无)
 hostname = somehost.example.com
 
-# 启用 X-Forwarded-For 解析 (默认：0)
-xff = 1
+# 启用后，将使用 HTTP X-Forwarded-For 头作为客户端地址，用于显示在状态面板上 (默认：no)
+# 建议仅在使用反向代理时启用
+xff = no
 
 # HTTP 请求认证令牌（可选，默认: 无）
 # 设置后，所有 HTTP 请求必须携带 r2h-token 查询参数，且值与此配置匹配
@@ -194,12 +195,11 @@ rtp://239.253.64.121:5140
 
 ## 公网访问建议
 
-开放公网访问时，建议修改 `hostname` / `xff` / `r2h-token` / `status-page-path` / `player-page-path` 以加强安全性。
+开放公网访问时，建议修改 `hostname` / `r2h-token` / `status-page-path` / `player-page-path` 以加强安全性。
 
 ```ini
 [global]
 hostname = iptv.example.com
-xff = 1
 r2h-token = my-secret-token-12345
 status-page-path = /my-status-page
 player-page-path = /my-player
@@ -210,9 +210,14 @@ player-page-path = /my-player
 ```ini
 [global]
 # 当 hostname 以 `http://` 或 `https://` 开头时，rtp2httpd 会认为自己位于反代之后，接受反代传来的 `X-Forwarded-For` 作为客户端地址（用于显示在状态面板）。
+# 这个参数也会影响 m3u 转换。m3u 转换后，所有被转换的 URL 将会以此为前缀。
 hostname = https://my-domain.com/rtp2httpd
-# 或者也可以直接启用 `X-Forwarded-For` 解析，内网直接 HTTP 不绑域名，外网由 Nginx / HAProxy 负责绑定域名
-xff = 1
+```
+
+如果你并不想使用 `hostname`（例如内网仍然想使用 `IP:端口` 访问），也可以单独开启 X-Forwarded-For 解析。但是这样做，转换后的 m3u 将会使用内网地址。
+
+```ini
+xff = yes
 ```
 
 ## 性能调优
