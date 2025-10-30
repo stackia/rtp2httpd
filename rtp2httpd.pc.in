@@ -4,7 +4,7 @@ bindir=@bindir@
 sysconfdir=@sysconfdir@
 
 Name: @PACKAGE_NAME@
-Description: Multicast RTP to Unicast HTTP stream converter with FCC support
+Description: RTP/UDP/RTSP to Unicast HTTP stream converter with FCC support
 Version: @PACKAGE_VERSION@
 URL: @PACKAGE_URL@
 Requires:

@@ -2,7 +2,8 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([rtp2httpd-modern],[1.0.0],[jsq2627@gmail.com],[rtp2httpd-modern],[https://github.com/stackia/rtp2httpd])
+m4_define([release_version], m4_esyscmd_s([echo ${RELEASE_VERSION:-1.0.0-snapshot}]))
+AC_INIT([rtp2httpd],[release_version],[jsq2627@gmail.com],[rtp2httpd],[https://github.com/stackia/rtp2httpd])
 AC_CONFIG_SRCDIR([src/rtp2httpd.h])
 AC_CONFIG_HEADERS([src/config.h])
 AM_INIT_AUTOMAKE([subdir-objects parallel-tests color-tests foreign -Wall -Werror])

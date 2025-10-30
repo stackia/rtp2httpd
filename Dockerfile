@@ -3,6 +3,7 @@ FROM --platform=$BUILDPLATFORM debian:bullseye-slim AS builder
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
+ARG RELEASE_VERSION
 
 # Install build dependencies
 RUN set -ex; \
@@ -43,7 +44,8 @@ RUN case "$TARGETPLATFORM" in \
   "linux/arm/v7") ARCH_FLAGS="--host=arm-linux-gnueabihf" ;; \
   esac && \
   echo "Building with ARCH_FLAGS=$ARCH_FLAGS" && \
-  autoreconf -fi && \
+  echo "Building with RELEASE_VERSION=$RELEASE_VERSION" && \
+  RELEASE_VERSION=${RELEASE_VERSION} autoreconf -fi && \
   ./configure --enable-optimization=-O3 ${ARCH_FLAGS} && \
   make
 
