@@ -13,12 +13,12 @@ include $(INCLUDE_DIR)/package.mk
 define Package/rtp2httpd
 	SECTION:=net
 	CATEGORY:=Network
-	TITLE:=Convert multicast RTP/UDP IPTV streams into HTTP streams with FCC support
+	TITLE:=Convert RTP/UDP/RTSP streams into HTTP streams with FCC support
 	URL:=https://github.com/stackia/rtp2httpd
 endef
 
 define Package/rtp2httpd/description
-	rtp2httpd converts multicast RTP/UDP media into http stream.
+	rtp2httpd converts RTP/UDP/RTSP media into http stream.
 	It acts as a tiny HTTP server. When client connect,
 	pre-configured multicast RTP service is choosen by URL.
 	Program then join pre-configured multicast address and translate
@@ -30,6 +30,7 @@ CONFIGURE_ARGS += \
 
 define Package/rtp2httpd/conffiles
 /etc/config/rtp2httpd
+/etc/rtp2httpd.conf
 endef
 
 define Package/rtp2httpd/install
