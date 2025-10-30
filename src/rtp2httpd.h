@@ -67,6 +67,7 @@ typedef struct
   int udpxy;       /* Enable UDPxy URL format support (0=no, 1=yes) */
   int maxclients;  /* Maximum concurrent client connections */
   char *hostname;  /* Server hostname for URL generation (NULL=auto) */
+  int xff;         /* Enable X-Forwarded-For header recognize (0=no, 1=yes) */
   char *r2h_token; /* Authentication token for HTTP requests (NULL=disabled) */
 
   /* Worker and performance settings */

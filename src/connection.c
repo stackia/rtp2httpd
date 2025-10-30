@@ -840,7 +840,7 @@ int connection_route_and_start(connection_t *c)
      * If protocol was detected (http/https), use X-Forwarded-For if present
      * Otherwise format real client address from sockaddr */
     char client_addr_str[128];
-    if (protocol[0] != '\0' && c->http_req.x_forwarded_for[0] != '\0')
+    if ((protocol[0] != '\0' || config.xff) && c->http_req.x_forwarded_for[0] != '\0')
     {
       /* Behind proxy with X-Forwarded-For - use it directly (already formatted) */
       logger(LOG_DEBUG, "X-Forwarded-For accepted: %s", c->http_req.x_forwarded_for);
