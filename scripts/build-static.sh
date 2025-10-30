@@ -123,17 +123,20 @@ cd "$BUILD_DIR"
 echo ""
 echo_step "Configuring Build"
 echo_info "Build directory: $(pwd)"
-echo_info "Optimization level: -Os (optimize for size)"
+echo_info "Optimization level: -O3 (optimize for performance)"
+if [ -n "$RELEASE_VERSION" ]; then
+    echo_info "Version: $RELEASE_VERSION"
+fi
 
 # Configure with static linking
 # Key flags:
 # -static: Create fully static binary
-# -Os: Optimize for size (best for embedded systems)
+# -O3: Optimize for performance
 # --sysroot: Use musl sysroot
 # -ffunction-sections -fdata-sections: Allow linker to remove unused code
 # -Wl,--gc-sections: Remove unused sections
 # -Wl,-s: Strip symbols (smaller binary)
-"${PROJECT_ROOT}/configure" \
+RELEASE_VERSION="${RELEASE_VERSION}" "${PROJECT_ROOT}/configure" \
     --host=${TOOLCHAIN_PREFIX} \
     --prefix=/usr \
     --sysconfdir=/etc \
@@ -190,8 +193,11 @@ echo_info "Binary: $(pwd)/$BINARY"
 echo_info "Size: $(stat -c%s "$BINARY" | numfmt --to=iec-i --suffix=B 2>/dev/null || stat -f%z "$BINARY" 2>/dev/null || echo "unknown")"
 echo_info "Architecture: ${TOOLCHAIN_PREFIX%%-*}"
 echo_info "Libc: musl (static)"
-echo_info "Optimization: -Os (size)"
+echo_info "Optimization: -O3 (performance)"
 echo_info "Toolchain: ${TOOLCHAIN_PREFIX} (${TOOLCHAIN_RELEASE})"
+if [ -n "$RELEASE_VERSION" ]; then
+    echo_info "Version: $RELEASE_VERSION"
+fi
 echo ""
 echo_info "To test on target device:"
 echo_info "  scp $(pwd)/$BINARY root@target:/usr/bin/"
