@@ -214,7 +214,7 @@ player-page-path = /my-player
 hostname = https://my-domain.com/rtp2httpd
 ```
 
-如果你并不想使用 `hostname`（例如内网仍然想使用 `IP:端口` 访问），也可以单独开启 X-Forwarded-For 解析。但是这样做，转换后的 m3u 将会使用内网地址。
+如果你并不想使用 `hostname`（例如内网仍然想使用 `IP:端口` 访问），也可以单独开启 X-Forwarded-For 解析。但是这样做，转换后的 m3u 将会使用内网地址，节目链接在公网可能无法访问（内置 Web 播放器已特殊处理，不受影响）。
 
 ```ini
 xff = yes
