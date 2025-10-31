@@ -907,7 +907,7 @@ void usage(FILE *f, char *progname)
           PACKAGE " - Multicast RTP to Unicast HTTP stream convertor\n"
                   "\n"
                   "Version " VERSION "\n"
-                  "Copyright 2008-2014 Ondrej Caletka <ondrej@caletka.cz>\n"
+                  "Copyright 2008-2025 Ondrej Caletka <ondrej@caletka.cz>\n"
                   "\n"
                   "This program is free software; you can redistribute it and/or modify\n"
                   "it under the terms of the GNU General Public License version 2\n"
