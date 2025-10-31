@@ -116,7 +116,12 @@ if test "x$GCC" = "xyes"; then
     # Essential security flags with minimal performance impact
     # _FORTIFY_SOURCE=2: Buffer overflow detection (~1-2% overhead, essential for network services)
     # fstack-protector-strong: Stack canary protection (~1-3% overhead, prevents buffer overflows)
-    SECURITY_CFLAGS="-D_FORTIFY_SOURCE=2 -fstack-protector-strong"
+    # -U_TIME_BITS: Undefine _TIME_BITS to avoid 64-bit time_t requirements
+    #   This prevents time64 symbol errors on OpenWrt/embedded systems with old musl libc (< 1.2.0)
+    #   AC_USE_SYSTEM_EXTENSIONS may enable _TIME_BITS=64, which requires __gettimeofday_time64,
+    #   __fstat_time64, __gmtime64, __time64, __mktime64 symbols not available in old musl.
+    #   Trade-off: This limits time_t to 32-bit, which will overflow in 2038 (Y2038 problem).
+    SECURITY_CFLAGS="-U_TIME_BITS -D_FORTIFY_SOURCE=2 -fstack-protector-strong"
 
     # Explicitly disable PIE for embedded systems (5-10% performance overhead)
     # Modern GCC enables PIE by default, but it's less useful on embedded systems
