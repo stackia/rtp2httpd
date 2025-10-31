@@ -236,12 +236,20 @@ http://other-cdn.com/live/stream.m3u8
 | `${lutc:yyyyMMddHHmmss}`      | 当前时间（UTC，自定义 long format）     | 20250115140000           |
 | `${now}`                      | 同 `${lutc}`                            | 2025-01-15T14:00:00.000Z |
 | `${now:yyyyMMddHHmmss}`       | 同 `${lutc:yyyyMMddHHmmss}`             | 20250115140000           |
-| `${timestamp}`                | 当前 Unix 时间戳（秒）                  | 1736949600               |
+| `${timestamp}`                | 当前 Unix 时间戳（秒，10位）                  | 1736949600               |
 | `${timestamp:yyyyMMddHHmmss}` | 同 `${lutc:yyyyMMddHHmmss}`             | 20250115140000           |
+| `${(b)}`                      | 节目开始时间的 Unix 时间戳（毫秒，13位）        | 1736937045000            |
+| `${(e)}`                      | 节目结束时间的 Unix 时间戳（毫秒，13位）        | 1736944245000            |
+| `${(b)timestamp}`             | 节目开始时间的 Unix 时间戳（秒，10位）        | 1736937045               |
+| `${(e)timestamp}`             | 节目结束时间的 Unix 时间戳（秒，10位）        | 1736944245               |
+| `${(b)10}`                    | 节目开始时间的 Unix 时间戳（秒，10位）        | 1736937045               |
+| `${(e)10}`                    | 节目结束时间的 Unix 时间戳（秒，10位）        | 1736944245               |
 | `${(b)yyyyMMddHHmmss}`        | 节目开始时间（本地时间，long format）   | 20250115183045           |
+| `${(b)yyyyMMddHHmmss:utc}`    | 节目开始时间（UTC时间，long format）   | 20250115103045           |
+| `${(b)yyyyMMddHHmmss\|Asia/Shanghai}` | 节目开始时间（指定时区，long format） | 20250115183045           |
 | `${(e)yyyyMMddHHmmss}`        | 节目结束时间（本地时间，long format）   | 20250115203045           |
-| `${(b)timestamp}`             | 节目开始时间的 Unix 时间戳（秒）        | 1736937045               |
-| `${(e)timestamp}`             | 节目结束时间的 Unix 时间戳（秒）        | 1736944245               |
+| `${(e)yyyyMMddHHmmss:utc}`    | 节目结束时间（UTC时间，long format）   | 20250115123045           |
+| `${(e)yyyyMMddHHmmss\|Asia/Shanghai}` | 节目结束时间（指定时区，long format） | 20250115203045           |
 | `${yyyy}`                     | 节目开始时间：4 位年份（本地时间）      | 2025                     |
 | `${MM}`                       | 节目开始时间：月份 01-12（本地时间）    | 01                       |
 | `${dd}`                       | 节目开始时间：日期 01-31（本地时间）    | 15                       |
@@ -266,12 +274,20 @@ http://other-cdn.com/live/stream.m3u8
 | `{lutc:YmdHMS}`      | 当前时间（UTC，自定义 short format）     | 20250115140000           |
 | `{now}`              | 同 `{lutc}`                              | 2025-01-15T14:00:00.000Z |
 | `{now:YmdHMS}`       | 同 `{lutc:YmdHMS}`                       | 20250115140000           |
-| `{timestamp}`        | 当前 Unix 时间戳（秒）                   | 1736949600               |
+| `{timestamp}`        | 当前 Unix 时间戳（秒，10位）                   | 1736949600               |
 | `{timestamp:YmdHMS}` | 同 `{lutc:YmdHMS}`                       | 20250115140000           |
+| `{(b)}`              | 节目开始时间的 Unix 时间戳（毫秒，13位）         | 1736937045000            |
+| `{(e)}`              | 节目结束时间的 Unix 时间戳（毫秒，13位）         | 1736944245000            |
+| `{(b)timestamp}`     | 节目开始时间的 Unix 时间戳（秒，10位）         | 1736937045               |
+| `{(e)timestamp}`     | 节目结束时间的 Unix 时间戳（秒，10位）         | 1736944245               |
+| `{(b)10}`            | 节目开始时间的 Unix 时间戳（秒，10位）         | 1736937045               |
+| `{(e)10}`            | 节目结束时间的 Unix 时间戳（秒，10位）         | 1736944245               |
 | `{(b)YmdHMS}`        | 节目开始时间（本地时间，short format）   | 20250115183045           |
+| `{(b)YmdHMS:utc}`    | 节目开始时间（UTC时间，short format）   | 20250115103045           |
+| `{(b)YmdHMS\|Asia/Shanghai}` | 节目开始时间（指定时区，short format） | 20250115183045           |
 | `{(e)YmdHMS}`        | 节目结束时间（本地时间，short format）   | 20250115203045           |
-| `{(b)timestamp}`     | 节目开始时间的 Unix 时间戳（秒）         | 1736937045               |
-| `{(e)timestamp}`     | 节目结束时间的 Unix 时间戳（秒）         | 1736944245               |
+| `{(e)YmdHMS:utc}`    | 节目结束时间（UTC时间，short format）   | 20250115123045           |
+| `{(e)YmdHMS\|Asia/Shanghai}` | 节目结束时间（指定时区，short format） | 20250115203045           |
 | `{Y}`                | 节目开始时间：4 位年份（本地时间）       | 2025                     |
 | `{m}`                | 节目开始时间：月份 01-12（本地时间）     | 01                       |
 | `{d}`                | 节目开始时间：日期 01-31（本地时间）     | 15                       |
@@ -303,6 +319,37 @@ http://other-cdn.com/live/stream.m3u8
 - `S` - 2 位秒数（00-59）
 
 示例：`{utc:YmdHMS}` → `20250115103045`
+
+### 时间戳格式说明
+
+**Unix 时间戳**：
+
+- **13位时间戳（毫秒）**：`${(b)}` 和 `{(b)}` 返回毫秒级时间戳，如 `1736937045000`
+- **10位时间戳（秒）**：
+  - `${(b)timestamp}` 和 `{(b)timestamp}` 返回秒级时间戳，如 `1736937045`
+  - `${(b)10}` 和 `{(b)10}` 也返回秒级时间戳，如 `1736937045`
+
+### 时区支持
+
+对于 `${(b)yyyyMMddHHmmss}` 和 `{(b)YmdHMS}` 格式（以及对应的 `(e)` 版本），支持以下时区修饰符：
+
+1. **本地时间（默认）**：`${(b)yyyyMMddHHmmss}` 或 `{(b)YmdHMS}`
+   - 使用浏览器所在时区
+
+2. **UTC时间**：`${(b)yyyyMMddHHmmss:utc}` 或 `{(b)YmdHMS:utc}`
+   - 使用 UTC 时区（协调世界时）
+   - 示例：`${(b)yyyyMMddHHmmss:utc}` → `20250115103045`
+
+3. **指定时区**：`${(b)yyyyMMddHHmmss|Asia/Shanghai}` 或 `{(b)YmdHMS|Asia/Shanghai}`
+   - 使用 IANA 时区数据库标准的时区名称
+   - 常见时区示例：
+     - 中国标准时间：`Asia/Shanghai`
+     - 美国东部时间：`America/New_York`
+     - 欧洲中部时间：`Europe/Paris`
+     - 日本标准时间：`Asia/Tokyo`
+   - 示例：`${(b)yyyyMMddHHmmss|Asia/Shanghai}` → `20250115183045`
+
+**注意**：时区名称必须是有效的 IANA 时区标识符。如果提供的时区无效，将回退使用本地时间。
 
 ## 相关文档
 

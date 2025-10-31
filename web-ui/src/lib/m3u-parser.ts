@@ -171,8 +171,36 @@ export function buildCatchupSegments(channel: Channel, startTime: Date): mpegts.
    * Parse long date format like yyyyMMddHHmmss
    * Used for ${utc:yyyyMMddHHmmss}, ${utcend:yyyyMMddHHmmss} formats (with $)
    * Also used for ${(b)yyyyMMddHHmmss} and ${(e)yyyyMMddHHmmss} formats
+   *
+   * @param date - The date to format
+   * @param format - The format string or special timezone modifier
+   * @param useUTC - Use UTC time (default: false for local time)
+   * @param timezone - Optional IANA timezone (e.g., "Asia/Shanghai")
    */
-  const parseLongDate = (date: Date, format: string, useUTC: boolean = false): string => {
+  const parseLongDate = (date: Date, format: string, useUTC: boolean = false, timezone?: string): string => {
+    // Handle timezone-aware formatting
+    if (timezone) {
+      try {
+        const year = date.toLocaleString('en-US', { year: 'numeric', timeZone: timezone });
+        const month = date.toLocaleString('en-US', { month: '2-digit', timeZone: timezone });
+        const day = date.toLocaleString('en-US', { day: '2-digit', timeZone: timezone });
+        const hours = date.toLocaleString('en-US', { hour: '2-digit', hour12: false, timeZone: timezone }).padStart(2, '0');
+        const minutes = date.toLocaleString('en-US', { minute: '2-digit', timeZone: timezone });
+        const seconds = date.toLocaleString('en-US', { second: '2-digit', timeZone: timezone });
+
+        return format
+          .replace(/yyyy/g, year)
+          .replace(/MM/g, month)
+          .replace(/dd/g, day)
+          .replace(/HH/g, hours)
+          .replace(/mm/g, minutes)
+          .replace(/ss/g, seconds);
+      } catch (e) {
+        console.warn(`Invalid timezone: ${timezone}, falling back to local time`);
+        // Fall through to default behavior
+      }
+    }
+
     const year = (useUTC ? date.getUTCFullYear() : date.getFullYear()).toString();
     const month = (useUTC ? date.getUTCMonth() + 1 : date.getMonth() + 1).toString().padStart(2, "0");
     const day = (useUTC ? date.getUTCDate() : date.getDate()).toString().padStart(2, "0");
@@ -194,7 +222,7 @@ export function buildCatchupSegments(channel: Channel, startTime: Date): mpegts.
    * Used for {utc:YmdHMS}, {utcend:YmdHMS} formats (without $)
    * Converts Y/m/d/H/M/S to yyyy/MM/dd/HH/mm/ss and then calls parseLongDate
    */
-  const parseShortDate = (date: Date, format: string, useUTC: boolean = false): string => {
+  const parseShortDate = (date: Date, format: string, useUTC: boolean = false, timezone?: string): string => {
     // Use __month__ to avoid conflicts during replacement
     const convertedFormat = format
       .replace(/Y/g, "yyyy")
@@ -204,7 +232,7 @@ export function buildCatchupSegments(channel: Channel, startTime: Date): mpegts.
       .replace(/M/g, "mm")
       .replace(/S/g, "ss")
       .replace(/__month__/g, "MM");
-    return parseLongDate(date, convertedFormat, useUTC);
+    return parseLongDate(date, convertedFormat, useUTC, timezone);
   };
 
   /**
@@ -227,10 +255,18 @@ export function buildCatchupSegments(channel: Channel, startTime: Date): mpegts.
    *   ${now:yyyyMMddHHmmss} - Same as ${lutc:yyyyMMddHHmmss}
    *   ${timestamp} - Current unix timestamp (seconds)
    *   ${timestamp:yyyyMMddHHmmss} - Same as ${lutc:yyyyMMddHHmmss}
+   *   ${(b)} - Start time unix timestamp in milliseconds (13-digit)
+   *   ${(e)} - End time unix timestamp in milliseconds (13-digit)
+   *   ${(b)timestamp} - Start time unix timestamp in seconds (10-digit)
+   *   ${(e)timestamp} - End time unix timestamp in seconds (10-digit)
+   *   ${(b)10} - Start time unix timestamp in seconds (10-digit)
+   *   ${(e)10} - End time unix timestamp in seconds (10-digit)
    *   ${(b)yyyyMMddHHmmss} - Start time in local time with long format
+   *   ${(b)yyyyMMddHHmmss:utc} - Start time in UTC with long format
+   *   ${(b)yyyyMMddHHmmss|Asia/Shanghai} - Start time in specified timezone with long format
    *   ${(e)yyyyMMddHHmmss} - End time in local time with long format
-   *   ${(b)timestamp} - Start time unix timestamp (seconds)
-   *   ${(e)timestamp} - End time unix timestamp (seconds)
+   *   ${(e)yyyyMMddHHmmss:utc} - End time in UTC with long format
+   *   ${(e)yyyyMMddHHmmss|Asia/Shanghai} - End time in specified timezone with long format
    *   ${yyyy} - 4-digit year (YYYY) of start time in local time
    *   ${MM} - Month (01-12) of start time in local time
    *   ${dd} - Day (01-31) of start time in local time
@@ -253,10 +289,18 @@ export function buildCatchupSegments(channel: Channel, startTime: Date): mpegts.
    *   {now:YmdHMS} - Same as {lutc:YmdHMS}
    *   {timestamp} - Current unix timestamp (seconds) (same as ${timestamp})
    *   {timestamp:YmdHMS} - Same as {lutc:YmdHMS}
+   *   {(b)} - Start time unix timestamp in milliseconds (13-digit)
+   *   {(e)} - End time unix timestamp in milliseconds (13-digit)
+   *   {(b)timestamp} - Start time unix timestamp in seconds (10-digit)
+   *   {(e)timestamp} - End time unix timestamp in seconds (10-digit)
+   *   {(b)10} - Start time unix timestamp in seconds (10-digit)
+   *   {(e)10} - End time unix timestamp in seconds (10-digit)
    *   {(b)YmdHMS} - Start time in local time with short format
+   *   {(b)YmdHMS:utc} - Start time in UTC with short format
+   *   {(b)YmdHMS|Asia/Shanghai} - Start time in specified timezone with short format
    *   {(e)YmdHMS} - End time in local time with short format
-   *   {(b)timestamp} - Start time unix timestamp (seconds)
-   *   {(e)timestamp} - End time unix timestamp (seconds)
+   *   {(e)YmdHMS:utc} - End time in UTC with short format
+   *   {(e)YmdHMS|Asia/Shanghai} - End time in specified timezone with short format
    *   {Y} - 4-digit year (YYYY) of start time in local time
    *   {m} - Month (01-12) of start time in local time
    *   {d} - Day (01-31) of start time in local time
@@ -274,34 +318,78 @@ export function buildCatchupSegments(channel: Channel, startTime: Date): mpegts.
     const durationSeconds = Math.floor((segmentEndTime.getTime() - segmentStartTime.getTime()) / 1000);
     const currentTimestamp = Math.floor(now.getTime() / 1000);
 
-    // Handle ${(b)format} and ${(e)format} - local time with long format
-    processedSource = processedSource.replace(/\$\{(\([be]\))([^}]+)\}/g, (_match, timeType, format) => {
+    // Handle ${(b)format} and ${(e)format} with timezone support
+    processedSource = processedSource.replace(/\$\{(\([be]\))([^}]+)\}/g, (_match, timeType, formatStr) => {
       const date = timeType === "(b)" ? segmentStartTime : segmentEndTime;
-      if (format === "timestamp") {
+
+      // Handle timestamp format (10-digit seconds)
+      if (formatStr === "timestamp") {
         return Math.floor(date.getTime() / 1000).toString();
       }
-      return parseLongDate(date, format, false);
+
+      // Handle 10-digit format (10 means 10-digit seconds timestamp)
+      if (formatStr === "10") {
+        return Math.floor(date.getTime() / 1000).toString();
+      }
+
+      // Check for timezone modifiers: :utc or |timezone
+      let timezone: string | undefined;
+      let useUTC = false;
+      let actualFormat = formatStr;
+
+      if (formatStr.endsWith(":utc")) {
+        useUTC = true;
+        actualFormat = formatStr.slice(0, -4);
+      } else if (formatStr.includes("|")) {
+        const parts = formatStr.split("|");
+        actualFormat = parts[0];
+        timezone = parts[1];
+      }
+
+      return parseLongDate(date, actualFormat, useUTC, timezone);
     });
 
-    // Handle ${(b)} and ${(e)} - local time ISO8601
+    // Handle ${(b)} and ${(e)} - 13-digit unix timestamp in milliseconds
     processedSource = processedSource.replace(/\$\{(\([be]\))\}/g, (_match, timeType) => {
       const date = timeType === "(b)" ? segmentStartTime : segmentEndTime;
-      return date.toISOString();
+      return date.getTime().toString();
     });
 
-    // Handle {(b)format} and {(e)format} - local time with short format
-    processedSource = processedSource.replace(/\{(\([be]\))([^}]+)\}/g, (_match, timeType, format) => {
+    // Handle {(b)format} and {(e)format} with timezone support
+    processedSource = processedSource.replace(/\{(\([be]\))([^}]+)\}/g, (_match, timeType, formatStr) => {
       const date = timeType === "(b)" ? segmentStartTime : segmentEndTime;
-      if (format === "timestamp") {
+
+      // Handle timestamp format (10-digit seconds)
+      if (formatStr === "timestamp") {
         return Math.floor(date.getTime() / 1000).toString();
       }
-      return parseShortDate(date, format, false);
+
+      // Handle 10-digit format (10 means 10-digit seconds timestamp)
+      if (formatStr === "10") {
+        return Math.floor(date.getTime() / 1000).toString();
+      }
+
+      // Check for timezone modifiers: :utc or |timezone
+      let timezone: string | undefined;
+      let useUTC = false;
+      let actualFormat = formatStr;
+
+      if (formatStr.endsWith(":utc")) {
+        useUTC = true;
+        actualFormat = formatStr.slice(0, -4);
+      } else if (formatStr.includes("|")) {
+        const parts = formatStr.split("|");
+        actualFormat = parts[0];
+        timezone = parts[1];
+      }
+
+      return parseShortDate(date, actualFormat, useUTC, timezone);
     });
 
-    // Handle {(b)} and {(e)} - local time ISO8601
+    // Handle {(b)} and {(e)} - 13-digit unix timestamp in milliseconds
     processedSource = processedSource.replace(/\{(\([be]\))\}/g, (_match, timeType) => {
       const date = timeType === "(b)" ? segmentStartTime : segmentEndTime;
-      return date.toISOString();
+      return date.getTime().toString();
     });
 
     // Handle ${keyword:format} - long format ($ variant)
