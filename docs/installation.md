@@ -144,6 +144,8 @@ src-git rtp2httpd https://github.com/stackia/rtp2httpd.git
 src-git rtp2httpd https://github.com/stackia/rtp2httpd.git;v3.1.1
 ```
 
+运行 `./scripts/feeds update rtp2httpd` 和 `./scripts/feeds install rtp2httpd` 更新 feed。
+
 运行 `make menuconfig`，找到 `LuCI -> Applications -> luci-app-rtp2httpd`，将其勾选为 `*` (编译到固件) 或 `M` (编译成 ipk/apk 包)，保存退出。
 
 运行 `make package/feeds/rtp2httpd/luci-app-rtp2httpd/compile -j1 V=sc` 可单独编译 `luci-app-rtp2httpd` 和 `rtp2httpd` 两个包。
