@@ -83,7 +83,9 @@ https://github.com/user-attachments/assets/fedc0c28-f9ac-4675-9b19-a8efdd062506
 curl -fsSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
 ```
 
-安装完成后，在 LuCI 管理界面的 "服务" 菜单中找到 "rtp2httpd" 进行配置。（如果菜单未出现，尝试浏览器使用无痕模式重新访问 LuCI 管理界面）
+安装完成后，在 LuCI 管理界面的 "服务" 菜单中找到 "rtp2httpd" 进行配置。
+
+如果菜单未出现，可尝试手动运行 `rm -rf /tmp/luci-modulecache /tmp/luci-indexcache*` 后，使用浏览器无痕模式（或清缓存）重新访问 LuCI 管理界面。
 
 ### 其他平台
 
