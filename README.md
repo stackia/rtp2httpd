@@ -87,7 +87,7 @@ curl -fsSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/inst
 
 如果菜单未出现，可尝试手动运行 `rm -rf /tmp/luci-modulecache /tmp/luci-indexcache* && killall -HUP rpcd` 后，重新访问 LuCI 管理界面。
 
-每次更新版本后建议清除浏览器缓存或用无痕模式访问，否则 LuCI 可能会显示旧版 UI。
+每次更新版本后如果 LuCI 出现工作异常，需要 **Ctrl+F5 刷新** 或 **清空浏览器缓存** 或 **使用无痕模式访问** 解决。
 
 ### 其他平台
 
