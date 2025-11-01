@@ -298,7 +298,7 @@ int fcc_initialize_and_request(stream_context_t *ctx)
     struct sockaddr_in sin;
     socklen_t slen;
     int r;
-    const struct ifreq *upstream_if;
+    const char *upstream_if;
 
     logger(LOG_DEBUG, "FCC: Initializing FCC session and sending request");
 

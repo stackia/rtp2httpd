@@ -69,55 +69,70 @@ static uint16_t calculate_checksum(const void *data, size_t len)
   return ~sum;
 }
 
-void bind_to_upstream_interface(int sock, const struct ifreq *ifr)
+void bind_to_upstream_interface(int sock, const char *ifname)
 {
-  if (ifr && ifr->ifr_name[0] != '\0')
+  if (ifname && ifname[0] != '\0')
   {
-    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, ifr, sizeof(struct ifreq)) < 0)
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(struct ifreq));
+    strncpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
+
+    /* Get the latest interface index dynamically to handle interface restarts (e.g., PPPoE reconnection) */
+    unsigned int ifindex = if_nametoindex(ifr.ifr_name);
+    if (ifindex > 0)
     {
-      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s", ifr->ifr_name, strerror(errno));
+      ifr.ifr_ifindex = ifindex;
+    }
+    else
+    {
+      logger(LOG_WARN, "Failed to get interface index for %s: %s", ifr.ifr_name, strerror(errno));
+    }
+
+    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(struct ifreq)) < 0)
+    {
+      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s", ifr.ifr_name, strerror(errno));
     }
   }
 }
 
-const struct ifreq *get_upstream_interface_for_fcc(void)
+const char *get_upstream_interface_for_fcc(void)
 {
   /* Priority: upstream_interface_fcc > upstream_interface */
-  if (config.upstream_interface_fcc.ifr_name[0] != '\0')
+  if (config.upstream_interface_fcc[0] != '\0')
   {
-    return &config.upstream_interface_fcc;
+    return config.upstream_interface_fcc;
   }
-  if (config.upstream_interface.ifr_name[0] != '\0')
+  if (config.upstream_interface[0] != '\0')
   {
-    return &config.upstream_interface;
+    return config.upstream_interface;
   }
   return NULL;
 }
 
-const struct ifreq *get_upstream_interface_for_rtsp(void)
+const char *get_upstream_interface_for_rtsp(void)
 {
   /* Priority: upstream_interface_rtsp > upstream_interface */
-  if (config.upstream_interface_rtsp.ifr_name[0] != '\0')
+  if (config.upstream_interface_rtsp[0] != '\0')
   {
-    return &config.upstream_interface_rtsp;
+    return config.upstream_interface_rtsp;
   }
-  if (config.upstream_interface.ifr_name[0] != '\0')
+  if (config.upstream_interface[0] != '\0')
   {
-    return &config.upstream_interface;
+    return config.upstream_interface;
   }
   return NULL;
 }
 
-const struct ifreq *get_upstream_interface_for_multicast(void)
+const char *get_upstream_interface_for_multicast(void)
 {
   /* Priority: upstream_interface_multicast > upstream_interface */
-  if (config.upstream_interface_multicast.ifr_name[0] != '\0')
+  if (config.upstream_interface_multicast[0] != '\0')
   {
-    return &config.upstream_interface_multicast;
+    return config.upstream_interface_multicast;
   }
-  if (config.upstream_interface.ifr_name[0] != '\0')
+  if (config.upstream_interface[0] != '\0')
   {
-    return &config.upstream_interface;
+    return config.upstream_interface;
   }
   return NULL;
 }
@@ -129,7 +144,7 @@ const struct ifreq *get_upstream_interface_for_multicast(void)
 static int prepare_mcast_group_req(service_t *service, struct group_req *gr, struct group_source_req *gsr)
 {
   int level;
-  const struct ifreq *upstream_if;
+  const char *upstream_if;
 
   memcpy(&(gr->gr_group), service->addr->ai_addr, service->addr->ai_addrlen);
 
@@ -150,9 +165,9 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr, str
   }
 
   upstream_if = get_upstream_interface_for_multicast();
-  if (upstream_if && upstream_if->ifr_name[0] != '\0')
+  if (upstream_if && upstream_if[0] != '\0')
   {
-    gr->gr_interface = upstream_if->ifr_ifindex;
+    gr->gr_interface = if_nametoindex(upstream_if);
   }
 
   /* Prepare source-specific multicast structure if needed */
@@ -212,7 +227,7 @@ int join_mcast_group(service_t *service)
 {
   int sock, r;
   int on = 1;
-  const struct ifreq *upstream_if;
+  const char *upstream_if;
 
   sock = socket(service->addr->ai_family, service->addr->ai_socktype,
                 service->addr->ai_protocol);
@@ -301,7 +316,7 @@ int rejoin_mcast_group(int sock, service_t *service)
   uint8_t packet[sizeof(struct igmpv3_report) + sizeof(struct igmpv3_grec) + sizeof(uint32_t)];
   size_t packet_len;
   int r;
-  const struct ifreq *upstream_if;
+  const char *upstream_if;
   struct sockaddr_in *mcast_addr;
   struct sockaddr_in *source_addr = NULL;
   uint32_t group_addr;
@@ -359,11 +374,11 @@ int rejoin_mcast_group(int sock, service_t *service)
   }
 
   /* Set IP_MULTICAST_IF to send from correct interface */
-  if (upstream_if && upstream_if->ifr_name[0] != '\0')
+  if (upstream_if && upstream_if[0] != '\0')
   {
     struct ip_mreqn mreq;
     memset(&mreq, 0, sizeof(mreq));
-    mreq.imr_ifindex = upstream_if->ifr_ifindex;
+    mreq.imr_ifindex = if_nametoindex(upstream_if);
     if (setsockopt(raw_sock, IPPROTO_IP, IP_MULTICAST_IF, &mreq, sizeof(mreq)) < 0)
     {
       logger(LOG_WARN, "Failed to set IP_MULTICAST_IF: %s", strerror(errno));

@@ -564,8 +564,7 @@ void parse_global_sec(char *line)
   {
     if (set_if_not_cmd_override(cmd_upstream_interface_set, "upstream-interface"))
     {
-      strncpy(config.upstream_interface.ifr_name, value, IFNAMSIZ - 1);
-      config.upstream_interface.ifr_ifindex = if_nametoindex(config.upstream_interface.ifr_name);
+      strncpy(config.upstream_interface, value, IFNAMSIZ - 1);
     }
     return;
   }
@@ -574,8 +573,7 @@ void parse_global_sec(char *line)
   {
     if (set_if_not_cmd_override(cmd_upstream_interface_fcc_set, "upstream-interface-fcc"))
     {
-      strncpy(config.upstream_interface_fcc.ifr_name, value, IFNAMSIZ - 1);
-      config.upstream_interface_fcc.ifr_ifindex = if_nametoindex(config.upstream_interface_fcc.ifr_name);
+      strncpy(config.upstream_interface_fcc, value, IFNAMSIZ - 1);
     }
     return;
   }
@@ -584,8 +582,7 @@ void parse_global_sec(char *line)
   {
     if (set_if_not_cmd_override(cmd_upstream_interface_rtsp_set, "upstream-interface-rtsp"))
     {
-      strncpy(config.upstream_interface_rtsp.ifr_name, value, IFNAMSIZ - 1);
-      config.upstream_interface_rtsp.ifr_ifindex = if_nametoindex(config.upstream_interface_rtsp.ifr_name);
+      strncpy(config.upstream_interface_rtsp, value, IFNAMSIZ - 1);
     }
     return;
   }
@@ -594,8 +591,7 @@ void parse_global_sec(char *line)
   {
     if (set_if_not_cmd_override(cmd_upstream_interface_multicast_set, "upstream-interface-multicast"))
     {
-      strncpy(config.upstream_interface_multicast.ifr_name, value, IFNAMSIZ - 1);
-      config.upstream_interface_multicast.ifr_ifindex = if_nametoindex(config.upstream_interface_multicast.ifr_name);
+      strncpy(config.upstream_interface_multicast, value, IFNAMSIZ - 1);
     }
     return;
   }
@@ -871,20 +867,20 @@ void restore_conf_defaults(void)
   config.external_m3u_update_interval = 86400; /* 24 hours default */
   config.last_external_m3u_update_time = 0;
 
-  if (config.upstream_interface.ifr_name[0] != '\0')
-    memset(&config.upstream_interface, 0, sizeof(struct ifreq));
+  if (config.upstream_interface[0] != '\0')
+    memset(config.upstream_interface, 0, IFNAMSIZ);
   cmd_upstream_interface_set = 0;
 
-  if (config.upstream_interface_fcc.ifr_name[0] != '\0')
-    memset(&config.upstream_interface_fcc, 0, sizeof(struct ifreq));
+  if (config.upstream_interface_fcc[0] != '\0')
+    memset(config.upstream_interface_fcc, 0, IFNAMSIZ);
   cmd_upstream_interface_fcc_set = 0;
 
-  if (config.upstream_interface_rtsp.ifr_name[0] != '\0')
-    memset(&config.upstream_interface_rtsp, 0, sizeof(struct ifreq));
+  if (config.upstream_interface_rtsp[0] != '\0')
+    memset(config.upstream_interface_rtsp, 0, IFNAMSIZ);
   cmd_upstream_interface_rtsp_set = 0;
 
-  if (config.upstream_interface_multicast.ifr_name[0] != '\0')
-    memset(&config.upstream_interface_multicast, 0, sizeof(struct ifreq));
+  if (config.upstream_interface_multicast[0] != '\0')
+    memset(config.upstream_interface_multicast, 0, IFNAMSIZ);
   cmd_upstream_interface_multicast_set = 0;
 
   /* Free all services */
@@ -1132,23 +1128,19 @@ void parse_cmd_line(int argc, char *argv[])
       cmd_player_page_path_set = 1;
       break;
     case 'i':
-      strncpy(config.upstream_interface.ifr_name, optarg, IFNAMSIZ - 1);
-      config.upstream_interface.ifr_ifindex = if_nametoindex(config.upstream_interface.ifr_name);
+      strncpy(config.upstream_interface, optarg, IFNAMSIZ - 1);
       cmd_upstream_interface_set = 1;
       break;
     case 'f':
-      strncpy(config.upstream_interface_fcc.ifr_name, optarg, IFNAMSIZ - 1);
-      config.upstream_interface_fcc.ifr_ifindex = if_nametoindex(config.upstream_interface_fcc.ifr_name);
+      strncpy(config.upstream_interface_fcc, optarg, IFNAMSIZ - 1);
       cmd_upstream_interface_fcc_set = 1;
       break;
     case 't':
-      strncpy(config.upstream_interface_rtsp.ifr_name, optarg, IFNAMSIZ - 1);
-      config.upstream_interface_rtsp.ifr_ifindex = if_nametoindex(config.upstream_interface_rtsp.ifr_name);
+      strncpy(config.upstream_interface_rtsp, optarg, IFNAMSIZ - 1);
       cmd_upstream_interface_rtsp_set = 1;
       break;
     case 'r':
-      strncpy(config.upstream_interface_multicast.ifr_name, optarg, IFNAMSIZ - 1);
-      config.upstream_interface_multicast.ifr_ifindex = if_nametoindex(config.upstream_interface_multicast.ifr_name);
+      strncpy(config.upstream_interface_multicast, optarg, IFNAMSIZ - 1);
       cmd_upstream_interface_multicast_set = 1;
       break;
     case 'R':
