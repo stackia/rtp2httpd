@@ -71,17 +71,6 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      - name: Download frontend pages artifact
-        uses: actions/download-artifact@v5
-        with:
-          name: frontend-pages
-          path: artifacts
-
-      - name: Use generated frontend pages
-        run: |
-          cp artifacts/status_page.h src/status_page.h
-          cp artifacts/player_page.h src/player_page.h
-
       - name: Set version environment variable
         run: |
           RELEASE_TAG="${{ github.event.release.tag_name }}"
@@ -161,17 +150,6 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      - name: Download frontend pages artifact
-        uses: actions/download-artifact@v5
-        with:
-          name: frontend-pages
-          path: artifacts
-
-      - name: Use generated frontend pages
-        run: |
-          cp artifacts/status_page.h src/status_page.h
-          cp artifacts/player_page.h src/player_page.h
-
       - name: Build
         uses: openwrt/gh-action-sdk@v9
         env:
@@ -239,7 +217,6 @@ jobs:
           - mipsel-unknown-linux-musl
           - mips-unknown-linux-musl
           - mips64-unknown-linux-musl
-          - i686-unknown-linux-musl
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -256,17 +233,6 @@ jobs:
             pkg-config \
             wget \
             xz-utils
-
-      - name: Download frontend pages artifact
-        uses: actions/download-artifact@v5
-        with:
-          name: frontend-pages
-          path: artifacts
-
-      - name: Use generated frontend pages
-        run: |
-          cp artifacts/status_page.h src/status_page.h
-          cp artifacts/player_page.h src/player_page.h
 
       - name: Set version environment variable
         run: |

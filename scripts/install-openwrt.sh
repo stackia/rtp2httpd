@@ -398,14 +398,6 @@ main() {
 
     MAIN_PACKAGE=$(match_package_name "$ASSETS" "rtp2httpd" "$ARCH" "$PKG_EXT")
     LUCI_PACKAGE=$(match_package_name "$ASSETS" "luci-app-rtp2httpd" "all" "$PKG_EXT")
-
-    # APK: 英文语言包已包含在主包中，只下载中文语言包
-    # IPK: 需要下载英文和中文语言包
-    I18N_EN_PACKAGE=""
-    if [ "$PKG_MANAGER" = "opkg" ]; then
-        I18N_EN_PACKAGE=$(match_package_name "$ASSETS" "luci-i18n-rtp2httpd-en" "all" "$PKG_EXT")
-    fi
-
     I18N_ZH_CN_PACKAGE=$(match_package_name "$ASSETS" "luci-i18n-rtp2httpd-zh-cn" "all" "$PKG_EXT")
 
     # 检查必须的包是否都匹配到了
@@ -425,16 +417,6 @@ main() {
     print_info "找到主程序包: $MAIN_PACKAGE"
     print_info "找到 LuCI 应用包: $LUCI_PACKAGE"
 
-    if [ "$PKG_MANAGER" = "apk" ]; then
-        print_info "APK 包管理器: 英文语言包已包含在主包中"
-    else
-        if [ -n "$I18N_EN_PACKAGE" ]; then
-            print_info "找到英文语言包: $I18N_EN_PACKAGE"
-        else
-            print_warn "未找到英文语言包，将跳过"
-        fi
-    fi
-
     if [ -n "$I18N_ZH_CN_PACKAGE" ]; then
         print_info "找到中文语言包: $I18N_ZH_CN_PACKAGE"
     else
@@ -448,9 +430,6 @@ main() {
 
     # 构建要下载的包列表（只包含找到的包）
     PACKAGES="$MAIN_PACKAGE $LUCI_PACKAGE"
-    if [ -n "$I18N_EN_PACKAGE" ]; then
-        PACKAGES="$PACKAGES $I18N_EN_PACKAGE"
-    fi
     if [ -n "$I18N_ZH_CN_PACKAGE" ]; then
         PACKAGES="$PACKAGES $I18N_ZH_CN_PACKAGE"
     fi

@@ -1,65 +1,55 @@
 msgid ""
-msgstr ""
-"Content-Type: text/plain; charset=UTF-8\n"
-"Project-Id-Version: PACKAGE VERSION\n"
-"Last-Translator: Automatically generated\n"
-"Language-Team: none\n"
-"Language: zh_Hans\n"
-"MIME-Version: 1.0\n"
-"Content-Transfer-Encoding: 8bit\n"
+msgstr "Content-Type: text/plain; charset=UTF-8"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:536
 msgid ""
 "Additional FFmpeg arguments for snapshot generation. Common options: -"
 "hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)"
 msgstr ""
-"生成快照时传递给 FFmpeg 的额外参数。常用选项：-hwaccel none（无硬件加速）、-"
-"hwaccel auto（自动）、-hwaccel vaapi（Intel GPU）"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:266
 msgid "Advanced Interface Settings"
-msgstr "高级接口设置"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:189
 msgid "Auto restart after crash"
-msgstr "程序崩溃后自动重启"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:172
 msgid "Basic Settings"
-msgstr "基础设置"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:353
 msgid "Buffer Pool Max Size"
-msgstr "缓冲池最大容量"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:208
 msgid "Config File Content"
-msgstr "配置文件内容"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:267
 msgid "Configure separate interfaces for multicast, FCC and RTSP"
-msgstr "分别配置组播、FCC 和 RTSP 的接口"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:247
 msgid "Debug"
-msgstr "Debug"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:279
 msgid ""
 "Default interface for all upstream traffic (multicast, FCC and RTSP). Leave "
 "empty to use routing table."
-msgstr "所有上游流量（组播、FCC 和 RTSP）使用的默认接口。留空则使用路由表。"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:209
 msgid "Edit the content of /etc/rtp2httpd.conf"
-msgstr "编辑 /etc/rtp2httpd.conf 的内容"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:516
 msgid ""
 "Enable video snapshot feature. When enabled, clients can request snapshots "
 "with snapshot=1 query parameter"
 msgstr ""
-"启用视频快照功能。启用后，客户端可以通过 snapshot=1 查询参数请求视频快照"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:368
 msgid ""
@@ -67,110 +57,100 @@ msgid ""
 "kernel 4.14+ (MSG_ZEROCOPY support). On supported devices, this can improve "
 "throughput and reduce CPU usage, especially under high concurrent load."
 msgstr ""
-"启用 MSG_ZEROCOPY 零拷贝发送以提升性能。需要内核 4.14+（支持 MSG_ZEROCOPY）。"
-"在支持的设备上，可提升吞吐量并降低 CPU 占用，特别是在高并发负载下。使用反向代"
-"理时不建议开启。"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:178
 msgid "Enabled"
-msgstr "启用"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:244
 msgid "Error"
-msgstr "Error"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:400
 msgid "External M3U"
-msgstr "外部 M3U"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:410
 msgid "External M3U Update Interval"
-msgstr "外部 M3U 更新间隔"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:411
 msgid ""
 "External M3U automatic update interval in seconds (default: 86400 = 24 "
 "hours). Set to 0 to disable automatic updates."
 msgstr ""
-"外部 M3U 自动更新间隔（秒），默认 86400（24 小时）。设为 0 禁用自动更新。"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:389
 msgid "FCC Listen Port Range"
-msgstr "FCC 监听端口范围"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:535
 msgid "FFmpeg Arguments"
-msgstr "FFmpeg 参数"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:525
 msgid "FFmpeg Path"
-msgstr "FFmpeg 路径"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:243
 msgid "Fatal"
-msgstr "Fatal"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:401
 msgid ""
 "Fetch M3U playlist from a URL (file://, http://, https:// supported). "
 "Example: https://example.com/playlist.m3u or file:///path/to/playlist.m3u"
 msgstr ""
-"从 URL 获取 M3U 播放列表（支持 file://、http://、https://）。示例：https://"
-"example.com/playlist.m3u 或 file:///path/to/playlist.m3u"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/root/usr/share/rpcd/acl.d/luci-app-rtp2httpd.json:3
 msgid "Grant UCI access for luci-app-rtp2httpd"
-msgstr "为 luci-app-rtp2httpd 授予 UCI 的访问权限"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:255
 msgid "Hostname"
-msgstr "主机名/域名"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:496
 msgid ""
 "If set, all HTTP requests must include r2h-token query parameter with "
 "matching value (e.g., http://server:5140/service?r2h-token=your-token)"
 msgstr ""
-"设置后，所有 HTTP 请求必须携带 r2h-token 查询参数，且值与此配置匹配（例如："
-"http://server:5140/service?r2h-token=your-token）"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:246
 msgid "Info"
-msgstr "Info"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:306
 msgid ""
 "Interface to use for FCC unicast upstream media stream (default: use routing "
 "table)"
-msgstr "用于 FCC 单播上游媒体流的接口（默认：使用路由表）"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:319
 msgid ""
 "Interface to use for RTSP unicast upstream media stream (default: use "
 "routing table)"
-msgstr "用于 RTSP 单播上游媒体流的接口（默认：使用路由表）"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:293
 msgid ""
 "Interface to use for multicast (RTP/UDP) upstream media stream (default: use "
 "routing table)"
-msgstr "用于组播（RTP/UDP）上游媒体流的接口（默认：使用路由表）"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:390
 msgid ""
 "Local UDP port range for FCC client sockets (format: start-end, e.g., "
 "40000-40100). Leave empty to use random ports."
 msgstr ""
-"FCC 客户端套接字使用的本地 UDP 端口范围（格式：起始端口-结束端口，例如："
-"40000-40100）。留空则使用随机端口。"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:242
 msgid "Logging level"
-msgstr "日志级别"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:330
 msgid "Max clients allowed"
-msgstr "最大客户端数"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:355
 msgid ""
@@ -178,44 +158,41 @@ msgid ""
 "Default is 16384 (~24MB). Increase to improve throughput for multi-client "
 "concurrency. Not recommended when running behind reverse proxies."
 msgstr ""
-"零拷贝缓冲池的最大缓冲区数量。每个缓冲区 1536 字节，默认 16384 个（约 "
-"24MB）。增大此值以提高多客户端并发时的吞吐量。使用反向代理时不建议开启。"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:175
 msgid "Monitoring & Advanced"
-msgstr "监控与高级功能"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:378
 msgid "Multicast Rejoin Interval"
-msgstr "组播周期性重新加入间隔"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:173
 msgid "Network & Performance"
-msgstr "网络与性能"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:432
 msgid "Note: The player page requires External M3U URL to be configured first."
-msgstr "注意：播放器页面需要先配置外部 M3U URL 才能使用。"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:342
 msgid ""
 "Number of worker processes. Set to 1 for resource-constrained devices, or "
 "CPU cores for best performance."
 msgstr ""
-"工作进程数量。资源紧凑设备建议设置为 1，最佳吞吐量可以设置为 CPU 核心数。"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:443
 msgid "Open Player Page"
-msgstr "打开播放器页面"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:475
 msgid "Open Status Dashboard"
-msgstr "打开状态面板"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:526
 msgid ""
 "Path to FFmpeg executable. Leave empty to use system PATH (default: ffmpeg)"
-msgstr "FFmpeg 可执行文件的路径。留空则使用系统 PATH（默认：ffmpeg）"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:379
 msgid ""
@@ -224,85 +201,82 @@ msgid ""
 "multicast memberships due to missing IGMP Query messages. Only needed for "
 "problematic network environments."
 msgstr ""
-"周期性重新加入组播组的间隔时间（秒），0 表示禁用（默认 0）。如果您的网络交换"
-"机因缺少 IGMP Query 消息而导致组播成员关系超时，可以启用此功能（建议 30-120 "
-"秒）。仅在网络环境有问题时需要启用。"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:174
 msgid "Player & M3U"
-msgstr "播放器与 M3U"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:441
 msgid "Player Page"
-msgstr "播放器页面"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:421
 msgid "Player Page Path"
-msgstr "播放器页面路径"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:461
 msgid "Please configure External M3U URL first"
-msgstr "请先配置外部 M3U URL"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:237
 msgid "Port"
-msgstr "端口"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:495
 msgid "R2H Token"
-msgstr "HTTP 请求认证令牌"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:188
 msgid "Respawn"
-msgstr "自动重启"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:473
 msgid "Status Dashboard"
-msgstr "状态面板"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:485
 msgid "Status Page Path"
-msgstr "状态页面路径"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:422
 msgid "URL path for the player page (default: /player)"
-msgstr "播放器页面的 URL 路径（默认：/player）"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:486
 msgid "URL path for the status page (default: /status)"
-msgstr "状态页面的 URL 路径（默认：/status）"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:304
 msgid "Upstream FCC Interface"
-msgstr "上游 FCC 接口"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:277
 msgid "Upstream Interface"
-msgstr "上游接口"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:291
 msgid "Upstream Multicast Interface"
-msgstr "上游组播接口"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:317
 msgid "Upstream RTSP Interface"
-msgstr "上游 RTSP 接口"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:198
 msgid "Use Config File"
-msgstr "使用配置文件"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:199
 msgid "Use config file instead of individual options"
-msgstr "使用配置文件而不是单独的选项"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:515
 msgid "Video Snapshot"
-msgstr "视频快照"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:245
 msgid "Warn"
-msgstr "Warn"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:256
 msgid ""
@@ -312,38 +286,32 @@ msgid ""
 "access URL (including http(s):// and path prefix), e.g., https://my-domain."
 "com/rtp2httpd, and ensure the reverse proxy forwards the Host header."
 msgstr ""
-"配置后将会检查 HTTP Host 头，必须匹配这里的值才能访问。M3U 转换时，也会使用这"
-"个值来作为转换后节目地址的域名。使用反向代理时，需要配置为经过反向代理后的访"
-"问地址（包括 http(s):// 和路径前缀），例如 https://my-domain.com/rtp2httpd，"
-"并且需要反向代理透传 Host 头。"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:506
 msgid ""
 "When enabled, uses HTTP X-Forwarded-For header as client address for status "
 "page display. Only enable when running behind a reverse proxy."
 msgstr ""
-"启用后，将使用 HTTP X-Forwarded-For 头作为客户端地址，用于显示在状态面板上。"
-"建议仅在使用反向代理时启用。"
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:340
 msgid "Workers"
-msgstr "工作进程数"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:505
 msgid "X-Forwarded-For"
-msgstr "X-Forwarded-For"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:366
 msgid "Zero-Copy on Send"
-msgstr "启用零拷贝发送"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:161
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/root/usr/share/luci/menu.d/luci-app-rtp2httpd.json:3
 msgid "rtp2httpd"
-msgstr "rtp2httpd"
+msgstr ""
 
 #: ../rtp2httpd/openwrt-support/luci-app-rtp2httpd/htdocs/luci-static/resources/view/rtp2httpd.js:163
 msgid ""
 "rtp2httpd converts RTP/UDP/RTSP media into http stream. Here you can "
 "configure the settings."
-msgstr "rtp2httpd 用于将 RTP/UDP/RTSP 媒体流转换为 HTTP 流。在这里进行配置。"
+msgstr ""
