@@ -8,7 +8,7 @@ RELEASE_VERSION:=$(if $(DUMP),unknown,$(shell \
 	   git diff --cached --quiet 2>/dev/null; then \
 		git describe --tags --exact-match --match 'v*' 2>/dev/null | sed 's/^v//'; \
 	else \
-		echo "1.0.0-snapshot"; \
+		echo "$$(date +%Y%m%d)"; \
 	fi))
 
 PKG_VERSION:=$(shell echo "$(RELEASE_VERSION)" | sed 's/-\([a-z]*\)\.\([0-9]*\)/_\1\2/g')
