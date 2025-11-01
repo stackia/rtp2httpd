@@ -159,7 +159,7 @@ jobs:
           - mipsel_74kc
           - mipsel_mips32
         sdk:
-          - "22.03.6" # For IPK
+          - "24.10.4" # For IPK
           - "SNAPSHOT" # For APK
     steps:
       - name: Checkout repository
