@@ -210,6 +210,7 @@ return view.extend({
     );
     o.rows = 40;
     o.cols = 80;
+    o.monospace = true;
     o.depends("use_config_file", "1");
     o.load = function (section_id) {
       return fs
