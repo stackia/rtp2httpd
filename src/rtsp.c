@@ -756,7 +756,7 @@ int rtsp_connect(rtsp_session_t *session)
     struct sockaddr_in server_addr;
     struct hostent *he;
     int connect_result;
-    const struct ifreq *upstream_if;
+    const char *upstream_if;
 
     /* Resolve hostname */
     he = gethostbyname(session->server_host);
@@ -2209,7 +2209,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session)
     const int port_range = 10000;
     const int port_min = 10000;
     const int port_start_offset = (int)(get_time_ms() % port_range);
-    const struct ifreq *upstream_if;
+    const char *upstream_if;
     struct sockaddr_in local_addr;
     int port_base;
     int port_max;
