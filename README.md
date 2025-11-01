@@ -85,7 +85,9 @@ curl -fsSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/inst
 
 安装完成后，在 LuCI 管理界面的 "服务" 菜单中找到 "rtp2httpd" 进行配置。
 
-如果菜单未出现，可尝试手动运行 `rm -rf /tmp/luci-modulecache /tmp/luci-indexcache*` 后，使用浏览器无痕模式（或清缓存）重新访问 LuCI 管理界面。
+如果菜单未出现，可尝试手动运行 `rm -rf /tmp/luci-modulecache /tmp/luci-indexcache* && killall -HUP rpcd` 后，重新访问 LuCI 管理界面。
+
+每次更新版本后建议清除浏览器缓存或用无痕模式访问，否则 LuCI 可能会显示旧版 UI。
 
 ### 其他平台
 
