@@ -149,6 +149,7 @@ typedef struct
     int local_rtcp_port;  /* Local RTCP port */
     int server_rtp_port;  /* Server RTP port */
     int server_rtcp_port; /* Server RTCP port */
+    char server_source_addr[RTSP_SERVER_HOST_SIZE]; /* Server UDP source address for NAT traversal */
 
     /* RTP packet tracking for loss detection */
     uint16_t current_seqn;     /* Last received RTP sequence number */

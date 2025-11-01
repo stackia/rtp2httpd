@@ -50,7 +50,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session);
 static void rtsp_close_udp_sockets(rtsp_session_t *session, const char *reason);
 static char *rtsp_find_header(const char *response, const char *header_name);
 static void rtsp_parse_transport_header(rtsp_session_t *session, const char *transport);
-static void rtsp_send_udp_nat_probe(int socket_fd, const char *addr, int port, const char *label);
+static void rtsp_send_udp_nat_probe(rtsp_session_t *session);
 static int rtsp_handle_redirect(rtsp_session_t *session, const char *location);
 static int rtsp_state_machine_advance(rtsp_session_t *session);
 static int rtsp_initiate_teardown(rtsp_session_t *session);
@@ -1206,6 +1206,9 @@ int rtsp_send_keepalive(rtsp_session_t *session)
             return -1;
         }
     }
+
+    /* Send NAT probe packets to maintain UDP hole-punching */
+    rtsp_send_udp_nat_probe(session);
 
     logger(LOG_DEBUG, "RTSP: Queued %s keepalive request", method);
     return 0;
@@ -2418,6 +2421,13 @@ static void rtsp_close_udp_sockets(rtsp_session_t *session, const char *reason)
         session->rtcp_socket = -1;
         logger(LOG_DEBUG, "RTSP: Closed UDP RTCP socket %s", reason);
     }
+
+    /* Reset UDP transport related fields */
+    session->local_rtp_port = 0;
+    session->local_rtcp_port = 0;
+    session->server_rtp_port = 0;
+    session->server_rtcp_port = 0;
+    session->server_source_addr[0] = '\0';
 }
 
 static char *rtsp_find_header(const char *response, const char *header_name)
@@ -2452,70 +2462,72 @@ static char *rtsp_find_header(const char *response, const char *header_name)
     return result;
 }
 
-static void rtsp_send_udp_nat_probe(int socket_fd, const char *addr, int port, const char *label)
+static void rtsp_send_udp_nat_probe(rtsp_session_t *session)
 {
     char port_str[RTSP_PORT_STRING_SIZE];
     struct addrinfo hints;
     struct addrinfo *result = NULL;
     struct addrinfo *rp;
-    int ret;
-    int sent_any = 0;
-    int last_errno = 0;
+    uint8_t rtp_packet[12];
+    uint8_t rtcp_packet[8];
 
-    if (socket_fd < 0 || !addr || !*addr || port <= 0)
+    if (!session || session->server_source_addr[0] == '\0')
     {
         return;
     }
 
-    snprintf(port_str, sizeof(port_str), "%d", port);
+    /* Build minimal RTP packet - 12 bytes */
+    memset(rtp_packet, 0, sizeof(rtp_packet));
+    rtp_packet[0] = 0x80; /* V=2, P=0, X=0, CC=0 */
+    rtp_packet[1] = 0x00; /* M=0, PT=0 */
+
+    /* Build minimal RTCP RR (Receiver Report) - 8 bytes */
+    memset(rtcp_packet, 0, sizeof(rtcp_packet));
+    rtcp_packet[0] = 0x80; /* V=2, P=0, RC=0 */
+    rtcp_packet[1] = 201;  /* PT=201 (Receiver Report) */
+    rtcp_packet[2] = 0x00; /* length in words - 1 (high byte) */
+    rtcp_packet[3] = 0x01; /* length in words - 1 (low byte) = 1 */
+
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_DGRAM;
     hints.ai_protocol = IPPROTO_UDP;
 
-    ret = getaddrinfo(addr, port_str, &hints, &result);
-    if (ret != 0)
+    /* Resolve server address once for both RTP and RTCP */
+    snprintf(port_str, sizeof(port_str), "%d", session->server_rtp_port);
+    if (getaddrinfo(session->server_source_addr, port_str, &hints, &result) != 0)
     {
-        logger(LOG_WARN, "RTSP: Failed to resolve NAT probe target %s:%s: %s",
-               addr, port_str, gai_strerror(ret));
         return;
     }
 
-    for (rp = result; rp != NULL; rp = rp->ai_next)
+    /* Send 3 NAT probe packets for both RTP and RTCP */
+    for (int attempt = 0; attempt < 3; attempt++)
     {
-        int attempt_success = 0;
-        for (int attempt = 0; attempt < 3; attempt++)
+        for (rp = result; rp != NULL; rp = rp->ai_next)
         {
-            if (sendto(socket_fd, NULL, 0, 0, rp->ai_addr, rp->ai_addrlen) < 0)
+            /* Send RTP probe */
+            if (session->server_rtp_port > 0 && session->rtp_socket >= 0)
             {
-                last_errno = errno;
-                logger(LOG_WARN, "RTSP: NAT probe send failed on %s socket to %s:%d (attempt %d): %s",
-                       label, addr, port, attempt + 1, strerror(last_errno));
+                sendto(session->rtp_socket, rtp_packet, sizeof(rtp_packet), 0, rp->ai_addr, rp->ai_addrlen);
             }
-            else
-            {
-                attempt_success = 1;
-                sent_any = 1;
-            }
-        }
-        if (attempt_success)
-        {
-            break;
-        }
-    }
 
-    if (sent_any)
-    {
-        logger(LOG_DEBUG, "RTSP: Sent NAT probe packets on %s socket to %s:%d",
-               label, addr, port);
-    }
-    else if (last_errno)
-    {
-        logger(LOG_WARN, "RTSP: No NAT probe packets sent on %s socket to %s:%d: %s",
-               label, addr, port, strerror(last_errno));
+            /* Send RTCP probe - update port in sockaddr */
+            if (session->server_rtcp_port > 0 && session->rtcp_socket >= 0)
+            {
+                if (rp->ai_family == AF_INET)
+                {
+                    ((struct sockaddr_in *)rp->ai_addr)->sin_port = htons(session->server_rtcp_port);
+                }
+                sendto(session->rtcp_socket, rtcp_packet, sizeof(rtcp_packet), 0, rp->ai_addr, rp->ai_addrlen);
+            }
+
+            break; /* Only use first resolved address */
+        }
     }
 
     freeaddrinfo(result);
+    logger(LOG_DEBUG, "RTSP: Sent NAT probe packets to %s:%d/%d",
+           session->server_source_addr, session->server_rtp_port, session->server_rtcp_port);
 }
 
 static void rtsp_parse_transport_header(rtsp_session_t *session, const char *transport)
@@ -2606,6 +2618,9 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
             source_address[idx] = '\0';
             if (source_address[0] != '\0')
             {
+                /* Save source address to session for NAT keepalive */
+                strncpy(session->server_source_addr, source_address, sizeof(session->server_source_addr) - 1);
+                session->server_source_addr[sizeof(session->server_source_addr) - 1] = '\0';
                 logger(LOG_DEBUG, "RTSP: Server UDP source address: %s", source_address);
             }
         }
@@ -2639,17 +2654,7 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
         }
 
         /* Send NAT probe packets if server provided source address and ports */
-        if (source_address[0] != '\0')
-        {
-            if (session->server_rtp_port > 0 && session->rtp_socket >= 0)
-            {
-                rtsp_send_udp_nat_probe(session->rtp_socket, source_address, session->server_rtp_port, "RTP");
-            }
-            if (session->server_rtcp_port > 0 && session->rtcp_socket >= 0)
-            {
-                rtsp_send_udp_nat_probe(session->rtcp_socket, source_address, session->server_rtcp_port, "RTCP");
-            }
-        }
+        rtsp_send_udp_nat_probe(session);
     }
 }
 
