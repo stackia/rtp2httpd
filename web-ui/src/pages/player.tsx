@@ -81,17 +81,12 @@ function PlayerPage() {
     const now = new Date();
 
     if (streamStartTime.getTime() > now.getTime() - 1000) {
-      setPlaybackSegments((prev) => {
-        if (prev.length === 1 && prev[0].url === currentChannel.url) {
-          return prev;
-        }
-        return [
-          {
-            url: currentChannel.url,
-            duration: 0,
-          },
-        ];
-      });
+      setPlaybackSegments([
+        {
+          url: currentChannel.url,
+          duration: 0,
+        },
+      ]);
       setPlayMode("live");
       return;
     }
@@ -103,9 +98,9 @@ function PlayerPage() {
 
     setPlaybackSegments(buildCatchupSegments(currentChannel, streamStartTime));
     setPlayMode("catchup");
-  }, [currentChannel, streamStartTime?.getTime()]);
+  }, [currentChannel, streamStartTime]);
 
-  const handleSeek = useCallback(
+  const handleVideoSeek = useCallback(
     (seekTime: Date) => {
       const now = new Date();
       if (seekTime.getTime() > now.getTime() - 30 * 1000) {
@@ -120,6 +115,10 @@ function PlayerPage() {
     },
     [streamStartTime],
   );
+
+  const handleVideoRetry = useCallback(() => {
+    setPlaybackSegments((segments) => [...segments]);
+  }, []);
 
   const selectChannel = useCallback((channel: Channel) => {
     setCurrentChannel(channel);
@@ -302,7 +301,8 @@ function PlayerPage() {
             onError={handleVideoError}
             locale={locale}
             currentProgram={currentVideoProgram}
-            onSeek={handleSeek}
+            onSeek={handleVideoSeek}
+            onRetry={handleVideoRetry}
             streamStartTime={streamStartTime}
             currentVideoTime={currentVideoTime}
             onCurrentVideoTimeChange={setCurrentVideoTime}
@@ -376,7 +376,7 @@ function PlayerPage() {
                   channelId={currentChannel ? getEPGChannelId(currentChannel, epgData) : null}
                   epgData={epgData}
                   currentTime={currentTime}
-                  onProgramSelect={handleSeek}
+                  onProgramSelect={handleVideoSeek}
                   locale={locale}
                   supportsCatchup={!!(currentChannel?.catchup && currentChannel?.catchupSource)}
                   currentPlayingProgram={currentVideoProgram}

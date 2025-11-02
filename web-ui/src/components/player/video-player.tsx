@@ -12,6 +12,7 @@ interface VideoPlayerProps {
   locale: Locale;
   currentProgram?: EPGProgram | null;
   onSeek?: (seekTime: Date) => void;
+  onRetry?: () => void;
   streamStartTime: Date;
   currentVideoTime: number;
   onCurrentVideoTimeChange: (time: number) => void;
@@ -30,6 +31,7 @@ export function VideoPlayer({
   locale,
   currentProgram = null,
   onSeek,
+  onRetry,
   streamStartTime,
   currentVideoTime,
   onCurrentVideoTimeChange,
@@ -55,11 +57,14 @@ export function VideoPlayer({
   const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
   const [showControls, setShowControls] = useState(false);
   const hideControlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const retryCountRef = useRef<number>(0);
+  const isRetryingRef = useRef<boolean>(false);
+  const stablePlaybackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Debounce loading indicator to prevent flickering on fast loads
   useEffect(() => {
     if (isLoading) {
-      // Show loading indicator after 200ms delay
+      // Show loading indicator after 500ms delay
       loadingTimeoutRef.current = setTimeout(() => {
         setShowLoading(true);
       }, 500);
@@ -280,6 +285,19 @@ export function VideoPlayer({
   useEffect(() => {
     if (!segments.length || !videoRef.current || !mpegts.isSupported()) return;
 
+    // Reset retry count when loading new stream (but not during retries)
+    console.log("Player loading...", isRetryingRef.current, retryCountRef.current);
+    if (!isRetryingRef.current) {
+      retryCountRef.current = 0;
+    }
+    isRetryingRef.current = false;
+
+    // Clear stable playback timer when loading new stream
+    if (stablePlaybackTimeoutRef.current) {
+      clearTimeout(stablePlaybackTimeoutRef.current);
+      stablePlaybackTimeoutRef.current = null;
+    }
+
     setShowControls(true);
     setIsLoading(true);
     setError(null);
@@ -296,6 +314,7 @@ export function VideoPlayer({
           enableWorker: true,
           isLive: true,
           enableStashBuffer: false,
+          liveSync: true,
         },
       );
 
@@ -304,11 +323,27 @@ export function VideoPlayer({
 
       player.on(mpegts.Events.ERROR, (errorType, errorDetail, errorInfo) => {
         console.error("Player error:", errorType, errorDetail, errorInfo);
+
         let errorMessage = t("playbackError");
+        let decodingErrorRetry = false;
 
         if (errorType === mpegts.ErrorTypes.MEDIA_ERROR) {
-          if (errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_UNSUPPORTED || errorInfo?.msg?.includes("codec")) {
+          if (
+            errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_UNSUPPORTED ||
+            errorDetail === mpegts.ErrorDetails.MEDIA_CODEC_UNSUPPORTED ||
+            errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_ERROR
+          ) {
             errorMessage = t("codecError");
+          } else if (errorDetail === mpegts.ErrorDetails.MEDIA_MSE_ERROR) {
+            errorMessage = `${t("mediaError")}: ${errorInfo?.msg}`;
+            if (errorInfo?.msg?.includes("HTMLMediaElement.error")) {
+              if (videoRef.current?.error?.message?.includes("PIPELINE_ERROR_DECODE")) {
+                // Decoding error, may be transient (upstream packet loss / transmit pressure), can infinite retry
+                decodingErrorRetry = true;
+              } else {
+                errorMessage += `${t("mediaError")}: ${videoRef.current?.error?.message}`;
+              }
+            }
           } else {
             errorMessage = `${t("mediaError")}: ${errorDetail}`;
           }
@@ -316,6 +351,22 @@ export function VideoPlayer({
           errorMessage = `${t("networkError")}: ${errorDetail}`;
         }
 
+        // Check if we should retry
+        if (decodingErrorRetry || retryCountRef.current < 3) {
+          if (!decodingErrorRetry) {
+            retryCountRef.current += 1;
+            console.log(`Retrying playback (attempt ${retryCountRef.current}/3)...`);
+          } else {
+            console.log(`Retrying playback due to decoding error...`);
+          }
+
+          isRetryingRef.current = true;
+          onRetry?.();
+
+          return;
+        }
+
+        // Max retries reached, show error
         setError(errorMessage);
         onError?.(errorMessage);
         setIsLoading(false);
@@ -348,7 +399,7 @@ export function VideoPlayer({
         playerRef.current = null;
       }
     };
-  }, [segments, onError, t]);
+  }, [segments, onError, t, onRetry]);
 
   // Handle video events
   useEffect(() => {
@@ -362,16 +413,39 @@ export function VideoPlayer({
 
     const handleWaiting = () => {
       setIsLoading(true);
+      // Clear stable playback timer when buffering
+      if (stablePlaybackTimeoutRef.current) {
+        clearTimeout(stablePlaybackTimeoutRef.current);
+        stablePlaybackTimeoutRef.current = null;
+      }
     };
 
     const handlePlaying = () => {
       setIsLoading(false);
       setIsPlaying(true);
+
+      // Start/restart stable playback timer
+      if (stablePlaybackTimeoutRef.current) {
+        clearTimeout(stablePlaybackTimeoutRef.current);
+      }
+
+      // Reset retry count after 30 seconds of stable playback
+      stablePlaybackTimeoutRef.current = setTimeout(() => {
+        if (retryCountRef.current > 0) {
+          console.log(`Resetting retry count after stable playback (was ${retryCountRef.current})`);
+          retryCountRef.current = 0;
+        }
+      }, 30000);
     };
 
     const handlePause = () => {
       setIsPlaying(false);
       setIsLive(false);
+      // Clear stable playback timer when paused
+      if (stablePlaybackTimeoutRef.current) {
+        clearTimeout(stablePlaybackTimeoutRef.current);
+        stablePlaybackTimeoutRef.current = null;
+      }
     };
 
     const handleTimeUpdate = () => {
@@ -400,6 +474,12 @@ export function VideoPlayer({
       video.removeEventListener("pause", handlePause);
       video.removeEventListener("timeupdate", handleTimeUpdate);
       video.removeEventListener("ended", handleEnded);
+
+      // Clear stable playback timer on cleanup
+      if (stablePlaybackTimeoutRef.current) {
+        clearTimeout(stablePlaybackTimeoutRef.current);
+        stablePlaybackTimeoutRef.current = null;
+      }
     };
   }, [onSeek, streamStartTime, isLive, currentVideoTime]);
 
@@ -478,7 +558,10 @@ export function VideoPlayer({
               <div className="absolute inset-0 rounded-full border-2 border-white/30" />
               <div className="absolute inset-0 rounded-full border-2 border-white border-t-transparent animate-spin" />
             </div>
-            <span className="text-xs md:text-sm text-white font-medium">{t("loadingVideo")}</span>
+            <span className="text-xs md:text-sm text-white font-medium">
+              {t("loadingVideo")}
+              {retryCountRef.current > 0 && ` (${retryCountRef.current}/3)`}
+            </span>
           </div>
         )}
 
