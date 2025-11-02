@@ -240,11 +240,11 @@ return view.extend({
     o.depends("use_config_file", "0");
 
     o = s.taboption("basic", form.ListValue, "verbose", _("Logging level"));
-    o.value("0", _("Fatal"));
-    o.value("1", _("Error"));
-    o.value("2", _("Warn"));
-    o.value("3", _("Info"));
-    o.value("4", _("Debug"));
+    o.value("0", "Fatal");
+    o.value("1", "Error");
+    o.value("2", "Warn");
+    o.value("3", "Info");
+    o.value("4", "Debug");
     o.default = "1";
     o.depends("use_config_file", "0");
 
@@ -253,7 +253,9 @@ return view.extend({
       form.Value,
       "hostname",
       _("Hostname"),
-      _("When configured, HTTP Host header will be checked and must match this value to allow access. This value is also used as the hostname in M3U playlist conversion. When using a reverse proxy, configure this with the proxied access URL (including http(s):// and path prefix), e.g., https://my-domain.com/rtp2httpd, and ensure the reverse proxy forwards the Host header.")
+      _(
+        "When configured, HTTP Host header will be checked and must match this value to allow access. This value is also used as the hostname in M3U playlist conversion. When using a reverse proxy, configure this with the proxied access URL (including http(s):// and path prefix), e.g., https://my-domain.com/rtp2httpd, and ensure the reverse proxy forwards the Host header."
+      )
     );
     o.depends("use_config_file", "0");
 
@@ -376,7 +378,9 @@ return view.extend({
       form.Value,
       "mcast_rejoin_interval",
       _("Multicast Rejoin Interval"),
-      _("Periodic multicast rejoin interval in seconds (0=disabled, default 0). Enable this (e.g., 30-120 seconds) if your network switches timeout multicast memberships due to missing IGMP Query messages. Only needed for problematic network environments.")
+      _(
+        "Periodic multicast rejoin interval in seconds (0=disabled, default 0). Enable this (e.g., 30-120 seconds) if your network switches timeout multicast memberships due to missing IGMP Query messages. Only needed for problematic network environments."
+      )
     );
     o.datatype = "range(0, 86400)";
     o.placeholder = "0";
@@ -387,7 +391,9 @@ return view.extend({
       form.Value,
       "fcc_listen_port_range",
       _("FCC Listen Port Range"),
-      _("Local UDP port range for FCC client sockets (format: start-end, e.g., 40000-40100). Leave empty to use random ports.")
+      _(
+        "Local UDP port range for FCC client sockets (format: start-end, e.g., 40000-40100). Leave empty to use random ports."
+      )
     );
     o.placeholder = "begin-end";
     o.depends("use_config_file", "0");
@@ -398,7 +404,9 @@ return view.extend({
       form.Value,
       "external_m3u",
       _("External M3U"),
-      _("Fetch M3U playlist from a URL (file://, http://, https:// supported). Example: https://example.com/playlist.m3u or file:///path/to/playlist.m3u")
+      _(
+        "Fetch M3U playlist from a URL (file://, http://, https:// supported). Example: https://example.com/playlist.m3u or file:///path/to/playlist.m3u"
+      )
     );
     o.placeholder = "https://example.com/playlist.m3u";
     o.depends("use_config_file", "0");
@@ -408,7 +416,9 @@ return view.extend({
       form.Value,
       "external_m3u_update_interval",
       _("External M3U Update Interval"),
-      _("External M3U automatic update interval in seconds (default: 86400 = 24 hours). Set to 0 to disable automatic updates.")
+      _(
+        "External M3U automatic update interval in seconds (default: 86400 = 24 hours). Set to 0 to disable automatic updates."
+      )
     );
     o.datatype = "uinteger";
     o.placeholder = "86400";
@@ -429,17 +439,14 @@ return view.extend({
     o.rawhtml = true;
     o.default =
       '<div class="alert-message warning">' +
-      _("Note: The player page requires External M3U URL to be configured first.") +
+      _(
+        "Note: The player page requires External M3U URL to be configured first."
+      ) +
       "</div>";
     o.depends({ use_config_file: "0", external_m3u: "" });
 
     // Player page button with M3U validation
-    o = s.taboption(
-      "player",
-      form.Button,
-      "_player_page",
-      _("Player Page")
-    );
+    o = s.taboption("player", form.Button, "_player_page", _("Player Page"));
     o.inputtitle = _("Open Player Page");
     o.inputstyle = "apply";
     o.onclick = function (ev, section_id) {
@@ -493,7 +500,9 @@ return view.extend({
       form.Value,
       "r2h_token",
       _("R2H Token"),
-      _("If set, all HTTP requests must include r2h-token query parameter with matching value (e.g., http://server:5140/service?r2h-token=your-token)")
+      _(
+        "If set, all HTTP requests must include r2h-token query parameter with matching value (e.g., http://server:5140/service?r2h-token=your-token)"
+      )
     );
     o.password = true;
     o.depends("use_config_file", "0");
@@ -503,7 +512,9 @@ return view.extend({
       form.Flag,
       "xff",
       _("X-Forwarded-For"),
-      _("When enabled, uses HTTP X-Forwarded-For header as client address for status page display. Only enable when running behind a reverse proxy.")
+      _(
+        "When enabled, uses HTTP X-Forwarded-For header as client address for status page display. Only enable when running behind a reverse proxy."
+      )
     );
     o.default = "0";
     o.depends("use_config_file", "0");
@@ -513,7 +524,9 @@ return view.extend({
       form.Flag,
       "video_snapshot",
       _("Video Snapshot"),
-      _("Enable video snapshot feature. When enabled, clients can request snapshots with snapshot=1 query parameter")
+      _(
+        "Enable video snapshot feature. When enabled, clients can request snapshots with snapshot=1 query parameter"
+      )
     );
     o.default = "0";
     o.depends("use_config_file", "0");
@@ -523,7 +536,9 @@ return view.extend({
       form.Value,
       "ffmpeg_path",
       _("FFmpeg Path"),
-      _("Path to FFmpeg executable. Leave empty to use system PATH (default: ffmpeg)")
+      _(
+        "Path to FFmpeg executable. Leave empty to use system PATH (default: ffmpeg)"
+      )
     );
     o.placeholder = "ffmpeg";
     o.depends({ use_config_file: "0", video_snapshot: "1" });
@@ -533,7 +548,9 @@ return view.extend({
       form.Value,
       "ffmpeg_args",
       _("FFmpeg Arguments"),
-      _("Additional FFmpeg arguments for snapshot generation. Common options: -hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)")
+      _(
+        "Additional FFmpeg arguments for snapshot generation. Common options: -hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)"
+      )
     );
     o.placeholder = "-hwaccel none";
     o.depends({ use_config_file: "0", video_snapshot: "1" });
