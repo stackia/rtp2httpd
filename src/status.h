@@ -66,6 +66,7 @@ typedef enum
 typedef struct
 {
   int active;                        /* 1 if slot is active, 0 if free */
+  char client_id[128];               /* Unique client ID: "IP:port-workerN-seqM" */
   pid_t worker_pid;                  /* Actual worker thread/process PID */
   int worker_index;                  /* Worker index (0-based, matches worker_id) */
   int64_t connect_time;              /* Connection timestamp in milliseconds */
@@ -102,6 +103,9 @@ typedef struct
 typedef struct
 {
   pid_t worker_pid; /* Worker process PID */
+
+  /* Client ID generation counter */
+  uint64_t client_id_counter; /* Incremented for each new client registration */
 
   /* Client traffic statistics */
   uint64_t client_bytes_cumulative; /* Bytes sent to clients that have disconnected */
@@ -253,7 +257,7 @@ void handle_player_page(connection_t *c);
 
 /**
  * Handle API request to disconnect a client
- * RESTful: POST/DELETE <status-path>/api/disconnect with form data body "client_id=123"
+ * RESTful: POST/DELETE <status-path>/api/disconnect with form data body "client_id=IP:port-workerN-seqM"
  * Sets disconnect flag in shared memory and notifies worker to close connection
  * @param c Connection object
  */

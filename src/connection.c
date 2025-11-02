@@ -559,18 +559,11 @@ int connection_route_and_start(connection_t *c)
       return 0;
     }
 
-    /* Parse r2h-token parameter from query string */
+    /* Parse r2h-token parameter from query string (automatically URL-decoded) */
     char token_value[256];
     if (http_parse_query_param(query_start + 1, "r2h-token", token_value, sizeof(token_value)) != 0)
     {
-      logger(LOG_WARN, "Client request rejected: missing r2h-token parameter");
-      http_send_401(c);
-      return 0;
-    }
-
-    if (http_url_decode(token_value) != 0)
-    {
-      logger(LOG_WARN, "Client request rejected: invalid r2h-token encoding");
+      logger(LOG_WARN, "Client request rejected: missing or invalid r2h-token parameter");
       http_send_401(c);
       return 0;
     }

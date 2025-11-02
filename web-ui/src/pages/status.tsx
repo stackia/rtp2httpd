@@ -53,7 +53,7 @@ function StatusPage() {
   const [clientsMap, setClientsMap] = useState<Map<string, ClientRow>>(new Map());
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [showDisconnected, setShowDisconnected] = useState(false);
-  const [disconnectingKeys, setDisconnectingKeys] = useState<Set<string>>(new Set());
+  const [disconnectingIds, setDisconnectingIds] = useState<Set<string>>(new Set());
   const [lastUpdated, setLastUpdated] = useState<string>("--");
 
   const handlePayload = useCallback((incoming: StatusPayload) => {
@@ -87,16 +87,16 @@ function StatusPage() {
   }, [clientsMap, showDisconnected]);
 
   const handleDisconnect = useCallback(
-    async (clientId: number, connectionKey: string) => {
-      setDisconnectingKeys((prev) => new Set(prev).add(connectionKey));
+    async (clientId: string) => {
+      setDisconnectingIds((prev) => new Set(prev).add(clientId));
       try {
         await disconnectClient(clientId);
       } catch (error) {
         window.alert(`Failed to disconnect client: ${error}`);
       } finally {
-        setDisconnectingKeys((prev) => {
+        setDisconnectingIds((prev) => {
           const next = new Set(prev);
-          next.delete(connectionKey);
+          next.delete(clientId);
           return next;
         });
       }
@@ -198,7 +198,7 @@ function StatusPage() {
             locale={locale}
             showDisconnected={showDisconnected}
             onShowDisconnectedChange={(checked) => setShowDisconnected(checked)}
-            disconnectingKeys={disconnectingKeys}
+            disconnectingIds={disconnectingIds}
             onDisconnect={handleDisconnect}
           />
 

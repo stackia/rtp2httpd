@@ -64,45 +64,23 @@ export function stateToLabel(locale: Locale, state: ClientState): string {
   return fallbackTable[key] ?? fallbackTable[FALLBACK_STATE_KEY];
 }
 
-function clientBaseKey(client: { clientAddr: string; workerPid: number }): string {
-  return `${client.clientAddr}-${client.workerPid}`;
-}
-
 export function mergeClients(previous: Map<string, ClientRow>, clients: ClientEntry[]): Map<string, ClientRow> {
   const now = Date.now();
   const next = new Map(previous);
-  const activeByBaseKey = new Map<string, string>();
-
-  for (const [key, entry] of next.entries()) {
-    const baseKey = entry.baseKey ?? clientBaseKey(entry);
-    if (!entry.baseKey) {
-      next.set(key, { ...entry, baseKey });
-    }
-    if (!entry.isDisconnected) {
-      activeByBaseKey.set(baseKey, key);
-    }
-  }
-
   const seenIds = new Set<string>();
 
   for (const client of clients) {
-    const baseKey = clientBaseKey(client);
-    const reuseKey = activeByBaseKey.get(baseKey);
-    const key = reuseKey ?? `${baseKey}-${now}`;
-    const previousEntry = reuseKey ? next.get(reuseKey) : undefined;
+    const previousEntry = next.get(client.clientId);
     const entry: ClientRow = {
       ...(previousEntry ?? client),
       ...client,
       isDisconnected: false,
       lastSeen: now,
       disconnectDurationMs: undefined,
-      connectionKey: key,
-      baseKey,
       firstSeen: previousEntry?.firstSeen ?? now,
     };
-    next.set(key, entry);
-    seenIds.add(key);
-    activeByBaseKey.set(baseKey, key);
+    next.set(client.clientId, entry);
+    seenIds.add(client.clientId);
   }
 
   for (const [id, entry] of next.entries()) {
@@ -112,8 +90,6 @@ export function mergeClients(previous: Map<string, ClientRow>, clients: ClientEn
         isDisconnected: true,
         disconnectDurationMs: entry.disconnectDurationMs ?? entry.durationMs,
         lastSeen: entry.lastSeen,
-        connectionKey: entry.connectionKey ?? id,
-        baseKey: entry.baseKey ?? clientBaseKey(entry),
         firstSeen: entry.firstSeen ?? entry.lastSeen,
       });
     }

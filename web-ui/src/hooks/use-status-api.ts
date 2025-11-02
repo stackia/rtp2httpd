@@ -2,11 +2,11 @@ import { useCallback } from "react";
 import { buildStatusPath, buildUrl } from "../lib/url";
 
 export function useStatusApi() {
-  const disconnectClient = useCallback(async (clientId: number) => {
+  const disconnectClient = useCallback(async (clientId: string) => {
     const response = await fetch(buildUrl(buildStatusPath("/api/disconnect")), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ client_id: String(clientId) }).toString(),
+      body: new URLSearchParams({ client_id: clientId }).toString(),
     });
     const data = await response.json().catch(() => undefined);
     if (!response.ok) {

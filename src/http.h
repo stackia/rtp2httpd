@@ -109,9 +109,10 @@ char *http_url_encode(const char *str);
 /**
  * Parse query parameter value from query/form string (case-insensitive parameter names)
  * Works for both URL query strings and application/x-www-form-urlencoded body data
+ * The returned value is automatically URL-decoded.
  * @param query_string Query or form data string (without leading ?)
  * @param param_name Parameter name to search for (case-insensitive)
- * @param value_buf Buffer to store parameter value
+ * @param value_buf Buffer to store parameter value (will be URL-decoded)
  * @param value_size Size of value buffer
  * @return 0 if parameter found, -1 if not found or error
  */
