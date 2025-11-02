@@ -151,9 +151,14 @@ export function parseM3U(content: string, serverAddress?: string): M3UMetadata {
  * Build catchup segments with playseek parameter
  * @param channel - The channel object containing catchup configuration
  * @param startTime - Start time for playback
+ * @param tailOffsetSeconds - Tail offset in seconds (0 means current time, positive values move the tail back)
  * @returns Array of media segments for catchup playback
  */
-export function buildCatchupSegments(channel: Channel, startTime: Date): mpegts.MediaSegment[] {
+export function buildCatchupSegments(
+  channel: Channel,
+  startTime: Date,
+  tailOffsetSeconds: number = 0,
+): mpegts.MediaSegment[] {
   if (!channel.catchupSource) {
     throw new Error("Channel does not have catchup source configured");
   }
@@ -164,7 +169,7 @@ export function buildCatchupSegments(channel: Channel, startTime: Date): mpegts.
   const segments: mpegts.MediaSegment[] = [];
 
   // Segment duration: (now - startTime) in both seconds and milliseconds
-  const segmentDurationMs = now.getTime() - startTime.getTime();
+  const segmentDurationMs = Math.max(now.getTime() + tailOffsetSeconds * 1000 - startTime.getTime(), 10000);
   const segmentDurationSec = segmentDurationMs / 1000;
 
   /**
@@ -437,7 +442,7 @@ export function buildCatchupSegments(channel: Channel, startTime: Date): mpegts.
 
   // Build segments from startTime to now (catchup/replay segments)
   let currentTime = new Date(startTime.getTime());
-  const splitPoint = new Date(now.getTime() - 10000);
+  const splitPoint = new Date(now.getTime() + tailOffsetSeconds * 1000 - 10000);
 
   while (currentTime < splitPoint) {
     const segmentEndTime = new Date(Math.min(currentTime.getTime() + segmentDurationMs, splitPoint.getTime()));
@@ -451,8 +456,6 @@ export function buildCatchupSegments(channel: Channel, startTime: Date): mpegts.
   }
 
   // Build segments from splitPoint to future (half-duration live segments)
-  currentTime = new Date(splitPoint.getTime());
-
   while (currentTime < endingFuture) {
     const segmentEndTime = new Date(Math.min(currentTime.getTime() + segmentDurationMs / 2, endingFuture.getTime()));
 

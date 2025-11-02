@@ -5,6 +5,7 @@
 const STORAGE_KEYS = {
   LAST_CHANNEL_ID: "rtp2httpd-player-last-channel-id",
   SIDEBAR_VISIBLE: "rtp2httpd-player-sidebar-visible",
+  CATCHUP_TAIL_OFFSET: "rtp2httpd-player-catchup-tail-offset",
 } as const;
 
 /**
@@ -55,5 +56,31 @@ export function getSidebarVisible(): boolean {
   } catch (error) {
     console.error("Failed to get sidebar visibility:", error);
     return true;
+  }
+}
+
+/**
+ * Save the catchup tail offset (in seconds)
+ * @param offset - The offset in seconds (0 means current time)
+ */
+export function saveCatchupTailOffset(offset: number): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.CATCHUP_TAIL_OFFSET, offset.toString());
+  } catch (error) {
+    console.error("Failed to save catchup tail offset:", error);
+  }
+}
+
+/**
+ * Get the catchup tail offset (in seconds)
+ * @returns The offset in seconds or 0 (default)
+ */
+export function getCatchupTailOffset(): number {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.CATCHUP_TAIL_OFFSET);
+    return stored !== null ? parseFloat(stored) : 0;
+  } catch (error) {
+    console.error("Failed to get catchup tail offset:", error);
+    return 0;
   }
 }

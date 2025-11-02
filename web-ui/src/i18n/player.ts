@@ -78,6 +78,8 @@ const base: TranslationDict = {
   themeAuto: "Auto",
   themeLight: "Light",
   themeDark: "Dark",
+  catchupTailOffset: "Catchup Tail Offset",
+  catchupTailOffsetHint: "0 means current time, in seconds",
 };
 
 const zhHans: TranslationDict = {
@@ -156,6 +158,8 @@ const zhHans: TranslationDict = {
   themeAuto: "自动",
   themeLight: "浅色",
   themeDark: "深色",
+  catchupTailOffset: "回看切片尾偏移",
+  catchupTailOffsetHint: "0 表示当前，单位秒",
 };
 
 const zhHant: TranslationDict = {
@@ -234,6 +238,8 @@ const zhHant: TranslationDict = {
   themeAuto: "自動",
   themeLight: "淺色",
   themeDark: "深色",
+  catchupTailOffset: "回看切片尾偏移",
+  catchupTailOffsetHint: "0 表示當前，單位秒",
 };
 
 export const translations: Record<Locale, TranslationDict> = {
