@@ -15,8 +15,8 @@ interface ConnectionsSectionProps {
   locale: Locale;
   showDisconnected: boolean;
   onShowDisconnectedChange: (checked: boolean) => void;
-  disconnectingKeys: Set<string>;
-  onDisconnect: (clientId: number, connectionKey: string) => void;
+  disconnectingIds: Set<string>;
+  onDisconnect: (clientId: string) => void;
 }
 
 
@@ -25,7 +25,7 @@ export function ConnectionsSection({
   locale,
   showDisconnected,
   onShowDisconnectedChange,
-  disconnectingKeys,
+  disconnectingIds,
   onDisconnect,
 }: ConnectionsSectionProps) {
   const t = useStatusTranslation(locale);
@@ -65,7 +65,7 @@ export function ConnectionsSection({
               </TableHeader>
               <TableBody>
                 {clients.map((client) => (
-                  <TableRow key={client.connectionKey} className={client.isDisconnected ? "opacity-60" : undefined}>
+                  <TableRow key={client.clientId} className={client.isDisconnected ? "opacity-60" : undefined}>
                     <TableCell>
                       <div className="font-medium">{client.clientAddr}</div>
                       <div className="text-xs text-muted-foreground">
@@ -100,10 +100,10 @@ export function ConnectionsSection({
                         <Button
                           size="sm"
                           variant="destructive"
-                          disabled={disconnectingKeys.has(client.connectionKey)}
-                          onClick={() => onDisconnect(client.clientId, client.connectionKey)}
+                          disabled={disconnectingIds.has(client.clientId)}
+                          onClick={() => onDisconnect(client.clientId)}
                         >
-                          {disconnectingKeys.has(client.connectionKey) ? t("disconnecting") : t("disconnect")}
+                          {disconnectingIds.has(client.clientId) ? t("disconnecting") : t("disconnect")}
                         </Button>
                       )}
                     </TableCell>
@@ -115,7 +115,7 @@ export function ConnectionsSection({
           <div className="flex flex-col gap-4 p-4 lg:hidden">
             {clients.map((client) => (
               <Card
-                key={client.connectionKey}
+                key={client.clientId}
                 className={`border border-border/60 ${client.isDisconnected ? "opacity-60" : ""}`}
               >
                 <CardContent className="space-y-4 p-4">
@@ -155,10 +155,10 @@ export function ConnectionsSection({
                       <Button
                         size="sm"
                         variant="destructive"
-                        disabled={disconnectingKeys.has(client.connectionKey)}
-                        onClick={() => onDisconnect(client.clientId, client.connectionKey)}
+                        disabled={disconnectingIds.has(client.clientId)}
+                        onClick={() => onDisconnect(client.clientId)}
                       >
-                        {disconnectingKeys.has(client.connectionKey) ? t("disconnecting") : t("disconnect")}
+                        {disconnectingIds.has(client.clientId) ? t("disconnecting") : t("disconnect")}
                       </Button>
                     )}
                   </div>

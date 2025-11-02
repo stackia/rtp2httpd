@@ -407,9 +407,10 @@ static const char *find_query_param(const char *query_string, const char *param_
 /**
  * Parse query parameter value from query/form string (case-insensitive parameter names)
  * Works for both URL query strings and application/x-www-form-urlencoded body data
+ * The returned value is automatically URL-decoded.
  * @param query_string Query or form data string (without leading ?)
  * @param param_name Parameter name to search for (case-insensitive)
- * @param value_buf Buffer to store parameter value
+ * @param value_buf Buffer to store parameter value (will be URL-decoded)
  * @param value_size Size of value buffer
  * @return 0 if parameter found, -1 if not found or error
  */
@@ -452,6 +453,12 @@ int http_parse_query_param(const char *query_string, const char *param_name,
     /* Copy value */
     strncpy(value_buf, value_start, value_len);
     value_buf[value_len] = '\0';
+
+    /* URL decode the value in-place */
+    if (http_url_decode(value_buf) != 0)
+    {
+        return -1; /* Invalid URL encoding */
+    }
 
     return 0;
 }

@@ -66,7 +66,7 @@ export enum ClientState {
 }
 
 export interface ClientEntry {
-  clientId: number;
+  clientId: string; /* Format: "IP:port-workerN-seqM" */
   workerPid: number;
   durationMs: number;
   clientAddr: string; /* Format: "IP:port" or "[IPv6]:port" */
@@ -103,7 +103,5 @@ export interface ClientRow extends ClientEntry {
   isDisconnected: boolean;
   disconnectDurationMs?: number;
   lastSeen: number;
-  connectionKey: string;
-  baseKey: string;
   firstSeen: number;
 }

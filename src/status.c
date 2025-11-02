@@ -283,6 +283,20 @@ int status_register_client(const char *client_addr_str, const char *service_url)
       status_shared->clients[i].client_addr[sizeof(status_shared->clients[i].client_addr) - 1] = '\0';
       status_shared->clients[i].state = CLIENT_STATE_CONNECTING;
 
+      /* Generate unique client ID: "IP:port-workerN-seqM"
+       * Use real client IP (not X-Forwarded-For) + port + worker index + sequence counter */
+      uint64_t seq = 0;
+      if (worker_id >= 0 && worker_id < STATUS_MAX_WORKERS)
+      {
+        seq = status_shared->worker_stats[worker_id].client_id_counter++;
+      }
+      snprintf(status_shared->clients[i].client_id,
+               sizeof(status_shared->clients[i].client_id),
+               "%s-worker%d-seq%llu",
+               client_addr_str,
+               worker_id,
+               (unsigned long long)seq);
+
       /* Copy service URL */
       if (service_url)
       {
@@ -601,13 +615,17 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
 
       int64_t duration_ms = current_time - status_shared->clients[i].connect_time;
 
+      /* Escape client_id for JSON */
+      char escaped_client_id[256];
+      json_escape_string(status_shared->clients[i].client_id, escaped_client_id, sizeof(escaped_client_id));
+
       len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                      "{\"clientId\":%d,\"workerPid\":%d,\"durationMs\":%lld,\"clientAddr\":\"%s\","
+                      "{\"clientId\":\"%s\",\"workerPid\":%d,\"durationMs\":%lld,\"clientAddr\":\"%s\","
                       "\"serviceUrl\":\"%s\",\"state\":%d,\"bytesSent\":%llu,"
                       "\"currentBandwidth\":%u,\"queueBytes\":%zu,"
                       "\"queueLimitBytes\":%zu,\"queueBytesHighwater\":%zu,"
                       "\"droppedBytes\":%llu,\"slow\":%d}",
-                      i, /* client_id is the status_index */
+                      escaped_client_id,
                       status_shared->clients[i].worker_pid,
                       (long long)duration_ms,
                       status_shared->clients[i].client_addr,
@@ -801,17 +819,16 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
 
 /**
  * Handle API request to disconnect a client
- * RESTful: POST <status-path>/api/disconnect with form data body "client_id=123"
+ * RESTful: POST <status-path>/api/disconnect with form data body "client_id=IP:port-workerN-seqM"
  *
  * In multi-worker architecture, this sets a disconnect flag in shared memory
  * and notifies the worker owning the connection to gracefully close it.
  */
 void handle_disconnect_client(connection_t *c)
 {
-  int client_id;
   int found = 0;
   char response[512];
-  char client_id_str[32] = {0};
+  char client_id_str[256] = {0};
 
   if (!status_shared)
   {
@@ -853,27 +870,37 @@ void handle_disconnect_client(connection_t *c)
     return;
   }
 
-  client_id = atoi(client_id_str);
-
-  /* Validate client_id range */
-  if (client_id < 0 || client_id >= STATUS_MAX_CLIENTS)
+  /* Validate client_id is not empty */
+  if (client_id_str[0] == '\0')
   {
     send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
     snprintf(response, sizeof(response),
-             "{\"success\":false,\"error\":\"Invalid client_id\"}");
+             "{\"success\":false,\"error\":\"Empty client_id\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
     return;
   }
 
-  if (status_shared->clients[client_id].active)
+  /* Find client by client_id string */
+  for (int i = 0; i < STATUS_MAX_CLIENTS; i++)
   {
-    found = 1;
-    /* Set disconnect flag - worker will check this and close the connection */
-    status_shared->clients[client_id].disconnect_requested = 1;
+    logger(LOG_DEBUG, "Checking client slot %d: active=%d, client_id=%s, to match=%s",
+           i,
+           status_shared->clients[i].active,
+           status_shared->clients[i].client_id,
+           client_id_str);
+    if (status_shared->clients[i].active &&
+        strcmp(status_shared->clients[i].client_id, client_id_str) == 0)
+    {
+      found = 1;
+      /* Set disconnect flag - worker will check this and close the connection */
+      status_shared->clients[i].disconnect_requested = 1;
 
-    /* Trigger disconnect request event to wake up workers */
-    status_trigger_event(STATUS_EVENT_DISCONNECT_REQUEST);
+      /* Trigger disconnect request event to wake up workers */
+      status_trigger_event(STATUS_EVENT_DISCONNECT_REQUEST);
+      break;
+    }
   }
+
   send_http_headers(c, STATUS_200, CONTENT_HTML, NULL);
 
   if (found)
