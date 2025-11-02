@@ -12,7 +12,14 @@ import { Card } from "../components/ui/card";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useLocale } from "../hooks/use-locale";
 import { useTheme } from "../hooks/use-theme";
-import { saveLastChannelId, getLastChannelId, saveSidebarVisible, getSidebarVisible } from "../lib/player-storage";
+import {
+  saveLastChannelId,
+  getLastChannelId,
+  saveSidebarVisible,
+  getSidebarVisible,
+  saveCatchupTailOffset,
+  getCatchupTailOffset,
+} from "../lib/player-storage";
 
 function PlayerPage() {
   const { locale, setLocale } = useLocale("player-locale");
@@ -32,6 +39,7 @@ function PlayerPage() {
   const [sidebarView, setSidebarView] = useState<"channels" | "epg">("channels");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [catchupTailOffset, setCatchupTailOffset] = useState(() => getCatchupTailOffset());
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const channelListRef = useRef<ChannelListRef>(null);
 
@@ -96,9 +104,9 @@ function PlayerPage() {
       return;
     }
 
-    setPlaybackSegments(buildCatchupSegments(currentChannel, streamStartTime));
+    setPlaybackSegments(buildCatchupSegments(currentChannel, streamStartTime, catchupTailOffset));
     setPlayMode("catchup");
-  }, [currentChannel, streamStartTime]);
+  }, [currentChannel, streamStartTime, catchupTailOffset]);
 
   const handleVideoSeek = useCallback(
     (seekTime: Date) => {
@@ -286,6 +294,11 @@ function PlayerPage() {
     [sidebarView, showSidebar],
   );
 
+  const handleCatchupTailOffsetChange = useCallback((offset: number) => {
+    setCatchupTailOffset(offset);
+    saveCatchupTailOffset(offset);
+  }, []);
+
   // Main UI content
   const mainContent = (
     <div ref={pageContainerRef} className="flex h-screen flex-col bg-background">
@@ -298,6 +311,7 @@ function PlayerPage() {
           <VideoPlayer
             channel={currentChannel}
             segments={playbackSegments}
+            liveSync={playMode === "live"}
             onError={handleVideoError}
             locale={locale}
             currentProgram={currentVideoProgram}
@@ -345,7 +359,14 @@ function PlayerPage() {
                 {t("programGuide")}
               </button>
               <div className="px-2 md:hidden">
-                <SettingsDropdown locale={locale} onLocaleChange={setLocale} theme={theme} onThemeChange={setTheme} />
+                <SettingsDropdown
+                  locale={locale}
+                  onLocaleChange={setLocale}
+                  theme={theme}
+                  onThemeChange={setTheme}
+                  catchupTailOffset={catchupTailOffset}
+                  onCatchupTailOffsetChange={handleCatchupTailOffsetChange}
+                />
               </div>
             </div>
 
@@ -366,6 +387,8 @@ function PlayerPage() {
                         onLocaleChange={setLocale}
                         theme={theme}
                         onThemeChange={setTheme}
+                        catchupTailOffset={catchupTailOffset}
+                        onCatchupTailOffsetChange={handleCatchupTailOffsetChange}
                       />
                     </div>
                   }

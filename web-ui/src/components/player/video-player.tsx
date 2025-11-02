@@ -8,6 +8,7 @@ import { PlayerControls } from "./player-controls";
 interface VideoPlayerProps {
   channel: Channel | null;
   segments: mpegts.MediaSegment[];
+  liveSync: boolean;
   onError?: (error: string) => void;
   locale: Locale;
   currentProgram?: EPGProgram | null;
@@ -29,6 +30,7 @@ export function VideoPlayer({
   segments,
   onError,
   locale,
+  liveSync,
   currentProgram = null,
   onSeek,
   onRetry,
@@ -314,7 +316,7 @@ export function VideoPlayer({
           enableWorker: true,
           isLive: true,
           enableStashBuffer: false,
-          liveSync: true,
+          liveSync,
         },
       );
 
@@ -399,7 +401,7 @@ export function VideoPlayer({
         playerRef.current = null;
       }
     };
-  }, [segments, onError, t, onRetry]);
+  }, [segments, liveSync, onError, t, onRetry]);
 
   // Handle video events
   useEffect(() => {
