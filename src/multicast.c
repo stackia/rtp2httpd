@@ -373,6 +373,15 @@ int rejoin_mcast_group(int sock, service_t *service)
     logger(LOG_WARN, "Failed to set IP_HDRINCL: %s", strerror(errno));
   }
 
+  /* Set Router Alert option - required for IGMP packets (RFC 3376) */
+  int router_alert = 1;
+  if (setsockopt(raw_sock, IPPROTO_IP, IP_ROUTER_ALERT, &router_alert, sizeof(router_alert)) < 0)
+  {
+    logger(LOG_ERROR, "Failed to set IP_ROUTER_ALERT: %s", strerror(errno));
+    close(raw_sock);
+    return -1;
+  }
+
   /* Set IP_MULTICAST_IF to send from correct interface */
   if (upstream_if && upstream_if[0] != '\0')
   {
