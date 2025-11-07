@@ -386,12 +386,18 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len)
   return 0;
 }
 
-int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len)
+int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len, int set_closing)
 {
   int result = connection_queue_output(c, data, len);
   if (result < 0)
     return result;
   connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+
+  if (set_closing && c)
+  {
+    c->state = CONN_CLOSING;
+  }
+
   return 0;
 }
 
@@ -402,6 +408,7 @@ connection_write_status_t connection_handle_write(connection_t *c)
 
   if (!c->zc_queue.head)
   {
+    connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
     connection_report_queue(c);
     if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
       return CONNECTION_WRITE_CLOSED;
@@ -414,6 +421,7 @@ connection_write_status_t connection_handle_write(connection_t *c)
   if (ret < 0 && ret != -2)
   {
     c->state = CONN_CLOSING;
+    connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
     connection_report_queue(c);
     return CONNECTION_WRITE_CLOSED;
   }
@@ -564,7 +572,6 @@ int connection_route_and_start(connection_t *c)
     char asset_path[HTTP_URL_BUFFER_SIZE];
     snprintf(asset_path, sizeof(asset_path), "/%.*s", (int)path_len, service_path);
     handle_embedded_file(c, asset_path);
-    c->state = CONN_CLOSING;
     return 0;
   }
 
@@ -619,7 +626,6 @@ int connection_route_and_start(connection_t *c)
   if (status_route_len == path_len && strncmp(service_path, status_route, path_len) == 0)
   {
     handle_embedded_file(c, "/status.html");
-    c->state = CONN_CLOSING;
     return 0;
   }
 
@@ -629,7 +635,6 @@ int connection_route_and_start(connection_t *c)
   if (player_route_len == path_len && strncmp(service_path, player_route, path_len) == 0)
   {
     handle_embedded_file(c, "/player.html");
-    c->state = CONN_CLOSING;
     return 0;
   }
 
@@ -639,7 +644,6 @@ int connection_route_and_start(connection_t *c)
   if (playlist_route_len == path_len && strncmp(service_path, playlist_route, path_len) == 0)
   {
     handle_playlist_request(c);
-    c->state = CONN_CLOSING;
     return 0;
   }
 
@@ -652,7 +656,6 @@ int connection_route_and_start(connection_t *c)
       (epg_xml_gz_route_len == path_len && strncmp(service_path, epg_xml_gz_route, path_len) == 0))
   {
     handle_epg_request(c);
-    c->state = CONN_CLOSING;
     return 0;
   }
   size_t status_sse_len = strlen(status_sse_route);
@@ -671,18 +674,15 @@ int connection_route_and_start(connection_t *c)
     if (api_name_len == strlen("disconnect") && strncmp(api_name, "disconnect", api_name_len) == 0)
     {
       handle_disconnect_client(c);
-      c->state = CONN_CLOSING;
       return 0;
     }
     if (api_name_len == strlen("log-level") && strncmp(api_name, "log-level", api_name_len) == 0)
     {
       handle_set_log_level(c);
-      c->state = CONN_CLOSING;
       return 0;
     }
 
     http_send_404(c);
-    c->state = CONN_CLOSING;
     return 0;
   }
 
@@ -757,9 +757,8 @@ int connection_route_and_start(connection_t *c)
   {
     logger(LOG_INFO, "HEAD request detected, returning success without upstream connection", url);
     send_http_headers(c, STATUS_200, "video/mp2t", NULL);
-    connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+    connection_queue_output_and_flush(c, NULL, 0, 1);
     service_free(service);
-    c->state = CONN_CLOSING;
     return 0;
   }
 
@@ -894,7 +893,9 @@ int connection_route_and_start(connection_t *c)
 
   /* Send success headers (skip for snapshots - will send after JPEG conversion) */
   if (!is_snapshot_request)
+  {
     send_http_headers(c, STATUS_200, "video/mp2t", NULL);
+  }
 
   /* Initialize stream in unified epoll (works for both streaming and snapshot) */
   if (stream_context_init_for_worker(&c->stream, c, service, c->epfd, c->status_index, is_snapshot_request) == 0)
@@ -986,6 +987,9 @@ int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_
   /* Always flush immediately for file sends (no batching) */
   connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
 
+  /* Set connection to closing state after file transfer */
+  c->state = CONN_CLOSING;
+
   return 0;
 }
 
@@ -1004,27 +1008,36 @@ static void handle_playlist_request(connection_t *c)
     return;
   }
 
+  /* Get ETag for the playlist */
+  const char *etag = m3u_get_etag();
+
+  /* Check ETag and send 304 if it matches */
+  if (http_check_etag_and_send_304(c, etag, "audio/x-mpegurl"))
+  {
+    return;
+  }
+
+  /* ETag doesn't match or not provided - send full playlist */
   size_t playlist_len = strlen(playlist);
   char *server_addr = get_server_address();
-  char extra_headers[256];
+  char extra_headers[512];
+  char server_addr_header[512] = {0};
 
+  /* Build X-Server-Address header if available */
   if (server_addr)
   {
-    snprintf(extra_headers, sizeof(extra_headers),
-             "Content-Length: %zu\r\n"
-             "X-Server-Address: %s\r\n",
-             playlist_len, server_addr);
+    snprintf(server_addr_header, sizeof(server_addr_header),
+             "X-Server-Address: %s", server_addr);
     free(server_addr);
   }
-  else
-  {
-    snprintf(extra_headers, sizeof(extra_headers),
-             "Content-Length: %zu\r\n",
-             playlist_len);
-  }
+
+  /* Build headers with ETag support */
+  http_build_etag_headers(extra_headers, sizeof(extra_headers),
+                          playlist_len, etag,
+                          server_addr_header[0] ? server_addr_header : NULL);
 
   send_http_headers(c, STATUS_200, "audio/x-mpegurl", extra_headers);
-  connection_queue_output_and_flush(c, (const uint8_t *)playlist, playlist_len);
+  connection_queue_output_and_flush(c, (const uint8_t *)playlist, playlist_len, 1);
 }
 
 /* Handle /epg.xml or /epg.xml.gz request - serve cached EPG data */
@@ -1045,12 +1058,21 @@ static void handle_epg_request(connection_t *c)
     return;
   }
 
-  char extra_headers[256];
+  /* Get ETag for the EPG data */
+  const char *etag = epg_get_etag();
   const char *content_type = is_gzipped ? "application/gzip" : "application/xml";
 
-  snprintf(extra_headers, sizeof(extra_headers),
-           "Content-Length: %zu\r\n",
-           epg_size);
+  /* Check ETag and send 304 if it matches */
+  if (http_check_etag_and_send_304(c, etag, content_type))
+  {
+    return;
+  }
+
+  /* ETag doesn't match or not provided - send full EPG data */
+  char extra_headers[256];
+
+  /* Build headers with ETag support */
+  http_build_etag_headers(extra_headers, sizeof(extra_headers), epg_size, etag, NULL);
 
   send_http_headers(c, STATUS_200, content_type, extra_headers);
 
@@ -1061,6 +1083,7 @@ static void handle_epg_request(connection_t *c)
   if (dup_fd < 0)
   {
     logger(LOG_ERROR, "Failed to dup EPG fd for zero-copy transmission: %s", strerror(errno));
+    c->state = CONN_CLOSING;
     return;
   }
 
@@ -1069,6 +1092,7 @@ static void handle_epg_request(connection_t *c)
   {
     logger(LOG_ERROR, "Failed to queue EPG file for zero-copy transmission");
     close(dup_fd);
+    c->state = CONN_CLOSING;
     return;
   }
 }

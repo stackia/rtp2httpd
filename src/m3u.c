@@ -23,6 +23,7 @@
 #include "http.h"
 #include "http_fetch.h"
 #include "epg.h"
+#include "md5.h"
 
 #define MAX_M3U_LINE 4096
 #define MAX_SERVICE_NAME 256
@@ -46,6 +47,10 @@ static size_t transformed_m3u_used = 0;
 static size_t transformed_m3u_inline_end = 0; /* Marks end of inline content */
 
 static int transformed_m3u_has_header = 0;
+
+/* ETag for transformed M3U playlist (MD5 hash as hex string) */
+static char transformed_m3u_etag[33] = {0};
+static int transformed_m3u_etag_valid = 0;
 
 /* Fetch M3U content from URL (supports file://, http://, https://)
  * Returns: malloc'd string containing content (caller must free), or NULL on error
@@ -857,6 +862,31 @@ static int is_url_recognizable(const char *url)
     return 0;
 }
 
+/* Update ETag for transformed M3U playlist */
+static void update_m3u_etag(void)
+{
+    MD5Context ctx;
+    uint8_t digest[16];
+
+    if (!transformed_m3u || transformed_m3u_used == 0)
+    {
+        transformed_m3u_etag_valid = 0;
+        transformed_m3u_etag[0] = '\0';
+        return;
+    }
+
+    /* Calculate MD5 hash of playlist content */
+    md5Init(&ctx);
+    md5Update(&ctx, (uint8_t *)transformed_m3u, transformed_m3u_used);
+    md5Finalize(&ctx);
+
+    /* Convert digest to hex string */
+    memcpy(digest, ctx.digest, 16);
+    md5_to_hex(digest, transformed_m3u_etag);
+
+    transformed_m3u_etag_valid = 1;
+}
+
 /* Append string to transformed M3U buffer */
 static int append_to_transformed_m3u(const char *str, service_source_t source)
 {
@@ -902,6 +932,9 @@ static int append_to_transformed_m3u(const char *str, service_source_t source)
     memcpy(transformed_m3u + transformed_m3u_used, str, len);
     transformed_m3u_used += len;
     transformed_m3u[transformed_m3u_used] = '\0';
+
+    /* Invalidate ETag since content changed */
+    transformed_m3u_etag_valid = 0;
 
     return 0;
 }
@@ -1466,7 +1499,29 @@ const char *m3u_get_transformed_playlist(void)
         return NULL;
     }
 
+    /* Update ETag if not valid */
+    if (!transformed_m3u_etag_valid)
+    {
+        update_m3u_etag();
+    }
+
     return transformed_m3u;
+}
+
+const char *m3u_get_etag(void)
+{
+    /* Ensure ETag is calculated */
+    if (!transformed_m3u_etag_valid && transformed_m3u && transformed_m3u_used > 0)
+    {
+        update_m3u_etag();
+    }
+
+    if (!transformed_m3u_etag_valid)
+    {
+        return NULL;
+    }
+
+    return transformed_m3u_etag;
 }
 
 void m3u_reset_transformed_playlist(void)
@@ -1483,6 +1538,10 @@ void m3u_reset_transformed_playlist(void)
 
     /* Reset header flag */
     transformed_m3u_has_header = 0;
+
+    /* Invalidate ETag */
+    transformed_m3u_etag_valid = 0;
+    transformed_m3u_etag[0] = '\0';
 }
 
 void m3u_reset_external_playlist(void)
@@ -1493,6 +1552,9 @@ void m3u_reset_external_playlist(void)
         /* Reset used size to inline end position */
         transformed_m3u_used = transformed_m3u_inline_end;
         transformed_m3u[transformed_m3u_used] = '\0';
+
+        /* Invalidate ETag since content changed */
+        transformed_m3u_etag_valid = 0;
     }
 
     /* If no inline content, reset header flag to allow external M3U header to be added */

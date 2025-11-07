@@ -465,10 +465,7 @@ void http_send_400(connection_t *conn)
     send_http_headers(conn, STATUS_400, "text/html; charset=utf-8", NULL);
 
     /* Send body and flush */
-    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
-
-    /* Set connection to closing state */
-    conn->state = CONN_CLOSING;
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1, 1);
 }
 
 /**
@@ -483,10 +480,7 @@ void http_send_404(connection_t *conn)
     send_http_headers(conn, STATUS_404, "text/html; charset=utf-8", NULL);
 
     /* Send body and flush */
-    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
-
-    /* Set connection to closing state */
-    conn->state = CONN_CLOSING;
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1, 1);
 }
 
 /**
@@ -501,10 +495,7 @@ void http_send_500(connection_t *conn)
     send_http_headers(conn, STATUS_500, "text/html; charset=utf-8", NULL);
 
     /* Send body and flush */
-    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
-
-    /* Set connection to closing state */
-    conn->state = CONN_CLOSING;
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1, 1);
 }
 
 /**
@@ -519,10 +510,7 @@ void http_send_503(connection_t *conn)
     send_http_headers(conn, STATUS_503, "text/html; charset=utf-8", NULL);
 
     /* Send body and flush */
-    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
-
-    /* Set connection to closing state */
-    conn->state = CONN_CLOSING;
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1, 1);
 }
 
 /**
@@ -537,10 +525,7 @@ void http_send_401(connection_t *conn)
     send_http_headers(conn, STATUS_401, "text/html; charset=utf-8", "WWW-Authenticate: Bearer\r\n");
 
     /* Send body and flush */
-    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
-
-    /* Set connection to closing state */
-    conn->state = CONN_CLOSING;
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1, 1);
 }
 
 /**
@@ -712,4 +697,165 @@ int http_match_host_header(const char *request_host_header, const char *expected
 
     /* Compare only the hostname parts (case-insensitive) */
     return (strcasecmp(request_hostname, expected_host) == 0) ? 1 : 0;
+}
+
+/**
+ * Check if client-provided ETag matches server ETag
+ * Supports wildcards, weak ETags (W/"..."), and comma-separated lists
+ * @param if_none_match The If-None-Match header value from client
+ * @param etag The server's ETag value
+ * @return 1 if matches, 0 otherwise
+ */
+static int etag_matches(const char *if_none_match, const char *etag)
+{
+    const char *p;
+    size_t etag_len;
+
+    if (!if_none_match || !if_none_match[0] || !etag)
+        return 0;
+
+    /* Check for wildcard */
+    if (if_none_match[0] == '*' && if_none_match[1] == '\0')
+        return 1;
+
+    /* Parse comma-separated ETag list */
+    p = if_none_match;
+    etag_len = strlen(etag);
+
+    while (*p)
+    {
+        const char *token_start;
+        const char *token_end;
+        size_t token_len;
+        const char *candidate;
+        size_t candidate_len;
+
+        /* Skip whitespace and commas */
+        while (*p == ' ' || *p == '\t' || *p == ',')
+            p++;
+
+        if (*p == '\0')
+            break;
+
+        token_start = p;
+        while (*p && *p != ',')
+            p++;
+        token_end = p;
+
+        /* Trim trailing whitespace */
+        while (token_end > token_start && (token_end[-1] == ' ' || token_end[-1] == '\t'))
+            token_end--;
+
+        token_len = (size_t)(token_end - token_start);
+        if (token_len == 0)
+            continue;
+
+        /* Check for wildcard */
+        if (token_len == 1 && token_start[0] == '*')
+            return 1;
+
+        candidate = token_start;
+        candidate_len = token_len;
+
+        /* Handle weak ETags (W/) */
+        if (candidate_len > 2 && candidate[0] == 'W' && candidate[1] == '/')
+        {
+            candidate += 2;
+            candidate_len -= 2;
+
+            while (candidate_len > 0 && (*candidate == ' ' || *candidate == '\t'))
+            {
+                candidate++;
+                candidate_len--;
+            }
+        }
+
+        /* Remove surrounding quotes from ETag if present */
+        if (candidate_len > 2 && candidate[0] == '"' && candidate[candidate_len - 1] == '"')
+        {
+            candidate++;
+            candidate_len -= 2;
+        }
+
+        /* Compare ETags */
+        if (candidate_len == etag_len && strncmp(candidate, etag, etag_len) == 0)
+            return 1;
+    }
+
+    return 0;
+}
+
+int http_check_etag_and_send_304(connection_t *c, const char *etag, const char *content_type)
+{
+    char extra_headers[256];
+
+    /* If no ETag provided or no If-None-Match header, cannot use caching */
+    if (!c || !etag || c->http_req.if_none_match[0] == '\0')
+    {
+        return 0;
+    }
+
+    /* Check if client's ETag matches server's current ETag */
+    if (!etag_matches(c->http_req.if_none_match, etag))
+    {
+        return 0; /* No match, content should be sent */
+    }
+
+    /* ETag matches - send 304 Not Modified response */
+    snprintf(extra_headers, sizeof(extra_headers),
+             "ETag: \"%s\"\r\n"
+             "Content-Length: 0\r\n"
+             "Cache-Control: no-cache\r\n",
+             etag);
+
+    send_http_headers(c, STATUS_304, content_type, extra_headers);
+    connection_queue_output_and_flush(c, NULL, 0, 1);
+
+    return 1; /* 304 was sent */
+}
+
+int http_build_etag_headers(char *buffer, size_t buffer_size, size_t content_length,
+                            const char *etag, const char *additional_headers)
+{
+    int written = 0;
+
+    if (!buffer || buffer_size == 0)
+    {
+        return -1;
+    }
+
+    /* Start with Content-Length */
+    written = snprintf(buffer, buffer_size, "Content-Length: %zu\r\n", content_length);
+    if (written < 0 || (size_t)written >= buffer_size)
+    {
+        return -1;
+    }
+
+    /* Add ETag and Cache-Control if ETag is provided */
+    if (etag)
+    {
+        int etag_written = snprintf(buffer + written, buffer_size - written,
+                                    "ETag: \"%s\"\r\n"
+                                    "Cache-Control: no-cache\r\n",
+                                    etag);
+        if (etag_written < 0 || (size_t)(written + etag_written) >= buffer_size)
+        {
+            return -1;
+        }
+        written += etag_written;
+    }
+
+    /* Add any additional headers */
+    if (additional_headers && additional_headers[0] != '\0')
+    {
+        int add_written = snprintf(buffer + written, buffer_size - written,
+                                   "%s\r\n", additional_headers);
+        if (add_written < 0 || (size_t)(written + add_written) >= buffer_size)
+        {
+            return -1;
+        }
+        written += add_written;
+    }
+
+    return written;
 }

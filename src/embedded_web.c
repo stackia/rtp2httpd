@@ -98,82 +98,6 @@ static const embedded_file_t *find_embedded_file(const char *path)
 }
 
 /**
- * Check if ETag matches
- * @param if_none_match The If-None-Match header value
- * @param etag The current ETag value
- * @return 1 if matches, 0 otherwise
- */
-static int etag_matches(const char *if_none_match, const char *etag)
-{
-  if (!if_none_match || !if_none_match[0] || !etag)
-    return 0;
-
-  /* Check for wildcard */
-  if (if_none_match[0] == '*' && if_none_match[1] == '\0')
-    return 1;
-
-  /* Parse comma-separated ETag list */
-  const char *p = if_none_match;
-  size_t etag_len = strlen(etag);
-
-  while (*p)
-  {
-    /* Skip whitespace and commas */
-    while (*p == ' ' || *p == '\t' || *p == ',')
-      p++;
-
-    if (*p == '\0')
-      break;
-
-    const char *token_start = p;
-    while (*p && *p != ',')
-      p++;
-    const char *token_end = p;
-
-    /* Trim trailing whitespace */
-    while (token_end > token_start && (token_end[-1] == ' ' || token_end[-1] == '\t'))
-      token_end--;
-
-    size_t token_len = (size_t)(token_end - token_start);
-    if (token_len == 0)
-      continue;
-
-    /* Check for wildcard */
-    if (token_len == 1 && token_start[0] == '*')
-      return 1;
-
-    const char *candidate = token_start;
-    size_t candidate_len = token_len;
-
-    /* Handle weak ETags (W/) */
-    if (candidate_len > 2 && candidate[0] == 'W' && candidate[1] == '/')
-    {
-      candidate += 2;
-      candidate_len -= 2;
-
-      while (candidate_len > 0 && (*candidate == ' ' || *candidate == '\t'))
-      {
-        candidate++;
-        candidate_len--;
-      }
-    }
-
-    /* Remove surrounding quotes from ETag if present */
-    if (candidate_len > 2 && candidate[0] == '"' && candidate[candidate_len - 1] == '"')
-    {
-      candidate++;
-      candidate_len -= 2;
-    }
-
-    /* Compare ETags */
-    if (candidate_len == etag_len && strncmp(candidate, etag, etag_len) == 0)
-      return 1;
-  }
-
-  return 0;
-}
-
-/**
  * Handle embedded static file request
  * @param c The connection
  * @param path The requested path
@@ -203,37 +127,23 @@ void handle_embedded_file(connection_t *c, const char *path)
              file->size);
 
     send_http_headers(c, STATUS_200, file->mime_type, extra_headers);
-    connection_queue_output_and_flush(c, file->data, file->size);
+    connection_queue_output_and_flush(c, file->data, file->size, 1);
   }
   else
   {
     /* Non-hashed files (e.g., HTML): use ETag-based negotiation caching */
 
-    /* Check If-None-Match header for cache validation */
-    if (file->etag && etag_matches(c->http_req.if_none_match, file->etag))
+    /* Check ETag and send 304 if it matches */
+    if (http_check_etag_and_send_304(c, file->etag, file->mime_type))
     {
-      /* Client has valid cached version - return 304 Not Modified */
-      snprintf(extra_headers, sizeof(extra_headers),
-               "ETag: \"%s\"\r\n"
-               "Content-Length: 0\r\n"
-               "Cache-Control: no-cache\r\n",
-               file->etag);
-
-      send_http_headers(c, STATUS_304, file->mime_type, extra_headers);
-      connection_queue_output_and_flush(c, NULL, 0);
       return;
     }
 
     /* Send file with ETag for future cache validation */
-    snprintf(extra_headers, sizeof(extra_headers),
-             "Content-Encoding: gzip\r\n"
-             "Content-Length: %zu\r\n"
-             "ETag: \"%s\"\r\n"
-             "Cache-Control: no-cache\r\n",
-             file->size,
-             file->etag ? file->etag : "");
+    http_build_etag_headers(extra_headers, sizeof(extra_headers), file->size, file->etag,
+                            "Content-Encoding: gzip");
 
     send_http_headers(c, STATUS_200, file->mime_type, extra_headers);
-    connection_queue_output_and_flush(c, file->data, file->size);
+    connection_queue_output_and_flush(c, file->data, file->size, 1);
   }
 }

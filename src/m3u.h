@@ -27,6 +27,11 @@ int m3u_is_header(const char *line);
  */
 const char *m3u_get_transformed_playlist(void);
 
+/* Get the ETag for the current transformed M3U playlist
+ * Returns: ETag string (static buffer), or NULL if no playlist
+ */
+const char *m3u_get_etag(void);
+
 /* Reset the transformed M3U playlist buffer
  * Called when configuration is reloaded
  */

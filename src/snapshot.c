@@ -518,7 +518,6 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
 
                     /* File descriptor ownership transferred to queue, don't close it here */
                     logger(LOG_INFO, "Snapshot: Sent JPEG response (%zu bytes)", jpeg_size);
-                    conn->state = CONN_CLOSING;
                 }
                 else
                 {
