@@ -22,7 +22,7 @@
 #include "connection.h"
 #include "http.h"
 #include "zerocopy.h"
-#include "status_page.h"
+#include "embedded_web.h"
 
 /* Helper: escape JSON string into out buffer */
 static void json_escape_string(const char *in, char *out, size_t out_sz)
@@ -832,7 +832,7 @@ void handle_disconnect_client(connection_t *c)
 
   if (!status_shared)
   {
-    send_http_headers(c, STATUS_503, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_503, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Status system not initialized\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -842,7 +842,7 @@ void handle_disconnect_client(connection_t *c)
   /* Check HTTP method */
   if (strcasecmp(c->http_req.method, "POST") != 0 && strcasecmp(c->http_req.method, "DELETE") != 0)
   {
-    send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Method not allowed. Use POST or DELETE\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -854,7 +854,7 @@ void handle_disconnect_client(connection_t *c)
   {
     if (http_parse_query_param(c->http_req.body, "client_id", client_id_str, sizeof(client_id_str)) != 0)
     {
-      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+      send_http_headers(c, STATUS_400, "application/json", NULL);
       snprintf(response, sizeof(response),
                "{\"success\":false,\"error\":\"Missing 'client_id' parameter in request body\"}");
       connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -863,7 +863,7 @@ void handle_disconnect_client(connection_t *c)
   }
   else
   {
-    send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Missing request body\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -873,7 +873,7 @@ void handle_disconnect_client(connection_t *c)
   /* Validate client_id is not empty */
   if (client_id_str[0] == '\0')
   {
-    send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Empty client_id\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -901,7 +901,7 @@ void handle_disconnect_client(connection_t *c)
     }
   }
 
-  send_http_headers(c, STATUS_200, CONTENT_HTML, NULL);
+  send_http_headers(c, STATUS_200, "application/json", NULL);
 
   if (found)
   {
@@ -930,7 +930,7 @@ void handle_set_log_level(connection_t *c)
   /* Check HTTP method */
   if (strcasecmp(c->http_req.method, "PUT") != 0 && strcasecmp(c->http_req.method, "PATCH") != 0)
   {
-    send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Method not allowed. Use PUT or PATCH\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -942,7 +942,7 @@ void handle_set_log_level(connection_t *c)
   {
     if (http_parse_query_param(c->http_req.body, "level", level_str, sizeof(level_str)) != 0)
     {
-      send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+      send_http_headers(c, STATUS_400, "application/json", NULL);
       snprintf(response, sizeof(response),
                "{\"success\":false,\"error\":\"Missing 'level' parameter in request body\"}");
       connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -951,7 +951,7 @@ void handle_set_log_level(connection_t *c)
   }
   else
   {
-    send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Missing request body\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -962,7 +962,7 @@ void handle_set_log_level(connection_t *c)
 
   if (new_level < LOG_FATAL || new_level > LOG_DEBUG)
   {
-    send_http_headers(c, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Invalid log level (must be 0-4)\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -975,138 +975,12 @@ void handle_set_log_level(connection_t *c)
     status_shared->current_log_level = new_level;
   }
   config.verbosity = new_level;
-  send_http_headers(c, STATUS_200, CONTENT_HTML, NULL);
+  send_http_headers(c, STATUS_200, "application/json", NULL);
 
   snprintf(response, sizeof(response),
            "{\"success\":true,\"message\":\"Log level changed to %s\"}",
            status_get_log_level_name(new_level));
   connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
-}
-
-static int status_if_none_match_matches(const char *header)
-{
-  if (!header || !header[0])
-    return 0;
-
-  if (header[0] == '*' && header[1] == '\0')
-    return 1;
-
-  const char *p = header;
-  size_t etag_len = strlen(status_page_etag);
-
-  while (*p)
-  {
-    while (*p == ' ' || *p == '\t' || *p == ',')
-      p++;
-
-    if (*p == '\0')
-      break;
-
-    const char *token_start = p;
-    while (*p && *p != ',')
-      p++;
-    const char *token_end = p;
-
-    while (token_end > token_start && (token_end[-1] == ' ' || token_end[-1] == '\t'))
-      token_end--;
-
-    size_t token_len = (size_t)(token_end - token_start);
-    if (token_len == 0)
-      continue;
-
-    if (token_len == 1 && token_start[0] == '*')
-      return 1;
-
-    const char *candidate = token_start;
-    size_t candidate_len = token_len;
-
-    if (candidate_len > 2 && candidate[0] == 'W' && candidate[1] == '/')
-    {
-      candidate += 2;
-      candidate_len -= 2;
-
-      while (candidate_len > 0 && (*candidate == ' ' || *candidate == '\t'))
-      {
-        candidate++;
-        candidate_len--;
-      }
-    }
-
-    if (candidate_len == etag_len &&
-        strncmp(candidate, status_page_etag, etag_len) == 0)
-      return 1;
-  }
-
-  return 0;
-}
-
-/**
- * Handle HTTP request for status page
- */
-void handle_status_page(connection_t *c)
-{
-  if (!c)
-    return;
-
-  char extra_headers[192];
-  size_t body_len = sizeof(status_page_html);
-
-  if (status_if_none_match_matches(c->http_req.if_none_match))
-  {
-    snprintf(extra_headers, sizeof(extra_headers),
-             "ETag: %s\r\n"
-             "Content-Length: 0\r\n",
-             status_page_etag);
-    send_http_headers(c, STATUS_304, CONTENT_HTML, extra_headers);
-    connection_queue_output_and_flush(c, NULL, 0);
-    return;
-  }
-
-  snprintf(extra_headers, sizeof(extra_headers),
-           "Content-Encoding: gzip\r\n"
-           "Content-Length: %zu\r\n"
-           "ETag: %s\r\n",
-           body_len,
-           status_page_etag);
-
-  send_http_headers(c, STATUS_200, CONTENT_HTML, extra_headers);
-  connection_queue_output_and_flush(c, status_page_html, body_len);
-}
-
-/**
- * Handle HTTP request for player page
- */
-void handle_player_page(connection_t *c)
-{
-#include "player_page.h"
-
-  if (!c)
-    return;
-
-  char extra_headers[192];
-  size_t body_len = sizeof(player_page_html);
-
-  /* Check If-None-Match for player page - use same helper with different etag */
-  if (c->http_req.if_none_match[0] != '\0' &&
-      strcmp(c->http_req.if_none_match, player_page_etag) == 0)
-  {
-    snprintf(extra_headers, sizeof(extra_headers),
-             "ETag: %s\r\n"
-             "Content-Length: 0\r\n",
-             player_page_etag);
-    send_http_headers(c, STATUS_304, CONTENT_HTML, extra_headers);
-    connection_queue_output_and_flush(c, NULL, 0);
-    return;
-  }
-
-  snprintf(extra_headers, sizeof(extra_headers),
-           "Content-Encoding: gzip\r\n"
-           "ETag: %s\r\n"
-           "Content-Length: %zu\r\n",
-           player_page_etag, body_len);
-
-  send_http_headers(c, STATUS_200, CONTENT_HTML, extra_headers);
-  connection_queue_output_and_flush(c, player_page_html, body_len);
 }
 
 /**
@@ -1119,7 +993,7 @@ int status_handle_sse_init(connection_t *c)
     return -1;
 
   /* Send SSE headers */
-  send_http_headers(c, STATUS_200, CONTENT_SSE, NULL);
+  send_http_headers(c, STATUS_200, "text/event-stream", NULL);
 
   c->sse_active = 1;
   c->sse_sent_initial = 0;

@@ -36,7 +36,7 @@ build-*-static/
 
 # Toolchain directory (auto-downloaded)
 toolchain/
-# Web UI build artifacts
+
+# Web UI
 web-ui/node_modules/
-web-ui/dist-player/
-web-ui/dist-status/
+web-ui/dist/

@@ -506,7 +506,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
                     snprintf(content_length_header, sizeof(content_length_header),
                              "Content-Length: %zu\r\n", jpeg_size);
 
-                    send_http_headers(conn, STATUS_200, CONTENT_JPEG, content_length_header);
+                    send_http_headers(conn, STATUS_200, "image/jpeg", content_length_header);
 
                     /* Queue JPEG file for non-blocking sendfile() */
                     if (connection_queue_file(conn, jpeg_fd, 0, jpeg_size) < 0)
@@ -566,7 +566,7 @@ void snapshot_fallback_to_streaming(snapshot_context_t *ctx, connection_t *conn)
     logger(LOG_INFO, "Snapshot: Falling back to normal streaming");
 
     /* Send normal streaming headers */
-    send_http_headers(conn, STATUS_200, CONTENT_MP2T, NULL);
+    send_http_headers(conn, STATUS_200, "video/mp2t", NULL);
 
     /* Free snapshot context */
     snapshot_free(ctx);

@@ -27,17 +27,7 @@ static const char *response_codes[] = {
     "HTTP/1.1 304 Not Modified\r\n",          /* 7 */
 };
 
-static const char *content_types[] = {
-    "Content-Type: application/octet-stream\r\n", /* 0 */
-    "Content-Type: text/html; charset=utf-8\r\n", /* 1 */
-    "Content-Type: video/mpeg\r\n",               /* 2 */
-    "Content-Type: audio/mpeg\r\n",               /* 3 */
-    "Content-Type: video/mp2t\r\n",               /* 4 */
-    "Content-Type: text/event-stream\r\n",        /* 5 */
-    "Content-Type: image/jpeg\r\n"                /* 6 */
-};
-
-void send_http_headers(connection_t *c, http_status_t status, content_type_t type, const char *extra_headers)
+void send_http_headers(connection_t *c, http_status_t status, const char *content_type, const char *extra_headers)
 {
     char headers[2048];
     int len = 0;
@@ -46,14 +36,14 @@ void send_http_headers(connection_t *c, http_status_t status, content_type_t typ
     /* Status line */
     len += snprintf(headers + len, sizeof(headers) - len, "%s", response_codes[status]);
 
-    /* Content-Type (skip for 304 responses which have no body) */
-    if (status != STATUS_304)
+    /* Content-Type (skip for 304 responses which have no body, or if NULL) */
+    if (status != STATUS_304 && content_type && content_type[0])
     {
-        len += snprintf(headers + len, sizeof(headers) - len, "%s", content_types[type]);
+        len += snprintf(headers + len, sizeof(headers) - len, "Content-Type: %s\r\n", content_type);
     }
 
     /* Connection header */
-    if (type == CONTENT_SSE)
+    if (content_type && strcmp(content_type, "text/event-stream") == 0)
     {
         /* SSE needs keep-alive and cache control */
         len += snprintf(headers + len, sizeof(headers) - len,
@@ -472,7 +462,7 @@ void http_send_400(connection_t *conn)
     static const char body[] = "<!doctype html><title>400</title>Bad Request";
 
     /* Send headers */
-    send_http_headers(conn, STATUS_400, CONTENT_HTML, NULL);
+    send_http_headers(conn, STATUS_400, "text/html; charset=utf-8", NULL);
 
     /* Send body and flush */
     connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
@@ -490,7 +480,7 @@ void http_send_404(connection_t *conn)
     static const char body[] = "<!doctype html><title>404</title>Not Found";
 
     /* Send headers */
-    send_http_headers(conn, STATUS_404, CONTENT_HTML, NULL);
+    send_http_headers(conn, STATUS_404, "text/html; charset=utf-8", NULL);
 
     /* Send body and flush */
     connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
@@ -508,7 +498,7 @@ void http_send_500(connection_t *conn)
     static const char body[] = "<!doctype html><title>500</title>Internal Server Error";
 
     /* Send headers */
-    send_http_headers(conn, STATUS_500, CONTENT_HTML, NULL);
+    send_http_headers(conn, STATUS_500, "text/html; charset=utf-8", NULL);
 
     /* Send body and flush */
     connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
@@ -526,7 +516,7 @@ void http_send_503(connection_t *conn)
     static const char body[] = "<!doctype html><title>503</title>Service Unavailable";
 
     /* Send headers */
-    send_http_headers(conn, STATUS_503, CONTENT_HTML, NULL);
+    send_http_headers(conn, STATUS_503, "text/html; charset=utf-8", NULL);
 
     /* Send body and flush */
     connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
@@ -544,7 +534,7 @@ void http_send_401(connection_t *conn)
     static const char body[] = "<!doctype html><title>401</title>Unauthorized";
 
     /* Send headers with WWW-Authenticate */
-    send_http_headers(conn, STATUS_401, CONTENT_HTML, "WWW-Authenticate: Bearer\r\n");
+    send_http_headers(conn, STATUS_401, "text/html; charset=utf-8", "WWW-Authenticate: Bearer\r\n");
 
     /* Send body and flush */
     connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);

@@ -1,24 +1,18 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import tailwindcss from "@tailwindcss/vite";
-import { viteSingleFile } from "vite-plugin-singlefile";
+import { resolve } from "path";
 
 export default defineConfig(() => {
-  // Determine which page to build based on environment variable
-  const page = process.env.VITE_PAGE || "status";
-  const inputFile = page === "player" ? "player.html" : "status.html";
-
   return {
-    plugins: [react(), tailwindcss(), viteSingleFile()],
+    plugins: [react(), tailwindcss()],
     build: {
       rollupOptions: {
-        input: inputFile,
-        output: {
-          entryFileNames: `[name].js`,
-          assetFileNames: `[name].[ext]`,
+        input: {
+          status: resolve(__dirname, "status.html"),
+          player: resolve(__dirname, "player.html"),
         },
       },
-      outDir: `dist-${page}`,
     },
     server: {
       proxy: {

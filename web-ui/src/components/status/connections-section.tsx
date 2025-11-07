@@ -19,7 +19,6 @@ interface ConnectionsSectionProps {
   onDisconnect: (clientId: string) => void;
 }
 
-
 export function ConnectionsSection({
   clients,
   locale,
