@@ -891,11 +891,8 @@ int connection_route_and_start(connection_t *c)
     c->status_index = -1;
   }
 
-  /* Send success headers (skip for snapshots - will send after JPEG conversion) */
-  if (!is_snapshot_request)
-  {
-    send_http_headers(c, STATUS_200, "video/mp2t", NULL);
-  }
+  /* Headers will be sent lazily when first data is ready (or 503 on timeout) */
+  /* Snapshots send JPEG headers after conversion */
 
   /* Initialize stream in unified epoll (works for both streaming and snapshot) */
   if (stream_context_init_for_worker(&c->stream, c, service, c->epfd, c->status_index, is_snapshot_request) == 0)
@@ -914,6 +911,11 @@ int connection_route_and_start(connection_t *c)
   }
   else
   {
+    /* Stream initialization failed - send 503 if headers not sent yet */
+    if (!c->headers_sent)
+    {
+      http_send_503(c);
+    }
     service_free(service);
     c->state = CONN_CLOSING;
     return -1;
