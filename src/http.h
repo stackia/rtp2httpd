@@ -178,4 +178,29 @@ int http_parse_url_components(const char *url, char *protocol, char *host, char 
  */
 int http_match_host_header(const char *request_host_header, const char *expected_host);
 
+/**
+ * Check ETag and send 304 Not Modified response if it matches
+ * This is a helper function to reduce code duplication for ETag-based caching.
+ *
+ * @param c Connection object
+ * @param etag Server's current ETag value (NULL if no ETag available)
+ * @param content_type Content-Type header value (can be NULL)
+ * @return 1 if 304 was sent (ETag matched), 0 if content should be sent (no match or no ETag)
+ */
+int http_check_etag_and_send_304(connection_t *c, const char *etag, const char *content_type);
+
+/**
+ * Build extra headers string with ETag and Cache-Control
+ * Helper function to format standard ETag caching headers with optional additional headers.
+ *
+ * @param buffer Output buffer for headers
+ * @param buffer_size Size of output buffer
+ * @param content_length Content length to include in headers
+ * @param etag ETag value (can be NULL if no ETag)
+ * @param additional_headers Optional additional headers (can be NULL), should NOT end with CRLF
+ * @return Number of characters written to buffer
+ */
+int http_build_etag_headers(char *buffer, size_t buffer_size, size_t content_length,
+                            const char *etag, const char *additional_headers);
+
 #endif /* __HTTP_H__ */

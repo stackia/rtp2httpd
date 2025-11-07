@@ -214,3 +214,19 @@ void md5String(char *input, uint8_t *result)
 
   memcpy(result, ctx.digest, 16);
 }
+
+/*
+ * Convert MD5 digest (16 bytes) to hex string (32 chars + null terminator)
+ * output must be able to store at least 33 bytes
+ */
+void md5_to_hex(const uint8_t *digest, char *output)
+{
+  static const char hex_chars[] = "0123456789abcdef";
+
+  for (int i = 0; i < 16; i++)
+  {
+    output[i * 2] = hex_chars[(digest[i] >> 4) & 0x0F];
+    output[i * 2 + 1] = hex_chars[digest[i] & 0x0F];
+  }
+  output[32] = '\0';
+}

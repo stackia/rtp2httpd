@@ -13,6 +13,8 @@ typedef struct
     int is_gzipped;         /* 1 if data is gzip compressed (based on URL), 0 otherwise */
     time_t last_fetch;      /* Timestamp of last successful fetch */
     int fetch_error_count;  /* Number of consecutive fetch errors */
+    char etag[33];          /* MD5 hash of EPG data as hex string (for HTTP ETag caching) */
+    int etag_valid;         /* 1 if etag is valid, 0 otherwise */
 } epg_cache_t;
 
 /* Initialize EPG cache
@@ -83,5 +85,10 @@ void epg_reset(void);
  * Returns: 1 if URL ends with .gz, 0 otherwise
  */
 int epg_url_is_gzipped(const char *url);
+
+/* Get the ETag for the current cached EPG data
+ * Returns: ETag string, or NULL if no data available
+ */
+const char *epg_get_etag(void);
 
 #endif /* __EPG_H__ */

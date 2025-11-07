@@ -835,7 +835,7 @@ void handle_disconnect_client(connection_t *c)
     send_http_headers(c, STATUS_503, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Status system not initialized\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
     return;
   }
 
@@ -845,7 +845,7 @@ void handle_disconnect_client(connection_t *c)
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Method not allowed. Use POST or DELETE\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
     return;
   }
 
@@ -857,7 +857,7 @@ void handle_disconnect_client(connection_t *c)
       send_http_headers(c, STATUS_400, "application/json", NULL);
       snprintf(response, sizeof(response),
                "{\"success\":false,\"error\":\"Missing 'client_id' parameter in request body\"}");
-      connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+      connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
       return;
     }
   }
@@ -866,7 +866,7 @@ void handle_disconnect_client(connection_t *c)
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Missing request body\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
     return;
   }
 
@@ -876,7 +876,7 @@ void handle_disconnect_client(connection_t *c)
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Empty client_id\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
     return;
   }
 
@@ -914,7 +914,7 @@ void handle_disconnect_client(connection_t *c)
              "{\"success\":false,\"error\":\"Client not found or already disconnected\"}");
   }
 
-  connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+  connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
 }
 
 /**
@@ -933,7 +933,7 @@ void handle_set_log_level(connection_t *c)
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Method not allowed. Use PUT or PATCH\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
     return;
   }
 
@@ -945,7 +945,7 @@ void handle_set_log_level(connection_t *c)
       send_http_headers(c, STATUS_400, "application/json", NULL);
       snprintf(response, sizeof(response),
                "{\"success\":false,\"error\":\"Missing 'level' parameter in request body\"}");
-      connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+      connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
       return;
     }
   }
@@ -954,7 +954,7 @@ void handle_set_log_level(connection_t *c)
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Missing request body\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
     return;
   }
 
@@ -965,7 +965,7 @@ void handle_set_log_level(connection_t *c)
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Invalid log level (must be 0-4)\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
     return;
   }
 
@@ -980,7 +980,7 @@ void handle_set_log_level(connection_t *c)
   snprintf(response, sizeof(response),
            "{\"success\":true,\"message\":\"Log level changed to %s\"}",
            status_get_log_level_name(new_level));
-  connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+  connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
 }
 
 /**
@@ -1010,7 +1010,7 @@ int status_handle_sse_init(connection_t *c)
 
   if (len > 0)
   {
-    connection_queue_output_and_flush(c, (const uint8_t *)tmp, (size_t)len);
+    connection_queue_output_and_flush(c, (const uint8_t *)tmp, (size_t)len, 0);
   }
 
   c->state = CONN_SSE;
@@ -1045,7 +1045,7 @@ int status_handle_sse_notification(connection_t *conn_head)
 
     if (len > 0)
     {
-      if (connection_queue_output_and_flush(cc, (const uint8_t *)tmp, (size_t)len) == 0)
+      if (connection_queue_output_and_flush(cc, (const uint8_t *)tmp, (size_t)len, 0) == 0)
       {
         updated_count++;
       }

@@ -158,9 +158,10 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len);
  * @param c Connection
  * @param data Data to send
  * @param len Length of data
+ * @param set_closing If non-zero, set connection state to CONN_CLOSING after queueing
  * @return 0 on success, -1 if buffer full
  */
-int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len);
+int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len, int set_closing);
 
 /**
  * Queue data for zero-copy send (no memcpy)
