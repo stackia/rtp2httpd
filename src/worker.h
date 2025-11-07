@@ -4,18 +4,11 @@
 #include "connection.h"
 
 /**
- * fd -> connection map to avoid O(N) scans
+ * fd -> connection map using hashmap for O(1) lookups
  */
-#define FD_MAP_SIZE 16384 /* power of two */
-
-typedef struct
-{
-  int fd;
-  connection_t *conn;
-} fdmap_entry_t;
 
 /**
- * Initialize the fd map
+ * Initialize the fd map (hashmap-based)
  */
 void fdmap_init(void);
 
@@ -38,6 +31,11 @@ connection_t *fdmap_get(int fd);
  * @param fd File descriptor
  */
 void fdmap_del(int fd);
+
+/**
+ * Cleanup and free the fd map (call on worker exit)
+ */
+void fdmap_cleanup(void);
 
 /**
  * Run the worker event loop

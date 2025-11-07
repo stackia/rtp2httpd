@@ -23,7 +23,9 @@ rtp2httpd_SOURCES = \
 	zerocopy.c \
 	m3u.c \
 	epg.c \
-	md5.c
+	md5.c \
+	hashmap.c \
+	embedded_web.c
 
 # Private headers (not installed)
 noinst_HEADERS = \
@@ -40,15 +42,16 @@ noinst_HEADERS = \
 	snapshot.h \
 	timezone.h \
 	status.h \
-	status_page.h \
-	player_page.h \
 	connection.h \
 	worker.h \
 	buffer_pool.h \
 	zerocopy.h \
 	m3u.h \
 	epg.h \
-	md5.h
+	md5.h \
+	hashmap.h \
+	embedded_web.h \
+	embedded_web_data.h
 
 # Compiler flags
 AM_CPPFLAGS = -DSYSCONFDIR=\"@sysconfdir@\"

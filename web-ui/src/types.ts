@@ -66,10 +66,10 @@ export enum ClientState {
 }
 
 export interface ClientEntry {
-  clientId: string; /* Format: "IP:port-workerN-seqM" */
+  clientId: string /* Format: "IP:port-workerN-seqM" */;
   workerPid: number;
   durationMs: number;
-  clientAddr: string; /* Format: "IP:port" or "[IPv6]:port" */
+  clientAddr: string /* Format: "IP:port" or "[IPv6]:port" */;
   serviceUrl: string;
   state: ClientState;
   bytesSent: number;

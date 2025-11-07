@@ -78,16 +78,16 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req);
 
 /**
  * Send HTTP response headers via connection output buffer
- * For SSE (Server-Sent Events), use CONTENT_SSE type which includes
+ * For SSE (Server-Sent Events), pass "text/event-stream" as content_type which includes
  * Cache-Control and Connection headers automatically.
  *
  * @param c Connection object
  * @param status Status code
- * @param type Content type
+ * @param content_type Content-Type header value (e.g., "text/html; charset=utf-8", "application/json", or NULL to skip)
  * @param extra_headers Optional extra headers to include (NULL or empty string if none)
  *                      Should NOT include trailing CRLF as it will be added automatically
  */
-void send_http_headers(connection_t *c, http_status_t status, content_type_t type, const char *extra_headers);
+void send_http_headers(connection_t *c, http_status_t status, const char *content_type, const char *extra_headers);
 
 /**
  * Decode percent-encoded sequences in-place within a URL component

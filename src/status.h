@@ -242,20 +242,6 @@ void status_update_client_queue(int status_index,
 void status_add_log_entry(enum loglevel level, const char *message);
 
 /**
- * Handle HTTP request for status page
- * Serves the HTML/CSS/JavaScript status page
- * @param c Connection object
- */
-void handle_status_page(connection_t *c);
-
-/**
- * Handle HTTP request for player page
- * Serves the HTML/CSS/JavaScript player page
- * @param c Connection object
- */
-void handle_player_page(connection_t *c);
-
-/**
  * Handle API request to disconnect a client
  * RESTful: POST/DELETE <status-path>/api/disconnect with form data body "client_id=IP:port-workerN-seqM"
  * Sets disconnect flag in shared memory and notifies worker to close connection

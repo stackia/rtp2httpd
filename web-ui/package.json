@@ -5,10 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run build:status && npm run build:player && npm run embed",
-    "build:status": "VITE_PAGE=status vite build",
-    "build:player": "VITE_PAGE=player vite build",
-    "embed": "node ../scripts/embed-page.js status dist-status/status.html ../src/status_page.h && node ../scripts/embed-page.js player dist-player/player.html ../src/player_page.h",
+    "build": "vite build && node ../scripts/embed-dist.js dist ../src/embedded_web_data.h",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write ."

@@ -11,6 +11,7 @@
 #include "zerocopy.h"
 #include "configuration.h"
 #include "http_fetch.h"
+#include "hashmap.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -20,8 +21,15 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
-/* fd -> connection map */
-static fdmap_entry_t fd_map[FD_MAP_SIZE];
+/* fd -> connection map entry */
+typedef struct
+{
+  int fd;
+  connection_t *conn;
+} fdmap_entry_t;
+
+/* fd -> connection map (hashmap-based for O(1) lookups) */
+static struct hashmap *fd_map = NULL;
 
 /* Connection list head */
 static connection_t *conn_head = NULL;
@@ -31,62 +39,98 @@ static volatile sig_atomic_t stop_flag = 0;
 
 #define WORKER_MAX_WRITE_BATCH 128
 
-static inline unsigned fd_hash(int fd) { return (unsigned)fd & (FD_MAP_SIZE - 1); }
+/**
+ * Hash function for file descriptors
+ */
+static uint64_t hash_fd(const void *item, uint64_t seed0, uint64_t seed1)
+{
+  const fdmap_entry_t *entry = item;
+  return hashmap_xxhash3(&entry->fd, sizeof(int), seed0, seed1);
+}
 
+/**
+ * Compare function for file descriptors
+ */
+static int compare_fds(const void *a, const void *b, void *udata)
+{
+  const fdmap_entry_t *ea = a;
+  const fdmap_entry_t *eb = b;
+  (void)udata; /* unused */
+  return ea->fd - eb->fd;
+}
+
+/**
+ * Initialize the fd map (hashmap-based)
+ */
 void fdmap_init(void)
 {
-  memset(fd_map, 0, sizeof(fd_map));
+  if (fd_map)
+    hashmap_free(fd_map);
+
+  /* Create hashmap with initial capacity of 16384 (same as old FD_MAP_SIZE) */
+  fd_map = hashmap_new(
+      sizeof(fdmap_entry_t), /* element size */
+      16384,                  /* initial capacity */
+      0, 0,                   /* seeds (use default) */
+      hash_fd,                /* hash function */
+      compare_fds,            /* compare function */
+      NULL,                   /* no element free function */
+      NULL                    /* no udata */
+  );
+
+  if (!fd_map)
+  {
+    logger(LOG_FATAL, "Failed to create fd map hashmap");
+    exit(1);
+  }
 }
 
+/**
+ * Set fd -> connection mapping
+ */
 void fdmap_set(int fd, connection_t *c)
 {
-  if (fd < 0)
+  if (fd < 0 || !fd_map)
     return;
-  unsigned idx = fd_hash(fd);
-  for (unsigned n = 0; n < FD_MAP_SIZE; n++)
-  {
-    unsigned i = (idx + n) & (FD_MAP_SIZE - 1);
-    if (fd_map[i].conn == NULL || fd_map[i].fd == fd)
-    {
-      fd_map[i].fd = fd;
-      fd_map[i].conn = c;
-      return;
-    }
-  }
+
+  fdmap_entry_t entry = {.fd = fd, .conn = c};
+  hashmap_set(fd_map, &entry);
 }
 
+/**
+ * Get connection by fd
+ */
 connection_t *fdmap_get(int fd)
 {
-  if (fd < 0)
+  if (fd < 0 || !fd_map)
     return NULL;
-  unsigned idx = fd_hash(fd);
-  for (unsigned n = 0; n < FD_MAP_SIZE; n++)
-  {
-    unsigned i = (idx + n) & (FD_MAP_SIZE - 1);
-    if (fd_map[i].conn == NULL)
-      return NULL;
-    if (fd_map[i].fd == fd)
-      return fd_map[i].conn;
-  }
-  return NULL;
+
+  fdmap_entry_t key = {.fd = fd};
+  const fdmap_entry_t *entry = hashmap_get(fd_map, &key);
+  return entry ? entry->conn : NULL;
 }
 
+/**
+ * Delete fd from map
+ */
 void fdmap_del(int fd)
 {
-  if (fd < 0)
+  if (fd < 0 || !fd_map)
     return;
-  unsigned idx = fd_hash(fd);
-  for (unsigned n = 0; n < FD_MAP_SIZE; n++)
+
+  fdmap_entry_t key = {.fd = fd};
+  hashmap_delete(fd_map, &key);
+}
+
+/**
+ * Cleanup and free the fd map
+ */
+void fdmap_cleanup(void)
+{
+  if (fd_map)
   {
-    unsigned i = (idx + n) & (FD_MAP_SIZE - 1);
-    if (fd_map[i].conn == NULL)
-      return;
-    if (fd_map[i].fd == fd)
-    {
-      fd_map[i].conn = NULL;
-      fd_map[i].fd = -1;
-      return;
-    }
+    hashmap_free(fd_map);
+    fd_map = NULL;
   }
 }
 

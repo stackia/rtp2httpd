@@ -12,6 +12,7 @@
 #include "zerocopy.h"
 #include "m3u.h"
 #include "epg.h"
+#include "embedded_web.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -549,6 +550,24 @@ int connection_route_and_start(connection_t *c)
   const char *query_start = strchr(service_path, '?');
   size_t path_len = query_start ? (size_t)(query_start - service_path) : strlen(service_path);
 
+  /* Adjust path_len to exclude trailing slash */
+  if (path_len > 0 && service_path[path_len - 1] == '/')
+    path_len--;
+
+  /* Handle static assets first (bypass r2h-token validation for /assets/) */
+  const char *assets_prefix = "assets/";
+  size_t assets_prefix_len = strlen(assets_prefix);
+  if (path_len >= assets_prefix_len &&
+      strncmp(service_path, assets_prefix, assets_prefix_len) == 0)
+  {
+    /* Reconstruct full path with leading slash */
+    char asset_path[HTTP_URL_BUFFER_SIZE];
+    snprintf(asset_path, sizeof(asset_path), "/%.*s", (int)path_len, service_path);
+    handle_embedded_file(c, asset_path);
+    c->state = CONN_CLOSING;
+    return 0;
+  }
+
   /* Check r2h-token if configured */
   if (config.r2h_token != NULL && config.r2h_token[0] != '\0')
   {
@@ -579,10 +598,6 @@ int connection_route_and_start(connection_t *c)
     logger(LOG_DEBUG, "r2h-token validated");
   }
 
-  /* Adjust path_len to exclude trailing slash */
-  if (path_len > 0 && service_path[path_len - 1] == '/')
-    path_len--;
-
   const char *status_route = config.status_page_route ? config.status_page_route : "status";
   size_t status_route_len = strlen(status_route);
   char status_sse_route[HTTP_URL_BUFFER_SIZE];
@@ -603,7 +618,7 @@ int connection_route_and_start(connection_t *c)
 
   if (status_route_len == path_len && strncmp(service_path, status_route, path_len) == 0)
   {
-    handle_status_page(c);
+    handle_embedded_file(c, "/status.html");
     c->state = CONN_CLOSING;
     return 0;
   }
@@ -613,7 +628,7 @@ int connection_route_and_start(connection_t *c)
   size_t player_route_len = strlen(player_route);
   if (player_route_len == path_len && strncmp(service_path, player_route, path_len) == 0)
   {
-    handle_player_page(c);
+    handle_embedded_file(c, "/player.html");
     c->state = CONN_CLOSING;
     return 0;
   }
@@ -741,7 +756,7 @@ int connection_route_and_start(connection_t *c)
   if (strcasecmp(c->http_req.method, "HEAD") == 0)
   {
     logger(LOG_INFO, "HEAD request detected, returning success without upstream connection", url);
-    send_http_headers(c, STATUS_200, CONTENT_MP2T, NULL);
+    send_http_headers(c, STATUS_200, "video/mp2t", NULL);
     connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
     service_free(service);
     c->state = CONN_CLOSING;
@@ -879,7 +894,7 @@ int connection_route_and_start(connection_t *c)
 
   /* Send success headers (skip for snapshots - will send after JPEG conversion) */
   if (!is_snapshot_request)
-    send_http_headers(c, STATUS_200, CONTENT_MP2T, NULL);
+    send_http_headers(c, STATUS_200, "video/mp2t", NULL);
 
   /* Initialize stream in unified epoll (works for both streaming and snapshot) */
   if (stream_context_init_for_worker(&c->stream, c, service, c->epfd, c->status_index, is_snapshot_request) == 0)
@@ -996,7 +1011,6 @@ static void handle_playlist_request(connection_t *c)
   if (server_addr)
   {
     snprintf(extra_headers, sizeof(extra_headers),
-             "Content-Type: audio/x-mpegurl\r\n"
              "Content-Length: %zu\r\n"
              "X-Server-Address: %s\r\n",
              playlist_len, server_addr);
@@ -1005,12 +1019,11 @@ static void handle_playlist_request(connection_t *c)
   else
   {
     snprintf(extra_headers, sizeof(extra_headers),
-             "Content-Type: audio/x-mpegurl\r\n"
              "Content-Length: %zu\r\n",
              playlist_len);
   }
 
-  send_http_headers(c, STATUS_200, CONTENT_HTML, extra_headers);
+  send_http_headers(c, STATUS_200, "audio/x-mpegurl", extra_headers);
   connection_queue_output_and_flush(c, (const uint8_t *)playlist, playlist_len);
 }
 
@@ -1036,11 +1049,10 @@ static void handle_epg_request(connection_t *c)
   const char *content_type = is_gzipped ? "application/gzip" : "application/xml";
 
   snprintf(extra_headers, sizeof(extra_headers),
-           "Content-Type: %s\r\n"
            "Content-Length: %zu\r\n",
-           content_type, epg_size);
+           epg_size);
 
-  send_http_headers(c, STATUS_200, CONTENT_HTML, extra_headers);
+  send_http_headers(c, STATUS_200, content_type, extra_headers);
 
   /* Use zero-copy transmission via sendfile
    * Note: epg_fd is owned by EPG cache, so we need to dup it
