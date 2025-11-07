@@ -43,6 +43,7 @@ typedef struct connection_s
   connection_buffer_class_t buffer_class;
   /* HTTP request parser */
   http_request_t http_req;
+  int headers_sent; /* Track whether HTTP response headers have been sent */
   /* service/stream */
   service_t *service;
   stream_context_t stream;

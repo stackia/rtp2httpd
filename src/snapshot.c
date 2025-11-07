@@ -564,8 +564,7 @@ void snapshot_fallback_to_streaming(snapshot_context_t *ctx, connection_t *conn)
 
     logger(LOG_INFO, "Snapshot: Falling back to normal streaming");
 
-    /* Send normal streaming headers */
-    send_http_headers(conn, STATUS_200, "video/mp2t", NULL);
+    /* Headers will be sent lazily when first stream data arrives */
 
     /* Free snapshot context */
     snapshot_free(ctx);

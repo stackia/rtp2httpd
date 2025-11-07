@@ -133,6 +133,12 @@ int rtp_queue_buf(connection_t *conn, buffer_ref_t *buf_ref, uint16_t *old_seqn,
   }
   /* For non-RTP packets (is_rtp == 0), skip sequence number tracking */
 
+  /* Send headers lazily on first data packet */
+  if (!conn->headers_sent)
+  {
+    send_http_headers(conn, STATUS_200, "video/mp2t", NULL);
+  }
+
   /* True zero-copy send - payload is in buffer pool, send directly without memcpy */
   /* Calculate offset of payload in the buffer */
   buf_ref->data_offset = payload - (uint8_t *)buf_ref->data;

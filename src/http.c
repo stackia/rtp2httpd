@@ -66,6 +66,7 @@ void send_http_headers(connection_t *c, http_status_t status, const char *conten
     len += snprintf(headers + len, sizeof(headers) - len, "\r\n");
 
     connection_queue_output(c, (const uint8_t *)headers, len);
+    c->headers_sent = 1;
 }
 
 int http_url_decode(char *str)

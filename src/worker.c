@@ -70,12 +70,12 @@ void fdmap_init(void)
   /* Create hashmap with initial capacity of 16384 (same as old FD_MAP_SIZE) */
   fd_map = hashmap_new(
       sizeof(fdmap_entry_t), /* element size */
-      16384,                  /* initial capacity */
-      0, 0,                   /* seeds (use default) */
-      hash_fd,                /* hash function */
-      compare_fds,            /* compare function */
-      NULL,                   /* no element free function */
-      NULL                    /* no udata */
+      16384,                 /* initial capacity */
+      0, 0,                  /* seeds (use default) */
+      hash_fd,               /* hash function */
+      compare_fds,           /* compare function */
+      NULL,                  /* no element free function */
+      NULL                   /* no udata */
   );
 
   if (!fd_map)
@@ -555,7 +555,16 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
           int res = stream_handle_fd_event(&c->stream, fd_ready, events[e].events, now);
           if (res < 0)
           {
-            worker_close_and_free_connection(c);
+            /* Send 503 if headers not sent yet (no data ever arrived) */
+            if (!c->headers_sent)
+            {
+              http_send_503(c);
+              /* http_send_503 sets CONN_CLOSING, don't force immediate close */
+            }
+            else
+            {
+              worker_close_and_free_connection(c);
+            }
             continue; /* Skip further processing for this connection */
           }
         }
@@ -574,10 +583,19 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
         {
           if (stream_tick(&c->stream, now) < 0)
           {
-            /* Stream timeout or error - close connection */
-            worker_close_and_free_connection(c);
-            c = next;
-            continue;
+            /* Send 503 if headers not sent yet (no data ever arrived) */
+            if (!c->headers_sent)
+            {
+              http_send_503(c);
+              /* http_send_503 sets CONN_CLOSING, don't force immediate close */
+            }
+            else
+            {
+              /* Stream timeout or error - close connection */
+              worker_close_and_free_connection(c);
+              c = next;
+              continue;
+            }
           }
         }
         status_handle_sse_heartbeat(c, now);
