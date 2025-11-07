@@ -381,18 +381,21 @@ void parse_global_sec(char *line)
   char *param, *value;
   char *ind;
 
-  j = i = 0;
-  while (!isspace(line[j]))
-    j++;
-  param = strndupa(line, j);
-
-  ind = index(line + j, '=');
+  /* Find the '=' sign first */
+  ind = index(line, '=');
   if (ind == NULL)
   {
     logger(LOG_ERROR, "Unrecognised config line: %s", line);
     return;
   }
 
+  /* Extract parameter name (from start to '=', trimming trailing whitespace) */
+  j = ind - line;
+  while (j > 0 && isspace(line[j - 1]))
+    j--;
+  param = strndupa(line, j);
+
+  /* Extract value (from '=' to end, trimming leading and trailing whitespace) */
   i = ind - line + 1;
   while (isspace(line[i]))
     i++;
