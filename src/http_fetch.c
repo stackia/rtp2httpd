@@ -198,8 +198,7 @@ static void http_fetch_remove_from_map(http_fetch_ctx_t *ctx)
     /* Remove from hashmap if pipe_fd is valid */
     if (fetch_fd_map && ctx->pipe_fd >= 0)
     {
-        http_fetch_ctx_t *temp_ptr = ctx;
-        hashmap_delete(fetch_fd_map, &temp_ptr);
+        hashmap_delete(fetch_fd_map, &ctx);
     }
 }
 
