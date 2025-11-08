@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect } from "react";
+import React, { useMemo, useRef, useLayoutEffect } from "react";
 import { EPGProgram } from "../../types/player";
 import { EPGData } from "../../lib/epg-parser";
 import { Card } from "../ui/card";
@@ -35,21 +35,9 @@ export function EPGView({
     const programs = epgData[channelId];
     if (!programs || programs.length === 0) return new Map<string, EPGProgram[]>();
 
-    const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
-
-    // Filter programs by date range
-    const filteredPrograms = programs.filter(
-      (p) =>
-        (p.start >= startOfDay && p.start < endOfDay) ||
-        (p.end > startOfDay && p.end <= endOfDay) ||
-        (p.start <= startOfDay && p.end >= endOfDay),
-    );
-
-    // Group by date
+    // Group all available programs by date (no date range filtering)
     const grouped = new Map<string, EPGProgram[]>();
-    filteredPrograms.forEach((program) => {
+    programs.forEach((program) => {
       const dateKey = new Date(
         program.start.getFullYear(),
         program.start.getMonth(),
@@ -67,20 +55,13 @@ export function EPGView({
     if (!channelId) return [];
     const programs = epgData[channelId];
     if (!programs || programs.length === 0) return [];
-    const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
-    return programs.filter(
-      (p) =>
-        (p.start >= startOfDay && p.start < endOfDay) ||
-        (p.end > startOfDay && p.end <= endOfDay) ||
-        (p.start <= startOfDay && p.end >= endOfDay),
-    );
+    // Return all available programs (no date range filtering)
+    return programs;
   }, [channelId, epgData]);
 
   // Auto-scroll to center current/playing program when it changes or channel changes
   // But skip if the change was caused by user clicking on a program
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isUserClickRef.current) {
       // User just clicked, skip auto-scroll
       isUserClickRef.current = false;
@@ -89,7 +70,6 @@ export function EPGView({
 
     if (currentProgramRef.current) {
       currentProgramRef.current.scrollIntoView({
-        behavior: "smooth",
         block: "center",
       });
     }
@@ -147,13 +127,7 @@ export function EPGView({
     return currentPlayingProgram?.id === program.id;
   };
 
-  if (!channelId) {
-    return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">{t("selectChannelPrompt")}</div>
-    );
-  }
-
-  if (channelPrograms.length === 0) {
+  if (!channelId || channelPrograms.length === 0) {
     return <div className="flex h-full items-center justify-center text-muted-foreground">{t("noEpgAvailable")}</div>;
   }
 
