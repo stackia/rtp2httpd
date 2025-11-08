@@ -58,6 +58,7 @@ export function VideoPlayer({
   const [isPlaying, setIsPlaying] = useState(false);
   const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [isPiP, setIsPiP] = useState(false);
   const hideControlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const retryCountRef = useRef<number>(0);
   const isRetryingRef = useRef<boolean>(false);
@@ -462,12 +463,22 @@ export function VideoPlayer({
       }
     };
 
+    const handleEnterPiP = () => {
+      setIsPiP(true);
+    };
+
+    const handleLeavePiP = () => {
+      setIsPiP(false);
+    };
+
     video.addEventListener("canplay", handleCanPlay);
     video.addEventListener("waiting", handleWaiting);
     video.addEventListener("playing", handlePlaying);
     video.addEventListener("pause", handlePause);
     video.addEventListener("timeupdate", handleTimeUpdate);
     video.addEventListener("ended", handleEnded);
+    video.addEventListener("enterpictureinpicture", handleEnterPiP);
+    video.addEventListener("leavepictureinpicture", handleLeavePiP);
 
     return () => {
       video.removeEventListener("canplay", handleCanPlay);
@@ -476,6 +487,8 @@ export function VideoPlayer({
       video.removeEventListener("pause", handlePause);
       video.removeEventListener("timeupdate", handleTimeUpdate);
       video.removeEventListener("ended", handleEnded);
+      video.removeEventListener("enterpictureinpicture", handleEnterPiP);
+      video.removeEventListener("leavepictureinpicture", handleLeavePiP);
 
       // Clear stable playback timer on cleanup
       if (stablePlaybackTimeoutRef.current) {
@@ -522,6 +535,20 @@ export function VideoPlayer({
       onFullscreenToggle();
     }
   }, [onFullscreenToggle]);
+
+  const togglePictureInPicture = useCallback(async () => {
+    if (!videoRef.current) return;
+
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else {
+        await videoRef.current.requestPictureInPicture();
+      }
+    } catch (err) {
+      console.error("Picture-in-Picture error:", err);
+    }
+  }, []);
 
   const handleUserClick = () => {
     if (needsUserInteraction && playerRef.current) {
@@ -650,6 +677,8 @@ export function VideoPlayer({
               onFullscreen={handleFullscreen}
               showSidebar={showSidebar}
               onToggleSidebar={onToggleSidebar}
+              isPiP={isPiP}
+              onPiPToggle={togglePictureInPicture}
             />
           </div>
         )}

@@ -13,6 +13,7 @@
   "dependencies": {
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "lucide-react": "^0.553.0",
     "mpegts.js": "^1.8.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
