@@ -1587,16 +1587,7 @@ void service_hashmap_remove(service_t *service)
         return;
     }
 
-    /* Create a temporary service with the URL to use as search key */
-    service_t key_service;
-    key_service.url = service->url;
-
-    const void *removed = hashmap_delete(service_map, &key_service);
-
-    if (removed == NULL)
-    {
-        logger(LOG_WARN, "Service URL not found in hashmap: %s", service->url);
-    }
+    hashmap_delete(service_map, &service);
 }
 
 service_t *service_hashmap_get(const char *url)
