@@ -8,6 +8,7 @@
 #include <strings.h>
 #include <ctype.h>
 #include <limits.h>
+#include <stdint.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -27,6 +28,9 @@ struct rtp_url_components
     int has_source;
     int has_fcc;
 };
+
+/* Service lookup hashmap for O(1) service lookup by URL */
+static struct hashmap *service_map = NULL;
 
 static int parse_ipv6_address(const char *input, char *addr, size_t addr_size, const char **remainder)
 {
@@ -1464,7 +1468,8 @@ void service_free_external(void)
         /* If this service is from external M3U, remove it */
         if (current->source == SERVICE_SOURCE_EXTERNAL)
         {
-            *current_ptr = current->next; /* Remove from list */
+            *current_ptr = current->next;    /* Remove from list */
+            service_hashmap_remove(current); /* Remove from hashmap */
             service_free(current);
             freed_count++;
         }
@@ -1476,4 +1481,154 @@ void service_free_external(void)
     }
 
     logger(LOG_INFO, "Freed %d external M3U services", freed_count);
+}
+
+/* ========== SERVICE HASHMAP IMPLEMENTATION ========== */
+
+/**
+ * Hash function for service URL
+ * Uses the URL string as the key with xxhash3 for better performance
+ * Note: item is a pointer to service_t* (i.e., service_t**)
+ */
+static uint64_t service_hash(const void *item, uint64_t seed0, uint64_t seed1)
+{
+    const service_t *service = *(const service_t **)item;
+    return hashmap_xxhash3(service->url, strlen(service->url), seed0, seed1);
+}
+
+/**
+ * Compare function for service URL
+ * Compares URL strings
+ * Note: a and b are pointers to service_t* (i.e., service_t**)
+ */
+static int service_compare(const void *a, const void *b, void *udata)
+{
+    const service_t *sa = *(const service_t **)a;
+    const service_t *sb = *(const service_t **)b;
+    (void)udata; /* Unused */
+    return strcmp(sa->url, sb->url);
+}
+
+void service_hashmap_init(void)
+{
+    if (service_map != NULL)
+    {
+        logger(LOG_WARN, "Service hashmap already initialized");
+        return;
+    }
+
+    /* Create hashmap with initial capacity of 64
+     * elsize is sizeof(service_t *) because we store pointers to services
+     * We use random seeds for security
+     */
+    service_map = hashmap_new(sizeof(service_t *), 64, 0, 0,
+                              service_hash, service_compare, NULL, NULL);
+
+    if (service_map == NULL)
+    {
+        logger(LOG_ERROR, "Failed to create service hashmap");
+    }
+    else
+    {
+        logger(LOG_DEBUG, "Service hashmap initialized");
+    }
+}
+
+void service_hashmap_free(void)
+{
+    if (service_map != NULL)
+    {
+        hashmap_free(service_map);
+        service_map = NULL;
+        logger(LOG_DEBUG, "Service hashmap freed");
+    }
+}
+
+void service_hashmap_add(service_t *service)
+{
+    if (service_map == NULL)
+    {
+        logger(LOG_ERROR, "Service hashmap not initialized");
+        return;
+    }
+
+    if (service == NULL || service->url == NULL)
+    {
+        logger(LOG_ERROR, "Invalid service for hashmap add");
+        return;
+    }
+
+    /* Store pointer to the service in the hashmap
+     * We pass &service because hashmap stores service_t* (pointer to service)
+     * The hashmap will copy this pointer value into its internal storage */
+    const void *old = hashmap_set(service_map, &service);
+
+    if (hashmap_oom(service_map))
+    {
+        logger(LOG_ERROR, "Out of memory when adding service to hashmap: %s", service->url);
+    }
+    else if (old != NULL)
+    {
+        logger(LOG_WARN, "Service URL already exists in hashmap (replaced): %s", service->url);
+    }
+}
+
+void service_hashmap_remove(service_t *service)
+{
+    if (service_map == NULL)
+    {
+        logger(LOG_ERROR, "Service hashmap not initialized");
+        return;
+    }
+
+    if (service == NULL || service->url == NULL)
+    {
+        logger(LOG_ERROR, "Invalid service for hashmap remove");
+        return;
+    }
+
+    /* Create a temporary service with the URL to use as search key */
+    service_t key_service;
+    key_service.url = service->url;
+
+    const void *removed = hashmap_delete(service_map, &key_service);
+
+    if (removed == NULL)
+    {
+        logger(LOG_WARN, "Service URL not found in hashmap: %s", service->url);
+    }
+}
+
+service_t *service_hashmap_get(const char *url)
+{
+    if (service_map == NULL)
+    {
+        logger(LOG_ERROR, "Service hashmap not initialized");
+        return NULL;
+    }
+
+    if (url == NULL)
+    {
+        return NULL;
+    }
+
+    /* Create a temporary service pointer to use as search key
+     * We need to cast away const here because the hashmap expects a non-const
+     * pointer, but we only use it for lookup, not modification */
+    service_t key_service;
+    memset(&key_service, 0, sizeof(key_service));
+    key_service.url = (char *)(uintptr_t)url; /* Cast via uintptr_t to avoid warning */
+
+    /* Pass pointer to the key service pointer (service_t**) */
+    service_t *key_ptr = &key_service;
+    const void *result = hashmap_get(service_map, &key_ptr);
+
+    if (result == NULL)
+    {
+        return NULL;
+    }
+
+    /* The hashmap returns a pointer to the stored service_t* pointer
+     * So we dereference once to get the service_t* */
+    return *(service_t **)result;
 }

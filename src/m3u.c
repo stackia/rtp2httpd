@@ -1009,6 +1009,9 @@ static char *create_service_from_url(const char *service_name, const char *url, 
     *services_tail = new_service;
     new_service->next = NULL;
 
+    /* Add to service hashmap for O(1) lookup */
+    service_hashmap_add(new_service);
+
     logger(LOG_INFO, "Service created: %s (%s) [%s]", unique_name,
            new_service->service_type == SERVICE_MRTP ? "RTP" : "RTSP",
            source == SERVICE_SOURCE_INLINE ? "inline" : "external");
@@ -1511,7 +1514,7 @@ static void m3u_reload_async_callback(http_fetch_ctx_t *ctx, char *content, size
 {
     int epfd;
 
-    (void)ctx; /* Unused */
+    (void)ctx;          /* Unused */
     (void)content_size; /* Unused */
 
     epfd = (int)(intptr_t)user_data; /* Retrieve epfd from user_data */

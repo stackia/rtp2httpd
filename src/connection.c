@@ -709,12 +709,8 @@ int connection_route_and_start(connection_t *c)
     return 0;
   }
 
-  /* Match against configured services */
-  for (service = services; service; service = service->next)
-  {
-    if (strcmp(decoded_path, service->url) == 0)
-      break;
-  }
+  /* Match against configured services using O(1) hashmap lookup */
+  service = service_hashmap_get(decoded_path);
 
   /* Dynamic parsing for RTSP and UDPxy if needed */
   if (service == NULL)

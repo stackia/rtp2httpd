@@ -609,14 +609,16 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
       {
         int64_t interval_ms = (int64_t)config.external_m3u_update_interval * 1000;
         int64_t last_update = config.last_external_m3u_update_time;
+        int64_t worker_offset_ms = (int64_t)worker_id * 1000;
 
         /* Handle first-time load: if last_update is 0, load immediately with staggered timing */
         if (last_update == 0)
         {
-          int64_t worker_offset_ms = (int64_t)worker_id * 1000;
+          /* Calculate uptime to compare against staggered offset */
+          int64_t uptime_ms = get_realtime_ms() - status_shared->server_start_time;
 
           /* Each worker loads after a staggered delay from startup (0s, 1s, 2s, ...) */
-          if (now >= worker_offset_ms)
+          if (uptime_ms >= worker_offset_ms)
           {
             /* Update timestamp immediately to prevent reentry during async operation */
             config.last_external_m3u_update_time = now;
@@ -638,7 +640,6 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
         /* Handle periodic updates (only if interval > 0) */
         else if (interval_ms > 0)
         {
-          int64_t worker_offset_ms = (int64_t)worker_id * 1000;
           int64_t time_since_last_update = now - last_update;
 
           /* Check if it's time for this worker to update */
