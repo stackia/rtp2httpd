@@ -153,6 +153,14 @@ export function VideoPlayer({
       }
 
       switch (e.key) {
+        case "Escape":
+          e.preventDefault();
+          // Blur any focused element
+          if (document.activeElement && document.activeElement !== document.body) {
+            (document.activeElement as HTMLElement).blur();
+          }
+          break;
+
         case "ArrowUp":
           e.preventDefault();
           // Previous channel
@@ -426,6 +434,11 @@ export function VideoPlayer({
       }
     };
 
+    const handleVolumeChange = () => {
+      setVolume(video.volume);
+      setIsMuted(video.muted);
+    };
+
     const handlePlaying = () => {
       setIsLoading(false);
       setIsPlaying(true);
@@ -476,6 +489,7 @@ export function VideoPlayer({
 
     video.addEventListener("canplay", handleCanPlay);
     video.addEventListener("waiting", handleWaiting);
+    video.addEventListener("volumechange", handleVolumeChange);
     video.addEventListener("playing", handlePlaying);
     video.addEventListener("pause", handlePause);
     video.addEventListener("timeupdate", handleTimeUpdate);
@@ -486,6 +500,7 @@ export function VideoPlayer({
     return () => {
       video.removeEventListener("canplay", handleCanPlay);
       video.removeEventListener("waiting", handleWaiting);
+      video.removeEventListener("volumechange", handleVolumeChange);
       video.removeEventListener("playing", handlePlaying);
       video.removeEventListener("pause", handlePause);
       video.removeEventListener("timeupdate", handleTimeUpdate);
@@ -501,25 +516,17 @@ export function VideoPlayer({
     };
   }, [onSeek, streamStartTime, isLive, currentVideoTime]);
 
-  // Handle volume changes
-  useEffect(() => {
-    if (playerRef.current) {
-      playerRef.current.volume = volume;
-      playerRef.current.muted = isMuted;
-    }
-  }, [volume, isMuted]);
-
   const toggleMute = useCallback(() => {
-    setIsMuted((prev) => !prev);
+    if (playerRef.current) {
+      playerRef.current.muted = !playerRef.current.muted;
+    }
   }, []);
 
-  const handleVolumeChange = useCallback(
-    (newVolume: number) => {
-      setVolume(newVolume);
-      if (isMuted && newVolume > 0) setIsMuted(false);
-    },
-    [isMuted],
-  );
+  const handleVolumeChange = useCallback((newVolume: number) => {
+    if (playerRef.current) {
+      playerRef.current.volume = newVolume;
+    }
+  }, []);
 
   const handleFullscreen = useCallback(() => {
     // Check if it's iOS
@@ -657,7 +664,7 @@ export function VideoPlayer({
         {channel && !error && !needsUserInteraction && (
           <div
             className={`absolute bottom-0 left-0 right-0 transition-opacity duration-300 ${
-              showControls ? "opacity-100" : "opacity-0"
+              showControls ? "opacity-100" : "opacity-0 has-focus-visible:opacity-100"
             }`}
             onMouseEnter={resetHideTimer}
           >

@@ -71,6 +71,7 @@ export function EPGView({
 
     if (currentProgramRef.current) {
       currentProgramRef.current.scrollIntoView({
+        behavior: "smooth",
         block: "center",
       });
     }
