@@ -94,3 +94,21 @@ body {
     opacity: 0;
   }
 }
+
+@container video (min-aspect-ratio: 16/9) {
+  .video-container video {
+    width: auto;
+    height: 100%;
+  }
+}
+
+@container video (max-aspect-ratio: 16/9) {
+  .video-container video {
+    width: 100%;
+    height: auto;
+  }
+}
+
+.video-container {
+  container: video / size;
+}

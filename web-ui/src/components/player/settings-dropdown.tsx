@@ -3,6 +3,7 @@ import { Settings } from "lucide-react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import type { ThemeMode } from "../../types/ui";
+import { Switch } from "../ui/switch";
 
 interface SettingsDropdownProps {
   locale: Locale;
@@ -11,6 +12,8 @@ interface SettingsDropdownProps {
   onThemeChange: (theme: ThemeMode) => void;
   catchupTailOffset: number;
   onCatchupTailOffsetChange: (offset: number) => void;
+  force16x9: boolean;
+  onForce16x9Change: (enabled: boolean) => void;
 }
 
 const localeOptions: Array<{ value: Locale; label: string }> = [
@@ -28,6 +31,8 @@ export function SettingsDropdown({
   onThemeChange,
   catchupTailOffset,
   onCatchupTailOffsetChange,
+  force16x9,
+  onForce16x9Change,
 }: SettingsDropdownProps) {
   const t = usePlayerTranslation(locale);
   const [isOpen, setIsOpen] = useState(false);
@@ -126,6 +131,14 @@ export function SettingsDropdown({
                 className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               />
               <p className="text-xs text-muted-foreground mt-1 px-1">{t("catchupTailOffsetHint")}</p>
+            </div>
+
+            {/* Force 16:9 Aspect Ratio Toggle */}
+            <div>
+              <label className="flex items-center justify-between px-1">
+                <span className="text-xs font-medium text-muted-foreground">{t("force16x9")}</span>
+                <Switch checked={force16x9} onCheckedChange={onForce16x9Change} />
+              </label>
             </div>
           </div>
         </div>

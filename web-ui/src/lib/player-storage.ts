@@ -6,6 +6,7 @@ const STORAGE_KEYS = {
   LAST_CHANNEL_ID: "rtp2httpd-player-last-channel-id",
   SIDEBAR_VISIBLE: "rtp2httpd-player-sidebar-visible",
   CATCHUP_TAIL_OFFSET: "rtp2httpd-player-catchup-tail-offset",
+  FORCE_16_9: "rtp2httpd-player-force-16-9",
 } as const;
 
 /**
@@ -82,5 +83,31 @@ export function getCatchupTailOffset(): number {
   } catch (error) {
     console.error("Failed to get catchup tail offset:", error);
     return 0;
+  }
+}
+
+/**
+ * Save the force 16:9 aspect ratio setting
+ * @param enabled - Whether to force 16:9 aspect ratio
+ */
+export function saveForce16x9(enabled: boolean): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.FORCE_16_9, JSON.stringify(enabled));
+  } catch (error) {
+    console.error("Failed to save force 16:9 setting:", error);
+  }
+}
+
+/**
+ * Get the force 16:9 aspect ratio setting
+ * @returns Whether to force 16:9 aspect ratio (default: true)
+ */
+export function getForce16x9(): boolean {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.FORCE_16_9);
+    return stored !== null ? JSON.parse(stored) : true;
+  } catch (error) {
+    console.error("Failed to get force 16:9 setting:", error);
+    return true;
   }
 }

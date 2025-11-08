@@ -19,6 +19,8 @@ import {
   getSidebarVisible,
   saveCatchupTailOffset,
   getCatchupTailOffset,
+  saveForce16x9,
+  getForce16x9,
 } from "../lib/player-storage";
 
 function PlayerPage() {
@@ -40,6 +42,7 @@ function PlayerPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [catchupTailOffset, setCatchupTailOffset] = useState(() => getCatchupTailOffset());
+  const [force16x9, setForce16x9] = useState(() => getForce16x9());
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const channelListRef = useRef<ChannelListRef>(null);
 
@@ -299,9 +302,14 @@ function PlayerPage() {
     saveCatchupTailOffset(offset);
   }, []);
 
+  const handleForce16x9Change = useCallback((enabled: boolean) => {
+    setForce16x9(enabled);
+    saveForce16x9(enabled);
+  }, []);
+
   // Main UI content
   const mainContent = (
-    <div ref={pageContainerRef} className="flex h-svh flex-col bg-background">
+    <div ref={pageContainerRef} className="flex h-dvh flex-col bg-background">
       <title>{t("title")}</title>
 
       {/* Main Content */}
@@ -330,6 +338,7 @@ function PlayerPage() {
             }}
             onFullscreenToggle={handleFullscreenToggle}
             onSearchInput={handleSearchInput}
+            force16x9={force16x9}
           />
         </div>
 
@@ -366,6 +375,8 @@ function PlayerPage() {
                   onThemeChange={setTheme}
                   catchupTailOffset={catchupTailOffset}
                   onCatchupTailOffsetChange={handleCatchupTailOffsetChange}
+                  force16x9={force16x9}
+                  onForce16x9Change={handleForce16x9Change}
                 />
               </div>
             </div>
@@ -389,6 +400,8 @@ function PlayerPage() {
                         onThemeChange={setTheme}
                         catchupTailOffset={catchupTailOffset}
                         onCatchupTailOffsetChange={handleCatchupTailOffsetChange}
+                        force16x9={force16x9}
+                        onForce16x9Change={handleForce16x9Change}
                       />
                     </div>
                   }
@@ -434,7 +447,7 @@ function PlayerPage() {
 
   if (error && !metadata) {
     return (
-      <div className="flex h-svh items-center justify-center bg-background">
+      <div className="flex h-dvh items-center justify-center bg-background">
         <Card className="max-w-md p-6">
           <div className="mb-4 text-xl font-semibold text-destructive">{t("error")}</div>
           <div className="mb-4">{error}</div>
