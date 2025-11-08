@@ -840,7 +840,7 @@ void restore_conf_defaults(void)
   cmd_player_page_path_set = 0;
 
   safe_free_string(&config.external_m3u_url);
-  config.external_m3u_update_interval = 86400; /* 24 hours default */
+  config.external_m3u_update_interval = 7200; /* 2 hours default */
   config.last_external_m3u_update_time = 0;
 
   if (config.upstream_interface[0] != '\0')
@@ -914,7 +914,7 @@ void usage(FILE *f, char *progname)
           "\t-s --status-page-path <path>  HTTP path for status UI (default: /status)\n"
           "\t-p --player-page-path <path>  HTTP path for player UI (default: /player)\n"
           "\t-M --external-m3u <url>  External M3U playlist URL (file://, http://, https://)\n"
-          "\t-I --external-m3u-update-interval <seconds>  Auto-update interval (default: 86400 = 24h, 0=disabled)\n"
+          "\t-I --external-m3u-update-interval <seconds>  Auto-update interval (default: 7200 = 2h, 0=disabled)\n"
           "\t-Z --zerocopy-on-send    Enable zero-copy send with MSG_ZEROCOPY for better performance (default: off)\n"
           "\t                     default " CONFIGFILE "\n",
           prog);
@@ -1201,4 +1201,3 @@ void parse_cmd_line(int argc, char *argv[])
   logger(LOG_DEBUG, "Verbosity: %d, Maxclients: %d, Workers: %d",
          config.verbosity, config.maxclients, config.workers);
 }
-

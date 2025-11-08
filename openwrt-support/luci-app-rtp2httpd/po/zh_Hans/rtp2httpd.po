@@ -81,10 +81,10 @@ msgstr "外部 M3U 更新间隔"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:420
 msgid ""
-"External M3U automatic update interval in seconds (default: 86400 = 24 "
+"External M3U automatic update interval in seconds (default: 7200 = 2 "
 "hours). Set to 0 to disable automatic updates."
 msgstr ""
-"外部 M3U 自动更新间隔（秒），默认 86400（24 小时）。设为 0 禁用自动更新。"
+"外部 M3U 自动更新间隔（秒），默认 7200（2 小时）。设为 0 禁用自动更新。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:393
 msgid "FCC Listen Port Range"

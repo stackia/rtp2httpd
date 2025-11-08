@@ -27,8 +27,8 @@ external-m3u = https://example.com/iptv.m3u
 external-m3u = file:///path/to/playlist.m3u
 
 # 外部 M3U 更新间隔（秒）
-# 默认 86400（24 小时），设为 0 禁用自动更新
-external-m3u-update-interval = 86400
+# 默认 7200（2 小时），设为 0 禁用自动更新
+external-m3u-update-interval = 7200
 ```
 
 ### 方法二：在配置文件中直接内联 M3U

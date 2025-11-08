@@ -417,11 +417,11 @@ return view.extend({
       "external_m3u_update_interval",
       _("External M3U Update Interval"),
       _(
-        "External M3U automatic update interval in seconds (default: 86400 = 24 hours). Set to 0 to disable automatic updates."
+        "External M3U automatic update interval in seconds (default: 7200 = 2 hours). Set to 0 to disable automatic updates."
       )
     );
     o.datatype = "uinteger";
-    o.placeholder = "86400";
+    o.placeholder = "7200";
     o.depends("use_config_file", "0");
 
     o = s.taboption(
