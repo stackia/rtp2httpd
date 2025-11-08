@@ -11,7 +11,6 @@ typedef struct
     int data_fd;            /* tmpfs file descriptor for EPG data (zero-copy), or -1 if not available */
     size_t data_size;       /* Size of EPG data */
     int is_gzipped;         /* 1 if data is gzip compressed (based on URL), 0 otherwise */
-    time_t last_fetch;      /* Timestamp of last successful fetch */
     int fetch_error_count;  /* Number of consecutive fetch errors */
     char etag[33];          /* MD5 hash of EPG data as hex string (for HTTP ETag caching) */
     int etag_valid;         /* 1 if etag is valid, 0 otherwise */
@@ -31,12 +30,6 @@ void epg_cleanup(void);
  * Returns: 0 on success, -1 on error
  */
 int epg_set_url(const char *url);
-
-/* Fetch EPG data synchronously (blocking)
- * Uses the URL previously set by epg_set_url()
- * Returns: 0 on success, -1 on error
- */
-int epg_fetch_sync(void);
 
 /* Start async EPG fetch
  * epfd: epoll file descriptor for async I/O
@@ -71,11 +64,6 @@ int epg_has_data(void);
  * Note: The returned fd is owned by the EPG cache and should NOT be closed by the caller.
  */
 int epg_get_fd(void);
-
-/* Get time since last successful fetch
- * Returns: seconds since last fetch, or -1 if never fetched
- */
-time_t epg_get_age(void);
 
 /* Reset EPG cache (clears data and URL)
  */

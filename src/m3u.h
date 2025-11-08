@@ -10,12 +10,6 @@
  */
 int m3u_parse_and_create_services(const char *content, const char *source_url);
 
-/* Fetch M3U content from URL
- * url: URL to fetch from
- * Returns: malloc'd string containing content (caller must free), or NULL on error
- */
-char *m3u_fetch_url(const char *url);
-
 /* Check if a line is an M3U header
  * line: line to check
  * Returns: 1 if line is #EXTM3U, 0 otherwise
@@ -50,5 +44,11 @@ void m3u_reset_external_playlist(void);
  *          Caller must free the returned string
  */
 char *get_server_address(void);
+
+/* Async external M3U reloading (non-blocking, for worker processes)
+ * epfd: epoll file descriptor for async I/O
+ * Returns: 0 if async fetch started, -1 on error or if not configured
+ */
+int m3u_reload_external_async(int epfd);
 
 #endif /* __M3U_H__ */

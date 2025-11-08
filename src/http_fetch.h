@@ -6,30 +6,6 @@
 /* Async HTTP fetch context (opaque) */
 typedef struct http_fetch_ctx_s http_fetch_ctx_t;
 
-/**
- * Synchronously fetch content from HTTP(S) URL using curl (blocking, zero-copy)
- * This function blocks until the fetch completes or times out.
- * Returns a tmpfs file descriptor for zero-copy transmission.
- * The file is unlinked but the fd remains valid until closed.
- *
- * @param url HTTP(S) URL to fetch
- * @param out_size Pointer to receive content size (required)
- * @return File descriptor on success (caller must close), or -1 on error
- */
-int http_fetch_fd_sync(const char *url, size_t *out_size);
-
-/**
- * Synchronously fetch content from HTTP(S) URL using curl (blocking)
- * This function blocks until the fetch completes or times out.
- * Suitable for use during initialization or in contexts where blocking is acceptable.
- * Note: This internally uses http_fetch_fd_sync and reads the entire content into memory.
- *
- * @param url HTTP(S) URL to fetch
- * @param out_size Pointer to receive content size (required)
- * @return Newly allocated buffer containing content (caller must free), or NULL on error
- */
-char *http_fetch_sync(const char *url, size_t *out_size);
-
 /* Callback type for async HTTP fetch completion
  * ctx: fetch context
  * content: fetched content (caller must free), or NULL on error
@@ -51,30 +27,32 @@ typedef void (*http_fetch_callback_t)(http_fetch_ctx_t *ctx, char *content, size
 typedef void (*http_fetch_fd_callback_t)(http_fetch_ctx_t *ctx, int fd, size_t content_size, void *user_data);
 
 /**
- * Start async HTTP fetch using popen and curl
+ * Start async fetch using popen and curl (supports HTTP(S) and file:// URLs)
  * This function starts a non-blocking HTTP(S) fetch using curl via popen.
  * The pipe is added to the provided epoll instance for async I/O.
+ * For file:// URLs, the fetch completes synchronously and callback is invoked immediately.
  *
- * @param url HTTP(S) URL to fetch
+ * @param url URL to fetch (http://, https://, or file://)
  * @param callback Function to call when fetch completes (required)
  * @param user_data User-provided data passed to callback (can be NULL)
  * @param epfd epoll file descriptor for async I/O (required)
- * @return Fetch context on success, NULL on error
+ * @return Fetch context on success (HTTP(S)), NULL for file:// (immediate completion) or error
  */
 http_fetch_ctx_t *http_fetch_start_async(const char *url, http_fetch_callback_t callback,
                                           void *user_data, int epfd);
 
 /**
- * Start async HTTP fetch using popen and curl (zero-copy with file descriptor)
+ * Start async fetch using popen and curl (zero-copy with file descriptor, supports file://)
  * This function starts a non-blocking HTTP(S) fetch using curl via popen.
  * The pipe is added to the provided epoll instance for async I/O.
  * Upon completion, a tmpfs file descriptor is passed to the callback for zero-copy transmission.
+ * For file:// URLs, the file is opened directly and callback is invoked immediately.
  *
- * @param url HTTP(S) URL to fetch
+ * @param url URL to fetch (http://, https://, or file://)
  * @param callback Function to call when fetch completes (required)
  * @param user_data User-provided data passed to callback (can be NULL)
  * @param epfd epoll file descriptor for async I/O (required)
- * @return Fetch context on success, NULL on error
+ * @return Fetch context on success (HTTP(S)), NULL for file:// (immediate completion) or error
  */
 http_fetch_ctx_t *http_fetch_start_async_fd(const char *url, http_fetch_fd_callback_t callback,
                                             void *user_data, int epfd);

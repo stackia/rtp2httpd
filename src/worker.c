@@ -12,6 +12,8 @@
 #include "configuration.h"
 #include "http_fetch.h"
 #include "hashmap.h"
+#include "m3u.h"
+#include "epg.h"
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -67,10 +69,9 @@ void fdmap_init(void)
   if (fd_map)
     hashmap_free(fd_map);
 
-  /* Create hashmap with initial capacity of 16384 (same as old FD_MAP_SIZE) */
   fd_map = hashmap_new(
       sizeof(fdmap_entry_t), /* element size */
-      16384,                 /* initial capacity */
+      0,                     /* initial capacity */
       0, 0,                  /* seeds (use default) */
       hash_fd,               /* hash function */
       compare_fds,           /* compare function */
@@ -602,38 +603,72 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
         c = next;
       }
 
-      /* Check if external M3U needs to be reloaded (all workers perform this with staggered timing) */
-      if (config.external_m3u_update_interval > 0)
+      /* Check if M3U/EPG needs to be reloaded (all workers perform this with staggered timing)
+       * This handles both external M3U and inline M3U's EPG updates */
+      if ((config.external_m3u_url || epg_get_url()) && config.external_m3u_update_interval >= 0)
       {
         int64_t interval_ms = (int64_t)config.external_m3u_update_interval * 1000;
         int64_t last_update = config.last_external_m3u_update_time;
 
-        /* Calculate staggered update time for this worker:
-         * Worker 0 updates at interval_ms, worker 1 at interval_ms + 1000ms, etc.
-         * This distributes the load and ensures each worker has updated services.
-         */
-        int64_t worker_offset_ms = (int64_t)worker_id * 1000;
-        int64_t time_since_last_update = now - last_update;
-
-        /* Check if it's time for this worker to update */
-        if (last_update > 0 && time_since_last_update >= (interval_ms + worker_offset_ms))
+        /* Handle first-time load: if last_update is 0, load immediately with staggered timing */
+        if (last_update == 0)
         {
-          /* Also check if this update cycle hasn't been done yet by checking
-           * if enough time has passed since the interval started */
-          int64_t current_cycle = time_since_last_update / interval_ms;
-          int64_t expected_update_time = current_cycle * interval_ms + worker_offset_ms;
+          int64_t worker_offset_ms = (int64_t)worker_id * 1000;
 
-          if (time_since_last_update >= expected_update_time)
+          /* Each worker loads after a staggered delay from startup (0s, 1s, 2s, ...) */
+          if (now >= worker_offset_ms)
           {
-            logger(LOG_DEBUG, "External M3U update interval reached for worker %d, reloading...", worker_id);
-
             /* Update timestamp immediately to prevent reentry during async operation */
             config.last_external_m3u_update_time = now;
 
-            /* Use async reload to avoid blocking the event loop */
-            reload_external_m3u_async(epfd);
-            /* Note: We always update timestamp regardless of success/failure to avoid
-             * hammering the server with repeated requests */
+            if (config.external_m3u_url)
+            {
+              /* External M3U: reload it (will also fetch EPG if found in M3U) */
+              logger(LOG_INFO, "Initial external M3U load for worker %d", worker_id);
+              m3u_reload_external_async(epfd);
+            }
+            else if (epg_get_url())
+            {
+              /* Inline M3U with EPG: only fetch EPG */
+              logger(LOG_INFO, "Initial EPG load (from inline M3U) for worker %d", worker_id);
+              epg_fetch_async(epfd);
+            }
+          }
+        }
+        /* Handle periodic updates (only if interval > 0) */
+        else if (interval_ms > 0)
+        {
+          int64_t worker_offset_ms = (int64_t)worker_id * 1000;
+          int64_t time_since_last_update = now - last_update;
+
+          /* Check if it's time for this worker to update */
+          if (time_since_last_update >= (interval_ms + worker_offset_ms))
+          {
+            /* Also check if this update cycle hasn't been done yet by checking
+             * if enough time has passed since the interval started */
+            int64_t current_cycle = time_since_last_update / interval_ms;
+            int64_t expected_update_time = current_cycle * interval_ms + worker_offset_ms;
+
+            if (time_since_last_update >= expected_update_time)
+            {
+              /* Update timestamp immediately to prevent reentry during async operation */
+              config.last_external_m3u_update_time = now;
+
+              if (config.external_m3u_url)
+              {
+                /* External M3U: reload it (will also fetch EPG if found in M3U) */
+                logger(LOG_DEBUG, "External M3U update interval reached for worker %d, reloading...", worker_id);
+                m3u_reload_external_async(epfd);
+              }
+              else if (epg_get_url())
+              {
+                /* Inline M3U with EPG: only fetch EPG */
+                logger(LOG_DEBUG, "EPG update interval reached for worker %d, reloading...", worker_id);
+                epg_fetch_async(epfd);
+              }
+              /* Note: We always update timestamp regardless of success/failure to avoid
+               * hammering the server with repeated requests */
+            }
           }
         }
       }

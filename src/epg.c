@@ -143,7 +143,6 @@ static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd, size_t content_
     epg_cache.data_fd = fd;
     epg_cache.data_size = content_size;
     epg_cache.is_gzipped = epg_url_is_gzipped(epg_cache.url);
-    epg_cache.last_fetch = time(NULL);
     epg_cache.fetch_error_count = 0;
 
     /* Calculate ETag for the fetched data */
@@ -176,7 +175,6 @@ void epg_cleanup(void)
     }
     epg_cache.data_size = 0;
     epg_cache.is_gzipped = 0;
-    epg_cache.last_fetch = 0;
     epg_cache.fetch_error_count = 0;
     epg_cache.etag_valid = 0;
     epg_cache.etag[0] = '\0';
@@ -222,26 +220,6 @@ int epg_set_url(const char *url)
     epg_cache.url = new_url;
 
     logger(LOG_INFO, "EPG URL set to: %s", url);
-    return 0;
-}
-
-int epg_fetch_sync(void)
-{
-    int new_fd;
-    size_t new_size;
-
-    /* Check if URL is set */
-    if (!epg_cache.url)
-    {
-        logger(LOG_ERROR, "Cannot fetch EPG: URL not set");
-        return -1;
-    }
-
-    logger(LOG_INFO, "Fetching EPG from: %s", epg_cache.url);
-
-    /* Fetch data synchronously using http_fetch_fd_sync (zero-copy) */
-    new_fd = http_fetch_fd_sync(epg_cache.url, &new_size);
-    epg_fetch_fd_callback(NULL, new_fd, new_size, NULL);
     return 0;
 }
 
@@ -312,15 +290,6 @@ int epg_get_fd(void)
 int epg_has_data(void)
 {
     return (epg_cache.data_fd >= 0 && epg_cache.data_size > 0);
-}
-
-time_t epg_get_age(void)
-{
-    if (epg_cache.last_fetch == 0)
-    {
-        return -1;
-    }
-    return time(NULL) - epg_cache.last_fetch;
 }
 
 void epg_reset(void)
