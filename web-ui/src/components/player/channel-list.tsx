@@ -98,6 +98,7 @@ export const ChannelList = forwardRef<ChannelListRef, ChannelListProps>(
 
       if (currentChannelRef.current) {
         currentChannelRef.current.scrollIntoView({
+          behavior: "smooth",
           block: "center",
         });
       }

@@ -4,6 +4,7 @@ import {
   Pause,
   Volume2,
   Volume1,
+  Volume,
   VolumeX,
   Maximize,
   Minimize,
@@ -71,8 +72,6 @@ export function PlayerControls({
   const progressBarRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [hoverPosition, setHoverPosition] = useState<number | null>(null);
-  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
-  const volumeHideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Check if catchup is supported
@@ -188,20 +187,6 @@ export function PlayerControls({
     return getTimeAtPosition(hoverPosition);
   }, [hoverPosition, getTimeAtPosition]);
 
-  const handleVolumeMouseEnter = useCallback(() => {
-    if (volumeHideTimeoutRef.current) {
-      clearTimeout(volumeHideTimeoutRef.current);
-      volumeHideTimeoutRef.current = null;
-    }
-    setShowVolumeSlider(true);
-  }, []);
-
-  const handleVolumeMouseLeave = useCallback(() => {
-    volumeHideTimeoutRef.current = setTimeout(() => {
-      setShowVolumeSlider(false);
-    }, 100);
-  }, []);
-
   // Track fullscreen state
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -213,16 +198,6 @@ export function PlayerControls({
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
   }, []);
-
-  const VolumeIcon = () => {
-    if (isMuted || volume === 0) {
-      return <VolumeX className="h-5 w-5 md:h-7 md:w-7" />;
-    } else if (volume < 0.5) {
-      return <Volume1 className="h-5 w-5 md:h-7 md:w-7" />;
-    } else {
-      return <Volume2 className="h-5 w-5 md:h-7 md:w-7" />;
-    }
-  };
 
   return (
     <div className="w-full bg-linear-to-t from-black/95 via-black/70 to-transparent px-3 md:px-4 pb-3 md:pb-4 pt-8 md:pt-12 flex flex-col gap-2 md:gap-3">
@@ -291,38 +266,38 @@ export function PlayerControls({
           </button>
 
           {/* Volume */}
-          <div className="relative flex items-center">
+          <div className="group/volume relative flex items-center">
             <button
               onClick={onMuteToggle}
-              onMouseEnter={handleVolumeMouseEnter}
-              onMouseLeave={handleVolumeMouseLeave}
               className="rounded-full p-1.5 md:p-2 text-white transition-all cursor-pointer hover:bg-white/20 active:scale-95"
               title={isMuted ? t("unmute") : t("mute")}
             >
-              <VolumeIcon />
+              {isMuted ? (
+                <VolumeX className="h-5 w-5 md:h-7 md:w-7" />
+              ) : volume === 0 ? (
+                <Volume className="h-5 w-5 md:h-7 md:w-7" />
+              ) : volume < 0.5 ? (
+                <Volume1 className="h-5 w-5 md:h-7 md:w-7" />
+              ) : (
+                <Volume2 className="h-5 w-5 md:h-7 md:w-7" />
+              )}
             </button>
 
             {/* Volume Slider */}
-            {showVolumeSlider && (
-              <div
-                className="absolute bottom-full left-1/2 -translate-x-1/2 rounded bg-black/90 px-2 md:px-3 py-2 shadow-lg cursor-pointer"
-                onMouseEnter={handleVolumeMouseEnter}
-                onMouseLeave={handleVolumeMouseLeave}
-              >
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={isMuted ? 0 : volume}
-                  onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-                  className="h-16 md:h-20 w-1 cursor-pointer appearance-none bg-transparent [writing-mode:vertical-lr] [direction:rtl]"
-                  style={{
-                    background: `linear-gradient(to top, #3b82f6 0%, #3b82f6 ${(isMuted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) ${(isMuted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) 100%)`,
-                  }}
-                />
-              </div>
-            )}
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 rounded bg-black/90 px-2 md:px-3 py-2 shadow-lg cursor-pointer opacity-0 invisible group-hover/volume:opacity-100 group-hover/volume:visible transition-all duration-150">
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={isMuted ? 0 : volume}
+                onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
+                className="h-16 md:h-20 w-1 cursor-pointer appearance-none bg-transparent [writing-mode:vertical-lr] [direction:rtl]"
+                style={{
+                  background: `linear-gradient(to top, #3b82f6 0%, #3b82f6 ${(isMuted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) ${(isMuted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) 100%)`,
+                }}
+              />
+            </div>
           </div>
 
           {/* Time Display */}
