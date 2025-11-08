@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef, Activity } from "react";
 import { createRoot } from "react-dom/client";
 import mpegts from "mpegts.js";
 import { Channel, M3UMetadata, PlayMode } from "../types/player";
@@ -372,11 +372,11 @@ function PlayerPage() {
 
             {/* Sidebar Content */}
             <div className="flex-1 overflow-hidden">
-              {sidebarView === "channels" && metadata && (
+              <Activity mode={sidebarView === "channels" ? "visible" : "hidden"}>
                 <ChannelList
                   ref={channelListRef}
-                  channels={metadata.channels}
-                  groups={metadata.groups}
+                  channels={metadata?.channels}
+                  groups={metadata?.groups}
                   currentChannel={currentChannel}
                   onChannelSelect={selectChannel}
                   locale={locale}
@@ -393,8 +393,8 @@ function PlayerPage() {
                     </div>
                   }
                 />
-              )}
-              {sidebarView === "epg" && (
+              </Activity>
+              <Activity mode={sidebarView === "epg" ? "visible" : "hidden"}>
                 <EPGView
                   channelId={currentChannel ? getEPGChannelId(currentChannel, epgData) : null}
                   epgData={epgData}
@@ -404,7 +404,7 @@ function PlayerPage() {
                   supportsCatchup={!!(currentChannel?.catchup && currentChannel?.catchupSource)}
                   currentPlayingProgram={currentVideoProgram}
                 />
-              )}
+              </Activity>
             </div>
           </div>
         )}

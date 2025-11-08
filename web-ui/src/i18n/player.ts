@@ -23,7 +23,6 @@ const base: TranslationDict = {
   catchup: "Catchup",
 
   // EPG view
-  selectChannelPrompt: "Select a channel to view program guide",
   noEpgAvailable: "No program guide available for this channel",
   onAir: "On Air",
   replay: "Replay",
@@ -103,7 +102,6 @@ const zhHans: TranslationDict = {
   catchup: "回看",
 
   // EPG 视图
-  selectChannelPrompt: "选择一个频道查看节目单",
   noEpgAvailable: "此频道暂无节目单",
   onAir: "直播中",
   replay: "回放",
@@ -183,7 +181,6 @@ const zhHant: TranslationDict = {
   catchup: "回看",
 
   // EPG 視圖
-  selectChannelPrompt: "選擇一個頻道檢視節目表",
   noEpgAvailable: "此頻道暫無節目表",
   onAir: "直播中",
   replay: "重播",

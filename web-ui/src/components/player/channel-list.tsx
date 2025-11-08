@@ -1,12 +1,12 @@
-import React, { useState, useMemo, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
+import React, { useState, useMemo, useRef, forwardRef, useImperativeHandle, useLayoutEffect } from "react";
 import { Channel } from "../../types/player";
 import { Card } from "../ui/card";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 
 interface ChannelListProps {
-  channels: Channel[];
-  groups: string[];
+  channels?: Channel[];
+  groups?: string[];
   currentChannel: Channel | null;
   onChannelSelect: (channel: Channel) => void;
   locale: Locale;
@@ -41,6 +41,7 @@ export const ChannelList = forwardRef<ChannelListRef, ChannelListProps>(
 
     // Filter and sort channels
     const filteredChannels = useMemo(() => {
+      if (!channels) return [];
       const filtered = channels.filter((ch) => {
         const matchesGroup = !selectedGroup || ch.group === selectedGroup;
         if (!matchesGroup) return false;
@@ -87,7 +88,7 @@ export const ChannelList = forwardRef<ChannelListRef, ChannelListProps>(
 
     // Auto-scroll to center current channel when it changes or filters change
     // But skip if the change was caused by user clicking on a channel
-    useEffect(() => {
+    useLayoutEffect(() => {
       if (isUserClickRef.current) {
         // User just clicked, skip auto-scroll
         isUserClickRef.current = false;
@@ -96,7 +97,6 @@ export const ChannelList = forwardRef<ChannelListRef, ChannelListProps>(
 
       if (currentChannelRef.current) {
         currentChannelRef.current.scrollIntoView({
-          behavior: "smooth",
           block: "center",
         });
       }
@@ -161,7 +161,7 @@ export const ChannelList = forwardRef<ChannelListRef, ChannelListProps>(
             >
               {t("allChannels")}
             </button>
-            {groups.map((group) => (
+            {groups?.map((group) => (
               <button
                 key={group}
                 onClick={() => setSelectedGroup(group)}
