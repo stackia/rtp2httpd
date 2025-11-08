@@ -165,35 +165,6 @@ static int parse_port_range_value(const char *value, int *min_port, int *max_por
   return 0;
 }
 
-/* Parse M3U content and trigger EPG fetch if configured
- * This helper encapsulates the common pattern of:
- * 1. Parse M3U content and create services
- * 2. Trigger EPG fetch if x-tvg-url was found
- *
- * mode: "sync" for synchronous EPG fetch, "async" for asynchronous
- * epfd: epoll file descriptor (only used for async mode, pass 0 for sync)
- */
-static void process_m3u_and_fetch_epg(const char *m3u_content, const char *source, const char *mode, int epfd)
-{
-  if (!m3u_content)
-    return;
-
-  m3u_parse_and_create_services(m3u_content, source);
-
-  /* Trigger EPG fetch if x-tvg-url was found in M3U */
-  if (epg_get_url())
-  {
-    if (strcmp(mode, "async") == 0)
-    {
-      epg_fetch_async(epfd);
-    }
-    else
-    {
-      epg_fetch_sync();
-    }
-  }
-}
-
 /* Generic function to set page path and route */
 static void set_page_path_value(const char *value, const char *page_name,
                                 char **path_ptr, char **route_ptr)
@@ -677,7 +648,8 @@ int parse_config_file(const char *path)
       {
         if (inline_m3u_buffer && inline_m3u_buffer_used > 0)
         {
-          process_m3u_and_fetch_epg(inline_m3u_buffer, "inline", "sync", 0);
+          /* Parse inline M3U (EPG will be fetched async by workers) */
+          m3u_parse_and_create_services(inline_m3u_buffer, "inline");
           free(inline_m3u_buffer);
           inline_m3u_buffer = NULL;
           inline_m3u_buffer_size = 0;
@@ -748,7 +720,8 @@ int parse_config_file(const char *path)
   {
     if (inline_m3u_buffer && inline_m3u_buffer_used > 0)
     {
-      process_m3u_and_fetch_epg(inline_m3u_buffer, "inline", "sync", 0);
+      /* Parse inline M3U (EPG will be fetched async by workers) */
+      m3u_parse_and_create_services(inline_m3u_buffer, "inline");
       free(inline_m3u_buffer);
       inline_m3u_buffer = NULL;
       inline_m3u_buffer_size = 0;
@@ -1212,145 +1185,17 @@ void parse_cmd_line(int argc, char *argv[])
     logger(LOG_WARN, "No config file found");
   }
 
-  /* Load external M3U if configured (from config file or command line)
-   * This happens after all config/cmdline parsing is complete, so command line
-   * arguments can override config file settings */
+  /* External M3U will be loaded asynchronously by workers after startup
+   * This avoids blocking the startup process waiting for network resources */
   if (config.external_m3u_url)
   {
-    logger(LOG_DEBUG, "Loading external M3U: %s", config.external_m3u_url);
-    char *m3u_content = m3u_fetch_url(config.external_m3u_url);
-    if (m3u_content)
-    {
-      process_m3u_and_fetch_epg(m3u_content, config.external_m3u_url, "sync", 0);
-      free(m3u_content);
-      /* Record initial load time */
-      config.last_external_m3u_update_time = get_time_ms();
-      logger(LOG_INFO, "External M3U loaded successfully from: %s", config.external_m3u_url);
-    }
-    else
-    {
-      logger(LOG_ERROR, "Failed to fetch external M3U from: %s", config.external_m3u_url);
-    }
+    logger(LOG_INFO, "External M3U configured: %s (will load asynchronously)",
+           config.external_m3u_url);
+    /* Initialize to 0 to trigger immediate first fetch in worker event loop */
+    config.last_external_m3u_update_time = 0;
   }
 
   logger(LOG_DEBUG, "Verbosity: %d, Maxclients: %d, Workers: %d",
          config.verbosity, config.maxclients, config.workers);
 }
 
-/* Reload external M3U playlist
- * This function fetches the external M3U and creates/updates services
- * Returns: 0 on success, -1 on error
- */
-int reload_external_m3u(void)
-{
-  char *m3u_content;
-
-  /* Check if external M3U is configured */
-  if (!config.external_m3u_url)
-  {
-    logger(LOG_DEBUG, "No external M3U URL configured, skipping reload");
-    return -1;
-  }
-
-  /* Check if update interval is configured */
-  if (config.external_m3u_update_interval <= 0)
-  {
-    logger(LOG_DEBUG, "External M3U update interval not configured, skipping reload");
-    return -1;
-  }
-
-  logger(LOG_INFO, "Reloading external M3U from: %s", config.external_m3u_url);
-
-  /* Fetch M3U content */
-  m3u_content = m3u_fetch_url(config.external_m3u_url);
-  if (!m3u_content)
-  {
-    logger(LOG_ERROR, "Failed to fetch external M3U during reload from: %s", config.external_m3u_url);
-    return -1;
-  }
-
-  /* Clear existing external services before loading new ones */
-  service_free_external();
-
-  /* Reset external transformed playlist buffer before reloading */
-  m3u_reset_external_playlist();
-
-  /* Parse M3U content and create services */
-  process_m3u_and_fetch_epg(m3u_content, config.external_m3u_url, "sync", 0);
-  free(m3u_content);
-
-  logger(LOG_INFO, "External M3U reloaded successfully");
-  return 0;
-}
-
-/* Callback for async M3U fetch completion */
-static void reload_m3u_async_callback(http_fetch_ctx_t *ctx, char *content, size_t content_size, void *user_data)
-{
-  int epfd;
-
-  (void)ctx; /* Unused */
-
-  epfd = (int)(intptr_t)user_data; /* Retrieve epfd from user_data */
-
-  if (!content)
-  {
-    logger(LOG_ERROR, "Async external M3U fetch failed: %s", config.external_m3u_url);
-    return;
-  }
-
-  logger(LOG_DEBUG, "Async external M3U fetch completed, processing content");
-
-  /* Clear existing external services before loading new ones */
-  service_free_external();
-
-  /* Reset external transformed playlist buffer before reloading */
-  m3u_reset_external_playlist();
-
-  /* Parse M3U content and create services */
-  process_m3u_and_fetch_epg(content, config.external_m3u_url, "async", epfd);
-  free(content);
-
-  logger(LOG_INFO, "External M3U reloaded successfully (async)");
-}
-
-/* Async version of reload_external_m3u for worker processes */
-int reload_external_m3u_async(int epfd)
-{
-  http_fetch_ctx_t *fetch_ctx;
-
-  /* Check if external M3U is configured */
-  if (!config.external_m3u_url)
-  {
-    logger(LOG_DEBUG, "No external M3U URL configured, skipping async reload");
-    return -1;
-  }
-
-  /* Check if update interval is configured */
-  if (config.external_m3u_update_interval <= 0)
-  {
-    logger(LOG_DEBUG, "External M3U update interval not configured, skipping async reload");
-    return -1;
-  }
-
-  /* Check if URL is HTTP(S) - only these can be fetched asynchronously */
-  if (strncmp(config.external_m3u_url, "http://", 7) != 0 &&
-      strncmp(config.external_m3u_url, "https://", 8) != 0)
-  {
-    logger(LOG_DEBUG, "External M3U URL is not HTTP(S), using synchronous fetch");
-    return reload_external_m3u();
-  }
-
-  logger(LOG_INFO, "Starting async reload of external M3U from: %s", config.external_m3u_url);
-
-  /* Start async fetch - pass epfd via user_data for EPG fetch later */
-  fetch_ctx = http_fetch_start_async(config.external_m3u_url, reload_m3u_async_callback,
-                                     (void *)(intptr_t)epfd, epfd);
-  if (!fetch_ctx)
-  {
-    logger(LOG_ERROR, "Failed to start async fetch for external M3U");
-    return -1;
-  }
-
-  logger(LOG_DEBUG, "Async external M3U fetch started successfully");
-  return 0;
-}

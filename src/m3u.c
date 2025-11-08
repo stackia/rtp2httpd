@@ -52,85 +52,6 @@ static int transformed_m3u_has_header = 0;
 static char transformed_m3u_etag[33] = {0};
 static int transformed_m3u_etag_valid = 0;
 
-/* Fetch M3U content from URL (supports file://, http://, https://)
- * Returns: malloc'd string containing content (caller must free), or NULL on error
- */
-char *m3u_fetch_url(const char *url)
-{
-    FILE *fp;
-    char *content = NULL;
-    long file_size;
-    size_t read_size;
-    size_t fetch_size;
-
-    /* Handle HTTP(S) URLs using http_fetch_sync */
-    if (strncmp(url, "http://", 7) == 0 || strncmp(url, "https://", 8) == 0)
-    {
-        content = http_fetch_sync(url, &fetch_size);
-        if (!content)
-        {
-            return NULL;
-        }
-
-        /* Add null terminator for M3U text content */
-        char *text_content = malloc(fetch_size + 1);
-        if (!text_content)
-        {
-            logger(LOG_ERROR, "Failed to allocate memory for M3U text content");
-            free(content);
-            return NULL;
-        }
-        memcpy(text_content, content, fetch_size);
-        text_content[fetch_size] = '\0';
-        free(content);
-
-        logger(LOG_INFO, "Successfully fetched M3U from URL (%zu bytes)", fetch_size);
-        return text_content;
-    }
-
-    /* Handle file:// URLs */
-    if (strncmp(url, "file://", 7) == 0)
-    {
-        url += 7; /* Skip file:// prefix */
-    }
-
-    /* Try to open as local file */
-    fp = fopen(url, "r");
-    if (!fp)
-    {
-        logger(LOG_ERROR, "Failed to open M3U file: %s", url);
-        return NULL;
-    }
-
-    /* Get file size */
-    fseek(fp, 0, SEEK_END);
-    file_size = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-
-    if (file_size < 0 || file_size > MAX_M3U_CONTENT)
-    {
-        logger(LOG_ERROR, "Invalid or too large M3U file: %s (size: %ld)", url, file_size);
-        fclose(fp);
-        return NULL;
-    }
-
-    /* Allocate memory for content */
-    content = malloc(file_size + 1);
-    if (!content)
-    {
-        logger(LOG_ERROR, "Failed to allocate memory for M3U content");
-        fclose(fp);
-        return NULL;
-    }
-
-    /* Read file content */
-    read_size = fread(content, 1, file_size, fp);
-    content[read_size] = '\0';
-
-    fclose(fp);
-    return content;
-}
-
 int m3u_is_header(const char *line)
 {
     return (strncmp(line, "#EXTM3U", 7) == 0);
@@ -1562,4 +1483,95 @@ void m3u_reset_external_playlist(void)
     {
         transformed_m3u_has_header = 0;
     }
+}
+
+/* Parse M3U content and trigger async EPG fetch if configured
+ * This helper encapsulates the common pattern of:
+ * 1. Parse M3U content and create services
+ * 2. Trigger async EPG fetch if x-tvg-url was found
+ *
+ * epfd: epoll file descriptor (required for async EPG fetch, pass -1 to skip EPG fetch)
+ */
+static void m3u_process_and_fetch_epg(const char *m3u_content, const char *source, int epfd)
+{
+    if (!m3u_content)
+        return;
+
+    m3u_parse_and_create_services(m3u_content, source);
+
+    /* Trigger async EPG fetch if x-tvg-url was found in M3U and epfd is valid */
+    if (epg_get_url() && epfd >= 0)
+    {
+        epg_fetch_async(epfd);
+    }
+}
+
+/* Callback for async M3U fetch completion */
+static void m3u_reload_async_callback(http_fetch_ctx_t *ctx, char *content, size_t content_size, void *user_data)
+{
+    int epfd;
+
+    (void)ctx; /* Unused */
+    (void)content_size; /* Unused */
+
+    epfd = (int)(intptr_t)user_data; /* Retrieve epfd from user_data */
+
+    if (!content)
+    {
+        logger(LOG_ERROR, "Async external M3U fetch failed: %s", config.external_m3u_url);
+        return;
+    }
+
+    logger(LOG_DEBUG, "Async external M3U fetch completed, processing content");
+
+    /* Clear existing external services before loading new ones */
+    service_free_external();
+
+    /* Reset external transformed playlist buffer before reloading */
+    m3u_reset_external_playlist();
+
+    /* Parse M3U content and create services, trigger async EPG fetch */
+    m3u_process_and_fetch_epg(content, config.external_m3u_url, epfd);
+    free(content);
+
+    logger(LOG_INFO, "External M3U reloaded successfully (async)");
+}
+
+/* Reload external M3U asynchronously (non-blocking, for worker processes)
+ * Supports both HTTP(S) and file:// URLs through unified async interface
+ * epfd: epoll file descriptor for async I/O
+ * Returns: 0 if async fetch started, -1 on error or if not configured
+ */
+int m3u_reload_external_async(int epfd)
+{
+    http_fetch_ctx_t *fetch_ctx;
+
+    /* Check if external M3U is configured */
+    if (!config.external_m3u_url)
+    {
+        logger(LOG_DEBUG, "No external M3U URL configured, skipping async reload");
+        return -1;
+    }
+
+    logger(LOG_DEBUG, "Starting async reload of external M3U: %s", config.external_m3u_url);
+
+    /* Start async fetch - supports both HTTP(S) and file:// URLs
+     * Note: file:// URLs complete synchronously and return NULL (callback already invoked) */
+    fetch_ctx = http_fetch_start_async(config.external_m3u_url, m3u_reload_async_callback,
+                                       (void *)(intptr_t)epfd, epfd);
+
+    /* NULL return value can mean:
+     * 1. file:// URL completed synchronously (callback already called) - SUCCESS
+     * 2. Error occurred (callback called with error) - also handled
+     * Non-NULL means HTTP(S) fetch started successfully and is in progress */
+    if (fetch_ctx)
+    {
+        logger(LOG_DEBUG, "Async HTTP(S) fetch started, waiting for completion");
+    }
+    else
+    {
+        logger(LOG_DEBUG, "Fetch completed immediately (likely file:// URL)");
+    }
+
+    return 0;
 }
