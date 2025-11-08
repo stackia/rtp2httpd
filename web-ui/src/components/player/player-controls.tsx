@@ -1,4 +1,17 @@
-import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
+import { useRef, useState, useEffect, useMemo, useCallback } from "react";
+import {
+  Play,
+  Pause,
+  Volume2,
+  Volume1,
+  VolumeX,
+  Maximize,
+  Minimize,
+  PictureInPicture,
+  PanelRightClose,
+  PanelRightOpen,
+  PictureInPicture2,
+} from "lucide-react";
 import { Channel, EPGProgram } from "../../types/player";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
@@ -201,36 +214,13 @@ export function PlayerControls({
     };
   }, []);
 
-  const getVolumeIcon = () => {
-    const speakerPath =
-      "M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z";
-
+  const VolumeIcon = () => {
     if (isMuted || volume === 0) {
-      // Volume X (muted)
-      return (
-        <>
-          <path d={speakerPath} />
-          <line x1="22" x2="16" y1="9" y2="15" />
-          <line x1="16" x2="22" y1="9" y2="15" />
-        </>
-      );
+      return <VolumeX className="h-5 w-5 md:h-7 md:w-7" />;
     } else if (volume < 0.5) {
-      // Volume 1 (low)
-      return (
-        <>
-          <path d={speakerPath} />
-          <path d="M16 9a5 5 0 0 1 0 6" />
-        </>
-      );
+      return <Volume1 className="h-5 w-5 md:h-7 md:w-7" />;
     } else {
-      // Volume 2 (high)
-      return (
-        <>
-          <path d={speakerPath} />
-          <path d="M16 9a5 5 0 0 1 0 6" />
-          <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
-        </>
-      );
+      return <Volume2 className="h-5 w-5 md:h-7 md:w-7" />;
     }
   };
 
@@ -294,29 +284,10 @@ export function PlayerControls({
           {/* Play/Pause */}
           <button
             onClick={onPlayPause}
-            className="rounded-full p-1.5 md:p-2 text-white transition-all hover:bg-white/20 active:scale-95"
+            className="rounded-full p-1.5 md:p-2 text-white transition-all cursor-pointer hover:bg-white/20 active:scale-95"
             title={isPlaying ? t("pause") : t("play")}
           >
-            <svg
-              className="h-5 w-5 md:h-7 md:w-7"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              viewBox="0 0 24 24"
-            >
-              {isPlaying ? (
-                /* Pause */
-                <>
-                  <rect x="14" y="3" width="5" height="18" rx="1" />
-                  <rect x="5" y="3" width="5" height="18" rx="1" />
-                </>
-              ) : (
-                /* Play */
-                <path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" />
-              )}
-            </svg>
+            {isPlaying ? <Pause className="h-5 w-5 md:h-7 md:w-7" /> : <Play className="h-5 w-5 md:h-7 md:w-7" />}
           </button>
 
           {/* Volume */}
@@ -325,26 +296,16 @@ export function PlayerControls({
               onClick={onMuteToggle}
               onMouseEnter={handleVolumeMouseEnter}
               onMouseLeave={handleVolumeMouseLeave}
-              className="rounded-full p-1.5 md:p-2 text-white transition-all hover:bg-white/20 active:scale-95 hover:cursor-pointer"
+              className="rounded-full p-1.5 md:p-2 text-white transition-all cursor-pointer hover:bg-white/20 active:scale-95"
               title={isMuted ? t("unmute") : t("mute")}
             >
-              <svg
-                className="h-5 w-5 md:h-7 md:w-7"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                viewBox="0 0 24 24"
-              >
-                {getVolumeIcon()}
-              </svg>
+              <VolumeIcon />
             </button>
 
             {/* Volume Slider */}
             {showVolumeSlider && (
               <div
-                className="absolute bottom-full left-1/2 -translate-x-1/2 rounded bg-black/90 px-2 md:px-3 py-2 shadow-lg hover:cursor-pointer"
+                className="absolute bottom-full left-1/2 -translate-x-1/2 rounded bg-black/90 px-2 md:px-3 py-2 shadow-lg cursor-pointer"
                 onMouseEnter={handleVolumeMouseEnter}
                 onMouseLeave={handleVolumeMouseLeave}
               >
@@ -389,7 +350,7 @@ export function PlayerControls({
           ) : (
             <button
               onClick={() => onSeek(new Date())}
-              className="rounded-full p-1.5 md:p-2 text-white transition-all hover:bg-white/20 active:scale-95 hover:cursor-pointer text-xs md:text-sm font-semibold"
+              className="rounded-full p-1.5 md:p-2 text-white transition-all hover:bg-white/20 active:scale-95 cursor-pointer text-xs md:text-sm font-semibold"
             >
               {t("goLive")}
             </button>
@@ -397,69 +358,28 @@ export function PlayerControls({
           {/* Fullscreen */}
           <button
             onClick={onFullscreen}
-            className="rounded-full p-1.5 md:p-2 text-white transition-all hover:bg-white/20 active:scale-95 hover:cursor-pointer"
+            className="rounded-full p-1.5 md:p-2 text-white transition-all hover:bg-white/20 active:scale-95 cursor-pointer"
             title={isFullscreen ? t("exitFullscreen") : t("fullscreen")}
           >
-            <svg
-              className="h-5 w-5 md:h-6 md:w-6"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              viewBox="0 0 24 24"
-            >
-              {isFullscreen ? (
-                /* Minimize - Exit fullscreen */
-                <>
-                  <path d="M8 3v3a2 2 0 0 1-2 2H3" />
-                  <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
-                  <path d="M3 16h3a2 2 0 0 1 2 2v3" />
-                  <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
-                </>
-              ) : (
-                /* Maximize - Enter fullscreen */
-                <>
-                  <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-                  <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
-                  <path d="M3 16v3a2 2 0 0 0 2 2h3" />
-                  <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-                </>
-              )}
-            </svg>
+            {isFullscreen ? (
+              <Minimize className="h-5 w-5 md:h-6 md:w-6" />
+            ) : (
+              <Maximize className="h-5 w-5 md:h-6 md:w-6" />
+            )}
           </button>
 
           {/* Picture-in-Picture - Only show if supported and handler is provided */}
           {onPiPToggle && document.pictureInPictureEnabled && (
             <button
               onClick={onPiPToggle}
-              className="rounded-full p-1.5 md:p-2 text-white transition-all hover:bg-white/20 active:scale-95 hover:cursor-pointer"
+              className="rounded-full p-1.5 md:p-2 text-white transition-all hover:bg-white/20 active:scale-95 cursor-pointer"
               title={isPiP ? t("exitPictureInPicture") : t("pictureInPicture")}
             >
-              <svg
-                className="h-5 w-5 md:h-6 md:w-6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                viewBox="0 0 24 24"
-              >
-                {isPiP ? (
-                  /* Exit PiP - X in corner of rectangle */
-                  <>
-                    <path d="M2 8V5c0-1.1.9-2 2-2h16a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-                    <rect width="10" height="7" x="2" y="15" rx="1" />
-                    <path d="m9 12 1.5 1.5L9 15" />
-                  </>
-                ) : (
-                  /* Enter PiP - Small rectangle in corner */
-                  <>
-                    <path d="M2 8V5c0-1.1.9-2 2-2h16a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-                    <rect width="10" height="7" x="2" y="15" rx="1" />
-                  </>
-                )}
-              </svg>
+              {isPiP ? (
+                <PictureInPicture2 className="h-5 w-5 md:h-6 md:w-6" />
+              ) : (
+                <PictureInPicture className="h-5 w-5 md:h-6 md:w-6" />
+              )}
             </button>
           )}
 
@@ -467,32 +387,14 @@ export function PlayerControls({
           {onToggleSidebar && (
             <button
               onClick={onToggleSidebar}
-              className="hidden md:flex rounded-full p-1.5 md:p-2 text-white transition-all hover:bg-white/20 active:scale-95 hover:cursor-pointer"
+              className="hidden md:flex rounded-full p-1.5 md:p-2 text-white transition-all hover:bg-white/20 active:scale-95 cursor-pointer"
               title={showSidebar ? t("hideSidebar") : t("showSidebar")}
             >
-              <svg
-                className="h-5 w-5 md:h-6 md:w-6"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                viewBox="0 0 24 24"
-              >
-                {showSidebar ? (
-                  <>
-                    <rect width="18" height="18" x="3" y="3" rx="2" />
-                    <path d="M15 3v18" />
-                    <path d="m8 9 3 3-3 3" />
-                  </>
-                ) : (
-                  <>
-                    <rect width="18" height="18" x="3" y="3" rx="2" />
-                    <path d="M15 3v18" />
-                    <path d="m10 15-3-3 3-3" />
-                  </>
-                )}
-              </svg>
+              {showSidebar ? (
+                <PanelRightClose className="h-5 w-5 md:h-6 md:w-6" />
+              ) : (
+                <PanelRightOpen className="h-5 w-5 md:h-6 md:w-6" />
+              )}
             </button>
           )}
         </div>

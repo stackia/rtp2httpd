@@ -4,7 +4,7 @@ import type { ThemeMode } from "../../types/ui";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
 import { Badge } from "../ui/badge";
 import { SelectBox } from "../ui/select-box";
-import { GlobeIcon, MoonIcon, SignalIcon, SunIcon } from "../icons";
+import { Globe, Moon, Wifi, Sun } from "lucide-react";
 
 interface StatusHeaderProps {
   statusAccent: string;
@@ -42,7 +42,7 @@ export function StatusHeader({
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <span className={`inline-flex items-center gap-2 font-medium ${statusAccent}`}>
-              <SignalIcon className="h-4 w-4" />
+              <Wifi className="h-4 w-4" />
               {statusLabel}
             </span>
             <Badge variant="outline" className="border-border/60">
@@ -60,7 +60,7 @@ export function StatusHeader({
         </div>
         <div className="flex flex-col gap-3 text-sm text-muted-foreground md:flex-row md:items-start">
           <label className="flex items-center gap-3">
-            <GlobeIcon className="h-4 w-4 text-muted-foreground" />
+            <Globe className="h-4 w-4 text-muted-foreground" />
             <span className="hidden text-xs font-semibold uppercase tracking-wide md:inline">{t("language")}</span>
             <SelectBox
               value={locale}
@@ -77,9 +77,9 @@ export function StatusHeader({
           </label>
           <label className="flex items-center gap-3">
             {theme === "dark" ? (
-              <MoonIcon className="h-4 w-4 text-muted-foreground" />
+              <Moon className="h-4 w-4 text-muted-foreground" />
             ) : (
-              <SunIcon className="h-4 w-4 text-muted-foreground" />
+              <Sun className="h-4 w-4 text-muted-foreground" />
             )}
             <span className="hidden text-xs font-semibold uppercase tracking-wide md:inline">{t("appearance")}</span>
             <SelectBox

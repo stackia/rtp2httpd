@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef, Activity } from "react";
+import { StrictMode, useEffect, useState, useCallback, useMemo, useRef, Activity } from "react";
 import { createRoot } from "react-dom/client";
 import mpegts from "mpegts.js";
 import { Channel, M3UMetadata, PlayMode } from "../types/player";
@@ -454,7 +454,7 @@ function PlayerPage() {
 
 // Mount the app
 createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
+  <StrictMode>
     <PlayerPage />
-  </React.StrictMode>,
+  </StrictMode>,
 );
