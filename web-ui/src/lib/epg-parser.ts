@@ -180,24 +180,7 @@ export async function loadEPG(url: string, validChannelIds?: Set<string>): Promi
     if (!response.ok) {
       throw new Error(`Failed to fetch EPG: ${response.statusText}`);
     }
-
-    let xmlText: string;
-
-    // Check if response is gzipped
-    const contentType = response.headers.get("content-type") || "";
-    const contentEncoding = response.headers.get("content-encoding") || "";
-
-    if (url.endsWith(".gz") || contentEncoding.includes("gzip") || contentType.includes("gzip")) {
-      // Handle gzipped content
-      const blob = await response.blob();
-      const ds = new DecompressionStream("gzip");
-      const decompressedStream = blob.stream().pipeThrough(ds);
-      const decompressedBlob = await new Response(decompressedStream).blob();
-      xmlText = await decompressedBlob.text();
-    } else {
-      xmlText = await response.text();
-    }
-
+    const xmlText = await response.text();
     return parseEPG(xmlText, validChannelIds);
   } catch (error) {
     console.error("Failed to load EPG:", error);

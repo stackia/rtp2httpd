@@ -192,30 +192,30 @@ function PlayerPage() {
 
       // Load EPG if available
       if (parsed.tvgUrl) {
-        try {
-          // Build set of valid channel IDs from M3U for filtering
-          // Use tvgId, tvgName, and name for EPG matching (with fallback logic)
-          const validChannelIds = new Set<string>();
-          parsed.channels.forEach((channel) => {
-            if (channel.tvgId) validChannelIds.add(channel.tvgId);
-            if (channel.tvgName) validChannelIds.add(channel.tvgName);
-            validChannelIds.add(channel.name);
-          });
+        // Build set of valid channel IDs from M3U for filtering
+        // Use tvgId, tvgName, and name for EPG matching (with fallback logic)
+        const validChannelIds = new Set<string>();
+        parsed.channels.forEach((channel) => {
+          if (channel.tvgId) validChannelIds.add(channel.tvgId);
+          if (channel.tvgName) validChannelIds.add(channel.tvgName);
+          validChannelIds.add(channel.name);
+        });
 
-          // Build EPG URL with token if available
-          let epgUrl = parsed.tvgUrl;
-          if (token) {
-            const separator = parsed.tvgUrl.includes("?") ? "&" : "?";
-            epgUrl = `${parsed.tvgUrl}${separator}r2h-token=${encodeURIComponent(token)}`;
-          }
-
-          // Load EPG and filter to only channels in M3U
-          const epg = await loadEPG(epgUrl, validChannelIds);
-          setEpgData(epg);
-        } catch (err) {
-          console.error("Failed to load EPG:", err);
-          // Don't fail the whole app if EPG fails
+        // Build EPG URL with token if available
+        let epgUrl = parsed.tvgUrl;
+        if (token) {
+          const separator = parsed.tvgUrl.includes("?") ? "&" : "?";
+          epgUrl = `${parsed.tvgUrl}${separator}r2h-token=${encodeURIComponent(token)}`;
         }
+
+        // Load EPG and filter to only channels in M3U
+        loadEPG(epgUrl, validChannelIds)
+          .then((epg) => {
+            setEpgData(epg);
+          })
+          .catch((err) => {
+            console.error("Failed to load EPG:", err);
+          });
       }
 
       // Try to restore last played channel, otherwise select first channel
