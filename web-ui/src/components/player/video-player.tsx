@@ -24,6 +24,7 @@ interface VideoPlayerProps {
   onToggleSidebar?: () => void;
   onFullscreenToggle?: () => void;
   onSearchInput?: (text: string) => void;
+  force16x9?: boolean;
 }
 
 export function VideoPlayer({
@@ -44,6 +45,7 @@ export function VideoPlayer({
   onToggleSidebar,
   onFullscreenToggle,
   onSearchInput,
+  force16x9 = true,
 }: VideoPlayerProps) {
   const t = usePlayerTranslation(locale);
 
@@ -572,10 +574,10 @@ export function VideoPlayer({
   return (
     <div className="relative w-full bg-black md:h-full" onMouseMove={resetHideTimer} onMouseLeave={handleMouseLeave}>
       {/* Mobile: 16:9 aspect ratio container, Desktop: full height */}
-      <div className="relative w-full aspect-video md:aspect-auto md:h-full">
+      <div className="video-container relative w-full aspect-video md:aspect-auto md:h-full flex items-center justify-center">
         <video
           ref={videoRef}
-          className="absolute inset-0 w-full h-full md:relative"
+          className={`max-w-full max-h-full ${force16x9 ? "object-fill aspect-video" : "w-full h-full"}`}
           playsInline
           webkit-playsinline="true"
           x5-playsinline="true"
