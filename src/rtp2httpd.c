@@ -18,6 +18,7 @@
 
 #include "rtp2httpd.h"
 #include "configuration.h"
+#include "service.h"
 #include "status.h"
 #include "worker.h"
 #include "zerocopy.h"
@@ -295,6 +296,7 @@ int main(int argc, char *argv[])
 
   free_bindaddr(bind_addresses);
   status_cleanup();
+  service_hashmap_free();
 
   return result;
 }

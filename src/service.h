@@ -2,6 +2,7 @@
 #define SERVICE_H
 
 #include <netdb.h>
+#include "hashmap.h"
 
 /* ========== HTTP/SERVICE BUFFER SIZE CONFIGURATION ========== */
 
@@ -150,5 +151,41 @@ void service_free(service_t *service);
  * and only removes services loaded from external M3U URLs
  */
 void service_free_external(void);
+
+/**
+ * Initialize the service lookup hashmap
+ * Must be called before any services are added
+ */
+void service_hashmap_init(void);
+
+/**
+ * Free the service lookup hashmap
+ * Should be called during shutdown
+ */
+void service_hashmap_free(void);
+
+/**
+ * Add a service to the lookup hashmap
+ * Should be called whenever a service is added to the global services list
+ *
+ * @param service Service to add to the hashmap
+ */
+void service_hashmap_add(service_t *service);
+
+/**
+ * Remove a service from the lookup hashmap
+ * Should be called whenever a service is removed from the global services list
+ *
+ * @param service Service to remove from the hashmap
+ */
+void service_hashmap_remove(service_t *service);
+
+/**
+ * Lookup a service by URL in O(1) time using the hashmap
+ *
+ * @param url URL to lookup
+ * @return Pointer to service structure or NULL if not found
+ */
+service_t *service_hashmap_get(const char *url);
 
 #endif /* SERVICE_H */

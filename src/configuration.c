@@ -998,6 +998,9 @@ void parse_cmd_line(int argc, char *argv[])
 
   restore_conf_defaults();
 
+  /* Initialize service hashmap for O(1) service lookup */
+  service_hashmap_init();
+
   while ((opt = getopt_long(argc, argv, short_opts,
                             longopts, &option_index)) != -1)
   {

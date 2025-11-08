@@ -185,10 +185,8 @@ http_fetch_ctx_t *http_fetch_find_by_fd(int fd)
     if (!result)
         return NULL;
 
-    /* Extract the pointer from the result */
-    http_fetch_ctx_t *ctx;
-    memcpy(&ctx, result, sizeof(http_fetch_ctx_t *));
-    return ctx;
+    /* Extract the pointer from the result - direct dereference is cleaner than memcpy */
+    return *(http_fetch_ctx_t **)result;
 }
 
 /* Remove context from hashmap */
