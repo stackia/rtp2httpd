@@ -1,5 +1,5 @@
 import type { SelectHTMLAttributes } from "react";
-import { ChevronDownIcon } from "../icons";
+import { ChevronDown } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 export interface SelectBoxProps extends SelectHTMLAttributes<HTMLSelectElement> {
@@ -18,7 +18,7 @@ export function SelectBox({ containerClassName, className, children, ...props }:
       >
         {children}
       </select>
-      <ChevronDownIcon className="pointer-events-none absolute right-3 h-4 w-4 text-muted-foreground transition-transform duration-200 peer-focus:rotate-180" />
+      <ChevronDown className="pointer-events-none absolute right-3 h-4 w-4 text-muted-foreground transition-transform duration-200 peer-focus:rotate-180" />
     </div>
   );
 }

@@ -1,4 +1,5 @@
-import React, { useMemo, useRef, useLayoutEffect } from "react";
+import { useMemo, useRef, useLayoutEffect } from "react";
+import { Circle, History } from "lucide-react";
 import { EPGProgram } from "../../types/player";
 import { EPGData } from "../../lib/epg-parser";
 import { Card } from "../ui/card";
@@ -216,30 +217,14 @@ export function EPGView({
                           {/* Right: Status Icon (unified position) */}
                           <div className="flex h-8 md:h-10 w-3 md:w-4 shrink-0 items-center justify-center">
                             {onAir && (
-                              <svg
-                                className="h-2.5 w-2.5 md:h-3 md:w-3 text-primary"
-                                fill="currentColor"
-                                viewBox="0 0 8 8"
-                              >
-                                <circle cx="4" cy="4" r="3" />
-                                <title>{t("onAir")}</title>
-                              </svg>
+                              <span title={t("onAir")}>
+                                <Circle className="h-2.5 w-2.5 md:h-3 md:w-3 text-primary fill-current" />
+                              </span>
                             )}
                             {isPast && supportsCatchup && (
-                              <svg
-                                className="h-3 w-3 md:h-3.5 md:w-3.5 text-muted-foreground"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <title>{t("replay")}</title>
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                />
-                              </svg>
+                              <span title={t("replay")}>
+                                <History className="h-3 w-3 md:h-3.5 md:w-3.5 text-muted-foreground" />
+                              </span>
                             )}
                           </div>
                         </div>

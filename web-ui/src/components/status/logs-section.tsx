@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { List } from "lucide-react";
 import type { Locale } from "../../lib/locale";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
 import type { LogEntry } from "../../types";
-import { LogsIcon } from "../icons";
 import { SelectBox } from "../ui/select-box";
 import { Switch } from "../ui/switch";
 
@@ -42,7 +42,7 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
         <h2 className="text-xl font-semibold tracking-tight text-card-foreground">{t("logs")}</h2>
         <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
           <label className="flex items-center gap-2">
-            <LogsIcon className="h-4 w-4" />
+            <List className="h-4 w-4" />
             <span>{t("logLevel")}:</span>
             <SelectBox
               value={logLevelValue ?? ""}

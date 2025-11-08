@@ -1,6 +1,6 @@
-import React, { useCallback, useMemo, useState } from "react";
+import { StrictMode, useCallback, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { ActivityIcon, GaugeIcon, LayersIcon, UsersIcon } from "../components/icons";
+import { Activity, Gauge, Layers, Users } from "lucide-react";
 import { ConnectionsSection } from "../components/status/connections-section";
 import { LogsSection } from "../components/status/logs-section";
 import { StatusHeader } from "../components/status/status-header";
@@ -146,25 +146,25 @@ function StatusPage() {
       {
         title: t("totalClients"),
         value: totalClients.toString(),
-        icon: UsersIcon,
+        icon: Users,
         tone: "violet" as const,
       },
       {
         title: t("totalBandwidth"),
         value: totalBandwidthDisplay,
-        icon: ActivityIcon,
+        icon: Activity,
         tone: "emerald" as const,
       },
       {
         title: t("totalTraffic"),
         value: totalTrafficDisplay,
-        icon: LayersIcon,
+        icon: Layers,
         tone: "sky" as const,
       },
       {
         title: t("maxClients"),
         value: maxClientsDisplay,
-        icon: GaugeIcon,
+        icon: Gauge,
         tone: "amber" as const,
       },
     ],
@@ -223,7 +223,7 @@ function StatusPage() {
 
 // Mount the app
 createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
+  <StrictMode>
     <StatusPage />
-  </React.StrictMode>,
+  </StrictMode>,
 );

@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import mpegts from "mpegts.js";
+import { Play } from "lucide-react";
 import { Channel, EPGProgram } from "../../types/player";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
@@ -632,9 +633,7 @@ export function VideoPlayer({
             onClick={handleUserClick}
           >
             <div className="flex flex-col items-center gap-4 text-white">
-              <svg className="h-20 w-20 opacity-90" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z" />
-              </svg>
+              <Play className="h-20 w-20 opacity-90 fill-current" />
               <div className="text-center">
                 <div className="mb-2 text-2xl font-semibold">{t("clickToPlay")}</div>
                 <div className="text-sm text-white/70">{t("autoplayBlocked")}</div>

@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useRef, forwardRef, useImperativeHandle, useLayoutEffect } from "react";
+import { useState, useMemo, useRef, forwardRef, useImperativeHandle, useLayoutEffect } from "react";
+import { Search, History } from "lucide-react";
 import { Channel } from "../../types/player";
 import { Card } from "../ui/card";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
@@ -130,19 +131,7 @@ export const ChannelList = forwardRef<ChannelListRef, ChannelListProps>(
                 onKeyDown={handleSearchKeyDown}
                 className="w-full rounded-lg border border-border bg-background px-3 md:px-4 py-2 md:py-2.5 pl-9 md:pl-10 text-sm shadow-sm transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
-              <svg
-                className="absolute left-2.5 md:left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
+              <Search className="absolute left-2.5 md:left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
             {settingsSlot && <div>{settingsSlot}</div>}
           </div>
@@ -201,20 +190,9 @@ export const ChannelList = forwardRef<ChannelListRef, ChannelListProps>(
                       <div className="flex items-center gap-1 md:gap-1.5">
                         <div className="truncate text-sm md:text-base font-semibold leading-tight">{channel.name}</div>
                         {channel.catchup && (
-                          <svg
-                            className="h-3 w-3 md:h-3.5 md:w-3.5 shrink-0 text-primary"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <title>{t("catchup")}</title>
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                            />
-                          </svg>
+                          <span title={t("catchup")}>
+                            <History className="h-3 w-3 md:h-3.5 md:w-3.5 shrink-0 text-primary" />
+                          </span>
                         )}
                       </div>
                       <div className="mt-0.5 truncate text-[10px] md:text-xs text-muted-foreground">
