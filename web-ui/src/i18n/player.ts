@@ -63,6 +63,8 @@ const base: TranslationDict = {
   unmute: "Unmute",
   fullscreen: "Fullscreen",
   exitFullscreen: "Exit Fullscreen",
+  pictureInPicture: "Picture in Picture",
+  exitPictureInPicture: "Exit Picture in Picture",
 
   // Relative dates
   today: "Today",
@@ -142,6 +144,8 @@ const zhHans: TranslationDict = {
   unmute: "取消静音",
   fullscreen: "全屏",
   exitFullscreen: "退出全屏",
+  pictureInPicture: "画中画",
+  exitPictureInPicture: "退出画中画",
 
   // 相对日期
   today: "今天",
@@ -221,6 +225,8 @@ const zhHant: TranslationDict = {
   unmute: "取消靜音",
   fullscreen: "全螢幕",
   exitFullscreen: "退出全螢幕",
+  pictureInPicture: "子母畫面",
+  exitPictureInPicture: "退出子母畫面",
 
   // 相對日期
   today: "今天",

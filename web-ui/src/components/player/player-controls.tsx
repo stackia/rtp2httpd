@@ -26,6 +26,9 @@ interface PlayerControlsProps {
   isMuted: boolean;
   onMuteToggle: () => void;
   onFullscreen: () => void;
+  // Picture-in-Picture controls
+  isPiP?: boolean;
+  onPiPToggle?: () => void;
   // Sidebar controls
   showSidebar?: boolean;
   onToggleSidebar?: () => void;
@@ -46,6 +49,8 @@ export function PlayerControls({
   isMuted,
   onMuteToggle,
   onFullscreen,
+  isPiP = false,
+  onPiPToggle,
   showSidebar = true,
   onToggleSidebar,
 }: PlayerControlsProps) {
@@ -423,6 +428,40 @@ export function PlayerControls({
               )}
             </svg>
           </button>
+
+          {/* Picture-in-Picture - Only show if supported and handler is provided */}
+          {onPiPToggle && document.pictureInPictureEnabled && (
+            <button
+              onClick={onPiPToggle}
+              className="rounded-full p-1.5 md:p-2 text-white transition-all hover:bg-white/20 active:scale-95 hover:cursor-pointer"
+              title={isPiP ? t("exitPictureInPicture") : t("pictureInPicture")}
+            >
+              <svg
+                className="h-5 w-5 md:h-6 md:w-6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                viewBox="0 0 24 24"
+              >
+                {isPiP ? (
+                  /* Exit PiP - X in corner of rectangle */
+                  <>
+                    <path d="M2 8V5c0-1.1.9-2 2-2h16a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                    <rect width="10" height="7" x="2" y="15" rx="1" />
+                    <path d="m9 12 1.5 1.5L9 15" />
+                  </>
+                ) : (
+                  /* Enter PiP - Small rectangle in corner */
+                  <>
+                    <path d="M2 8V5c0-1.1.9-2 2-2h16a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                    <rect width="10" height="7" x="2" y="15" rx="1" />
+                  </>
+                )}
+              </svg>
+            </button>
+          )}
 
           {/* Toggle Sidebar - Hidden on mobile */}
           {onToggleSidebar && (
