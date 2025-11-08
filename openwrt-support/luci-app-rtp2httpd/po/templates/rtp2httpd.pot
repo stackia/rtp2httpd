@@ -68,7 +68,7 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:420
 msgid ""
-"External M3U automatic update interval in seconds (default: 86400 = 24 "
+"External M3U automatic update interval in seconds (default: 7200 = 2 "
 "hours). Set to 0 to disable automatic updates."
 msgstr ""
 
