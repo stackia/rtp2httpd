@@ -189,7 +189,7 @@ sudo make install
 
 ### 可选依赖
 
-- **curl**：用于获取外部 M3U 播放列表（HTTP/HTTPS）
+- **curl** 或 **uclient-fetch**：用于获取外部 M3U 播放列表（HTTP/HTTPS）
 - **ffmpeg**：用于视频快照功能
 
 ## 下一步

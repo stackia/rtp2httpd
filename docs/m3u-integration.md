@@ -21,7 +21,7 @@ rtp2httpd 全面支持 M3U/M3U8 播放列表格式，可自动识别节目并提
 ```ini
 [global]
 # 外部 M3U 配置（支持 file://, http://, https://）
-# 注意：HTTP/HTTPS 需要安装 curl 命令
+# 注意：HTTP/HTTPS 需要安装 curl 或 uclient-fetch 命令
 external-m3u = https://example.com/iptv.m3u
 # 或使用本地文件
 external-m3u = file:///path/to/playlist.m3u
@@ -197,8 +197,8 @@ http://other-cdn.com/live/stream.m3u8
 
 1. **HTTP/HTTPS 支持**
 
-   - 需要系统安装 `curl` 命令
-   - OpenWrt 用户：`opkg install curl`
+   - 需要系统安装 `curl` 或 `uclient-fetch` 命令
+   - rtp2httpd 会自动检测并使用可用的工具
 
 2. **更新策略**
 
