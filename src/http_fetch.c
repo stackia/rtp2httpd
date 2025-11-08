@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/epoll.h>
+#include <sys/wait.h>
 
 #include "http_fetch.h"
 #include "rtp2httpd.h"
@@ -16,6 +17,18 @@
 #define HTTP_FETCH_BUFFER_SIZE 8192         /* Read buffer size for async fetch */
 #define MAX_HTTP_CONTENT (20 * 1024 * 1024) /* 10MB max */
 #define MAX_URL_LENGTH 2048
+
+/* HTTP fetch tool types */
+typedef enum
+{
+    HTTP_TOOL_CURL = 0,
+    HTTP_TOOL_UCLIENT_FETCH,
+    HTTP_TOOL_NONE
+} http_fetch_tool_t;
+
+/* Cached detected HTTP fetch tool */
+static http_fetch_tool_t detected_tool = HTTP_TOOL_NONE;
+static int tool_detection_done = 0;
 
 /* Async HTTP fetch context */
 struct http_fetch_ctx_s
@@ -38,10 +51,112 @@ struct http_fetch_ctx_s
 /* Global list of active HTTP fetch contexts */
 static http_fetch_ctx_t *active_fetches = NULL;
 
-/* Synchronously fetch content from HTTP(S) URL using curl (blocking, returns fd) */
+/* Detect available HTTP fetch tool */
+static http_fetch_tool_t detect_http_fetch_tool(void)
+{
+    int ret;
+
+    /* Return cached result if already detected */
+    if (tool_detection_done)
+    {
+        return detected_tool;
+    }
+
+    /* Check for curl by trying to execute it with --version
+     * This respects the PATH environment variable */
+    ret = system("curl --version >/dev/null 2>&1");
+    if (ret == 0)
+    {
+        logger(LOG_INFO, "HTTP fetch tool detected: curl");
+        detected_tool = HTTP_TOOL_CURL;
+        tool_detection_done = 1;
+        return detected_tool;
+    }
+
+    /* Check for uclient-fetch by trying to execute it
+     * uclient-fetch returns 1 when called without arguments, but that's fine
+     * as long as it's found in PATH */
+    ret = system("uclient-fetch >/dev/null 2>&1");
+    if (ret == 0 || WEXITSTATUS(ret) == 1)
+    {
+        logger(LOG_INFO, "HTTP fetch tool detected: uclient-fetch");
+        detected_tool = HTTP_TOOL_UCLIENT_FETCH;
+        tool_detection_done = 1;
+        return detected_tool;
+    }
+
+    /* No suitable tool found */
+    logger(LOG_ERROR, "No HTTP fetch tool found. Please install curl or uclient-fetch.");
+    detected_tool = HTTP_TOOL_NONE;
+    tool_detection_done = 1;
+    return detected_tool;
+}
+
+/* Build fetch command based on available tool */
+static int build_fetch_command(char *buf, size_t bufsize,
+                               const char *url,
+                               const char *output_file,
+                               int timeout,
+                               int async_mode)
+{
+    http_fetch_tool_t tool = detect_http_fetch_tool();
+    int ret;
+
+    if (tool == HTTP_TOOL_NONE)
+    {
+        logger(LOG_ERROR, "No HTTP fetch tool available");
+        return -1;
+    }
+
+    if (tool == HTTP_TOOL_CURL)
+    {
+        /* curl command */
+        if (async_mode)
+        {
+            ret = snprintf(buf, bufsize,
+                           "curl -L -f -s -S --max-time %d --connect-timeout 10 -o '%s' '%s' 2>&1; echo \"EXIT_CODE:$?\"",
+                           timeout, output_file, url);
+        }
+        else
+        {
+            ret = snprintf(buf, bufsize,
+                           "curl -L -f -s -S --max-time %d --connect-timeout %d -o '%s' '%s' 2>&1",
+                           timeout, timeout, output_file, url);
+        }
+    }
+    else /* HTTP_TOOL_UCLIENT_FETCH */
+    {
+        /* uclient-fetch command
+         * Note: uclient-fetch does not support following redirects (-L equivalent)
+         * and does not have separate connect/total timeout settings
+         */
+        if (async_mode)
+        {
+            ret = snprintf(buf, bufsize,
+                           "uclient-fetch -q -T %d -O '%s' '%s' 2>&1; echo \"EXIT_CODE:$?\"",
+                           timeout, output_file, url);
+        }
+        else
+        {
+            ret = snprintf(buf, bufsize,
+                           "uclient-fetch -q -T %d -O '%s' '%s' 2>&1",
+                           timeout, output_file, url);
+        }
+    }
+
+    if (ret >= (int)bufsize)
+    {
+        logger(LOG_ERROR, "Fetch command too long for URL: %s", url);
+        return -1;
+    }
+
+    return 0;
+}
+
+/* Synchronously fetch content from HTTP(S) URL using curl or uclient-fetch (blocking, returns fd) */
 int http_fetch_fd_sync(const char *url, size_t *out_size)
 {
-    char curl_cmd[MAX_URL_LENGTH + 256];
+    char fetch_cmd[MAX_URL_LENGTH + 256];
     char temp_file[] = "/tmp/rtp2httpd_fetch_sync_XXXXXX";
     int temp_fd;
     long file_size;
@@ -64,25 +179,20 @@ int http_fetch_fd_sync(const char *url, size_t *out_size)
     }
     close(temp_fd);
 
-    /* Build curl command with timeout and follow redirects */
-    ret = snprintf(curl_cmd, sizeof(curl_cmd),
-                   "curl -L -f -s -S --max-time 30 --connect-timeout 30 -o '%s' '%s' 2>&1",
-                   temp_file, url);
-
-    if (ret >= (int)sizeof(curl_cmd))
+    /* Build fetch command with timeout and follow redirects */
+    if (build_fetch_command(fetch_cmd, sizeof(fetch_cmd), url, temp_file, 30, 0) < 0)
     {
-        logger(LOG_ERROR, "Curl command too long for URL: %s", url);
         unlink(temp_file);
         return -1;
     }
 
     logger(LOG_DEBUG, "Fetching URL (sync): %s", url);
 
-    /* Execute curl command */
-    ret = system(curl_cmd);
+    /* Execute fetch command */
+    ret = system(fetch_cmd);
     if (ret != 0)
     {
-        logger(LOG_ERROR, "Failed to fetch URL (curl exit code %d): %s", ret, url);
+        logger(LOG_ERROR, "Failed to fetch URL (exit code %d): %s", ret, url);
         unlink(temp_file);
         return -1;
     }
@@ -247,10 +357,9 @@ static http_fetch_ctx_t *http_fetch_start_async_internal(const char *url,
                                                          http_fetch_fd_callback_t fd_callback,
                                                          void *user_data, int epfd)
 {
-    char curl_cmd[MAX_URL_LENGTH + 256];
+    char fetch_cmd[MAX_URL_LENGTH + 256];
     char temp_file_template[] = "/tmp/rtp2httpd_http_fetch_XXXXXX";
     int temp_fd;
-    int ret;
     struct epoll_event ev;
 
     if (!url || (!callback && !fd_callback) || epfd < 0)
@@ -286,25 +395,20 @@ static http_fetch_ctx_t *http_fetch_start_async_internal(const char *url,
     close(temp_fd);
     ctx->temp_file = strdup(temp_file_template);
 
-    /* Build curl command - output to temp file, errors to stdout for monitoring */
-    ret = snprintf(curl_cmd, sizeof(curl_cmd),
-                   "curl -L -f -s -S --max-time 30 --connect-timeout 10 -o '%s' '%s' 2>&1; echo \"EXIT_CODE:$?\"",
-                   ctx->temp_file, url);
-
-    if (ret >= (int)sizeof(curl_cmd))
+    /* Build fetch command - output to temp file, errors to stdout for monitoring */
+    if (build_fetch_command(fetch_cmd, sizeof(fetch_cmd), url, ctx->temp_file, 30, 1) < 0)
     {
-        logger(LOG_ERROR, "Curl command too long for URL: %s", url);
         http_fetch_free(ctx);
         return NULL;
     }
 
     logger(LOG_DEBUG, "Starting async HTTP fetch: %s", url);
 
-    /* Start curl process with popen */
-    ctx->pipe_fp = popen(curl_cmd, "r");
+    /* Start fetch process with popen */
+    ctx->pipe_fp = popen(fetch_cmd, "r");
     if (!ctx->pipe_fp)
     {
-        logger(LOG_ERROR, "Failed to start curl process: %s", strerror(errno));
+        logger(LOG_ERROR, "Failed to start fetch process: %s", strerror(errno));
         http_fetch_free(ctx);
         return NULL;
     }
@@ -432,11 +536,11 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx)
         ctx->pipe_fp = NULL;
         ctx->pipe_fd = -1;
 
-        /* Check curl exit code */
+        /* Check fetch exit code */
         if (exit_code != 0)
         {
-            logger(LOG_ERROR, "Async HTTP fetch failed (curl exit code %d): %s", exit_code, ctx->url);
-            logger(LOG_DEBUG, "Curl output: %.*s", (int)ctx->buffer_used, ctx->buffer);
+            logger(LOG_ERROR, "Async HTTP fetch failed (exit code %d): %s", exit_code, ctx->url);
+            logger(LOG_DEBUG, "Fetch output: %.*s", (int)ctx->buffer_used, ctx->buffer);
 
             if (ctx->use_fd)
             {
