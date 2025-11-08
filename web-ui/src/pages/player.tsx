@@ -301,13 +301,13 @@ function PlayerPage() {
 
   // Main UI content
   const mainContent = (
-    <div ref={pageContainerRef} className="flex h-screen flex-col bg-background">
+    <div ref={pageContainerRef} className="flex h-svh flex-col bg-background">
       <title>{t("title")}</title>
 
       {/* Main Content */}
       <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
         {/* Video Player - Mobile: fixed aspect ratio at top, Desktop: fills left side */}
-        <div className="w-full md:flex-1 shrink-0">
+        <div className="w-full sticky md:static md:flex-1 shrink-0">
           <VideoPlayer
             channel={currentChannel}
             segments={playbackSegments}
@@ -434,7 +434,7 @@ function PlayerPage() {
 
   if (error && !metadata) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex h-svh items-center justify-center bg-background">
         <Card className="max-w-md p-6">
           <div className="mb-4 text-xl font-semibold text-destructive">{t("error")}</div>
           <div className="mb-4">{error}</div>

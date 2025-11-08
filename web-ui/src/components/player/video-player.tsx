@@ -302,7 +302,7 @@ export function VideoPlayer({
       stablePlaybackTimeoutRef.current = null;
     }
 
-    setShowControls(true);
+    resetHideTimer();
     setIsLoading(true);
     setError(null);
     setIsPlaying(false);
