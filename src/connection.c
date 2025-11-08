@@ -1058,7 +1058,9 @@ static void handle_epg_request(connection_t *c)
 
   /* Get ETag for the EPG data */
   const char *etag = epg_get_etag();
-  const char *content_type = is_gzipped ? "application/gzip" : "application/xml";
+  /* Always use application/xml as content type - if gzipped, add Content-Encoding header
+   * This allows browser to automatically decompress (better performance than JS) */
+  const char *content_type = "application/xml";
 
   /* Check ETag and send 304 if it matches */
   if (http_check_etag_and_send_304(c, etag, content_type))
@@ -1069,8 +1071,10 @@ static void handle_epg_request(connection_t *c)
   /* ETag doesn't match or not provided - send full EPG data */
   char extra_headers[256];
 
-  /* Build headers with ETag support */
-  http_build_etag_headers(extra_headers, sizeof(extra_headers), epg_size, etag, NULL);
+  /* Build headers with ETag support
+   * If gzipped, add Content-Encoding: gzip to let browser decompress automatically */
+  http_build_etag_headers(extra_headers, sizeof(extra_headers), epg_size, etag,
+                          is_gzipped ? "Content-Encoding: gzip" : NULL);
 
   send_http_headers(c, STATUS_200, content_type, extra_headers);
 
