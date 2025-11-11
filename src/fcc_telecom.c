@@ -158,7 +158,7 @@ int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf, int 
 
     if (result_code != 0)
     {
-        logger(LOG_DEBUG, "FCC (Telecom): Server response error code: %u, falling back to multicast", result_code);
+        logger(LOG_WARN, "FCC (Telecom): Server response error code: %u, falling back to multicast", result_code);
         fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Server error");
         ctx->mcast_sock = stream_join_mcast_group(ctx);
         return 0;
@@ -193,7 +193,7 @@ int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf, int 
     if (type == 1)
     {
         /* Join multicast immediately */
-        logger(LOG_DEBUG, "FCC (Telecom): Server says no unicast needed, joining multicast");
+        logger(LOG_INFO, "FCC (Telecom): Server says no unicast needed, joining multicast");
         fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "No unicast needed");
         ctx->mcast_sock = stream_join_mcast_group(ctx);
     }
