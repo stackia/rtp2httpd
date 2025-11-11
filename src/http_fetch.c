@@ -55,16 +55,16 @@ static struct hashmap *fetch_fd_map = NULL;
 /* Hash function for fd-based hashmap lookup */
 static uint64_t hash_fetch_fd(const void *item, uint64_t seed0, uint64_t seed1)
 {
-    const http_fetch_ctx_t *const *ctx_ptr = item;
-    const http_fetch_ctx_t *ctx = *ctx_ptr;
+    http_fetch_ctx_t *const *ctx_ptr = item;
+    http_fetch_ctx_t *ctx = *ctx_ptr;
     return hashmap_xxhash3(&ctx->pipe_fd, sizeof(int), seed0, seed1);
 }
 
 /* Compare function for fd-based hashmap lookup */
 static int compare_fetch_fds(const void *a, const void *b, void *udata)
 {
-    const http_fetch_ctx_t *const *ctx_a = a;
-    const http_fetch_ctx_t *const *ctx_b = b;
+    http_fetch_ctx_t *const *ctx_a = a;
+    http_fetch_ctx_t *const *ctx_b = b;
     (void)udata; /* unused */
     return (*ctx_a)->pipe_fd - (*ctx_b)->pipe_fd;
 }
@@ -180,8 +180,7 @@ http_fetch_ctx_t *http_fetch_find_by_fd(int fd)
     if (!result)
         return NULL;
 
-    /* Extract the pointer from the result - direct dereference is cleaner than memcpy */
-    return *(http_fetch_ctx_t **)result;
+    return *(http_fetch_ctx_t *const *)result;
 }
 
 /* Remove context from hashmap */

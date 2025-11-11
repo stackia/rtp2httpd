@@ -133,29 +133,21 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
         int result = 0;
         if (peer_addr.sin_port == ctx->fcc.fcc_server->sin_port)
         {
-            /* RTCP control message */
-            if (recv_data[0] == 0x83)
+            /* RTCP control message from FCC server */
+            int res = fcc_handle_server_response(ctx, recv_data, actualr, &peer_addr);
+            if (res == 1)
             {
-                int res = fcc_handle_server_response(ctx, recv_data, actualr, &peer_addr);
-                if (res == 1)
+                /* FCC redirect - retry request with new server */
+                if (fcc_initialize_and_request(ctx) < 0)
                 {
-                    /* FCC redirect - retry request with new server */
-                    if (fcc_initialize_and_request(ctx) < 0)
-                    {
-                        logger(LOG_ERROR, "FCC redirect retry failed");
-                        buffer_ref_put(recv_buf);
-                        return -1;
-                    }
+                    logger(LOG_ERROR, "FCC redirect retry failed");
                     buffer_ref_put(recv_buf);
-                    return 0; /* Redirect handled successfully */
+                    return -1;
                 }
-                result = res;
+                buffer_ref_put(recv_buf);
+                return 0; /* Redirect handled successfully */
             }
-            else if (recv_data[0] == 0x84)
-            {
-                /* Sync notification (FMT 4) */
-                result = fcc_handle_sync_notification(ctx, 0);
-            }
+            result = res;
         }
         else if (peer_addr.sin_port == ctx->fcc.media_port)
         {
@@ -347,6 +339,12 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, se
     else if (service->fcc_addr)
     {
         /* use Fast Channel Change for quick stream startup */
+
+        /* Use FCC type from service (already determined during parsing) */
+        ctx->fcc.type = service->fcc_type;
+        logger(LOG_INFO, "FCC: Using %s FCC protocol",
+               ctx->fcc.type == FCC_TYPE_HUAWEI ? "Huawei" : "Telecom/ZTE/Fiberhome");
+
         if (fcc_initialize_and_request(ctx) < 0)
         {
             logger(LOG_ERROR, "FCC initialization failed");
