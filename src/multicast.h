@@ -39,6 +39,14 @@ const char *get_upstream_interface_for_rtsp(void);
 const char *get_upstream_interface_for_multicast(void);
 
 /**
+ * Get local IP address for FCC packets
+ * Uses the configured upstream interface for FCC, or falls back to first non-loopback address
+ *
+ * @return Local IP address in host byte order, or 0 if unable to determine
+ */
+uint32_t get_local_ip_for_fcc(void);
+
+/**
  * Join a multicast group and return socket
  *
  * @param service Service structure containing multicast address info

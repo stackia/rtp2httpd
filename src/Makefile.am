@@ -12,6 +12,8 @@ rtp2httpd_SOURCES = \
 	rtp.c \
 	multicast.c \
 	fcc.c \
+	fcc_telecom.c \
+	fcc_huawei.c \
 	stream.c \
 	rtsp.c \
 	snapshot.c \
@@ -37,6 +39,8 @@ noinst_HEADERS = \
 	rtp.h \
 	multicast.h \
 	fcc.h \
+	fcc_telecom.h \
+	fcc_huawei.h \
 	stream.h \
 	rtsp.h \
 	snapshot.h \

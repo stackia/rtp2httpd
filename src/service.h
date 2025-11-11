@@ -60,6 +60,7 @@ typedef struct service_s
   struct addrinfo *addr;
   struct addrinfo *msrc_addr;
   struct addrinfo *fcc_addr;
+  int fcc_type;            /* FCC protocol type */
   char *rtp_url;           /* Full RTP URL for SERVICE_MRTP */
   char *rtsp_url;          /* Full RTSP URL for SERVICE_RTSP */
   char *seek_param_name;   /* Name of seek parameter (e.g., "playseek", "tvdr") */
@@ -124,7 +125,7 @@ service_t *service_create_from_rtp_url(const char *http_url);
  * @param expected_type Expected service type (SERVICE_MRTP or SERVICE_RTSP)
  * @return Pointer to newly allocated service structure or NULL if no merge needed/on failure
  */
-service_t *service_create_with_query_merge(const service_t *configured_service,
+service_t *service_create_with_query_merge(service_t *configured_service,
                                            const char *request_url,
                                            service_type_t expected_type);
 
@@ -136,7 +137,7 @@ service_t *service_create_with_query_merge(const service_t *configured_service,
  * @param service Service structure to clone
  * @return Pointer to newly allocated cloned service structure or NULL on failure
  */
-service_t *service_clone(const service_t *service);
+service_t *service_clone(service_t *service);
 
 /**
  * Free service structure allocated by service creation functions

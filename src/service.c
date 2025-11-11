@@ -15,6 +15,7 @@
 #include "service.h"
 #include "rtp2httpd.h"
 #include "http.h"
+#include "fcc.h"
 
 /* RTP URL parsing helper structure */
 struct rtp_url_components
@@ -27,6 +28,8 @@ struct rtp_url_components
     char fcc_port[HTTP_PORT_COMPONENT_SIZE];
     int has_source;
     int has_fcc;
+    fcc_type_t fcc_type;   /* FCC protocol type */
+    int fcc_type_explicit; /* 1 if fcc-type was explicitly set via query param */
 };
 
 /* Service lookup hashmap for O(1) service lookup by URL */
@@ -120,9 +123,12 @@ static int parse_rtp_url_components(char *url_part, struct rtp_url_components *c
     char *query_start, *at_pos;
     char main_part[HTTP_URL_MAIN_PART_SIZE];
     char fcc_value[HTTP_URL_FCC_VALUE_SIZE];
+    char fcc_type_value[32];
 
     /* Initialize components */
     memset(components, 0, sizeof(*components));
+    components->fcc_type = FCC_TYPE_TELECOM; /* Default to Telecom */
+    components->fcc_type_explicit = 0;
 
     /* URL decode the input */
     if (http_url_decode(url_part) != 0)
@@ -153,6 +159,27 @@ static int parse_rtp_url_components(char *url_part, struct rtp_url_components *c
                 return -1;
             }
             components->has_fcc = 1;
+        }
+
+        /* Parse fcc-type parameter from query string */
+        if (http_parse_query_param(query_start, "fcc-type", fcc_type_value, sizeof(fcc_type_value)) == 0)
+        {
+            /* Check for empty fcc-type value */
+            if (fcc_type_value[0] != '\0')
+            {
+                /* Parse fcc-type value (case-insensitive) */
+                if (strcasecmp(fcc_type_value, "telecom") == 0)
+                {
+                    components->fcc_type = FCC_TYPE_TELECOM;
+                    components->fcc_type_explicit = 1;
+                }
+                else if (strcasecmp(fcc_type_value, "huawei") == 0)
+                {
+                    components->fcc_type = FCC_TYPE_HUAWEI;
+                    components->fcc_type_explicit = 1;
+                }
+                /* Unrecognized values are ignored (use port-based detection) */
+            }
         }
     }
 
@@ -717,7 +744,7 @@ cleanup:
     return NULL;
 }
 
-service_t *service_create_with_query_merge(const service_t *configured_service,
+service_t *service_create_with_query_merge(service_t *configured_service,
                                            const char *request_url,
                                            service_type_t expected_type)
 {
@@ -1137,6 +1164,7 @@ service_t *service_create_from_rtp_url(const char *http_url)
 
     /* Set up FCC address */
     result->fcc_addr = NULL;
+    result->fcc_type = components.fcc_type;
     if (components.has_fcc)
     {
         fcc_res_addr = malloc(sizeof(struct sockaddr_storage));
@@ -1168,6 +1196,30 @@ service_t *service_create_from_rtp_url(const char *http_url)
         fcc_res_ai->ai_canonname = NULL;
         fcc_res_ai->ai_next = NULL;
         result->fcc_addr = fcc_res_ai;
+
+        /* Determine FCC type based on explicit parameter or port-based detection */
+        if (components.fcc_type_explicit)
+        {
+            logger(LOG_DEBUG, "FCC type explicitly set to %s",
+                   result->fcc_type == FCC_TYPE_HUAWEI ? "Huawei" : "Telecom");
+        }
+        else
+        {
+            /* Detect FCC type based on server port: 8027=Huawei, others=Telecom */
+            struct sockaddr_in *fcc_sin = (struct sockaddr_in *)fcc_res_ai->ai_addr;
+            int fcc_port = ntohs(fcc_sin->sin_port);
+
+            if (fcc_port == 8027)
+            {
+                result->fcc_type = FCC_TYPE_HUAWEI;
+                logger(LOG_DEBUG, "FCC type detected as Huawei (port %d)", fcc_port);
+            }
+            else
+            {
+                result->fcc_type = FCC_TYPE_TELECOM;
+                logger(LOG_DEBUG, "FCC type detected as Telecom (port %d)", fcc_port);
+            }
+        }
     }
 
     /* Free temporary addrinfo structures */
@@ -1232,7 +1284,7 @@ static struct addrinfo *clone_addrinfo(const struct addrinfo *src)
     return cloned;
 }
 
-service_t *service_clone(const service_t *service)
+service_t *service_clone(service_t *service)
 {
     service_t *cloned;
 
@@ -1255,6 +1307,7 @@ service_t *service_clone(const service_t *service)
     /* Copy simple fields */
     cloned->service_type = service->service_type;
     cloned->source = service->source;
+    cloned->fcc_type = service->fcc_type;
 
     /* Clone string fields */
     if (service->url)
@@ -1492,7 +1545,7 @@ void service_free_external(void)
  */
 static uint64_t service_hash(const void *item, uint64_t seed0, uint64_t seed1)
 {
-    const service_t *service = *(const service_t **)item;
+    service_t *service = *(service_t *const *)item;
     return hashmap_xxhash3(service->url, strlen(service->url), seed0, seed1);
 }
 
@@ -1503,8 +1556,8 @@ static uint64_t service_hash(const void *item, uint64_t seed0, uint64_t seed1)
  */
 static int service_compare(const void *a, const void *b, void *udata)
 {
-    const service_t *sa = *(const service_t **)a;
-    const service_t *sb = *(const service_t **)b;
+    service_t *sa = *(service_t *const *)a;
+    service_t *sb = *(service_t *const *)b;
     (void)udata; /* Unused */
     return strcmp(sa->url, sb->url);
 }
@@ -1619,7 +1672,5 @@ service_t *service_hashmap_get(const char *url)
         return NULL;
     }
 
-    /* The hashmap returns a pointer to the stored service_t* pointer
-     * So we dereference once to get the service_t* */
-    return *(service_t **)result;
+    return *(service_t *const *)result;
 }

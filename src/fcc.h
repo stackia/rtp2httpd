@@ -10,8 +10,13 @@
 typedef struct stream_context_s stream_context_t;
 typedef struct buffer_ref_s buffer_ref_t;
 
-#define FCC_PK_LEN_REQ 40
-#define FCC_PK_LEN_TERM 16
+/* FCC Protocol Type - Based on vendor and port */
+typedef enum
+{
+    FCC_TYPE_TELECOM = 0, /* Telecom/ZTE/Fiberhome (port 15970, FMT 2,3,4,5) */
+    FCC_TYPE_HUAWEI = 1   /* Huawei (port 8027, FMT 5,6,8,9,12) */
+} fcc_type_t;
+
 #define FCC_MAX_REDIRECTS 5
 
 /* FCC Timeout Configuration */
@@ -35,17 +40,22 @@ typedef enum
 typedef struct
 {
     fcc_state_t state;
+    fcc_type_t type;  /* FCC protocol type (Telecom or Huawei) */
     int status_index; /* Index in status_shared->clients array for state updates */
     int fcc_sock;
     struct sockaddr_in *fcc_server;
     struct sockaddr_in fcc_client;
-    uint16_t media_port;
+    uint16_t media_port; /* RTP media port (network byte order, for direct comparison with sin_port) */
     uint16_t current_seqn;
     uint16_t fcc_term_seqn;
     int fcc_term_sent;
     uint16_t not_first_packet;
     int redirect_count;         /* Number of redirects followed */
     int64_t unicast_start_time; /* Timestamp when unicast started (for sync wait timeout) */
+
+    /* Huawei FCC specific fields */
+    uint32_t session_id;        /* Session ID for NAT traversal correlation */
+    uint8_t need_nat_traversal; /* NAT traversal support flag from server */
 
     /* Multicast pending buffer for smooth transition - zero-copy chain */
     buffer_ref_t *pending_list_head;
@@ -149,5 +159,19 @@ int fcc_handle_mcast_transition(stream_context_t *ctx, buffer_ref_t *buf_ref);
  * @return 0 on success
  */
 int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref);
+
+/**
+ * Send UDP packet 3 times to FCC server (for reliability)
+ *
+ * @param fd Socket file descriptor
+ * @param buf Buffer to send
+ * @param n Size of buffer
+ * @param flags Send flags
+ * @param addr Destination address
+ * @param addr_len Address length
+ * @return Number of bytes sent, or -1 on error
+ */
+ssize_t sendto_triple(int fd, const void *buf, size_t n, int flags,
+                      struct sockaddr_in *addr, socklen_t addr_len);
 
 #endif /* __FCC_H__ */

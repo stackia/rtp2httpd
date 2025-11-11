@@ -12,6 +12,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <net/if.h>
+#include <ifaddrs.h>
 #include "multicast.h"
 #include "rtp2httpd.h"
 #include "service.h"
@@ -135,6 +136,81 @@ const char *get_upstream_interface_for_multicast(void)
     return config.upstream_interface;
   }
   return NULL;
+}
+
+/**
+ * Get local IP address for FCC packets
+ * Priority: upstream_interface_fcc > upstream_interface > first non-loopback IP
+ */
+uint32_t get_local_ip_for_fcc(void)
+{
+  const char *ifname = get_upstream_interface_for_fcc();
+  struct ifaddrs *ifaddr, *ifa;
+  uint32_t local_ip = 0;
+
+  if (getifaddrs(&ifaddr) == -1)
+  {
+    logger(LOG_ERROR, "getifaddrs failed: %s", strerror(errno));
+    return 0;
+  }
+
+  /* If specific interface is configured, get its IP */
+  if (ifname && ifname[0] != '\0')
+  {
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next)
+    {
+      if (ifa->ifa_addr == NULL)
+        continue;
+
+      if (ifa->ifa_addr->sa_family == AF_INET &&
+          strcmp(ifa->ifa_name, ifname) == 0)
+      {
+        struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
+        local_ip = ntohl(addr->sin_addr.s_addr);
+        logger(LOG_DEBUG, "FCC: Using local IP from interface %s: %u.%u.%u.%u",
+               ifname,
+               (local_ip >> 24) & 0xFF, (local_ip >> 16) & 0xFF,
+               (local_ip >> 8) & 0xFF, local_ip & 0xFF);
+        break;
+      }
+    }
+  }
+
+  /* Fallback: Get first non-loopback IPv4 address */
+  if (local_ip == 0)
+  {
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next)
+    {
+      if (ifa->ifa_addr == NULL)
+        continue;
+
+      if (ifa->ifa_addr->sa_family == AF_INET)
+      {
+        struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
+        uint32_t ip = ntohl(addr->sin_addr.s_addr);
+
+        /* Skip loopback (127.0.0.0/8) */
+        if ((ip >> 24) != 127)
+        {
+          local_ip = ip;
+          logger(LOG_DEBUG, "FCC: Using first non-loopback IP from interface %s: %u.%u.%u.%u",
+                 ifa->ifa_name,
+                 (local_ip >> 24) & 0xFF, (local_ip >> 16) & 0xFF,
+                 (local_ip >> 8) & 0xFF, local_ip & 0xFF);
+          break;
+        }
+      }
+    }
+  }
+
+  freeifaddrs(ifaddr);
+
+  if (local_ip == 0)
+  {
+    logger(LOG_WARN, "FCC: Could not determine local IP address");
+  }
+
+  return local_ip;
 }
 
 /*

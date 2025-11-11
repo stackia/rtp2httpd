@@ -13,6 +13,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "fcc.h"
+#include "fcc_telecom.h"
+#include "fcc_huawei.h"
 #include "rtp2httpd.h"
 #include "service.h"
 #include "multicast.h"
@@ -25,13 +27,7 @@
 #include "zerocopy.h"
 
 /* Forward declarations for internal functions */
-static uint8_t *build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client_nport);
-static uint8_t *build_fcc_term_pk(struct addrinfo *maddr, uint16_t seqn);
-static ssize_t sendto_triple(int fd, const void *buf, size_t n, int flags,
-                             struct sockaddr_in *addr, socklen_t addr_len);
 static void log_fcc_state_transition(fcc_state_t from, fcc_state_t to, const char *reason);
-static void log_fcc_server_response(uint8_t fmt, uint8_t result_code, uint16_t signal_port, uint16_t media_port,
-                                    uint32_t valid_time, uint32_t speed, uint32_t speed_after_sync);
 static int fcc_send_term_packet(fcc_session_t *fcc, service_t *service,
                                 uint16_t seqn, const char *reason);
 static int fcc_send_termination_message(stream_context_t *ctx, uint16_t mcast_seqn);
@@ -83,60 +79,8 @@ static int fcc_bind_socket_with_range(int sock, struct sockaddr_in *sin)
     return -1;
 }
 
-static uint8_t *build_fcc_request_pk(struct addrinfo *maddr, uint16_t fcc_client_nport)
-{
-    struct sockaddr_in *maddr_sin = (struct sockaddr_in *)
-                                        maddr->ai_addr;
-
-    static uint8_t pk[FCC_PK_LEN_REQ];
-    memset(&pk, 0, sizeof(pk));
-    uint8_t *p = pk;
-    *(p++) = 0x82;                              // Version 2, Padding 0, FMT 2
-    *(p++) = 205;                               // Type: Generic RTP Feedback (205)
-    *(uint16_t *)p = htons(sizeof(pk) / 4 - 1); // Length
-    p += 2;
-    p += 4;                                      // Sender SSRC
-    *(uint32_t *)p = maddr_sin->sin_addr.s_addr; // Media source SSRC
-    p += 4;
-
-    // FCI
-    p += 4;                            // Version 0, Reserved 3 bytes
-    *(uint16_t *)p = fcc_client_nport; // FCC client port
-    p += 2;
-    *(uint16_t *)p = maddr_sin->sin_port; // Mcast group port
-    p += 2;
-    *(uint32_t *)p = maddr_sin->sin_addr.s_addr; // Mcast group IP
-    p += 4;
-
-    return pk;
-}
-
-static uint8_t *build_fcc_term_pk(struct addrinfo *maddr, uint16_t seqn)
-{
-    struct sockaddr_in *maddr_sin = (struct sockaddr_in *)maddr->ai_addr;
-
-    static uint8_t pk[FCC_PK_LEN_TERM];
-    memset(&pk, 0, sizeof(pk));
-    uint8_t *p = pk;
-    *(p++) = 0x85;                              // Version 2, Padding 0, FMT 5
-    *(p++) = 205;                               // Type: Generic RTP Feedback (205)
-    *(uint16_t *)p = htons(sizeof(pk) / 4 - 1); // Length
-    p += 2;
-    p += 4;                                      // Sender SSRC
-    *(uint32_t *)p = maddr_sin->sin_addr.s_addr; // Media source SSRC
-    p += 4;
-
-    // FCI
-    *(p++) = seqn ? 0 : 1;        // Stop bit, 0 = normal, 1 = force
-    p++;                          // Reserved
-    *(uint16_t *)p = htons(seqn); // First multicast packet sequence
-    p += 2;
-
-    return pk;
-}
-
-static ssize_t sendto_triple(int fd, const void *buf, size_t n,
-                             int flags, struct sockaddr_in *addr, socklen_t addr_len)
+ssize_t sendto_triple(int fd, const void *buf, size_t n,
+                      int flags, struct sockaddr_in *addr, socklen_t addr_len)
 {
     static uint8_t i;
     for (i = 0; i < 3; i++)
@@ -210,38 +154,6 @@ static void log_fcc_state_transition(fcc_state_t from, fcc_state_t to, const cha
     const char *state_names[] = {"INIT", "REQUESTED", "UNICAST_PENDING", "UNICAST_ACTIVE", "MCAST_REQUESTED", "MCAST_ACTIVE", "ERROR"};
     logger(LOG_DEBUG, "FCC State: %s -> %s (%s)",
            state_names[from], state_names[to], reason ? reason : "");
-}
-
-/*
- * Helper function to format bitrate with human-readable units
- */
-static void format_bitrate(uint32_t bps, char *output, size_t output_size)
-{
-    if (bps >= 1048576) // 1024 * 1024
-    {
-        snprintf(output, output_size, "%.2f Mbps", bps / 1048576.0);
-    }
-    else if (bps >= 1024)
-    {
-        snprintf(output, output_size, "%.2f Kbps", bps / 1024.0);
-    }
-    else
-    {
-        snprintf(output, output_size, "%u bps", bps);
-    }
-}
-
-static void log_fcc_server_response(uint8_t fmt, uint8_t result_code, uint16_t signal_port, uint16_t media_port,
-                                    uint32_t valid_time, uint32_t speed, uint32_t speed_after_sync)
-{
-    char speed_str[32];
-    char speed_after_sync_str[32];
-
-    format_bitrate(speed, speed_str, sizeof(speed_str));
-    format_bitrate(speed_after_sync, speed_after_sync_str, sizeof(speed_after_sync_str));
-
-    logger(LOG_DEBUG, "FCC Response: FMT=%u, result=%u, signal_port=%u, media_port=%u, valid_time=%u, speed=%s, speed_after_sync=%s",
-           fmt, result_code, ntohs(signal_port), ntohs(media_port), valid_time, speed_str, speed_after_sync_str);
 }
 
 /*
@@ -362,130 +274,44 @@ int fcc_initialize_and_request(stream_context_t *ctx)
         logger(LOG_DEBUG, "FCC: Socket registered with epoll");
     }
 
-    /* Send FCC request */
-    r = sendto_triple(fcc->fcc_sock, build_fcc_request_pk(service->addr, fcc->fcc_client.sin_port),
-                      FCC_PK_LEN_REQ, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
+    /* Send FCC request - different format for Huawei vs Telecom */
+    if (fcc->type == FCC_TYPE_HUAWEI)
+    {
+        r = fcc_huawei_initialize_and_request(ctx);
+    }
+    else
+    {
+        r = fcc_telecom_initialize_and_request(ctx);
+    }
+
     if (r < 0)
     {
-        logger(LOG_ERROR, "FCC: Unable to send request message: %s", strerror(errno));
         return -1;
     }
 
     ctx->last_fcc_data_time = get_time_ms();
     fcc_session_set_state(fcc, FCC_STATE_REQUESTED, "Request sent");
-    logger(LOG_DEBUG, "FCC: Request sent to server %s:%u",
-           inet_ntoa(fcc->fcc_server->sin_addr), ntohs(fcc->fcc_server->sin_port));
 
     return 0;
 }
 
 /*
- * FCC Protocol Stage 2: Handle server response (FMT 3)
+ * FCC Protocol Stage 2: Handle server response
+ * Dispatches to vendor-specific handler based on FCC type
  */
 int fcc_handle_server_response(stream_context_t *ctx, uint8_t *buf, int buf_len,
                                struct sockaddr_in *peer_addr)
 {
     fcc_session_t *fcc = &ctx->fcc;
 
-    if (fcc->state != FCC_STATE_REQUESTED)
-        return 0;
-
-    if (buf[1] != 205)
+    /* Dispatch to vendor-specific handler based on FCC type */
+    if (fcc->type == FCC_TYPE_HUAWEI)
     {
-        logger(LOG_DEBUG, "FCC: Unrecognized payload type: %u", buf[1]);
-        return 0;
+        return fcc_huawei_handle_server_response(ctx, buf, buf_len, peer_addr);
     }
-
-    if (buf[0] == 0x83)
-    { /* FMT 3 - Server Response */
-        uint8_t result_code = buf[12];
-        uint8_t action_code = buf[13];
-        uint16_t new_signal_port = *(uint16_t *)(buf + 14);
-        uint16_t new_media_port = *(uint16_t *)(buf + 16);
-        uint32_t new_fcc_ip = *(uint32_t *)(buf + 20);
-        uint32_t valid_time = ntohl(*(uint32_t *)(buf + 24));
-        uint32_t speed = ntohl(*(uint32_t *)(buf + 28));            // bitrate in bps
-        uint32_t speed_after_sync = ntohl(*(uint32_t *)(buf + 32)); // bitrate in bps
-
-        log_fcc_server_response(3, result_code, new_signal_port, new_media_port, valid_time, speed, speed_after_sync);
-
-        if (result_code != 0)
-        {
-            logger(LOG_DEBUG, "FCC: Server response error code: %u, falling back to multicast", result_code);
-            fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Fallback to multicast join");
-            ctx->mcast_sock = stream_join_mcast_group(ctx);
-            return 0;
-        }
-
-        /* Update server endpoints if provided */
-        int signal_port_changed = 0, media_port_changed = 0;
-
-        if (new_signal_port && new_signal_port != fcc->fcc_server->sin_port)
-        {
-            logger(LOG_DEBUG, "FCC: Server provided new signal port: %u", ntohs(new_signal_port));
-            fcc->fcc_server->sin_port = new_signal_port;
-            signal_port_changed = 1;
-        }
-
-        if (new_media_port && new_media_port != fcc->media_port)
-        {
-            fcc->media_port = new_media_port;
-            logger(LOG_DEBUG, "FCC: Server provided new media port: %u", ntohs(new_media_port));
-            media_port_changed = 1;
-        }
-
-        if (new_fcc_ip && new_fcc_ip != fcc->fcc_server->sin_addr.s_addr)
-        {
-            fcc->fcc_server->sin_addr.s_addr = new_fcc_ip;
-            logger(LOG_DEBUG, "FCC: Server provided new IP: %s", inet_ntoa(fcc->fcc_server->sin_addr));
-            signal_port_changed = 1;
-            media_port_changed = 1;
-        }
-
-        /* Handle different action codes */
-        if (action_code == 3)
-        {
-            /* Redirect to new FCC server */
-            fcc->redirect_count++;
-            if (fcc->redirect_count > FCC_MAX_REDIRECTS)
-            {
-                logger(LOG_WARN, "FCC: Too many redirects (%d), falling back to multicast", fcc->redirect_count);
-                fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Too many redirects");
-                ctx->mcast_sock = stream_join_mcast_group(ctx);
-                return 0;
-            }
-            logger(LOG_INFO, "FCC: Server requests redirection to new server %s:%u (redirect #%d)",
-                   inet_ntoa(fcc->fcc_server->sin_addr), ntohs(fcc->fcc_server->sin_port), fcc->redirect_count);
-            fcc_session_set_state(fcc, FCC_STATE_INIT, "Server redirect");
-            return 1;
-        }
-        else if (action_code != 2)
-        {
-            /* Join multicast immediately */
-            logger(LOG_DEBUG, "FCC: Server requests immediate multicast join, code: %u", action_code);
-            fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Immediate multicast join");
-            ctx->mcast_sock = stream_join_mcast_group(ctx);
-            return 0;
-        }
-        else
-        {
-            /* Normal FCC flow - server will start unicast stream */
-            if (media_port_changed && fcc->media_port)
-            {
-                struct sockaddr_in sintmp = *fcc->fcc_server;
-                sintmp.sin_port = fcc->media_port;
-                sendto_triple(fcc->fcc_sock, NULL, 0, 0, &sintmp, sizeof(sintmp));
-            }
-            if (signal_port_changed)
-            {
-                sendto_triple(fcc->fcc_sock, NULL, 0, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
-            }
-
-            /* Record start time for unicast phase (for sync wait timeout) */
-            fcc->unicast_start_time = get_time_ms();
-            fcc_session_set_state(fcc, FCC_STATE_UNICAST_PENDING, "Server accepted request");
-            logger(LOG_DEBUG, "FCC: Server accepted request, waiting for unicast stream");
-        }
+    else if (fcc->type == FCC_TYPE_TELECOM)
+    {
+        return fcc_telecom_handle_server_response(ctx, buf, buf_len, peer_addr);
     }
 
     return 0;
@@ -560,24 +386,21 @@ int fcc_handle_unicast_media(stream_context_t *ctx, buffer_ref_t *buf_ref)
 static int fcc_send_term_packet(fcc_session_t *fcc, service_t *service,
                                 uint16_t seqn, const char *reason)
 {
-    int r;
-
-    if (!fcc->fcc_sock || !fcc->fcc_server || !service)
+    if (!fcc->fcc_sock || !fcc->fcc_server)
     {
-        logger(LOG_DEBUG, "FCC: Cannot send termination - missing socket/server/service");
+        logger(LOG_DEBUG, "FCC: Cannot send termination - missing socket/server");
         return -1;
     }
 
-    r = sendto_triple(fcc->fcc_sock, build_fcc_term_pk(service->addr, seqn),
-                      FCC_PK_LEN_TERM, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
-    if (r < 0)
+    /* Send different termination packet based on FCC type */
+    if (fcc->type == FCC_TYPE_HUAWEI)
     {
-        logger(LOG_ERROR, "FCC: Unable to send termination packet (%s): %s", reason, strerror(errno));
-        return -1;
+        return fcc_huawei_send_term_packet(fcc, service, seqn, reason);
     }
-
-    logger(LOG_DEBUG, "FCC: Termination packet sent (%s), seqn=%u", reason, seqn);
-    return 0;
+    else
+    {
+        return fcc_telecom_send_term_packet(fcc, service, seqn, reason);
+    }
 }
 
 /*
