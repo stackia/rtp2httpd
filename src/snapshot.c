@@ -40,17 +40,17 @@ int snapshot_init(snapshot_context_t *ctx)
 
     memset(ctx, 0, sizeof(snapshot_context_t));
 
-    /* Create tmpfs mmap file for IDR frame accumulation */
-    char tmpfs_path[] = "/dev/shm/rtp2httpd_idr_frame_XXXXXX";
-    ctx->idr_frame_fd = mkstemp(tmpfs_path);
+    /* Create tmp mmap file for IDR frame accumulation */
+    char tmp_path[] = "/tmp/rtp2httpd_idr_frame_XXXXXX";
+    ctx->idr_frame_fd = mkstemp(tmp_path);
     if (ctx->idr_frame_fd < 0)
     {
-        logger(LOG_ERROR, "Snapshot: Failed to create tmpfs file: %s", strerror(errno));
+        logger(LOG_ERROR, "Snapshot: Failed to create tmp file: %s", strerror(errno));
         return -1;
     }
 
     /* Unlink immediately - file will be deleted when fd is closed */
-    unlink(tmpfs_path);
+    unlink(tmp_path);
 
     /* Set buffer capacity */
     ctx->idr_frame_capacity = SNAPSHOT_BUFFER_CAPACITY;
@@ -58,7 +58,7 @@ int snapshot_init(snapshot_context_t *ctx)
     /* Allocate mmap buffer */
     if (ftruncate(ctx->idr_frame_fd, ctx->idr_frame_capacity) < 0)
     {
-        logger(LOG_ERROR, "Snapshot: Failed to truncate tmpfs file: %s", strerror(errno));
+        logger(LOG_ERROR, "Snapshot: Failed to truncate tmp file: %s", strerror(errno));
         close(ctx->idr_frame_fd);
         return -1;
     }
@@ -68,7 +68,7 @@ int snapshot_init(snapshot_context_t *ctx)
                                ctx->idr_frame_fd, 0);
     if (ctx->idr_frame_mmap == MAP_FAILED)
     {
-        logger(LOG_ERROR, "Snapshot: Failed to mmap tmpfs file: %s", strerror(errno));
+        logger(LOG_ERROR, "Snapshot: Failed to mmap tmp file: %s", strerror(errno));
         close(ctx->idr_frame_fd);
         return -1;
     }
@@ -248,8 +248,8 @@ static int snapshot_convert_to_jpeg(int idr_frame_fd, size_t idr_frame_size,
     *jpeg_fd = -1;
     *jpeg_size = 0;
 
-    /* Create output file in tmpfs */
-    char output_path[] = "/dev/shm/rtp2httpd_jpeg_XXXXXX";
+    /* Create output file in /tmp */
+    char output_path[] = "/tmp/rtp2httpd_jpeg_XXXXXX";
     int output_fd = mkstemp(output_path);
     if (output_fd < 0)
     {

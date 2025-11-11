@@ -73,23 +73,24 @@ static void json_escape_string(const char *in, char *out, size_t out_sz)
 /* Global pointer to shared memory */
 status_shared_t *status_shared = NULL;
 
-/* Name for shared memory object */
-#define SHM_NAME "/rtp2httpd_status"
+/* Path for shared memory file in /tmp */
+static char shm_path[256] = {0};
 
 /**
  * Initialize status tracking system
- * Creates and maps shared memory, then immediately closes the file descriptor.
+ * Creates and maps shared memory file in /tmp, then immediately closes the file descriptor.
  * The mmap() mapping remains valid after close() per POSIX specification.
  */
 int status_init(void)
 {
   int fd;
 
-  /* Create shared memory object */
-  fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0600);
+  /* Create shared memory file in /tmp */
+  snprintf(shm_path, sizeof(shm_path), "/tmp/rtp2httpd_status_%d", getpid());
+  fd = open(shm_path, O_CREAT | O_RDWR | O_EXCL, 0600);
   if (fd == -1)
   {
-    logger(LOG_ERROR, "Failed to create shared memory: %s", strerror(errno));
+    logger(LOG_ERROR, "Failed to create shared memory file: %s", strerror(errno));
     return -1;
   }
 
@@ -98,7 +99,7 @@ int status_init(void)
   {
     logger(LOG_ERROR, "Failed to set shared memory size: %s", strerror(errno));
     close(fd);
-    shm_unlink(SHM_NAME);
+    unlink(shm_path);
     return -1;
   }
 
@@ -109,7 +110,7 @@ int status_init(void)
   {
     logger(LOG_ERROR, "Failed to map shared memory: %s", strerror(errno));
     close(fd);
-    shm_unlink(SHM_NAME);
+    unlink(shm_path);
     return -1;
   }
 
@@ -158,7 +159,7 @@ int status_init(void)
             close(status_shared->worker_notification_pipes[j]);
         }
         munmap(status_shared, sizeof(status_shared_t));
-        shm_unlink(SHM_NAME);
+        unlink(shm_path);
         return -1;
       }
 
@@ -234,13 +235,13 @@ void status_cleanup(void)
     status_shared = NULL;
   }
 
-  /* Only worker 0 unlinks shared memory object
-   * shm_unlink() removes the shared memory object from the filesystem.
+  /* Only worker 0 unlinks shared memory file
+   * unlink() removes the shared memory file from the filesystem.
    * If called by a non-last worker, other workers would lose access to shared memory.
    * In the fork model, worker 0 is the main process and exits last. */
   if (worker_id == 0)
   {
-    shm_unlink(SHM_NAME);
+    unlink(shm_path);
     logger(LOG_DEBUG, "Status tracking cleaned up (worker 0 - shared resources destroyed)");
   }
   else
