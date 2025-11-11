@@ -145,17 +145,12 @@ static int build_fetch_command(char *buf, size_t bufsize,
 
     if (tool == HTTP_TOOL_CURL)
     {
-        /* curl command */
         ret = snprintf(buf, bufsize,
-                       "curl -L -f -s -S --max-time %d --connect-timeout 10 -o '%s' '%s' 2>&1; echo \"EXIT_CODE:$?\"",
+                       "curl -L -f -s -S -k --max-time %d --connect-timeout 10 -o '%s' '%s' 2>&1; echo \"EXIT_CODE:$?\"",
                        timeout, output_file, url);
     }
     else /* HTTP_TOOL_UCLIENT_FETCH */
     {
-        /* uclient-fetch command
-         * Note: uclient-fetch does not support following redirects (-L equivalent)
-         * and does not have separate connect/total timeout settings
-         */
         ret = snprintf(buf, bufsize,
                        "uclient-fetch -q -T %d -O '%s' '%s' 2>&1; echo \"EXIT_CODE:$?\"",
                        timeout, output_file, url);
