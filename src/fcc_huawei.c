@@ -189,7 +189,7 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf, int b
 
     if (result_code != 1)
     {
-        logger(LOG_DEBUG, "FCC (Huawei): Server response error (result=%u), falling back to multicast", result_code);
+        logger(LOG_WARN, "FCC (Huawei): Server response error (result=%u), falling back to multicast", result_code);
         fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Server error");
         ctx->mcast_sock = stream_join_mcast_group(ctx);
         return 0;
@@ -198,7 +198,7 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf, int b
     if (type == 1)
     {
         /* No need for unicast, join multicast immediately */
-        logger(LOG_DEBUG, "FCC (Huawei): Server says no unicast needed, joining multicast");
+        logger(LOG_INFO, "FCC (Huawei): Server says no unicast needed, joining multicast");
         fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "No unicast needed");
         ctx->mcast_sock = stream_join_mcast_group(ctx);
     }
