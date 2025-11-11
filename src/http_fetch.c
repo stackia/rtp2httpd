@@ -152,7 +152,7 @@ static int build_fetch_command(char *buf, size_t bufsize,
     else /* HTTP_TOOL_UCLIENT_FETCH */
     {
         ret = snprintf(buf, bufsize,
-                       "uclient-fetch -q -T %d -O '%s' '%s' 2>&1; echo \"EXIT_CODE:$?\"",
+                       "uclient-fetch --no-check-certificate -q -T %d -O '%s' '%s' 2>&1; echo \"EXIT_CODE:$?\"",
                        timeout, output_file, url);
     }
 

@@ -605,14 +605,31 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 
       /* Check if M3U/EPG needs to be reloaded (all workers perform this with staggered timing)
        * This handles both external M3U and inline M3U's EPG updates */
-      if ((config.external_m3u_url || epg_get_url()) && config.external_m3u_update_interval >= 0)
+      m3u_cache_t *m3u_cache = m3u_get_cache();
+      epg_cache_t *epg_cache = epg_get_cache();
+
+      if ((config.external_m3u_url || epg_cache->url) && config.external_m3u_update_interval >= 0)
       {
         int64_t interval_ms = (int64_t)config.external_m3u_update_interval * 1000;
         int64_t last_update = config.last_external_m3u_update_time;
         int64_t worker_offset_ms = (int64_t)worker_id * 1000;
 
+        /* Check if retry is scheduled for M3U */
+        if (config.external_m3u_url && m3u_cache->next_retry_time > 0 && now >= m3u_cache->next_retry_time)
+        {
+          logger(LOG_INFO, "M3U retry scheduled, attempting fetch (retry %d)", m3u_cache->retry_count);
+          m3u_cache->next_retry_time = 0; /* Clear retry time before attempting */
+          m3u_reload_external_async(epfd);
+        }
+        /* Check if retry is scheduled for EPG */
+        else if (epg_cache->url && epg_cache->next_retry_time > 0 && now >= epg_cache->next_retry_time)
+        {
+          logger(LOG_INFO, "EPG retry scheduled, attempting fetch (retry %d)", epg_cache->retry_count);
+          epg_cache->next_retry_time = 0; /* Clear retry time before attempting */
+          epg_fetch_async(epfd);
+        }
         /* Handle first-time load: if last_update is 0, load immediately with staggered timing */
-        if (last_update == 0)
+        else if (last_update == 0)
         {
           /* Calculate uptime to compare against staggered offset */
           int64_t uptime_ms = get_realtime_ms() - status_shared->server_start_time;
@@ -629,7 +646,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
               logger(LOG_INFO, "Initial external M3U load for worker %d", worker_id);
               m3u_reload_external_async(epfd);
             }
-            else if (epg_get_url())
+            else if (epg_cache->url)
             {
               /* Inline M3U with EPG: only fetch EPG */
               logger(LOG_INFO, "Initial EPG load (from inline M3U) for worker %d", worker_id);
@@ -659,12 +676,18 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
               {
                 /* External M3U: reload it (will also fetch EPG if found in M3U) */
                 logger(LOG_DEBUG, "External M3U update interval reached for worker %d, reloading...", worker_id);
+                /* Reset retry state for new update cycle */
+                m3u_cache->retry_count = 0;
+                m3u_cache->next_retry_time = 0;
                 m3u_reload_external_async(epfd);
               }
-              else if (epg_get_url())
+              else if (epg_cache->url)
               {
                 /* Inline M3U with EPG: only fetch EPG */
                 logger(LOG_DEBUG, "EPG update interval reached for worker %d, reloading...", worker_id);
+                /* Reset retry state for new update cycle */
+                epg_cache->retry_count = 0;
+                epg_cache->next_retry_time = 0;
                 epg_fetch_async(epfd);
               }
               /* Note: We always update timestamp regardless of success/failure to avoid

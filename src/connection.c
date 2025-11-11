@@ -1044,20 +1044,23 @@ static void handle_epg_request(connection_t *c)
   if (!c)
     return;
 
-  int epg_fd;
-  size_t epg_size;
-  int is_gzipped;
+  /* Get EPG cache */
+  epg_cache_t *epg = epg_get_cache();
 
-  /* Get EPG data fd from cache (zero-copy) */
-  if (epg_get_data_fd(&epg_fd, &epg_size, &is_gzipped) != 0)
+  /* Check if EPG data is available */
+  if (epg->data_fd < 0 || epg->data_size == 0)
   {
     /* No EPG data available */
     http_send_404(c);
     return;
   }
 
+  int epg_fd = epg->data_fd;
+  size_t epg_size = epg->data_size;
+  int is_gzipped = epg->is_gzipped;
+
   /* Get ETag for the EPG data */
-  const char *etag = epg_get_etag();
+  const char *etag = epg->etag_valid ? epg->etag : NULL;
   /* Always use application/xml as content type - if gzipped, add Content-Encoding header
    * This allows browser to automatically decompress (better performance than JS) */
   const char *content_type = "application/xml";

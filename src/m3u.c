@@ -39,18 +39,12 @@ struct m3u_extinf
     int has_catchup;
 };
 
-/* Static buffer for transformed M3U playlist */
-/* Single unified buffer, with marker to track inline content end */
-static char *transformed_m3u = NULL;
-static size_t transformed_m3u_size = 0;
-static size_t transformed_m3u_used = 0;
-static size_t transformed_m3u_inline_end = 0; /* Marks end of inline content */
+/* Global M3U cache for state tracking and transformed playlist */
+static m3u_cache_t m3u_cache = {0};
 
-static int transformed_m3u_has_header = 0;
-
-/* ETag for transformed M3U playlist (MD5 hash as hex string) */
-static char transformed_m3u_etag[33] = {0};
-static int transformed_m3u_etag_valid = 0;
+/* Retry delays in seconds: 2, 4, 8, 16, 32, 64, 128, 256 */
+static const int m3u_retry_delays[] = {2, 4, 8, 16, 32, 64, 128, 256};
+#define M3U_MAX_RETRY_COUNT 8
 
 int m3u_is_header(const char *line)
 {
@@ -789,23 +783,23 @@ static void update_m3u_etag(void)
     MD5Context ctx;
     uint8_t digest[16];
 
-    if (!transformed_m3u || transformed_m3u_used == 0)
+    if (!m3u_cache.transformed_m3u || m3u_cache.transformed_m3u_used == 0)
     {
-        transformed_m3u_etag_valid = 0;
-        transformed_m3u_etag[0] = '\0';
+        m3u_cache.transformed_m3u_etag_valid = 0;
+        m3u_cache.transformed_m3u_etag[0] = '\0';
         return;
     }
 
     /* Calculate MD5 hash of playlist content */
     md5Init(&ctx);
-    md5Update(&ctx, (uint8_t *)transformed_m3u, transformed_m3u_used);
+    md5Update(&ctx, (uint8_t *)m3u_cache.transformed_m3u, m3u_cache.transformed_m3u_used);
     md5Finalize(&ctx);
 
     /* Convert digest to hex string */
     memcpy(digest, ctx.digest, 16);
-    md5_to_hex(digest, transformed_m3u_etag);
+    md5_to_hex(digest, m3u_cache.transformed_m3u_etag);
 
-    transformed_m3u_etag_valid = 1;
+    m3u_cache.transformed_m3u_etag_valid = 1;
 }
 
 /* Append string to transformed M3U buffer */
@@ -817,45 +811,45 @@ static int append_to_transformed_m3u(const char *str, service_source_t source)
     (void)source; /* Source parameter kept for API compatibility but not used */
 
     /* Allocate buffer if needed */
-    if (!transformed_m3u)
+    if (!m3u_cache.transformed_m3u)
     {
-        transformed_m3u_size = 4096;
-        transformed_m3u = malloc(transformed_m3u_size);
-        if (!transformed_m3u)
+        m3u_cache.transformed_m3u_size = 4096;
+        m3u_cache.transformed_m3u = malloc(m3u_cache.transformed_m3u_size);
+        if (!m3u_cache.transformed_m3u)
         {
             logger(LOG_ERROR, "Failed to allocate transformed M3U buffer");
             return -1;
         }
-        transformed_m3u_used = 0;
-        transformed_m3u[0] = '\0';
+        m3u_cache.transformed_m3u_used = 0;
+        m3u_cache.transformed_m3u[0] = '\0';
     }
 
     /* Grow buffer if needed */
-    while (transformed_m3u_used + len + 1 > transformed_m3u_size)
+    while (m3u_cache.transformed_m3u_used + len + 1 > m3u_cache.transformed_m3u_size)
     {
-        new_size = transformed_m3u_size * 2;
+        new_size = m3u_cache.transformed_m3u_size * 2;
         if (new_size > MAX_M3U_CONTENT)
         {
             logger(LOG_ERROR, "Transformed M3U too large");
             return -1;
         }
-        char *new_buf = realloc(transformed_m3u, new_size);
+        char *new_buf = realloc(m3u_cache.transformed_m3u, new_size);
         if (!new_buf)
         {
             logger(LOG_ERROR, "Failed to grow transformed M3U buffer");
             return -1;
         }
-        transformed_m3u = new_buf;
-        transformed_m3u_size = new_size;
+        m3u_cache.transformed_m3u = new_buf;
+        m3u_cache.transformed_m3u_size = new_size;
     }
 
     /* Append string */
-    memcpy(transformed_m3u + transformed_m3u_used, str, len);
-    transformed_m3u_used += len;
-    transformed_m3u[transformed_m3u_used] = '\0';
+    memcpy(m3u_cache.transformed_m3u + m3u_cache.transformed_m3u_used, str, len);
+    m3u_cache.transformed_m3u_used += len;
+    m3u_cache.transformed_m3u[m3u_cache.transformed_m3u_used] = '\0';
 
     /* Invalidate ETag since content changed */
-    transformed_m3u_etag_valid = 0;
+    m3u_cache.transformed_m3u_etag_valid = 0;
 
     return 0;
 }
@@ -1112,7 +1106,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
             }
 
             /* Only add header once to the transformed playlist */
-            if (!transformed_m3u_has_header)
+            if (!m3u_cache.transformed_m3u_has_header)
             {
                 /* Build transformed header with local EPG URL */
                 char transformed_header[MAX_M3U_LINE];
@@ -1149,7 +1143,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
                     append_to_transformed_m3u(line, service_source);
                 }
                 append_to_transformed_m3u("\n", service_source);
-                transformed_m3u_has_header = 1;
+                m3u_cache.transformed_m3u_has_header = 1;
             }
             continue;
         }
@@ -1403,11 +1397,11 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
     /* Mark the end of inline content if this was inline parsing */
     if (service_source == SERVICE_SOURCE_INLINE)
     {
-        transformed_m3u_inline_end = transformed_m3u_used;
+        m3u_cache.transformed_m3u_inline_end = m3u_cache.transformed_m3u_used;
     }
 
     logger(LOG_INFO, "Parsed %d M3U entries, generated transformed playlist (%zu bytes)",
-           entry_count, transformed_m3u_used);
+           entry_count, m3u_cache.transformed_m3u_used);
 
     if (server_addr)
         free(server_addr);
@@ -1418,73 +1412,73 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
 const char *m3u_get_transformed_playlist(void)
 {
     /* Simply return the unified buffer - no merging needed */
-    if (transformed_m3u_used == 0)
+    if (m3u_cache.transformed_m3u_used == 0)
     {
         return NULL;
     }
 
     /* Update ETag if not valid */
-    if (!transformed_m3u_etag_valid)
+    if (!m3u_cache.transformed_m3u_etag_valid)
     {
         update_m3u_etag();
     }
 
-    return transformed_m3u;
+    return m3u_cache.transformed_m3u;
 }
 
 const char *m3u_get_etag(void)
 {
     /* Ensure ETag is calculated */
-    if (!transformed_m3u_etag_valid && transformed_m3u && transformed_m3u_used > 0)
+    if (!m3u_cache.transformed_m3u_etag_valid && m3u_cache.transformed_m3u && m3u_cache.transformed_m3u_used > 0)
     {
         update_m3u_etag();
     }
 
-    if (!transformed_m3u_etag_valid)
+    if (!m3u_cache.transformed_m3u_etag_valid)
     {
         return NULL;
     }
 
-    return transformed_m3u_etag;
+    return m3u_cache.transformed_m3u_etag;
 }
 
 void m3u_reset_transformed_playlist(void)
 {
     /* Clear entire buffer */
-    if (transformed_m3u)
+    if (m3u_cache.transformed_m3u)
     {
-        free(transformed_m3u);
-        transformed_m3u = NULL;
+        free(m3u_cache.transformed_m3u);
+        m3u_cache.transformed_m3u = NULL;
     }
-    transformed_m3u_size = 0;
-    transformed_m3u_used = 0;
-    transformed_m3u_inline_end = 0;
+    m3u_cache.transformed_m3u_size = 0;
+    m3u_cache.transformed_m3u_used = 0;
+    m3u_cache.transformed_m3u_inline_end = 0;
 
     /* Reset header flag */
-    transformed_m3u_has_header = 0;
+    m3u_cache.transformed_m3u_has_header = 0;
 
     /* Invalidate ETag */
-    transformed_m3u_etag_valid = 0;
-    transformed_m3u_etag[0] = '\0';
+    m3u_cache.transformed_m3u_etag_valid = 0;
+    m3u_cache.transformed_m3u_etag[0] = '\0';
 }
 
 void m3u_reset_external_playlist(void)
 {
     /* Truncate buffer to inline content only (for external reload) */
-    if (transformed_m3u && transformed_m3u_inline_end < transformed_m3u_used)
+    if (m3u_cache.transformed_m3u && m3u_cache.transformed_m3u_inline_end < m3u_cache.transformed_m3u_used)
     {
         /* Reset used size to inline end position */
-        transformed_m3u_used = transformed_m3u_inline_end;
-        transformed_m3u[transformed_m3u_used] = '\0';
+        m3u_cache.transformed_m3u_used = m3u_cache.transformed_m3u_inline_end;
+        m3u_cache.transformed_m3u[m3u_cache.transformed_m3u_used] = '\0';
 
         /* Invalidate ETag since content changed */
-        transformed_m3u_etag_valid = 0;
+        m3u_cache.transformed_m3u_etag_valid = 0;
     }
 
     /* If no inline content, reset header flag to allow external M3U header to be added */
-    if (transformed_m3u_inline_end == 0)
+    if (m3u_cache.transformed_m3u_inline_end == 0)
     {
-        transformed_m3u_has_header = 0;
+        m3u_cache.transformed_m3u_has_header = 0;
     }
 }
 
@@ -1503,7 +1497,7 @@ static void m3u_process_and_fetch_epg(const char *m3u_content, const char *sourc
     m3u_parse_and_create_services(m3u_content, source);
 
     /* Trigger async EPG fetch if x-tvg-url was found in M3U and epfd is valid */
-    if (epg_get_url() && epfd >= 0)
+    if (epg_get_cache()->url && epfd >= 0)
     {
         epg_fetch_async(epfd);
     }
@@ -1521,7 +1515,23 @@ static void m3u_reload_async_callback(http_fetch_ctx_t *ctx, char *content, size
 
     if (!content)
     {
-        logger(LOG_ERROR, "Async external M3U fetch failed: %s", config.external_m3u_url);
+        /* Schedule retry if we haven't exceeded max retries */
+        if (m3u_cache.retry_count < M3U_MAX_RETRY_COUNT)
+        {
+            int64_t delay_ms = (int64_t)m3u_retry_delays[m3u_cache.retry_count] * 1000;
+            m3u_cache.next_retry_time = get_time_ms() + delay_ms;
+            logger(LOG_ERROR, "Async external M3U fetch failed: %s, will retry in %d seconds (retry %d/%d)",
+                   config.external_m3u_url, m3u_retry_delays[m3u_cache.retry_count],
+                   m3u_cache.retry_count + 1, M3U_MAX_RETRY_COUNT);
+            m3u_cache.retry_count++;
+        }
+        else
+        {
+            logger(LOG_ERROR, "Async external M3U fetch failed: %s, max retries (%d) exceeded, will wait for next update interval",
+                   config.external_m3u_url, M3U_MAX_RETRY_COUNT);
+            m3u_cache.retry_count = 0;
+            m3u_cache.next_retry_time = 0;
+        }
         return;
     }
 
@@ -1536,6 +1546,10 @@ static void m3u_reload_async_callback(http_fetch_ctx_t *ctx, char *content, size
     /* Parse M3U content and create services, trigger async EPG fetch */
     m3u_process_and_fetch_epg(content, config.external_m3u_url, epfd);
     free(content);
+
+    /* Reset retry state on success */
+    m3u_cache.retry_count = 0;
+    m3u_cache.next_retry_time = 0;
 
     logger(LOG_INFO, "External M3U reloaded successfully (async)");
 }
@@ -1577,4 +1591,9 @@ int m3u_reload_external_async(int epfd)
     }
 
     return 0;
+}
+
+m3u_cache_t *m3u_get_cache(void)
+{
+    return &m3u_cache;
 }
