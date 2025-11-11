@@ -17,6 +17,10 @@
 /* Global EPG cache */
 static epg_cache_t epg_cache = {0};
 
+/* Retry delays in seconds: 2, 4, 8, 16, 32, 64, 128, 256 */
+static const int retry_delays[] = {2, 4, 8, 16, 32, 64, 128, 256};
+#define EPG_MAX_RETRY_COUNT 8
+
 /* Check if URL ends with .gz (case insensitive)
  * Handles URLs with query strings (e.g., http://example.com/epg.xml.gz?query=123)
  * Returns: 1 if URL ends with .gz (before query string), 0 otherwise
@@ -129,7 +133,24 @@ static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd, size_t content_
     if (fd < 0)
     {
         epg_cache.fetch_error_count++;
-        logger(LOG_ERROR, "EPG fetch failed (error count: %d)", epg_cache.fetch_error_count);
+
+        /* Schedule retry if we haven't exceeded max retries */
+        if (epg_cache.retry_count < EPG_MAX_RETRY_COUNT)
+        {
+            int64_t delay_ms = (int64_t)retry_delays[epg_cache.retry_count] * 1000;
+            epg_cache.next_retry_time = get_time_ms() + delay_ms;
+            logger(LOG_ERROR, "EPG fetch failed (error count: %d), will retry in %d seconds (retry %d/%d)",
+                   epg_cache.fetch_error_count, retry_delays[epg_cache.retry_count],
+                   epg_cache.retry_count + 1, EPG_MAX_RETRY_COUNT);
+            epg_cache.retry_count++;
+        }
+        else
+        {
+            logger(LOG_ERROR, "EPG fetch failed (error count: %d), max retries (%d) exceeded, will wait for next update interval",
+                   epg_cache.fetch_error_count, EPG_MAX_RETRY_COUNT);
+            epg_cache.retry_count = 0;
+            epg_cache.next_retry_time = 0;
+        }
         return;
     }
 
@@ -144,6 +165,10 @@ static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd, size_t content_
     epg_cache.data_size = content_size;
     epg_cache.is_gzipped = epg_url_is_gzipped(epg_cache.url);
     epg_cache.fetch_error_count = 0;
+
+    /* Reset retry state on success */
+    epg_cache.retry_count = 0;
+    epg_cache.next_retry_time = 0;
 
     /* Calculate ETag for the fetched data */
     calculate_epg_etag(fd, content_size);
@@ -254,56 +279,7 @@ int epg_fetch_async(int epfd)
     return 0;
 }
 
-const char *epg_get_url(void)
+epg_cache_t *epg_get_cache(void)
 {
-    return epg_cache.url;
-}
-
-int epg_get_data_fd(int *fd, size_t *size, int *is_gzipped)
-{
-    if (epg_cache.data_fd < 0 || epg_cache.data_size == 0)
-    {
-        return -1;
-    }
-
-    if (fd)
-    {
-        *fd = epg_cache.data_fd;
-    }
-    if (size)
-    {
-        *size = epg_cache.data_size;
-    }
-    if (is_gzipped)
-    {
-        *is_gzipped = epg_cache.is_gzipped;
-    }
-
-    return 0;
-}
-
-int epg_get_fd(void)
-{
-    return epg_cache.data_fd;
-}
-
-int epg_has_data(void)
-{
-    return (epg_cache.data_fd >= 0 && epg_cache.data_size > 0);
-}
-
-void epg_reset(void)
-{
-    epg_cleanup();
-    logger(LOG_INFO, "EPG cache reset");
-}
-
-const char *epg_get_etag(void)
-{
-    if (!epg_cache.etag_valid)
-    {
-        return NULL;
-    }
-
-    return epg_cache.etag;
+    return &epg_cache;
 }

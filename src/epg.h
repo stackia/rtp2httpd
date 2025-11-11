@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <time.h>
+#include <stdint.h>
 
 /* EPG cache structure */
 typedef struct
@@ -14,6 +15,8 @@ typedef struct
     int fetch_error_count;  /* Number of consecutive fetch errors */
     char etag[33];          /* MD5 hash of EPG data as hex string (for HTTP ETag caching) */
     int etag_valid;         /* 1 if etag is valid, 0 otherwise */
+    int retry_count;        /* Current retry count (0-8) */
+    int64_t next_retry_time; /* Next retry time in milliseconds (0 if not retrying) */
 } epg_cache_t;
 
 /* Initialize EPG cache
@@ -37,46 +40,14 @@ int epg_set_url(const char *url);
  */
 int epg_fetch_async(int epfd);
 
-/* Get EPG source URL
- * Returns: EPG source URL or NULL if not set
- */
-const char *epg_get_url(void);
-
-/* Get cached EPG data file descriptor (zero-copy)
- * fd: pointer to receive file descriptor (read-only, do not close)
- * size: pointer to receive data size
- * is_gzipped: pointer to receive compression status (can be NULL)
- * Returns: 0 on success, -1 if no data available
- *
- * Note: The returned fd is owned by the EPG cache and should NOT be closed by the caller.
- * The fd remains valid until the next EPG fetch or epg_cleanup() is called.
- */
-int epg_get_data_fd(int *fd, size_t *size, int *is_gzipped);
-
-/* Check if EPG data is available
- * Returns: 1 if data is available, 0 otherwise
- */
-int epg_has_data(void);
-
-/* Get EPG data file descriptor (zero-copy)
- * Returns: file descriptor on success, -1 if no data available
- *
- * Note: The returned fd is owned by the EPG cache and should NOT be closed by the caller.
- */
-int epg_get_fd(void);
-
-/* Reset EPG cache (clears data and URL)
- */
-void epg_reset(void);
-
 /* Check if URL ends with .gz (case insensitive)
  * Returns: 1 if URL ends with .gz, 0 otherwise
  */
 int epg_url_is_gzipped(const char *url);
 
-/* Get the ETag for the current cached EPG data
- * Returns: ETag string, or NULL if no data available
+/* Get EPG cache for direct access
+ * Returns: pointer to epg_cache_t structure
  */
-const char *epg_get_etag(void);
+epg_cache_t *epg_get_cache(void);
 
 #endif /* __EPG_H__ */
