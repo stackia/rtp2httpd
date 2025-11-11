@@ -45,7 +45,7 @@
 static int rtsp_prepare_request(rtsp_session_t *session, const char *method, const char *extra_headers);
 static int rtsp_try_send_pending(rtsp_session_t *session);
 static int rtsp_try_receive_response(rtsp_session_t *session);
-static int rtsp_parse_response(rtsp_session_t *session, const char *response);
+static int rtsp_parse_response(rtsp_session_t *session, const char *response, size_t *response_offset, size_t *response_len);
 static int rtsp_setup_udp_sockets(rtsp_session_t *session);
 static void rtsp_close_udp_sockets(rtsp_session_t *session, const char *reason);
 static char *rtsp_find_header(const char *response, const char *header_name);
@@ -1324,16 +1324,42 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
     session->response_buffer_pos += (size_t)received;
     session->response_buffer[session->response_buffer_pos] = '\0';
 
+    /* Try to parse the response (this will locate RTSP/1.0 and check completeness) */
+    size_t response_offset = 0;
+    size_t response_len = 0;
+    int was_keepalive = session->awaiting_keepalive_response;
+    int parse_result = rtsp_parse_response(session, (const char *)session->response_buffer, &response_offset, &response_len);
+
+    if (parse_result == 1)
+    {
+        /* Need more data */
+        if (response_offset > 0 && response_offset != session->response_buffer_pos)
+        {
+            /* Move RTSP response start to buffer beginning to make room */
+            size_t remaining = session->response_buffer_pos - response_offset;
+            memmove(session->response_buffer, session->response_buffer + response_offset, remaining);
+            session->response_buffer_pos = remaining;
+            session->response_buffer[session->response_buffer_pos] = '\0';
+            logger(LOG_DEBUG, "RTSP: Moved incomplete RTSP response to buffer start");
+        }
+        else if (session->response_buffer_pos >= sizeof(session->response_buffer) - 1)
+        {
+            /* Buffer full but no valid RTSP response - discard everything */
+            logger(LOG_DEBUG, "RTSP: Buffer full with no RTSP response, discarding");
+            session->response_buffer_pos = 0;
+        }
+        /* Wait for more data */
+        return 0;
+    }
+
     /* Complete response received */
-    logger(LOG_DEBUG, "RTSP: Received complete response:\n%s", session->response_buffer);
+    logger(LOG_DEBUG, "RTSP: Received complete response:\n%.*s", (int)response_len, session->response_buffer + response_offset);
 
     session->awaiting_response = 0;
-    int was_keepalive = session->awaiting_keepalive_response;
-    int parse_result = rtsp_parse_response(session, (char *)session->response_buffer);
+    session->awaiting_keepalive_response = 0;
 
     if (parse_result < 0)
     {
-        session->awaiting_keepalive_response = 0;
         return -1;
     }
 
@@ -1341,28 +1367,22 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
     if (parse_result == 2)
     {
         /* Redirect in progress - state machine will handle it */
-        session->awaiting_keepalive_response = 0;
         session->response_buffer_pos = 0;
         return 0;
     }
 
-    session->awaiting_keepalive_response = 0;
-
-    /* Check if there's data after the response headers (e.g., RTP data after PLAY response) */
-    size_t extra_data_len = 0;
-    char *end_of_headers = strstr((char *)session->response_buffer, "\r\n\r\n");
-    if (end_of_headers)
+    /* Calculate data remaining after the RTSP response */
+    size_t data_after_response_end = response_offset + response_len;
+    size_t remaining_data_len = 0;
+    if (session->response_buffer_pos > data_after_response_end)
     {
-        size_t headers_len = (end_of_headers - (char *)session->response_buffer) + 4;
-        if (session->response_buffer_pos > headers_len)
-        {
-            extra_data_len = session->response_buffer_pos - headers_len;
-            logger(LOG_DEBUG, "RTSP: Found %zu bytes of data after response headers", extra_data_len);
-        }
+        remaining_data_len = session->response_buffer_pos - data_after_response_end;
+        logger(LOG_DEBUG, "RTSP: Found %zu bytes of data after response", remaining_data_len);
     }
 
     if (was_keepalive)
     {
+        /* Discard response and any remaining data */
         session->response_buffer_pos = 0;
         const char *method = session->use_get_parameter ? "GET_PARAMETER" : "OPTIONS";
         logger(LOG_DEBUG, "RTSP: %s keepalive acknowledged", method);
@@ -1381,13 +1401,13 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
     {
         rtsp_session_set_state(session, RTSP_STATE_DESCRIBED);
         session->response_buffer_pos = 0;
-        return 1;
+        return RTSP_RESPONSE_ADVANCE;
     }
     if (session->state == RTSP_STATE_AWAITING_SETUP)
     {
         rtsp_session_set_state(session, RTSP_STATE_SETUP);
         session->response_buffer_pos = 0;
-        return 1;
+        return RTSP_RESPONSE_ADVANCE;
     }
 
     if (session->state == RTSP_STATE_AWAITING_PLAY)
@@ -1395,13 +1415,16 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
         rtsp_session_set_state(session, RTSP_STATE_PLAYING);
 
         /* For TCP interleaved mode, preserve any RTP data that came after PLAY response */
-        if (session->transport_mode == RTSP_TRANSPORT_TCP && extra_data_len > 0)
+        if (session->transport_mode == RTSP_TRANSPORT_TCP && remaining_data_len > 0)
         {
-            memmove(session->response_buffer, end_of_headers + 4, extra_data_len);
-            session->response_buffer_pos = extra_data_len;
-            logger(LOG_DEBUG, "RTSP: Preserved %zu bytes of RTP data after PLAY response", extra_data_len);
+            memmove(session->response_buffer, session->response_buffer + data_after_response_end, remaining_data_len);
+            session->response_buffer_pos = remaining_data_len;
+            logger(LOG_DEBUG, "RTSP: Preserved %zu bytes of RTP data after PLAY response", remaining_data_len);
         }
-        session->response_buffer_pos = 0;
+        else
+        {
+            session->response_buffer_pos = 0;
+        }
     }
     else if (session->state == RTSP_STATE_AWAITING_TEARDOWN)
     {
@@ -2023,7 +2046,7 @@ int rtsp_session_is_async_teardown(rtsp_session_t *session)
 }
 
 /* Helper functions */
-static int rtsp_parse_response(rtsp_session_t *session, const char *response)
+static int rtsp_parse_response(rtsp_session_t *session, const char *response, size_t *response_offset, size_t *response_len)
 {
     char *session_header = NULL;
     char *transport_header = NULL;
@@ -2032,8 +2055,33 @@ static int rtsp_parse_response(rtsp_session_t *session, const char *response)
     int status_code;
     int result = 0;
 
+    /* Locate RTSP response start (skip any TCP interleaved data before it)
+     * TCP interleaved data packets start with '$', RTSP responses start with "RTSP/1.0" */
+    const char *rtsp_start = strstr(response, "RTSP/1.0");
+    if (!rtsp_start)
+    {
+        /* No RTSP response found yet - might be only interleaved data or incomplete */
+        *response_offset = 0;
+        *response_len = 0;
+        return 1; /* Need more data */
+    }
+
+    /* Check if we have a complete RTSP response (ends with \r\n\r\n) */
+    const char *response_end = strstr(rtsp_start, "\r\n\r\n");
+    if (!response_end)
+    {
+        /* Incomplete RTSP response - need more data */
+        *response_offset = rtsp_start - response;
+        *response_len = 0;
+        return 1; /* Need more data */
+    }
+
+    /* Calculate response offset and length (including \r\n\r\n) */
+    *response_offset = rtsp_start - response;
+    *response_len = (response_end - rtsp_start) + 4;
+
     /* Parse status line */
-    if (sscanf(response, "RTSP/1.0 %d", &status_code) != 1)
+    if (sscanf(rtsp_start, "RTSP/1.0 %d", &status_code) != 1)
     {
         logger(LOG_ERROR, "RTSP: Invalid response format");
         result = -1;
@@ -2046,7 +2094,7 @@ static int rtsp_parse_response(rtsp_session_t *session, const char *response)
         /* Redirection response */
         logger(LOG_DEBUG, "RTSP: Received redirect response %d", status_code);
 
-        location_header = rtsp_find_header(response, "Location");
+        location_header = rtsp_find_header(rtsp_start, "Location");
         if (!location_header)
         {
             logger(LOG_ERROR, "RTSP: Redirect response missing Location header");
@@ -2072,7 +2120,7 @@ static int rtsp_parse_response(rtsp_session_t *session, const char *response)
         }
 
         /* Extract WWW-Authenticate header */
-        char *www_auth_header = rtsp_find_header(response, "WWW-Authenticate");
+        char *www_auth_header = rtsp_find_header(rtsp_start, "WWW-Authenticate");
         if (!www_auth_header)
         {
             logger(LOG_ERROR, "RTSP: 401 response missing WWW-Authenticate header");
@@ -2146,7 +2194,7 @@ static int rtsp_parse_response(rtsp_session_t *session, const char *response)
     /* Parse Public header from OPTIONS response to determine supported methods */
     if (session->state == RTSP_STATE_AWAITING_OPTIONS)
     {
-        public_header = rtsp_find_header(response, "Public");
+        public_header = rtsp_find_header(rtsp_start, "Public");
         if (public_header)
         {
             /* Check if GET_PARAMETER is supported */
@@ -2170,7 +2218,7 @@ static int rtsp_parse_response(rtsp_session_t *session, const char *response)
     }
 
     /* Extract Session header if present */
-    session_header = rtsp_find_header(response, "Session");
+    session_header = rtsp_find_header(rtsp_start, "Session");
     if (session_header)
     {
         char *semicolon = strchr(session_header, ';');
@@ -2181,7 +2229,7 @@ static int rtsp_parse_response(rtsp_session_t *session, const char *response)
     }
 
     /* Extract Transport header if present */
-    transport_header = rtsp_find_header(response, "Transport");
+    transport_header = rtsp_find_header(rtsp_start, "Transport");
     if (transport_header)
     {
         rtsp_parse_transport_header(session, transport_header);
