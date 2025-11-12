@@ -1115,22 +1115,11 @@ int m3u_parse_and_create_services(const char *content, const char *source_url)
                 {
                     /* Replace x-tvg-url with local endpoint */
                     char *server_addr_temp = get_server_address();
-                    const char *epg_filename;
-
-                    /* Determine EPG filename based on original URL extension */
-                    if (epg_url_is_gzipped(tvg_url))
-                    {
-                        epg_filename = "epg.xml.gz";
-                    }
-                    else
-                    {
-                        epg_filename = "epg.xml";
-                    }
 
                     /* server_addr_temp is now a complete URL ending with '/', so just append filename */
                     snprintf(transformed_header, sizeof(transformed_header),
-                             "#EXTM3U x-tvg-url=\"%s%s\"",
-                             server_addr_temp, epg_filename);
+                             "#EXTM3U x-tvg-url=\"%sepg.xml\"",
+                             server_addr_temp);
 
                     if (server_addr_temp)
                         free(server_addr_temp);
