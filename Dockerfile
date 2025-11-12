@@ -1,5 +1,5 @@
 # Build stage
-FROM --platform=$BUILDPLATFORM debian:bullseye-slim AS builder
+FROM --platform=$BUILDPLATFORM alpine:3 AS builder
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
@@ -7,31 +7,29 @@ ARG RELEASE_VERSION
 
 # Install build dependencies
 RUN set -ex; \
-  apt-get update; \
-  apt-get install -y \
+  apk add --no-cache \
   autoconf \
   automake \
-  pkg-config; \
+  pkgconfig \
+  make \
+  libc-dev \
+  linux-headers; \
   case "$TARGETPLATFORM" in \
-  "$BUILDPLATFORM") apt-get install -y build-essential ;; \
+  "$BUILDPLATFORM") apk add --no-cache gcc ;; \
   "linux/arm64") \
-  dpkg --add-architecture arm64 && \
-  apt-get install -y \
-  crossbuild-essential-arm64 \
-  gcc-aarch64-linux-gnu ;; \
+  apk add --no-cache \
+  gcc-aarch64-none-elf \
+  binutils-aarch64-none-elf || \
+  apk add --no-cache gcc ;; \
   "linux/arm/v7") \
-  dpkg --add-architecture armhf && \
-  apt-get install -y \
-  crossbuild-essential-armhf \
-  gcc-arm-linux-gnueabihf ;; \
+  apk add --no-cache \
+  gcc-arm-none-eabi \
+  binutils-arm-none-eabi || \
+  apk add --no-cache gcc ;; \
   "linux/amd64") \
-  dpkg --add-architecture amd64 && \
-  apt-get install -y \
-  crossbuild-essential-amd64 \
-  gcc-x86-64-linux-gnu ;; \
+  apk add --no-cache gcc ;; \
   *) echo "Unsupported platform combination: $BUILDPLATFORM -> $TARGETPLATFORM" && exit 1 ;; \
-  esac && \
-  rm -rf /var/lib/apt/lists/*
+  esac
 
 # Copy source code
 WORKDIR /workdir
@@ -50,12 +48,7 @@ RUN case "$TARGETPLATFORM" in \
   make
 
 # Runtime stage
-FROM debian:bullseye-slim
-
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-  libgcc1 curl \
-  && rm -rf /var/lib/apt/lists/*
+FROM alpine:3
 
 # Copy the built binary and config
 COPY --from=builder /workdir/src/rtp2httpd /usr/local/bin/
