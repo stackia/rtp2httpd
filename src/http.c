@@ -466,7 +466,7 @@ void http_send_400(connection_t *conn)
     send_http_headers(conn, STATUS_400, "text/html; charset=utf-8", NULL);
 
     /* Send body and flush */
-    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1, 1);
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
 }
 
 /**
@@ -481,7 +481,7 @@ void http_send_404(connection_t *conn)
     send_http_headers(conn, STATUS_404, "text/html; charset=utf-8", NULL);
 
     /* Send body and flush */
-    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1, 1);
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
 }
 
 /**
@@ -496,7 +496,7 @@ void http_send_500(connection_t *conn)
     send_http_headers(conn, STATUS_500, "text/html; charset=utf-8", NULL);
 
     /* Send body and flush */
-    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1, 1);
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
 }
 
 /**
@@ -511,7 +511,7 @@ void http_send_503(connection_t *conn)
     send_http_headers(conn, STATUS_503, "text/html; charset=utf-8", NULL);
 
     /* Send body and flush */
-    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1, 1);
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
 }
 
 /**
@@ -526,7 +526,7 @@ void http_send_401(connection_t *conn)
     send_http_headers(conn, STATUS_401, "text/html; charset=utf-8", "WWW-Authenticate: Bearer\r\n");
 
     /* Send body and flush */
-    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1, 1);
+    connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
 }
 
 /**
@@ -810,7 +810,7 @@ int http_check_etag_and_send_304(connection_t *c, const char *etag, const char *
              etag);
 
     send_http_headers(c, STATUS_304, content_type, extra_headers);
-    connection_queue_output_and_flush(c, NULL, 0, 1);
+    connection_queue_output_and_flush(c, NULL, 0);
 
     return 1; /* 304 was sent */
 }

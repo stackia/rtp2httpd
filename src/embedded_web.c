@@ -127,7 +127,7 @@ void handle_embedded_file(connection_t *c, const char *path)
              file->size);
 
     send_http_headers(c, STATUS_200, file->mime_type, extra_headers);
-    connection_queue_output_and_flush(c, file->data, file->size, 1);
+    connection_queue_output_and_flush(c, file->data, file->size);
   }
   else
   {
@@ -144,6 +144,6 @@ void handle_embedded_file(connection_t *c, const char *path)
                             "Content-Encoding: gzip");
 
     send_http_headers(c, STATUS_200, file->mime_type, extra_headers);
-    connection_queue_output_and_flush(c, file->data, file->size, 1);
+    connection_queue_output_and_flush(c, file->data, file->size);
   }
 }

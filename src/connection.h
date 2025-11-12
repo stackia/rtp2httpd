@@ -49,7 +49,6 @@ typedef struct connection_s
   stream_context_t stream;
   int streaming;
   /* SSE */
-  int sse_active;
   int64_t next_sse_ts; /* Next SSE heartbeat time in milliseconds */
   int sse_sent_initial;
   int sse_last_write_index;
@@ -156,13 +155,13 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len);
 /**
  * Queue data to connection output buffer and flush immediately
  * Data will be sent via connection_handle_write() with proper flow control
+ * Set connection state to CONN_CLOSING after queueing
  * @param c Connection
  * @param data Data to send
  * @param len Length of data
- * @param set_closing If non-zero, set connection state to CONN_CLOSING after queueing
  * @return 0 on success, -1 if buffer full
  */
-int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len, int set_closing);
+int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len);
 
 /**
  * Queue data for zero-copy send (no memcpy)
