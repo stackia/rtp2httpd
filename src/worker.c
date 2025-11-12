@@ -523,7 +523,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
             {
               /* Normal HTTP request handling */
               connection_handle_read(c);
-              if (!c->zc_queue.head && !c->streaming)
+              if (c->state == CONN_CLOSING && !c->zc_queue.head)
               {
                 worker_close_and_free_connection(c);
                 continue; /* Skip further processing for this connection */
@@ -589,7 +589,10 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
             }
           }
         }
-        status_handle_sse_heartbeat(c, now);
+        else if (c->state == CONN_SSE)
+        {
+          status_handle_sse_heartbeat(c, now);
+        }
         c = next;
       }
 

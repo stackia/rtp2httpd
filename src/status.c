@@ -836,7 +836,7 @@ void handle_disconnect_client(connection_t *c)
     send_http_headers(c, STATUS_503, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Status system not initialized\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
     return;
   }
 
@@ -846,7 +846,7 @@ void handle_disconnect_client(connection_t *c)
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Method not allowed. Use POST or DELETE\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
     return;
   }
 
@@ -858,7 +858,7 @@ void handle_disconnect_client(connection_t *c)
       send_http_headers(c, STATUS_400, "application/json", NULL);
       snprintf(response, sizeof(response),
                "{\"success\":false,\"error\":\"Missing 'client_id' parameter in request body\"}");
-      connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
+      connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
       return;
     }
   }
@@ -867,7 +867,7 @@ void handle_disconnect_client(connection_t *c)
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Missing request body\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
     return;
   }
 
@@ -877,7 +877,7 @@ void handle_disconnect_client(connection_t *c)
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Empty client_id\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
     return;
   }
 
@@ -915,7 +915,7 @@ void handle_disconnect_client(connection_t *c)
              "{\"success\":false,\"error\":\"Client not found or already disconnected\"}");
   }
 
-  connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
+  connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
 }
 
 /**
@@ -934,7 +934,7 @@ void handle_set_log_level(connection_t *c)
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Method not allowed. Use PUT or PATCH\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
     return;
   }
 
@@ -946,7 +946,7 @@ void handle_set_log_level(connection_t *c)
       send_http_headers(c, STATUS_400, "application/json", NULL);
       snprintf(response, sizeof(response),
                "{\"success\":false,\"error\":\"Missing 'level' parameter in request body\"}");
-      connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
+      connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
       return;
     }
   }
@@ -955,7 +955,7 @@ void handle_set_log_level(connection_t *c)
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Missing request body\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
     return;
   }
 
@@ -966,7 +966,7 @@ void handle_set_log_level(connection_t *c)
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Invalid log level (must be 0-4)\"}");
-    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
     return;
   }
 
@@ -975,13 +975,12 @@ void handle_set_log_level(connection_t *c)
   {
     status_shared->current_log_level = new_level;
   }
-  config.verbosity = new_level;
   send_http_headers(c, STATUS_200, "application/json", NULL);
 
   snprintf(response, sizeof(response),
            "{\"success\":true,\"message\":\"Log level changed to %s\"}",
            status_get_log_level_name(new_level));
-  connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response), 1);
+  connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
 }
 
 /**
@@ -996,7 +995,6 @@ int status_handle_sse_init(connection_t *c)
   /* Send SSE headers */
   send_http_headers(c, STATUS_200, "text/event-stream", NULL);
 
-  c->sse_active = 1;
   c->sse_sent_initial = 0;
   c->sse_last_write_index = -1;
   c->sse_last_log_count = 0;
@@ -1011,7 +1009,7 @@ int status_handle_sse_init(connection_t *c)
 
   if (len > 0)
   {
-    connection_queue_output_and_flush(c, (const uint8_t *)tmp, (size_t)len, 0);
+    connection_queue_output_and_flush(c, (const uint8_t *)tmp, (size_t)len);
   }
 
   c->state = CONN_SSE;
@@ -1035,7 +1033,7 @@ int status_handle_sse_notification(connection_t *conn_head)
    * so we must build a separate payload for each connection */
   for (connection_t *cc = conn_head; cc; cc = cc->next)
   {
-    if (!cc->sse_active)
+    if (cc->state != CONN_SSE)
       continue;
 
     char tmp[SSE_BUFFER_SIZE];
@@ -1046,8 +1044,9 @@ int status_handle_sse_notification(connection_t *conn_head)
 
     if (len > 0)
     {
-      if (connection_queue_output_and_flush(cc, (const uint8_t *)tmp, (size_t)len, 0) == 0)
+      if (connection_queue_output_and_flush(cc, (const uint8_t *)tmp, (size_t)len) == 0)
       {
+        cc->state = CONN_SSE;
         updated_count++;
       }
     }
@@ -1065,7 +1064,7 @@ int status_handle_sse_notification(connection_t *conn_head)
  */
 int status_handle_sse_heartbeat(connection_t *c, int64_t now)
 {
-  if (!c || !c->sse_active)
+  if (!c || c->state != CONN_SSE)
     return -1;
 
   /* Check if heartbeat is needed */

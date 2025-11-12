@@ -230,7 +230,6 @@ connection_t *connection_create(int fd, int epfd,
   c->state = CONN_READ_REQ_LINE;
   c->service = NULL;
   c->streaming = 0;
-  c->sse_active = 0;
   c->status_index = -1; /* Not registered yet */
   c->next = NULL;
 
@@ -386,14 +385,14 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len)
   return 0;
 }
 
-int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len, int set_closing)
+int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len)
 {
   int result = connection_queue_output(c, data, len);
   if (result < 0)
     return result;
   connection_epoll_update_events(c->epfd, c->fd, EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
 
-  if (set_closing && c)
+  if (c)
   {
     c->state = CONN_CLOSING;
   }
@@ -757,7 +756,7 @@ int connection_route_and_start(connection_t *c)
   {
     logger(LOG_INFO, "HEAD request detected, returning success without upstream connection", url);
     send_http_headers(c, STATUS_200, "video/mp2t", NULL);
-    connection_queue_output_and_flush(c, NULL, 0, 1);
+    connection_queue_output_and_flush(c, NULL, 0);
     service_free(service);
     return 0;
   }
@@ -1039,7 +1038,7 @@ static void handle_playlist_request(connection_t *c)
                           server_addr_header[0] ? server_addr_header : NULL);
 
   send_http_headers(c, STATUS_200, "audio/x-mpegurl", extra_headers);
-  connection_queue_output_and_flush(c, (const uint8_t *)playlist, playlist_len, 1);
+  connection_queue_output_and_flush(c, (const uint8_t *)playlist, playlist_len);
 }
 
 /* Handle /epg.xml or /epg.xml.gz request - serve cached EPG data

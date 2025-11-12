@@ -45,7 +45,7 @@
 static int rtsp_prepare_request(rtsp_session_t *session, const char *method, const char *extra_headers);
 static int rtsp_try_send_pending(rtsp_session_t *session);
 static int rtsp_try_receive_response(rtsp_session_t *session);
-static int rtsp_parse_response(rtsp_session_t *session, const char *response, size_t *response_offset, size_t *response_len);
+static int rtsp_parse_response_header(rtsp_session_t *session, const char *response, size_t *response_offset, size_t *response_len);
 static int rtsp_setup_udp_sockets(rtsp_session_t *session);
 static void rtsp_close_udp_sockets(rtsp_session_t *session, const char *reason);
 static char *rtsp_find_header(const char *response, const char *header_name);
@@ -1328,7 +1328,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
     size_t response_offset = 0;
     size_t response_len = 0;
     int was_keepalive = session->awaiting_keepalive_response;
-    int parse_result = rtsp_parse_response(session, (const char *)session->response_buffer, &response_offset, &response_len);
+    int parse_result = rtsp_parse_response_header(session, (const char *)session->response_buffer, &response_offset, &response_len);
 
     if (parse_result == 1)
     {
@@ -1340,12 +1340,12 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
             memmove(session->response_buffer, session->response_buffer + response_offset, remaining);
             session->response_buffer_pos = remaining;
             session->response_buffer[session->response_buffer_pos] = '\0';
-            logger(LOG_DEBUG, "RTSP: Moved incomplete RTSP response to buffer start");
+            logger(LOG_DEBUG, "RTSP: Moved incomplete RTSP header to buffer start");
         }
         else if (session->response_buffer_pos >= sizeof(session->response_buffer) - 1)
         {
-            /* Buffer full but no valid RTSP response - discard everything */
-            logger(LOG_DEBUG, "RTSP: Buffer full with no RTSP response, discarding");
+            /* Buffer full but no valid RTSP header - discard everything */
+            logger(LOG_DEBUG, "RTSP: Buffer full with no RTSP header, discarding");
             session->response_buffer_pos = 0;
         }
         /* Wait for more data */
@@ -1353,7 +1353,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
     }
 
     /* Complete response received */
-    logger(LOG_DEBUG, "RTSP: Received complete response:\n%.*s", (int)response_len, session->response_buffer + response_offset);
+    logger(LOG_DEBUG, "RTSP: Received complete header:\n%.*s", (int)response_len, session->response_buffer + response_offset);
 
     session->awaiting_response = 0;
     session->awaiting_keepalive_response = 0;
@@ -1372,12 +1372,18 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
     }
 
     /* Calculate data remaining after the RTSP response */
-    size_t data_after_response_end = response_offset + response_len;
+    size_t data_after_header_end = response_offset + response_len;
     size_t remaining_data_len = 0;
-    if (session->response_buffer_pos > data_after_response_end)
+    if (session->response_buffer_pos > data_after_header_end)
     {
-        remaining_data_len = session->response_buffer_pos - data_after_response_end;
-        logger(LOG_DEBUG, "RTSP: Found %zu bytes of data after response", remaining_data_len);
+        remaining_data_len = session->response_buffer_pos - data_after_header_end;
+
+        if (session->state != RTSP_STATE_AWAITING_PLAY)
+        {
+            logger(LOG_DEBUG, "RTSP: Response body data (state=%d): %.*s",
+                   session->state, (int)remaining_data_len,
+                   session->response_buffer + data_after_header_end);
+        }
     }
 
     if (was_keepalive)
@@ -1417,7 +1423,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session)
         /* For TCP interleaved mode, preserve any RTP data that came after PLAY response */
         if (session->transport_mode == RTSP_TRANSPORT_TCP && remaining_data_len > 0)
         {
-            memmove(session->response_buffer, session->response_buffer + data_after_response_end, remaining_data_len);
+            memmove(session->response_buffer, session->response_buffer + data_after_header_end, remaining_data_len);
             session->response_buffer_pos = remaining_data_len;
             logger(LOG_DEBUG, "RTSP: Preserved %zu bytes of RTP data after PLAY response", remaining_data_len);
         }
@@ -2046,7 +2052,7 @@ int rtsp_session_is_async_teardown(rtsp_session_t *session)
 }
 
 /* Helper functions */
-static int rtsp_parse_response(rtsp_session_t *session, const char *response, size_t *response_offset, size_t *response_len)
+static int rtsp_parse_response_header(rtsp_session_t *session, const char *response, size_t *response_offset, size_t *response_len)
 {
     char *session_header = NULL;
     char *transport_header = NULL;
