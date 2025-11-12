@@ -168,10 +168,6 @@ export function buildCatchupSegments(
   const endingFuture = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   const segments: mpegts.MediaSegment[] = [];
 
-  // Segment duration: (now - startTime) in both seconds and milliseconds
-  const segmentDurationMs = Math.max(now.getTime() + tailOffsetSeconds * 1000 - startTime.getTime(), 10000);
-  const segmentDurationSec = segmentDurationMs / 1000;
-
   /**
    * Parse long date format like yyyyMMddHHmmss
    * Used for ${utc:yyyyMMddHHmmss}, ${utcend:yyyyMMddHHmmss} formats (with $)
@@ -439,6 +435,13 @@ export function buildCatchupSegments(
       return processedSource;
     }
   };
+
+  // Segment duration: (now - startTime) in both seconds and milliseconds
+  const segmentDurationMs = Math.min(
+    Math.max(now.getTime() + tailOffsetSeconds * 1000 - startTime.getTime(), 10000), // min 10s
+    5 * 60 * 60 * 1000, // max 5 hours
+  );
+  const segmentDurationSec = segmentDurationMs / 1000;
 
   // Build segments from startTime to now (catchup/replay segments)
   let currentTime = new Date(startTime.getTime());
