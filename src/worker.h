@@ -47,18 +47,6 @@ void fdmap_cleanup(void);
 int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd);
 
 /**
- * Get the connection list head (for iteration)
- * @return Pointer to first connection or NULL
- */
-connection_t *worker_get_conn_head(void);
-
-/**
- * Set the connection list head
- * @param head New head pointer
- */
-void worker_set_conn_head(connection_t *head);
-
-/**
  * Close and free a connection, removing it from the list
  * @param c Connection to close
  */

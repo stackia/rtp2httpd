@@ -159,16 +159,6 @@ void worker_cleanup_socket_from_epoll(int epoll_fd, int sock)
   close(sock);
 }
 
-connection_t *worker_get_conn_head(void)
-{
-  return conn_head;
-}
-
-void worker_set_conn_head(connection_t *head)
-{
-  conn_head = head;
-}
-
 static void remove_connection_from_list(connection_t *c)
 {
   if (!c)
@@ -702,6 +692,9 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
   /* Cleanup: close all active connections */
   while (conn_head)
     worker_close_and_free_connection(conn_head);
+
+  /* Cleanup fd map */
+  fdmap_cleanup();
 
   /* Close notification pipe read end */
   if (notif_fd >= 0)

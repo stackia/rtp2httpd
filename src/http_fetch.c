@@ -229,9 +229,6 @@ static void http_fetch_free(http_fetch_ctx_t *ctx)
     if (ctx->buffer)
         free(ctx->buffer);
 
-    /* Remove from hashmap */
-    http_fetch_remove_from_map(ctx);
-
     free(ctx);
 }
 
@@ -546,26 +543,12 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx)
             exit_code = atoi(exit_marker + 10);
         }
 
-        /* Close the pipe */
-        (void)pclose(ctx->pipe_fp);
-        ctx->pipe_fp = NULL;
-        ctx->pipe_fd = -1;
-
         /* Check fetch exit code */
         if (exit_code != 0)
         {
             logger(LOG_ERROR, "Async HTTP fetch failed (exit code %d): %s", exit_code, ctx->url);
             logger(LOG_DEBUG, "Fetch output: %.*s", (int)ctx->buffer_used, ctx->buffer);
-
-            if (ctx->use_fd)
-            {
-                ctx->fd_callback(ctx, -1, 0, ctx->user_data);
-            }
-            else
-            {
-                ctx->callback(ctx, NULL, 0, ctx->user_data);
-            }
-            http_fetch_free(ctx);
+            http_fetch_cancel(ctx);
             return -1;
         }
 
@@ -579,8 +562,7 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx)
             if (content_fd < 0)
             {
                 logger(LOG_ERROR, "Failed to open downloaded file: %s", ctx->temp_file);
-                ctx->fd_callback(ctx, -1, 0, ctx->user_data);
-                http_fetch_free(ctx);
+                http_fetch_cancel(ctx);
                 return -1;
             }
 
@@ -592,13 +574,14 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx)
             {
                 logger(LOG_ERROR, "Invalid or too large downloaded file (size: %ld)", file_size);
                 close(content_fd);
-                ctx->fd_callback(ctx, -1, 0, ctx->user_data);
-                http_fetch_free(ctx);
+                http_fetch_cancel(ctx);
                 return -1;
             }
 
             logger(LOG_DEBUG, "Async HTTP fetch completed successfully (%ld bytes, fd=%d): %s",
                    file_size, content_fd, ctx->url);
+
+            http_fetch_remove_from_map(ctx);
 
             /* Call fd-based callback with file descriptor
              * Note: temp_file will be unlinked by http_fetch_free,
@@ -616,8 +599,7 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx)
         if (!fp)
         {
             logger(LOG_ERROR, "Failed to open downloaded file: %s", ctx->temp_file);
-            ctx->callback(ctx, NULL, 0, ctx->user_data);
-            http_fetch_free(ctx);
+            http_fetch_cancel(ctx);
             return -1;
         }
 
@@ -630,8 +612,7 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx)
         {
             logger(LOG_ERROR, "Invalid or too large downloaded file (size: %ld)", file_size);
             fclose(fp);
-            ctx->callback(ctx, NULL, 0, ctx->user_data);
-            http_fetch_free(ctx);
+            http_fetch_cancel(ctx);
             return -1;
         }
 
@@ -641,8 +622,7 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx)
         {
             logger(LOG_ERROR, "Failed to allocate memory for HTTP content");
             fclose(fp);
-            ctx->callback(ctx, NULL, 0, ctx->user_data);
-            http_fetch_free(ctx);
+            http_fetch_cancel(ctx);
             return -1;
         }
 
@@ -652,6 +632,8 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx)
         fclose(fp);
 
         logger(LOG_DEBUG, "Async HTTP fetch completed successfully (%zu bytes): %s", read_size, ctx->url);
+
+        http_fetch_remove_from_map(ctx);
 
         /* Call completion callback with actual content size */
         ctx->callback(ctx, content, read_size, ctx->user_data);
@@ -672,6 +654,8 @@ void http_fetch_cancel(http_fetch_ctx_t *ctx)
         return;
 
     logger(LOG_DEBUG, "Cancelling async HTTP fetch: %s", ctx->url);
+
+    http_fetch_remove_from_map(ctx);
 
     /* Invoke callback with NULL/error to signal cancellation */
     if (ctx->use_fd && ctx->fd_callback)
