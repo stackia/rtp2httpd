@@ -221,7 +221,7 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf, int b
             /* NAT traversal supported - update server address and send NAT packet */
             fcc->need_nat_traversal = 1;
 
-            /* Update unicast server IP and media port (keep fcc_server->sin_port as control port 8027) */
+            /* Update unicast server IP and media port (keep fcc_server->sin_port as control port7) */
             fcc->fcc_server->sin_addr.s_addr = htonl(server_ip);
             fcc->media_port = htons(server_port);
 

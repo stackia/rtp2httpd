@@ -13,8 +13,8 @@ typedef struct buffer_ref_s buffer_ref_t;
 /* FCC Protocol Type - Based on vendor and port */
 typedef enum
 {
-    FCC_TYPE_TELECOM = 0, /* Telecom/ZTE/Fiberhome (port 15970, FMT 2,3,4,5) */
-    FCC_TYPE_HUAWEI = 1   /* Huawei (port 8027, FMT 5,6,8,9,12) */
+    FCC_TYPE_TELECOM = 0, /* Telecom/ZTE/Fiberhome (FMT 2,3,4,5) */
+    FCC_TYPE_HUAWEI = 1   /* Huawei (FMT 5,6,8,9,12) */
 } fcc_type_t;
 
 #define FCC_MAX_REDIRECTS 5

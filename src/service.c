@@ -1203,23 +1203,6 @@ service_t *service_create_from_rtp_url(const char *http_url)
             logger(LOG_DEBUG, "FCC type explicitly set to %s",
                    result->fcc_type == FCC_TYPE_HUAWEI ? "Huawei" : "Telecom");
         }
-        else
-        {
-            /* Detect FCC type based on server port: 8027=Huawei, others=Telecom */
-            struct sockaddr_in *fcc_sin = (struct sockaddr_in *)fcc_res_ai->ai_addr;
-            int fcc_port = ntohs(fcc_sin->sin_port);
-
-            if (fcc_port == 8027)
-            {
-                result->fcc_type = FCC_TYPE_HUAWEI;
-                logger(LOG_DEBUG, "FCC type detected as Huawei (port %d)", fcc_port);
-            }
-            else
-            {
-                result->fcc_type = FCC_TYPE_TELECOM;
-                logger(LOG_DEBUG, "FCC type detected as Telecom (port %d)", fcc_port);
-            }
-        }
     }
 
     /* Free temporary addrinfo structures */
