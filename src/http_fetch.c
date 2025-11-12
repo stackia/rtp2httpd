@@ -25,6 +25,7 @@ typedef enum
 {
     HTTP_TOOL_CURL = 0,
     HTTP_TOOL_UCLIENT_FETCH,
+    HTTP_TOOL_WGET,
     HTTP_TOOL_NONE
 } http_fetch_tool_t;
 
@@ -98,9 +99,8 @@ static http_fetch_tool_t detect_http_fetch_tool(void)
         return detected_tool;
     }
 
-    /* Check for curl by trying to execute it with --version
-     * This respects the PATH environment variable */
-    ret = system("curl --version >/dev/null 2>&1");
+    /* Check for curl by using which command */
+    ret = system("which curl >/dev/null 2>&1");
     if (ret == 0)
     {
         logger(LOG_INFO, "HTTP fetch tool detected: curl");
@@ -109,11 +109,9 @@ static http_fetch_tool_t detect_http_fetch_tool(void)
         return detected_tool;
     }
 
-    /* Check for uclient-fetch by trying to execute it
-     * uclient-fetch returns 1 when called without arguments, but that's fine
-     * as long as it's found in PATH */
-    ret = system("uclient-fetch >/dev/null 2>&1");
-    if (ret == 0 || WEXITSTATUS(ret) == 1)
+    /* Check for uclient-fetch by using which command */
+    ret = system("which uclient-fetch >/dev/null 2>&1");
+    if (ret == 0)
     {
         logger(LOG_INFO, "HTTP fetch tool detected: uclient-fetch");
         detected_tool = HTTP_TOOL_UCLIENT_FETCH;
@@ -121,8 +119,18 @@ static http_fetch_tool_t detect_http_fetch_tool(void)
         return detected_tool;
     }
 
+    /* Check for wget by using which command */
+    ret = system("which wget >/dev/null 2>&1");
+    if (ret == 0)
+    {
+        logger(LOG_INFO, "HTTP fetch tool detected: wget");
+        detected_tool = HTTP_TOOL_WGET;
+        tool_detection_done = 1;
+        return detected_tool;
+    }
+
     /* No suitable tool found */
-    logger(LOG_ERROR, "No HTTP fetch tool found. Please install curl or uclient-fetch.");
+    logger(LOG_ERROR, "No HTTP fetch tool found. Please install curl, uclient-fetch or wget.");
     detected_tool = HTTP_TOOL_NONE;
     tool_detection_done = 1;
     return detected_tool;
@@ -149,10 +157,16 @@ static int build_fetch_command(char *buf, size_t bufsize,
                        "curl -L -f -s -S -k --max-time %d --connect-timeout 10 -o '%s' '%s' 2>&1; echo \"EXIT_CODE:$?\"",
                        timeout, output_file, url);
     }
-    else /* HTTP_TOOL_UCLIENT_FETCH */
+    else if (tool == HTTP_TOOL_UCLIENT_FETCH)
     {
         ret = snprintf(buf, bufsize,
                        "uclient-fetch --no-check-certificate -q -T %d -O '%s' '%s' 2>&1; echo \"EXIT_CODE:$?\"",
+                       timeout, output_file, url);
+    }
+    else /* HTTP_TOOL_WGET */
+    {
+        ret = snprintf(buf, bufsize,
+                       "wget --no-check-certificate -q -T %d -O '%s' '%s' 2>&1; echo \"EXIT_CODE:$?\"",
                        timeout, output_file, url);
     }
 
