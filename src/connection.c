@@ -45,7 +45,7 @@
 
 /* Forward declarations */
 static void handle_playlist_request(connection_t *c);
-static void handle_epg_request(connection_t *c);
+static void handle_epg_request(connection_t *c, int requested_gz);
 
 static inline buffer_ref_t *connection_alloc_output_buffer(connection_t *c)
 {
@@ -652,10 +652,14 @@ int connection_route_and_start(connection_t *c)
   const char *epg_xml_gz_route = "epg.xml.gz";
   size_t epg_xml_route_len = strlen(epg_xml_route);
   size_t epg_xml_gz_route_len = strlen(epg_xml_gz_route);
-  if ((epg_xml_route_len == path_len && strncmp(service_path, epg_xml_route, path_len) == 0) ||
-      (epg_xml_gz_route_len == path_len && strncmp(service_path, epg_xml_gz_route, path_len) == 0))
+  if (epg_xml_gz_route_len == path_len && strncmp(service_path, epg_xml_gz_route, path_len) == 0)
   {
-    handle_epg_request(c);
+    handle_epg_request(c, 1);
+    return 0;
+  }
+  if (epg_xml_route_len == path_len && strncmp(service_path, epg_xml_route, path_len) == 0)
+  {
+    handle_epg_request(c, 0);
     return 0;
   }
   size_t status_sse_len = strlen(status_sse_route);
@@ -1038,8 +1042,10 @@ static void handle_playlist_request(connection_t *c)
   connection_queue_output_and_flush(c, (const uint8_t *)playlist, playlist_len, 1);
 }
 
-/* Handle /epg.xml or /epg.xml.gz request - serve cached EPG data */
-static void handle_epg_request(connection_t *c)
+/* Handle /epg.xml or /epg.xml.gz request - serve cached EPG data
+ * requested_gz: 1 if client requested .gz version, 0 for .xml version
+ */
+static void handle_epg_request(connection_t *c, int requested_gz)
 {
   if (!c)
     return;
@@ -1061,9 +1067,41 @@ static void handle_epg_request(connection_t *c)
 
   /* Get ETag for the EPG data */
   const char *etag = epg->etag_valid ? epg->etag : NULL;
-  /* Always use application/xml as content type - if gzipped, add Content-Encoding header
-   * This allows browser to automatically decompress (better performance than JS) */
-  const char *content_type = "application/xml";
+
+  /* Determine content type and encoding based on request and cache state
+   * Logic:
+   * - If requested epg.xml.gz:
+   *   - If cache is_gzipped: send as application/gzip (no Content-Encoding)
+   *   - If cache is NOT gzipped: send 404
+   * - If requested epg.xml:
+   *   - If cache is_gzipped: send as application/xml with Content-Encoding: gzip
+   *   - If cache is NOT gzipped: send as application/xml (no Content-Encoding)
+   */
+  const char *content_type;
+  const char *content_encoding = NULL;
+
+  if (requested_gz)
+  {
+    /* Client requested .gz file */
+    if (!is_gzipped)
+    {
+      /* Cache is not gzipped, cannot serve .gz request */
+      http_send_404(c);
+      return;
+    }
+    /* Cache is gzipped - serve as application/gzip */
+    content_type = "application/gzip";
+  }
+  else
+  {
+    /* Client requested .xml file */
+    content_type = "application/xml";
+    if (is_gzipped)
+    {
+      /* Cache is gzipped - add Content-Encoding to let browser decompress */
+      content_encoding = "Content-Encoding: gzip";
+    }
+  }
 
   /* Check ETag and send 304 if it matches */
   if (http_check_etag_and_send_304(c, etag, content_type))
@@ -1074,10 +1112,9 @@ static void handle_epg_request(connection_t *c)
   /* ETag doesn't match or not provided - send full EPG data */
   char extra_headers[256];
 
-  /* Build headers with ETag support
-   * If gzipped, add Content-Encoding: gzip to let browser decompress automatically */
+  /* Build headers with ETag support */
   http_build_etag_headers(extra_headers, sizeof(extra_headers), epg_size, etag,
-                          is_gzipped ? "Content-Encoding: gzip" : NULL);
+                          content_encoding);
 
   send_http_headers(c, STATUS_200, content_type, extra_headers);
 
