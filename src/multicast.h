@@ -39,14 +39,6 @@ const char *get_upstream_interface_for_rtsp(void);
 const char *get_upstream_interface_for_multicast(void);
 
 /**
- * Select the appropriate upstream interface for IGMP control messages with priority logic
- * Priority: upstream_interface_igmp > upstream_interface_multicast > upstream_interface
- *
- * @return Pointer to the interface name to use (may be NULL if none configured)
- */
-const char *get_upstream_interface_for_igmp(void);
-
-/**
  * Get local IP address for FCC packets
  * Uses the configured upstream interface for FCC, or falls back to first non-loopback address
  *
