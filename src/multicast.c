@@ -139,30 +139,6 @@ const char *get_upstream_interface_for_multicast(void)
 }
 
 /**
- * Get upstream interface for IGMP control messages
- * Priority: upstream_interface_igmp > upstream_interface_multicast > upstream_interface
- */
-const char *get_upstream_interface_for_igmp(void)
-{
-  /* Priority 1: Dedicated IGMP control interface */
-  if (config.upstream_interface_igmp[0] != '\0')
-  {
-    return config.upstream_interface_igmp;
-  }
-  /* Priority 2: Multicast interface (IGMP follows multicast by default) */
-  if (config.upstream_interface_multicast[0] != '\0')
-  {
-    return config.upstream_interface_multicast;
-  }
-  /* Priority 3: Default interface */
-  if (config.upstream_interface[0] != '\0')
-  {
-    return config.upstream_interface;
-  }
-  return NULL;
-}
-
-/**
  * Get local IP address for FCC packets
  * Priority: upstream_interface_fcc > upstream_interface > first non-loopback IP
  */
@@ -264,13 +240,10 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr, str
     return -1;
   }
 
-  /* Use IGMP interface for gr_interface (controls IGMP message sending) */
-  upstream_if = get_upstream_interface_for_igmp();
+  upstream_if = get_upstream_interface_for_multicast();
   if (upstream_if && upstream_if[0] != '\0')
   {
     gr->gr_interface = if_nametoindex(upstream_if);
-    logger(LOG_DEBUG, "Multicast: Using interface %s (index %u) for IGMP control messages",
-           upstream_if, gr->gr_interface);
   }
 
   /* Prepare source-specific multicast structure if needed */
@@ -357,13 +330,9 @@ int join_mcast_group(service_t *service)
     logger(LOG_ERROR, "SO_REUSEADDR failed: %s", strerror(errno));
   }
 
-  /* Determine which interface to use for data reception */
+  /* Determine which interface to use */
   upstream_if = get_upstream_interface_for_multicast();
   bind_to_upstream_interface(sock, upstream_if);
-  if (upstream_if && upstream_if[0] != '\0')
-  {
-    logger(LOG_DEBUG, "Multicast: Using interface %s for data reception", upstream_if);
-  }
 
   r = bind(sock, (struct sockaddr *)service->addr->ai_addr, service->addr->ai_addrlen);
   if (r)
@@ -470,7 +439,7 @@ int rejoin_mcast_group(int sock, service_t *service)
   }
 
   /* Bind to upstream interface if specified */
-  upstream_if = get_upstream_interface_for_igmp();
+  upstream_if = get_upstream_interface_for_multicast();
   bind_to_upstream_interface(raw_sock, upstream_if);
 
   /* Set IP_HDRINCL to 0 - kernel will add IP header */
@@ -487,6 +456,18 @@ int rejoin_mcast_group(int sock, service_t *service)
     logger(LOG_ERROR, "Failed to set IP_ROUTER_ALERT: %s", strerror(errno));
     close(raw_sock);
     return -1;
+  }
+
+  /* Set IP_MULTICAST_IF to send from correct interface */
+  if (upstream_if && upstream_if[0] != '\0')
+  {
+    struct ip_mreqn mreq;
+    memset(&mreq, 0, sizeof(mreq));
+    mreq.imr_ifindex = if_nametoindex(upstream_if);
+    if (setsockopt(raw_sock, IPPROTO_IP, IP_MULTICAST_IF, &mreq, sizeof(mreq)) < 0)
+    {
+      logger(LOG_WARN, "Failed to set IP_MULTICAST_IF: %s", strerror(errno));
+    }
   }
 
   /* Construct IGMPv3 Membership Report packet */

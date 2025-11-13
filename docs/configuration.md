@@ -19,24 +19,9 @@ rtp2httpd [选项]
 - `-i, --upstream-interface <接口>` - 默认上游接口（作用于所有流量类型，优先级最低）
 - `-f, --upstream-interface-fcc <接口>` - FCC 上游接口（覆盖 `-i` 设置）
 - `-t, --upstream-interface-rtsp <接口>` - RTSP 上游接口（覆盖 `-i` 设置）
-- `-r, --upstream-interface-multicast <接口>` - 组播数据接收接口（覆盖 `-i` 设置）
-- `-G, --upstream-interface-igmp <接口>` - IGMP 控制消息接口（覆盖 `-r` 设置）
+- `-r, --upstream-interface-multicast <接口>` - 组播上游接口（覆盖 `-i` 设置）
 
-**优先级规则**：
-
-- 组播/FCC/RTSP 流量：`upstream-interface-{multicast,fcc,rtsp}` > `upstream-interface` > 系统路由表
-- IGMP 控制消息：`upstream-interface-igmp` > `upstream-interface-multicast` > `upstream-interface` > 系统路由表
-
-**IGMP/组播接口分离场景**：
-
-当 rtp2httpd 运行在光猫上时，有些运营商要求 IGMP 控制消息通过 iptv vlan 发出，而组播数据则通过单独的组播 vlan 接收。
-
-此时可以在光猫上新建一条连接，VLAN 填写组播 VLAN，这里假设这个新接口叫做 `nbif3`，原先已有的 iptv 接口叫做 `nbif2`。可以用下面参数分别指定组播和 IGMP 接口。
-
-```bash
---upstream-interface-multicast nbif3 # 通过 nbif3 接口接收组播数据
---upstream-interface-igmp nbif2 # 通过 nbif2 接口发送 IGMP 控制消息
-```
+**优先级规则**：`upstream-interface-{fcc,rtsp,multicast}` > `upstream-interface` > 系统路由表
 
 ### 性能优化
 
@@ -126,23 +111,15 @@ upstream-interface = eth0
 #
 # 高级配置：为不同流量类型配置专用接口
 # 注意：专用接口配置优先级高于默认接口
-# upstream-interface-multicast = eth0  # 组播数据接收接口
-# upstream-interface-igmp = eth0       # IGMP 控制消息接口
-# upstream-interface-fcc = eth1        # FCC 流量接口
-# upstream-interface-rtsp = eth2       # RTSP 流量接口
+# upstream-interface-multicast = eth0  # 组播流量 (RTP/UDP)
+# upstream-interface-fcc = eth1        # FCC
+# upstream-interface-rtsp = eth2       # RTSP
 #
 # 混合配置示例：默认使用 eth0，但 FCC 使用更快的 eth1
 # upstream-interface = eth0
 # upstream-interface-fcc = eth1
 #
-# IGMP/组播分离配置示例：IGMP 通过 WAN 接口，数据通过 VLAN 接口
-# upstream-interface-multicast = eth0.100  # VLAN 接口接收组播数据
-# upstream-interface-igmp = eth0           # WAN 接口发送 IGMP 控制消息
-#
-# 优先级：
-# - IGMP: upstream-interface-igmp > upstream-interface-multicast > upstream-interface
-# - 组播: upstream-interface-multicast > upstream-interface
-# - FCC/RTSP: upstream-interface-{fcc,rtsp} > upstream-interface
+# 优先级：upstream-interface-{multicast,fcc,rtsp} > upstream-interface > 系统路由表
 
 # 外部 M3U 配置（支持 file://, http://, https://）
 # 注意：HTTP/HTTPS 需要安装 curl 命令

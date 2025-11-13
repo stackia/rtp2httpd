@@ -83,7 +83,6 @@ typedef struct
   char upstream_interface_fcc[IFNAMSIZ];       /* Interface for FCC unicast media requests (overrides upstream_interface) */
   char upstream_interface_rtsp[IFNAMSIZ];      /* Interface for RTSP unicast media requests (overrides upstream_interface) */
   char upstream_interface_multicast[IFNAMSIZ]; /* Interface for upstream multicast media requests (overrides upstream_interface) */
-  char upstream_interface_igmp[IFNAMSIZ];      /* Interface for IGMP control messages (overrides upstream_interface_multicast) */
 
   /* Multicast settings */
   int mcast_rejoin_interval; /* Periodic multicast rejoin interval in seconds (0=disabled, default 0) */

@@ -48,7 +48,6 @@ int cmd_upstream_interface_set;
 int cmd_upstream_interface_fcc_set;
 int cmd_upstream_interface_rtsp_set;
 int cmd_upstream_interface_multicast_set;
-int cmd_upstream_interface_igmp_set;
 int cmd_fcc_listen_port_range_set;
 int cmd_status_page_path_set;
 int cmd_player_page_path_set;
@@ -571,15 +570,6 @@ void parse_global_sec(char *line)
     return;
   }
 
-  if (strcasecmp("upstream-interface-igmp", param) == 0)
-  {
-    if (set_if_not_cmd_override(cmd_upstream_interface_igmp_set, "upstream-interface-igmp"))
-    {
-      strncpy(config.upstream_interface_igmp, value, IFNAMSIZ - 1);
-    }
-    return;
-  }
-
   if (strcasecmp("mcast-rejoin-interval", param) == 0)
   {
     if (set_if_not_cmd_override(cmd_mcast_rejoin_interval_set, "mcast-rejoin-interval"))
@@ -869,10 +859,6 @@ void restore_conf_defaults(void)
     memset(config.upstream_interface_multicast, 0, IFNAMSIZ);
   cmd_upstream_interface_multicast_set = 0;
 
-  if (config.upstream_interface_igmp[0] != '\0')
-    memset(config.upstream_interface_igmp, 0, IFNAMSIZ);
-  cmd_upstream_interface_igmp_set = 0;
-
   /* Free all services */
   while (services != NULL)
   {
@@ -921,7 +907,6 @@ void usage(FILE *f, char *progname)
           "\t-f --upstream-interface-fcc <interface>  Interface for FCC unicast traffic (overrides -i)\n"
           "\t-t --upstream-interface-rtsp <interface>  Interface for RTSP unicast traffic (overrides -i)\n"
           "\t-r --upstream-interface-multicast <interface>  Interface for multicast traffic (overrides -i)\n"
-          "\t-G --upstream-interface-igmp <interface>  Interface for IGMP control messages (overrides -r)\n"
           "\t-R --mcast-rejoin-interval <seconds>  Periodic multicast rejoin interval (0=disabled, default 0)\n"
           "\t-F --ffmpeg-path <path>  Path to ffmpeg executable (default: ffmpeg)\n"
           "\t-A --ffmpeg-args <args>  Additional ffmpeg arguments (default: -hwaccel none)\n"
@@ -996,7 +981,6 @@ void parse_cmd_line(int argc, char *argv[])
       {"upstream-interface-fcc", required_argument, 0, 'f'},
       {"upstream-interface-rtsp", required_argument, 0, 't'},
       {"upstream-interface-multicast", required_argument, 0, 'r'},
-      {"upstream-interface-igmp", required_argument, 0, 'G'},
       {"mcast-rejoin-interval", required_argument, 0, 'R'},
       {"ffmpeg-path", required_argument, 0, 'F'},
       {"ffmpeg-args", required_argument, 0, 'A'},
@@ -1008,7 +992,7 @@ void parse_cmd_line(int argc, char *argv[])
       {"zerocopy-on-send", no_argument, 0, 'Z'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhUm:w:b:c:l:P:H:XT:i:f:t:r:G:R:F:A:s:p:M:I:SCZ";
+  const char short_opts[] = "v:qhUm:w:b:c:l:P:H:XT:i:f:t:r:R:F:A:s:p:M:I:SCZ";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1137,10 +1121,6 @@ void parse_cmd_line(int argc, char *argv[])
     case 'r':
       strncpy(config.upstream_interface_multicast, optarg, IFNAMSIZ - 1);
       cmd_upstream_interface_multicast_set = 1;
-      break;
-    case 'G':
-      strncpy(config.upstream_interface_igmp, optarg, IFNAMSIZ - 1);
-      cmd_upstream_interface_igmp_set = 1;
       break;
     case 'R':
       if (atoi(optarg) < 0)
