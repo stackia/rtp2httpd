@@ -48,9 +48,8 @@ typedef struct stream_context_s {
  * last_mcast_data_time to prevent false timeout triggers. Should be used
  * instead of join_mcast_group() directly in all stream-related code.
  * @param ctx Stream context
- * @return Socket file descriptor on success, exits on failure
  */
-int stream_join_mcast_group(stream_context_t *ctx);
+void stream_join_mcast_group(stream_context_t *ctx);
 
 /**
  * Initialize a stream context for integration into a worker's unified epoll

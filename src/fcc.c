@@ -84,7 +84,7 @@ void fcc_session_cleanup(fcc_session_t *fcc, service_t *service, int epoll_fd) {
   }
 
   /* Send termination message ONLY if not sent before */
-  if (!fcc->fcc_term_sent && fcc->fcc_sock && fcc->fcc_server && service) {
+  if (!fcc->fcc_term_sent && fcc->fcc_sock >= 0 && fcc->fcc_server && service) {
     logger(LOG_DEBUG, "FCC: Sending termination packet (cleanup)");
     if (fcc_send_term_packet(fcc, service, 0, "cleanup") == 0) {
       fcc->fcc_term_sent = 1;
@@ -105,9 +105,9 @@ void fcc_session_cleanup(fcc_session_t *fcc, service_t *service, int epoll_fd) {
   fcc->pending_list_tail = NULL;
 
   /* Close FCC socket */
-  if (fcc->fcc_sock > 0) {
+  if (fcc->fcc_sock >= 0) {
     worker_cleanup_socket_from_epoll(epoll_fd, fcc->fcc_sock);
-    fcc->fcc_sock = 0;
+    fcc->fcc_sock = -1;
     logger(LOG_DEBUG, "FCC: Socket closed");
   }
 
@@ -144,6 +144,7 @@ static void log_fcc_state_transition(fcc_state_t from, fcc_state_t to,
 void fcc_session_init(fcc_session_t *fcc) {
   memset(fcc, 0, sizeof(fcc_session_t));
   fcc->state = FCC_STATE_INIT;
+  fcc->fcc_sock = -1;
   fcc->status_index = -1;
   fcc->redirect_count = 0;
 }
@@ -193,7 +194,7 @@ int fcc_initialize_and_request(stream_context_t *ctx) {
 
   logger(LOG_DEBUG, "FCC: Initializing FCC session and sending request");
 
-  if (!fcc->fcc_sock) {
+  if (fcc->fcc_sock < 0) {
     /* Create and configure FCC socket */
     fcc->fcc_sock = socket(AF_INET, service->fcc_addr->ai_socktype,
                            service->fcc_addr->ai_protocol);
@@ -207,7 +208,7 @@ int fcc_initialize_and_request(stream_context_t *ctx) {
       logger(LOG_ERROR, "FCC: Failed to set socket non-blocking: %s",
              strerror(errno));
       close(fcc->fcc_sock);
-      fcc->fcc_sock = 0;
+      fcc->fcc_sock = -1;
       return -1;
     }
 
@@ -245,7 +246,7 @@ int fcc_initialize_and_request(stream_context_t *ctx) {
       logger(LOG_ERROR, "FCC: Failed to add socket to epoll: %s",
              strerror(errno));
       close(fcc->fcc_sock);
-      fcc->fcc_sock = 0;
+      fcc->fcc_sock = -1;
       return -1;
     }
     fdmap_set(fcc->fcc_sock, ctx->conn);
@@ -310,7 +311,7 @@ int fcc_handle_sync_notification(stream_context_t *ctx, int timeout_ms) {
                         timeout_ms ? "Sync notification timeout"
                                    : "Sync notification received");
 
-  ctx->mcast_sock = stream_join_mcast_group(ctx);
+  stream_join_mcast_group(ctx);
 
   return 0; /* Signal to join multicast */
 }
@@ -358,7 +359,7 @@ int fcc_handle_unicast_media(stream_context_t *ctx, buffer_ref_t *buf_ref) {
  */
 static int fcc_send_term_packet(fcc_session_t *fcc, service_t *service,
                                 uint16_t seqn, const char *reason) {
-  if (!fcc->fcc_sock || !fcc->fcc_server) {
+  if (fcc->fcc_sock < 0 || !fcc->fcc_server) {
     logger(LOG_DEBUG, "FCC: Cannot send termination - missing socket/server");
     return -1;
   }
