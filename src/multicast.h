@@ -1,7 +1,7 @@
 #ifndef __MULTICAST_H__
 #define __MULTICAST_H__
 
-#include "rtp2httpd.h"
+#include "service.h"
 
 /* UDP socket receive buffer size (512KB) */
 #define UDP_RCVBUF_SIZE (512 * 1024)
@@ -40,7 +40,8 @@ const char *get_upstream_interface_for_multicast(void);
 
 /**
  * Get local IP address for FCC packets
- * Uses the configured upstream interface for FCC, or falls back to first non-loopback address
+ * Uses the configured upstream interface for FCC, or falls back to first
+ * non-loopback address
  *
  * @return Local IP address in host byte order, or 0 if unable to determine
  */
@@ -59,10 +60,9 @@ int join_mcast_group(service_t *service);
  * This performs MCAST_LEAVE_GROUP followed by MCAST_JOIN_GROUP to force
  * the kernel to send a new IGMP Report message, refreshing membership.
  *
- * @param sock Existing multicast socket file descriptor
  * @param service Service structure containing multicast address info
  * @return 0 on success, -1 on failure
  */
-int rejoin_mcast_group(int sock, service_t *service);
+int rejoin_mcast_group(service_t *service);
 
 #endif /* __MULTICAST_H__ */

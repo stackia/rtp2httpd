@@ -1,22 +1,18 @@
 #ifndef __STATUS_H__
 #define __STATUS_H__
 
+#include "configuration.h"
+#include "connection.h"
 #include <stdint.h>
 #include <sys/types.h>
-#include <time.h>
-#include <pthread.h>
-#include "rtp2httpd.h"
-
-/* Forward declarations */
-typedef struct connection_s connection_t;
 
 /* Maximum number of clients we can track in shared memory */
 #define STATUS_MAX_CLIENTS 256
 
 /* Event types for worker notification */
-typedef enum
-{
-  STATUS_EVENT_SSE_UPDATE = 1,        /* SSE update event (client connect/disconnect/state change) */
+typedef enum {
+  STATUS_EVENT_SSE_UPDATE =
+      1, /* SSE update event (client connect/disconnect/state change) */
   STATUS_EVENT_DISCONNECT_REQUEST = 2 /* Disconnect request from API */
 } status_event_type_t;
 
@@ -30,8 +26,7 @@ typedef enum
 #define SSE_BUFFER_SIZE 262144 /* 256k */
 
 /* Client state types for status display */
-typedef enum
-{
+typedef enum {
   CLIENT_STATE_CONNECTING = 0,
   CLIENT_STATE_FCC_INIT,
   CLIENT_STATE_FCC_REQUESTED,
@@ -63,35 +58,35 @@ typedef enum
 } client_state_type_t;
 
 /* Per-client statistics stored in shared memory */
-typedef struct
-{
-  int active;                        /* 1 if slot is active, 0 if free */
-  char client_id[128];               /* Unique client ID: "IP:port-workerN-seqM" */
-  pid_t worker_pid;                  /* Actual worker thread/process PID */
-  int worker_index;                  /* Worker index (0-based, matches worker_id) */
-  int64_t connect_time;              /* Connection timestamp in milliseconds */
-  char client_addr[128];             /* Client address (IP:port format, IPv6 uses []:port) */
-  char service_url[256];             /* Service URL being accessed */
-  client_state_type_t state;         /* Current connection state */
-  uint64_t bytes_sent;               /* Total bytes sent to client */
-  uint32_t current_bandwidth;        /* Current bandwidth in bytes/sec */
-  volatile int disconnect_requested; /* Set to 1 when disconnect is requested from API */
-  size_t queue_bytes;                /* Current queued bytes */
-  uint32_t queue_buffers;            /* Current queued buffers */
-  size_t queue_limit_bytes;          /* Dynamic queue limit snapshot */
-  size_t queue_bytes_highwater;      /* Peak queued bytes */
-  uint32_t queue_buffers_highwater;  /* Peak queued buffers */
-  uint64_t dropped_packets;          /* Total dropped packets */
-  uint64_t dropped_bytes;            /* Total dropped bytes */
-  uint32_t backpressure_events;      /* Times backpressure triggered */
+typedef struct {
+  int active;           /* 1 if slot is active, 0 if free */
+  char client_id[128];  /* Unique client ID: "IP:port-workerN-seqM" */
+  pid_t worker_pid;     /* Actual worker thread/process PID */
+  int worker_index;     /* Worker index (0-based, matches worker_id) */
+  int64_t connect_time; /* Connection timestamp in milliseconds */
+  char
+      client_addr[128]; /* Client address (IP:port format, IPv6 uses []:port) */
+  char service_url[256];      /* Service URL being accessed */
+  client_state_type_t state;  /* Current connection state */
+  uint64_t bytes_sent;        /* Total bytes sent to client */
+  uint32_t current_bandwidth; /* Current bandwidth in bytes/sec */
+  volatile int
+      disconnect_requested; /* Set to 1 when disconnect is requested from API */
+  size_t queue_bytes;       /* Current queued bytes */
+  uint32_t queue_buffers;   /* Current queued buffers */
+  size_t queue_limit_bytes; /* Dynamic queue limit snapshot */
+  size_t queue_bytes_highwater;     /* Peak queued bytes */
+  uint32_t queue_buffers_highwater; /* Peak queued buffers */
+  uint64_t dropped_packets;         /* Total dropped packets */
+  uint64_t dropped_bytes;           /* Total dropped bytes */
+  uint32_t backpressure_events;     /* Times backpressure triggered */
   int slow_active;
 } client_stats_t;
 
 /* Log entry structure for circular buffer */
-typedef struct
-{
+typedef struct {
   int64_t timestamp; /* Timestamp in milliseconds */
-  enum loglevel level;
+  loglevel_t level;
   char message[STATUS_LOG_ENTRY_LEN];
 } log_entry_t;
 
@@ -100,15 +95,15 @@ typedef struct
  * Each worker writes to its own slot to avoid contention
  * No atomic operations needed - readers aggregate all workers
  */
-typedef struct
-{
+typedef struct {
   pid_t worker_pid; /* Worker process PID */
 
   /* Client ID generation counter */
   uint64_t client_id_counter; /* Incremented for each new client registration */
 
   /* Client traffic statistics */
-  uint64_t client_bytes_cumulative; /* Bytes sent to clients that have disconnected */
+  uint64_t client_bytes_cumulative; /* Bytes sent to clients that have
+                                       disconnected */
 
   /* Zero-copy send statistics */
   uint64_t total_sends;       /* Total number of sendmsg() calls */
@@ -136,26 +131,29 @@ typedef struct
 } worker_stats_t;
 
 /* Shared memory structure for status information */
-typedef struct
-{
+typedef struct {
   /* Global statistics */
   int total_clients;
-  uint64_t total_bytes_sent_cumulative; /* Bytes sent to clients that have disconnected */
+  uint64_t total_bytes_sent_cumulative; /* Bytes sent to clients that have
+                                           disconnected */
   uint32_t total_bandwidth;
   int64_t server_start_time; /* Server start time in milliseconds */
 
   /* Log level control */
-  enum loglevel current_log_level;
+  loglevel_t current_log_level;
 
   /* Event notification for SSE updates */
-  volatile int event_counter; /* Incremented when events occur (connect/disconnect/state change) */
+  volatile int event_counter; /* Incremented when events occur
+                                 (connect/disconnect/state change) */
 
   /* Per-worker notification pipes for SSE updates
    * Pipes are created BEFORE fork so all workers can access all write ends
    * When an event occurs, any worker can write to all other workers' pipes
    * Read ends are used by each worker in their epoll loop */
-  int worker_notification_pipe_read_fds[STATUS_MAX_WORKERS]; /* Read ends of worker pipes, -1 if closed */
-  int worker_notification_pipes[STATUS_MAX_WORKERS];         /* Write ends of worker pipes, -1 if inactive */
+  int worker_notification_pipe_read_fds
+      [STATUS_MAX_WORKERS]; /* Read ends of worker pipes, -1 if closed */
+  int worker_notification_pipes[STATUS_MAX_WORKERS]; /* Write ends of worker
+                                                        pipes, -1 if inactive */
 
   /* Log circular buffer */
   pthread_mutex_t log_mutex; /* Mutex to protect log buffer writes */
@@ -192,11 +190,13 @@ void status_cleanup(void);
  * Only called for media streaming clients, not for status/API requests
  * Called after routing determines the connection is for a media service
  * Allocates a free slot in the clients array under mutex protection
- * @param client_addr_str Client address string (format: "IP:port" or "[IPv6]:port")
+ * @param client_addr_str Client address string (format: "IP:port" or
+ * "[IPv6]:port")
  * @param service_url Service URL string (e.g., HTTP request path)
  * @return Client slot index (status_index) on success, -1 on error
  */
-int status_register_client(const char *client_addr_str, const char *service_url);
+int status_register_client(const char *client_addr_str,
+                           const char *service_url);
 
 /**
  * Unregister a streaming client connection from shared memory
@@ -212,7 +212,8 @@ void status_unregister_client(int status_index);
  * @param bytes_sent Total bytes sent
  * @param current_bandwidth Current bandwidth in bytes/sec
  */
-void status_update_client_bytes(int status_index, uint64_t bytes_sent, uint32_t current_bandwidth);
+void status_update_client_bytes(int status_index, uint64_t bytes_sent,
+                                uint32_t current_bandwidth);
 
 /**
  * Update client state by status index
@@ -222,16 +223,13 @@ void status_update_client_bytes(int status_index, uint64_t bytes_sent, uint32_t 
  */
 void status_update_client_state(int status_index, client_state_type_t state);
 
-void status_update_client_queue(int status_index,
-                                size_t queue_bytes,
-                                size_t queue_buffers,
-                                size_t queue_limit_bytes,
+void status_update_client_queue(int status_index, size_t queue_bytes,
+                                size_t queue_buffers, size_t queue_limit_bytes,
                                 size_t queue_bytes_highwater,
                                 size_t queue_buffers_highwater,
                                 uint64_t dropped_packets,
                                 uint64_t dropped_bytes,
-                                uint32_t backpressure_events,
-                                int slow_active);
+                                uint32_t backpressure_events, int slow_active);
 
 /**
  * Add log entry to circular buffer
@@ -239,12 +237,13 @@ void status_update_client_queue(int status_index,
  * @param level Log level
  * @param message Log message
  */
-void status_add_log_entry(enum loglevel level, const char *message);
+void status_add_log_entry(loglevel_t level, const char *message);
 
 /**
  * Handle API request to disconnect a client
- * RESTful: POST/DELETE <status-path>/api/disconnect with form data body "client_id=IP:port-workerN-seqM"
- * Sets disconnect flag in shared memory and notifies worker to close connection
+ * RESTful: POST/DELETE <status-path>/api/disconnect with form data body
+ * "client_id=IP:port-workerN-seqM" Sets disconnect flag in shared memory and
+ * notifies worker to close connection
  * @param c Connection object
  */
 void handle_disconnect_client(connection_t *c);
@@ -265,7 +264,8 @@ int status_worker_get_notif_fd(void);
 
 /**
  * Trigger an event notification to wake up workers
- * Called when significant events occur (connect/disconnect/state change/disconnect request)
+ * Called when significant events occur (connect/disconnect/state
+ * change/disconnect request)
  * @param event_type Type of event to trigger
  */
 void status_trigger_event(status_event_type_t event_type);
@@ -275,7 +275,7 @@ void status_trigger_event(status_event_type_t event_type);
  * @param level Log level enum value
  * @return String representation of log level
  */
-const char *status_get_log_level_name(enum loglevel level);
+const char *status_get_log_level_name(loglevel_t level);
 
 /**
  * Build SSE JSON payload with status information (for event-driven SSE)
@@ -289,8 +289,7 @@ const char *status_get_log_level_name(enum loglevel level);
  * @return Number of bytes written to buffer
  */
 int status_build_sse_json(char *buffer, size_t buffer_capacity,
-                          int *p_sent_initial,
-                          int *p_last_write_index,
+                          int *p_sent_initial, int *p_last_write_index,
                           int *p_last_log_count);
 
 /**

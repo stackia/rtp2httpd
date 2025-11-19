@@ -1,16 +1,15 @@
 #ifndef CONNECTION_H
 #define CONNECTION_H
 
-#include <stdint.h>
-#include <time.h>
-#include <sys/types.h>
-#include "stream.h"
 #include "http.h"
+#include "service.h"
+#include "stream.h"
 #include "zerocopy.h"
+#include <stdint.h>
+#include <sys/types.h>
 
 /* Per-connection HTTP state (unified event-driven within each worker) */
-typedef enum
-{
+typedef enum {
   CONN_READ_REQ_LINE = 0,
   CONN_READ_HEADERS,
   CONN_ROUTE,
@@ -21,16 +20,14 @@ typedef enum
 
 #define INBUF_SIZE 8192
 
-typedef enum
-{
+typedef enum {
   CONNECTION_BUFFER_CONTROL = 0,
   CONNECTION_BUFFER_MEDIA = 1
 } connection_buffer_class_t;
 
 #define CONNECTION_QUEUE_REPORT_INTERVAL_MS 1000
 
-typedef struct connection_s
-{
+typedef struct connection_s {
   int fd;
   int epfd;
   conn_state_t state;
@@ -54,7 +51,8 @@ typedef struct connection_s
   int sse_last_write_index;
   int sse_last_log_count;
   /* status tracking */
-  int status_index; /* Index in status_shared->clients array, -1 if not registered */
+  int status_index; /* Index in status_shared->clients array, -1 if not
+                       registered */
   /* client address for status tracking (only used for streaming clients) */
   struct sockaddr_storage client_addr;
   socklen_t client_addr_len;
@@ -76,8 +74,7 @@ typedef struct connection_s
   int64_t slow_candidate_since;
 } connection_t;
 
-typedef enum
-{
+typedef enum {
   CONNECTION_WRITE_IDLE = 0,
   CONNECTION_WRITE_PENDING,
   CONNECTION_WRITE_BLOCKED,
@@ -93,7 +90,8 @@ typedef enum
  * @return Pointer to new connection or NULL on failure
  */
 connection_t *connection_create(int fd, int epfd,
-                                struct sockaddr_storage *client_addr, socklen_t addr_len);
+                                struct sockaddr_storage *client_addr,
+                                socklen_t addr_len);
 
 /**
  * Free a connection and all associated resources
@@ -161,7 +159,8 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len);
  * @param len Length of data
  * @return 0 on success, -1 if buffer full
  */
-int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len);
+int connection_queue_output_and_flush(connection_t *c, const uint8_t *data,
+                                      size_t len);
 
 /**
  * Queue data for zero-copy send (no memcpy)
@@ -181,6 +180,7 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref);
  * @param file_size Number of bytes to send from file
  * @return 0 on success, -1 on error
  */
-int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_t file_size);
+int connection_queue_file(connection_t *c, int file_fd, off_t file_offset,
+                          size_t file_size);
 
 #endif /* CONNECTION_H */

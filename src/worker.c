@@ -1,31 +1,24 @@
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif
-
 #include "worker.h"
 #include "connection.h"
+#include "epg.h"
+#include "hashmap.h"
+#include "http_fetch.h"
+#include "m3u.h"
 #include "rtp2httpd.h"
 #include "status.h"
 #include "stream.h"
-#include "rtsp.h"
+#include "utils.h"
 #include "zerocopy.h"
-#include "configuration.h"
-#include "http_fetch.h"
-#include "hashmap.h"
-#include "m3u.h"
-#include "epg.h"
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 #include <errno.h>
 #include <signal.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
-#include <netdb.h>
+#include <unistd.h>
 
 /* fd -> connection map entry */
-typedef struct
-{
+typedef struct {
   int fd;
   connection_t *conn;
 } fdmap_entry_t;
@@ -44,8 +37,7 @@ static volatile sig_atomic_t stop_flag = 0;
 /**
  * Hash function for file descriptors
  */
-static uint64_t hash_fd(const void *item, uint64_t seed0, uint64_t seed1)
-{
+static uint64_t hash_fd(const void *item, uint64_t seed0, uint64_t seed1) {
   const fdmap_entry_t *entry = item;
   return hashmap_xxhash3(&entry->fd, sizeof(int), seed0, seed1);
 }
@@ -53,8 +45,7 @@ static uint64_t hash_fd(const void *item, uint64_t seed0, uint64_t seed1)
 /**
  * Compare function for file descriptors
  */
-static int compare_fds(const void *a, const void *b, void *udata)
-{
+static int compare_fds(const void *a, const void *b, void *udata) {
   const fdmap_entry_t *ea = a;
   const fdmap_entry_t *eb = b;
   (void)udata; /* unused */
@@ -64,23 +55,20 @@ static int compare_fds(const void *a, const void *b, void *udata)
 /**
  * Initialize the fd map (hashmap-based)
  */
-void fdmap_init(void)
-{
+void fdmap_init(void) {
   if (fd_map)
     hashmap_free(fd_map);
 
-  fd_map = hashmap_new(
-      sizeof(fdmap_entry_t), /* element size */
-      0,                     /* initial capacity */
-      0, 0,                  /* seeds (use default) */
-      hash_fd,               /* hash function */
-      compare_fds,           /* compare function */
-      NULL,                  /* no element free function */
-      NULL                   /* no udata */
+  fd_map = hashmap_new(sizeof(fdmap_entry_t), /* element size */
+                       0,                     /* initial capacity */
+                       0, 0,                  /* seeds (use default) */
+                       hash_fd,               /* hash function */
+                       compare_fds,           /* compare function */
+                       NULL,                  /* no element free function */
+                       NULL                   /* no udata */
   );
 
-  if (!fd_map)
-  {
+  if (!fd_map) {
     logger(LOG_FATAL, "Failed to create fd map hashmap");
     exit(1);
   }
@@ -89,8 +77,7 @@ void fdmap_init(void)
 /**
  * Set fd -> connection mapping
  */
-void fdmap_set(int fd, connection_t *c)
-{
+void fdmap_set(int fd, connection_t *c) {
   if (fd < 0 || !fd_map)
     return;
 
@@ -101,8 +88,7 @@ void fdmap_set(int fd, connection_t *c)
 /**
  * Get connection by fd
  */
-connection_t *fdmap_get(int fd)
-{
+connection_t *fdmap_get(int fd) {
   if (fd < 0 || !fd_map)
     return NULL;
 
@@ -114,8 +100,7 @@ connection_t *fdmap_get(int fd)
 /**
  * Delete fd from map
  */
-void fdmap_del(int fd)
-{
+void fdmap_del(int fd) {
   if (fd < 0 || !fd_map)
     return;
 
@@ -126,19 +111,15 @@ void fdmap_del(int fd)
 /**
  * Cleanup and free the fd map
  */
-void fdmap_cleanup(void)
-{
-  if (fd_map)
-  {
+void fdmap_cleanup(void) {
+  if (fd_map) {
     hashmap_free(fd_map);
     fd_map = NULL;
   }
 }
 
-void worker_cleanup_socket_from_epoll(int epoll_fd, int sock)
-{
-  if (sock < 0)
-  {
+void worker_cleanup_socket_from_epoll(int epoll_fd, int sock) {
+  if (sock < 0) {
     return;
   }
 
@@ -146,12 +127,12 @@ void worker_cleanup_socket_from_epoll(int epoll_fd, int sock)
   fdmap_del(sock);
 
   /* Remove from epoll */
-  if (epoll_fd >= 0)
-  {
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, sock, NULL) < 0)
-    {
+  if (epoll_fd >= 0) {
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, sock, NULL) < 0) {
       /* Log but continue - socket might not be in epoll */
-      logger(LOG_DEBUG, "Worker: epoll_ctl DEL failed for fd %d: %s (continuing)", sock, strerror(errno));
+      logger(LOG_DEBUG,
+             "Worker: epoll_ctl DEL failed for fd %d: %s (continuing)", sock,
+             strerror(errno));
     }
   }
 
@@ -159,49 +140,43 @@ void worker_cleanup_socket_from_epoll(int epoll_fd, int sock)
   close(sock);
 }
 
-static void remove_connection_from_list(connection_t *c)
-{
+static void remove_connection_from_list(connection_t *c) {
   if (!c)
     return;
-  if (conn_head == c)
-  {
+  if (conn_head == c) {
     conn_head = c->next;
     return;
   }
-  for (connection_t *p = conn_head; p; p = p->next)
-  {
-    if (p->next == c)
-    {
+  for (connection_t *p = conn_head; p; p = p->next) {
+    if (p->next == c) {
       p->next = c->next;
       return;
     }
   }
 }
 
-void worker_close_and_free_connection(connection_t *c)
-{
+void worker_close_and_free_connection(connection_t *c) {
   if (!c)
     return;
 
-  /* CRITICAL: For streaming connections, initiate cleanup first to check if async TEARDOWN will be started
-   * This prevents use-after-free when TEARDOWN response arrives after connection is freed. */
-  if (c->streaming)
-  {
+  /* CRITICAL: For streaming connections, initiate cleanup first to check if
+   * async TEARDOWN will be started This prevents use-after-free when TEARDOWN
+   * response arrives after connection is freed. */
+  if (c->streaming) {
     /* Initiate stream cleanup - this may start async RTSP TEARDOWN */
     int async_cleanup = stream_context_cleanup(&c->stream);
-    c->streaming = 0; /* Mark as no longer streaming to prevent double cleanup */
+    c->streaming =
+        0; /* Mark as no longer streaming to prevent double cleanup */
 
-    if (async_cleanup)
-    {
+    if (async_cleanup) {
       /* Async RTSP TEARDOWN initiated - defer connection cleanup */
-      logger(LOG_DEBUG, "Worker: Async RTSP TEARDOWN initiated, deferring connection cleanup");
+      logger(LOG_DEBUG, "Worker: Async RTSP TEARDOWN initiated, deferring "
+                        "connection cleanup");
 
       /* Close and cleanup client socket immediately */
-      if (c->fd >= 0)
-      {
+      if (c->fd >= 0) {
         fdmap_del(c->fd);
-        if (c->epfd >= 0)
-        {
+        if (c->epfd >= 0) {
           epoll_ctl(c->epfd, EPOLL_CTL_DEL, c->fd, NULL);
         }
         close(c->fd);
@@ -212,8 +187,10 @@ void worker_close_and_free_connection(connection_t *c)
       c->state = CONN_CLOSING;
 
       /* Keep connection alive for RTSP TEARDOWN completion */
-      /* RTSP TEARDOWN completion will trigger final cleanup via stream event handler returning -1 */
-      logger(LOG_DEBUG, "Worker: Deferred cleanup - waiting for RTSP TEARDOWN completion");
+      /* RTSP TEARDOWN completion will trigger final cleanup via stream event
+       * handler returning -1 */
+      logger(LOG_DEBUG,
+             "Worker: Deferred cleanup - waiting for RTSP TEARDOWN completion");
       return;
     }
   }
@@ -221,12 +198,11 @@ void worker_close_and_free_connection(connection_t *c)
   /* Normal cleanup path: remove from fd map */
   fdmap_del(c->fd);
 
-  /* Remove from epoll - CRITICAL: Must remove all sockets before close() to prevent fd reuse issues */
-  if (c->epfd >= 0)
-  {
+  /* Remove from epoll - CRITICAL: Must remove all sockets before close() to
+   * prevent fd reuse issues */
+  if (c->epfd >= 0) {
     /* Remove client socket */
-    if (c->fd >= 0)
-    {
+    if (c->fd >= 0) {
       epoll_ctl(c->epfd, EPOLL_CTL_DEL, c->fd, NULL);
     }
   }
@@ -238,14 +214,12 @@ void worker_close_and_free_connection(connection_t *c)
   connection_free(c);
 }
 
-static void term_handler(int signum)
-{
+static void term_handler(int signum) {
   (void)signum;
   stop_flag = 1;
 }
 
-int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
-{
+int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
   int i;
   struct sockaddr_storage client;
 
@@ -254,34 +228,29 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 
   /* Build epoll set for listening sockets */
   int epfd = epoll_create1(EPOLL_CLOEXEC);
-  if (epfd < 0)
-  {
+  if (epfd < 0) {
     logger(LOG_FATAL, "epoll_create1 failed: %s", strerror(errno));
     return -1;
   }
 
   struct epoll_event ev, events[1024];
-  for (i = 0; i < num_sockets; i++)
-  {
+  for (i = 0; i < num_sockets; i++) {
     connection_set_nonblocking(listen_sockets[i]);
     memset(&ev, 0, sizeof(ev));
     ev.events = EPOLLIN;
     ev.data.fd = listen_sockets[i];
-    if (epoll_ctl(epfd, EPOLL_CTL_ADD, listen_sockets[i], &ev) < 0)
-    {
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, listen_sockets[i], &ev) < 0) {
       logger(LOG_FATAL, "epoll_ctl ADD failed: %s", strerror(errno));
       close(epfd);
       return -1;
     }
   }
 
-  if (notif_fd >= 0)
-  {
+  if (notif_fd >= 0) {
     memset(&ev, 0, sizeof(ev));
     ev.events = EPOLLIN;
     ev.data.fd = notif_fd;
-    if (epoll_ctl(epfd, EPOLL_CTL_ADD, notif_fd, &ev) < 0)
-    {
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, notif_fd, &ev) < 0) {
       logger(LOG_ERROR, "epoll_ctl ADD notif_fd failed: %s", strerror(errno));
       notif_fd = -1;
     }
@@ -294,12 +263,11 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
   /* Unified event loop: accept + clients + stream fds */
   int64_t last_tick = get_time_ms();
 
-  while (!stop_flag)
-  {
+  while (!stop_flag) {
     int timeout_ms = 100;
-    int n = epoll_wait(epfd, events, (int)(sizeof(events) / sizeof(events[0])), timeout_ms);
-    if (n < 0)
-    {
+    int n = epoll_wait(epfd, events, (int)(sizeof(events) / sizeof(events[0])),
+                       timeout_ms);
+    if (n < 0) {
       if (errno == EINTR)
         continue;
       logger(LOG_FATAL, "epoll_wait failed: %s", strerror(errno));
@@ -309,30 +277,26 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
     int64_t now = get_time_ms();
 
     /* 1) Handle all ready events */
-    for (int e = 0; e < n; e++)
-    {
+    for (int e = 0; e < n; e++) {
       int fd_ready = events[e].data.fd;
       int is_listener = 0;
       for (i = 0; i < num_sockets; i++)
-        if (fd_ready == listen_sockets[i])
-        {
+        if (fd_ready == listen_sockets[i]) {
           is_listener = 1;
           break;
         }
 
-      if (notif_fd >= 0 && fd_ready == notif_fd)
-      {
+      if (notif_fd >= 0 && fd_ready == notif_fd) {
         /* Read event notifications from pipe */
         uint8_t event_buf[256];
         ssize_t bytes_read;
         int has_sse_update = 0;
         int has_disconnect_request = 0;
 
-        while ((bytes_read = read(notif_fd, event_buf, sizeof(event_buf))) > 0)
-        {
+        while ((bytes_read = read(notif_fd, event_buf, sizeof(event_buf))) >
+               0) {
           /* Check event types in the buffer */
-          for (ssize_t j = 0; j < bytes_read; j++)
-          {
+          for (ssize_t j = 0; j < bytes_read; j++) {
             if (event_buf[j] == STATUS_EVENT_SSE_UPDATE)
               has_sse_update = 1;
             else if (event_buf[j] == STATUS_EVENT_DISCONNECT_REQUEST)
@@ -341,24 +305,20 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
         }
 
         /* Handle SSE updates */
-        if (has_sse_update)
-        {
+        if (has_sse_update) {
           status_handle_sse_notification(conn_head);
         }
 
         /* Handle disconnect requests */
-        if (has_disconnect_request && status_shared)
-        {
+        if (has_disconnect_request && status_shared) {
           connection_t *c = conn_head;
-          while (c)
-          {
+          while (c) {
             connection_t *next = c->next;
 
             /* Check if disconnect was requested for this client */
             if (c->status_index >= 0 &&
                 status_shared->clients[c->status_index].active &&
-                status_shared->clients[c->status_index].disconnect_requested)
-            {
+                status_shared->clients[c->status_index].disconnect_requested) {
               logger(LOG_INFO, "Disconnect requested for client %s via API",
                      status_shared->clients[c->status_index].client_addr);
               worker_close_and_free_connection(c);
@@ -371,15 +331,12 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
         continue;
       }
 
-      if (is_listener)
-      {
+      if (is_listener) {
         /* Accept as many as possible */
-        for (;;)
-        {
+        for (;;) {
           socklen_t alen = sizeof(client);
           int cfd = accept(fd_ready, (struct sockaddr *)&client, &alen);
-          if (cfd < 0)
-          {
+          if (cfd < 0) {
             if (errno == EAGAIN || errno == EINTR)
               break;
             logger(LOG_ERROR, "accept failed: %s", strerror(errno));
@@ -389,10 +346,10 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
           connection_set_tcp_nodelay(cfd);
 
           /* Create connection
-           * status_index will be assigned later by status_register_client() if this is a streaming client */
+           * status_index will be assigned later by status_register_client() if
+           * this is a streaming client */
           connection_t *c = connection_create(cfd, epfd, &client, alen);
-          if (!c)
-          {
+          if (!c) {
             close(cfd);
             continue;
           }
@@ -406,13 +363,11 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
           memset(&cev, 0, sizeof(cev));
           cev.events = EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR;
           cev.data.fd = cfd;
-          if (epoll_ctl(epfd, EPOLL_CTL_ADD, cfd, &cev) < 0)
-          {
-            logger(LOG_ERROR, "epoll_ctl ADD client failed: %s", strerror(errno));
+          if (epoll_ctl(epfd, EPOLL_CTL_ADD, cfd, &cev) < 0) {
+            logger(LOG_ERROR, "epoll_ctl ADD client failed: %s",
+                   strerror(errno));
             worker_close_and_free_connection(c);
-          }
-          else
-          {
+          } else {
             fdmap_set(cfd, c);
           }
         }
@@ -421,8 +376,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 
       /* Check if this is an async HTTP fetch fd */
       http_fetch_ctx_t *fetch_ctx = http_fetch_find_by_fd(fd_ready);
-      if (fetch_ctx)
-      {
+      if (fetch_ctx) {
         /* Handle HTTP fetch event */
         (void)http_fetch_handle_event(fetch_ctx);
         /* Return value: 0 = more data expected, 1 = completed, -1 = error
@@ -432,128 +386,119 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
 
       /* Non-listener: lookup by fd map */
       connection_t *c = fdmap_get(fd_ready);
-      if (c)
-      {
-        if (fd_ready == c->fd)
-        {
+      if (c) {
+        if (fd_ready == c->fd) {
           /* Client socket events */
 
-          /* First, handle EPOLLERR for MSG_ZEROCOPY completions before checking for real errors */
-          if (events[e].events & EPOLLERR)
-          {
+          /* First, handle EPOLLERR for MSG_ZEROCOPY completions before checking
+           * for real errors */
+          if (events[e].events & EPOLLERR) {
             /* EPOLLERR can indicate either:
              * 1. MSG_ZEROCOPY completion notification (normal operation)
              * 2. Actual socket error
              * We need to check MSG_ERRQUEUE first to distinguish between them.
              */
             int had_zerocopy_completions = 0;
-            if (c->zerocopy_enabled)
-            {
-              int completions = zerocopy_handle_completions(c->fd, &c->zc_queue);
-              if (completions > 0)
-              {
+            if (c->zerocopy_enabled) {
+              int completions =
+                  zerocopy_handle_completions(c->fd, &c->zc_queue);
+              if (completions > 0) {
                 had_zerocopy_completions = 1;
-                if (c->state == CONN_CLOSING && !c->zc_queue.head && !c->zc_queue.pending_head)
-                {
+                if (c->state == CONN_CLOSING && !c->zc_queue.head &&
+                    !c->zc_queue.pending_head) {
                   worker_close_and_free_connection(c);
                   continue; /* Skip further processing for this connection */
                 }
-              }
-              else if (completions < 0)
-              {
+              } else if (completions < 0) {
                 /* Error reading MSG_ERRQUEUE - treat as real socket error */
-                logger(LOG_DEBUG, "Failed to read MSG_ERRQUEUE: %s", strerror(errno));
+                logger(LOG_DEBUG, "Failed to read MSG_ERRQUEUE: %s",
+                       strerror(errno));
                 worker_close_and_free_connection(c);
                 continue;
               }
-              /* completions == 0: no zerocopy completions, check for real error below */
+              /* completions == 0: no zerocopy completions, check for real error
+               * below */
             }
 
             /* If EPOLLERR is set but we didn't get zerocopy completions,
              * check if it's a real socket error by trying to get SO_ERROR */
-            if (!had_zerocopy_completions)
-            {
+            if (!had_zerocopy_completions) {
               int socket_error = 0;
               socklen_t errlen = sizeof(socket_error);
-              if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &socket_error, &errlen) == 0 && socket_error != 0)
-              {
+              if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &socket_error,
+                             &errlen) == 0 &&
+                  socket_error != 0) {
                 /* Real socket error */
-                logger(LOG_DEBUG, "Client connection error: %s", strerror(socket_error));
+                logger(LOG_DEBUG, "Client connection error: %s",
+                       strerror(socket_error));
                 worker_close_and_free_connection(c);
                 continue; /* Skip further processing for this connection */
               }
-              /* Otherwise, EPOLLERR might be spurious or already handled by zerocopy */
+              /* Otherwise, EPOLLERR might be spurious or already handled by
+               * zerocopy */
             }
           }
 
           /* Handle disconnect events */
-          if (events[e].events & (EPOLLHUP | EPOLLRDHUP))
-          {
+          if (events[e].events & (EPOLLHUP | EPOLLRDHUP)) {
             logger(LOG_DEBUG, "Client disconnected");
             worker_close_and_free_connection(c);
             continue; /* Skip further processing for this connection */
           }
 
-          /* Handle EPOLLIN and EPOLLOUT independently (not mutually exclusive) */
-          if (events[e].events & EPOLLIN)
-          {
-            /* For streaming connections, client socket is monitored for disconnect detection */
-            if (c->streaming)
-            {
+          /* Handle EPOLLIN and EPOLLOUT independently (not mutually exclusive)
+           */
+          if (events[e].events & EPOLLIN) {
+            /* For streaming connections, client socket is monitored for
+             * disconnect detection */
+            if (c->streaming) {
               /* Client sent data or disconnected during streaming */
               char discard_buffer[1024];
-              int bytes = recv(c->fd, discard_buffer, sizeof(discard_buffer), 0);
-              if (bytes <= 0 && errno != EAGAIN)
-              {
+              int bytes =
+                  recv(c->fd, discard_buffer, sizeof(discard_buffer), 0);
+              if (bytes <= 0 && errno != EAGAIN) {
                 /* Client disconnected (bytes == 0) or error (bytes < 0) */
                 if (bytes == 0)
-                  logger(LOG_DEBUG, "Client disconnected gracefully during streaming");
+                  logger(LOG_DEBUG,
+                         "Client disconnected gracefully during streaming");
                 else
-                  logger(LOG_DEBUG, "Client socket error during streaming: %s", strerror(errno));
+                  logger(LOG_DEBUG, "Client socket error during streaming: %s",
+                         strerror(errno));
                 worker_close_and_free_connection(c);
                 continue; /* Skip further processing for this connection */
+              } else {
+                /* Client sent unexpected data (e.g., additional HTTP request) -
+                 * discard */
+                logger(LOG_DEBUG,
+                       "Client sent %d bytes during streaming (discarded)",
+                       bytes);
               }
-              else
-              {
-                /* Client sent unexpected data (e.g., additional HTTP request) - discard */
-                logger(LOG_DEBUG, "Client sent %d bytes during streaming (discarded)", bytes);
-              }
-            }
-            else
-            {
+            } else {
               /* Normal HTTP request handling */
               connection_handle_read(c);
-              if (c->state == CONN_CLOSING && !c->zc_queue.head)
-              {
+              if (c->state == CONN_CLOSING && !c->zc_queue.head) {
                 worker_close_and_free_connection(c);
                 continue; /* Skip further processing for this connection */
               }
             }
           }
 
-          if (events[e].events & EPOLLOUT)
-          {
+          if (events[e].events & EPOLLOUT) {
             connection_write_status_t status = connection_handle_write(c);
-            if (status == CONNECTION_WRITE_CLOSED)
-            {
+            if (status == CONNECTION_WRITE_CLOSED) {
               worker_close_and_free_connection(c);
               continue;
             }
           }
-        }
-        else
-        {
-          int res = stream_handle_fd_event(&c->stream, fd_ready, events[e].events, now);
-          if (res < 0)
-          {
+        } else {
+          int res = stream_handle_fd_event(&c->stream, fd_ready,
+                                           events[e].events, now);
+          if (res < 0) {
             /* Send 503 if headers not sent yet (no data ever arrived) */
-            if (!c->headers_sent)
-            {
+            if (!c->headers_sent) {
               http_send_503(c);
               /* http_send_503 sets CONN_CLOSING, don't force immediate close */
-            }
-            else
-            {
+            } else {
               worker_close_and_free_connection(c);
             }
             continue; /* Skip further processing for this connection */
@@ -563,128 +508,132 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
     }
 
     /* 2) Periodic tick: update streams and SSE heartbeats */
-    if (now - last_tick >= timeout_ms)
-    {
+    if (now - last_tick >= timeout_ms) {
       last_tick = now;
       connection_t *c = conn_head;
-      while (c)
-      {
-        connection_t *next = c->next; /* Save next pointer before potential cleanup */
-        if (c->streaming)
-        {
-          if (stream_tick(&c->stream, now) < 0)
-          {
+      while (c) {
+        connection_t *next =
+            c->next; /* Save next pointer before potential cleanup */
+        if (c->streaming) {
+          if (stream_tick(&c->stream, now) < 0) {
             /* Send 503 if headers not sent yet (no data ever arrived) */
-            if (!c->headers_sent)
-            {
+            if (!c->headers_sent) {
               http_send_503(c);
               /* http_send_503 sets CONN_CLOSING, don't force immediate close */
-            }
-            else
-            {
+            } else {
               /* Stream timeout or error - close connection */
               worker_close_and_free_connection(c);
               c = next;
               continue;
             }
           }
-        }
-        else if (c->state == CONN_SSE)
-        {
+        } else if (c->state == CONN_SSE) {
           status_handle_sse_heartbeat(c, now);
         }
         c = next;
       }
 
-      /* Check if M3U/EPG needs to be reloaded (all workers perform this with staggered timing)
-       * This handles both external M3U and inline M3U's EPG updates */
+      /* Check if M3U/EPG needs to be reloaded (all workers perform this with
+       * staggered timing) This handles both external M3U and inline M3U's EPG
+       * updates */
       m3u_cache_t *m3u_cache = m3u_get_cache();
       epg_cache_t *epg_cache = epg_get_cache();
 
-      if ((config.external_m3u_url || epg_cache->url) && config.external_m3u_update_interval >= 0)
-      {
-        int64_t interval_ms = (int64_t)config.external_m3u_update_interval * 1000;
+      if ((config.external_m3u_url || epg_cache->url) &&
+          config.external_m3u_update_interval >= 0) {
+        int64_t interval_ms =
+            (int64_t)config.external_m3u_update_interval * 1000;
         int64_t last_update = config.last_external_m3u_update_time;
         int64_t worker_offset_ms = (int64_t)worker_id * 1000;
 
         /* Check if retry is scheduled for M3U */
-        if (config.external_m3u_url && m3u_cache->next_retry_time > 0 && now >= m3u_cache->next_retry_time)
-        {
-          logger(LOG_INFO, "M3U retry scheduled, attempting fetch (retry %d)", m3u_cache->retry_count);
-          m3u_cache->next_retry_time = 0; /* Clear retry time before attempting */
+        if (config.external_m3u_url && m3u_cache->next_retry_time > 0 &&
+            now >= m3u_cache->next_retry_time) {
+          logger(LOG_INFO, "M3U retry scheduled, attempting fetch (retry %d)",
+                 m3u_cache->retry_count);
+          m3u_cache->next_retry_time =
+              0; /* Clear retry time before attempting */
           m3u_reload_external_async(epfd);
         }
         /* Check if retry is scheduled for EPG */
-        else if (epg_cache->url && epg_cache->next_retry_time > 0 && now >= epg_cache->next_retry_time)
-        {
-          logger(LOG_INFO, "EPG retry scheduled, attempting fetch (retry %d)", epg_cache->retry_count);
-          epg_cache->next_retry_time = 0; /* Clear retry time before attempting */
+        else if (epg_cache->url && epg_cache->next_retry_time > 0 &&
+                 now >= epg_cache->next_retry_time) {
+          logger(LOG_INFO, "EPG retry scheduled, attempting fetch (retry %d)",
+                 epg_cache->retry_count);
+          epg_cache->next_retry_time =
+              0; /* Clear retry time before attempting */
           epg_fetch_async(epfd);
         }
-        /* Handle first-time load: if last_update is 0, load immediately with staggered timing */
-        else if (last_update == 0)
-        {
+        /* Handle first-time load: if last_update is 0, load immediately with
+           staggered timing */
+        else if (last_update == 0) {
           /* Calculate uptime to compare against staggered offset */
-          int64_t uptime_ms = get_realtime_ms() - status_shared->server_start_time;
+          int64_t uptime_ms =
+              get_realtime_ms() - status_shared->server_start_time;
 
-          /* Each worker loads after a staggered delay from startup (0s, 1s, 2s, ...) */
-          if (uptime_ms >= worker_offset_ms)
-          {
-            /* Update timestamp immediately to prevent reentry during async operation */
+          /* Each worker loads after a staggered delay from startup (0s, 1s, 2s,
+           * ...) */
+          if (uptime_ms >= worker_offset_ms) {
+            /* Update timestamp immediately to prevent reentry during async
+             * operation */
             config.last_external_m3u_update_time = now;
 
-            if (config.external_m3u_url)
-            {
-              /* External M3U: reload it (will also fetch EPG if found in M3U) */
-              logger(LOG_INFO, "Initial external M3U load for worker %d", worker_id);
+            if (config.external_m3u_url) {
+              /* External M3U: reload it (will also fetch EPG if found in M3U)
+               */
+              logger(LOG_INFO, "Initial external M3U load for worker %d",
+                     worker_id);
               m3u_reload_external_async(epfd);
-            }
-            else if (epg_cache->url)
-            {
+            } else if (epg_cache->url) {
               /* Inline M3U with EPG: only fetch EPG */
-              logger(LOG_INFO, "Initial EPG load (from inline M3U) for worker %d", worker_id);
+              logger(LOG_INFO,
+                     "Initial EPG load (from inline M3U) for worker %d",
+                     worker_id);
               epg_fetch_async(epfd);
             }
           }
         }
         /* Handle periodic updates (only if interval > 0) */
-        else if (interval_ms > 0)
-        {
+        else if (interval_ms > 0) {
           int64_t time_since_last_update = now - last_update;
 
           /* Check if it's time for this worker to update */
-          if (time_since_last_update >= (interval_ms + worker_offset_ms))
-          {
+          if (time_since_last_update >= (interval_ms + worker_offset_ms)) {
             /* Also check if this update cycle hasn't been done yet by checking
              * if enough time has passed since the interval started */
             int64_t current_cycle = time_since_last_update / interval_ms;
-            int64_t expected_update_time = current_cycle * interval_ms + worker_offset_ms;
+            int64_t expected_update_time =
+                current_cycle * interval_ms + worker_offset_ms;
 
-            if (time_since_last_update >= expected_update_time)
-            {
-              /* Update timestamp immediately to prevent reentry during async operation */
+            if (time_since_last_update >= expected_update_time) {
+              /* Update timestamp immediately to prevent reentry during async
+               * operation */
               config.last_external_m3u_update_time = now;
 
-              if (config.external_m3u_url)
-              {
-                /* External M3U: reload it (will also fetch EPG if found in M3U) */
-                logger(LOG_DEBUG, "External M3U update interval reached for worker %d, reloading...", worker_id);
+              if (config.external_m3u_url) {
+                /* External M3U: reload it (will also fetch EPG if found in M3U)
+                 */
+                logger(LOG_DEBUG,
+                       "External M3U update interval reached for worker %d, "
+                       "reloading...",
+                       worker_id);
                 /* Reset retry state for new update cycle */
                 m3u_cache->retry_count = 0;
                 m3u_cache->next_retry_time = 0;
                 m3u_reload_external_async(epfd);
-              }
-              else if (epg_cache->url)
-              {
+              } else if (epg_cache->url) {
                 /* Inline M3U with EPG: only fetch EPG */
-                logger(LOG_DEBUG, "EPG update interval reached for worker %d, reloading...", worker_id);
+                logger(
+                    LOG_DEBUG,
+                    "EPG update interval reached for worker %d, reloading...",
+                    worker_id);
                 /* Reset retry state for new update cycle */
                 epg_cache->retry_count = 0;
                 epg_cache->next_retry_time = 0;
                 epg_fetch_async(epfd);
               }
-              /* Note: We always update timestamp regardless of success/failure to avoid
-               * hammering the server with repeated requests */
+              /* Note: We always update timestamp regardless of success/failure
+               * to avoid hammering the server with repeated requests */
             }
           }
         }
@@ -700,8 +649,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd)
   fdmap_cleanup();
 
   /* Close notification pipe read end */
-  if (notif_fd >= 0)
-  {
+  if (notif_fd >= 0) {
     close(notif_fd);
   }
 

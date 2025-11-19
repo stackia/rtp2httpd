@@ -2,7 +2,6 @@
 #define SERVICE_H
 
 #include <netdb.h>
-#include "hashmap.h"
 
 /* ========== HTTP/SERVICE BUFFER SIZE CONFIGURATION ========== */
 
@@ -34,15 +33,10 @@
 #endif
 
 /* Service type enumeration */
-typedef enum
-{
-  SERVICE_MRTP = 0,
-  SERVICE_RTSP
-} service_type_t;
+typedef enum { SERVICE_MRTP = 0, SERVICE_RTSP } service_type_t;
 
 /* Service source enumeration - tracks where the service was created from */
-typedef enum
-{
+typedef enum {
   SERVICE_SOURCE_INLINE = 0,  /* From inline M3U in config file */
   SERVICE_SOURCE_EXTERNAL = 1 /* From external M3U URL */
 } service_source_t;
@@ -51,8 +45,7 @@ typedef enum
  * Service configuration structure
  * Represents a single media service (multicast RTP/UDP or RTSP stream)
  */
-typedef struct service_s
-{
+typedef struct service_s {
   char *url;
   char *msrc;
   service_type_t service_type;
@@ -60,19 +53,24 @@ typedef struct service_s
   struct addrinfo *addr;
   struct addrinfo *msrc_addr;
   struct addrinfo *fcc_addr;
-  int fcc_type;            /* FCC protocol type */
-  char *rtp_url;           /* Full RTP URL for SERVICE_MRTP */
-  char *rtsp_url;          /* Full RTSP URL for SERVICE_RTSP */
-  char *seek_param_name;   /* Name of seek parameter (e.g., "playseek", "tvdr") */
+  int fcc_type;          /* FCC protocol type */
+  char *rtp_url;         /* Full RTP URL for SERVICE_MRTP */
+  char *rtsp_url;        /* Full RTSP URL for SERVICE_RTSP */
+  char *seek_param_name; /* Name of seek parameter (e.g., "playseek", "tvdr") */
   char *seek_param_value;  /* Value of seek parameter for time range */
-  int seek_offset_seconds; /* Additional offset in seconds from r2h-seek-offset parameter */
+  int seek_offset_seconds; /* Additional offset in seconds from r2h-seek-offset
+                              parameter */
   char *user_agent;        /* User-Agent header for timezone detection */
   struct service_s *next;
 } service_t;
 
+/* GLOBALS */
+extern service_t *services;
+
 /**
  * Create service from UDPxy format URL
- * Format: /udp/multicast_addr:port or /rtp/multicast_addr:port[@source_addr:port]
+ * Format: /udp/multicast_addr:port or
+ * /rtp/multicast_addr:port[@source_addr:port]
  *
  * @param url URL string to parse
  * @return Pointer to newly allocated service structure or NULL on failure
@@ -123,7 +121,8 @@ service_t *service_create_from_rtp_url(const char *http_url);
  * @param configured_service The configured service (RTP or RTSP)
  * @param request_url The HTTP request URL (may contain query params)
  * @param expected_type Expected service type (SERVICE_MRTP or SERVICE_RTSP)
- * @return Pointer to newly allocated service structure or NULL if no merge needed/on failure
+ * @return Pointer to newly allocated service structure or NULL if no merge
+ * needed/on failure
  */
 service_t *service_create_with_query_merge(service_t *configured_service,
                                            const char *request_url,
@@ -131,11 +130,12 @@ service_t *service_create_with_query_merge(service_t *configured_service,
 
 /**
  * Clone a service structure (deep copy)
- * Creates a completely independent copy of the service with all fields duplicated
- * The cloned service is not added to the global services list
+ * Creates a completely independent copy of the service with all fields
+ * duplicated The cloned service is not added to the global services list
  *
  * @param service Service structure to clone
- * @return Pointer to newly allocated cloned service structure or NULL on failure
+ * @return Pointer to newly allocated cloned service structure or NULL on
+ * failure
  */
 service_t *service_clone(service_t *service);
 

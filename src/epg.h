@@ -2,21 +2,22 @@
 #define __EPG_H__
 
 #include <stddef.h>
-#include <time.h>
 #include <stdint.h>
 
 /* EPG cache structure */
-typedef struct
-{
-    char *url;              /* EPG source URL */
-    int data_fd;            /* tmpfs file descriptor for EPG data (zero-copy), or -1 if not available */
-    size_t data_size;       /* Size of EPG data */
-    int is_gzipped;         /* 1 if data is gzip compressed (based on URL), 0 otherwise */
-    int fetch_error_count;  /* Number of consecutive fetch errors */
-    char etag[33];          /* MD5 hash of EPG data as hex string (for HTTP ETag caching) */
-    int etag_valid;         /* 1 if etag is valid, 0 otherwise */
-    int retry_count;        /* Current retry count (0-8) */
-    int64_t next_retry_time; /* Next retry time in milliseconds (0 if not retrying) */
+typedef struct {
+  char *url;   /* EPG source URL */
+  int data_fd; /* tmpfs file descriptor for EPG data (zero-copy), or -1 if not
+                  available */
+  size_t data_size; /* Size of EPG data */
+  int is_gzipped; /* 1 if data is gzip compressed (based on URL), 0 otherwise */
+  int fetch_error_count; /* Number of consecutive fetch errors */
+  char
+      etag[33]; /* MD5 hash of EPG data as hex string (for HTTP ETag caching) */
+  int etag_valid;  /* 1 if etag is valid, 0 otherwise */
+  int retry_count; /* Current retry count (0-8) */
+  int64_t
+      next_retry_time; /* Next retry time in milliseconds (0 if not retrying) */
 } epg_cache_t;
 
 /* Initialize EPG cache

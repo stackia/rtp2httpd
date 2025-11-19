@@ -31,6 +31,10 @@ tests/*.trs
 tests/test-suite.log
 *-check_*.o
 
+# clangd
+.cache/
+compile_commands.json
+
 # Build directories
 build-*-static/
 
