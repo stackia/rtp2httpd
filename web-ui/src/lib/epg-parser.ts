@@ -1,7 +1,7 @@
 import { EPGProgram } from "../types/player";
 
 /**
- * EPG data organized by channel ID for fast lookup
+ * EPG data organized by channel ID or display name for fast lookup
  */
 export type EPGData = Record<string, EPGProgram[]>;
 
@@ -16,15 +16,34 @@ export async function parseEPG(xmlText: string, validChannelIds?: Set<string>): 
   const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
   const epgData: EPGData = {};
+  const channelDisplayNames = extractChannelDisplayNames(xmlDoc);
   const programElements = xmlDoc.getElementsByTagName("programme");
+
+  const ensureProgramBucket = (primaryKey: string, aliasKey?: string): EPGProgram[] => {
+    const aliasBucket = aliasKey ? epgData[aliasKey] : undefined;
+    const bucket = epgData[primaryKey] || aliasBucket || [];
+
+    if (!epgData[primaryKey]) {
+      epgData[primaryKey] = bucket;
+    }
+    if (aliasKey && !epgData[aliasKey]) {
+      epgData[aliasKey] = bucket;
+    }
+
+    return bucket;
+  };
 
   for (let i = 0; i < programElements.length; i++) {
     const prog = programElements[i];
 
     const channelId = prog.getAttribute("channel") || "";
+    if (!channelId) {
+      continue;
+    }
+    const channelDisplayName = channelDisplayNames[channelId] || channelId;
 
     // Skip if channel is not in valid list
-    if (validChannelIds && !validChannelIds.has(channelId)) {
+    if (validChannelIds && !validChannelIds.has(channelId) && !validChannelIds.has(channelDisplayName)) {
       continue;
     }
 
@@ -34,33 +53,44 @@ export async function parseEPG(xmlText: string, validChannelIds?: Set<string>): 
     if (!start || !stop) continue;
 
     const titleElement = prog.getElementsByTagName("title")[0];
-    const descElement = prog.getElementsByTagName("desc")[0];
-    const iconElement = prog.getElementsByTagName("icon")[0];
 
-    const title = titleElement?.textContent || "Unknown Program";
-    const description = descElement?.textContent || undefined;
-    const icon = iconElement?.getAttribute("src") || undefined;
+    const title = titleElement?.textContent || "Excellent Program";
 
     const program: EPGProgram = {
       id: `${channelId}-${start.getTime()}`,
-      channelId,
       title,
       start,
       end: stop,
-      description,
-      icon,
     };
 
     // Initialize array for this channel if it doesn't exist
-    if (!epgData[channelId]) {
-      epgData[channelId] = [];
-    }
-
-    epgData[channelId].push(program);
+    const bucket = ensureProgramBucket(channelId, channelDisplayName);
+    bucket.push(program);
   }
 
   // Assuming EPG programs are already sorted by start time in the source
   return epgData;
+}
+
+function extractChannelDisplayNames(xmlDoc: Document): Record<string, string> {
+  const map: Record<string, string> = {};
+  const channelElements = xmlDoc.getElementsByTagName("channel");
+
+  for (let i = 0; i < channelElements.length; i++) {
+    const channel = channelElements[i];
+    const id = channel.getAttribute("id");
+    if (!id) {
+      continue;
+    }
+
+    const displayNameElement = channel.getElementsByTagName("display-name")[0];
+    const displayName = displayNameElement?.textContent?.trim();
+    if (displayName) {
+      map[id] = displayName;
+    }
+  }
+
+  return map;
 }
 
 /**
