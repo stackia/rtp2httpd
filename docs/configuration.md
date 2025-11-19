@@ -39,8 +39,6 @@ rtp2httpd [选项]
 
 ### 服务控制
 
-- `-d, --daemon` - 后台守护进程模式
-- `-D, --nodaemon` - 前台运行模式 (默认)
 - `-c, --config <文件>` - 指定配置文件路径 (默认 `/etc/rtp2httpd.conf`)
 - `-C, --noconfig` - 不读取配置文件
 

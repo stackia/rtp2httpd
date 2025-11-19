@@ -874,8 +874,6 @@ void parse_cmd_line(int argc, char *argv[]) {
       {"verbose", required_argument, 0, 'v'},
       {"quiet", no_argument, 0, 'q'},
       {"help", no_argument, 0, 'h'},
-      {"daemon", no_argument, 0, 'd'},
-      {"nodaemon", no_argument, 0, 'D'},
       {"noudpxy", no_argument, 0, 'U'},
       {"maxclients", required_argument, 0, 'm'},
       {"workers", required_argument, 0, 'w'},

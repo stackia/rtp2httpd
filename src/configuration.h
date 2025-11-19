@@ -33,7 +33,7 @@ typedef struct bindaddr_s {
  * Centralizes all runtime configuration parameters
  */
 typedef struct {
-  /* Logging and daemon settings */
+  /* Logging settings */
   loglevel_t verbosity; /* Log verbosity level (LOG_FATAL to LOG_DEBUG) */
 
   /* Network and service settings */
