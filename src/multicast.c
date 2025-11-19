@@ -1,22 +1,16 @@
-#ifdef HAVE_CONFIG_H
-#include "config.h"
-#endif /* HAVE_CONFIG_H */
-
+#include "multicast.h"
+#include "connection.h"
+#include "service.h"
+#include "utils.h"
+#include <arpa/inet.h>
+#include <errno.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
 #include <sys/socket.h>
-#include <sys/epoll.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
-#include <arpa/inet.h>
 #include <unistd.h>
-#include <net/if.h>
-#include <ifaddrs.h>
-#include "multicast.h"
-#include "rtp2httpd.h"
-#include "service.h"
-#include "connection.h"
 
 /* IGMPv3 Protocol Definitions */
 #define IGMP_V3_MEMBERSHIP_REPORT 0x22
@@ -28,8 +22,7 @@
 #define IGMPV3_BLOCK_OLD_SOURCES 6
 
 /* IGMPv3 Membership Report structures */
-struct igmpv3_grec
-{
+struct igmpv3_grec {
   uint8_t grec_type;
   uint8_t grec_auxwords;
   uint16_t grec_nsrcs;
@@ -37,8 +30,7 @@ struct igmpv3_grec
   uint32_t grec_src[0];
 } __attribute__((packed));
 
-struct igmpv3_report
-{
+struct igmpv3_report {
   uint8_t type;
   uint8_t resv1;
   uint16_t csum;
@@ -48,19 +40,16 @@ struct igmpv3_report
 } __attribute__((packed));
 
 /* Calculate Internet Checksum (RFC 1071) */
-static uint16_t calculate_checksum(const void *data, size_t len)
-{
+static uint16_t calculate_checksum(const void *data, size_t len) {
   const uint16_t *buf = data;
   uint32_t sum = 0;
 
-  while (len > 1)
-  {
+  while (len > 1) {
     sum += *buf++;
     len -= 2;
   }
 
-  if (len == 1)
-  {
+  if (len == 1) {
     sum += *(const uint8_t *)buf;
   }
 
@@ -70,69 +59,58 @@ static uint16_t calculate_checksum(const void *data, size_t len)
   return ~sum;
 }
 
-void bind_to_upstream_interface(int sock, const char *ifname)
-{
-  if (ifname && ifname[0] != '\0')
-  {
+void bind_to_upstream_interface(int sock, const char *ifname) {
+  if (ifname && ifname[0] != '\0') {
     struct ifreq ifr;
     memset(&ifr, 0, sizeof(struct ifreq));
     strncpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
 
-    /* Get the latest interface index dynamically to handle interface restarts (e.g., PPPoE reconnection) */
+    /* Get the latest interface index dynamically to handle interface restarts
+     * (e.g., PPPoE reconnection) */
     unsigned int ifindex = if_nametoindex(ifr.ifr_name);
-    if (ifindex > 0)
-    {
+    if (ifindex > 0) {
       ifr.ifr_ifindex = ifindex;
-    }
-    else
-    {
-      logger(LOG_WARN, "Failed to get interface index for %s: %s", ifr.ifr_name, strerror(errno));
+    } else {
+      logger(LOG_WARN, "Failed to get interface index for %s: %s", ifr.ifr_name,
+             strerror(errno));
     }
 
-    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(struct ifreq)) < 0)
-    {
-      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s", ifr.ifr_name, strerror(errno));
+    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, &ifr,
+                   sizeof(struct ifreq)) < 0) {
+      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s",
+             ifr.ifr_name, strerror(errno));
     }
   }
 }
 
-const char *get_upstream_interface_for_fcc(void)
-{
+const char *get_upstream_interface_for_fcc(void) {
   /* Priority: upstream_interface_fcc > upstream_interface */
-  if (config.upstream_interface_fcc[0] != '\0')
-  {
+  if (config.upstream_interface_fcc[0] != '\0') {
     return config.upstream_interface_fcc;
   }
-  if (config.upstream_interface[0] != '\0')
-  {
+  if (config.upstream_interface[0] != '\0') {
     return config.upstream_interface;
   }
   return NULL;
 }
 
-const char *get_upstream_interface_for_rtsp(void)
-{
+const char *get_upstream_interface_for_rtsp(void) {
   /* Priority: upstream_interface_rtsp > upstream_interface */
-  if (config.upstream_interface_rtsp[0] != '\0')
-  {
+  if (config.upstream_interface_rtsp[0] != '\0') {
     return config.upstream_interface_rtsp;
   }
-  if (config.upstream_interface[0] != '\0')
-  {
+  if (config.upstream_interface[0] != '\0') {
     return config.upstream_interface;
   }
   return NULL;
 }
 
-const char *get_upstream_interface_for_multicast(void)
-{
+const char *get_upstream_interface_for_multicast(void) {
   /* Priority: upstream_interface_multicast > upstream_interface */
-  if (config.upstream_interface_multicast[0] != '\0')
-  {
+  if (config.upstream_interface_multicast[0] != '\0') {
     return config.upstream_interface_multicast;
   }
-  if (config.upstream_interface[0] != '\0')
-  {
+  if (config.upstream_interface[0] != '\0') {
     return config.upstream_interface;
   }
   return NULL;
@@ -142,34 +120,28 @@ const char *get_upstream_interface_for_multicast(void)
  * Get local IP address for FCC packets
  * Priority: upstream_interface_fcc > upstream_interface > first non-loopback IP
  */
-uint32_t get_local_ip_for_fcc(void)
-{
+uint32_t get_local_ip_for_fcc(void) {
   const char *ifname = get_upstream_interface_for_fcc();
   struct ifaddrs *ifaddr, *ifa;
   uint32_t local_ip = 0;
 
-  if (getifaddrs(&ifaddr) == -1)
-  {
+  if (getifaddrs(&ifaddr) == -1) {
     logger(LOG_ERROR, "getifaddrs failed: %s", strerror(errno));
     return 0;
   }
 
   /* If specific interface is configured, get its IP */
-  if (ifname && ifname[0] != '\0')
-  {
-    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next)
-    {
+  if (ifname && ifname[0] != '\0') {
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
       if (ifa->ifa_addr == NULL)
         continue;
 
       if (ifa->ifa_addr->sa_family == AF_INET &&
-          strcmp(ifa->ifa_name, ifname) == 0)
-      {
+          strcmp(ifa->ifa_name, ifname) == 0) {
         struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
         local_ip = ntohl(addr->sin_addr.s_addr);
         logger(LOG_DEBUG, "FCC: Using local IP from interface %s: %u.%u.%u.%u",
-               ifname,
-               (local_ip >> 24) & 0xFF, (local_ip >> 16) & 0xFF,
+               ifname, (local_ip >> 24) & 0xFF, (local_ip >> 16) & 0xFF,
                (local_ip >> 8) & 0xFF, local_ip & 0xFF);
         break;
       }
@@ -177,26 +149,23 @@ uint32_t get_local_ip_for_fcc(void)
   }
 
   /* Fallback: Get first non-loopback IPv4 address */
-  if (local_ip == 0)
-  {
-    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next)
-    {
+  if (local_ip == 0) {
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
       if (ifa->ifa_addr == NULL)
         continue;
 
-      if (ifa->ifa_addr->sa_family == AF_INET)
-      {
+      if (ifa->ifa_addr->sa_family == AF_INET) {
         struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
         uint32_t ip = ntohl(addr->sin_addr.s_addr);
 
         /* Skip loopback (127.0.0.0/8) */
-        if ((ip >> 24) != 127)
-        {
+        if ((ip >> 24) != 127) {
           local_ip = ip;
-          logger(LOG_DEBUG, "FCC: Using first non-loopback IP from interface %s: %u.%u.%u.%u",
-                 ifa->ifa_name,
-                 (local_ip >> 24) & 0xFF, (local_ip >> 16) & 0xFF,
-                 (local_ip >> 8) & 0xFF, local_ip & 0xFF);
+          logger(
+              LOG_DEBUG,
+              "FCC: Using first non-loopback IP from interface %s: %u.%u.%u.%u",
+              ifa->ifa_name, (local_ip >> 24) & 0xFF, (local_ip >> 16) & 0xFF,
+              (local_ip >> 8) & 0xFF, local_ip & 0xFF);
           break;
         }
       }
@@ -205,8 +174,7 @@ uint32_t get_local_ip_for_fcc(void)
 
   freeifaddrs(ifaddr);
 
-  if (local_ip == 0)
-  {
+  if (local_ip == 0) {
     logger(LOG_WARN, "FCC: Could not determine local IP address");
   }
 
@@ -217,15 +185,14 @@ uint32_t get_local_ip_for_fcc(void)
  * Helper function to prepare multicast group request structures
  * Returns the socket level (SOL_IP or SOL_IPV6) and fills gr/gsr structures
  */
-static int prepare_mcast_group_req(service_t *service, struct group_req *gr, struct group_source_req *gsr)
-{
+static int prepare_mcast_group_req(service_t *service, struct group_req *gr,
+                                   struct group_source_req *gsr) {
   int level;
   const char *upstream_if;
 
   memcpy(&(gr->gr_group), service->addr->ai_addr, service->addr->ai_addrlen);
 
-  switch (service->addr->ai_family)
-  {
+  switch (service->addr->ai_family) {
   case AF_INET:
     level = SOL_IP;
     gr->gr_interface = 0;
@@ -233,7 +200,8 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr, str
 
   case AF_INET6:
     level = SOL_IPV6;
-    gr->gr_interface = ((const struct sockaddr_in6 *)(service->addr->ai_addr))->sin6_scope_id;
+    gr->gr_interface =
+        ((const struct sockaddr_in6 *)(service->addr->ai_addr))->sin6_scope_id;
     break;
   default:
     logger(LOG_ERROR, "Address family don't support mcast.");
@@ -241,17 +209,16 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr, str
   }
 
   upstream_if = get_upstream_interface_for_multicast();
-  if (upstream_if && upstream_if[0] != '\0')
-  {
+  if (upstream_if && upstream_if[0] != '\0') {
     gr->gr_interface = if_nametoindex(upstream_if);
   }
 
   /* Prepare source-specific multicast structure if needed */
-  if (strcmp(service->msrc, "") != 0 && service->msrc != NULL)
-  {
+  if (strcmp(service->msrc, "") != 0 && service->msrc != NULL) {
     gsr->gsr_group = gr->gr_group;
     gsr->gsr_interface = gr->gr_interface;
-    memcpy(&(gsr->gsr_source), service->msrc_addr->ai_addr, service->msrc_addr->ai_addrlen);
+    memcpy(&(gsr->gsr_source), service->msrc_addr->ai_addr,
+           service->msrc_addr->ai_addrlen);
   }
 
   return level;
@@ -261,8 +228,8 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr, str
  * Helper function to perform multicast group join/leave operation
  * is_join: 1 for join, 0 for leave
  */
-static int mcast_group_op(int sock, service_t *service, int is_join, const char *op_name)
-{
+static int mcast_group_op(int sock, service_t *service, int is_join,
+                          const char *op_name) {
   struct group_req gr;
   struct group_source_req gsr;
   int level, r;
@@ -270,8 +237,7 @@ static int mcast_group_op(int sock, service_t *service, int is_join, const char 
   int is_ssm; /* Source-Specific Multicast */
 
   level = prepare_mcast_group_req(service, &gr, &gsr);
-  if (level < 0)
-  {
+  if (level < 0) {
     return -1;
   }
 
@@ -279,19 +245,15 @@ static int mcast_group_op(int sock, service_t *service, int is_join, const char 
   is_ssm = (strcmp(service->msrc, "") != 0 && service->msrc != NULL);
 
   /* Select the appropriate operation */
-  if (is_ssm)
-  {
+  if (is_ssm) {
     op = is_join ? MCAST_JOIN_SOURCE_GROUP : MCAST_LEAVE_SOURCE_GROUP;
     r = setsockopt(sock, level, op, &gsr, sizeof(gsr));
-  }
-  else
-  {
+  } else {
     op = is_join ? MCAST_JOIN_GROUP : MCAST_LEAVE_GROUP;
     r = setsockopt(sock, level, op, &gr, sizeof(gr));
   }
 
-  if (r < 0)
-  {
+  if (r < 0) {
     logger(LOG_ERROR, "Multicast: %s failed: %s", op_name, strerror(errno));
     return -1;
   }
@@ -299,8 +261,7 @@ static int mcast_group_op(int sock, service_t *service, int is_join, const char 
   return 0;
 }
 
-int join_mcast_group(service_t *service)
-{
+int join_mcast_group(service_t *service) {
   int sock, r;
   int on = 1;
   const char *upstream_if;
@@ -309,24 +270,24 @@ int join_mcast_group(service_t *service)
                 service->addr->ai_protocol);
 
   /* Set socket to non-blocking mode for epoll */
-  if (connection_set_nonblocking(sock) < 0)
-  {
-    logger(LOG_ERROR, "Failed to set multicast socket non-blocking: %s", strerror(errno));
+  if (connection_set_nonblocking(sock) < 0) {
+    logger(LOG_ERROR, "Failed to set multicast socket non-blocking: %s",
+           strerror(errno));
     close(sock);
     exit(RETVAL_SOCK_READ_FAILED);
   }
 
   /* Set receive buffer size to 512KB */
   int rcvbuf_size = UDP_RCVBUF_SIZE;
-  r = setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf_size, sizeof(rcvbuf_size));
-  if (r < 0)
-  {
-    logger(LOG_WARN, "Failed to set SO_RCVBUF to %d: %s", rcvbuf_size, strerror(errno));
+  r = setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &rcvbuf_size,
+                 sizeof(rcvbuf_size));
+  if (r < 0) {
+    logger(LOG_WARN, "Failed to set SO_RCVBUF to %d: %s", rcvbuf_size,
+           strerror(errno));
   }
 
   r = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
-  if (r)
-  {
+  if (r) {
     logger(LOG_ERROR, "SO_REUSEADDR failed: %s", strerror(errno));
   }
 
@@ -334,16 +295,15 @@ int join_mcast_group(service_t *service)
   upstream_if = get_upstream_interface_for_multicast();
   bind_to_upstream_interface(sock, upstream_if);
 
-  r = bind(sock, (struct sockaddr *)service->addr->ai_addr, service->addr->ai_addrlen);
-  if (r)
-  {
+  r = bind(sock, (struct sockaddr *)service->addr->ai_addr,
+           service->addr->ai_addrlen);
+  if (r) {
     logger(LOG_ERROR, "Cannot bind: %s", strerror(errno));
     exit(RETVAL_RTP_FAILED);
   }
 
   /* Join the multicast group */
-  if (mcast_group_op(sock, service, 1, "join") < 0)
-  {
+  if (mcast_group_op(sock, service, 1, "join") < 0) {
     logger(LOG_ERROR, "Cannot join mcast group");
     exit(RETVAL_RTP_FAILED);
   }
@@ -357,16 +317,20 @@ int join_mcast_group(service_t *service)
  *
  * Background:
  * In our multi-process architecture, each client connection maintains its own
- * multicast socket. When multiple clients are playing the same multicast source,
- * the kernel maintains a reference count for that multicast group membership.
+ * multicast socket. When multiple clients are playing the same multicast
+ * source, the kernel maintains a reference count for that multicast group
+ * membership.
  *
  * Problem:
  * The traditional leave/join approach (MCAST_LEAVE_GROUP + MCAST_JOIN_GROUP)
  * will NOT trigger an IGMP Report in this scenario because:
  * 1. When we call MCAST_LEAVE_GROUP, the kernel decrements the reference count
- * 2. If other sockets still have membership (refcount > 0), no IGMP Leave is sent
- * 3. When we call MCAST_JOIN_GROUP again, the kernel sees the group already exists
- * 4. No IGMP Report is sent because the interface is still a member of the group
+ * 2. If other sockets still have membership (refcount > 0), no IGMP Leave is
+ * sent
+ * 3. When we call MCAST_JOIN_GROUP again, the kernel sees the group already
+ * exists
+ * 4. No IGMP Report is sent because the interface is still a member of the
+ * group
  *
  * Solution:
  * We manually construct and send an IGMPv3 Membership Report packet using a
@@ -375,21 +339,22 @@ int join_mcast_group(service_t *service)
  * timing out and stopping the multicast stream delivery.
  *
  * This is particularly important when:
- * - The upstream router requires periodic IGMP Reports (typical timeout: 3 minutes)
+ * - The upstream router requires periodic IGMP Reports (typical timeout: 3
+ * minutes)
  * - We want to ensure we become the "Reporter" for the group
  * - Multiple worker processes are serving the same multicast stream
  *
- * @param sock The existing multicast socket (unused, for API compatibility)
- * @param service Service structure containing multicast group and optional source
+ * @param service Service structure containing multicast group and optional
+ * source
  * @return 0 on success, -1 on failure
  */
-int rejoin_mcast_group(int sock, service_t *service)
-{
+int rejoin_mcast_group(service_t *service) {
   int raw_sock;
   struct sockaddr_in dest;
   struct igmpv3_report *report;
   struct igmpv3_grec *grec;
-  uint8_t packet[sizeof(struct igmpv3_report) + sizeof(struct igmpv3_grec) + sizeof(uint32_t)];
+  uint8_t packet[sizeof(struct igmpv3_report) + sizeof(struct igmpv3_grec) +
+                 sizeof(uint32_t)];
   size_t packet_len;
   int r;
   const char *upstream_if;
@@ -400,8 +365,7 @@ int rejoin_mcast_group(int sock, service_t *service)
   int is_ssm = 0;
 
   /* Only support IPv4 for now */
-  if (service->addr->ai_family != AF_INET)
-  {
+  if (service->addr->ai_family != AF_INET) {
     logger(LOG_ERROR, "IGMPv3 raw socket rejoin only supports IPv4");
     return -1;
   }
@@ -410,11 +374,11 @@ int rejoin_mcast_group(int sock, service_t *service)
   group_addr = mcast_addr->sin_addr.s_addr;
 
   /* Check if this is Source-Specific Multicast (SSM) */
-  if (service->msrc != NULL && strcmp(service->msrc, "") != 0 && service->msrc_addr != NULL)
-  {
-    if (service->msrc_addr->ai_family != AF_INET)
-    {
-      logger(LOG_ERROR, "IGMPv3 raw socket rejoin: source address must be IPv4");
+  if (service->msrc != NULL && strcmp(service->msrc, "") != 0 &&
+      service->msrc_addr != NULL) {
+    if (service->msrc_addr->ai_family != AF_INET) {
+      logger(LOG_ERROR,
+             "IGMPv3 raw socket rejoin: source address must be IPv4");
       return -1;
     }
     source_addr = (struct sockaddr_in *)service->msrc_addr->ai_addr;
@@ -424,16 +388,16 @@ int rejoin_mcast_group(int sock, service_t *service)
 
   /* Create raw socket for IGMP */
   raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_IGMP);
-  if (raw_sock < 0)
-  {
-    logger(LOG_ERROR, "Failed to create raw IGMP socket: %s (need root?)", strerror(errno));
+  if (raw_sock < 0) {
+    logger(LOG_ERROR, "Failed to create raw IGMP socket: %s (need root?)",
+           strerror(errno));
     return -1;
   }
 
   /* Set socket to non-blocking mode to avoid blocking on sendto */
-  if (connection_set_nonblocking(raw_sock) < 0)
-  {
-    logger(LOG_ERROR, "Failed to set raw IGMP socket non-blocking: %s", strerror(errno));
+  if (connection_set_nonblocking(raw_sock) < 0) {
+    logger(LOG_ERROR, "Failed to set raw IGMP socket non-blocking: %s",
+           strerror(errno));
     close(raw_sock);
     return -1;
   }
@@ -444,28 +408,27 @@ int rejoin_mcast_group(int sock, service_t *service)
 
   /* Set IP_HDRINCL to 0 - kernel will add IP header */
   int hdrincl = 0;
-  if (setsockopt(raw_sock, IPPROTO_IP, IP_HDRINCL, &hdrincl, sizeof(hdrincl)) < 0)
-  {
+  if (setsockopt(raw_sock, IPPROTO_IP, IP_HDRINCL, &hdrincl, sizeof(hdrincl)) <
+      0) {
     logger(LOG_WARN, "Failed to set IP_HDRINCL: %s", strerror(errno));
   }
 
   /* Set Router Alert option - required for IGMP packets (RFC 3376) */
   int router_alert = 1;
-  if (setsockopt(raw_sock, IPPROTO_IP, IP_ROUTER_ALERT, &router_alert, sizeof(router_alert)) < 0)
-  {
+  if (setsockopt(raw_sock, IPPROTO_IP, IP_ROUTER_ALERT, &router_alert,
+                 sizeof(router_alert)) < 0) {
     logger(LOG_ERROR, "Failed to set IP_ROUTER_ALERT: %s", strerror(errno));
     close(raw_sock);
     return -1;
   }
 
   /* Set IP_MULTICAST_IF to send from correct interface */
-  if (upstream_if && upstream_if[0] != '\0')
-  {
+  if (upstream_if && upstream_if[0] != '\0') {
     struct ip_mreqn mreq;
     memset(&mreq, 0, sizeof(mreq));
     mreq.imr_ifindex = if_nametoindex(upstream_if);
-    if (setsockopt(raw_sock, IPPROTO_IP, IP_MULTICAST_IF, &mreq, sizeof(mreq)) < 0)
-    {
+    if (setsockopt(raw_sock, IPPROTO_IP, IP_MULTICAST_IF, &mreq, sizeof(mreq)) <
+        0) {
       logger(LOG_WARN, "Failed to set IP_MULTICAST_IF: %s", strerror(errno));
     }
   }
@@ -483,8 +446,7 @@ int rejoin_mcast_group(int sock, service_t *service)
   /* Group Record */
   grec = (struct igmpv3_grec *)(packet + sizeof(struct igmpv3_report));
 
-  if (is_ssm)
-  {
+  if (is_ssm) {
     /* Source-Specific Multicast: MODE_IS_INCLUDE with source list */
     grec->grec_type = IGMPV3_MODE_IS_INCLUDE;
     grec->grec_auxwords = 0;
@@ -492,18 +454,21 @@ int rejoin_mcast_group(int sock, service_t *service)
     grec->grec_mca = group_addr;
 
     /* Add source address to the source list */
-    uint32_t *src_list = (uint32_t *)((uint8_t *)grec + sizeof(struct igmpv3_grec));
+    uint32_t *src_list =
+        (uint32_t *)((uint8_t *)grec + sizeof(struct igmpv3_grec));
     src_list[0] = source_addr->sin_addr.s_addr;
 
-    packet_len = sizeof(struct igmpv3_report) + sizeof(struct igmpv3_grec) + sizeof(uint32_t);
-  }
-  else
-  {
+    packet_len = sizeof(struct igmpv3_report) + sizeof(struct igmpv3_grec) +
+                 sizeof(uint32_t);
+  } else {
     /* Any-Source Multicast (ASM): MODE_IS_EXCLUDE with empty source list */
-    grec->grec_type = IGMPV3_MODE_IS_EXCLUDE; /* Exclude mode = join group, receive all sources */
+    grec->grec_type = IGMPV3_MODE_IS_EXCLUDE; /* Exclude mode = join group,
+                                                 receive all sources */
     grec->grec_auxwords = 0;
-    grec->grec_nsrcs = htons(0); /* No source list in exclude mode = receive from any source */
-    grec->grec_mca = group_addr; /* Multicast group address (already in network byte order) */
+    grec->grec_nsrcs =
+        htons(0); /* No source list in exclude mode = receive from any source */
+    grec->grec_mca = group_addr; /* Multicast group address (already in network
+                                    byte order) */
 
     packet_len = sizeof(struct igmpv3_report) + sizeof(struct igmpv3_grec);
   }
@@ -517,11 +482,10 @@ int rejoin_mcast_group(int sock, service_t *service)
   dest.sin_addr.s_addr = inet_addr("224.0.0.22");
 
   /* Send the IGMPv3 Report */
-  r = sendto(raw_sock, packet, packet_len, 0,
-             (struct sockaddr *)&dest, sizeof(dest));
+  r = sendto(raw_sock, packet, packet_len, 0, (struct sockaddr *)&dest,
+             sizeof(dest));
 
-  if (r < 0)
-  {
+  if (r < 0) {
     logger(LOG_ERROR, "Failed to send IGMPv3 Report: %s", strerror(errno));
     close(raw_sock);
     return -1;
@@ -532,16 +496,17 @@ int rejoin_mcast_group(int sock, service_t *service)
   char group_str[INET_ADDRSTRLEN];
   inet_ntop(AF_INET, &mcast_addr->sin_addr, group_str, sizeof(group_str));
 
-  if (is_ssm)
-  {
+  if (is_ssm) {
     char source_str[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &source_addr->sin_addr, source_str, sizeof(source_str));
-    logger(LOG_DEBUG, "Multicast: Sent IGMPv3 Report for SSM group %s source %s via raw socket",
+    logger(LOG_DEBUG,
+           "Multicast: Sent IGMPv3 Report for SSM group %s source %s via raw "
+           "socket",
            group_str, source_str);
-  }
-  else
-  {
-    logger(LOG_DEBUG, "Multicast: Sent IGMPv3 Report for ASM group %s via raw socket", group_str);
+  } else {
+    logger(LOG_DEBUG,
+           "Multicast: Sent IGMPv3 Report for ASM group %s via raw socket",
+           group_str);
   }
 
   return 0;

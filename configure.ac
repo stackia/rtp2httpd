@@ -16,11 +16,12 @@ AC_PROG_INSTALL
 
 # Enable system extensions
 AC_USE_SYSTEM_EXTENSIONS
+AC_DEFINE([_DEFAULT_SOURCE], [1], [Enable default glibc features])
 
 # Check for compiler warning flags
 if test "x$GCC" = "xyes"; then
     # Basic warning flags (no performance impact)
-    WARN_CFLAGS="-std=c99 -Wall -Wextra -Wno-unused-parameter"
+    WARN_CFLAGS="-std=c11 -Wall -Wextra -Wunused"
     WARN_CFLAGS="$WARN_CFLAGS -Wformat=2 -Wformat-security"
     WARN_CFLAGS="$WARN_CFLAGS -Wstrict-prototypes -Wmissing-prototypes"
     WARN_CFLAGS="$WARN_CFLAGS -Wold-style-definition -Wpointer-arith"

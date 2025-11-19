@@ -11,8 +11,8 @@
 #ifndef TIMEZONE_H
 #define TIMEZONE_H
 
-#include <time.h>
 #include <stddef.h>
+#include <time.h>
 
 /* Constants */
 #define TIMEZONE_MAX_OFFSET_HOURS 14  /* Maximum timezone offset (UTC+14) */
@@ -41,7 +41,8 @@
  *       printf("Offset: %d seconds (%+.1f hours)\n", offset, offset/3600.0);
  *   }
  */
-int timezone_parse_from_user_agent(const char *user_agent, int *tz_offset_seconds);
+int timezone_parse_from_user_agent(const char *user_agent,
+                                   int *tz_offset_seconds);
 
 /*
  * Format time in yyyyMMddHHmmss format
@@ -57,8 +58,8 @@ int timezone_parse_from_user_agent(const char *user_agent, int *tz_offset_second
  *   struct tm utc_time;
  *   char output[32];
  *   // ... initialize utc_time ...
- *   if (timezone_format_time_yyyyMMddHHmmss(&utc_time, output, sizeof(output)) == 0) {
- *       printf("Formatted: %s\n", output);  // Output: 20240101120000
+ *   if (timezone_format_time_yyyyMMddHHmmss(&utc_time, output, sizeof(output))
+ * == 0) { printf("Formatted: %s\n", output);  // Output: 20240101120000
  *   }
  */
 int timezone_format_time_yyyyMMddHHmmss(const struct tm *utc_time,
@@ -75,7 +76,8 @@ int timezone_format_time_yyyyMMddHHmmss(const struct tm *utc_time,
  *
  * Format detection is automatic. Output preserves input format.
  *
- * Thread Safety: NOT thread-safe (modifies TZ environment variable for some formats)
+ * Thread Safety: NOT thread-safe (modifies TZ environment variable for some
+ * formats)
  *
  * @param input_time Input time string (must not be NULL)
  * @param tz_offset_seconds Timezone offset from User-Agent in seconds
@@ -91,30 +93,37 @@ int timezone_format_time_yyyyMMddHHmmss(const struct tm *utc_time,
  *
  * Examples:
  *   // Unix timestamp
- *   timezone_convert_time_with_offset("1696089600", 0, 3600, output, sizeof(output));
+ *   timezone_convert_time_with_offset("1696089600", 0, 3600, output,
+ * sizeof(output));
  *   // Output: "1696093200"
  *
  *   // yyyyMMddHHmmss with timezone conversion
- *   timezone_convert_time_with_offset("20250930150000", 8*3600, 3600, output, sizeof(output));
+ *   timezone_convert_time_with_offset("20250930150000", 8*3600, 3600, output,
+ * sizeof(output));
  *   // Output: "20250930080000" (15:00 UTC+8 -> 07:00 UTC + 1h)
  *
  *   // yyyyMMddHHmmssGMT with timezone conversion
- *   timezone_convert_time_with_offset("20250930150000GMT", 8*3600, 3600, output, sizeof(output));
+ *   timezone_convert_time_with_offset("20250930150000GMT", 8*3600, 3600,
+ * output, sizeof(output));
  *   // Output: "20250930080000GMT" (15:00 UTC+8 -> 07:00 UTC + 1h)
  *
  *   // ISO 8601 with Z (preserves Z suffix)
- *   timezone_convert_time_with_offset("2025-09-30T15:00:00Z", 8*3600, 3600, output, sizeof(output));
+ *   timezone_convert_time_with_offset("2025-09-30T15:00:00Z", 8*3600, 3600,
+ * output, sizeof(output));
  *   // Output: "2025-09-30T16:00:00Z" (tz_offset_seconds ignored)
  *
  *   // ISO 8601 with timezone (preserves timezone)
- *   timezone_convert_time_with_offset("2025-09-30T15:00:00+08:00", 0, 3600, output, sizeof(output));
+ *   timezone_convert_time_with_offset("2025-09-30T15:00:00+08:00", 0, 3600,
+ * output, sizeof(output));
  *   // Output: "2025-09-30T16:00:00+08:00"
  *
  *   // ISO 8601 without timezone (no Z added to output)
- *   timezone_convert_time_with_offset("2025-09-30T15:00:00", 8*3600, 3600, output, sizeof(output));
+ *   timezone_convert_time_with_offset("2025-09-30T15:00:00", 8*3600, 3600,
+ * output, sizeof(output));
  *   // Output: "2025-09-30T08:00:00" (no Z suffix)
  */
-int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seconds,
+int timezone_convert_time_with_offset(const char *input_time,
+                                      int tz_offset_seconds,
                                       int additional_offset_seconds,
                                       char *output_time, size_t output_size);
 
@@ -133,20 +142,21 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
  *
  * @param iso_str Input ISO 8601 string (must not be NULL)
  * @param tm_out Output tm structure (must not be NULL)
- * @param milliseconds_out Output milliseconds (0-999), or -1 if not present (must not be NULL)
- * @param has_timezone_out Output: 1 if timezone present, 0 if not (must not be NULL)
- * @param timezone_offset_out Output timezone offset in seconds (must not be NULL)
- * @param timezone_suffix_out Output buffer for original timezone suffix (e.g., "Z", "+08:00", "")
- *                            (must not be NULL)
- * @param suffix_size Size of timezone_suffix_out buffer (minimum 7 bytes for "±HH:MM")
+ * @param milliseconds_out Output milliseconds (0-999), or -1 if not present
+ * (must not be NULL)
+ * @param has_timezone_out Output: 1 if timezone present, 0 if not (must not be
+ * NULL)
+ * @param timezone_offset_out Output timezone offset in seconds (must not be
+ * NULL)
+ * @param timezone_suffix_out Output buffer for original timezone suffix (e.g.,
+ * "Z", "+08:00", "") (must not be NULL)
+ * @param suffix_size Size of timezone_suffix_out buffer (minimum 7 bytes for
+ * "±HH:MM")
  * @return 0 on success, -1 on error
  */
-int timezone_parse_iso8601(const char *iso_str,
-                           struct tm *tm_out,
-                           int *milliseconds_out,
-                           int *has_timezone_out,
-                           int *timezone_offset_out,
-                           char *timezone_suffix_out,
+int timezone_parse_iso8601(const char *iso_str, struct tm *tm_out,
+                           int *milliseconds_out, int *has_timezone_out,
+                           int *timezone_offset_out, char *timezone_suffix_out,
                            size_t suffix_size);
 
 /*
@@ -156,29 +166,29 @@ int timezone_parse_iso8601(const char *iso_str,
  *
  * @param tm Time structure (must not be NULL)
  * @param milliseconds Milliseconds (0-999), or -1 to omit milliseconds
- * @param timezone_suffix Timezone suffix to append (e.g., "", "Z", "+08:00") (must not be NULL)
+ * @param timezone_suffix Timezone suffix to append (e.g., "", "Z", "+08:00")
+ * (must not be NULL)
  * @param output Output buffer (must not be NULL)
  * @param output_size Size of output buffer (minimum 30 bytes for full format)
  * @return 0 on success, -1 on error
  */
-int timezone_format_time_iso8601(const struct tm *tm,
-                                 int milliseconds,
-                                 const char *timezone_suffix,
-                                 char *output,
+int timezone_format_time_iso8601(const struct tm *tm, int milliseconds,
+                                 const char *timezone_suffix, char *output,
                                  size_t output_size);
 
 /*
  * Convert ISO 8601 time string with timezone and offset
  *
- * If input has embedded timezone (Z or ±HH:MM), uses that and ignores external_tz_offset.
- * If input has no timezone, uses external_tz_offset for conversion.
- * Always applies offset_seconds after any timezone conversion.
+ * If input has embedded timezone (Z or ±HH:MM), uses that and ignores
+ * external_tz_offset. If input has no timezone, uses external_tz_offset for
+ * conversion. Always applies offset_seconds after any timezone conversion.
  * Output preserves original timezone format.
  *
  * Thread Safety: NOT thread-safe (modifies TZ environment variable)
  *
  * @param iso_str Input ISO 8601 string (must not be NULL)
- * @param external_tz_offset Timezone offset from User-Agent in seconds (used only if no embedded timezone)
+ * @param external_tz_offset Timezone offset from User-Agent in seconds (used
+ * only if no embedded timezone)
  * @param offset_seconds Additional offset to always apply in seconds
  * @param output Output buffer (must not be NULL)
  * @param output_size Size of output buffer (minimum 30 bytes)
@@ -186,8 +196,7 @@ int timezone_format_time_iso8601(const struct tm *tm,
  */
 int timezone_convert_iso8601_with_offset(const char *iso_str,
                                          int external_tz_offset,
-                                         int offset_seconds,
-                                         char *output,
+                                         int offset_seconds, char *output,
                                          size_t output_size);
 
 #endif /* TIMEZONE_H */

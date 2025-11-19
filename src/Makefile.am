@@ -27,7 +27,8 @@ rtp2httpd_SOURCES = \
 	epg.c \
 	md5.c \
 	hashmap.c \
-	embedded_web.c
+	embedded_web.c \
+	utils.c
 
 # Private headers (not installed)
 noinst_HEADERS = \
@@ -55,10 +56,11 @@ noinst_HEADERS = \
 	md5.h \
 	hashmap.h \
 	embedded_web.h \
-	embedded_web_data.h
+	embedded_web_data.h \
+	utils.h
 
 # Compiler flags
-AM_CPPFLAGS = -DSYSCONFDIR=\"@sysconfdir@\"
+AM_CPPFLAGS = -DSYSCONFDIR=\"@sysconfdir@\" -include config.h
 AM_CFLAGS = @OPT_CFLAGS@ @WARN_CFLAGS@ @SECURITY_CFLAGS@
 
 # Linker flags

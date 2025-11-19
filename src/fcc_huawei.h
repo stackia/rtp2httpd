@@ -1,14 +1,9 @@
 #ifndef __FCC_HUAWEI_H__
 #define __FCC_HUAWEI_H__
 
-#include <stdint.h>
-#include <netinet/in.h>
-#include <netdb.h>
 #include "fcc.h"
-
-/* Forward declarations */
-typedef struct stream_context_s stream_context_t;
-typedef struct service_s service_t;
+#include <netdb.h>
+#include <stdint.h>
 
 /* Huawei FCC Packet Lengths */
 #define FCC_PK_LEN_REQ_HUAWEI 32  /* Huawei request packet (FMT 5) */
@@ -30,7 +25,8 @@ typedef struct service_s service_t;
  * @param fcc_client_nport FCC client port (network byte order)
  * @return Pointer to static packet buffer
  */
-uint8_t *build_fcc_request_pk_huawei(struct addrinfo *maddr, uint32_t local_ip, uint16_t fcc_client_nport);
+uint8_t *build_fcc_request_pk_huawei(struct addrinfo *maddr, uint32_t local_ip,
+                                     uint16_t fcc_client_nport);
 
 /**
  * Build Huawei FCC NAT traversal packet - FMT 12
@@ -63,11 +59,10 @@ int fcc_huawei_initialize_and_request(stream_context_t *ctx);
  * @param ctx Stream context
  * @param buf Response buffer
  * @param buf_len Buffer length
- * @param peer_addr Peer address
  * @return 0 on success, -1 for fallback to multicast, 1 for state restart
  */
-int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf, int buf_len,
-                                       struct sockaddr_in *peer_addr);
+int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
+                                      int buf_len);
 
 /**
  * Send Huawei FCC termination packet
@@ -78,6 +73,7 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf, int b
  * @param reason Reason for termination
  * @return 0 on success, -1 on error
  */
-int fcc_huawei_send_term_packet(fcc_session_t *fcc, service_t *service, uint16_t seqn, const char *reason);
+int fcc_huawei_send_term_packet(fcc_session_t *fcc, service_t *service,
+                                uint16_t seqn, const char *reason);
 
 #endif /* __FCC_HUAWEI_H__ */

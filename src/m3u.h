@@ -1,31 +1,32 @@
 #ifndef __M3U_H__
 #define __M3U_H__
 
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* M3U cache structure for external M3U state tracking */
-typedef struct
-{
-    int retry_count;         /* Current retry count (0-8) */
-    int64_t next_retry_time; /* Next retry time in milliseconds (0 if not retrying) */
+typedef struct {
+  int retry_count; /* Current retry count (0-8) */
+  int64_t
+      next_retry_time; /* Next retry time in milliseconds (0 if not retrying) */
 
-    /* Transformed M3U playlist buffer */
-    char *transformed_m3u;              /* Dynamic buffer for transformed playlist */
-    size_t transformed_m3u_size;        /* Total allocated size */
-    size_t transformed_m3u_used;        /* Used size (content length) */
-    size_t transformed_m3u_inline_end;  /* Marks end of inline content */
-    int transformed_m3u_has_header;     /* 1 if #EXTM3U header was added, 0 otherwise */
+  /* Transformed M3U playlist buffer */
+  char *transformed_m3u;       /* Dynamic buffer for transformed playlist */
+  size_t transformed_m3u_size; /* Total allocated size */
+  size_t transformed_m3u_used; /* Used size (content length) */
+  size_t transformed_m3u_inline_end; /* Marks end of inline content */
+  int transformed_m3u_has_header; /* 1 if #EXTM3U header was added, 0 otherwise
+                                   */
 
-    /* ETag for transformed M3U playlist */
-    char transformed_m3u_etag[33];      /* MD5 hash as hex string */
-    int transformed_m3u_etag_valid;     /* 1 if etag is valid, 0 otherwise */
+  /* ETag for transformed M3U playlist */
+  char transformed_m3u_etag[33];  /* MD5 hash as hex string */
+  int transformed_m3u_etag_valid; /* 1 if etag is valid, 0 otherwise */
 } m3u_cache_t;
 
 /* Parse M3U content and create services
  * content: M3U content as string
- * source_url: source URL of the M3U (for identification, can be NULL for inline)
- * Returns: 0 on success, -1 on error
+ * source_url: source URL of the M3U (for identification, can be NULL for
+ * inline) Returns: 0 on success, -1 on error
  */
 int m3u_parse_and_create_services(const char *content, const char *source_url);
 
@@ -56,11 +57,12 @@ void m3u_reset_transformed_playlist(void);
 void m3u_reset_external_playlist(void);
 
 /* Get server address as complete URL
- * Priority: hostname config > non-upstream interface private IP > non-upstream interface public IP > upstream interface IP > localhost
- * Returns: malloc'd string containing complete URL (protocol://host:port/ or protocol://host:port/path/)
- *          Always ends with trailing slash '/'
- *          Port is omitted if it's 80 for http or 443 for https
- *          Caller must free the returned string
+ * Priority: hostname config > non-upstream interface private IP > non-upstream
+ * interface public IP > upstream interface IP > localhost Returns: malloc'd
+ * string containing complete URL (protocol://host:port/ or
+ * protocol://host:port/path/) Always ends with trailing slash '/' Port is
+ * omitted if it's 80 for http or 443 for https Caller must free the returned
+ * string
  */
 char *get_server_address(void);
 

@@ -1,15 +1,13 @@
 #ifndef EMBEDDED_WEB_H
 #define EMBEDDED_WEB_H
 
-#include <stdint.h>
-#include <stddef.h>
-#include <stdbool.h>
-
 #include "connection.h"
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 /* Embedded file structure */
-typedef struct
-{
+typedef struct {
   const char *path;
   const char *mime_type;
   const char *etag;

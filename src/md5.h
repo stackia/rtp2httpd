@@ -1,13 +1,10 @@
 #ifndef MD5_H
 #define MD5_H
 
-#include <stdio.h>
 #include <stdint.h>
-#include <string.h>
-#include <stdlib.h>
+#include <stdio.h>
 
-typedef struct
-{
+typedef struct {
   uint64_t size;      // Size of input in bytes
   uint32_t buffer[4]; // Current accumulation of hash
   uint8_t input[64];  // Input to be used in the next step
