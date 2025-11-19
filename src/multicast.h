@@ -56,12 +56,12 @@ uint32_t get_local_ip_for_fcc(void);
 int join_mcast_group(service_t *service);
 
 /**
- * Rejoin a multicast group on an existing socket
- * This performs MCAST_LEAVE_GROUP followed by MCAST_JOIN_GROUP to force
- * the kernel to send a new IGMP Report message, refreshing membership.
+ * Rejoin a multicast group by sending both IGMPv2 and IGMPv3 reports via raw
+ * sockets. Ensures upstream devices refresh membership state even when the
+ * kernel suppresses joins due to existing memberships.
  *
  * @param service Service structure containing multicast address info
- * @return 0 on success, -1 on failure
+ * @return 0 on success, -1 if both IGMP versions fail
  */
 int rejoin_mcast_group(service_t *service);
 
