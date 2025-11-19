@@ -19,17 +19,22 @@ uint8_t *build_fcc_request_pk_telecom(struct addrinfo *maddr,
   // RTCP Header (8 bytes)
   pk[0] = 0x80 | FCC_FMT_TELECOM_REQ; // Version 2, Padding 0, FMT 2
   pk[1] = 205;                        // Type: Generic RTP Feedback (205)
-  *(uint16_t *)&pk[2] = htons(sizeof(pk) / 4 - 1); // Length
+  uint16_t len_words = htons(sizeof(pk) / 4 - 1); // Length
+  memcpy(pk + 2, &len_words, sizeof(len_words));
   // pk[4-7]: Sender SSRC = 0 (already zeroed by memset)
 
   // Media source SSRC (4 bytes) - multicast IP address
-  *(uint32_t *)&pk[8] = maddr_sin->sin_addr.s_addr;
+  uint32_t ssrc = maddr_sin->sin_addr.s_addr;
+  memcpy(pk + 8, &ssrc, sizeof(ssrc));
 
   // FCI - Feedback Control Information
   // pk[12-15]: Version 0, Reserved 3 bytes (already zeroed)
-  *(uint16_t *)&pk[16] = fcc_client_nport;           // FCC client port
-  *(uint16_t *)&pk[18] = maddr_sin->sin_port;        // Mcast group port
-  *(uint32_t *)&pk[20] = maddr_sin->sin_addr.s_addr; // Mcast group IP
+  memcpy(pk + 16, &fcc_client_nport,
+         sizeof(fcc_client_nport)); // FCC client port
+  memcpy(pk + 18, &maddr_sin->sin_port,
+         sizeof(maddr_sin->sin_port)); // Mcast group port
+  memcpy(pk + 20, &maddr_sin->sin_addr.s_addr,
+         sizeof(maddr_sin->sin_addr.s_addr)); // Mcast group IP
 
   return pk;
 }
@@ -43,16 +48,19 @@ uint8_t *build_fcc_term_pk_telecom(struct addrinfo *maddr, uint16_t seqn) {
   // RTCP Header (8 bytes)
   pk[0] = 0x80 | FCC_FMT_TELECOM_TERM; // Version 2, Padding 0, FMT 5
   pk[1] = 205;                         // Type: Generic RTP Feedback (205)
-  *(uint16_t *)&pk[2] = htons(sizeof(pk) / 4 - 1); // Length
+  uint16_t len_words = htons(sizeof(pk) / 4 - 1); // Length
+  memcpy(pk + 2, &len_words, sizeof(len_words));
   // pk[4-7]: Sender SSRC = 0 (already zeroed by memset)
 
   // Media source SSRC (4 bytes) - multicast IP address
-  *(uint32_t *)&pk[8] = maddr_sin->sin_addr.s_addr;
+  uint32_t ssrc = maddr_sin->sin_addr.s_addr;
+  memcpy(pk + 8, &ssrc, sizeof(ssrc));
 
   // FCI - Feedback Control Information
   pk[12] = seqn ? 0 : 1; // Stop bit, 0 = normal, 1 = force
   // pk[13]: Reserved (already zeroed)
-  *(uint16_t *)&pk[14] = htons(seqn); // First multicast packet sequence
+  uint16_t seq_be = htons(seqn); // First multicast packet sequence
+  memcpy(pk + 14, &seq_be, sizeof(seq_be));
 
   return pk;
 }
@@ -104,12 +112,22 @@ int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf) {
   /* Handle FMT 3 - Telecom Server Response */
   uint8_t result_code = buf[12];
   uint8_t type = buf[13];
-  uint16_t new_signal_port = *(uint16_t *)(buf + 14);
-  uint16_t new_media_port = *(uint16_t *)(buf + 16);
-  uint32_t new_fcc_ip = *(uint32_t *)(buf + 20);
-  uint32_t valid_time = ntohl(*(uint32_t *)(buf + 24));
-  uint32_t speed = ntohl(*(uint32_t *)(buf + 28));            // bitrate in bps
-  uint32_t speed_after_sync = ntohl(*(uint32_t *)(buf + 32)); // bitrate in bps
+  uint16_t new_signal_port_be;
+  memcpy(&new_signal_port_be, buf + 14, sizeof(new_signal_port_be));
+  uint16_t new_media_port_be;
+  memcpy(&new_media_port_be, buf + 16, sizeof(new_media_port_be));
+  uint32_t new_fcc_ip_be;
+  memcpy(&new_fcc_ip_be, buf + 20, sizeof(new_fcc_ip_be));
+  uint32_t valid_time_be;
+  memcpy(&valid_time_be, buf + 24, sizeof(valid_time_be));
+  uint32_t valid_time = ntohl(valid_time_be);
+  uint32_t speed_be;
+  memcpy(&speed_be, buf + 28, sizeof(speed_be)); // bitrate in bps
+  uint32_t speed = ntohl(speed_be);
+  uint32_t speed_after_sync_be;
+  memcpy(&speed_after_sync_be, buf + 32,
+         sizeof(speed_after_sync_be)); // bitrate in bps
+  uint32_t speed_after_sync = ntohl(speed_after_sync_be);
 
   /* Log response for debugging */
   char speed_str[32];
@@ -134,8 +152,8 @@ int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf) {
   logger(LOG_DEBUG,
          "FCC Response: FMT=3, result=%u, signal_port=%u, media_port=%u, "
          "valid_time=%u, speed=%s, speed_after_sync=%s",
-         result_code, ntohs(new_signal_port), ntohs(new_media_port), valid_time,
-         speed_str, speed_after_sync_str);
+         result_code, ntohs(new_signal_port_be), ntohs(new_media_port_be),
+         valid_time, speed_str, speed_after_sync_str);
 
   if (result_code != 0) {
     logger(LOG_WARN,
@@ -150,22 +168,22 @@ int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf) {
   /* Update server endpoints if provided */
   int signal_port_changed = 0, media_port_changed = 0;
 
-  if (new_signal_port && new_signal_port != fcc->fcc_server->sin_port) {
+  if (new_signal_port_be && new_signal_port_be != fcc->fcc_server->sin_port) {
+    fcc->fcc_server->sin_port = new_signal_port_be;
     logger(LOG_DEBUG, "FCC (Telecom): Server provided new signal port: %u",
-           ntohs(new_signal_port));
-    fcc->fcc_server->sin_port = new_signal_port;
+           ntohs(fcc->fcc_server->sin_port));
     signal_port_changed = 1;
   }
 
-  if (new_media_port && new_media_port != fcc->media_port) {
-    fcc->media_port = new_media_port;
+  if (new_media_port_be && new_media_port_be != fcc->media_port) {
+    fcc->media_port = new_media_port_be;
     logger(LOG_DEBUG, "FCC (Telecom): Server provided new media port: %u",
-           ntohs(new_media_port));
+           ntohs(fcc->media_port));
     media_port_changed = 1;
   }
 
-  if (new_fcc_ip && new_fcc_ip != fcc->fcc_server->sin_addr.s_addr) {
-    fcc->fcc_server->sin_addr.s_addr = new_fcc_ip;
+  if (new_fcc_ip_be && new_fcc_ip_be != fcc->fcc_server->sin_addr.s_addr) {
+    fcc->fcc_server->sin_addr.s_addr = new_fcc_ip_be;
     logger(LOG_DEBUG, "FCC (Telecom): Server provided new IP: %s",
            inet_ntoa(fcc->fcc_server->sin_addr));
     signal_port_changed = 1;

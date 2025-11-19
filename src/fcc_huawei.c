@@ -25,24 +25,29 @@ uint8_t *build_fcc_request_pk_huawei(struct addrinfo *maddr, uint32_t local_ip,
   // RTCP Header (8 bytes)
   pk[0] = 0x80 | FCC_FMT_HUAWEI_REQ; // V=2, P=0, FMT=5
   pk[1] = 205;                       // PT=205 (Generic RTP Feedback)
-  *(uint16_t *)&pk[2] = htons(7);    // Length = 8 words - 1 = 7
+  uint16_t len_words = htons(7);     // Length = 8 words - 1 = 7
+  memcpy(pk + 2, &len_words, sizeof(len_words));
   // pk[4-7]: Sender SSRC = 0 (already zeroed by memset)
 
   // Media Source SSRC (4 bytes) - multicast IP address
-  *(uint32_t *)&pk[8] = maddr_sin->sin_addr.s_addr;
+  uint32_t ssrc = maddr_sin->sin_addr.s_addr;
+  memcpy(pk + 8, &ssrc, sizeof(ssrc));
 
   // FCI - Feedback Control Information (16 bytes)
   // pk[12-19]: Reserved (8 bytes, already zeroed)
 
   // Local IP address (4 bytes) - network byte order
-  *(uint32_t *)&pk[20] = htonl(local_ip);
+  uint32_t local_ip_be = htonl(local_ip);
+  memcpy(pk + 20, &local_ip_be, sizeof(local_ip_be));
 
   // FCC client port (2 bytes) + Flag (2 bytes)
-  *(uint16_t *)&pk[24] = fcc_client_nport;
-  *(uint16_t *)&pk[26] = htons(0x8000);
+  memcpy(pk + 24, &fcc_client_nport, sizeof(fcc_client_nport));
+  uint16_t flag_be = htons(0x8000);
+  memcpy(pk + 26, &flag_be, sizeof(flag_be));
 
   // Redirect support flag (4 bytes) - 0x20000000
-  *(uint32_t *)&pk[28] = htonl(0x20000000);
+  uint32_t redirect_flag = htonl(0x20000000);
+  memcpy(pk + 28, &redirect_flag, sizeof(redirect_flag));
 
   return pk;
 }
@@ -61,7 +66,8 @@ uint8_t *build_fcc_nat_pk_huawei(uint32_t session_id) {
   pk[3] = 0x00;
 
   // Session ID - 4 bytes, network byte order
-  *(uint32_t *)&pk[4] = htonl(session_id);
+  uint32_t session_id_be = htonl(session_id);
+  memcpy(pk + 4, &session_id_be, sizeof(session_id_be));
 
   return pk;
 }
@@ -78,17 +84,20 @@ uint8_t *build_fcc_term_pk_huawei(struct addrinfo *maddr, uint16_t seqn) {
   // RTCP Header (8 bytes)
   pk[0] = 0x80 | FCC_FMT_HUAWEI_TERM; // V=2, P=0, FMT=9
   pk[1] = 205;                        // PT=205 (Generic RTP Feedback)
-  *(uint16_t *)&pk[2] = htons(3);     // Length = 4 words - 1 = 3
+  uint16_t len_words = htons(3);      // Length = 4 words - 1 = 3
+  memcpy(pk + 2, &len_words, sizeof(len_words));
   // pk[4-7]: Sender SSRC = 0 (already zeroed by memset)
 
   // Media Source SSRC (4 bytes) - multicast IP address
-  *(uint32_t *)&pk[8] = maddr_sin->sin_addr.s_addr;
+  uint32_t ssrc = maddr_sin->sin_addr.s_addr;
+  memcpy(pk + 8, &ssrc, sizeof(ssrc));
 
   // FCI - Status byte and sequence number (4 bytes)
   if (seqn > 0) {
     pk[12] = 0x01; // Status: joined multicast successfully
     pk[13] = 0x00;
-    *(uint16_t *)&pk[14] = htons(seqn); // First multicast sequence number
+    uint16_t seq_be = htons(seqn); // First multicast sequence number
+    memcpy(pk + 14, &seq_be, sizeof(seq_be));
   } else {
     pk[12] = 0x02; // Status: error, cannot join multicast
     pk[13] = 0x00;
@@ -162,8 +171,9 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
 
   /* Handle FMT 6 - Huawei Server Response */
   uint8_t result_code = buf[12]; // 1 = success
-  uint16_t type =
-      ntohs(*(uint16_t *)(buf + 14)); // 1=no unicast, 2=unicast, 3=redirect
+  uint16_t type_be;
+  memcpy(&type_be, buf + 14, sizeof(type_be));
+  uint16_t type = ntohs(type_be); // 1=no unicast, 2=unicast, 3=redirect
 
   logger(LOG_DEBUG, "FCC (Huawei): Response received: result=%u, type=%u",
          result_code, type);
@@ -188,12 +198,16 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
     /* Server will send unicast stream */
     uint8_t nat_flag = buf[24];
     uint8_t need_nat_traversal = (nat_flag << 2) >> 7; // Extract bit 5
-    uint16_t server_port = ntohs(*(uint16_t *)(buf + 26));
-    uint32_t server_ip = ntohl(*(uint32_t *)(buf + 32));
+    uint16_t server_port_be;
+    memcpy(&server_port_be, buf + 26, sizeof(server_port_be));
+    uint32_t server_ip_be;
+    memcpy(&server_ip_be, buf + 32, sizeof(server_ip_be));
 
     /* Check if server supports NAT traversal */
     if (buf_len > 28) {
-      fcc->session_id = ntohl(*(uint32_t *)(buf + 28));
+      uint32_t session_id_be;
+      memcpy(&session_id_be, buf + 28, sizeof(session_id_be));
+      fcc->session_id = ntohl(session_id_be);
     }
 
     if (need_nat_traversal == 1 && fcc->session_id != 0) {
@@ -202,8 +216,10 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
 
       /* Update unicast server IP and media port (keep fcc_server->sin_port as
        * control port7) */
-      fcc->fcc_server->sin_addr.s_addr = htonl(server_ip);
-      fcc->media_port = htons(server_port);
+      fcc->fcc_server->sin_addr.s_addr = server_ip_be;
+      if (server_port_be != 0) {
+        fcc->media_port = server_port_be;
+      }
 
       /* Build and send NAT traversal packet (FMT 12) to punch hole in NAT */
       uint8_t *nat_pk = build_fcc_nat_pk_huawei(fcc->session_id);
@@ -211,7 +227,9 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
       /* Send NAT packet to media port (for NAT hole punching on RTP port) */
       struct sockaddr_in media_addr;
       memcpy(&media_addr, fcc->fcc_server, sizeof(media_addr));
-      media_addr.sin_port = htons(server_port);
+      if (fcc->media_port != 0) {
+        media_addr.sin_port = fcc->media_port;
+      }
 
       int r =
           sendto_triple(fcc->fcc_sock, nat_pk, FCC_PK_LEN_NAT_HUAWEI, 0,
@@ -241,12 +259,14 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
       return 0;
     }
 
-    uint16_t server_port = ntohs(*(uint16_t *)(buf + 26));
-    uint32_t server_ip = ntohl(*(uint32_t *)(buf + 32));
+    uint16_t server_port_be;
+    memcpy(&server_port_be, buf + 26, sizeof(server_port_be));
+    uint32_t server_ip_be;
+    memcpy(&server_ip_be, buf + 32, sizeof(server_ip_be));
 
-    fcc->fcc_server->sin_addr.s_addr = htonl(server_ip);
-    if (server_port != 0) {
-      fcc->fcc_server->sin_port = htons(server_port);
+    fcc->fcc_server->sin_addr.s_addr = server_ip_be;
+    if (server_port_be != 0) {
+      fcc->fcc_server->sin_port = server_port_be;
     }
 
     logger(LOG_DEBUG, "FCC (Huawei): Server redirect to %s:%u (redirect #%d)",

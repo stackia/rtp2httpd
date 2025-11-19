@@ -28,7 +28,9 @@ int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size,
 
     /* Extract sequence number if requested */
     if (seqn) {
-      *seqn = ntohs(*(uint16_t *)(buf + 2));
+      uint16_t seq_be;
+      memcpy(&seq_be, buf + 2, sizeof(seq_be));
+      *seqn = ntohs(seq_be);
     }
 
     /* Cache first byte to reduce memory access */
@@ -44,7 +46,9 @@ int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size,
         logger(LOG_DEBUG, "Malformed RTP packet: extension header truncated");
         return -1;
       }
-      payloadstart += 4 + 4 * ntohs(*((uint16_t *)(buf + payloadstart + 2)));
+      uint16_t ext_len_be;
+      memcpy(&ext_len_be, buf + payloadstart + 2, sizeof(ext_len_be));
+      payloadstart += 4 + 4 * ntohs(ext_len_be);
     }
 
     payloadlength = recv_len - payloadstart;
