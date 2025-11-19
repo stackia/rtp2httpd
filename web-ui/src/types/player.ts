@@ -12,12 +12,9 @@ export interface Channel {
 
 export interface EPGProgram {
   id: string;
-  channelId: string;
   title: string;
   start: Date;
   end: Date;
-  description?: string;
-  icon?: string;
 }
 
 export interface M3UMetadata {
