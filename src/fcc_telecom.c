@@ -161,7 +161,7 @@ int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf) {
            "multicast",
            result_code);
     fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Server error");
-    ctx->mcast_sock = stream_join_mcast_group(ctx);
+    stream_join_mcast_group(ctx);
     return 0;
   }
 
@@ -196,7 +196,7 @@ int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf) {
     logger(LOG_INFO,
            "FCC (Telecom): Server says no unicast needed, joining multicast");
     fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "No unicast needed");
-    ctx->mcast_sock = stream_join_mcast_group(ctx);
+    stream_join_mcast_group(ctx);
   } else if (type == 2) {
     /* Normal FCC flow - server will start unicast stream */
     if (media_port_changed && fcc->media_port) {
@@ -225,7 +225,7 @@ int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf) {
           "FCC (Telecom): Too many redirects (%d), falling back to multicast",
           fcc->redirect_count);
       fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Too many redirects");
-      ctx->mcast_sock = stream_join_mcast_group(ctx);
+      stream_join_mcast_group(ctx);
       return 0;
     }
     logger(LOG_DEBUG,
@@ -240,7 +240,7 @@ int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf) {
            "FCC (Telecom): Unsupported type=%u, falling back to multicast",
            type);
     fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Unsupported type");
-    ctx->mcast_sock = stream_join_mcast_group(ctx);
+    stream_join_mcast_group(ctx);
   }
 
   return 0;
@@ -250,7 +250,7 @@ int fcc_telecom_send_term_packet(fcc_session_t *fcc, service_t *service,
                                  uint16_t seqn, const char *reason) {
   int r;
 
-  if (!fcc->fcc_sock || !fcc->fcc_server) {
+  if (fcc->fcc_sock < 0 || !fcc->fcc_server) {
     logger(LOG_DEBUG, "FCC: Cannot send termination - missing socket/server");
     return -1;
   }

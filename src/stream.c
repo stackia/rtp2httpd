@@ -24,9 +24,11 @@
  * function should be used instead of join_mcast_group() directly in all
  * stream-related code to ensure proper timeout handling.
  */
-int stream_join_mcast_group(stream_context_t *ctx) {
+void stream_join_mcast_group(stream_context_t *ctx) {
+  if (ctx->mcast_sock >= 0)
+    return;
   int sock = join_mcast_group(ctx->service);
-  if (sock > 0) {
+  if (sock >= 0) {
     /* Register socket with epoll immediately after creation */
     struct epoll_event ev;
     ev.events = EPOLLIN; /* Level-triggered mode for read events */
@@ -44,8 +46,9 @@ int stream_join_mcast_group(stream_context_t *ctx) {
     int64_t now = get_time_ms();
     ctx->last_mcast_data_time = now;
     ctx->last_mcast_rejoin_time = now;
+
+    ctx->mcast_sock = sock;
   }
-  return sock;
 }
 
 /*
@@ -78,7 +81,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
   socklen_t slen = sizeof(peer_addr);
 
   /* Process FCC socket events */
-  if (ctx->fcc.fcc_sock > 0 && fd == ctx->fcc.fcc_sock) {
+  if (ctx->fcc.fcc_sock >= 0 && fd == ctx->fcc.fcc_sock) {
     /* Allocate a fresh buffer from pool for this receive operation */
     buffer_ref_t *recv_buf = buffer_pool_alloc();
     if (!recv_buf) {
@@ -143,7 +146,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
   }
 
   /* Process multicast socket events */
-  if (ctx->mcast_sock > 0 && fd == ctx->mcast_sock) {
+  if (ctx->mcast_sock >= 0 && fd == ctx->mcast_sock) {
     /* Allocate a fresh buffer from pool for this receive operation */
     buffer_ref_t *recv_buf = buffer_pool_alloc();
     if (!recv_buf) {
@@ -198,7 +201,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
   }
 
   /* Process RTSP socket events */
-  if (ctx->rtsp.socket > 0 && fd == ctx->rtsp.socket) {
+  if (ctx->rtsp.socket >= 0 && fd == ctx->rtsp.socket) {
     /* Handle RTSP socket events (handshake and RTP data in PLAYING state) */
     int result = rtsp_handle_socket_event(&ctx->rtsp, events);
     if (result < 0) {
@@ -218,7 +221,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
   }
 
   /* Process RTSP RTP socket events (UDP mode) */
-  if (ctx->rtsp.rtp_socket > 0 && fd == ctx->rtsp.rtp_socket) {
+  if (ctx->rtsp.rtp_socket >= 0 && fd == ctx->rtsp.rtp_socket) {
     int result = rtsp_handle_udp_rtp_data(&ctx->rtsp, ctx->conn);
     if (result < 0) {
       return -1; /* Error */
@@ -230,7 +233,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
   }
 
   /* Handle UDP RTCP socket (for future RTCP processing) */
-  if (ctx->rtsp.rtcp_socket > 0 && fd == ctx->rtsp.rtcp_socket) {
+  if (ctx->rtsp.rtcp_socket >= 0 && fd == ctx->rtsp.rtcp_socket) {
     /* RTCP data processing could be added here in the future */
     /* For now, just consume the data to prevent buffer overflow */
     uint8_t rtcp_buffer[RTCP_BUFFER_SIZE];
@@ -252,6 +255,7 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
   ctx->service = service;
   ctx->epoll_fd = epoll_fd;
   ctx->status_index = status_index;
+  ctx->mcast_sock = -1;
   fcc_session_init(&ctx->fcc);
   ctx->fcc.status_index = status_index;
   rtsp_session_init(&ctx->rtsp);
@@ -319,7 +323,7 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
     /* Direct multicast join */
     /* Note: Both /rtp/ and /udp/ endpoints now use unified packet detection */
     /* Packets are automatically detected as RTP or raw UDP at receive time */
-    ctx->mcast_sock = stream_join_mcast_group(ctx);
+    stream_join_mcast_group(ctx);
     fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE,
                           "Direct multicast");
   }
@@ -332,7 +336,7 @@ int stream_tick(stream_context_t *ctx, int64_t now) {
     return 0;
 
   /* Periodic multicast rejoin (if enabled) */
-  if (config.mcast_rejoin_interval > 0 && ctx->mcast_sock > 0) {
+  if (config.mcast_rejoin_interval > 0 && ctx->mcast_sock >= 0) {
     int64_t elapsed_ms = now - ctx->last_mcast_rejoin_time;
     if (elapsed_ms >= config.mcast_rejoin_interval * 1000) {
       logger(LOG_DEBUG, "Multicast: Periodic rejoin (interval: %d seconds)",
@@ -350,7 +354,7 @@ int stream_tick(stream_context_t *ctx, int64_t now) {
   }
 
   /* Check for multicast stream timeout */
-  if (ctx->mcast_sock > 0) {
+  if (ctx->mcast_sock >= 0) {
     int64_t elapsed_ms = now - ctx->last_mcast_data_time;
     if (elapsed_ms >= MCAST_TIMEOUT_SEC * 1000) {
       logger(LOG_ERROR,
@@ -361,7 +365,7 @@ int stream_tick(stream_context_t *ctx, int64_t now) {
   }
 
   /* Check for FCC timeouts */
-  if (ctx->fcc.fcc_sock > 0) {
+  if (ctx->fcc.fcc_sock >= 0) {
     int64_t elapsed_ms = now - ctx->last_fcc_data_time;
     int timeout_ms = 0;
 
@@ -383,7 +387,7 @@ int stream_tick(stream_context_t *ctx, int64_t now) {
           fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE,
                                 "First unicast packet timeout");
         }
-        ctx->mcast_sock = stream_join_mcast_group(ctx);
+        stream_join_mcast_group(ctx);
       }
     } else if (ctx->fcc.state == FCC_STATE_UNICAST_ACTIVE ||
                ctx->fcc.state == FCC_STATE_MCAST_REQUESTED) {
@@ -397,9 +401,7 @@ int stream_tick(stream_context_t *ctx, int64_t now) {
                FCC_TIMEOUT_UNICAST_SEC);
         fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE,
                               "Unicast interrupted");
-        if (!ctx->mcast_sock) {
-          ctx->mcast_sock = stream_join_mcast_group(ctx);
-        }
+        stream_join_mcast_group(ctx);
       }
 
       /* Check if we've been waiting too long for sync notification */
@@ -487,9 +489,9 @@ int stream_context_cleanup(stream_context_t *ctx) {
   int rtsp_async = rtsp_session_cleanup(&ctx->rtsp);
 
   /* Close multicast socket if active (always safe to cleanup immediately) */
-  if (ctx->mcast_sock) {
+  if (ctx->mcast_sock >= 0) {
     worker_cleanup_socket_from_epoll(ctx->epoll_fd, ctx->mcast_sock);
-    ctx->mcast_sock = 0;
+    ctx->mcast_sock = -1;
     logger(LOG_DEBUG, "Multicast socket closed");
   }
 
