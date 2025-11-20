@@ -4,6 +4,7 @@
 #include "buffer_pool.h"
 #include "service.h"
 #include <netinet/in.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 /* Forward declarations */
@@ -51,8 +52,9 @@ typedef struct {
   int fcc_sock;
   struct sockaddr_in *fcc_server;
   struct sockaddr_in fcc_client;
-  uint16_t media_port; /* RTP media port (network byte order, for direct
-                          comparison with sin_port) */
+  uint16_t media_port;   /* RTP media port (network byte order, for direct
+                            comparison with sin_port) */
+  bool verify_server_ip; /* Verify server ip before processing packets */
   uint16_t current_seqn;
   uint16_t fcc_term_seqn;
   int fcc_term_sent;

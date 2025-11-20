@@ -216,7 +216,10 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
 
       /* Update unicast server IP and media port (keep fcc_server->sin_port as
        * control port7) */
-      fcc->fcc_server->sin_addr.s_addr = server_ip_be;
+      if (server_ip_be != 0) {
+        fcc->fcc_server->sin_addr.s_addr = server_ip_be;
+        fcc->verify_server_ip = true;
+      }
       if (server_port_be != 0) {
         fcc->media_port = server_port_be;
       }
@@ -264,7 +267,10 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
     uint32_t server_ip_be;
     memcpy(&server_ip_be, buf + 32, sizeof(server_ip_be));
 
-    fcc->fcc_server->sin_addr.s_addr = server_ip_be;
+    if (server_ip_be != 0) {
+      fcc->fcc_server->sin_addr.s_addr = server_ip_be;
+      fcc->verify_server_ip = true;
+    }
     if (server_port_be != 0) {
       fcc->fcc_server->sin_port = server_port_be;
     }
