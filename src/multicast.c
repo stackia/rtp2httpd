@@ -94,10 +94,11 @@ static int create_igmp_raw_socket(void) {
     logger(LOG_WARN, "Failed to set IP_HDRINCL: %s", strerror(errno));
   }
 
-  int router_alert = 1;
-  if (setsockopt(raw_sock, IPPROTO_IP, IP_ROUTER_ALERT, &router_alert,
-                 sizeof(router_alert)) < 0) {
-    logger(LOG_ERROR, "Failed to set IP_ROUTER_ALERT: %s", strerror(errno));
+  unsigned char router_alert_option[4] = {IPOPT_RA, 4, 0x00, 0x00};
+  if (setsockopt(raw_sock, IPPROTO_IP, IP_OPTIONS, router_alert_option,
+                 sizeof(router_alert_option)) < 0) {
+    logger(LOG_ERROR, "Failed to set Router Alert IP option: %s",
+           strerror(errno));
     close(raw_sock);
     return -1;
   }
