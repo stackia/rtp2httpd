@@ -64,22 +64,22 @@ select_github_mirror() {
 
     case "$choice" in
         1)
-            print_info "使用 GitHub 官方直连"
-            GITHUB_API="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
-            GITHUB_RELEASE="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
-            GITHUB_RAW="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
-            ;;
-        2)
             print_info "使用 gh-proxy.com 镜像加速"
             GITHUB_API="https://gh-proxy.com/https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
             GITHUB_RELEASE="https://gh-proxy.com/https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
             GITHUB_RAW="https://gh-proxy.com/https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
             ;;
-        *)
-            print_warn "无效选项，使用默认方式: GitHub 官方"
+        2)
+            print_info "使用 GitHub 官方直连"
             GITHUB_API="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
             GITHUB_RELEASE="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
             GITHUB_RAW="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
+            ;;
+        *)
+            print_warn "无效选项，使用默认方式: gh-proxy.com 镜像加速"
+            GITHUB_API="https://gh-proxy.com/https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
+            GITHUB_RELEASE="https://gh-proxy.com/https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
+            GITHUB_RAW="https://gh-proxy.com/https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
             ;;
     esac
 
@@ -225,6 +225,57 @@ get_latest_version() {
 
     print_info "最新版本: $version"
     echo "$version"
+}
+
+# 选择版本号
+select_version() {
+    local latest_version="$1"
+
+    # 去掉 v 前缀用于显示
+    local display_version="${latest_version#v}"
+
+    print_info "=========================================="
+    print_info "选择要安装的版本"
+    print_info "=========================================="
+    echo ""
+    print_info "最新版本: ${GREEN}${display_version}${NC}"
+    echo ""
+    printf "${CYAN}请输入要安装的版本号 [默认: ${display_version}]: ${NC}" >&2
+
+    # 读取用户输入（从 /dev/tty 读取以支持管道环境）
+    read user_version < /dev/tty
+
+    # 如果输入为空，使用默认值（最新版本）
+    if [ -z "$user_version" ]; then
+        user_version="$latest_version"
+        print_info "使用默认版本: ${display_version}"
+    else
+        # 去掉用户输入中可能带的 v 前缀
+        user_version="${user_version#v}"
+
+        print_info "用户选择版本: ${user_version}"
+
+        # 添加 v 前缀用于 API 查询
+        local version_tag="v${user_version}"
+
+        # 验证版本是否存在
+        print_info "验证版本是否存在..."
+        local version_check=$(curl -sSL "${GITHUB_API}/releases/tags/${version_tag}" 2>/dev/null | grep '"tag_name":')
+
+        if [ -z "$version_check" ]; then
+            print_error "版本 ${user_version} 不存在"
+            print_error "请访问 https://github.com/${REPO_OWNER}/${REPO_NAME}/releases 查看可用版本"
+            exit 1
+        fi
+
+        print_info "版本验证通过"
+
+        # 返回带 v 前缀的版本号
+        user_version="$version_tag"
+    fi
+
+    echo ""
+    echo "$user_version"
 }
 
 # 获取指定版本的所有 release assets
@@ -376,7 +427,10 @@ main() {
     ARCH=$(get_cpu_arch)
 
     # 获取最新版本
-    VERSION=$(get_latest_version)
+    LATEST_VERSION=$(get_latest_version)
+
+    # 让用户选择要安装的版本
+    VERSION=$(select_version "$LATEST_VERSION")
 
     # 获取该版本的所有 assets
     ASSETS=$(get_release_assets "$VERSION")
