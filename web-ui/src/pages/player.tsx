@@ -1,6 +1,6 @@
 import { StrictMode, useEffect, useState, useCallback, useMemo, useRef, Activity } from "react";
 import { createRoot } from "react-dom/client";
-import mpegts from "mpegts.js";
+import mpegts from "@rtp2httpd/mpegts.js";
 import { Channel, M3UMetadata, PlayMode } from "../types/player";
 import { parseM3U, buildCatchupSegments, normalizeUrl } from "../lib/m3u-parser";
 import { loadEPG, getCurrentProgram, getEPGChannelId, EPGData } from "../lib/epg-parser";
@@ -93,7 +93,7 @@ function PlayerPage() {
 
     const now = new Date();
 
-    if (streamStartTime.getTime() > now.getTime() - 1000) {
+    if (streamStartTime.getTime() > now.getTime() - 3000) {
       setPlaybackSegments([
         {
           url: currentChannel.url,

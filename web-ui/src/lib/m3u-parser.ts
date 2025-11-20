@@ -1,4 +1,4 @@
-import mpegts from "mpegts.js";
+import mpegts from "@rtp2httpd/mpegts.js";
 import { M3UMetadata, Channel } from "../types/player";
 
 /**

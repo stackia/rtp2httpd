@@ -11,26 +11,25 @@
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@rtp2httpd/mpegts.js": "^2.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^0.553.0",
-    "mpegts.js": "^1.8.0",
+    "lucide-react": "^0.554.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "tailwind-merge": "^3.3.1"
+    "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.1.16",
-    "@types/node": "^24.9.1",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
-    "@vitejs/plugin-react-swc": "^4.2.0",
-    "eslint": "^9.38.0",
+    "@tailwindcss/vite": "^4.1.17",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.6",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react-swc": "^4.2.2",
+    "eslint": "^9.39.1",
     "neostandard": "^0.12.2",
-    "prettier": "^3.4.2",
-    "tailwindcss": "^4.1.16",
+    "prettier": "^3.6.2",
+    "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
-    "vite": "^7.1.12",
-    "vite-plugin-singlefile": "^2.3.0"
+    "vite": "^7.2.4"
   }
 }
