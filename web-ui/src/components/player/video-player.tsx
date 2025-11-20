@@ -195,24 +195,33 @@ export function VideoPlayer({
         // Blur any focused element
         if (document.activeElement && document.activeElement !== document.body) {
           (document.activeElement as HTMLElement).blur();
-        }
-        // Clear digit buffer if active
-        if (digitBuffer) {
+        } else if (digitBuffer) {
           setDigitBuffer("");
           if (digitTimeoutRef.current) {
             clearTimeout(digitTimeoutRef.current);
             digitTimeoutRef.current = null;
           }
+        } else if (showControls) {
+          if (hideControlsTimeoutRef.current) {
+            clearTimeout(hideControlsTimeoutRef.current);
+          }
+          setShowControls(false);
+        } else {
+          resetHideTimer();
         }
         break;
 
       case "ArrowUp":
+      case "PageDown":
+      case "ChannelDown":
         e.preventDefault();
         // Previous channel
         onChannelNavigate?.("prev");
         break;
 
       case "ArrowDown":
+      case "PageUp":
+      case "ChannelUp":
         e.preventDefault();
         // Next channel
         onChannelNavigate?.("next");
@@ -257,6 +266,7 @@ export function VideoPlayer({
 
       case "s":
       case "S":
+      case "BrowserFavorites":
         e.preventDefault();
         // Toggle sidebar
         onToggleSidebar?.();
