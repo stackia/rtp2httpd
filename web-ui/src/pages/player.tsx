@@ -4,8 +4,11 @@ import mpegts from "mpegts.js";
 import { Channel, M3UMetadata, PlayMode } from "../types/player";
 import { parseM3U, buildCatchupSegments, normalizeUrl } from "../lib/m3u-parser";
 import { loadEPG, getCurrentProgram, getEPGChannelId, EPGData } from "../lib/epg-parser";
-import { ChannelList } from "../components/player/channel-list";
-import { EPGView } from "../components/player/epg-view";
+import {
+  ChannelList,
+  nextScrollBehaviorRef as channelListNextScrollBehaviorRef,
+} from "../components/player/channel-list";
+import { EPGView, nextScrollBehaviorRef as epgViewNextScrollBehaviorRef } from "../components/player/epg-view";
 import { VideoPlayer } from "../components/player/video-player";
 import { SettingsDropdown } from "../components/player/settings-dropdown";
 import { Card } from "../components/ui/card";
@@ -341,7 +344,10 @@ function PlayerPage() {
             {/* Sidebar Tabs */}
             <div className="flex items-center border-b border-border shrink-0">
               <button
-                onClick={() => setSidebarView("channels")}
+                onClick={() => {
+                  channelListNextScrollBehaviorRef.current = "instant";
+                  setSidebarView("channels");
+                }}
                 className={`flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium ${
                   sidebarView === "channels"
                     ? "border-b-2 border-primary text-primary"
@@ -351,7 +357,10 @@ function PlayerPage() {
                 {t("channels")} ({metadata?.channels.length || 0})
               </button>
               <button
-                onClick={() => setSidebarView("epg")}
+                onClick={() => {
+                  epgViewNextScrollBehaviorRef.current = "instant";
+                  setSidebarView("epg");
+                }}
                 className={`flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium ${
                   sidebarView === "epg"
                     ? "border-b-2 border-primary text-primary"

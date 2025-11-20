@@ -1,4 +1,4 @@
-import { useMemo, useRef, useLayoutEffect } from "react";
+import { useMemo, useRef, useLayoutEffect, RefObject } from "react";
 import { Circle, History } from "lucide-react";
 import { EPGProgram } from "../../types/player";
 import { EPGData } from "../../lib/epg-parser";
@@ -16,6 +16,8 @@ interface EPGViewProps {
   currentPlayingProgram: EPGProgram | null;
 }
 
+export const nextScrollBehaviorRef: RefObject<"smooth" | "instant" | "skip"> = { current: "instant" };
+
 export function EPGView({
   channelId,
   epgData,
@@ -27,7 +29,6 @@ export function EPGView({
 }: EPGViewProps) {
   const t = usePlayerTranslation(locale);
   const currentProgramRef = useRef<HTMLDivElement>(null);
-  const isUserClickRef = useRef(false);
 
   // Group programs by date
   const programsByDate = useMemo(() => {
@@ -61,24 +62,25 @@ export function EPGView({
   }, [channelId, epgData]);
 
   // Auto-scroll to center current/playing program when it changes or channel changes
-  // But skip if the change was caused by user clicking on a program
   useLayoutEffect(() => {
-    if (isUserClickRef.current) {
-      // User just clicked, skip auto-scroll
-      isUserClickRef.current = false;
+    setTimeout(() => {
+      nextScrollBehaviorRef.current = "smooth";
+    }, 0);
+
+    if (nextScrollBehaviorRef.current === "skip") {
       return;
     }
 
     if (currentProgramRef.current) {
       currentProgramRef.current.scrollIntoView({
-        behavior: "smooth",
+        behavior: nextScrollBehaviorRef.current,
         block: "center",
       });
     }
   }, [currentPlayingProgram, channelId, channelPrograms]);
 
   const handleProgramClick = (programStart: Date, programEnd: Date) => {
-    isUserClickRef.current = true;
+    nextScrollBehaviorRef.current = "skip";
     onProgramSelect(programStart, programEnd);
   };
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useLayoutEffect } from "react";
+import { useState, useMemo, useRef, useLayoutEffect, RefObject } from "react";
 import { Search, History } from "lucide-react";
 import { Channel } from "../../types/player";
 import { Card } from "../ui/card";
@@ -14,6 +14,8 @@ interface ChannelListProps {
   settingsSlot?: React.ReactNode;
 }
 
+export const nextScrollBehaviorRef: RefObject<"smooth" | "instant" | "skip"> = { current: "instant" };
+
 export function ChannelList({
   channels,
   groups,
@@ -27,7 +29,6 @@ export function ChannelList({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const currentChannelRef = useRef<HTMLDivElement>(null);
-  const isUserClickRef = useRef(false);
 
   // Filter and sort channels
   const filteredChannels = useMemo(() => {
@@ -44,6 +45,8 @@ export function ChannelList({
 
       return nameMatches || idMatches;
     });
+
+    nextScrollBehaviorRef.current = "instant";
 
     // Sort channels: exact ID match first, then partial ID match, then name match
     if (searchQuery) {
@@ -72,29 +75,33 @@ export function ChannelList({
         return 0;
       });
     }
-
     return filtered;
   }, [channels, searchQuery, selectedGroup]);
 
+  const filteredChannelsHasCurrentChannel = useMemo(() => {
+    return currentChannel && filteredChannels.some((channel) => channel.id === currentChannel.id);
+  }, [filteredChannels, currentChannel]);
+
   // Auto-scroll to center current channel when it changes or filters change
-  // But skip if the change was caused by user clicking on a channel
   useLayoutEffect(() => {
-    if (isUserClickRef.current) {
-      // User just clicked, skip auto-scroll
-      isUserClickRef.current = false;
+    setTimeout(() => {
+      nextScrollBehaviorRef.current = "smooth";
+    }, 0);
+
+    if (nextScrollBehaviorRef.current === "skip") {
       return;
     }
 
     if (currentChannelRef.current) {
       currentChannelRef.current.scrollIntoView({
-        behavior: "smooth",
+        behavior: nextScrollBehaviorRef.current,
         block: "center",
       });
     }
   }, [currentChannel, filteredChannels]);
 
   const handleChannelClick = (channel: Channel) => {
-    isUserClickRef.current = true;
+    nextScrollBehaviorRef.current = "skip";
     onChannelSelect(channel);
   };
 
@@ -163,10 +170,14 @@ export function ChannelList({
       {/* Channel List */}
       <div className="flex-1 overflow-y-auto px-3 md:px-4 py-2 md:py-3">
         <div className="space-y-1.5">
-          {filteredChannels.map((channel) => (
+          {filteredChannels.map((channel, i) => (
             <Card
               key={channel.id}
-              ref={currentChannel?.id === channel.id ? currentChannelRef : null}
+              ref={
+                (filteredChannelsHasCurrentChannel ? currentChannel?.id === channel.id : i === 0)
+                  ? currentChannelRef
+                  : null
+              }
               className={`group cursor-pointer overflow-hidden border transition-all duration-200 ${
                 currentChannel?.id === channel.id
                   ? "border-primary bg-primary/5 shadow-md"
