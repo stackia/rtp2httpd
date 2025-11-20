@@ -182,12 +182,15 @@ int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf) {
     media_port_changed = 1;
   }
 
-  if (new_fcc_ip_be && new_fcc_ip_be != fcc->fcc_server->sin_addr.s_addr) {
-    fcc->fcc_server->sin_addr.s_addr = new_fcc_ip_be;
-    logger(LOG_DEBUG, "FCC (Telecom): Server provided new IP: %s",
-           inet_ntoa(fcc->fcc_server->sin_addr));
-    signal_port_changed = 1;
-    media_port_changed = 1;
+  if (new_fcc_ip_be != 0) {
+    fcc->verify_server_ip = true;
+    if (new_fcc_ip_be != fcc->fcc_server->sin_addr.s_addr) {
+      fcc->fcc_server->sin_addr.s_addr = new_fcc_ip_be;
+      logger(LOG_DEBUG, "FCC (Telecom): Server provided new IP: %s",
+             inet_ntoa(fcc->fcc_server->sin_addr));
+      signal_port_changed = 1;
+      media_port_changed = 1;
+    }
   }
 
   /* Handle different action codes */

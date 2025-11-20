@@ -110,7 +110,8 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
     }
 
     /* Verify packet comes from expected FCC server */
-    if (peer_addr.sin_addr.s_addr != ctx->fcc.fcc_server->sin_addr.s_addr) {
+    if (ctx->fcc.verify_server_ip &&
+        peer_addr.sin_addr.s_addr != ctx->fcc.fcc_server->sin_addr.s_addr) {
       buffer_ref_put(recv_buf);
       return 0;
     }
