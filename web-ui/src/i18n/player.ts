@@ -27,6 +27,7 @@ const base: TranslationDict = {
   onAir: "On Air",
   replay: "Replay",
   nowPlaying: "Now Playing",
+  excellentProgram: "Excellent Program",
 
   // Video player
   selectChannelToWatch: "Select a channel to start watching",
@@ -109,6 +110,7 @@ const zhHans: TranslationDict = {
   onAir: "直播中",
   replay: "回放",
   nowPlaying: "正在播放",
+  excellentProgram: "精彩节目",
 
   // 视频播放器
   selectChannelToWatch: "选择一个频道开始观看",
@@ -191,6 +193,7 @@ const zhHant: TranslationDict = {
   onAir: "直播中",
   replay: "重播",
   nowPlaying: "正在播放",
+  excellentProgram: "精彩節目",
 
   // 視訊播放器
   selectChannelToWatch: "選擇一個頻道開始觀看",

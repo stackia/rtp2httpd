@@ -207,7 +207,7 @@ export function PlayerControls({
           <div className="flex-1 truncate">
             <span className="font-medium">{formatTime(startTime)}</span>
             <span className="mx-1 md:mx-2 text-white/40">|</span>
-            <span className="text-white/90">{currentProgram.title}</span>
+            <span className="text-white/90">{currentProgram.title || t("excellentProgram")}</span>
           </div>
           <span className="font-medium ml-2">{formatTime(endTime)}</span>
         </div>

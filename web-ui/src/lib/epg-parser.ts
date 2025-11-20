@@ -54,7 +54,7 @@ export async function parseEPG(xmlText: string, validChannelIds?: Set<string>): 
 
     const titleElement = prog.getElementsByTagName("title")[0];
 
-    const title = titleElement?.textContent || "Excellent Program";
+    const title = titleElement?.textContent;
 
     const program: EPGProgram = {
       id: `${channelId}-${start.getTime()}`,
@@ -197,6 +197,121 @@ export function getTodayPrograms(channelId: string, epgData: EPGData): EPGProgra
   const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
 
   return getChannelPrograms(channelId, epgData, startOfDay, endOfDay);
+}
+
+/**
+ * Generate fallback programs for time gaps
+ * Creates 2-hour blocks titled "精彩节目" for periods without real EPG data
+ * @param existingPrograms - Existing programs for the channel (must be sorted by start time)
+ * @param channelId - Channel ID for generating program IDs
+ * @param lookbackHours - How many hours back from now to generate fallback programs (default: 48)
+ * @returns Array of fallback programs that don't overlap with existing programs
+ */
+export function generateFallbackPrograms(
+  existingPrograms: EPGProgram[],
+  channelId: string,
+  lookbackHours: number,
+): EPGProgram[] {
+  const now = new Date();
+  const startTime = new Date(now.getTime() - lookbackHours * 60 * 60 * 1000);
+  const fallbackPrograms: EPGProgram[] = [];
+
+  // Generate 2-hour blocks for the entire time range
+  const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+  let currentStart = new Date(startTime);
+
+  // Round down to nearest 2-hour boundary for cleaner segments
+  const hoursSinceEpoch = Math.floor(currentStart.getTime() / (60 * 60 * 1000));
+  const roundedHours = Math.floor(hoursSinceEpoch / 2) * 2;
+  currentStart = new Date(roundedHours * 60 * 60 * 1000);
+
+  while (currentStart < now) {
+    const currentEnd = new Date(currentStart.getTime() + TWO_HOURS_MS);
+
+    // Check if this time slot overlaps with any existing program
+    const hasOverlap = existingPrograms.some(
+      (p) =>
+        (p.start <= currentStart && p.end > currentStart) ||
+        (p.start < currentEnd && p.end >= currentEnd) ||
+        (p.start >= currentStart && p.end <= currentEnd),
+    );
+
+    if (!hasOverlap) {
+      fallbackPrograms.push({
+        id: `fallback-${channelId}-${currentStart.getTime()}`,
+        start: currentStart,
+        end: currentEnd,
+      });
+    }
+
+    currentStart = currentEnd;
+  }
+
+  return fallbackPrograms;
+}
+
+/**
+ * Fill gaps in EPG data with fallback programs
+ * Only processes channels that have catchup support
+ * @param epgData - Existing EPG data
+ * @param channels - List of channels from M3U playlist
+ * @param lookbackHours - How many hours back from now to generate fallback programs (default: 48)
+ * @returns EPG data with gaps filled
+ */
+export function fillEPGGaps(
+  epgData: EPGData,
+  channels: { tvgId?: string; tvgName?: string; name: string; catchup?: string; catchupSource?: string }[],
+  lookbackHours: number = 72,
+): EPGData {
+  const filledData = { ...epgData };
+
+  for (const channel of channels) {
+    // Only process channels with catchup support
+    if (!channel.catchup || !channel.catchupSource) {
+      continue;
+    }
+
+    // Get the EPG channel ID using fallback logic
+    const epgChannelId =
+      channel.tvgId && filledData[channel.tvgId]
+        ? channel.tvgId
+        : channel.tvgName && filledData[channel.tvgName]
+          ? channel.tvgName
+          : channel.name && filledData[channel.name]
+            ? channel.name
+            : null;
+
+    let existingPrograms: EPGProgram[] = [];
+    const targetChannelId = epgChannelId || channel.tvgId || channel.tvgName || channel.name;
+
+    if (epgChannelId) {
+      existingPrograms = filledData[epgChannelId] || [];
+    }
+
+    // Generate fallback programs for gaps
+    const fallbackPrograms = generateFallbackPrograms(existingPrograms, targetChannelId, lookbackHours);
+
+    if (fallbackPrograms.length > 0) {
+      // Merge existing and fallback programs, then sort by start time
+      const mergedPrograms = [...existingPrograms, ...fallbackPrograms].sort(
+        (a, b) => a.start.getTime() - b.start.getTime(),
+      );
+
+      // Ensure all possible channel ID keys point to the same array
+      filledData[targetChannelId] = mergedPrograms;
+      if (channel.tvgId && channel.tvgId !== targetChannelId) {
+        filledData[channel.tvgId] = mergedPrograms;
+      }
+      if (channel.tvgName && channel.tvgName !== targetChannelId) {
+        filledData[channel.tvgName] = mergedPrograms;
+      }
+      if (channel.name !== targetChannelId) {
+        filledData[channel.name] = mergedPrograms;
+      }
+    }
+  }
+
+  return filledData;
 }
 
 /**

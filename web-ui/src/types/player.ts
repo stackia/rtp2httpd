@@ -12,7 +12,7 @@ export interface Channel {
 
 export interface EPGProgram {
   id: string;
-  title: string;
+  title?: string;
   start: Date;
   end: Date;
 }
