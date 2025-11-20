@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import mpegts from "@rtp2httpd/mpegts.js";
 import { Channel, M3UMetadata, PlayMode } from "../types/player";
 import { parseM3U, buildCatchupSegments, normalizeUrl } from "../lib/m3u-parser";
-import { loadEPG, getCurrentProgram, getEPGChannelId, EPGData } from "../lib/epg-parser";
+import { loadEPG, getCurrentProgram, getEPGChannelId, EPGData, fillEPGGaps } from "../lib/epg-parser";
 import {
   ChannelList,
   nextScrollBehaviorRef as channelListNextScrollBehaviorRef,
@@ -224,11 +224,20 @@ function PlayerPage() {
         // Load EPG and filter to only channels in M3U
         loadEPG(epgUrl, validChannelIds)
           .then((epg) => {
-            setEpgData(epg);
+            // Fill gaps in EPG data with 2-hour fallback programs for catchup-capable channels
+            const filledEpg = fillEPGGaps(epg, parsed.channels);
+            setEpgData(filledEpg);
           })
           .catch((err) => {
             console.error("Failed to load EPG:", err);
+            // Even if EPG loading fails, generate fallback programs for catchup-capable channels
+            const fallbackEpg = fillEPGGaps({}, parsed.channels);
+            setEpgData(fallbackEpg);
           });
+      } else {
+        // No EPG URL provided, generate fallback programs for catchup-capable channels
+        const fallbackEpg = fillEPGGaps({}, parsed.channels);
+        setEpgData(fallbackEpg);
       }
 
       // Try to restore last played channel, otherwise select first channel

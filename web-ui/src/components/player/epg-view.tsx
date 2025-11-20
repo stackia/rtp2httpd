@@ -209,7 +209,9 @@ export function EPGView({
 
                           {/* Middle-Right: Title and Description */}
                           <div className="flex-1 overflow-hidden min-w-0">
-                            <div className="text-sm md:text-base font-semibold leading-tight">{program.title}</div>
+                            <div className="text-sm md:text-base font-semibold leading-tight">
+                              {program.title || t("excellentProgram")}
+                            </div>
                           </div>
 
                           {/* Right: Status Icon (unified position) */}
