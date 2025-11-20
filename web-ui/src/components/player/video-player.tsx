@@ -254,7 +254,9 @@ export function VideoPlayer({
       case "M":
         e.preventDefault();
         // Toggle mute
-        setIsMuted((prev) => !prev);
+        if (playerRef.current) {
+          playerRef.current.muted = !playerRef.current.muted;
+        }
         break;
 
       case "f":
