@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import mpegts from "mpegts.js";
 import { Play } from "lucide-react";
 import { Channel, EPGProgram } from "../../types/player";
@@ -18,12 +18,10 @@ interface VideoPlayerProps {
   streamStartTime: Date;
   currentVideoTime: number;
   onCurrentVideoTimeChange: (time: number) => void;
-  onPrevChannel?: () => void;
-  onNextChannel?: () => void;
+  onChannelNavigate?: (target: "prev" | "next" | number) => void;
   showSidebar?: boolean;
   onToggleSidebar?: () => void;
   onFullscreenToggle?: () => void;
-  onSearchInput?: (text: string) => void;
   force16x9?: boolean;
 }
 
@@ -39,12 +37,10 @@ export function VideoPlayer({
   streamStartTime,
   currentVideoTime,
   onCurrentVideoTimeChange,
-  onPrevChannel,
-  onNextChannel,
+  onChannelNavigate,
   showSidebar = true,
   onToggleSidebar,
   onFullscreenToggle,
-  onSearchInput,
   force16x9 = true,
 }: VideoPlayerProps) {
   const t = usePlayerTranslation(locale);
@@ -66,6 +62,10 @@ export function VideoPlayer({
   const retryCountRef = useRef<number>(0);
   const isRetryingRef = useRef<boolean>(false);
   const stablePlaybackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Digit input state
+  const [digitBuffer, setDigitBuffer] = useState("");
+  const digitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Debounce loading indicator to prevent flickering on fast loads
   useEffect(() => {
@@ -134,115 +134,6 @@ export function VideoPlayer({
     }
   }, []);
 
-  // Keyboard controls
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is typing in an input field
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-
-      // Check if it's a number key (0-9)
-      const isNumberKey = /^[0-9]$/.test(e.key);
-
-      // If it's a number key, focus search and append the number
-      if (isNumberKey && onSearchInput) {
-        e.preventDefault();
-        onSearchInput(e.key);
-        return;
-      }
-
-      switch (e.key) {
-        case "Escape":
-          e.preventDefault();
-          // Blur any focused element
-          if (document.activeElement && document.activeElement !== document.body) {
-            (document.activeElement as HTMLElement).blur();
-          }
-          break;
-
-        case "ArrowUp":
-          e.preventDefault();
-          // Previous channel
-          if (onPrevChannel) {
-            onPrevChannel();
-          }
-          break;
-
-        case "ArrowDown":
-          e.preventDefault();
-          // Next channel
-          if (onNextChannel) {
-            onNextChannel();
-          }
-          break;
-
-        case "ArrowLeft": {
-          e.preventDefault();
-          // Seek backward 5 seconds
-          const currentAbsoluteTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
-          const newSeekTime = new Date(currentAbsoluteTime.getTime() - 5000);
-          handleSeek(newSeekTime);
-          break;
-        }
-
-        case "ArrowRight": {
-          e.preventDefault();
-          // Seek forward 5 seconds
-          const currentAbsoluteTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
-          const newSeekTime = new Date(currentAbsoluteTime.getTime() + 5000);
-          handleSeek(newSeekTime);
-          break;
-        }
-
-        case " ": // Space
-          e.preventDefault();
-          togglePlayPause();
-          break;
-
-        case "m":
-        case "M":
-          e.preventDefault();
-          // Toggle mute
-          setIsMuted((prev) => !prev);
-          break;
-
-        case "f":
-        case "F":
-          e.preventDefault();
-          // Toggle fullscreen
-          if (onFullscreenToggle) {
-            onFullscreenToggle();
-          }
-          break;
-
-        case "s":
-        case "S":
-          e.preventDefault();
-          // Toggle sidebar
-          if (onToggleSidebar) {
-            onToggleSidebar();
-          }
-          break;
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [
-    handleSeek,
-    streamStartTime,
-    currentVideoTime,
-    onPrevChannel,
-    onNextChannel,
-    onFullscreenToggle,
-    onToggleSidebar,
-    onSearchInput,
-    togglePlayPause,
-  ]);
-
   // Reset hide timer for controls
   const resetHideTimer = useCallback(() => {
     setShowControls(true);
@@ -252,6 +143,133 @@ export function VideoPlayer({
     hideControlsTimeoutRef.current = setTimeout(() => {
       setShowControls(false);
     }, 3000);
+  }, []);
+
+  const handleKeyDown = useEffectEvent((e: KeyboardEvent) => {
+    // Ignore if user is typing in an input field
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+
+    // Check if it's a number key (0-9)
+    const isNumberKey = /^[0-9]$/.test(e.key);
+
+    // If it's a number key, append to buffer
+    if (isNumberKey) {
+      e.preventDefault();
+      resetHideTimer();
+
+      // Clear existing timeout
+      if (digitTimeoutRef.current) {
+        clearTimeout(digitTimeoutRef.current);
+      }
+
+      // Set new timeout to confirm selection
+      const newBuffer = digitBuffer + e.key;
+      digitTimeoutRef.current = setTimeout(() => {
+        onChannelNavigate?.(parseInt(newBuffer, 10));
+        setDigitBuffer("");
+        digitTimeoutRef.current = null;
+      }, 1000); // 1000ms delay
+      setDigitBuffer(newBuffer);
+      return;
+    }
+
+    switch (e.key) {
+      case "Enter":
+        e.preventDefault();
+        if (digitBuffer) {
+          if (digitTimeoutRef.current) {
+            clearTimeout(digitTimeoutRef.current);
+            digitTimeoutRef.current = null;
+          }
+          onChannelNavigate?.(parseInt(digitBuffer, 10));
+          setDigitBuffer("");
+        } else {
+          onToggleSidebar?.();
+        }
+        break;
+
+      case "Escape":
+        e.preventDefault();
+        // Blur any focused element
+        if (document.activeElement && document.activeElement !== document.body) {
+          (document.activeElement as HTMLElement).blur();
+        }
+        // Clear digit buffer if active
+        if (digitBuffer) {
+          setDigitBuffer("");
+          if (digitTimeoutRef.current) {
+            clearTimeout(digitTimeoutRef.current);
+            digitTimeoutRef.current = null;
+          }
+        }
+        break;
+
+      case "ArrowUp":
+        e.preventDefault();
+        // Previous channel
+        onChannelNavigate?.("prev");
+        break;
+
+      case "ArrowDown":
+        e.preventDefault();
+        // Next channel
+        onChannelNavigate?.("next");
+        break;
+
+      case "ArrowLeft": {
+        e.preventDefault();
+        // Seek backward 5 seconds
+        const currentAbsoluteTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
+        const newSeekTime = new Date(currentAbsoluteTime.getTime() - 5000);
+        handleSeek(newSeekTime);
+        break;
+      }
+
+      case "ArrowRight": {
+        e.preventDefault();
+        // Seek forward 5 seconds
+        const currentAbsoluteTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
+        const newSeekTime = new Date(currentAbsoluteTime.getTime() + 5000);
+        handleSeek(newSeekTime);
+        break;
+      }
+
+      case " ": // Space
+        e.preventDefault();
+        togglePlayPause();
+        break;
+
+      case "m":
+      case "M":
+        e.preventDefault();
+        // Toggle mute
+        setIsMuted((prev) => !prev);
+        break;
+
+      case "f":
+      case "F":
+        e.preventDefault();
+        // Toggle fullscreen
+        onFullscreenToggle?.();
+        break;
+
+      case "s":
+      case "S":
+        e.preventDefault();
+        // Toggle sidebar
+        onToggleSidebar?.();
+        break;
+    }
+  });
+
+  // Keyboard controls
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
   }, []);
 
   // Handle mouse leave - hide controls immediately
@@ -285,6 +303,15 @@ export function VideoPlayer({
       }
     };
   }, [resetHideTimer]);
+
+  // Cleanup digit timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (digitTimeoutRef.current) {
+        clearTimeout(digitTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Initialize mpegts.js
   useEffect(() => {
@@ -622,11 +649,17 @@ export function VideoPlayer({
                 }}
               />
             )}
-            {/* Bottom Row: Channel Info */}
+            {/* Bottom Row: Channel Info & Digit Input */}
             <div className="flex items-center justify-center w-full">
               <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
-                <span className="rounded bg-white/10 px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium text-white/60 shrink-0">
-                  {channel.id}
+                <span
+                  className={`rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition-all duration-300 ${
+                    digitBuffer
+                      ? "bg-primary text-primary-foreground scale-110 shadow-lg ring-2 ring-primary/50"
+                      : "bg-white/10 text-white/60"
+                  }`}
+                >
+                  {digitBuffer || channel.id}
                 </span>
                 <h2 className="text-xs md:text-base font-bold text-white truncate">{channel.name}</h2>
                 <span className="text-xs md:text-sm text-white/50 hidden sm:inline">·</span>
