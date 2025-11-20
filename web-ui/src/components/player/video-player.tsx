@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import mpegts from "mpegts.js";
+import mpegts from "@rtp2httpd/mpegts.js";
 import { Play } from "lucide-react";
 import { Channel, EPGProgram } from "../../types/player";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
