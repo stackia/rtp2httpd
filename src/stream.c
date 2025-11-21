@@ -11,11 +11,33 @@
 #include "worker.h"
 #include <errno.h>
 #include <netinet/in.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+static bool is_rtcp_packet(const uint8_t *data, size_t len) {
+  if (!data || len < 8) {
+    return false;
+  }
+
+  uint8_t version = (data[0] >> 6) & 0x03;
+  if (version != 2) {
+    return false;
+  }
+
+  uint8_t payload_type = data[1];
+  if (payload_type < 200 || payload_type > 211) {
+    return false;
+  }
+
+  uint16_t length_words = ((uint16_t)data[2] << 8) | data[3];
+  size_t packet_len = (size_t)(length_words + 1) * 4;
+
+  return packet_len > 0 && packet_len <= len;
+}
 
 /*
  * Wrapper for join_mcast_group that also resets the multicast data timeout
@@ -122,7 +144,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
     /* Handle different types of FCC packets */
     uint8_t *recv_data = (uint8_t *)recv_buf->data;
     int result = 0;
-    if (peer_addr.sin_port == ctx->fcc.fcc_server->sin_port) {
+    if (is_rtcp_packet(recv_data, (size_t)actualr)) {
       /* RTCP control message from FCC server */
       int res = fcc_handle_server_response(ctx, recv_data, actualr);
       if (res == 1) {
@@ -136,7 +158,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
         return 0; /* Redirect handled successfully */
       }
       result = res;
-    } else if (peer_addr.sin_port == ctx->fcc.media_port) {
+    } else {
       /* RTP media packet from FCC unicast stream */
       result = fcc_handle_unicast_media(ctx, recv_buf);
     }
