@@ -74,7 +74,7 @@ start_instance() {
         [ "$aux" = 1 ] && procd_append_param command "--xff"
   fi
 
-  config_get_bool aux "$cfg" 'respawn' '0'
+  config_get_bool aux "$cfg" 'respawn' '1'
   [ "$aux" = 1 ] && procd_set_param respawn
 
   config_get config_update_time "$cfg" 'config_update_time' '0'
