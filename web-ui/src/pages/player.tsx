@@ -25,6 +25,7 @@ import {
   saveForce16x9,
   getForce16x9,
 } from "../lib/player-storage";
+import { cn } from "../lib/utils";
 
 function PlayerPage() {
   const { locale, setLocale } = useLocale("player-locale");
@@ -36,7 +37,6 @@ function PlayerPage() {
   const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
   const [playMode, setPlayMode] = useState<PlayMode>("live");
   const [playbackSegments, setPlaybackSegments] = useState<mpegts.MediaSegment[]>([]);
-  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRevealing, setIsRevealing] = useState(false);
@@ -56,13 +56,10 @@ function PlayerPage() {
   // Track current video playback time in seconds (relative to stream start)
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
 
-  // Update current time every second
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
+  const currentTime = useMemo(
+    () => new Date(streamStartTime.getTime() + currentVideoTime * 1000),
+    [streamStartTime, currentVideoTime],
+  );
 
   // Track fullscreen state
   useEffect(() => {
@@ -128,10 +125,6 @@ function PlayerPage() {
     },
     [streamStartTime],
   );
-
-  const handleVideoRetry = useCallback(() => {
-    setPlaybackSegments((segments) => [...segments]);
-  }, []);
 
   const selectChannel = useCallback((channel: Channel) => {
     setCurrentChannel(channel);
@@ -257,7 +250,7 @@ function PlayerPage() {
 
       // Trigger reveal animation
       setIsRevealing(true);
-      setTimeout(() => {
+      window.setTimeout(() => {
         setIsLoading(false);
       }, 500); // Match zoom-fade-out animation duration
     } catch (err) {
@@ -314,6 +307,40 @@ function PlayerPage() {
     saveForce16x9(enabled);
   }, []);
 
+  const handleToggleSidebar = useCallback(() => {
+    setShowSidebar((prev) => {
+      const newState = !prev;
+      saveSidebarVisible(newState);
+      return newState;
+    });
+  }, []);
+
+  const settingsSlot = useMemo(() => {
+    return (
+      <div className="ml-2">
+        <SettingsDropdown
+          locale={locale}
+          onLocaleChange={setLocale}
+          theme={theme}
+          onThemeChange={setTheme}
+          catchupTailOffset={catchupTailOffset}
+          onCatchupTailOffsetChange={handleCatchupTailOffsetChange}
+          force16x9={force16x9}
+          onForce16x9Change={handleForce16x9Change}
+        />
+      </div>
+    );
+  }, [
+    locale,
+    theme,
+    catchupTailOffset,
+    force16x9,
+    setLocale,
+    setTheme,
+    handleCatchupTailOffsetChange,
+    handleForce16x9Change,
+  ]);
+
   // Main UI content
   const mainContent = (
     <div ref={pageContainerRef} className="flex h-dvh flex-col bg-background">
@@ -331,129 +358,82 @@ function PlayerPage() {
             locale={locale}
             currentProgram={currentVideoProgram}
             onSeek={handleVideoSeek}
-            onRetry={handleVideoRetry}
             streamStartTime={streamStartTime}
             currentVideoTime={currentVideoTime}
             onCurrentVideoTimeChange={setCurrentVideoTime}
             onChannelNavigate={handleChannelNavigate}
             showSidebar={showSidebar}
-            onToggleSidebar={() => {
-              const newState = !showSidebar;
-              setShowSidebar(newState);
-              saveSidebarVisible(newState);
-            }}
+            onToggleSidebar={handleToggleSidebar}
             onFullscreenToggle={handleFullscreenToggle}
             force16x9={force16x9}
           />
         </div>
 
         {/* Sidebar - Mobile: always visible (below video, hidden in fullscreen), Desktop: toggle-able side panel (visible in fullscreen) */}
-        <Activity mode={(showSidebar || isMobile) && !(isFullscreen && isMobile) ? "visible" : "hidden"}>
-          <div className="flex flex-col w-full md:w-80 md:border-l border-t md:border-t-0 border-border bg-card flex-1 md:flex-initial overflow-hidden">
-            {/* Sidebar Tabs */}
-            <div className="flex items-center border-b border-border shrink-0">
-              <button
-                onClick={() => {
-                  channelListNextScrollBehaviorRef.current = "instant";
-                  setSidebarView("channels");
-                }}
-                className={`flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium ${
-                  sidebarView === "channels"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground cursor-pointer hover:text-foreground"
-                }`}
-              >
-                {t("channels")} ({metadata?.channels.length || 0})
-              </button>
-              <button
-                onClick={() => {
-                  epgViewNextScrollBehaviorRef.current = "instant";
-                  setSidebarView("epg");
-                }}
-                className={`flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium ${
-                  sidebarView === "epg"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground cursor-pointer hover:text-foreground"
-                }`}
-              >
-                {t("programGuide")}
-              </button>
-              <div className="px-2 md:hidden">
-                <SettingsDropdown
-                  locale={locale}
-                  onLocaleChange={setLocale}
-                  theme={theme}
-                  onThemeChange={setTheme}
-                  catchupTailOffset={catchupTailOffset}
-                  onCatchupTailOffsetChange={handleCatchupTailOffsetChange}
-                  force16x9={force16x9}
-                  onForce16x9Change={handleForce16x9Change}
-                />
-              </div>
-            </div>
-
-            {/* Sidebar Content */}
-            <div className="flex-1 overflow-hidden">
-              <Activity mode={sidebarView === "channels" ? "visible" : "hidden"}>
-                <ChannelList
-                  channels={metadata?.channels}
-                  groups={metadata?.groups}
-                  currentChannel={currentChannel}
-                  onChannelSelect={selectChannel}
-                  locale={locale}
-                  settingsSlot={
-                    <div className="hidden md:block ml-2">
-                      <SettingsDropdown
-                        locale={locale}
-                        onLocaleChange={setLocale}
-                        theme={theme}
-                        onThemeChange={setTheme}
-                        catchupTailOffset={catchupTailOffset}
-                        onCatchupTailOffsetChange={handleCatchupTailOffsetChange}
-                        force16x9={force16x9}
-                        onForce16x9Change={handleForce16x9Change}
-                      />
-                    </div>
-                  }
-                />
-              </Activity>
-              <Activity mode={sidebarView === "epg" ? "visible" : "hidden"}>
-                <EPGView
-                  channelId={currentChannel ? getEPGChannelId(currentChannel, epgData) : null}
-                  epgData={epgData}
-                  currentTime={currentTime}
-                  onProgramSelect={handleVideoSeek}
-                  locale={locale}
-                  supportsCatchup={!!(currentChannel?.catchup && currentChannel?.catchupSource)}
-                  currentPlayingProgram={currentVideoProgram}
-                />
-              </Activity>
-            </div>
+        <div
+          className={cn(
+            "flex flex-col w-full md:w-80 md:border-l border-t md:border-t-0 border-border bg-card flex-1 md:flex-initial overflow-hidden",
+            (showSidebar || isMobile) && !(isFullscreen && isMobile) ? "" : "hidden",
+          )}
+        >
+          {/* Sidebar Tabs */}
+          <div className="flex items-center border-b border-border shrink-0">
+            <button
+              onClick={() => {
+                channelListNextScrollBehaviorRef.current = "instant";
+                setSidebarView("channels");
+              }}
+              className={`flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium ${
+                sidebarView === "channels"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground cursor-pointer hover:text-foreground"
+              }`}
+            >
+              {t("channels")} ({metadata?.channels.length || 0})
+            </button>
+            <button
+              onClick={() => {
+                epgViewNextScrollBehaviorRef.current = "instant";
+                setSidebarView("epg");
+              }}
+              className={`flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium ${
+                sidebarView === "epg"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground cursor-pointer hover:text-foreground"
+              }`}
+            >
+              {t("programGuide")}
+            </button>
           </div>
-        </Activity>
+
+          {/* Sidebar Content */}
+          <div className="flex-1 overflow-hidden">
+            <Activity mode={sidebarView === "channels" ? "visible" : "hidden"}>
+              <ChannelList
+                channels={metadata?.channels}
+                groups={metadata?.groups}
+                currentChannel={currentChannel}
+                onChannelSelect={selectChannel}
+                locale={locale}
+                settingsSlot={settingsSlot}
+              />
+            </Activity>
+            <Activity mode={sidebarView === "epg" ? "visible" : "hidden"}>
+              <EPGView
+                channelId={currentChannel ? getEPGChannelId(currentChannel, epgData) : null}
+                epgData={epgData}
+                currentTime={currentTime}
+                onProgramSelect={handleVideoSeek}
+                locale={locale}
+                supportsCatchup={!!(currentChannel?.catchup && currentChannel?.catchupSource)}
+                currentPlayingProgram={currentVideoProgram}
+              />
+            </Activity>
+          </div>
+        </div>
       </div>
     </div>
   );
-
-  if (isLoading) {
-    return (
-      <>
-        {/* Main content rendered below (will be revealed) */}
-        {mainContent}
-        {/* Loading overlay */}
-        <div
-          className={`fixed inset-0 z-50 flex items-center justify-center bg-background ${
-            isRevealing ? "animate-[zoom-fade-out_0.5s_ease-out_forwards]" : ""
-          }`}
-        >
-          <div className="text-center space-y-4">
-            {/* Loading spinner */}
-            <div className="h-12 w-12 mx-auto rounded-full border-4 border-muted border-t-primary animate-spin" />
-          </div>
-        </div>
-      </>
-    );
-  }
 
   if (error && !metadata) {
     return (
@@ -472,7 +452,25 @@ function PlayerPage() {
     );
   }
 
-  return mainContent;
+  return (
+    <>
+      {/* Main content rendered below (will be revealed) */}
+      {mainContent}
+      {/* Loading overlay */}
+      {isLoading && (
+        <div
+          className={`fixed inset-0 z-50 flex items-center justify-center bg-background ${
+            isRevealing ? "animate-[zoom-fade-out_0.5s_ease-out_forwards]" : ""
+          }`}
+        >
+          <div className="text-center space-y-4">
+            {/* Loading spinner */}
+            <div className="h-12 w-12 mx-auto rounded-full border-4 border-muted border-t-primary animate-spin" />
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 // Mount the app

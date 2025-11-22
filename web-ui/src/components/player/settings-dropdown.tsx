@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo } from "react";
 import { Settings } from "lucide-react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
@@ -24,7 +24,7 @@ const localeOptions: Array<{ value: Locale; label: string }> = [
 
 const themeOptions: ThemeMode[] = ["auto", "light", "dark"];
 
-export function SettingsDropdown({
+function SettingsDropdownComponent({
   locale,
   onLocaleChange,
   theme,
@@ -77,7 +77,7 @@ export function SettingsDropdown({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-center p-2 rounded hover:bg-muted transition-colors cursor-pointer"
+        className="flex items-center justify-center p-1 md:p-2 rounded hover:bg-muted transition-colors cursor-pointer"
         title={t("settings")}
       >
         <Settings className="h-5 w-5 text-muted-foreground" />
@@ -146,3 +146,5 @@ export function SettingsDropdown({
     </div>
   );
 }
+
+export const SettingsDropdown = memo(SettingsDropdownComponent);

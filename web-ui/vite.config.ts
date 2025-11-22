@@ -7,6 +7,9 @@ export default defineConfig(({ mode }) => {
   const isDev = mode === "development";
   return {
     plugins: [react(), tailwindcss()],
+    define: {
+      "process.env.NODE_ENV": JSON.stringify(mode),
+    },
     build: {
       sourcemap: isDev,
       minify: !isDev,

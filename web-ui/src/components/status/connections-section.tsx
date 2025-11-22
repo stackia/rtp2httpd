@@ -71,7 +71,7 @@ export function ConnectionsSection({
                         {t("workerPid")}: {client.workerPid}
                       </div>
                     </TableCell>
-                    <TableCell className="max-w-[240px] break-words text-sm">{client.serviceUrl || "-"}</TableCell>
+                    <TableCell className="max-w-[240px] wrap-break-word text-sm">{client.serviceUrl || "-"}</TableCell>
                     <TableCell>
                       <Badge variant={stateToVariant(client.state)} className="px-3">
                         {stateToLabel(locale, client.state)}
