@@ -3,10 +3,13 @@ import react from "@vitejs/plugin-react-swc";
 import tailwindcss from "@tailwindcss/vite";
 import { resolve } from "path";
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  const isDev = mode === "development";
   return {
     plugins: [react(), tailwindcss()],
     build: {
+      sourcemap: isDev,
+      minify: !isDev,
       rollupOptions: {
         input: {
           status: resolve(__dirname, "status.html"),

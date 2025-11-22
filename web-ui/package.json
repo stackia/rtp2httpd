@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && node ../scripts/embed-dist.js dist ../src/embedded_web_data.h",
+    "build:debug": "vite build --mode=development && node ../scripts/embed-dist.js dist ../src/embedded_web_data.h",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write ."
