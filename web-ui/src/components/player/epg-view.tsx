@@ -1,4 +1,4 @@
-import { useMemo, useRef, useLayoutEffect, RefObject } from "react";
+import { useMemo, useRef, useLayoutEffect, RefObject, memo, useCallback } from "react";
 import { Circle, History } from "lucide-react";
 import { EPGProgram } from "../../types/player";
 import { EPGData } from "../../lib/epg-parser";
@@ -18,7 +18,7 @@ interface EPGViewProps {
 
 export const nextScrollBehaviorRef: RefObject<"smooth" | "instant" | "skip"> = { current: "instant" };
 
-export function EPGView({
+function EPGViewComponent({
   channelId,
   epgData,
   currentTime,
@@ -63,7 +63,7 @@ export function EPGView({
 
   // Auto-scroll to center current/playing program when it changes or channel changes
   useLayoutEffect(() => {
-    setTimeout(() => {
+    window.setTimeout(() => {
       nextScrollBehaviorRef.current = "smooth";
     }, 0);
 
@@ -79,10 +79,13 @@ export function EPGView({
     }
   }, [currentPlayingProgram, channelId, channelPrograms]);
 
-  const handleProgramClick = (programStart: Date, programEnd: Date) => {
-    nextScrollBehaviorRef.current = "skip";
-    onProgramSelect(programStart, programEnd);
-  };
+  const handleProgramClick = useCallback(
+    (programStart: Date, programEnd: Date) => {
+      nextScrollBehaviorRef.current = "skip";
+      onProgramSelect(programStart, programEnd);
+    },
+    [onProgramSelect],
+  );
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString([], {
@@ -240,3 +243,5 @@ export function EPGView({
     </div>
   );
 }
+
+export const EPGView = memo(EPGViewComponent);

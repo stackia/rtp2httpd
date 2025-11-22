@@ -14,7 +14,6 @@ interface VideoPlayerProps {
   locale: Locale;
   currentProgram?: EPGProgram | null;
   onSeek?: (seekTime: Date) => void;
-  onRetry?: () => void;
   streamStartTime: Date;
   currentVideoTime: number;
   onCurrentVideoTimeChange: (time: number) => void;
@@ -33,7 +32,6 @@ export function VideoPlayer({
   liveSync,
   currentProgram = null,
   onSeek,
-  onRetry,
   streamStartTime,
   currentVideoTime,
   onCurrentVideoTimeChange,
@@ -49,44 +47,41 @@ export function VideoPlayer({
   const playerRef = useRef<mpegts.Player | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showLoading, setShowLoading] = useState(false);
-  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const loadingTimeoutRef = useRef<number>(0);
   const [isLive, setIsLive] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => (mpegts.isSupported() ? null : t("mseNotSupported")));
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
-  const [showControls, setShowControls] = useState(false);
+  const [showControls, setShowControls] = useState(true);
   const [isPiP, setIsPiP] = useState(false);
-  const hideControlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const retryCountRef = useRef<number>(0);
+  const hideControlsTimeoutRef = useRef<number>(0);
+  const [retryCount, setRetryCount] = useState(0);
   const isRetryingRef = useRef<boolean>(false);
-  const stablePlaybackTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const stablePlaybackTimeoutRef = useRef<number>(0);
 
   // Digit input state
   const [digitBuffer, setDigitBuffer] = useState("");
-  const digitTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const digitTimeoutRef = useRef<number>(0);
 
   // Debounce loading indicator to prevent flickering on fast loads
   useEffect(() => {
     if (isLoading) {
       // Show loading indicator after 500ms delay
-      loadingTimeoutRef.current = setTimeout(() => {
+      loadingTimeoutRef.current = window.setTimeout(() => {
         setShowLoading(true);
       }, 500);
     } else {
       // Immediately hide loading indicator
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-        loadingTimeoutRef.current = null;
-      }
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowLoading(false);
     }
 
     return () => {
       if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-        loadingTimeoutRef.current = null;
+        window.clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = 0;
       }
     };
   }, [isLoading]);
@@ -134,16 +129,230 @@ export function VideoPlayer({
     }
   }, []);
 
-  // Reset hide timer for controls
-  const resetHideTimer = useCallback(() => {
-    setShowControls(true);
+  const resetControlsTimer = useCallback(() => {
     if (hideControlsTimeoutRef.current) {
-      clearTimeout(hideControlsTimeoutRef.current);
+      window.clearTimeout(hideControlsTimeoutRef.current);
     }
-    hideControlsTimeoutRef.current = setTimeout(() => {
+    hideControlsTimeoutRef.current = window.setTimeout(() => {
       setShowControls(false);
     }, 3000);
   }, []);
+
+  const showControlsImmediately = useCallback(() => {
+    setShowControls(true);
+    resetControlsTimer();
+  }, [resetControlsTimer]);
+
+  const hideControlsImmediately = useCallback(() => {
+    if (hideControlsTimeoutRef.current) {
+      window.clearTimeout(hideControlsTimeoutRef.current);
+      hideControlsTimeoutRef.current = 0;
+    }
+    setShowControls(false);
+  }, []);
+
+  // Start auto-hide timer on mount
+  useEffect(() => {
+    resetControlsTimer();
+    return () => {
+      if (hideControlsTimeoutRef.current) {
+        window.clearTimeout(hideControlsTimeoutRef.current);
+      }
+    };
+  }, [resetControlsTimer]);
+
+  // Load video stream
+  useEffect(() => {
+    if (!segments.length || !videoRef.current || !mpegts.isSupported()) return;
+
+    // Reset retry count when loading new stream (but not during retries)
+    console.log("Player loading...", isRetryingRef.current, retryCount);
+    if (!isRetryingRef.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRetryCount(0);
+    }
+    isRetryingRef.current = false;
+
+    // Clear stable playback timer when loading new stream
+    if (stablePlaybackTimeoutRef.current) {
+      window.clearTimeout(stablePlaybackTimeoutRef.current);
+      stablePlaybackTimeoutRef.current = 0;
+    }
+
+    showControlsImmediately();
+    setIsLoading(true);
+    setError(null);
+    setIsPlaying(false);
+    setNeedsUserInteraction(false);
+
+    try {
+      const player = mpegts.createPlayer(
+        {
+          type: "mpegts",
+          segments,
+        },
+        {
+          enableWorker: true,
+          isLive: true,
+          enableStashBuffer: false,
+          liveSync,
+        },
+      );
+
+      playerRef.current = player;
+      player.attachMediaElement(videoRef.current);
+
+      player.on(mpegts.Events.ERROR, (errorType, errorDetail, errorInfo) => {
+        console.error("Player error:", errorType, errorDetail, errorInfo);
+
+        let errorMessage = t("playbackError");
+        let decodingErrorRetry = false;
+
+        if (errorType === mpegts.ErrorTypes.MEDIA_ERROR) {
+          if (
+            errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_UNSUPPORTED ||
+            errorDetail === mpegts.ErrorDetails.MEDIA_CODEC_UNSUPPORTED ||
+            errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_ERROR
+          ) {
+            errorMessage = t("codecError");
+          } else if (errorDetail === mpegts.ErrorDetails.MEDIA_MSE_ERROR) {
+            errorMessage = `${t("mediaError")}: ${errorInfo?.msg}`;
+            if (errorInfo?.msg?.includes("HTMLMediaElement.error")) {
+              if (videoRef.current?.error?.message?.includes("PIPELINE_ERROR_DECODE")) {
+                // Decoding error, may be transient (upstream packet loss / transmit pressure), can infinite retry
+                decodingErrorRetry = true;
+              } else {
+                errorMessage += `${t("mediaError")}: ${videoRef.current?.error?.message}`;
+              }
+            }
+          } else {
+            errorMessage = `${t("mediaError")}: ${errorDetail}`;
+          }
+        } else if (errorType === mpegts.ErrorTypes.NETWORK_ERROR) {
+          errorMessage = `${t("networkError")}: ${errorDetail}`;
+        }
+
+        // Check if we should retry
+        if (decodingErrorRetry || retryCount < 3) {
+          if (!decodingErrorRetry) {
+            setRetryCount(retryCount + 1);
+            console.log(`Retrying playback (attempt ${retryCount}/3)...`);
+          } else {
+            console.log(`Retrying playback due to decoding error...`);
+          }
+
+          isRetryingRef.current = true;
+
+          return;
+        }
+
+        // Max retries reached, show error
+        setError(errorMessage);
+        onError?.(errorMessage);
+        setIsLoading(false);
+      });
+
+      player.load();
+
+      const playPromise = player.play();
+      if (playPromise) {
+        playPromise
+          .catch((err: Error) => {
+            if (err.name === "NotAllowedError" || err.message.includes("user didn't interact")) {
+              setNeedsUserInteraction(true);
+            }
+          })
+          .finally(() => {
+            setIsLoading(false);
+          });
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : t("failedToPlay");
+      setError(errorMsg);
+      onError?.(errorMsg);
+      setIsLoading(false);
+    }
+
+    return () => {
+      if (playerRef.current) {
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
+    };
+  }, [segments, liveSync, onError, t, showControlsImmediately, retryCount]);
+
+  const handleVideoCanPlay = useEffectEvent(() => {
+    setIsLoading(false);
+    setIsPlaying(true);
+  });
+
+  const handleVideoWaiting = useEffectEvent(() => {
+    setIsLoading(true);
+    // Clear stable playback timer when buffering
+    if (stablePlaybackTimeoutRef.current) {
+      window.clearTimeout(stablePlaybackTimeoutRef.current);
+      stablePlaybackTimeoutRef.current = 0;
+    }
+  });
+
+  const handleVideoVolumeChange = useEffectEvent(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    setVolume(video.volume);
+    setIsMuted(video.muted);
+  });
+
+  const handleVideoPlaying = useEffectEvent(() => {
+    setIsLoading(false);
+    setIsPlaying(true);
+
+    // Start/restart stable playback timer
+    if (stablePlaybackTimeoutRef.current) {
+      window.clearTimeout(stablePlaybackTimeoutRef.current);
+    }
+
+    // Reset retry count after 30 seconds of stable playback
+    stablePlaybackTimeoutRef.current = window.setTimeout(() => {
+      if (retryCount > 0) {
+        console.log(`Resetting retry count after stable playback (was ${retryCount})`);
+        setRetryCount(0);
+      }
+    }, 30000);
+  });
+
+  const handleVideoPause = useEffectEvent(() => {
+    setIsPlaying(false);
+    setIsLive(false);
+    // Clear stable playback timer when paused
+    if (stablePlaybackTimeoutRef.current) {
+      window.clearTimeout(stablePlaybackTimeoutRef.current);
+      stablePlaybackTimeoutRef.current = 0;
+    }
+  });
+
+  const handleVideoTimeUpdate = useEffectEvent(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.currentTime < currentVideoTime || video.currentTime - currentVideoTime >= 1) {
+      onCurrentVideoTimeChange(video.currentTime);
+      setIsLive(streamStartTime.getTime() + video.currentTime * 1000 >= Date.now() - 3000);
+    }
+  });
+
+  const handleVideoEnded = useEffectEvent(() => {
+    if (onSeek && playerRef.current?.duration) {
+      const seekTime = new Date(streamStartTime.getTime() + playerRef.current.duration * 1000);
+      onSeek(seekTime);
+    }
+  });
+
+  const handleVideoEnterPiP = useEffectEvent(() => {
+    setIsPiP(true);
+  });
+
+  const handleVideoLeavePiP = useEffectEvent(() => {
+    setIsPiP(false);
+  });
 
   const handleKeyDown = useEffectEvent((e: KeyboardEvent) => {
     // Ignore if user is typing in an input field
@@ -157,19 +366,19 @@ export function VideoPlayer({
     // If it's a number key, append to buffer
     if (isNumberKey) {
       e.preventDefault();
-      resetHideTimer();
+      showControlsImmediately();
 
       // Clear existing timeout
       if (digitTimeoutRef.current) {
-        clearTimeout(digitTimeoutRef.current);
+        window.clearTimeout(digitTimeoutRef.current);
       }
 
       // Set new timeout to confirm selection
       const newBuffer = digitBuffer + e.key;
-      digitTimeoutRef.current = setTimeout(() => {
+      digitTimeoutRef.current = window.setTimeout(() => {
         onChannelNavigate?.(parseInt(newBuffer, 10));
         setDigitBuffer("");
-        digitTimeoutRef.current = null;
+        digitTimeoutRef.current = 0;
       }, 1000); // 1000ms delay
       setDigitBuffer(newBuffer);
       return;
@@ -180,8 +389,8 @@ export function VideoPlayer({
         e.preventDefault();
         if (digitBuffer) {
           if (digitTimeoutRef.current) {
-            clearTimeout(digitTimeoutRef.current);
-            digitTimeoutRef.current = null;
+            window.clearTimeout(digitTimeoutRef.current);
+            digitTimeoutRef.current = 0;
           }
           onChannelNavigate?.(parseInt(digitBuffer, 10));
           setDigitBuffer("");
@@ -198,16 +407,13 @@ export function VideoPlayer({
         } else if (digitBuffer) {
           setDigitBuffer("");
           if (digitTimeoutRef.current) {
-            clearTimeout(digitTimeoutRef.current);
-            digitTimeoutRef.current = null;
+            window.clearTimeout(digitTimeoutRef.current);
+            digitTimeoutRef.current = 0;
           }
         } else if (showControls) {
-          if (hideControlsTimeoutRef.current) {
-            clearTimeout(hideControlsTimeoutRef.current);
-          }
-          setShowControls(false);
+          hideControlsImmediately();
         } else {
-          resetHideTimer();
+          showControlsImmediately();
         }
         break;
 
@@ -276,286 +482,55 @@ export function VideoPlayer({
     }
   });
 
-  // Keyboard controls
   useEffect(() => {
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
+    const video = videoRef.current;
+    if (!video) return;
 
-  // Handle mouse leave - hide controls immediately
-  const handleMouseLeave = useCallback(() => {
-    if (hideControlsTimeoutRef.current) {
-      clearTimeout(hideControlsTimeoutRef.current);
-    }
-    setShowControls(false);
+    video.addEventListener("canplay", handleVideoCanPlay);
+    video.addEventListener("waiting", handleVideoWaiting);
+    video.addEventListener("volumechange", handleVideoVolumeChange);
+    video.addEventListener("playing", handleVideoPlaying);
+    video.addEventListener("pause", handleVideoPause);
+    video.addEventListener("timeupdate", handleVideoTimeUpdate);
+    video.addEventListener("ended", handleVideoEnded);
+    video.addEventListener("enterpictureinpicture", handleVideoEnterPiP);
+    video.addEventListener("leavepictureinpicture", handleVideoLeavePiP);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      video.removeEventListener("canplay", handleVideoCanPlay);
+      video.removeEventListener("waiting", handleVideoWaiting);
+      video.removeEventListener("volumechange", handleVideoVolumeChange);
+      video.removeEventListener("playing", handleVideoPlaying);
+      video.removeEventListener("pause", handleVideoPause);
+      video.removeEventListener("timeupdate", handleVideoTimeUpdate);
+      video.removeEventListener("ended", handleVideoEnded);
+      video.removeEventListener("enterpictureinpicture", handleVideoEnterPiP);
+      video.removeEventListener("leavepictureinpicture", handleVideoLeavePiP);
+      window.removeEventListener("keydown", handleKeyDown);
+
+      if (stablePlaybackTimeoutRef.current) {
+        window.clearTimeout(stablePlaybackTimeoutRef.current);
+        stablePlaybackTimeoutRef.current = 0;
+      }
+      if (digitTimeoutRef.current) {
+        window.clearTimeout(digitTimeoutRef.current);
+        digitTimeoutRef.current = 0;
+      }
+    };
   }, []);
 
   // Handle video click/tap - toggle controls
   const handleVideoClick = useCallback(() => {
     if (showControls) {
-      // Hide controls immediately
-      if (hideControlsTimeoutRef.current) {
-        clearTimeout(hideControlsTimeoutRef.current);
-      }
-      setShowControls(false);
+      hideControlsImmediately();
     } else {
       // Show controls and start auto-hide timer
-      resetHideTimer();
+      showControlsImmediately();
     }
-  }, [showControls, resetHideTimer]);
+  }, [showControls, hideControlsImmediately, showControlsImmediately]);
 
-  // Start auto-hide timer on mount
-  useEffect(() => {
-    resetHideTimer();
-    return () => {
-      if (hideControlsTimeoutRef.current) {
-        clearTimeout(hideControlsTimeoutRef.current);
-      }
-    };
-  }, [resetHideTimer]);
-
-  // Cleanup digit timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (digitTimeoutRef.current) {
-        clearTimeout(digitTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Initialize mpegts.js
-  useEffect(() => {
-    if (!mpegts.isSupported()) {
-      const errorMsg = t("mseNotSupported");
-      setError(errorMsg);
-      onError?.(errorMsg);
-    }
-  }, [onError, t]);
-
-  // Load video stream
-  useEffect(() => {
-    if (!segments.length || !videoRef.current || !mpegts.isSupported()) return;
-
-    // Reset retry count when loading new stream (but not during retries)
-    console.log("Player loading...", isRetryingRef.current, retryCountRef.current);
-    if (!isRetryingRef.current) {
-      retryCountRef.current = 0;
-    }
-    isRetryingRef.current = false;
-
-    // Clear stable playback timer when loading new stream
-    if (stablePlaybackTimeoutRef.current) {
-      clearTimeout(stablePlaybackTimeoutRef.current);
-      stablePlaybackTimeoutRef.current = null;
-    }
-
-    resetHideTimer();
-    setIsLoading(true);
-    setError(null);
-    setIsPlaying(false);
-    setNeedsUserInteraction(false);
-
-    try {
-      const player = mpegts.createPlayer(
-        {
-          type: "mpegts",
-          segments,
-        },
-        {
-          enableWorker: true,
-          isLive: true,
-          enableStashBuffer: false,
-          liveSync,
-        },
-      );
-
-      playerRef.current = player;
-      player.attachMediaElement(videoRef.current);
-
-      player.on(mpegts.Events.ERROR, (errorType, errorDetail, errorInfo) => {
-        console.error("Player error:", errorType, errorDetail, errorInfo);
-
-        let errorMessage = t("playbackError");
-        let decodingErrorRetry = false;
-
-        if (errorType === mpegts.ErrorTypes.MEDIA_ERROR) {
-          if (
-            errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_UNSUPPORTED ||
-            errorDetail === mpegts.ErrorDetails.MEDIA_CODEC_UNSUPPORTED ||
-            errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_ERROR
-          ) {
-            errorMessage = t("codecError");
-          } else if (errorDetail === mpegts.ErrorDetails.MEDIA_MSE_ERROR) {
-            errorMessage = `${t("mediaError")}: ${errorInfo?.msg}`;
-            if (errorInfo?.msg?.includes("HTMLMediaElement.error")) {
-              if (videoRef.current?.error?.message?.includes("PIPELINE_ERROR_DECODE")) {
-                // Decoding error, may be transient (upstream packet loss / transmit pressure), can infinite retry
-                decodingErrorRetry = true;
-              } else {
-                errorMessage += `${t("mediaError")}: ${videoRef.current?.error?.message}`;
-              }
-            }
-          } else {
-            errorMessage = `${t("mediaError")}: ${errorDetail}`;
-          }
-        } else if (errorType === mpegts.ErrorTypes.NETWORK_ERROR) {
-          errorMessage = `${t("networkError")}: ${errorDetail}`;
-        }
-
-        // Check if we should retry
-        if (decodingErrorRetry || retryCountRef.current < 3) {
-          if (!decodingErrorRetry) {
-            retryCountRef.current += 1;
-            console.log(`Retrying playback (attempt ${retryCountRef.current}/3)...`);
-          } else {
-            console.log(`Retrying playback due to decoding error...`);
-          }
-
-          isRetryingRef.current = true;
-          onRetry?.();
-
-          return;
-        }
-
-        // Max retries reached, show error
-        setError(errorMessage);
-        onError?.(errorMessage);
-        setIsLoading(false);
-      });
-
-      player.load();
-
-      const playPromise = player.play();
-      if (playPromise) {
-        playPromise
-          .catch((err: Error) => {
-            if (err.name === "NotAllowedError" || err.message.includes("user didn't interact")) {
-              setNeedsUserInteraction(true);
-            }
-          })
-          .finally(() => {
-            setIsLoading(false);
-          });
-      }
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : t("failedToPlay");
-      setError(errorMsg);
-      onError?.(errorMsg);
-      setIsLoading(false);
-    }
-
-    return () => {
-      if (playerRef.current) {
-        playerRef.current.destroy();
-        playerRef.current = null;
-      }
-    };
-  }, [segments, liveSync, onError, t, onRetry]);
-
-  // Handle video events
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const handleCanPlay = () => {
-      setIsLoading(false);
-      setIsPlaying(true);
-    };
-
-    const handleWaiting = () => {
-      setIsLoading(true);
-      // Clear stable playback timer when buffering
-      if (stablePlaybackTimeoutRef.current) {
-        clearTimeout(stablePlaybackTimeoutRef.current);
-        stablePlaybackTimeoutRef.current = null;
-      }
-    };
-
-    const handleVolumeChange = () => {
-      setVolume(video.volume);
-      setIsMuted(video.muted);
-    };
-
-    const handlePlaying = () => {
-      setIsLoading(false);
-      setIsPlaying(true);
-
-      // Start/restart stable playback timer
-      if (stablePlaybackTimeoutRef.current) {
-        clearTimeout(stablePlaybackTimeoutRef.current);
-      }
-
-      // Reset retry count after 30 seconds of stable playback
-      stablePlaybackTimeoutRef.current = setTimeout(() => {
-        if (retryCountRef.current > 0) {
-          console.log(`Resetting retry count after stable playback (was ${retryCountRef.current})`);
-          retryCountRef.current = 0;
-        }
-      }, 30000);
-    };
-
-    const handlePause = () => {
-      setIsPlaying(false);
-      setIsLive(false);
-      // Clear stable playback timer when paused
-      if (stablePlaybackTimeoutRef.current) {
-        clearTimeout(stablePlaybackTimeoutRef.current);
-        stablePlaybackTimeoutRef.current = null;
-      }
-    };
-
-    const handleTimeUpdate = () => {
-      onCurrentVideoTimeChange(video.currentTime);
-      setIsLive(streamStartTime.getTime() + video.currentTime * 1000 >= Date.now() - 3000);
-    };
-
-    const handleEnded = () => {
-      if (onSeek && playerRef.current?.duration) {
-        const seekTime = new Date(streamStartTime.getTime() + playerRef.current.duration * 1000);
-        onSeek(seekTime);
-      }
-    };
-
-    const handleEnterPiP = () => {
-      setIsPiP(true);
-    };
-
-    const handleLeavePiP = () => {
-      setIsPiP(false);
-    };
-
-    video.addEventListener("canplay", handleCanPlay);
-    video.addEventListener("waiting", handleWaiting);
-    video.addEventListener("volumechange", handleVolumeChange);
-    video.addEventListener("playing", handlePlaying);
-    video.addEventListener("pause", handlePause);
-    video.addEventListener("timeupdate", handleTimeUpdate);
-    video.addEventListener("ended", handleEnded);
-    video.addEventListener("enterpictureinpicture", handleEnterPiP);
-    video.addEventListener("leavepictureinpicture", handleLeavePiP);
-
-    return () => {
-      video.removeEventListener("canplay", handleCanPlay);
-      video.removeEventListener("waiting", handleWaiting);
-      video.removeEventListener("volumechange", handleVolumeChange);
-      video.removeEventListener("playing", handlePlaying);
-      video.removeEventListener("pause", handlePause);
-      video.removeEventListener("timeupdate", handleTimeUpdate);
-      video.removeEventListener("ended", handleEnded);
-      video.removeEventListener("enterpictureinpicture", handleEnterPiP);
-      video.removeEventListener("leavepictureinpicture", handleLeavePiP);
-
-      // Clear stable playback timer on cleanup
-      if (stablePlaybackTimeoutRef.current) {
-        clearTimeout(stablePlaybackTimeoutRef.current);
-        stablePlaybackTimeoutRef.current = null;
-      }
-    };
-  }, [onSeek, streamStartTime, isLive, currentVideoTime]);
-
-  const toggleMute = useCallback(() => {
+  const handleMuteToggle = useCallback(() => {
     if (playerRef.current) {
       playerRef.current.muted = !playerRef.current.muted;
     }
@@ -585,7 +560,7 @@ export function VideoPlayer({
     }
   }, [onFullscreenToggle]);
 
-  const togglePictureInPicture = useCallback(async () => {
+  const handlePiPToggle = useCallback(async () => {
     if (!videoRef.current) return;
 
     try {
@@ -611,14 +586,12 @@ export function VideoPlayer({
     }
   };
 
-  if (!channel) {
-    return (
-      <div className="flex h-full items-center justify-center bg-black text-white">{t("selectChannelToWatch")}</div>
-    );
-  }
-
   return (
-    <div className="relative w-full bg-black md:h-full" onMouseMove={resetHideTimer} onMouseLeave={handleMouseLeave}>
+    <div
+      className="relative w-full bg-black md:h-full"
+      onMouseMove={showControlsImmediately}
+      onMouseLeave={hideControlsImmediately}
+    >
       {/* Mobile: 16:9 aspect ratio container, Desktop: full height */}
       <div className="video-container relative w-full aspect-video md:aspect-auto md:h-full flex items-center justify-center">
         <video
@@ -638,48 +611,50 @@ export function VideoPlayer({
             </div>
             <span className="text-xs md:text-sm text-white font-medium">
               {t("loadingVideo")}
-              {retryCountRef.current > 0 && ` (${retryCountRef.current}/3)`}
+              {retryCount > 0 && ` (${retryCount}/3)`}
             </span>
           </div>
         )}
 
         {/* Channel Info and Controls */}
-        <div
-          className={`absolute top-4 right-4 md:top-8 md:right-8 flex flex-col gap-2 md:gap-3 items-end transition-opacity duration-300 ${
-            showControls ? "opacity-100" : "opacity-0"
-          }`}
-        >
-          <div className="flex flex-col gap-1.5 md:gap-2 px-2 py-1.5 md:px-3 md:py-2 items-center justify-center overflow-hidden rounded-lg bg-white/10 ring-1 ring-white/20 backdrop-blur-sm max-w-[calc(100vw-2rem)] md:max-w-none">
-            {/* Logo Banner */}
-            {channel.logo && (
-              <img
-                src={channel.logo}
-                alt={channel.name}
-                className="h-8 w-20 md:h-14 md:w-36 object-contain"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
-              />
-            )}
-            {/* Bottom Row: Channel Info & Digit Input */}
-            <div className="flex items-center justify-center w-full">
-              <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
-                <span
-                  className={`rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition-all duration-300 ${
-                    digitBuffer
-                      ? "bg-primary text-primary-foreground scale-110 shadow-lg ring-2 ring-primary/50"
-                      : "bg-white/10 text-white/60"
-                  }`}
-                >
-                  {digitBuffer || channel.id}
-                </span>
-                <h2 className="text-xs md:text-base font-bold text-white truncate">{channel.name}</h2>
-                <span className="text-xs md:text-sm text-white/50 hidden sm:inline">·</span>
-                <div className="text-xs md:text-sm text-white/70 truncate hidden sm:block">{channel.group}</div>
+        {channel && (
+          <div
+            className={`absolute top-4 right-4 md:top-8 md:right-8 flex flex-col gap-2 md:gap-3 items-end transition-opacity duration-300 ${
+              showControls ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            <div className="flex flex-col gap-1.5 md:gap-2 px-2 py-1.5 md:px-3 md:py-2 items-center justify-center overflow-hidden rounded-lg bg-white/10 ring-1 ring-white/20 backdrop-blur-sm max-w-[calc(100vw-2rem)] md:max-w-none">
+              {/* Logo Banner */}
+              {channel.logo && (
+                <img
+                  src={channel.logo}
+                  alt={channel.name}
+                  className="h-8 w-20 md:h-14 md:w-36 object-contain"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              )}
+              {/* Bottom Row: Channel Info & Digit Input */}
+              <div className="flex items-center justify-center w-full">
+                <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
+                  <span
+                    className={`rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition-all duration-300 ${
+                      digitBuffer
+                        ? "bg-primary text-primary-foreground scale-110 shadow-lg ring-2 ring-primary/50"
+                        : "bg-white/10 text-white/60"
+                    }`}
+                  >
+                    {digitBuffer || channel.id}
+                  </span>
+                  <h2 className="text-xs md:text-base font-bold text-white truncate">{channel.name}</h2>
+                  <span className="text-xs md:text-sm text-white/50 hidden sm:inline">·</span>
+                  <div className="text-xs md:text-sm text-white/70 truncate hidden sm:block">{channel.group}</div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {needsUserInteraction && (
           <div
@@ -711,7 +686,7 @@ export function VideoPlayer({
             className={`absolute bottom-0 left-0 right-0 transition-opacity duration-300 ${
               showControls ? "opacity-100" : "opacity-0 has-focus-visible:opacity-100"
             }`}
-            onMouseEnter={resetHideTimer}
+            onMouseEnter={showControlsImmediately}
           >
             <PlayerControls
               channel={channel}
@@ -726,12 +701,12 @@ export function VideoPlayer({
               volume={volume}
               onVolumeChange={handleVolumeChange}
               isMuted={isMuted}
-              onMuteToggle={toggleMute}
+              onMuteToggle={handleMuteToggle}
               onFullscreen={handleFullscreen}
               showSidebar={showSidebar}
               onToggleSidebar={onToggleSidebar}
               isPiP={isPiP}
-              onPiPToggle={togglePictureInPicture}
+              onPiPToggle={handlePiPToggle}
             />
           </div>
         )}

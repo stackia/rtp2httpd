@@ -70,14 +70,13 @@ export function PlayerControls({
 }: PlayerControlsProps) {
   const t = usePlayerTranslation(locale);
   const progressBarRef = useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
   const [hoverPosition, setHoverPosition] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Check if catchup is supported
   const isCatchupSupported = Boolean(channel.catchup && channel.catchupSource);
 
-  const getStartEndDuration = useCallback(() => {
+  const { startTime, endTime, duration } = useMemo(() => {
     if (!currentProgram) {
       // No EPG data: use 3-hour rewind window
       const now = new Date();
@@ -95,8 +94,6 @@ export function PlayerControls({
 
     return { startTime, endTime, duration };
   }, [currentProgram]);
-
-  const { startTime, endTime, duration } = getStartEndDuration();
 
   const elapsedTime = useMemo(() => {
     const currentAbsoluteTime = new Date(seekStartTime.getTime() + currentTime * 1000);
@@ -174,12 +171,11 @@ export function PlayerControls({
       const percentage = Math.min(Math.max(((e.clientX - rect.left) / rect.width) * 100, 0), 100);
       setHoverPosition(percentage);
     },
-    [isCatchupSupported, isDragging, handleSeek],
+    [isCatchupSupported],
   );
 
   const handleMouseLeave = useCallback(() => {
     setHoverPosition(null);
-    setIsDragging(false);
   }, []);
 
   const hoverTime = useMemo(() => {

@@ -27,6 +27,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react-swc": "^4.2.2",
     "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
     "neostandard": "^0.12.2",
     "prettier": "^3.6.2",
     "tailwindcss": "^4.1.17",

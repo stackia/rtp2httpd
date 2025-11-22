@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { StatusPayload } from "../types";
 import type { ConnectionState } from "../types/ui";
 import { buildStatusPath, buildUrl } from "../lib/url";
@@ -7,8 +7,9 @@ export function useSse(
   onPayload: (payload: StatusPayload) => void,
   onConnectionChange: (state: ConnectionState) => void,
 ) {
-  const reconnectRef = useRef<number>(-1);
+  const reconnectRef = useRef<number>(0);
   const sourceRef = useRef<EventSource | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   const connect = useCallback(() => {
     if (sourceRef.current) {
@@ -23,7 +24,7 @@ export function useSse(
 
     source.onopen = () => {
       window.clearTimeout(reconnectRef.current);
-      reconnectRef.current = -1;
+      reconnectRef.current = 0;
       onConnectionChange("connected");
     };
 
@@ -31,10 +32,9 @@ export function useSse(
       onConnectionChange("disconnected");
       source.close();
       window.clearTimeout(reconnectRef.current);
-      reconnectRef.current = -1;
       reconnectRef.current = window.setTimeout(() => {
         onConnectionChange("reconnecting");
-        connect();
+        setRetryCount(retryCount + 1);
       }, 1000);
     };
 
@@ -46,7 +46,7 @@ export function useSse(
         console.error("Failed to parse SSE payload", error);
       }
     };
-  }, [onConnectionChange, onPayload]);
+  }, [onConnectionChange, onPayload, retryCount]);
 
   useEffect(() => {
     connect();
@@ -56,7 +56,7 @@ export function useSse(
         sourceRef.current = null;
       }
       window.clearTimeout(reconnectRef.current);
-      reconnectRef.current = -1;
+      reconnectRef.current = 0;
     };
   }, [connect]);
 }

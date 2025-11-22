@@ -8,7 +8,7 @@ export function useLocale(storageKey: string) {
     if (typeof window !== "undefined") {
       window.localStorage.setItem(storageKey, locale);
     }
-  }, [locale]);
+  }, [locale, storageKey]);
 
   return { locale, setLocale };
 }
