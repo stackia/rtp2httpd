@@ -248,17 +248,6 @@ return view.extend({
     o.default = "1";
     o.depends("use_config_file", "0");
 
-    o = s.taboption(
-      "basic",
-      form.Value,
-      "hostname",
-      _("Hostname"),
-      _(
-        "When configured, HTTP Host header will be checked and must match this value to allow access. This value is also used as the hostname in M3U playlist conversion. When using a reverse proxy, configure this with the proxied access URL (including http(s):// and path prefix), e.g., https://my-domain.com/rtp2httpd, and ensure the reverse proxy forwards the Host header."
-      )
-    );
-    o.depends("use_config_file", "0");
-
     // ===== TAB 2: Network & Performance =====
     // Add "Advanced Interface Settings" option
     o = s.taboption(
@@ -354,7 +343,7 @@ return view.extend({
       "buffer_pool_max_size",
       _("Buffer Pool Max Size"),
       _(
-        "Maximum number of buffers in zero-copy pool. Each buffer is 1536 bytes. Default is 16384 (~24MB). Increase to improve throughput for multi-client concurrency. Not recommended when running behind reverse proxies."
+        "Maximum number of buffers in zero-copy pool. Each buffer is 1536 bytes. Default is 16384 (~24MB). Increase to improve throughput for multi-client concurrency."
       )
     );
     o.datatype = "range(1024, 1048576)";
@@ -363,23 +352,11 @@ return view.extend({
 
     o = s.taboption(
       "network",
-      form.Flag,
-      "zerocopy_on_send",
-      _("Zero-Copy on Send"),
-      _(
-        "Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires kernel 4.14+ (MSG_ZEROCOPY support). On supported devices, this can improve throughput and reduce CPU usage, especially under high concurrent load."
-      )
-    );
-    o.default = "0";
-    o.depends("use_config_file", "0");
-
-    o = s.taboption(
-      "network",
       form.Value,
       "mcast_rejoin_interval",
       _("Multicast Rejoin Interval"),
       _(
-        "Periodic multicast rejoin interval in seconds (0=disabled, default 0). Enable this (e.g., 30-120 seconds) if your network switches timeout multicast memberships due to missing IGMP Query messages. Only needed for problematic network environments."
+        "Periodic multicast rejoin interval in seconds (0=disabled, default 0). Enable this (e.g., 30-120 seconds) if your network switches timeout multicast memberships due to missing IGMP Query messages. Only use when experiencing multicast stream interruptions."
       )
     );
     o.datatype = "range(0, 86400)";
@@ -396,6 +373,18 @@ return view.extend({
       )
     );
     o.placeholder = "begin-end";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "network",
+      form.Flag,
+      "zerocopy_on_send",
+      _("Zero-Copy on Send"),
+      _(
+        "Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires kernel 4.14+ (MSG_ZEROCOPY support). On supported devices, this can improve throughput and reduce CPU usage, especially under high concurrent load. Recommended only when experiencing performance bottlenecks."
+      )
+    );
+    o.default = "0";
     o.depends("use_config_file", "0");
 
     // ===== TAB 3: Player & M3U =====
@@ -493,6 +482,17 @@ return view.extend({
       _("URL path for the status page (default: /status)")
     );
     o.placeholder = "/status";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "advanced",
+      form.Value,
+      "hostname",
+      _("Hostname"),
+      _(
+        "When configured, HTTP Host header will be checked and must match this value to allow access. This value is also used as the hostname in M3U playlist conversion. When using a reverse proxy, configure this with the proxied access URL (including http(s):// and path prefix), e.g., https://my-domain.com/rtp2httpd, and ensure the reverse proxy forwards the Host header."
+      )
+    );
     o.depends("use_config_file", "0");
 
     o = s.taboption(
