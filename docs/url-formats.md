@@ -53,6 +53,11 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000GM
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r2h-seek-name=seek&r2h-seek-offset=3600
 ```
 
+### 使用场景
+
+- 将 IPTV RTSP 单播流转换为 HTTP 流
+- 实现 RTSP 时移回看功能
+
 ### 常见问题：时移回看时，实际回看时间比节目单早了/晚了 8 小时
 
 这是由于时区未能匹配。需要做时区转换。你可以尝试以下几种方式。
@@ -61,11 +66,6 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r
 - 修改播放链接，加上参数 `&r2h-seek-offset=28800` 或 `&r2h-seek-offset=-28800`
 
 关于时移回看的参数处理（时区、偏移），详见 [RTSP 时间处理与时区转换](rtsp-time-processing.md)。
-
-### 使用场景
-
-- 将 IPTV RTSP 单播流转换为 HTTP 流
-- 实现 RTSP 时移回看功能
 
 ## 状态页面
 
@@ -86,7 +86,7 @@ http://192.168.1.1:5140/status
 - 系统日志查看
 - 远程管理功能（强制断开连接等）
 
-状态页面路径可以通过配置参数 `status-page-path` 自定义。
+状态页面路径可以通过配置项 `status-page-path` 自定义。
 
 ## M3U 播放列表访问
 
