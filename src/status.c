@@ -109,47 +109,37 @@ int status_init(void) {
     status_shared->worker_notification_pipes[i] = -1;
   }
 
-  /* Create notification pipes for all workers BEFORE fork
-   * This ensures all workers can access all pipe write ends for cross-worker
-   * notification */
-  if (config.workers > 0) {
-    int num_workers = config.workers;
-    if (num_workers > STATUS_MAX_WORKERS) {
-      logger(LOG_WARN,
-             "Requested %d workers exceeds maximum %d, limiting to %d",
-             num_workers, STATUS_MAX_WORKERS, STATUS_MAX_WORKERS);
-      num_workers = STATUS_MAX_WORKERS;
-    }
-
-    for (int i = 0; i < num_workers; i++) {
-      int pipe_fds[2];
-      if (pipe(pipe_fds) == -1) {
-        logger(LOG_ERROR,
-               "Failed to create notification pipe for worker %d: %s", i,
-               strerror(errno));
-        /* Clean up already created pipes */
-        for (int j = 0; j < i; j++) {
-          if (status_shared->worker_notification_pipe_read_fds[j] != -1)
-            close(status_shared->worker_notification_pipe_read_fds[j]);
-          if (status_shared->worker_notification_pipes[j] != -1)
-            close(status_shared->worker_notification_pipes[j]);
-        }
-        munmap(status_shared, sizeof(status_shared_t));
-        unlink(shm_path);
-        return -1;
+  /* Pre-create notification pipes for all possible workers (STATUS_MAX_WORKERS)
+   * This is done BEFORE fork so all processes inherit the same pipe fds.
+   * Pre-creating all pipes allows future config reload to change worker count
+   * without needing to recreate pipes. */
+  for (int i = 0; i < STATUS_MAX_WORKERS; i++) {
+    int pipe_fds[2];
+    if (pipe(pipe_fds) == -1) {
+      logger(LOG_ERROR, "Failed to create notification pipe for worker %d: %s",
+             i, strerror(errno));
+      /* Clean up already created pipes */
+      for (int j = 0; j < i; j++) {
+        if (status_shared->worker_notification_pipe_read_fds[j] != -1)
+          close(status_shared->worker_notification_pipe_read_fds[j]);
+        if (status_shared->worker_notification_pipes[j] != -1)
+          close(status_shared->worker_notification_pipes[j]);
       }
-
-      /* Set read end to non-blocking mode */
-      int flags = fcntl(pipe_fds[0], F_GETFL, 0);
-      fcntl(pipe_fds[0], F_SETFL, flags | O_NONBLOCK);
-
-      /* Store both ends in shared memory
-       * Read ends will be used by each worker after fork
-       * Write ends are accessible by all workers for cross-worker notification
-       */
-      status_shared->worker_notification_pipe_read_fds[i] = pipe_fds[0];
-      status_shared->worker_notification_pipes[i] = pipe_fds[1];
+      munmap(status_shared, sizeof(status_shared_t));
+      unlink(shm_path);
+      return -1;
     }
+
+    /* Set read end to non-blocking mode */
+    int flags = fcntl(pipe_fds[0], F_GETFL, 0);
+    fcntl(pipe_fds[0], F_SETFL, flags | O_NONBLOCK);
+
+    /* Store both ends in shared memory
+     * Read ends will be used by each worker after fork
+     * Write ends are accessible by all workers for cross-worker notification
+     */
+    status_shared->worker_notification_pipe_read_fds[i] = pipe_fds[0];
+    status_shared->worker_notification_pipes[i] = pipe_fds[1];
   }
 
   /* Initialize mutexes for multi-process safety */
@@ -166,58 +156,71 @@ int status_init(void) {
 
 /**
  * Cleanup status tracking system
- * IMPORTANT: This function is called by each worker process on exit.
- * Some cleanup operations must only be performed by worker 0 to avoid
- * race conditions and undefined behavior in multi-worker environments.
+ *
+ * This function is called by each process on exit. Since fork() creates
+ * independent copies of file descriptors, each process can safely close
+ * its own fd copies without affecting other processes.
+ *
+ * Each process closes:
+ * - All pipe write ends (its own copies)
+ * - All pipe read ends (its own copies, most already closed in
+ *   status_worker_get_notif_fd)
+ * - Its view of shared memory (munmap)
+ *
+ * Only the final cleanup process (supervisor or single worker) should:
+ * - Destroy shared mutexes
+ * - Unlink the shared memory file
+ *
+ * In supervisor mode, the supervisor waits for all workers to exit before
+ * calling this function, ensuring it's the last process.
  */
 void status_cleanup(void) {
+  /* Determine if this process should do final cleanup:
+   * - In supervisor mode: supervisor (worker_id == -1) does final cleanup
+   * - In single-worker mode: worker 0 does final cleanup */
+  int is_final_cleanup =
+      (worker_id == -1) || (worker_id == 0 && config.workers <= 1);
+
   if (status_shared != NULL && status_shared != MAP_FAILED) {
-    /* Close all pipe write ends (shared across all workers)
-     * Only worker 0 should do this to avoid closing pipes other workers might
-     * still use */
-    if (worker_id == 0) {
-      for (int i = 0; i < STATUS_MAX_WORKERS; i++) {
-        if (status_shared->worker_notification_pipes[i] != -1) {
-          close(status_shared->worker_notification_pipes[i]);
-          status_shared->worker_notification_pipes[i] = -1;
-        }
+    /* Close all pipe fds (this process's copies)
+     * Since fork() duplicates fds, closing here only affects this process */
+    for (int i = 0; i < STATUS_MAX_WORKERS; i++) {
+      if (status_shared->worker_notification_pipes[i] != -1) {
+        close(status_shared->worker_notification_pipes[i]);
+      }
+      if (status_shared->worker_notification_pipe_read_fds[i] != -1) {
+        close(status_shared->worker_notification_pipe_read_fds[i]);
       }
     }
 
-    /* Each worker closes its own notification pipe read end
-     * (Other workers' read ends were already closed in
-     * status_worker_get_notif_fd) */
-    if (worker_id >= 0 && worker_id < STATUS_MAX_WORKERS &&
-        status_shared->worker_notification_pipe_read_fds[worker_id] != -1) {
-      close(status_shared->worker_notification_pipe_read_fds[worker_id]);
-      status_shared->worker_notification_pipe_read_fds[worker_id] = -1;
-    }
-
-    /* Only worker 0 destroys shared mutexes
-     * Destroying a mutex that other workers might still be using causes
-     * undefined behavior. In the fork model, worker 0 is the main process and
-     * exits last. */
-    if (worker_id == 0) {
+    /* Only the final cleanup process destroys shared mutexes
+     * Destroying a mutex that other processes might still be using causes
+     * undefined behavior */
+    if (is_final_cleanup) {
       pthread_mutex_destroy(&status_shared->log_mutex);
       pthread_mutex_destroy(&status_shared->clients_mutex);
     }
 
-    /* Each worker unmaps its own view of shared memory
+    /* Each process unmaps its own view of shared memory
      * This is safe - munmap() only affects the current process's address space
      */
     munmap(status_shared, sizeof(status_shared_t));
     status_shared = NULL;
   }
 
-  /* Only worker 0 unlinks shared memory file
-   * unlink() removes the shared memory file from the filesystem.
-   * If called by a non-last worker, other workers would lose access to shared
-   * memory. In the fork model, worker 0 is the main process and exits last. */
-  if (worker_id == 0) {
+  /* Only the final cleanup process unlinks shared memory file
+   * unlink() removes the shared memory file from the filesystem */
+  if (is_final_cleanup) {
     unlink(shm_path);
-    logger(
-        LOG_DEBUG,
-        "Status tracking cleaned up (worker 0 - shared resources destroyed)");
+    if (worker_id == -1) {
+      logger(LOG_DEBUG,
+             "Status tracking cleaned up (supervisor - shared resources "
+             "destroyed)");
+    } else {
+      logger(LOG_DEBUG,
+             "Status tracking cleaned up (single worker - shared resources "
+             "destroyed)");
+    }
   } else {
     logger(LOG_DEBUG, "Status tracking cleaned up (worker %d)", worker_id);
   }

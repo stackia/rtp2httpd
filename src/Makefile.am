@@ -5,6 +5,7 @@ bin_PROGRAMS = rtp2httpd
 # Program sources
 rtp2httpd_SOURCES = \
 	rtp2httpd.c \
+	supervisor.c \
 	configuration.c \
 	http.c \
 	http_fetch.c \
@@ -33,6 +34,7 @@ rtp2httpd_SOURCES = \
 # Private headers (not installed)
 noinst_HEADERS = \
 	rtp2httpd.h \
+	supervisor.h \
 	configuration.h \
 	http.h \
 	http_fetch.h \
