@@ -89,6 +89,13 @@ const base: TranslationDict = {
   clientStateRtspPaused: "RTSP Paused",
   clientStateDisconnected: "Disconnected",
   clientStateUnknown: "Unknown State",
+  clearLogs: "Clear Logs",
+  serviceControl: "Service Control",
+  reloadConfig: "Reload Config",
+  restartWorkers: "Restart Workers",
+  reloading: "Reloading…",
+  restarting: "Restarting…",
+  clearing: "Clearing…",
 };
 
 const zhHans: TranslationDict = {
@@ -178,6 +185,13 @@ const zhHans: TranslationDict = {
   clientStateRtspPaused: "RTSP 暂停",
   clientStateDisconnected: "已断开",
   clientStateUnknown: "未知状态",
+  clearLogs: "清空日志",
+  serviceControl: "服务控制",
+  reloadConfig: "重载配置",
+  restartWorkers: "重启工作进程",
+  reloading: "重载中…",
+  restarting: "重启中…",
+  clearing: "清空中…",
 };
 
 const zhHant: TranslationDict = {
@@ -267,6 +281,13 @@ const zhHant: TranslationDict = {
   clientStateRtspPaused: "RTSP 暫停",
   clientStateDisconnected: "已斷線",
   clientStateUnknown: "未知狀態",
+  clearLogs: "清空日誌",
+  serviceControl: "服務控制",
+  reloadConfig: "重載設定",
+  restartWorkers: "重啟工作行程",
+  reloading: "重載中…",
+  restarting: "重啟中…",
+  clearing: "清空中…",
 };
 
 export const translations: Record<Locale, TranslationDict> = {

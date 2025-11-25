@@ -879,7 +879,7 @@ static char *create_service_from_url(const char *service_name, const char *url,
   /* Add to service hashmap for O(1) lookup */
   service_hashmap_add(new_service);
 
-  logger(LOG_INFO, "Service created: %s (%s) [%s]", unique_name,
+  logger(LOG_DEBUG, "Service created: %s (%s) [%s]", unique_name,
          new_service->service_type == SERVICE_MRTP ? "RTP" : "RTSP",
          source == SERVICE_SOURCE_INLINE ? "inline" : "external");
 

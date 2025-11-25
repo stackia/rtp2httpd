@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Activity, Gauge, Layers, Users } from "lucide-react";
 import { ConnectionsSection } from "../components/status/connections-section";
 import { LogsSection } from "../components/status/logs-section";
+import { ServiceControlSection } from "../components/status/service-control-section";
 import { StatusHeader } from "../components/status/status-header";
 import { SummaryStats } from "../components/status/summary-stats";
 import { WorkersSection } from "../components/status/workers-section";
@@ -46,7 +47,7 @@ function StatusPage() {
   const t = useStatusTranslation(locale);
 
   const { theme, setTheme } = useTheme("status-theme");
-  const { disconnectClient, setLogLevel } = useStatusApi();
+  const { disconnectClient, setLogLevel, clearLogs, reloadConfig, restartWorkers } = useStatusApi();
 
   const [connectionState, setConnectionState] = useState<ConnectionState>("reconnecting");
   const [payload, setPayload] = useState<StatusPayload | null>(null);
@@ -114,6 +115,31 @@ function StatusPage() {
     },
     [setLogLevel],
   );
+
+  const handleClearLogs = useCallback(async () => {
+    try {
+      await clearLogs();
+      setLogs([]);
+    } catch (error) {
+      window.alert(`Failed to clear logs: ${error}`);
+    }
+  }, [clearLogs]);
+
+  const handleReloadConfig = useCallback(async () => {
+    try {
+      await reloadConfig();
+    } catch (error) {
+      window.alert(`Failed to reload config: ${error}`);
+    }
+  }, [reloadConfig]);
+
+  const handleRestartWorkers = useCallback(async () => {
+    try {
+      await restartWorkers();
+    } catch (error) {
+      window.alert(`Failed to restart workers: ${error}`);
+    }
+  }, [restartWorkers]);
 
   const uptime = payload ? formatDuration(payload.uptimeMs) : "--";
 
@@ -213,6 +239,14 @@ function StatusPage() {
             logLevelValue={logLevelValue}
             onLogLevelChange={handleLogLevelChange}
             disabled={!logLevelValue}
+            locale={locale}
+          />
+
+          <ServiceControlSection
+            onReloadConfig={handleReloadConfig}
+            onRestartWorkers={handleRestartWorkers}
+            onClearLogs={handleClearLogs}
+            disabled={connectionState !== "connected"}
             locale={locale}
           />
         </div>

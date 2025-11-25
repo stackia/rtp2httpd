@@ -249,11 +249,34 @@ void status_add_log_entry(loglevel_t level, const char *message);
 void handle_disconnect_client(connection_t *c);
 
 /**
+ * Handle API request to clear logs
+ * RESTful: POST <status-path>/api/clear-logs
+ * @param c Connection object
+ */
+void handle_clear_logs(connection_t *c);
+
+/**
  * Handle API request to change log level
  * RESTful: PUT/PATCH <status-path>/api/log-level with form data body "level=2"
  * @param c Connection object
  */
 void handle_set_log_level(connection_t *c);
+
+/**
+ * Handle API request to reload configuration
+ * RESTful: POST <status-path>/api/reload-config
+ * Sends SIGHUP to supervisor process to trigger config reload
+ * @param c Connection object
+ */
+void handle_reload_config(connection_t *c);
+
+/**
+ * Handle API request to restart all workers
+ * RESTful: POST <status-path>/api/restart-workers
+ * Sends SIGUSR1 to supervisor process to trigger worker restart
+ * @param c Connection object
+ */
+void handle_restart_workers(connection_t *c);
 
 /**
  * Get the notification pipe read fd for current worker (called after fork)
