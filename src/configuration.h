@@ -2,6 +2,7 @@
 #define __CONFIGURATION_H__
 
 #include <net/if.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -133,19 +134,19 @@ void config_init(void);
  * Free all configuration resources
  * Frees services, EPG cache, M3U cache, bind addresses, and config strings.
  * Respects cmd_*_set flags - resources set by command line are NOT freed.
+ * If force_free is true, all resources are freed regardless of cmd_*_set flags.
  */
-void config_free(void);
+void config_free(bool force_free);
 
 /**
  * Reload configuration from file
  * Sequence: config_free() -> config_init() -> parse_config_file()
  * Respects command line overrides (cmd_*_set flags).
  *
- * @param out_old_workers If non-NULL, receives the old workers count
  * @param out_bind_changed If non-NULL, set to 1 if bind addresses changed
  * @return 0 on success, -1 on error (keeps old config)
  */
-int config_reload(int *out_old_workers, int *out_bind_changed);
+int config_reload(int *out_bind_changed);
 
 /**
  * Get the config file path used during startup

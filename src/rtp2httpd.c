@@ -6,7 +6,7 @@
 #include <unistd.h>
 
 /* GLOBALS */
-int worker_id = 0; /* Worker ID for this process (0-based) */
+int worker_id = SUPERVISOR_WORKER_ID; /* Worker ID for this process (0-based) */
 
 int main(int argc, char *argv[]) {
   parse_cmd_line(argc, argv);
@@ -17,14 +17,6 @@ int main(int argc, char *argv[]) {
     /* Continue anyway - status page won't work but streaming will */
   }
 
-  if (config.workers > 1) {
-    /* Multi-worker mode: run as supervisor */
-    logger(LOG_INFO, "Starting supervisor with %d workers (SO_REUSEPORT)",
-           config.workers);
-    return supervisor_run();
-  } else {
-    /* Single worker mode: run worker directly */
-    logger(LOG_INFO, "Starting single worker (pid=%d)", (int)getpid());
-    return run_worker();
-  }
+  logger(LOG_INFO, "Starting rtp2httpd with %d worker(s)", config.workers);
+  return supervisor_run();
 }

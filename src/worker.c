@@ -291,17 +291,8 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
       reload_flag = 0;
       logger(LOG_INFO, "Received SIGHUP, reloading configuration");
 
-      int bind_changed = 0;
-      if (config_reload(NULL, &bind_changed) == 0) {
+      if (config_reload(NULL) == 0) {
         logger(LOG_INFO, "Configuration reloaded successfully");
-
-        /* If bind addresses changed, exit so supervisor can restart us */
-        if (bind_changed) {
-          logger(LOG_INFO,
-                 "Bind addresses changed, exiting for supervisor restart");
-          stop_flag = 1;
-          break;
-        }
       } else {
         logger(LOG_ERROR, "Configuration reload failed, keeping old config");
       }

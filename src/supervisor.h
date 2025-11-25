@@ -1,6 +1,8 @@
 #ifndef __SUPERVISOR_H__
 #define __SUPERVISOR_H__
 
+#define SUPERVISOR_WORKER_ID (-1)
+
 /**
  * Supervisor module for multi-process worker management
  *

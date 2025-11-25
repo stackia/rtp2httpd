@@ -743,7 +743,7 @@ void set_config_file_path(const char *path) {
  * Respects cmd_*_set flags - resources set by command line are NOT freed.
  * Does NOT reset cmd_*_set flags (they track command line args).
  */
-void config_free(void) {
+void config_free(bool force_free) {
   /* Free all services */
   service_free_all();
 
@@ -754,27 +754,27 @@ void config_free(void) {
   m3u_reset_external_playlist();
 
   /* Free string config values */
-  if (!cmd_hostname_set)
+  if (!cmd_hostname_set || force_free)
     safe_free_string(&config.hostname);
-  if (!cmd_r2h_token_set)
+  if (!cmd_r2h_token_set || force_free)
     safe_free_string(&config.r2h_token);
-  if (!cmd_ffmpeg_path_set)
+  if (!cmd_ffmpeg_path_set || force_free)
     safe_free_string(&config.ffmpeg_path);
-  if (!cmd_ffmpeg_args_set)
+  if (!cmd_ffmpeg_args_set || force_free)
     safe_free_string(&config.ffmpeg_args);
-  if (!cmd_status_page_path_set) {
+  if (!cmd_status_page_path_set || force_free) {
     safe_free_string(&config.status_page_path);
     safe_free_string(&config.status_page_route);
   }
-  if (!cmd_player_page_path_set) {
+  if (!cmd_player_page_path_set || force_free) {
     safe_free_string(&config.player_page_path);
     safe_free_string(&config.player_page_route);
   }
-  if (!cmd_external_m3u_url_set)
+  if (!cmd_external_m3u_url_set || force_free)
     safe_free_string(&config.external_m3u_url);
 
   /* Free bind addresses */
-  if (!cmd_bind_set) {
+  if (!cmd_bind_set || force_free) {
     free_bindaddr(bind_addresses);
     bind_addresses = NULL;
   }
@@ -844,12 +844,10 @@ void config_init(void) {
  * Reload configuration from file
  * Sequence: config_free() -> config_init() -> parse_config_file()
  *
- * @param out_old_workers If non-NULL, receives the old workers count
  * @param out_bind_changed If non-NULL, set to 1 if bind addresses changed
  * @return 0 on success, -1 on error (keeps old config)
  */
-int config_reload(int *out_old_workers, int *out_bind_changed) {
-  int old_workers;
+int config_reload(int *out_bind_changed) {
   bindaddr_t *old_bind_addresses;
 
   if (!config_file_path) {
@@ -857,12 +855,11 @@ int config_reload(int *out_old_workers, int *out_bind_changed) {
     return -1;
   }
 
-  /* Save current values for comparison and potential rollback */
-  old_workers = config.workers;
+  /* Save current bind addresses for comparison and potential rollback */
   old_bind_addresses = copy_bindaddr(bind_addresses);
 
   /* Step 1: Free all configuration resources */
-  config_free();
+  config_free(false);
 
   /* Step 2: Initialize configuration with defaults */
   config_init();
@@ -871,8 +868,6 @@ int config_reload(int *out_old_workers, int *out_bind_changed) {
   if (parse_config_file(config_file_path) != 0) {
     logger(LOG_ERROR, "Failed to parse config file during reload: %s",
            config_file_path);
-    /* Restore old workers count */
-    config.workers = old_workers;
     /* Restore old bind addresses */
     if (!cmd_bind_set) {
       bind_addresses = old_bind_addresses;
@@ -887,11 +882,6 @@ int config_reload(int *out_old_workers, int *out_bind_changed) {
   if (out_bind_changed) {
     *out_bind_changed =
         !bind_addresses_equal(bind_addresses, old_bind_addresses);
-  }
-
-  /* Output old workers count for supervisor to compare */
-  if (out_old_workers) {
-    *out_old_workers = old_workers;
   }
 
   /* Clean up saved bind addresses */

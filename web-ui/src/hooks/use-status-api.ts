@@ -25,8 +25,41 @@ export function useStatusApi() {
     }
   }, []);
 
+  const clearLogs = useCallback(async () => {
+    const response = await fetch(buildUrl(buildStatusPath("/api/clear-logs")), {
+      method: "POST",
+    });
+    const data = await response.json().catch(() => undefined);
+    if (!response.ok) {
+      throw new Error(data?.error ?? `Request failed with status ${response.status}`);
+    }
+  }, []);
+
+  const reloadConfig = useCallback(async () => {
+    const response = await fetch(buildUrl(buildStatusPath("/api/reload-config")), {
+      method: "POST",
+    });
+    const data = await response.json().catch(() => undefined);
+    if (!response.ok) {
+      throw new Error(data?.error ?? `Request failed with status ${response.status}`);
+    }
+  }, []);
+
+  const restartWorkers = useCallback(async () => {
+    const response = await fetch(buildUrl(buildStatusPath("/api/restart-workers")), {
+      method: "POST",
+    });
+    const data = await response.json().catch(() => undefined);
+    if (!response.ok) {
+      throw new Error(data?.error ?? `Request failed with status ${response.status}`);
+    }
+  }, []);
+
   return {
     disconnectClient,
     setLogLevel,
+    clearLogs,
+    reloadConfig,
+    restartWorkers,
   };
 }

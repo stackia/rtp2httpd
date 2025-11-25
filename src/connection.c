@@ -645,6 +645,21 @@ int connection_route_and_start(connection_t *c) {
       handle_set_log_level(c);
       return 0;
     }
+    if (api_name_len == strlen("clear-logs") &&
+        strncmp(api_name, "clear-logs", api_name_len) == 0) {
+      handle_clear_logs(c);
+      return 0;
+    }
+    if (api_name_len == strlen("reload-config") &&
+        strncmp(api_name, "reload-config", api_name_len) == 0) {
+      handle_reload_config(c);
+      return 0;
+    }
+    if (api_name_len == strlen("restart-workers") &&
+        strncmp(api_name, "restart-workers", api_name_len) == 0) {
+      handle_restart_workers(c);
+      return 0;
+    }
 
     http_send_404(c);
     return 0;

@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -693,7 +694,15 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
   int cur_wi = status_shared->log_write_index;
   int cur_count = status_shared->log_count;
   int new_entries = 0;
-  if (!sent_initial) {
+  int logs_cleared = 0;
+
+  /* Detect log clear: count decreased or write_index reset while count is less
+   */
+  if (sent_initial && cur_count < last_log_count) {
+    logs_cleared = 1;
+  }
+
+  if (!sent_initial || logs_cleared) {
     logs_mode = "full";
   } else {
     int delta_idx = (cur_wi - last_write_index + STATUS_MAX_LOG_ENTRIES) %
@@ -714,8 +723,8 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
                   ",\"logsMode\":\"%s\",\"logs\":[", logs_mode);
 
   /* Add logs according to mode */
-  if (!sent_initial) {
-    /* Full dump: all available logs */
+  if (!sent_initial || logs_cleared) {
+    /* Full dump: all available logs (also used after log clear) */
     int full_count = cur_count;
     if (full_count > 0) {
       if (cur_count < STATUS_MAX_LOG_ENTRIES)
@@ -888,6 +897,48 @@ void handle_disconnect_client(connection_t *c) {
 }
 
 /**
+ * Handle API request to clear logs
+ * RESTful: POST <status-path>/api/clear-logs
+ */
+void handle_clear_logs(connection_t *c) {
+  char response[256];
+
+  /* Check HTTP method */
+  if (strcasecmp(c->http_req.method, "POST") != 0) {
+    send_http_headers(c, STATUS_400, "application/json", NULL);
+    snprintf(response, sizeof(response),
+             "{\"success\":false,\"error\":\"Method not allowed. Use POST\"}");
+    connection_queue_output_and_flush(c, (const uint8_t *)response,
+                                      strlen(response));
+    return;
+  }
+
+  if (!status_shared) {
+    send_http_headers(c, STATUS_503, "application/json", NULL);
+    snprintf(response, sizeof(response),
+             "{\"success\":false,\"error\":\"Status system not initialized\"}");
+    connection_queue_output_and_flush(c, (const uint8_t *)response,
+                                      strlen(response));
+    return;
+  }
+
+  /* Clear logs under mutex protection */
+  pthread_mutex_lock(&status_shared->log_mutex);
+  status_shared->log_write_index = 0;
+  status_shared->log_count = 0;
+  pthread_mutex_unlock(&status_shared->log_mutex);
+
+  /* Trigger SSE update to notify clients */
+  status_trigger_event(STATUS_EVENT_SSE_UPDATE);
+
+  send_http_headers(c, STATUS_200, "application/json", NULL);
+  snprintf(response, sizeof(response),
+           "{\"success\":true,\"message\":\"Logs cleared\"}");
+  connection_queue_output_and_flush(c, (const uint8_t *)response,
+                                    strlen(response));
+}
+
+/**
  * Handle API request to change log level
  * RESTful: PUT <status-path>/api/log-level with form data body "level=2"
  */
@@ -950,6 +1001,81 @@ void handle_set_log_level(connection_t *c) {
   snprintf(response, sizeof(response),
            "{\"success\":true,\"message\":\"Log level changed to %s\"}",
            status_get_log_level_name(new_level));
+  connection_queue_output_and_flush(c, (const uint8_t *)response,
+                                    strlen(response));
+}
+
+/**
+ * Handle API request to reload configuration
+ * RESTful: POST <status-path>/api/reload-config
+ * Sends SIGHUP to supervisor process to trigger config reload
+ */
+void handle_reload_config(connection_t *c) {
+  char response[256];
+
+  /* Check HTTP method */
+  if (strcasecmp(c->http_req.method, "POST") != 0) {
+    send_http_headers(c, STATUS_400, "application/json", NULL);
+    snprintf(response, sizeof(response),
+             "{\"success\":false,\"error\":\"Method not allowed. Use POST\"}");
+    connection_queue_output_and_flush(c, (const uint8_t *)response,
+                                      strlen(response));
+    return;
+  }
+
+  /* Get supervisor PID (parent process) */
+  pid_t supervisor_pid = getppid();
+
+  /* Send SIGHUP to supervisor */
+  if (kill(supervisor_pid, SIGHUP) == 0) {
+    send_http_headers(c, STATUS_200, "application/json", NULL);
+    snprintf(
+        response, sizeof(response),
+        "{\"success\":true,\"message\":\"Configuration reload triggered\"}");
+  } else {
+    send_http_headers(c, STATUS_500, "application/json", NULL);
+    snprintf(response, sizeof(response),
+             "{\"success\":false,\"error\":\"Failed to send signal to "
+             "supervisor: %s\"}",
+             strerror(errno));
+  }
+  connection_queue_output_and_flush(c, (const uint8_t *)response,
+                                    strlen(response));
+}
+
+/**
+ * Handle API request to restart all workers
+ * RESTful: POST <status-path>/api/restart-workers
+ * Sends SIGUSR1 to supervisor process to trigger worker restart
+ */
+void handle_restart_workers(connection_t *c) {
+  char response[256];
+
+  /* Check HTTP method */
+  if (strcasecmp(c->http_req.method, "POST") != 0) {
+    send_http_headers(c, STATUS_400, "application/json", NULL);
+    snprintf(response, sizeof(response),
+             "{\"success\":false,\"error\":\"Method not allowed. Use POST\"}");
+    connection_queue_output_and_flush(c, (const uint8_t *)response,
+                                      strlen(response));
+    return;
+  }
+
+  /* Get supervisor PID (parent process) */
+  pid_t supervisor_pid = getppid();
+
+  /* Send SIGUSR1 to supervisor */
+  if (kill(supervisor_pid, SIGUSR1) == 0) {
+    send_http_headers(c, STATUS_200, "application/json", NULL);
+    snprintf(response, sizeof(response),
+             "{\"success\":true,\"message\":\"Worker restart triggered\"}");
+  } else {
+    send_http_headers(c, STATUS_500, "application/json", NULL);
+    snprintf(response, sizeof(response),
+             "{\"success\":false,\"error\":\"Failed to send signal to "
+             "supervisor: %s\"}",
+             strerror(errno));
+  }
   connection_queue_output_and_flush(c, (const uint8_t *)response,
                                     strlen(response));
 }

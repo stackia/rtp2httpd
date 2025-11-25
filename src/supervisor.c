@@ -23,9 +23,6 @@
 #define RESTART_WINDOW_SEC 5     /* Time window for restart counting */
 #define MAX_RESTARTS_IN_WINDOW 3 /* Max restarts allowed in window */
 
-/* Special worker_id value for supervisor process */
-#define SUPERVISOR_WORKER_ID (-1)
-
 /* Worker process information */
 typedef struct {
   pid_t pid;     /* Worker PID, 0 if not running */
@@ -40,10 +37,12 @@ static worker_info_t *workers = NULL;
 static int num_workers = 0;
 static volatile sig_atomic_t supervisor_stop_flag = 0;
 static volatile sig_atomic_t supervisor_reload_flag = 0;
+static volatile sig_atomic_t supervisor_restart_workers_flag = 0;
 
 /* Forward declarations */
 static void supervisor_signal_handler(int signum);
 static void supervisor_sighup_handler(int signum);
+static void supervisor_sigusr1_handler(int signum);
 static int spawn_worker(int worker_idx);
 static void cleanup_workers(void);
 
@@ -61,6 +60,14 @@ static void supervisor_signal_handler(int signum) {
 static void supervisor_sighup_handler(int signum) {
   (void)signum;
   supervisor_reload_flag = 1;
+}
+
+/**
+ * Signal handler for SIGUSR1 (restart all workers)
+ */
+static void supervisor_sigusr1_handler(int signum) {
+  (void)signum;
+  supervisor_restart_workers_flag = 1;
 }
 
 /**
@@ -142,6 +149,24 @@ static int spawn_worker(int worker_idx) {
 }
 
 /**
+ * Broadcast a signal to all running workers
+ * @param signum Signal number to send
+ * @param reason Log message describing why the signal is being sent
+ */
+static void broadcast_signal_to_workers(int signum, const char *reason) {
+  logger(LOG_INFO, "%s, sending %s to %d workers", reason,
+         signum == SIGTERM  ? "SIGTERM"
+         : signum == SIGHUP ? "SIGHUP"
+                            : "signal",
+         num_workers);
+  for (int i = 0; i < num_workers; i++) {
+    if (workers[i].pid > 0) {
+      kill(workers[i].pid, signum);
+    }
+  }
+}
+
+/**
  * Find worker by PID
  * @return worker index, or -1 if not found
  */
@@ -168,9 +193,6 @@ static void cleanup_workers(void) {
 int supervisor_run(void) {
   int i;
 
-  /* Mark this process as supervisor (not a worker) */
-  worker_id = SUPERVISOR_WORKER_ID;
-
   num_workers = config.workers;
   workers = calloc(num_workers, sizeof(worker_info_t));
   if (!workers) {
@@ -188,8 +210,6 @@ int supervisor_run(void) {
       workers[i].restart_times[j] = 0;
     }
   }
-
-  logger(LOG_INFO, "Starting %d workers", num_workers);
 
   /* Spawn all workers */
   for (i = 0; i < num_workers; i++) {
@@ -216,6 +236,14 @@ int supervisor_run(void) {
   sa_hup.sa_flags = 0;
   sigaction(SIGHUP, &sa_hup, NULL);
 
+  /* SIGUSR1 for restarting all workers */
+  struct sigaction sa_usr1;
+  memset(&sa_usr1, 0, sizeof(sa_usr1));
+  sa_usr1.sa_handler = supervisor_sigusr1_handler;
+  sigemptyset(&sa_usr1.sa_mask);
+  sa_usr1.sa_flags = 0;
+  sigaction(SIGUSR1, &sa_usr1, NULL);
+
   /* Ignore SIGCHLD - we use waitpid() to collect children */
   signal(SIGCHLD, SIG_DFL);
 
@@ -231,7 +259,6 @@ int supervisor_run(void) {
       int worker_idx = find_worker_by_pid(pid);
 
       if (worker_idx < 0) {
-        logger(LOG_WARN, "Unknown child %d exited", (int)pid);
         continue;
       }
 
@@ -284,22 +311,18 @@ int supervisor_run(void) {
       supervisor_reload_flag = 0;
       logger(LOG_INFO, "Received SIGHUP, reloading configuration");
 
-      int old_workers = 0;
-      if (config_reload(&old_workers, NULL) == 0) {
+      int bind_changed = 0;
+      if (config_reload(&bind_changed) == 0) {
         logger(LOG_INFO, "Configuration reloaded successfully");
 
-        /* Check for single <-> multi worker transition */
-        if ((old_workers == 1 && config.workers > 1) ||
-            (old_workers > 1 && config.workers == 1)) {
-          logger(LOG_FATAL,
-                 "Cannot switch between single and multi-worker mode at "
-                 "runtime, exiting");
-          supervisor_stop_flag = 1;
-          continue;
-        }
-
-        /* Handle worker count changes first */
+        /* Handle worker count changes */
         if (config.workers > num_workers) {
+          if (bind_changed) {
+            broadcast_signal_to_workers(SIGTERM, "Bind addresses changed");
+          } else {
+            broadcast_signal_to_workers(SIGHUP, "Forwarding config reload");
+          }
+
           /* Need to spawn more workers */
           int new_count = config.workers;
           worker_info_t *new_workers =
@@ -326,7 +349,7 @@ int supervisor_run(void) {
             logger(LOG_ERROR, "Failed to allocate memory for new workers");
           }
         } else if (config.workers < num_workers) {
-          /* Need to terminate excess workers - no need to send SIGHUP first */
+          /* Need to terminate excess workers */
           logger(LOG_INFO, "Reducing worker count from %d to %d", num_workers,
                  config.workers);
           for (i = config.workers; i < num_workers; i++) {
@@ -344,13 +367,17 @@ int supervisor_run(void) {
           if (new_workers) {
             workers = new_workers;
           }
-        }
 
-        /* Forward SIGHUP to existing workers (after count adjustment) */
-        logger(LOG_INFO, "Forwarding SIGHUP to %d workers", num_workers);
-        for (i = 0; i < num_workers; i++) {
-          if (workers[i].pid > 0) {
-            kill(workers[i].pid, SIGHUP);
+          if (bind_changed) {
+            broadcast_signal_to_workers(SIGTERM, "Bind addresses changed");
+          } else {
+            broadcast_signal_to_workers(SIGHUP, "Forwarding config reload");
+          }
+        } else {
+          if (bind_changed) {
+            broadcast_signal_to_workers(SIGTERM, "Bind addresses changed");
+          } else {
+            broadcast_signal_to_workers(SIGHUP, "Forwarding config reload");
           }
         }
       } else {
@@ -359,20 +386,18 @@ int supervisor_run(void) {
       }
     }
 
+    /* Handle SIGUSR1 restart workers request */
+    if (supervisor_restart_workers_flag) {
+      supervisor_restart_workers_flag = 0;
+      broadcast_signal_to_workers(SIGTERM,
+                                  "Received SIGUSR1, restarting workers");
+    }
+
     /* Sleep before next check */
     usleep(100000); /* 100ms */
   }
 
-  logger(LOG_INFO, "Received stop signal, shutting down workers");
-
-  /* Send SIGTERM to all workers and wait for them to exit */
-  for (i = 0; i < num_workers; i++) {
-    if (workers[i].pid > 0) {
-      logger(LOG_INFO, "Sending SIGTERM to worker %d (pid %d)", i,
-             (int)workers[i].pid);
-      kill(workers[i].pid, SIGTERM);
-    }
-  }
+  broadcast_signal_to_workers(SIGTERM, "Received stop signal, shutting down");
 
   /* Wait for all workers to exit with timeout */
   int remaining = num_workers;
@@ -538,9 +563,8 @@ int run_worker(void) {
   /* Run worker event loop */
   int result = worker_run_event_loop(s, maxs, notif_fd);
 
-  free_bindaddr(bind_addresses);
   status_cleanup();
-  config_free();
+  config_free(true);
 
   return result;
 }
