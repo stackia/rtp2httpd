@@ -1304,6 +1304,24 @@ void service_free_external(void) {
   logger(LOG_INFO, "Freed %d external M3U services", freed_count);
 }
 
+void service_free_all(void) {
+  service_t *current;
+  int freed_count = 0;
+
+  /* Free hashmap */
+  service_hashmap_free();
+
+  /* Free all services */
+  while (services != NULL) {
+    current = services;
+    services = current->next;
+    service_free(current);
+    freed_count++;
+  }
+
+  logger(LOG_INFO, "Freed %d services (all)", freed_count);
+}
+
 /* ========== SERVICE HASHMAP IMPLEMENTATION ========== */
 
 /**

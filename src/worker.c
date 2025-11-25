@@ -1,4 +1,5 @@
 #include "worker.h"
+#include "configuration.h"
 #include "connection.h"
 #include "epg.h"
 #include "hashmap.h"
@@ -31,6 +32,9 @@ static connection_t *conn_head = NULL;
 
 /* Stop flag for graceful shutdown */
 static volatile sig_atomic_t stop_flag = 0;
+
+/* Reload flag for SIGHUP handling */
+static volatile sig_atomic_t reload_flag = 0;
 
 #define WORKER_MAX_WRITE_BATCH 128
 
@@ -219,6 +223,11 @@ static void term_handler(int signum) {
   stop_flag = 1;
 }
 
+static void sighup_handler(int signum) {
+  (void)signum;
+  reload_flag = 1;
+}
+
 int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
   int i;
   struct sockaddr_storage client;
@@ -259,6 +268,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
   /* Register signal handlers */
   signal(SIGTERM, &term_handler);
   signal(SIGINT, &term_handler);
+  signal(SIGHUP, &sighup_handler);
 
   /* Unified event loop: accept + clients + stream fds */
   int64_t last_tick = get_time_ms();
@@ -275,6 +285,27 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
     }
 
     int64_t now = get_time_ms();
+
+    /* Handle SIGHUP reload request */
+    if (reload_flag) {
+      reload_flag = 0;
+      logger(LOG_INFO, "Received SIGHUP, reloading configuration");
+
+      int bind_changed = 0;
+      if (config_reload(NULL, &bind_changed) == 0) {
+        logger(LOG_INFO, "Configuration reloaded successfully");
+
+        /* If bind addresses changed, exit so supervisor can restart us */
+        if (bind_changed) {
+          logger(LOG_INFO,
+                 "Bind addresses changed, exiting for supervisor restart");
+          stop_flag = 1;
+          break;
+        }
+      } else {
+        logger(LOG_ERROR, "Configuration reload failed, keeping old config");
+      }
+    }
 
     /* 1) Handle all ready events */
     for (int e = 0; e < n; e++) {

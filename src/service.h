@@ -154,6 +154,13 @@ void service_free(service_t *service);
 void service_free_external(void);
 
 /**
+ * Free all services in the global services list
+ * Free hashmap, then frees all services (both inline and external)
+ * Used during config reload
+ */
+void service_free_all(void);
+
+/**
  * Initialize the service lookup hashmap
  * Must be called before any services are added
  */

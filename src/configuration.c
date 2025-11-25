@@ -1,4 +1,5 @@
 #include "configuration.h"
+#include "epg.h"
 #include "m3u.h"
 #include "service.h"
 #include "utils.h"
@@ -18,26 +19,32 @@
 config_t config;
 bindaddr_t *bind_addresses = NULL;
 
-int cmd_verbosity_set;
-int cmd_udpxy_set;
-int cmd_maxclients_set;
-int cmd_bind_set;
-int cmd_hostname_set;
-int cmd_xff_set;
-int cmd_r2h_token_set;
-int cmd_buffer_pool_max_size_set;
-int cmd_mcast_rejoin_interval_set;
-int cmd_ffmpeg_path_set;
-int cmd_ffmpeg_args_set;
-int cmd_video_snapshot_set;
-int cmd_upstream_interface_set;
-int cmd_upstream_interface_fcc_set;
-int cmd_upstream_interface_rtsp_set;
-int cmd_upstream_interface_multicast_set;
-int cmd_fcc_listen_port_range_set;
-int cmd_status_page_path_set;
-int cmd_player_page_path_set;
-int cmd_zerocopy_on_send_set;
+/* Config file path for reload */
+static char *config_file_path = NULL;
+
+int cmd_verbosity_set = 0;
+int cmd_udpxy_set = 0;
+int cmd_maxclients_set = 0;
+int cmd_bind_set = 0;
+int cmd_hostname_set = 0;
+int cmd_xff_set = 0;
+int cmd_r2h_token_set = 0;
+int cmd_buffer_pool_max_size_set = 0;
+int cmd_mcast_rejoin_interval_set = 0;
+int cmd_ffmpeg_path_set = 0;
+int cmd_ffmpeg_args_set = 0;
+int cmd_video_snapshot_set = 0;
+int cmd_upstream_interface_set = 0;
+int cmd_upstream_interface_fcc_set = 0;
+int cmd_upstream_interface_rtsp_set = 0;
+int cmd_upstream_interface_multicast_set = 0;
+int cmd_fcc_listen_port_range_set = 0;
+int cmd_status_page_path_set = 0;
+int cmd_player_page_path_set = 0;
+int cmd_zerocopy_on_send_set = 0;
+int cmd_workers_set = 0;
+int cmd_external_m3u_url_set = 0;
+int cmd_external_m3u_update_interval_set = 0;
 
 enum section_e { SEC_NONE = 0, SEC_BIND, SEC_SERVICES, SEC_GLOBAL };
 
@@ -658,116 +665,243 @@ void free_bindaddr(bindaddr_t *ba) {
   }
 }
 
-/*
- * Free service structure created from configuration file
+/**
+ * Deep copy a bind address list
  */
-static void free_config_service(service_t *service) {
-  if (service->url != NULL)
-    free(service->url);
-  if (service->addr != NULL)
-    freeaddrinfo(service->addr);
-  if (service->msrc_addr != NULL)
-    freeaddrinfo(service->msrc_addr);
-  if (service->fcc_addr != NULL)
-    freeaddrinfo(service->fcc_addr);
-  if (service->rtsp_url != NULL)
-    free(service->rtsp_url);
-  if (service->user_agent != NULL)
-    free(service->user_agent);
-  if (service->msrc != NULL)
-    free(service->msrc);
-  free(service);
-}
+static bindaddr_t *copy_bindaddr(bindaddr_t *src) {
+  bindaddr_t *head = NULL;
+  bindaddr_t **tail = &head;
 
-/* Setup configuration defaults */
-void restore_conf_defaults(void) {
-  service_t *service_tmp;
-
-  /* Initialize configuration structure with defaults */
-  memset(&config, 0, sizeof(config_t));
-
-  /* Set default values and reset command line flags */
-  config.verbosity = LOG_ERROR;
-  cmd_verbosity_set = 0;
-
-  config.maxclients = 5;
-  cmd_maxclients_set = 0;
-
-  config.udpxy = 1;
-  cmd_udpxy_set = 0;
-
-  cmd_bind_set = 0;
-
-  config.fcc_listen_port_min = 0;
-  config.fcc_listen_port_max = 0;
-  cmd_fcc_listen_port_range_set = 0;
-
-  config.workers = 1; /* default single worker for low-end OpenWrt */
-
-  config.buffer_pool_max_size = 16384;
-  cmd_buffer_pool_max_size_set = 0;
-
-  safe_free_string(&config.hostname);
-  cmd_hostname_set = 0;
-
-  config.xff = 0;
-  cmd_xff_set = 0;
-
-  safe_free_string(&config.r2h_token);
-  cmd_r2h_token_set = 0;
-
-  safe_free_string(&config.ffmpeg_path);
-  cmd_ffmpeg_path_set = 0;
-
-  safe_free_string(&config.ffmpeg_args);
-  config.ffmpeg_args = strdup("-hwaccel none"); /* Set default ffmpeg args */
-  cmd_ffmpeg_args_set = 0;
-
-  config.video_snapshot = 0;
-  cmd_video_snapshot_set = 0;
-
-  config.mcast_rejoin_interval = 0; /* default disabled */
-  cmd_mcast_rejoin_interval_set = 0;
-
-  config.zerocopy_on_send = 0; /* default: disabled for compatibility */
-  cmd_zerocopy_on_send_set = 0;
-
-  set_status_page_path_value("/status");
-  cmd_status_page_path_set = 0;
-
-  set_player_page_path_value("/player");
-  cmd_player_page_path_set = 0;
-
-  safe_free_string(&config.external_m3u_url);
-  config.external_m3u_update_interval = 7200; /* 2 hours default */
-  config.last_external_m3u_update_time = 0;
-
-  if (config.upstream_interface[0] != '\0')
-    memset(config.upstream_interface, 0, IFNAMSIZ);
-  cmd_upstream_interface_set = 0;
-
-  if (config.upstream_interface_fcc[0] != '\0')
-    memset(config.upstream_interface_fcc, 0, IFNAMSIZ);
-  cmd_upstream_interface_fcc_set = 0;
-
-  if (config.upstream_interface_rtsp[0] != '\0')
-    memset(config.upstream_interface_rtsp, 0, IFNAMSIZ);
-  cmd_upstream_interface_rtsp_set = 0;
-
-  if (config.upstream_interface_multicast[0] != '\0')
-    memset(config.upstream_interface_multicast, 0, IFNAMSIZ);
-  cmd_upstream_interface_multicast_set = 0;
-
-  /* Free all services */
-  while (services != NULL) {
-    service_tmp = services;
-    services = services->next;
-    free_config_service(service_tmp);
+  while (src) {
+    bindaddr_t *copy = malloc(sizeof(bindaddr_t));
+    if (!copy) {
+      free_bindaddr(head);
+      return NULL;
+    }
+    copy->node = src->node ? strdup(src->node) : NULL;
+    copy->service = src->service ? strdup(src->service) : NULL;
+    copy->next = NULL;
+    *tail = copy;
+    tail = &copy->next;
+    src = src->next;
   }
 
-  /* Free all bind addresses */
-  free_bindaddr(bind_addresses);
-  bind_addresses = NULL;
+  return head;
+}
+
+/**
+ * Compare two bind address lists for equality
+ * Returns 1 if equal, 0 if different
+ */
+int bind_addresses_equal(bindaddr_t *a, bindaddr_t *b) {
+  while (a && b) {
+    /* Compare node (both NULL or both equal) */
+    if (a->node == NULL && b->node != NULL)
+      return 0;
+    if (a->node != NULL && b->node == NULL)
+      return 0;
+    if (a->node && b->node && strcmp(a->node, b->node) != 0)
+      return 0;
+
+    /* Compare service (both NULL or both equal) */
+    if (a->service == NULL && b->service != NULL)
+      return 0;
+    if (a->service != NULL && b->service == NULL)
+      return 0;
+    if (a->service && b->service && strcmp(a->service, b->service) != 0)
+      return 0;
+
+    a = a->next;
+    b = b->next;
+  }
+
+  /* Both should be NULL at the end for equality */
+  return (a == NULL && b == NULL);
+}
+
+/**
+ * Get the config file path
+ */
+const char *get_config_file_path(void) { return config_file_path; }
+
+/**
+ * Set the config file path (stores a copy)
+ */
+void set_config_file_path(const char *path) {
+  if (config_file_path) {
+    free(config_file_path);
+    config_file_path = NULL;
+  }
+  if (path) {
+    config_file_path = strdup(path);
+  }
+}
+
+/**
+ * Free all configuration resources
+ * Frees services, EPG cache, M3U cache, bind addresses, and config strings.
+ * Respects cmd_*_set flags - resources set by command line are NOT freed.
+ * Does NOT reset cmd_*_set flags (they track command line args).
+ */
+void config_free(void) {
+  /* Free all services */
+  service_free_all();
+
+  /* Free EPG cache */
+  epg_cleanup();
+
+  /* Free external M3U cache */
+  m3u_reset_external_playlist();
+
+  /* Free string config values */
+  if (!cmd_hostname_set)
+    safe_free_string(&config.hostname);
+  if (!cmd_r2h_token_set)
+    safe_free_string(&config.r2h_token);
+  if (!cmd_ffmpeg_path_set)
+    safe_free_string(&config.ffmpeg_path);
+  if (!cmd_ffmpeg_args_set)
+    safe_free_string(&config.ffmpeg_args);
+  if (!cmd_status_page_path_set) {
+    safe_free_string(&config.status_page_path);
+    safe_free_string(&config.status_page_route);
+  }
+  if (!cmd_player_page_path_set) {
+    safe_free_string(&config.player_page_path);
+    safe_free_string(&config.player_page_route);
+  }
+  if (!cmd_external_m3u_url_set)
+    safe_free_string(&config.external_m3u_url);
+
+  /* Free bind addresses */
+  if (!cmd_bind_set) {
+    free_bindaddr(bind_addresses);
+    bind_addresses = NULL;
+  }
+}
+
+/**
+ * Initialize configuration with default values
+ * Sets all config values to defaults. Respects cmd_*_set flags -
+ * values set by command line are NOT reset.
+ * Does NOT reset cmd_*_set flags (they track command line args).
+ */
+void config_init(void) {
+  /* Set numeric config values to defaults (only if not set by command line) */
+  if (!cmd_verbosity_set)
+    config.verbosity = LOG_ERROR;
+  if (!cmd_maxclients_set)
+    config.maxclients = 5;
+  if (!cmd_udpxy_set)
+    config.udpxy = 1;
+  if (!cmd_buffer_pool_max_size_set)
+    config.buffer_pool_max_size = 16384;
+  if (!cmd_xff_set)
+    config.xff = 0;
+  if (!cmd_video_snapshot_set)
+    config.video_snapshot = 0;
+  if (!cmd_mcast_rejoin_interval_set)
+    config.mcast_rejoin_interval = 0;
+  if (!cmd_zerocopy_on_send_set)
+    config.zerocopy_on_send = 0;
+  if (!cmd_fcc_listen_port_range_set) {
+    config.fcc_listen_port_min = 0;
+    config.fcc_listen_port_max = 0;
+  }
+
+  /* Workers setting (only if not set by command line) */
+  if (!cmd_workers_set)
+    config.workers = 1;
+
+  /* Set string config values to defaults (only if not set by command line) */
+  if (!cmd_ffmpeg_args_set)
+    config.ffmpeg_args = strdup("-hwaccel none");
+  if (!cmd_status_page_path_set)
+    set_status_page_path_value("/status");
+  if (!cmd_player_page_path_set)
+    set_player_page_path_value("/player");
+
+  /* Reset interface settings (only if not set by command line) */
+  if (!cmd_upstream_interface_set)
+    memset(config.upstream_interface, 0, IFNAMSIZ);
+  if (!cmd_upstream_interface_fcc_set)
+    memset(config.upstream_interface_fcc, 0, IFNAMSIZ);
+  if (!cmd_upstream_interface_rtsp_set)
+    memset(config.upstream_interface_rtsp, 0, IFNAMSIZ);
+  if (!cmd_upstream_interface_multicast_set)
+    memset(config.upstream_interface_multicast, 0, IFNAMSIZ);
+
+  /* External M3U settings (only if not set by command line) */
+  if (!cmd_external_m3u_update_interval_set)
+    config.external_m3u_update_interval = 7200;
+  config.last_external_m3u_update_time = 0;
+
+  /* Initialize service hashmap */
+  service_hashmap_init();
+}
+
+/**
+ * Reload configuration from file
+ * Sequence: config_free() -> config_init() -> parse_config_file()
+ *
+ * @param out_old_workers If non-NULL, receives the old workers count
+ * @param out_bind_changed If non-NULL, set to 1 if bind addresses changed
+ * @return 0 on success, -1 on error (keeps old config)
+ */
+int config_reload(int *out_old_workers, int *out_bind_changed) {
+  int old_workers;
+  bindaddr_t *old_bind_addresses;
+
+  if (!config_file_path) {
+    logger(LOG_ERROR, "No config file path set, cannot reload");
+    return -1;
+  }
+
+  /* Save current values for comparison and potential rollback */
+  old_workers = config.workers;
+  old_bind_addresses = copy_bindaddr(bind_addresses);
+
+  /* Step 1: Free all configuration resources */
+  config_free();
+
+  /* Step 2: Initialize configuration with defaults */
+  config_init();
+
+  /* Step 3: Parse config file */
+  if (parse_config_file(config_file_path) != 0) {
+    logger(LOG_ERROR, "Failed to parse config file during reload: %s",
+           config_file_path);
+    /* Restore old workers count */
+    config.workers = old_workers;
+    /* Restore old bind addresses */
+    if (!cmd_bind_set) {
+      bind_addresses = old_bind_addresses;
+      old_bind_addresses = NULL; /* Don't free it */
+    }
+    if (old_bind_addresses)
+      free_bindaddr(old_bind_addresses);
+    return -1;
+  }
+
+  /* Check if bind addresses changed */
+  if (out_bind_changed) {
+    *out_bind_changed =
+        !bind_addresses_equal(bind_addresses, old_bind_addresses);
+  }
+
+  /* Output old workers count for supervisor to compare */
+  if (out_old_workers) {
+    *out_old_workers = old_workers;
+  }
+
+  /* Clean up saved bind addresses */
+  if (old_bind_addresses)
+    free_bindaddr(old_bind_addresses);
+
+  logger(LOG_INFO, "Configuration reloaded successfully from %s",
+         config_file_path);
+
+  return 0;
 }
 
 void usage(FILE *f, char *progname) {
@@ -904,10 +1038,9 @@ void parse_cmd_line(int argc, char *argv[]) {
   int option_index, opt;
   int configfile_failed = 1;
 
-  restore_conf_defaults();
-
-  /* Initialize service hashmap for O(1) service lookup */
-  service_hashmap_init();
+  /* Zero out config structure and initialize with defaults */
+  memset(&config, 0, sizeof(config_t));
+  config_init();
 
   while ((opt = getopt_long(argc, argv, short_opts, longopts, &option_index)) !=
          -1) {
@@ -943,6 +1076,7 @@ void parse_cmd_line(int argc, char *argv[]) {
         logger(LOG_ERROR, "Invalid workers! Ignoring.");
       } else {
         config.workers = atoi(optarg);
+        cmd_workers_set = 1;
       }
       break;
     case 'b':
@@ -955,9 +1089,13 @@ void parse_cmd_line(int argc, char *argv[]) {
       break;
     case 'c':
       configfile_failed = parse_config_file(optarg);
+      if (configfile_failed == 0) {
+        set_config_file_path(optarg);
+      }
       break;
     case 'C':
       configfile_failed = 0;
+      set_config_file_path(NULL); /* No config file */
       break;
     case 'l':
       parse_bind_cmd(optarg);
@@ -1046,6 +1184,7 @@ void parse_cmd_line(int argc, char *argv[]) {
       if (config.external_m3u_url)
         free(config.external_m3u_url);
       config.external_m3u_url = strdup(optarg);
+      cmd_external_m3u_url_set = 1;
       logger(LOG_INFO, "External M3U URL set to: %s", config.external_m3u_url);
       break;
     case 'I':
@@ -1053,6 +1192,7 @@ void parse_cmd_line(int argc, char *argv[]) {
         logger(LOG_ERROR, "Invalid external-m3u-update-interval! Ignoring.");
       } else {
         config.external_m3u_update_interval = atoi(optarg);
+        cmd_external_m3u_update_interval_set = 1;
         logger(LOG_INFO, "External M3U update interval set to %d seconds",
                config.external_m3u_update_interval);
       }
@@ -1070,9 +1210,13 @@ void parse_cmd_line(int argc, char *argv[]) {
   }
   if (configfile_failed) {
     configfile_failed = parse_config_file(CONFIGFILE);
+    if (configfile_failed == 0) {
+      set_config_file_path(CONFIGFILE);
+    }
   }
   if (configfile_failed) {
     logger(LOG_WARN, "No config file found");
+    set_config_file_path(NULL);
   }
 
   /* External M3U will be loaded asynchronously by workers after startup

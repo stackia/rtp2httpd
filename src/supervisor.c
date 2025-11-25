@@ -1,7 +1,6 @@
 #include "supervisor.h"
 #include "configuration.h"
 #include "rtp2httpd.h"
-#include "service.h"
 #include "status.h"
 #include "utils.h"
 #include "worker.h"
@@ -40,18 +39,28 @@ typedef struct {
 static worker_info_t *workers = NULL;
 static int num_workers = 0;
 static volatile sig_atomic_t supervisor_stop_flag = 0;
+static volatile sig_atomic_t supervisor_reload_flag = 0;
 
 /* Forward declarations */
 static void supervisor_signal_handler(int signum);
+static void supervisor_sighup_handler(int signum);
 static int spawn_worker(int worker_idx);
 static void cleanup_workers(void);
 
 /**
- * Signal handler for supervisor process
+ * Signal handler for supervisor process (SIGTERM/SIGINT)
  */
 static void supervisor_signal_handler(int signum) {
   (void)signum;
   supervisor_stop_flag = 1;
+}
+
+/**
+ * Signal handler for SIGHUP (config reload)
+ */
+static void supervisor_sighup_handler(int signum) {
+  (void)signum;
+  supervisor_reload_flag = 1;
 }
 
 /**
@@ -199,12 +208,16 @@ int supervisor_run(void) {
   sigaction(SIGTERM, &sa, NULL);
   sigaction(SIGINT, &sa, NULL);
 
+  /* SIGHUP for config reload */
+  struct sigaction sa_hup;
+  memset(&sa_hup, 0, sizeof(sa_hup));
+  sa_hup.sa_handler = supervisor_sighup_handler;
+  sigemptyset(&sa_hup.sa_mask);
+  sa_hup.sa_flags = 0;
+  sigaction(SIGHUP, &sa_hup, NULL);
+
   /* Ignore SIGCHLD - we use waitpid() to collect children */
   signal(SIGCHLD, SIG_DFL);
-
-  /* Future: SIGHUP for config reload
-   * sigaction(SIGHUP, &reload_handler, NULL);
-   */
 
   logger(LOG_INFO, "Entering monitoring loop");
 
@@ -263,6 +276,86 @@ int supervisor_run(void) {
             logger(LOG_ERROR, "Failed to restart worker %d", i);
           }
         }
+      }
+    }
+
+    /* Handle SIGHUP reload request */
+    if (supervisor_reload_flag) {
+      supervisor_reload_flag = 0;
+      logger(LOG_INFO, "Received SIGHUP, reloading configuration");
+
+      int old_workers = 0;
+      if (config_reload(&old_workers, NULL) == 0) {
+        logger(LOG_INFO, "Configuration reloaded successfully");
+
+        /* Check for single <-> multi worker transition */
+        if ((old_workers == 1 && config.workers > 1) ||
+            (old_workers > 1 && config.workers == 1)) {
+          logger(LOG_FATAL,
+                 "Cannot switch between single and multi-worker mode at "
+                 "runtime, exiting");
+          supervisor_stop_flag = 1;
+          continue;
+        }
+
+        /* Handle worker count changes first */
+        if (config.workers > num_workers) {
+          /* Need to spawn more workers */
+          int new_count = config.workers;
+          worker_info_t *new_workers =
+              realloc(workers, new_count * sizeof(worker_info_t));
+          if (new_workers) {
+            workers = new_workers;
+            /* Initialize new worker slots */
+            for (i = num_workers; i < new_count; i++) {
+              workers[i].pid = 0;
+              workers[i].worker_id = i;
+              workers[i].restart_count = 0;
+              workers[i].rate_limited = 0;
+              for (int j = 0; j < MAX_RESTARTS_IN_WINDOW; j++) {
+                workers[i].restart_times[j] = 0;
+              }
+              /* Spawn new worker - it inherits new config automatically */
+              logger(LOG_INFO, "Spawning new worker %d", i);
+              if (spawn_worker(i) < 0) {
+                logger(LOG_ERROR, "Failed to spawn new worker %d", i);
+              }
+            }
+            num_workers = new_count;
+          } else {
+            logger(LOG_ERROR, "Failed to allocate memory for new workers");
+          }
+        } else if (config.workers < num_workers) {
+          /* Need to terminate excess workers - no need to send SIGHUP first */
+          logger(LOG_INFO, "Reducing worker count from %d to %d", num_workers,
+                 config.workers);
+          for (i = config.workers; i < num_workers; i++) {
+            if (workers[i].pid > 0) {
+              logger(LOG_INFO, "Sending SIGTERM to excess worker %d (pid %d)",
+                     i, (int)workers[i].pid);
+              kill(workers[i].pid, SIGTERM);
+            }
+          }
+          /* Update num_workers - excess workers will be reaped normally */
+          num_workers = config.workers;
+          /* Shrink array */
+          worker_info_t *new_workers =
+              realloc(workers, num_workers * sizeof(worker_info_t));
+          if (new_workers) {
+            workers = new_workers;
+          }
+        }
+
+        /* Forward SIGHUP to existing workers (after count adjustment) */
+        logger(LOG_INFO, "Forwarding SIGHUP to %d workers", num_workers);
+        for (i = 0; i < num_workers; i++) {
+          if (workers[i].pid > 0) {
+            kill(workers[i].pid, SIGHUP);
+          }
+        }
+      } else {
+        logger(LOG_ERROR,
+               "Configuration reload failed, not forwarding SIGHUP to workers");
       }
     }
 
@@ -447,7 +540,7 @@ int run_worker(void) {
 
   free_bindaddr(bind_addresses);
   status_cleanup();
-  service_hashmap_free();
+  config_free();
 
   return result;
 }

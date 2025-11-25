@@ -110,7 +110,6 @@ void parse_bind_sec(char *line);
 void parse_services_sec(char *line);
 void parse_global_sec(char *line);
 int parse_config_file(const char *path);
-void restore_conf_defaults(void);
 void usage(FILE *f, char *progname);
 void parse_bind_cmd(char *optarg);
 
@@ -120,5 +119,50 @@ void parse_cmd_line(int argc, char *argv[]);
 /* Memory management */
 bindaddr_t *new_empty_bindaddr(void);
 void free_bindaddr(bindaddr_t *);
+
+/* Configuration lifecycle */
+
+/**
+ * Initialize configuration with default values
+ * Sets all config values to defaults. Respects cmd_*_set flags -
+ * values set by command line are NOT reset.
+ */
+void config_init(void);
+
+/**
+ * Free all configuration resources
+ * Frees services, EPG cache, M3U cache, bind addresses, and config strings.
+ * Respects cmd_*_set flags - resources set by command line are NOT freed.
+ */
+void config_free(void);
+
+/**
+ * Reload configuration from file
+ * Sequence: config_free() -> config_init() -> parse_config_file()
+ * Respects command line overrides (cmd_*_set flags).
+ *
+ * @param out_old_workers If non-NULL, receives the old workers count
+ * @param out_bind_changed If non-NULL, set to 1 if bind addresses changed
+ * @return 0 on success, -1 on error (keeps old config)
+ */
+int config_reload(int *out_old_workers, int *out_bind_changed);
+
+/**
+ * Get the config file path used during startup
+ * @return Config file path or NULL if no config file
+ */
+const char *get_config_file_path(void);
+
+/**
+ * Set the config file path (stores a copy)
+ * @param path Config file path or NULL to clear
+ */
+void set_config_file_path(const char *path);
+
+/**
+ * Compare two bind address lists for equality
+ * @return 1 if equal, 0 if different
+ */
+int bind_addresses_equal(bindaddr_t *a, bindaddr_t *b);
 
 #endif /* __CONFIGURATION_H__ */
