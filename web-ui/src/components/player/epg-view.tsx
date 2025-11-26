@@ -1,4 +1,4 @@
-import { useMemo, useRef, useLayoutEffect, RefObject, memo, useCallback } from "react";
+import { useMemo, useRef, useLayoutEffect, RefObject, memo, useCallback, useState, useEffect } from "react";
 import { Circle, History } from "lucide-react";
 import { EPGProgram } from "../../types/player";
 import { EPGData } from "../../lib/epg-parser";
@@ -9,7 +9,6 @@ import type { Locale } from "../../lib/locale";
 interface EPGViewProps {
   channelId: string | null;
   epgData: EPGData;
-  currentTime: Date;
   onProgramSelect: (programStart: Date, programEnd: Date) => void;
   locale: Locale;
   supportsCatchup: boolean;
@@ -21,7 +20,6 @@ export const nextScrollBehaviorRef: RefObject<"smooth" | "instant" | "skip"> = {
 function EPGViewComponent({
   channelId,
   epgData,
-  currentTime,
   onProgramSelect,
   locale,
   supportsCatchup,
@@ -29,6 +27,14 @@ function EPGViewComponent({
 }: EPGViewProps) {
   const t = usePlayerTranslation(locale);
   const currentProgramRef = useRef<HTMLDivElement>(null);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   // Group programs by date
   const programsByDate = useMemo(() => {
