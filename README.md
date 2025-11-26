@@ -1,6 +1,6 @@
 # <img src="./web-ui/src/favicon.svg" width="24" height="24"> rtp2httpd - IPTV 流媒体转发服务器
 
-rtp2httpd 是一个多媒体流转发服务器。本项目是 [oskar456/rtp2httpd](https://github.com/oskar456/rtp2httpd) 的完全重构版本，在原项目基础上加入了许多新功能，专为中国大陆 IPTV 环境设计。
+rtp2httpd 是一个多媒体流转发服务器。本项目基于 [oskar456/rtp2httpd](https://github.com/oskar456/rtp2httpd) 做了完全重写，在原项目基础上加入了许多新功能，专为中国大陆 IPTV 环境设计。
 
 rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并实现了运营商级的 FCC（[Fast Channel Change](https://blog.csdn.net/yangzex/article/details/131328837)）快速换台协议，可以作为 `udpxy` 和 `msd_lite` 的无缝替代，为 IPTV 用户提供接近原生机顶盒的观看体验。
 
@@ -16,7 +16,7 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
   - 支持外部 M3U URL
   - 智能识别 RTP/RTSP URL 并转换为 HTTP 代理格式
   - 自动处理 catchup-source 时移回看地址
-  - 通过 `/playlist.m3u` 访问转换后的播放列表
+  - 通过 `http://<server:port>/playlist.m3u` 访问转换后的播放列表
 - **频道快照**：支持通过 HTTP 请求快速获取频道的快照图片，降低播放端解码压力
 
 ### ⚡ FCC 快速换台技术
@@ -26,7 +26,7 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 
 ### 📊 实时状态监控
 
-- **Web 状态页面**：通过浏览器访问 `/status` 查看实时运行状态
+- **Web 状态页面**：通过浏览器访问 `http://<server:port>/status` 查看实时运行状态
 - **客户端连接统计**：显示每个连接的 IP、状态、带宽使用、传输数据量
 - **系统日志查看**：实时查看服务器日志，支持动态调整日志级别
 - **远程管理功能**：通过 Web 界面强制断开客户端连接
@@ -36,17 +36,15 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 - **浏览器直接使用**：内置基于 Web 的现代化播放器界面，可以在浏览器直接打开播放
 - **快速起播**：搭配 FCC 可实现快速起播、快速换台
 - **支持时移和回看**：支持 EPG 电子节目单，支持时移和回看（有 RTSP 回看源时）
-- **零资源占用**：纯 Web 前端实现，对 rtp2httpd 运行几乎没有资源占用（无解码转码开销）
+- **零开销**：纯 Web 前端实现，对 rtp2httpd 运行几乎没有资源占用（无解码转码开销）
 
 ### 🚀 高性能优化
 
 - **非阻塞 IO 模型**：使用 epoll 事件驱动，高效处理大量并发连接
 - **多核优化**：支持多 worker 进程，充分利用多核 CPU 提高最大吞吐量
+- **缓冲池优化**：预分配缓冲池，避免频繁内存分配，多客户端根据负载动态共享，避免慢客户端吃满资源
 - **零拷贝技术**：支持 Linux 内核 MSG_ZEROCOPY 特性，避免数据在用户态和内核态之间的拷贝
-- **智能批量发送**：自动积攒小包后批量发送，减少系统调用开销 90%，同时兼顾低延时
-- **Buffer Pool 管理**：预分配缓冲池，避免频繁内存分配，多客户端根据负载动态共享
-- **高并发支持**：单个 worker 可支持 100+ 并发流媒体客户端
-- **纯 C 编写**：使用纯 C 语言编写，零依赖，小巧简洁
+- **轻量化**：使用纯 C 语言编写，零依赖，小巧简洁，适合运行在各种嵌入式设备上（路由器、光猫、NAS 等）
   - 程序大小仅 300KB (x86_64)，并内置了 Web 播放器所有前端资源
 
 ## 📹 演示效果
@@ -62,8 +60,8 @@ https://github.com/user-attachments/assets/a8c9c60f-ebc3-49a8-b374-f579f8e34d92
 
 https://github.com/user-attachments/assets/d676b8c1-7017-48a1-814c-caab0054b361
 
-> 需要配置 M3U 播放列表后使用，通过浏览器访问 `/player` 即可打开。
-> 受限于浏览器解码能力，个别频道可能不支持。
+> 需要配置 M3U 播放列表后使用，通过浏览器访问 `http://<server:port>/player` 即可打开。
+> 受限于浏览器解码能力，一些频道可能不支持（Chrome 无法播放使用 AC3 音频的北京卫视 4K，iOS 无法播放使用 MP2 音频的高清、标清频道）。
 
 ### 实时状态监控
 
@@ -85,9 +83,9 @@ curl -fsSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/inst
 
 安装完成后，在 LuCI 管理界面的 "服务" 菜单中找到 "rtp2httpd" 进行配置。
 
-如果菜单未出现，可尝试手动运行 `rm -rf /tmp/luci-modulecache /tmp/luci-indexcache* && killall -HUP rpcd` 后，重新访问 LuCI 管理界面。
-
 每次更新版本后如果 LuCI 出现工作异常，需要 **Ctrl+F5 刷新** 或 **清空浏览器缓存** 或 **使用无痕模式访问** 解决。
+
+如果安装后，LuCI 未出现 rtp2httpd 入口，说明你的 LuCI 版本过低，无法支持 JS-based LuCI 插件。请考虑更新固件。或者手动编辑和维护 `/etc/config/rtp2httpd`（需要将 disabled 设为 0），使用 `/etc/init.d/rtp2httpd restart` 重启服务。
 
 ### 其他平台
 
@@ -95,7 +93,7 @@ rtp2httpd 支持多种部署方式：
 
 - **静态二进制文件**：适用于任何 Linux 系统
 - **Docker 容器**：容器化部署
-- **编译安装**：从源代码编译
+- **编译安装**：直接从源代码编译，或者作为 OpenWrt feed 自行编译到固件中
 
 详见 [安装指南](docs/installation.md)。
 
@@ -115,6 +113,7 @@ rtp2httpd 支持多种部署方式：
 
 - ✅ 可以部署在商业环境中（如企业内部使用）
 - ✅ 可以基于它提供收费的 IPTV 转码服务
+- ✅ 可以在有偿 IPTV 咨询服务中使用本软件
 - ✅ 可以销售包含此软件的硬件设备
 - ⚠️ 如果修改代码，必须公开修改后的源代码
 - ⚠️ 如果分发二进制文件，必须同时提供源代码
@@ -122,6 +121,6 @@ rtp2httpd 支持多种部署方式：
 
 ## 🙏 致谢
 
-- 原始项目 rtp2httpd 的开发者们
-- 为 FCC 协议实现提供技术支持的社区贡献者
+- 原始项目 [oskar456/rtp2httpd](https://github.com/oskar456/rtp2httpd) 的开发者们
+- 愿意在互联网上公开 FCC 协议细节的业内人士
 - 所有测试和反馈用户
