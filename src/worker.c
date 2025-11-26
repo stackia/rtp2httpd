@@ -291,9 +291,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
       reload_flag = 0;
       logger(LOG_INFO, "Received SIGHUP, reloading configuration");
 
-      if (config_reload(NULL) == 0) {
-        logger(LOG_INFO, "Configuration reloaded successfully");
-      } else {
+      if (config_reload(NULL) != 0) {
         logger(LOG_ERROR, "Configuration reload failed, keeping old config");
       }
     }

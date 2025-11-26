@@ -2,6 +2,7 @@
 #include "configuration.h"
 #include "rtp2httpd.h"
 #include "status.h"
+#include "supervisor.h"
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -63,15 +64,11 @@ int logger(loglevel_t level, const char *format, ...) {
   }
 
   if (current_level >= level) {
-    /* Add worker_id prefix only if multiple workers
-     * worker_id == -1 indicates supervisor process */
-    if (config.workers > 1) {
-      if (worker_id == -1) {
-        prefix_len = snprintf(message, sizeof(message), "[Supervisor] ");
-      } else {
-        prefix_len =
-            snprintf(message, sizeof(message), "[Worker %d] ", worker_id);
-      }
+    if (worker_id == SUPERVISOR_WORKER_ID) {
+      prefix_len = snprintf(message, sizeof(message), "[Supervisor] ");
+    } else {
+      prefix_len =
+          snprintf(message, sizeof(message), "[Worker %d] ", worker_id);
     }
 
     /* Format the actual message after the prefix (if any) */

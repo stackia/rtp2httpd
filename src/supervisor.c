@@ -313,8 +313,6 @@ int supervisor_run(void) {
 
       int bind_changed = 0;
       if (config_reload(&bind_changed) == 0) {
-        logger(LOG_INFO, "Configuration reloaded successfully");
-
         /* Handle worker count changes */
         if (config.workers > num_workers) {
           if (bind_changed) {

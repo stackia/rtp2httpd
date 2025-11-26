@@ -750,9 +750,6 @@ void config_free(bool force_free) {
   /* Free EPG cache */
   epg_cleanup();
 
-  /* Free external M3U cache */
-  m3u_reset_external_playlist();
-
   /* Free string config values */
   if (!cmd_hostname_set || force_free)
     safe_free_string(&config.hostname);
@@ -851,8 +848,10 @@ int config_reload(int *out_bind_changed) {
   bindaddr_t *old_bind_addresses;
 
   if (!config_file_path) {
-    logger(LOG_ERROR, "No config file path set, cannot reload");
-    return -1;
+    logger(LOG_INFO, "Only reload M3U/EPG, skipping configuration reload "
+                     "(config file path not set)");
+    config.last_external_m3u_update_time = 0;
+    return 0;
   }
 
   /* Save current bind addresses for comparison and potential rollback */
