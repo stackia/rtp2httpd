@@ -13,7 +13,7 @@ OpenWrt 是 rtp2httpd 的最佳运行环境。在完成 IPTV 网络融合后（�
 使用一键安装脚本自动下载并安装最新版本。如果你已经安装了 rtp2httpd，重新运行脚本也可以一键更新到最新版。
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
+wget -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
 ```
 
 脚本会自动：
@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/inst
 <summary>如果需要使用 prerelease 测试版本，点击查看命令</summary>
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh -s -- --prerelease
+wget -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh -s -- --prerelease
 ```
 
 </details>
