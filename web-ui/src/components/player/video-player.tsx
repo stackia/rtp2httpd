@@ -24,6 +24,8 @@ interface VideoPlayerProps {
   force16x9?: boolean;
 }
 
+const MAX_RETRIES = 3;
+
 export function VideoPlayer({
   channel,
   segments,
@@ -58,7 +60,7 @@ export function VideoPlayer({
   const [isPiP, setIsPiP] = useState(false);
   const hideControlsTimeoutRef = useRef<number>(0);
   const [retryCount, setRetryCount] = useState(0);
-  const isRetryingRef = useRef<boolean>(false);
+  const [acceptedRetryCount, setAcceptedRetryCount] = useState(0);
   const stablePlaybackTimeoutRef = useRef<number>(0);
 
   // Digit input state
@@ -161,17 +163,66 @@ export function VideoPlayer({
     };
   }, [resetControlsTimer]);
 
+  const handlePlayerError = useEffectEvent((errorType: string, errorDetail: string, errorInfo: any) => {
+    console.error("Player error:", errorType, errorDetail, errorInfo);
+
+    let errorMessage = t("playbackError");
+    let decodingErrorRetry = false;
+
+    if (errorType === mpegts.ErrorTypes.MEDIA_ERROR) {
+      if (
+        errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_UNSUPPORTED ||
+        errorDetail === mpegts.ErrorDetails.MEDIA_CODEC_UNSUPPORTED ||
+        errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_ERROR
+      ) {
+        errorMessage = t("codecError");
+      } else if (errorDetail === mpegts.ErrorDetails.MEDIA_MSE_ERROR) {
+        errorMessage = `${t("mediaError")}: ${errorInfo?.msg}`;
+        if (errorInfo?.msg?.includes("HTMLMediaElement.error")) {
+          if (videoRef.current?.error?.message?.includes("PIPELINE_ERROR_DECODE")) {
+            // Decoding error, may be transient (upstream packet loss / transmit pressure), can infinite retry
+            decodingErrorRetry = true;
+          } else {
+            errorMessage += `${t("mediaError")}: ${videoRef.current?.error?.message}`;
+          }
+        }
+      } else {
+        errorMessage = `${t("mediaError")}: ${errorDetail}`;
+      }
+    } else if (errorType === mpegts.ErrorTypes.NETWORK_ERROR) {
+      errorMessage = `${t("networkError")}: ${errorDetail}`;
+    }
+
+    // Check if we should retry
+    if (retryCount < acceptedRetryCount + MAX_RETRIES) {
+      setRetryCount(retryCount + 1);
+      if (!decodingErrorRetry) {
+        console.log(`Retrying playback (attempt ${retryCount + 1 - acceptedRetryCount}/${MAX_RETRIES})...`);
+      } else {
+        setAcceptedRetryCount(acceptedRetryCount + 1);
+        console.log(`Retrying playback due to decoding error...`);
+      }
+      return;
+    }
+
+    // Max retries reached, show error
+    setError(errorMessage);
+    onError?.(errorMessage);
+    setIsLoading(false);
+  });
+
+  const [prevSegments, setPrevSegments] = useState(segments);
+  if (segments !== prevSegments) {
+    setPrevSegments(segments);
+    setRetryCount(0);
+    setAcceptedRetryCount(0);
+  }
+
   // Load video stream
   useEffect(() => {
     if (!segments.length || !videoRef.current || !mpegts.isSupported()) return;
 
-    // Reset retry count when loading new stream (but not during retries)
-    console.log("Player loading...", isRetryingRef.current, retryCount);
-    if (!isRetryingRef.current) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setRetryCount(0);
-    }
-    isRetryingRef.current = false;
+    console.log("Player loading... retryCount:", retryCount);
 
     // Clear stable playback timer when loading new stream
     if (stablePlaybackTimeoutRef.current) {
@@ -179,6 +230,7 @@ export function VideoPlayer({
       stablePlaybackTimeoutRef.current = 0;
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     showControlsImmediately();
     setIsLoading(true);
     setError(null);
@@ -202,55 +254,7 @@ export function VideoPlayer({
       playerRef.current = player;
       player.attachMediaElement(videoRef.current);
 
-      player.on(mpegts.Events.ERROR, (errorType, errorDetail, errorInfo) => {
-        console.error("Player error:", errorType, errorDetail, errorInfo);
-
-        let errorMessage = t("playbackError");
-        let decodingErrorRetry = false;
-
-        if (errorType === mpegts.ErrorTypes.MEDIA_ERROR) {
-          if (
-            errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_UNSUPPORTED ||
-            errorDetail === mpegts.ErrorDetails.MEDIA_CODEC_UNSUPPORTED ||
-            errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_ERROR
-          ) {
-            errorMessage = t("codecError");
-          } else if (errorDetail === mpegts.ErrorDetails.MEDIA_MSE_ERROR) {
-            errorMessage = `${t("mediaError")}: ${errorInfo?.msg}`;
-            if (errorInfo?.msg?.includes("HTMLMediaElement.error")) {
-              if (videoRef.current?.error?.message?.includes("PIPELINE_ERROR_DECODE")) {
-                // Decoding error, may be transient (upstream packet loss / transmit pressure), can infinite retry
-                decodingErrorRetry = true;
-              } else {
-                errorMessage += `${t("mediaError")}: ${videoRef.current?.error?.message}`;
-              }
-            }
-          } else {
-            errorMessage = `${t("mediaError")}: ${errorDetail}`;
-          }
-        } else if (errorType === mpegts.ErrorTypes.NETWORK_ERROR) {
-          errorMessage = `${t("networkError")}: ${errorDetail}`;
-        }
-
-        // Check if we should retry
-        if (decodingErrorRetry || retryCount < 3) {
-          if (!decodingErrorRetry) {
-            setRetryCount(retryCount + 1);
-            console.log(`Retrying playback (attempt ${retryCount}/3)...`);
-          } else {
-            console.log(`Retrying playback due to decoding error...`);
-          }
-
-          isRetryingRef.current = true;
-
-          return;
-        }
-
-        // Max retries reached, show error
-        setError(errorMessage);
-        onError?.(errorMessage);
-        setIsLoading(false);
-      });
+      player.on(mpegts.Events.ERROR, handlePlayerError);
 
       player.load();
 
@@ -279,7 +283,7 @@ export function VideoPlayer({
         playerRef.current = null;
       }
     };
-  }, [segments, liveSync, onError, t, showControlsImmediately, retryCount]);
+  }, [retryCount, segments, liveSync, onError, showControlsImmediately, t]);
 
   const handleVideoCanPlay = useEffectEvent(() => {
     setIsLoading(false);
@@ -313,9 +317,9 @@ export function VideoPlayer({
 
     // Reset retry count after 30 seconds of stable playback
     stablePlaybackTimeoutRef.current = window.setTimeout(() => {
-      if (retryCount > 0) {
-        console.log(`Resetting retry count after stable playback (was ${retryCount})`);
-        setRetryCount(0);
+      if (retryCount > acceptedRetryCount) {
+        console.log(`Resetting accepted retry count after stable playback`);
+        setAcceptedRetryCount(retryCount);
       }
     }, 30000);
   });
@@ -611,7 +615,7 @@ export function VideoPlayer({
             </div>
             <span className="text-xs md:text-sm text-white font-medium">
               {t("loadingVideo")}
-              {retryCount > 0 && ` (${retryCount}/3)`}
+              {retryCount - acceptedRetryCount > 0 && ` (${retryCount - acceptedRetryCount}/${MAX_RETRIES})`}
             </span>
           </div>
         )}
