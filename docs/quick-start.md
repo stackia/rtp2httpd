@@ -5,7 +5,7 @@
 使用一键安装脚本自动下载并安装最新版本：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
+wget -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
 ```
 
 脚本会自动：
