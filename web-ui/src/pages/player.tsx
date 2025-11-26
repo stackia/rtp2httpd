@@ -56,11 +56,6 @@ function PlayerPage() {
   // Track current video playback time in seconds (relative to stream start)
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
 
-  const currentTime = useMemo(
-    () => new Date(streamStartTime.getTime() + currentVideoTime * 1000),
-    [streamStartTime, currentVideoTime],
-  );
-
   // Track fullscreen state
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -422,7 +417,6 @@ function PlayerPage() {
               <EPGView
                 channelId={currentChannel ? getEPGChannelId(currentChannel, epgData) : null}
                 epgData={epgData}
-                currentTime={currentTime}
                 onProgramSelect={handleVideoSeek}
                 locale={locale}
                 supportsCatchup={!!(currentChannel?.catchup && currentChannel?.catchupSource)}
