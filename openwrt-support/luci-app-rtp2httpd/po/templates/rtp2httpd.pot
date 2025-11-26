@@ -102,7 +102,8 @@ msgstr ""
 #: htdocs/luci-static/resources/view/rtp2httpd.js:504
 msgid ""
 "If set, all HTTP requests must include r2h-token query parameter with "
-"matching value (e.g., http://server:5140/service?r2h-token=your-token)"
+"matching value (e.g., http://<server:port>/rtp/<ip:port>?fcc=<ip:port>&r2h-"
+"token=<your-token>)"
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:297
