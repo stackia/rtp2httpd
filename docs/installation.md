@@ -64,6 +64,8 @@ chmod +x rtp2httpd-X.Y.Z-x86_64
 ./rtp2httpd-X.Y.Z-x86_64 --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
 
+提示：你可以使用这个示例文件 [rtp2httpd.conf](../rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](configuration.md)。
+
 ## Docker 容器部署
 
 适用于支持 Docker 的设备。**必须使用 host 网络模式**以接收组播流。
@@ -88,13 +90,15 @@ services:
 
 ### 挂载配置文件
 
-如果需要使用配置文件：
+如果需要使用配置文件（假设配置文件位于 `/path/to/rtp2httpd.conf`）：
 
 ```bash
 docker run --network=host --rm \
-  -v /path/to/rtp2httpd.conf:/etc/rtp2httpd.conf:ro \
+  -v /path/to/rtp2httpd.conf:/usr/local/etc/rtp2httpd.conf:ro \
   ghcr.io/stackia/rtp2httpd:latest
 ```
+
+提示：你可以使用这个示例文件 [rtp2httpd.conf](../rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](configuration.md)。
 
 ### 启用零拷贝时的特殊要求
 
@@ -196,3 +200,4 @@ sudo make install
 
 - [快速上手](quick-start.md)：OpenWrt 快速配置指南
 - [配置参数详解](configuration.md)：了解所有配置选项
+- [URL 格式说明](url-formats.md)：了解所有支持的 URL 格式

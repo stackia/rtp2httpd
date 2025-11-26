@@ -93,7 +93,9 @@ xff = no
 
 # HTTP 请求认证令牌（可选，默认: 无）
 # 设置后，所有 HTTP 请求必须携带 r2h-token 查询参数，且值与此配置匹配
-# 例如: http://server:5140/service?r2h-token=your-secret-token
+# 例如:
+# http://server:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970&r2h-token=your-secret-token
+# http://server:5140/player?r2h-token=your-secret-token
 r2h-token = your-secret-token-here
 
 # 状态页路径（默认: /status）
