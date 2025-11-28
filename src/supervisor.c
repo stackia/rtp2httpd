@@ -109,6 +109,7 @@ static void record_restart(worker_info_t *w) {
  * @return 0 on success, -1 on error
  */
 static int spawn_worker(int worker_idx) {
+  pid_t supervisor_pid = getpid();
   pid_t pid = fork();
 
   if (pid < 0) {
@@ -124,7 +125,7 @@ static int spawn_worker(int worker_idx) {
     prctl(PR_SET_PDEATHSIG, SIGTERM);
 
     /* Check if parent already exited (race condition protection) */
-    if (getppid() == 1) {
+    if (getppid() != supervisor_pid) {
       /* Parent already exited, exit immediately */
       _exit(EXIT_FAILURE);
     }
