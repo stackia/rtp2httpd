@@ -1,7 +1,7 @@
 msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:552
+#: htdocs/luci-static/resources/view/rtp2httpd.js:551
 msgid ""
 "Additional FFmpeg arguments for snapshot generation. Common options: -"
 "hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)"
@@ -41,7 +41,7 @@ msgstr ""
 msgid "Edit the content of /etc/rtp2httpd.conf"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:528
+#: htdocs/luci-static/resources/view/rtp2httpd.js:527
 msgid ""
 "Enable video snapshot feature. When enabled, clients can request snapshots "
 "with snapshot=1 query parameter"
@@ -77,11 +77,11 @@ msgstr ""
 msgid "FCC Listen Port Range"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:550
+#: htdocs/luci-static/resources/view/rtp2httpd.js:549
 msgid "FFmpeg Arguments"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:538
+#: htdocs/luci-static/resources/view/rtp2httpd.js:537
 msgid "FFmpeg Path"
 msgstr ""
 
@@ -102,8 +102,8 @@ msgstr ""
 #: htdocs/luci-static/resources/view/rtp2httpd.js:504
 msgid ""
 "If set, all HTTP requests must include r2h-token query parameter with "
-"matching value (e.g., http://<server:port>/rtp/<ip:port>?fcc=<ip:port>&r2h-"
-"token=<your-token>)"
+"matching value (e.g., http://server:port/rtp/ip:port?fcc=ip:port&r2h-"
+"token=your-token)"
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:297
@@ -175,7 +175,7 @@ msgstr ""
 msgid "Open Status Dashboard"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:540
+#: htdocs/luci-static/resources/view/rtp2httpd.js:539
 msgid ""
 "Path to FFmpeg executable. Leave empty to use system PATH (default: ffmpeg)"
 msgstr ""
@@ -256,7 +256,7 @@ msgstr ""
 msgid "Use config file instead of individual options"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:526
+#: htdocs/luci-static/resources/view/rtp2httpd.js:525
 msgid "Video Snapshot"
 msgstr ""
 
@@ -269,7 +269,7 @@ msgid ""
 "com/rtp2httpd, and ensure the reverse proxy forwards the Host header."
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:516
+#: htdocs/luci-static/resources/view/rtp2httpd.js:515
 msgid ""
 "When enabled, uses HTTP X-Forwarded-For header as client address for status "
 "page display. Only enable when running behind a reverse proxy."
@@ -279,7 +279,7 @@ msgstr ""
 msgid "Workers"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:514
+#: htdocs/luci-static/resources/view/rtp2httpd.js:513
 msgid "X-Forwarded-For"
 msgstr ""
 
