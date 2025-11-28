@@ -8,7 +8,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:552
+#: htdocs/luci-static/resources/view/rtp2httpd.js:551
 msgid ""
 "Additional FFmpeg arguments for snapshot generation. Common options: -"
 "hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)"
@@ -50,7 +50,7 @@ msgstr "所有上游流量（组播、FCC 和 RTSP）使用的默认接口。留
 msgid "Edit the content of /etc/rtp2httpd.conf"
 msgstr "编辑 /etc/rtp2httpd.conf 的内容"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:528
+#: htdocs/luci-static/resources/view/rtp2httpd.js:527
 msgid ""
 "Enable video snapshot feature. When enabled, clients can request snapshots "
 "with snapshot=1 query parameter"
@@ -91,11 +91,11 @@ msgstr ""
 msgid "FCC Listen Port Range"
 msgstr "FCC 监听端口范围"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:550
+#: htdocs/luci-static/resources/view/rtp2httpd.js:549
 msgid "FFmpeg Arguments"
 msgstr "FFmpeg 参数"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:538
+#: htdocs/luci-static/resources/view/rtp2httpd.js:537
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
@@ -118,11 +118,11 @@ msgstr "主机名/域名"
 #: htdocs/luci-static/resources/view/rtp2httpd.js:504
 msgid ""
 "If set, all HTTP requests must include r2h-token query parameter with "
-"matching value (e.g., http://<server:port>/rtp/<ip:port>?fcc=<ip:port>&r2h-"
-"token=<your-token>)"
+"matching value (e.g., http://server:port/rtp/ip:port?fcc=ip:port&r2h-"
+"token=your-token)"
 msgstr ""
 "设置后，所有 HTTP 请求必须携带 r2h-token 查询参数，且值与此配置匹配（例如："
-"http://<server:port>/rtp/<ip:port>?fcc=<ip:port>&r2h-token=<your-token>）"
+"http://server:port/rtp/ip:port?fcc=ip:port&r2h-token=your-token）"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:297
 msgid ""
@@ -198,7 +198,7 @@ msgstr "打开播放器页面"
 msgid "Open Status Dashboard"
 msgstr "打开状态面板"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:540
+#: htdocs/luci-static/resources/view/rtp2httpd.js:539
 msgid ""
 "Path to FFmpeg executable. Leave empty to use system PATH (default: ffmpeg)"
 msgstr "FFmpeg 可执行文件的路径。留空则使用系统 PATH（默认：ffmpeg）"
@@ -282,7 +282,7 @@ msgstr "使用配置文件"
 msgid "Use config file instead of individual options"
 msgstr "使用配置文件而不是单独的选项"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:526
+#: htdocs/luci-static/resources/view/rtp2httpd.js:525
 msgid "Video Snapshot"
 msgstr "视频快照"
 
@@ -299,7 +299,7 @@ msgstr ""
 "问地址（包括 http(s):// 和路径前缀），例如 https://my-domain.com/rtp2httpd，"
 "并且需要反向代理透传 Host 头。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:516
+#: htdocs/luci-static/resources/view/rtp2httpd.js:515
 msgid ""
 "When enabled, uses HTTP X-Forwarded-For header as client address for status "
 "page display. Only enable when running behind a reverse proxy."
@@ -311,7 +311,7 @@ msgstr ""
 msgid "Workers"
 msgstr "工作进程数"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:514
+#: htdocs/luci-static/resources/view/rtp2httpd.js:513
 msgid "X-Forwarded-For"
 msgstr "X-Forwarded-For"
 

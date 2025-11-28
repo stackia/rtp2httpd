@@ -501,7 +501,7 @@ return view.extend({
       "r2h_token",
       _("R2H Token"),
       _(
-        "If set, all HTTP requests must include r2h-token query parameter with matching value (e.g., http://<server:port>/rtp/<ip:port>?fcc=<ip:port>&r2h-token=<your-token>)"
+        "If set, all HTTP requests must include r2h-token query parameter with matching value (e.g., http://server:port/rtp/ip:port?fcc=ip:port&r2h-token=your-token)"
       )
     );
     o.depends("use_config_file", "0");
