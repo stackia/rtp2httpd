@@ -6,6 +6,34 @@ on:
       - published
 
 jobs:
+  versioned:
+    name: Generate Versioned Makefiles
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set version environment variable
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          echo "RELEASE_VERSION=${RELEASE_TAG#v}" >> $GITHUB_ENV
+
+      - name: Generate versioned Makefiles
+        run: ./scripts/generate-versioned-makefiles.sh
+
+      - name: Commit and push versioned Makefiles
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add openwrt-support/rtp2httpd/Makefile.versioned openwrt-support/luci-app-rtp2httpd/Makefile.versioned
+          git commit -m "chore: update versioned Makefiles for ${{ github.event.release.tag_name }}"
+          git push origin HEAD:main
+
   frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
