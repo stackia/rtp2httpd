@@ -153,10 +153,16 @@ echo_step "Building"
 make -j$(nproc)
 
 echo ""
+echo_step "Installing to dist directory"
+DIST_DIR="$(pwd)/dist"
+DESTDIR="${DIST_DIR}" make install-strip
+echo_info "Files installed to: ${DIST_DIR}"
+
+echo ""
 echo_step "Build Completed Successfully!"
 
 # Verify the binary
-BINARY="src/rtp2httpd"
+BINARY="${DIST_DIR}/usr/bin/rtp2httpd"
 if [ ! -f "$BINARY" ]; then
     echo_error "Binary not found: $BINARY"
     exit 1
@@ -189,7 +195,7 @@ fi
 
 echo ""
 echo_step "=== Build Summary ==="
-echo_info "Binary: $(pwd)/$BINARY"
+echo_info "Binary: ${BINARY}"
 echo_info "Size: $(stat -c%s "$BINARY" | numfmt --to=iec-i --suffix=B 2>/dev/null || stat -f%z "$BINARY" 2>/dev/null || echo "unknown")"
 echo_info "Architecture: ${TOOLCHAIN_PREFIX%%-*}"
 echo_info "Libc: musl (static)"
@@ -198,8 +204,9 @@ echo_info "Toolchain: ${TOOLCHAIN_PREFIX} (${TOOLCHAIN_RELEASE})"
 if [ -n "$RELEASE_VERSION" ]; then
     echo_info "Version: $RELEASE_VERSION"
 fi
+echo_info "Install directory: ${DIST_DIR}"
 echo ""
 echo_info "To test on target device:"
-echo_info "  scp $(pwd)/$BINARY root@target:/usr/bin/"
+echo_info "  scp ${DIST_DIR}/usr/bin/rtp2httpd root@target:/usr/bin/"
 echo_info "  ssh root@target '/usr/bin/rtp2httpd --version'"
 

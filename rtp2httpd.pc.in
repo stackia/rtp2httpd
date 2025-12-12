@@ -4,7 +4,7 @@ bindir=@bindir@
 sysconfdir=@sysconfdir@
 
 Name: @PACKAGE_NAME@
-Description: RTP/UDP/RTSP to Unicast HTTP stream converter with FCC support
+Description: Multicast RTP/RTSP to Unicast HTTP stream converter, optimized for China IPTV
 Version: @PACKAGE_VERSION@
 URL: @PACKAGE_URL@
 Requires:

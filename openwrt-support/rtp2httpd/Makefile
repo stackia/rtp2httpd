@@ -34,7 +34,7 @@ endef
 define Package/rtp2httpd
 	SECTION:=net
 	CATEGORY:=Network
-	TITLE:=Convert RTP/UDP/RTSP streams into HTTP streams with FCC support
+	TITLE:=Multicast RTP/RTSP to Unicast HTTP stream converter, optimized for China IPTV
 	URL:=https://github.com/stackia/rtp2httpd
 endef
 

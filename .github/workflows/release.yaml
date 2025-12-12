@@ -294,7 +294,7 @@ jobs:
             ARCH_SHORT="${ARCH%%-*}"
           fi
 
-          BINARY_PATH="build-${ARCH}-static/src/rtp2httpd"
+          BINARY_PATH="build-${ARCH}-static/dist/usr/bin/rtp2httpd"
 
           if [ ! -f "$BINARY_PATH" ]; then
             echo "Error: Binary not found at $BINARY_PATH"
