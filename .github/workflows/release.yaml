@@ -51,6 +51,9 @@ jobs:
         with:
           node-version-file: .nvmrc
 
+      - name: Set up Corepack
+        run: corepack enable
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
         working-directory: web-ui
@@ -245,6 +248,7 @@ jobs:
           - mipsel-unknown-linux-musl
           - mips-unknown-linux-musl
           - mips64-unknown-linux-musl
+          - riscv64-unknown-linux-musl
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
