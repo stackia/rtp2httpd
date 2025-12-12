@@ -64,24 +64,21 @@ jobs:
 
       - name: Save generated pages
         run: |
-          cp src/status_page.h /tmp/status_page.h
-          cp src/player_page.h /tmp/player_page.h
+          cp src/embedded_web_data.h /tmp/embedded_web_data.h
 
       - name: Upload page artifacts
         uses: actions/upload-artifact@v4
         with:
           name: frontend-pages
           path: |
-            src/status_page.h
-            src/player_page.h
+            src/embedded_web_data.h
           if-no-files-found: error
 
       - name: Check frontend pages are up-to-date
         run: |
           set -euo pipefail
-          cp /tmp/status_page.h src/status_page.h
-          cp /tmp/player_page.h src/player_page.h
-          if ! git diff --quiet --exit-code src/status_page.h src/player_page.h; then
+          cp /tmp/embedded_web_data.h src/embedded_web_data.h
+          if ! git diff --quiet --exit-code src/embedded_web_data.h; then
             echo "::error::Frontend pages are out of sync with the tag!"
             echo "::error::The built frontend files differ from those in the repository."
             echo "::error::Please commit the updated frontend pages and create a new tag."
