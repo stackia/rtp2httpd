@@ -165,8 +165,9 @@ src-git rtp2httpd https://github.com/stackia/rtp2httpd.git;v3.1.1
 sudo apt-get install build-essential autoconf automake pkg-config curl
 
 # 安装 Node.js LTS（用于构建 Web UI）
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt-get install -y nodejs
+corepack enable
 ```
 
 ### 编译步骤
@@ -177,8 +178,8 @@ git clone https://github.com/stackia/rtp2httpd.git
 cd rtp2httpd
 
 # 构建前端并嵌入静态资源
-npm ci --prefix web-ui
-npm run build --prefix web-ui
+pnpm --prefix web-ui install --frozen-lockfile
+pnpm --prefix web-ui run build
 
 # 生成构建脚本
 autoreconf -fi
