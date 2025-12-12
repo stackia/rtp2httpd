@@ -1,5 +1,5 @@
 # Build stage
-FROM alpine:3 AS builder
+FROM alpine:3.22 AS builder
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
@@ -27,7 +27,7 @@ RUN echo "Building for $TARGETPLATFORM" && \
   make
 
 # Runtime stage
-FROM alpine:3
+FROM alpine:3.22
 
 # Copy the built binary and config
 COPY --from=builder /workdir/src/rtp2httpd /usr/local/bin/
