@@ -76,15 +76,15 @@ int logger(loglevel_t level, const char *format, ...) {
     vsnprintf(message + prefix_len, sizeof(message) - prefix_len, format, ap);
     va_end(ap);
 
-    /* Output to stderr */
-    r = fputs(message, stderr);
+    /* Output to stdout */
+    r = fputs(message, stdout);
 
     /* Store in status log buffer */
     status_add_log_entry(level, message);
 
     // Automatically add newline if format doesn't end with one
     if (format && strlen(format) > 0 && format[strlen(format) - 1] != '\n') {
-      fputc('\n', stderr);
+      fputc('\n', stdout);
     }
   }
   return r;
