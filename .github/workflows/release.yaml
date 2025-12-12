@@ -52,11 +52,11 @@ jobs:
           node-version-file: .nvmrc
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
         working-directory: web-ui
 
       - name: Build frontend
-        run: npm run build
+        run: pnpm run build
         working-directory: web-ui
 
       - name: Save generated pages
