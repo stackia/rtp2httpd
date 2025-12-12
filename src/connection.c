@@ -459,8 +459,29 @@ int connection_route_and_start(connection_t *c) {
   /* Ensure URL begins with '/' */
   const char *url = c->http_req.url;
 
-  logger(LOG_INFO, "New client requested URL: %s (method: %s)", url,
-         c->http_req.method);
+  /* Format client address string (will be overridden by X-Forwarded-For if
+   * present later) */
+  char client_addr_str[NI_MAXHOST + NI_MAXSERV + 4] = "unknown";
+  if (c->client_addr_len > 0) {
+    char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+    int r = getnameinfo((struct sockaddr *)&c->client_addr, c->client_addr_len,
+                        hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
+                        NI_NUMERICHOST | NI_NUMERICSERV);
+    if (r == 0) {
+      /* Check if IPv6 address needs brackets */
+      if (strchr(hbuf, ':') != NULL) {
+        /* IPv6 - wrap in brackets */
+        snprintf(client_addr_str, sizeof(client_addr_str), "[%s]:%s", hbuf,
+                 sbuf);
+      } else {
+        /* IPv4 - simple format */
+        snprintf(client_addr_str, sizeof(client_addr_str), "%s:%s", hbuf, sbuf);
+      }
+    }
+  }
+
+  logger(LOG_INFO, "New client %s requested URL: %s (method: %s)",
+         client_addr_str, url, c->http_req.method);
 
   if (url[0] != '/') {
     http_send_400(c);
@@ -809,38 +830,15 @@ int connection_route_and_start(connection_t *c) {
 
     display_url[url_len] = '\0';
 
-    /* Format client address string
-     * If protocol was detected (http/https), use X-Forwarded-For if present
-     * Otherwise format real client address from sockaddr */
-    char client_addr_str[NI_MAXHOST + NI_MAXSERV + 4];
+    /* Override client address with X-Forwarded-For if present and enabled */
     if ((protocol[0] != '\0' || config.xff) &&
         c->http_req.x_forwarded_for[0] != '\0') {
       /* Behind proxy with X-Forwarded-For - use it directly (already formatted)
        */
-      logger(LOG_DEBUG, "X-Forwarded-For accepted: %s",
+      logger(LOG_INFO, "X-Forwarded-For accepted: %s",
              c->http_req.x_forwarded_for);
       snprintf(client_addr_str, sizeof(client_addr_str), "%s",
                c->http_req.x_forwarded_for);
-    } else {
-      /* Format real client address from sockaddr */
-      char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-      int r = getnameinfo((struct sockaddr *)&c->client_addr,
-                          c->client_addr_len, hbuf, sizeof(hbuf), sbuf,
-                          sizeof(sbuf), NI_NUMERICHOST | NI_NUMERICSERV);
-      if (r != 0) {
-        snprintf(client_addr_str, sizeof(client_addr_str), "unknown");
-      } else {
-        /* Check if IPv6 address needs brackets */
-        if (strchr(hbuf, ':') != NULL) {
-          /* IPv6 - wrap in brackets */
-          snprintf(client_addr_str, sizeof(client_addr_str), "[%s]:%s", hbuf,
-                   sbuf);
-        } else {
-          /* IPv4 - simple format */
-          snprintf(client_addr_str, sizeof(client_addr_str), "%s:%s", hbuf,
-                   sbuf);
-        }
-      }
     }
 
     c->status_index = status_register_client(client_addr_str, display_url);
