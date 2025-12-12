@@ -5,6 +5,7 @@ import { Channel, EPGProgram } from "../../types/player";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import { PlayerControls } from "./player-controls";
+import { cn } from "../../lib/utils";
 
 interface VideoPlayerProps {
   channel: Channel | null;
@@ -597,10 +598,15 @@ export function VideoPlayer({
       onMouseLeave={hideControlsImmediately}
     >
       {/* Mobile: 16:9 aspect ratio container, Desktop: full height */}
-      <div className="video-container relative w-full aspect-video md:aspect-auto md:h-full flex items-center justify-center">
+      <div
+        className={cn(
+          "video-container relative w-full aspect-video md:aspect-auto md:h-full flex items-center justify-center",
+          !showControls && "cursor-none",
+        )}
+      >
         <video
           ref={videoRef}
-          className={`max-w-full max-h-full ${force16x9 ? "object-fill aspect-video" : "w-full h-full"}`}
+          className={cn("max-w-full max-h-full", force16x9 ? "object-fill aspect-video" : "w-full h-full")}
           playsInline
           webkit-playsinline="true"
           x5-playsinline="true"
@@ -623,9 +629,10 @@ export function VideoPlayer({
         {/* Channel Info and Controls */}
         {channel && (
           <div
-            className={`absolute top-4 right-4 md:top-8 md:right-8 flex flex-col gap-2 md:gap-3 items-end transition-opacity duration-300 ${
-              showControls ? "opacity-100" : "opacity-0"
-            }`}
+            className={cn(
+              "absolute top-4 right-4 md:top-8 md:right-8 flex flex-col gap-2 md:gap-3 items-end transition-opacity duration-300",
+              showControls ? "opacity-100" : "opacity-0",
+            )}
           >
             <div className="flex flex-col gap-1.5 md:gap-2 px-2 py-1.5 md:px-3 md:py-2 items-center justify-center overflow-hidden rounded-lg bg-white/10 ring-1 ring-white/20 backdrop-blur-sm max-w-[calc(100vw-2rem)] md:max-w-none">
               {/* Logo Banner */}
@@ -643,11 +650,12 @@ export function VideoPlayer({
               <div className="flex items-center justify-center w-full">
                 <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
                   <span
-                    className={`rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition-all duration-300 ${
+                    className={cn(
+                      "rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition-all duration-300",
                       digitBuffer
                         ? "bg-primary text-primary-foreground scale-110 shadow-lg ring-2 ring-primary/50"
-                        : "bg-white/10 text-white/60"
-                    }`}
+                        : "bg-white/10 text-white/60",
+                    )}
                   >
                     {digitBuffer || channel.id}
                   </span>
@@ -687,9 +695,10 @@ export function VideoPlayer({
         {/* Player Controls */}
         {channel && !error && !needsUserInteraction && (
           <div
-            className={`absolute bottom-0 left-0 right-0 transition-opacity duration-300 ${
-              showControls ? "opacity-100" : "opacity-0 has-focus-visible:opacity-100"
-            }`}
+            className={cn(
+              "absolute bottom-0 left-0 right-0 transition-opacity duration-300",
+              showControls ? "opacity-100" : "opacity-0 has-focus-visible:opacity-100",
+            )}
             onMouseEnter={showControlsImmediately}
           >
             <PlayerControls
