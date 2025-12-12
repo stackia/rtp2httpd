@@ -4,6 +4,7 @@ import { Channel } from "../../types/player";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import { ChannelListItem } from "./channel-list-item";
+import { cn } from "../../lib/utils";
 
 interface ChannelListProps {
   channels?: Channel[];
@@ -161,11 +162,12 @@ function ChannelListComponent({
           <div className="flex flex-wrap gap-1.5 md:gap-2">
             <button
               onClick={() => setSelectedGroup(null)}
-              className={`rounded-lg px-2.5 md:py-1.5 text-xs md:text-sm font-medium transition-all ${
+              className={cn(
+                "rounded-lg px-2.5 md:py-1.5 text-xs md:text-sm font-medium transition-all",
                 selectedGroup === null
                   ? "bg-primary text-primary-foreground shadow-sm"
-                  : "bg-background text-muted-foreground cursor-pointer hover:bg-background/80 hover:text-foreground"
-              }`}
+                  : "bg-background text-muted-foreground cursor-pointer hover:bg-background/80 hover:text-foreground",
+              )}
             >
               {t("allChannels")}
             </button>
@@ -173,11 +175,12 @@ function ChannelListComponent({
               <button
                 key={group}
                 onClick={() => setSelectedGroup(group)}
-                className={`rounded-lg px-2.5 md:py-1.5 text-xs md:text-sm font-medium transition-all ${
+                className={cn(
+                  "rounded-lg px-2.5 md:py-1.5 text-xs md:text-sm font-medium transition-all",
                   selectedGroup === group
                     ? "bg-primary text-primary-foreground shadow-sm"
-                    : "cursor-pointer bg-background text-muted-foreground hover:bg-background/80 hover:text-foreground"
-                }`}
+                    : "cursor-pointer bg-background text-muted-foreground hover:bg-background/80 hover:text-foreground",
+                )}
               >
                 {group}
               </button>

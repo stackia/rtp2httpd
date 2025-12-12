@@ -5,6 +5,7 @@ import { useStatusTranslation } from "../../hooks/use-status-translation";
 import { Badge } from "../ui/badge";
 import { SelectBox } from "../ui/select-box";
 import { Globe, Moon, Wifi, Sun } from "lucide-react";
+import { cn } from "../../lib/utils";
 
 interface StatusHeaderProps {
   statusAccent: string;
@@ -41,7 +42,7 @@ export function StatusHeader({
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            <span className={`inline-flex items-center gap-2 font-medium ${statusAccent}`}>
+            <span className={cn("inline-flex items-center gap-2 font-medium", statusAccent)}>
               <Wifi className="h-4 w-4" />
               {statusLabel}
             </span>

@@ -3,6 +3,7 @@ import { History } from "lucide-react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import { Locale } from "../../lib/locale";
 import { Channel } from "../../types/player";
+import { cn } from "../../lib/utils";
 
 interface ChannelListItemProps {
   channel: Channel;
@@ -23,11 +24,12 @@ const ChannelListItemComponent = forwardRef<HTMLDivElement, ChannelListItemProps
       <div
         key={channel.id}
         ref={ref}
-        className={`rounded-xl border bg-card text-card-foreground shadow group cursor-pointer overflow-hidden transition-all duration-200 flex items-center gap-2 p-2 ${
+        className={cn(
+          "rounded-xl border bg-card text-card-foreground shadow group cursor-pointer overflow-hidden transition-all duration-200 flex items-center gap-2 p-2",
           isCurrentChannel
             ? "border-primary bg-primary/5 shadow-md"
-            : "border-border hover:border-primary/50 hover:bg-muted/50 hover:shadow-sm"
-        }`}
+            : "border-border hover:border-primary/50 hover:bg-muted/50 hover:shadow-sm",
+        )}
         onClick={handleClick}
       >
         {/* Left: Channel Number and Info */}

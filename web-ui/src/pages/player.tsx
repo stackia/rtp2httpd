@@ -378,11 +378,12 @@ function PlayerPage() {
                 channelListNextScrollBehaviorRef.current = "instant";
                 setSidebarView("channels");
               }}
-              className={`flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium ${
+              className={cn(
+                "flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium",
                 sidebarView === "channels"
                   ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground cursor-pointer hover:text-foreground"
-              }`}
+                  : "text-muted-foreground cursor-pointer hover:text-foreground",
+              )}
             >
               {t("channels")} ({metadata?.channels.length || 0})
             </button>
@@ -391,11 +392,12 @@ function PlayerPage() {
                 epgViewNextScrollBehaviorRef.current = "instant";
                 setSidebarView("epg");
               }}
-              className={`flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium ${
+              className={cn(
+                "flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium",
                 sidebarView === "epg"
                   ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground cursor-pointer hover:text-foreground"
-              }`}
+                  : "text-muted-foreground cursor-pointer hover:text-foreground",
+              )}
             >
               {t("programGuide")}
             </button>
@@ -453,9 +455,10 @@ function PlayerPage() {
       {/* Loading overlay */}
       {isLoading && (
         <div
-          className={`fixed inset-0 z-50 flex items-center justify-center bg-background ${
-            isRevealing ? "animate-[zoom-fade-out_0.5s_ease-out_forwards]" : ""
-          }`}
+          className={cn(
+            "fixed inset-0 z-50 flex items-center justify-center bg-background",
+            isRevealing && "animate-[zoom-fade-out_0.5s_ease-out_forwards]",
+          )}
         >
           <div className="text-center space-y-4">
             {/* Loading spinner */}

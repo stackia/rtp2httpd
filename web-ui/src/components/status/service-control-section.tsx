@@ -3,6 +3,7 @@ import { RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import type { Locale } from "../../lib/locale";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
 import { Button } from "../ui/button";
+import { cn } from "../../lib/utils";
 
 interface ServiceControlSectionProps {
   onReloadConfig: () => Promise<void>;
@@ -65,7 +66,7 @@ export function ServiceControlSection({
             disabled={disabled || reloading}
             className="gap-2"
           >
-            <RefreshCw className={`h-4 w-4 ${reloading ? "animate-spin" : ""}`} />
+            <RefreshCw className={cn("h-4 w-4", reloading && "animate-spin")} />
             {reloading ? t("reloading") : t("reloadConfig")}
           </Button>
           <Button
@@ -75,7 +76,7 @@ export function ServiceControlSection({
             disabled={disabled || restarting}
             className="gap-2"
           >
-            <RotateCcw className={`h-4 w-4 ${restarting ? "animate-spin" : ""}`} />
+            <RotateCcw className={cn("h-4 w-4", restarting && "animate-spin")} />
             {restarting ? t("restarting") : t("restartWorkers")}
           </Button>
           <Button
@@ -85,7 +86,7 @@ export function ServiceControlSection({
             disabled={disabled || clearing}
             className="gap-2"
           >
-            <Trash2 className={`h-4 w-4 ${clearing ? "animate-pulse" : ""}`} />
+            <Trash2 className={cn("h-4 w-4", clearing && "animate-pulse")} />
             {clearing ? t("clearing") : t("clearLogs")}
           </Button>
         </div>
