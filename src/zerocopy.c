@@ -503,7 +503,7 @@ int zerocopy_handle_completions(int fd, zerocopy_queue_t *queue) {
       if ((cmsg->cmsg_level == SOL_IP && cmsg->cmsg_type == IP_RECVERR) ||
           (cmsg->cmsg_level == SOL_IPV6 && cmsg->cmsg_type == IPV6_RECVERR)) {
         struct sock_extended_err *serr =
-            (struct sock_extended_err *)CMSG_DATA(cmsg);
+            (struct sock_extended_err *)(uintptr_t)CMSG_DATA(cmsg);
 
         if (serr->ee_origin == SO_EE_ORIGIN_ZEROCOPY) {
           uint32_t lo = serr->ee_info;

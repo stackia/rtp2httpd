@@ -11,7 +11,8 @@
 
 uint8_t *build_fcc_request_pk_telecom(struct addrinfo *maddr,
                                       uint16_t fcc_client_nport) {
-  struct sockaddr_in *maddr_sin = (struct sockaddr_in *)maddr->ai_addr;
+  struct sockaddr_in *maddr_sin =
+      (struct sockaddr_in *)(uintptr_t)maddr->ai_addr;
 
   static uint8_t pk[FCC_PK_LEN_REQ_TELECOM];
   memset(&pk, 0, sizeof(pk));
@@ -40,7 +41,8 @@ uint8_t *build_fcc_request_pk_telecom(struct addrinfo *maddr,
 }
 
 uint8_t *build_fcc_term_pk_telecom(struct addrinfo *maddr, uint16_t seqn) {
-  struct sockaddr_in *maddr_sin = (struct sockaddr_in *)maddr->ai_addr;
+  struct sockaddr_in *maddr_sin =
+      (struct sockaddr_in *)(uintptr_t)maddr->ai_addr;
 
   static uint8_t pk[FCC_PK_LEN_TERM_TELECOM];
   memset(&pk, 0, sizeof(pk));

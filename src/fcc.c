@@ -9,6 +9,7 @@
 #include "utils.h"
 #include "worker.h"
 #include <errno.h>
+#include <inttypes.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
@@ -236,7 +237,8 @@ int fcc_initialize_and_request(stream_context_t *ctx) {
     slen = sizeof(fcc->fcc_client);
     getsockname(fcc->fcc_sock, (struct sockaddr *)&fcc->fcc_client, &slen);
 
-    fcc->fcc_server = (struct sockaddr_in *)service->fcc_addr->ai_addr;
+    fcc->fcc_server =
+        (struct sockaddr_in *)(uintptr_t)service->fcc_addr->ai_addr;
 
     /* Register socket with epoll immediately after creation */
     struct epoll_event ev;
@@ -462,7 +464,7 @@ int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref) {
     fcc->pending_list_tail = NULL;
 
     logger(LOG_DEBUG,
-           "FCC: Flushed pending buffer chain, total_flushed_bytes=%lu",
+           "FCC: Flushed pending buffer chain, total_flushed_bytes=%" PRIu64,
            flushed_bytes);
   }
 

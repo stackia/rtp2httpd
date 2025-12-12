@@ -259,9 +259,10 @@ char *get_server_address(void) {
 
     /* Only process IPv4 for now */
     if (ifa->ifa_addr->sa_family == AF_INET) {
-      struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
+      struct sockaddr_in addr;
+      memcpy(&addr, ifa->ifa_addr, sizeof(addr));
 
-      if (inet_ntop(AF_INET, &addr->sin_addr, addr_str, sizeof(addr_str)) ==
+      if (inet_ntop(AF_INET, &addr.sin_addr, addr_str, sizeof(addr_str)) ==
           NULL)
         continue;
 

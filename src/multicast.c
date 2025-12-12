@@ -196,7 +196,8 @@ uint32_t get_local_ip_for_fcc(void) {
 
       if (ifa->ifa_addr->sa_family == AF_INET &&
           strcmp(ifa->ifa_name, ifname) == 0) {
-        struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
+        struct sockaddr_in *addr =
+            (struct sockaddr_in *)(uintptr_t)ifa->ifa_addr;
         local_ip = ntohl(addr->sin_addr.s_addr);
         logger(LOG_DEBUG, "FCC: Using local IP from interface %s: %u.%u.%u.%u",
                ifname, (local_ip >> 24) & 0xFF, (local_ip >> 16) & 0xFF,
@@ -213,7 +214,8 @@ uint32_t get_local_ip_for_fcc(void) {
         continue;
 
       if (ifa->ifa_addr->sa_family == AF_INET) {
-        struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
+        struct sockaddr_in *addr =
+            (struct sockaddr_in *)(uintptr_t)ifa->ifa_addr;
         uint32_t ip = ntohl(addr->sin_addr.s_addr);
 
         /* Skip loopback (127.0.0.0/8) */
@@ -259,7 +261,8 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr,
   case AF_INET6:
     level = SOL_IPV6;
     gr->gr_interface =
-        ((const struct sockaddr_in6 *)(service->addr->ai_addr))->sin6_scope_id;
+        ((struct sockaddr_in6 *)(uintptr_t)service->addr->ai_addr)
+            ->sin6_scope_id;
     break;
   default:
     logger(LOG_ERROR, "Address family don't support mcast.");
@@ -393,7 +396,7 @@ int rejoin_mcast_group(service_t *service) {
     return -1;
   }
 
-  mcast_addr = (struct sockaddr_in *)service->addr->ai_addr;
+  mcast_addr = (struct sockaddr_in *)(uintptr_t)service->addr->ai_addr;
   group_addr = mcast_addr->sin_addr.s_addr;
 
   if (service->msrc != NULL && strcmp(service->msrc, "") != 0 &&
@@ -402,7 +405,7 @@ int rejoin_mcast_group(service_t *service) {
       logger(LOG_ERROR, "IGMP raw socket rejoin: source address must be IPv4");
       return -1;
     }
-    source_addr = (struct sockaddr_in *)service->msrc_addr->ai_addr;
+    source_addr = (struct sockaddr_in *)(uintptr_t)service->msrc_addr->ai_addr;
     is_ssm = 1;
     nsrcs = 1;
   }
@@ -449,7 +452,7 @@ int rejoin_mcast_group(service_t *service) {
     grec->grec_nsrcs = htons(nsrcs);
     grec->grec_mca = group_addr;
     uint32_t *src_list =
-        (uint32_t *)((uint8_t *)grec + sizeof(struct igmpv3_grec));
+        (uint32_t *)((uintptr_t)grec + sizeof(struct igmpv3_grec));
     src_list[0] = source_addr->sin_addr.s_addr;
     packet_len_v3 = sizeof(struct igmpv3_report) + sizeof(struct igmpv3_grec) +
                     sizeof(uint32_t);
