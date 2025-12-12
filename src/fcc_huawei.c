@@ -17,7 +17,8 @@
  */
 uint8_t *build_fcc_request_pk_huawei(struct addrinfo *maddr, uint32_t local_ip,
                                      uint16_t fcc_client_nport) {
-  struct sockaddr_in *maddr_sin = (struct sockaddr_in *)maddr->ai_addr;
+  struct sockaddr_in *maddr_sin =
+      (struct sockaddr_in *)(uintptr_t)maddr->ai_addr;
 
   static uint8_t pk[FCC_PK_LEN_REQ_HUAWEI];
   memset(&pk, 0, sizeof(pk));
@@ -76,7 +77,8 @@ uint8_t *build_fcc_nat_pk_huawei(uint32_t session_id) {
  * Build Huawei FCC termination packet - FMT 9
  */
 uint8_t *build_fcc_term_pk_huawei(struct addrinfo *maddr, uint16_t seqn) {
-  struct sockaddr_in *maddr_sin = (struct sockaddr_in *)maddr->ai_addr;
+  struct sockaddr_in *maddr_sin =
+      (struct sockaddr_in *)(uintptr_t)maddr->ai_addr;
 
   static uint8_t pk[FCC_PK_LEN_TERM_HUAWEI];
   memset(&pk, 0, sizeof(pk));

@@ -2399,8 +2399,9 @@ static void rtsp_send_udp_nat_probe(rtsp_session_t *session) {
       /* Send RTCP probe - update port in sockaddr */
       if (session->server_rtcp_port > 0 && session->rtcp_socket >= 0) {
         if (rp->ai_family == AF_INET) {
-          ((struct sockaddr_in *)rp->ai_addr)->sin_port =
-              htons(session->server_rtcp_port);
+          struct sockaddr_in *addr =
+              (struct sockaddr_in *)(uintptr_t)rp->ai_addr;
+          addr->sin_port = htons(session->server_rtcp_port);
         }
         sendto(session->rtcp_socket, rtcp_packet, sizeof(rtcp_packet), 0,
                rp->ai_addr, rp->ai_addrlen);
