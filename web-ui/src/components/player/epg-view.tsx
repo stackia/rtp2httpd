@@ -5,6 +5,7 @@ import { EPGData } from "../../lib/epg-parser";
 import { Card } from "../ui/card";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
+import { cn } from "../../lib/utils";
 
 interface EPGViewProps {
   channelId: string | null;
@@ -168,17 +169,16 @@ function EPGViewComponent({
                       <Card
                         key={program.id}
                         ref={playing ? currentProgramRef : null}
-                        className={`overflow-hidden border transition-all duration-200 ${
+                        className={cn(
+                          "overflow-hidden border transition-all duration-200",
                           playing
                             ? "border-primary bg-primary/5 shadow-md"
                             : isPast
                               ? "border-border opacity-70"
-                              : "border-border"
-                        } ${
-                          (isPast && supportsCatchup) || onAir
-                            ? "cursor-pointer hover:border-primary/50 hover:bg-muted/50 hover:opacity-100 hover:shadow-sm"
-                            : ""
-                        }`}
+                              : "border-border",
+                          ((isPast && supportsCatchup) || onAir) &&
+                            "cursor-pointer hover:border-primary/50 hover:bg-muted/50 hover:opacity-100 hover:shadow-sm",
+                        )}
                         onClick={() => {
                           if (isPast && supportsCatchup) {
                             handleProgramClick(program.start, program.end);
@@ -207,7 +207,10 @@ function EPGViewComponent({
                           {/* Middle-Left: Time */}
                           <div className="flex shrink-0 flex-col items-end">
                             <span
-                              className={`text-xs md:text-sm font-semibold tabular-nums leading-tight ${playing ? "text-primary" : ""}`}
+                              className={cn(
+                                "text-xs md:text-sm font-semibold tabular-nums leading-tight",
+                                playing && "text-primary",
+                              )}
                             >
                               {formatTime(program.start)}
                             </span>

@@ -9,6 +9,7 @@ import { Badge } from "../ui/badge";
 import { Switch } from "../ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { QueueUsage } from "./queue-usage";
+import { cn } from "../../lib/utils";
 
 interface ConnectionsSectionProps {
   clients: ClientRow[];
@@ -115,7 +116,7 @@ export function ConnectionsSection({
             {clients.map((client) => (
               <Card
                 key={client.clientId}
-                className={`border border-border/60 ${client.isDisconnected ? "opacity-60" : ""}`}
+                className={cn("border border-border/60", client.isDisconnected && "opacity-60")}
               >
                 <CardContent className="space-y-4 p-4">
                   <div className="flex items-center justify-between">

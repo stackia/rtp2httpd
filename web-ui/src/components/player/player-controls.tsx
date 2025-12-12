@@ -16,6 +16,7 @@ import {
 import { Channel, EPGProgram } from "../../types/player";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
+import { cn } from "../../lib/utils";
 
 interface PlayerControlsProps {
   // Channel information
@@ -213,9 +214,10 @@ export function PlayerControls({
       {(isCatchupSupported || currentProgram) && (
         <div
           ref={progressBarRef}
-          className={`group relative h-2 rounded-full bg-white/20 transition-all ${
-            isCatchupSupported ? "cursor-pointer hover:h-3" : "cursor-default"
-          }`}
+          className={cn(
+            "group relative h-2 rounded-full bg-white/20 transition-all",
+            isCatchupSupported ? "cursor-pointer hover:h-3" : "cursor-default",
+          )}
           onMouseDown={isCatchupSupported ? handleMouseDown : undefined}
           onMouseMove={isCatchupSupported ? handleMouseMove : undefined}
           onMouseLeave={isCatchupSupported ? handleMouseLeave : undefined}
@@ -240,9 +242,10 @@ export function PlayerControls({
           )}
 
           <div
-            className={`absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-lg transition-all ${
-              isCatchupSupported ? "group-hover:h-4 group-hover:w-4" : ""
-            }`}
+            className={cn(
+              "absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-lg transition-all",
+              isCatchupSupported && "group-hover:h-4 group-hover:w-4",
+            )}
             style={{ left: `${progress}%` }}
           />
         </div>
