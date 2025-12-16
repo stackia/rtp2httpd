@@ -15,41 +15,15 @@ static epg_cache_t epg_cache = {0};
 static const int retry_delays[] = {2, 4, 8, 16, 32, 64, 128, 256};
 #define EPG_MAX_RETRY_COUNT 8
 
-/* Check if URL ends with .gz (case insensitive)
- * Handles URLs with query strings (e.g.,
- * http://example.com/epg.xml.gz?query=123) Returns: 1 if URL ends with .gz
- * (before query string), 0 otherwise
- */
-int epg_url_is_gzipped(const char *url) {
-  const char *path_end;
-  const char *gz_pos;
-  size_t path_len;
+/* Detect gzip-compressed data via gzip magic number (0x1f 0x8b) */
+static int epg_fd_is_gzipped(int fd) {
+  unsigned char magic[2];
 
-  if (!url) {
+  if (pread(fd, magic, sizeof(magic), 0) != sizeof(magic)) {
     return 0;
   }
 
-  /* Find the end of the path (before query string or fragment) */
-  path_end = strchr(url, '?');
-  if (!path_end) {
-    path_end = strchr(url, '#');
-  }
-
-  /* Calculate path length */
-  if (path_end) {
-    path_len = path_end - url;
-  } else {
-    path_len = strlen(url);
-  }
-
-  /* Need at least 3 characters for .gz */
-  if (path_len < 3) {
-    return 0;
-  }
-
-  /* Check if path ends with .gz (case insensitive) */
-  gz_pos = url + path_len - 3;
-  return (strcasecmp(gz_pos, ".gz") == 0);
+  return (magic[0] == 0x1f && magic[1] == 0x8b);
 }
 
 /* Calculate MD5 hash of EPG data from file descriptor */
@@ -146,7 +120,7 @@ static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd,
   /* Store new fd */
   epg_cache.data_fd = fd;
   epg_cache.data_size = content_size;
-  epg_cache.is_gzipped = epg_url_is_gzipped(epg_cache.url);
+  epg_cache.is_gzipped = epg_fd_is_gzipped(fd);
   epg_cache.fetch_error_count = 0;
 
   /* Reset retry state on success */
