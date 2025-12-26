@@ -280,6 +280,7 @@ void rtsp_session_init(rtsp_session_t *session) {
   session->cseq = 1;
   session->server_port = 554; /* Default RTSP port */
   session->redirect_count = 0;
+  session->r2h_start[0] = '\0';
 
   /* Initialize transport parameters - mode will be negotiated during SETUP */
   session->transport_mode = RTSP_TRANSPORT_TCP;    /* Default preference */
@@ -559,6 +560,62 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
 
   if (path_start) {
     *path_start = '/';
+
+    char *query_start = strstr(path_start, "?");
+    if (session->r2h_start[0] == '\0' && query_start) {
+      /* Extract r2h-start parameter if present */
+      char *r2h_start = strstr(query_start, "r2h-start=");
+
+      /* Check if at parameter boundary */
+      if (r2h_start &&
+          (r2h_start == query_start + 1 || *(r2h_start - 1) == '&')) {
+        /* Extract value */
+        char *value_start = r2h_start + 10; /* Skip "r2h-start=" */
+        char *value_end = strchr(value_start, '&');
+        if (!value_end) {
+          value_end = value_start + strlen(value_start);
+        }
+
+        size_t value_len = value_end - value_start;
+        char *start_str = malloc(value_len + 1);
+        if (start_str) {
+          strncpy(start_str, value_start, value_len);
+          start_str[value_len] = '\0';
+
+          /* URL decode */
+          if (http_url_decode(start_str) == 0) {
+            snprintf(session->r2h_start, sizeof(session->r2h_start), "%s", start_str);
+            logger(LOG_DEBUG, "Found r2h-start parameter: %s", session->r2h_start);
+          } else {
+            logger(LOG_ERROR, "Failed to decode r2h-start parameter");
+          }
+
+          free(start_str);
+        }
+
+        /* Remove r2h-start parameter from URL */
+        char *param_start =
+            (r2h_start > query_start + 1) ? (r2h_start - 1) : r2h_start;
+        if (r2h_start == query_start + 1) {
+          /* First parameter */
+          if (*value_end == '&') {
+            /* Has other params after, keep '?' and move them forward */
+            memmove(query_start + 1, value_end + 1, strlen(value_end + 1) + 1);
+          } else {
+            /* Only parameter, remove '?' */
+            *query_start = '\0';
+            query_start = NULL; /* Mark as no query string */
+          }
+        } else {
+          /* Not first parameter, remove including preceding '&' */
+          if (*value_end == '&') {
+            memmove(param_start, value_end, strlen(value_end) + 1);
+          } else {
+            *param_start = '\0';
+          }
+        }
+      }
+    }
   }
 
   /* Extract path and query string (playseek already removed by http.c) */
@@ -1411,8 +1468,13 @@ static int rtsp_state_machine_advance(rtsp_session_t *session) {
     return 0;
 
   case RTSP_STATE_SETUP:
-    snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\n",
-             session->session_id);
+    if (session->r2h_start[0] != '\0') {
+      snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\nRange: npt=%s-\r\n",
+                session->session_id, session->r2h_start);
+    } else {
+      snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\n",
+                session->session_id);
+    }
     if (rtsp_prepare_request(session, RTSP_METHOD_PLAY, extra_headers) < 0) {
       logger(LOG_ERROR, "RTSP: Failed to prepare PLAY request");
       return -1;
