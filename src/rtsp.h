@@ -118,6 +118,7 @@ typedef struct {
   int server_port;                         /* RTSP server port */
   char server_path[RTSP_SERVER_PATH_SIZE]; /* RTSP path with query string */
   int redirect_count;                      /* Number of redirects followed */
+  char r2h_start[RTSP_TIME_STRING_SIZE];
 
   /* Authentication state */
   char username[RTSP_CREDENTIAL_SIZE]; /* RTSP username for authentication */
