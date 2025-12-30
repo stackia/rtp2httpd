@@ -263,16 +263,15 @@ msgstr ""
 #: htdocs/luci-static/resources/view/rtp2httpd.js:493
 msgid ""
 "When configured, HTTP Host header will be checked and must match this value "
-"to allow access. This value is also used as the hostname in M3U playlist "
-"conversion. When using a reverse proxy, configure this with the proxied "
-"access URL (including http(s):// and path prefix), e.g., https://my-domain."
-"com/rtp2httpd, and ensure the reverse proxy forwards the Host header."
+"to allow access."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:515
 msgid ""
 "When enabled, uses HTTP X-Forwarded-For header as client address for status "
-"page display. Only enable when running behind a reverse proxy."
+"page display. Also accepts X-Forwarded-Host / X-Forwarded-Proto headers as "
+"the base URL for M3U playlist conversion. Only enable when running behind a "
+"reverse proxy."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:331

@@ -954,47 +954,46 @@ int connection_queue_file(connection_t *c, int file_fd, off_t file_offset,
   return 0;
 }
 
-/* Handle /playlist.m3u request - serve transformed M3U playlist */
+/* Handle /playlist.m3u request - serve dynamically generated M3U playlist */
 static void handle_playlist_request(connection_t *c) {
+  char *playlist = NULL;
+  size_t playlist_len;
+  char extra_headers[512];
+  const char *etag;
+
   if (!c)
     return;
 
-  const char *playlist = m3u_get_transformed_playlist();
-
-  if (!playlist) {
-    /* No playlist available */
-    http_send_404(c);
-    return;
-  }
-
-  /* Get ETag for the playlist */
-  const char *etag = m3u_get_etag();
+  /* Get ETag for the half-transformed playlist (for caching) */
+  etag = m3u_get_etag();
 
   /* Check ETag and send 304 if it matches */
   if (http_check_etag_and_send_304(c, etag, "audio/x-mpegurl")) {
     return;
   }
 
-  /* ETag doesn't match or not provided - send full playlist */
-  size_t playlist_len = strlen(playlist);
-  char *server_addr = get_server_address();
-  char extra_headers[512];
-  char server_addr_header[512] = {0};
+  /* Generate complete playlist dynamically */
+  playlist =
+      m3u_generate_playlist(c->http_req.hostname, c->http_req.x_forwarded_host,
+                            c->http_req.x_forwarded_proto);
 
-  /* Build X-Server-Address header if available */
-  if (server_addr) {
-    snprintf(server_addr_header, sizeof(server_addr_header),
-             "X-Server-Address: %s", server_addr);
-    free(server_addr);
+  if (!playlist) {
+    /* No playlist available or generation failed */
+    http_send_404(c);
+    return;
   }
+
+  playlist_len = strlen(playlist);
 
   /* Build headers with ETag support */
   http_build_etag_headers(extra_headers, sizeof(extra_headers), playlist_len,
-                          etag,
-                          server_addr_header[0] ? server_addr_header : NULL);
+                          etag, NULL);
 
   send_http_headers(c, STATUS_200, "audio/x-mpegurl", extra_headers);
   connection_queue_output_and_flush(c, (const uint8_t *)playlist, playlist_len);
+
+  /* Free the dynamically generated playlist */
+  free(playlist);
 }
 
 /* Handle /epg.xml or /epg.xml.gz request - serve cached EPG data

@@ -268,6 +268,14 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
             end--;
             *end = '\0';
           }
+        } else if (strcasecmp(inbuf, "X-Forwarded-Host") == 0) {
+          strncpy(req->x_forwarded_host, value,
+                  sizeof(req->x_forwarded_host) - 1);
+          req->x_forwarded_host[sizeof(req->x_forwarded_host) - 1] = '\0';
+        } else if (strcasecmp(inbuf, "X-Forwarded-Proto") == 0) {
+          strncpy(req->x_forwarded_proto, value,
+                  sizeof(req->x_forwarded_proto) - 1);
+          req->x_forwarded_proto[sizeof(req->x_forwarded_proto) - 1] = '\0';
         } else if (strcasecmp(inbuf, "Content-Length") == 0) {
           req->content_length = atoi(value);
         }

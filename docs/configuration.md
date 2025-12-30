@@ -88,6 +88,7 @@ workers = 1
 hostname = somehost.example.com
 
 # 启用后，将使用 HTTP X-Forwarded-For 头作为客户端地址，用于显示在状态面板上 (默认：no)
+# 并接受 X-Forwarded-Host / X-Forwarded-Proto 头作为 playlist.m3u 中的地址前缀
 # 建议仅在使用反向代理时启用
 xff = no
 
@@ -205,19 +206,34 @@ status-page-path = /my-status-page
 player-page-path = /my-player
 ```
 
-如有条件，建议前置 nginx / lucky / caddy 等反向代理负责转发。使用反向代理时，需要将 hostname 配置为经过反向代理后访问的地址（包括路径前缀），并且需要反向代理透传 Host 头，例如：
+如有条件，建议前置 nginx / lucky / caddy 等反向代理负责转发，并开启 `xff` 选项
 
 ```ini
 [global]
-# 当 hostname 以 `http://` 或 `https://` 开头时，rtp2httpd 会认为自己位于反代之后，接受反代传来的 `X-Forwarded-For` 作为客户端地址（用于显示在状态面板）。
-# 这个参数也会影响 m3u 转换。m3u 转换后，所有被转换的 URL 将会以此为前缀。
-hostname = https://my-domain.com/rtp2httpd
+xff = yes
 ```
 
-如果你并不想使用 `hostname`（例如内网仍然想使用 `IP:端口` 访问），也可以单独开启 X-Forwarded-For 解析。但是这样做，转换后的 m3u 将会使用内网地址，节目链接在公网可能无法访问（内置 Web 播放器已特殊处理，不受影响）。
+需要确保反向代理可以透传 `X-Forwarded-For` / `X-Forwarded-Host` / `X-Forwarded-Proto` 头。对于 lucky，开启 `万事大吉` 选项即可。对于 nginx，以下是一个配置示例：
 
-```ini
-xff = yes
+```nginx
+server {
+    listen 80;
+    server_name iptv.example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:5140;
+        proxy_http_version 1.1;
+
+        # 透传客户端真实 IP 和协议信息
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # 流媒体相关优化
+        proxy_buffering off;
+    }
+}
 ```
 
 ## 性能调优

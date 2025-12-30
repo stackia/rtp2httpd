@@ -2,52 +2,10 @@ import mpegts from "@rtp2httpd/mpegts.js";
 import { M3UMetadata, Channel } from "../types/player";
 
 /**
- * Normalize URL by stripping server address prefix and resolving with current window.location
- * @param url - The URL to normalize
- * @param serverAddress - The server base URL from X-Server-Address header (e.g., "http://example.org:5140/" or "https://example.org/")
- * @returns Normalized URL (resolved relative to current page location if URL starts with serverAddress, otherwise unchanged)
- *
- * Examples:
- *   - If window.location is "http://example.org/player" and relativePath is "CCTV1"
- *     → resolves to "http://example.org/CCTV1"
- *   - If window.location is "http://example.org/prefix/player" and relativePath is "CCTV1"
- *     → resolves to "http://example.org/prefix/CCTV1"
- *   - If window.location is "http://example.org/prefix/player/" and relativePath is "CCTV1"
- *     → resolves to "http://example.org/prefix/CCTV1"
- */
-export function normalizeUrl(url: string, serverAddress?: string): string {
-  if (!serverAddress) {
-    return url;
-  }
-
-  try {
-    // If URL starts with serverAddress, strip the prefix and resolve with current location
-    if (url.startsWith(serverAddress)) {
-      const relativePath = url.substring(serverAddress.length);
-
-      // Get base URL from current location (remove last path segment)
-      const currentUrl = new URL(window.location.href);
-      const pathParts = currentUrl.pathname.split("/").filter((p) => p); // Remove empty parts
-      pathParts.pop(); // Remove last segment (current page)
-      const basePath = "/" + pathParts.join("/") + (pathParts.length > 0 ? "/" : "");
-
-      const baseUrl = `${currentUrl.protocol}//${currentUrl.host}${basePath}`;
-      return new URL(relativePath, baseUrl).toString();
-    }
-  } catch (e) {
-    // If URL parsing fails, return as-is
-    console.warn("Failed to parse URL:", url, e);
-  }
-
-  return url;
-}
-
-/**
  * Parse M3U playlist content
  * @param content - The M3U playlist content
- * @param serverAddress - Optional server base URL from X-Server-Address header (e.g., "http://example.org:5140/")
  */
-export function parseM3U(content: string, serverAddress?: string): M3UMetadata {
+export function parseM3U(content: string): M3UMetadata {
   const lines = content.split("\n");
   const channels: Channel[] = [];
   const groups: string[] = [];
@@ -68,7 +26,7 @@ export function parseM3U(content: string, serverAddress?: string): M3UMetadata {
     if (line.startsWith("#EXTM3U")) {
       const tvgUrlMatch = line.match(/x-tvg-url="([^"]+)"/);
       if (tvgUrlMatch) {
-        tvgUrl = normalizeUrl(tvgUrlMatch[1], serverAddress);
+        tvgUrl = tvgUrlMatch[1];
       }
       const catchupMatch = line.match(/catchup="([^"]+)"/);
       if (catchupMatch) {
@@ -103,10 +61,6 @@ export function parseM3U(content: string, serverAddress?: string): M3UMetadata {
         seenGroups.add(group);
       }
 
-      // Normalize catchup source URL if present
-      const rawCatchupSource = catchupSourceMatch?.[1] || defaultCatchupSource;
-      const normalizedCatchupSource = rawCatchupSource ? normalizeUrl(rawCatchupSource, serverAddress) : undefined;
-
       currentChannel = {
         id: `${channels.length + 1}`,
         name,
@@ -115,7 +69,7 @@ export function parseM3U(content: string, serverAddress?: string): M3UMetadata {
         tvgId: tvgIdMatch?.[1],
         tvgName: tvgNameMatch?.[1],
         catchup: catchupMatch?.[1] || defaultCatchup,
-        catchupSource: normalizedCatchupSource,
+        catchupSource: catchupSourceMatch?.[1] || defaultCatchupSource,
       };
       continue;
     }
@@ -129,12 +83,9 @@ export function parseM3U(content: string, serverAddress?: string): M3UMetadata {
         line.startsWith("rtsp://") ||
         line.startsWith("udp://"))
     ) {
-      // Normalize URL: replace hostname/port with current window.location if it matches server address
-      const normalizedUrl = normalizeUrl(line, serverAddress);
-
       channels.push({
         ...currentChannel,
-        url: normalizedUrl,
+        url: line,
       });
       currentChannel = null;
     }
