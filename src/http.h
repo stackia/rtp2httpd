@@ -46,6 +46,8 @@ typedef struct {
   char accept[256];
   char if_none_match[256];
   char x_forwarded_for[64];
+  char x_forwarded_host[256];
+  char x_forwarded_proto[16];
   int x_request_snapshot;
   http_parse_state_t parse_state;
   int content_length;

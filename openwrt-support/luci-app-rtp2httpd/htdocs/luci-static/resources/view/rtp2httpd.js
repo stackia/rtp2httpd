@@ -490,7 +490,7 @@ return view.extend({
       "hostname",
       _("Hostname"),
       _(
-        "When configured, HTTP Host header will be checked and must match this value to allow access. This value is also used as the hostname in M3U playlist conversion. When using a reverse proxy, configure this with the proxied access URL (including http(s):// and path prefix), e.g., https://my-domain.com/rtp2httpd, and ensure the reverse proxy forwards the Host header."
+        "When configured, HTTP Host header will be checked and must match this value to allow access."
       )
     );
     o.depends("use_config_file", "0");
@@ -512,7 +512,7 @@ return view.extend({
       "xff",
       _("X-Forwarded-For"),
       _(
-        "When enabled, uses HTTP X-Forwarded-For header as client address for status page display. Only enable when running behind a reverse proxy."
+        "When enabled, uses HTTP X-Forwarded-For header as client address for status page display. Also accepts X-Forwarded-Host / X-Forwarded-Proto headers as the base URL for M3U playlist conversion. Only enable when running behind a reverse proxy."
       )
     );
     o.default = "0";

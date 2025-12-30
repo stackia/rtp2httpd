@@ -41,6 +41,17 @@ int m3u_is_header(const char *line);
  */
 const char *m3u_get_transformed_playlist(void);
 
+/* Generate complete M3U playlist dynamically based on request headers
+ * host_header: HTTP Host header (can be NULL)
+ * x_forwarded_host: X-Forwarded-Host header (can be NULL, only used when
+ * xff=yes) x_forwarded_proto: X-Forwarded-Proto header (can be NULL, only used
+ * when xff=yes) Returns: malloc'd complete M3U content with header and replaced
+ * placeholders, caller must free
+ */
+char *m3u_generate_playlist(const char *host_header,
+                            const char *x_forwarded_host,
+                            const char *x_forwarded_proto);
+
 /* Get the ETag for the current transformed M3U playlist
  * Returns: ETag string (static buffer), or NULL if no playlist
  */

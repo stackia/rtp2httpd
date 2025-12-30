@@ -20,6 +20,7 @@
 #define MAX_SERVICE_NAME 256
 #define MAX_URL_LENGTH 2048
 #define MAX_M3U_CONTENT (10 * 1024 * 1024) /* 10MB max */
+#define M3U_BASE_URL_PLACEHOLDER "{BASE_URL}"
 
 /* Structure to store parsed EXTINF data */
 struct m3u_extinf {
@@ -571,18 +572,15 @@ static int extract_wrapped_url(const char *url, char *extracted,
   return 0;
 }
 
-/* Build service URL for transformed M3U
+/* Build service URL for transformed M3U using placeholder
  * service_name: name of the service (will be URL encoded)
  * query_params: optional query parameters (can be NULL)
  * output: buffer to store URL
  * output_size: size of output buffer
- * base_url: complete base URL from get_server_address() (e.g.,
- * "http://host:port/" or "https://host:port/path/") Returns: 0 on success, -1
- * on error
+ * Returns: 0 on success, -1 on error
  */
 static int build_service_url(const char *service_name, const char *query_params,
-                             char *output, size_t output_size,
-                             const char *base_url) {
+                             char *output, size_t output_size) {
   char *encoded_name = http_url_encode(service_name);
   char *encoded_token = NULL;
   int result;
@@ -604,24 +602,24 @@ static int build_service_url(const char *service_name, const char *query_params,
     }
   }
 
-  /* Build URL with appropriate query parameters */
-  /* base_url already ends with '/', so we can directly append the service name
-   */
+  /* Build URL with placeholder and appropriate query parameters */
   if (has_query_params && has_r2h_token) {
     /* Include both query parameters and r2h-token */
-    result = snprintf(output, output_size, "%s%s?%s&r2h-token=%s", base_url,
-                      encoded_name, query_params, encoded_token);
+    result = snprintf(output, output_size, "%s%s?%s&r2h-token=%s",
+                      M3U_BASE_URL_PLACEHOLDER, encoded_name, query_params,
+                      encoded_token);
   } else if (has_query_params) {
     /* Include only query parameters */
-    result = snprintf(output, output_size, "%s%s?%s", base_url, encoded_name,
-                      query_params);
+    result = snprintf(output, output_size, "%s%s?%s", M3U_BASE_URL_PLACEHOLDER,
+                      encoded_name, query_params);
   } else if (has_r2h_token) {
     /* Include only r2h-token */
-    result = snprintf(output, output_size, "%s%s?r2h-token=%s", base_url,
-                      encoded_name, encoded_token);
+    result = snprintf(output, output_size, "%s%s?r2h-token=%s",
+                      M3U_BASE_URL_PLACEHOLDER, encoded_name, encoded_token);
   } else {
     /* No query parameters */
-    result = snprintf(output, output_size, "%s%s", base_url, encoded_name);
+    result = snprintf(output, output_size, "%s%s", M3U_BASE_URL_PLACEHOLDER,
+                      encoded_name);
   }
 
   free(encoded_name);
@@ -895,7 +893,6 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
   int in_entry = 0;
   int entry_count = 0;
   size_t line_len;
-  char *server_addr = NULL;
   char proxy_url[MAX_URL_LENGTH];
   char transformed_line[MAX_M3U_LINE];
 
@@ -912,15 +909,6 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
   } else {
     service_source = SERVICE_SOURCE_EXTERNAL;
   }
-
-  /* Get server address as complete URL */
-  server_addr = get_server_address();
-  if (!server_addr) {
-    logger(LOG_ERROR, "Failed to get server address");
-    return -1;
-  }
-
-  logger(LOG_INFO, "Server base URL: %s", server_addr);
 
   /* Don't reset transformed M3U buffer - accumulate content from multiple
    * sources */
@@ -970,31 +958,8 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
         free(tvg_url);
       }
 
-      /* Only add header once to the transformed playlist */
-      if (!m3u_cache.transformed_m3u_has_header) {
-        /* Build transformed header with local EPG URL */
-        char transformed_header[MAX_M3U_LINE];
-
-        if (tvg_url) {
-          /* Replace x-tvg-url with local endpoint */
-          char *server_addr_temp = get_server_address();
-
-          /* server_addr_temp is now a complete URL ending with '/', so just
-           * append filename */
-          snprintf(transformed_header, sizeof(transformed_header),
-                   "#EXTM3U x-tvg-url=\"%sepg.xml\"", server_addr_temp);
-
-          if (server_addr_temp)
-            free(server_addr_temp);
-
-          append_to_transformed_m3u(transformed_header, service_source);
-        } else {
-          /* No EPG URL, add header as-is */
-          append_to_transformed_m3u(line, service_source);
-        }
-        append_to_transformed_m3u("\n", service_source);
-        m3u_cache.transformed_m3u_has_header = 1;
-      }
+      /* Do NOT add header to transformed playlist - it will be added
+       * dynamically when serving the playlist */
       continue;
     }
 
@@ -1008,11 +973,6 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
     /* Parse EXTINF line */
     if (strncmp(line, "#EXTINF:", 8) == 0) {
       memset(&current_extinf, 0, sizeof(current_extinf));
-
-      /* Add blank line before first entry to separate from header */
-      if (entry_count == 0) {
-        append_to_transformed_m3u("\n", service_source);
-      }
 
       /* Extract service name */
       char base_name[MAX_SERVICE_NAME];
@@ -1108,8 +1068,8 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
             char catchup_proxy_url[MAX_URL_LENGTH];
 
             if (build_service_url(unique_catchup_name, catchup_query,
-                                  catchup_proxy_url, sizeof(catchup_proxy_url),
-                                  server_addr) == 0) {
+                                  catchup_proxy_url,
+                                  sizeof(catchup_proxy_url)) == 0) {
               /* Find and replace catchup-source in line */
               char *catchup_start =
                   strstr(transformed_line, "catchup-source=\"");
@@ -1182,7 +1142,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
           /* Build service URL using the actual unique service name for
            * transformed M3U */
           if (build_service_url(unique_service_name, main_query, proxy_url,
-                                sizeof(proxy_url), server_addr) == 0) {
+                                sizeof(proxy_url)) == 0) {
             append_to_transformed_m3u(proxy_url, service_source);
           } else {
             append_to_transformed_m3u(line, service_source);
@@ -1227,9 +1187,6 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
          "Parsed %d M3U entries, generated transformed playlist (%zu bytes)",
          entry_count, m3u_cache.transformed_m3u_used);
 
-  if (server_addr)
-    free(server_addr);
-
   return 0;
 }
 
@@ -1245,6 +1202,153 @@ const char *m3u_get_transformed_playlist(void) {
   }
 
   return m3u_cache.transformed_m3u;
+}
+
+/* Generate complete M3U playlist dynamically based on request headers
+ * Returns malloc'd string, caller must free
+ */
+char *m3u_generate_playlist(const char *host_header,
+                            const char *x_forwarded_host,
+                            const char *x_forwarded_proto) {
+  const char *half_transformed = m3u_cache.transformed_m3u;
+  size_t half_size = m3u_cache.transformed_m3u_used;
+  char *base_url = NULL;
+  char *result = NULL;
+  size_t result_size;
+  size_t result_used = 0;
+  const char *src_ptr;
+  char *dst_ptr;
+  epg_cache_t *epg;
+
+  /* Check if we have content to serve */
+  if (!half_transformed || half_size == 0) {
+    return NULL;
+  }
+
+  /* Build base URL based on headers and xff config */
+  const char *host = NULL;
+  const char *proto = "http";
+
+  if (config.xff && x_forwarded_host && x_forwarded_host[0]) {
+    /* Use X-Forwarded-Host when xff is enabled */
+    host = x_forwarded_host;
+    if (x_forwarded_proto && x_forwarded_proto[0]) {
+      proto = x_forwarded_proto;
+    }
+  } else if (host_header && host_header[0]) {
+    /* Use Host header */
+    host = host_header;
+  }
+
+  if (host) {
+    /* Build base URL from host and proto */
+    size_t url_len = strlen(proto) + 3 + strlen(host) + 2; /* proto://host/ */
+    base_url = malloc(url_len);
+    if (!base_url) {
+      logger(LOG_ERROR, "Failed to allocate base URL");
+      return NULL;
+    }
+    snprintf(base_url, url_len, "%s://%s/", proto, host);
+  } else {
+    /* Fallback to get_server_address */
+    base_url = get_server_address();
+    if (!base_url) {
+      logger(LOG_ERROR, "Failed to get server address for M3U generation");
+      return NULL;
+    }
+  }
+
+  logger(LOG_DEBUG, "Generating M3U with base URL: %s", base_url);
+
+  /* Calculate result size: header + EPG line + content with replacements
+   * Estimate: assume worst case where every placeholder gets replaced */
+  size_t base_url_len = strlen(base_url);
+  size_t placeholder_len = strlen(M3U_BASE_URL_PLACEHOLDER);
+  size_t max_replacements = half_size / placeholder_len + 1;
+  size_t header_size = 512; /* Space for #EXTM3U and EPG URL */
+  result_size = header_size + half_size + (max_replacements * base_url_len) + 1;
+
+  result = malloc(result_size);
+  if (!result) {
+    logger(LOG_ERROR, "Failed to allocate result buffer for M3U generation");
+    free(base_url);
+    return NULL;
+  }
+
+  dst_ptr = result;
+
+  /* Add #EXTM3U header */
+  epg = epg_get_cache();
+  if (epg && epg->url) {
+    /* Add header with EPG URL */
+    int written = snprintf(dst_ptr, result_size - result_used,
+                           "#EXTM3U x-tvg-url=\"%sepg.xml\"\n\n", base_url);
+    if (written > 0) {
+      dst_ptr += written;
+      result_used += written;
+    }
+  } else {
+    /* No EPG, just add basic header */
+    int written = snprintf(dst_ptr, result_size - result_used, "#EXTM3U\n\n");
+    if (written > 0) {
+      dst_ptr += written;
+      result_used += written;
+    }
+  }
+
+  /* Copy half-transformed content while replacing placeholders */
+  src_ptr = half_transformed;
+  while (*src_ptr) {
+    /* Check if we're at a placeholder */
+    if (strncmp(src_ptr, M3U_BASE_URL_PLACEHOLDER, placeholder_len) == 0) {
+      /* Replace with base URL */
+      size_t remaining = result_size - result_used;
+      if (base_url_len >= remaining) {
+        /* Need to grow buffer */
+        size_t new_size = result_size * 2;
+        char *new_result = realloc(result, new_size);
+        if (!new_result) {
+          logger(LOG_ERROR, "Failed to grow result buffer");
+          free(result);
+          free(base_url);
+          return NULL;
+        }
+        result = new_result;
+        result_size = new_size;
+        dst_ptr = result + result_used;
+      }
+
+      memcpy(dst_ptr, base_url, base_url_len);
+      dst_ptr += base_url_len;
+      result_used += base_url_len;
+      src_ptr += placeholder_len;
+    } else {
+      /* Copy character as-is */
+      if (result_used >= result_size - 1) {
+        /* Need to grow buffer */
+        size_t new_size = result_size * 2;
+        char *new_result = realloc(result, new_size);
+        if (!new_result) {
+          logger(LOG_ERROR, "Failed to grow result buffer");
+          free(result);
+          free(base_url);
+          return NULL;
+        }
+        result = new_result;
+        result_size = new_size;
+        dst_ptr = result + result_used;
+      }
+
+      *dst_ptr++ = *src_ptr++;
+      result_used++;
+    }
+  }
+
+  /* Null terminate */
+  *dst_ptr = '\0';
+
+  free(base_url);
+  return result;
 }
 
 const char *m3u_get_etag(void) {

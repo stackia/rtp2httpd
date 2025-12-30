@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useState, useCallback, useMemo, useRef, Activity
 import { createRoot } from "react-dom/client";
 import mpegts from "@rtp2httpd/mpegts.js";
 import { Channel, M3UMetadata, PlayMode } from "../types/player";
-import { parseM3U, buildCatchupSegments, normalizeUrl } from "../lib/m3u-parser";
+import { parseM3U, buildCatchupSegments } from "../lib/m3u-parser";
 import { loadEPG, getCurrentProgram, getEPGChannelId, EPGData, fillEPGGaps } from "../lib/epg-parser";
 import {
   ChannelList,
@@ -170,7 +170,7 @@ function PlayerPage() {
       const token = urlParams.get("r2h-token");
 
       // Build playlist URL with token if available
-      let playlistUrl = normalizeUrl("/playlist.m3u", "/");
+      let playlistUrl = "/playlist.m3u";
       if (token) {
         playlistUrl += `?r2h-token=${encodeURIComponent(token)}`;
       }
@@ -180,15 +180,8 @@ function PlayerPage() {
         throw new Error(t("failedToLoadPlaylist"));
       }
 
-      // Extract server base URL from X-Server-Address header
-      // Format: complete URL like "http://example.org:5140/" or "https://example.org/"
-      const serverAddress = response.headers.get("X-Server-Address") || undefined;
-      if (serverAddress) {
-        console.log("Server base URL from header:", serverAddress);
-      }
-
       const content = await response.text();
-      const parsed = parseM3U(content, serverAddress);
+      const parsed = parseM3U(content);
       setMetadata(parsed);
 
       // Load EPG if available
