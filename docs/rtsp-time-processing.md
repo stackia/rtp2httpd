@@ -79,6 +79,16 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=202401011200
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000&r2h-seek-offset=-30
 ```
 
+### r2h-start 参数（可选）
+
+用于指定从特定时间点开始播放 RTSP 流，实现续播功能。此参数值会作为 NPT（Normal Play Time）格式的时间点，在 RTSP PLAY 请求中通过 `Range: npt=<时间点>-` 头发送给 RTSP 服务器。
+
+#### 示例
+
+```url
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-start=123.45
+```
+
 ## 支持的时间格式
 
 rtp2httpd 支持解析以下时间格式。只有当时间能够被成功解析时，才可以进行时区转换或应用 r2h-seek-offset 秒数偏移。
