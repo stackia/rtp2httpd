@@ -211,13 +211,20 @@ int epg_fetch_async(int epfd) {
 
   logger(LOG_INFO, "Starting async EPG fetch from: %s", epg_cache.url);
 
-  /* Start async fetch with fd-based callback (zero-copy) */
+  /* Start async fetch with fd-based callback (zero-copy)
+   * Note: file:// URLs complete synchronously and return NULL (callback already
+   * invoked) */
   fetch_ctx = http_fetch_start_async_fd(epg_cache.url, epg_fetch_fd_callback,
                                         NULL, epfd);
-  if (!fetch_ctx) {
-    logger(LOG_ERROR, "Failed to start async fetch for EPG");
-    epg_cache.fetch_error_count++;
-    return -1;
+
+  /* NULL return value can mean:
+   * 1. file:// URL completed synchronously (callback already called) - SUCCESS
+   * 2. Error occurred (callback called with error) - also handled
+   * Non-NULL means HTTP(S) fetch started successfully and is in progress */
+  if (fetch_ctx) {
+    logger(LOG_DEBUG, "Async HTTP(S) fetch started, waiting for completion");
+  } else {
+    logger(LOG_DEBUG, "Fetch completed immediately (likely file:// URL)");
   }
 
   return 0;
