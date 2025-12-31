@@ -1229,10 +1229,24 @@ char *m3u_generate_playlist(const char *host_header,
   const char *host = NULL;
   const char *proto = "http";
 
+  /* Extract protocol from config.hostname if configured */
+  char config_protocol[16] = {0};
+  if (config.hostname && config.hostname[0] != '\0') {
+    /* Parse URL components from config.hostname to extract protocol */
+    if (http_parse_url_components(config.hostname, config_protocol, NULL, NULL,
+                                  NULL) == 0) {
+      /* Successfully parsed - use protocol from config.hostname if present */
+      if (config_protocol[0] != '\0') {
+        proto = config_protocol;
+      }
+    }
+  }
+
   if (config.xff && x_forwarded_host && x_forwarded_host[0]) {
     /* Use X-Forwarded-Host when xff is enabled */
     host = x_forwarded_host;
     if (x_forwarded_proto && x_forwarded_proto[0]) {
+      /* X-Forwarded-Proto overrides config.hostname protocol */
       proto = x_forwarded_proto;
     }
   } else if (host_header && host_header[0]) {
