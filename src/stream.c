@@ -233,6 +233,11 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
         logger(LOG_DEBUG, "RTSP: Graceful TEARDOWN completed");
         return -1; /* Signal connection should be closed */
       }
+      if (result == -3)
+      {
+        logger(LOG_DEBUG, "RTSP: found duration: %0.3f", ctx->rtsp.r2h_duration_value);
+        return -3;
+      }
       /* Real error */
       logger(LOG_ERROR, "RTSP: Socket event handling failed");
       return -1;

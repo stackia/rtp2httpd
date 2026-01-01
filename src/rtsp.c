@@ -281,6 +281,8 @@ void rtsp_session_init(rtsp_session_t *session) {
   session->server_port = 554; /* Default RTSP port */
   session->redirect_count = 0;
   session->r2h_start[0] = '\0';
+  session->r2h_duration = 0;
+  session->r2h_duration_value = -1;
 
   /* Initialize transport parameters - mode will be negotiated during SETUP */
   session->transport_mode = RTSP_TRANSPORT_TCP;    /* Default preference */
@@ -597,6 +599,57 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
         char *param_start =
             (r2h_start > query_start + 1) ? (r2h_start - 1) : r2h_start;
         if (r2h_start == query_start + 1) {
+          /* First parameter */
+          if (*value_end == '&') {
+            /* Has other params after, keep '?' and move them forward */
+            memmove(query_start + 1, value_end + 1, strlen(value_end + 1) + 1);
+          } else {
+            /* Only parameter, remove '?' */
+            *query_start = '\0';
+            query_start = NULL; /* Mark as no query string */
+          }
+        } else {
+          /* Not first parameter, remove including preceding '&' */
+          if (*value_end == '&') {
+            memmove(param_start, value_end, strlen(value_end) + 1);
+          } else {
+            *param_start = '\0';
+          }
+        }
+      }
+    }
+
+    if (!session->r2h_duration && query_start) {
+      /* Extract r2h-duration parameter if present */
+      char *r2h_duration = strstr(query_start, "r2h-duration=");
+
+      /* Check if at parameter boundary */
+      if (r2h_duration &&
+          (r2h_duration == query_start + 1 || *(r2h_duration - 1) == '&')) {
+        /* Extract value */
+        char *value_start = r2h_duration + 13; /* Skip "r2h-start=" */
+        char *value_end = strchr(value_start, '&');
+        if (!value_end) {
+          value_end = value_start + strlen(value_start);
+        }
+        size_t value_len = value_end - value_start;
+        char *duration_str = malloc(value_len + 1);
+        if (duration_str) {
+          strncpy(duration_str, value_start, value_len);
+          duration_str[value_len] = '\0';
+          if (strcmp(duration_str, "1") == 0) {
+            session->r2h_duration = 1;
+            logger(LOG_INFO,
+                   "Duration request detected via query parameter(r2h-duration) for URL: %s",
+                   rtsp_url);
+          }
+          free(duration_str);
+        }
+
+        /* Remove r2h-duration parameter from URL */
+        char *param_start =
+            (r2h_duration > query_start + 1) ? (r2h_duration - 1) : r2h_duration;
+        if (r2h_duration == query_start + 1) {
           /* First parameter */
           if (*value_end == '&') {
             /* Has other params after, keep '?' and move them forward */
@@ -999,6 +1052,7 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
       if (response_result < 0) {
         logger(LOG_ERROR, "RTSP: Failed to receive response");
         rtsp_session_set_state(session, RTSP_STATE_ERROR);
+        if (response_result == -3) return -3;
         return -1;
       }
 
@@ -1331,6 +1385,46 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
       logger(LOG_DEBUG, "RTSP: Response body data (state=%d): %.*s",
              session->state, (int)remaining_data_len,
              session->response_buffer + data_after_header_end);
+    }
+
+    if (session->r2h_duration && session->state == RTSP_STATE_AWAITING_DESCRIBE)
+    {
+      char *body_str = malloc(remaining_data_len + 1);
+      if (body_str) {
+        strncpy(body_str, session->response_buffer + data_after_header_end, remaining_data_len);
+        body_str[remaining_data_len] = '\0';
+
+        char *r2h_range = strstr(body_str, "a=range:npt=");
+
+        /* Check if at parameter boundary */
+        if (r2h_range)
+        {
+          /* Extract value */
+          char *value_start = r2h_range + 12; /* Skip "a=range:npt=" */
+          char *value_end = strchr(value_start, '\r\n');
+          if (!value_end) {
+            value_end = value_start + strlen(value_start);
+          }
+          size_t value_len = value_end - value_start;
+          char *value_str = malloc(value_len + 1);
+          if (value_str)
+          {
+            strncpy(value_str, value_start, value_len);
+            value_str[value_len] = '\0';
+          }
+          float range_start, range_end;
+          if (sscanf(value_str, "%f-%f", &range_start, &range_end)==2) {
+            logger(LOG_DEBUG,"RTSP: Range: %.3f-%.3f", range_start, range_end);
+            session->r2h_duration_value = range_end;
+          } else {
+            logger(LOG_DEBUG,"RTSP Range: %s, cannot find right range!", value_str);
+          }
+          free(value_str);
+        }
+        free(body_str);
+      }
+      /* r2h-duration return */
+      return -3;
     }
   }
 

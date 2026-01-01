@@ -514,8 +514,17 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
           int res = stream_handle_fd_event(&c->stream, fd_ready,
                                            events[e].events, now);
           if (res < 0) {
-            /* Send 503 if headers not sent yet (no data ever arrived) */
-            if (!c->headers_sent) {
+            /* Send 200 for r2h-duration request */
+            if (res == -3) {
+              send_http_headers(c, STATUS_200, "application/json", NULL);
+              char response[64];
+              snprintf(response, sizeof(response),
+                         "{\"duration\": \"%0.3f\"}", c->stream.rtsp.r2h_duration_value);
+
+              connection_queue_output_and_flush(c, (const uint8_t *)response,
+                                                strlen(response));
+            } else if (!c->headers_sent) {
+              /* Send 503 if headers not sent yet (no data ever arrived) */
               http_send_503(c);
               /* http_send_503 sets CONN_CLOSING, don't force immediate close */
             } else {
