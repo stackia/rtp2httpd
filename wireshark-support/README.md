@@ -1,6 +1,6 @@
 # FCC 协议 Wireshark 分析器使用说明
 
-这是一个用于分析 FCC (Fast Channel Change) 协议的 Wireshark Lua dissector。
+这是一个用于分析 FCC (Fast Channel Change) 协议的 Wireshark Lua dissector，支持电信 (Telecom) 和华为 (Huawei) 两种协议变体。
 
 ## 快速开始
 
@@ -32,8 +32,11 @@ Dissector 会自动识别以下情况的 FCC 协议包：
 
 - UDP 端口 8027/15970 的流量（默认 FCC 服务器端口）
 - 符合 FCC 协议特征的 RTCP 包（自动启发式检测）
+- 华为 NAT 穿透包（8 字节，magic 0x0003）
 
-## 支持的消息类型
+## 支持的协议变体
+
+### 电信协议 (Telecom)
 
 | FMT | 消息类型          | 说明                     |
 | --- | ----------------- | ------------------------ |
@@ -42,26 +45,56 @@ Dissector 会自动识别以下情况的 FCC 协议包：
 | 4   | Sync Notification | 同步通知（可加入组播）   |
 | 5   | Termination       | 终止消息                 |
 
+### 华为协议 (Huawei)
+
+| FMT | 消息类型          | 说明                        |
+| --- | ----------------- | --------------------------- |
+| 5   | Client Request    | RSR - Rapid Stream Request  |
+| 6   | Server Response   | 服务器响应                  |
+| 8   | Sync Notification | 同步通知（可加入组播）      |
+| 9   | Termination       | SCR - Stream Change Request |
+| -   | NAT Traversal     | NAT 穿透包（非 RTCP 格式）  |
+
+> **注意**: FMT 5 在两种协议中含义不同。Dissector 会根据包长度自动区分：
+>
+> - 32 字节：华为客户端请求
+> - 16 字节：电信终止消息
+
 ## 过滤器示例
 
 ```text
 # 显示所有 FCC 协议包
 fcc
 
-# 只显示客户端请求
+# 只显示客户端请求（电信）
 fcc.fmt == 2
 
-# 只显示服务器响应
+# 只显示服务器响应（电信）
 fcc.fmt == 3
 
-# 只显示成功的响应
+# 只显示华为服务器响应
+fcc.fmt == 6
+
+# 只显示华为终止消息
+fcc.fmt == 9
+
+# 只显示成功的电信响应
 fcc.resp.result == 0
 
-# 只显示服务器重定向消息
+# 只显示成功的华为响应
+fcc.hw.resp.result == 1
+
+# 只显示服务器重定向消息（电信）
 fcc.resp.action == 3
+
+# 只显示华为重定向消息
+fcc.hw.resp.type == 3
 
 # 显示特定组播地址的请求
 fcc.req.mcast_ip == 239.1.1.1
+
+# 显示华为 NAT 穿透包
+fcc.hw.nat.session_id
 ```
 
 ## 字段说明
@@ -72,14 +105,14 @@ fcc.req.mcast_ip == 239.1.1.1
 - `fcc.fmt`: 反馈消息类型
 - `fcc.media_ssrc`: 媒体源地址（显示为 IP）
 
-### 客户端请求字段
+### 电信客户端请求字段
 
 - `fcc.req.client_port`: 客户端端口
 - `fcc.req.mcast_port`: 组播端口
 - `fcc.req.mcast_ip`: 组播地址
 - `fcc.req.stb_id`: 机顶盒 ID
 
-### 服务器响应字段
+### 电信服务器响应字段
 
 - `fcc.resp.result`: 结果代码（0=成功，1=错误）
 - `fcc.resp.action`: 动作代码（2=启动单播，3=重定向）
@@ -89,10 +122,36 @@ fcc.req.mcast_ip == 239.1.1.1
 - `fcc.resp.speed`: 突发速率（自动显示为 Mbps/Kbps）
 - `fcc.resp.speed_after_sync`: 同步后速率
 
-### 终止消息字段
+### 电信终止消息字段
 
 - `fcc.term.stop_bit`: 停止位（0=正常，1=强制）
 - `fcc.term.seqn`: 首个组播包序列号
+
+### 华为客户端请求字段
+
+- `fcc.hw.req.local_ip`: 本地 IP 地址
+- `fcc.hw.req.client_port`: 客户端端口
+- `fcc.hw.req.flag`: 标志位
+- `fcc.hw.req.redirect_flag`: 重定向支持标志
+
+### 华为服务器响应字段
+
+- `fcc.hw.resp.result`: 结果代码（1=成功，其他=错误）
+- `fcc.hw.resp.type`: 响应类型（1=无需单播，2=单播流，3=重定向）
+- `fcc.hw.resp.nat_flag`: NAT 标志
+- `fcc.hw.resp.server_port`: 服务器端口
+- `fcc.hw.resp.session_id`: 会话 ID
+- `fcc.hw.resp.server_ip`: 服务器 IP 地址
+
+### 华为终止消息字段
+
+- `fcc.hw.term.status`: 状态（1=成功加入组播，2=错误）
+- `fcc.hw.term.seqn`: 首个组播包序列号
+
+### 华为 NAT 穿透包字段
+
+- `fcc.hw.nat.magic`: Magic 值 (0x0003)
+- `fcc.hw.nat.session_id`: 会话 ID
 
 ## 自定义端口
 
@@ -126,3 +185,9 @@ udp_port:add(8027, fcc_proto)  -- 改为你的端口
 
 - 确认数据包完整（未被截断）
 - 检查数据包长度是否符合协议要求
+
+**Q: 如何区分电信和华为协议？**
+
+- 查看 Info 列：会显示 "(Telecom)" 或 "(Huawei)" 后缀
+- 电信协议使用 FMT 2/3/4/5
+- 华为协议使用 FMT 5/6/8/9
