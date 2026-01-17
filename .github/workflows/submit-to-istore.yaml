@@ -1,0 +1,184 @@
+name: Submit to iStore
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to update (e.g., 3.5.1)"
+        required: true
+        type: string
+
+jobs:
+  submit-to-istore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download IPK files from release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ inputs.version }}"
+          TAG="v${VERSION}"
+
+          echo "Downloading IPK files from release ${TAG}..."
+
+          mkdir -p ipk-files
+          cd ipk-files
+
+          # Download all IPK files from the release
+          gh release download "${TAG}" --repo stackia/rtp2httpd --pattern "*.ipk"
+
+          echo "Downloaded files:"
+          ls -la
+
+      - name: Prepare openwrt-app-meta PR
+        id: meta-pr
+        env:
+          GH_TOKEN: ${{ secrets.ISTORE_PAT }}
+        run: |
+          VERSION="${{ inputs.version }}"
+          # Extract release number from IPK filename
+          RELEASE=$(ls ../ipk-files/rtp2httpd_${VERSION}-r*.ipk 2>/dev/null | head -1 | sed -n 's/.*-r\([0-9]*\)_.*/\1/p')
+          if [ -z "$RELEASE" ]; then
+            RELEASE="1"
+          fi
+
+          # Clone openwrt-app-meta
+          git clone https://x-access-token:${GH_TOKEN}@github.com/linkease/openwrt-app-meta.git
+          cd openwrt-app-meta
+
+          # Create a new branch
+          BRANCH_NAME="update-rtp2httpd-${VERSION}-r${RELEASE}"
+          git checkout -b "${BRANCH_NAME}"
+
+          # Update Makefile
+          MAKEFILE="applications/app-meta-rtp2httpd/Makefile"
+          if [ -f "${MAKEFILE}" ]; then
+            # Update PKG_VERSION
+            sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=${VERSION}/" "${MAKEFILE}"
+            # Update PKG_RELEASE
+            sed -i "s/^PKG_RELEASE:=.*/PKG_RELEASE:=${RELEASE}/" "${MAKEFILE}"
+            echo "Updated Makefile with version ${VERSION} and release ${RELEASE}"
+            cat "${MAKEFILE}"
+          else
+            echo "Error: Makefile not found at ${MAKEFILE}"
+            exit 1
+          fi
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Commit and push
+          git add .
+          git commit -m "update rtp2httpd to ${VERSION}-r${RELEASE}"
+          git push origin "${BRANCH_NAME}"
+
+          # Create draft PR and capture the URL
+          META_PR_URL=$(gh pr create \
+            --repo linkease/openwrt-app-meta \
+            --title "update rtp2httpd to ${VERSION}-r${RELEASE}" \
+            --body "Update rtp2httpd metadata to version ${VERSION}-r${RELEASE}
+
+          This PR updates the package version in the app metadata.
+
+          Automated PR from [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd)" \
+            --head "${BRANCH_NAME}" \
+            --draft)
+
+          echo "meta_pr_url=${META_PR_URL}" >> $GITHUB_OUTPUT
+          echo "Created meta PR: ${META_PR_URL}"
+
+      - name: Prepare istore-repo PR
+        env:
+          GH_TOKEN: ${{ secrets.ISTORE_PAT }}
+          META_PR_URL: ${{ steps.meta-pr.outputs.meta_pr_url }}
+        run: |
+          VERSION="${{ inputs.version }}"
+          # Extract release number from IPK filename
+          RELEASE=$(ls ipk-files/rtp2httpd_${VERSION}-r*.ipk 2>/dev/null | head -1 | sed -n 's/.*-r\([0-9]*\)_.*/\1/p')
+          if [ -z "$RELEASE" ]; then
+            RELEASE="1"
+          fi
+
+          # Clone istore-repo
+          git clone https://x-access-token:${GH_TOKEN}@github.com/linkease/istore-repo.git
+          cd istore-repo
+
+          # Create a new branch
+          BRANCH_NAME="update-rtp2httpd-${VERSION}-r${RELEASE}"
+          git checkout -b "${BRANCH_NAME}"
+
+          # Copy IPK files to appropriate directories
+          # Architecture-specific packages go to nas/
+          # Only submit aarch64_cortex-a53 and x86_64
+          for arch in aarch64_cortex-a53 x86_64; do
+            IPK_FILE="../ipk-files/rtp2httpd_${VERSION}-r${RELEASE}_${arch}.ipk"
+            if [ -f "${IPK_FILE}" ]; then
+              mkdir -p "bin/packages/${arch}/nas"
+              # Remove old version if exists
+              rm -f "bin/packages/${arch}/nas/rtp2httpd_"*.ipk
+              cp "${IPK_FILE}" "bin/packages/${arch}/nas/"
+              echo "Copied rtp2httpd IPK for ${arch}"
+            fi
+          done
+
+          # LuCI packages go to all/nas_luci/
+          mkdir -p "bin/packages/all/nas_luci"
+
+          # luci-app-rtp2httpd
+          LUCI_APP_IPK="../ipk-files/luci-app-rtp2httpd_${VERSION}-r${RELEASE}_all.ipk"
+          if [ -f "${LUCI_APP_IPK}" ]; then
+            rm -f "bin/packages/all/nas_luci/luci-app-rtp2httpd_"*.ipk
+            cp "${LUCI_APP_IPK}" "bin/packages/all/nas_luci/"
+            echo "Copied luci-app-rtp2httpd IPK"
+          fi
+
+          # luci-i18n-rtp2httpd-zh-cn
+          LUCI_I18N_IPK="../ipk-files/luci-i18n-rtp2httpd-zh-cn_${VERSION}_all.ipk"
+          if [ -f "${LUCI_I18N_IPK}" ]; then
+            rm -f "bin/packages/all/nas_luci/luci-i18n-rtp2httpd-zh-cn_"*.ipk
+            cp "${LUCI_I18N_IPK}" "bin/packages/all/nas_luci/"
+            echo "Copied luci-i18n-rtp2httpd-zh-cn IPK"
+          fi
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Commit and push
+          git add .
+          git commit -m "update rtp2httpd to ${VERSION}-r${RELEASE}"
+          git push origin "${BRANCH_NAME}"
+
+          # Create draft PR with meta PR link
+          gh pr create \
+            --repo linkease/istore-repo \
+            --base pending \
+            --title "update rtp2httpd to ${VERSION}-r${RELEASE}" \
+            --body "更新 rtp2httpd 到版本 ${VERSION}-r${RELEASE}
+
+          本 PR 更新了以下软件包：
+          - \`rtp2httpd\` (aarch64_cortex-a53, x86_64)
+          - \`luci-app-rtp2httpd\`
+          - \`luci-i18n-rtp2httpd-zh-cn\`
+
+          自动化 PR 来自 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd)
+
+          ---
+
+          请完成以下表格：(方括号内填 \"x\" 以选中)
+          * [x] 文件已经上传
+          * [x] 确认PR的目标分支是\`pending\`
+          * [x] 如果[元数据仓库](https://github.com/linkease/openwrt-app-meta/pulls)已经PR了请提供PR链接：
+            * ${META_PR_URL}
+
+          如果是全新软件：
+          * [x] 是否开源软件？
+          * [x] 代码仓库或者官方网站：https://github.com/stackia/rtp2httpd" \
+            --head "${BRANCH_NAME}" \
+            --draft
