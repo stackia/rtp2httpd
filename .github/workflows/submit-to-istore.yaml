@@ -106,6 +106,7 @@ jobs:
           echo "Created meta PR: ${META_PR_URL}"
 
       - name: Prepare istore-repo PR
+        id: repo-pr
         env:
           GH_TOKEN: ${{ secrets.ISTORE_PAT }}
           META_PR_URL: ${{ steps.meta-pr.outputs.meta_pr_url }}
@@ -179,8 +180,8 @@ jobs:
           git commit -m "update rtp2httpd to ${VERSION}-r${RELEASE}"
           git push origin "${BRANCH_NAME}" --force
 
-          # Create draft PR from fork to upstream with meta PR link
-          gh pr create \
+          # Create draft PR from fork to upstream with meta PR link and capture the URL
+          REPO_PR_URL=$(gh pr create \
             --repo linkease/istore-repo \
             --base pending \
             --title "update rtp2httpd to ${VERSION}-r${RELEASE}" \
@@ -205,4 +206,29 @@ jobs:
           * [x] 是否开源软件？
           * [x] 代码仓库或者官方网站：https://github.com/stackia/rtp2httpd" \
             --head "${GITHUB_USER}:${BRANCH_NAME}" \
-            --draft
+            --draft)
+
+          echo "repo_pr_url=${REPO_PR_URL}" >> $GITHUB_OUTPUT
+          echo "Created repo PR: ${REPO_PR_URL}"
+
+      - name: Mark PRs as ready for review
+        env:
+          GH_TOKEN: ${{ secrets.ISTORE_PAT }}
+          META_PR_URL: ${{ steps.meta-pr.outputs.meta_pr_url }}
+          REPO_PR_URL: ${{ steps.repo-pr.outputs.repo_pr_url }}
+        run: |
+          echo "Converting draft PRs to ready for review..."
+
+          # Extract PR numbers from URLs
+          META_PR_NUMBER=$(echo "${META_PR_URL}" | grep -oP '\d+$')
+          REPO_PR_NUMBER=$(echo "${REPO_PR_URL}" | grep -oP '\d+$')
+
+          # Mark meta PR as ready
+          echo "Marking openwrt-app-meta PR #${META_PR_NUMBER} as ready..."
+          gh pr ready "${META_PR_NUMBER}" --repo linkease/openwrt-app-meta
+
+          # Mark repo PR as ready
+          echo "Marking istore-repo PR #${REPO_PR_NUMBER} as ready..."
+          gh pr ready "${REPO_PR_NUMBER}" --repo linkease/istore-repo
+
+          echo "Both PRs are now ready for review!"
