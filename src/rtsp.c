@@ -941,6 +941,17 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
     } else if (events & (EPOLLHUP | EPOLLRDHUP)) {
       logger(LOG_INFO, "RTSP: Server closed connection");
     }
+
+    /* If we're in TEARDOWN states, server closing connection is acceptable
+     * (some servers don't send TEARDOWN response before closing) */
+    if (session->state == RTSP_STATE_SENDING_TEARDOWN ||
+        session->state == RTSP_STATE_AWAITING_TEARDOWN) {
+      logger(LOG_DEBUG,
+             "RTSP: Server closed connection during TEARDOWN (acceptable)");
+      rtsp_force_cleanup(session);
+      return -2; /* Graceful teardown completion */
+    }
+
     rtsp_session_set_state(session, RTSP_STATE_ERROR);
     return -1; /* Connection closed or error */
   }
@@ -2058,7 +2069,6 @@ int rtsp_session_cleanup(rtsp_session_t *session) {
   rtsp_force_cleanup(session);
   return 0; /* Cleanup completed immediately */
 }
-
 
 /* Helper functions */
 static int rtsp_parse_response_header(rtsp_session_t *session,
