@@ -88,7 +88,7 @@ jobs:
           # Commit and push to fork
           git add .
           git commit -m "update rtp2httpd to ${VERSION}-r${RELEASE}"
-          git push origin "${BRANCH_NAME}"
+          git push origin "${BRANCH_NAME}" --force
 
           # Create draft PR from fork to upstream and capture the URL
           META_PR_URL=$(gh pr create \
@@ -177,7 +177,7 @@ jobs:
           # Commit and push to fork
           git add .
           git commit -m "update rtp2httpd to ${VERSION}-r${RELEASE}"
-          git push origin "${BRANCH_NAME}"
+          git push origin "${BRANCH_NAME}" --force
 
           # Create draft PR from fork to upstream with meta PR link
           gh pr create \
