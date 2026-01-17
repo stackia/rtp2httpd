@@ -1396,7 +1396,8 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
         session->state == RTSP_STATE_AWAITING_DESCRIBE) {
       char *body_str = malloc(remaining_data_len + 1);
       if (body_str) {
-        strncpy(body_str, session->response_buffer + data_after_header_end,
+        strncpy(body_str,
+                (const char *)session->response_buffer + data_after_header_end,
                 remaining_data_len);
         body_str[remaining_data_len] = '\0';
 
@@ -1406,7 +1407,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
         if (r2h_range) {
           /* Extract value */
           char *value_start = r2h_range + 12; /* Skip "a=range:npt=" */
-          char *value_end = strchr(value_start, '\r\n');
+          char *value_end = strchr(value_start, '\r');
           if (!value_end) {
             value_end = value_start + strlen(value_start);
           }
