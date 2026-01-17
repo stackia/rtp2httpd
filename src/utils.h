@@ -59,6 +59,17 @@ int64_t get_realtime_ms(void);
 #define max(a, b) ((a) > (b) ? (a) : (b))
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
+/**
+ * Set socket receive buffer size, trying SO_RCVBUFFORCE first.
+ * SO_RCVBUFFORCE can exceed system limits but requires CAP_NET_ADMIN.
+ * Falls back to SO_RCVBUF if SO_RCVBUFFORCE fails.
+ *
+ * @param fd Socket file descriptor
+ * @param size Desired receive buffer size in bytes
+ * @return 0 on success, -1 on failure
+ */
+int set_socket_rcvbuf(int fd, int size);
+
 /* Array size calculation macro */
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 

@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <time.h>
 
 /**
@@ -41,6 +42,33 @@ int64_t get_realtime_ms(void) {
     return 0;
   }
   return (int64_t)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+}
+
+/**
+ * Set socket receive buffer size, trying SO_RCVBUFFORCE first.
+ * SO_RCVBUFFORCE can exceed system limits but requires CAP_NET_ADMIN.
+ * Falls back to SO_RCVBUF if SO_RCVBUFFORCE fails.
+ *
+ * @param fd Socket file descriptor
+ * @param size Desired receive buffer size in bytes
+ * @return 0 on success, -1 on failure
+ */
+int set_socket_rcvbuf(int fd, int size) {
+  int r;
+
+  /* Try SO_RCVBUFFORCE first (requires CAP_NET_ADMIN, can exceed rmem_max) */
+  r = setsockopt(fd, SOL_SOCKET, SO_RCVBUFFORCE, &size, sizeof(size));
+  if (r == 0) {
+    return 0;
+  }
+
+  /* Fall back to SO_RCVBUF (limited by rmem_max) */
+  r = setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+  if (r < 0) {
+    return -1;
+  }
+
+  return 0;
 }
 
 /**
