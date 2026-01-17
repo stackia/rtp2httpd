@@ -640,6 +640,7 @@ export function VideoPlayer({
                 <img
                   src={channel.logo}
                   alt={channel.name}
+                  referrerPolicy="no-referrer"
                   className="h-8 w-20 md:h-14 md:w-36 object-contain"
                   onError={(e) => {
                     (e.target as HTMLImageElement).style.display = "none";
