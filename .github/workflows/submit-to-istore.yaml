@@ -47,13 +47,25 @@ jobs:
             RELEASE="1"
           fi
 
-          # Clone openwrt-app-meta
-          git clone https://x-access-token:${GH_TOKEN}@github.com/linkease/openwrt-app-meta.git
+          # Get the authenticated user's username
+          GITHUB_USER=$(gh api user --jq .login)
+          echo "GitHub user: ${GITHUB_USER}"
+
+          # Fork the repository if not already forked
+          echo "Forking linkease/openwrt-app-meta..."
+          gh repo fork linkease/openwrt-app-meta --clone=false || true
+
+          # Clone from the fork
+          git clone https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_USER}/openwrt-app-meta.git
           cd openwrt-app-meta
 
-          # Create a new branch
+          # Add upstream remote and fetch
+          git remote add upstream https://github.com/linkease/openwrt-app-meta.git
+          git fetch upstream
+
+          # Create a new branch directly from upstream/main
           BRANCH_NAME="update-rtp2httpd-${VERSION}-r${RELEASE}"
-          git checkout -b "${BRANCH_NAME}"
+          git checkout -b "${BRANCH_NAME}" upstream/main
 
           # Update Makefile
           MAKEFILE="applications/app-meta-rtp2httpd/Makefile"
@@ -73,12 +85,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Commit and push
+          # Commit and push to fork
           git add .
           git commit -m "update rtp2httpd to ${VERSION}-r${RELEASE}"
           git push origin "${BRANCH_NAME}"
 
-          # Create draft PR and capture the URL
+          # Create draft PR from fork to upstream and capture the URL
           META_PR_URL=$(gh pr create \
             --repo linkease/openwrt-app-meta \
             --title "update rtp2httpd to ${VERSION}-r${RELEASE}" \
@@ -87,7 +99,7 @@ jobs:
           This PR updates the package version in the app metadata.
 
           Automated PR from [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd)" \
-            --head "${BRANCH_NAME}" \
+            --head "${GITHUB_USER}:${BRANCH_NAME}" \
             --draft)
 
           echo "meta_pr_url=${META_PR_URL}" >> $GITHUB_OUTPUT
@@ -105,13 +117,25 @@ jobs:
             RELEASE="1"
           fi
 
-          # Clone istore-repo
-          git clone https://x-access-token:${GH_TOKEN}@github.com/linkease/istore-repo.git
+          # Get the authenticated user's username
+          GITHUB_USER=$(gh api user --jq .login)
+          echo "GitHub user: ${GITHUB_USER}"
+
+          # Fork the repository if not already forked
+          echo "Forking linkease/istore-repo..."
+          gh repo fork linkease/istore-repo --clone=false || true
+
+          # Clone from the fork
+          git clone https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_USER}/istore-repo.git
           cd istore-repo
 
-          # Create a new branch
+          # Add upstream remote and fetch
+          git remote add upstream https://github.com/linkease/istore-repo.git
+          git fetch upstream
+
+          # Create a new branch directly from upstream/pending
           BRANCH_NAME="update-rtp2httpd-${VERSION}-r${RELEASE}"
-          git checkout -b "${BRANCH_NAME}"
+          git checkout -b "${BRANCH_NAME}" upstream/pending
 
           # Copy IPK files to appropriate directories
           # Architecture-specific packages go to nas/
@@ -150,12 +174,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Commit and push
+          # Commit and push to fork
           git add .
           git commit -m "update rtp2httpd to ${VERSION}-r${RELEASE}"
           git push origin "${BRANCH_NAME}"
 
-          # Create draft PR with meta PR link
+          # Create draft PR from fork to upstream with meta PR link
           gh pr create \
             --repo linkease/istore-repo \
             --base pending \
@@ -180,5 +204,5 @@ jobs:
           如果是全新软件：
           * [x] 是否开源软件？
           * [x] 代码仓库或者官方网站：https://github.com/stackia/rtp2httpd" \
-            --head "${BRANCH_NAME}" \
+            --head "${GITHUB_USER}:${BRANCH_NAME}" \
             --draft
