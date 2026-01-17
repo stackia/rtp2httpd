@@ -2059,14 +2059,6 @@ int rtsp_session_cleanup(rtsp_session_t *session) {
   return 0; /* Cleanup completed immediately */
 }
 
-int rtsp_session_is_async_teardown(rtsp_session_t *session) {
-  /* Check if session is in async TEARDOWN states where we're waiting for
-   * response */
-  return (session->teardown_requested &&
-          (session->state == RTSP_STATE_SENDING_TEARDOWN ||
-           session->state == RTSP_STATE_AWAITING_TEARDOWN ||
-           session->state == RTSP_STATE_RECONNECTING));
-}
 
 /* Helper functions */
 static int rtsp_parse_response_header(rtsp_session_t *session,

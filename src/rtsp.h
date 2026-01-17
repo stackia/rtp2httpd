@@ -283,12 +283,6 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session,
  */
 int rtsp_session_cleanup(rtsp_session_t *session);
 
-/**
- * Check if RTSP session is in async TEARDOWN state
- * @param session RTSP session
- * @return 1 if in async TEARDOWN, 0 otherwise
- */
-int rtsp_session_is_async_teardown(rtsp_session_t *session);
 
 /**
  * Schedule an RTSP OPTIONS keepalive request if the session is idle.
