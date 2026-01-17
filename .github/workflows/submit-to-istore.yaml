@@ -145,8 +145,6 @@ jobs:
             IPK_FILE="../ipk-files/rtp2httpd_${VERSION}-r${RELEASE}_${arch}.ipk"
             if [ -f "${IPK_FILE}" ]; then
               mkdir -p "bin/packages/${arch}/nas"
-              # Remove old version if exists
-              rm -f "bin/packages/${arch}/nas/rtp2httpd_"*.ipk
               cp "${IPK_FILE}" "bin/packages/${arch}/nas/"
               echo "Copied rtp2httpd IPK for ${arch}"
             fi
@@ -158,7 +156,6 @@ jobs:
           # luci-app-rtp2httpd
           LUCI_APP_IPK="../ipk-files/luci-app-rtp2httpd_${VERSION}-r${RELEASE}_all.ipk"
           if [ -f "${LUCI_APP_IPK}" ]; then
-            rm -f "bin/packages/all/nas_luci/luci-app-rtp2httpd_"*.ipk
             cp "${LUCI_APP_IPK}" "bin/packages/all/nas_luci/"
             echo "Copied luci-app-rtp2httpd IPK"
           fi
@@ -166,7 +163,6 @@ jobs:
           # luci-i18n-rtp2httpd-zh-cn
           LUCI_I18N_IPK="../ipk-files/luci-i18n-rtp2httpd-zh-cn_${VERSION}_all.ipk"
           if [ -f "${LUCI_I18N_IPK}" ]; then
-            rm -f "bin/packages/all/nas_luci/luci-i18n-rtp2httpd-zh-cn_"*.ipk
             cp "${LUCI_I18N_IPK}" "bin/packages/all/nas_luci/"
             echo "Copied luci-i18n-rtp2httpd-zh-cn IPK"
           fi
