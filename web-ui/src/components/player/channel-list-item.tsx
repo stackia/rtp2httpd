@@ -53,6 +53,7 @@ const ChannelListItemComponent = forwardRef<HTMLDivElement, ChannelListItemProps
             <img
               src={channel.logo}
               alt={channel.name}
+              referrerPolicy="no-referrer"
               className="h-full w-full object-contain transition-transform duration-200 group-hover:scale-105 drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
