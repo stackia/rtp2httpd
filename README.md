@@ -87,6 +87,11 @@ wget -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/insta
 
 如果安装后，LuCI 未出现 rtp2httpd 入口，说明你的 LuCI 版本过低，无法支持 JS-based LuCI 插件。请考虑更新固件。或者手动编辑和维护 `/etc/config/rtp2httpd`（需要将 disabled 设为 0），使用 `/etc/init.d/rtp2httpd restart` 重启服务。
 
+> 也有一些热心网友开发了 Lua 版本 luci-app-rtp2httpd，供参考
+>
+> - <https://www.right.com.cn/forum/thread-8461513-1-1.html>
+> - <https://github.com/jarod360/rtp2httpd/releases>
+
 ### 其他平台
 
 rtp2httpd 支持多种部署方式：
@@ -106,6 +111,17 @@ rtp2httpd 支持多种部署方式：
 - **[配置参数详解](docs/configuration.md)**：完整配置选项说明
 - **[FCC 快速换台配置](docs/fcc-setup.md)**：启用毫秒级换台功能
 - **[视频快照配置](docs/video-snapshot.md)**：频道预览图功能配置
+
+如果是首次搭建 IPTV 组播转发服务，对相关网络知识比较陌生（DHCP 鉴权、路由、组播、防火墙），这里也推荐以下教程：
+
+- [浙江杭州电信 IPTV 内网融合教程：在局域网任意设备观看 IPTV](https://baiyun.me/zhejiang-hangzhou-telecom-iptv)
+- [K2P 利用 rtp2httpd 刷 openwrt 单线复用双网融合完美解决看 IPTV 超简单详细](https://www.right.com.cn/forum/thread-8457970-1-1.html)
+- [重庆电信 IPTV 内网融合 抓包 rtp2httpd](https://www.right.com.cn/forum/thread-8457356-1-1.html)
+- [浙江 电信 IPTV 组播 转单播 rtp2httpd 去花屏](https://www.right.com.cn/forum/thread-8452510-1-1.html)
+- [使用 Rtp2httpd 酷 9 浙江 电信 IPTV 单播 回看](https://www.right.com.cn/forum/thread-8453715-1-1.html)
+- [湖南电信 OpenWrt 拨号 IPTV 全流程教程 | 内网融合组播转单播 + 单播回看全搞定](https://mp.weixin.qq.com/s/_hEVbrgHll_qIePXGtATTw)
+- [📺 旁路由 IPTV 插件使用篇](https://www.bilibili.com/video/BV1ioiKBNE8t/)
+- [📺 组播转单播系列第二期：借助 rtp2httpd 插件实现全家设备观看 iptv](https://www.bilibili.com/video/BV1Zhr4B3ELy/)
 
 ## 📄 开源许可
 
