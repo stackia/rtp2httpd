@@ -115,6 +115,7 @@ rtp2httpd 支持多种部署方式：
 如果是首次搭建 IPTV 组播转发服务，对相关网络知识比较陌生（DHCP 鉴权、路由、组播、防火墙），这里也推荐以下教程：
 
 - [浙江杭州电信 IPTV 内网融合教程：在局域网任意设备观看 IPTV](https://baiyun.me/zhejiang-hangzhou-telecom-iptv)
+- [自动抓取IPTV单播地址，实现时移回看](https://www.bandwh.com/net/2571.html)
 - [K2P 利用 rtp2httpd 刷 openwrt 单线复用双网融合完美解决看 IPTV 超简单详细](https://www.right.com.cn/forum/thread-8457970-1-1.html)
 - [重庆电信 IPTV 内网融合 抓包 rtp2httpd](https://www.right.com.cn/forum/thread-8457356-1-1.html)
 - [浙江 电信 IPTV 组播 转单播 rtp2httpd 去花屏](https://www.right.com.cn/forum/thread-8452510-1-1.html)
