@@ -1295,11 +1295,38 @@ char *m3u_generate_playlist(const char *host_header,
   epg = epg_get_cache();
   if (epg && epg->url) {
     /* Add header with EPG URL */
-    int written = snprintf(dst_ptr, result_size - result_used,
-                           "#EXTM3U x-tvg-url=\"%sepg.xml\"\n\n", base_url);
+    int written;
+    int has_r2h_token = (config.r2h_token && config.r2h_token[0] != '\0');
+    char *encoded_token = NULL;
+    
+    /* URL encode r2h-token if configured */
+    if (has_r2h_token) {
+      encoded_token = http_url_encode(config.r2h_token);
+      if (!encoded_token) {
+        logger(LOG_ERROR, "Failed to URL encode r2h-token for EPG URL");
+        /* Continue without token */
+        has_r2h_token = 0;
+      }
+    }
+    
+    if (has_r2h_token && encoded_token) {
+      /* Include r2h-token in EPG URL */
+      written = snprintf(dst_ptr, result_size - result_used,
+                         "#EXTM3U x-tvg-url=\"%sepg.xml?r2h-token=%s\"\n\n", 
+                         base_url, encoded_token);
+    } else {
+      /* No token, just basic EPG URL */
+      written = snprintf(dst_ptr, result_size - result_used,
+                         "#EXTM3U x-tvg-url=\"%sepg.xml\"\n\n", base_url);
+    }
+    
     if (written > 0) {
       dst_ptr += written;
       result_used += written;
+    }
+    
+    if (encoded_token) {
+      free(encoded_token);
     }
   } else {
     /* No EPG, just add basic header */
