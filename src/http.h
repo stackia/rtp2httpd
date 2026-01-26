@@ -119,6 +119,17 @@ int http_parse_query_param(const char *query_string, const char *param_name,
                            char *value_buf, size_t value_size);
 
 /**
+ * Copy query string excluding a specific parameter (case-insensitive)
+ * @param query_string Input query string (without leading '?')
+ * @param exclude_param Parameter name to exclude (case-insensitive)
+ * @param output Output buffer
+ * @param output_size Output buffer size
+ * @return Length of output string, or -1 on error
+ */
+int http_filter_query_param(const char *query_string, const char *exclude_param,
+                            char *output, size_t output_size);
+
+/**
  * Send HTTP 400 Bad Request response
  * @param conn Connection object
  */

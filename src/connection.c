@@ -819,12 +819,18 @@ int connection_route_and_start(connection_t *c) {
       url_len += decoded_len;
     }
 
-    /* Add query parameters if present */
+    /* Add query parameters if present, excluding r2h-token */
     if (query_start && url_len < sizeof(display_url)) {
-      size_t query_len = strlen(query_start);
-      if (url_len + query_len < sizeof(display_url)) {
-        memcpy(display_url + url_len, query_start, query_len);
-        url_len += query_len;
+      char filtered_query[HTTP_URL_BUFFER_SIZE];
+      int filtered_len = http_filter_query_param(query_start + 1, "r2h-token",
+                                                 filtered_query,
+                                                 sizeof(filtered_query));
+      if (filtered_len > 0) {
+        if (url_len + (size_t)filtered_len + 1 < sizeof(display_url)) {
+          display_url[url_len++] = '?';
+          memcpy(display_url + url_len, filtered_query, (size_t)filtered_len);
+          url_len += (size_t)filtered_len;
+        }
       }
     }
 
