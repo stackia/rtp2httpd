@@ -51,6 +51,7 @@ start_instance() {
         append_arg "$cfg" maxclients "--maxclients"
         append_arg "$cfg" workers "--workers"
         append_arg "$cfg" buffer_pool_max_size "--buffer-pool-max-size"
+        append_arg "$cfg" udp_rcvbuf_size "--udp-rcvbuf-size"
         append_arg "$cfg" hostname "--hostname"
         append_arg "$cfg" status_page_path "--status-page-path"
         append_arg "$cfg" player_page_path "--player-page-path"
