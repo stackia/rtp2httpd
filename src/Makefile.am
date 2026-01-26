@@ -11,6 +11,7 @@ rtp2httpd_SOURCES = \
 	http_fetch.c \
 	service.c \
 	rtp.c \
+	rtp_reorder.c \
 	multicast.c \
 	fcc.c \
 	fcc_telecom.c \
@@ -40,6 +41,7 @@ noinst_HEADERS = \
 	http_fetch.h \
 	service.h \
 	rtp.h \
+	rtp_reorder.h \
 	multicast.h \
 	fcc.h \
 	fcc_telecom.h \

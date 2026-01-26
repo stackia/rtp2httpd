@@ -74,21 +74,39 @@ void stream_join_mcast_group(stream_context_t *ctx) {
 }
 
 /*
- * Process RTP payload - either forward to client (streaming) or capture I-frame
- * (snapshot) Returns: bytes forwarded (>= 0) for streaming, 1 if I-frame
- * captured for snapshot, -1 on error
+ * Process RTP payload with reordering - either forward to client (streaming)
+ * or capture I-frame (snapshot)
+ * Returns: bytes forwarded (>= 0), 1 if I-frame captured for snapshot, -1 on
+ * error
  */
-int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref,
-                               uint16_t *old_seqn, uint16_t *not_first) {
-  /* In snapshot mode, delegate to snapshot module */
-  if (ctx->snapshot.enabled) {
-    return snapshot_process_packet(
-        &ctx->snapshot, buf_ref->data_size,
-        (uint8_t *)buf_ref->data + buf_ref->data_offset, ctx->conn);
-  } else {
-    /* Normal streaming mode - forward to client */
-    return rtp_queue_buf(ctx->conn, buf_ref, old_seqn, not_first);
+int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref) {
+  uint8_t *data_ptr = (uint8_t *)buf_ref->data + buf_ref->data_offset;
+  uint8_t *payload;
+  int payload_len;
+  uint16_t seqn;
+
+  int is_rtp =
+      rtp_get_payload(data_ptr, buf_ref->data_size, &payload, &payload_len, &seqn);
+
+  if (is_rtp < 0)
+    return 0; /* Malformed packet */
+
+  if (is_rtp == 0) {
+    /* Non-RTP packet - pass through directly (no reordering needed) */
+    if (ctx->snapshot.enabled) {
+      return snapshot_process_packet(&ctx->snapshot, buf_ref->data_size,
+                                     data_ptr, ctx->conn);
+    }
+    return rtp_queue_buf_direct(ctx->conn, buf_ref);
   }
+
+  /* Adjust buffer to point to payload */
+  buf_ref->data_offset = payload - (uint8_t *)buf_ref->data;
+  buf_ref->data_size = (size_t)payload_len;
+
+  /* Process through reorder buffer */
+  return rtp_reorder_insert(&ctx->reorder, buf_ref, seqn, ctx->conn,
+                            ctx->snapshot.enabled);
 }
 
 /*
@@ -294,6 +312,9 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
   ctx->last_mcast_data_time = get_time_ms();
   ctx->last_fcc_data_time = get_time_ms();
   ctx->last_mcast_rejoin_time = get_time_ms();
+
+  /* Initialize RTP reorder context */
+  rtp_reorder_init(&ctx->reorder);
 
   /* Initialize snapshot context if this is a snapshot request */
   if (is_snapshot) {
@@ -504,6 +525,9 @@ int stream_tick(stream_context_t *ctx, int64_t now) {
 int stream_context_cleanup(stream_context_t *ctx) {
   if (!ctx)
     return 0;
+
+  /* Clean up RTP reorder context */
+  rtp_reorder_cleanup(&ctx->reorder);
 
   /* Clean up snapshot resources if in snapshot mode */
   if (ctx->snapshot.enabled) {
