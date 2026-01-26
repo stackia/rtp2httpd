@@ -1,0 +1,12 @@
+[project]
+name = "rtp2httpd-tools"
+version = "0.1.0"
+description = "Test tools for rtp2httpd - multicast UDP replay utility"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "scapy>=2.5.0",
+]
+
+[project.scripts]
+mcast-replay = "main:main"

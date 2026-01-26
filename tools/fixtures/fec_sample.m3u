@@ -1,0 +1,3 @@
+#EXTM3U
+#EXTINF:-1,Test Channel (FEC Sample)
+rtp://239.81.0.195:4056
