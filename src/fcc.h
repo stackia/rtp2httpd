@@ -55,10 +55,8 @@ typedef struct {
   uint16_t media_port;   /* RTP media port (network byte order, for direct
                             comparison with sin_port) */
   bool verify_server_ip; /* Verify server ip before processing packets */
-  uint16_t current_seqn;
   uint16_t fcc_term_seqn;
   int fcc_term_sent;
-  uint16_t not_first_packet;
   int redirect_count;         /* Number of redirects followed */
   int64_t unicast_start_time; /* Timestamp when unicast started (for sync wait
                                  timeout) */

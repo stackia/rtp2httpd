@@ -2,6 +2,7 @@
 #define __STREAM_H__
 
 #include "fcc.h"
+#include "rtp_reorder.h"
 #include "rtsp.h"
 #include "service.h"
 #include "snapshot.h"
@@ -37,6 +38,9 @@ typedef struct stream_context_s {
                                  detection */
   int64_t last_mcast_rejoin_time; /* Timestamp of last multicast rejoin for
                                      periodic refresh */
+
+  /* RTP reorder context */
+  rtp_reorder_t reorder;
 
   /* Snapshot context */
   snapshot_context_t snapshot;
@@ -94,17 +98,13 @@ int stream_tick(stream_context_t *ctx, int64_t now);
 int stream_context_cleanup(stream_context_t *ctx);
 
 /**
- * Process RTP payload - either forward to client (streaming) or capture I-frame
- * (snapshot) This function should be used instead of rtp_queue_buf() for stream
- * contexts
+ * Process RTP payload with reordering - either forward to client (streaming)
+ * or capture I-frame (snapshot)
  * @param ctx Stream context
  * @param buf_ref Buffer reference
- * @param old_seqn Pointer to previous sequence number
- * @param not_first Pointer to first packet flag
  * @return bytes forwarded (>= 0) for streaming, 1 if I-frame captured for
  * snapshot, -1 on error
  */
-int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref,
-                               uint16_t *old_seqn, uint16_t *not_first);
+int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref);
 
 #endif /* __STREAM_H__ */

@@ -149,10 +149,6 @@ typedef struct {
   char server_source_addr[RTSP_SERVER_HOST_SIZE]; /* Server UDP source address
                                                      for NAT traversal */
 
-  /* RTP packet tracking for loss detection */
-  uint16_t current_seqn;     /* Last received RTP sequence number */
-  uint16_t not_first_packet; /* Flag indicating first packet received */
-
   /* Statistics */
   uint64_t packets_dropped; /* Packets dropped due to backpressure */
 

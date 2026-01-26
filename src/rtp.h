@@ -27,18 +27,12 @@ int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size,
                     uint16_t *seqn);
 
 /**
- * Write RTP payload to client via connection output buffer, handling sequence
- * numbers and duplicates Uses true zero-copy by sending payload directly from
- * buffer pool without memcpy
+ * Queue RTP payload directly to client (used by reorder module)
  *
  * @param conn Connection object for output buffering
- * @param buf_ref Buffer reference for the buffer containing the RTP packet
- * @param old_seqn Pointer to store/track previous sequence number
- * @param not_first Pointer to track if this is not the first packet
- * @return number of payload bytes queued to the client (>=0), or -1 if buffer
- * full
+ * @param buf_ref Buffer reference (already pointing to payload)
+ * @return number of payload bytes queued (>=0), or -1 if buffer full
  */
-int rtp_queue_buf(connection_t *conn, buffer_ref_t *buf_ref, uint16_t *old_seqn,
-                  uint16_t *not_first);
+int rtp_queue_buf_direct(connection_t *conn, buffer_ref_t *buf_ref);
 
 #endif /* __RTP_H__ */
