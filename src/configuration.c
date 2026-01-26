@@ -30,6 +30,7 @@ int cmd_hostname_set = 0;
 int cmd_xff_set = 0;
 int cmd_r2h_token_set = 0;
 int cmd_buffer_pool_max_size_set = 0;
+int cmd_udp_rcvbuf_size_set = 0;
 int cmd_mcast_rejoin_interval_set = 0;
 int cmd_ffmpeg_path_set = 0;
 int cmd_ffmpeg_args_set = 0;
@@ -390,6 +391,19 @@ void parse_global_sec(char *line) {
                "Invalid buffer-pool-max-size! Must be >= 1. Ignoring.");
       } else {
         config.buffer_pool_max_size = val;
+      }
+    }
+    return;
+  }
+
+  if (strcasecmp("udp-rcvbuf-size", param) == 0) {
+    if (set_if_not_cmd_override(cmd_udp_rcvbuf_size_set, "udp-rcvbuf-size")) {
+      int val = atoi(value);
+      if (val < 65536) {
+        logger(LOG_ERROR,
+               "Invalid udp-rcvbuf-size! Must be >= 65536 (64KB). Ignoring.");
+      } else {
+        config.udp_rcvbuf_size = val;
       }
     }
     return;
@@ -793,6 +807,8 @@ void config_init(void) {
     config.udpxy = 1;
   if (!cmd_buffer_pool_max_size_set)
     config.buffer_pool_max_size = 16384;
+  if (!cmd_udp_rcvbuf_size_set)
+    config.udp_rcvbuf_size = 512 * 1024; /* 512KB default */
   if (!cmd_xff_set)
     config.xff = 0;
   if (!cmd_video_snapshot_set)
@@ -921,6 +937,8 @@ void usage(FILE *f, char *progname) {
       "(default 1)\n"
       "\t-b --buffer-pool-max-size <n> Maximum number of buffers in zero-copy "
       "pool (default 16384)\n"
+      "\t-B --udp-rcvbuf-size <bytes> UDP socket receive buffer size for "
+      "multicast/FCC/RTSP (default 524288 = 512KB)\n"
       "\t-l --listen [addr:]port  Address/port to bind (default ANY:5140)\n"
       "\t-c --config <file>   Read this file for configuration, instead of the "
       "default one\n"
@@ -1001,6 +1019,7 @@ void parse_cmd_line(int argc, char *argv[]) {
       {"maxclients", required_argument, 0, 'm'},
       {"workers", required_argument, 0, 'w'},
       {"buffer-pool-max-size", required_argument, 0, 'b'},
+      {"udp-rcvbuf-size", required_argument, 0, 'B'},
       {"listen", required_argument, 0, 'l'},
       {"config", required_argument, 0, 'c'},
       {"noconfig", no_argument, 0, 'C'},
@@ -1023,7 +1042,7 @@ void parse_cmd_line(int argc, char *argv[]) {
       {"zerocopy-on-send", no_argument, 0, 'Z'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhUm:w:b:c:l:P:H:XT:i:f:t:r:R:F:A:s:p:M:I:SCZ";
+  const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:R:F:A:s:p:M:I:SCZ";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1074,6 +1093,15 @@ void parse_cmd_line(int argc, char *argv[]) {
       } else {
         config.buffer_pool_max_size = atoi(optarg);
         cmd_buffer_pool_max_size_set = 1;
+      }
+      break;
+    case 'B':
+      if (atoi(optarg) < 65536) {
+        logger(LOG_ERROR,
+               "Invalid udp-rcvbuf-size! Must be >= 65536 (64KB). Ignoring.");
+      } else {
+        config.udp_rcvbuf_size = atoi(optarg);
+        cmd_udp_rcvbuf_size_set = 1;
       }
       break;
     case 'c':

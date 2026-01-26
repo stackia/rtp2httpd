@@ -28,6 +28,11 @@ rtp2httpd [选项]
 - `-b, --buffer-pool-max-size <数量>` - 缓冲池最大缓冲区数量 (默认: 16384)
   - 每个缓冲区 1536 字节，16384 个约占用 24MB 内存
   - 增大此值以提高多客户端并发时的吞吐量
+- `-B, --udp-rcvbuf-size <字节>` - UDP socket 接收缓冲区大小 (默认: 524288 = 512KB)
+  - 作用于组播、FCC、RTSP RTP/RTCP 所有 UDP socket
+  - 对于 30 Mbps 的 4K IPTV 流，512KB 可提供约 140ms 的缓冲
+  - 增大此值以减少高带宽流的丢包
+  - 实际缓冲区大小可能受内核参数 `net.core.rmem_max` 限制
 - `-Z, --zerocopy-on-send` - 启用零拷贝发送以提升性能 (默认: 关闭)
   - 需要内核支持 MSG_ZEROCOPY (Linux 4.14+)
   - 在支持的设备上提升吞吐量并降低 CPU 占用
@@ -148,6 +153,13 @@ fcc-listen-port-range = 40000-40100
 # 每个缓冲区 1536 字节，16384 个约占用 24MB 内存
 # 增大此值以提高多客户端并发时的吞吐量，例如设置为 32768 或更高
 buffer-pool-max-size = 16384
+
+# UDP socket 接收缓冲区大小（默认: 524288 = 512KB）
+# 作用于组播、FCC、RTSP RTP/RTCP 所有 UDP socket
+# 对于 30 Mbps 的 4K IPTV 流，512KB 可提供约 140ms 的缓冲
+# 增大此值以减少高带宽流的丢包
+# 实际缓冲区大小可能受内核参数 net.core.rmem_max 限制
+udp-rcvbuf-size = 524288
 
 # 启用零拷贝发送以提升性能（默认: no）
 # 设为 yes/true/on/1 以启用零拷贝

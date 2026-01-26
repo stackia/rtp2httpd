@@ -338,9 +338,9 @@ int join_mcast_group(service_t *service) {
     exit(RETVAL_SOCK_READ_FAILED);
   }
 
-  /* Set receive buffer size to 512KB */
-  if (set_socket_rcvbuf(sock, UDP_RCVBUF_SIZE) < 0) {
-    logger(LOG_WARN, "Failed to set SO_RCVBUF to %d: %s", UDP_RCVBUF_SIZE,
+  /* Set receive buffer size */
+  if (set_socket_rcvbuf(sock, config.udp_rcvbuf_size) < 0) {
+    logger(LOG_WARN, "Failed to set SO_RCVBUF to %d: %s", config.udp_rcvbuf_size,
            strerror(errno));
   }
 

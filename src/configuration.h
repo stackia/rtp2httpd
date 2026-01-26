@@ -48,6 +48,8 @@ typedef struct {
   int workers; /* Number of worker threads (SO_REUSEPORT sharded), default 1 */
   int buffer_pool_max_size; /* Maximum number of buffers in zero-copy buffer
                                pool, default 16384 */
+  int udp_rcvbuf_size;      /* UDP socket receive buffer size in bytes for
+                               multicast, FCC, and RTSP sockets. Default 512KB */
 
   /* FCC (Fast Channel Change) settings */
   int fcc_listen_port_min; /* Minimum UDP port for FCC sockets (0=any) */

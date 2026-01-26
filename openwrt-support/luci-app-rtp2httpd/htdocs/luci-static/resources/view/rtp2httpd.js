@@ -353,6 +353,19 @@ return view.extend({
     o = s.taboption(
       "network",
       form.Value,
+      "udp_rcvbuf_size",
+      _("UDP Receive Buffer Size"),
+      _(
+        "UDP socket receive buffer size in bytes. Applies to multicast, FCC, and RTSP sockets. Default is 524288 (512KB). For 4K IPTV streams at ~30 Mbps, 512KB provides ~140ms of buffering. Increase to reduce packet loss. Note: actual size may be limited by kernel parameter net.core.rmem_max."
+      )
+    );
+    o.datatype = "range(65536, 16777216)";
+    o.placeholder = "524288";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "network",
+      form.Value,
       "mcast_rejoin_interval",
       _("Multicast Rejoin Interval"),
       _(
