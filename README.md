@@ -78,7 +78,7 @@ https://github.com/user-attachments/assets/fedc0c28-f9ac-4675-9b19-a8efdd062506
 ### OpenWrt 一键安装/更新
 
 ```bash
-wget -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
+uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
 ```
 
 安装完成后，在 LuCI 管理界面的 "服务" 菜单中找到 "rtp2httpd" 进行配置。
