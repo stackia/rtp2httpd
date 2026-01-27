@@ -21,9 +21,10 @@ int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size,
     payload_type = buf[1] & 0x7F;
     if (unlikely(payload_type == FEC_PAYLOAD_TYPE_1 ||
                  payload_type == FEC_PAYLOAD_TYPE_2)) {
-      logger(LOG_DEBUG, "FEC packet detected (payload type %d), skipping",
-             payload_type);
-      return -1;
+      /* FEC packet detected - return special code for caller to handle */
+      *payload = buf;
+      *size = recv_len;
+      return 2; /* FEC packet */
     }
 
     /* Extract sequence number if requested */

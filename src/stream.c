@@ -3,13 +3,16 @@
 #include "fcc.h"
 #include "multicast.h"
 #include "rtp.h"
+#include "rtp_fec.h"
 #include "rtsp.h"
 #include "service.h"
 #include "snapshot.h"
 #include "status.h"
 #include "utils.h"
 #include "worker.h"
+#include <arpa/inet.h>
 #include <errno.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -49,27 +52,49 @@ static bool is_rtcp_packet(const uint8_t *data, size_t len) {
 void stream_join_mcast_group(stream_context_t *ctx) {
   if (ctx->mcast_sock >= 0)
     return;
-  int sock = join_mcast_group(ctx->service);
-  if (sock >= 0) {
-    /* Register socket with epoll immediately after creation */
-    struct epoll_event ev;
-    ev.events = EPOLLIN; /* Level-triggered mode for read events */
-    ev.data.fd = sock;
-    if (epoll_ctl(ctx->epoll_fd, EPOLL_CTL_ADD, sock, &ev) < 0) {
-      logger(LOG_ERROR, "Multicast: Failed to add socket to epoll: %s",
-             strerror(errno));
-      close(sock);
-      exit(RETVAL_SOCK_READ_FAILED);
+
+  /* Join main RTP multicast group */
+  int sock = join_mcast_group(ctx->service, 0);
+  if (sock < 0) {
+    exit(RETVAL_RTP_FAILED);
+  }
+
+  /* Register socket with epoll immediately after creation */
+  struct epoll_event ev;
+  ev.events = EPOLLIN; /* Level-triggered mode for read events */
+  ev.data.fd = sock;
+  if (epoll_ctl(ctx->epoll_fd, EPOLL_CTL_ADD, sock, &ev) < 0) {
+    logger(LOG_ERROR, "Multicast: Failed to add socket to epoll: %s",
+           strerror(errno));
+    close(sock);
+    exit(RETVAL_SOCK_READ_FAILED);
+  }
+  fdmap_set(sock, ctx->conn);
+  logger(LOG_DEBUG, "Multicast: Socket registered with epoll");
+
+  /* Reset timeout and rejoin timers when joining multicast group */
+  int64_t now = get_time_ms();
+  ctx->last_mcast_data_time = now;
+  ctx->last_mcast_rejoin_time = now;
+
+  ctx->mcast_sock = sock;
+
+  /* Join FEC multicast group if configured (same IP, different port) */
+  if (fec_is_enabled(&ctx->fec)) {
+    int fec_sock = join_mcast_group(ctx->service, 1);
+    if (fec_sock >= 0) {
+      /* Register FEC socket with epoll */
+      ev.events = EPOLLIN;
+      ev.data.fd = fec_sock;
+      if (epoll_ctl(ctx->epoll_fd, EPOLL_CTL_ADD, fec_sock, &ev) < 0) {
+        logger(LOG_ERROR, "FEC: Failed to add socket to epoll: %s",
+               strerror(errno));
+        close(fec_sock);
+      } else {
+        ctx->fec.sock = fec_sock;
+        fdmap_set(fec_sock, ctx->conn);
+      }
     }
-    fdmap_set(sock, ctx->conn);
-    logger(LOG_DEBUG, "Multicast: Socket registered with epoll");
-
-    /* Reset timeout and rejoin timers when joining multicast group */
-    int64_t now = get_time_ms();
-    ctx->last_mcast_data_time = now;
-    ctx->last_mcast_rejoin_time = now;
-
-    ctx->mcast_sock = sock;
   }
 }
 
@@ -85,13 +110,19 @@ int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref) {
   int payload_len;
   uint16_t seqn;
 
-  int is_rtp =
+  int pkt_type =
       rtp_get_payload(data_ptr, buf_ref->data_size, &payload, &payload_len, &seqn);
 
-  if (is_rtp < 0)
+  if (pkt_type < 0)
     return 0; /* Malformed packet */
 
-  if (is_rtp == 0) {
+  if (pkt_type == 2) {
+    /* FEC packet received on RTP socket - process it for recovery */
+    fec_process_packet(&ctx->fec, payload, payload_len);
+    return 0;
+  }
+
+  if (pkt_type == 0) {
     /* Non-RTP packet - pass through directly (no reordering needed) */
     if (ctx->snapshot.enabled) {
       return snapshot_process_packet(&ctx->snapshot, buf_ref->data_size,
@@ -100,13 +131,15 @@ int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref) {
     return rtp_queue_buf_direct(ctx->conn, buf_ref);
   }
 
+  /* pkt_type == 1: Regular RTP packet */
+
   /* Adjust buffer to point to payload */
   buf_ref->data_offset = payload - (uint8_t *)buf_ref->data;
   buf_ref->data_size = (size_t)payload_len;
 
-  /* Process through reorder buffer */
+  /* Process through reorder buffer (also serves as FEC packet store) */
   return rtp_reorder_insert(&ctx->reorder, buf_ref, seqn, ctx->conn,
-                            ctx->snapshot.enabled);
+                            ctx->snapshot.enabled, &ctx->fec);
 }
 
 /*
@@ -241,6 +274,16 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
     return result;
   }
 
+  /* Process FEC socket events */
+  if (ctx->fec.sock >= 0 && fd == ctx->fec.sock) {
+    uint8_t fec_buf[BUFFER_POOL_BUFFER_SIZE];
+    actualr = recv(ctx->fec.sock, fec_buf, sizeof(fec_buf), 0);
+    if (actualr > 0) {
+      fec_process_packet(&ctx->fec, fec_buf, actualr);
+    }
+    return 0;
+  }
+
   /* Process RTSP socket events */
   if (ctx->rtsp.socket >= 0 && fd == ctx->rtsp.socket) {
     /* Handle RTSP socket events (handshake and RTP data in PLAYING state) */
@@ -316,6 +359,9 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
   /* Initialize RTP reorder context */
   rtp_reorder_init(&ctx->reorder);
 
+  /* Initialize FEC context (must be after reorder init) */
+  fec_init(&ctx->fec, service->fec_port, &ctx->reorder);
+
   /* Initialize snapshot context if this is a snapshot request */
   if (is_snapshot) {
     if (snapshot_init(&ctx->snapshot) < 0) {
@@ -369,9 +415,7 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
       return -1;
     }
   } else {
-    /* Direct multicast join */
-    /* Note: Both /rtp/ and /udp/ endpoints now use unified packet detection */
-    /* Packets are automatically detected as RTP or raw UDP at receive time */
+    /* Direct multicast join (also joins FEC multicast if configured) */
     stream_join_mcast_group(ctx);
     fcc_session_set_state(&ctx->fcc, FCC_STATE_MCAST_ACTIVE,
                           "Direct multicast");
@@ -528,6 +572,9 @@ int stream_context_cleanup(stream_context_t *ctx) {
 
   /* Clean up RTP reorder context */
   rtp_reorder_cleanup(&ctx->reorder);
+
+  /* Clean up FEC context (fec_cleanup owns the socket cleanup) */
+  fec_cleanup(&ctx->fec, ctx->epoll_fd);
 
   /* Clean up snapshot resources if in snapshot mode */
   if (ctx->snapshot.enabled) {

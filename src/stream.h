@@ -2,6 +2,7 @@
 #define __STREAM_H__
 
 #include "fcc.h"
+#include "rtp_fec.h"
 #include "rtp_reorder.h"
 #include "rtsp.h"
 #include "service.h"
@@ -41,6 +42,9 @@ typedef struct stream_context_s {
 
   /* RTP reorder context */
   rtp_reorder_t reorder;
+
+  /* FEC context for packet recovery */
+  fec_context_t fec;
 
   /* Snapshot context */
   snapshot_context_t snapshot;

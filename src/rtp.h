@@ -21,7 +21,7 @@ typedef struct buffer_ref_s buffer_ref_t;
  * @param size Pointer to store payload size
  * @param seqn Pointer to store RTP sequence number (can be NULL if not needed,
  * only valid if return value is 1)
- * @return 1 if RTP packet, 0 if non-RTP packet, -1 on malformed RTP packet
+ * @return 1 if RTP packet, 0 if non-RTP packet, 2 if FEC packet, -1 on error
  */
 int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size,
                     uint16_t *seqn);

@@ -48,9 +48,10 @@ uint32_t get_local_ip_for_fcc(void);
  * Join a multicast group and return socket
  *
  * @param service Service structure containing multicast address info
- * @return Socket file descriptor on success, exits on failure
+ * @param is_fec If true, join FEC multicast (uses service->fec_port)
+ * @return Socket file descriptor on success, -1 on failure
  */
-int join_mcast_group(service_t *service);
+int join_mcast_group(service_t *service, int is_fec);
 
 /**
  * Rejoin a multicast group by sending both IGMPv2 and IGMPv3 reports via raw
