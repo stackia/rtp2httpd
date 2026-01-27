@@ -96,25 +96,6 @@ http://192.168.1.1:5140/playlist.m3u
 
 详见 [M3U 播放列表集成](m3u-integration.md)。
 
-## 视频快照
-
-在任意流媒体 URL 后添加 `snapshot=1` 参数，或在 HTTP 请求头中添加 `Accept: image/jpeg` 或 `X-Request-Snapshot: 1`，即可获取视频流的 JPEG 快照。
-
-**示例**：
-
-```url
-# 方式 1：URL 参数
-http://192.168.1.1:5140/rtp/239.253.64.120:5140?snapshot=1
-
-# 方式 2：HTTP 请求头
-curl -H "Accept: image/jpeg" http://192.168.1.1:5140/rtp/239.253.64.120:5140
-
-# 方式 3：自定义请求头
-curl -H "X-Request-Snapshot: 1" http://192.168.1.1:5140/rtp/239.253.64.120:5140
-```
-
-详见 [视频快照配置](video-snapshot.md)。
-
 ## 内置 Web 播放器
 
 ```url
@@ -169,6 +150,25 @@ http://192.168.1.1:5140/udp/239.253.64.120:5140
 ```
 
 UDPxy 兼容模式默认启用，可以通过配置参数 `udpxy = no` 禁用。禁用后仅支持通过 m3u 提供服务。
+
+## 视频快照
+
+在任意流媒体 URL 后添加 `snapshot=1` 参数，或在 HTTP 请求头中添加 `Accept: image/jpeg` 或 `X-Request-Snapshot: 1`，即可获取视频流的 JPEG 快照。
+
+**示例**：
+
+```url
+# 方式 1：URL 参数
+http://192.168.1.1:5140/rtp/239.253.64.120:5140?snapshot=1
+
+# 方式 2：HTTP 请求头
+curl -H "Accept: image/jpeg" http://192.168.1.1:5140/rtp/239.253.64.120:5140
+
+# 方式 3：自定义请求头
+curl -H "X-Request-Snapshot: 1" http://192.168.1.1:5140/rtp/239.253.64.120:5140
+```
+
+详见 [视频快照配置](video-snapshot.md)。
 
 ## 相关文档
 
