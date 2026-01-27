@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <ifaddrs.h>
 #include <net/if.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <stdlib.h>
@@ -322,51 +323,78 @@ static int mcast_group_op(int sock, service_t *service, int is_join,
   return 0;
 }
 
-int join_mcast_group(service_t *service) {
+int join_mcast_group(service_t *service, int is_fec) {
   int sock, r;
   int on = 1;
   const char *upstream_if;
+  struct sockaddr_storage bind_addr;
+  socklen_t bind_addr_len;
+  const char *log_prefix = is_fec ? "FEC" : "Multicast";
 
   sock = socket(service->addr->ai_family, service->addr->ai_socktype,
                 service->addr->ai_protocol);
+  if (sock < 0) {
+    logger(LOG_ERROR, "%s: Failed to create socket: %s", log_prefix,
+           strerror(errno));
+    return -1;
+  }
 
   /* Set socket to non-blocking mode for epoll */
   if (connection_set_nonblocking(sock) < 0) {
-    logger(LOG_ERROR, "Failed to set multicast socket non-blocking: %s",
+    logger(LOG_ERROR, "%s: Failed to set socket non-blocking: %s", log_prefix,
            strerror(errno));
     close(sock);
-    exit(RETVAL_SOCK_READ_FAILED);
+    return -1;
   }
 
   /* Set receive buffer size */
   if (set_socket_rcvbuf(sock, config.udp_rcvbuf_size) < 0) {
-    logger(LOG_WARN, "Failed to set SO_RCVBUF to %d: %s", config.udp_rcvbuf_size,
-           strerror(errno));
+    logger(LOG_WARN, "%s: Failed to set SO_RCVBUF to %d: %s", log_prefix,
+           config.udp_rcvbuf_size, strerror(errno));
   }
 
   r = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
   if (r) {
-    logger(LOG_ERROR, "SO_REUSEADDR failed: %s", strerror(errno));
+    logger(LOG_ERROR, "%s: SO_REUSEADDR failed: %s", log_prefix,
+           strerror(errno));
   }
 
   /* Determine which interface to use */
   upstream_if = get_upstream_interface_for_multicast();
   bind_to_upstream_interface(sock, upstream_if);
 
-  r = bind(sock, (struct sockaddr *)service->addr->ai_addr,
-           service->addr->ai_addrlen);
+  /* Prepare bind address with appropriate port */
+  memcpy(&bind_addr, service->addr->ai_addr, service->addr->ai_addrlen);
+  bind_addr_len = service->addr->ai_addrlen;
+
+  if (is_fec && service->fec_port > 0) {
+    if (service->addr->ai_family == AF_INET) {
+      ((struct sockaddr_in *)&bind_addr)->sin_port = htons(service->fec_port);
+    } else if (service->addr->ai_family == AF_INET6) {
+      ((struct sockaddr_in6 *)&bind_addr)->sin6_port = htons(service->fec_port);
+    }
+  }
+
+  r = bind(sock, (struct sockaddr *)&bind_addr, bind_addr_len);
   if (r) {
-    logger(LOG_ERROR, "Cannot bind: %s", strerror(errno));
-    exit(RETVAL_RTP_FAILED);
+    logger(LOG_ERROR, "%s: Cannot bind: %s", log_prefix, strerror(errno));
+    close(sock);
+    return -1;
   }
 
   /* Join the multicast group */
   if (mcast_group_op(sock, service, 1, "join") < 0) {
-    logger(LOG_ERROR, "Cannot join mcast group");
-    exit(RETVAL_RTP_FAILED);
+    logger(LOG_ERROR, "%s: Cannot join mcast group", log_prefix);
+    close(sock);
+    return -1;
   }
 
-  logger(LOG_INFO, "Multicast: Successfully joined group");
+  if (is_fec) {
+    logger(LOG_INFO, "%s: Successfully joined group (port %u)", log_prefix,
+           service->fec_port);
+  } else {
+    logger(LOG_INFO, "%s: Successfully joined group", log_prefix);
+  }
   return sock;
 }
 

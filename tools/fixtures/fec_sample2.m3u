@@ -1,5 +1,5 @@
 #EXTM3U
 #EXTINF:-1,Test Channel (with FEC)
-rtp://239.81.0.195:4056?fec=4055
+rtp://239.11.0.109:5140?fec=5142
 #EXTINF:-1,Test Channel (no FEC)
-rtp://239.81.0.195:4056
+rtp://239.11.0.109:5140
