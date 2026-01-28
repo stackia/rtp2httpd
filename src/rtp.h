@@ -21,24 +21,18 @@ typedef struct buffer_ref_s buffer_ref_t;
  * @param size Pointer to store payload size
  * @param seqn Pointer to store RTP sequence number (can be NULL if not needed,
  * only valid if return value is 1)
- * @return 1 if RTP packet, 0 if non-RTP packet, -1 on malformed RTP packet
+ * @return 1 if RTP packet, 0 if non-RTP packet, 2 if FEC packet, -1 on error
  */
 int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size,
                     uint16_t *seqn);
 
 /**
- * Write RTP payload to client via connection output buffer, handling sequence
- * numbers and duplicates Uses true zero-copy by sending payload directly from
- * buffer pool without memcpy
+ * Queue RTP payload directly to client (used by reorder module)
  *
  * @param conn Connection object for output buffering
- * @param buf_ref Buffer reference for the buffer containing the RTP packet
- * @param old_seqn Pointer to store/track previous sequence number
- * @param not_first Pointer to track if this is not the first packet
- * @return number of payload bytes queued to the client (>=0), or -1 if buffer
- * full
+ * @param buf_ref Buffer reference (already pointing to payload)
+ * @return number of payload bytes queued (>=0), or -1 if buffer full
  */
-int rtp_queue_buf(connection_t *conn, buffer_ref_t *buf_ref, uint16_t *old_seqn,
-                  uint16_t *not_first);
+int rtp_queue_buf_direct(connection_t *conn, buffer_ref_t *buf_ref);
 
 #endif /* __RTP_H__ */

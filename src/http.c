@@ -395,6 +395,69 @@ int http_parse_query_param(const char *query_string, const char *param_name,
 }
 
 /**
+ * Copy query string excluding a specific parameter (case-insensitive)
+ * @param query_string Input query string (without leading '?')
+ * @param exclude_param Parameter name to exclude (case-insensitive)
+ * @param output Output buffer
+ * @param output_size Output buffer size
+ * @return Length of output string, or -1 on error
+ */
+int http_filter_query_param(const char *query_string, const char *exclude_param,
+                            char *output, size_t output_size) {
+  if (!query_string || !exclude_param || !output || output_size == 0) {
+    return -1;
+  }
+
+  size_t exclude_len = strlen(exclude_param);
+  size_t out_len = 0;
+  const char *pos = query_string;
+  int first_param = 1;
+
+  output[0] = '\0';
+
+  while (pos && *pos) {
+    /* Find end of current parameter */
+    const char *param_end = strchr(pos, '&');
+    size_t param_len = param_end ? (size_t)(param_end - pos) : strlen(pos);
+
+    /* Check if this parameter matches the one to exclude */
+    int should_exclude = 0;
+    if (param_len > exclude_len && pos[exclude_len] == '=' &&
+        strncasecmp(pos, exclude_param, exclude_len) == 0) {
+      should_exclude = 1;
+    }
+
+    if (!should_exclude && param_len > 0) {
+      /* Add separator if not first parameter */
+      if (!first_param) {
+        if (out_len + 1 >= output_size) {
+          return -1; /* Buffer too small */
+        }
+        output[out_len++] = '&';
+      }
+
+      /* Copy parameter */
+      if (out_len + param_len >= output_size) {
+        return -1; /* Buffer too small */
+      }
+      memcpy(output + out_len, pos, param_len);
+      out_len += param_len;
+      first_param = 0;
+    }
+
+    /* Move to next parameter */
+    if (param_end) {
+      pos = param_end + 1;
+    } else {
+      break;
+    }
+  }
+
+  output[out_len] = '\0';
+  return (int)out_len;
+}
+
+/**
  * Send HTTP 400 Bad Request response
  * @param conn Connection object
  */

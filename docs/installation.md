@@ -13,7 +13,7 @@ OpenWrt 是 rtp2httpd 的最佳运行环境。在完成 IPTV 网络融合后（�
 使用一键安装脚本自动下载并安装最新版本。如果你已经安装了 rtp2httpd，重新运行脚本也可以一键更新到最新版。
 
 ```bash
-wget -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
+uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
 ```
 
 脚本会自动：
@@ -26,7 +26,7 @@ wget -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/insta
 <summary>如果需要使用 prerelease 测试版本，点击查看命令</summary>
 
 ```bash
-wget -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh -s -- --prerelease
+uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh -s -- --prerelease
 ```
 
 </details>
@@ -73,7 +73,7 @@ chmod +x rtp2httpd-X.Y.Z-x86_64
 ### 基本启动方式
 
 ```bash
-docker run --network=host --rm \
+docker run --network=host --cap-add=NET_ADMIN --ulimit memlock=-1:-1 --rm \
   ghcr.io/stackia/rtp2httpd:latest \
   --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
@@ -85,52 +85,32 @@ services:
   rtp2httpd:
     image: ghcr.io/stackia/rtp2httpd:latest
     network_mode: host
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
     command: --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
+
+> **关于推荐参数**：
+>
+> - `cap_add: NET_ADMIN`：允许通过 `SO_RCVBUFFORCE` 绕过内核参数 `net.core.rmem_max` 限制，设置更大的 UDP 接收缓冲区
+> - `ulimits: memlock: -1`：启用零拷贝（`--zerocopy-on-send`）时必需，MSG_ZEROCOPY 需要锁定内存页
 
 ### 挂载配置文件
 
 如果需要使用配置文件（假设配置文件位于 `/path/to/rtp2httpd.conf`）：
 
 ```bash
-docker run --network=host --rm \
+docker run --network=host --cap-add=NET_ADMIN --ulimit memlock=-1:-1 --rm \
   -v /path/to/rtp2httpd.conf:/usr/local/etc/rtp2httpd.conf:ro \
   ghcr.io/stackia/rtp2httpd:latest
 ```
 
 提示：你可以使用这个示例文件 [rtp2httpd.conf](../rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](configuration.md)。
-
-### 启用零拷贝时的特殊要求
-
-**⚠️ 仅当使用 `--zerocopy-on-send` 参数启用零拷贝时，需要添加 `--ulimit memlock=-1:-1` 参数**
-
-MSG_ZEROCOPY 技术需要锁定内存页。Docker 容器默认的 locked memory 限制（64KB）太小，会导致 ENOBUFS 错误，表现为：
-
-- 客户端无法播放
-- 服务端 buffer pool 疯狂增长
-- 统计数字中的 ENOBUFS 错误飙升
-
-启用零拷贝时的正确启动方式：
-
-```bash
-docker run --network=host --ulimit memlock=-1:-1 --rm \
-  ghcr.io/stackia/rtp2httpd:latest \
-  --noconfig --verbose 2 --listen 5140 --maxclients 20 --zerocopy-on-send
-```
-
-docker-compose 配置：
-
-```yaml
-services:
-  rtp2httpd:
-    image: ghcr.io/stackia/rtp2httpd:latest
-    network_mode: host
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    command: --noconfig --verbose 2 --listen 5140 --maxclients 20 --zerocopy-on-send
-```
 
 ## OpenWrt 编译安装
 

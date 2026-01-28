@@ -1,7 +1,7 @@
 msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:551
+#: htdocs/luci-static/resources/view/rtp2httpd.js:564
 msgid ""
 "Additional FFmpeg arguments for snapshot generation. Common options: -"
 "hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)"
@@ -41,13 +41,13 @@ msgstr ""
 msgid "Edit the content of /etc/rtp2httpd.conf"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:527
+#: htdocs/luci-static/resources/view/rtp2httpd.js:540
 msgid ""
 "Enable video snapshot feature. When enabled, clients can request snapshots "
 "with snapshot=1 query parameter"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:384
+#: htdocs/luci-static/resources/view/rtp2httpd.js:397
 msgid ""
 "Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires "
 "kernel 4.14+ (MSG_ZEROCOPY support). On supported devices, this can improve "
@@ -59,33 +59,33 @@ msgstr ""
 msgid "Enabled"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:395
+#: htdocs/luci-static/resources/view/rtp2httpd.js:408
 msgid "External M3U"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:407
+#: htdocs/luci-static/resources/view/rtp2httpd.js:420
 msgid "External M3U Update Interval"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:409
+#: htdocs/luci-static/resources/view/rtp2httpd.js:422
 msgid ""
 "External M3U automatic update interval in seconds (default: 7200 = 2 hours). "
 "Set to 0 to disable automatic updates."
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:370
+#: htdocs/luci-static/resources/view/rtp2httpd.js:383
 msgid "FCC Listen Port Range"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:549
+#: htdocs/luci-static/resources/view/rtp2httpd.js:562
 msgid "FFmpeg Arguments"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:537
+#: htdocs/luci-static/resources/view/rtp2httpd.js:550
 msgid "FFmpeg Path"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:397
+#: htdocs/luci-static/resources/view/rtp2httpd.js:410
 msgid ""
 "Fetch M3U playlist from a URL (file://, http://, https:// supported). "
 "Example: https://example.com/playlist.m3u or file:///path/to/playlist.m3u"
@@ -95,11 +95,11 @@ msgstr ""
 msgid "Grant UCI access for luci-app-rtp2httpd"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:491
+#: htdocs/luci-static/resources/view/rtp2httpd.js:504
 msgid "Hostname"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:504
+#: htdocs/luci-static/resources/view/rtp2httpd.js:517
 msgid ""
 "If set, all HTTP requests must include r2h-token query parameter with "
 "matching value (e.g., http://server:port/rtp/ip:port?fcc=ip:port&r2h-"
@@ -124,7 +124,7 @@ msgid ""
 "routing table)"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:372
+#: htdocs/luci-static/resources/view/rtp2httpd.js:385
 msgid ""
 "Local UDP port range for FCC client sockets (format: start-end, e.g., "
 "40000-40100). Leave empty to use random ports."
@@ -149,7 +149,7 @@ msgstr ""
 msgid "Monitoring & Advanced"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:357
+#: htdocs/luci-static/resources/view/rtp2httpd.js:370
 msgid "Multicast Rejoin Interval"
 msgstr ""
 
@@ -157,7 +157,7 @@ msgstr ""
 msgid "Network & Performance"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:432
+#: htdocs/luci-static/resources/view/rtp2httpd.js:445
 msgid "Note: The player page requires External M3U URL to be configured first."
 msgstr ""
 
@@ -167,20 +167,20 @@ msgid ""
 "CPU cores for best performance."
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:439
+#: htdocs/luci-static/resources/view/rtp2httpd.js:452
 msgid "Open Player Page"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:471
+#: htdocs/luci-static/resources/view/rtp2httpd.js:484
 msgid "Open Status Dashboard"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:539
+#: htdocs/luci-static/resources/view/rtp2httpd.js:552
 msgid ""
 "Path to FFmpeg executable. Leave empty to use system PATH (default: ffmpeg)"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:359
+#: htdocs/luci-static/resources/view/rtp2httpd.js:372
 msgid ""
 "Periodic multicast rejoin interval in seconds (0=disabled, default 0). "
 "Enable this (e.g., 30-120 seconds) if your network switches timeout "
@@ -192,15 +192,15 @@ msgstr ""
 msgid "Player & M3U"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:438
+#: htdocs/luci-static/resources/view/rtp2httpd.js:451
 msgid "Player Page"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:420
+#: htdocs/luci-static/resources/view/rtp2httpd.js:433
 msgid "Player Page Path"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:457
+#: htdocs/luci-static/resources/view/rtp2httpd.js:470
 msgid "Please configure External M3U URL first"
 msgstr ""
 
@@ -208,7 +208,7 @@ msgstr ""
 msgid "Port"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:502
+#: htdocs/luci-static/resources/view/rtp2httpd.js:515
 msgid "R2H Token"
 msgstr ""
 
@@ -216,19 +216,31 @@ msgstr ""
 msgid "Respawn"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:469
+#: htdocs/luci-static/resources/view/rtp2httpd.js:482
 msgid "Status Dashboard"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:481
+#: htdocs/luci-static/resources/view/rtp2httpd.js:494
 msgid "Status Page Path"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:421
+#: htdocs/luci-static/resources/view/rtp2httpd.js:357
+msgid "UDP Receive Buffer Size"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:359
+msgid ""
+"UDP socket receive buffer size in bytes. Applies to multicast, FCC, and RTSP "
+"sockets. Default is 524288 (512KB). For 4K IPTV streams at ~30 Mbps, 512KB "
+"provides ~140ms of buffering. Increase to reduce packet loss. Note: actual "
+"size may be limited by kernel parameter net.core.rmem_max."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:434
 msgid "URL path for the player page (default: /player)"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:482
+#: htdocs/luci-static/resources/view/rtp2httpd.js:495
 msgid "URL path for the status page (default: /status)"
 msgstr ""
 
@@ -256,17 +268,17 @@ msgstr ""
 msgid "Use config file instead of individual options"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:525
+#: htdocs/luci-static/resources/view/rtp2httpd.js:538
 msgid "Video Snapshot"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:493
+#: htdocs/luci-static/resources/view/rtp2httpd.js:506
 msgid ""
 "When configured, HTTP Host header will be checked and must match this value "
 "to allow access."
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:515
+#: htdocs/luci-static/resources/view/rtp2httpd.js:528
 msgid ""
 "When enabled, uses HTTP X-Forwarded-For header as client address for status "
 "page display. Also accepts X-Forwarded-Host / X-Forwarded-Proto headers as "
@@ -278,11 +290,11 @@ msgstr ""
 msgid "Workers"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:513
+#: htdocs/luci-static/resources/view/rtp2httpd.js:526
 msgid "X-Forwarded-For"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:382
+#: htdocs/luci-static/resources/view/rtp2httpd.js:395
 msgid "Zero-Copy on Send"
 msgstr ""
 

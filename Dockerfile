@@ -36,15 +36,13 @@ COPY --from=builder /workdir/rtp2httpd.conf /usr/local/etc/
 # Expose the default port
 EXPOSE 5140
 
-# Important: When using --zerocopy-on-send option, you must add --ulimit memlock=-1:-1
-# MSG_ZEROCOPY requires locked memory pages. Without this ulimit, you will get ENOBUFS errors.
+# Recommended options:
+#   --cap-add=NET_ADMIN: Allow setting larger UDP receive buffers (bypassing rmem_max via SO_RCVBUFFORCE)
+#   --ulimit memlock=-1:-1: Required for zero-copy (MSG_ZEROCOPY needs locked memory pages)
 #
-# Basic usage (default, no zero-copy):
-#   docker run --network=host --rm ghcr.io/stackia/rtp2httpd:latest
-#
-# With zero-copy enabled:
-#   docker run --network=host --ulimit memlock=-1:-1 --rm \
-#     ghcr.io/stackia/rtp2httpd:latest --zerocopy-on-send
+# Usage:
+#   docker run --network=host --cap-add=NET_ADMIN --ulimit memlock=-1:-1 --rm \
+#     ghcr.io/stackia/rtp2httpd:latest
 
 # Run the application
 ENTRYPOINT ["/usr/local/bin/rtp2httpd"]

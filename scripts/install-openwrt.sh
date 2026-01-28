@@ -121,10 +121,17 @@ check_requirements() {
 
     print_info "检测到包管理器: $PKG_MANAGER"
 
-    # 检查 curl
-    if ! check_command curl; then
-        print_error "未找到命令: curl"
-        print_error "请先安装 curl"
+    # 检查 uclient-fetch
+    if ! check_command uclient-fetch; then
+        print_error "未找到命令: uclient-fetch"
+        print_error "请先安装 uclient-fetch"
+        exit 1
+    fi
+
+    # 检查 jsonfilter
+    if ! check_command jsonfilter; then
+        print_error "未找到命令: jsonfilter"
+        print_error "请先安装 jshn 包"
         exit 1
     fi
 
@@ -211,10 +218,10 @@ get_latest_version() {
     if [ "$USE_PRERELEASE" = true ]; then
         print_info "使用 prerelease 模式，将获取最新的预发布版本"
         # 获取所有 releases（包括 prerelease），取第一个
-        version=$(curl -sSL "${GITHUB_API}/releases" | grep '"tag_name":' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+        version=$(uclient-fetch -q -O - "${GITHUB_API}/releases" | jsonfilter -e '@[0].tag_name')
     else
         # 只获取最新的正式版本
-        version=$(curl -sSL "${GITHUB_API}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+        version=$(uclient-fetch -q -O - "${GITHUB_API}/releases/latest" | jsonfilter -e '@.tag_name')
     fi
 
     if [ -z "$version" ]; then
@@ -254,7 +261,7 @@ select_version() {
 
         # 验证版本是否存在
         print_info "验证版本是否存在..."
-        local version_check=$(curl -sSL "${GITHUB_API}/releases/tags/${version_tag}" 2>/dev/null | grep '"tag_name":')
+        local version_check=$(uclient-fetch -q -O - "${GITHUB_API}/releases/tags/${version_tag}" 2>/dev/null | jsonfilter -e '@.tag_name' 2>/dev/null)
 
         if [ -z "$version_check" ]; then
             print_error "版本 ${user_version} 不存在"
@@ -277,7 +284,7 @@ get_release_assets() {
 
     print_info "获取 Release Assets 列表..."
 
-    local assets=$(curl -sSL "${GITHUB_API}/releases/tags/${version}" | grep '"name":' | sed -E 's/.*"name":\s*"([^"]+)".*/\1/')
+    local assets=$(uclient-fetch -q -O - "${GITHUB_API}/releases/tags/${version}" | jsonfilter -e '@.assets[*].name')
 
     if [ -z "$assets" ]; then
         print_error "无法获取 Release Assets 列表"
@@ -334,7 +341,7 @@ download_file() {
 
     print_info "下载: $(basename "$output")"
 
-    if ! curl -fsSL --insecure --progress-bar -o "$output" "$url"; then
+    if ! uclient-fetch -q -O "$output" "$url"; then
         print_error "下载失败: $url"
         return 1
     fi

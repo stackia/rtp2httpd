@@ -117,10 +117,8 @@ void fcc_session_cleanup(fcc_session_t *fcc, service_t *service, int epoll_fd) {
   fcc->fcc_server =
       NULL; /* This was pointing to service memory, safe to NULL */
   fcc->media_port = 0;
-  fcc->current_seqn = 0;
   fcc->fcc_term_seqn = 0;
   fcc->fcc_term_sent = 0;
-  fcc->not_first_packet = 0;
 
   /* Clear client address structure */
   memset(&fcc->fcc_client, 0, sizeof(fcc->fcc_client));
@@ -213,10 +211,10 @@ int fcc_initialize_and_request(stream_context_t *ctx) {
       return -1;
     }
 
-    /* Set receive buffer size to 512KB */
-    if (set_socket_rcvbuf(fcc->fcc_sock, UDP_RCVBUF_SIZE) < 0) {
+    /* Set receive buffer size */
+    if (set_socket_rcvbuf(fcc->fcc_sock, config.udp_rcvbuf_size) < 0) {
       logger(LOG_WARN, "FCC: Failed to set SO_RCVBUF to %d: %s",
-             UDP_RCVBUF_SIZE, strerror(errno));
+             config.udp_rcvbuf_size, strerror(errno));
     }
 
     upstream_if = get_upstream_interface_for_fcc();
@@ -333,21 +331,24 @@ int fcc_handle_unicast_media(stream_context_t *ctx, buffer_ref_t *buf_ref) {
     logger(LOG_INFO, "FCC: Unicast stream started successfully");
   }
 
-  /* Forward RTP payload to client (true zero-copy) or capture I-frame
-   * (snapshot) */
-  int processed_bytes = stream_process_rtp_payload(
-      ctx, buf_ref, &fcc->current_seqn, &fcc->not_first_packet);
+  /* Forward RTP payload to client (with reordering) */
+  int processed_bytes = stream_process_rtp_payload(ctx, buf_ref);
   if (processed_bytes > 0) {
     ctx->total_bytes_sent += (uint64_t)processed_bytes;
   }
 
-  /* Check if we should terminate FCC based on sequence number */
-  if (fcc->fcc_term_sent && fcc->current_seqn >= fcc->fcc_term_seqn - 1 &&
+  /* Check if we should terminate FCC based on reorder's delivered sequence.
+   * base_seq - 1 is the last sequence number successfully delivered.
+   * Only check when reorder is in active phase (initialized == 2). */
+  if (fcc->fcc_term_sent && ctx->reorder.initialized == 2 &&
       fcc->state != FCC_STATE_MCAST_ACTIVE) {
-    logger(LOG_INFO,
-           "FCC: Switching to multicast stream (reached termination sequence)");
-    fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE,
-                          "Reached termination sequence");
+    uint16_t last_delivered = ctx->reorder.base_seq - 1;
+    if ((int16_t)(last_delivered - (fcc->fcc_term_seqn - 1)) >= 0) {
+      logger(LOG_INFO,
+             "FCC: Switching to multicast stream (reached termination sequence)");
+      fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE,
+                            "Reached termination sequence");
+    }
   }
 
   return 0;
@@ -446,8 +447,7 @@ int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref) {
     while (node) {
       /* Queue each buffer for zero-copy send */
       buffer_ref_t *next = node->send_next;
-      int processed_bytes = stream_process_rtp_payload(
-          ctx, node, &fcc->current_seqn, &fcc->not_first_packet);
+      int processed_bytes = stream_process_rtp_payload(ctx, node);
       if (likely(processed_bytes > 0)) {
         ctx->total_bytes_sent += (uint64_t)processed_bytes;
         flushed_bytes += (uint64_t)processed_bytes;
@@ -467,8 +467,7 @@ int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref) {
 
   /* Forward multicast data to client (true zero-copy) or capture I-frame
    * (snapshot) */
-  int processed_bytes = stream_process_rtp_payload(
-      ctx, buf_ref, &fcc->current_seqn, &fcc->not_first_packet);
+  int processed_bytes = stream_process_rtp_payload(ctx, buf_ref);
   if (likely(processed_bytes > 0)) {
     ctx->total_bytes_sent += (uint64_t)processed_bytes;
   }

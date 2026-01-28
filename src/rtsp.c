@@ -294,10 +294,6 @@ void rtsp_session_init(rtsp_session_t *session) {
   session->auth_type = RTSP_AUTH_NONE;
   session->auth_retry_count = 0;
 
-  /* Initialize RTP packet tracking */
-  session->current_seqn = 0;
-  session->not_first_packet = 0;
-
   /* Initialize statistics */
   session->packets_dropped = 0;
 
@@ -1774,9 +1770,7 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session,
       if (packet_buf) {
         memcpy(packet_buf->data, &session->response_buffer[4], packet_length);
         packet_buf->data_size = (size_t)packet_length;
-        int pb = stream_process_rtp_payload(&conn->stream, packet_buf,
-                                            &session->current_seqn,
-                                            &session->not_first_packet);
+        int pb = stream_process_rtp_payload(&conn->stream, packet_buf);
         if (pb > 0)
           bytes_forwarded += pb;
         /* Release our reference */
@@ -1850,9 +1844,7 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
     } else {
       /* RTP - extract RTP payload and forward to client or capture snapshot
        * (true zero-copy) */
-      int pb = stream_process_rtp_payload(&conn->stream, rtp_buf,
-                                          &session->current_seqn,
-                                          &session->not_first_packet);
+      int pb = stream_process_rtp_payload(&conn->stream, rtp_buf);
       if (pb > 0)
         bytes_written = pb;
     }
@@ -2331,10 +2323,10 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
       return -1;
     }
 
-    /* Set receive buffer size to 512KB */
-    if (set_socket_rcvbuf(rtp_socket, UDP_RCVBUF_SIZE) < 0) {
+    /* Set receive buffer size */
+    if (set_socket_rcvbuf(rtp_socket, config.udp_rcvbuf_size) < 0) {
       logger(LOG_WARN, "RTSP: Failed to set RTP SO_RCVBUF to %d: %s",
-             UDP_RCVBUF_SIZE, strerror(errno));
+             config.udp_rcvbuf_size, strerror(errno));
     }
 
     bind_to_upstream_interface(rtp_socket, upstream_if);
@@ -2369,10 +2361,10 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
       return -1;
     }
 
-    /* Set receive buffer size to 512KB */
-    if (set_socket_rcvbuf(rtcp_socket, UDP_RCVBUF_SIZE) < 0) {
+    /* Set receive buffer size */
+    if (set_socket_rcvbuf(rtcp_socket, config.udp_rcvbuf_size) < 0) {
       logger(LOG_WARN, "RTSP: Failed to set RTCP SO_RCVBUF to %d: %s",
-             UDP_RCVBUF_SIZE, strerror(errno));
+             config.udp_rcvbuf_size, strerror(errno));
     }
 
     bind_to_upstream_interface(rtcp_socket, upstream_if);

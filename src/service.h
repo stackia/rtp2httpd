@@ -54,6 +54,7 @@ typedef struct service_s {
   struct addrinfo *msrc_addr;
   struct addrinfo *fcc_addr;
   int fcc_type;          /* FCC protocol type */
+  uint16_t fec_port;     /* FEC multicast port (0 if not configured) */
   char *rtp_url;         /* Full RTP URL for SERVICE_MRTP */
   char *rtsp_url;        /* Full RTSP URL for SERVICE_RTSP */
   char *seek_param_name; /* Name of seek parameter (e.g., "playseek", "tvdr") */

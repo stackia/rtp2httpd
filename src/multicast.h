@@ -3,17 +3,6 @@
 
 #include "service.h"
 
-/*
- * UDP socket receive buffer size (512KB).
- *
- * For 4K IPTV streams at ~50 Mbps, 512KB provides ~80ms of buffering,
- * which helps absorb network jitter and brief processing delays.
- * Smaller buffers may cause packet loss and video artifacts (mosaic/glitches)
- * during traffic bursts. The actual buffer size may be limited by
- * net.core.rmem_max unless SO_RCVBUFFORCE is used with CAP_NET_ADMIN.
- */
-#define UDP_RCVBUF_SIZE (512 * 1024)
-
 /**
  * Bind socket to upstream interface if configured
  *
@@ -59,9 +48,10 @@ uint32_t get_local_ip_for_fcc(void);
  * Join a multicast group and return socket
  *
  * @param service Service structure containing multicast address info
- * @return Socket file descriptor on success, exits on failure
+ * @param is_fec If true, join FEC multicast (uses service->fec_port)
+ * @return Socket file descriptor on success, -1 on failure
  */
-int join_mcast_group(service_t *service);
+int join_mcast_group(service_t *service, int is_fec);
 
 /**
  * Rejoin a multicast group by sending both IGMPv2 and IGMPv3 reports via raw
