@@ -1311,13 +1311,24 @@ char *m3u_generate_playlist(const char *host_header,
     
     if (has_r2h_token && encoded_token) {
       /* Include r2h-token in EPG URL */
-      written = snprintf(dst_ptr, result_size - result_used,
-                         "#EXTM3U x-tvg-url=\"%sepg.xml?r2h-token=%s\"\n\n", 
-                         base_url, encoded_token);
+      if (epg->is_gzipped) {
+        written = snprintf(dst_ptr, result_size - result_used,
+                           "#EXTM3U x-tvg-url=\"%sepg.xml.gz?r2h-token=%s\"\n\n", 
+                           base_url, encoded_token);
+      } else {
+        written = snprintf(dst_ptr, result_size - result_used,
+                           "#EXTM3U x-tvg-url=\"%sepg.xml?r2h-token=%s\"\n\n", 
+                           base_url, encoded_token);
+      }
     } else {
       /* No token, just basic EPG URL */
-      written = snprintf(dst_ptr, result_size - result_used,
-                         "#EXTM3U x-tvg-url=\"%sepg.xml\"\n\n", base_url);
+      if (epg->is_gzipped) {
+        written = snprintf(dst_ptr, result_size - result_used,
+                           "#EXTM3U x-tvg-url=\"%sepg.xml.gz\"\n\n", base_url);
+      } else {
+        written = snprintf(dst_ptr, result_size - result_used,
+                           "#EXTM3U x-tvg-url=\"%sepg.xml\"\n\n", base_url);
+      }
     }
     
     if (written > 0) {
