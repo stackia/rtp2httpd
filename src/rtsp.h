@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#include "stun.h"
+
 #define RTSP_DISABLE_TCP_TRANSPORT 0 /* To debug UDP transport, set to 1 */
 
 /* ========== RTSP BUFFER SIZE CONFIGURATION ========== */
@@ -149,6 +151,9 @@ typedef struct {
   char server_source_addr[RTSP_SERVER_HOST_SIZE]; /* Server UDP source address
                                                      for NAT traversal */
 
+  /* STUN NAT traversal state */
+  stun_state_t stun; /* STUN state for discovering mapped UDP port */
+
   /* Statistics */
   uint64_t packets_dropped; /* Packets dropped due to backpressure */
 
@@ -286,5 +291,13 @@ int rtsp_session_cleanup(rtsp_session_t *session);
  * @return 0 on success, -1 if keepalive could not be queued
  */
 int rtsp_send_keepalive(rtsp_session_t *session);
+
+/**
+ * Advance the RTSP state machine to the next state.
+ * Called after receiving a response or when STUN completes.
+ * @param session RTSP session
+ * @return 0 on success, -1 on error
+ */
+int rtsp_state_machine_advance(rtsp_session_t *session);
 
 #endif /* __RTSP_H__ */

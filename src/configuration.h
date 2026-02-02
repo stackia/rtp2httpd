@@ -102,6 +102,10 @@ typedef struct {
   /* Zero-copy settings */
   int zerocopy_on_send; /* Enable zero-copy send with MSG_ZEROCOPY (0=disabled,
                            1=enabled) */
+
+  /* STUN NAT traversal settings */
+  char *rtsp_stun_server; /* STUN server host:port for RTSP NAT traversal
+                             (NULL=disabled) */
 } config_t;
 
 /* GLOBALS */
