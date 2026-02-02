@@ -289,6 +289,16 @@ msgstr "上游组播接口"
 msgid "Upstream RTSP Interface"
 msgstr "上游 RTSP 接口"
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js:321
+msgid "Upstream HTTP Proxy Interface"
+msgstr "上游 HTTP 代理接口"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:323
+msgid ""
+"Interface to use for HTTP proxy upstream requests (default: use routing "
+"table)"
+msgstr "用于 HTTP 代理上游请求的接口（默认：使用路由表）"
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:198
 msgid "Use Config File"
 msgstr "使用配置文件"

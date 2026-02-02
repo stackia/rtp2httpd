@@ -74,6 +74,58 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r
 
 关于时移回看的参数处理（时区、偏移），详见 [RTSP 时间处理与时区转换](rtsp-time-processing.md)。
 
+## HTTP 代理
+
+```url
+http://服务器地址:端口/http/上游服务器[:端口]/路径[?参数]
+```
+
+**示例**：
+
+```url
+# 代理 HLS 流（指定端口）
+http://192.168.1.1:5140/http/upstream.example.com:8080/live/stream.m3u8
+
+# 代理 HTTP 请求（省略端口，默认 80）
+http://192.168.1.1:5140/http/api.example.com/video?auth=xxx&quality=hd
+```
+
+### 参数说明
+
+- **上游服务器**：目标 HTTP 服务器地址
+- **端口**（可选）：目标服务器端口，默认 80
+- **路径**：请求路径，包括查询参数
+
+### 使用场景
+
+- 代理上游 HLS/DASH 流媒体，统一认证和访问控制
+- 为不支持直接访问的内网服务提供 HTTP 代理
+- 绕过防火墙限制，通过 rtp2httpd 转发 HTTP 请求
+
+### 注意事项
+
+- 仅支持 HTTP 上游（不支持 HTTPS）
+- 可通过 `upstream-interface-http` 配置指定上游网络接口
+
+### r2h-token 认证
+
+当配置了 r2h-token 时，HTTP 代理支持从多个来源获取认证令牌：
+
+1. **URL 查询参数**（最高优先级）：`?r2h-token=xxx`
+2. **Cookie**：`Cookie: r2h-token=xxx`
+3. **User-Agent**：`User-Agent: ... R2HTOKEN/xxx`
+
+**为什么需要多来源认证？**
+
+HTTP 代理的典型用途是代理上游 HLS 流媒体。HLS 协议的工作方式是：播放器先请求 `.m3u8` 索引文件，然后根据索引文件中的 URL 请求后续的 `.ts` 媒体分片。
+
+问题在于：rtp2httpd 不会改写 m3u8 内容，因此索引文件中的分片 URL 不会包含 `r2h-token` 参数。如果只支持 URL 参数认证，播放器在请求后续分片时就会因为缺少 token 而被拒绝。
+
+多来源认证解决了这个问题：
+
+- **网页播放器**：首次请求 `/playlist.m3u?r2h-token=xxx` 时，服务器下发 `Set-Cookie: r2h-token=xxx`，浏览器后续请求自动携带 Cookie
+- **客户端播放器**：大多数客户端都允许修改 User-Agent，在 User-Agent 中添加 `R2HTOKEN/yourtoken`，所有请求都会自动认证
+
 ## M3U 播放列表访问
 
 ```url

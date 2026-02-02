@@ -2,6 +2,7 @@
 #define __STREAM_H__
 
 #include "fcc.h"
+#include "http_proxy.h"
 #include "rtp_fec.h"
 #include "rtp_reorder.h"
 #include "rtsp.h"
@@ -23,7 +24,8 @@ typedef struct stream_context_s {
   service_t *service;
   fcc_session_t fcc;
   int mcast_sock;
-  rtsp_session_t rtsp; /* RTSP session for SERVICE_RTSP */
+  rtsp_session_t rtsp;           /* RTSP session for SERVICE_RTSP */
+  http_proxy_session_t http_proxy; /* HTTP proxy session for SERVICE_HTTP */
   int status_index; /* Index in status_shared->clients array for status updates
                      */
 

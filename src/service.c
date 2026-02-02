@@ -236,6 +236,74 @@ static int parse_rtp_url_components(char *url_part,
   return 0;
 }
 
+service_t *service_create_from_http_url(const char *http_url) {
+  service_t *result = NULL;
+  char working_url[HTTP_URL_BUFFER_SIZE];
+  const char *url_part;
+
+  /* Validate input */
+  if (!http_url || strlen(http_url) >= sizeof(working_url)) {
+    logger(LOG_ERROR, "Invalid or too long HTTP proxy URL");
+    return NULL;
+  }
+
+  /* Copy URL to avoid modifying original */
+  strncpy(working_url, http_url, sizeof(working_url) - 1);
+  working_url[sizeof(working_url) - 1] = '\0';
+
+  /* Check URL format: /http/host:port/path or http://host:port/path */
+  if (strncmp(working_url, "/http/", 6) == 0) {
+    url_part = working_url + 6;
+  } else if (strncmp(working_url, "http://", 7) == 0) {
+    url_part = working_url + 7;
+  } else {
+    logger(LOG_ERROR, "Invalid HTTP proxy URL format (must start with /http/ "
+                      "or http://): %s",
+           http_url);
+    return NULL;
+  }
+
+  /* Validate that we have at least a host */
+  if (!url_part || url_part[0] == '\0' || url_part[0] == '/') {
+    logger(LOG_ERROR, "HTTP proxy URL missing host: %s", http_url);
+    return NULL;
+  }
+
+  /* Allocate and initialize service */
+  result = calloc(1, sizeof(service_t));
+  if (!result) {
+    logger(LOG_ERROR, "Failed to allocate service for HTTP proxy");
+    return NULL;
+  }
+
+  result->service_type = SERVICE_HTTP;
+  result->source = SERVICE_SOURCE_INLINE;
+
+  /* Store the original URL */
+  result->url = strdup(http_url);
+  if (!result->url) {
+    logger(LOG_ERROR, "Failed to duplicate URL for HTTP proxy service");
+    free(result);
+    return NULL;
+  }
+
+  /* Build full HTTP URL: http://host:port/path */
+  char full_url[HTTP_URL_BUFFER_SIZE];
+  snprintf(full_url, sizeof(full_url), "http://%s", url_part);
+  result->http_url = strdup(full_url);
+  if (!result->http_url) {
+    logger(LOG_ERROR, "Failed to duplicate HTTP URL for service");
+    free(result->url);
+    free(result);
+    return NULL;
+  }
+
+  logger(LOG_DEBUG, "Created HTTP proxy service: %s -> %s", http_url,
+         result->http_url);
+
+  return result;
+}
+
 service_t *service_create_from_udpxy_url(char *url) {
   char working_url[HTTP_URL_BUFFER_SIZE];
 
@@ -257,9 +325,13 @@ service_t *service_create_from_udpxy_url(char *url) {
   } else if (strncmp(working_url, "/rtsp/", 6) == 0) {
     /* RTSP service - use service_create_from_rtsp_url */
     return service_create_from_rtsp_url(url);
+  } else if (strncmp(working_url, "/http/", 6) == 0) {
+    /* HTTP proxy service - use service_create_from_http_url */
+    return service_create_from_http_url(url);
   } else {
     logger(LOG_DEBUG,
-           "Invalid URL format (must start with /rtp/, /udp/, or /rtsp/): %s",
+           "Invalid URL format (must start with /rtp/, /udp/, /rtsp/, or "
+           "/http/): %s",
            url);
     return NULL;
   }
@@ -1258,6 +1330,14 @@ void service_free(service_t *service) {
     if (service->user_agent) {
       free(service->user_agent);
       service->user_agent = NULL;
+    }
+  }
+
+  /* Free HTTP-specific fields */
+  if (service->service_type == SERVICE_HTTP) {
+    if (service->http_url) {
+      free(service->http_url);
+      service->http_url = NULL;
     }
   }
 

@@ -1,10 +1,15 @@
 #include "http.h"
+#include "configuration.h"
 #include "connection.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+
+/* Maximum allowed request body size (4MB) to prevent OOM from malicious
+ * requests */
+#define HTTP_REQUEST_BODY_MAX_SIZE (4 * 1024 * 1024)
 
 static const char *response_codes[] = {
     "HTTP/1.1 200 OK\r\n",                    /* 0 */
@@ -44,6 +49,16 @@ void send_http_headers(connection_t *c, http_status_t status,
      * support) */
     len +=
         snprintf(headers + len, sizeof(headers) - len, "Connection: close\r\n");
+  }
+
+  /* Set-Cookie for r2h-token if needed (token was provided via URL query) */
+  if (c->should_set_r2h_cookie && config.r2h_token &&
+      config.r2h_token[0] != '\0') {
+    len += snprintf(headers + len, sizeof(headers) - len,
+                    "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; "
+                    "SameSite=Strict\r\n",
+                    config.r2h_token);
+    c->should_set_r2h_cookie = 0; /* Only set once */
   }
 
   /* Extra headers if provided */
@@ -145,7 +160,23 @@ void http_request_init(http_request_t *req) {
   memset(req, 0, sizeof(*req));
   req->parse_state = HTTP_PARSE_REQ_LINE;
   req->content_length = -1;
+  req->body = NULL;
   req->body_len = 0;
+  req->body_alloc = 0;
+}
+
+/**
+ * Cleanup HTTP request structure (free dynamically allocated memory)
+ */
+void http_request_cleanup(http_request_t *req) {
+  if (!req)
+    return;
+  if (req->body) {
+    free(req->body);
+    req->body = NULL;
+  }
+  req->body_len = 0;
+  req->body_alloc = 0;
 }
 
 /**
@@ -229,6 +260,30 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
           *value_end = '\0';
         }
 
+        /* Save raw headers for proxy forwarding (exclude Host, Connection,
+         * Content-Length, Transfer-Encoding which are handled specially, and
+         * X-Forwarded-* headers which should not be forwarded to upstream) */
+        if (strcasecmp(inbuf, "Host") != 0 &&
+            strcasecmp(inbuf, "Connection") != 0 &&
+            strcasecmp(inbuf, "Content-Length") != 0 &&
+            strcasecmp(inbuf, "Transfer-Encoding") != 0 &&
+            strcasecmp(inbuf, "X-Forwarded-For") != 0 &&
+            strcasecmp(inbuf, "X-Forwarded-Host") != 0 &&
+            strcasecmp(inbuf, "X-Forwarded-Proto") != 0) {
+          size_t header_line_len =
+              strlen(inbuf) + 2 + strlen(value) + 2; /* "Name: Value\r\n" */
+          if (req->raw_headers_len + header_line_len <
+              sizeof(req->raw_headers) - 1) {
+            int added =
+                snprintf(req->raw_headers + req->raw_headers_len,
+                         sizeof(req->raw_headers) - req->raw_headers_len,
+                         "%s: %s\r\n", inbuf, value);
+            if (added > 0) {
+              req->raw_headers_len += (size_t)added;
+            }
+          }
+        }
+
         /* Extract interesting headers */
         if (strcasecmp(inbuf, "Host") == 0) {
           strncpy(req->hostname, value, sizeof(req->hostname) - 1);
@@ -278,6 +333,9 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
           req->x_forwarded_proto[sizeof(req->x_forwarded_proto) - 1] = '\0';
         } else if (strcasecmp(inbuf, "Content-Length") == 0) {
           req->content_length = atoi(value);
+        } else if (strcasecmp(inbuf, "Cookie") == 0) {
+          strncpy(req->cookie, value, sizeof(req->cookie) - 1);
+          req->cookie[sizeof(req->cookie) - 1] = '\0';
         }
       }
 
@@ -289,20 +347,40 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
 
   /* Parse body if needed */
   if (req->parse_state == HTTP_PARSE_BODY) {
-    int body_size = req->content_length;
-    if (body_size > (int)sizeof(req->body) - 1)
-      body_size = (int)sizeof(req->body) - 1; /* Truncate if too large */
+    size_t body_size = (size_t)req->content_length;
 
-    if (*in_len >= body_size) {
-      /* We have the full body */
-      memcpy(req->body, inbuf, body_size);
-      req->body[body_size] = '\0';
-      req->body_len = body_size;
+    /* Check body size limit to prevent OOM from malicious requests */
+    if (body_size > HTTP_REQUEST_BODY_MAX_SIZE) {
+      return -1; /* Body too large */
+    }
+
+    /* Allocate body buffer if not already done */
+    if (!req->body) {
+      req->body = malloc(body_size + 1); /* +1 for null terminator */
+      if (!req->body) {
+        return -1; /* Allocation failed */
+      }
+      req->body_alloc = body_size + 1;
+      req->body_len = 0;
+    }
+
+    /* Calculate how much more we need */
+    size_t remaining = body_size - req->body_len;
+    size_t available = (size_t)*in_len;
+    size_t to_copy = (available < remaining) ? available : remaining;
+
+    if (to_copy > 0) {
+      memcpy(req->body + req->body_len, inbuf, to_copy);
+      req->body_len += to_copy;
 
       /* Shift buffer */
-      memmove(inbuf, inbuf + body_size, *in_len - body_size);
-      *in_len -= body_size;
+      memmove(inbuf, inbuf + to_copy, *in_len - (int)to_copy);
+      *in_len -= (int)to_copy;
+    }
 
+    if (req->body_len >= body_size) {
+      /* We have the full body */
+      req->body[req->body_len] = '\0';
       req->parse_state = HTTP_PARSE_COMPLETE;
       return 1; /* Request complete */
     } else {

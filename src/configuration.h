@@ -67,6 +67,9 @@ typedef struct {
   char upstream_interface_multicast
       [IFNAMSIZ]; /* Interface for upstream multicast media requests (overrides
                      upstream_interface) */
+  char upstream_interface_http[IFNAMSIZ]; /* Interface for HTTP proxy upstream
+                                             requests (overrides
+                                             upstream_interface) */
 
   /* Multicast settings */
   int mcast_rejoin_interval; /* Periodic multicast rejoin interval in seconds

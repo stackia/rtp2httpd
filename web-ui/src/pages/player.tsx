@@ -165,17 +165,7 @@ function PlayerPage() {
       setIsLoading(true);
       setError(null);
 
-      // Extract r2h-token from current URL if present
-      const urlParams = new URLSearchParams(window.location.search);
-      const token = urlParams.get("r2h-token");
-
-      // Build playlist URL with token if available
-      let playlistUrl = "/playlist.m3u";
-      if (token) {
-        playlistUrl += `?r2h-token=${encodeURIComponent(token)}`;
-      }
-
-      const response = await fetch(playlistUrl);
+      const response = await fetch("/playlist.m3u");
       if (!response.ok) {
         throw new Error(t("failedToLoadPlaylist"));
       }
@@ -196,11 +186,7 @@ function PlayerPage() {
         });
 
         // Build EPG URL with token if available
-        let epgUrl = parsed.tvgUrl;
-        if (token) {
-          const separator = parsed.tvgUrl.includes("?") ? "&" : "?";
-          epgUrl = `${parsed.tvgUrl}${separator}r2h-token=${encodeURIComponent(token)}`;
-        }
+        const epgUrl = parsed.tvgUrl.replace(".gz", "");
 
         // Load EPG and filter to only channels in M3U
         loadEPG(epgUrl, validChannelIds)

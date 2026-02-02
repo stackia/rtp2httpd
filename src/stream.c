@@ -330,6 +330,31 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
     return 0;
   }
 
+  /* Process HTTP proxy socket events */
+  if (ctx->http_proxy.socket >= 0 && fd == ctx->http_proxy.socket) {
+    int result = http_proxy_handle_socket_event(&ctx->http_proxy, events);
+    if (result < 0) {
+      logger(LOG_ERROR, "HTTP Proxy: Socket event handling failed");
+      return -1;
+    }
+    if (result > 0) {
+      ctx->total_bytes_sent += (uint64_t)result;
+    }
+    /* Check if transfer is complete */
+    if (ctx->http_proxy.state == HTTP_PROXY_STATE_COMPLETE) {
+      logger(LOG_DEBUG, "HTTP Proxy: Transfer complete");
+      /* Set connection to closing state - worker will close it after
+       * output queue is drained. Return -2 to indicate graceful close. */
+      ctx->conn->state = CONN_CLOSING;
+      /* Trigger EPOLLOUT to flush any remaining data in the queue */
+      connection_epoll_update_events(
+          ctx->conn->epfd, ctx->conn->fd,
+          EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+      return -2;
+    }
+    return 0;
+  }
+
   return 0;
 }
 
@@ -375,7 +400,45 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
   }
 
   /* Initialize media path depending on service type */
-  if (service->service_type == SERVICE_RTSP) {
+  if (service->service_type == SERVICE_HTTP) {
+    /* HTTP proxy service */
+    http_proxy_session_init(&ctx->http_proxy);
+    ctx->http_proxy.epoll_fd = ctx->epoll_fd;
+    ctx->http_proxy.conn = conn;
+    ctx->http_proxy.status_index = status_index;
+
+    if (!service->http_url) {
+      logger(LOG_ERROR, "HTTP URL not found in service configuration");
+      return -1;
+    }
+
+    /* Parse URL */
+    if (http_proxy_parse_url(&ctx->http_proxy, service->http_url) < 0) {
+      logger(LOG_ERROR, "HTTP Proxy: Failed to parse URL");
+      return -1;
+    }
+
+    /* Set HTTP method from client request */
+    http_proxy_set_method(&ctx->http_proxy, conn->http_req.method);
+
+    /* Set raw headers for full passthrough */
+    http_proxy_set_raw_headers(&ctx->http_proxy, conn->http_req.raw_headers,
+                               conn->http_req.raw_headers_len);
+
+    /* Set request body for passthrough */
+    if (conn->http_req.body && conn->http_req.body_len > 0) {
+      http_proxy_set_request_body(&ctx->http_proxy, conn->http_req.body,
+                                  conn->http_req.body_len);
+    }
+
+    /* Initiate connection */
+    if (http_proxy_connect(&ctx->http_proxy) < 0) {
+      logger(LOG_ERROR, "HTTP Proxy: Failed to initiate connection");
+      return -1;
+    }
+
+    logger(LOG_DEBUG, "HTTP Proxy: Async connection initiated");
+  } else if (service->service_type == SERVICE_RTSP) {
     ctx->rtsp.epoll_fd = ctx->epoll_fd;
     ctx->rtsp.conn = conn;
     if (!service->rtsp_url) {
@@ -594,6 +657,9 @@ int stream_context_cleanup(stream_context_t *ctx) {
 
   /* Clean up RTSP session - this may initiate async TEARDOWN */
   int rtsp_async = rtsp_session_cleanup(&ctx->rtsp);
+
+  /* Clean up HTTP proxy session (always synchronous) */
+  http_proxy_session_cleanup(&ctx->http_proxy);
 
   /* Close multicast socket if active (always safe to cleanup immediately) */
   if (ctx->mcast_sock >= 0) {

@@ -175,6 +175,17 @@ const char *get_upstream_interface_for_multicast(void) {
   return NULL;
 }
 
+const char *get_upstream_interface_for_http(void) {
+  /* Priority: upstream_interface_http > upstream_interface */
+  if (config.upstream_interface_http[0] != '\0') {
+    return config.upstream_interface_http;
+  }
+  if (config.upstream_interface[0] != '\0') {
+    return config.upstream_interface;
+  }
+  return NULL;
+}
+
 /**
  * Get local IP address for FCC packets
  * Priority: upstream_interface_fcc > upstream_interface > first non-loopback IP
