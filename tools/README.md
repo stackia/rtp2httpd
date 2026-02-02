@@ -21,6 +21,7 @@ Multicast UDP replay tool for testing rtp2httpd.
 ```bash
 cd tools
 uv sync
+source .venv/bin/activate
 ```
 
 ## Usage
@@ -135,6 +136,123 @@ Enables seamless looping without the 3-second gap between replay cycles:
 - No pause between loop iterations
 - Ideal for stress testing and sustained high-throughput scenarios
 - Combine with `--speed` for maximum throughput: `--speed 100 --continuous`
+
+## Stress Test
+
+The `stress_test.py` script runs automated performance tests on streaming servers (rtp2httpd, msd_lite, udpxy).
+
+### What It Does
+
+1. Starts multicast packet replay (`main.py --continuous --speed N`)
+2. Launches the streaming server
+3. Spawns multiple concurrent curl clients to pull the stream
+4. Monitors CPU and memory usage (including forked child processes)
+5. Reports statistics after the test
+
+### Usage
+
+```bash
+# Test rtp2httpd (default)
+python stress_test.py
+
+# Test msd_lite
+python stress_test.py --program msd_lite
+
+# Test udpxy
+python stress_test.py --program udpxy
+
+# Custom parameters
+python stress_test.py --duration 30 --clients 16 --speed 10
+
+# Verbose output (show subprocess output)
+python stress_test.py -v
+```
+
+### Options
+
+| Option          | Default     | Description                              |
+| --------------- | ----------- | ---------------------------------------- |
+| `--program`     | `rtp2httpd` | Program to test: rtp2httpd, msd_lite, udpxy |
+| `--duration`    | `10`        | Test duration in seconds                 |
+| `--clients`     | `8`         | Number of concurrent curl clients        |
+| `--speed`       | `5.0`       | Replay speed multiplier (5x ≈ 40 Mbps)   |
+| `-v, --verbose` | -           | Show verbose output from subprocesses    |
+
+### Example Output
+
+```
+============================================================
+Stress Test: rtp2httpd
+============================================================
+Program:      rtp2httpd
+Binary:       /path/to/rtp2httpd
+Duration:     10s
+Clients:      8
+Replay speed: 5.0x (~40 Mbps)
+Port:         5140
+Stream:       rtp/239.81.0.195:4056
+============================================================
+
+[1/3] Starting multicast replay...
+  PID: 12345
+
+[2/3] Starting rtp2httpd...
+  PID: 12346
+
+[3/3] Starting 8 curl clients...
+  PIDs: [12347, 12348, ...]
+
+[Running] Test running for 10 seconds...
+  Progress: 10.0s / 10s
+
+============================================================
+RESULTS
+============================================================
+
+[rtp2httpd]
+  CPU:  avg=  2.00%  max=  2.00%
+  PSS:  avg=  3.62MB max=  3.62MB
+  USS:  avg=  3.62MB max=  3.62MB
+
+[replay (main.py)]
+  CPU:  avg=100.67%  max=102.00%
+  PSS:  avg= 69.47MB max= 69.47MB
+  USS:  avg= 69.47MB max= 69.47MB
+
+[curl clients x4 (aggregated)]
+  CPU:  avg=  0.00%  max=  0.00%
+  PSS:  avg= 38.62MB max= 38.62MB
+  USS:  avg= 38.62MB max= 38.62MB
+
+------------------------------------------------------------
+SUMMARY (rtp2httpd)
+------------------------------------------------------------
+  Test duration:  10s
+  Clients:        4
+  Replay speed:   5.0x (~40 Mbps)
+  CPU average:    2.00%
+  CPU peak:       2.00%
+  PSS average:    3.62 MB (proportional)
+  PSS peak:       3.62 MB
+  USS average:    3.62 MB (private only)
+  USS peak:       3.62 MB
+============================================================
+```
+
+### CPU Measurement
+
+- Uses `top -b -n 2` for accurate CPU sampling (first sample is cumulative, second is actual usage)
+- Aggregates CPU usage across parent process and all forked child processes
+- More accurate than `/proc/[pid]/stat` for programs using io_uring
+
+### Memory Measurement
+
+Reports two memory metrics for accurate measurement with fork'd processes:
+
+- **PSS (Proportional Set Size)**: Shared memory divided proportionally among all sharing processes. Best for capacity planning.
+- **USS (Unique Set Size)**: Private memory only (Private_Clean + Private_Dirty). Represents memory freed when process exits.
+
+Both metrics are read from `/proc/[pid]/smaps_rollup` (Linux 4.14+) and aggregated across all child processes.
 
 ## Fixtures
 
