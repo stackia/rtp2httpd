@@ -16,7 +16,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 
 from scapy.all import PcapNgReader, UDP, IP, Raw
 
@@ -147,10 +147,7 @@ def load_packets(filepath: Path) -> list[PacketInfo]:
             flush=True,
         )
         for addr, port in sorted(dests):
-            count = sum(
-                1 for p in packets
-                if p.dst_addr == addr and p.dst_port == port
-            )
+            count = sum(1 for p in packets if p.dst_addr == addr and p.dst_port == port)
             print(f"  -> {addr}:{port} ({count} packets)", flush=True)
     else:
         print("No UDP packets found in file", flush=True)
@@ -165,6 +162,18 @@ def ip_to_proc_format(ip: str) -> str:
     return f"{octets[3]:02X}{octets[2]:02X}{octets[1]:02X}{octets[0]:02X}"
 
 
+def proc_format_to_ip(hex_str: str) -> str:
+    """Convert /proc/net/igmp hex format back to IP address."""
+    # hex_str is in reversed byte order: DDCCBBAA for AA.BB.CC.DD
+    octets = [
+        int(hex_str[6:8], 16),
+        int(hex_str[4:6], 16),
+        int(hex_str[2:4], 16),
+        int(hex_str[0:2], 16),
+    ]
+    return f"{octets[0]}.{octets[1]}.{octets[2]}.{octets[3]}"
+
+
 def check_igmp_membership(group_addr: str) -> bool:
     """Check if any process is subscribed to the multicast group."""
     target = ip_to_proc_format(group_addr)
@@ -175,6 +184,77 @@ def check_igmp_membership(group_addr: str) -> bool:
             return target in content
     except IOError:
         return False
+
+
+def get_subnet_for_ip(ip: str, prefix_len: int = 24) -> str:
+    """Get the /prefix_len subnet for an IP address."""
+    octets = [int(x) for x in ip.split(".")]
+    ip_int = (octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]
+    mask = (0xFFFFFFFF << (32 - prefix_len)) & 0xFFFFFFFF
+    net_int = ip_int & mask
+
+    net_octets = [
+        (net_int >> 24) & 0xFF,
+        (net_int >> 16) & 0xFF,
+        (net_int >> 8) & 0xFF,
+        net_int & 0xFF,
+    ]
+    return (
+        f"{net_octets[0]}.{net_octets[1]}.{net_octets[2]}.{net_octets[3]}/{prefix_len}"
+    )
+
+
+def is_ip_in_subnet(ip: str, subnet: str) -> bool:
+    """Check if an IP address is within a subnet (e.g., 239.81.0.0/24)."""
+    net_addr, prefix_len = subnet.split("/")
+    prefix_len = int(prefix_len)
+
+    ip_octets = [int(x) for x in ip.split(".")]
+    net_octets = [int(x) for x in net_addr.split(".")]
+
+    ip_int = (
+        (ip_octets[0] << 24) | (ip_octets[1] << 16) | (ip_octets[2] << 8) | ip_octets[3]
+    )
+    net_int = (
+        (net_octets[0] << 24)
+        | (net_octets[1] << 16)
+        | (net_octets[2] << 8)
+        | net_octets[3]
+    )
+
+    mask = (0xFFFFFFFF << (32 - prefix_len)) & 0xFFFFFFFF
+    return (ip_int & mask) == (net_int & mask)
+
+
+def get_igmp_joined_groups(subnets: list[str]) -> set[str]:
+    """Get all multicast groups currently joined that are within the specified subnets."""
+    joined = set()
+
+    try:
+        with open("/proc/net/igmp", "r") as f:
+            for line in f:
+                # Skip header and interface lines
+                line = line.strip()
+                if not line or line.startswith("Idx") or "\t" not in line:
+                    continue
+
+                # Lines with group addresses start with a tab and have hex address
+                parts = line.split()
+                if len(parts) >= 1:
+                    hex_addr = parts[0]
+                    if len(hex_addr) == 8:
+                        try:
+                            ip = proc_format_to_ip(hex_addr)
+                            for subnet in subnets:
+                                if is_ip_in_subnet(ip, subnet):
+                                    joined.add(ip)
+                                    break
+                        except (ValueError, IndexError):
+                            continue
+    except IOError:
+        pass
+
+    return joined
 
 
 def get_interface_ip(interface: str) -> str:
@@ -208,25 +288,46 @@ def create_multicast_socket(
                 socket.inet_aton(ip_addr),
             )
         except OSError as e:
-            raise OSError(
-                f"Failed to bind to interface {interface}: {e}"
-            ) from e
+            raise OSError(f"Failed to bind to interface {interface}: {e}") from e
 
     return sock
 
 
 class IGMPMonitor(Thread):
-    """Thread that monitors /proc/net/igmp for group membership."""
+    """Thread that monitors /proc/net/igmp for group membership.
 
-    def __init__(self, groups: dict[str, Event]):
+    Supports two modes:
+    1. Fixed groups mode: monitors specific addresses (legacy)
+    2. Subnet mode: monitors entire subnets and dynamically tracks joined groups
+    """
+
+    def __init__(
+        self,
+        groups: dict[str, Event] | None = None,
+        subnets: list[str] | None = None,
+        on_join: callable = None,
+        on_leave: callable = None,
+    ):
         super().__init__(daemon=True)
-        self.groups = groups  # {address: joined_event}
+        self.groups = groups or {}  # {address: joined_event}
+        self.subnets = subnets or []  # Subnets to monitor (e.g., ["239.81.0.0/24"])
+        self.on_join = on_join  # Callback when a new group is joined
+        self.on_leave = on_leave  # Callback when a group is left
+        self._active_groups: set[str] = set()  # Currently joined groups in subnets
+        self._lock = Lock()  # Protect active_groups access
         self.running = True
 
     def run(self) -> None:
-        print("IGMP monitor started (polling /proc/net/igmp)", flush=True)
+        if self.subnets:
+            print(
+                f"IGMP monitor started for subnets: {', '.join(self.subnets)}",
+                flush=True,
+            )
+        else:
+            print("IGMP monitor started (polling /proc/net/igmp)", flush=True)
 
         while self.running:
+            # Handle fixed groups (legacy mode)
             for addr, event in self.groups.items():
                 is_joined = check_igmp_membership(addr)
 
@@ -237,7 +338,33 @@ class IGMPMonitor(Thread):
                     print(f"IGMP Leave detected: {addr}", flush=True)
                     event.clear()
 
+            # Handle subnet monitoring (new mode)
+            if self.subnets:
+                current_joined = get_igmp_joined_groups(self.subnets)
+
+                with self._lock:
+                    # Detect new joins
+                    new_joins = current_joined - self._active_groups
+                    for addr in new_joins:
+                        print(f"IGMP Join detected: {addr}", flush=True)
+                        if self.on_join:
+                            self.on_join(addr)
+
+                    # Detect leaves
+                    leaves = self._active_groups - current_joined
+                    for addr in leaves:
+                        print(f"IGMP Leave detected: {addr}", flush=True)
+                        if self.on_leave:
+                            self.on_leave(addr)
+
+                    self._active_groups = current_joined
+
             time.sleep(0.05)  # Poll every 50ms for faster response
+
+    def get_active_groups(self) -> set[str]:
+        """Return currently active (joined) groups."""
+        with self._lock:
+            return self._active_groups.copy()
 
     def stop(self) -> None:
         self.running = False
@@ -246,17 +373,23 @@ class IGMPMonitor(Thread):
 def replay_loop(
     packets: list[PacketInfo],
     sock: socket.socket,
-    group_events: dict[str, Event],
+    group_events: dict[str, Event] | None = None,
+    igmp_monitor: IGMPMonitor | None = None,
     loss_rate: float = 0.0,
     reorder_rate: float = 0.0,
     speed: float = 1.0,
     continuous: bool = False,
     verbose: bool = False,
 ) -> None:
-    """Continuously replay packets when IGMP join is active."""
+    """Continuously replay packets when IGMP join is active.
+
+    Optimized for maximum throughput with minimal overhead.
+    """
     if not packets:
         print("No packets to replay")
         return
+
+    group_events = group_events or {}
 
     loop_count = 0
     total_packets_sent = 0
@@ -267,22 +400,38 @@ def replay_loop(
 
     # Pre-calculate relative timestamps for speed adjustment
     base_ts = packets[0].timestamp
-    relative_times = [(p.timestamp - base_ts) / speed for p in packets]
+    relative_times = tuple((p.timestamp - base_ts) / speed for p in packets)
+
+    # Pre-extract payload and port for faster access
+    packet_data = tuple((p.payload, p.dst_port) for p in packets)
+    num_packets = len(packets)
 
     # For continuous mode: track RTP sequence offset per stream (by dest port)
-    # Each stream has its own sequence number space
-    stream_seq_offsets: dict[int, int] = {}  # port -> seq_offset
-    stream_rtp_counts: dict[int, int] = {}   # port -> rtp_packet_count
-    for p in packets:
-        if is_rtp_packet(p.payload):
-            port = p.dst_port
+    stream_seq_offsets: dict[int, int] = {}
+    stream_rtp_counts: dict[int, int] = {}
+    for payload, port in packet_data:
+        if is_rtp_packet(payload):
             stream_rtp_counts[port] = stream_rtp_counts.get(port, 0) + 1
             if port not in stream_seq_offsets:
                 stream_seq_offsets[port] = 0
 
-    dests = set((p.dst_addr, p.dst_port) for p in packets)
-    dest_str = ", ".join(f"{addr}:{port}" for addr, port in sorted(dests))
-    print(f"Waiting for IGMP Join on {dest_str}...", flush=True)
+    # Get unique ports from pcap
+    pcap_ports = set(p.dst_port for p in packets)
+
+    if igmp_monitor and igmp_monitor.subnets:
+        print(
+            f"Waiting for IGMP Join on subnets: {', '.join(igmp_monitor.subnets)}",
+            flush=True,
+        )
+        print(
+            f"Will replay to any joined address using ports: "
+            f"{', '.join(str(p) for p in sorted(pcap_ports))}",
+            flush=True,
+        )
+    else:
+        pcap_dests = set((p.dst_addr, p.dst_port) for p in packets)
+        dest_str = ", ".join(f"{addr}:{port}" for addr, port in sorted(pcap_dests))
+        print(f"Waiting for IGMP Join on {dest_str}...", flush=True)
 
     # Show mode information
     mode_parts = []
@@ -299,129 +448,251 @@ def replay_loop(
 
     print("(Ctrl+C to stop)", flush=True)
 
-    # Buffer for reordering (holds delayed packets)
-    reorder_buffer: list[tuple[PacketInfo, float]] = []
-
     # Periodic stats tracking
-    stats_interval = 5.0  # Print stats every 5 seconds
+    stats_interval = 5.0
     last_stats_time = time.monotonic()
     interval_packets = 0
     interval_bytes = 0
 
+    # Track current targets
+    current_targets: set[str] = set()
+
+    # Cache function references for speed
+    monotonic = time.monotonic
+    sleep = time.sleep
+    sendto = sock.sendto
+    random_fn = random.random if (loss_rate > 0 or reorder_rate > 0) else None
+
+    # Always use timing for bandwidth/speed control
+    # Timing is essential for controlled replay at specific speeds
+
+    def get_target_addresses() -> set[str]:
+        if igmp_monitor and igmp_monitor.subnets:
+            return igmp_monitor.get_active_groups()
+        return {addr for addr, event in group_events.items() if event.is_set()}
+
     try:
         while True:
-            # Check if any group is joined
-            any_joined = any(event.is_set() for event in group_events.values())
+            targets = get_target_addresses()
 
-            if not any_joined:
-                time.sleep(0.1)
+            if not targets:
+                if current_targets:
+                    print("All groups left, waiting for Join...", flush=True)
+                    current_targets.clear()
+                sleep(0.1)
                 continue
 
+            # Log new targets
+            new_targets = targets - current_targets
+            for addr in sorted(new_targets):
+                if current_targets:
+                    print(f"Adding target: {addr}", flush=True)
+            current_targets = targets.copy()
+
             loop_count += 1
-            loop_start = time.monotonic()
+            loop_start = monotonic()
             packets_this_loop = 0
             dropped_this_loop = 0
             reordered_this_loop = 0
 
             if loop_count == 1:
-                print("Starting replay...", flush=True)
+                print(
+                    f"Starting replay to {len(targets)} target(s): "
+                    f"{', '.join(sorted(targets))}",
+                    flush=True,
+                )
 
-            for i, pkt in enumerate(packets):
-                # Check if this group is still joined
-                if pkt.dst_addr in group_events:
-                    if not group_events[pkt.dst_addr].is_set():
+            # Convert targets to list for faster iteration
+            target_list = list(targets)
+            target_count = len(target_list)
+
+            # Pre-build destination tuples for each target and port
+            # This avoids tuple creation in the hot loop
+            dest_cache: dict[tuple[str, int], tuple[str, int]] = {}
+            for addr in target_list:
+                for port in pcap_ports:
+                    dest_cache[(addr, port)] = (addr, port)
+
+            # Reorder buffer for packet reordering simulation
+            reorder_buffer: list[tuple[bytes, int, float, list[str]]] = []
+
+            i = 0
+            next_target_refresh = 500  # Refresh targets every 500 packets
+
+            # Check if we need loss/reorder simulation
+            use_loss = loss_rate > 0 and random_fn is not None
+            use_reorder = reorder_rate > 0 and random_fn is not None
+
+            # Fast path: no loss/reorder simulation
+            if not use_loss and not use_reorder:
+                while i < num_packets:
+                    # Refresh targets periodically
+                    if i >= next_target_refresh:
+                        targets = get_target_addresses()
+                        if not targets:
+                            break
+                        target_list = list(targets)
+                        target_count = len(target_list)
+                        next_target_refresh = i + 500
+
+                    payload, port = packet_data[i]
+
+                    # Timing: single monotonic() call, sleep handles the wait
+                    target_time = loop_start + relative_times[i]
+                    wait_time = target_time - monotonic()
+                    if wait_time > 0.001:
+                        sleep(wait_time)
+
+                    # Patch RTP sequence number in continuous mode
+                    if continuous and port in stream_seq_offsets:
+                        offset = stream_seq_offsets[port]
+                        if offset > 0:
+                            payload = patch_rtp_sequence(payload, offset)
+
+                    # Send to all targets - unrolled for common cases
+                    payload_len = len(payload)
+                    if target_count == 1:
+                        sendto(payload, (target_list[0], port))
+                        total_packets_sent += 1
+                        total_bytes_sent += payload_len
+                        packets_this_loop += 1
+                        interval_packets += 1
+                        interval_bytes += payload_len
+                    elif target_count == 2:
+                        sendto(payload, (target_list[0], port))
+                        sendto(payload, (target_list[1], port))
+                        total_packets_sent += 2
+                        total_bytes_sent += payload_len * 2
+                        packets_this_loop += 2
+                        interval_packets += 2
+                        interval_bytes += payload_len * 2
+                    else:
+                        for dst_addr in target_list:
+                            sendto(payload, (dst_addr, port))
+                        total_packets_sent += target_count
+                        total_bytes_sent += payload_len * target_count
+                        packets_this_loop += target_count
+                        interval_packets += target_count
+                        interval_bytes += payload_len * target_count
+
+                    i += 1
+            else:
+                # Slow path: with loss/reorder simulation
+                while i < num_packets:
+                    # Refresh targets periodically
+                    if i >= next_target_refresh:
+                        targets = get_target_addresses()
+                        if not targets:
+                            break
+                        target_list = list(targets)
+                        target_count = len(target_list)
+                        next_target_refresh = i + 500
+
+                    payload, port = packet_data[i]
+
+                    # Timing control
+                    target_time = loop_start + relative_times[i]
+                    now = monotonic()
+                    wait_time = target_time - now
+
+                    if wait_time > 0.001:
+                        sleep(wait_time)
+                        now = target_time  # Assume sleep was accurate enough
+
+                    # Process reorder buffer
+                    if reorder_buffer:
+                        j = 0
+                        while j < len(reorder_buffer):
+                            buf_payload, buf_port, buf_time, buf_targets = (
+                                reorder_buffer[j]
+                            )
+                            if now >= buf_time:
+                                for dst_addr in buf_targets:
+                                    sendto(buf_payload, (dst_addr, buf_port))
+                                    total_packets_sent += 1
+                                    total_bytes_sent += len(buf_payload)
+                                    packets_this_loop += 1
+                                reorder_buffer.pop(j)
+                            else:
+                                j += 1
+
+                    # Simulate packet loss
+                    if use_loss and random_fn() * 100 < loss_rate:
+                        dropped_this_loop += 1
+                        total_packets_dropped += 1
+                        i += 1
                         continue
 
-                # Wait until target time using busy-wait for precision
-                target_time = loop_start + relative_times[i]
-                now = time.monotonic()
-                wait_time = target_time - now
+                    # Simulate packet reordering
+                    if use_reorder and random_fn() * 100 < reorder_rate:
+                        delay_time = random.uniform(0.001, 0.01)
+                        reorder_buffer.append(
+                            (payload, port, now + delay_time, target_list.copy())
+                        )
+                        reordered_this_loop += 1
+                        total_packets_reordered += 1
+                        i += 1
+                        continue
 
-                if wait_time > 0.01:
-                    # Long wait: use sleep for most of it, then busy-wait
-                    time.sleep(wait_time - 0.001)
-                    while time.monotonic() < target_time:
-                        pass
-                elif wait_time > 0:
-                    # Short wait: busy-wait only
-                    while time.monotonic() < target_time:
-                        pass
-                # else: we're behind schedule, send immediately
+                    # Patch RTP sequence number in continuous mode
+                    if continuous and port in stream_seq_offsets:
+                        offset = stream_seq_offsets[port]
+                        if offset > 0:
+                            payload = patch_rtp_sequence(payload, offset)
 
-                # Send any buffered reordered packets that are due
-                now = time.monotonic()
-                due_packets = [
-                    (p, t) for p, t in reorder_buffer if now >= t
-                ]
-                for delayed_pkt, _ in due_packets:
-                    sock.sendto(
-                        delayed_pkt.payload,
-                        (delayed_pkt.dst_addr, delayed_pkt.dst_port),
-                    )
-                    total_packets_sent += 1
-                    total_bytes_sent += len(delayed_pkt.payload)
-                    packets_this_loop += 1
-                reorder_buffer = [
-                    (p, t) for p, t in reorder_buffer if now < t
-                ]
+                    # Send to all targets
+                    payload_len = len(payload)
+                    if target_count == 1:
+                        sendto(payload, (target_list[0], port))
+                        total_packets_sent += 1
+                        total_bytes_sent += payload_len
+                        packets_this_loop += 1
+                        interval_packets += 1
+                        interval_bytes += payload_len
+                    elif target_count == 2:
+                        sendto(payload, (target_list[0], port))
+                        sendto(payload, (target_list[1], port))
+                        total_packets_sent += 2
+                        total_bytes_sent += payload_len * 2
+                        packets_this_loop += 2
+                        interval_packets += 2
+                        interval_bytes += payload_len * 2
+                    else:
+                        for dst_addr in target_list:
+                            sendto(payload, (dst_addr, port))
+                        total_packets_sent += target_count
+                        total_bytes_sent += payload_len * target_count
+                        packets_this_loop += target_count
+                        interval_packets += target_count
+                        interval_bytes += payload_len * target_count
 
-                # Simulate packet loss
-                if loss_rate > 0 and random.random() * 100 < loss_rate:
-                    dropped_this_loop += 1
-                    total_packets_dropped += 1
-                    continue
+                    i += 1
 
-                # Simulate packet reordering
-                if reorder_rate > 0 and random.random() * 100 < reorder_rate:
-                    # Delay this packet by 1-10ms
-                    delay_time = random.uniform(0.001, 0.01)
-                    reorder_buffer.append((pkt, time.monotonic() + delay_time))
-                    reordered_this_loop += 1
-                    total_packets_reordered += 1
-                    continue
-
-                # Patch RTP sequence number in continuous mode
-                port = pkt.dst_port
-                if continuous and port in stream_seq_offsets and stream_seq_offsets[port] > 0:
-                    payload = patch_rtp_sequence(pkt.payload, stream_seq_offsets[port])
-                else:
-                    payload = pkt.payload
-
-                sock.sendto(payload, (pkt.dst_addr, pkt.dst_port))
-                total_packets_sent += 1
-                total_bytes_sent += len(payload)
-                packets_this_loop += 1
-                interval_packets += 1
-                interval_bytes += len(payload)
-
-                # Periodic stats output
-                now = time.monotonic()
-                if now - last_stats_time >= stats_interval:
-                    elapsed_interval = now - last_stats_time
-                    pkt_rate = interval_packets / elapsed_interval
-                    byte_rate = interval_bytes / elapsed_interval
-                    print(
-                        f"[Stats] {pkt_rate:.1f} pkt/s, "
-                        f"{byte_rate / 1024 / 1024:.2f} MB/s, "
-                        f"{byte_rate * 8 / 1024 / 1024:.2f} Mbps",
-                        flush=True,
-                    )
-                    last_stats_time = now
-                    interval_packets = 0
-                    interval_bytes = 0
-
-            # Flush remaining reorder buffer at end of loop
-            for delayed_pkt, _ in reorder_buffer:
-                sock.sendto(
-                    delayed_pkt.payload,
-                    (delayed_pkt.dst_addr, delayed_pkt.dst_port),
+            # Stats output at end of each loop (time-based, every stats_interval)
+            now = monotonic()
+            if now - last_stats_time >= stats_interval:
+                elapsed_interval = now - last_stats_time
+                pkt_rate = interval_packets / elapsed_interval
+                byte_rate = interval_bytes / elapsed_interval
+                print(
+                    f"[Stats] {target_count} target(s), {pkt_rate:.1f} pkt/s, "
+                    f"{byte_rate / 1024 / 1024:.2f} MB/s, "
+                    f"{byte_rate * 8 / 1024 / 1024:.2f} Mbps",
+                    flush=True,
                 )
-                total_packets_sent += 1
-                total_bytes_sent += len(delayed_pkt.payload)
-                packets_this_loop += 1
-            reorder_buffer.clear()
+                last_stats_time = now
+                interval_packets = 0
+                interval_bytes = 0
 
-            loop_duration = time.monotonic() - loop_start
+            # Flush remaining reorder buffer
+            for buf_payload, buf_port, _, buf_targets in reorder_buffer:
+                for dst_addr in buf_targets:
+                    sendto(buf_payload, (dst_addr, buf_port))
+                    total_packets_sent += 1
+                    total_bytes_sent += len(buf_payload)
+                    packets_this_loop += 1
+
+            loop_duration = monotonic() - loop_start
 
             if verbose and packets_this_loop > 0:
                 stats = f"Loop {loop_count}: {packets_this_loop} packets"
@@ -429,25 +700,17 @@ def replay_loop(
                     stats += f", {dropped_this_loop} dropped"
                 if reordered_this_loop > 0:
                     stats += f", {reordered_this_loop} reordered"
+                stats += f" to {len(current_targets)} target(s)"
                 stats += f" in {loop_duration:.2f}s"
                 print(stats, flush=True)
 
             if continuous:
-                # Continuous mode: update seq offset per stream and continue immediately
                 for port, count in stream_rtp_counts.items():
                     stream_seq_offsets[port] += count
             else:
-                # Normal mode: wait 3 seconds before next loop
                 if verbose:
                     print("Waiting 3s before next loop...", flush=True)
-                time.sleep(3.0)
-
-                # Check if still joined before next loop
-                any_joined = any(
-                    event.is_set() for event in group_events.values()
-                )
-                if not any_joined:
-                    print("All groups left, waiting for Join...", flush=True)
+                sleep(3.0)
 
     except KeyboardInterrupt:
         pass
@@ -501,17 +764,18 @@ def main() -> int:
         print("Error: No UDP packets found in file", file=sys.stderr)
         return 1
 
-    # Get unique multicast groups
-    groups = set(p.dst_addr for p in packets)
-    group_events: dict[str, Event] = {addr: Event() for addr in groups}
+    # Calculate subnets to monitor based on destination addresses in pcap
+    # Each unique destination IP gets its corresponding /24 subnet monitored
+    pcap_addrs = set(p.dst_addr for p in packets)
+    subnets = sorted(set(get_subnet_for_ip(addr) for addr in pcap_addrs))
 
     print(
-        f"Monitoring IGMP for groups: {', '.join(sorted(groups))}",
+        f"Monitoring IGMP for subnets (based on pcap): {', '.join(subnets)}",
         flush=True,
     )
 
-    # Start IGMP monitor
-    igmp_monitor = IGMPMonitor(group_events)
+    # Start IGMP monitor in subnet mode
+    igmp_monitor = IGMPMonitor(subnets=subnets)
     igmp_monitor.start()
 
     try:
@@ -524,7 +788,7 @@ def main() -> int:
         replay_loop(
             packets,
             sock,
-            group_events,
+            igmp_monitor=igmp_monitor,
             loss_rate=args.loss,
             reorder_rate=args.reorder,
             speed=args.speed,
