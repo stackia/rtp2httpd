@@ -21,8 +21,23 @@ from typing import Callable
 # Program Configurations
 # =============================================================================
 
-# Fixed stream URL for all programs
-STREAM_URL = "rtp/239.81.0.195:4056"
+# Base multicast address and port for streams
+# Each client will use a different address in the same /24 subnet
+MULTICAST_BASE = "239.81.0"  # /24 subnet
+MULTICAST_PORT = 4056
+MULTICAST_START_HOST = 1  # Start from .1 (e.g., 239.81.0.1)
+
+
+def get_stream_url(client_index: int) -> str:
+    """Generate stream URL for a specific client.
+
+    Each client gets a unique multicast address in the same /24 subnet.
+    """
+    host = MULTICAST_START_HOST + client_index
+    if host > 254:
+        host = ((host - 1) % 254) + 1  # Wrap around, skip .0 and .255
+    return f"rtp/{MULTICAST_BASE}.{host}:{MULTICAST_PORT}"
+
 
 # Program configurations with relative paths (relative to tools directory)
 PROGRAM_CONFIGS: dict[str, dict] = {
@@ -32,10 +47,14 @@ PROGRAM_CONFIGS: dict[str, dict] = {
         # Args builder: receives (binary_path, m3u_file, port) -> list of args
         "build_args": lambda binary, m3u, port: [
             str(binary),
-            "-M", f"file://{m3u}",
-            "-l", str(port),
-            "-v", "4",
-            "-m", "10",  # Single worker
+            "-M",
+            f"file://{m3u}",
+            "-l",
+            str(port),
+            "-v",
+            "1",
+            "-m",
+            "999",
         ],
     },
     "msd_lite": {
@@ -43,16 +62,18 @@ PROGRAM_CONFIGS: dict[str, dict] = {
         "port": 7088,
         "build_args": lambda binary, m3u, port: [
             str(binary),
-            "-c", str(binary.parent.parent.parent / "conf" / "msd_lite.conf"),
+            "-c",
+            str(binary.parent.parent.parent / "conf" / "msd_lite.conf"),
         ],
     },
     "udpxy": {
-        "binary": "../../udpxy/udpxy",
+        "binary": "../../udpxy/chipmunk/udpxy",
         "port": 4022,
         "build_args": lambda binary, m3u, port: [
             str(binary),
             "-T",  # Run in foreground
-            "-p", str(port),
+            "-p",
+            str(port),
         ],
     },
 }
@@ -62,9 +83,11 @@ PROGRAM_CONFIGS: dict[str, dict] = {
 # Process Statistics
 # =============================================================================
 
+
 @dataclass
 class ProcessStats:
     """CPU and memory statistics for a process."""
+
     pid: int
     name: str
     cpu_samples: list[float] = field(default_factory=list)
@@ -73,7 +96,9 @@ class ProcessStats:
 
     @property
     def cpu_avg(self) -> float:
-        return sum(self.cpu_samples) / len(self.cpu_samples) if self.cpu_samples else 0.0
+        return (
+            sum(self.cpu_samples) / len(self.cpu_samples) if self.cpu_samples else 0.0
+        )
 
     @property
     def cpu_max(self) -> float:
@@ -81,7 +106,9 @@ class ProcessStats:
 
     @property
     def pss_avg(self) -> float:
-        return sum(self.pss_samples) / len(self.pss_samples) if self.pss_samples else 0.0
+        return (
+            sum(self.pss_samples) / len(self.pss_samples) if self.pss_samples else 0.0
+        )
 
     @property
     def pss_max(self) -> float:
@@ -89,7 +116,9 @@ class ProcessStats:
 
     @property
     def uss_avg(self) -> float:
-        return sum(self.uss_samples) / len(self.uss_samples) if self.uss_samples else 0.0
+        return (
+            sum(self.uss_samples) / len(self.uss_samples) if self.uss_samples else 0.0
+        )
 
     @property
     def uss_max(self) -> float:
@@ -121,9 +150,10 @@ def get_child_pids(pid: int) -> list[int]:
 @dataclass
 class MemoryInfo:
     """Memory information for a process."""
-    pss: float = 0.0   # Proportional Set Size (MB) - includes proportional shared
-    uss: float = 0.0   # Unique Set Size (MB) - private memory only
-    rss: float = 0.0   # Resident Set Size (MB) - includes all shared
+
+    pss: float = 0.0  # Proportional Set Size (MB) - includes proportional shared
+    uss: float = 0.0  # Unique Set Size (MB) - private memory only
+    rss: float = 0.0  # Resident Set Size (MB) - includes all shared
 
 
 def get_process_memory(pid: int) -> MemoryInfo | None:
@@ -197,8 +227,7 @@ class ResourceMonitor(threading.Thread):
         self.interval = interval
         self.running = True
         self.stats: dict[int, ProcessStats] = {
-            pid: ProcessStats(pid=pid, name=name)
-            for pid, name in pids.items()
+            pid: ProcessStats(pid=pid, name=name) for pid, name in pids.items()
         }
 
     def _get_cpu_via_top(self, pids: list[int]) -> dict[int, float]:
@@ -313,6 +342,7 @@ class ResourceMonitor(threading.Thread):
 # Argument Parsing
 # =============================================================================
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Stress test streaming servers with multicast replay and curl clients",
@@ -350,9 +380,15 @@ Examples:
         help="Replay speed multiplier (default: 5.0)",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Show verbose output from subprocesses",
+    )
+    parser.add_argument(
+        "--same-address",
+        action="store_true",
+        help="All clients use the same multicast address (default: each client uses a unique address)",
     )
     return parser.parse_args()
 
@@ -360,6 +396,7 @@ Examples:
 # =============================================================================
 # Main Logic
 # =============================================================================
+
 
 def find_project_root() -> Path:
     """Find the project root directory."""
@@ -404,7 +441,10 @@ def main() -> int:
     venv_python = tools_dir / ".venv" / "bin" / "python"
     if not venv_python.exists():
         print(f"Error: Python venv not found at {venv_python}", file=sys.stderr)
-        print("Please run: python -m venv tools/.venv && tools/.venv/bin/pip install scapy", file=sys.stderr)
+        print(
+            "Please run: python -m venv tools/.venv && tools/.venv/bin/pip install scapy",
+            file=sys.stderr,
+        )
         return 1
 
     print("=" * 60)
@@ -416,7 +456,14 @@ def main() -> int:
     print(f"Clients:      {args.clients}")
     print(f"Replay speed: {args.speed}x (~{8 * args.speed:.0f} Mbps)")
     print(f"Port:         {port}")
-    print(f"Stream:       {STREAM_URL}")
+    if args.same_address:
+        print(
+            f"Stream:       {MULTICAST_BASE}.{MULTICAST_START_HOST}:{MULTICAST_PORT} (same for all clients)"
+        )
+    else:
+        print(
+            f"Streams:      {MULTICAST_BASE}.{MULTICAST_START_HOST}-{MULTICAST_START_HOST + args.clients - 1}:{MULTICAST_PORT} (unique per client)"
+        )
     print("=" * 60)
 
     processes: list[subprocess.Popen] = []
@@ -431,7 +478,8 @@ def main() -> int:
             str(tools_dir / "main.py"),
             str(pcapng_file),
             "--continuous",
-            "--speed", str(args.speed),
+            "--speed",
+            str(args.speed),
         ]
         replay_proc = subprocess.Popen(
             replay_cmd,
@@ -468,14 +516,30 @@ def main() -> int:
 
         # 3. Start curl clients
         print(f"\n[3/3] Starting {args.clients} curl clients...")
-        full_stream_url = f"http://127.0.0.1:{port}/{STREAM_URL}"
-        print(f"  URL: {full_stream_url}")
+        if args.same_address:
+            print(
+                f"  All clients use the same address: {MULTICAST_BASE}.{MULTICAST_START_HOST}:{MULTICAST_PORT}"
+            )
+        else:
+            print(f"  Each client uses a unique address in {MULTICAST_BASE}.0/24")
         curl_procs: list[subprocess.Popen] = []
 
         for i in range(args.clients):
+            # Use same address for all clients if --same-address, otherwise unique per client
+            client_index = 0 if args.same_address else i
+            stream_url = get_stream_url(client_index)
+            full_stream_url = f"http://127.0.0.1:{port}/{stream_url}"
+            if i == 0:
+                if args.same_address:
+                    print(f"  URL: {full_stream_url}")
+                else:
+                    print(
+                        f"  URLs: {full_stream_url} ... (and {args.clients - 1} more)"
+                    )
             curl_cmd = [
                 "curl",
-                "-o", "/dev/null",
+                "-o",
+                "/dev/null",
                 "--no-buffer",
                 "-s",  # Silent mode
                 full_stream_url,
@@ -518,7 +582,9 @@ def main() -> int:
                 break
 
             elapsed = time.monotonic() - start_time
-            print(f"\r  Progress: {elapsed:.1f}s / {args.duration}s", end="", flush=True)
+            print(
+                f"\r  Progress: {elapsed:.1f}s / {args.duration}s", end="", flush=True
+            )
             time.sleep(0.5)
 
         print("\n")
@@ -567,16 +633,28 @@ def main() -> int:
         # Server stats
         if server_stats and server_stats.cpu_samples:
             print(f"\n[{args.program}]")
-            print(f"  CPU:  avg={server_stats.cpu_avg:6.2f}%  max={server_stats.cpu_max:6.2f}%")
-            print(f"  PSS:  avg={server_stats.pss_avg:6.2f}MB max={server_stats.pss_max:6.2f}MB")
-            print(f"  USS:  avg={server_stats.uss_avg:6.2f}MB max={server_stats.uss_max:6.2f}MB")
+            print(
+                f"  CPU:  avg={server_stats.cpu_avg:6.2f}%  max={server_stats.cpu_max:6.2f}%"
+            )
+            print(
+                f"  PSS:  avg={server_stats.pss_avg:6.2f}MB max={server_stats.pss_max:6.2f}MB"
+            )
+            print(
+                f"  USS:  avg={server_stats.uss_avg:6.2f}MB max={server_stats.uss_max:6.2f}MB"
+            )
 
         # Replay stats
         if replay_stats and replay_stats.cpu_samples:
             print("\n[replay (main.py)]")
-            print(f"  CPU:  avg={replay_stats.cpu_avg:6.2f}%  max={replay_stats.cpu_max:6.2f}%")
-            print(f"  PSS:  avg={replay_stats.pss_avg:6.2f}MB max={replay_stats.pss_max:6.2f}MB")
-            print(f"  USS:  avg={replay_stats.uss_avg:6.2f}MB max={replay_stats.uss_max:6.2f}MB")
+            print(
+                f"  CPU:  avg={replay_stats.cpu_avg:6.2f}%  max={replay_stats.cpu_max:6.2f}%"
+            )
+            print(
+                f"  PSS:  avg={replay_stats.pss_avg:6.2f}MB max={replay_stats.pss_max:6.2f}MB"
+            )
+            print(
+                f"  USS:  avg={replay_stats.uss_avg:6.2f}MB max={replay_stats.uss_max:6.2f}MB"
+            )
 
         # Aggregate curl stats
         if curl_stats:

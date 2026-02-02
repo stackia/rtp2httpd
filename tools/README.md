@@ -6,6 +6,9 @@ Multicast UDP replay tool for testing rtp2httpd.
 
 - Replay UDP multicast packets from pcapng capture files
 - IGMP-aware: starts sending when a process joins the multicast group, stops when all leave
+- **Subnet monitoring**: monitors entire /24 subnets based on multicast addresses in the pcapng file
+- **Dynamic target detection**: automatically sends packets to any joined address within monitored subnets
+- **Multi-target support**: simultaneously sends to multiple joined multicast addresses
 - Simulate network impairments: packet loss and reordering
 - Preserves original packet timing from capture
 - Adjustable playback speed for stress testing
@@ -95,13 +98,33 @@ python main.py fixtures/fec_sample.pcapng --continuous --loss 1.0 -v
 
 The replay tool will detect the IGMP join and start sending packets. When the curl request ends, it detects the IGMP leave and stops.
 
+### Multiple Clients with Different Addresses
+
+The replay tool monitors entire /24 subnets, so you can request any address in the same subnet:
+
+```bash
+# Terminal 1: Request 239.81.0.1
+curl http://localhost:5140/rtp/239.81.0.1:4056 -o /dev/null
+
+# Terminal 2: Request 239.81.0.2
+curl http://localhost:5140/rtp/239.81.0.2:4056 -o /dev/null
+
+# Terminal 3: Request 239.81.0.3
+curl http://localhost:5140/rtp/239.81.0.3:4056 -o /dev/null
+```
+
+The replay tool will simultaneously send packets to all joined addresses.
+
 ## How It Works
 
 1. **Load**: Reads pcapng file and extracts UDP packets with timestamps
-2. **Monitor**: Polls `/proc/net/igmp` every 50ms to detect multicast group membership
-3. **Replay**: When a group is joined, replays packets with original timing
-4. **Loop**: After completing one replay cycle, waits 3 seconds before next loop
-5. **Stop**: When all groups are left, pauses until next join
+2. **Subnet Detection**: Calculates /24 subnets from multicast addresses found in the pcapng file
+3. **Monitor**: Polls `/proc/net/igmp` every 50ms to detect multicast group membership within monitored subnets
+4. **Dynamic Targeting**: When any address in the monitored subnets is joined, replays packets to that address
+5. **Multi-Target**: Supports simultaneous multicast to multiple joined addresses
+6. **Replay**: Replays packets with original timing (adjusted by speed multiplier)
+7. **Loop**: After completing one replay cycle, waits 3 seconds before next loop
+8. **Stop**: When all groups are left, pauses until next join
 
 ## Network Impairment Simulation
 
@@ -145,7 +168,7 @@ The `stress_test.py` script runs automated performance tests on streaming server
 
 1. Starts multicast packet replay (`main.py --continuous --speed N`)
 2. Launches the streaming server
-3. Spawns multiple concurrent curl clients to pull the stream
+3. Spawns multiple concurrent curl clients, each requesting a unique multicast address (by default)
 4. Monitors CPU and memory usage (including forked child processes)
 5. Reports statistics after the test
 
@@ -170,13 +193,14 @@ python stress_test.py -v
 
 ### Options
 
-| Option          | Default     | Description                              |
-| --------------- | ----------- | ---------------------------------------- |
-| `--program`     | `rtp2httpd` | Program to test: rtp2httpd, msd_lite, udpxy |
-| `--duration`    | `10`        | Test duration in seconds                 |
-| `--clients`     | `8`         | Number of concurrent curl clients        |
-| `--speed`       | `5.0`       | Replay speed multiplier (5x ≈ 40 Mbps)   |
-| `-v, --verbose` | -           | Show verbose output from subprocesses    |
+| Option           | Default     | Description                                                    |
+| ---------------- | ----------- | -------------------------------------------------------------- |
+| `--program`      | `rtp2httpd` | Program to test: rtp2httpd, msd_lite, udpxy                    |
+| `--duration`     | `10`        | Test duration in seconds                                       |
+| `--clients`      | `8`         | Number of concurrent curl clients                              |
+| `--speed`        | `5.0`       | Replay speed multiplier (5x ≈ 40 Mbps)                         |
+| `--same-address` | -           | All clients use the same multicast address (default: unique)   |
+| `-v, --verbose`  | -           | Show verbose output from subprocesses                          |
 
 ### Example Output
 
@@ -190,7 +214,7 @@ Duration:     10s
 Clients:      8
 Replay speed: 5.0x (~40 Mbps)
 Port:         5140
-Stream:       rtp/239.81.0.195:4056
+Streams:      239.81.0.1-8:4056 (unique per client)
 ============================================================
 
 [1/3] Starting multicast replay...
@@ -200,6 +224,8 @@ Stream:       rtp/239.81.0.195:4056
   PID: 12346
 
 [3/3] Starting 8 curl clients...
+  Each client uses a unique address in 239.81.0.0/24
+  URLs: http://127.0.0.1:5140/rtp/239.81.0.1:4056 ... (and 7 more)
   PIDs: [12347, 12348, ...]
 
 [Running] Test running for 10 seconds...
@@ -238,6 +264,17 @@ SUMMARY (rtp2httpd)
   USS peak:       3.62 MB
 ============================================================
 ```
+
+### Unique Multicast Addresses
+
+By default, each curl client requests a unique multicast address in the same /24 subnet:
+
+- Client 1: `239.81.0.1:4056`
+- Client 2: `239.81.0.2:4056`
+- Client 3: `239.81.0.3:4056`
+- ...and so on
+
+This tests the server's ability to handle multiple independent streams. Use `--same-address` to have all clients request the same address (traditional single-stream stress test).
 
 ### CPU Measurement
 
