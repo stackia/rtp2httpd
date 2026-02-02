@@ -74,6 +74,8 @@ PROGRAM_CONFIGS: dict[str, dict] = {
             "-T",  # Run in foreground
             "-p",
             str(port),
+            "-c",
+            "999",  # Max clients
         ],
     },
 }

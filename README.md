@@ -113,6 +113,7 @@ rtp2httpd 支持多种部署方式：
 - **[配置参数详解](docs/configuration.md)**：完整配置选项说明
 - **[FCC 快速换台配置](docs/fcc-setup.md)**：启用毫秒级换台功能
 - **[视频快照配置](docs/video-snapshot.md)**：频道预览图功能配置
+- **[性能测试报告](docs/benchmark.md)**：与 msd_lite、udpxy 的性能对比
 
 如果是首次搭建 IPTV 组播转发服务，对相关网络知识比较陌生（DHCP 鉴权、路由、组播、防火墙），这里也推荐以下教程：
 

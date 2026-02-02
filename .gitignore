@@ -47,3 +47,6 @@ web-ui/dist/
 
 # python
 __pycache__/
+
+# Benchmark results
+tools/benchmark_results_*.txt
