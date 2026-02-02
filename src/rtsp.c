@@ -442,7 +442,8 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
 
   /* Parse rtsp://host:port/path?query format */
   if (strncmp(url_copy, "rtsp://", 7) != 0) {
-    logger(LOG_ERROR, "RTSP: Invalid URL format, must start with rtsp://");
+    logger(LOG_DEBUG, "RTSP: Invalid URL format, must start with rtsp://: %s",
+           rtsp_url);
     return -1;
   }
 

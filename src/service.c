@@ -258,8 +258,9 @@ service_t *service_create_from_udpxy_url(char *url) {
     /* RTSP service - use service_create_from_rtsp_url */
     return service_create_from_rtsp_url(url);
   } else {
-    logger(LOG_ERROR,
-           "Invalid URL format (must start with /rtp/, /udp/, or /rtsp/)");
+    logger(LOG_DEBUG,
+           "Invalid URL format (must start with /rtp/, /udp/, or /rtsp/): %s",
+           url);
     return NULL;
   }
 }
