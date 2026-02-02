@@ -184,6 +184,9 @@ python stress_test.py --program msd_lite
 # Test udpxy
 python stress_test.py --program udpxy
 
+# Test tvgate
+python stress_test.py --program tvgate
+
 # Custom parameters
 python stress_test.py --duration 30 --clients 16 --speed 10
 
@@ -195,7 +198,7 @@ python stress_test.py -v
 
 | Option           | Default     | Description                                                    |
 | ---------------- | ----------- | -------------------------------------------------------------- |
-| `--program`      | `rtp2httpd` | Program to test: rtp2httpd, msd_lite, udpxy                    |
+| `--program`      | `rtp2httpd` | Program to test: rtp2httpd, msd_lite, udpxy, tvgate            |
 | `--duration`     | `10`        | Test duration in seconds                                       |
 | `--clients`      | `8`         | Number of concurrent curl clients                              |
 | `--speed`        | `5.0`       | Replay speed multiplier (5x ≈ 40 Mbps)                         |

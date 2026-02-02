@@ -44,8 +44,8 @@ PROGRAM_CONFIGS: dict[str, dict] = {
     "rtp2httpd": {
         "binary": "../src/rtp2httpd",
         "port": 5140,
-        # Args builder: receives (binary_path, m3u_file, port) -> list of args
-        "build_args": lambda binary, m3u, port: [
+        # Args builder: receives (binary_path, m3u_file, port, config_path) -> list of args
+        "build_args": lambda binary, m3u, port, config: [
             str(binary),
             "-M",
             f"file://{m3u}",
@@ -60,22 +60,33 @@ PROGRAM_CONFIGS: dict[str, dict] = {
     "msd_lite": {
         "binary": "../../msd_lite/build/src/msd_lite",
         "port": 7088,
-        "build_args": lambda binary, m3u, port: [
+        "config": "stress-test-conf/msd_lite.conf",  # Relative to tools directory
+        "build_args": lambda binary, m3u, port, config: [
             str(binary),
             "-c",
-            str(binary.parent.parent.parent / "conf" / "msd_lite.conf"),
+            str(config),
         ],
     },
     "udpxy": {
         "binary": "../../udpxy/chipmunk/udpxy",
         "port": 4022,
-        "build_args": lambda binary, m3u, port: [
+        "build_args": lambda binary, m3u, port, config: [
             str(binary),
             "-T",  # Run in foreground
             "-p",
             str(port),
             "-c",
             "999",  # Max clients
+        ],
+    },
+    "tvgate": {
+        "binary": "../../tvgate/TVGate-linux-arm64",
+        "port": 8888,
+        "config": "stress-test-conf/tvgate-config.yaml",  # Relative to tools directory
+        "build_args": lambda binary, m3u, port, config: [
+            str(binary),
+            "-config",
+            str(config),
         ],
     },
 }
@@ -497,7 +508,11 @@ def main() -> int:
 
         # 2. Start streaming server
         print(f"\n[2/3] Starting {args.program}...")
-        server_cmd = build_args(binary_path, m3u_file, port)
+        # Resolve config path if specified (relative to tools directory)
+        config_path = None
+        if "config" in config:
+            config_path = (tools_dir / config["config"]).resolve()
+        server_cmd = build_args(binary_path, m3u_file, port, config_path)
         server_proc = subprocess.Popen(
             server_cmd,
             stdout=subprocess.PIPE if not args.verbose else None,

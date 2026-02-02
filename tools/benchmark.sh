@@ -1,15 +1,43 @@
 #!/bin/bash
 #
-# Benchmark script for rtp2httpd, msd_lite, and udpxy
+# Benchmark script for rtp2httpd, msd_lite, udpxy, and tvgate
 #
 # Runs stress tests sequentially to ensure accurate measurements.
 # Results are collected and summarized at the end.
+#
+# Usage:
+#   ./benchmark.sh              # Run all programs
+#   ./benchmark.sh rtp2httpd    # Run only rtp2httpd tests
+#   ./benchmark.sh tvgate       # Run only tvgate tests
 #
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+# All available programs
+ALL_PROGRAMS=("rtp2httpd" "msd_lite" "udpxy" "tvgate")
+
+# Parse command line arguments
+if [ $# -gt 0 ]; then
+    # Validate provided program name
+    valid=false
+    for p in "${ALL_PROGRAMS[@]}"; do
+        if [ "$1" = "$p" ]; then
+            valid=true
+            break
+        fi
+    done
+    if [ "$valid" = false ]; then
+        echo "Error: Unknown program '$1'"
+        echo "Available programs: ${ALL_PROGRAMS[*]}"
+        exit 1
+    fi
+    PROGRAMS=("$1")
+else
+    PROGRAMS=("${ALL_PROGRAMS[@]}")
+fi
 
 # Activate virtual environment
 if [ -f ".venv/bin/activate" ]; then
@@ -22,9 +50,6 @@ fi
 
 # Output file for results
 RESULTS_FILE="benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
-
-# Programs to test
-PROGRAMS=("rtp2httpd" "msd_lite" "udpxy")
 
 # Test duration
 DURATION=10
@@ -99,6 +124,9 @@ for program in "${PROGRAMS[@]}"; do
             ;;
         udpxy)
             binary="../../udpxy/chipmunk/udpxy"
+            ;;
+        tvgate)
+            binary="../../tvgate/TVGate-linux-arm64"
             ;;
     esac
 
