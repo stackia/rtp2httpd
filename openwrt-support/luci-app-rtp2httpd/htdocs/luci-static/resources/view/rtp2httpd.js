@@ -400,6 +400,18 @@ return view.extend({
     o.default = "0";
     o.depends("use_config_file", "0");
 
+    o = s.taboption(
+      "network",
+      form.Value,
+      "rtsp_stun_server",
+      _("RTSP STUN Server"),
+      _(
+        "When RTSP server only supports UDP transport and client is behind NAT, try using STUN for NAT traversal (may not always succeed). Format: host:port or host (default port 3478). Example: stun.miwifi.com"
+      )
+    );
+    o.placeholder = "stun.miwifi.com";
+    o.depends("use_config_file", "0");
+
     // ===== TAB 3: Player & M3U =====
     o = s.taboption(
       "player",

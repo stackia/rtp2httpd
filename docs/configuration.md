@@ -64,6 +64,13 @@ rtp2httpd [选项]
 
 - `-U, --noudpxy` - 禁用 UDPxy 兼容模式 (禁用后只能使用 `[services]` 或 `external-m3u` 中定义的服务)
 
+### RTSP NAT 穿透
+
+- `-N, --rtsp-stun-server <host:port>` - STUN 服务器地址 (默认: 禁用)
+  - 当 RTSP 服务器仅支持 UDP 传输且客户端位于 NAT 后时，可尝试使用 STUN 进行 NAT 穿透（不保证成功）
+  - 格式：`host:port` 或 `host`（默认端口 3478）
+  - 示例：`stun.miwifi.com` 或 `stun.miwifi.com:3478`
+
 ### 其他
 
 - `-S, --video-snapshot` - 启用视频快照功能 (默认: 关闭)
@@ -167,6 +174,11 @@ udp-rcvbuf-size = 524288
 # 在支持的设备上可提升吞吐量并降低 CPU 占用，特别是在高并发负载下
 # 如果你的 rtp2httpd 位于反向代理之后 (nginx/caddy/lucky 等)，不建议开启这个选项
 zerocopy-on-send = no
+
+# STUN 服务器用于 RTSP NAT 穿透（默认: 禁用）
+# 当 RTSP 服务器仅支持 UDP 传输且客户端位于 NAT 后时，可尝试使用 STUN 进行 NAT 穿透（不保证成功）
+# 格式: host:port 或 host（默认端口 3478）
+rtsp-stun-server = stun.miwifi.com
 
 # 启用视频快照功能（默认: no）
 # 启用后可通过 `snapshot=1` 查询参数获取视频流的实时快照

@@ -46,6 +46,7 @@ int cmd_zerocopy_on_send_set = 0;
 int cmd_workers_set = 0;
 int cmd_external_m3u_url_set = 0;
 int cmd_external_m3u_update_interval_set = 0;
+int cmd_rtsp_stun_server_set = 0;
 
 enum section_e { SEC_NONE = 0, SEC_BIND, SEC_SERVICES, SEC_GLOBAL };
 
@@ -547,6 +548,18 @@ void parse_global_sec(char *line) {
     return;
   }
 
+  /* STUN NAT traversal configuration */
+  if (strcasecmp("rtsp-stun-server", param) == 0) {
+    if (!cmd_rtsp_stun_server_set) {
+      safe_free_string(&config.rtsp_stun_server);
+      if (value[0] != '\0') {
+        config.rtsp_stun_server = strdup(value);
+        logger(LOG_INFO, "RTSP STUN server: %s", config.rtsp_stun_server);
+      }
+    }
+    return;
+  }
+
   logger(LOG_ERROR, "Unknown config parameter: %s", param);
 }
 
@@ -783,6 +796,8 @@ void config_free(bool force_free) {
   }
   if (!cmd_external_m3u_url_set || force_free)
     safe_free_string(&config.external_m3u_url);
+  if (!cmd_rtsp_stun_server_set || force_free)
+    safe_free_string(&config.rtsp_stun_server);
 
   /* Free bind addresses */
   if (!cmd_bind_set || force_free) {
@@ -976,6 +991,8 @@ void usage(FILE *f, char *progname) {
       "(default: 7200 = 2h, 0=disabled)\n"
       "\t-Z --zerocopy-on-send    Enable zero-copy send with MSG_ZEROCOPY for "
       "better performance (default: off)\n"
+      "\t-N --rtsp-stun-server <host:port>  STUN server for RTSP NAT traversal "
+      "(default: disabled)\n"
       "\t                     default " CONFIGFILE "\n",
       prog);
 }
@@ -1040,9 +1057,10 @@ void parse_cmd_line(int argc, char *argv[]) {
       {"external-m3u", required_argument, 0, 'M'},
       {"external-m3u-update-interval", required_argument, 0, 'I'},
       {"zerocopy-on-send", no_argument, 0, 'Z'},
+      {"rtsp-stun-server", required_argument, 0, 'N'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:R:F:A:s:p:M:I:SCZ";
+  const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:R:F:A:s:p:M:I:SCZN:";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1218,6 +1236,12 @@ void parse_cmd_line(int argc, char *argv[]) {
       config.zerocopy_on_send = 1;
       cmd_zerocopy_on_send_set = 1;
       logger(LOG_INFO, "Zero-copy send enabled (MSG_ZEROCOPY)");
+      break;
+    case 'N':
+      safe_free_string(&config.rtsp_stun_server);
+      config.rtsp_stun_server = strdup(optarg);
+      cmd_rtsp_stun_server_set = 1;
+      logger(LOG_INFO, "RTSP STUN server: %s", config.rtsp_stun_server);
       break;
     default:
       logger(LOG_FATAL, "Unknown option! %d ", opt);

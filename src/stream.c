@@ -512,6 +512,14 @@ int stream_tick(stream_context_t *ctx, int64_t now) {
     }
   }
 
+  /* Check STUN timeout if waiting for STUN response */
+  if (ctx->rtsp.stun.in_progress && ctx->rtsp.state == RTSP_STATE_DESCRIBED) {
+    if (stun_check_timeout(&ctx->rtsp.stun) > 0) {
+      /* STUN finally timed out, advance state machine to continue with local port */
+      rtsp_state_machine_advance(&ctx->rtsp);
+    }
+  }
+
   /* Send periodic RTSP OPTIONS keepalive when using UDP transport */
   if (ctx->rtsp.state == RTSP_STATE_PLAYING &&
       ctx->rtsp.transport_mode == RTSP_TRANSPORT_UDP &&
