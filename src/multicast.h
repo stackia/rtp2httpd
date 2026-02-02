@@ -36,6 +36,14 @@ const char *get_upstream_interface_for_rtsp(void);
 const char *get_upstream_interface_for_multicast(void);
 
 /**
+ * Select the appropriate upstream interface for HTTP proxy with priority logic
+ * Priority: upstream_interface_http > upstream_interface
+ *
+ * @return Pointer to the interface name to use (may be NULL if none configured)
+ */
+const char *get_upstream_interface_for_http(void);
+
+/**
  * Get local IP address for FCC packets
  * Uses the configured upstream interface for FCC, or falls back to first
  * non-loopback address

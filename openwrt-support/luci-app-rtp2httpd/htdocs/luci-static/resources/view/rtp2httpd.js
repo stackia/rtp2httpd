@@ -316,6 +316,19 @@ return view.extend({
 
     o = s.taboption(
       "network",
+      widgets.DeviceSelect,
+      "upstream_interface_http",
+      _("Upstream HTTP Proxy Interface"),
+      _(
+        "Interface to use for HTTP proxy upstream requests (default: use routing table)"
+      )
+    );
+    o.noaliases = true;
+    o.datatype = "interface";
+    o.depends({ use_config_file: "0", advanced_interface_settings: "1" });
+
+    o = s.taboption(
+      "network",
       form.Value,
       "maxclients",
       _("Max clients allowed")

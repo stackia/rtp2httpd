@@ -72,6 +72,9 @@ typedef struct connection_s {
   double queue_avg_bytes;
   int slow_active;
   int64_t slow_candidate_since;
+  /* r2h-token Set-Cookie flag: set cookie when token was provided via URL
+     query */
+  int should_set_r2h_cookie;
 } connection_t;
 
 typedef enum {

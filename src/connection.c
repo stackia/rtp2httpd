@@ -39,6 +39,172 @@
 static void handle_playlist_request(connection_t *c);
 static void handle_epg_request(connection_t *c, int requested_gz);
 
+/* Token source for r2h-token validation */
+typedef enum {
+  TOKEN_SOURCE_NONE = 0,
+  TOKEN_SOURCE_QUERY,  /* From URL query parameter */
+  TOKEN_SOURCE_COOKIE, /* From Cookie header */
+  TOKEN_SOURCE_UA      /* From User-Agent R2HTOKEN/xxx */
+} token_source_t;
+
+/**
+ * Parse cookie value from Cookie header string
+ * Format: "name1=value1; name2=value2"
+ * @param cookie_header Cookie header value
+ * @param name Cookie name to search for
+ * @param value_buf Buffer to store cookie value
+ * @param value_size Size of value buffer
+ * @return 0 if found, -1 if not found
+ */
+static int parse_cookie_value(const char *cookie_header, const char *name,
+                              char *value_buf, size_t value_size) {
+  if (!cookie_header || !name || !value_buf || value_size == 0)
+    return -1;
+
+  size_t name_len = strlen(name);
+  const char *p = cookie_header;
+
+  while (*p) {
+    /* Skip leading whitespace */
+    while (*p == ' ' || *p == '\t')
+      p++;
+
+    /* Check if this cookie matches the name */
+    if (strncasecmp(p, name, name_len) == 0 && p[name_len] == '=') {
+      /* Found the cookie, extract value */
+      const char *value_start = p + name_len + 1;
+      const char *value_end = value_start;
+
+      /* Find end of value (semicolon or end of string) */
+      while (*value_end && *value_end != ';')
+        value_end++;
+
+      size_t value_len = (size_t)(value_end - value_start);
+      if (value_len >= value_size)
+        value_len = value_size - 1;
+
+      if (value_len > 0)
+        memcpy(value_buf, value_start, value_len);
+      value_buf[value_len] = '\0';
+
+      /* Trim trailing whitespace */
+      while (value_len > 0 &&
+             (value_buf[value_len - 1] == ' ' ||
+              value_buf[value_len - 1] == '\t')) {
+        value_buf[--value_len] = '\0';
+      }
+
+      return 0;
+    }
+
+    /* Move to next cookie */
+    while (*p && *p != ';')
+      p++;
+    if (*p == ';')
+      p++;
+  }
+
+  return -1;
+}
+
+/**
+ * Extract R2HTOKEN from User-Agent
+ * Format: "... R2HTOKEN/tokenvalue ..." or "... R2HTOKEN/tokenvalue"
+ * @param user_agent User-Agent header value
+ * @param value_buf Buffer to store token value
+ * @param value_size Size of value buffer
+ * @return 0 if found, -1 if not found
+ */
+static int extract_r2h_token_from_ua(const char *user_agent, char *value_buf,
+                                     size_t value_size) {
+  if (!user_agent || !value_buf || value_size == 0)
+    return -1;
+
+  const char *prefix = "R2HTOKEN/";
+  size_t prefix_len = strlen(prefix);
+
+  const char *p = strstr(user_agent, prefix);
+  if (!p)
+    return -1;
+
+  /* Extract value after R2HTOKEN/ until space or end of string */
+  const char *value_start = p + prefix_len;
+  const char *value_end = value_start;
+
+  while (*value_end && *value_end != ' ' && *value_end != '\t')
+    value_end++;
+
+  size_t value_len = (size_t)(value_end - value_start);
+  if (value_len == 0)
+    return -1;
+
+  if (value_len >= value_size)
+    value_len = value_size - 1;
+
+  strncpy(value_buf, value_start, value_len);
+  value_buf[value_len] = '\0';
+
+  return 0;
+}
+
+/**
+ * Extract and validate r2h-token from multiple sources (priority order):
+ * 1. URL query parameter: ?r2h-token=xxx
+ * 2. Cookie: r2h-token=xxx
+ * 3. User-Agent: R2HTOKEN/xxx
+ *
+ * @param c Connection
+ * @param query_start Pointer to '?' in URL or NULL
+ * @return Token source if valid, TOKEN_SOURCE_NONE if not found or invalid
+ */
+static token_source_t validate_r2h_token(connection_t *c,
+                                         const char *query_start) {
+  char token_value[256] = {0};
+
+  /* Source 1: URL query parameter (highest priority) */
+  if (query_start) {
+    if (http_parse_query_param(query_start + 1, "r2h-token", token_value,
+                               sizeof(token_value)) == 0) {
+      if (strcmp(token_value, config.r2h_token) == 0) {
+        logger(LOG_DEBUG, "r2h-token validated (source: query)");
+        return TOKEN_SOURCE_QUERY;
+      }
+      logger(LOG_WARN, "r2h-token mismatch (source: query)");
+      return TOKEN_SOURCE_NONE;
+    }
+  }
+
+  /* Source 2: Cookie header */
+  if (c->http_req.cookie[0] != '\0') {
+    if (parse_cookie_value(c->http_req.cookie, "r2h-token", token_value,
+                           sizeof(token_value)) == 0) {
+      if (strcmp(token_value, config.r2h_token) == 0) {
+        logger(LOG_DEBUG, "r2h-token validated (source: cookie)");
+        return TOKEN_SOURCE_COOKIE;
+      }
+      logger(LOG_WARN, "r2h-token mismatch (source: cookie)");
+      return TOKEN_SOURCE_NONE;
+    }
+  }
+
+  /* Source 3: User-Agent with R2HTOKEN/xxx format */
+  if (c->http_req.user_agent[0] != '\0') {
+    if (extract_r2h_token_from_ua(c->http_req.user_agent, token_value,
+                                  sizeof(token_value)) == 0) {
+      if (strcmp(token_value, config.r2h_token) == 0) {
+        logger(LOG_DEBUG, "r2h-token validated (source: user-agent)");
+        return TOKEN_SOURCE_UA;
+      }
+      logger(LOG_WARN, "r2h-token mismatch (source: user-agent)");
+      return TOKEN_SOURCE_NONE;
+    }
+  }
+
+  /* Token not found in any source */
+  logger(LOG_WARN, "Client request rejected: r2h-token not found");
+  return TOKEN_SOURCE_NONE;
+}
+
 static inline buffer_ref_t *connection_alloc_output_buffer(connection_t *c) {
   buffer_ref_t *buf_ref = NULL;
 
@@ -302,6 +468,9 @@ void connection_free(connection_t *c) {
     c->fd = -1;
   }
 
+  /* Cleanup HTTP request (free dynamically allocated body) */
+  http_request_cleanup(&c->http_req);
+
   free(c);
 }
 
@@ -556,34 +725,15 @@ int connection_route_and_start(connection_t *c) {
     return 0;
   }
 
-  /* Check r2h-token if configured */
+  /* Check r2h-token if configured (supports URL query, Cookie, User-Agent) */
   if (config.r2h_token != NULL && config.r2h_token[0] != '\0') {
-    if (!query_start) {
-      logger(LOG_WARN, "Client request rejected: missing r2h-token parameter");
+    token_source_t source = validate_r2h_token(c, query_start);
+    if (source == TOKEN_SOURCE_NONE) {
       http_send_401(c);
       return 0;
     }
-
-    /* Parse r2h-token parameter from query string (automatically URL-decoded)
-     */
-    char token_value[256];
-    if (http_parse_query_param(query_start + 1, "r2h-token", token_value,
-                               sizeof(token_value)) != 0) {
-      logger(LOG_WARN,
-             "Client request rejected: missing or invalid r2h-token parameter");
-      http_send_401(c);
-      return 0;
-    }
-
-    /* Compare token value with configured token */
-    if (strcmp(token_value, config.r2h_token) != 0) {
-      logger(LOG_WARN, "Client request rejected: invalid r2h-token (got: %s)",
-             token_value);
-      http_send_401(c);
-      return 0;
-    }
-
-    logger(LOG_DEBUG, "r2h-token validated");
+    /* Set cookie only when token was provided via URL query (first visit) */
+    c->should_set_r2h_cookie = (source == TOKEN_SOURCE_QUERY);
   }
 
   const char *status_route =

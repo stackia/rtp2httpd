@@ -1,9 +1,9 @@
 import { useCallback } from "react";
-import { buildStatusPath, buildUrl } from "../lib/url";
+import { buildStatusPath } from "../lib/url";
 
 export function useStatusApi() {
   const disconnectClient = useCallback(async (clientId: string) => {
-    const response = await fetch(buildUrl(buildStatusPath("/api/disconnect")), {
+    const response = await fetch(buildStatusPath("/api/disconnect"), {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ client_id: clientId }).toString(),
@@ -15,7 +15,7 @@ export function useStatusApi() {
   }, []);
 
   const setLogLevel = useCallback(async (level: string) => {
-    const response = await fetch(buildUrl(buildStatusPath("/api/log-level")), {
+    const response = await fetch(buildStatusPath("/api/log-level"), {
       method: "PUT",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ level }).toString(),
@@ -26,7 +26,7 @@ export function useStatusApi() {
   }, []);
 
   const clearLogs = useCallback(async () => {
-    const response = await fetch(buildUrl(buildStatusPath("/api/clear-logs")), {
+    const response = await fetch(buildStatusPath("/api/clear-logs"), {
       method: "POST",
     });
     const data = await response.json().catch(() => undefined);
@@ -36,7 +36,7 @@ export function useStatusApi() {
   }, []);
 
   const reloadConfig = useCallback(async () => {
-    const response = await fetch(buildUrl(buildStatusPath("/api/reload-config")), {
+    const response = await fetch(buildStatusPath("/api/reload-config"), {
       method: "POST",
     });
     const data = await response.json().catch(() => undefined);
@@ -46,7 +46,7 @@ export function useStatusApi() {
   }, []);
 
   const restartWorkers = useCallback(async () => {
-    const response = await fetch(buildUrl(buildStatusPath("/api/restart-workers")), {
+    const response = await fetch(buildStatusPath("/api/restart-workers"), {
       method: "POST",
     });
     const data = await response.json().catch(() => undefined);

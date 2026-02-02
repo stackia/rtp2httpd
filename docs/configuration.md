@@ -20,8 +20,9 @@ rtp2httpd [选项]
 - `-f, --upstream-interface-fcc <接口>` - FCC 上游接口（覆盖 `-i` 设置）
 - `-t, --upstream-interface-rtsp <接口>` - RTSP 上游接口（覆盖 `-i` 设置）
 - `-r, --upstream-interface-multicast <接口>` - 组播上游接口（覆盖 `-i` 设置）
+- `-y, --upstream-interface-http <接口>` - HTTP 代理上游接口（覆盖 `-i` 设置）
 
-**优先级规则**：`upstream-interface-{fcc,rtsp,multicast}` > `upstream-interface` > 系统路由表
+**优先级规则**：`upstream-interface-{fcc,rtsp,multicast,http}` > `upstream-interface` > 系统路由表
 
 ### 性能优化
 
@@ -127,12 +128,13 @@ upstream-interface = eth0
 # upstream-interface-multicast = eth0  # 组播流量 (RTP/UDP)
 # upstream-interface-fcc = eth1        # FCC
 # upstream-interface-rtsp = eth2       # RTSP
+# upstream-interface-http = eth3       # HTTP 代理
 #
 # 混合配置示例：默认使用 eth0，但 FCC 使用更快的 eth1
 # upstream-interface = eth0
 # upstream-interface-fcc = eth1
 #
-# 优先级：upstream-interface-{multicast,fcc,rtsp} > upstream-interface > 系统路由表
+# 优先级：upstream-interface-{multicast,fcc,rtsp,http} > upstream-interface > 系统路由表
 
 # 外部 M3U 配置（支持 file://, http://, https://）
 # 注意：HTTP/HTTPS 需要安装 curl 命令

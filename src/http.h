@@ -49,10 +49,15 @@ typedef struct {
   char x_forwarded_host[256];
   char x_forwarded_proto[16];
   int x_request_snapshot;
+  char cookie[1024];  /* Cookie header value for r2h-token extraction */
   http_parse_state_t parse_state;
   int content_length;
-  char body[1024];
-  int body_len;
+  char *body;         /* Dynamically allocated based on Content-Length */
+  size_t body_len;    /* Current body length */
+  size_t body_alloc;  /* Allocated size of body buffer */
+  /* Raw headers for proxying - stores all headers except Host, Connection */
+  char raw_headers[4096];
+  size_t raw_headers_len;
 } http_request_t;
 
 /**
@@ -60,6 +65,12 @@ typedef struct {
  * @param req Request structure to initialize
  */
 void http_request_init(http_request_t *req);
+
+/**
+ * Cleanup HTTP request structure (free dynamically allocated memory)
+ * @param req Request structure to cleanup
+ */
+void http_request_cleanup(http_request_t *req);
 
 /**
  * Parse HTTP request from buffer (incremental parsing)

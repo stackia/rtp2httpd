@@ -33,7 +33,7 @@
 #endif
 
 /* Service type enumeration */
-typedef enum { SERVICE_MRTP = 0, SERVICE_RTSP } service_type_t;
+typedef enum { SERVICE_MRTP = 0, SERVICE_RTSP, SERVICE_HTTP } service_type_t;
 
 /* Service source enumeration - tracks where the service was created from */
 typedef enum {
@@ -57,6 +57,7 @@ typedef struct service_s {
   uint16_t fec_port;     /* FEC multicast port (0 if not configured) */
   char *rtp_url;         /* Full RTP URL for SERVICE_MRTP */
   char *rtsp_url;        /* Full RTSP URL for SERVICE_RTSP */
+  char *http_url;        /* Full HTTP URL for SERVICE_HTTP */
   char *seek_param_name; /* Name of seek parameter (e.g., "playseek", "tvdr") */
   char *seek_param_value;  /* Value of seek parameter for time range */
   int seek_offset_seconds; /* Additional offset in seconds from r2h-seek-offset
@@ -108,6 +109,15 @@ service_t *service_create_from_rtsp_url(const char *http_url);
  * @return Pointer to newly allocated service structure or NULL on failure
  */
 service_t *service_create_from_rtp_url(const char *http_url);
+
+/**
+ * Create service from HTTP proxy URL
+ * Accepts format: /http/host:port/path?query
+ *
+ * @param http_url URL to parse
+ * @return Pointer to newly allocated service structure or NULL on failure
+ */
+service_t *service_create_from_http_url(const char *http_url);
 
 /**
  * Create service from configured service with query parameter merging

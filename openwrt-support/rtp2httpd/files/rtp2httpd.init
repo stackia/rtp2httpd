@@ -43,6 +43,7 @@ start_instance() {
             append_arg "$cfg" upstream_interface_multicast "--upstream-interface-multicast"
             append_arg "$cfg" upstream_interface_fcc "--upstream-interface-fcc"
             append_arg "$cfg" upstream_interface_rtsp "--upstream-interface-rtsp"
+            append_arg "$cfg" upstream_interface_http "--upstream-interface-http"
         else
             # Simple mode - use default interface for all
             append_arg "$cfg" upstream_interface "--upstream-interface"
