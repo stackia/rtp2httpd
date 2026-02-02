@@ -21,9 +21,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const uint8_t RS_MODULUS = 0x1d; /* x^8+x^4+x^3+x^2+1=0 */
-static const unsigned int RS_BOUND = 0x100;
-static const unsigned int RS_SIZE = 0xFF;
+#define RS_MODULUS 0x1d /* x^8+x^4+x^3+x^2+1=0 */
+#define RS_BOUND   0x100
+#define RS_SIZE    0xFF
 
 /*
  * Hardcoded G matrix for k=100, m=5
@@ -57,8 +57,7 @@ static const uint8_t fec_g4_k100[100] = {
  * For row 4, returns from hardcoded table.
  * For other k values, falls back to computed Vandermonde.
  */
-static uint8_t get_g_coefficient(int row, int col, int k,
-                                 const uint8_t *g0_table,
+static uint8_t get_g_coefficient(int row, int col, const uint8_t *g0_table,
                                  const uint8_t *g4_table)
 {
   if (row < 4)
@@ -257,7 +256,7 @@ rs_fec_t *rs_fec_new(int data_pkt_num, int fec_pkt_num)
       for (j = 0; j < rs->k; ++j)
       {
         rs->en_GM[i][j] =
-            get_g_coefficient(i, j, rs->k, fec_g0_k100, fec_g4_k100);
+            get_g_coefficient(i, j, fec_g0_k100, fec_g4_k100);
       }
     }
   }
