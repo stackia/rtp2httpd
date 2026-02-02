@@ -1,0 +1,7 @@
+server:
+  port: 8888
+
+http:
+  max_idle_conns: 999
+  max_idle_conns_per_host: 999
+  max_conns_per_host: 999
