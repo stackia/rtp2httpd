@@ -8,6 +8,8 @@ Multicast UDP replay tool for testing rtp2httpd.
 - IGMP-aware: starts sending when a process joins the multicast group, stops when all leave
 - Simulate network impairments: packet loss and reordering
 - Preserves original packet timing from capture
+- Adjustable playback speed for stress testing
+- Continuous replay mode with incrementing RTP sequence numbers
 
 ## Requirements
 
@@ -29,12 +31,14 @@ python main.py <pcapng_file> [options]
 
 ### Options
 
-| Option                  | Description                                     |
-| ----------------------- | ----------------------------------------------- |
-| `-i, --interface IFACE` | Network interface for multicast (e.g., eth0)    |
-| `-v, --verbose`         | Show verbose output                             |
-| `--loss PERCENT`        | Simulate packet loss (0-100%, default: 0)       |
-| `--reorder PERCENT`     | Simulate packet reordering (0-100%, default: 0) |
+| Option                  | Description                                                       |
+| ----------------------- | ----------------------------------------------------------------- |
+| `-i, --interface IFACE` | Network interface for multicast (e.g., eth0)                      |
+| `-v, --verbose`         | Show verbose output                                               |
+| `--loss PERCENT`        | Simulate packet loss (0-100%, default: 0)                         |
+| `--reorder PERCENT`     | Simulate packet reordering (0-100%, default: 0)                   |
+| `--speed MULTIPLIER`    | Playback speed multiplier (e.g., 2.0 for 2x, default: 1)          |
+| `--continuous`          | Continuous replay without gaps, with incrementing RTP seq numbers |
 
 ### Examples
 
@@ -56,6 +60,15 @@ python main.py fixtures/fec_sample.pcapng --reorder 5.0
 
 # Simulate both loss and reordering
 python main.py fixtures/fec_sample.pcapng --loss 0.5 --reorder 2.0 -v
+
+# 2x playback speed
+python main.py fixtures/fec_sample.pcapng --speed 2.0 -v
+
+# 10x speed continuous stress test (no gaps between loops)
+python main.py fixtures/fec_sample.pcapng --speed 10 --continuous -v
+
+# Continuous replay with packet loss simulation
+python main.py fixtures/fec_sample.pcapng --continuous --loss 1.0 -v
 ```
 
 ## Testing with rtp2httpd
@@ -106,6 +119,23 @@ Randomly delays packets by 1-10ms, causing them to arrive out of order. Useful f
 - RTP reorder buffer functionality
 - Jitter buffer behavior
 
+### Speed Control (`--speed`)
+
+Adjusts playback speed relative to original timing. Examples:
+
+- `--speed 2.0` - 2x faster (half the delay between packets)
+- `--speed 0.5` - Half speed (double the delay)
+- `--speed 10` - 10x faster for stress testing
+
+### Continuous Mode (`--continuous`)
+
+Enables seamless looping without the 3-second gap between replay cycles:
+
+- RTP sequence numbers are patched to increment continuously across loops
+- No pause between loop iterations
+- Ideal for stress testing and sustained high-throughput scenarios
+- Combine with `--speed` for maximum throughput: `--speed 100 --continuous`
+
 ## Fixtures
 
 - `fixtures/fec_sample.pcapng` - Sample capture with RTP and FEC packets
@@ -114,5 +144,5 @@ Randomly delays packets by 1-10ms, causing them to arrive out of order. Useful f
 ## Notes
 
 - The tool uses `IP_MULTICAST_LOOP=1` to allow local testing (sender and receiver on same machine)
-- Each replay loop is followed by a 3-second pause to allow rtp2httpd to reset its reorder state
+- Each replay loop is followed by a 3-second pause to allow rtp2httpd to reset its reorder state (unless `--continuous` is used)
 - Supports PPPoE and other encapsulations (handled by scapy)

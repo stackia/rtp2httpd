@@ -21,6 +21,34 @@ from threading import Thread, Event
 from scapy.all import PcapNgReader, UDP, IP, Raw
 
 
+def is_rtp_packet(payload: bytes) -> bool:
+    """Check if payload is an RTP packet (version 2)."""
+    return len(payload) >= 12 and (payload[0] & 0xC0) == 0x80
+
+
+def patch_rtp_sequence(payload: bytes, seq_offset: int) -> bytes:
+    """Patch RTP sequence number in payload.
+
+    RTP header format (first 12 bytes):
+    - Byte 0: V=2, P, X, CC
+    - Byte 1: M, PT
+    - Bytes 2-3: Sequence number (big-endian)
+    """
+    if not is_rtp_packet(payload):
+        return payload
+
+    # Calculate new sequence number (wrap at 65536)
+    orig_seq = (payload[2] << 8) | payload[3]
+    new_seq = (orig_seq + seq_offset) & 0xFFFF
+
+    # Patch in place using bytearray
+    patched = bytearray(payload)
+    patched[2] = (new_seq >> 8) & 0xFF
+    patched[3] = new_seq & 0xFF
+
+    return bytes(patched)
+
+
 @dataclass
 class PacketInfo:
     """Parsed UDP packet information."""
@@ -41,6 +69,8 @@ Examples:
   %(prog)s fixtures/fec_sample.pcapng
   %(prog)s fixtures/fec_sample.pcapng -i eth0
   %(prog)s fixtures/fec_sample.pcapng -v
+  %(prog)s fixtures/fec_sample.pcapng --speed 2.0           # 2x speed
+  %(prog)s fixtures/fec_sample.pcapng --speed 10 --continuous  # Stress test
   %(prog)s fixtures/fec_sample.pcapng --loss 1.0 --reorder 2.0
 """,
     )
@@ -70,15 +100,26 @@ Examples:
         metavar="PERCENT",
         help="Packet reorder rate in percent (0-100, default: 0)",
     )
+    parser.add_argument(
+        "--speed",
+        type=float,
+        default=1.0,
+        metavar="MULTIPLIER",
+        help="Playback speed multiplier (e.g., 2.0 for 2x, default: 1.0)",
+    )
+    parser.add_argument(
+        "--continuous",
+        action="store_true",
+        help="Continuous replay without gaps, with incrementing RTP seq numbers",
+    )
     return parser.parse_args()
 
 
-def load_packets(filepath: Path, verbose: bool = False) -> list[PacketInfo]:
+def load_packets(filepath: Path) -> list[PacketInfo]:
     """Load UDP packets from pcapng file."""
     packets: list[PacketInfo] = []
 
-    if verbose:
-        print(f"Loading {filepath}...", flush=True)
+    print(f"Loading {filepath}...", flush=True)
 
     with PcapNgReader(str(filepath)) as reader:
         for pkt in reader:
@@ -98,22 +139,21 @@ def load_packets(filepath: Path, verbose: bool = False) -> list[PacketInfo]:
                         )
                     )
 
-    if verbose:
-        if packets:
-            duration = packets[-1].timestamp - packets[0].timestamp
-            dests = set((p.dst_addr, p.dst_port) for p in packets)
-            print(
-                f"Loaded {len(packets)} UDP packets (duration: {duration:.2f}s)",
-                flush=True,
+    if packets:
+        duration = packets[-1].timestamp - packets[0].timestamp
+        dests = set((p.dst_addr, p.dst_port) for p in packets)
+        print(
+            f"Loaded {len(packets)} UDP packets (duration: {duration:.2f}s)",
+            flush=True,
+        )
+        for addr, port in sorted(dests):
+            count = sum(
+                1 for p in packets
+                if p.dst_addr == addr and p.dst_port == port
             )
-            for addr, port in sorted(dests):
-                count = sum(
-                    1 for p in packets
-                    if p.dst_addr == addr and p.dst_port == port
-                )
-                print(f"  -> {addr}:{port} ({count} packets)", flush=True)
-        else:
-            print("No UDP packets found in file", flush=True)
+            print(f"  -> {addr}:{port} ({count} packets)", flush=True)
+    else:
+        print("No UDP packets found in file", flush=True)
 
     return packets
 
@@ -178,31 +218,23 @@ def create_multicast_socket(
 class IGMPMonitor(Thread):
     """Thread that monitors /proc/net/igmp for group membership."""
 
-    def __init__(
-        self,
-        groups: dict[str, Event],
-        verbose: bool = False,
-    ):
+    def __init__(self, groups: dict[str, Event]):
         super().__init__(daemon=True)
         self.groups = groups  # {address: joined_event}
-        self.verbose = verbose
         self.running = True
 
     def run(self) -> None:
-        if self.verbose:
-            print("IGMP monitor started (polling /proc/net/igmp)", flush=True)
+        print("IGMP monitor started (polling /proc/net/igmp)", flush=True)
 
         while self.running:
             for addr, event in self.groups.items():
                 is_joined = check_igmp_membership(addr)
 
                 if is_joined and not event.is_set():
-                    if self.verbose:
-                        print(f"IGMP Join detected: {addr}", flush=True)
+                    print(f"IGMP Join detected: {addr}", flush=True)
                     event.set()
                 elif not is_joined and event.is_set():
-                    if self.verbose:
-                        print(f"IGMP Leave detected: {addr}", flush=True)
+                    print(f"IGMP Leave detected: {addr}", flush=True)
                     event.clear()
 
             time.sleep(0.05)  # Poll every 50ms for faster response
@@ -217,6 +249,8 @@ def replay_loop(
     group_events: dict[str, Event],
     loss_rate: float = 0.0,
     reorder_rate: float = 0.0,
+    speed: float = 1.0,
+    continuous: bool = False,
     verbose: bool = False,
 ) -> None:
     """Continuously replay packets when IGMP join is active."""
@@ -231,18 +265,48 @@ def replay_loop(
     total_bytes_sent = 0
     start_time = time.monotonic()
 
+    # Pre-calculate relative timestamps for speed adjustment
+    base_ts = packets[0].timestamp
+    relative_times = [(p.timestamp - base_ts) / speed for p in packets]
+
+    # For continuous mode: track RTP sequence offset per stream (by dest port)
+    # Each stream has its own sequence number space
+    stream_seq_offsets: dict[int, int] = {}  # port -> seq_offset
+    stream_rtp_counts: dict[int, int] = {}   # port -> rtp_packet_count
+    for p in packets:
+        if is_rtp_packet(p.payload):
+            port = p.dst_port
+            stream_rtp_counts[port] = stream_rtp_counts.get(port, 0) + 1
+            if port not in stream_seq_offsets:
+                stream_seq_offsets[port] = 0
+
     dests = set((p.dst_addr, p.dst_port) for p in packets)
     dest_str = ", ".join(f"{addr}:{port}" for addr, port in sorted(dests))
     print(f"Waiting for IGMP Join on {dest_str}...", flush=True)
-    if loss_rate > 0 or reorder_rate > 0:
-        print(
-            f"Simulation: loss={loss_rate:.1f}%, reorder={reorder_rate:.1f}%",
-            flush=True,
-        )
+
+    # Show mode information
+    mode_parts = []
+    if speed != 1.0:
+        mode_parts.append(f"speed={speed:.1f}x")
+    if continuous:
+        mode_parts.append("continuous")
+    if loss_rate > 0:
+        mode_parts.append(f"loss={loss_rate:.1f}%")
+    if reorder_rate > 0:
+        mode_parts.append(f"reorder={reorder_rate:.1f}%")
+    if mode_parts:
+        print(f"Mode: {', '.join(mode_parts)}", flush=True)
+
     print("(Ctrl+C to stop)", flush=True)
 
     # Buffer for reordering (holds delayed packets)
     reorder_buffer: list[tuple[PacketInfo, float]] = []
+
+    # Periodic stats tracking
+    stats_interval = 5.0  # Print stats every 5 seconds
+    last_stats_time = time.monotonic()
+    interval_packets = 0
+    interval_bytes = 0
 
     try:
         while True:
@@ -259,7 +323,7 @@ def replay_loop(
             dropped_this_loop = 0
             reordered_this_loop = 0
 
-            if verbose and loop_count == 1:
+            if loop_count == 1:
                 print("Starting replay...", flush=True)
 
             for i, pkt in enumerate(packets):
@@ -268,16 +332,21 @@ def replay_loop(
                     if not group_events[pkt.dst_addr].is_set():
                         continue
 
-                # Apply original timing
-                if i > 0:
-                    delay = pkt.timestamp - packets[i - 1].timestamp
-                    if delay > 0:
-                        time.sleep(delay)
+                # Wait until target time using busy-wait for precision
+                target_time = loop_start + relative_times[i]
+                now = time.monotonic()
+                wait_time = target_time - now
 
-                # Check again after sleep
-                if pkt.dst_addr in group_events:
-                    if not group_events[pkt.dst_addr].is_set():
-                        continue
+                if wait_time > 0.01:
+                    # Long wait: use sleep for most of it, then busy-wait
+                    time.sleep(wait_time - 0.001)
+                    while time.monotonic() < target_time:
+                        pass
+                elif wait_time > 0:
+                    # Short wait: busy-wait only
+                    while time.monotonic() < target_time:
+                        pass
+                # else: we're behind schedule, send immediately
 
                 # Send any buffered reordered packets that are due
                 now = time.monotonic()
@@ -304,17 +373,42 @@ def replay_loop(
 
                 # Simulate packet reordering
                 if reorder_rate > 0 and random.random() * 100 < reorder_rate:
-                    # Delay this packet by 1-5 packets worth of time
+                    # Delay this packet by 1-10ms
                     delay_time = random.uniform(0.001, 0.01)
                     reorder_buffer.append((pkt, time.monotonic() + delay_time))
                     reordered_this_loop += 1
                     total_packets_reordered += 1
                     continue
 
-                sock.sendto(pkt.payload, (pkt.dst_addr, pkt.dst_port))
+                # Patch RTP sequence number in continuous mode
+                port = pkt.dst_port
+                if continuous and port in stream_seq_offsets and stream_seq_offsets[port] > 0:
+                    payload = patch_rtp_sequence(pkt.payload, stream_seq_offsets[port])
+                else:
+                    payload = pkt.payload
+
+                sock.sendto(payload, (pkt.dst_addr, pkt.dst_port))
                 total_packets_sent += 1
-                total_bytes_sent += len(pkt.payload)
+                total_bytes_sent += len(payload)
                 packets_this_loop += 1
+                interval_packets += 1
+                interval_bytes += len(payload)
+
+                # Periodic stats output
+                now = time.monotonic()
+                if now - last_stats_time >= stats_interval:
+                    elapsed_interval = now - last_stats_time
+                    pkt_rate = interval_packets / elapsed_interval
+                    byte_rate = interval_bytes / elapsed_interval
+                    print(
+                        f"[Stats] {pkt_rate:.1f} pkt/s, "
+                        f"{byte_rate / 1024 / 1024:.2f} MB/s, "
+                        f"{byte_rate * 8 / 1024 / 1024:.2f} Mbps",
+                        flush=True,
+                    )
+                    last_stats_time = now
+                    interval_packets = 0
+                    interval_bytes = 0
 
             # Flush remaining reorder buffer at end of loop
             for delayed_pkt, _ in reorder_buffer:
@@ -338,15 +432,21 @@ def replay_loop(
                 stats += f" in {loop_duration:.2f}s"
                 print(stats, flush=True)
 
-            # Wait 3 seconds before next loop
-            if verbose:
-                print("Waiting 3s before next loop...", flush=True)
-            time.sleep(3.0)
-
-            # Check if still joined before next loop
-            any_joined = any(event.is_set() for event in group_events.values())
-            if not any_joined:
+            if continuous:
+                # Continuous mode: update seq offset per stream and continue immediately
+                for port, count in stream_rtp_counts.items():
+                    stream_seq_offsets[port] += count
+            else:
+                # Normal mode: wait 3 seconds before next loop
                 if verbose:
+                    print("Waiting 3s before next loop...", flush=True)
+                time.sleep(3.0)
+
+                # Check if still joined before next loop
+                any_joined = any(
+                    event.is_set() for event in group_events.values()
+                )
+                if not any_joined:
                     print("All groups left, waiting for Join...", flush=True)
 
     except KeyboardInterrupt:
@@ -387,8 +487,12 @@ def main() -> int:
         print("Error: --reorder must be between 0 and 100", file=sys.stderr)
         return 1
 
+    if args.speed <= 0:
+        print("Error: --speed must be greater than 0", file=sys.stderr)
+        return 1
+
     try:
-        packets = load_packets(args.pcapng_file, verbose=args.verbose)
+        packets = load_packets(args.pcapng_file)
     except Exception as e:
         print(f"Error loading pcapng file: {e}", file=sys.stderr)
         return 1
@@ -401,14 +505,13 @@ def main() -> int:
     groups = set(p.dst_addr for p in packets)
     group_events: dict[str, Event] = {addr: Event() for addr in groups}
 
-    if args.verbose:
-        print(
-            f"Monitoring IGMP for groups: {', '.join(sorted(groups))}",
-            flush=True,
-        )
+    print(
+        f"Monitoring IGMP for groups: {', '.join(sorted(groups))}",
+        flush=True,
+    )
 
     # Start IGMP monitor
-    igmp_monitor = IGMPMonitor(group_events, verbose=args.verbose)
+    igmp_monitor = IGMPMonitor(group_events)
     igmp_monitor.start()
 
     try:
@@ -424,6 +527,8 @@ def main() -> int:
             group_events,
             loss_rate=args.loss,
             reorder_rate=args.reorder,
+            speed=args.speed,
+            continuous=args.continuous,
             verbose=args.verbose,
         )
     finally:
