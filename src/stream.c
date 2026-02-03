@@ -215,6 +215,11 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
                                   conn->http_req.body_len);
     }
 
+    /* Set request headers for base URL construction during content rewriting */
+    http_proxy_set_request_headers(&ctx->http_proxy, conn->http_req.hostname,
+                                   conn->http_req.x_forwarded_host,
+                                   conn->http_req.x_forwarded_proto);
+
     /* Initiate connection */
     if (http_proxy_connect(&ctx->http_proxy) < 0) {
       logger(LOG_ERROR, "HTTP Proxy: Failed to initiate connection");

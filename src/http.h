@@ -141,6 +141,29 @@ int http_filter_query_param(const char *query_string, const char *exclude_param,
                             char *output, size_t output_size);
 
 /**
+ * Filter Cookie header to remove a specific cookie (case-insensitive name)
+ * Cookie format: "name1=value1; name2=value2; ..."
+ * @param cookie_header Input cookie header value
+ * @param exclude_name Cookie name to exclude (case-insensitive)
+ * @param output Output buffer
+ * @param output_size Output buffer size
+ * @return Length of output string, or -1 on error
+ */
+int http_filter_cookie(const char *cookie_header, const char *exclude_name,
+                       char *output, size_t output_size);
+
+/**
+ * Filter User-Agent header to remove R2HTOKEN/xxx pattern
+ * Format: "... R2HTOKEN/value ..." or "... R2HTOKEN/value"
+ * @param user_agent Input User-Agent header value
+ * @param output Output buffer
+ * @param output_size Output buffer size
+ * @return Length of output string, or -1 on error
+ */
+int http_filter_user_agent_token(const char *user_agent, char *output,
+                                 size_t output_size);
+
+/**
  * Send HTTP 400 Bad Request response
  * @param conn Connection object
  */

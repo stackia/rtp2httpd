@@ -21,6 +21,7 @@ rtp2httpd_SOURCES = \
 	stream.c \
 	rtsp.c \
 	http_proxy.c \
+	http_proxy_rewrite.c \
 	stun.c \
 	snapshot.c \
 	timezone.c \
@@ -55,6 +56,7 @@ noinst_HEADERS = \
 	stream.h \
 	rtsp.h \
 	http_proxy.h \
+	http_proxy_rewrite.h \
 	stun.h \
 	snapshot.h \
 	timezone.h \

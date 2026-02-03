@@ -261,8 +261,9 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
         }
 
         /* Save raw headers for proxy forwarding (exclude Host, Connection,
-         * Content-Length, Transfer-Encoding which are handled specially, and
-         * X-Forwarded-* headers which should not be forwarded to upstream) */
+         * Content-Length, Transfer-Encoding which are handled specially,
+         * and X-Forwarded-* headers which should not be forwarded to upstream).
+         * Cookie and User-Agent are filtered to remove r2h-token before forwarding. */
         if (strcasecmp(inbuf, "Host") != 0 &&
             strcasecmp(inbuf, "Connection") != 0 &&
             strcasecmp(inbuf, "Content-Length") != 0 &&
@@ -270,16 +271,41 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
             strcasecmp(inbuf, "X-Forwarded-For") != 0 &&
             strcasecmp(inbuf, "X-Forwarded-Host") != 0 &&
             strcasecmp(inbuf, "X-Forwarded-Proto") != 0) {
-          size_t header_line_len =
-              strlen(inbuf) + 2 + strlen(value) + 2; /* "Name: Value\r\n" */
-          if (req->raw_headers_len + header_line_len <
-              sizeof(req->raw_headers) - 1) {
-            int added =
-                snprintf(req->raw_headers + req->raw_headers_len,
-                         sizeof(req->raw_headers) - req->raw_headers_len,
-                         "%s: %s\r\n", inbuf, value);
-            if (added > 0) {
-              req->raw_headers_len += (size_t)added;
+          const char *filtered_value = value;
+          char filter_buf[2048];
+
+          /* Filter r2h-token from Cookie header */
+          if (strcasecmp(inbuf, "Cookie") == 0 && config.r2h_token[0]) {
+            int flen = http_filter_cookie(value, "r2h-token", filter_buf,
+                                          sizeof(filter_buf));
+            if (flen > 0) {
+              filtered_value = filter_buf;
+            } else if (flen == 0) {
+              /* Cookie is empty after filtering, skip this header */
+              filtered_value = NULL;
+            }
+          }
+          /* Filter R2HTOKEN/xxx from User-Agent header */
+          else if (strcasecmp(inbuf, "User-Agent") == 0 && config.r2h_token[0]) {
+            int flen = http_filter_user_agent_token(value, filter_buf,
+                                                    sizeof(filter_buf));
+            if (flen > 0) {
+              filtered_value = filter_buf;
+            }
+          }
+
+          if (filtered_value && filtered_value[0]) {
+            size_t header_line_len = strlen(inbuf) + 2 + strlen(filtered_value) +
+                                     2; /* "Name: Value\r\n" */
+            if (req->raw_headers_len + header_line_len <
+                sizeof(req->raw_headers) - 1) {
+              int added =
+                  snprintf(req->raw_headers + req->raw_headers_len,
+                           sizeof(req->raw_headers) - req->raw_headers_len,
+                           "%s: %s\r\n", inbuf, filtered_value);
+              if (added > 0) {
+                req->raw_headers_len += (size_t)added;
+              }
             }
           }
         }
@@ -470,6 +496,161 @@ int http_parse_query_param(const char *query_string, const char *param_name,
   }
 
   return 0;
+}
+
+/**
+ * Filter Cookie header to remove a specific cookie (case-insensitive name)
+ * Cookie format: "name1=value1; name2=value2; ..."
+ * @param cookie_header Input cookie header value
+ * @param exclude_name Cookie name to exclude (case-insensitive)
+ * @param output Output buffer
+ * @param output_size Output buffer size
+ * @return Length of output string, or -1 on error
+ */
+int http_filter_cookie(const char *cookie_header, const char *exclude_name,
+                       char *output, size_t output_size) {
+  if (!cookie_header || !exclude_name || !output || output_size == 0) {
+    return -1;
+  }
+
+  size_t exclude_len = strlen(exclude_name);
+  size_t out_len = 0;
+  const char *pos = cookie_header;
+  int first_cookie = 1;
+
+  output[0] = '\0';
+
+  while (*pos) {
+    /* Skip leading whitespace */
+    while (*pos == ' ' || *pos == '\t')
+      pos++;
+
+    if (*pos == '\0')
+      break;
+
+    /* Find end of current cookie (semicolon or end of string) */
+    const char *cookie_end = strchr(pos, ';');
+    size_t cookie_len = cookie_end ? (size_t)(cookie_end - pos) : strlen(pos);
+
+    /* Check if this cookie matches the one to exclude */
+    int should_exclude = 0;
+    if (cookie_len > exclude_len && pos[exclude_len] == '=' &&
+        strncasecmp(pos, exclude_name, exclude_len) == 0) {
+      should_exclude = 1;
+    }
+
+    if (!should_exclude && cookie_len > 0) {
+      /* Add separator if not first cookie */
+      if (!first_cookie) {
+        if (out_len + 2 >= output_size) {
+          return -1; /* Buffer too small */
+        }
+        output[out_len++] = ';';
+        output[out_len++] = ' ';
+      }
+
+      /* Copy cookie */
+      if (out_len + cookie_len >= output_size) {
+        return -1; /* Buffer too small */
+      }
+      memcpy(output + out_len, pos, cookie_len);
+      out_len += cookie_len;
+      first_cookie = 0;
+    }
+
+    /* Move to next cookie */
+    if (cookie_end) {
+      pos = cookie_end + 1;
+    } else {
+      break;
+    }
+  }
+
+  output[out_len] = '\0';
+  return (int)out_len;
+}
+
+/**
+ * Filter User-Agent header to remove R2HTOKEN/xxx pattern
+ * Format: "... R2HTOKEN/value ..." or "... R2HTOKEN/value"
+ * @param user_agent Input User-Agent header value
+ * @param output Output buffer
+ * @param output_size Output buffer size
+ * @return Length of output string, or -1 on error
+ */
+int http_filter_user_agent_token(const char *user_agent, char *output,
+                                 size_t output_size) {
+  if (!user_agent || !output || output_size == 0) {
+    return -1;
+  }
+
+  const char *token_start = strcasestr(user_agent, "R2HTOKEN/");
+  if (!token_start) {
+    /* No token found, copy as-is */
+    size_t len = strlen(user_agent);
+    if (len >= output_size) {
+      return -1;
+    }
+    memcpy(output, user_agent, len + 1);
+    return (int)len;
+  }
+
+  /* Find end of token (space or end of string) */
+  const char *token_end = token_start + 9; /* Skip "R2HTOKEN/" */
+  while (*token_end && *token_end != ' ' && *token_end != '\t')
+    token_end++;
+
+  /* Determine if there's a space before and after the token.
+   * We want to remove exactly one space to avoid double spaces or missing spaces.
+   * If token is at start: "R2HTOKEN/xxx suffix" -> "suffix"
+   * If token is at end: "prefix R2HTOKEN/xxx" -> "prefix"
+   * If token is in middle: "prefix R2HTOKEN/xxx suffix" -> "prefix suffix"
+   */
+  int has_leading_space =
+      (token_start > user_agent &&
+       (*(token_start - 1) == ' ' || *(token_start - 1) == '\t'));
+  int has_trailing_space = (*token_end == ' ' || *token_end == '\t');
+
+  /* Determine prefix end point */
+  const char *prefix_end = token_start;
+  if (has_leading_space && has_trailing_space) {
+    /* Token in middle: remove leading space, keep trailing space */
+    prefix_end--;
+  } else if (has_leading_space) {
+    /* Token at end: remove leading space */
+    prefix_end--;
+  }
+  /* If only trailing space or no spaces: prefix_end stays at token_start */
+
+  /* Determine suffix start point */
+  const char *suffix_start = token_end;
+  if (!has_leading_space && has_trailing_space) {
+    /* Token at start: skip trailing space */
+    suffix_start++;
+  }
+  /* If token in middle or at end: suffix_start stays at token_end */
+
+  /* Calculate output: prefix + suffix */
+  size_t prefix_len = (size_t)(prefix_end - user_agent);
+  size_t suffix_len = strlen(suffix_start);
+  size_t total_len = prefix_len + suffix_len;
+
+  if (total_len >= output_size) {
+    return -1;
+  }
+
+  /* Copy prefix */
+  if (prefix_len > 0) {
+    memcpy(output, user_agent, prefix_len);
+  }
+
+  /* Copy suffix */
+  if (suffix_len > 0) {
+    memcpy(output + prefix_len, suffix_start, suffix_len);
+  }
+
+  output[total_len] = '\0';
+  return (int)total_len;
 }
 
 /**

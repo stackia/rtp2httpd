@@ -111,6 +111,18 @@ const char *get_upstream_interface_for_multicast(void);
 const char *get_upstream_interface_for_http(void);
 
 /**
+ * Build base URL for proxy based on request headers and config
+ * Priority: XFF headers (if enabled) > Host header > get_server_address()
+ *
+ * @param host_header HTTP Host header (can be NULL)
+ * @param x_forwarded_host X-Forwarded-Host header (can be NULL)
+ * @param x_forwarded_proto X-Forwarded-Proto header (can be NULL)
+ * @return malloc'd base URL string (caller must free), or NULL on error
+ */
+char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host,
+                           const char *x_forwarded_proto);
+
+/**
  * Get local IP address for FCC packets
  * Uses the configured upstream interface for FCC, or falls back to first
  * non-loopback address
