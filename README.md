@@ -8,10 +8,10 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 
 ### 📡 多协议支持
 
-- **组播 RTP/UDP 转单播 HTTP**：将组播 RTP/UDP 流转换为标准 HTTP 流 (RTP->HTTP)
-- **RTSP 转 HTTP 视频流**：完整支持 RTSP/RTP 协议栈，包括 TCP 和 UDP 传输模式 (RTSP->HTTP)
+- **RTP->HTTP**：将组播 RTP/UDP 流转换为标准 HTTP 流
+- **RTSP->HTTP**：RTSP 转为 HTTP 视频流，完整支持 RTSP/RTP 协议栈，包括 TCP 和 UDP 传输模式
   - 可以实现 IPTV RTSP 时移源的回看
-- **HTTP 反向代理**：可以反向代理 IPTV 内网 HLS 源，方便在局域网、公网观看 (HTTP->HTTP)
+- **HTTP->HTTP**：实现了完整反向代理，可以将 IPTV 内网 HLS 源代理到局域网、公网，方便观看
 - **UDPxy 兼容性**：完全兼容 UDPxy URL 格式
 - **M3U 播放列表集成**：支持 M3U/M3U8 格式，自动识别并转换节目地址，提供标准化的播放列表
   - 支持外部 M3U URL
@@ -49,7 +49,7 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 - **缓冲池优化**：预分配缓冲池，避免频繁内存分配，多客户端根据负载动态共享，避免慢客户端吃满资源
 - **零拷贝技术**：支持 Linux 内核 MSG_ZEROCOPY 特性，避免数据在用户态和内核态之间的拷贝
 - **轻量化**：使用纯 C 语言编写，零依赖，小巧简洁，适合运行在各种嵌入式设备上（路由器、光猫、NAS 等）
-  - 程序大小仅 300KB (x86_64)，并内置了 Web 播放器所有前端资源
+  - 程序大小仅 340KB (x86_64)，并内置了 Web 播放器所有前端资源
 - 查看 **[性能测试报告](docs/benchmark.md)**（与 msd_lite、udpxy、tvgate 的性能对比）
 
 ## 📹 演示效果
