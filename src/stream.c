@@ -344,13 +344,12 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
     if (ctx->http_proxy.state == HTTP_PROXY_STATE_COMPLETE) {
       logger(LOG_DEBUG, "HTTP Proxy: Transfer complete");
       /* Set connection to closing state - worker will close it after
-       * output queue is drained. Return -2 to indicate graceful close. */
+       * output queue is drained. */
       ctx->conn->state = CONN_CLOSING;
       /* Trigger EPOLLOUT to flush any remaining data in the queue */
       connection_epoll_update_events(
           ctx->conn->epfd, ctx->conn->fd,
           EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
-      return -2;
     }
     return 0;
   }
