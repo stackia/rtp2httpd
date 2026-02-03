@@ -11,6 +11,7 @@ export function stateToVariant(state: ClientState): "default" | "secondary" | "d
     case ClientState.RtspPlaying:
     case ClientState.RtspSetup:
     case ClientState.RtspConnected:
+    case ClientState.HttpStreaming:
       return "default";
     case ClientState.Error:
       return "destructive";
@@ -48,6 +49,10 @@ const STATE_TRANSLATIONS: Record<ClientState, TranslationKey> = {
   [ClientState.RtspAwaitingTeardown]: "clientStateRtspAwaitingTeardown",
   [ClientState.RtspTeardownComplete]: "clientStateRtspTeardownComplete",
   [ClientState.RtspPaused]: "clientStateRtspPaused",
+  [ClientState.HttpConnecting]: "clientStateHttpConnecting",
+  [ClientState.HttpSendingRequest]: "clientStateHttpSendingRequest",
+  [ClientState.HttpAwaitingHeaders]: "clientStateHttpAwaitingHeaders",
+  [ClientState.HttpStreaming]: "clientStateHttpStreaming",
   [ClientState.Error]: "clientStateError",
   [ClientState.Disconnected]: "clientStateDisconnected",
 };

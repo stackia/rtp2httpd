@@ -61,8 +61,12 @@ export enum ClientState {
   RtspAwaitingTeardown = 23,
   RtspTeardownComplete = 24,
   RtspPaused = 25,
-  Error = 26,
-  Disconnected = 27,
+  HttpConnecting = 26,
+  HttpSendingRequest = 27,
+  HttpAwaitingHeaders = 28,
+  HttpStreaming = 29,
+  Error = 30,
+  Disconnected = 31,
 }
 
 export interface ClientEntry {

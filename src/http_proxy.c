@@ -271,6 +271,10 @@ int http_proxy_connect(http_proxy_session_t *session) {
       }
 
       session->state = HTTP_PROXY_STATE_CONNECTING;
+      if (session->status_index >= 0) {
+        status_update_client_state(session->status_index,
+                                   CLIENT_STATE_HTTP_CONNECTING);
+      }
       return 0; /* Success - connection in progress */
     } else {
       /* Real connection error */
@@ -311,6 +315,10 @@ int http_proxy_connect(http_proxy_session_t *session) {
   }
 
   session->state = HTTP_PROXY_STATE_SENDING_REQUEST;
+  if (session->status_index >= 0) {
+    status_update_client_state(session->status_index,
+                               CLIENT_STATE_HTTP_SENDING_REQUEST);
+  }
   return 0;
 }
 
@@ -818,6 +826,10 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
   session->response_buffer_pos = body_len;
 
   session->state = HTTP_PROXY_STATE_STREAMING;
+  if (session->status_index >= 0) {
+    status_update_client_state(session->status_index,
+                               CLIENT_STATE_HTTP_STREAMING);
+  }
 
   return 1; /* Headers complete */
 }
@@ -882,6 +894,10 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
     }
 
     session->state = HTTP_PROXY_STATE_SENDING_REQUEST;
+    if (session->status_index >= 0) {
+      status_update_client_state(session->status_index,
+                                 CLIENT_STATE_HTTP_SENDING_REQUEST);
+    }
   }
 
   /* Handle writable socket - send pending request */
@@ -900,6 +916,10 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
       logger(LOG_DEBUG, "HTTP Proxy: Request sent (%zu headers + %zu body bytes)",
              session->pending_request_len, session->request_body_len);
       session->state = HTTP_PROXY_STATE_AWAITING_HEADERS;
+      if (session->status_index >= 0) {
+        status_update_client_state(session->status_index,
+                                   CLIENT_STATE_HTTP_AWAITING_HEADERS);
+      }
 
       /* Update epoll to only monitor EPOLLIN */
       if (session->epoll_fd >= 0) {
