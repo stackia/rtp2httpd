@@ -150,8 +150,9 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
     if (result > 0) {
       ctx->total_bytes_sent += (uint64_t)result;
     }
-    /* Check if transfer is complete */
-    if (ctx->http_proxy.state == HTTP_PROXY_STATE_COMPLETE) {
+    /* Check if transfer is complete (only process once) */
+    if (ctx->http_proxy.state == HTTP_PROXY_STATE_COMPLETE &&
+        ctx->conn->state != CONN_CLOSING) {
       logger(LOG_DEBUG, "HTTP Proxy: Transfer complete");
       /* Set connection to closing state - worker will close it after
        * output queue is drained. */
