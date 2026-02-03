@@ -275,7 +275,8 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
           char filter_buf[2048];
 
           /* Filter r2h-token from Cookie header */
-          if (strcasecmp(inbuf, "Cookie") == 0 && config.r2h_token[0]) {
+          if (strcasecmp(inbuf, "Cookie") == 0 && config.r2h_token &&
+              config.r2h_token[0] != '\0') {
             int flen = http_filter_cookie(value, "r2h-token", filter_buf,
                                           sizeof(filter_buf));
             if (flen > 0) {
@@ -286,7 +287,8 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
             }
           }
           /* Filter R2HTOKEN/xxx from User-Agent header */
-          else if (strcasecmp(inbuf, "User-Agent") == 0 && config.r2h_token[0]) {
+          else if (strcasecmp(inbuf, "User-Agent") == 0 && config.r2h_token &&
+                   config.r2h_token[0] != '\0') {
             int flen = http_filter_user_agent_token(value, filter_buf,
                                                     sizeof(filter_buf));
             if (flen > 0) {

@@ -151,7 +151,7 @@ int http_proxy_parse_url(http_proxy_session_t *session, const char *url) {
 
     /* Check if URL has query string with potential r2h-token */
     const char *query_start = strchr(slash, '?');
-    if (query_start && config.r2h_token[0]) {
+    if (query_start && config.r2h_token && config.r2h_token[0] != '\0') {
       /* Copy path portion up to query string */
       size_t path_len = (size_t)(query_start - slash);
       memcpy(session->target_path, slash, path_len);
