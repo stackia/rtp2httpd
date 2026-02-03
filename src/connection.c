@@ -489,11 +489,14 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len) {
     /* Allocate a buffer from the pool */
     buffer_ref_t *buf_ref = connection_alloc_output_buffer(c);
     if (!buf_ref) {
-      /* Pool exhausted */
-      logger(LOG_WARN,
-             "connection_queue_output: Buffer pool exhausted, cannot queue %zu "
-             "bytes",
-             remaining);
+      /* Pool exhausted.
+       * Use fprintf instead of logger to avoid feedback loop:
+       * logger -> status_add_log_entry -> SSE update -> pool exhausted -> logger
+       */
+      fprintf(stderr,
+              "connection_queue_output: Buffer pool exhausted, cannot queue "
+              "%zu bytes\n",
+              remaining);
       return -1;
     }
 
@@ -508,12 +511,14 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len) {
 
     /* Queue this buffer for zero-copy send */
     if (connection_queue_zerocopy(c, buf_ref) < 0) {
-      /* Queue full - release the buffer and fail */
+      /* Queue full - release the buffer and fail.
+       * Use fprintf instead of logger to avoid feedback loop:
+       * logger -> status_add_log_entry -> SSE update -> queue full -> logger */
       buffer_ref_put(buf_ref);
-      logger(LOG_WARN,
-             "connection_queue_output: Zero-copy queue full, cannot queue %zu "
-             "bytes",
-             remaining);
+      fprintf(stderr,
+              "connection_queue_output: Zero-copy queue full, cannot queue %zu "
+              "bytes\n",
+              remaining);
       return -1;
     }
 
