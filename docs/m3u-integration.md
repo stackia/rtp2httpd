@@ -175,7 +175,7 @@ http://other-cdn.com/live/stream.m3u8
 ### 输出 M3U（转换后）
 
 ```m3u
-#EXTM3U x-tvg-url="http://192.168.1.1:5140/epg.xml"
+#EXTM3U x-tvg-url="http://192.168.1.1:5140/epg.xml.gz"
 
 #EXTINF:-1 tvg-id="CCTV1" tvg-name="CCTV1" tvg-logo="https://example.com/logo/CCTV1.png" group-title="央视" catchup="default" catchup-source="http://192.168.1.1:5140/CCTV-1/catchup?playseek={utc:YmdHMS}-{utcend:YmdHMS}",CCTV-1
 http://192.168.1.1:5140/央视/CCTV-1
