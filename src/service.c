@@ -288,7 +288,8 @@ service_t *service_create_from_http_url(const char *http_url) {
   }
 
   /* Build full HTTP URL: http://host:port/path */
-  char full_url[HTTP_URL_BUFFER_SIZE];
+  /* Use larger buffer to accommodate "http://" prefix + url_part */
+  char full_url[HTTP_URL_BUFFER_SIZE + 8];
   snprintf(full_url, sizeof(full_url), "http://%s", url_part);
   result->http_url = strdup(full_url);
   if (!result->http_url) {

@@ -3,6 +3,7 @@
 #include "epg.h"
 #include "http.h"
 #include "http_fetch.h"
+#include "http_proxy.h"
 #include "md5.h"
 #include "service.h"
 #include "utils.h"
@@ -634,89 +635,6 @@ static int build_service_url(const char *service_name, const char *query_params,
   return 0;
 }
 
-/* Check if URL is a plain HTTP URL that should be proxied
- * Returns: 1 if URL is http:// (not https://), 0 otherwise
- */
-static int is_http_proxy_url(const char *url) {
-  /* Only support http:// URLs for proxying (not https://) */
-  if (strncasecmp(url, "http://", 7) == 0) {
-    /* Make sure it's not already a wrapped URL (http://host/rtp/...) */
-    const char *path_start = strchr(url + 7, '/');
-    if (path_start) {
-      /* Check if path starts with /rtp/, /udp/, /rtsp/, or /http/ */
-      if (strncmp(path_start, "/rtp/", 5) == 0 ||
-          strncmp(path_start, "/udp/", 5) == 0 ||
-          strncmp(path_start, "/rtsp/", 6) == 0 ||
-          strncmp(path_start, "/http/", 6) == 0) {
-        return 0; /* Already wrapped, don't treat as plain HTTP */
-      }
-    }
-    return 1;
-  }
-  return 0;
-}
-
-/* Build HTTP proxy URL for transformed M3U
- * Converts http://host:port/path to {BASE_URL}http/host:port/path
- * http_url: original HTTP URL (must start with http://)
- * output: buffer to store transformed URL
- * output_size: size of output buffer
- * Returns: 0 on success, -1 on error
- */
-static int build_http_proxy_url(const char *http_url, char *output,
-                                size_t output_size) {
-  const char *host_start;
-  char *encoded_token = NULL;
-  int result;
-  int has_r2h_token = (config.r2h_token && config.r2h_token[0] != '\0');
-
-  /* Skip http:// prefix */
-  if (strncasecmp(http_url, "http://", 7) != 0) {
-    logger(LOG_ERROR, "build_http_proxy_url: URL must start with http://");
-    return -1;
-  }
-  host_start = http_url + 7; /* Points to host:port/path */
-
-  /* URL encode r2h-token if configured */
-  if (has_r2h_token) {
-    encoded_token = http_url_encode(config.r2h_token);
-    if (!encoded_token) {
-      logger(LOG_ERROR, "Failed to URL encode r2h-token");
-      return -1;
-    }
-  }
-
-  /* Build proxy URL: {BASE_URL}http/host:port/path[?r2h-token=xxx] */
-  /* Check if original URL has query parameters */
-  const char *query_start = strchr(host_start, '?');
-
-  if (has_r2h_token && encoded_token) {
-    if (query_start) {
-      /* Original URL has query params, append r2h-token with & */
-      result = snprintf(output, output_size, "%shttp/%s&r2h-token=%s",
-                        M3U_BASE_URL_PLACEHOLDER, host_start, encoded_token);
-    } else {
-      /* No query params, add r2h-token with ? */
-      result = snprintf(output, output_size, "%shttp/%s?r2h-token=%s",
-                        M3U_BASE_URL_PLACEHOLDER, host_start, encoded_token);
-    }
-  } else {
-    /* No r2h-token, just transform the URL */
-    result = snprintf(output, output_size, "%shttp/%s", M3U_BASE_URL_PLACEHOLDER,
-                      host_start);
-  }
-
-  if (encoded_token)
-    free(encoded_token);
-
-  if (result >= (int)output_size) {
-    logger(LOG_ERROR, "HTTP proxy URL too long");
-    return -1;
-  }
-
-  return 0;
-}
-
 /* Check if URL can be recognized and converted to a service
  * Returns: 1 if URL can be handled, 0 otherwise
  */
@@ -1244,15 +1162,15 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
           append_to_transformed_m3u(line, service_source);
           append_to_transformed_m3u("\n", service_source);
         }
-      } else if (is_http_proxy_url(line)) {
+      } else if (http_proxy_is_proxy_url(line)) {
         /* HTTP URL: convert to http proxy format without creating a service */
         char http_proxy_url[MAX_URL_LENGTH];
 
         append_to_transformed_m3u(transformed_line, service_source);
         append_to_transformed_m3u("\n", service_source);
 
-        if (build_http_proxy_url(line, http_proxy_url, sizeof(http_proxy_url)) ==
-            0) {
+        if (http_proxy_build_url(line, M3U_BASE_URL_PLACEHOLDER, http_proxy_url,
+                                 sizeof(http_proxy_url)) == 0) {
           append_to_transformed_m3u(http_proxy_url, service_source);
           logger(LOG_DEBUG, "Converted HTTP URL to proxy format: %s", line);
         } else {
