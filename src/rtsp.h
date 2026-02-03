@@ -107,6 +107,7 @@ typedef enum {
 
 /* RTSP session structure */
 typedef struct {
+  int initialized; /* Flag: session has been initialized with resources */
   int socket;                /* TCP socket to RTSP server */
   int epoll_fd;              /* Epoll file descriptor for socket registration */
   struct connection_s *conn; /* Connection pointer for fdmap registration */
@@ -299,5 +300,13 @@ int rtsp_send_keepalive(rtsp_session_t *session);
  * @return 0 on success, -1 on error
  */
 int rtsp_state_machine_advance(rtsp_session_t *session);
+
+/**
+ * Periodic tick for RTSP session (STUN timeout, keepalive)
+ * @param session RTSP session
+ * @param now Current timestamp in milliseconds
+ * @return 0 on success
+ */
+int rtsp_session_tick(rtsp_session_t *session, int64_t now);
 
 #endif /* __RTSP_H__ */

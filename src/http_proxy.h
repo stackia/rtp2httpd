@@ -42,6 +42,7 @@ typedef enum {
 
 /* HTTP proxy session structure */
 typedef struct {
+  int initialized; /* Flag: session has been initialized with resources */
   int socket;                        /* TCP socket to upstream server */
   int epoll_fd;                      /* Epoll file descriptor for socket
                                         registration */

@@ -183,6 +183,7 @@ static void fec_free_group(fec_group_t *grp)
 void fec_init(fec_context_t *ctx, uint16_t fec_port, rtp_reorder_t *reorder)
 {
   memset(ctx, 0, sizeof(*ctx));
+  ctx->initialized = 1;
   ctx->sock = -1;
   ctx->reorder = reorder;
   ctx->fec_port = fec_port;
@@ -190,6 +191,11 @@ void fec_init(fec_context_t *ctx, uint16_t fec_port, rtp_reorder_t *reorder)
 
 void fec_cleanup(fec_context_t *ctx, int epoll_fd)
 {
+  /* Skip if never initialized */
+  if (!ctx->initialized) {
+    return;
+  }
+
   /* Close FEC socket if open */
   if (ctx->sock >= 0)
   {
@@ -225,6 +231,9 @@ void fec_cleanup(fec_context_t *ctx, int epoll_fd)
            (unsigned long)total_loss,
            (unsigned long)ctx->recovery_successes, recovery_pct);
   }
+
+  /* Mark as not initialized */
+  ctx->initialized = 0;
 }
 
 int fec_process_packet(fec_context_t *ctx, const uint8_t *data, int len)

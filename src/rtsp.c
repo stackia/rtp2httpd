@@ -271,6 +271,7 @@ static int rtsp_build_basic_auth_header(rtsp_session_t *session, char *output,
 
 void rtsp_session_init(rtsp_session_t *session) {
   memset(session, 0, sizeof(rtsp_session_t));
+  session->initialized = 1;
   session->state = RTSP_STATE_INIT;
   session->socket = -1;
   session->epoll_fd = -1;
@@ -1690,6 +1691,42 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
   }
 }
 
+int rtsp_session_tick(rtsp_session_t *session, int64_t now) {
+  if (!session || !session->initialized) {
+    return 0;
+  }
+
+  /* Check STUN timeout if waiting for STUN response */
+  if (session->stun.in_progress && session->state == RTSP_STATE_DESCRIBED) {
+    if (stun_check_timeout(&session->stun) > 0) {
+      /* STUN finally timed out, advance state machine to continue with local
+       * port */
+      rtsp_state_machine_advance(session);
+    }
+  }
+
+  /* Send periodic RTSP OPTIONS keepalive when using UDP transport */
+  if (session->state == RTSP_STATE_PLAYING &&
+      session->transport_mode == RTSP_TRANSPORT_UDP &&
+      session->keepalive_interval_ms > 0 && session->session_id[0] != '\0') {
+    if (session->last_keepalive_ms == 0) {
+      session->last_keepalive_ms = now;
+    }
+
+    int64_t keepalive_elapsed = now - session->last_keepalive_ms;
+    if (keepalive_elapsed >= session->keepalive_interval_ms) {
+      int ka_status = rtsp_send_keepalive(session);
+      if (ka_status == 0) {
+        session->last_keepalive_ms = now;
+      } else if (ka_status < 0) {
+        logger(LOG_WARN, "RTSP: Failed to queue OPTIONS keepalive");
+      }
+    }
+  }
+
+  return 0;
+}
+
 int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session,
                                      connection_t *conn) {
   int bytes_received;
@@ -1977,8 +2014,9 @@ static void rtsp_force_cleanup(rtsp_session_t *session) {
   session->session_id[0] = '\0';
   session->server_url[0] = '\0';
 
-  /* Mark cleanup as done */
+  /* Mark cleanup as done and reset initialized flag */
   session->cleanup_done = 1;
+  session->initialized = 0;
 
   session->state = RTSP_STATE_INIT;
   logger(LOG_DEBUG, "RTSP: Session cleanup complete");
@@ -2072,6 +2110,11 @@ static int rtsp_initiate_teardown(rtsp_session_t *session) {
  * It will initiate TEARDOWN if in SETUP or PLAYING state
  */
 int rtsp_session_cleanup(rtsp_session_t *session) {
+  /* Skip cleanup if session was never initialized */
+  if (!session->initialized) {
+    return 0; /* Nothing to clean up */
+  }
+
   /* Prevent re-entry: if cleanup already done, skip */
   if (session->cleanup_done) {
     logger(LOG_DEBUG, "RTSP: Cleanup already completed, skipping");

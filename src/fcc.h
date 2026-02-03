@@ -45,6 +45,7 @@ typedef enum {
 
 /* FCC Session Context - encapsulates all FCC-related state */
 typedef struct {
+  int initialized; /* Flag: session has been initialized with resources */
   fcc_state_t state;
   fcc_type_t type;  /* FCC protocol type (Telecom or Huawei) */
   int status_index; /* Index in status_shared->clients array for state updates
@@ -60,6 +61,8 @@ typedef struct {
   int redirect_count;         /* Number of redirects followed */
   int64_t unicast_start_time; /* Timestamp when unicast started (for sync wait
                                  timeout) */
+  int64_t last_data_time;     /* Timestamp of last received FCC data for timeout
+                                 detection */
 
   /* Huawei FCC specific fields */
   uint32_t session_id;        /* Session ID for NAT traversal correlation */
@@ -99,6 +102,24 @@ void fcc_session_init(fcc_session_t *fcc);
  * @param epoll_fd Epoll file descriptor for socket cleanup
  */
 void fcc_session_cleanup(fcc_session_t *fcc, service_t *service, int epoll_fd);
+
+/**
+ * Periodic tick for FCC session (timeout checks)
+ *
+ * @param ctx Stream context (needed for multicast join on fallback)
+ * @param now Current timestamp in milliseconds
+ * @return 0 on success, -1 if connection should be closed
+ */
+int fcc_session_tick(stream_context_t *ctx, int64_t now);
+
+/**
+ * Handle FCC socket events (receive and process packets)
+ *
+ * @param ctx Stream context
+ * @param now Current timestamp in milliseconds
+ * @return 0 on success, -1 on error
+ */
+int fcc_handle_socket_event(stream_context_t *ctx, int64_t now);
 
 /**
  * Set FCC session state with logging and status update
