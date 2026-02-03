@@ -6,6 +6,8 @@ rtp2httpd 支持多种流媒体协议，通过不同的 URL 前缀进行区分�
 
 当配置了 r2h-token（HTTP 请求认证令牌）时，所有 URL 都需要额外带上参数 `r2h-token=<your token>` 才能访问。
 
+> 除了 URL 参数，也支持通过 Cookie 或者 User Agent 来传递 `r2h-token`。例如 `Cookie: r2h-token=xxx` 或 `User-Agent: R2HTOKEN/xxx`。
+
 ## 组播 RTP 流转换
 
 ```url
@@ -106,25 +108,7 @@ http://192.168.1.1:5140/http/api.example.com/video?auth=xxx&quality=hd
 
 - 仅支持 HTTP 上游（不支持 HTTPS）
 - 可通过 `upstream-interface-http` 配置指定上游网络接口
-
-### r2h-token 认证
-
-当配置了 r2h-token 时，HTTP 代理支持从多个来源获取认证令牌：
-
-1. **URL 查询参数**（最高优先级）：`?r2h-token=xxx`
-2. **Cookie**：`Cookie: r2h-token=xxx`
-3. **User-Agent**：`User-Agent: ... R2HTOKEN/xxx`
-
-**为什么需要多来源认证？**
-
-HTTP 代理的典型用途是代理上游 HLS 流媒体。HLS 协议的工作方式是：播放器先请求 `.m3u8` 索引文件，然后根据索引文件中的 URL 请求后续的 `.ts` 媒体分片。
-
-问题在于：rtp2httpd 不会改写 m3u8 内容，因此索引文件中的分片 URL 不会包含 `r2h-token` 参数。如果只支持 URL 参数认证，播放器在请求后续分片时就会因为缺少 token 而被拒绝。
-
-多来源认证解决了这个问题：
-
-- **网页播放器**：首次请求 `/playlist.m3u?r2h-token=xxx` 时，服务器下发 `Set-Cookie: r2h-token=xxx`，浏览器后续请求自动携带 Cookie
-- **客户端播放器**：大多数客户端都允许修改 User-Agent，在 User-Agent 中添加 `R2HTOKEN/yourtoken`，所有请求都会自动认证
+- 如果被代理的目标 URL 是 m3u 类型，其中所有 `http://` URL 会被自动改写为经过 rtp2httpd 代理后的地址
 
 ## M3U 播放列表访问
 
