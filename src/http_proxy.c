@@ -2,7 +2,7 @@
 #include "buffer_pool.h"
 #include "configuration.h"
 #include "connection.h"
-#include "http.h"
+#include "http.h" /* For http_url_encode */
 #include "multicast.h"
 #include "status.h"
 #include "utils.h"
@@ -571,12 +571,22 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
   return bytes_forwarded;
 }
 
+/* Check if status code is a redirect that may have Location header */
+static int http_proxy_is_redirect_status(int status_code) {
+  return (status_code == 301 || status_code == 302 || status_code == 303 ||
+          status_code == 307 || status_code == 308);
+}
+
 static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
   char *header_end;
   char *line;
   char *body_start;
   size_t header_len;
   char headers_copy[HTTP_PROXY_RESPONSE_BUFFER_SIZE];
+  char location_header[HTTP_PROXY_PATH_SIZE];
+  int has_location = 0;
+
+  location_header[0] = '\0';
 
   /* Look for end of headers (double CRLF) */
   session->response_buffer[session->response_buffer_pos] = '\0';
@@ -631,6 +641,15 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
                                      1] = '\0';
       logger(LOG_DEBUG, "HTTP Proxy: Content-Type: %s",
              session->response_content_type);
+    } else if (strncasecmp(line, "Location:", 9) == 0) {
+      /* Extract Location header value for potential rewriting */
+      char *value = line + 9;
+      while (*value == ' ')
+        value++;
+      strncpy(location_header, value, sizeof(location_header) - 1);
+      location_header[sizeof(location_header) - 1] = '\0';
+      has_location = 1;
+      logger(LOG_DEBUG, "HTTP Proxy: Location: %s", location_header);
     }
     /* Note: Transfer-Encoding is passed through, not parsed */
   }
@@ -640,44 +659,142 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
   /* Forward response headers to client - flush immediately */
   if (!session->headers_forwarded && session->conn) {
     /*
-     * We need to inject Set-Cookie header if should_set_r2h_cookie is set.
-     * Strategy: send headers without final \r\n\r\n, optionally inject
-     * Set-Cookie, then send \r\n\r\n.
+     * For redirect responses (30x), we need to rewrite the Location header
+     * to point back through the proxy. We rebuild headers line by line.
+     *
+     * For non-redirect responses, we need to inject Set-Cookie header if
+     * should_set_r2h_cookie is set.
      */
-    size_t headers_without_crlf = header_len - 2; /* Exclude final \r\n */
+    int is_redirect = http_proxy_is_redirect_status(session->response_status_code);
+    char rewritten_location[HTTP_PROXY_PATH_SIZE];
+    int location_rewritten = 0;
 
-    /* Send headers up to (but not including) final \r\n\r\n */
-    if (connection_queue_output(session->conn, session->response_buffer,
-                                headers_without_crlf) < 0) {
-      logger(LOG_ERROR, "HTTP Proxy: Failed to forward headers to client");
-      return -1;
+    /* Rewrite Location header for redirects */
+    if (is_redirect && has_location) {
+      if (http_proxy_build_url(location_header, "/", rewritten_location,
+                               sizeof(rewritten_location)) == 0) {
+        location_rewritten = 1;
+        logger(LOG_DEBUG, "HTTP Proxy: Rewritten Location: %s -> %s",
+               location_header, rewritten_location);
+      }
     }
 
-    /* Inject Set-Cookie header if needed */
-    if (session->conn->should_set_r2h_cookie && config.r2h_token &&
-        config.r2h_token[0] != '\0') {
-      char set_cookie_header[512];
-      int cookie_len =
-          snprintf(set_cookie_header, sizeof(set_cookie_header),
-                   "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; "
-                   "SameSite=Strict\r\n",
-                   config.r2h_token);
-      if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
-        if (connection_queue_output(session->conn,
-                                    (const uint8_t *)set_cookie_header,
-                                    cookie_len) < 0) {
-          logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
+    if (location_rewritten) {
+      /*
+       * Need to rebuild headers with modified Location.
+       * Parse original headers again and rebuild with new Location value.
+       */
+      char rebuilt_headers[HTTP_PROXY_RESPONSE_BUFFER_SIZE];
+      char *rebuild_ptr = rebuilt_headers;
+      size_t rebuild_remaining = sizeof(rebuilt_headers);
+      char *orig_line;
+      char orig_headers[HTTP_PROXY_RESPONSE_BUFFER_SIZE];
+      int first_line = 1;
+
+      /* Copy headers again for parsing */
+      memcpy(orig_headers, session->response_buffer, header_len - 2);
+      orig_headers[header_len - 2] = '\0';
+
+      /* Rebuild headers line by line */
+      orig_line = strtok(orig_headers, "\r\n");
+      while (orig_line != NULL) {
+        int written;
+
+        if (strncasecmp(orig_line, "Location:", 9) == 0) {
+          /* Replace Location header with rewritten value */
+          written = snprintf(rebuild_ptr, rebuild_remaining, "Location: %s\r\n",
+                             rewritten_location);
+        } else {
+          /* Copy other headers as-is */
+          written = snprintf(rebuild_ptr, rebuild_remaining, "%s\r\n", orig_line);
+        }
+
+        if (written < 0 || (size_t)written >= rebuild_remaining) {
+          logger(LOG_ERROR, "HTTP Proxy: Rebuilt headers too large");
           return -1;
         }
-        logger(LOG_DEBUG, "HTTP Proxy: Injected Set-Cookie header for r2h-token");
-      }
-      session->conn->should_set_r2h_cookie = 0; /* Only set once */
-    }
 
-    /* Send final \r\n to end headers */
-    if (connection_queue_output(session->conn, (const uint8_t *)"\r\n", 2) < 0) {
-      logger(LOG_ERROR, "HTTP Proxy: Failed to send header terminator");
-      return -1;
+        rebuild_ptr += written;
+        rebuild_remaining -= written;
+        first_line = 0;
+        orig_line = strtok(NULL, "\r\n");
+      }
+
+      (void)first_line; /* Suppress unused warning */
+
+      /* Send rebuilt headers */
+      size_t rebuilt_len = rebuild_ptr - rebuilt_headers;
+      if (connection_queue_output(session->conn, (const uint8_t *)rebuilt_headers,
+                                  rebuilt_len) < 0) {
+        logger(LOG_ERROR, "HTTP Proxy: Failed to forward rebuilt headers");
+        return -1;
+      }
+
+      /* Inject Set-Cookie header if needed */
+      if (session->conn->should_set_r2h_cookie && config.r2h_token &&
+          config.r2h_token[0] != '\0') {
+        char set_cookie_header[512];
+        int cookie_len =
+            snprintf(set_cookie_header, sizeof(set_cookie_header),
+                     "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; "
+                     "SameSite=Strict\r\n",
+                     config.r2h_token);
+        if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
+          if (connection_queue_output(session->conn,
+                                      (const uint8_t *)set_cookie_header,
+                                      cookie_len) < 0) {
+            logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
+            return -1;
+          }
+          logger(LOG_DEBUG,
+                 "HTTP Proxy: Injected Set-Cookie header for r2h-token");
+        }
+        session->conn->should_set_r2h_cookie = 0;
+      }
+
+      /* Send final CRLF to end headers */
+      if (connection_queue_output(session->conn, (const uint8_t *)"\r\n", 2) < 0) {
+        logger(LOG_ERROR, "HTTP Proxy: Failed to send header terminator");
+        return -1;
+      }
+    } else {
+      /* No Location rewriting needed - use original logic */
+      size_t headers_without_crlf = header_len - 2; /* Exclude final \r\n */
+
+      /* Send headers up to (but not including) final \r\n\r\n */
+      if (connection_queue_output(session->conn, session->response_buffer,
+                                  headers_without_crlf) < 0) {
+        logger(LOG_ERROR, "HTTP Proxy: Failed to forward headers to client");
+        return -1;
+      }
+
+      /* Inject Set-Cookie header if needed */
+      if (session->conn->should_set_r2h_cookie && config.r2h_token &&
+          config.r2h_token[0] != '\0') {
+        char set_cookie_header[512];
+        int cookie_len =
+            snprintf(set_cookie_header, sizeof(set_cookie_header),
+                     "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; "
+                     "SameSite=Strict\r\n",
+                     config.r2h_token);
+        if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
+          if (connection_queue_output(session->conn,
+                                      (const uint8_t *)set_cookie_header,
+                                      cookie_len) < 0) {
+            logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
+            return -1;
+          }
+          logger(LOG_DEBUG,
+                 "HTTP Proxy: Injected Set-Cookie header for r2h-token");
+        }
+        session->conn->should_set_r2h_cookie = 0; /* Only set once */
+      }
+
+      /* Send final \r\n to end headers */
+      if (connection_queue_output(session->conn, (const uint8_t *)"\r\n", 2) < 0) {
+        logger(LOG_ERROR, "HTTP Proxy: Failed to send header terminator");
+        return -1;
+      }
     }
 
     session->headers_forwarded = 1;
@@ -871,3 +988,77 @@ int http_proxy_session_cleanup(http_proxy_session_t *session) {
 
   return 0;
 }
+
+int http_proxy_is_proxy_url(const char *url) {
+  /* Only support http:// URLs for proxying (not https://) */
+  if (strncasecmp(url, "http://", 7) == 0) {
+    /* Make sure it's not already a wrapped URL (http://host/rtp/...) */
+    const char *path_start = strchr(url + 7, '/');
+    if (path_start) {
+      /* Check if path starts with /rtp/, /udp/, /rtsp/, or /http/ */
+      if (strncmp(path_start, "/rtp/", 5) == 0 ||
+          strncmp(path_start, "/udp/", 5) == 0 ||
+          strncmp(path_start, "/rtsp/", 6) == 0 ||
+          strncmp(path_start, "/http/", 6) == 0) {
+        return 0; /* Already wrapped, don't treat as plain HTTP */
+      }
+    }
+    return 1;
+  }
+  return 0;
+}
+
+int http_proxy_build_url(const char *http_url, const char *base_url_placeholder,
+                         char *output, size_t output_size) {
+  const char *host_start;
+  char *encoded_token = NULL;
+  int result;
+  int has_r2h_token = (config.r2h_token && config.r2h_token[0] != '\0');
+
+  /* Skip http:// prefix */
+  if (strncasecmp(http_url, "http://", 7) != 0) {
+    logger(LOG_ERROR, "http_proxy_build_url: URL must start with http://");
+    return -1;
+  }
+  host_start = http_url + 7; /* Points to host:port/path */
+
+  /* URL encode r2h-token if configured */
+  if (has_r2h_token) {
+    encoded_token = http_url_encode(config.r2h_token);
+    if (!encoded_token) {
+      logger(LOG_ERROR, "Failed to URL encode r2h-token");
+      return -1;
+    }
+  }
+
+  /* Build proxy URL: {BASE_URL}http/host:port/path[?r2h-token=xxx] */
+  /* Check if original URL has query parameters */
+  const char *query_start = strchr(host_start, '?');
+
+  if (has_r2h_token && encoded_token) {
+    if (query_start) {
+      /* Original URL has query params, append r2h-token with & */
+      result = snprintf(output, output_size, "%shttp/%s&r2h-token=%s",
+                        base_url_placeholder, host_start, encoded_token);
+    } else {
+      /* No query params, add r2h-token with ? */
+      result = snprintf(output, output_size, "%shttp/%s?r2h-token=%s",
+                        base_url_placeholder, host_start, encoded_token);
+    }
+  } else {
+    /* No r2h-token, just transform the URL */
+    result =
+        snprintf(output, output_size, "%shttp/%s", base_url_placeholder, host_start);
+  }
+
+  if (encoded_token)
+    free(encoded_token);
+
+  if (result >= (int)output_size) {
+    logger(LOG_ERROR, "HTTP proxy URL too long");
+    return -1;
+  }
+
+  return 0;
+}
+
