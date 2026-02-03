@@ -9,7 +9,7 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 ### 📡 多协议支持
 
 - **RTP->HTTP**：将组播 RTP/UDP 流转换为标准 HTTP 流
-- **RTSP->HTTP**：RTSP 转为 HTTP 视频流，完整支持 RTSP/RTP 协议栈，包括 TCP 和 UDP 传输模式
+- **RTSP->HTTP**：RTSP 转为 HTTP 视频流，完整支持 RTSP/RTP 协议栈，支持 UDP NAT 穿透 (STUN)
   - 可以实现 IPTV RTSP 时移源的回看
 - **HTTP->HTTP**：实现了完整反向代理，可以将 IPTV 内网 HLS 源代理到局域网、公网，方便观看
 - **UDPxy 兼容性**：完全兼容 UDPxy URL 格式
@@ -37,7 +37,7 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 
 ### 🎬 内置播放器
 
-- **浏览器直接使用**：内置基于 Web 的现代化播放器界面，可以在浏览器直接打开播放
+- **浏览器直接使用**：内置基于 Web 的现代化播放器界面，可以在浏览器直接打开播放，桌面/移动端 UI 自适应
 - **快速起播**：搭配 FCC 可实现快速起播、快速换台
 - **支持时移和回看**：支持 EPG 电子节目单，支持时移和回看（需要有 RTSP 回看源）
 - **零开销**：纯 Web 前端实现，对 rtp2httpd 运行几乎没有资源占用（无解码转码开销）
