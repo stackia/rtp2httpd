@@ -523,16 +523,11 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
 
               connection_queue_output_and_flush(c, (const uint8_t *)response,
                                                 strlen(response));
-            } else if (c->state != CONN_CLOSING) {
-              /* Only handle if not in CONN_CLOSING state.
-               * CONN_CLOSING connections will be closed by EPOLLOUT handler
-               * after output queue is drained (graceful close). */
-              if (!c->headers_sent) {
-                /* Send 503 if headers not sent yet (no data ever arrived) */
-                http_send_503(c);
-              } else {
-                worker_close_and_free_connection(c);
-              }
+            } else if (!c->headers_sent && c->state != CONN_CLOSING) {
+              /* Send 503 if headers not sent yet (no data ever arrived) */
+              http_send_503(c);
+            } else {
+              worker_close_and_free_connection(c);
             }
             continue; /* Skip further processing for this connection */
           }
