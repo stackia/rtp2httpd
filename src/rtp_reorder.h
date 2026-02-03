@@ -5,9 +5,11 @@
 #include "rtp_fec.h"
 #include <stdint.h>
 
-/* Window size must be power of 2, >= max FEC k value (300) + margin */
-#define RTP_REORDER_WINDOW_SIZE 512
-#define RTP_REORDER_WINDOW_MASK 511 /* Fast modulo: seq & MASK */
+/* Window sizes must be power of 2 for fast modulo (seq & mask) */
+#define RTP_REORDER_WINDOW_SIZE_SMALL 32   /* Without FEC: minimal reordering */
+#define RTP_REORDER_WINDOW_MASK_SMALL 31
+#define RTP_REORDER_WINDOW_SIZE_LARGE 512  /* With FEC: >= max FEC k value (300) + margin */
+#define RTP_REORDER_WINDOW_MASK_LARGE 511
 
 /*
  * Number of packets to collect before determining base sequence.
@@ -26,15 +28,23 @@ typedef struct stream_context_s stream_context_t;
 typedef struct connection_s connection_t;
 
 typedef struct rtp_reorder_s {
-  buffer_ref_t *slots[RTP_REORDER_WINDOW_SIZE]; /* RTP payload buffers */
-  uint16_t seq[RTP_REORDER_WINDOW_SIZE]; /* Sequence number per slot (for FEC validation) */
-  uint16_t base_seq;                     /* Next expected sequence for delivery */
-  uint16_t count;                        /* Number of buffered packets */
-  uint8_t initialized;                   /* Flag: context has been initialized */
-  uint8_t phase;                         /* 0=not started, 1=collecting, 2=active */
+  buffer_ref_t **slots;  /* RTP payload buffers (dynamically allocated) */
+  uint16_t *seq;         /* Sequence number per slot (dynamically allocated) */
+  uint16_t window_size;  /* Current window size (64 or 512) */
+  uint16_t window_mask;  /* Fast modulo mask (window_size - 1) */
+  uint16_t base_seq;     /* Next expected sequence for delivery */
+  uint16_t count;        /* Number of buffered packets */
+  uint8_t initialized;   /* Flag: context has been initialized */
+  uint8_t phase;         /* 0=not started, 1=collecting, 2=active */
 } rtp_reorder_t;
 
-void rtp_reorder_init(rtp_reorder_t *r);
+/**
+ * Initialize reorder context
+ * @param r Reorder context
+ * @param use_fec If true, use large window (512) for FEC; otherwise small (64)
+ * @return 0 on success, -1 on memory allocation failure
+ */
+int rtp_reorder_init(rtp_reorder_t *r, int use_fec);
 void rtp_reorder_cleanup(rtp_reorder_t *r);
 
 /**

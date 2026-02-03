@@ -237,7 +237,10 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
     }
 
     /* Initialize RTP reorder and FEC (common to all RTP-based services) */
-    rtp_reorder_init(&ctx->reorder);
+    if (rtp_reorder_init(&ctx->reorder, service->fec_port > 0) < 0) {
+      logger(LOG_ERROR, "Failed to initialize RTP reorder buffer");
+      return -1;
+    }
     fec_init(&ctx->fec, service->fec_port, &ctx->reorder);
 
     if (service->service_type == SERVICE_RTSP) {

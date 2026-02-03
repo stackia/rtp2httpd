@@ -379,7 +379,7 @@ int fec_attempt_recovery(fec_context_t *ctx, uint16_t seq,
   }
 
   /* Quick check: k exceeds reorder buffer size, recovery impossible */
-  if (grp->k > RTP_REORDER_WINDOW_SIZE)
+  if (grp->k > reorder->window_size)
   {
     return -1;
   }
