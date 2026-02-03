@@ -31,6 +31,7 @@ int snapshot_init(snapshot_context_t *ctx) {
     return -1;
 
   memset(ctx, 0, sizeof(snapshot_context_t));
+  ctx->initialized = 1;
 
   /* Create tmp mmap file for IDR frame accumulation */
   char tmp_path[] = "/tmp/rtp2httpd_idr_frame_XXXXXX";
@@ -64,7 +65,6 @@ int snapshot_init(snapshot_context_t *ctx) {
     return -1;
   }
 
-  ctx->enabled = 1;
   ctx->fallback_to_streaming = 0;
   ctx->idr_frame_size = 0;
   ctx->idr_frame_complete = 0;
@@ -87,7 +87,7 @@ int snapshot_init(snapshot_context_t *ctx) {
  * Free snapshot context and release resources
  */
 void snapshot_free(snapshot_context_t *ctx) {
-  if (!ctx)
+  if (!ctx || !ctx->initialized)
     return;
 
   if (ctx->idr_frame_mmap && ctx->idr_frame_mmap != MAP_FAILED) {
@@ -100,7 +100,7 @@ void snapshot_free(snapshot_context_t *ctx) {
     ctx->idr_frame_fd = -1;
   }
 
-  ctx->enabled = 0;
+  ctx->initialized = 0;
 }
 
 /**
@@ -322,7 +322,7 @@ static int snapshot_convert_to_jpeg(int idr_frame_fd, size_t idr_frame_size,
  */
 int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
                             connection_t *conn) {
-  if (!ctx || !ctx->enabled)
+  if (!ctx || !ctx->initialized)
     return -1;
 
   if (ctx->idr_frame_complete)
@@ -533,7 +533,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
 
 void snapshot_fallback_to_streaming(snapshot_context_t *ctx,
                                     connection_t *conn) {
-  if (!ctx || !ctx->enabled || !conn)
+  if (!ctx || !ctx->initialized || !conn)
     return;
 
   if (!ctx->fallback_to_streaming) {

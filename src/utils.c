@@ -3,10 +3,15 @@
 #include "rtp2httpd.h"
 #include "status.h"
 #include "supervisor.h"
+#include <arpa/inet.h>
+#include <errno.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <time.h>
 
@@ -116,4 +121,139 @@ int logger(loglevel_t level, const char *format, ...) {
     }
   }
   return r;
+}
+
+void bind_to_upstream_interface(int sock, const char *ifname) {
+  if (ifname && ifname[0] != '\0') {
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(struct ifreq));
+    strncpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
+
+    /* Get the latest interface index dynamically to handle interface restarts
+     * (e.g., PPPoE reconnection) */
+    unsigned int ifindex = if_nametoindex(ifr.ifr_name);
+    if (ifindex > 0) {
+      ifr.ifr_ifindex = (int)ifindex;
+    } else {
+      logger(LOG_WARN, "Failed to get interface index for %s: %s", ifr.ifr_name,
+             strerror(errno));
+    }
+
+    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, &ifr,
+                   sizeof(struct ifreq)) < 0) {
+      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s",
+             ifr.ifr_name, strerror(errno));
+    }
+  }
+}
+
+const char *get_upstream_interface_for_fcc(void) {
+  /* Priority: upstream_interface_fcc > upstream_interface */
+  if (config.upstream_interface_fcc[0] != '\0') {
+    return config.upstream_interface_fcc;
+  }
+  if (config.upstream_interface[0] != '\0') {
+    return config.upstream_interface;
+  }
+  return NULL;
+}
+
+const char *get_upstream_interface_for_rtsp(void) {
+  /* Priority: upstream_interface_rtsp > upstream_interface */
+  if (config.upstream_interface_rtsp[0] != '\0') {
+    return config.upstream_interface_rtsp;
+  }
+  if (config.upstream_interface[0] != '\0') {
+    return config.upstream_interface;
+  }
+  return NULL;
+}
+
+const char *get_upstream_interface_for_multicast(void) {
+  /* Priority: upstream_interface_multicast > upstream_interface */
+  if (config.upstream_interface_multicast[0] != '\0') {
+    return config.upstream_interface_multicast;
+  }
+  if (config.upstream_interface[0] != '\0') {
+    return config.upstream_interface;
+  }
+  return NULL;
+}
+
+const char *get_upstream_interface_for_http(void) {
+  /* Priority: upstream_interface_http > upstream_interface */
+  if (config.upstream_interface_http[0] != '\0') {
+    return config.upstream_interface_http;
+  }
+  if (config.upstream_interface[0] != '\0') {
+    return config.upstream_interface;
+  }
+  return NULL;
+}
+
+/**
+ * Get local IP address for FCC packets
+ * Priority: upstream_interface_fcc > upstream_interface > first non-loopback IP
+ */
+uint32_t get_local_ip_for_fcc(void) {
+  const char *ifname = get_upstream_interface_for_fcc();
+  struct ifaddrs *ifaddr, *ifa;
+  uint32_t local_ip = 0;
+
+  if (getifaddrs(&ifaddr) == -1) {
+    logger(LOG_ERROR, "getifaddrs failed: %s", strerror(errno));
+    return 0;
+  }
+
+  /* If specific interface is configured, get its IP */
+  if (ifname && ifname[0] != '\0') {
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+      if (ifa->ifa_addr == NULL)
+        continue;
+
+      if (ifa->ifa_addr->sa_family == AF_INET &&
+          strcmp(ifa->ifa_name, ifname) == 0) {
+        struct sockaddr_in *addr =
+            (struct sockaddr_in *)(uintptr_t)ifa->ifa_addr;
+        local_ip = ntohl(addr->sin_addr.s_addr);
+        logger(LOG_DEBUG, "FCC: Using local IP from interface %s: %u.%u.%u.%u",
+               ifname, (local_ip >> 24) & 0xFF, (local_ip >> 16) & 0xFF,
+               (local_ip >> 8) & 0xFF, local_ip & 0xFF);
+        break;
+      }
+    }
+  }
+
+  /* Fallback: Get first non-loopback IPv4 address */
+  if (local_ip == 0) {
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+      if (ifa->ifa_addr == NULL)
+        continue;
+
+      if (ifa->ifa_addr->sa_family == AF_INET) {
+        struct sockaddr_in *addr =
+            (struct sockaddr_in *)(uintptr_t)ifa->ifa_addr;
+        uint32_t ip = ntohl(addr->sin_addr.s_addr);
+
+        /* Skip loopback (127.0.0.0/8) */
+        if ((ip >> 24) != 127) {
+          local_ip = ip;
+          logger(
+              LOG_DEBUG,
+              "FCC: Using first non-loopback IP from interface %s: %u.%u.%u.%u",
+              ifa->ifa_name, (local_ip >> 24) & 0xFF, (local_ip >> 16) & 0xFF,
+              (local_ip >> 8) & 0xFF, local_ip & 0xFF);
+          break;
+        }
+      }
+    }
+  }
+
+  freeifaddrs(ifaddr);
+
+  if (local_ip == 0) {
+    logger(LOG_WARN, "FCC: Could not determine local IP address");
+  }
+
+  return local_ip;
 }

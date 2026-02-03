@@ -37,6 +37,7 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session);
 
 void http_proxy_session_init(http_proxy_session_t *session) {
   memset(session, 0, sizeof(http_proxy_session_t));
+  session->initialized = 1;
   session->state = HTTP_PROXY_STATE_INIT;
   session->socket = -1;
   session->epoll_fd = -1;
@@ -956,7 +957,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
 }
 
 int http_proxy_session_cleanup(http_proxy_session_t *session) {
-  if (!session) {
+  if (!session || !session->initialized) {
     return 0;
   }
 
@@ -984,6 +985,7 @@ int http_proxy_session_cleanup(http_proxy_session_t *session) {
   }
 
   session->cleanup_done = 1;
+  session->initialized = 0;
   session->state = HTTP_PROXY_STATE_CLOSING;
 
   return 0;

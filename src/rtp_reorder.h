@@ -30,7 +30,8 @@ typedef struct rtp_reorder_s {
   uint16_t seq[RTP_REORDER_WINDOW_SIZE]; /* Sequence number per slot (for FEC validation) */
   uint16_t base_seq;                     /* Next expected sequence for delivery */
   uint16_t count;                        /* Number of buffered packets */
-  uint8_t initialized;                   /* 0=not init, 1=collecting, 2=active */
+  uint8_t initialized;                   /* Flag: context has been initialized */
+  uint8_t phase;                         /* 0=not started, 1=collecting, 2=active */
 } rtp_reorder_t;
 
 void rtp_reorder_init(rtp_reorder_t *r);

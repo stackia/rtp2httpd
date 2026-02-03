@@ -186,7 +186,7 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
            "multicast",
            result_code);
     fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Server error");
-    stream_join_mcast_group(ctx);
+    mcast_session_join(&ctx->mcast, ctx);
     return 0;
   }
 
@@ -195,7 +195,7 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
     logger(LOG_INFO,
            "FCC (Huawei): Server says no unicast needed, joining multicast");
     fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "No unicast needed");
-    stream_join_mcast_group(ctx);
+    mcast_session_join(&ctx->mcast, ctx);
   } else if (type == 2) {
     /* Server will send unicast stream */
     uint8_t nat_flag = buf[24];
@@ -260,7 +260,7 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
              "FCC (Huawei): Too many redirects (%d), falling back to multicast",
              fcc->redirect_count);
       fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Too many redirects");
-      stream_join_mcast_group(ctx);
+      mcast_session_join(&ctx->mcast, ctx);
       return 0;
     }
 
@@ -287,7 +287,7 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
            "FCC (Huawei): Unsupported type=%u, falling back to multicast",
            type);
     fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Unsupported type");
-    stream_join_mcast_group(ctx);
+    mcast_session_join(&ctx->mcast, ctx);
   }
 
   return 0;

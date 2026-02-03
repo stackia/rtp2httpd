@@ -3,6 +3,7 @@
 
 #include "fcc.h"
 #include "http_proxy.h"
+#include "multicast.h"
 #include "rtp_fec.h"
 #include "rtp_reorder.h"
 #include "rtsp.h"
@@ -22,10 +23,6 @@ typedef struct stream_context_s {
   int epoll_fd;
   connection_t *conn; /* Pointer to parent connection for output buffering */
   service_t *service;
-  fcc_session_t fcc;
-  int mcast_sock;
-  rtsp_session_t rtsp;           /* RTSP session for SERVICE_RTSP */
-  http_proxy_session_t http_proxy; /* HTTP proxy session for SERVICE_HTTP */
   int status_index; /* Index in status_shared->clients array for status updates
                      */
 
@@ -34,13 +31,17 @@ typedef struct stream_context_s {
   uint64_t last_bytes_sent;   /* Bytes sent at last bandwidth calculation */
   int64_t last_status_update; /* Last status update time in milliseconds */
 
-  /* Stream health monitoring */
-  int64_t last_mcast_data_time; /* Timestamp of last received multicast data in
-                                   milliseconds */
-  int64_t last_fcc_data_time; /* Timestamp of last received FCC data for timeout
-                                 detection */
-  int64_t last_mcast_rejoin_time; /* Timestamp of last multicast rejoin for
-                                     periodic refresh */
+  /* FCC session for Fast Channel Change */
+  fcc_session_t fcc;
+
+  /* Multicast session */
+  mcast_session_t mcast;
+
+  /* RTSP session for SERVICE_RTSP */
+  rtsp_session_t rtsp;
+
+  /* HTTP proxy session for SERVICE_HTTP */
+  http_proxy_session_t http_proxy;
 
   /* RTP reorder context */
   rtp_reorder_t reorder;
@@ -51,15 +52,6 @@ typedef struct stream_context_s {
   /* Snapshot context */
   snapshot_context_t snapshot;
 } stream_context_t;
-
-/**
- * Join a multicast group and reset the timeout timer.
- * This is a wrapper around join_mcast_group() that also resets
- * last_mcast_data_time to prevent false timeout triggers. Should be used
- * instead of join_mcast_group() directly in all stream-related code.
- * @param ctx Stream context
- */
-void stream_join_mcast_group(stream_context_t *ctx);
 
 /**
  * Initialize a stream context for integration into a worker's unified epoll

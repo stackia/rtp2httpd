@@ -9,10 +9,20 @@
 #include <stdlib.h>
 #include <string.h>
 
-void rtp_reorder_init(rtp_reorder_t *r) { memset(r, 0, sizeof(*r)); }
+void rtp_reorder_init(rtp_reorder_t *r) {
+  memset(r, 0, sizeof(*r));
+  r->initialized = 1;
+  /* phase starts at 0, transitions to 1 (collecting) then 2 (active)
+   * when packets arrive */
+}
 
 void rtp_reorder_cleanup(rtp_reorder_t *r)
 {
+  /* Skip if never initialized */
+  if (!r->initialized) {
+    return;
+  }
+
   for (int i = 0; i < RTP_REORDER_WINDOW_SIZE; i++)
   {
     if (r->slots[i])
@@ -22,6 +32,7 @@ void rtp_reorder_cleanup(rtp_reorder_t *r)
     }
   }
   r->count = 0;
+  r->phase = 0;
   r->initialized = 0;
 }
 
@@ -163,10 +174,10 @@ int rtp_reorder_insert(rtp_reorder_t *r, buffer_ref_t *buf_ref, uint16_t seqn,
   int total_bytes = 0;
 
   /* Phase 0: First packet - start collecting */
-  if (unlikely(r->initialized == 0))
+  if (unlikely(r->phase == 0))
   {
     r->base_seq = seqn; /* Remember first seq as reference */
-    r->initialized = 1; /* Enter collecting phase */
+    r->phase = 1; /* Enter collecting phase */
 
     /* Store first packet */
     int slot = seqn & RTP_REORDER_WINDOW_MASK;
@@ -179,7 +190,7 @@ int rtp_reorder_insert(rtp_reorder_t *r, buffer_ref_t *buf_ref, uint16_t seqn,
 
   /* Phase 1: Collecting initial packets
    * base_seq dynamically tracks the minimum sequence seen so far */
-  if (unlikely(r->initialized == 1))
+  if (unlikely(r->phase == 1))
   {
     int slot = seqn & RTP_REORDER_WINDOW_MASK;
 
@@ -200,7 +211,7 @@ int rtp_reorder_insert(rtp_reorder_t *r, buffer_ref_t *buf_ref, uint16_t seqn,
     /* Collected enough? Start delivering from base_seq */
     if (r->count >= RTP_REORDER_INIT_COLLECT)
     {
-      r->initialized = 2; /* Enter active phase */
+      r->phase = 2; /* Enter active phase */
 
       logger(LOG_DEBUG,
              "RTP reorder: Init complete, base_seq=%u (%d packets collected)",
@@ -213,7 +224,7 @@ int rtp_reorder_insert(rtp_reorder_t *r, buffer_ref_t *buf_ref, uint16_t seqn,
     return total_bytes;
   }
 
-  /* Phase 2: Active reordering (initialized == 2) */
+  /* Phase 2: Active reordering (phase == 2) */
   int16_t seq_diff = (int16_t)(seqn - r->base_seq);
 
   /* Case 1: Expected sequence -> store and flush */

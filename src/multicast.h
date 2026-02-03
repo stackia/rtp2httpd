@@ -2,73 +2,62 @@
 #define __MULTICAST_H__
 
 #include "service.h"
+#include <stdint.h>
+
+/* Forward declarations */
+typedef struct stream_context_s stream_context_t;
+typedef struct connection_s connection_t;
+struct buffer_ref_s;
 
 /**
- * Bind socket to upstream interface if configured
- *
- * @param sock Socket file descriptor to bind
- * @param ifname Interface name for binding (may be NULL)
+ * Multicast session context - encapsulates all multicast-related state
  */
-void bind_to_upstream_interface(int sock, const char *ifname);
+typedef struct mcast_session_s {
+  int initialized;          /* Flag: session has been initialized */
+  int sock;                 /* Multicast socket (-1 if not joined) */
+  int64_t last_data_time;   /* Timestamp of last received data (ms) */
+  int64_t last_rejoin_time; /* Timestamp of last periodic rejoin (ms) */
+} mcast_session_t;
 
 /**
- * Select the appropriate upstream interface for FCC with priority logic
- * Priority: upstream_interface_fcc > upstream_interface
- *
- * @return Pointer to the interface name to use (may be NULL if none configured)
+ * Initialize multicast session
+ * @param session Multicast session to initialize
  */
-const char *get_upstream_interface_for_fcc(void);
+void mcast_session_init(mcast_session_t *session);
 
 /**
- * Select the appropriate upstream interface for RTSP with priority logic
- * Priority: upstream_interface_rtsp > upstream_interface
- *
- * @return Pointer to the interface name to use (may be NULL if none configured)
+ * Cleanup multicast session and release resources
+ * @param session Multicast session to cleanup
+ * @param epoll_fd Epoll file descriptor for socket cleanup
  */
-const char *get_upstream_interface_for_rtsp(void);
+void mcast_session_cleanup(mcast_session_t *session, int epoll_fd);
 
 /**
- * Select the appropriate upstream interface for multicast with priority logic
- * Priority: upstream_interface_multicast > upstream_interface
- *
- * @return Pointer to the interface name to use (may be NULL if none configured)
+ * Join multicast group and register with epoll
+ * @param session Multicast session
+ * @param ctx Stream context (for service, epoll_fd, conn)
+ * @return 0 on success, -1 on error
  */
-const char *get_upstream_interface_for_multicast(void);
+int mcast_session_join(mcast_session_t *session, stream_context_t *ctx);
 
 /**
- * Select the appropriate upstream interface for HTTP proxy with priority logic
- * Priority: upstream_interface_http > upstream_interface
- *
- * @return Pointer to the interface name to use (may be NULL if none configured)
+ * Handle multicast socket events
+ * @param session Multicast session
+ * @param ctx Stream context
+ * @param now Current timestamp in milliseconds
+ * @return processed bytes on success, -1 on error
  */
-const char *get_upstream_interface_for_http(void);
+int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx,
+                               int64_t now);
 
 /**
- * Get local IP address for FCC packets
- * Uses the configured upstream interface for FCC, or falls back to first
- * non-loopback address
- *
- * @return Local IP address in host byte order, or 0 if unable to determine
+ * Periodic tick for multicast session (timeout/rejoin checks)
+ * @param session Multicast session
+ * @param service Service configuration
+ * @param now Current timestamp in milliseconds
+ * @return 0 on success, -1 if connection should be closed (timeout)
  */
-uint32_t get_local_ip_for_fcc(void);
-
-/**
- * Join a multicast group and return socket
- *
- * @param service Service structure containing multicast address info
- * @param is_fec If true, join FEC multicast (uses service->fec_port)
- * @return Socket file descriptor on success, -1 on failure
- */
-int join_mcast_group(service_t *service, int is_fec);
-
-/**
- * Rejoin a multicast group by sending both IGMPv2 and IGMPv3 reports via raw
- * sockets. Ensures upstream devices refresh membership state even when the
- * kernel suppresses joins due to existing memberships.
- *
- * @param service Service structure containing multicast address info
- * @return 0 on success, -1 if both IGMP versions fail
- */
-int rejoin_mcast_group(service_t *service);
+int mcast_session_tick(mcast_session_t *session, service_t *service,
+                       int64_t now);
 
 #endif /* __MULTICAST_H__ */
