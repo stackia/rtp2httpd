@@ -85,6 +85,21 @@ typedef struct {
   size_t request_body_len;
   size_t request_body_sent; /* Bytes of request body already sent */
 
+  /* Body rewriting state (for M3U, HTML, etc.) */
+  int needs_body_rewrite;          /* Flag: response needs body rewriting */
+  char *rewrite_body_buffer;       /* Dynamically allocated body buffer */
+  size_t rewrite_body_buffer_size; /* Allocated buffer size */
+  size_t rewrite_body_buffer_used; /* Bytes used in buffer */
+
+  /* Saved response headers for passthrough during body rewrite */
+  char *saved_response_headers;    /* malloc'd copy of original response headers */
+  size_t saved_response_headers_len;
+
+  /* Request headers for base URL construction */
+  char host_header[HTTP_PROXY_HOST_SIZE];           /* Host header from client */
+  char x_forwarded_host[HTTP_PROXY_HOST_SIZE];      /* X-Forwarded-Host header */
+  char x_forwarded_proto[16];                       /* X-Forwarded-Proto header */
+
   /* Cleanup state */
   int cleanup_done; /* Flag: cleanup has been completed */
 } http_proxy_session_t;
@@ -132,6 +147,18 @@ void http_proxy_set_raw_headers(http_proxy_session_t *session,
  */
 void http_proxy_set_request_body(http_proxy_session_t *session,
                                  const char *body, size_t body_len);
+
+/**
+ * Set request headers for base URL construction during content rewriting
+ * @param session HTTP proxy session
+ * @param host_header Host header value (can be NULL)
+ * @param x_forwarded_host X-Forwarded-Host header value (can be NULL)
+ * @param x_forwarded_proto X-Forwarded-Proto header value (can be NULL)
+ */
+void http_proxy_set_request_headers(http_proxy_session_t *session,
+                                    const char *host_header,
+                                    const char *x_forwarded_host,
+                                    const char *x_forwarded_proto);
 
 /**
  * Connect to upstream HTTP server (non-blocking)

@@ -3,6 +3,7 @@
 #include "configuration.h"
 #include "connection.h"
 #include "http.h" /* For http_url_encode */
+#include "http_proxy_rewrite.h"
 #include "multicast.h"
 #include "status.h"
 #include "utils.h"
@@ -140,14 +141,44 @@ int http_proxy_parse_url(http_proxy_session_t *session, const char *url) {
     session->target_port = 80;
   }
 
-  /* Extract path (including query string) */
+  /* Extract path (including query string), but strip r2h-token to avoid
+   * leaking credentials to upstream server */
   if (slash) {
     if (strlen(slash) >= HTTP_PROXY_PATH_SIZE) {
       logger(LOG_ERROR, "HTTP Proxy: Path too long");
       return -1;
     }
-    strncpy(session->target_path, slash, HTTP_PROXY_PATH_SIZE - 1);
-    session->target_path[HTTP_PROXY_PATH_SIZE - 1] = '\0';
+
+    /* Check if URL has query string with potential r2h-token */
+    const char *query_start = strchr(slash, '?');
+    if (query_start && config.r2h_token[0]) {
+      /* Copy path portion up to query string */
+      size_t path_len = (size_t)(query_start - slash);
+      memcpy(session->target_path, slash, path_len);
+
+      /* Filter out r2h-token from query string */
+      char filtered_query[HTTP_PROXY_PATH_SIZE];
+      int filtered_len = http_filter_query_param(query_start + 1, "r2h-token",
+                                                  filtered_query,
+                                                  sizeof(filtered_query));
+      if (filtered_len > 0) {
+        /* Append filtered query string */
+        int result = snprintf(session->target_path + path_len,
+                              HTTP_PROXY_PATH_SIZE - path_len, "?%s",
+                              filtered_query);
+        if (result < 0 || (size_t)result >= HTTP_PROXY_PATH_SIZE - path_len) {
+          logger(LOG_ERROR, "HTTP Proxy: Path with query too long");
+          return -1;
+        }
+      } else {
+        /* No remaining query params, just terminate at path */
+        session->target_path[path_len] = '\0';
+      }
+    } else {
+      /* No query string or no r2h-token configured, copy as-is */
+      strncpy(session->target_path, slash, HTTP_PROXY_PATH_SIZE - 1);
+      session->target_path[HTTP_PROXY_PATH_SIZE - 1] = '\0';
+    }
   } else {
     /* No path, default to / */
     strcpy(session->target_path, "/");
@@ -186,6 +217,37 @@ void http_proxy_set_request_body(http_proxy_session_t *session,
 
   session->request_body = body;
   session->request_body_len = body_len;
+}
+
+void http_proxy_set_request_headers(http_proxy_session_t *session,
+                                    const char *host_header,
+                                    const char *x_forwarded_host,
+                                    const char *x_forwarded_proto) {
+  if (!session)
+    return;
+
+  if (host_header) {
+    strncpy(session->host_header, host_header, sizeof(session->host_header) - 1);
+    session->host_header[sizeof(session->host_header) - 1] = '\0';
+  } else {
+    session->host_header[0] = '\0';
+  }
+
+  if (x_forwarded_host) {
+    strncpy(session->x_forwarded_host, x_forwarded_host,
+            sizeof(session->x_forwarded_host) - 1);
+    session->x_forwarded_host[sizeof(session->x_forwarded_host) - 1] = '\0';
+  } else {
+    session->x_forwarded_host[0] = '\0';
+  }
+
+  if (x_forwarded_proto) {
+    strncpy(session->x_forwarded_proto, x_forwarded_proto,
+            sizeof(session->x_forwarded_proto) - 1);
+    session->x_forwarded_proto[sizeof(session->x_forwarded_proto) - 1] = '\0';
+  } else {
+    session->x_forwarded_proto[0] = '\0';
+  }
 }
 
 int http_proxy_connect(http_proxy_session_t *session) {
@@ -463,9 +525,217 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
    * Two-phase receive strategy for zero-copy optimization:
    * Phase 1 (AWAITING_HEADERS): Use fixed buffer for header parsing
    * Phase 2 (STREAMING): Recv directly to buffer pool for zero-copy send
+   *                      OR buffer for rewriting if needs_body_rewrite
    */
 
   if (session->state == HTTP_PROXY_STATE_STREAMING) {
+    /* Check if we need to buffer for rewriting */
+    if (session->needs_body_rewrite) {
+      /* Buffer mode: collect body for rewriting */
+      uint8_t temp_buf[8192];
+      received = recv(session->socket, temp_buf, sizeof(temp_buf), 0);
+
+      if (received < 0) {
+        if (errno == EAGAIN) {
+          return 0;
+        }
+        logger(LOG_ERROR, "HTTP Proxy: Recv failed: %s", strerror(errno));
+        return -1;
+      }
+
+      if (received == 0) {
+        /* Connection closed - process buffered body */
+        logger(LOG_DEBUG, "HTTP Proxy: Upstream closed, processing rewrite buffer");
+        goto process_rewrite_body;
+      }
+
+      /* Append to rewrite buffer */
+      {
+      size_t new_size = session->rewrite_body_buffer_used + (size_t)received;
+      if (new_size > REWRITE_MAX_BODY_SIZE) {
+        logger(LOG_ERROR, "HTTP Proxy: Rewrite body exceeds max size");
+        return -1;
+      }
+
+      /* Grow buffer if needed */
+      if (new_size > session->rewrite_body_buffer_size) {
+        size_t new_alloc = session->rewrite_body_buffer_size == 0
+                               ? 16384
+                               : session->rewrite_body_buffer_size * 2;
+        while (new_alloc < new_size)
+          new_alloc *= 2;
+        if (new_alloc > REWRITE_MAX_BODY_SIZE)
+          new_alloc = REWRITE_MAX_BODY_SIZE;
+
+        char *new_buf = realloc(session->rewrite_body_buffer, new_alloc);
+        if (!new_buf) {
+          logger(LOG_ERROR, "HTTP Proxy: Failed to grow rewrite buffer");
+          return -1;
+        }
+        session->rewrite_body_buffer = new_buf;
+        session->rewrite_body_buffer_size = new_alloc;
+      }
+
+      memcpy(session->rewrite_body_buffer + session->rewrite_body_buffer_used,
+             temp_buf, (size_t)received);
+      session->rewrite_body_buffer_used = new_size;
+      session->bytes_received += received;
+
+      /* Check if we've received all content */
+      if (session->content_length >= 0 &&
+          session->bytes_received >= session->content_length) {
+        goto process_rewrite_body;
+      }
+      }
+
+      return 0; /* Keep buffering */
+
+    process_rewrite_body:
+      /* Process the buffered body */
+      if (session->rewrite_body_buffer_used > 0) {
+        /* Null-terminate for rewriting */
+        if (session->rewrite_body_buffer_used >= session->rewrite_body_buffer_size) {
+          char *new_buf = realloc(session->rewrite_body_buffer,
+                                  session->rewrite_body_buffer_used + 1);
+          if (!new_buf) {
+            logger(LOG_ERROR, "HTTP Proxy: Failed to grow rewrite buffer for null");
+            return -1;
+          }
+          session->rewrite_body_buffer = new_buf;
+          session->rewrite_body_buffer_size = session->rewrite_body_buffer_used + 1;
+        }
+        session->rewrite_body_buffer[session->rewrite_body_buffer_used] = '\0';
+
+        /* Build base URL and rewrite context */
+        char *base_url = build_proxy_base_url(
+            session->host_header, session->x_forwarded_host, session->x_forwarded_proto);
+        if (!base_url) {
+          logger(LOG_ERROR, "HTTP Proxy: Failed to build base URL for rewriting");
+          return -1;
+        }
+
+        rewrite_context_t ctx = {.upstream_host = session->target_host,
+                                 .upstream_port = session->target_port,
+                                 .upstream_path = session->target_path,
+                                 .base_url = base_url};
+
+        char *rewritten = NULL;
+        size_t rewritten_size = 0;
+
+        int rewrite_result = rewrite_m3u_content(&ctx, session->rewrite_body_buffer,
+                                                 &rewritten, &rewritten_size);
+        free(base_url);
+
+        if (rewrite_result < 0) {
+          logger(LOG_ERROR, "HTTP Proxy: M3U rewrite failed");
+          return -1;
+        }
+
+        /* Build and send response headers with new Content-Length
+         * Passthrough original headers except Content-Length and Transfer-Encoding */
+        char headers[HTTP_PROXY_RESPONSE_BUFFER_SIZE];
+        char *hdr_ptr = headers;
+        size_t hdr_remaining = sizeof(headers);
+        int headers_len = 0;
+
+        if (session->saved_response_headers && session->saved_response_headers_len > 0) {
+          /* Parse and rebuild headers from saved original headers */
+          char *saved_copy = strdup(session->saved_response_headers);
+          if (saved_copy) {
+            char *line = strtok(saved_copy, "\r\n");
+            while (line != NULL) {
+              /* Skip headers that need to be modified */
+              if (strncasecmp(line, "Content-Length:", 15) == 0 ||
+                  strncasecmp(line, "Transfer-Encoding:", 18) == 0) {
+                /* Skip - will add correct Content-Length later */
+              } else {
+                /* Pass through this header */
+                int written = snprintf(hdr_ptr, hdr_remaining, "%s\r\n", line);
+                if (written > 0 && (size_t)written < hdr_remaining) {
+                  hdr_ptr += written;
+                  hdr_remaining -= written;
+                  headers_len += written;
+                }
+              }
+              line = strtok(NULL, "\r\n");
+            }
+            free(saved_copy);
+          }
+
+          /* Add correct Content-Length */
+          int cl_written = snprintf(hdr_ptr, hdr_remaining, "Content-Length: %zu\r\n",
+                                    rewritten_size);
+          if (cl_written > 0 && (size_t)cl_written < hdr_remaining) {
+            hdr_ptr += cl_written;
+            hdr_remaining -= cl_written;
+            headers_len += cl_written;
+          }
+        } else {
+          /* Fallback: build minimal headers */
+          headers_len = snprintf(
+              headers, sizeof(headers),
+              "HTTP/1.1 %d OK\r\n"
+              "Content-Type: %s\r\n"
+              "Content-Length: %zu\r\n"
+              "Connection: close\r\n",
+              session->response_status_code, session->response_content_type,
+              rewritten_size);
+          hdr_ptr = headers + headers_len;
+          hdr_remaining = sizeof(headers) - headers_len;
+        }
+
+        /* Inject Set-Cookie header if needed */
+        if (session->conn && session->conn->should_set_r2h_cookie &&
+            config.r2h_token && config.r2h_token[0] != '\0') {
+          int cookie_written = snprintf(
+              hdr_ptr, hdr_remaining,
+              "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; SameSite=Strict\r\n",
+              config.r2h_token);
+          if (cookie_written > 0 && (size_t)cookie_written < hdr_remaining) {
+            hdr_ptr += cookie_written;
+            hdr_remaining -= cookie_written;
+            headers_len += cookie_written;
+          }
+          session->conn->should_set_r2h_cookie = 0;
+        }
+
+        /* Add final CRLF to end headers */
+        int final_written = snprintf(hdr_ptr, hdr_remaining, "\r\n");
+        if (final_written > 0) {
+          headers_len += final_written;
+        }
+
+        if (connection_queue_output(session->conn, (const uint8_t *)headers,
+                                    headers_len) < 0) {
+          free(rewritten);
+          logger(LOG_ERROR, "HTTP Proxy: Failed to send rewritten headers");
+          return -1;
+        }
+
+        /* Send rewritten body */
+        if (connection_queue_output(session->conn, (const uint8_t *)rewritten,
+                                    rewritten_size) < 0) {
+          free(rewritten);
+          logger(LOG_ERROR, "HTTP Proxy: Failed to send rewritten body");
+          return -1;
+        }
+
+        session->headers_forwarded = 1;
+        if (session->conn) {
+          session->conn->headers_sent = 1;
+        }
+
+        bytes_forwarded = (int)(headers_len + rewritten_size);
+        free(rewritten);
+
+        logger(LOG_DEBUG, "HTTP Proxy: Sent rewritten M3U (%zu bytes body)",
+               rewritten_size);
+      }
+
+      session->state = HTTP_PROXY_STATE_COMPLETE;
+      return bytes_forwarded;
+    }
+
     /* Phase 2: Zero-copy streaming - recv directly to buffer pool */
     buffer_ref_t *buf = buffer_pool_alloc();
     if (!buf) {
@@ -558,22 +828,52 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
 
   /* Forward any body data that came with headers (in response_buffer) */
   if (session->headers_received && session->response_buffer_pos > 0) {
-    if (connection_queue_output(session->conn, session->response_buffer,
-                                session->response_buffer_pos) < 0) {
-      logger(LOG_ERROR, "HTTP Proxy: Failed to queue initial body data");
-      return -1;
-    }
+    if (session->needs_body_rewrite) {
+      /* Buffer mode: save initial body data for rewriting */
+      size_t initial_size = session->response_buffer_pos;
+      if (initial_size > REWRITE_MAX_BODY_SIZE) {
+        logger(LOG_ERROR, "HTTP Proxy: Initial body exceeds max rewrite size");
+        return -1;
+      }
 
-    bytes_forwarded = (int)session->response_buffer_pos;
-    session->response_buffer_pos = 0;
-    session->bytes_received += bytes_forwarded;
+      session->rewrite_body_buffer = malloc(initial_size + 1);
+      if (!session->rewrite_body_buffer) {
+        logger(LOG_ERROR, "HTTP Proxy: Failed to allocate rewrite buffer");
+        return -1;
+      }
+      memcpy(session->rewrite_body_buffer, session->response_buffer, initial_size);
+      session->rewrite_body_buffer_size = initial_size + 1;
+      session->rewrite_body_buffer_used = initial_size;
+      session->bytes_received += initial_size;
+      session->response_buffer_pos = 0;
 
-    /* Check if we've received all content */
-    if (session->content_length >= 0 &&
-        session->bytes_received >= session->content_length) {
-      logger(LOG_DEBUG, "HTTP Proxy: Received all content (%zd bytes)",
-             session->bytes_received);
-      session->state = HTTP_PROXY_STATE_COMPLETE;
+      /* Check if we've received all content */
+      if (session->content_length >= 0 &&
+          session->bytes_received >= session->content_length) {
+        /* All body received - trigger rewrite processing on next iteration */
+        logger(LOG_DEBUG,
+               "HTTP Proxy: All M3U content received with headers (%zd bytes)",
+               session->bytes_received);
+      }
+    } else {
+      /* Normal mode: forward immediately */
+      if (connection_queue_output(session->conn, session->response_buffer,
+                                  session->response_buffer_pos) < 0) {
+        logger(LOG_ERROR, "HTTP Proxy: Failed to queue initial body data");
+        return -1;
+      }
+
+      bytes_forwarded = (int)session->response_buffer_pos;
+      session->response_buffer_pos = 0;
+      session->bytes_received += bytes_forwarded;
+
+      /* Check if we've received all content */
+      if (session->content_length >= 0 &&
+          session->bytes_received >= session->content_length) {
+        logger(LOG_DEBUG, "HTTP Proxy: Received all content (%zd bytes)",
+               session->bytes_received);
+        session->state = HTTP_PROXY_STATE_COMPLETE;
+      }
     }
   }
 
@@ -665,8 +965,40 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
   session->headers_received = 1;
 
+  /* Check if response body needs rewriting (M3U content) */
+  if (rewrite_is_m3u_content_type(session->response_content_type)) {
+    /* Only rewrite if Content-Length is known and within limits */
+    if (session->content_length > 0 &&
+        (size_t)session->content_length <= REWRITE_MAX_BODY_SIZE) {
+      session->needs_body_rewrite = 1;
+      logger(LOG_DEBUG, "HTTP Proxy: M3U content detected, will rewrite body");
+    } else if (session->content_length == -1) {
+      /* Chunked or unknown length - try to buffer if reasonable */
+      session->needs_body_rewrite = 1;
+      logger(LOG_DEBUG,
+             "HTTP Proxy: M3U content with unknown length, will buffer");
+    } else {
+      logger(LOG_WARN,
+             "HTTP Proxy: M3U content too large for rewriting (%zd bytes)",
+             session->content_length);
+    }
+
+    /* Save original response headers for passthrough during rewrite */
+    if (session->needs_body_rewrite) {
+      session->saved_response_headers = malloc(header_len + 1);
+      if (session->saved_response_headers) {
+        memcpy(session->saved_response_headers, session->response_buffer, header_len);
+        session->saved_response_headers[header_len] = '\0';
+        session->saved_response_headers_len = header_len;
+        logger(LOG_DEBUG, "HTTP Proxy: Saved %zu bytes of response headers for rewrite",
+               header_len);
+      }
+    }
+  }
+
   /* Forward response headers to client - flush immediately */
-  if (!session->headers_forwarded && session->conn) {
+  /* Skip header forwarding if body needs rewriting (Content-Length may change) */
+  if (!session->headers_forwarded && session->conn && !session->needs_body_rewrite) {
     /*
      * For redirect responses (30x), we need to rewrite the Location header
      * to point back through the proxy. We rebuild headers line by line.
@@ -996,6 +1328,21 @@ int http_proxy_session_cleanup(http_proxy_session_t *session) {
       close(session->socket);
     }
     session->socket = -1;
+  }
+
+  /* Free rewrite body buffer if allocated */
+  if (session->rewrite_body_buffer) {
+    free(session->rewrite_body_buffer);
+    session->rewrite_body_buffer = NULL;
+    session->rewrite_body_buffer_size = 0;
+    session->rewrite_body_buffer_used = 0;
+  }
+
+  /* Free saved response headers if allocated */
+  if (session->saved_response_headers) {
+    free(session->saved_response_headers);
+    session->saved_response_headers = NULL;
+    session->saved_response_headers_len = 0;
   }
 
   /* Update status if registered */

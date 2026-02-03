@@ -1,5 +1,7 @@
 #include "utils.h"
 #include "configuration.h"
+#include "http.h"
+#include "m3u.h"
 #include "rtp2httpd.h"
 #include "status.h"
 #include "supervisor.h"
@@ -10,6 +12,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -256,4 +259,56 @@ uint32_t get_local_ip_for_fcc(void) {
   }
 
   return local_ip;
+}
+
+char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host,
+                           const char *x_forwarded_proto) {
+  const char *host = NULL;
+  const char *proto = "http";
+  char *base_url = NULL;
+
+  /* Extract protocol from config.hostname if configured */
+  char config_protocol[16] = {0};
+  if (config.hostname && config.hostname[0] != '\0') {
+    /* Parse URL components from config.hostname to extract protocol */
+    if (http_parse_url_components(config.hostname, config_protocol, NULL, NULL,
+                                  NULL) == 0) {
+      /* Successfully parsed - use protocol from config.hostname if present */
+      if (config_protocol[0] != '\0') {
+        proto = config_protocol;
+      }
+    }
+  }
+
+  if (config.xff && x_forwarded_host && x_forwarded_host[0]) {
+    /* Use X-Forwarded-Host when xff is enabled */
+    host = x_forwarded_host;
+    if (x_forwarded_proto && x_forwarded_proto[0]) {
+      /* X-Forwarded-Proto overrides config.hostname protocol */
+      proto = x_forwarded_proto;
+    }
+  } else if (host_header && host_header[0]) {
+    /* Use Host header */
+    host = host_header;
+  }
+
+  if (host) {
+    /* Build base URL from host and proto */
+    size_t url_len = strlen(proto) + 3 + strlen(host) + 2; /* proto://host/ */
+    base_url = malloc(url_len);
+    if (!base_url) {
+      logger(LOG_ERROR, "Failed to allocate base URL");
+      return NULL;
+    }
+    snprintf(base_url, url_len, "%s://%s/", proto, host);
+  } else {
+    /* Fallback to get_server_address */
+    base_url = get_server_address();
+    if (!base_url) {
+      logger(LOG_ERROR, "Failed to get server address for base URL");
+      return NULL;
+    }
+  }
+
+  return base_url;
 }
