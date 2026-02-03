@@ -8,18 +8,19 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 
 ### 📡 多协议支持
 
-- **组播 RTP/UDP 转单播 HTTP**：将组播 RTP/UDP 流转换为标准 HTTP 流
-- **UDPxy 兼容性**：完全兼容 UDPxy URL 格式
-- **RTSP 转 HTTP 视频流**：完整支持 RTSP/RTP 协议栈，包括 TCP 和 UDP 传输模式
+- **组播 RTP/UDP 转单播 HTTP**：将组播 RTP/UDP 流转换为标准 HTTP 流 (RTP->HTTP)
+- **RTSP 转 HTTP 视频流**：完整支持 RTSP/RTP 协议栈，包括 TCP 和 UDP 传输模式 (RTSP->HTTP)
   - 可以实现 IPTV RTSP 时移源的回看
-- **HTTP 反向代理**：可以反向代理 IPTV 内网 HLS 源，方便在局域网、公网观看
+- **HTTP 反向代理**：可以反向代理 IPTV 内网 HLS 源，方便在局域网、公网观看 (HTTP->HTTP)
+- **UDPxy 兼容性**：完全兼容 UDPxy URL 格式
 - **M3U 播放列表集成**：支持 M3U/M3U8 格式，自动识别并转换节目地址，提供标准化的播放列表
   - 支持外部 M3U URL
   - 智能识别 RTP/RTSP URL 并转换为 HTTP 代理格式
   - 自动处理 catchup-source 时移回看地址
   - 通过 `http://<server:port>/playlist.m3u` 访问转换后的播放列表
-- **RTP 包重排序**：自动纠正乱序到达的 RTP 包，消除网络抖动导致的花屏
-- **FEC 前向纠错**：支持 Reed-Solomon FEC 冗余恢复，无需重传即可修复丢包（需组播上游支持 FEC）
+- **抗丢包抗抖动**：支持乱序恢复、FEC 前向纠错技术，保证播放质量
+  - 自动纠正乱序到达的 RTP 包，消除网络抖动导致的花屏
+  - 支持 Reed-Solomon FEC 冗余恢复，可抵抗轻度丢包（需组播上游支持 FEC）
 - **频道快照**：支持通过 HTTP 请求快速获取频道的快照图片，降低播放端解码压力
 
 ### ⚡ FCC 快速换台技术
@@ -49,6 +50,7 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 - **零拷贝技术**：支持 Linux 内核 MSG_ZEROCOPY 特性，避免数据在用户态和内核态之间的拷贝
 - **轻量化**：使用纯 C 语言编写，零依赖，小巧简洁，适合运行在各种嵌入式设备上（路由器、光猫、NAS 等）
   - 程序大小仅 300KB (x86_64)，并内置了 Web 播放器所有前端资源
+- 查看 **[性能测试报告](docs/benchmark.md)**（与 msd_lite、udpxy、tvgate 的性能对比）
 
 ## 📹 演示效果
 
@@ -114,7 +116,6 @@ rtp2httpd 支持多种部署方式：
 - **[配置参数详解](docs/configuration.md)**：完整配置选项说明
 - **[FCC 快速换台配置](docs/fcc-setup.md)**：启用毫秒级换台功能
 - **[视频快照配置](docs/video-snapshot.md)**：频道预览图功能配置
-- **[性能测试报告](docs/benchmark.md)**：与 msd_lite、udpxy、tvgate 的性能对比
 
 如果是首次搭建 IPTV 组播转发服务，对相关网络知识比较陌生（DHCP 鉴权、路由、组播、防火墙），这里也推荐以下教程：
 

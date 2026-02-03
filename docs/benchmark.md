@@ -13,6 +13,7 @@
   - 内存: 从 `/proc/[pid]/smaps_rollup` 读取 USS (Unique Set Size)
   - 如果存在 fork 后的子进程，所有父子进程的 CPU、内存分别求和作为总结果
 - **测试版本**:
+  - rtp2httpd: v3.7.0
   - msd_lite: commit 79a6c62 (2025-05-02)
   - udpxy: commit 56fc563 (2026-01-26)
   - tvgate: v2.1.8
