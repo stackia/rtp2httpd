@@ -350,3 +350,17 @@ msgid ""
 "rtp2httpd converts RTP/UDP/RTSP media into http stream. Here you can "
 "configure the settings."
 msgstr "rtp2httpd 用于将 RTP/UDP/RTSP 媒体流转换为 HTTP 流。在这里进行配置。"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:420
+msgid "RTSP STUN Server"
+msgstr "RTSP STUN 服务器"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:422
+msgid ""
+"When RTSP server only supports UDP transport and client is behind NAT, try "
+"using STUN for NAT traversal (may not always succeed). Format: host:port or "
+"host (default port 3478). Example: stun.miwifi.com"
+msgstr ""
+"当 RTSP 服务器仅支持 UDP 传输且客户端位于 NAT 后面时，尝试使用 STUN 进行 NAT "
+"穿透（可能不总是成功）。格式：host:port 或 host（默认端口 3478）。示例："
+"stun.miwifi.com"
