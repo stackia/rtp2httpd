@@ -356,9 +356,8 @@ static void rtsp_session_set_state(rtsp_session_t *session,
 
   session->state = new_state;
 
-  /* Update client status immediately if status_index is valid */
-  if (session->status_index >= 0 &&
-      new_state < ARRAY_SIZE(rtsp_to_client_state)) {
+  /* Update client status immediately */
+  if (new_state < ARRAY_SIZE(rtsp_to_client_state)) {
     status_update_client_state(session->status_index,
                                rtsp_to_client_state[new_state]);
   }

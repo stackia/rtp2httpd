@@ -460,6 +460,7 @@ void connection_free(connection_t *c) {
   /* Unregister from status (only if registered as streaming client) */
   if (c->status_index >= 0) {
     status_unregister_client(c->status_index);
+    c->status_index = -1;
   }
 
   /* Close socket */
