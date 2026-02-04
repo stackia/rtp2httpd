@@ -1,6 +1,6 @@
 include $(TOPDIR)/rules.mk
 
-RELEASE_VERSION:=3.8.2
+RELEASE_VERSION:=3.8.3
 
 PKG_VERSION:=$(shell echo "$(RELEASE_VERSION)" | sed 's/-\([a-z]*\)\.\([0-9]*\)/_\1\2/g')
 PKG_PO_VERSION:=$(PKG_VERSION)
