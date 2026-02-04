@@ -290,6 +290,10 @@ char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host
   } else if (host_header && host_header[0]) {
     /* Use Host header */
     host = host_header;
+    /* Apply X-Forwarded-Proto even without X-Forwarded-Host */
+    if (config.xff && x_forwarded_proto && x_forwarded_proto[0]) {
+      proto = x_forwarded_proto;
+    }
   }
 
   if (host) {
