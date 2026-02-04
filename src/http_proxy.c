@@ -1322,11 +1322,7 @@ int http_proxy_session_cleanup(http_proxy_session_t *session) {
 
   /* Close socket */
   if (session->socket >= 0) {
-    if (session->epoll_fd >= 0) {
-      worker_cleanup_socket_from_epoll(session->epoll_fd, session->socket);
-    } else {
-      close(session->socket);
-    }
+    worker_cleanup_socket_from_epoll(session->epoll_fd, session->socket);
     session->socket = -1;
   }
 

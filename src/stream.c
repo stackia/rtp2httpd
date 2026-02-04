@@ -366,26 +366,26 @@ int stream_context_cleanup(stream_context_t *ctx) {
   if (!ctx)
     return 0;
 
-  /* Clean up RTP reorder context */
-  rtp_reorder_cleanup(&ctx->reorder);
-
-  /* Clean up FEC context (fec_cleanup owns the socket cleanup) */
-  fec_cleanup(&ctx->fec, ctx->epoll_fd);
-
   /* Clean up snapshot resources */
   snapshot_free(&ctx->snapshot);
 
   /* Clean up FCC session (always safe to cleanup immediately) */
   fcc_session_cleanup(&ctx->fcc, ctx->service, ctx->epoll_fd);
 
-  /* Clean up RTSP session - this may initiate async TEARDOWN */
-  int rtsp_async = rtsp_session_cleanup(&ctx->rtsp);
+  /* Clean up multicast session */
+  mcast_session_cleanup(&ctx->mcast, ctx->epoll_fd);
 
   /* Clean up HTTP proxy session (always synchronous) */
   http_proxy_session_cleanup(&ctx->http_proxy);
 
-  /* Clean up multicast session */
-  mcast_session_cleanup(&ctx->mcast, ctx->epoll_fd);
+  /* Clean up RTSP session - this may initiate async TEARDOWN */
+  int rtsp_async = rtsp_session_cleanup(&ctx->rtsp);
+
+  /* Clean up FEC context (fec_cleanup owns the socket cleanup) */
+  fec_cleanup(&ctx->fec, ctx->epoll_fd);
+
+  /* Clean up RTP reorder context */
+  rtp_reorder_cleanup(&ctx->reorder);
 
   if (rtsp_async) {
     /* RTSP async TEARDOWN initiated - defer final cleanup */

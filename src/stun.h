@@ -27,14 +27,7 @@ typedef struct {
   uint16_t mapped_rtp_port;             /* Discovered mapped RTP port (0=none) */
   uint16_t mapped_rtcp_port;            /* Discovered mapped RTCP port (0=none) */
   unsigned char transaction_id[STUN_TRANSACTION_ID_SIZE]; /* Transaction ID */
-  int socket_fd;                        /* Socket used for STUN (RTP socket) */
 } stun_state_t;
-
-/**
- * Initialize STUN state to default values
- * @param state STUN state structure to initialize
- */
-void stun_state_init(stun_state_t *state);
 
 /**
  * Send STUN Binding Request from the specified socket
@@ -59,9 +52,10 @@ int stun_parse_response(stun_state_t *state, const uint8_t *data, size_t len);
  * Check if STUN request has timed out and handle retry/abort
  * Should be called periodically while in_progress is true
  * @param state STUN state structure
+ * @param socket_fd UDP socket to send from (typically RTP socket)
  * @return 1 if STUN completed (timeout or max retries), 0 if still in progress
  */
-int stun_check_timeout(stun_state_t *state);
+int stun_check_timeout(stun_state_t *state, int socket_fd);
 
 /**
  * Get the discovered mapped RTP port
