@@ -98,14 +98,6 @@ int http_url_decode(char *str) {
   return 0;
 }
 
-/**
- * URL encode a string (RFC 3986)
- * Allocates and returns a new string with encoded characters.
- * Unreserved characters (alphanumeric, -, _, ., ~, /) are not encoded.
- *
- * @param str String to encode
- * @return Newly allocated encoded string (caller must free), or NULL on error
- */
 char *http_url_encode(const char *str) {
   static const char hex_chars[] = "0123456789ABCDEF";
   size_t len;
@@ -151,9 +143,6 @@ char *http_url_encode(const char *str) {
   return encoded;
 }
 
-/**
- * Initialize HTTP request structure
- */
 void http_request_init(http_request_t *req) {
   if (!req)
     return;
@@ -165,9 +154,6 @@ void http_request_init(http_request_t *req) {
   req->body_alloc = 0;
 }
 
-/**
- * Cleanup HTTP request structure (free dynamically allocated memory)
- */
 void http_request_cleanup(http_request_t *req) {
   if (!req)
     return;
@@ -179,10 +165,6 @@ void http_request_cleanup(http_request_t *req) {
   req->body_alloc = 0;
 }
 
-/**
- * Parse HTTP request from buffer (incremental parsing)
- * Returns: 0 = need more data, 1 = request complete, -1 = parse error
- */
 int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
   if (!inbuf || !in_len || !req)
     return -1;
@@ -446,17 +428,6 @@ static const char *find_query_param(const char *query_string,
   return NULL;
 }
 
-/**
- * Parse query parameter value from query/form string (case-insensitive
- * parameter names) Works for both URL query strings and
- * application/x-www-form-urlencoded body data The returned value is
- * automatically URL-decoded.
- * @param query_string Query or form data string (without leading ?)
- * @param param_name Parameter name to search for (case-insensitive)
- * @param value_buf Buffer to store parameter value (will be URL-decoded)
- * @param value_size Size of value buffer
- * @return 0 if parameter found, -1 if not found or error
- */
 int http_parse_query_param(const char *query_string, const char *param_name,
                            char *value_buf, size_t value_size) {
   const char *param_start, *value_start, *value_end;
@@ -500,15 +471,6 @@ int http_parse_query_param(const char *query_string, const char *param_name,
   return 0;
 }
 
-/**
- * Filter Cookie header to remove a specific cookie (case-insensitive name)
- * Cookie format: "name1=value1; name2=value2; ..."
- * @param cookie_header Input cookie header value
- * @param exclude_name Cookie name to exclude (case-insensitive)
- * @param output Output buffer
- * @param output_size Output buffer size
- * @return Length of output string, or -1 on error
- */
 int http_filter_cookie(const char *cookie_header, const char *exclude_name,
                        char *output, size_t output_size) {
   if (!cookie_header || !exclude_name || !output || output_size == 0) {
@@ -572,14 +534,6 @@ int http_filter_cookie(const char *cookie_header, const char *exclude_name,
   return (int)out_len;
 }
 
-/**
- * Filter User-Agent header to remove R2HTOKEN/xxx pattern
- * Format: "... R2HTOKEN/value ..." or "... R2HTOKEN/value"
- * @param user_agent Input User-Agent header value
- * @param output Output buffer
- * @param output_size Output buffer size
- * @return Length of output string, or -1 on error
- */
 int http_filter_user_agent_token(const char *user_agent, char *output,
                                  size_t output_size) {
   if (!user_agent || !output || output_size == 0) {
@@ -655,14 +609,6 @@ int http_filter_user_agent_token(const char *user_agent, char *output,
   return (int)total_len;
 }
 
-/**
- * Copy query string excluding a specific parameter (case-insensitive)
- * @param query_string Input query string (without leading '?')
- * @param exclude_param Parameter name to exclude (case-insensitive)
- * @param output Output buffer
- * @param output_size Output buffer size
- * @return Length of output string, or -1 on error
- */
 int http_filter_query_param(const char *query_string, const char *exclude_param,
                             char *output, size_t output_size) {
   if (!query_string || !exclude_param || !output || output_size == 0) {
@@ -718,10 +664,6 @@ int http_filter_query_param(const char *query_string, const char *exclude_param,
   return (int)out_len;
 }
 
-/**
- * Send HTTP 400 Bad Request response
- * @param conn Connection object
- */
 void http_send_400(connection_t *conn) {
   static const char body[] = "<!doctype html><title>400</title>Bad Request";
 
@@ -733,10 +675,6 @@ void http_send_400(connection_t *conn) {
                                     sizeof(body) - 1);
 }
 
-/**
- * Send HTTP 404 Not Found response
- * @param conn Connection object
- */
 void http_send_404(connection_t *conn) {
   static const char body[] = "<!doctype html><title>404</title>Not Found";
 
@@ -748,10 +686,6 @@ void http_send_404(connection_t *conn) {
                                     sizeof(body) - 1);
 }
 
-/**
- * Send HTTP 500 Internal Server Error response
- * @param conn Connection object
- */
 void http_send_500(connection_t *conn) {
   static const char body[] =
       "<!doctype html><title>500</title>Internal Server Error";
@@ -764,10 +698,6 @@ void http_send_500(connection_t *conn) {
                                     sizeof(body) - 1);
 }
 
-/**
- * Send HTTP 503 Service Unavailable response
- * @param conn Connection object
- */
 void http_send_503(connection_t *conn) {
   static const char body[] =
       "<!doctype html><title>503</title>Service Unavailable";
@@ -780,10 +710,6 @@ void http_send_503(connection_t *conn) {
                                     sizeof(body) - 1);
 }
 
-/**
- * Send HTTP 401 Unauthorized response
- * @param conn Connection object
- */
 void http_send_401(connection_t *conn) {
   static const char body[] = "<!doctype html><title>401</title>Unauthorized";
 
@@ -796,15 +722,6 @@ void http_send_401(connection_t *conn) {
                                     sizeof(body) - 1);
 }
 
-/**
- * Parse URL and extract components (protocol, host, port, path)
- * @param url Input URL string
- * @param protocol Output buffer for protocol (can be NULL)
- * @param host Output buffer for host (can be NULL)
- * @param port Output buffer for port (can be NULL)
- * @param path Output buffer for path (can be NULL)
- * @return 0 on success, -1 on error
- */
 int http_parse_url_components(const char *url, char *protocol, char *host,
                               char *port, char *path) {
   const char *p = url;
@@ -913,13 +830,6 @@ int http_parse_url_components(const char *url, char *protocol, char *host,
   return 0;
 }
 
-/**
- * Match Host header against expected hostname
- * @param request_host_header Host header from HTTP request
- * @param expected_host Expected hostname to match against (just the hostname
- * part)
- * @return 1 if match, 0 if not match, -1 on error
- */
 int http_match_host_header(const char *request_host_header,
                            const char *expected_host) {
   char request_hostname[256];

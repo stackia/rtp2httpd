@@ -67,11 +67,6 @@ int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref) {
                             ctx->snapshot.initialized, ctx->fec.initialized ? &ctx->fec : NULL);
 }
 
-/*
- * Handle an event-ready fd that belongs to this stream context
- * Note: Client socket events are handled by worker.c,
- * this function only handles media stream sockets (multicast, FCC, RTSP)
- */
 int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
                            int64_t now) {
   /* Process FCC socket events */

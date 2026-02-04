@@ -57,12 +57,6 @@ status_shared_t *status_shared = NULL;
 /* Path for shared memory file in /tmp */
 static char shm_path[256] = {0};
 
-/**
- * Initialize status tracking system
- * Creates and maps shared memory file in /tmp, then immediately closes the file
- * descriptor. The mmap() mapping remains valid after close() per POSIX
- * specification.
- */
 int status_init(void) {
   int fd;
 
@@ -227,11 +221,6 @@ void status_cleanup(void) {
   }
 }
 
-/**
- * Register a new streaming client connection
- * Only called for media streaming clients, not for status/API requests
- * Allocates a free slot under mutex protection and returns the slot index
- */
 int status_register_client(const char *client_addr_str,
                            const char *service_url) {
   int status_index = -1;
@@ -303,10 +292,6 @@ int status_register_client(const char *client_addr_str,
   return status_index;
 }
 
-/**
- * Unregister a streaming client connection
- * Only called for media streaming clients that were previously registered
- */
 void status_unregister_client(int status_index) {
   if (!status_shared)
     return;
@@ -337,11 +322,6 @@ void status_unregister_client(int status_index) {
   status_trigger_event(STATUS_EVENT_SSE_UPDATE);
 }
 
-/**
- * Get the notification pipe read fd for current worker (called after fork)
- * Also closes read fds for other workers to avoid fd leaks
- * @return notification pipe read fd on success, -1 on error
- */
 int status_worker_get_notif_fd(void) {
   int i;
 
@@ -366,10 +346,6 @@ int status_worker_get_notif_fd(void) {
   return notif_fd;
 }
 
-/**
- * Trigger an event notification to wake up workers
- * @param event_type Type of event to trigger
- */
 void status_trigger_event(status_event_type_t event_type) {
   uint8_t event_byte = (uint8_t)event_type;
   int i;
@@ -393,10 +369,6 @@ void status_trigger_event(status_event_type_t event_type) {
   }
 }
 
-/**
- * Update client bytes and bandwidth by status index
- * Always triggers status event notification.
- */
 void status_update_client_bytes(int status_index, uint64_t bytes_sent,
                                 uint32_t current_bandwidth) {
   if (!status_shared)
@@ -413,10 +385,6 @@ void status_update_client_bytes(int status_index, uint64_t bytes_sent,
   status_shared->clients[status_index].current_bandwidth = current_bandwidth;
 }
 
-/**
- * Update client state by status index
- * Always triggers status event notification.
- */
 void status_update_client_state(int status_index, client_state_type_t state) {
   if (!status_shared)
     return;
@@ -464,9 +432,6 @@ void status_update_client_queue(int status_index, size_t queue_bytes,
   status_shared->clients[status_index].slow_active = slow_active;
 }
 
-/**
- * Add log entry to circular buffer
- */
 void status_add_log_entry(enum loglevel level, const char *message) {
   int index;
 
@@ -505,9 +470,6 @@ void status_add_log_entry(enum loglevel level, const char *message) {
 /* Removed format_bytes and format_bandwidth - formatting is done in JavaScript
  * on the frontend */
 
-/**
- * Get log level name (public function for SSE)
- */
 const char *status_get_log_level_name(enum loglevel level) {
   switch (level) {
   case LOG_FATAL:
@@ -525,17 +487,6 @@ const char *status_get_log_level_name(enum loglevel level) {
   }
 }
 
-/**
- * Build SSE JSON payload with status information (for event-driven SSE)
- * This function is used by worker.c to build SSE payloads for connections.
- *
- * @param buffer Output buffer
- * @param buffer_capacity Buffer size
- * @param p_sent_initial Pointer to sent_initial flag (in/out)
- * @param p_last_write_index Pointer to last write index (in/out)
- * @param p_last_log_count Pointer to last log count (in/out)
- * @return Number of bytes written to buffer
- */
 int status_build_sse_json(char *buffer, size_t buffer_capacity,
                           int *p_sent_initial, int *p_last_write_index,
                           int *p_last_log_count) {
@@ -797,14 +748,6 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
   return len;
 }
 
-/**
- * Handle API request to disconnect a client
- * RESTful: POST <status-path>/api/disconnect with form data body
- * "client_id=IP:port-workerN-seqM"
- *
- * In multi-worker architecture, this sets a disconnect flag in shared memory
- * and notifies the worker owning the connection to gracefully close it.
- */
 void handle_disconnect_client(connection_t *c) {
   int found = 0;
   char response[512];
@@ -896,10 +839,6 @@ void handle_disconnect_client(connection_t *c) {
                                     strlen(response));
 }
 
-/**
- * Handle API request to clear logs
- * RESTful: POST <status-path>/api/clear-logs
- */
 void handle_clear_logs(connection_t *c) {
   char response[256];
 
@@ -938,10 +877,6 @@ void handle_clear_logs(connection_t *c) {
                                     strlen(response));
 }
 
-/**
- * Handle API request to change log level
- * RESTful: PUT <status-path>/api/log-level with form data body "level=2"
- */
 void handle_set_log_level(connection_t *c) {
   int new_level;
   char response[512];
@@ -1005,11 +940,6 @@ void handle_set_log_level(connection_t *c) {
                                     strlen(response));
 }
 
-/**
- * Handle API request to reload configuration
- * RESTful: POST <status-path>/api/reload-config
- * Sends SIGHUP to supervisor process to trigger config reload
- */
 void handle_reload_config(connection_t *c) {
   char response[256];
 
@@ -1043,11 +973,6 @@ void handle_reload_config(connection_t *c) {
                                     strlen(response));
 }
 
-/**
- * Handle API request to restart all workers
- * RESTful: POST <status-path>/api/restart-workers
- * Sends SIGUSR1 to supervisor process to trigger worker restart
- */
 void handle_restart_workers(connection_t *c) {
   char response[256];
 
@@ -1080,10 +1005,6 @@ void handle_restart_workers(connection_t *c) {
                                     strlen(response));
 }
 
-/**
- * Initialize SSE connection for a client
- * Sends SSE headers and sets up connection state for SSE streaming
- */
 int status_handle_sse_init(connection_t *c) {
   if (!c)
     return -1;
@@ -1111,10 +1032,6 @@ int status_handle_sse_init(connection_t *c) {
   return 0;
 }
 
-/**
- * Handle SSE notification event
- * Builds and enqueues SSE payloads for all active SSE connections
- */
 int status_handle_sse_notification(connection_t *conn_head) {
   int updated_count = 0;
 
@@ -1146,13 +1063,6 @@ int status_handle_sse_notification(connection_t *conn_head) {
   return updated_count;
 }
 
-/**
- * Handle SSE heartbeat for a connection
- * Triggers status update to keep connection alive and update frontend
- * Only sends heartbeat when there are no active media clients
- * This ensures uptime is updated even when idle, while relying on event-driven
- * updates when clients are active
- */
 int status_handle_sse_heartbeat(connection_t *c, int64_t now) {
   if (!c || c->state != CONN_SSE)
     return -1;

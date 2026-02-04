@@ -929,12 +929,6 @@ int rtsp_connect(rtsp_session_t *session) {
   return 0;
 }
 
-/**
- * Main event handler for RTSP socket - handles all async I/O
- * Called by worker when socket has EPOLLIN or EPOLLOUT events
- * @return Number of bytes forwarded to client (>0), 0 if no data forwarded, -1
- * on error
- */
 int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
   int result;
 
@@ -1513,10 +1507,6 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
   return 0;
 }
 
-/**
- * State machine advancement - initiates next action based on current state
- * Returns: 0 = continue, -1 = error
- */
 int rtsp_state_machine_advance(rtsp_session_t *session) {
   char extra_headers[RTSP_HEADERS_BUFFER_SIZE];
 
@@ -2099,11 +2089,6 @@ static int rtsp_initiate_teardown(rtsp_session_t *session) {
   return 1; /* Indicate reconnect needed */
 }
 
-/**
- * Public cleanup function - initiates async TEARDOWN or forces cleanup
- * This function is called when the client disconnects
- * It will initiate TEARDOWN if in SETUP or PLAYING state
- */
 int rtsp_session_cleanup(rtsp_session_t *session) {
   /* Skip cleanup if session was never initialized */
   if (!session->initialized) {

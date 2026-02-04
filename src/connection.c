@@ -475,9 +475,6 @@ void connection_free(connection_t *c) {
   free(c);
 }
 
-/**
- * Queue data to connection output buffer
- */
 int connection_queue_output(connection_t *c, const uint8_t *data, size_t len) {
   if (!c || !data || len == 0)
     return 0;

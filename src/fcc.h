@@ -150,7 +150,10 @@ int fcc_initialize_and_request(stream_context_t *ctx);
  * @param ctx Stream context
  * @param buf Response buffer
  * @param buf_len Buffer length
- * @return 0 on success, -1 for fallback to multicast, 1 for state restart
+ * @return Return values:
+ *    0: Success, FCC accepted by server
+ *    1: State restart needed (redirect to different server)
+ *   -1: Fallback to multicast (FCC rejected or unsupported)
  */
 int fcc_handle_server_response(stream_context_t *ctx, uint8_t *buf,
                                int buf_len);
@@ -160,7 +163,7 @@ int fcc_handle_server_response(stream_context_t *ctx, uint8_t *buf,
  *
  * @param ctx Stream context
  * @param timeout_ms If non-zero, indicates this is called due to timeout
- * @return 0 on success
+ * @return 0 on success (multicast join initiated)
  */
 int fcc_handle_sync_notification(stream_context_t *ctx, int timeout_ms);
 
@@ -169,25 +172,27 @@ int fcc_handle_sync_notification(stream_context_t *ctx, int timeout_ms);
  *
  * @param ctx Stream context
  * @param buf_ref Buffer reference for zero-copy
- * @return 0 on success
+ * @return 0 on success (packet processed and forwarded)
  */
 int fcc_handle_unicast_media(stream_context_t *ctx, buffer_ref_t *buf_ref);
 
 /**
  * Handle multicast data during transition period
+ * Buffers packets until sync point is reached
  *
  * @param ctx Stream context
  * @param buf_ref Buffer reference for zero-copy
- * @return 0 on success
+ * @return 0 on success (packet buffered or forwarded)
  */
 int fcc_handle_mcast_transition(stream_context_t *ctx, buffer_ref_t *buf_ref);
 
 /**
  * Handle multicast data in active state
+ * Forwards packets directly to client
  *
  * @param ctx Stream context
  * @param buf_ref Buffer reference for zero-copy
- * @return 0 on success
+ * @return 0 on success (packet forwarded)
  */
 int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref);
 

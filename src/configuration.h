@@ -119,7 +119,14 @@ extern bindaddr_t *bind_addresses;
 void parse_bind_sec(char *line);
 void parse_services_sec(char *line);
 void parse_global_sec(char *line);
+
+/**
+ * Parse configuration file
+ * @param path Path to configuration file
+ * @return 0 on success, -1 on error (file not found or parse error)
+ */
 int parse_config_file(const char *path);
+
 void usage(FILE *f, char *progname);
 void parse_bind_cmd(char *optarg);
 

@@ -76,7 +76,10 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
  * @param fd File descriptor that has events
  * @param events Epoll event mask (EPOLLIN, EPOLLOUT, etc.)
  * @param now Current timestamp in milliseconds (from get_time_ms())
- * Returns -1 on fatal/cleanup, 1 on state-change (e.g. restart), 0 to continue.
+ * @return Return values:
+ *   0: Success, continue processing
+ *  -1: Connection should be closed (error or graceful TEARDOWN complete)
+ *  -3: Duration query completed, send response to client
  */
 int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
                            int64_t now);

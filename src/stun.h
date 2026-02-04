@@ -53,7 +53,9 @@ int stun_parse_response(stun_state_t *state, const uint8_t *data, size_t len);
  * Should be called periodically while in_progress is true
  * @param state STUN state structure
  * @param socket_fd UDP socket to send from (typically RTP socket)
- * @return 1 if STUN completed (timeout or max retries), 0 if still in progress
+ * @return Return values:
+ *   0: Still in progress (waiting for response or retry sent)
+ *   1: STUN completed (timeout after max retries, proceed without mapped port)
  */
 int stun_check_timeout(stun_state_t *state, int socket_fd);
 
