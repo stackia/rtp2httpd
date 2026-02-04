@@ -84,14 +84,6 @@ static int stun_parse_server(const char *server_str, char *host,
   return 0;
 }
 
-void stun_state_init(stun_state_t *state) {
-  if (!state) {
-    return;
-  }
-  memset(state, 0, sizeof(stun_state_t));
-  state->socket_fd = -1;
-}
-
 int stun_send_request(stun_state_t *state, int socket_fd) {
   struct addrinfo hints, *res = NULL;
   char host[256];
@@ -163,7 +155,6 @@ int stun_send_request(stun_state_t *state, int socket_fd) {
   }
 
   /* Update state */
-  state->socket_fd = socket_fd;
   state->in_progress = 1;
   state->request_time_ms = get_time_ms();
 
@@ -277,7 +268,7 @@ int stun_parse_response(stun_state_t *state, const uint8_t *data, size_t len) {
   return -1;
 }
 
-int stun_check_timeout(stun_state_t *state) {
+int stun_check_timeout(stun_state_t *state, int socket_fd) {
   int64_t now;
   int64_t elapsed;
 
@@ -304,9 +295,7 @@ int stun_check_timeout(stun_state_t *state) {
     logger(LOG_DEBUG, "STUN: Timeout, retrying (attempt %d/%d)",
            state->retry_count + 1, STUN_MAX_RETRIES + 1);
 
-    if (state->socket_fd >= 0) {
-      stun_send_request(state, state->socket_fd);
-    }
+    stun_send_request(state, socket_fd);
   }
 
   return 0;

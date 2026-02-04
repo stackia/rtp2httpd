@@ -319,9 +319,6 @@ void rtsp_session_init(rtsp_session_t *session) {
   session->teardown_requested = 0;
   session->teardown_reconnect_done = 0;
   session->state_before_teardown = RTSP_STATE_INIT;
-
-  /* Initialize STUN state */
-  stun_state_init(&session->stun);
 }
 
 /**
@@ -1576,7 +1573,7 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
       /* Check STUN status and determine which port to advertise */
       if (session->stun.in_progress) {
         /* STUN still in progress - check for timeout/retry */
-        stun_check_timeout(&session->stun);
+        stun_check_timeout(&session->stun, session->rtp_socket);
 
         /* If STUN is still in progress after timeout check, wait for it */
         if (session->stun.in_progress) {
@@ -1698,7 +1695,7 @@ int rtsp_session_tick(rtsp_session_t *session, int64_t now) {
 
   /* Check STUN timeout if waiting for STUN response */
   if (session->stun.in_progress && session->state == RTSP_STATE_DESCRIBED) {
-    if (stun_check_timeout(&session->stun) > 0) {
+    if (stun_check_timeout(&session->stun, session->rtp_socket) > 0) {
       /* STUN finally timed out, advance state machine to continue with local
        * port */
       rtsp_state_machine_advance(session);
@@ -1989,7 +1986,6 @@ static void rtsp_force_cleanup(rtsp_session_t *session) {
     logger(LOG_DEBUG, "RTSP: Main socket closed");
   }
 
-  /* Close and remove UDP sockets from epoll */
   rtsp_close_udp_sockets(session, "cleanup");
 
   /* Reset response buffer position */
@@ -2151,6 +2147,9 @@ int rtsp_session_cleanup(rtsp_session_t *session) {
 
     logger(LOG_INFO, "RTSP: Cleanup requested in state %d, initiating TEARDOWN",
            session->state);
+
+    /* Close UDP sockets to stop processing RTP traffic */
+    rtsp_close_udp_sockets(session, "teardown");
 
     /* Try to initiate TEARDOWN */
     int result = rtsp_initiate_teardown(session);
@@ -2554,7 +2553,6 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
       logger(LOG_ERROR, "RTSP: Failed to add RTCP socket to epoll: %s",
              strerror(errno));
       worker_cleanup_socket_from_epoll(session->epoll_fd, session->rtp_socket);
-      close(session->rtp_socket);
       close(session->rtcp_socket);
       session->rtp_socket = -1;
       session->rtcp_socket = -1;
@@ -2582,14 +2580,14 @@ static void rtsp_close_udp_sockets(rtsp_session_t *session,
   if (session->rtp_socket >= 0) {
     worker_cleanup_socket_from_epoll(session->epoll_fd, session->rtp_socket);
     session->rtp_socket = -1;
-    logger(LOG_DEBUG, "RTSP: Closed UDP RTP socket %s", reason);
+    logger(LOG_DEBUG, "RTSP: Closed UDP RTP socket (%s)", reason);
   }
 
   /* Close and remove RTCP socket from epoll */
   if (session->rtcp_socket >= 0) {
     worker_cleanup_socket_from_epoll(session->epoll_fd, session->rtcp_socket);
     session->rtcp_socket = -1;
-    logger(LOG_DEBUG, "RTSP: Closed UDP RTCP socket %s", reason);
+    logger(LOG_DEBUG, "RTSP: Closed UDP RTCP socket (%s)", reason);
   }
 
   /* Reset UDP transport related fields */
