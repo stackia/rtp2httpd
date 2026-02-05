@@ -560,7 +560,7 @@ static int extract_wrapped_url(const char *url, char *extracted,
 
   /* Check if protocol is supported */
   if (strcasecmp(protocol, "rtp") != 0 && strcasecmp(protocol, "udp") != 0 &&
-      strcasecmp(protocol, "rtsp") != 0) {
+      strcasecmp(protocol, "rtsp") != 0 && strcasecmp(protocol, "http") != 0) {
     return -1; /* Unsupported protocol */
   }
 
@@ -645,20 +645,18 @@ static int is_url_recognizable(const char *url) {
   strncpy(test_url, url, sizeof(test_url) - 1);
   test_url[sizeof(test_url) - 1] = '\0';
 
-  /* Try to extract wrapped URL */
+  /* Try to extract wrapped URL (supports rtp, udp, rtsp, http) */
   if (extract_wrapped_url(test_url, extracted, sizeof(extracted)) == 0) {
-    /* Use extracted URL for checking */
-    size_t len = strlen(extracted);
-    if (len >= sizeof(test_url))
-      len = sizeof(test_url) - 1;
-    memcpy(test_url, extracted, len);
-    test_url[len] = '\0';
+    /* Wrapped URL extracted - always recognizable since extract_wrapped_url
+     * only succeeds for supported protocols */
+    return 1;
   }
 
-  /* Check if protocol is supported */
+  /* Not a wrapped URL - check direct protocols */
   if (strncmp(test_url, "rtp://", 6) == 0 ||
       strncmp(test_url, "udp://", 6) == 0 ||
-      strncmp(test_url, "rtsp://", 7) == 0) {
+      strncmp(test_url, "rtsp://", 7) == 0 ||
+      strncmp(test_url, "http://", 7) == 0) {
     return 1;
   }
 
@@ -839,6 +837,8 @@ static char *create_service_from_url(const char *service_name, const char *url,
     new_service = service_create_from_rtp_url(normalized_url);
   } else if (strncmp(normalized_url, "rtsp://", 7) == 0) {
     new_service = service_create_from_rtsp_url(normalized_url);
+  } else if (strncmp(normalized_url, "http://", 7) == 0) {
+    new_service = service_create_from_http_url(normalized_url);
   } else {
     logger(LOG_WARN, "Unsupported URL format in M3U: %s", normalized_url);
     free(unique_name);
@@ -879,8 +879,22 @@ static char *create_service_from_url(const char *service_name, const char *url,
   /* Add to service hashmap for O(1) lookup */
   service_hashmap_add(new_service);
 
-  logger(LOG_DEBUG, "Service created: %s (%s) [%s]", unique_name,
-         new_service->service_type == SERVICE_MRTP ? "RTP" : "RTSP",
+  const char *type_str;
+  switch (new_service->service_type) {
+  case SERVICE_MRTP:
+    type_str = "RTP";
+    break;
+  case SERVICE_RTSP:
+    type_str = "RTSP";
+    break;
+  case SERVICE_HTTP:
+    type_str = "HTTP";
+    break;
+  default:
+    type_str = "UNKNOWN";
+    break;
+  }
+  logger(LOG_DEBUG, "Service created: %s (%s) [%s]", unique_name, type_str,
          source == SERVICE_SOURCE_INLINE ? "inline" : "external");
 
   /* Return the unique name for use in transformed M3U */
@@ -1162,23 +1176,6 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
           append_to_transformed_m3u(line, service_source);
           append_to_transformed_m3u("\n", service_source);
         }
-      } else if (http_proxy_is_proxy_url(line)) {
-        /* HTTP URL: convert to http proxy format without creating a service */
-        char http_proxy_url[MAX_URL_LENGTH];
-
-        append_to_transformed_m3u(transformed_line, service_source);
-        append_to_transformed_m3u("\n", service_source);
-
-        if (http_proxy_build_url(line, M3U_BASE_URL_PLACEHOLDER, http_proxy_url,
-                                 sizeof(http_proxy_url)) == 0) {
-          append_to_transformed_m3u(http_proxy_url, service_source);
-          logger(LOG_DEBUG, "Converted HTTP URL to proxy format: %s", line);
-        } else {
-          /* Failed to build proxy URL, preserve original */
-          append_to_transformed_m3u(line, service_source);
-          logger(LOG_WARN, "Failed to convert HTTP URL: %s", line);
-        }
-        append_to_transformed_m3u("\n", service_source);
       } else {
         /* Unrecognizable URL: preserve original EXTINF and URL completely */
         append_to_transformed_m3u(transformed_line, service_source);

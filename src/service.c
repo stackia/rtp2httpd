@@ -1241,6 +1241,13 @@ service_t *service_clone(service_t *service) {
     }
   }
 
+  if (service->http_url) {
+    cloned->http_url = strdup(service->http_url);
+    if (!cloned->http_url) {
+      goto cleanup_error;
+    }
+  }
+
   if (service->seek_param_name) {
     cloned->seek_param_name = strdup(service->seek_param_name);
     if (!cloned->seek_param_name) {
