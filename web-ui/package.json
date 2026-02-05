@@ -1,5 +1,5 @@
 {
-  "name": "rtp2httpd-status-ui",
+  "name": "rtp2httpd-web-ui",
   "private": true,
   "version": "0.1.0",
   "type": "module",

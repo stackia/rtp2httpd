@@ -1,0 +1,2 @@
+overrides:
+  '@rtp2httpd/mpegts.js': link:../../mpegts.js

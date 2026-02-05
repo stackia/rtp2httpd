@@ -53,6 +53,7 @@ function getMimeType(filePath) {
     ".ttf": "font/ttf",
     ".eot": "application/vnd.ms-fontobject",
     ".webp": "image/webp",
+    ".wasm": "application/wasm",
   };
   return mimeTypes[ext] || "application/octet-stream";
 }
@@ -75,7 +76,8 @@ function scanDirectory(dir, baseDir = dir) {
     if (stat.isDirectory()) {
       files.push(...scanDirectory(fullPath, baseDir));
     } else if (stat.isFile()) {
-      const relativePath = "/" + relative(baseDir, fullPath).replace(/\\/g, "/");
+      const relativePath =
+        "/" + relative(baseDir, fullPath).replace(/\\/g, "/");
       files.push({
         path: relativePath,
         fullPath,
@@ -131,13 +133,19 @@ function main() {
 
     const cacheType = file.hasHash ? "immutable" : "etag";
     console.log(
-      `  ${file.path} (${(content.length / 1000).toFixed(1)}KB → ${(compressed.length / 1000).toFixed(1)}KB, ${cacheType})`
+      `  ${file.path} (${(content.length / 1000).toFixed(1)}KB → ${(
+        compressed.length / 1000
+      ).toFixed(1)}KB, ${cacheType})`
     );
   }
 
   console.log(
-    `\nTotal size: ${(totalOriginalSize / 1000).toFixed(1)}KB → ${(totalCompressedSize / 1000).toFixed(1)}KB ` +
-    `(${((1 - totalCompressedSize / totalOriginalSize) * 100).toFixed(1)}% reduction)`
+    `\nTotal size: ${(totalOriginalSize / 1000).toFixed(1)}KB → ${(
+      totalCompressedSize / 1000
+    ).toFixed(1)}KB ` +
+      `(${((1 - totalCompressedSize / totalOriginalSize) * 100).toFixed(
+        1
+      )}% reduction)`
   );
 
   // Generate header file
@@ -156,7 +164,9 @@ function main() {
   // Declare data arrays for each file
   for (const file of embeddedFiles) {
     lines.push(
-      `/* ${file.path} (${(file.compressed.length / 1000).toFixed(1)}KB gzipped) */`
+      `/* ${file.path} (${(file.compressed.length / 1000).toFixed(
+        1
+      )}KB gzipped) */`
     );
     lines.push(`static const uint8_t ${file.varName}[] = {`);
     lines.push(formatByteArray(file.compressed));
@@ -166,7 +176,7 @@ function main() {
 
   // Include embedded_web.h for the type definition
   lines.push("/* Include embedded_web.h for embedded_file_t definition */");
-  lines.push("#include \"embedded_web.h\"");
+  lines.push('#include "embedded_web.h"');
   lines.push("");
 
   // Define the array

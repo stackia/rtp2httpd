@@ -249,6 +249,7 @@ export function VideoPlayer({
           isLive: true,
           enableStashBuffer: false,
           liveSync,
+          softDecodeWasmPath: "/assets/wasm/",
         },
       );
 
