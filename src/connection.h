@@ -97,10 +97,10 @@ connection_t *connection_create(int fd, int epfd,
                                 socklen_t addr_len);
 
 /**
- * Free a connection and all associated resources
- * @param c Connection to free
+ * Cleanup a connection and all associated resources
+ * @param c Connection to cleanup
  */
-void connection_free(connection_t *c);
+void connection_cleanup(connection_t *c);
 
 /**
  * Handle read event on client connection

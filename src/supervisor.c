@@ -563,7 +563,7 @@ int run_worker(void) {
   int result = worker_run_event_loop(s, maxs, notif_fd);
 
   status_cleanup();
-  config_free(true);
+  config_cleanup(true);
 
   return result;
 }

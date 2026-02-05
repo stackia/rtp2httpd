@@ -362,7 +362,7 @@ int stream_context_cleanup(stream_context_t *ctx) {
     return 0;
 
   /* Clean up snapshot resources */
-  snapshot_free(&ctx->snapshot);
+  snapshot_cleanup(&ctx->snapshot);
 
   /* Clean up FCC session (always safe to cleanup immediately) */
   fcc_session_cleanup(&ctx->fcc, ctx->service, ctx->epoll_fd);
@@ -392,9 +392,9 @@ int stream_context_cleanup(stream_context_t *ctx) {
 
   /* NOTE: Do NOT free ctx->service here!
    * The service pointer is shared with the parent connection (c->service).
-   * The connection owns the service and will free it in connection_free()
+   * The connection owns the service and will free it in connection_cleanup()
    * based on the c->service_owned flag.
-   * Freeing it here would cause double-free when connection_free() is called.
+   * Freeing it here would cause double-free when connection_cleanup() is called.
    */
   ctx->service = NULL; /* Clear pointer but don't free */
 

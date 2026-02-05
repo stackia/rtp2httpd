@@ -39,10 +39,10 @@ typedef struct snapshot_context_s {
 int snapshot_init(snapshot_context_t *ctx);
 
 /**
- * Free snapshot context and release resources
- * @param ctx Snapshot context to free
+ * Cleanup snapshot context and release resources
+ * @param ctx Snapshot context to cleanup
  */
-void snapshot_free(snapshot_context_t *ctx);
+void snapshot_cleanup(snapshot_context_t *ctx);
 
 /**
  * Process RTP payload for snapshot mode
