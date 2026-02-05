@@ -187,15 +187,6 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
 int http_proxy_session_cleanup(http_proxy_session_t *session);
 
 /**
- * Check if URL is a plain HTTP URL that should be proxied
- * Only http:// URLs (not https://) that are not already wrapped are proxied.
- *
- * @param url URL string to check
- * @return 1 if URL should be proxied, 0 otherwise
- */
-int http_proxy_is_proxy_url(const char *url);
-
-/**
  * Build HTTP proxy URL for transformed M3U
  * Converts http://host:port/path to {BASE_URL}http/host:port/path
  *

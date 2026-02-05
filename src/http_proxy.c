@@ -1334,25 +1334,6 @@ int http_proxy_session_cleanup(http_proxy_session_t *session) {
   return 0;
 }
 
-int http_proxy_is_proxy_url(const char *url) {
-  /* Only support http:// URLs for proxying (not https://) */
-  if (strncasecmp(url, "http://", 7) == 0) {
-    /* Make sure it's not already a wrapped URL (http://host/rtp/...) */
-    const char *path_start = strchr(url + 7, '/');
-    if (path_start) {
-      /* Check if path starts with /rtp/, /udp/, /rtsp/, or /http/ */
-      if (strncmp(path_start, "/rtp/", 5) == 0 ||
-          strncmp(path_start, "/udp/", 5) == 0 ||
-          strncmp(path_start, "/rtsp/", 6) == 0 ||
-          strncmp(path_start, "/http/", 6) == 0) {
-        return 0; /* Already wrapped, don't treat as plain HTTP */
-      }
-    }
-    return 1;
-  }
-  return 0;
-}
-
 int http_proxy_build_url(const char *http_url, const char *base_url_placeholder,
                          char *output, size_t output_size) {
   const char *host_start;
