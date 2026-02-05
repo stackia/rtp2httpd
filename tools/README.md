@@ -87,7 +87,7 @@ python main.py fixtures/fec_sample.pcapng --continuous --loss 1.0 -v
 2. Start rtp2httpd with the test M3U:
 
    ```bash
-   ./rtp2httpd -m tools/fixtures/fec_sample.m3u
+   ./rtp2httpd -m tools/fixtures/sample.m3u
    ```
 
 3. Request the stream (triggers IGMP join):
@@ -196,14 +196,14 @@ python stress_test.py -v
 
 ### Options
 
-| Option           | Default     | Description                                                    |
-| ---------------- | ----------- | -------------------------------------------------------------- |
-| `--program`      | `rtp2httpd` | Program to test: rtp2httpd, msd_lite, udpxy, tvgate            |
-| `--duration`     | `10`        | Test duration in seconds                                       |
-| `--clients`      | `8`         | Number of concurrent curl clients                              |
-| `--speed`        | `5.0`       | Replay speed multiplier (5x ≈ 40 Mbps)                         |
-| `--same-address` | -           | All clients use the same multicast address (default: unique)   |
-| `-v, --verbose`  | -           | Show verbose output from subprocesses                          |
+| Option           | Default     | Description                                                  |
+| ---------------- | ----------- | ------------------------------------------------------------ |
+| `--program`      | `rtp2httpd` | Program to test: rtp2httpd, msd_lite, udpxy, tvgate          |
+| `--duration`     | `10`        | Test duration in seconds                                     |
+| `--clients`      | `8`         | Number of concurrent curl clients                            |
+| `--speed`        | `5.0`       | Replay speed multiplier (5x ≈ 40 Mbps)                       |
+| `--same-address` | -           | All clients use the same multicast address (default: unique) |
+| `-v, --verbose`  | -           | Show verbose output from subprocesses                        |
 
 ### Example Output
 
@@ -297,7 +297,7 @@ Both metrics are read from `/proc/[pid]/smaps_rollup` (Linux 4.14+) and aggregat
 ## Fixtures
 
 - `fixtures/fec_sample.pcapng` - Sample capture with RTP and FEC packets
-- `fixtures/fec_sample.m3u` - M3U playlist for rtp2httpd
+- `fixtures/sample.m3u` - M3U playlist for rtp2httpd
 
 ## Notes
 

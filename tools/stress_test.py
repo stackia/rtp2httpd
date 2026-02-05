@@ -437,7 +437,7 @@ def main() -> int:
 
     # Paths
     pcapng_file = tools_dir / "fixtures" / "fec_sample.pcapng"
-    m3u_file = tools_dir / "fixtures" / "fec_sample.m3u"
+    m3u_file = tools_dir / "fixtures" / "sample.m3u"
 
     # Validate paths
     if not pcapng_file.exists():
