@@ -86,7 +86,7 @@ int snapshot_init(snapshot_context_t *ctx) {
 /**
  * Free snapshot context and release resources
  */
-void snapshot_free(snapshot_context_t *ctx) {
+void snapshot_cleanup(snapshot_context_t *ctx) {
   if (!ctx || !ctx->initialized)
     return;
 
@@ -546,7 +546,7 @@ void snapshot_fallback_to_streaming(snapshot_context_t *ctx,
   /* Headers will be sent lazily when first stream data arrives */
 
   /* Free snapshot context */
-  snapshot_free(ctx);
+  snapshot_cleanup(ctx);
 
   zerocopy_register_stream_client();
   conn->stream_registered = 1;

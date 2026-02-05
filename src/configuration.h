@@ -147,16 +147,16 @@ void free_bindaddr(bindaddr_t *);
 void config_init(void);
 
 /**
- * Free all configuration resources
+ * Cleanup all configuration resources
  * Frees services, EPG cache, M3U cache, bind addresses, and config strings.
  * Respects cmd_*_set flags - resources set by command line are NOT freed.
  * If force_free is true, all resources are freed regardless of cmd_*_set flags.
  */
-void config_free(bool force_free);
+void config_cleanup(bool force_free);
 
 /**
  * Reload configuration from file
- * Sequence: config_free() -> config_init() -> parse_config_file()
+ * Sequence: config_cleanup() -> config_init() -> parse_config_file()
  * Respects command line overrides (cmd_*_set flags).
  *
  * @param out_bind_changed If non-NULL, set to 1 if bind addresses changed

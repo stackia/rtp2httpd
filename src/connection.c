@@ -424,7 +424,7 @@ connection_t *connection_create(int fd, int epfd,
   return c;
 }
 
-void connection_free(connection_t *c) {
+void connection_cleanup(connection_t *c) {
   if (!c)
     return;
 
@@ -439,7 +439,7 @@ void connection_free(connection_t *c) {
    * fallback */
   if (c->streaming) {
     logger(LOG_WARN,
-           "connection_free: streaming flag still set, cleaning up stream");
+           "connection_cleanup: streaming flag still set, cleaning up stream");
     stream_context_cleanup(&c->stream);
   }
 

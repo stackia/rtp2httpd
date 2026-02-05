@@ -214,8 +214,8 @@ void worker_close_and_free_connection(connection_t *c) {
   /* Remove from list */
   remove_connection_from_list(c);
 
-  /* Free connection */
-  connection_free(c);
+  /* Cleanup connection */
+  connection_cleanup(c);
 }
 
 static void term_handler(int signum) {

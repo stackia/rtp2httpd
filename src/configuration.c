@@ -779,7 +779,7 @@ void set_config_file_path(const char *path) {
  * Respects cmd_*_set flags - resources set by command line are NOT freed.
  * Does NOT reset cmd_*_set flags (they track command line args).
  */
-void config_free(bool force_free) {
+void config_cleanup(bool force_free) {
   /* Free all services */
   service_free_all();
 
@@ -881,7 +881,7 @@ void config_init(void) {
 
 /**
  * Reload configuration from file
- * Sequence: config_free() -> config_init() -> parse_config_file()
+ * Sequence: config_cleanup() -> config_init() -> parse_config_file()
  *
  * @param out_bind_changed If non-NULL, set to 1 if bind addresses changed
  * @return 0 on success, -1 on error (keeps old config)
@@ -899,8 +899,8 @@ int config_reload(int *out_bind_changed) {
   /* Save current bind addresses for comparison and potential rollback */
   old_bind_addresses = copy_bindaddr(bind_addresses);
 
-  /* Step 1: Free all configuration resources */
-  config_free(false);
+  /* Step 1: Cleanup all configuration resources */
+  config_cleanup(false);
 
   /* Step 2: Initialize configuration with defaults */
   config_init();
