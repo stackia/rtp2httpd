@@ -47,10 +47,11 @@ select_github_mirror() {
     echo ""
     printf "${CYAN}请选择访问方式:${NC}\n" >&2
     echo ""
-    echo "  1) gh-proxy.com (镜像加速)"
-    echo "  2) GitHub 官方 (直连)"
+    echo "  1) GitHub 官方 (直连)"
+    echo "  2) gh-proxy.com (镜像加速)"
+    echo "  3) ghfast.top (镜像加速)"
     echo ""
-    printf "请输入选项 [1-2] (默认: 1): " >&2
+    printf "请输入选项 [1-3] (默认: 1): " >&2
 
     # 读取用户输入（从 /dev/tty 读取以支持管道环境）
     read choice < /dev/tty
@@ -64,22 +65,28 @@ select_github_mirror() {
 
     case "$choice" in
         1)
-            print_info "使用 gh-proxy.com 镜像加速"
-            GITHUB_API="https://gh-proxy.com/https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
-            GITHUB_RELEASE="https://gh-proxy.com/https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
-            GITHUB_RAW="https://gh-proxy.com/https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
-            ;;
-        2)
             print_info "使用 GitHub 官方直连"
             GITHUB_API="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
             GITHUB_RELEASE="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
             GITHUB_RAW="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
             ;;
-        *)
-            print_warn "无效选项，使用默认方式: gh-proxy.com 镜像加速"
+        2)
+            print_info "使用 gh-proxy.com 镜像加速"
             GITHUB_API="https://gh-proxy.com/https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
             GITHUB_RELEASE="https://gh-proxy.com/https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
             GITHUB_RAW="https://gh-proxy.com/https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
+            ;;
+        3)
+            print_info "使用 ghfast.top 镜像加速"
+            GITHUB_API="https://ghfast.top/https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
+            GITHUB_RELEASE="https://ghfast.top/https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
+            GITHUB_RAW="https://ghfast.top/https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
+            ;;
+        *)
+            print_warn "无效选项，使用默认方式: GitHub 官方直连"
+            GITHUB_API="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
+            GITHUB_RELEASE="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
+            GITHUB_RAW="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
             ;;
     esac
 
