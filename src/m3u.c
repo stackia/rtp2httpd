@@ -1075,6 +1075,18 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
             }
           }
 
+          /* First, generate the main service URL to know if it has query params */
+          char *main_query = extract_dynamic_params(line);
+          int main_url_has_query = 0;
+
+          /* Build service URL using the actual unique service name for
+           * transformed M3U */
+          if (build_service_url(unique_service_name, main_query, proxy_url,
+                                sizeof(proxy_url)) == 0) {
+            /* Check if the generated URL has query parameters */
+            main_url_has_query = (strchr(proxy_url, '?') != NULL);
+          }
+
           /* Now generate the transformed EXTINF line with unique names */
           if (unique_catchup_name && catchup_is_recognizable) {
             /* Replace catchup-source URL in EXTINF line */
@@ -1118,32 +1130,47 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
           } else if (current_extinf.has_catchup &&
                      strlen(current_extinf.catchup_source) > 0 &&
                      !catchup_is_recognizable &&
-                     current_extinf.catchup_source[0] == '&') {
-            /* catchup-source is not recognizable but starts with '&', and main
-             * service was converted Replace '&' with '?' to make it valid for
-             * append mode */
-            char *catchup_start = strstr(transformed_line, "catchup-source=\"");
-            if (catchup_start) {
-              catchup_start += 16; /* Skip 'catchup-source="' */
-              char *catchup_end = strchr(catchup_start, '"');
-              if (catchup_end) {
-                /* Build transformed EXTINF line with modified catchup-source */
-                size_t prefix_len = catchup_start - transformed_line;
-                char final_extinf[MAX_M3U_LINE];
-                /* Replace leading '&' with '?' */
-                snprintf(final_extinf, sizeof(final_extinf), "%.*s?%.*s%s",
-                         (int)prefix_len, transformed_line,
-                         (int)(catchup_end - catchup_start - 1),
-                         catchup_start + 1, catchup_end);
-                append_to_transformed_m3u(final_extinf, service_source);
-                append_to_transformed_m3u("\n", service_source);
+                     (current_extinf.catchup_source[0] == '&' ||
+                      current_extinf.catchup_source[0] == '?')) {
+            /* catchup-source is not recognizable but starts with '&' or '?',
+             * and main service was converted. Adjust the leading character
+             * based on whether main URL has query parameters:
+             * - Main URL has '?': catchup-source should start with '&'
+             * - Main URL has no '?': catchup-source should start with '?' */
+            char expected_char = main_url_has_query ? '&' : '?';
+            char current_char = current_extinf.catchup_source[0];
+
+            if (current_char == expected_char) {
+              /* Already correct, keep as-is */
+              append_to_transformed_m3u(transformed_line, service_source);
+              append_to_transformed_m3u("\n", service_source);
+            } else {
+              /* Need to replace leading character */
+              char *catchup_start =
+                  strstr(transformed_line, "catchup-source=\"");
+              if (catchup_start) {
+                catchup_start += 16; /* Skip 'catchup-source="' */
+                char *catchup_end = strchr(catchup_start, '"');
+                if (catchup_end) {
+                  /* Build transformed EXTINF line with modified catchup-source
+                   */
+                  size_t prefix_len = catchup_start - transformed_line;
+                  char final_extinf[MAX_M3U_LINE];
+                  /* Replace leading char with expected_char */
+                  snprintf(final_extinf, sizeof(final_extinf), "%.*s%c%.*s%s",
+                           (int)prefix_len, transformed_line, expected_char,
+                           (int)(catchup_end - catchup_start - 1),
+                           catchup_start + 1, catchup_end);
+                  append_to_transformed_m3u(final_extinf, service_source);
+                  append_to_transformed_m3u("\n", service_source);
+                } else {
+                  append_to_transformed_m3u(transformed_line, service_source);
+                  append_to_transformed_m3u("\n", service_source);
+                }
               } else {
                 append_to_transformed_m3u(transformed_line, service_source);
                 append_to_transformed_m3u("\n", service_source);
               }
-            } else {
-              append_to_transformed_m3u(transformed_line, service_source);
-              append_to_transformed_m3u("\n", service_source);
             }
           } else {
             /* No catchup or unrecognizable catchup URL, use original EXTINF */
@@ -1151,13 +1178,8 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
             append_to_transformed_m3u("\n", service_source);
           }
 
-          /* Now generate the main service URL */
-          char *main_query = extract_dynamic_params(line);
-
-          /* Build service URL using the actual unique service name for
-           * transformed M3U */
-          if (build_service_url(unique_service_name, main_query, proxy_url,
-                                sizeof(proxy_url)) == 0) {
+          /* Append the main service URL */
+          if (proxy_url[0] != '\0') {
             append_to_transformed_m3u(proxy_url, service_source);
           } else {
             append_to_transformed_m3u(line, service_source);
