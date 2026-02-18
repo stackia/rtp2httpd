@@ -1924,22 +1924,26 @@ static int rtsp_process_interleaved_buffer(rtsp_session_t *session,
       break;
     }
 
-    /* Process RTP/RTCP packet based on channel */
-    if (channel == session->rtp_channel) {
-      buffer_ref_t *packet_buf = buffer_pool_alloc();
-      if (packet_buf) {
-        memcpy(packet_buf->data, &session->response_buffer[4], packet_length);
-        packet_buf->data_size = (size_t)packet_length;
-        int pb = stream_process_rtp_payload(&conn->stream, packet_buf);
-        if (pb > 0)
-          bytes_forwarded += pb;
-        buffer_ref_put(packet_buf);
-      } else {
-        session->packets_dropped++;
-        logger(LOG_DEBUG, "RTSP TCP: Buffer pool exhausted, dropping packet");
+    /* Process RTP/RTCP packet based on channel.
+     * During TEARDOWN, stream context (reorder, FEC, etc.) is already freed,
+     * so skip payload processing and just consume the frame from the buffer. */
+    if (!session->teardown_requested) {
+      if (channel == session->rtp_channel) {
+        buffer_ref_t *packet_buf = buffer_pool_alloc();
+        if (packet_buf) {
+          memcpy(packet_buf->data, &session->response_buffer[4], packet_length);
+          packet_buf->data_size = (size_t)packet_length;
+          int pb = stream_process_rtp_payload(&conn->stream, packet_buf);
+          if (pb > 0)
+            bytes_forwarded += pb;
+          buffer_ref_put(packet_buf);
+        } else {
+          session->packets_dropped++;
+          logger(LOG_DEBUG, "RTSP TCP: Buffer pool exhausted, dropping packet");
+        }
+      } else if (channel == session->rtcp_channel) {
+        /* RTCP data - ignored */
       }
-    } else if (channel == session->rtcp_channel) {
-      /* RTCP data - ignored */
     }
 
     /* Remove processed packet from buffer */
