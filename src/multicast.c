@@ -329,7 +329,9 @@ static int rejoin_mcast_group(service_t *service) {
 
     memset(&dest, 0, sizeof(dest));
     dest.sin_family = AF_INET;
-    dest.sin_addr.s_addr = inet_addr("224.0.0.2");
+    /* RFC 2236 §3.7: Membership Reports go to the group address, not 224.0.0.2
+     * (224.0.0.2 is for Leave Group messages only). */
+    dest.sin_addr.s_addr = group_addr;
 
     if (sendto(raw_sock, &report_v2, sizeof(report_v2), 0,
                (struct sockaddr *)&dest, sizeof(dest)) < 0) {
