@@ -141,6 +141,25 @@ int http_filter_query_param(const char *query_string, const char *exclude_param,
                             char *output, size_t output_size);
 
 /**
+ * Find $label suffix at the end of a URL.
+ * A $label is a trailing "$..." at the very end of the URL, used for UI display
+ * in frontend players. The '$' must NOT be followed by '{' (to avoid matching
+ * ${placeholder} patterns used in dynamic parameters).
+ *
+ * @param url Input URL string
+ * @return Pointer to the '$' within the url string, or NULL if no label found
+ */
+const char *http_find_url_label(const char *url);
+
+/**
+ * Strip $label suffix from the end of a URL in-place.
+ * Uses http_find_url_label() to locate the label, then truncates the string.
+ *
+ * @param url URL string to modify in-place
+ */
+void http_strip_url_label(char *url);
+
+/**
  * Filter Cookie header to remove a specific cookie (case-insensitive name)
  * Cookie format: "name1=value1; name2=value2; ..."
  * @param cookie_header Input cookie header value

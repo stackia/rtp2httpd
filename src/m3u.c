@@ -574,7 +574,7 @@ static int extract_wrapped_url(const char *url, char *extracted,
 }
 
 /* Build service URL for transformed M3U using placeholder
- * service_name: name of the service (will be URL encoded)
+ * service_name: name of the service
  * query_params: optional query parameters (can be NULL)
  * output: buffer to store URL
  * output_size: size of output buffer
@@ -582,48 +582,36 @@ static int extract_wrapped_url(const char *url, char *extracted,
  */
 static int build_service_url(const char *service_name, const char *query_params,
                              char *output, size_t output_size) {
-  char *encoded_name = http_url_encode(service_name);
   char *encoded_token = NULL;
   int result;
   int has_query_params = (query_params && strlen(query_params) > 0);
   int has_r2h_token = (config.r2h_token && config.r2h_token[0] != '\0');
-
-  if (!encoded_name) {
-    logger(LOG_ERROR, "Failed to URL encode service name");
-    return -1;
-  }
 
   /* URL encode r2h-token if configured */
   if (has_r2h_token) {
     encoded_token = http_url_encode(config.r2h_token);
     if (!encoded_token) {
       logger(LOG_ERROR, "Failed to URL encode r2h-token");
-      free(encoded_name);
       return -1;
     }
   }
 
   /* Build URL with placeholder and appropriate query parameters */
   if (has_query_params && has_r2h_token) {
-    /* Include both query parameters and r2h-token */
     result = snprintf(output, output_size, "%s%s?%s&r2h-token=%s",
-                      M3U_BASE_URL_PLACEHOLDER, encoded_name, query_params,
+                      M3U_BASE_URL_PLACEHOLDER, service_name, query_params,
                       encoded_token);
   } else if (has_query_params) {
-    /* Include only query parameters */
     result = snprintf(output, output_size, "%s%s?%s", M3U_BASE_URL_PLACEHOLDER,
-                      encoded_name, query_params);
+                      service_name, query_params);
   } else if (has_r2h_token) {
-    /* Include only r2h-token */
     result = snprintf(output, output_size, "%s%s?r2h-token=%s",
-                      M3U_BASE_URL_PLACEHOLDER, encoded_name, encoded_token);
+                      M3U_BASE_URL_PLACEHOLDER, service_name, encoded_token);
   } else {
-    /* No query parameters */
     result = snprintf(output, output_size, "%s%s", M3U_BASE_URL_PLACEHOLDER,
-                      encoded_name);
+                      service_name);
   }
 
-  free(encoded_name);
   if (encoded_token)
     free(encoded_token);
 
@@ -748,10 +736,11 @@ static char *find_unique_service_name(const char *service_name) {
   service_t *existing;
   int max_suffix = 0;
   char test_name[MAX_SERVICE_NAME];
-  char *result = NULL;
   int base_exists = 0;
 
-  /* Check if base name exists and find max numbered suffix */
+  /* Check if base name exists and find max numbered suffix.
+   * Service names use /label for $label differentiation (e.g.,
+   * "group/channel/UHD"), so dedup is a simple string comparison. */
   for (existing = services; existing != NULL; existing = existing->next) {
     if (!existing->url)
       continue;
@@ -787,13 +776,10 @@ static char *find_unique_service_name(const char *service_name) {
   }
 
   /* Base name is taken, assign next available number */
-  /* Start from 2 (first duplicate), or max_suffix + 1 if numbered services
-   * already exist */
   int next_suffix = (max_suffix > 0) ? max_suffix + 1 : 2;
   snprintf(test_name, sizeof(test_name), "%s/%d", service_name, next_suffix);
-  result = strdup(test_name);
 
-  return result;
+  return strdup(test_name);
 }
 
 /* Create a service from name and URL
@@ -819,6 +805,11 @@ static char *create_service_from_url(const char *service_name, const char *url,
     strncpy(normalized_url, extracted_url, sizeof(normalized_url) - 1);
     normalized_url[sizeof(normalized_url) - 1] = '\0';
   }
+
+  /* Strip $label suffix from URL before creating service
+   * ($label is a UI display tag at the end of URL, not part of the actual
+   * address) */
+  http_strip_url_label(normalized_url);
 
   /* Find unique service name (handles duplicates automatically) */
   unique_name = find_unique_service_name(service_name);
@@ -1049,13 +1040,36 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
 
     /* Process URL line (follows EXTINF) */
     if (in_entry && line[0] != '#') {
+      /* Extract $label suffix from URL end before any processing */
+      const char *url_label = http_find_url_label(line);
+      char url_label_copy[MAX_SERVICE_NAME];
+      if (url_label) {
+        strncpy(url_label_copy, url_label, sizeof(url_label_copy) - 1);
+        url_label_copy[sizeof(url_label_copy) - 1] = '\0';
+      } else {
+        url_label_copy[0] = '\0';
+      }
+
       /* Check if URL is recognizable */
       int is_recognizable = is_url_recognizable(line);
 
       if (is_recognizable) {
+        /* Build service name: append /label (converting $label to /label)
+         * so that same channel with different labels get distinct paths */
+        char name_with_label[MAX_SERVICE_NAME];
+        if (url_label_copy[0] == '$' && url_label_copy[1] != '\0') {
+          /* Convert "$label" to "/label" and append to service name */
+          snprintf(name_with_label, sizeof(name_with_label), "%s/%s",
+                   current_extinf.name, url_label_copy + 1);
+        } else {
+          strncpy(name_with_label, current_extinf.name,
+                  sizeof(name_with_label) - 1);
+          name_with_label[sizeof(name_with_label) - 1] = '\0';
+        }
+
         /* Recognizable URL: create service first to get unique name */
         char *unique_service_name =
-            create_service_from_url(current_extinf.name, line, service_source);
+            create_service_from_url(name_with_label, line, service_source);
 
         if (unique_service_name) {
           char *unique_catchup_name = NULL;
@@ -1075,8 +1089,13 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
             }
           }
 
-          /* First, generate the main service URL to know if it has query params */
-          char *main_query = extract_dynamic_params(line);
+          /* Extract dynamic params from URL without $label to avoid
+           * $label causing static params (like fcc) to be treated as dynamic */
+          char line_without_label[MAX_M3U_LINE];
+          strncpy(line_without_label, line, sizeof(line_without_label) - 1);
+          line_without_label[sizeof(line_without_label) - 1] = '\0';
+          http_strip_url_label(line_without_label);
+          char *main_query = extract_dynamic_params(line_without_label);
           int main_url_has_query = 0;
 
           /* Build service URL using the actual unique service name for
@@ -1085,6 +1104,16 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
                                 sizeof(proxy_url)) == 0) {
             /* Check if the generated URL has query parameters */
             main_url_has_query = (strchr(proxy_url, '?') != NULL);
+
+            /* Append raw $label to the very end of proxy URL (after any query
+             * params) so that it always appears as the last part of the URL */
+            if (url_label_copy[0] != '\0') {
+              size_t purl_len = strlen(proxy_url);
+              size_t lbl_len = strlen(url_label_copy);
+              if (purl_len + lbl_len < sizeof(proxy_url)) {
+                memcpy(proxy_url + purl_len, url_label_copy, lbl_len + 1);
+              }
+            }
           }
 
           /* Now generate the transformed EXTINF line with unique names */
@@ -1295,7 +1324,7 @@ char *m3u_generate_playlist(const char *host_header,
     int written;
     int has_r2h_token = (config.r2h_token && config.r2h_token[0] != '\0');
     char *encoded_token = NULL;
-    
+
     /* URL encode r2h-token if configured */
     if (has_r2h_token) {
       encoded_token = http_url_encode(config.r2h_token);
@@ -1305,16 +1334,16 @@ char *m3u_generate_playlist(const char *host_header,
         has_r2h_token = 0;
       }
     }
-    
+
     if (has_r2h_token && encoded_token) {
       /* Include r2h-token in EPG URL */
       if (epg->is_gzipped) {
         written = snprintf(dst_ptr, result_size - result_used,
-                           "#EXTM3U x-tvg-url=\"%sepg.xml.gz?r2h-token=%s\"\n\n", 
+                           "#EXTM3U x-tvg-url=\"%sepg.xml.gz?r2h-token=%s\"\n\n",
                            base_url, encoded_token);
       } else {
         written = snprintf(dst_ptr, result_size - result_used,
-                           "#EXTM3U x-tvg-url=\"%sepg.xml?r2h-token=%s\"\n\n", 
+                           "#EXTM3U x-tvg-url=\"%sepg.xml?r2h-token=%s\"\n\n",
                            base_url, encoded_token);
       }
     } else {
@@ -1327,12 +1356,12 @@ char *m3u_generate_playlist(const char *host_header,
                            "#EXTM3U x-tvg-url=\"%sepg.xml\"\n\n", base_url);
       }
     }
-    
+
     if (written > 0) {
       dst_ptr += written;
       result_used += written;
     }
-    
+
     if (encoded_token) {
       free(encoded_token);
     }
