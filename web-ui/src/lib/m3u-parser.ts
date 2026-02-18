@@ -1,5 +1,5 @@
 import mpegts from "@rtp2httpd/mpegts.js";
-import { M3UMetadata, Channel } from "../types/player";
+import { M3UMetadata, Channel, Source } from "../types/player";
 
 /**
  * Parse M3U playlist content
@@ -14,7 +14,15 @@ export function parseM3U(content: string): M3UMetadata {
   let defaultCatchup: string | undefined;
   let defaultCatchupSource: string | undefined;
 
-  let currentChannel: Omit<Channel, "url"> | null = null;
+  let currentExtinf: {
+    name: string;
+    logo?: string;
+    group: string;
+    tvgId?: string;
+    tvgName?: string;
+    catchup?: string;
+    catchupSource?: string;
+  } | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -61,8 +69,7 @@ export function parseM3U(content: string): M3UMetadata {
         seenGroups.add(group);
       }
 
-      currentChannel = {
-        id: `${channels.length + 1}`,
+      currentExtinf = {
         name,
         logo: tvgLogoMatch?.[1],
         group,
@@ -76,45 +83,83 @@ export function parseM3U(content: string): M3UMetadata {
 
     // Parse URL line
     if (
-      currentChannel &&
+      currentExtinf &&
       (line.startsWith("http://") ||
         line.startsWith("https://") ||
         line.startsWith("rtp://") ||
         line.startsWith("rtsp://") ||
         line.startsWith("udp://"))
     ) {
+      // Extract optional $<label> suffix from URL (e.g., "http://...url$高清" → label "高清")
+      const labelMatch = line.match(/\$([^$]+)$/);
+      const sourceLabel = labelMatch ? labelMatch[1] : undefined;
+
       channels.push({
-        ...currentChannel,
-        url: line,
+        id: `${channels.length + 1}`,
+        name: currentExtinf.name,
+        logo: currentExtinf.logo,
+        group: currentExtinf.group,
+        tvgId: currentExtinf.tvgId,
+        tvgName: currentExtinf.tvgName,
+        sources: [{ url: line, catchup: currentExtinf.catchup, catchupSource: currentExtinf.catchupSource, label: sourceLabel }],
       });
-      currentChannel = null;
+      currentExtinf = null;
     }
   }
 
   return {
     tvgUrl,
-    channels,
+    channels: mergeChannelSources(channels),
     groups,
   };
 }
 
 /**
+ * Merge channels with the same name and group into a single channel with multiple sources.
+ * Channels are considered duplicates if they share the same group + name combination.
+ */
+function mergeChannelSources(channels: Channel[]): Channel[] {
+  const mergeMap = new Map<string, Channel>();
+
+  for (const ch of channels) {
+    const key = `${ch.group}\0${ch.name}`;
+    const existing = mergeMap.get(key);
+
+    if (existing) {
+      existing.sources.push(...ch.sources);
+      if (!existing.logo && ch.logo) {
+        existing.logo = ch.logo;
+      }
+    } else {
+      mergeMap.set(key, { ...ch });
+    }
+  }
+
+  const merged = Array.from(mergeMap.values());
+  merged.forEach((ch, i) => {
+    ch.id = `${i + 1}`;
+  });
+
+  return merged;
+}
+
+/**
  * Build catchup segments with playseek parameter
- * @param channel - The channel object containing catchup configuration
+ * @param source - The source containing url, catchup mode, and catchupSource
  * @param startTime - Start time for playback
  * @param tailOffsetSeconds - Tail offset in seconds (0 means current time, positive values move the tail back)
  * @returns Array of media segments for catchup playback
  */
 export function buildCatchupSegments(
-  channel: Channel,
+  source: Source,
   startTime: Date,
   tailOffsetSeconds: number = 0,
 ): mpegts.MediaSegment[] {
-  if (!channel.catchupSource) {
-    throw new Error("Channel does not have catchup source configured");
+  if (!source.catchupSource) {
+    throw new Error("Source does not have catchup source configured");
   }
 
-  const catchupMode = channel.catchup || "default";
+  const catchupMode = source.catchup || "default";
   const now = new Date();
   const endingFuture = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   const segments: mpegts.MediaSegment[] = [];
@@ -221,7 +266,7 @@ export function buildCatchupSegments(
    */
   const buildCatchupUrl = (segmentStartTime: Date, segmentEndTime: Date): string => {
     // Replace placeholders in catchup source
-    let processedSource = channel.catchupSource!;
+    let processedSource = source.catchupSource!;
 
     const durationSeconds = Math.floor((segmentEndTime.getTime() - segmentStartTime.getTime()) / 1000);
     const currentTimestamp = Math.floor(now.getTime() / 1000);
@@ -380,7 +425,7 @@ export function buildCatchupSegments(
     // Build final URL based on catchup mode
     if (catchupMode === "append") {
       // Append mode: append catchup source to original channel URL
-      return channel.url + processedSource;
+      return source.url + processedSource;
     } else {
       // Default mode: use catchup source as complete URL
       return processedSource;

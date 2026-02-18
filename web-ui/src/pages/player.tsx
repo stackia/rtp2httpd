@@ -24,6 +24,8 @@ import {
   getCatchupTailOffset,
   saveForce16x9,
   getForce16x9,
+  saveLastSourceIndex,
+  getLastSourceIndex,
 } from "../lib/player-storage";
 import { cn } from "../lib/utils";
 
@@ -56,6 +58,12 @@ function PlayerPage() {
   // Track current video playback time in seconds (relative to stream start)
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
 
+  // Track active source index for multi-source channels
+  const [activeSourceIndex, setActiveSourceIndex] = useState(0);
+
+  // Get the active source's URL and catchupSource
+  const activeSource = currentChannel?.sources[activeSourceIndex] ?? currentChannel?.sources[0];
+
   // Track fullscreen state
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -81,29 +89,35 @@ function PlayerPage() {
   }, []);
 
   useEffect(() => {
-    if (!currentChannel) return;
+    if (!activeSource) return;
 
     const now = new Date();
 
     if (streamStartTime.getTime() > now.getTime() - 3000) {
-      setPlaybackSegments([
-        {
-          url: currentChannel.url,
-          duration: 0,
-        },
-      ]);
+      setPlaybackSegments([{ url: activeSource.url, duration: 0 }]);
       setPlayMode("live");
       return;
     }
 
-    // Check if channel supports catchup
-    if (!currentChannel.catchup || !currentChannel.catchupSource) {
+    // Source supports catchup: use it
+    if (activeSource.catchup && activeSource.catchupSource) {
+      setPlaybackSegments(buildCatchupSegments(activeSource, streamStartTime, catchupTailOffset));
+      setPlayMode("catchup");
       return;
     }
 
-    setPlaybackSegments(buildCatchupSegments(currentChannel, streamStartTime, catchupTailOffset));
-    setPlayMode("catchup");
-  }, [currentChannel, streamStartTime, catchupTailOffset]);
+    // Source doesn't support catchup: try to find another source that does
+    const fallbackIndex = currentChannel?.sources.findIndex(
+      (s, i) => i !== activeSourceIndex && s.catchup && s.catchupSource,
+    );
+    if (fallbackIndex !== undefined && fallbackIndex !== -1) {
+      setActiveSourceIndex(fallbackIndex);
+      return;
+    }
+
+    // No source supports catchup, fall back to live
+    setStreamStartTime(new Date());
+  }, [currentChannel, activeSource, activeSourceIndex, streamStartTime, catchupTailOffset]);
 
   const handleVideoSeek = useCallback(
     (seekTime: Date) => {
@@ -121,8 +135,26 @@ function PlayerPage() {
     [streamStartTime],
   );
 
+  const handleSourceChange = useCallback(
+    (sourceIndex: number) => {
+      if (playMode === "live") {
+        setStreamStartTime(new Date());
+      } else {
+        // Preserve current playback position when switching source in catchup mode
+        setStreamStartTime(new Date(streamStartTime.getTime() + currentVideoTime * 1000));
+      }
+      setActiveSourceIndex(sourceIndex);
+      if (currentChannel) {
+        saveLastSourceIndex(currentChannel.id, sourceIndex);
+      }
+    },
+    [currentChannel, playMode, streamStartTime, currentVideoTime],
+  );
+
   const selectChannel = useCallback((channel: Channel) => {
     setCurrentChannel(channel);
+    const lastSource = getLastSourceIndex(channel.id);
+    setActiveSourceIndex(lastSource < channel.sources.length ? lastSource : 0);
     setStreamStartTime(new Date());
   }, []);
 
@@ -340,6 +372,8 @@ function PlayerPage() {
             onToggleSidebar={handleToggleSidebar}
             onFullscreenToggle={handleFullscreenToggle}
             force16x9={force16x9}
+            activeSourceIndex={activeSourceIndex}
+            onSourceChange={handleSourceChange}
           />
         </div>
 
@@ -400,7 +434,7 @@ function PlayerPage() {
                 epgData={epgData}
                 onProgramSelect={handleVideoSeek}
                 locale={locale}
-                supportsCatchup={!!(currentChannel?.catchup && currentChannel?.catchupSource)}
+                supportsCatchup={!!currentChannel?.sources.some((s) => s.catchup && s.catchupSource)}
                 currentPlayingProgram={currentVideoProgram}
               />
             </Activity>

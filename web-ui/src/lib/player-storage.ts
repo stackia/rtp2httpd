@@ -7,6 +7,7 @@ const STORAGE_KEYS = {
   SIDEBAR_VISIBLE: "rtp2httpd-player-sidebar-visible",
   CATCHUP_TAIL_OFFSET: "rtp2httpd-player-catchup-tail-offset",
   FORCE_16_9: "rtp2httpd-player-force-16-9",
+  LAST_SOURCE_INDEX: "rtp2httpd-player-last-source-index",
 } as const;
 
 /**
@@ -109,5 +110,35 @@ export function getForce16x9(): boolean {
   } catch (error) {
     console.error("Failed to get force 16:9 setting:", error);
     return true;
+  }
+}
+
+/**
+ * Save the last active source index for a channel
+ * @param channelId - The channel ID
+ * @param sourceIndex - The source index to save
+ */
+export function saveLastSourceIndex(channelId: string, sourceIndex: number): void {
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.LAST_SOURCE_INDEX) || "{}");
+    stored[channelId] = sourceIndex;
+    localStorage.setItem(STORAGE_KEYS.LAST_SOURCE_INDEX, JSON.stringify(stored));
+  } catch (error) {
+    console.error("Failed to save last source index:", error);
+  }
+}
+
+/**
+ * Get the last active source index for a channel
+ * @param channelId - The channel ID
+ * @returns The last source index or 0 (default)
+ */
+export function getLastSourceIndex(channelId: string): number {
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.LAST_SOURCE_INDEX) || "{}");
+    return stored[channelId] ?? 0;
+  } catch (error) {
+    console.error("Failed to get last source index:", error);
+    return 0;
   }
 }

@@ -260,14 +260,14 @@ export function generateFallbackPrograms(
  */
 export function fillEPGGaps(
   epgData: EPGData,
-  channels: { tvgId?: string; tvgName?: string; name: string; catchup?: string; catchupSource?: string }[],
+  channels: { tvgId?: string; tvgName?: string; name: string; sources?: { catchup?: string; catchupSource?: string }[] }[],
   lookbackHours: number = 72,
 ): EPGData {
   const filledData = { ...epgData };
 
   for (const channel of channels) {
     // Only process channels with catchup support
-    if (!channel.catchup || !channel.catchupSource) {
+    if (!channel.sources?.some((s) => s.catchup && s.catchupSource)) {
       continue;
     }
 

@@ -1,13 +1,18 @@
+export interface Source {
+  url: string;
+  catchup?: string;
+  catchupSource?: string;
+  label?: string;
+}
+
 export interface Channel {
   id: string;
   name: string;
   logo?: string;
   group: string;
-  url: string;
   tvgId?: string;
   tvgName?: string;
-  catchup?: string;
-  catchupSource?: string;
+  sources: Source[];
 }
 
 export interface EPGProgram {
