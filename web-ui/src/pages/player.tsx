@@ -64,6 +64,11 @@ function PlayerPage() {
   // Get the active source's URL and catchupSource
   const activeSource = currentChannel?.sources[activeSourceIndex] ?? currentChannel?.sources[0];
 
+  // Reset currentVideoTime when streamStartTime changes (new stream starts from 0)
+  useEffect(() => {
+    setCurrentVideoTime(0);
+  }, [streamStartTime]);
+
   // Track fullscreen state
   useEffect(() => {
     const handleFullscreenChange = () => {
