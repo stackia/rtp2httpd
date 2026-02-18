@@ -53,66 +53,6 @@ rtp://239.253.64.121:5140
 rtp://239.194.10.15:1234
 ```
 
-## URL 识别与转换规则
-
-### 支持的 URL 格式
-
-rtp2httpd 能够识别并转换以下格式的 URL：
-
-1. **直接协议 URL**：
-
-   - `rtp://[source@]multicast_addr:port[?query]`
-   - `rtsp://server:port/path[?query]`
-   - `udp://multicast_addr:port[?query]`
-
-2. **UDPxy 格式的 HTTP URL**：
-   - `http://hostname:port/rtp/multicast_addr:port`
-   - `http://hostname:port/rtsp/server:port/path`
-   - 会自动把 `hostname:port` 替换为 rtp2httpd 实际的地址和端口
-
-### 转换示例
-
-| 原始 URL                                    | 转换后 URL                                    |
-| ------------------------------------------- | --------------------------------------------- |
-| `rtp://239.253.64.120:5140`                 | `http://hostname:5140/CCTV-1`                 |
-| `rtsp://10.0.0.50:554/live`                 | `http://hostname:5140/CCTV-2`                 |
-| `http://router:5140/rtp/239.1.1.1:1234`     | `http://hostname:5140/频道名`                 |
-| `http://other-server/stream.m3u8`（第三方） | `http://other-server/stream.m3u8`（保持原样） |
-
-**服务名称提取规则**：使用 `#EXTINF` 行中最后一个逗号后的文本作为服务名称。
-
-```
-#EXTINF:-1 tvg-id="..." tvg-name="..." group-title="...",CCTV-1
-                                                          ^^^^^^
-                                                        服务名称
-```
-
-## 时移回看（Catchup）支持
-
-当 M3U 中包含 `catchup-source` 属性时，rtp2httpd 会自动创建对应的时移服务。
-
-### 配置示例
-
-```m3u
-#EXTINF:-1 tvg-id="CCTV1" catchup="default" catchup-source="rtsp://10.0.0.50:554/catchup?playseek={utc:YmdHMS}-{utcend:YmdHMS}",CCTV-1
-rtp://239.253.64.120:5140
-```
-
-### 转换结果
-
-- **直播服务**：`http://hostname:5140/CCTV-1`
-- **时移服务**：`http://hostname:5140/CCTV-1/catchup?playseek={utc:YmdHMS}-{utcend:YmdHMS}`
-
-### 占位符处理
-
-- **动态占位符**（包含 `{` 或 `}`）：保留在转换后的 URL 中，由播放器填充
-  - 例如：`{utc:YmdHMS}`、`{utcend:YmdHMS}`
-- **静态参数**：其他查询参数不会保留在转换的 m3u 中。但依然会保留在对上游的请求中。
-
-### 不可识别 URL 的处理
-
-如果 `catchup-source` 是第三方 HTTP URL（如 `http://other-cdn.com/catchup`），则会原样保留，不进行转换。
-
 ## 使用播放列表
 
 ### 方式一：使用内置播放器
@@ -188,6 +128,7 @@ http://other-cdn.com/live/stream.m3u8
 ```
 
 **注意**：
+
 - EPG 的 URL 已转换为 rtp2httpd 代理地址
 - CCTV-1 和 CCTV-2 的 URL 已转换为 rtp2httpd 代理地址
 - CCTV-1 的 catchup-source 也已转换，并保留动态占位符
@@ -196,24 +137,121 @@ http://other-cdn.com/live/stream.m3u8
 ## 使用建议
 
 1. **HTTP/HTTPS 支持**
-
    - 需要系统安装 `curl` 或 `uclient-fetch` 或 `wget` 命令
    - rtp2httpd 会自动检测并使用可用的工具
 
 2. **更新策略**
-
    - 默认 24 小时自动更新外部 M3U
    - 可根据源更新频率调整 `external-m3u-update-interval`
    - 设为 0 禁用自动更新（需手动重启服务更新）
 
 3. **混合使用**
-
    - 可同时配置外部 M3U 和内联 M3U
    - 两者会合并到同一个转换后的播放列表中
 
 4. **使用反向代理时开启 `xff` 选项**
-
    - M3U 在转换过程中，需要知道自身的完整访问地址，因此如果使用反向代理，请开启 `xff` 选项，并确保反代程序可以透传 `X-Forwarded-*` 相关头。详见 [公网访问建议](configuration.md#公网访问建议)。
+
+## URL 识别与转换规则
+
+### 支持的 URL 格式
+
+rtp2httpd 能够识别并转换以下格式的 URL：
+
+1. **直接协议 URL**：
+   - `rtp://[source@]multicast_addr:port[?query]`
+   - `rtsp://server:port/path[?query]`
+   - `udp://multicast_addr:port[?query]`
+
+2. **UDPxy 格式的 HTTP URL**：
+   - `http://hostname:port/rtp/multicast_addr:port`
+   - `http://hostname:port/rtsp/server:port/path`
+   - 会自动把 `hostname:port` 替换为 rtp2httpd 实际的地址和端口
+
+### 转换示例
+
+| 原始 URL                                    | 转换后 URL                                    |
+| ------------------------------------------- | --------------------------------------------- |
+| `rtp://239.253.64.120:5140`                 | `http://hostname:5140/CCTV-1`                 |
+| `rtsp://10.0.0.50:554/live`                 | `http://hostname:5140/CCTV-2`                 |
+| `http://router:5140/rtp/239.1.1.1:1234`     | `http://hostname:5140/频道名`                 |
+| `http://other-server/stream.m3u8`（第三方） | `http://other-server/stream.m3u8`（保持原样） |
+
+**服务名称提取规则**：使用 `#EXTINF` 行中最后一个逗号后的文本作为服务名称。
+
+```
+#EXTINF:-1 tvg-id="..." tvg-name="..." group-title="...",CCTV-1
+                                                          ^^^^^^
+                                                        服务名称
+```
+
+## 时移回看（Catchup）支持
+
+当 M3U 中包含 `catchup-source` 属性时，rtp2httpd 会自动创建对应的时移服务。
+
+### 配置示例
+
+```m3u
+#EXTINF:-1 tvg-id="CCTV1" catchup="default" catchup-source="rtsp://10.0.0.50:554/catchup?playseek={utc:YmdHMS}-{utcend:YmdHMS}",CCTV-1
+rtp://239.253.64.120:5140
+```
+
+### 转换结果
+
+- **直播服务**：`http://hostname:5140/CCTV-1`
+- **时移服务**：`http://hostname:5140/CCTV-1/catchup?playseek={utc:YmdHMS}-{utcend:YmdHMS}`
+
+### 占位符处理
+
+- **动态占位符**（包含 `{` 或 `}`）：保留在转换后的 URL 中，由播放器填充
+  - 例如：`{utc:YmdHMS}`、`{utcend:YmdHMS}`
+- **静态参数**：其他查询参数不会保留在转换的 m3u 中。但依然会保留在对上游的请求中。
+
+### 不可识别 URL 的处理
+
+如果 `catchup-source` 是第三方 HTTP URL（如 `http://other-cdn.com/catchup`），则会原样保留，不进行转换。
+
+## 线路标签
+
+通过在 URL 末尾添加 `$标签` 后缀，可以为频道源指定显示标签（如清晰度）。`$标签` 必须位于整个 URL 的最末尾。
+
+只有在支持标签和频道聚合的播放器中（例如内置网页播放器）才有效果。
+
+### 示例输入
+
+```m3u
+#EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
+rtp://239.253.64.96:5140/?fcc=10.255.75.73:15970$超高清
+#EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
+rtp://239.253.64.200:5140/?fcc=10.255.75.73:15970$高清
+#EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
+rtp://239.253.64.44:5140/?fcc=10.255.75.73:15970$标清
+```
+
+### 示例输出
+
+每个带 `$label` 的频道会生成独立的服务路径，`$label` 转换为 `/label` 子路径，同时 `$label` 保留在转换后 URL 的末尾：
+
+```m3u
+#EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
+http://192.168.1.1:5140/卫视/广东卫视/超高清$超高清
+
+#EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
+http://192.168.1.1:5140/卫视/广东卫视/高清$高清
+
+#EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
+http://192.168.1.1:5140/卫视/广东卫视/标清$标清
+```
+
+### 内置播放器频道聚合
+
+> **注意**：频道聚合是**内置 Web 播放器**的前端功能，并非 rtp2httpd 服务端行为。第三方播放器（如 APTV、TiviMate 等）是否支持类似的聚合显示取决于其自身实现。rtp2httpd 服务端仅负责解析 `$标签`、生成独立的服务路径，以及在转换后的 M3U 中保留 `$标签`。
+
+当 M3U 中存在多个**同组同名**的频道时，内置播放器会自动将它们聚合为一个频道的多个源，在频道列表中只显示一次。用户可以通过源选择器切换不同源（如不同清晰度）：
+
+<img width="664" height="352" alt="频道源选择器" src="https://github.com/user-attachments/assets/1b17ac40-e0e6-4a5f-8659-2b4ba9bd7c28" />
+
+如果源 URL 带有 `$标签` 后缀，播放器会将其提取为源的显示标签（如「超高清」「高清」「标清」）。没有 `$标签` 的源则按序号显示（如「线路 1」「线路 2」）。
 
 ## 内置播放器支持的时间占位符
 
