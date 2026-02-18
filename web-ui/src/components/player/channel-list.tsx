@@ -1,8 +1,9 @@
-import { useState, useMemo, useRef, useLayoutEffect, RefObject, useCallback, memo } from "react";
+import { useState, useMemo, useRef, useLayoutEffect, RefObject, useCallback, memo, useEffect, useTransition, useDeferredValue } from "react";
 import { Search } from "lucide-react";
 import { Channel } from "../../types/player";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
+import { EPGData, getEPGChannelId, getCurrentProgram } from "../../lib/epg-parser";
 import { ChannelListItem } from "./channel-list-item";
 import { cn } from "../../lib/utils";
 
@@ -13,6 +14,7 @@ interface ChannelListProps {
   onChannelSelect: (channel: Channel) => void;
   locale: Locale;
   settingsSlot?: React.ReactNode;
+  epgData?: EPGData;
 }
 
 export const nextScrollBehaviorRef: RefObject<"smooth" | "instant" | "skip"> = { current: "instant" };
@@ -24,12 +26,41 @@ function ChannelListComponent({
   onChannelSelect,
   locale,
   settingsSlot,
+  epgData,
 }: ChannelListProps) {
   const t = usePlayerTranslation(locale);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const currentChannelRef = useRef<HTMLDivElement>(null);
+
+  // Re-compute current programs every minute (low-priority update)
+  const [now, setNow] = useState(() => new Date());
+  const [, startTransition] = useTransition();
+  useEffect(() => {
+    const timer = setInterval(() => {
+      startTransition(() => setNow(new Date()));
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, [startTransition]);
+
+  // Defer epgData so initial load / large EPG updates don't block interactions
+  const deferredEpgData = useDeferredValue(epgData);
+
+  // Map channel id -> current program title
+  const currentProgramMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (!channels || !deferredEpgData) return map;
+    for (const ch of channels) {
+      const epgId = getEPGChannelId(ch, deferredEpgData);
+      if (!epgId) continue;
+      const program = getCurrentProgram(epgId, deferredEpgData, now);
+      if (program?.title) {
+        map[ch.id] = program.title;
+      }
+    }
+    return map;
+  }, [channels, deferredEpgData, now]);
 
   // Filter and sort channels
   const filteredChannels = useMemo(() => {
@@ -204,6 +235,7 @@ function ChannelListComponent({
               isCurrentChannel={channel.id === currentChannel?.id}
               handleChannelClick={handleChannelClick}
               locale={locale}
+              currentProgram={currentProgramMap[channel.id]}
             />
           ))}
         </div>
