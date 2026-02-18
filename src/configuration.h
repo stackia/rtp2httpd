@@ -74,8 +74,6 @@ typedef struct {
   /* Multicast settings */
   int mcast_rejoin_interval; /* Periodic multicast rejoin interval in seconds
                                 (0=disabled, default 0) */
-  int mcast_timeout; /* Multicast stream inactivity timeout in seconds before
-                        closing connection (default 5) */
 
   /* FFmpeg settings */
   char *ffmpeg_path; /* Path to ffmpeg executable (NULL=use system default

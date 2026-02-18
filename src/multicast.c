@@ -329,7 +329,9 @@ static int rejoin_mcast_group(service_t *service) {
 
     memset(&dest, 0, sizeof(dest));
     dest.sin_family = AF_INET;
-    dest.sin_addr.s_addr = inet_addr("224.0.0.2");
+    /* RFC 2236 §3.7: Membership Reports go to the group address, not 224.0.0.2
+     * (224.0.0.2 is for Leave Group messages only). */
+    dest.sin_addr.s_addr = group_addr;
 
     if (sendto(raw_sock, &report_v2, sizeof(report_v2), 0,
                (struct sockaddr *)&dest, sizeof(dest)) < 0) {
@@ -558,42 +560,21 @@ int mcast_session_tick(mcast_session_t *session, service_t *service,
       logger(LOG_DEBUG, "Multicast: Periodic rejoin (interval: %d seconds)",
              config.mcast_rejoin_interval);
 
-      /*
-       * Primary method: socket-based leave + rejoin.
-       * This works without root privileges and causes the kernel to send
-       * a fresh IGMP Membership Report, refreshing the membership in
-       * upstream IGMP proxies (ONU/DSLAM). Ideal for ISPs like China
-       * Telecom that use aggressive IGMP membership timeouts.
-       */
-      mcast_group_op(session->sock, service, 0, "periodic leave");
-      if (mcast_group_op(session->sock, service, 1, "periodic rejoin") == 0) {
+      if (rejoin_mcast_group(service) == 0) {
         session->last_rejoin_time = now;
-        /* Reset timeout counter to avoid false positive after brief leave gap */
-        session->last_data_time = now;
-        logger(LOG_DEBUG, "Multicast: Socket-based rejoin successful");
       } else {
         logger(LOG_ERROR,
-               "Multicast: Socket rejoin failed, will retry next interval");
-      }
-
-      /*
-       * Secondary method: raw IGMP report (best-effort, requires root/CAP_NET_RAW).
-       * Provides an explicit IGMP report in addition to the kernel's automatic
-       * one. Failures are non-fatal since the socket rejoin above is sufficient.
-       */
-      if (rejoin_mcast_group(service) == 0) {
-        logger(LOG_DEBUG, "Multicast: Raw IGMP report sent successfully");
+               "Multicast: Failed to rejoin group, will retry next interval");
       }
     }
   }
 
   /* Check for multicast stream timeout */
-  int mcast_timeout = (config.mcast_timeout > 0) ? config.mcast_timeout : MCAST_TIMEOUT_SEC;
   int64_t elapsed_ms = now - session->last_data_time;
-  if (elapsed_ms >= mcast_timeout * 1000) {
+  if (elapsed_ms >= MCAST_TIMEOUT_SEC * 1000) {
     logger(LOG_ERROR,
            "Multicast: No data received for %d seconds, closing connection",
-           mcast_timeout);
+           MCAST_TIMEOUT_SEC);
     return -1;
   }
 
