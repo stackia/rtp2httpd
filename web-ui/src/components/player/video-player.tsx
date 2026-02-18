@@ -622,7 +622,7 @@ export function VideoPlayer({
 
   return (
     <div
-      className="relative w-full bg-black md:h-full"
+      className="relative w-full bg-black md:h-full pt-[env(safe-area-inset-top)]"
       onMouseMove={showControlsImmediately}
       onMouseLeave={hideControlsImmediately}
     >

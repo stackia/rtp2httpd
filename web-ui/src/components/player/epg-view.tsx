@@ -146,7 +146,7 @@ function EPGViewComponent({
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       <div className="relative">
         {Array.from(programsByDate.entries()).map(([dateKey, programs]) => {
           const date = new Date(dateKey);
