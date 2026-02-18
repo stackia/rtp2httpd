@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState, useCallback, useMemo, useRef, Activity } from "react";
+import { StrictMode, useEffect, useState, useCallback, useMemo, useRef, Activity, startTransition } from "react";
 import { createRoot } from "react-dom/client";
 import mpegts from "@rtp2httpd/mpegts.js";
 import { Channel, M3UMetadata, PlayMode } from "../types/player";
@@ -84,7 +84,7 @@ function PlayerPage() {
   // Track mobile/desktop state
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
+      startTransition(() => setIsMobile(window.innerWidth < 768));
     };
 
     window.addEventListener("resize", handleResize);
@@ -230,18 +230,18 @@ function PlayerPage() {
           .then((epg) => {
             // Fill gaps in EPG data with 2-hour fallback programs for catchup-capable channels
             const filledEpg = fillEPGGaps(epg, parsed.channels);
-            setEpgData(filledEpg);
+            startTransition(() => setEpgData(filledEpg));
           })
           .catch((err) => {
             console.error("Failed to load EPG:", err);
             // Even if EPG loading fails, generate fallback programs for catchup-capable channels
             const fallbackEpg = fillEPGGaps({}, parsed.channels);
-            setEpgData(fallbackEpg);
+            startTransition(() => setEpgData(fallbackEpg));
           });
       } else {
         // No EPG URL provided, generate fallback programs for catchup-capable channels
         const fallbackEpg = fillEPGGaps({}, parsed.channels);
-        setEpgData(fallbackEpg);
+        startTransition(() => setEpgData(fallbackEpg));
       }
 
       // Try to restore last played channel, otherwise select first channel
@@ -431,6 +431,7 @@ function PlayerPage() {
                 onChannelSelect={selectChannel}
                 locale={locale}
                 settingsSlot={settingsSlot}
+                epgData={epgData}
               />
             </Activity>
             <Activity mode={sidebarView === "epg" ? "visible" : "hidden"}>

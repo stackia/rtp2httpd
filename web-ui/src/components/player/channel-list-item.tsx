@@ -10,10 +10,11 @@ interface ChannelListItemProps {
   isCurrentChannel: boolean;
   handleChannelClick: (channel: Channel) => void;
   locale: Locale;
+  currentProgram?: string;
 }
 
 const ChannelListItemComponent = forwardRef<HTMLDivElement, ChannelListItemProps>(
-  ({ channel, isCurrentChannel, handleChannelClick, locale }, ref) => {
+  ({ channel, isCurrentChannel, handleChannelClick, locale, currentProgram }, ref) => {
     const t = usePlayerTranslation(locale);
 
     const handleClick = useCallback(() => {
@@ -45,7 +46,15 @@ const ChannelListItemComponent = forwardRef<HTMLDivElement, ChannelListItemProps
               </span>
             )}
           </div>
-          <div className="mt-0.5 truncate text-[10px] md:text-xs text-muted-foreground">{channel.group}</div>
+          <div className="mt-0.5 truncate text-[10px] md:text-xs text-muted-foreground">
+            {channel.group}
+            {currentProgram && (
+              <>
+                <span className="mx-1">·</span>
+                <span>{currentProgram}</span>
+              </>
+            )}
+          </div>
         </div>
         {/* Right: Logo */}
         {channel.logo && (
