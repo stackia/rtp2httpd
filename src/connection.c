@@ -158,16 +158,29 @@ static int extract_r2h_token_from_ua(const char *user_agent, char *value_buf,
  * @return Token source if valid, TOKEN_SOURCE_NONE if not found or invalid
  */
 static token_source_t validate_r2h_token(connection_t *c,
-                                         const char *query_start) {
+                                         const char *query_start,
+                                         const char *raw_query_start) {
   char token_value[256] = {0};
 
-  /* Source 1: URL query parameter (highest priority) */
+  /* Source 1: URL query parameter (highest priority)
+   * Try stripped URL first, then raw URL as fallback in case the configured
+   * token itself contains '$' which would be incorrectly stripped */
   if (query_start) {
     if (http_parse_query_param(query_start + 1, "r2h-token", token_value,
                                sizeof(token_value)) == 0) {
       if (strcmp(token_value, config.r2h_token) == 0) {
         logger(LOG_DEBUG, "r2h-token validated (source: query)");
         return TOKEN_SOURCE_QUERY;
+      }
+      /* Retry with raw (unstripped) query in case token contains '$' */
+      if (raw_query_start && strchr(config.r2h_token, '$')) {
+        char raw_token[256] = {0};
+        if (http_parse_query_param(raw_query_start + 1, "r2h-token", raw_token,
+                                   sizeof(raw_token)) == 0 &&
+            strcmp(raw_token, config.r2h_token) == 0) {
+          logger(LOG_DEBUG, "r2h-token validated (source: query, raw)");
+          return TOKEN_SOURCE_QUERY;
+        }
       }
       logger(LOG_WARN, "r2h-token mismatch (source: query)");
       return TOKEN_SOURCE_NONE;
@@ -623,8 +636,12 @@ void connection_handle_read(connection_t *c) {
 }
 
 int connection_route_and_start(connection_t *c) {
-  /* Ensure URL begins with '/' */
-  const char *url = c->http_req.url;
+  /* Copy URL and strip $label suffix (UI display tag at URL end) */
+  char url_buf[HTTP_URL_BUFFER_SIZE];
+  strncpy(url_buf, c->http_req.url, sizeof(url_buf) - 1);
+  url_buf[sizeof(url_buf) - 1] = '\0';
+  http_strip_url_label(url_buf);
+  const char *url = url_buf;
 
   /* Format client address string (will be overridden by X-Forwarded-For if
    * present later) */
@@ -725,7 +742,8 @@ int connection_route_and_start(connection_t *c) {
 
   /* Check r2h-token if configured (supports URL query, Cookie, User-Agent) */
   if (config.r2h_token != NULL && config.r2h_token[0] != '\0') {
-    token_source_t source = validate_r2h_token(c, query_start);
+    const char *raw_query_start = strchr(c->http_req.url, '?');
+    token_source_t source = validate_r2h_token(c, query_start, raw_query_start);
     if (source == TOKEN_SOURCE_NONE) {
       http_send_401(c);
       return 0;
@@ -855,6 +873,9 @@ int connection_route_and_start(connection_t *c) {
     return 0;
   }
 
+  /* Strip $label suffix from decoded path (used for UI display only) */
+  http_strip_url_label(decoded_path);
+
   /* Match against configured services using O(1) hashmap lookup */
   service = service_hashmap_get(decoded_path);
 
@@ -868,7 +889,7 @@ int connection_route_and_start(connection_t *c) {
      * present */
     logger(LOG_INFO, "Service matched: %s", service->url);
     service_t *merged_service = service_create_with_query_merge(
-        service, c->http_req.url, service->service_type);
+        service, url, service->service_type);
     if (merged_service) {
       service = merged_service;
     } else {

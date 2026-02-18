@@ -471,6 +471,47 @@ int http_parse_query_param(const char *query_string, const char *param_name,
   return 0;
 }
 
+const char *http_find_url_label(const char *url) {
+  const char *p;
+  size_t len;
+
+  if (!url) {
+    return NULL;
+  }
+
+  len = strlen(url);
+  if (len == 0) {
+    return NULL;
+  }
+
+  /* Search backwards for '$' */
+  p = url + len;
+  while (p > url) {
+    p--;
+    if (*p == '$') {
+      /* '$' at the very end of string (no label text after it) - not a label */
+      if (p[1] == '\0') {
+        continue;
+      }
+      /* '${' is a placeholder pattern, not a label */
+      if (p[1] == '{') {
+        continue;
+      }
+      return p;
+    }
+  }
+
+  return NULL;
+}
+
+void http_strip_url_label(char *url) {
+  const char *label = http_find_url_label(url);
+  if (label) {
+    /* Truncate at the '$' position */
+    url[label - url] = '\0';
+  }
+}
+
 int http_filter_cookie(const char *cookie_header, const char *exclude_name,
                        char *output, size_t output_size) {
   if (!cookie_header || !exclude_name || !output || output_size == 0) {

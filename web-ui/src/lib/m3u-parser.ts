@@ -90,7 +90,7 @@ export function parseM3U(content: string): M3UMetadata {
         line.startsWith("rtsp://") ||
         line.startsWith("udp://"))
     ) {
-      // Extract optional $<label> suffix from URL (e.g., "http://...url$高清" → label "高清")
+      // Extract optional $<label> suffix from URL (e.g., "http://...url$UHD" → label "UHD")
       const labelMatch = line.match(/\$([^$]+)$/);
       const sourceLabel = labelMatch ? labelMatch[1] : undefined;
 
@@ -101,7 +101,9 @@ export function parseM3U(content: string): M3UMetadata {
         group: currentExtinf.group,
         tvgId: currentExtinf.tvgId,
         tvgName: currentExtinf.tvgName,
-        sources: [{ url: line, catchup: currentExtinf.catchup, catchupSource: currentExtinf.catchupSource, label: sourceLabel }],
+        sources: [
+          { url: line, catchup: currentExtinf.catchup, catchupSource: currentExtinf.catchupSource, label: sourceLabel },
+        ],
       });
       currentExtinf = null;
     }
