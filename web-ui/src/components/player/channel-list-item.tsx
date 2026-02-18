@@ -39,7 +39,7 @@ const ChannelListItemComponent = forwardRef<HTMLDivElement, ChannelListItemProps
         <div className="flex-1 overflow-hidden min-w-0">
           <div className="flex items-center gap-1 md:gap-1.5">
             <div className="truncate text-sm md:text-base font-semibold leading-tight">{channel.name}</div>
-            {channel.catchup && (
+            {channel.sources.some((s) => s.catchup && s.catchupSource) && (
               <span title={t("catchup")}>
                 <History className="h-3 w-3 md:h-3.5 md:w-3.5 shrink-0 text-primary" />
               </span>

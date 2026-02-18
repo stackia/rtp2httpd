@@ -73,6 +73,10 @@ const base: TranslationDict = {
   tomorrow: "Tomorrow",
   dayBeforeYesterday: "2 days ago",
 
+  // Source selector
+  source: "Source",
+  sourceFallback: "Trying next source...",
+
   // Settings
   settings: "Settings",
   language: "Language",
@@ -156,6 +160,10 @@ const zhHans: TranslationDict = {
   tomorrow: "明天",
   dayBeforeYesterday: "前天",
 
+  // 线路选择
+  source: "线路",
+  sourceFallback: "正在尝试下一线路...",
+
   // 设置
   settings: "设置",
   language: "语言",
@@ -238,6 +246,10 @@ const zhHant: TranslationDict = {
   yesterday: "昨天",
   tomorrow: "明天",
   dayBeforeYesterday: "前天",
+
+  // 線路選擇
+  source: "線路",
+  sourceFallback: "正在嘗試下一線路...",
 
   // 設置
   settings: "設定",

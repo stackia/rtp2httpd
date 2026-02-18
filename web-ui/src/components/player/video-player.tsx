@@ -23,6 +23,8 @@ interface VideoPlayerProps {
   onToggleSidebar?: () => void;
   onFullscreenToggle?: () => void;
   force16x9?: boolean;
+  activeSourceIndex?: number;
+  onSourceChange?: (index: number) => void;
 }
 
 const MAX_RETRIES = 3;
@@ -43,6 +45,8 @@ export function VideoPlayer({
   onToggleSidebar,
   onFullscreenToggle,
   force16x9 = true,
+  activeSourceIndex = 0,
+  onSourceChange,
 }: VideoPlayerProps) {
   const t = usePlayerTranslation(locale);
 
@@ -206,7 +210,14 @@ export function VideoPlayer({
       return;
     }
 
-    // Max retries reached, show error
+    // Max retries reached, try fallback to next source
+    if (channel && onSourceChange && activeSourceIndex + 1 < channel.sources.length) {
+      console.log("Falling back to next source...");
+      onSourceChange(activeSourceIndex + 1);
+      return;
+    }
+
+    // No more sources to try, show error
     setError(errorMessage);
     onError?.(errorMessage);
     setIsLoading(false);
@@ -620,6 +631,9 @@ export function VideoPlayer({
               <div className="absolute inset-0 rounded-full border-2 border-white border-t-transparent animate-spin" />
             </div>
             <span className="text-xs md:text-sm text-white font-medium">
+              {channel &&
+                channel.sources.length > 1 &&
+                `[${channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}] `}
               {t("loadingVideo")}
               {retryCount - acceptedRetryCount > 0 && ` (${retryCount - acceptedRetryCount}/${MAX_RETRIES})`}
             </span>
@@ -721,6 +735,8 @@ export function VideoPlayer({
               onToggleSidebar={onToggleSidebar}
               isPiP={isPiP}
               onPiPToggle={handlePiPToggle}
+              activeSourceIndex={activeSourceIndex}
+              onSourceChange={onSourceChange}
             />
           </div>
         )}
