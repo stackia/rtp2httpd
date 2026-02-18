@@ -32,6 +32,7 @@ int cmd_r2h_token_set = 0;
 int cmd_buffer_pool_max_size_set = 0;
 int cmd_udp_rcvbuf_size_set = 0;
 int cmd_mcast_rejoin_interval_set = 0;
+int cmd_mcast_timeout_set = 0;
 int cmd_ffmpeg_path_set = 0;
 int cmd_ffmpeg_args_set = 0;
 int cmd_video_snapshot_set = 0;
@@ -540,6 +541,20 @@ void parse_global_sec(char *line) {
     return;
   }
 
+  if (strcasecmp("mcast-timeout", param) == 0) {
+    if (set_if_not_cmd_override(cmd_mcast_timeout_set, "mcast-timeout")) {
+      int timeout = atoi(value);
+      if (timeout < 1) {
+        logger(LOG_ERROR,
+               "Invalid mcast-timeout value: %s (must be >= 1)", value);
+      } else {
+        config.mcast_timeout = timeout;
+        logger(LOG_INFO, "Multicast timeout set to %d seconds", timeout);
+      }
+    }
+    return;
+  }
+
   /* External M3U configuration */
   if (strcasecmp("external-m3u", param) == 0) {
     if (config.external_m3u_url)
@@ -839,6 +854,8 @@ void config_init(void) {
     config.video_snapshot = 0;
   if (!cmd_mcast_rejoin_interval_set)
     config.mcast_rejoin_interval = 0;
+  if (!cmd_mcast_timeout_set)
+    config.mcast_timeout = 5;
   if (!cmd_zerocopy_on_send_set)
     config.zerocopy_on_send = 0;
   if (!cmd_fcc_listen_port_range_set) {
