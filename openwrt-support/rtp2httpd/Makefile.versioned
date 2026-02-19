@@ -14,7 +14,7 @@ PKG_FIXUP:=autoreconf
 
 PKG_SOURCE:=rtp2httpd-v$(RELEASE_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/stackia/rtp2httpd/tar.gz/v$(RELEASE_VERSION)?
-PKG_HASH:=skip
+PKG_HASH:=f2d42db1944b8199e3956baca1c45477a9acc9e1496f06d5347d73b72337fd2d
 
 include $(INCLUDE_DIR)/package.mk
 

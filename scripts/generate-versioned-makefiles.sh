@@ -3,8 +3,15 @@ set -e
 
 RELEASE_VERSION=${RELEASE_VERSION:-"1.0.0-snapshot"}
 
+# Download source tarball and compute PKG_HASH
+PKG_SOURCE_URL="https://codeload.github.com/stackia/rtp2httpd/tar.gz/v${RELEASE_VERSION}"
+TARBALL=$(mktemp)
+trap 'rm -f "$TARBALL"' EXIT
+curl -fsSL -o "$TARBALL" "$PKG_SOURCE_URL"
+PKG_HASH=$(sha256sum "$TARBALL" | cut -d' ' -f1)
+
 # Process rtp2httpd Makefile
-awk -v version="$RELEASE_VERSION" '
+awk -v version="$RELEASE_VERSION" -v pkg_hash="$PKG_HASH" '
   # Skip comment line
   /^# Extract version from git tags/ { next }
   # Handle multi-line RELEASE_VERSION block
@@ -28,7 +35,7 @@ awk -v version="$RELEASE_VERSION" '
   /^include \$\(INCLUDE_DIR\)\/package\.mk$/ {
     print "PKG_SOURCE:=rtp2httpd-v$(RELEASE_VERSION).tar.gz"
     print "PKG_SOURCE_URL:=https://codeload.github.com/stackia/rtp2httpd/tar.gz/v$(RELEASE_VERSION)?"
-    print "PKG_HASH:=skip"
+    print "PKG_HASH:=" pkg_hash
     print ""
   }
   # Print all other lines
