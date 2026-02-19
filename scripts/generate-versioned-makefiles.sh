@@ -12,8 +12,11 @@ PKG_HASH=$(sha256sum "$TARBALL" | cut -d' ' -f1)
 
 # Process rtp2httpd Makefile
 awk -v version="$RELEASE_VERSION" -v pkg_hash="$PKG_HASH" '
-  # Skip comment line
+  # Skip comment lines about version extraction and Makefile.versioned
   /^# Extract version from git tags/ { next }
+  /^# For firmware maintainers:/ { next }
+  /^# version and PKG_HASH/ { next }
+  /^# See https:\/\/github.com\/stackia\/rtp2httpd/ { next }
   # Handle multi-line RELEASE_VERSION block
   /^RELEASE_VERSION:=/ {
     # Print hardcoded version instead
@@ -44,8 +47,11 @@ awk -v version="$RELEASE_VERSION" -v pkg_hash="$PKG_HASH" '
 
 # Process luci-app-rtp2httpd Makefile
 awk -v version="$RELEASE_VERSION" '
-  # Skip comment line
+  # Skip comment lines about version extraction and Makefile.versioned
   /^# Extract version from git tags/ { next }
+  /^# For firmware maintainers:/ { next }
+  /^# version and PKG_HASH/ { next }
+  /^# See https:\/\/github.com\/stackia\/rtp2httpd/ { next }
   # Handle multi-line RELEASE_VERSION block
   /^RELEASE_VERSION:=/ {
     # Print hardcoded version instead

@@ -136,7 +136,7 @@ src-git rtp2httpd https://github.com/stackia/rtp2httpd.git;v3.1.1
 
 ### 固件维护者集成指南
 
-如果你维护第三方 OpenWrt 固件，希望直接将 rtp2httpd 集成到你的 feeds 仓库中（而非通过 `src-git` 引用），可以使用上游提供的预生成 Makefile：
+如果你维护第三方 OpenWrt 固件，希望直接将 rtp2httpd 集成到你的 feeds 仓库中（而非通过 `src-git` 引用），可以使用本项目提供的 `Makefile.versioned`：
 
 ```bash
 git clone https://github.com/stackia/rtp2httpd.git
@@ -150,7 +150,7 @@ mv openwrt-support/luci-app-rtp2httpd/Makefile.versioned openwrt-support/luci-ap
 cp -r openwrt-support/* /path/to/your/feeds/
 ```
 
-`Makefile.versioned` 与原始 `Makefile` 的区别在于：版本号已固定、`PKG_HASH` 已填充、构建时会从 GitHub Release 下载源码包，无需本地 git 仓库。每次上游发布新版本时，`Makefile.versioned` 会自动更新。
+`Makefile.versioned` 与原始 `Makefile` 的区别在于：版本号已固定、`PKG_HASH` 已填充、构建时会从 GitHub Release 下载源码包，无需本地 git 仓库。每次 rtp2httpd 发布新版本时，main 分支 `Makefile.versioned` 都会自动更新。
 
 ## 传统编译安装
 
