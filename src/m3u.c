@@ -574,7 +574,7 @@ static int extract_wrapped_url(const char *url, char *extracted,
 }
 
 /* Build service URL for transformed M3U using placeholder
- * service_name: name of the service
+ * service_name: name of the service (will be URL encoded)
  * query_params: optional query parameters (can be NULL)
  * output: buffer to store URL
  * output_size: size of output buffer
@@ -582,16 +582,23 @@ static int extract_wrapped_url(const char *url, char *extracted,
  */
 static int build_service_url(const char *service_name, const char *query_params,
                              char *output, size_t output_size) {
+  char *encoded_name = http_url_encode(service_name);
   char *encoded_token = NULL;
   int result;
   int has_query_params = (query_params && strlen(query_params) > 0);
   int has_r2h_token = (config.r2h_token && config.r2h_token[0] != '\0');
+
+  if (!encoded_name) {
+    logger(LOG_ERROR, "Failed to URL encode service name");
+    return -1;
+  }
 
   /* URL encode r2h-token if configured */
   if (has_r2h_token) {
     encoded_token = http_url_encode(config.r2h_token);
     if (!encoded_token) {
       logger(LOG_ERROR, "Failed to URL encode r2h-token");
+      free(encoded_name);
       return -1;
     }
   }
@@ -599,19 +606,20 @@ static int build_service_url(const char *service_name, const char *query_params,
   /* Build URL with placeholder and appropriate query parameters */
   if (has_query_params && has_r2h_token) {
     result = snprintf(output, output_size, "%s%s?%s&r2h-token=%s",
-                      M3U_BASE_URL_PLACEHOLDER, service_name, query_params,
+                      M3U_BASE_URL_PLACEHOLDER, encoded_name, query_params,
                       encoded_token);
   } else if (has_query_params) {
     result = snprintf(output, output_size, "%s%s?%s", M3U_BASE_URL_PLACEHOLDER,
-                      service_name, query_params);
+                      encoded_name, query_params);
   } else if (has_r2h_token) {
     result = snprintf(output, output_size, "%s%s?r2h-token=%s",
-                      M3U_BASE_URL_PLACEHOLDER, service_name, encoded_token);
+                      M3U_BASE_URL_PLACEHOLDER, encoded_name, encoded_token);
   } else {
     result = snprintf(output, output_size, "%s%s", M3U_BASE_URL_PLACEHOLDER,
-                      service_name);
+                      encoded_name);
   }
 
+  free(encoded_name);
   if (encoded_token)
     free(encoded_token);
 
