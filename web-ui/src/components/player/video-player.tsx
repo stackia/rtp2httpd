@@ -68,10 +68,22 @@ export function VideoPlayer({
   const [retryBaseline, setRetryBaseline] = useState(0);
   const [isRetrySeek, setIsRetrySeek] = useState(false);
   const stablePlaybackTimeoutRef = useRef<number>(0);
+  const [isNativeHLS, setIsNativeHLS] = useState(false);
 
   // Digit input state
   const [digitBuffer, setDigitBuffer] = useState("");
   const digitTimeoutRef = useRef<number>(0);
+
+  // Helper function to detect if URL is HLS
+  const isHLSUrl = useCallback((url: string): boolean => {
+    return url.includes(".m3u8") || url.includes("application/vnd.apple.mpegurl");
+  }, []);
+
+  // Helper function to check if browser supports native HLS
+  const canPlayHLS = useCallback((): boolean => {
+    const video = document.createElement("video");
+    return video.canPlayType("application/vnd.apple.mpegurl") !== "";
+  }, []);
 
   // Debounce loading indicator to prevent flickering on fast loads
   useEffect(() => {
@@ -96,10 +108,24 @@ export function VideoPlayer({
 
   const handleSeek = useCallback(
     (seekTime: Date) => {
-      if (playerRef.current && seekTime.getTime() >= streamStartTime.getTime()) {
-        const seekSeconds = (seekTime.getTime() - streamStartTime.getTime()) / 1000;
+      const video = videoRef.current;
+      if (!video) return;
 
-        // Check if seekSeconds is within buffered ranges
+      const seekSeconds = (seekTime.getTime() - streamStartTime.getTime()) / 1000;
+
+      if (isNativeHLS) {
+        // For native HLS, seek directly on video element if within duration
+        if (seekSeconds >= 0 && (!video.duration || seekSeconds <= video.duration)) {
+          video.currentTime = seekSeconds;
+          if (video.paused) {
+            video.play().catch((err: Error) => {
+              console.error("Play error after seek:", err);
+            });
+          }
+          return;
+        }
+      } else if (playerRef.current && seekTime.getTime() >= streamStartTime.getTime()) {
+        // For mpegts.js, check buffered ranges
         const buffered = playerRef.current.buffered;
         let isBuffered = false;
 
@@ -120,22 +146,37 @@ export function VideoPlayer({
           return;
         }
       }
-      // If not buffered, call onSeek callback
+
+      // If not buffered or out of range, call onSeek callback
       onSeek?.(seekTime);
     },
-    [onSeek, streamStartTime],
+    [onSeek, streamStartTime, isNativeHLS],
   );
 
   const togglePlayPause = useCallback(() => {
-    if (playerRef.current && videoRef.current) {
-      if (videoRef.current.paused) {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (isNativeHLS) {
+      // For native HLS, control the video element directly
+      if (video.paused) {
+        video.play().catch((err: Error) => {
+          console.error("Play error:", err);
+        });
+        setNeedsUserInteraction(false);
+      } else {
+        video.pause();
+      }
+    } else if (playerRef.current) {
+      // For mpegts.js, use the player API
+      if (video.paused) {
         playerRef.current.play();
         setNeedsUserInteraction(false);
       } else {
         playerRef.current.pause();
       }
     }
-  }, []);
+  }, [isNativeHLS]);
 
   const resetControlsTimer = useCallback(() => {
     if (hideControlsTimeoutRef.current) {
@@ -250,7 +291,10 @@ export function VideoPlayer({
 
   // Load video stream
   useEffect(() => {
-    if (!segments.length || !videoRef.current || !mpegts.isSupported()) return;
+    if (!segments.length || !videoRef.current) return;
+
+    const video = videoRef.current;
+    const firstSegmentUrl = segments[0].url;
 
     console.log("Player loading...");
 
@@ -267,6 +311,56 @@ export function VideoPlayer({
     setIsPlaying(false);
     setNeedsUserInteraction(false);
 
+    // Check if this is an HLS stream
+    const isHLS = isHLSUrl(firstSegmentUrl);
+    const useNativeHLS = isHLS && canPlayHLS();
+
+    setIsNativeHLS(useNativeHLS);
+
+    if (useNativeHLS) {
+      // Native HLS playback
+      console.log("Using native HLS playback");
+
+      try {
+        video.src = firstSegmentUrl;
+        video.load();
+
+        const playPromise = video.play();
+        if (playPromise) {
+          playPromise
+            .catch((err: Error) => {
+              if (err.name === "NotAllowedError" || err.message.includes("user didn't interact")) {
+                setNeedsUserInteraction(true);
+              } else {
+                const errorMsg = `${t("failedToPlay")}: ${err.message}`;
+                setError(errorMsg);
+                onError?.(errorMsg);
+              }
+            })
+            .finally(() => {
+              setIsLoading(false);
+            });
+        }
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : t("failedToPlay");
+        setError(errorMsg);
+        onError?.(errorMsg);
+        setIsLoading(false);
+      }
+
+      return () => {
+        video.src = "";
+        video.load();
+      };
+    }
+
+    // MPEG-TS playback using mpegts.js
+    if (!mpegts.isSupported()) {
+      setError(t("mseNotSupported"));
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const player = mpegts.createPlayer(
         {
@@ -282,7 +376,7 @@ export function VideoPlayer({
       );
 
       playerRef.current = player;
-      player.attachMediaElement(videoRef.current);
+      player.attachMediaElement(video);
 
       player.on(mpegts.Events.ERROR, handlePlayerError);
 
@@ -313,7 +407,7 @@ export function VideoPlayer({
         playerRef.current = null;
       }
     };
-  }, [segments, liveSync, onError, showControlsImmediately, t]);
+  }, [segments, liveSync, onError, showControlsImmediately, t, isHLSUrl, canPlayHLS]);
 
   const handleVideoCanPlay = useEffectEvent(() => {
     setIsLoading(false);
@@ -494,7 +588,9 @@ export function VideoPlayer({
       case "M":
         e.preventDefault();
         // Toggle mute
-        if (playerRef.current) {
+        if (isNativeHLS && videoRef.current) {
+          videoRef.current.muted = !videoRef.current.muted;
+        } else if (playerRef.current) {
           playerRef.current.muted = !playerRef.current.muted;
         }
         break;
@@ -565,16 +661,29 @@ export function VideoPlayer({
   }, [showControls, hideControlsImmediately, showControlsImmediately]);
 
   const handleMuteToggle = useCallback(() => {
-    if (playerRef.current) {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (isNativeHLS) {
+      video.muted = !video.muted;
+    } else if (playerRef.current) {
       playerRef.current.muted = !playerRef.current.muted;
     }
-  }, []);
+  }, [isNativeHLS]);
 
-  const handleVolumeChange = useCallback((newVolume: number) => {
-    if (playerRef.current) {
-      playerRef.current.volume = newVolume;
-    }
-  }, []);
+  const handleVolumeChange = useCallback(
+    (newVolume: number) => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      if (isNativeHLS) {
+        video.volume = newVolume;
+      } else if (playerRef.current) {
+        playerRef.current.volume = newVolume;
+      }
+    },
+    [isNativeHLS],
+  );
 
   const handleFullscreen = useCallback(() => {
     // Check if it's iOS
@@ -609,9 +718,21 @@ export function VideoPlayer({
   }, []);
 
   const handleUserClick = () => {
-    if (needsUserInteraction && playerRef.current) {
-      setNeedsUserInteraction(false);
-      setIsPlaying(true);
+    if (!needsUserInteraction) return;
+
+    const video = videoRef.current;
+    if (!video) return;
+
+    setNeedsUserInteraction(false);
+    setIsPlaying(true);
+
+    if (isNativeHLS) {
+      video.play()?.catch((err: Error) => {
+        console.error("Play error after user interaction:", err);
+        setError(`${t("failedToPlay")}: ${err.message}`);
+        onError?.(`${t("failedToPlay")}: ${err.message}`);
+      });
+    } else if (playerRef.current) {
       playerRef.current.play()?.catch((err: Error) => {
         console.error("Play error after user interaction:", err);
         setError(`${t("failedToPlay")}: ${err.message}`);
