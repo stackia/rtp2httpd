@@ -5,7 +5,6 @@ import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { EPGData } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
 import type { EPGProgram } from "../../types/player";
-import { Card } from "../ui/card";
 
 interface EPGViewProps {
 	channelId: string | null;
@@ -27,7 +26,7 @@ function EPGViewComponent({
 	currentPlayingProgram,
 }: EPGViewProps) {
 	const t = usePlayerTranslation(locale);
-	const currentProgramRef = useRef<HTMLDivElement>(null);
+	const currentProgramRef = useRef<HTMLButtonElement>(null);
 	const [currentTime, setCurrentTime] = useState(() => new Date());
 
 	useEffect(() => {
@@ -146,7 +145,7 @@ function EPGViewComponent({
 	}
 
 	return (
-		<div className="h-full overflow-y-auto pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+		<div className="h-full overflow-y-auto pb-[env(safe-area-inset-bottom)]">
 			<div className="relative">
 				{Array.from(programsByDate.entries()).map(([dateKey, programs]) => {
 					const date = new Date(dateKey);
@@ -158,19 +157,20 @@ function EPGViewComponent({
 							</div>
 
 							{/* Programs for this date */}
-							<div className="px-2 md:px-3 py-1.5 md:py-2">
-								<div className="space-y-1.5">
+							<div className="px-2 py-2">
+								<div className="space-y-2">
 									{programs.map((program) => {
 										const onAir = isOnAir(program);
 										const isPast = isPastProgram(program);
 										const playing = isCurrentlyPlaying(program);
 
 										return (
-											<Card
+											<button
+												type="button"
 												key={program.id}
 												ref={playing ? currentProgramRef : null}
 												className={clsx(
-													"overflow-hidden border transition-all duration-200",
+													"rounded-xl border bg-card text-card-foreground shadow overflow-hidden transition duration-200 w-full text-left",
 													playing
 														? "border-primary bg-primary/5 shadow-md"
 														: isPast
@@ -240,7 +240,7 @@ function EPGViewComponent({
 														)}
 													</div>
 												</div>
-											</Card>
+											</button>
 										);
 									})}
 								</div>

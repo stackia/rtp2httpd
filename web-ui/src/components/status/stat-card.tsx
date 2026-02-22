@@ -59,7 +59,7 @@ export function StatCard({ title, value, icon: Icon, tone = "violet" }: StatCard
 	const palette = STAT_CARD_TONES[tone];
 	return (
 		<Card
-			className="relative overflow-hidden border border-border/40 bg-card/95 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
+			className="relative overflow-hidden border border-border/40 bg-card/95 transition duration-200 hover:-translate-y-0.5 hover:shadow-lg"
 			style={{ boxShadow: palette.cardShadow }}
 		>
 			<div
