@@ -1,9 +1,9 @@
+import { clsx } from "clsx";
 import { Circle, History } from "lucide-react";
 import { memo, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { EPGData } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
-import { cn } from "../../lib/utils";
 import type { EPGProgram } from "../../types/player";
 import { Card } from "../ui/card";
 
@@ -169,7 +169,7 @@ function EPGViewComponent({
 											<Card
 												key={program.id}
 												ref={playing ? currentProgramRef : null}
-												className={cn(
+												className={clsx(
 													"overflow-hidden border transition-all duration-200",
 													playing
 														? "border-primary bg-primary/5 shadow-md"
@@ -207,7 +207,7 @@ function EPGViewComponent({
 													{/* Middle-Left: Time */}
 													<div className="flex shrink-0 flex-col items-end">
 														<span
-															className={cn(
+															className={clsx(
 																"text-xs md:text-sm font-semibold tabular-nums leading-tight",
 																playing && "text-primary",
 															)}

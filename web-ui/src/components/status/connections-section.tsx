@@ -1,8 +1,8 @@
+import { clsx } from "clsx";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
 import { formatBandwidth, formatBytes, formatDuration } from "../../lib/format";
 import type { Locale } from "../../lib/locale";
 import { stateToLabel, stateToVariant } from "../../lib/status";
-import { cn } from "../../lib/utils";
 import type { ClientRow } from "../../types";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -116,7 +116,7 @@ export function ConnectionsSection({
 						{clients.map((client) => (
 							<Card
 								key={client.clientId}
-								className={cn("border border-border/60", client.isDisconnected && "opacity-60")}
+								className={clsx("border border-border/60", client.isDisconnected && "opacity-60")}
 							>
 								<CardContent className="space-y-4 p-4">
 									<div className="flex items-center justify-between">

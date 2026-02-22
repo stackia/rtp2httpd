@@ -1,8 +1,8 @@
+import { clsx } from "clsx";
 import { History } from "lucide-react";
 import { forwardRef, memo, useCallback } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
-import { cn } from "../../lib/utils";
 import type { Channel } from "../../types/player";
 
 interface ChannelListItemProps {
@@ -26,7 +26,7 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
 				type="button"
 				key={channel.id}
 				ref={ref}
-				className={cn(
+				className={clsx(
 					"rounded-xl border bg-card text-card-foreground shadow group cursor-pointer overflow-hidden transition-all duration-200 flex items-center gap-2 p-2 w-full text-left",
 					isCurrentChannel
 						? "border-primary bg-primary/5 shadow-md"

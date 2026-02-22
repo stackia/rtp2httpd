@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@rtp2httpd/mpegts.js':
-        specifier: ^2.0.0
-        version: 2.0.0
+        specifier: link:../../mpegts.js
+        version: link:../../mpegts.js
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -26,9 +26,6 @@ importers:
       react-dom:
         specifier: ^19.2.4
         version: 19.2.4(react@19.2.4)
-      tailwind-merge:
-        specifier: ^3.5.0
-        version: 3.5.0
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.4.4
@@ -57,6 +54,9 @@ importers:
       vite:
         specifier: ^7.3.1
         version: 7.3.1(@types/node@25.3.0)(jiti@2.6.1)(lightningcss@1.31.1)
+      vite-bundle-analyzer:
+        specifier: ^1.3.6
+        version: 1.3.6
 
 packages:
 
@@ -413,9 +413,6 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@rtp2httpd/mpegts.js@2.0.0':
-    resolution: {integrity: sha512-qjvqAZa+1uJTkdVM/9hTEvir44JxUyk5XQNxNTb5xR7fQMmFQUd4DBtqAkr2/iifYh3u/VRdhpL8Oq1U4T5Mpw==}
-
   '@swc/core-darwin-arm64@1.15.11':
     resolution: {integrity: sha512-QoIupRWVH8AF1TgxYyeA5nS18dtqMuxNwchjBIwJo3RdwLEFiJq6onOx9JAxHtuPwUkIVuU2Xbp+jCJ7Vzmgtg==}
     engines: {node: '>=10'}
@@ -760,9 +757,6 @@ packages:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
 
-  tailwind-merge@3.5.0:
-    resolution: {integrity: sha512-I8K9wewnVDkL1NTGoqWmVEIlUcB9gFriAEkXkfCjX5ib8ezGxtR3xD7iZIxrfArjEsH7F1CHD4RFUtxefdqV/A==}
-
   tailwindcss@4.2.0:
     resolution: {integrity: sha512-yYzTZ4++b7fNYxFfpnberEEKu43w44aqDMNM9MHMmcKuCH7lL8jJ4yJ7LGHv7rSwiqM0nkiobF9I6cLlpS2P7Q==}
 
@@ -774,9 +768,6 @@ packages:
     resolution: {integrity: sha512-j2Zq4NyQYG5XMST4cbs02Ak8iJUdxRM0XI5QyxXuZOzKOINmWurp3smXu3y5wDcJrptwpSjgXHzIQxR0omXljQ==}
     engines: {node: '>=12.0.0'}
 
-  tslib@2.8.1:
-    resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
-
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
@@ -784,6 +775,10 @@ packages:
 
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
+
+  vite-bundle-analyzer@1.3.6:
+    resolution: {integrity: sha512-elFXkF9oGy4CJEeOdP1DSEHRDKWfmaEDfT9/GuF4jmyfmUF6nC//iN+ythqMEVvrtchOEHGKLumZwnu1NjoI0w==}
+    hasBin: true
 
   vite@7.3.1:
     resolution: {integrity: sha512-w+N7Hifpc3gRjZ63vYBXA56dvvRlNWRczTdmCBBa+CotUzAPf5b7YMdMR/8CQoeYE5LX3W4wj6RYTgonm1b9DA==}
@@ -1035,10 +1030,6 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.59.0':
     optional: true
-
-  '@rtp2httpd/mpegts.js@2.0.0':
-    dependencies:
-      tslib: 2.8.1
 
   '@swc/core-darwin-arm64@1.15.11':
     optional: true
@@ -1348,8 +1339,6 @@ snapshots:
 
   source-map-js@1.2.1: {}
 
-  tailwind-merge@3.5.0: {}
-
   tailwindcss@4.2.0: {}
 
   tapable@2.3.0: {}
@@ -1359,11 +1348,11 @@ snapshots:
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3
 
-  tslib@2.8.1: {}
-
   typescript@5.9.3: {}
 
   undici-types@7.18.2: {}
+
+  vite-bundle-analyzer@1.3.6: {}
 
   vite@7.3.1(@types/node@25.3.0)(jiti@2.6.1)(lightningcss@1.31.1):
     dependencies:

@@ -27,14 +27,3 @@ export interface M3UMetadata {
 	channels: Channel[];
 	groups: string[];
 }
-
-export type PlayMode = "live" | "catchup";
-
-export interface PlayerState {
-	currentChannel: Channel | null;
-	playMode: PlayMode;
-	currentTime: Date;
-	isPlaying: boolean;
-	volume: number;
-	isMuted: boolean;
-}
