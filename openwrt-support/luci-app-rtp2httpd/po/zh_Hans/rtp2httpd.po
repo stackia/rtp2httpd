@@ -8,7 +8,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:589
+#: htdocs/luci-static/resources/view/rtp2httpd.js:601
 msgid ""
 "Additional FFmpeg arguments for snapshot generation. Common options: -"
 "hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)"
@@ -32,6 +32,10 @@ msgstr "基础设置"
 msgid "Buffer Pool Max Size"
 msgstr "缓冲池最大容量"
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js:551
+msgid "CORS Allow Origin"
+msgstr "CORS 允许的源"
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:208
 msgid "Config File Content"
 msgstr "配置文件内容"
@@ -50,7 +54,7 @@ msgstr "所有上游流量（组播、FCC 和 RTSP）使用的默认接口。留
 msgid "Edit the content of /etc/rtp2httpd.conf"
 msgstr "编辑 /etc/rtp2httpd.conf 的内容"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:565
+#: htdocs/luci-static/resources/view/rtp2httpd.js:577
 msgid ""
 "Enable video snapshot feature. When enabled, clients can request snapshots "
 "with snapshot=1 query parameter"
@@ -91,11 +95,11 @@ msgstr ""
 msgid "FCC Listen Port Range"
 msgstr "FCC 监听端口范围"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:587
+#: htdocs/luci-static/resources/view/rtp2httpd.js:599
 msgid "FFmpeg Arguments"
 msgstr "FFmpeg 参数"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:575
+#: htdocs/luci-static/resources/view/rtp2httpd.js:587
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
@@ -204,7 +208,7 @@ msgstr "打开播放器页面"
 msgid "Open Status Dashboard"
 msgstr "打开状态面板"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:577
+#: htdocs/luci-static/resources/view/rtp2httpd.js:589
 msgid ""
 "Path to FFmpeg executable. Leave empty to use system PATH (default: ffmpeg)"
 msgstr "FFmpeg 可执行文件的路径。留空则使用系统 PATH（默认：ffmpeg）"
@@ -251,6 +255,15 @@ msgstr "RTSP STUN 服务器"
 #: htdocs/luci-static/resources/view/rtp2httpd.js:188
 msgid "Respawn"
 msgstr "自动重启"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:553
+msgid ""
+"Set Access-Control-Allow-Origin header to enable CORS. Use * to allow all "
+"origins, or specify a domain (e.g., https://example.com). Leave empty to "
+"disable CORS."
+msgstr ""
+"设置 Access-Control-Allow-Origin 响应头以启用 CORS 跨域访问。设为 * 允许所有"
+"来源，或指定域名（如 https://example.com）。留空则禁用 CORS。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:507
 msgid "Status Dashboard"
@@ -311,7 +324,7 @@ msgstr "使用配置文件"
 msgid "Use config file instead of individual options"
 msgstr "使用配置文件而不是单独的选项"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:563
+#: htdocs/luci-static/resources/view/rtp2httpd.js:575
 msgid "Video Snapshot"
 msgstr "视频快照"
 
@@ -331,7 +344,7 @@ msgid ""
 "to allow access."
 msgstr "配置后将会检查 HTTP Host 头，必须匹配这里的值才能访问。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:553
+#: htdocs/luci-static/resources/view/rtp2httpd.js:565
 msgid ""
 "When enabled, uses HTTP X-Forwarded-For header as client address for status "
 "page display. Also accepts X-Forwarded-Host / X-Forwarded-Proto headers as "
@@ -346,7 +359,7 @@ msgstr ""
 msgid "Workers"
 msgstr "工作进程数"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:551
+#: htdocs/luci-static/resources/view/rtp2httpd.js:563
 msgid "X-Forwarded-For"
 msgstr "X-Forwarded-For"
 

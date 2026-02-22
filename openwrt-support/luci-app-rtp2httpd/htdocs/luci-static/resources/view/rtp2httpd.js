@@ -546,6 +546,18 @@ return view.extend({
 
     o = s.taboption(
       "advanced",
+      form.Value,
+      "cors_allow_origin",
+      _("CORS Allow Origin"),
+      _(
+        "Set Access-Control-Allow-Origin header to enable CORS. Use * to allow all origins, or specify a domain (e.g., https://example.com). Leave empty to disable CORS."
+      )
+    );
+    o.placeholder = "*";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "advanced",
       form.Flag,
       "xff",
       _("X-Forwarded-For"),
