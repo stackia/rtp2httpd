@@ -7,5 +7,5 @@ rtp://239.81.0.195:4056
 rtp://239.11.0.109:5140?fec=5142
 #EXTINF:-1,FEC Sample 2 (no FEC)
 rtp://239.11.0.109:5140
-#EXTINF:-1,HLS Sample
+#EXTINF:-1 catchup="default" catchup-source="http://maitv-vod.lab.eyevinn.technology/VINN.mp4/master.m3u8",HLS Sample
 http://maitv-vod.lab.eyevinn.technology/VINN.mp4/master.m3u8
