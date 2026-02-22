@@ -373,11 +373,7 @@ export function PlayerControls({
 											)}
 										>
 											<span className="flex items-center gap-2">
-												{!isLive ? (
-													<History className="h-3 w-3" />
-												) : (
-													<Tv className="h-3 w-3" />
-												)}
+												{!isLive ? <History className="h-3 w-3" /> : <Tv className="h-3 w-3" />}
 												{source.label || `${t("source")} ${index + 1}`}
 											</span>
 										</button>
