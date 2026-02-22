@@ -254,7 +254,10 @@ export function VideoPlayer({
 	useEffect(() => {
 		if (!videoRef.current || !isSupported()) return;
 
-		const player = createPlayer(videoRef.current, { isLive: true, enableStashBuffer: false });
+		const player = createPlayer(videoRef.current, {
+			isLive: true,
+			enableStashBuffer: false,
+		});
 		playerRef.current = player;
 
 		player.on("error", handlePlayerError);
@@ -405,15 +408,16 @@ export function VideoPlayer({
 
 		switch (e.key) {
 			case "Enter":
-				e.preventDefault();
 				if (digitBuffer) {
+					e.preventDefault();
 					if (digitTimeoutRef.current) {
 						window.clearTimeout(digitTimeoutRef.current);
 						digitTimeoutRef.current = 0;
 					}
 					onChannelNavigate?.(parseInt(digitBuffer, 10));
 					setDigitBuffer("");
-				} else {
+				} else if (!document.activeElement || document.activeElement === document.body) {
+					e.preventDefault();
 					onToggleSidebar?.();
 				}
 				break;
@@ -439,6 +443,7 @@ export function VideoPlayer({
 			case "PageDown":
 			case "ChannelDown":
 				e.preventDefault();
+				(document.activeElement as HTMLElement)?.blur();
 				onChannelNavigate?.("prev");
 				break;
 
@@ -446,11 +451,13 @@ export function VideoPlayer({
 			case "PageUp":
 			case "ChannelUp":
 				e.preventDefault();
+				(document.activeElement as HTMLElement)?.blur();
 				onChannelNavigate?.("next");
 				break;
 
 			case "ArrowLeft": {
 				e.preventDefault();
+				(document.activeElement as HTMLElement)?.blur();
 				const currentAbsoluteTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
 				const newSeekTime = new Date(currentAbsoluteTime.getTime() - 5000);
 				handleSeek(newSeekTime);
@@ -459,6 +466,7 @@ export function VideoPlayer({
 
 			case "ArrowRight": {
 				e.preventDefault();
+				(document.activeElement as HTMLElement)?.blur();
 				const currentAbsoluteTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
 				const newSeekTime = new Date(currentAbsoluteTime.getTime() + 5000);
 				handleSeek(newSeekTime);
@@ -466,6 +474,9 @@ export function VideoPlayer({
 			}
 
 			case " ":
+				if (document.activeElement && document.activeElement !== document.body) {
+					break;
+				}
 				e.preventDefault();
 				togglePlayPause();
 				break;
@@ -659,7 +670,7 @@ export function VideoPlayer({
 								<div className="flex items-center gap-1.5 md:gap-2 min-w-0">
 									<span
 										className={clsx(
-											"rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition-all duration-300",
+											"rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition duration-300",
 											digitBuffer
 												? "bg-primary text-primary-foreground scale-110 shadow-lg ring-2 ring-primary/50"
 												: "bg-white/10 text-white/60",

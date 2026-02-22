@@ -27,7 +27,7 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
 				key={channel.id}
 				ref={ref}
 				className={clsx(
-					"rounded-xl border bg-card text-card-foreground shadow group cursor-pointer overflow-hidden transition-all duration-200 flex items-center gap-2 p-2 w-full text-left",
+					"rounded-xl border bg-card text-card-foreground shadow group cursor-pointer overflow-hidden transition duration-200 flex items-center gap-2 p-2 w-full text-left",
 					isCurrentChannel
 						? "border-primary bg-primary/5 shadow-md"
 						: "border-border hover:border-primary/50 hover:bg-muted/50 hover:shadow-sm",
