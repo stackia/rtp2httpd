@@ -959,8 +959,10 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
   session->headers_received = 1;
 
-  /* Check if response body needs rewriting (M3U content) */
-  if (rewrite_is_m3u_content_type(session->response_content_type)) {
+  /* Check if response body needs rewriting (M3U content).
+   * Skip for HEAD requests — there is no body to rewrite. */
+  if (rewrite_is_m3u_content_type(session->response_content_type) &&
+      strcasecmp(session->method, "HEAD") != 0) {
     /* Only rewrite if Content-Length is known and within limits */
     if (session->content_length > 0 &&
         (size_t)session->content_length <= REWRITE_MAX_BODY_SIZE) {
@@ -1144,14 +1146,20 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
         EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
   }
 
-  /* Move body data to beginning of buffer */
-  size_t body_len = session->response_buffer_pos - header_len;
-  if (body_len > 0) {
-    memmove(session->response_buffer, body_start, body_len);
-  }
-  session->response_buffer_pos = body_len;
+  /* HEAD responses have no body — go straight to COMPLETE */
+  if (strcasecmp(session->method, "HEAD") == 0) {
+    session->response_buffer_pos = 0;
+    session->state = HTTP_PROXY_STATE_COMPLETE;
+  } else {
+    /* Move body data to beginning of buffer */
+    size_t body_len = session->response_buffer_pos - header_len;
+    if (body_len > 0) {
+      memmove(session->response_buffer, body_start, body_len);
+    }
+    session->response_buffer_pos = body_len;
 
-  session->state = HTTP_PROXY_STATE_STREAMING;
+    session->state = HTTP_PROXY_STATE_STREAMING;
+  }
   status_update_client_state(session->status_index,
                                CLIENT_STATE_HTTP_STREAMING);
 

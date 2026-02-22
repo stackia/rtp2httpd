@@ -934,9 +934,12 @@ int connection_route_and_start(connection_t *c) {
     return 0;
   }
 
-  /* Handle HEAD requests for media streams - return success without connecting
-   * upstream */
-  if (strcasecmp(c->http_req.method, "HEAD") == 0) {
+  /* Handle HEAD requests for RTP/RTSP streams - return success without
+   * connecting upstream.  HTTP services forward HEAD to the upstream server
+   * so the real Content-Type (e.g. application/vnd.apple.mpegurl for HLS)
+   * is returned to the client. */
+  if (strcasecmp(c->http_req.method, "HEAD") == 0 &&
+      service->service_type != SERVICE_HTTP) {
     logger(
         LOG_INFO,
         "HEAD request detected, returning success without upstream connection");
