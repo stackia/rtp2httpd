@@ -1,5 +1,7 @@
 # 配置参数详解
 
+Language: [中文](configuration.md) | [English](en/configuration.md)
+
 rtp2httpd 支持通过命令行参数和配置文件两种方式进行配置。
 
 ## 命令行参数

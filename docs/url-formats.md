@@ -1,5 +1,7 @@
 # URL 格式与协议支持
 
+Language: [中文](url-formats.md) | [English](en/url-formats.md)
+
 rtp2httpd 支持多种流媒体协议，通过不同的 URL 前缀进行区分。
 
 基本格式：`http://服务器地址:端口/路径[?参数1=值1][&参数2=值2][&参数3=值3]`

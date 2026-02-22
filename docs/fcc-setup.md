@@ -1,5 +1,7 @@
 # FCC 快速换台配置指南
 
+Language: [中文](fcc-setup.md) | [English](en/fcc-setup.md)
+
 FCC (Fast Channel Change) 是运营商级的快速换台协议，可实现毫秒级换台响应。大多数省份的 IPTV 机顶盒都是通过 FCC 实现快速换台。
 
 ## FCC 工作原理

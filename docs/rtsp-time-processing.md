@@ -1,5 +1,7 @@
 # RTSP 时间处理与时区转换
 
+Language: [中文](rtsp-time-processing.md) | [English](en/rtsp-time-processing.md)
+
 本文档详细说明 rtp2httpd 如何处理 RTSP 时移回看功能中的时间参数和时区转换。
 
 ## IPTV RTSP 时移回看原理

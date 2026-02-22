@@ -1,5 +1,7 @@
 # 各地区 FCC 服务器收集
 
+Language: [中文](cn-fcc-collection.md) | [English](en/cn-fcc-collection.md)
+
 以下是从互联网收集的各地区 FCC 服务器，不保证可用，如有不可用请到 <https://github.com/stackia/rtp2httpd/issues/5> 讨论反馈。
 
 1. 如果没有列出本城市 IP，可以尝试临近城市或省会的 IP。

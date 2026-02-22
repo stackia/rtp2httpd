@@ -1,5 +1,7 @@
 # 安装方式
 
+Language: [中文](installation.md) | [English](en/installation.md)
+
 rtp2httpd 支持多种安装方式，适应不同的使用场景。
 
 ## OpenWrt 路由器部署

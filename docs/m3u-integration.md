@@ -1,5 +1,7 @@
 # M3U 播放列表集成
 
+Language: [中文](m3u-integration.md) | [English](en/m3u-integration.md)
+
 rtp2httpd 全面支持 M3U/M3U8 播放列表格式，可自动识别节目并提供转换后的播放列表，让你可以一键导入外部 m3u 频道列表，自动替换 URL，直接在 IPTV 播放器中使用。
 
 ## 核心能力

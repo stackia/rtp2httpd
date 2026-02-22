@@ -1,5 +1,7 @@
 # 视频快照（预览图）配置
 
+Language: [中文](video-snapshot.md) | [English](en/video-snapshot.md)
+
 rtp2httpd 支持使用 FFmpeg 来生成视频流的快照（snapshot）功能。如果播放器集成了此功能，将会获得极快的频道预览图加载速度。
 
 ## 功能特点

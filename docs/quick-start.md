@@ -1,5 +1,7 @@
 # 快速上手
 
+Language: [中文](quick-start.md) | [English](en/quick-start.md)
+
 ## OpenWrt 一键安装（推荐）
 
 使用一键安装脚本自动下载并安装最新版本：
