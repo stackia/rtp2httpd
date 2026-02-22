@@ -81,9 +81,8 @@ export function PlayerControls({
 	const [hoverPosition, setHoverPosition] = useState<number | null>(null);
 	const [isFullscreen, setIsFullscreen] = useState(false);
 
-	// Check if catchup is supported
-	const activeSource = channel.sources[activeSourceIndex] ?? channel.sources[0];
-	const isCatchupSupported = Boolean(activeSource?.catchup && activeSource?.catchupSource);
+	// Check if any source on this channel supports catchup
+	const isCatchupSupported = channel.sources.some((s) => s.catchup && s.catchupSource);
 
 	const { startTime, endTime, duration } = useMemo(() => {
 		if (!currentProgram) {
@@ -257,7 +256,7 @@ export function PlayerControls({
 
 					<div
 						className={clsx(
-							"absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-lg transition-[width,height] duration-150",
+							"absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-lg transition-[left] duration-150",
 							isCatchupSupported && "group-hover:h-4 group-hover:w-4",
 						)}
 						style={{ left: `${progress}%` }}
@@ -357,29 +356,32 @@ export function PlayerControls({
 								{channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}
 							</button>
 							<div className="absolute bottom-full left-1/2 -translate-x-1/2 rounded bg-black/60 backdrop-blur-sm py-1 shadow-lg opacity-0 invisible group-hover/source:opacity-100 group-hover/source:visible group-focus-within/source:opacity-100 group-focus-within/source:visible transition-[opacity,visibility] duration-150">
-								{channel.sources.map((source, index) => (
-									<button
-										type="button"
-										key={source.url}
-										onClick={(e) => {
-											onSourceChange(index);
-											e.currentTarget.blur();
-										}}
-										className={clsx(
-											"block w-full whitespace-nowrap px-3 py-1.5 text-xs md:text-sm text-left transition-colors cursor-pointer",
-											index === activeSourceIndex ? "text-primary font-medium" : "text-white/80 hover:bg-white/10",
-										)}
-									>
-										<span className="flex items-center gap-2">
-											{!isLive && source.catchup && source.catchupSource ? (
-												<History className="h-3 w-3" />
-											) : (
-												<Tv className="h-3 w-3" />
+								{channel.sources
+									.map((source, index) => ({ source, index }))
+									.filter(({ source }) => isLive || (source.catchup && source.catchupSource))
+									.map(({ source, index }) => (
+										<button
+											type="button"
+											key={source.url}
+											onClick={(e) => {
+												onSourceChange(index);
+												e.currentTarget.blur();
+											}}
+											className={clsx(
+												"block w-full whitespace-nowrap px-3 py-1.5 text-xs md:text-sm text-left transition-colors cursor-pointer",
+												index === activeSourceIndex ? "text-primary font-medium" : "text-white/80 hover:bg-white/10",
 											)}
-											{source.label || `${t("source")} ${index + 1}`}
-										</span>
-									</button>
-								))}
+										>
+											<span className="flex items-center gap-2">
+												{!isLive ? (
+													<History className="h-3 w-3" />
+												) : (
+													<Tv className="h-3 w-3" />
+												)}
+												{source.label || `${t("source")} ${index + 1}`}
+											</span>
+										</button>
+									))}
 							</div>
 						</div>
 					)}
