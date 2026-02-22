@@ -25,6 +25,7 @@ interface VideoPlayerProps {
 	force16x9?: boolean;
 	activeSourceIndex?: number;
 	onSourceChange?: (index: number) => void;
+	onPlaybackStarted?: () => void;
 }
 
 const MAX_RETRIES = 3;
@@ -47,6 +48,7 @@ export function VideoPlayer({
 	force16x9 = true,
 	activeSourceIndex = 0,
 	onSourceChange,
+	onPlaybackStarted,
 }: VideoPlayerProps) {
 	const t = usePlayerTranslation(locale);
 
@@ -338,6 +340,7 @@ export function VideoPlayer({
 	const handleVideoPlaying = useEffectEvent(() => {
 		setIsLoading(false);
 		setIsPlaying(true);
+		onPlaybackStarted?.();
 
 		if (stablePlaybackTimeoutRef.current) {
 			window.clearTimeout(stablePlaybackTimeoutRef.current);

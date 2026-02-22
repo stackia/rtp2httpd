@@ -121,8 +121,16 @@ export function getForce16x9(): boolean {
 export function saveLastSourceIndex(channelId: string, sourceIndex: number): void {
 	try {
 		const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.LAST_SOURCE_INDEX) || "{}");
-		stored[channelId] = sourceIndex;
-		localStorage.setItem(STORAGE_KEYS.LAST_SOURCE_INDEX, JSON.stringify(stored));
+		if (sourceIndex === 0) {
+			delete stored[channelId];
+		} else {
+			stored[channelId] = sourceIndex;
+		}
+		if (Object.keys(stored).length === 0) {
+			localStorage.removeItem(STORAGE_KEYS.LAST_SOURCE_INDEX);
+		} else {
+			localStorage.setItem(STORAGE_KEYS.LAST_SOURCE_INDEX, JSON.stringify(stored));
+		}
 	} catch (error) {
 		console.error("Failed to save last source index:", error);
 	}
