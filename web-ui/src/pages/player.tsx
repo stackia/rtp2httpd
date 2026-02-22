@@ -144,12 +144,15 @@ function PlayerPage() {
 				setStreamStartTime(new Date(streamStartTime.getTime() + currentVideoTime * 1000));
 			}
 			setActiveSourceIndex(sourceIndex);
-			if (currentChannel) {
-				saveLastSourceIndex(currentChannel.id, sourceIndex);
-			}
 		},
-		[currentChannel, playMode, streamStartTime, currentVideoTime],
+		[playMode, streamStartTime, currentVideoTime],
 	);
+
+	const handlePlaybackStarted = useCallback(() => {
+		if (currentChannel) {
+			saveLastSourceIndex(currentChannel.id, activeSourceIndex);
+		}
+	}, [currentChannel, activeSourceIndex]);
 
 	const selectChannel = useCallback((channel: Channel) => {
 		setCurrentChannel(channel);
@@ -378,6 +381,7 @@ function PlayerPage() {
 						force16x9={force16x9}
 						activeSourceIndex={activeSourceIndex}
 						onSourceChange={handleSourceChange}
+						onPlaybackStarted={handlePlaybackStarted}
 					/>
 				</div>
 
