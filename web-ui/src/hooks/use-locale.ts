@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { detectInitialLocale } from "../lib/locale";
 
 export function useLocale(storageKey: string) {
-  const [locale, setLocale] = useState(() => detectInitialLocale(storageKey));
+	const [locale, setLocale] = useState(() => detectInitialLocale(storageKey));
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(storageKey, locale);
-    }
-  }, [locale, storageKey]);
+	useEffect(() => {
+		if (typeof window !== "undefined") {
+			window.localStorage.setItem(storageKey, locale);
+		}
+	}, [locale, storageKey]);
 
-  return { locale, setLocale };
+	return { locale, setLocale };
 }

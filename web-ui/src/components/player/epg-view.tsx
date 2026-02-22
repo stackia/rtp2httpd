@@ -1,256 +1,256 @@
-import { useMemo, useRef, useLayoutEffect, RefObject, memo, useCallback, useState, useEffect } from "react";
 import { Circle, History } from "lucide-react";
-import { EPGProgram } from "../../types/player";
-import { EPGData } from "../../lib/epg-parser";
-import { Card } from "../ui/card";
+import { memo, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
+import type { EPGData } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
 import { cn } from "../../lib/utils";
+import type { EPGProgram } from "../../types/player";
+import { Card } from "../ui/card";
 
 interface EPGViewProps {
-  channelId: string | null;
-  epgData: EPGData;
-  onProgramSelect: (programStart: Date, programEnd: Date) => void;
-  locale: Locale;
-  supportsCatchup: boolean;
-  currentPlayingProgram: EPGProgram | null;
+	channelId: string | null;
+	epgData: EPGData;
+	onProgramSelect: (programStart: Date, programEnd: Date) => void;
+	locale: Locale;
+	supportsCatchup: boolean;
+	currentPlayingProgram: EPGProgram | null;
 }
 
 export const nextScrollBehaviorRef: RefObject<"smooth" | "instant" | "skip"> = { current: "instant" };
 
 function EPGViewComponent({
-  channelId,
-  epgData,
-  onProgramSelect,
-  locale,
-  supportsCatchup,
-  currentPlayingProgram,
+	channelId,
+	epgData,
+	onProgramSelect,
+	locale,
+	supportsCatchup,
+	currentPlayingProgram,
 }: EPGViewProps) {
-  const t = usePlayerTranslation(locale);
-  const currentProgramRef = useRef<HTMLDivElement>(null);
-  const [currentTime, setCurrentTime] = useState(() => new Date());
+	const t = usePlayerTranslation(locale);
+	const currentProgramRef = useRef<HTMLDivElement>(null);
+	const [currentTime, setCurrentTime] = useState(() => new Date());
 
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-    return () => window.clearInterval(interval);
-  }, []);
+	useEffect(() => {
+		const interval = window.setInterval(() => {
+			setCurrentTime(new Date());
+		}, 1000);
+		return () => window.clearInterval(interval);
+	}, []);
 
-  // Group programs by date
-  const programsByDate = useMemo(() => {
-    if (!channelId) return new Map<string, EPGProgram[]>();
+	// Group programs by date
+	const programsByDate = useMemo(() => {
+		if (!channelId) return new Map<string, EPGProgram[]>();
 
-    const programs = epgData[channelId];
-    if (!programs || programs.length === 0) return new Map<string, EPGProgram[]>();
+		const programs = epgData[channelId];
+		if (!programs || programs.length === 0) return new Map<string, EPGProgram[]>();
 
-    // Group all available programs by date (no date range filtering)
-    const grouped = new Map<string, EPGProgram[]>();
-    programs.forEach((program) => {
-      const dateKey = new Date(
-        program.start.getFullYear(),
-        program.start.getMonth(),
-        program.start.getDate(),
-      ).toISOString();
-      const existing = grouped.get(dateKey) || [];
-      existing.push(program);
-      grouped.set(dateKey, existing);
-    });
+		// Group all available programs by date (no date range filtering)
+		const grouped = new Map<string, EPGProgram[]>();
+		programs.forEach((program) => {
+			const dateKey = new Date(
+				program.start.getFullYear(),
+				program.start.getMonth(),
+				program.start.getDate(),
+			).toISOString();
+			const existing = grouped.get(dateKey) || [];
+			existing.push(program);
+			grouped.set(dateKey, existing);
+		});
 
-    return grouped;
-  }, [channelId, epgData]);
+		return grouped;
+	}, [channelId, epgData]);
 
-  const channelPrograms = useMemo(() => {
-    if (!channelId) return [];
-    const programs = epgData[channelId];
-    if (!programs || programs.length === 0) return [];
-    // Return all available programs (no date range filtering)
-    return programs;
-  }, [channelId, epgData]);
+	const channelPrograms = useMemo(() => {
+		if (!channelId) return [];
+		const programs = epgData[channelId];
+		if (!programs || programs.length === 0) return [];
+		// Return all available programs (no date range filtering)
+		return programs;
+	}, [channelId, epgData]);
 
-  // Auto-scroll to center current/playing program when it changes or channel changes
-  useLayoutEffect(() => {
-    window.setTimeout(() => {
-      nextScrollBehaviorRef.current = "smooth";
-    }, 0);
+	// Auto-scroll to center current/playing program when it changes or channel changes
+	useLayoutEffect(() => {
+		window.setTimeout(() => {
+			nextScrollBehaviorRef.current = "smooth";
+		}, 0);
 
-    if (nextScrollBehaviorRef.current === "skip") {
-      return;
-    }
+		if (nextScrollBehaviorRef.current === "skip") {
+			return;
+		}
 
-    if (currentProgramRef.current) {
-      currentProgramRef.current.scrollIntoView({
-        behavior: nextScrollBehaviorRef.current,
-        block: "center",
-      });
-    }
-  }, [currentPlayingProgram, channelId, channelPrograms]);
+		if (currentProgramRef.current) {
+			currentProgramRef.current.scrollIntoView({
+				behavior: nextScrollBehaviorRef.current,
+				block: "center",
+			});
+		}
+	}, []);
 
-  const handleProgramClick = useCallback(
-    (programStart: Date, programEnd: Date) => {
-      nextScrollBehaviorRef.current = "skip";
-      onProgramSelect(programStart, programEnd);
-    },
-    [onProgramSelect],
-  );
+	const handleProgramClick = useCallback(
+		(programStart: Date, programEnd: Date) => {
+			nextScrollBehaviorRef.current = "skip";
+			onProgramSelect(programStart, programEnd);
+		},
+		[onProgramSelect],
+	);
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+	const formatTime = (date: Date) => {
+		return date.toLocaleTimeString([], {
+			hour: "2-digit",
+			minute: "2-digit",
+		});
+	};
 
-  const formatDuration = (start: Date, end: Date) => {
-    const minutes = Math.round((end.getTime() - start.getTime()) / 60000);
-    return `${minutes}${t("minutes")}`;
-  };
+	const formatDuration = (start: Date, end: Date) => {
+		const minutes = Math.round((end.getTime() - start.getTime()) / 60000);
+		return `${minutes}${t("minutes")}`;
+	};
 
-  const formatRelativeDate = (date: Date) => {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const targetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const daysDiff = Math.floor((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+	const formatRelativeDate = (date: Date) => {
+		const now = new Date();
+		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+		const targetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+		const daysDiff = Math.floor((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-    switch (daysDiff) {
-      case 0:
-        return t("today");
-      case -1:
-        return t("yesterday");
-      case -2:
-        return t("dayBeforeYesterday");
-      case 1:
-        return t("tomorrow");
-      default:
-        return date.toLocaleDateString(locale === "zh-Hans" || locale === "zh-Hant" ? "zh-CN" : "en-US", {
-          month: "short",
-          day: "numeric",
-        });
-    }
-  };
+		switch (daysDiff) {
+			case 0:
+				return t("today");
+			case -1:
+				return t("yesterday");
+			case -2:
+				return t("dayBeforeYesterday");
+			case 1:
+				return t("tomorrow");
+			default:
+				return date.toLocaleDateString(locale === "zh-Hans" || locale === "zh-Hant" ? "zh-CN" : "en-US", {
+					month: "short",
+					day: "numeric",
+				});
+		}
+	};
 
-  const isOnAir = (program: EPGProgram) => {
-    return program.start <= currentTime && program.end > currentTime;
-  };
+	const isOnAir = (program: EPGProgram) => {
+		return program.start <= currentTime && program.end > currentTime;
+	};
 
-  const isPastProgram = (program: EPGProgram) => {
-    return program.end <= currentTime;
-  };
+	const isPastProgram = (program: EPGProgram) => {
+		return program.end <= currentTime;
+	};
 
-  const isCurrentlyPlaying = (program: EPGProgram) => {
-    return currentPlayingProgram?.id === program.id;
-  };
+	const isCurrentlyPlaying = (program: EPGProgram) => {
+		return currentPlayingProgram?.id === program.id;
+	};
 
-  if (!channelId || channelPrograms.length === 0) {
-    return <div className="flex h-full items-center justify-center text-muted-foreground">{t("noEpgAvailable")}</div>;
-  }
+	if (!channelId || channelPrograms.length === 0) {
+		return <div className="flex h-full items-center justify-center text-muted-foreground">{t("noEpgAvailable")}</div>;
+	}
 
-  return (
-    <div className="h-full overflow-y-auto pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-      <div className="relative">
-        {Array.from(programsByDate.entries()).map(([dateKey, programs]) => {
-          const date = new Date(dateKey);
-          return (
-            <div key={dateKey} className="relative">
-              {/* Date Header */}
-              <div className="sticky top-0 z-10 border-b border-border bg-card px-3 md:px-4 py-1.5 md:py-2 shadow-sm">
-                <h3 className="text-xs md:text-sm font-semibold text-foreground">{formatRelativeDate(date)}</h3>
-              </div>
+	return (
+		<div className="h-full overflow-y-auto pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+			<div className="relative">
+				{Array.from(programsByDate.entries()).map(([dateKey, programs]) => {
+					const date = new Date(dateKey);
+					return (
+						<div key={dateKey} className="relative">
+							{/* Date Header */}
+							<div className="sticky top-0 z-10 border-b border-border bg-card px-3 md:px-4 py-1.5 md:py-2 shadow-sm">
+								<h3 className="text-xs md:text-sm font-semibold text-foreground">{formatRelativeDate(date)}</h3>
+							</div>
 
-              {/* Programs for this date */}
-              <div className="px-2 md:px-3 py-1.5 md:py-2">
-                <div className="space-y-1.5">
-                  {programs.map((program) => {
-                    const onAir = isOnAir(program);
-                    const isPast = isPastProgram(program);
-                    const playing = isCurrentlyPlaying(program);
+							{/* Programs for this date */}
+							<div className="px-2 md:px-3 py-1.5 md:py-2">
+								<div className="space-y-1.5">
+									{programs.map((program) => {
+										const onAir = isOnAir(program);
+										const isPast = isPastProgram(program);
+										const playing = isCurrentlyPlaying(program);
 
-                    return (
-                      <Card
-                        key={program.id}
-                        ref={playing ? currentProgramRef : null}
-                        className={cn(
-                          "overflow-hidden border transition-all duration-200",
-                          playing
-                            ? "border-primary bg-primary/5 shadow-md"
-                            : isPast
-                              ? "border-border opacity-70"
-                              : "border-border",
-                          ((isPast && supportsCatchup) || onAir) &&
-                            "cursor-pointer hover:border-primary/50 hover:bg-muted/50 hover:opacity-100 hover:shadow-sm",
-                        )}
-                        onClick={() => {
-                          if (isPast && supportsCatchup) {
-                            handleProgramClick(program.start, program.end);
-                          } else if (onAir) {
-                            // Click on-air program to go live
-                            const now = new Date();
-                            handleProgramClick(now, now);
-                          }
-                        }}
-                      >
-                        <div className="flex items-center gap-2 md:gap-2.5 p-2 md:p-2.5">
-                          {/* Left: Status Indicator Bar */}
-                          <div className="flex shrink-0">
-                            {playing ? (
-                              <div className="h-8 md:h-10 w-1 rounded-full bg-primary" title={t("nowPlaying")} />
-                            ) : isPast && supportsCatchup ? (
-                              <div
-                                className="h-8 md:h-10 w-1 rounded-full bg-muted-foreground/30"
-                                title={t("replay")}
-                              />
-                            ) : (
-                              <div className="h-8 md:h-10 w-1 rounded-full bg-transparent" />
-                            )}
-                          </div>
+										return (
+											<Card
+												key={program.id}
+												ref={playing ? currentProgramRef : null}
+												className={cn(
+													"overflow-hidden border transition-all duration-200",
+													playing
+														? "border-primary bg-primary/5 shadow-md"
+														: isPast
+															? "border-border opacity-70"
+															: "border-border",
+													((isPast && supportsCatchup) || onAir) &&
+														"cursor-pointer hover:border-primary/50 hover:bg-muted/50 hover:opacity-100 hover:shadow-sm",
+												)}
+												onClick={() => {
+													if (isPast && supportsCatchup) {
+														handleProgramClick(program.start, program.end);
+													} else if (onAir) {
+														// Click on-air program to go live
+														const now = new Date();
+														handleProgramClick(now, now);
+													}
+												}}
+											>
+												<div className="flex items-center gap-2 md:gap-2.5 p-2 md:p-2.5">
+													{/* Left: Status Indicator Bar */}
+													<div className="flex shrink-0">
+														{playing ? (
+															<div className="h-8 md:h-10 w-1 rounded-full bg-primary" title={t("nowPlaying")} />
+														) : isPast && supportsCatchup ? (
+															<div
+																className="h-8 md:h-10 w-1 rounded-full bg-muted-foreground/30"
+																title={t("replay")}
+															/>
+														) : (
+															<div className="h-8 md:h-10 w-1 rounded-full bg-transparent" />
+														)}
+													</div>
 
-                          {/* Middle-Left: Time */}
-                          <div className="flex shrink-0 flex-col items-end">
-                            <span
-                              className={cn(
-                                "text-xs md:text-sm font-semibold tabular-nums leading-tight",
-                                playing && "text-primary",
-                              )}
-                            >
-                              {formatTime(program.start)}
-                            </span>
-                            <span className="text-[10px] md:text-xs text-muted-foreground tabular-nums">
-                              {formatDuration(program.start, program.end)}
-                            </span>
-                          </div>
+													{/* Middle-Left: Time */}
+													<div className="flex shrink-0 flex-col items-end">
+														<span
+															className={cn(
+																"text-xs md:text-sm font-semibold tabular-nums leading-tight",
+																playing && "text-primary",
+															)}
+														>
+															{formatTime(program.start)}
+														</span>
+														<span className="text-[10px] md:text-xs text-muted-foreground tabular-nums">
+															{formatDuration(program.start, program.end)}
+														</span>
+													</div>
 
-                          {/* Middle-Right: Title and Description */}
-                          <div className="flex-1 overflow-hidden min-w-0">
-                            <div className="text-sm md:text-base font-semibold leading-tight">
-                              {program.title || t("excellentProgram")}
-                            </div>
-                          </div>
+													{/* Middle-Right: Title and Description */}
+													<div className="flex-1 overflow-hidden min-w-0">
+														<div className="text-sm md:text-base font-semibold leading-tight">
+															{program.title || t("excellentProgram")}
+														</div>
+													</div>
 
-                          {/* Right: Status Icon (unified position) */}
-                          <div className="flex h-8 md:h-10 w-3 md:w-4 shrink-0 items-center justify-center">
-                            {onAir && (
-                              <span title={t("onAir")}>
-                                <Circle className="h-2.5 w-2.5 md:h-3 md:w-3 text-primary fill-current" />
-                              </span>
-                            )}
-                            {isPast && supportsCatchup && (
-                              <span title={t("replay")}>
-                                <History className="h-3 w-3 md:h-3.5 md:w-3.5 text-muted-foreground" />
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+													{/* Right: Status Icon (unified position) */}
+													<div className="flex h-8 md:h-10 w-3 md:w-4 shrink-0 items-center justify-center">
+														{onAir && (
+															<span title={t("onAir")}>
+																<Circle className="h-2.5 w-2.5 md:h-3 md:w-3 text-primary fill-current" />
+															</span>
+														)}
+														{isPast && supportsCatchup && (
+															<span title={t("replay")}>
+																<History className="h-3 w-3 md:h-3.5 md:w-3.5 text-muted-foreground" />
+															</span>
+														)}
+													</div>
+												</div>
+											</Card>
+										);
+									})}
+								</div>
+							</div>
+						</div>
+					);
+				})}
+			</div>
+		</div>
+	);
 }
 
 export const EPGView = memo(EPGViewComponent);
