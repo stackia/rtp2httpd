@@ -1,7 +1,7 @@
+import { clsx } from "clsx";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
 import { formatBandwidth, formatBytes } from "../../lib/format";
 import type { Locale } from "../../lib/locale";
-import { cn } from "../../lib/utils";
 import type { PoolStats, WorkerEntry } from "../../types";
 import { Badge } from "../ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
@@ -25,7 +25,7 @@ export function WorkersSection({ workers, locale }: WorkersSectionProps) {
 			{workers.length === 0 ? (
 				<div className="rounded-2xl border border-dashed p-6 text-sm text-muted-foreground">{t("noWorkerStats")}</div>
 			) : (
-				<div className={cn("grid gap-6", workers.length > 1 && "lg:grid-cols-2")}>
+				<div className={clsx("grid gap-6", workers.length > 1 && "lg:grid-cols-2")}>
 					{workers.map((worker) => {
 						const metrics = [
 							{

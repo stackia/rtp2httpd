@@ -1,7 +1,9 @@
+import { clsx } from "clsx";
 import { Search } from "lucide-react";
 import {
 	memo,
 	type RefObject,
+	startTransition,
 	useCallback,
 	useDeferredValue,
 	useEffect,
@@ -9,12 +11,10 @@ import {
 	useMemo,
 	useRef,
 	useState,
-	useTransition,
 } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import { type EPGData, getCurrentProgram, getEPGChannelId } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
-import { cn } from "../../lib/utils";
 import type { Channel } from "../../types/player";
 import { ChannelListItem } from "./channel-list-item";
 
@@ -47,7 +47,6 @@ function ChannelListComponent({
 
 	// Re-compute current programs every minute (low-priority update)
 	const [now, setNow] = useState(() => new Date());
-	const [, startTransition] = useTransition();
 	useEffect(() => {
 		const timer = setInterval(() => {
 			startTransition(() => setNow(new Date()));
@@ -205,7 +204,7 @@ function ChannelListComponent({
 						<button
 							type="button"
 							onClick={() => setSelectedGroup(null)}
-							className={cn(
+							className={clsx(
 								"rounded-lg px-2.5 md:px-2 py-0.5 md:py-1 text-xs font-medium transition-all",
 								selectedGroup === null
 									? "bg-primary text-primary-foreground shadow-sm"
@@ -219,7 +218,7 @@ function ChannelListComponent({
 								type="button"
 								key={group}
 								onClick={() => setSelectedGroup(group)}
-								className={cn(
+								className={clsx(
 									"rounded-lg px-2.5 md:px-2 py-0.5 md:py-1 text-xs font-medium transition-all",
 									selectedGroup === group
 										? "bg-primary text-primary-foreground shadow-sm"

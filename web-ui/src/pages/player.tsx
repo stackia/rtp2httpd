@@ -1,4 +1,5 @@
-import type mpegts from "@rtp2httpd/mpegts.js";
+import type { PlayerSegment } from "@rtp2httpd/mpegts.js";
+import { clsx } from "clsx";
 import { Activity, StrictMode, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -26,8 +27,7 @@ import {
 	saveLastSourceIndex,
 	saveSidebarVisible,
 } from "../lib/player-storage";
-import { cn } from "../lib/utils";
-import type { Channel, M3UMetadata, PlayMode } from "../types/player";
+import type { Channel, M3UMetadata } from "../types/player";
 
 function PlayerPage() {
 	const { locale, setLocale } = useLocale("player-locale");
@@ -37,8 +37,8 @@ function PlayerPage() {
 	const [metadata, setMetadata] = useState<M3UMetadata | null>(null);
 	const [epgData, setEpgData] = useState<EPGData>({});
 	const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
-	const [playMode, setPlayMode] = useState<PlayMode>("live");
-	const [playbackSegments, setPlaybackSegments] = useState<mpegts.MediaSegment[]>([]);
+	const [playMode, setPlayMode] = useState<"live" | "catchup">("live");
+	const [playbackSegments, setPlaybackSegments] = useState<PlayerSegment[]>([]);
 	const [error, setError] = useState<string | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 	const [isRevealing, setIsRevealing] = useState(false);
@@ -63,11 +63,6 @@ function PlayerPage() {
 
 	// Get the active source's URL and catchupSource
 	const activeSource = currentChannel?.sources[activeSourceIndex] ?? currentChannel?.sources[0];
-
-	// Reset currentVideoTime when streamStartTime changes (new stream starts from 0)
-	useEffect(() => {
-		setCurrentVideoTime(0);
-	}, []);
 
 	// Track fullscreen state
 	useEffect(() => {
@@ -169,6 +164,10 @@ function PlayerPage() {
 			saveLastChannelId(currentChannel.id);
 		}
 	}, [currentChannel, playMode]);
+
+	const handleCurrentVideoTimeChange = useCallback((time: number) => {
+		startTransition(() => setCurrentVideoTime(time));
+	}, []);
 
 	const handleChannelNavigate = useCallback(
 		(target: "prev" | "next" | number) => {
@@ -364,14 +363,14 @@ function PlayerPage() {
 					<VideoPlayer
 						channel={currentChannel}
 						segments={playbackSegments}
-						liveSync={playMode === "live"}
+						playMode={playMode}
 						onError={handleVideoError}
 						locale={locale}
 						currentProgram={currentVideoProgram}
 						onSeek={handleVideoSeek}
 						streamStartTime={streamStartTime}
 						currentVideoTime={currentVideoTime}
-						onCurrentVideoTimeChange={setCurrentVideoTime}
+						onCurrentVideoTimeChange={handleCurrentVideoTimeChange}
 						onChannelNavigate={handleChannelNavigate}
 						showSidebar={showSidebar}
 						onToggleSidebar={handleToggleSidebar}
@@ -384,7 +383,7 @@ function PlayerPage() {
 
 				{/* Sidebar - Mobile: always visible (below video, hidden in fullscreen), Desktop: toggle-able side panel (visible in fullscreen) */}
 				<div
-					className={cn(
+					className={clsx(
 						"flex flex-col w-full md:w-80 md:border-l border-t md:border-t-0 border-border bg-card flex-1 md:flex-initial overflow-hidden",
 						(showSidebar || isMobile) && !(isFullscreen && isMobile) ? "" : "hidden",
 					)}
@@ -397,7 +396,7 @@ function PlayerPage() {
 								channelListNextScrollBehaviorRef.current = "instant";
 								setSidebarView("channels");
 							}}
-							className={cn(
+							className={clsx(
 								"flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium",
 								sidebarView === "channels"
 									? "border-b-2 border-primary text-primary"
@@ -412,7 +411,7 @@ function PlayerPage() {
 								epgViewNextScrollBehaviorRef.current = "instant";
 								setSidebarView("epg");
 							}}
-							className={cn(
+							className={clsx(
 								"flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium",
 								sidebarView === "epg"
 									? "border-b-2 border-primary text-primary"
@@ -477,7 +476,7 @@ function PlayerPage() {
 			{/* Loading overlay */}
 			{isLoading && (
 				<div
-					className={cn(
+					className={clsx(
 						"fixed inset-0 z-50 flex items-center justify-center bg-background",
 						isRevealing && "animate-[zoom-fade-out_0.5s_ease-out_forwards]",
 					)}

@@ -1,8 +1,8 @@
+import { clsx } from "clsx";
 import { RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
 import type { Locale } from "../../lib/locale";
-import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 
 interface ServiceControlSectionProps {
@@ -66,7 +66,7 @@ export function ServiceControlSection({
 						disabled={disabled || reloading}
 						className="gap-2"
 					>
-						<RefreshCw className={cn("h-4 w-4", reloading && "animate-spin")} />
+						<RefreshCw className={clsx("h-4 w-4", reloading && "animate-spin")} />
 						{reloading ? t("reloading") : t("reloadConfig")}
 					</Button>
 					<Button
@@ -76,7 +76,7 @@ export function ServiceControlSection({
 						disabled={disabled || restarting}
 						className="gap-2"
 					>
-						<RotateCcw className={cn("h-4 w-4", restarting && "animate-spin")} />
+						<RotateCcw className={clsx("h-4 w-4", restarting && "animate-spin")} />
 						{restarting ? t("restarting") : t("restartWorkers")}
 					</Button>
 					<Button
@@ -86,7 +86,7 @@ export function ServiceControlSection({
 						disabled={disabled || clearing}
 						className="gap-2"
 					>
-						<Trash2 className={cn("h-4 w-4", clearing && "animate-pulse")} />
+						<Trash2 className={clsx("h-4 w-4", clearing && "animate-pulse")} />
 						{clearing ? t("clearing") : t("clearLogs")}
 					</Button>
 				</div>

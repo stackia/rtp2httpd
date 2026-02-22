@@ -1,3 +1,4 @@
+import { clsx } from "clsx";
 import {
 	History,
 	Maximize,
@@ -17,7 +18,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
-import { cn } from "../../lib/utils";
 import type { Channel, EPGProgram } from "../../types/player";
 
 interface PlayerControlsProps {
@@ -228,7 +228,7 @@ export function PlayerControls({
 					aria-valuemax={100}
 					aria-valuenow={Math.round(progress)}
 					aria-label={t("seekTo")}
-					className={cn(
+					className={clsx(
 						"group relative h-2 rounded-full bg-white/20 transition-all",
 						isCatchupSupported ? "cursor-pointer hover:h-3" : "cursor-default",
 					)}
@@ -256,7 +256,7 @@ export function PlayerControls({
 					)}
 
 					<div
-						className={cn(
+						className={clsx(
 							"absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-lg transition-all",
 							isCatchupSupported && "group-hover:h-4 group-hover:w-4",
 						)}
@@ -333,7 +333,7 @@ export function PlayerControls({
 				<div className="flex items-center gap-1 md:gap-2">
 					{/* Live/Catchup Indicator & Go Live Button */}
 					{isLive ? (
-						<span className="flex items-center gap-1 md:gap-1.5 p-1.5 md:p-2 text-xs md:text-sm font-semibold text-white">
+						<span className="flex items-center gap-1 md:gap-1.5 p-1.5 md:p-2 text-xs md:text-sm font-medium text-white">
 							<span className="h-1.5 w-1.5 md:h-2 md:w-2 animate-pulse rounded-full bg-red-600" />
 							{t("live")}
 						</span>
@@ -341,7 +341,7 @@ export function PlayerControls({
 						<button
 							type="button"
 							onClick={() => onSeek(new Date())}
-							className="rounded-full p-1.5 md:p-2 text-white transition-all hover:bg-white/20 active:scale-95 cursor-pointer text-xs md:text-sm font-semibold"
+							className="rounded-full px-2 py-1 md:px-2.5 md:py-1.5 text-white transition-all hover:bg-white/20 active:scale-95 cursor-pointer text-xs md:text-sm font-medium"
 						>
 							{t("goLive")}
 						</button>
@@ -352,7 +352,7 @@ export function PlayerControls({
 						<div className="group/source relative flex items-center focus-within:z-10" tabIndex={-1}>
 							<button
 								type="button"
-								className="rounded-full px-2 py-1 md:px-2.5 md:py-1.5 text-xs md:text-sm font-medium text-white transition-all hover:bg-white/20 cursor-pointer"
+								className="rounded-full px-2 py-1 md:px-2.5 md:py-1.5 text-xs md:text-sm font-medium text-white transition-all hover:bg-white/20 active:scale-95 cursor-pointer"
 							>
 								{channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}
 							</button>
@@ -362,7 +362,7 @@ export function PlayerControls({
 										type="button"
 										key={source.url}
 										onClick={() => onSourceChange(index)}
-										className={cn(
+										className={clsx(
 											"block w-full whitespace-nowrap px-3 py-1.5 text-xs md:text-sm text-left transition-colors cursor-pointer",
 											index === activeSourceIndex ? "text-primary font-medium" : "text-white/80 hover:bg-white/10",
 										)}

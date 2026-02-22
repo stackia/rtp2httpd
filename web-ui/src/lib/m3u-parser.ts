@@ -1,4 +1,4 @@
-import type mpegts from "@rtp2httpd/mpegts.js";
+import type { PlayerSegment } from "@rtp2httpd/mpegts.js";
 import type { Channel, M3UMetadata, Source } from "../types/player";
 
 /**
@@ -152,11 +152,7 @@ function mergeChannelSources(channels: Channel[]): Channel[] {
  * @param tailOffsetSeconds - Tail offset in seconds (0 means current time, positive values move the tail back)
  * @returns Array of media segments for catchup playback
  */
-export function buildCatchupSegments(
-	source: Source,
-	startTime: Date,
-	tailOffsetSeconds: number = 0,
-): mpegts.MediaSegment[] {
+export function buildCatchupSegments(source: Source, startTime: Date, tailOffsetSeconds: number = 0): PlayerSegment[] {
 	if (!source.catchupSource) {
 		throw new Error("Source does not have catchup source configured");
 	}
@@ -164,7 +160,7 @@ export function buildCatchupSegments(
 	const catchupMode = source.catchup || "default";
 	const now = new Date();
 	const endingFuture = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-	const segments: mpegts.MediaSegment[] = [];
+	const segments: PlayerSegment[] = [];
 
 	/**
 	 * Parse long date format like yyyyMMddHHmmss

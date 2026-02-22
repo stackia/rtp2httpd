@@ -1,8 +1,8 @@
+import { clsx } from "clsx";
 import { Globe, Moon, Sun, Wifi } from "lucide-react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
 import type { TranslationKey } from "../../i18n/status";
 import type { Locale } from "../../lib/locale";
-import { cn } from "../../lib/utils";
 import type { ThemeMode } from "../../types/ui";
 import { Badge } from "../ui/badge";
 import { SelectBox } from "../ui/select-box";
@@ -42,7 +42,7 @@ export function StatusHeader({
 			<div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
 				<div className="space-y-4">
 					<div className="flex flex-wrap items-center gap-3 text-sm">
-						<span className={cn("inline-flex items-center gap-2 font-medium", statusAccent)}>
+						<span className={clsx("inline-flex items-center gap-2 font-medium", statusAccent)}>
 							<Wifi className="h-4 w-4" />
 							{statusLabel}
 						</span>

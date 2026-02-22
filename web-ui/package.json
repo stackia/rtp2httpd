@@ -13,13 +13,12 @@
 		"format": "biome check --fix ."
 	},
 	"dependencies": {
-		"@rtp2httpd/mpegts.js": "^2.0.0",
+		"@rtp2httpd/mpegts.js": "link:../../mpegts.js",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"lucide-react": "^0.575.0",
 		"react": "^19.2.4",
-		"react-dom": "^19.2.4",
-		"tailwind-merge": "^3.5.0"
+		"react-dom": "^19.2.4"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.4",
@@ -30,6 +29,7 @@
 		"@vitejs/plugin-react-swc": "^4.2.3",
 		"tailwindcss": "^4.2.0",
 		"typescript": "^5.9.3",
-		"vite": "^7.3.1"
+		"vite": "^7.3.1",
+		"vite-bundle-analyzer": "^1.3.6"
 	}
 }

@@ -1,16 +1,16 @@
-import mpegts from "@rtp2httpd/mpegts.js";
+import { createPlayer, isSupported, type Player, type PlayerError, type PlayerSegment } from "@rtp2httpd/mpegts.js";
+import { clsx } from "clsx";
 import { Play } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
-import { cn } from "../../lib/utils";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PlayerControls } from "./player-controls";
 
 interface VideoPlayerProps {
 	channel: Channel | null;
-	segments: mpegts.MediaSegment[];
-	liveSync: boolean;
+	segments: PlayerSegment[];
+	playMode: "live" | "catchup";
 	onError?: (error: string) => void;
 	locale: Locale;
 	currentProgram?: EPGProgram | null;
@@ -34,7 +34,7 @@ export function VideoPlayer({
 	segments,
 	onError,
 	locale,
-	liveSync,
+	playMode,
 	currentProgram = null,
 	onSeek,
 	streamStartTime,
@@ -51,15 +51,15 @@ export function VideoPlayer({
 	const t = usePlayerTranslation(locale);
 
 	const videoRef = useRef<HTMLVideoElement>(null);
-	const playerRef = useRef<mpegts.Player | null>(null);
+	const playerRef = useRef<Player | null>(null);
 	const [isLoading, setIsLoading] = useState(false);
 	const [showLoading, setShowLoading] = useState(false);
 	const loadingTimeoutRef = useRef<number>(0);
-	const [isLive, setIsLive] = useState(true);
-	const [error, setError] = useState<string | null>(() => (mpegts.isSupported() ? null : t("mseNotSupported")));
+	const [error, setError] = useState<string | null>(() => (isSupported() ? null : t("mseNotSupported")));
 	const [volume, setVolume] = useState(1);
 	const [isMuted, setIsMuted] = useState(false);
 	const [isPlaying, setIsPlaying] = useState(false);
+	const isLive = streamStartTime.getTime() + currentVideoTime * 1000 >= Date.now() - 3000;
 	const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
 	const [showControls, setShowControls] = useState(true);
 	const [isPiP, setIsPiP] = useState(false);
@@ -68,6 +68,8 @@ export function VideoPlayer({
 	const [retryBaseline, setRetryBaseline] = useState(0);
 	const [isRetrySeek, setIsRetrySeek] = useState(false);
 	const stablePlaybackTimeoutRef = useRef<number>(0);
+	// Whether to auto-play after player recreation (true for initial load and "go live")
+	const shouldAutoPlayRef = useRef(true);
 
 	// Digit input state
 	const [digitBuffer, setDigitBuffer] = useState("");
@@ -76,13 +78,10 @@ export function VideoPlayer({
 	// Debounce loading indicator to prevent flickering on fast loads
 	useEffect(() => {
 		if (isLoading) {
-			// Show loading indicator after 500ms delay
 			loadingTimeoutRef.current = window.setTimeout(() => {
 				setShowLoading(true);
 			}, 500);
 		} else {
-			// Immediately hide loading indicator
-			// eslint-disable-next-line react-hooks/set-state-in-effect
 			setShowLoading(false);
 		}
 
@@ -94,45 +93,49 @@ export function VideoPlayer({
 		};
 	}, [isLoading]);
 
+	// Simplified seek: buffer checking is done inside the library
 	const handleSeek = useCallback(
 		(seekTime: Date) => {
-			if (playerRef.current && seekTime.getTime() >= streamStartTime.getTime()) {
-				const seekSeconds = (seekTime.getTime() - streamStartTime.getTime()) / 1000;
+			if (!playerRef.current) return;
+			const video = videoRef.current;
+			const goingLive = seekTime.getTime() >= Date.now() - 3000;
 
-				// Check if seekSeconds is within buffered ranges
-				const buffered = playerRef.current.buffered;
-				let isBuffered = false;
-
-				for (let i = 0; i < buffered.length; i++) {
-					const start = buffered.start(i);
-					const end = buffered.end(i);
-
-					if (seekSeconds >= start && seekSeconds <= end) {
-						isBuffered = true;
-						break;
-					}
+			if (goingLive && playMode === "live" && video) {
+				// "Go Live": jump to the end of buffered range, resume playback and liveSync
+				const buffered = video.buffered;
+				if (buffered.length > 0) {
+					video.currentTime = buffered.end(buffered.length - 1);
 				}
-
-				if (isBuffered) {
-					// Seek within buffered range
-					playerRef.current.currentTime = seekSeconds;
-					playerRef.current.play(); // resume if paused
-					return;
-				}
+				playerRef.current.setLiveSync(true);
+				video.play();
+				return;
 			}
-			// If not buffered, call onSeek callback
-			onSeek?.(seekTime);
+
+			// Regular seek: preserve current play/pause state, disable liveSync to avoid auto-catchup
+			if (playMode === "live") {
+				playerRef.current.setLiveSync(false);
+			}
+			shouldAutoPlayRef.current = !video?.paused;
+			const seekSeconds = (seekTime.getTime() - streamStartTime.getTime()) / 1000;
+			if (seekSeconds >= 0) {
+				playerRef.current.seek(seekSeconds);
+				// If not in buffer, library emits "seek-needed" -> onSeek -> parent rebuilds segments
+			} else {
+				// Seeking before current stream start — need entirely new stream
+				onSeek?.(seekTime);
+			}
 		},
-		[onSeek, streamStartTime],
+		[streamStartTime, onSeek, playMode],
 	);
 
 	const togglePlayPause = useCallback(() => {
-		if (playerRef.current && videoRef.current) {
-			if (videoRef.current.paused) {
-				playerRef.current.play();
+		const video = videoRef.current;
+		if (video) {
+			if (video.paused) {
+				video.play();
 				setNeedsUserInteraction(false);
 			} else {
-				playerRef.current.pause();
+				video.pause();
 			}
 		}
 	}, []);
@@ -169,34 +172,33 @@ export function VideoPlayer({
 		};
 	}, [resetControlsTimer]);
 
-	const handlePlayerError = useEffectEvent((errorType: string, errorDetail: string, errorInfo: { msg?: string }) => {
-		console.error("Player error:", errorType, errorDetail, errorInfo);
+	const handlePlayerError = useEffectEvent((playerError: PlayerError) => {
+		console.error("Player error:", playerError);
 
 		let errorMessage = t("playbackError");
 		let decodingErrorRetry = false;
 
-		if (errorType === mpegts.ErrorTypes.MEDIA_ERROR) {
-			if (
-				errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_UNSUPPORTED ||
-				errorDetail === mpegts.ErrorDetails.MEDIA_CODEC_UNSUPPORTED ||
-				errorDetail === mpegts.ErrorDetails.MEDIA_FORMAT_ERROR
-			) {
-				errorMessage = t("codecError");
-			} else if (errorDetail === mpegts.ErrorDetails.MEDIA_MSE_ERROR) {
-				errorMessage = `${t("mediaError")}: ${errorInfo?.msg}`;
-				if (errorInfo?.msg?.includes("HTMLMediaElement.error")) {
+		if (playerError.category === "media") {
+			if (playerError.detail === "MediaMSEError") {
+				errorMessage = `${t("mediaError")}: ${playerError.info}`;
+				if (playerError.info?.includes("HTMLMediaElement.error")) {
 					if (videoRef.current?.error?.message?.includes("PIPELINE_ERROR_DECODE")) {
-						// Decoding error, may be transient (upstream packet loss / transmit pressure), can infinite retry
 						decodingErrorRetry = true;
 					} else {
 						errorMessage += `${t("mediaError")}: ${videoRef.current?.error?.message}`;
 					}
 				}
 			} else {
-				errorMessage = `${t("mediaError")}: ${errorDetail}`;
+				errorMessage = `${t("mediaError")}: ${playerError.detail}`;
 			}
-		} else if (errorType === mpegts.ErrorTypes.NETWORK_ERROR) {
-			errorMessage = `${t("networkError")}: ${errorDetail}`;
+		} else if (playerError.category === "demux") {
+			if (playerError.detail === "FormatUnsupported" || playerError.detail === "CodecUnsupported") {
+				errorMessage = t("codecError");
+			} else {
+				errorMessage = `${t("mediaError")}: ${playerError.detail}`;
+			}
+		} else if (playerError.category === "io") {
+			errorMessage = `${t("networkError")}: ${playerError.detail}`;
 		}
 
 		// Check if we should retry
@@ -208,14 +210,11 @@ export function VideoPlayer({
 				setRetryBaseline(retryBaseline + 1);
 				console.log(`Retrying playback due to decoding error...`);
 			}
-			// Seek to current playback position so parent rebuilds segments from here
 			setIsRetrySeek(true);
 			if (onSeek) {
-				if (liveSync) {
-					// Live mode: seek to now
+				if (playMode === "live") {
 					onSeek(new Date());
 				} else {
-					// Catchup mode: seek to current position
 					onSeek(new Date(streamStartTime.getTime() + currentVideoTime * 1000));
 				}
 			}
@@ -239,90 +238,87 @@ export function VideoPlayer({
 	if (segments !== prevSegments) {
 		setPrevSegments(segments);
 		if (isRetrySeek) {
-			// Segments changed due to retry seek, preserve retry state
 			setIsRetrySeek(false);
 		} else {
-			// Segments changed due to user action (channel switch, manual seek, etc.)
 			setRetryCount(0);
 			setRetryBaseline(0);
 		}
 	}
 
-	// Load video stream
+	const handleSeekNeeded = useEffectEvent((seconds: number) => {
+		const seekTime = new Date(streamStartTime.getTime() + seconds * 1000);
+		onSeek?.(seekTime);
+	});
+
+	// Create a single player instance on mount, destroy on unmount
 	useEffect(() => {
-		if (!segments.length || !videoRef.current || !mpegts.isSupported()) return;
+		if (!videoRef.current || !isSupported()) return;
 
-		console.log("Player loading...");
+		const player = createPlayer(videoRef.current, { isLive: true, enableStashBuffer: false });
+		playerRef.current = player;
 
-		// Clear stable playback timer when loading new stream
+		player.on("error", handlePlayerError);
+		player.on("seek-needed", handleSeekNeeded);
+
+		return () => {
+			player.destroy();
+			playerRef.current = null;
+		};
+	}, []);
+
+	// Toggle live sync at runtime without recreating the player
+	useEffect(() => {
+		playerRef.current?.setLiveSync(playMode === "live");
+	}, [playMode]);
+
+	// Load segments whenever they change (channel switch, seek, retry — all go through here)
+	const handleLoadSegments = useEffectEvent((newSegments: PlayerSegment[]) => {
+		if (!newSegments.length || !playerRef.current) return;
+
+		console.log("Loading segments...");
+
 		if (stablePlaybackTimeoutRef.current) {
 			window.clearTimeout(stablePlaybackTimeoutRef.current);
 			stablePlaybackTimeoutRef.current = 0;
 		}
 
-		// eslint-disable-next-line react-hooks/set-state-in-effect
 		showControlsImmediately();
 		setIsLoading(true);
 		setError(null);
-		setIsPlaying(false);
-		setNeedsUserInteraction(false);
 
-		try {
-			const player = mpegts.createPlayer(
-				{
-					type: "mpegts",
-					segments,
-				},
-				{
-					enableWorker: true,
-					isLive: true,
-					enableStashBuffer: false,
-					liveSync,
-				},
-			);
+		playerRef.current.loadSegments(newSegments);
 
-			playerRef.current = player;
-			player.attachMediaElement(videoRef.current);
-
-			player.on(mpegts.Events.ERROR, handlePlayerError);
-
-			player.load();
-
-			const playPromise = player.play();
-			if (playPromise) {
-				playPromise
-					.catch((err: Error) => {
-						if (err.name === "NotAllowedError" || err.message.includes("user didn't interact")) {
-							setNeedsUserInteraction(true);
-						}
-					})
-					.finally(() => {
-						setIsLoading(false);
-					});
+		if (shouldAutoPlayRef.current) {
+			const video = videoRef.current;
+			if (video) {
+				const playPromise = video.play();
+				if (playPromise) {
+					playPromise
+						.catch((err: Error) => {
+							if (err.name === "NotAllowedError" || err.message.includes("user didn't interact")) {
+								setNeedsUserInteraction(true);
+							}
+						})
+						.finally(() => {
+							setIsLoading(false);
+						});
+				}
 			}
-		} catch (err) {
-			const errorMsg = err instanceof Error ? err.message : t("failedToPlay");
-			setError(errorMsg);
-			onError?.(errorMsg);
+		} else {
 			setIsLoading(false);
 		}
+	});
 
-		return () => {
-			if (playerRef.current) {
-				playerRef.current.destroy();
-				playerRef.current = null;
-			}
-		};
-	}, [segments, liveSync, onError, showControlsImmediately, t]);
+	useEffect(() => {
+		handleLoadSegments(segments);
+	}, [segments]);
 
 	const handleVideoCanPlay = useEffectEvent(() => {
 		setIsLoading(false);
-		setIsPlaying(true);
 	});
 
 	const handleVideoWaiting = useEffectEvent(() => {
 		setIsLoading(true);
-		// Clear stable playback timer when buffering
 		if (stablePlaybackTimeoutRef.current) {
 			window.clearTimeout(stablePlaybackTimeoutRef.current);
 			stablePlaybackTimeoutRef.current = 0;
@@ -340,12 +336,10 @@ export function VideoPlayer({
 		setIsLoading(false);
 		setIsPlaying(true);
 
-		// Start/restart stable playback timer
 		if (stablePlaybackTimeoutRef.current) {
 			window.clearTimeout(stablePlaybackTimeoutRef.current);
 		}
 
-		// Reset retry count after 30 seconds of stable playback
 		stablePlaybackTimeoutRef.current = window.setTimeout(() => {
 			if (retryCount > retryBaseline) {
 				console.log(`Resetting accepted retry count after stable playback`);
@@ -356,8 +350,6 @@ export function VideoPlayer({
 
 	const handleVideoPause = useEffectEvent(() => {
 		setIsPlaying(false);
-		setIsLive(false);
-		// Clear stable playback timer when paused
 		if (stablePlaybackTimeoutRef.current) {
 			window.clearTimeout(stablePlaybackTimeoutRef.current);
 			stablePlaybackTimeoutRef.current = 0;
@@ -367,15 +359,13 @@ export function VideoPlayer({
 	const handleVideoTimeUpdate = useEffectEvent(() => {
 		const video = videoRef.current;
 		if (!video) return;
-		if (video.currentTime < currentVideoTime || video.currentTime - currentVideoTime >= 1) {
-			onCurrentVideoTimeChange(video.currentTime);
-			setIsLive(streamStartTime.getTime() + video.currentTime * 1000 >= Date.now() - 3000);
-		}
+		onCurrentVideoTimeChange(video.currentTime);
 	});
 
 	const handleVideoEnded = useEffectEvent(() => {
-		if (onSeek && playerRef.current?.duration) {
-			const seekTime = new Date(streamStartTime.getTime() + playerRef.current.duration * 1000);
+		const video = videoRef.current;
+		if (onSeek && video?.duration) {
+			const seekTime = new Date(streamStartTime.getTime() + video.duration * 1000);
 			onSeek(seekTime);
 		}
 	});
@@ -389,31 +379,26 @@ export function VideoPlayer({
 	});
 
 	const handleKeyDown = useEffectEvent((e: KeyboardEvent) => {
-		// Ignore if user is typing in an input field
 		if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
 			return;
 		}
 
-		// Check if it's a number key (0-9)
 		const isNumberKey = /^[0-9]$/.test(e.key);
 
-		// If it's a number key, append to buffer
 		if (isNumberKey) {
 			e.preventDefault();
 			showControlsImmediately();
 
-			// Clear existing timeout
 			if (digitTimeoutRef.current) {
 				window.clearTimeout(digitTimeoutRef.current);
 			}
 
-			// Set new timeout to confirm selection
 			const newBuffer = digitBuffer + e.key;
 			digitTimeoutRef.current = window.setTimeout(() => {
 				onChannelNavigate?.(parseInt(newBuffer, 10));
 				setDigitBuffer("");
 				digitTimeoutRef.current = 0;
-			}, 1000); // 1000ms delay
+			}, 1000);
 			setDigitBuffer(newBuffer);
 			return;
 		}
@@ -435,7 +420,6 @@ export function VideoPlayer({
 
 			case "Escape":
 				e.preventDefault();
-				// Blur any focused element
 				if (document.activeElement && document.activeElement !== document.body) {
 					(document.activeElement as HTMLElement).blur();
 				} else if (digitBuffer) {
@@ -455,7 +439,6 @@ export function VideoPlayer({
 			case "PageDown":
 			case "ChannelDown":
 				e.preventDefault();
-				// Previous channel
 				onChannelNavigate?.("prev");
 				break;
 
@@ -463,13 +446,11 @@ export function VideoPlayer({
 			case "PageUp":
 			case "ChannelUp":
 				e.preventDefault();
-				// Next channel
 				onChannelNavigate?.("next");
 				break;
 
 			case "ArrowLeft": {
 				e.preventDefault();
-				// Seek backward 5 seconds
 				const currentAbsoluteTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
 				const newSeekTime = new Date(currentAbsoluteTime.getTime() - 5000);
 				handleSeek(newSeekTime);
@@ -478,14 +459,13 @@ export function VideoPlayer({
 
 			case "ArrowRight": {
 				e.preventDefault();
-				// Seek forward 5 seconds
 				const currentAbsoluteTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
 				const newSeekTime = new Date(currentAbsoluteTime.getTime() + 5000);
 				handleSeek(newSeekTime);
 				break;
 			}
 
-			case " ": // Space
+			case " ":
 				e.preventDefault();
 				togglePlayPause();
 				break;
@@ -493,16 +473,14 @@ export function VideoPlayer({
 			case "m":
 			case "M":
 				e.preventDefault();
-				// Toggle mute
-				if (playerRef.current) {
-					playerRef.current.muted = !playerRef.current.muted;
+				if (videoRef.current) {
+					videoRef.current.muted = !videoRef.current.muted;
 				}
 				break;
 
 			case "f":
 			case "F":
 				e.preventDefault();
-				// Toggle fullscreen
 				onFullscreenToggle?.();
 				break;
 
@@ -510,7 +488,6 @@ export function VideoPlayer({
 			case "S":
 			case "BrowserFavorites":
 				e.preventDefault();
-				// Toggle sidebar
 				onToggleSidebar?.();
 				break;
 		}
@@ -554,34 +531,30 @@ export function VideoPlayer({
 		};
 	}, []);
 
-	// Handle video click/tap - toggle controls
 	const handleVideoClick = useCallback(() => {
 		if (showControls) {
 			hideControlsImmediately();
 		} else {
-			// Show controls and start auto-hide timer
 			showControlsImmediately();
 		}
 	}, [showControls, hideControlsImmediately, showControlsImmediately]);
 
 	const handleMuteToggle = useCallback(() => {
-		if (playerRef.current) {
-			playerRef.current.muted = !playerRef.current.muted;
+		if (videoRef.current) {
+			videoRef.current.muted = !videoRef.current.muted;
 		}
 	}, []);
 
 	const handleVolumeChange = useCallback((newVolume: number) => {
-		if (playerRef.current) {
-			playerRef.current.volume = newVolume;
+		if (videoRef.current) {
+			videoRef.current.volume = newVolume;
 		}
 	}, []);
 
 	const handleFullscreen = useCallback(() => {
-		// Check if it's iOS
 		const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
 		if (isIOS && videoRef.current) {
-			// iOS: Use video element's webkit fullscreen API
 			const video = videoRef.current as HTMLVideoElement & {
 				webkitEnterFullscreen?: () => void;
 				webkitRequestFullscreen?: () => void;
@@ -592,7 +565,6 @@ export function VideoPlayer({
 				video.webkitRequestFullscreen();
 			}
 		} else if (onFullscreenToggle) {
-			// Desktop/Android: Use container fullscreen
 			onFullscreenToggle();
 		}
 	}, [onFullscreenToggle]);
@@ -612,10 +584,10 @@ export function VideoPlayer({
 	}, []);
 
 	const handleUserClick = () => {
-		if (needsUserInteraction && playerRef.current) {
+		if (needsUserInteraction && videoRef.current) {
 			setNeedsUserInteraction(false);
 			setIsPlaying(true);
-			playerRef.current.play()?.catch((err: Error) => {
+			videoRef.current.play()?.catch((err: Error) => {
 				console.error("Play error after user interaction:", err);
 				setError(`${t("failedToPlay")}: ${err.message}`);
 				onError?.(`${t("failedToPlay")}: ${err.message}`);
@@ -632,7 +604,7 @@ export function VideoPlayer({
 		>
 			{/* Mobile: 16:9 aspect ratio container, Desktop: full height */}
 			<div
-				className={cn(
+				className={clsx(
 					"video-container relative w-full aspect-video md:aspect-auto md:h-full flex items-center justify-center",
 					!showControls && "cursor-none",
 				)}
@@ -640,7 +612,7 @@ export function VideoPlayer({
 				{/* biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks */}
 				<video
 					ref={videoRef}
-					className={cn("max-w-full max-h-full", force16x9 ? "object-fill aspect-video" : "w-full h-full")}
+					className={clsx("max-w-full max-h-full", force16x9 ? "object-fill aspect-video" : "w-full h-full")}
 					playsInline
 					webkit-playsinline="true"
 					x5-playsinline="true"
@@ -666,13 +638,12 @@ export function VideoPlayer({
 				{/* Channel Info and Controls */}
 				{channel && (
 					<div
-						className={cn(
+						className={clsx(
 							"absolute top-4 right-4 md:top-8 md:right-8 flex flex-col gap-2 md:gap-3 items-end transition-opacity duration-300",
 							showControls ? "opacity-100" : "opacity-0",
 						)}
 					>
 						<div className="flex flex-col gap-1.5 md:gap-2 px-2 py-1.5 md:px-3 md:py-2 items-center justify-center overflow-hidden rounded-lg bg-white/10 ring-1 ring-white/20 backdrop-blur-sm max-w-[calc(100vw-2rem)] md:max-w-none">
-							{/* Logo Banner */}
 							{channel.logo && (
 								<img
 									src={channel.logo}
@@ -684,11 +655,10 @@ export function VideoPlayer({
 									}}
 								/>
 							)}
-							{/* Bottom Row: Channel Info & Digit Input */}
 							<div className="flex items-center justify-center w-full">
 								<div className="flex items-center gap-1.5 md:gap-2 min-w-0">
 									<span
-										className={cn(
+										className={clsx(
 											"rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition-all duration-300",
 											digitBuffer
 												? "bg-primary text-primary-foreground scale-110 shadow-lg ring-2 ring-primary/50"
@@ -731,11 +701,10 @@ export function VideoPlayer({
 					</div>
 				)}
 
-				{/* Player Controls */}
 				{channel && !error && !needsUserInteraction && (
 					<div
 						role="toolbar"
-						className={cn(
+						className={clsx(
 							"absolute bottom-0 left-0 right-0 transition-opacity duration-300",
 							showControls ? "opacity-100" : "opacity-0 has-focus-visible:opacity-100",
 						)}
