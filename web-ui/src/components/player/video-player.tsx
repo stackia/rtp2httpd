@@ -682,8 +682,12 @@ export function VideoPlayer({
 										{digitBuffer || channel.id}
 									</span>
 									<h2 className="text-xs md:text-base font-bold text-white truncate">{channel.name}</h2>
-									<span className="text-xs md:text-sm text-white/50 hidden sm:inline">·</span>
-									<div className="text-xs md:text-sm text-white/70 truncate hidden sm:block">{channel.group}</div>
+									{channel.group && (
+										<>
+											<span className="text-xs md:text-sm text-white/50 hidden sm:inline">·</span>
+											<div className="text-xs md:text-sm text-white/70 truncate hidden sm:block">{channel.group}</div>
+										</>
+									)}
 								</div>
 							</div>
 						</div>
