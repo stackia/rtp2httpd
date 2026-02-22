@@ -717,6 +717,31 @@ int connection_route_and_start(connection_t *c) {
     logger(LOG_DEBUG, "Host header validated: %s", c->http_req.hostname);
   }
 
+  /* Handle CORS preflight (OPTIONS) before r2h-token check */
+  if (config.cors_allow_origin && config.cors_allow_origin[0] &&
+      strcasecmp(c->http_req.method, "OPTIONS") == 0) {
+    char cors_headers[1024];
+    int clen = 0;
+
+    clen += snprintf(cors_headers + clen, sizeof(cors_headers) - clen,
+                     "Access-Control-Allow-Methods: %s\r\n",
+                     c->http_req.access_control_request_method[0]
+                         ? c->http_req.access_control_request_method
+                         : "GET, HEAD, OPTIONS");
+    if (c->http_req.access_control_request_headers[0]) {
+      clen += snprintf(cors_headers + clen, sizeof(cors_headers) - clen,
+                       "Access-Control-Allow-Headers: %s\r\n",
+                       c->http_req.access_control_request_headers);
+    }
+    clen += snprintf(cors_headers + clen, sizeof(cors_headers) - clen,
+                     "Access-Control-Max-Age: 86400\r\n"
+                     "Content-Length: 0\r\n");
+
+    send_http_headers(c, STATUS_204, NULL, cors_headers);
+    connection_queue_output_and_flush(c, NULL, 0);
+    return 0;
+  }
+
   /* Extract service_path and query */
   const char *service_path = url + 1; /* skip leading '/' */
   const char *query_start = strchr(service_path, '?');

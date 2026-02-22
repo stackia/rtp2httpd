@@ -20,6 +20,7 @@ static const char *response_codes[] = {
     "HTTP/1.1 500 Internal Server Error\r\n", /* 5 */
     "HTTP/1.1 401 Unauthorized\r\n",          /* 6 */
     "HTTP/1.1 304 Not Modified\r\n",          /* 7 */
+    "HTTP/1.1 204 No Content\r\n",            /* 8 */
 };
 
 void send_http_headers(connection_t *c, http_status_t status,
@@ -59,6 +60,13 @@ void send_http_headers(connection_t *c, http_status_t status,
                     "SameSite=Strict\r\n",
                     config.r2h_token);
     c->should_set_r2h_cookie = 0; /* Only set once */
+  }
+
+  /* CORS header if configured */
+  if (config.cors_allow_origin && config.cors_allow_origin[0]) {
+    len += snprintf(headers + len, sizeof(headers) - len,
+                    "Access-Control-Allow-Origin: %s\r\n",
+                    config.cors_allow_origin);
   }
 
   /* Extra headers if provided */
@@ -346,6 +354,16 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
         } else if (strcasecmp(inbuf, "Cookie") == 0) {
           strncpy(req->cookie, value, sizeof(req->cookie) - 1);
           req->cookie[sizeof(req->cookie) - 1] = '\0';
+        } else if (strcasecmp(inbuf, "Access-Control-Request-Method") == 0) {
+          strncpy(req->access_control_request_method, value,
+                  sizeof(req->access_control_request_method) - 1);
+          req->access_control_request_method
+              [sizeof(req->access_control_request_method) - 1] = '\0';
+        } else if (strcasecmp(inbuf, "Access-Control-Request-Headers") == 0) {
+          strncpy(req->access_control_request_headers, value,
+                  sizeof(req->access_control_request_headers) - 1);
+          req->access_control_request_headers
+              [sizeof(req->access_control_request_headers) - 1] = '\0';
         }
       }
 

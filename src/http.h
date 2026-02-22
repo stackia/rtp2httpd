@@ -15,7 +15,8 @@ typedef enum {
   STATUS_503 = 4,
   STATUS_500 = 5,
   STATUS_401 = 6,
-  STATUS_304 = 7
+  STATUS_304 = 7,
+  STATUS_204 = 8
 } http_status_t;
 
 /* Content Types */
@@ -50,6 +51,8 @@ typedef struct {
   char x_forwarded_proto[16];
   int x_request_snapshot;
   char cookie[1024];  /* Cookie header value for r2h-token extraction */
+  char access_control_request_method[64];   /* CORS preflight method */
+  char access_control_request_headers[512]; /* CORS preflight headers */
   http_parse_state_t parse_state;
   int content_length;
   char *body;         /* Dynamically allocated based on Content-Length */

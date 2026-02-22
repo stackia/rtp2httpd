@@ -109,6 +109,10 @@ typedef struct {
   /* STUN NAT traversal settings */
   char *rtsp_stun_server; /* STUN server host:port for RTSP NAT traversal
                              (NULL=disabled) */
+
+  /* CORS settings */
+  char *cors_allow_origin; /* CORS Access-Control-Allow-Origin value
+                              (NULL=disabled) */
 } config_t;
 
 /* GLOBALS */

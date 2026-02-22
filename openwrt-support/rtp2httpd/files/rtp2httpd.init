@@ -62,6 +62,7 @@ start_instance() {
         append_arg "$cfg" mcast_rejoin_interval "--mcast-rejoin-interval"
         append_arg "$cfg" fcc_listen_port_range "--fcc-listen-port-range"
         append_arg "$cfg" rtsp_stun_server "--rtsp-stun-server"
+        append_arg "$cfg" cors_allow_origin "--cors-allow-origin"
         append_arg "$cfg" ffmpeg_path "--ffmpeg-path"
         append_arg "$cfg" ffmpeg_args "--ffmpeg-args"
 

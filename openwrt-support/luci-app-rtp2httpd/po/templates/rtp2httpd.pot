@@ -1,7 +1,7 @@
 msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:589
+#: htdocs/luci-static/resources/view/rtp2httpd.js:601
 msgid ""
 "Additional FFmpeg arguments for snapshot generation. Common options: -"
 "hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)"
@@ -23,6 +23,10 @@ msgstr ""
 msgid "Buffer Pool Max Size"
 msgstr ""
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js:551
+msgid "CORS Allow Origin"
+msgstr ""
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:208
 msgid "Config File Content"
 msgstr ""
@@ -41,7 +45,7 @@ msgstr ""
 msgid "Edit the content of /etc/rtp2httpd.conf"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:565
+#: htdocs/luci-static/resources/view/rtp2httpd.js:577
 msgid ""
 "Enable video snapshot feature. When enabled, clients can request snapshots "
 "with snapshot=1 query parameter"
@@ -77,11 +81,11 @@ msgstr ""
 msgid "FCC Listen Port Range"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:587
+#: htdocs/luci-static/resources/view/rtp2httpd.js:599
 msgid "FFmpeg Arguments"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:575
+#: htdocs/luci-static/resources/view/rtp2httpd.js:587
 msgid "FFmpeg Path"
 msgstr ""
 
@@ -181,7 +185,7 @@ msgstr ""
 msgid "Open Status Dashboard"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:577
+#: htdocs/luci-static/resources/view/rtp2httpd.js:589
 msgid ""
 "Path to FFmpeg executable. Leave empty to use system PATH (default: ffmpeg)"
 msgstr ""
@@ -224,6 +228,13 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:188
 msgid "Respawn"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:553
+msgid ""
+"Set Access-Control-Allow-Origin header to enable CORS. Use * to allow all "
+"origins, or specify a domain (e.g., https://example.com). Leave empty to "
+"disable CORS."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:507
@@ -282,7 +293,7 @@ msgstr ""
 msgid "Use config file instead of individual options"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:563
+#: htdocs/luci-static/resources/view/rtp2httpd.js:575
 msgid "Video Snapshot"
 msgstr ""
 
@@ -299,7 +310,7 @@ msgid ""
 "to allow access."
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:553
+#: htdocs/luci-static/resources/view/rtp2httpd.js:565
 msgid ""
 "When enabled, uses HTTP X-Forwarded-For header as client address for status "
 "page display. Also accepts X-Forwarded-Host / X-Forwarded-Proto headers as "
@@ -311,7 +322,7 @@ msgstr ""
 msgid "Workers"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:551
+#: htdocs/luci-static/resources/view/rtp2httpd.js:563
 msgid "X-Forwarded-For"
 msgstr ""
 

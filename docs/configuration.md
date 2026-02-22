@@ -58,6 +58,8 @@ rtp2httpd [选项]
 - `-H, --hostname <主机名>` - 检查 HTTP Host 头的主机名
 - `-X, --xff` - 启用 X-Forwarded-For 解析
 - `-T, --r2h-token <令牌>` - HTTP 请求认证令牌 (所有请求必须携带 r2h-token 查询参数)
+- `-O, --cors-allow-origin <值>` - 设置 CORS Access-Control-Allow-Origin 头 (默认: 禁用)
+  - 设为 `*` 允许所有来源，或指定具体域名（如 `https://example.com`）
 - `-s, --status-page-path <路径>` - 状态页面与 API 根路径 (默认: /status)
 - `-p, --player-page-path <路径>` - 内置播放器页面路径 (默认: /player)
 
@@ -181,6 +183,11 @@ zerocopy-on-send = no
 # 当 RTSP 服务器仅支持 UDP 传输且客户端位于 NAT 后时，可尝试使用 STUN 进行 NAT 穿透（不保证成功）
 # 格式: host:port 或 host（默认端口 3478）
 rtsp-stun-server = stun.miwifi.com
+
+# CORS 跨域请求配置（默认: 禁用）
+# 设置后启用 CORS
+# 设为 * 允许所有域名，或指定具体域名
+;cors-allow-origin = *
 
 # 启用视频快照功能（默认: no）
 # 启用后可通过 `snapshot=1` 查询参数获取视频流的实时快照
