@@ -1,40 +1,40 @@
 export interface Source {
-  url: string;
-  catchup?: string;
-  catchupSource?: string;
-  label?: string;
+	url: string;
+	catchup?: string;
+	catchupSource?: string;
+	label?: string;
 }
 
 export interface Channel {
-  id: string;
-  name: string;
-  logo?: string;
-  group: string;
-  tvgId?: string;
-  tvgName?: string;
-  sources: Source[];
+	id: string;
+	name: string;
+	logo?: string;
+	group: string;
+	tvgId?: string;
+	tvgName?: string;
+	sources: Source[];
 }
 
 export interface EPGProgram {
-  id: string;
-  title?: string;
-  start: Date;
-  end: Date;
+	id: string;
+	title?: string;
+	start: Date;
+	end: Date;
 }
 
 export interface M3UMetadata {
-  tvgUrl?: string;
-  channels: Channel[];
-  groups: string[];
+	tvgUrl?: string;
+	channels: Channel[];
+	groups: string[];
 }
 
 export type PlayMode = "live" | "catchup";
 
 export interface PlayerState {
-  currentChannel: Channel | null;
-  playMode: PlayMode;
-  currentTime: Date;
-  isPlaying: boolean;
-  volume: number;
-  isMuted: boolean;
+	currentChannel: Channel | null;
+	playMode: PlayMode;
+	currentTime: Date;
+	isPlaying: boolean;
+	volume: number;
+	isMuted: boolean;
 }

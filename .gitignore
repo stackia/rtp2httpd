@@ -19,6 +19,7 @@ depcomp
 install-sh
 missing
 .dirstamp
+.vscode/
 
 # Test framework files
 test-driver
