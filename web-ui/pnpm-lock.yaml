@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@rtp2httpd/mpegts.js':
-        specifier: link:../../mpegts.js
-        version: link:../../mpegts.js
+        specifier: ^3.0.0
+        version: 3.0.0
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -412,6 +412,9 @@ packages:
     resolution: {integrity: sha512-2HRCml6OztYXyJXAvdDXPKcawukWY2GpR5/nxKp4iBgiO3wcoEGkAaqctIbZcNB6KlUQBIqt8VYkNSj2397EfA==}
     cpu: [x64]
     os: [win32]
+
+  '@rtp2httpd/mpegts.js@3.0.0':
+    resolution: {integrity: sha512-IfO50KvAGEG5Ca1kxOzjmnVMleRlB+PJNRqHx+cqCD9XfkERyYqq8KTnf47MmgRxFcvqgAThBnas5XPCTs5Y6w==}
 
   '@swc/core-darwin-arm64@1.15.11':
     resolution: {integrity: sha512-QoIupRWVH8AF1TgxYyeA5nS18dtqMuxNwchjBIwJo3RdwLEFiJq6onOx9JAxHtuPwUkIVuU2Xbp+jCJ7Vzmgtg==}
@@ -1030,6 +1033,8 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.59.0':
     optional: true
+
+  '@rtp2httpd/mpegts.js@3.0.0': {}
 
   '@swc/core-darwin-arm64@1.15.11':
     optional: true

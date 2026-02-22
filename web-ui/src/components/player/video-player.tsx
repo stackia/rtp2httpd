@@ -566,17 +566,17 @@ export function VideoPlayer({
 	}, []);
 
 	const handleFullscreen = useCallback(() => {
-		const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+		const isIOS = /iPhone|iPod/.test(navigator.userAgent);
 
 		if (isIOS && videoRef.current) {
+			// iPhone doesn't support the standard Fullscreen API, but has webkitEnterFullscreen for videos
+			// iPad doesn't have such limitations and works with the standard API, so we only apply this workaround for iPhone/iPod
 			const video = videoRef.current as HTMLVideoElement & {
+				webkitSupportsFullscreen?: boolean;
 				webkitEnterFullscreen?: () => void;
-				webkitRequestFullscreen?: () => void;
 			};
-			if (video.webkitEnterFullscreen) {
-				video.webkitEnterFullscreen();
-			} else if (video.webkitRequestFullscreen) {
-				video.webkitRequestFullscreen();
+			if (video.webkitSupportsFullscreen) {
+				video.webkitEnterFullscreen?.();
 			}
 		} else if (onFullscreenToggle) {
 			onFullscreenToggle();
