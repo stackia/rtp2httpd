@@ -71,12 +71,14 @@ body {
 	@apply bg-background text-foreground antialiased;
 }
 
-:focus-visible {
-	@apply outline-none ring-2 ring-ring;
-}
+@layer base {
+	:focus-visible {
+		@apply outline-none ring-2 ring-ring;
+	}
 
-* {
-	@apply transition-shadow;
+	* {
+		@apply transition-shadow;
+	}
 }
 
 .scrollbar-thin {

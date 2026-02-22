@@ -73,17 +73,14 @@ function EPGViewComponent({
 			nextScrollBehaviorRef.current = "smooth";
 		}, 0);
 
-		if (nextScrollBehaviorRef.current === "skip") {
-			return;
-		}
+		if (!currentPlayingProgram || !channelId || !channelPrograms.length) return;
+		if (nextScrollBehaviorRef.current === "skip") return;
 
-		if (currentProgramRef.current) {
-			currentProgramRef.current.scrollIntoView({
-				behavior: nextScrollBehaviorRef.current,
-				block: "center",
-			});
-		}
-	}, []);
+		currentProgramRef.current?.scrollIntoView({
+			behavior: nextScrollBehaviorRef.current,
+			block: "center",
+		});
+	}, [currentPlayingProgram, channelId, channelPrograms]);
 
 	const handleProgramClick = useCallback(
 		(programStart: Date, programEnd: Date) => {

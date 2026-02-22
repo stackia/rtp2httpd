@@ -128,26 +128,23 @@ function ChannelListComponent({
 			nextScrollBehaviorRef.current = "smooth";
 		}, 0);
 
-		if (nextScrollBehaviorRef.current === "skip") {
-			return;
-		}
+		if (!currentChannel) return;
+		if (nextScrollBehaviorRef.current === "skip") return;
 
-		if (currentChannelRef.current) {
-			currentChannelRef.current.scrollIntoView({
-				behavior: nextScrollBehaviorRef.current,
-				block: "center",
-			});
-		}
-	}, []);
+		currentChannelRef.current?.scrollIntoView({
+			behavior: nextScrollBehaviorRef.current,
+			block: "center",
+		});
+	}, [currentChannel]);
 
 	useLayoutEffect(() => {
-		if (currentChannelRef.current) {
-			currentChannelRef.current.scrollIntoView({
-				behavior: "instant",
-				block: "center",
-			});
-		}
-	}, []);
+		if (!filteredChannels.length) return;
+
+		currentChannelRef.current?.scrollIntoView({
+			behavior: "instant",
+			block: "center",
+		});
+	}, [filteredChannels]);
 
 	const handleChannelClick = useCallback(
 		(channel: Channel) => {
@@ -163,6 +160,7 @@ function ChannelListComponent({
 			if (e.key === "Enter" && filteredChannels.length > 0) {
 				onChannelSelect(filteredChannels[0]);
 				setSearchQuery("");
+				(document.activeElement as HTMLElement)?.blur();
 			} else if (e.key === "Escape") {
 				if (document.activeElement && document.activeElement !== document.body) {
 					(document.activeElement as HTMLElement).blur();
