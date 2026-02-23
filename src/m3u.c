@@ -910,7 +910,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
   char proxy_url[MAX_URL_LENGTH];
   char transformed_line[MAX_M3U_LINE];
   
-  /* Check and skip UTF-8 BOM */  
+  /* Check and skip UTF-8 BOM */
   if (strncmp(content_ptr, "\xEF\xBB\xBF", 3) == 0) {
     content_ptr += 3;
     logger(LOG_DEBUG, "Detected and skipped UTF-8 BOM in M3U content");
