@@ -53,6 +53,7 @@ function getMimeType(filePath) {
     ".ttf": "font/ttf",
     ".eot": "application/vnd.ms-fontobject",
     ".webp": "image/webp",
+    ".wasm": "application/wasm",
   };
   return mimeTypes[ext] || "application/octet-stream";
 }

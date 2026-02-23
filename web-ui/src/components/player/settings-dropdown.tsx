@@ -15,6 +15,8 @@ interface SettingsDropdownProps {
 	onCatchupTailOffsetChange: (offset: number) => void;
 	force16x9: boolean;
 	onForce16x9Change: (enabled: boolean) => void;
+	mp2SoftDecode: boolean;
+	onMp2SoftDecodeChange: (enabled: boolean) => void;
 }
 
 const localeOptions: Array<{ value: Locale; label: string }> = [
@@ -40,6 +42,8 @@ function SettingsDropdownComponent({
 	onCatchupTailOffsetChange,
 	force16x9,
 	onForce16x9Change,
+	mp2SoftDecode,
+	onMp2SoftDecodeChange,
 }: SettingsDropdownProps) {
 	const t = usePlayerTranslation(locale);
 	const [isOpen, setIsOpen] = useState(false);
@@ -92,10 +96,10 @@ function SettingsDropdownComponent({
 			</button>
 
 			{isOpen && (
-				<div className="absolute top-full right-0 mt-1 w-48 rounded-md border border-border bg-card shadow-lg z-50">
+				<div className="absolute top-full right-0 mt-1 w-46 rounded-md border border-border bg-card shadow-lg z-50">
 					<div className="p-2 space-y-3">
 						{/* Language Select */}
-						<label>
+						<label className="block">
 							<span className="block text-xs font-medium text-muted-foreground mb-1.5 px-1">{t("language")}</span>
 							<select
 								value={locale}
@@ -111,7 +115,7 @@ function SettingsDropdownComponent({
 						</label>
 
 						{/* Theme Select */}
-						<label>
+						<label className="block">
 							<span className="block text-xs font-medium text-muted-foreground mb-1.5 px-1">{t("theme")}</span>
 							<select
 								value={theme}
@@ -127,7 +131,7 @@ function SettingsDropdownComponent({
 						</label>
 
 						{/* Catchup Tail Offset Input */}
-						<label>
+						<label className="block">
 							<span className="block text-xs font-medium text-muted-foreground mb-1.5 px-1">
 								{t("catchupTailOffset")}
 							</span>
@@ -145,6 +149,12 @@ function SettingsDropdownComponent({
 						<div className="flex items-center justify-between px-1">
 							<span className="text-xs font-medium text-muted-foreground">{t("force16x9")}</span>
 							<Switch checked={force16x9} onCheckedChange={onForce16x9Change} aria-label={t("force16x9")} />
+						</div>
+
+						{/* MP2 Audio Software Decode Toggle */}
+						<div className="flex items-center justify-between px-1">
+							<span className="text-xs font-medium text-muted-foreground">{t("mp2SoftDecode")}</span>
+							<Switch checked={mp2SoftDecode} onCheckedChange={onMp2SoftDecodeChange} aria-label={t("mp2SoftDecode")} />
 						</div>
 					</div>
 				</div>

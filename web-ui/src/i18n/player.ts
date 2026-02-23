@@ -89,6 +89,7 @@ const base: TranslationDict = {
 	catchupTailOffset: "Catchup Tail Offset",
 	catchupTailOffsetHint: "0 means current time, in seconds",
 	force16x9: "Force 16:9",
+	mp2SoftDecode: "MP2 Audio Software Decoder",
 };
 
 const zhHans: TranslationDict = {
@@ -178,6 +179,7 @@ const zhHans: TranslationDict = {
 	catchupTailOffset: "回看切片尾偏移",
 	catchupTailOffsetHint: "0 表示当前，单位秒",
 	force16x9: "强制 16:9",
+	mp2SoftDecode: "MP2 音频软解",
 };
 
 // 繁體中文（偏好香港用語）
@@ -268,6 +270,7 @@ const zhHant: TranslationDict = {
 	catchupTailOffset: "回看切片尾偏移",
 	catchupTailOffsetHint: "0 表示當前，單位秒",
 	force16x9: "強制 16:9",
+	mp2SoftDecode: "MP2 音頻軟解",
 };
 
 export const translations: Record<Locale, TranslationDict> = {

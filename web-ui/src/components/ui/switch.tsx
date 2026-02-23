@@ -31,7 +31,7 @@ export const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
 				onClick={toggle}
 				onKeyDown={handleKeyDown}
 				className={clsx(
-					"relative inline-flex h-6 w-11 items-center rounded-full border border-input bg-input transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50",
+					"relative shrink-0 inline-flex h-6 w-11 items-center rounded-full border border-input bg-input transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50",
 					checked ? "bg-primary" : "bg-input",
 					className,
 				)}
