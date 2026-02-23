@@ -1,152 +1,61 @@
 /**
- * LocalStorage utilities for player state persistence
+ * LocalStorage utilities for player state persistence.
+ *
+ * createStore<T>(key, defaultValue) returns a [get, save] tuple that handles
+ * JSON serialization, error handling, and backward-compatible reads.
  */
 
-const STORAGE_KEYS = {
-	LAST_CHANNEL_ID: "rtp2httpd-player-last-channel-id",
-	SIDEBAR_VISIBLE: "rtp2httpd-player-sidebar-visible",
-	CATCHUP_TAIL_OFFSET: "rtp2httpd-player-catchup-tail-offset",
-	FORCE_16_9: "rtp2httpd-player-force-16-9",
-	LAST_SOURCE_INDEX: "rtp2httpd-player-last-source-index",
-} as const;
-
-/**
- * Save the last played live channel ID
- * @param channelId - The channel ID to save
- */
-export function saveLastChannelId(channelId: string): void {
-	try {
-		localStorage.setItem(STORAGE_KEYS.LAST_CHANNEL_ID, channelId);
-	} catch (error) {
-		console.error("Failed to save last channel ID:", error);
-	}
+function createStore<T>(key: string, defaultValue: T): [get: () => T, save: (value: T) => void] {
+	return [
+		(): T => {
+			try {
+				const raw = localStorage.getItem(key);
+				if (raw === null) return defaultValue;
+				return JSON.parse(raw) as T;
+			} catch {
+				return defaultValue;
+			}
+		},
+		(value: T): void => {
+			try {
+				if (JSON.stringify(value) === JSON.stringify(defaultValue)) {
+					localStorage.removeItem(key);
+				} else {
+					localStorage.setItem(key, JSON.stringify(value));
+				}
+			} catch {}
+		},
+	];
 }
 
-/**
- * Get the last played live channel ID
- * @returns The last channel ID or null if not found
- */
-export function getLastChannelId(): string | null {
-	try {
-		return localStorage.getItem(STORAGE_KEYS.LAST_CHANNEL_ID);
-	} catch (error) {
-		console.error("Failed to get last channel ID:", error);
-		return null;
-	}
-}
+export const [getLastChannelId, saveLastChannelId] = createStore<string | null>(
+	"rtp2httpd-player-last-channel-id",
+	null,
+);
+export const [getSidebarVisible, saveSidebarVisible] = createStore("rtp2httpd-player-sidebar-visible", true);
+export const [getCatchupTailOffset, saveCatchupTailOffset] = createStore("rtp2httpd-player-catchup-tail-offset", 0);
+export const [getForce16x9, saveForce16x9] = createStore("rtp2httpd-player-force-16-9", true);
+export const [getMp2SoftDecode, saveMp2SoftDecode] = createStore(
+	"rtp2httpd-player-mp2-soft-decode",
+	/iPhone|iPod/.test(navigator.userAgent),
+);
 
-/**
- * Save the sidebar visibility state
- * @param visible - Whether the sidebar is visible
- */
-export function saveSidebarVisible(visible: boolean): void {
-	try {
-		localStorage.setItem(STORAGE_KEYS.SIDEBAR_VISIBLE, JSON.stringify(visible));
-	} catch (error) {
-		console.error("Failed to save sidebar visibility:", error);
-	}
-}
+// Per-channel source index uses a JSON object map, so it needs custom logic
+const [getSourceIndexMap, saveSourceIndexMap] = createStore<Record<string, number>>(
+	"rtp2httpd-player-last-source-index",
+	{},
+);
 
-/**
- * Get the sidebar visibility state
- * @returns The sidebar visibility or true (default)
- */
-export function getSidebarVisible(): boolean {
-	try {
-		const stored = localStorage.getItem(STORAGE_KEYS.SIDEBAR_VISIBLE);
-		return stored !== null ? JSON.parse(stored) : true;
-	} catch (error) {
-		console.error("Failed to get sidebar visibility:", error);
-		return true;
-	}
-}
-
-/**
- * Save the catchup tail offset (in seconds)
- * @param offset - The offset in seconds (0 means current time)
- */
-export function saveCatchupTailOffset(offset: number): void {
-	try {
-		localStorage.setItem(STORAGE_KEYS.CATCHUP_TAIL_OFFSET, offset.toString());
-	} catch (error) {
-		console.error("Failed to save catchup tail offset:", error);
-	}
-}
-
-/**
- * Get the catchup tail offset (in seconds)
- * @returns The offset in seconds or 0 (default)
- */
-export function getCatchupTailOffset(): number {
-	try {
-		const stored = localStorage.getItem(STORAGE_KEYS.CATCHUP_TAIL_OFFSET);
-		return stored !== null ? parseFloat(stored) : 0;
-	} catch (error) {
-		console.error("Failed to get catchup tail offset:", error);
-		return 0;
-	}
-}
-
-/**
- * Save the force 16:9 aspect ratio setting
- * @param enabled - Whether to force 16:9 aspect ratio
- */
-export function saveForce16x9(enabled: boolean): void {
-	try {
-		localStorage.setItem(STORAGE_KEYS.FORCE_16_9, JSON.stringify(enabled));
-	} catch (error) {
-		console.error("Failed to save force 16:9 setting:", error);
-	}
-}
-
-/**
- * Get the force 16:9 aspect ratio setting
- * @returns Whether to force 16:9 aspect ratio (default: true)
- */
-export function getForce16x9(): boolean {
-	try {
-		const stored = localStorage.getItem(STORAGE_KEYS.FORCE_16_9);
-		return stored !== null ? JSON.parse(stored) : true;
-	} catch (error) {
-		console.error("Failed to get force 16:9 setting:", error);
-		return true;
-	}
-}
-
-/**
- * Save the last active source index for a channel
- * @param channelId - The channel ID
- * @param sourceIndex - The source index to save
- */
-export function saveLastSourceIndex(channelId: string, sourceIndex: number): void {
-	try {
-		const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.LAST_SOURCE_INDEX) || "{}");
-		if (sourceIndex === 0) {
-			delete stored[channelId];
-		} else {
-			stored[channelId] = sourceIndex;
-		}
-		if (Object.keys(stored).length === 0) {
-			localStorage.removeItem(STORAGE_KEYS.LAST_SOURCE_INDEX);
-		} else {
-			localStorage.setItem(STORAGE_KEYS.LAST_SOURCE_INDEX, JSON.stringify(stored));
-		}
-	} catch (error) {
-		console.error("Failed to save last source index:", error);
-	}
-}
-
-/**
- * Get the last active source index for a channel
- * @param channelId - The channel ID
- * @returns The last source index or 0 (default)
- */
 export function getLastSourceIndex(channelId: string): number {
-	try {
-		const stored = JSON.parse(localStorage.getItem(STORAGE_KEYS.LAST_SOURCE_INDEX) || "{}");
-		return stored[channelId] ?? 0;
-	} catch (error) {
-		console.error("Failed to get last source index:", error);
-		return 0;
+	return getSourceIndexMap()[channelId] ?? 0;
+}
+
+export function saveLastSourceIndex(channelId: string, sourceIndex: number): void {
+	const map = getSourceIndexMap();
+	if (sourceIndex === 0) {
+		delete map[channelId];
+	} else {
+		map[channelId] = sourceIndex;
 	}
+	saveSourceIndexMap(map);
 }

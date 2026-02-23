@@ -37,7 +37,11 @@ export function useTheme(storageKey: string) {
 	useEffect(() => {
 		applyTheme(theme);
 		if (typeof window !== "undefined") {
-			window.localStorage.setItem(storageKey, theme);
+			if (theme === "auto") {
+				window.localStorage.removeItem(storageKey);
+			} else {
+				window.localStorage.setItem(storageKey, theme);
+			}
 		}
 	}, [theme, storageKey, applyTheme]);
 
