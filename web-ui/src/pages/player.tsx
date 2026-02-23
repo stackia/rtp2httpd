@@ -20,11 +20,13 @@ import {
 	getForce16x9,
 	getLastChannelId,
 	getLastSourceIndex,
+	getMp2SoftDecode,
 	getSidebarVisible,
 	saveCatchupTailOffset,
 	saveForce16x9,
 	saveLastChannelId,
 	saveLastSourceIndex,
+	saveMp2SoftDecode,
 	saveSidebarVisible,
 } from "../lib/player-storage";
 import type { Channel, M3UMetadata } from "../types/player";
@@ -48,6 +50,7 @@ function PlayerPage() {
 	const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
 	const [catchupTailOffset, setCatchupTailOffset] = useState(() => getCatchupTailOffset());
 	const [force16x9, setForce16x9] = useState(() => getForce16x9());
+	const [mp2SoftDecode, setMp2SoftDecode] = useState(() => getMp2SoftDecode());
 	const pageContainerRef = useRef<HTMLDivElement>(null);
 
 	// Track stream start time - the absolute time position when current stream started
@@ -320,6 +323,11 @@ function PlayerPage() {
 		saveForce16x9(enabled);
 	}, []);
 
+	const handleMp2SoftDecodeChange = useCallback((enabled: boolean) => {
+		setMp2SoftDecode(enabled);
+		saveMp2SoftDecode(enabled);
+	}, []);
+
 	const handleToggleSidebar = useCallback(() => {
 		setShowSidebar((prev) => {
 			const newState = !prev;
@@ -340,6 +348,8 @@ function PlayerPage() {
 					onCatchupTailOffsetChange={handleCatchupTailOffsetChange}
 					force16x9={force16x9}
 					onForce16x9Change={handleForce16x9Change}
+					mp2SoftDecode={mp2SoftDecode}
+					onMp2SoftDecodeChange={handleMp2SoftDecodeChange}
 				/>
 			</div>
 		);
@@ -348,10 +358,12 @@ function PlayerPage() {
 		theme,
 		catchupTailOffset,
 		force16x9,
+		mp2SoftDecode,
 		setLocale,
 		setTheme,
 		handleCatchupTailOffsetChange,
 		handleForce16x9Change,
+		handleMp2SoftDecodeChange,
 	]);
 
 	// Main UI content
@@ -379,6 +391,7 @@ function PlayerPage() {
 						onToggleSidebar={handleToggleSidebar}
 						onFullscreenToggle={handleFullscreenToggle}
 						force16x9={force16x9}
+						mp2SoftDecode={mp2SoftDecode}
 						activeSourceIndex={activeSourceIndex}
 						onSourceChange={handleSourceChange}
 						onPlaybackStarted={handlePlaybackStarted}

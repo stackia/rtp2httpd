@@ -1,4 +1,5 @@
 import { createPlayer, isSupported, type Player, type PlayerError, type PlayerSegment } from "@rtp2httpd/mpegts.js";
+import mp2WasmUrl from "@rtp2httpd/mpegts.js/wasm/mp2_decoder.wasm?url";
 import { clsx } from "clsx";
 import { Play } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
@@ -23,6 +24,7 @@ interface VideoPlayerProps {
 	onToggleSidebar?: () => void;
 	onFullscreenToggle?: () => void;
 	force16x9?: boolean;
+	mp2SoftDecode?: boolean;
 	activeSourceIndex?: number;
 	onSourceChange?: (index: number) => void;
 	onPlaybackStarted?: () => void;
@@ -46,6 +48,7 @@ export function VideoPlayer({
 	onToggleSidebar,
 	onFullscreenToggle,
 	force16x9 = true,
+	mp2SoftDecode = false,
 	activeSourceIndex = 0,
 	onSourceChange,
 	onPlaybackStarted,
@@ -53,7 +56,7 @@ export function VideoPlayer({
 	const t = usePlayerTranslation(locale);
 
 	const videoRef = useRef<HTMLVideoElement>(null);
-	const playerRef = useRef<Player | null>(null);
+	const [player, setPlayer] = useState<Player | null>(null);
 	const [isLoading, setIsLoading] = useState(false);
 	const [showLoading, setShowLoading] = useState(false);
 	const loadingTimeoutRef = useRef<number>(0);
@@ -98,7 +101,7 @@ export function VideoPlayer({
 	// Simplified seek: buffer checking is done inside the library
 	const handleSeek = useCallback(
 		(seekTime: Date) => {
-			if (!playerRef.current) return;
+			if (!player) return;
 			const video = videoRef.current;
 			const goingLive = seekTime.getTime() >= Date.now() - 3000;
 
@@ -108,26 +111,26 @@ export function VideoPlayer({
 				if (buffered.length > 0) {
 					video.currentTime = buffered.end(buffered.length - 1);
 				}
-				playerRef.current.setLiveSync(true);
+				player.setLiveSync(true);
 				video.play();
 				return;
 			}
 
 			// Regular seek: preserve current play/pause state, disable liveSync to avoid auto-catchup
 			if (playMode === "live") {
-				playerRef.current.setLiveSync(false);
+				player.setLiveSync(false);
 			}
 			shouldAutoPlayRef.current = !video?.paused;
 			const seekSeconds = (seekTime.getTime() - streamStartTime.getTime()) / 1000;
 			if (seekSeconds >= 0) {
-				playerRef.current.seek(seekSeconds);
+				player.seek(seekSeconds);
 				// If not in buffer, library emits "seek-needed" -> onSeek -> parent rebuilds segments
 			} else {
 				// Seeking before current stream start — need entirely new stream
 				onSeek?.(seekTime);
 			}
 		},
-		[streamStartTime, onSeek, playMode],
+		[streamStartTime, onSeek, playMode, player],
 	);
 
 	const togglePlayPause = useCallback(() => {
@@ -252,33 +255,28 @@ export function VideoPlayer({
 		onSeek?.(seekTime);
 	});
 
-	// Create a single player instance on mount, destroy on unmount
+	// Create player instance; recreated when mp2SoftDecode changes
 	useEffect(() => {
 		if (!videoRef.current || !isSupported()) return;
 
-		const player = createPlayer(videoRef.current, {
-			isLive: true,
-			enableStashBuffer: false,
+		const p = createPlayer(videoRef.current, {
+			wasmDecoders: mp2SoftDecode ? { mp2: mp2WasmUrl } : {},
 		});
-		playerRef.current = player;
+		p.on("error", handlePlayerError);
+		p.on("seek-needed", handleSeekNeeded);
+		setPlayer(p);
 
-		player.on("error", handlePlayerError);
-		player.on("seek-needed", handleSeekNeeded);
-
-		return () => {
-			player.destroy();
-			playerRef.current = null;
-		};
-	}, []);
+		return () => p.destroy();
+	}, [mp2SoftDecode]);
 
 	// Toggle live sync at runtime without recreating the player
 	useEffect(() => {
-		playerRef.current?.setLiveSync(playMode === "live");
-	}, [playMode]);
+		player?.setLiveSync(playMode === "live");
+	}, [playMode, player]);
 
 	// Load segments whenever they change (channel switch, seek, retry — all go through here)
 	const handleLoadSegments = useEffectEvent((newSegments: PlayerSegment[]) => {
-		if (!newSegments.length || !playerRef.current) return;
+		if (!newSegments.length || !player) return;
 
 		console.log("Loading segments...");
 
@@ -291,7 +289,7 @@ export function VideoPlayer({
 		setIsLoading(true);
 		setError(null);
 
-		playerRef.current.loadSegments(newSegments);
+		player.loadSegments(newSegments);
 
 		if (shouldAutoPlayRef.current) {
 			const video = videoRef.current;
@@ -315,8 +313,8 @@ export function VideoPlayer({
 	});
 
 	useEffect(() => {
-		handleLoadSegments(segments);
-	}, [segments]);
+		if (player) handleLoadSegments(segments);
+	}, [segments, player]);
 
 	const handleVideoCanPlay = useEffectEvent(() => {
 		setIsLoading(false);
