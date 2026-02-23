@@ -37,7 +37,7 @@ export const [getCatchupTailOffset, saveCatchupTailOffset] = createStore("rtp2ht
 export const [getForce16x9, saveForce16x9] = createStore("rtp2httpd-player-force-16-9", true);
 export const [getMp2SoftDecode, saveMp2SoftDecode] = createStore(
 	"rtp2httpd-player-mp2-soft-decode",
-	/iPhone|iPod/.test(navigator.userAgent),
+	/iPhone|iPad|iPod/.test(navigator.userAgent),
 );
 
 // Per-channel source index uses a JSON object map, so it needs custom logic

@@ -107,12 +107,12 @@ export function VideoPlayer({
 
 			if (goingLive && playMode === "live" && video) {
 				// "Go Live": jump to the end of buffered range, resume playback and liveSync
+				video.play();
 				const buffered = video.buffered;
 				if (buffered.length > 0) {
-					video.currentTime = buffered.end(buffered.length - 1);
+					video.currentTime = Math.max(Math.max(buffered.end(buffered.length - 1) - 0.5, 0), buffered.start(0));
 				}
 				player.setLiveSync(true);
-				video.play();
 				return;
 			}
 
@@ -255,6 +255,10 @@ export function VideoPlayer({
 		onSeek?.(seekTime);
 	});
 
+	const handleAudioSuspended = useEffectEvent(() => {
+		setNeedsUserInteraction(true);
+	});
+
 	// Create player instance; recreated when mp2SoftDecode changes
 	useEffect(() => {
 		if (!videoRef.current || !isSupported()) return;
@@ -264,6 +268,7 @@ export function VideoPlayer({
 		});
 		p.on("error", handlePlayerError);
 		p.on("seek-needed", handleSeekNeeded);
+		p.on("audio-suspended", handleAudioSuspended);
 		setPlayer(p);
 
 		return () => p.destroy();
