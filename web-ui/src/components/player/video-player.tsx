@@ -345,6 +345,12 @@ export function VideoPlayer({
 		setIsPlaying(true);
 		onPlaybackStarted?.();
 
+		const video = videoRef.current;
+
+		if (playMode === "live" && video && video.currentTime < video.buffered.end(video.buffered.length - 1) - 4) {
+			player?.setLiveSync(false);
+		}
+
 		if (stablePlaybackTimeoutRef.current) {
 			window.clearTimeout(stablePlaybackTimeoutRef.current);
 		}
