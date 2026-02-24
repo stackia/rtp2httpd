@@ -1455,16 +1455,19 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
           if (value_str) {
             strncpy(value_str, value_start, value_len);
             value_str[value_len] = '\0';
-          }
-          float range_start, range_end;
-          if (sscanf(value_str, "%f-%f", &range_start, &range_end) == 2) {
-            logger(LOG_DEBUG, "RTSP: Range: %.3f-%.3f", range_start, range_end);
-            session->r2h_duration_value = range_end;
+            float range_start, range_end;
+            if (sscanf(value_str, "%f-%f", &range_start, &range_end) == 2) {
+              logger(LOG_DEBUG, "RTSP: Range: %.3f-%.3f", range_start,
+                     range_end);
+              session->r2h_duration_value = range_end;
+            } else {
+              logger(LOG_DEBUG, "RTSP Range: %s, cannot find right range!",
+                     value_str);
+            }
+            free(value_str);
           } else {
-            logger(LOG_DEBUG, "RTSP Range: %s, cannot find right range!",
-                   value_str);
+            logger(LOG_ERROR, "RTSP: malloc failed for Range header parsing");
           }
-          free(value_str);
         }
         free(body_str);
       }
