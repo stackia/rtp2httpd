@@ -477,6 +477,10 @@ static char *extract_dynamic_params(const char *url) {
       if (has_placeholder) {
         /* Add this parameter to result */
         size_t param_len = param_end - param_start;
+        if (result_len + param_len + 2 > sizeof(result)) {
+          logger(LOG_WARN, "Dynamic params exceed buffer size, truncating");
+          break;
+        }
         if (!first_param) {
           result[result_len++] = '&';
         }
