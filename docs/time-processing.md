@@ -1,22 +1,26 @@
-# RTSP 时间处理与时区转换
+# 时间处理与时区转换
 
-本文档详细说明 rtp2httpd 如何处理 RTSP 时移回看功能中的时间参数和时区转换。
+本文档详细说明 rtp2httpd 如何处理时移回看功能中的时间参数和时区转换。此机制同时适用于 RTSP 代理和 HTTP 代理。
 
-## IPTV RTSP 时移回看原理
+## 时移回看原理
 
-IPTV 运营商的 RTSP 服务器通常支持时移回看功能，允许用户观看过去时间段的直播内容。这个功能通过在 RTSP URL 中添加时间范围参数（如 `playseek`、`tvdr` 等）来实现。
+IPTV 运营商的服务器通常支持时移回看功能，允许用户观看过去时间段的直播内容。这个功能通过在 URL 中添加时间范围参数（如 `playseek`、`tvdr` 等）来实现。
 
 **基本工作流程**：
 
-1. **客户端请求**：客户端向 RTSP 服务器请求特定时间段的视频。
+1. **客户端请求**：客户端向上游服务器请求特定时间段的视频。
 
    ```
+   # RTSP 上游
    rtsp://iptv.example.com:554/channel1?playseek=20240101120000-20240101130000
+
+   # HTTP 上游
+   http://iptv.example.com/channel1?playseek=20240101120000-20240101130000
    ```
 
-2. **服务器响应**：RTSP 服务器根据时间参数，从录制的历史内容中返回对应时间段的视频流
+2. **服务器响应**：上游服务器根据时间参数，从录制的历史内容中返回对应时间段的视频流
 
-3. **时间格式要求**：各地区 IPTV 运营商要求时间格式和时区可能有不同，利用有些期望 UTC 时区，有些期望 GMT+8 时区，有些期望 `20240101120000` 这样的格式，有些期望 `20240101120000GMT` 这样的格式。各播放器对时区和时间格式的支持也五花八门。一旦播放器格式、时区和运营商不匹配，就会造成回看失败。
+3. **时间格式要求**：各地区 IPTV 运营商要求时间格式和时区可能有不同，有些期望 UTC 时区，有些期望 GMT+8 时区，有些期望 `20240101120000` 这样的格式，有些期望 `20240101120000GMT` 这样的格式。各播放器对时区和时间格式的支持也五花八门。一旦播放器格式、时区和运营商不匹配，就会造成回看失败。
 
 ## rtp2httpd 的作用
 
@@ -34,7 +38,7 @@ rtp2httpd 作为中间代理，能够根据配置灵活转换时间格式和时�
 
 ### r2h-seek-name 参数（可选）
 
-用于指定 RTSP 时移参数的名称。如果不指定，rtp2httpd 会自动识别常见的参数名。
+用于指定时移参数的名称。如果不指定，rtp2httpd 会自动识别常见的参数名。
 
 #### 自动识别的参数名（按优先级）
 
@@ -43,20 +47,26 @@ rtp2httpd 作为中间代理，能够根据配置灵活转换时间格式和时�
 
 #### 使用方法
 
-- **标准参数名**：当 RTSP 服务器使用 `playseek` 或 `tvdr` 时，无需指定此参数
-- **自定义参数名**：当 RTSP 服务器使用其他参数名（如 `seek`、`timeshift` 等）时，需要通过 `r2h-seek-name` 显式指定
+- **标准参数名**：当上游服务器使用 `playseek` 或 `tvdr` 时，无需指定此参数
+- **自定义参数名**：当上游服务器使用其他参数名（如 `seek`、`timeshift` 等）时，需要通过 `r2h-seek-name` 显式指定
 
 #### 示例
 
 ```url
-# 自动识别 playseek 参数
+# RTSP 代理：自动识别 playseek 参数
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000
 
-# 自动识别 tvdr 参数
+# RTSP 代理：自动识别 tvdr 参数
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000-20240101130000
 
-# 使用自定义参数名
+# RTSP 代理：使用自定义参数名
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?custom_seek=20240101120000&r2h-seek-name=custom_seek
+
+# HTTP 代理：自动识别 playseek 参数
+http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-20240101130000
+
+# HTTP 代理：使用自定义参数名
+http://192.168.1.1:5140/http/iptv.example.com/channel1?custom_seek=20240101120000&r2h-seek-name=custom_seek
 ```
 
 ### r2h-seek-offset 参数（可选）
@@ -65,23 +75,26 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?custom_seek=202401011
 
 #### 使用场景
 
-- **补偿时钟偏差**：RTSP 服务器与实际时间存在固定偏差时
+- **补偿时钟偏差**：上游服务器与实际时间存在固定偏差时
 - **微调时移位置**：需要提前或延后若干秒开始播放时
 - **测试与调试**：验证不同时间点的内容
 
 #### 示例
 
 ```url
-# 在 playseek 指定的范围上增加 1 小时（3600 秒）
+# RTSP 代理：在 playseek 指定的范围上增加 1 小时（3600 秒）
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000&r2h-seek-offset=3600
+
+# HTTP 代理：在 playseek 指定的范围上增加 1 小时（3600 秒）
+http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-20240101130000&r2h-seek-offset=3600
 
 # 在 playseek 指定的范围上减少 30 秒
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000&r2h-seek-offset=-30
 ```
 
-### r2h-start 参数（可选）
+### r2h-start 参数（可选，仅 RTSP）
 
-用于指定从特定时间点开始播放 RTSP 流，实现续播功能。此参数值会作为 NPT（Normal Play Time）格式的时间点，在 RTSP PLAY 请求中通过 `Range: npt=<时间点>-` 头发送给 RTSP 服务器。
+用于指定从特定时间点开始播放 RTSP 流，实现续播功能。此参数值会作为 NPT（Normal Play Time）格式的时间点，在 RTSP PLAY 请求中通过 `Range: npt=<时间点>-` 头发送给 RTSP 服务器。此参数仅对 RTSP 代理有效。
 
 #### 示例
 
@@ -187,7 +200,7 @@ flowchart TD
 
     D --> E["<b>5. 格式化输出</b><br/>• 保持原始格式<br/>• 保留原有时区后缀 (如有)"]
 
-    E --> F["<b>6. 附加到 RTSP URL</b><br/>• 作为查询参数<br/>• 发送 RTSP DESCRIBE 请求"]
+    E --> F["<b>6. 附加到上游 URL</b><br/>• 作为查询参数<br/>• RTSP: 发送 DESCRIBE 请求<br/>• HTTP: 转发给上游服务器"]
 
     style A fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     style B fill:#fff3e0,stroke:#f57c00,stroke-width:2px
@@ -199,5 +212,5 @@ flowchart TD
 
 ## 相关文档
 
-- [URL 格式与协议支持](url-formats.md) - RTSP URL 格式说明
+- [URL 格式与协议支持](url-formats.md) - RTSP / HTTP 代理 URL 格式说明
 - [配置参数详解](configuration.md) - 服务器配置选项

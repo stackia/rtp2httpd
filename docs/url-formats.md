@@ -74,7 +74,7 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r
 - 修改播放器 User Agent 设置，加上 `TZ/UTC+8` 或 `TZ/UTC-8`。例如 `AptvPlayer/1.3.3 TZ/UTC+8`。
 - 修改播放链接，加上参数 `&r2h-seek-offset=28800` 或 `&r2h-seek-offset=-28800`
 
-关于时移回看的参数处理（时区、偏移），详见 [RTSP 时间处理与时区转换](rtsp-time-processing.md)。
+关于时移回看的参数处理（时区、偏移），详见 [时间处理与时区转换](time-processing.md)。
 
 ## HTTP 代理
 
@@ -103,6 +103,20 @@ http://192.168.1.1:5140/http/api.example.com/video?auth=xxx&quality=hd
 - 代理上游 HLS/DASH 流媒体，统一认证和访问控制
 - 为不支持直接访问的内网服务提供 HTTP 代理
 - 绕过防火墙限制，通过 rtp2httpd 转发 HTTP 请求
+
+### 时移回看支持
+
+HTTP 代理同样支持 `r2h-seek-name`、`r2h-seek-offset` 参数和 User-Agent 时区转换，处理方式与 RTSP 代理一致。
+
+```url
+# 自动识别 playseek 参数并进行时区转换
+http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-20240101130000
+
+# 使用自定义参数名 + 时间偏移
+http://192.168.1.1:5140/http/iptv.example.com/channel1?catchup=20240101120000&r2h-seek-name=catchup&r2h-seek-offset=3600
+```
+
+详见 [时间处理与时区转换](time-processing.md)。
 
 ### 注意事项
 
