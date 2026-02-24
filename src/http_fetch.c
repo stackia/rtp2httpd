@@ -155,11 +155,9 @@ static int build_fetch_command(char *buf, size_t bufsize, const char *url,
     return -1;
   }
 
-  /* Escape single quotes in url and output_file to prevent shell injection */
+  /* Escape single quotes in url to prevent shell injection */
   char escaped_url[4096];
-  char escaped_output[1024];
-  if (shell_escape_single_quote(url, escaped_url, sizeof(escaped_url)) < 0 ||
-      shell_escape_single_quote(output_file, escaped_output, sizeof(escaped_output)) < 0) {
+  if (shell_escape_single_quote(url, escaped_url, sizeof(escaped_url)) < 0) {
     return -1;
   }
 
@@ -167,18 +165,18 @@ static int build_fetch_command(char *buf, size_t bufsize, const char *url,
     ret = snprintf(buf, bufsize,
                    "curl -L -f -s -S -k --max-time %d --connect-timeout 10 -o "
                    "'%s' '%s' 2>&1; echo \"EXIT_CODE:$?\"",
-                   timeout, escaped_output, escaped_url);
+                   timeout, output_file, escaped_url);
   } else if (tool == HTTP_TOOL_UCLIENT_FETCH) {
     ret = snprintf(buf, bufsize,
                    "uclient-fetch --no-check-certificate -q -T %d -O '%s' '%s' "
                    "2>&1; echo \"EXIT_CODE:$?\"",
-                   timeout, escaped_output, escaped_url);
+                   timeout, output_file, escaped_url);
   } else /* HTTP_TOOL_WGET */
   {
     ret = snprintf(buf, bufsize,
                    "wget --no-check-certificate -q -T %d -O '%s' '%s' 2>&1; "
                    "echo \"EXIT_CODE:$?\"",
-                   timeout, escaped_output, escaped_url);
+                   timeout, output_file, escaped_url);
   }
 
   if (ret >= (int)bufsize) {
