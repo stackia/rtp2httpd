@@ -3,6 +3,7 @@
 #include "connection.h"
 #include <ctype.h>
 #include <stdio.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -355,7 +356,13 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
                   sizeof(req->x_forwarded_proto) - 1);
           req->x_forwarded_proto[sizeof(req->x_forwarded_proto) - 1] = '\0';
         } else if (strcasecmp(inbuf, "Content-Length") == 0) {
-          req->content_length = atoi(value);
+          char *endptr;
+          long cl = strtol(value, &endptr, 10);
+          if (*endptr != '\0' || cl < 0 || cl > INT_MAX) {
+            req->content_length = 0;
+          } else {
+            req->content_length = (int)cl;
+          }
         } else if (strcasecmp(inbuf, "Cookie") == 0) {
           strncpy(req->cookie, value, sizeof(req->cookie) - 1);
           req->cookie[sizeof(req->cookie) - 1] = '\0';
