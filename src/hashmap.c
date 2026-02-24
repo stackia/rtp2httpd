@@ -210,8 +210,8 @@ void hashmap_clear(struct hashmap *map, bool update_cap) {
     if (new_buckets) {
       map->free(map->buckets);
       map->buckets = new_buckets;
+      map->nbuckets = map->cap;
     }
-    map->nbuckets = map->cap;
   }
   memset(map->buckets, 0, map->bucketsz * map->nbuckets);
   map->mask = map->nbuckets - 1;
