@@ -77,6 +77,11 @@ void send_http_headers(connection_t *c, http_status_t status,
   /* Final CRLF */
   len += snprintf(headers + len, sizeof(headers) - len, "\r\n");
 
+  /* Clamp len: snprintf returns would-be length on truncation, which could
+   * exceed the buffer size and cause connection_queue_output to overread */
+  if (len >= (int)sizeof(headers))
+    len = (int)sizeof(headers) - 1;
+
   connection_queue_output(c, (const uint8_t *)headers, len);
   c->headers_sent = 1;
 }
