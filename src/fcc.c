@@ -374,6 +374,8 @@ int fcc_initialize_and_request(stream_context_t *ctx) {
     sin.sin_addr.s_addr = INADDR_ANY;
     if (fcc_bind_socket_with_range(fcc->fcc_sock, &sin) != 0) {
       logger(LOG_ERROR, "FCC: Cannot bind socket within configured range");
+      close(fcc->fcc_sock);
+      fcc->fcc_sock = -1;
       return -1;
     }
 
