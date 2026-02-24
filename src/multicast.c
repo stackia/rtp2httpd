@@ -506,8 +506,9 @@ int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx,
 
   /* Receive into buffer */
   int actualr = recv(session->sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE, 0);
-  if (actualr < 0 && errno != EAGAIN) {
-    logger(LOG_DEBUG, "Multicast: Receive failed: %s", strerror(errno));
+  if (actualr < 0) {
+    if (errno != EAGAIN)
+      logger(LOG_DEBUG, "Multicast: Receive failed: %s", strerror(errno));
     buffer_ref_put(recv_buf);
     return 0;
   }
