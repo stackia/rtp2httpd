@@ -960,6 +960,20 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
       return -2; /* Graceful teardown completion */
     }
 
+    /* During PLAYING: upstream is done — drain pending client output
+     * before disconnecting regardless of error/hangup distinction. */
+    if (session->state == RTSP_STATE_PLAYING) {
+      logger(LOG_INFO, "RTSP: Upstream closed during PLAYING, draining client");
+      rtsp_force_cleanup(session);
+      if (session->conn && session->conn->state != CONN_CLOSING) {
+        session->conn->state = CONN_CLOSING;
+        connection_epoll_update_events(
+            session->conn->epfd, session->conn->fd,
+            EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+      }
+      return 0;
+    }
+
     rtsp_session_set_state(session, RTSP_STATE_ERROR);
     return -1; /* Connection closed or error */
   }
@@ -1133,8 +1147,18 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
     if (session->state == RTSP_STATE_PLAYING) {
       result = rtsp_handle_tcp_interleaved_data(session, session->conn);
       if (result < 0) {
-        rtsp_session_set_state(session, RTSP_STATE_ERROR);
-        return -1; /* Error */
+        /* Upstream gone (EOF or recv error): drain pending client output */
+        logger(LOG_DEBUG,
+               "RTSP: TCP interleaved upstream closed during PLAYING, "
+               "draining client");
+        rtsp_force_cleanup(session);
+        if (session->conn && session->conn->state != CONN_CLOSING) {
+          session->conn->state = CONN_CLOSING;
+          connection_epoll_update_events(
+              session->conn->epfd, session->conn->fd,
+              EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+        }
+        return 0;
       }
       return result; /* Return number of bytes forwarded to client */
     }
@@ -1969,10 +1993,10 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session,
         return 0; /* No data available, not an error */
       }
       logger(LOG_ERROR, "RTSP: TCP receive failed: %s", strerror(errno));
-      return -1;
+      return -1; /* Upstream gone — caller will drain client */
     } else if (bytes_received == 0) {
       logger(LOG_INFO, "RTSP: Server closed connection (EOF received)");
-      return -1; /* Signal connection closure */
+      return -1; /* EOF — caller will drain client */
     }
 
     session->response_buffer_pos += bytes_received;
