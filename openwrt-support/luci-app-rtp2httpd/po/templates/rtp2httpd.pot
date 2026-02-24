@@ -1,7 +1,7 @@
 msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:601
+#: htdocs/luci-static/resources/view/rtp2httpd.js:600
 msgid ""
 "Additional FFmpeg arguments for snapshot generation. Common options: -"
 "hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)"
@@ -45,7 +45,7 @@ msgstr ""
 msgid "Edit the content of /etc/rtp2httpd.conf"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:577
+#: htdocs/luci-static/resources/view/rtp2httpd.js:576
 msgid ""
 "Enable video snapshot feature. When enabled, clients can request snapshots "
 "with snapshot=1 query parameter"
@@ -81,11 +81,11 @@ msgstr ""
 msgid "FCC Listen Port Range"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:599
+#: htdocs/luci-static/resources/view/rtp2httpd.js:598
 msgid "FFmpeg Arguments"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:587
+#: htdocs/luci-static/resources/view/rtp2httpd.js:586
 msgid "FFmpeg Path"
 msgstr ""
 
@@ -185,7 +185,7 @@ msgstr ""
 msgid "Open Status Dashboard"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:589
+#: htdocs/luci-static/resources/view/rtp2httpd.js:588
 msgid ""
 "Path to FFmpeg executable. Leave empty to use system PATH (default: ffmpeg)"
 msgstr ""
@@ -293,7 +293,7 @@ msgstr ""
 msgid "Use config file instead of individual options"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:575
+#: htdocs/luci-static/resources/view/rtp2httpd.js:574
 msgid "Video Snapshot"
 msgstr ""
 
@@ -310,7 +310,7 @@ msgid ""
 "to allow access."
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:565
+#: htdocs/luci-static/resources/view/rtp2httpd.js:564
 msgid ""
 "When enabled, uses HTTP X-Forwarded-For header as client address for status "
 "page display. Also accepts X-Forwarded-Host / X-Forwarded-Proto headers as "
@@ -322,7 +322,7 @@ msgstr ""
 msgid "Workers"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:563
+#: htdocs/luci-static/resources/view/rtp2httpd.js:562
 msgid "X-Forwarded-For"
 msgstr ""
 
