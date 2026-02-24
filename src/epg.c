@@ -31,7 +31,7 @@ static void calculate_epg_etag(int fd, size_t size) {
   MD5Context ctx;
   uint8_t digest[16];
   uint8_t buffer[8192];
-  size_t bytes_read;
+  ssize_t bytes_read;
   size_t total_read = 0;
   off_t original_offset;
 
