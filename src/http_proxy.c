@@ -782,8 +782,9 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
   }
 
   /* Phase 1: Header parsing - use fixed buffer */
+  /* Reserve 1 byte for null terminator used in header parsing */
   size_t available =
-      HTTP_PROXY_RESPONSE_BUFFER_SIZE - session->response_buffer_pos;
+      HTTP_PROXY_RESPONSE_BUFFER_SIZE - 1 - session->response_buffer_pos;
   if (available == 0) {
     logger(LOG_ERROR, "HTTP Proxy: Response buffer full");
     return -1;
