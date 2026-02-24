@@ -394,6 +394,11 @@ export function VideoPlayer({
 	});
 
 	const handleKeyDown = useEffectEvent((e: KeyboardEvent) => {
+		if (videoRef.current?.paused && needsUserInteraction) {
+			videoRef.current.play();
+			setNeedsUserInteraction(false);
+		}
+
 		if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
 			return;
 		}
