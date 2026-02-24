@@ -2,6 +2,7 @@
 #include "configuration.h"
 #include "connection.h"
 #include "http.h"
+#include "service.h"
 #include "md5.h"
 #include "multicast.h"
 #include "rtp.h"
@@ -390,9 +391,6 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
   const char *fallback_user_source = NULL;
   const char *fallback_pass_source = NULL;
   int tz_offset_seconds = 0;
-  char playseek_utc[256] = {
-      0}; /* Buffer for UTC-converted playseek parameter */
-
   /* Check for NULL parameters */
   if (!session || !rtsp_url) {
     logger(LOG_ERROR, "RTSP: Invalid parameters to rtsp_parse_server_url");
@@ -700,99 +698,30 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
     return -1;
   }
 
-  /* Handle seek parameter - convert to UTC for URL query parameter */
+  /* Handle seek parameter - convert to UTC and append to server_url */
   if (seek_param_value && strlen(seek_param_value) > 0 && seek_param_name &&
       strlen(seek_param_name) > 0) {
-    /* Parse seek parameter: could be "begin-end", "begin-", or "begin" */
-    char begin_str[RTSP_TIME_COMPONENT_SIZE] = {0};
-    char end_str[RTSP_TIME_COMPONENT_SIZE] = {0};
-    char begin_utc[RTSP_TIME_STRING_SIZE] = {0};
-    char end_utc[RTSP_TIME_STRING_SIZE] = {0};
-    char *dash_pos = strchr(seek_param_value, '-');
-    size_t seek_param_name_len = strlen(seek_param_name);
+    char converted[256];
+    if (service_convert_seek_value(seek_param_value, tz_offset_seconds,
+                                   seek_offset_seconds, converted,
+                                   sizeof(converted)) == 0) {
+      /* Append seek parameter to server_url */
+      char *query_marker = strchr(session->server_url, '?');
+      size_t current_len = strlen(session->server_url);
+      size_t param_len = strlen(seek_param_name) + 1 + strlen(converted);
 
-    /* Extract begin and end times */
-    if (dash_pos) {
-      /* Has dash: "begin-end" or "begin-" */
-      size_t begin_len = dash_pos - seek_param_value;
-      if (begin_len < sizeof(begin_str)) {
-        strncpy(begin_str, seek_param_value, begin_len);
-        begin_str[begin_len] = '\0';
-        strcpy(end_str, dash_pos + 1); /* end_str may be empty */
-      }
-    } else {
-      /* No dash: treat as "begin-" (open-ended range) */
-      strncpy(begin_str, seek_param_value, sizeof(begin_str) - 1);
-      begin_str[sizeof(begin_str) - 1] = '\0';
-      /* end_str remains empty */
-    }
-
-    logger(LOG_DEBUG, "RTSP: Parsed %s - begin='%s', end='%s'", seek_param_name,
-           begin_str, end_str);
-
-    /* Convert begin time to UTC (keep original format) */
-    if (timezone_convert_time_with_offset(begin_str, tz_offset_seconds,
-                                          seek_offset_seconds, begin_utc,
-                                          sizeof(begin_utc)) == 0) {
-      logger(LOG_DEBUG, "RTSP: Converted begin time '%s' to UTC '%s'",
-             begin_str, begin_utc);
-    } else {
-      /* Conversion failed, use original */
-      strncpy(begin_utc, begin_str, sizeof(begin_utc) - 1);
-      begin_utc[sizeof(begin_utc) - 1] = '\0';
-    }
-
-    /* Convert end time to UTC if present */
-    if (strlen(end_str) > 0) {
-      if (timezone_convert_time_with_offset(end_str, tz_offset_seconds,
-                                            seek_offset_seconds, end_utc,
-                                            sizeof(end_utc)) == 0) {
-        logger(LOG_DEBUG, "RTSP: Converted end time '%s' to UTC '%s'", end_str,
-               end_utc);
-      } else {
-        /* Conversion failed, use original */
-        strncpy(end_utc, end_str, sizeof(end_utc) - 1);
-        end_utc[sizeof(end_utc) - 1] = '\0';
-      }
-      snprintf(playseek_utc, sizeof(playseek_utc), "%s-%s", begin_utc, end_utc);
-    } else {
-      /* Open-ended range */
-      snprintf(playseek_utc, sizeof(playseek_utc), "%s-", begin_utc);
-    }
-    logger(LOG_DEBUG, "RTSP: UTC %s parameter: '%s'", seek_param_name,
-           playseek_utc);
-
-    /* Append seek parameter to server_url for DESCRIBE request */
-    /* Check if URL already has query parameters */
-    char *query_marker = strchr(session->server_url, '?');
-    size_t current_len = strlen(session->server_url);
-    size_t playseek_len = strlen(playseek_utc);
-
-    if (query_marker) {
-      /* URL already has query parameters, append with & */
-      if (current_len + 2 + seek_param_name_len + playseek_len <
-          sizeof(session->server_url)) {
+      if (current_len + 1 + param_len < sizeof(session->server_url)) {
         snprintf(session->server_url + current_len,
-                 sizeof(session->server_url) - current_len, "&%s=%s",
-                 seek_param_name, playseek_utc);
+                 sizeof(session->server_url) - current_len, "%c%s=%s",
+                 query_marker ? '&' : '?', seek_param_name, converted);
       } else {
         logger(LOG_ERROR, "RTSP: URL too long to append %s parameter",
                seek_param_name);
       }
-    } else {
-      /* No query parameters yet, append with ? */
-      if (current_len + 2 + seek_param_name_len + playseek_len <
-          sizeof(session->server_url)) {
-        snprintf(session->server_url + current_len,
-                 sizeof(session->server_url) - current_len, "?%s=%s",
-                 seek_param_name, playseek_utc);
-      } else {
-        logger(LOG_ERROR, "RTSP: URL too long to append %s parameter",
-               seek_param_name);
-      }
+
+      logger(LOG_DEBUG, "RTSP: Updated server_url with %s: %s",
+             seek_param_name, session->server_url);
     }
-    logger(LOG_DEBUG, "RTSP: Updated server_url with %s: %s", seek_param_name,
-           session->server_url);
   }
 
   logger(LOG_DEBUG, "RTSP: Parsed URL - host=%s, port=%d, path=%s",

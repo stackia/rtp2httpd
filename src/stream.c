@@ -8,6 +8,7 @@
 #include "service.h"
 #include "snapshot.h"
 #include "status.h"
+#include "timezone.h"
 #include "utils.h"
 #include "worker.h"
 #include <arpa/inet.h>
@@ -179,8 +180,37 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
       return -1;
     }
 
+    /* Build proxy URL, applying timezone conversion to seek params if present
+     */
+    char proxy_url[2048];
+    strncpy(proxy_url, service->http_url, sizeof(proxy_url) - 1);
+    proxy_url[sizeof(proxy_url) - 1] = '\0';
+
+    if (service->seek_param_name && service->seek_param_value) {
+      int tz_offset = 0;
+      if (service->user_agent)
+        timezone_parse_from_user_agent(service->user_agent, &tz_offset);
+
+      char converted[256];
+      if (service_convert_seek_value(service->seek_param_value, tz_offset,
+                                     service->seek_offset_seconds, converted,
+                                     sizeof(converted)) == 0) {
+        size_t current_len = strlen(proxy_url);
+        char *query_marker = strchr(proxy_url, '?');
+        size_t remain = sizeof(proxy_url) - current_len;
+        int written =
+            snprintf(proxy_url + current_len, remain, "%c%s=%s",
+                     query_marker ? '&' : '?', service->seek_param_name,
+                     converted);
+        if (written < 0 || (size_t)written >= remain) {
+          proxy_url[current_len] = '\0'; /* Restore on truncation */
+          logger(LOG_WARN, "HTTP Proxy: URL too long to append seek parameter");
+        }
+      }
+    }
+
     /* Parse URL */
-    if (http_proxy_parse_url(&ctx->http_proxy, service->http_url) < 0) {
+    if (http_proxy_parse_url(&ctx->http_proxy, proxy_url) < 0) {
       logger(LOG_ERROR, "HTTP Proxy: Failed to parse URL");
       return -1;
     }
