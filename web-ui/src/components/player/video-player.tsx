@@ -138,7 +138,6 @@ export function VideoPlayer({
 		if (video) {
 			if (video.paused) {
 				video.play();
-				setNeedsUserInteraction(false);
 			} else {
 				video.pause();
 			}
@@ -394,11 +393,6 @@ export function VideoPlayer({
 	});
 
 	const handleKeyDown = useEffectEvent((e: KeyboardEvent) => {
-		if (videoRef.current?.paused && needsUserInteraction) {
-			videoRef.current.play();
-			setNeedsUserInteraction(false);
-		}
-
 		if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
 			return;
 		}
@@ -611,17 +605,30 @@ export function VideoPlayer({
 		}
 	}, []);
 
-	const handleUserClick = () => {
-		if (needsUserInteraction && videoRef.current) {
-			setNeedsUserInteraction(false);
-			setIsPlaying(true);
-			videoRef.current.play()?.catch((err: Error) => {
-				console.error("Play error after user interaction:", err);
-				setError(`${t("failedToPlay")}: ${err.message}`);
-				onError?.(`${t("failedToPlay")}: ${err.message}`);
-			});
-		}
-	};
+	const handleUserInteraction = useEffectEvent(() => {
+		if (!videoRef.current) return;
+		setNeedsUserInteraction(false);
+		setIsPlaying(true);
+		videoRef.current.play()?.catch((err: Error) => {
+			console.error("Play error after user interaction:", err);
+			setError(`${t("failedToPlay")}: ${err.message}`);
+			onError?.(`${t("failedToPlay")}: ${err.message}`);
+		});
+	});
+
+	// When autoplay is blocked, listen for any user interaction on the document to resume playback
+	useEffect(() => {
+		if (!needsUserInteraction) return;
+
+		const handler = () => handleUserInteraction();
+		document.addEventListener("click", handler);
+		document.addEventListener("keydown", handler);
+
+		return () => {
+			document.removeEventListener("click", handler);
+			document.removeEventListener("keydown", handler);
+		};
+	}, [needsUserInteraction]);
 
 	return (
 		<div
@@ -712,7 +719,7 @@ export function VideoPlayer({
 					<button
 						type="button"
 						className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/80 p-4 transition-opacity hover:bg-black/85 border-none"
-						onClick={handleUserClick}
+						onClick={handleUserInteraction}
 					>
 						<div className="flex flex-col items-center gap-4 text-white">
 							<Play className="h-20 w-20 opacity-90 fill-current" />
