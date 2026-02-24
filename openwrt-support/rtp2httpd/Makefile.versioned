@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=rtp2httpd
 
-RELEASE_VERSION:=3.9.1
+RELEASE_VERSION:=3.10.1
 
 PKG_VERSION:=$(shell echo "$(RELEASE_VERSION)" | sed 's/-\([a-z]*\)\.\([0-9]*\)/_\1\2/g')
 PKG_RELEASE:=1
@@ -14,7 +14,7 @@ PKG_FIXUP:=autoreconf
 
 PKG_SOURCE:=rtp2httpd-v$(RELEASE_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/stackia/rtp2httpd/tar.gz/v$(RELEASE_VERSION)?
-PKG_HASH:=f2d42db1944b8199e3956baca1c45477a9acc9e1496f06d5347d73b72337fd2d
+PKG_HASH:=de873955827a8f3d4576d1184e86f66bc775ddb16f731578dcab1f4d4064287c
 
 include $(INCLUDE_DIR)/package.mk
 
