@@ -120,6 +120,36 @@ service_t *service_create_from_rtp_url(const char *http_url);
 service_t *service_create_from_http_url(const char *http_url);
 
 /**
+ * Extract seek parameters (r2h-seek-name, r2h-seek-offset, and the seek
+ * parameter itself) from a URL query string, removing them in-place.
+ *
+ * @param query_start Pointer to the '?' in the URL (modified in-place)
+ * @param out_seek_param_name Output: malloc'd seek parameter name (caller frees)
+ * @param out_seek_param_value Output: malloc'd seek parameter value (caller
+ * frees)
+ * @param out_seek_offset_seconds Output: seek offset in seconds
+ * @return 0 on success, -1 on failure
+ */
+int service_extract_seek_params(char *query_start, char **out_seek_param_name,
+                                char **out_seek_param_value,
+                                int *out_seek_offset_seconds);
+
+/**
+ * Convert seek parameter value with timezone and offset.
+ * Handles "begin-end", "begin-", and "begin" formats.
+ *
+ * @param seek_param_value The seek parameter value to convert
+ * @param tz_offset_seconds Timezone offset in seconds from UTC
+ * @param seek_offset_seconds Additional seek offset in seconds
+ * @param output Output buffer for converted value
+ * @param output_size Size of output buffer
+ * @return 0 on success, -1 on failure
+ */
+int service_convert_seek_value(const char *seek_param_value,
+                               int tz_offset_seconds, int seek_offset_seconds,
+                               char *output, size_t output_size);
+
+/**
  * Create service from configured service with query parameter merging
  * If the request URL contains query parameters, they are merged with the
  * configured service's URL and a new service is created.
