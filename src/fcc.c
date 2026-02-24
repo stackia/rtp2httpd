@@ -229,8 +229,9 @@ int fcc_handle_socket_event(stream_context_t *ctx, int64_t now) {
   int actualr =
       recvfrom(fcc->fcc_sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE, 0,
                (struct sockaddr *)&peer_addr, &slen);
-  if (actualr < 0 && errno != EAGAIN) {
-    logger(LOG_ERROR, "FCC: Receive failed: %s", strerror(errno));
+  if (actualr < 0) {
+    if (errno != EAGAIN)
+      logger(LOG_ERROR, "FCC: Receive failed: %s", strerror(errno));
     buffer_ref_put(recv_buf);
     return 0;
   }
