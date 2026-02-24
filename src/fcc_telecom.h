@@ -47,9 +47,11 @@ int fcc_telecom_initialize_and_request(stream_context_t *ctx);
  *
  * @param ctx Stream context
  * @param buf Response buffer
+ * @param buf_len Length of response buffer in bytes
  * @return 0 on success, -1 for fallback to multicast, 1 for state restart
  */
-int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf);
+int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf,
+                                       size_t buf_len);
 
 /**
  * Send Telecom FCC termination packet

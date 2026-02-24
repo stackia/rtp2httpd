@@ -90,7 +90,13 @@ int fcc_telecom_initialize_and_request(stream_context_t *ctx) {
   return 0;
 }
 
-int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf) {
+int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf,
+                                       size_t buf_len) {
+  if (buf_len < 36) {
+    logger(LOG_WARN, "FCC Telecom: response too short (%zu bytes)", buf_len);
+    return 0;
+  }
+
   fcc_session_t *fcc = &ctx->fcc;
   uint8_t fmt = buf[0] & 0x1F;
 

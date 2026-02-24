@@ -427,7 +427,7 @@ int fcc_handle_server_response(stream_context_t *ctx, uint8_t *buf,
   if (fcc->type == FCC_TYPE_HUAWEI) {
     return fcc_huawei_handle_server_response(ctx, buf, buf_len);
   } else if (fcc->type == FCC_TYPE_TELECOM) {
-    return fcc_telecom_handle_server_response(ctx, buf);
+    return fcc_telecom_handle_server_response(ctx, buf, buf_len);
   }
 
   return 0;
