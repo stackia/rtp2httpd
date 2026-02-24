@@ -224,6 +224,8 @@ export function buildCatchupSegments(source: Source, startTime: Date, tailOffset
 	 *   ${timestamp:yyyyMMddHHmmss} - Same as ${lutc:yyyyMMddHHmmss}
 	 *   ${(b)yyyyMMddHHmmss} - Start time in local time with long format
 	 *   ${(e)yyyyMMddHHmmss} - End time in local time with long format
+	 *   ${(b)yyyyMMdd|UTC} - Start time in UTC with long format (|UTC suffix)
+	 *   ${(e)yyyyMMdd|UTC} - End time in UTC with long format (|UTC suffix)
 	 *   ${(b)timestamp} - Start time unix timestamp (seconds)
 	 *   ${(e)timestamp} - End time unix timestamp (seconds)
 	 *   ${yyyy} - 4-digit year (YYYY) of start time in local time
@@ -250,6 +252,8 @@ export function buildCatchupSegments(source: Source, startTime: Date, tailOffset
 	 *   {timestamp:YmdHMS} - Same as {lutc:YmdHMS}
 	 *   {(b)YmdHMS} - Start time in local time with short format
 	 *   {(e)YmdHMS} - End time in local time with short format
+	 *   {(b)YmdHMS|UTC} - Start time in UTC with short format (|UTC suffix)
+	 *   {(e)YmdHMS|UTC} - End time in UTC with short format (|UTC suffix)
 	 *   {(b)timestamp} - Start time unix timestamp (seconds)
 	 *   {(e)timestamp} - End time unix timestamp (seconds)
 	 *   {Y} - 4-digit year (YYYY) of start time in local time
@@ -270,12 +274,15 @@ export function buildCatchupSegments(source: Source, startTime: Date, tailOffset
 		const currentTimestamp = Math.floor(now.getTime() / 1000);
 
 		// Handle ${(b)format} and ${(e)format} - local time with long format
+		// Supports |UTC suffix to force UTC output, e.g. ${(b)yyyyMMdd|UTC}
 		processedSource = processedSource.replace(/\$\{(\([be]\))([^}]+)\}/g, (_match, timeType, format) => {
 			const date = timeType === "(b)" ? segmentStartTime : segmentEndTime;
-			if (format === "timestamp") {
+			const useUTC = format.endsWith("|UTC");
+			const cleanFormat = useUTC ? format.slice(0, -4) : format;
+			if (cleanFormat === "timestamp") {
 				return Math.floor(date.getTime() / 1000).toString();
 			}
-			return parseLongDate(date, format, false);
+			return parseLongDate(date, cleanFormat, useUTC);
 		});
 
 		// Handle ${(b)} and ${(e)} - local time ISO8601
@@ -285,12 +292,15 @@ export function buildCatchupSegments(source: Source, startTime: Date, tailOffset
 		});
 
 		// Handle {(b)format} and {(e)format} - local time with short format
+		// Supports |UTC suffix to force UTC output, e.g. {(b)YmdHMS|UTC}
 		processedSource = processedSource.replace(/\{(\([be]\))([^}]+)\}/g, (_match, timeType, format) => {
 			const date = timeType === "(b)" ? segmentStartTime : segmentEndTime;
-			if (format === "timestamp") {
+			const useUTC = format.endsWith("|UTC");
+			const cleanFormat = useUTC ? format.slice(0, -4) : format;
+			if (cleanFormat === "timestamp") {
 				return Math.floor(date.getTime() / 1000).toString();
 			}
-			return parseShortDate(date, format, false);
+			return parseShortDate(date, cleanFormat, useUTC);
 		});
 
 		// Handle {(b)} and {(e)} - local time ISO8601
