@@ -1170,7 +1170,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
     logger(LOG_ERROR, "Cannot resolve multicast address %s:%s. GAI: %s",
            components.multicast_addr, components.multicast_port,
            gai_strerror(r));
-    free(result);
+    service_free(result);
     return NULL;
   }
 
@@ -1183,7 +1183,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
       logger(LOG_ERROR, "Cannot resolve source address %s. GAI: %s",
              components.source_addr, gai_strerror(rr));
       freeaddrinfo(res);
-      free(result);
+      service_free(result);
       return NULL;
     }
   }
@@ -1198,7 +1198,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
       freeaddrinfo(res);
       if (msrc_res)
         freeaddrinfo(msrc_res);
-      free(result);
+      service_free(result);
       return NULL;
     }
   }
@@ -1226,7 +1226,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
       freeaddrinfo(fcc_res);
     free(res_addr);
     free(res_ai);
-    free(result);
+    service_free(result);
     return NULL;
   }
 
@@ -1252,9 +1252,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
         freeaddrinfo(fcc_res);
       free(msrc_res_addr);
       free(msrc_res_ai);
-      free(res_addr);
-      free(res_ai);
-      free(result);
+      service_free(result);
       return NULL;
     }
 
@@ -1281,11 +1279,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
       freeaddrinfo(msrc_res);
       if (fcc_res)
         freeaddrinfo(fcc_res);
-      free(msrc_res_addr);
-      free(msrc_res_ai);
-      free(res_addr);
-      free(res_ai);
-      free(result);
+      service_free(result);
       return NULL;
     }
   } else {
@@ -1297,9 +1291,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
         freeaddrinfo(msrc_res);
       if (fcc_res)
         freeaddrinfo(fcc_res);
-      free(res_addr);
-      free(res_ai);
-      free(result);
+      service_free(result);
       return NULL;
     }
   }
@@ -1319,15 +1311,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
       freeaddrinfo(fcc_res);
       free(fcc_res_addr);
       free(fcc_res_ai);
-      if (msrc_res_addr)
-        free(msrc_res_addr);
-      if (msrc_res_ai)
-        free(msrc_res_ai);
-      free(res_addr);
-      free(res_ai);
-      if (result->msrc)
-        free(result->msrc);
-      free(result);
+      service_free(result);
       return NULL;
     }
 
