@@ -534,7 +534,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
           return 0;
         }
         logger(LOG_ERROR, "HTTP Proxy: Recv failed: %s", strerror(errno));
-        return -1;
+        goto process_rewrite_body;
       }
 
       if (received == 0) {
@@ -745,7 +745,8 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
         return 0;
       }
       logger(LOG_ERROR, "HTTP Proxy: Recv failed: %s", strerror(errno));
-      return -1;
+      session->state = HTTP_PROXY_STATE_COMPLETE;
+      return 0;
     }
 
     if (received == 0) {
@@ -1186,8 +1187,13 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
     } else {
       logger(LOG_ERROR, "HTTP Proxy: Socket error event received");
     }
-    session->state = HTTP_PROXY_STATE_ERROR;
-    return -1;
+    /* During STREAMING: drain pending client output before disconnecting */
+    if (session->state == HTTP_PROXY_STATE_STREAMING) {
+      session->state = HTTP_PROXY_STATE_COMPLETE;
+    } else {
+      session->state = HTTP_PROXY_STATE_ERROR;
+      return -1;
+    }
   }
 
   /* Handle connection completion FIRST - before checking HUP events
@@ -1264,6 +1270,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
   }
 
   /* Handle readable socket - receive response */
+  int bytes_forwarded = 0;
   if (events & EPOLLIN) {
     if (session->state == HTTP_PROXY_STATE_AWAITING_HEADERS ||
         session->state == HTTP_PROXY_STATE_STREAMING) {
@@ -1273,33 +1280,52 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
         session->state = HTTP_PROXY_STATE_ERROR;
         return -1;
       }
-      return result; /* Return bytes forwarded */
+      bytes_forwarded = result;
     }
   }
 
-  /* Check for connection hangup AFTER processing data
-   * This ensures we drain any remaining data before closing */
-  if (events & (EPOLLHUP | EPOLLRDHUP)) {
+  /* Check for connection hangup AFTER processing data.
+   * Only when EPOLLIN was NOT set — if EPOLLIN was set, recv already
+   * handled EOF (returning 0) and set COMPLETE as needed.  Processing
+   * EPOLLHUP together with EPOLLIN would prematurely set COMPLETE
+   * before buffered data (e.g. rewrite body) is processed. */
+  if ((events & (EPOLLHUP | EPOLLRDHUP)) && !(events & EPOLLIN)) {
     /* Upstream closed connection */
     if (session->state == HTTP_PROXY_STATE_STREAMING ||
         session->state == HTTP_PROXY_STATE_AWAITING_HEADERS) {
       logger(LOG_DEBUG, "HTTP Proxy: Upstream closed connection (normal)");
       session->state = HTTP_PROXY_STATE_COMPLETE;
-      return 0;
+    } else if (session->state != HTTP_PROXY_STATE_COMPLETE) {
+      /* For other states (like SENDING_REQUEST), this is unexpected */
+      logger(LOG_INFO,
+             "HTTP Proxy: Upstream closed connection unexpectedly in "
+             "state %d",
+             session->state);
+      session->state = HTTP_PROXY_STATE_ERROR;
+      return -1;
     }
-    /* If already complete, this is expected - just return success */
-    if (session->state == HTTP_PROXY_STATE_COMPLETE) {
-      return 0;
-    }
-    /* For other states (like SENDING_REQUEST), this is unexpected */
-    logger(LOG_INFO, "HTTP Proxy: Upstream closed connection unexpectedly in "
-                     "state %d",
-           session->state);
-    session->state = HTTP_PROXY_STATE_ERROR;
-    return -1;
   }
 
-  return 0;
+  /* When transfer is complete, clean up proxy socket and begin draining
+   * the client connection's output queue.
+   * The proxy socket must be removed from epoll immediately because a TCP
+   * socket in EOF state continuously triggers EPOLLIN under level-triggered
+   * epoll, which would cause CPU spin. */
+  if (session->state == HTTP_PROXY_STATE_COMPLETE) {
+    if (session->socket >= 0) {
+      worker_cleanup_socket_from_epoll(session->epoll_fd, session->socket);
+      session->socket = -1;
+    }
+    if (session->conn && session->conn->state != CONN_CLOSING) {
+      logger(LOG_DEBUG, "HTTP Proxy: Transfer complete");
+      session->conn->state = CONN_CLOSING;
+      connection_epoll_update_events(
+          session->conn->epfd, session->conn->fd,
+          EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+    }
+  }
+
+  return bytes_forwarded;
 }
 
 int http_proxy_session_cleanup(http_proxy_session_t *session) {
