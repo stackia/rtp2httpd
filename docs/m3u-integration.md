@@ -277,6 +277,8 @@ http://192.168.1.1:5140/卫视/广东卫视/标清$标清
 | `${timestamp:yyyyMMddHHmmss}` | 同 `${lutc:yyyyMMddHHmmss}`             | 20250115140000           |
 | `${(b)yyyyMMddHHmmss}`        | 节目开始时间（本地时间，long format）   | 20250115183045           |
 | `${(e)yyyyMMddHHmmss}`        | 节目结束时间（本地时间，long format）   | 20250115203045           |
+| `${(b)yyyyMMdd\|UTC}`         | 节目开始时间（UTC，long format）        | 20250115103045           |
+| `${(e)yyyyMMdd\|UTC}`         | 节目结束时间（UTC，long format）        | 20250115123045           |
 | `${(b)timestamp}`             | 节目开始时间的 Unix 时间戳（秒）        | 1736937045               |
 | `${(e)timestamp}`             | 节目结束时间的 Unix 时间戳（秒）        | 1736944245               |
 | `${yyyy}`                     | 节目开始时间：4 位年份（本地时间）      | 2025                     |
@@ -307,6 +309,8 @@ http://192.168.1.1:5140/卫视/广东卫视/标清$标清
 | `{timestamp:YmdHMS}` | 同 `{lutc:YmdHMS}`                       | 20250115140000           |
 | `{(b)YmdHMS}`        | 节目开始时间（本地时间，short format）   | 20250115183045           |
 | `{(e)YmdHMS}`        | 节目结束时间（本地时间，short format）   | 20250115203045           |
+| `{(b)YmdHMS\|UTC}`   | 节目开始时间（UTC，short format）        | 20250115103045           |
+| `{(e)YmdHMS\|UTC}`   | 节目结束时间（UTC，short format）        | 20250115123045           |
 | `{(b)timestamp}`     | 节目开始时间的 Unix 时间戳（秒）         | 1736937045               |
 | `{(e)timestamp}`     | 节目结束时间的 Unix 时间戳（秒）         | 1736944245               |
 | `{Y}`                | 节目开始时间：4 位年份（本地时间）       | 2025                     |
