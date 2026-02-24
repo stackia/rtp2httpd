@@ -6405,7 +6405,7 @@ static const uint8_t data__status_html[] = {
 
 static const embedded_file_t embedded_files[] = {
     {"/assets/icon.png", "image/png", "f73cce73902a4537cb8ac2e8d74bbd4ef159ba02e72c1f93ecbc1119a410e263", data__assets_icon_png, sizeof(data__assets_icon_png), false},
-    {"/assets/mp2_decoder-QOp_8zoi.wasm", "application/wasm", "238f3c45e2eee963ad9510d973e9e71300b3d5185578b48df25d52acc1b7a3da", data__assets_mp2_decoder_QOp_8zoi_wasm, sizeof(data__assets_mp2_decoder_QOp_8zoi_wasm), false},
+    {"/assets/mp2_decoder-QOp_8zoi.wasm", "application/wasm", NULL, data__assets_mp2_decoder_QOp_8zoi_wasm, sizeof(data__assets_mp2_decoder_QOp_8zoi_wasm), true},
     {"/assets/player-C5K0vmZ0.js", "application/javascript; charset=utf-8", NULL, data__assets_player_C5K0vmZ0_js, sizeof(data__assets_player_C5K0vmZ0_js), true},
     {"/assets/status-Buyq2zeR.js", "application/javascript; charset=utf-8", NULL, data__assets_status_Buyq2zeR_js, sizeof(data__assets_status_Buyq2zeR_js), true},
     {"/assets/use-theme-B2iJDXdb.css", "text/css; charset=utf-8", NULL, data__assets_use_theme_B2iJDXdb_css, sizeof(data__assets_use_theme_B2iJDXdb_css), true},
