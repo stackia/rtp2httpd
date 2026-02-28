@@ -2,7 +2,7 @@
 
 [>> 访问官方文档网站 <<](https://rtp2httpd.com)
 
-[>> English Documentation <<](https://rtp2httpd.com/en)
+[>> English Documentation <<](https://rtp2httpd.com/en/)
 
 rtp2httpd 是一个多媒体流转发服务器。本项目基于 [oskar456/rtp2httpd](https://github.com/oskar456/rtp2httpd) 做了完全重写，在原项目基础上加入了许多新功能，专为中国大陆 IPTV 环境设计。
 
