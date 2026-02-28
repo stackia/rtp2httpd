@@ -149,5 +149,6 @@ fcc-listen-port-range = 40000-40100
 
 ## 相关文档
 
+- [各地 FCC 地址汇总](./cn-fcc-collection)：中国各省 FCC 服务器地址
 - [URL 格式说明](./url-formats)：FCC URL 格式
 - [配置参数详解](./configuration)：FCC 相关配置参数

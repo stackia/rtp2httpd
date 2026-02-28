@@ -165,3 +165,5 @@ sudo make install
 - [快速上手](./quick-start)：OpenWrt 快速配置指南
 - [配置参数详解](./configuration)：了解所有配置选项
 - [URL 格式说明](./url-formats)：了解所有支持的 URL 格式
+- [M3U 播放列表集成](./m3u-integration)：配置播放列表
+- [FCC 快速换台配置](./fcc-setup)：启用毫秒级换台功能
