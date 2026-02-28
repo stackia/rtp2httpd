@@ -2,6 +2,12 @@
 
 rtp2httpd 支持通过命令行参数和配置文件两种方式进行配置。
 
+> [!TIP]
+>
+> 1. 命令行参数具有最高优先级
+> 2. 配置文件参数次之
+> 3. 内置默认值最低
+
 ## 命令行参数
 
 ```bash
@@ -46,7 +52,7 @@ rtp2httpd [选项]
 ### 服务控制
 
 - `-c, --config <文件>` - 指定配置文件路径 (默认 `/etc/rtp2httpd.conf`)
-- `-C, --noconfig` - 不读取配置文件
+- `-C, --noconfig` - 不读取任何配置文件（避免读到默认的 `/etc/rtp2httpd.conf`）
 
 ### 日志控制
 
@@ -139,7 +145,7 @@ upstream-interface = eth0
 # 优先级：upstream-interface-{multicast,fcc,rtsp,http} > upstream-interface > 系统路由表
 
 # 外部 M3U 配置（支持 file://, http://, https://）
-# 注意：HTTP/HTTPS 需要安装 curl 命令
+# 注意：HTTP/HTTPS 需要安装 curl 或 uclient-fetch 或 wget 命令
 external-m3u = https://example.com/iptv.m3u
 # 或使用本地文件
 external-m3u = file:///path/to/playlist.m3u
@@ -221,61 +227,10 @@ rtp://239.253.64.120:5140
 rtp://239.253.64.121:5140
 ```
 
-## 配置优先级
-
-1. 命令行参数具有最高优先级
-2. 配置文件参数次之
-3. 内置默认值最低
-
-## 公网访问建议
-
-开放公网访问时，建议修改 `hostname` / `r2h-token` / `status-page-path` / `player-page-path` 以加强安全性。
-
-```ini
-[global]
-hostname = iptv.example.com
-r2h-token = my-secret-token-12345
-status-page-path = /my-status-page
-player-page-path = /my-player
-```
-
-如有条件，建议前置 nginx / lucky / caddy 等反向代理负责转发，并开启 `xff` 选项
-
-```ini
-[global]
-xff = yes
-```
-
-需要确保反向代理可以透传 `X-Forwarded-For` / `X-Forwarded-Host` / `X-Forwarded-Proto` 头。对于 lucky，开启 `万事大吉` 选项即可。对于 nginx，以下是一个配置示例：
-
-```nginx
-server {
-    listen 80;
-    server_name iptv.example.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:5140;
-        proxy_http_version 1.1;
-
-        # 透传客户端真实 IP 和协议信息
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # 流媒体相关优化
-        proxy_buffering off;
-    }
-}
-```
-
-## 性能调优
-
-建议修改内核参数，[开启 BBR](https://blog.clash-plus.com/post/openwrt-bbr/) 有助于在公网环境提高传输稳定性、降低起播延迟。
-
 ## 相关文档
 
-- [快速上手](quick-start.md)：基本配置指南
-- [M3U 播放列表集成](m3u-integration.md)：M3U 配置详解
-- [FCC 快速换台配置](fcc-setup.md)：FCC 相关配置
-- [视频快照配置](video-snapshot.md)：视频快照功能配置
+- [快速上手](./quick-start)：基本配置指南
+- [M3U 播放列表集成](./m3u-integration)：M3U 配置详解
+- [FCC 快速换台配置](./fcc-setup)：FCC 相关配置
+- [视频快照配置](./video-snapshot)：视频快照功能配置
+- [公网访问建议](./public-access)：安全配置、反向代理、性能调优
