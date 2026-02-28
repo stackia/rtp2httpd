@@ -1,6 +1,4 @@
 Makefile
-rtp2httpd
-!openwrt-support/rtp2httpd
 !openwrt-support/rtp2httpd/Makefile
 !openwrt-support/luci-app-rtp2httpd/Makefile
 *.o
@@ -8,6 +6,7 @@ rtp2httpd
 Makefile.in
 *.pc
 config.*
+!config.ts
 stamp-h1
 .deps
 autom4te.cache
@@ -42,9 +41,10 @@ build-*-static/
 # Toolchain directory (auto-downloaded)
 toolchain/
 
-# Web UI
-web-ui/node_modules/
+node_modules/
 web-ui/dist/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
 
 # python
 __pycache__/
