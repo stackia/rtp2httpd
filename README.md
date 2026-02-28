@@ -12,7 +12,7 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 - **RTSP->HTTP**：RTSP 转为 HTTP 视频流，完整支持 RTSP/RTP 协议栈，支持 UDP NAT 穿透 (STUN)
   - 可以实现 IPTV RTSP 时移源的回看
 - **HTTP->HTTP**：实现了完整反向代理，可以将 IPTV 内网 HLS 源代理到局域网、公网，方便观看
-- **UDPxy 兼容性**：完全兼容 UDPxy URL 格式
+- **udpxy 兼容性**：完全兼容 udpxy URL 格式
 - **M3U 播放列表集成**：支持 M3U/M3U8 格式，自动识别并转换节目地址，提供标准化的播放列表
   - 支持外部 M3U URL
   - 智能识别 RTP/RTSP URL 并转换为 HTTP 代理格式
@@ -58,15 +58,17 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 
 https://github.com/user-attachments/assets/a8c9c60f-ebc3-49a8-b374-f579f8e34d92
 
-> **提示**：快速换台需要使用针对 IPTV 优化的播放器，例如 [mytv-android](https://github.com/mytv-android/mytv-android) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) 等（视频中的播放器是 TiviMate）。
+> [!TIP]
+> 快速换台需要使用针对 IPTV 优化的播放器，例如 [mytv-android](https://github.com/mytv-android/mytv-android) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) 等（视频中的播放器是 TiviMate）。
 > 常见普通播放器，例如 PotPlayer / IINA 等，没有专门优化起播速度，FCC 效果不明显。
 
 ### 内置播放器
 
 https://github.com/user-attachments/assets/d676b8c1-7017-48a1-814c-caab0054b361
 
+> [!TIP]
 > 需要配置 M3U 播放列表后使用，通过浏览器访问 `http://<server:port>/player` 即可打开。
-> 受限于浏览器解码能力，一些频道可能不支持（Chrome 无法播放使用 AC3 音频的北京卫视 4K，iOS 无法播放使用 MP2 音频的高清、标清频道）。
+> 受限于浏览器解码能力，一些频道可能不支持（表现为无音频、画面黑屏）。
 
 ### 实时状态监控
 
@@ -76,6 +78,7 @@ https://github.com/user-attachments/assets/d676b8c1-7017-48a1-814c-caab0054b361
 
 https://github.com/user-attachments/assets/fedc0c28-f9ac-4675-9b19-a8efdd062506
 
+> [!NOTE]
 > 单流码率 8 Mbps。总仅占用 25% CPU 单核 (i3-N305)，消耗 4MB 内存。
 
 ## 🚀 快速开始
@@ -88,10 +91,13 @@ uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/s
 
 安装完成后，在 LuCI 管理界面的 "服务" 菜单中找到 "rtp2httpd" 进行配置。
 
-每次更新版本后如果 LuCI 出现工作异常，需要 **Ctrl+F5 刷新** 或 **清空浏览器缓存** 或 **使用无痕模式访问** 解决。
+> [!WARNING]
+> 每次更新版本后如果 LuCI 出现工作异常，需要 **Ctrl+F5 刷新** 或 **清空浏览器缓存** 或 **使用无痕模式访问** 解决。
 
-如果安装后，LuCI 未出现 rtp2httpd 入口，说明你的 LuCI 版本过低，无法支持 JS-based LuCI 插件。请考虑更新固件。或者手动编辑和维护 `/etc/config/rtp2httpd`（需要将 disabled 设为 0），使用 `/etc/init.d/rtp2httpd restart` 重启服务。
+> [!IMPORTANT]
+> 如果安装后，LuCI 未出现 rtp2httpd 入口，说明你的 LuCI 版本过低，无法支持 JS-based LuCI 插件。请考虑更新固件。或者手动编辑和维护 `/etc/config/rtp2httpd`（需要将 disabled 设为 0），使用 `/etc/init.d/rtp2httpd restart` 重启服务。
 
+> [!TIP]
 > 也有一些热心网友开发了 Lua 版本 luci-app-rtp2httpd，供参考
 >
 > - <https://www.right.com.cn/forum/thread-8461513-1-1.html>

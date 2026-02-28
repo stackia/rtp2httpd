@@ -1,14 +1,15 @@
-# URL 格式与协议支持
+# URL 格式说明
 
 rtp2httpd 支持多种流媒体协议，通过不同的 URL 前缀进行区分。
 
 基本格式：`http://服务器地址:端口/路径[?参数1=值1][&参数2=值2][&参数3=值3]`
 
-当配置了 r2h-token（HTTP 请求认证令牌）时，所有 URL 都需要额外带上参数 `r2h-token=<your token>` 才能访问。
+当配置了 `r2h-token（HTTP 请求认证令牌）` 时，所有 URL 都需要额外带上参数 `r2h-token=<your token>` 才能访问。
 
+> [!TIP]
 > 除了 URL 参数，也支持通过 Cookie 或者 User Agent 来传递 `r2h-token`。例如 `Cookie: r2h-token=xxx` 或 `User-Agent: R2HTOKEN/xxx`。
 
-## 组播 RTP 流转换
+## 组播 RTP 转 HTTP 单播流
 
 ```url
 http://服务器地址:端口/rtp/组播地址:端口[?fcc=FCC服务器:端口][&fcc-type=协议类型][&fec=FEC端口]
@@ -40,7 +41,7 @@ http://192.168.1.1:5140/rtp/239.81.0.195:4056?fec=4055
 - 配合 FCC 实现毫秒级换台
 - 配合 FEC 实现丢包恢复，提高播放稳定性
 
-## RTSP 流代理
+## RTSP 转 HTTP
 
 ```url
 http://服务器地址:端口/rtsp/RTSP服务器:端口/路径[?参数]
@@ -67,6 +68,9 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r
 - 将 IPTV RTSP 单播流转换为 HTTP 流
 - 实现 RTSP 时移回看功能
 
+> [!IMPORTANT]
+> rtp2httpd 的 RTSP 支持仅适用于承载单路 MPEG-TS 流的场景（即 IPTV 单播/时移回看），不支持监控摄像头等其他 RTSP 用途。
+
 ### 常见问题：时移回看时，实际回看时间比节目单早了/晚了 8 小时
 
 这是由于时区未能匹配。需要做时区转换。你可以尝试以下几种方式。
@@ -74,9 +78,9 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r
 - 修改播放器 User Agent 设置，加上 `TZ/UTC+8` 或 `TZ/UTC-8`。例如 `AptvPlayer/1.3.3 TZ/UTC+8`。
 - 修改播放链接，加上参数 `&r2h-seek-offset=28800` 或 `&r2h-seek-offset=-28800`
 
-关于时移回看的参数处理（时区、偏移），详见 [时间处理与时区转换](time-processing.md)。
+关于时移回看的参数处理（时区、偏移），详见 [时间处理说明](./time-processing)。
 
-## HTTP 代理
+## HTTP 反向代理
 
 ```url
 http://服务器地址:端口/http/上游服务器[:端口]/路径[?参数]
@@ -101,8 +105,7 @@ http://192.168.1.1:5140/http/api.example.com/video?auth=xxx&quality=hd
 ### 使用场景
 
 - 代理上游 HLS/DASH 流媒体，统一认证和访问控制
-- 为不支持直接访问的内网服务提供 HTTP 代理
-- 绕过防火墙限制，通过 rtp2httpd 转发 HTTP 请求
+- 为不支持直接访问的 IPTV 内网服务提供 HTTP 反向代理
 
 ### 时移回看支持
 
@@ -116,13 +119,13 @@ http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-2
 http://192.168.1.1:5140/http/iptv.example.com/channel1?catchup=20240101120000&r2h-seek-name=catchup&r2h-seek-offset=3600
 ```
 
-详见 [时间处理与时区转换](time-processing.md)。
+详见 [时间处理说明](./time-processing)。
 
 ### 注意事项
 
 - 仅支持 HTTP 上游（不支持 HTTPS）
 - 可通过 `upstream-interface-http` 配置指定上游网络接口
-- 如果被代理的目标 URL 是 m3u 类型，其中所有 `http://` URL 会被自动改写为经过 rtp2httpd 代理后的地址
+- 如果被代理的目标 URL 是 m3u 类型，其中所有 `http://` URL 会被自动改写为经过 rtp2httpd 代理后的地址（为了保证 HLS 流能被正确代理）
 
 ## M3U 播放列表访问
 
@@ -144,7 +147,7 @@ http://192.168.1.1:5140/playlist.m3u
 - 隐藏频道源 IP、认证信息
 - 自动更新频道信息
 
-详见 [M3U 播放列表集成](m3u-integration.md)。
+详见 [M3U 播放列表集成](./m3u-integration)。
 
 ## 内置 Web 播放器
 
@@ -158,7 +161,7 @@ http://服务器地址:端口/player
 http://192.168.1.1:5140/player
 ```
 
-访问内置 Web 播放器，可以在网页端播放已配置的 M3U 频道列表。
+访问[内置 Web 播放器](./web-player)，可以在网页端播放已配置的 M3U 频道列表。
 
 播放器页面路径可以通过配置项 `player-page-path` 自定义。设置为 `/` 可以实现不带任何路径直接访问。
 
@@ -183,23 +186,28 @@ http://192.168.1.1:5140/status
 
 状态页面路径可以通过配置项 `status-page-path` 自定义。设置为 `/` 可以实现不带任何路径直接访问。
 
-## UDPxy 兼容模式
+## udpxy 兼容模式
 
-rtp2httpd 完全兼容 UDPxy URL 格式，可以无缝替换 UDPxy。
+rtp2httpd 完全兼容 udpxy URL 格式，可以无缝替换 udpxy / msd_lite 等组播转单播服务。
 
-### UDPxy 格式
+### udpxy 格式
 
 ```url
 http://服务器地址:端口/udp/组播地址:端口
+http://服务器地址:端口/rtp/组播地址:端口
 ```
 
 **示例**：
 
 ```url
 http://192.168.1.1:5140/udp/239.253.64.120:5140
+http://192.168.1.1:5140/rtp/239.253.64.120:5140
 ```
 
-UDPxy 兼容模式默认启用，可以通过配置参数 `udpxy = no` 禁用。禁用后仅支持通过 m3u 提供服务。
+udpxy 兼容模式默认启用，可以通过配置参数 `udpxy = no` 禁用。禁用后仅支持通过 m3u 提供服务。
+
+> [!TIP]
+> 使用 `/udp/` 和 `/rtp/` 没有任何差别，选择任意一种即可。
 
 ## 视频快照
 
@@ -218,11 +226,11 @@ curl -H "Accept: image/jpeg" http://192.168.1.1:5140/rtp/239.253.64.120:5140
 curl -H "X-Request-Snapshot: 1" http://192.168.1.1:5140/rtp/239.253.64.120:5140
 ```
 
-详见 [视频快照配置](video-snapshot.md)。
+详见 [视频快照配置](./video-snapshot)。
 
 ## 相关文档
 
-- [M3U 播放列表集成](m3u-integration.md)：播放列表配置
-- [FCC 快速换台配置](fcc-setup.md)：启用毫秒级换台
-- [视频快照配置](video-snapshot.md)：频道预览图功能
-- [配置参数详解](configuration.md)：查看完整配置选项
+- [M3U 播放列表集成](./m3u-integration)：播放列表配置
+- [FCC 快速换台配置](./fcc-setup)：启用毫秒级换台
+- [视频快照配置](./video-snapshot)：频道预览图功能
+- [配置参数详解](./configuration)：查看完整配置选项

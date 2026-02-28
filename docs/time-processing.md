@@ -1,4 +1,4 @@
-# 时间处理与时区转换
+# 时间处理说明
 
 本文档详细说明 rtp2httpd 如何处理时移回看功能中的时间参数和时区转换。此机制同时适用于 RTSP 代理和 HTTP 代理。
 
@@ -165,52 +165,17 @@ playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
 
 如果 User-Agent 中没有时区信息，则不进行任何时区转换，只应用 `r2h-seek-offset` 指定的秒数偏移。
 
-### 时区转换工作流程
-
-rtp2httpd 按以下步骤处理时间参数：
-
-```mermaid
-flowchart TD
-    A["<b>1. 解析时间格式</b>"]
-    A --> A1["Unix 时间戳 (≤10 位数字)"]
-    A --> A2["yyyyMMddHHmmss (14 位数字)"]
-    A --> A3["yyyyMMddHHmmssGMT (14 位 + GMT)"]
-    A --> A4["ISO 8601 (包含 T 分隔符)"]
-
-    A1 --> B
-    A2 --> B
-    A3 --> B
-    A4 --> B
-
-    B["<b>2. 解析 User-Agent 时区</b><br/>• 查找 TZ/ 标记<br/>• 提取 UTC 偏移量(秒)<br/>• 默认值: 0 (UTC)"]
-
-    B --> C["<b>3. 时区转换 (根据格式决定)</b>"]
-
-    C --> C1["Unix 时间戳 → 跳过 (已是 UTC)"]
-    C --> C2["ISO 8601 带时区 → 跳过 (保留原时区)"]
-    C --> C3["yyyyMMddHHmmss → 应用 User-Agent 时区转换"]
-    C --> C4["ISO 8601 无时区 → 应用 User-Agent 时区转换"]
-
-    C1 --> D
-    C2 --> D
-    C3 --> D
-    C4 --> D
-
-    D["<b>4. 应用 r2h-seek-offset</b><br/>(如果指定)<br/>• 对所有格式应用额外的秒数偏移<br/>• 可正可负"]
-
-    D --> E["<b>5. 格式化输出</b><br/>• 保持原始格式<br/>• 保留原有时区后缀 (如有)"]
-
-    E --> F["<b>6. 附加到上游 URL</b><br/>• 作为查询参数<br/>• RTSP: 发送 DESCRIBE 请求<br/>• HTTP: 转发给上游服务器"]
-
-    style A fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    style B fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    style C fill:#fff9c4,stroke:#f9a825,stroke-width:2px
-    style D fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    style E fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
-    style F fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-```
+> [!NOTE]
+> rtp2httpd 按以下步骤处理时间参数：
+>
+> 1. **解析时间格式** — 识别参数值属于哪种格式：Unix 时间戳（≤10 位数字）、`yyyyMMddHHmmss`（14 位数字）、`yyyyMMddHHmmssGMT`（14 位 + GMT 后缀）、ISO 8601（包含 `T` 分隔符）
+> 2. **解析 User-Agent 时区** — 从 User-Agent 中查找 `TZ/` 标记，提取 UTC 偏移量（秒）。如果没有时区信息，默认为 0（UTC）
+> 3. **时区转换** — Unix 时间戳和 ISO 8601 带时区的格式跳过转换；`yyyyMMddHHmmss` 和 ISO 8601 无时区的格式应用 User-Agent 时区转换
+> 4. **应用 `r2h-seek-offset`** — 如果指定了该参数，对所有格式应用额外的秒数偏移（可正可负）
+> 5. **格式化输出** — 保持原始格式，保留原有时区后缀（如有）
+> 6. **附加到上游 URL** — 将处理后的时间参数作为查询参数附加到上游请求中（RTSP 发送 DESCRIBE 请求，HTTP 转发给上游服务器）
 
 ## 相关文档
 
-- [URL 格式与协议支持](url-formats.md) - RTSP / HTTP 代理 URL 格式说明
-- [配置参数详解](configuration.md) - 服务器配置选项
+- [URL 格式说明](./url-formats) - RTSP / HTTP 代理 URL 格式说明
+- [配置参数详解](./configuration) - 服务器配置选项

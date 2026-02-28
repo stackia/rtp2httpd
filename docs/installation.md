@@ -4,45 +4,9 @@ rtp2httpd 支持多种安装方式，适应不同的使用场景。
 
 ## OpenWrt 路由器部署
 
-OpenWrt 是 rtp2httpd 的最佳运行环境。在完成 IPTV 网络融合后（可以搜索教程 `OpenWrt IPTV 融合`），通过 DHCP 获取到 IPTV 内网 IP，可直接访问整个 IPTV 网络，无需 NAT 穿透。
+OpenWrt 是 rtp2httpd 的最佳运行环境。在中国大陆，通常需要先完成 IPTV 网络融合（可以搜索教程 `OpenWrt IPTV 融合`），通过 DHCP 获取到 IPTV 内网 IP，才能访问运营商的 IPTV 组播网络。
 
-本项目支持的最低 OpenWrt 版本为 21.02，在更低版本上 LuCI 配置界面可能无法加载，但通过手动编辑 `/etc/config/rtp2httpd` 文件并运行 `/etc/init.d/rtp2httpd restart` 仍然可以使用。
-
-### 一键安装脚本
-
-使用一键安装脚本自动下载并安装最新版本。如果你已经安装了 rtp2httpd，重新运行脚本也可以一键更新到最新版。
-
-```bash
-uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
-```
-
-脚本会自动：
-
-- 检测设备的 CPU 架构
-- 从 GitHub Release 获取最新版本
-- 下载并安装所有必需的软件包（主程序 + LuCI 界面 + 语言包）
-
-<details>
-<summary>如果需要使用 prerelease 测试版本，点击查看命令</summary>
-
-```bash
-uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh -s -- --prerelease
-```
-
-</details>
-
-### 手动安装
-
-如果无法使用一键脚本，可以手动在 [Releases](https://github.com/stackia/rtp2httpd/releases) 页面下载对应架构的软件包：
-
-- `rtp2httpd_x.y.z-1_<arch>.ipk` - 主程序包
-- `luci-app-rtp2httpd_x.y.z_all.ipk` - LuCI Web 界面
-- `luci-i18n-rtp2httpd-en_x.y.z_all.ipk` - 英文语言包
-- `luci-i18n-rtp2httpd-zh-cn_x.y.z_all.ipk` - 中文语言包
-
-```bash
-opkg install rtp2httpd_*.ipk luci-app-rtp2httpd_*.ipk luci-i18n-rtp2httpd-*.ipk
-```
+详见 [快速上手](./quick-start)。
 
 ## 静态二进制文件部署
 
@@ -53,6 +17,9 @@ opkg install rtp2httpd_*.ipk luci-app-rtp2httpd_*.ipk luci-i18n-rtp2httpd-*.ipk
 **示例**：
 
 ```bash
+# 获取自己的 CPU 架构
+uname -m
+
 # 下载二进制文件
 wget https://github.com/stackia/rtp2httpd/releases/download/vX.Y.Z/rtp2httpd-X.Y.Z-x86_64
 chmod +x rtp2httpd-X.Y.Z-x86_64
@@ -64,11 +31,12 @@ chmod +x rtp2httpd-X.Y.Z-x86_64
 ./rtp2httpd-X.Y.Z-x86_64 --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
 
-提示：你可以使用这个示例文件 [rtp2httpd.conf](../rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](configuration.md)。
+> [!TIP]
+> 你可以使用这个示例文件 [rtp2httpd.conf](../rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](./configuration)。
 
 ## Docker 容器部署
 
-适用于支持 Docker 的设备。**必须使用 host 网络模式**以接收组播流。
+适用于支持 Docker 的设备。**需要使用 host 网络模式**以正确接收组播流。
 
 ### 基本启动方式
 
@@ -95,6 +63,7 @@ services:
     command: --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
 
+> [!NOTE]
 > **关于推荐参数**：
 >
 > - `cap_add: NET_ADMIN`：允许通过 `SO_RCVBUFFORCE` 绕过内核参数 `net.core.rmem_max` 限制，设置更大的 UDP 接收缓冲区
@@ -110,7 +79,8 @@ docker run --network=host --cap-add=NET_ADMIN --ulimit memlock=-1:-1 --rm \
   ghcr.io/stackia/rtp2httpd:latest
 ```
 
-提示：你可以使用这个示例文件 [rtp2httpd.conf](../rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](configuration.md)。
+> [!TIP]
+> 你可以使用这个示例文件 [rtp2httpd.conf](../rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](./configuration)。
 
 ## OpenWrt 编译安装
 
@@ -124,8 +94,8 @@ src-git rtp2httpd https://github.com/stackia/rtp2httpd.git
 或者指定版本号：
 
 ```text
-# 使用 v3.1.1 版本代码
-src-git rtp2httpd https://github.com/stackia/rtp2httpd.git;v3.1.1
+# 使用 v3.10.1 版本代码
+src-git rtp2httpd https://github.com/stackia/rtp2httpd.git;v3.10.1
 ```
 
 运行 `./scripts/feeds update rtp2httpd` 和 `./scripts/feeds install rtp2httpd` 更新 feed。
@@ -175,9 +145,9 @@ corepack enable
 git clone https://github.com/stackia/rtp2httpd.git
 cd rtp2httpd
 
-# 构建前端并嵌入静态资源
-pnpm --prefix web-ui install --frozen-lockfile
-pnpm --prefix web-ui run build
+# 构建 Web UI 并嵌入静态资源
+pnpm install --frozen-lockfile
+pnpm run web-ui:build
 
 # 生成构建脚本
 autoreconf -fi
@@ -190,13 +160,8 @@ make
 sudo make install
 ```
 
-### 可选依赖
-
-- **curl** 或 **uclient-fetch** 或 **wget**：用于获取外部 M3U 播放列表（HTTP/HTTPS）
-- **ffmpeg**：用于视频快照功能
-
 ## 下一步
 
-- [快速上手](quick-start.md)：OpenWrt 快速配置指南
-- [配置参数详解](configuration.md)：了解所有配置选项
-- [URL 格式说明](url-formats.md)：了解所有支持的 URL 格式
+- [快速上手](./quick-start)：OpenWrt 快速配置指南
+- [配置参数详解](./configuration)：了解所有配置选项
+- [URL 格式说明](./url-formats)：了解所有支持的 URL 格式

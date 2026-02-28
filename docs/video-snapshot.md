@@ -1,6 +1,9 @@
-# 视频快照（预览图）配置
+# 视频快照配置
 
 rtp2httpd 支持使用 FFmpeg 来生成视频流的快照（snapshot）功能。如果播放器集成了此功能，将会获得极快的频道预览图加载速度。
+
+> [!IMPORTANT]
+> 此功能需要播放器支持，目前已知支持 rtp2httpd 视频快照的播放器只有 [mytv-android](https://github.com/mytv-android/mytv-android)。
 
 ## 功能特点
 
@@ -15,11 +18,15 @@ rtp2httpd 支持使用 FFmpeg 来生成视频流的快照（snapshot）功能。
 
 视频快照功能依赖 FFmpeg 来提供解码能力，请先手动安装 FFmpeg。
 
-**重要**：不要使用 OpenWrt 官方源的 `ffmpeg` 包，它阉割了 h264/hevc 编解码器，将导致无法解码视频流。
+> [!CAUTION]
+> 不要使用 OpenWrt 官方源的 `ffmpeg` 包，它阉割了 h264/hevc 编解码器，将导致无法解码视频流。
+
+> [!TIP]
+> 对于飞牛 fnOS，一般已经内置了带硬件加速 ffmpeg，可以直接使用。
 
 #### 推荐方法：下载静态编译版本
 
-从 [johnvansickle.com](https://johnvansickle.com/ffmpeg/) 下载静态编译的 FFmpeg：
+从 [johnvansickle.com](https://johnvansickle.com/ffmpeg/) 下载静态编译的 FFmpeg（注意此版本不支持硬件解码）：
 
 ```bash
 # 下载 FFmpeg（以 amd64 为例）
@@ -60,31 +67,6 @@ ffmpeg-path = /usr/bin/ffmpeg
 
 # FFmpeg 额外参数（可选，默认: -hwaccel none）
 ffmpeg-args = -hwaccel none
-```
-
-## 请求快照
-
-有三种方式请求视频快照，任选一种即可：
-
-### 方式 1：URL 查询参数
-
-在任意流媒体 URL 后添加 `snapshot=1` 参数：
-
-```url
-http://192.168.1.1:5140/rtp/239.253.64.120:5140?snapshot=1
-http://192.168.1.1:5140/CCTV-1?snapshot=1
-```
-
-### 方式 2：Accept 请求头
-
-```bash
-curl -H "Accept: image/jpeg" http://192.168.1.1:5140/rtp/239.253.64.120:5140
-```
-
-### 方式 3：自定义请求头
-
-```bash
-curl -H "X-Request-Snapshot: 1" http://192.168.1.1:5140/rtp/239.253.64.120:5140
 ```
 
 ### ffmpeg-path 参数
@@ -182,6 +164,23 @@ ffmpeg-args = -hwaccel v4l2m2m
 
 3. **兼容性**：这种方式可以同时兼容 rtp2httpd 和其他不支持快照的流媒体服务器
 
+除了 `X-Request-Snapshot: 1`，也支持另外两种请求方式获取快照：
+
+### URL 查询参数
+
+在任意流媒体 URL 后添加 `snapshot=1` 参数：
+
+```url
+http://192.168.1.1:5140/rtp/239.253.64.120:5140?snapshot=1
+http://192.168.1.1:5140/CCTV-1?snapshot=1
+```
+
+### Accept 请求头
+
+```bash
+curl -H "Accept: image/jpeg" http://192.168.1.1:5140/rtp/239.253.64.120:5140
+```
+
 ## 故障排查
 
 ### 快照请求返回视频流而不是图片
@@ -210,6 +209,6 @@ ffmpeg-args = -hwaccel v4l2m2m
 
 ## 相关文档
 
-- [URL 格式说明](url-formats.md)：快照 URL 格式
-- [配置参数详解](configuration.md)：视频快照相关配置
-- [FCC 快速换台配置](fcc-setup.md)：配合 FCC 获得更快的快照速度
+- [URL 格式说明](./url-formats)：快照 URL 格式
+- [配置参数详解](./configuration)：视频快照相关配置
+- [FCC 快速换台配置](./fcc-setup)：配合 FCC 获得更快的快照速度

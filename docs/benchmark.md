@@ -89,7 +89,7 @@
 
 ## 运行基准测试
 
-详见 [tools/README.md](../tools/README.md) 了解测试工具和方法。
+详见 [tools/README.md](https://github.com/stackia/rtp2httpd/blob/main/tools/README.md) 了解测试工具和方法。
 
 快速运行：
 
