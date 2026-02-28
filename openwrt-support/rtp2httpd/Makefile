@@ -15,7 +15,7 @@ RELEASE_VERSION:=$(if $(DUMP),unknown,$(shell \
 
 # For firmware maintainers: please use Makefile.versioned instead, which has a pinned
 # version and PKG_HASH ready for direct inclusion in your feeds repository.
-# See https://github.com/stackia/rtp2httpd/blob/main/docs/installation.md
+# See https://rtp2httpd.com/guide/installation
 PKG_VERSION:=$(shell echo "$(RELEASE_VERSION)" | sed 's/-\([a-z]*\)\.\([0-9]*\)/_\1\2/g')
 PKG_RELEASE:=1
 PKG_MAINTAINER:=Stackie Jia <jsq2627@gmail.com>

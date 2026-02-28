@@ -52,7 +52,7 @@ rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并�
 - **零拷贝技术**：支持 Linux 内核 MSG_ZEROCOPY 特性，避免数据在用户态和内核态之间的拷贝
 - **轻量化**：使用纯 C 语言编写，零依赖，小巧简洁，适合运行在各种嵌入式设备上（路由器、光猫、NAS 等）
   - 程序大小仅 340KB (x86_64)，并内置了 Web 播放器所有前端资源
-- 查看 **[性能测试报告](docs/benchmark.md)**（与 msd_lite、udpxy、tvgate 的性能对比）
+- 查看 **[性能测试报告](https://rtp2httpd.com/reference/benchmark)**（与 msd_lite、udpxy、tvgate 的性能对比）
 
 ## 📹 演示效果
 
