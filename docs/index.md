@@ -91,7 +91,7 @@ features:
 
 ### 实时状态监控
 
-![实时状态监控](../images/status-page.png)
+![实时状态监控](./images/status-page.png)
 
 ### 25 条 1080p 组播流同时播放
 
