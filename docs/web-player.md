@@ -149,6 +149,6 @@ IPTV 大多数高清、标清频道使用 MPEG-1 Layer 2 (MP2) 音频编码，�
 
 ## 相关文档
 
-- [M3U 播放列表集成](./m3u-integration)：M3U 配置和线路标签
-- [FCC 快速换台配置](./fcc-setup)：启用毫秒级换台功能
-- [配置参数详解](./configuration)：播放器相关配置参数
+- [M3U 播放列表集成](./m3u-integration.md)：M3U 配置和线路标签
+- [FCC 快速换台配置](./fcc-setup.md)：启用毫秒级换台功能
+- [配置参数详解](./configuration.md)：播放器相关配置参数
