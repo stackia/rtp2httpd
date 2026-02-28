@@ -216,4 +216,4 @@ http://192.168.1.1:5140/卫视/广东卫视/标清$标清
 
 - [内置 Web 播放器](./web-player.md)：播放器功能、频道聚合、时间占位符
 - [URL 格式说明](./url-formats.md)：了解所有支持的 URL 格式
-- [配置参数详解](./configuration.md)：查看完整配置选项
+- [配置参数详解](../reference/configuration.md)：查看完整配置选项

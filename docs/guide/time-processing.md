@@ -178,4 +178,4 @@ playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
 ## 相关文档
 
 - [URL 格式说明](./url-formats.md)：RTSP / HTTP 代理 URL 格式说明
-- [配置参数详解](./configuration.md)：服务器配置选项
+- [配置参数详解](../reference/configuration.md)：服务器配置选项

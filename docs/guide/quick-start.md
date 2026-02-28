@@ -34,7 +34,7 @@ uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/s
 
 安装完成后，在 LuCI 管理界面的 "服务" 菜单中找到 "rtp2httpd" 进行配置：
 
-![LuCI 配置界面](./images/luci-config.png)
+![LuCI 配置界面](../images/luci-config.png)
 
 > [!WARNING]
 > 每次更新版本后如果 LuCI 出现工作异常，需要 **Ctrl+F5 刷新** 或 **清空浏览器缓存** 或 **使用无痕模式访问** 解决。
@@ -96,5 +96,5 @@ http://路由器IP:5140/playlist.m3u
 - [安装方式](./installation.md)：了解其他安装方式（Docker、静态二进制、编译安装）
 - [M3U 播放列表集成](./m3u-integration.md)：配置播放列表自动识别和转换
 - [URL 格式说明](./url-formats.md)：了解所有支持的 URL 格式
-- [配置参数详解](./configuration.md)：深入了解所有配置选项
+- [配置参数详解](../reference/configuration.md)：深入了解所有配置选项
 - [FCC 快速换台配置](./fcc-setup.md)：启用毫秒级换台功能

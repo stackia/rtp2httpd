@@ -210,5 +210,5 @@ curl -H "Accept: image/jpeg" http://192.168.1.1:5140/rtp/239.253.64.120:5140
 ## 相关文档
 
 - [URL 格式说明](./url-formats.md)：快照 URL 格式
-- [配置参数详解](./configuration.md)：视频快照相关配置
+- [配置参数详解](../reference/configuration.md)：视频快照相关配置
 - [FCC 快速换台配置](./fcc-setup.md)：配合 FCC 获得更快的快照速度

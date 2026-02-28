@@ -233,4 +233,4 @@ curl -H "X-Request-Snapshot: 1" http://192.168.1.1:5140/rtp/239.253.64.120:5140
 - [M3U 播放列表集成](./m3u-integration.md)：播放列表配置
 - [FCC 快速换台配置](./fcc-setup.md)：启用毫秒级换台
 - [视频快照配置](./video-snapshot.md)：频道预览图功能
-- [配置参数详解](./configuration.md)：查看完整配置选项
+- [配置参数详解](../reference/configuration.md)：查看完整配置选项
