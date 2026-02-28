@@ -163,7 +163,7 @@ export default defineConfig({
 				apiKey: "5ea4c13bbf1296239ae1c79273d3c4cd",
 				indexName: "rtp2httpd",
 				locales: {
-					zh: {
+					root: {
 						translations: {
 							button: {
 								buttonText: "搜索",
@@ -201,7 +201,7 @@ export default defineConfig({
 									closeText: "关闭",
 									backToSearchText: "返回搜索",
 									closeKeyAriaLabel: "Esc 键",
-									poweredByText: "由…提供支持",
+									poweredByText: "搜索提供商",
 								},
 								errorScreen: {
 									titleText: "无法获取结果",
