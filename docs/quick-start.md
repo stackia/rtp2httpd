@@ -92,6 +92,7 @@ http://路由器IP:5140/playlist.m3u
 
 ## 下一步
 
+- [内置 Web 播放器](./web-player)：播放器功能、兼容性说明
 - [安装方式](./installation)：了解其他安装方式（Docker、静态二进制、编译安装）
 - [M3U 播放列表集成](./m3u-integration)：配置播放列表自动识别和转换
 - [URL 格式说明](./url-formats)：了解所有支持的 URL 格式
