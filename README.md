@@ -1,5 +1,7 @@
 # <img src="./icon.svg" width="24" height="24"> rtp2httpd - IPTV 流媒体转发服务器
 
+[>> 访问官方文档网站 <<](https://rtp2httpd.com)
+
 rtp2httpd 是一个多媒体流转发服务器。本项目基于 [oskar456/rtp2httpd](https://github.com/oskar456/rtp2httpd) 做了完全重写，在原项目基础上加入了许多新功能，专为中国大陆 IPTV 环境设计。
 
 rtp2httpd 支持将组播 RTP/UDP 流、RTSP 流转换为 HTTP 单播流，并实现了运营商级的 FCC（[Fast Channel Change](https://blog.csdn.net/yangzex/article/details/131328837)）快速换台协议，可以作为 `udpxy` 和 `msd_lite` 的无缝替代，为 IPTV 用户提供接近原生机顶盒的观看体验。
@@ -81,59 +83,12 @@ https://github.com/user-attachments/assets/fedc0c28-f9ac-4675-9b19-a8efdd062506
 > [!NOTE]
 > 单流码率 8 Mbps。总仅占用 25% CPU 单核 (i3-N305)，消耗 4MB 内存。
 
-## 🚀 快速开始
-
-### OpenWrt 一键安装/更新
-
-```bash
-uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
-```
-
-安装完成后，在 LuCI 管理界面的 "服务" 菜单中找到 "rtp2httpd" 进行配置。
-
-> [!WARNING]
-> 每次更新版本后如果 LuCI 出现工作异常，需要 **Ctrl+F5 刷新** 或 **清空浏览器缓存** 或 **使用无痕模式访问** 解决。
-
-> [!IMPORTANT]
-> 如果安装后，LuCI 未出现 rtp2httpd 入口，说明你的 LuCI 版本过低，无法支持 JS-based LuCI 插件。请考虑更新固件。或者手动编辑和维护 `/etc/config/rtp2httpd`（需要将 disabled 设为 0），使用 `/etc/init.d/rtp2httpd restart` 重启服务。
-
-> [!TIP]
-> 也有一些热心网友开发了 Lua 版本 luci-app-rtp2httpd，供参考
->
-> - <https://www.right.com.cn/forum/thread-8461513-1-1.html>
-> - <https://github.com/jarod360/rtp2httpd/releases>
-
-### 其他平台
-
-rtp2httpd 支持多种部署方式：
-
-- **静态二进制文件**：适用于任何 Linux 系统
-- **Docker 容器**：容器化部署
-- **编译安装**：直接从源代码编译，或者作为 OpenWrt feed 自行编译到固件中
-
-详见 [安装指南](docs/installation.md)。
-
 ## 📖 文档
 
-- **[快速上手](docs/quick-start.md)**：OpenWrt 快速配置指南
-- **[安装方式](docs/installation.md)**：各种平台的安装指南
-- **[URL 格式说明](docs/url-formats.md)**：支持的 URL 格式和协议
-- **[M3U 播放列表集成](docs/m3u-integration.md)**：M3U 配置和使用
-- **[配置参数详解](docs/configuration.md)**：完整配置选项说明
-- **[FCC 快速换台配置](docs/fcc-setup.md)**：启用毫秒级换台功能
-- **[视频快照配置](docs/video-snapshot.md)**：频道预览图功能配置
+- **[快速上手](https://rtp2httpd.com/guide/quick-start)**：OpenWrt 快速配置指南
+- **[安装方式](https://rtp2httpd.com/guide/installation)**：各种平台的安装指南
 
-如果是首次搭建 IPTV 组播转发服务，对相关网络知识比较陌生（DHCP 鉴权、路由、组播、防火墙），这里也推荐以下教程：
-
-- [浙江杭州电信 IPTV 内网融合教程：在局域网任意设备观看 IPTV](https://baiyun.me/zhejiang-hangzhou-telecom-iptv)
-- [自动抓取IPTV单播地址，实现时移回看](https://www.bandwh.com/net/2571.html)
-- [K2P 利用 rtp2httpd 刷 openwrt 单线复用双网融合完美解决看 IPTV 超简单详细](https://www.right.com.cn/forum/thread-8457970-1-1.html)
-- [重庆电信 IPTV 内网融合 抓包 rtp2httpd](https://www.right.com.cn/forum/thread-8457356-1-1.html)
-- [浙江 电信 IPTV 组播 转单播 rtp2httpd 去花屏](https://www.right.com.cn/forum/thread-8452510-1-1.html)
-- [使用 Rtp2httpd 酷 9 浙江 电信 IPTV 单播 回看](https://www.right.com.cn/forum/thread-8453715-1-1.html)
-- [湖南电信 OpenWrt 拨号 IPTV 全流程教程 | 内网融合组播转单播 + 单播回看全搞定](https://mp.weixin.qq.com/s/_hEVbrgHll_qIePXGtATTw)
-- [📺 旁路由 IPTV 插件使用篇](https://www.bilibili.com/video/BV1ioiKBNE8t/)
-- [📺 组播转单播系列第二期：借助 rtp2httpd 插件实现全家设备观看 iptv](https://www.bilibili.com/video/BV1Zhr4B3ELy/)
+如果是首次搭建 IPTV 组播转发服务，对相关网络知识比较陌生（DHCP 鉴权、路由、组播、防火墙），推荐先看 [搭建教程](https://rtp2httpd.com/reference/related-resources#iptv-搭建教程)。
 
 ## 📄 开源许可
 
