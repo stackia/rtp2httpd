@@ -161,7 +161,7 @@ export default defineConfig({
 			options: {
 				appId: "WFCUQFWIYE",
 				apiKey: "5ea4c13bbf1296239ae1c79273d3c4cd",
-				indexName: "Documentation Website",
+				indexName: "rtp2httpd",
 				locales: {
 					zh: {
 						translations: {
