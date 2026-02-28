@@ -42,10 +42,16 @@ export default defineConfig({
 					{ text: "配置参数详解", link: "/reference/configuration" },
 					{ text: "各地 FCC 地址汇总", link: "/reference/cn-fcc-collection" },
 					{ text: "性能测试报告", link: "/reference/benchmark" },
+					{ text: "相关教程和软件", link: "/reference/related-resources" },
 				],
 			},
 		],
 
 		socialLinks: [{ icon: "github", link: "https://github.com/stackia/rtp2httpd" }],
+
+		footer: {
+			message: "Released under the GPL-2.0 License.",
+			copyright: "Copyright © 2023-present Stackie Jia",
+		},
 	},
 });

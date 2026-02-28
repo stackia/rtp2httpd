@@ -10,7 +10,7 @@ hero:
   actions:
     - theme: brand
       text: 快速上手
-      link: /quick-start
+      link: /guide/quick-start
     - theme: alt
       text: GitHub
       link: https://github.com/stackia/rtp2httpd
@@ -100,6 +100,6 @@ features:
 > [!NOTE]
 > 单流码率 8 Mbps。总仅占用 25% CPU 单核 (i3-N305)，消耗 4MB 内存。
 >
-> 与 udpxy / msd_lite / tvgate 的对比，详见 [性能测试报告](../reference/benchmark.md)。
+> 与 udpxy / msd_lite / tvgate 的对比，详见 [性能测试报告](./reference/benchmark.md)。
 
 </div>
