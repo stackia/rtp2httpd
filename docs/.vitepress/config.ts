@@ -175,7 +175,7 @@ export default defineConfig({
 									clearButtonAriaLabel: "清除查询",
 									closeButtonText: "关闭",
 									closeButtonAriaLabel: "关闭",
-									placeholderText: "搜索文档或向 AI 提问",
+									placeholderText: "搜索文档",
 									placeholderTextAskAi: "再问一个问题...",
 									placeholderTextAskAiStreaming: "正在回答...",
 									searchInputLabel: "搜索",
