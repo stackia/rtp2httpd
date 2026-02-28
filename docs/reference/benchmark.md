@@ -99,8 +99,3 @@ cd tools
 ```
 
 测试结果保存至 `benchmark_results_YYYYMMDD_HHMMSS.txt`。
-
-## 相关文档
-
-- [安装方式](../guide/installation.md)：各平台安装指南
-- [配置参数详解](./configuration.md)：性能相关配置参数
