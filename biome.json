@@ -1,27 +1,27 @@
 {
-  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-  "files": {
-    "includes": [
-      "web-ui/**",
-      "docs/**",
-      "scripts/**",
-      "tools/**",
-      "!web-ui/dist",
-      "!docs/.vitepress/dist",
-      "!docs/.vitepress/cache"
-    ]
-  },
-  "css": {
-    "parser": {
-      "tailwindDirectives": true
-    }
-  },
-  "formatter": {
-    "lineWidth": 120
-  },
-  "linter": {
-    "rules": {
-      "recommended": true
-    }
-  }
+	"$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+	"files": {
+		"includes": [
+			"web-ui/**",
+			"docs/**",
+			"scripts/**",
+			"tools/**",
+			"!web-ui/dist",
+			"!docs/.vitepress/dist",
+			"!docs/.vitepress/cache"
+		]
+	},
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
+		}
+	},
+	"formatter": {
+		"lineWidth": 120
+	},
+	"linter": {
+		"rules": {
+			"recommended": true
+		}
+	}
 }
