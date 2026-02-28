@@ -102,5 +102,5 @@ cd tools
 
 ## 相关文档
 
-- [安装方式](./installation.md)：各平台安装指南
+- [安装方式](../guide/installation.md)：各平台安装指南
 - [配置参数详解](./configuration.md)：性能相关配置参数

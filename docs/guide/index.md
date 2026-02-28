@@ -91,7 +91,7 @@ features:
 
 ### 实时状态监控
 
-![实时状态监控](./images/status-page.png)
+![实时状态监控](../images/status-page.png)
 
 ### 25 条 1080p 组播流同时播放
 
@@ -100,6 +100,6 @@ features:
 > [!NOTE]
 > 单流码率 8 Mbps。总仅占用 25% CPU 单核 (i3-N305)，消耗 4MB 内存。
 >
-> 与 udpxy / msd_lite / tvgate 的对比，详见 [性能测试报告](./benchmark.md)。
+> 与 udpxy / msd_lite / tvgate 的对比，详见 [性能测试报告](../reference/benchmark.md)。
 
 </div>

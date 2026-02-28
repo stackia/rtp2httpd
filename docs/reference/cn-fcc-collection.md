@@ -166,5 +166,5 @@
 
 ## 相关文档
 
-- [FCC 快速换台配置](./fcc-setup.md)：FCC 工作原理与配置方法
-- [URL 格式说明](./url-formats.md)：FCC URL 参数格式
+- [FCC 快速换台配置](../guide/fcc-setup.md)：FCC 工作原理与配置方法
+- [URL 格式说明](../guide/url-formats.md)：FCC URL 参数格式

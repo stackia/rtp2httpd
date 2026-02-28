@@ -229,8 +229,8 @@ rtp://239.253.64.121:5140
 
 ## 相关文档
 
-- [快速上手](./quick-start.md)：基本配置指南
-- [M3U 播放列表集成](./m3u-integration.md)：M3U 配置详解
-- [FCC 快速换台配置](./fcc-setup.md)：FCC 相关配置
-- [视频快照配置](./video-snapshot.md)：视频快照功能配置
-- [公网访问建议](./public-access.md)：安全配置、反向代理、性能调优
+- [快速上手](../guide/quick-start.md)：基本配置指南
+- [M3U 播放列表集成](../guide/m3u-integration.md)：M3U 配置详解
+- [FCC 快速换台配置](../guide/fcc-setup.md)：FCC 相关配置
+- [视频快照配置](../guide/video-snapshot.md)：视频快照功能配置
+- [公网访问建议](../guide/public-access.md)：安全配置、反向代理、性能调优
