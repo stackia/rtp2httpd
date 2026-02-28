@@ -45,7 +45,7 @@ features:
 .demo-section {
   max-width: 960px;
   margin: 0 auto;
-  padding: 0 24px 64px;
+  padding: 0 24px;
 }
 .demo-section h2 {
   font-size: 28px;
