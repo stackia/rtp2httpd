@@ -5,6 +5,7 @@ export default defineConfig({
 	description: "IPTV 流媒体转发服务器",
 	lang: "zh-CN",
 	cleanUrls: true,
+	head: [["link", { rel: "icon", href: "/icon.svg", type: "image/svg+xml" }]],
 
 	themeConfig: {
 		logo: "/icon.svg",
