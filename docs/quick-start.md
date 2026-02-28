@@ -56,8 +56,8 @@ uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/s
 
 ### 可选配置项
 
-- **播放器与 M3U - 外部 M3U**：如有现成的 M3U 播放列表，填入此设置项后后即可使用 [内置 Web 播放器](./web-player)（[M3U 播放列表集成](./m3u-integration)）
-- **FCC 服务器**：如需快速换台，需要在节目 URL 带上 FCC 服务器地址（[FCC 快速换台配置](./fcc-setup)）
+- **播放器与 M3U - 外部 M3U**：如有现成的 M3U 播放列表，填入此设置项后后即可使用 [内置 Web 播放器](./web-player.md)（[M3U 播放列表集成](./m3u-integration.md)）
+- **FCC 服务器**：如需快速换台，需要在节目 URL 带上 FCC 服务器地址（[FCC 快速换台配置](./fcc-setup.md)）
 
 ## 测试访问
 
@@ -76,7 +76,7 @@ http://路由器IP:5140/playlist.m3u
 
 ## 使用内置播放器
 
-如果已配置 M3U 播放列表，可直接在浏览器中访问 `http://路由器IP:5140/player` 打开 [内置 Web 播放器](./web-player)。
+如果已配置 M3U 播放列表，可直接在浏览器中访问 `http://路由器IP:5140/player` 打开 [内置 Web 播放器](./web-player.md)。
 
 ## 在其他播放器中使用
 
@@ -92,9 +92,9 @@ http://路由器IP:5140/playlist.m3u
 
 ## 下一步
 
-- [内置 Web 播放器](./web-player)：播放器功能、兼容性说明
-- [安装方式](./installation)：了解其他安装方式（Docker、静态二进制、编译安装）
-- [M3U 播放列表集成](./m3u-integration)：配置播放列表自动识别和转换
-- [URL 格式说明](./url-formats)：了解所有支持的 URL 格式
-- [配置参数详解](./configuration)：深入了解所有配置选项
-- [FCC 快速换台配置](./fcc-setup)：启用毫秒级换台功能
+- [内置 Web 播放器](./web-player.md)：播放器功能、兼容性说明
+- [安装方式](./installation.md)：了解其他安装方式（Docker、静态二进制、编译安装）
+- [M3U 播放列表集成](./m3u-integration.md)：配置播放列表自动识别和转换
+- [URL 格式说明](./url-formats.md)：了解所有支持的 URL 格式
+- [配置参数详解](./configuration.md)：深入了解所有配置选项
+- [FCC 快速换台配置](./fcc-setup.md)：启用毫秒级换台功能

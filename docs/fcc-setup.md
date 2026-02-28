@@ -25,7 +25,7 @@ FCC 服务器缓存了各频道最近的关键帧。当播放器换台时：
 
 ### 方法一：查询已知 FCC 服务器列表
 
-可以先查看 [各地 FCC 地址汇总](./cn-fcc-collection)，尝试能否找到自己本地可用的地址。
+可以先查看 [各地 FCC 地址汇总](./cn-fcc-collection.md)，尝试能否找到自己本地可用的地址。
 
 ### 方法二：从机顶盒抓包获取
 
@@ -133,7 +133,7 @@ fcc-listen-port-range = 40000-40100
 
 ## 测试 FCC 是否工作
 
-1. **使用起播较快播放器**：确保播放器本身起播速度足够快，不能成为瓶颈，例如 [内置 Web 播放器](./web-player)。
+1. **使用起播较快播放器**：确保播放器本身起播速度足够快，不能成为瓶颈，例如 [内置 Web 播放器](./web-player.md)。
 
 2. **观察换台速度**：
 
@@ -149,6 +149,6 @@ fcc-listen-port-range = 40000-40100
 
 ## 相关文档
 
-- [各地 FCC 地址汇总](./cn-fcc-collection)：中国各省 FCC 服务器地址
-- [URL 格式说明](./url-formats)：FCC URL 格式
-- [配置参数详解](./configuration)：FCC 相关配置参数
+- [各地 FCC 地址汇总](./cn-fcc-collection.md)：中国各省 FCC 服务器地址
+- [URL 格式说明](./url-formats.md)：FCC URL 格式
+- [配置参数详解](./configuration.md)：FCC 相关配置参数

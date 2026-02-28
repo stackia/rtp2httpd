@@ -78,7 +78,7 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r
 - 修改播放器 User Agent 设置，加上 `TZ/UTC+8` 或 `TZ/UTC-8`。例如 `AptvPlayer/1.3.3 TZ/UTC+8`。
 - 修改播放链接，加上参数 `&r2h-seek-offset=28800` 或 `&r2h-seek-offset=-28800`
 
-关于时移回看的参数处理（时区、偏移），详见 [时间处理说明](./time-processing)。
+关于时移回看的参数处理（时区、偏移），详见 [时间处理说明](./time-processing.md)。
 
 ## HTTP 反向代理
 
@@ -119,7 +119,7 @@ http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-2
 http://192.168.1.1:5140/http/iptv.example.com/channel1?catchup=20240101120000&r2h-seek-name=catchup&r2h-seek-offset=3600
 ```
 
-详见 [时间处理说明](./time-processing)。
+详见 [时间处理说明](./time-processing.md)。
 
 ### 注意事项
 
@@ -147,7 +147,7 @@ http://192.168.1.1:5140/playlist.m3u
 - 隐藏频道源 IP、认证信息
 - 自动更新频道信息
 
-详见 [M3U 播放列表集成](./m3u-integration)。
+详见 [M3U 播放列表集成](./m3u-integration.md)。
 
 ## 内置 Web 播放器
 
@@ -161,7 +161,7 @@ http://服务器地址:端口/player
 http://192.168.1.1:5140/player
 ```
 
-访问[内置 Web 播放器](./web-player)，可以在网页端播放已配置的 M3U 频道列表。
+访问[内置 Web 播放器](./web-player.md)，可以在网页端播放已配置的 M3U 频道列表。
 
 播放器页面路径可以通过配置项 `player-page-path` 自定义。设置为 `/` 可以实现不带任何路径直接访问。
 
@@ -226,11 +226,11 @@ curl -H "Accept: image/jpeg" http://192.168.1.1:5140/rtp/239.253.64.120:5140
 curl -H "X-Request-Snapshot: 1" http://192.168.1.1:5140/rtp/239.253.64.120:5140
 ```
 
-详见 [视频快照配置](./video-snapshot)。
+详见 [视频快照配置](./video-snapshot.md)。
 
 ## 相关文档
 
-- [M3U 播放列表集成](./m3u-integration)：播放列表配置
-- [FCC 快速换台配置](./fcc-setup)：启用毫秒级换台
-- [视频快照配置](./video-snapshot)：频道预览图功能
-- [配置参数详解](./configuration)：查看完整配置选项
+- [M3U 播放列表集成](./m3u-integration.md)：播放列表配置
+- [FCC 快速换台配置](./fcc-setup.md)：启用毫秒级换台
+- [视频快照配置](./video-snapshot.md)：频道预览图功能
+- [配置参数详解](./configuration.md)：查看完整配置选项

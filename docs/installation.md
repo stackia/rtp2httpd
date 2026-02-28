@@ -6,7 +6,7 @@ rtp2httpd 支持多种安装方式，适应不同的使用场景。
 
 OpenWrt 是 rtp2httpd 的最佳运行环境。在中国大陆，通常需要先完成 IPTV 网络融合（可以搜索教程 `OpenWrt IPTV 融合`），通过 DHCP 获取到 IPTV 内网 IP，才能访问运营商的 IPTV 组播网络。
 
-详见 [快速上手](./quick-start)。
+详见 [快速上手](./quick-start.md)。
 
 ## 静态二进制文件部署
 
@@ -32,7 +32,7 @@ chmod +x rtp2httpd-X.Y.Z-x86_64
 ```
 
 > [!TIP]
-> 你可以使用这个示例文件 [rtp2httpd.conf](../rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](./configuration)。
+> 你可以使用这个示例文件 [rtp2httpd.conf](../rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](./configuration.md)。
 
 ## Docker 容器部署
 
@@ -80,7 +80,7 @@ docker run --network=host --cap-add=NET_ADMIN --ulimit memlock=-1:-1 --rm \
 ```
 
 > [!TIP]
-> 你可以使用这个示例文件 [rtp2httpd.conf](../rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](./configuration)。
+> 你可以使用这个示例文件 [rtp2httpd.conf](../rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](./configuration.md)。
 
 ## OpenWrt 编译安装
 
@@ -162,8 +162,8 @@ sudo make install
 
 ## 下一步
 
-- [快速上手](./quick-start)：OpenWrt 快速配置指南
-- [配置参数详解](./configuration)：了解所有配置选项
-- [URL 格式说明](./url-formats)：了解所有支持的 URL 格式
-- [M3U 播放列表集成](./m3u-integration)：配置播放列表
-- [FCC 快速换台配置](./fcc-setup)：启用毫秒级换台功能
+- [快速上手](./quick-start.md)：OpenWrt 快速配置指南
+- [配置参数详解](./configuration.md)：了解所有配置选项
+- [URL 格式说明](./url-formats.md)：了解所有支持的 URL 格式
+- [M3U 播放列表集成](./m3u-integration.md)：配置播放列表
+- [FCC 快速换台配置](./fcc-setup.md)：启用毫秒级换台功能

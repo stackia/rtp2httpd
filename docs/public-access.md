@@ -79,6 +79,6 @@ server {
 
 ## 相关文档
 
-- [配置参数详解](./configuration)：完整配置选项说明
-- [URL 格式说明](./url-formats)：认证令牌传递方式
-- [性能测试报告](./benchmark)：与其他方案的性能对比
+- [配置参数详解](./configuration.md)：完整配置选项说明
+- [URL 格式说明](./url-formats.md)：认证令牌传递方式
+- [性能测试报告](./benchmark.md)：与其他方案的性能对比
