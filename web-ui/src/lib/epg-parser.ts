@@ -68,7 +68,11 @@ export async function parseEPG(xmlText: string, validChannelIds?: Set<string>): 
 		bucket.push(program);
 	}
 
-	// Assuming EPG programs are already sorted by start time in the source
+	// Sort programs by start time for each channel
+	for (const programs of new Set(Object.values(epgData))) {
+		programs.sort((a, b) => a.start.getTime() - b.start.getTime());
+	}
+
 	return epgData;
 }
 
