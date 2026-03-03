@@ -43,9 +43,13 @@ function EPGViewComponent({
 		const programs = epgData[channelId];
 		if (!programs || programs.length === 0) return new Map<string, EPGProgram[]>();
 
+		const sortedPrograms = programs.toSorted(
+			(a, b) => a.start.getTime() - b.start.getTime() || a.end.getTime() - b.end.getTime(),
+		);
+
 		// Group all available programs by date (no date range filtering)
 		const grouped = new Map<string, EPGProgram[]>();
-		programs.forEach((program) => {
+		sortedPrograms.forEach((program) => {
 			const dateKey = new Date(
 				program.start.getFullYear(),
 				program.start.getMonth(),
