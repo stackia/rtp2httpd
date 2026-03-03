@@ -94,6 +94,7 @@ The following FCC (Fast Channel Change) server addresses were collected from the
   - `124.132.240.66:15970`
   - `61.156.103.83:8027` (Qingdao)
   - `119.184.120.108:8027` (Rizhao)
+  - `60.210.139.78:8027` (Weifang)
 
 ## Shanxi
 
