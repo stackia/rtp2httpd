@@ -6,5 +6,13 @@
         "cache-control": "max-age=31536000, immutable"
       }
     }
-  ]
+  ],
+  "mimeTypes": {
+    ".txt": "text/plain; charset=utf-8"
+  },
+  "responseOverrides": {
+    "404": {
+      "rewrite": "/404.html"
+    }
+  }
 }
