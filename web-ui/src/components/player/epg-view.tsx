@@ -43,7 +43,7 @@ function EPGViewComponent({
 		const programs = epgData[channelId];
 		if (!programs || programs.length === 0) return new Map<string, EPGProgram[]>();
 
-		const sortedPrograms = programs.toSorted(
+		const sortedPrograms = [...programs].sort(
 			(a, b) => a.start.getTime() - b.start.getTime() || a.end.getTime() - b.end.getTime(),
 		);
 
