@@ -258,12 +258,14 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
 
         /* Save raw headers for proxy forwarding (exclude Host, Connection,
          * Content-Length, Transfer-Encoding which are handled specially,
+         * Accept-Encoding to prevent compressed responses that break rewriting,
          * and X-Forwarded-* headers which should not be forwarded to upstream).
          * Cookie and User-Agent are filtered to remove r2h-token before forwarding. */
         if (strcasecmp(inbuf, "Host") != 0 &&
             strcasecmp(inbuf, "Connection") != 0 &&
             strcasecmp(inbuf, "Content-Length") != 0 &&
             strcasecmp(inbuf, "Transfer-Encoding") != 0 &&
+            strcasecmp(inbuf, "Accept-Encoding") != 0 &&
             strcasecmp(inbuf, "X-Forwarded-For") != 0 &&
             strcasecmp(inbuf, "X-Forwarded-Host") != 0 &&
             strcasecmp(inbuf, "X-Forwarded-Proto") != 0) {
