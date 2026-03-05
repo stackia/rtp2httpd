@@ -294,6 +294,89 @@ Reports two memory metrics for accurate measurement with fork'd processes:
 
 Both metrics are read from `/proc/[pid]/smaps_rollup` (Linux 4.14+) and aggregated across all child processes.
 
+## E2E Test Suite
+
+The `e2e/` directory contains a comprehensive end-to-end test suite (99 tests) built with **pytest**. Tests launch real rtp2httpd processes against mock servers and verify behavior through HTTP requests.
+
+### Quick Start
+
+```bash
+cd tools
+
+# Install dependencies (pytest is in the "test" optional group)
+uv sync --extra test
+
+# Run all tests
+uv run pytest e2e/ -v
+
+# Run a single test file
+uv run pytest e2e/test_m3u.py -v
+
+# Run tests matching a keyword
+uv run pytest e2e/ -k "etag" -v
+
+# Skip slow tests
+uv run pytest e2e/ -m "not slow" -v
+
+# Skip multicast tests (they require Linux)
+uv run pytest e2e/ -m "not multicast" -v
+
+# Collect / list tests without running
+uv run pytest e2e/ --co -q
+```
+
+Or use the convenience script: `e2e/run.sh [pytest args...]`
+
+> **Prerequisites:** rtp2httpd must be built first (`./configure && make`). The binary is expected at `src/rtp2httpd`. Tests are skipped automatically if the binary is missing.
+
+### Test Suites
+
+| File | Tests | Description |
+|---|---|---|
+| `test_auth.py` | 11 | r2h-token authentication (query param, cookie, User-Agent) |
+| `test_config.py` | 17 | Configuration: CLI flags, config file sections, workers, CORS, hostname validation |
+| `test_error.py` | 17 | Error handling: 404, malformed HTTP, long URLs, concurrent connections, trailing slashes |
+| `test_http_proxy.py` | 10 | HTTP reverse proxy: status passthrough, content types, M3U rewriting, query params |
+| `test_m3u.py` | 21 | M3U transformation: inline/external, URL rewriting, ETag caching, duplicate names, catchup, metadata |
+| `test_multicast.py` | 7 | RTP multicast streaming, UDPxy URL format, FEC parameter (Linux only) |
+| `test_pages.py` | 6 | Built-in pages: status, player, playlist.m3u, SSE |
+| `test_rtsp.py` | 10 | RTSP proxy: TCP interleaved & UDP transport, protocol handshake, playseek |
+
+### Architecture
+
+```
+e2e/
+├── conftest.py        # Pytest fixtures (r2h_binary, mock servers, etc.)
+├── helpers.py         # R2HProcess, MockRTSPServer(TCP/UDP), MockHTTPUpstream,
+│                      #   MulticastSender, stream_get, http_get, make_rtp_packet
+├── run.sh             # Convenience runner script
+└── test_*.py          # Test files
+```
+
+**Key helpers:**
+
+- **`R2HProcess`** — starts/stops an rtp2httpd instance with custom args or config content
+- **`MockRTSPServer`** — RTSP server using TCP interleaved transport (`$` framing)
+- **`MockRTSPServerUDP`** — RTSP server using UDP transport (sends to `client_port`)
+- **`MockHTTPUpstream`** — configurable HTTP server for proxy tests
+- **`MulticastSender`** — sends RTP packets to a multicast group on loopback
+- **`stream_get`** — HTTP/1.0 GET with short per-recv timeouts for streaming responses
+- **`make_rtp_packet`** — crafts RTP packets with MPEG-TS null packet payload
+
+### Markers
+
+| Marker | Meaning |
+|---|---|
+| `multicast` | Requires multicast on loopback (Linux only — skipped on macOS due to `IP_BOUND_IF` limitation) |
+| `rtsp` | Uses mock RTSP server |
+| `http_proxy` | Uses mock HTTP upstream |
+| `slow` | Takes longer than usual |
+
+### Platform Notes
+
+- **Linux**: All tests should pass. Multicast-on-loopback works via `IP_ADD_MEMBERSHIP`.
+- **macOS**: Multicast streaming tests are skipped (macOS `IP_BOUND_IF` prevents loopback multicast reception). RTSP TCP interleaved streaming tests are marked `xfail` (macOS kqueue does not reliably flush data to the HTTP client within the test timeout). RTSP UDP tests work.
+
 ## Fixtures
 
 - `fixtures/fec_sample.pcapng` - Sample capture with RTP and FEC packets

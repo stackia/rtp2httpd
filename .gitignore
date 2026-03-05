@@ -29,6 +29,9 @@ docs/.vitepress/cache/
 
 # python
 __pycache__/
+*.pyc
+.venv/
+.pytest_cache/
 
 # Benchmark results
 tools/benchmark_results_*.txt
