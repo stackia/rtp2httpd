@@ -4,37 +4,33 @@ This project is configured with support for unit testing using the Check framewo
 
 ## Prerequisites
 
-Make sure the Check framework is installed on your system:
+Make sure the Check framework and CMake are installed on your system:
 
 ### Ubuntu/Debian
 ```bash
-sudo apt-get install check libcheck-dev pkg-config
+sudo apt-get install cmake check libcheck-dev pkg-config
 ```
 
 ### CentOS/RHEL/Fedora
 ```bash
 # CentOS/RHEL
-sudo yum install check-devel pkgconfig
+sudo yum install cmake check-devel pkgconfig
 # or Fedora
-sudo dnf install check-devel pkgconfig
+sudo dnf install cmake check-devel pkgconfig
 ```
 
 ## Building and Running Tests
 
-1. **Configure the project** (if Check framework is available):
+1. **Configure and build the project**:
 ```bash
-./configure
+cmake -B build
+cmake --build build
 ```
 
-2. **Build and run tests**:
+2. **Run tests**:
 ```bash
-make check
+cd build && ctest
 ```
-
-This command will:
-- Compile the test programs
-- Run all tests
-- Display test results
 
 ## Adding New Tests
 
@@ -60,22 +56,11 @@ tcase_add_test(tc_headers, test_your_new_function);
 ### Creating Tests for New Modules
 
 1. Create a new test file in the `tests/` directory, e.g., `check_rtp.c`
-2. Add to `tests/Makefile.am`:
-
-```makefile
-TESTS += check_rtp
-check_PROGRAMS += check_rtp
-
-check_rtp_SOURCES = check_rtp.c $(top_srcdir)/src/rtp.c
-check_rtp_CPPFLAGS = @CHECK_CFLAGS@ -I$(top_srcdir)/src
-check_rtp_LDADD = @CHECK_LIBS@
-```
-
-3. Re-run `autoreconf -fiv` and `./configure`
+2. Add the test target to `CMakeLists.txt`
+3. Re-run `cmake -B build` to pick up the new test
 
 ## Notes
 
-- If the Check framework is unavailable, the configure script will skip test support
 - Test programs are located in the `tests/` directory
 - Test output files are generated during the build process and can be safely deleted
 

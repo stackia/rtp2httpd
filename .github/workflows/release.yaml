@@ -256,10 +256,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            autoconf \
-            automake \
+            cmake \
             build-essential \
-            pkg-config \
             wget \
             xz-utils
 
@@ -267,9 +265,6 @@ jobs:
         run: |
           RELEASE_TAG="${{ github.event.release.tag_name }}"
           echo "RELEASE_VERSION=${RELEASE_TAG#v}" >> $GITHUB_ENV
-
-      - name: Generate configure script
-        run: autoreconf -fi
 
       - name: Build static binary
         env:

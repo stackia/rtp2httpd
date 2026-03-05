@@ -3,34 +3,13 @@ src/rtp2httpd
 !openwrt-support/rtp2httpd/Makefile
 !openwrt-support/luci-app-rtp2httpd/Makefile
 *.o
-# Automake/autoconf generated files
-Makefile.in
-*.pc
-config.*
-!config.ts
-stamp-h1
-.deps
-autom4te.cache
-aclocal.m4
-compile
-configure
-configure~
-depcomp
-install-sh
-missing
-.dirstamp
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+
 .vscode/
-
-# Test framework files
-test-driver
-
-# Test generated files
-tests/check_*
-!tests/check_*.c
-tests/*.log
-tests/*.trs
-tests/test-suite.log
-*-check_*.o
 
 # clangd
 .cache/

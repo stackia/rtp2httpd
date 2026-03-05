@@ -16,7 +16,7 @@ awk -v version="$RELEASE_VERSION" -v pkg_hash="$PKG_HASH" '
   /^# Extract version from git tags/ { next }
   /^# For firmware maintainers:/ { next }
   /^# version and PKG_HASH/ { next }
-  /^# See https:\/\/github.com\/stackia\/rtp2httpd/ { next }
+  /^# See https:\/\/rtp2httpd.com/ { next }
   # Handle multi-line RELEASE_VERSION block
   /^RELEASE_VERSION:=/ {
     # Print hardcoded version instead
@@ -51,7 +51,7 @@ awk -v version="$RELEASE_VERSION" '
   /^# Extract version from git tags/ { next }
   /^# For firmware maintainers:/ { next }
   /^# version and PKG_HASH/ { next }
-  /^# See https:\/\/github.com\/stackia\/rtp2httpd/ { next }
+  /^# See https:\/\/rtp2httpd.com/ { next }
   # Handle multi-line RELEASE_VERSION block
   /^RELEASE_VERSION:=/ {
     # Print hardcoded version instead

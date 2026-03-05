@@ -22,12 +22,10 @@ PKG_MAINTAINER:=Stackie Jia <jsq2627@gmail.com>
 PKG_LICENSE:=GPL-2.0-or-later
 PKG_LICENSE_FILES:=LICENSE
 
-PKG_FIXUP:=autoreconf
+PKG_FIXUP:=cmake
 
 include $(INCLUDE_DIR)/package.mk
-
-# Export RELEASE_VERSION to autoreconf and configure
-export RELEASE_VERSION
+include $(INCLUDE_DIR)/cmake.mk
 
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
@@ -49,8 +47,8 @@ define Package/rtp2httpd/description
 	incoming RTP data to HTTP stream.
 endef
 
-CONFIGURE_ARGS += \
-	--enable-optimization=-O3
+CMAKE_OPTIONS += \
+	-DOPTIMIZATION_LEVEL=-O3
 
 define Package/rtp2httpd/conffiles
 /etc/config/rtp2httpd
@@ -62,7 +60,7 @@ define Package/rtp2httpd/install
 	$(INSTALL_CONF) ./files/rtp2httpd.conf $(1)/etc/config/rtp2httpd
 	$(INSTALL_CONF) $(PKG_BUILD_DIR)/rtp2httpd.conf $(1)/etc
 	$(INSTALL_BIN) ./files/rtp2httpd.init $(1)/etc/init.d/rtp2httpd
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/src/rtp2httpd $(1)/usr/bin
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/rtp2httpd $(1)/usr/bin
 endef
 
 $(eval $(call BuildPackage,rtp2httpd))
