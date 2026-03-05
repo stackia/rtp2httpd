@@ -29,6 +29,7 @@ struct rtp_url_components {
   fcc_type_t fcc_type;   /* FCC protocol type */
   int fcc_type_explicit; /* 1 if fcc-type was explicitly set via query param */
   uint16_t fec_port;     /* FEC multicast port (0 if not configured) */
+  char ifname[IFNAMSIZ]; /* Network interface name (from ?ifname= query param) */
 };
 
 /* Service lookup hashmap for O(1) service lookup by URL */
@@ -164,6 +165,16 @@ static int parse_rtp_url_components(char *url_part,
         if (*endptr == '\0' && port > 0 && port <= 65535) {
           components->fec_port = (uint16_t)port;
         }
+      }
+    }
+
+    /* Parse ifname parameter from query string */
+    char ifname_value[IFNAMSIZ];
+    if (http_parse_query_param(query_start, "ifname", ifname_value,
+                               sizeof(ifname_value)) == 0) {
+      if (ifname_value[0] != '\0') {
+        strncpy(components->ifname, ifname_value, IFNAMSIZ - 1);
+        components->ifname[IFNAMSIZ - 1] = '\0';
       }
     }
   }
@@ -1336,6 +1347,19 @@ service_t *service_create_from_rtp_url(const char *http_url) {
   if (fcc_res)
     freeaddrinfo(fcc_res);
 
+  /* Store interface name if specified */
+  if (components.ifname[0] != '\0') {
+    result->ifname = strdup(components.ifname);
+    if (!result->ifname) {
+      logger(LOG_ERROR, "Failed to allocate memory for interface name");
+      service_free(result);
+      return NULL;
+    }
+    logger(LOG_DEBUG, "RTP service will use interface: %s", result->ifname);
+  } else {
+    result->ifname = NULL;
+  }
+
   /* Store original URL for reference */
   result->url = strdup(http_url);
   if (!result->url) {
@@ -1466,6 +1490,13 @@ service_t *service_clone(service_t *service) {
     }
   }
 
+  if (service->ifname) {
+    cloned->ifname = strdup(service->ifname);
+    if (!cloned->ifname) {
+      goto cleanup_error;
+    }
+  }
+
   /* Clone addrinfo structures */
   if (service->addr) {
     cloned->addr = clone_addrinfo(service->addr);
@@ -1542,6 +1573,11 @@ void service_free(service_t *service) {
   if (service->user_agent) {
     free(service->user_agent);
     service->user_agent = NULL;
+  }
+
+  if (service->ifname) {
+    free(service->ifname);
+    service->ifname = NULL;
   }
 
   /* Free common fields */

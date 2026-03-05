@@ -151,7 +151,13 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr,
     return -1;
   }
 
-  upstream_if = get_upstream_interface_for_multicast();
+  /* Use per-service interface if specified, otherwise use global config */
+  if (service->ifname && service->ifname[0] != '\0') {
+    upstream_if = service->ifname;
+  } else {
+    upstream_if = get_upstream_interface_for_multicast();
+  }
+
   if (upstream_if && upstream_if[0] != '\0') {
     gr->gr_interface = if_nametoindex(upstream_if);
   }
@@ -240,8 +246,12 @@ static int join_mcast_group(service_t *service, int is_fec) {
            strerror(errno));
   }
 
-  /* Determine which interface to use */
-  upstream_if = get_upstream_interface_for_multicast();
+  /* Use per-service interface if specified, otherwise use global config */
+  if (service->ifname && service->ifname[0] != '\0') {
+    upstream_if = service->ifname;
+  } else {
+    upstream_if = get_upstream_interface_for_multicast();
+  }
   bind_to_upstream_interface(sock, upstream_if);
 
   /* Prepare bind address with appropriate port */

@@ -63,6 +63,7 @@ typedef struct service_s {
   int seek_offset_seconds; /* Additional offset in seconds from r2h-seek-offset
                               parameter */
   char *user_agent;        /* User-Agent header for timezone detection */
+  char *ifname;            /* Network interface name for multicast (from ?ifname= query param) */
   struct service_s *next;
 } service_t;
 
