@@ -29,7 +29,8 @@ struct rtp_url_components {
   fcc_type_t fcc_type;   /* FCC protocol type */
   int fcc_type_explicit; /* 1 if fcc-type was explicitly set via query param */
   uint16_t fec_port;     /* FEC multicast port (0 if not configured) */
-  char ifname[IFNAMSIZ]; /* Network interface name (from ?ifname= query param) */
+  char ifname[IFNAMSIZ]; /* Network interface name (from ?r2h-ifname= query param) */
+  char ifname_fcc[IFNAMSIZ]; /* Network interface name for FCC (from ?r2h-ifname-fcc= query param) */
 };
 
 /* Service lookup hashmap for O(1) service lookup by URL */
@@ -168,13 +169,23 @@ static int parse_rtp_url_components(char *url_part,
       }
     }
 
-    /* Parse ifname parameter from query string */
+    /* Parse r2h-ifname parameter from query string */
     char ifname_value[IFNAMSIZ];
-    if (http_parse_query_param(query_start, "ifname", ifname_value,
+    if (http_parse_query_param(query_start, "r2h-ifname", ifname_value,
                                sizeof(ifname_value)) == 0) {
       if (ifname_value[0] != '\0') {
         strncpy(components->ifname, ifname_value, IFNAMSIZ - 1);
         components->ifname[IFNAMSIZ - 1] = '\0';
+      }
+    }
+
+    /* Parse r2h-ifname-fcc parameter from query string */
+    char ifname_fcc_value[IFNAMSIZ];
+    if (http_parse_query_param(query_start, "r2h-ifname-fcc", ifname_fcc_value,
+                               sizeof(ifname_fcc_value)) == 0) {
+      if (ifname_fcc_value[0] != '\0') {
+        strncpy(components->ifname_fcc, ifname_fcc_value, IFNAMSIZ - 1);
+        components->ifname_fcc[IFNAMSIZ - 1] = '\0';
       }
     }
   }
@@ -788,9 +799,27 @@ service_t *service_create_from_http_url(const char *http_url) {
   /* Extract seek parameters from HTTP URL (same as RTSP) */
   char *query_start = strchr(result->http_url, '?');
   if (query_start) {
+    /* Extract r2h-ifname parameter */
+    char ifname_value[IFNAMSIZ] = {0};
+    http_parse_query_param(query_start + 1, "r2h-ifname", ifname_value,
+                           sizeof(ifname_value));
+
     service_extract_seek_params(query_start, &result->seek_param_name,
                                 &result->seek_param_value,
                                 &result->seek_offset_seconds);
+
+    /* Store interface name if specified */
+    if (ifname_value[0] != '\0') {
+      result->ifname = strdup(ifname_value);
+      if (!result->ifname) {
+        logger(LOG_ERROR, "Failed to allocate memory for interface name");
+        free(result->url);
+        free(result->http_url);
+        free(result);
+        return NULL;
+      }
+      logger(LOG_DEBUG, "HTTP proxy service will use interface: %s", result->ifname);
+    }
   }
 
   logger(LOG_DEBUG, "Created HTTP proxy service: %s -> %s", http_url,
@@ -845,6 +874,7 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   char *seek_param_name = NULL;
   char *seek_param_value = NULL;
   int seek_offset_seconds = 0;
+  char ifname_value[IFNAMSIZ] = {0};
 
   /* Validate input */
   if (!http_url || strlen(http_url) >= sizeof(working_url)) {
@@ -876,6 +906,10 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   /* Extract seek parameters from query string (modifies url_part in-place) */
   query_start = strchr(url_part, '?');
   if (query_start) {
+    /* Extract r2h-ifname parameter before processing seek params */
+    http_parse_query_param(query_start + 1, "r2h-ifname", ifname_value,
+                           sizeof(ifname_value));
+
     if (service_extract_seek_params(query_start, &seek_param_name,
                                     &seek_param_value,
                                     &seek_offset_seconds) < 0) {
@@ -911,6 +945,18 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   result->seek_param_value = seek_param_value;
   seek_param_value = NULL; /* Transfer ownership */
   result->seek_offset_seconds = seek_offset_seconds;
+
+  /* Store interface name if specified */
+  if (ifname_value[0] != '\0') {
+    result->ifname = strdup(ifname_value);
+    if (!result->ifname) {
+      logger(LOG_ERROR, "Failed to allocate memory for interface name");
+      goto cleanup;
+    }
+    logger(LOG_DEBUG, "RTSP service will use interface: %s", result->ifname);
+  } else {
+    result->ifname = NULL;
+  }
 
   result->url = strdup(http_url);
   if (!result->url) {
@@ -1360,6 +1406,19 @@ service_t *service_create_from_rtp_url(const char *http_url) {
     result->ifname = NULL;
   }
 
+  /* Store FCC interface name if specified */
+  if (components.ifname_fcc[0] != '\0') {
+    result->ifname_fcc = strdup(components.ifname_fcc);
+    if (!result->ifname_fcc) {
+      logger(LOG_ERROR, "Failed to allocate memory for FCC interface name");
+      service_free(result);
+      return NULL;
+    }
+    logger(LOG_DEBUG, "RTP service will use FCC interface: %s", result->ifname_fcc);
+  } else {
+    result->ifname_fcc = NULL;
+  }
+
   /* Store original URL for reference */
   result->url = strdup(http_url);
   if (!result->url) {
@@ -1497,6 +1556,13 @@ service_t *service_clone(service_t *service) {
     }
   }
 
+  if (service->ifname_fcc) {
+    cloned->ifname_fcc = strdup(service->ifname_fcc);
+    if (!cloned->ifname_fcc) {
+      goto cleanup_error;
+    }
+  }
+
   /* Clone addrinfo structures */
   if (service->addr) {
     cloned->addr = clone_addrinfo(service->addr);
@@ -1578,6 +1644,11 @@ void service_free(service_t *service) {
   if (service->ifname) {
     free(service->ifname);
     service->ifname = NULL;
+  }
+
+  if (service->ifname_fcc) {
+    free(service->ifname_fcc);
+    service->ifname_fcc = NULL;
   }
 
   /* Free common fields */

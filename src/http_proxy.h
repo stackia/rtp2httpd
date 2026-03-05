@@ -4,8 +4,9 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-/* Forward declaration */
+/* Forward declarations */
 struct connection_s;
+typedef struct service_s service_t;
 
 /* ========== HTTP PROXY BUFFER SIZE CONFIGURATION ========== */
 
@@ -163,9 +164,10 @@ void http_proxy_set_request_headers(http_proxy_session_t *session,
 /**
  * Connect to upstream HTTP server (non-blocking)
  * @param session HTTP proxy session (must have epoll_fd set)
+ * @param service Service structure containing interface configuration (can be NULL)
  * @return 0 on success (connection in progress), -1 on error
  */
-int http_proxy_connect(http_proxy_session_t *session);
+int http_proxy_connect(http_proxy_session_t *session, service_t *service);
 
 /**
  * Handle socket events (readable/writable) for async I/O state machine

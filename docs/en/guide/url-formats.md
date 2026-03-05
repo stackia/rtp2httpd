@@ -12,7 +12,7 @@ When `r2h-token` (HTTP request authentication token) is configured, all URLs mus
 ## Multicast RTP to HTTP Unicast Stream
 
 ```url
-http://server:port/rtp/multicast_address:port[?fcc=FCC_server:port][&fcc-type=protocol_type][&fec=FEC_port][&ifname=network_interface]
+http://server:port/rtp/multicast_address:port[?fcc=FCC_server:port][&fcc-type=protocol_type][&fec=FEC_port][&r2h-ifname=network_interface][&r2h-ifname-fcc=fcc_network_interface]
 ```
 
 **Examples**:
@@ -22,7 +22,8 @@ http://192.168.1.1:5140/rtp/239.253.64.120:5140
 http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970
 http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:8027&fcc-type=huawei
 http://192.168.1.1:5140/rtp/239.81.0.195:4056?fec=4055
-http://192.168.1.1:5140/rtp/239.253.64.120:5140?ifname=eth1
+http://192.168.1.1:5140/rtp/239.253.64.120:5140?r2h-ifname=eth1
+http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970&r2h-ifname=eth0&r2h-ifname-fcc=eth1
 ```
 
 ### Parameters
@@ -34,7 +35,8 @@ http://192.168.1.1:5140/rtp/239.253.64.120:5140?ifname=eth1
   - `telecom`: Telecom/ZTE/Fiberhome FCC protocol (default)
   - `huawei`: Huawei FCC protocol
 - **fec** (optional): FEC (Forward Error Correction) port number, used to receive FEC redundant packets for packet loss recovery
-- **ifname** (optional): Specify the network interface name to receive multicast streams (e.g., `eth0`, `eth1`). Takes priority over the global `upstream-interface-multicast` configuration
+- **r2h-ifname** (optional): Specify the network interface name to receive multicast streams (e.g., `eth0`, `eth1`). Takes priority over the global `upstream-interface-multicast` configuration
+- **r2h-ifname-fcc** (optional): Specify the network interface name for FCC. Only effective when using FCC, takes priority over the global `upstream-interface-fcc` configuration
 
 ### Use Cases
 
@@ -42,7 +44,8 @@ http://192.168.1.1:5140/rtp/239.253.64.120:5140?ifname=eth1
 - Share IPTV streams across multiple devices on LAN
 - Enable millisecond-level channel switching with FCC
 - Improve playback stability with FEC packet loss recovery
-- Use the `ifname` parameter to route different channels through different network interfaces (suitable for multi-NIC environments, such as receiving multicast streams from different operators on different interfaces)
+- Use the `r2h-ifname` parameter to route different channels through different network interfaces (suitable for multi-NIC environments, such as receiving multicast streams from different operators on different interfaces)
+- Use the `r2h-ifname-fcc` parameter to specify a separate network interface for FCC (separate multicast reception from FCC communication in multi-NIC environments)
 
 ## RTSP to HTTP
 
@@ -64,7 +67,14 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000GM
 
 # Custom time-shift parameter name + time offset
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r2h-seek-name=seek&r2h-seek-offset=3600
+
+# Specify network interface
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-ifname=eth1
 ```
+
+### Parameters
+
+- **r2h-ifname** (optional): Specify the network interface name for RTSP connections. Takes priority over the global `upstream-interface-rtsp` configuration
 
 ### Use Cases
 
@@ -97,6 +107,9 @@ http://192.168.1.1:5140/http/upstream.example.com:8080/live/stream.m3u8
 
 # Proxy HTTP request (port omitted, defaults to 80)
 http://192.168.1.1:5140/http/api.example.com/video?auth=xxx&quality=hd
+
+# Specify network interface
+http://192.168.1.1:5140/http/upstream.example.com:8080/live/stream.m3u8?r2h-ifname=eth1
 ```
 
 ### Parameters
@@ -104,6 +117,7 @@ http://192.168.1.1:5140/http/api.example.com/video?auth=xxx&quality=hd
 - **upstream_server**: Target HTTP server address
 - **port** (optional): Target server port, defaults to 80
 - **path**: Request path, including query parameters
+- **r2h-ifname** (optional): Specify the network interface name for HTTP connections. Takes priority over the global `upstream-interface-http` configuration
 
 ### Use Cases
 

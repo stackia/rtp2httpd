@@ -250,7 +250,7 @@ void http_proxy_set_request_headers(http_proxy_session_t *session,
   }
 }
 
-int http_proxy_connect(http_proxy_session_t *session) {
+int http_proxy_connect(http_proxy_session_t *session, service_t *service) {
   struct sockaddr_in server_addr;
   struct hostent *he;
   int connect_result;
@@ -294,7 +294,12 @@ int http_proxy_connect(http_proxy_session_t *session) {
   }
 
   /* Bind to upstream interface if configured */
-  upstream_if = get_upstream_interface_for_http();
+  /* Use per-service interface if specified, otherwise use global config */
+  if (service && service->ifname && service->ifname[0] != '\0') {
+    upstream_if = service->ifname;
+  } else {
+    upstream_if = get_upstream_interface_for_http();
+  }
   bind_to_upstream_interface(session->socket, upstream_if);
 
   /* Connect to server (non-blocking) */

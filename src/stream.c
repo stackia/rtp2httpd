@@ -234,7 +234,7 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
                                    conn->http_req.x_forwarded_proto);
 
     /* Initiate connection */
-    if (http_proxy_connect(&ctx->http_proxy) < 0) {
+    if (http_proxy_connect(&ctx->http_proxy, ctx->service) < 0) {
       logger(LOG_ERROR, "HTTP Proxy: Failed to initiate connection");
       return -1;
     }

@@ -366,7 +366,12 @@ int fcc_initialize_and_request(stream_context_t *ctx) {
              config.udp_rcvbuf_size, strerror(errno));
     }
 
-    upstream_if = get_upstream_interface_for_fcc();
+    /* Use per-service FCC interface if specified, otherwise use global config */
+    if (service->ifname_fcc && service->ifname_fcc[0] != '\0') {
+      upstream_if = service->ifname_fcc;
+    } else {
+      upstream_if = get_upstream_interface_for_fcc();
+    }
     bind_to_upstream_interface(fcc->fcc_sock, upstream_if);
 
     /* Bind to configured or ephemeral port */
