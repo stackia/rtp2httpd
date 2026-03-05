@@ -783,8 +783,8 @@ int rtsp_connect(rtsp_session_t *session) {
   }
 
   /* Use per-service interface if specified, otherwise use global config */
-  if (ctx->service->ifname && ctx->service->ifname[0] != '\0') {
-    upstream_if = ctx->service->ifname;
+  if (session->service && session->service->ifname && session->service->ifname[0] != '\0') {
+    upstream_if = session->service->ifname;
   } else {
     upstream_if = get_upstream_interface_for_rtsp();
   }
@@ -2455,8 +2455,8 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
   logger(LOG_DEBUG, "RTSP: Setting up UDP sockets");
 
   /* Use per-service interface if specified, otherwise use global config */
-  if (ctx->service->ifname && ctx->service->ifname[0] != '\0') {
-    upstream_if = ctx->service->ifname;
+  if (session->service && session->service->ifname && session->service->ifname[0] != '\0') {
+    upstream_if = session->service->ifname;
   } else {
     upstream_if = get_upstream_interface_for_rtsp();
   }

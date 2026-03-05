@@ -268,6 +268,7 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
       ctx->rtsp.status_index = status_index;
       ctx->rtsp.epoll_fd = ctx->epoll_fd;
       ctx->rtsp.conn = conn;
+      ctx->rtsp.service = service;
       if (!service->rtsp_url) {
         logger(LOG_ERROR, "RTSP URL not found in service configuration");
         return -1;

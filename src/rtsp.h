@@ -6,6 +6,9 @@
 
 #include "stun.h"
 
+/* Forward declarations */
+typedef struct service_s service_t;
+
 #define RTSP_DISABLE_TCP_TRANSPORT 0 /* To debug UDP transport, set to 1 */
 
 /* ========== RTSP BUFFER SIZE CONFIGURATION ========== */
@@ -111,6 +114,7 @@ typedef struct {
   int socket;                /* TCP socket to RTSP server */
   int epoll_fd;              /* Epoll file descriptor for socket registration */
   struct connection_s *conn; /* Connection pointer for fdmap registration */
+  service_t *service;        /* Service pointer for accessing per-service configuration */
   rtsp_state_t state;        /* Current RTSP state */
   int status_index; /* Index in status_shared->clients array for state updates
                      */
