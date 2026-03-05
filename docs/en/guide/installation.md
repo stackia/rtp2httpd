@@ -130,7 +130,7 @@ Suitable for scenarios requiring custom builds or development debugging.
 
 ```bash
 # Ubuntu/Debian
-sudo apt-get install build-essential autoconf automake pkg-config curl
+sudo apt-get install build-essential cmake pkg-config curl
 
 # Install Node.js LTS (for building Web UI)
 curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
@@ -149,15 +149,12 @@ cd rtp2httpd
 pnpm install --frozen-lockfile
 pnpm run web-ui:build
 
-# Generate build scripts
-autoreconf -fi
-
 # Configure and build
-./configure --enable-optimization=-O3
-make
+cmake -B build -DOPTIMIZATION_LEVEL=-O3
+cmake --build build -j$(nproc)
 
 # Install
-sudo make install
+sudo cmake --install build
 ```
 
 ## Next Steps

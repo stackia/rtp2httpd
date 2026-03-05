@@ -77,9 +77,12 @@ add_executable(rtp2httpd ${COMMON_SOURCES})
 
 target_include_directories(rtp2httpd PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# ── Install directories (needed before compile definitions) ────────
+include(GNUInstallDirs)
+
 # ── Compile definitions ────────────────────────────────────────────
 target_compile_definitions(rtp2httpd PRIVATE
-  SYSCONFDIR="${CMAKE_INSTALL_PREFIX}/etc"
+  SYSCONFDIR="${CMAKE_INSTALL_FULL_SYSCONFDIR}"
   _DEFAULT_SOURCE
   PACKAGE="${PROJECT_NAME}"
   PACKAGE_VERSION="${PROJECT_VERSION_STRING}"
@@ -148,8 +151,6 @@ if(PLATFORM_LINUX)
 endif()
 
 # ── Installation ────────────────────────────────────────────────────
-include(GNUInstallDirs)
-
 install(TARGETS rtp2httpd
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

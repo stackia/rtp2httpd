@@ -7,9 +7,7 @@ ARG RELEASE_VERSION
 
 # Install build dependencies
 RUN apk add --no-cache \
-  autoconf \
-  automake \
-  pkgconfig \
+  cmake \
   make \
   gcc \
   musl-dev \
@@ -22,15 +20,18 @@ COPY . .
 # Build natively on target platform (using QEMU when cross-building)
 RUN echo "Building for $TARGETPLATFORM" && \
   echo "RELEASE_VERSION=$RELEASE_VERSION" && \
-  RELEASE_VERSION=${RELEASE_VERSION} autoreconf -fi && \
-  ./configure --enable-optimization=-O3 && \
-  make
+  RELEASE_VERSION="${RELEASE_VERSION}" cmake -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DOPTIMIZATION_LEVEL=-O3 \
+    -DCMAKE_INSTALL_PREFIX=/usr/local \
+    -DCMAKE_INSTALL_SYSCONFDIR=/usr/local/etc && \
+  cmake --build build -j$(nproc)
 
 # Runtime stage
 FROM alpine:3.22
 
 # Copy the built binary and config
-COPY --from=builder /workdir/src/rtp2httpd /usr/local/bin/
+COPY --from=builder /workdir/build/rtp2httpd /usr/local/bin/
 COPY --from=builder /workdir/rtp2httpd.conf /usr/local/etc/
 
 # Expose the default port

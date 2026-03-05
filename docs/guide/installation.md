@@ -130,7 +130,7 @@ cp -r openwrt-support/* /path/to/your/feeds/
 
 ```bash
 # Ubuntu/Debian
-sudo apt-get install build-essential autoconf automake pkg-config curl
+sudo apt-get install build-essential cmake pkg-config curl
 
 # 安装 Node.js LTS（用于构建 Web UI）
 curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
@@ -149,15 +149,12 @@ cd rtp2httpd
 pnpm install --frozen-lockfile
 pnpm run web-ui:build
 
-# 生成构建脚本
-autoreconf -fi
-
 # 配置和编译
-./configure --enable-optimization=-O3
-make
+cmake -B build -DOPTIMIZATION_LEVEL=-O3
+cmake --build build -j$(nproc)
 
 # 安装
-sudo make install
+sudo cmake --install build
 ```
 
 ## 下一步
