@@ -12,7 +12,7 @@ When `r2h-token` (HTTP request authentication token) is configured, all URLs mus
 ## Multicast RTP to HTTP Unicast Stream
 
 ```url
-http://server:port/rtp/multicast_address:port[?fcc=FCC_server:port][&fcc-type=protocol_type][&fec=FEC_port]
+http://server:port/rtp/multicast_address:port[?fcc=FCC_server:port][&fcc-type=protocol_type][&fec=FEC_port][&ifname=network_interface]
 ```
 
 **Examples**:
@@ -22,6 +22,7 @@ http://192.168.1.1:5140/rtp/239.253.64.120:5140
 http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970
 http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:8027&fcc-type=huawei
 http://192.168.1.1:5140/rtp/239.81.0.195:4056?fec=4055
+http://192.168.1.1:5140/rtp/239.253.64.120:5140?ifname=eth1
 ```
 
 ### Parameters
@@ -33,6 +34,7 @@ http://192.168.1.1:5140/rtp/239.81.0.195:4056?fec=4055
   - `telecom`: Telecom/ZTE/Fiberhome FCC protocol (default)
   - `huawei`: Huawei FCC protocol
 - **fec** (optional): FEC (Forward Error Correction) port number, used to receive FEC redundant packets for packet loss recovery
+- **ifname** (optional): Specify the network interface name to receive multicast streams (e.g., `eth0`, `eth1`). Takes priority over the global `upstream-interface-multicast` configuration
 
 ### Use Cases
 
@@ -40,6 +42,7 @@ http://192.168.1.1:5140/rtp/239.81.0.195:4056?fec=4055
 - Share IPTV streams across multiple devices on LAN
 - Enable millisecond-level channel switching with FCC
 - Improve playback stability with FEC packet loss recovery
+- Use the `ifname` parameter to route different channels through different network interfaces (suitable for multi-NIC environments, such as receiving multicast streams from different operators on different interfaces)
 
 ## RTSP to HTTP
 
