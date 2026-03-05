@@ -2,6 +2,7 @@
 #include "configuration.h"
 #include "http.h"
 #include "m3u.h"
+#include "platform_compat.h"
 #include "rtp2httpd.h"
 #include "status.h"
 #include "supervisor.h"
@@ -14,7 +15,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <time.h>
 
@@ -128,24 +128,9 @@ int logger(loglevel_t level, const char *format, ...) {
 
 void bind_to_upstream_interface(int sock, const char *ifname) {
   if (ifname && ifname[0] != '\0') {
-    struct ifreq ifr;
-    memset(&ifr, 0, sizeof(struct ifreq));
-    strncpy(ifr.ifr_name, ifname, IFNAMSIZ - 1);
-
-    /* Get the latest interface index dynamically to handle interface restarts
-     * (e.g., PPPoE reconnection) */
-    unsigned int ifindex = if_nametoindex(ifr.ifr_name);
-    if (ifindex > 0) {
-      ifr.ifr_ifindex = (int)ifindex;
-    } else {
-      logger(LOG_WARN, "Failed to get interface index for %s: %s", ifr.ifr_name,
+    if (platform_bind_to_device(sock, ifname) < 0) {
+      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s", ifname,
              strerror(errno));
-    }
-
-    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, &ifr,
-                   sizeof(struct ifreq)) < 0) {
-      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s",
-             ifr.ifr_name, strerror(errno));
     }
   }
 }

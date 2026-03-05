@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/prctl.h>
+#include "platform_compat.h"
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -122,7 +122,7 @@ static int spawn_worker(int worker_idx) {
     /* Child process: become a worker */
 
     /* Ensure child dies when parent (supervisor) exits */
-    prctl(PR_SET_PDEATHSIG, SIGTERM);
+    platform_set_parent_death_signal(SIGTERM);
 
     /* Check if parent already exited (race condition protection) */
     if (getppid() != supervisor_pid) {

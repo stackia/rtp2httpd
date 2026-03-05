@@ -2,6 +2,8 @@
 #include "configuration.h"
 #include "connection.h"
 #include "http.h"
+#include "platform_compat.h"
+#include "poller.h"
 #include "service.h"
 #include "md5.h"
 #include "multicast.h"
@@ -18,7 +20,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -771,8 +772,9 @@ int rtsp_connect(rtsp_session_t *session) {
     logger(LOG_ERROR, "RTSP: Failed to create socket: %s", strerror(errno));
     return -1;
   }
+  platform_set_nosigpipe(session->socket);
 
-  /* Set socket to non-blocking mode for epoll */
+  /* Set socket to non-blocking mode for poller */
   if (connection_set_nonblocking(session->socket) < 0) {
     logger(LOG_ERROR, "RTSP: Failed to set socket non-blocking: %s",
            strerror(errno));
@@ -799,16 +801,12 @@ int rtsp_connect(rtsp_session_t *session) {
       logger(LOG_DEBUG, "RTSP: Connection to %s:%d in progress (async)",
              session->server_host, session->server_port);
 
-      /* Register socket with epoll for EPOLLOUT to detect connection completion
+      /* Register socket with poller for writable to detect connection completion
        */
       if (session->epoll_fd >= 0) {
-        struct epoll_event ev;
-        ev.events = EPOLLOUT | EPOLLIN | EPOLLERR |
-                    EPOLLHUP; /* Wait for writable (connected) or error */
-        ev.data.fd = session->socket;
-        if (epoll_ctl(session->epoll_fd, EPOLL_CTL_ADD, session->socket, &ev) <
-            0) {
-          logger(LOG_ERROR, "RTSP: Failed to add socket to epoll: %s",
+        if (poller_add(session->epoll_fd, session->socket, POLLER_OUT | POLLER_IN | POLLER_ERR |
+                    POLLER_HUP) < 0) {
+          logger(LOG_ERROR, "RTSP: Failed to add socket to poller: %s",
                  strerror(errno));
           close(session->socket);
           session->socket = -1;
@@ -816,7 +814,7 @@ int rtsp_connect(rtsp_session_t *session) {
         }
         fdmap_set(session->socket, session->conn);
         logger(LOG_DEBUG,
-               "RTSP: Socket registered with epoll for connection completion");
+               "RTSP: Socket registered with poller for connection completion");
       }
 
       /* Set state to CONNECTING - connection will complete asynchronously */
@@ -837,21 +835,18 @@ int rtsp_connect(rtsp_session_t *session) {
   logger(LOG_DEBUG, "RTSP: Connected immediately to %s:%d",
          session->server_host, session->server_port);
 
-  /* Register socket with epoll for read events */
+  /* Register socket with poller for read events */
   if (session->epoll_fd >= 0) {
-    struct epoll_event ev;
-    ev.events = EPOLLIN | EPOLLHUP | EPOLLERR |
-                EPOLLRDHUP; /* Monitor read and error events */
-    ev.data.fd = session->socket;
-    if (epoll_ctl(session->epoll_fd, EPOLL_CTL_ADD, session->socket, &ev) < 0) {
-      logger(LOG_ERROR, "RTSP: Failed to add socket to epoll: %s",
+    if (poller_add(session->epoll_fd, session->socket, POLLER_IN | POLLER_HUP | POLLER_ERR |
+                POLLER_RDHUP) < 0) {
+      logger(LOG_ERROR, "RTSP: Failed to add socket to poller: %s",
              strerror(errno));
       close(session->socket);
       session->socket = -1;
       return -1;
     }
     fdmap_set(session->socket, session->conn);
-    logger(LOG_DEBUG, "RTSP: Socket registered with epoll");
+    logger(LOG_DEBUG, "RTSP: Socket registered with poller");
   }
 
   rtsp_session_set_state(session, RTSP_STATE_CONNECTED);
@@ -862,8 +857,8 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
   int result;
 
   /* Check for connection errors or hangup */
-  if (events & (EPOLLHUP | EPOLLERR | EPOLLRDHUP)) {
-    if (events & EPOLLERR) {
+  if (events & (POLLER_HUP | POLLER_ERR | POLLER_RDHUP)) {
+    if (events & POLLER_ERR) {
       int sock_error = 0;
       socklen_t error_len = sizeof(sock_error);
       if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error,
@@ -873,7 +868,7 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
       } else {
         logger(LOG_ERROR, "RTSP: Socket error event received");
       }
-    } else if (events & (EPOLLHUP | EPOLLRDHUP)) {
+    } else if (events & (POLLER_HUP | POLLER_RDHUP)) {
       logger(LOG_INFO, "RTSP: Server closed connection");
     }
 
@@ -896,7 +891,7 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
         session->conn->state = CONN_CLOSING;
         connection_epoll_update_events(
             session->conn->epfd, session->conn->fd,
-            EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+            POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
       }
       return 0;
     }
@@ -934,15 +929,11 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
     logger(LOG_DEBUG, "RTSP: Connection to %s:%d completed successfully",
            session->server_host, session->server_port);
 
-    /* Update epoll to monitor both read and write */
+    /* Update poller to monitor both read and write */
     if (session->epoll_fd >= 0) {
-      struct epoll_event ev;
-      ev.events = EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR |
-                  EPOLLRDHUP; /* Monitor I/O and errors */
-      ev.data.fd = session->socket;
-      if (epoll_ctl(session->epoll_fd, EPOLL_CTL_MOD, session->socket, &ev) <
-          0) {
-        logger(LOG_ERROR, "RTSP: Failed to modify socket epoll events: %s",
+      if (poller_mod(session->epoll_fd, session->socket, POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR |
+                  POLLER_RDHUP) < 0) {
+        logger(LOG_ERROR, "RTSP: Failed to modify socket poller events: %s",
                strerror(errno));
         rtsp_session_set_state(session, RTSP_STATE_ERROR);
         return -1;
@@ -970,11 +961,11 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
       rtsp_session_set_state(session, RTSP_STATE_ERROR);
       return -1;
     }
-    /* Now pending_request is ready, will be sent when EPOLLOUT fires */
+    /* Now pending_request is ready, will be sent when POLLER_OUT fires */
   }
 
   /* Handle writable socket - try to send pending data */
-  if (events & EPOLLOUT) {
+  if (events & POLLER_OUT) {
     if (session->pending_request_len > 0 &&
         session->pending_request_sent < session->pending_request_len) {
       result = rtsp_try_send_pending(session);
@@ -985,19 +976,15 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
       }
 
       /* If send completed, switch to waiting for response and stop monitoring
-       * EPOLLOUT */
+       * POLLER_OUT */
       if (session->pending_request_sent >= session->pending_request_len) {
         session->awaiting_response = 1;
 
-        /* Modify epoll to only monitor EPOLLIN to avoid busy loop */
+        /* Modify poller to only monitor POLLER_IN to avoid busy loop */
         if (session->epoll_fd >= 0) {
-          struct epoll_event ev;
-          ev.events = EPOLLIN | EPOLLHUP | EPOLLERR |
-                      EPOLLRDHUP; /* Wait for response and errors */
-          ev.data.fd = session->socket;
-          if (epoll_ctl(session->epoll_fd, EPOLL_CTL_MOD, session->socket,
-                        &ev) < 0) {
-            logger(LOG_ERROR, "RTSP: Failed to modify epoll events: %s",
+          if (poller_mod(session->epoll_fd, session->socket, POLLER_IN | POLLER_HUP | POLLER_ERR |
+                      POLLER_RDHUP) < 0) {
+            logger(LOG_ERROR, "RTSP: Failed to modify poller events: %s",
                    strerror(errno));
             rtsp_session_set_state(session, RTSP_STATE_ERROR);
             return -1;
@@ -1010,7 +997,7 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
   }
 
   /* Handle readable socket - try to receive response */
-  if (events & EPOLLIN) {
+  if (events & POLLER_IN) {
     if (session->awaiting_response) {
       int response_result = rtsp_try_receive_response(session);
       if (response_result < 0) {
@@ -1021,14 +1008,10 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
         return -1;
       }
 
-      /* Re-enable EPOLLOUT for next request */
+      /* Re-enable POLLER_OUT for next request */
       if (response_result == RTSP_RESPONSE_ADVANCE && session->epoll_fd >= 0) {
-        struct epoll_event ev;
-        ev.events = EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR | EPOLLRDHUP;
-        ev.data.fd = session->socket;
-        if (epoll_ctl(session->epoll_fd, EPOLL_CTL_MOD, session->socket, &ev) <
-            0) {
-          logger(LOG_ERROR, "RTSP: Failed to modify epoll events: %s",
+        if (poller_mod(session->epoll_fd, session->socket, POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
+          logger(LOG_ERROR, "RTSP: Failed to modify poller events: %s",
                  strerror(errno));
           rtsp_session_set_state(session, RTSP_STATE_ERROR);
           return -1;
@@ -1083,7 +1066,7 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
           session->conn->state = CONN_CLOSING;
           connection_epoll_update_events(
               session->conn->epfd, session->conn->fd,
-              EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+              POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
         }
         return 0;
       }
@@ -1093,7 +1076,7 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
 
   /* Only advance state machine on initial connection or after response received
    */
-  /* For SENDING_* states, just wait for EPOLLOUT to complete the send */
+  /* For SENDING_* states, just wait for POLLER_OUT to complete the send */
   return 0;
 }
 
@@ -1208,11 +1191,8 @@ int rtsp_send_keepalive(rtsp_session_t *session) {
   session->keepalive_pending = 1;
 
   if (session->epoll_fd >= 0) {
-    struct epoll_event ev;
-    ev.events = EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR | EPOLLRDHUP;
-    ev.data.fd = session->socket;
-    if (epoll_ctl(session->epoll_fd, EPOLL_CTL_MOD, session->socket, &ev) < 0) {
-      logger(LOG_ERROR, "RTSP: Failed to enable EPOLLOUT for %s keepalive: %s",
+    if (poller_mod(session->epoll_fd, session->socket, POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
+      logger(LOG_ERROR, "RTSP: Failed to enable POLLER_OUT for %s keepalive: %s",
              method, strerror(errno));
       session->pending_request_len = 0;
       session->pending_request_sent = 0;
@@ -1295,7 +1275,7 @@ static int rtsp_try_send_pending(rtsp_session_t *session) {
 
 /**
  * Try to receive RTSP response (non-blocking)
- * Returns: 0 = incomplete/complete, -1 = error, 1 = need EPOLLOUT for next
+ * Returns: 0 = incomplete/complete, -1 = error, 1 = need POLLER_OUT for next
  * request
  */
 static int rtsp_try_receive_response(rtsp_session_t *session) {
@@ -2025,7 +2005,7 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
  * Used when TEARDOWN cannot be sent or after TEARDOWN completes
  */
 static void rtsp_force_cleanup(rtsp_session_t *session) {
-  /* Close and remove RTSP control socket from epoll */
+  /* Close and remove RTSP control socket from poller */
   if (session->socket >= 0) {
     worker_cleanup_socket_from_epoll(session->epoll_fd, session->socket);
     session->socket = -1;
@@ -2135,12 +2115,8 @@ static int rtsp_initiate_teardown(rtsp_session_t *session) {
              "RTSP: TEARDOWN request prepared, will send asynchronously");
 
       if (session->epoll_fd >= 0) {
-        struct epoll_event ev;
-        ev.events = EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR | EPOLLRDHUP;
-        ev.data.fd = session->socket;
-        if (epoll_ctl(session->epoll_fd, EPOLL_CTL_MOD, session->socket, &ev) <
-            0) {
-          logger(LOG_ERROR, "RTSP: Failed to modify socket epoll events: %s",
+        if (poller_mod(session->epoll_fd, session->socket, POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
+          logger(LOG_ERROR, "RTSP: Failed to modify socket poller events: %s",
                  strerror(errno));
           rtsp_session_set_state(session, RTSP_STATE_ERROR);
           return -1;
@@ -2488,6 +2464,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
              strerror(errno));
       return -1;
     }
+    platform_set_nosigpipe(rtp_socket);
 
     if (connection_set_nonblocking(rtp_socket) < 0) {
       logger(LOG_ERROR, "RTSP: Failed to set RTP socket non-blocking: %s",
@@ -2525,6 +2502,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
       close(rtp_socket);
       return -1;
     }
+    platform_set_nosigpipe(rtcp_socket);
 
     if (connection_set_nonblocking(rtcp_socket) < 0) {
       logger(LOG_ERROR, "RTSP: Failed to set RTCP socket non-blocking: %s",
@@ -2575,13 +2553,9 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
   session->local_rtcp_port = selected_rtp_port + 1;
 
   if (session->epoll_fd >= 0) {
-    struct epoll_event ev;
-
-    ev.events = EPOLLIN | EPOLLHUP | EPOLLERR;
-    ev.data.fd = session->rtp_socket;
-    if (epoll_ctl(session->epoll_fd, EPOLL_CTL_ADD, session->rtp_socket, &ev) <
+    if (poller_add(session->epoll_fd, session->rtp_socket, POLLER_IN | POLLER_HUP | POLLER_ERR) <
         0) {
-      logger(LOG_ERROR, "RTSP: Failed to add RTP socket to epoll: %s",
+      logger(LOG_ERROR, "RTSP: Failed to add RTP socket to poller: %s",
              strerror(errno));
       close(session->rtp_socket);
       close(session->rtcp_socket);
@@ -2592,13 +2566,11 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
       return -1;
     }
     fdmap_set(session->rtp_socket, session->conn);
-    logger(LOG_DEBUG, "RTSP: RTP socket registered with epoll");
+    logger(LOG_DEBUG, "RTSP: RTP socket registered with poller");
 
-    ev.events = EPOLLIN | EPOLLHUP | EPOLLERR;
-    ev.data.fd = session->rtcp_socket;
-    if (epoll_ctl(session->epoll_fd, EPOLL_CTL_ADD, session->rtcp_socket, &ev) <
+    if (poller_add(session->epoll_fd, session->rtcp_socket, POLLER_IN | POLLER_HUP | POLLER_ERR) <
         0) {
-      logger(LOG_ERROR, "RTSP: Failed to add RTCP socket to epoll: %s",
+      logger(LOG_ERROR, "RTSP: Failed to add RTCP socket to poller: %s",
              strerror(errno));
       worker_cleanup_socket_from_epoll(session->epoll_fd, session->rtp_socket);
       close(session->rtcp_socket);
@@ -2609,7 +2581,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
       return -1;
     }
     fdmap_set(session->rtcp_socket, session->conn);
-    logger(LOG_DEBUG, "RTSP: RTCP socket registered with epoll");
+    logger(LOG_DEBUG, "RTSP: RTCP socket registered with poller");
   }
 
   logger(LOG_DEBUG, "RTSP: UDP sockets bound to ports %d (RTP) and %d (RTCP)",
@@ -2619,19 +2591,19 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
 }
 
 /*
- * Close UDP sockets and remove from epoll
+ * Close UDP sockets and remove from poller
  * Called when TCP interleaved mode is confirmed
  */
 static void rtsp_close_udp_sockets(rtsp_session_t *session,
                                    const char *reason) {
-  /* Close and remove RTP socket from epoll */
+  /* Close and remove RTP socket from poller */
   if (session->rtp_socket >= 0) {
     worker_cleanup_socket_from_epoll(session->epoll_fd, session->rtp_socket);
     session->rtp_socket = -1;
     logger(LOG_DEBUG, "RTSP: Closed UDP RTP socket (%s)", reason);
   }
 
-  /* Close and remove RTCP socket from epoll */
+  /* Close and remove RTCP socket from poller */
   if (session->rtcp_socket >= 0) {
     worker_cleanup_socket_from_epoll(session->epoll_fd, session->rtcp_socket);
     session->rtcp_socket = -1;
@@ -2877,7 +2849,7 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location) {
 
   session->redirect_count++;
 
-  /* Close current connection and remove from epoll properly */
+  /* Close current connection and remove from poller properly */
   if (session->socket >= 0) {
     worker_cleanup_socket_from_epoll(session->epoll_fd, session->socket);
     session->socket = -1;
@@ -2896,7 +2868,7 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location) {
     return -1;
   }
 
-  /* Connect to new server (socket will be registered with epoll using
+  /* Connect to new server (socket will be registered with poller using
    * session->epoll_fd) */
   if (rtsp_connect(session) < 0) {
     logger(LOG_ERROR, "RTSP: Failed to connect to redirected server");

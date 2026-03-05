@@ -37,7 +37,8 @@ tests/test-suite.log
 compile_commands.json
 
 # Build directories
-build-*-static/
+build/
+build-*/
 
 # Toolchain directory (auto-downloaded)
 toolchain/
