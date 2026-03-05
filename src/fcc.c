@@ -4,6 +4,7 @@
 #include "fcc_huawei.h"
 #include "fcc_telecom.h"
 #include "multicast.h"
+#include "poller.h"
 #include "rtp.h"
 #include "status.h"
 #include "stream.h"
@@ -14,7 +15,6 @@
 #include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -351,7 +351,7 @@ int fcc_initialize_and_request(stream_context_t *ctx) {
       return -1;
     }
 
-    /* Set socket to non-blocking mode for epoll */
+    /* Set socket to non-blocking mode for poller */
     if (connection_set_nonblocking(fcc->fcc_sock) < 0) {
       logger(LOG_ERROR, "FCC: Failed to set socket non-blocking: %s",
              strerror(errno));
@@ -387,19 +387,16 @@ int fcc_initialize_and_request(stream_context_t *ctx) {
     fcc->fcc_server =
         (struct sockaddr_in *)(uintptr_t)service->fcc_addr->ai_addr;
 
-    /* Register socket with epoll immediately after creation */
-    struct epoll_event ev;
-    ev.events = EPOLLIN; /* Level-triggered mode for read events */
-    ev.data.fd = fcc->fcc_sock;
-    if (epoll_ctl(ctx->epoll_fd, EPOLL_CTL_ADD, fcc->fcc_sock, &ev) < 0) {
-      logger(LOG_ERROR, "FCC: Failed to add socket to epoll: %s",
+    /* Register socket with poller immediately after creation */
+    if (poller_add(ctx->epoll_fd, fcc->fcc_sock, POLLER_IN) < 0) {
+      logger(LOG_ERROR, "FCC: Failed to add socket to poller: %s",
              strerror(errno));
       close(fcc->fcc_sock);
       fcc->fcc_sock = -1;
       return -1;
     }
     fdmap_set(fcc->fcc_sock, ctx->conn);
-    logger(LOG_DEBUG, "FCC: Socket registered with epoll");
+    logger(LOG_DEBUG, "FCC: Socket registered with poller");
   }
 
   /* Send FCC request - different format for Huawei vs Telecom */

@@ -1,12 +1,12 @@
 #include "http_fetch.h"
 #include "hashmap.h"
+#include "poller.h"
 #include "utils.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -220,9 +220,9 @@ static void http_fetch_free(http_fetch_ctx_t *ctx) {
   if (!ctx)
     return;
 
-  /* Remove from epoll if registered */
+  /* Remove from poller if registered */
   if (ctx->epfd >= 0 && ctx->pipe_fd >= 0) {
-    epoll_ctl(ctx->epfd, EPOLL_CTL_DEL, ctx->pipe_fd, NULL);
+    poller_del(ctx->epfd, ctx->pipe_fd);
   }
 
   /* Close pipe */
@@ -255,7 +255,6 @@ http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
   char fetch_cmd[MAX_URL_LENGTH + 256];
   char temp_file_template[] = "/tmp/rtp2httpd_http_fetch_XXXXXX";
   int temp_fd;
-  struct epoll_event ev;
 
   if (!url || (!callback && !fd_callback) || epfd < 0) {
     logger(LOG_ERROR, "Invalid parameters for async HTTP fetch");
@@ -452,13 +451,10 @@ http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
   }
   ctx->buffer_used = 0;
 
-  /* Register pipe fd with epoll */
-  memset(&ev, 0, sizeof(ev));
-  ev.events = EPOLLIN | EPOLLHUP | EPOLLERR;
-  ev.data.fd = ctx->pipe_fd;
-
-  if (epoll_ctl(epfd, EPOLL_CTL_ADD, ctx->pipe_fd, &ev) < 0) {
-    logger(LOG_ERROR, "Failed to add async HTTP fetch to epoll: %s",
+  /* Register pipe fd with poller */
+  if (poller_add(epfd, ctx->pipe_fd, POLLER_IN | POLLER_HUP | POLLER_ERR) <
+      0) {
+    logger(LOG_ERROR, "Failed to add async HTTP fetch to poller: %s",
            strerror(errno));
     http_fetch_free(ctx);
     return NULL;

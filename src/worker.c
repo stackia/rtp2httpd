@@ -5,6 +5,7 @@
 #include "hashmap.h"
 #include "http_fetch.h"
 #include "m3u.h"
+#include "poller.h"
 #include "rtp2httpd.h"
 #include "status.h"
 #include "stream.h"
@@ -14,7 +15,6 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -130,12 +130,12 @@ void worker_cleanup_socket_from_epoll(int epoll_fd, int sock) {
   /* Remove from fdmap first */
   fdmap_del(sock);
 
-  /* Remove from epoll */
+  /* Remove from poller */
   if (epoll_fd >= 0) {
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, sock, NULL) < 0) {
-      /* Log but continue - socket might not be in epoll */
+    if (poller_del(epoll_fd, sock) < 0) {
+      /* Log but continue - socket might not be in poller */
       logger(LOG_DEBUG,
-             "Worker: epoll_ctl DEL failed for fd %d: %s (continuing)", sock,
+             "Worker: poller_del failed for fd %d: %s (continuing)", sock,
              strerror(errno));
     }
   }
@@ -181,7 +181,7 @@ void worker_close_and_free_connection(connection_t *c) {
       if (c->fd >= 0) {
         fdmap_del(c->fd);
         if (c->epfd >= 0) {
-          epoll_ctl(c->epfd, EPOLL_CTL_DEL, c->fd, NULL);
+          poller_del(c->epfd, c->fd);
         }
         close(c->fd);
         c->fd = -1;
@@ -202,12 +202,12 @@ void worker_close_and_free_connection(connection_t *c) {
   /* Normal cleanup path: remove from fd map */
   fdmap_del(c->fd);
 
-  /* Remove from epoll - CRITICAL: Must remove all sockets before close() to
+  /* Remove from poller - CRITICAL: Must remove all sockets before close() to
    * prevent fd reuse issues */
   if (c->epfd >= 0) {
     /* Remove client socket */
     if (c->fd >= 0) {
-      epoll_ctl(c->epfd, EPOLL_CTL_DEL, c->fd, NULL);
+      poller_del(c->epfd, c->fd);
     }
   }
 
@@ -235,32 +235,26 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
   /* Initialize fd map */
   fdmap_init();
 
-  /* Build epoll set for listening sockets */
-  int epfd = epoll_create1(EPOLL_CLOEXEC);
+  /* Build poller set for listening sockets */
+  int epfd = poller_create();
   if (epfd < 0) {
-    logger(LOG_FATAL, "epoll_create1 failed: %s", strerror(errno));
+    logger(LOG_FATAL, "poller_create failed: %s", strerror(errno));
     return -1;
   }
 
-  struct epoll_event ev, events[1024];
+  poller_event_t events[1024];
   for (i = 0; i < num_sockets; i++) {
     connection_set_nonblocking(listen_sockets[i]);
-    memset(&ev, 0, sizeof(ev));
-    ev.events = EPOLLIN;
-    ev.data.fd = listen_sockets[i];
-    if (epoll_ctl(epfd, EPOLL_CTL_ADD, listen_sockets[i], &ev) < 0) {
-      logger(LOG_FATAL, "epoll_ctl ADD failed: %s", strerror(errno));
-      close(epfd);
+    if (poller_add(epfd, listen_sockets[i], POLLER_IN) < 0) {
+      logger(LOG_FATAL, "poller_add failed: %s", strerror(errno));
+      poller_close(epfd);
       return -1;
     }
   }
 
   if (notif_fd >= 0) {
-    memset(&ev, 0, sizeof(ev));
-    ev.events = EPOLLIN;
-    ev.data.fd = notif_fd;
-    if (epoll_ctl(epfd, EPOLL_CTL_ADD, notif_fd, &ev) < 0) {
-      logger(LOG_ERROR, "epoll_ctl ADD notif_fd failed: %s", strerror(errno));
+    if (poller_add(epfd, notif_fd, POLLER_IN) < 0) {
+      logger(LOG_ERROR, "poller_add notif_fd failed: %s", strerror(errno));
       notif_fd = -1;
     }
   }
@@ -275,12 +269,12 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
 
   while (!stop_flag) {
     int timeout_ms = 100;
-    int n = epoll_wait(epfd, events, (int)(sizeof(events) / sizeof(events[0])),
-                       timeout_ms);
+    int n = poller_wait(epfd, events,
+                        (int)(sizeof(events) / sizeof(events[0])), timeout_ms);
     if (n < 0) {
       if (errno == EINTR)
         continue;
-      logger(LOG_FATAL, "epoll_wait failed: %s", strerror(errno));
+      logger(LOG_FATAL, "poller_wait failed: %s", strerror(errno));
       break;
     }
 
@@ -298,7 +292,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
 
     /* 1) Handle all ready events */
     for (int e = 0; e < n; e++) {
-      int fd_ready = events[e].data.fd;
+      int fd_ready = events[e].fd;
       int is_listener = 0;
       for (i = 0; i < num_sockets; i++)
         if (fd_ready == listen_sockets[i]) {
@@ -378,14 +372,11 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
           c->next = conn_head;
           conn_head = c;
 
-          /* Add client fd to epoll and map */
-          struct epoll_event cev;
-          memset(&cev, 0, sizeof(cev));
-          cev.events = EPOLLIN | EPOLLRDHUP | EPOLLHUP | EPOLLERR;
-          cev.data.fd = cfd;
-          if (epoll_ctl(epfd, EPOLL_CTL_ADD, cfd, &cev) < 0) {
-            logger(LOG_ERROR, "epoll_ctl ADD client failed: %s",
-                   strerror(errno));
+          /* Add client fd to poller and map */
+          if (poller_add(epfd, cfd,
+                         POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR) <
+              0) {
+            logger(LOG_ERROR, "poller_add client failed: %s", strerror(errno));
             worker_close_and_free_connection(c);
           } else {
             fdmap_set(cfd, c);
@@ -410,10 +401,10 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
         if (fd_ready == c->fd) {
           /* Client socket events */
 
-          /* First, handle EPOLLERR for MSG_ZEROCOPY completions before checking
-           * for real errors */
-          if (events[e].events & EPOLLERR) {
-            /* EPOLLERR can indicate either:
+          /* First, handle POLLER_ERR for MSG_ZEROCOPY completions before
+           * checking for real errors */
+          if (events[e].events & POLLER_ERR) {
+            /* POLLER_ERR can indicate either:
              * 1. MSG_ZEROCOPY completion notification (normal operation)
              * 2. Actual socket error
              * We need to check MSG_ERRQUEUE first to distinguish between them.
@@ -440,7 +431,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
                * below */
             }
 
-            /* If EPOLLERR is set but we didn't get zerocopy completions,
+            /* If POLLER_ERR is set but we didn't get zerocopy completions,
              * check if it's a real socket error by trying to get SO_ERROR */
             if (!had_zerocopy_completions) {
               int socket_error = 0;
@@ -454,21 +445,21 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
                 worker_close_and_free_connection(c);
                 continue; /* Skip further processing for this connection */
               }
-              /* Otherwise, EPOLLERR might be spurious or already handled by
+              /* Otherwise, POLLER_ERR might be spurious or already handled by
                * zerocopy */
             }
           }
 
           /* Handle disconnect events */
-          if (events[e].events & (EPOLLHUP | EPOLLRDHUP)) {
+          if (events[e].events & (POLLER_HUP | POLLER_RDHUP)) {
             logger(LOG_DEBUG, "Client disconnected");
             worker_close_and_free_connection(c);
             continue; /* Skip further processing for this connection */
           }
 
-          /* Handle EPOLLIN and EPOLLOUT independently (not mutually exclusive)
-           */
-          if (events[e].events & EPOLLIN) {
+          /* Handle POLLER_IN and POLLER_OUT independently (not mutually
+           * exclusive) */
+          if (events[e].events & POLLER_IN) {
             /* For streaming connections, client socket is monitored for
              * disconnect detection */
             if (c->streaming) {
@@ -503,7 +494,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
             }
           }
 
-          if (events[e].events & EPOLLOUT) {
+          if (events[e].events & POLLER_OUT) {
             connection_write_status_t status = connection_handle_write(c);
             if (status == CONNECTION_WRITE_CLOSED) {
               worker_close_and_free_connection(c);
@@ -681,8 +672,8 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
     close(notif_fd);
   }
 
-  /* Close epoll and listeners */
-  close(epfd);
+  /* Close poller and listeners */
+  poller_close(epfd);
   for (i = 0; i < num_sockets; i++)
     close(listen_sockets[i]);
 

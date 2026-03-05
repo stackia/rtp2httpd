@@ -5,6 +5,8 @@
 #include "http.h" /* For http_url_encode */
 #include "http_proxy_rewrite.h"
 #include "multicast.h"
+#include "platform_compat.h"
+#include "poller.h"
 #include "status.h"
 #include "utils.h"
 #include "worker.h"
@@ -17,7 +19,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -282,6 +283,7 @@ int http_proxy_connect(http_proxy_session_t *session) {
            strerror(errno));
     return -1;
   }
+  platform_set_nosigpipe(session->socket);
 
   /* Set socket to non-blocking mode */
   if (connection_set_nonblocking(session->socket) < 0) {
@@ -311,15 +313,13 @@ int http_proxy_connect(http_proxy_session_t *session) {
       logger(LOG_DEBUG, "HTTP Proxy: Connection to %s:%d in progress (async)",
              session->target_host, session->target_port);
 
-      /* Register socket with epoll for EPOLLOUT to detect connection
+      /* Register socket with poller for POLLER_OUT to detect connection
        * completion */
       if (session->epoll_fd >= 0) {
-        struct epoll_event ev;
-        ev.events = EPOLLOUT | EPOLLIN | EPOLLERR | EPOLLHUP | EPOLLRDHUP;
-        ev.data.fd = session->socket;
-        if (epoll_ctl(session->epoll_fd, EPOLL_CTL_ADD, session->socket, &ev) <
-            0) {
-          logger(LOG_ERROR, "HTTP Proxy: Failed to add socket to epoll: %s",
+        if (poller_add(session->epoll_fd, session->socket,
+                       POLLER_OUT | POLLER_IN | POLLER_ERR | POLLER_HUP |
+                           POLLER_RDHUP) < 0) {
+          logger(LOG_ERROR, "HTTP Proxy: Failed to add socket to poller: %s",
                  strerror(errno));
           close(session->socket);
           session->socket = -1;
@@ -327,7 +327,7 @@ int http_proxy_connect(http_proxy_session_t *session) {
         }
         fdmap_set(session->socket, session->conn);
         logger(LOG_DEBUG,
-               "HTTP Proxy: Socket registered with epoll for connection");
+               "HTTP Proxy: Socket registered with poller for connection");
       }
 
       session->state = HTTP_PROXY_STATE_CONNECTING;
@@ -347,13 +347,12 @@ int http_proxy_connect(http_proxy_session_t *session) {
   logger(LOG_DEBUG, "HTTP Proxy: Connected immediately to %s:%d",
          session->target_host, session->target_port);
 
-  /* Register socket with epoll */
+  /* Register socket with poller */
   if (session->epoll_fd >= 0) {
-    struct epoll_event ev;
-    ev.events = EPOLLIN | EPOLLOUT | EPOLLHUP | EPOLLERR | EPOLLRDHUP;
-    ev.data.fd = session->socket;
-    if (epoll_ctl(session->epoll_fd, EPOLL_CTL_ADD, session->socket, &ev) < 0) {
-      logger(LOG_ERROR, "HTTP Proxy: Failed to add socket to epoll: %s",
+    if (poller_add(session->epoll_fd, session->socket,
+                   POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR |
+                       POLLER_RDHUP) < 0) {
+      logger(LOG_ERROR, "HTTP Proxy: Failed to add socket to poller: %s",
              strerror(errno));
       close(session->socket);
       session->socket = -1;
@@ -478,7 +477,7 @@ static int http_proxy_try_send_pending(http_proxy_session_t *session) {
     logger(LOG_DEBUG, "HTTP Proxy: Sent headers %zd bytes (%zu/%zu)", sent,
            session->pending_request_sent, session->pending_request_len);
 
-    /* If headers not fully sent, return and wait for next EPOLLOUT */
+    /* If headers not fully sent, return and wait for next POLLER_OUT */
     if (session->pending_request_sent < session->pending_request_len) {
       return total_sent;
     }
@@ -765,7 +764,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
     bytes_forwarded = (int)received;
 
     /* Let connection_queue_zerocopy's internal batching mechanism handle
-     * EPOLLOUT - it uses zerocopy_should_flush() for optimal batching */
+     * POLLER_OUT - it uses zerocopy_should_flush() for optimal batching */
     session->bytes_received += bytes_forwarded;
 
     /* Check if we've received all content */
@@ -1143,7 +1142,7 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
      * CONN_CLOSING */
     connection_epoll_update_events(
         session->conn->epfd, session->conn->fd,
-        EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+        POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
   }
 
   /* HEAD responses have no body — go straight to COMPLETE */
@@ -1176,7 +1175,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
   }
 
   /* Check for hard socket errors first */
-  if (events & EPOLLERR) {
+  if (events & POLLER_ERR) {
     int sock_error = 0;
     socklen_t error_len = sizeof(sock_error);
     if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error,
@@ -1196,7 +1195,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
   }
 
   /* Handle connection completion FIRST - before checking HUP events
-   * When TCP connect completes, we may get EPOLLOUT | EPOLLHUP together
+   * When TCP connect completes, we may get POLLER_OUT | POLLER_HUP together
    * in some edge cases, so we must check connection state first */
   if (session->state == HTTP_PROXY_STATE_CONNECTING) {
     int sock_error = 0;
@@ -1235,7 +1234,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
   }
 
   /* Handle writable socket - send pending request */
-  if ((events & EPOLLOUT) &&
+  if ((events & POLLER_OUT) &&
       session->state == HTTP_PROXY_STATE_SENDING_REQUEST) {
     result = http_proxy_try_send_pending(session);
     if (result < 0) {
@@ -1252,14 +1251,12 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
       session->state = HTTP_PROXY_STATE_AWAITING_HEADERS;
       status_update_client_state(session->status_index, CLIENT_STATE_HTTP_AWAITING_HEADERS);
 
-      /* Update epoll to only monitor EPOLLIN */
+      /* Update poller to only monitor POLLER_IN */
       if (session->epoll_fd >= 0) {
-        struct epoll_event ev;
-        ev.events = EPOLLIN | EPOLLHUP | EPOLLERR | EPOLLRDHUP;
-        ev.data.fd = session->socket;
-        if (epoll_ctl(session->epoll_fd, EPOLL_CTL_MOD, session->socket, &ev) <
+        if (poller_mod(session->epoll_fd, session->socket,
+                       POLLER_IN | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) <
             0) {
-          logger(LOG_ERROR, "HTTP Proxy: Failed to modify epoll events: %s",
+          logger(LOG_ERROR, "HTTP Proxy: Failed to modify poller events: %s",
                  strerror(errno));
           session->state = HTTP_PROXY_STATE_ERROR;
           return -1;
@@ -1270,7 +1267,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
 
   /* Handle readable socket - receive response */
   int bytes_forwarded = 0;
-  if (events & EPOLLIN) {
+  if (events & POLLER_IN) {
     if (session->state == HTTP_PROXY_STATE_AWAITING_HEADERS ||
         session->state == HTTP_PROXY_STATE_STREAMING) {
       result = http_proxy_try_receive_response(session);
@@ -1284,11 +1281,11 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
   }
 
   /* Check for connection hangup AFTER processing data.
-   * Only when EPOLLIN was NOT set — if EPOLLIN was set, recv already
+   * Only when POLLER_IN was NOT set — if POLLER_IN was set, recv already
    * handled EOF (returning 0) and set COMPLETE as needed.  Processing
-   * EPOLLHUP together with EPOLLIN would prematurely set COMPLETE
+   * POLLER_HUP together with POLLER_IN would prematurely set COMPLETE
    * before buffered data (e.g. rewrite body) is processed. */
-  if ((events & (EPOLLHUP | EPOLLRDHUP)) && !(events & EPOLLIN)) {
+  if ((events & (POLLER_HUP | POLLER_RDHUP)) && !(events & POLLER_IN)) {
     /* Upstream closed connection */
     if (session->state == HTTP_PROXY_STATE_STREAMING ||
         session->state == HTTP_PROXY_STATE_AWAITING_HEADERS) {
@@ -1307,9 +1304,9 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
 
   /* When transfer is complete, clean up proxy socket and begin draining
    * the client connection's output queue.
-   * The proxy socket must be removed from epoll immediately because a TCP
-   * socket in EOF state continuously triggers EPOLLIN under level-triggered
-   * epoll, which would cause CPU spin. */
+   * The proxy socket must be removed from the poller immediately because a
+   * TCP socket in EOF state continuously triggers POLLER_IN under
+   * level-triggered polling, which would cause CPU spin. */
   if (session->state == HTTP_PROXY_STATE_COMPLETE) {
     if (session->socket >= 0) {
       worker_cleanup_socket_from_epoll(session->epoll_fd, session->socket);
@@ -1320,7 +1317,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
       session->conn->state = CONN_CLOSING;
       connection_epoll_update_events(
           session->conn->epfd, session->conn->fd,
-          EPOLLIN | EPOLLOUT | EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+          POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
     }
   }
 

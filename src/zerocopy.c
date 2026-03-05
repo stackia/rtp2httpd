@@ -1,15 +1,18 @@
 #include "zerocopy.h"
+#include "platform_compat.h"
 #include "rtp2httpd.h"
 #include "status.h"
 #include "utils.h"
 #include <errno.h>
-#include <linux/errqueue.h>
 #include <netinet/in.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/sendfile.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#ifdef __linux__
+#include <linux/errqueue.h>
+#endif
 
 /* Global zero-copy state */
 zerocopy_state_t zerocopy_state = {0};
@@ -29,6 +32,7 @@ zerocopy_state_t zerocopy_state = {0};
  * Detect MSG_ZEROCOPY support by attempting to enable it on a test socket
  */
 static int detect_msg_zerocopy_support(void) {
+#ifdef __linux__
   int sock = socket(AF_INET, SOCK_STREAM, 0);
   if (sock < 0)
     return 0;
@@ -38,6 +42,10 @@ static int detect_msg_zerocopy_support(void) {
   close(sock);
 
   return (ret == 0) ? 1 : 0;
+#else
+  /* MSG_ZEROCOPY is Linux-only */
+  return 0;
+#endif
 }
 
 void zerocopy_register_stream_client(void) { zerocopy_state.active_streams++; }
@@ -66,7 +74,8 @@ int zerocopy_init(void) {
     /* Try to detect MSG_ZEROCOPY support */
     if (!detect_msg_zerocopy_support()) {
       logger(LOG_WARN,
-             "Zero-copy: MSG_ZEROCOPY not available (kernel 4.14+ required)");
+             "Zero-copy: MSG_ZEROCOPY not available (Linux kernel 4.14+ "
+             "required)");
       logger(LOG_WARN, "Zero-copy: Falling back to regular send");
       /* Disable zerocopy in config since it's not supported */
       config.zerocopy_on_send = 0;
@@ -259,8 +268,8 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
     size_t remaining = file_buf->file_size - file_buf->file_sent;
     off_t offset = file_buf->file_offset + file_buf->file_sent;
 
-    /* Use sendfile() for non-blocking file send */
-    ssize_t sent = sendfile(fd, file_buf->file_fd, &offset, remaining);
+    /* Use platform_sendfile() for non-blocking file send */
+    ssize_t sent = platform_sendfile(fd, file_buf->file_fd, &offset, remaining);
 
     if (sent < 0) {
       if (errno == EAGAIN) {
@@ -470,6 +479,7 @@ int zerocopy_handle_completions(int fd, zerocopy_queue_t *queue) {
   if (!config.zerocopy_on_send)
     return 0;
 
+#ifdef __linux__
   int completions = 0;
 
   /* Read completion notifications from error queue */
@@ -580,4 +590,10 @@ int zerocopy_handle_completions(int fd, zerocopy_queue_t *queue) {
   }
 
   return completions;
+#else
+  /* MSG_ZEROCOPY completions are Linux-only */
+  (void)fd;
+  (void)queue;
+  return 0;
+#endif
 }
