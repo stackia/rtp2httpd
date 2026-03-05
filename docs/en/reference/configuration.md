@@ -30,6 +30,9 @@ rtp2httpd [options]
 
 **Priority order**: `upstream-interface-{fcc,rtsp,multicast,http}` > `upstream-interface` > system routing table
 
+> [!TIP]
+> In addition to global configuration, you can specify upstream interfaces per request using the `r2h-ifname` and `r2h-ifname-fcc` URL parameters. See [URL Formats](/en/guide/url-formats) for details.
+
 ### Performance Optimization
 
 - `-b, --buffer-pool-max-size <number>` - Maximum number of buffers in buffer pool (default: 16384)

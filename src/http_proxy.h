@@ -100,6 +100,9 @@ typedef struct {
   char x_forwarded_host[HTTP_PROXY_HOST_SIZE];      /* X-Forwarded-Host header */
   char x_forwarded_proto[16];                       /* X-Forwarded-Proto header */
 
+  /* Per-service upstream interface override (resolved at init, non-owning) */
+  const char *upstream_ifname;
+
   /* Cleanup state */
   int cleanup_done; /* Flag: cleanup has been completed */
 } http_proxy_session_t;

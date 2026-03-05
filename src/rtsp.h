@@ -183,6 +183,9 @@ typedef struct {
                                 */
   rtsp_state_t state_before_teardown; /* State before TEARDOWN was initiated */
 
+  /* Per-service upstream interface override (resolved at init, non-owning) */
+  const char *upstream_ifname;
+
   /* Buffering */
   uint8_t response_buffer[RTSP_RESPONSE_BUFFER_SIZE]; /* Buffer for RTSP
                                                          responses (control

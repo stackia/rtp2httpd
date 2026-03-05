@@ -734,7 +734,6 @@ int rtsp_connect(rtsp_session_t *session) {
   struct sockaddr_in server_addr;
   struct hostent *he;
   int connect_result;
-  const char *upstream_if;
 
   /* Start STUN discovery early - before TCP connect
    * This allows STUN to run in parallel with TCP connection establishment
@@ -782,8 +781,7 @@ int rtsp_connect(rtsp_session_t *session) {
     return -1;
   }
 
-  upstream_if = get_upstream_interface_for_rtsp();
-  bind_to_upstream_interface(session->socket, upstream_if);
+  bind_to_upstream_interface(session->socket, session->upstream_ifname);
 
   /* Connect to server (non-blocking) */
   memset(&server_addr, 0, sizeof(server_addr));
@@ -2437,7 +2435,6 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
   const int port_range = 10000;
   const int port_min = 10000;
   const int port_start_offset = (int)(get_time_ms() % port_range);
-  const char *upstream_if;
   struct sockaddr_in local_addr;
   int port_base;
   int port_max;
@@ -2448,8 +2445,6 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
   int rtcp_socket = -1;
 
   logger(LOG_DEBUG, "RTSP: Setting up UDP sockets");
-
-  upstream_if = get_upstream_interface_for_rtsp();
 
   session->local_rtp_port = 0;
   session->local_rtcp_port = 0;
@@ -2507,7 +2502,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
              config.udp_rcvbuf_size, strerror(errno));
     }
 
-    bind_to_upstream_interface(rtp_socket, upstream_if);
+    bind_to_upstream_interface(rtp_socket, session->upstream_ifname);
 
     local_addr.sin_port = htons(candidate_rtp_port);
     if (bind(rtp_socket, (struct sockaddr *)&local_addr, sizeof(local_addr)) <
@@ -2545,7 +2540,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
              config.udp_rcvbuf_size, strerror(errno));
     }
 
-    bind_to_upstream_interface(rtcp_socket, upstream_if);
+    bind_to_upstream_interface(rtcp_socket, session->upstream_ifname);
 
     local_addr.sin_port = htons(candidate_rtp_port + 1);
     if (bind(rtcp_socket, (struct sockaddr *)&local_addr, sizeof(local_addr)) <

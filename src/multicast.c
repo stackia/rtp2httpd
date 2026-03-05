@@ -75,9 +75,10 @@ static uint16_t calculate_checksum(const void *data, size_t len) {
   return ~sum;
 }
 
-static int create_igmp_raw_socket(void) {
+static int create_igmp_raw_socket(service_t *service) {
   int raw_sock;
-  const char *upstream_if = get_upstream_interface_for_multicast();
+  const char *upstream_if =
+      get_upstream_interface_for_multicast(service ? service->ifname : NULL);
 
   raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_IGMP);
   if (raw_sock < 0) {
@@ -151,7 +152,8 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr,
     return -1;
   }
 
-  upstream_if = get_upstream_interface_for_multicast();
+  upstream_if =
+      get_upstream_interface_for_multicast(service ? service->ifname : NULL);
   if (upstream_if && upstream_if[0] != '\0') {
     gr->gr_interface = if_nametoindex(upstream_if);
   }
@@ -241,7 +243,8 @@ static int join_mcast_group(service_t *service, int is_fec) {
   }
 
   /* Determine which interface to use */
-  upstream_if = get_upstream_interface_for_multicast();
+  upstream_if =
+      get_upstream_interface_for_multicast(service ? service->ifname : NULL);
   bind_to_upstream_interface(sock, upstream_if);
 
   /* Prepare bind address with appropriate port */
@@ -316,7 +319,7 @@ static int rejoin_mcast_group(service_t *service) {
     nsrcs = 1;
   }
 
-  raw_sock = create_igmp_raw_socket();
+  raw_sock = create_igmp_raw_socket(service);
   if (raw_sock < 0) {
     return -1;
   }

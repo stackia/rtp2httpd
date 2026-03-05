@@ -150,8 +150,16 @@ void bind_to_upstream_interface(int sock, const char *ifname) {
   }
 }
 
-const char *get_upstream_interface_for_fcc(void) {
-  /* Priority: upstream_interface_fcc > upstream_interface */
+const char *get_upstream_interface_for_fcc(const char *override,
+                                           const char *override_fcc) {
+  /* Priority: override_fcc > override > upstream_interface_fcc >
+   * upstream_interface */
+  if (override_fcc && override_fcc[0] != '\0') {
+    return override_fcc;
+  }
+  if (override && override[0] != '\0') {
+    return override;
+  }
   if (config.upstream_interface_fcc[0] != '\0') {
     return config.upstream_interface_fcc;
   }
@@ -161,8 +169,11 @@ const char *get_upstream_interface_for_fcc(void) {
   return NULL;
 }
 
-const char *get_upstream_interface_for_rtsp(void) {
-  /* Priority: upstream_interface_rtsp > upstream_interface */
+const char *get_upstream_interface_for_rtsp(const char *override) {
+  /* Priority: override > upstream_interface_rtsp > upstream_interface */
+  if (override && override[0] != '\0') {
+    return override;
+  }
   if (config.upstream_interface_rtsp[0] != '\0') {
     return config.upstream_interface_rtsp;
   }
@@ -172,8 +183,11 @@ const char *get_upstream_interface_for_rtsp(void) {
   return NULL;
 }
 
-const char *get_upstream_interface_for_multicast(void) {
-  /* Priority: upstream_interface_multicast > upstream_interface */
+const char *get_upstream_interface_for_multicast(const char *override) {
+  /* Priority: override > upstream_interface_multicast > upstream_interface */
+  if (override && override[0] != '\0') {
+    return override;
+  }
   if (config.upstream_interface_multicast[0] != '\0') {
     return config.upstream_interface_multicast;
   }
@@ -183,8 +197,11 @@ const char *get_upstream_interface_for_multicast(void) {
   return NULL;
 }
 
-const char *get_upstream_interface_for_http(void) {
-  /* Priority: upstream_interface_http > upstream_interface */
+const char *get_upstream_interface_for_http(const char *override) {
+  /* Priority: override > upstream_interface_http > upstream_interface */
+  if (override && override[0] != '\0') {
+    return override;
+  }
   if (config.upstream_interface_http[0] != '\0') {
     return config.upstream_interface_http;
   }
@@ -198,8 +215,8 @@ const char *get_upstream_interface_for_http(void) {
  * Get local IP address for FCC packets
  * Priority: upstream_interface_fcc > upstream_interface > first non-loopback IP
  */
-uint32_t get_local_ip_for_fcc(void) {
-  const char *ifname = get_upstream_interface_for_fcc();
+uint32_t get_local_ip_for_fcc(const char *override, const char *override_fcc) {
+  const char *ifname = get_upstream_interface_for_fcc(override, override_fcc);
   struct ifaddrs *ifaddr, *ifa;
   uint32_t local_ip = 0;
 
