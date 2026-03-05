@@ -174,6 +174,8 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
     ctx->http_proxy.epoll_fd = ctx->epoll_fd;
     ctx->http_proxy.conn = conn;
     ctx->http_proxy.status_index = status_index;
+    ctx->http_proxy.upstream_ifname =
+        get_upstream_interface_for_http(service->ifname);
 
     if (!service->http_url) {
       logger(LOG_ERROR, "HTTP URL not found in service configuration");
@@ -268,6 +270,8 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
       ctx->rtsp.status_index = status_index;
       ctx->rtsp.epoll_fd = ctx->epoll_fd;
       ctx->rtsp.conn = conn;
+      ctx->rtsp.upstream_ifname =
+          get_upstream_interface_for_rtsp(service->ifname);
       if (!service->rtsp_url) {
         logger(LOG_ERROR, "RTSP URL not found in service configuration");
         return -1;

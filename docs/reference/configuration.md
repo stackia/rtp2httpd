@@ -30,6 +30,9 @@ rtp2httpd [选项]
 
 **优先级规则**：`upstream-interface-{fcc,rtsp,multicast,http}` > `upstream-interface` > 系统路由表
 
+> [!TIP]
+> 除了全局配置外，还可以在每个请求的 URL 中通过 `r2h-ifname` 和 `r2h-ifname-fcc` 参数指定上游接口，详见 [URL 格式说明](../guide/url-formats.md)。
+
 ### 性能优化
 
 - `-b, --buffer-pool-max-size <数量>` - 缓冲池最大缓冲区数量 (默认: 16384)

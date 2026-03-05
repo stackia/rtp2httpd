@@ -80,35 +80,43 @@ void bind_to_upstream_interface(int sock, const char *ifname);
 
 /**
  * Select the appropriate upstream interface for FCC with priority logic
- * Priority: upstream_interface_fcc > upstream_interface
+ * Priority: override_fcc > override > upstream_interface_fcc >
+ * upstream_interface
  *
+ * @param override Per-service ifname override (from r2h-ifname), or NULL
+ * @param override_fcc Per-service ifname_fcc override (from r2h-ifname-fcc),
+ * or NULL
  * @return Pointer to the interface name to use (may be NULL if none configured)
  */
-const char *get_upstream_interface_for_fcc(void);
+const char *get_upstream_interface_for_fcc(const char *override,
+                                           const char *override_fcc);
 
 /**
  * Select the appropriate upstream interface for RTSP with priority logic
- * Priority: upstream_interface_rtsp > upstream_interface
+ * Priority: override > upstream_interface_rtsp > upstream_interface
  *
+ * @param override Per-service ifname override (from r2h-ifname), or NULL
  * @return Pointer to the interface name to use (may be NULL if none configured)
  */
-const char *get_upstream_interface_for_rtsp(void);
+const char *get_upstream_interface_for_rtsp(const char *override);
 
 /**
  * Select the appropriate upstream interface for multicast with priority logic
- * Priority: upstream_interface_multicast > upstream_interface
+ * Priority: override > upstream_interface_multicast > upstream_interface
  *
+ * @param override Per-service ifname override (from r2h-ifname), or NULL
  * @return Pointer to the interface name to use (may be NULL if none configured)
  */
-const char *get_upstream_interface_for_multicast(void);
+const char *get_upstream_interface_for_multicast(const char *override);
 
 /**
  * Select the appropriate upstream interface for HTTP proxy with priority logic
- * Priority: upstream_interface_http > upstream_interface
+ * Priority: override > upstream_interface_http > upstream_interface
  *
+ * @param override Per-service ifname override (from r2h-ifname), or NULL
  * @return Pointer to the interface name to use (may be NULL if none configured)
  */
-const char *get_upstream_interface_for_http(void);
+const char *get_upstream_interface_for_http(const char *override);
 
 /**
  * Build base URL for proxy based on request headers and config
@@ -127,9 +135,12 @@ char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host
  * Uses the configured upstream interface for FCC, or falls back to first
  * non-loopback address
  *
+ * @param override Per-service ifname override (from r2h-ifname), or NULL
+ * @param override_fcc Per-service ifname_fcc override (from r2h-ifname-fcc),
+ * or NULL
  * @return Local IP address in host byte order, or 0 if unable to determine
  */
-uint32_t get_local_ip_for_fcc(void);
+uint32_t get_local_ip_for_fcc(const char *override, const char *override_fcc);
 
 /* Array size calculation macro */
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))

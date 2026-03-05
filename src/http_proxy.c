@@ -254,7 +254,6 @@ int http_proxy_connect(http_proxy_session_t *session) {
   struct sockaddr_in server_addr;
   struct hostent *he;
   int connect_result;
-  const char *upstream_if;
 
   if (!session || session->socket >= 0) {
     logger(LOG_ERROR, "HTTP Proxy: Invalid session or already connected");
@@ -294,8 +293,7 @@ int http_proxy_connect(http_proxy_session_t *session) {
   }
 
   /* Bind to upstream interface if configured */
-  upstream_if = get_upstream_interface_for_http();
-  bind_to_upstream_interface(session->socket, upstream_if);
+  bind_to_upstream_interface(session->socket, session->upstream_ifname);
 
   /* Connect to server (non-blocking) */
   memset(&server_addr, 0, sizeof(server_addr));

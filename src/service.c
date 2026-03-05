@@ -5,6 +5,7 @@
 #include "timezone.h"
 #include "utils.h"
 #include <limits.h>
+#include <net/if.h>
 #include <netdb.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -507,6 +508,71 @@ fail:
   return -1;
 }
 
+/**
+ * Extract r2h-ifname and r2h-ifname-fcc from query string, removing them
+ * in-place.
+ * @param query_start Pointer to '?' in URL (may be set to NULL if query becomes
+ * empty)
+ * @param out_ifname Output: malloc'd ifname string (caller frees), or NULL
+ * @param out_ifname_fcc Output: malloc'd ifname_fcc string (caller frees), or
+ * NULL
+ */
+static void service_extract_ifname_params(char *query_start, char **out_ifname,
+                                          char **out_ifname_fcc) {
+  if (!out_ifname || !out_ifname_fcc) {
+    return;
+  }
+  *out_ifname = NULL;
+  *out_ifname_fcc = NULL;
+
+  if (!query_start || *query_start != '?') {
+    return;
+  }
+
+  /* Extract r2h-ifname-fcc first (longer prefix, avoids matching r2h-ifname) */
+  char *param_start = strstr(query_start, "r2h-ifname-fcc=");
+  if (param_start &&
+      (param_start == query_start + 1 || *(param_start - 1) == '&')) {
+    char *value_start = param_start + 15; /* strlen("r2h-ifname-fcc=") */
+    char *value_end = strchr(value_start, '&');
+    if (!value_end)
+      value_end = value_start + strlen(value_start);
+
+    size_t value_len = (size_t)(value_end - value_start);
+    *out_ifname_fcc = malloc(value_len + 1);
+    if (*out_ifname_fcc) {
+      memcpy(*out_ifname_fcc, value_start, value_len);
+      (*out_ifname_fcc)[value_len] = '\0';
+      logger(LOG_DEBUG, "Found r2h-ifname-fcc parameter: %s", *out_ifname_fcc);
+    }
+
+    remove_query_param(&query_start, param_start, value_end);
+  }
+
+  /* Extract r2h-ifname */
+  if (query_start) {
+    param_start = strstr(query_start, "r2h-ifname=");
+    if (param_start &&
+        (param_start == query_start + 1 || *(param_start - 1) == '&')) {
+      /* Make sure this is not r2h-ifname-fcc (already handled above) */
+      char *value_start = param_start + 11; /* strlen("r2h-ifname=") */
+      char *value_end = strchr(value_start, '&');
+      if (!value_end)
+        value_end = value_start + strlen(value_start);
+
+      size_t value_len = (size_t)(value_end - value_start);
+      *out_ifname = malloc(value_len + 1);
+      if (*out_ifname) {
+        memcpy(*out_ifname, value_start, value_len);
+        (*out_ifname)[value_len] = '\0';
+        logger(LOG_DEBUG, "Found r2h-ifname parameter: %s", *out_ifname);
+      }
+
+      remove_query_param(&query_start, param_start, value_end);
+    }
+  }
+}
+
 int service_convert_seek_value(const char *seek_param_value,
                                int tz_offset_seconds, int seek_offset_seconds,
                                char *output, size_t output_size) {
@@ -774,12 +840,14 @@ service_t *service_create_from_http_url(const char *http_url) {
     return NULL;
   }
 
-  /* Extract seek parameters from HTTP URL (same as RTSP) */
+  /* Extract r2h-* parameters from HTTP URL (removes in-place) */
   char *query_start = strchr(result->http_url, '?');
   if (query_start) {
     service_extract_seek_params(query_start, &result->seek_param_name,
                                 &result->seek_param_value,
                                 &result->seek_offset_seconds);
+    service_extract_ifname_params(query_start, &result->ifname,
+                                  &result->ifname_fcc);
   }
 
   logger(LOG_DEBUG, "Created HTTP proxy service: %s -> %s", http_url,
@@ -862,7 +930,8 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
     return NULL;
   }
 
-  /* Extract seek parameters from query string (modifies url_part in-place) */
+  /* Extract r2h-* parameters from query string (modifies url_part in-place) */
+  char *ifname = NULL, *ifname_fcc = NULL;
   query_start = strchr(url_part, '?');
   if (query_start) {
     if (service_extract_seek_params(query_start, &seek_param_name,
@@ -870,6 +939,7 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
                                     &seek_offset_seconds) < 0) {
       return NULL;
     }
+    service_extract_ifname_params(query_start, &ifname, &ifname_fcc);
   }
 
   /* Allocate service structure */
@@ -880,6 +950,10 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   }
 
   result->service_type = SERVICE_RTSP;
+  result->ifname = ifname;
+  result->ifname_fcc = ifname_fcc;
+  ifname = NULL;     /* Transfer ownership */
+  ifname_fcc = NULL; /* Transfer ownership */
 
   /* Build full RTSP URL */
   if (strlen(url_part) + 7 >= sizeof(rtsp_url)) {
@@ -921,6 +995,10 @@ cleanup:
     free(seek_param_name);
   if (seek_param_value)
     free(seek_param_value);
+  if (ifname)
+    free(ifname);
+  if (ifname_fcc)
+    free(ifname_fcc);
 
   if (result) {
     service_free(result);
@@ -1059,6 +1137,39 @@ service_t *service_create_with_query_merge(service_t *configured_service,
     }
   }
 
+  /* Append r2h-ifname parameter if present in configured service */
+  if (configured_service->ifname) {
+    char ifname_param[IFNAMSIZ + 16];
+    const char *separator = strchr(merged_url, '?') ? "&" : "?";
+
+    snprintf(ifname_param, sizeof(ifname_param), "%sr2h-ifname=%s", separator,
+             configured_service->ifname);
+
+    if (strlen(merged_url) + strlen(ifname_param) < sizeof(merged_url)) {
+      strcat(merged_url, ifname_param);
+    } else {
+      logger(LOG_ERROR, "Merged %s URL with r2h-ifname too long", type_name);
+      return NULL;
+    }
+  }
+
+  /* Append r2h-ifname-fcc parameter if present in configured service */
+  if (configured_service->ifname_fcc) {
+    char ifname_fcc_param[IFNAMSIZ + 20];
+    const char *separator = strchr(merged_url, '?') ? "&" : "?";
+
+    snprintf(ifname_fcc_param, sizeof(ifname_fcc_param),
+             "%sr2h-ifname-fcc=%s", separator, configured_service->ifname_fcc);
+
+    if (strlen(merged_url) + strlen(ifname_fcc_param) < sizeof(merged_url)) {
+      strcat(merged_url, ifname_fcc_param);
+    } else {
+      logger(LOG_ERROR, "Merged %s URL with r2h-ifname-fcc too long",
+             type_name);
+      return NULL;
+    }
+  }
+
   /* Create new service from merged URL */
   logger(LOG_DEBUG, "Creating %s service with merged URL: %s", type_name,
          merged_url);
@@ -1129,7 +1240,14 @@ service_t *service_create_from_rtp_url(const char *http_url) {
   /* Set service type to RTP */
   result->service_type = SERVICE_MRTP;
 
-  /* Build and store full RTP URL (rtp://) */
+  /* Extract r2h-ifname and r2h-ifname-fcc before storing URL (removes
+   * in-place) */
+  {
+    char *qstart = strchr(url_part, '?');
+    service_extract_ifname_params(qstart, &result->ifname, &result->ifname_fcc);
+  }
+
+  /* Build and store full RTP URL (rtp://) - r2h-ifname already stripped */
   char rtp_url[HTTP_URL_BUFFER_SIZE];
   snprintf(rtp_url, sizeof(rtp_url), "rtp://%.1000s", url_part);
   result->rtp_url = strdup(rtp_url);
@@ -1466,6 +1584,20 @@ service_t *service_clone(service_t *service) {
     }
   }
 
+  if (service->ifname) {
+    cloned->ifname = strdup(service->ifname);
+    if (!cloned->ifname) {
+      goto cleanup_error;
+    }
+  }
+
+  if (service->ifname_fcc) {
+    cloned->ifname_fcc = strdup(service->ifname_fcc);
+    if (!cloned->ifname_fcc) {
+      goto cleanup_error;
+    }
+  }
+
   /* Clone addrinfo structures */
   if (service->addr) {
     cloned->addr = clone_addrinfo(service->addr);
@@ -1542,6 +1674,16 @@ void service_free(service_t *service) {
   if (service->user_agent) {
     free(service->user_agent);
     service->user_agent = NULL;
+  }
+
+  if (service->ifname) {
+    free(service->ifname);
+    service->ifname = NULL;
+  }
+
+  if (service->ifname_fcc) {
+    free(service->ifname_fcc);
+    service->ifname_fcc = NULL;
   }
 
   /* Free common fields */

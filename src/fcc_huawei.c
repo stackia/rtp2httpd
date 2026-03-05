@@ -114,7 +114,9 @@ int fcc_huawei_initialize_and_request(stream_context_t *ctx) {
   int r;
 
   /* Huawei FCC: Send RSR (FMT 5) with local IP and FCC client port */
-  uint32_t local_ip = get_local_ip_for_fcc();
+  service_t *service = ctx->service;
+  uint32_t local_ip =
+      get_local_ip_for_fcc(service->ifname, service->ifname_fcc);
   uint16_t fcc_client_nport = fcc->fcc_client.sin_port;
 
   if (local_ip == 0) {
