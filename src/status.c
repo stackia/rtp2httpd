@@ -515,7 +515,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity,
       buffer, buffer_capacity,
       "data: "
       "{\"serverStartTime\":%lld,\"uptimeMs\":%lld,\"currentLogLevel\":%d,"
-      "\"version\":\"" PACKAGE_VERSION "\",\"maxClients\":%d,\"clients\":[",
+      "\"version\":\"" VERSION "\",\"maxClients\":%d,\"clients\":[",
       (long long)status_shared->server_start_time, (long long)uptime_ms,
       status_shared->current_log_level, config.maxclients);
 

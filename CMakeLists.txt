@@ -8,7 +8,6 @@ else()
 endif()
 
 project(rtp2httpd
-  VERSION 1.0.0
   LANGUAGES C
   DESCRIPTION "RTP to HTTP streaming daemon"
 )
@@ -80,7 +79,6 @@ include(GNUInstallDirs)
 target_compile_definitions(rtp2httpd PRIVATE
   SYSCONFDIR="${CMAKE_INSTALL_FULL_SYSCONFDIR}"
   PACKAGE="${PROJECT_NAME}"
-  PACKAGE_VERSION="${PROJECT_VERSION_STRING}"
   VERSION="${PROJECT_VERSION_STRING}"
 )
 
