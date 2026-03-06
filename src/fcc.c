@@ -206,7 +206,7 @@ static bool is_rtcp_packet(const uint8_t *data, size_t len) {
 int fcc_handle_socket_event(stream_context_t *ctx, int64_t now) {
   fcc_session_t *fcc = &ctx->fcc;
 
-  /* Drain all available packets for edge-triggered pollers (kqueue EV_CLEAR)
+  /* Drain all available packets for edge-triggered pollers (epoll EPOLLET / kqueue EV_CLEAR)
    * where the read event fires only once per data arrival. */
   for (;;) {
     struct sockaddr_in peer_addr;

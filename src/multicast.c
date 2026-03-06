@@ -553,7 +553,7 @@ int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx,
   }
 
   /* Drain all available packets from the socket.  This is required for
-   * edge-triggered pollers (kqueue EV_CLEAR) where the read event fires
+   * edge-triggered pollers (epoll EPOLLET / kqueue EV_CLEAR) where the read event fires
    * only once per data arrival transition and won't re-trigger while
    * unread data remains in the socket buffer. */
   for (;;) {

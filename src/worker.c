@@ -463,26 +463,33 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
             /* For streaming connections, client socket is monitored for
              * disconnect detection */
             if (c->streaming) {
-              /* Client sent data or disconnected during streaming */
+              /* Client sent data or disconnected during streaming.
+               * Drain all available data for edge-triggered pollers. */
               char discard_buffer[1024];
-              int bytes =
-                  recv(c->fd, discard_buffer, sizeof(discard_buffer), 0);
-              if (bytes <= 0 && errno != EAGAIN) {
-                /* Client disconnected (bytes == 0) or error (bytes < 0) */
-                if (bytes == 0)
+              int closed = 0;
+              for (;;) {
+                int bytes =
+                    recv(c->fd, discard_buffer, sizeof(discard_buffer), 0);
+                if (bytes > 0) {
+                  logger(LOG_DEBUG,
+                         "Client sent %d bytes during streaming (discarded)",
+                         bytes);
+                  continue;
+                }
+                if (bytes == 0) {
                   logger(LOG_DEBUG,
                          "Client disconnected gracefully during streaming");
-                else
+                  closed = 1;
+                } else if (errno != EAGAIN) {
                   logger(LOG_DEBUG, "Client socket error during streaming: %s",
                          strerror(errno));
+                  closed = 1;
+                }
+                break; /* EAGAIN or closed/error */
+              }
+              if (closed) {
                 worker_close_and_free_connection(c);
                 continue; /* Skip further processing for this connection */
-              } else {
-                /* Client sent unexpected data (e.g., additional HTTP request) -
-                 * discard */
-                logger(LOG_DEBUG,
-                       "Client sent %d bytes during streaming (discarded)",
-                       bytes);
               }
             } else {
               /* Normal HTTP request handling */
