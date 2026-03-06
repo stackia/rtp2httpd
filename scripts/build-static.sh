@@ -185,12 +185,6 @@ else
 fi
 
 echo ""
-echo_info "Checking for musl libc..."
-if strings "$BINARY" | grep -q "musl"; then
-    echo_info "✓ Binary contains musl libc"
-fi
-
-echo ""
 echo_step "=== Build Summary ==="
 echo_info "Binary: ${BINARY}"
 echo_info "Size: $(stat -c%s "$BINARY" | numfmt --to=iec-i --suffix=B 2>/dev/null || stat -f%z "$BINARY" 2>/dev/null || echo "unknown")"
