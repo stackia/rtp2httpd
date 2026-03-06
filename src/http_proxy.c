@@ -457,46 +457,55 @@ static int http_proxy_try_send_pending(http_proxy_session_t *session) {
   size_t remaining;
   int total_sent = 0;
 
-  /* Phase 1: Send request headers from pending_request buffer */
-  if (session->pending_request_sent < session->pending_request_len) {
+  /* Phase 1: Send request headers from pending_request buffer.
+   * Loop to drain all writable data for edge-triggered pollers. */
+  while (session->pending_request_sent < session->pending_request_len) {
     remaining = session->pending_request_len - session->pending_request_sent;
     sent = send(session->socket,
                 session->pending_request + session->pending_request_sent,
-                remaining, MSG_NOSIGNAL);
+                remaining, MSG_NOSIGNAL | MSG_DONTWAIT);
 
-    if (sent < 0) {
-      if (errno == EAGAIN) {
-        return 0; /* Would block, try again later */
+    if (sent <= 0) {
+      if (sent < 0 && errno == EAGAIN) {
+        return total_sent > 0 ? total_sent : 0;
       }
-      logger(LOG_ERROR, "HTTP Proxy: Send headers failed: %s", strerror(errno));
-      return -1;
+      if (sent < 0) {
+        logger(LOG_ERROR, "HTTP Proxy: Send headers failed: %s",
+               strerror(errno));
+        return -1;
+      }
+      break; /* sent == 0: no progress */
     }
 
     session->pending_request_sent += sent;
     total_sent += (int)sent;
     logger(LOG_DEBUG, "HTTP Proxy: Sent headers %zd bytes (%zu/%zu)", sent,
            session->pending_request_sent, session->pending_request_len);
-
-    /* If headers not fully sent, return and wait for next POLLER_OUT */
-    if (session->pending_request_sent < session->pending_request_len) {
-      return total_sent;
-    }
   }
 
-  /* Phase 2: Send request body directly from request_body pointer */
-  if (session->request_body_len > 0 &&
-      session->request_body_sent < session->request_body_len) {
+  /* If headers not fully sent, wait for next writable event */
+  if (session->pending_request_sent < session->pending_request_len) {
+    return total_sent;
+  }
+
+  /* Phase 2: Send request body directly from request_body pointer.
+   * Loop to drain all writable data for edge-triggered pollers. */
+  while (session->request_body_len > 0 &&
+         session->request_body_sent < session->request_body_len) {
     remaining = session->request_body_len - session->request_body_sent;
     sent = send(session->socket,
                 session->request_body + session->request_body_sent, remaining,
-                MSG_NOSIGNAL);
+                MSG_NOSIGNAL | MSG_DONTWAIT);
 
-    if (sent < 0) {
-      if (errno == EAGAIN) {
-        return total_sent > 0 ? total_sent : 0; /* Headers sent, body blocked */
+    if (sent <= 0) {
+      if (sent < 0 && errno == EAGAIN) {
+        return total_sent > 0 ? total_sent : 0;
       }
-      logger(LOG_ERROR, "HTTP Proxy: Send body failed: %s", strerror(errno));
-      return -1;
+      if (sent < 0) {
+        logger(LOG_ERROR, "HTTP Proxy: Send body failed: %s", strerror(errno));
+        return -1;
+      }
+      break; /* sent == 0: no progress */
     }
 
     session->request_body_sent += sent;
@@ -1267,7 +1276,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
 
   /* Handle readable socket - receive response.
    * Loop until EAGAIN to drain all available data.  This is required for
-   * edge-triggered pollers (kqueue EV_CLEAR) where the read event fires
+   * edge-triggered pollers (epoll EPOLLET / kqueue EV_CLEAR) where the read event fires
    * only once per data arrival and won't re-trigger while unread data
    * remains in the socket buffer. */
   int bytes_forwarded = 0;
@@ -1309,10 +1318,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
   }
 
   /* When transfer is complete, clean up proxy socket and begin draining
-   * the client connection's output queue.
-   * The proxy socket must be removed from the poller immediately because a
-   * TCP socket in EOF state continuously triggers POLLER_IN under
-   * level-triggered polling, which would cause CPU spin. */
+   * the client connection's output queue. */
   if (session->state == HTTP_PROXY_STATE_COMPLETE) {
     if (session->socket >= 0) {
       worker_cleanup_socket_from_epoll(session->epoll_fd, session->socket);

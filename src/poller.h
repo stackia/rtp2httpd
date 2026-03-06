@@ -2,12 +2,16 @@
 #define POLLER_H
 
 /**
- * Platform-agnostic event polling abstraction.
+ * Platform-agnostic event polling abstraction (edge-triggered).
  *
  * Provides a unified API over platform-specific event notification mechanisms:
- *   - Linux:   epoll
- *   - macOS:   kqueue
+ *   - Linux:   epoll with EPOLLET (edge-triggered)
+ *   - macOS:   kqueue with EV_CLEAR (edge-triggered)
  *   - Windows: (future) IOCP
+ *
+ * All handlers must drain socket data (read/write until EAGAIN) because
+ * edge-triggered pollers only notify on state transitions, not while
+ * data remains available.
  */
 
 #include <stdint.h>

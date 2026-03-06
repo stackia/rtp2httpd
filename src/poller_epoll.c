@@ -11,7 +11,7 @@ void poller_close(int pfd) { close(pfd); }
 
 int poller_add(int pfd, int fd, uint32_t events) {
   struct epoll_event ev;
-  ev.events = 0;
+  ev.events = EPOLLET; /* Edge-triggered mode */
   ev.data.fd = fd;
   if (events & POLLER_IN)
     ev.events |= EPOLLIN;
@@ -28,7 +28,7 @@ int poller_add(int pfd, int fd, uint32_t events) {
 
 int poller_mod(int pfd, int fd, uint32_t events) {
   struct epoll_event ev;
-  ev.events = 0;
+  ev.events = EPOLLET; /* Edge-triggered mode */
   ev.data.fd = fd;
   if (events & POLLER_IN)
     ev.events |= EPOLLIN;

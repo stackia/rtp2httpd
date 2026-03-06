@@ -1219,23 +1219,30 @@ static int rtsp_try_send_pending(rtsp_session_t *session) {
     return 0; /* Already sent */
   }
 
-  ssize_t sent = send(
-      session->socket, session->pending_request + session->pending_request_sent,
-      session->pending_request_len - session->pending_request_sent,
-      MSG_DONTWAIT | MSG_NOSIGNAL);
+  /* Loop to drain all writable data for edge-triggered pollers */
+  while (session->pending_request_sent < session->pending_request_len) {
+    ssize_t sent = send(
+        session->socket,
+        session->pending_request + session->pending_request_sent,
+        session->pending_request_len - session->pending_request_sent,
+        MSG_DONTWAIT | MSG_NOSIGNAL);
 
-  if (sent < 0) {
-    if (errno == EAGAIN) {
-      /* Would block - will retry when socket becomes writable */
-      return 0;
+    if (sent <= 0) {
+      if (sent < 0 && errno == EAGAIN) {
+        /* Would block - will retry when socket becomes writable */
+        return 0;
+      }
+      if (sent < 0) {
+        logger(LOG_ERROR, "RTSP: Failed to send request: %s", strerror(errno));
+        session->keepalive_pending = 0;
+        session->awaiting_keepalive_response = 0;
+        return -1;
+      }
+      break; /* sent == 0: no progress */
     }
-    logger(LOG_ERROR, "RTSP: Failed to send request: %s", strerror(errno));
-    session->keepalive_pending = 0;
-    session->awaiting_keepalive_response = 0;
-    return -1;
-  }
 
-  session->pending_request_sent += (size_t)sent;
+    session->pending_request_sent += (size_t)sent;
+  }
 
   if (session->pending_request_sent >= session->pending_request_len) {
     /* Send complete - now await response */
@@ -1893,7 +1900,7 @@ static int rtsp_process_interleaved_buffer(rtsp_session_t *session,
 
 int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session,
                                      connection_t *conn) {
-  /* Drain all available data for edge-triggered pollers (kqueue EV_CLEAR)
+  /* Drain all available data for edge-triggered pollers (epoll EPOLLET / kqueue EV_CLEAR)
    * where the read event fires only once per data arrival. */
   while (session->response_buffer_pos < RTSP_RESPONSE_BUFFER_SIZE) {
     int bytes_received =
@@ -1943,7 +1950,7 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
     }
   }
 
-  /* Drain all available packets for edge-triggered pollers (kqueue EV_CLEAR)
+  /* Drain all available packets for edge-triggered pollers (epoll EPOLLET / kqueue EV_CLEAR)
    * where the read event fires only once per data arrival. */
   for (;;) {
     /* Allocate a fresh buffer from pool for this receive operation */

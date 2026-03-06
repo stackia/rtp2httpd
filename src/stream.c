@@ -80,7 +80,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
   }
 
   /* Process FEC socket events - drain all available packets for
-   * edge-triggered pollers (kqueue EV_CLEAR). */
+   * edge-triggered pollers (epoll EPOLLET / kqueue EV_CLEAR). */
   if (ctx->fec.initialized && ctx->fec.sock >= 0 && fd == ctx->fec.sock) {
     for (;;) {
       uint8_t fec_buf[BUFFER_POOL_BUFFER_SIZE];
@@ -130,7 +130,7 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
   }
 
   /* Handle UDP RTCP socket - drain all available packets for
-   * edge-triggered pollers (kqueue EV_CLEAR). */
+   * edge-triggered pollers (epoll EPOLLET / kqueue EV_CLEAR). */
   if (ctx->rtsp.initialized && ctx->rtsp.rtcp_socket >= 0 && fd == ctx->rtsp.rtcp_socket) {
     /* RTCP data processing could be added here in the future */
     /* For now, just consume all data to prevent buffer overflow */

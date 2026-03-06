@@ -567,35 +567,44 @@ connection_write_status_t connection_handle_write(connection_t *c) {
     return CONNECTION_WRITE_IDLE;
   }
 
-  size_t bytes_sent = 0;
-  int ret = zerocopy_send(c->fd, &c->zc_queue, &bytes_sent);
+  /* Loop to drain all writable data for edge-triggered pollers where
+   * EPOLLOUT / EV_CLEAR fires only once when the socket becomes writable. */
+  for (;;) {
+    size_t bytes_sent = 0;
+    int ret = zerocopy_send(c->fd, &c->zc_queue, &bytes_sent);
 
-  if (ret < 0 && ret != -2) {
-    c->state = CONN_CLOSING;
-    connection_epoll_update_events(c->epfd, c->fd,
-                                   POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
-    connection_report_queue(c);
-    return CONNECTION_WRITE_CLOSED;
+    if (ret < 0 && ret != -2) {
+      c->state = CONN_CLOSING;
+      connection_epoll_update_events(c->epfd, c->fd,
+                                     POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+      connection_report_queue(c);
+      return CONNECTION_WRITE_CLOSED;
+    }
+
+    if (ret == -2) {
+      /* EAGAIN - socket send buffer full, wait for next writable event */
+      connection_report_queue(c);
+      return CONNECTION_WRITE_BLOCKED;
+    }
+
+    if (!c->zc_queue.head) {
+      /* All data sent - remove POLLER_OUT */
+      connection_epoll_update_events(c->epfd, c->fd,
+                                     POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+      connection_report_queue(c);
+      if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
+        return CONNECTION_WRITE_CLOSED;
+      return CONNECTION_WRITE_IDLE;
+    }
+
+    /* Guard against spinning if zerocopy_send sent 0 bytes without EAGAIN */
+    if (bytes_sent == 0)
+      break;
   }
 
-  if (ret == -2) {
-    connection_report_queue(c);
-    return CONNECTION_WRITE_BLOCKED;
-  }
-
-  if (c->zc_queue.head) {
-    connection_report_queue(c);
-    return CONNECTION_WRITE_PENDING;
-  }
-
-  connection_epoll_update_events(c->epfd, c->fd,
-                                 POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+  /* Queue still has data but we couldn't make progress */
   connection_report_queue(c);
-
-  if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
-    return CONNECTION_WRITE_CLOSED;
-
-  return CONNECTION_WRITE_IDLE;
+  return CONNECTION_WRITE_PENDING;
 }
 
 void connection_handle_read(connection_t *c) {
@@ -603,7 +612,7 @@ void connection_handle_read(connection_t *c) {
     return;
 
   /* Read into input buffer.  Loop to drain all available data for
-   * edge-triggered pollers (kqueue EV_CLEAR) where the read event fires
+   * edge-triggered pollers (epoll EPOLLET / kqueue EV_CLEAR) where the read event fires
    * only once per data arrival.  This is important for POST requests
    * with bodies larger than INBUF_SIZE. */
   for (;;) {
