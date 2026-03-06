@@ -9,7 +9,7 @@
 
 /* /assets/icon.png (5.4KB gzipped) */
 static const uint8_t data__assets_icon_png[] = {
-    31, 139, 8, 0, 0, 0, 0, 0, 2, 19, 37, 143, 121, 88, 76, 251, 227, 128, 63, 179, 181, 47, 83, 34,
+    31, 139, 8, 0, 0, 0, 0, 0, 2, 3, 37, 143, 121, 88, 76, 251, 227, 128, 63, 179, 181, 47, 83, 34,
     82, 166, 108, 45, 110, 68, 89, 174, 165, 51, 200, 23, 151, 171, 174, 80, 182, 102, 34, 42, 97, 162, 125, 155,
     115, 82, 84, 184, 138, 184, 217, 39, 75, 133, 164, 190, 182, 172, 157, 202, 146, 43, 169, 108, 131, 210, 76, 69,
     59, 179, 239, 231, 156, 207, 239, 249, 62, 191, 63, 222, 255, 222, 231, 121, 159, 183, 32, 100, 205, 114, 91, 43,
@@ -240,7 +240,7 @@ static const uint8_t data__assets_icon_png[] = {
 
 /* /assets/mp2_decoder-QOp_8zoi.wasm (9.3KB gzipped) */
 static const uint8_t data__assets_mp2_decoder_QOp_8zoi_wasm[] = {
-    31, 139, 8, 0, 0, 0, 0, 0, 2, 19, 181, 124, 11, 116, 156, 215, 113, 222, 220, 251, 63, 240, 239, 254,
+    31, 139, 8, 0, 0, 0, 0, 0, 2, 3, 181, 124, 11, 116, 156, 215, 113, 222, 220, 251, 63, 240, 239, 254,
     187, 192, 226, 65, 16, 36, 40, 113, 238, 21, 64, 66, 20, 31, 224, 67, 32, 68, 74, 226, 94, 46, 176, 32,
     68, 145, 146, 19, 63, 228, 39, 73, 83, 144, 196, 127, 249, 90, 112, 5, 211, 57, 182, 177, 74, 229, 24, 177,
     101, 155, 93, 172, 19, 246, 84, 245, 161, 91, 37, 97, 92, 185, 230, 177, 221, 148, 173, 237, 24, 161, 73, 145,
@@ -634,7 +634,7 @@ static const uint8_t data__assets_mp2_decoder_QOp_8zoi_wasm[] = {
 
 /* /assets/player-RwooG3rx.js (53.1KB gzipped) */
 static const uint8_t data__assets_player_RwooG3rx_js[] = {
-    31, 139, 8, 0, 0, 0, 0, 0, 2, 19, 236, 189, 107, 151, 227, 198, 117, 40, 250, 87, 48, 88, 19, 94,
+    31, 139, 8, 0, 0, 0, 0, 0, 2, 3, 236, 189, 107, 151, 227, 198, 117, 40, 250, 87, 48, 88, 19, 94,
     64, 44, 114, 8, 240, 209, 108, 176, 209, 189, 122, 186, 123, 70, 99, 207, 163, 61, 61, 61, 146, 204, 195, 75,
     129, 64, 145, 196, 52, 8, 80, 64, 177, 31, 98, 115, 45, 217, 73, 142, 95, 241, 117, 98, 91, 182, 227, 248,
     36, 182, 227, 19, 203, 241, 145, 157, 135, 99, 43, 150, 229, 179, 214, 249, 43, 87, 243, 250, 116, 255, 194, 93,
@@ -2852,7 +2852,7 @@ static const uint8_t data__assets_player_RwooG3rx_js[] = {
 
 /* /assets/status-Buyq2zeR.js (12.1KB gzipped) */
 static const uint8_t data__assets_status_Buyq2zeR_js[] = {
-    31, 139, 8, 0, 0, 0, 0, 0, 2, 19, 213, 125, 123, 147, 220, 182, 149, 239, 255, 247, 83, 208, 188, 146,
+    31, 139, 8, 0, 0, 0, 0, 0, 2, 3, 213, 125, 123, 147, 220, 182, 149, 239, 255, 247, 83, 208, 188, 146,
     138, 220, 5, 169, 126, 77, 79, 79, 171, 168, 46, 105, 36, 89, 74, 244, 138, 102, 100, 39, 233, 59, 21, 177,
     217, 232, 110, 106, 216, 100, 139, 68, 79, 207, 104, 212, 85, 138, 55, 190, 150, 95, 73, 54, 142, 237, 181, 227,
     196, 113, 54, 217, 56, 15, 217, 142, 227, 68, 138, 109, 37, 223, 101, 203, 61, 51, 250, 22, 183, 240, 34, 1,
@@ -3359,7 +3359,7 @@ static const uint8_t data__assets_status_Buyq2zeR_js[] = {
 
 /* /assets/use-theme-B2iJDXdb.css (8.8KB gzipped) */
 static const uint8_t data__assets_use_theme_B2iJDXdb_css[] = {
-    31, 139, 8, 0, 0, 0, 0, 0, 2, 19, 237, 125, 89, 143, 227, 202, 177, 230, 251, 252, 10, 206, 49, 106,
+    31, 139, 8, 0, 0, 0, 0, 0, 2, 3, 237, 125, 89, 143, 227, 202, 177, 230, 251, 252, 10, 206, 49, 106,
     80, 60, 151, 100, 115, 145, 84, 18, 101, 27, 103, 96, 204, 0, 3, 92, 251, 225, 26, 247, 169, 213, 56, 160,
     196, 148, 68, 23, 55, 144, 84, 149, 84, 132, 238, 111, 191, 136, 220, 152, 220, 146, 75, 169, 61, 110, 31, 123,
     169, 22, 51, 190, 136, 140, 136, 76, 230, 198, 204, 200, 95, 66, 239, 134, 50, 37, 205, 146, 20, 101, 69, 128,
@@ -3731,7 +3731,7 @@ static const uint8_t data__assets_use_theme_B2iJDXdb_css[] = {
 
 /* /assets/use-theme-DodBhe-F.js (62.4KB gzipped) */
 static const uint8_t data__assets_use_theme_DodBhe_F_js[] = {
-    31, 139, 8, 0, 0, 0, 0, 0, 2, 19, 212, 189, 123, 87, 227, 56, 182, 56, 250, 255, 249, 20, 193, 183,
+    31, 139, 8, 0, 0, 0, 0, 0, 2, 3, 212, 189, 123, 87, 227, 56, 182, 56, 250, 255, 249, 20, 193, 183,
     110, 198, 62, 40, 169, 4, 168, 151, 83, 106, 14, 111, 106, 186, 40, 40, 160, 186, 138, 166, 57, 180, 18, 43,
     137, 27, 197, 78, 217, 114, 32, 5, 153, 207, 126, 215, 222, 122, 88, 54, 129, 238, 153, 51, 231, 222, 223, 93,
     139, 69, 44, 105, 235, 189, 37, 109, 237, 151, 252, 97, 145, 12, 100, 156, 38, 126, 112, 63, 72, 147, 92, 54,
@@ -6334,7 +6334,7 @@ static const uint8_t data__assets_use_theme_DodBhe_F_js[] = {
 
 /* /player.html (0.8KB gzipped) */
 static const uint8_t data__player_html[] = {
-    31, 139, 8, 0, 0, 0, 0, 0, 2, 19, 173, 149, 109, 143, 212, 56, 12, 199, 223, 239, 167, 48, 57, 9,
+    31, 139, 8, 0, 0, 0, 0, 0, 2, 3, 173, 149, 109, 143, 212, 56, 12, 199, 223, 239, 167, 48, 57, 9,
     117, 164, 77, 135, 93, 16, 7, 92, 51, 39, 161, 101, 79, 192, 157, 132, 142, 7, 241, 54, 77, 60, 109, 110,
     210, 164, 74, 220, 153, 173, 110, 249, 238, 168, 77, 135, 233, 176, 35, 30, 36, 94, 181, 113, 237, 159, 255, 182,
     235, 182, 184, 167, 189, 162, 190, 69, 168, 169, 177, 171, 179, 98, 184, 128, 149, 174, 18, 12, 29, 91, 157, 1,
@@ -6371,7 +6371,7 @@ static const uint8_t data__player_html[] = {
 
 /* /status.html (0.7KB gzipped) */
 static const uint8_t data__status_html[] = {
-    31, 139, 8, 0, 0, 0, 0, 0, 2, 19, 149, 85, 77, 111, 212, 48, 16, 189, 247, 87, 12, 62, 84, 89,
+    31, 139, 8, 0, 0, 0, 0, 0, 2, 3, 149, 85, 77, 111, 212, 48, 16, 189, 247, 87, 12, 62, 84, 89,
     169, 201, 66, 79, 168, 196, 139, 84, 149, 74, 124, 93, 40, 72, 92, 29, 123, 54, 49, 235, 216, 193, 158, 236,
     54, 176, 253, 239, 40, 113, 194, 102, 219, 21, 42, 39, 103, 38, 51, 239, 61, 123, 252, 146, 252, 133, 114, 146,
     186, 6, 161, 162, 218, 172, 206, 242, 126, 1, 35, 108, 201, 25, 90, 182, 58, 3, 200, 43, 20, 170, 127, 0,
@@ -6406,14 +6406,14 @@ static const uint8_t data__status_html[] = {
 #include "embedded_web.h"
 
 static const embedded_file_t embedded_files[] = {
-    {"/assets/icon.png", "image/png", "4a3f01c54fedc4429cbb5d763b634da06a95f34defe69bba9298e09dc60d382e", data__assets_icon_png, sizeof(data__assets_icon_png), false},
+    {"/assets/icon.png", "image/png", "f73cce73902a4537cb8ac2e8d74bbd4ef159ba02e72c1f93ecbc1119a410e263", data__assets_icon_png, sizeof(data__assets_icon_png), false},
     {"/assets/mp2_decoder-QOp_8zoi.wasm", "application/wasm", NULL, data__assets_mp2_decoder_QOp_8zoi_wasm, sizeof(data__assets_mp2_decoder_QOp_8zoi_wasm), true},
     {"/assets/player-RwooG3rx.js", "application/javascript; charset=utf-8", NULL, data__assets_player_RwooG3rx_js, sizeof(data__assets_player_RwooG3rx_js), true},
     {"/assets/status-Buyq2zeR.js", "application/javascript; charset=utf-8", NULL, data__assets_status_Buyq2zeR_js, sizeof(data__assets_status_Buyq2zeR_js), true},
     {"/assets/use-theme-B2iJDXdb.css", "text/css; charset=utf-8", NULL, data__assets_use_theme_B2iJDXdb_css, sizeof(data__assets_use_theme_B2iJDXdb_css), true},
     {"/assets/use-theme-DodBhe-F.js", "application/javascript; charset=utf-8", NULL, data__assets_use_theme_DodBhe_F_js, sizeof(data__assets_use_theme_DodBhe_F_js), true},
-    {"/player.html", "text/html; charset=utf-8", "894e47fdf23c14639d60d467b220a3ed2b9f89353707d16fa9903d17363890fa", data__player_html, sizeof(data__player_html), false},
-    {"/status.html", "text/html; charset=utf-8", "d4ea83d9b0998726e0e1041094ebc1031e2a4168d07be4f53afc5625a4f856b2", data__status_html, sizeof(data__status_html), false},
+    {"/player.html", "text/html; charset=utf-8", "731aee6331480c162e4244894931b64d8a49edd6533bda23a7dd76cc913d86d3", data__player_html, sizeof(data__player_html), false},
+    {"/status.html", "text/html; charset=utf-8", "95c79c5f508bdefce88a5a5409b5456da32f8ce28477be925bbb2ceaa70c1a07", data__status_html, sizeof(data__status_html), false},
 };
 
 #define EMBEDDED_FILES_COUNT 8
