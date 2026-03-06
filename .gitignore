@@ -1,14 +1,3 @@
-Makefile
-src/rtp2httpd
-!openwrt-support/rtp2httpd/Makefile
-!openwrt-support/luci-app-rtp2httpd/Makefile
-*.o
-
-# CMake generated files
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-
 .vscode/
 
 # clangd
