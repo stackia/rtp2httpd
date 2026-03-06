@@ -8,8 +8,6 @@ The mock sender uses 7 TS packets per RTP datagram at ~200 pps,
 producing roughly 2 Mbps of payload (similar to real IPTV streams).
 """
 
-import time
-
 import pytest
 
 from helpers import (
@@ -43,7 +41,6 @@ class TestBasicRTPStream:
         mcast_port = find_free_udp_port()
         sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=200)
         sender.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -69,7 +66,6 @@ class TestBasicRTPStream:
         mcast_port = find_free_udp_port()
         sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=300)
         sender.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -104,7 +100,6 @@ class TestUDPxyFormat:
         mcast_port = find_free_udp_port()
         sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=200)
         sender.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -159,7 +154,6 @@ class TestFEC:
         fec_port = find_free_udp_port()
         sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=200)
         sender.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -193,7 +187,6 @@ class TestMultipleConcurrentClients:
         mcast_port = find_free_udp_port()
         sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=300)
         sender.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(

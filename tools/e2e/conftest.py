@@ -1,8 +1,11 @@
 """
 Pytest configuration and shared fixtures for rtp2httpd E2E tests.
 
-Run all tests:
-    cd tools && python -m pytest e2e/ -v
+Run all tests (parallel by default):
+    cd tools/e2e && ./run.sh
+
+Run sequentially:
+    cd tools/e2e && ./run.sh -p 1
 
 Run a single suite:
     cd tools && python -m pytest e2e/test_m3u.py -v

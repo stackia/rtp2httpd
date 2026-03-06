@@ -5,8 +5,6 @@ These tests start a mock HTTP upstream, point rtp2httpd at it via
 /http/127.0.0.1:<port>/…, and verify responses are correctly proxied.
 """
 
-import time
-
 import pytest
 
 from helpers import (
@@ -35,7 +33,6 @@ class TestBasicProxy:
             "/hello": {"status": 200, "body": b"world", "headers": {"Content-Type": "text/plain"}},
         })
         upstream.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -59,7 +56,6 @@ class TestBasicProxy:
         """A proxied 404 from the upstream should be forwarded to the client."""
         upstream = MockHTTPUpstream(routes={})  # no routes → all 404
         upstream.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -96,7 +92,6 @@ class TestProxyContentType:
             },
         })
         upstream.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -133,7 +128,6 @@ class TestProxyLargeBody:
             "/big": {"status": 200, "body": big_body, "headers": {"Content-Type": "application/octet-stream"}},
         })
         upstream.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -169,7 +163,6 @@ class TestProxyQueryParams:
             "/search": {"status": 200, "body": b"found"},
         })
         upstream.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -215,7 +208,6 @@ class TestProxyM3URewrite:
             },
         })
         upstream.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -281,7 +273,6 @@ class TestProxyStatusCodes:
             "/err": {"status": 500, "body": b"Internal Error"},
         })
         upstream.start()
-        time.sleep(0.1)
         port = find_free_port()
         r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
@@ -306,7 +297,6 @@ class TestProxyStatusCodes:
             },
         })
         upstream.start()
-        time.sleep(0.1)
         port = find_free_port()
         r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
@@ -335,7 +325,6 @@ class TestProxyEmptyBody:
             "/empty": {"status": 200, "body": b""},
         })
         upstream.start()
-        time.sleep(0.1)
         port = find_free_port()
         r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
