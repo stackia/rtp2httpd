@@ -9,6 +9,8 @@ Tests use a generous 20 s timeout via ``stream_get`` to accommodate the
 RTSP state machine setup time on macOS.
 """
 
+import time
+
 import pytest
 
 from helpers import (
