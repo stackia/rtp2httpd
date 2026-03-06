@@ -29,6 +29,7 @@ class _RTSPServerBase:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self.requests_received: list[str] = []
+        self.requests_detailed: list[dict] = []
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -92,6 +93,17 @@ class _RTSPServerBase:
                     elif lo.startswith("transport:"):
                         transport_hdr = line.split(":", 1)[1].strip()
                 self.requests_received.append(method)
+                # Capture full request details for test verification
+                req_headers_map: dict[str, str] = {}
+                for hdr_line in req.split("\r\n")[1:]:
+                    if hdr_line and ":" in hdr_line:
+                        hk, hv = hdr_line.split(":", 1)
+                        req_headers_map[hk.strip()] = hv.strip()
+                self.requests_detailed.append({
+                    "method": method,
+                    "uri": uri,
+                    "headers": req_headers_map,
+                })
 
                 if method == "OPTIONS":
                     conn.sendall(("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
