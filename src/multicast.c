@@ -174,9 +174,10 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr,
     gr->gr_interface = if_nametoindex(upstream_if);
   }
 
-#ifdef __APPLE__
-  /* macOS requires a valid interface index for multicast join (unlike Linux
-   * where 0 means "any"). Fall back to the first non-loopback interface. */
+#if defined(__APPLE__) || defined(__FreeBSD__)
+  /* macOS/FreeBSD may require a valid interface index for multicast join
+   * (unlike Linux where 0 means "any"). Fall back to the first non-loopback
+   * interface. */
   if (gr->gr_interface == 0 && service->addr->ai_family == AF_INET) {
     struct ifaddrs *ifaddr, *ifa;
     if (getifaddrs(&ifaddr) == 0) {
