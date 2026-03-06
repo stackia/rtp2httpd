@@ -126,7 +126,6 @@ class TestProxyLargeBody:
     """Verify a larger payload is proxied completely."""
 
     @pytest.mark.slow
-    @pytest.mark.xfail(reason="rtp2httpd HTTP proxy may time out on large payloads (potential bug)")
     def test_large_payload(self, r2h_binary):
         """Verify a 64 KB payload is proxied completely."""
         big_body = b"X" * (64 * 1024)
