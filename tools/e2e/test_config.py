@@ -440,3 +440,147 @@ class TestCORS:
                    "access-control-allow-methods" in hdrs
         finally:
             r2h.stop()
+
+    def test_cors_specific_origin(self, r2h_binary):
+        """CORS with a specific origin should return that origin."""
+        port = find_free_port()
+        r2h = R2HProcess(
+            r2h_binary, port,
+            extra_args=["-v", "4", "-m", "100", "-O", "http://mysite.com"],
+        )
+        try:
+            r2h.start()
+            status, hdrs, _ = http_get("127.0.0.1", port, "/status")
+            assert status == 200
+            acao = hdrs.get("Access-Control-Allow-Origin",
+                           hdrs.get("access-control-allow-origin", ""))
+            assert acao == "http://mysite.com"
+        finally:
+            r2h.stop()
+
+
+# ---------------------------------------------------------------------------
+# XFF (X-Forwarded-For) support
+# ---------------------------------------------------------------------------
+
+
+class TestXFF:
+    """The -X / --xff flag enables X-Forwarded-For header support."""
+
+    def test_xff_flag_accepted(self, r2h_binary):
+        """Server should start and respond with -X flag enabled."""
+        port = find_free_port()
+        r2h = R2HProcess(
+            r2h_binary, port,
+            extra_args=["-v", "4", "-m", "100", "-X"],
+        )
+        try:
+            r2h.start()
+            status, _, _ = http_get("127.0.0.1", port, "/status")
+            assert status == 200
+        finally:
+            r2h.stop()
+
+    def test_xff_with_forwarded_header(self, r2h_binary):
+        """With -X, requests with X-Forwarded-For should be accepted normally."""
+        port = find_free_port()
+        r2h = R2HProcess(
+            r2h_binary, port,
+            extra_args=["-v", "4", "-m", "100", "-X"],
+        )
+        try:
+            r2h.start()
+            status, _, _ = http_get(
+                "127.0.0.1", port, "/status",
+                headers={"X-Forwarded-For": "10.0.0.1"},
+            )
+            assert status == 200
+        finally:
+            r2h.stop()
+
+    def test_xff_m3u_url_uses_forwarded_host(self, r2h_binary):
+        """With -X and X-Forwarded-Host, M3U URLs should use the forwarded host."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+xff = yes
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1,XFF Channel
+rtp://239.0.0.1:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get(
+                "127.0.0.1", port, "/playlist.m3u",
+                headers={
+                    "X-Forwarded-Host": "public.example.com",
+                    "X-Forwarded-Proto": "https",
+                },
+            )
+            assert status == 200
+            text = body.decode()
+            # With XFF enabled and X-Forwarded-Host set, the base URL
+            # in the M3U should use the forwarded host
+            assert "public.example.com" in text
+        finally:
+            r2h.stop()
+
+
+# ---------------------------------------------------------------------------
+# Quiet mode
+# ---------------------------------------------------------------------------
+
+
+class TestQuietMode:
+    """The -q flag suppresses non-essential output."""
+
+    def test_quiet_mode_starts(self, r2h_binary):
+        """Server should start and respond normally with -q flag."""
+        port = find_free_port()
+        r2h = R2HProcess(
+            r2h_binary, port,
+            extra_args=["-q", "-m", "100"],
+        )
+        try:
+            r2h.start()
+            status, _, _ = http_get("127.0.0.1", port, "/status")
+            assert status == 200
+        finally:
+            r2h.stop()
+
+
+# ---------------------------------------------------------------------------
+# XFF in config file
+# ---------------------------------------------------------------------------
+
+
+class TestXFFConfig:
+    """XFF can also be enabled via config file."""
+
+    def test_xff_config_option(self, r2h_binary):
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+xff = yes
+
+[bind]
+* {port}
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, _ = http_get(
+                "127.0.0.1", port, "/status",
+                headers={"X-Forwarded-For": "192.168.1.1"},
+            )
+            assert status == 200
+        finally:
+            r2h.stop()

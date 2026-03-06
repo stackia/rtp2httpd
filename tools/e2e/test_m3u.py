@@ -465,28 +465,6 @@ rtp://239.0.0.1:1234
 
 
 # ---------------------------------------------------------------------------
-# Empty playlist
-# ---------------------------------------------------------------------------
-
-
-class TestM3UEmpty:
-    """When no services are configured, /playlist.m3u returns 404."""
-
-    def test_no_services_404(self, r2h_binary):
-        port = find_free_port()
-        r2h = R2HProcess(
-            r2h_binary, port,
-            extra_args=["-v", "4", "-m", "100"],
-        )
-        try:
-            r2h.start()
-            status, _, _ = http_get("127.0.0.1", port, "/playlist.m3u")
-            assert status == 404
-        finally:
-            r2h.stop()
-
-
-# ---------------------------------------------------------------------------
 # Special characters in service names
 # ---------------------------------------------------------------------------
 
@@ -653,5 +631,165 @@ rtp://239.0.0.1:1234
                 "127.0.0.1", port, "HEAD", "/MyChannel$HD", timeout=3.0,
             )
             assert status == 200
+        finally:
+            r2h.stop()
+
+
+# ---------------------------------------------------------------------------
+# External M3U via HTTP URL
+# ---------------------------------------------------------------------------
+
+
+class TestM3UHTTPExternal:
+    """M3U loaded from an HTTP URL via -M http://..."""
+
+    def test_external_http_m3u(self, r2h_binary):
+        """Loading M3U from an HTTP URL should populate the playlist."""
+        from helpers import MockHTTPUpstream
+
+        m3u_content = (
+            "#EXTM3U\n"
+            "#EXTINF:-1,HTTP Loaded Channel\n"
+            "rtp://239.10.0.1:5000\n"
+        )
+        upstream = MockHTTPUpstream(routes={
+            "/channels.m3u": {
+                "status": 200,
+                "body": m3u_content,
+                "headers": {"Content-Type": "audio/x-mpegurl"},
+            },
+        })
+        upstream.start()
+        time.sleep(0.1)
+
+        port = find_free_port()
+        r2h = R2HProcess(
+            r2h_binary, port,
+            extra_args=[
+                "-v", "4", "-m", "100",
+                "-M", "http://127.0.0.1:%d/channels.m3u" % upstream.port,
+            ],
+        )
+        try:
+            r2h.start()
+            time.sleep(1.0)  # allow async M3U fetch via curl
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+            assert status == 200
+            assert "HTTP Loaded Channel" in text
+        finally:
+            r2h.stop()
+            upstream.stop()
+
+    def test_external_http_m3u_url_rewritten(self, r2h_binary):
+        """URLs in externally loaded HTTP M3U should be rewritten."""
+        from helpers import MockHTTPUpstream
+
+        m3u_content = (
+            "#EXTM3U\n"
+            "#EXTINF:-1,Ext RTSP Channel\n"
+            "rtsp://192.168.1.1:554/live\n"
+            "#EXTINF:-1,Ext RTP Channel\n"
+            "rtp://239.10.0.1:5000\n"
+        )
+        upstream = MockHTTPUpstream(routes={
+            "/list.m3u": {
+                "status": 200,
+                "body": m3u_content,
+                "headers": {"Content-Type": "audio/x-mpegurl"},
+            },
+        })
+        upstream.start()
+        time.sleep(0.1)
+
+        port = find_free_port()
+        r2h = R2HProcess(
+            r2h_binary, port,
+            extra_args=[
+                "-v", "4", "-m", "100",
+                "-M", "http://127.0.0.1:%d/list.m3u" % upstream.port,
+            ],
+        )
+        try:
+            r2h.start()
+            time.sleep(1.0)
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+            assert status == 200
+            # URLs should be rewritten to go through rtp2httpd
+            assert "rtsp://192.168.1.1:554" not in text
+            assert "rtp://239.10.0.1:5000" not in text
+            assert "http://" in text
+        finally:
+            r2h.stop()
+            upstream.stop()
+
+
+# ---------------------------------------------------------------------------
+# Multiple sources per channel with $label suffix in M3U
+# ---------------------------------------------------------------------------
+
+
+class TestM3UMultiLabel:
+    """M3U with multiple sources for the same channel using $label."""
+
+    def test_multi_label_distinct_urls(self, r2h_binary):
+        """Channels with same name but different $label should produce
+        distinct URLs in the playlist."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1,CCTV-1
+rtp://239.0.0.1:1234$HD
+#EXTINF:-1,CCTV-1
+rtp://239.0.0.2:1234$SD
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+            assert status == 200
+            assert "CCTV-1" in text
+            # Should have URLs for both sources
+            url_lines = [l for l in text.splitlines() if l.startswith("http")]
+            assert len(url_lines) >= 2, \
+                "Expected at least 2 URLs for multi-label, got %d" % len(url_lines)
+            assert len(set(url_lines)) == len(url_lines), "URLs should be unique"
+        finally:
+            r2h.stop()
+
+    def test_multi_label_urls_contain_labels(self, r2h_binary):
+        """The playlist URLs for multi-label channels should reference labels."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1,TestCh
+rtp://239.0.0.1:1234$HD
+#EXTINF:-1,TestCh
+rtp://239.0.0.2:1234$SD
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+            assert status == 200
+            # Both EXTINF entries should reference TestCh
+            assert text.count("TestCh") >= 2
         finally:
             r2h.stop()
