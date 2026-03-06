@@ -36,7 +36,7 @@ define Package/rtp2httpd/description
 endef
 
 CMAKE_OPTIONS += \
-	-DOPTIMIZATION_LEVEL=-O3
+	-DENABLE_AGGRESSIVE_OPT=ON
 
 define Package/rtp2httpd/conffiles
 /etc/config/rtp2httpd

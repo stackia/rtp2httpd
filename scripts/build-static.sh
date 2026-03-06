@@ -123,7 +123,7 @@ cd "$BUILD_DIR"
 echo ""
 echo_step "Configuring Build"
 echo_info "Build directory: $(pwd)"
-echo_info "Optimization level: -O3 (optimize for performance)"
+echo_info "Build type: Release (with aggressive optimizations)"
 if [ -n "$RELEASE_VERSION" ]; then
     echo_info "Version: $RELEASE_VERSION"
 fi
@@ -143,7 +143,7 @@ RELEASE_VERSION="${RELEASE_VERSION}" cmake "${PROJECT_ROOT}" \
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DCMAKE_INSTALL_SYSCONFDIR=/etc \
     -DCMAKE_BUILD_TYPE=Release \
-    -DOPTIMIZATION_LEVEL=-O3 \
+    -DENABLE_AGGRESSIVE_OPT=ON \
     -DCMAKE_SYSTEM_NAME=Linux
 
 echo ""
@@ -191,7 +191,7 @@ echo_info "Binary: ${BINARY}"
 echo_info "Size: $(stat -c%s "$BINARY" | numfmt --to=iec-i --suffix=B 2>/dev/null || stat -f%z "$BINARY" 2>/dev/null || echo "unknown")"
 echo_info "Architecture: ${TOOLCHAIN_PREFIX%%-*}"
 echo_info "Libc: musl (static)"
-echo_info "Optimization: -O3 (performance)"
+echo_info "Optimization: Release + aggressive"
 echo_info "Toolchain: ${TOOLCHAIN_PREFIX} (${TOOLCHAIN_RELEASE})"
 if [ -n "$RELEASE_VERSION" ]; then
     echo_info "Version: $RELEASE_VERSION"

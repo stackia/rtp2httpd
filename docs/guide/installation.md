@@ -150,7 +150,7 @@ pnpm install --frozen-lockfile
 pnpm run web-ui:build
 
 # 配置和编译
-cmake -B build -DOPTIMIZATION_LEVEL=-O3
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON
 cmake --build build -j$(nproc)
 
 # 安装
