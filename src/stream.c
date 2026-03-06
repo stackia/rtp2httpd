@@ -79,11 +79,14 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
     return mcast_session_handle_event(&ctx->mcast, ctx, now);
   }
 
-  /* Process FEC socket events */
+  /* Process FEC socket events - drain all available packets for
+   * edge-triggered pollers (kqueue EV_CLEAR). */
   if (ctx->fec.initialized && ctx->fec.sock >= 0 && fd == ctx->fec.sock) {
-    uint8_t fec_buf[BUFFER_POOL_BUFFER_SIZE];
-    int fec_len = recv(ctx->fec.sock, fec_buf, sizeof(fec_buf), 0);
-    if (fec_len > 0) {
+    for (;;) {
+      uint8_t fec_buf[BUFFER_POOL_BUFFER_SIZE];
+      int fec_len = recv(ctx->fec.sock, fec_buf, sizeof(fec_buf), 0);
+      if (fec_len <= 0)
+        break;
       fec_process_packet(&ctx->fec, fec_buf, fec_len);
     }
     return 0;
@@ -126,12 +129,14 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
     return 0; /* Success - processed data, continue with other events */
   }
 
-  /* Handle UDP RTCP socket (for future RTCP processing) */
+  /* Handle UDP RTCP socket - drain all available packets for
+   * edge-triggered pollers (kqueue EV_CLEAR). */
   if (ctx->rtsp.initialized && ctx->rtsp.rtcp_socket >= 0 && fd == ctx->rtsp.rtcp_socket) {
     /* RTCP data processing could be added here in the future */
-    /* For now, just consume the data to prevent buffer overflow */
+    /* For now, just consume all data to prevent buffer overflow */
     uint8_t rtcp_buffer[RTCP_BUFFER_SIZE];
-    recv(ctx->rtsp.rtcp_socket, rtcp_buffer, sizeof(rtcp_buffer), 0);
+    while (recv(ctx->rtsp.rtcp_socket, rtcp_buffer, sizeof(rtcp_buffer), 0) > 0)
+      ;
     return 0;
   }
 

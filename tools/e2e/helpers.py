@@ -307,17 +307,25 @@ class R2HProcess:
 
 
 class MulticastSender:
-    """Continuously sends RTP packets to a multicast group on loopback."""
+    """Continuously sends RTP packets to a multicast group on loopback.
+
+    *ts_per_rtp* controls how many 188-byte TS null packets are packed
+    into each RTP datagram.  Real IPTV typically uses 7 TS/RTP which,
+    at ~190 pps, produces roughly 2 Mbps of payload.
+    """
 
     def __init__(
         self,
         addr: str = MCAST_ADDR,
         port: int = 0,
         pps: int = 200,
+        ts_per_rtp: int = 7,
     ):
         self.addr = addr
         self.port = port or find_free_udp_port()
         self.pps = pps
+        self.ts_per_rtp = ts_per_rtp
+        self._payload = _TS_NULL_PACKET * ts_per_rtp
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -339,7 +347,7 @@ class MulticastSender:
         ts = 0
         interval = 1.0 / self.pps
         while not self._stop.is_set():
-            pkt = make_rtp_packet(seq, ts)
+            pkt = make_rtp_packet(seq, ts, payload=self._payload)
             try:
                 self._sock.sendto(pkt, (self.addr, self.port))
                 self.packets_sent += 1

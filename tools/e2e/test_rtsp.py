@@ -5,12 +5,10 @@ Tests cover both TCP interleaved and UDP transport modes using mock RTSP
 servers.  rtp2httpd prefers TCP interleaved but falls back to UDP when the
 server only offers it.
 
-NOTE: rtp2httpd's RTSP state machine can take several seconds on macOS
-due to internal timing (UDP port allocation, kqueue wakeup intervals).
-Tests use a generous 15 s timeout via ``stream_get``.
+Tests use a generous 20 s timeout via ``stream_get`` to accommodate the
+RTSP state machine setup time on macOS.
 """
 
-import sys
 import time
 
 import pytest
@@ -26,8 +24,6 @@ from helpers import (
 
 pytestmark = pytest.mark.rtsp
 
-# rtp2httpd RTSP proxy can take up to ~15 s on macOS before the first
-# byte arrives (due to kqueue event loop timing and UDP port allocation).
 _STREAM_TIMEOUT = 20.0
 
 
@@ -37,19 +33,8 @@ _STREAM_TIMEOUT = 20.0
 
 
 class TestRTSPTCPStream:
-    """RTSP with TCP interleaved (``RTP/AVP/TCP;interleaved=0-1``).
+    """RTSP with TCP interleaved (``RTP/AVP/TCP;interleaved=0-1``)."""
 
-    On macOS, rtp2httpd's kqueue-based event loop does not reliably flush
-    TCP interleaved RTSP data to the HTTP client within the test timeout.
-    These streaming tests are expected to fail on macOS but pass on Linux.
-    """
-
-    _tcp_xfail = pytest.mark.xfail(
-        sys.platform == "darwin",
-        reason="macOS kqueue does not reliably flush TCP interleaved RTSP data",
-    )
-
-    @_tcp_xfail
     def test_tcp_stream_returns_200(self, r2h_binary):
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
@@ -69,7 +54,6 @@ class TestRTSPTCPStream:
             r2h.stop()
             rtsp.stop()
 
-    @_tcp_xfail
     def test_tcp_data_is_ts(self, r2h_binary):
         """Relayed data should be raw MPEG-TS (RTP headers stripped)."""
         rtsp = MockRTSPServer(num_packets=500)
@@ -195,10 +179,6 @@ class TestRTSPUDPStream:
 class TestRTSPPlayseek:
     """Verify playseek parameter is forwarded in RTSP requests."""
 
-    @pytest.mark.xfail(
-        sys.platform == "darwin",
-        reason="macOS kqueue does not reliably flush TCP interleaved RTSP data",
-    )
     def test_playseek_tcp(self, r2h_binary):
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()

@@ -602,36 +602,44 @@ void connection_handle_read(connection_t *c) {
   if (!c)
     return;
 
-  /* Read into input buffer */
-  if (c->in_len < INBUF_SIZE) {
-    int r = read(c->fd, c->inbuf + c->in_len, INBUF_SIZE - c->in_len);
-    if (r > 0) {
-      c->in_len += r;
-    } else if (r == 0) {
-      c->state = CONN_CLOSING;
-      return;
-    } else if (errno == EAGAIN) {
-      return;
-    } else {
-      c->state = CONN_CLOSING;
-      return;
+  /* Read into input buffer.  Loop to drain all available data for
+   * edge-triggered pollers (kqueue EV_CLEAR) where the read event fires
+   * only once per data arrival.  This is important for POST requests
+   * with bodies larger than INBUF_SIZE. */
+  for (;;) {
+    if (c->in_len < INBUF_SIZE) {
+      int r = read(c->fd, c->inbuf + c->in_len, INBUF_SIZE - c->in_len);
+      if (r > 0) {
+        c->in_len += r;
+      } else if (r == 0) {
+        c->state = CONN_CLOSING;
+        return;
+      } else if (errno == EAGAIN) {
+        return; /* No more data available */
+      } else {
+        c->state = CONN_CLOSING;
+        return;
+      }
     }
-  }
 
-  /* Parse HTTP request using http.c parser */
-  if (c->state == CONN_READ_REQ_LINE || c->state == CONN_READ_HEADERS) {
-    int parse_result = http_parse_request(c->inbuf, &c->in_len, &c->http_req);
-    if (parse_result == 1) {
-      /* Request complete, route it */
-      c->state = CONN_ROUTE;
-      connection_route_and_start(c);
-      return;
-    } else if (parse_result < 0) {
-      /* Parse error */
-      c->state = CONN_CLOSING;
-      return;
+    /* Parse HTTP request using http.c parser */
+    if (c->state == CONN_READ_REQ_LINE || c->state == CONN_READ_HEADERS) {
+      int parse_result =
+          http_parse_request(c->inbuf, &c->in_len, &c->http_req);
+      if (parse_result == 1) {
+        /* Request complete, route it */
+        c->state = CONN_ROUTE;
+        connection_route_and_start(c);
+        return;
+      } else if (parse_result < 0) {
+        /* Parse error */
+        c->state = CONN_CLOSING;
+        return;
+      }
+      /* else parse_result == 0: need more data, keep reading */
+    } else {
+      return; /* Not in a request-reading state */
     }
-    /* else parse_result == 0: need more data, continue reading */
   }
 }
 

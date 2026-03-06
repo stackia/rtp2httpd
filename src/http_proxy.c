@@ -1265,18 +1265,24 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
     }
   }
 
-  /* Handle readable socket - receive response */
+  /* Handle readable socket - receive response.
+   * Loop until EAGAIN to drain all available data.  This is required for
+   * edge-triggered pollers (kqueue EV_CLEAR) where the read event fires
+   * only once per data arrival and won't re-trigger while unread data
+   * remains in the socket buffer. */
   int bytes_forwarded = 0;
   if (events & POLLER_IN) {
-    if (session->state == HTTP_PROXY_STATE_AWAITING_HEADERS ||
-        session->state == HTTP_PROXY_STATE_STREAMING) {
+    while (session->state == HTTP_PROXY_STATE_AWAITING_HEADERS ||
+           session->state == HTTP_PROXY_STATE_STREAMING) {
       result = http_proxy_try_receive_response(session);
       if (result < 0) {
         logger(LOG_ERROR, "HTTP Proxy: Failed to receive response");
         session->state = HTTP_PROXY_STATE_ERROR;
         return -1;
       }
-      bytes_forwarded = result;
+      if (result == 0)
+        break; /* EAGAIN or need more data - wait for next event */
+      bytes_forwarded += result;
     }
   }
 
