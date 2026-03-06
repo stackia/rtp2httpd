@@ -23,8 +23,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(PLATFORM_LINUX TRUE)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set(PLATFORM_MACOS TRUE)
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-  set(PLATFORM_WINDOWS TRUE)
 endif()
 
 # ── Source files ────────────────────────────────────────────────────
@@ -68,8 +66,6 @@ if(PLATFORM_LINUX)
   list(APPEND COMMON_SOURCES src/poller_epoll.c)
 elseif(PLATFORM_MACOS)
   list(APPEND COMMON_SOURCES src/poller_kqueue.c)
-# elseif(PLATFORM_WINDOWS)
-#   list(APPEND COMMON_SOURCES src/poller_iocp.c)  # Future
 endif()
 
 # ── Build target ────────────────────────────────────────────────────
@@ -83,13 +79,13 @@ include(GNUInstallDirs)
 # ── Compile definitions ────────────────────────────────────────────
 target_compile_definitions(rtp2httpd PRIVATE
   SYSCONFDIR="${CMAKE_INSTALL_FULL_SYSCONFDIR}"
-  _DEFAULT_SOURCE
   PACKAGE="${PROJECT_NAME}"
   PACKAGE_VERSION="${PROJECT_VERSION_STRING}"
   VERSION="${PROJECT_VERSION_STRING}"
 )
 
 if(PLATFORM_LINUX)
+  # _GNU_SOURCE implies _DEFAULT_SOURCE on glibc
   target_compile_definitions(rtp2httpd PRIVATE _GNU_SOURCE)
 endif()
 
@@ -117,12 +113,15 @@ endif()
 
 target_compile_options(rtp2httpd PRIVATE ${WARN_FLAGS})
 
-# ── Optimization ────────────────────────────────────────────────────
-set(OPTIMIZATION_LEVEL "-O2" CACHE STRING "Optimization level (-O0, -O1, -O2, -O3, -Os)")
+# ── Build type default ──────────────────────────────────────────────
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+endif()
 
-target_compile_options(rtp2httpd PRIVATE ${OPTIMIZATION_LEVEL})
+# ── Aggressive optimizations (opt-in) ──────────────────────────────
+option(ENABLE_AGGRESSIVE_OPT "Enable aggressive optimizations (LTO, fast-math)" OFF)
 
-if(OPTIMIZATION_LEVEL STREQUAL "-O3")
+if(ENABLE_AGGRESSIVE_OPT)
   target_compile_options(rtp2httpd PRIVATE
     -finline-functions -funroll-loops -ftree-vectorize
     -ffast-math -fomit-frame-pointer
@@ -135,10 +134,11 @@ endif()
 
 # ── Security hardening (Linux) ──────────────────────────────────────
 if(PLATFORM_LINUX)
-  target_compile_options(rtp2httpd PRIVATE
-    -D_FORTIFY_SOURCE=2
-    -fstack-protector-strong
-  )
+  target_compile_options(rtp2httpd PRIVATE -fstack-protector-strong)
+  # _FORTIFY_SOURCE requires optimization >= -O1
+  if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_definitions(rtp2httpd PRIVATE _FORTIFY_SOURCE=2)
+  endif()
 endif()
 
 # ── Libraries ───────────────────────────────────────────────────────
@@ -162,8 +162,9 @@ install(FILES rtp2httpd.conf
 # ── Summary ─────────────────────────────────────────────────────────
 message(STATUS "")
 message(STATUS "rtp2httpd build configuration:")
-message(STATUS "  Platform:      ${CMAKE_SYSTEM_NAME}")
-message(STATUS "  Compiler:      ${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}")
-message(STATUS "  Optimization:  ${OPTIMIZATION_LEVEL}")
+message(STATUS "  Platform:       ${CMAKE_SYSTEM_NAME}")
+message(STATUS "  Compiler:       ${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}")
+message(STATUS "  Build type:     ${CMAKE_BUILD_TYPE}")
+message(STATUS "  Aggressive opt: ${ENABLE_AGGRESSIVE_OPT}")
 message(STATUS "  Install prefix: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "")

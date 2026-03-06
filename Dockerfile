@@ -22,7 +22,7 @@ RUN echo "Building for $TARGETPLATFORM" && \
   echo "RELEASE_VERSION=$RELEASE_VERSION" && \
   RELEASE_VERSION="${RELEASE_VERSION}" cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
-    -DOPTIMIZATION_LEVEL=-O3 \
+    -DENABLE_AGGRESSIVE_OPT=ON \
     -DCMAKE_INSTALL_PREFIX=/usr/local \
     -DCMAKE_INSTALL_SYSCONFDIR=/usr/local/etc && \
   cmake --build build -j$(nproc)
