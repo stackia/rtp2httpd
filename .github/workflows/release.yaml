@@ -312,3 +312,71 @@ jobs:
             ${{ steps.prepare.outputs.binary_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  macos-static-bin:
+    name: macOS Binary ${{ matrix.arch }}
+    needs: frontend
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: macos-26-intel
+          - arch: arm64
+            runner: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set version environment variable
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          echo "RELEASE_VERSION=${RELEASE_TAG#v}" >> $GITHUB_ENV
+
+      - name: Build binary
+        run: |
+          BUILD_DIR="build-macos-${{ matrix.arch }}"
+          mkdir -p "$BUILD_DIR"
+          cd "$BUILD_DIR"
+
+          RELEASE_VERSION="${RELEASE_VERSION}" cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_AGGRESSIVE_OPT=ON \
+            -DCMAKE_INSTALL_PREFIX=/usr/local
+
+          cmake --build . -j$(sysctl -n hw.ncpu)
+
+          DESTDIR="$(pwd)/dist" cmake --install . --strip
+
+      - name: Prepare release artifact
+        id: prepare
+        run: |
+          BUILD_DIR="build-macos-${{ matrix.arch }}"
+          BINARY_PATH="${BUILD_DIR}/dist/usr/local/bin/rtp2httpd"
+
+          if [ ! -f "$BINARY_PATH" ]; then
+            echo "Error: Binary not found at $BINARY_PATH"
+            exit 1
+          fi
+
+          OUTPUT_NAME="rtp2httpd-${RELEASE_VERSION}-macos-${{ matrix.arch }}"
+          cp "$BINARY_PATH" "$OUTPUT_NAME"
+
+          file "$OUTPUT_NAME"
+          ls -lh "$OUTPUT_NAME"
+
+          echo "binary_name=$OUTPUT_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload to release assets
+        run: |
+          gh release upload \
+            --repo ${{ github.repository }} \
+            ${{ github.event.release.tag_name }} \
+            ${{ steps.prepare.outputs.binary_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
