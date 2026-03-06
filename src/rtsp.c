@@ -1893,14 +1893,16 @@ static int rtsp_process_interleaved_buffer(rtsp_session_t *session,
 
 int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session,
                                      connection_t *conn) {
-  if (session->response_buffer_pos < RTSP_RESPONSE_BUFFER_SIZE) {
+  /* Drain all available data for edge-triggered pollers (kqueue EV_CLEAR)
+   * where the read event fires only once per data arrival. */
+  while (session->response_buffer_pos < RTSP_RESPONSE_BUFFER_SIZE) {
     int bytes_received =
         recv(session->socket,
              session->response_buffer + session->response_buffer_pos,
              RTSP_RESPONSE_BUFFER_SIZE - session->response_buffer_pos, 0);
     if (bytes_received < 0) {
       if (errno == EAGAIN) {
-        return 0; /* No data available, not an error */
+        break; /* No more data available */
       }
       logger(LOG_ERROR, "RTSP: TCP receive failed: %s", strerror(errno));
       return -1; /* Upstream gone — caller will drain client */
@@ -1916,7 +1918,7 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session,
 }
 
 int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
-  int bytes_received;
+  int total_bytes_written = 0;
 
   /* Check for STUN response if STUN discovery is in progress */
   if (session->stun.in_progress) {
@@ -1941,63 +1943,60 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
     }
   }
 
-  /* Allocate a fresh buffer from pool for this receive operation */
-  buffer_ref_t *rtp_buf = buffer_pool_alloc();
-  if (!rtp_buf) {
-    /* Buffer pool exhausted - drop this packet */
-    logger(LOG_DEBUG, "RTSP UDP: Buffer pool exhausted, dropping packet");
-    session->packets_dropped++;
-    /* Drain the socket to prevent event loop spinning */
-    uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
-    ssize_t drained = recv(session->rtp_socket, dummy, sizeof(dummy), 0);
-    if (drained < 0 && errno != EAGAIN) {
-      logger(LOG_DEBUG, "RTSP UDP: Dummy recv failed while dropping packet: %s",
-             strerror(errno));
+  /* Drain all available packets for edge-triggered pollers (kqueue EV_CLEAR)
+   * where the read event fires only once per data arrival. */
+  for (;;) {
+    /* Allocate a fresh buffer from pool for this receive operation */
+    buffer_ref_t *rtp_buf = buffer_pool_alloc();
+    if (!rtp_buf) {
+      /* Buffer pool exhausted - drop this packet */
+      logger(LOG_DEBUG, "RTSP UDP: Buffer pool exhausted, dropping packet");
+      session->packets_dropped++;
+      /* Drain the socket to prevent event loop spinning */
+      uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
+      recv(session->rtp_socket, dummy, sizeof(dummy), 0);
+      return total_bytes_written;
     }
-    return 0;
-  }
 
-  /* Receive directly into zero-copy buffer (true zero-copy receive) */
-  bytes_received =
-      recv(session->rtp_socket, rtp_buf->data, BUFFER_POOL_BUFFER_SIZE, 0);
-  if (bytes_received < 0) {
-    if (errno == EAGAIN) {
+    /* Receive directly into zero-copy buffer (true zero-copy receive) */
+    int bytes_received =
+        recv(session->rtp_socket, rtp_buf->data, BUFFER_POOL_BUFFER_SIZE, 0);
+    if (bytes_received < 0) {
       buffer_ref_put(rtp_buf);
-      return 0; /* No data available right now */
+      if (errno == EAGAIN)
+        break; /* No more data available */
+      logger(LOG_ERROR, "RTSP: RTP receive failed: %s", strerror(errno));
+      return -1;
     }
-    logger(LOG_ERROR, "RTSP: RTP receive failed: %s", strerror(errno));
-    buffer_ref_put(rtp_buf);
-    return -1;
-  }
 
-  if (bytes_received > 0) {
+    if (bytes_received == 0) {
+      buffer_ref_put(rtp_buf);
+      break;
+    }
+
     rtp_buf->data_size = (size_t)bytes_received;
     int bytes_written = 0;
     /* Handle RTP data based on transport protocol */
     if (session->transport_protocol == RTSP_PROTOCOL_MP2T) {
       /* MP2T - zero-copy send (data already in pool buffer, just queue it) */
-      /* Note: zerocopy_queue_add() will automatically increment refcount */
       if (connection_queue_zerocopy(conn, rtp_buf) == 0) {
         bytes_written = bytes_received;
       } else {
         /* Queue full - backpressure */
         session->packets_dropped++;
-        bytes_written = 0;
       }
     } else {
-      /* RTP - extract RTP payload and forward to client or capture snapshot
-       * (true zero-copy) */
+      /* RTP - extract RTP payload and forward to client or capture snapshot */
       int pb = stream_process_rtp_payload(&conn->stream, rtp_buf);
       if (pb > 0)
         bytes_written = pb;
     }
     /* Release our reference to the buffer */
     buffer_ref_put(rtp_buf);
-    return bytes_written;
+    total_bytes_written += bytes_written;
   }
 
-  buffer_ref_put(rtp_buf);
-  return 0;
+  return total_bytes_written;
 }
 
 /**

@@ -6,7 +6,6 @@ and precedence rules.
 """
 
 import os
-import sys
 import tempfile
 import time
 
@@ -72,10 +71,6 @@ class TestMaxClients:
     """The -m flag limits concurrent streaming connections."""
 
     @pytest.mark.slow
-    @pytest.mark.xfail(
-        sys.platform == "darwin",
-        reason="macOS kqueue timing: RTSP stream may not deliver first byte within test timeout",
-    )
     def test_max_clients_enforced(self, r2h_binary):
         """When maxclients=1 and one client is streaming an RTSP source,
         a second stream request should get 503 Service Unavailable."""

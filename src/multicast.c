@@ -552,59 +552,70 @@ int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx,
     return -1;
   }
 
-  /* Allocate buffer from pool */
-  buffer_ref_t *recv_buf = buffer_pool_alloc();
-  if (!recv_buf) {
-    logger(LOG_DEBUG, "Multicast: Buffer pool exhausted, dropping packet");
-    session->last_data_time = now;
-    /* Drain socket to prevent event loop spinning */
-    uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
-    recv(session->sock, dummy, sizeof(dummy), 0);
-    return 0;
-  }
-
-  /* Receive into buffer */
-  int actualr = recv(session->sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE, 0);
-  if (actualr < 0) {
-    if (errno != EAGAIN)
-      logger(LOG_DEBUG, "Multicast: Receive failed: %s", strerror(errno));
-    buffer_ref_put(recv_buf);
-    return 0;
-  }
-
-  session->last_data_time = now;
-  recv_buf->data_size = (size_t)actualr;
-
-  int result = 0;
-
-  /* Handle based on FCC state (if FCC initialized) */
-  if (!ctx->fcc.initialized) {
-    /* Direct multicast without FCC - forward to client */
-    int processed_bytes = stream_process_rtp_payload(ctx, recv_buf);
-    if (processed_bytes > 0) {
-      ctx->total_bytes_sent += (uint64_t)processed_bytes;
+  /* Drain all available packets from the socket.  This is required for
+   * edge-triggered pollers (kqueue EV_CLEAR) where the read event fires
+   * only once per data arrival transition and won't re-trigger while
+   * unread data remains in the socket buffer. */
+  for (;;) {
+    /* Allocate buffer from pool */
+    buffer_ref_t *recv_buf = buffer_pool_alloc();
+    if (!recv_buf) {
+      logger(LOG_DEBUG, "Multicast: Buffer pool exhausted, dropping packet");
+      session->last_data_time = now;
+      /* Drain socket to prevent event loop spinning */
+      uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
+      recv(session->sock, dummy, sizeof(dummy), 0);
+      return 0;
     }
+
+    /* Receive into buffer */
+    int actualr =
+        recv(session->sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE, 0);
+    if (actualr < 0) {
+      buffer_ref_put(recv_buf);
+      if (errno != EAGAIN)
+        logger(LOG_DEBUG, "Multicast: Receive failed: %s", strerror(errno));
+      break; /* No more data available */
+    }
+
+    session->last_data_time = now;
+    recv_buf->data_size = (size_t)actualr;
+
+    int result = 0;
+
+    /* Handle based on FCC state (if FCC initialized) */
+    if (!ctx->fcc.initialized) {
+      /* Direct multicast without FCC - forward to client */
+      int processed_bytes = stream_process_rtp_payload(ctx, recv_buf);
+      if (processed_bytes > 0) {
+        ctx->total_bytes_sent += (uint64_t)processed_bytes;
+      }
+      buffer_ref_put(recv_buf);
+      continue; /* Read next packet */
+    }
+
+    switch (ctx->fcc.state) {
+    case FCC_STATE_MCAST_ACTIVE:
+      result = fcc_handle_mcast_active(ctx, recv_buf);
+      break;
+
+    case FCC_STATE_MCAST_REQUESTED:
+      result = fcc_handle_mcast_transition(ctx, recv_buf);
+      break;
+
+    default:
+      logger(LOG_DEBUG, "Received multicast data in unexpected FCC state: %d",
+             ctx->fcc.state);
+      break;
+    }
+
     buffer_ref_put(recv_buf);
-    return 0;
+
+    if (result != 0)
+      return result;
   }
 
-  switch (ctx->fcc.state) {
-  case FCC_STATE_MCAST_ACTIVE:
-    result = fcc_handle_mcast_active(ctx, recv_buf);
-    break;
-
-  case FCC_STATE_MCAST_REQUESTED:
-    result = fcc_handle_mcast_transition(ctx, recv_buf);
-    break;
-
-  default:
-    logger(LOG_DEBUG, "Received multicast data in unexpected FCC state: %d",
-           ctx->fcc.state);
-    break;
-  }
-
-  buffer_ref_put(recv_buf);
-  return result;
+  return 0;
 }
 
 int mcast_session_tick(mcast_session_t *session, service_t *service,
