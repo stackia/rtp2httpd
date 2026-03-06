@@ -24,7 +24,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-BINARY_PATH = PROJECT_ROOT / "src" / "rtp2httpd"
+BINARY_PATH = PROJECT_ROOT / "build" / "rtp2httpd"
 FIXTURES_DIR = PROJECT_ROOT / "tools" / "fixtures"
 
 LOOPBACK_IF = "lo0" if sys.platform == "darwin" else "lo"

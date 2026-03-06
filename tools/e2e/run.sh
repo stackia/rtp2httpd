@@ -16,13 +16,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLS_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$TOOLS_DIR")"
-BINARY="$PROJECT_ROOT/src/rtp2httpd"
+BINARY="$PROJECT_ROOT/build/rtp2httpd"
 
 # ── Pre-flight checks ──────────────────────────────────────────────────────
 
 if [ ! -f "$BINARY" ]; then
     echo "ERROR: rtp2httpd binary not found at $BINARY"
-    echo "Build the project first:  cd $PROJECT_ROOT && ./configure && make"
+    echo "Build the project first:  cd $PROJECT_ROOT && cmake -B build && cmake --build build"
     exit 1
 fi
 

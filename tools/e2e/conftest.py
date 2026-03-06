@@ -59,7 +59,7 @@ def r2h_binary() -> Path:
     if not BINARY_PATH.exists():
         pytest.skip(
             f"rtp2httpd binary not found at {BINARY_PATH}.  "
-            "Build the project first (./configure && make)."
+            "Build the project first (cmake -B build && cmake --build build)."
         )
     return BINARY_PATH
 
