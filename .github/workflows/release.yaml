@@ -56,11 +56,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
-        working-directory: web-ui
 
       - name: Build frontend
-        run: pnpm run build
-        working-directory: web-ui
+        run: pnpm run web-ui:build
 
       - name: Save generated pages
         run: |
@@ -138,7 +136,7 @@ jobs:
           build-args: |
             RELEASE_VERSION=${{ env.RELEASE_VERSION }}
 
-  ipk:
+  openwrt-packages:
     name: Package ${{ matrix.arch }}-${{ matrix.sdk }}
     needs: frontend
     runs-on: ubuntu-latest
@@ -171,7 +169,7 @@ jobs:
 
         sdk:
           - "24.10.4" # For IPK
-          - "SNAPSHOT" # For APK
+          - "25.12.0" # For APK
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -226,7 +224,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  static-bin:
+  linux-static-bin:
     name: Static Binary ${{ matrix.arch }}
     needs: frontend
     runs-on: ubuntu-latest
