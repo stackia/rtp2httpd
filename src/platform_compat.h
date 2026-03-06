@@ -11,8 +11,8 @@
 #include <stddef.h> /* NULL */
 
 /* ── MSG_NOSIGNAL ────────────────────────────────────────────────────
- * Linux has MSG_NOSIGNAL as a per-send flag.
- * macOS/BSD use the SO_NOSIGPIPE socket option instead (set once on socket).
+ * Linux/FreeBSD have MSG_NOSIGNAL as a per-send flag.
+ * macOS uses the SO_NOSIGPIPE socket option instead (set once on socket).
  * We define MSG_NOSIGNAL to 0 on macOS so existing send()/sendmsg() calls
  * compile unchanged; the actual SIGPIPE suppression is done via
  * platform_set_nosigpipe() which callers must invoke after socket creation.
@@ -26,13 +26,15 @@ static inline void platform_set_nosigpipe(int fd) {
   int one = 1;
   setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
 }
-#else /* Linux / other */
+#else /* Linux / FreeBSD / other */
 static inline void platform_set_nosigpipe(int fd) { (void)fd; }
 #endif
 
 /* ── sendfile() ──────────────────────────────────────────────────────
- * Linux:  ssize_t sendfile(int out_fd, int in_fd, off_t *offset, size_t count)
- * macOS:  int sendfile(int fd, int s, off_t offset, off_t *len, ...)
+ * Linux:   ssize_t sendfile(int out_fd, int in_fd, off_t *offset, size_t count)
+ * macOS:   int sendfile(int fd, int s, off_t offset, off_t *len, ...)
+ * FreeBSD: int sendfile(int fd, int s, off_t offset, size_t nbytes,
+ *                       struct sf_hdtr *, off_t *sbytes, int flags)
  *
  * We provide a wrapper with the Linux-style signature.
  */
@@ -53,6 +55,25 @@ static inline ssize_t platform_sendfile(int out_fd, int in_fd, off_t *offset,
     *offset += len;
   }
   return (ssize_t)len;
+}
+#elif defined(__FreeBSD__)
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/uio.h>
+static inline ssize_t platform_sendfile(int out_fd, int in_fd, off_t *offset,
+                                        size_t count) {
+  off_t sbytes = 0;
+  off_t off = offset ? *offset : 0;
+  /* FreeBSD sendfile: sendfile(in_fd, out_fd, offset, count, NULL, &sbytes, 0)
+   */
+  int r = sendfile(in_fd, out_fd, off, count, NULL, &sbytes, 0);
+  if (r < 0 && sbytes == 0) {
+    return -1;
+  }
+  if (offset) {
+    *offset += sbytes;
+  }
+  return (ssize_t)sbytes;
 }
 #else /* Linux */
 #include <sys/sendfile.h>

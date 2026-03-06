@@ -22,6 +22,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(PLATFORM_LINUX TRUE)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set(PLATFORM_MACOS TRUE)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
+  set(PLATFORM_FREEBSD TRUE)
 endif()
 
 # ── Source files ────────────────────────────────────────────────────
@@ -63,7 +65,7 @@ set(COMMON_SOURCES
 # Platform-specific poller backend
 if(PLATFORM_LINUX)
   list(APPEND COMMON_SOURCES src/poller_epoll.c)
-elseif(PLATFORM_MACOS)
+elseif(PLATFORM_MACOS OR PLATFORM_FREEBSD)
   list(APPEND COMMON_SOURCES src/poller_kqueue.c)
 endif()
 
@@ -130,8 +132,8 @@ if(ENABLE_AGGRESSIVE_OPT)
   endif()
 endif()
 
-# ── Security hardening (Linux) ──────────────────────────────────────
-if(PLATFORM_LINUX)
+# ── Security hardening ──────────────────────────────────────────────
+if(PLATFORM_LINUX OR PLATFORM_FREEBSD)
   target_compile_options(rtp2httpd PRIVATE -fstack-protector-strong)
   # _FORTIFY_SOURCE requires optimization >= -O1
   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
