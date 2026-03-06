@@ -12,7 +12,6 @@ regular send(), so these tests validate the fallback path too.
 """
 
 import sys
-import time
 import concurrent.futures
 
 import pytest
@@ -54,7 +53,6 @@ class TestZerocopyMulticast:
         mcast_port = find_free_udp_port()
         sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=300)
         sender.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -80,7 +78,6 @@ class TestZerocopyMulticast:
         mcast_port = find_free_udp_port()
         sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=300)
         sender.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -107,7 +104,6 @@ class TestZerocopyMulticast:
         mcast_port = find_free_udp_port()
         sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=300)
         sender.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(

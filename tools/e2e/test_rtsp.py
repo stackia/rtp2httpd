@@ -9,8 +9,6 @@ Tests use a generous 20 s timeout via ``stream_get`` to accommodate the
 RTSP state machine setup time on macOS.
 """
 
-import time
-
 import pytest
 
 from helpers import (
@@ -38,7 +36,6 @@ class TestRTSPTCPStream:
     def test_tcp_stream_returns_200(self, r2h_binary):
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        time.sleep(0.1)
         port = find_free_port()
         r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
@@ -58,7 +55,6 @@ class TestRTSPTCPStream:
         """Relayed data should be raw MPEG-TS (RTP headers stripped)."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        time.sleep(0.1)
         port = find_free_port()
         r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
@@ -79,7 +75,6 @@ class TestRTSPTCPStream:
         """The mock should receive OPTIONS, DESCRIBE, SETUP, PLAY."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        time.sleep(0.1)
         port = find_free_port()
         r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
@@ -89,7 +84,6 @@ class TestRTSPTCPStream:
                 "/rtsp/127.0.0.1:%d/test" % rtsp.port,
                 read_bytes=2048, timeout=_STREAM_TIMEOUT,
             )
-            time.sleep(0.5)
             methods = rtsp.requests_received
             assert "OPTIONS" in methods
             assert "DESCRIBE" in methods
@@ -111,7 +105,6 @@ class TestRTSPUDPStream:
     def test_udp_stream_returns_200(self, r2h_binary):
         rtsp = MockRTSPServerUDP()
         rtsp.start()
-        time.sleep(0.1)
         port = find_free_port()
         r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
@@ -130,7 +123,6 @@ class TestRTSPUDPStream:
     def test_udp_data_is_ts(self, r2h_binary):
         rtsp = MockRTSPServerUDP()
         rtsp.start()
-        time.sleep(0.1)
         port = find_free_port()
         r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
@@ -150,7 +142,6 @@ class TestRTSPUDPStream:
     def test_udp_protocol_handshake(self, r2h_binary):
         rtsp = MockRTSPServerUDP()
         rtsp.start()
-        time.sleep(0.1)
         port = find_free_port()
         r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
@@ -160,7 +151,6 @@ class TestRTSPUDPStream:
                 "/rtsp/127.0.0.1:%d/test" % rtsp.port,
                 read_bytes=2048, timeout=_STREAM_TIMEOUT,
             )
-            time.sleep(0.5)
             methods = rtsp.requests_received
             assert "OPTIONS" in methods
             assert "DESCRIBE" in methods
@@ -182,7 +172,6 @@ class TestRTSPPlayseek:
     def test_playseek_tcp(self, r2h_binary):
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        time.sleep(0.1)
         port = find_free_port()
         r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
@@ -201,7 +190,6 @@ class TestRTSPPlayseek:
     def test_playseek_udp(self, r2h_binary):
         rtsp = MockRTSPServerUDP()
         rtsp.start()
-        time.sleep(0.1)
         port = find_free_port()
         r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:

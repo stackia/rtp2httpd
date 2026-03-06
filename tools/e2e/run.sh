@@ -3,7 +3,8 @@
 # E2E test runner for rtp2httpd
 #
 # Usage:
-#   ./run.sh                            # Run all tests
+#   ./run.sh                            # Run all tests (parallel)
+#   ./run.sh -p 1                       # Run sequentially
 #   ./run.sh test_m3u.py                # Run M3U tests only
 #   ./run.sh test_multicast.py          # Run multicast tests only
 #   ./run.sh -k "etag"                  # Run tests matching keyword
@@ -29,10 +30,37 @@ fi
 echo "Binary:  $BINARY"
 echo ""
 
+# ── Parse parallelism flag ────────────────────────────────────────────────
+
+PARALLEL="auto"
+EXTRA_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -p)
+            PARALLEL="$2"
+            shift 2
+            ;;
+        --parallel=*)
+            PARALLEL="${1#*=}"
+            shift
+            ;;
+        *)
+            EXTRA_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
 # ── Run tests via uv ─────────────────────────────────────────────────────
 
-echo "─── Running E2E tests ───"
+echo "─── Running E2E tests (workers: $PARALLEL) ───"
 echo ""
 
 cd "$TOOLS_DIR"
-exec uv run --extra test pytest e2e/ -v "$@"
+
+if [[ "$PARALLEL" == "1" ]]; then
+    exec uv run --extra test pytest e2e/ -v "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+else
+    exec uv run --extra test pytest e2e/ -v -n "$PARALLEL" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+fi

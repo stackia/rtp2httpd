@@ -7,7 +7,7 @@ and precedence rules.
 
 import os
 import tempfile
-import time
+import time  # needed for TestMaxClients deadline loop
 
 import pytest
 
@@ -79,7 +79,6 @@ class TestMaxClients:
 
         rtsp = MockRTSPServerUDP(num_packets=2000)
         rtsp.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
