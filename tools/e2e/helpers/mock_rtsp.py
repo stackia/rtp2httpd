@@ -23,8 +23,22 @@ class _RTSPServerBase:
     transport-specific behaviour.
     """
 
-    def __init__(self, port: int = 0):
+    def __init__(self, port: int = 0, sdp_control: str = "*",
+                 content_base: str = "auto", custom_sdp: str | None = None):
+        """
+        Args:
+            port: TCP port to listen on (0 = auto-select).
+            sdp_control: Value for ``a=control:`` in SDP (default ``*``).
+            content_base: Controls the Content-Base header in DESCRIBE:
+                ``"auto"`` (default) uses the request URI (appending ``/``
+                for relative controls); ``None`` omits the header entirely;
+                any other string is sent verbatim.
+            custom_sdp: If set, replaces the auto-generated SDP body.
+        """
         self.port = port or find_free_port()
+        self._sdp_control = sdp_control
+        self._content_base = content_base
+        self._custom_sdp = custom_sdp
         self._server_sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -109,13 +123,31 @@ class _RTSPServerBase:
                     conn.sendall(("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
                                   "Public: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN\r\n\r\n" % cseq).encode())
                 elif method == "DESCRIBE":
-                    sdp = ("v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=T\r\n"
-                           "c=IN IP4 0.0.0.0\r\nt=0 0\r\n"
-                           "m=video 0 RTP/AVP 33\r\na=control:*\r\n")
+                    if self._custom_sdp is not None:
+                        sdp = self._custom_sdp
+                    else:
+                        sdp = ("v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=T\r\n"
+                               "c=IN IP4 0.0.0.0\r\nt=0 0\r\n"
+                               "m=video 0 RTP/AVP 33\r\na=control:%s\r\n"
+                               % self._sdp_control)
+                    # Build Content-Base header (or omit it)
+                    cb_header = ""
+                    if self._content_base is None:
+                        pass  # no Content-Base header
+                    elif self._content_base == "auto":
+                        # When control is a relative URL, Content-Base must
+                        # end with '/' for correct RFC 3986 resolution.
+                        cb_val = uri
+                        if self._sdp_control != "*" and not self._sdp_control.startswith("rtsp://"):
+                            if not cb_val.endswith("/"):
+                                cb_val += "/"
+                        cb_header = "Content-Base: %s\r\n" % cb_val
+                    else:
+                        cb_header = "Content-Base: %s\r\n" % self._content_base
                     conn.sendall(("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
                                   "Content-Type: application/sdp\r\n"
-                                  "Content-Base: %s\r\n"
-                                  "Content-Length: %d\r\n\r\n%s" % (cseq, uri, len(sdp), sdp)).encode())
+                                  "%s"
+                                  "Content-Length: %d\r\n\r\n%s" % (cseq, cb_header, len(sdp), sdp)).encode())
                 elif method == "SETUP":
                     conn.sendall(self._setup_response(cseq, transport_hdr).encode())
                 elif method == "PLAY":
@@ -148,8 +180,11 @@ class MockRTSPServer(_RTSPServerBase):
     the RTSP source is still connected).
     """
 
-    def __init__(self, port: int = 0, num_packets: int = 200):
-        super().__init__(port)
+    def __init__(self, port: int = 0, num_packets: int = 200,
+                 sdp_control: str = "*", content_base: str = "auto",
+                 custom_sdp: str | None = None):
+        super().__init__(port, sdp_control=sdp_control,
+                         content_base=content_base, custom_sdp=custom_sdp)
         self._num_packets = num_packets
 
     def _setup_response(self, cseq: str, transport_hdr: str) -> str:

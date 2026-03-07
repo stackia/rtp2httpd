@@ -38,7 +38,7 @@
 
 /* Helper function prototypes */
 static int rtsp_prepare_request(rtsp_session_t *session, const char *method,
-                                const char *extra_headers);
+                                const char *url, const char *extra_headers);
 static int rtsp_try_send_pending(rtsp_session_t *session);
 static int rtsp_try_receive_response(rtsp_session_t *session);
 static int rtsp_parse_response_header(rtsp_session_t *session,
@@ -54,6 +54,9 @@ static void rtsp_send_udp_nat_probe(rtsp_session_t *session);
 static int rtsp_process_interleaved_buffer(rtsp_session_t *session,
                                            connection_t *conn);
 static int rtsp_handle_redirect(rtsp_session_t *session, const char *location);
+static void rtsp_parse_describe_sdp(rtsp_session_t *session,
+                                    const char *header_start,
+                                    const char *sdp_body);
 static int rtsp_initiate_teardown(rtsp_session_t *session);
 static int rtsp_reconnect_for_teardown(rtsp_session_t *session);
 static void rtsp_force_cleanup(rtsp_session_t *session);
@@ -1085,10 +1088,11 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
  * Builds request and stores in pending_request buffer
  */
 static int rtsp_prepare_request(rtsp_session_t *session, const char *method,
-                                const char *extra_headers) {
+                                const char *url, const char *extra_headers) {
   char auth_header_buf[RTSP_HEADERS_BUFFER_SIZE] = "";
   const char *auth_header = "";
   const char *extra = extra_headers ? extra_headers : "";
+  const char *request_url = url ? url : session->server_url;
 
   /* Build authentication header dynamically if credentials are available */
   if (session->username[0] != '\0' && session->password[0] != '\0') {
@@ -1096,7 +1100,7 @@ static int rtsp_prepare_request(rtsp_session_t *session, const char *method,
         session->auth_nonce[0] != '\0') {
       /* Build Digest authentication header */
       char digest_response[33];
-      rtsp_build_digest_response(session, method, session->server_url,
+      rtsp_build_digest_response(session, method, request_url,
                                  digest_response, sizeof(digest_response));
 
       int auth_len;
@@ -1106,14 +1110,14 @@ static int rtsp_prepare_request(rtsp_session_t *session, const char *method,
             "Authorization: Digest username=\"%s\", realm=\"%s\", "
             "nonce=\"%s\", uri=\"%s\", response=\"%s\", opaque=\"%s\"\r\n",
             session->username, session->auth_realm, session->auth_nonce,
-            session->server_url, digest_response, session->auth_opaque);
+            request_url, digest_response, session->auth_opaque);
       } else {
         auth_len =
             snprintf(auth_header_buf, sizeof(auth_header_buf),
                      "Authorization: Digest username=\"%s\", realm=\"%s\", "
                      "nonce=\"%s\", uri=\"%s\", response=\"%s\"\r\n",
                      session->username, session->auth_realm,
-                     session->auth_nonce, session->server_url, digest_response);
+                     session->auth_nonce, request_url, digest_response);
       }
 
       if (auth_len >= (int)sizeof(auth_header_buf)) {
@@ -1140,7 +1144,7 @@ static int rtsp_prepare_request(rtsp_session_t *session, const char *method,
                      "%s"
                      "%s"
                      "\r\n",
-                     method, session->server_url, RTSP_VERSION, session->cseq++,
+                     method, request_url, RTSP_VERSION, session->cseq++,
                      USER_AGENT, auth_header, extra);
 
   if (len < 0 || len >= (int)sizeof(session->pending_request)) {
@@ -1183,7 +1187,7 @@ int rtsp_send_keepalive(rtsp_session_t *session) {
   /* Use GET_PARAMETER if supported, otherwise use OPTIONS */
   const char *method = session->use_get_parameter ? RTSP_METHOD_GET_PARAMETER
                                                   : RTSP_METHOD_OPTIONS;
-  if (rtsp_prepare_request(session, method, extra_headers) < 0) {
+  if (rtsp_prepare_request(session, method, NULL, extra_headers) < 0) {
     logger(LOG_ERROR, "RTSP: Failed to prepare %s keepalive request", method);
     return -1;
   }
@@ -1416,49 +1420,6 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
              session->response_buffer + data_after_header_end);
     }
 
-    if (session->r2h_duration &&
-        session->state == RTSP_STATE_AWAITING_DESCRIBE) {
-      char *body_str = malloc(remaining_data_len + 1);
-      if (body_str) {
-        strncpy(body_str,
-                (const char *)session->response_buffer + data_after_header_end,
-                remaining_data_len);
-        body_str[remaining_data_len] = '\0';
-
-        char *r2h_range = strstr(body_str, "a=range:npt=");
-
-        /* Check if at parameter boundary */
-        if (r2h_range) {
-          /* Extract value */
-          char *value_start = r2h_range + 12; /* Skip "a=range:npt=" */
-          char *value_end = strchr(value_start, '\r');
-          if (!value_end) {
-            value_end = value_start + strlen(value_start);
-          }
-          size_t value_len = value_end - value_start;
-          char *value_str = malloc(value_len + 1);
-          if (value_str) {
-            strncpy(value_str, value_start, value_len);
-            value_str[value_len] = '\0';
-            float range_start, range_end;
-            if (sscanf(value_str, "%f-%f", &range_start, &range_end) == 2) {
-              logger(LOG_DEBUG, "RTSP: Range: %.3f-%.3f", range_start,
-                     range_end);
-              session->r2h_duration_value = range_end;
-            } else {
-              logger(LOG_DEBUG, "RTSP Range: %s, cannot find right range!",
-                     value_str);
-            }
-            free(value_str);
-          } else {
-            logger(LOG_ERROR, "RTSP: malloc failed for Range header parsing");
-          }
-        }
-        free(body_str);
-      }
-      /* r2h-duration return */
-      return -3;
-    }
   }
 
   if (was_keepalive) {
@@ -1518,6 +1479,15 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
     return RTSP_RESPONSE_ADVANCE;
   }
   if (session->state == RTSP_STATE_AWAITING_DESCRIBE) {
+    rtsp_parse_describe_sdp(
+        session,
+        (const char *)session->response_buffer + response_offset,
+        (const char *)session->response_buffer + response_offset +
+            response_len);
+    if (session->r2h_duration) {
+      session->response_buffer_pos = 0;
+      return -3; /* Duration query completed */
+    }
     rtsp_session_set_state(session, RTSP_STATE_DESCRIBED);
     session->response_buffer_pos = 0;
     return RTSP_RESPONSE_ADVANCE;
@@ -1564,7 +1534,8 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
   case RTSP_STATE_CONNECTED:
     /* Ready to send OPTIONS (RFC 2326 requires OPTIONS before DESCRIBE) */
     extra_headers[0] = '\0'; /* No extra headers needed for OPTIONS */
-    if (rtsp_prepare_request(session, RTSP_METHOD_OPTIONS, extra_headers) < 0) {
+    if (rtsp_prepare_request(session, RTSP_METHOD_OPTIONS, NULL, extra_headers) <
+        0) {
       logger(LOG_ERROR, "RTSP: Failed to prepare OPTIONS request");
       return -1;
     }
@@ -1576,8 +1547,8 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
     /* OPTIONS response received, ready to send DESCRIBE */
     snprintf(extra_headers, sizeof(extra_headers),
              "Accept: application/sdp\r\n");
-    if (rtsp_prepare_request(session, RTSP_METHOD_DESCRIBE, extra_headers) <
-        0) {
+    if (rtsp_prepare_request(session, RTSP_METHOD_DESCRIBE, NULL,
+                             extra_headers) < 0) {
       logger(LOG_ERROR, "RTSP: Failed to prepare DESCRIBE request");
       return -1;
     }
@@ -1663,7 +1634,10 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
                  advertised_rtp_port, advertised_rtcp_port);
       }
     }
-    if (rtsp_prepare_request(session, RTSP_METHOD_SETUP, extra_headers) < 0) {
+    if (rtsp_prepare_request(
+            session, RTSP_METHOD_SETUP,
+            session->setup_url[0] ? session->setup_url : NULL,
+            extra_headers) < 0) {
       logger(LOG_ERROR, "RTSP: Failed to prepare SETUP request");
       return -1;
     }
@@ -1680,7 +1654,8 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
       snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\n",
                session->session_id);
     }
-    if (rtsp_prepare_request(session, RTSP_METHOD_PLAY, extra_headers) < 0) {
+    if (rtsp_prepare_request(session, RTSP_METHOD_PLAY, NULL, extra_headers) <
+        0) {
       logger(LOG_ERROR, "RTSP: Failed to prepare PLAY request");
       return -1;
     }
@@ -1700,8 +1675,8 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
     if (session->teardown_requested) {
       snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\n",
                session->session_id);
-      if (rtsp_prepare_request(session, RTSP_METHOD_TEARDOWN, extra_headers) <
-          0) {
+      if (rtsp_prepare_request(session, RTSP_METHOD_TEARDOWN, NULL,
+                               extra_headers) < 0) {
         logger(LOG_ERROR, "RTSP: Failed to prepare TEARDOWN after reconnect");
         return -1;
       }
@@ -2110,8 +2085,8 @@ static int rtsp_initiate_teardown(rtsp_session_t *session) {
       snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\n",
                session->session_id);
 
-      if (rtsp_prepare_request(session, RTSP_METHOD_TEARDOWN, extra_headers) <
-          0) {
+      if (rtsp_prepare_request(session, RTSP_METHOD_TEARDOWN, NULL,
+                               extra_headers) < 0) {
         logger(LOG_ERROR, "RTSP: Failed to prepare TEARDOWN request");
         return -1;
       }
@@ -2652,6 +2627,139 @@ static char *rtsp_find_header(const char *response, const char *header_name) {
   result[header_len] = '\0';
 
   return result;
+}
+
+/**
+ * Resolve a relative URI reference against a base URL per RFC 3986.
+ * If base ends with '/', appends directly; otherwise replaces the last
+ * path segment.
+ */
+static void rtsp_resolve_relative_url(const char *base_url,
+                                      const char *relative,
+                                      char *out, size_t out_size) {
+  size_t base_len = strlen(base_url);
+  if (base_len > 0 && base_url[base_len - 1] == '/') {
+    snprintf(out, out_size, "%s%s", base_url, relative);
+  } else {
+    const char *authority = strstr(base_url, "://");
+    const char *last_slash = NULL;
+    if (authority) {
+      last_slash = strrchr(authority + 3, '/');
+    }
+    if (last_slash) {
+      size_t prefix_len = (size_t)(last_slash - base_url) + 1;
+      snprintf(out, out_size, "%.*s%s", (int)prefix_len, base_url, relative);
+    } else {
+      snprintf(out, out_size, "%s/%s", base_url, relative);
+    }
+  }
+}
+
+/**
+ * Parse DESCRIBE response SDP body in a single pass.
+ *
+ * Extracts two things from the DESCRIBE response:
+ *
+ * 1. **SETUP URL** — resolves Content-Base header + SDP ``a=control:``
+ *    attribute per RFC 2326 Section 10.2 / Appendix C.1.1.  Stores the
+ *    result in ``session->setup_url`` (empty ⇒ SETUP uses server_url).
+ *
+ * 2. **Stream duration** — if ``session->r2h_duration`` is set, extracts
+ *    the endpoint from ``a=range:npt=<start>-<end>`` and stores it in
+ *    ``session->r2h_duration_value``.
+ *
+ * @param session      RTSP session
+ * @param header_start Start of the RTSP response header in the buffer
+ * @param sdp_body     Start of the SDP body (right after \\r\\n\\r\\n)
+ */
+static void rtsp_parse_describe_sdp(rtsp_session_t *session,
+                                    const char *header_start,
+                                    const char *sdp_body) {
+  session->setup_url[0] = '\0';
+
+  char *content_base = rtsp_find_header(header_start, "Content-Base");
+  const char *base_url = content_base ? content_base : session->server_url;
+
+  if (*sdp_body == '\0')
+    goto done;
+
+  /* --- a=control: → setup_url ----------------------------------------- */
+
+  /* Find the first media-level a=control: (after first m= line).
+   * This skips any session-level a=control: which typically is '*'
+   * (aggregate control).  When there are multiple m= sections
+   * (multi-track), we use the first media track since rtp2httpd
+   * only sets up a single track. */
+  {
+    const char *media_section = strstr(sdp_body, "\nm=");
+    if (!media_section)
+      media_section = strstr(sdp_body, "\r\nm=");
+    const char *search_start = media_section ? media_section : sdp_body;
+    const char *control = strstr(search_start, "a=control:");
+
+    if (control) {
+      const char *val = control + 10; /* skip "a=control:" */
+      const char *val_end = strpbrk(val, "\r\n");
+      if (!val_end)
+        val_end = val + strlen(val);
+
+      size_t len = val_end - val;
+      if (len > 0 && len < sizeof(session->setup_url)) {
+        char attr[RTSP_SERVER_URL_SIZE];
+        memcpy(attr, val, len);
+        attr[len] = '\0';
+
+        if (strcmp(attr, "*") == 0) {
+          logger(LOG_DEBUG, "RTSP: SDP a=control:* (aggregate)");
+        } else if (strncmp(attr, "rtsp://", 7) == 0) {
+          strncpy(session->setup_url, attr,
+                  sizeof(session->setup_url) - 1);
+          session->setup_url[sizeof(session->setup_url) - 1] = '\0';
+          logger(LOG_DEBUG, "RTSP: Resolved SETUP URL (absolute): %s",
+                 session->setup_url);
+        } else {
+          rtsp_resolve_relative_url(base_url, attr, session->setup_url,
+                                    sizeof(session->setup_url));
+          logger(LOG_DEBUG, "RTSP: Resolved SETUP URL (relative): %s",
+                 session->setup_url);
+        }
+      }
+    }
+  }
+
+  /* --- a=range:npt= → r2h_duration_value ------------------------------ */
+
+  if (session->r2h_duration) {
+    const char *range = strstr(sdp_body, "a=range:npt=");
+    if (range) {
+      const char *val = range + 12; /* skip "a=range:npt=" */
+      const char *val_end = strpbrk(val, "\r\n");
+      if (!val_end)
+        val_end = val + strlen(val);
+
+      size_t len = val_end - val;
+      char buf[64];
+      if (len > 0 && len < sizeof(buf)) {
+        memcpy(buf, val, len);
+        buf[len] = '\0';
+
+        float range_start, range_end;
+        if (sscanf(buf, "%f-%f", &range_start, &range_end) == 2) {
+          logger(LOG_DEBUG, "RTSP: Range: %.3f-%.3f", range_start,
+                 range_end);
+          session->r2h_duration_value = range_end;
+        } else {
+          logger(LOG_DEBUG, "RTSP Range: %s, cannot find right range!", buf);
+        }
+      }
+    }
+  }
+
+done:
+  if (content_base) {
+    logger(LOG_DEBUG, "RTSP: Content-Base: %s", content_base);
+    free(content_base);
+  }
 }
 
 static void rtsp_send_udp_nat_probe(rtsp_session_t *session) {

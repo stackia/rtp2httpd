@@ -117,6 +117,8 @@ typedef struct {
   uint32_t cseq;    /* RTSP sequence number */
   char session_id[RTSP_SESSION_ID_SIZE];   /* RTSP session ID */
   char server_url[RTSP_SERVER_URL_SIZE];   /* Full RTSP URL */
+  char setup_url[RTSP_SERVER_URL_SIZE];    /* Resolved SETUP URL (from
+                                              Content-Base + a=control) */
   char server_host[RTSP_SERVER_HOST_SIZE]; /* RTSP server hostname */
   int server_port;                         /* RTSP server port */
   char server_path[RTSP_SERVER_PATH_SIZE]; /* RTSP path with query string */
