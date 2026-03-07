@@ -117,7 +117,7 @@ for program in "${PROGRAMS[@]}"; do
     # Check if program binary exists
     case "$program" in
         rtp2httpd)
-            binary="../src/rtp2httpd"
+            binary="../build/rtp2httpd"
             ;;
         msd_lite)
             binary="../../msd_lite/build/src/msd_lite"
