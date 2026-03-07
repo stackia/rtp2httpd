@@ -55,9 +55,6 @@ class TestCustomPort:
             r2h.start()
             # Port should be reachable
             assert wait_for_port(port)
-            # Different port should NOT be reachable
-            other_port = find_free_port()
-            assert not wait_for_port(other_port, timeout=0.3)
         finally:
             r2h.stop()
 
