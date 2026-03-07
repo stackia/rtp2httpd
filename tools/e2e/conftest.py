@@ -29,6 +29,7 @@ from helpers import (  # noqa: E402
     BINARY_PATH,
     LOOPBACK_IF,
     MCAST_ADDR,
+    MockFCCServer,
     MockHTTPUpstream,
     MockRTSPServer,
     MockRTSPServerUDP,
@@ -47,6 +48,7 @@ from helpers import (  # noqa: E402
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "multicast: requires multicast on loopback")
     config.addinivalue_line("markers", "rtsp: requires mock RTSP server")
+    config.addinivalue_line("markers", "fcc: requires mock FCC server")
     config.addinivalue_line("markers", "http_proxy: requires mock HTTP upstream")
     config.addinivalue_line("markers", "slow: tests that take a bit longer")
 
@@ -117,6 +119,15 @@ def mock_rtsp():
 def mock_rtsp_udp():
     """Yield a started MockRTSPServerUDP; stops on teardown."""
     srv = MockRTSPServerUDP()
+    srv.start()
+    yield srv
+    srv.stop()
+
+
+@pytest.fixture()
+def mock_fcc():
+    """Yield a started MockFCCServer; stops on teardown."""
+    srv = MockFCCServer()
     srv.start()
     yield srv
     srv.stop()

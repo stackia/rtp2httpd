@@ -24,6 +24,7 @@ from .constants import (
     PROJECT_ROOT,
 )
 from .http import http_get, http_request, stream_get
+from .mock_fcc import MockFCCServer
 from .mock_http import MockHTTPUpstream
 from .mock_rtsp import MockRTSPServer, MockRTSPServerUDP
 from .ports import (
@@ -41,6 +42,7 @@ __all__ = [
     "LOOPBACK_IF",
     "MCAST_ADDR",
     "PROJECT_ROOT",
+    "MockFCCServer",
     "MockHTTPUpstream",
     "MockRTSPServer",
     "MockRTSPServerUDP",
