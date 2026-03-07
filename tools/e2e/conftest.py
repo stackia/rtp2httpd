@@ -33,6 +33,7 @@ from helpers import (  # noqa: E402
     MockHTTPUpstream,
     MockRTSPServer,
     MockRTSPServerUDP,
+    MockSTUNServer,
     MulticastSender,
     R2HProcess,
     find_free_port,
