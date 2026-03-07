@@ -376,3 +376,181 @@ jobs:
             ${{ steps.prepare.outputs.binary_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  freebsd-14-bin:
+    name: FreeBSD 14 Binary
+    needs: frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set version environment variable
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          echo "RELEASE_VERSION=${RELEASE_TAG#v}" >> $GITHUB_ENV
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-pages
+          path: src/
+
+      - name: Install dependencies and Build on FreeBSD 14.0
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "14.0"
+          usesh: true
+          prepare: |
+            echo "=== FreeBSD version ==="
+            uname -r
+
+            echo "=== Install dependencies ==="
+            pkg install -y gmake pkgconf cmake
+
+          run: |
+            cd $GITHUB_WORKSPACE
+
+            echo "=== Build binary ==="
+            mkdir -p build && cd build
+
+            cmake "${GITHUB_WORKSPACE}" \
+              -DCMAKE_INSTALL_PREFIX=/usr/local \
+              -DCMAKE_INSTALL_SYSCONFDIR=/etc \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DENABLE_AGGRESSIVE_OPT=ON \
+              -DCMAKE_SYSTEM_NAME=FreeBSD \
+              -DRELEASE_VERSION="${{ env.RELEASE_VERSION }}"
+
+            cmake --build . -j$(nproc)
+
+            echo "=== Verify binary ==="
+            file rtp2httpd
+            ldd rtp2httpd || true
+
+            echo "=== Stage binary ==="
+            DESTDIR="${GITHUB_WORKSPACE}/staging/freebsd14" cmake --install . --strip
+
+            echo "=== Verify Stage binary ==="
+            file ${GITHUB_WORKSPACE}/staging/freebsd14/usr/local/bin/rtp2httpd
+            ldd ${GITHUB_WORKSPACE}/staging/freebsd14/usr/local/bin/rtp2httpd || true
+
+      - name: Prepare release artifact
+        id: prepare_freebsd14_bin
+        run: |
+          BINARY_SRC="staging/freebsd14/usr/local/bin/rtp2httpd"
+          BINARY_DST="rtp2httpd-${RELEASE_VERSION}-freebsd14-x86_64"
+
+          if [ ! -f "$BINARY_SRC" ]; then
+            echo "Error: Binary not found at $BINARY_SRC"
+            exit 1
+          fi
+
+          cp "$BINARY_SRC" "$BINARY_DST"
+          file "$BINARY_DST"
+          ls -lh "$BINARY_DST"
+
+          echo "binary_name=$BINARY_DST" >> $GITHUB_OUTPUT
+
+      - name: Upload to release assets
+        run: |
+          gh release upload \
+            --repo ${{ github.repository }} \
+            ${{ github.event.release.tag_name }} \
+            ${{ steps.prepare_freebsd14_bin.outputs.binary_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  freebsd-15-bin:
+    name: FreeBSD 15 Binary
+    needs: frontend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set version environment variable
+        run: |
+          RELEASE_TAG="${{ github.event.release.tag_name }}"
+          echo "RELEASE_VERSION=${RELEASE_TAG#v}" >> $GITHUB_ENV
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-pages
+          path: src/
+
+      - name: Install dependencies and Build on FreeBSD 15.0
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "15.0"
+          usesh: true
+          prepare: |
+            echo "=== FreeBSD version ==="
+            uname -r
+
+            echo "=== Install dependencies ==="
+            pkg install -y gmake pkgconf cmake
+
+          run: |
+            cd $GITHUB_WORKSPACE
+
+            echo "=== Build binary ==="
+            mkdir -p build && cd build
+
+            cmake "${GITHUB_WORKSPACE}" \
+              -DCMAKE_INSTALL_PREFIX=/usr/local \
+              -DCMAKE_INSTALL_SYSCONFDIR=/etc \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DENABLE_AGGRESSIVE_OPT=ON \
+              -DCMAKE_SYSTEM_NAME=FreeBSD \
+              -DRELEASE_VERSION="${{ env.RELEASE_VERSION }}"
+
+            cmake --build . -j$(nproc)
+
+            echo "=== Verify binary ==="
+            file rtp2httpd
+            ldd rtp2httpd || true
+
+            echo "=== Stage binary ==="
+            DESTDIR="${GITHUB_WORKSPACE}/staging/freebsd15" cmake --install . --strip
+
+            echo "=== Verify Stage binary ==="
+            file ${GITHUB_WORKSPACE}/staging/freebsd15/usr/local/bin/rtp2httpd
+            ldd ${GITHUB_WORKSPACE}/staging/freebsd15/usr/local/bin/rtp2httpd || true
+
+      - name: Prepare release artifact
+        id: prepare_freebsd15_bin
+        run: |
+          BINARY_SRC="staging/freebsd15/usr/local/bin/rtp2httpd"
+          BINARY_DST="rtp2httpd-${RELEASE_VERSION}-freebsd15-x86_64"
+
+          if [ ! -f "$BINARY_SRC" ]; then
+            echo "Error: Binary not found at $BINARY_SRC"
+            exit 1
+          fi
+
+          cp "$BINARY_SRC" "$BINARY_DST"
+          file "$BINARY_DST"
+          ls -lh "$BINARY_DST"
+
+          echo "binary_name=$BINARY_DST" >> $GITHUB_OUTPUT
+
+      - name: Upload to release assets
+        run: |
+          gh release upload \
+            --repo ${{ github.repository }} \
+            ${{ github.event.release.tag_name }} \
+            ${{ steps.prepare_freebsd15_bin.outputs.binary_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
