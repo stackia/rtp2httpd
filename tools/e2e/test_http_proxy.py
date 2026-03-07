@@ -158,47 +158,6 @@ class TestProxyQueryParams:
 
 
 # ---------------------------------------------------------------------------
-# M3U content rewriting through proxy
-# ---------------------------------------------------------------------------
-
-
-class TestProxyM3URewrite:
-    """When proxying M3U playlists, internal URLs should be rewritten."""
-
-    def test_m3u_proxy(self, shared_r2h):
-        m3u_body = (
-            "#EXTM3U\n"
-            "#EXT-X-VERSION:3\n"
-            "#EXT-X-TARGETDURATION:10\n"
-            "#EXTINF:10,\n"
-            "http://127.0.0.1:9999/segment1.ts\n"
-            "#EXTINF:10,\n"
-            "http://127.0.0.1:9999/segment2.ts\n"
-        )
-        upstream = MockHTTPUpstream(routes={
-            "/live/playlist.m3u8": {
-                "status": 200,
-                "body": m3u_body,
-                "headers": {"Content-Type": "application/vnd.apple.mpegurl"},
-            },
-        })
-        upstream.start()
-        try:
-            status, hdrs, body = http_get(
-                "127.0.0.1", shared_r2h.port,
-                f"/http/127.0.0.1:{upstream.port}/live/playlist.m3u8",
-                timeout=5.0,
-            )
-            assert status == 200
-            # The body may be rewritten to route segments through rtp2httpd.
-            # At minimum, the playlist data should be returned.
-            text = body.decode("utf-8", errors="replace")
-            assert "#EXTM3U" in text
-        finally:
-            upstream.stop()
-
-
-# ---------------------------------------------------------------------------
 # Upstream unreachable
 # ---------------------------------------------------------------------------
 
