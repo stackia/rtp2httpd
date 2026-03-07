@@ -12,6 +12,7 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
     """Handler whose per-path responses are configured via the class attr."""
 
     routes: dict  # set dynamically
+    requests_log: list  # set dynamically
 
     def do_GET(self) -> None:
         self._dispatch()
@@ -23,6 +24,14 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
         self._dispatch()
 
     def _dispatch(self, head: bool = False) -> None:
+        # Record the request details
+        hdrs = {k: v for k, v in self.headers.items()}
+        self.requests_log.append({
+            "method": self.command,
+            "path": self.path,  # full path including query string
+            "headers": hdrs,
+        })
+
         path = self.path.split("?")[0]
         route = self.routes.get(path)
         if route is None:
@@ -56,6 +65,7 @@ class MockHTTPUpstream:
     def __init__(self, port: int = 0, routes: dict | None = None):
         self.port = port or find_free_port()
         self.routes = routes or {}
+        self.requests_log: list[dict] = []
         self._server: HTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -63,7 +73,7 @@ class MockHTTPUpstream:
         handler = type(
             "_H",
             (_UpstreamHandler,),
-            {"routes": self.routes},
+            {"routes": self.routes, "requests_log": self.requests_log},
         )
         self._server = HTTPServer(("127.0.0.1", self.port), handler)
         self._thread = threading.Thread(
