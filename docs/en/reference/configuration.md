@@ -22,11 +22,11 @@ rtp2httpd [options]
 
 #### Upstream Network Interface Configuration
 
-- `-i, --upstream-interface <interface>` - Default upstream interface (applies to all traffic types, lowest priority)
-- `-f, --upstream-interface-fcc <interface>` - FCC upstream interface (overrides `-i`)
-- `-t, --upstream-interface-rtsp <interface>` - RTSP upstream interface (overrides `-i`)
+- `-i, --upstream-interface <interface>` - Default upstream interface (applies to all traffic types, lowest priority, not for FreeBSD)
+- `-f, --upstream-interface-fcc <interface>` - FCC upstream interface (overrides `-i` , not for FreeBSD)
+- `-t, --upstream-interface-rtsp <interface>` - RTSP upstream interface (overrides `-i` , not for FreeBSD)
 - `-r, --upstream-interface-multicast <interface>` - Multicast upstream interface (overrides `-i`)
-- `-y, --upstream-interface-http <interface>` - HTTP proxy upstream interface (overrides `-i`)
+- `-y, --upstream-interface-http <interface>` - HTTP proxy upstream interface (overrides `-i` , not for FreeBSD)
 
 **Priority order**: `upstream-interface-{fcc,rtsp,multicast,http}` > `upstream-interface` > system routing table
 
@@ -132,10 +132,12 @@ player-page-path = /player
 # Upstream network interface configuration (optional)
 #
 # Simple configuration: Configure only one default interface for all traffic types
+# Simple configuration not applicable to FreeBSD environments
 upstream-interface = eth0
 #
 # Advanced configuration: Configure dedicated interfaces for different traffic types
-# Note: Dedicated interface configuration has higher priority than default interface
+# Note: Dedicated interface configuration has higher priority than default interface,
+# Only upstream-interface-multicast is supported in FreeBSD environments.
 # upstream-interface-multicast = eth0  # Multicast traffic (RTP/UDP)
 # upstream-interface-fcc = eth1        # FCC
 # upstream-interface-rtsp = eth2       # RTSP
