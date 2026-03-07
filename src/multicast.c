@@ -114,7 +114,6 @@ static int create_igmp_raw_socket(service_t *service) {
   }
 
   if (upstream_if && upstream_if[0] != '\0') {
-#if defined(__LINUX__) || defined(__FreeBSD__) 
     struct ip_mreqn mreq;
     memset(&mreq, 0, sizeof(mreq));
     mreq.imr_ifindex = if_nametoindex(upstream_if);
@@ -122,19 +121,6 @@ static int create_igmp_raw_socket(service_t *service) {
                    sizeof(mreq)) < 0) {
       logger(LOG_WARN, "Failed to set IP_MULTICAST_IF: %s", strerror(errno));
     }
-#else
-    /* macOS: Use in_addr for IP_MULTICAST_IF */
-    unsigned int ifidx = if_nametoindex(upstream_if);
-    if (ifidx > 0) {
-      /* Set by interface index using IP_BOUND_IF as fallback */
-      struct in_addr ifaddr;
-      ifaddr.s_addr = htonl(ifidx);
-      if (setsockopt(raw_sock, IPPROTO_IP, IP_MULTICAST_IF, &ifaddr,
-                     sizeof(ifaddr)) < 0) {
-        logger(LOG_WARN, "Failed to set IP_MULTICAST_IF: %s", strerror(errno));
-      }
-    }
-#endif
   }
 
   return raw_sock;
