@@ -33,15 +33,14 @@ class R2HProcess:
         args = self._build_args()
         self.process = subprocess.Popen(
             args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         if wait and not wait_for_port(self.port, timeout=6.0):
-            out = self.get_output()
             self.stop()
             raise RuntimeError(
                 "rtp2httpd did not start on port %d.\n"
-                "Command: %s\nOutput:\n%s" % (self.port, " ".join(args), out)
+                "Command: %s" % (self.port, " ".join(args))
             )
 
     def stop(self) -> None:
@@ -58,14 +57,6 @@ class R2HProcess:
             except FileNotFoundError:
                 pass
             self._config_path = None
-
-    def get_output(self) -> str:
-        if self.process and self.process.stdout:
-            import select
-            readable = select.select([self.process.stdout], [], [], 0.1)[0]
-            if readable:
-                return self.process.stdout.read1(65536).decode("utf-8", errors="replace")
-        return ""
 
     # -- internals -----------------------------------------------------------
 
