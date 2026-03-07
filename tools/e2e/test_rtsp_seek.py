@@ -293,3 +293,269 @@ class TestRTSPStartSeek:
                 "PLAY without r2h-start should not have Range, got: %s" % play_headers
         finally:
             rtsp.stop()
+
+
+# ===================================================================
+# r2h-seek-offset (additional seconds offset)
+# ===================================================================
+
+
+def _get_describe_uri(rtsp):
+    """Extract the URI from the first DESCRIBE request."""
+    describe_reqs = [r for r in rtsp.requests_detailed
+                     if r["method"] == "DESCRIBE"]
+    assert len(describe_reqs) > 0, "Expected DESCRIBE request"
+    return describe_reqs[0]["uri"]
+
+
+def _extract_seek_value(uri, param_name):
+    """Extract a seek parameter value from a URI query string."""
+    import re
+    match = re.search(r'[?&]%s=([^&]+)' % re.escape(param_name), uri)
+    assert match, "Expected %s= in URI, got: %s" % (param_name, uri)
+    return match.group(1)
+
+
+class TestRTSPSeekOffset:
+    """Verify r2h-seek-offset applies additional seconds offset."""
+
+    def test_positive_offset(self, shared_r2h):
+        """r2h-seek-offset=3600 should add 1 hour to playseek times."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            stream_get(
+                "127.0.0.1", shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600" % rtsp.port,
+                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+            )
+
+            uri = _get_describe_uri(rtsp)
+            val = _extract_seek_value(uri, "playseek")
+            assert val == "20240101130000-20240101140000", \
+                "Expected +1h offset, got: %s" % val
+        finally:
+            rtsp.stop()
+
+    def test_negative_offset(self, shared_r2h):
+        """r2h-seek-offset=-30 should subtract 30 seconds from playseek."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            stream_get(
+                "127.0.0.1", shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=-30" % rtsp.port,
+                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+            )
+
+            uri = _get_describe_uri(rtsp)
+            val = _extract_seek_value(uri, "playseek")
+            assert val == "20240101115930-20240101125930", \
+                "Expected -30s offset, got: %s" % val
+        finally:
+            rtsp.stop()
+
+    def test_offset_stripped_from_uri(self, shared_r2h):
+        """r2h-seek-offset should be stripped from the RTSP URI."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            stream_get(
+                "127.0.0.1", shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600" % rtsp.port,
+                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+            )
+
+            uri = _get_describe_uri(rtsp)
+            assert "r2h-seek-offset" not in uri, \
+                "r2h-seek-offset should be stripped, got: %s" % uri
+        finally:
+            rtsp.stop()
+
+    def test_offset_with_unix_timestamp(self, shared_r2h):
+        """r2h-seek-offset should work with Unix timestamps."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            # 1704096000 = 2024-01-01T12:00:00 UTC
+            stream_get(
+                "127.0.0.1", shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream?playseek=1704096000-1704099600&r2h-seek-offset=3600" % rtsp.port,
+                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+            )
+
+            uri = _get_describe_uri(rtsp)
+            val = _extract_seek_value(uri, "playseek")
+            assert val == "1704099600-1704103200", \
+                "Expected +3600 on Unix timestamps, got: %s" % val
+        finally:
+            rtsp.stop()
+
+
+# ===================================================================
+# Timezone conversion (User-Agent TZ/ marker)
+# ===================================================================
+
+
+class TestRTSPTimezone:
+    """Verify timezone conversion based on User-Agent TZ/ marker."""
+
+    def test_tz_utc_plus_8_converts_yyyyMMddHHmmss(self, shared_r2h):
+        """TZ/UTC+8 should subtract 8 hours from yyyyMMddHHmmss format."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            stream_get(
+                "127.0.0.1", shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000" % rtsp.port,
+                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
+            )
+
+            uri = _get_describe_uri(rtsp)
+            val = _extract_seek_value(uri, "playseek")
+            assert val == "20240101040000-20240101050000", \
+                "TZ/UTC+8: 12:00 CST should become 04:00 UTC, got: %s" % val
+        finally:
+            rtsp.stop()
+
+    def test_tz_utc_minus_5_converts_yyyyMMddHHmmss(self, shared_r2h):
+        """TZ/UTC-5 should add 5 hours to yyyyMMddHHmmss format."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            stream_get(
+                "127.0.0.1", shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000" % rtsp.port,
+                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC-5"},
+            )
+
+            uri = _get_describe_uri(rtsp)
+            val = _extract_seek_value(uri, "playseek")
+            assert val == "20240101170000-20240101180000", \
+                "TZ/UTC-5: 12:00 EST should become 17:00 UTC, got: %s" % val
+        finally:
+            rtsp.stop()
+
+    def test_no_tz_no_conversion(self, shared_r2h):
+        """Without TZ/ in User-Agent, yyyyMMddHHmmss should not be converted."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            stream_get(
+                "127.0.0.1", shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000" % rtsp.port,
+                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0"},
+            )
+
+            uri = _get_describe_uri(rtsp)
+            val = _extract_seek_value(uri, "playseek")
+            assert val == "20240101120000-20240101130000", \
+                "No TZ: times should stay unchanged, got: %s" % val
+        finally:
+            rtsp.stop()
+
+    def test_unix_timestamp_skips_tz_conversion(self, shared_r2h):
+        """Unix timestamps should not be affected by User-Agent timezone."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            stream_get(
+                "127.0.0.1", shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream?playseek=1704096000-1704099600" % rtsp.port,
+                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
+            )
+
+            uri = _get_describe_uri(rtsp)
+            val = _extract_seek_value(uri, "playseek")
+            assert val == "1704096000-1704099600", \
+                "Unix timestamps should not be timezone-converted, got: %s" % val
+        finally:
+            rtsp.stop()
+
+    def test_tz_with_offset_combined(self, shared_r2h):
+        """TZ/UTC+8 combined with r2h-seek-offset should apply both."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            # 12:00 CST → 04:00 UTC, then +3600 → 05:00 UTC
+            stream_get(
+                "127.0.0.1", shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600" % rtsp.port,
+                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
+            )
+
+            uri = _get_describe_uri(rtsp)
+            val = _extract_seek_value(uri, "playseek")
+            assert val == "20240101050000-20240101060000", \
+                "TZ+8 then +3600s: expected 05:00-06:00 UTC, got: %s" % val
+        finally:
+            rtsp.stop()
+
+
+# ===================================================================
+# Time format preservation
+# ===================================================================
+
+
+class TestRTSPTimeFormatPreservation:
+    """Verify that output format matches input format."""
+
+    def test_gmt_suffix_preserved(self, shared_r2h):
+        """yyyyMMddHHmmssGMT format should preserve the GMT suffix."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            stream_get(
+                "127.0.0.1", shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000GMT-20240101130000GMT&r2h-seek-offset=3600" % rtsp.port,
+                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+            )
+
+            uri = _get_describe_uri(rtsp)
+            val = _extract_seek_value(uri, "playseek")
+            assert val == "20240101130000GMT-20240101140000GMT", \
+                "GMT suffix should be preserved, got: %s" % val
+        finally:
+            rtsp.stop()
+
+    def test_unix_timestamp_format_preserved(self, shared_r2h):
+        """Unix timestamp format should stay as Unix timestamp."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            stream_get(
+                "127.0.0.1", shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream?playseek=1704096000-1704099600" % rtsp.port,
+                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+            )
+
+            uri = _get_describe_uri(rtsp)
+            val = _extract_seek_value(uri, "playseek")
+            assert val == "1704096000-1704099600", \
+                "Unix timestamp format should be preserved, got: %s" % val
+        finally:
+            rtsp.stop()
+
+    def test_gmt_suffix_with_tz_conversion(self, shared_r2h):
+        """yyyyMMddHHmmssGMT with TZ/UTC+8 should convert and keep GMT suffix."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            stream_get(
+                "127.0.0.1", shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000GMT-20240101130000GMT" % rtsp.port,
+                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
+            )
+
+            uri = _get_describe_uri(rtsp)
+            val = _extract_seek_value(uri, "playseek")
+            assert val == "20240101040000GMT-20240101050000GMT", \
+                "GMT format + TZ/UTC+8: expected 04:00-05:00 with GMT, got: %s" % val
+        finally:
+            rtsp.stop()
