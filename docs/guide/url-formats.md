@@ -35,7 +35,7 @@ http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970&r2h-ifna
   - `huawei`：华为 FCC 协议
 - **fec**（可选）：FEC 前向纠错端口号，用于接收 FEC 冗余数据包来恢复丢包
 - **r2h-ifname**（可选）：指定使用的上游网络接口（覆盖全局配置）
-- **r2h-ifname-fcc**（可选）：指定 FCC 使用的上游网络接口（覆盖全局配置）
+- **r2h-ifname-fcc**（可选）：指定 FCC 使用的上游网络接口（覆盖全局配置），不适用于 FreeBSD 环境
 
 ### 使用场景
 
@@ -65,7 +65,7 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000GM
 # 自定义时移参数名 + 时间偏移
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r2h-seek-name=seek&r2h-seek-offset=3600
 
-# 指定上游网络接口
+# 指定上游网络接口（不适用于 FreeBSD 环境）
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-ifname=eth0
 ```
 
@@ -124,7 +124,7 @@ http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-2
 # 使用自定义参数名 + 时间偏移
 http://192.168.1.1:5140/http/iptv.example.com/channel1?catchup=20240101120000&r2h-seek-name=catchup&r2h-seek-offset=3600
 
-# 指定上游网络接口
+# 指定上游网络接口（不适用于 FreeBSD 环境）
 http://192.168.1.1:5140/http/iptv.example.com/channel1?r2h-ifname=eth0
 ```
 
@@ -133,7 +133,7 @@ http://192.168.1.1:5140/http/iptv.example.com/channel1?r2h-ifname=eth0
 ### 注意事项
 
 - 仅支持 HTTP 上游（不支持 HTTPS）
-- 可通过 `upstream-interface-http` 配置指定上游网络接口，也可以通过 `r2h-ifname` 参数在每次请求中指定
+- 可通过 `upstream-interface-http` 配置指定上游网络接口，也可以通过 `r2h-ifname` 参数在每次请求中指定（均不适用于 FreeBSD 环境）
 - 如果被代理的目标 URL 是 m3u 类型，其中所有 `http://` URL 会被自动改写为经过 rtp2httpd 代理后的地址（为了保证 HLS 流能被正确代理）
 
 ## M3U 播放列表访问
