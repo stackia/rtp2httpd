@@ -41,6 +41,37 @@ _ZC_ARGS = ["-Z", "-v", "4", "-m", "100"]
 
 
 # ---------------------------------------------------------------------------
+# Module-scoped shared rtp2httpd instances
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def zc_multicast_r2h(r2h_binary):
+    """Zerocopy rtp2httpd with multicast interface for multicast tests."""
+    port = find_free_port()
+    r2h = R2HProcess(
+        r2h_binary, port,
+        extra_args=_ZC_ARGS + ["-r", LOOPBACK_IF],
+    )
+    r2h.start()
+    yield r2h
+    r2h.stop()
+
+
+@pytest.fixture(scope="module")
+def zc_r2h(r2h_binary):
+    """Zerocopy rtp2httpd for RTSP and HTTP proxy tests."""
+    port = find_free_port()
+    r2h = R2HProcess(
+        r2h_binary, port,
+        extra_args=_ZC_ARGS,
+    )
+    r2h.start()
+    yield r2h
+    r2h.stop()
+
+
+# ---------------------------------------------------------------------------
 # Multicast + zerocopy
 # ---------------------------------------------------------------------------
 
@@ -48,21 +79,14 @@ _ZC_ARGS = ["-Z", "-v", "4", "-m", "100"]
 class TestZerocopyMulticast:
     """Verify multicast RTP streaming works with MSG_ZEROCOPY enabled."""
 
-    def test_multicast_stream_200(self, r2h_binary):
+    def test_multicast_stream_200(self, zc_multicast_r2h):
         """Basic multicast stream should return 200 with zerocopy."""
         mcast_port = find_free_udp_port()
         sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=300)
         sender.start()
-
-        port = find_free_port()
-        r2h = R2HProcess(
-            r2h_binary, port,
-            extra_args=_ZC_ARGS + ["-r", LOOPBACK_IF],
-        )
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", zc_multicast_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}",
                 read_bytes=8192,
                 timeout=_STREAM_TIMEOUT,
@@ -70,24 +94,16 @@ class TestZerocopyMulticast:
             assert status == 200
             assert len(body) > 0, "Expected stream data with zerocopy"
         finally:
-            r2h.stop()
             sender.stop()
 
-    def test_multicast_ts_integrity(self, r2h_binary):
+    def test_multicast_ts_integrity(self, zc_multicast_r2h):
         """TS sync bytes must be intact after zerocopy transmission."""
         mcast_port = find_free_udp_port()
         sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=300)
         sender.start()
-
-        port = find_free_port()
-        r2h = R2HProcess(
-            r2h_binary, port,
-            extra_args=_ZC_ARGS + ["-r", LOOPBACK_IF],
-        )
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", zc_multicast_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}",
                 read_bytes=8192,
                 timeout=_STREAM_TIMEOUT,
@@ -96,27 +112,19 @@ class TestZerocopyMulticast:
             assert len(body) >= 188, "Need at least one TS packet"
             assert body[0] == 0x47, f"Expected TS sync byte 0x47, got 0x{body[0]:02x}"
         finally:
-            r2h.stop()
             sender.stop()
 
-    def test_multicast_concurrent_clients(self, r2h_binary):
+    def test_multicast_concurrent_clients(self, zc_multicast_r2h):
         """Multiple clients streaming the same multicast with zerocopy."""
         mcast_port = find_free_udp_port()
         sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=300)
         sender.start()
-
-        port = find_free_port()
-        r2h = R2HProcess(
-            r2h_binary, port,
-            extra_args=_ZC_ARGS + ["-r", LOOPBACK_IF],
-        )
         try:
-            r2h.start()
             url = f"/rtp/{MCAST_ADDR}:{mcast_port}"
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
                 futures = [
-                    pool.submit(stream_get, "127.0.0.1", port, url, 4096, _STREAM_TIMEOUT)
+                    pool.submit(stream_get, "127.0.0.1", zc_multicast_r2h.port, url, 4096, _STREAM_TIMEOUT)
                     for _ in range(3)
                 ]
                 results = [f.result() for f in futures]
@@ -125,7 +133,6 @@ class TestZerocopyMulticast:
                 assert s == 200, f"Client {i} got status {s}"
                 assert len(b) > 0, f"Client {i} got no data"
         finally:
-            r2h.stop()
             sender.stop()
 
 
@@ -138,20 +145,13 @@ class TestZerocopyRTSP:
     """Verify RTSP streaming works with MSG_ZEROCOPY enabled."""
 
     @pytest.mark.rtsp
-    def test_rtsp_tcp_stream(self, r2h_binary):
+    def test_rtsp_tcp_stream(self, zc_r2h):
         """RTSP TCP interleaved streaming should work with zerocopy."""
         mock = MockRTSPServer(num_packets=200)
         mock.start()
-
-        port = find_free_port()
-        r2h = R2HProcess(
-            r2h_binary, port,
-            extra_args=_ZC_ARGS,
-        )
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", zc_r2h.port,
                 f"/rtsp/127.0.0.1:{mock.port}",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
@@ -159,24 +159,16 @@ class TestZerocopyRTSP:
             assert status == 200
             assert len(body) > 0, "Expected RTSP TCP stream data with zerocopy"
         finally:
-            r2h.stop()
             mock.stop()
 
     @pytest.mark.rtsp
-    def test_rtsp_tcp_data_integrity(self, r2h_binary):
+    def test_rtsp_tcp_data_integrity(self, zc_r2h):
         """TS sync bytes must be intact in RTSP TCP stream with zerocopy."""
         mock = MockRTSPServer(num_packets=200)
         mock.start()
-
-        port = find_free_port()
-        r2h = R2HProcess(
-            r2h_binary, port,
-            extra_args=_ZC_ARGS,
-        )
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", zc_r2h.port,
                 f"/rtsp/127.0.0.1:{mock.port}",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
@@ -185,24 +177,16 @@ class TestZerocopyRTSP:
             assert len(body) >= 188
             assert body[0] == 0x47, f"Expected TS sync byte 0x47, got 0x{body[0]:02x}"
         finally:
-            r2h.stop()
             mock.stop()
 
     @pytest.mark.rtsp
-    def test_rtsp_udp_stream(self, r2h_binary):
+    def test_rtsp_udp_stream(self, zc_r2h):
         """RTSP UDP streaming should work with zerocopy."""
         mock = MockRTSPServerUDP(num_packets=200)
         mock.start()
-
-        port = find_free_port()
-        r2h = R2HProcess(
-            r2h_binary, port,
-            extra_args=_ZC_ARGS,
-        )
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", zc_r2h.port,
                 f"/rtsp/127.0.0.1:{mock.port}",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
@@ -210,7 +194,6 @@ class TestZerocopyRTSP:
             assert status == 200
             assert len(body) > 0, "Expected RTSP UDP stream data with zerocopy"
         finally:
-            r2h.stop()
             mock.stop()
 
 
@@ -223,7 +206,7 @@ class TestZerocopyHTTPProxy:
     """Verify HTTP proxy works with MSG_ZEROCOPY enabled."""
 
     @pytest.mark.http_proxy
-    def test_proxy_stream(self, r2h_binary):
+    def test_proxy_stream(self, zc_r2h):
         """HTTP proxy should forward data correctly with zerocopy."""
         body_data = b"x" * 16384  # 16KB body
         upstream = MockHTTPUpstream(routes={
@@ -234,28 +217,20 @@ class TestZerocopyHTTPProxy:
             },
         })
         upstream.start()
-
-        port = find_free_port()
-        r2h = R2HProcess(
-            r2h_binary, port,
-            extra_args=_ZC_ARGS,
-        )
         try:
-            r2h.start()
             from helpers import http_get
             status, _, body = http_get(
-                "127.0.0.1", port,
+                "127.0.0.1", zc_r2h.port,
                 f"/http/127.0.0.1:{upstream.port}/stream",
                 timeout=5.0,
             )
             assert status == 200
             assert body == body_data, "Body mismatch with zerocopy proxy"
         finally:
-            r2h.stop()
             upstream.stop()
 
     @pytest.mark.http_proxy
-    def test_proxy_large_body(self, r2h_binary):
+    def test_proxy_large_body(self, zc_r2h):
         """HTTP proxy should handle large payloads correctly with zerocopy."""
         # 256KB body - exercises multiple sendmsg calls with MSG_ZEROCOPY
         body_data = bytes(range(256)) * 1024  # 256KB
@@ -267,17 +242,10 @@ class TestZerocopyHTTPProxy:
             },
         })
         upstream.start()
-
-        port = find_free_port()
-        r2h = R2HProcess(
-            r2h_binary, port,
-            extra_args=_ZC_ARGS,
-        )
         try:
-            r2h.start()
             from helpers import http_get
             status, _, body = http_get(
-                "127.0.0.1", port,
+                "127.0.0.1", zc_r2h.port,
                 f"/http/127.0.0.1:{upstream.port}/large",
                 timeout=10.0,
             )
@@ -287,5 +255,4 @@ class TestZerocopyHTTPProxy:
             )
             assert body == body_data, "Body content mismatch with zerocopy proxy"
         finally:
-            r2h.stop()
             upstream.stop()
