@@ -27,6 +27,7 @@ from .http import http_get, http_request, stream_get
 from .mock_fcc import MockFCCServer
 from .mock_http import MockHTTPUpstream
 from .mock_rtsp import MockRTSPServer, MockRTSPServerUDP
+from .mock_stun import MockSTUNServer
 from .ports import (
     find_free_port,
     find_free_udp_port,
@@ -46,6 +47,7 @@ __all__ = [
     "MockHTTPUpstream",
     "MockRTSPServer",
     "MockRTSPServerUDP",
+    "MockSTUNServer",
     "MulticastSender",
     "R2HProcess",
     "find_free_port",

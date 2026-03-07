@@ -1711,7 +1711,14 @@ int rtsp_session_tick(rtsp_session_t *session, int64_t now) {
     if (stun_check_timeout(&session->stun, session->rtp_socket) > 0) {
       /* STUN finally timed out, advance state machine to continue with local
        * port */
-      rtsp_state_machine_advance(session);
+      if (rtsp_state_machine_advance(session) == 0) {
+        /* Re-arm POLLER_OUT so the pending SETUP request gets sent */
+        if (session->epoll_fd >= 0) {
+          poller_mod(session->epoll_fd, session->socket,
+                     POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR |
+                         POLLER_RDHUP);
+        }
+      }
     }
   }
 
@@ -1917,7 +1924,14 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
                  stun_get_mapped_port(&session->stun));
           /* If state machine was waiting for STUN, advance it now */
           if (session->state == RTSP_STATE_DESCRIBED) {
-            rtsp_state_machine_advance(session);
+            if (rtsp_state_machine_advance(session) == 0) {
+              /* Re-arm POLLER_OUT so the pending SETUP request gets sent */
+              if (session->epoll_fd >= 0) {
+                poller_mod(session->epoll_fd, session->socket,
+                           POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR |
+                               POLLER_RDHUP);
+              }
+            }
           }
         }
       }
