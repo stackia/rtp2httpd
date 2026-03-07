@@ -42,7 +42,7 @@ def get_stream_url(client_index: int) -> str:
 # Program configurations with relative paths (relative to tools directory)
 PROGRAM_CONFIGS: dict[str, dict] = {
     "rtp2httpd": {
-        "binary": "../src/rtp2httpd",
+        "binary": "../build/rtp2httpd",
         "port": 5140,
         # Args builder: receives (binary_path, m3u_file, port, config_path) -> list of args
         "build_args": lambda binary, m3u, port, config: [
@@ -415,7 +415,7 @@ def find_project_root() -> Path:
     """Find the project root directory."""
     current = Path(__file__).resolve().parent
     while current != current.parent:
-        if (current / "src" / "rtp2httpd").exists() or (current / "rtp2httpd").exists():
+        if (current / "build" / "rtp2httpd").exists() or (current / "rtp2httpd").exists():
             return current
         current = current.parent
     return Path(__file__).resolve().parent.parent
