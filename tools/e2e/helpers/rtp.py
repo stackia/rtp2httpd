@@ -13,6 +13,11 @@ from .ports import find_free_udp_port
 _TS_NULL_PACKET = b"\x47\x1f\xff\x10" + b"\xff" * 184
 
 
+def _make_ts_with_marker(marker: int) -> bytes:
+    """TS null packet with a 2-byte big-endian marker embedded at bytes 4-5."""
+    return b"\x47\x1f\xff\x10" + struct.pack("!H", marker & 0xFFFF) + b"\xff" * 182
+
+
 def make_rtp_packet(
     seq: int,
     timestamp: int,
@@ -48,11 +53,17 @@ class MulticastSender:
         port: int = 0,
         pps: int = 200,
         ts_per_rtp: int = 7,
+        reorder_distance: int = 0,
+        unique_payloads: bool = False,
+        send_duplicates: bool = False,
     ):
         self.addr = addr
         self.port = port or find_free_udp_port()
         self.pps = pps
         self.ts_per_rtp = ts_per_rtp
+        self.reorder_distance = reorder_distance
+        self.unique_payloads = unique_payloads
+        self.send_duplicates = send_duplicates
         self._payload = _TS_NULL_PACKET * ts_per_rtp
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
@@ -74,16 +85,39 @@ class MulticastSender:
         seq = 0
         ts = 0
         interval = 1.0 / self.pps
+        buf: list[bytes] = []
         while not self._stop.is_set():
-            pkt = make_rtp_packet(seq, ts, payload=self._payload)
-            try:
-                self._sock.sendto(pkt, (self.addr, self.port))
-                self.packets_sent += 1
-            except OSError:
-                pass
+            if self.unique_payloads:
+                payload = _make_ts_with_marker(seq) * self.ts_per_rtp
+            else:
+                payload = self._payload
+            pkt = make_rtp_packet(seq, ts, payload=payload)
+
+            if self.reorder_distance > 1:
+                buf.append(pkt)
+                if len(buf) >= self.reorder_distance:
+                    for p in reversed(buf):
+                        self._send(p)
+                    buf.clear()
+            else:
+                self._send(pkt)
+                if self.send_duplicates:
+                    self._send(pkt)
+
             seq = (seq + 1) & 0xFFFF
             ts = (ts + 3600) & 0xFFFFFFFF
             self._stop.wait(interval)
+
+        # Flush remaining buffered packets on stop
+        for p in reversed(buf):
+            self._send(p)
+
+    def _send(self, pkt: bytes) -> None:
+        try:
+            self._sock.sendto(pkt, (self.addr, self.port))
+            self.packets_sent += 1
+        except OSError:
+            pass
 
     def stop(self) -> None:
         self._stop.set()
