@@ -169,7 +169,7 @@ class MockRTSPServer(_RTSPServerBase):
                 conn.sendall(frame)
                 seq = (seq + 1) & 0xFFFF
                 ts = (ts + 3600) & 0xFFFFFFFF
-                time.sleep(0.005)
+                time.sleep(0.001)
         except (OSError, BrokenPipeError):
             pass
 
@@ -231,7 +231,7 @@ class MockRTSPServerUDP(_RTSPServerBase):
                 udp_sock.sendto(rtp, (client_ip, self._client_rtp_port))
                 seq = (seq + 1) & 0xFFFF
                 ts = (ts + 3600) & 0xFFFFFFFF
-                time.sleep(0.005)
+                time.sleep(0.001)
         except (OSError, BrokenPipeError):
             pass
         finally:

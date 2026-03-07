@@ -13,6 +13,21 @@ from helpers import (
 
 
 # ---------------------------------------------------------------------------
+# Module-scoped shared rtp2httpd instance
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def basic_r2h(r2h_binary):
+    """A single rtp2httpd instance shared by tests using default config."""
+    port = find_free_port()
+    r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
+    r2h.start()
+    yield r2h
+    r2h.stop()
+
+
+# ---------------------------------------------------------------------------
 # Status page
 # ---------------------------------------------------------------------------
 
@@ -20,39 +35,27 @@ from helpers import (
 class TestStatusPage:
     """The /status page should return HTML."""
 
-    def test_status_returns_html(self, r2h_binary):
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
-        try:
-            r2h.start()
-            status, hdrs, body = http_get("127.0.0.1", port, "/status")
-            assert status == 200
-            ct = hdrs.get("Content-Type", hdrs.get("content-type", ""))
-            assert "html" in ct.lower()
-            assert len(body) > 100  # non-trivial HTML page
-        finally:
-            r2h.stop()
+    def test_status_returns_html(self, basic_r2h):
+        status, hdrs, body = http_get("127.0.0.1", basic_r2h.port, "/status")
+        assert status == 200
+        ct = hdrs.get("Content-Type", hdrs.get("content-type", ""))
+        assert "html" in ct.lower()
+        assert len(body) > 100  # non-trivial HTML page
 
-    def test_status_contains_info(self, r2h_binary):
+    def test_status_contains_info(self, basic_r2h):
         """Status page should contain recognizable content.
         The embedded HTML may be gzip-compressed; request uncompressed."""
         import gzip
 
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
-        try:
-            r2h.start()
-            _, hdrs, body = http_get(
-                "127.0.0.1", port, "/status",
-                headers={"Accept-Encoding": "identity"},
-            )
-            # Decompress if gzip (0x1f 0x8b magic)
-            if body[:2] == b"\x1f\x8b":
-                body = gzip.decompress(body)
-            text = body.decode("utf-8", errors="replace").lower()
-            assert "<html" in text or "<!doctype" in text
-        finally:
-            r2h.stop()
+        _, hdrs, body = http_get(
+            "127.0.0.1", basic_r2h.port, "/status",
+            headers={"Accept-Encoding": "identity"},
+        )
+        # Decompress if gzip (0x1f 0x8b magic)
+        if body[:2] == b"\x1f\x8b":
+            body = gzip.decompress(body)
+        text = body.decode("utf-8", errors="replace").lower()
+        assert "<html" in text or "<!doctype" in text
 
 
 # ---------------------------------------------------------------------------
@@ -63,18 +66,12 @@ class TestStatusPage:
 class TestPlayerPage:
     """The /player page should return HTML."""
 
-    def test_player_returns_html(self, r2h_binary):
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
-        try:
-            r2h.start()
-            status, hdrs, body = http_get("127.0.0.1", port, "/player")
-            assert status == 200
-            ct = hdrs.get("Content-Type", hdrs.get("content-type", ""))
-            assert "html" in ct.lower()
-            assert len(body) > 100
-        finally:
-            r2h.stop()
+    def test_player_returns_html(self, basic_r2h):
+        status, hdrs, body = http_get("127.0.0.1", basic_r2h.port, "/player")
+        assert status == 200
+        ct = hdrs.get("Content-Type", hdrs.get("content-type", ""))
+        assert "html" in ct.lower()
+        assert len(body) > 100
 
 
 # ---------------------------------------------------------------------------
@@ -108,16 +105,10 @@ rtp://239.0.0.1:1234
         finally:
             r2h.stop()
 
-    def test_playlist_m3u_no_services(self, r2h_binary):
+    def test_playlist_m3u_no_services(self, basic_r2h):
         """Without any services, /playlist.m3u should return 404."""
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
-        try:
-            r2h.start()
-            status, _, _ = http_get("127.0.0.1", port, "/playlist.m3u")
-            assert status == 404
-        finally:
-            r2h.stop()
+        status, _, _ = http_get("127.0.0.1", basic_r2h.port, "/playlist.m3u")
+        assert status == 404
 
 
 # ---------------------------------------------------------------------------
@@ -128,19 +119,13 @@ rtp://239.0.0.1:1234
 class TestStatusSSE:
     """The status SSE endpoint should respond with event-stream type."""
 
-    def test_status_sse_content_type(self, r2h_binary):
+    def test_status_sse_content_type(self, basic_r2h):
         from helpers import stream_get
 
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
-        try:
-            r2h.start()
-            status, hdrs, _ = stream_get(
-                "127.0.0.1", port, "/status/sse",
-                read_bytes=256, timeout=3.0,
-            )
-            if status == 200:
-                ct = hdrs.get("content-type", "")
-                assert "event-stream" in ct or "text/" in ct
-        finally:
-            r2h.stop()
+        status, hdrs, _ = stream_get(
+            "127.0.0.1", basic_r2h.port, "/status/sse",
+            read_bytes=256, timeout=3.0,
+        )
+        if status == 200:
+            ct = hdrs.get("content-type", "")
+            assert "event-stream" in ct or "text/" in ct
