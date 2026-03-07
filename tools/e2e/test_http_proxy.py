@@ -263,6 +263,167 @@ class TestProxyStatusCodes:
 
 
 # ---------------------------------------------------------------------------
+# Redirect Location rewriting
+# ---------------------------------------------------------------------------
+
+
+def _get_location(hdrs):
+    """Extract Location header value (case-insensitive lookup)."""
+    for k, v in hdrs.items():
+        if k.lower() == "location":
+            return v
+    return None
+
+
+class TestProxyRedirectLocationRewrite:
+    """30x redirect responses should have their Location header rewritten
+    so the URL points back through the rtp2httpd proxy."""
+
+    def test_302_location_rewritten(self, shared_r2h):
+        """302 Location with http:// URL should be rewritten to /http/... path."""
+        upstream = MockHTTPUpstream(routes={
+            "/old": {
+                "status": 302,
+                "body": b"",
+                "headers": {"Location": "http://10.0.0.1:8080/new/page"},
+            },
+        })
+        upstream.start()
+        try:
+            status, hdrs, _ = http_get(
+                "127.0.0.1", shared_r2h.port,
+                "/http/127.0.0.1:%d/old" % upstream.port,
+                timeout=5.0,
+            )
+            assert status == 302
+            location = _get_location(hdrs)
+            assert location is not None, "Location header missing"
+            assert location == "/http/10.0.0.1:8080/new/page"
+        finally:
+            upstream.stop()
+
+    def test_301_location_rewritten(self, shared_r2h):
+        """301 permanent redirect should also rewrite Location."""
+        upstream = MockHTTPUpstream(routes={
+            "/moved": {
+                "status": 301,
+                "body": b"",
+                "headers": {"Location": "http://10.0.0.1:8080/moved-here"},
+            },
+        })
+        upstream.start()
+        try:
+            status, hdrs, _ = http_get(
+                "127.0.0.1", shared_r2h.port,
+                "/http/127.0.0.1:%d/moved" % upstream.port,
+                timeout=5.0,
+            )
+            assert status == 301
+            location = _get_location(hdrs)
+            assert location is not None, "Location header missing"
+            assert location == "/http/10.0.0.1:8080/moved-here"
+        finally:
+            upstream.stop()
+
+    def test_307_location_rewritten(self, shared_r2h):
+        """307 temporary redirect should rewrite Location."""
+        upstream = MockHTTPUpstream(routes={
+            "/temp": {
+                "status": 307,
+                "body": b"",
+                "headers": {"Location": "http://10.0.0.1:8080/temp-dest"},
+            },
+        })
+        upstream.start()
+        try:
+            status, hdrs, _ = http_get(
+                "127.0.0.1", shared_r2h.port,
+                "/http/127.0.0.1:%d/temp" % upstream.port,
+                timeout=5.0,
+            )
+            assert status == 307
+            location = _get_location(hdrs)
+            assert location is not None, "Location header missing"
+            assert location == "/http/10.0.0.1:8080/temp-dest"
+        finally:
+            upstream.stop()
+
+    def test_redirect_location_preserves_query_string(self, shared_r2h):
+        """Query parameters in Location URL should be preserved after rewrite."""
+        upstream = MockHTTPUpstream(routes={
+            "/redir-qs": {
+                "status": 302,
+                "body": b"",
+                "headers": {"Location": "http://10.0.0.1:8080/target?foo=bar&baz=1"},
+            },
+        })
+        upstream.start()
+        try:
+            status, hdrs, _ = http_get(
+                "127.0.0.1", shared_r2h.port,
+                "/http/127.0.0.1:%d/redir-qs" % upstream.port,
+                timeout=5.0,
+            )
+            assert status == 302
+            location = _get_location(hdrs)
+            assert location is not None, "Location header missing"
+            assert "/http/10.0.0.1:8080/target?" in location
+            assert "foo=bar" in location
+            assert "baz=1" in location
+        finally:
+            upstream.stop()
+
+    def test_redirect_https_location_not_rewritten(self, shared_r2h):
+        """https:// Location should NOT be rewritten (only http:// is supported)."""
+        upstream = MockHTTPUpstream(routes={
+            "/secure-redir": {
+                "status": 302,
+                "body": b"",
+                "headers": {"Location": "https://example.com/secure"},
+            },
+        })
+        upstream.start()
+        try:
+            status, hdrs, _ = http_get(
+                "127.0.0.1", shared_r2h.port,
+                "/http/127.0.0.1:%d/secure-redir" % upstream.port,
+                timeout=5.0,
+            )
+            assert status == 302
+            location = _get_location(hdrs)
+            assert location is not None, "Location header missing"
+            assert location == "https://example.com/secure"
+        finally:
+            upstream.stop()
+
+    def test_non_redirect_location_not_rewritten(self, shared_r2h):
+        """A 200 response with a Location header should NOT rewrite it."""
+        upstream = MockHTTPUpstream(routes={
+            "/ok-with-loc": {
+                "status": 200,
+                "body": b"ok",
+                "headers": {
+                    "Location": "http://10.0.0.1:8080/other",
+                    "Content-Type": "text/plain",
+                },
+            },
+        })
+        upstream.start()
+        try:
+            status, hdrs, _ = http_get(
+                "127.0.0.1", shared_r2h.port,
+                "/http/127.0.0.1:%d/ok-with-loc" % upstream.port,
+                timeout=5.0,
+            )
+            assert status == 200
+            location = _get_location(hdrs)
+            if location is not None:
+                assert location == "http://10.0.0.1:8080/other"
+        finally:
+            upstream.stop()
+
+
+# ---------------------------------------------------------------------------
 # HTTP proxy with empty response body
 # ---------------------------------------------------------------------------
 
