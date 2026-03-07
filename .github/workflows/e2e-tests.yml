@@ -1,0 +1,23 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build rtp2httpd
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON
+          cmake --build build -j$(nproc)
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Run E2E tests
+        run: ./tools/e2e/run.sh
