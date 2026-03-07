@@ -22,11 +22,11 @@ rtp2httpd [选项]
 
 #### 上游网络接口配置
 
-- `-i, --upstream-interface <接口>` - 默认上游接口（作用于所有流量类型，优先级最低）
-- `-f, --upstream-interface-fcc <接口>` - FCC 上游接口（覆盖 `-i` 设置）
-- `-t, --upstream-interface-rtsp <接口>` - RTSP 上游接口（覆盖 `-i` 设置）
+- `-i, --upstream-interface <接口>` - 默认上游接口（作用于所有流量类型，优先级最低，不适用于 FreeBSD 环境）
+- `-f, --upstream-interface-fcc <接口>` - FCC 上游接口（覆盖 `-i` 设置，不适用于 FreeBSD 环境）
+- `-t, --upstream-interface-rtsp <接口>` - RTSP 上游接口（覆盖 `-i` 设置，不适用于 FreeBSD 环境）
 - `-r, --upstream-interface-multicast <接口>` - 组播上游接口（覆盖 `-i` 设置）
-- `-y, --upstream-interface-http <接口>` - HTTP 代理上游接口（覆盖 `-i` 设置）
+- `-y, --upstream-interface-http <接口>` - HTTP 代理上游接口（覆盖 `-i` 设置，不适用于 FreeBSD 环境）
 
 **优先级规则**：`upstream-interface-{fcc,rtsp,multicast,http}` > `upstream-interface` > 系统路由表
 
@@ -131,11 +131,11 @@ player-page-path = /player
 
 # 上游网络接口配置 (可选)
 #
-# 简单配置：只配置一个默认接口，所有流量类型都使用此接口
+# 简单配置：只配置一个默认接口，所有流量类型都使用此接口，不适用于 FreeBSD 环境
 upstream-interface = eth0
 #
 # 高级配置：为不同流量类型配置专用接口
-# 注意：专用接口配置优先级高于默认接口
+# 注意：专用接口配置优先级高于默认接口，FreeBSD 环境下仅支持 upstream-interface-multicast
 # upstream-interface-multicast = eth0  # 组播流量 (RTP/UDP)
 # upstream-interface-fcc = eth1        # FCC
 # upstream-interface-rtsp = eth2       # RTSP

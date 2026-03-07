@@ -121,6 +121,24 @@ static inline int platform_bind_to_device(int sock, const char *ifname) {
     return -1;
   return setsockopt(sock, IPPROTO_IP, IP_BOUND_IF, &ifindex, sizeof(ifindex));
 }
+#elif defined(__FreeBSD__)
+#include "utils.h"
+#include <net/if.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <string.h>
+static inline int platform_bind_to_device(int sock, const char *ifname) {
+    unsigned int ifindex = if_nametoindex(ifname);
+    if (ifindex == 0) return -1;
+    struct ip_mreqn mreqn;
+    memset(&mreqn, 0, sizeof(mreqn));
+    mreqn.imr_ifindex = (int)ifindex;
+    if (setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF, &mreqn, sizeof(mreqn)) < 0) {
+        logger(LOG_ERROR, "Platform Compat: Failed to bind devices because FreeBSD does not support binding unicast socket to network devices.");
+        return -1;
+    }
+    return 0;
+}
 #else /* Linux */
 #include <net/if.h>
 #include <string.h>
