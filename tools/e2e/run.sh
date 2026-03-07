@@ -62,5 +62,5 @@ cd "$TOOLS_DIR"
 if [[ "$PARALLEL" == "1" ]]; then
     exec uv run --extra test pytest e2e/ -v "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 else
-    exec uv run --extra test pytest e2e/ -v -n "$PARALLEL" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+    exec uv run --extra test pytest e2e/ -v -n "$PARALLEL" --dist loadfile "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 fi

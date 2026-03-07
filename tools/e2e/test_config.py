@@ -104,7 +104,7 @@ class TestMaxClients:
             assert b"200" in resp1, "First client did not get 200: %r" % resp1[:80]
 
             # Connection is active - the server has registered this client.
-            time.sleep(0.5)
+            time.sleep(0.2)
 
             # Second client should be rejected
             status2, _, _ = stream_get(

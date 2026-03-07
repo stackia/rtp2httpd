@@ -9,8 +9,6 @@ Tests use a generous 20 s timeout via ``stream_get`` to accommodate the
 RTSP state machine setup time on macOS.
 """
 
-import time
-
 import pytest
 
 from helpers import (
@@ -27,6 +25,21 @@ pytestmark = pytest.mark.rtsp
 _STREAM_TIMEOUT = 20.0
 
 
+# ---------------------------------------------------------------------------
+# Module-scoped shared rtp2httpd instance
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def shared_r2h(r2h_binary):
+    """A single rtp2httpd instance shared by all RTSP tests."""
+    port = find_free_port()
+    r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
+    r2h.start()
+    yield r2h
+    r2h.stop()
+
+
 # ===================================================================
 # TCP interleaved transport
 # ===================================================================
@@ -35,34 +48,27 @@ _STREAM_TIMEOUT = 20.0
 class TestRTSPTCPStream:
     """RTSP with TCP interleaved (``RTP/AVP/TCP;interleaved=0-1``)."""
 
-    def test_tcp_stream_returns_200(self, r2h_binary):
+    def test_tcp_stream_returns_200(self, shared_r2h):
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
                 read_bytes=4096, timeout=_STREAM_TIMEOUT,
             )
             assert status == 200, "Expected 200 for TCP interleaved RTSP"
             assert len(body) > 0
         finally:
-            r2h.stop()
             rtsp.stop()
 
-    def test_tcp_data_is_ts(self, r2h_binary):
+    def test_tcp_data_is_ts(self, shared_r2h):
         """Relayed data should be raw MPEG-TS (RTP headers stripped)."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
                 read_bytes=4096, timeout=_STREAM_TIMEOUT,
             )
@@ -70,19 +76,15 @@ class TestRTSPTCPStream:
             assert len(body) >= 188
             assert body[0] == 0x47, "Expected TS sync byte 0x47, got 0x%02x" % body[0]
         finally:
-            r2h.stop()
             rtsp.stop()
 
-    def test_tcp_protocol_handshake(self, r2h_binary):
+    def test_tcp_protocol_handshake(self, shared_r2h):
         """The mock should receive OPTIONS, DESCRIBE, SETUP, PLAY."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/test" % rtsp.port,
                 read_bytes=2048, timeout=_STREAM_TIMEOUT,
             )
@@ -92,7 +94,6 @@ class TestRTSPTCPStream:
             assert "SETUP" in methods
             assert "PLAY" in methods
         finally:
-            r2h.stop()
             rtsp.stop()
 
 
@@ -104,33 +105,26 @@ class TestRTSPTCPStream:
 class TestRTSPUDPStream:
     """RTSP with UDP transport (``RTP/AVP;unicast;client_port=...``)."""
 
-    def test_udp_stream_returns_200(self, r2h_binary):
+    def test_udp_stream_returns_200(self, shared_r2h):
         rtsp = MockRTSPServerUDP()
         rtsp.start()
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
                 read_bytes=4096, timeout=_STREAM_TIMEOUT,
             )
             assert status == 200, "Expected 200 for UDP RTSP"
             assert len(body) > 0
         finally:
-            r2h.stop()
             rtsp.stop()
 
-    def test_udp_data_is_ts(self, r2h_binary):
+    def test_udp_data_is_ts(self, shared_r2h):
         rtsp = MockRTSPServerUDP()
         rtsp.start()
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
                 read_bytes=4096, timeout=_STREAM_TIMEOUT,
             )
@@ -138,18 +132,14 @@ class TestRTSPUDPStream:
             assert len(body) >= 188
             assert body[0] == 0x47, "Expected TS sync byte"
         finally:
-            r2h.stop()
             rtsp.stop()
 
-    def test_udp_protocol_handshake(self, r2h_binary):
+    def test_udp_protocol_handshake(self, shared_r2h):
         rtsp = MockRTSPServerUDP()
         rtsp.start()
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/test" % rtsp.port,
                 read_bytes=2048, timeout=_STREAM_TIMEOUT,
             )
@@ -159,7 +149,6 @@ class TestRTSPUDPStream:
             assert "SETUP" in methods
             assert "PLAY" in methods
         finally:
-            r2h.stop()
             rtsp.stop()
 
 
@@ -171,40 +160,32 @@ class TestRTSPUDPStream:
 class TestRTSPPlayseek:
     """Verify playseek parameter is forwarded in RTSP requests."""
 
-    def test_playseek_tcp(self, r2h_binary):
+    def test_playseek_tcp(self, shared_r2h):
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000" % rtsp.port,
                 read_bytes=4096, timeout=_STREAM_TIMEOUT,
             )
             assert status == 200
             assert len(body) > 0
         finally:
-            r2h.stop()
             rtsp.stop()
 
-    def test_playseek_udp(self, r2h_binary):
+    def test_playseek_udp(self, shared_r2h):
         rtsp = MockRTSPServerUDP()
         rtsp.start()
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000" % rtsp.port,
                 read_bytes=4096, timeout=_STREAM_TIMEOUT,
             )
             assert status == 200
             assert len(body) > 0
         finally:
-            r2h.stop()
             rtsp.stop()
 
 
@@ -214,36 +195,24 @@ class TestRTSPPlayseek:
 
 
 class TestRTSPHeadRequest:
-    def test_head_rtsp(self, r2h_binary):
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
-        try:
-            r2h.start()
-            status, _, body = http_request(
-                "127.0.0.1", port, "HEAD",
-                "/rtsp/127.0.0.1:554/test", timeout=3.0,
-            )
-            assert status == 200
-            assert len(body) == 0
-        finally:
-            r2h.stop()
+    def test_head_rtsp(self, shared_r2h):
+        status, _, body = http_request(
+            "127.0.0.1", shared_r2h.port, "HEAD",
+            "/rtsp/127.0.0.1:554/test", timeout=3.0,
+        )
+        assert status == 200
+        assert len(body) == 0
 
 
 class TestRTSPInvalidServer:
-    def test_rtsp_unreachable(self, r2h_binary):
-        port = find_free_port()
+    def test_rtsp_unreachable(self, shared_r2h):
         dead_port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
-        try:
-            r2h.start()
-            status, _, _ = stream_get(
-                "127.0.0.1", port,
-                "/rtsp/127.0.0.1:%d/test" % dead_port,
-                read_bytes=512, timeout=8.0,
-            )
-            assert status in (0, 500, 502, 503)
-        finally:
-            r2h.stop()
+        status, _, _ = stream_get(
+            "127.0.0.1", shared_r2h.port,
+            "/rtsp/127.0.0.1:%d/test" % dead_port,
+            read_bytes=512, timeout=8.0,
+        )
+        assert status in (0, 500, 502, 503)
 
 
 # ===================================================================
@@ -254,22 +223,17 @@ class TestRTSPInvalidServer:
 class TestRTSPPlayseekForwarding:
     """Verify that playseek parameters are forwarded in the RTSP URI."""
 
-    def test_playseek_forwarded_in_describe_uri(self, r2h_binary):
+    def test_playseek_forwarded_in_describe_uri(self, shared_r2h):
         """playseek parameter should be forwarded in the DESCRIBE URI."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        time.sleep(0.1)
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000" % rtsp.port,
                 read_bytes=4096, timeout=_STREAM_TIMEOUT,
             )
             assert status == 200
-            time.sleep(0.5)
 
             # Verify DESCRIBE URI contains the playseek parameter
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
@@ -279,24 +243,18 @@ class TestRTSPPlayseekForwarding:
             assert "playseek=" in uri, \
                 "playseek should be forwarded in DESCRIBE URI, got: %s" % uri
         finally:
-            r2h.stop()
             rtsp.stop()
 
-    def test_playseek_correct_path_in_uri(self, r2h_binary):
+    def test_playseek_correct_path_in_uri(self, shared_r2h):
         """The RTSP URI should contain the correct server path."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        time.sleep(0.1)
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/live/channel1?playseek=20240101120000-20240101130000" % rtsp.port,
                 read_bytes=2048, timeout=_STREAM_TIMEOUT,
             )
-            time.sleep(0.5)
 
             # DESCRIBE URI should include the full path
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
@@ -304,7 +262,6 @@ class TestRTSPPlayseekForwarding:
             uri = describe_reqs[0]["uri"]
             assert "/live/channel1" in uri
         finally:
-            r2h.stop()
             rtsp.stop()
 
 
@@ -316,22 +273,17 @@ class TestRTSPPlayseekForwarding:
 class TestRTSPTvdr:
     """Verify tvdr parameter works as an alternative seek parameter."""
 
-    def test_tvdr_forwarded_in_uri(self, r2h_binary):
+    def test_tvdr_forwarded_in_uri(self, shared_r2h):
         """tvdr parameter should be forwarded in the RTSP URI."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        time.sleep(0.1)
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream?tvdr=20240601080000-20240601090000" % rtsp.port,
                 read_bytes=4096, timeout=_STREAM_TIMEOUT,
             )
             assert status == 200
-            time.sleep(0.5)
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE request"
@@ -339,7 +291,6 @@ class TestRTSPTvdr:
             assert "tvdr=" in uri, \
                 "tvdr should be forwarded in DESCRIBE URI, got: %s" % uri
         finally:
-            r2h.stop()
             rtsp.stop()
 
 
@@ -351,22 +302,17 @@ class TestRTSPTvdr:
 class TestRTSPCustomSeekName:
     """Verify r2h-seek-name allows specifying a custom seek parameter."""
 
-    def test_custom_seek_forwarded_in_uri(self, r2h_binary):
+    def test_custom_seek_forwarded_in_uri(self, shared_r2h):
         """The custom seek parameter should be forwarded in the RTSP URI."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        time.sleep(0.1)
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             status, _, body = stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream?r2h-seek-name=myseek&myseek=20240301100000-20240301110000" % rtsp.port,
                 read_bytes=4096, timeout=_STREAM_TIMEOUT,
             )
             assert status == 200
-            time.sleep(0.5)
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE request"
@@ -375,25 +321,19 @@ class TestRTSPCustomSeekName:
             assert "myseek=" in uri, \
                 "Custom seek param should be in DESCRIBE URI, got: %s" % uri
         finally:
-            r2h.stop()
             rtsp.stop()
 
-    def test_r2h_seek_name_stripped_from_uri(self, r2h_binary):
+    def test_r2h_seek_name_stripped_from_uri(self, shared_r2h):
         """r2h-seek-name is an rtp2httpd meta-parameter and should be
         stripped from the RTSP URI, while the actual seek param stays."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        time.sleep(0.1)
-        port = find_free_port()
-        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
         try:
-            r2h.start()
             stream_get(
-                "127.0.0.1", port,
+                "127.0.0.1", shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream?r2h-seek-name=myseek&myseek=20240301100000-20240301110000" % rtsp.port,
                 read_bytes=2048, timeout=_STREAM_TIMEOUT,
             )
-            time.sleep(0.5)
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0
@@ -404,5 +344,4 @@ class TestRTSPCustomSeekName:
             # But the actual seek param should be present
             assert "myseek=" in uri
         finally:
-            r2h.stop()
             rtsp.stop()

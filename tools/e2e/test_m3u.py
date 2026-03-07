@@ -112,7 +112,7 @@ class TestExternalM3UFile:
         try:
             r2h.start()
             # External M3U may load asynchronously, give it a moment
-            time.sleep(0.5)
+            time.sleep(0.2)
             status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
             text = body.decode()
             assert status == 200
@@ -137,7 +137,7 @@ class TestExternalM3UFile:
         )
         try:
             r2h.start()
-            time.sleep(0.5)
+            time.sleep(0.2)
             status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
             text = body.decode()
             assert status == 200
@@ -660,7 +660,6 @@ class TestM3UHTTPExternal:
             },
         })
         upstream.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -672,7 +671,7 @@ class TestM3UHTTPExternal:
         )
         try:
             r2h.start()
-            time.sleep(1.0)  # allow async M3U fetch via curl
+            time.sleep(0.5)  # allow async M3U fetch via curl
             status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
             text = body.decode()
             assert status == 200
@@ -700,7 +699,6 @@ class TestM3UHTTPExternal:
             },
         })
         upstream.start()
-        time.sleep(0.1)
 
         port = find_free_port()
         r2h = R2HProcess(
@@ -712,7 +710,7 @@ class TestM3UHTTPExternal:
         )
         try:
             r2h.start()
-            time.sleep(1.0)
+            time.sleep(0.5)
             status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
             text = body.decode()
             assert status == 200

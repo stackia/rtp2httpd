@@ -18,17 +18,21 @@ SECRET = "s3cret-t0ken"
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Module-scoped shared fixtures
 # ---------------------------------------------------------------------------
 
 
-def _start_with_token(r2h_binary, port, token=SECRET):
+@pytest.fixture(scope="module")
+def token_r2h(r2h_binary):
+    """A single rtp2httpd instance with -T token for auth tests."""
+    port = find_free_port()
     r2h = R2HProcess(
         r2h_binary, port,
-        extra_args=["-v", "4", "-m", "100", "-T", token],
+        extra_args=["-v", "4", "-m", "100", "-T", SECRET],
     )
     r2h.start()
-    return r2h
+    yield r2h
+    r2h.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -58,26 +62,16 @@ class TestNoAuth:
 class TestAuthRequired:
     """With -T, requests without a valid token should be rejected."""
 
-    def test_missing_token_401(self, r2h_binary):
-        port = find_free_port()
-        r2h = _start_with_token(r2h_binary, port)
-        try:
-            status, _, _ = http_get("127.0.0.1", port, "/status")
-            assert status == 401
-        finally:
-            r2h.stop()
+    def test_missing_token_401(self, token_r2h):
+        status, _, _ = http_get("127.0.0.1", token_r2h.port, "/status")
+        assert status == 401
 
-    def test_wrong_token_401(self, r2h_binary):
-        port = find_free_port()
-        r2h = _start_with_token(r2h_binary, port)
-        try:
-            status, _, _ = http_get(
-                "127.0.0.1", port,
-                f"/status?r2h-token=wrong-token",
-            )
-            assert status == 401
-        finally:
-            r2h.stop()
+    def test_wrong_token_401(self, token_r2h):
+        status, _, _ = http_get(
+            "127.0.0.1", token_r2h.port,
+            f"/status?r2h-token=wrong-token",
+        )
+        assert status == 401
 
 
 # ---------------------------------------------------------------------------
@@ -88,32 +82,22 @@ class TestAuthRequired:
 class TestAuthQueryParam:
     """Token provided via ?r2h-token=."""
 
-    def test_valid_query_token(self, r2h_binary):
-        port = find_free_port()
-        r2h = _start_with_token(r2h_binary, port)
-        try:
-            status, _, _ = http_get(
-                "127.0.0.1", port,
-                f"/status?r2h-token={SECRET}",
-            )
-            assert status == 200
-        finally:
-            r2h.stop()
+    def test_valid_query_token(self, token_r2h):
+        status, _, _ = http_get(
+            "127.0.0.1", token_r2h.port,
+            f"/status?r2h-token={SECRET}",
+        )
+        assert status == 200
 
-    def test_query_token_sets_cookie(self, r2h_binary):
+    def test_query_token_sets_cookie(self, token_r2h):
         """Successful query-param auth should set an r2h-token cookie."""
-        port = find_free_port()
-        r2h = _start_with_token(r2h_binary, port)
-        try:
-            status, hdrs, _ = http_get(
-                "127.0.0.1", port,
-                f"/status?r2h-token={SECRET}",
-            )
-            assert status == 200
-            set_cookie = hdrs.get("Set-Cookie", hdrs.get("set-cookie", ""))
-            assert "r2h-token=" in set_cookie
-        finally:
-            r2h.stop()
+        status, hdrs, _ = http_get(
+            "127.0.0.1", token_r2h.port,
+            f"/status?r2h-token={SECRET}",
+        )
+        assert status == 200
+        set_cookie = hdrs.get("Set-Cookie", hdrs.get("set-cookie", ""))
+        assert "r2h-token=" in set_cookie
 
 
 # ---------------------------------------------------------------------------
@@ -124,29 +108,19 @@ class TestAuthQueryParam:
 class TestAuthCookie:
     """Token provided via Cookie header."""
 
-    def test_valid_cookie(self, r2h_binary):
-        port = find_free_port()
-        r2h = _start_with_token(r2h_binary, port)
-        try:
-            status, _, _ = http_get(
-                "127.0.0.1", port, "/status",
-                headers={"Cookie": f"r2h-token={SECRET}"},
-            )
-            assert status == 200
-        finally:
-            r2h.stop()
+    def test_valid_cookie(self, token_r2h):
+        status, _, _ = http_get(
+            "127.0.0.1", token_r2h.port, "/status",
+            headers={"Cookie": f"r2h-token={SECRET}"},
+        )
+        assert status == 200
 
-    def test_wrong_cookie_401(self, r2h_binary):
-        port = find_free_port()
-        r2h = _start_with_token(r2h_binary, port)
-        try:
-            status, _, _ = http_get(
-                "127.0.0.1", port, "/status",
-                headers={"Cookie": "r2h-token=bad"},
-            )
-            assert status == 401
-        finally:
-            r2h.stop()
+    def test_wrong_cookie_401(self, token_r2h):
+        status, _, _ = http_get(
+            "127.0.0.1", token_r2h.port, "/status",
+            headers={"Cookie": "r2h-token=bad"},
+        )
+        assert status == 401
 
 
 # ---------------------------------------------------------------------------
@@ -157,29 +131,19 @@ class TestAuthCookie:
 class TestAuthUserAgent:
     """Token embedded in User-Agent as R2HTOKEN/<token>."""
 
-    def test_valid_user_agent_token(self, r2h_binary):
-        port = find_free_port()
-        r2h = _start_with_token(r2h_binary, port)
-        try:
-            status, _, _ = http_get(
-                "127.0.0.1", port, "/status",
-                headers={"User-Agent": f"R2HTOKEN/{SECRET}"},
-            )
-            assert status == 200
-        finally:
-            r2h.stop()
+    def test_valid_user_agent_token(self, token_r2h):
+        status, _, _ = http_get(
+            "127.0.0.1", token_r2h.port, "/status",
+            headers={"User-Agent": f"R2HTOKEN/{SECRET}"},
+        )
+        assert status == 200
 
-    def test_wrong_user_agent_token_401(self, r2h_binary):
-        port = find_free_port()
-        r2h = _start_with_token(r2h_binary, port)
-        try:
-            status, _, _ = http_get(
-                "127.0.0.1", port, "/status",
-                headers={"User-Agent": "R2HTOKEN/wrong"},
-            )
-            assert status == 401
-        finally:
-            r2h.stop()
+    def test_wrong_user_agent_token_401(self, token_r2h):
+        status, _, _ = http_get(
+            "127.0.0.1", token_r2h.port, "/status",
+            headers={"User-Agent": "R2HTOKEN/wrong"},
+        )
+        assert status == 401
 
 
 # ---------------------------------------------------------------------------
