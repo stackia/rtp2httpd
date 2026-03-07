@@ -2239,6 +2239,24 @@ static int rtsp_parse_response_header(rtsp_session_t *session,
     goto cleanup;
   }
 
+  /* If Content-Length is present, ensure the full body has arrived before
+   * declaring the response complete.  This is critical for DESCRIBE responses
+   * whose SDP body must be available when rtsp_parse_describe_sdp() runs. */
+  if (status_code == 200) {
+    char *cl = rtsp_find_header(rtsp_start, "Content-Length");
+    if (cl) {
+      size_t content_length = (size_t)atoi(cl);
+      free(cl);
+      size_t total_needed = *response_offset + *response_len + content_length;
+      size_t buffered = strlen(response);
+      if (buffered < total_needed) {
+        /* Body not fully received yet */
+        *response_len = 0;
+        return 1; /* Need more data */
+      }
+    }
+  }
+
   /* Handle different status code ranges */
   if (status_code >= 300 && status_code < 400) {
     /* Redirection response */
