@@ -35,7 +35,7 @@ http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970&r2h-ifna
   - `huawei`: Huawei FCC protocol
 - **fec** (optional): FEC (Forward Error Correction) port number, used to receive FEC redundant packets for packet loss recovery
 - **r2h-ifname** (optional): Specify the upstream network interface to use (overrides global configuration)
-- **r2h-ifname-fcc** (optional): Specify the upstream network interface for FCC (overrides global configuration)
+- **r2h-ifname-fcc** (optional): Specify the upstream network interface for FCC (overrides global configuration), not for FreeBSD
 
 ### Use Cases
 
@@ -65,7 +65,7 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000GM
 # Custom time-shift parameter name + time offset
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r2h-seek-name=seek&r2h-seek-offset=3600
 
-# Specify upstream network interface
+# Specify upstream network interface (not for FreeBSD)
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-ifname=eth0
 ```
 
@@ -124,7 +124,7 @@ http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-2
 # Use custom parameter name + time offset
 http://192.168.1.1:5140/http/iptv.example.com/channel1?catchup=20240101120000&r2h-seek-name=catchup&r2h-seek-offset=3600
 
-# Specify upstream network interface
+# Specify upstream network interface (not for FreeBSD)
 http://192.168.1.1:5140/http/iptv.example.com/channel1?r2h-ifname=eth0
 ```
 
@@ -133,7 +133,7 @@ See [Time Processing Guide](/en/guide/time-processing) for details.
 ### Notes
 
 - Only supports HTTP upstream (HTTPS is not supported)
-- Can be configured to use a specific network interface via `upstream-interface-http`, or overridden per request using the `r2h-ifname` parameter
+- Can be configured to use a specific network interface via `upstream-interface-http`, or overridden per request using the `r2h-ifname` parameter (None of these are applicable to FreeBSD)
 - If the proxied target URL is an m3u file, all `http://` URLs in it will be automatically rewritten to go through the rtp2httpd proxy (to ensure HLS streams are correctly proxied)
 
 ## M3U Playlist Access
