@@ -2,6 +2,7 @@
 #define SERVICE_H
 
 #include <netdb.h>
+#include <stdint.h>
 
 /* ========== HTTP/SERVICE BUFFER SIZE CONFIGURATION ========== */
 
