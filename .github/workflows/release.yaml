@@ -127,7 +127,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/riscv64
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -165,7 +165,6 @@ jobs:
           - mipsel_24kc_24kf
           - mipsel_74kc
           - mipsel_mips32
-          - riscv64_riscv64
 
         sdk:
           - "24.10.4" # For IPK
@@ -243,7 +242,6 @@ jobs:
           - mipsel-unknown-linux-musl
           - mips-unknown-linux-musl
           - mips64-unknown-linux-musl
-          - riscv64-unknown-linux-musl
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
