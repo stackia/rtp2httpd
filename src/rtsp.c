@@ -1053,8 +1053,16 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
           /* Real error: set error state */
           rtsp_session_set_state(session, RTSP_STATE_ERROR);
         }
+        return result;
       }
-      return result;
+
+      /* For edge-triggered pollers: after transitioning to PLAYING, fall
+       * through to process any preserved RTP data in the response buffer
+       * and drain remaining socket data.  Without this, the preserved data
+       * would sit unprocessed until a new edge arrives. */
+      if (session->state != RTSP_STATE_PLAYING) {
+        return result;
+      }
     }
 
     if (session->state == RTSP_STATE_PLAYING) {
@@ -1882,28 +1890,53 @@ static int rtsp_process_interleaved_buffer(rtsp_session_t *session,
 
 int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session,
                                      connection_t *conn) {
-  /* Drain all available data for edge-triggered pollers (epoll EPOLLET / kqueue EV_CLEAR)
-   * where the read event fires only once per data arrival. */
-  while (session->response_buffer_pos < RTSP_RESPONSE_BUFFER_SIZE) {
-    int bytes_received =
-        recv(session->socket,
-             session->response_buffer + session->response_buffer_pos,
-             RTSP_RESPONSE_BUFFER_SIZE - session->response_buffer_pos, 0);
-    if (bytes_received < 0) {
-      if (errno == EAGAIN) {
-        break; /* No more data available */
+  int total_forwarded = 0;
+
+  /* Outer loop: drain all available data for edge-triggered pollers
+   * (epoll EPOLLET / kqueue EV_CLEAR) where the read event fires only once
+   * per data arrival.  The inner recv loop may fill the small response buffer
+   * before hitting EAGAIN; after processing we must loop back to recv more. */
+  for (;;) {
+    int hit_eagain = 0;
+
+    /* Fill response buffer from socket */
+    while (session->response_buffer_pos < RTSP_RESPONSE_BUFFER_SIZE) {
+      int bytes_received =
+          recv(session->socket,
+               session->response_buffer + session->response_buffer_pos,
+               RTSP_RESPONSE_BUFFER_SIZE - session->response_buffer_pos, 0);
+      if (bytes_received < 0) {
+        if (errno == EAGAIN) {
+          hit_eagain = 1;
+          break; /* No more data available */
+        }
+        logger(LOG_ERROR, "RTSP: TCP receive failed: %s", strerror(errno));
+        return -1; /* Upstream gone — caller will drain client */
+      } else if (bytes_received == 0) {
+        logger(LOG_INFO, "RTSP: Server closed connection (EOF received)");
+        return -1; /* EOF — caller will drain client */
       }
-      logger(LOG_ERROR, "RTSP: TCP receive failed: %s", strerror(errno));
-      return -1; /* Upstream gone — caller will drain client */
-    } else if (bytes_received == 0) {
-      logger(LOG_INFO, "RTSP: Server closed connection (EOF received)");
-      return -1; /* EOF — caller will drain client */
+
+      session->response_buffer_pos += bytes_received;
     }
 
-    session->response_buffer_pos += bytes_received;
+    /* Process complete interleaved frames from buffer */
+    int result = rtsp_process_interleaved_buffer(session, conn);
+    if (result < 0)
+      return result;
+    total_forwarded += result;
+
+    /* If we hit EAGAIN, socket is fully drained */
+    if (hit_eagain)
+      break;
+
+    /* If buffer is still full after processing (incomplete packet spanning
+     * the entire buffer), we can't make progress — stop to avoid spinning */
+    if (session->response_buffer_pos >= RTSP_RESPONSE_BUFFER_SIZE)
+      break;
   }
 
-  return rtsp_process_interleaved_buffer(session, conn);
+  return total_forwarded;
 }
 
 int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
