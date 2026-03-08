@@ -110,7 +110,7 @@ http://other-cdn.com/live/stream.m3u8
    - rtp2httpd will automatically detect and use available tools
 
 2. **Update Strategy**
-   - External M3U is auto-updated every 24 hours by default
+   - External M3U is auto-updated every 2 hours by default
    - Adjust `external-m3u-update-interval` based on source update frequency
    - Set to 0 to disable auto-update (requires manual service restart to update)
 

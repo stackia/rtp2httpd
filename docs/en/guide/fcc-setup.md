@@ -1,6 +1,6 @@
 # Fast Channel Change Configuration
 
-FCC (Fast Channel Change) is a carrier-grade fast channel switching protocol that enables millisecond-level channel change response. Most IPTV set-top boxes in China achieve fast channel switching through FCC.
+FCC (Fast Channel Change) is a carrier-grade fast channel switching protocol that enables millisecond-level channel change response. IPTV set-top boxes in most provinces of China achieve fast channel switching through FCC.
 
 ## How FCC Works
 
@@ -21,7 +21,7 @@ The entire process is transparent to the player, ensuring that the first frame r
 
 Therefore, you must first find the FCC server corresponding to your multicast source before you can use it.
 
-## How to Obtain FCC Server
+## Finding Your FCC Server
 
 ### Method 1: Check Known FCC Server List
 
@@ -38,7 +38,7 @@ If your region is not in the list, you need to capture packets from your IPTV se
 2. **Connect the Set-Top Box**:
 
    - Method 1: Use a network tap or mirror port
-   - Method 2: Set the PC as the gateway of the set-top box for man-in-the-middle packet capture
+   - Method 2: Set the PC as the gateway of the set-top box for traffic interception
 
    Specific methods are not detailed here, as there are many online tutorials.
 
@@ -64,17 +64,14 @@ http://server-address:port/rtp/multicast-address:port?fcc=FCC-server-IP:port[&fc
 **Examples**:
 
 ```url
-# Telecom FCC (auto-detect)
+# Use Telecom FCC protocol by default
 http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970
-
-# Huawei FCC (auto-detect)
-http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:8027
 
 # Manually specify Huawei FCC protocol
 http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:8027&fcc-type=huawei
 
-# Manually specify Telecom FCC protocol
-http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970&fcc-type=telecom
+# If using rtp2httpd's M3U conversion feature, you can also write it like this in M3U
+rtp://239.253.64.120:5140/?fcc=10.255.14.152:15970
 ```
 
 #### fcc-type Parameter Description
@@ -82,7 +79,7 @@ http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970&fcc-type
 - **telecom** or not specified: Use Telecom/ZTE/FiberHome FCC protocol
 - **huawei**: Use Huawei FCC protocol
 
-In most cases, `telecom` will work. In some specific network environments, the `huawei` protocol may be required.
+The difference between the two protocols is very small. In most cases, `telecom` will work. In some specific network environments, the `huawei` protocol may be required.
 
 ### Configure FCC in M3U
 
@@ -131,7 +128,7 @@ Then you need to configure port forwarding on the upstream router to forward thi
 > [!TIP]
 > If your environment requires NAT traversal and the FCC server supports both protocols, it is recommended to use the Huawei FCC protocol (port 8027) first, which can save port forwarding configuration.
 
-## Testing if FCC Works
+## Verifying FCC
 
 1. **Use a fast-starting player**: Ensure the player itself starts fast enough and does not become a bottleneck, such as the [built-in web player](/en/guide/web-player).
 
@@ -150,5 +147,5 @@ Then you need to configure port forwarding on the upstream router to forward thi
 ## Related Documentation
 
 - [China FCC Address Collection](/en/reference/cn-fcc-collection): FCC server addresses for various provinces in China
-- [URL Format Specification](/en/guide/url-formats): FCC URL format
+- [URL Formats](/en/guide/url-formats): FCC URL format
 - [Configuration Reference](/en/reference/configuration): FCC-related configuration parameters
