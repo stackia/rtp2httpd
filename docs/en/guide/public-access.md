@@ -1,4 +1,4 @@
-# Public Access Recommendations
+# Public Access Guide
 
 If you need to expose rtp2httpd to the public internet, please ensure proper security measures are in place.
 
@@ -27,7 +27,7 @@ xff = yes
 
 Ensure that the reverse proxy can pass through `X-Forwarded-For` / `X-Forwarded-Host` / `X-Forwarded-Proto` headers.
 
-For lucky, simply enable the `万事大吉` (All-in-One) option.
+For lucky, simply enable the "All-in-One" option.
 
 For nginx, here is a configuration example:
 
@@ -80,5 +80,5 @@ The root cause of these phenomena is limited upload bandwidth, preventing data f
 ## Related Documentation
 
 - [Configuration Reference](/en/reference/configuration): Complete configuration options
-- [URL Format Specification](/en/guide/url-formats): Authentication token passing methods
-- [Benchmark Report](/en/reference/benchmark): Performance comparison with other solutions
+- [URL Formats](/en/guide/url-formats): Authentication token passing methods
+- [Performance Benchmark](/en/reference/benchmark): Performance comparison with other solutions

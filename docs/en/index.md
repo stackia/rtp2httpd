@@ -23,10 +23,10 @@ features:
     details: Supports ISP FCC (Fast Channel Change) protocol, millisecond-level channel switching, comparable to native set-top box experience
   - icon: 📋
     title: M3U Playlist
-    details: Automatically recognize and convert RTP/RTSP addresses, support catchup time-shift sources
+    details: Automatic RTP/RTSP address recognition and conversion, with catchup time-shift support
   - icon: 🛡️
     title: Packet Loss Recovery
-    details: RTP reordering recovery, Reed-Solomon FEC forward error correction, eliminate network jitter artifacts
+    details: RTP reordering recovery, Reed-Solomon FEC forward error correction, eliminates network jitter artifacts
   - icon: 🎬
     title: Built-in Player
     details: Modern web player with EPG and time-shift support, responsive for desktop/mobile
@@ -98,8 +98,8 @@ features:
 <video controls preload="metadata" src="/videos/multistream-demo.mp4#t=0.001" />
 
 > [!NOTE]
-> Single stream bitrate 8 Mbps. Only consumes 25% CPU single core (i3-N305), 4MB memory.
+> Single stream bitrate 8 Mbps. Total CPU usage only 25% of a single core (i3-N305), 4MB memory.
 >
-> For comparison with udpxy / msd_lite / tvgate, see the [Performance Benchmark Report](./reference/benchmark.md).
+> For comparison with udpxy / msd_lite / tvgate, see the [Performance Benchmark](./reference/benchmark.md).
 
 </div>

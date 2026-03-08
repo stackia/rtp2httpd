@@ -82,9 +82,9 @@ docker run --network=host --cap-add=NET_ADMIN --ulimit memlock=-1:-1 --rm \
 > [!TIP]
 > You can use this example file [rtp2httpd.conf](https://github.com/stackia/rtp2httpd/blob/main/rtp2httpd.conf) as a base to modify your configuration. See [Configuration Reference](/en/reference/configuration) for details.
 
-## OpenWrt Compile Integration
+## OpenWrt Build Integration
 
-If you want to compile rtp2httpd directly into your firmware via OpenWrt source build, you can add this repository directly to `feeds.conf.default`:
+If you want to build rtp2httpd directly into your firmware via OpenWrt source, you can add this repository directly to `feeds.conf.default`:
 
 ```text
 # Use latest code from main branch
@@ -100,11 +100,11 @@ src-git rtp2httpd https://github.com/stackia/rtp2httpd.git;v3.10.1
 
 Run `./scripts/feeds update rtp2httpd` and `./scripts/feeds install rtp2httpd` to update the feed.
 
-Run `make menuconfig`, find `LuCI -> Applications -> luci-app-rtp2httpd`, select it as `*` (compile into firmware) or `M` (compile as ipk/apk package), save and exit.
+Run `make menuconfig`, find `LuCI -> Applications -> luci-app-rtp2httpd`, select it as `*` (build into firmware) or `M` (build as ipk/apk package), save and exit.
 
-Run `make package/feeds/rtp2httpd/luci-app-rtp2httpd/compile -j1 V=sc` to compile `luci-app-rtp2httpd` and `rtp2httpd` packages separately.
+Run `make package/feeds/rtp2httpd/luci-app-rtp2httpd/compile -j1 V=sc` to build `luci-app-rtp2httpd` and `rtp2httpd` packages separately.
 
-### Firmware Maintainer Integration Guide
+### Firmware Maintainer Guide
 
 If you maintain a third-party OpenWrt firmware and want to integrate rtp2httpd directly into your feeds repository (rather than via `src-git` reference), you can use the `Makefile.versioned` provided by this project:
 
@@ -122,9 +122,9 @@ cp -r openwrt-support/* /path/to/your/feeds/
 
 The difference between `Makefile.versioned` and the original `Makefile` is: version number is fixed, `PKG_HASH` is filled, builds download source package from GitHub Release, no local git repository needed. Every time rtp2httpd releases a new version, the `Makefile.versioned` in the main branch is automatically updated.
 
-## Traditional Compile Installation
+## Building from Source
 
-Suitable for scenarios requiring custom compilation or development debugging.
+Suitable for scenarios requiring custom builds or development debugging.
 
 ### Install Dependencies
 
@@ -138,7 +138,7 @@ sudo apt-get install -y nodejs
 corepack enable
 ```
 
-### Compile Steps
+### Build Steps
 
 ```bash
 # Clone repository
@@ -152,7 +152,7 @@ pnpm run web-ui:build
 # Generate build scripts
 autoreconf -fi
 
-# Configure and compile
+# Configure and build
 ./configure --enable-optimization=-O3
 make
 

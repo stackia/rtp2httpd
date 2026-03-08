@@ -1,4 +1,4 @@
-# URL Format
+# URL Formats
 
 rtp2httpd supports multiple streaming protocols, distinguished by different URL prefixes.
 
