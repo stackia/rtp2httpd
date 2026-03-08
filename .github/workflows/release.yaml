@@ -425,13 +425,12 @@ jobs:
             echo "=== Build binary ==="
             mkdir -p build && cd build
 
-            cmake "${GITHUB_WORKSPACE}" \
+            RELEASE_VERSION="${{ env.RELEASE_VERSION }}" cmake "${GITHUB_WORKSPACE}" \
               -DCMAKE_INSTALL_PREFIX=/usr/local \
               -DCMAKE_INSTALL_SYSCONFDIR=/etc \
               -DCMAKE_BUILD_TYPE=Release \
               -DENABLE_AGGRESSIVE_OPT=ON \
-              -DCMAKE_SYSTEM_NAME=FreeBSD \
-              -DRELEASE_VERSION="${{ env.RELEASE_VERSION }}"
+              -DCMAKE_SYSTEM_NAME=FreeBSD
 
             cmake --build . -j$(nproc)
 
