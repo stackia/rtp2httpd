@@ -29,6 +29,10 @@ The following FCC (Fast Channel Change) server addresses were collected from the
   - `115.233.40.137:8027` (Hangzhou)
   - `115.233.41.137:8027` (Hangzhou)
   - `220.186.210.205:8027` (Wenzhou)
+  - `220.186.213.242:8027` (Wenzhou)
+  - `220.186.213.247:8027` (Wenzhou)
+  - `220.186.213.249:8027` (Wenzhou)
+  - `220.186.213.250:8027` (Wenzhou)
   - `115.233.43.70:8027` (Jinhua)
   - `220.191.136.24:8027` (Taizhou)
   - `115.233.42.69:8027` (Shaoxing)
@@ -57,6 +61,7 @@ The following FCC (Fast Channel Change) server addresses were collected from the
   - `124.232.149.47:15970`
   - `61.150.161.42:8027`
   - `222.241.55.41:8027` (Changde)
+  - `218.76.213.41:8027` (Shaoyang)
 - China Mobile: `100.127.255.233:15970`
 
 ## Hubei
@@ -66,12 +71,16 @@ The following FCC (Fast Channel Change) server addresses were collected from the
 ## Henan
 
 - China Unicom:
-  - `10.254.199.130:8027` (Zhengzhou)
   - `10.254.185.70:15970`
+  - `10.254.192.94:8027`
+  - `10.254.199.130:8027` (Zhengzhou)
+  - `10.254.223.130:8027` (Zhumadian)
 
 ## Hebei
 
-- China Telecom: `192.168.30.150:8027`
+- China Telecom:
+  - `192.168.19.28:8027`
+  - `192.168.30.150:8027` (Tangshan)
 - China Unicom:
   - `10.7.50.172:8027` (Tangshan)
   - `10.7.35.172:8027` (Qinhuangdao)
