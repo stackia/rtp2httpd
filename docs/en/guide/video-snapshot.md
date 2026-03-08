@@ -1,6 +1,6 @@
 # Video Snapshot Configuration
 
-rtp2httpd supports using FFmpeg to generate snapshot functionality for video streams. If a player integrates this feature, it will achieve extremely fast channel preview image loading speed.
+rtp2httpd supports generating video stream snapshots using FFmpeg. Players that integrate this feature achieve extremely fast channel preview loading.
 
 > [!IMPORTANT]
 > This feature requires player support. Currently, the only known player that supports rtp2httpd video snapshots is [mytv-android](https://github.com/mytv-android/mytv-android).
@@ -47,7 +47,7 @@ sudo chmod +x /usr/local/bin/ffmpeg
 
 The video snapshot feature is disabled by default and needs to be manually enabled.
 
-This feature has certain hardware requirements. Only consider enabling it on powerful x86 devices.
+This feature has certain hardware requirements. Only consider enabling it on high-performance x86 devices.
 
 ### Command Line Method
 
@@ -209,6 +209,6 @@ Possible causes:
 
 ## Related Documentation
 
-- [URL Format Specification](/en/guide/url-formats): Snapshot URL format
+- [URL Formats](/en/guide/url-formats): Snapshot URL format
 - [Configuration Reference](/en/reference/configuration): Video snapshot related configuration
 - [FCC Fast Channel Change Configuration](/en/guide/fcc-setup): Achieve faster snapshot speed with FCC

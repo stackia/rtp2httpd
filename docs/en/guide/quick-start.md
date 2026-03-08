@@ -87,13 +87,13 @@ Add `http://router-IP:5140/playlist.m3u` to any IPTV-compatible player to watch.
 There are three ways to view runtime logs:
 
 1. Visit the status page `/status`, view logs at the bottom of the page
-2. In OpenWrt backend, "Status" -> "System Log" to view logs
+2. In the OpenWrt admin panel, "Status" -> "System Log" to view logs
 3. SSH connect to router and run `logread -e rtp2httpd`
 
 ## Next Steps
 
 - [Built-in Web Player](/en/guide/web-player): Player features and compatibility notes
-- [Installation Methods](/en/guide/installation): Learn about other installation methods (Docker, static binary, compile from source)
+- [Installation Methods](/en/guide/installation): Learn about other installation methods (Docker, static binary, build from source)
 - [M3U Playlist Integration](/en/guide/m3u-integration): Configure playlist auto-recognition and conversion
 - [URL Format Guide](/en/guide/url-formats): Learn all supported URL formats
 - [Configuration Reference](/en/reference/configuration): In-depth understanding of all configuration options

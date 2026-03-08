@@ -1,4 +1,4 @@
-# Time Processing Specification
+# Time Processing
 
 This document explains in detail how rtp2httpd handles time parameters and timezone conversion in the timeshift/catch-up functionality. This mechanism applies to both RTSP proxy and HTTP proxy.
 
@@ -177,5 +177,5 @@ If there is no timezone information in the User-Agent, no timezone conversion is
 
 ## Related Documentation
 
-- [URL Format Specification](/en/guide/url-formats): RTSP/HTTP proxy URL format specification
+- [URL Formats](/en/guide/url-formats): RTSP/HTTP proxy URL format
 - [Configuration Reference](/en/reference/configuration): Server configuration options
