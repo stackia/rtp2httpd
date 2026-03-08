@@ -21,7 +21,9 @@ The following FCC (Fast Channel Change) server addresses were collected from the
 
 ## Jiangsu
 
-- China Telecom: `180.100.72.185:15970`
+- China Telecom:
+  - `180.100.72.185:15970`
+  - `180.100.106.54:554`
 
 ## Zhejiang
 
