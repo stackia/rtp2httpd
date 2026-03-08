@@ -110,7 +110,7 @@ http://other-cdn.com/live/stream.m3u8
    - rtp2httpd 会自动检测并使用可用的工具
 
 2. **更新策略**
-   - 默认 24 小时自动更新外部 M3U
+   - 默认 2 小时自动更新外部 M3U
    - 可根据源更新频率调整 `external-m3u-update-interval`
    - 设为 0 禁用自动更新（需手动重启服务更新）
 
