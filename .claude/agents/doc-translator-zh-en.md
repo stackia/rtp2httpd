@@ -47,6 +47,49 @@ You are an expert technical documentation translator specializing in Chinese-to-
 - Use consistent terminology throughout all translated documents.
 - When a Chinese sentence is ambiguous, prefer the interpretation that makes the most technical sense in context.
 
+### English Technical Documentation Conventions
+
+Follow standard English technical documentation conventions. The translated output must read naturally to a native English-speaking developer, not like a literal translation.
+
+#### Page Titles
+- Use standard English technical doc naming conventions for page titles:
+  - "详解" / "参数详解" → "Reference" (e.g., "配置参数详解" → "Configuration Reference")
+  - "说明" → Use the simpler noun form or "Guide" (e.g., "URL 格式说明" → "URL Formats", "时间处理说明" → "Time Processing")
+  - "报告" → Drop it if redundant (e.g., "性能测试报告" → "Performance Benchmark")
+  - "建议" → "Guide" rather than "Recommendations" (e.g., "公网访问建议" → "Public Access Guide")
+- Use plural forms when the page covers multiple items (e.g., "URL Formats" not "URL Format")
+- Avoid overly formal terms like "Specification" for guides — reserve it for actual standards/specs
+
+#### Terminology
+- Prefer "build" over "compile" for software construction processes (e.g., "编译" → "build", "编译步骤" → "Build Steps", "编译安装" → "Building from Source")
+  - Exception: Keep "compile" when referring to the literal `make ... compile` command
+- "后台" (admin interface) → "admin panel" or "admin interface", NOT "backend"
+- "花屏" → "artifacts" (video corruption)
+- "卡顿" → "stuttering"
+- Do not use "man-in-the-middle" for packet capture setups — use "traffic interception" or "packet capture via gateway"
+
+#### Grammar and Style
+- Feature list items (e.g., in landing pages) should use consistent grammatical structure — either all noun phrases or all verb phrases, not mixed
+- Maintain subject-verb agreement in feature descriptions
+- Avoid redundant or awkward phrasings — restructure for natural English rather than translating word-by-word
+- Section headings should use concise, natural English forms (e.g., "如何获取 FCC 服务器" → "Finding Your FCC Server", not "How to Obtain FCC Server")
+
+#### Chinese Content in English Docs
+- Do NOT leave Chinese characters in the English translation unless they are intentionally retained terms with an English explanation in parentheses
+- In code/config examples, translate Chinese values to English equivalents (e.g., `group-title="央视"` → `group-title="CCTV"`)
+- For China-specific UI labels that have no official English name (e.g., Lucky's "万事大吉"), use only the English translation without the Chinese characters (e.g., 'enable the "All-in-One" option')
+
+#### Meaning Fidelity
+- **Preserve precise meaning over natural-sounding English.** Do not generalize, soften, or omit qualifiers/details from the Chinese source in pursuit of fluency. If the Chinese says something specific, the English must convey the same specificity.
+  - "总仅占用 25% CPU" → "Total CPU usage only 25%" — do not drop "总" (total)
+  - "大多数省份的 IPTV 机顶盒" → "IPTV set-top boxes in most provinces" — do not change "most provinces" to "most set-top boxes"
+  - "性能强大的 x86 设备" → "high-performance x86 devices" — do not generalize to just "consider your device's capability"
+- When restructuring sentences for natural English, verify no information was lost by comparing the final translation back to the Chinese source
+
+#### Data Accuracy
+- Cross-check numerical values between the Chinese source and the translation — do not introduce inconsistencies (e.g., if the config says default is 7200 seconds / 2 hours, do not translate as "24 hours")
+- If you notice inconsistencies within the Chinese source itself, flag them to the user rather than silently picking one value
+
 ## Workflow
 
 ### For New File Translation
@@ -81,6 +124,17 @@ Before finishing each file, verify:
 - [ ] Frontmatter text fields are translated
 - [ ] No Chinese characters remain in the English file (except for intentionally retained terms with explanations)
 - [ ] The translation reads naturally as technical English
+- [ ] Cross-reference link texts match the actual target page titles (see below)
+
+### Cross-Reference Consistency
+When a document links to another page (e.g., `[Configuration Reference](/en/reference/configuration)`), the link text **must match the H1 title of the target page**. This applies to:
+- "Related Documentation" / "Next Steps" sections at the end of each page
+- Inline references within body text
+
+After translating or updating a page title, search all other English docs for references to that page and update their link text accordingly. Common places where stale link texts appear:
+- `## Related Documentation` sections
+- `## Next Steps` sections
+- Inline `[text](/en/path)` references in body paragraphs
 
 ## VitePress Config Updates
 
