@@ -1,32 +1,44 @@
 #!/bin/sh
-# rtp2httpd 一键安装脚本 for OpenWRT
-# 自动从 GitHub Release 下载并安装最新版本
+# rtp2httpd quick install script for OpenWRT
+# Automatically download and install the latest version from GitHub Release
 
 set -e
 
-# 颜色输出
+# Color output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# GitHub 仓库信息
+# GitHub repository info
 REPO_OWNER="stackia"
 REPO_NAME="rtp2httpd"
 
-# GitHub 访问方式配置(将在用户选择后设置)
+# GitHub access configuration (set after user selection)
 GITHUB_API=""
 GITHUB_RELEASE=""
 GITHUB_RAW=""
 
-# 临时下载目录
+# Temporary download directory
 TMP_DIR="/tmp/rtp2httpd_install"
 
-# 是否使用 prerelease 版本
+# Whether to use prerelease version
 USE_PRERELEASE=false
 
-# 打印信息函数
+# Language: zh (default) or en
+LANG_CODE="zh"
+
+# Bilingual message function
+msg() {
+    if [ "$LANG_CODE" = "en" ]; then
+        echo "$2"
+    else
+        echo "$1"
+    fi
+}
+
+# Print functions
 print_info() {
     printf "${GREEN}[INFO]${NC} %s\n" "$1" >&2
 }
@@ -39,51 +51,51 @@ print_error() {
     printf "${RED}[ERROR]${NC} %s\n" "$1" >&2
 }
 
-# 选择 GitHub 访问方式
+# Select GitHub access method
 select_github_mirror() {
     print_info "=========================================="
-    print_info "选择 GitHub 访问方式"
+    print_info "$(msg '选择 GitHub 访问方式' 'Select GitHub Access Method')"
     print_info "=========================================="
     echo ""
-    printf "${CYAN}请选择访问方式:${NC}\n" >&2
+    printf "${CYAN}$(msg '请选择访问方式:' 'Please select access method:')${NC}\n" >&2
     echo ""
-    echo "  1) GitHub 官方 (直连)"
-    echo "  2) gh-proxy.com (镜像加速)"
-    echo "  3) ghfast.top (镜像加速)"
+    echo "  1) $(msg 'GitHub 官方 (直连)' 'GitHub Official (Direct)')"
+    echo "  2) gh-proxy.com ($(msg '镜像加速' 'Mirror'))"
+    echo "  3) ghfast.top ($(msg '镜像加速' 'Mirror'))"
     echo ""
-    printf "请输入选项 [1-3] (默认: 1): " >&2
+    printf "$(msg '请输入选项 [1-3] (默认: 1): ' 'Enter option [1-3] (default: 1): ')" >&2
 
-    # 读取用户输入（从 /dev/tty 读取以支持管道环境）
+    # Read user input (from /dev/tty to support piped environments)
     read choice < /dev/tty
 
-    # 如果输入为空，使用默认值
+    # Use default if empty
     if [ -z "$choice" ]; then
         choice="1"
     fi
 
     echo ""
 
-    # API 始终使用直连方式，避免 rate limit
+    # API always uses direct access to avoid rate limit
     GITHUB_API="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}"
 
     case "$choice" in
         1)
-            print_info "使用 GitHub 官方直连"
+            print_info "$(msg '使用 GitHub 官方直连' 'Using GitHub Official (Direct)')"
             GITHUB_RELEASE="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
             GITHUB_RAW="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
             ;;
         2)
-            print_info "使用 gh-proxy.com 镜像加速"
+            print_info "$(msg '使用 gh-proxy.com 镜像加速' 'Using gh-proxy.com mirror')"
             GITHUB_RELEASE="https://gh-proxy.com/https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
             GITHUB_RAW="https://gh-proxy.com/https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
             ;;
         3)
-            print_info "使用 ghfast.top 镜像加速"
+            print_info "$(msg '使用 ghfast.top 镜像加速' 'Using ghfast.top mirror')"
             GITHUB_RELEASE="https://ghfast.top/https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
             GITHUB_RAW="https://ghfast.top/https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
             ;;
         *)
-            print_warn "无效选项，使用默认方式: GitHub 官方直连"
+            print_warn "$(msg '无效选项，使用默认方式: GitHub 官方直连' 'Invalid option, using default: GitHub Official (Direct)')"
             GITHUB_RELEASE="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download"
             GITHUB_RAW="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}"
             ;;
@@ -92,16 +104,16 @@ select_github_mirror() {
     echo ""
 }
 
-# 检查命令是否存在
+# Check if a command exists
 check_command() {
     if ! command -v "$1" >/dev/null 2>&1; then
-        print_error "未找到命令: $1"
+        print_error "$(msg "未找到命令: $1" "Command not found: $1")"
         return 1
     fi
     return 0
 }
 
-# 检测包管理器类型
+# Detect package manager type
 detect_package_manager() {
     if command -v apk >/dev/null 2>&1; then
         echo "apk"
@@ -112,41 +124,41 @@ detect_package_manager() {
     fi
 }
 
-# 检查必要的命令
+# Check required commands
 check_requirements() {
-    print_info "检查系统环境..."
+    print_info "$(msg '检查系统环境...' 'Checking system environment...')"
 
-    # 检测包管理器
+    # Detect package manager
     PKG_MANAGER=$(detect_package_manager)
 
     if [ -z "$PKG_MANAGER" ]; then
-        print_error "未找到包管理器 (apk 或 opkg)"
-        print_error "请确认您的系统是 OpenWrt"
+        print_error "$(msg '未找到包管理器 (apk 或 opkg)' 'Package manager not found (apk or opkg)')"
+        print_error "$(msg '请确认您的系统是 OpenWrt' 'Please confirm your system is OpenWrt')"
         exit 1
     fi
 
-    print_info "检测到包管理器: $PKG_MANAGER"
+    print_info "$(msg "检测到包管理器: $PKG_MANAGER" "Detected package manager: $PKG_MANAGER")"
 
-    # 检查 uclient-fetch
+    # Check uclient-fetch
     if ! check_command uclient-fetch; then
-        print_error "未找到命令: uclient-fetch"
-        print_error "请先安装 uclient-fetch"
+        print_error "$(msg '未找到命令: uclient-fetch' 'Command not found: uclient-fetch')"
+        print_error "$(msg '请先安装 uclient-fetch' 'Please install uclient-fetch first')"
         exit 1
     fi
 
-    # 检查 jsonfilter
+    # Check jsonfilter
     if ! check_command jsonfilter; then
-        print_error "未找到命令: jsonfilter"
-        print_error "请先安装 jshn 包"
+        print_error "$(msg '未找到命令: jsonfilter' 'Command not found: jsonfilter')"
+        print_error "$(msg '请先安装 jshn 包' 'Please install jshn package first')"
         exit 1
     fi
 
-    print_info "系统环境检查通过"
+    print_info "$(msg '系统环境检查通过' 'System environment check passed')"
 }
 
-# 检查是否已安装
+# Check if already installed
 check_installed() {
-    print_info "检查安装状态..."
+    print_info "$(msg '检查安装状态...' 'Checking installation status...')"
 
     local installed_version=""
 
@@ -161,42 +173,42 @@ check_installed() {
     fi
 
     if [ -n "$installed_version" ]; then
-        print_warn "检测到已安装 rtp2httpd 版本: $installed_version"
-        print_warn "本脚本将进行更新操作"
+        print_warn "$(msg "检测到已安装 rtp2httpd 版本: $installed_version" "Detected installed rtp2httpd version: $installed_version")"
+        print_warn "$(msg '本脚本将进行更新操作' 'This script will perform an update')"
         echo ""
-        printf "${YELLOW}是否继续? [Y/n]: ${NC}" >&2
+        printf "${YELLOW}$(msg '是否继续? [Y/n]: ' 'Continue? [Y/n]: ')${NC}" >&2
         read confirm < /dev/tty
 
-        # 如果用户输入 n 或 N，则退出
+        # Exit if user inputs n or N
         if [ "$confirm" = "n" ] || [ "$confirm" = "N" ]; then
-            print_info "已取消操作"
+            print_info "$(msg '已取消操作' 'Operation cancelled')"
             exit 0
         fi
 
         echo ""
         return 0
     else
-        print_info "未检测到已安装的 rtp2httpd"
+        print_info "$(msg '未检测到已安装的 rtp2httpd' 'No existing rtp2httpd installation detected')"
         return 0
     fi
 }
 
-# 获取 CPU 架构
+# Get CPU architecture
 get_cpu_arch() {
-    print_info "检测 CPU 架构..."
+    print_info "$(msg '检测 CPU 架构...' 'Detecting CPU architecture...')"
 
     local arch=""
 
-    # 优先从 /etc/openwrt_release 读取完整架构信息
+    # Prefer reading full architecture info from /etc/openwrt_release
     if [ -f /etc/openwrt_release ]; then
         . /etc/openwrt_release
         if [ -n "$DISTRIB_ARCH" ]; then
             arch="$DISTRIB_ARCH"
-            print_info "从 OpenWrt 发行版信息获取架构: $arch"
+            print_info "$(msg "从 OpenWrt 发行版信息获取架构: $arch" "Architecture from OpenWrt release info: $arch")"
         fi
     fi
 
-    # 如果未获取到,使用包管理器检测
+    # Fallback to package manager detection
     if [ -z "$arch" ]; then
         if [ "$PKG_MANAGER" = "apk" ]; then
             arch=$(apk --print-arch 2>/dev/null)
@@ -206,124 +218,120 @@ get_cpu_arch() {
     fi
 
     if [ -z "$arch" ]; then
-        print_error "无法检测 CPU 架构"
+        print_error "$(msg '无法检测 CPU 架构' 'Unable to detect CPU architecture')"
         exit 1
     fi
 
-    print_info "检测到架构: $arch"
+    print_info "$(msg "检测到架构: $arch" "Detected architecture: $arch")"
     echo "$arch"
 }
 
-# 获取最新版本号
+# Get latest version
 get_latest_version() {
-    print_info "获取最新版本信息..."
+    print_info "$(msg '获取最新版本信息...' 'Fetching latest version info...')"
 
     local version=""
 
-    # 检查是否使用 prerelease 版本
+    # Check if using prerelease version
     if [ "$USE_PRERELEASE" = true ]; then
-        print_info "使用 prerelease 模式，将获取最新的预发布版本"
-        # 获取所有 releases（包括 prerelease），取第一个
+        print_info "$(msg '使用 prerelease 模式，将获取最新的预发布版本' 'Using prerelease mode, fetching latest pre-release version')"
+        # Get all releases (including prerelease), take the first one
         version=$(uclient-fetch -q -O - "${GITHUB_API}/releases" | jsonfilter -e '@[0].tag_name')
     else
-        # 只获取最新的正式版本
+        # Only get latest stable version
         version=$(uclient-fetch -q -O - "${GITHUB_API}/releases/latest" | jsonfilter -e '@.tag_name')
     fi
 
     if [ -z "$version" ]; then
-        print_error "无法获取最新版本信息"
-        print_error "请检查网络连接或手动访问: https://github.com/${REPO_OWNER}/${REPO_NAME}/releases"
+        print_error "$(msg '无法获取最新版本信息' 'Unable to fetch latest version info')"
+        print_error "$(msg "请检查网络连接或手动访问: https://github.com/${REPO_OWNER}/${REPO_NAME}/releases" "Please check network connection or visit: https://github.com/${REPO_OWNER}/${REPO_NAME}/releases")"
         exit 1
     fi
 
-    print_info "最新版本: $version"
+    print_info "$(msg "最新版本: $version" "Latest version: $version")"
     echo "$version"
 }
 
-# 选择版本号
+# Select version
 select_version() {
     local latest_version="$1"
 
-    # 去掉 v 前缀用于显示
+    # Strip v prefix for display
     local display_version="${latest_version#v}"
 
-    printf "${CYAN}请输入要安装的版本号 [默认: ${display_version}]: ${NC}" >&2
+    printf "${CYAN}$(msg "请输入要安装的版本号 [默认: ${display_version}]: " "Enter version to install [default: ${display_version}]: ")${NC}" >&2
 
-    # 读取用户输入（从 /dev/tty 读取以支持管道环境）
+    # Read user input (from /dev/tty to support piped environments)
     read user_version < /dev/tty
 
-    # 如果输入为空，使用默认值（最新版本）
+    # Use default if empty (latest version)
     if [ -z "$user_version" ]; then
         user_version="$latest_version"
-        print_info "使用默认版本: ${display_version}"
+        print_info "$(msg "使用默认版本: ${display_version}" "Using default version: ${display_version}")"
     else
-        # 去掉用户输入中可能带的 v 前缀
+        # Strip possible v prefix from user input
         user_version="${user_version#v}"
 
-        print_info "用户选择版本: ${user_version}"
+        print_info "$(msg "用户选择版本: ${user_version}" "Selected version: ${user_version}")"
 
-        # 添加 v 前缀用于 API 查询
+        # Add v prefix for API query
         local version_tag="v${user_version}"
 
-        # 验证版本是否存在
-        print_info "验证版本是否存在..."
+        # Verify version exists
+        print_info "$(msg '验证版本是否存在...' 'Verifying version exists...')"
         local version_check=$(uclient-fetch -q -O - "${GITHUB_API}/releases/tags/${version_tag}" 2>/dev/null | jsonfilter -e '@.tag_name' 2>/dev/null)
 
         if [ -z "$version_check" ]; then
-            print_error "版本 ${user_version} 不存在"
-            print_error "请访问 https://github.com/${REPO_OWNER}/${REPO_NAME}/releases 查看可用版本"
+            print_error "$(msg "版本 ${user_version} 不存在" "Version ${user_version} does not exist")"
+            print_error "$(msg "请访问 https://github.com/${REPO_OWNER}/${REPO_NAME}/releases 查看可用版本" "Please visit https://github.com/${REPO_OWNER}/${REPO_NAME}/releases for available versions")"
             exit 1
         fi
 
-        print_info "版本验证通过"
+        print_info "$(msg '版本验证通过' 'Version verified')"
 
-        # 返回带 v 前缀的版本号
+        # Return version with v prefix
         user_version="$version_tag"
     fi
 
     echo "$user_version"
 }
 
-# 获取指定版本的所有 release assets
+# Get release assets for a specific version
 get_release_assets() {
     local version="$1"
 
-    print_info "获取 Release Assets 列表..."
+    print_info "$(msg '获取 Release Assets 列表...' 'Fetching release assets list...')"
 
     local assets=$(uclient-fetch -q -O - "${GITHUB_API}/releases/tags/${version}" | jsonfilter -e '@.assets[*].name')
 
     if [ -z "$assets" ]; then
-        print_error "无法获取 Release Assets 列表"
+        print_error "$(msg '无法获取 Release Assets 列表' 'Unable to fetch release assets list')"
         exit 1
     fi
 
     echo "$assets"
 }
 
-# 从 assets 列表中匹配包文件名
-# 参数: $1=assets列表 $2=包名前缀 $3=架构 $4=包扩展名
+# Match package filename from assets list
+# Args: $1=assets list $2=package prefix $3=architecture $4=package extension
 match_package_name() {
     local assets="$1"
     local prefix="$2"
     local arch="$3"
     local ext="$4"
 
-    # 根据前缀和架构匹配
-    # 对于主包: rtp2httpd_*_${arch}.${ext}
-    # 对于 luci 相关包: ${prefix}_*_all.${ext} 或 ${prefix}_*.${ext}
-
     local matched=""
 
     if [ "$arch" != "all" ]; then
-        # 主包需要匹配架构
+        # Main package needs to match architecture
         matched=$(echo "$assets" | grep "^${prefix}[_-].*_${arch}\.${ext}$" | head -n 1)
     else
-        # luci 相关包通常是 all 架构
+        # luci-related packages are usually all architecture
         matched=$(echo "$assets" | grep "^${prefix}[_-].*\.${ext}$" | head -n 1)
     fi
 
     if [ -z "$matched" ]; then
-        print_warn "未找到匹配的包: ${prefix} (架构: ${arch})"
+        print_warn "$(msg "未找到匹配的包: ${prefix} (架构: ${arch})" "No matching package found: ${prefix} (arch: ${arch})")"
         return 1
     fi
 
@@ -331,7 +339,7 @@ match_package_name() {
     return 0
 }
 
-# 构建下载 URL
+# Build download URL
 build_download_url() {
     local version="$1"
     local arch="$2"
@@ -340,35 +348,35 @@ build_download_url() {
     echo "${GITHUB_RELEASE}/${version}/${package_name}"
 }
 
-# 下载文件
+# Download file
 download_file() {
     local url="$1"
     local output="$2"
 
-    print_info "下载: $(basename "$output")"
+    print_info "$(msg '下载' 'Downloading'): $(basename "$output")"
 
     if ! uclient-fetch -q -O "$output" "$url"; then
-        print_error "下载失败: $url"
+        print_error "$(msg "下载失败: $url" "Download failed: $url")"
         return 1
     fi
 
     return 0
 }
 
-# 安装软件包
+# Install package
 install_package() {
     local package_file="$1"
 
-    print_info "安装: $(basename "$package_file")"
+    print_info "$(msg '安装' 'Installing'): $(basename "$package_file")"
 
     if [ "$PKG_MANAGER" = "apk" ]; then
         if ! apk add --allow-untrusted "$package_file"; then
-            print_error "安装失败: $(basename "$package_file")"
+            print_error "$(msg "安装失败: $(basename "$package_file")" "Installation failed: $(basename "$package_file")")"
             return 1
         fi
     else
         if ! opkg install --force-reinstall --force-downgrade "$package_file"; then
-            print_error "安装失败: $(basename "$package_file")"
+            print_error "$(msg "安装失败: $(basename "$package_file")" "Installation failed: $(basename "$package_file")")"
             return 1
         fi
     fi
@@ -376,116 +384,127 @@ install_package() {
     return 0
 }
 
-# 清理临时文件
+# Clean up temporary files
 cleanup() {
     if [ -d "$TMP_DIR" ]; then
-        print_info "清理临时文件..."
+        print_info "$(msg '清理临时文件...' 'Cleaning up temporary files...')"
         rm -rf "$TMP_DIR"
     fi
 }
 
-# 解析命令行参数
+# Parse command line arguments
 parse_args() {
     while [ $# -gt 0 ]; do
         case "$1" in
+            --lang)
+                if [ -n "$2" ]; then
+                    LANG_CODE="$2"
+                    shift
+                else
+                    print_error "$(msg '--lang 需要指定语言代码 (zh 或 en)' '--lang requires a language code (zh or en)')"
+                    exit 1
+                fi
+                shift
+                ;;
             --prerelease)
                 USE_PRERELEASE=true
                 shift
                 ;;
             --help|-h)
-                echo "用法: $0 [选项]"
+                echo "$(msg '用法' 'Usage'): $0 [$(msg '选项' 'options')]"
                 echo ""
-                echo "选项:"
-                echo "  --prerelease    安装最新的预发布版本（包括 prerelease）"
-                echo "  --help, -h      显示此帮助信息"
+                echo "$(msg '选项' 'Options'):"
+                echo "  --lang <zh|en>  $(msg '设置界面语言（默认: zh）' 'Set display language (default: zh)')"
+                echo "  --prerelease    $(msg '安装最新的预发布版本（包括 prerelease）' 'Install the latest pre-release version')"
+                echo "  --help, -h      $(msg '显示此帮助信息' 'Show this help message')"
                 echo ""
                 exit 0
                 ;;
             *)
-                print_error "未知参数: $1"
-                echo "使用 --help 查看帮助信息"
+                print_error "$(msg "未知参数: $1" "Unknown argument: $1")"
+                echo "$(msg '使用 --help 查看帮助信息' 'Use --help for help')"
                 exit 1
                 ;;
         esac
     done
 }
 
-# 主安装流程
+# Main install flow
 main() {
     print_info "=========================================="
-    print_info "rtp2httpd 一键安装脚本"
+    print_info "$(msg 'rtp2httpd 一键安装脚本' 'rtp2httpd Quick Installer')"
     print_info "=========================================="
     echo ""
 
-    # 选择 GitHub 访问方式
+    # Select GitHub access method
     select_github_mirror
 
-    # 检查系统环境
+    # Check system environment
     check_requirements
 
-    # 检查是否已安装
+    # Check if already installed
     check_installed
 
-    # 获取 CPU 架构
+    # Get CPU architecture
     ARCH=$(get_cpu_arch)
 
-    # 获取最新版本
+    # Get latest version
     LATEST_VERSION=$(get_latest_version)
 
-    # 让用户选择要安装的版本
+    # Let user select version to install
     VERSION=$(select_version "$LATEST_VERSION")
 
-    # 获取该版本的所有 assets
+    # Get all assets for this version
     ASSETS=$(get_release_assets "$VERSION")
 
-    # 创建临时目录
+    # Create temporary directory
     mkdir -p "$TMP_DIR"
 
-    # 根据包管理器确定包扩展名
+    # Determine package extension based on package manager
     if [ "$PKG_MANAGER" = "apk" ]; then
         PKG_EXT="apk"
     else
         PKG_EXT="ipk"
     fi
 
-    # 从 assets 列表中匹配包文件名
+    # Match package filenames from assets list
     print_info ""
-    print_info "匹配软件包文件名..."
+    print_info "$(msg '匹配软件包文件名...' 'Matching package filenames...')"
     print_info "=========================================="
 
     MAIN_PACKAGE=$(match_package_name "$ASSETS" "rtp2httpd" "$ARCH" "$PKG_EXT")
     LUCI_PACKAGE=$(match_package_name "$ASSETS" "luci-app-rtp2httpd" "all" "$PKG_EXT")
     I18N_ZH_CN_PACKAGE=$(match_package_name "$ASSETS" "luci-i18n-rtp2httpd-zh-cn" "all" "$PKG_EXT")
 
-    # 检查必须的包是否都匹配到了
+    # Check required packages are found
     if [ -z "$MAIN_PACKAGE" ]; then
-        print_error "未找到主程序包: rtp2httpd (架构: ${ARCH})"
-        print_error "请检查该版本是否支持您的架构"
+        print_error "$(msg "未找到主程序包: rtp2httpd (架构: ${ARCH})" "Main package not found: rtp2httpd (arch: ${ARCH})")"
+        print_error "$(msg '请检查该版本是否支持您的架构' 'Please check if this version supports your architecture')"
         cleanup
         exit 1
     fi
 
     if [ -z "$LUCI_PACKAGE" ]; then
-        print_error "未找到 LuCI 应用包: luci-app-rtp2httpd"
+        print_error "$(msg '未找到 LuCI 应用包: luci-app-rtp2httpd' 'LuCI app package not found: luci-app-rtp2httpd')"
         cleanup
         exit 1
     fi
 
-    print_info "找到主程序包: $MAIN_PACKAGE"
-    print_info "找到 LuCI 应用包: $LUCI_PACKAGE"
+    print_info "$(msg "找到主程序包: $MAIN_PACKAGE" "Found main package: $MAIN_PACKAGE")"
+    print_info "$(msg "找到 LuCI 应用包: $LUCI_PACKAGE" "Found LuCI app package: $LUCI_PACKAGE")"
 
     if [ -n "$I18N_ZH_CN_PACKAGE" ]; then
-        print_info "找到中文语言包: $I18N_ZH_CN_PACKAGE"
+        print_info "$(msg "找到中文语言包: $I18N_ZH_CN_PACKAGE" "Found Chinese language pack: $I18N_ZH_CN_PACKAGE")"
     else
-        print_warn "未找到中文语言包，将跳过"
+        print_warn "$(msg '未找到中文语言包，将跳过' 'Chinese language pack not found, skipping')"
     fi
 
-    # 下载所有包
+    # Download all packages
     print_info ""
-    print_info "开始下载软件包..."
+    print_info "$(msg '开始下载软件包...' 'Downloading packages...')"
     print_info "=========================================="
 
-    # 构建要下载的包列表（只包含找到的包）
+    # Build package list (only include found packages)
     PACKAGES="$MAIN_PACKAGE $LUCI_PACKAGE"
     if [ -n "$I18N_ZH_CN_PACKAGE" ]; then
         PACKAGES="$PACKAGES $I18N_ZH_CN_PACKAGE"
@@ -504,14 +523,14 @@ main() {
     done
 
     if [ "$DOWNLOAD_SUCCESS" = false ]; then
-        print_error "下载失败，安装中止"
+        print_error "$(msg '下载失败，安装中止' 'Download failed, installation aborted')"
         cleanup
         exit 1
     fi
 
-    # 安装所有包
+    # Install all packages
     print_info ""
-    print_info "开始安装软件包..."
+    print_info "$(msg '开始安装软件包...' 'Installing packages...')"
     print_info "=========================================="
 
     INSTALL_SUCCESS=true
@@ -525,39 +544,38 @@ main() {
         fi
     done
 
-    # 清理临时文件
+    # Clean up temporary files
     cleanup
 
     if [ "$INSTALL_SUCCESS" = false ]; then
         print_error ""
-        print_error "安装失败！"
+        print_error "$(msg '安装失败！' 'Installation failed!')"
         exit 1
     fi
 
-    # 安装成功
+    # Installation successful
     print_info ""
     print_info "=========================================="
-    print_info "安装完成！"
+    print_info "$(msg '安装完成！' 'Installation complete!')"
     print_info "=========================================="
     print_info ""
-    print_info "已安装版本: $VERSION"
+    print_info "$(msg "已安装版本: $VERSION" "Installed version: $VERSION")"
     print_info ""
-    print_info "后续步骤："
-    print_info "1. 访问 LuCI 管理界面"
-    print_info "2. 在 '服务' 菜单中找到 'rtp2httpd'"
-    print_info "3. 根据需要配置服务参数"
-    print_info "4. 启动服务"
+    print_info "$(msg '后续步骤：' 'Next steps:')"
+    print_info "$(msg '1. 访问 LuCI 管理界面' '1. Access the LuCI admin interface')"
+    print_info "$(msg "2. 在 '服务' 菜单中找到 'rtp2httpd'" "2. Find 'rtp2httpd' in the 'Services' menu")"
+    print_info "$(msg '3. 根据需要配置服务参数' '3. Configure the service parameters as needed')"
+    print_info "$(msg '4. 启动服务' '4. Start the service')"
     print_info ""
-    print_info "更多信息请访问: https://github.com/${REPO_OWNER}/${REPO_NAME}"
+    print_info "$(msg '更多信息请访问' 'For more info visit'): https://github.com/${REPO_OWNER}/${REPO_NAME}"
     print_info ""
 }
 
-# 捕获退出信号，确保清理临时文件
+# Trap exit signals to ensure cleanup
 trap cleanup EXIT INT TERM
 
-# 解析命令行参数
+# Parse command line arguments
 parse_args "$@"
 
-# 执行主函数
+# Execute main function
 main
-

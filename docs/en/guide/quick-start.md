@@ -1,11 +1,11 @@
 # Quick Start
 
-## OpenWrt One-Click Install/Update (Recommended)
+## OpenWrt Quick Install/Update (Recommended)
 
 Run the following command to automatically download and install the latest version:
 
 ```bash
-uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh
+uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/scripts/install-openwrt.sh | sh -s -- --lang en
 ```
 
 The script will automatically:
@@ -16,7 +16,7 @@ The script will automatically:
 - If previously installed, running this script will uninstall the old version and reinstall the latest version
 
 > [!TIP]
-> If the one-click script doesn't work, you can manually download the packages for your architecture from the [Releases](https://github.com/stackia/rtp2httpd/releases) page:
+> If the install script doesn't work, you can manually download the packages for your architecture from the [Releases](https://github.com/stackia/rtp2httpd/releases) page:
 >
 > - `rtp2httpd_<version>_<arch>.ipk` - Main program package
 > - `luci-app-rtp2httpd_<version>_all.ipk` - LuCI Web interface
@@ -46,7 +46,6 @@ After installation, find "rtp2httpd" in the "Services" menu of the LuCI manageme
 >
 > - <https://www.right.com.cn/forum/thread-8461513-1-1.html>
 > - <https://github.com/jarod360/rtp2httpd/releases>
-
 
 ### Required Configuration Items
 
