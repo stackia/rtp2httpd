@@ -25,7 +25,7 @@ RTP/IPTV multicast-to-HTTP streaming daemon written in C, with a React/TypeScrip
 ## Code Style — Python
 
 - Package manager: uv — do not use pip/pipenv/poetry
-- Always run Python scripts via `uv run` from `tools/` — do not use `python` directly outside this directory
+- Always run Python scripts via `uv run` — do not use `python` directly
 
 ## Documentation
 

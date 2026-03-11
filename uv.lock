@@ -90,22 +90,17 @@ name = "rtp2httpd-tools"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "scapy" },
-]
-
-[package.optional-dependencies]
-test = [
     { name = "pytest" },
     { name = "pytest-xdist" },
+    { name = "scapy" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.0" },
-    { name = "pytest-xdist", marker = "extra == 'test'", specifier = ">=3.5" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-xdist", specifier = ">=3.5" },
     { name = "scapy", specifier = ">=2.5.0" },
 ]
-provides-extras = ["test"]
 
 [[package]]
 name = "scapy"

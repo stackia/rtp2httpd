@@ -2,19 +2,19 @@
 Pytest configuration and shared fixtures for rtp2httpd E2E tests.
 
 Run all tests (parallel by default):
-    cd tools/e2e && ./run.sh
+    ./scripts/run-e2e.sh
 
 Run sequentially:
-    cd tools/e2e && ./run.sh -p 1
+    ./scripts/run-e2e.sh -p 1
 
 Run a single suite:
-    cd tools && python -m pytest e2e/test_m3u.py -v
+    uv run pytest e2e/test_m3u.py -v
 
 Run tests matching a keyword:
-    cd tools && python -m pytest e2e/ -k "etag" -v
+    uv run pytest e2e/ -k "etag" -v
 
 Skip slow / multicast tests:
-    cd tools && python -m pytest e2e/ -m "not multicast" -v
+    uv run pytest e2e/ -m "not multicast" -v
 """
 
 import sys
