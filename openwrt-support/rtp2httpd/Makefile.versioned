@@ -16,7 +16,7 @@ export RELEASE_VERSION
 
 PKG_SOURCE:=rtp2httpd-v$(RELEASE_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/stackia/rtp2httpd/tar.gz/v$(RELEASE_VERSION)?
-PKG_HASH:=992d41429e063ed2e66a682151bff5928ad4e2da2164abd1b093ca04c4f220fd
+PKG_HASH:=1834c1ad9f650948a707b673c66415c11b6f13d289b5ddc863b844afff80da99
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
