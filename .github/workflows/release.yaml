@@ -345,7 +345,7 @@ jobs:
             -DENABLE_AGGRESSIVE_OPT=ON \
             -DCMAKE_INSTALL_PREFIX=/usr/local
 
-          cmake --build . -j$(sysctl -n hw.ncpu)
+          cmake --build . -j$(getconf _NPROCESSORS_ONLN)
 
           DESTDIR="$(pwd)/dist" cmake --install . --strip
 
@@ -432,7 +432,7 @@ jobs:
               -DENABLE_AGGRESSIVE_OPT=ON \
               -DCMAKE_SYSTEM_NAME=FreeBSD
 
-            cmake --build . -j$(nproc)
+            cmake --build . -j$(getconf _NPROCESSORS_ONLN)
 
             echo "=== Verify binary ==="
             file rtp2httpd

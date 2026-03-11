@@ -151,7 +151,7 @@ pnpm run web-ui:build
 
 # Configure and build
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON
-cmake --build build -j$(nproc)
+cmake --build build -j$(getconf _NPROCESSORS_ONLN)
 
 # Install
 sudo cmake --install build

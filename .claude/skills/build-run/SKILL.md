@@ -23,7 +23,7 @@ pnpm run web-ui:build:debug      # debug: unminified, with source maps
 
 # 2. Configure & compile the C binary
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON
-cmake --build build -j$(nproc)
+cmake --build build -j$(getconf _NPROCESSORS_ONLN)
 ```
 
 The binary lands at `build/rtp2httpd`. Skip step 1 when only C code changed — the generated

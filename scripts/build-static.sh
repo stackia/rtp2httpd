@@ -148,7 +148,7 @@ RELEASE_VERSION="${RELEASE_VERSION}" cmake "${PROJECT_ROOT}" \
 
 echo ""
 echo_step "Building"
-cmake --build . -j$(nproc)
+cmake --build . -j$(getconf _NPROCESSORS_ONLN)
 
 echo ""
 echo_step "Installing to dist directory"
