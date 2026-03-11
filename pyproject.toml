@@ -3,11 +3,11 @@ name = "rtp2httpd-tools"
 version = "0.1.0"
 description = "Test tools for rtp2httpd - multicast UDP replay utility"
 readme = "tools/README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
-    "scapy>=2.5.0",
-    "pytest>=8.0",
-    "pytest-xdist>=3.5",
+    "scapy>=2.7.0",
+    "pytest>=9.0.2",
+    "pytest-xdist>=3.8.0",
 ]
 
 [project.scripts]
