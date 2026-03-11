@@ -12,6 +12,8 @@ PKG_LICENSE_FILES:=LICENSE
 
 PKG_FIXUP:=cmake
 
+export RELEASE_VERSION
+
 PKG_SOURCE:=rtp2httpd-v$(RELEASE_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/stackia/rtp2httpd/tar.gz/v$(RELEASE_VERSION)?
 PKG_HASH:=992d41429e063ed2e66a682151bff5928ad4e2da2164abd1b093ca04c4f220fd

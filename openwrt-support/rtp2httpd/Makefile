@@ -24,6 +24,8 @@ PKG_LICENSE_FILES:=LICENSE
 
 PKG_FIXUP:=cmake
 
+export RELEASE_VERSION
+
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
 
