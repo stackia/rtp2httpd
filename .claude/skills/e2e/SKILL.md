@@ -50,7 +50,7 @@ All commands run from the project root. The `run-e2e.sh` wrapper handles uv/pyte
 **Prerequisite** — the binary must be built first:
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON && cmake --build build -j$(nproc)
 ```
 
 Python deps are managed via uv (`pyproject.toml` at project root).
