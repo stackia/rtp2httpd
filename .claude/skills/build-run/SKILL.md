@@ -67,7 +67,7 @@ Run `./build/rtp2httpd --help` for the complete flag list.
 The config file is INI-style with three sections: `[global]`, `[bind]`, `[services]`.
 
 - **Reference config**: `rtp2httpd.conf` in the project root — all options are documented with comments
-- **Full docs**: `docs/.vitepress/dist/reference/configuration.md`
+- **Full docs**: `docs/reference/configuration.md`
 
 When both CLI flags and config file settings are present, CLI flags take precedence.
 
@@ -89,6 +89,21 @@ rtsp://10.0.0.50:554/live
 #EXTINF:-1,HTTP Channel
 http://upstream.example.com/stream
 ```
+
+## URL formats
+
+Constructing correct URLs is critical when testing rtp2httpd. The path prefix determines the
+protocol handler — getting it wrong gives a 404 or unexpected behavior.
+
+| Type          | URL pattern                                          | Example                                                       |
+|---------------|------------------------------------------------------|---------------------------------------------------------------|
+| RTP multicast | `/rtp/<mcast_ip>:<port>[?fcc=...&fec=...]`           | `/rtp/239.253.64.120:5140`                                    |
+| RTSP proxy    | `/rtsp/<rtsp_host>:<port>/<path>[?playseek=...]`     | `/rtsp/iptv.example.com:554/channel1`                         |
+| HTTP proxy    | `/http/<upstream_host>[:<port>]/<path>[?params]`     | `/http/upstream.example.com:8080/live/stream.m3u8`            |
+| Playlist      | `/playlist.m3u`                                      | `/playlist.m3u`                                               |
+
+For the full URL reference with all query parameters (fcc, fec, playseek, tvdr, r2h-ifname,
+r2h-token, r2h-seek-name, r2h-seek-offset, etc.), read `docs/guide/url-formats.md`.
 
 ## Verify it works
 
