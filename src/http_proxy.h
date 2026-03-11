@@ -24,6 +24,9 @@ struct connection_s;
 /* HTTP proxy content type buffer */
 #define HTTP_PROXY_CONTENT_TYPE_SIZE 256
 
+/* Timeout constant for HTTP proxy state machine */
+#define HTTP_PROXY_TIMEOUT_SEC 3
+
 /* ========== HTTP PROXY STATES ========== */
 
 /* HTTP proxy protocol states - async state machine */
@@ -49,6 +52,7 @@ typedef struct {
   struct connection_s *conn;         /* Connection pointer for fdmap registration
                                         and output */
   http_proxy_state_t state;          /* Current state */
+  int64_t last_state_change_ms;      /* Timestamp of last state change */
   int status_index;                  /* Index in status_shared->clients array */
 
   /* Target server info */
@@ -188,6 +192,14 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
  * @return 0 if cleanup completed
  */
 int http_proxy_session_cleanup(http_proxy_session_t *session);
+
+/**
+ * Periodic tick for HTTP proxy session (timeout checks)
+ * @param session HTTP proxy session
+ * @param now Current timestamp in milliseconds
+ * @return 0 on success, -1 on timeout
+ */
+int http_proxy_session_tick(http_proxy_session_t *session, int64_t now);
 
 /**
  * Build HTTP proxy URL for transformed M3U

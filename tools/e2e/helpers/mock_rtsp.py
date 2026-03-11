@@ -271,3 +271,104 @@ class MockRTSPServerUDP(_RTSPServerBase):
             pass
         finally:
             udp_sock.close()
+
+
+# ---------------------------------------------------------------------------
+# MockRTSPServerSilent  --  accepts connection but never responds
+# ---------------------------------------------------------------------------
+
+
+class MockRTSPServerSilent(_RTSPServerBase):
+    """Accepts connection but never responds (for timeout tests)."""
+
+    def _setup_response(self, cseq: str, transport_hdr: str) -> str:
+        return ""  # never called
+
+    def _after_play(self, conn: socket.socket, addr: tuple) -> None:
+        pass  # never called
+
+    def _handle(self, conn: socket.socket, addr: tuple) -> None:
+        """Override: accept connection but send nothing."""
+        try:
+            while not self._stop.is_set():
+                time.sleep(0.1)
+        except Exception:
+            pass
+        finally:
+            conn.close()
+
+
+# ---------------------------------------------------------------------------
+# MockRTSPServerNoTeardownResponse  --  normal handshake, silent TEARDOWN
+# ---------------------------------------------------------------------------
+
+
+class MockRTSPServerNoMedia(_RTSPServerBase):
+    """Completes full RTSP handshake but never sends any media data."""
+
+    def _setup_response(self, cseq: str, transport_hdr: str) -> str:
+        return ("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
+                "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
+                "Session: t1\r\n\r\n" % cseq)
+
+    def _after_play(self, conn: socket.socket, addr: tuple) -> None:
+        """Send PLAY 200 OK but no media packets — just hold connection."""
+        conn.settimeout(1.0)
+        try:
+            while not self._stop.is_set():
+                try:
+                    data = conn.recv(4096)
+                    if not data:
+                        break
+                except socket.timeout:
+                    continue
+        except (ConnectionError, OSError):
+            pass
+        finally:
+            conn.close()
+
+
+class MockRTSPServerNoTeardownResponse(_RTSPServerBase):
+    """Normal RTSP handshake through PLAY, but never responds to TEARDOWN."""
+
+    def __init__(self, port: int = 0, num_packets: int = 50):
+        super().__init__(port)
+        self._num_packets = num_packets
+
+    def _setup_response(self, cseq: str, transport_hdr: str) -> str:
+        return ("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
+                "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
+                "Session: t1\r\n\r\n" % cseq)
+
+    def _after_play(self, conn: socket.socket, addr: tuple) -> None:
+        """Send a few packets then keep connection alive."""
+        seq = 0
+        ts = 0
+        try:
+            for _ in range(self._num_packets):
+                if self._stop.is_set():
+                    break
+                rtp = make_rtp_packet(seq, ts)
+                frame = b"\x24" + struct.pack("!BH", 0, len(rtp)) + rtp
+                conn.sendall(frame)
+                seq = (seq + 1) & 0xFFFF
+                ts = (ts + 3600) & 0xFFFFFFFF
+                time.sleep(0.001)
+        except (OSError, BrokenPipeError):
+            return
+
+        # Now wait for TEARDOWN but don't respond to it
+        conn.settimeout(1.0)
+        try:
+            while not self._stop.is_set():
+                try:
+                    data = conn.recv(4096)
+                    if not data:
+                        break
+                    # Got TEARDOWN (or anything) — just ignore and hold connection
+                except socket.timeout:
+                    continue
+        except (ConnectionError, OSError):
+            pass
+        finally:
+            conn.close()
