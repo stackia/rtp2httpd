@@ -1,10 +1,16 @@
 ---
 name: e2e
 description: >
-  Write, run, and debug end-to-end tests for rtp2httpd. Use this skill whenever the user wants to
-  create new e2e test cases, add tests to existing test files, run the e2e test suite, or diagnose
-  failing tests. Also activate when the user mentions pytest, test_*.py files under tools/e2e/,
-  mock servers (RTSP/HTTP/FCC/STUN), multicast testing, or the run.sh test runner.
+  Write, run, and debug end-to-end tests for rtp2httpd. ALWAYS use this skill when the user:
+  (1) wants to write new e2e/integration tests or add test cases to existing test files,
+  (2) asks to run tests (e.g. "跑测试", "run tests", "run pytest", mentions run.sh or uv),
+  (3) needs to debug failing or hanging tests (timeout, assertion errors, import errors),
+  (4) mentions ANY file under tools/e2e/ (test_*.py, conftest.py, helpers/*, run.sh),
+  (5) mentions mock servers (MockRTSP*, MockHTTP*, MockFCC*, MockSTUN*), R2HProcess, or test fixtures,
+  (6) asks about test infrastructure (markers, fixtures, scope, multicast setup, port allocation),
+  (7) mentions "端到端测试", "e2e test", "integration test" in the context of rtp2httpd.
+  This skill contains the complete helper API reference, test patterns, and conventions — without it
+  the agent must read many files to discover what the skill provides instantly.
 argument-hint: "[run|write|debug] [optional test file or keyword]"
 ---
 
@@ -39,9 +45,6 @@ All commands run from the project root. The `run.sh` wrapper handles uv/pytest i
 
 # Dry run (list tests without running)
 ./tools/e2e/run.sh --co
-
-# Direct pytest (from tools/ dir)
-cd tools && uv run --extra test pytest e2e/test_m3u.py -v
 ```
 
 **Prerequisite** — the binary must be built first:
@@ -55,39 +58,34 @@ Python deps are managed via uv (`tools/pyproject.toml`, extra `test`).
 ## Project Layout
 
 ```text
-tools/
-├── pyproject.toml              # pytest config, Python deps
-├── e2e/
-│   ├── run.sh                  # Test runner script
-│   ├── conftest.py             # Shared fixtures and markers
-│   ├── test_m3u.py             # M3U playlist tests
-│   ├── test_multicast.py       # RTP multicast streaming
-│   ├── test_rtsp_*.py          # RTSP proxy (transport, seek, stun, misc, content_base)
-│   ├── test_http_proxy*.py     # HTTP proxy (basic, seek, m3u_rewrite)
-│   ├── test_fcc.py             # Fast Channel Change
-│   ├── test_config.py          # Config parsing
-│   ├── test_auth.py            # Authentication
-│   ├── test_error.py           # Error handling
-│   ├── test_epg.py             # EPG
-│   ├── test_pages.py           # Static pages
-│   ├── test_zerocopy.py        # Zero-copy streaming
-│   └── helpers/
-│       ├── __init__.py         # Re-exports all helpers
-│       ├── constants.py        # BINARY_PATH, LOOPBACK_IF, MCAST_ADDR
-│       ├── ports.py            # find_free_port(), wait_for_port()
-│       ├── http.py             # http_get(), http_request(), stream_get()
-│       ├── rtp.py              # make_rtp_packet(), MulticastSender
-│       ├── r2h_process.py      # R2HProcess wrapper
-│       ├── mock_rtsp.py        # MockRTSPServer variants
-│       ├── mock_http.py        # MockHTTPUpstream variants
-│       ├── mock_fcc.py         # MockFCCServer
-│       └── mock_stun.py        # MockSTUNServer
+tools/e2e/
+├── run.sh                  # Test runner script
+├── conftest.py             # Shared fixtures and markers
+├── test_m3u.py             # M3U playlist tests
+├── test_multicast.py       # RTP multicast streaming
+├── test_rtsp_*.py          # RTSP proxy (transport, seek, stun, misc, content_base)
+├── test_http_proxy*.py     # HTTP proxy (basic, seek, m3u_rewrite)
+├── test_fcc.py             # Fast Channel Change
+├── test_config.py          # Config parsing
+├── test_auth.py            # Authentication
+├── test_error.py           # Error handling
+├── test_epg.py / test_pages.py / test_zerocopy.py
+└── helpers/
+    ├── __init__.py         # Re-exports all helpers (must update when adding new ones)
+    ├── constants.py        # BINARY_PATH, LOOPBACK_IF, MCAST_ADDR, FIXTURES_DIR
+    ├── ports.py            # find_free_port(), wait_for_port()
+    ├── http.py             # http_get(), http_request(), stream_get()
+    ├── rtp.py              # make_rtp_packet(), MulticastSender
+    ├── r2h_process.py      # R2HProcess wrapper
+    ├── mock_rtsp.py        # MockRTSPServer variants
+    ├── mock_http.py        # MockHTTPUpstream variants
+    ├── mock_fcc.py         # MockFCCServer
+    └── mock_stun.py        # MockSTUNServer
 ```
 
 ## Writing Tests
 
 Before writing new tests, read the relevant existing test file and helpers to match conventions.
-For the full API of each helper, read the source files listed above.
 
 ### Imports
 
@@ -141,13 +139,6 @@ from helpers import (
 - `MulticastSender(addr=MCAST_ADDR, port=0, pps=200, ts_per_rtp=7, ...)` — sends RTP multicast on loopback
 - `make_rtp_packet(seq, timestamp, ssrc=0x12345678, payload_type=33, payload=None)`
 
-**Constants**:
-
-- `BINARY_PATH` — `PROJECT_ROOT / "build" / "rtp2httpd"`
-- `LOOPBACK_IF` — `"lo"` on Linux, `"lo0"` on macOS
-- `MCAST_ADDR` — `"239.255.0.1"`
-- `FIXTURES_DIR` — `PROJECT_ROOT / "tools" / "fixtures"`
-
 ### Shared Fixtures (conftest.py)
 
 - `r2h_binary` (session) — Path to binary, skips if missing
@@ -181,158 +172,71 @@ across multiple tests whenever possible to cut test setup overhead significantly
 2. Tests need different configs or args?
    → Only then start a per-test R2HProcess on demand.
 
-**Scope guidelines:**
-
-| Scope      | When to use                                                        |
-| :--------- | :----------------------------------------------------------------- |
-| `module`   | All tests in the file share the same r2h config (best performance) |
-| `class`    | A group of tests in one class share the same config                |
-| `function` | Last resort — tests need incompatible configs or startup args      |
-
 ### Test Patterns
 
-**Pattern 1 — Shared R2HProcess via module fixture (preferred)**
+**Pattern 1 — Module-scoped shared R2HProcess (preferred)**
 
-When multiple tests can share the same rtp2httpd config, start it once for the whole file.
-This is the default approach — only deviate when tests genuinely need different startup parameters.
+The default approach. Start r2h once for the whole file, all tests share it:
 
 ```python
 @pytest.fixture(scope="module")
 def shared_r2h(r2h_binary):
-    """Single rtp2httpd instance shared by all tests in this module."""
     port = find_free_port()
     config = f"""\
 [global]
 verbosity = 4
-
 [bind]
 * {port}
-
 [services]
 #EXTM3U
 #EXTINF:-1,Channel One
 rtp://239.0.0.1:1234
-#EXTINF:-1,Channel Two
-rtp://239.0.0.2:1234
 """
     r2h = R2HProcess(r2h_binary, port, config_content=config)
     r2h.start()
     yield r2h
     r2h.stop()
 
-
 class TestPlaylist:
     def test_playlist_served(self, shared_r2h):
         status, _, body = http_get("127.0.0.1", shared_r2h.port, "/playlist.m3u")
         assert status == 200
-        assert b"Channel One" in body
-
-    def test_playlist_etag(self, shared_r2h):
-        _, hdrs, _ = http_get("127.0.0.1", shared_r2h.port, "/playlist.m3u")
-        assert hdrs.get("ETag")
-
-    def test_unknown_service_404(self, shared_r2h):
-        status, _, _ = http_get("127.0.0.1", shared_r2h.port, "/NonExistent")
-        assert status == 404
 ```
 
-**Pattern 2 — Shared R2HProcess via class fixture**
+Use `scope="class"` when different classes in the same file need different configs.
 
-When different classes in the same file need different configs:
+**Pattern 2 — Per-test R2HProcess (only when needed)**
 
-```python
-class TestFeatureA:
-    @pytest.fixture(scope="class")
-    def r2h_feature_a(self, r2h_binary):
-        port = find_free_port()
-        config = f"""\
-[global]
-verbosity = 4
-[bind]
-* {port}
-[services]
-#EXTM3U
-#EXTINF:-1,A Channel
-rtp://239.0.0.1:1234
-"""
-        r2h = R2HProcess(r2h_binary, port, config_content=config)
-        r2h.start()
-        yield r2h
-        r2h.stop()
-
-    def test_a_one(self, r2h_feature_a):
-        status, _, _ = http_get("127.0.0.1", r2h_feature_a.port, "/playlist.m3u")
-        assert status == 200
-
-    def test_a_two(self, r2h_feature_a):
-        status, _, _ = http_get("127.0.0.1", r2h_feature_a.port, "/A%20Channel")
-        assert status == 200
-```
-
-**Pattern 3 — Per-test R2HProcess (on demand, only when needed)**
-
-Only create a fresh R2HProcess per test when the config or startup args differ from other tests
-and cannot be shared. Use `try/finally` for cleanup:
+When the config is unique to one test and can't be shared. Use `try/finally`:
 
 ```python
-class TestSpecialConfig:
-    def test_custom_max_clients(self, r2h_binary):
-        """This test needs a unique maxclients value, cannot share."""
-        port = find_free_port()
-        config = f"""\
+def test_custom_max_clients(self, r2h_binary):
+    port = find_free_port()
+    config = f"""\
 [global]
 verbosity = 4
 maxclients = 1
 [bind]
 * {port}
 """
-        r2h = R2HProcess(r2h_binary, port, config_content=config)
-        try:
-            r2h.start()
-            status, _, _ = http_get("127.0.0.1", port, "/playlist.m3u")
-            assert status == 200
-        finally:
-            r2h.stop()
+    r2h = R2HProcess(r2h_binary, port, config_content=config)
+    try:
+        r2h.start()
+        status, _, _ = http_get("127.0.0.1", port, "/playlist.m3u")
+        assert status == 200
+    finally:
+        r2h.stop()
 ```
 
-**Pattern 4 — Multicast streaming (module-scoped R2HProcess)**
+**Pattern 3 — With mock servers (RTSP / HTTP / multicast)**
 
-```python
-pytestmark = pytest.mark.multicast
-
-@pytest.fixture(scope="module")
-def multicast_r2h(r2h_binary):
-    port = find_free_port()
-    r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100", "-r", LOOPBACK_IF])
-    r2h.start()
-    yield r2h
-    r2h.stop()
-
-class TestStreaming:
-    def test_rtp_stream(self, multicast_r2h):
-        mcast_port = find_free_udp_port()
-        sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=200)
-        sender.start()
-        try:
-            status, _, body = stream_get(
-                "127.0.0.1", multicast_r2h.port,
-                f"/rtp/{MCAST_ADDR}:{mcast_port}",
-                read_bytes=4096, timeout=10.0,
-            )
-            assert status == 200
-            assert len(body) > 0
-        finally:
-            sender.stop()
-```
-
-**Pattern 5 — RTSP proxy (module-scoped R2HProcess + mock)**
+Module-scoped fixture that starts both mock + r2h, yields both, stops both:
 
 ```python
 pytestmark = pytest.mark.rtsp
 
 @pytest.fixture(scope="module")
 def rtsp_env(r2h_binary):
-    """Shared RTSP mock + r2h for the whole module."""
     mock = MockRTSPServer()
     mock.start()
     port = find_free_port()
@@ -351,52 +255,14 @@ rtsp://127.0.0.1:{mock.port}/live
     yield r2h, mock
     r2h.stop()
     mock.stop()
-
-class TestRTSPProxy:
-    def test_rtsp_stream(self, rtsp_env):
-        r2h, mock = rtsp_env
-        status, _, body = stream_get("127.0.0.1", r2h.port, "/RTSP%20Ch", read_bytes=4096)
-        assert status == 200
 ```
 
-**Pattern 6 — HTTP proxy (module-scoped)**
-
-```python
-pytestmark = pytest.mark.http_proxy
-
-@pytest.fixture(scope="module")
-def http_proxy_env(r2h_binary):
-    upstream = MockHTTPUpstream(routes={
-        "/stream": {"status": 200, "body": b"data", "headers": {"Content-Type": "video/mp2t"}},
-    })
-    upstream.start()
-    port = find_free_port()
-    config = f"""\
-[global]
-verbosity = 4
-[bind]
-* {port}
-[services]
-#EXTM3U
-#EXTINF:-1,HTTP Ch
-http://127.0.0.1:{upstream.port}/stream
-"""
-    r2h = R2HProcess(r2h_binary, port, config_content=config)
-    r2h.start()
-    yield r2h, upstream
-    r2h.stop()
-    upstream.stop()
-
-class TestHTTPProxy:
-    def test_proxy_passthrough(self, http_proxy_env):
-        r2h, upstream = http_proxy_env
-        status, _, body = http_get("127.0.0.1", r2h.port, "/HTTP%20Ch")
-        assert status == 200
-```
+Same pattern works for HTTP proxy (with `MockHTTPUpstream`) and multicast (with `MulticastSender`
+and `extra_args=["-v", "4", "-m", "100", "-r", LOOPBACK_IF]` instead of config_content).
 
 ### Conventions
 
-- **Reuse R2HProcess**: Default to `scope="module"` fixtures. Only create per-test instances when startup parameters are incompatible. Starting fewer processes = faster test suite.
+- **Reuse R2HProcess**: Default to `scope="module"` fixtures. Starting fewer processes = faster tests.
 - **File naming**: `test_<feature>.py` in `tools/e2e/`
 - **Class grouping**: Group related tests in classes (`TestFeatureSubArea`)
 - **Test naming**: `test_<what>_<expected_behavior>` (e.g. `test_etag_present`, `test_if_none_match_304`)
@@ -405,12 +271,18 @@ class TestHTTPProxy:
 - **URL encoding**: Use `%20` for spaces in service name URLs (e.g. `/Test%20Service`)
 - **Config format**: INI-style with `[global]`, `[bind]`, `[services]` sections
 - **Module docstrings**: Each test file starts with a docstring describing what it covers
-- **Async waits**: Use `time.sleep()` sparingly for inherently async operations (e.g. external M3U fetch)
+
+### Gotchas
+
+- **Adding new helpers**: New mock servers or helpers must be added to `helpers/__init__.py` re-exports (both the `from .module import` line AND the `__all__` list), otherwise `from helpers import NewThing` fails with ImportError.
+- **`MockRTSPServer` already supports `custom_sdp`**: Before creating a new mock subclass for custom SDP, check if `MockRTSPServer(..., custom_sdp="...")` already does what you need.
+- **External M3U fetch is async**: After starting r2h with `-M http://...` or `-M file://...`, add `time.sleep(0.5)` before assertions to let the async curl fetch complete.
+- **Concurrent connection tests**: To test connection limits (maxclients), use raw sockets to hold connections open while attempting new ones via `stream_get()`.
+- **RTSP mock inspection**: Use `mock_rtsp.requests_received` (list of method names) and `mock_rtsp.requests_detailed` to verify handshake sequences.
+- **HTTP mock inspection**: Use `upstream.requests_log` to check request details.
 
 ### Debugging Tips
 
-- Run a single test sequentially with verbose output: `./tools/e2e/run.sh -p 1 -k "test_name" -x`
-- Check if the binary is built: `ls -la build/rtp2httpd`
-- If a test hangs, it's usually a `stream_get()` timeout too short or the multicast sender not reaching the process
-- For RTSP tests, inspect `mock_rtsp.requests_received` and `mock_rtsp.requests_detailed`
-- For HTTP proxy tests, inspect `upstream.requests_log` for request details
+- Run single test with verbose output: `./tools/e2e/run.sh -p 1 -k "test_name" -x`
+- Check binary is built: `ls -la build/rtp2httpd`
+- Test hangs? Usually `stream_get()` timeout too short or multicast sender not reaching the process
