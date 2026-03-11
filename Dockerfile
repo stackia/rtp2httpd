@@ -25,7 +25,7 @@ RUN echo "Building for $TARGETPLATFORM" && \
     -DENABLE_AGGRESSIVE_OPT=ON \
     -DCMAKE_INSTALL_PREFIX=/usr/local \
     -DCMAKE_INSTALL_SYSCONFDIR=/usr/local/etc && \
-  cmake --build build -j$(nproc)
+  cmake --build build -j$(getconf _NPROCESSORS_ONLN)
 
 # Runtime stage
 FROM alpine:3.22

@@ -31,4 +31,4 @@ uv run pytest e2e/ -v
 uv run pytest e2e/test_m3u.py -v
 ```
 
-> **Prerequisites:** [uv](https://docs.astral.sh/uv/) and a built rtp2httpd binary (`cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON && cmake --build build -j$(nproc)`). The binary is expected at `build/rtp2httpd`. Tests are skipped automatically if the binary is missing.
+> **Prerequisites:** [uv](https://docs.astral.sh/uv/) and a built rtp2httpd binary (`cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON && cmake --build build -j$(getconf _NPROCESSORS_ONLN)`). The binary is expected at `build/rtp2httpd`. Tests are skipped automatically if the binary is missing.
