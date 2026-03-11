@@ -76,7 +76,7 @@ features:
 <video controls muted src="https://github.com/user-attachments/assets/ca1a332f-d6e7-4a1e-be88-92bef67758b3" />
 
 > [!TIP]
-> 快速换台需要搭配使用针对 IPTV 优化的播放器，例如 [mytv-android](https://github.com/mytv-android/mytv-android) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) / 内置 Web 播放器等。视频中的播放器是 TiviMate。
+> 快速换台需要搭配使用针对 IPTV 优化的播放器，例如 [mytv-android](https://github.com/mytv-android/mytv-android) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) / 内置 Web 播放器等。视频中的播放器是 mytv-android。
 >
 > 一些常见的万能播放器（如 PotPlayer / IINA）没有针对起播速度做优化，不会有明显效果。
 

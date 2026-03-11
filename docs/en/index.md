@@ -76,7 +76,7 @@ features:
 <video controls muted src="https://github.com/user-attachments/assets/ca1a332f-d6e7-4a1e-be88-92bef67758b3" />
 
 > [!TIP]
-> Fast channel change requires using IPTV-optimized players, such as [mytv-android](https://github.com/mytv-android/mytv-android) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) / built-in web player. The player in the video is TiviMate.
+> Fast channel change requires using IPTV-optimized players, such as [mytv-android](https://github.com/mytv-android/mytv-android) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) / built-in web player. The player in the video is mytv-android.
 >
 > Some common general-purpose players (such as PotPlayer / IINA) are not optimized for startup speed and will not show significant improvement.
 
