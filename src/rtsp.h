@@ -240,9 +240,8 @@ int rtsp_connect(rtsp_session_t *session);
  * @return Return values:
  *   >0: Number of bytes forwarded to client
  *    0: No data forwarded (handshake in progress or no data available)
- *   -1: Error (socket error, protocol error, connection closed unexpectedly)
- *   -2: Graceful TEARDOWN completed (not an error, connection should close)
- *   -3: Duration query completed (r2h-duration request)
+ *   -1: Error or connection should close (including graceful TEARDOWN completion)
+ *   -2: Duration query completed (r2h-duration request)
  */
 int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events);
 

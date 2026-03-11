@@ -513,7 +513,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
                                            events[e].events, now);
           if (res < 0) {
             /* Send 200 for r2h-duration request */
-            if (res == -3) {
+            if (res == -2) {
               send_http_headers(c, STATUS_200, "application/json", NULL);
               char response[64];
               snprintf(response, sizeof(response), "{\"duration\": \"%0.3f\"}",

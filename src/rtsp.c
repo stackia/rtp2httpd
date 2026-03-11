@@ -33,8 +33,11 @@
 #define RTSP_MAX_REDIRECTS 5
 #define RTSP_KEEPALIVE_INTERVAL_MS 30000
 
+#define RTSP_RESPONSE_OK 0
 #define RTSP_RESPONSE_ADVANCE 1
 #define RTSP_RESPONSE_KEEPALIVE 2
+#define RTSP_RESPONSE_DURATION 3
+#define RTSP_RESPONSE_ERROR -1
 
 /* Helper function prototypes */
 static int rtsp_prepare_request(rtsp_session_t *session, const char *method,
@@ -882,7 +885,7 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
       logger(LOG_DEBUG,
              "RTSP: Server closed connection during TEARDOWN (acceptable)");
       rtsp_force_cleanup(session);
-      return -2; /* Graceful teardown completion */
+      return -1;
     }
 
     /* During PLAYING: upstream is done — drain pending client output
@@ -956,11 +959,8 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
     /* Advance state machine to prepare next request (DESCRIBE or TEARDOWN) */
     result = rtsp_state_machine_advance(session);
     if (result < 0) {
-      /* -2 indicates graceful TEARDOWN completion, not an error */
-      if (result == -2) {
-        return -2; /* Propagate graceful teardown signal */
-      }
-      /* Real error: set error state */
+      if (result == -2)
+        return -1;
       rtsp_session_set_state(session, RTSP_STATE_ERROR);
       return -1;
     }
@@ -1006,9 +1006,11 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
       if (response_result < 0) {
         logger(LOG_ERROR, "RTSP: Failed to receive response");
         rtsp_session_set_state(session, RTSP_STATE_ERROR);
-        if (response_result == -3)
-          return -3;
         return -1;
+      }
+
+      if (response_result == RTSP_RESPONSE_DURATION) {
+        return -2;
       }
 
       /* Re-enable POLLER_OUT for next request */
@@ -1048,12 +1050,10 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
        */
       result = rtsp_state_machine_advance(session);
       if (result < 0) {
-        /* -2 indicates graceful TEARDOWN completion, not an error */
-        if (result != -2) {
-          /* Real error: set error state */
-          rtsp_session_set_state(session, RTSP_STATE_ERROR);
-        }
-        return result;
+        if (result == -2)
+          return -1;
+        rtsp_session_set_state(session, RTSP_STATE_ERROR);
+        return -1;
       }
 
       /* For edge-triggered pollers: after transitioning to PLAYING, fall
@@ -1294,12 +1294,16 @@ static int rtsp_try_send_pending(rtsp_session_t *session) {
 
 /**
  * Try to receive RTSP response (non-blocking)
- * Returns: 0 = incomplete/complete, -1 = error, 1 = need POLLER_OUT for next
- * request
+ * Returns:
+ *   RTSP_RESPONSE_ADVANCE: Response complete, re-enable POLLER_OUT
+ *   RTSP_RESPONSE_KEEPALIVE: Keepalive response handled
+ *   RTSP_RESPONSE_OK: Waiting for more data, or response processed internally
+ *   RTSP_RESPONSE_ERROR: recv failure, connection closed, or parse error
+ *   RTSP_RESPONSE_DURATION: Duration query completed
  */
 static int rtsp_try_receive_response(rtsp_session_t *session) {
   if (!session->awaiting_response) {
-    return 0; /* Not waiting for response */
+    return RTSP_RESPONSE_OK;
   }
 
   /* Try to receive more data (skip recv if buffer is already full to avoid
@@ -1314,17 +1318,17 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
     if (received < 0) {
       if (errno == EAGAIN) {
         /* Would block - will retry when data arrives */
-        return 0;
+        return RTSP_RESPONSE_OK;
       }
       logger(LOG_ERROR, "RTSP: Failed to receive response: %s",
              strerror(errno));
-      return -1;
+      return RTSP_RESPONSE_ERROR;
     }
 
     if (received == 0) {
       logger(LOG_ERROR, "RTSP: Connection closed by server");
       session->awaiting_keepalive_response = 0;
-      return -1;
+      return RTSP_RESPONSE_ERROR;
     }
 
     session->response_buffer_pos += (size_t)received;
@@ -1360,7 +1364,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
         /* ANNOUNCE received during drain - propagate stream end signal */
         session->awaiting_response = 0;
         session->awaiting_keepalive_response = 0;
-        return -1;
+        return RTSP_RESPONSE_ERROR;
       }
       /* Buffer contents changed - skip stale response_offset logic */
     } else if (response_offset > 0 &&
@@ -1395,7 +1399,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
       }
     }
     /* Wait for more data */
-    return 0;
+    return RTSP_RESPONSE_OK;
   }
 
   /* Complete response received */
@@ -1406,14 +1410,14 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
   session->awaiting_keepalive_response = 0;
 
   if (parse_result < 0) {
-    return -1;
+    return RTSP_RESPONSE_ERROR;
   }
 
   /* Handle redirect case */
   if (parse_result == 2) {
     /* Redirect in progress - state machine will handle it */
     session->response_buffer_pos = 0;
-    return 0;
+    return RTSP_RESPONSE_OK;
   }
 
   /* Calculate data remaining after the RTSP response */
@@ -1494,7 +1498,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
             response_len);
     if (session->r2h_duration) {
       session->response_buffer_pos = 0;
-      return -3; /* Duration query completed */
+      return RTSP_RESPONSE_DURATION;
     }
     rtsp_session_set_state(session, RTSP_STATE_DESCRIBED);
     session->response_buffer_pos = 0;
@@ -1532,7 +1536,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
     session->response_buffer_pos = 0;
   }
 
-  return 0;
+  return RTSP_RESPONSE_OK;
 }
 
 int rtsp_state_machine_advance(rtsp_session_t *session) {
@@ -1700,7 +1704,6 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
     /* TEARDOWN response received, now force cleanup */
     logger(LOG_INFO, "RTSP: TEARDOWN complete, cleaning up");
     rtsp_force_cleanup(session);
-    /* Return -2 to signal graceful teardown completion (not an error) */
     return -2;
 
   default:
