@@ -79,7 +79,7 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
  * @return Return values:
  *   0: Success, continue processing
  *  -1: Connection should be closed (error or graceful TEARDOWN complete)
- *  -3: Duration query completed, send response to client
+ *  -2: Duration query completed, send response to client
  */
 int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
                            int64_t now);
