@@ -8,14 +8,17 @@ on:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v6
 
       - name: Build rtp2httpd
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON
-          cmake --build build -j$(nproc)
+          cmake --build build -j$(getconf _NPROCESSORS_ONLN)
 
       - uses: astral-sh/setup-uv@v7
 
