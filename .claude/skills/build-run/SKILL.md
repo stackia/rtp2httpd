@@ -4,7 +4,7 @@ description: >
   Build, run, and configure rtp2httpd locally. Use this skill whenever the user wants to compile
   the project, start the daemon, pass command-line arguments, edit configuration, or troubleshoot
   build/runtime issues. Also activate when the user mentions cmake, build directory, rtp2httpd.conf,
-  or asks how to test the service locally.
+  web-ui build, pnpm run, vite build, embedded_web_data.h, or asks how to test the service locally.
 ---
 
 # Building and Running rtp2httpd
@@ -14,19 +14,24 @@ to HTTP unicast. This skill covers local development builds — not OpenWrt cros
 
 ## Build
 
-```bash
-# Configure (Debug for development, Release for performance)
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
+Always prefer production builds unless the user explicitly asks for debug.
 
-# Compile
+```bash
+# 1. If web-ui/src/ has changed, rebuild the frontend first (generates src/embedded_web_data.h)
+pnpm run web-ui:build            # production (preferred)
+pnpm run web-ui:build:debug      # debug: unminified, with source maps
+
+# 2. Configure & compile the C binary
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON
 cmake --build build -j$(nproc)
 ```
 
-The binary lands at `build/rtp2httpd`.
+The binary lands at `build/rtp2httpd`. Skip step 1 when only C code changed — the generated
+`embedded_web_data.h` is committed so Node.js is not required for C-only builds.
 
-### Build options
+### CMake options
 
-| CMake option              | Default | Purpose                              |
+| Option                    | Default | Purpose                              |
 |---------------------------|---------|--------------------------------------|
 | `CMAKE_BUILD_TYPE`        | Release | Debug / Release / RelWithDebInfo     |
 | `ENABLE_AGGRESSIVE_OPT`   | OFF     | LTO, fast-math, loop unrolling       |
