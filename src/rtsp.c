@@ -365,6 +365,7 @@ static void rtsp_session_set_state(rtsp_session_t *session,
   }
 
   session->state = new_state;
+  session->last_state_change_ms = get_time_ms();
 
   /* Update client status immediately */
   if (new_state < ARRAY_SIZE(rtsp_to_client_state)) {
@@ -1717,6 +1718,38 @@ int rtsp_session_tick(rtsp_session_t *session, int64_t now) {
     return 0;
   }
 
+  /* Check state timeout */
+  if (session->last_state_change_ms > 0) {
+    int64_t elapsed = now - session->last_state_change_ms;
+    int timeout_sec = 0;
+    switch (session->state) {
+    case RTSP_STATE_CONNECTING:
+    case RTSP_STATE_AWAITING_OPTIONS:
+    case RTSP_STATE_AWAITING_DESCRIBE:
+    case RTSP_STATE_AWAITING_SETUP:
+    case RTSP_STATE_AWAITING_PLAY:
+    case RTSP_STATE_RECONNECTING:
+      timeout_sec = RTSP_HANDSHAKE_TIMEOUT_SEC;
+      break;
+    case RTSP_STATE_PLAYING:
+      if (!session->first_media_received)
+        timeout_sec = RTSP_FIRST_MEDIA_TIMEOUT_SEC;
+      break;
+    case RTSP_STATE_SENDING_TEARDOWN:
+    case RTSP_STATE_AWAITING_TEARDOWN:
+      timeout_sec = RTSP_TEARDOWN_TIMEOUT_SEC;
+      break;
+    default:
+      break;
+    }
+    if (timeout_sec > 0 && elapsed >= timeout_sec * 1000) {
+      logger(LOG_ERROR, "RTSP: State %d timed out after %lld ms",
+             session->state, (long long)elapsed);
+      rtsp_session_set_state(session, RTSP_STATE_ERROR);
+      return -1;
+    }
+  }
+
   /* Check STUN timeout if waiting for STUN response */
   if (session->stun.in_progress && session->state == RTSP_STATE_DESCRIBED) {
     if (stun_check_timeout(&session->stun, session->rtp_socket) > 0) {
@@ -1867,6 +1900,10 @@ static int rtsp_process_interleaved_buffer(rtsp_session_t *session,
         if (packet_buf) {
           memcpy(packet_buf->data, &session->response_buffer[4], packet_length);
           packet_buf->data_size = (size_t)packet_length;
+          if (!session->first_media_received) {
+            session->first_media_received = 1;
+            logger(LOG_DEBUG, "RTSP: First media packet received (TCP)");
+          }
           int pb = stream_process_rtp_payload(&conn->stream, packet_buf);
           if (pb > 0)
             bytes_forwarded += pb;
@@ -2007,25 +2044,14 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
     }
 
     rtp_buf->data_size = (size_t)bytes_received;
-    int bytes_written = 0;
-    /* Handle RTP data based on transport protocol */
-    if (session->transport_protocol == RTSP_PROTOCOL_MP2T) {
-      /* MP2T - zero-copy send (data already in pool buffer, just queue it) */
-      if (connection_queue_zerocopy(conn, rtp_buf) == 0) {
-        bytes_written = bytes_received;
-      } else {
-        /* Queue full - backpressure */
-        session->packets_dropped++;
-      }
-    } else {
-      /* RTP - extract RTP payload and forward to client or capture snapshot */
-      int pb = stream_process_rtp_payload(&conn->stream, rtp_buf);
-      if (pb > 0)
-        bytes_written = pb;
+    if (!session->first_media_received) {
+      session->first_media_received = 1;
+      logger(LOG_DEBUG, "RTSP: First media packet received (UDP)");
     }
-    /* Release our reference to the buffer */
+    int pb = stream_process_rtp_payload(&conn->stream, rtp_buf);
     buffer_ref_put(rtp_buf);
-    total_bytes_written += bytes_written;
+    if (pb > 0)
+      total_bytes_written += pb;
   }
 
   return total_bytes_written;

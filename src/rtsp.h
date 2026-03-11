@@ -8,6 +8,11 @@
 
 #define RTSP_DISABLE_TCP_TRANSPORT 0 /* To debug UDP transport, set to 1 */
 
+/* Timeout constants for RTSP state machine */
+#define RTSP_HANDSHAKE_TIMEOUT_SEC 3
+#define RTSP_TEARDOWN_TIMEOUT_SEC 3
+#define RTSP_FIRST_MEDIA_TIMEOUT_SEC 3
+
 /* ========== RTSP BUFFER SIZE CONFIGURATION ========== */
 
 /* RTCP buffer size - same as RTP buffer pool for consistency */
@@ -112,6 +117,7 @@ typedef struct {
   int epoll_fd;              /* Epoll file descriptor for socket registration */
   struct connection_s *conn; /* Connection pointer for fdmap registration */
   rtsp_state_t state;        /* Current RTSP state */
+  int64_t last_state_change_ms; /* Timestamp of last state change */
   int status_index; /* Index in status_shared->clients array for state updates
                      */
   uint32_t cseq;    /* RTSP sequence number */
@@ -161,7 +167,8 @@ typedef struct {
   uint64_t packets_dropped; /* Packets dropped due to backpressure */
 
   /* Cleanup state */
-  int cleanup_done; /* Flag: cleanup has been completed */
+  int cleanup_done;          /* Flag: cleanup has been completed */
+  int first_media_received;  /* Flag: first media packet received in PLAYING */
 
   /* Non-blocking I/O state */
   char pending_request[RTSP_REQUEST_BUFFER_SIZE]; /* Request being sent */

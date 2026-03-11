@@ -31,7 +31,11 @@ from helpers import (  # noqa: E402
     MCAST_ADDR,
     MockFCCServer,
     MockHTTPUpstream,
+    MockHTTPUpstreamSilent,
     MockRTSPServer,
+    MockRTSPServerNoMedia,
+    MockRTSPServerNoTeardownResponse,
+    MockRTSPServerSilent,
     MockRTSPServerUDP,
     MockSTUNServer,
     MulticastSender,
@@ -138,6 +142,42 @@ def mock_fcc():
 def mock_http():
     """Yield a started MockHTTPUpstream (empty routes); stops on teardown."""
     srv = MockHTTPUpstream()
+    srv.start()
+    yield srv
+    srv.stop()
+
+
+@pytest.fixture()
+def mock_rtsp_silent():
+    """Yield a started MockRTSPServerSilent; stops on teardown."""
+    srv = MockRTSPServerSilent()
+    srv.start()
+    yield srv
+    srv.stop()
+
+
+@pytest.fixture()
+def mock_rtsp_no_media():
+    """Yield a started MockRTSPServerNoMedia; stops on teardown."""
+    srv = MockRTSPServerNoMedia()
+    srv.start()
+    yield srv
+    srv.stop()
+
+
+@pytest.fixture()
+def mock_rtsp_no_teardown():
+    """Yield a started MockRTSPServerNoTeardownResponse; stops on teardown."""
+    srv = MockRTSPServerNoTeardownResponse()
+    srv.start()
+    yield srv
+    srv.stop()
+
+
+@pytest.fixture()
+def mock_http_silent():
+    """Yield a started MockHTTPUpstreamSilent; stops on teardown."""
+    srv = MockHTTPUpstreamSilent()
     srv.start()
     yield srv
     srv.stop()

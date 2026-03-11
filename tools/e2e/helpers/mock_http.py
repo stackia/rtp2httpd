@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import socket
 import threading
+import time
 
 from .ports import find_free_port
 
@@ -86,3 +88,50 @@ class MockHTTPUpstream:
             self._server.shutdown()
         if self._thread:
             self._thread.join(timeout=3)
+
+
+class MockHTTPUpstreamSilent:
+    """Accepts TCP connections but never sends any data (for timeout tests).
+
+    Uses raw sockets since HTTPServer would auto-handle requests.
+    """
+
+    def __init__(self, port: int = 0):
+        self.port = port or find_free_port()
+        self._server_sock: socket.socket | None = None
+        self._thread: threading.Thread | None = None
+        self._stop = threading.Event()
+
+    def start(self) -> None:
+        self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._server_sock.bind(("127.0.0.1", self.port))
+        self._server_sock.listen(5)
+        self._server_sock.settimeout(1.0)
+        self._thread = threading.Thread(target=self._accept, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._server_sock:
+            self._server_sock.close()
+        if self._thread:
+            self._thread.join(timeout=3)
+
+    def _accept(self) -> None:
+        while not self._stop.is_set():
+            try:
+                conn, addr = self._server_sock.accept()
+                t = threading.Thread(target=self._handle, args=(conn,), daemon=True)
+                t.start()
+            except (socket.timeout, OSError):
+                continue
+
+    def _handle(self, conn: socket.socket) -> None:
+        try:
+            while not self._stop.is_set():
+                time.sleep(0.1)
+        except Exception:
+            pass
+        finally:
+            conn.close()

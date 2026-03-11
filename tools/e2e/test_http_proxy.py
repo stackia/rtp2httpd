@@ -5,10 +5,13 @@ These tests start a mock HTTP upstream, point rtp2httpd at it via
 /http/127.0.0.1:<port>/..., and verify responses are correctly proxied.
 """
 
+import time
+
 import pytest
 
 from helpers import (
     MockHTTPUpstream,
+    MockHTTPUpstreamSilent,
     R2HProcess,
     find_free_port,
     http_get,
@@ -175,6 +178,51 @@ class TestProxyUnreachable:
         )
         # Should be an error or a closed connection
         assert status in (0, 500, 502, 503)
+
+
+# ---------------------------------------------------------------------------
+# Upstream timeout (accepts connection but never responds)
+# ---------------------------------------------------------------------------
+
+# Timeout constant matching C code (3s)
+_HTTP_PROXY_TIMEOUT = 3
+_TIMEOUT_MIN_FACTOR = 0.8
+_TIMEOUT_MAX_FACTOR = 3.0
+
+
+class TestProxyUpstreamTimeout:
+    """When the HTTP upstream accepts but never responds, should time out."""
+
+    @pytest.mark.slow
+    def test_http_proxy_response_timeout(self, r2h_binary):
+        """MockHTTPUpstreamSilent doesn't respond — should get 503 within timeout."""
+        r2h_port = find_free_port()
+        r2h = R2HProcess(r2h_binary, r2h_port, extra_args=["-v", "4", "-m", "100"])
+        r2h.start()
+        try:
+            upstream = MockHTTPUpstreamSilent()
+            upstream.start()
+            try:
+                t0 = time.monotonic()
+                status, _, _ = stream_get(
+                    "127.0.0.1", r2h_port,
+                    "/http/127.0.0.1:%d/test" % upstream.port,
+                    read_bytes=256,
+                    timeout=_HTTP_PROXY_TIMEOUT * _TIMEOUT_MAX_FACTOR + 5,
+                )
+                elapsed = time.monotonic() - t0
+
+                assert status == 503, f"Expected 503, got {status}"
+                assert elapsed >= _HTTP_PROXY_TIMEOUT * _TIMEOUT_MIN_FACTOR, (
+                    f"Timed out too quickly: {elapsed:.1f}s"
+                )
+                assert elapsed <= _HTTP_PROXY_TIMEOUT * _TIMEOUT_MAX_FACTOR + 2, (
+                    f"Timed out too slowly: {elapsed:.1f}s"
+                )
+            finally:
+                upstream.stop()
+        finally:
+            r2h.stop()
 
 
 # ---------------------------------------------------------------------------

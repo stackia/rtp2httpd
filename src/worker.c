@@ -553,6 +553,14 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
               continue;
             }
           }
+        } else if (c->state == CONN_CLOSING &&
+                   c->stream.rtsp.initialized &&
+                   !c->stream.rtsp.cleanup_done) {
+          if (rtsp_session_tick(&c->stream.rtsp, now) < 0) {
+            worker_close_and_free_connection(c);
+            c = next;
+            continue;
+          }
         } else if (c->state == CONN_SSE) {
           status_handle_sse_heartbeat(c, now);
         }

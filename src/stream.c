@@ -337,8 +337,13 @@ int stream_tick(stream_context_t *ctx, int64_t now) {
   /* FCC session tick (timeout checks) */
   fcc_session_tick(ctx, now);
 
-  /* RTSP session tick (STUN timeout, keepalive) */
-  rtsp_session_tick(&ctx->rtsp, now);
+  /* RTSP session tick (STUN timeout, keepalive, state timeout) */
+  if (rtsp_session_tick(&ctx->rtsp, now) < 0)
+    return -1;
+
+  /* HTTP proxy session tick (state timeout) */
+  if (http_proxy_session_tick(&ctx->http_proxy, now) < 0)
+    return -1;
 
   /* Check snapshot timeout (5 seconds) */
   if (ctx->snapshot.initialized) {

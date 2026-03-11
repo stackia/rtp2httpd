@@ -37,6 +37,28 @@ static int http_proxy_try_send_pending(http_proxy_session_t *session);
 static int http_proxy_try_receive_response(http_proxy_session_t *session);
 static int http_proxy_parse_response_headers(http_proxy_session_t *session);
 
+/**
+ * Set HTTP proxy session state and update client status
+ */
+static void http_proxy_set_state(http_proxy_session_t *session,
+                                 http_proxy_state_t new_state) {
+  static const client_state_type_t proxy_to_client_state[] = {
+      [HTTP_PROXY_STATE_CONNECTING] = CLIENT_STATE_HTTP_CONNECTING,
+      [HTTP_PROXY_STATE_SENDING_REQUEST] = CLIENT_STATE_HTTP_SENDING_REQUEST,
+      [HTTP_PROXY_STATE_AWAITING_HEADERS] = CLIENT_STATE_HTTP_AWAITING_HEADERS,
+      [HTTP_PROXY_STATE_STREAMING] = CLIENT_STATE_HTTP_STREAMING,
+  };
+  if (session->state == new_state)
+    return;
+  session->state = new_state;
+  session->last_state_change_ms = get_time_ms();
+  if (new_state < ARRAY_SIZE(proxy_to_client_state) &&
+      proxy_to_client_state[new_state] != 0) {
+    status_update_client_state(session->status_index,
+                               proxy_to_client_state[new_state]);
+  }
+}
+
 void http_proxy_session_init(http_proxy_session_t *session) {
   memset(session, 0, sizeof(http_proxy_session_t));
   session->initialized = 1;
@@ -330,8 +352,7 @@ int http_proxy_connect(http_proxy_session_t *session) {
                "HTTP Proxy: Socket registered with poller for connection");
       }
 
-      session->state = HTTP_PROXY_STATE_CONNECTING;
-      status_update_client_state(session->status_index, CLIENT_STATE_HTTP_CONNECTING);
+      http_proxy_set_state(session, HTTP_PROXY_STATE_CONNECTING);
       return 0; /* Success - connection in progress */
     } else {
       /* Real connection error */
@@ -361,17 +382,16 @@ int http_proxy_connect(http_proxy_session_t *session) {
     fdmap_set(session->socket, session->conn);
   }
 
-  session->state = HTTP_PROXY_STATE_CONNECTED;
+  http_proxy_set_state(session, HTTP_PROXY_STATE_CONNECTED);
 
   /* Build and queue HTTP request */
   if (http_proxy_build_request(session) < 0) {
     logger(LOG_ERROR, "HTTP Proxy: Failed to build request");
-    session->state = HTTP_PROXY_STATE_ERROR;
+    http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
     return -1;
   }
 
-  session->state = HTTP_PROXY_STATE_SENDING_REQUEST;
-  status_update_client_state(session->status_index, CLIENT_STATE_HTTP_SENDING_REQUEST);
+  http_proxy_set_state(session, HTTP_PROXY_STATE_SENDING_REQUEST);
   return 0;
 }
 
@@ -666,7 +686,7 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
            rewritten_size);
   }
 
-  session->state = HTTP_PROXY_STATE_COMPLETE;
+  http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
   return bytes_forwarded;
 }
 
@@ -754,14 +774,14 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
         return 0;
       }
       logger(LOG_ERROR, "HTTP Proxy: Recv failed: %s", strerror(errno));
-      session->state = HTTP_PROXY_STATE_COMPLETE;
+      http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
       return 0;
     }
 
     if (received == 0) {
       buffer_ref_put(buf);
       logger(LOG_DEBUG, "HTTP Proxy: Upstream closed connection");
-      session->state = HTTP_PROXY_STATE_COMPLETE;
+      http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
       return 0;
     }
 
@@ -784,7 +804,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
         session->bytes_received >= session->content_length) {
       logger(LOG_DEBUG, "HTTP Proxy: Received all content (%zd bytes)",
              session->bytes_received);
-      session->state = HTTP_PROXY_STATE_COMPLETE;
+      http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
     }
 
     return bytes_forwarded;
@@ -813,7 +833,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
 
   if (received == 0) {
     logger(LOG_DEBUG, "HTTP Proxy: Upstream closed connection");
-    session->state = HTTP_PROXY_STATE_COMPLETE;
+    http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
     return 0;
   }
 
@@ -877,7 +897,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
           session->bytes_received >= session->content_length) {
         logger(LOG_DEBUG, "HTTP Proxy: Received all content (%zd bytes)",
                session->bytes_received);
-        session->state = HTTP_PROXY_STATE_COMPLETE;
+        http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
       }
     }
   }
@@ -1160,7 +1180,7 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
   /* HEAD responses have no body — go straight to COMPLETE */
   if (strcasecmp(session->method, "HEAD") == 0) {
     session->response_buffer_pos = 0;
-    session->state = HTTP_PROXY_STATE_COMPLETE;
+    http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
   } else {
     /* Move body data to beginning of buffer */
     size_t body_len = session->response_buffer_pos - header_len;
@@ -1169,10 +1189,8 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
     }
     session->response_buffer_pos = body_len;
 
-    session->state = HTTP_PROXY_STATE_STREAMING;
+    http_proxy_set_state(session, HTTP_PROXY_STATE_STREAMING);
   }
-  status_update_client_state(session->status_index,
-                               CLIENT_STATE_HTTP_STREAMING);
 
   return 1; /* Headers complete */
 }
@@ -1199,9 +1217,9 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
     }
     /* During STREAMING: drain pending client output before disconnecting */
     if (session->state == HTTP_PROXY_STATE_STREAMING) {
-      session->state = HTTP_PROXY_STATE_COMPLETE;
+      http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
     } else {
-      session->state = HTTP_PROXY_STATE_ERROR;
+      http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
       return -1;
     }
   }
@@ -1217,14 +1235,14 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
                    &error_len) < 0) {
       logger(LOG_ERROR, "HTTP Proxy: getsockopt(SO_ERROR) failed: %s",
              strerror(errno));
-      session->state = HTTP_PROXY_STATE_ERROR;
+      http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
       return -1;
     }
 
     if (sock_error != 0) {
       logger(LOG_ERROR, "HTTP Proxy: Connection to %s:%d failed: %s",
              session->target_host, session->target_port, strerror(sock_error));
-      session->state = HTTP_PROXY_STATE_ERROR;
+      http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
       return -1;
     }
 
@@ -1232,17 +1250,16 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
     logger(LOG_INFO, "HTTP Proxy: Connected to %s:%d", session->target_host,
            session->target_port);
 
-    session->state = HTTP_PROXY_STATE_CONNECTED;
+    http_proxy_set_state(session, HTTP_PROXY_STATE_CONNECTED);
 
     /* Build and queue HTTP request */
     if (http_proxy_build_request(session) < 0) {
       logger(LOG_ERROR, "HTTP Proxy: Failed to build request");
-      session->state = HTTP_PROXY_STATE_ERROR;
+      http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
       return -1;
     }
 
-    session->state = HTTP_PROXY_STATE_SENDING_REQUEST;
-    status_update_client_state(session->status_index, CLIENT_STATE_HTTP_SENDING_REQUEST);
+    http_proxy_set_state(session, HTTP_PROXY_STATE_SENDING_REQUEST);
   }
 
   /* Handle writable socket - send pending request */
@@ -1251,7 +1268,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
     result = http_proxy_try_send_pending(session);
     if (result < 0) {
       logger(LOG_ERROR, "HTTP Proxy: Failed to send request");
-      session->state = HTTP_PROXY_STATE_ERROR;
+      http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
       return -1;
     }
 
@@ -1260,8 +1277,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
         session->request_body_sent >= session->request_body_len) {
       logger(LOG_DEBUG, "HTTP Proxy: Request sent (%zu headers + %zu body bytes)",
              session->pending_request_len, session->request_body_len);
-      session->state = HTTP_PROXY_STATE_AWAITING_HEADERS;
-      status_update_client_state(session->status_index, CLIENT_STATE_HTTP_AWAITING_HEADERS);
+      http_proxy_set_state(session, HTTP_PROXY_STATE_AWAITING_HEADERS);
 
       /* Update poller to only monitor POLLER_IN */
       if (session->epoll_fd >= 0) {
@@ -1270,7 +1286,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
             0) {
           logger(LOG_ERROR, "HTTP Proxy: Failed to modify poller events: %s",
                  strerror(errno));
-          session->state = HTTP_PROXY_STATE_ERROR;
+          http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
           return -1;
         }
       }
@@ -1289,7 +1305,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
       result = http_proxy_try_receive_response(session);
       if (result < 0) {
         logger(LOG_ERROR, "HTTP Proxy: Failed to receive response");
-        session->state = HTTP_PROXY_STATE_ERROR;
+        http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
         return -1;
       }
       if (result == 0)
@@ -1308,14 +1324,14 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
     if (session->state == HTTP_PROXY_STATE_STREAMING ||
         session->state == HTTP_PROXY_STATE_AWAITING_HEADERS) {
       logger(LOG_DEBUG, "HTTP Proxy: Upstream closed connection (normal)");
-      session->state = HTTP_PROXY_STATE_COMPLETE;
+      http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
     } else if (session->state != HTTP_PROXY_STATE_COMPLETE) {
       /* For other states (like SENDING_REQUEST), this is unexpected */
       logger(LOG_INFO,
              "HTTP Proxy: Upstream closed connection unexpectedly in "
              "state %d",
              session->state);
-      session->state = HTTP_PROXY_STATE_ERROR;
+      http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
       return -1;
     }
   }
@@ -1376,6 +1392,27 @@ int http_proxy_session_cleanup(http_proxy_session_t *session) {
   session->initialized = 0;
   session->state = HTTP_PROXY_STATE_CLOSING;
 
+  return 0;
+}
+
+int http_proxy_session_tick(http_proxy_session_t *session, int64_t now) {
+  if (!session || !session->initialized || session->last_state_change_ms <= 0)
+    return 0;
+  switch (session->state) {
+  case HTTP_PROXY_STATE_CONNECTING:
+  case HTTP_PROXY_STATE_SENDING_REQUEST:
+  case HTTP_PROXY_STATE_AWAITING_HEADERS:
+    break;
+  default:
+    return 0;
+  }
+  int64_t elapsed = now - session->last_state_change_ms;
+  if (elapsed >= HTTP_PROXY_TIMEOUT_SEC * 1000) {
+    logger(LOG_ERROR, "HTTP Proxy: State %d timed out after %lld ms",
+           session->state, (long long)elapsed);
+    http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
+    return -1;
+  }
   return 0;
 }
 

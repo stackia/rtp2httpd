@@ -1,14 +1,21 @@
 """
 E2E tests for miscellaneous RTSP features.
 
-Covers HEAD requests, unreachable server handling, and r2h-duration
-(stream duration query).
+Covers HEAD requests, unreachable server handling, r2h-duration
+(stream duration query), and timeout handling.
 """
+
+import json
+import socket
+import time
 
 import pytest
 
 from helpers import (
     MockRTSPServer,
+    MockRTSPServerNoMedia,
+    MockRTSPServerNoTeardownResponse,
+    MockRTSPServerSilent,
     R2HProcess,
     find_free_port,
     http_get,
@@ -19,6 +26,56 @@ from helpers import (
 pytestmark = pytest.mark.rtsp
 
 _STREAM_TIMEOUT = 20.0
+
+# Timeout constants matching C code (3s each)
+_RTSP_HANDSHAKE_TIMEOUT = 3
+_RTSP_FIRST_MEDIA_TIMEOUT = 3
+_RTSP_TEARDOWN_TIMEOUT = 3
+
+# Tolerance window for timeout assertions
+_TIMEOUT_MIN_FACTOR = 0.8
+_TIMEOUT_MAX_FACTOR = 3.0
+
+
+def _get_status_clients(port: int, timeout: float = 3.0) -> list[dict]:
+    """Fetch the SSE status endpoint and parse the first data event to
+    extract the active clients list."""
+    try:
+        sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+    except (OSError, socket.timeout):
+        return []
+    try:
+        sock.sendall(b"GET /status/sse HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
+        data = b""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            sock.settimeout(min(remaining, 1.0))
+            try:
+                chunk = sock.recv(8192)
+            except socket.timeout:
+                continue
+            if not chunk:
+                break
+            data += chunk
+            if b"\ndata: {" in data and b'"clients"' in data:
+                break
+    except (socket.timeout, OSError):
+        pass
+    finally:
+        sock.close()
+
+    text = data.decode(errors="replace")
+    for line in text.split("\n"):
+        line = line.strip()
+        if line.startswith("data: {"):
+            json_str = line[len("data: "):]
+            try:
+                obj = json.loads(json_str)
+                return obj.get("clients", [])
+            except json.JSONDecodeError:
+                pass
+    return []
 
 
 @pytest.fixture(scope="module")
@@ -55,6 +112,126 @@ class TestRTSPInvalidServer:
             read_bytes=512, timeout=8.0,
         )
         assert status in (0, 500, 502, 503)
+
+
+# ===================================================================
+# RTSP timeout handling
+# ===================================================================
+
+
+class TestRTSPHandshakeTimeout:
+    """When the RTSP server never responds, the proxy should time out."""
+
+    @pytest.mark.slow
+    def test_rtsp_response_timeout(self, r2h_binary):
+        """MockRTSPServerSilent doesn't respond — should get 503 within timeout."""
+        r2h_port = find_free_port()
+        r2h = R2HProcess(r2h_binary, r2h_port, extra_args=["-v", "4", "-m", "100"])
+        r2h.start()
+        try:
+            rtsp = MockRTSPServerSilent()
+            rtsp.start()
+            try:
+                t0 = time.monotonic()
+                status, _, _ = stream_get(
+                    "127.0.0.1", r2h_port,
+                    "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                    read_bytes=256,
+                    timeout=_RTSP_HANDSHAKE_TIMEOUT * _TIMEOUT_MAX_FACTOR + 5,
+                )
+                elapsed = time.monotonic() - t0
+
+                assert status == 503, f"Expected 503, got {status}"
+                assert elapsed >= _RTSP_HANDSHAKE_TIMEOUT * _TIMEOUT_MIN_FACTOR, (
+                    f"Timed out too quickly: {elapsed:.1f}s"
+                )
+                assert elapsed <= _RTSP_HANDSHAKE_TIMEOUT * _TIMEOUT_MAX_FACTOR + 2, (
+                    f"Timed out too slowly: {elapsed:.1f}s"
+                )
+            finally:
+                rtsp.stop()
+        finally:
+            r2h.stop()
+
+
+class TestRTSPFirstMediaTimeout:
+    """When RTSP enters PLAY but no media arrives, should time out."""
+
+    @pytest.mark.slow
+    def test_no_media_after_play_timeout(self, r2h_binary):
+        """MockRTSPServerNoMedia completes handshake but sends no media —
+        should get 503 within the first-media timeout."""
+        r2h_port = find_free_port()
+        r2h = R2HProcess(r2h_binary, r2h_port, extra_args=["-v", "4", "-m", "100"])
+        r2h.start()
+        try:
+            rtsp = MockRTSPServerNoMedia()
+            rtsp.start()
+            try:
+                t0 = time.monotonic()
+                status, _, _ = stream_get(
+                    "127.0.0.1", r2h_port,
+                    "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                    read_bytes=256,
+                    timeout=_RTSP_FIRST_MEDIA_TIMEOUT * _TIMEOUT_MAX_FACTOR + 5,
+                )
+                elapsed = time.monotonic() - t0
+
+                assert status == 503, f"Expected 503, got {status}"
+                assert elapsed >= _RTSP_FIRST_MEDIA_TIMEOUT * _TIMEOUT_MIN_FACTOR, (
+                    f"Timed out too quickly: {elapsed:.1f}s"
+                )
+                assert elapsed <= _RTSP_FIRST_MEDIA_TIMEOUT * _TIMEOUT_MAX_FACTOR + 5, (
+                    f"Timed out too slowly: {elapsed:.1f}s"
+                )
+            finally:
+                rtsp.stop()
+        finally:
+            r2h.stop()
+
+
+class TestRTSPTeardownTimeout:
+    """When TEARDOWN gets no response, the connection should be cleaned up."""
+
+    @pytest.mark.slow
+    def test_teardown_timeout_cleanup(self, r2h_binary):
+        """MockRTSPServerNoTeardownResponse — TEARDOWN connections
+        should be cleaned up within the teardown timeout."""
+        r2h_port = find_free_port()
+        r2h = R2HProcess(r2h_binary, r2h_port, extra_args=["-v", "4", "-m", "100"])
+        r2h.start()
+        try:
+            rtsp = MockRTSPServerNoTeardownResponse(num_packets=500)
+            rtsp.start()
+            try:
+                # Start streaming to trigger RTSP handshake + PLAY
+                status, _, body = stream_get(
+                    "127.0.0.1", r2h_port,
+                    "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                    read_bytes=2048, timeout=15.0,
+                )
+                assert status == 200, f"Expected 200, got {status}"
+                assert len(body) > 0
+
+                # After stream_get returns, client disconnected.
+                # rtp2httpd will send TEARDOWN to the mock server.
+                # The mock won't respond, so TEARDOWN should timeout.
+                # Wait for the teardown timeout plus some slack.
+                time.sleep(_RTSP_TEARDOWN_TIMEOUT + 2)
+
+                # Verify via SSE status that no streaming clients remain.
+                # The server has a crash-restart mechanism, so just checking
+                # /status 200 isn't sufficient — we must verify the client
+                # list is empty.
+                clients = _get_status_clients(r2h_port)
+                assert len(clients) == 0, (
+                    f"Expected 0 active clients after teardown timeout, "
+                    f"got {len(clients)}: {clients}"
+                )
+            finally:
+                rtsp.stop()
+        finally:
+            r2h.stop()
 
 
 # ===================================================================
