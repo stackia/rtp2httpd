@@ -3,9 +3,9 @@ name: e2e
 description: >
   Write, run, and debug end-to-end tests for rtp2httpd. ALWAYS use this skill when the user:
   (1) wants to write new e2e/integration tests or add test cases to existing test files,
-  (2) asks to run tests (e.g. "跑测试", "run tests", "run pytest", mentions run.sh or uv),
+  (2) asks to run tests (e.g. "跑测试", "run tests", "run pytest", mentions run-e2e.sh or uv),
   (3) needs to debug failing or hanging tests (timeout, assertion errors, import errors),
-  (4) mentions ANY file under tools/e2e/ (test_*.py, conftest.py, helpers/*, run.sh),
+  (4) mentions ANY file under e2e/ (test_*.py, conftest.py, helpers/*, run-e2e.sh),
   (5) mentions mock servers (MockRTSP*, MockHTTP*, MockFCC*, MockSTUN*), R2HProcess, or test fixtures,
   (6) asks about test infrastructure (markers, fixtures, scope, multicast setup, port allocation),
   (7) mentions "端到端测试", "e2e test", "integration test" in the context of rtp2httpd.
@@ -17,34 +17,34 @@ argument-hint: "[run|write|debug] [optional test file or keyword]"
 # rtp2httpd E2E Testing
 
 rtp2httpd is a C daemon that proxies RTP multicast, RTSP, and HTTP streams to HTTP clients.
-The e2e tests are Python-based (pytest), living in `tools/e2e/`. They spin up the real binary
+The e2e tests are Python-based (pytest), living in `e2e/`. They spin up the real binary
 against mock servers and verify behavior over the network.
 
 ## Running Tests
 
-All commands run from the project root. The `run.sh` wrapper handles uv/pytest invocation:
+All commands run from the project root. The `run-e2e.sh` wrapper handles uv/pytest invocation:
 
 ```bash
 # All tests (parallel, recommended)
-./tools/e2e/run.sh
+./scripts/run-e2e.sh
 
 # Sequential (useful for debugging)
-./tools/e2e/run.sh -p 1
+./scripts/run-e2e.sh -p 1
 
 # Single test file
-./tools/e2e/run.sh test_m3u.py
+./scripts/run-e2e.sh test_m3u.py
 
 # Filter by keyword
-./tools/e2e/run.sh -k "etag"
+./scripts/run-e2e.sh -k "etag"
 
 # Filter by marker
-./tools/e2e/run.sh -m "not multicast"
+./scripts/run-e2e.sh -m "not multicast"
 
 # Stop on first failure
-./tools/e2e/run.sh -x
+./scripts/run-e2e.sh -x
 
 # Dry run (list tests without running)
-./tools/e2e/run.sh --co
+./scripts/run-e2e.sh --co
 ```
 
 **Prerequisite** — the binary must be built first:
@@ -53,13 +53,12 @@ All commands run from the project root. The `run.sh` wrapper handles uv/pytest i
 cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)
 ```
 
-Python deps are managed via uv (`tools/pyproject.toml`, extra `test`).
+Python deps are managed via uv (`pyproject.toml` at project root).
 
 ## Project Layout
 
 ```text
-tools/e2e/
-├── run.sh                  # Test runner script
+e2e/
 ├── conftest.py             # Shared fixtures and markers
 ├── test_m3u.py             # M3U playlist tests
 ├── test_multicast.py       # RTP multicast streaming
@@ -263,7 +262,7 @@ and `extra_args=["-v", "4", "-m", "100", "-r", LOOPBACK_IF]` instead of config_c
 ### Conventions
 
 - **Reuse R2HProcess**: Default to `scope="module"` fixtures. Starting fewer processes = faster tests.
-- **File naming**: `test_<feature>.py` in `tools/e2e/`
+- **File naming**: `test_<feature>.py` in `e2e/`
 - **Class grouping**: Group related tests in classes (`TestFeatureSubArea`)
 - **Test naming**: `test_<what>_<expected_behavior>` (e.g. `test_etag_present`, `test_if_none_match_304`)
 - **Port allocation**: Always use `find_free_port()` / `find_free_udp_port()`, never hardcode
@@ -283,6 +282,6 @@ and `extra_args=["-v", "4", "-m", "100", "-r", LOOPBACK_IF]` instead of config_c
 
 ### Debugging Tips
 
-- Run single test with verbose output: `./tools/e2e/run.sh -p 1 -k "test_name" -x`
+- Run single test with verbose output: `./scripts/run-e2e.sh -p 1 -k "test_name" -x`
 - Check binary is built: `ls -la build/rtp2httpd`
 - Test hangs? Usually `stream_get()` timeout too short or multicast sender not reaching the process

@@ -451,13 +451,10 @@ def main() -> int:
         return 1
 
     # Check for venv
-    venv_python = tools_dir / ".venv" / "bin" / "python"
+    venv_python = project_root / ".venv" / "bin" / "python"
     if not venv_python.exists():
         print(f"Error: Python venv not found at {venv_python}", file=sys.stderr)
-        print(
-            "Please run: python -m venv tools/.venv && tools/.venv/bin/pip install scapy",
-            file=sys.stderr,
-        )
+        print("Please run: uv sync", file=sys.stderr)
         return 1
 
     print("=" * 60)

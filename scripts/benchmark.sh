@@ -14,7 +14,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT/tools"
 
 # All available programs
 ALL_PROGRAMS=("rtp2httpd" "msd_lite" "udpxy" "tvgate")
@@ -40,11 +41,11 @@ else
 fi
 
 # Activate virtual environment
-if [ -f ".venv/bin/activate" ]; then
-    source .venv/bin/activate
+if [ -f "$PROJECT_ROOT/.venv/bin/activate" ]; then
+    source "$PROJECT_ROOT/.venv/bin/activate"
 else
-    echo "Error: Virtual environment not found at $SCRIPT_DIR/.venv"
-    echo "Please run: cd tools && uv sync"
+    echo "Error: Virtual environment not found at $PROJECT_ROOT/.venv"
+    echo "Please run: uv sync"
     exit 1
 fi
 
