@@ -346,7 +346,7 @@ export function VideoPlayer({
 
 		const video = videoRef.current;
 
-		if (playMode === "live" && video && video.currentTime < video.buffered.end(video.buffered.length - 1) - 4) {
+		if (playMode === "live" && video && video.buffered.length > 0 && video.currentTime < video.buffered.end(video.buffered.length - 1) - 4) {
 			player?.setLiveSync(false);
 		}
 
