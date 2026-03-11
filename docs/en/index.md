@@ -73,7 +73,7 @@ features:
 
 ### Fast Channel Change + Time-Shift Playback
 
-<video controls preload="metadata" src="https://github.com/user-attachments/assets/a8c9c60f-ebc3-49a8-b374-f579f8e34d92" />
+<video controls muted src="https://github.com/user-attachments/assets/3a0bb0ca-312b-42fa-8b80-0799691fe404" />
 
 > [!TIP]
 > Fast channel change requires using IPTV-optimized players, such as [mytv-android](https://github.com/mytv-android/mytv-android) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) / built-in web player. The player in the video is TiviMate.
@@ -82,7 +82,7 @@ features:
 
 ### Built-in Web Player
 
-<video controls preload="metadata" src="https://github.com/user-attachments/assets/d676b8c1-7017-48a1-814c-caab0054b361" />
+<video controls muted src="https://github.com/user-attachments/assets/2b9837ea-03c1-450d-9843-f16703e663af" />
 
 > [!TIP]
 > Requires M3U playlist configuration. Access via browser at `http://<server:port>/player` to open.
@@ -91,11 +91,11 @@ features:
 
 ### Real-time Status Monitoring
 
-![Real-time Status Monitoring](../images/status-page.png)
+![Real-time Status Monitoring](../images/web-dashboard-en.png)
 
 ### 25 Concurrent 1080p Multicast Streams
 
-<video controls preload="metadata" src="https://github.com/user-attachments/assets/fedc0c28-f9ac-4675-9b19-a8efdd062506" />
+<video controls muted src="https://github.com/user-attachments/assets/95b87003-42f4-4fa2-8ab4-3ec83434939f" />
 
 > [!NOTE]
 > Single stream bitrate 8 Mbps. Total CPU usage only 25% of a single core (i3-N305), 4MB memory.
