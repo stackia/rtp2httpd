@@ -4,17 +4,6 @@
 #include "configuration.h"
 #include <stdint.h>
 
-/* Return values used across multiple modules */
-typedef enum {
-  RETVAL_CLEAN = 0,
-  RETVAL_WRITE_FAILED = 1,
-  RETVAL_READ_FAILED = 2,
-  RETVAL_UNKNOWN_METHOD = 3,
-  RETVAL_BAD_REQUEST = 4,
-  RETVAL_RTP_FAILED = 5,
-  RETVAL_SOCK_READ_FAILED = 6
-} retval_t;
-
 /**
  * Logger function. Show the message if current verbosity is above
  * logged level.

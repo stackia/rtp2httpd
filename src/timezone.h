@@ -17,9 +17,6 @@
 /* Constants */
 #define TIMEZONE_MAX_OFFSET_HOURS 14  /* Maximum timezone offset (UTC+14) */
 #define TIMEZONE_MIN_OFFSET_HOURS -12 /* Minimum timezone offset (UTC-12) */
-#define TIMEZONE_MIN_BUFFER_SIZE 17   /* Minimum buffer for yyyyMMddTHHmmssZ */
-#define TIMEZONE_NAME_MAX_LEN 63      /* Maximum timezone name length */
-#define TIMEZONE_FORMAT_MAX_LEN 127   /* Maximum format string length */
 
 /*
  * Parse timezone information from User-Agent header

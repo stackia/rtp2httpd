@@ -9,7 +9,7 @@
 #include <unistd.h>
 
 /* Global EPG cache */
-static epg_cache_t epg_cache = {0};
+static epg_cache_t epg_cache = {.data_fd = -1};
 
 /* Retry delays in seconds: 2, 4, 8, 16, 32, 64, 128, 256 */
 static const int retry_delays[] = {2, 4, 8, 16, 32, 64, 128, 256};
@@ -133,13 +133,6 @@ static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd,
   logger(LOG_INFO, "EPG data cached: %zu bytes, fd=%d (%s), ETag=%s",
          content_size, fd, epg_cache.is_gzipped ? "gzipped" : "uncompressed",
          epg_cache.etag_valid ? epg_cache.etag : "none");
-}
-
-int epg_init(void) {
-  memset(&epg_cache, 0, sizeof(epg_cache));
-  epg_cache.data_fd = -1;
-  logger(LOG_DEBUG, "EPG cache initialized");
-  return 0;
 }
 
 void epg_cleanup(void) {

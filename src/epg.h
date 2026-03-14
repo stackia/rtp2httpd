@@ -20,11 +20,6 @@ typedef struct {
       next_retry_time; /* Next retry time in milliseconds (0 if not retrying) */
 } epg_cache_t;
 
-/* Initialize EPG cache
- * Returns: 0 on success, -1 on error
- */
-int epg_init(void);
-
 /* Cleanup EPG cache
  */
 void epg_cleanup(void);
@@ -40,11 +35,6 @@ int epg_set_url(const char *url);
  * Returns: 0 on success, -1 on error
  */
 int epg_fetch_async(int epfd);
-
-/* Check if URL ends with .gz (case insensitive)
- * Returns: 1 if URL ends with .gz, 0 otherwise
- */
-int epg_url_is_gzipped(const char *url);
 
 /* Get EPG cache for direct access
  * Returns: pointer to epg_cache_t structure

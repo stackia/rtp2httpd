@@ -25,8 +25,6 @@ typedef enum {
   CONNECTION_BUFFER_MEDIA = 1
 } connection_buffer_class_t;
 
-#define CONNECTION_QUEUE_REPORT_INTERVAL_MS 1000
-
 typedef struct connection_s {
   int fd;
   int epfd;
