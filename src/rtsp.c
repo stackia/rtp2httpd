@@ -2390,14 +2390,14 @@ static int rtsp_parse_response_header(rtsp_session_t *session,
 
     /* Move state back to retry the same request */
     if (session->state == RTSP_STATE_AWAITING_OPTIONS) {
-      session->state = RTSP_STATE_CONNECTED;
+      rtsp_session_set_state(session, RTSP_STATE_CONNECTED);
     } else if (session->state == RTSP_STATE_AWAITING_DESCRIBE) {
-      session->state =
-          RTSP_STATE_AWAITING_OPTIONS; /* Will advance to DESCRIBED */
+      rtsp_session_set_state(session,
+                             RTSP_STATE_AWAITING_OPTIONS); /* Will advance to DESCRIBED */
     } else if (session->state == RTSP_STATE_AWAITING_SETUP) {
-      session->state = RTSP_STATE_DESCRIBED;
+      rtsp_session_set_state(session, RTSP_STATE_DESCRIBED);
     } else if (session->state == RTSP_STATE_AWAITING_PLAY) {
-      session->state = RTSP_STATE_SETUP;
+      rtsp_session_set_state(session, RTSP_STATE_SETUP);
     }
 
     logger(LOG_DEBUG, "RTSP: Retrying request with %s authentication",
