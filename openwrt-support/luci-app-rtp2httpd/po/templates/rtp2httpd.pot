@@ -310,7 +310,7 @@ msgstr ""
 #: htdocs/luci-static/resources/view/rtp2httpd.js:587
 msgid ""
 "User-Agent header used for upstream RTSP requests. Leave empty to use the "
-"default rtp2httpd/<version>."
+"default rtp2httpd/{version}."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:596

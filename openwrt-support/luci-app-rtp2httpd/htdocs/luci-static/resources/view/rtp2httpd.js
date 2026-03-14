@@ -584,7 +584,7 @@ return view.extend({
       "rtsp_user_agent",
       _("RTSP User-Agent"),
       _(
-        "User-Agent header used for upstream RTSP requests. Leave empty to use the default rtp2httpd/<version>."
+        "User-Agent header used for upstream RTSP requests. Leave empty to use the default rtp2httpd/{version}."
       )
     );
     o.depends("use_config_file", "0");

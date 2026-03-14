@@ -343,10 +343,10 @@ msgstr "使用配置文件而不是单独的选项"
 #: htdocs/luci-static/resources/view/rtp2httpd.js:587
 msgid ""
 "User-Agent header used for upstream RTSP requests. Leave empty to use the "
-"default rtp2httpd/<version>."
+"default rtp2httpd/{version}."
 msgstr ""
 "用于上游 RTSP 请求的 User-Agent 请求头。留空则使用默认的 rtp2httpd/"
-"<version>。"
+"{version}。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:596
 msgid "Video Snapshot"
