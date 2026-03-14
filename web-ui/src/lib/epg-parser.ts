@@ -6,7 +6,7 @@ import type { EPGProgram } from "../types/player";
 export type EPGData = Record<string, EPGProgram[]>;
 
 /**
- * Parse EPG XML data and organize by channel ID
+ * Parse EPG XML data and organize by channel ID and display names
  * Supports XMLTV format
  * @param xmlText - XMLTV format XML string
  * @param validChannelIds - Optional set of valid channel IDs from M3U to filter programs
@@ -16,21 +16,25 @@ export async function parseEPG(xmlText: string, validChannelIds?: Set<string>): 
 	const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
 	const epgData: EPGData = {};
-	const channelDisplayNames = extractChannelDisplayNames(xmlDoc);
+	const channelLookupKeys = extractChannelLookupKeys(xmlDoc);
 	const programElements = xmlDoc.getElementsByTagName("programme");
 
-	const ensureProgramBucket = (primaryKey: string, aliasKey?: string): EPGProgram[] => {
-		const aliasBucket = aliasKey ? epgData[aliasKey] : undefined;
-		const bucket = epgData[primaryKey] || aliasBucket || [];
-
-		if (!epgData[primaryKey]) {
-			epgData[primaryKey] = bucket;
+	const getOrCreateProgramBucket = (lookupKeys: string[]): EPGProgram[] => {
+		for (const key of lookupKeys) {
+			const existingPrograms = epgData[key];
+			if (existingPrograms) {
+				for (const alias of lookupKeys) {
+					epgData[alias] = existingPrograms;
+				}
+				return existingPrograms;
+			}
 		}
-		if (aliasKey && !epgData[aliasKey]) {
-			epgData[aliasKey] = bucket;
-		}
 
-		return bucket;
+		const programs: EPGProgram[] = [];
+		for (const key of lookupKeys) {
+			epgData[key] = programs;
+		}
+		return programs;
 	};
 
 	for (let i = 0; i < programElements.length; i++) {
@@ -40,10 +44,10 @@ export async function parseEPG(xmlText: string, validChannelIds?: Set<string>): 
 		if (!channelId) {
 			continue;
 		}
-		const channelDisplayName = channelDisplayNames[channelId] || channelId;
+		const lookupKeys = channelLookupKeys[channelId] || [channelId];
 
 		// Skip if channel is not in valid list
-		if (validChannelIds && !validChannelIds.has(channelId) && !validChannelIds.has(channelDisplayName)) {
+		if (validChannelIds && !lookupKeys.some((key) => validChannelIds.has(key))) {
 			continue;
 		}
 
@@ -64,7 +68,7 @@ export async function parseEPG(xmlText: string, validChannelIds?: Set<string>): 
 		};
 
 		// Initialize array for this channel if it doesn't exist
-		const bucket = ensureProgramBucket(channelId, channelDisplayName);
+		const bucket = getOrCreateProgramBucket(lookupKeys);
 		bucket.push(program);
 	}
 
@@ -76,8 +80,8 @@ export async function parseEPG(xmlText: string, validChannelIds?: Set<string>): 
 	return epgData;
 }
 
-function extractChannelDisplayNames(xmlDoc: Document): Record<string, string> {
-	const map: Record<string, string> = {};
+function extractChannelLookupKeys(xmlDoc: Document): Record<string, string[]> {
+	const map: Record<string, string[]> = {};
 	const channelElements = xmlDoc.getElementsByTagName("channel");
 
 	for (let i = 0; i < channelElements.length; i++) {
@@ -87,11 +91,17 @@ function extractChannelDisplayNames(xmlDoc: Document): Record<string, string> {
 			continue;
 		}
 
-		const displayNameElement = channel.getElementsByTagName("display-name")[0];
-		const displayName = displayNameElement?.textContent?.trim();
-		if (displayName) {
-			map[id] = displayName;
+		const displayNameElements = channel.getElementsByTagName("display-name");
+		const keys = [id];
+		const seen = new Set(keys);
+		for (let j = 0; j < displayNameElements.length; j++) {
+			const displayName = displayNameElements[j].textContent?.trim();
+			if (displayName && !seen.has(displayName)) {
+				keys.push(displayName);
+				seen.add(displayName);
+			}
 		}
+		map[id] = keys;
 	}
 
 	return map;
