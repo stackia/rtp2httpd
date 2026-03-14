@@ -396,6 +396,154 @@ rtp://239.0.0.1:1234
             r2h.stop()
 
 
+class TestM3UCatchupAppend:
+    """catchup="append" with fragment catchup-source (starting with & or ?)."""
+
+    def test_question_mark_preserved_no_dynamic_query(self, r2h_binary):
+        """'?' catchup-source stays '?' when main URL produces no query in proxy URL."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 catchup="append" catchup-source="?playseek={{utc}}-{{utcend}}",QMark NoDyn Ch
+rtp://239.0.0.1:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+            assert status == 200
+            assert "QMark NoDyn Ch" in text
+            assert 'catchup-source="?' in text, (
+                "Expected catchup-source to start with '?', got:\n%s" % text
+            )
+        finally:
+            r2h.stop()
+
+    def test_ampersand_adjusted_to_question_no_dynamic_query(self, r2h_binary):
+        """'&' catchup-source becomes '?' when main URL produces no query in proxy URL."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 catchup="append" catchup-source="&playseek={{utc}}-{{utcend}}",Amp NoDyn Ch
+rtp://239.0.0.1:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+            assert status == 200
+            assert "Amp NoDyn Ch" in text
+            assert 'catchup-source="?' in text, (
+                "Expected '&' adjusted to '?' when no dynamic query, got:\n%s" % text
+            )
+        finally:
+            r2h.stop()
+
+    def test_ampersand_preserved_with_dynamic_query(self, r2h_binary):
+        """'&' catchup-source stays '&' when main URL has dynamic query params."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 catchup="append" catchup-source="&playseek={{utc}}-{{utcend}}",Amp Dyn Ch
+http://10.10.10.1:8888/live/stream.m3u8?begin={{utc}}
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+            assert status == 200
+            assert "Amp Dyn Ch" in text
+            assert 'catchup-source="&' in text, (
+                "Expected catchup-source to start with '&' when main has dynamic query, got:\n%s"
+                % text
+            )
+        finally:
+            r2h.stop()
+
+    def test_question_adjusted_to_ampersand_with_dynamic_query(self, r2h_binary):
+        """'?' catchup-source becomes '&' when main URL has dynamic query params."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 catchup="append" catchup-source="?playseek={{utc}}-{{utcend}}",QMark Dyn Ch
+http://10.10.10.1:8888/live/stream.m3u8?begin={{utc}}
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+            assert status == 200
+            assert "QMark Dyn Ch" in text
+            assert 'catchup-source="&' in text, (
+                "Expected '?' adjusted to '&' when main has dynamic query, got:\n%s" % text
+            )
+        finally:
+            r2h.stop()
+
+    def test_static_query_does_not_count_as_dynamic(self, r2h_binary):
+        """Main URL with only static query params (no placeholders) should not have query in proxy URL."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 catchup="append" catchup-source="&playseek={{utc}}-{{utcend}}",Static Query Ch
+http://10.10.10.1:8888/live/stream.m3u8?token=abc
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+            assert status == 200
+            assert "Static Query Ch" in text
+            # Static ?token=abc is not a dynamic param, so proxy URL has no query.
+            # '&' should be adjusted to '?'.
+            assert 'catchup-source="?' in text, (
+                "Static query should not count as dynamic; '&' should become '?', got:\n%s"
+                % text
+            )
+        finally:
+            r2h.stop()
+
+
 # ---------------------------------------------------------------------------
 # TVG URL in header
 # ---------------------------------------------------------------------------
