@@ -90,6 +90,7 @@ The built-in web player supports the following time placeholder formats, which c
 | `${mm}`                       | Program start time: minute 00-59 (local time)         | 30                       |
 | `${ss}`                       | Program start time: second 00-59 (local time)         | 45                       |
 | `${duration}`                 | Program duration (seconds)                            | 7200                     |
+| `${offset}`                   | Seconds elapsed since program start                   | 12600                    |
 
 ### `{}` Format (uses short format)
 
@@ -122,6 +123,7 @@ The built-in web player supports the following time placeholder formats, which c
 | `{M}`                    | Program start time: minute 00-59 (local time)          | 30                       |
 | `{S}`                    | Program start time: second 00-59 (local time)          | 45                       |
 | `{duration}`             | Program duration (seconds)                             | 7200                     |
+| `{offset}`               | Seconds elapsed since program start                    | 12600                    |
 
 ### Format Description
 
