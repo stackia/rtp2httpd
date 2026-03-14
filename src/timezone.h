@@ -199,4 +199,23 @@ int timezone_convert_iso8601_with_offset(const char *iso_str,
                                          int offset_seconds, char *output,
                                          size_t output_size);
 
+/*
+ * Parse a time string and convert to UTC epoch (time_t)
+ *
+ * Uses the same format detection as timezone_convert_time_with_offset():
+ * - Unix timestamp (<=10 digits): atoll() + additional_offset
+ * - yyyyMMddHHmmss[GMT]: parse, apply tz_offset + additional_offset
+ * - ISO 8601: parse, handle embedded timezone, apply offsets
+ *
+ * Thread Safety: NOT thread-safe (may modify TZ environment variable)
+ *
+ * @param input_time Input time string (must not be NULL)
+ * @param tz_offset_seconds Timezone offset in seconds from UTC
+ * @param additional_offset_seconds Additional offset in seconds
+ * @param out_utc Output: resulting UTC epoch value (must not be NULL)
+ * @return 0 on success, -1 on error
+ */
+int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds,
+                           int additional_offset_seconds, time_t *out_utc);
+
 #endif /* TIMEZONE_H */

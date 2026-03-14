@@ -4,13 +4,11 @@
 #include "http.h"
 #include "platform_compat.h"
 #include "poller.h"
-#include "service.h"
 #include "md5.h"
 #include "multicast.h"
 #include "rtp.h"
 #include "status.h"
 #include "stream.h"
-#include "timezone.h"
 #include "utils.h"
 #include "worker.h"
 #include <errno.h>
@@ -381,9 +379,7 @@ static void rtsp_session_set_state(rtsp_session_t *session,
 }
 
 int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
-                          const char *seek_param_name,
-                          const char *seek_param_value, int seek_offset_seconds,
-                          const char *user_agent, const char *fallback_username,
+                          const char *fallback_username,
                           const char *fallback_password) {
   char url_copy[RTSP_URL_COPY_SIZE];
   char host_buffer[RTSP_SERVER_HOST_SIZE];
@@ -398,16 +394,10 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
   char fallback_pass_copy[RTSP_CREDENTIAL_SIZE];
   const char *fallback_user_source = NULL;
   const char *fallback_pass_source = NULL;
-  int tz_offset_seconds = 0;
   /* Check for NULL parameters */
   if (!session || !rtsp_url) {
     logger(LOG_ERROR, "RTSP: Invalid parameters to rtsp_parse_server_url");
     return -1;
-  }
-
-  /* Parse timezone from User-Agent if provided */
-  if (user_agent) {
-    timezone_parse_from_user_agent(user_agent, &tz_offset_seconds);
   }
 
   /* Copy URL to avoid modifying original */
@@ -704,32 +694,6 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
   if (url_len >= (int)sizeof(session->server_url)) {
     logger(LOG_ERROR, "RTSP: Server URL too long, truncated");
     return -1;
-  }
-
-  /* Handle seek parameter - convert to UTC and append to server_url */
-  if (seek_param_value && strlen(seek_param_value) > 0 && seek_param_name &&
-      strlen(seek_param_name) > 0) {
-    char converted[256];
-    if (service_convert_seek_value(seek_param_value, tz_offset_seconds,
-                                   seek_offset_seconds, converted,
-                                   sizeof(converted)) == 0) {
-      /* Append seek parameter to server_url */
-      char *query_marker = strchr(session->server_url, '?');
-      size_t current_len = strlen(session->server_url);
-      size_t param_len = strlen(seek_param_name) + 1 + strlen(converted);
-
-      if (current_len + 1 + param_len < sizeof(session->server_url)) {
-        snprintf(session->server_url + current_len,
-                 sizeof(session->server_url) - current_len, "%c%s=%s",
-                 query_marker ? '&' : '?', seek_param_name, converted);
-      } else {
-        logger(LOG_ERROR, "RTSP: URL too long to append %s parameter",
-               seek_param_name);
-      }
-
-      logger(LOG_DEBUG, "RTSP: Updated server_url with %s: %s",
-             seek_param_name, session->server_url);
-    }
   }
 
   logger(LOG_DEBUG, "RTSP: Parsed URL - host=%s, port=%d, path=%s",
@@ -3070,7 +3034,7 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location) {
       (session->password[0] != '\0') ? session->password : NULL;
 
   /* Parse new URL and update session */
-  if (rtsp_parse_server_url(session, location, NULL, NULL, 0, NULL,
+  if (rtsp_parse_server_url(session, location,
                             redirect_username, redirect_password) < 0) {
     logger(LOG_ERROR, "RTSP: Failed to parse redirect URL");
     return -1;

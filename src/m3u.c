@@ -505,6 +505,258 @@ static char *extract_dynamic_params(const char *url) {
   return strdup(result);
 }
 
+static int append_path_template_fragment(char *buffer, size_t buffer_size,
+                                         size_t *buffer_len,
+                                         const char *fragment_start,
+                                         size_t fragment_len) {
+  if (!buffer || !buffer_len || !fragment_start)
+    return -1;
+
+  if (*buffer_len + fragment_len >= buffer_size) {
+    logger(LOG_WARN, "Path template fragments exceed buffer size");
+    return -1;
+  }
+
+  memcpy(buffer + *buffer_len, fragment_start, fragment_len);
+  *buffer_len += fragment_len;
+  buffer[*buffer_len] = '\0';
+  return 0;
+}
+
+static int classify_path_placeholder(const char *inner, int is_short_syntax,
+                                     int *is_begin, int *is_end) {
+  char normalized[128];
+  char *colon;
+
+  if (!inner || !is_begin || !is_end)
+    return -1;
+
+  *is_begin = 0;
+  *is_end = 0;
+
+  if (inner[0] == '(' && inner[2] == ')' &&
+      (inner[1] == 'b' || inner[1] == 'e')) {
+    if (inner[1] == 'b') {
+      *is_begin = 1;
+    } else {
+      *is_end = 1;
+    }
+    return 0;
+  }
+
+  strncpy(normalized, inner, sizeof(normalized) - 1);
+  normalized[sizeof(normalized) - 1] = '\0';
+  colon = strchr(normalized, ':');
+  if (colon)
+    *colon = '\0';
+
+  if (strcmp(normalized, "utc") == 0 || strcmp(normalized, "start") == 0 ||
+      strcmp(normalized, "yyyy") == 0 || strcmp(normalized, "MM") == 0 ||
+      strcmp(normalized, "dd") == 0 || strcmp(normalized, "HH") == 0 ||
+      strcmp(normalized, "mm") == 0 || strcmp(normalized, "ss") == 0) {
+    *is_begin = 1;
+  } else if (strcmp(normalized, "utcend") == 0 ||
+             strcmp(normalized, "end") == 0) {
+    *is_end = 1;
+  } else if (is_short_syntax &&
+             (strcmp(normalized, "Y") == 0 || strcmp(normalized, "m") == 0 ||
+              strcmp(normalized, "d") == 0 || strcmp(normalized, "H") == 0 ||
+              strcmp(normalized, "M") == 0 || strcmp(normalized, "S") == 0)) {
+    *is_begin = 1;
+  }
+
+  return 0;
+}
+
+static int path_placeholder_requirements(const char *url, int *needs_begin,
+                                         int *needs_end,
+                                         char *begin_template,
+                                         size_t begin_template_size,
+                                         char *end_template,
+                                         size_t end_template_size) {
+  const char *query;
+  size_t path_len;
+  const char *p;
+  size_t begin_len = 0;
+  size_t end_len = 0;
+
+  if (!url || !needs_begin || !needs_end || !begin_template || !end_template)
+    return -1;
+
+  *needs_begin = 0;
+  *needs_end = 0;
+  begin_template[0] = '\0';
+  end_template[0] = '\0';
+
+  query = strchr(url, '?');
+  path_len = query ? (size_t)(query - url) : strlen(url);
+  p = url;
+
+  while (p < url + path_len) {
+    if (*p == '$' && p + 1 < url + path_len && *(p + 1) == '{') {
+      const char *closing = strchr(p + 2, '}');
+      const char *inner_start = p + 2;
+      size_t inner_len;
+      char inner[128];
+      int is_begin = 0;
+      int is_end = 0;
+
+      if (!closing || (size_t)(closing - url) >= path_len) {
+        p++;
+        continue;
+      }
+
+      inner_len = (size_t)(closing - inner_start);
+      if (inner_len >= sizeof(inner)) {
+        p = closing + 1;
+        continue;
+      }
+
+      memcpy(inner, inner_start, inner_len);
+      inner[inner_len] = '\0';
+
+      classify_path_placeholder(inner, 0, &is_begin, &is_end);
+      if (is_begin) {
+        *needs_begin = 1;
+        if (append_path_template_fragment(begin_template, begin_template_size,
+                                          &begin_len, p,
+                                          (size_t)(closing - p + 1)) != 0) {
+          return -1;
+        }
+      } else if (is_end) {
+        *needs_end = 1;
+        if (append_path_template_fragment(end_template, end_template_size,
+                                          &end_len, p,
+                                          (size_t)(closing - p + 1)) != 0) {
+          return -1;
+        }
+      } else if (strcmp(inner, "duration") == 0) {
+        *needs_begin = 1;
+        *needs_end = 1;
+      } else if (strcmp(inner, "offset") == 0) {
+        *needs_begin = 1;
+      }
+
+      p = closing + 1;
+      continue;
+    }
+
+    if (*p == '{' && (p == url || *(p - 1) != '$')) {
+      const char *closing = strchr(p + 1, '}');
+      const char *inner_start = p + 1;
+      size_t inner_len;
+      char inner[128];
+      int is_begin = 0;
+      int is_end = 0;
+
+      if (!closing || (size_t)(closing - url) >= path_len) {
+        p++;
+        continue;
+      }
+
+      inner_len = (size_t)(closing - inner_start);
+      if (inner_len >= sizeof(inner)) {
+        p = closing + 1;
+        continue;
+      }
+
+      memcpy(inner, inner_start, inner_len);
+      inner[inner_len] = '\0';
+
+      classify_path_placeholder(inner, 1, &is_begin, &is_end);
+      if (is_begin) {
+        *needs_begin = 1;
+        if (append_path_template_fragment(begin_template, begin_template_size,
+                                          &begin_len, p,
+                                          (size_t)(closing - p + 1)) != 0) {
+          return -1;
+        }
+      } else if (is_end) {
+        *needs_end = 1;
+        if (append_path_template_fragment(end_template, end_template_size,
+                                          &end_len, p,
+                                          (size_t)(closing - p + 1)) != 0) {
+          return -1;
+        }
+      } else if (strcmp(inner, "duration") == 0) {
+        *needs_begin = 1;
+        *needs_end = 1;
+      } else if (strcmp(inner, "offset") == 0) {
+        *needs_begin = 1;
+      }
+
+      p = closing + 1;
+      continue;
+    }
+
+    p++;
+  }
+
+  return 0;
+}
+
+static char *extract_path_template_query(const char *url) {
+  int needs_begin = 0;
+  int needs_end = 0;
+  char begin_template[MAX_URL_LENGTH];
+  char end_template[MAX_URL_LENGTH];
+  const char *begin_value;
+  const char *end_value;
+  char query[MAX_URL_LENGTH];
+
+  if (!url)
+    return NULL;
+
+  if (path_placeholder_requirements(url, &needs_begin, &needs_end,
+                                    begin_template, sizeof(begin_template),
+                                    end_template, sizeof(end_template)) != 0) {
+    return NULL;
+  }
+
+  if (!needs_begin && !needs_end)
+    return NULL;
+
+  begin_value = begin_template[0] ? begin_template : (needs_begin ? "${utc}" : "");
+  end_value = end_template[0] ? end_template : (needs_end ? "${utcend}" : "");
+
+  if (needs_end) {
+    if (snprintf(query, sizeof(query), "playseek=%s-%s", begin_value,
+                 end_value) >= (int)sizeof(query)) {
+      logger(LOG_WARN, "Path template query exceeds buffer size");
+      return NULL;
+    }
+    return strdup(query);
+  }
+
+  if (snprintf(query, sizeof(query), "playseek=%s", begin_value) >=
+      (int)sizeof(query)) {
+    logger(LOG_WARN, "Path template query exceeds buffer size");
+    return NULL;
+  }
+
+  return strdup(query);
+}
+
+static char *merge_dynamic_param_strings(const char *first, const char *second) {
+  size_t total_len;
+  char *merged;
+
+  if (!first && !second)
+    return NULL;
+  if (!first)
+    return strdup(second);
+  if (!second)
+    return strdup(first);
+
+  total_len = strlen(first) + strlen(second) + 2;
+  merged = malloc(total_len);
+  if (!merged)
+    return NULL;
+
+  snprintf(merged, total_len, "%s&%s", first, second);
+  return merged;
+}
+
 /* Extract actual URL from http://host:port/protocol/actual_url format
  * Example: http://router.ccca.cc:5140/rtp/239.253.64.120:5140 ->
  * rtp://239.253.64.120:5140
@@ -913,13 +1165,13 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
   size_t line_len;
   char proxy_url[MAX_URL_LENGTH];
   char transformed_line[MAX_M3U_LINE];
-  
+
   /* Check and skip UTF-8 BOM */
   if (strncmp(content_ptr, "\xEF\xBB\xBF", 3) == 0) {
     content_ptr += 3;
     logger(LOG_DEBUG, "Detected and skipped UTF-8 BOM in M3U content");
   }
-  
+
   memset(&current_extinf, 0, sizeof(current_extinf));
 
   logger(LOG_INFO, "Parsing M3U content from: %s",
@@ -1137,8 +1389,12 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
           /* Now generate the transformed EXTINF line with unique names */
           if (unique_catchup_name && catchup_is_recognizable) {
             /* Replace catchup-source URL in EXTINF line */
-            char *catchup_query =
-                extract_dynamic_params(current_extinf.catchup_source);
+            char *catchup_dynamic_query =
+              extract_dynamic_params(current_extinf.catchup_source);
+            char *catchup_path_query =
+              extract_path_template_query(current_extinf.catchup_source);
+            char *catchup_query = merge_dynamic_param_strings(
+              catchup_dynamic_query, catchup_path_query);
             char catchup_proxy_url[MAX_URL_LENGTH];
 
             if (build_service_url(unique_catchup_name, catchup_query,
@@ -1174,6 +1430,10 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
 
             if (catchup_query)
               free(catchup_query);
+            if (catchup_dynamic_query)
+              free(catchup_dynamic_query);
+            if (catchup_path_query)
+              free(catchup_path_query);
           } else if (current_extinf.has_catchup &&
                      strlen(current_extinf.catchup_source) > 0 &&
                      !catchup_is_recognizable &&
