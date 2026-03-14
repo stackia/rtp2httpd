@@ -163,6 +163,9 @@ rtp2httpd 能够识别并转换以下格式的 URL：
 ```m3u
 #EXTINF:-1 tvg-id="CCTV1" catchup="default" catchup-source="rtsp://10.0.0.50:554/catchup?playseek={utc:YmdHMS}-{utcend:YmdHMS}",CCTV-1
 rtp://239.253.64.120:5140
+
+#EXTINF:-1 catchup="append" catchup-source="?starttime=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}&endtime=${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}",CCTV-1
+http://iptv.example.com/live/channel1.m3u8
 ```
 
 ### 转换结果

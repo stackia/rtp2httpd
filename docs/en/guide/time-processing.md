@@ -124,9 +124,24 @@ playseek=1704096000-1704099600
 playseek=20240101120000GMT-20240101130000GMT
 ```
 
-### 4. ISO 8601 Format (Contains T separator)
+### 4. Compact ISO 8601 Format (yyyyMMddTHHmmss)
 
-Supports multiple ISO 8601 variants:
+Compact ISO 8601 format without hyphen and colon separators:
+
+```
+# Without timezone (uses User-Agent timezone)
+playseek=20240101T120000-20240101T130000
+
+# With Z suffix (UTC timezone)
+playseek=20240101T120000Z-20240101T130000Z
+
+# With timezone offset
+playseek=20240101T200000+08:00-20240101T210000+08:00
+```
+
+### 5. ISO 8601 Format (yyyy-MM-ddTHH:mm:ss)
+
+Full ISO 8601 format, supporting multiple variants:
 
 ```
 # Without timezone (uses User-Agent timezone)
@@ -142,12 +157,12 @@ playseek=2024-01-01T12:00:00+08:00-2024-01-01T13:00:00+08:00
 playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
 ```
 
-**Characteristics**:
+**Common characteristics of ISO 8601 formats** (applies to formats 4 and 5):
 
 - If timezone information is included (Z or ±HH:MM), uses that timezone and ignores User-Agent timezone
 - If no timezone information is included, uses the timezone from User-Agent for conversion
 - Output format preserves original timezone suffix (Z, ±HH:MM, or no suffix)
-- Supports millisecond precision (.sss)
+- Full format (format 5) supports millisecond precision (.sss)
 
 ## Timezone Handling Mechanism
 
@@ -168,7 +183,7 @@ If there is no timezone information in the User-Agent, no timezone conversion is
 > [!NOTE]
 > rtp2httpd processes time parameters in the following steps:
 >
-> 1. **Parse time format** — Identify which format the parameter value belongs to: Unix timestamp (≤10 digits), `yyyyMMddHHmmss` (14 digits), `yyyyMMddHHmmssGMT` (14 digits + GMT suffix), ISO 8601 (contains `T` separator)
+> 1. **Parse time format** — Identify which format the parameter value belongs to: Unix timestamp (≤10 digits), `yyyyMMddHHmmss` (14 digits), `yyyyMMddHHmmssGMT` (14 digits + GMT suffix), compact ISO 8601 (`yyyyMMddTHHmmss`), full ISO 8601 (`yyyy-MM-ddTHH:mm:ss`)
 > 2. **Parse User-Agent timezone** — Search for the `TZ/` marker in the User-Agent, extract UTC offset (seconds). If no timezone information, defaults to 0 (UTC)
 > 3. **Timezone conversion** — Unix timestamp and ISO 8601 with timezone formats skip conversion; `yyyyMMddHHmmss` and ISO 8601 without timezone formats apply User-Agent timezone conversion
 > 4. **Apply `r2h-seek-offset`** — If this parameter is specified, apply additional second offset (can be positive or negative) to all formats
