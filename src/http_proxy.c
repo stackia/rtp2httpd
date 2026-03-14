@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -34,6 +35,18 @@ static int http_proxy_build_request(http_proxy_session_t *session);
 static int http_proxy_try_send_pending(http_proxy_session_t *session);
 static int http_proxy_try_receive_response(http_proxy_session_t *session);
 static int http_proxy_parse_response_headers(http_proxy_session_t *session);
+static int http_proxy_append_raw_headers(http_proxy_session_t *session,
+                                         char **dest, size_t *remaining,
+                                         int *total_len,
+                                         int filter_user_agent);
+
+static const char *http_proxy_get_override_user_agent(void) {
+  if (config.http_proxy_user_agent && config.http_proxy_user_agent[0] != '\0') {
+    return config.http_proxy_user_agent;
+  }
+
+  return NULL;
+}
 
 /**
  * Set HTTP proxy session state and update client status
@@ -398,6 +411,7 @@ static int http_proxy_build_request(http_proxy_session_t *session) {
   char host_header[HTTP_PROXY_HOST_SIZE + 16];
   char *p;
   size_t remaining;
+  const char *override_user_agent = http_proxy_get_override_user_agent();
 
   /* Build Host header with port if non-standard */
   if (session->target_port == 80) {
@@ -438,16 +452,25 @@ static int http_proxy_build_request(http_proxy_session_t *session) {
     remaining -= cl_len;
   }
 
-  /* Add raw headers from client for full passthrough */
+  /* Add raw headers from client for full passthrough, filtering User-Agent
+   * when a configured override should take precedence. */
   if (session->raw_headers_len > 0) {
-    if (session->raw_headers_len >= remaining) {
-      logger(LOG_ERROR, "HTTP Proxy: Request too large (raw headers)");
+    if (http_proxy_append_raw_headers(session, &p, &remaining, &len,
+                                      override_user_agent != NULL) < 0) {
       return -1;
     }
-    memcpy(p, session->raw_headers, session->raw_headers_len);
-    len += (int)session->raw_headers_len;
-    p += session->raw_headers_len;
-    remaining -= session->raw_headers_len;
+  }
+
+  if (override_user_agent) {
+    int ua_len = snprintf(p, remaining, "User-Agent: %s\r\n",
+                          override_user_agent);
+    if (ua_len < 0 || (size_t)ua_len >= remaining) {
+      logger(LOG_ERROR, "HTTP Proxy: Request too large (User-Agent)");
+      return -1;
+    }
+    len += ua_len;
+    p += ua_len;
+    remaining -= ua_len;
   }
 
   /* Add final CRLF to end headers */
@@ -466,6 +489,45 @@ static int http_proxy_build_request(http_proxy_session_t *session) {
   logger(LOG_DEBUG,
          "HTTP Proxy: Built request headers (%d bytes, body %zu bytes) for %s%s",
          len, session->request_body_len, host_header, session->target_path);
+
+  return 0;
+}
+
+static int http_proxy_append_raw_headers(http_proxy_session_t *session,
+                                         char **dest, size_t *remaining,
+                                         int *total_len,
+                                         int filter_user_agent) {
+  size_t offset = 0;
+
+  while (offset < session->raw_headers_len) {
+    size_t line_len = 0;
+    const char *line = session->raw_headers + offset;
+
+    while (offset + line_len + 1 < session->raw_headers_len &&
+           !(line[line_len] == '\r' && line[line_len + 1] == '\n')) {
+      line_len++;
+    }
+
+    if (offset + line_len + 1 >= session->raw_headers_len) {
+      logger(LOG_ERROR, "HTTP Proxy: Malformed raw headers");
+      return -1;
+    }
+
+    if (!(filter_user_agent && line_len >= 11 &&
+          strncasecmp(line, "User-Agent:", 11) == 0)) {
+      if (line_len + 2 >= *remaining) {
+        logger(LOG_ERROR, "HTTP Proxy: Request too large (raw headers)");
+        return -1;
+      }
+
+      memcpy(*dest, line, line_len + 2);
+      *dest += line_len + 2;
+      *remaining -= line_len + 2;
+      *total_len += (int)(line_len + 2);
+    }
+
+    offset += line_len + 2;
+  }
 
   return 0;
 }

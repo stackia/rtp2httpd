@@ -48,6 +48,7 @@ int cmd_workers_set = 0;
 int cmd_external_m3u_url_set = 0;
 int cmd_external_m3u_update_interval_set = 0;
 int cmd_rtsp_stun_server_set = 0;
+int cmd_http_proxy_user_agent_set = 0;
 int cmd_rtsp_user_agent_set = 0;
 int cmd_cors_allow_origin_set = 0;
 
@@ -571,6 +572,17 @@ void parse_global_sec(char *line) {
     return;
   }
 
+  if (strcasecmp("http-proxy-user-agent", param) == 0) {
+    if (set_if_not_cmd_override(cmd_http_proxy_user_agent_set,
+                                "http-proxy-user-agent")) {
+      safe_free_string(&config.http_proxy_user_agent);
+      if (value[0] != '\0') {
+        config.http_proxy_user_agent = strdup(value);
+      }
+    }
+    return;
+  }
+
   if (strcasecmp("rtsp-user-agent", param) == 0) {
     if (set_if_not_cmd_override(cmd_rtsp_user_agent_set, "rtsp-user-agent")) {
       safe_free_string(&config.rtsp_user_agent);
@@ -829,6 +841,8 @@ void config_cleanup(bool force_free) {
     safe_free_string(&config.external_m3u_url);
   if (!cmd_rtsp_stun_server_set || force_free)
     safe_free_string(&config.rtsp_stun_server);
+  if (!cmd_http_proxy_user_agent_set || force_free)
+    safe_free_string(&config.http_proxy_user_agent);
   if (!cmd_rtsp_user_agent_set || force_free)
     safe_free_string(&config.rtsp_user_agent);
   if (!cmd_cors_allow_origin_set || force_free)
@@ -1029,6 +1043,7 @@ void usage(FILE *f, char *progname) {
       "(default: 7200 = 2h, 0=disabled)\n"
       "\t-Z --zerocopy-on-send    Enable zero-copy send with MSG_ZEROCOPY for "
       "better performance (default: off)\n"
+      "\t-g --http-proxy-user-agent <value>  Override User-Agent for upstream HTTP proxy requests\n"
       "\t-u --rtsp-user-agent <value>  User-Agent header for upstream RTSP requests "
       "(default: rtp2httpd/<version>)\n"
       "\t-N --rtsp-stun-server <host:port>  STUN server for RTSP NAT traversal "
@@ -1100,12 +1115,13 @@ void parse_cmd_line(int argc, char *argv[]) {
       {"external-m3u", required_argument, 0, 'M'},
       {"external-m3u-update-interval", required_argument, 0, 'I'},
       {"zerocopy-on-send", no_argument, 0, 'Z'},
+        {"http-proxy-user-agent", required_argument, 0, 'g'},
       {"rtsp-stun-server", required_argument, 0, 'N'},
       {"rtsp-user-agent", required_argument, 0, 'u'},
       {"cors-allow-origin", required_argument, 0, 'O'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:y:R:F:A:s:p:M:I:SCZN:u:O:";
+      const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:y:R:F:A:s:p:M:I:SCZg:N:u:O:";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1285,6 +1301,13 @@ void parse_cmd_line(int argc, char *argv[]) {
       config.zerocopy_on_send = 1;
       cmd_zerocopy_on_send_set = 1;
       logger(LOG_INFO, "Zero-copy send enabled (MSG_ZEROCOPY)");
+      break;
+    case 'g':
+      safe_free_string(&config.http_proxy_user_agent);
+      if (optarg[0] != '\0') {
+        config.http_proxy_user_agent = strdup(optarg);
+      }
+      cmd_http_proxy_user_agent_set = 1;
       break;
     case 'N':
       safe_free_string(&config.rtsp_stun_server);

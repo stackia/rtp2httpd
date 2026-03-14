@@ -570,13 +570,23 @@ return view.extend({
     o = s.taboption(
       "advanced",
       form.Value,
+      "http_proxy_user_agent",
+      _("HTTP Proxy User-Agent"),
+      _(
+        "Override the User-Agent header sent to upstream HTTP proxy requests. Leave empty to forward the client User-Agent as-is."
+      )
+    );
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "advanced",
+      form.Value,
       "rtsp_user_agent",
       _("RTSP User-Agent"),
       _(
         "User-Agent header used for upstream RTSP requests. Leave empty to use the default rtp2httpd/<version>."
       )
     );
-    o.placeholder = "";
     o.depends("use_config_file", "0");
 
     o = s.taboption(

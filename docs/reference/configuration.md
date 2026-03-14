@@ -78,12 +78,17 @@ rtp2httpd [选项]
 
 - `-U, --noudpxy` - 禁用 UDPxy 兼容模式 (禁用后只能使用 `[services]` 或 `external-m3u` 中定义的服务)
 
+### HTTP 代理相关
+
+- `-g, --http-proxy-user-agent <值>` - 向 HTTP 上游请求时的 User-Agent 头 (默认: 透传客户端 User-Agent)
+  - 作用于通过 `/http/...` 路径代理到上游 HTTP 服务器的请求
+  - 配置后会替换原本透传给上游的客户端 User-Agent
+
 ### RTSP 相关
 
-- `-u, --rtsp-user-agent <值>` - 上游 RTSP 请求的 User-Agent 头 (默认: `rtp2httpd/<version>`)
+- `-u, --rtsp-user-agent <值>` - 向 RTSP 上游请求时的 User-Agent 头 (默认: `rtp2httpd/<version>`)
   - 作用于 OPTIONS、DESCRIBE、SETUP、PLAY、TEARDOWN、GET_PARAMETER 等上游 RTSP 请求
   - 某些上游 RTSP 服务器会校验或依赖特定 User-Agent，可通过此参数进行兼容
-  - 留空时使用内置默认值
 
 - `-N, --rtsp-stun-server <host:port>` - STUN 服务器地址 (默认: 禁用)
   - 当 RTSP 服务器仅支持 UDP 传输且客户端位于 NAT 后时，可尝试使用 STUN 进行 NAT 穿透（不保证成功）
@@ -195,6 +200,10 @@ udp-rcvbuf-size = 524288
 # 在支持的设备上可提升吞吐量并降低 CPU 占用，特别是在高并发负载下
 # 如果你的 rtp2httpd 位于反向代理之后 (nginx/caddy/lucky 等)，不建议开启这个选项
 zerocopy-on-send = no
+
+# 覆盖上游 HTTP 代理请求的 User-Agent（默认: 不覆盖）
+# 设置后将替换发送给 /http/ 上游服务器的客户端 User-Agent
+http-proxy-user-agent = rtp2httpd-http-proxy/1.0
 
 # 上游 RTSP 请求的 User-Agent（默认: rtp2httpd/<version>）
 # 当上游 RTSP 服务器要求特定 User-Agent 时可配置此项
