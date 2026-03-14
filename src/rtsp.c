@@ -36,7 +36,6 @@ static const char rtsp_default_user_agent[] = "rtp2httpd/" VERSION;
 #define RTSP_RESPONSE_KEEPALIVE 2
 #define RTSP_RESPONSE_DURATION 3
 #define RTSP_RESPONSE_ERROR -1
-
 /* Helper function prototypes */
 static int rtsp_prepare_request(rtsp_session_t *session, const char *method,
                                 const char *url, const char *extra_headers);
@@ -298,6 +297,8 @@ void rtsp_session_init(rtsp_session_t *session) {
   session->server_port = 554; /* Default RTSP port */
   session->redirect_count = 0;
   session->r2h_start[0] = '\0';
+  session->playseek_range_start[0] = '\0';
+  session->use_playseek_range = 0;
   session->r2h_duration = 0;
   session->r2h_duration_value = -1;
 
@@ -604,17 +605,14 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
         char *param_start =
             (r2h_start > query_start + 1) ? (r2h_start - 1) : r2h_start;
         if (r2h_start == query_start + 1) {
-          /* First parameter */
           if (*value_end == '&') {
-            /* Has other params after, keep '?' and move them forward */
-            memmove(query_start + 1, value_end + 1, strlen(value_end + 1) + 1);
+            memmove(query_start + 1, value_end + 1,
+                    strlen(value_end + 1) + 1);
           } else {
-            /* Only parameter, remove '?' */
             *query_start = '\0';
-            query_start = NULL; /* Mark as no query string */
+            query_start = NULL;
           }
         } else {
-          /* Not first parameter, remove including preceding '&' */
           if (*value_end == '&') {
             memmove(param_start, value_end, strlen(value_end) + 1);
           } else {
@@ -657,17 +655,14 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
                                 ? (r2h_duration - 1)
                                 : r2h_duration;
         if (r2h_duration == query_start + 1) {
-          /* First parameter */
           if (*value_end == '&') {
-            /* Has other params after, keep '?' and move them forward */
-            memmove(query_start + 1, value_end + 1, strlen(value_end + 1) + 1);
+            memmove(query_start + 1, value_end + 1,
+                    strlen(value_end + 1) + 1);
           } else {
-            /* Only parameter, remove '?' */
             *query_start = '\0';
-            query_start = NULL; /* Mark as no query string */
+            query_start = NULL;
           }
         } else {
-          /* Not first parameter, remove including preceding '&' */
           if (*value_end == '&') {
             memmove(param_start, value_end, strlen(value_end) + 1);
           } else {
@@ -1631,7 +1626,12 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
   }
 
   case RTSP_STATE_SETUP:
-    if (session->r2h_start[0] != '\0') {
+    if (session->use_playseek_range &&
+        session->playseek_range_start[0] != '\0') {
+      snprintf(extra_headers, sizeof(extra_headers),
+               "Session: %s\r\nRange: clock=%s-\r\n",
+               session->session_id, session->playseek_range_start);
+    } else if (session->r2h_start[0] != '\0') {
       snprintf(extra_headers, sizeof(extra_headers),
                "Session: %s\r\nRange: npt=%s-\r\n", session->session_id,
                session->r2h_start);

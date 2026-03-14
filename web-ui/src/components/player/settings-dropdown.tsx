@@ -11,8 +11,6 @@ interface SettingsDropdownProps {
 	onLocaleChange: (locale: Locale) => void;
 	theme: ThemeMode;
 	onThemeChange: (theme: ThemeMode) => void;
-	catchupTailOffset: number;
-	onCatchupTailOffsetChange: (offset: number) => void;
 	force16x9: boolean;
 	onForce16x9Change: (enabled: boolean) => void;
 	mp2SoftDecode: boolean;
@@ -38,8 +36,6 @@ function SettingsDropdownComponent({
 	onLocaleChange,
 	theme,
 	onThemeChange,
-	catchupTailOffset,
-	onCatchupTailOffsetChange,
 	force16x9,
 	onForce16x9Change,
 	mp2SoftDecode,
@@ -47,13 +43,7 @@ function SettingsDropdownComponent({
 }: SettingsDropdownProps) {
 	const t = usePlayerTranslation(locale);
 	const [isOpen, setIsOpen] = useState(false);
-	const [localOffset, setLocalOffset] = useState(catchupTailOffset.toString());
 	const dropdownRef = useRef<HTMLDivElement>(null);
-
-	// Update local offset when catchupTailOffset prop changes
-	useEffect(() => {
-		setLocalOffset(catchupTailOffset.toString());
-	}, [catchupTailOffset]);
 
 	useEffect(() => {
 		function handleClickOutside(event: MouseEvent) {
@@ -67,22 +57,6 @@ function SettingsDropdownComponent({
 			return () => document.removeEventListener("mousedown", handleClickOutside);
 		}
 	}, [isOpen]);
-
-	// When dropdown closes, apply the offset change
-	const prevIsOpenRef = useRef(isOpen);
-	useEffect(() => {
-		// Only trigger when dropdown transitions from open to closed
-		if (prevIsOpenRef.current && !isOpen) {
-			const value = parseFloat(localOffset);
-			if (!Number.isNaN(value) && value !== catchupTailOffset) {
-				onCatchupTailOffsetChange(value);
-			} else if (Number.isNaN(value)) {
-				// Reset to current value if invalid
-				setLocalOffset(catchupTailOffset.toString());
-			}
-		}
-		prevIsOpenRef.current = isOpen;
-	}, [isOpen, localOffset, catchupTailOffset, onCatchupTailOffsetChange]);
 
 	return (
 		<div className="relative" ref={dropdownRef}>
@@ -128,21 +102,6 @@ function SettingsDropdownComponent({
 									</option>
 								))}
 							</select>
-						</label>
-
-						{/* Catchup Tail Offset Input */}
-						<label className="block">
-							<span className="block text-xs font-medium text-muted-foreground mb-1.5 px-1">
-								{t("catchupTailOffset")}
-							</span>
-							<input
-								type="number"
-								value={localOffset}
-								onChange={(e) => setLocalOffset(e.target.value)}
-								placeholder={t("catchupTailOffsetHint")}
-								className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-							/>
-							<p className="text-xs text-muted-foreground mt-1 px-1">{t("catchupTailOffsetHint")}</p>
 						</label>
 
 						{/* Force 16:9 Aspect Ratio Toggle */}

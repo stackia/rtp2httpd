@@ -96,6 +96,8 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=202401011200
 
 用于指定从特定时间点开始播放 RTSP 流，实现续播功能。此参数值会作为 NPT（Normal Play Time）格式的时间点，在 RTSP PLAY 请求中通过 `Range: npt=<时间点>-` 头发送给 RTSP 服务器。此参数仅对 RTSP 代理有效。
 
+为了改善对中国境内大多数运营商 RTSP 服务器兼容性，如果同一个 RTSP 请求里还带了“距离当前时刻小于 1 小时”的 seek 参数（包括 `playseek`、`tvdr` 和自定义 `r2h-seek-name`），则 `r2h-start` 会被忽略，改由 seek 的起始时间生成 `Range: clock=` 头。
+
 #### 示例
 
 ```url
@@ -165,6 +167,16 @@ playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
 - 完整格式（格式 5）支持毫秒精度（.sss）
 
 ## 时区处理机制
+
+### RTSP recent seek 特殊处理
+
+对于 RTSP 代理，seek 参数除了可以像 HTTP 代理那样继续作为 URL 参数传给上游，还支持一个“近实时”分支。这里的 seek 参数包括 `playseek`、`tvdr`，以及通过 `r2h-seek-name` 指定的自定义参数：
+
+- 当 seek 起始时间满足“当前时间 - 起始时间 < 3600 秒”时，rtp2httpd 不再把该 seek 参数透传到 RTSP 上游 URL
+- 该分支只取 seek 的起始时间，结束时间会被忽略
+- RTSP `PLAY` 请求会发送 `Range: clock=<yyyyMMddTHHmmssZ>-`
+- 当 seek 恰好等于 1 小时前时，不触发该分支，仍按普通 URL 参数透传
+- 如果 seek 无法解析，仍保持原有透传行为
 
 ### 时区识别
 

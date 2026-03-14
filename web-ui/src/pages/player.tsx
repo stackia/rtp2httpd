@@ -16,13 +16,11 @@ import { useTheme } from "../hooks/use-theme";
 import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG } from "../lib/epg-parser";
 import { buildCatchupSegments, parseM3U } from "../lib/m3u-parser";
 import {
-	getCatchupTailOffset,
 	getForce16x9,
 	getLastChannelId,
 	getLastSourceIndex,
 	getMp2SoftDecode,
 	getSidebarVisible,
-	saveCatchupTailOffset,
 	saveForce16x9,
 	saveLastChannelId,
 	saveLastSourceIndex,
@@ -48,7 +46,6 @@ function PlayerPage() {
 	const [sidebarView, setSidebarView] = useState<"channels" | "epg">("channels");
 	const [isFullscreen, setIsFullscreen] = useState(false);
 	const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
-	const [catchupTailOffset, setCatchupTailOffset] = useState(() => getCatchupTailOffset());
 	const [force16x9, setForce16x9] = useState(() => getForce16x9());
 	const [mp2SoftDecode, setMp2SoftDecode] = useState(() => getMp2SoftDecode());
 	const pageContainerRef = useRef<HTMLDivElement>(null);
@@ -104,7 +101,7 @@ function PlayerPage() {
 
 		// Source supports catchup: use it
 		if (activeSource.catchup && activeSource.catchupSource) {
-			setPlaybackSegments(buildCatchupSegments(activeSource, streamStartTime, catchupTailOffset));
+			setPlaybackSegments(buildCatchupSegments(activeSource, streamStartTime));
 			setPlayMode("catchup");
 			return;
 		}
@@ -120,16 +117,16 @@ function PlayerPage() {
 
 		// No source supports catchup, fall back to live
 		setStreamStartTime(new Date());
-	}, [currentChannel, activeSource, activeSourceIndex, streamStartTime, catchupTailOffset]);
+	}, [currentChannel, activeSource, activeSourceIndex, streamStartTime]);
 
 	const handleVideoSeek = useCallback(
 		(seekTime: Date) => {
 			const now = new Date();
-			if (seekTime.getTime() > now.getTime() - 30 * 1000) {
+			if (seekTime.getTime() > now.getTime() - 10 * 1000) {
 				if (streamStartTime < seekTime) {
 					setStreamStartTime(now);
 				} else {
-					setStreamStartTime(new Date(now.getTime() - 30 * 1000));
+					setStreamStartTime(new Date(now.getTime() - 10 * 1000));
 				}
 			} else {
 				setStreamStartTime(seekTime);
@@ -313,11 +310,6 @@ function PlayerPage() {
 		}
 	}, []);
 
-	const handleCatchupTailOffsetChange = useCallback((offset: number) => {
-		setCatchupTailOffset(offset);
-		saveCatchupTailOffset(offset);
-	}, []);
-
 	const handleForce16x9Change = useCallback((enabled: boolean) => {
 		setForce16x9(enabled);
 		saveForce16x9(enabled);
@@ -344,8 +336,6 @@ function PlayerPage() {
 					onLocaleChange={setLocale}
 					theme={theme}
 					onThemeChange={setTheme}
-					catchupTailOffset={catchupTailOffset}
-					onCatchupTailOffsetChange={handleCatchupTailOffsetChange}
 					force16x9={force16x9}
 					onForce16x9Change={handleForce16x9Change}
 					mp2SoftDecode={mp2SoftDecode}
@@ -353,18 +343,7 @@ function PlayerPage() {
 				/>
 			</div>
 		);
-	}, [
-		locale,
-		theme,
-		catchupTailOffset,
-		force16x9,
-		mp2SoftDecode,
-		setLocale,
-		setTheme,
-		handleCatchupTailOffsetChange,
-		handleForce16x9Change,
-		handleMp2SoftDecodeChange,
-	]);
+	}, [locale, theme, force16x9, mp2SoftDecode, setLocale, setTheme, handleForce16x9Change, handleMp2SoftDecodeChange]);
 
 	// Main UI content
 	const mainContent = (

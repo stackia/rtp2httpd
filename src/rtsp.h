@@ -125,6 +125,8 @@ typedef struct {
   char server_path[RTSP_SERVER_PATH_SIZE]; /* RTSP path with query string */
   int redirect_count;                      /* Number of redirects followed */
   char r2h_start[RTSP_TIME_STRING_SIZE];
+  char playseek_range_start[RTSP_TIME_STRING_SIZE];
+  int use_playseek_range;
   int r2h_duration;
   float r2h_duration_value;
 
