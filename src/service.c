@@ -1030,8 +1030,9 @@ static int render_keyword(const char *inner, int use_short,
     if (strcmp(inner, name) == 0) {
       if (!ctx->has_begin)
         return -1;
-      if (snprintf(val, val_size, time_components[i].fmt,
-                   get_tm_component(&ctx->begin_tm_utc, i)) >= (int)val_size)
+      int comp = get_tm_component(&ctx->begin_tm_utc, i);
+      int width = (i == 0) ? 4 : 2;
+      if (snprintf(val, val_size, "%0*d", width, comp) >= (int)val_size)
         return -1;
       return 1;
     }

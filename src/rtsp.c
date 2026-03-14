@@ -2697,7 +2697,9 @@ static void rtsp_resolve_relative_url(const char *base_url,
                                       char *out, size_t out_size) {
   size_t base_len = strlen(base_url);
   if (base_len > 0 && base_url[base_len - 1] == '/') {
-    snprintf(out, out_size, "%s%s", base_url, relative);
+    size_t n = snprintf(out, out_size, "%s", base_url);
+    if (n < out_size)
+      snprintf(out + n, out_size - n, "%s", relative);
   } else {
     const char *authority = strstr(base_url, "://");
     const char *last_slash = NULL;
@@ -2706,9 +2708,13 @@ static void rtsp_resolve_relative_url(const char *base_url,
     }
     if (last_slash) {
       size_t prefix_len = (size_t)(last_slash - base_url) + 1;
-      snprintf(out, out_size, "%.*s%s", (int)prefix_len, base_url, relative);
+      size_t n = snprintf(out, out_size, "%.*s", (int)prefix_len, base_url);
+      if (n < out_size)
+        snprintf(out + n, out_size - n, "%s", relative);
     } else {
-      snprintf(out, out_size, "%s/%s", base_url, relative);
+      size_t n = snprintf(out, out_size, "%s/", base_url);
+      if (n < out_size)
+        snprintf(out + n, out_size - n, "%s", relative);
     }
   }
 }
