@@ -134,6 +134,7 @@ The following FCC (Fast Channel Change) server addresses were collected from the
   - `118.119.188.42:8027` (Emeishan)
   - `118.119.178.42:8027` (Leshan)
   - `182.128.24.170:8027` (Guangyuan)
+  - `182.134.43.42:8027` (Yibin)
 - China Mobile: `183.223.164.65:8027`
 
 ## Chongqing
