@@ -1,7 +1,7 @@
 msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:600
+#: htdocs/luci-static/resources/view/rtp2httpd.js:622
 msgid ""
 "Additional FFmpeg arguments for snapshot generation. Common options: -"
 "hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)"
@@ -45,7 +45,7 @@ msgstr ""
 msgid "Edit the content of /etc/rtp2httpd.conf"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:576
+#: htdocs/luci-static/resources/view/rtp2httpd.js:598
 msgid ""
 "Enable video snapshot feature. When enabled, clients can request snapshots "
 "with snapshot=1 query parameter"
@@ -81,11 +81,11 @@ msgstr ""
 msgid "FCC Listen Port Range"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:598
+#: htdocs/luci-static/resources/view/rtp2httpd.js:620
 msgid "FFmpeg Arguments"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:586
+#: htdocs/luci-static/resources/view/rtp2httpd.js:608
 msgid "FFmpeg Path"
 msgstr ""
 
@@ -97,6 +97,10 @@ msgstr ""
 
 #: root/usr/share/rpcd/acl.d/luci-app-rtp2httpd.json:3
 msgid "Grant UCI access for luci-app-rtp2httpd"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:574
+msgid "HTTP Proxy User-Agent"
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:529
@@ -185,7 +189,13 @@ msgstr ""
 msgid "Open Status Dashboard"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:588
+#: htdocs/luci-static/resources/view/rtp2httpd.js:576
+msgid ""
+"Override the User-Agent header sent to upstream HTTP proxy requests. Leave "
+"empty to forward the client User-Agent as-is."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:610
 msgid ""
 "Path to FFmpeg executable. Leave empty to use system PATH (default: ffmpeg)"
 msgstr ""
@@ -222,24 +232,12 @@ msgstr ""
 msgid "R2H Token"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:575
-msgid "HTTP Proxy User-Agent"
-msgstr ""
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:576
-msgid "Override the User-Agent header sent to upstream HTTP proxy requests. Leave empty to forward the client User-Agent as-is."
-msgstr ""
-
 #: htdocs/luci-static/resources/view/rtp2httpd.js:420
 msgid "RTSP STUN Server"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:432
+#: htdocs/luci-static/resources/view/rtp2httpd.js:585
 msgid "RTSP User-Agent"
-msgstr ""
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:433
-msgid "User-Agent header used for upstream RTSP requests. Leave empty to use the default rtp2httpd/<version>."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:188
@@ -309,7 +307,13 @@ msgstr ""
 msgid "Use config file instead of individual options"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:574
+#: htdocs/luci-static/resources/view/rtp2httpd.js:587
+msgid ""
+"User-Agent header used for upstream RTSP requests. Leave empty to use the "
+"default rtp2httpd/<version>."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:596
 msgid "Video Snapshot"
 msgstr ""
 
