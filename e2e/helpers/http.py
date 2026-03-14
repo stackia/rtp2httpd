@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.client
+import re
 import socket
 import time
 
@@ -43,6 +44,19 @@ def http_request(
         return resp.status, dict(resp.getheaders()), rbody
     finally:
         conn.close()
+
+
+def extract_catchup_source(playlist_text, channel_name):
+    """Extract catchup-source URL from the EXTINF line for a channel.
+
+    Returns ``(line, catchup_source_url)``.
+    """
+    for line in playlist_text.splitlines():
+        if channel_name in line and "catchup-source=" in line:
+            match = re.search(r'catchup-source="([^"]+)"', line)
+            assert match, "Expected catchup-source in line: %s" % line
+            return line, match.group(1)
+    raise AssertionError("Expected catchup-source line for channel: %s" % channel_name)
 
 
 def stream_get(

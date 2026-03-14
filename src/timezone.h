@@ -76,8 +76,7 @@ int timezone_format_time_yyyyMMddHHmmss(const struct tm *utc_time,
  *
  * Format detection is automatic. Output preserves input format.
  *
- * Thread Safety: NOT thread-safe (modifies TZ environment variable for some
- * formats)
+ * Thread Safety: NOT thread-safe (uses gmtime() which returns static buffer)
  *
  * @param input_time Input time string (must not be NULL)
  * @param tz_offset_seconds Timezone offset from User-Agent in seconds
@@ -184,7 +183,7 @@ int timezone_format_time_iso8601(const struct tm *tm, int milliseconds,
  * conversion. Always applies offset_seconds after any timezone conversion.
  * Output preserves original timezone format.
  *
- * Thread Safety: NOT thread-safe (modifies TZ environment variable)
+ * Thread Safety: NOT thread-safe (uses gmtime() which returns static buffer)
  *
  * @param iso_str Input ISO 8601 string (must not be NULL)
  * @param external_tz_offset Timezone offset from User-Agent in seconds (used
@@ -207,7 +206,7 @@ int timezone_convert_iso8601_with_offset(const char *iso_str,
  * - yyyyMMddHHmmss[GMT]: parse, apply tz_offset + additional_offset
  * - ISO 8601: parse, handle embedded timezone, apply offsets
  *
- * Thread Safety: NOT thread-safe (may modify TZ environment variable)
+ * Thread Safety: NOT thread-safe (uses gmtime() which returns static buffer)
  *
  * @param input_time Input time string (must not be NULL)
  * @param tz_offset_seconds Timezone offset in seconds from UTC

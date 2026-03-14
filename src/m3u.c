@@ -6,6 +6,7 @@
 #include "http_proxy.h"
 #include "md5.h"
 #include "service.h"
+#include "url_template.h"
 #include "utils.h"
 #include <arpa/inet.h>
 #include <ctype.h>
@@ -430,6 +431,32 @@ static int extract_service_name(const char *line, char *name,
   return 0;
 }
 
+static void rewrite_catchup_mode_for_proxy(const char *input_line,
+                                           char *output_line,
+                                           size_t output_size) {
+  const char *append_mode;
+  size_t prefix_len;
+
+  if (!input_line || !output_line || output_size == 0)
+    return;
+
+  append_mode = strstr(input_line, "catchup=\"append\"");
+  if (!append_mode) {
+    strncpy(output_line, input_line, output_size - 1);
+    output_line[output_size - 1] = '\0';
+    return;
+  }
+
+  prefix_len = (size_t)(append_mode - input_line);
+  if (snprintf(output_line, output_size, "%.*scatchup=\"default\"%s",
+               (int)prefix_len, input_line,
+               append_mode + strlen("catchup=\"append\"")) >=
+      (int)output_size) {
+    strncpy(output_line, input_line, output_size - 1);
+    output_line[output_size - 1] = '\0';
+  }
+}
+
 /* Extract dynamic query parameters (containing { or }) from URL
  * Returns: malloc'd string containing only dynamic params (caller must free),
  * or NULL if none
@@ -505,201 +532,8 @@ static char *extract_dynamic_params(const char *url) {
   return strdup(result);
 }
 
-static int append_path_template_fragment(char *buffer, size_t buffer_size,
-                                         size_t *buffer_len,
-                                         const char *fragment_start,
-                                         size_t fragment_len) {
-  if (!buffer || !buffer_len || !fragment_start)
-    return -1;
-
-  if (*buffer_len + fragment_len >= buffer_size) {
-    logger(LOG_WARN, "Path template fragments exceed buffer size");
-    return -1;
-  }
-
-  memcpy(buffer + *buffer_len, fragment_start, fragment_len);
-  *buffer_len += fragment_len;
-  buffer[*buffer_len] = '\0';
-  return 0;
-}
-
-static int classify_path_placeholder(const char *inner, int is_short_syntax,
-                                     int *is_begin, int *is_end) {
-  char normalized[128];
-  char *colon;
-
-  if (!inner || !is_begin || !is_end)
-    return -1;
-
-  *is_begin = 0;
-  *is_end = 0;
-
-  if (inner[0] == '(' && inner[2] == ')' &&
-      (inner[1] == 'b' || inner[1] == 'e')) {
-    if (inner[1] == 'b') {
-      *is_begin = 1;
-    } else {
-      *is_end = 1;
-    }
-    return 0;
-  }
-
-  strncpy(normalized, inner, sizeof(normalized) - 1);
-  normalized[sizeof(normalized) - 1] = '\0';
-  colon = strchr(normalized, ':');
-  if (colon)
-    *colon = '\0';
-
-  if (strcmp(normalized, "utc") == 0 || strcmp(normalized, "start") == 0 ||
-      strcmp(normalized, "yyyy") == 0 || strcmp(normalized, "MM") == 0 ||
-      strcmp(normalized, "dd") == 0 || strcmp(normalized, "HH") == 0 ||
-      strcmp(normalized, "mm") == 0 || strcmp(normalized, "ss") == 0) {
-    *is_begin = 1;
-  } else if (strcmp(normalized, "utcend") == 0 ||
-             strcmp(normalized, "end") == 0) {
-    *is_end = 1;
-  } else if (is_short_syntax &&
-             (strcmp(normalized, "Y") == 0 || strcmp(normalized, "m") == 0 ||
-              strcmp(normalized, "d") == 0 || strcmp(normalized, "H") == 0 ||
-              strcmp(normalized, "M") == 0 || strcmp(normalized, "S") == 0)) {
-    *is_begin = 1;
-  }
-
-  return 0;
-}
-
-static int path_placeholder_requirements(const char *url, int *needs_begin,
-                                         int *needs_end,
-                                         char *begin_template,
-                                         size_t begin_template_size,
-                                         char *end_template,
-                                         size_t end_template_size) {
-  const char *query;
-  size_t path_len;
-  const char *p;
-  size_t begin_len = 0;
-  size_t end_len = 0;
-
-  if (!url || !needs_begin || !needs_end || !begin_template || !end_template)
-    return -1;
-
-  *needs_begin = 0;
-  *needs_end = 0;
-  begin_template[0] = '\0';
-  end_template[0] = '\0';
-
-  query = strchr(url, '?');
-  path_len = query ? (size_t)(query - url) : strlen(url);
-  p = url;
-
-  while (p < url + path_len) {
-    if (*p == '$' && p + 1 < url + path_len && *(p + 1) == '{') {
-      const char *closing = strchr(p + 2, '}');
-      const char *inner_start = p + 2;
-      size_t inner_len;
-      char inner[128];
-      int is_begin = 0;
-      int is_end = 0;
-
-      if (!closing || (size_t)(closing - url) >= path_len) {
-        p++;
-        continue;
-      }
-
-      inner_len = (size_t)(closing - inner_start);
-      if (inner_len >= sizeof(inner)) {
-        p = closing + 1;
-        continue;
-      }
-
-      memcpy(inner, inner_start, inner_len);
-      inner[inner_len] = '\0';
-
-      classify_path_placeholder(inner, 0, &is_begin, &is_end);
-      if (is_begin) {
-        *needs_begin = 1;
-        if (append_path_template_fragment(begin_template, begin_template_size,
-                                          &begin_len, p,
-                                          (size_t)(closing - p + 1)) != 0) {
-          return -1;
-        }
-      } else if (is_end) {
-        *needs_end = 1;
-        if (append_path_template_fragment(end_template, end_template_size,
-                                          &end_len, p,
-                                          (size_t)(closing - p + 1)) != 0) {
-          return -1;
-        }
-      } else if (strcmp(inner, "duration") == 0) {
-        *needs_begin = 1;
-        *needs_end = 1;
-      } else if (strcmp(inner, "offset") == 0) {
-        *needs_begin = 1;
-      }
-
-      p = closing + 1;
-      continue;
-    }
-
-    if (*p == '{' && (p == url || *(p - 1) != '$')) {
-      const char *closing = strchr(p + 1, '}');
-      const char *inner_start = p + 1;
-      size_t inner_len;
-      char inner[128];
-      int is_begin = 0;
-      int is_end = 0;
-
-      if (!closing || (size_t)(closing - url) >= path_len) {
-        p++;
-        continue;
-      }
-
-      inner_len = (size_t)(closing - inner_start);
-      if (inner_len >= sizeof(inner)) {
-        p = closing + 1;
-        continue;
-      }
-
-      memcpy(inner, inner_start, inner_len);
-      inner[inner_len] = '\0';
-
-      classify_path_placeholder(inner, 1, &is_begin, &is_end);
-      if (is_begin) {
-        *needs_begin = 1;
-        if (append_path_template_fragment(begin_template, begin_template_size,
-                                          &begin_len, p,
-                                          (size_t)(closing - p + 1)) != 0) {
-          return -1;
-        }
-      } else if (is_end) {
-        *needs_end = 1;
-        if (append_path_template_fragment(end_template, end_template_size,
-                                          &end_len, p,
-                                          (size_t)(closing - p + 1)) != 0) {
-          return -1;
-        }
-      } else if (strcmp(inner, "duration") == 0) {
-        *needs_begin = 1;
-        *needs_end = 1;
-      } else if (strcmp(inner, "offset") == 0) {
-        *needs_begin = 1;
-      }
-
-      p = closing + 1;
-      continue;
-    }
-
-    p++;
-  }
-
-  return 0;
-}
-
-static char *extract_path_template_query(const char *url) {
-  int needs_begin = 0;
-  int needs_end = 0;
-  char begin_template[MAX_URL_LENGTH];
-  char end_template[MAX_URL_LENGTH];
+static char *extract_catchup_template_query(const char *url) {
+  url_template_analysis_t analysis;
   const char *begin_value;
   const char *end_value;
   char query[MAX_URL_LENGTH];
@@ -707,22 +541,24 @@ static char *extract_path_template_query(const char *url) {
   if (!url)
     return NULL;
 
-  if (path_placeholder_requirements(url, &needs_begin, &needs_end,
-                                    begin_template, sizeof(begin_template),
-                                    end_template, sizeof(end_template)) != 0) {
+  if (url_template_analyze(url, &analysis) != 0) {
     return NULL;
   }
 
-  if (!needs_begin && !needs_end)
+  if (!analysis.needs_begin && !analysis.needs_end)
     return NULL;
 
-  begin_value = begin_template[0] ? begin_template : (needs_begin ? "${utc}" : "");
-  end_value = end_template[0] ? end_template : (needs_end ? "${utcend}" : "");
+  begin_value = analysis.begin_template[0]
+                  ? analysis.begin_template
+                  : (analysis.needs_begin ? "${utc}" : "");
+  end_value = analysis.end_template[0]
+                ? analysis.end_template
+                : (analysis.needs_end ? "${utcend}" : "");
 
-  if (needs_end) {
+  if (analysis.needs_end) {
     if (snprintf(query, sizeof(query), "playseek=%s-%s", begin_value,
                  end_value) >= (int)sizeof(query)) {
-      logger(LOG_WARN, "Path template query exceeds buffer size");
+      logger(LOG_WARN, "Catchup template query exceeds buffer size");
       return NULL;
     }
     return strdup(query);
@@ -730,31 +566,41 @@ static char *extract_path_template_query(const char *url) {
 
   if (snprintf(query, sizeof(query), "playseek=%s", begin_value) >=
       (int)sizeof(query)) {
-    logger(LOG_WARN, "Path template query exceeds buffer size");
+    logger(LOG_WARN, "Catchup template query exceeds buffer size");
     return NULL;
   }
 
   return strdup(query);
 }
 
-static char *merge_dynamic_param_strings(const char *first, const char *second) {
-  size_t total_len;
-  char *merged;
+static int build_appended_catchup_url(const char *base_url,
+                                      const char *catchup_source,
+                                      char *output, size_t output_size) {
+  const char *separator;
+  const char *suffix;
+  int written;
 
-  if (!first && !second)
-    return NULL;
-  if (!first)
-    return strdup(second);
-  if (!second)
-    return strdup(first);
+  if (!base_url || !catchup_source || !output || output_size == 0)
+    return -1;
 
-  total_len = strlen(first) + strlen(second) + 2;
-  merged = malloc(total_len);
-  if (!merged)
-    return NULL;
+  if (catchup_source[0] == '\0')
+    return -1;
 
-  snprintf(merged, total_len, "%s&%s", first, second);
-  return merged;
+  separator = strchr(base_url, '?') ? "&" : "?";
+  if (catchup_source[0] == '?' || catchup_source[0] == '&') {
+    suffix = catchup_source + 1;
+  } else {
+    suffix = catchup_source;
+  }
+
+  written = snprintf(output, output_size, "%s%s%s", base_url, separator,
+                     suffix);
+  if (written < 0 || (size_t)written >= output_size) {
+    logger(LOG_WARN, "Appended catchup URL exceeds buffer size");
+    return -1;
+  }
+
+  return 0;
 }
 
 /* Extract actual URL from http://host:port/protocol/actual_url format
@@ -1051,7 +897,8 @@ static char *find_unique_service_name(const char *service_name) {
  * (caller must free), or NULL on error
  */
 static char *create_service_from_url(const char *service_name, const char *url,
-                                     service_source_t source) {
+                                     service_source_t source,
+                                     int strip_url_label) {
   char normalized_url[MAX_URL_LENGTH];
   char extracted_url[MAX_URL_LENGTH];
   service_t *new_service = NULL;
@@ -1070,10 +917,11 @@ static char *create_service_from_url(const char *service_name, const char *url,
     normalized_url[sizeof(normalized_url) - 1] = '\0';
   }
 
-  /* Strip $label suffix from URL before creating service
-   * ($label is a UI display tag at the end of URL, not part of the actual
-   * address) */
-  http_strip_url_label(normalized_url);
+  /* Strip $label suffix only for main entry URLs.
+   * catchup-source does not support $label semantics, so preserve it
+   * literally when creating catchup services. */
+  if (strip_url_label)
+    http_strip_url_label(normalized_url);
 
   /* Find unique service name (handles duplicates automatically) */
   unique_name = find_unique_service_name(service_name);
@@ -1338,43 +1186,53 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
         }
 
         /* Recognizable URL: create service first to get unique name */
-        char *unique_service_name =
-            create_service_from_url(name_with_label, line, service_source);
+        char *unique_service_name = create_service_from_url(
+          name_with_label, line, service_source, 1);
 
         if (unique_service_name) {
           char *unique_catchup_name = NULL;
           int catchup_is_recognizable = 0;
+          char line_without_label[MAX_M3U_LINE];
+          char appended_catchup_url[MAX_URL_LENGTH];
+          const char *catchup_service_url = current_extinf.catchup_source;
+
+          strncpy(line_without_label, line, sizeof(line_without_label) - 1);
+          line_without_label[sizeof(line_without_label) - 1] = '\0';
+          http_strip_url_label(line_without_label);
 
           /* Create catchup service if present and URL is recognizable */
           if (current_extinf.has_catchup &&
               strlen(current_extinf.catchup_source) > 0) {
             catchup_is_recognizable =
                 is_url_recognizable(current_extinf.catchup_source);
+
+            if (!catchup_is_recognizable &&
+                is_url_recognizable(line_without_label) &&
+                build_appended_catchup_url(line_without_label,
+                                           current_extinf.catchup_source,
+                                           appended_catchup_url,
+                                           sizeof(appended_catchup_url)) == 0) {
+              catchup_service_url = appended_catchup_url;
+              catchup_is_recognizable = 1;
+            }
+
             if (catchup_is_recognizable) {
               char catchup_name[MAX_SERVICE_NAME + 20];
               snprintf(catchup_name, sizeof(catchup_name), "%s/catchup",
                        unique_service_name);
-              unique_catchup_name = create_service_from_url(
-                  catchup_name, current_extinf.catchup_source, service_source);
+                unique_catchup_name = create_service_from_url(
+                  catchup_name, catchup_service_url, service_source, 0);
             }
           }
 
           /* Extract dynamic params from URL without $label to avoid
            * $label causing static params (like fcc) to be treated as dynamic */
-          char line_without_label[MAX_M3U_LINE];
-          strncpy(line_without_label, line, sizeof(line_without_label) - 1);
-          line_without_label[sizeof(line_without_label) - 1] = '\0';
-          http_strip_url_label(line_without_label);
           char *main_query = extract_dynamic_params(line_without_label);
-          int main_url_has_query = 0;
 
           /* Build service URL using the actual unique service name for
            * transformed M3U */
           if (build_service_url(unique_service_name, main_query, proxy_url,
                                 sizeof(proxy_url)) == 0) {
-            /* Check if the generated URL has query parameters */
-            main_url_has_query = (strchr(proxy_url, '?') != NULL);
-
             /* Append raw $label to the very end of proxy URL (after any query
              * params) so that it always appears as the last part of the URL */
             if (url_label_copy[0] != '\0') {
@@ -1389,96 +1247,47 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
           /* Now generate the transformed EXTINF line with unique names */
           if (unique_catchup_name && catchup_is_recognizable) {
             /* Replace catchup-source URL in EXTINF line */
-            char *catchup_dynamic_query =
-              extract_dynamic_params(current_extinf.catchup_source);
-            char *catchup_path_query =
-              extract_path_template_query(current_extinf.catchup_source);
-            char *catchup_query = merge_dynamic_param_strings(
-              catchup_dynamic_query, catchup_path_query);
+            char *catchup_query =
+              extract_catchup_template_query(catchup_service_url);
             char catchup_proxy_url[MAX_URL_LENGTH];
+            char rewritten_extinf[MAX_M3U_LINE];
+
+            rewrite_catchup_mode_for_proxy(transformed_line, rewritten_extinf,
+                                           sizeof(rewritten_extinf));
 
             if (build_service_url(unique_catchup_name, catchup_query,
                                   catchup_proxy_url,
                                   sizeof(catchup_proxy_url)) == 0) {
               /* Find and replace catchup-source in line */
               char *catchup_start =
-                  strstr(transformed_line, "catchup-source=\"");
+                  strstr(rewritten_extinf, "catchup-source=\"");
               if (catchup_start) {
                 catchup_start += 16; /* Skip 'catchup-source="' */
                 char *catchup_end = strchr(catchup_start, '"');
                 if (catchup_end) {
                   /* Build transformed EXTINF line */
-                  size_t prefix_len = catchup_start - transformed_line;
+                  size_t prefix_len = catchup_start - rewritten_extinf;
                   char final_extinf[MAX_M3U_LINE];
                   snprintf(final_extinf, sizeof(final_extinf), "%.*s%s%s",
-                           (int)prefix_len, transformed_line, catchup_proxy_url,
+                           (int)prefix_len, rewritten_extinf, catchup_proxy_url,
                            catchup_end);
                   append_to_transformed_m3u(final_extinf, service_source);
                   append_to_transformed_m3u("\n", service_source);
                 } else {
-                  append_to_transformed_m3u(transformed_line, service_source);
+                  append_to_transformed_m3u(rewritten_extinf, service_source);
                   append_to_transformed_m3u("\n", service_source);
                 }
               } else {
-                append_to_transformed_m3u(transformed_line, service_source);
+                append_to_transformed_m3u(rewritten_extinf, service_source);
                 append_to_transformed_m3u("\n", service_source);
               }
             } else {
-              append_to_transformed_m3u(transformed_line, service_source);
+              append_to_transformed_m3u(rewritten_extinf, service_source);
               append_to_transformed_m3u("\n", service_source);
             }
 
             if (catchup_query)
               free(catchup_query);
-            if (catchup_dynamic_query)
-              free(catchup_dynamic_query);
-            if (catchup_path_query)
-              free(catchup_path_query);
-          } else if (current_extinf.has_catchup &&
-                     strlen(current_extinf.catchup_source) > 0 &&
-                     !catchup_is_recognizable &&
-                     (current_extinf.catchup_source[0] == '&' ||
-                      current_extinf.catchup_source[0] == '?')) {
-            /* catchup-source is not recognizable but starts with '&' or '?',
-             * and main service was converted. Adjust the leading character
-             * based on whether main URL has query parameters:
-             * - Main URL has '?': catchup-source should start with '&'
-             * - Main URL has no '?': catchup-source should start with '?' */
-            char expected_char = main_url_has_query ? '&' : '?';
-            char current_char = current_extinf.catchup_source[0];
-
-            if (current_char == expected_char) {
-              /* Already correct, keep as-is */
-              append_to_transformed_m3u(transformed_line, service_source);
-              append_to_transformed_m3u("\n", service_source);
-            } else {
-              /* Need to replace leading character */
-              char *catchup_start =
-                  strstr(transformed_line, "catchup-source=\"");
-              if (catchup_start) {
-                catchup_start += 16; /* Skip 'catchup-source="' */
-                char *catchup_end = strchr(catchup_start, '"');
-                if (catchup_end) {
-                  /* Build transformed EXTINF line with modified catchup-source
-                   */
-                  size_t prefix_len = catchup_start - transformed_line;
-                  char final_extinf[MAX_M3U_LINE];
-                  /* Replace leading char with expected_char */
-                  snprintf(final_extinf, sizeof(final_extinf), "%.*s%c%.*s%s",
-                           (int)prefix_len, transformed_line, expected_char,
-                           (int)(catchup_end - catchup_start - 1),
-                           catchup_start + 1, catchup_end);
-                  append_to_transformed_m3u(final_extinf, service_source);
-                  append_to_transformed_m3u("\n", service_source);
-                } else {
-                  append_to_transformed_m3u(transformed_line, service_source);
-                  append_to_transformed_m3u("\n", service_source);
-                }
-              } else {
-                append_to_transformed_m3u(transformed_line, service_source);
-                append_to_transformed_m3u("\n", service_source);
-              }
-            }
           } else {
             /* No catchup or unrecognizable catchup URL, use original EXTINF */
             append_to_transformed_m3u(transformed_line, service_source);
