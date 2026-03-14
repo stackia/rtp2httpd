@@ -73,6 +73,8 @@ for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do
 done
 
 # ── Run tests via uv ─────────────────────────────────────────────────────
+# Use loadscope so large suites can parallelize at class/module scope rather
+# than pinning an entire test file to one worker.
 
 echo "─── Running E2E tests (workers: $PARALLEL) ───"
 echo ""
@@ -82,5 +84,5 @@ cd "$PROJECT_ROOT"
 if [[ "$PARALLEL" == "1" ]]; then
     exec uv run pytest "$TEST_PATH" -v "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"
 else
-    exec uv run pytest "$TEST_PATH" -v -n "$PARALLEL" --dist loadfile "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"
+    exec uv run pytest "$TEST_PATH" -v -n "$PARALLEL" --dist loadscope "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"
 fi
