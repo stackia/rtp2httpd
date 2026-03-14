@@ -569,6 +569,18 @@ return view.extend({
 
     o = s.taboption(
       "advanced",
+      form.Value,
+      "rtsp_user_agent",
+      _("RTSP User-Agent"),
+      _(
+        "User-Agent header used for upstream RTSP requests. Leave empty to use the default rtp2httpd/<version>."
+      )
+    );
+    o.placeholder = "";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "advanced",
       form.Flag,
       "video_snapshot",
       _("Video Snapshot"),

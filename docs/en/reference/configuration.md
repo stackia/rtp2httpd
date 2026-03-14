@@ -32,7 +32,6 @@ rtp2httpd [options]
 
 > [!TIP]
 > In addition to global configuration, you can specify upstream interfaces per request using the `r2h-ifname` and `r2h-ifname-fcc` URL parameters. See [URL Formats](/en/guide/url-formats) for details.
-
 > [!TIP]
 > On FreeBSD, specifying upstream interfaces is not supported except for multicast.
 
@@ -79,7 +78,12 @@ rtp2httpd [options]
 
 - `-U, --noudpxy` - Disable UDPxy compatibility mode (when disabled, only services defined in `[services]` or `external-m3u` can be used)
 
-### RTSP NAT Traversal
+### RTSP Options
+
+- `-u, --rtsp-user-agent <value>` - User-Agent header for upstream RTSP requests (default: `rtp2httpd/<version>`)
+  - Applies to upstream RTSP requests such as OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN, and GET_PARAMETER
+  - Some upstream RTSP servers validate or require a specific User-Agent, so this option can be used for compatibility
+  - When left empty, the built-in default value is used
 
 - `-N, --rtsp-stun-server <host:port>` - STUN server address (default: disabled)
   - When an RTSP server only supports UDP transport and the client is behind NAT, STUN can be used to attempt NAT traversal (not guaranteed to succeed)
@@ -191,6 +195,10 @@ udp-rcvbuf-size = 524288
 # Can improve throughput and reduce CPU usage on supported devices, especially under high concurrent loads
 # Not recommended if rtp2httpd is behind a reverse proxy (nginx/caddy/lucky, etc.)
 zerocopy-on-send = no
+
+# User-Agent for upstream RTSP requests (default: rtp2httpd/<version>)
+# Configure this when an upstream RTSP server requires a specific User-Agent for compatibility
+rtsp-user-agent = rtp2httpd/custom
 
 # STUN server for RTSP NAT traversal (default: disabled)
 # When an RTSP server only supports UDP transport and the client is behind NAT, STUN can be used to attempt NAT traversal (not guaranteed to succeed)

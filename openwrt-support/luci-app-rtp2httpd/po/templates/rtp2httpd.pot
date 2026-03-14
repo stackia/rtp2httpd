@@ -226,6 +226,14 @@ msgstr ""
 msgid "RTSP STUN Server"
 msgstr ""
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js:432
+msgid "RTSP User-Agent"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:433
+msgid "User-Agent header used for upstream RTSP requests. Leave empty to use the default rtp2httpd/<version>."
+msgstr ""
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:188
 msgid "Respawn"
 msgstr ""

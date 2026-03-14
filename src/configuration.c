@@ -48,6 +48,7 @@ int cmd_workers_set = 0;
 int cmd_external_m3u_url_set = 0;
 int cmd_external_m3u_update_interval_set = 0;
 int cmd_rtsp_stun_server_set = 0;
+int cmd_rtsp_user_agent_set = 0;
 int cmd_cors_allow_origin_set = 0;
 
 enum section_e { SEC_NONE = 0, SEC_BIND, SEC_SERVICES, SEC_GLOBAL };
@@ -570,6 +571,16 @@ void parse_global_sec(char *line) {
     return;
   }
 
+  if (strcasecmp("rtsp-user-agent", param) == 0) {
+    if (set_if_not_cmd_override(cmd_rtsp_user_agent_set, "rtsp-user-agent")) {
+      safe_free_string(&config.rtsp_user_agent);
+      if (value[0] != '\0') {
+        config.rtsp_user_agent = strdup(value);
+      }
+    }
+    return;
+  }
+
   /* CORS configuration */
   if (strcasecmp("cors-allow-origin", param) == 0) {
     if (set_if_not_cmd_override(cmd_cors_allow_origin_set,
@@ -818,6 +829,8 @@ void config_cleanup(bool force_free) {
     safe_free_string(&config.external_m3u_url);
   if (!cmd_rtsp_stun_server_set || force_free)
     safe_free_string(&config.rtsp_stun_server);
+  if (!cmd_rtsp_user_agent_set || force_free)
+    safe_free_string(&config.rtsp_user_agent);
   if (!cmd_cors_allow_origin_set || force_free)
     safe_free_string(&config.cors_allow_origin);
 
@@ -1016,6 +1029,8 @@ void usage(FILE *f, char *progname) {
       "(default: 7200 = 2h, 0=disabled)\n"
       "\t-Z --zerocopy-on-send    Enable zero-copy send with MSG_ZEROCOPY for "
       "better performance (default: off)\n"
+      "\t-u --rtsp-user-agent <value>  User-Agent header for upstream RTSP requests "
+      "(default: rtp2httpd/<version>)\n"
       "\t-N --rtsp-stun-server <host:port>  STUN server for RTSP NAT traversal "
       "(default: disabled)\n"
       "\t-O --cors-allow-origin <origin>  Set Access-Control-Allow-Origin header "
@@ -1086,10 +1101,11 @@ void parse_cmd_line(int argc, char *argv[]) {
       {"external-m3u-update-interval", required_argument, 0, 'I'},
       {"zerocopy-on-send", no_argument, 0, 'Z'},
       {"rtsp-stun-server", required_argument, 0, 'N'},
+      {"rtsp-user-agent", required_argument, 0, 'u'},
       {"cors-allow-origin", required_argument, 0, 'O'},
       {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:y:R:F:A:s:p:M:I:SCZN:O:";
+  const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:y:R:F:A:s:p:M:I:SCZN:u:O:";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1275,6 +1291,13 @@ void parse_cmd_line(int argc, char *argv[]) {
       config.rtsp_stun_server = strdup(optarg);
       cmd_rtsp_stun_server_set = 1;
       logger(LOG_INFO, "RTSP STUN server: %s", config.rtsp_stun_server);
+      break;
+    case 'u':
+      safe_free_string(&config.rtsp_user_agent);
+      if (optarg[0] != '\0') {
+        config.rtsp_user_agent = strdup(optarg);
+      }
+      cmd_rtsp_user_agent_set = 1;
       break;
     case 'O':
       safe_free_string(&config.cors_allow_origin);

@@ -29,8 +29,6 @@
  * to upstream HTTP servers and streams the response back to clients.
  */
 
-#define HTTP_PROXY_USER_AGENT "rtp2httpd/" VERSION
-
 /* Helper function prototypes */
 static int http_proxy_build_request(http_proxy_session_t *session);
 static int http_proxy_try_send_pending(http_proxy_session_t *session);
