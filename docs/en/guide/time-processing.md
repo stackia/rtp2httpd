@@ -96,6 +96,8 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=202401011200
 
 Used to specify starting playback of an RTSP stream from a specific time point, implementing resume functionality. This parameter value will be sent as an NPT (Normal Play Time) format time point to the RTSP server in the RTSP PLAY request via the `Range: npt=<time-point>-` header. This parameter is only valid for RTSP proxy.
 
+To improve compatibility with RTSP servers of most ISPs in China, if the same RTSP request also contains a seek parameter (including `playseek`, `tvdr`, and custom `r2h-seek-name`) whose start time is less than 1 hour from the current time, `r2h-start` will be ignored and the seek start time will be used to generate a `Range: clock=` header instead.
+
 #### Example
 
 ```url
@@ -165,6 +167,16 @@ playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
 - Full format (format 5) supports millisecond precision (.sss)
 
 ## Timezone Handling Mechanism
+
+### RTSP Recent Seek Handling
+
+For the RTSP proxy, in addition to passing seek parameters to the upstream as URL query parameters (same as HTTP proxy), a "near-realtime" branch is also supported. The seek parameters here include `playseek`, `tvdr`, and any custom parameter specified via `r2h-seek-name`:
+
+- When the seek start time satisfies "current time - start time < 3600 seconds", rtp2httpd will not pass the seek parameter through to the upstream RTSP URL
+- This branch only uses the seek start time; the end time is ignored
+- The RTSP `PLAY` request will send `Range: clock=<yyyyMMddTHHmmssZ>-`
+- When the seek start time is exactly 1 hour ago, this branch is not triggered and the parameter is passed through as a normal URL parameter
+- If the seek value cannot be parsed, the original pass-through behavior is preserved
 
 ### Timezone Recognition
 

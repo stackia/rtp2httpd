@@ -86,8 +86,6 @@ const base: TranslationDict = {
 	themeAuto: "Auto",
 	themeLight: "Light",
 	themeDark: "Dark",
-	catchupTailOffset: "Catchup Tail Offset",
-	catchupTailOffsetHint: "0 means current time, in seconds",
 	force16x9: "Force 16:9",
 	mp2SoftDecode: "MP2 Audio Software Decoder",
 };
@@ -176,8 +174,6 @@ const zhHans: TranslationDict = {
 	themeAuto: "自动",
 	themeLight: "浅色",
 	themeDark: "深色",
-	catchupTailOffset: "回看切片尾偏移",
-	catchupTailOffsetHint: "0 表示当前，单位秒",
 	force16x9: "强制 16:9",
 	mp2SoftDecode: "MP2 音频软解",
 };
@@ -267,8 +263,6 @@ const zhHant: TranslationDict = {
 	themeAuto: "自動",
 	themeLight: "淺色",
 	themeDark: "深色",
-	catchupTailOffset: "回看切片尾偏移",
-	catchupTailOffsetHint: "0 表示當前，單位秒",
 	force16x9: "強制 16:9",
 	mp2SoftDecode: "MP2 音頻軟解",
 };

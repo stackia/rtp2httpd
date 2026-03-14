@@ -7,21 +7,6 @@
 #include <time.h>
 
 typedef struct {
-  int has_seek;
-  int has_begin;
-  int has_end;
-  int tz_offset_seconds;
-  int seek_offset_seconds;
-  time_t begin_utc;
-  time_t end_utc;
-  time_t now_utc;
-  struct tm begin_tm_utc;
-  struct tm end_tm_utc;
-  struct tm begin_tm_local;
-  struct tm end_tm_local;
-} seek_context_t;
-
-typedef struct {
   const char *long_name;
   const char *short_name;
 } time_component_def_t;
@@ -30,44 +15,6 @@ static const time_component_def_t time_components[] = {
     {"yyyy", "Y"}, {"MM", "m"}, {"dd", "d"},
     {"HH", "H"},   {"mm", "M"}, {"ss", "S"},
     {NULL, NULL}};
-
-static int is_valid_seek_time_value(const char *value) {
-  time_t parsed_time;
-
-  if (!value || value[0] == '\0')
-    return 0;
-
-  return timezone_parse_to_utc(value, 0, 0, &parsed_time) == 0;
-}
-
-static const char *find_seek_range_separator(const char *value) {
-  const char *separator;
-
-  if (!value)
-    return NULL;
-
-  separator = value;
-  while ((separator = strchr(separator, '-')) != NULL) {
-    char begin_candidate[128] = {0};
-    size_t begin_len = (size_t)(separator - value);
-
-    if (begin_len > 0 && begin_len < sizeof(begin_candidate)) {
-      memcpy(begin_candidate, value, begin_len);
-      begin_candidate[begin_len] = '\0';
-
-      if (is_valid_seek_time_value(begin_candidate)) {
-        const char *end_candidate = separator + 1;
-
-        if (*end_candidate == '\0' || is_valid_seek_time_value(end_candidate))
-          return separator;
-      }
-    }
-
-    separator++;
-  }
-
-  return NULL;
-}
 
 static int append_template_fragment(char *buffer, size_t buffer_size,
                                     size_t *buffer_len,
@@ -561,95 +508,6 @@ static int template_query_requirements(const char *url, int *has_template,
   return 0;
 }
 
-static int seek_context_time_to_tm(time_t timestamp, struct tm *output) {
-  struct tm *tmp;
-
-  if (!output)
-    return -1;
-
-  tmp = gmtime(&timestamp);
-  if (!tmp)
-    return -1;
-
-  *output = *tmp;
-  return 0;
-}
-
-static int seek_context_init(seek_context_t *ctx, const char *seek_param_value,
-                             int tz_offset_seconds,
-                             int seek_offset_seconds) {
-  char begin_str[128] = {0};
-  char end_str[128] = {0};
-  const char *dash_pos;
-
-  if (!ctx)
-    return -1;
-
-  memset(ctx, 0, sizeof(*ctx));
-  ctx->tz_offset_seconds = tz_offset_seconds;
-  ctx->seek_offset_seconds = seek_offset_seconds;
-  ctx->now_utc = time(NULL);
-
-  if (!seek_param_value || seek_param_value[0] == '\0')
-    return 0;
-
-  ctx->has_seek = 1;
-  dash_pos = find_seek_range_separator(seek_param_value);
-
-  if (dash_pos) {
-    size_t begin_len = (size_t)(dash_pos - seek_param_value);
-    if (begin_len >= sizeof(begin_str)) {
-      logger(LOG_ERROR, "Seek begin value too long");
-      return -1;
-    }
-    memcpy(begin_str, seek_param_value, begin_len);
-    begin_str[begin_len] = '\0';
-    strncpy(end_str, dash_pos + 1, sizeof(end_str) - 1);
-    end_str[sizeof(end_str) - 1] = '\0';
-  } else {
-    strncpy(begin_str, seek_param_value, sizeof(begin_str) - 1);
-    begin_str[sizeof(begin_str) - 1] = '\0';
-  }
-
-  if (begin_str[0] != '\0') {
-    if (timezone_parse_to_utc(begin_str, tz_offset_seconds,
-                              seek_offset_seconds, &ctx->begin_utc) != 0) {
-      logger(LOG_ERROR, "Failed to parse begin time '%s' for template",
-             begin_str);
-      return -1;
-    }
-    ctx->has_begin = 1;
-  }
-
-  if (end_str[0] != '\0') {
-    if (timezone_parse_to_utc(end_str, tz_offset_seconds,
-                              seek_offset_seconds, &ctx->end_utc) != 0) {
-      logger(LOG_ERROR, "Failed to parse end time '%s' for template",
-             end_str);
-      return -1;
-    }
-    ctx->has_end = 1;
-  }
-
-  if (ctx->has_begin) {
-    if (seek_context_time_to_tm(ctx->begin_utc, &ctx->begin_tm_utc) != 0)
-      return -1;
-    if (seek_context_time_to_tm(ctx->begin_utc + tz_offset_seconds,
-                                &ctx->begin_tm_local) != 0)
-      return -1;
-  }
-
-  if (ctx->has_end) {
-    if (seek_context_time_to_tm(ctx->end_utc, &ctx->end_tm_utc) != 0)
-      return -1;
-    if (seek_context_time_to_tm(ctx->end_utc + tz_offset_seconds,
-                                &ctx->end_tm_local) != 0)
-      return -1;
-  }
-
-  return 0;
-}
-
 static int append_output_string(char *output, size_t output_size,
                                 size_t *output_pos, const char *value) {
   size_t value_len;
@@ -727,12 +585,12 @@ static int format_time_by_pattern(const struct tm *t, const char *fmt,
 }
 
 static int render_be_format(const char *fmt, size_t fmt_len, int is_begin,
-                            int use_short, const seek_context_t *ctx,
+                            int use_short, const seek_parse_result_t *ctx,
                             char *val, size_t val_size) {
   const struct tm *tm_utc = is_begin ? &ctx->begin_tm_utc : &ctx->end_tm_utc;
   time_t epoch = is_begin ? ctx->begin_utc : ctx->end_utc;
 
-  if ((is_begin && !ctx->has_begin) || (!is_begin && !ctx->has_end)) {
+  if ((is_begin && !ctx->begin_parsed) || (!is_begin && !ctx->end_parsed)) {
     logger(LOG_ERROR,
            "Template requires %s time but seek value does not provide it",
            is_begin ? "begin" : "end");
@@ -769,7 +627,7 @@ static int render_be_format(const char *fmt, size_t fmt_len, int is_begin,
 }
 
 static int render_keyword(const char *inner, int use_short,
-                          const seek_context_t *ctx, const struct tm *now_tm,
+                          const seek_parse_result_t *ctx, const struct tm *now_tm,
                           char *val, size_t val_size) {
   char buf[128];
   char *colon;
@@ -783,11 +641,11 @@ static int render_keyword(const char *inner, int use_short,
 
     *colon = '\0';
     if (strcmp(buf, "utc") == 0 || strcmp(buf, "start") == 0) {
-      if (!ctx->has_begin)
+      if (!ctx->begin_parsed)
         return -1;
       tm_target = &ctx->begin_tm_utc;
     } else if (strcmp(buf, "utcend") == 0 || strcmp(buf, "end") == 0) {
-      if (!ctx->has_end)
+      if (!ctx->end_parsed)
         return -1;
       tm_target = &ctx->end_tm_utc;
     } else if (strcmp(buf, "lutc") == 0 || strcmp(buf, "now") == 0 ||
@@ -805,13 +663,13 @@ static int render_keyword(const char *inner, int use_short,
   }
 
   if (strcmp(inner, "utc") == 0 || strcmp(inner, "start") == 0) {
-    if (!ctx->has_begin ||
+    if (!ctx->begin_parsed ||
         timezone_format_time_iso8601(&ctx->begin_tm_utc, 0, "Z", val, val_size) != 0)
       return -1;
     return 1;
   }
   if (strcmp(inner, "utcend") == 0 || strcmp(inner, "end") == 0) {
-    if (!ctx->has_end ||
+    if (!ctx->end_parsed ||
         timezone_format_time_iso8601(&ctx->end_tm_utc, 0, "Z", val, val_size) != 0)
       return -1;
     return 1;
@@ -828,7 +686,7 @@ static int render_keyword(const char *inner, int use_short,
     return 1;
   }
   if (strcmp(inner, "duration") == 0) {
-    if (!ctx->has_begin || !ctx->has_end)
+    if (!ctx->begin_parsed || !ctx->end_parsed)
       return -1;
     if (snprintf(val, val_size, "%lld",
                  (long long)(ctx->end_utc - ctx->begin_utc)) >= (int)val_size)
@@ -836,7 +694,7 @@ static int render_keyword(const char *inner, int use_short,
     return 1;
   }
   if (strcmp(inner, "offset") == 0) {
-    if (!ctx->has_begin)
+    if (!ctx->begin_parsed)
       return -1;
     if (snprintf(val, val_size, "%lld",
                  (long long)(ctx->now_utc - ctx->begin_utc)) >= (int)val_size)
@@ -854,7 +712,7 @@ static int render_keyword(const char *inner, int use_short,
         int comp;
         int width;
 
-        if (!ctx->has_begin)
+        if (!ctx->begin_parsed)
           return -1;
         comp = get_tm_component(&ctx->begin_tm_utc, i);
         width = (i == 0) ? 4 : 2;
@@ -870,7 +728,7 @@ static int render_keyword(const char *inner, int use_short,
 
 static int render_placeholder(const char *p, int inner_offset,
                               int be_char_offset, int fmt_offset,
-                              int use_short, const seek_context_t *ctx,
+                              int use_short, const seek_parse_result_t *ctx,
                               const struct tm *now_tm, char *output,
                               size_t output_size, size_t *output_pos) {
   if (p[inner_offset] == '(' &&
@@ -926,7 +784,7 @@ static int render_placeholder(const char *p, int inner_offset,
   return 0;
 }
 
-static int render_template_url(const char *url, const seek_context_t *ctx,
+static int render_template_url(const char *url, const seek_parse_result_t *ctx,
                                char *output, size_t output_size) {
   size_t output_pos = 0;
   const char *p;
@@ -936,8 +794,12 @@ static int render_template_url(const char *url, const seek_context_t *ctx,
     return -1;
 
   output[0] = '\0';
-  if (seek_context_time_to_tm(ctx->now_utc, &now_tm) != 0)
-    return -1;
+  {
+    struct tm *tmp = gmtime(&ctx->now_utc);
+    if (!tmp)
+      return -1;
+    now_tm = *tmp;
+  }
 
   p = url;
   while (*p) {
@@ -1080,23 +942,29 @@ int url_template_has_placeholders(const char *url) {
   return 0;
 }
 
-int url_template_resolve(const char *url, const char *seek_param_value,
-                         int tz_offset_seconds, int seek_offset_seconds,
+int url_template_resolve(const char *url,
+                         const seek_parse_result_t *parse_result,
                          char *output, size_t output_size) {
-  seek_context_t ctx;
-
-  if (!url || !output || output_size == 0)
+  if (!url || !parse_result || !output || output_size == 0)
     return -1;
 
-  if (seek_context_init(&ctx, seek_param_value, tz_offset_seconds,
-                        seek_offset_seconds) != 0)
-    return -1;
-
-  if (!ctx.has_seek) {
+  if (!parse_result->has_seek) {
     strncpy(output, url, output_size - 1);
     output[output_size - 1] = '\0';
     return 0;
   }
 
-  return render_template_url(url, &ctx, output, output_size);
+  if (parse_result->has_begin && !parse_result->begin_parsed) {
+    logger(LOG_ERROR, "Failed to parse begin time '%s' for template",
+           parse_result->begin_str);
+    return -1;
+  }
+
+  if (parse_result->has_end && !parse_result->end_parsed) {
+    logger(LOG_ERROR, "Failed to parse end time '%s' for template",
+           parse_result->end_str);
+    return -1;
+  }
+
+  return render_template_url(url, parse_result, output, output_size);
 }

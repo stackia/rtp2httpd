@@ -149,10 +149,9 @@ function mergeChannelSources(channels: Channel[]): Channel[] {
  * Build catchup segments with playseek parameter
  * @param source - The source containing url, catchup mode, and catchupSource
  * @param startTime - Start time for playback
- * @param tailOffsetSeconds - Tail offset in seconds (0 means current time, positive values move the tail back)
  * @returns Array of media segments for catchup playback
  */
-export function buildCatchupSegments(source: Source, startTime: Date, tailOffsetSeconds: number = 0): PlayerSegment[] {
+export function buildCatchupSegments(source: Source, startTime: Date): PlayerSegment[] {
 	if (!source.catchupSource) {
 		throw new Error("Source does not have catchup source configured");
 	}
@@ -442,14 +441,14 @@ export function buildCatchupSegments(source: Source, startTime: Date, tailOffset
 
 	// Segment duration: (now - startTime) in both seconds and milliseconds
 	const segmentDurationMs = Math.min(
-		Math.max(now.getTime() + tailOffsetSeconds * 1000 - startTime.getTime(), 10000), // min 10s
+		Math.max(now.getTime() - startTime.getTime(), 10000), // min 10s
 		5 * 60 * 60 * 1000, // max 5 hours
 	);
 	const segmentDurationSec = segmentDurationMs / 1000;
 
 	// Build segments from startTime to now (catchup/replay segments)
 	let currentTime = new Date(startTime.getTime());
-	const splitPoint = new Date(now.getTime() + tailOffsetSeconds * 1000 - 10000);
+	const splitPoint = new Date(now.getTime() - 10000);
 
 	while (currentTime < splitPoint) {
 		const segmentEndTime = new Date(Math.min(currentTime.getTime() + segmentDurationMs, splitPoint.getTime()));

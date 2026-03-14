@@ -164,6 +164,8 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
 
   /* Initialize media path depending on service type */
   if (service->service_type == SERVICE_HTTP) {
+    seek_parse_result_t seek_parse_result;
+
     /* Snapshot mode is not supported for HTTP proxy - ignore is_snapshot */
     http_proxy_session_init(&ctx->http_proxy);
     ctx->http_proxy.epoll_fd = ctx->epoll_fd;
@@ -177,14 +179,20 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
       return -1;
     }
 
+    if (service_parse_seek_value(service->seek_param_value,
+                                 service->seek_offset_seconds,
+                                 service->user_agent,
+                                 &seek_parse_result) != 0) {
+      logger(LOG_ERROR, "HTTP Proxy: Failed to parse seek parameters");
+      return -1;
+    }
+
     /* Build proxy URL with template substitution or seek param append */
     char proxy_url[2048];
     if (service_resolve_upstream_url(service->http_url,
-                                    service->seek_param_name,
-                                    service->seek_param_value,
-                                    service->seek_offset_seconds,
-                                    service->user_agent,
-                                    proxy_url, sizeof(proxy_url)) < 0) {
+                                     service->seek_param_name,
+                                     &seek_parse_result,
+                                     proxy_url, sizeof(proxy_url)) < 0) {
       logger(LOG_ERROR, "HTTP Proxy: Failed to resolve upstream URL");
       return -1;
     }
@@ -244,6 +252,9 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
 
     if (service->service_type == SERVICE_RTSP) {
       /* Initialize RTSP session */
+      seek_parse_result_t seek_parse_result;
+      const char *resolved_seek_param_name = service->seek_param_name;
+
       rtsp_session_init(&ctx->rtsp);
       ctx->rtsp.status_index = status_index;
       ctx->rtsp.epoll_fd = ctx->epoll_fd;
@@ -255,15 +266,30 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
         return -1;
       }
 
+      if (service_parse_seek_value(service->seek_param_value,
+                                   service->seek_offset_seconds,
+                                   service->user_agent,
+                                   &seek_parse_result) != 0) {
+        logger(LOG_ERROR, "RTSP: Failed to parse seek parameters");
+        return -1;
+      }
+
+      if (service_format_recent_seek_range(
+              &seek_parse_result, ctx->rtsp.playseek_range_start,
+              sizeof(ctx->rtsp.playseek_range_start)) > 0) {
+        ctx->rtsp.use_playseek_range = 1;
+        resolved_seek_param_name = NULL;
+      }
+
       /* Resolve URL templates / seek params, then parse */
       char resolved_rtsp_url[2048];
       if (service_resolve_upstream_url(service->rtsp_url,
-                                      service->seek_param_name,
-                                      service->seek_param_value,
-                                      service->seek_offset_seconds,
-                                      service->user_agent,
-                                      resolved_rtsp_url,
-                                      sizeof(resolved_rtsp_url)) < 0) {
+                                       resolved_seek_param_name,
+                                       ctx->rtsp.use_playseek_range
+                                           ? NULL
+                                           : &seek_parse_result,
+                                       resolved_rtsp_url,
+                                       sizeof(resolved_rtsp_url)) < 0) {
         logger(LOG_ERROR, "RTSP: Failed to resolve upstream URL");
         return -1;
       }

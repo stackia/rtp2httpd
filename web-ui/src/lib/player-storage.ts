@@ -33,7 +33,6 @@ export const [getLastChannelId, saveLastChannelId] = createStore<string | null>(
 	null,
 );
 export const [getSidebarVisible, saveSidebarVisible] = createStore("rtp2httpd-player-sidebar-visible", true);
-export const [getCatchupTailOffset, saveCatchupTailOffset] = createStore("rtp2httpd-player-catchup-tail-offset", 0);
 export const [getForce16x9, saveForce16x9] = createStore("rtp2httpd-player-force-16-9", true);
 export const [getMp2SoftDecode, saveMp2SoftDecode] = createStore(
 	"rtp2httpd-player-mp2-soft-decode",

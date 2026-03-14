@@ -612,63 +612,144 @@ static const char *find_seek_range_separator(const char *value) {
   return NULL;
 }
 
-int service_convert_seek_value(const char *seek_param_value,
-                               int tz_offset_seconds, int seek_offset_seconds,
-                               char *output, size_t output_size) {
-  char begin_str[128] = {0};
-  char end_str[128] = {0};
-  char begin_utc[128] = {0};
-  char end_utc[128] = {0};
+int service_parse_seek_value(const char *seek_param_value,
+                             int seek_offset_seconds,
+                             const char *user_agent,
+                             seek_parse_result_t *parse_result) {
   const char *dash_pos;
 
-  if (!seek_param_value || !output || output_size == 0)
+  if (!parse_result)
     return -1;
 
+  memset(parse_result, 0, sizeof(*parse_result));
+  parse_result->seek_offset_seconds = seek_offset_seconds;
+  parse_result->now_utc = time(NULL);
+
+  if (user_agent)
+    timezone_parse_from_user_agent(user_agent,
+                                   &parse_result->tz_offset_seconds);
+
+  if (!seek_param_value || seek_param_value[0] == '\0')
+    return 0;
+
+  parse_result->has_seek = 1;
   dash_pos = find_seek_range_separator(seek_param_value);
+  parse_result->has_range_separator = (dash_pos != NULL);
 
   if (dash_pos) {
-    size_t begin_len = dash_pos - seek_param_value;
-    if (begin_len < sizeof(begin_str)) {
-      strncpy(begin_str, seek_param_value, begin_len);
-      begin_str[begin_len] = '\0';
-      strncpy(end_str, dash_pos + 1, sizeof(end_str) - 1);
-      end_str[sizeof(end_str) - 1] = '\0';
+    size_t begin_len = (size_t)(dash_pos - seek_param_value);
+    if (begin_len > 0 && begin_len < sizeof(parse_result->begin_str)) {
+      memcpy(parse_result->begin_str, seek_param_value, begin_len);
+      parse_result->begin_str[begin_len] = '\0';
+      parse_result->has_begin = 1;
     }
+
+    strncpy(parse_result->end_str, dash_pos + 1,
+            sizeof(parse_result->end_str) - 1);
+    parse_result->end_str[sizeof(parse_result->end_str) - 1] = '\0';
+    if (parse_result->end_str[0] != '\0')
+      parse_result->has_end = 1;
   } else {
-    strncpy(begin_str, seek_param_value, sizeof(begin_str) - 1);
-    begin_str[sizeof(begin_str) - 1] = '\0';
+    strncpy(parse_result->begin_str, seek_param_value,
+            sizeof(parse_result->begin_str) - 1);
+    parse_result->begin_str[sizeof(parse_result->begin_str) - 1] = '\0';
+    if (parse_result->begin_str[0] != '\0')
+      parse_result->has_begin = 1;
   }
 
-  logger(LOG_DEBUG, "Parsed seek - begin='%s', end='%s'", begin_str, end_str);
+  if (parse_result->has_begin &&
+      timezone_parse_to_utc(parse_result->begin_str,
+                            parse_result->tz_offset_seconds,
+                            seek_offset_seconds,
+                            &parse_result->begin_utc) == 0) {
+    parse_result->begin_parsed = 1;
+  }
 
-  /* Convert begin time */
-  if (timezone_convert_time_with_offset(begin_str, tz_offset_seconds,
-                                        seek_offset_seconds, begin_utc,
-                                        sizeof(begin_utc)) == 0) {
-    logger(LOG_DEBUG, "Converted begin time '%s' to UTC '%s'", begin_str,
-           begin_utc);
+  if (parse_result->has_end &&
+      timezone_parse_to_utc(parse_result->end_str,
+                            parse_result->tz_offset_seconds,
+                            seek_offset_seconds,
+                            &parse_result->end_utc) == 0) {
+    parse_result->end_parsed = 1;
+  }
+
+  if (parse_result->begin_parsed) {
+    struct tm *tmp;
+    tmp = gmtime(&parse_result->begin_utc);
+    if (!tmp)
+      return -1;
+    parse_result->begin_tm_utc = *tmp;
+    time_t local_ts = parse_result->begin_utc + parse_result->tz_offset_seconds;
+    tmp = gmtime(&local_ts);
+    if (!tmp)
+      return -1;
+    parse_result->begin_tm_local = *tmp;
+  }
+
+  if (parse_result->end_parsed) {
+    struct tm *tmp;
+    tmp = gmtime(&parse_result->end_utc);
+    if (!tmp)
+      return -1;
+    parse_result->end_tm_utc = *tmp;
+    time_t local_ts = parse_result->end_utc + parse_result->tz_offset_seconds;
+    tmp = gmtime(&local_ts);
+    if (!tmp)
+      return -1;
+    parse_result->end_tm_local = *tmp;
+  }
+
+  if (parse_result->begin_parsed && parse_result->now_utc != (time_t)-1 &&
+      parse_result->begin_utc <= parse_result->now_utc &&
+      parse_result->now_utc - parse_result->begin_utc < 3600) {
+    parse_result->is_recent = 1;
+  }
+
+  return 0;
+}
+
+int service_convert_seek_value(
+    const seek_parse_result_t *parse_result, char *output,
+    size_t output_size) {
+  char begin_utc[128] = {0};
+  char end_utc[128] = {0};
+
+  if (!parse_result || !output || output_size == 0)
+    return -1;
+
+  if (!parse_result->has_seek)
+    return -1;
+
+  logger(LOG_DEBUG, "Parsed seek - begin='%s', end='%s'",
+         parse_result->begin_str, parse_result->end_str);
+
+  if (parse_result->has_begin &&
+      timezone_convert_time_with_offset(parse_result->begin_str,
+                                        parse_result->tz_offset_seconds,
+                                        parse_result->seek_offset_seconds,
+                                        begin_utc, sizeof(begin_utc)) == 0) {
+    logger(LOG_DEBUG, "Converted begin time '%s' to UTC '%s'",
+           parse_result->begin_str, begin_utc);
   } else {
-    strncpy(begin_utc, begin_str, sizeof(begin_utc) - 1);
+    strncpy(begin_utc, parse_result->begin_str, sizeof(begin_utc) - 1);
     begin_utc[sizeof(begin_utc) - 1] = '\0';
   }
 
-  /* Convert end time if present */
-  if (strlen(end_str) > 0) {
-    if (timezone_convert_time_with_offset(end_str, tz_offset_seconds,
-                                          seek_offset_seconds, end_utc,
-                                          sizeof(end_utc)) == 0) {
-      logger(LOG_DEBUG, "Converted end time '%s' to UTC '%s'", end_str,
-             end_utc);
+  if (parse_result->has_end) {
+    if (timezone_convert_time_with_offset(parse_result->end_str,
+                                          parse_result->tz_offset_seconds,
+                                          parse_result->seek_offset_seconds,
+                                          end_utc, sizeof(end_utc)) == 0) {
+      logger(LOG_DEBUG, "Converted end time '%s' to UTC '%s'",
+             parse_result->end_str, end_utc);
     } else {
-      strncpy(end_utc, end_str, sizeof(end_utc) - 1);
+      strncpy(end_utc, parse_result->end_str, sizeof(end_utc) - 1);
       end_utc[sizeof(end_utc) - 1] = '\0';
     }
     snprintf(output, output_size, "%s-%s", begin_utc, end_utc);
-  } else if (dash_pos) {
-    /* Open-ended range (had trailing dash) */
+  } else if (parse_result->has_range_separator) {
     snprintf(output, output_size, "%s-", begin_utc);
   } else {
-    /* No dash at all */
     snprintf(output, output_size, "%s", begin_utc);
   }
 
@@ -676,40 +757,59 @@ int service_convert_seek_value(const char *seek_param_value,
   return 0;
 }
 
-int service_resolve_upstream_url(const char *url,
-                                 const char *seek_param_name,
-                                 const char *seek_param_value,
-                                 int seek_offset_seconds,
-                                 const char *user_agent,
-                                 char *output, size_t output_size) {
-  int tz_offset = 0;
+int service_format_recent_seek_range(
+    const seek_parse_result_t *parse_result, char *output,
+    size_t output_size) {
+  if (!parse_result || !output || output_size == 0)
+    return -1;
+
+  output[0] = '\0';
+
+  if (!parse_result->is_recent || !parse_result->begin_parsed)
+    return 0;
+
+  if (output_size < 17)
+    return -1;
+
+  if (strftime(output, output_size, "%Y%m%dT%H%M%SZ",
+               &parse_result->begin_tm_utc) == 0)
+    return -1;
+
+  return 1;
+}
+
+int service_resolve_upstream_url(
+    const char *url, const char *seek_param_name,
+    const seek_parse_result_t *parse_result, char *output,
+    size_t output_size) {
   int has_template;
+  seek_parse_result_t empty_parse_result;
 
   if (!url || !output || output_size == 0)
     return -1;
 
-  if (user_agent)
-    timezone_parse_from_user_agent(user_agent, &tz_offset);
-
   has_template = url_template_has_placeholders(url);
 
+  if (!parse_result) {
+    memset(&empty_parse_result, 0, sizeof(empty_parse_result));
+    parse_result = &empty_parse_result;
+  }
+
   if (!has_template) {
-    /* Query-append mode: copy URL and append seek param as query parameter */
     strncpy(output, url, output_size - 1);
     output[output_size - 1] = '\0';
 
-    if (seek_param_name && seek_param_value && seek_param_value[0] != '\0' &&
-        strlen(seek_param_name) > 0 && strlen(seek_param_value) > 0) {
+    if (seek_param_name && parse_result->has_seek &&
+        strlen(seek_param_name) > 0) {
       char converted[256];
-      if (service_convert_seek_value(seek_param_value, tz_offset,
-                                     seek_offset_seconds, converted,
+      if (service_convert_seek_value(parse_result, converted,
                                      sizeof(converted)) == 0) {
         size_t current_len = strlen(output);
         char *query_marker = strchr(output, '?');
         size_t remain = output_size - current_len;
-        int written =
-            snprintf(output + current_len, remain, "%c%s=%s",
-                     query_marker ? '&' : '?', seek_param_name, converted);
+        int written = snprintf(output + current_len, remain, "%c%s=%s",
+                               query_marker ? '&' : '?', seek_param_name,
+                               converted);
         if (written < 0 || (size_t)written >= remain) {
           logger(LOG_ERROR, "URL too long to append seek parameter");
           output[current_len] = '\0';
@@ -720,8 +820,7 @@ int service_resolve_upstream_url(const char *url,
     return 0;
   }
 
-  return url_template_resolve(url, seek_param_value, tz_offset,
-                              seek_offset_seconds, output, output_size);
+  return url_template_resolve(url, parse_result, output, output_size);
 }
 
 /* Merge query strings with override semantics:
