@@ -222,6 +222,14 @@ msgstr ""
 msgid "R2H Token"
 msgstr ""
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js:575
+msgid "HTTP Proxy User-Agent"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:576
+msgid "Override the User-Agent header sent to upstream HTTP proxy requests. Leave empty to forward the client User-Agent as-is."
+msgstr ""
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:420
 msgid "RTSP STUN Server"
 msgstr ""

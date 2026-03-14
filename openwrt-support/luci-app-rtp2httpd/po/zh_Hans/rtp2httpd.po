@@ -248,6 +248,14 @@ msgstr "端口"
 msgid "R2H Token"
 msgstr "HTTP 请求认证令牌"
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js:575
+msgid "HTTP Proxy User-Agent"
+msgstr "HTTP 代理 User-Agent"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:576
+msgid "Override the User-Agent header sent to upstream HTTP proxy requests. Leave empty to forward the client User-Agent as-is."
+msgstr "覆盖发送给上游 HTTP 代理请求的 User-Agent 请求头。留空则按原样转发客户端的 User-Agent。"
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:420
 msgid "RTSP STUN Server"
 msgstr "RTSP STUN 服务器"

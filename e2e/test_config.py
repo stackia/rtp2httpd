@@ -12,6 +12,7 @@ import time  # needed for TestMaxClients deadline loop
 import pytest
 
 from helpers import (
+    MockHTTPUpstream,
     MockRTSPServer,
     R2HProcess,
     find_free_port,
@@ -183,6 +184,31 @@ def _assert_rtsp_user_agent(port: int, expected_user_agent: str):
         rtsp.stop()
 
 
+def _assert_http_proxy_user_agent(port: int, expected_user_agent: str):
+    upstream = MockHTTPUpstream(
+        routes={
+            "/headers": {"status": 200, "body": b"ok"},
+        }
+    )
+    upstream.start()
+    try:
+        status, _, body = http_get(
+            "127.0.0.1",
+            port,
+            f"/http/127.0.0.1:{upstream.port}/headers",
+            timeout=5.0,
+            headers={"User-Agent": "ClientUserAgent/0.1"},
+        )
+        assert status == 200
+        assert body == b"ok"
+        assert upstream.requests_log, "Expected upstream request"
+        assert (
+            upstream.requests_log[0]["headers"].get("User-Agent") == expected_user_agent
+        )
+    finally:
+        upstream.stop()
+
+
 OPTION_SOURCE_PRIORITY_CASES = [
     pytest.param(
         {
@@ -263,6 +289,19 @@ OPTION_SOURCE_PRIORITY_CASES = [
             "assertion": _assert_udpxy_state,
         },
         id="udpxy",
+    ),
+    pytest.param(
+        {
+            "name": "http-proxy-user-agent",
+            "config_lines": _value_config_line("http-proxy-user-agent"),
+            "cli_args": _value_cli_args("--http-proxy-user-agent"),
+            "config_source_value": "ConfigHttpProxyUA/1.0",
+            "cli_source_value": "CliHttpProxyUA/2.0",
+            "priority_config_value": "ConfigHttpProxyUA/1.0",
+            "priority_cli_value": "CliOverrideHttpProxyUA/3.0",
+            "assertion": _assert_http_proxy_user_agent,
+        },
+        id="http-proxy-user-agent",
     ),
     pytest.param(
         {

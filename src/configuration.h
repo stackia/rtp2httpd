@@ -109,6 +109,8 @@ typedef struct {
   /* STUN NAT traversal settings */
   char *rtsp_stun_server; /* STUN server host:port for RTSP NAT traversal
                              (NULL=disabled) */
+  char *http_proxy_user_agent; /* Override User-Agent header for upstream HTTP
+                                  proxy requests (NULL=disabled) */
   char *rtsp_user_agent; /* User-Agent header for upstream RTSP requests
                             (NULL=use default) */
 
