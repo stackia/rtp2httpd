@@ -15,7 +15,6 @@
 #define FCC_FMT_HUAWEI_RESP 6 /* RTCP Response */
 #define FCC_FMT_HUAWEI_SYN 8  /* RTCP Sync Notification */
 #define FCC_FMT_HUAWEI_TERM 9 /* RTCP Termination */
-#define FCC_FMT_HUAWEI_NAT 12 /* NAT Traversal packet */
 
 /**
  * Build Huawei FCC request packet - FMT 5

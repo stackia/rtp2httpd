@@ -41,15 +41,11 @@
 
 #define RTSP_CREDENTIAL_SIZE 128
 
-/* RTSP playseek range - for Range header in PLAY command */
-#define RTSP_PLAYSEEK_RANGE_SIZE 256
-
 /* URL copy buffer - for URL parsing operations */
 #define RTSP_URL_COPY_SIZE 1024
 
 /* Time conversion buffers - for playseek time formatting */
 #define RTSP_TIME_STRING_SIZE 64
-#define RTSP_TIME_COMPONENT_SIZE 32
 
 /* Port string buffer - for port number conversion */
 #define RTSP_PORT_STRING_SIZE 16
@@ -65,7 +61,6 @@
 #define RTSP_METHOD_PLAY "PLAY"
 #define RTSP_METHOD_TEARDOWN "TEARDOWN"
 #define RTSP_METHOD_GET_PARAMETER "GET_PARAMETER"
-#define RTSP_METHOD_SET_PARAMETER "SET_PARAMETER"
 
 /* RTSP authentication types */
 typedef enum {
@@ -246,27 +241,6 @@ int rtsp_connect(rtsp_session_t *session);
  *   -2: Duration query completed (r2h-duration request)
  */
 int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events);
-
-/**
- * Send RTSP DESCRIBE request
- * @param session RTSP session
- * @return 0 on success, -1 on error
- */
-int rtsp_describe(rtsp_session_t *session);
-
-/**
- * Send RTSP SETUP request
- * @param session RTSP session (must have epoll_fd set)
- * @return 0 on success, -1 on error
- */
-int rtsp_setup(rtsp_session_t *session);
-
-/**
- * Send RTSP PLAY request with optional range
- * @param session RTSP session
- * @return 0 on success, -1 on error
- */
-int rtsp_play(rtsp_session_t *session);
 
 /**
  * Handle TCP interleaved RTP data and forward to HTTP client via connection

@@ -562,6 +562,7 @@ int run_worker(void) {
   /* Run worker event loop */
   int result = worker_run_event_loop(s, maxs, notif_fd);
 
+  zerocopy_cleanup();
   status_cleanup();
   config_cleanup(true);
 
