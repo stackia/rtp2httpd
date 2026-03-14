@@ -32,7 +32,6 @@ rtp2httpd [选项]
 
 > [!TIP]
 > 除了全局配置外，还可以在每个请求的 URL 中通过 `r2h-ifname` 和 `r2h-ifname-fcc` 参数指定上游接口，详见 [URL 格式说明](../guide/url-formats.md)。
-
 > [!TIP]
 > FreeBSD 系统下不支持指定除组播外的接口。
 
@@ -79,7 +78,12 @@ rtp2httpd [选项]
 
 - `-U, --noudpxy` - 禁用 UDPxy 兼容模式 (禁用后只能使用 `[services]` 或 `external-m3u` 中定义的服务)
 
-### RTSP NAT 穿透
+### RTSP 相关
+
+- `-u, --rtsp-user-agent <值>` - 上游 RTSP 请求的 User-Agent 头 (默认: `rtp2httpd/<version>`)
+  - 作用于 OPTIONS、DESCRIBE、SETUP、PLAY、TEARDOWN、GET_PARAMETER 等上游 RTSP 请求
+  - 某些上游 RTSP 服务器会校验或依赖特定 User-Agent，可通过此参数进行兼容
+  - 留空时使用内置默认值
 
 - `-N, --rtsp-stun-server <host:port>` - STUN 服务器地址 (默认: 禁用)
   - 当 RTSP 服务器仅支持 UDP 传输且客户端位于 NAT 后时，可尝试使用 STUN 进行 NAT 穿透（不保证成功）
@@ -191,6 +195,10 @@ udp-rcvbuf-size = 524288
 # 在支持的设备上可提升吞吐量并降低 CPU 占用，特别是在高并发负载下
 # 如果你的 rtp2httpd 位于反向代理之后 (nginx/caddy/lucky 等)，不建议开启这个选项
 zerocopy-on-send = no
+
+# 上游 RTSP 请求的 User-Agent（默认: rtp2httpd/<version>）
+# 当上游 RTSP 服务器要求特定 User-Agent 时可配置此项
+rtsp-user-agent = rtp2httpd/custom
 
 # STUN 服务器用于 RTSP NAT 穿透（默认: 禁用）
 # 当 RTSP 服务器仅支持 UDP 传输且客户端位于 NAT 后时，可尝试使用 STUN 进行 NAT 穿透（不保证成功）

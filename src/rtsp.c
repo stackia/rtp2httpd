@@ -27,7 +27,7 @@
 
 /* RTSP version and user agent */
 #define RTSP_VERSION "RTSP/1.0"
-#define USER_AGENT "rtp2httpd/" VERSION
+static const char rtsp_default_user_agent[] = "rtp2httpd/" VERSION;
 #define RTSP_MAX_REDIRECTS 5
 #define RTSP_KEEPALIVE_INTERVAL_MS 30000
 
@@ -71,6 +71,14 @@ static void rtsp_build_digest_response(rtsp_session_t *session,
                                        size_t response_size);
 static int rtsp_build_basic_auth_header(rtsp_session_t *session, char *output,
                                         size_t output_size);
+
+static const char *rtsp_get_user_agent(void) {
+  if (config.rtsp_user_agent && config.rtsp_user_agent[0] != '\0') {
+    return config.rtsp_user_agent;
+  }
+
+  return rtsp_default_user_agent;
+}
 
 static int rtsp_base64_encode(const uint8_t *input, size_t input_len,
                               char *output, size_t output_size) {
@@ -1118,7 +1126,7 @@ static int rtsp_prepare_request(rtsp_session_t *session, const char *method,
                      "%s"
                      "\r\n",
                      method, request_url, RTSP_VERSION, session->cseq++,
-                     USER_AGENT, auth_header, extra);
+                     rtsp_get_user_agent(), auth_header, extra);
 
   if (len < 0 || len >= (int)sizeof(session->pending_request)) {
     logger(LOG_ERROR, "RTSP: Request buffer overflow");
