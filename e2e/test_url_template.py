@@ -458,6 +458,208 @@ class TestHTTPTemplateResolver:
         finally:
             upstream.stop()
 
+    def test_iso8601_seek_range_in_template_mode(self, shared_r2h):
+        """ISO8601 seek ranges should not be split on date hyphens in template mode."""
+        expected_path = "/archive/20240101120000/20240101130000/video.ts"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/archive/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/video.ts"
+                "?playseek=2024-01-01T12:00:00.000Z-2024-01-01T13:00:00.000Z"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_end_template_only(self, shared_r2h):
+        """URL with only ${(e)...} and no ${(b)...} should still substitute end."""
+        expected_path = "/archive/20240101130000/video.ts"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/archive/${(e)yyyyMMddHHmmss}/video.ts"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_begin_and_end_different_formats(self, shared_r2h):
+        """Begin in date-only, end in time-only format in the same URL."""
+        expected_path = "/archive/20240101/130000/video.ts"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/archive/${(b)yyyyMMdd}/${(e)HHmmss}/video.ts"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_utc_and_end_in_query_only(self, shared_r2h):
+        """Templates only in query string (no path templates) should trigger template mode."""
+        upstream = _make_upstream("/stream")
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream"
+                "?begin={utc}&end={end}&playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+
+            full_path = _get_upstream_path(upstream)
+            assert "begin=2024-01-01T12:00:00.000Z" in full_path, (
+                "Query {utc} should be substituted as ISO8601, got: %s" % full_path
+            )
+            assert "end=2024-01-01T13:00:00.000Z" in full_path, (
+                "Query {end} should be substituted as ISO8601, got: %s" % full_path
+            )
+        finally:
+            upstream.stop()
+
+    def test_duration_zero_same_begin_end(self, shared_r2h):
+        """{duration} should be 0 when begin and end are the same."""
+        expected_path = "/stream/0"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream/{duration}"
+                "?playseek=20240101120000-20240101120000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_long_duration_24h(self, shared_r2h):
+        """{duration} for a 24-hour range should be 86400."""
+        expected_path = "/stream/86400"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream/{duration}"
+                "?playseek=20240101000000-20240102000000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_multiple_end_templates(self, shared_r2h):
+        """Multiple ${(e)...} placeholders in the same URL."""
+        expected_path = "/path/20240101/130000/file"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/path/${(e)yyyyMMdd}/${(e)HHmmss}/file"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_component_month_december(self, shared_r2h):
+        """{m} should correctly show 12 for December."""
+        expected_path = "/stream/12"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream/{m}"
+                "?playseek=20241215120000-20241215130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_component_hour_23(self, shared_r2h):
+        """{H} should correctly show 23 for 11pm."""
+        expected_path = "/stream/23"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream/{H}"
+                "?playseek=20240101230000-20240102000000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_end_and_utc_iso8601_with_duration(self, shared_r2h):
+        """{end} and {utc} output ISO8601, {duration} outputs seconds."""
+        upstream = _make_upstream()
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream/{utc}/{end}/{duration}"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+
+            path = _get_upstream_path(upstream)
+            parts = path.strip("/").split("/")
+            assert len(parts) >= 4, "Expected /stream/utc/end/duration, got: %s" % path
+            assert "2024-01-01T12:00:00.000Z" == parts[1], (
+                "Expected begin ISO8601, got: %s" % parts[1]
+            )
+            assert "2024-01-01T13:00:00.000Z" == parts[2], (
+                "Expected end ISO8601, got: %s" % parts[2]
+            )
+            assert parts[3] == "3600", "Expected duration 3600, got: %s" % parts[3]
+        finally:
+            upstream.stop()
+
+    def test_multiple_templates_utc_lutc_end_duration(self, shared_r2h):
+        """Multiple keyword placeholders in one URL."""
+        upstream = _make_upstream()
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/s/{utc}/{lutc}/{end}/{duration}"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+
+            path = _get_upstream_path(upstream)
+            parts = path.strip("/").split("/")
+            assert len(parts) >= 5, "Expected 5 parts, got: %s" % path
+            assert parts[1] == "2024-01-01T12:00:00.000Z", (
+                "Expected {utc} ISO8601 begin, got: %s" % parts[1]
+            )
+            # {lutc} is current time ISO8601 - verify format
+            assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z", parts[2]), (
+                "Expected {lutc} ISO8601 format, got: %s" % parts[2]
+            )
+            assert parts[3] == "2024-01-01T13:00:00.000Z", (
+                "Expected {end} ISO8601 end, got: %s" % parts[3]
+            )
+            assert parts[4] == "3600", "Expected {duration} 3600, got: %s" % parts[4]
+        finally:
+            upstream.stop()
+
 
 # ===================================================================
 # Template with timezone and seek offset
@@ -615,6 +817,86 @@ class TestHTTPPathTemplateTimezone:
                 "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file"
                 "?playseek=20240101120000-20240101130000&r2h-seek-offset=-30"
             ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_tz_utc_minus_5(self, shared_r2h):
+        """TZ/UTC-5: ${(b)FORMAT} uses local time, so 12:00 local stays 12:00."""
+        expected_path = "/path/20240101120000/20240101130000/file"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d"
+                "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                timeout=_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC-5"},
+            )
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_tz_utc_no_offset(self, shared_r2h):
+        """TZ/UTC (no offset) should not change values."""
+        expected_path = "/path/20240101120000/20240101130000/file"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d"
+                "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                timeout=_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC"},
+            )
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_no_user_agent_defaults_utc(self, shared_r2h):
+        """No User-Agent at all should default to UTC."""
+        expected_path = "/path/20240101120000/file"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_seek_offset_with_unix_timestamp_seek(self, shared_r2h):
+        """r2h-seek-offset with Unix timestamp seek value and template URL."""
+        # begin = 1704110400 + 3600 = 1704114000, end = 1704114000 + 3600 = 1704117600
+        expected_path = "/path/20240101130000/20240101140000/file"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d"
+                "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file"
+                "?playseek=%d-%d&r2h-seek-offset=3600"
+            ) % (upstream.port, _BEGIN_EPOCH, _END_EPOCH)
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -802,6 +1084,123 @@ class TestHTTPPathTemplateEdgeCases:
         finally:
             upstream.stop()
 
+    def test_end_placeholder_requires_end_value(self, shared_r2h):
+        """End-derived placeholders should fail when the seek value has no end time."""
+        upstream = _make_upstream("/unused")
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/archive/${(e)yyyyMMddHHmmss}/video.ts"
+                "?playseek=20240101120000-"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status >= 400, "Expected request to fail without an end time"
+            assert (
+                len(upstream.requests_log) == 0
+            ), "Upstream should not be contacted when end placeholders cannot be resolved"
+        finally:
+            upstream.stop()
+
+    def test_february_29_leap_year(self, shared_r2h):
+        """Template substitution should handle Feb 29 correctly in a leap year."""
+        expected_path = "/archive/20240229/120000/file"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/archive/${(b)yyyyMMdd}/${(b)HHmmss}/file"
+                "?playseek=20240229120000-20240229130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_year_boundary(self, shared_r2h):
+        """Template substitution crossing year boundary (Dec 31 -> Jan 1)."""
+        # 23:00 + 2h = next day 01:00
+        expected_path = "/archive/20250101010000/file"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/archive/${(b)yyyyMMddHHmmss}/file"
+                "?playseek=20241231230000-20250101010000&r2h-seek-offset=7200"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_gmt_suffix_seek_with_template(self, shared_r2h):
+        """GMT-suffixed seek value should work with template substitution."""
+        expected_path = "/path/20240101120000/file"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file"
+                "?playseek=20240101120000GMT-20240101130000GMT"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_template_preserves_url_path_structure(self, shared_r2h):
+        """Template substitution should not alter directory structure."""
+        expected_path = "/a/b/20240101120000/c/d/file.m3u8"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/a/b/${(b)yyyyMMddHHmmss}/c/d/file.m3u8"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_format_with_dots(self, shared_r2h):
+        """Format pattern with literal dots: yyyy.MM.dd."""
+        expected_path = "/path/2024.01.01/file"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/path/${(b)yyyy.MM.dd}/file"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_format_with_colons(self, shared_r2h):
+        """Format pattern with literal colons: HH:mm:ss."""
+        # Note: colons are valid in URL paths
+        upstream = _make_upstream()
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/path/${(b)HH:mm:ss}/file"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+
+            path = _get_upstream_path(upstream)
+            assert "12:00:00" in path, (
+                "Format with colons should produce 12:00:00, got: %s" % path
+            )
+        finally:
+            upstream.stop()
+
 
 # ===================================================================
 # RTSP with path-level templates
@@ -873,6 +1272,69 @@ class TestRTSPPathTemplate:
             uri = describe_reqs[0]["uri"]
             assert "2024-01-01T12:00:00.000Z" in uri, (
                 "Expected ISO8601 in URI, got: %s" % uri
+            )
+        finally:
+            rtsp.stop()
+
+    def test_template_with_custom_seek_name(self, shared_r2h):
+        """Template substitution with r2h-seek-name in RTSP."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            url = (
+                "/rtsp/127.0.0.1:%d"
+                "/path/${(b)yyyyMMddHHmmss}/stream"
+                "?r2h-seek-name=myseek&myseek=20240101120000-20240101130000"
+            ) % rtsp.port
+            status, _, body = stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+            assert status == 200
+
+            describe_reqs = [
+                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
+            ]
+            assert len(describe_reqs) > 0
+            uri = describe_reqs[0]["uri"]
+            assert "20240101120000" in uri, (
+                "Template should be substituted in RTSP URI, got: %s" % uri
+            )
+            assert "${" not in uri, "No unresolved templates, got: %s" % uri
+            assert "r2h-seek-name" not in uri, (
+                "r2h-seek-name should be stripped, got: %s" % uri
+            )
+        finally:
+            rtsp.stop()
+
+    def test_rtsp_duration_placeholder(self, shared_r2h):
+        """{duration} in RTSP URL should be substituted."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            url = (
+                "/rtsp/127.0.0.1:%d/stream/{duration}"
+                "?playseek=20240101120000-20240101130000"
+            ) % rtsp.port
+            status, _, body = stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+            assert status == 200
+
+            describe_reqs = [
+                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
+            ]
+            assert len(describe_reqs) > 0
+            uri = describe_reqs[0]["uri"]
+            assert "/stream/3600" in uri, (
+                "Duration should be 3600 in RTSP URI, got: %s" % uri
             )
         finally:
             rtsp.stop()
@@ -1331,121 +1793,6 @@ rtp://239.0.0.1:1234
         finally:
             r2h.stop()
 
-
-# ===================================================================
-# M3U catchup-source closed-loop consumption
-# ===================================================================
-
-
-@pytest.mark.http_proxy
-class TestM3UCatchupConsumption:
-    """Verify playlist-emitted catchup links can be consumed end-to-end."""
-
-    def test_path_template_link_resolves_to_upstream_path(self, r2h_binary):
-        """A catchup-source from /playlist.m3u should work after simulated player substitution."""
-        expected_path = "/path/20240101120000/20240101130000/1.m3u8"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        port = find_free_port()
-        config = f"""\
-[global]
-verbosity = 4
-maxclients = 10
-
-[bind]
-* {port}
-
-[services]
-#EXTM3U
-#EXTINF:-1 catchup="default" catchup-source="http://127.0.0.1:{upstream.port}/path/${{(b)yyyyMMddHHmmss}}/${{(e)yyyyMMddHHmmss}}/1.m3u8",Template Loop Channel
-rtp://239.0.0.1:1234
-"""
-        r2h = R2HProcess(r2h_binary, port, config_content=config)
-        try:
-            r2h.start()
-            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
-            assert status == 200
-
-            catchup_source = _extract_catchup_source(
-                body.decode(), "Template Loop Channel"
-            )
-            resolved_url = catchup_source.replace(
-                "${(b)yyyyMMddHHmmss}", "20240101120000"
-            )
-            resolved_url = resolved_url.replace(
-                "${(e)yyyyMMddHHmmss}", "20240101130000"
-            )
-
-            status, _, _ = http_get(
-                "127.0.0.1",
-                port,
-                _absolute_url_to_path(resolved_url),
-                timeout=_TIMEOUT,
-            )
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            r2h.stop()
-            upstream.stop()
-
-    def test_mixed_template_link_preserves_dynamic_query_end_to_end(self, r2h_binary):
-        """A catchup-source with path and query templates should resolve both after player substitution."""
-        expected_path = "/path/20240101120000/1.m3u8"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        port = find_free_port()
-        config = f"""\
-[global]
-verbosity = 4
-maxclients = 10
-
-[bind]
-* {port}
-
-[services]
-#EXTM3U
-#EXTINF:-1 catchup="default" catchup-source="http://127.0.0.1:{upstream.port}/path/${{(b)yyyyMMddHHmmss}}/1.m3u8?token=1&begin={{utc}}",Mixed Loop Channel
-rtp://239.0.0.1:1234
-"""
-        r2h = R2HProcess(r2h_binary, port, config_content=config)
-        try:
-            r2h.start()
-            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
-            assert status == 200
-
-            catchup_source = _extract_catchup_source(
-                body.decode(), "Mixed Loop Channel"
-            )
-            resolved_url = catchup_source.replace(
-                "${(b)yyyyMMddHHmmss}", "20240101120000"
-            )
-            resolved_url = resolved_url.replace("{utc}", "2024-01-01T12:00:00.000Z")
-
-            status, _, _ = http_get(
-                "127.0.0.1",
-                port,
-                _absolute_url_to_path(resolved_url),
-                timeout=_TIMEOUT,
-            )
-            assert status == 200
-
-            full_path = _get_upstream_path(upstream)
-            assert full_path.startswith(expected_path)
-            assert "token=1" in full_path
-            assert "begin=2024-01-01T12:00:00.000Z" in full_path
-        finally:
-            r2h.stop()
-            upstream.stop()
-
-
-# ===================================================================
-# M3U catchup-source rewrite edge cases
-# ===================================================================
-
-
-class TestM3UCatchupRewriteMore:
-    """Additional rewrite-only checks for catchup-source transformation."""
-
     def test_query_only_templates_unchanged(self, r2h_binary):
         """Catchup-source with query-only templates should NOT inject extra playseek."""
         port = find_free_port()
@@ -1618,455 +1965,152 @@ rtp://239.0.0.1:1234
         finally:
             r2h.stop()
 
+    def test_append_catchup_preserves_placeholders(self, r2h_binary):
+        """Append-mode catchup-source placeholders should pass through unchanged."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+maxclients = 10
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 catchup="append" catchup-source="?playseek={{utc}}-{{utcend}}&duration={{duration}}",Placeholder Ch
+http://10.10.10.1:8888/live/stream.m3u8
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+
+            assert status == 200
+            catchup_source = _extract_catchup_source(text, "Placeholder Ch")
+            assert "{utc}" in catchup_source, (
+                "Placeholder {utc} should be preserved, got: %s" % catchup_source
+            )
+            assert "{utcend}" in catchup_source, (
+                "Placeholder {utcend} should be preserved, got: %s" % catchup_source
+            )
+            assert "{duration}" in catchup_source, (
+                "Placeholder {duration} should be preserved, got: %s" % catchup_source
+            )
+        finally:
+            r2h.stop()
+
 
 # ===================================================================
-# Additional normal / edge case coverage
+# M3U catchup-source closed-loop consumption
 # ===================================================================
 
 
 @pytest.mark.http_proxy
-class TestHTTPPathTemplateMoreCases:
-    """Additional normal and edge case coverage for URL template substitution."""
+class TestM3UCatchupConsumption:
+    """Verify playlist-emitted catchup links can be consumed end-to-end."""
 
-    def test_iso8601_seek_range_in_template_mode(self, shared_r2h):
-        """ISO8601 seek ranges should not be split on date hyphens in template mode."""
-        expected_path = "/archive/20240101120000/20240101130000/video.ts"
+    def test_path_template_link_resolves_to_upstream_path(self, r2h_binary):
+        """A catchup-source from /playlist.m3u should work after simulated player substitution."""
+        expected_path = "/path/20240101120000/20240101130000/1.m3u8"
         upstream = _make_upstream(expected_path)
         upstream.start()
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+maxclients = 10
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 catchup="default" catchup-source="http://127.0.0.1:{upstream.port}/path/${{(b)yyyyMMddHHmmss}}/${{(e)yyyyMMddHHmmss}}/1.m3u8",Template Loop Channel
+rtp://239.0.0.1:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
         try:
-            url = (
-                "/http/127.0.0.1:%d/archive/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/video.ts"
-                "?playseek=2024-01-01T12:00:00.000Z-2024-01-01T13:00:00.000Z"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            assert status == 200
+
+            catchup_source = _extract_catchup_source(
+                body.decode(), "Template Loop Channel"
+            )
+            resolved_url = catchup_source.replace(
+                "${(b)yyyyMMddHHmmss}", "20240101120000"
+            )
+            resolved_url = resolved_url.replace(
+                "${(e)yyyyMMddHHmmss}", "20240101130000"
+            )
+
+            status, _, _ = http_get(
+                "127.0.0.1",
+                port,
+                _absolute_url_to_path(resolved_url),
+                timeout=_TIMEOUT,
+            )
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
         finally:
+            r2h.stop()
             upstream.stop()
 
-    def test_end_template_only(self, shared_r2h):
-        """URL with only ${(e)...} and no ${(b)...} should still substitute end."""
-        expected_path = "/archive/20240101130000/video.ts"
+    def test_mixed_template_link_preserves_dynamic_query_end_to_end(self, r2h_binary):
+        """A catchup-source with path and query templates should resolve both after player substitution."""
+        expected_path = "/path/20240101120000/1.m3u8"
         upstream = _make_upstream(expected_path)
         upstream.start()
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+maxclients = 10
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 catchup="default" catchup-source="http://127.0.0.1:{upstream.port}/path/${{(b)yyyyMMddHHmmss}}/1.m3u8?token=1&begin={{utc}}",Mixed Loop Channel
+rtp://239.0.0.1:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
         try:
-            url = (
-                "/http/127.0.0.1:%d/archive/${(e)yyyyMMddHHmmss}/video.ts"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
             assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
 
-    def test_end_placeholder_requires_end_value(self, shared_r2h):
-        """End-derived placeholders should fail when the seek value has no end time."""
-        upstream = _make_upstream("/unused")
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/archive/${(e)yyyyMMddHHmmss}/video.ts"
-                "?playseek=20240101120000-"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status >= 400, "Expected request to fail without an end time"
-            assert (
-                len(upstream.requests_log) == 0
-            ), "Upstream should not be contacted when end placeholders cannot be resolved"
-        finally:
-            upstream.stop()
+            catchup_source = _extract_catchup_source(
+                body.decode(), "Mixed Loop Channel"
+            )
+            resolved_url = catchup_source.replace(
+                "${(b)yyyyMMddHHmmss}", "20240101120000"
+            )
+            resolved_url = resolved_url.replace("{utc}", "2024-01-01T12:00:00.000Z")
 
-    def test_begin_and_end_different_formats(self, shared_r2h):
-        """Begin in date-only, end in time-only format in the same URL."""
-        expected_path = "/archive/20240101/130000/video.ts"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/archive/${(b)yyyyMMdd}/${(e)HHmmss}/video.ts"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_utc_and_end_in_query_only(self, shared_r2h):
-        """Templates only in query string (no path templates) should trigger template mode."""
-        upstream = _make_upstream("/stream")
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/stream"
-                "?begin={utc}&end={end}&playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            status, _, _ = http_get(
+                "127.0.0.1",
+                port,
+                _absolute_url_to_path(resolved_url),
+                timeout=_TIMEOUT,
+            )
             assert status == 200
 
             full_path = _get_upstream_path(upstream)
-            assert "begin=2024-01-01T12:00:00.000Z" in full_path, (
-                "Query {utc} should be substituted as ISO8601, got: %s" % full_path
-            )
-            assert "end=2024-01-01T13:00:00.000Z" in full_path, (
-                "Query {end} should be substituted as ISO8601, got: %s" % full_path
-            )
+            assert full_path.startswith(expected_path)
+            assert "token=1" in full_path
+            assert "begin=2024-01-01T12:00:00.000Z" in full_path
         finally:
+            r2h.stop()
             upstream.stop()
-
-    def test_duration_zero_same_begin_end(self, shared_r2h):
-        """{duration} should be 0 when begin and end are the same."""
-        expected_path = "/stream/0"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{duration}"
-                "?playseek=20240101120000-20240101120000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_long_duration_24h(self, shared_r2h):
-        """{duration} for a 24-hour range should be 86400."""
-        expected_path = "/stream/86400"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{duration}"
-                "?playseek=20240101000000-20240102000000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_february_29_leap_year(self, shared_r2h):
-        """Template substitution should handle Feb 29 correctly in a leap year."""
-        expected_path = "/archive/20240229/120000/file"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/archive/${(b)yyyyMMdd}/${(b)HHmmss}/file"
-                "?playseek=20240229120000-20240229130000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_year_boundary(self, shared_r2h):
-        """Template substitution crossing year boundary (Dec 31 -> Jan 1)."""
-        # 23:00 + 2h = next day 01:00
-        expected_path = "/archive/20250101010000/file"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/archive/${(b)yyyyMMddHHmmss}/file"
-                "?playseek=20241231230000-20250101010000&r2h-seek-offset=7200"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_tz_utc_minus_5(self, shared_r2h):
-        """TZ/UTC-5: ${(b)FORMAT} uses local time, so 12:00 local stays 12:00."""
-        expected_path = "/path/20240101120000/20240101130000/file"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d"
-                "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get(
-                "127.0.0.1",
-                shared_r2h.port,
-                url,
-                timeout=_TIMEOUT,
-                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC-5"},
-            )
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_tz_utc_no_offset(self, shared_r2h):
-        """TZ/UTC (no offset) should not change values."""
-        expected_path = "/path/20240101120000/20240101130000/file"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d"
-                "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get(
-                "127.0.0.1",
-                shared_r2h.port,
-                url,
-                timeout=_TIMEOUT,
-                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC"},
-            )
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_no_user_agent_defaults_utc(self, shared_r2h):
-        """No User-Agent at all should default to UTC."""
-        expected_path = "/path/20240101120000/file"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_gmt_suffix_seek_with_template(self, shared_r2h):
-        """GMT-suffixed seek value should work with template substitution."""
-        expected_path = "/path/20240101120000/file"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file"
-                "?playseek=20240101120000GMT-20240101130000GMT"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_multiple_end_templates(self, shared_r2h):
-        """Multiple ${(e)...} placeholders in the same URL."""
-        expected_path = "/path/20240101/130000/file"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/path/${(e)yyyyMMdd}/${(e)HHmmss}/file"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_template_preserves_url_path_structure(self, shared_r2h):
-        """Template substitution should not alter directory structure."""
-        expected_path = "/a/b/20240101120000/c/d/file.m3u8"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/a/b/${(b)yyyyMMddHHmmss}/c/d/file.m3u8"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_component_month_december(self, shared_r2h):
-        """{m} should correctly show 12 for December."""
-        expected_path = "/stream/12"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{m}"
-                "?playseek=20241215120000-20241215130000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_component_hour_23(self, shared_r2h):
-        """{H} should correctly show 23 for 11pm."""
-        expected_path = "/stream/23"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{H}"
-                "?playseek=20240101230000-20240102000000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_end_and_utc_iso8601_with_duration(self, shared_r2h):
-        """{end} and {utc} output ISO8601, {duration} outputs seconds."""
-        upstream = _make_upstream()
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{utc}/{end}/{duration}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-
-            path = _get_upstream_path(upstream)
-            parts = path.strip("/").split("/")
-            assert len(parts) >= 4, "Expected /stream/utc/end/duration, got: %s" % path
-            assert "2024-01-01T12:00:00.000Z" == parts[1], (
-                "Expected begin ISO8601, got: %s" % parts[1]
-            )
-            assert "2024-01-01T13:00:00.000Z" == parts[2], (
-                "Expected end ISO8601, got: %s" % parts[2]
-            )
-            assert parts[3] == "3600", "Expected duration 3600, got: %s" % parts[3]
-        finally:
-            upstream.stop()
-
-    def test_format_with_dots(self, shared_r2h):
-        """Format pattern with literal dots: yyyy.MM.dd."""
-        expected_path = "/path/2024.01.01/file"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/path/${(b)yyyy.MM.dd}/file"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-    def test_format_with_colons(self, shared_r2h):
-        """Format pattern with literal colons: HH:mm:ss."""
-        # Note: colons are valid in URL paths
-        upstream = _make_upstream()
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/path/${(b)HH:mm:ss}/file"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-
-            path = _get_upstream_path(upstream)
-            assert "12:00:00" in path, (
-                "Format with colons should produce 12:00:00, got: %s" % path
-            )
-        finally:
-            upstream.stop()
-
-    def test_multiple_templates_utc_lutc_end_duration(self, shared_r2h):
-        """Multiple keyword placeholders in one URL."""
-        upstream = _make_upstream()
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/s/{utc}/{lutc}/{end}/{duration}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-
-            path = _get_upstream_path(upstream)
-            parts = path.strip("/").split("/")
-            assert len(parts) >= 5, "Expected 5 parts, got: %s" % path
-            assert parts[1] == "2024-01-01T12:00:00.000Z", (
-                "Expected {utc} ISO8601 begin, got: %s" % parts[1]
-            )
-            # {lutc} is current time ISO8601 - verify format
-            assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z", parts[2]), (
-                "Expected {lutc} ISO8601 format, got: %s" % parts[2]
-            )
-            assert parts[3] == "2024-01-01T13:00:00.000Z", (
-                "Expected {end} ISO8601 end, got: %s" % parts[3]
-            )
-            assert parts[4] == "3600", "Expected {duration} 3600, got: %s" % parts[4]
-        finally:
-            upstream.stop()
-
-    def test_seek_offset_with_unix_timestamp_seek(self, shared_r2h):
-        """r2h-seek-offset with Unix timestamp seek value and template URL."""
-        # begin = 1704110400 + 3600 = 1704114000, end = 1704114000 + 3600 = 1704117600
-        expected_path = "/path/20240101130000/20240101140000/file"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d"
-                "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file"
-                "?playseek=%d-%d&r2h-seek-offset=3600"
-            ) % (upstream.port, _BEGIN_EPOCH, _END_EPOCH)
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
-
-
 @pytest.mark.rtsp
-class TestRTSPPathTemplateMore:
-    """Additional RTSP template tests."""
+class TestRTSPQueryAppendMode:
+    """RTSP query-append seek handling without URL templates."""
 
-    def test_template_with_custom_seek_name(self, shared_r2h):
-        """Template substitution with r2h-seek-name in RTSP."""
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            url = (
-                "/rtsp/127.0.0.1:%d"
-                "/path/${(b)yyyyMMddHHmmss}/stream"
-                "?r2h-seek-name=myseek&myseek=20240101120000-20240101130000"
-            ) % rtsp.port
-            status, _, body = stream_get(
-                "127.0.0.1",
-                shared_r2h.port,
-                url,
-                read_bytes=4096,
-                timeout=_STREAM_TIMEOUT,
-            )
-            assert status == 200
-
-            describe_reqs = [
-                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
-            ]
-            assert len(describe_reqs) > 0
-            uri = describe_reqs[0]["uri"]
-            assert "20240101120000" in uri, (
-                "Template should be substituted in RTSP URI, got: %s" % uri
-            )
-            assert "${" not in uri, "No unresolved templates, got: %s" % uri
-            assert "r2h-seek-name" not in uri, (
-                "r2h-seek-name should be stripped, got: %s" % uri
-            )
-        finally:
-            rtsp.stop()
-
-    def test_rtsp_query_append_no_template(self, shared_r2h):
+    def test_query_append_no_template(self, shared_r2h):
         """RTSP URL without template should append playseek as query param."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
@@ -2093,40 +2137,6 @@ class TestRTSPPathTemplateMore:
             )
         finally:
             rtsp.stop()
-
-    def test_rtsp_duration_placeholder(self, shared_r2h):
-        """{duration} in RTSP URL should be substituted."""
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream/{duration}"
-                "?playseek=20240101120000-20240101130000"
-            ) % rtsp.port
-            status, _, body = stream_get(
-                "127.0.0.1",
-                shared_r2h.port,
-                url,
-                read_bytes=4096,
-                timeout=_STREAM_TIMEOUT,
-            )
-            assert status == 200
-
-            describe_reqs = [
-                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
-            ]
-            assert len(describe_reqs) > 0
-            uri = describe_reqs[0]["uri"]
-            assert "/stream/3600" in uri, (
-                "Duration should be 3600 in RTSP URI, got: %s" % uri
-            )
-        finally:
-            rtsp.stop()
-
-
-@pytest.mark.rtsp
-class TestRTSPQueryAppendMode:
-    """RTSP query-append seek handling without URL templates."""
 
     def test_playseek_udp(self, shared_r2h):
         """playseek query-append should work over RTSP UDP transport."""
@@ -2213,93 +2223,6 @@ class TestRTSPQueryAppendMode:
             uri = _get_describe_uri(rtsp)
             assert "myseek=" in uri, "Custom seek param should be in DESCRIBE URI"
             assert "r2h-seek-name" not in uri, "r2h-seek-name should be stripped"
-        finally:
-            rtsp.stop()
-
-
-@pytest.mark.rtsp
-class TestRTSPStartSeek:
-    """r2h-start handling for RTSP time-based seeking."""
-
-    def test_start_adds_range_header(self, shared_r2h):
-        """r2h-start should be forwarded as Range: npt=<value>- in PLAY."""
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            url = "/rtsp/127.0.0.1:%d/stream?r2h-start=120.5" % rtsp.port
-            stream_get(
-                "127.0.0.1",
-                shared_r2h.port,
-                url,
-                read_bytes=4096,
-                timeout=_STREAM_TIMEOUT,
-            )
-
-            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert len(play_reqs) > 0, "Expected PLAY request"
-            play_headers = play_reqs[0]["headers"]
-            assert "Range" in play_headers, "PLAY should have Range header"
-            assert "120.5" in play_headers["Range"]
-        finally:
-            rtsp.stop()
-
-    def test_start_stripped_from_rtsp_uri(self, shared_r2h):
-        """r2h-start should be stripped from the RTSP URI sent upstream."""
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            url = "/rtsp/127.0.0.1:%d/stream?r2h-start=60" % rtsp.port
-            stream_get(
-                "127.0.0.1",
-                shared_r2h.port,
-                url,
-                read_bytes=4096,
-                timeout=_STREAM_TIMEOUT,
-            )
-
-            uri = _get_describe_uri(rtsp)
-            assert "r2h-start" not in uri
-        finally:
-            rtsp.stop()
-
-    def test_start_with_other_params(self, shared_r2h):
-        """r2h-start should be stripped while other query params are preserved."""
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            url = "/rtsp/127.0.0.1:%d/stream?token=abc&r2h-start=30&sid=123" % rtsp.port
-            stream_get(
-                "127.0.0.1",
-                shared_r2h.port,
-                url,
-                read_bytes=4096,
-                timeout=_STREAM_TIMEOUT,
-            )
-
-            uri = _get_describe_uri(rtsp)
-            assert "r2h-start" not in uri
-            assert "token=abc" in uri
-            assert "sid=123" in uri
-        finally:
-            rtsp.stop()
-
-    def test_no_range_header_without_start(self, shared_r2h):
-        """Without r2h-start, PLAY should not have a Range header."""
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            url = "/rtsp/127.0.0.1:%d/stream" % rtsp.port
-            stream_get(
-                "127.0.0.1",
-                shared_r2h.port,
-                url,
-                read_bytes=4096,
-                timeout=_STREAM_TIMEOUT,
-            )
-
-            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert len(play_reqs) > 0, "Expected PLAY request"
-            assert "Range" not in play_reqs[0]["headers"]
         finally:
             rtsp.stop()
 
@@ -2598,8 +2521,8 @@ class TestRTSPQueryAppendOffsetAndFormat:
 
 
 @pytest.mark.http_proxy
-class TestNewPlaceholderFormats:
-    """Tests for newly supported placeholder formats."""
+class TestPlaceholderSyntaxBeginTime:
+    """Alternative placeholder syntaxes for begin time substitution."""
 
     def test_dollar_brace_utc(self, shared_r2h):
         """${utc} outputs begin time as ISO8601."""
@@ -2649,6 +2572,80 @@ class TestNewPlaceholderFormats:
         finally:
             upstream.stop()
 
+    def test_bare_be_iso8601(self, shared_r2h):
+        """${(b)} bare outputs ISO8601."""
+        expected_path = "/stream/2024-01-01T12:00:00.000Z"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream/${(b)}"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_brace_keyword_short_format(self, shared_r2h):
+        """{utc:YmdHMS} outputs begin time in short format UTC."""
+        expected_path = "/stream/20240101120000"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream/{utc:YmdHMS}"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+
+@pytest.mark.http_proxy
+class TestPlaceholderSyntaxEndTime:
+    """Alternative placeholder syntaxes for end time substitution."""
+
+    def test_utcend_placeholder(self, shared_r2h):
+        """{utcend} outputs end time as ISO8601."""
+        expected_path = "/stream/2024-01-01T13:00:00.000Z"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream/{utcend}"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_brace_utcend_short_format(self, shared_r2h):
+        """{utcend:YmdHMS} outputs end time in short format UTC."""
+        expected_path = "/stream/20240101130000"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream/{utcend:YmdHMS}"
+                "?playseek=20240101120000-20240101130000"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+
+@pytest.mark.http_proxy
+class TestPlaceholderSyntaxTimestamp:
+    """Epoch timestamp placeholder variants."""
+
     def test_dollar_brace_timestamp(self, shared_r2h):
         """${timestamp} outputs current epoch as decimal."""
         upstream = _make_upstream()
@@ -2685,21 +2682,10 @@ class TestNewPlaceholderFormats:
         finally:
             upstream.stop()
 
-    def test_utcend_placeholder(self, shared_r2h):
-        """{utcend} outputs end time as ISO8601."""
-        expected_path = "/stream/2024-01-01T13:00:00.000Z"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{utcend}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
+
+@pytest.mark.http_proxy
+class TestPlaceholderSyntaxCurrentTime:
+    """Placeholders for current wall-clock time."""
 
     def test_now_placeholder(self, shared_r2h):
         """{now} outputs current time as ISO8601."""
@@ -2720,45 +2706,10 @@ class TestNewPlaceholderFormats:
         finally:
             upstream.stop()
 
-    def test_pipe_utc_modifier(self, shared_r2h):
-        """${(b)yyyyMMddHHmmss|UTC} forces UTC output even with timezone."""
-        # With TZ/UTC+8: begin 12:00 local → 04:00 UTC
-        # |UTC forces UTC output: 04:00
-        expected_path = "/stream/20240101040000"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${(b)yyyyMMddHHmmss|UTC}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get(
-                "127.0.0.1",
-                shared_r2h.port,
-                url,
-                timeout=_TIMEOUT,
-                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
-            )
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
 
-    def test_bare_be_iso8601(self, shared_r2h):
-        """${(b)} bare outputs ISO8601."""
-        expected_path = "/stream/2024-01-01T12:00:00.000Z"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${(b)}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
+@pytest.mark.http_proxy
+class TestPlaceholderSyntaxComponentsAndDuration:
+    """Component placeholders (${yyyy}, etc.) and ${duration} with $ syntax."""
 
     def test_dollar_brace_components(self, shared_r2h):
         """${yyyy}, ${MM}, ${dd}, ${HH}, ${mm}, ${ss} for begin time components (UTC)."""
@@ -2792,33 +2743,30 @@ class TestNewPlaceholderFormats:
         finally:
             upstream.stop()
 
-    def test_brace_keyword_short_format(self, shared_r2h):
-        """{utc:YmdHMS} outputs begin time in short format UTC."""
-        expected_path = "/stream/20240101120000"
-        upstream = _make_upstream(expected_path)
-        upstream.start()
-        try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{utc:YmdHMS}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
-            assert status == 200
-            assert _get_upstream_path(upstream) == expected_path
-        finally:
-            upstream.stop()
 
-    def test_brace_utcend_short_format(self, shared_r2h):
-        """{utcend:YmdHMS} outputs end time in short format UTC."""
-        expected_path = "/stream/20240101130000"
+@pytest.mark.http_proxy
+class TestPlaceholderSyntaxModifiers:
+    """Placeholder modifiers like |UTC."""
+
+    def test_pipe_utc_modifier(self, shared_r2h):
+        """${(b)yyyyMMddHHmmss|UTC} forces UTC output even with timezone."""
+        # With TZ/UTC+8: begin 12:00 local → 04:00 UTC
+        # |UTC forces UTC output: 04:00
+        expected_path = "/stream/20240101040000"
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/{utcend:YmdHMS}"
+                "/http/127.0.0.1:%d/stream/${(b)yyyyMMddHHmmss|UTC}"
                 "?playseek=20240101120000-20240101130000"
             ) % upstream.port
-            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            status, _, _ = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                timeout=_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
+            )
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
         finally:

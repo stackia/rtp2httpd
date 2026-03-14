@@ -315,3 +315,94 @@ class TestRTSPDurationQuery:
                 "r2h-duration should be stripped from RTSP URI, got: %s" % uri
         finally:
             rtsp.stop()
+
+
+class TestRTSPStartSeek:
+    """r2h-start handling for RTSP time-based seeking."""
+
+    def test_start_adds_range_header(self, shared_r2h):
+        """r2h-start should be forwarded as Range: npt=<value>- in PLAY."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            url = "/rtsp/127.0.0.1:%d/stream?r2h-start=120.5" % rtsp.port
+            stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert len(play_reqs) > 0, "Expected PLAY request"
+            play_headers = play_reqs[0]["headers"]
+            assert "Range" in play_headers, "PLAY should have Range header"
+            assert "120.5" in play_headers["Range"]
+        finally:
+            rtsp.stop()
+
+    def test_start_stripped_from_rtsp_uri(self, shared_r2h):
+        """r2h-start should be stripped from the RTSP URI sent upstream."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            url = "/rtsp/127.0.0.1:%d/stream?r2h-start=60" % rtsp.port
+            stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+
+            describe_reqs = [r for r in rtsp.requests_detailed
+                             if r["method"] == "DESCRIBE"]
+            assert len(describe_reqs) > 0, "Expected DESCRIBE"
+            assert "r2h-start" not in describe_reqs[0]["uri"]
+        finally:
+            rtsp.stop()
+
+    def test_start_with_other_params(self, shared_r2h):
+        """r2h-start should be stripped while other query params are preserved."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            url = "/rtsp/127.0.0.1:%d/stream?token=abc&r2h-start=30&sid=123" % rtsp.port
+            stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+
+            describe_reqs = [r for r in rtsp.requests_detailed
+                             if r["method"] == "DESCRIBE"]
+            assert len(describe_reqs) > 0, "Expected DESCRIBE"
+            uri = describe_reqs[0]["uri"]
+            assert "r2h-start" not in uri
+            assert "token=abc" in uri
+            assert "sid=123" in uri
+        finally:
+            rtsp.stop()
+
+    def test_no_range_header_without_start(self, shared_r2h):
+        """Without r2h-start, PLAY should not have a Range header."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            url = "/rtsp/127.0.0.1:%d/stream" % rtsp.port
+            stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert len(play_reqs) > 0, "Expected PLAY request"
+            assert "Range" not in play_reqs[0]["headers"]
+        finally:
+            rtsp.stop()
