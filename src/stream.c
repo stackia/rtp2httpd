@@ -8,7 +8,6 @@
 #include "service.h"
 #include "snapshot.h"
 #include "status.h"
-#include "timezone.h"
 #include "utils.h"
 #include "worker.h"
 #include <arpa/inet.h>
@@ -178,33 +177,16 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
       return -1;
     }
 
-    /* Build proxy URL, applying timezone conversion to seek params if present
-     */
+    /* Build proxy URL with template substitution or seek param append */
     char proxy_url[2048];
-    strncpy(proxy_url, service->http_url, sizeof(proxy_url) - 1);
-    proxy_url[sizeof(proxy_url) - 1] = '\0';
-
-    if (service->seek_param_name && service->seek_param_value) {
-      int tz_offset = 0;
-      if (service->user_agent)
-        timezone_parse_from_user_agent(service->user_agent, &tz_offset);
-
-      char converted[256];
-      if (service_convert_seek_value(service->seek_param_value, tz_offset,
-                                     service->seek_offset_seconds, converted,
-                                     sizeof(converted)) == 0) {
-        size_t current_len = strlen(proxy_url);
-        char *query_marker = strchr(proxy_url, '?');
-        size_t remain = sizeof(proxy_url) - current_len;
-        int written =
-            snprintf(proxy_url + current_len, remain, "%c%s=%s",
-                     query_marker ? '&' : '?', service->seek_param_name,
-                     converted);
-        if (written < 0 || (size_t)written >= remain) {
-          proxy_url[current_len] = '\0'; /* Restore on truncation */
-          logger(LOG_WARN, "HTTP Proxy: URL too long to append seek parameter");
-        }
-      }
+    if (service_resolve_upstream_url(service->http_url,
+                                    service->seek_param_name,
+                                    service->seek_param_value,
+                                    service->seek_offset_seconds,
+                                    service->user_agent,
+                                    proxy_url, sizeof(proxy_url)) < 0) {
+      logger(LOG_ERROR, "HTTP Proxy: Failed to resolve upstream URL");
+      return -1;
     }
 
     /* Parse URL */
@@ -273,11 +255,20 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
         return -1;
       }
 
-      /* Parse URL and initiate connection */
-      if (rtsp_parse_server_url(
-              &ctx->rtsp, service->rtsp_url, service->seek_param_name,
-              service->seek_param_value, service->seek_offset_seconds,
-              service->user_agent, NULL, NULL) < 0) {
+      /* Resolve URL templates / seek params, then parse */
+      char resolved_rtsp_url[2048];
+      if (service_resolve_upstream_url(service->rtsp_url,
+                                      service->seek_param_name,
+                                      service->seek_param_value,
+                                      service->seek_offset_seconds,
+                                      service->user_agent,
+                                      resolved_rtsp_url,
+                                      sizeof(resolved_rtsp_url)) < 0) {
+        logger(LOG_ERROR, "RTSP: Failed to resolve upstream URL");
+        return -1;
+      }
+      if (rtsp_parse_server_url(&ctx->rtsp, resolved_rtsp_url,
+                                NULL, NULL) < 0) {
         logger(LOG_ERROR, "RTSP: Failed to parse URL");
         return -1;
       }

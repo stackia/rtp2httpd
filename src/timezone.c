@@ -518,6 +518,121 @@ int timezone_parse_iso8601(const char *iso_str, struct tm *tm_out,
 }
 
 /*
+ * Parse a time string and convert to UTC epoch (time_t)
+ */
+int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds,
+                           int additional_offset_seconds, time_t *out_utc) {
+  struct tm local_time;
+  time_t timestamp;
+  int year, month, day, hour, min, sec;
+  size_t input_len;
+  size_t digit_count;
+
+  if (!input_time || !out_utc) {
+    logger(LOG_ERROR, "Timezone: NULL pointer in timezone_parse_to_utc");
+    return -1;
+  }
+
+  input_len = strlen(input_time);
+  digit_count = strspn(input_time, "0123456789");
+
+  /* Format 1: Unix timestamp (all digits, length <= 10) */
+  if (input_len <= 10 && digit_count == input_len) {
+    timestamp = (time_t)atoll(input_time);
+    timestamp += additional_offset_seconds;
+    *out_utc = timestamp;
+    return 0;
+  }
+
+  /* Format 2: yyyyMMddHHmmss or yyyyMMddHHmmssGMT */
+  if ((input_len == 14 && digit_count == 14) ||
+      (input_len == 17 && digit_count == 14 &&
+       strcmp(input_time + 14, "GMT") == 0)) {
+    if (sscanf(input_time, "%4d%2d%2d%2d%2d%2d", &year, &month, &day, &hour,
+               &min, &sec) != 6) {
+      return -1;
+    }
+
+    memset(&local_time, 0, sizeof(local_time));
+    local_time.tm_year = year - 1900;
+    local_time.tm_mon = month - 1;
+    local_time.tm_mday = day;
+    local_time.tm_hour = hour;
+    local_time.tm_min = min;
+    local_time.tm_sec = sec;
+    local_time.tm_isdst = 0;
+
+    char *old_tz = NULL;
+    char *current_tz = getenv("TZ");
+    if (current_tz)
+      old_tz = strdup(current_tz);
+    setenv("TZ", "UTC", 1);
+    tzset();
+    timestamp = mktime(&local_time);
+    if (old_tz) {
+      setenv("TZ", old_tz, 1);
+      free(old_tz);
+    } else
+      unsetenv("TZ");
+    tzset();
+
+    if (timestamp == -1)
+      return -1;
+
+    timestamp -= tz_offset_seconds;
+    timestamp += additional_offset_seconds;
+    *out_utc = timestamp;
+    return 0;
+  }
+
+  /* Format 3: ISO 8601 */
+  if (strchr(input_time, 'T') != NULL) {
+    struct tm tm;
+    int milliseconds;
+    int has_timezone;
+    int timezone_offset;
+    char timezone_suffix[16];
+
+    if (timezone_parse_iso8601(input_time, &tm, &milliseconds, &has_timezone,
+                               &timezone_offset, timezone_suffix,
+                               sizeof(timezone_suffix)) != 0) {
+      return -1;
+    }
+
+    char *old_tz = NULL;
+    char *current_tz = getenv("TZ");
+    if (current_tz)
+      old_tz = strdup(current_tz);
+    setenv("TZ", "UTC", 1);
+    tzset();
+    timestamp = mktime(&tm);
+    if (old_tz) {
+      setenv("TZ", old_tz, 1);
+      free(old_tz);
+    } else
+      unsetenv("TZ");
+    tzset();
+
+    if (timestamp == -1)
+      return -1;
+
+    if (has_timezone) {
+      timestamp -= timezone_offset;
+      timestamp += additional_offset_seconds;
+    } else {
+      timestamp -= tz_offset_seconds;
+      timestamp += additional_offset_seconds;
+    }
+
+    *out_utc = timestamp;
+    return 0;
+  }
+
+  /* Unknown format */
+  return -1;
+}
+
+/*
  * Convert ISO 8601 time string with timezone and offset
  */
 int timezone_convert_iso8601_with_offset(const char *iso_str,

@@ -211,14 +211,11 @@ void rtsp_session_init(rtsp_session_t *session);
 
 /**
  * Parse RTSP server URL and initialize session (RTSP protocol layer)
- * Parses RTSP URL components (host, port, path) and converts seek parameter to
- * Range header format
+ * Parses RTSP URL components (host, port, path).
+ * Seek parameter handling is done by service_resolve_upstream_url() before
+ * calling this function.
  * @param session RTSP session to populate
- * @param rtsp_url Full RTSP URL (rtsp://host:port/path)
- * @param seek_param_name Optional seek parameter name (e.g., "playseek",
- * "tvdr")
- * @param seek_param_value Optional seek parameter value for time range
- * @param user_agent Optional User-Agent header for timezone detection
+ * @param rtsp_url Full RTSP URL (rtsp://host:port/path), already resolved
  * @param fallback_username Optional username to reuse when URL lacks
  * credentials
  * @param fallback_password Optional password to reuse when URL lacks
@@ -226,9 +223,7 @@ void rtsp_session_init(rtsp_session_t *session);
  * @return 0 on success, -1 on error
  */
 int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
-                          const char *seek_param_name,
-                          const char *seek_param_value, int seek_offset_seconds,
-                          const char *user_agent, const char *fallback_username,
+                          const char *fallback_username,
                           const char *fallback_password);
 
 /**

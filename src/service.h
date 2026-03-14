@@ -240,4 +240,39 @@ void service_hashmap_remove(service_t *service);
  */
 service_t *service_hashmap_get(const char *url);
 
+/**
+ * Check if a URL contains template placeholders anywhere (path or query)
+ *
+ * Detects patterns like ${(b)...}, ${(e)...}, {utc}, {start}, {lutc},
+ * {end}, {duration}, {offset}, {Y}, {m}, {d}, {H}, {M}, {S}
+ *
+ * @param url URL string to scan
+ * @return 1 if templates found, 0 otherwise
+ */
+int service_url_has_template(const char *url);
+
+/**
+ * Resolve upstream URL by substituting template placeholders or appending
+ * seek parameters (query-append mode).
+ *
+ * Template mode: if URL contains placeholders, substitute them using
+ * begin/end times parsed from seek_param_value.
+ * Query-append mode: if no placeholders, append seek param as query parameter.
+ *
+ * @param url The upstream URL (may contain template placeholders)
+ * @param seek_param_name Seek parameter name (e.g., "playseek")
+ * @param seek_param_value Seek parameter value (e.g., "20240101120000-20240101130000")
+ * @param seek_offset_seconds Additional offset in seconds
+ * @param user_agent User-Agent header for timezone detection
+ * @param output Output buffer for resolved URL
+ * @param output_size Size of output buffer
+ * @return 0 on success, -1 on error
+ */
+int service_resolve_upstream_url(const char *url,
+                                 const char *seek_param_name,
+                                 const char *seek_param_value,
+                                 int seek_offset_seconds,
+                                 const char *user_agent,
+                                 char *output, size_t output_size);
+
 #endif /* SERVICE_H */
