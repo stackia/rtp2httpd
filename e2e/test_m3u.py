@@ -13,6 +13,7 @@ import pytest
 
 from helpers import (
     R2HProcess,
+    extract_catchup_source,
     find_free_port,
     http_get,
     http_request,
@@ -100,13 +101,12 @@ class TestExternalM3UFile:
 
     def test_external_file_m3u(self, r2h_binary):
         m3u_path = self._write_m3u(
-            "#EXTM3U\n"
-            "#EXTINF:-1,File Channel\n"
-            "rtp://239.10.0.1:5000\n"
+            "#EXTM3U\n" "#EXTINF:-1,File Channel\n" "rtp://239.10.0.1:5000\n"
         )
         port = find_free_port()
         r2h = R2HProcess(
-            r2h_binary, port,
+            r2h_binary,
+            port,
             extra_args=["-v", "4", "-m", "100", "-M", f"file://{m3u_path}"],
         )
         try:
@@ -126,13 +126,12 @@ class TestExternalM3UFile:
         The transformed URL may or may not include the FEC param (it is stored
         in the service config).  We just verify the service is listed."""
         m3u_path = self._write_m3u(
-            "#EXTM3U\n"
-            "#EXTINF:-1,FEC Stream\n"
-            "rtp://239.10.0.1:5000?fec=5002\n"
+            "#EXTM3U\n" "#EXTINF:-1,FEC Stream\n" "rtp://239.10.0.1:5000?fec=5002\n"
         )
         port = find_free_port()
         r2h = R2HProcess(
-            r2h_binary, port,
+            r2h_binary,
+            port,
             extra_args=["-v", "4", "-m", "100", "-M", f"file://{m3u_path}"],
         )
         try:
@@ -286,7 +285,9 @@ rtp://239.0.0.1:1234
 
             # Second request with If-None-Match
             status, _, body = http_get(
-                "127.0.0.1", port, "/playlist.m3u",
+                "127.0.0.1",
+                port,
+                "/playlist.m3u",
                 headers={"If-None-Match": etag},
             )
             assert status == 304
@@ -300,7 +301,9 @@ rtp://239.0.0.1:1234
         r2h = self._start_with_m3u(r2h_binary, port)
         try:
             status, _, body = http_get(
-                "127.0.0.1", port, "/playlist.m3u",
+                "127.0.0.1",
+                port,
+                "/playlist.m3u",
                 headers={"If-None-Match": '"wrong-etag"'},
             )
             assert status == 200
@@ -397,10 +400,10 @@ rtp://239.0.0.1:1234
 
 
 class TestM3UCatchupAppend:
-    """catchup="append" with fragment catchup-source (starting with & or ?)."""
+    """Append catchup fragments should be promoted into direct catchup proxy URLs."""
 
     def test_question_mark_preserved_no_dynamic_query(self, r2h_binary):
-        """'?' catchup-source stays '?' when main URL produces no query in proxy URL."""
+        """Append catchup with '?' should become a direct proxy catchup URL."""
         port = find_free_port()
         config = f"""\
 [global]
@@ -421,14 +424,18 @@ rtp://239.0.0.1:1234
             text = body.decode()
             assert status == 200
             assert "QMark NoDyn Ch" in text
-            assert 'catchup-source="?' in text, (
-                "Expected catchup-source to start with '?', got:\n%s" % text
+            line, catchup_source = extract_catchup_source(text, "QMark NoDyn Ch")
+            assert 'catchup="default"' in line, (
+                "Expected transformed append catchup to become default, got:\n%s" % line
             )
+            assert (
+                "/QMark%20NoDyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source
+            ), ("Expected direct catchup proxy URL, got:\n%s" % catchup_source)
         finally:
             r2h.stop()
 
     def test_ampersand_adjusted_to_question_no_dynamic_query(self, r2h_binary):
-        """'&' catchup-source becomes '?' when main URL produces no query in proxy URL."""
+        """Append catchup with '&' should also become a direct proxy catchup URL."""
         port = find_free_port()
         config = f"""\
 [global]
@@ -449,14 +456,18 @@ rtp://239.0.0.1:1234
             text = body.decode()
             assert status == 200
             assert "Amp NoDyn Ch" in text
-            assert 'catchup-source="?' in text, (
-                "Expected '&' adjusted to '?' when no dynamic query, got:\n%s" % text
+            line, catchup_source = extract_catchup_source(text, "Amp NoDyn Ch")
+            assert 'catchup="default"' in line, (
+                "Expected transformed append catchup to become default, got:\n%s" % line
             )
+            assert (
+                "/Amp%20NoDyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source
+            ), ("Expected direct catchup proxy URL, got:\n%s" % catchup_source)
         finally:
             r2h.stop()
 
     def test_ampersand_preserved_with_dynamic_query(self, r2h_binary):
-        """'&' catchup-source stays '&' when main URL has dynamic query params."""
+        """Append catchup should use direct proxy URL even when main proxy URL has dynamic query."""
         port = find_free_port()
         config = f"""\
 [global]
@@ -477,15 +488,19 @@ http://10.10.10.1:8888/live/stream.m3u8?begin={{utc}}
             text = body.decode()
             assert status == 200
             assert "Amp Dyn Ch" in text
-            assert 'catchup-source="&' in text, (
-                "Expected catchup-source to start with '&' when main has dynamic query, got:\n%s"
-                % text
+            line, catchup_source = extract_catchup_source(text, "Amp Dyn Ch")
+            assert 'catchup="default"' in line, (
+                "Expected transformed append catchup to become default, got:\n%s" % line
             )
+            assert (
+                "/Amp%20Dyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source
+            ), ("Expected direct catchup proxy URL, got:\n%s" % catchup_source)
+            assert "http://127.0.0.1:" in line
         finally:
             r2h.stop()
 
     def test_question_adjusted_to_ampersand_with_dynamic_query(self, r2h_binary):
-        """'?' catchup-source becomes '&' when main URL has dynamic query params."""
+        """Append catchup with '?' should still use a direct proxy catchup URL."""
         port = find_free_port()
         config = f"""\
 [global]
@@ -506,14 +521,18 @@ http://10.10.10.1:8888/live/stream.m3u8?begin={{utc}}
             text = body.decode()
             assert status == 200
             assert "QMark Dyn Ch" in text
-            assert 'catchup-source="&' in text, (
-                "Expected '?' adjusted to '&' when main has dynamic query, got:\n%s" % text
+            line, catchup_source = extract_catchup_source(text, "QMark Dyn Ch")
+            assert 'catchup="default"' in line, (
+                "Expected transformed append catchup to become default, got:\n%s" % line
             )
+            assert (
+                "/QMark%20Dyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source
+            ), ("Expected direct catchup proxy URL, got:\n%s" % catchup_source)
         finally:
             r2h.stop()
 
     def test_static_query_does_not_count_as_dynamic(self, r2h_binary):
-        """Main URL with only static query params (no placeholders) should not have query in proxy URL."""
+        """Static main-query parameters should not prevent append catchup promotion."""
         port = find_free_port()
         config = f"""\
 [global]
@@ -534,12 +553,45 @@ http://10.10.10.1:8888/live/stream.m3u8?token=abc
             text = body.decode()
             assert status == 200
             assert "Static Query Ch" in text
-            # Static ?token=abc is not a dynamic param, so proxy URL has no query.
-            # '&' should be adjusted to '?'.
-            assert 'catchup-source="?' in text, (
-                "Static query should not count as dynamic; '&' should become '?', got:\n%s"
-                % text
+            line, catchup_source = extract_catchup_source(text, "Static Query Ch")
+            assert 'catchup="default"' in line, (
+                "Expected transformed append catchup to become default, got:\n%s" % line
             )
+            assert (
+                "/Static%20Query%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source
+            ), ("Expected direct catchup proxy URL, got:\n%s" % catchup_source)
+        finally:
+            r2h.stop()
+
+    def test_no_prefix_catchup_is_promoted(self, r2h_binary):
+        """Append catchup-source without a leading separator should still become a direct proxy URL."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 catchup="append" catchup-source="playseek={{utc}}-{{utcend}}",No Prefix Ch
+rtp://239.0.0.1:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+            assert status == 200
+            assert "No Prefix Ch" in text
+            line, catchup_source = extract_catchup_source(text, "No Prefix Ch")
+            assert 'catchup="default"' in line, (
+                "Expected transformed append catchup to become default, got:\n%s" % line
+            )
+            assert (
+                "/No%20Prefix%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source
+            ), ("Expected direct catchup proxy URL, got:\n%s" % catchup_source)
         finally:
             r2h.stop()
 
@@ -716,7 +768,11 @@ rtp://239.0.0.1:1234
         try:
             r2h.start()
             status, _, body = http_request(
-                "127.0.0.1", port, "HEAD", "/Test%20Service", timeout=3.0,
+                "127.0.0.1",
+                port,
+                "HEAD",
+                "/Test%20Service",
+                timeout=3.0,
             )
             assert status == 200
             assert len(body) == 0
@@ -776,7 +832,11 @@ rtp://239.0.0.1:1234
             r2h.start()
             # With $label suffix
             status, _, _ = http_request(
-                "127.0.0.1", port, "HEAD", "/MyChannel$HD", timeout=3.0,
+                "127.0.0.1",
+                port,
+                "HEAD",
+                "/MyChannel$HD",
+                timeout=3.0,
             )
             assert status == 200
         finally:
@@ -796,25 +856,30 @@ class TestM3UHTTPExternal:
         from helpers import MockHTTPUpstream
 
         m3u_content = (
-            "#EXTM3U\n"
-            "#EXTINF:-1,HTTP Loaded Channel\n"
-            "rtp://239.10.0.1:5000\n"
+            "#EXTM3U\n" "#EXTINF:-1,HTTP Loaded Channel\n" "rtp://239.10.0.1:5000\n"
         )
-        upstream = MockHTTPUpstream(routes={
-            "/channels.m3u": {
-                "status": 200,
-                "body": m3u_content,
-                "headers": {"Content-Type": "audio/x-mpegurl"},
-            },
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/channels.m3u": {
+                    "status": 200,
+                    "body": m3u_content,
+                    "headers": {"Content-Type": "audio/x-mpegurl"},
+                },
+            }
+        )
         upstream.start()
 
         port = find_free_port()
         r2h = R2HProcess(
-            r2h_binary, port,
+            r2h_binary,
+            port,
             extra_args=[
-                "-v", "4", "-m", "100",
-                "-M", "http://127.0.0.1:%d/channels.m3u" % upstream.port,
+                "-v",
+                "4",
+                "-m",
+                "100",
+                "-M",
+                "http://127.0.0.1:%d/channels.m3u" % upstream.port,
             ],
         )
         try:
@@ -839,21 +904,28 @@ class TestM3UHTTPExternal:
             "#EXTINF:-1,Ext RTP Channel\n"
             "rtp://239.10.0.1:5000\n"
         )
-        upstream = MockHTTPUpstream(routes={
-            "/list.m3u": {
-                "status": 200,
-                "body": m3u_content,
-                "headers": {"Content-Type": "audio/x-mpegurl"},
-            },
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/list.m3u": {
+                    "status": 200,
+                    "body": m3u_content,
+                    "headers": {"Content-Type": "audio/x-mpegurl"},
+                },
+            }
+        )
         upstream.start()
 
         port = find_free_port()
         r2h = R2HProcess(
-            r2h_binary, port,
+            r2h_binary,
+            port,
             extra_args=[
-                "-v", "4", "-m", "100",
-                "-M", "http://127.0.0.1:%d/list.m3u" % upstream.port,
+                "-v",
+                "4",
+                "-m",
+                "100",
+                "-M",
+                "http://127.0.0.1:%d/list.m3u" % upstream.port,
             ],
         )
         try:
@@ -906,8 +978,9 @@ rtp://239.0.0.2:1234$SD
             assert "CCTV-1" in text
             # Should have URLs for both sources
             url_lines = [l for l in text.splitlines() if l.startswith("http")]
-            assert len(url_lines) >= 2, \
-                "Expected at least 2 URLs for multi-label, got %d" % len(url_lines)
+            assert (
+                len(url_lines) >= 2
+            ), "Expected at least 2 URLs for multi-label, got %d" % len(url_lines)
             assert len(set(url_lines)) == len(url_lines), "URLs should be unique"
         finally:
             r2h.stop()

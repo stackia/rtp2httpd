@@ -241,17 +241,6 @@ void service_hashmap_remove(service_t *service);
 service_t *service_hashmap_get(const char *url);
 
 /**
- * Check if a URL contains template placeholders anywhere (path or query)
- *
- * Detects patterns like ${(b)...}, ${(e)...}, {utc}, {start}, {lutc},
- * {end}, {duration}, {offset}, {Y}, {m}, {d}, {H}, {M}, {S}
- *
- * @param url URL string to scan
- * @return 1 if templates found, 0 otherwise
- */
-int service_url_has_template(const char *url);
-
-/**
  * Resolve upstream URL by substituting template placeholders or appending
  * seek parameters (query-append mode).
  *

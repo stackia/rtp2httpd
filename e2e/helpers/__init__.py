@@ -23,7 +23,7 @@ from .constants import (
     MCAST_ADDR,
     PROJECT_ROOT,
 )
-from .http import http_get, http_request, stream_get
+from .http import extract_catchup_source, http_get, http_request, stream_get
 from .mock_fcc import MockFCCServer
 from .mock_http import MockHTTPUpstream, MockHTTPUpstreamSilent
 from .mock_rtsp import (
@@ -60,6 +60,7 @@ __all__ = [
     "MockSTUNServer",
     "MulticastSender",
     "R2HProcess",
+    "extract_catchup_source",
     "find_free_port",
     "find_free_udp_port",
     "find_free_udp_port_pair",

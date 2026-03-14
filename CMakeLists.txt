@@ -34,6 +34,7 @@ set(COMMON_SOURCES
   src/http.c
   src/http_fetch.c
   src/service.c
+  src/url_template.c
   src/rtp.c
   src/rtp_reorder.c
   src/rtp_fec.c
