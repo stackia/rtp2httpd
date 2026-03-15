@@ -263,13 +263,14 @@ and `extra_args=["-v", "4", "-m", "100", "-r", LOOPBACK_IF]` instead of config_c
 
 - **Reuse R2HProcess**: Default to `scope="module"` fixtures. Starting fewer processes = faster tests.
 - **File naming**: `test_<feature>.py` in `e2e/`
-- **Class grouping**: Group related tests in classes (`TestFeatureSubArea`)
+- **Class grouping**: Group tests by **functional sub-area** (`TestProxyRedirect`, `TestProxyStatusCodes`), never by chronology (`TestXxxNew`, `TestXxxMore`). Add new tests to the matching existing class.
 - **Test naming**: `test_<what>_<expected_behavior>` (e.g. `test_etag_present`, `test_if_none_match_304`)
 - **Port allocation**: Always use `find_free_port()` / `find_free_udp_port()`, never hardcode
 - **Cleanup**: Module/class fixtures use `yield` + `.stop()`. Per-test instances use `try/finally`.
 - **URL encoding**: Use `%20` for spaces in service name URLs (e.g. `/Test%20Service`)
 - **Config format**: INI-style with `[global]`, `[bind]`, `[services]` sections
 - **Module docstrings**: Each test file starts with a docstring describing what it covers
+- **Parametrize**: Actively look for similar test patterns — if tests only differ in input/expected values, always use `@pytest.mark.parametrize` instead of copy-pasting test methods
 
 ### Gotchas
 
