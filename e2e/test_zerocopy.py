@@ -50,7 +50,8 @@ def zc_multicast_r2h(r2h_binary):
     """Zerocopy rtp2httpd with multicast interface for multicast tests."""
     port = find_free_port()
     r2h = R2HProcess(
-        r2h_binary, port,
+        r2h_binary,
+        port,
         extra_args=_ZC_ARGS + ["-r", LOOPBACK_IF],
     )
     r2h.start()
@@ -63,7 +64,8 @@ def zc_r2h(r2h_binary):
     """Zerocopy rtp2httpd for RTSP and HTTP proxy tests."""
     port = find_free_port()
     r2h = R2HProcess(
-        r2h_binary, port,
+        r2h_binary,
+        port,
         extra_args=_ZC_ARGS,
     )
     r2h.start()
@@ -86,7 +88,8 @@ class TestZerocopyMulticast:
         sender.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", zc_multicast_r2h.port,
+                "127.0.0.1",
+                zc_multicast_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}",
                 read_bytes=8192,
                 timeout=_STREAM_TIMEOUT,
@@ -103,7 +106,8 @@ class TestZerocopyMulticast:
         sender.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", zc_multicast_r2h.port,
+                "127.0.0.1",
+                zc_multicast_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}",
                 read_bytes=8192,
                 timeout=_STREAM_TIMEOUT,
@@ -151,7 +155,8 @@ class TestZerocopyRTSP:
         mock.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", zc_r2h.port,
+                "127.0.0.1",
+                zc_r2h.port,
                 f"/rtsp/127.0.0.1:{mock.port}",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
@@ -168,7 +173,8 @@ class TestZerocopyRTSP:
         mock.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", zc_r2h.port,
+                "127.0.0.1",
+                zc_r2h.port,
                 f"/rtsp/127.0.0.1:{mock.port}",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
@@ -186,7 +192,8 @@ class TestZerocopyRTSP:
         mock.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", zc_r2h.port,
+                "127.0.0.1",
+                zc_r2h.port,
                 f"/rtsp/127.0.0.1:{mock.port}",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
@@ -209,18 +216,22 @@ class TestZerocopyHTTPProxy:
     def test_proxy_stream(self, zc_r2h):
         """HTTP proxy should forward data correctly with zerocopy."""
         body_data = b"x" * 16384  # 16KB body
-        upstream = MockHTTPUpstream(routes={
-            "/stream": {
-                "status": 200,
-                "body": body_data,
-                "headers": {"Content-Type": "application/octet-stream"},
-            },
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/stream": {
+                    "status": 200,
+                    "body": body_data,
+                    "headers": {"Content-Type": "application/octet-stream"},
+                },
+            }
+        )
         upstream.start()
         try:
             from helpers import http_get
+
             status, _, body = http_get(
-                "127.0.0.1", zc_r2h.port,
+                "127.0.0.1",
+                zc_r2h.port,
                 f"/http/127.0.0.1:{upstream.port}/stream",
                 timeout=5.0,
             )
@@ -234,25 +245,27 @@ class TestZerocopyHTTPProxy:
         """HTTP proxy should handle large payloads correctly with zerocopy."""
         # 256KB body - exercises multiple sendmsg calls with MSG_ZEROCOPY
         body_data = bytes(range(256)) * 1024  # 256KB
-        upstream = MockHTTPUpstream(routes={
-            "/large": {
-                "status": 200,
-                "body": body_data,
-                "headers": {"Content-Type": "application/octet-stream"},
-            },
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/large": {
+                    "status": 200,
+                    "body": body_data,
+                    "headers": {"Content-Type": "application/octet-stream"},
+                },
+            }
+        )
         upstream.start()
         try:
             from helpers import http_get
+
             status, _, body = http_get(
-                "127.0.0.1", zc_r2h.port,
+                "127.0.0.1",
+                zc_r2h.port,
                 f"/http/127.0.0.1:{upstream.port}/large",
                 timeout=10.0,
             )
             assert status == 200
-            assert len(body) == len(body_data), (
-                f"Expected {len(body_data)} bytes, got {len(body)}"
-            )
+            assert len(body) == len(body_data), f"Expected {len(body_data)} bytes, got {len(body)}"
             assert body == body_data, "Body content mismatch with zerocopy proxy"
         finally:
             upstream.stop()

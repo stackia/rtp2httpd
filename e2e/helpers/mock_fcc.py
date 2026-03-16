@@ -235,7 +235,9 @@ class MockFCCServer:
         # Start unicast sender in a separate thread so the receive loop
         # keeps processing incoming packets (e.g. termination).
         t = threading.Thread(
-            target=self._send_unicast, args=(client_addr,), daemon=True,
+            target=self._send_unicast,
+            args=(client_addr,),
+            daemon=True,
         )
         t.start()
 

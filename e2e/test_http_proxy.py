@@ -15,7 +15,6 @@ from helpers import (
     R2HProcess,
     find_free_port,
     http_get,
-    http_request,
     stream_get,
 )
 
@@ -47,13 +46,16 @@ class TestBasicProxy:
 
     def test_proxy_200(self, shared_r2h):
         """A proxied path returning 200 should be relayed to the client."""
-        upstream = MockHTTPUpstream(routes={
-            "/hello": {"status": 200, "body": b"world", "headers": {"Content-Type": "text/plain"}},
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/hello": {"status": 200, "body": b"world", "headers": {"Content-Type": "text/plain"}},
+            }
+        )
         upstream.start()
         try:
             status, hdrs, body = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 f"/http/127.0.0.1:{upstream.port}/hello",
                 timeout=5.0,
             )
@@ -68,7 +70,8 @@ class TestBasicProxy:
         upstream.start()
         try:
             status, _, _ = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 f"/http/127.0.0.1:{upstream.port}/missing",
                 timeout=5.0,
             )
@@ -86,17 +89,20 @@ class TestProxyContentType:
     """Verify Content-Type from upstream is preserved."""
 
     def test_json_content_type(self, shared_r2h):
-        upstream = MockHTTPUpstream(routes={
-            "/api/data": {
-                "status": 200,
-                "body": b'{"key":"value"}',
-                "headers": {"Content-Type": "application/json"},
-            },
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/api/data": {
+                    "status": 200,
+                    "body": b'{"key":"value"}',
+                    "headers": {"Content-Type": "application/json"},
+                },
+            }
+        )
         upstream.start()
         try:
             status, hdrs, body = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 f"/http/127.0.0.1:{upstream.port}/api/data",
                 timeout=5.0,
             )
@@ -118,13 +124,16 @@ class TestProxyLargeBody:
     def test_large_payload(self, shared_r2h):
         """Verify a 64 KB payload is proxied completely."""
         big_body = b"X" * (64 * 1024)
-        upstream = MockHTTPUpstream(routes={
-            "/big": {"status": 200, "body": big_body, "headers": {"Content-Type": "application/octet-stream"}},
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/big": {"status": 200, "body": big_body, "headers": {"Content-Type": "application/octet-stream"}},
+            }
+        )
         upstream.start()
         try:
             status, _, body = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/http/127.0.0.1:%d/big" % upstream.port,
                 timeout=10.0,
             )
@@ -145,13 +154,16 @@ class TestProxyQueryParams:
     def test_query_forwarded(self, shared_r2h):
         # The mock doesn't inspect query params, but rtp2httpd should
         # proxy the full URL. We just verify a 200 comes back.
-        upstream = MockHTTPUpstream(routes={
-            "/search": {"status": 200, "body": b"found"},
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/search": {"status": 200, "body": b"found"},
+            }
+        )
         upstream.start()
         try:
             status, _, body = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 f"/http/127.0.0.1:{upstream.port}/search?q=test&page=1",
                 timeout=5.0,
             )
@@ -171,7 +183,8 @@ class TestProxyUnreachable:
     def test_upstream_down(self, shared_r2h):
         dead_port = find_free_port()
         status, _, _ = stream_get(
-            "127.0.0.1", shared_r2h.port,
+            "127.0.0.1",
+            shared_r2h.port,
             "/http/127.0.0.1:%d/whatever" % dead_port,
             read_bytes=512,
             timeout=6.0,
@@ -205,7 +218,8 @@ class TestProxyUpstreamTimeout:
             try:
                 t0 = time.monotonic()
                 status, _, _ = stream_get(
-                    "127.0.0.1", r2h_port,
+                    "127.0.0.1",
+                    r2h_port,
                     "/http/127.0.0.1:%d/test" % upstream.port,
                     read_bytes=256,
                     timeout=_HTTP_PROXY_TIMEOUT * _TIMEOUT_MAX_FACTOR + 5,
@@ -213,12 +227,8 @@ class TestProxyUpstreamTimeout:
                 elapsed = time.monotonic() - t0
 
                 assert status == 503, f"Expected 503, got {status}"
-                assert elapsed >= _HTTP_PROXY_TIMEOUT * _TIMEOUT_MIN_FACTOR, (
-                    f"Timed out too quickly: {elapsed:.1f}s"
-                )
-                assert elapsed <= _HTTP_PROXY_TIMEOUT * _TIMEOUT_MAX_FACTOR + 2, (
-                    f"Timed out too slowly: {elapsed:.1f}s"
-                )
+                assert elapsed >= _HTTP_PROXY_TIMEOUT * _TIMEOUT_MIN_FACTOR, f"Timed out too quickly: {elapsed:.1f}s"
+                assert elapsed <= _HTTP_PROXY_TIMEOUT * _TIMEOUT_MAX_FACTOR + 2, f"Timed out too slowly: {elapsed:.1f}s"
             finally:
                 upstream.stop()
         finally:
@@ -234,13 +244,16 @@ class TestProxyStatusCodes:
     """Verify various upstream HTTP status codes are forwarded."""
 
     def test_proxy_500(self, shared_r2h):
-        upstream = MockHTTPUpstream(routes={
-            "/err": {"status": 500, "body": b"Internal Error"},
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/err": {"status": 500, "body": b"Internal Error"},
+            }
+        )
         upstream.start()
         try:
             status, _, body = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/http/127.0.0.1:%d/err" % upstream.port,
                 timeout=5.0,
             )
@@ -250,17 +263,20 @@ class TestProxyStatusCodes:
 
     def test_proxy_302_body(self, shared_r2h):
         """rtp2httpd should forward redirects from upstream."""
-        upstream = MockHTTPUpstream(routes={
-            "/redirect": {
-                "status": 302,
-                "body": b"",
-                "headers": {"Location": "http://example.com/new"},
-            },
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/redirect": {
+                    "status": 302,
+                    "body": b"",
+                    "headers": {"Location": "http://example.com/new"},
+                },
+            }
+        )
         upstream.start()
         try:
             status, hdrs, _ = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/http/127.0.0.1:%d/redirect" % upstream.port,
                 timeout=5.0,
             )
@@ -288,17 +304,20 @@ class TestProxyRedirectLocationRewrite:
 
     def test_302_location_rewritten(self, shared_r2h):
         """302 Location with http:// URL should be rewritten to /http/... path."""
-        upstream = MockHTTPUpstream(routes={
-            "/old": {
-                "status": 302,
-                "body": b"",
-                "headers": {"Location": "http://10.0.0.1:8080/new/page"},
-            },
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/old": {
+                    "status": 302,
+                    "body": b"",
+                    "headers": {"Location": "http://10.0.0.1:8080/new/page"},
+                },
+            }
+        )
         upstream.start()
         try:
             status, hdrs, _ = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/http/127.0.0.1:%d/old" % upstream.port,
                 timeout=5.0,
             )
@@ -311,17 +330,20 @@ class TestProxyRedirectLocationRewrite:
 
     def test_301_location_rewritten(self, shared_r2h):
         """301 permanent redirect should also rewrite Location."""
-        upstream = MockHTTPUpstream(routes={
-            "/moved": {
-                "status": 301,
-                "body": b"",
-                "headers": {"Location": "http://10.0.0.1:8080/moved-here"},
-            },
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/moved": {
+                    "status": 301,
+                    "body": b"",
+                    "headers": {"Location": "http://10.0.0.1:8080/moved-here"},
+                },
+            }
+        )
         upstream.start()
         try:
             status, hdrs, _ = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/http/127.0.0.1:%d/moved" % upstream.port,
                 timeout=5.0,
             )
@@ -334,17 +356,20 @@ class TestProxyRedirectLocationRewrite:
 
     def test_307_location_rewritten(self, shared_r2h):
         """307 temporary redirect should rewrite Location."""
-        upstream = MockHTTPUpstream(routes={
-            "/temp": {
-                "status": 307,
-                "body": b"",
-                "headers": {"Location": "http://10.0.0.1:8080/temp-dest"},
-            },
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/temp": {
+                    "status": 307,
+                    "body": b"",
+                    "headers": {"Location": "http://10.0.0.1:8080/temp-dest"},
+                },
+            }
+        )
         upstream.start()
         try:
             status, hdrs, _ = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/http/127.0.0.1:%d/temp" % upstream.port,
                 timeout=5.0,
             )
@@ -357,17 +382,20 @@ class TestProxyRedirectLocationRewrite:
 
     def test_redirect_location_preserves_query_string(self, shared_r2h):
         """Query parameters in Location URL should be preserved after rewrite."""
-        upstream = MockHTTPUpstream(routes={
-            "/redir-qs": {
-                "status": 302,
-                "body": b"",
-                "headers": {"Location": "http://10.0.0.1:8080/target?foo=bar&baz=1"},
-            },
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/redir-qs": {
+                    "status": 302,
+                    "body": b"",
+                    "headers": {"Location": "http://10.0.0.1:8080/target?foo=bar&baz=1"},
+                },
+            }
+        )
         upstream.start()
         try:
             status, hdrs, _ = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/http/127.0.0.1:%d/redir-qs" % upstream.port,
                 timeout=5.0,
             )
@@ -382,17 +410,20 @@ class TestProxyRedirectLocationRewrite:
 
     def test_redirect_https_location_not_rewritten(self, shared_r2h):
         """https:// Location should NOT be rewritten (only http:// is supported)."""
-        upstream = MockHTTPUpstream(routes={
-            "/secure-redir": {
-                "status": 302,
-                "body": b"",
-                "headers": {"Location": "https://example.com/secure"},
-            },
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/secure-redir": {
+                    "status": 302,
+                    "body": b"",
+                    "headers": {"Location": "https://example.com/secure"},
+                },
+            }
+        )
         upstream.start()
         try:
             status, hdrs, _ = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/http/127.0.0.1:%d/secure-redir" % upstream.port,
                 timeout=5.0,
             )
@@ -405,20 +436,23 @@ class TestProxyRedirectLocationRewrite:
 
     def test_non_redirect_location_not_rewritten(self, shared_r2h):
         """A 200 response with a Location header should NOT rewrite it."""
-        upstream = MockHTTPUpstream(routes={
-            "/ok-with-loc": {
-                "status": 200,
-                "body": b"ok",
-                "headers": {
-                    "Location": "http://10.0.0.1:8080/other",
-                    "Content-Type": "text/plain",
+        upstream = MockHTTPUpstream(
+            routes={
+                "/ok-with-loc": {
+                    "status": 200,
+                    "body": b"ok",
+                    "headers": {
+                        "Location": "http://10.0.0.1:8080/other",
+                        "Content-Type": "text/plain",
+                    },
                 },
-            },
-        })
+            }
+        )
         upstream.start()
         try:
             status, hdrs, _ = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/http/127.0.0.1:%d/ok-with-loc" % upstream.port,
                 timeout=5.0,
             )
@@ -439,13 +473,16 @@ class TestProxyEmptyBody:
     """An upstream 200 with empty body should be forwarded."""
 
     def test_empty_200(self, shared_r2h):
-        upstream = MockHTTPUpstream(routes={
-            "/empty": {"status": 200, "body": b""},
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/empty": {"status": 200, "body": b""},
+            }
+        )
         upstream.start()
         try:
             status, _, body = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/http/127.0.0.1:%d/empty" % upstream.port,
                 timeout=5.0,
             )

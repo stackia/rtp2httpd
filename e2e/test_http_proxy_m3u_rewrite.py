@@ -43,7 +43,8 @@ def shared_r2h(r2h_binary):
 def _m3u_get(shared_r2h, upstream_port, path, content_type="application/vnd.apple.mpegurl"):
     """Convenience: GET an M3U path through the proxy and return decoded text."""
     status, hdrs, body = http_get(
-        "127.0.0.1", shared_r2h.port,
+        "127.0.0.1",
+        shared_r2h.port,
         f"/http/127.0.0.1:{upstream_port}{path}",
         timeout=_TIMEOUT,
     )
@@ -52,13 +53,15 @@ def _m3u_get(shared_r2h, upstream_port, path, content_type="application/vnd.appl
 
 def _make_m3u_upstream(path, body, content_type="application/vnd.apple.mpegurl"):
     """Create and start a MockHTTPUpstream serving an M3U playlist."""
-    upstream = MockHTTPUpstream(routes={
-        path: {
-            "status": 200,
-            "body": body,
-            "headers": {"Content-Type": content_type},
-        },
-    })
+    upstream = MockHTTPUpstream(
+        routes={
+            path: {
+                "status": 200,
+                "body": body,
+                "headers": {"Content-Type": content_type},
+            },
+        }
+    )
     upstream.start()
     return upstream
 
@@ -117,12 +120,7 @@ class TestM3URewriteAbsoluteHTTP:
 
     def test_url_with_query_params_rewritten(self, shared_r2h):
         """Query parameters on segment URLs should be preserved after rewrite."""
-        m3u = (
-            "#EXTM3U\n"
-            "#EXT-X-TARGETDURATION:10\n"
-            "#EXTINF:10,\n"
-            "http://10.0.0.1:8080/seg.ts?token=abc&t=123\n"
-        )
+        m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nhttp://10.0.0.1:8080/seg.ts?token=abc&t=123\n"
         upstream = _make_m3u_upstream("/playlist.m3u8", m3u)
         try:
             status, _, text = _m3u_get(shared_r2h, upstream.port, "/playlist.m3u8")
@@ -136,12 +134,7 @@ class TestM3URewriteAbsoluteHTTP:
 
     def test_port_80_url_rewritten(self, shared_r2h):
         """http:// URLs with default port 80 (no explicit port) should be rewritten."""
-        m3u = (
-            "#EXTM3U\n"
-            "#EXT-X-TARGETDURATION:10\n"
-            "#EXTINF:10,\n"
-            "http://cdn.example.com/seg.ts\n"
-        )
+        m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nhttp://cdn.example.com/seg.ts\n"
         upstream = _make_m3u_upstream("/playlist.m3u8", m3u)
         try:
             status, _, text = _m3u_get(shared_r2h, upstream.port, "/playlist.m3u8")
@@ -162,23 +155,16 @@ class TestM3URewriteRelativeURL:
 
     def test_bare_filename_resolved(self, shared_r2h):
         """A bare filename like 'segment.ts' should be resolved to upstream dir."""
-        m3u = (
-            "#EXTM3U\n"
-            "#EXT-X-TARGETDURATION:10\n"
-            "#EXTINF:10,\n"
-            "segment0.ts\n"
-            "#EXTINF:10,\n"
-            "segment1.ts\n"
-        )
+        m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nsegment0.ts\n#EXTINF:10,\nsegment1.ts\n"
         upstream = _make_m3u_upstream("/live/stream/playlist.m3u8", m3u)
         try:
             status, _, text = _m3u_get(shared_r2h, upstream.port, "/live/stream/playlist.m3u8")
             assert status == 200
             # Should be resolved: /live/stream/ + segment0.ts
-            lines = [l for l in text.splitlines() if "segment0.ts" in l]
+            lines = [line for line in text.splitlines() if "segment0.ts" in line]
             assert len(lines) == 1
             assert f"/http/127.0.0.1:{upstream.port}/live/stream/segment0.ts" in lines[0]
-            lines1 = [l for l in text.splitlines() if "segment1.ts" in l]
+            lines1 = [line for line in text.splitlines() if "segment1.ts" in line]
             assert len(lines1) == 1
             assert f"/http/127.0.0.1:{upstream.port}/live/stream/segment1.ts" in lines1[0]
         finally:
@@ -186,17 +172,12 @@ class TestM3URewriteRelativeURL:
 
     def test_absolute_path_resolved(self, shared_r2h):
         """An absolute path like '/segments/seg.ts' should use upstream host."""
-        m3u = (
-            "#EXTM3U\n"
-            "#EXT-X-TARGETDURATION:10\n"
-            "#EXTINF:10,\n"
-            "/segments/seg0.ts\n"
-        )
+        m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\n/segments/seg0.ts\n"
         upstream = _make_m3u_upstream("/live/playlist.m3u8", m3u)
         try:
             status, _, text = _m3u_get(shared_r2h, upstream.port, "/live/playlist.m3u8")
             assert status == 200
-            lines = [l for l in text.splitlines() if "seg0.ts" in l]
+            lines = [line for line in text.splitlines() if "seg0.ts" in line]
             assert len(lines) == 1
             assert f"/http/127.0.0.1:{upstream.port}/segments/seg0.ts" in lines[0]
         finally:
@@ -204,17 +185,12 @@ class TestM3URewriteRelativeURL:
 
     def test_relative_subdir_resolved(self, shared_r2h):
         """A relative path like 'subdir/seg.ts' should be resolved to upstream dir."""
-        m3u = (
-            "#EXTM3U\n"
-            "#EXT-X-TARGETDURATION:10\n"
-            "#EXTINF:10,\n"
-            "hd/seg0.ts\n"
-        )
+        m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nhd/seg0.ts\n"
         upstream = _make_m3u_upstream("/live/playlist.m3u8", m3u)
         try:
             status, _, text = _m3u_get(shared_r2h, upstream.port, "/live/playlist.m3u8")
             assert status == 200
-            lines = [l for l in text.splitlines() if "seg0.ts" in l]
+            lines = [line for line in text.splitlines() if "seg0.ts" in line]
             assert len(lines) == 1
             assert f"/http/127.0.0.1:{upstream.port}/live/hd/seg0.ts" in lines[0]
         finally:
@@ -231,12 +207,7 @@ class TestM3URewriteHTTPS:
 
     def test_https_segment_not_rewritten(self, shared_r2h):
         """https:// segment URLs should remain unchanged in the output."""
-        m3u = (
-            "#EXTM3U\n"
-            "#EXT-X-TARGETDURATION:10\n"
-            "#EXTINF:10,\n"
-            "https://secure.example.com/seg.ts\n"
-        )
+        m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nhttps://secure.example.com/seg.ts\n"
         upstream = _make_m3u_upstream("/playlist.m3u8", m3u)
         try:
             status, _, text = _m3u_get(shared_r2h, upstream.port, "/playlist.m3u8")
@@ -389,15 +360,7 @@ class TestM3URewritePassthrough:
 
     def test_empty_lines_preserved(self, shared_r2h):
         """Empty lines in the playlist should not cause issues."""
-        m3u = (
-            "#EXTM3U\n"
-            "\n"
-            "#EXT-X-TARGETDURATION:10\n"
-            "\n"
-            "#EXTINF:10,\n"
-            "http://10.0.0.1:8080/seg.ts\n"
-            "\n"
-        )
+        m3u = "#EXTM3U\n\n#EXT-X-TARGETDURATION:10\n\n#EXTINF:10,\nhttp://10.0.0.1:8080/seg.ts\n\n"
         upstream = _make_m3u_upstream("/playlist.m3u8", m3u)
         try:
             status, _, text = _m3u_get(shared_r2h, upstream.port, "/playlist.m3u8")
@@ -420,7 +383,8 @@ class TestM3URewriteContentType:
         """application/vnd.apple.mpegurl should trigger rewriting."""
         m3u = "#EXTM3U\n#EXTINF:10,\nhttp://10.0.0.1:8080/seg.ts\n"
         upstream = _make_m3u_upstream(
-            "/playlist.m3u8", m3u,
+            "/playlist.m3u8",
+            m3u,
             content_type="application/vnd.apple.mpegurl",
         )
         try:
@@ -435,7 +399,8 @@ class TestM3URewriteContentType:
         """application/x-mpegurl should trigger rewriting."""
         m3u = "#EXTM3U\n#EXTINF:10,\nhttp://10.0.0.1:8080/seg.ts\n"
         upstream = _make_m3u_upstream(
-            "/playlist.m3u8", m3u,
+            "/playlist.m3u8",
+            m3u,
             content_type="application/x-mpegurl",
         )
         try:
@@ -449,7 +414,8 @@ class TestM3URewriteContentType:
         """audio/x-mpegurl should trigger rewriting."""
         m3u = "#EXTM3U\n#EXTINF:10,\nhttp://10.0.0.1:8080/seg.ts\n"
         upstream = _make_m3u_upstream(
-            "/playlist.m3u8", m3u,
+            "/playlist.m3u8",
+            m3u,
             content_type="audio/x-mpegurl",
         )
         try:
@@ -463,7 +429,8 @@ class TestM3URewriteContentType:
         """audio/mpegurl should trigger rewriting."""
         m3u = "#EXTM3U\n#EXTINF:10,\nhttp://10.0.0.1:8080/seg.ts\n"
         upstream = _make_m3u_upstream(
-            "/playlist.m3u8", m3u,
+            "/playlist.m3u8",
+            m3u,
             content_type="audio/mpegurl",
         )
         try:
@@ -476,17 +443,20 @@ class TestM3URewriteContentType:
     def test_non_m3u_content_not_rewritten(self, shared_r2h):
         """text/plain content should NOT have URLs rewritten."""
         body = "http://10.0.0.1:8080/seg.ts\n"
-        upstream = MockHTTPUpstream(routes={
-            "/data.txt": {
-                "status": 200,
-                "body": body,
-                "headers": {"Content-Type": "text/plain"},
-            },
-        })
+        upstream = MockHTTPUpstream(
+            routes={
+                "/data.txt": {
+                    "status": 200,
+                    "body": body,
+                    "headers": {"Content-Type": "text/plain"},
+                },
+            }
+        )
         upstream.start()
         try:
             status, _, raw = http_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 f"/http/127.0.0.1:{upstream.port}/data.txt",
                 timeout=_TIMEOUT,
             )
@@ -501,7 +471,8 @@ class TestM3URewriteContentType:
         """Content-Type with charset parameter should still trigger rewrite."""
         m3u = "#EXTM3U\n#EXTINF:10,\nhttp://10.0.0.1:8080/seg.ts\n"
         upstream = _make_m3u_upstream(
-            "/playlist.m3u8", m3u,
+            "/playlist.m3u8",
+            m3u,
             content_type="application/vnd.apple.mpegurl; charset=utf-8",
         )
         try:
@@ -559,7 +530,7 @@ class TestM3URewriteRealistic:
         m3u = (
             "#EXTM3U\n"
             '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English",URI="http://10.0.0.1:8080/audio/en.m3u8"\n'
-            "#EXT-X-STREAM-INF:BANDWIDTH=2000000,AUDIO=\"aac\"\n"
+            '#EXT-X-STREAM-INF:BANDWIDTH=2000000,AUDIO="aac"\n'
             "http://10.0.0.1:8080/video/high.m3u8\n"
         )
         upstream = _make_m3u_upstream("/master.m3u8", m3u)
@@ -633,12 +604,7 @@ class TestM3URewriteEdgeCases:
 
     def test_url_with_uri_in_path(self, shared_r2h):
         """A URL containing 'URI=' as part of the path should not confuse the parser."""
-        m3u = (
-            "#EXTM3U\n"
-            "#EXT-X-TARGETDURATION:10\n"
-            "#EXTINF:10,\n"
-            "http://10.0.0.1:8080/path/with/URI=value/seg.ts\n"
-        )
+        m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nhttp://10.0.0.1:8080/path/with/URI=value/seg.ts\n"
         upstream = _make_m3u_upstream("/playlist.m3u8", m3u)
         try:
             status, _, text = _m3u_get(shared_r2h, upstream.port, "/playlist.m3u8")
@@ -651,12 +617,7 @@ class TestM3URewriteEdgeCases:
 
     def test_windows_line_endings(self, shared_r2h):
         """M3U with \\r\\n line endings should be handled correctly."""
-        m3u = (
-            "#EXTM3U\r\n"
-            "#EXT-X-TARGETDURATION:10\r\n"
-            "#EXTINF:10,\r\n"
-            "http://10.0.0.1:8080/seg.ts\r\n"
-        )
+        m3u = "#EXTM3U\r\n#EXT-X-TARGETDURATION:10\r\n#EXTINF:10,\r\nhttp://10.0.0.1:8080/seg.ts\r\n"
         upstream = _make_m3u_upstream("/playlist.m3u8", m3u)
         try:
             status, _, text = _m3u_get(shared_r2h, upstream.port, "/playlist.m3u8")
@@ -703,12 +664,7 @@ class TestM3URewriteEdgeCases:
 
     def test_content_length_updated(self, shared_r2h):
         """After rewriting, the Content-Length should match the actual body size."""
-        m3u = (
-            "#EXTM3U\n"
-            "#EXT-X-TARGETDURATION:10\n"
-            "#EXTINF:10,\n"
-            "http://10.0.0.1:8080/seg.ts\n"
-        )
+        m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nhttp://10.0.0.1:8080/seg.ts\n"
         upstream = _make_m3u_upstream("/playlist.m3u8", m3u)
         try:
             status, hdrs, text = _m3u_get(shared_r2h, upstream.port, "/playlist.m3u8")

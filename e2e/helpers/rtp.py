@@ -30,8 +30,8 @@ def make_rtp_packet(
         payload = _TS_NULL_PACKET
     header = struct.pack(
         "!BBHII",
-        0x80,                     # V=2, P=0, X=0, CC=0
-        payload_type & 0x7F,      # M=0, PT
+        0x80,  # V=2, P=0, X=0, CC=0
+        payload_type & 0x7F,  # M=0, PT
         seq & 0xFFFF,
         timestamp & 0xFFFFFFFF,
         ssrc & 0xFFFFFFFF,
@@ -75,7 +75,8 @@ class MulticastSender:
         self._sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
         self._sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
         self._sock.setsockopt(
-            socket.IPPROTO_IP, socket.IP_MULTICAST_IF,
+            socket.IPPROTO_IP,
+            socket.IP_MULTICAST_IF,
             socket.inet_aton("127.0.0.1"),
         )
         self._thread = threading.Thread(target=self._loop, daemon=True)

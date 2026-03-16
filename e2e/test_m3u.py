@@ -9,7 +9,6 @@ import os
 import tempfile
 import time
 
-import pytest
 
 from helpers import (
     R2HProcess,
@@ -100,9 +99,7 @@ class TestExternalM3UFile:
         return path
 
     def test_external_file_m3u(self, r2h_binary):
-        m3u_path = self._write_m3u(
-            "#EXTM3U\n" "#EXTINF:-1,File Channel\n" "rtp://239.10.0.1:5000\n"
-        )
+        m3u_path = self._write_m3u("#EXTM3U\n#EXTINF:-1,File Channel\nrtp://239.10.0.1:5000\n")
         port = find_free_port()
         r2h = R2HProcess(
             r2h_binary,
@@ -125,9 +122,7 @@ class TestExternalM3UFile:
         """FEC query parameter in M3U source should be preserved internally.
         The transformed URL may or may not include the FEC param (it is stored
         in the service config).  We just verify the service is listed."""
-        m3u_path = self._write_m3u(
-            "#EXTM3U\n" "#EXTINF:-1,FEC Stream\n" "rtp://239.10.0.1:5000?fec=5002\n"
-        )
+        m3u_path = self._write_m3u("#EXTM3U\n#EXTINF:-1,FEC Stream\nrtp://239.10.0.1:5000?fec=5002\n")
         port = find_free_port()
         r2h = R2HProcess(
             r2h_binary,
@@ -358,7 +353,7 @@ rtp://239.0.0.3:1234
             text = body.decode()
             assert status == 200
             # Each "Same Name" entry should have a distinct URL
-            lines = [l for l in text.splitlines() if l.startswith("http")]
+            lines = [line for line in text.splitlines() if line.startswith("http")]
             assert len(lines) >= 3, "Expected at least 3 rewritten URLs"
             assert len(set(lines)) == len(lines), "URLs should be unique"
         finally:
@@ -425,12 +420,10 @@ rtp://239.0.0.1:1234
             assert status == 200
             assert "QMark NoDyn Ch" in text
             line, catchup_source = extract_catchup_source(text, "QMark NoDyn Ch")
-            assert 'catchup="default"' in line, (
-                "Expected transformed append catchup to become default, got:\n%s" % line
+            assert 'catchup="default"' in line, "Expected transformed append catchup to become default, got:\n%s" % line
+            assert "/QMark%20NoDyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source, (
+                "Expected direct catchup proxy URL, got:\n%s" % catchup_source
             )
-            assert (
-                "/QMark%20NoDyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source
-            ), ("Expected direct catchup proxy URL, got:\n%s" % catchup_source)
         finally:
             r2h.stop()
 
@@ -457,12 +450,10 @@ rtp://239.0.0.1:1234
             assert status == 200
             assert "Amp NoDyn Ch" in text
             line, catchup_source = extract_catchup_source(text, "Amp NoDyn Ch")
-            assert 'catchup="default"' in line, (
-                "Expected transformed append catchup to become default, got:\n%s" % line
+            assert 'catchup="default"' in line, "Expected transformed append catchup to become default, got:\n%s" % line
+            assert "/Amp%20NoDyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source, (
+                "Expected direct catchup proxy URL, got:\n%s" % catchup_source
             )
-            assert (
-                "/Amp%20NoDyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source
-            ), ("Expected direct catchup proxy URL, got:\n%s" % catchup_source)
         finally:
             r2h.stop()
 
@@ -489,12 +480,10 @@ http://10.10.10.1:8888/live/stream.m3u8?begin={{utc}}
             assert status == 200
             assert "Amp Dyn Ch" in text
             line, catchup_source = extract_catchup_source(text, "Amp Dyn Ch")
-            assert 'catchup="default"' in line, (
-                "Expected transformed append catchup to become default, got:\n%s" % line
+            assert 'catchup="default"' in line, "Expected transformed append catchup to become default, got:\n%s" % line
+            assert "/Amp%20Dyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source, (
+                "Expected direct catchup proxy URL, got:\n%s" % catchup_source
             )
-            assert (
-                "/Amp%20Dyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source
-            ), ("Expected direct catchup proxy URL, got:\n%s" % catchup_source)
             assert "http://127.0.0.1:" in line
         finally:
             r2h.stop()
@@ -522,12 +511,10 @@ http://10.10.10.1:8888/live/stream.m3u8?begin={{utc}}
             assert status == 200
             assert "QMark Dyn Ch" in text
             line, catchup_source = extract_catchup_source(text, "QMark Dyn Ch")
-            assert 'catchup="default"' in line, (
-                "Expected transformed append catchup to become default, got:\n%s" % line
+            assert 'catchup="default"' in line, "Expected transformed append catchup to become default, got:\n%s" % line
+            assert "/QMark%20Dyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source, (
+                "Expected direct catchup proxy URL, got:\n%s" % catchup_source
             )
-            assert (
-                "/QMark%20Dyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source
-            ), ("Expected direct catchup proxy URL, got:\n%s" % catchup_source)
         finally:
             r2h.stop()
 
@@ -554,12 +541,10 @@ http://10.10.10.1:8888/live/stream.m3u8?token=abc
             assert status == 200
             assert "Static Query Ch" in text
             line, catchup_source = extract_catchup_source(text, "Static Query Ch")
-            assert 'catchup="default"' in line, (
-                "Expected transformed append catchup to become default, got:\n%s" % line
+            assert 'catchup="default"' in line, "Expected transformed append catchup to become default, got:\n%s" % line
+            assert "/Static%20Query%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source, (
+                "Expected direct catchup proxy URL, got:\n%s" % catchup_source
             )
-            assert (
-                "/Static%20Query%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source
-            ), ("Expected direct catchup proxy URL, got:\n%s" % catchup_source)
         finally:
             r2h.stop()
 
@@ -586,12 +571,10 @@ rtp://239.0.0.1:1234
             assert status == 200
             assert "No Prefix Ch" in text
             line, catchup_source = extract_catchup_source(text, "No Prefix Ch")
-            assert 'catchup="default"' in line, (
-                "Expected transformed append catchup to become default, got:\n%s" % line
+            assert 'catchup="default"' in line, "Expected transformed append catchup to become default, got:\n%s" % line
+            assert "/No%20Prefix%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source, (
+                "Expected direct catchup proxy URL, got:\n%s" % catchup_source
             )
-            assert (
-                "/No%20Prefix%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source
-            ), ("Expected direct catchup proxy URL, got:\n%s" % catchup_source)
         finally:
             r2h.stop()
 
@@ -735,7 +718,7 @@ http://example.com:8080/stream.m3u8
             assert "RTSP Channel" in text
             assert "HTTP Channel" in text
             # Each should have a distinct URL line
-            url_lines = [l for l in text.splitlines() if l.startswith("http")]
+            url_lines = [line for line in text.splitlines() if line.startswith("http")]
             assert len(url_lines) >= 3
         finally:
             r2h.stop()
@@ -855,9 +838,7 @@ class TestM3UHTTPExternal:
         """Loading M3U from an HTTP URL should populate the playlist."""
         from helpers import MockHTTPUpstream
 
-        m3u_content = (
-            "#EXTM3U\n" "#EXTINF:-1,HTTP Loaded Channel\n" "rtp://239.10.0.1:5000\n"
-        )
+        m3u_content = "#EXTM3U\n#EXTINF:-1,HTTP Loaded Channel\nrtp://239.10.0.1:5000\n"
         upstream = MockHTTPUpstream(
             routes={
                 "/channels.m3u": {
@@ -977,10 +958,8 @@ rtp://239.0.0.2:1234$SD
             assert status == 200
             assert "CCTV-1" in text
             # Should have URLs for both sources
-            url_lines = [l for l in text.splitlines() if l.startswith("http")]
-            assert (
-                len(url_lines) >= 2
-            ), "Expected at least 2 URLs for multi-label, got %d" % len(url_lines)
+            url_lines = [line for line in text.splitlines() if line.startswith("http")]
+            assert len(url_lines) >= 2, "Expected at least 2 URLs for multi-label, got %d" % len(url_lines)
             assert len(set(url_lines)) == len(url_lines), "URLs should be unique"
         finally:
             r2h.stop()

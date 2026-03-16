@@ -179,9 +179,7 @@ class TestHTTPTemplateResolver:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d%s?playseek=%s"
-            ) % (upstream.port, url_path_template, playseek)
+            url = ("/http/127.0.0.1:%d%s?playseek=%s") % (upstream.port, url_path_template, playseek)
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -195,8 +193,7 @@ class TestHTTPTemplateResolver:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/{Y}/{m}/{d}/{H}/{M}/{S}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/{Y}/{m}/{d}/{H}/{M}/{S}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -226,10 +223,7 @@ class TestHTTPTemplateResolver:
         upstream = _make_upstream()
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d"
-                "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file.m3u8"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file.m3u8") % upstream.port
             # No playseek parameter - URL should be forwarded as-is
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
@@ -247,9 +241,7 @@ class TestHTTPTemplateResolver:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d"
-                "/path/${(b)yyyyMMddHHmmss}/data"
-                "?ts={utc}&playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/data?ts={utc}&playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -259,8 +251,7 @@ class TestHTTPTemplateResolver:
             assert full_path.startswith("/path/20240101120000/data")
             # Query template also substituted (ISO8601)
             assert "ts=2024-01-01T12" in full_path, (
-                "Query template {utc} should be substituted as ISO8601, got: %s"
-                % full_path
+                "Query template {utc} should be substituted as ISO8601, got: %s" % full_path
             )
         finally:
             upstream.stop()
@@ -272,9 +263,7 @@ class TestHTTPTemplateResolver:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d"
-                "/path/${(b)yyyyMMdd}/${(b)HHmmss}/file"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/path/${(b)yyyyMMdd}/${(b)HHmmss}/file?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -288,11 +277,7 @@ class TestHTTPTemplateResolver:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d"
-                "/path/${(b)yyyyMMddHHmmss}/file"
-                "?playseek=20240101120000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file?playseek=20240101120000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -307,11 +292,11 @@ class TestHTTPTemplateResolver:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d"
-                "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file"
-                "?playseek=%d-%d"
-            ) % (upstream.port, _BEGIN_EPOCH, _END_EPOCH)
+            url = ("/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file?playseek=%d-%d") % (
+                upstream.port,
+                _BEGIN_EPOCH,
+                _END_EPOCH,
+            )
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -323,10 +308,7 @@ class TestHTTPTemplateResolver:
         upstream = _make_upstream()
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{offset}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{offset}?playseek=20240101120000-20240101130000") % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
@@ -336,9 +318,7 @@ class TestHTTPTemplateResolver:
             assert match, "Expected /stream/<number>, got: %s" % path
             offset_val = int(match.group(1))
             # The offset should be at least a few million seconds (we're past 2024)
-            assert offset_val > 1000000, (
-                "Offset should be large (time since 2024-01-01), got: %d" % offset_val
-            )
+            assert offset_val > 1000000, "Offset should be large (time since 2024-01-01), got: %d" % offset_val
         finally:
             upstream.stop()
 
@@ -349,9 +329,7 @@ class TestHTTPTemplateResolver:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d"
-                "/path/{utc}/${(b)yyyyMMddHHmmss}/file"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/path/{utc}/${(b)yyyyMMddHHmmss}/file?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -382,8 +360,7 @@ class TestHTTPTemplateResolver:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/archive/${(e)yyyyMMddHHmmss}/video.ts"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/archive/${(e)yyyyMMddHHmmss}/video.ts?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -398,8 +375,7 @@ class TestHTTPTemplateResolver:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/archive/${(b)yyyyMMdd}/${(e)HHmmss}/video.ts"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/archive/${(b)yyyyMMdd}/${(e)HHmmss}/video.ts?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -413,8 +389,7 @@ class TestHTTPTemplateResolver:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream"
-                "?begin={utc}&end={end}&playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream?begin={utc}&end={end}&playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -435,10 +410,7 @@ class TestHTTPTemplateResolver:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{duration}"
-                "?playseek=20240101120000-20240101120000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{duration}?playseek=20240101120000-20240101120000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -451,10 +423,7 @@ class TestHTTPTemplateResolver:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{duration}"
-                "?playseek=20240101000000-20240102000000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{duration}?playseek=20240101000000-20240102000000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -468,8 +437,7 @@ class TestHTTPTemplateResolver:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/path/${(e)yyyyMMdd}/${(e)HHmmss}/file"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/path/${(e)yyyyMMdd}/${(e)HHmmss}/file?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -489,9 +457,7 @@ class TestHTTPTemplateResolver:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/%s?playseek=%s"
-            ) % (upstream.port, placeholder, playseek)
+            url = ("/http/127.0.0.1:%d/stream/%s?playseek=%s") % (upstream.port, placeholder, playseek)
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -504,20 +470,15 @@ class TestHTTPTemplateResolver:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/{utc}/{end}/{duration}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/{utc}/{end}/{duration}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
             parts = path.strip("/").split("/")
             assert len(parts) >= 4, "Expected /stream/utc/end/duration, got: %s" % path
-            assert "2024-01-01T12:00:00.000Z" == parts[1], (
-                "Expected begin ISO8601, got: %s" % parts[1]
-            )
-            assert "2024-01-01T13:00:00.000Z" == parts[2], (
-                "Expected end ISO8601, got: %s" % parts[2]
-            )
+            assert "2024-01-01T12:00:00.000Z" == parts[1], "Expected begin ISO8601, got: %s" % parts[1]
+            assert "2024-01-01T13:00:00.000Z" == parts[2], "Expected end ISO8601, got: %s" % parts[2]
             assert parts[3] == "3600", "Expected duration 3600, got: %s" % parts[3]
         finally:
             upstream.stop()
@@ -528,24 +489,19 @@ class TestHTTPTemplateResolver:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/s/{utc}/{lutc}/{end}/{duration}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/s/{utc}/{lutc}/{end}/{duration}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
             parts = path.strip("/").split("/")
             assert len(parts) >= 5, "Expected 5 parts, got: %s" % path
-            assert parts[1] == "2024-01-01T12:00:00.000Z", (
-                "Expected {utc} ISO8601 begin, got: %s" % parts[1]
-            )
+            assert parts[1] == "2024-01-01T12:00:00.000Z", "Expected {utc} ISO8601 begin, got: %s" % parts[1]
             # {lutc} is current time ISO8601 - verify format
             assert re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z", parts[2]), (
                 "Expected {lutc} ISO8601 format, got: %s" % parts[2]
             )
-            assert parts[3] == "2024-01-01T13:00:00.000Z", (
-                "Expected {end} ISO8601 end, got: %s" % parts[3]
-            )
+            assert parts[3] == "2024-01-01T13:00:00.000Z", "Expected {end} ISO8601 end, got: %s" % parts[3]
             assert parts[4] == "3600", "Expected {duration} 3600, got: %s" % parts[4]
         finally:
             upstream.stop()
@@ -637,10 +593,7 @@ class TestHTTPPathTemplateTimezone:
         upstream = _make_upstream()
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{lutc}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{lutc}?playseek=20240101120000-20240101130000") % upstream.port
             http_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -651,9 +604,7 @@ class TestHTTPPathTemplateTimezone:
 
             path = _get_upstream_path(upstream)
             # {lutc} outputs current time as ISO8601 - verify format
-            match = re.match(
-                r"/stream/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z)", path
-            )
+            match = re.match(r"/stream/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z)", path)
             assert match, "Expected ISO8601 format for {lutc}, got: %s" % path
         finally:
             upstream.stop()
@@ -665,10 +616,7 @@ class TestHTTPPathTemplateTimezone:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{utc}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{utc}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -687,10 +635,7 @@ class TestHTTPPathTemplateTimezone:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{duration}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{duration}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -728,8 +673,7 @@ class TestHTTPPathTemplateTimezone:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -771,9 +715,7 @@ class TestHTTPPathTemplateEdgeCases:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/{utc}/" "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/{utc}/?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -787,8 +729,7 @@ class TestHTTPPathTemplateEdgeCases:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/cctv/${(b)yyyyMMddHHmmss}/data.ts"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/cctv/${(b)yyyyMMddHHmmss}/data.ts?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -811,10 +752,10 @@ class TestHTTPPathTemplateEdgeCases:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/path/${(b)%s}/file"
-                "?playseek=20240101120000-20240101130000"
-            ) % (upstream.port, format_pattern)
+            url = ("/http/127.0.0.1:%d/path/${(b)%s}/file?playseek=20240101120000-20240101130000") % (
+                upstream.port,
+                format_pattern,
+            )
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -826,19 +767,12 @@ class TestHTTPPathTemplateEdgeCases:
         upstream = _make_upstream()
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{foo}/{utc}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{foo}/{utc}?playseek=20240101120000-20240101130000") % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
-            assert "{foo}" in path, (
-                "Unknown placeholder should pass through, got: %s" % path
-            )
-            assert (
-                "2024-01-01T12:00:00.000Z" in path
-            ), "Known placeholder {utc} should still be substituted as ISO8601"
+            assert "{foo}" in path, "Unknown placeholder should pass through, got: %s" % path
+            assert "2024-01-01T12:00:00.000Z" in path, "Known placeholder {utc} should still be substituted as ISO8601"
         finally:
             upstream.stop()
 
@@ -882,10 +816,7 @@ class TestHTTPPathTemplateEdgeCases:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file"
-                "?playseek=20240101120000-"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file?playseek=20240101120000-") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -899,17 +830,14 @@ class TestHTTPPathTemplateEdgeCases:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file"
-                "?quality=hd&playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file?quality=hd&playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
 
             full_path = _get_upstream_path(upstream)
             assert full_path.startswith("/path/20240101120000/file")
-            assert "quality=hd" in full_path, (
-                "Static query params should be preserved, got: %s" % full_path
-            )
+            assert "quality=hd" in full_path, "Static query params should be preserved, got: %s" % full_path
         finally:
             upstream.stop()
 
@@ -918,15 +846,12 @@ class TestHTTPPathTemplateEdgeCases:
         upstream = _make_upstream("/unused")
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/archive/${(e)yyyyMMddHHmmss}/video.ts"
-                "?playseek=20240101120000-"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/archive/${(e)yyyyMMddHHmmss}/video.ts?playseek=20240101120000-") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status >= 400, "Expected request to fail without an end time"
-            assert (
-                len(upstream.requests_log) == 0
-            ), "Upstream should not be contacted when end placeholders cannot be resolved"
+            assert len(upstream.requests_log) == 0, (
+                "Upstream should not be contacted when end placeholders cannot be resolved"
+            )
         finally:
             upstream.stop()
 
@@ -937,8 +862,7 @@ class TestHTTPPathTemplateEdgeCases:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/archive/${(b)yyyyMMdd}/${(b)HHmmss}/file"
-                "?playseek=20240229120000-20240229130000"
+                "/http/127.0.0.1:%d/archive/${(b)yyyyMMdd}/${(b)HHmmss}/file?playseek=20240229120000-20240229130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -970,8 +894,7 @@ class TestHTTPPathTemplateEdgeCases:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file"
-                "?playseek=20240101120000GMT-20240101130000GMT"
+                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file?playseek=20240101120000GMT-20240101130000GMT"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -986,8 +909,7 @@ class TestHTTPPathTemplateEdgeCases:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/a/b/${(b)yyyyMMddHHmmss}/c/d/file.m3u8"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/a/b/${(b)yyyyMMddHHmmss}/c/d/file.m3u8?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -1001,16 +923,11 @@ class TestHTTPPathTemplateEdgeCases:
         upstream = _make_upstream()
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/path/${(b)HH:mm:ss}/file"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/path/${(b)HH:mm:ss}/file?playseek=20240101120000-20240101130000") % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
-            assert "12:00:00" in path, (
-                "Format with colons should produce 12:00:00, got: %s" % path
-            )
+            assert "12:00:00" in path, "Format with colons should produce 12:00:00, got: %s" % path
         finally:
             upstream.stop()
 
@@ -1043,20 +960,12 @@ class TestRTSPPathTemplate:
             )
             assert status == 200
 
-            describe_reqs = [
-                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
-            ]
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE request"
             uri = describe_reqs[0]["uri"]
-            assert "20240101120000" in uri, (
-                "Begin template should be substituted in DESCRIBE URI, got: %s" % uri
-            )
-            assert "20240101130000" in uri, (
-                "End template should be substituted in DESCRIBE URI, got: %s" % uri
-            )
-            assert "${" not in uri, (
-                "No unresolved templates should remain in URI, got: %s" % uri
-            )
+            assert "20240101120000" in uri, "Begin template should be substituted in DESCRIBE URI, got: %s" % uri
+            assert "20240101130000" in uri, "End template should be substituted in DESCRIBE URI, got: %s" % uri
+            assert "${" not in uri, "No unresolved templates should remain in URI, got: %s" % uri
         finally:
             rtsp.stop()
 
@@ -1065,10 +974,7 @@ class TestRTSPPathTemplate:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream/{utc}"
-                "?playseek=20240101120000-20240101130000"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream/{utc}?playseek=20240101120000-20240101130000") % rtsp.port
             status, _, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -1078,14 +984,10 @@ class TestRTSPPathTemplate:
             )
             assert status == 200
 
-            describe_reqs = [
-                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
-            ]
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0
             uri = describe_reqs[0]["uri"]
-            assert "2024-01-01T12:00:00.000Z" in uri, (
-                "Expected ISO8601 in URI, got: %s" % uri
-            )
+            assert "2024-01-01T12:00:00.000Z" in uri, "Expected ISO8601 in URI, got: %s" % uri
         finally:
             rtsp.stop()
 
@@ -1108,18 +1010,12 @@ class TestRTSPPathTemplate:
             )
             assert status == 200
 
-            describe_reqs = [
-                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
-            ]
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0
             uri = describe_reqs[0]["uri"]
-            assert "20240101120000" in uri, (
-                "Template should be substituted in RTSP URI, got: %s" % uri
-            )
+            assert "20240101120000" in uri, "Template should be substituted in RTSP URI, got: %s" % uri
             assert "${" not in uri, "No unresolved templates, got: %s" % uri
-            assert "r2h-seek-name" not in uri, (
-                "r2h-seek-name should be stripped, got: %s" % uri
-            )
+            assert "r2h-seek-name" not in uri, "r2h-seek-name should be stripped, got: %s" % uri
         finally:
             rtsp.stop()
 
@@ -1128,10 +1024,7 @@ class TestRTSPPathTemplate:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream/{duration}"
-                "?playseek=20240101120000-20240101130000"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream/{duration}?playseek=20240101120000-20240101130000") % rtsp.port
             status, _, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -1141,14 +1034,10 @@ class TestRTSPPathTemplate:
             )
             assert status == 200
 
-            describe_reqs = [
-                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
-            ]
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0
             uri = describe_reqs[0]["uri"]
-            assert "/stream/3600" in uri, (
-                "Duration should be 3600 in RTSP URI, got: %s" % uri
-            )
+            assert "/stream/3600" in uri, "Duration should be 3600 in RTSP URI, got: %s" % uri
         finally:
             rtsp.stop()
 
@@ -1167,16 +1056,12 @@ class TestQueryAppendMode:
         upstream = _make_upstream("/stream")
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream" "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
 
             path = _get_upstream_path(upstream)
-            assert "playseek=" in path, (
-                "Query-append mode should append playseek, got: %s" % path
-            )
+            assert "playseek=" in path, "Query-append mode should append playseek, got: %s" % path
             assert path.startswith("/stream?") or path.startswith("/stream&"), (
                 "Path should be /stream with query, got: %s" % path
             )
@@ -1194,16 +1079,13 @@ class TestHTTPQueryAppendMetaParams:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream"
-                "?r2h-seek-name=myseek&myseek=20240301100000-20240301110000"
+                "/http/127.0.0.1:%d/stream?r2h-seek-name=myseek&myseek=20240301100000-20240301110000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
 
             path = _get_upstream_path(upstream)
-            assert "myseek=" in path, (
-                "Custom seek param should be forwarded, got: %s" % path
-            )
+            assert "myseek=" in path, "Custom seek param should be forwarded, got: %s" % path
         finally:
             upstream.stop()
 
@@ -1213,15 +1095,12 @@ class TestHTTPQueryAppendMetaParams:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream"
-                "?r2h-seek-name=myseek&myseek=20240301100000-20240301110000"
+                "/http/127.0.0.1:%d/stream?r2h-seek-name=myseek&myseek=20240301100000-20240301110000"
             ) % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
-            assert "r2h-seek-name" not in path, (
-                "r2h-seek-name should be stripped, got: %s" % path
-            )
+            assert "r2h-seek-name" not in path, "r2h-seek-name should be stripped, got: %s" % path
             assert "myseek=" in path
         finally:
             upstream.stop()
@@ -1237,16 +1116,12 @@ class TestHTTPQueryAppendOffset:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream"
-                "?playseek=20240101120000-20240101130000&r2h-seek-offset=3600"
+                "/http/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600"
             ) % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
-            assert (
-                _extract_query_param(path, "playseek")
-                == "20240101130000-20240101140000"
-            )
+            assert _extract_query_param(path, "playseek") == "20240101130000-20240101140000"
         finally:
             upstream.stop()
 
@@ -1256,16 +1131,12 @@ class TestHTTPQueryAppendOffset:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream"
-                "?playseek=20240101120000-20240101130000&r2h-seek-offset=-30"
+                "/http/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=-30"
             ) % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
-            assert (
-                _extract_query_param(path, "playseek")
-                == "20240101115930-20240101125930"
-            )
+            assert _extract_query_param(path, "playseek") == "20240101115930-20240101125930"
         finally:
             upstream.stop()
 
@@ -1275,15 +1146,12 @@ class TestHTTPQueryAppendOffset:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream"
-                "?playseek=20240101120000-20240101130000&r2h-seek-offset=3600"
+                "/http/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600"
             ) % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
-            assert "r2h-seek-offset" not in path, (
-                "r2h-seek-offset should be stripped, got: %s" % path
-            )
+            assert "r2h-seek-offset" not in path, "r2h-seek-offset should be stripped, got: %s" % path
         finally:
             upstream.stop()
 
@@ -1292,10 +1160,7 @@ class TestHTTPQueryAppendOffset:
         upstream = _make_upstream("/stream")
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream"
-                "?playseek=1704096000-1704099600&r2h-seek-offset=3600"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream?playseek=1704096000-1704099600&r2h-seek-offset=3600") % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
@@ -1313,9 +1178,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
         upstream = _make_upstream("/stream")
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream" "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % upstream.port
             http_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -1325,10 +1188,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
             )
 
             path = _get_upstream_path(upstream)
-            assert (
-                _extract_query_param(path, "playseek")
-                == "20240101170000-20240101180000"
-            )
+            assert _extract_query_param(path, "playseek") == "20240101170000-20240101180000"
         finally:
             upstream.stop()
 
@@ -1337,9 +1197,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
         upstream = _make_upstream("/stream")
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream" "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % upstream.port
             http_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -1349,10 +1207,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
             )
 
             path = _get_upstream_path(upstream)
-            assert (
-                _extract_query_param(path, "playseek")
-                == "20240101120000-20240101130000"
-            )
+            assert _extract_query_param(path, "playseek") == "20240101120000-20240101130000"
         finally:
             upstream.stop()
 
@@ -1361,9 +1216,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
         upstream = _make_upstream("/stream")
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream" "?playseek=1704096000-1704099600"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream?playseek=1704096000-1704099600") % upstream.port
             http_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -1383,8 +1236,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream"
-                "?playseek=20240101120000-20240101130000&r2h-seek-offset=3600"
+                "/http/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600"
             ) % upstream.port
             http_get(
                 "127.0.0.1",
@@ -1395,10 +1247,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
             )
 
             path = _get_upstream_path(upstream)
-            assert (
-                _extract_query_param(path, "playseek")
-                == "20240101050000-20240101060000"
-            )
+            assert _extract_query_param(path, "playseek") == "20240101050000-20240101060000"
         finally:
             upstream.stop()
 
@@ -1408,16 +1257,12 @@ class TestHTTPQueryAppendTimezoneAndFormat:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream"
-                "?playseek=20240101120000GMT-20240101130000GMT&r2h-seek-offset=3600"
+                "/http/127.0.0.1:%d/stream?playseek=20240101120000GMT-20240101130000GMT&r2h-seek-offset=3600"
             ) % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
-            assert (
-                _extract_query_param(path, "playseek")
-                == "20240101130000GMT-20240101140000GMT"
-            )
+            assert _extract_query_param(path, "playseek") == "20240101130000GMT-20240101140000GMT"
         finally:
             upstream.stop()
 
@@ -1426,9 +1271,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
         upstream = _make_upstream("/stream")
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream" "?playseek=1704096000-1704099600"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream?playseek=1704096000-1704099600") % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
@@ -1441,10 +1284,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
         upstream = _make_upstream("/stream")
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream"
-                "?playseek=20240101120000GMT-20240101130000GMT"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream?playseek=20240101120000GMT-20240101130000GMT") % upstream.port
             http_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -1454,10 +1294,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
             )
 
             path = _get_upstream_path(upstream)
-            assert (
-                _extract_query_param(path, "playseek")
-                == "20240101040000GMT-20240101050000GMT"
-            )
+            assert _extract_query_param(path, "playseek") == "20240101040000GMT-20240101050000GMT"
         finally:
             upstream.stop()
 
@@ -1466,9 +1303,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
         upstream = _make_upstream("/stream")
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream" "?tvdr=20240601080000-20240601090000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream?tvdr=20240601080000-20240601090000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
 
@@ -1487,9 +1322,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
             assert status == 200
 
             path = _get_upstream_path(upstream)
-            assert path == "/stream", (
-                "URL without seek should be unchanged, got: %s" % path
-            )
+            assert path == "/stream", "URL without seek should be unchanged, got: %s" % path
         finally:
             upstream.stop()
 
@@ -1498,19 +1331,14 @@ class TestHTTPQueryAppendTimezoneAndFormat:
         upstream = _make_upstream("/stream")
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream"
-                "?token=abc&playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream?token=abc&playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
 
             path = _get_upstream_path(upstream)
             assert "token=abc" in path, "Existing query params should be preserved"
             assert "playseek=" in path, "Seek should be appended"
-            assert "&playseek=" in path, (
-                "Seek should be appended with & separator, got: %s" % path
-            )
+            assert "&playseek=" in path, "Seek should be appended with & separator, got: %s" % path
         finally:
             upstream.stop()
 
@@ -1519,9 +1347,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
         upstream = _make_upstream("/stream")
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream" "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -1547,8 +1373,7 @@ class TestHTTPQueryAppendTimezoneAndFormat:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream"
-                "?playseek=2024-01-01T12:00:00.000Z-2024-01-01T13:00:00.000Z"
+                "/http/127.0.0.1:%d/stream?playseek=2024-01-01T12:00:00.000Z-2024-01-01T13:00:00.000Z"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -1556,11 +1381,8 @@ class TestHTTPQueryAppendTimezoneAndFormat:
             path = _get_upstream_path(upstream)
             match = re.search(r"playseek=([^&]+)", path)
             assert match, "Expected playseek in path"
-            assert (
-                match.group(1) == "2024-01-01T12:00:00.000Z-2024-01-01T13:00:00.000Z"
-            ), (
-                "ISO8601 seek range should remain intact after splitting, got: %s"
-                % match.group(1)
+            assert match.group(1) == "2024-01-01T12:00:00.000Z-2024-01-01T13:00:00.000Z", (
+                "ISO8601 seek range should remain intact after splitting, got: %s" % match.group(1)
             )
         finally:
             upstream.stop()
@@ -1600,8 +1422,7 @@ rtp://239.0.0.1:1234
             assert "Template Channel" in text
 
             assert "playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}" in text, (
-                "Path template catchup-source should keep original placeholder format, got:\n%s"
-                % text
+                "Path template catchup-source should keep original placeholder format, got:\n%s" % text
             )
         finally:
             r2h.stop()
@@ -1633,8 +1454,7 @@ rtp://239.0.0.1:1234
 
             _, catchup_source = extract_catchup_source(text, "Query Template Ch")
             assert "playseek={utc:YmdHMS}-{utcend:YmdHMS}" in catchup_source, (
-                "Expected query templates to become playseek carrier, got: %s"
-                % catchup_source
+                "Expected query templates to become playseek carrier, got: %s" % catchup_source
             )
         finally:
             r2h.stop()
@@ -1665,12 +1485,10 @@ rtp://239.0.0.1:1234
             assert "Plain Channel" in text
 
             lines = text.split("\n")
-            catchup_lines = [l for l in lines if "catchup-source=" in l]
+            catchup_lines = [line for line in lines if "catchup-source=" in line]
             if len(catchup_lines) > 0:
                 catchup_line = catchup_lines[0]
-                assert (
-                    "playseek={utc}" not in catchup_line
-                ), "No-template catchup should not get playseek injected"
+                assert "playseek={utc}" not in catchup_line, "No-template catchup should not get playseek injected"
         finally:
             r2h.stop()
 
@@ -1698,9 +1516,7 @@ rtp://239.0.0.1:1234
 
             assert status == 200
             assert "Dollar Brace Ch" in text
-            assert (
-                "playseek=" in text
-            ), "Path template with ${(b)...} should inject playseek"
+            assert "playseek=" in text, "Path template with ${(b)...} should inject playseek"
         finally:
             r2h.stop()
 
@@ -1728,9 +1544,9 @@ rtp://239.0.0.1:1234
 
             assert status == 200
             assert "Canonical Channel" in text
-            assert (
-                "playseek=${(b)yyyyMMdd}${(b)HHmmss}-${(e)yyyyMMdd}${(e)HHmmss}" in text
-            ), ("Expected original placeholder fragments in playseek, got:\n%s" % text)
+            assert "playseek=${(b)yyyyMMdd}${(b)HHmmss}-${(e)yyyyMMdd}${(e)HHmmss}" in text, (
+                "Expected original placeholder fragments in playseek, got:\n%s" % text
+            )
         finally:
             r2h.stop()
 
@@ -1760,12 +1576,10 @@ rtp://239.0.0.1:1234
             assert "Mixed Channel" in text
             _, catchup_source = extract_catchup_source(text, "Mixed Channel")
             assert "playseek={utc}" in catchup_source, (
-                "Expected query begin template to become playseek carrier, got: %s"
-                % catchup_source
+                "Expected query begin template to become playseek carrier, got: %s" % catchup_source
             )
             assert "begin={utc}" not in catchup_source, (
-                "Expected original query template to be folded into playseek, got: %s"
-                % catchup_source
+                "Expected original query template to be folded into playseek, got: %s" % catchup_source
             )
         finally:
             r2h.stop()
@@ -1800,12 +1614,10 @@ http://10.10.10.1:8888/live/stream.m3u8?token=1&begin={{utc}}
             service_url = lines[channel_index + 1]
 
             assert "/Main%20Query%20Template%20Ch?begin={utc}" in service_url, (
-                "Expected transformed main service URL to preserve template query, got: %s"
-                % service_url
+                "Expected transformed main service URL to preserve template query, got: %s" % service_url
             )
             assert "token=1" not in service_url, (
-                "Expected static query params to stay stripped from transformed main service URL, got: %s"
-                % service_url
+                "Expected static query params to stay stripped from transformed main service URL, got: %s" % service_url
             )
         finally:
             r2h.stop()
@@ -1835,8 +1647,7 @@ http://10.10.10.1:8888/live/stream.m3u8
             assert status == 200
             _, catchup_source = extract_catchup_source(text, "Placeholder Ch")
             assert "playseek={utc}-{utcend}" in catchup_source, (
-                "Expected append-mode placeholders to expose playseek carrier, got: %s"
-                % catchup_source
+                "Expected append-mode placeholders to expose playseek carrier, got: %s" % catchup_source
             )
         finally:
             r2h.stop()
@@ -1866,18 +1677,12 @@ http://10.10.10.1:8888/live/stream.m3u8
             assert status == 200
             _, catchup_source = extract_catchup_source(text, "Append Offset Ch")
             assert (
-                "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}"
-                in catchup_source
-            ), (
-                "Expected append-mode query templates to become playseek carrier, got: %s"
-                % catchup_source
-            )
+                "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}" in catchup_source
+            ), "Expected append-mode query templates to become playseek carrier, got: %s" % catchup_source
         finally:
             r2h.stop()
 
-    def test_append_query_templates_without_prefix_become_playseek_carrier(
-        self, r2h_binary
-    ):
+    def test_append_query_templates_without_prefix_become_playseek_carrier(self, r2h_binary):
         """Append-mode query templates without a leading separator should also be folded into playseek."""
         port = find_free_port()
         config = f"""\
@@ -1902,8 +1707,7 @@ http://10.10.10.1:8888/live/stream.m3u8
             assert status == 200
             _, catchup_source = extract_catchup_source(text, "Append No Prefix Ch")
             assert (
-                "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}"
-                in catchup_source
+                "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}" in catchup_source
             ), (
                 "Expected append-mode query templates without prefix to become playseek carrier, got: %s"
                 % catchup_source
@@ -1946,9 +1750,7 @@ rtp://239.0.0.1:1234
             status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
             assert status == 200
 
-            _, catchup_source = extract_catchup_source(
-                body.decode(), "Catchup Label Literal Ch"
-            )
+            _, catchup_source = extract_catchup_source(body.decode(), "Catchup Label Literal Ch")
 
             status, _, _ = http_get(
                 "127.0.0.1",
@@ -1987,15 +1789,9 @@ rtp://239.0.0.1:1234
             status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
             assert status == 200
 
-            _, catchup_source = extract_catchup_source(
-                body.decode(), "Template Loop Channel"
-            )
-            resolved_url = catchup_source.replace(
-                "${(b)yyyyMMddHHmmss}", "20240101120000"
-            )
-            resolved_url = resolved_url.replace(
-                "${(e)yyyyMMddHHmmss}", "20240101130000"
-            )
+            _, catchup_source = extract_catchup_source(body.decode(), "Template Loop Channel")
+            resolved_url = catchup_source.replace("${(b)yyyyMMddHHmmss}", "20240101120000")
+            resolved_url = resolved_url.replace("${(e)yyyyMMddHHmmss}", "20240101130000")
 
             status, _, _ = http_get(
                 "127.0.0.1",
@@ -2034,12 +1830,8 @@ rtp://239.0.0.1:1234
             status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
             assert status == 200
 
-            _, catchup_source = extract_catchup_source(
-                body.decode(), "Mixed Loop Channel"
-            )
-            resolved_url = catchup_source.replace(
-                "${(b)yyyyMMddHHmmss}", "20240101120000"
-            )
+            _, catchup_source = extract_catchup_source(body.decode(), "Mixed Loop Channel")
+            resolved_url = catchup_source.replace("${(b)yyyyMMddHHmmss}", "20240101120000")
             resolved_url = resolved_url.replace("{utc}", "2024-01-01T12:00:00.000Z")
 
             status, _, _ = http_get(
@@ -2083,9 +1875,7 @@ rtp://239.0.0.1:1234
             status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
             assert status == 200
 
-            _, catchup_source = extract_catchup_source(
-                body.decode(), "Current Time Loop Channel"
-            )
+            _, catchup_source = extract_catchup_source(body.decode(), "Current Time Loop Channel")
             assert "playseek={utc}" in catchup_source
 
             resolved_url = catchup_source.replace("{utc}", "2024-01-01T12:00:00.000Z")
@@ -2101,9 +1891,9 @@ rtp://239.0.0.1:1234
             full_path = _get_upstream_path(upstream)
             assert full_path.startswith(expected_path)
             assert "begin=2024-01-01T12:00:00.000Z" in full_path
-            assert re.search(
-                r"[?&]now=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z", full_path
-            ), ("Expected {lutc} to resolve as ISO8601 UTC, got: %s" % full_path)
+            assert re.search(r"[?&]now=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z", full_path), (
+                "Expected {lutc} to resolve as ISO8601 UTC, got: %s" % full_path
+            )
             assert re.search(r"[?&]ts=\d+", full_path), (
                 "Expected {timestamp} to resolve as Unix timestamp, got: %s" % full_path
             )
@@ -2136,20 +1926,13 @@ rtp://239.0.0.1:1234
             status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
             assert status == 200
 
-            _, catchup_source = extract_catchup_source(
-                body.decode(), "Offset Loop Channel"
-            )
+            _, catchup_source = extract_catchup_source(body.decode(), "Offset Loop Channel")
             assert (
-                "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}"
-                in catchup_source
+                "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}" in catchup_source
             ), "Expected start/end query templates to become playseek carrier"
 
-            resolved_url = catchup_source.replace(
-                "${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}", "20240101T120000"
-            )
-            resolved_url = resolved_url.replace(
-                "${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}", "20240101T130000"
-            )
+            resolved_url = catchup_source.replace("${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}", "20240101T120000")
+            resolved_url = resolved_url.replace("${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}", "20240101T130000")
 
             status, _, _ = http_get(
                 "127.0.0.1",
@@ -2161,8 +1944,7 @@ rtp://239.0.0.1:1234
 
             full_path = _get_upstream_path(upstream)
             assert "starttime=20240101T130000" in full_path, (
-                "Expected r2h-seek-offset to shift starttime by +1h, got: %s"
-                % full_path
+                "Expected r2h-seek-offset to shift starttime by +1h, got: %s" % full_path
             )
             assert "endtime=20240101T140000" in full_path, (
                 "Expected r2h-seek-offset to shift endtime by +1h, got: %s" % full_path
@@ -2171,9 +1953,7 @@ rtp://239.0.0.1:1234
             r2h.stop()
             upstream.stop()
 
-    def test_append_query_template_offset_applies_via_playseek_carrier(
-        self, r2h_binary
-    ):
+    def test_append_query_template_offset_applies_via_playseek_carrier(self, r2h_binary):
         """Append-mode query-template catchup should also apply offset after proxied playseek request."""
         expected_path = "/VINN.mp4/master.m3u8"
         upstream = _make_upstream(expected_path)
@@ -2198,20 +1978,13 @@ http://127.0.0.1:{upstream.port}/VINN.mp4/master.m3u8
             status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
             assert status == 200
 
-            _, catchup_source = extract_catchup_source(
-                body.decode(), "Append Offset Loop Channel"
-            )
+            _, catchup_source = extract_catchup_source(body.decode(), "Append Offset Loop Channel")
             assert (
-                "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}"
-                in catchup_source
+                "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}" in catchup_source
             ), "Expected append-mode templates to become playseek carrier"
 
-            resolved_url = catchup_source.replace(
-                "${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}", "20240101T120000"
-            )
-            resolved_url = resolved_url.replace(
-                "${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}", "20240101T130000"
-            )
+            resolved_url = catchup_source.replace("${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}", "20240101T120000")
+            resolved_url = resolved_url.replace("${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}", "20240101T130000")
 
             status, _, _ = http_get(
                 "127.0.0.1",
@@ -2223,20 +1996,16 @@ http://127.0.0.1:{upstream.port}/VINN.mp4/master.m3u8
 
             full_path = _get_upstream_path(upstream)
             assert "starttime=20240101T130000" in full_path, (
-                "Expected append-mode r2h-seek-offset to shift starttime by +1h, got: %s"
-                % full_path
+                "Expected append-mode r2h-seek-offset to shift starttime by +1h, got: %s" % full_path
             )
             assert "endtime=20240101T140000" in full_path, (
-                "Expected append-mode r2h-seek-offset to shift endtime by +1h, got: %s"
-                % full_path
+                "Expected append-mode r2h-seek-offset to shift endtime by +1h, got: %s" % full_path
             )
         finally:
             r2h.stop()
             upstream.stop()
 
-    def test_append_no_prefix_query_template_offset_applies_via_playseek_carrier(
-        self, r2h_binary
-    ):
+    def test_append_no_prefix_query_template_offset_applies_via_playseek_carrier(self, r2h_binary):
         """Append-mode query-template catchup without a leading separator should also apply offset."""
         expected_path = "/VINN.mp4/master.m3u8"
         upstream = _make_upstream(expected_path)
@@ -2261,20 +2030,13 @@ http://127.0.0.1:{upstream.port}/VINN.mp4/master.m3u8
             status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
             assert status == 200
 
-            _, catchup_source = extract_catchup_source(
-                body.decode(), "Append No Prefix Loop Channel"
-            )
+            _, catchup_source = extract_catchup_source(body.decode(), "Append No Prefix Loop Channel")
             assert (
-                "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}"
-                in catchup_source
+                "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}" in catchup_source
             ), "Expected append-mode templates without prefix to become playseek carrier"
 
-            resolved_url = catchup_source.replace(
-                "${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}", "20240101T120000"
-            )
-            resolved_url = resolved_url.replace(
-                "${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}", "20240101T130000"
-            )
+            resolved_url = catchup_source.replace("${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}", "20240101T120000")
+            resolved_url = resolved_url.replace("${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}", "20240101T130000")
 
             status, _, _ = http_get(
                 "127.0.0.1",
@@ -2286,12 +2048,10 @@ http://127.0.0.1:{upstream.port}/VINN.mp4/master.m3u8
 
             full_path = _get_upstream_path(upstream)
             assert "starttime=20240101T130000" in full_path, (
-                "Expected append-mode no-prefix r2h-seek-offset to shift starttime by +1h, got: %s"
-                % full_path
+                "Expected append-mode no-prefix r2h-seek-offset to shift starttime by +1h, got: %s" % full_path
             )
             assert "endtime=20240101T140000" in full_path, (
-                "Expected append-mode no-prefix r2h-seek-offset to shift endtime by +1h, got: %s"
-                % full_path
+                "Expected append-mode no-prefix r2h-seek-offset to shift endtime by +1h, got: %s" % full_path
             )
         finally:
             r2h.stop()
@@ -2307,9 +2067,7 @@ class TestRTSPQueryAppendMode:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream" "?playseek=20240101120000-20240101130000"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % rtsp.port
             status, _, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2319,14 +2077,10 @@ class TestRTSPQueryAppendMode:
             )
             assert status == 200
 
-            describe_reqs = [
-                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
-            ]
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0
             uri = describe_reqs[0]["uri"]
-            assert "playseek=" in uri, (
-                "Query-append RTSP should have playseek in URI, got: %s" % uri
-            )
+            assert "playseek=" in uri, "Query-append RTSP should have playseek in URI, got: %s" % uri
         finally:
             rtsp.stop()
 
@@ -2335,9 +2089,7 @@ class TestRTSPQueryAppendMode:
         rtsp = MockRTSPServerUDP()
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream" "?playseek=20240101120000-20240101130000"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % rtsp.port
             status, _, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2355,9 +2107,7 @@ class TestRTSPQueryAppendMode:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream" "?tvdr=20240601080000-20240601090000"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?tvdr=20240601080000-20240601090000") % rtsp.port
             status, _, _ = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2377,10 +2127,7 @@ class TestRTSPQueryAppendMode:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/live/channel1"
-                "?playseek=20240101120000-20240101130000"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/live/channel1?playseek=20240101120000-20240101130000") % rtsp.port
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2399,10 +2146,7 @@ class TestRTSPQueryAppendMode:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream"
-                "?r2h-seek-name=myseek&myseek=20240301100000-20240301110000"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?r2h-seek-name=myseek&myseek=20240301100000-20240301110000") % rtsp.port
             status, _, _ = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2428,10 +2172,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream"
-                "?playseek=20240101120000-20240101130000&r2h-seek-offset=3600"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600") % rtsp.port
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2441,9 +2182,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
             )
 
             uri = _get_describe_uri(rtsp)
-            assert (
-                _extract_query_param(uri, "playseek") == "20240101130000-20240101140000"
-            )
+            assert _extract_query_param(uri, "playseek") == "20240101130000-20240101140000"
         finally:
             rtsp.stop()
 
@@ -2452,10 +2191,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream"
-                "?playseek=20240101120000-20240101130000&r2h-seek-offset=-30"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=-30") % rtsp.port
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2465,9 +2201,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
             )
 
             uri = _get_describe_uri(rtsp)
-            assert (
-                _extract_query_param(uri, "playseek") == "20240101115930-20240101125930"
-            )
+            assert _extract_query_param(uri, "playseek") == "20240101115930-20240101125930"
         finally:
             rtsp.stop()
 
@@ -2476,10 +2210,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream"
-                "?playseek=20240101120000-20240101130000&r2h-seek-offset=3600"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600") % rtsp.port
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2498,10 +2229,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream"
-                "?playseek=1704096000-1704099600&r2h-seek-offset=3600"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=1704096000-1704099600&r2h-seek-offset=3600") % rtsp.port
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2520,9 +2248,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream" "?playseek=20240101120000-20240101130000"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % rtsp.port
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2533,9 +2259,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
             )
 
             uri = _get_describe_uri(rtsp)
-            assert (
-                _extract_query_param(uri, "playseek") == "20240101040000-20240101050000"
-            )
+            assert _extract_query_param(uri, "playseek") == "20240101040000-20240101050000"
         finally:
             rtsp.stop()
 
@@ -2544,9 +2268,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream" "?playseek=20240101120000-20240101130000"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % rtsp.port
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2557,9 +2279,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
             )
 
             uri = _get_describe_uri(rtsp)
-            assert (
-                _extract_query_param(uri, "playseek") == "20240101170000-20240101180000"
-            )
+            assert _extract_query_param(uri, "playseek") == "20240101170000-20240101180000"
         finally:
             rtsp.stop()
 
@@ -2568,9 +2288,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream" "?playseek=20240101120000-20240101130000"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % rtsp.port
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2581,9 +2299,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
             )
 
             uri = _get_describe_uri(rtsp)
-            assert (
-                _extract_query_param(uri, "playseek") == "20240101120000-20240101130000"
-            )
+            assert _extract_query_param(uri, "playseek") == "20240101120000-20240101130000"
         finally:
             rtsp.stop()
 
@@ -2592,9 +2308,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream" "?playseek=1704096000-1704099600"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=1704096000-1704099600") % rtsp.port
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2614,10 +2328,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream"
-                "?playseek=20240101120000-20240101130000&r2h-seek-offset=3600"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600") % rtsp.port
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2628,9 +2339,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
             )
 
             uri = _get_describe_uri(rtsp)
-            assert (
-                _extract_query_param(uri, "playseek") == "20240101050000-20240101060000"
-            )
+            assert _extract_query_param(uri, "playseek") == "20240101050000-20240101060000"
         finally:
             rtsp.stop()
 
@@ -2640,8 +2349,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp.start()
         try:
             url = (
-                "/rtsp/127.0.0.1:%d/stream"
-                "?playseek=20240101120000GMT-20240101130000GMT&r2h-seek-offset=3600"
+                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000GMT-20240101130000GMT&r2h-seek-offset=3600"
             ) % rtsp.port
             stream_get(
                 "127.0.0.1",
@@ -2652,10 +2360,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
             )
 
             uri = _get_describe_uri(rtsp)
-            assert (
-                _extract_query_param(uri, "playseek")
-                == "20240101130000GMT-20240101140000GMT"
-            )
+            assert _extract_query_param(uri, "playseek") == "20240101130000GMT-20240101140000GMT"
         finally:
             rtsp.stop()
 
@@ -2664,9 +2369,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream" "?playseek=1704096000-1704099600"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=1704096000-1704099600") % rtsp.port
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2685,10 +2388,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream"
-                "?playseek=20240101120000GMT-20240101130000GMT"
-            ) % rtsp.port
+            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000GMT-20240101130000GMT") % rtsp.port
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -2699,10 +2399,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
             )
 
             uri = _get_describe_uri(rtsp)
-            assert (
-                _extract_query_param(uri, "playseek")
-                == "20240101040000GMT-20240101050000GMT"
-            )
+            assert _extract_query_param(uri, "playseek") == "20240101040000GMT-20240101050000GMT"
         finally:
             rtsp.stop()
 
@@ -2722,10 +2419,7 @@ class TestPlaceholderSyntaxBeginTime:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${utc}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/${utc}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -2739,8 +2433,7 @@ class TestPlaceholderSyntaxBeginTime:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/${utc:yyyyMMddHHmmss}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/${utc:yyyyMMddHHmmss}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -2754,10 +2447,7 @@ class TestPlaceholderSyntaxBeginTime:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{(b)YmdHMS}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{(b)YmdHMS}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -2770,10 +2460,7 @@ class TestPlaceholderSyntaxBeginTime:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${(b)}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/${(b)}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -2786,10 +2473,7 @@ class TestPlaceholderSyntaxBeginTime:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{utc:YmdHMS}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{utc:YmdHMS}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -2807,10 +2491,7 @@ class TestPlaceholderSyntaxEndTime:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{utcend}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{utcend}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -2823,10 +2504,7 @@ class TestPlaceholderSyntaxEndTime:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{utcend:YmdHMS}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{utcend:YmdHMS}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -2843,10 +2521,7 @@ class TestPlaceholderSyntaxTimestamp:
         upstream = _make_upstream()
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${timestamp}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/${timestamp}?playseek=20240101120000-20240101130000") % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
@@ -2864,10 +2539,7 @@ class TestPlaceholderSyntaxTimestamp:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${(b)timestamp}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/${(b)timestamp}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -2884,16 +2556,11 @@ class TestPlaceholderSyntaxCurrentTime:
         upstream = _make_upstream()
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{now}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{now}?playseek=20240101120000-20240101130000") % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
 
             path = _get_upstream_path(upstream)
-            match = re.match(
-                r"/stream/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z)", path
-            )
+            match = re.match(r"/stream/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z)", path)
             assert match, "Expected ISO8601 format for {now}, got: %s" % path
         finally:
             upstream.stop()
@@ -2910,8 +2577,7 @@ class TestPlaceholderSyntaxComponentsAndDuration:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/${yyyy}/${MM}/${dd}/${HH}/${mm}/${ss}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/${yyyy}/${MM}/${dd}/${HH}/${mm}/${ss}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -2925,10 +2591,7 @@ class TestPlaceholderSyntaxComponentsAndDuration:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${duration}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/${duration}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -2949,8 +2612,7 @@ class TestPlaceholderSyntaxModifiers:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/${(b)yyyyMMddHHmmss|UTC}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/${(b)yyyyMMddHHmmss|UTC}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get(
                 "127.0.0.1",
@@ -2971,8 +2633,7 @@ class TestPlaceholderSyntaxModifiers:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/${(e)yyyyMMddHHmmss|UTC}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/${(e)yyyyMMddHHmmss|UTC}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get(
                 "127.0.0.1",
@@ -3002,10 +2663,7 @@ class TestPlaceholderSyntaxLongKeywords:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${utcend}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/${utcend}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -3018,10 +2676,7 @@ class TestPlaceholderSyntaxLongKeywords:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${start}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/${start}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -3034,10 +2689,7 @@ class TestPlaceholderSyntaxLongKeywords:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${end}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/${end}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -3049,15 +2701,12 @@ class TestPlaceholderSyntaxLongKeywords:
         upstream = _make_upstream()
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${lutc}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/${lutc}?playseek=20240101120000-20240101130000") % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             path = _get_upstream_path(upstream)
-            assert re.match(
-                r"/stream/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z", path
-            ), "Expected ISO8601 for ${lutc}, got: %s" % path
+            assert re.match(r"/stream/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z", path), (
+                "Expected ISO8601 for ${lutc}, got: %s" % path
+            )
         finally:
             upstream.stop()
 
@@ -3066,15 +2715,12 @@ class TestPlaceholderSyntaxLongKeywords:
         upstream = _make_upstream()
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${now}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/${now}?playseek=20240101120000-20240101130000") % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             path = _get_upstream_path(upstream)
-            assert re.match(
-                r"/stream/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z", path
-            ), "Expected ISO8601 for ${now}, got: %s" % path
+            assert re.match(r"/stream/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z", path), (
+                "Expected ISO8601 for ${now}, got: %s" % path
+            )
         finally:
             upstream.stop()
 
@@ -3083,10 +2729,7 @@ class TestPlaceholderSyntaxLongKeywords:
         upstream = _make_upstream()
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${offset}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/${offset}?playseek=20240101120000-20240101130000") % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             path = _get_upstream_path(upstream)
             match = re.match(r"/stream/(\d+)", path)
@@ -3101,10 +2744,7 @@ class TestPlaceholderSyntaxLongKeywords:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/${(e)timestamp}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/${(e)timestamp}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -3123,8 +2763,7 @@ class TestPlaceholderSyntaxKeywordFormats:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/${utcend:yyyyMMddHHmmss}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/${utcend:yyyyMMddHHmmss}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -3139,8 +2778,7 @@ class TestPlaceholderSyntaxKeywordFormats:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/${start:yyyyMMddHHmmss}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/${start:yyyyMMddHHmmss}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -3155,8 +2793,7 @@ class TestPlaceholderSyntaxKeywordFormats:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/${end:yyyyMMddHHmmss}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/${end:yyyyMMddHHmmss}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -3170,8 +2807,7 @@ class TestPlaceholderSyntaxKeywordFormats:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/${lutc:yyyyMMddHHmmss}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/${lutc:yyyyMMddHHmmss}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             path = _get_upstream_path(upstream)
@@ -3187,8 +2823,7 @@ class TestPlaceholderSyntaxKeywordFormats:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/${now:yyyyMMddHHmmss}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/${now:yyyyMMddHHmmss}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             path = _get_upstream_path(upstream)
@@ -3204,14 +2839,12 @@ class TestPlaceholderSyntaxKeywordFormats:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/${timestamp:yyyyMMddHHmmss}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/${timestamp:yyyyMMddHHmmss}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             path = _get_upstream_path(upstream)
             assert re.match(r"/stream/\d{14}", path), (
-                "Expected 14-digit formatted time for ${timestamp:FORMAT}, got: %s"
-                % path
+                "Expected 14-digit formatted time for ${timestamp:FORMAT}, got: %s" % path
             )
         finally:
             upstream.stop()
@@ -3222,10 +2855,7 @@ class TestPlaceholderSyntaxKeywordFormats:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{end:YmdHMS}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{end:YmdHMS}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -3238,10 +2868,7 @@ class TestPlaceholderSyntaxKeywordFormats:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{start:YmdHMS}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{start:YmdHMS}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -3253,10 +2880,7 @@ class TestPlaceholderSyntaxKeywordFormats:
         upstream = _make_upstream()
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{lutc:YmdHMS}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{lutc:YmdHMS}?playseek=20240101120000-20240101130000") % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             path = _get_upstream_path(upstream)
             assert re.match(r"/stream/\d{14}", path), (
@@ -3270,10 +2894,7 @@ class TestPlaceholderSyntaxKeywordFormats:
         upstream = _make_upstream()
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{now:YmdHMS}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{now:YmdHMS}?playseek=20240101120000-20240101130000") % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             path = _get_upstream_path(upstream)
             assert re.match(r"/stream/\d{14}", path), (
@@ -3288,14 +2909,12 @@ class TestPlaceholderSyntaxKeywordFormats:
         upstream.start()
         try:
             url = (
-                "/http/127.0.0.1:%d/stream/{timestamp:YmdHMS}"
-                "?playseek=20240101120000-20240101130000"
+                "/http/127.0.0.1:%d/stream/{timestamp:YmdHMS}?playseek=20240101120000-20240101130000"
             ) % upstream.port
             http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             path = _get_upstream_path(upstream)
             assert re.match(r"/stream/\d{14}", path), (
-                "Expected 14-digit formatted time for {timestamp:FORMAT}, got: %s"
-                % path
+                "Expected 14-digit formatted time for {timestamp:FORMAT}, got: %s" % path
             )
         finally:
             upstream.stop()
@@ -3311,10 +2930,7 @@ class TestPlaceholderSyntaxShortBeginEnd:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{(e)YmdHMS}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{(e)YmdHMS}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -3327,10 +2943,7 @@ class TestPlaceholderSyntaxShortBeginEnd:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{(b)}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{(b)}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -3343,10 +2956,7 @@ class TestPlaceholderSyntaxShortBeginEnd:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{(e)}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{(e)}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -3359,10 +2969,7 @@ class TestPlaceholderSyntaxShortBeginEnd:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{(b)YmdHMS|UTC}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{(b)YmdHMS|UTC}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -3381,10 +2988,7 @@ class TestPlaceholderSyntaxShortBeginEnd:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{(e)YmdHMS|UTC}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{(e)YmdHMS|UTC}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -3403,10 +3007,7 @@ class TestPlaceholderSyntaxShortBeginEnd:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{(b)timestamp}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{(b)timestamp}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -3419,10 +3020,7 @@ class TestPlaceholderSyntaxShortBeginEnd:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/{(e)timestamp}"
-                "?playseek=20240101120000-20240101130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/{(e)timestamp}?playseek=20240101120000-20240101130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
@@ -3536,10 +3134,7 @@ class TestSeekValueFormats:
         upstream = _make_upstream(expected_path)
         upstream.start()
         try:
-            url = (
-                "/http/127.0.0.1:%d/stream/live.m3u8"
-                "?playseek=20240101T120000-20240101T130000"
-            ) % upstream.port
+            url = ("/http/127.0.0.1:%d/stream/live.m3u8?playseek=20240101T120000-20240101T130000") % upstream.port
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
             full_path = _get_upstream_path(upstream)

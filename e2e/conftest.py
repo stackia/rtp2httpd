@@ -27,8 +27,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from helpers import (  # noqa: E402
     BINARY_PATH,
-    LOOPBACK_IF,
-    MCAST_ADDR,
     MockFCCServer,
     MockHTTPUpstream,
     MockHTTPUpstreamSilent,
@@ -37,12 +35,10 @@ from helpers import (  # noqa: E402
     MockRTSPServerNoTeardownResponse,
     MockRTSPServerSilent,
     MockRTSPServerUDP,
-    MockSTUNServer,
     MulticastSender,
     R2HProcess,
     find_free_port,
     find_free_udp_port,
-    wait_for_port,
 )
 
 # ---------------------------------------------------------------------------

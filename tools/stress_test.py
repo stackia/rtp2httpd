@@ -109,9 +109,7 @@ class ProcessStats:
 
     @property
     def cpu_avg(self) -> float:
-        return (
-            sum(self.cpu_samples) / len(self.cpu_samples) if self.cpu_samples else 0.0
-        )
+        return sum(self.cpu_samples) / len(self.cpu_samples) if self.cpu_samples else 0.0
 
     @property
     def cpu_max(self) -> float:
@@ -119,9 +117,7 @@ class ProcessStats:
 
     @property
     def pss_avg(self) -> float:
-        return (
-            sum(self.pss_samples) / len(self.pss_samples) if self.pss_samples else 0.0
-        )
+        return sum(self.pss_samples) / len(self.pss_samples) if self.pss_samples else 0.0
 
     @property
     def pss_max(self) -> float:
@@ -129,9 +125,7 @@ class ProcessStats:
 
     @property
     def uss_avg(self) -> float:
-        return (
-            sum(self.uss_samples) / len(self.uss_samples) if self.uss_samples else 0.0
-        )
+        return sum(self.uss_samples) / len(self.uss_samples) if self.uss_samples else 0.0
 
     @property
     def uss_max(self) -> float:
@@ -155,7 +149,7 @@ def get_child_pids(pid: int) -> list[int]:
                             children.append(child)
                             # Recursively get grandchildren
                             children.extend(get_child_pids(child))
-    except (FileNotFoundError, PermissionError, ValueError):
+    except FileNotFoundError, PermissionError, ValueError:
         pass
     return children
 
@@ -211,7 +205,7 @@ def get_process_memory(pid: int) -> MemoryInfo | None:
             uss=uss_kb / 1024.0,
             rss=rss_kb / 1024.0,
         )
-    except (FileNotFoundError, PermissionError, ValueError, IndexError):
+    except FileNotFoundError, PermissionError, ValueError, IndexError:
         return None
 
 
@@ -223,7 +217,7 @@ def get_process_rss(pid: int) -> float | None:
             rss_pages = int(statm[1])
             page_size = os.sysconf("SC_PAGE_SIZE")
             return (rss_pages * page_size) / (1024 * 1024)
-    except (FileNotFoundError, ProcessLookupError, IndexError):
+    except FileNotFoundError, ProcessLookupError, IndexError:
         return None
 
 
@@ -239,9 +233,7 @@ class ResourceMonitor(threading.Thread):
         self.pids = pids  # {pid: name}
         self.interval = interval
         self.running = True
-        self.stats: dict[int, ProcessStats] = {
-            pid: ProcessStats(pid=pid, name=name) for pid, name in pids.items()
-        }
+        self.stats: dict[int, ProcessStats] = {pid: ProcessStats(pid=pid, name=name) for pid, name in pids.items()}
 
     def _get_cpu_via_top(self, pids: list[int]) -> dict[int, float]:
         """Get CPU percentage for multiple PIDs using top.
@@ -278,7 +270,7 @@ class ResourceMonitor(threading.Thread):
                             # CPU% is typically in column 9 (0-indexed: 8)
                             cpu_str = parts[8].replace(",", ".")
                             result[pid] = float(cpu_str)
-                    except (ValueError, IndexError):
+                    except ValueError, IndexError:
                         continue
         except subprocess.TimeoutExpired:
             pass
@@ -467,9 +459,7 @@ def main() -> int:
     print(f"Replay speed: {args.speed}x (~{8 * args.speed:.0f} Mbps)")
     print(f"Port:         {port}")
     if args.same_address:
-        print(
-            f"Stream:       {MULTICAST_BASE}.{MULTICAST_START_HOST}:{MULTICAST_PORT} (same for all clients)"
-        )
+        print(f"Stream:       {MULTICAST_BASE}.{MULTICAST_START_HOST}:{MULTICAST_PORT} (same for all clients)")
     else:
         print(
             f"Streams:      {MULTICAST_BASE}.{MULTICAST_START_HOST}-{MULTICAST_START_HOST + args.clients - 1}:{MULTICAST_PORT} (unique per client)"
@@ -531,9 +521,7 @@ def main() -> int:
         # 3. Start curl clients
         print(f"\n[3/3] Starting {args.clients} curl clients...")
         if args.same_address:
-            print(
-                f"  All clients use the same address: {MULTICAST_BASE}.{MULTICAST_START_HOST}:{MULTICAST_PORT}"
-            )
+            print(f"  All clients use the same address: {MULTICAST_BASE}.{MULTICAST_START_HOST}:{MULTICAST_PORT}")
         else:
             print(f"  Each client uses a unique address in {MULTICAST_BASE}.0/24")
         curl_procs: list[subprocess.Popen] = []
@@ -547,9 +535,7 @@ def main() -> int:
                 if args.same_address:
                     print(f"  URL: {full_stream_url}")
                 else:
-                    print(
-                        f"  URLs: {full_stream_url} ... (and {args.clients - 1} more)"
-                    )
+                    print(f"  URLs: {full_stream_url} ... (and {args.clients - 1} more)")
             curl_cmd = [
                 "curl",
                 "-o",
@@ -576,7 +562,7 @@ def main() -> int:
         }
         # Add curl processes
         for i, curl_proc in enumerate(curl_procs):
-            pids_to_monitor[curl_proc.pid] = f"curl-{i+1}"
+            pids_to_monitor[curl_proc.pid] = f"curl-{i + 1}"
 
         monitor = ResourceMonitor(pids_to_monitor, interval=0.5)
         monitor.start()
@@ -596,9 +582,7 @@ def main() -> int:
                 break
 
             elapsed = time.monotonic() - start_time
-            print(
-                f"\r  Progress: {elapsed:.1f}s / {args.duration}s", end="", flush=True
-            )
+            print(f"\r  Progress: {elapsed:.1f}s / {args.duration}s", end="", flush=True)
             time.sleep(0.5)
 
         print("\n")
@@ -647,28 +631,16 @@ def main() -> int:
         # Server stats
         if server_stats and server_stats.cpu_samples:
             print(f"\n[{args.program}]")
-            print(
-                f"  CPU:  avg={server_stats.cpu_avg:6.2f}%  max={server_stats.cpu_max:6.2f}%"
-            )
-            print(
-                f"  PSS:  avg={server_stats.pss_avg:6.2f}MB max={server_stats.pss_max:6.2f}MB"
-            )
-            print(
-                f"  USS:  avg={server_stats.uss_avg:6.2f}MB max={server_stats.uss_max:6.2f}MB"
-            )
+            print(f"  CPU:  avg={server_stats.cpu_avg:6.2f}%  max={server_stats.cpu_max:6.2f}%")
+            print(f"  PSS:  avg={server_stats.pss_avg:6.2f}MB max={server_stats.pss_max:6.2f}MB")
+            print(f"  USS:  avg={server_stats.uss_avg:6.2f}MB max={server_stats.uss_max:6.2f}MB")
 
         # Replay stats
         if replay_stats and replay_stats.cpu_samples:
             print("\n[replay (main.py)]")
-            print(
-                f"  CPU:  avg={replay_stats.cpu_avg:6.2f}%  max={replay_stats.cpu_max:6.2f}%"
-            )
-            print(
-                f"  PSS:  avg={replay_stats.pss_avg:6.2f}MB max={replay_stats.pss_max:6.2f}MB"
-            )
-            print(
-                f"  USS:  avg={replay_stats.uss_avg:6.2f}MB max={replay_stats.uss_max:6.2f}MB"
-            )
+            print(f"  CPU:  avg={replay_stats.cpu_avg:6.2f}%  max={replay_stats.cpu_max:6.2f}%")
+            print(f"  PSS:  avg={replay_stats.pss_avg:6.2f}MB max={replay_stats.pss_max:6.2f}MB")
+            print(f"  USS:  avg={replay_stats.uss_avg:6.2f}MB max={replay_stats.uss_max:6.2f}MB")
 
         # Aggregate curl stats
         if curl_stats:

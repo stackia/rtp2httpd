@@ -5,8 +5,6 @@ Tests cover command-line flags, config file sections, default values,
 and precedence rules.
 """
 
-import os
-import tempfile
 import time  # needed for TestMaxClients deadline loop
 
 import pytest
@@ -175,9 +173,7 @@ def _assert_rtsp_user_agent(port: int, expected_user_agent: str):
         assert status == 200, f"Expected 200, got {status}"
         assert len(body) > 0, "Expected RTSP stream body"
 
-        option_reqs = [
-            req for req in rtsp.requests_detailed if req["method"] == "OPTIONS"
-        ]
+        option_reqs = [req for req in rtsp.requests_detailed if req["method"] == "OPTIONS"]
         assert option_reqs, "Expected OPTIONS request"
         assert option_reqs[0]["headers"].get("User-Agent") == expected_user_agent
     finally:
@@ -202,9 +198,7 @@ def _assert_http_proxy_user_agent(port: int, expected_user_agent: str):
         assert status == 200
         assert body == b"ok"
         assert upstream.requests_log, "Expected upstream request"
-        assert (
-            upstream.requests_log[0]["headers"].get("User-Agent") == expected_user_agent
-        )
+        assert upstream.requests_log[0]["headers"].get("User-Agent") == expected_user_agent
     finally:
         upstream.stop()
 
@@ -319,9 +313,7 @@ OPTION_SOURCE_PRIORITY_CASES = [
 ]
 
 
-def _run_option_source_case(
-    r2h_binary, case, *, config_value=None, cli_value=None, expected_value=None
-):
+def _run_option_source_case(r2h_binary, case, *, config_value=None, cli_value=None, expected_value=None):
     port = find_free_port()
     global_lines = []
 
@@ -351,11 +343,7 @@ def _run_option_source_case(
         r2h.start()
         case["assertion"](
             port,
-            (
-                expected_value
-                if expected_value is not None
-                else case.get("assertion_expected")
-            ),
+            (expected_value if expected_value is not None else case.get("assertion_expected")),
         )
     finally:
         r2h.stop()
@@ -709,10 +697,7 @@ class TestCORS:
                 },
             )
             assert status == 204
-            assert (
-                "Access-Control-Allow-Methods" in hdrs
-                or "access-control-allow-methods" in hdrs
-            )
+            assert "Access-Control-Allow-Methods" in hdrs or "access-control-allow-methods" in hdrs
         finally:
             r2h.stop()
 

@@ -38,10 +38,7 @@ class R2HProcess:
         )
         if wait and not wait_for_port(self.port, timeout=6.0):
             self.stop()
-            raise RuntimeError(
-                "rtp2httpd did not start on port %d.\n"
-                "Command: %s" % (self.port, " ".join(args))
-            )
+            raise RuntimeError("rtp2httpd did not start on port %d.\nCommand: %s" % (self.port, " ".join(args)))
 
     def stop(self) -> None:
         if self.process and self.process.poll() is None:

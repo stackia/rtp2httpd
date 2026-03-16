@@ -31,7 +31,8 @@ def shared_r2h(r2h_binary):
     """A single rtp2httpd instance shared by all FCC tests."""
     port = find_free_port()
     r2h = R2HProcess(
-        r2h_binary, port,
+        r2h_binary,
+        port,
         extra_args=["-v", "4", "-m", "100", "-r", LOOPBACK_IF],
     )
     r2h.start()
@@ -51,15 +52,19 @@ class TestTelecomFCC:
         """FCC server sends unicast data; HTTP client receives TS payload."""
         mcast_port = find_free_udp_port()
         fcc = MockFCCServer(
-            mcast_addr=MCAST_ADDR, protocol="telecom",
-            unicast_pps=300, sync_after=0,
+            mcast_addr=MCAST_ADDR,
+            protocol="telecom",
+            unicast_pps=300,
+            sync_after=0,
         )
         fcc.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{fcc.port}",
-                read_bytes=4096, timeout=_FCC_STREAM_TIMEOUT,
+                read_bytes=4096,
+                timeout=_FCC_STREAM_TIMEOUT,
             )
             assert status == 200
             assert len(body) > 0, "Expected to receive unicast stream data"
@@ -75,15 +80,19 @@ class TestTelecomFCC:
         sender.start()
 
         fcc = MockFCCServer(
-            mcast_addr=MCAST_ADDR, protocol="telecom",
-            unicast_pps=300, sync_after=50,
+            mcast_addr=MCAST_ADDR,
+            protocol="telecom",
+            unicast_pps=300,
+            sync_after=50,
         )
         fcc.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{fcc.port}",
-                read_bytes=8192, timeout=_FCC_STREAM_TIMEOUT,
+                read_bytes=8192,
+                timeout=_FCC_STREAM_TIMEOUT,
             )
             assert status == 200
             assert len(body) > 0
@@ -99,15 +108,19 @@ class TestTelecomFCC:
         sender.start()
 
         fcc = MockFCCServer(
-            mcast_addr=MCAST_ADDR, protocol="telecom",
-            unicast_pps=300, sync_after=30,
+            mcast_addr=MCAST_ADDR,
+            protocol="telecom",
+            unicast_pps=300,
+            sync_after=30,
         )
         fcc.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{fcc.port}",
-                read_bytes=16384, timeout=_FCC_STREAM_TIMEOUT,
+                read_bytes=16384,
+                timeout=_FCC_STREAM_TIMEOUT,
             )
             assert status == 200
             assert len(body) > 0
@@ -117,9 +130,7 @@ class TestTelecomFCC:
             fcc.stop()
             sender.stop()
 
-        assert fcc.terminations_received >= 1, (
-            "Expected at least one FCC termination packet"
-        )
+        assert fcc.terminations_received >= 1, "Expected at least one FCC termination packet"
 
 
 # ---------------------------------------------------------------------------
@@ -134,18 +145,20 @@ class TestHuaweiFCC:
         """Huawei FCC server sends unicast data; HTTP client receives TS payload."""
         mcast_port = find_free_udp_port()
         fcc = MockFCCServer(
-            mcast_addr=MCAST_ADDR, protocol="huawei",
-            unicast_pps=300, sync_after=0,
+            mcast_addr=MCAST_ADDR,
+            protocol="huawei",
+            unicast_pps=300,
+            sync_after=0,
         )
         fcc.start()
         try:
-            url = (
-                f"/rtp/{MCAST_ADDR}:{mcast_port}"
-                f"?fcc=127.0.0.1:{fcc.port}&fcc-type=huawei"
-            )
+            url = f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{fcc.port}&fcc-type=huawei"
             status, _, body = stream_get(
-                "127.0.0.1", shared_r2h.port, url,
-                read_bytes=4096, timeout=_FCC_STREAM_TIMEOUT,
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_FCC_STREAM_TIMEOUT,
             )
             assert status == 200
             assert len(body) > 0, "Expected to receive unicast stream data"
@@ -161,18 +174,20 @@ class TestHuaweiFCC:
         sender.start()
 
         fcc = MockFCCServer(
-            mcast_addr=MCAST_ADDR, protocol="huawei",
-            unicast_pps=300, sync_after=50,
+            mcast_addr=MCAST_ADDR,
+            protocol="huawei",
+            unicast_pps=300,
+            sync_after=50,
         )
         fcc.start()
         try:
-            url = (
-                f"/rtp/{MCAST_ADDR}:{mcast_port}"
-                f"?fcc=127.0.0.1:{fcc.port}&fcc-type=huawei"
-            )
+            url = f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{fcc.port}&fcc-type=huawei"
             status, _, body = stream_get(
-                "127.0.0.1", shared_r2h.port, url,
-                read_bytes=8192, timeout=_FCC_STREAM_TIMEOUT,
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=8192,
+                timeout=_FCC_STREAM_TIMEOUT,
             )
             assert status == 200
             assert len(body) > 0
@@ -188,18 +203,20 @@ class TestHuaweiFCC:
         sender.start()
 
         fcc = MockFCCServer(
-            mcast_addr=MCAST_ADDR, protocol="huawei",
-            unicast_pps=300, sync_after=30,
+            mcast_addr=MCAST_ADDR,
+            protocol="huawei",
+            unicast_pps=300,
+            sync_after=30,
         )
         fcc.start()
         try:
-            url = (
-                f"/rtp/{MCAST_ADDR}:{mcast_port}"
-                f"?fcc=127.0.0.1:{fcc.port}&fcc-type=huawei"
-            )
+            url = f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{fcc.port}&fcc-type=huawei"
             status, _, body = stream_get(
-                "127.0.0.1", shared_r2h.port, url,
-                read_bytes=16384, timeout=_FCC_STREAM_TIMEOUT,
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=16384,
+                timeout=_FCC_STREAM_TIMEOUT,
             )
             assert status == 200
             assert len(body) > 0
@@ -208,9 +225,7 @@ class TestHuaweiFCC:
             fcc.stop()
             sender.stop()
 
-        assert fcc.terminations_received >= 1, (
-            "Expected at least one Huawei FCC termination packet (FMT 9)"
-        )
+        assert fcc.terminations_received >= 1, "Expected at least one Huawei FCC termination packet (FMT 9)"
 
 
 # ---------------------------------------------------------------------------
@@ -231,9 +246,11 @@ class TestFCCFallback:
         dead_fcc_port = find_free_udp_port()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{dead_fcc_port}",
-                read_bytes=4096, timeout=_FCC_STREAM_TIMEOUT,
+                read_bytes=4096,
+                timeout=_FCC_STREAM_TIMEOUT,
             )
             assert status == 200
             assert len(body) > 0, "Expected multicast fallback to deliver data"

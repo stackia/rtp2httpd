@@ -200,9 +200,7 @@ def get_subnet_for_ip(ip: str, prefix_len: int = 24) -> str:
         (net_int >> 8) & 0xFF,
         net_int & 0xFF,
     ]
-    return (
-        f"{net_octets[0]}.{net_octets[1]}.{net_octets[2]}.{net_octets[3]}/{prefix_len}"
-    )
+    return f"{net_octets[0]}.{net_octets[1]}.{net_octets[2]}.{net_octets[3]}/{prefix_len}"
 
 
 def is_ip_in_subnet(ip: str, subnet: str) -> bool:
@@ -213,15 +211,8 @@ def is_ip_in_subnet(ip: str, subnet: str) -> bool:
     ip_octets = [int(x) for x in ip.split(".")]
     net_octets = [int(x) for x in net_addr.split(".")]
 
-    ip_int = (
-        (ip_octets[0] << 24) | (ip_octets[1] << 16) | (ip_octets[2] << 8) | ip_octets[3]
-    )
-    net_int = (
-        (net_octets[0] << 24)
-        | (net_octets[1] << 16)
-        | (net_octets[2] << 8)
-        | net_octets[3]
-    )
+    ip_int = (ip_octets[0] << 24) | (ip_octets[1] << 16) | (ip_octets[2] << 8) | ip_octets[3]
+    net_int = (net_octets[0] << 24) | (net_octets[1] << 16) | (net_octets[2] << 8) | net_octets[3]
 
     mask = (0xFFFFFFFF << (32 - prefix_len)) & 0xFFFFFFFF
     return (ip_int & mask) == (net_int & mask)
@@ -250,7 +241,7 @@ def get_igmp_joined_groups(subnets: list[str]) -> set[str]:
                                 if is_ip_in_subnet(ip, subnet):
                                     joined.add(ip)
                                     break
-                        except (ValueError, IndexError):
+                        except ValueError, IndexError:
                             continue
     except IOError:
         pass
@@ -425,8 +416,7 @@ def replay_loop(
             flush=True,
         )
         print(
-            f"Will replay to any joined address using ports: "
-            f"{', '.join(str(p) for p in sorted(pcap_ports))}",
+            f"Will replay to any joined address using ports: {', '.join(str(p) for p in sorted(pcap_ports))}",
             flush=True,
         )
     else:
@@ -498,8 +488,7 @@ def replay_loop(
 
             if loop_count == 1:
                 print(
-                    f"Starting replay to {len(targets)} target(s): "
-                    f"{', '.join(sorted(targets))}",
+                    f"Starting replay to {len(targets)} target(s): {', '.join(sorted(targets))}",
                     flush=True,
                 )
 
@@ -604,9 +593,7 @@ def replay_loop(
                     if reorder_buffer:
                         j = 0
                         while j < len(reorder_buffer):
-                            buf_payload, buf_port, buf_time, buf_targets = (
-                                reorder_buffer[j]
-                            )
+                            buf_payload, buf_port, buf_time, buf_targets = reorder_buffer[j]
                             if now >= buf_time:
                                 for dst_addr in buf_targets:
                                     sendto(buf_payload, (dst_addr, buf_port))
@@ -627,9 +614,7 @@ def replay_loop(
                     # Simulate packet reordering
                     if use_reorder and random_fn() * 100 < reorder_rate:
                         delay_time = random.uniform(0.001, 0.01)
-                        reorder_buffer.append(
-                            (payload, port, now + delay_time, target_list.copy())
-                        )
+                        reorder_buffer.append((payload, port, now + delay_time, target_list.copy()))
                         reordered_this_loop += 1
                         total_packets_reordered += 1
                         i += 1
@@ -719,8 +704,7 @@ def replay_loop(
     elapsed = time.monotonic() - start_time
     print(f"\nStopped after {loop_count} loop(s)", flush=True)
     print(
-        f"Total: {total_packets_sent} packets sent, "
-        f"{total_bytes_sent / 1024:.1f} KB",
+        f"Total: {total_packets_sent} packets sent, {total_bytes_sent / 1024:.1f} KB",
         flush=True,
     )
     if total_packets_dropped > 0:
@@ -729,8 +713,7 @@ def replay_loop(
         print(f"Reordered: {total_packets_reordered} packets", flush=True)
     if elapsed > 0:
         print(
-            f"Duration: {elapsed:.1f}s, "
-            f"Rate: {total_packets_sent / elapsed:.1f} pkt/s",
+            f"Duration: {elapsed:.1f}s, Rate: {total_packets_sent / elapsed:.1f} pkt/s",
             flush=True,
         )
 

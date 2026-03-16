@@ -23,8 +23,9 @@ class _RTSPServerBase:
     transport-specific behaviour.
     """
 
-    def __init__(self, port: int = 0, sdp_control: str = "*",
-                 content_base: str | None = "auto", custom_sdp: str | None = None):
+    def __init__(
+        self, port: int = 0, sdp_control: str = "*", content_base: str | None = "auto", custom_sdp: str | None = None
+    ):
         """
         Args:
             port: TCP port to listen on (0 = auto-select).
@@ -82,7 +83,7 @@ class _RTSPServerBase:
                 conn, addr = self._server_sock.accept()
                 t = threading.Thread(target=self._handle, args=(conn, addr), daemon=True)
                 t.start()
-            except (socket.timeout, OSError):
+            except socket.timeout, OSError:
                 continue
 
     def _handle(self, conn: socket.socket, addr: tuple) -> None:
@@ -114,23 +115,30 @@ class _RTSPServerBase:
                     if hdr_line and ":" in hdr_line:
                         hk, hv = hdr_line.split(":", 1)
                         req_headers_map[hk.strip()] = hv.strip()
-                self.requests_detailed.append({
-                    "method": method,
-                    "uri": uri,
-                    "headers": req_headers_map,
-                })
+                self.requests_detailed.append(
+                    {
+                        "method": method,
+                        "uri": uri,
+                        "headers": req_headers_map,
+                    }
+                )
 
                 if method == "OPTIONS":
-                    conn.sendall(("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-                                  "Public: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN\r\n\r\n" % cseq).encode())
+                    conn.sendall(
+                        (
+                            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
+                            "Public: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN\r\n\r\n" % cseq
+                        ).encode()
+                    )
                 elif method == "DESCRIBE":
                     if self._custom_sdp is not None:
                         sdp = self._custom_sdp
                     else:
-                        sdp = ("v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=T\r\n"
-                               "c=IN IP4 0.0.0.0\r\nt=0 0\r\n"
-                               "m=video 0 RTP/AVP 33\r\na=control:%s\r\n"
-                               % self._sdp_control)
+                        sdp = (
+                            "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=T\r\n"
+                            "c=IN IP4 0.0.0.0\r\nt=0 0\r\n"
+                            "m=video 0 RTP/AVP 33\r\na=control:%s\r\n" % self._sdp_control
+                        )
                     # Build Content-Base header (or omit it)
                     cb_header = ""
                     if self._content_base is None:
@@ -145,22 +153,24 @@ class _RTSPServerBase:
                         cb_header = "Content-Base: %s\r\n" % cb_val
                     else:
                         cb_header = "Content-Base: %s\r\n" % self._content_base
-                    conn.sendall(("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-                                  "Content-Type: application/sdp\r\n"
-                                  "%s"
-                                  "Content-Length: %d\r\n\r\n%s" % (cseq, cb_header, len(sdp), sdp)).encode())
+                    conn.sendall(
+                        (
+                            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
+                            "Content-Type: application/sdp\r\n"
+                            "%s"
+                            "Content-Length: %d\r\n\r\n%s" % (cseq, cb_header, len(sdp), sdp)
+                        ).encode()
+                    )
                 elif method == "SETUP":
                     conn.sendall(self._setup_response(cseq, transport_hdr).encode())
                 elif method == "PLAY":
-                    conn.sendall(("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-                                  "Session: t1\r\n\r\n" % cseq).encode())
+                    conn.sendall(("RTSP/1.0 200 OK\r\nCSeq: %s\r\nSession: t1\r\n\r\n" % cseq).encode())
                     self._after_play(conn, addr)
                     return
                 elif method == "TEARDOWN":
-                    conn.sendall(("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-                                  "Session: t1\r\n\r\n" % cseq).encode())
+                    conn.sendall(("RTSP/1.0 200 OK\r\nCSeq: %s\r\nSession: t1\r\n\r\n" % cseq).encode())
                     return
-        except (socket.timeout, ConnectionError, OSError):
+        except socket.timeout, ConnectionError, OSError:
             pass
         finally:
             conn.close()
@@ -181,17 +191,23 @@ class MockRTSPServer(_RTSPServerBase):
     the RTSP source is still connected).
     """
 
-    def __init__(self, port: int = 0, num_packets: int = 200,
-                 sdp_control: str = "*", content_base: str | None = "auto",
-                 custom_sdp: str | None = None):
-        super().__init__(port, sdp_control=sdp_control,
-                         content_base=content_base, custom_sdp=custom_sdp)
+    def __init__(
+        self,
+        port: int = 0,
+        num_packets: int = 200,
+        sdp_control: str = "*",
+        content_base: str | None = "auto",
+        custom_sdp: str | None = None,
+    ):
+        super().__init__(port, sdp_control=sdp_control, content_base=content_base, custom_sdp=custom_sdp)
         self._num_packets = num_packets
 
     def _setup_response(self, cseq: str, transport_hdr: str) -> str:
-        return ("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-                "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
-                "Session: t1\r\n\r\n" % cseq)
+        return (
+            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
+            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
+            "Session: t1\r\n\r\n" % cseq
+        )
 
     def _after_play(self, conn: socket.socket, addr: tuple) -> None:
         seq = 0
@@ -206,7 +222,7 @@ class MockRTSPServer(_RTSPServerBase):
                 seq = (seq + 1) & 0xFFFF
                 ts = (ts + 3600) & 0xFFFFFFFF
                 time.sleep(0.001)
-        except (OSError, BrokenPipeError):
+        except OSError, BrokenPipeError:
             pass
 
 
@@ -239,14 +255,14 @@ class MockRTSPServerUDP(_RTSPServerBase):
                 break
 
         self._server_rtp_port, self._server_rtcp_port = find_free_udp_port_pair()
-        return ("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-                "Transport: RTP/AVP;unicast;"
-                "client_port=%d-%d;"
-                "server_port=%d-%d\r\n"
-                "Session: t1\r\n\r\n" % (
-                    cseq,
-                    self._client_rtp_port, self._client_rtp_port + 1,
-                    self._server_rtp_port, self._server_rtcp_port))
+        return (
+            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
+            "Transport: RTP/AVP;unicast;"
+            "client_port=%d-%d;"
+            "server_port=%d-%d\r\n"
+            "Session: t1\r\n\r\n"
+            % (cseq, self._client_rtp_port, self._client_rtp_port + 1, self._server_rtp_port, self._server_rtcp_port)
+        )
 
     def _after_play(self, conn: socket.socket, addr: tuple) -> None:
         """Send RTP packets over UDP to the client's advertised port."""
@@ -268,7 +284,7 @@ class MockRTSPServerUDP(_RTSPServerBase):
                 seq = (seq + 1) & 0xFFFF
                 ts = (ts + 3600) & 0xFFFFFFFF
                 time.sleep(0.001)
-        except (OSError, BrokenPipeError):
+        except OSError, BrokenPipeError:
             pass
         finally:
             udp_sock.close()
@@ -308,9 +324,11 @@ class MockRTSPServerNoMedia(_RTSPServerBase):
     """Completes full RTSP handshake but never sends any media data."""
 
     def _setup_response(self, cseq: str, transport_hdr: str) -> str:
-        return ("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-                "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
-                "Session: t1\r\n\r\n" % cseq)
+        return (
+            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
+            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
+            "Session: t1\r\n\r\n" % cseq
+        )
 
     def _after_play(self, conn: socket.socket, addr: tuple) -> None:
         """Send PLAY 200 OK but no media packets — just hold connection."""
@@ -323,7 +341,7 @@ class MockRTSPServerNoMedia(_RTSPServerBase):
                         break
                 except socket.timeout:
                     continue
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             pass
         finally:
             conn.close()
@@ -337,9 +355,11 @@ class MockRTSPServerNoTeardownResponse(_RTSPServerBase):
         self._num_packets = num_packets
 
     def _setup_response(self, cseq: str, transport_hdr: str) -> str:
-        return ("RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-                "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
-                "Session: t1\r\n\r\n" % cseq)
+        return (
+            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
+            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
+            "Session: t1\r\n\r\n" % cseq
+        )
 
     def _after_play(self, conn: socket.socket, addr: tuple) -> None:
         """Send a few packets then keep connection alive."""
@@ -355,7 +375,7 @@ class MockRTSPServerNoTeardownResponse(_RTSPServerBase):
                 seq = (seq + 1) & 0xFFFF
                 ts = (ts + 3600) & 0xFFFFFFFF
                 time.sleep(0.001)
-        except (OSError, BrokenPipeError):
+        except OSError, BrokenPipeError:
             return
 
         # Now wait for TEARDOWN but don't respond to it
@@ -369,7 +389,7 @@ class MockRTSPServerNoTeardownResponse(_RTSPServerBase):
                     # Got TEARDOWN (or anything) — just ignore and hold connection
                 except socket.timeout:
                     continue
-        except (ConnectionError, OSError):
+        except ConnectionError, OSError:
             pass
         finally:
             conn.close()

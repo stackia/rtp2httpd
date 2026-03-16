@@ -42,7 +42,7 @@ def _get_status_clients(port: int, timeout: float = 3.0) -> list[dict]:
     extract the active clients list."""
     try:
         sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
-    except (OSError, socket.timeout):
+    except OSError, socket.timeout:
         return []
     data = b""
     try:
@@ -60,7 +60,7 @@ def _get_status_clients(port: int, timeout: float = 3.0) -> list[dict]:
             data += chunk
             if b"\ndata: {" in data and b'"clients"' in data:
                 break
-    except (socket.timeout, OSError):
+    except socket.timeout, OSError:
         pass
     finally:
         sock.close()
@@ -152,12 +152,12 @@ class TestRTSPHandshakeTimeout:
                 elapsed = time.monotonic() - t0
 
                 assert status == 503, f"Expected 503, got {status}"
-                assert (
-                    elapsed >= _RTSP_HANDSHAKE_TIMEOUT * _TIMEOUT_MIN_FACTOR
-                ), f"Timed out too quickly: {elapsed:.1f}s"
-                assert (
-                    elapsed <= _RTSP_HANDSHAKE_TIMEOUT * _TIMEOUT_MAX_FACTOR + 2
-                ), f"Timed out too slowly: {elapsed:.1f}s"
+                assert elapsed >= _RTSP_HANDSHAKE_TIMEOUT * _TIMEOUT_MIN_FACTOR, (
+                    f"Timed out too quickly: {elapsed:.1f}s"
+                )
+                assert elapsed <= _RTSP_HANDSHAKE_TIMEOUT * _TIMEOUT_MAX_FACTOR + 2, (
+                    f"Timed out too slowly: {elapsed:.1f}s"
+                )
             finally:
                 rtsp.stop()
         finally:
@@ -189,12 +189,12 @@ class TestRTSPFirstMediaTimeout:
                 elapsed = time.monotonic() - t0
 
                 assert status == 503, f"Expected 503, got {status}"
-                assert (
-                    elapsed >= _RTSP_FIRST_MEDIA_TIMEOUT * _TIMEOUT_MIN_FACTOR
-                ), f"Timed out too quickly: {elapsed:.1f}s"
-                assert (
-                    elapsed <= _RTSP_FIRST_MEDIA_TIMEOUT * _TIMEOUT_MAX_FACTOR + 5
-                ), f"Timed out too slowly: {elapsed:.1f}s"
+                assert elapsed >= _RTSP_FIRST_MEDIA_TIMEOUT * _TIMEOUT_MIN_FACTOR, (
+                    f"Timed out too quickly: {elapsed:.1f}s"
+                )
+                assert elapsed <= _RTSP_FIRST_MEDIA_TIMEOUT * _TIMEOUT_MAX_FACTOR + 5, (
+                    f"Timed out too slowly: {elapsed:.1f}s"
+                )
             finally:
                 rtsp.stop()
         finally:
@@ -238,8 +238,7 @@ class TestRTSPTeardownTimeout:
                 # list is empty.
                 clients = _get_status_clients(r2h_port)
                 assert len(clients) == 0, (
-                    f"Expected 0 active clients after teardown timeout, "
-                    f"got {len(clients)}: {clients}"
+                    f"Expected 0 active clients after teardown timeout, got {len(clients)}: {clients}"
                 )
             finally:
                 rtsp.stop()
@@ -275,12 +274,8 @@ class TestRTSPDurationQuery:
             )
             assert status == 200, "Expected 200 for r2h-duration, got %d" % status
             body_str = body.decode(errors="replace")
-            assert '"duration"' in body_str, (
-                "Response should contain duration JSON, got: %s" % body_str
-            )
-            assert "3600.500" in body_str, (
-                "Duration should be 3600.500, got: %s" % body_str
-            )
+            assert '"duration"' in body_str, "Response should contain duration JSON, got: %s" % body_str
+            assert "3600.500" in body_str, "Duration should be 3600.500, got: %s" % body_str
         finally:
             rtsp.stop()
 
@@ -305,12 +300,8 @@ class TestRTSPDurationQuery:
             methods = rtsp.requests_received
             assert "OPTIONS" in methods, "Expected OPTIONS"
             assert "DESCRIBE" in methods, "Expected DESCRIBE"
-            assert "SETUP" not in methods, (
-                "r2h-duration should NOT send SETUP, got: %s" % methods
-            )
-            assert "PLAY" not in methods, (
-                "r2h-duration should NOT send PLAY, got: %s" % methods
-            )
+            assert "SETUP" not in methods, "r2h-duration should NOT send SETUP, got: %s" % methods
+            assert "PLAY" not in methods, "r2h-duration should NOT send PLAY, got: %s" % methods
         finally:
             rtsp.stop()
 
@@ -333,14 +324,10 @@ class TestRTSPDurationQuery:
                 timeout=_STREAM_TIMEOUT,
             )
 
-            describe_reqs = [
-                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
-            ]
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE"
             uri = describe_reqs[0]["uri"]
-            assert "r2h-duration" not in uri, (
-                "r2h-duration should be stripped from RTSP URI, got: %s" % uri
-            )
+            assert "r2h-duration" not in uri, "r2h-duration should be stripped from RTSP URI, got: %s" % uri
         finally:
             rtsp.stop()
 
@@ -384,9 +371,7 @@ class TestRTSPStartSeek:
                 timeout=_STREAM_TIMEOUT,
             )
 
-            describe_reqs = [
-                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
-            ]
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE"
             assert "r2h-start" not in describe_reqs[0]["uri"]
         finally:
@@ -406,9 +391,7 @@ class TestRTSPStartSeek:
                 timeout=_STREAM_TIMEOUT,
             )
 
-            describe_reqs = [
-                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
-            ]
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE"
             uri = describe_reqs[0]["uri"]
             assert "r2h-start" not in uri
@@ -470,9 +453,7 @@ class TestRTSPRecentPlayseek:
                 timeout=_STREAM_TIMEOUT,
             )
 
-            describe_reqs = [
-                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
-            ]
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE"
             assert "%s=" % param_name not in describe_reqs[0]["uri"]
             assert "r2h-seek-name=" not in describe_reqs[0]["uri"]
@@ -536,13 +517,9 @@ class TestRTSPRecentPlayseek:
                 timeout=_STREAM_TIMEOUT,
             )
 
-            describe_reqs = [
-                r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"
-            ]
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE"
-            assert (
-                "%s=%s-%s" % (param_name, start_str, end_str) in describe_reqs[0]["uri"]
-            )
+            assert "%s=%s-%s" % (param_name, start_str, end_str) in describe_reqs[0]["uri"]
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert len(play_reqs) > 0, "Expected PLAY request"

@@ -85,18 +85,22 @@ class TestInvalidAddress:
 
     def test_no_port_in_rtp_url(self, basic_r2h):
         status, _, _ = stream_get(
-            "127.0.0.1", basic_r2h.port,
+            "127.0.0.1",
+            basic_r2h.port,
             "/rtp/239.0.0.1",  # missing :port
-            read_bytes=256, timeout=3.0,
+            read_bytes=256,
+            timeout=3.0,
         )
         # rtp2httpd may accept it (200 then close) or reject (400/404/503)
         assert status in (0, 200, 400, 404, 503)
 
     def test_invalid_ip_in_rtp_url(self, basic_r2h):
         status, _, _ = stream_get(
-            "127.0.0.1", basic_r2h.port,
+            "127.0.0.1",
+            basic_r2h.port,
             "/rtp/not-an-ip:1234",
-            read_bytes=256, timeout=3.0,
+            read_bytes=256,
+            timeout=3.0,
         )
         assert status in (0, 200, 400, 404, 500, 503)
 
@@ -123,7 +127,10 @@ class TestMethodHandling:
     def test_post_on_status_rejected(self, basic_r2h):
         """POST to a non-API endpoint should be rejected or ignored."""
         status, _, _ = http_request(
-            "127.0.0.1", basic_r2h.port, "POST", "/nonexistent",
+            "127.0.0.1",
+            basic_r2h.port,
+            "POST",
+            "/nonexistent",
             body=b"test",
         )
         # Should get 404 or 501
@@ -199,10 +206,7 @@ class TestConcurrentConnections:
         import concurrent.futures
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
-            futures = [
-                pool.submit(http_get, "127.0.0.1", basic_r2h.port, "/status", 3.0)
-                for _ in range(5)
-            ]
+            futures = [pool.submit(http_get, "127.0.0.1", basic_r2h.port, "/status", 3.0) for _ in range(5)]
             for f in concurrent.futures.as_completed(futures):
                 status, _, _ = f.result()
                 assert status == 200
@@ -252,7 +256,9 @@ class TestIfnameParam:
 
     def test_ifname_param_accepted(self, basic_r2h):
         status, _, _ = http_request(
-            "127.0.0.1", basic_r2h.port, "HEAD",
+            "127.0.0.1",
+            basic_r2h.port,
+            "HEAD",
             "/rtp/239.0.0.1:1234?r2h-ifname=lo0",
             timeout=3.0,
         )

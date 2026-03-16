@@ -40,7 +40,8 @@ def multicast_r2h(r2h_binary):
     """A single rtp2httpd instance with multicast interface for streaming tests."""
     port = find_free_port()
     r2h = R2HProcess(
-        r2h_binary, port,
+        r2h_binary,
+        port,
         extra_args=["-v", "4", "-m", "100", "-r", LOOPBACK_IF],
     )
     r2h.start()
@@ -63,7 +64,8 @@ class TestBasicRTPStream:
         sender.start()
         try:
             status, hdrs, body = stream_get(
-                "127.0.0.1", multicast_r2h.port,
+                "127.0.0.1",
+                multicast_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}",
                 read_bytes=4096,
                 timeout=_MCAST_STREAM_TIMEOUT,
@@ -80,7 +82,8 @@ class TestBasicRTPStream:
         sender.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", multicast_r2h.port,
+                "127.0.0.1",
+                multicast_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}",
                 read_bytes=4096,
                 timeout=_MCAST_STREAM_TIMEOUT,
@@ -106,7 +109,8 @@ class TestUDPxyFormat:
         sender.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", multicast_r2h.port,
+                "127.0.0.1",
+                multicast_r2h.port,
                 f"/udp/{MCAST_ADDR}:{mcast_port}",
                 read_bytes=4096,
                 timeout=_MCAST_STREAM_TIMEOUT,
@@ -120,14 +124,18 @@ class TestUDPxyFormat:
         """-U flag should cause /udp/ URLs to return 404."""
         port = find_free_port()
         r2h = R2HProcess(
-            r2h_binary, port,
+            r2h_binary,
+            port,
             extra_args=["-v", "4", "-m", "100", "-U"],
         )
         try:
             r2h.start()
             from helpers import http_request
+
             status, _, _ = http_request(
-                "127.0.0.1", port, "HEAD",
+                "127.0.0.1",
+                port,
+                "HEAD",
                 "/udp/239.0.0.1:1234",
                 timeout=3.0,
             )
@@ -152,7 +160,8 @@ class TestFEC:
         sender.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", multicast_r2h.port,
+                "127.0.0.1",
+                multicast_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}?fec={fec_port}",
                 read_bytes=4096,
                 timeout=_MCAST_STREAM_TIMEOUT,
@@ -179,6 +188,7 @@ class TestMultipleConcurrentClients:
             url = f"/rtp/{MCAST_ADDR}:{mcast_port}"
 
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
                 f1 = pool.submit(stream_get, "127.0.0.1", multicast_r2h.port, url, 2048, _MCAST_STREAM_TIMEOUT)
                 f2 = pool.submit(stream_get, "127.0.0.1", multicast_r2h.port, url, 2048, _MCAST_STREAM_TIMEOUT)
@@ -205,14 +215,18 @@ class TestHeadRequest:
         port = find_free_port()
         mcast_port = find_free_udp_port()
         r2h = R2HProcess(
-            r2h_binary, port,
+            r2h_binary,
+            port,
             extra_args=["-v", "4", "-m", "100"],
         )
         try:
             r2h.start()
             from helpers import http_request
+
             status, hdrs, body = http_request(
-                "127.0.0.1", port, "HEAD",
+                "127.0.0.1",
+                port,
+                "HEAD",
                 f"/rtp/{MCAST_ADDR}:{mcast_port}",
                 timeout=3.0,
             )
@@ -252,9 +266,7 @@ def _assert_markers_ordered(markers: list[int]) -> None:
         diff = (markers[i] - markers[i - 1]) & 0xFFFF
         # diff==0 means same RTP packet (7 TS per RTP share a marker)
         # diff < 0x8000 means forward progress
-        assert diff == 0 or diff < 0x8000, (
-            f"Out-of-order marker at TS#{i}: {markers[i - 1]} -> {markers[i]}"
-        )
+        assert diff == 0 or diff < 0x8000, f"Out-of-order marker at TS#{i}: {markers[i - 1]} -> {markers[i]}"
 
 
 class TestRTPReorder:
@@ -264,13 +276,17 @@ class TestRTPReorder:
         """Out-of-order RTP input should still yield 188-byte-aligned TS."""
         mcast_port = find_free_udp_port()
         sender = MulticastSender(
-            addr=MCAST_ADDR, port=mcast_port, pps=300,
-            reorder_distance=4, unique_payloads=True,
+            addr=MCAST_ADDR,
+            port=mcast_port,
+            pps=300,
+            reorder_distance=4,
+            unique_payloads=True,
         )
         sender.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", multicast_r2h.port,
+                "127.0.0.1",
+                multicast_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}",
                 read_bytes=8192,
                 timeout=_MCAST_STREAM_TIMEOUT,
@@ -284,13 +300,17 @@ class TestRTPReorder:
         """Markers embedded in TS payloads must arrive in RTP sequence order."""
         mcast_port = find_free_udp_port()
         sender = MulticastSender(
-            addr=MCAST_ADDR, port=mcast_port, pps=300,
-            reorder_distance=4, unique_payloads=True,
+            addr=MCAST_ADDR,
+            port=mcast_port,
+            pps=300,
+            reorder_distance=4,
+            unique_payloads=True,
         )
         sender.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", multicast_r2h.port,
+                "127.0.0.1",
+                multicast_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}",
                 read_bytes=16384,
                 timeout=_MCAST_STREAM_TIMEOUT,
@@ -305,13 +325,17 @@ class TestRTPReorder:
         """Reorder distance matching the init-collect window (8 packets)."""
         mcast_port = find_free_udp_port()
         sender = MulticastSender(
-            addr=MCAST_ADDR, port=mcast_port, pps=300,
-            reorder_distance=8, unique_payloads=True,
+            addr=MCAST_ADDR,
+            port=mcast_port,
+            pps=300,
+            reorder_distance=8,
+            unique_payloads=True,
         )
         sender.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", multicast_r2h.port,
+                "127.0.0.1",
+                multicast_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}",
                 read_bytes=16384,
                 timeout=_MCAST_STREAM_TIMEOUT,
@@ -327,13 +351,17 @@ class TestRTPReorder:
         """Larger reorder distance (16) still within the 32-slot window."""
         mcast_port = find_free_udp_port()
         sender = MulticastSender(
-            addr=MCAST_ADDR, port=mcast_port, pps=300,
-            reorder_distance=16, unique_payloads=True,
+            addr=MCAST_ADDR,
+            port=mcast_port,
+            pps=300,
+            reorder_distance=16,
+            unique_payloads=True,
         )
         sender.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", multicast_r2h.port,
+                "127.0.0.1",
+                multicast_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}",
                 read_bytes=16384,
                 timeout=_MCAST_STREAM_TIMEOUT,
@@ -349,13 +377,17 @@ class TestRTPReorder:
         """Duplicate RTP packets should be silently dropped without corruption."""
         mcast_port = find_free_udp_port()
         sender = MulticastSender(
-            addr=MCAST_ADDR, port=mcast_port, pps=300,
-            send_duplicates=True, unique_payloads=True,
+            addr=MCAST_ADDR,
+            port=mcast_port,
+            pps=300,
+            send_duplicates=True,
+            unique_payloads=True,
         )
         sender.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", multicast_r2h.port,
+                "127.0.0.1",
+                multicast_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}",
                 read_bytes=8192,
                 timeout=_MCAST_STREAM_TIMEOUT,

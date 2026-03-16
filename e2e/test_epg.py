@@ -85,20 +85,20 @@ rtp://239.0.0.1:1234
 @pytest.fixture(scope="module")
 def plain_epg_r2h(r2h_binary):
     """rtp2httpd with uncompressed EPG loaded from HTTP upstream."""
-    upstream = MockHTTPUpstream(routes={
-        "/epg.xml": {
-            "status": 200,
-            "body": SAMPLE_EPG_XML,
-            "headers": {"Content-Type": "application/xml"},
-        },
-    })
+    upstream = MockHTTPUpstream(
+        routes={
+            "/epg.xml": {
+                "status": 200,
+                "body": SAMPLE_EPG_XML,
+                "headers": {"Content-Type": "application/xml"},
+            },
+        }
+    )
     upstream.start()
 
     port = find_free_port()
     m3u_content = (
-        '#EXTM3U x-tvg-url="http://127.0.0.1:%d/epg.xml"\n'
-        "#EXTINF:-1,Channel\n"
-        "rtp://239.0.0.1:1234\n"
+        '#EXTM3U x-tvg-url="http://127.0.0.1:%d/epg.xml"\n#EXTINF:-1,Channel\nrtp://239.0.0.1:1234\n'
     ) % upstream.port
     upstream.routes["/m3u"] = {
         "status": 200,
@@ -106,10 +106,15 @@ def plain_epg_r2h(r2h_binary):
         "headers": {"Content-Type": "audio/x-mpegurl"},
     }
     r2h = R2HProcess(
-        r2h_binary, port,
+        r2h_binary,
+        port,
         extra_args=[
-            "-v", "4", "-m", "100",
-            "-M", "http://127.0.0.1:%d/m3u" % upstream.port,
+            "-v",
+            "4",
+            "-m",
+            "100",
+            "-M",
+            "http://127.0.0.1:%d/m3u" % upstream.port,
         ],
     )
     r2h.start()
@@ -123,20 +128,20 @@ def plain_epg_r2h(r2h_binary):
 def gz_epg_r2h(r2h_binary):
     """rtp2httpd with gzipped EPG loaded from HTTP upstream."""
     gz_data = gzip.compress(SAMPLE_EPG_XML.encode())
-    upstream = MockHTTPUpstream(routes={
-        "/epg.xml.gz": {
-            "status": 200,
-            "body": gz_data,
-            "headers": {"Content-Type": "application/gzip"},
-        },
-    })
+    upstream = MockHTTPUpstream(
+        routes={
+            "/epg.xml.gz": {
+                "status": 200,
+                "body": gz_data,
+                "headers": {"Content-Type": "application/gzip"},
+            },
+        }
+    )
     upstream.start()
 
     port = find_free_port()
     m3u_content = (
-        '#EXTM3U x-tvg-url="http://127.0.0.1:%d/epg.xml.gz"\n'
-        "#EXTINF:-1,Channel\n"
-        "rtp://239.0.0.1:1234\n"
+        '#EXTM3U x-tvg-url="http://127.0.0.1:%d/epg.xml.gz"\n#EXTINF:-1,Channel\nrtp://239.0.0.1:1234\n'
     ) % upstream.port
     upstream.routes["/m3u"] = {
         "status": 200,
@@ -144,10 +149,15 @@ def gz_epg_r2h(r2h_binary):
         "headers": {"Content-Type": "audio/x-mpegurl"},
     }
     r2h = R2HProcess(
-        r2h_binary, port,
+        r2h_binary,
+        port,
         extra_args=[
-            "-v", "4", "-m", "100",
-            "-M", "http://127.0.0.1:%d/m3u" % upstream.port,
+            "-v",
+            "4",
+            "-m",
+            "100",
+            "-M",
+            "http://127.0.0.1:%d/m3u" % upstream.port,
         ],
     )
     r2h.start()
@@ -211,7 +221,9 @@ class TestUncompressedEPG:
     def test_epg_xml_served(self, plain_epg_r2h):
         """GET /epg.xml should return plain XML content."""
         status, hdrs, body = http_get(
-            "127.0.0.1", plain_epg_r2h.port, "/epg.xml",
+            "127.0.0.1",
+            plain_epg_r2h.port,
+            "/epg.xml",
         )
         assert status == 200
         ct = hdrs.get("Content-Type", "")
@@ -223,14 +235,18 @@ class TestUncompressedEPG:
     def test_epg_xml_gz_returns_404(self, plain_epg_r2h):
         """GET /epg.xml.gz should return 404 when source is not gzipped."""
         status, _, _ = http_get(
-            "127.0.0.1", plain_epg_r2h.port, "/epg.xml.gz",
+            "127.0.0.1",
+            plain_epg_r2h.port,
+            "/epg.xml.gz",
         )
         assert status == 404
 
     def test_m3u_tvg_url_points_to_epg_xml(self, plain_epg_r2h):
         """M3U x-tvg-url should be rewritten to /epg.xml for plain source."""
         status, _, body = http_get(
-            "127.0.0.1", plain_epg_r2h.port, "/playlist.m3u",
+            "127.0.0.1",
+            plain_epg_r2h.port,
+            "/playlist.m3u",
         )
         text = body.decode()
         assert status == 200
@@ -249,35 +265,39 @@ class TestGzippedEPG:
     def test_epg_xml_served_with_content_encoding(self, gz_epg_r2h):
         """GET /epg.xml should return Content-Encoding: gzip."""
         status, hdrs, body = http_get(
-            "127.0.0.1", gz_epg_r2h.port, "/epg.xml",
+            "127.0.0.1",
+            gz_epg_r2h.port,
+            "/epg.xml",
         )
         assert status == 200
         ct = hdrs.get("Content-Type", "")
         assert "xml" in ct.lower()
         ce = hdrs.get("Content-Encoding", "")
-        assert "gzip" in ce.lower(), \
-            "Gzipped source served via /epg.xml should have Content-Encoding: gzip"
+        assert "gzip" in ce.lower(), "Gzipped source served via /epg.xml should have Content-Encoding: gzip"
         decompressed = gzip.decompress(body)
         assert b"Test Programme" in decompressed
 
     def test_epg_xml_gz_served(self, gz_epg_r2h):
         """GET /epg.xml.gz should return raw gzip data as application/gzip."""
         status, hdrs, body = http_get(
-            "127.0.0.1", gz_epg_r2h.port, "/epg.xml.gz",
+            "127.0.0.1",
+            gz_epg_r2h.port,
+            "/epg.xml.gz",
         )
         assert status == 200
         ct = hdrs.get("Content-Type", "")
         assert "gzip" in ct.lower()
         ce = hdrs.get("Content-Encoding", "")
-        assert "gzip" not in ce.lower(), \
-            "/epg.xml.gz should not add Content-Encoding: gzip"
+        assert "gzip" not in ce.lower(), "/epg.xml.gz should not add Content-Encoding: gzip"
         decompressed = gzip.decompress(body)
         assert b"Test Programme" in decompressed
 
     def test_m3u_tvg_url_points_to_epg_xml_gz(self, gz_epg_r2h):
         """M3U x-tvg-url should be rewritten to /epg.xml.gz for gzipped source."""
         status, _, body = http_get(
-            "127.0.0.1", gz_epg_r2h.port, "/playlist.m3u",
+            "127.0.0.1",
+            gz_epg_r2h.port,
+            "/playlist.m3u",
         )
         text = body.decode()
         assert status == 200
@@ -295,7 +315,9 @@ class TestEPGETag:
     def test_etag_present(self, plain_epg_r2h):
         """EPG response should include an ETag header."""
         status, hdrs, _ = http_get(
-            "127.0.0.1", plain_epg_r2h.port, "/epg.xml",
+            "127.0.0.1",
+            plain_epg_r2h.port,
+            "/epg.xml",
         )
         assert status == 200
         etag = hdrs.get("ETag", hdrs.get("etag", ""))
@@ -304,13 +326,17 @@ class TestEPGETag:
     def test_if_none_match_304(self, plain_epg_r2h):
         """If-None-Match with matching ETag should return 304."""
         _, hdrs1, _ = http_get(
-            "127.0.0.1", plain_epg_r2h.port, "/epg.xml",
+            "127.0.0.1",
+            plain_epg_r2h.port,
+            "/epg.xml",
         )
         etag = hdrs1.get("ETag", hdrs1.get("etag", ""))
         assert etag
 
         status, _, body = http_get(
-            "127.0.0.1", plain_epg_r2h.port, "/epg.xml",
+            "127.0.0.1",
+            plain_epg_r2h.port,
+            "/epg.xml",
             headers={"If-None-Match": etag},
         )
         assert status == 304
@@ -319,7 +345,9 @@ class TestEPGETag:
     def test_if_none_match_mismatch(self, plain_epg_r2h):
         """If-None-Match with wrong ETag should return 200."""
         status, _, body = http_get(
-            "127.0.0.1", plain_epg_r2h.port, "/epg.xml",
+            "127.0.0.1",
+            plain_epg_r2h.port,
+            "/epg.xml",
             headers={"If-None-Match": '"wrong-etag"'},
         )
         assert status == 200
@@ -350,7 +378,8 @@ class TestEPGAuth:
     def test_epg_with_valid_token(self, auth_epg_r2h):
         """GET /epg.xml with valid token should return 200."""
         status, _, body = http_get(
-            "127.0.0.1", auth_epg_r2h.port,
+            "127.0.0.1",
+            auth_epg_r2h.port,
             f"/epg.xml?r2h-token={SECRET}",
         )
         assert status == 200
@@ -359,7 +388,8 @@ class TestEPGAuth:
     def test_m3u_tvg_url_includes_token(self, auth_epg_r2h):
         """M3U x-tvg-url should include r2h-token when auth is configured."""
         status, _, body = http_get(
-            "127.0.0.1", auth_epg_r2h.port,
+            "127.0.0.1",
+            auth_epg_r2h.port,
             f"/playlist.m3u?r2h-token={SECRET}",
         )
         assert status == 200

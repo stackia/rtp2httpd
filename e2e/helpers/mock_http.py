@@ -28,11 +28,13 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
     def _dispatch(self, head: bool = False) -> None:
         # Record the request details
         hdrs = {k: v for k, v in self.headers.items()}
-        self.requests_log.append({
-            "method": self.command,
-            "path": self.path,  # full path including query string
-            "headers": hdrs,
-        })
+        self.requests_log.append(
+            {
+                "method": self.command,
+                "path": self.path,  # full path including query string
+                "headers": hdrs,
+            }
+        )
 
         path = self.path.split("?")[0]
         route = self.routes.get(path)
@@ -79,7 +81,8 @@ class MockHTTPUpstream:
         )
         self._server = HTTPServer(("127.0.0.1", self.port), handler)
         self._thread = threading.Thread(
-            target=self._server.serve_forever, daemon=True,
+            target=self._server.serve_forever,
+            daemon=True,
         )
         self._thread.start()
 
@@ -125,7 +128,7 @@ class MockHTTPUpstreamSilent:
                 conn, addr = self._server_sock.accept()
                 t = threading.Thread(target=self._handle, args=(conn,), daemon=True)
                 t.start()
-            except (socket.timeout, OSError):
+            except socket.timeout, OSError:
                 continue
 
     def _handle(self, conn: socket.socket) -> None:

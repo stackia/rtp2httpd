@@ -48,7 +48,9 @@ class TestStatusPage:
         import gzip
 
         _, hdrs, body = http_get(
-            "127.0.0.1", basic_r2h.port, "/status",
+            "127.0.0.1",
+            basic_r2h.port,
+            "/status",
             headers={"Accept-Encoding": "identity"},
         )
         # Decompress if gzip (0x1f 0x8b magic)
@@ -123,8 +125,11 @@ class TestStatusSSE:
         from helpers import stream_get
 
         status, hdrs, _ = stream_get(
-            "127.0.0.1", basic_r2h.port, "/status/sse",
-            read_bytes=256, timeout=3.0,
+            "127.0.0.1",
+            basic_r2h.port,
+            "/status/sse",
+            read_bytes=256,
+            timeout=3.0,
         )
         if status == 200:
             ct = hdrs.get("content-type", "")

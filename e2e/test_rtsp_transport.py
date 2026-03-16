@@ -43,9 +43,11 @@ class TestRTSPTCPStream:
         rtsp.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
-                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
             )
             assert status == 200, "Expected 200 for TCP interleaved RTSP"
             assert len(body) > 0
@@ -58,9 +60,11 @@ class TestRTSPTCPStream:
         rtsp.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
-                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
             )
             assert status == 200
             assert len(body) >= 188
@@ -74,9 +78,11 @@ class TestRTSPTCPStream:
         rtsp.start()
         try:
             stream_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/test" % rtsp.port,
-                read_bytes=2048, timeout=_STREAM_TIMEOUT,
+                read_bytes=2048,
+                timeout=_STREAM_TIMEOUT,
             )
             methods = rtsp.requests_received
             assert "OPTIONS" in methods
@@ -100,9 +106,11 @@ class TestRTSPUDPStream:
         rtsp.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
-                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
             )
             assert status == 200, "Expected 200 for UDP RTSP"
             assert len(body) > 0
@@ -114,9 +122,11 @@ class TestRTSPUDPStream:
         rtsp.start()
         try:
             status, _, body = stream_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
-                read_bytes=4096, timeout=_STREAM_TIMEOUT,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
             )
             assert status == 200
             assert len(body) >= 188
@@ -129,9 +139,11 @@ class TestRTSPUDPStream:
         rtsp.start()
         try:
             stream_get(
-                "127.0.0.1", shared_r2h.port,
+                "127.0.0.1",
+                shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/test" % rtsp.port,
-                read_bytes=2048, timeout=_STREAM_TIMEOUT,
+                read_bytes=2048,
+                timeout=_STREAM_TIMEOUT,
             )
             methods = rtsp.requests_received
             assert "OPTIONS" in methods
