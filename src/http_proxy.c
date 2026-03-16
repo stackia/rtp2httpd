@@ -4,13 +4,11 @@
 #include "connection.h"
 #include "http.h" /* For http_url_encode */
 #include "http_proxy_rewrite.h"
-#include "multicast.h"
 #include "platform_compat.h"
 #include "poller.h"
 #include "status.h"
 #include "utils.h"
 #include "worker.h"
-#include "zerocopy.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>

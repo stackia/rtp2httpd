@@ -3,7 +3,6 @@
 #include "epg.h"
 #include "http.h"
 #include "http_fetch.h"
-#include "http_proxy.h"
 #include "md5.h"
 #include "service.h"
 #include "url_template.h"

@@ -10,7 +10,6 @@
 
 #include <stdint.h>
 
-#include "buffer_pool.h"
 #include "rs_fec.h"
 
 /* Maximum number of FEC groups to track per stream */

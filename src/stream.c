@@ -9,7 +9,6 @@
 #include "snapshot.h"
 #include "status.h"
 #include "utils.h"
-#include "worker.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>

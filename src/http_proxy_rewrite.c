@@ -8,7 +8,6 @@
 
 #include "http_proxy_rewrite.h"
 #include "configuration.h"
-#include "http.h" /* For http_url_encode */
 #include "http_proxy.h"
 #include "utils.h"
 #include <ctype.h>
