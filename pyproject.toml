@@ -1,8 +1,6 @@
 [project]
-name = "rtp2httpd-tools"
+name = "rtp2httpd"
 version = "0.1.0"
-description = "Test tools for rtp2httpd - multicast UDP replay utility"
-readme = "tools/README.md"
 requires-python = ">=3.14"
 dependencies = [
     "scapy>=2.7.0",
@@ -14,6 +12,7 @@ dependencies = [
 dev = [
     "ruff>=0.15.6",
     "basedpyright>=1.38.2",
+    "clang-format>=22.1.1",
 ]
 
 [tool.ruff]
