@@ -43,8 +43,6 @@ int url_template_analyze(const char *url, url_template_analysis_t *analysis);
 
 int url_template_has_placeholders(const char *url);
 
-int url_template_resolve(const char *url,
-                         const seek_parse_result_t *parse_result,
-                         char *output, size_t output_size);
+int url_template_resolve(const char *url, const seek_parse_result_t *parse_result, char *output, size_t output_size);
 
 #endif

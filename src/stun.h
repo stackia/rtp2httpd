@@ -20,12 +20,12 @@
  * Embedded in rtsp_session_t for per-session STUN handling
  */
 typedef struct {
-  int in_progress;       /* STUN request is pending */
-  int completed;         /* STUN completed (success or timeout) */
-  int64_t request_time_ms;              /* Timestamp when request was sent */
-  int retry_count;                      /* Number of retries attempted */
-  uint16_t mapped_rtp_port;             /* Discovered mapped RTP port (0=none) */
-  uint16_t mapped_rtcp_port;            /* Discovered mapped RTCP port (0=none) */
+  int in_progress;                                        /* STUN request is pending */
+  int completed;                                          /* STUN completed (success or timeout) */
+  int64_t request_time_ms;                                /* Timestamp when request was sent */
+  int retry_count;                                        /* Number of retries attempted */
+  uint16_t mapped_rtp_port;                               /* Discovered mapped RTP port (0=none) */
+  uint16_t mapped_rtcp_port;                              /* Discovered mapped RTCP port (0=none) */
   unsigned char transaction_id[STUN_TRANSACTION_ID_SIZE]; /* Transaction ID */
 } stun_state_t;
 

@@ -36,15 +36,14 @@ static void init_embedded_files_map(void) {
     return;
 
   /* Create hashmap with initial capacity set to number of embedded files */
-  embedded_files_map =
-      hashmap_new(sizeof(embedded_file_t), /* element size */
-                  EMBEDDED_FILES_COUNT,    /* initial capacity */
-                  0, 0,                    /* seeds (use default) */
-                  hash_path,               /* hash function */
-                  compare_paths,           /* compare function */
-                  NULL, /* no element free function (static data) */
-                  NULL  /* no udata */
-      );
+  embedded_files_map = hashmap_new(sizeof(embedded_file_t), /* element size */
+                                   EMBEDDED_FILES_COUNT,    /* initial capacity */
+                                   0, 0,                    /* seeds (use default) */
+                                   hash_path,               /* hash function */
+                                   compare_paths,           /* compare function */
+                                   NULL,                    /* no element free function (static data) */
+                                   NULL                     /* no udata */
+  );
 
   if (!embedded_files_map) {
     logger(LOG_ERROR, "Failed to create embedded files hashmap");
@@ -56,8 +55,7 @@ static void init_embedded_files_map(void) {
     hashmap_set(embedded_files_map, &embedded_files[i]);
   }
 
-  logger(LOG_DEBUG, "Initialized embedded files hashmap with %d files",
-         EMBEDDED_FILES_COUNT);
+  logger(LOG_DEBUG, "Initialized embedded files hashmap with %d files", EMBEDDED_FILES_COUNT);
 }
 
 /**
@@ -121,8 +119,7 @@ void handle_embedded_file(connection_t *c, const char *path) {
     }
 
     /* Send file with ETag for future cache validation */
-    http_build_etag_headers(extra_headers, sizeof(extra_headers), file->size,
-                            file->etag, "Content-Encoding: gzip");
+    http_build_etag_headers(extra_headers, sizeof(extra_headers), file->size, file->etag, "Content-Encoding: gzip");
 
     send_http_headers(c, STATUS_200, file->mime_type, extra_headers);
     connection_queue_output_and_flush(c, file->data, file->size);

@@ -57,8 +57,7 @@ typedef enum {
  * @param value_size Size of value buffer
  * @return 0 if found, -1 if not found
  */
-static int parse_cookie_value(const char *cookie_header, const char *name,
-                              char *value_buf, size_t value_size) {
+static int parse_cookie_value(const char *cookie_header, const char *name, char *value_buf, size_t value_size) {
   if (!cookie_header || !name || !value_buf || value_size == 0)
     return -1;
 
@@ -89,9 +88,7 @@ static int parse_cookie_value(const char *cookie_header, const char *name,
       value_buf[value_len] = '\0';
 
       /* Trim trailing whitespace */
-      while (value_len > 0 &&
-             (value_buf[value_len - 1] == ' ' ||
-              value_buf[value_len - 1] == '\t')) {
+      while (value_len > 0 && (value_buf[value_len - 1] == ' ' || value_buf[value_len - 1] == '\t')) {
         value_buf[--value_len] = '\0';
       }
 
@@ -116,8 +113,7 @@ static int parse_cookie_value(const char *cookie_header, const char *name,
  * @param value_size Size of value buffer
  * @return 0 if found, -1 if not found
  */
-static int extract_r2h_token_from_ua(const char *user_agent, char *value_buf,
-                                     size_t value_size) {
+static int extract_r2h_token_from_ua(const char *user_agent, char *value_buf, size_t value_size) {
   if (!user_agent || !value_buf || value_size == 0)
     return -1;
 
@@ -158,17 +154,14 @@ static int extract_r2h_token_from_ua(const char *user_agent, char *value_buf,
  * @param query_start Pointer to '?' in URL or NULL
  * @return Token source if valid, TOKEN_SOURCE_NONE if not found or invalid
  */
-static token_source_t validate_r2h_token(connection_t *c,
-                                         const char *query_start,
-                                         const char *raw_query_start) {
+static token_source_t validate_r2h_token(connection_t *c, const char *query_start, const char *raw_query_start) {
   char token_value[256] = {0};
 
   /* Source 1: URL query parameter (highest priority)
    * Try stripped URL first, then raw URL as fallback in case the configured
    * token itself contains '$' which would be incorrectly stripped */
   if (query_start) {
-    if (http_parse_query_param(query_start + 1, "r2h-token", token_value,
-                               sizeof(token_value)) == 0) {
+    if (http_parse_query_param(query_start + 1, "r2h-token", token_value, sizeof(token_value)) == 0) {
       if (strcmp(token_value, config.r2h_token) == 0) {
         logger(LOG_DEBUG, "r2h-token validated (source: query)");
         return TOKEN_SOURCE_QUERY;
@@ -176,8 +169,7 @@ static token_source_t validate_r2h_token(connection_t *c,
       /* Retry with raw (unstripped) query in case token contains '$' */
       if (raw_query_start && strchr(config.r2h_token, '$')) {
         char raw_token[256] = {0};
-        if (http_parse_query_param(raw_query_start + 1, "r2h-token", raw_token,
-                                   sizeof(raw_token)) == 0 &&
+        if (http_parse_query_param(raw_query_start + 1, "r2h-token", raw_token, sizeof(raw_token)) == 0 &&
             strcmp(raw_token, config.r2h_token) == 0) {
           logger(LOG_DEBUG, "r2h-token validated (source: query, raw)");
           return TOKEN_SOURCE_QUERY;
@@ -190,8 +182,7 @@ static token_source_t validate_r2h_token(connection_t *c,
 
   /* Source 2: Cookie header */
   if (c->http_req.cookie[0] != '\0') {
-    if (parse_cookie_value(c->http_req.cookie, "r2h-token", token_value,
-                           sizeof(token_value)) == 0) {
+    if (parse_cookie_value(c->http_req.cookie, "r2h-token", token_value, sizeof(token_value)) == 0) {
       if (strcmp(token_value, config.r2h_token) == 0) {
         logger(LOG_DEBUG, "r2h-token validated (source: cookie)");
         return TOKEN_SOURCE_COOKIE;
@@ -203,8 +194,7 @@ static token_source_t validate_r2h_token(connection_t *c,
 
   /* Source 3: User-Agent with R2HTOKEN/xxx format */
   if (c->http_req.user_agent[0] != '\0') {
-    if (extract_r2h_token_from_ua(c->http_req.user_agent, token_value,
-                                  sizeof(token_value)) == 0) {
+    if (extract_r2h_token_from_ua(c->http_req.user_agent, token_value, sizeof(token_value)) == 0) {
       if (strcmp(token_value, config.r2h_token) == 0) {
         logger(LOG_DEBUG, "r2h-token validated (source: user-agent)");
         return TOKEN_SOURCE_UA;
@@ -233,9 +223,7 @@ static inline buffer_ref_t *connection_alloc_output_buffer(connection_t *c) {
   return buf_ref;
 }
 
-static size_t connection_compute_limit_bytes(buffer_pool_t *pool,
-                                             size_t fair_bytes,
-                                             double burst_factor) {
+static size_t connection_compute_limit_bytes(buffer_pool_t *pool, size_t fair_bytes, double burst_factor) {
   size_t limit_bytes = (size_t)((double)fair_bytes * burst_factor);
 
   if (pool->max_buffers > 0) {
@@ -257,16 +245,14 @@ static size_t connection_compute_limit_bytes(buffer_pool_t *pool,
   return limit_bytes;
 }
 
-static size_t connection_calculate_queue_limit(connection_t *c,
-                                               int64_t now_ms) {
+static size_t connection_calculate_queue_limit(connection_t *c, int64_t now_ms) {
   buffer_pool_t *pool = &zerocopy_state.pool;
   size_t active = zerocopy_active_streams();
 
   if (active == 0)
     active = 1;
 
-  size_t total_buffers =
-      pool->num_buffers ? pool->num_buffers : BUFFER_POOL_INITIAL_SIZE;
+  size_t total_buffers = pool->num_buffers ? pool->num_buffers : BUFFER_POOL_INITIAL_SIZE;
 
   size_t share_buffers = total_buffers / active;
   if (share_buffers < CONN_QUEUE_MIN_BUFFERS)
@@ -274,43 +260,34 @@ static size_t connection_calculate_queue_limit(connection_t *c,
 
   double utilization = 0.0;
   if (pool->max_buffers > 0) {
-    size_t used_buffers = (pool->num_buffers > pool->num_free)
-                              ? (pool->num_buffers - pool->num_free)
-                              : 0;
+    size_t used_buffers = (pool->num_buffers > pool->num_free) ? (pool->num_buffers - pool->num_free) : 0;
     utilization = (double)used_buffers / (double)pool->max_buffers;
   }
 
   double burst_factor = CONN_QUEUE_BURST_FACTOR;
-  if (pool->num_buffers >= pool->max_buffers ||
-      utilization >= CONN_QUEUE_HIGH_UTIL_THRESHOLD)
+  if (pool->num_buffers >= pool->max_buffers || utilization >= CONN_QUEUE_HIGH_UTIL_THRESHOLD)
     burst_factor = CONN_QUEUE_BURST_FACTOR_CONGESTED;
-  if (pool->num_free < pool->low_watermark / 2 ||
-      utilization >= CONN_QUEUE_DRAIN_UTIL_THRESHOLD)
+  if (pool->num_free < pool->low_watermark / 2 || utilization >= CONN_QUEUE_DRAIN_UTIL_THRESHOLD)
     burst_factor = CONN_QUEUE_BURST_FACTOR_DRAIN;
 
   size_t fair_bytes = share_buffers * BUFFER_POOL_BUFFER_SIZE;
-  double queue_mem_bytes =
-      (double)c->zc_queue.num_queued * (double)BUFFER_POOL_BUFFER_SIZE;
+  double queue_mem_bytes = (double)c->zc_queue.num_queued * (double)BUFFER_POOL_BUFFER_SIZE;
 
   if (c->queue_avg_bytes <= 0.0)
     c->queue_avg_bytes = queue_mem_bytes;
   else
-    c->queue_avg_bytes = (1.0 - CONN_QUEUE_EWMA_ALPHA) * c->queue_avg_bytes +
-                         CONN_QUEUE_EWMA_ALPHA * queue_mem_bytes;
+    c->queue_avg_bytes = (1.0 - CONN_QUEUE_EWMA_ALPHA) * c->queue_avg_bytes + CONN_QUEUE_EWMA_ALPHA * queue_mem_bytes;
 
-  size_t bursted_bytes =
-      connection_compute_limit_bytes(pool, fair_bytes, burst_factor);
+  size_t bursted_bytes = connection_compute_limit_bytes(pool, fair_bytes, burst_factor);
 
   double slow_threshold = (double)fair_bytes * CONN_QUEUE_SLOW_FACTOR;
 
-  double limit_based_threshold =
-      (double)bursted_bytes * CONN_QUEUE_SLOW_LIMIT_RATIO;
+  double limit_based_threshold = (double)bursted_bytes * CONN_QUEUE_SLOW_LIMIT_RATIO;
   if (slow_threshold > limit_based_threshold)
     slow_threshold = limit_based_threshold;
 
   double slow_exit_threshold = (double)fair_bytes * CONN_QUEUE_SLOW_EXIT_FACTOR;
-  double limit_exit_threshold =
-      (double)bursted_bytes * CONN_QUEUE_SLOW_EXIT_LIMIT_RATIO;
+  double limit_exit_threshold = (double)bursted_bytes * CONN_QUEUE_SLOW_EXIT_LIMIT_RATIO;
   if (slow_exit_threshold > limit_exit_threshold)
     slow_exit_threshold = limit_exit_threshold;
 
@@ -335,8 +312,7 @@ static size_t connection_calculate_queue_limit(connection_t *c,
   if (c->slow_active && burst_factor > CONN_QUEUE_SLOW_CLAMP_FACTOR)
     burst_factor = CONN_QUEUE_SLOW_CLAMP_FACTOR;
 
-  size_t limit_bytes =
-      connection_compute_limit_bytes(pool, fair_bytes, burst_factor);
+  size_t limit_bytes = connection_compute_limit_bytes(pool, fair_bytes, burst_factor);
 
   return limit_bytes;
 }
@@ -354,10 +330,9 @@ static void connection_report_queue(connection_t *c) {
   size_t queue_buffers = c->zc_queue.num_queued;
   size_t queue_bytes = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
 
-  status_update_client_queue(
-      c->status_index, queue_bytes, queue_buffers, c->queue_limit_bytes,
-      c->queue_bytes_highwater, c->queue_buffers_highwater, c->dropped_packets,
-      c->dropped_bytes, c->backpressure_events, c->slow_active);
+  status_update_client_queue(c->status_index, queue_bytes, queue_buffers, c->queue_limit_bytes,
+                             c->queue_bytes_highwater, c->queue_buffers_highwater, c->dropped_packets, c->dropped_bytes,
+                             c->backpressure_events, c->slow_active);
 }
 int connection_set_nonblocking(int fd) {
   int flags = fcntl(fd, F_GETFL, 0);
@@ -371,13 +346,9 @@ int connection_set_tcp_nodelay(int fd) {
   return setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
 }
 
-void connection_epoll_update_events(int epfd, int fd, uint32_t events) {
-  poller_mod(epfd, fd, events);
-}
+void connection_epoll_update_events(int epfd, int fd, uint32_t events) { poller_mod(epfd, fd, events); }
 
-connection_t *connection_create(int fd, int epfd,
-                                struct sockaddr_storage *client_addr,
-                                socklen_t addr_len) {
+connection_t *connection_create(int fd, int epfd, struct sockaddr_storage *client_addr, socklen_t addr_len) {
   connection_t *c = calloc(1, sizeof(*c));
   if (!c)
     return NULL;
@@ -417,10 +388,8 @@ connection_t *connection_create(int fd, int epfd,
   /* Enforce TCP user timeout so unacknowledged data fails quickly */
 #ifdef TCP_USER_TIMEOUT
   int tcp_user_timeout = CONNECTION_TCP_USER_TIMEOUT_MS;
-  if (setsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &tcp_user_timeout,
-                 sizeof(tcp_user_timeout)) < 0) {
-    logger(LOG_DEBUG, "connection_create: Failed to set TCP_USER_TIMEOUT: %s",
-           strerror(errno));
+  if (setsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &tcp_user_timeout, sizeof(tcp_user_timeout)) < 0) {
+    logger(LOG_DEBUG, "connection_create: Failed to set TCP_USER_TIMEOUT: %s", strerror(errno));
   }
 #endif
 
@@ -451,8 +420,7 @@ void connection_cleanup(connection_t *c) {
    * stream_context_cleanup for streaming connections, so this is a safety
    * fallback */
   if (c->streaming) {
-    logger(LOG_WARN,
-           "connection_cleanup: streaming flag still set, cleaning up stream");
+    logger(LOG_WARN, "connection_cleanup: streaming flag still set, cleaning up stream");
     stream_context_cleanup(&c->stream);
   }
 
@@ -539,13 +507,11 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len) {
   return 0;
 }
 
-int connection_queue_output_and_flush(connection_t *c, const uint8_t *data,
-                                      size_t len) {
+int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len) {
   int result = connection_queue_output(c, data, len);
   if (result < 0)
     return result;
-  connection_epoll_update_events(
-      c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+  connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
 
   if (c) {
     c->state = CONN_CLOSING;
@@ -559,8 +525,7 @@ connection_write_status_t connection_handle_write(connection_t *c) {
     return CONNECTION_WRITE_IDLE;
 
   if (!c->zc_queue.head) {
-    connection_epoll_update_events(c->epfd, c->fd,
-                                   POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+    connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
     connection_report_queue(c);
     if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
       return CONNECTION_WRITE_CLOSED;
@@ -575,8 +540,7 @@ connection_write_status_t connection_handle_write(connection_t *c) {
 
     if (ret < 0 && ret != -2) {
       c->state = CONN_CLOSING;
-      connection_epoll_update_events(c->epfd, c->fd,
-                                     POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+      connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
       connection_report_queue(c);
       return CONNECTION_WRITE_CLOSED;
     }
@@ -589,8 +553,7 @@ connection_write_status_t connection_handle_write(connection_t *c) {
 
     if (!c->zc_queue.head) {
       /* All data sent - remove POLLER_OUT */
-      connection_epoll_update_events(c->epfd, c->fd,
-                                     POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+      connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
       connection_report_queue(c);
       if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
         return CONNECTION_WRITE_CLOSED;
@@ -633,8 +596,7 @@ void connection_handle_read(connection_t *c) {
 
     /* Parse HTTP request using http.c parser */
     if (c->state == CONN_READ_REQ_LINE || c->state == CONN_READ_HEADERS) {
-      int parse_result =
-          http_parse_request(c->inbuf, &c->in_len, &c->http_req);
+      int parse_result = http_parse_request(c->inbuf, &c->in_len, &c->http_req);
       if (parse_result == 1) {
         /* Request complete, route it */
         c->state = CONN_ROUTE;
@@ -665,15 +627,13 @@ int connection_route_and_start(connection_t *c) {
   char client_addr_str[NI_MAXHOST + NI_MAXSERV + 4] = "unknown";
   if (c->client_addr_len > 0) {
     char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-    int r = getnameinfo((struct sockaddr *)&c->client_addr, c->client_addr_len,
-                        hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
+    int r = getnameinfo((struct sockaddr *)&c->client_addr, c->client_addr_len, hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
                         NI_NUMERICHOST | NI_NUMERICSERV);
     if (r == 0) {
       /* Check if IPv6 address needs brackets */
       if (strchr(hbuf, ':') != NULL) {
         /* IPv6 - wrap in brackets */
-        snprintf(client_addr_str, sizeof(client_addr_str), "[%s]:%s", hbuf,
-                 sbuf);
+        snprintf(client_addr_str, sizeof(client_addr_str), "[%s]:%s", hbuf, sbuf);
       } else {
         /* IPv4 - simple format */
         snprintf(client_addr_str, sizeof(client_addr_str), "%s:%s", hbuf, sbuf);
@@ -681,8 +641,7 @@ int connection_route_and_start(connection_t *c) {
     }
   }
 
-  logger(LOG_INFO, "New client %s requested URL: %s (method: %s)",
-         client_addr_str, url, c->http_req.method);
+  logger(LOG_INFO, "New client %s requested URL: %s (method: %s)", client_addr_str, url, c->http_req.method);
 
   if (url[0] != '/') {
     http_send_400(c);
@@ -695,26 +654,21 @@ int connection_route_and_start(connection_t *c) {
 
   if (config.hostname != NULL && config.hostname[0] != '\0') {
     /* Parse URL components from config.hostname */
-    if (http_parse_url_components(config.hostname, protocol, expected_host,
-                                  NULL, NULL) != 0) {
-      logger(LOG_ERROR, "Failed to parse configured hostname: %s",
-             config.hostname);
+    if (http_parse_url_components(config.hostname, protocol, expected_host, NULL, NULL) != 0) {
+      logger(LOG_ERROR, "Failed to parse configured hostname: %s", config.hostname);
       http_send_400(c);
       return 0;
     }
 
     /* If Host header is missing, reject the request */
     if (c->http_req.hostname[0] == '\0') {
-      logger(LOG_WARN,
-             "Client request rejected: missing Host header (expected: %s)",
-             expected_host);
+      logger(LOG_WARN, "Client request rejected: missing Host header (expected: %s)", expected_host);
       http_send_400(c);
       return 0;
     }
 
     /* Match Host header against expected hostname */
-    int match_result =
-        http_match_host_header(c->http_req.hostname, expected_host);
+    int match_result = http_match_host_header(c->http_req.hostname, expected_host);
 
     if (match_result < 0) {
       logger(LOG_ERROR, "Failed to match Host header");
@@ -735,19 +689,15 @@ int connection_route_and_start(connection_t *c) {
   }
 
   /* Handle CORS preflight (OPTIONS) before r2h-token check */
-  if (config.cors_allow_origin && config.cors_allow_origin[0] &&
-      strcasecmp(c->http_req.method, "OPTIONS") == 0) {
+  if (config.cors_allow_origin && config.cors_allow_origin[0] && strcasecmp(c->http_req.method, "OPTIONS") == 0) {
     char cors_headers[1024];
     int clen = 0;
 
-    clen += snprintf(cors_headers + clen, sizeof(cors_headers) - clen,
-                     "Access-Control-Allow-Methods: %s\r\n",
-                     c->http_req.access_control_request_method[0]
-                         ? c->http_req.access_control_request_method
-                         : "GET, HEAD, OPTIONS");
+    clen += snprintf(cors_headers + clen, sizeof(cors_headers) - clen, "Access-Control-Allow-Methods: %s\r\n",
+                     c->http_req.access_control_request_method[0] ? c->http_req.access_control_request_method
+                                                                  : "GET, HEAD, OPTIONS");
     if (c->http_req.access_control_request_headers[0]) {
-      clen += snprintf(cors_headers + clen, sizeof(cors_headers) - clen,
-                       "Access-Control-Allow-Headers: %s\r\n",
+      clen += snprintf(cors_headers + clen, sizeof(cors_headers) - clen, "Access-Control-Allow-Headers: %s\r\n",
                        c->http_req.access_control_request_headers);
     }
     clen += snprintf(cors_headers + clen, sizeof(cors_headers) - clen,
@@ -762,8 +712,7 @@ int connection_route_and_start(connection_t *c) {
   /* Extract service_path and query */
   const char *service_path = url + 1; /* skip leading '/' */
   const char *query_start = strchr(service_path, '?');
-  size_t path_len =
-      query_start ? (size_t)(query_start - service_path) : strlen(service_path);
+  size_t path_len = query_start ? (size_t)(query_start - service_path) : strlen(service_path);
 
   /* Adjust path_len to exclude trailing slash */
   if (path_len > 0 && service_path[path_len - 1] == '/')
@@ -772,12 +721,10 @@ int connection_route_and_start(connection_t *c) {
   /* Handle static assets first (bypass r2h-token validation for /assets/) */
   const char *assets_prefix = "assets/";
   size_t assets_prefix_len = strlen(assets_prefix);
-  if (path_len >= assets_prefix_len &&
-      strncmp(service_path, assets_prefix, assets_prefix_len) == 0) {
+  if (path_len >= assets_prefix_len && strncmp(service_path, assets_prefix, assets_prefix_len) == 0) {
     /* Reconstruct full path with leading slash */
     char asset_path[HTTP_URL_BUFFER_SIZE];
-    snprintf(asset_path, sizeof(asset_path), "/%.*s", (int)path_len,
-             service_path);
+    snprintf(asset_path, sizeof(asset_path), "/%.*s", (int)path_len, service_path);
     handle_embedded_file(c, asset_path);
     return 0;
   }
@@ -794,17 +741,14 @@ int connection_route_and_start(connection_t *c) {
     c->should_set_r2h_cookie = (source == TOKEN_SOURCE_QUERY);
   }
 
-  const char *status_route =
-      config.status_page_route ? config.status_page_route : "status";
+  const char *status_route = config.status_page_route ? config.status_page_route : "status";
   size_t status_route_len = strlen(status_route);
   char status_sse_route[HTTP_URL_BUFFER_SIZE];
   char status_api_prefix[HTTP_URL_BUFFER_SIZE];
 
   if (status_route_len > 0) {
-    snprintf(status_sse_route, sizeof(status_sse_route), "%s/sse",
-             status_route);
-    snprintf(status_api_prefix, sizeof(status_api_prefix), "%s/api/",
-             status_route);
+    snprintf(status_sse_route, sizeof(status_sse_route), "%s/sse", status_route);
+    snprintf(status_api_prefix, sizeof(status_api_prefix), "%s/api/", status_route);
   } else {
     strncpy(status_sse_route, "sse", sizeof(status_sse_route) - 1);
     status_sse_route[sizeof(status_sse_route) - 1] = '\0';
@@ -812,18 +756,15 @@ int connection_route_and_start(connection_t *c) {
     status_api_prefix[sizeof(status_api_prefix) - 1] = '\0';
   }
 
-  if (status_route_len == path_len &&
-      strncmp(service_path, status_route, path_len) == 0) {
+  if (status_route_len == path_len && strncmp(service_path, status_route, path_len) == 0) {
     handle_embedded_file(c, "/status.html");
     return 0;
   }
 
   /* Handle player page */
-  const char *player_route =
-      config.player_page_route ? config.player_page_route : "player";
+  const char *player_route = config.player_page_route ? config.player_page_route : "player";
   size_t player_route_len = strlen(player_route);
-  if (player_route_len == path_len &&
-      strncmp(service_path, player_route, path_len) == 0) {
+  if (player_route_len == path_len && strncmp(service_path, player_route, path_len) == 0) {
     handle_embedded_file(c, "/player.html");
     return 0;
   }
@@ -831,8 +772,7 @@ int connection_route_and_start(connection_t *c) {
   /* Handle /playlist.m3u request */
   const char *playlist_route = "playlist.m3u";
   size_t playlist_route_len = strlen(playlist_route);
-  if (playlist_route_len == path_len &&
-      strncmp(service_path, playlist_route, path_len) == 0) {
+  if (playlist_route_len == path_len && strncmp(service_path, playlist_route, path_len) == 0) {
     handle_playlist_request(c);
     return 0;
   }
@@ -842,50 +782,41 @@ int connection_route_and_start(connection_t *c) {
   const char *epg_xml_gz_route = "epg.xml.gz";
   size_t epg_xml_route_len = strlen(epg_xml_route);
   size_t epg_xml_gz_route_len = strlen(epg_xml_gz_route);
-  if (epg_xml_gz_route_len == path_len &&
-      strncmp(service_path, epg_xml_gz_route, path_len) == 0) {
+  if (epg_xml_gz_route_len == path_len && strncmp(service_path, epg_xml_gz_route, path_len) == 0) {
     handle_epg_request(c, 1);
     return 0;
   }
-  if (epg_xml_route_len == path_len &&
-      strncmp(service_path, epg_xml_route, path_len) == 0) {
+  if (epg_xml_route_len == path_len && strncmp(service_path, epg_xml_route, path_len) == 0) {
     handle_epg_request(c, 0);
     return 0;
   }
   size_t status_sse_len = strlen(status_sse_route);
-  if (status_sse_len == path_len &&
-      strncmp(service_path, status_sse_route, path_len) == 0) {
+  if (status_sse_len == path_len && strncmp(service_path, status_sse_route, path_len) == 0) {
     /* Delegate SSE initialization to status module */
     return status_handle_sse_init(c);
   }
   size_t status_api_prefix_len = strlen(status_api_prefix);
-  if (path_len >= status_api_prefix_len &&
-      strncmp(service_path, status_api_prefix, status_api_prefix_len) == 0) {
+  if (path_len >= status_api_prefix_len && strncmp(service_path, status_api_prefix, status_api_prefix_len) == 0) {
     const char *api_name = service_path + status_api_prefix_len;
     size_t api_name_len = path_len - status_api_prefix_len;
 
-    if (api_name_len == strlen("disconnect") &&
-        strncmp(api_name, "disconnect", api_name_len) == 0) {
+    if (api_name_len == strlen("disconnect") && strncmp(api_name, "disconnect", api_name_len) == 0) {
       handle_disconnect_client(c);
       return 0;
     }
-    if (api_name_len == strlen("log-level") &&
-        strncmp(api_name, "log-level", api_name_len) == 0) {
+    if (api_name_len == strlen("log-level") && strncmp(api_name, "log-level", api_name_len) == 0) {
       handle_set_log_level(c);
       return 0;
     }
-    if (api_name_len == strlen("clear-logs") &&
-        strncmp(api_name, "clear-logs", api_name_len) == 0) {
+    if (api_name_len == strlen("clear-logs") && strncmp(api_name, "clear-logs", api_name_len) == 0) {
       handle_clear_logs(c);
       return 0;
     }
-    if (api_name_len == strlen("reload-config") &&
-        strncmp(api_name, "reload-config", api_name_len) == 0) {
+    if (api_name_len == strlen("reload-config") && strncmp(api_name, "reload-config", api_name_len) == 0) {
       handle_reload_config(c);
       return 0;
     }
-    if (api_name_len == strlen("restart-workers") &&
-        strncmp(api_name, "restart-workers", api_name_len) == 0) {
+    if (api_name_len == strlen("restart-workers") && strncmp(api_name, "restart-workers", api_name_len) == 0) {
       handle_restart_workers(c);
       return 0;
     }
@@ -930,8 +861,7 @@ int connection_route_and_start(connection_t *c) {
     /* Found configured service (RTP or RTSP) - try to merge query params if
      * present */
     logger(LOG_INFO, "Service matched: %s", service->url);
-    service_t *merged_service = service_create_with_query_merge(
-        service, url, service->service_type);
+    service_t *merged_service = service_create_with_query_merge(service, url, service->service_type);
     if (merged_service) {
       service = merged_service;
     } else {
@@ -955,11 +885,8 @@ int connection_route_and_start(connection_t *c) {
    * connecting upstream.  HTTP services forward HEAD to the upstream server
    * so the real Content-Type (e.g. application/vnd.apple.mpegurl for HLS)
    * is returned to the client. */
-  if (strcasecmp(c->http_req.method, "HEAD") == 0 &&
-      service->service_type != SERVICE_HTTP) {
-    logger(
-        LOG_INFO,
-        "HEAD request detected, returning success without upstream connection");
+  if (strcasecmp(c->http_req.method, "HEAD") == 0 && service->service_type != SERVICE_HTTP) {
+    logger(LOG_INFO, "HEAD request detected, returning success without upstream connection");
     send_http_headers(c, STATUS_200, "video/mp2t", NULL);
     connection_queue_output_and_flush(c, NULL, 0);
     service_free(service);
@@ -985,32 +912,24 @@ int connection_route_and_start(connection_t *c) {
   if (config.video_snapshot) {
     if (c->http_req.x_request_snapshot) {
       is_snapshot_request = 2;
-      logger(
-          LOG_INFO,
-          "Snapshot request detected via X-Request-Snapshot header for URL: %s",
-          c->http_req.url);
+      logger(LOG_INFO, "Snapshot request detected via X-Request-Snapshot header for URL: %s", c->http_req.url);
     }
 
     if (!is_snapshot_request && c->http_req.accept[0] != '\0') {
       /* Check if Accept header contains "image/jpeg" */
       if (strstr(c->http_req.accept, "image/jpeg") != NULL) {
         is_snapshot_request = 2;
-        logger(LOG_INFO,
-               "Snapshot request detected via Accept header for URL: %s",
-               c->http_req.url);
+        logger(LOG_INFO, "Snapshot request detected via Accept header for URL: %s", c->http_req.url);
       }
     }
 
     /* Also check for snapshot=1 query parameter */
     if (!is_snapshot_request && query_start != NULL) {
       char snapshot_value[16];
-      if (http_parse_query_param(query_start + 1, "snapshot", snapshot_value,
-                                 sizeof(snapshot_value)) == 0) {
+      if (http_parse_query_param(query_start + 1, "snapshot", snapshot_value, sizeof(snapshot_value)) == 0) {
         if (strcmp(snapshot_value, "1") == 0) {
           is_snapshot_request = 1;
-          logger(LOG_INFO,
-                 "Snapshot request detected via query parameter for URL: %s",
-                 c->http_req.url);
+          logger(LOG_INFO, "Snapshot request detected via query parameter for URL: %s", c->http_req.url);
         }
       }
     }
@@ -1036,9 +955,7 @@ int connection_route_and_start(connection_t *c) {
     /* Add query parameters if present, excluding r2h-token */
     if (query_start && url_len < sizeof(display_url)) {
       char filtered_query[HTTP_URL_BUFFER_SIZE];
-      int filtered_len = http_filter_query_param(query_start + 1, "r2h-token",
-                                                 filtered_query,
-                                                 sizeof(filtered_query));
+      int filtered_len = http_filter_query_param(query_start + 1, "r2h-token", filtered_query, sizeof(filtered_query));
       if (filtered_len > 0) {
         if (url_len + (size_t)filtered_len + 1 < sizeof(display_url)) {
           display_url[url_len++] = '?';
@@ -1051,20 +968,16 @@ int connection_route_and_start(connection_t *c) {
     display_url[url_len] = '\0';
 
     /* Override client address with X-Forwarded-For if present and enabled */
-    if ((protocol[0] != '\0' || config.xff) &&
-        c->http_req.x_forwarded_for[0] != '\0') {
+    if ((protocol[0] != '\0' || config.xff) && c->http_req.x_forwarded_for[0] != '\0') {
       /* Behind proxy with X-Forwarded-For - use it directly (already formatted)
        */
-      logger(LOG_INFO, "X-Forwarded-For accepted: %s",
-             c->http_req.x_forwarded_for);
-      snprintf(client_addr_str, sizeof(client_addr_str), "%s",
-               c->http_req.x_forwarded_for);
+      logger(LOG_INFO, "X-Forwarded-For accepted: %s", c->http_req.x_forwarded_for);
+      snprintf(client_addr_str, sizeof(client_addr_str), "%s", c->http_req.x_forwarded_for);
     }
 
     c->status_index = status_register_client(client_addr_str, display_url);
     if (c->status_index < 0) {
-      logger(LOG_ERROR,
-             "Failed to register streaming client in status tracking");
+      logger(LOG_ERROR, "Failed to register streaming client in status tracking");
     }
   } else {
     c->status_index = -1;
@@ -1075,9 +988,7 @@ int connection_route_and_start(connection_t *c) {
 
   /* Initialize stream in unified epoll (works for both streaming and snapshot)
    */
-  if (stream_context_init_for_worker(&c->stream, c, service, c->epfd,
-                                     c->status_index,
-                                     is_snapshot_request) == 0) {
+  if (stream_context_init_for_worker(&c->stream, c, service, c->epfd, c->status_index, is_snapshot_request) == 0) {
     if (!is_snapshot_request && !c->stream_registered) {
       zerocopy_register_stream_client();
       c->stream_registered = 1;
@@ -1117,8 +1028,7 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref) {
       logger(LOG_DEBUG,
              "Backpressure: dropping %zu bytes for client fd=%d (queued=%zu "
              "limit=%zu drops=%llu)",
-             buf_ref->data_size, c->fd, queued_bytes, limit_bytes,
-             (unsigned long long)c->dropped_packets);
+             buf_ref->data_size, c->fd, queued_bytes, limit_bytes, (unsigned long long)c->dropped_packets);
     }
 
     connection_report_queue(c);
@@ -1146,27 +1056,23 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref) {
    * - Lower latency impact (100ms is acceptable for streaming)
    */
   if (zerocopy_should_flush(&c->zc_queue)) {
-    connection_epoll_update_events(
-        c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+    connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
   }
 
   return 0;
 }
 
-int connection_queue_file(connection_t *c, int file_fd, off_t file_offset,
-                          size_t file_size) {
+int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_t file_size) {
   if (!c || file_fd < 0 || file_size == 0)
     return -1;
 
   /* Add file to zero-copy queue */
-  int ret =
-      zerocopy_queue_add_file(&c->zc_queue, file_fd, file_offset, file_size);
+  int ret = zerocopy_queue_add_file(&c->zc_queue, file_fd, file_offset, file_size);
   if (ret < 0)
     return -1;
 
   /* Always flush immediately for file sends (no batching) */
-  connection_epoll_update_events(
-      c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+  connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
 
   /* Set connection to closing state after file transfer */
   c->state = CONN_CLOSING;
@@ -1193,9 +1099,7 @@ static void handle_playlist_request(connection_t *c) {
   }
 
   /* Generate complete playlist dynamically */
-  playlist =
-      m3u_generate_playlist(c->http_req.hostname, c->http_req.x_forwarded_host,
-                            c->http_req.x_forwarded_proto);
+  playlist = m3u_generate_playlist(c->http_req.hostname, c->http_req.x_forwarded_host, c->http_req.x_forwarded_proto);
 
   if (!playlist) {
     /* No playlist available or generation failed */
@@ -1206,8 +1110,7 @@ static void handle_playlist_request(connection_t *c) {
   playlist_len = strlen(playlist);
 
   /* Build headers with ETag support */
-  http_build_etag_headers(extra_headers, sizeof(extra_headers), playlist_len,
-                          etag, NULL);
+  http_build_etag_headers(extra_headers, sizeof(extra_headers), playlist_len, etag, NULL);
 
   send_http_headers(c, STATUS_200, "audio/x-mpegurl", extra_headers);
   connection_queue_output_and_flush(c, (const uint8_t *)playlist, playlist_len);
@@ -1280,8 +1183,7 @@ static void handle_epg_request(connection_t *c, int requested_gz) {
   char extra_headers[256];
 
   /* Build headers with ETag support */
-  http_build_etag_headers(extra_headers, sizeof(extra_headers), epg_size, etag,
-                          content_encoding);
+  http_build_etag_headers(extra_headers, sizeof(extra_headers), epg_size, etag, content_encoding);
 
   send_http_headers(c, STATUS_200, content_type, extra_headers);
 
@@ -1290,8 +1192,7 @@ static void handle_epg_request(connection_t *c, int requested_gz) {
    * zerocopy_queue_add_file will close the fd when done */
   int dup_fd = dup(epg_fd);
   if (dup_fd < 0) {
-    logger(LOG_ERROR, "Failed to dup EPG fd for zero-copy transmission: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "Failed to dup EPG fd for zero-copy transmission: %s", strerror(errno));
     c->state = CONN_CLOSING;
     return;
   }

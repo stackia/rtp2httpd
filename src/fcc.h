@@ -19,19 +19,17 @@ typedef enum {
 #define FCC_MAX_REDIRECTS 5
 
 /* FCC Timeout Configuration */
-#define FCC_TIMEOUT_SIGNALING_MS                                               \
-  80 /* Timeout for signaling phase (FCC_STATE_REQUESTED or                    \
-        FCC_STATE_UNICAST_PENDING) */
-#define FCC_TIMEOUT_UNICAST_SEC                                                \
-  1.0 /* Timeout for unicast media packets (FCC_STATE_UNICAST_ACTIVE) */
-#define FCC_TIMEOUT_SYNC_WAIT_SEC                                              \
-  15.0 /* Max wait time for server sync notification before joining multicast  \
+#define FCC_TIMEOUT_SIGNALING_MS                                                                                       \
+  80                                /* Timeout for signaling phase (FCC_STATE_REQUESTED or                             \
+                                       FCC_STATE_UNICAST_PENDING) */
+#define FCC_TIMEOUT_UNICAST_SEC 1.0 /* Timeout for unicast media packets (FCC_STATE_UNICAST_ACTIVE) */
+#define FCC_TIMEOUT_SYNC_WAIT_SEC                                                                                      \
+  15.0 /* Max wait time for server sync notification before joining multicast                                          \
         */
 
 /* FCC State Machine - Based on Fast Channel Change Protocol */
 typedef enum {
-  FCC_STATE_INIT =
-      0, /* Initial state - prepare FCC request or join multicast */
+  FCC_STATE_INIT = 0,        /* Initial state - prepare FCC request or join multicast */
   FCC_STATE_REQUESTED,       /* FCC request sent, waiting for server response */
   FCC_STATE_UNICAST_PENDING, /* Server accepted, waiting for first unicast
                                 packet */
@@ -129,8 +127,7 @@ int fcc_handle_socket_event(stream_context_t *ctx, int64_t now);
  * @param reason Reason for state change
  * @return 1 if state changed, 0 if no change
  */
-int fcc_session_set_state(fcc_session_t *fcc, fcc_state_t new_state,
-                          const char *reason);
+int fcc_session_set_state(fcc_session_t *fcc, fcc_state_t new_state, const char *reason);
 
 /*
  * FCC Protocol Handler Functions
@@ -155,8 +152,7 @@ int fcc_initialize_and_request(stream_context_t *ctx);
  *    1: State restart needed (redirect to different server)
  *   -1: Fallback to multicast (FCC rejected or unsupported)
  */
-int fcc_handle_server_response(stream_context_t *ctx, uint8_t *buf,
-                               int buf_len);
+int fcc_handle_server_response(stream_context_t *ctx, uint8_t *buf, int buf_len);
 
 /**
  * Stage 3: Handle synchronization notification (FMT 4)
@@ -207,7 +203,6 @@ int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref);
  * @param addr_len Address length
  * @return Number of bytes sent, or -1 on error
  */
-ssize_t sendto_triple(int fd, const void *buf, size_t n, int flags,
-                      struct sockaddr_in *addr, socklen_t addr_len);
+ssize_t sendto_triple(int fd, const void *buf, size_t n, int flags, struct sockaddr_in *addr, socklen_t addr_len);
 
 #endif /* __FCC_H__ */

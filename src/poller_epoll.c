@@ -43,16 +43,11 @@ int poller_mod(int pfd, int fd, uint32_t events) {
   return epoll_ctl(pfd, EPOLL_CTL_MOD, fd, &ev);
 }
 
-int poller_del(int pfd, int fd) {
-  return epoll_ctl(pfd, EPOLL_CTL_DEL, fd, NULL);
-}
+int poller_del(int pfd, int fd) { return epoll_ctl(pfd, EPOLL_CTL_DEL, fd, NULL); }
 
-int poller_wait(int pfd, poller_event_t *events, int max_events,
-                int timeout_ms) {
+int poller_wait(int pfd, poller_event_t *events, int max_events, int timeout_ms) {
   struct epoll_event ep_buf[1024];
-  struct epoll_event *ep_events =
-      max_events <= 1024 ? ep_buf
-                         : malloc(max_events * sizeof(struct epoll_event));
+  struct epoll_event *ep_events = max_events <= 1024 ? ep_buf : malloc(max_events * sizeof(struct epoll_event));
   int n = epoll_wait(pfd, ep_events, max_events, timeout_ms);
   for (int i = 0; i < n; i++) {
     events[i].fd = ep_events[i].data.fd;

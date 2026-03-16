@@ -134,9 +134,7 @@ void worker_cleanup_socket_from_epoll(int epoll_fd, int sock) {
   if (epoll_fd >= 0) {
     if (poller_del(epoll_fd, sock) < 0) {
       /* Log but continue - socket might not be in poller */
-      logger(LOG_DEBUG,
-             "Worker: poller_del failed for fd %d: %s (continuing)", sock,
-             strerror(errno));
+      logger(LOG_DEBUG, "Worker: poller_del failed for fd %d: %s (continuing)", sock, strerror(errno));
     }
   }
 
@@ -169,8 +167,7 @@ void worker_close_and_free_connection(connection_t *c) {
   if (c->streaming) {
     /* Initiate stream cleanup - this may start async RTSP TEARDOWN */
     int async_cleanup = stream_context_cleanup(&c->stream);
-    c->streaming =
-        0; /* Mark as no longer streaming to prevent double cleanup */
+    c->streaming = 0; /* Mark as no longer streaming to prevent double cleanup */
 
     if (async_cleanup) {
       /* Async RTSP TEARDOWN initiated - defer connection cleanup */
@@ -193,8 +190,7 @@ void worker_close_and_free_connection(connection_t *c) {
       /* Keep connection alive for RTSP TEARDOWN completion */
       /* RTSP TEARDOWN completion will trigger final cleanup via stream event
        * handler returning -1 */
-      logger(LOG_DEBUG,
-             "Worker: Deferred cleanup - waiting for RTSP TEARDOWN completion");
+      logger(LOG_DEBUG, "Worker: Deferred cleanup - waiting for RTSP TEARDOWN completion");
       return;
     }
   }
@@ -269,8 +265,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
 
   while (!stop_flag) {
     int timeout_ms = 100;
-    int n = poller_wait(epfd, events,
-                        (int)(sizeof(events) / sizeof(events[0])), timeout_ms);
+    int n = poller_wait(epfd, events, (int)(sizeof(events) / sizeof(events[0])), timeout_ms);
     if (n < 0) {
       if (errno == EINTR)
         continue;
@@ -307,8 +302,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
         int has_sse_update = 0;
         int has_disconnect_request = 0;
 
-        while ((bytes_read = read(notif_fd, event_buf, sizeof(event_buf))) >
-               0) {
+        while ((bytes_read = read(notif_fd, event_buf, sizeof(event_buf))) > 0) {
           /* Check event types in the buffer */
           for (ssize_t j = 0; j < bytes_read; j++) {
             if (event_buf[j] == STATUS_EVENT_SSE_UPDATE)
@@ -330,8 +324,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
             connection_t *next = c->next;
 
             /* Check if disconnect was requested for this client */
-            if (c->status_index >= 0 &&
-                status_shared->clients[c->status_index].active &&
+            if (c->status_index >= 0 && status_shared->clients[c->status_index].active &&
                 status_shared->clients[c->status_index].disconnect_requested) {
               logger(LOG_INFO, "Disconnect requested for client %s via API",
                      status_shared->clients[c->status_index].client_addr);
@@ -373,9 +366,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
           conn_head = c;
 
           /* Add client fd to poller and map */
-          if (poller_add(epfd, cfd,
-                         POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR) <
-              0) {
+          if (poller_add(epfd, cfd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR) < 0) {
             logger(LOG_ERROR, "poller_add client failed: %s", strerror(errno));
             worker_close_and_free_connection(c);
           } else {
@@ -411,19 +402,16 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
              */
             int had_zerocopy_completions = 0;
             if (c->zerocopy_enabled) {
-              int completions =
-                  zerocopy_handle_completions(c->fd, &c->zc_queue);
+              int completions = zerocopy_handle_completions(c->fd, &c->zc_queue);
               if (completions > 0) {
                 had_zerocopy_completions = 1;
-                if (c->state == CONN_CLOSING && !c->zc_queue.head &&
-                    !c->zc_queue.pending_head) {
+                if (c->state == CONN_CLOSING && !c->zc_queue.head && !c->zc_queue.pending_head) {
                   worker_close_and_free_connection(c);
                   continue; /* Skip further processing for this connection */
                 }
               } else if (completions < 0) {
                 /* Error reading MSG_ERRQUEUE - treat as real socket error */
-                logger(LOG_DEBUG, "Failed to read MSG_ERRQUEUE: %s",
-                       strerror(errno));
+                logger(LOG_DEBUG, "Failed to read MSG_ERRQUEUE: %s", strerror(errno));
                 worker_close_and_free_connection(c);
                 continue;
               }
@@ -436,12 +424,9 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
             if (!had_zerocopy_completions) {
               int socket_error = 0;
               socklen_t errlen = sizeof(socket_error);
-              if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &socket_error,
-                             &errlen) == 0 &&
-                  socket_error != 0) {
+              if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &socket_error, &errlen) == 0 && socket_error != 0) {
                 /* Real socket error */
-                logger(LOG_DEBUG, "Client connection error: %s",
-                       strerror(socket_error));
+                logger(LOG_DEBUG, "Client connection error: %s", strerror(socket_error));
                 worker_close_and_free_connection(c);
                 continue; /* Skip further processing for this connection */
               }
@@ -468,21 +453,16 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
               char discard_buffer[1024];
               int closed = 0;
               for (;;) {
-                int bytes =
-                    recv(c->fd, discard_buffer, sizeof(discard_buffer), 0);
+                int bytes = recv(c->fd, discard_buffer, sizeof(discard_buffer), 0);
                 if (bytes > 0) {
-                  logger(LOG_DEBUG,
-                         "Client sent %d bytes during streaming (discarded)",
-                         bytes);
+                  logger(LOG_DEBUG, "Client sent %d bytes during streaming (discarded)", bytes);
                   continue;
                 }
                 if (bytes == 0) {
-                  logger(LOG_DEBUG,
-                         "Client disconnected gracefully during streaming");
+                  logger(LOG_DEBUG, "Client disconnected gracefully during streaming");
                   closed = 1;
                 } else if (errno != EAGAIN) {
-                  logger(LOG_DEBUG, "Client socket error during streaming: %s",
-                         strerror(errno));
+                  logger(LOG_DEBUG, "Client socket error during streaming: %s", strerror(errno));
                   closed = 1;
                 }
                 break; /* EAGAIN or closed/error */
@@ -509,18 +489,15 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
             }
           }
         } else {
-          int res = stream_handle_fd_event(&c->stream, fd_ready,
-                                           events[e].events, now);
+          int res = stream_handle_fd_event(&c->stream, fd_ready, events[e].events, now);
           if (res < 0) {
             /* Send 200 for r2h-duration request */
             if (res == -2) {
               send_http_headers(c, STATUS_200, "application/json", NULL);
               char response[64];
-              snprintf(response, sizeof(response), "{\"duration\": \"%0.3f\"}",
-                       c->stream.rtsp.r2h_duration_value);
+              snprintf(response, sizeof(response), "{\"duration\": \"%0.3f\"}", c->stream.rtsp.r2h_duration_value);
 
-              connection_queue_output_and_flush(c, (const uint8_t *)response,
-                                                strlen(response));
+              connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
             } else if (!c->headers_sent && c->state != CONN_CLOSING) {
               /* Send 503 if headers not sent yet (no data ever arrived) */
               http_send_503(c);
@@ -538,8 +515,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
       last_tick = now;
       connection_t *c = conn_head;
       while (c) {
-        connection_t *next =
-            c->next; /* Save next pointer before potential cleanup */
+        connection_t *next = c->next; /* Save next pointer before potential cleanup */
         if (c->streaming) {
           if (stream_tick(&c->stream, now) < 0) {
             /* Send 503 if headers not sent yet (no data ever arrived) */
@@ -553,9 +529,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
               continue;
             }
           }
-        } else if (c->state == CONN_CLOSING &&
-                   c->stream.rtsp.initialized &&
-                   !c->stream.rtsp.cleanup_done) {
+        } else if (c->state == CONN_CLOSING && c->stream.rtsp.initialized && !c->stream.rtsp.cleanup_done) {
           if (rtsp_session_tick(&c->stream.rtsp, now) < 0) {
             worker_close_and_free_connection(c);
             c = next;
@@ -573,37 +547,28 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
       m3u_cache_t *m3u_cache = m3u_get_cache();
       epg_cache_t *epg_cache = epg_get_cache();
 
-      if ((config.external_m3u_url || epg_cache->url) &&
-          config.external_m3u_update_interval >= 0) {
-        int64_t interval_ms =
-            (int64_t)config.external_m3u_update_interval * 1000;
+      if ((config.external_m3u_url || epg_cache->url) && config.external_m3u_update_interval >= 0) {
+        int64_t interval_ms = (int64_t)config.external_m3u_update_interval * 1000;
         int64_t last_update = config.last_external_m3u_update_time;
         int64_t worker_offset_ms = (int64_t)worker_id * 1000;
 
         /* Check if retry is scheduled for M3U */
-        if (config.external_m3u_url && m3u_cache->next_retry_time > 0 &&
-            now >= m3u_cache->next_retry_time) {
-          logger(LOG_INFO, "M3U retry scheduled, attempting fetch (retry %d)",
-                 m3u_cache->retry_count);
-          m3u_cache->next_retry_time =
-              0; /* Clear retry time before attempting */
+        if (config.external_m3u_url && m3u_cache->next_retry_time > 0 && now >= m3u_cache->next_retry_time) {
+          logger(LOG_INFO, "M3U retry scheduled, attempting fetch (retry %d)", m3u_cache->retry_count);
+          m3u_cache->next_retry_time = 0; /* Clear retry time before attempting */
           m3u_reload_external_async(epfd);
         }
         /* Check if retry is scheduled for EPG */
-        else if (epg_cache->url && epg_cache->next_retry_time > 0 &&
-                 now >= epg_cache->next_retry_time) {
-          logger(LOG_INFO, "EPG retry scheduled, attempting fetch (retry %d)",
-                 epg_cache->retry_count);
-          epg_cache->next_retry_time =
-              0; /* Clear retry time before attempting */
+        else if (epg_cache->url && epg_cache->next_retry_time > 0 && now >= epg_cache->next_retry_time) {
+          logger(LOG_INFO, "EPG retry scheduled, attempting fetch (retry %d)", epg_cache->retry_count);
+          epg_cache->next_retry_time = 0; /* Clear retry time before attempting */
           epg_fetch_async(epfd);
         }
         /* Handle first-time load: if last_update is 0, load immediately with
            staggered timing */
         else if (last_update == 0) {
           /* Calculate uptime to compare against staggered offset */
-          int64_t uptime_ms =
-              get_realtime_ms() - status_shared->server_start_time;
+          int64_t uptime_ms = get_realtime_ms() - status_shared->server_start_time;
 
           /* Each worker loads after a staggered delay from startup (0s, 1s, 2s,
            * ...) */
@@ -615,14 +580,11 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
             if (config.external_m3u_url) {
               /* External M3U: reload it (will also fetch EPG if found in M3U)
                */
-              logger(LOG_INFO, "Initial external M3U load for worker %d",
-                     worker_id);
+              logger(LOG_INFO, "Initial external M3U load for worker %d", worker_id);
               m3u_reload_external_async(epfd);
             } else if (epg_cache->url) {
               /* Inline M3U with EPG: only fetch EPG */
-              logger(LOG_INFO,
-                     "Initial EPG load (from inline M3U) for worker %d",
-                     worker_id);
+              logger(LOG_INFO, "Initial EPG load (from inline M3U) for worker %d", worker_id);
               epg_fetch_async(epfd);
             }
           }
@@ -636,8 +598,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
             /* Also check if this update cycle hasn't been done yet by checking
              * if enough time has passed since the interval started */
             int64_t current_cycle = time_since_last_update / interval_ms;
-            int64_t expected_update_time =
-                current_cycle * interval_ms + worker_offset_ms;
+            int64_t expected_update_time = current_cycle * interval_ms + worker_offset_ms;
 
             if (time_since_last_update >= expected_update_time) {
               /* Update timestamp immediately to prevent reentry during async
@@ -657,10 +618,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
                 m3u_reload_external_async(epfd);
               } else if (epg_cache->url) {
                 /* Inline M3U with EPG: only fetch EPG */
-                logger(
-                    LOG_DEBUG,
-                    "EPG update interval reached for worker %d, reloading...",
-                    worker_id);
+                logger(LOG_DEBUG, "EPG update interval reached for worker %d, reloading...", worker_id);
                 /* Reset retry state for new update cycle */
                 epg_cache->retry_count = 0;
                 epg_cache->next_retry_time = 0;

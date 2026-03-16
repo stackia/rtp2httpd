@@ -7,8 +7,7 @@
 #define FEC_PAYLOAD_TYPE_1 127
 #define FEC_PAYLOAD_TYPE_2 97
 
-int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size,
-                    uint16_t *seqn) {
+int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, uint16_t *seqn) {
   int payloadstart, payloadlength;
   uint8_t flags;
   uint8_t payload_type;
@@ -19,8 +18,7 @@ int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size,
 
     /* Extract and check payload type */
     payload_type = buf[1] & 0x7F;
-    if (unlikely(payload_type == FEC_PAYLOAD_TYPE_1 ||
-                 payload_type == FEC_PAYLOAD_TYPE_2)) {
+    if (unlikely(payload_type == FEC_PAYLOAD_TYPE_1 || payload_type == FEC_PAYLOAD_TYPE_2)) {
       /* FEC packet detected - return special code for caller to handle */
       *payload = buf;
       *size = recv_len;
@@ -61,8 +59,7 @@ int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size,
     }
 
     /* Validate final payload bounds */
-    if (unlikely(payloadlength <= 0) ||
-        unlikely(payloadstart + payloadlength > recv_len)) {
+    if (unlikely(payloadlength <= 0) || unlikely(payloadstart + payloadlength > recv_len)) {
       logger(LOG_DEBUG, "Malformed RTP packet: invalid payload length");
       return -1;
     }

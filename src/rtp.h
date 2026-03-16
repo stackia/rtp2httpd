@@ -23,8 +23,7 @@ typedef struct buffer_ref_s buffer_ref_t;
  * only valid if return value is 1)
  * @return 1 if RTP packet, 0 if non-RTP packet, 2 if FEC packet, -1 on error
  */
-int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size,
-                    uint16_t *seqn);
+int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, uint16_t *seqn);
 
 /**
  * Queue RTP payload directly to client (used by reorder module)

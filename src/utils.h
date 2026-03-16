@@ -12,8 +12,7 @@
  * @param format printf style format string
  * @returns Whatever printf returns
  */
-int logger(loglevel_t level, const char *format, ...)
-    __attribute__((format(printf, 2, 3)));
+int logger(loglevel_t level, const char *format, ...) __attribute__((format(printf, 2, 3)));
 
 /**
  * Get current monotonic time in milliseconds.
@@ -35,13 +34,13 @@ int64_t get_time_ms(void);
 int64_t get_realtime_ms(void);
 
 #ifndef strndupa
-#define strndupa(s, n)                                                         \
-  (__extension__({                                                             \
-    const char *__in = (s);                                                    \
-    size_t __len = strnlen(__in, (n)) + 1;                                     \
-    char *__out = (char *)alloca(__len);                                       \
-    __out[__len - 1] = '\0';                                                   \
-    (char *)memcpy(__out, __in, __len - 1);                                    \
+#define strndupa(s, n)                                                                                                 \
+  (__extension__({                                                                                                     \
+    const char *__in = (s);                                                                                            \
+    size_t __len = strnlen(__in, (n)) + 1;                                                                             \
+    char *__out = (char *)alloca(__len);                                                                               \
+    __out[__len - 1] = '\0';                                                                                           \
+    (char *)memcpy(__out, __in, __len - 1);                                                                            \
   }))
 #endif
 
@@ -77,8 +76,7 @@ void bind_to_upstream_interface(int sock, const char *ifname);
  * or NULL
  * @return Pointer to the interface name to use (may be NULL if none configured)
  */
-const char *get_upstream_interface_for_fcc(const char *override,
-                                           const char *override_fcc);
+const char *get_upstream_interface_for_fcc(const char *override, const char *override_fcc);
 
 /**
  * Select the appropriate upstream interface for RTSP with priority logic
@@ -116,8 +114,7 @@ const char *get_upstream_interface_for_http(const char *override);
  * @param x_forwarded_proto X-Forwarded-Proto header (can be NULL)
  * @return malloc'd base URL string (caller must free), or NULL on error
  */
-char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host,
-                           const char *x_forwarded_proto);
+char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host, const char *x_forwarded_proto);
 
 /**
  * Get local IP address for FCC packets

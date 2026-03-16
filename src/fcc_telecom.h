@@ -22,8 +22,7 @@
  * @param fcc_client_nport FCC client port (network byte order)
  * @return Pointer to static packet buffer
  */
-uint8_t *build_fcc_request_pk_telecom(struct addrinfo *maddr,
-                                      uint16_t fcc_client_nport);
+uint8_t *build_fcc_request_pk_telecom(struct addrinfo *maddr, uint16_t fcc_client_nport);
 
 /**
  * Build Telecom FCC termination packet (FMT 5)
@@ -50,8 +49,7 @@ int fcc_telecom_initialize_and_request(stream_context_t *ctx);
  * @param buf_len Length of response buffer in bytes
  * @return 0 on success, -1 for fallback to multicast, 1 for state restart
  */
-int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf,
-                                       size_t buf_len);
+int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf, size_t buf_len);
 
 /**
  * Send Telecom FCC termination packet
@@ -62,7 +60,6 @@ int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf,
  * @param reason Reason for termination
  * @return 0 on success, -1 on error
  */
-int fcc_telecom_send_term_packet(fcc_session_t *fcc, service_t *service,
-                                 uint16_t seqn, const char *reason);
+int fcc_telecom_send_term_packet(fcc_session_t *fcc, service_t *service, uint16_t seqn, const char *reason);
 
 #endif /* __FCC_TELECOM_H__ */

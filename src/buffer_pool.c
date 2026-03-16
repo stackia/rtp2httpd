@@ -8,11 +8,11 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#define WORKER_STATS_INC(field)                                                \
-  do {                                                                         \
-    if (status_shared && worker_id >= 0 && worker_id < STATUS_MAX_WORKERS) {   \
-      status_shared->worker_stats[worker_id].field++;                          \
-    }                                                                          \
+#define WORKER_STATS_INC(field)                                                                                        \
+  do {                                                                                                                 \
+    if (status_shared && worker_id >= 0 && worker_id < STATUS_MAX_WORKERS) {                                           \
+      status_shared->worker_stats[worker_id].field++;                                                                  \
+    }                                                                                                                  \
   } while (0)
 
 static uint64_t buffer_pool_time_us(void) {
@@ -38,9 +38,7 @@ void buffer_pool_update_stats(buffer_pool_t *pool) {
   }
 }
 
-static buffer_pool_segment_t *buffer_pool_segment_create(size_t buffer_size,
-                                                         size_t num_buffers,
-                                                         buffer_pool_t *pool) {
+static buffer_pool_segment_t *buffer_pool_segment_create(size_t buffer_size, size_t num_buffers, buffer_pool_t *pool) {
   buffer_pool_segment_t *segment = malloc(sizeof(buffer_pool_segment_t));
   if (!segment)
     return NULL;
@@ -51,11 +49,8 @@ static buffer_pool_segment_t *buffer_pool_segment_create(size_t buffer_size,
   segment->parent = pool;
   segment->next = NULL;
 
-  if (posix_memalign((void **)&segment->buffers, BUFFER_POOL_ALIGNMENT,
-                     buffer_size * num_buffers) != 0) {
-    logger(LOG_ERROR,
-           "Buffer pool: Failed to allocate aligned memory for %zu buffers",
-           num_buffers);
+  if (posix_memalign((void **)&segment->buffers, BUFFER_POOL_ALIGNMENT, buffer_size * num_buffers) != 0) {
+    logger(LOG_ERROR, "Buffer pool: Failed to allocate aligned memory for %zu buffers", num_buffers);
     free(segment);
     return NULL;
   }
@@ -79,10 +74,8 @@ static buffer_pool_segment_t *buffer_pool_segment_create(size_t buffer_size,
   return segment;
 }
 
-int buffer_pool_init(buffer_pool_t *pool, size_t buffer_size,
-                     size_t initial_buffers, size_t max_buffers,
-                     size_t expand_size, size_t low_watermark,
-                     size_t high_watermark) {
+int buffer_pool_init(buffer_pool_t *pool, size_t buffer_size, size_t initial_buffers, size_t max_buffers,
+                     size_t expand_size, size_t low_watermark, size_t high_watermark) {
   memset(pool, 0, sizeof(*pool));
 
   pool->buffer_size = buffer_size;
@@ -95,8 +88,7 @@ int buffer_pool_init(buffer_pool_t *pool, size_t buffer_size,
   pool->num_buffers = 0;
   pool->num_free = 0;
 
-  buffer_pool_segment_t *initial_segment =
-      buffer_pool_segment_create(buffer_size, initial_buffers, pool);
+  buffer_pool_segment_t *initial_segment = buffer_pool_segment_create(buffer_size, initial_buffers, pool);
   if (!initial_segment)
     return -1;
 
@@ -114,8 +106,7 @@ static inline const char *buffer_pool_name(buffer_pool_t *pool) {
 
 static int buffer_pool_expand(buffer_pool_t *pool) {
   if (pool->num_buffers >= pool->max_buffers) {
-    logger(LOG_DEBUG, "%s: Cannot expand beyond maximum size (%zu buffers)",
-           buffer_pool_name(pool), pool->max_buffers);
+    logger(LOG_DEBUG, "%s: Cannot expand beyond maximum size (%zu buffers)", buffer_pool_name(pool), pool->max_buffers);
     return -1;
   }
 
@@ -124,16 +115,12 @@ static int buffer_pool_expand(buffer_pool_t *pool) {
     buffers_to_add = pool->max_buffers - pool->num_buffers;
   }
 
-  logger(LOG_DEBUG,
-         "%s: Expanding by %zu buffers (current: %zu, free: %zu, max: %zu)",
-         buffer_pool_name(pool), buffers_to_add, pool->num_buffers,
-         pool->num_free, pool->max_buffers);
+  logger(LOG_DEBUG, "%s: Expanding by %zu buffers (current: %zu, free: %zu, max: %zu)", buffer_pool_name(pool),
+         buffers_to_add, pool->num_buffers, pool->num_free, pool->max_buffers);
 
-  buffer_pool_segment_t *new_segment =
-      buffer_pool_segment_create(pool->buffer_size, buffers_to_add, pool);
+  buffer_pool_segment_t *new_segment = buffer_pool_segment_create(pool->buffer_size, buffers_to_add, pool);
   if (!new_segment) {
-    logger(LOG_ERROR, "%s: Failed to allocate new segment",
-           buffer_pool_name(pool));
+    logger(LOG_ERROR, "%s: Failed to allocate new segment", buffer_pool_name(pool));
     return -1;
   }
 
@@ -150,8 +137,8 @@ static int buffer_pool_expand(buffer_pool_t *pool) {
 
   buffer_pool_update_stats(pool);
 
-  logger(LOG_DEBUG, "%s: Expansion successful (total: %zu buffers, free: %zu)",
-         buffer_pool_name(pool), pool->num_buffers, pool->num_free);
+  logger(LOG_DEBUG, "%s: Expansion successful (total: %zu buffers, free: %zu)", buffer_pool_name(pool),
+         pool->num_buffers, pool->num_free);
 
   return 0;
 }
@@ -195,8 +182,7 @@ void buffer_ref_put(buffer_ref_t *ref) {
       return;
     }
 
-    buffer_pool_t *pool =
-        ref->segment ? ref->segment->parent : &zerocopy_state.pool;
+    buffer_pool_t *pool = ref->segment ? ref->segment->parent : &zerocopy_state.pool;
 
     if (ref->segment) {
       ref->segment->num_free++;
@@ -222,28 +208,23 @@ buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool) {
     }
 
     if (buffer_pool_expand(pool) < 0) {
-      logger(LOG_DEBUG,
-             "%s: Exhausted and cannot expand (total: %zu, max: %zu)",
-             buffer_pool_name(pool), pool->num_buffers, pool->max_buffers);
+      logger(LOG_DEBUG, "%s: Exhausted and cannot expand (total: %zu, max: %zu)", buffer_pool_name(pool),
+             pool->num_buffers, pool->max_buffers);
       return NULL;
     }
 
     if (!pool->free_list) {
-      logger(LOG_ERROR, "%s: Expansion succeeded but free_list is still empty",
-             buffer_pool_name(pool));
+      logger(LOG_ERROR, "%s: Expansion succeeded but free_list is still empty", buffer_pool_name(pool));
       return NULL;
     }
-  } else if (pool->num_free <= pool->low_watermark &&
-             pool->num_buffers < pool->max_buffers) {
+  } else if (pool->num_free <= pool->low_watermark && pool->num_buffers < pool->max_buffers) {
     logger(LOG_DEBUG,
            "%s: Low watermark reached (free: %zu, watermark: %zu), expanding "
            "proactively",
            buffer_pool_name(pool), pool->num_free, pool->low_watermark);
 
     if (buffer_pool_expand(pool) < 0) {
-      logger(LOG_DEBUG,
-             "%s: Proactive expansion failed, continuing with current buffers",
-             buffer_pool_name(pool));
+      logger(LOG_DEBUG, "%s: Proactive expansion failed, continuing with current buffers", buffer_pool_name(pool));
     }
   }
 
@@ -265,26 +246,19 @@ buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool) {
   return ref;
 }
 
-buffer_ref_t *buffer_pool_alloc(void) {
-  return buffer_pool_alloc_from(&zerocopy_state.pool);
-}
+buffer_ref_t *buffer_pool_alloc(void) { return buffer_pool_alloc_from(&zerocopy_state.pool); }
 
-buffer_ref_t *buffer_pool_alloc_control(void) {
-  return buffer_pool_alloc_from(&zerocopy_state.control_pool);
-}
+buffer_ref_t *buffer_pool_alloc_control(void) { return buffer_pool_alloc_from(&zerocopy_state.control_pool); }
 
-static void buffer_pool_try_shrink_pool(buffer_pool_t *pool,
-                                        size_t min_buffers) {
-  if (pool->num_free <= pool->high_watermark ||
-      pool->num_buffers <= min_buffers) {
+static void buffer_pool_try_shrink_pool(buffer_pool_t *pool, size_t min_buffers) {
+  if (pool->num_free <= pool->high_watermark || pool->num_buffers <= min_buffers) {
     return;
   }
 
   logger(LOG_DEBUG,
          "%s: Checking for shrink opportunity (free: %zu, high_watermark: %zu, "
          "total: %zu)",
-         buffer_pool_name(pool), pool->num_free, pool->high_watermark,
-         pool->num_buffers);
+         buffer_pool_name(pool), pool->num_free, pool->high_watermark, pool->num_buffers);
 
   buffer_pool_segment_t *prev = NULL;
   buffer_pool_segment_t *seg = pool->segments;
@@ -293,8 +267,7 @@ static void buffer_pool_try_shrink_pool(buffer_pool_t *pool,
   while (seg != NULL) {
     buffer_pool_segment_t *next = seg->next;
 
-    if (seg->num_free == seg->num_buffers &&
-        pool->num_buffers - seg->num_buffers >= min_buffers) {
+    if (seg->num_free == seg->num_buffers && pool->num_buffers - seg->num_buffers >= min_buffers) {
       buffer_ref_t **free_ptr = &pool->free_list;
       size_t removed_count = 0;
 
@@ -302,8 +275,7 @@ static void buffer_pool_try_shrink_pool(buffer_pool_t *pool,
         buffer_ref_t *ref = *free_ptr;
         uint8_t *buf_addr = (uint8_t *)ref->data;
         uint8_t *seg_start = seg->buffers;
-        uint8_t *seg_end =
-            seg->buffers + (seg->num_buffers * pool->buffer_size);
+        uint8_t *seg_end = seg->buffers + (seg->num_buffers * pool->buffer_size);
 
         if (buf_addr >= seg_start && buf_addr < seg_end) {
           *free_ptr = ref->free_next;
@@ -314,10 +286,8 @@ static void buffer_pool_try_shrink_pool(buffer_pool_t *pool,
       }
 
       if (removed_count != seg->num_buffers) {
-        logger(
-            LOG_ERROR,
-            "%s: Shrink inconsistency - expected %zu free buffers, found %zu",
-            buffer_pool_name(pool), seg->num_buffers, removed_count);
+        logger(LOG_ERROR, "%s: Shrink inconsistency - expected %zu free buffers, found %zu", buffer_pool_name(pool),
+               seg->num_buffers, removed_count);
       }
 
       pool->num_buffers -= seg->num_buffers;
@@ -332,8 +302,7 @@ static void buffer_pool_try_shrink_pool(buffer_pool_t *pool,
       logger(LOG_DEBUG,
              "%s: Freeing idle segment with %zu buffers (age: %.1fs, total: "
              "%zu -> %zu)",
-             buffer_pool_name(pool), seg->num_buffers,
-             (buffer_pool_time_us() - seg->create_time_us) / 1000000.0,
+             buffer_pool_name(pool), seg->num_buffers, (buffer_pool_time_us() - seg->create_time_us) / 1000000.0,
              pool->num_buffers + seg->num_buffers, pool->num_buffers);
 
       free(seg->refs);
@@ -363,8 +332,7 @@ static void buffer_pool_try_shrink_pool(buffer_pool_t *pool,
     logger(LOG_DEBUG,
            "%s: Shrink completed - freed %zu segments (total: %zu buffers, "
            "free: %zu)",
-           buffer_pool_name(pool), segments_freed, pool->num_buffers,
-           pool->num_free);
+           buffer_pool_name(pool), segments_freed, pool->num_buffers, pool->num_free);
 
     buffer_pool_update_stats(pool);
   }
@@ -372,6 +340,5 @@ static void buffer_pool_try_shrink_pool(buffer_pool_t *pool,
 
 void buffer_pool_try_shrink(void) {
   buffer_pool_try_shrink_pool(&zerocopy_state.pool, BUFFER_POOL_INITIAL_SIZE);
-  buffer_pool_try_shrink_pool(&zerocopy_state.control_pool,
-                              CONTROL_POOL_INITIAL_SIZE);
+  buffer_pool_try_shrink_pool(&zerocopy_state.control_pool, CONTROL_POOL_INITIAL_SIZE);
 }

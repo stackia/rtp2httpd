@@ -20,12 +20,7 @@ typedef enum {
 } http_status_t;
 
 /* HTTP request parsing state */
-typedef enum {
-  HTTP_PARSE_REQ_LINE = 0,
-  HTTP_PARSE_HEADERS,
-  HTTP_PARSE_BODY,
-  HTTP_PARSE_COMPLETE
-} http_parse_state_t;
+typedef enum { HTTP_PARSE_REQ_LINE = 0, HTTP_PARSE_HEADERS, HTTP_PARSE_BODY, HTTP_PARSE_COMPLETE } http_parse_state_t;
 
 /* HTTP request structure */
 typedef struct {
@@ -39,14 +34,14 @@ typedef struct {
   char x_forwarded_host[256];
   char x_forwarded_proto[16];
   int x_request_snapshot;
-  char cookie[1024];  /* Cookie header value for r2h-token extraction */
+  char cookie[1024];                        /* Cookie header value for r2h-token extraction */
   char access_control_request_method[64];   /* CORS preflight method */
   char access_control_request_headers[512]; /* CORS preflight headers */
   http_parse_state_t parse_state;
   int content_length;
-  char *body;         /* Dynamically allocated based on Content-Length */
-  size_t body_len;    /* Current body length */
-  size_t body_alloc;  /* Allocated size of body buffer */
+  char *body;        /* Dynamically allocated based on Content-Length */
+  size_t body_len;   /* Current body length */
+  size_t body_alloc; /* Allocated size of body buffer */
   /* Raw headers for proxying - stores all headers except Host, Connection */
   char raw_headers[4096];
   size_t raw_headers_len;
@@ -87,8 +82,7 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req);
  * @param extra_headers Optional extra headers to include (NULL or empty string
  * if none) Should NOT include trailing CRLF as it will be added automatically
  */
-void send_http_headers(connection_t *c, http_status_t status,
-                       const char *content_type, const char *extra_headers);
+void send_http_headers(connection_t *c, http_status_t status, const char *content_type, const char *extra_headers);
 
 /**
  * Decode percent-encoded sequences in-place within a URL component
@@ -118,8 +112,7 @@ char *http_url_encode(const char *str);
  * @param value_size Size of value buffer
  * @return 0 if parameter found, -1 if not found or error
  */
-int http_parse_query_param(const char *query_string, const char *param_name,
-                           char *value_buf, size_t value_size);
+int http_parse_query_param(const char *query_string, const char *param_name, char *value_buf, size_t value_size);
 
 /**
  * Copy query string excluding a specific parameter (case-insensitive)
@@ -129,8 +122,7 @@ int http_parse_query_param(const char *query_string, const char *param_name,
  * @param output_size Output buffer size
  * @return Length of output string, or -1 on error
  */
-int http_filter_query_param(const char *query_string, const char *exclude_param,
-                            char *output, size_t output_size);
+int http_filter_query_param(const char *query_string, const char *exclude_param, char *output, size_t output_size);
 
 /**
  * Find $label suffix at the end of a URL.
@@ -160,8 +152,7 @@ void http_strip_url_label(char *url);
  * @param output_size Output buffer size
  * @return Length of output string, or -1 on error
  */
-int http_filter_cookie(const char *cookie_header, const char *exclude_name,
-                       char *output, size_t output_size);
+int http_filter_cookie(const char *cookie_header, const char *exclude_name, char *output, size_t output_size);
 
 /**
  * Filter User-Agent header to remove R2HTOKEN/xxx pattern
@@ -171,8 +162,7 @@ int http_filter_cookie(const char *cookie_header, const char *exclude_name,
  * @param output_size Output buffer size
  * @return Length of output string, or -1 on error
  */
-int http_filter_user_agent_token(const char *user_agent, char *output,
-                                 size_t output_size);
+int http_filter_user_agent_token(const char *user_agent, char *output, size_t output_size);
 
 /**
  * Send HTTP 400 Bad Request response
@@ -225,8 +215,7 @@ void http_send_401(connection_t *conn);
  * 1024 bytes
  * @return 0 on success, -1 on error
  */
-int http_parse_url_components(const char *url, char *protocol, char *host,
-                              char *port, char *path);
+int http_parse_url_components(const char *url, char *protocol, char *host, char *port, char *path);
 
 /**
  * Match Host header against expected hostname
@@ -238,8 +227,7 @@ int http_parse_url_components(const char *url, char *protocol, char *host,
  * part, e.g., "example.org")
  * @return 1 if match, 0 if not match, -1 on error
  */
-int http_match_host_header(const char *request_host_header,
-                           const char *expected_host);
+int http_match_host_header(const char *request_host_header, const char *expected_host);
 
 /**
  * Check ETag and send 304 Not Modified response if it matches
@@ -251,8 +239,7 @@ int http_match_host_header(const char *request_host_header,
  * @return 1 if 304 was sent (ETag matched), 0 if content should be sent (no
  * match or no ETag)
  */
-int http_check_etag_and_send_304(connection_t *c, const char *etag,
-                                 const char *content_type);
+int http_check_etag_and_send_304(connection_t *c, const char *etag, const char *content_type);
 
 /**
  * Build extra headers string with ETag and Cache-Control
@@ -267,8 +254,7 @@ int http_check_etag_and_send_304(connection_t *c, const char *etag,
  * NOT end with CRLF
  * @return Number of characters written to buffer
  */
-int http_build_etag_headers(char *buffer, size_t buffer_size,
-                            size_t content_length, const char *etag,
+int http_build_etag_headers(char *buffer, size_t buffer_size, size_t content_length, const char *etag,
                             const char *additional_headers);
 
 #endif /* __HTTP_H__ */

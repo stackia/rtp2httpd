@@ -12,8 +12,7 @@ typedef struct http_fetch_ctx_s http_fetch_ctx_t;
  * content_size: size of fetched content in bytes (0 if content is NULL)
  * user_data: user-provided data passed to http_fetch_start_async
  */
-typedef void (*http_fetch_callback_t)(http_fetch_ctx_t *ctx, char *content,
-                                      size_t content_size, void *user_data);
+typedef void (*http_fetch_callback_t)(http_fetch_ctx_t *ctx, char *content, size_t content_size, void *user_data);
 
 /* Callback type for async HTTP fetch completion with file descriptor
  * (zero-copy) ctx: fetch context fd: tmpfs file descriptor containing fetched
@@ -26,8 +25,7 @@ typedef void (*http_fetch_callback_t)(http_fetch_ctx_t *ctx, char *content,
  * unlinked before this callback is called, so it will be automatically deleted
  * when all fds are closed.
  */
-typedef void (*http_fetch_fd_callback_t)(http_fetch_ctx_t *ctx, int fd,
-                                         size_t content_size, void *user_data);
+typedef void (*http_fetch_fd_callback_t)(http_fetch_ctx_t *ctx, int fd, size_t content_size, void *user_data);
 
 /**
  * Start async fetch using popen and curl (supports HTTP(S) and file:// URLs)
@@ -43,9 +41,7 @@ typedef void (*http_fetch_fd_callback_t)(http_fetch_ctx_t *ctx, int fd,
  * @return Fetch context on success (HTTP(S)), NULL for file:// (immediate
  * completion) or error
  */
-http_fetch_ctx_t *http_fetch_start_async(const char *url,
-                                         http_fetch_callback_t callback,
-                                         void *user_data, int epfd);
+http_fetch_ctx_t *http_fetch_start_async(const char *url, http_fetch_callback_t callback, void *user_data, int epfd);
 
 /**
  * Start async fetch using popen and curl (zero-copy with file descriptor,
@@ -62,9 +58,8 @@ http_fetch_ctx_t *http_fetch_start_async(const char *url,
  * @return Fetch context on success (HTTP(S)), NULL for file:// (immediate
  * completion) or error
  */
-http_fetch_ctx_t *http_fetch_start_async_fd(const char *url,
-                                            http_fetch_fd_callback_t callback,
-                                            void *user_data, int epfd);
+http_fetch_ctx_t *http_fetch_start_async_fd(const char *url, http_fetch_fd_callback_t callback, void *user_data,
+                                            int epfd);
 
 /**
  * Find HTTP fetch context by file descriptor

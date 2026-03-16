@@ -13,18 +13,15 @@
 /* Constants for time calculations */
 #define SECONDS_PER_HOUR 3600
 #define SECONDS_PER_DAY 86400
-#define MAX_TIMEZONE_OFFSET_SECONDS                                            \
-  (TIMEZONE_MAX_OFFSET_HOURS * SECONDS_PER_HOUR)
-#define MIN_TIMEZONE_OFFSET_SECONDS                                            \
-  (TIMEZONE_MIN_OFFSET_HOURS * SECONDS_PER_HOUR)
+#define MAX_TIMEZONE_OFFSET_SECONDS (TIMEZONE_MAX_OFFSET_HOURS * SECONDS_PER_HOUR)
+#define MIN_TIMEZONE_OFFSET_SECONDS (TIMEZONE_MIN_OFFSET_HOURS * SECONDS_PER_HOUR)
 
 /*
  * Parse timezone information from User-Agent header
  * Supports patterns like: TZ/UTC+8, TZ/UTC-5, TZ/UTC
  * Returns 0 on success, -1 if no timezone found (defaults to UTC)
  */
-int timezone_parse_from_user_agent(const char *user_agent,
-                                   int *tz_offset_seconds) {
+int timezone_parse_from_user_agent(const char *user_agent, int *tz_offset_seconds) {
   const char *tz_marker;
 
   /* Validate required output parameter */
@@ -64,27 +61,23 @@ int timezone_parse_from_user_agent(const char *user_agent,
       if (sscanf(tz_marker, "%d", &offset_hours) == 1) {
         /* Validate offset range */
         if (offset_hours < 0 || offset_hours > abs(TIMEZONE_MAX_OFFSET_HOURS)) {
-          logger(LOG_ERROR, "Timezone: Invalid offset hours %d (must be 0-%d)",
-                 offset_hours, abs(TIMEZONE_MAX_OFFSET_HOURS));
+          logger(LOG_ERROR, "Timezone: Invalid offset hours %d (must be 0-%d)", offset_hours,
+                 abs(TIMEZONE_MAX_OFFSET_HOURS));
           return -1;
         }
 
         *tz_offset_seconds = sign * offset_hours * SECONDS_PER_HOUR;
 
         /* Double-check final offset is in valid range */
-        if (*tz_offset_seconds < MIN_TIMEZONE_OFFSET_SECONDS ||
-            *tz_offset_seconds > MAX_TIMEZONE_OFFSET_SECONDS) {
-          logger(LOG_ERROR,
-                 "Timezone: Calculated offset %d seconds out of range [%d, %d]",
-                 *tz_offset_seconds, MIN_TIMEZONE_OFFSET_SECONDS,
-                 MAX_TIMEZONE_OFFSET_SECONDS);
+        if (*tz_offset_seconds < MIN_TIMEZONE_OFFSET_SECONDS || *tz_offset_seconds > MAX_TIMEZONE_OFFSET_SECONDS) {
+          logger(LOG_ERROR, "Timezone: Calculated offset %d seconds out of range [%d, %d]", *tz_offset_seconds,
+                 MIN_TIMEZONE_OFFSET_SECONDS, MAX_TIMEZONE_OFFSET_SECONDS);
           *tz_offset_seconds = 0;
           return -1;
         }
 
-        logger(LOG_DEBUG,
-               "Timezone: Parsed timezone offset: UTC%+d (%d seconds)",
-               sign * offset_hours, *tz_offset_seconds);
+        logger(LOG_DEBUG, "Timezone: Parsed timezone offset: UTC%+d (%d seconds)", sign * offset_hours,
+               *tz_offset_seconds);
         return 0;
       }
     } else {
@@ -103,27 +96,22 @@ int timezone_parse_from_user_agent(const char *user_agent,
 /*
  * Format time in yyyyMMddHHmmss format
  */
-int timezone_format_time_yyyyMMddHHmmss(const struct tm *utc_time,
-                                        char *output_time, size_t output_size) {
+int timezone_format_time_yyyyMMddHHmmss(const struct tm *utc_time, char *output_time, size_t output_size) {
   /* Validate inputs */
   if (!utc_time || !output_time) {
-    logger(LOG_ERROR,
-           "Timezone: NULL pointer in timezone_format_time_yyyyMMddHHmmss");
+    logger(LOG_ERROR, "Timezone: NULL pointer in timezone_format_time_yyyyMMddHHmmss");
     return -1;
   }
 
   if (output_size < 15) {
-    logger(LOG_ERROR,
-           "Timezone: Output buffer too small (%zu bytes, need at least 15)",
-           output_size);
+    logger(LOG_ERROR, "Timezone: Output buffer too small (%zu bytes, need at least 15)", output_size);
     return -1;
   }
 
   /* Format as yyyyMMddHHmmss */
-  int written = snprintf(output_time, output_size, "%04d%02d%02d%02d%02d%02d",
-                         utc_time->tm_year + 1900, utc_time->tm_mon + 1,
-                         utc_time->tm_mday, utc_time->tm_hour, utc_time->tm_min,
-                         utc_time->tm_sec);
+  int written =
+      snprintf(output_time, output_size, "%04d%02d%02d%02d%02d%02d", utc_time->tm_year + 1900, utc_time->tm_mon + 1,
+               utc_time->tm_mday, utc_time->tm_hour, utc_time->tm_min, utc_time->tm_sec);
 
   if (written < 0 || (size_t)written >= output_size) {
     logger(LOG_ERROR, "Timezone: Output buffer too small for formatted time");
@@ -156,16 +144,12 @@ static int is_basic_iso8601_format(const char *input_time) {
   return 1;
 }
 
-static int timezone_parse_basic_iso8601(const char *iso_str, struct tm *tm_out,
-                                        int *has_timezone_out,
-                                        int *timezone_offset_out,
-                                        char *timezone_suffix_out,
-                                        size_t suffix_size) {
+static int timezone_parse_basic_iso8601(const char *iso_str, struct tm *tm_out, int *has_timezone_out,
+                                        int *timezone_offset_out, char *timezone_suffix_out, size_t suffix_size) {
   int year, month, day, hour, min, sec;
   const char *p;
 
-  if (!iso_str || !tm_out || !has_timezone_out || !timezone_offset_out ||
-      !timezone_suffix_out) {
+  if (!iso_str || !tm_out || !has_timezone_out || !timezone_offset_out || !timezone_suffix_out) {
     logger(LOG_ERROR, "Timezone: NULL pointer in timezone_parse_basic_iso8601");
     return -1;
   }
@@ -178,15 +162,13 @@ static int timezone_parse_basic_iso8601(const char *iso_str, struct tm *tm_out,
     return -1;
   }
 
-  if (sscanf(iso_str, "%4d%2d%2dT%2d%2d%2d", &year, &month, &day, &hour,
-             &min, &sec) != 6) {
+  if (sscanf(iso_str, "%4d%2d%2dT%2d%2d%2d", &year, &month, &day, &hour, &min, &sec) != 6) {
     logger(LOG_ERROR, "Timezone: Failed to parse basic ISO 8601: %s", iso_str);
     return -1;
   }
 
-  if (year < 1900 || year > 9999 || month < 1 || month > 12 || day < 1 ||
-      day > 31 || hour < 0 || hour > 23 || min < 0 || min > 59 || sec < 0 ||
-      sec > 60) {
+  if (year < 1900 || year > 9999 || month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 ||
+      min < 0 || min > 59 || sec < 0 || sec > 60) {
     logger(LOG_ERROR, "Timezone: Invalid basic ISO 8601 components: %s", iso_str);
     return -1;
   }
@@ -218,28 +200,23 @@ static int timezone_parse_basic_iso8601(const char *iso_str, struct tm *tm_out,
     int tz_minutes = 0;
 
     if (sscanf(p + 1, "%2d:%2d", &tz_hours, &tz_minutes) != 2) {
-      logger(LOG_ERROR,
-             "Timezone: Failed to parse basic ISO 8601 timezone offset: %s",
-             p);
+      logger(LOG_ERROR, "Timezone: Failed to parse basic ISO 8601 timezone offset: %s", p);
       return -1;
     }
 
     if (tz_hours > 14 || tz_minutes < 0 || tz_minutes > 59) {
-      logger(LOG_ERROR,
-             "Timezone: Invalid basic ISO 8601 timezone offset: %s", p);
+      logger(LOG_ERROR, "Timezone: Invalid basic ISO 8601 timezone offset: %s", p);
       return -1;
     }
 
     *has_timezone_out = 1;
     *timezone_offset_out = tz_sign * (tz_hours * 3600 + tz_minutes * 60);
-    snprintf(timezone_suffix_out, suffix_size, "%c%02d:%02d", *p, tz_hours,
-             tz_minutes);
+    snprintf(timezone_suffix_out, suffix_size, "%c%02d:%02d", *p, tz_hours, tz_minutes);
     return 0;
   }
 
   if (*p != '\0') {
-    logger(LOG_ERROR,
-           "Timezone: Invalid character after basic ISO 8601 time: '%c'", *p);
+    logger(LOG_ERROR, "Timezone: Invalid character after basic ISO 8601 time: '%c'", *p);
     return -1;
   }
 
@@ -251,9 +228,7 @@ static int timezone_parse_basic_iso8601(const char *iso_str, struct tm *tm_out,
  * Supports: Unix timestamp, yyyyMMddHHmmss, yyyyMMddHHmmssGMT, ISO 8601 (all
  * variants)
  */
-int timezone_convert_time_with_offset(const char *input_time,
-                                      int tz_offset_seconds,
-                                      int additional_offset_seconds,
+int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seconds, int additional_offset_seconds,
                                       char *output_time, size_t output_size) {
   struct tm local_time;
   time_t timestamp;
@@ -264,25 +239,19 @@ int timezone_convert_time_with_offset(const char *input_time,
 
   /* Validate inputs */
   if (!input_time || !output_time) {
-    logger(LOG_ERROR,
-           "Timezone: NULL pointer in timezone_convert_time_with_offset");
+    logger(LOG_ERROR, "Timezone: NULL pointer in timezone_convert_time_with_offset");
     return -1;
   }
 
   if (output_size < 64) {
-    logger(LOG_ERROR,
-           "Timezone: Output buffer too small (%zu bytes, need at least 64)",
-           output_size);
+    logger(LOG_ERROR, "Timezone: Output buffer too small (%zu bytes, need at least 64)", output_size);
     return -1;
   }
 
   /* Validate timezone offset range */
-  if (tz_offset_seconds < MIN_TIMEZONE_OFFSET_SECONDS ||
-      tz_offset_seconds > MAX_TIMEZONE_OFFSET_SECONDS) {
-    logger(LOG_ERROR,
-           "Timezone: Invalid timezone offset %d seconds (range: [%d, %d])",
-           tz_offset_seconds, MIN_TIMEZONE_OFFSET_SECONDS,
-           MAX_TIMEZONE_OFFSET_SECONDS);
+  if (tz_offset_seconds < MIN_TIMEZONE_OFFSET_SECONDS || tz_offset_seconds > MAX_TIMEZONE_OFFSET_SECONDS) {
+    logger(LOG_ERROR, "Timezone: Invalid timezone offset %d seconds (range: [%d, %d])", tz_offset_seconds,
+           MIN_TIMEZONE_OFFSET_SECONDS, MAX_TIMEZONE_OFFSET_SECONDS);
     return -1;
   }
 
@@ -294,23 +263,20 @@ int timezone_convert_time_with_offset(const char *input_time,
     timestamp = (time_t)atoll(input_time);
     timestamp += additional_offset_seconds;
     snprintf(output_time, output_size, "%lld", (long long)timestamp);
-    logger(LOG_DEBUG, "Timezone: Unix timestamp '%s' + offset %d = '%s'",
-           input_time, additional_offset_seconds, output_time);
+    logger(LOG_DEBUG, "Timezone: Unix timestamp '%s' + offset %d = '%s'", input_time, additional_offset_seconds,
+           output_time);
     return 0;
   }
 
   /* Format 2: yyyyMMddHHmmss and yyyyMMddHHmmssGMT (14 digits, optionally
    * followed by "GMT") */
   if ((input_len == 14 && digit_count == 14) ||
-      (input_len == 17 && digit_count == 14 &&
-       strcmp(input_time + 14, "GMT") == 0)) {
+      (input_len == 17 && digit_count == 14 && strcmp(input_time + 14, "GMT") == 0)) {
     int has_gmt_suffix = (input_len == 17);
 
     /* Parse the time string (first 14 digits) */
-    if (sscanf(input_time, "%4d%2d%2d%2d%2d%2d", &year, &month, &day, &hour,
-               &min, &sec) != 6) {
-      logger(LOG_ERROR, "Timezone: Failed to parse time string: %s",
-             input_time);
+    if (sscanf(input_time, "%4d%2d%2d%2d%2d%2d", &year, &month, &day, &hour, &min, &sec) != 6) {
+      logger(LOG_ERROR, "Timezone: Failed to parse time string: %s", input_time);
       return -1;
     }
 
@@ -369,8 +335,7 @@ int timezone_convert_time_with_offset(const char *input_time,
     }
 
     struct tm utc_time_copy = *utc_time;
-    if (timezone_format_time_yyyyMMddHHmmss(&utc_time_copy, temp_time,
-                                            sizeof(temp_time)) != 0) {
+    if (timezone_format_time_yyyyMMddHHmmss(&utc_time_copy, temp_time, sizeof(temp_time)) != 0) {
       return -1;
     }
 
@@ -380,16 +345,14 @@ int timezone_convert_time_with_offset(const char *input_time,
       logger(LOG_DEBUG,
              "Timezone: yyyyMMddHHmmssGMT '%s' (TZ offset %d) + seek offset %d "
              "= '%s'",
-             input_time, -tz_offset_seconds, additional_offset_seconds,
-             output_time);
+             input_time, -tz_offset_seconds, additional_offset_seconds, output_time);
     } else {
       strncpy(output_time, temp_time, output_size - 1);
       output_time[output_size - 1] = '\0';
       logger(LOG_DEBUG,
              "Timezone: yyyyMMddHHmmss '%s' (TZ offset %d) + seek offset %d = "
              "'%s'",
-             input_time, -tz_offset_seconds, additional_offset_seconds,
-             output_time);
+             input_time, -tz_offset_seconds, additional_offset_seconds, output_time);
     }
 
     return 0;
@@ -403,8 +366,7 @@ int timezone_convert_time_with_offset(const char *input_time,
     char timezone_suffix[16];
     char basic_time[32];
 
-    if (timezone_parse_basic_iso8601(input_time, &tm, &has_timezone,
-                                     &timezone_offset, timezone_suffix,
+    if (timezone_parse_basic_iso8601(input_time, &tm, &has_timezone, &timezone_offset, timezone_suffix,
                                      sizeof(timezone_suffix)) != 0) {
       return -1;
     }
@@ -412,8 +374,7 @@ int timezone_convert_time_with_offset(const char *input_time,
     timestamp = timegm(&tm);
 
     if (timestamp == -1) {
-      logger(LOG_ERROR,
-             "Timezone: Failed to convert basic ISO 8601 time to timestamp");
+      logger(LOG_ERROR, "Timezone: Failed to convert basic ISO 8601 time to timestamp");
       return -1;
     }
 
@@ -426,53 +387,46 @@ int timezone_convert_time_with_offset(const char *input_time,
 
     struct tm *utc_time = gmtime(&timestamp);
     if (!utc_time) {
-      logger(LOG_ERROR,
-             "Timezone: Failed to convert basic ISO 8601 timestamp to UTC");
+      logger(LOG_ERROR, "Timezone: Failed to convert basic ISO 8601 timestamp to UTC");
       return -1;
     }
 
     struct tm utc_time_copy = *utc_time;
-    if (timezone_format_time_yyyyMMddHHmmss(&utc_time_copy, basic_time,
-                                            sizeof(basic_time)) != 0) {
+    if (timezone_format_time_yyyyMMddHHmmss(&utc_time_copy, basic_time, sizeof(basic_time)) != 0) {
       return -1;
     }
 
-    if (snprintf(output_time, output_size, "%.8sT%s%s", basic_time,
-                 basic_time + 8, timezone_suffix) >= (int)output_size) {
-      logger(LOG_ERROR,
-             "Timezone: Output buffer too small for basic ISO 8601 conversion");
+    if (snprintf(output_time, output_size, "%.8sT%s%s", basic_time, basic_time + 8, timezone_suffix) >=
+        (int)output_size) {
+      logger(LOG_ERROR, "Timezone: Output buffer too small for basic ISO 8601 conversion");
       return -1;
     }
 
     logger(LOG_DEBUG,
            "Timezone: basic ISO 8601 '%s' (TZ offset %d) + seek offset %d = "
            "'%s'",
-           input_time, has_timezone ? timezone_offset : -tz_offset_seconds,
-           additional_offset_seconds, output_time);
+           input_time, has_timezone ? timezone_offset : -tz_offset_seconds, additional_offset_seconds, output_time);
     return 0;
   }
 
   /* Format 4: ISO 8601 (contains 'T' separator, must check after
    * yyyyMMddHHmmssGMT) */
   if (strchr(input_time, 'T') != NULL) {
-    return timezone_convert_iso8601_with_offset(input_time, tz_offset_seconds,
-                                                additional_offset_seconds,
-                                                output_time, output_size);
+    return timezone_convert_iso8601_with_offset(input_time, tz_offset_seconds, additional_offset_seconds, output_time,
+                                                output_size);
   }
 
   /* Unknown format, use as-is */
   strncpy(output_time, input_time, output_size - 1);
   output_time[output_size - 1] = '\0';
-  logger(LOG_DEBUG, "Timezone: Unknown time format '%s', using as-is",
-         input_time);
+  logger(LOG_DEBUG, "Timezone: Unknown time format '%s', using as-is", input_time);
   return 0;
 }
 
 /*
  * Format time as ISO 8601 string
  */
-int timezone_format_time_iso8601(const struct tm *tm, int milliseconds,
-                                 const char *timezone_suffix, char *output,
+int timezone_format_time_iso8601(const struct tm *tm, int milliseconds, const char *timezone_suffix, char *output,
                                  size_t output_size) {
   int written;
 
@@ -483,31 +437,25 @@ int timezone_format_time_iso8601(const struct tm *tm, int milliseconds,
   }
 
   if (output_size < 30) {
-    logger(LOG_ERROR,
-           "Timezone: Output buffer too small (%zu bytes, need at least 30)",
-           output_size);
+    logger(LOG_ERROR, "Timezone: Output buffer too small (%zu bytes, need at least 30)", output_size);
     return -1;
   }
 
   /* Validate milliseconds */
   if (milliseconds < -1 || milliseconds > 999) {
-    logger(LOG_ERROR, "Timezone: Invalid milliseconds %d (must be -1 to 999)",
-           milliseconds);
+    logger(LOG_ERROR, "Timezone: Invalid milliseconds %d (must be -1 to 999)", milliseconds);
     return -1;
   }
 
   /* Format base time: YYYY-MM-DDTHH:MM:SS */
   if (milliseconds >= 0) {
     /* Include milliseconds: YYYY-MM-DDTHH:MM:SS.sss */
-    written =
-        snprintf(output, output_size, "%04d-%02d-%02dT%02d:%02d:%02d.%03d%s",
-                 tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday, tm->tm_hour,
-                 tm->tm_min, tm->tm_sec, milliseconds, timezone_suffix);
+    written = snprintf(output, output_size, "%04d-%02d-%02dT%02d:%02d:%02d.%03d%s", tm->tm_year + 1900, tm->tm_mon + 1,
+                       tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec, milliseconds, timezone_suffix);
   } else {
     /* No milliseconds: YYYY-MM-DDTHH:MM:SS */
-    written = snprintf(output, output_size, "%04d-%02d-%02dT%02d:%02d:%02d%s",
-                       tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
-                       tm->tm_hour, tm->tm_min, tm->tm_sec, timezone_suffix);
+    written = snprintf(output, output_size, "%04d-%02d-%02dT%02d:%02d:%02d%s", tm->tm_year + 1900, tm->tm_mon + 1,
+                       tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec, timezone_suffix);
   }
 
   if (written < 0 || (size_t)written >= output_size) {
@@ -521,10 +469,8 @@ int timezone_format_time_iso8601(const struct tm *tm, int milliseconds,
 /*
  * Parse ISO 8601 time string and extract components
  */
-int timezone_parse_iso8601(const char *iso_str, struct tm *tm_out,
-                           int *milliseconds_out, int *has_timezone_out,
-                           int *timezone_offset_out, char *timezone_suffix_out,
-                           size_t suffix_size) {
+int timezone_parse_iso8601(const char *iso_str, struct tm *tm_out, int *milliseconds_out, int *has_timezone_out,
+                           int *timezone_offset_out, char *timezone_suffix_out, size_t suffix_size) {
   int year, month, day, hour, min, sec;
   int milliseconds = -1;
   int has_timezone = 0;
@@ -533,8 +479,7 @@ int timezone_parse_iso8601(const char *iso_str, struct tm *tm_out,
   char tz_suffix[16] = "";
 
   /* Validate inputs */
-  if (!iso_str || !tm_out || !milliseconds_out || !has_timezone_out ||
-      !timezone_offset_out || !timezone_suffix_out) {
+  if (!iso_str || !tm_out || !milliseconds_out || !has_timezone_out || !timezone_offset_out || !timezone_suffix_out) {
     logger(LOG_ERROR, "Timezone: NULL pointer in timezone_parse_iso8601");
     return -1;
   }
@@ -550,17 +495,14 @@ int timezone_parse_iso8601(const char *iso_str, struct tm *tm_out,
   /* Check for 'T' separator */
   p = strchr(iso_str, 'T');
   if (!p) {
-    logger(LOG_ERROR,
-           "Timezone: Invalid ISO 8601 format, missing 'T' separator");
+    logger(LOG_ERROR, "Timezone: Invalid ISO 8601 format, missing 'T' separator");
     return -1;
   }
 
   /* Parse base format: YYYY-MM-DDTHH:MM:SS */
-  int parsed = sscanf(iso_str, "%4d-%2d-%2dT%2d:%2d:%2d", &year, &month, &day,
-                      &hour, &min, &sec);
+  int parsed = sscanf(iso_str, "%4d-%2d-%2dT%2d:%2d:%2d", &year, &month, &day, &hour, &min, &sec);
   if (parsed != 6) {
-    logger(LOG_ERROR, "Timezone: Failed to parse ISO 8601 base format: %s",
-           iso_str);
+    logger(LOG_ERROR, "Timezone: Failed to parse ISO 8601 base format: %s", iso_str);
     return -1;
   }
 
@@ -629,8 +571,7 @@ int timezone_parse_iso8601(const char *iso_str, struct tm *tm_out,
         sscanf(p, "%3d%c%2d", &tz_hours, &colon, &tz_minutes) == 3) {
       /* Validate timezone offset */
       if (abs(tz_hours) > 14 || tz_minutes < 0 || tz_minutes > 59) {
-        logger(LOG_ERROR, "Timezone: Invalid timezone offset in ISO 8601: %s",
-               p);
+        logger(LOG_ERROR, "Timezone: Invalid timezone offset in ISO 8601: %s", p);
         return -1;
       }
 
@@ -638,8 +579,7 @@ int timezone_parse_iso8601(const char *iso_str, struct tm *tm_out,
       timezone_offset = tz_sign * (abs(tz_hours) * 3600 + tz_minutes * 60);
 
       /* Save original timezone suffix */
-      snprintf(tz_suffix, sizeof(tz_suffix), "%c%02d:%02d", *p, abs(tz_hours),
-               tz_minutes);
+      snprintf(tz_suffix, sizeof(tz_suffix), "%c%02d:%02d", *p, abs(tz_hours), tz_minutes);
     } else {
       logger(LOG_ERROR, "Timezone: Failed to parse timezone offset: %s", p);
       return -1;
@@ -650,8 +590,7 @@ int timezone_parse_iso8601(const char *iso_str, struct tm *tm_out,
     timezone_offset = 0;
     tz_suffix[0] = '\0';
   } else {
-    logger(LOG_ERROR,
-           "Timezone: Invalid character after time in ISO 8601: '%c'", *p);
+    logger(LOG_ERROR, "Timezone: Invalid character after time in ISO 8601: '%c'", *p);
     return -1;
   }
 
@@ -678,8 +617,8 @@ int timezone_parse_iso8601(const char *iso_str, struct tm *tm_out,
 /*
  * Parse a time string and convert to UTC epoch (time_t)
  */
-int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds,
-                           int additional_offset_seconds, time_t *out_utc) {
+int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int additional_offset_seconds,
+                          time_t *out_utc) {
   struct tm local_time;
   time_t timestamp;
   int year, month, day, hour, min, sec;
@@ -704,10 +643,8 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds,
 
   /* Format 2: yyyyMMddHHmmss or yyyyMMddHHmmssGMT */
   if ((input_len == 14 && digit_count == 14) ||
-      (input_len == 17 && digit_count == 14 &&
-       strcmp(input_time + 14, "GMT") == 0)) {
-    if (sscanf(input_time, "%4d%2d%2d%2d%2d%2d", &year, &month, &day, &hour,
-               &min, &sec) != 6) {
+      (input_len == 17 && digit_count == 14 && strcmp(input_time + 14, "GMT") == 0)) {
+    if (sscanf(input_time, "%4d%2d%2d%2d%2d%2d", &year, &month, &day, &hour, &min, &sec) != 6) {
       return -1;
     }
 
@@ -738,8 +675,7 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds,
     int timezone_offset;
     char timezone_suffix[16];
 
-    if (timezone_parse_basic_iso8601(input_time, &tm, &has_timezone,
-                                     &timezone_offset, timezone_suffix,
+    if (timezone_parse_basic_iso8601(input_time, &tm, &has_timezone, &timezone_offset, timezone_suffix,
                                      sizeof(timezone_suffix)) != 0) {
       return -1;
     }
@@ -767,8 +703,7 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds,
     int timezone_offset;
     char timezone_suffix[16];
 
-    if (timezone_parse_iso8601(input_time, &tm, &milliseconds, &has_timezone,
-                               &timezone_offset, timezone_suffix,
+    if (timezone_parse_iso8601(input_time, &tm, &milliseconds, &has_timezone, &timezone_offset, timezone_suffix,
                                sizeof(timezone_suffix)) != 0) {
       return -1;
     }
@@ -797,9 +732,7 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds,
 /*
  * Convert ISO 8601 time string with timezone and offset
  */
-int timezone_convert_iso8601_with_offset(const char *iso_str,
-                                         int external_tz_offset,
-                                         int offset_seconds, char *output,
+int timezone_convert_iso8601_with_offset(const char *iso_str, int external_tz_offset, int offset_seconds, char *output,
                                          size_t output_size) {
   struct tm tm;
   int milliseconds;
@@ -810,21 +743,17 @@ int timezone_convert_iso8601_with_offset(const char *iso_str,
 
   /* Validate inputs */
   if (!iso_str || !output) {
-    logger(LOG_ERROR,
-           "Timezone: NULL pointer in timezone_convert_iso8601_with_offset");
+    logger(LOG_ERROR, "Timezone: NULL pointer in timezone_convert_iso8601_with_offset");
     return -1;
   }
 
   if (output_size < 30) {
-    logger(LOG_ERROR,
-           "Timezone: Output buffer too small (%zu bytes, need at least 30)",
-           output_size);
+    logger(LOG_ERROR, "Timezone: Output buffer too small (%zu bytes, need at least 30)", output_size);
     return -1;
   }
 
   /* Parse ISO 8601 string */
-  if (timezone_parse_iso8601(iso_str, &tm, &milliseconds, &has_timezone,
-                             &timezone_offset, timezone_suffix,
+  if (timezone_parse_iso8601(iso_str, &tm, &milliseconds, &has_timezone, &timezone_offset, timezone_suffix,
                              sizeof(timezone_suffix)) != 0) {
     logger(LOG_ERROR, "Timezone: Failed to parse ISO 8601 string: %s", iso_str);
     return -1;
@@ -872,6 +801,5 @@ int timezone_convert_iso8601_with_offset(const char *iso_str,
   struct tm result_copy = *result_time;
 
   /* Format output preserving original timezone suffix */
-  return timezone_format_time_iso8601(&result_copy, milliseconds,
-                                      timezone_suffix, output, output_size);
+  return timezone_format_time_iso8601(&result_copy, milliseconds, timezone_suffix, output, output_size);
 }

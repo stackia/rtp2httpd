@@ -9,11 +9,11 @@
 
 #include <stdint.h>
 
-#define SWAP(a, b)        \
-  {                       \
-    int temp = (a);       \
-    (a) = (b);            \
-    (b) = temp;           \
+#define SWAP(a, b)                                                                                                     \
+  {                                                                                                                    \
+    int temp = (a);                                                                                                    \
+    (a) = (b);                                                                                                         \
+    (b) = temp;                                                                                                        \
   }
 
 typedef struct rs_fec_s {
@@ -51,7 +51,6 @@ void rs_fec_free(rs_fec_t *p);
  * @param data_len Length of each packet's data
  * @return 0 on success, -1 on failure
  */
-int rs_fec_decode(rs_fec_t *code, uint8_t **data, uint8_t **fec_data,
-                  int lost_map[], int data_len);
+int rs_fec_decode(rs_fec_t *code, uint8_t **data, uint8_t **fec_data, int lost_map[], int data_len);
 
 #endif /* RS_FEC_H */

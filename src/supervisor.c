@@ -1,5 +1,6 @@
 #include "supervisor.h"
 #include "configuration.h"
+#include "platform_compat.h"
 #include "rtp2httpd.h"
 #include "status.h"
 #include "utils.h"
@@ -11,7 +12,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "platform_compat.h"
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -25,11 +25,11 @@
 
 /* Worker process information */
 typedef struct {
-  pid_t pid;     /* Worker PID, 0 if not running */
-  int worker_id; /* Worker ID (0-based) */
+  pid_t pid;                                     /* Worker PID, 0 if not running */
+  int worker_id;                                 /* Worker ID (0-based) */
   int64_t restart_times[MAX_RESTARTS_IN_WINDOW]; /* Recent restart timestamps */
-  int restart_count; /* Number of restarts in current window */
-  int rate_limited;  /* 1 if currently rate limited, 0 otherwise */
+  int restart_count;                             /* Number of restarts in current window */
+  int rate_limited;                              /* 1 if currently rate limited, 0 otherwise */
 } worker_info_t;
 
 /* Supervisor state */
@@ -113,8 +113,7 @@ static int spawn_worker(int worker_idx) {
   pid_t pid = fork();
 
   if (pid < 0) {
-    logger(LOG_ERROR, "Failed to fork worker %d: %s", worker_idx,
-           strerror(errno));
+    logger(LOG_ERROR, "Failed to fork worker %d: %s", worker_idx, strerror(errno));
     return -1;
   }
 
@@ -265,11 +264,9 @@ int supervisor_run(void) {
 
       /* Log exit reason */
       if (WIFEXITED(status)) {
-        logger(LOG_WARN, "Worker %d (pid %d) exited with status %d", worker_idx,
-               (int)pid, WEXITSTATUS(status));
+        logger(LOG_WARN, "Worker %d (pid %d) exited with status %d", worker_idx, (int)pid, WEXITSTATUS(status));
       } else if (WIFSIGNALED(status)) {
-        logger(LOG_WARN, "Worker %d (pid %d) killed by signal %d", worker_idx,
-               (int)pid, WTERMSIG(status));
+        logger(LOG_WARN, "Worker %d (pid %d) killed by signal %d", worker_idx, (int)pid, WTERMSIG(status));
       }
 
       workers[worker_idx].pid = 0;
@@ -285,17 +282,15 @@ int supervisor_run(void) {
           }
         } else {
           workers[worker_idx].rate_limited = 1;
-          logger(LOG_ERROR,
-                 "Worker %d restart rate limited (%d restarts in %d seconds)",
-                 worker_idx, MAX_RESTARTS_IN_WINDOW, RESTART_WINDOW_SEC);
+          logger(LOG_ERROR, "Worker %d restart rate limited (%d restarts in %d seconds)", worker_idx,
+                 MAX_RESTARTS_IN_WINDOW, RESTART_WINDOW_SEC);
         }
       }
     }
 
     /* Check for rate-limited workers that can now be restarted */
     for (i = 0; i < num_workers; i++) {
-      if (workers[i].rate_limited && workers[i].pid == 0 &&
-          !supervisor_stop_flag) {
+      if (workers[i].rate_limited && workers[i].pid == 0 && !supervisor_stop_flag) {
         if (restart_allowed(&workers[i])) {
           record_restart(&workers[i]);
           workers[i].rate_limited = 0;
@@ -324,8 +319,7 @@ int supervisor_run(void) {
 
           /* Need to spawn more workers */
           int new_count = config.workers;
-          worker_info_t *new_workers =
-              realloc(workers, new_count * sizeof(worker_info_t));
+          worker_info_t *new_workers = realloc(workers, new_count * sizeof(worker_info_t));
           if (new_workers) {
             workers = new_workers;
             /* Initialize new worker slots */
@@ -349,20 +343,17 @@ int supervisor_run(void) {
           }
         } else if (config.workers < num_workers) {
           /* Need to terminate excess workers */
-          logger(LOG_INFO, "Reducing worker count from %d to %d", num_workers,
-                 config.workers);
+          logger(LOG_INFO, "Reducing worker count from %d to %d", num_workers, config.workers);
           for (i = config.workers; i < num_workers; i++) {
             if (workers[i].pid > 0) {
-              logger(LOG_INFO, "Sending SIGTERM to excess worker %d (pid %d)",
-                     i, (int)workers[i].pid);
+              logger(LOG_INFO, "Sending SIGTERM to excess worker %d (pid %d)", i, (int)workers[i].pid);
               kill(workers[i].pid, SIGTERM);
             }
           }
           /* Update num_workers - excess workers will be reaped normally */
           num_workers = config.workers;
           /* Shrink array */
-          worker_info_t *new_workers =
-              realloc(workers, num_workers * sizeof(worker_info_t));
+          worker_info_t *new_workers = realloc(workers, num_workers * sizeof(worker_info_t));
           if (new_workers) {
             workers = new_workers;
           }
@@ -380,16 +371,14 @@ int supervisor_run(void) {
           }
         }
       } else {
-        logger(LOG_ERROR,
-               "Configuration reload failed, not forwarding SIGHUP to workers");
+        logger(LOG_ERROR, "Configuration reload failed, not forwarding SIGHUP to workers");
       }
     }
 
     /* Handle SIGUSR1 restart workers request */
     if (supervisor_restart_workers_flag) {
       supervisor_restart_workers_flag = 0;
-      broadcast_signal_to_workers(SIGTERM,
-                                  "Received SIGUSR1, restarting workers");
+      broadcast_signal_to_workers(SIGTERM, "Received SIGUSR1, restarting workers");
     }
 
     /* Sleep before next check */
@@ -426,8 +415,7 @@ int supervisor_run(void) {
 
   /* Force kill any remaining workers */
   if (remaining > 0) {
-    logger(LOG_WARN, "%d workers didn't exit gracefully, sending SIGKILL",
-           remaining);
+    logger(LOG_WARN, "%d workers didn't exit gracefully, sending SIGKILL", remaining);
     for (i = 0; i < num_workers; i++) {
       if (workers[i].pid > 0) {
         kill(workers[i].pid, SIGKILL);
@@ -529,8 +517,8 @@ int run_worker(void) {
         close(s[maxs]);
         continue;
       }
-      r = getnameinfo(ai->ai_addr, ai->ai_addrlen, hbuf, sizeof(hbuf), sbuf,
-                      sizeof(sbuf), NI_NUMERICHOST | NI_NUMERICSERV);
+      r = getnameinfo(ai->ai_addr, ai->ai_addrlen, hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
+                      NI_NUMERICHOST | NI_NUMERICSERV);
       if (r) {
         logger(LOG_ERROR, "getnameinfo failed: %s", gai_strerror(r));
       } else {
@@ -556,8 +544,7 @@ int run_worker(void) {
     return EXIT_FAILURE;
   }
 
-  logger(LOG_INFO,
-         "Server initialization complete, ready to accept connections");
+  logger(LOG_INFO, "Server initialization complete, ready to accept connections");
 
   /* Run worker event loop */
   int result = worker_run_event_loop(s, maxs, notif_fd);

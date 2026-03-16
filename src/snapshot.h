@@ -11,7 +11,7 @@ typedef struct connection_s connection_t;
  * Snapshot context - encapsulates all state for snapshot mode
  */
 typedef struct snapshot_context_s {
-  int initialized; /* Flag: context has been initialized (1 = snapshot mode active) */
+  int initialized;           /* Flag: context has been initialized (1 = snapshot mode active) */
   int fallback_to_streaming; /* 1 if snapshot failed and we should fallback to
                                 normal streaming */
   int idr_frame_fd;          /* tmpfs mmap file descriptor for IDR frame data */
@@ -54,8 +54,7 @@ void snapshot_cleanup(snapshot_context_t *ctx);
  * @param conn Connection
  * @return 0 on success, -1 on error
  */
-int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
-                            connection_t *conn);
+int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf, connection_t *conn);
 
 /**
  * Fallback to normal streaming mode
@@ -63,7 +62,6 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
  * @param ctx Snapshot context
  * @param conn Connection
  */
-void snapshot_fallback_to_streaming(snapshot_context_t *ctx,
-                                    connection_t *conn);
+void snapshot_fallback_to_streaming(snapshot_context_t *ctx, connection_t *conn);
 
 #endif /* SNAPSHOT_H */

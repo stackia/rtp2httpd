@@ -48,9 +48,8 @@ typedef struct buffer_ref_s {
     size_t data_size; /* Size of buffer data (BUFFER_TYPE_MEMORY) */
     size_t file_size; /* Total size to send from file (BUFFER_TYPE_FILE) */
   };
-  int refcount; /* Reference count */
-  struct buffer_pool_segment_s
-      *segment; /* Segment this buffer belongs to (BUFFER_TYPE_MEMORY) */
+  int refcount;                          /* Reference count */
+  struct buffer_pool_segment_s *segment; /* Segment this buffer belongs to (BUFFER_TYPE_MEMORY) */
 
   /* Union: buffer is either in free list OR in send queue, never both */
   union {
@@ -59,8 +58,7 @@ typedef struct buffer_ref_s {
   };
 
   union {
-    struct iovec
-        iov; /* Data pointer and length for sendmsg() (BUFFER_TYPE_MEMORY) */
+    struct iovec iov; /* Data pointer and length for sendmsg() (BUFFER_TYPE_MEMORY) */
     size_t file_sent; /* Bytes already sent from this file (BUFFER_TYPE_FILE) */
   };
   union {
@@ -99,10 +97,8 @@ typedef struct buffer_pool_s {
   size_t high_watermark;
 } buffer_pool_t;
 
-int buffer_pool_init(buffer_pool_t *pool, size_t buffer_size,
-                     size_t initial_buffers, size_t max_buffers,
-                     size_t expand_size, size_t low_watermark,
-                     size_t high_watermark);
+int buffer_pool_init(buffer_pool_t *pool, size_t buffer_size, size_t initial_buffers, size_t max_buffers,
+                     size_t expand_size, size_t low_watermark, size_t high_watermark);
 void buffer_pool_cleanup(buffer_pool_t *pool);
 void buffer_pool_update_stats(buffer_pool_t *pool);
 void buffer_ref_get(buffer_ref_t *ref);

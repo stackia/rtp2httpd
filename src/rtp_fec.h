@@ -68,18 +68,18 @@ typedef struct fec_context_s {
   int group_count;                    /* Number of active groups */
 
   /* min_end_seq caching for efficient expired group detection */
-  uint16_t min_end_seq;               /* Minimum end_seq among active groups */
-  uint8_t min_end_seq_valid;          /* 1 if min_end_seq is valid */
+  uint16_t min_end_seq;      /* Minimum end_seq among active groups */
+  uint8_t min_end_seq_valid; /* 1 if min_end_seq is valid */
 
-  rtp_reorder_t *reorder;             /* Associated reorder buffer */
+  rtp_reorder_t *reorder; /* Associated reorder buffer */
 
-  rs_fec_t *rs_decoder;               /* Cached RS decoder (lazy init) */
-  int rs_k;                           /* Current decoder k parameter */
-  int rs_m;                           /* Current decoder m parameter */
+  rs_fec_t *rs_decoder; /* Cached RS decoder (lazy init) */
+  int rs_k;             /* Current decoder k parameter */
+  int rs_m;             /* Current decoder m parameter */
 
   /* Statistics */
-  uint64_t packets_lost;        /* Total packets lost (not recovered) */
-  uint64_t recovery_successes;  /* Packets successfully recovered via FEC */
+  uint64_t packets_lost;       /* Total packets lost (not recovered) */
+  uint64_t recovery_successes; /* Packets successfully recovered via FEC */
 } fec_context_t;
 
 /**
@@ -121,8 +121,7 @@ int fec_process_packet(fec_context_t *ctx, const uint8_t *data, int len);
  * @param recovered_len Output: length of recovered data
  * @return 0 on success (data recovered), -1 on failure (cannot recover)
  */
-int fec_attempt_recovery(fec_context_t *ctx, uint16_t seq,
-                         uint8_t **recovered_data, int *recovered_len);
+int fec_attempt_recovery(fec_context_t *ctx, uint16_t seq, uint8_t **recovered_data, int *recovered_len);
 
 /**
  * Release expired FEC groups and their RTP buffers
@@ -146,8 +145,6 @@ void fec_release_expired_groups(fec_context_t *ctx, uint16_t base_seq);
  * @param ctx FEC context
  * @return 1 if enabled, 0 if disabled
  */
-static inline int fec_is_enabled(const fec_context_t *ctx) {
-  return ctx && (ctx->fec_port > 0 || ctx->fec_active);
-}
+static inline int fec_is_enabled(const fec_context_t *ctx) { return ctx && (ctx->fec_port > 0 || ctx->fec_active); }
 
 #endif /* RTP_FEC_H */

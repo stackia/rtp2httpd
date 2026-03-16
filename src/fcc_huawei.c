@@ -15,10 +15,8 @@
 /**
  * Build Huawei FCC request packet - FMT 5
  */
-uint8_t *build_fcc_request_pk_huawei(struct addrinfo *maddr, uint32_t local_ip,
-                                     uint16_t fcc_client_nport) {
-  struct sockaddr_in *maddr_sin =
-      (struct sockaddr_in *)(uintptr_t)maddr->ai_addr;
+uint8_t *build_fcc_request_pk_huawei(struct addrinfo *maddr, uint32_t local_ip, uint16_t fcc_client_nport) {
+  struct sockaddr_in *maddr_sin = (struct sockaddr_in *)(uintptr_t)maddr->ai_addr;
 
   static uint8_t pk[FCC_PK_LEN_REQ_HUAWEI];
   memset(&pk, 0, sizeof(pk));
@@ -77,8 +75,7 @@ uint8_t *build_fcc_nat_pk_huawei(uint32_t session_id) {
  * Build Huawei FCC termination packet - FMT 9
  */
 uint8_t *build_fcc_term_pk_huawei(struct addrinfo *maddr, uint16_t seqn) {
-  struct sockaddr_in *maddr_sin =
-      (struct sockaddr_in *)(uintptr_t)maddr->ai_addr;
+  struct sockaddr_in *maddr_sin = (struct sockaddr_in *)(uintptr_t)maddr->ai_addr;
 
   static uint8_t pk[FCC_PK_LEN_TERM_HUAWEI];
   memset(&pk, 0, sizeof(pk));
@@ -115,8 +112,7 @@ int fcc_huawei_initialize_and_request(stream_context_t *ctx) {
 
   /* Huawei FCC: Send RSR (FMT 5) with local IP and FCC client port */
   service_t *service = ctx->service;
-  uint32_t local_ip =
-      get_local_ip_for_fcc(service->ifname, service->ifname_fcc);
+  uint32_t local_ip = get_local_ip_for_fcc(service->ifname, service->ifname_fcc);
   uint16_t fcc_client_nport = fcc->fcc_client.sin_port;
 
   if (local_ip == 0) {
@@ -124,14 +120,11 @@ int fcc_huawei_initialize_and_request(stream_context_t *ctx) {
     return -1;
   }
 
-  uint8_t *request_pk = build_fcc_request_pk_huawei(ctx->service->addr,
-                                                    local_ip, fcc_client_nport);
+  uint8_t *request_pk = build_fcc_request_pk_huawei(ctx->service->addr, local_ip, fcc_client_nport);
 
-  r = sendto_triple(fcc->fcc_sock, request_pk, FCC_PK_LEN_REQ_HUAWEI, 0,
-                    fcc->fcc_server, sizeof(*fcc->fcc_server));
+  r = sendto_triple(fcc->fcc_sock, request_pk, FCC_PK_LEN_REQ_HUAWEI, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
   if (r < 0) {
-    logger(LOG_ERROR, "FCC (Huawei): Unable to send request message: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "FCC (Huawei): Unable to send request message: %s", strerror(errno));
     return -1;
   }
 
@@ -139,24 +132,19 @@ int fcc_huawei_initialize_and_request(stream_context_t *ctx) {
   struct in_addr local_addr;
   local_addr.s_addr = htonl(local_ip);
   char local_ip_str[INET_ADDRSTRLEN];
-  inet_ntop(AF_INET, &fcc->fcc_server->sin_addr, server_ip_str,
-            sizeof(server_ip_str));
+  inet_ntop(AF_INET, &fcc->fcc_server->sin_addr, server_ip_str, sizeof(server_ip_str));
   inet_ntop(AF_INET, &local_addr, local_ip_str, sizeof(local_ip_str));
-  logger(LOG_DEBUG,
-         "FCC (Huawei): Request (FMT 5) sent to server %s:%u (local %s:%u)",
-         server_ip_str, ntohs(fcc->fcc_server->sin_port), local_ip_str,
-         ntohs(fcc_client_nport));
+  logger(LOG_DEBUG, "FCC (Huawei): Request (FMT 5) sent to server %s:%u (local %s:%u)", server_ip_str,
+         ntohs(fcc->fcc_server->sin_port), local_ip_str, ntohs(fcc_client_nport));
 
   return 0;
 }
 
-int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
-                                      int buf_len) {
+int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf, int buf_len) {
   fcc_session_t *fcc = &ctx->fcc;
 
   if (buf_len < 2) {
-    logger(LOG_WARN, "FCC (Huawei): response too short for header (%d bytes)",
-           buf_len);
+    logger(LOG_WARN, "FCC (Huawei): response too short for header (%d bytes)", buf_len);
     return 0;
   }
 
@@ -182,9 +170,7 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
 
   /* Handle FMT 6 - Huawei Server Response */
   if (buf_len < 16) {
-    logger(LOG_WARN,
-           "FCC (Huawei): response too short for result/type fields (%d bytes)",
-           buf_len);
+    logger(LOG_WARN, "FCC (Huawei): response too short for result/type fields (%d bytes)", buf_len);
     return 0;
   }
 
@@ -193,8 +179,7 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
   memcpy(&type_be, buf + 14, sizeof(type_be));
   uint16_t type = ntohs(type_be); // 1=no unicast, 2=unicast, 3=redirect
 
-  logger(LOG_DEBUG, "FCC (Huawei): Response received: result=%u, type=%u",
-         result_code, type);
+  logger(LOG_DEBUG, "FCC (Huawei): Response received: result=%u, type=%u", result_code, type);
 
   if (result_code != 1) {
     logger(LOG_WARN,
@@ -208,16 +193,13 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
 
   if (type == 1) {
     /* No need for unicast, join multicast immediately */
-    logger(LOG_INFO,
-           "FCC (Huawei): Server says no unicast needed, joining multicast");
+    logger(LOG_INFO, "FCC (Huawei): Server says no unicast needed, joining multicast");
     fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "No unicast needed");
     mcast_session_join(&ctx->mcast, ctx);
   } else if (type == 2) {
     /* Server will send unicast stream */
     if (buf_len < 36) {
-      logger(LOG_WARN,
-             "FCC (Huawei): response too short for unicast fields (%d bytes)",
-             buf_len);
+      logger(LOG_WARN, "FCC (Huawei): response too short for unicast fields (%d bytes)", buf_len);
       fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Short response");
       mcast_session_join(&ctx->mcast, ctx);
       return 0;
@@ -261,12 +243,10 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
         media_addr.sin_port = fcc->media_port;
       }
 
-      int r =
-          sendto_triple(fcc->fcc_sock, nat_pk, FCC_PK_LEN_NAT_HUAWEI, 0,
-                        (struct sockaddr_in *)&media_addr, sizeof(media_addr));
+      int r = sendto_triple(fcc->fcc_sock, nat_pk, FCC_PK_LEN_NAT_HUAWEI, 0, (struct sockaddr_in *)&media_addr,
+                            sizeof(media_addr));
       if (r < 0) {
-        logger(LOG_ERROR, "FCC (Huawei): Failed to send NAT packet: %s",
-               strerror(errno));
+        logger(LOG_ERROR, "FCC (Huawei): Failed to send NAT packet: %s", strerror(errno));
       }
 
       logger(LOG_DEBUG, "FCC (Huawei): NAT traversal packet sent");
@@ -274,15 +254,12 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
 
     /* Record start time and transition to waiting for unicast */
     fcc->unicast_start_time = get_time_ms();
-    fcc_session_set_state(fcc, FCC_STATE_UNICAST_PENDING,
-                          "Server accepted request");
+    fcc_session_set_state(fcc, FCC_STATE_UNICAST_PENDING, "Server accepted request");
     logger(LOG_DEBUG, "FCC (Huawei): Waiting for unicast stream");
   } else if (type == 3) {
     /* Redirect to new server */
     if (buf_len < 36) {
-      logger(LOG_WARN,
-             "FCC (Huawei): response too short for redirect fields (%d bytes)",
-             buf_len);
+      logger(LOG_WARN, "FCC (Huawei): response too short for redirect fields (%d bytes)", buf_len);
       fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Short response");
       mcast_session_join(&ctx->mcast, ctx);
       return 0;
@@ -290,9 +267,7 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
 
     fcc->redirect_count++;
     if (fcc->redirect_count > FCC_MAX_REDIRECTS) {
-      logger(LOG_WARN,
-             "FCC (Huawei): Too many redirects (%d), falling back to multicast",
-             fcc->redirect_count);
+      logger(LOG_WARN, "FCC (Huawei): Too many redirects (%d), falling back to multicast", fcc->redirect_count);
       fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Too many redirects");
       mcast_session_join(&ctx->mcast, ctx);
       return 0;
@@ -311,15 +286,12 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
       fcc->fcc_server->sin_port = server_port_be;
     }
 
-    logger(LOG_DEBUG, "FCC (Huawei): Server redirect to %s:%u (redirect #%d)",
-           inet_ntoa(fcc->fcc_server->sin_addr),
+    logger(LOG_DEBUG, "FCC (Huawei): Server redirect to %s:%u (redirect #%d)", inet_ntoa(fcc->fcc_server->sin_addr),
            ntohs(fcc->fcc_server->sin_port), fcc->redirect_count);
     fcc_session_set_state(fcc, FCC_STATE_INIT, "Server redirect");
     return 1;
   } else {
-    logger(LOG_WARN,
-           "FCC (Huawei): Unsupported type=%u, falling back to multicast",
-           type);
+    logger(LOG_WARN, "FCC (Huawei): Unsupported type=%u, falling back to multicast", type);
     fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Unsupported type");
     mcast_session_join(&ctx->mcast, ctx);
   }
@@ -327,8 +299,7 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf,
   return 0;
 }
 
-int fcc_huawei_send_term_packet(fcc_session_t *fcc, service_t *service,
-                                uint16_t seqn, const char *reason) {
+int fcc_huawei_send_term_packet(fcc_session_t *fcc, service_t *service, uint16_t seqn, const char *reason) {
   int r;
 
   if (fcc->fcc_sock < 0 || !fcc->fcc_server) {
@@ -337,18 +308,13 @@ int fcc_huawei_send_term_packet(fcc_session_t *fcc, service_t *service,
   }
 
   /* Huawei FCC: Send SCR (FMT 9) termination packet */
-  r = sendto_triple(
-      fcc->fcc_sock, build_fcc_term_pk_huawei(service->addr, seqn),
-      FCC_PK_LEN_TERM_HUAWEI, 0, fcc->fcc_server, sizeof(*fcc->fcc_server));
+  r = sendto_triple(fcc->fcc_sock, build_fcc_term_pk_huawei(service->addr, seqn), FCC_PK_LEN_TERM_HUAWEI, 0,
+                    fcc->fcc_server, sizeof(*fcc->fcc_server));
   if (r < 0) {
-    logger(LOG_ERROR,
-           "FCC (Huawei): Unable to send termination packet (FMT 9) (%s): %s",
-           reason, strerror(errno));
+    logger(LOG_ERROR, "FCC (Huawei): Unable to send termination packet (FMT 9) (%s): %s", reason, strerror(errno));
     return -1;
   }
-  logger(LOG_DEBUG,
-         "FCC (Huawei): Termination packet (FMT 9) sent (%s), seqn=%u", reason,
-         seqn);
+  logger(LOG_DEBUG, "FCC (Huawei): Termination packet (FMT 9) sent (%s), seqn=%u", reason, seqn);
 
   return 0;
 }

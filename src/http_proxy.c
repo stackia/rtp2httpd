@@ -35,9 +35,7 @@ static int http_proxy_build_request(http_proxy_session_t *session);
 static int http_proxy_try_send_pending(http_proxy_session_t *session);
 static int http_proxy_try_receive_response(http_proxy_session_t *session);
 static int http_proxy_parse_response_headers(http_proxy_session_t *session);
-static int http_proxy_append_raw_headers(http_proxy_session_t *session,
-                                         char **dest, size_t *remaining,
-                                         int *total_len,
+static int http_proxy_append_raw_headers(http_proxy_session_t *session, char **dest, size_t *remaining, int *total_len,
                                          int filter_user_agent);
 
 static const char *http_proxy_get_override_user_agent(void) {
@@ -51,8 +49,7 @@ static const char *http_proxy_get_override_user_agent(void) {
 /**
  * Set HTTP proxy session state and update client status
  */
-static void http_proxy_set_state(http_proxy_session_t *session,
-                                 http_proxy_state_t new_state) {
+static void http_proxy_set_state(http_proxy_session_t *session, http_proxy_state_t new_state) {
   static const client_state_type_t proxy_to_client_state[] = {
       [HTTP_PROXY_STATE_CONNECTING] = CLIENT_STATE_HTTP_CONNECTING,
       [HTTP_PROXY_STATE_SENDING_REQUEST] = CLIENT_STATE_HTTP_SENDING_REQUEST,
@@ -63,10 +60,8 @@ static void http_proxy_set_state(http_proxy_session_t *session,
     return;
   session->state = new_state;
   session->last_state_change_ms = get_time_ms();
-  if (new_state < ARRAY_SIZE(proxy_to_client_state) &&
-      proxy_to_client_state[new_state] != 0) {
-    status_update_client_state(session->status_index,
-                               proxy_to_client_state[new_state]);
+  if (new_state < ARRAY_SIZE(proxy_to_client_state) && proxy_to_client_state[new_state] != 0) {
+    status_update_client_state(session->status_index, proxy_to_client_state[new_state]);
   }
 }
 
@@ -192,14 +187,10 @@ int http_proxy_parse_url(http_proxy_session_t *session, const char *url) {
 
       /* Filter out r2h-token from query string */
       char filtered_query[HTTP_PROXY_PATH_SIZE];
-      int filtered_len = http_filter_query_param(query_start + 1, "r2h-token",
-                                                  filtered_query,
-                                                  sizeof(filtered_query));
+      int filtered_len = http_filter_query_param(query_start + 1, "r2h-token", filtered_query, sizeof(filtered_query));
       if (filtered_len > 0) {
         /* Append filtered query string */
-        int result = snprintf(session->target_path + path_len,
-                              HTTP_PROXY_PATH_SIZE - path_len, "?%s",
-                              filtered_query);
+        int result = snprintf(session->target_path + path_len, HTTP_PROXY_PATH_SIZE - path_len, "?%s", filtered_query);
         if (result < 0 || (size_t)result >= HTTP_PROXY_PATH_SIZE - path_len) {
           logger(LOG_ERROR, "HTTP Proxy: Path with query too long");
           return -1;
@@ -218,8 +209,8 @@ int http_proxy_parse_url(http_proxy_session_t *session, const char *url) {
     strcpy(session->target_path, "/");
   }
 
-  logger(LOG_DEBUG, "HTTP Proxy: Parsed URL - host=%s, port=%d, path=%s",
-         session->target_host, session->target_port, session->target_path);
+  logger(LOG_DEBUG, "HTTP Proxy: Parsed URL - host=%s, port=%d, path=%s", session->target_host, session->target_port,
+         session->target_path);
 
   return 0;
 }
@@ -232,9 +223,7 @@ void http_proxy_set_method(http_proxy_session_t *session, const char *method) {
   session->method[sizeof(session->method) - 1] = '\0';
 }
 
-void http_proxy_set_raw_headers(http_proxy_session_t *session,
-                                const char *raw_headers,
-                                size_t raw_headers_len) {
+void http_proxy_set_raw_headers(http_proxy_session_t *session, const char *raw_headers, size_t raw_headers_len) {
   if (!session)
     return;
 
@@ -244,8 +233,7 @@ void http_proxy_set_raw_headers(http_proxy_session_t *session,
   session->raw_headers_len = raw_headers_len;
 }
 
-void http_proxy_set_request_body(http_proxy_session_t *session,
-                                 const char *body, size_t body_len) {
+void http_proxy_set_request_body(http_proxy_session_t *session, const char *body, size_t body_len) {
   if (!session)
     return;
 
@@ -253,10 +241,8 @@ void http_proxy_set_request_body(http_proxy_session_t *session,
   session->request_body_len = body_len;
 }
 
-void http_proxy_set_request_headers(http_proxy_session_t *session,
-                                    const char *host_header,
-                                    const char *x_forwarded_host,
-                                    const char *x_forwarded_proto) {
+void http_proxy_set_request_headers(http_proxy_session_t *session, const char *host_header,
+                                    const char *x_forwarded_host, const char *x_forwarded_proto) {
   if (!session)
     return;
 
@@ -268,16 +254,14 @@ void http_proxy_set_request_headers(http_proxy_session_t *session,
   }
 
   if (x_forwarded_host) {
-    strncpy(session->x_forwarded_host, x_forwarded_host,
-            sizeof(session->x_forwarded_host) - 1);
+    strncpy(session->x_forwarded_host, x_forwarded_host, sizeof(session->x_forwarded_host) - 1);
     session->x_forwarded_host[sizeof(session->x_forwarded_host) - 1] = '\0';
   } else {
     session->x_forwarded_host[0] = '\0';
   }
 
   if (x_forwarded_proto) {
-    strncpy(session->x_forwarded_proto, x_forwarded_proto,
-            sizeof(session->x_forwarded_proto) - 1);
+    strncpy(session->x_forwarded_proto, x_forwarded_proto, sizeof(session->x_forwarded_proto) - 1);
     session->x_forwarded_proto[sizeof(session->x_forwarded_proto) - 1] = '\0';
   } else {
     session->x_forwarded_proto[0] = '\0';
@@ -297,31 +281,27 @@ int http_proxy_connect(http_proxy_session_t *session) {
   /* Resolve hostname */
   he = gethostbyname(session->target_host);
   if (!he) {
-    logger(LOG_ERROR, "HTTP Proxy: Cannot resolve hostname %s: %s",
-           session->target_host, hstrerror(h_errno));
+    logger(LOG_ERROR, "HTTP Proxy: Cannot resolve hostname %s: %s", session->target_host, hstrerror(h_errno));
     return -1;
   }
 
   /* Validate address list */
   if (!he->h_addr_list[0]) {
-    logger(LOG_ERROR, "HTTP Proxy: No addresses for hostname %s",
-           session->target_host);
+    logger(LOG_ERROR, "HTTP Proxy: No addresses for hostname %s", session->target_host);
     return -1;
   }
 
   /* Create TCP socket */
   session->socket = socket(AF_INET, SOCK_STREAM, 0);
   if (session->socket < 0) {
-    logger(LOG_ERROR, "HTTP Proxy: Failed to create socket: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "HTTP Proxy: Failed to create socket: %s", strerror(errno));
     return -1;
   }
   platform_set_nosigpipe(session->socket);
 
   /* Set socket to non-blocking mode */
   if (connection_set_nonblocking(session->socket) < 0) {
-    logger(LOG_ERROR, "HTTP Proxy: Failed to set socket non-blocking: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "HTTP Proxy: Failed to set socket non-blocking: %s", strerror(errno));
     close(session->socket);
     session->socket = -1;
     return -1;
@@ -336,39 +316,35 @@ int http_proxy_connect(http_proxy_session_t *session) {
   server_addr.sin_port = htons(session->target_port);
   memcpy(&server_addr.sin_addr.s_addr, he->h_addr_list[0], he->h_length);
 
-  connect_result = connect(session->socket, (struct sockaddr *)&server_addr,
-                           sizeof(server_addr));
+  connect_result = connect(session->socket, (struct sockaddr *)&server_addr, sizeof(server_addr));
 
   /* Handle non-blocking connect result */
   if (connect_result < 0) {
     if (errno == EINPROGRESS || errno == EWOULDBLOCK) {
       /* Connection in progress - normal for non-blocking sockets */
-      logger(LOG_DEBUG, "HTTP Proxy: Connection to %s:%d in progress (async)",
-             session->target_host, session->target_port);
+      logger(LOG_DEBUG, "HTTP Proxy: Connection to %s:%d in progress (async)", session->target_host,
+             session->target_port);
 
       /* Register socket with poller for POLLER_OUT to detect connection
        * completion */
       if (session->epoll_fd >= 0) {
         if (poller_add(session->epoll_fd, session->socket,
-                       POLLER_OUT | POLLER_IN | POLLER_ERR | POLLER_HUP |
-                           POLLER_RDHUP) < 0) {
-          logger(LOG_ERROR, "HTTP Proxy: Failed to add socket to poller: %s",
-                 strerror(errno));
+                       POLLER_OUT | POLLER_IN | POLLER_ERR | POLLER_HUP | POLLER_RDHUP) < 0) {
+          logger(LOG_ERROR, "HTTP Proxy: Failed to add socket to poller: %s", strerror(errno));
           close(session->socket);
           session->socket = -1;
           return -1;
         }
         fdmap_set(session->socket, session->conn);
-        logger(LOG_DEBUG,
-               "HTTP Proxy: Socket registered with poller for connection");
+        logger(LOG_DEBUG, "HTTP Proxy: Socket registered with poller for connection");
       }
 
       http_proxy_set_state(session, HTTP_PROXY_STATE_CONNECTING);
       return 0; /* Success - connection in progress */
     } else {
       /* Real connection error */
-      logger(LOG_ERROR, "HTTP Proxy: Failed to connect to %s:%d: %s",
-             session->target_host, session->target_port, strerror(errno));
+      logger(LOG_ERROR, "HTTP Proxy: Failed to connect to %s:%d: %s", session->target_host, session->target_port,
+             strerror(errno));
       close(session->socket);
       session->socket = -1;
       return -1;
@@ -376,16 +352,13 @@ int http_proxy_connect(http_proxy_session_t *session) {
   }
 
   /* Immediate connection success (rare, but possible for localhost) */
-  logger(LOG_DEBUG, "HTTP Proxy: Connected immediately to %s:%d",
-         session->target_host, session->target_port);
+  logger(LOG_DEBUG, "HTTP Proxy: Connected immediately to %s:%d", session->target_host, session->target_port);
 
   /* Register socket with poller */
   if (session->epoll_fd >= 0) {
     if (poller_add(session->epoll_fd, session->socket,
-                   POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR |
-                       POLLER_RDHUP) < 0) {
-      logger(LOG_ERROR, "HTTP Proxy: Failed to add socket to poller: %s",
-             strerror(errno));
+                   POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
+      logger(LOG_ERROR, "HTTP Proxy: Failed to add socket to poller: %s", strerror(errno));
       close(session->socket);
       session->socket = -1;
       return -1;
@@ -417,8 +390,7 @@ static int http_proxy_build_request(http_proxy_session_t *session) {
   if (session->target_port == 80) {
     snprintf(host_header, sizeof(host_header), "%s", session->target_host);
   } else {
-    snprintf(host_header, sizeof(host_header), "%s:%d", session->target_host,
-             session->target_port);
+    snprintf(host_header, sizeof(host_header), "%s:%d", session->target_host, session->target_port);
   }
 
   /* Use stored method or default to GET */
@@ -441,8 +413,7 @@ static int http_proxy_build_request(http_proxy_session_t *session) {
 
   /* Add Content-Length header if there's a request body */
   if (session->request_body_len > 0) {
-    int cl_len = snprintf(p, remaining, "Content-Length: %zu\r\n",
-                          session->request_body_len);
+    int cl_len = snprintf(p, remaining, "Content-Length: %zu\r\n", session->request_body_len);
     if (cl_len < 0 || (size_t)cl_len >= remaining) {
       logger(LOG_ERROR, "HTTP Proxy: Request too large (Content-Length)");
       return -1;
@@ -455,15 +426,13 @@ static int http_proxy_build_request(http_proxy_session_t *session) {
   /* Add raw headers from client for full passthrough, filtering User-Agent
    * when a configured override should take precedence. */
   if (session->raw_headers_len > 0) {
-    if (http_proxy_append_raw_headers(session, &p, &remaining, &len,
-                                      override_user_agent != NULL) < 0) {
+    if (http_proxy_append_raw_headers(session, &p, &remaining, &len, override_user_agent != NULL) < 0) {
       return -1;
     }
   }
 
   if (override_user_agent) {
-    int ua_len = snprintf(p, remaining, "User-Agent: %s\r\n",
-                          override_user_agent);
+    int ua_len = snprintf(p, remaining, "User-Agent: %s\r\n", override_user_agent);
     if (ua_len < 0 || (size_t)ua_len >= remaining) {
       logger(LOG_ERROR, "HTTP Proxy: Request too large (User-Agent)");
       return -1;
@@ -486,16 +455,13 @@ static int http_proxy_build_request(http_proxy_session_t *session) {
   session->pending_request_sent = 0;
   session->request_body_sent = 0;
 
-  logger(LOG_DEBUG,
-         "HTTP Proxy: Built request headers (%d bytes, body %zu bytes) for %s%s",
-         len, session->request_body_len, host_header, session->target_path);
+  logger(LOG_DEBUG, "HTTP Proxy: Built request headers (%d bytes, body %zu bytes) for %s%s", len,
+         session->request_body_len, host_header, session->target_path);
 
   return 0;
 }
 
-static int http_proxy_append_raw_headers(http_proxy_session_t *session,
-                                         char **dest, size_t *remaining,
-                                         int *total_len,
+static int http_proxy_append_raw_headers(http_proxy_session_t *session, char **dest, size_t *remaining, int *total_len,
                                          int filter_user_agent) {
   size_t offset = 0;
 
@@ -513,8 +479,7 @@ static int http_proxy_append_raw_headers(http_proxy_session_t *session,
       return -1;
     }
 
-    if (!(filter_user_agent && line_len >= 11 &&
-          strncasecmp(line, "User-Agent:", 11) == 0)) {
+    if (!(filter_user_agent && line_len >= 11 && strncasecmp(line, "User-Agent:", 11) == 0)) {
       if (line_len + 2 >= *remaining) {
         logger(LOG_ERROR, "HTTP Proxy: Request too large (raw headers)");
         return -1;
@@ -541,17 +506,15 @@ static int http_proxy_try_send_pending(http_proxy_session_t *session) {
    * Loop to drain all writable data for edge-triggered pollers. */
   while (session->pending_request_sent < session->pending_request_len) {
     remaining = session->pending_request_len - session->pending_request_sent;
-    sent = send(session->socket,
-                session->pending_request + session->pending_request_sent,
-                remaining, MSG_NOSIGNAL | MSG_DONTWAIT);
+    sent = send(session->socket, session->pending_request + session->pending_request_sent, remaining,
+                MSG_NOSIGNAL | MSG_DONTWAIT);
 
     if (sent <= 0) {
       if (sent < 0 && errno == EAGAIN) {
         return total_sent > 0 ? total_sent : 0;
       }
       if (sent < 0) {
-        logger(LOG_ERROR, "HTTP Proxy: Send headers failed: %s",
-               strerror(errno));
+        logger(LOG_ERROR, "HTTP Proxy: Send headers failed: %s", strerror(errno));
         return -1;
       }
       break; /* sent == 0: no progress */
@@ -559,8 +522,8 @@ static int http_proxy_try_send_pending(http_proxy_session_t *session) {
 
     session->pending_request_sent += sent;
     total_sent += (int)sent;
-    logger(LOG_DEBUG, "HTTP Proxy: Sent headers %zd bytes (%zu/%zu)", sent,
-           session->pending_request_sent, session->pending_request_len);
+    logger(LOG_DEBUG, "HTTP Proxy: Sent headers %zd bytes (%zu/%zu)", sent, session->pending_request_sent,
+           session->pending_request_len);
   }
 
   /* If headers not fully sent, wait for next writable event */
@@ -570,11 +533,9 @@ static int http_proxy_try_send_pending(http_proxy_session_t *session) {
 
   /* Phase 2: Send request body directly from request_body pointer.
    * Loop to drain all writable data for edge-triggered pollers. */
-  while (session->request_body_len > 0 &&
-         session->request_body_sent < session->request_body_len) {
+  while (session->request_body_len > 0 && session->request_body_sent < session->request_body_len) {
     remaining = session->request_body_len - session->request_body_sent;
-    sent = send(session->socket,
-                session->request_body + session->request_body_sent, remaining,
+    sent = send(session->socket, session->request_body + session->request_body_sent, remaining,
                 MSG_NOSIGNAL | MSG_DONTWAIT);
 
     if (sent <= 0) {
@@ -590,8 +551,8 @@ static int http_proxy_try_send_pending(http_proxy_session_t *session) {
 
     session->request_body_sent += sent;
     total_sent += (int)sent;
-    logger(LOG_DEBUG, "HTTP Proxy: Sent body %zd bytes (%zu/%zu)", sent,
-           session->request_body_sent, session->request_body_len);
+    logger(LOG_DEBUG, "HTTP Proxy: Sent body %zd bytes (%zu/%zu)", sent, session->request_body_sent,
+           session->request_body_len);
   }
 
   return total_sent;
@@ -609,8 +570,7 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
   if (session->rewrite_body_buffer_used > 0) {
     /* Null-terminate for rewriting */
     if (session->rewrite_body_buffer_used >= session->rewrite_body_buffer_size) {
-      char *new_buf = realloc(session->rewrite_body_buffer,
-                              session->rewrite_body_buffer_used + 1);
+      char *new_buf = realloc(session->rewrite_body_buffer, session->rewrite_body_buffer_used + 1);
       if (!new_buf) {
         logger(LOG_ERROR, "HTTP Proxy: Failed to grow rewrite buffer for null");
         return -1;
@@ -621,8 +581,7 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
     session->rewrite_body_buffer[session->rewrite_body_buffer_used] = '\0';
 
     /* Build base URL and rewrite context */
-    char *base_url = build_proxy_base_url(
-        session->host_header, session->x_forwarded_host, session->x_forwarded_proto);
+    char *base_url = build_proxy_base_url(session->host_header, session->x_forwarded_host, session->x_forwarded_proto);
     if (!base_url) {
       logger(LOG_ERROR, "HTTP Proxy: Failed to build base URL for rewriting");
       return -1;
@@ -636,8 +595,7 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
     char *rewritten = NULL;
     size_t rewritten_size = 0;
 
-    int rewrite_result = rewrite_m3u_content(&ctx, session->rewrite_body_buffer,
-                                             &rewritten, &rewritten_size);
+    int rewrite_result = rewrite_m3u_content(&ctx, session->rewrite_body_buffer, &rewritten, &rewritten_size);
     free(base_url);
 
     if (rewrite_result < 0) {
@@ -659,8 +617,7 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
         char *line = strtok(saved_copy, "\r\n");
         while (line != NULL) {
           /* Skip headers that need to be modified */
-          if (strncasecmp(line, "Content-Length:", 15) == 0 ||
-              strncasecmp(line, "Transfer-Encoding:", 18) == 0) {
+          if (strncasecmp(line, "Content-Length:", 15) == 0 || strncasecmp(line, "Transfer-Encoding:", 18) == 0) {
             /* Skip - will add correct Content-Length later */
           } else {
             /* Pass through this header */
@@ -677,8 +634,7 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
       }
 
       /* Add correct Content-Length */
-      int cl_written = snprintf(hdr_ptr, hdr_remaining, "Content-Length: %zu\r\n",
-                                rewritten_size);
+      int cl_written = snprintf(hdr_ptr, hdr_remaining, "Content-Length: %zu\r\n", rewritten_size);
       if (cl_written > 0 && (size_t)cl_written < hdr_remaining) {
         hdr_ptr += cl_written;
         hdr_remaining -= cl_written;
@@ -686,25 +642,20 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
       }
     } else {
       /* Fallback: build minimal headers */
-      headers_len = snprintf(
-          headers, sizeof(headers),
-          "HTTP/1.1 %d OK\r\n"
-          "Content-Type: %s\r\n"
-          "Content-Length: %zu\r\n"
-          "Connection: close\r\n",
-          session->response_status_code, session->response_content_type,
-          rewritten_size);
+      headers_len = snprintf(headers, sizeof(headers),
+                             "HTTP/1.1 %d OK\r\n"
+                             "Content-Type: %s\r\n"
+                             "Content-Length: %zu\r\n"
+                             "Connection: close\r\n",
+                             session->response_status_code, session->response_content_type, rewritten_size);
       hdr_ptr = headers + headers_len;
       hdr_remaining = sizeof(headers) - headers_len;
     }
 
     /* Inject Set-Cookie header if needed */
-    if (session->conn && session->conn->should_set_r2h_cookie &&
-        config.r2h_token && config.r2h_token[0] != '\0') {
+    if (session->conn && session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
       int cookie_written = snprintf(
-          hdr_ptr, hdr_remaining,
-          "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; SameSite=Strict\r\n",
-          config.r2h_token);
+          hdr_ptr, hdr_remaining, "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; SameSite=Strict\r\n", config.r2h_token);
       if (cookie_written > 0 && (size_t)cookie_written < hdr_remaining) {
         hdr_ptr += cookie_written;
         hdr_remaining -= cookie_written;
@@ -719,16 +670,14 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
       headers_len += final_written;
     }
 
-    if (connection_queue_output(session->conn, (const uint8_t *)headers,
-                                headers_len) < 0) {
+    if (connection_queue_output(session->conn, (const uint8_t *)headers, headers_len) < 0) {
       free(rewritten);
       logger(LOG_ERROR, "HTTP Proxy: Failed to send rewritten headers");
       return -1;
     }
 
     /* Send rewritten body */
-    if (connection_queue_output(session->conn, (const uint8_t *)rewritten,
-                                rewritten_size) < 0) {
+    if (connection_queue_output(session->conn, (const uint8_t *)rewritten, rewritten_size) < 0) {
       free(rewritten);
       logger(LOG_ERROR, "HTTP Proxy: Failed to send rewritten body");
       return -1;
@@ -742,8 +691,7 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
     bytes_forwarded = (int)(headers_len + rewritten_size);
     free(rewritten);
 
-    logger(LOG_DEBUG, "HTTP Proxy: Sent rewritten M3U (%zu bytes body)",
-           rewritten_size);
+    logger(LOG_DEBUG, "HTTP Proxy: Sent rewritten M3U (%zu bytes body)", rewritten_size);
   }
 
   http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
@@ -788,9 +736,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
       }
 
       if (new_size > session->rewrite_body_buffer_size) {
-        size_t new_alloc = session->rewrite_body_buffer_size == 0
-                               ? 16384
-                               : session->rewrite_body_buffer_size * 2;
+        size_t new_alloc = session->rewrite_body_buffer_size == 0 ? 16384 : session->rewrite_body_buffer_size * 2;
         while (new_alloc < new_size)
           new_alloc *= 2;
         if (new_alloc > REWRITE_MAX_BODY_SIZE)
@@ -805,14 +751,12 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
         session->rewrite_body_buffer_size = new_alloc;
       }
 
-      memcpy(session->rewrite_body_buffer + session->rewrite_body_buffer_used,
-             temp_buf, (size_t)received);
+      memcpy(session->rewrite_body_buffer + session->rewrite_body_buffer_used, temp_buf, (size_t)received);
       session->rewrite_body_buffer_used = new_size;
       session->bytes_received += received;
 
       /* All content received — finalize immediately */
-      if (session->content_length >= 0 &&
-          session->bytes_received >= session->content_length) {
+      if (session->content_length >= 0 && session->bytes_received >= session->content_length) {
         return http_proxy_finalize_rewrite(session);
       }
 
@@ -860,10 +804,8 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
     session->bytes_received += bytes_forwarded;
 
     /* Check if we've received all content */
-    if (session->content_length >= 0 &&
-        session->bytes_received >= session->content_length) {
-      logger(LOG_DEBUG, "HTTP Proxy: Received all content (%zd bytes)",
-             session->bytes_received);
+    if (session->content_length >= 0 && session->bytes_received >= session->content_length) {
+      logger(LOG_DEBUG, "HTTP Proxy: Received all content (%zd bytes)", session->bytes_received);
       http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
     }
 
@@ -872,16 +814,13 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
 
   /* Phase 1: Header parsing - use fixed buffer */
   /* Reserve 1 byte for null terminator used in header parsing */
-  size_t available =
-      HTTP_PROXY_RESPONSE_BUFFER_SIZE - 1 - session->response_buffer_pos;
+  size_t available = HTTP_PROXY_RESPONSE_BUFFER_SIZE - 1 - session->response_buffer_pos;
   if (available == 0) {
     logger(LOG_ERROR, "HTTP Proxy: Response buffer full");
     return -1;
   }
 
-  received = recv(session->socket,
-                  session->response_buffer + session->response_buffer_pos,
-                  available, 0);
+  received = recv(session->socket, session->response_buffer + session->response_buffer_pos, available, 0);
 
   if (received < 0) {
     if (errno == EAGAIN) {
@@ -933,17 +872,13 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
       session->response_buffer_pos = 0;
 
       /* Check if we've received all content */
-      if (session->content_length >= 0 &&
-          session->bytes_received >= session->content_length) {
-        logger(LOG_DEBUG,
-               "HTTP Proxy: All M3U content received with headers (%zd bytes)",
-               session->bytes_received);
+      if (session->content_length >= 0 && session->bytes_received >= session->content_length) {
+        logger(LOG_DEBUG, "HTTP Proxy: All M3U content received with headers (%zd bytes)", session->bytes_received);
         return http_proxy_finalize_rewrite(session);
       }
     } else {
       /* Normal mode: forward immediately */
-      if (connection_queue_output(session->conn, session->response_buffer,
-                                  session->response_buffer_pos) < 0) {
+      if (connection_queue_output(session->conn, session->response_buffer, session->response_buffer_pos) < 0) {
         logger(LOG_ERROR, "HTTP Proxy: Failed to queue initial body data");
         return -1;
       }
@@ -953,10 +888,8 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
       session->bytes_received += bytes_forwarded;
 
       /* Check if we've received all content */
-      if (session->content_length >= 0 &&
-          session->bytes_received >= session->content_length) {
-        logger(LOG_DEBUG, "HTTP Proxy: Received all content (%zd bytes)",
-               session->bytes_received);
+      if (session->content_length >= 0 && session->bytes_received >= session->content_length) {
+        logger(LOG_DEBUG, "HTTP Proxy: Received all content (%zd bytes)", session->bytes_received);
         http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
       }
     }
@@ -967,8 +900,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
 
 /* Check if status code is a redirect that may have Location header */
 static int http_proxy_is_redirect_status(int status_code) {
-  return (status_code == 301 || status_code == 302 || status_code == 303 ||
-          status_code == 307 || status_code == 308);
+  return (status_code == 301 || status_code == 302 || status_code == 303 || status_code == 307 || status_code == 308);
 }
 
 static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
@@ -1016,25 +948,20 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
   }
   session->response_status_code = atoi(status_str + 1);
 
-  logger(LOG_DEBUG, "HTTP Proxy: Response status: %d",
-         session->response_status_code);
+  logger(LOG_DEBUG, "HTTP Proxy: Response status: %d", session->response_status_code);
 
   /* Parse headers */
   while ((line = strtok(NULL, "\r\n")) != NULL) {
     if (strncasecmp(line, "Content-Length:", 15) == 0) {
       session->content_length = atoll(line + 15);
-      logger(LOG_DEBUG, "HTTP Proxy: Content-Length: %zd",
-             session->content_length);
+      logger(LOG_DEBUG, "HTTP Proxy: Content-Length: %zd", session->content_length);
     } else if (strncasecmp(line, "Content-Type:", 13) == 0) {
       char *value = line + 13;
       while (*value == ' ')
         value++;
-      strncpy(session->response_content_type, value,
-              sizeof(session->response_content_type) - 1);
-      session->response_content_type[sizeof(session->response_content_type) -
-                                     1] = '\0';
-      logger(LOG_DEBUG, "HTTP Proxy: Content-Type: %s",
-             session->response_content_type);
+      strncpy(session->response_content_type, value, sizeof(session->response_content_type) - 1);
+      session->response_content_type[sizeof(session->response_content_type) - 1] = '\0';
+      logger(LOG_DEBUG, "HTTP Proxy: Content-Type: %s", session->response_content_type);
     } else if (strncasecmp(line, "Location:", 9) == 0) {
       /* Extract Location header value for potential rewriting */
       char *value = line + 9;
@@ -1052,22 +979,17 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
   /* Check if response body needs rewriting (M3U content).
    * Skip for HEAD requests — there is no body to rewrite. */
-  if (rewrite_is_m3u_content_type(session->response_content_type) &&
-      strcasecmp(session->method, "HEAD") != 0) {
+  if (rewrite_is_m3u_content_type(session->response_content_type) && strcasecmp(session->method, "HEAD") != 0) {
     /* Only rewrite if Content-Length is known and within limits */
-    if (session->content_length > 0 &&
-        (size_t)session->content_length <= REWRITE_MAX_BODY_SIZE) {
+    if (session->content_length > 0 && (size_t)session->content_length <= REWRITE_MAX_BODY_SIZE) {
       session->needs_body_rewrite = 1;
       logger(LOG_DEBUG, "HTTP Proxy: M3U content detected, will rewrite body");
     } else if (session->content_length == -1) {
       /* Chunked or unknown length - try to buffer if reasonable */
       session->needs_body_rewrite = 1;
-      logger(LOG_DEBUG,
-             "HTTP Proxy: M3U content with unknown length, will buffer");
+      logger(LOG_DEBUG, "HTTP Proxy: M3U content with unknown length, will buffer");
     } else {
-      logger(LOG_WARN,
-             "HTTP Proxy: M3U content too large for rewriting (%zd bytes)",
-             session->content_length);
+      logger(LOG_WARN, "HTTP Proxy: M3U content too large for rewriting (%zd bytes)", session->content_length);
     }
 
     /* Save original response headers for passthrough during rewrite */
@@ -1077,8 +999,7 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
         memcpy(session->saved_response_headers, session->response_buffer, header_len);
         session->saved_response_headers[header_len] = '\0';
         session->saved_response_headers_len = header_len;
-        logger(LOG_DEBUG, "HTTP Proxy: Saved %zu bytes of response headers for rewrite",
-               header_len);
+        logger(LOG_DEBUG, "HTTP Proxy: Saved %zu bytes of response headers for rewrite", header_len);
       }
     }
   }
@@ -1099,11 +1020,9 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
     /* Rewrite Location header for redirects */
     if (is_redirect && has_location) {
-      if (http_proxy_build_url(location_header, "/", rewritten_location,
-                               sizeof(rewritten_location)) == 0) {
+      if (http_proxy_build_url(location_header, "/", rewritten_location, sizeof(rewritten_location)) == 0) {
         location_rewritten = 1;
-        logger(LOG_DEBUG, "HTTP Proxy: Rewritten Location: %s -> %s",
-               location_header, rewritten_location);
+        logger(LOG_DEBUG, "HTTP Proxy: Rewritten Location: %s -> %s", location_header, rewritten_location);
       }
     }
 
@@ -1130,8 +1049,7 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
         if (strncasecmp(orig_line, "Location:", 9) == 0) {
           /* Replace Location header with rewritten value */
-          written = snprintf(rebuild_ptr, rebuild_remaining, "Location: %s\r\n",
-                             rewritten_location);
+          written = snprintf(rebuild_ptr, rebuild_remaining, "Location: %s\r\n", rewritten_location);
         } else {
           /* Copy other headers as-is */
           written = snprintf(rebuild_ptr, rebuild_remaining, "%s\r\n", orig_line);
@@ -1152,30 +1070,24 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
       /* Send rebuilt headers */
       size_t rebuilt_len = rebuild_ptr - rebuilt_headers;
-      if (connection_queue_output(session->conn, (const uint8_t *)rebuilt_headers,
-                                  rebuilt_len) < 0) {
+      if (connection_queue_output(session->conn, (const uint8_t *)rebuilt_headers, rebuilt_len) < 0) {
         logger(LOG_ERROR, "HTTP Proxy: Failed to forward rebuilt headers");
         return -1;
       }
 
       /* Inject Set-Cookie header if needed */
-      if (session->conn->should_set_r2h_cookie && config.r2h_token &&
-          config.r2h_token[0] != '\0') {
+      if (session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
         char set_cookie_header[512];
-        int cookie_len =
-            snprintf(set_cookie_header, sizeof(set_cookie_header),
-                     "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; "
-                     "SameSite=Strict\r\n",
-                     config.r2h_token);
+        int cookie_len = snprintf(set_cookie_header, sizeof(set_cookie_header),
+                                  "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; "
+                                  "SameSite=Strict\r\n",
+                                  config.r2h_token);
         if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
-          if (connection_queue_output(session->conn,
-                                      (const uint8_t *)set_cookie_header,
-                                      cookie_len) < 0) {
+          if (connection_queue_output(session->conn, (const uint8_t *)set_cookie_header, cookie_len) < 0) {
             logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
             return -1;
           }
-          logger(LOG_DEBUG,
-                 "HTTP Proxy: Injected Set-Cookie header for r2h-token");
+          logger(LOG_DEBUG, "HTTP Proxy: Injected Set-Cookie header for r2h-token");
         }
         session->conn->should_set_r2h_cookie = 0;
       }
@@ -1190,30 +1102,24 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
       size_t headers_without_crlf = header_len - 2; /* Exclude final \r\n */
 
       /* Send headers up to (but not including) final \r\n\r\n */
-      if (connection_queue_output(session->conn, session->response_buffer,
-                                  headers_without_crlf) < 0) {
+      if (connection_queue_output(session->conn, session->response_buffer, headers_without_crlf) < 0) {
         logger(LOG_ERROR, "HTTP Proxy: Failed to forward headers to client");
         return -1;
       }
 
       /* Inject Set-Cookie header if needed */
-      if (session->conn->should_set_r2h_cookie && config.r2h_token &&
-          config.r2h_token[0] != '\0') {
+      if (session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
         char set_cookie_header[512];
-        int cookie_len =
-            snprintf(set_cookie_header, sizeof(set_cookie_header),
-                     "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; "
-                     "SameSite=Strict\r\n",
-                     config.r2h_token);
+        int cookie_len = snprintf(set_cookie_header, sizeof(set_cookie_header),
+                                  "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; "
+                                  "SameSite=Strict\r\n",
+                                  config.r2h_token);
         if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
-          if (connection_queue_output(session->conn,
-                                      (const uint8_t *)set_cookie_header,
-                                      cookie_len) < 0) {
+          if (connection_queue_output(session->conn, (const uint8_t *)set_cookie_header, cookie_len) < 0) {
             logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
             return -1;
           }
-          logger(LOG_DEBUG,
-                 "HTTP Proxy: Injected Set-Cookie header for r2h-token");
+          logger(LOG_DEBUG, "HTTP Proxy: Injected Set-Cookie header for r2h-token");
         }
         session->conn->should_set_r2h_cookie = 0; /* Only set once */
       }
@@ -1227,14 +1133,12 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
     session->headers_forwarded = 1;
     session->conn->headers_sent = 1; /* Mark headers as sent */
-    logger(LOG_DEBUG, "HTTP Proxy: Forwarded %zu bytes of headers to client",
-           header_len);
+    logger(LOG_DEBUG, "HTTP Proxy: Forwarded %zu bytes of headers to client", header_len);
 
     /* Flush headers immediately - don't use queue_output_and_flush which sets
      * CONN_CLOSING */
-    connection_epoll_update_events(
-        session->conn->epfd, session->conn->fd,
-        POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+    connection_epoll_update_events(session->conn->epfd, session->conn->fd,
+                                   POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
   }
 
   /* HEAD responses have no body — go straight to COMPLETE */
@@ -1255,9 +1159,7 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
   return 1; /* Headers complete */
 }
 
-
-int http_proxy_handle_socket_event(http_proxy_session_t *session,
-                                   uint32_t events) {
+int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t events) {
   int result;
 
   if (!session || session->socket < 0) {
@@ -1268,9 +1170,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
   if (events & POLLER_ERR) {
     int sock_error = 0;
     socklen_t error_len = sizeof(sock_error);
-    if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error,
-                   &error_len) == 0 &&
-        sock_error != 0) {
+    if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error, &error_len) == 0 && sock_error != 0) {
       logger(LOG_ERROR, "HTTP Proxy: Socket error: %s", strerror(sock_error));
     } else {
       logger(LOG_ERROR, "HTTP Proxy: Socket error event received");
@@ -1291,24 +1191,21 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
     int sock_error = 0;
     socklen_t error_len = sizeof(sock_error);
 
-    if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error,
-                   &error_len) < 0) {
-      logger(LOG_ERROR, "HTTP Proxy: getsockopt(SO_ERROR) failed: %s",
-             strerror(errno));
+    if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error, &error_len) < 0) {
+      logger(LOG_ERROR, "HTTP Proxy: getsockopt(SO_ERROR) failed: %s", strerror(errno));
       http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
       return -1;
     }
 
     if (sock_error != 0) {
-      logger(LOG_ERROR, "HTTP Proxy: Connection to %s:%d failed: %s",
-             session->target_host, session->target_port, strerror(sock_error));
+      logger(LOG_ERROR, "HTTP Proxy: Connection to %s:%d failed: %s", session->target_host, session->target_port,
+             strerror(sock_error));
       http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
       return -1;
     }
 
     /* Connection succeeded */
-    logger(LOG_INFO, "HTTP Proxy: Connected to %s:%d", session->target_host,
-           session->target_port);
+    logger(LOG_INFO, "HTTP Proxy: Connected to %s:%d", session->target_host, session->target_port);
 
     http_proxy_set_state(session, HTTP_PROXY_STATE_CONNECTED);
 
@@ -1323,8 +1220,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
   }
 
   /* Handle writable socket - send pending request */
-  if ((events & POLLER_OUT) &&
-      session->state == HTTP_PROXY_STATE_SENDING_REQUEST) {
+  if ((events & POLLER_OUT) && session->state == HTTP_PROXY_STATE_SENDING_REQUEST) {
     result = http_proxy_try_send_pending(session);
     if (result < 0) {
       logger(LOG_ERROR, "HTTP Proxy: Failed to send request");
@@ -1335,17 +1231,14 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
     /* Check if send completed (headers + body) */
     if (session->pending_request_sent >= session->pending_request_len &&
         session->request_body_sent >= session->request_body_len) {
-      logger(LOG_DEBUG, "HTTP Proxy: Request sent (%zu headers + %zu body bytes)",
-             session->pending_request_len, session->request_body_len);
+      logger(LOG_DEBUG, "HTTP Proxy: Request sent (%zu headers + %zu body bytes)", session->pending_request_len,
+             session->request_body_len);
       http_proxy_set_state(session, HTTP_PROXY_STATE_AWAITING_HEADERS);
 
       /* Update poller to only monitor POLLER_IN */
       if (session->epoll_fd >= 0) {
-        if (poller_mod(session->epoll_fd, session->socket,
-                       POLLER_IN | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) <
-            0) {
-          logger(LOG_ERROR, "HTTP Proxy: Failed to modify poller events: %s",
-                 strerror(errno));
+        if (poller_mod(session->epoll_fd, session->socket, POLLER_IN | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
+          logger(LOG_ERROR, "HTTP Proxy: Failed to modify poller events: %s", strerror(errno));
           http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
           return -1;
         }
@@ -1360,8 +1253,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
    * remains in the socket buffer. */
   int bytes_forwarded = 0;
   if (events & POLLER_IN) {
-    while (session->state == HTTP_PROXY_STATE_AWAITING_HEADERS ||
-           session->state == HTTP_PROXY_STATE_STREAMING) {
+    while (session->state == HTTP_PROXY_STATE_AWAITING_HEADERS || session->state == HTTP_PROXY_STATE_STREAMING) {
       result = http_proxy_try_receive_response(session);
       if (result < 0) {
         logger(LOG_ERROR, "HTTP Proxy: Failed to receive response");
@@ -1381,8 +1273,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
    * before buffered data (e.g. rewrite body) is processed. */
   if ((events & (POLLER_HUP | POLLER_RDHUP)) && !(events & POLLER_IN)) {
     /* Upstream closed connection */
-    if (session->state == HTTP_PROXY_STATE_STREAMING ||
-        session->state == HTTP_PROXY_STATE_AWAITING_HEADERS) {
+    if (session->state == HTTP_PROXY_STATE_STREAMING || session->state == HTTP_PROXY_STATE_AWAITING_HEADERS) {
       logger(LOG_DEBUG, "HTTP Proxy: Upstream closed connection (normal)");
       http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
     } else if (session->state != HTTP_PROXY_STATE_COMPLETE) {
@@ -1406,9 +1297,8 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session,
     if (session->conn && session->conn->state != CONN_CLOSING) {
       logger(LOG_DEBUG, "HTTP Proxy: Transfer complete");
       session->conn->state = CONN_CLOSING;
-      connection_epoll_update_events(
-          session->conn->epfd, session->conn->fd,
-          POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+      connection_epoll_update_events(session->conn->epfd, session->conn->fd,
+                                     POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
     }
   }
 
@@ -1424,8 +1314,7 @@ int http_proxy_session_cleanup(http_proxy_session_t *session) {
     return 0;
   }
 
-  logger(LOG_DEBUG, "HTTP Proxy: Cleaning up session (socket=%d)",
-         session->socket);
+  logger(LOG_DEBUG, "HTTP Proxy: Cleaning up session (socket=%d)", session->socket);
 
   /* Close socket */
   if (session->socket >= 0) {
@@ -1468,16 +1357,14 @@ int http_proxy_session_tick(http_proxy_session_t *session, int64_t now) {
   }
   int64_t elapsed = now - session->last_state_change_ms;
   if (elapsed >= HTTP_PROXY_TIMEOUT_SEC * 1000) {
-    logger(LOG_ERROR, "HTTP Proxy: State %d timed out after %lld ms",
-           session->state, (long long)elapsed);
+    logger(LOG_ERROR, "HTTP Proxy: State %d timed out after %lld ms", session->state, (long long)elapsed);
     http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
     return -1;
   }
   return 0;
 }
 
-int http_proxy_build_url(const char *http_url, const char *base_url_placeholder,
-                         char *output, size_t output_size) {
+int http_proxy_build_url(const char *http_url, const char *base_url_placeholder, char *output, size_t output_size) {
   const char *host_start;
   char *encoded_token = NULL;
   int result;
@@ -1506,17 +1393,14 @@ int http_proxy_build_url(const char *http_url, const char *base_url_placeholder,
   if (has_r2h_token && encoded_token) {
     if (query_start) {
       /* Original URL has query params, append r2h-token with & */
-      result = snprintf(output, output_size, "%shttp/%s&r2h-token=%s",
-                        base_url_placeholder, host_start, encoded_token);
+      result = snprintf(output, output_size, "%shttp/%s&r2h-token=%s", base_url_placeholder, host_start, encoded_token);
     } else {
       /* No query params, add r2h-token with ? */
-      result = snprintf(output, output_size, "%shttp/%s?r2h-token=%s",
-                        base_url_placeholder, host_start, encoded_token);
+      result = snprintf(output, output_size, "%shttp/%s?r2h-token=%s", base_url_placeholder, host_start, encoded_token);
     }
   } else {
     /* No r2h-token, just transform the URL */
-    result =
-        snprintf(output, output_size, "%shttp/%s", base_url_placeholder, host_start);
+    result = snprintf(output, output_size, "%shttp/%s", base_url_placeholder, host_start);
   }
 
   if (encoded_token)
@@ -1529,4 +1413,3 @@ int http_proxy_build_url(const char *http_url, const char *base_url_placeholder,
 
   return 0;
 }
-

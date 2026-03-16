@@ -21,11 +21,11 @@ zerocopy_state_t zerocopy_state = {0};
  * Helper macro to access this worker's statistics in shared memory
  * Falls back to no-op if shared memory not available
  */
-#define WORKER_STATS_INC(field)                                                \
-  do {                                                                         \
-    if (status_shared && worker_id >= 0 && worker_id < STATUS_MAX_WORKERS) {   \
-      status_shared->worker_stats[worker_id].field++;                          \
-    }                                                                          \
+#define WORKER_STATS_INC(field)                                                                                        \
+  do {                                                                                                                 \
+    if (status_shared && worker_id >= 0 && worker_id < STATUS_MAX_WORKERS) {                                           \
+      status_shared->worker_stats[worker_id].field++;                                                                  \
+    }                                                                                                                  \
   } while (0)
 
 /**
@@ -73,36 +73,31 @@ int zerocopy_init(void) {
   if (config.zerocopy_on_send) {
     /* Try to detect MSG_ZEROCOPY support */
     if (!detect_msg_zerocopy_support()) {
-      logger(LOG_WARN,
-             "Zero-copy: MSG_ZEROCOPY not available (Linux kernel 4.14+ "
-             "required)");
+      logger(LOG_WARN, "Zero-copy: MSG_ZEROCOPY not available (Linux kernel 4.14+ "
+                       "required)");
       logger(LOG_WARN, "Zero-copy: Falling back to regular send");
       /* Disable zerocopy in config since it's not supported */
       config.zerocopy_on_send = 0;
     } else {
-      logger(LOG_INFO,
-             "Zero-copy: MSG_ZEROCOPY enabled for better performance");
+      logger(LOG_INFO, "Zero-copy: MSG_ZEROCOPY enabled for better performance");
     }
   } else {
     /* Default: Use regular send for maximum compatibility */
-    logger(LOG_INFO,
-           "Zero-copy: Using regular send (default). Enable zerocopy-on-send "
-           "for better performance on supported devices.");
+    logger(LOG_INFO, "Zero-copy: Using regular send (default). Enable zerocopy-on-send "
+                     "for better performance on supported devices.");
   }
 
   /* Initialize buffer pool with dynamic expansion support */
-  if (buffer_pool_init(&zerocopy_state.pool, BUFFER_POOL_BUFFER_SIZE,
-                       BUFFER_POOL_INITIAL_SIZE, config.buffer_pool_max_size,
-                       BUFFER_POOL_EXPAND_SIZE, BUFFER_POOL_LOW_WATERMARK,
+  if (buffer_pool_init(&zerocopy_state.pool, BUFFER_POOL_BUFFER_SIZE, BUFFER_POOL_INITIAL_SIZE,
+                       config.buffer_pool_max_size, BUFFER_POOL_EXPAND_SIZE, BUFFER_POOL_LOW_WATERMARK,
                        BUFFER_POOL_HIGH_WATERMARK) < 0) {
     logger(LOG_FATAL, "Zero-copy: Failed to initialize buffer pool");
     return -1;
   }
 
   /* Initialize control plane pool */
-  if (buffer_pool_init(&zerocopy_state.control_pool, BUFFER_POOL_BUFFER_SIZE,
-                       CONTROL_POOL_INITIAL_SIZE, CONTROL_POOL_MAX_BUFFERS,
-                       CONTROL_POOL_EXPAND_SIZE, CONTROL_POOL_LOW_WATERMARK,
+  if (buffer_pool_init(&zerocopy_state.control_pool, BUFFER_POOL_BUFFER_SIZE, CONTROL_POOL_INITIAL_SIZE,
+                       CONTROL_POOL_MAX_BUFFERS, CONTROL_POOL_EXPAND_SIZE, CONTROL_POOL_LOW_WATERMARK,
                        CONTROL_POOL_HIGH_WATERMARK) < 0) {
     logger(LOG_FATAL, "Zero-copy: Failed to initialize control buffer pool");
     buffer_pool_cleanup(&zerocopy_state.pool);
@@ -132,9 +127,7 @@ void zerocopy_cleanup(void) {
   zerocopy_state.active_streams = 0;
 }
 
-void zerocopy_queue_init(zerocopy_queue_t *queue) {
-  memset(queue, 0, sizeof(*queue));
-}
+void zerocopy_queue_init(zerocopy_queue_t *queue) { memset(queue, 0, sizeof(*queue)); }
 
 void zerocopy_queue_cleanup(zerocopy_queue_t *queue) {
   /* Clean up send queue - buffers are now directly in the queue */
@@ -198,8 +191,7 @@ int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref) {
   return 0;
 }
 
-int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd,
-                            off_t file_offset, size_t file_size) {
+int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd, off_t file_offset, size_t file_size) {
   if (file_fd < 0 || file_size == 0)
     return -1;
 
@@ -236,9 +228,8 @@ int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd,
    */
   queue->num_queued++;
 
-  logger(LOG_DEBUG,
-         "zerocopy_queue_add_file: Queued file fd=%d offset=%ld size=%zu",
-         file_fd, (long)file_offset, file_size);
+  logger(LOG_DEBUG, "zerocopy_queue_add_file: Queued file fd=%d offset=%ld size=%zu", file_fd, (long)file_offset,
+         file_size);
 
   return 0;
 }
@@ -302,8 +293,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
       /* Release reference - this will close fd and free buffer_ref */
       buffer_ref_put(file_buf);
 
-      logger(LOG_DEBUG, "Zero-copy: sendfile complete (%zu bytes)",
-             total_file_size);
+      logger(LOG_DEBUG, "Zero-copy: sendfile complete (%zu bytes)", total_file_size);
     }
     /* Note: Partial sends for files don't update total_bytes (files don't
      * count) */
@@ -320,8 +310,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
   int iov_count = 0;
 
   buffer_ref_t *buf = queue->head;
-  while (buf && iov_count < ZEROCOPY_MAX_IOVECS &&
-         buf->type == BUFFER_TYPE_MEMORY) {
+  while (buf && iov_count < ZEROCOPY_MAX_IOVECS && buf->type == BUFFER_TYPE_MEMORY) {
     iovecs[iov_count] = buf->iov;
     buffers[iov_count] = buf;
     iov_count++;
@@ -512,8 +501,7 @@ int zerocopy_handle_completions(int fd, zerocopy_queue_t *queue) {
       /* Check for both IPv4 and IPv6 error messages */
       if ((cmsg->cmsg_level == SOL_IP && cmsg->cmsg_type == IP_RECVERR) ||
           (cmsg->cmsg_level == SOL_IPV6 && cmsg->cmsg_type == IPV6_RECVERR)) {
-        struct sock_extended_err *serr =
-            (struct sock_extended_err *)(uintptr_t)CMSG_DATA(cmsg);
+        struct sock_extended_err *serr = (struct sock_extended_err *)(uintptr_t)CMSG_DATA(cmsg);
 
         if (serr->ee_origin == SO_EE_ORIGIN_ZEROCOPY) {
           uint32_t lo = serr->ee_info;

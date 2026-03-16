@@ -6,17 +6,16 @@
 
 /* M3U cache structure for external M3U state tracking */
 typedef struct {
-  int retry_count; /* Current retry count (0-8) */
-  int64_t
-      next_retry_time; /* Next retry time in milliseconds (0 if not retrying) */
+  int retry_count;         /* Current retry count (0-8) */
+  int64_t next_retry_time; /* Next retry time in milliseconds (0 if not retrying) */
 
   /* Transformed M3U playlist buffer */
-  char *transformed_m3u;       /* Dynamic buffer for transformed playlist */
-  size_t transformed_m3u_size; /* Total allocated size */
-  size_t transformed_m3u_used; /* Used size (content length) */
+  char *transformed_m3u;             /* Dynamic buffer for transformed playlist */
+  size_t transformed_m3u_size;       /* Total allocated size */
+  size_t transformed_m3u_used;       /* Used size (content length) */
   size_t transformed_m3u_inline_end; /* Marks end of inline content */
-  int transformed_m3u_has_header; /* 1 if #EXTM3U header was added, 0 otherwise
-                                   */
+  int transformed_m3u_has_header;    /* 1 if #EXTM3U header was added, 0 otherwise
+                                      */
 
   /* ETag for transformed M3U playlist */
   char transformed_m3u_etag[33];  /* MD5 hash as hex string */
@@ -48,9 +47,7 @@ const char *m3u_get_transformed_playlist(void);
  * when xff=yes) Returns: malloc'd complete M3U content with header and replaced
  * placeholders, caller must free
  */
-char *m3u_generate_playlist(const char *host_header,
-                            const char *x_forwarded_host,
-                            const char *x_forwarded_proto);
+char *m3u_generate_playlist(const char *host_header, const char *x_forwarded_host, const char *x_forwarded_proto);
 
 /* Get the ETag for the current transformed M3U playlist
  * Returns: ETag string (static buffer), or NULL if no playlist

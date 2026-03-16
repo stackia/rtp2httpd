@@ -63,11 +63,7 @@
 #define RTSP_METHOD_GET_PARAMETER "GET_PARAMETER"
 
 /* RTSP authentication types */
-typedef enum {
-  RTSP_AUTH_NONE = 0,
-  RTSP_AUTH_BASIC,
-  RTSP_AUTH_DIGEST
-} rtsp_auth_type_t;
+typedef enum { RTSP_AUTH_NONE = 0, RTSP_AUTH_BASIC, RTSP_AUTH_DIGEST } rtsp_auth_type_t;
 
 /* RTSP protocol states - fully async state machine */
 typedef enum {
@@ -107,15 +103,15 @@ typedef enum {
 
 /* RTSP session structure */
 typedef struct {
-  int initialized; /* Flag: session has been initialized with resources */
-  int socket;                /* TCP socket to RTSP server */
-  int epoll_fd;              /* Epoll file descriptor for socket registration */
-  struct connection_s *conn; /* Connection pointer for fdmap registration */
-  rtsp_state_t state;        /* Current RTSP state */
-  int64_t last_state_change_ms; /* Timestamp of last state change */
-  int status_index; /* Index in status_shared->clients array for state updates
-                     */
-  uint32_t cseq;    /* RTSP sequence number */
+  int initialized;                         /* Flag: session has been initialized with resources */
+  int socket;                              /* TCP socket to RTSP server */
+  int epoll_fd;                            /* Epoll file descriptor for socket registration */
+  struct connection_s *conn;               /* Connection pointer for fdmap registration */
+  rtsp_state_t state;                      /* Current RTSP state */
+  int64_t last_state_change_ms;            /* Timestamp of last state change */
+  int status_index;                        /* Index in status_shared->clients array for state updates
+                                            */
+  uint32_t cseq;                           /* RTSP sequence number */
   char session_id[RTSP_SESSION_ID_SIZE];   /* RTSP session ID */
   char server_url[RTSP_SERVER_URL_SIZE];   /* Full RTSP URL */
   char setup_url[RTSP_SERVER_URL_SIZE];    /* Resolved SETUP URL (from
@@ -131,13 +127,13 @@ typedef struct {
   float r2h_duration_value;
 
   /* Authentication state */
-  char username[RTSP_CREDENTIAL_SIZE]; /* RTSP username for authentication */
-  char password[RTSP_CREDENTIAL_SIZE]; /* RTSP password for authentication */
-  rtsp_auth_type_t auth_type; /* Authentication type required by server */
+  char username[RTSP_CREDENTIAL_SIZE];    /* RTSP username for authentication */
+  char password[RTSP_CREDENTIAL_SIZE];    /* RTSP password for authentication */
+  rtsp_auth_type_t auth_type;             /* Authentication type required by server */
   char auth_realm[RTSP_CREDENTIAL_SIZE];  /* Digest auth realm */
   char auth_nonce[RTSP_CREDENTIAL_SIZE];  /* Digest auth nonce */
   char auth_opaque[RTSP_CREDENTIAL_SIZE]; /* Digest auth opaque */
-  int auth_retry_count; /* Number of auth retries (prevent infinite loops) */
+  int auth_retry_count;                   /* Number of auth retries (prevent infinite loops) */
 
   /* Transport mode configuration */
   rtsp_transport_mode_t transport_mode;         /* Current transport mode */
@@ -148,12 +144,12 @@ typedef struct {
   int rtcp_channel; /* RTCP interleaved channel (usually 1) */
 
   /* RTP/UDP transport info (preserved for future use) */
-  int rtp_socket;       /* Local RTP receiving socket */
-  int rtcp_socket;      /* Local RTCP receiving socket */
-  int local_rtp_port;   /* Local RTP port */
-  int local_rtcp_port;  /* Local RTCP port */
-  int server_rtp_port;  /* Server RTP port */
-  int server_rtcp_port; /* Server RTCP port */
+  int rtp_socket;                                 /* Local RTP receiving socket */
+  int rtcp_socket;                                /* Local RTCP receiving socket */
+  int local_rtp_port;                             /* Local RTP port */
+  int local_rtcp_port;                            /* Local RTCP port */
+  int server_rtp_port;                            /* Server RTP port */
+  int server_rtcp_port;                           /* Server RTCP port */
   char server_source_addr[RTSP_SERVER_HOST_SIZE]; /* Server UDP source address
                                                      for NAT traversal */
 
@@ -164,29 +160,29 @@ typedef struct {
   uint64_t packets_dropped; /* Packets dropped due to backpressure */
 
   /* Cleanup state */
-  int cleanup_done;          /* Flag: cleanup has been completed */
-  int first_media_received;  /* Flag: first media packet received in PLAYING */
+  int cleanup_done;         /* Flag: cleanup has been completed */
+  int first_media_received; /* Flag: first media packet received in PLAYING */
 
   /* Non-blocking I/O state */
   char pending_request[RTSP_REQUEST_BUFFER_SIZE]; /* Request being sent */
-  size_t pending_request_len;  /* Total length of pending request */
-  size_t pending_request_sent; /* Bytes already sent */
-  size_t response_buffer_pos;  /* Current position in response buffer */
-  int awaiting_response;       /* Flag: waiting for response */
+  size_t pending_request_len;                     /* Total length of pending request */
+  size_t pending_request_sent;                    /* Bytes already sent */
+  size_t response_buffer_pos;                     /* Current position in response buffer */
+  int awaiting_response;                          /* Flag: waiting for response */
 
   /* Keepalive tracking */
-  int keepalive_interval_ms; /* Keepalive interval (0 = disabled) */
-  int64_t last_keepalive_ms; /* Timestamp of last keepalive */
-  int keepalive_pending;     /* Pending keepalive request queued for send */
+  int keepalive_interval_ms;       /* Keepalive interval (0 = disabled) */
+  int64_t last_keepalive_ms;       /* Timestamp of last keepalive */
+  int keepalive_pending;           /* Pending keepalive request queued for send */
   int awaiting_keepalive_response; /* Awaiting keepalive response */
-  int use_get_parameter; /* Use GET_PARAMETER for keepalive (1), fallback to
-                            OPTIONS (0) */
+  int use_get_parameter;           /* Use GET_PARAMETER for keepalive (1), fallback to
+                                      OPTIONS (0) */
 
   /* Teardown and cleanup state */
-  int teardown_requested;      /* Flag: TEARDOWN has been requested (cleanup
-                                  initiated) */
-  int teardown_reconnect_done; /* Flag: Already attempted reconnect for TEARDOWN
-                                */
+  int teardown_requested;             /* Flag: TEARDOWN has been requested (cleanup
+                                         initiated) */
+  int teardown_reconnect_done;        /* Flag: Already attempted reconnect for TEARDOWN
+                                       */
   rtsp_state_t state_before_teardown; /* State before TEARDOWN was initiated */
 
   /* Per-service upstream interface override (resolved at init, non-owning) */
@@ -219,8 +215,7 @@ void rtsp_session_init(rtsp_session_t *session);
  * credentials
  * @return 0 on success, -1 on error
  */
-int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url,
-                          const char *fallback_username,
+int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const char *fallback_username,
                           const char *fallback_password);
 
 /**
@@ -251,8 +246,7 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events);
  * @param conn Connection object for output buffering
  * @return Number of bytes forwarded, -1 on error
  */
-int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session,
-                                     struct connection_s *conn);
+int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, struct connection_s *conn);
 
 /**
  * Handle UDP RTP data and forward to HTTP client via connection output buffer
@@ -260,8 +254,7 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session,
  * @param conn Connection object for output buffering
  * @return Number of bytes forwarded, -1 on error
  */
-int rtsp_handle_udp_rtp_data(rtsp_session_t *session,
-                             struct connection_s *conn);
+int rtsp_handle_udp_rtp_data(rtsp_session_t *session, struct connection_s *conn);
 
 /**
  * Send RTSP TEARDOWN and cleanup session
@@ -270,7 +263,6 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session,
  * (cleanup deferred)
  */
 int rtsp_session_cleanup(rtsp_session_t *session);
-
 
 /**
  * Schedule an RTSP OPTIONS keepalive request if the session is idle.

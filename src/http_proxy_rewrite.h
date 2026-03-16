@@ -48,8 +48,7 @@ int rewrite_is_m3u_content_type(const char *content_type);
  * @param output_size Pointer to receive output size
  * @return 0 on success, -1 on error
  */
-int rewrite_m3u_content(const rewrite_context_t *ctx, const char *input,
-                        char **output, size_t *output_size);
+int rewrite_m3u_content(const rewrite_context_t *ctx, const char *input, char **output, size_t *output_size);
 
 /* ========== Generic URL Rewriting Helpers ========== */
 
@@ -63,8 +62,7 @@ int rewrite_m3u_content(const rewrite_context_t *ctx, const char *input,
  * @param output_size Output buffer size
  * @return 0 on success, -1 on error
  */
-int rewrite_resolve_relative_url(const char *relative_url, const char *base_host,
-                                 int base_port, const char *base_path,
+int rewrite_resolve_relative_url(const char *relative_url, const char *base_host, int base_port, const char *base_path,
                                  char *output, size_t output_size);
 
 /**
@@ -77,8 +75,7 @@ int rewrite_resolve_relative_url(const char *relative_url, const char *base_host
  * @param output_size Output buffer size
  * @return 0 on success, -1 on error (e.g., https:// URLs return -1)
  */
-int rewrite_url_to_proxy_format(const rewrite_context_t *ctx, const char *url,
-                                char *output, size_t output_size);
+int rewrite_url_to_proxy_format(const rewrite_context_t *ctx, const char *url, char *output, size_t output_size);
 
 /* ========== Future Extensions ========== */
 /* int rewrite_is_html_content_type(const char *content_type); */

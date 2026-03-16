@@ -1,9 +1,9 @@
 #include "service.h"
-#include "url_template.h"
 #include "fcc.h"
 #include "hashmap.h"
 #include "http.h"
 #include "timezone.h"
+#include "url_template.h"
 #include "utils.h"
 #include <limits.h>
 #include <net/if.h>
@@ -36,8 +36,7 @@ struct rtp_url_components {
 /* Service lookup hashmap for O(1) service lookup by URL */
 static struct hashmap *service_map = NULL;
 
-static int parse_ipv6_address(const char *input, char *addr, size_t addr_size,
-                              const char **remainder) {
+static int parse_ipv6_address(const char *input, char *addr, size_t addr_size, const char **remainder) {
   const char *end = strchr(input + 1, ']');
   if (!end) {
     return -1; /* No closing bracket */
@@ -54,8 +53,7 @@ static int parse_ipv6_address(const char *input, char *addr, size_t addr_size,
   return 0;
 }
 
-static int parse_address_port(const char *input, char *addr, size_t addr_size,
-                              char *port, size_t port_size) {
+static int parse_address_port(const char *input, char *addr, size_t addr_size, char *port, size_t port_size) {
   const char *port_start;
   size_t addr_len;
 
@@ -101,8 +99,7 @@ static int parse_address_port(const char *input, char *addr, size_t addr_size,
   return 0;
 }
 
-static int parse_rtp_url_components(char *url_part,
-                                    struct rtp_url_components *components) {
+static int parse_rtp_url_components(char *url_part, struct rtp_url_components *components) {
   char *query_start, *at_pos;
   char main_part[HTTP_URL_MAIN_PART_SIZE];
   char fcc_value[HTTP_URL_FCC_VALUE_SIZE];
@@ -125,14 +122,12 @@ static int parse_rtp_url_components(char *url_part,
     query_start++;       /* Point to query string */
 
     /* Parse FCC parameter from query string */
-    if (http_parse_query_param(query_start, "fcc", fcc_value,
-                               sizeof(fcc_value)) == 0) {
+    if (http_parse_query_param(query_start, "fcc", fcc_value, sizeof(fcc_value)) == 0) {
       /* Check for empty FCC value */
       if (fcc_value[0] == '\0') {
         return -1; /* Empty FCC parameter */
       }
-      if (parse_address_port(fcc_value, components->fcc_addr,
-                             sizeof(components->fcc_addr), components->fcc_port,
+      if (parse_address_port(fcc_value, components->fcc_addr, sizeof(components->fcc_addr), components->fcc_port,
                              sizeof(components->fcc_port)) != 0) {
         return -1;
       }
@@ -140,8 +135,7 @@ static int parse_rtp_url_components(char *url_part,
     }
 
     /* Parse fcc-type parameter from query string */
-    if (http_parse_query_param(query_start, "fcc-type", fcc_type_value,
-                               sizeof(fcc_type_value)) == 0) {
+    if (http_parse_query_param(query_start, "fcc-type", fcc_type_value, sizeof(fcc_type_value)) == 0) {
       /* Check for empty fcc-type value */
       if (fcc_type_value[0] != '\0') {
         /* Parse fcc-type value (case-insensitive) */
@@ -158,8 +152,7 @@ static int parse_rtp_url_components(char *url_part,
 
     /* Parse FEC port parameter from query string */
     char fec_port_value[16];
-    if (http_parse_query_param(query_start, "fec", fec_port_value,
-                               sizeof(fec_port_value)) == 0) {
+    if (http_parse_query_param(query_start, "fec", fec_port_value, sizeof(fec_port_value)) == 0) {
       if (fec_port_value[0] != '\0') {
         char *endptr;
         long port = strtol(fec_port_value, &endptr, 10);
@@ -207,26 +200,21 @@ static int parse_rtp_url_components(char *url_part,
     }
 
     /* Parse source address */
-    if (parse_address_port(
-            main_part, components->source_addr, sizeof(components->source_addr),
-            components->source_port, sizeof(components->source_port)) != 0) {
+    if (parse_address_port(main_part, components->source_addr, sizeof(components->source_addr), components->source_port,
+                           sizeof(components->source_port)) != 0) {
       return -1;
     }
     components->has_source = 1;
 
     /* Parse multicast address */
-    if (parse_address_port(at_pos + 1, components->multicast_addr,
-                           sizeof(components->multicast_addr),
-                           components->multicast_port,
-                           sizeof(components->multicast_port)) != 0) {
+    if (parse_address_port(at_pos + 1, components->multicast_addr, sizeof(components->multicast_addr),
+                           components->multicast_port, sizeof(components->multicast_port)) != 0) {
       return -1;
     }
   } else {
     /* No source, only multicast address */
-    if (parse_address_port(main_part, components->multicast_addr,
-                           sizeof(components->multicast_addr),
-                           components->multicast_port,
-                           sizeof(components->multicast_port)) != 0) {
+    if (parse_address_port(main_part, components->multicast_addr, sizeof(components->multicast_addr),
+                           components->multicast_port, sizeof(components->multicast_port)) != 0) {
       return -1;
     }
   }
@@ -243,8 +231,7 @@ static int parse_rtp_url_components(char *url_part,
  * query_start points to '?' (may be set to NULL if query becomes empty).
  * param_start points to the first char of the parameter name.
  * value_end points past the last char of the parameter value. */
-static void remove_query_param(char **query_start, char *param_start,
-                                char *value_end) {
+static void remove_query_param(char **query_start, char *param_start, char *value_end) {
   char *qs = *query_start;
 
   if (param_start == qs + 1) {
@@ -266,8 +253,7 @@ static void remove_query_param(char **query_start, char *param_start,
   }
 }
 
-int service_extract_seek_params(char *query_start, char **out_seek_param_name,
-                                char **out_seek_param_value,
+int service_extract_seek_params(char *query_start, char **out_seek_param_name, char **out_seek_param_value,
                                 int *out_seek_offset_seconds) {
   char *r2h_seek_name_explicit = NULL;
   const char *seek_param_name = NULL;
@@ -275,8 +261,8 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
   int seek_offset_seconds = 0;
   char heuristic_seek_name[16];
 
-  if (!query_start || *query_start != '?' || !out_seek_param_name ||
-      !out_seek_param_value || !out_seek_offset_seconds) {
+  if (!query_start || *query_start != '?' || !out_seek_param_name || !out_seek_param_value ||
+      !out_seek_offset_seconds) {
     return -1;
   }
 
@@ -286,8 +272,7 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
 
   /* Step 1: Extract r2h-seek-name parameter if present */
   char *r2h_start = strstr(query_start, "r2h-seek-name=");
-  if (r2h_start &&
-      (r2h_start == query_start + 1 || *(r2h_start - 1) == '&')) {
+  if (r2h_start && (r2h_start == query_start + 1 || *(r2h_start - 1) == '&')) {
     char *value_start = r2h_start + 14; /* Skip "r2h-seek-name=" */
     char *value_end = strchr(value_start, '&');
     if (!value_end)
@@ -304,8 +289,7 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
         free(r2h_seek_name_explicit);
         r2h_seek_name_explicit = NULL;
       } else {
-        logger(LOG_DEBUG, "Found r2h-seek-name parameter: %s",
-               r2h_seek_name_explicit);
+        logger(LOG_DEBUG, "Found r2h-seek-name parameter: %s", r2h_seek_name_explicit);
       }
     }
 
@@ -315,8 +299,7 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
   /* Step 1.5: Extract r2h-seek-offset parameter if present */
   if (query_start) {
     char *offset_start = strstr(query_start, "r2h-seek-offset=");
-    if (offset_start &&
-        (offset_start == query_start + 1 || *(offset_start - 1) == '&')) {
+    if (offset_start && (offset_start == query_start + 1 || *(offset_start - 1) == '&')) {
       char *value_start = offset_start + 16; /* Skip "r2h-seek-offset=" */
       char *value_end = strchr(value_start, '&');
       if (!value_end)
@@ -331,11 +314,9 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
         if (http_url_decode(offset_str) == 0) {
           char *endptr;
           long offset_val = strtol(offset_str, &endptr, 10);
-          if (*endptr == '\0' && offset_val >= INT_MIN &&
-              offset_val <= INT_MAX) {
+          if (*endptr == '\0' && offset_val >= INT_MIN && offset_val <= INT_MAX) {
             seek_offset_seconds = (int)offset_val;
-            logger(LOG_DEBUG, "Found r2h-seek-offset parameter: %d seconds",
-                   seek_offset_seconds);
+            logger(LOG_DEBUG, "Found r2h-seek-offset parameter: %d seconds", seek_offset_seconds);
           } else {
             logger(LOG_WARN, "Invalid r2h-seek-offset value: %s", offset_str);
           }
@@ -352,28 +333,23 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
   /* Step 2: Determine seek parameter name */
   if (r2h_seek_name_explicit) {
     seek_param_name = r2h_seek_name_explicit;
-    logger(LOG_DEBUG, "Using explicitly specified seek parameter name: %s",
-           seek_param_name);
+    logger(LOG_DEBUG, "Using explicitly specified seek parameter name: %s", seek_param_name);
   } else if (query_start) {
     /* Heuristic detection with fixed priority: playseek > tvdr
      * Use case-insensitive matching and preserve original case */
     char *playseek_check = strcasestr(query_start, "playseek=");
-    if (playseek_check &&
-        (playseek_check == query_start + 1 || *(playseek_check - 1) == '&')) {
+    if (playseek_check && (playseek_check == query_start + 1 || *(playseek_check - 1) == '&')) {
       memcpy(heuristic_seek_name, playseek_check, 8);
       heuristic_seek_name[8] = '\0';
       seek_param_name = heuristic_seek_name;
-      logger(LOG_DEBUG, "Heuristic: detected playseek parameter (%s)",
-             seek_param_name);
+      logger(LOG_DEBUG, "Heuristic: detected playseek parameter (%s)", seek_param_name);
     } else {
       char *tvdr_check = strcasestr(query_start, "tvdr=");
-      if (tvdr_check &&
-          (tvdr_check == query_start + 1 || *(tvdr_check - 1) == '&')) {
+      if (tvdr_check && (tvdr_check == query_start + 1 || *(tvdr_check - 1) == '&')) {
         memcpy(heuristic_seek_name, tvdr_check, 4);
         heuristic_seek_name[4] = '\0';
         seek_param_name = heuristic_seek_name;
-        logger(LOG_DEBUG, "Heuristic: detected tvdr parameter (%s)",
-               seek_param_name);
+        logger(LOG_DEBUG, "Heuristic: detected tvdr parameter (%s)", seek_param_name);
       }
     }
   }
@@ -390,8 +366,7 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
 
     /* Iterate through all occurrences of the seek parameter (case-insensitive) */
     while ((seek_start = strcasestr(search_pos, search_pattern)) != NULL) {
-      if (seek_start > query_start && *(seek_start - 1) != '?' &&
-          *(seek_start - 1) != '&') {
+      if (seek_start > query_start && *(seek_start - 1) != '?' && *(seek_start - 1) != '&') {
         search_pos = seek_start + strlen(search_pattern);
         continue;
       }
@@ -404,8 +379,7 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
       size_t param_len = seek_end - seek_start;
       char *current_value = malloc(param_len + 1);
       if (!current_value) {
-        logger(LOG_ERROR, "Failed to allocate memory for %s parameter",
-               seek_param_name);
+        logger(LOG_ERROR, "Failed to allocate memory for %s parameter", seek_param_name);
         if (first_value)
           free(first_value);
         if (selected_value)
@@ -417,8 +391,7 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
       current_value[param_len] = '\0';
 
       if (http_url_decode(current_value) != 0) {
-        logger(LOG_ERROR, "Failed to decode %s parameter value",
-               seek_param_name);
+        logger(LOG_ERROR, "Failed to decode %s parameter value", seek_param_name);
         free(current_value);
         if (first_value)
           free(first_value);
@@ -430,11 +403,9 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
       if (!first_value)
         first_value = strdup(current_value);
 
-      if (!selected_value && current_value && !strchr(current_value, '{') &&
-          !strchr(current_value, '}')) {
+      if (!selected_value && current_value && !strchr(current_value, '{') && !strchr(current_value, '}')) {
         selected_value = strdup(current_value);
-        logger(LOG_DEBUG, "Found valid %s parameter: %s", seek_param_name,
-               selected_value);
+        logger(LOG_DEBUG, "Found valid %s parameter: %s", seek_param_name, selected_value);
       }
 
       free(current_value);
@@ -448,17 +419,15 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
         free(first_value);
     } else if (first_value) {
       seek_param_value = first_value;
-      logger(LOG_DEBUG,
-             "No valid format found for %s, using first value as fallback: %s",
-             seek_param_name, seek_param_value);
+      logger(LOG_DEBUG, "No valid format found for %s, using first value as fallback: %s", seek_param_name,
+             seek_param_value);
     }
 
     /* Remove all seek parameters from URL (case-insensitive) */
     if (seek_param_value) {
       char *remove_pos = query_start;
       while ((seek_start = strcasestr(remove_pos, search_pattern)) != NULL) {
-        if (seek_start > query_start && *(seek_start - 1) != '?' &&
-            *(seek_start - 1) != '&') {
+        if (seek_start > query_start && *(seek_start - 1) != '?' && *(seek_start - 1) != '&') {
           remove_pos = seek_start + strlen(search_pattern);
           continue;
         }
@@ -470,11 +439,9 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
         char *param_value_end = strchr(seek_start, '&');
         if (param_value_end) {
           if (seek_start == query_start + 1) {
-            memmove(query_start + 1, param_value_end + 1,
-                    strlen(param_value_end + 1) + 1);
+            memmove(query_start + 1, param_value_end + 1, strlen(param_value_end + 1) + 1);
           } else {
-            memmove(param_to_remove_start, param_value_end,
-                    strlen(param_value_end) + 1);
+            memmove(param_to_remove_start, param_value_end, strlen(param_value_end) + 1);
           }
           remove_pos = param_to_remove_start;
         } else {
@@ -492,9 +459,7 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
   /* Return results */
   if (seek_param_name) {
     *out_seek_param_name =
-        (seek_param_name == r2h_seek_name_explicit)
-            ? r2h_seek_name_explicit
-            : strdup(seek_param_name);
+        (seek_param_name == r2h_seek_name_explicit) ? r2h_seek_name_explicit : strdup(seek_param_name);
     /* If we used r2h_seek_name_explicit, ownership transferred */
     if (seek_param_name == r2h_seek_name_explicit)
       r2h_seek_name_explicit = NULL;
@@ -526,8 +491,7 @@ fail:
  * @param out_ifname_fcc Output: malloc'd ifname_fcc string (caller frees), or
  * NULL
  */
-static void service_extract_ifname_params(char *query_start, char **out_ifname,
-                                          char **out_ifname_fcc) {
+static void service_extract_ifname_params(char *query_start, char **out_ifname, char **out_ifname_fcc) {
   if (!out_ifname || !out_ifname_fcc) {
     return;
   }
@@ -540,8 +504,7 @@ static void service_extract_ifname_params(char *query_start, char **out_ifname,
 
   /* Extract r2h-ifname-fcc first (longer prefix, avoids matching r2h-ifname) */
   char *param_start = strstr(query_start, "r2h-ifname-fcc=");
-  if (param_start &&
-      (param_start == query_start + 1 || *(param_start - 1) == '&')) {
+  if (param_start && (param_start == query_start + 1 || *(param_start - 1) == '&')) {
     char *value_start = param_start + 15; /* strlen("r2h-ifname-fcc=") */
     char *value_end = strchr(value_start, '&');
     if (!value_end)
@@ -561,8 +524,7 @@ static void service_extract_ifname_params(char *query_start, char **out_ifname,
   /* Extract r2h-ifname */
   if (query_start) {
     param_start = strstr(query_start, "r2h-ifname=");
-    if (param_start &&
-        (param_start == query_start + 1 || *(param_start - 1) == '&')) {
+    if (param_start && (param_start == query_start + 1 || *(param_start - 1) == '&')) {
       /* Make sure this is not r2h-ifname-fcc (already handled above) */
       char *value_start = param_start + 11; /* strlen("r2h-ifname=") */
       char *value_end = strchr(value_start, '&');
@@ -620,9 +582,7 @@ static const char *find_seek_range_separator(const char *value) {
   return NULL;
 }
 
-int service_parse_seek_value(const char *seek_param_value,
-                             int seek_offset_seconds,
-                             const char *user_agent,
+int service_parse_seek_value(const char *seek_param_value, int seek_offset_seconds, const char *user_agent,
                              seek_parse_result_t *parse_result) {
   const char *dash_pos;
 
@@ -634,8 +594,7 @@ int service_parse_seek_value(const char *seek_param_value,
   parse_result->now_utc = time(NULL);
 
   if (user_agent)
-    timezone_parse_from_user_agent(user_agent,
-                                   &parse_result->tz_offset_seconds);
+    timezone_parse_from_user_agent(user_agent, &parse_result->tz_offset_seconds);
 
   if (!seek_param_value || seek_param_value[0] == '\0')
     return 0;
@@ -652,32 +611,24 @@ int service_parse_seek_value(const char *seek_param_value,
       parse_result->has_begin = 1;
     }
 
-    strncpy(parse_result->end_str, dash_pos + 1,
-            sizeof(parse_result->end_str) - 1);
+    strncpy(parse_result->end_str, dash_pos + 1, sizeof(parse_result->end_str) - 1);
     parse_result->end_str[sizeof(parse_result->end_str) - 1] = '\0';
     if (parse_result->end_str[0] != '\0')
       parse_result->has_end = 1;
   } else {
-    strncpy(parse_result->begin_str, seek_param_value,
-            sizeof(parse_result->begin_str) - 1);
+    strncpy(parse_result->begin_str, seek_param_value, sizeof(parse_result->begin_str) - 1);
     parse_result->begin_str[sizeof(parse_result->begin_str) - 1] = '\0';
     if (parse_result->begin_str[0] != '\0')
       parse_result->has_begin = 1;
   }
 
-  if (parse_result->has_begin &&
-      timezone_parse_to_utc(parse_result->begin_str,
-                            parse_result->tz_offset_seconds,
-                            seek_offset_seconds,
-                            &parse_result->begin_utc) == 0) {
+  if (parse_result->has_begin && timezone_parse_to_utc(parse_result->begin_str, parse_result->tz_offset_seconds,
+                                                       seek_offset_seconds, &parse_result->begin_utc) == 0) {
     parse_result->begin_parsed = 1;
   }
 
-  if (parse_result->has_end &&
-      timezone_parse_to_utc(parse_result->end_str,
-                            parse_result->tz_offset_seconds,
-                            seek_offset_seconds,
-                            &parse_result->end_utc) == 0) {
+  if (parse_result->has_end && timezone_parse_to_utc(parse_result->end_str, parse_result->tz_offset_seconds,
+                                                     seek_offset_seconds, &parse_result->end_utc) == 0) {
     parse_result->end_parsed = 1;
   }
 
@@ -708,17 +659,14 @@ int service_parse_seek_value(const char *seek_param_value,
   }
 
   if (parse_result->begin_parsed && parse_result->now_utc != (time_t)-1 &&
-      parse_result->begin_utc <= parse_result->now_utc &&
-      parse_result->now_utc - parse_result->begin_utc < 3600) {
+      parse_result->begin_utc <= parse_result->now_utc && parse_result->now_utc - parse_result->begin_utc < 3600) {
     parse_result->is_recent = 1;
   }
 
   return 0;
 }
 
-int service_convert_seek_value(
-    const seek_parse_result_t *parse_result, char *output,
-    size_t output_size) {
+int service_convert_seek_value(const seek_parse_result_t *parse_result, char *output, size_t output_size) {
   char begin_utc[128] = {0};
   char end_utc[128] = {0};
 
@@ -728,28 +676,21 @@ int service_convert_seek_value(
   if (!parse_result->has_seek)
     return -1;
 
-  logger(LOG_DEBUG, "Parsed seek - begin='%s', end='%s'",
-         parse_result->begin_str, parse_result->end_str);
+  logger(LOG_DEBUG, "Parsed seek - begin='%s', end='%s'", parse_result->begin_str, parse_result->end_str);
 
   if (parse_result->has_begin &&
-      timezone_convert_time_with_offset(parse_result->begin_str,
-                                        parse_result->tz_offset_seconds,
-                                        parse_result->seek_offset_seconds,
-                                        begin_utc, sizeof(begin_utc)) == 0) {
-    logger(LOG_DEBUG, "Converted begin time '%s' to UTC '%s'",
-           parse_result->begin_str, begin_utc);
+      timezone_convert_time_with_offset(parse_result->begin_str, parse_result->tz_offset_seconds,
+                                        parse_result->seek_offset_seconds, begin_utc, sizeof(begin_utc)) == 0) {
+    logger(LOG_DEBUG, "Converted begin time '%s' to UTC '%s'", parse_result->begin_str, begin_utc);
   } else {
     strncpy(begin_utc, parse_result->begin_str, sizeof(begin_utc) - 1);
     begin_utc[sizeof(begin_utc) - 1] = '\0';
   }
 
   if (parse_result->has_end) {
-    if (timezone_convert_time_with_offset(parse_result->end_str,
-                                          parse_result->tz_offset_seconds,
-                                          parse_result->seek_offset_seconds,
-                                          end_utc, sizeof(end_utc)) == 0) {
-      logger(LOG_DEBUG, "Converted end time '%s' to UTC '%s'",
-             parse_result->end_str, end_utc);
+    if (timezone_convert_time_with_offset(parse_result->end_str, parse_result->tz_offset_seconds,
+                                          parse_result->seek_offset_seconds, end_utc, sizeof(end_utc)) == 0) {
+      logger(LOG_DEBUG, "Converted end time '%s' to UTC '%s'", parse_result->end_str, end_utc);
     } else {
       strncpy(end_utc, parse_result->end_str, sizeof(end_utc) - 1);
       end_utc[sizeof(end_utc) - 1] = '\0';
@@ -765,9 +706,7 @@ int service_convert_seek_value(
   return 0;
 }
 
-int service_format_recent_seek_range(
-    const seek_parse_result_t *parse_result, char *output,
-    size_t output_size) {
+int service_format_recent_seek_range(const seek_parse_result_t *parse_result, char *output, size_t output_size) {
   if (!parse_result || !output || output_size == 0)
     return -1;
 
@@ -779,17 +718,14 @@ int service_format_recent_seek_range(
   if (output_size < 17)
     return -1;
 
-  if (strftime(output, output_size, "%Y%m%dT%H%M%SZ",
-               &parse_result->begin_tm_utc) == 0)
+  if (strftime(output, output_size, "%Y%m%dT%H%M%SZ", &parse_result->begin_tm_utc) == 0)
     return -1;
 
   return 1;
 }
 
-int service_resolve_upstream_url(
-    const char *url, const char *seek_param_name,
-    const seek_parse_result_t *parse_result, char *output,
-    size_t output_size) {
+int service_resolve_upstream_url(const char *url, const char *seek_param_name, const seek_parse_result_t *parse_result,
+                                 char *output, size_t output_size) {
   int has_template;
   seek_parse_result_t empty_parse_result;
 
@@ -807,17 +743,14 @@ int service_resolve_upstream_url(
     strncpy(output, url, output_size - 1);
     output[output_size - 1] = '\0';
 
-    if (seek_param_name && parse_result->has_seek &&
-        strlen(seek_param_name) > 0) {
+    if (seek_param_name && parse_result->has_seek && strlen(seek_param_name) > 0) {
       char converted[256];
-      if (service_convert_seek_value(parse_result, converted,
-                                     sizeof(converted)) == 0) {
+      if (service_convert_seek_value(parse_result, converted, sizeof(converted)) == 0) {
         size_t current_len = strlen(output);
         char *query_marker = strchr(output, '?');
         size_t remain = output_size - current_len;
-        int written = snprintf(output + current_len, remain, "%c%s=%s",
-                               query_marker ? '&' : '?', seek_param_name,
-                               converted);
+        int written =
+            snprintf(output + current_len, remain, "%c%s=%s", query_marker ? '&' : '?', seek_param_name, converted);
         if (written < 0 || (size_t)written >= remain) {
           logger(LOG_ERROR, "URL too long to append seek parameter");
           output[current_len] = '\0';
@@ -837,31 +770,29 @@ int service_resolve_upstream_url(
  * - Override params whose name doesn't appear in base are appended.
  * - Multiple same-name params in override are all preserved.
  * base_query and override_query should not include the leading '?'. */
-static int merge_query_strings(const char *base_query,
-                                const char *override_query, char *output,
-                                size_t output_size) {
+static int merge_query_strings(const char *base_query, const char *override_query, char *output, size_t output_size) {
   if (!output || output_size == 0)
     return -1;
 
   output[0] = '\0';
   size_t out_pos = 0;
 
-#define MERGE_APPEND_SEP()                                                     \
-  do {                                                                         \
-    if (out_pos > 0) {                                                         \
-      if (out_pos + 1 >= output_size)                                          \
-        return -1;                                                             \
-      output[out_pos++] = '&';                                                 \
-    }                                                                          \
+#define MERGE_APPEND_SEP()                                                                                             \
+  do {                                                                                                                 \
+    if (out_pos > 0) {                                                                                                 \
+      if (out_pos + 1 >= output_size)                                                                                  \
+        return -1;                                                                                                     \
+      output[out_pos++] = '&';                                                                                         \
+    }                                                                                                                  \
   } while (0)
 
-#define MERGE_APPEND_PARAM(src, len)                                           \
-  do {                                                                         \
-    MERGE_APPEND_SEP();                                                        \
-    if (out_pos + (len) >= output_size)                                        \
-      return -1;                                                               \
-    memcpy(output + out_pos, (src), (len));                                    \
-    out_pos += (len);                                                          \
+#define MERGE_APPEND_PARAM(src, len)                                                                                   \
+  do {                                                                                                                 \
+    MERGE_APPEND_SEP();                                                                                                \
+    if (out_pos + (len) >= output_size)                                                                                \
+      return -1;                                                                                                       \
+    memcpy(output + out_pos, (src), (len));                                                                            \
+    out_pos += (len);                                                                                                  \
   } while (0)
 
   /* Pass 1: Walk base params. For each param name:
@@ -993,8 +924,9 @@ service_t *service_create_from_http_url(const char *http_url) {
   } else if (strncmp(working_url, "http://", 7) == 0) {
     url_part = working_url + 7;
   } else {
-    logger(LOG_ERROR, "Invalid HTTP proxy URL format (must start with /http/ "
-                      "or http://): %s",
+    logger(LOG_ERROR,
+           "Invalid HTTP proxy URL format (must start with /http/ "
+           "or http://): %s",
            http_url);
     return NULL;
   }
@@ -1038,18 +970,14 @@ service_t *service_create_from_http_url(const char *http_url) {
   /* Extract r2h-* parameters from HTTP URL (removes in-place) */
   char *query_start = strchr(result->http_url, '?');
   if (query_start) {
-    service_extract_seek_params(query_start, &result->seek_param_name,
-                                &result->seek_param_value,
+    service_extract_seek_params(query_start, &result->seek_param_name, &result->seek_param_value,
                                 &result->seek_offset_seconds);
-    service_extract_ifname_params(query_start, &result->ifname,
-                                  &result->ifname_fcc);
+    service_extract_ifname_params(query_start, &result->ifname, &result->ifname_fcc);
   }
 
-  logger(LOG_DEBUG, "Created HTTP proxy service: %s -> %s", http_url,
-         result->http_url);
+  logger(LOG_DEBUG, "Created HTTP proxy service: %s -> %s", http_url, result->http_url);
   if (result->seek_param_value) {
-    logger(LOG_DEBUG, "HTTP: Extracted %s parameter: %s",
-           result->seek_param_name ? result->seek_param_name : "seek",
+    logger(LOG_DEBUG, "HTTP: Extracted %s parameter: %s", result->seek_param_name ? result->seek_param_name : "seek",
            result->seek_param_value);
   }
 
@@ -1070,8 +998,7 @@ service_t *service_create_from_udpxy_url(char *url) {
   working_url[sizeof(working_url) - 1] = '\0';
 
   /* Determine service type and delegate to appropriate function */
-  if (strncmp(working_url, "/rtp/", 5) == 0 ||
-      strncmp(working_url, "/udp/", 5) == 0) {
+  if (strncmp(working_url, "/rtp/", 5) == 0 || strncmp(working_url, "/udp/", 5) == 0) {
     /* RTP/UDP service - service_create_from_rtp_url handles both */
     return service_create_from_rtp_url(url);
   } else if (strncmp(working_url, "/rtsp/", 6) == 0) {
@@ -1115,8 +1042,7 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   } else if (strncmp(working_url, "/rtsp/", 6) == 0) {
     url_part = working_url + 6;
   } else {
-    logger(LOG_ERROR,
-           "Invalid RTSP URL format (must start with rtsp:// or /rtsp/)");
+    logger(LOG_ERROR, "Invalid RTSP URL format (must start with rtsp:// or /rtsp/)");
     return NULL;
   }
 
@@ -1129,9 +1055,7 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   char *ifname = NULL, *ifname_fcc = NULL;
   query_start = strchr(url_part, '?');
   if (query_start) {
-    if (service_extract_seek_params(query_start, &seek_param_name,
-                                    &seek_param_value,
-                                    &seek_offset_seconds) < 0) {
+    if (service_extract_seek_params(query_start, &seek_param_name, &seek_param_value, &seek_offset_seconds) < 0) {
       return NULL;
     }
     service_extract_ifname_params(query_start, &ifname, &ifname_fcc);
@@ -1178,8 +1102,7 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
 
   logger(LOG_DEBUG, "Parsed RTSP URL: %s", result->rtsp_url);
   if (result->seek_param_value) {
-    logger(LOG_DEBUG, "Parsed %s parameter: %s",
-           result->seek_param_name ? result->seek_param_name : "seek",
+    logger(LOG_DEBUG, "Parsed %s parameter: %s", result->seek_param_name ? result->seek_param_name : "seek",
            result->seek_param_value);
   }
 
@@ -1202,8 +1125,7 @@ cleanup:
   return NULL;
 }
 
-service_t *service_create_with_query_merge(service_t *configured_service,
-                                           const char *request_url,
+service_t *service_create_with_query_merge(service_t *configured_service, const char *request_url,
                                            service_type_t expected_type) {
   char merged_url[2048];
   char *query_start, *existing_query;
@@ -1218,9 +1140,7 @@ service_t *service_create_with_query_merge(service_t *configured_service,
 
   /* Check if this is the expected service type */
   if (configured_service->service_type != expected_type) {
-    type_name = (expected_type == SERVICE_RTSP)  ? "RTSP"
-                : (expected_type == SERVICE_HTTP) ? "HTTP"
-                                                  : "RTP";
+    type_name = (expected_type == SERVICE_RTSP) ? "RTSP" : (expected_type == SERVICE_HTTP) ? "HTTP" : "RTP";
     logger(LOG_ERROR, "Service is not %s type", type_name);
     return NULL;
   }
@@ -1273,8 +1193,7 @@ service_t *service_create_with_query_merge(service_t *configured_service,
     merged_url[base_len] = '?';
 
     /* Merge query strings: override params replace same-name base params */
-    if (merge_query_strings(existing_query + 1, query_start + 1,
-                            merged_url + base_len + 1,
+    if (merge_query_strings(existing_query + 1, query_start + 1, merged_url + base_len + 1,
                             sizeof(merged_url) - base_len - 1) < 0) {
       logger(LOG_ERROR, "Merged %s URL too long", type_name);
       return NULL;
@@ -1300,8 +1219,8 @@ service_t *service_create_with_query_merge(service_t *configured_service,
     /* Determine separator based on whether URL already has query params */
     separator = strchr(merged_url, '?') ? "&" : "?";
 
-    snprintf(seek_name_param, sizeof(seek_name_param), "%sr2h-seek-name=%s",
-             separator, configured_service->seek_param_name);
+    snprintf(seek_name_param, sizeof(seek_name_param), "%sr2h-seek-name=%s", separator,
+             configured_service->seek_param_name);
 
     if (strlen(merged_url) + strlen(seek_name_param) < sizeof(merged_url)) {
       strcat(merged_url, seek_name_param);
@@ -1319,15 +1238,13 @@ service_t *service_create_with_query_merge(service_t *configured_service,
     /* Determine separator based on whether URL already has query params */
     separator = strchr(merged_url, '?') ? "&" : "?";
 
-    snprintf(seek_offset_param, sizeof(seek_offset_param),
-             "%sr2h-seek-offset=%d", separator,
+    snprintf(seek_offset_param, sizeof(seek_offset_param), "%sr2h-seek-offset=%d", separator,
              configured_service->seek_offset_seconds);
 
     if (strlen(merged_url) + strlen(seek_offset_param) < sizeof(merged_url)) {
       strcat(merged_url, seek_offset_param);
     } else {
-      logger(LOG_ERROR, "Merged %s URL with r2h-seek-offset too long",
-             type_name);
+      logger(LOG_ERROR, "Merged %s URL with r2h-seek-offset too long", type_name);
       return NULL;
     }
   }
@@ -1337,8 +1254,7 @@ service_t *service_create_with_query_merge(service_t *configured_service,
     char ifname_param[IFNAMSIZ + 16];
     const char *separator = strchr(merged_url, '?') ? "&" : "?";
 
-    snprintf(ifname_param, sizeof(ifname_param), "%sr2h-ifname=%s", separator,
-             configured_service->ifname);
+    snprintf(ifname_param, sizeof(ifname_param), "%sr2h-ifname=%s", separator, configured_service->ifname);
 
     if (strlen(merged_url) + strlen(ifname_param) < sizeof(merged_url)) {
       strcat(merged_url, ifname_param);
@@ -1353,21 +1269,19 @@ service_t *service_create_with_query_merge(service_t *configured_service,
     char ifname_fcc_param[IFNAMSIZ + 20];
     const char *separator = strchr(merged_url, '?') ? "&" : "?";
 
-    snprintf(ifname_fcc_param, sizeof(ifname_fcc_param),
-             "%sr2h-ifname-fcc=%s", separator, configured_service->ifname_fcc);
+    snprintf(ifname_fcc_param, sizeof(ifname_fcc_param), "%sr2h-ifname-fcc=%s", separator,
+             configured_service->ifname_fcc);
 
     if (strlen(merged_url) + strlen(ifname_fcc_param) < sizeof(merged_url)) {
       strcat(merged_url, ifname_fcc_param);
     } else {
-      logger(LOG_ERROR, "Merged %s URL with r2h-ifname-fcc too long",
-             type_name);
+      logger(LOG_ERROR, "Merged %s URL with r2h-ifname-fcc too long", type_name);
       return NULL;
     }
   }
 
   /* Create new service from merged URL */
-  logger(LOG_DEBUG, "Creating %s service with merged URL: %s", type_name,
-         merged_url);
+  logger(LOG_DEBUG, "Creating %s service with merged URL: %s", type_name, merged_url);
 
   if (expected_type == SERVICE_RTSP) {
     return service_create_from_rtsp_url(merged_url);
@@ -1385,8 +1299,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
   char *url_part;
   struct rtp_url_components components;
   struct addrinfo hints, *res = NULL, *msrc_res = NULL, *fcc_res = NULL;
-  struct sockaddr_storage *res_addr = NULL, *msrc_res_addr = NULL,
-                          *fcc_res_addr = NULL;
+  struct sockaddr_storage *res_addr = NULL, *msrc_res_addr = NULL, *fcc_res_addr = NULL;
   struct addrinfo *res_ai = NULL, *msrc_res_ai = NULL, *fcc_res_ai = NULL;
   int r = 0, rr = 0, rrr = 0;
 
@@ -1459,11 +1372,9 @@ service_t *service_create_from_rtp_url(const char *http_url) {
     return NULL;
   }
 
-  logger(LOG_DEBUG, "Parsed RTP URL: mcast=%s:%s", components.multicast_addr,
-         components.multicast_port);
+  logger(LOG_DEBUG, "Parsed RTP URL: mcast=%s:%s", components.multicast_addr, components.multicast_port);
   if (components.has_source) {
-    logger(LOG_DEBUG, " src=%s:%s", components.source_addr,
-           components.source_port);
+    logger(LOG_DEBUG, " src=%s:%s", components.source_addr, components.source_port);
   }
   if (components.has_fcc) {
     logger(LOG_DEBUG, " fcc=%s:%s", components.fcc_addr, components.fcc_port);
@@ -1477,24 +1388,20 @@ service_t *service_create_from_rtp_url(const char *http_url) {
   hints.ai_socktype = SOCK_DGRAM;
 
   /* Resolve multicast address */
-  r = getaddrinfo(components.multicast_addr, components.multicast_port, &hints,
-                  &res);
+  r = getaddrinfo(components.multicast_addr, components.multicast_port, &hints, &res);
   if (r != 0) {
-    logger(LOG_ERROR, "Cannot resolve multicast address %s:%s. GAI: %s",
-           components.multicast_addr, components.multicast_port,
-           gai_strerror(r));
+    logger(LOG_ERROR, "Cannot resolve multicast address %s:%s. GAI: %s", components.multicast_addr,
+           components.multicast_port, gai_strerror(r));
     service_free(result);
     return NULL;
   }
 
   /* Resolve source address if present */
   if (components.has_source) {
-    const char *src_port =
-        components.source_port[0] ? components.source_port : NULL;
+    const char *src_port = components.source_port[0] ? components.source_port : NULL;
     rr = getaddrinfo(components.source_addr, src_port, &hints, &msrc_res);
     if (rr != 0) {
-      logger(LOG_ERROR, "Cannot resolve source address %s. GAI: %s",
-             components.source_addr, gai_strerror(rr));
+      logger(LOG_ERROR, "Cannot resolve source address %s. GAI: %s", components.source_addr, gai_strerror(rr));
       freeaddrinfo(res);
       service_free(result);
       return NULL;
@@ -1506,8 +1413,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
     const char *fcc_port = components.fcc_port[0] ? components.fcc_port : NULL;
     rrr = getaddrinfo(components.fcc_addr, fcc_port, &hints, &fcc_res);
     if (rrr != 0) {
-      logger(LOG_ERROR, "Cannot resolve FCC address %s. GAI: %s",
-             components.fcc_addr, gai_strerror(rrr));
+      logger(LOG_ERROR, "Cannot resolve FCC address %s. GAI: %s", components.fcc_addr, gai_strerror(rrr));
       freeaddrinfo(res);
       if (msrc_res)
         freeaddrinfo(msrc_res);
@@ -1557,8 +1463,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
     msrc_res_addr = malloc(sizeof(struct sockaddr_storage));
     msrc_res_ai = malloc(sizeof(struct addrinfo));
     if (!msrc_res_addr || !msrc_res_ai) {
-      logger(LOG_ERROR,
-             "Failed to allocate memory for source address structures");
+      logger(LOG_ERROR, "Failed to allocate memory for source address structures");
       freeaddrinfo(res);
       freeaddrinfo(msrc_res);
       if (fcc_res)
@@ -1579,8 +1484,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
     /* Create source string for compatibility */
     char source_str[HTTP_SOURCE_STRING_SIZE];
     if (components.source_port[0]) {
-      snprintf(source_str, sizeof(source_str), "%s:%s", components.source_addr,
-               components.source_port);
+      snprintf(source_str, sizeof(source_str), "%s:%s", components.source_addr, components.source_port);
     } else {
       strncpy(source_str, components.source_addr, sizeof(source_str) - 1);
       source_str[sizeof(source_str) - 1] = '\0';
@@ -1637,8 +1541,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
 
     /* Determine FCC type based on explicit parameter or port-based detection */
     if (components.fcc_type_explicit) {
-      logger(LOG_DEBUG, "FCC type explicitly set to %s",
-             result->fcc_type == FCC_TYPE_HUAWEI ? "Huawei" : "Telecom");
+      logger(LOG_DEBUG, "FCC type explicitly set to %s", result->fcc_type == FCC_TYPE_HUAWEI ? "Huawei" : "Telecom");
     }
   }
 
@@ -1996,8 +1899,7 @@ void service_hashmap_init(void) {
    * elsize is sizeof(service_t *) because we store pointers to services
    * We use random seeds for security
    */
-  service_map = hashmap_new(sizeof(service_t *), 64, 0, 0, service_hash,
-                            service_compare, NULL, NULL);
+  service_map = hashmap_new(sizeof(service_t *), 64, 0, 0, service_hash, service_compare, NULL, NULL);
 
   if (service_map == NULL) {
     logger(LOG_ERROR, "Failed to create service hashmap");
@@ -2031,11 +1933,9 @@ void service_hashmap_add(service_t *service) {
   const void *old = hashmap_set(service_map, &service);
 
   if (hashmap_oom(service_map)) {
-    logger(LOG_ERROR, "Out of memory when adding service to hashmap: %s",
-           service->url);
+    logger(LOG_ERROR, "Out of memory when adding service to hashmap: %s", service->url);
   } else if (old != NULL) {
-    logger(LOG_WARN, "Service URL already exists in hashmap (replaced): %s",
-           service->url);
+    logger(LOG_WARN, "Service URL already exists in hashmap (replaced): %s", service->url);
   }
 }
 
@@ -2068,8 +1968,7 @@ service_t *service_hashmap_get(const char *url) {
    * pointer, but we only use it for lookup, not modification */
   service_t key_service;
   memset(&key_service, 0, sizeof(key_service));
-  key_service.url =
-      (char *)(uintptr_t)url; /* Cast via uintptr_t to avoid warning */
+  key_service.url = (char *)(uintptr_t)url; /* Cast via uintptr_t to avoid warning */
 
   /* Pass pointer to the key service pointer (service_t**) */
   service_t *key_ptr = &key_service;

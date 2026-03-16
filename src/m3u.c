@@ -39,9 +39,7 @@ static m3u_cache_t m3u_cache = {0};
 static const int m3u_retry_delays[] = {2, 4, 8, 16, 32, 64, 128, 256};
 #define M3U_MAX_RETRY_COUNT 8
 
-int m3u_is_header(const char *line) {
-  return (strncmp(line, "#EXTM3U", 7) == 0);
-}
+int m3u_is_header(const char *line) { return (strncmp(line, "#EXTM3U", 7) == 0); }
 
 /* Extract x-tvg-url attribute from #EXTM3U header line
  * Returns: malloc'd string containing URL (caller must free), or NULL if not
@@ -188,14 +186,12 @@ char *get_server_address(void) {
     char path[1024] = {0};
 
     /* Parse URL components from config.hostname */
-    if (http_parse_url_components(config.hostname, protocol, host, port,
-                                  path) != 0) {
+    if (http_parse_url_components(config.hostname, protocol, host, port, path) != 0) {
       /* Failed to parse, build basic URL with config.hostname as host */
       if (strcmp(server_port, "80") == 0) {
         snprintf(full_url, sizeof(full_url), "http://%s/", config.hostname);
       } else {
-        snprintf(full_url, sizeof(full_url), "http://%s:%s/", config.hostname,
-                 server_port);
+        snprintf(full_url, sizeof(full_url), "http://%s:%s/", config.hostname, server_port);
       }
       return strdup(full_url);
     }
@@ -214,8 +210,7 @@ char *get_server_address(void) {
 
     /* Build base URL: protocol://host:port or protocol://host (if port is 80
      * and protocol is http) */
-    if (port[0] == '\0' ||
-        (strcmp(protocol, "http") == 0 && strcmp(port, "80") == 0) ||
+    if (port[0] == '\0' || (strcmp(protocol, "http") == 0 && strcmp(port, "80") == 0) ||
         (strcmp(protocol, "https") == 0 && strcmp(port, "443") == 0)) {
       snprintf(full_url, sizeof(full_url), "%s://%s", protocol, host);
     } else {
@@ -265,22 +260,18 @@ char *get_server_address(void) {
       struct sockaddr_in addr;
       memcpy(&addr, ifa->ifa_addr, sizeof(addr));
 
-      if (inet_ntop(AF_INET, &addr.sin_addr, addr_str, sizeof(addr_str)) ==
-          NULL)
+      if (inet_ntop(AF_INET, &addr.sin_addr, addr_str, sizeof(addr_str)) == NULL)
         continue;
 
       /* Check if this is an upstream interface */
       int is_upstream = 0;
-      if (config.upstream_interface[0] != '\0' &&
-          strcmp(ifa->ifa_name, config.upstream_interface) == 0) {
+      if (config.upstream_interface[0] != '\0' && strcmp(ifa->ifa_name, config.upstream_interface) == 0) {
         is_upstream = 1;
       }
-      if (config.upstream_interface_fcc[0] != '\0' &&
-          strcmp(ifa->ifa_name, config.upstream_interface_fcc) == 0) {
+      if (config.upstream_interface_fcc[0] != '\0' && strcmp(ifa->ifa_name, config.upstream_interface_fcc) == 0) {
         is_upstream = 1;
       }
-      if (config.upstream_interface_rtsp[0] != '\0' &&
-          strcmp(ifa->ifa_name, config.upstream_interface_rtsp) == 0) {
+      if (config.upstream_interface_rtsp[0] != '\0' && strcmp(ifa->ifa_name, config.upstream_interface_rtsp) == 0) {
         is_upstream = 1;
       }
       if (config.upstream_interface_multicast[0] != '\0' &&
@@ -342,8 +333,7 @@ char *get_server_address(void) {
 /* Extract attribute value from EXTINF line
  * Example: catchup-source="rtsp://..." extracts the URL
  */
-static int extract_attribute(const char *line, const char *attr_name,
-                             char *value, size_t value_size) {
+static int extract_attribute(const char *line, const char *attr_name, char *value, size_t value_size) {
   char search_pattern[128];
   const char *attr_start;
   const char *value_start;
@@ -393,8 +383,7 @@ static int extract_attribute(const char *line, const char *attr_name,
  * Format: #EXTINF:-1 ... ,ServiceName
  * Returns the text after the last comma
  */
-static int extract_service_name(const char *line, char *name,
-                                size_t name_size) {
+static int extract_service_name(const char *line, char *name, size_t name_size) {
   const char *comma_pos;
   const char *name_start;
   size_t name_len;
@@ -421,9 +410,7 @@ static int extract_service_name(const char *line, char *name,
 
   /* Remove trailing whitespace and newline */
   name_len = strlen(name);
-  while (name_len > 0 &&
-         (isspace(name[name_len - 1]) || name[name_len - 1] == '\r' ||
-          name[name_len - 1] == '\n')) {
+  while (name_len > 0 && (isspace(name[name_len - 1]) || name[name_len - 1] == '\r' || name[name_len - 1] == '\n')) {
     name[name_len - 1] = '\0';
     name_len--;
   }
@@ -431,9 +418,7 @@ static int extract_service_name(const char *line, char *name,
   return 0;
 }
 
-static void rewrite_catchup_mode_for_proxy(const char *input_line,
-                                           char *output_line,
-                                           size_t output_size) {
+static void rewrite_catchup_mode_for_proxy(const char *input_line, char *output_line, size_t output_size) {
   const char *append_mode;
   size_t prefix_len;
 
@@ -448,10 +433,8 @@ static void rewrite_catchup_mode_for_proxy(const char *input_line,
   }
 
   prefix_len = (size_t)(append_mode - input_line);
-  if (snprintf(output_line, output_size, "%.*scatchup=\"default\"%s",
-               (int)prefix_len, input_line,
-               append_mode + strlen("catchup=\"append\"")) >=
-      (int)output_size) {
+  if (snprintf(output_line, output_size, "%.*scatchup=\"default\"%s", (int)prefix_len, input_line,
+               append_mode + strlen("catchup=\"append\"")) >= (int)output_size) {
     strncpy(output_line, input_line, output_size - 1);
     output_line[output_size - 1] = '\0';
   }
@@ -548,24 +531,18 @@ static char *extract_catchup_template_query(const char *url) {
   if (!analysis.needs_begin && !analysis.needs_end)
     return NULL;
 
-  begin_value = analysis.begin_template[0]
-                  ? analysis.begin_template
-                  : (analysis.needs_begin ? "${utc}" : "");
-  end_value = analysis.end_template[0]
-                ? analysis.end_template
-                : (analysis.needs_end ? "${utcend}" : "");
+  begin_value = analysis.begin_template[0] ? analysis.begin_template : (analysis.needs_begin ? "${utc}" : "");
+  end_value = analysis.end_template[0] ? analysis.end_template : (analysis.needs_end ? "${utcend}" : "");
 
   if (analysis.needs_end) {
-    if (snprintf(query, sizeof(query), "playseek=%s-%s", begin_value,
-                 end_value) >= (int)sizeof(query)) {
+    if (snprintf(query, sizeof(query), "playseek=%s-%s", begin_value, end_value) >= (int)sizeof(query)) {
       logger(LOG_WARN, "Catchup template query exceeds buffer size");
       return NULL;
     }
     return strdup(query);
   }
 
-  if (snprintf(query, sizeof(query), "playseek=%s", begin_value) >=
-      (int)sizeof(query)) {
+  if (snprintf(query, sizeof(query), "playseek=%s", begin_value) >= (int)sizeof(query)) {
     logger(LOG_WARN, "Catchup template query exceeds buffer size");
     return NULL;
   }
@@ -573,9 +550,8 @@ static char *extract_catchup_template_query(const char *url) {
   return strdup(query);
 }
 
-static int build_appended_catchup_url(const char *base_url,
-                                      const char *catchup_source,
-                                      char *output, size_t output_size) {
+static int build_appended_catchup_url(const char *base_url, const char *catchup_source, char *output,
+                                      size_t output_size) {
   const char *separator;
   const char *suffix;
   int written;
@@ -593,8 +569,7 @@ static int build_appended_catchup_url(const char *base_url,
     suffix = catchup_source;
   }
 
-  written = snprintf(output, output_size, "%s%s%s", base_url, separator,
-                     suffix);
+  written = snprintf(output, output_size, "%s%s%s", base_url, separator, suffix);
   if (written < 0 || (size_t)written >= output_size) {
     logger(LOG_WARN, "Appended catchup URL exceeds buffer size");
     return -1;
@@ -607,8 +582,7 @@ static int build_appended_catchup_url(const char *base_url,
  * Example: http://router.ccca.cc:5140/rtp/239.253.64.120:5140 ->
  * rtp://239.253.64.120:5140
  */
-static int extract_wrapped_url(const char *url, char *extracted,
-                               size_t extracted_size) {
+static int extract_wrapped_url(const char *url, char *extracted, size_t extracted_size) {
   const char *scheme_end;
   const char *host_start;
   const char *path_start;
@@ -661,14 +635,13 @@ static int extract_wrapped_url(const char *url, char *extracted,
   protocol[protocol_len] = '\0';
 
   /* Check if protocol is supported */
-  if (strcasecmp(protocol, "rtp") != 0 && strcasecmp(protocol, "udp") != 0 &&
-      strcasecmp(protocol, "rtsp") != 0 && strcasecmp(protocol, "http") != 0) {
+  if (strcasecmp(protocol, "rtp") != 0 && strcasecmp(protocol, "udp") != 0 && strcasecmp(protocol, "rtsp") != 0 &&
+      strcasecmp(protocol, "http") != 0) {
     return -1; /* Unsupported protocol */
   }
 
   /* Build extracted URL: protocol://rest_of_path */
-  if (snprintf(extracted, extracted_size, "%s://%s", protocol,
-               protocol_end + 1) >= (int)extracted_size) {
+  if (snprintf(extracted, extracted_size, "%s://%s", protocol, protocol_end + 1) >= (int)extracted_size) {
     return -1; /* Buffer too small */
   }
 
@@ -682,8 +655,7 @@ static int extract_wrapped_url(const char *url, char *extracted,
  * output_size: size of output buffer
  * Returns: 0 on success, -1 on error
  */
-static int build_service_url(const char *service_name, const char *query_params,
-                             char *output, size_t output_size) {
+static int build_service_url(const char *service_name, const char *query_params, char *output, size_t output_size) {
   char *encoded_name = http_url_encode(service_name);
   char *encoded_token = NULL;
   int result;
@@ -707,18 +679,14 @@ static int build_service_url(const char *service_name, const char *query_params,
 
   /* Build URL with placeholder and appropriate query parameters */
   if (has_query_params && has_r2h_token) {
-    result = snprintf(output, output_size, "%s%s?%s&r2h-token=%s",
-                      M3U_BASE_URL_PLACEHOLDER, encoded_name, query_params,
+    result = snprintf(output, output_size, "%s%s?%s&r2h-token=%s", M3U_BASE_URL_PLACEHOLDER, encoded_name, query_params,
                       encoded_token);
   } else if (has_query_params) {
-    result = snprintf(output, output_size, "%s%s?%s", M3U_BASE_URL_PLACEHOLDER,
-                      encoded_name, query_params);
+    result = snprintf(output, output_size, "%s%s?%s", M3U_BASE_URL_PLACEHOLDER, encoded_name, query_params);
   } else if (has_r2h_token) {
-    result = snprintf(output, output_size, "%s%s?r2h-token=%s",
-                      M3U_BASE_URL_PLACEHOLDER, encoded_name, encoded_token);
+    result = snprintf(output, output_size, "%s%s?r2h-token=%s", M3U_BASE_URL_PLACEHOLDER, encoded_name, encoded_token);
   } else {
-    result = snprintf(output, output_size, "%s%s", M3U_BASE_URL_PLACEHOLDER,
-                      encoded_name);
+    result = snprintf(output, output_size, "%s%s", M3U_BASE_URL_PLACEHOLDER, encoded_name);
   }
 
   free(encoded_name);
@@ -751,10 +719,8 @@ static int is_url_recognizable(const char *url) {
   }
 
   /* Not a wrapped URL - check direct protocols */
-  if (strncmp(test_url, "rtp://", 6) == 0 ||
-      strncmp(test_url, "udp://", 6) == 0 ||
-      strncmp(test_url, "rtsp://", 7) == 0 ||
-      strncmp(test_url, "http://", 7) == 0) {
+  if (strncmp(test_url, "rtp://", 6) == 0 || strncmp(test_url, "udp://", 6) == 0 ||
+      strncmp(test_url, "rtsp://", 7) == 0 || strncmp(test_url, "http://", 7) == 0) {
     return 1;
   }
 
@@ -774,8 +740,7 @@ static void update_m3u_etag(void) {
 
   /* Calculate MD5 hash of playlist content */
   md5Init(&ctx);
-  md5Update(&ctx, (uint8_t *)m3u_cache.transformed_m3u,
-            m3u_cache.transformed_m3u_used);
+  md5Update(&ctx, (uint8_t *)m3u_cache.transformed_m3u, m3u_cache.transformed_m3u_used);
   md5Finalize(&ctx);
 
   /* Convert digest to hex string */
@@ -805,8 +770,7 @@ static int append_to_transformed_m3u(const char *str, service_source_t source) {
   }
 
   /* Grow buffer if needed */
-  while (m3u_cache.transformed_m3u_used + len + 1 >
-         m3u_cache.transformed_m3u_size) {
+  while (m3u_cache.transformed_m3u_used + len + 1 > m3u_cache.transformed_m3u_size) {
     new_size = m3u_cache.transformed_m3u_size * 2;
     if (new_size > MAX_M3U_CONTENT) {
       logger(LOG_ERROR, "Transformed M3U too large");
@@ -863,16 +827,14 @@ static char *find_unique_service_name(const char *service_name) {
 
     /* Check for numbered variants (name/2, name/3, etc.) */
     size_t base_len = strlen(service_name);
-    if (strncmp(existing->url, service_name, base_len) == 0 &&
-        existing->url[base_len] == '/') {
+    if (strncmp(existing->url, service_name, base_len) == 0 && existing->url[base_len] == '/') {
       /* Extract the suffix number */
       const char *suffix_str = existing->url + base_len + 1;
       char *endptr;
       long suffix_num = strtol(suffix_str, &endptr, 10);
 
       /* Valid if entire remaining string is a number */
-      if (*suffix_str != '\0' && *endptr == '\0' && suffix_num > 0 &&
-          suffix_num < 1000) {
+      if (*suffix_str != '\0' && *endptr == '\0' && suffix_num > 0 && suffix_num < 1000) {
         if (suffix_num > max_suffix) {
           max_suffix = (int)suffix_num;
         }
@@ -896,8 +858,7 @@ static char *find_unique_service_name(const char *service_name) {
  * Returns: malloc'd string containing the actual unique service name used
  * (caller must free), or NULL on error
  */
-static char *create_service_from_url(const char *service_name, const char *url,
-                                     service_source_t source,
+static char *create_service_from_url(const char *service_name, const char *url, service_source_t source,
                                      int strip_url_label) {
   char normalized_url[MAX_URL_LENGTH];
   char extracted_url[MAX_URL_LENGTH];
@@ -910,8 +871,7 @@ static char *create_service_from_url(const char *service_name, const char *url,
 
   /* Try to extract wrapped URL (e.g., http://router:5140/rtp/239.x.x.x ->
    * rtp://239.x.x.x) */
-  if (extract_wrapped_url(normalized_url, extracted_url,
-                          sizeof(extracted_url)) == 0) {
+  if (extract_wrapped_url(normalized_url, extracted_url, sizeof(extracted_url)) == 0) {
     /* Use the extracted URL */
     strncpy(normalized_url, extracted_url, sizeof(normalized_url) - 1);
     normalized_url[sizeof(normalized_url) - 1] = '\0';
@@ -926,17 +886,14 @@ static char *create_service_from_url(const char *service_name, const char *url,
   /* Find unique service name (handles duplicates automatically) */
   unique_name = find_unique_service_name(service_name);
   if (!unique_name) {
-    logger(LOG_ERROR, "Failed to generate unique service name for: %s",
-           service_name);
+    logger(LOG_ERROR, "Failed to generate unique service name for: %s", service_name);
     return NULL;
   }
 
-  logger(LOG_DEBUG, "Creating service from M3U: %s -> %s %s", service_name,
-         unique_name, normalized_url);
+  logger(LOG_DEBUG, "Creating service from M3U: %s -> %s %s", service_name, unique_name, normalized_url);
 
   /* Create service based on URL type */
-  if (strncmp(normalized_url, "rtp://", 6) == 0 ||
-      strncmp(normalized_url, "udp://", 6) == 0) {
+  if (strncmp(normalized_url, "rtp://", 6) == 0 || strncmp(normalized_url, "udp://", 6) == 0) {
     new_service = service_create_from_rtp_url(normalized_url);
   } else if (strncmp(normalized_url, "rtsp://", 7) == 0) {
     new_service = service_create_from_rtsp_url(normalized_url);
@@ -949,8 +906,7 @@ static char *create_service_from_url(const char *service_name, const char *url,
   }
 
   if (!new_service) {
-    logger(LOG_ERROR, "Failed to create service from M3U entry: %s",
-           service_name);
+    logger(LOG_ERROR, "Failed to create service from M3U entry: %s", service_name);
     free(unique_name);
     return NULL;
   }
@@ -1022,13 +978,11 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
 
   memset(&current_extinf, 0, sizeof(current_extinf));
 
-  logger(LOG_INFO, "Parsing M3U content from: %s",
-         source_url ? source_url : "inline");
+  logger(LOG_INFO, "Parsing M3U content from: %s", source_url ? source_url : "inline");
 
   /* Determine service source based on source_url */
   service_source_t service_source;
-  if (!source_url || strcmp(source_url, "inline") == 0 ||
-      strncmp(source_url, "inline", 6) == 0) {
+  if (!source_url || strcmp(source_url, "inline") == 0 || strncmp(source_url, "inline", 6) == 0) {
     service_source = SERVICE_SOURCE_INLINE;
   } else {
     service_source = SERVICE_SOURCE_EXTERNAL;
@@ -1058,8 +1012,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
 
     /* Trim trailing whitespace */
     line_len = strlen(line);
-    while (line_len > 0 &&
-           (isspace(line[line_len - 1]) || line[line_len - 1] == '\r')) {
+    while (line_len > 0 && (isspace(line[line_len - 1]) || line[line_len - 1] == '\r')) {
       line[line_len - 1] = '\0';
       line_len--;
     }
@@ -1107,8 +1060,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
       }
 
       /* Extract group-title if present */
-      if (extract_attribute(line, "group-title", current_extinf.group_title,
-                            sizeof(current_extinf.group_title)) == 0 &&
+      if (extract_attribute(line, "group-title", current_extinf.group_title, sizeof(current_extinf.group_title)) == 0 &&
           current_extinf.group_title[0] != '\0') {
         /* Build service name as "group-title/service-name" */
         size_t group_len = strlen(current_extinf.group_title);
@@ -1123,25 +1075,21 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
         }
 
         /* Now safe to format */
-        int written = snprintf(current_extinf.name, sizeof(current_extinf.name),
-                               "%s/%s", current_extinf.group_title, base_name);
+        int written =
+            snprintf(current_extinf.name, sizeof(current_extinf.name), "%s/%s", current_extinf.group_title, base_name);
         if (written < 0 || (size_t)written >= sizeof(current_extinf.name)) {
-          logger(LOG_ERROR,
-                 "Failed to format service name, using base name only");
-          strncpy(current_extinf.name, base_name,
-                  sizeof(current_extinf.name) - 1);
+          logger(LOG_ERROR, "Failed to format service name, using base name only");
+          strncpy(current_extinf.name, base_name, sizeof(current_extinf.name) - 1);
           current_extinf.name[sizeof(current_extinf.name) - 1] = '\0';
         }
       } else {
         /* No group-title, use base name as-is */
-        strncpy(current_extinf.name, base_name,
-                sizeof(current_extinf.name) - 1);
+        strncpy(current_extinf.name, base_name, sizeof(current_extinf.name) - 1);
         current_extinf.name[sizeof(current_extinf.name) - 1] = '\0';
       }
 
       /* Extract catchup-source if present */
-      if (extract_attribute(line, "catchup-source",
-                            current_extinf.catchup_source,
+      if (extract_attribute(line, "catchup-source", current_extinf.catchup_source,
                             sizeof(current_extinf.catchup_source)) == 0) {
         current_extinf.has_catchup = 1;
       }
@@ -1177,17 +1125,14 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
         char name_with_label[MAX_SERVICE_NAME];
         if (url_label_copy[0] == '$' && url_label_copy[1] != '\0') {
           /* Convert "$label" to "/label" and append to service name */
-          snprintf(name_with_label, sizeof(name_with_label), "%s/%s",
-                   current_extinf.name, url_label_copy + 1);
+          snprintf(name_with_label, sizeof(name_with_label), "%s/%s", current_extinf.name, url_label_copy + 1);
         } else {
-          strncpy(name_with_label, current_extinf.name,
-                  sizeof(name_with_label) - 1);
+          strncpy(name_with_label, current_extinf.name, sizeof(name_with_label) - 1);
           name_with_label[sizeof(name_with_label) - 1] = '\0';
         }
 
         /* Recognizable URL: create service first to get unique name */
-        char *unique_service_name = create_service_from_url(
-          name_with_label, line, service_source, 1);
+        char *unique_service_name = create_service_from_url(name_with_label, line, service_source, 1);
 
         if (unique_service_name) {
           char *unique_catchup_name = NULL;
@@ -1201,16 +1146,11 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
           http_strip_url_label(line_without_label);
 
           /* Create catchup service if present and URL is recognizable */
-          if (current_extinf.has_catchup &&
-              strlen(current_extinf.catchup_source) > 0) {
-            catchup_is_recognizable =
-                is_url_recognizable(current_extinf.catchup_source);
+          if (current_extinf.has_catchup && strlen(current_extinf.catchup_source) > 0) {
+            catchup_is_recognizable = is_url_recognizable(current_extinf.catchup_source);
 
-            if (!catchup_is_recognizable &&
-                is_url_recognizable(line_without_label) &&
-                build_appended_catchup_url(line_without_label,
-                                           current_extinf.catchup_source,
-                                           appended_catchup_url,
+            if (!catchup_is_recognizable && is_url_recognizable(line_without_label) &&
+                build_appended_catchup_url(line_without_label, current_extinf.catchup_source, appended_catchup_url,
                                            sizeof(appended_catchup_url)) == 0) {
               catchup_service_url = appended_catchup_url;
               catchup_is_recognizable = 1;
@@ -1218,10 +1158,8 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
 
             if (catchup_is_recognizable) {
               char catchup_name[MAX_SERVICE_NAME + 20];
-              snprintf(catchup_name, sizeof(catchup_name), "%s/catchup",
-                       unique_service_name);
-                unique_catchup_name = create_service_from_url(
-                  catchup_name, catchup_service_url, service_source, 0);
+              snprintf(catchup_name, sizeof(catchup_name), "%s/catchup", unique_service_name);
+              unique_catchup_name = create_service_from_url(catchup_name, catchup_service_url, service_source, 0);
             }
           }
 
@@ -1231,8 +1169,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
 
           /* Build service URL using the actual unique service name for
            * transformed M3U */
-          if (build_service_url(unique_service_name, main_query, proxy_url,
-                                sizeof(proxy_url)) == 0) {
+          if (build_service_url(unique_service_name, main_query, proxy_url, sizeof(proxy_url)) == 0) {
             /* Append raw $label to the very end of proxy URL (after any query
              * params) so that it always appears as the last part of the URL */
             if (url_label_copy[0] != '\0') {
@@ -1247,20 +1184,16 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
           /* Now generate the transformed EXTINF line with unique names */
           if (unique_catchup_name && catchup_is_recognizable) {
             /* Replace catchup-source URL in EXTINF line */
-            char *catchup_query =
-              extract_catchup_template_query(catchup_service_url);
+            char *catchup_query = extract_catchup_template_query(catchup_service_url);
             char catchup_proxy_url[MAX_URL_LENGTH];
             char rewritten_extinf[MAX_M3U_LINE];
 
-            rewrite_catchup_mode_for_proxy(transformed_line, rewritten_extinf,
-                                           sizeof(rewritten_extinf));
+            rewrite_catchup_mode_for_proxy(transformed_line, rewritten_extinf, sizeof(rewritten_extinf));
 
-            if (build_service_url(unique_catchup_name, catchup_query,
-                                  catchup_proxy_url,
-                                  sizeof(catchup_proxy_url)) == 0) {
+            if (build_service_url(unique_catchup_name, catchup_query, catchup_proxy_url, sizeof(catchup_proxy_url)) ==
+                0) {
               /* Find and replace catchup-source in line */
-              char *catchup_start =
-                  strstr(rewritten_extinf, "catchup-source=\"");
+              char *catchup_start = strstr(rewritten_extinf, "catchup-source=\"");
               if (catchup_start) {
                 catchup_start += 16; /* Skip 'catchup-source="' */
                 char *catchup_end = strchr(catchup_start, '"');
@@ -1268,9 +1201,8 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
                   /* Build transformed EXTINF line */
                   size_t prefix_len = catchup_start - rewritten_extinf;
                   char final_extinf[MAX_M3U_LINE];
-                  snprintf(final_extinf, sizeof(final_extinf), "%.*s%s%s",
-                           (int)prefix_len, rewritten_extinf, catchup_proxy_url,
-                           catchup_end);
+                  snprintf(final_extinf, sizeof(final_extinf), "%.*s%s%s", (int)prefix_len, rewritten_extinf,
+                           catchup_proxy_url, catchup_end);
                   append_to_transformed_m3u(final_extinf, service_source);
                   append_to_transformed_m3u("\n", service_source);
                 } else {
@@ -1336,9 +1268,8 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
     m3u_cache.transformed_m3u_inline_end = m3u_cache.transformed_m3u_used;
   }
 
-  logger(LOG_INFO,
-         "Parsed %d M3U entries, generated transformed playlist (%zu bytes)",
-         entry_count, m3u_cache.transformed_m3u_used);
+  logger(LOG_INFO, "Parsed %d M3U entries, generated transformed playlist (%zu bytes)", entry_count,
+         m3u_cache.transformed_m3u_used);
 
   return 0;
 }
@@ -1360,9 +1291,7 @@ const char *m3u_get_transformed_playlist(void) {
 /* Generate complete M3U playlist dynamically based on request headers
  * Returns malloc'd string, caller must free
  */
-char *m3u_generate_playlist(const char *host_header,
-                            const char *x_forwarded_host,
-                            const char *x_forwarded_proto) {
+char *m3u_generate_playlist(const char *host_header, const char *x_forwarded_host, const char *x_forwarded_proto) {
   const char *half_transformed = m3u_cache.transformed_m3u;
   size_t half_size = m3u_cache.transformed_m3u_used;
   char *base_url = NULL;
@@ -1425,22 +1354,18 @@ char *m3u_generate_playlist(const char *host_header,
     if (has_r2h_token && encoded_token) {
       /* Include r2h-token in EPG URL */
       if (epg->is_gzipped) {
-        written = snprintf(dst_ptr, result_size - result_used,
-                           "#EXTM3U x-tvg-url=\"%sepg.xml.gz?r2h-token=%s\"\n\n",
+        written = snprintf(dst_ptr, result_size - result_used, "#EXTM3U x-tvg-url=\"%sepg.xml.gz?r2h-token=%s\"\n\n",
                            base_url, encoded_token);
       } else {
-        written = snprintf(dst_ptr, result_size - result_used,
-                           "#EXTM3U x-tvg-url=\"%sepg.xml?r2h-token=%s\"\n\n",
+        written = snprintf(dst_ptr, result_size - result_used, "#EXTM3U x-tvg-url=\"%sepg.xml?r2h-token=%s\"\n\n",
                            base_url, encoded_token);
       }
     } else {
       /* No token, just basic EPG URL */
       if (epg->is_gzipped) {
-        written = snprintf(dst_ptr, result_size - result_used,
-                           "#EXTM3U x-tvg-url=\"%sepg.xml.gz\"\n\n", base_url);
+        written = snprintf(dst_ptr, result_size - result_used, "#EXTM3U x-tvg-url=\"%sepg.xml.gz\"\n\n", base_url);
       } else {
-        written = snprintf(dst_ptr, result_size - result_used,
-                           "#EXTM3U x-tvg-url=\"%sepg.xml\"\n\n", base_url);
+        written = snprintf(dst_ptr, result_size - result_used, "#EXTM3U x-tvg-url=\"%sepg.xml\"\n\n", base_url);
       }
     }
 
@@ -1518,8 +1443,7 @@ char *m3u_generate_playlist(const char *host_header,
 
 const char *m3u_get_etag(void) {
   /* Ensure ETag is calculated */
-  if (!m3u_cache.transformed_m3u_etag_valid && m3u_cache.transformed_m3u &&
-      m3u_cache.transformed_m3u_used > 0) {
+  if (!m3u_cache.transformed_m3u_etag_valid && m3u_cache.transformed_m3u && m3u_cache.transformed_m3u_used > 0) {
     update_m3u_etag();
   }
 
@@ -1550,8 +1474,7 @@ void m3u_reset_transformed_playlist(void) {
 
 void m3u_reset_external_playlist(void) {
   /* Truncate buffer to inline content only (for external reload) */
-  if (m3u_cache.transformed_m3u &&
-      m3u_cache.transformed_m3u_inline_end < m3u_cache.transformed_m3u_used) {
+  if (m3u_cache.transformed_m3u && m3u_cache.transformed_m3u_inline_end < m3u_cache.transformed_m3u_used) {
     /* Reset used size to inline end position */
     m3u_cache.transformed_m3u_used = m3u_cache.transformed_m3u_inline_end;
     m3u_cache.transformed_m3u[m3u_cache.transformed_m3u_used] = '\0';
@@ -1575,8 +1498,7 @@ void m3u_reset_external_playlist(void) {
  * epfd: epoll file descriptor (required for async EPG fetch, pass -1 to skip
  * EPG fetch)
  */
-static void m3u_process_and_fetch_epg(const char *m3u_content,
-                                      const char *source, int epfd) {
+static void m3u_process_and_fetch_epg(const char *m3u_content, const char *source, int epfd) {
   if (!m3u_content)
     return;
 
@@ -1589,8 +1511,7 @@ static void m3u_process_and_fetch_epg(const char *m3u_content,
 }
 
 /* Callback for async M3U fetch completion */
-static void m3u_reload_async_callback(http_fetch_ctx_t *ctx, char *content,
-                                      size_t content_size, void *user_data) {
+static void m3u_reload_async_callback(http_fetch_ctx_t *ctx, char *content, size_t content_size, void *user_data) {
   int epfd;
 
   (void)ctx;          /* Unused */
@@ -1601,14 +1522,13 @@ static void m3u_reload_async_callback(http_fetch_ctx_t *ctx, char *content,
   if (!content) {
     /* Schedule retry if we haven't exceeded max retries */
     if (m3u_cache.retry_count < M3U_MAX_RETRY_COUNT) {
-      int64_t delay_ms =
-          (int64_t)m3u_retry_delays[m3u_cache.retry_count] * 1000;
+      int64_t delay_ms = (int64_t)m3u_retry_delays[m3u_cache.retry_count] * 1000;
       m3u_cache.next_retry_time = get_time_ms() + delay_ms;
       logger(LOG_ERROR,
              "Async external M3U fetch failed: %s, will retry in %d seconds "
              "(retry %d/%d)",
-             config.external_m3u_url, m3u_retry_delays[m3u_cache.retry_count],
-             m3u_cache.retry_count + 1, M3U_MAX_RETRY_COUNT);
+             config.external_m3u_url, m3u_retry_delays[m3u_cache.retry_count], m3u_cache.retry_count + 1,
+             M3U_MAX_RETRY_COUNT);
       m3u_cache.retry_count++;
     } else {
       logger(LOG_ERROR,
@@ -1654,15 +1574,12 @@ int m3u_reload_external_async(int epfd) {
     return -1;
   }
 
-  logger(LOG_DEBUG, "Starting async reload of external M3U: %s",
-         config.external_m3u_url);
+  logger(LOG_DEBUG, "Starting async reload of external M3U: %s", config.external_m3u_url);
 
   /* Start async fetch - supports both HTTP(S) and file:// URLs
    * Note: file:// URLs complete synchronously and return NULL (callback already
    * invoked) */
-  fetch_ctx =
-      http_fetch_start_async(config.external_m3u_url, m3u_reload_async_callback,
-                             (void *)(intptr_t)epfd, epfd);
+  fetch_ctx = http_fetch_start_async(config.external_m3u_url, m3u_reload_async_callback, (void *)(intptr_t)epfd, epfd);
 
   /* NULL return value can mean:
    * 1. file:// URL completed synchronously (callback already called) - SUCCESS

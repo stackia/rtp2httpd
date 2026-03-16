@@ -42,8 +42,7 @@ static inline void platform_set_nosigpipe(int fd) { (void)fd; }
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/uio.h>
-static inline ssize_t platform_sendfile(int out_fd, int in_fd, off_t *offset,
-                                        size_t count) {
+static inline ssize_t platform_sendfile(int out_fd, int in_fd, off_t *offset, size_t count) {
   off_t len = (off_t)count;
   off_t off = offset ? *offset : 0;
   /* macOS sendfile: sendfile(in_fd, out_fd, offset, &len, NULL, 0) */
@@ -60,8 +59,7 @@ static inline ssize_t platform_sendfile(int out_fd, int in_fd, off_t *offset,
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/uio.h>
-static inline ssize_t platform_sendfile(int out_fd, int in_fd, off_t *offset,
-                                        size_t count) {
+static inline ssize_t platform_sendfile(int out_fd, int in_fd, off_t *offset, size_t count) {
   off_t sbytes = 0;
   off_t off = offset ? *offset : 0;
   /* FreeBSD sendfile: sendfile(in_fd, out_fd, offset, count, NULL, &sbytes, 0)
@@ -77,8 +75,7 @@ static inline ssize_t platform_sendfile(int out_fd, int in_fd, off_t *offset,
 }
 #else /* Linux */
 #include <sys/sendfile.h>
-static inline ssize_t platform_sendfile(int out_fd, int in_fd, off_t *offset,
-                                        size_t count) {
+static inline ssize_t platform_sendfile(int out_fd, int in_fd, off_t *offset, size_t count) {
   return sendfile(out_fd, in_fd, offset, count);
 }
 #endif
@@ -125,19 +122,21 @@ static inline int platform_bind_to_device(int sock, const char *ifname) {
 #include "utils.h"
 #include <net/if.h>
 #include <netinet/in.h>
-#include <sys/socket.h>
 #include <string.h>
+#include <sys/socket.h>
 static inline int platform_bind_to_device(int sock, const char *ifname) {
-    unsigned int ifindex = if_nametoindex(ifname);
-    if (ifindex == 0) return -1;
-    struct ip_mreqn mreqn;
-    memset(&mreqn, 0, sizeof(mreqn));
-    mreqn.imr_ifindex = (int)ifindex;
-    if (setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF, &mreqn, sizeof(mreqn)) < 0) {
-        logger(LOG_ERROR, "Platform Compat: Failed to bind devices because FreeBSD does not support binding unicast socket to network devices.");
-        return -1;
-    }
-    return 0;
+  unsigned int ifindex = if_nametoindex(ifname);
+  if (ifindex == 0)
+    return -1;
+  struct ip_mreqn mreqn;
+  memset(&mreqn, 0, sizeof(mreqn));
+  mreqn.imr_ifindex = (int)ifindex;
+  if (setsockopt(sock, IPPROTO_IP, IP_MULTICAST_IF, &mreqn, sizeof(mreqn)) < 0) {
+    logger(LOG_ERROR, "Platform Compat: Failed to bind devices because FreeBSD does not support binding unicast socket "
+                      "to network devices.");
+    return -1;
+  }
+  return 0;
 }
 #else /* Linux */
 #include <net/if.h>
@@ -159,9 +158,7 @@ static inline int platform_bind_to_device(int sock, const char *ifname) {
  */
 #ifdef __linux__
 #include <sys/prctl.h>
-static inline void platform_set_parent_death_signal(int sig) {
-  prctl(PR_SET_PDEATHSIG, sig);
-}
+static inline void platform_set_parent_death_signal(int sig) { prctl(PR_SET_PDEATHSIG, sig); }
 #else
 static inline void platform_set_parent_death_signal(int sig) { (void)sig; }
 #endif

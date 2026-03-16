@@ -11,8 +11,7 @@
 
 /* Event types for worker notification */
 typedef enum {
-  STATUS_EVENT_SSE_UPDATE =
-      1, /* SSE update event (client connect/disconnect/state change) */
+  STATUS_EVENT_SSE_UPDATE = 1,        /* SSE update event (client connect/disconnect/state change) */
   STATUS_EVENT_DISCONNECT_REQUEST = 2 /* Disconnect request from API */
 } status_event_type_t;
 
@@ -63,27 +62,25 @@ typedef enum {
 
 /* Per-client statistics stored in shared memory */
 typedef struct {
-  int active;           /* 1 if slot is active, 0 if free */
-  char client_id[128];  /* Unique client ID: "IP:port-workerN-seqM" */
-  pid_t worker_pid;     /* Actual worker thread/process PID */
-  int worker_index;     /* Worker index (0-based, matches worker_id) */
-  int64_t connect_time; /* Connection timestamp in milliseconds */
-  char
-      client_addr[128]; /* Client address (IP:port format, IPv6 uses []:port) */
-  char service_url[256];      /* Service URL being accessed */
-  client_state_type_t state;  /* Current connection state */
-  uint64_t bytes_sent;        /* Total bytes sent to client */
-  uint32_t current_bandwidth; /* Current bandwidth in bytes/sec */
-  volatile int
-      disconnect_requested; /* Set to 1 when disconnect is requested from API */
-  size_t queue_bytes;       /* Current queued bytes */
-  uint32_t queue_buffers;   /* Current queued buffers */
-  size_t queue_limit_bytes; /* Dynamic queue limit snapshot */
-  size_t queue_bytes_highwater;     /* Peak queued bytes */
-  uint32_t queue_buffers_highwater; /* Peak queued buffers */
-  uint64_t dropped_packets;         /* Total dropped packets */
-  uint64_t dropped_bytes;           /* Total dropped bytes */
-  uint32_t backpressure_events;     /* Times backpressure triggered */
+  int active;                        /* 1 if slot is active, 0 if free */
+  char client_id[128];               /* Unique client ID: "IP:port-workerN-seqM" */
+  pid_t worker_pid;                  /* Actual worker thread/process PID */
+  int worker_index;                  /* Worker index (0-based, matches worker_id) */
+  int64_t connect_time;              /* Connection timestamp in milliseconds */
+  char client_addr[128];             /* Client address (IP:port format, IPv6 uses []:port) */
+  char service_url[256];             /* Service URL being accessed */
+  client_state_type_t state;         /* Current connection state */
+  uint64_t bytes_sent;               /* Total bytes sent to client */
+  uint32_t current_bandwidth;        /* Current bandwidth in bytes/sec */
+  volatile int disconnect_requested; /* Set to 1 when disconnect is requested from API */
+  size_t queue_bytes;                /* Current queued bytes */
+  uint32_t queue_buffers;            /* Current queued buffers */
+  size_t queue_limit_bytes;          /* Dynamic queue limit snapshot */
+  size_t queue_bytes_highwater;      /* Peak queued bytes */
+  uint32_t queue_buffers_highwater;  /* Peak queued buffers */
+  uint64_t dropped_packets;          /* Total dropped packets */
+  uint64_t dropped_bytes;            /* Total dropped bytes */
+  uint32_t backpressure_events;      /* Times backpressure triggered */
   int slow_active;
 } client_stats_t;
 
@@ -154,10 +151,9 @@ typedef struct {
    * Pipes are created BEFORE fork so all workers can access all write ends
    * When an event occurs, any worker can write to all other workers' pipes
    * Read ends are used by each worker in their epoll loop */
-  int worker_notification_pipe_read_fds
-      [STATUS_MAX_WORKERS]; /* Read ends of worker pipes, -1 if closed */
-  int worker_notification_pipes[STATUS_MAX_WORKERS]; /* Write ends of worker
-                                                        pipes, -1 if inactive */
+  int worker_notification_pipe_read_fds[STATUS_MAX_WORKERS]; /* Read ends of worker pipes, -1 if closed */
+  int worker_notification_pipes[STATUS_MAX_WORKERS];         /* Write ends of worker
+                                                                pipes, -1 if inactive */
 
   /* Log circular buffer */
   pthread_mutex_t log_mutex; /* Mutex to protect log buffer writes */
@@ -199,8 +195,7 @@ void status_cleanup(void);
  * @param service_url Service URL string (e.g., HTTP request path)
  * @return Client slot index (status_index) on success, -1 on error
  */
-int status_register_client(const char *client_addr_str,
-                           const char *service_url);
+int status_register_client(const char *client_addr_str, const char *service_url);
 
 /**
  * Unregister a streaming client connection from shared memory
@@ -216,8 +211,7 @@ void status_unregister_client(int status_index);
  * @param bytes_sent Total bytes sent
  * @param current_bandwidth Current bandwidth in bytes/sec
  */
-void status_update_client_bytes(int status_index, uint64_t bytes_sent,
-                                uint32_t current_bandwidth);
+void status_update_client_bytes(int status_index, uint64_t bytes_sent, uint32_t current_bandwidth);
 
 /**
  * Update client state by status index
@@ -227,13 +221,9 @@ void status_update_client_bytes(int status_index, uint64_t bytes_sent,
  */
 void status_update_client_state(int status_index, client_state_type_t state);
 
-void status_update_client_queue(int status_index, size_t queue_bytes,
-                                size_t queue_buffers, size_t queue_limit_bytes,
-                                size_t queue_bytes_highwater,
-                                size_t queue_buffers_highwater,
-                                uint64_t dropped_packets,
-                                uint64_t dropped_bytes,
-                                uint32_t backpressure_events, int slow_active);
+void status_update_client_queue(int status_index, size_t queue_bytes, size_t queue_buffers, size_t queue_limit_bytes,
+                                size_t queue_bytes_highwater, size_t queue_buffers_highwater, uint64_t dropped_packets,
+                                uint64_t dropped_bytes, uint32_t backpressure_events, int slow_active);
 
 /**
  * Add log entry to circular buffer
@@ -315,8 +305,7 @@ const char *status_get_log_level_name(loglevel_t level);
  * @param p_last_log_count Pointer to last log count (in/out)
  * @return Number of bytes written to buffer
  */
-int status_build_sse_json(char *buffer, size_t buffer_capacity,
-                          int *p_sent_initial, int *p_last_write_index,
+int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_initial, int *p_last_write_index,
                           int *p_last_log_count);
 
 /**

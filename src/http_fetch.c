@@ -10,17 +10,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define HTTP_FETCH_BUFFER_SIZE 8192 /* Read buffer size for async fetch */
+#define HTTP_FETCH_BUFFER_SIZE 8192         /* Read buffer size for async fetch */
 #define MAX_HTTP_CONTENT (20 * 1024 * 1024) /* 10MB max */
 #define MAX_URL_LENGTH 2048
 
 /* HTTP fetch tool types */
-typedef enum {
-  HTTP_TOOL_CURL = 0,
-  HTTP_TOOL_UCLIENT_FETCH,
-  HTTP_TOOL_WGET,
-  HTTP_TOOL_NONE
-} http_fetch_tool_t;
+typedef enum { HTTP_TOOL_CURL = 0, HTTP_TOOL_UCLIENT_FETCH, HTTP_TOOL_WGET, HTTP_TOOL_NONE } http_fetch_tool_t;
 
 /* Cached detected HTTP fetch tool */
 static http_fetch_tool_t detected_tool = HTTP_TOOL_NONE;
@@ -39,15 +34,14 @@ struct http_fetch_ctx_s {
   http_fetch_callback_t callback;       /* completion callback */
   http_fetch_fd_callback_t fd_callback; /* fd-based completion callback */
   void *user_data;                      /* user-provided data */
-  int use_fd; /* 1 to use fd callback (zero-copy), 0 to use memory callback */
+  int use_fd;                           /* 1 to use fd callback (zero-copy), 0 to use memory callback */
 };
 
 /* Global hashmap for fast fd-based lookup */
 static struct hashmap *fetch_fd_map = NULL;
 
 /* Hash function for fd-based hashmap lookup */
-static uint64_t hash_fetch_fd(const void *item, uint64_t seed0,
-                              uint64_t seed1) {
+static uint64_t hash_fetch_fd(const void *item, uint64_t seed0, uint64_t seed1) {
   http_fetch_ctx_t *const *ctx_ptr = item;
   http_fetch_ctx_t *ctx = *ctx_ptr;
   return hashmap_xxhash3(&ctx->pipe_fd, sizeof(int), seed0, seed1);
@@ -67,14 +61,13 @@ static void http_fetch_init_map(void) {
     return;
 
   /* Create hashmap with initial capacity of 8 */
-  fetch_fd_map = hashmap_new(
-      sizeof(http_fetch_ctx_t *), /* element size: pointer to context */
-      0,                          /* initial capacity */
-      0, 0,                       /* seeds (use default) */
-      hash_fetch_fd,              /* hash function */
-      compare_fetch_fds,          /* compare function */
-      NULL,                       /* no element free function */
-      NULL                        /* no user data */
+  fetch_fd_map = hashmap_new(sizeof(http_fetch_ctx_t *), /* element size: pointer to context */
+                             0,                          /* initial capacity */
+                             0, 0,                       /* seeds (use default) */
+                             hash_fetch_fd,              /* hash function */
+                             compare_fetch_fds,          /* compare function */
+                             NULL,                       /* no element free function */
+                             NULL                        /* no user data */
   );
 }
 
@@ -115,9 +108,7 @@ static http_fetch_tool_t detect_http_fetch_tool(void) {
   }
 
   /* No suitable tool found */
-  logger(
-      LOG_ERROR,
-      "No HTTP fetch tool found. Please install curl, uclient-fetch or wget.");
+  logger(LOG_ERROR, "No HTTP fetch tool found. Please install curl, uclient-fetch or wget.");
   detected_tool = HTTP_TOOL_NONE;
   tool_detection_done = 1;
   return detected_tool;
@@ -129,24 +120,26 @@ static int shell_escape_single_quote(const char *input, char *output, size_t out
   size_t j = 0;
   for (size_t i = 0; input[i] != '\0'; i++) {
     if (input[i] == '\'') {
-      if (j + 4 >= output_size) return -1;
+      if (j + 4 >= output_size)
+        return -1;
       output[j++] = '\'';
       output[j++] = '\\';
       output[j++] = '\'';
       output[j++] = '\'';
     } else {
-      if (j + 1 >= output_size) return -1;
+      if (j + 1 >= output_size)
+        return -1;
       output[j++] = input[i];
     }
   }
-  if (j >= output_size) return -1;
+  if (j >= output_size)
+    return -1;
   output[j] = '\0';
   return 0;
 }
 
 /* Build fetch command based on available tool */
-static int build_fetch_command(char *buf, size_t bufsize, const char *url,
-                               const char *output_file, int timeout) {
+static int build_fetch_command(char *buf, size_t bufsize, const char *url, const char *output_file, int timeout) {
   http_fetch_tool_t tool = detect_http_fetch_tool();
   int ret;
 
@@ -248,10 +241,9 @@ static void http_fetch_free(http_fetch_ctx_t *ctx) {
 }
 
 /* Internal helper to start async HTTP fetch */
-static http_fetch_ctx_t *
-http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
-                                http_fetch_fd_callback_t fd_callback,
-                                void *user_data, int epfd) {
+static http_fetch_ctx_t *http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
+                                                         http_fetch_fd_callback_t fd_callback, void *user_data,
+                                                         int epfd) {
   char fetch_cmd[MAX_URL_LENGTH + 256];
   char temp_file_template[] = "/tmp/rtp2httpd_http_fetch_XXXXXX";
   int temp_fd;
@@ -284,8 +276,7 @@ http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
       /* fd-based callback: open file and return fd */
       int fd = open(file_path, O_RDONLY);
       if (fd < 0) {
-        logger(LOG_ERROR, "Failed to open file: %s - %s", file_path,
-               strerror(errno));
+        logger(LOG_ERROR, "Failed to open file: %s - %s", file_path, strerror(errno));
         fd_callback(ctx, -1, 0, user_data);
         free(ctx->url);
         free(ctx);
@@ -295,8 +286,7 @@ http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
       /* Get file size */
       struct stat st;
       if (fstat(fd, &st) < 0) {
-        logger(LOG_ERROR, "Failed to stat file: %s - %s", file_path,
-               strerror(errno));
+        logger(LOG_ERROR, "Failed to stat file: %s - %s", file_path, strerror(errno));
         close(fd);
         fd_callback(ctx, -1, 0, user_data);
         free(ctx->url);
@@ -304,9 +294,7 @@ http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
         return NULL;
       }
 
-      logger(LOG_DEBUG,
-             "file:// fetch completed synchronously (fd=%d, %zu bytes): %s", fd,
-             (size_t)st.st_size, url);
+      logger(LOG_DEBUG, "file:// fetch completed synchronously (fd=%d, %zu bytes): %s", fd, (size_t)st.st_size, url);
 
       /* Invoke callback with fd (caller must close) */
       fd_callback(ctx, fd, (size_t)st.st_size, user_data);
@@ -319,8 +307,7 @@ http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
       /* Memory-based callback: read entire file into memory */
       FILE *fp = fopen(file_path, "r");
       if (!fp) {
-        logger(LOG_ERROR, "Failed to open file: %s - %s", file_path,
-               strerror(errno));
+        logger(LOG_ERROR, "Failed to open file: %s - %s", file_path, strerror(errno));
         callback(ctx, NULL, 0, user_data);
         free(ctx->url);
         free(ctx);
@@ -342,8 +329,7 @@ http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
       }
 
       if (file_size > MAX_HTTP_CONTENT) {
-        logger(LOG_ERROR, "File too large (%ld bytes, max %ld): %s", file_size,
-               (long)MAX_HTTP_CONTENT, file_path);
+        logger(LOG_ERROR, "File too large (%ld bytes, max %ld): %s", file_size, (long)MAX_HTTP_CONTENT, file_path);
         fclose(fp);
         callback(ctx, NULL, 0, user_data);
         free(ctx->url);
@@ -354,8 +340,7 @@ http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
       /* Allocate buffer */
       char *content = malloc(file_size + 1);
       if (!content) {
-        logger(LOG_ERROR, "Failed to allocate %ld bytes for file content",
-               file_size);
+        logger(LOG_ERROR, "Failed to allocate %ld bytes for file content", file_size);
         fclose(fp);
         callback(ctx, NULL, 0, user_data);
         free(ctx->url);
@@ -368,8 +353,7 @@ http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
       content[read_size] = '\0';
       fclose(fp);
 
-      logger(LOG_DEBUG, "file:// fetch completed synchronously (%zu bytes): %s",
-             read_size, url);
+      logger(LOG_DEBUG, "file:// fetch completed synchronously (%zu bytes): %s", read_size, url);
 
       /* Invoke callback with content (caller must free) */
       callback(ctx, content, read_size, user_data);
@@ -408,8 +392,7 @@ http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
 
   /* Build fetch command - output to temp file, errors to stdout for monitoring
    */
-  if (build_fetch_command(fetch_cmd, sizeof(fetch_cmd), url, ctx->temp_file,
-                          30) < 0) {
+  if (build_fetch_command(fetch_cmd, sizeof(fetch_cmd), url, ctx->temp_file, 30) < 0) {
     http_fetch_free(ctx);
     return NULL;
   }
@@ -435,8 +418,7 @@ http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
   /* Set non-blocking mode */
   int flags = fcntl(ctx->pipe_fd, F_GETFL, 0);
   if (flags < 0 || fcntl(ctx->pipe_fd, F_SETFL, flags | O_NONBLOCK) < 0) {
-    logger(LOG_ERROR, "Failed to set non-blocking mode on pipe: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "Failed to set non-blocking mode on pipe: %s", strerror(errno));
     http_fetch_free(ctx);
     return NULL;
   }
@@ -452,10 +434,8 @@ http_fetch_start_async_internal(const char *url, http_fetch_callback_t callback,
   ctx->buffer_used = 0;
 
   /* Register pipe fd with poller */
-  if (poller_add(epfd, ctx->pipe_fd, POLLER_IN | POLLER_HUP | POLLER_ERR) <
-      0) {
-    logger(LOG_ERROR, "Failed to add async HTTP fetch to poller: %s",
-           strerror(errno));
+  if (poller_add(epfd, ctx->pipe_fd, POLLER_IN | POLLER_HUP | POLLER_ERR) < 0) {
+    logger(LOG_ERROR, "Failed to add async HTTP fetch to poller: %s", strerror(errno));
     http_fetch_free(ctx);
     return NULL;
   }
@@ -507,8 +487,7 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx) {
   }
 
   if (nread < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
-    logger(LOG_ERROR, "Error reading from async HTTP fetch pipe: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "Error reading from async HTTP fetch pipe: %s", strerror(errno));
     http_fetch_cancel(ctx);
     return -1;
   }
@@ -536,10 +515,8 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx) {
 
     /* Check fetch exit code */
     if (exit_code != 0) {
-      logger(LOG_ERROR, "Async HTTP fetch failed (exit code %d): %s", exit_code,
-             ctx->url);
-      logger(LOG_DEBUG, "Fetch output: %.*s", (int)ctx->buffer_used,
-             ctx->buffer);
+      logger(LOG_ERROR, "Async HTTP fetch failed (exit code %d): %s", exit_code, ctx->url);
+      logger(LOG_DEBUG, "Fetch output: %.*s", (int)ctx->buffer_used, ctx->buffer);
       http_fetch_cancel(ctx);
       return -1;
     }
@@ -561,16 +538,14 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx) {
       lseek(content_fd, 0, SEEK_SET);
 
       if (file_size < 0 || file_size > MAX_HTTP_CONTENT) {
-        logger(LOG_ERROR, "Invalid or too large downloaded file (size: %ld)",
-               file_size);
+        logger(LOG_ERROR, "Invalid or too large downloaded file (size: %ld)", file_size);
         close(content_fd);
         http_fetch_cancel(ctx);
         return -1;
       }
 
-      logger(LOG_DEBUG,
-             "Async HTTP fetch completed successfully (%ld bytes, fd=%d): %s",
-             file_size, content_fd, ctx->url);
+      logger(LOG_DEBUG, "Async HTTP fetch completed successfully (%ld bytes, fd=%d): %s", file_size, content_fd,
+             ctx->url);
 
       http_fetch_remove_from_map(ctx);
 
@@ -599,8 +574,7 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx) {
     fseek(fp, 0, SEEK_SET);
 
     if (file_size < 0 || file_size > MAX_HTTP_CONTENT) {
-      logger(LOG_ERROR, "Invalid or too large downloaded file (size: %ld)",
-             file_size);
+      logger(LOG_ERROR, "Invalid or too large downloaded file (size: %ld)", file_size);
       fclose(fp);
       http_fetch_cancel(ctx);
       return -1;
@@ -620,8 +594,7 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx) {
     content[read_size] = '\0';
     fclose(fp);
 
-    logger(LOG_DEBUG, "Async HTTP fetch completed successfully (%zu bytes): %s",
-           read_size, ctx->url);
+    logger(LOG_DEBUG, "Async HTTP fetch completed successfully (%zu bytes): %s", read_size, ctx->url);
 
     http_fetch_remove_from_map(ctx);
 
@@ -658,15 +631,12 @@ void http_fetch_cancel(http_fetch_ctx_t *ctx) {
 }
 
 /* Start async HTTP fetch using popen (memory-based) */
-http_fetch_ctx_t *http_fetch_start_async(const char *url,
-                                         http_fetch_callback_t callback,
-                                         void *user_data, int epfd) {
+http_fetch_ctx_t *http_fetch_start_async(const char *url, http_fetch_callback_t callback, void *user_data, int epfd) {
   return http_fetch_start_async_internal(url, callback, NULL, user_data, epfd);
 }
 
 /* Start async HTTP fetch using popen (fd-based, zero-copy) */
-http_fetch_ctx_t *http_fetch_start_async_fd(const char *url,
-                                            http_fetch_fd_callback_t callback,
-                                            void *user_data, int epfd) {
+http_fetch_ctx_t *http_fetch_start_async_fd(const char *url, http_fetch_fd_callback_t callback, void *user_data,
+                                            int epfd) {
   return http_fetch_start_async_internal(url, NULL, callback, user_data, epfd);
 }

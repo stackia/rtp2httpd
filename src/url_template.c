@@ -11,14 +11,10 @@ typedef struct {
   const char *short_name;
 } time_component_def_t;
 
-static const time_component_def_t time_components[] = {
-    {"yyyy", "Y"}, {"MM", "m"}, {"dd", "d"},
-    {"HH", "H"},   {"mm", "M"}, {"ss", "S"},
-    {NULL, NULL}};
+static const time_component_def_t time_components[] = {{"yyyy", "Y"}, {"MM", "m"}, {"dd", "d"}, {"HH", "H"},
+                                                       {"mm", "M"},   {"ss", "S"}, {NULL, NULL}};
 
-static int append_template_fragment(char *buffer, size_t buffer_size,
-                                    size_t *buffer_len,
-                                    const char *fragment_start,
+static int append_template_fragment(char *buffer, size_t buffer_size, size_t *buffer_len, const char *fragment_start,
                                     size_t fragment_len) {
   if (!buffer || !buffer_len || !fragment_start)
     return -1;
@@ -34,8 +30,7 @@ static int append_template_fragment(char *buffer, size_t buffer_size,
   return 0;
 }
 
-static int copy_template_value(char *buffer, size_t buffer_size,
-                               const char *value_start, size_t value_len) {
+static int copy_template_value(char *buffer, size_t buffer_size, const char *value_start, size_t value_len) {
   if (!buffer || !value_start || value_len >= buffer_size)
     return -1;
 
@@ -44,16 +39,12 @@ static int copy_template_value(char *buffer, size_t buffer_size,
   return 0;
 }
 
-static int classify_template_placeholder(const char *inner, int is_short_syntax,
-                                         int *is_known_template,
-                                         int *is_begin, int *is_end,
-                                         int *needs_begin,
-                                         int *needs_end) {
+static int classify_template_placeholder(const char *inner, int is_short_syntax, int *is_known_template, int *is_begin,
+                                         int *is_end, int *needs_begin, int *needs_end) {
   char normalized[128];
   char *colon;
 
-  if (!inner || !is_known_template || !is_begin || !is_end || !needs_begin ||
-      !needs_end)
+  if (!inner || !is_known_template || !is_begin || !is_end || !needs_begin || !needs_end)
     return -1;
 
   *is_known_template = 0;
@@ -62,8 +53,7 @@ static int classify_template_placeholder(const char *inner, int is_short_syntax,
   *needs_begin = 0;
   *needs_end = 0;
 
-  if (inner[0] == '(' && inner[2] == ')' &&
-      (inner[1] == 'b' || inner[1] == 'e')) {
+  if (inner[0] == '(' && inner[2] == ')' && (inner[1] == 'b' || inner[1] == 'e')) {
     *is_known_template = 1;
     if (inner[1] == 'b') {
       *is_begin = 1;
@@ -81,15 +71,13 @@ static int classify_template_placeholder(const char *inner, int is_short_syntax,
   if (colon)
     *colon = '\0';
 
-  if (strcmp(normalized, "utc") == 0 || strcmp(normalized, "start") == 0 ||
-      strcmp(normalized, "yyyy") == 0 || strcmp(normalized, "MM") == 0 ||
-      strcmp(normalized, "dd") == 0 || strcmp(normalized, "HH") == 0 ||
+  if (strcmp(normalized, "utc") == 0 || strcmp(normalized, "start") == 0 || strcmp(normalized, "yyyy") == 0 ||
+      strcmp(normalized, "MM") == 0 || strcmp(normalized, "dd") == 0 || strcmp(normalized, "HH") == 0 ||
       strcmp(normalized, "mm") == 0 || strcmp(normalized, "ss") == 0) {
     *is_known_template = 1;
     *is_begin = 1;
     *needs_begin = 1;
-  } else if (strcmp(normalized, "utcend") == 0 ||
-             strcmp(normalized, "end") == 0) {
+  } else if (strcmp(normalized, "utcend") == 0 || strcmp(normalized, "end") == 0) {
     *is_known_template = 1;
     *is_end = 1;
     *needs_end = 1;
@@ -100,14 +88,12 @@ static int classify_template_placeholder(const char *inner, int is_short_syntax,
   } else if (strcmp(normalized, "offset") == 0) {
     *is_known_template = 1;
     *needs_begin = 1;
-  } else if (strcmp(normalized, "lutc") == 0 ||
-             strcmp(normalized, "now") == 0 ||
+  } else if (strcmp(normalized, "lutc") == 0 || strcmp(normalized, "now") == 0 ||
              strcmp(normalized, "timestamp") == 0) {
     *is_known_template = 1;
   } else if (is_short_syntax &&
-             (strcmp(normalized, "Y") == 0 || strcmp(normalized, "m") == 0 ||
-              strcmp(normalized, "d") == 0 || strcmp(normalized, "H") == 0 ||
-              strcmp(normalized, "M") == 0 || strcmp(normalized, "S") == 0)) {
+             (strcmp(normalized, "Y") == 0 || strcmp(normalized, "m") == 0 || strcmp(normalized, "d") == 0 ||
+              strcmp(normalized, "H") == 0 || strcmp(normalized, "M") == 0 || strcmp(normalized, "S") == 0)) {
     *is_known_template = 1;
     *is_begin = 1;
     *needs_begin = 1;
@@ -116,15 +102,12 @@ static int classify_template_placeholder(const char *inner, int is_short_syntax,
   return 0;
 }
 
-static int template_substring_requirements(const char *input, size_t input_len,
-                                           int *has_template, int *has_begin,
-                                           int *has_end, int *needs_begin,
-                                           int *needs_end) {
+static int template_substring_requirements(const char *input, size_t input_len, int *has_template, int *has_begin,
+                                           int *has_end, int *needs_begin, int *needs_end) {
   const char *p;
   const char *input_end;
 
-  if (!input || !has_template || !has_begin || !has_end || !needs_begin ||
-      !needs_end)
+  if (!input || !has_template || !has_begin || !has_end || !needs_begin || !needs_end)
     return -1;
 
   *has_template = 0;
@@ -161,9 +144,7 @@ static int template_substring_requirements(const char *input, size_t input_len,
       memcpy(inner, inner_start, inner_len);
       inner[inner_len] = '\0';
 
-      if (classify_template_placeholder(inner, 0, &is_known_template,
-                                        &is_begin, &is_end,
-                                        &local_needs_begin,
+      if (classify_template_placeholder(inner, 0, &is_known_template, &is_begin, &is_end, &local_needs_begin,
                                         &local_needs_end) != 0)
         return -1;
 
@@ -205,9 +186,7 @@ static int template_substring_requirements(const char *input, size_t input_len,
       memcpy(inner, inner_start, inner_len);
       inner[inner_len] = '\0';
 
-      if (classify_template_placeholder(inner, 1, &is_known_template,
-                                        &is_begin, &is_end,
-                                        &local_needs_begin,
+      if (classify_template_placeholder(inner, 1, &is_known_template, &is_begin, &is_end, &local_needs_begin,
                                         &local_needs_end) != 0)
         return -1;
 
@@ -230,8 +209,7 @@ static int template_substring_requirements(const char *input, size_t input_len,
   return 0;
 }
 
-static const char *find_template_range_separator(const char *value,
-                                                 size_t value_len) {
+static const char *find_template_range_separator(const char *value, size_t value_len) {
   const char *separator;
   const char *value_end;
 
@@ -252,15 +230,10 @@ static const char *find_template_range_separator(const char *value,
     int right_needs_begin = 0;
     int right_needs_end = 0;
 
-    if (template_substring_requirements(value, (size_t)(separator - value),
-                                        &left_has_template, &left_has_begin,
-                                        &left_has_end, &left_needs_begin,
-                                        &left_needs_end) == 0 &&
-        template_substring_requirements(separator + 1,
-                                        (size_t)(value_end - (separator + 1)),
-                                        &right_has_template, &right_has_begin,
-                                        &right_has_end, &right_needs_begin,
-                                        &right_needs_end) == 0) {
+    if (template_substring_requirements(value, (size_t)(separator - value), &left_has_template, &left_has_begin,
+                                        &left_has_end, &left_needs_begin, &left_needs_end) == 0 &&
+        template_substring_requirements(separator + 1, (size_t)(value_end - (separator + 1)), &right_has_template,
+                                        &right_has_begin, &right_has_end, &right_needs_begin, &right_needs_end) == 0) {
       if (left_has_begin && !left_has_end && right_has_end)
         return separator;
     }
@@ -271,11 +244,8 @@ static const char *find_template_range_separator(const char *value,
   return NULL;
 }
 
-static int template_path_requirements(const char *url, int *has_template,
-                                      int *needs_begin, int *needs_end,
-                                      char *begin_template,
-                                      size_t begin_template_size,
-                                      char *end_template,
+static int template_path_requirements(const char *url, int *has_template, int *needs_begin, int *needs_end,
+                                      char *begin_template, size_t begin_template_size, char *end_template,
                                       size_t end_template_size) {
   const char *query;
   size_t path_len;
@@ -283,8 +253,7 @@ static int template_path_requirements(const char *url, int *has_template,
   size_t begin_len = 0;
   size_t end_len = 0;
 
-  if (!url || !has_template || !needs_begin || !needs_end || !begin_template ||
-      !end_template)
+  if (!url || !has_template || !needs_begin || !needs_end || !begin_template || !end_template)
     return -1;
 
   *has_template = 0;
@@ -323,9 +292,7 @@ static int template_path_requirements(const char *url, int *has_template,
       memcpy(inner, inner_start, inner_len);
       inner[inner_len] = '\0';
 
-      if (classify_template_placeholder(inner, 0, &is_known_template,
-                                        &is_begin, &is_end,
-                                        &local_needs_begin,
+      if (classify_template_placeholder(inner, 0, &is_known_template, &is_begin, &is_end, &local_needs_begin,
                                         &local_needs_end) != 0)
         return -1;
 
@@ -335,14 +302,11 @@ static int template_path_requirements(const char *url, int *has_template,
       *needs_end |= local_needs_end;
 
       if (is_begin) {
-        if (append_template_fragment(begin_template, begin_template_size,
-                                     &begin_len, p,
-                                     (size_t)(closing - p + 1)) != 0)
+        if (append_template_fragment(begin_template, begin_template_size, &begin_len, p, (size_t)(closing - p + 1)) !=
+            0)
           return -1;
       } else if (is_end) {
-        if (append_template_fragment(end_template, end_template_size,
-                                     &end_len, p,
-                                     (size_t)(closing - p + 1)) != 0)
+        if (append_template_fragment(end_template, end_template_size, &end_len, p, (size_t)(closing - p + 1)) != 0)
           return -1;
       }
 
@@ -375,9 +339,7 @@ static int template_path_requirements(const char *url, int *has_template,
       memcpy(inner, inner_start, inner_len);
       inner[inner_len] = '\0';
 
-      if (classify_template_placeholder(inner, 1, &is_known_template,
-                                        &is_begin, &is_end,
-                                        &local_needs_begin,
+      if (classify_template_placeholder(inner, 1, &is_known_template, &is_begin, &is_end, &local_needs_begin,
                                         &local_needs_end) != 0)
         return -1;
 
@@ -387,14 +349,11 @@ static int template_path_requirements(const char *url, int *has_template,
       *needs_end |= local_needs_end;
 
       if (is_begin) {
-        if (append_template_fragment(begin_template, begin_template_size,
-                                     &begin_len, p,
-                                     (size_t)(closing - p + 1)) != 0)
+        if (append_template_fragment(begin_template, begin_template_size, &begin_len, p, (size_t)(closing - p + 1)) !=
+            0)
           return -1;
       } else if (is_end) {
-        if (append_template_fragment(end_template, end_template_size,
-                                     &end_len, p,
-                                     (size_t)(closing - p + 1)) != 0)
+        if (append_template_fragment(end_template, end_template_size, &end_len, p, (size_t)(closing - p + 1)) != 0)
           return -1;
       }
 
@@ -408,17 +367,13 @@ static int template_path_requirements(const char *url, int *has_template,
   return 0;
 }
 
-static int template_query_requirements(const char *url, int *has_template,
-                                       int *needs_begin, int *needs_end,
-                                       char *begin_template,
-                                       size_t begin_template_size,
-                                       char *end_template,
+static int template_query_requirements(const char *url, int *has_template, int *needs_begin, int *needs_end,
+                                       char *begin_template, size_t begin_template_size, char *end_template,
                                        size_t end_template_size) {
   const char *query_start;
   const char *param_start;
 
-  if (!url || !has_template || !needs_begin || !needs_end || !begin_template ||
-      !end_template)
+  if (!url || !has_template || !needs_begin || !needs_end || !begin_template || !end_template)
     return -1;
 
   *has_template = 0;
@@ -462,10 +417,8 @@ static int template_query_requirements(const char *url, int *has_template,
     value_start = equals_pos + 1;
     value_len = (size_t)(param_end - value_start);
 
-    if (template_substring_requirements(value_start, value_len,
-                                        &local_has_template, &has_begin,
-                                        &has_end, &local_needs_begin,
-                                        &local_needs_end) != 0)
+    if (template_substring_requirements(value_start, value_len, &local_has_template, &has_begin, &has_end,
+                                        &local_needs_begin, &local_needs_end) != 0)
       return -1;
 
     if (local_has_template)
@@ -474,29 +427,20 @@ static int template_query_requirements(const char *url, int *has_template,
     *needs_end |= local_needs_end;
 
     if (has_begin && has_end) {
-      const char *separator = find_template_range_separator(value_start,
-                                                            value_len);
+      const char *separator = find_template_range_separator(value_start, value_len);
       if (separator) {
-        if (!begin_template[0] &&
-            copy_template_value(begin_template, begin_template_size,
-                                value_start,
-                                (size_t)(separator - value_start)) != 0)
+        if (!begin_template[0] && copy_template_value(begin_template, begin_template_size, value_start,
+                                                      (size_t)(separator - value_start)) != 0)
           return -1;
-        if (!end_template[0] &&
-            copy_template_value(end_template, end_template_size,
-                                separator + 1,
-                                (size_t)(param_end - (separator + 1))) != 0)
+        if (!end_template[0] && copy_template_value(end_template, end_template_size, separator + 1,
+                                                    (size_t)(param_end - (separator + 1))) != 0)
           return -1;
       }
     } else if (has_begin && !has_end) {
-      if (!begin_template[0] &&
-          copy_template_value(begin_template, begin_template_size, value_start,
-                              value_len) != 0)
+      if (!begin_template[0] && copy_template_value(begin_template, begin_template_size, value_start, value_len) != 0)
         return -1;
     } else if (has_end && !has_begin) {
-      if (!end_template[0] &&
-          copy_template_value(end_template, end_template_size, value_start,
-                              value_len) != 0)
+      if (!end_template[0] && copy_template_value(end_template, end_template_size, value_start, value_len) != 0)
         return -1;
     }
 
@@ -508,8 +452,7 @@ static int template_query_requirements(const char *url, int *has_template,
   return 0;
 }
 
-static int append_output_string(char *output, size_t output_size,
-                                size_t *output_pos, const char *value) {
+static int append_output_string(char *output, size_t output_size, size_t *output_pos, const char *value) {
   size_t value_len;
 
   if (!output || !output_pos || !value)
@@ -546,8 +489,7 @@ static int get_tm_component(const struct tm *t, int index) {
   }
 }
 
-static int format_time_by_pattern(const struct tm *t, const char *fmt,
-                                  int use_short, char *output,
+static int format_time_by_pattern(const struct tm *t, const char *fmt, int use_short, char *output,
                                   size_t output_size) {
   size_t pos = 0;
   const char *p = fmt;
@@ -557,8 +499,7 @@ static int format_time_by_pattern(const struct tm *t, const char *fmt,
     int matched = 0;
 
     for (i = 0; time_components[i].long_name; i++) {
-      const char *name = use_short ? time_components[i].short_name
-                                   : time_components[i].long_name;
+      const char *name = use_short ? time_components[i].short_name : time_components[i].long_name;
       size_t name_len = strlen(name);
 
       if (strncmp(p, name, name_len) == 0) {
@@ -584,16 +525,13 @@ static int format_time_by_pattern(const struct tm *t, const char *fmt,
   return 0;
 }
 
-static int render_be_format(const char *fmt, size_t fmt_len, int is_begin,
-                            int use_short, const seek_parse_result_t *ctx,
-                            char *val, size_t val_size) {
+static int render_be_format(const char *fmt, size_t fmt_len, int is_begin, int use_short,
+                            const seek_parse_result_t *ctx, char *val, size_t val_size) {
   const struct tm *tm_utc = is_begin ? &ctx->begin_tm_utc : &ctx->end_tm_utc;
   time_t epoch = is_begin ? ctx->begin_utc : ctx->end_utc;
 
   if ((is_begin && !ctx->begin_parsed) || (!is_begin && !ctx->end_parsed)) {
-    logger(LOG_ERROR,
-           "Template requires %s time but seek value does not provide it",
-           is_begin ? "begin" : "end");
+    logger(LOG_ERROR, "Template requires %s time but seek value does not provide it", is_begin ? "begin" : "end");
     return -1;
   }
 
@@ -620,14 +558,12 @@ static int render_be_format(const char *fmt, size_t fmt_len, int is_begin,
       force_utc = 1;
     }
 
-    which = force_utc ? tm_utc
-                      : (is_begin ? &ctx->begin_tm_local : &ctx->end_tm_local);
+    which = force_utc ? tm_utc : (is_begin ? &ctx->begin_tm_local : &ctx->end_tm_local);
     return format_time_by_pattern(which, clean_fmt, use_short, val, val_size);
   }
 }
 
-static int render_keyword(const char *inner, int use_short,
-                          const seek_parse_result_t *ctx, const struct tm *now_tm,
+static int render_keyword(const char *inner, int use_short, const seek_parse_result_t *ctx, const struct tm *now_tm,
                           char *val, size_t val_size) {
   char buf[128];
   char *colon;
@@ -648,14 +584,12 @@ static int render_keyword(const char *inner, int use_short,
       if (!ctx->end_parsed)
         return -1;
       tm_target = &ctx->end_tm_utc;
-    } else if (strcmp(buf, "lutc") == 0 || strcmp(buf, "now") == 0 ||
-               strcmp(buf, "timestamp") == 0) {
+    } else if (strcmp(buf, "lutc") == 0 || strcmp(buf, "now") == 0 || strcmp(buf, "timestamp") == 0) {
       tm_target = now_tm;
     }
 
     if (tm_target) {
-      if (format_time_by_pattern(tm_target, colon + 1, use_short, val,
-                                 val_size) != 0)
+      if (format_time_by_pattern(tm_target, colon + 1, use_short, val, val_size) != 0)
         return -1;
       return 1;
     }
@@ -663,14 +597,12 @@ static int render_keyword(const char *inner, int use_short,
   }
 
   if (strcmp(inner, "utc") == 0 || strcmp(inner, "start") == 0) {
-    if (!ctx->begin_parsed ||
-        timezone_format_time_iso8601(&ctx->begin_tm_utc, 0, "Z", val, val_size) != 0)
+    if (!ctx->begin_parsed || timezone_format_time_iso8601(&ctx->begin_tm_utc, 0, "Z", val, val_size) != 0)
       return -1;
     return 1;
   }
   if (strcmp(inner, "utcend") == 0 || strcmp(inner, "end") == 0) {
-    if (!ctx->end_parsed ||
-        timezone_format_time_iso8601(&ctx->end_tm_utc, 0, "Z", val, val_size) != 0)
+    if (!ctx->end_parsed || timezone_format_time_iso8601(&ctx->end_tm_utc, 0, "Z", val, val_size) != 0)
       return -1;
     return 1;
   }
@@ -680,24 +612,21 @@ static int render_keyword(const char *inner, int use_short,
     return 1;
   }
   if (strcmp(inner, "timestamp") == 0) {
-    if (snprintf(val, val_size, "%lld", (long long)ctx->now_utc) >=
-        (int)val_size)
+    if (snprintf(val, val_size, "%lld", (long long)ctx->now_utc) >= (int)val_size)
       return -1;
     return 1;
   }
   if (strcmp(inner, "duration") == 0) {
     if (!ctx->begin_parsed || !ctx->end_parsed)
       return -1;
-    if (snprintf(val, val_size, "%lld",
-                 (long long)(ctx->end_utc - ctx->begin_utc)) >= (int)val_size)
+    if (snprintf(val, val_size, "%lld", (long long)(ctx->end_utc - ctx->begin_utc)) >= (int)val_size)
       return -1;
     return 1;
   }
   if (strcmp(inner, "offset") == 0) {
     if (!ctx->begin_parsed)
       return -1;
-    if (snprintf(val, val_size, "%lld",
-                 (long long)(ctx->now_utc - ctx->begin_utc)) >= (int)val_size)
+    if (snprintf(val, val_size, "%lld", (long long)(ctx->now_utc - ctx->begin_utc)) >= (int)val_size)
       return -1;
     return 1;
   }
@@ -706,8 +635,7 @@ static int render_keyword(const char *inner, int use_short,
     int i;
 
     for (i = 0; time_components[i].long_name; i++) {
-      const char *name = use_short ? time_components[i].short_name
-                                   : time_components[i].long_name;
+      const char *name = use_short ? time_components[i].short_name : time_components[i].long_name;
       if (strcmp(inner, name) == 0) {
         int comp;
         int width;
@@ -726,14 +654,10 @@ static int render_keyword(const char *inner, int use_short,
   return 0;
 }
 
-static int render_placeholder(const char *p, int inner_offset,
-                              int be_char_offset, int fmt_offset,
-                              int use_short, const seek_parse_result_t *ctx,
-                              const struct tm *now_tm, char *output,
-                              size_t output_size, size_t *output_pos) {
-  if (p[inner_offset] == '(' &&
-      (p[be_char_offset] == 'b' || p[be_char_offset] == 'e') &&
-      p[inner_offset + 2] == ')') {
+static int render_placeholder(const char *p, int inner_offset, int be_char_offset, int fmt_offset, int use_short,
+                              const seek_parse_result_t *ctx, const struct tm *now_tm, char *output, size_t output_size,
+                              size_t *output_pos) {
+  if (p[inner_offset] == '(' && (p[be_char_offset] == 'b' || p[be_char_offset] == 'e') && p[inner_offset + 2] == ')') {
     const char *fmt_start = p + fmt_offset;
     const char *closing = strchr(fmt_start, '}');
 
@@ -747,8 +671,7 @@ static int render_placeholder(const char *p, int inner_offset,
       memcpy(fmt, fmt_start, fmt_len);
       fmt[fmt_len] = '\0';
 
-      if (render_be_format(fmt, fmt_len, p[be_char_offset] == 'b', use_short,
-                           ctx, val, sizeof(val)) != 0)
+      if (render_be_format(fmt, fmt_len, p[be_char_offset] == 'b', use_short, ctx, val, sizeof(val)) != 0)
         return -1;
       if (append_output_string(output, output_size, output_pos, val) != 0)
         return -1;
@@ -784,8 +707,7 @@ static int render_placeholder(const char *p, int inner_offset,
   return 0;
 }
 
-static int render_template_url(const char *url, const seek_parse_result_t *ctx,
-                               char *output, size_t output_size) {
+static int render_template_url(const char *url, const seek_parse_result_t *ctx, char *output, size_t output_size) {
   size_t output_pos = 0;
   const char *p;
   struct tm now_tm;
@@ -804,8 +726,7 @@ static int render_template_url(const char *url, const seek_parse_result_t *ctx,
   p = url;
   while (*p) {
     if (p[0] == '$' && p[1] == '{') {
-      int consumed = render_placeholder(p, 2, 3, 5, 0, ctx, &now_tm, output,
-                                        output_size, &output_pos);
+      int consumed = render_placeholder(p, 2, 3, 5, 0, ctx, &now_tm, output, output_size, &output_pos);
       if (consumed < 0)
         return -1;
       if (consumed > 0) {
@@ -815,8 +736,7 @@ static int render_template_url(const char *url, const seek_parse_result_t *ctx,
     }
 
     if (*p == '{' && (p == url || *(p - 1) != '$')) {
-      int consumed = render_placeholder(p, 1, 2, 4, 1, ctx, &now_tm, output,
-                                        output_size, &output_pos);
+      int consumed = render_placeholder(p, 1, 2, 4, 1, ctx, &now_tm, output, output_size, &output_pos);
       if (consumed < 0)
         return -1;
       if (consumed > 0) {
@@ -853,18 +773,12 @@ int url_template_analyze(const char *url, url_template_analysis_t *analysis) {
 
   memset(analysis, 0, sizeof(*analysis));
 
-  if (template_path_requirements(url, &path_has_template, &path_needs_begin,
-                                 &path_needs_end, path_begin_template,
-                                 sizeof(path_begin_template),
-                                 path_end_template,
-                                 sizeof(path_end_template)) != 0)
+  if (template_path_requirements(url, &path_has_template, &path_needs_begin, &path_needs_end, path_begin_template,
+                                 sizeof(path_begin_template), path_end_template, sizeof(path_end_template)) != 0)
     return -1;
 
-  if (template_query_requirements(url, &query_has_template, &query_needs_begin,
-                                  &query_needs_end, query_begin_template,
-                                  sizeof(query_begin_template),
-                                  query_end_template,
-                                  sizeof(query_end_template)) != 0)
+  if (template_query_requirements(url, &query_has_template, &query_needs_begin, &query_needs_end, query_begin_template,
+                                  sizeof(query_begin_template), query_end_template, sizeof(query_end_template)) != 0)
     return -1;
 
   analysis->has_template = path_has_template || query_has_template;
@@ -872,22 +786,18 @@ int url_template_analyze(const char *url, url_template_analysis_t *analysis) {
   analysis->needs_end = path_needs_end || query_needs_end;
 
   if (query_begin_template[0]) {
-    strncpy(analysis->begin_template, query_begin_template,
-            sizeof(analysis->begin_template) - 1);
+    strncpy(analysis->begin_template, query_begin_template, sizeof(analysis->begin_template) - 1);
     analysis->begin_template[sizeof(analysis->begin_template) - 1] = '\0';
   } else if (path_begin_template[0]) {
-    strncpy(analysis->begin_template, path_begin_template,
-            sizeof(analysis->begin_template) - 1);
+    strncpy(analysis->begin_template, path_begin_template, sizeof(analysis->begin_template) - 1);
     analysis->begin_template[sizeof(analysis->begin_template) - 1] = '\0';
   }
 
   if (query_end_template[0]) {
-    strncpy(analysis->end_template, query_end_template,
-            sizeof(analysis->end_template) - 1);
+    strncpy(analysis->end_template, query_end_template, sizeof(analysis->end_template) - 1);
     analysis->end_template[sizeof(analysis->end_template) - 1] = '\0';
   } else if (path_end_template[0]) {
-    strncpy(analysis->end_template, path_end_template,
-            sizeof(analysis->end_template) - 1);
+    strncpy(analysis->end_template, path_end_template, sizeof(analysis->end_template) - 1);
     analysis->end_template[sizeof(analysis->end_template) - 1] = '\0';
   }
 
@@ -905,12 +815,9 @@ int url_template_has_placeholders(const char *url) {
     return 1;
 
   /* Check for known simple placeholders */
-  static const char *tokens[] = {
-    "{utc}",    "{start}",  "{lutc}",     "{end}",   "{duration}",
-    "{offset}", "{utcend}", "{now}",      "{timestamp}",
-    "{Y}",      "{m}",      "{d}",        "{H}",     "{M}",        "{S}",
-    NULL
-  };
+  static const char *tokens[] = {"{utc}",    "{start}", "{lutc}",      "{end}", "{duration}", "{offset}",
+                                 "{utcend}", "{now}",   "{timestamp}", "{Y}",   "{m}",        "{d}",
+                                 "{H}",      "{M}",     "{S}",         NULL};
   for (int i = 0; tokens[i]; i++) {
     if (strstr(url, tokens[i]))
       return 1;
@@ -928,9 +835,7 @@ int url_template_has_placeholders(const char *url) {
 
   /* Check for {keyword:FORMAT} patterns */
   static const char *keyword_prefixes[] = {
-    "{utc:",  "{start:", "{lutc:", "{end:",
-    "{utcend:", "{now:", "{timestamp:", NULL
-  };
+      "{utc:", "{start:", "{lutc:", "{end:", "{utcend:", "{now:", "{timestamp:", NULL};
   for (int i = 0; keyword_prefixes[i]; i++) {
     const char *found = strstr(url, keyword_prefixes[i]);
     if (found && (found == url || *(found - 1) != '$')) {
@@ -942,9 +847,7 @@ int url_template_has_placeholders(const char *url) {
   return 0;
 }
 
-int url_template_resolve(const char *url,
-                         const seek_parse_result_t *parse_result,
-                         char *output, size_t output_size) {
+int url_template_resolve(const char *url, const seek_parse_result_t *parse_result, char *output, size_t output_size) {
   if (!url || !parse_result || !output || output_size == 0)
     return -1;
 
@@ -955,14 +858,12 @@ int url_template_resolve(const char *url,
   }
 
   if (parse_result->has_begin && !parse_result->begin_parsed) {
-    logger(LOG_ERROR, "Failed to parse begin time '%s' for template",
-           parse_result->begin_str);
+    logger(LOG_ERROR, "Failed to parse begin time '%s' for template", parse_result->begin_str);
     return -1;
   }
 
   if (parse_result->has_end && !parse_result->end_parsed) {
-    logger(LOG_ERROR, "Failed to parse end time '%s' for template",
-           parse_result->end_str);
+    logger(LOG_ERROR, "Failed to parse end time '%s' for template", parse_result->end_str);
     return -1;
   }
 

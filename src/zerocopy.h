@@ -94,8 +94,7 @@ int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref);
  * @param file_size Number of bytes to send from file
  * @return 0 on success, -1 on error
  */
-int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd,
-                            off_t file_offset, size_t file_size);
+int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd, off_t file_offset, size_t file_size);
 
 /**
  * Send queued data using zero-copy techniques

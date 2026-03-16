@@ -37,8 +37,7 @@ int snapshot_init(snapshot_context_t *ctx) {
   char tmp_path[] = "/tmp/rtp2httpd_idr_frame_XXXXXX";
   ctx->idr_frame_fd = mkstemp(tmp_path);
   if (ctx->idr_frame_fd < 0) {
-    logger(LOG_ERROR, "Snapshot: Failed to create tmp file: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "Snapshot: Failed to create tmp file: %s", strerror(errno));
     return -1;
   }
 
@@ -50,15 +49,12 @@ int snapshot_init(snapshot_context_t *ctx) {
 
   /* Allocate mmap buffer */
   if (ftruncate(ctx->idr_frame_fd, ctx->idr_frame_capacity) < 0) {
-    logger(LOG_ERROR, "Snapshot: Failed to truncate tmp file: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "Snapshot: Failed to truncate tmp file: %s", strerror(errno));
     close(ctx->idr_frame_fd);
     return -1;
   }
 
-  ctx->idr_frame_mmap =
-      mmap(NULL, ctx->idr_frame_capacity, PROT_READ | PROT_WRITE, MAP_SHARED,
-           ctx->idr_frame_fd, 0);
+  ctx->idr_frame_mmap = mmap(NULL, ctx->idr_frame_capacity, PROT_READ | PROT_WRITE, MAP_SHARED, ctx->idr_frame_fd, 0);
   if (ctx->idr_frame_mmap == MAP_FAILED) {
     logger(LOG_ERROR, "Snapshot: Failed to mmap tmp file: %s", strerror(errno));
     close(ctx->idr_frame_fd);
@@ -78,8 +74,7 @@ int snapshot_init(snapshot_context_t *ctx) {
   ctx->pmt_pid = 0;
   ctx->ts_header_size = 0;
 
-  logger(LOG_DEBUG, "Snapshot: Initialized (%zu bytes buffer)",
-         ctx->idr_frame_capacity);
+  logger(LOG_DEBUG, "Snapshot: Initialized (%zu bytes buffer)", ctx->idr_frame_capacity);
   return 0;
 }
 
@@ -159,14 +154,12 @@ static uint16_t extract_pmt_pid_from_pat(const uint8_t *pat_packet) {
 
   /* Skip to program loop: 8 bytes header (table_id to last_section_number) */
   const uint8_t *program_data = payload + 8;
-  int program_data_len = section_length - 5 -
-                         4; /* -5 for header after section_length, -4 for CRC */
+  int program_data_len = section_length - 5 - 4; /* -5 for header after section_length, -4 for CRC */
 
   /* Parse program entries (4 bytes each: program_number(16) + PMT_PID(13)) */
   for (int i = 0; i + 4 <= program_data_len; i += 4) {
     uint16_t program_number = (program_data[i] << 8) | program_data[i + 1];
-    uint16_t pmt_pid =
-        ((program_data[i + 2] & 0x1F) << 8) | program_data[i + 3];
+    uint16_t pmt_pid = ((program_data[i + 2] & 0x1F) << 8) | program_data[i + 3];
 
     /* Skip NIT (program_number 0) */
     if (program_number != 0 && pmt_pid != 0) {
@@ -183,8 +176,7 @@ static uint16_t extract_pmt_pid_from_pat(const uint8_t *pat_packet) {
  * @param ts_packet TS packet to cache (188 bytes)
  * @param pid PID of the packet
  */
-static void cache_ts_header_packet(snapshot_context_t *ctx,
-                                   const uint8_t *ts_packet, uint16_t pid) {
+static void cache_ts_header_packet(snapshot_context_t *ctx, const uint8_t *ts_packet, uint16_t pid) {
   if (!ctx || !ts_packet)
     return;
 
@@ -196,8 +188,7 @@ static void cache_ts_header_packet(snapshot_context_t *ctx,
     /* Extract PMT PID from PAT */
     ctx->pmt_pid = extract_pmt_pid_from_pat(ts_packet);
 
-    logger(LOG_DEBUG, "Snapshot: Cached PAT packet (PMT PID: 0x%04x)",
-           ctx->pmt_pid);
+    logger(LOG_DEBUG, "Snapshot: Cached PAT packet (PMT PID: 0x%04x)", ctx->pmt_pid);
   }
   /* Cache PMT (if we know the PMT PID) */
   else if (ctx->pmt_pid != 0 && pid == ctx->pmt_pid && !ctx->has_pmt) {
@@ -226,8 +217,7 @@ static void cache_ts_header_packet(snapshot_context_t *ctx,
  * @param jpeg_size Output: JPEG file size
  * @return 0 on success, -1 on error
  */
-static int snapshot_convert_to_jpeg(int idr_frame_fd, size_t idr_frame_size,
-                                    int *jpeg_fd, size_t *jpeg_size) {
+static int snapshot_convert_to_jpeg(int idr_frame_fd, size_t idr_frame_size, int *jpeg_fd, size_t *jpeg_size) {
   if (idr_frame_fd < 0 || idr_frame_size == 0 || !jpeg_fd || !jpeg_size)
     return -1;
 
@@ -238,8 +228,7 @@ static int snapshot_convert_to_jpeg(int idr_frame_fd, size_t idr_frame_size,
   char output_path[] = "/tmp/rtp2httpd_jpeg_XXXXXX";
   int output_fd = mkstemp(output_path);
   if (output_fd < 0) {
-    logger(LOG_ERROR, "Snapshot: Failed to create JPEG output file: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "Snapshot: Failed to create JPEG output file: %s", strerror(errno));
     return -1;
   }
 
@@ -251,8 +240,7 @@ static int snapshot_convert_to_jpeg(int idr_frame_fd, size_t idr_frame_size,
    * ffmpeg will demux the TS and extract the first video frame
    */
   const char *ffmpeg_path = config.ffmpeg_path ? config.ffmpeg_path : "ffmpeg";
-  const char *ffmpeg_args =
-      config.ffmpeg_args ? config.ffmpeg_args : "-hwaccel none";
+  const char *ffmpeg_args = config.ffmpeg_args ? config.ffmpeg_args : "-hwaccel none";
 
   char command[1024];
   snprintf(command, sizeof(command),
@@ -265,8 +253,7 @@ static int snapshot_convert_to_jpeg(int idr_frame_fd, size_t idr_frame_size,
   /* Execute ffmpeg */
   FILE *fp = popen(command, "r");
   if (!fp) {
-    logger(LOG_ERROR, "Snapshot: Failed to execute ffmpeg: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "Snapshot: Failed to execute ffmpeg: %s", strerror(errno));
     close(output_fd);
     return -1;
   }
@@ -292,8 +279,7 @@ static int snapshot_convert_to_jpeg(int idr_frame_fd, size_t idr_frame_size,
   /* Get JPEG file size */
   struct stat st;
   if (fstat(output_fd, &st) < 0) {
-    logger(LOG_ERROR, "Snapshot: Failed to stat output file: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "Snapshot: Failed to stat output file: %s", strerror(errno));
     close(output_fd);
     return -1;
   }
@@ -310,8 +296,7 @@ static int snapshot_convert_to_jpeg(int idr_frame_fd, size_t idr_frame_size,
   /* Reset file position for sendfile */
   lseek(output_fd, 0, SEEK_SET);
 
-  logger(LOG_DEBUG, "Snapshot: JPEG conversion successful (%zu bytes)",
-         *jpeg_size);
+  logger(LOG_DEBUG, "Snapshot: JPEG conversion successful (%zu bytes)", *jpeg_size);
   return 0;
 }
 
@@ -320,8 +305,7 @@ static int snapshot_convert_to_jpeg(int idr_frame_fd, size_t idr_frame_size,
  * Detects and accumulates IDR frame TS packets, then converts to JPEG and sends
  * to client
  */
-int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
-                            connection_t *conn) {
+int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf, connection_t *conn) {
   if (!ctx || !ctx->initialized)
     return -1;
 
@@ -385,8 +369,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
           int ts_payload_len = TS_PACKET_SIZE - ts_payload_start;
 
           /* Check for PES header with video stream */
-          if (ts_payload_len >= 6 && ts_payload[0] == 0x00 &&
-              ts_payload[1] == 0x00 && ts_payload[2] == 0x01) {
+          if (ts_payload_len >= 6 && ts_payload[0] == 0x00 && ts_payload[1] == 0x00 && ts_payload[2] == 0x01) {
             uint8_t stream_id = ts_payload[3];
             if (stream_id >= 0xE0 && stream_id <= 0xEF) /* Video stream */
             {
@@ -399,8 +382,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
                 /* Scan for NAL start code */
                 for (int i = 0; i < es_len - 4; i++) {
                   if (es_data[i] == 0 && es_data[i + 1] == 0 &&
-                      (es_data[i + 2] == 1 ||
-                       (es_data[i + 2] == 0 && es_data[i + 3] == 1))) {
+                      (es_data[i + 2] == 1 || (es_data[i + 2] == 0 && es_data[i + 3] == 1))) {
                     int nal_start = (es_data[i + 2] == 1) ? i + 3 : i + 4;
                     if (nal_start < es_len) {
                       uint8_t nal_header = es_data[nal_start];
@@ -408,9 +390,8 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
                       uint8_t hevc_type = (nal_header >> 1) & 0x3F;
 
                       /* Check if this is an IDR frame */
-                      if (h264_type == 5 || /* H.264 IDR */
-                          hevc_type == 19 || hevc_type == 20 ||
-                          hevc_type == 21) /* HEVC IDR */
+                      if (h264_type == 5 ||                                      /* H.264 IDR */
+                          hevc_type == 19 || hevc_type == 20 || hevc_type == 21) /* HEVC IDR */
                       {
                         /* Found IDR frame! Start capturing from this packet */
                         ctx->idr_frame_started = 1;
@@ -447,8 +428,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
     /* If IDR frame started, check if this packet belongs to the IDR frame */
     if (ctx->idr_frame_started) {
       /* Check if this is the end of IDR frame (next PES start on same PID) */
-      if (pid == ctx->video_pid && payload_unit_start &&
-          ctx->idr_frame_size > ctx->ts_header_size) {
+      if (pid == ctx->video_pid && payload_unit_start && ctx->idr_frame_size > ctx->ts_header_size) {
         /* IDR frame complete */
         ctx->idr_frame_complete = 1;
 
@@ -456,8 +436,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
         logger(LOG_DEBUG,
                "Snapshot: Complete IDR frame captured (%zu bytes total, %zu "
                "header + %zu video, %zu video packets)",
-               ctx->idr_frame_size, ctx->ts_header_size, video_size,
-               video_size / TS_PACKET_SIZE);
+               ctx->idr_frame_size, ctx->ts_header_size, video_size, video_size / TS_PACKET_SIZE);
 
         /* Warn if PAT/PMT not captured (ffmpeg may fail) */
         if (!ctx->has_pat || !ctx->has_pmt) {
@@ -469,8 +448,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
 
         /* Truncate to actual size */
         if (ftruncate(ctx->idr_frame_fd, ctx->idr_frame_size) < 0) {
-          logger(LOG_WARN, "Snapshot: Failed to truncate mmap file: %s",
-                 strerror(errno));
+          logger(LOG_WARN, "Snapshot: Failed to truncate mmap file: %s", strerror(errno));
         }
 
         /* Reset file position for ffmpeg to read from beginning */
@@ -480,15 +458,12 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
         int jpeg_fd = -1;
         size_t jpeg_size = 0;
 
-        if (snapshot_convert_to_jpeg(ctx->idr_frame_fd, ctx->idr_frame_size,
-                                     &jpeg_fd, &jpeg_size) == 0) {
+        if (snapshot_convert_to_jpeg(ctx->idr_frame_fd, ctx->idr_frame_size, &jpeg_fd, &jpeg_size) == 0) {
           /* Send HTTP headers with Content-Length */
           char content_length_header[64];
-          snprintf(content_length_header, sizeof(content_length_header),
-                   "Content-Length: %zu\r\n", jpeg_size);
+          snprintf(content_length_header, sizeof(content_length_header), "Content-Length: %zu\r\n", jpeg_size);
 
-          send_http_headers(conn, STATUS_200, "image/jpeg",
-                            content_length_header);
+          send_http_headers(conn, STATUS_200, "image/jpeg", content_length_header);
 
           /* Queue JPEG file for non-blocking sendfile() */
           if (connection_queue_file(conn, jpeg_fd, 0, jpeg_size) < 0) {
@@ -499,8 +474,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
 
           /* File descriptor ownership transferred to queue, don't close it here
            */
-          logger(LOG_INFO, "Snapshot: Sent JPEG response (%zu bytes)",
-                 jpeg_size);
+          logger(LOG_INFO, "Snapshot: Sent JPEG response (%zu bytes)", jpeg_size);
         } else {
           /* Conversion failed */
           logger(LOG_ERROR, "Snapshot: JPEG conversion failed");
@@ -519,8 +493,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
         }
 
         /* Copy this TS packet */
-        memcpy(ctx->idr_frame_mmap + ctx->idr_frame_size, ts_packet,
-               TS_PACKET_SIZE);
+        memcpy(ctx->idr_frame_mmap + ctx->idr_frame_size, ts_packet, TS_PACKET_SIZE);
         ctx->idr_frame_size += TS_PACKET_SIZE;
       }
     }
@@ -531,8 +504,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
   return 0; /* Continue accumulating */
 }
 
-void snapshot_fallback_to_streaming(snapshot_context_t *ctx,
-                                    connection_t *conn) {
+void snapshot_fallback_to_streaming(snapshot_context_t *ctx, connection_t *conn) {
   if (!ctx || !ctx->initialized || !conn)
     return;
 

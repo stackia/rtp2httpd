@@ -78,16 +78,14 @@ static char *extract_token(char *line, int *pos) {
 
 /* Parse boolean value from string */
 static int parse_bool(const char *value) {
-  return (strcasecmp("on", value) == 0) || (strcasecmp("true", value) == 0) ||
-         (strcasecmp("yes", value) == 0) || (strcasecmp("1", value) == 0);
+  return (strcasecmp("on", value) == 0) || (strcasecmp("true", value) == 0) || (strcasecmp("yes", value) == 0) ||
+         (strcasecmp("1", value) == 0);
 }
 
 /* Set config value if not already set by command line */
 static int set_if_not_cmd_override(int cmd_flag, const char *param_name) {
   if (cmd_flag) {
-    logger(LOG_WARN,
-           "Config file value \"%s\" ignored (already set on command line)",
-           param_name);
+    logger(LOG_WARN, "Config file value \"%s\" ignored (already set on command line)", param_name);
     return 0;
   }
   return 1;
@@ -101,8 +99,7 @@ static void safe_free_string(char **str) {
   }
 }
 
-static int parse_port_range_value(const char *value, int *min_port,
-                                  int *max_port) {
+static int parse_port_range_value(const char *value, int *min_port, int *max_port) {
   char *endptr = NULL;
   long start = 0;
   long end = 0;
@@ -147,15 +144,13 @@ static int parse_port_range_value(const char *value, int *min_port,
 }
 
 /* Generic function to set page path and route */
-static void set_page_path_value(const char *value, const char *page_name,
-                                char **path_ptr, char **route_ptr) {
+static void set_page_path_value(const char *value, const char *page_name, char **path_ptr, char **route_ptr) {
   char normalized[HTTP_URL_BUFFER_SIZE];
   size_t len = 0;
   const char *src;
 
   if (!value || value[0] == '\0') {
-    logger(LOG_ERROR, "%s-page-path cannot be empty, keeping previous value",
-           page_name);
+    logger(LOG_ERROR, "%s-page-path cannot be empty, keeping previous value", page_name);
     return;
   }
 
@@ -169,8 +164,7 @@ static void set_page_path_value(const char *value, const char *page_name,
     normalized[len++] = *src++;
 
   if (*src != '\0') {
-    logger(LOG_ERROR, "%s-page-path is too long, keeping previous value",
-           page_name);
+    logger(LOG_ERROR, "%s-page-path is too long, keeping previous value", page_name);
     return;
   }
 
@@ -201,13 +195,11 @@ static void set_page_path_value(const char *value, const char *page_name,
 }
 
 static void set_status_page_path_value(const char *value) {
-  set_page_path_value(value, "status", &config.status_page_path,
-                      &config.status_page_route);
+  set_page_path_value(value, "status", &config.status_page_path, &config.status_page_route);
 }
 
 static void set_player_page_path_value(const char *value) {
-  set_page_path_value(value, "player", &config.player_page_path,
-                      &config.player_page_route);
+  set_page_path_value(value, "player", &config.player_page_path, &config.player_page_route);
 }
 
 void parse_bind_sec(char *line) {
@@ -270,9 +262,8 @@ void parse_services_sec(char *line) {
   /* If we're currently buffering M3U content, continue buffering */
   if (inline_m3u_buffer && inline_m3u_buffer_used > 0) {
     /* Check if this is a comment line (M3U metadata) or URL line */
-    if (line[0] == '#' || strncmp(line, "rtp://", 6) == 0 ||
-        strncmp(line, "rtsp://", 7) == 0 || strncmp(line, "udp://", 6) == 0 ||
-        strncmp(line, "http://", 7) == 0 || strncmp(line, "https://", 8) == 0) {
+    if (line[0] == '#' || strncmp(line, "rtp://", 6) == 0 || strncmp(line, "rtsp://", 7) == 0 ||
+        strncmp(line, "udp://", 6) == 0 || strncmp(line, "http://", 7) == 0 || strncmp(line, "https://", 8) == 0) {
       /* Continue buffering */
       size_t line_len = strlen(line);
       while (inline_m3u_buffer_used + line_len + 2 > inline_m3u_buffer_size) {
@@ -372,14 +363,12 @@ void parse_global_sec(char *line) {
   }
 
   if (strcasecmp("fcc-listen-port-range", param) == 0) {
-    if (set_if_not_cmd_override(cmd_fcc_listen_port_range_set,
-                                "fcc-listen-port-range")) {
+    if (set_if_not_cmd_override(cmd_fcc_listen_port_range_set, "fcc-listen-port-range")) {
       int min_port = 0, max_port = 0;
       if (parse_port_range_value(value, &min_port, &max_port) == 0) {
         config.fcc_listen_port_min = min_port;
         config.fcc_listen_port_max = max_port;
-        logger(LOG_INFO, "FCC listen port range set to %d-%d", min_port,
-               max_port);
+        logger(LOG_INFO, "FCC listen port range set to %d-%d", min_port, max_port);
       } else {
         logger(LOG_ERROR, "Invalid fcc-listen-port-range value: %s", value);
       }
@@ -388,12 +377,10 @@ void parse_global_sec(char *line) {
   }
 
   if (strcasecmp("buffer-pool-max-size", param) == 0) {
-    if (set_if_not_cmd_override(cmd_buffer_pool_max_size_set,
-                                "buffer-pool-max-size")) {
+    if (set_if_not_cmd_override(cmd_buffer_pool_max_size_set, "buffer-pool-max-size")) {
       int val = atoi(value);
       if (val < 1) {
-        logger(LOG_ERROR,
-               "Invalid buffer-pool-max-size! Must be >= 1. Ignoring.");
+        logger(LOG_ERROR, "Invalid buffer-pool-max-size! Must be >= 1. Ignoring.");
       } else {
         config.buffer_pool_max_size = val;
       }
@@ -405,8 +392,7 @@ void parse_global_sec(char *line) {
     if (set_if_not_cmd_override(cmd_udp_rcvbuf_size_set, "udp-rcvbuf-size")) {
       int val = atoi(value);
       if (val < 65536) {
-        logger(LOG_ERROR,
-               "Invalid udp-rcvbuf-size! Must be >= 65536 (64KB). Ignoring.");
+        logger(LOG_ERROR, "Invalid udp-rcvbuf-size! Must be >= 65536 (64KB). Ignoring.");
       } else {
         config.udp_rcvbuf_size = val;
       }
@@ -486,57 +472,49 @@ void parse_global_sec(char *line) {
 
   /* Interface parameters with command line override */
   if (strcasecmp("upstream-interface", param) == 0) {
-    if (set_if_not_cmd_override(cmd_upstream_interface_set,
-                                "upstream-interface")) {
+    if (set_if_not_cmd_override(cmd_upstream_interface_set, "upstream-interface")) {
       strncpy(config.upstream_interface, value, IFNAMSIZ - 1);
     }
     return;
   }
 
   if (strcasecmp("upstream-interface-fcc", param) == 0) {
-    if (set_if_not_cmd_override(cmd_upstream_interface_fcc_set,
-                                "upstream-interface-fcc")) {
+    if (set_if_not_cmd_override(cmd_upstream_interface_fcc_set, "upstream-interface-fcc")) {
       strncpy(config.upstream_interface_fcc, value, IFNAMSIZ - 1);
     }
     return;
   }
 
   if (strcasecmp("upstream-interface-rtsp", param) == 0) {
-    if (set_if_not_cmd_override(cmd_upstream_interface_rtsp_set,
-                                "upstream-interface-rtsp")) {
+    if (set_if_not_cmd_override(cmd_upstream_interface_rtsp_set, "upstream-interface-rtsp")) {
       strncpy(config.upstream_interface_rtsp, value, IFNAMSIZ - 1);
     }
     return;
   }
 
   if (strcasecmp("upstream-interface-multicast", param) == 0) {
-    if (set_if_not_cmd_override(cmd_upstream_interface_multicast_set,
-                                "upstream-interface-multicast")) {
+    if (set_if_not_cmd_override(cmd_upstream_interface_multicast_set, "upstream-interface-multicast")) {
       strncpy(config.upstream_interface_multicast, value, IFNAMSIZ - 1);
     }
     return;
   }
 
   if (strcasecmp("upstream-interface-http", param) == 0) {
-    if (set_if_not_cmd_override(cmd_upstream_interface_http_set,
-                                "upstream-interface-http")) {
+    if (set_if_not_cmd_override(cmd_upstream_interface_http_set, "upstream-interface-http")) {
       strncpy(config.upstream_interface_http, value, IFNAMSIZ - 1);
     }
     return;
   }
 
   if (strcasecmp("mcast-rejoin-interval", param) == 0) {
-    if (set_if_not_cmd_override(cmd_mcast_rejoin_interval_set,
-                                "mcast-rejoin-interval")) {
+    if (set_if_not_cmd_override(cmd_mcast_rejoin_interval_set, "mcast-rejoin-interval")) {
       int interval = atoi(value);
       if (interval < 0) {
-        logger(LOG_ERROR,
-               "Invalid mcast-rejoin-interval value: %s (must be >= 0)", value);
+        logger(LOG_ERROR, "Invalid mcast-rejoin-interval value: %s (must be >= 0)", value);
       } else {
         config.mcast_rejoin_interval = interval;
         if (interval > 0) {
-          logger(LOG_INFO, "Multicast rejoin interval set to %d seconds",
-                 interval);
+          logger(LOG_INFO, "Multicast rejoin interval set to %d seconds", interval);
         }
       }
     }
@@ -548,15 +526,13 @@ void parse_global_sec(char *line) {
     if (config.external_m3u_url)
       free(config.external_m3u_url);
     config.external_m3u_url = strdup(value);
-    logger(LOG_INFO, "External M3U URL configured: %s",
-           config.external_m3u_url);
+    logger(LOG_INFO, "External M3U URL configured: %s", config.external_m3u_url);
     return;
   }
 
   if (strcasecmp("external-m3u-update-interval", param) == 0) {
     config.external_m3u_update_interval = atoi(value);
-    logger(LOG_INFO, "External M3U update interval: %d seconds",
-           config.external_m3u_update_interval);
+    logger(LOG_INFO, "External M3U update interval: %d seconds", config.external_m3u_update_interval);
     return;
   }
 
@@ -573,8 +549,7 @@ void parse_global_sec(char *line) {
   }
 
   if (strcasecmp("http-proxy-user-agent", param) == 0) {
-    if (set_if_not_cmd_override(cmd_http_proxy_user_agent_set,
-                                "http-proxy-user-agent")) {
+    if (set_if_not_cmd_override(cmd_http_proxy_user_agent_set, "http-proxy-user-agent")) {
       safe_free_string(&config.http_proxy_user_agent);
       if (value[0] != '\0') {
         config.http_proxy_user_agent = strdup(value);
@@ -595,8 +570,7 @@ void parse_global_sec(char *line) {
 
   /* CORS configuration */
   if (strcasecmp("cors-allow-origin", param) == 0) {
-    if (set_if_not_cmd_override(cmd_cors_allow_origin_set,
-                                "cors-allow-origin")) {
+    if (set_if_not_cmd_override(cmd_cors_allow_origin_set, "cors-allow-origin")) {
       safe_free_string(&config.cors_allow_origin);
       config.cors_allow_origin = strdup(value);
     }
@@ -947,8 +921,7 @@ int config_reload(int *out_bind_changed) {
 
   /* Step 3: Parse config file */
   if (parse_config_file(config_file_path) != 0) {
-    logger(LOG_ERROR, "Failed to parse config file during reload: %s",
-           config_file_path);
+    logger(LOG_ERROR, "Failed to parse config file during reload: %s", config_file_path);
     /* Restore old bind addresses */
     if (!cmd_bind_set) {
       bind_addresses = old_bind_addresses;
@@ -961,97 +934,92 @@ int config_reload(int *out_bind_changed) {
 
   /* Check if bind addresses changed */
   if (out_bind_changed) {
-    *out_bind_changed =
-        !bind_addresses_equal(bind_addresses, old_bind_addresses);
+    *out_bind_changed = !bind_addresses_equal(bind_addresses, old_bind_addresses);
   }
 
   /* Clean up saved bind addresses */
   if (old_bind_addresses)
     free_bindaddr(old_bind_addresses);
 
-  logger(LOG_INFO, "Configuration reloaded successfully from %s",
-         config_file_path);
+  logger(LOG_INFO, "Configuration reloaded successfully from %s", config_file_path);
 
   return 0;
 }
 
 void usage(FILE *f, char *progname) {
   char *prog = basename(progname);
-  fprintf(
-      f, PACKAGE
-      " - Multicast RTP to Unicast HTTP stream convertor\n"
-      "\n"
-      "Version " VERSION "\n"
-      "\n"
-      "This program is free software; you can redistribute it and/or modify\n"
-      "it under the terms of the GNU General Public License version 2\n"
-      "as published by the Free Software Foundation.\n");
-  fprintf(
-      f,
-      "\n"
-      "Usage: %s [options]\n"
-      "\n"
-      "Options:\n"
-      "\t-h --help            Show this help\n"
-      "\t-v --verbose         Increase verbosity (0=FATAL, 1=ERROR, 2=WARN, "
-      "3=INFO, 4=DEBUG)\n"
-      "\t-q --quiet           Report only fatal errors\n"
-      "\t-U --noudpxy         Disable UDPxy compatibility\n"
-      "\t-m --maxclients <n>  Serve max n requests simultaneously (default 5)\n"
-      "\t-w --workers <n>     Number of worker processes with SO_REUSEPORT "
-      "(default 1)\n"
-      "\t-b --buffer-pool-max-size <n> Maximum number of buffers in zero-copy "
-      "pool (default 16384)\n"
-      "\t-B --udp-rcvbuf-size <bytes> UDP socket receive buffer size for "
-      "multicast/FCC/RTSP (default 524288 = 512KB)\n"
-      "\t-l --listen [addr:]port  Address/port to bind (default ANY:5140)\n"
-      "\t-c --config <file>   Read this file for configuration, instead of the "
-      "default one\n"
-      "\t-C --noconfig        Do not read the default config\n"
-      "\t-P --fcc-listen-port-range <start[-end]>  Restrict FCC UDP listen "
-      "sockets to specific ports\n"
-      "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header "
-      "(default none)\n"
-      "\t-X --xff             Enable X-Forwarded-For header recognize "
-      "(default: off)\n"
-      "\t-T --r2h-token <token>   Authentication token for HTTP requests "
-      "(default none)\n"
-      "\t-i --upstream-interface <interface>  Default interface for all "
-      "upstream traffic (lowest priority)\n"
-      "\t-f --upstream-interface-fcc <interface>  Interface for FCC unicast "
-      "traffic (overrides -i)\n"
-      "\t-t --upstream-interface-rtsp <interface>  Interface for RTSP unicast "
-      "traffic (overrides -i)\n"
-      "\t-r --upstream-interface-multicast <interface>  Interface for "
-      "multicast traffic (overrides -i)\n"
-      "\t-y --upstream-interface-http <interface>  Interface for HTTP proxy "
-      "upstream traffic (overrides -i)\n"
-      "\t-R --mcast-rejoin-interval <seconds>  Periodic multicast rejoin "
-      "interval (0=disabled, default 0)\n"
-      "\t-F --ffmpeg-path <path>  Path to ffmpeg executable (default: ffmpeg)\n"
-      "\t-A --ffmpeg-args <args>  Additional ffmpeg arguments (default: "
-      "-hwaccel none)\n"
-      "\t-S --video-snapshot      Enable video snapshot feature (default: "
-      "off)\n"
-      "\t-s --status-page-path <path>  HTTP path for status UI (default: "
-      "/status)\n"
-      "\t-p --player-page-path <path>  HTTP path for player UI (default: "
-      "/player)\n"
-      "\t-M --external-m3u <url>  External M3U playlist URL (file://, http://, "
-      "https://)\n"
-      "\t-I --external-m3u-update-interval <seconds>  Auto-update interval "
-      "(default: 7200 = 2h, 0=disabled)\n"
-      "\t-Z --zerocopy-on-send    Enable zero-copy send with MSG_ZEROCOPY for "
-      "better performance (default: off)\n"
-      "\t-g --http-proxy-user-agent <value>  Override User-Agent for upstream HTTP proxy requests\n"
-      "\t-u --rtsp-user-agent <value>  User-Agent header for upstream RTSP requests "
-      "(default: rtp2httpd/<version>)\n"
-      "\t-N --rtsp-stun-server <host:port>  STUN server for RTSP NAT traversal "
-      "(default: disabled)\n"
-      "\t-O --cors-allow-origin <origin>  Set Access-Control-Allow-Origin header "
-      "(default: disabled)\n"
-      "\t                     default " CONFIGFILE "\n",
-      prog);
+  fprintf(f, PACKAGE " - Multicast RTP to Unicast HTTP stream convertor\n"
+                     "\n"
+                     "Version " VERSION "\n"
+                     "\n"
+                     "This program is free software; you can redistribute it and/or modify\n"
+                     "it under the terms of the GNU General Public License version 2\n"
+                     "as published by the Free Software Foundation.\n");
+  fprintf(f,
+          "\n"
+          "Usage: %s [options]\n"
+          "\n"
+          "Options:\n"
+          "\t-h --help            Show this help\n"
+          "\t-v --verbose         Increase verbosity (0=FATAL, 1=ERROR, 2=WARN, "
+          "3=INFO, 4=DEBUG)\n"
+          "\t-q --quiet           Report only fatal errors\n"
+          "\t-U --noudpxy         Disable UDPxy compatibility\n"
+          "\t-m --maxclients <n>  Serve max n requests simultaneously (default 5)\n"
+          "\t-w --workers <n>     Number of worker processes with SO_REUSEPORT "
+          "(default 1)\n"
+          "\t-b --buffer-pool-max-size <n> Maximum number of buffers in zero-copy "
+          "pool (default 16384)\n"
+          "\t-B --udp-rcvbuf-size <bytes> UDP socket receive buffer size for "
+          "multicast/FCC/RTSP (default 524288 = 512KB)\n"
+          "\t-l --listen [addr:]port  Address/port to bind (default ANY:5140)\n"
+          "\t-c --config <file>   Read this file for configuration, instead of the "
+          "default one\n"
+          "\t-C --noconfig        Do not read the default config\n"
+          "\t-P --fcc-listen-port-range <start[-end]>  Restrict FCC UDP listen "
+          "sockets to specific ports\n"
+          "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header "
+          "(default none)\n"
+          "\t-X --xff             Enable X-Forwarded-For header recognize "
+          "(default: off)\n"
+          "\t-T --r2h-token <token>   Authentication token for HTTP requests "
+          "(default none)\n"
+          "\t-i --upstream-interface <interface>  Default interface for all "
+          "upstream traffic (lowest priority)\n"
+          "\t-f --upstream-interface-fcc <interface>  Interface for FCC unicast "
+          "traffic (overrides -i)\n"
+          "\t-t --upstream-interface-rtsp <interface>  Interface for RTSP unicast "
+          "traffic (overrides -i)\n"
+          "\t-r --upstream-interface-multicast <interface>  Interface for "
+          "multicast traffic (overrides -i)\n"
+          "\t-y --upstream-interface-http <interface>  Interface for HTTP proxy "
+          "upstream traffic (overrides -i)\n"
+          "\t-R --mcast-rejoin-interval <seconds>  Periodic multicast rejoin "
+          "interval (0=disabled, default 0)\n"
+          "\t-F --ffmpeg-path <path>  Path to ffmpeg executable (default: ffmpeg)\n"
+          "\t-A --ffmpeg-args <args>  Additional ffmpeg arguments (default: "
+          "-hwaccel none)\n"
+          "\t-S --video-snapshot      Enable video snapshot feature (default: "
+          "off)\n"
+          "\t-s --status-page-path <path>  HTTP path for status UI (default: "
+          "/status)\n"
+          "\t-p --player-page-path <path>  HTTP path for player UI (default: "
+          "/player)\n"
+          "\t-M --external-m3u <url>  External M3U playlist URL (file://, http://, "
+          "https://)\n"
+          "\t-I --external-m3u-update-interval <seconds>  Auto-update interval "
+          "(default: 7200 = 2h, 0=disabled)\n"
+          "\t-Z --zerocopy-on-send    Enable zero-copy send with MSG_ZEROCOPY for "
+          "better performance (default: off)\n"
+          "\t-g --http-proxy-user-agent <value>  Override User-Agent for upstream HTTP proxy requests\n"
+          "\t-u --rtsp-user-agent <value>  User-Agent header for upstream RTSP requests "
+          "(default: rtp2httpd/<version>)\n"
+          "\t-N --rtsp-stun-server <host:port>  STUN server for RTSP NAT traversal "
+          "(default: disabled)\n"
+          "\t-O --cors-allow-origin <origin>  Set Access-Control-Allow-Origin header "
+          "(default: disabled)\n"
+          "\t                     default " CONFIGFILE "\n",
+          prog);
 }
 
 void parse_bind_cmd(char *arg) {
@@ -1085,43 +1053,42 @@ void parse_bind_cmd(char *arg) {
 }
 
 void parse_cmd_line(int argc, char *argv[]) {
-  const struct option longopts[] = {
-      {"verbose", required_argument, 0, 'v'},
-      {"quiet", no_argument, 0, 'q'},
-      {"help", no_argument, 0, 'h'},
-      {"noudpxy", no_argument, 0, 'U'},
-      {"maxclients", required_argument, 0, 'm'},
-      {"workers", required_argument, 0, 'w'},
-      {"buffer-pool-max-size", required_argument, 0, 'b'},
-      {"udp-rcvbuf-size", required_argument, 0, 'B'},
-      {"listen", required_argument, 0, 'l'},
-      {"config", required_argument, 0, 'c'},
-      {"noconfig", no_argument, 0, 'C'},
-      {"fcc-listen-port-range", required_argument, 0, 'P'},
-      {"hostname", required_argument, 0, 'H'},
-      {"xff", no_argument, 0, 'X'},
-      {"r2h-token", required_argument, 0, 'T'},
-      {"upstream-interface", required_argument, 0, 'i'},
-      {"upstream-interface-fcc", required_argument, 0, 'f'},
-      {"upstream-interface-rtsp", required_argument, 0, 't'},
-      {"upstream-interface-multicast", required_argument, 0, 'r'},
-      {"upstream-interface-http", required_argument, 0, 'y'},
-      {"mcast-rejoin-interval", required_argument, 0, 'R'},
-      {"ffmpeg-path", required_argument, 0, 'F'},
-      {"ffmpeg-args", required_argument, 0, 'A'},
-      {"video-snapshot", no_argument, 0, 'S'},
-      {"status-page-path", required_argument, 0, 's'},
-      {"player-page-path", required_argument, 0, 'p'},
-      {"external-m3u", required_argument, 0, 'M'},
-      {"external-m3u-update-interval", required_argument, 0, 'I'},
-      {"zerocopy-on-send", no_argument, 0, 'Z'},
-        {"http-proxy-user-agent", required_argument, 0, 'g'},
-      {"rtsp-stun-server", required_argument, 0, 'N'},
-      {"rtsp-user-agent", required_argument, 0, 'u'},
-      {"cors-allow-origin", required_argument, 0, 'O'},
-      {0, 0, 0, 0}};
+  const struct option longopts[] = {{"verbose", required_argument, 0, 'v'},
+                                    {"quiet", no_argument, 0, 'q'},
+                                    {"help", no_argument, 0, 'h'},
+                                    {"noudpxy", no_argument, 0, 'U'},
+                                    {"maxclients", required_argument, 0, 'm'},
+                                    {"workers", required_argument, 0, 'w'},
+                                    {"buffer-pool-max-size", required_argument, 0, 'b'},
+                                    {"udp-rcvbuf-size", required_argument, 0, 'B'},
+                                    {"listen", required_argument, 0, 'l'},
+                                    {"config", required_argument, 0, 'c'},
+                                    {"noconfig", no_argument, 0, 'C'},
+                                    {"fcc-listen-port-range", required_argument, 0, 'P'},
+                                    {"hostname", required_argument, 0, 'H'},
+                                    {"xff", no_argument, 0, 'X'},
+                                    {"r2h-token", required_argument, 0, 'T'},
+                                    {"upstream-interface", required_argument, 0, 'i'},
+                                    {"upstream-interface-fcc", required_argument, 0, 'f'},
+                                    {"upstream-interface-rtsp", required_argument, 0, 't'},
+                                    {"upstream-interface-multicast", required_argument, 0, 'r'},
+                                    {"upstream-interface-http", required_argument, 0, 'y'},
+                                    {"mcast-rejoin-interval", required_argument, 0, 'R'},
+                                    {"ffmpeg-path", required_argument, 0, 'F'},
+                                    {"ffmpeg-args", required_argument, 0, 'A'},
+                                    {"video-snapshot", no_argument, 0, 'S'},
+                                    {"status-page-path", required_argument, 0, 's'},
+                                    {"player-page-path", required_argument, 0, 'p'},
+                                    {"external-m3u", required_argument, 0, 'M'},
+                                    {"external-m3u-update-interval", required_argument, 0, 'I'},
+                                    {"zerocopy-on-send", no_argument, 0, 'Z'},
+                                    {"http-proxy-user-agent", required_argument, 0, 'g'},
+                                    {"rtsp-stun-server", required_argument, 0, 'N'},
+                                    {"rtsp-user-agent", required_argument, 0, 'u'},
+                                    {"cors-allow-origin", required_argument, 0, 'O'},
+                                    {0, 0, 0, 0}};
 
-      const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:y:R:F:A:s:p:M:I:SCZg:N:u:O:";
+  const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:y:R:F:A:s:p:M:I:SCZg:N:u:O:";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1129,8 +1096,7 @@ void parse_cmd_line(int argc, char *argv[]) {
   memset(&config, 0, sizeof(config_t));
   config_init();
 
-  while ((opt = getopt_long(argc, argv, short_opts, longopts, &option_index)) !=
-         -1) {
+  while ((opt = getopt_long(argc, argv, short_opts, longopts, &option_index)) != -1) {
     switch (opt) {
     case 0:
       break;
@@ -1176,8 +1142,7 @@ void parse_cmd_line(int argc, char *argv[]) {
       break;
     case 'B':
       if (atoi(optarg) < 65536) {
-        logger(LOG_ERROR,
-               "Invalid udp-rcvbuf-size! Must be >= 65536 (64KB). Ignoring.");
+        logger(LOG_ERROR, "Invalid udp-rcvbuf-size! Must be >= 65536 (64KB). Ignoring.");
       } else {
         config.udp_rcvbuf_size = atoi(optarg);
         cmd_udp_rcvbuf_size_set = 1;
@@ -1204,8 +1169,7 @@ void parse_cmd_line(int argc, char *argv[]) {
         config.fcc_listen_port_min = min_port;
         config.fcc_listen_port_max = max_port;
         cmd_fcc_listen_port_range_set = 1;
-        logger(LOG_INFO, "FCC listen port range set to %d-%d", min_port,
-               max_port);
+        logger(LOG_INFO, "FCC listen port range set to %d-%d", min_port, max_port);
       } else {
         logger(LOG_ERROR, "Invalid fcc-listen-port-range value: %s", optarg);
       }
@@ -1261,8 +1225,7 @@ void parse_cmd_line(int argc, char *argv[]) {
         config.mcast_rejoin_interval = atoi(optarg);
         cmd_mcast_rejoin_interval_set = 1;
         if (config.mcast_rejoin_interval > 0) {
-          logger(LOG_INFO, "Multicast rejoin interval set to %d seconds",
-                 config.mcast_rejoin_interval);
+          logger(LOG_INFO, "Multicast rejoin interval set to %d seconds", config.mcast_rejoin_interval);
         }
       }
       break;
@@ -1293,8 +1256,7 @@ void parse_cmd_line(int argc, char *argv[]) {
       } else {
         config.external_m3u_update_interval = atoi(optarg);
         cmd_external_m3u_update_interval_set = 1;
-        logger(LOG_INFO, "External M3U update interval set to %d seconds",
-               config.external_m3u_update_interval);
+        logger(LOG_INFO, "External M3U update interval set to %d seconds", config.external_m3u_update_interval);
       }
       break;
     case 'Z':
@@ -1347,12 +1309,10 @@ void parse_cmd_line(int argc, char *argv[]) {
   /* External M3U will be loaded asynchronously by workers after startup
    * This avoids blocking the startup process waiting for network resources */
   if (config.external_m3u_url) {
-    logger(LOG_INFO, "External M3U configured: %s (will load asynchronously)",
-           config.external_m3u_url);
+    logger(LOG_INFO, "External M3U configured: %s (will load asynchronously)", config.external_m3u_url);
     /* Initialize to 0 to trigger immediate first fetch in worker event loop */
     config.last_external_m3u_update_time = 0;
   }
 
-  logger(LOG_DEBUG, "Verbosity: %d, Maxclients: %d, Workers: %d",
-         config.verbosity, config.maxclients, config.workers);
+  logger(LOG_DEBUG, "Verbosity: %d, Maxclients: %d, Workers: %d", config.verbosity, config.maxclients, config.workers);
 }

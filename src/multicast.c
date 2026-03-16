@@ -79,19 +79,16 @@ static uint16_t calculate_checksum(const void *data, size_t len) {
 
 static int create_igmp_raw_socket(service_t *service) {
   int raw_sock;
-  const char *upstream_if =
-      get_upstream_interface_for_multicast(service ? service->ifname : NULL);
+  const char *upstream_if = get_upstream_interface_for_multicast(service ? service->ifname : NULL);
 
   raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_IGMP);
   if (raw_sock < 0) {
-    logger(LOG_ERROR, "Failed to create raw IGMP socket: %s (need root?)",
-           strerror(errno));
+    logger(LOG_ERROR, "Failed to create raw IGMP socket: %s (need root?)", strerror(errno));
     return -1;
   }
 
   if (connection_set_nonblocking(raw_sock) < 0) {
-    logger(LOG_ERROR, "Failed to set raw IGMP socket non-blocking: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "Failed to set raw IGMP socket non-blocking: %s", strerror(errno));
     close(raw_sock);
     return -1;
   }
@@ -99,16 +96,13 @@ static int create_igmp_raw_socket(service_t *service) {
   bind_to_upstream_interface(raw_sock, upstream_if);
 
   int hdrincl = 0;
-  if (setsockopt(raw_sock, IPPROTO_IP, IP_HDRINCL, &hdrincl, sizeof(hdrincl)) <
-      0) {
+  if (setsockopt(raw_sock, IPPROTO_IP, IP_HDRINCL, &hdrincl, sizeof(hdrincl)) < 0) {
     logger(LOG_WARN, "Failed to set IP_HDRINCL: %s", strerror(errno));
   }
 
   unsigned char router_alert_option[4] = {IPOPT_RA, 4, 0x00, 0x00};
-  if (setsockopt(raw_sock, IPPROTO_IP, IP_OPTIONS, router_alert_option,
-                 sizeof(router_alert_option)) < 0) {
-    logger(LOG_ERROR, "Failed to set Router Alert IP option: %s",
-           strerror(errno));
+  if (setsockopt(raw_sock, IPPROTO_IP, IP_OPTIONS, router_alert_option, sizeof(router_alert_option)) < 0) {
+    logger(LOG_ERROR, "Failed to set Router Alert IP option: %s", strerror(errno));
     close(raw_sock);
     return -1;
   }
@@ -117,8 +111,7 @@ static int create_igmp_raw_socket(service_t *service) {
     struct ip_mreqn mreq;
     memset(&mreq, 0, sizeof(mreq));
     mreq.imr_ifindex = if_nametoindex(upstream_if);
-    if (setsockopt(raw_sock, IPPROTO_IP, IP_MULTICAST_IF, &mreq,
-                   sizeof(mreq)) < 0) {
+    if (setsockopt(raw_sock, IPPROTO_IP, IP_MULTICAST_IF, &mreq, sizeof(mreq)) < 0) {
       logger(LOG_WARN, "Failed to set IP_MULTICAST_IF: %s", strerror(errno));
     }
   }
@@ -130,8 +123,7 @@ static int create_igmp_raw_socket(service_t *service) {
  * Helper function to prepare multicast group request structures
  * Returns the socket level (SOL_IP or SOL_IPV6) and fills gr/gsr structures
  */
-static int prepare_mcast_group_req(service_t *service, struct group_req *gr,
-                                   struct group_source_req *gsr) {
+static int prepare_mcast_group_req(service_t *service, struct group_req *gr, struct group_source_req *gsr) {
   int level;
   const char *upstream_if;
 
@@ -145,17 +137,14 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr,
 
   case AF_INET6:
     level = SOL_IPV6;
-    gr->gr_interface =
-        ((struct sockaddr_in6 *)(uintptr_t)service->addr->ai_addr)
-            ->sin6_scope_id;
+    gr->gr_interface = ((struct sockaddr_in6 *)(uintptr_t)service->addr->ai_addr)->sin6_scope_id;
     break;
   default:
     logger(LOG_ERROR, "Address family don't support mcast.");
     return -1;
   }
 
-  upstream_if =
-      get_upstream_interface_for_multicast(service ? service->ifname : NULL);
+  upstream_if = get_upstream_interface_for_multicast(service ? service->ifname : NULL);
   if (upstream_if && upstream_if[0] != '\0') {
     gr->gr_interface = if_nametoindex(upstream_if);
   }
@@ -179,9 +168,7 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr,
         unsigned int idx = if_nametoindex(ifa->ifa_name);
         if (idx > 0) {
           gr->gr_interface = idx;
-          logger(LOG_DEBUG,
-                 "Multicast: Auto-selected interface %s (index %u) for join",
-                 ifa->ifa_name, idx);
+          logger(LOG_DEBUG, "Multicast: Auto-selected interface %s (index %u) for join", ifa->ifa_name, idx);
           break;
         }
       }
@@ -194,8 +181,7 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr,
   if (service->msrc != NULL && strcmp(service->msrc, "") != 0) {
     gsr->gsr_group = gr->gr_group;
     gsr->gsr_interface = gr->gr_interface;
-    memcpy(&(gsr->gsr_source), service->msrc_addr->ai_addr,
-           service->msrc_addr->ai_addrlen);
+    memcpy(&(gsr->gsr_source), service->msrc_addr->ai_addr, service->msrc_addr->ai_addrlen);
   }
 
   return level;
@@ -205,8 +191,7 @@ static int prepare_mcast_group_req(service_t *service, struct group_req *gr,
  * Helper function to perform multicast group join/leave operation
  * is_join: 1 for join, 0 for leave
  */
-static int mcast_group_op(int sock, service_t *service, int is_join,
-                          const char *op_name) {
+static int mcast_group_op(int sock, service_t *service, int is_join, const char *op_name) {
   struct group_req gr;
   struct group_source_req gsr;
   int level, r;
@@ -251,32 +236,27 @@ static int join_mcast_group(service_t *service, int is_fec) {
   socklen_t bind_addr_len;
   const char *log_prefix = is_fec ? "FEC" : "Multicast";
 
-  sock = socket(service->addr->ai_family, service->addr->ai_socktype,
-                service->addr->ai_protocol);
+  sock = socket(service->addr->ai_family, service->addr->ai_socktype, service->addr->ai_protocol);
   if (sock < 0) {
-    logger(LOG_ERROR, "%s: Failed to create socket: %s", log_prefix,
-           strerror(errno));
+    logger(LOG_ERROR, "%s: Failed to create socket: %s", log_prefix, strerror(errno));
     return -1;
   }
 
   /* Set socket to non-blocking mode for epoll */
   if (connection_set_nonblocking(sock) < 0) {
-    logger(LOG_ERROR, "%s: Failed to set socket non-blocking: %s", log_prefix,
-           strerror(errno));
+    logger(LOG_ERROR, "%s: Failed to set socket non-blocking: %s", log_prefix, strerror(errno));
     close(sock);
     return -1;
   }
 
   /* Set receive buffer size */
   if (set_socket_rcvbuf(sock, config.udp_rcvbuf_size) < 0) {
-    logger(LOG_WARN, "%s: Failed to set SO_RCVBUF to %d: %s", log_prefix,
-           config.udp_rcvbuf_size, strerror(errno));
+    logger(LOG_WARN, "%s: Failed to set SO_RCVBUF to %d: %s", log_prefix, config.udp_rcvbuf_size, strerror(errno));
   }
 
   r = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
   if (r) {
-    logger(LOG_ERROR, "%s: SO_REUSEADDR failed: %s", log_prefix,
-           strerror(errno));
+    logger(LOG_ERROR, "%s: SO_REUSEADDR failed: %s", log_prefix, strerror(errno));
   }
 
 #ifdef SO_REUSEPORT
@@ -284,14 +264,12 @@ static int join_mcast_group(service_t *service, int is_fec) {
    * address:port. Required on macOS/BSD for reliable multicast receive. */
   r = setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on));
   if (r) {
-    logger(LOG_DEBUG, "%s: SO_REUSEPORT failed: %s", log_prefix,
-           strerror(errno));
+    logger(LOG_DEBUG, "%s: SO_REUSEPORT failed: %s", log_prefix, strerror(errno));
   }
 #endif
 
   /* Determine which interface to use */
-  upstream_if =
-      get_upstream_interface_for_multicast(service ? service->ifname : NULL);
+  upstream_if = get_upstream_interface_for_multicast(service ? service->ifname : NULL);
   bind_to_upstream_interface(sock, upstream_if);
 
   /* Prepare bind address with appropriate port */
@@ -322,8 +300,7 @@ static int join_mcast_group(service_t *service, int is_fec) {
   }
 
   if (is_fec) {
-    logger(LOG_INFO, "%s: Successfully joined group (port %u)", log_prefix,
-           service->fec_port);
+    logger(LOG_INFO, "%s: Successfully joined group (port %u)", log_prefix, service->fec_port);
   } else {
     logger(LOG_INFO, "%s: Successfully joined group", log_prefix);
   }
@@ -338,8 +315,7 @@ static int rejoin_mcast_group(service_t *service) {
   struct igmpv2_report report_v2;
   struct igmpv3_report *report_v3;
   struct igmpv3_grec *grec;
-  uint8_t packet_v3[sizeof(struct igmpv3_report) + sizeof(struct igmpv3_grec) +
-                    sizeof(uint32_t)];
+  uint8_t packet_v3[sizeof(struct igmpv3_report) + sizeof(struct igmpv3_grec) + sizeof(uint32_t)];
   size_t packet_len_v3 = 0;
   uint32_t group_addr;
   uint16_t nsrcs = 0;
@@ -356,8 +332,7 @@ static int rejoin_mcast_group(service_t *service) {
   mcast_addr = (struct sockaddr_in *)(uintptr_t)service->addr->ai_addr;
   group_addr = mcast_addr->sin_addr.s_addr;
 
-  if (service->msrc != NULL && strcmp(service->msrc, "") != 0 &&
-      service->msrc_addr != NULL) {
+  if (service->msrc != NULL && strcmp(service->msrc, "") != 0 && service->msrc_addr != NULL) {
     if (service->msrc_addr->ai_family != AF_INET) {
       logger(LOG_ERROR, "IGMP raw socket rejoin: source address must be IPv4");
       return -1;
@@ -384,16 +359,13 @@ static int rejoin_mcast_group(service_t *service) {
      * (224.0.0.2 is for Leave Group messages only). */
     dest.sin_addr.s_addr = group_addr;
 
-    if (sendto(raw_sock, &report_v2, sizeof(report_v2), 0,
-               (struct sockaddr *)&dest, sizeof(dest)) < 0) {
+    if (sendto(raw_sock, &report_v2, sizeof(report_v2), 0, (struct sockaddr *)&dest, sizeof(dest)) < 0) {
       logger(LOG_ERROR, "Failed to send IGMPv2 Report: %s", strerror(errno));
     } else {
       sent_v2 = 1;
       char group_str[INET_ADDRSTRLEN];
       inet_ntop(AF_INET, &mcast_addr->sin_addr, group_str, sizeof(group_str));
-      logger(LOG_DEBUG,
-             "Multicast: Sent IGMPv2 Report for ASM group %s via raw socket",
-             group_str);
+      logger(LOG_DEBUG, "Multicast: Sent IGMPv2 Report for ASM group %s via raw socket", group_str);
     }
   } else {
     logger(LOG_DEBUG, "Skipping IGMPv2 report for SSM subscription");
@@ -410,11 +382,9 @@ static int rejoin_mcast_group(service_t *service) {
     grec->grec_type = IGMPV3_MODE_IS_INCLUDE;
     grec->grec_nsrcs = htons(nsrcs);
     grec->grec_mca = group_addr;
-    uint32_t *src_list =
-        (uint32_t *)((uintptr_t)grec + sizeof(struct igmpv3_grec));
+    uint32_t *src_list = (uint32_t *)((uintptr_t)grec + sizeof(struct igmpv3_grec));
     src_list[0] = source_addr->sin_addr.s_addr;
-    packet_len_v3 = sizeof(struct igmpv3_report) + sizeof(struct igmpv3_grec) +
-                    sizeof(uint32_t);
+    packet_len_v3 = sizeof(struct igmpv3_report) + sizeof(struct igmpv3_grec) + sizeof(uint32_t);
   } else {
     grec->grec_type = IGMPV3_MODE_IS_EXCLUDE;
     grec->grec_mca = group_addr;
@@ -427,8 +397,7 @@ static int rejoin_mcast_group(service_t *service) {
   dest.sin_family = AF_INET;
   dest.sin_addr.s_addr = inet_addr("224.0.0.22");
 
-  if (sendto(raw_sock, packet_v3, packet_len_v3, 0, (struct sockaddr *)&dest,
-             sizeof(dest)) < 0) {
+  if (sendto(raw_sock, packet_v3, packet_len_v3, 0, (struct sockaddr *)&dest, sizeof(dest)) < 0) {
     logger(LOG_ERROR, "Failed to send IGMPv3 Report: %s", strerror(errno));
   } else {
     sent_v3 = 1;
@@ -436,16 +405,13 @@ static int rejoin_mcast_group(service_t *service) {
     inet_ntop(AF_INET, &mcast_addr->sin_addr, group_str, sizeof(group_str));
     if (is_ssm) {
       char source_str[INET_ADDRSTRLEN];
-      inet_ntop(AF_INET, &source_addr->sin_addr, source_str,
-                sizeof(source_str));
+      inet_ntop(AF_INET, &source_addr->sin_addr, source_str, sizeof(source_str));
       logger(LOG_DEBUG,
              "Multicast: Sent IGMPv3 Report for SSM group %s source %s via raw "
              "socket",
              group_str, source_str);
     } else {
-      logger(LOG_DEBUG,
-             "Multicast: Sent IGMPv3 Report for ASM group %s via raw socket",
-             group_str);
+      logger(LOG_DEBUG, "Multicast: Sent IGMPv3 Report for ASM group %s via raw socket", group_str);
     }
   }
 
@@ -501,8 +467,7 @@ int mcast_session_join(mcast_session_t *session, stream_context_t *ctx) {
 
   /* Register socket with poller */
   if (poller_add(ctx->epoll_fd, sock, POLLER_IN) < 0) {
-    logger(LOG_ERROR, "Multicast: Failed to add socket to poller: %s",
-           strerror(errno));
+    logger(LOG_ERROR, "Multicast: Failed to add socket to poller: %s", strerror(errno));
     close(sock);
     return -1;
   }
@@ -520,8 +485,7 @@ int mcast_session_join(mcast_session_t *session, stream_context_t *ctx) {
     int fec_sock = join_mcast_group(ctx->service, 1);
     if (fec_sock >= 0) {
       if (poller_add(ctx->epoll_fd, fec_sock, POLLER_IN) < 0) {
-        logger(LOG_ERROR, "FEC: Failed to add socket to poller: %s",
-               strerror(errno));
+        logger(LOG_ERROR, "FEC: Failed to add socket to poller: %s", strerror(errno));
         close(fec_sock);
       } else {
         ctx->fec.sock = fec_sock;
@@ -533,8 +497,7 @@ int mcast_session_join(mcast_session_t *session, stream_context_t *ctx) {
   return 0;
 }
 
-int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx,
-                               int64_t now) {
+int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx, int64_t now) {
   if (!session || !session->initialized || session->sock < 0) {
     return -1;
   }
@@ -556,8 +519,7 @@ int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx,
     }
 
     /* Receive into buffer */
-    int actualr =
-        recv(session->sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE, 0);
+    int actualr = recv(session->sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE, 0);
     if (actualr < 0) {
       buffer_ref_put(recv_buf);
       if (errno != EAGAIN)
@@ -591,8 +553,7 @@ int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx,
       break;
 
     default:
-      logger(LOG_DEBUG, "Received multicast data in unexpected FCC state: %d",
-             ctx->fcc.state);
+      logger(LOG_DEBUG, "Received multicast data in unexpected FCC state: %d", ctx->fcc.state);
       break;
     }
 
@@ -605,8 +566,7 @@ int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx,
   return 0;
 }
 
-int mcast_session_tick(mcast_session_t *session, service_t *service,
-                       int64_t now) {
+int mcast_session_tick(mcast_session_t *session, service_t *service, int64_t now) {
   if (!session || !session->initialized || session->sock < 0) {
     return 0;
   }
@@ -615,14 +575,12 @@ int mcast_session_tick(mcast_session_t *session, service_t *service,
   if (config.mcast_rejoin_interval > 0) {
     int64_t elapsed_ms = now - session->last_rejoin_time;
     if (elapsed_ms >= config.mcast_rejoin_interval * 1000) {
-      logger(LOG_DEBUG, "Multicast: Periodic rejoin (interval: %d seconds)",
-             config.mcast_rejoin_interval);
+      logger(LOG_DEBUG, "Multicast: Periodic rejoin (interval: %d seconds)", config.mcast_rejoin_interval);
 
       if (rejoin_mcast_group(service) == 0) {
         session->last_rejoin_time = now;
       } else {
-        logger(LOG_ERROR,
-               "Multicast: Failed to rejoin group, will retry next interval");
+        logger(LOG_ERROR, "Multicast: Failed to rejoin group, will retry next interval");
       }
     }
   }
@@ -630,9 +588,7 @@ int mcast_session_tick(mcast_session_t *session, service_t *service,
   /* Check for multicast stream timeout */
   int64_t elapsed_ms = now - session->last_data_time;
   if (elapsed_ms >= MCAST_TIMEOUT_SEC * 1000) {
-    logger(LOG_ERROR,
-           "Multicast: No data received for %d seconds, closing connection",
-           MCAST_TIMEOUT_SEC);
+    logger(LOG_ERROR, "Multicast: No data received for %d seconds, closing connection", MCAST_TIMEOUT_SEC);
     return -1;
   }
 

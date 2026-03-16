@@ -56,18 +56,18 @@ typedef struct service_s {
   struct addrinfo *addr;
   struct addrinfo *msrc_addr;
   struct addrinfo *fcc_addr;
-  int fcc_type;          /* FCC protocol type */
-  uint16_t fec_port;     /* FEC multicast port (0 if not configured) */
-  char *rtp_url;         /* Full RTP URL for SERVICE_MRTP */
-  char *rtsp_url;        /* Full RTSP URL for SERVICE_RTSP */
-  char *http_url;        /* Full HTTP URL for SERVICE_HTTP */
-  char *seek_param_name; /* Name of seek parameter (e.g., "playseek", "tvdr") */
+  int fcc_type;            /* FCC protocol type */
+  uint16_t fec_port;       /* FEC multicast port (0 if not configured) */
+  char *rtp_url;           /* Full RTP URL for SERVICE_MRTP */
+  char *rtsp_url;          /* Full RTSP URL for SERVICE_RTSP */
+  char *http_url;          /* Full HTTP URL for SERVICE_HTTP */
+  char *seek_param_name;   /* Name of seek parameter (e.g., "playseek", "tvdr") */
   char *seek_param_value;  /* Value of seek parameter for time range */
   int seek_offset_seconds; /* Additional offset in seconds from r2h-seek-offset
                               parameter */
   char *user_agent;        /* User-Agent header for timezone detection */
-  char *ifname;     /* Per-service upstream interface override (from r2h-ifname) */
-  char *ifname_fcc; /* Per-service FCC interface override (from r2h-ifname-fcc) */
+  char *ifname;            /* Per-service upstream interface override (from r2h-ifname) */
+  char *ifname_fcc;        /* Per-service FCC interface override (from r2h-ifname-fcc) */
   struct service_s *next;
 } service_t;
 
@@ -135,8 +135,7 @@ service_t *service_create_from_http_url(const char *http_url);
  * @param out_seek_offset_seconds Output: seek offset in seconds
  * @return 0 on success, -1 on failure
  */
-int service_extract_seek_params(char *query_start, char **out_seek_param_name,
-                                char **out_seek_param_value,
+int service_extract_seek_params(char *query_start, char **out_seek_param_name, char **out_seek_param_value,
                                 int *out_seek_offset_seconds);
 
 /**
@@ -148,9 +147,7 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
  * @param parse_result Output parse result structure
  * @return 0 on success, -1 on invalid parameters
  */
-int service_parse_seek_value(const char *seek_param_value,
-                             int seek_offset_seconds,
-                             const char *user_agent,
+int service_parse_seek_value(const char *seek_param_value, int seek_offset_seconds, const char *user_agent,
                              seek_parse_result_t *parse_result);
 
 /**
@@ -161,9 +158,7 @@ int service_parse_seek_value(const char *seek_param_value,
  * @param output_size Size of output buffer
  * @return 0 on success, -1 on failure
  */
-int service_convert_seek_value(
-  const seek_parse_result_t *parse_result, char *output,
-  size_t output_size);
+int service_convert_seek_value(const seek_parse_result_t *parse_result, char *output, size_t output_size);
 
 /**
  * Format a recent seek begin time for RTSP PLAY Range clock headers.
@@ -173,9 +168,7 @@ int service_convert_seek_value(
  * @param output_size Size of output buffer
  * @return 1 if seek is recent and formatted, 0 if not applicable, -1 on error
  */
-int service_format_recent_seek_range(
-  const seek_parse_result_t *parse_result, char *output,
-  size_t output_size);
+int service_format_recent_seek_range(const seek_parse_result_t *parse_result, char *output, size_t output_size);
 
 /**
  * Create service from configured service with query parameter merging
@@ -193,8 +186,7 @@ int service_format_recent_seek_range(
  * @return Pointer to newly allocated service structure or NULL if no merge
  * needed/on failure
  */
-service_t *service_create_with_query_merge(service_t *configured_service,
-                                           const char *request_url,
+service_t *service_create_with_query_merge(service_t *configured_service, const char *request_url,
                                            service_type_t expected_type);
 
 /**
@@ -280,9 +272,7 @@ service_t *service_hashmap_get(const char *url);
  * @param output_size Size of output buffer
  * @return 0 on success, -1 on error
  */
-int service_resolve_upstream_url(const char *url,
-                                 const char *seek_param_name,
-                                 const seek_parse_result_t *parse_result,
+int service_resolve_upstream_url(const char *url, const char *seek_param_name, const seek_parse_result_t *parse_result,
                                  char *output, size_t output_size);
 
 #endif /* SERVICE_H */

@@ -17,11 +17,11 @@
 #include <stdint.h>
 
 /* Event flags (platform-independent) */
-#define POLLER_IN    0x001  /* Ready to read */
-#define POLLER_OUT   0x002  /* Ready to write */
-#define POLLER_ERR   0x004  /* Error condition */
-#define POLLER_HUP   0x008  /* Hangup (peer closed) */
-#define POLLER_RDHUP 0x010  /* Read half of connection closed */
+#define POLLER_IN 0x001    /* Ready to read */
+#define POLLER_OUT 0x002   /* Ready to write */
+#define POLLER_ERR 0x004   /* Error condition */
+#define POLLER_HUP 0x008   /* Hangup (peer closed) */
+#define POLLER_RDHUP 0x010 /* Read half of connection closed */
 
 /* Event structure returned by poller_wait() */
 typedef struct {

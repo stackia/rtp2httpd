@@ -67,10 +67,7 @@ void hashmap_set_grow_by_power(struct hashmap *map, size_t power) {
 
 static double clamp_load_factor(double factor, double default_factor) {
   // Check for NaN and clamp between 50% and 90%
-  return factor != factor ? default_factor
-         : factor < 0.50  ? 0.50
-         : factor > 0.95  ? 0.95
-                          : factor;
+  return factor != factor ? default_factor : factor < 0.50 ? 0.50 : factor > 0.95 ? 0.95 : factor;
 }
 
 void hashmap_set_load_factor(struct hashmap *map, double factor) {
@@ -87,9 +84,7 @@ static struct bucket *bucket_at(const struct hashmap *map, size_t index) {
   return bucket_at0(map->buckets, map->bucketsz, index);
 }
 
-static void *bucket_item(struct bucket *entry) {
-  return ((char *)entry) + sizeof(struct bucket);
-}
+static void *bucket_item(struct bucket *entry) { return ((char *)entry) + sizeof(struct bucket); }
 
 static uint64_t clip_hash(uint64_t hash) { return hash & 0xFFFFFFFFFFFF; }
 
@@ -99,13 +94,12 @@ static uint64_t get_hash(const struct hashmap *map, const void *key) {
 
 // hashmap_new_with_allocator returns a new hash map using a custom allocator.
 // See hashmap_new for more information information
-struct hashmap *hashmap_new_with_allocator(
-    void *(*_malloc)(size_t), void *(*_realloc)(void *, size_t),
-    void (*_free)(void *), size_t elsize, size_t cap, uint64_t seed0,
-    uint64_t seed1,
-    uint64_t (*hash)(const void *item, uint64_t seed0, uint64_t seed1),
-    int (*compare)(const void *a, const void *b, void *udata),
-    void (*elfree)(void *item), void *udata) {
+struct hashmap *hashmap_new_with_allocator(void *(*_malloc)(size_t), void *(*_realloc)(void *, size_t),
+                                           void (*_free)(void *), size_t elsize, size_t cap, uint64_t seed0,
+                                           uint64_t seed1,
+                                           uint64_t (*hash)(const void *item, uint64_t seed0, uint64_t seed1),
+                                           int (*compare)(const void *a, const void *b, void *udata),
+                                           void (*elfree)(void *item), void *udata) {
   _malloc = _malloc ? _malloc : __malloc ? __malloc : malloc;
   _realloc = _realloc ? _realloc : __realloc ? __realloc : realloc;
   _free = _free ? _free : __free ? __free : free;
@@ -175,13 +169,11 @@ struct hashmap *hashmap_new_with_allocator(
 // The hashmap must be freed with hashmap_free().
 // Param `elfree` is a function that frees a specific item. This should be NULL
 // unless you're storing some kind of reference data in the hash.
-struct hashmap *
-hashmap_new(size_t elsize, size_t cap, uint64_t seed0, uint64_t seed1,
-            uint64_t (*hash)(const void *item, uint64_t seed0, uint64_t seed1),
-            int (*compare)(const void *a, const void *b, void *udata),
-            void (*elfree)(void *item), void *udata) {
-  return hashmap_new_with_allocator(NULL, NULL, NULL, elsize, cap, seed0, seed1,
-                                    hash, compare, elfree, udata);
+struct hashmap *hashmap_new(size_t elsize, size_t cap, uint64_t seed0, uint64_t seed1,
+                            uint64_t (*hash)(const void *item, uint64_t seed0, uint64_t seed1),
+                            int (*compare)(const void *a, const void *b, void *udata), void (*elfree)(void *item),
+                            void *udata) {
+  return hashmap_new_with_allocator(NULL, NULL, NULL, elsize, cap, seed0, seed1, hash, compare, elfree, udata);
 }
 
 static void free_elements(struct hashmap *map) {
@@ -220,9 +212,9 @@ void hashmap_clear(struct hashmap *map, bool update_cap) {
 }
 
 static bool resize0(struct hashmap *map, size_t new_cap) {
-  struct hashmap *map2 = hashmap_new_with_allocator(
-      map->malloc, map->realloc, map->free, map->elsize, new_cap, map->seed0,
-      map->seed1, map->hash, map->compare, map->elfree, map->udata);
+  struct hashmap *map2 =
+      hashmap_new_with_allocator(map->malloc, map->realloc, map->free, map->elsize, new_cap, map->seed0, map->seed1,
+                                 map->hash, map->compare, map->elfree, map->udata);
   if (!map2)
     return false;
   for (size_t i = 0; i < map->nbuckets; i++) {
@@ -257,15 +249,12 @@ static bool resize0(struct hashmap *map, size_t new_cap) {
   return true;
 }
 
-static bool resize(struct hashmap *map, size_t new_cap) {
-  return resize0(map, new_cap);
-}
+static bool resize(struct hashmap *map, size_t new_cap) { return resize0(map, new_cap); }
 
 // hashmap_set_with_hash works like hashmap_set but you provide your
 // own hash. The 'hash' callback provided to the hashmap_new function
 // will not be called
-const void *hashmap_set_with_hash(struct hashmap *map, const void *item,
-                                  uint64_t hash) {
+const void *hashmap_set_with_hash(struct hashmap *map, const void *item, uint64_t hash) {
   hash = clip_hash(hash);
   map->oom = false;
   if (map->count >= map->growat) {
@@ -291,8 +280,7 @@ const void *hashmap_set_with_hash(struct hashmap *map, const void *item,
       return NULL;
     }
     bitem = bucket_item(bucket);
-    if (entry->hash == bucket->hash &&
-        (!map->compare || map->compare(eitem, bitem, map->udata) == 0)) {
+    if (entry->hash == bucket->hash && (!map->compare || map->compare(eitem, bitem, map->udata) == 0)) {
       memcpy(map->spare, bitem, map->elsize);
       memcpy(bitem, eitem, map->elsize);
       return map->spare;
@@ -319,8 +307,7 @@ const void *hashmap_set(struct hashmap *map, const void *item) {
 // hashmap_get_with_hash works like hashmap_get but you provide your
 // own hash. The 'hash' callback provided to the hashmap_new function
 // will not be called
-const void *hashmap_get_with_hash(const struct hashmap *map, const void *key,
-                                  uint64_t hash) {
+const void *hashmap_get_with_hash(const struct hashmap *map, const void *key, uint64_t hash) {
   hash = clip_hash(hash);
   size_t i = hash & map->mask;
   while (1) {
@@ -358,8 +345,7 @@ const void *hashmap_probe(struct hashmap *map, uint64_t position) {
 // hashmap_delete_with_hash works like hashmap_delete but you provide your
 // own hash. The 'hash' callback provided to the hashmap_new function
 // will not be called
-const void *hashmap_delete_with_hash(struct hashmap *map, const void *key,
-                                     uint64_t hash) {
+const void *hashmap_delete_with_hash(struct hashmap *map, const void *key, uint64_t hash) {
   hash = clip_hash(hash);
   map->oom = false;
   size_t i = hash & map->mask;
@@ -369,8 +355,7 @@ const void *hashmap_delete_with_hash(struct hashmap *map, const void *key,
       return NULL;
     }
     void *bitem = bucket_item(bucket);
-    if (bucket->hash == hash &&
-        (!map->compare || map->compare(key, bitem, map->udata) == 0)) {
+    if (bucket->hash == hash && (!map->compare || map->compare(key, bitem, map->udata) == 0)) {
       memcpy(map->spare, bitem, map->elsize);
       bucket->dib = 0;
       while (1) {
@@ -424,8 +409,7 @@ bool hashmap_oom(struct hashmap *map) { return map->oom; }
 // hashmap_scan iterates over all items in the hash map
 // Param `iter` can return false to stop iteration early.
 // Returns false if the iteration has been stopped early.
-bool hashmap_scan(struct hashmap *map,
-                  bool (*iter)(const void *item, void *udata), void *udata) {
+bool hashmap_scan(struct hashmap *map, bool (*iter)(const void *item, void *udata), void *udata) {
   for (size_t i = 0; i < map->nbuckets; i++) {
     struct bucket *bucket = bucket_at(map, i);
     if (bucket->dib && !iter(bucket_item(bucket), udata)) {
@@ -482,44 +466,40 @@ bool hashmap_iter(struct hashmap *map, size_t *i, void **item) {
 //
 // default: SipHash-2-4
 //-----------------------------------------------------------------------------
-static uint64_t SIP64(const uint8_t *in, const size_t inlen, uint64_t seed0,
-                      uint64_t seed1) {
-#define U8TO64_LE(p)                                                           \
-  {                                                                            \
-    (((uint64_t)((p)[0])) | ((uint64_t)((p)[1]) << 8) |                        \
-     ((uint64_t)((p)[2]) << 16) | ((uint64_t)((p)[3]) << 24) |                 \
-     ((uint64_t)((p)[4]) << 32) | ((uint64_t)((p)[5]) << 40) |                 \
-     ((uint64_t)((p)[6]) << 48) | ((uint64_t)((p)[7]) << 56))                  \
+static uint64_t SIP64(const uint8_t *in, const size_t inlen, uint64_t seed0, uint64_t seed1) {
+#define U8TO64_LE(p)                                                                                                   \
+  {(((uint64_t)((p)[0])) | ((uint64_t)((p)[1]) << 8) | ((uint64_t)((p)[2]) << 16) | ((uint64_t)((p)[3]) << 24) |       \
+    ((uint64_t)((p)[4]) << 32) | ((uint64_t)((p)[5]) << 40) | ((uint64_t)((p)[6]) << 48) |                             \
+    ((uint64_t)((p)[7]) << 56))}
+#define U64TO8_LE(p, v)                                                                                                \
+  {                                                                                                                    \
+    U32TO8_LE((p), (uint32_t)((v)));                                                                                   \
+    U32TO8_LE((p) + 4, (uint32_t)((v) >> 32));                                                                         \
   }
-#define U64TO8_LE(p, v)                                                        \
-  {                                                                            \
-    U32TO8_LE((p), (uint32_t)((v)));                                           \
-    U32TO8_LE((p) + 4, (uint32_t)((v) >> 32));                                 \
-  }
-#define U32TO8_LE(p, v)                                                        \
-  {                                                                            \
-    (p)[0] = (uint8_t)((v));                                                   \
-    (p)[1] = (uint8_t)((v) >> 8);                                              \
-    (p)[2] = (uint8_t)((v) >> 16);                                             \
-    (p)[3] = (uint8_t)((v) >> 24);                                             \
+#define U32TO8_LE(p, v)                                                                                                \
+  {                                                                                                                    \
+    (p)[0] = (uint8_t)((v));                                                                                           \
+    (p)[1] = (uint8_t)((v) >> 8);                                                                                      \
+    (p)[2] = (uint8_t)((v) >> 16);                                                                                     \
+    (p)[3] = (uint8_t)((v) >> 24);                                                                                     \
   }
 #define ROTL(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
-#define SIPROUND                                                               \
-  {                                                                            \
-    v0 += v1;                                                                  \
-    v1 = ROTL(v1, 13);                                                         \
-    v1 ^= v0;                                                                  \
-    v0 = ROTL(v0, 32);                                                         \
-    v2 += v3;                                                                  \
-    v3 = ROTL(v3, 16);                                                         \
-    v3 ^= v2;                                                                  \
-    v0 += v3;                                                                  \
-    v3 = ROTL(v3, 21);                                                         \
-    v3 ^= v0;                                                                  \
-    v2 += v1;                                                                  \
-    v1 = ROTL(v1, 17);                                                         \
-    v1 ^= v2;                                                                  \
-    v2 = ROTL(v2, 32);                                                         \
+#define SIPROUND                                                                                                       \
+  {                                                                                                                    \
+    v0 += v1;                                                                                                          \
+    v1 = ROTL(v1, 13);                                                                                                 \
+    v1 ^= v0;                                                                                                          \
+    v0 = ROTL(v0, 32);                                                                                                 \
+    v2 += v3;                                                                                                          \
+    v3 = ROTL(v3, 16);                                                                                                 \
+    v3 ^= v2;                                                                                                          \
+    v0 += v3;                                                                                                          \
+    v3 = ROTL(v3, 21);                                                                                                 \
+    v3 ^= v0;                                                                                                          \
+    v2 += v1;                                                                                                          \
+    v1 = ROTL(v1, 17);                                                                                                 \
+    v1 ^= v2;                                                                                                          \
+    v2 = ROTL(v2, 32);                                                                                                 \
   }
   uint64_t k0 = U8TO64_LE((uint8_t *)&seed0);
   uint64_t k1 = U8TO64_LE((uint8_t *)&seed1);
@@ -598,9 +578,7 @@ static uint32_t XXH_read32(const void *memptr) {
   return val;
 }
 
-static uint64_t XXH_rotl64(uint64_t x, int r) {
-  return (x << r) | (x >> (64 - r));
-}
+static uint64_t XXH_rotl64(uint64_t x, int r) { return (x << r) | (x >> (64 - r)); }
 
 static uint64_t xxh3(const void *data, size_t len, uint64_t seed) {
   const uint8_t *p = (const uint8_t *)data;
@@ -634,8 +612,7 @@ static uint64_t xxh3(const void *data, size_t len, uint64_t seed) {
       p += 32;
     } while (p <= limit);
 
-    h64 = XXH_rotl64(v1, 1) + XXH_rotl64(v2, 7) + XXH_rotl64(v3, 12) +
-          XXH_rotl64(v4, 18);
+    h64 = XXH_rotl64(v1, 1) + XXH_rotl64(v2, 7) + XXH_rotl64(v3, 12) + XXH_rotl64(v4, 18);
 
     v1 *= XXH_PRIME_2;
     v1 = XXH_rotl64(v1, 31);
@@ -698,13 +675,11 @@ static uint64_t xxh3(const void *data, size_t len, uint64_t seed) {
 }
 
 // hashmap_sip returns a hash value for `data` using SipHash-2-4.
-uint64_t hashmap_sip(const void *data, size_t len, uint64_t seed0,
-                     uint64_t seed1) {
+uint64_t hashmap_sip(const void *data, size_t len, uint64_t seed0, uint64_t seed1) {
   return SIP64((const uint8_t *)data, len, seed0, seed1);
 }
 
-uint64_t hashmap_xxhash3(const void *data, size_t len, uint64_t seed0,
-                         uint64_t seed1) {
+uint64_t hashmap_xxhash3(const void *data, size_t len, uint64_t seed0, uint64_t seed1) {
   (void)seed1;
   return xxh3(data, len, seed0);
 }
@@ -787,13 +762,9 @@ static bool iter_ints(const void *item, void *udata) {
   return true;
 }
 
-static int compare_ints_udata(const void *a, const void *b, void *udata) {
-  return *(int *)a - *(int *)b;
-}
+static int compare_ints_udata(const void *a, const void *b, void *udata) { return *(int *)a - *(int *)b; }
 
-static int compare_strs(const void *a, const void *b, void *udata) {
-  return strcmp(*(char **)a, *(char **)b);
-}
+static int compare_strs(const void *a, const void *b, void *udata) { return strcmp(*(char **)a, *(char **)b); }
 
 static uint64_t hash_int(const void *item, uint64_t seed0, uint64_t seed1) {
   return hashmap_xxhash3(item, sizeof(int), seed0, seed1);
@@ -831,8 +802,7 @@ static void all(void) {
 
   struct hashmap *map;
 
-  while (!(map = hashmap_new(sizeof(int), 0, seed, seed, hash_int,
-                             compare_ints_udata, NULL, NULL))) {
+  while (!(map = hashmap_new(sizeof(int), 0, seed, seed, hash_int, compare_ints_udata, NULL, NULL))) {
   }
   shuffle(vals, N, sizeof(int));
   for (int i = 0; i < N; i++) {
@@ -941,8 +911,7 @@ static void all(void) {
 
   xfree(vals);
 
-  while (!(map = hashmap_new(sizeof(char *), 0, seed, seed, hash_str,
-                             compare_strs, free_str, NULL)))
+  while (!(map = hashmap_new(sizeof(char *), 0, seed, seed, hash_str, compare_strs, free_str, NULL)))
     ;
 
   for (int i = 0; i < N; i++) {
@@ -974,37 +943,34 @@ static void all(void) {
   }
 }
 
-#define bench(name, N, code)                                                   \
-  {                                                                            \
-    {                                                                          \
-      if (strlen(name) > 0) {                                                  \
-        printf("%-14s ", name);                                                \
-      }                                                                        \
-      size_t tmem = total_mem;                                                 \
-      size_t tallocs = total_allocs;                                           \
-      uint64_t bytes = 0;                                                      \
-      clock_t begin = clock();                                                 \
-      for (int i = 0; i < N; i++) {                                            \
-        (code);                                                                \
-      }                                                                        \
-      clock_t end = clock();                                                   \
-      double elapsed_secs = (double)(end - begin) / CLOCKS_PER_SEC;            \
-      double bytes_sec = (double)bytes / elapsed_secs;                         \
-      printf("%d ops in %.3f secs, %.0f ns/op, %.0f op/sec", N, elapsed_secs,  \
-             elapsed_secs / (double)N * 1e9, (double)N / elapsed_secs);        \
-      if (bytes > 0) {                                                         \
-        printf(", %.1f GB/sec", bytes_sec / 1024 / 1024 / 1024);               \
-      }                                                                        \
-      if (total_mem > tmem) {                                                  \
-        size_t used_mem = total_mem - tmem;                                    \
-        printf(", %.2f bytes/op", (double)used_mem / N);                       \
-      }                                                                        \
-      if (total_allocs > tallocs) {                                            \
-        size_t used_allocs = total_allocs - tallocs;                           \
-        printf(", %.2f allocs/op", (double)used_allocs / N);                   \
-      }                                                                        \
-      printf("\n");                                                            \
-    }                                                                          \
+#define bench(name, N, code)                                                                                           \
+  {{if (strlen(name) > 0){printf("%-14s ", name);                                                                      \
+  }                                                                                                                    \
+  size_t tmem = total_mem;                                                                                             \
+  size_t tallocs = total_allocs;                                                                                       \
+  uint64_t bytes = 0;                                                                                                  \
+  clock_t begin = clock();                                                                                             \
+  for (int i = 0; i < N; i++) {                                                                                        \
+    (code);                                                                                                            \
+  }                                                                                                                    \
+  clock_t end = clock();                                                                                               \
+  double elapsed_secs = (double)(end - begin) / CLOCKS_PER_SEC;                                                        \
+  double bytes_sec = (double)bytes / elapsed_secs;                                                                     \
+  printf("%d ops in %.3f secs, %.0f ns/op, %.0f op/sec", N, elapsed_secs, elapsed_secs / (double)N * 1e9,              \
+         (double)N / elapsed_secs);                                                                                    \
+  if (bytes > 0) {                                                                                                     \
+    printf(", %.1f GB/sec", bytes_sec / 1024 / 1024 / 1024);                                                           \
+  }                                                                                                                    \
+  if (total_mem > tmem) {                                                                                              \
+    size_t used_mem = total_mem - tmem;                                                                                \
+    printf(", %.2f bytes/op", (double)used_mem / N);                                                                   \
+  }                                                                                                                    \
+  if (total_allocs > tallocs) {                                                                                        \
+    size_t used_allocs = total_allocs - tallocs;                                                                       \
+    printf(", %.2f allocs/op", (double)used_allocs / N);                                                               \
+  }                                                                                                                    \
+  printf("\n");                                                                                                        \
+  }                                                                                                                    \
   }
 
 static void benchmarks(void) {
@@ -1023,8 +989,7 @@ static void benchmarks(void) {
   struct hashmap *map;
   shuffle(vals, N, sizeof(int));
 
-  map = hashmap_new(sizeof(int), 0, seed, seed, hash_int, compare_ints_udata,
-                    NULL, NULL);
+  map = hashmap_new(sizeof(int), 0, seed, seed, hash_int, compare_ints_udata, NULL, NULL);
   bench("set", N, {
     const int *v = hashmap_set(map, &vals[i]);
     assert(!v);
@@ -1038,8 +1003,7 @@ static void benchmarks(void) {
     assert(v && *v == vals[i]);
   }) hashmap_free(map);
 
-  map = hashmap_new(sizeof(int), N, seed, seed, hash_int, compare_ints_udata,
-                    NULL, NULL);
+  map = hashmap_new(sizeof(int), N, seed, seed, hash_int, compare_ints_udata, NULL, NULL);
   bench("set (cap)", N, {
     const int *v = hashmap_set(map, &vals[i]);
     assert(!v);

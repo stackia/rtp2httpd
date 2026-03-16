@@ -42,8 +42,7 @@ int rewrite_is_m3u_content_type(const char *content_type) {
 
 /* ========== URL Resolution Helpers ========== */
 
-int rewrite_resolve_relative_url(const char *relative_url, const char *base_host,
-                                 int base_port, const char *base_path,
+int rewrite_resolve_relative_url(const char *relative_url, const char *base_host, int base_port, const char *base_path,
                                  char *output, size_t output_size) {
   if (!relative_url || !base_host || !output || output_size == 0)
     return -1;
@@ -53,11 +52,9 @@ int rewrite_resolve_relative_url(const char *relative_url, const char *base_host
   if (relative_url[0] == '/') {
     /* Absolute path - use host:port directly */
     if (base_port == 80) {
-      result =
-          snprintf(output, output_size, "http://%s%s", base_host, relative_url);
+      result = snprintf(output, output_size, "http://%s%s", base_host, relative_url);
     } else {
-      result = snprintf(output, output_size, "http://%s:%d%s", base_host,
-                        base_port, relative_url);
+      result = snprintf(output, output_size, "http://%s:%d%s", base_host, base_port, relative_url);
     }
   } else {
     /* Relative path - need to extract directory from base_path */
@@ -82,11 +79,9 @@ int rewrite_resolve_relative_url(const char *relative_url, const char *base_host
     }
 
     if (base_port == 80) {
-      result = snprintf(output, output_size, "http://%s%s%s", base_host,
-                        dir_path, relative_url);
+      result = snprintf(output, output_size, "http://%s%s%s", base_host, dir_path, relative_url);
     } else {
-      result = snprintf(output, output_size, "http://%s:%d%s%s", base_host,
-                        base_port, dir_path, relative_url);
+      result = snprintf(output, output_size, "http://%s:%d%s%s", base_host, base_port, dir_path, relative_url);
     }
   }
 
@@ -98,8 +93,7 @@ int rewrite_resolve_relative_url(const char *relative_url, const char *base_host
   return 0;
 }
 
-int rewrite_url_to_proxy_format(const rewrite_context_t *ctx, const char *url,
-                                char *output, size_t output_size) {
+int rewrite_url_to_proxy_format(const rewrite_context_t *ctx, const char *url, char *output, size_t output_size) {
   if (!ctx || !url || !output || output_size == 0)
     return -1;
 
@@ -123,8 +117,7 @@ int rewrite_url_to_proxy_format(const rewrite_context_t *ctx, const char *url,
     strcpy(absolute_url, url);
   } else {
     /* Relative URL - resolve to absolute */
-    if (rewrite_resolve_relative_url(url, ctx->upstream_host, ctx->upstream_port,
-                                     ctx->upstream_path, absolute_url,
+    if (rewrite_resolve_relative_url(url, ctx->upstream_host, ctx->upstream_port, ctx->upstream_path, absolute_url,
                                      sizeof(absolute_url)) < 0) {
       return -1;
     }
@@ -167,8 +160,8 @@ static int should_rewrite_url(const char *url) {
  * Handles both URI="value" and URI=value formats
  * Only matches URI= that appears to be an HLS attribute (preceded by comma, colon, or start)
  */
-static const char *find_uri_attribute(const char *line, const char **value_end,
-                                      int *has_quotes, const char **attr_start) {
+static const char *find_uri_attribute(const char *line, const char **value_end, int *has_quotes,
+                                      const char **attr_start) {
   const char *uri_pos = line;
 
   while ((uri_pos = strcasestr(uri_pos, "URI=")) != NULL) {
@@ -198,8 +191,7 @@ static const char *find_uri_attribute(const char *line, const char **value_end,
       /* Unquoted value - ends at comma, space, or end of line */
       *has_quotes = 0;
       const char *end = value_start;
-      while (*end && *end != ',' && *end != ' ' && *end != '\t' &&
-             *end != '\r' && *end != '\n') {
+      while (*end && *end != ',' && *end != ' ' && *end != '\t' && *end != '\r' && *end != '\n') {
         end++;
       }
       if (end > value_start) {
@@ -217,8 +209,7 @@ static const char *find_uri_attribute(const char *line, const char **value_end,
  * Rewrite all URI attributes in a comment line (non-recursive)
  * @return New malloc'd string with rewritten URIs, or NULL if no rewrite needed
  */
-static char *rewrite_uri_attributes(const rewrite_context_t *ctx,
-                                    const char *line) {
+static char *rewrite_uri_attributes(const rewrite_context_t *ctx, const char *line) {
   char *result = NULL;
   char *current = strdup(line);
   if (!current)
@@ -231,8 +222,7 @@ static char *rewrite_uri_attributes(const rewrite_context_t *ctx,
     const char *value_end;
     const char *attr_start;
     int has_quotes;
-    const char *uri_value =
-        find_uri_attribute(current + search_offset, &value_end, &has_quotes, &attr_start);
+    const char *uri_value = find_uri_attribute(current + search_offset, &value_end, &has_quotes, &attr_start);
 
     if (!uri_value)
       break;
@@ -262,8 +252,7 @@ static char *rewrite_uri_attributes(const rewrite_context_t *ctx,
 
     /* Rewrite the URI */
     char rewritten_uri[HTTP_PROXY_PATH_SIZE * 2];
-    if (rewrite_url_to_proxy_format(ctx, original_uri, rewritten_uri,
-                                    sizeof(rewritten_uri)) < 0) {
+    if (rewrite_url_to_proxy_format(ctx, original_uri, rewritten_uri, sizeof(rewritten_uri)) < 0) {
       free(original_uri);
       search_offset = value_end_offset + (has_quotes ? 1 : 0);
       continue;
@@ -281,8 +270,7 @@ static char *rewrite_uri_attributes(const rewrite_context_t *ctx,
     size_t suffix_len = strlen(current + suffix_start);
     size_t rewritten_len = strlen(rewritten_uri);
 
-    size_t new_line_len =
-        prefix_len + (has_quotes ? 1 : 0) + rewritten_len + (has_quotes ? 1 : 0) + suffix_len + 1;
+    size_t new_line_len = prefix_len + (has_quotes ? 1 : 0) + rewritten_len + (has_quotes ? 1 : 0) + suffix_len + 1;
     char *new_line = malloc(new_line_len);
     if (!new_line) {
       free(current);
@@ -320,8 +308,7 @@ static char *rewrite_uri_attributes(const rewrite_context_t *ctx,
  * Rewrite a single M3U line
  * @return New malloc'd string with rewritten content, or NULL if no changes
  */
-static char *rewrite_m3u_line(const rewrite_context_t *ctx, const char *line,
-                              size_t line_len) {
+static char *rewrite_m3u_line(const rewrite_context_t *ctx, const char *line, size_t line_len) {
   /* Skip empty lines */
   if (line_len == 0)
     return NULL;
@@ -335,8 +322,7 @@ static char *rewrite_m3u_line(const rewrite_context_t *ctx, const char *line,
 
   /* Remove trailing \r\n for processing */
   size_t process_len = line_len;
-  while (process_len > 0 &&
-         (line_copy[process_len - 1] == '\r' || line_copy[process_len - 1] == '\n')) {
+  while (process_len > 0 && (line_copy[process_len - 1] == '\r' || line_copy[process_len - 1] == '\n')) {
     line_copy[--process_len] = '\0';
   }
 
@@ -366,8 +352,7 @@ static char *rewrite_m3u_line(const rewrite_context_t *ctx, const char *line,
 
 /* ========== Main M3U Rewriting Function ========== */
 
-int rewrite_m3u_content(const rewrite_context_t *ctx, const char *input,
-                        char **output, size_t *output_size) {
+int rewrite_m3u_content(const rewrite_context_t *ctx, const char *input, char **output, size_t *output_size) {
   if (!ctx || !input || !output || !output_size)
     return -1;
 

@@ -54,8 +54,7 @@ static void calculate_epg_etag(int fd, size_t size) {
   md5Init(&ctx);
 
   while (total_read < size) {
-    size_t to_read = (size - total_read < sizeof(buffer)) ? (size - total_read)
-                                                          : sizeof(buffer);
+    size_t to_read = (size - total_read < sizeof(buffer)) ? (size - total_read) : sizeof(buffer);
     bytes_read = read(fd, buffer, to_read);
 
     if (bytes_read <= 0) {
@@ -83,8 +82,7 @@ static void calculate_epg_etag(int fd, size_t size) {
 }
 
 /* Async fetch completion callback (fd-based, zero-copy) */
-static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd,
-                                  size_t content_size, void *user_data) {
+static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd, size_t content_size, void *user_data) {
   (void)ctx;       /* Unused */
   (void)user_data; /* Unused */
 
@@ -98,8 +96,8 @@ static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd,
       logger(LOG_ERROR,
              "EPG fetch failed (error count: %d), will retry in %d seconds "
              "(retry %d/%d)",
-             epg_cache.fetch_error_count, retry_delays[epg_cache.retry_count],
-             epg_cache.retry_count + 1, EPG_MAX_RETRY_COUNT);
+             epg_cache.fetch_error_count, retry_delays[epg_cache.retry_count], epg_cache.retry_count + 1,
+             EPG_MAX_RETRY_COUNT);
       epg_cache.retry_count++;
     } else {
       logger(LOG_ERROR,
@@ -130,9 +128,8 @@ static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd,
   /* Calculate ETag for the fetched data */
   calculate_epg_etag(fd, content_size);
 
-  logger(LOG_INFO, "EPG data cached: %zu bytes, fd=%d (%s), ETag=%s",
-         content_size, fd, epg_cache.is_gzipped ? "gzipped" : "uncompressed",
-         epg_cache.etag_valid ? epg_cache.etag : "none");
+  logger(LOG_INFO, "EPG data cached: %zu bytes, fd=%d (%s), ETag=%s", content_size, fd,
+         epg_cache.is_gzipped ? "gzipped" : "uncompressed", epg_cache.etag_valid ? epg_cache.etag : "none");
 }
 
 void epg_cleanup(void) {
@@ -207,8 +204,7 @@ int epg_fetch_async(int epfd) {
   /* Start async fetch with fd-based callback (zero-copy)
    * Note: file:// URLs complete synchronously and return NULL (callback already
    * invoked) */
-  fetch_ctx = http_fetch_start_async_fd(epg_cache.url, epg_fetch_fd_callback,
-                                        NULL, epfd);
+  fetch_ctx = http_fetch_start_async_fd(epg_cache.url, epg_fetch_fd_callback, NULL, epfd);
 
   /* NULL return value can mean:
    * 1. file:// URL completed synchronously (callback already called) - SUCCESS

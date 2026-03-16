@@ -66,8 +66,7 @@ typedef struct stream_context_s {
  * @param is_snapshot 1 if this is a snapshot request, 0 for normal streaming
  * @return 0 on success, -1 on error
  */
-int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
-                                   service_t *service, int epoll_fd,
+int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, service_t *service, int epoll_fd,
                                    int status_index, int is_snapshot);
 
 /**
@@ -81,8 +80,7 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn,
  *  -1: Connection should be closed (error or graceful TEARDOWN complete)
  *  -2: Duration query completed, send response to client
  */
-int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events,
-                           int64_t now);
+int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64_t now);
 
 /**
  * Periodic maintenance: update status, manage timers. Should be called ~1s.

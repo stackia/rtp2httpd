@@ -103,8 +103,7 @@ int logger(loglevel_t level, const char *format, ...) {
     if (worker_id == SUPERVISOR_WORKER_ID) {
       prefix_len = snprintf(message, sizeof(message), "[Supervisor] ");
     } else {
-      prefix_len =
-          snprintf(message, sizeof(message), "[Worker %d] ", worker_id);
+      prefix_len = snprintf(message, sizeof(message), "[Worker %d] ", worker_id);
     }
 
     /* Format the actual message after the prefix (if any) */
@@ -129,14 +128,12 @@ int logger(loglevel_t level, const char *format, ...) {
 void bind_to_upstream_interface(int sock, const char *ifname) {
   if (ifname && ifname[0] != '\0') {
     if (platform_bind_to_device(sock, ifname) < 0) {
-      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s", ifname,
-             strerror(errno));
+      logger(LOG_ERROR, "Failed to bind to upstream interface %s: %s", ifname, strerror(errno));
     }
   }
 }
 
-const char *get_upstream_interface_for_fcc(const char *override,
-                                           const char *override_fcc) {
+const char *get_upstream_interface_for_fcc(const char *override, const char *override_fcc) {
   /* Priority: override_fcc > override > upstream_interface_fcc >
    * upstream_interface */
   if (override_fcc && override_fcc[0] != '\0') {
@@ -216,14 +213,11 @@ uint32_t get_local_ip_for_fcc(const char *override, const char *override_fcc) {
       if (ifa->ifa_addr == NULL)
         continue;
 
-      if (ifa->ifa_addr->sa_family == AF_INET &&
-          strcmp(ifa->ifa_name, ifname) == 0) {
-        struct sockaddr_in *addr =
-            (struct sockaddr_in *)(uintptr_t)ifa->ifa_addr;
+      if (ifa->ifa_addr->sa_family == AF_INET && strcmp(ifa->ifa_name, ifname) == 0) {
+        struct sockaddr_in *addr = (struct sockaddr_in *)(uintptr_t)ifa->ifa_addr;
         local_ip = ntohl(addr->sin_addr.s_addr);
-        logger(LOG_DEBUG, "FCC: Using local IP from interface %s: %u.%u.%u.%u",
-               ifname, (local_ip >> 24) & 0xFF, (local_ip >> 16) & 0xFF,
-               (local_ip >> 8) & 0xFF, local_ip & 0xFF);
+        logger(LOG_DEBUG, "FCC: Using local IP from interface %s: %u.%u.%u.%u", ifname, (local_ip >> 24) & 0xFF,
+               (local_ip >> 16) & 0xFF, (local_ip >> 8) & 0xFF, local_ip & 0xFF);
         break;
       }
     }
@@ -236,18 +230,14 @@ uint32_t get_local_ip_for_fcc(const char *override, const char *override_fcc) {
         continue;
 
       if (ifa->ifa_addr->sa_family == AF_INET) {
-        struct sockaddr_in *addr =
-            (struct sockaddr_in *)(uintptr_t)ifa->ifa_addr;
+        struct sockaddr_in *addr = (struct sockaddr_in *)(uintptr_t)ifa->ifa_addr;
         uint32_t ip = ntohl(addr->sin_addr.s_addr);
 
         /* Skip loopback (127.0.0.0/8) */
         if ((ip >> 24) != 127) {
           local_ip = ip;
-          logger(
-              LOG_DEBUG,
-              "FCC: Using first non-loopback IP from interface %s: %u.%u.%u.%u",
-              ifa->ifa_name, (local_ip >> 24) & 0xFF, (local_ip >> 16) & 0xFF,
-              (local_ip >> 8) & 0xFF, local_ip & 0xFF);
+          logger(LOG_DEBUG, "FCC: Using first non-loopback IP from interface %s: %u.%u.%u.%u", ifa->ifa_name,
+                 (local_ip >> 24) & 0xFF, (local_ip >> 16) & 0xFF, (local_ip >> 8) & 0xFF, local_ip & 0xFF);
           break;
         }
       }
@@ -263,8 +253,7 @@ uint32_t get_local_ip_for_fcc(const char *override, const char *override_fcc) {
   return local_ip;
 }
 
-char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host,
-                           const char *x_forwarded_proto) {
+char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host, const char *x_forwarded_proto) {
   const char *host = NULL;
   const char *proto = "http";
   char *base_url = NULL;
@@ -273,8 +262,7 @@ char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host
   char config_protocol[16] = {0};
   if (config.hostname && config.hostname[0] != '\0') {
     /* Parse URL components from config.hostname to extract protocol */
-    if (http_parse_url_components(config.hostname, config_protocol, NULL, NULL,
-                                  NULL) == 0) {
+    if (http_parse_url_components(config.hostname, config_protocol, NULL, NULL, NULL) == 0) {
       /* Successfully parsed - use protocol from config.hostname if present */
       if (config_protocol[0] != '\0') {
         proto = config_protocol;

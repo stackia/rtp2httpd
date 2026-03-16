@@ -45,15 +45,15 @@ typedef enum {
 
 /* HTTP proxy session structure */
 typedef struct {
-  int initialized; /* Flag: session has been initialized with resources */
-  int socket;                        /* TCP socket to upstream server */
-  int epoll_fd;                      /* Epoll file descriptor for socket
-                                        registration */
-  struct connection_s *conn;         /* Connection pointer for fdmap registration
-                                        and output */
-  http_proxy_state_t state;          /* Current state */
-  int64_t last_state_change_ms;      /* Timestamp of last state change */
-  int status_index;                  /* Index in status_shared->clients array */
+  int initialized;              /* Flag: session has been initialized with resources */
+  int socket;                   /* TCP socket to upstream server */
+  int epoll_fd;                 /* Epoll file descriptor for socket
+                                   registration */
+  struct connection_s *conn;    /* Connection pointer for fdmap registration
+                                   and output */
+  http_proxy_state_t state;     /* Current state */
+  int64_t last_state_change_ms; /* Timestamp of last state change */
+  int status_index;             /* Index in status_shared->clients array */
 
   /* Target server info */
   char target_host[HTTP_PROXY_HOST_SIZE];
@@ -64,19 +64,19 @@ typedef struct {
   char method[16];
 
   /* Response parsing state */
-  int response_status_code;                          /* HTTP status code */
+  int response_status_code;                                 /* HTTP status code */
   char response_content_type[HTTP_PROXY_CONTENT_TYPE_SIZE]; /* Content-Type */
-  ssize_t content_length;   /* Content-Length (-1 if chunked or unknown) */
-  ssize_t bytes_received;   /* Bytes of body received so far */
-  int headers_received;     /* Flag: headers fully received */
-  int headers_forwarded;    /* Flag: headers forwarded to client */
+  ssize_t content_length;                                   /* Content-Length (-1 if chunked or unknown) */
+  ssize_t bytes_received;                                   /* Bytes of body received so far */
+  int headers_received;                                     /* Flag: headers fully received */
+  int headers_forwarded;                                    /* Flag: headers forwarded to client */
 
   /* Non-blocking I/O state */
-  char pending_request[HTTP_PROXY_REQUEST_BUFFER_SIZE]; /* Request being sent */
-  size_t pending_request_len;                           /* Total length */
-  size_t pending_request_sent;                          /* Bytes already sent */
+  char pending_request[HTTP_PROXY_REQUEST_BUFFER_SIZE];     /* Request being sent */
+  size_t pending_request_len;                               /* Total length */
+  size_t pending_request_sent;                              /* Bytes already sent */
   uint8_t response_buffer[HTTP_PROXY_RESPONSE_BUFFER_SIZE]; /* Receive buffer */
-  size_t response_buffer_pos; /* Current position in response buffer */
+  size_t response_buffer_pos;                               /* Current position in response buffer */
 
   /* Raw headers from client request for full passthrough (pointer to avoid copy)
    */
@@ -96,13 +96,13 @@ typedef struct {
   size_t rewrite_body_buffer_used; /* Bytes used in buffer */
 
   /* Saved response headers for passthrough during body rewrite */
-  char *saved_response_headers;    /* malloc'd copy of original response headers */
+  char *saved_response_headers; /* malloc'd copy of original response headers */
   size_t saved_response_headers_len;
 
   /* Request headers for base URL construction */
-  char host_header[HTTP_PROXY_HOST_SIZE];           /* Host header from client */
-  char x_forwarded_host[HTTP_PROXY_HOST_SIZE];      /* X-Forwarded-Host header */
-  char x_forwarded_proto[16];                       /* X-Forwarded-Proto header */
+  char host_header[HTTP_PROXY_HOST_SIZE];      /* Host header from client */
+  char x_forwarded_host[HTTP_PROXY_HOST_SIZE]; /* X-Forwarded-Host header */
+  char x_forwarded_proto[16];                  /* X-Forwarded-Proto header */
 
   /* Per-service upstream interface override (resolved at init, non-owning) */
   const char *upstream_ifname;
@@ -143,8 +143,7 @@ void http_proxy_set_method(http_proxy_session_t *session, const char *method);
  * @param raw_headers Raw header string in "Name: Value\r\n" format
  * @param raw_headers_len Length of raw headers string
  */
-void http_proxy_set_raw_headers(http_proxy_session_t *session,
-                                const char *raw_headers, size_t raw_headers_len);
+void http_proxy_set_raw_headers(http_proxy_session_t *session, const char *raw_headers, size_t raw_headers_len);
 
 /**
  * Set request body for passthrough from client request
@@ -152,8 +151,7 @@ void http_proxy_set_raw_headers(http_proxy_session_t *session,
  * @param body Request body data
  * @param body_len Length of request body
  */
-void http_proxy_set_request_body(http_proxy_session_t *session,
-                                 const char *body, size_t body_len);
+void http_proxy_set_request_body(http_proxy_session_t *session, const char *body, size_t body_len);
 
 /**
  * Set request headers for base URL construction during content rewriting
@@ -162,10 +160,8 @@ void http_proxy_set_request_body(http_proxy_session_t *session,
  * @param x_forwarded_host X-Forwarded-Host header value (can be NULL)
  * @param x_forwarded_proto X-Forwarded-Proto header value (can be NULL)
  */
-void http_proxy_set_request_headers(http_proxy_session_t *session,
-                                    const char *host_header,
-                                    const char *x_forwarded_host,
-                                    const char *x_forwarded_proto);
+void http_proxy_set_request_headers(http_proxy_session_t *session, const char *host_header,
+                                    const char *x_forwarded_host, const char *x_forwarded_proto);
 
 /**
  * Connect to upstream HTTP server (non-blocking)
@@ -182,8 +178,7 @@ int http_proxy_connect(http_proxy_session_t *session);
  * @return Number of bytes forwarded to client (>0), 0 if no data forwarded, -1
  * on error
  */
-int http_proxy_handle_socket_event(http_proxy_session_t *session,
-                                   uint32_t events);
+int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t events);
 
 /**
  * Cleanup HTTP proxy session
@@ -212,7 +207,6 @@ int http_proxy_session_tick(http_proxy_session_t *session, int64_t now);
  * @param output_size Size of output buffer
  * @return 0 on success, -1 on error
  */
-int http_proxy_build_url(const char *http_url, const char *base_url_placeholder,
-                         char *output, size_t output_size);
+int http_proxy_build_url(const char *http_url, const char *base_url_placeholder, char *output, size_t output_size);
 
 #endif /* __HTTP_PROXY_H__ */

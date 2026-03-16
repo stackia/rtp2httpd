@@ -20,10 +20,7 @@ typedef enum {
 
 #define INBUF_SIZE 8192
 
-typedef enum {
-  CONNECTION_BUFFER_CONTROL = 0,
-  CONNECTION_BUFFER_MEDIA = 1
-} connection_buffer_class_t;
+typedef enum { CONNECTION_BUFFER_CONTROL = 0, CONNECTION_BUFFER_MEDIA = 1 } connection_buffer_class_t;
 
 typedef struct connection_s {
   int fd;
@@ -90,9 +87,7 @@ typedef enum {
  * @param addr_len Address structure length
  * @return Pointer to new connection or NULL on failure
  */
-connection_t *connection_create(int fd, int epfd,
-                                struct sockaddr_storage *client_addr,
-                                socklen_t addr_len);
+connection_t *connection_create(int fd, int epfd, struct sockaddr_storage *client_addr, socklen_t addr_len);
 
 /**
  * Cleanup a connection and all associated resources
@@ -160,8 +155,7 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len);
  * @param len Length of data
  * @return 0 on success, -1 if buffer full
  */
-int connection_queue_output_and_flush(connection_t *c, const uint8_t *data,
-                                      size_t len);
+int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len);
 
 /**
  * Queue data for zero-copy send (no memcpy)
@@ -181,7 +175,6 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref);
  * @param file_size Number of bytes to send from file
  * @return 0 on success, -1 on error
  */
-int connection_queue_file(connection_t *c, int file_fd, off_t file_offset,
-                          size_t file_size);
+int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_t file_size);
 
 #endif /* CONNECTION_H */

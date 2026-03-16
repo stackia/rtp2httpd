@@ -47,8 +47,7 @@ int mcast_session_join(mcast_session_t *session, stream_context_t *ctx);
  * @param now Current timestamp in milliseconds
  * @return processed bytes on success, -1 on error
  */
-int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx,
-                               int64_t now);
+int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx, int64_t now);
 
 /**
  * Periodic tick for multicast session (timeout/rejoin checks)
@@ -57,7 +56,6 @@ int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx,
  * @param now Current timestamp in milliseconds
  * @return 0 on success, -1 if connection should be closed (timeout)
  */
-int mcast_session_tick(mcast_session_t *session, service_t *service,
-                       int64_t now);
+int mcast_session_tick(mcast_session_t *session, service_t *service, int64_t now);
 
 #endif /* __MULTICAST_H__ */

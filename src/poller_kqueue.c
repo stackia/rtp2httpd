@@ -1,5 +1,4 @@
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
-    defined(__NetBSD__)
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
 
 #include "poller.h"
 #include <errno.h>
@@ -22,8 +21,7 @@ int poller_add(int pfd, int fd, uint32_t events) {
     nchanges++;
   }
   if (events & POLLER_OUT) {
-    EV_SET(&changes[nchanges], fd, EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0,
-           NULL);
+    EV_SET(&changes[nchanges], fd, EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, NULL);
     nchanges++;
   }
 
@@ -52,8 +50,7 @@ int poller_mod(int pfd, int fd, uint32_t events) {
   nchanges++;
 
   if (events & POLLER_OUT) {
-    EV_SET(&changes[nchanges], fd, EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0,
-           NULL);
+    EV_SET(&changes[nchanges], fd, EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, NULL);
   } else {
     EV_SET(&changes[nchanges], fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
   }
@@ -94,11 +91,9 @@ int poller_del(int pfd, int fd) {
   return 0;
 }
 
-int poller_wait(int pfd, poller_event_t *events, int max_events,
-                int timeout_ms) {
+int poller_wait(int pfd, poller_event_t *events, int max_events, int timeout_ms) {
   struct kevent kev_buf[1024];
-  struct kevent *kev_events =
-      max_events <= 1024 ? kev_buf : malloc(max_events * sizeof(struct kevent));
+  struct kevent *kev_events = max_events <= 1024 ? kev_buf : malloc(max_events * sizeof(struct kevent));
   struct timespec ts;
   struct timespec *pts = NULL;
 

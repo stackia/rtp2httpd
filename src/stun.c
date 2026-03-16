@@ -51,8 +51,7 @@ static void stun_gen_transaction_id(unsigned char tid[STUN_TRANSACTION_ID_SIZE])
  * @param port Output port (default STUN_DEFAULT_PORT if not specified)
  * @return 0 on success, -1 on error
  */
-static int stun_parse_server(const char *server_str, char *host,
-                             size_t host_size, int *port) {
+static int stun_parse_server(const char *server_str, char *host, size_t host_size, int *port) {
   const char *colon;
   size_t host_len;
 
@@ -103,10 +102,8 @@ int stun_send_request(stun_state_t *state, int socket_fd) {
   }
 
   /* Parse server address */
-  if (stun_parse_server(config.rtsp_stun_server, host, sizeof(host), &port) <
-      0) {
-    logger(LOG_WARN, "STUN: Failed to parse server address: %s",
-           config.rtsp_stun_server);
+  if (stun_parse_server(config.rtsp_stun_server, host, sizeof(host), &port) < 0) {
+    logger(LOG_WARN, "STUN: Failed to parse server address: %s", config.rtsp_stun_server);
     return -1;
   }
 
@@ -146,8 +143,7 @@ int stun_send_request(stun_state_t *state, int socket_fd) {
   memcpy(request + 8, state->transaction_id, STUN_TRANSACTION_ID_SIZE);
 
   /* Send request */
-  sent = sendto(socket_fd, request, sizeof(request), 0, res->ai_addr,
-                res->ai_addrlen);
+  sent = sendto(socket_fd, request, sizeof(request), 0, res->ai_addr, res->ai_addrlen);
   freeaddrinfo(res);
 
   if (sent != sizeof(request)) {
@@ -159,8 +155,8 @@ int stun_send_request(stun_state_t *state, int socket_fd) {
   state->in_progress = 1;
   state->request_time_ms = get_time_ms();
 
-  logger(LOG_DEBUG, "STUN: Sent Binding Request to %s:%d (attempt %d/%d)", host,
-         port, state->retry_count + 1, STUN_MAX_RETRIES + 1);
+  logger(LOG_DEBUG, "STUN: Sent Binding Request to %s:%d (attempt %d/%d)", host, port, state->retry_count + 1,
+         STUN_MAX_RETRIES + 1);
 
   return 0;
 }
@@ -177,8 +173,7 @@ int stun_parse_response(stun_state_t *state, const uint8_t *data, size_t len) {
   /* Parse header */
   msg_type = ((uint16_t)data[0] << 8) | data[1];
   msg_len = ((uint16_t)data[2] << 8) | data[3];
-  magic = ((uint32_t)data[4] << 24) | ((uint32_t)data[5] << 16) |
-          ((uint32_t)data[6] << 8) | data[7];
+  magic = ((uint32_t)data[4] << 24) | ((uint32_t)data[5] << 16) | ((uint32_t)data[6] << 8) | data[7];
 
   /* Validate message type */
   if (msg_type != STUN_MSG_BINDING_SUCCESS) {
@@ -213,10 +208,8 @@ int stun_parse_response(stun_state_t *state, const uint8_t *data, size_t len) {
     if (attr_type == STUN_ATTR_XOR_MAPPED_ADDR && attr_len >= 8) {
       uint8_t family = data[val_off + 1];
       if (family == STUN_ADDR_FAMILY_IPV4) {
-        uint16_t xport =
-            ((uint16_t)data[val_off + 2] << 8) | data[val_off + 3];
-        uint32_t xaddr = ((uint32_t)data[val_off + 4] << 24) |
-                         ((uint32_t)data[val_off + 5] << 16) |
+        uint16_t xport = ((uint16_t)data[val_off + 2] << 8) | data[val_off + 3];
+        uint32_t xaddr = ((uint32_t)data[val_off + 4] << 24) | ((uint32_t)data[val_off + 5] << 16) |
                          ((uint32_t)data[val_off + 6] << 8) | data[val_off + 7];
 
         /* XOR decode */
@@ -243,16 +236,14 @@ int stun_parse_response(stun_state_t *state, const uint8_t *data, size_t len) {
     if (attr_type == STUN_ATTR_MAPPED_ADDR && attr_len >= 8) {
       uint8_t family = data[val_off + 1];
       if (family == STUN_ADDR_FAMILY_IPV4) {
-        uint16_t port =
-            ((uint16_t)data[val_off + 2] << 8) | data[val_off + 3];
+        uint16_t port = ((uint16_t)data[val_off + 2] << 8) | data[val_off + 3];
 
         state->mapped_rtp_port = port;
         state->mapped_rtcp_port = port + 1;
         state->in_progress = 0;
         state->completed = 1;
 
-        logger(LOG_INFO, "STUN: Discovered mapped port %d (MAPPED-ADDRESS)",
-               port);
+        logger(LOG_INFO, "STUN: Discovered mapped port %d (MAPPED-ADDRESS)", port);
         return 0;
       }
     }
@@ -285,16 +276,14 @@ int stun_check_timeout(stun_state_t *state, int socket_fd) {
 
     if (state->retry_count > STUN_MAX_RETRIES) {
       /* Give up, proceed without STUN */
-      logger(LOG_WARN, "STUN: Timeout after %d attempts, using local port",
-             state->retry_count);
+      logger(LOG_WARN, "STUN: Timeout after %d attempts, using local port", state->retry_count);
       state->in_progress = 0;
       state->completed = 1;
       return 1;
     }
 
     /* Retry */
-    logger(LOG_DEBUG, "STUN: Timeout, retrying (attempt %d/%d)",
-           state->retry_count + 1, STUN_MAX_RETRIES + 1);
+    logger(LOG_DEBUG, "STUN: Timeout, retrying (attempt %d/%d)", state->retry_count + 1, STUN_MAX_RETRIES + 1);
 
     stun_send_request(state, socket_fd);
   }
