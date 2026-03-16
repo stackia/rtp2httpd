@@ -12,6 +12,9 @@ project(rtp2httpd
   DESCRIPTION "RTP to HTTP streaming daemon"
 )
 
+# ── Compile commands (for clangd) ─────────────────────────────────
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # ── C standard ──────────────────────────────────────────────────────
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
