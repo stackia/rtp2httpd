@@ -83,6 +83,7 @@ The following FCC (Fast Channel Change) server addresses were collected from the
 - China Telecom:
   - `192.168.19.28:8027`
   - `192.168.30.150:8027` (Tangshan)
+  - `192.168.72.20:8027` (Baoding)
 - China Unicom:
   - `10.7.50.172:8027` (Tangshan)
   - `10.7.35.172:8027` (Qinhuangdao)
