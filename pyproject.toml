@@ -10,8 +10,18 @@ dependencies = [
     "pytest-xdist>=3.8.0",
 ]
 
-[project.scripts]
-mcast-replay = "main:main"
+[dependency-groups]
+dev = [
+    "ruff>=0.15.6",
+    "basedpyright>=1.38.2",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.basedpyright]
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
 
 [tool.pytest.ini_options]
 testpaths = ["e2e"]
