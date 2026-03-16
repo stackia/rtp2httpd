@@ -77,9 +77,7 @@ function hasHashInFilename(filename) {
   // Match patterns like: name-a1b2c3d4.js, name-A1B2-3C4D.css, etc.
   // Vite generates hashes like: [name]-[hash].js where hash contains alphanumeric chars and hyphens
   // Match: player-JMsuKSSN.js, status-BtNSEM5x.js, use-locale-BAU8V-1E.css
-  return /-[a-zA-Z0-9_-]{6,}\.(js|css|png|jpg|svg|woff2?|wasm)$/i.test(
-    filename,
-  );
+  return /-[a-zA-Z0-9_-]{6,}\.(js|css|png|jpg|svg|woff2?|wasm)$/i.test(filename);
 }
 
 function scanDirectory(dir, baseDir = dir) {
@@ -173,9 +171,7 @@ function main() {
 
   // Declare data arrays for each file
   for (const file of embeddedFiles) {
-    lines.push(
-      `/* ${file.path} (${(file.compressed.length / 1000).toFixed(1)}KB gzipped) */`,
-    );
+    lines.push(`/* ${file.path} (${(file.compressed.length / 1000).toFixed(1)}KB gzipped) */`);
     lines.push(`static const uint8_t ${file.varName}[] = {`);
     lines.push(formatByteArray(file.compressed));
     lines.push("};");

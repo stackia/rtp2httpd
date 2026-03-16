@@ -7,119 +7,119 @@ import type { ThemeMode } from "../../types/ui";
 import { Switch } from "../ui/switch";
 
 interface SettingsDropdownProps {
-	locale: Locale;
-	onLocaleChange: (locale: Locale) => void;
-	theme: ThemeMode;
-	onThemeChange: (theme: ThemeMode) => void;
-	force16x9: boolean;
-	onForce16x9Change: (enabled: boolean) => void;
-	mp2SoftDecode: boolean;
-	onMp2SoftDecodeChange: (enabled: boolean) => void;
+  locale: Locale;
+  onLocaleChange: (locale: Locale) => void;
+  theme: ThemeMode;
+  onThemeChange: (theme: ThemeMode) => void;
+  force16x9: boolean;
+  onForce16x9Change: (enabled: boolean) => void;
+  mp2SoftDecode: boolean;
+  onMp2SoftDecodeChange: (enabled: boolean) => void;
 }
 
 const localeOptions: Array<{ value: Locale; label: string }> = [
-	{ value: "en", label: "English" },
-	{ value: "zh-Hans", label: "简体中文" },
-	{ value: "zh-Hant", label: "繁體中文" },
+  { value: "en", label: "English" },
+  { value: "zh-Hans", label: "简体中文" },
+  { value: "zh-Hant", label: "繁體中文" },
 ];
 
 const themeOptions: ThemeMode[] = ["auto", "light", "dark"];
 
 const themeLabels: Record<ThemeMode, TranslationKey> = {
-	auto: "themeAuto",
-	light: "themeLight",
-	dark: "themeDark",
+  auto: "themeAuto",
+  light: "themeLight",
+  dark: "themeDark",
 };
 
 function SettingsDropdownComponent({
-	locale,
-	onLocaleChange,
-	theme,
-	onThemeChange,
-	force16x9,
-	onForce16x9Change,
-	mp2SoftDecode,
-	onMp2SoftDecodeChange,
+  locale,
+  onLocaleChange,
+  theme,
+  onThemeChange,
+  force16x9,
+  onForce16x9Change,
+  mp2SoftDecode,
+  onMp2SoftDecodeChange,
 }: SettingsDropdownProps) {
-	const t = usePlayerTranslation(locale);
-	const [isOpen, setIsOpen] = useState(false);
-	const dropdownRef = useRef<HTMLDivElement>(null);
+  const t = usePlayerTranslation(locale);
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-	useEffect(() => {
-		function handleClickOutside(event: MouseEvent) {
-			if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-				setIsOpen(false);
-			}
-		}
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
 
-		if (isOpen) {
-			document.addEventListener("mousedown", handleClickOutside);
-			return () => document.removeEventListener("mousedown", handleClickOutside);
-		}
-	}, [isOpen]);
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isOpen]);
 
-	return (
-		<div className="relative" ref={dropdownRef}>
-			<button
-				type="button"
-				onClick={() => setIsOpen(!isOpen)}
-				className="flex items-center justify-center p-1 md:p-2 rounded hover:bg-muted transition-colors cursor-pointer"
-				title={t("settings")}
-			>
-				<Settings className="h-5 w-5 text-muted-foreground" />
-			</button>
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center justify-center p-1 md:p-2 rounded hover:bg-muted transition-colors cursor-pointer"
+        title={t("settings")}
+      >
+        <Settings className="h-5 w-5 text-muted-foreground" />
+      </button>
 
-			{isOpen && (
-				<div className="absolute top-full right-0 mt-1 w-46 rounded-md border border-border bg-card shadow-lg z-50">
-					<div className="p-2 space-y-3">
-						{/* Language Select */}
-						<label className="block">
-							<span className="block text-xs font-medium text-muted-foreground mb-1.5 px-1">{t("language")}</span>
-							<select
-								value={locale}
-								onChange={(e) => onLocaleChange(e.target.value as Locale)}
-								className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background text-foreground cursor-pointer hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary"
-							>
-								{localeOptions.map((option) => (
-									<option key={option.value} value={option.value}>
-										{option.label}
-									</option>
-								))}
-							</select>
-						</label>
+      {isOpen && (
+        <div className="absolute top-full right-0 mt-1 w-46 rounded-md border border-border bg-card shadow-lg z-50">
+          <div className="p-2 space-y-3">
+            {/* Language Select */}
+            <label className="block">
+              <span className="block text-xs font-medium text-muted-foreground mb-1.5 px-1">{t("language")}</span>
+              <select
+                value={locale}
+                onChange={(e) => onLocaleChange(e.target.value as Locale)}
+                className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background text-foreground cursor-pointer hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                {localeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-						{/* Theme Select */}
-						<label className="block">
-							<span className="block text-xs font-medium text-muted-foreground mb-1.5 px-1">{t("theme")}</span>
-							<select
-								value={theme}
-								onChange={(e) => onThemeChange(e.target.value as ThemeMode)}
-								className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background text-foreground cursor-pointer hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary"
-							>
-								{themeOptions.map((option) => (
-									<option key={option} value={option}>
-										{t(themeLabels[option])}
-									</option>
-								))}
-							</select>
-						</label>
+            {/* Theme Select */}
+            <label className="block">
+              <span className="block text-xs font-medium text-muted-foreground mb-1.5 px-1">{t("theme")}</span>
+              <select
+                value={theme}
+                onChange={(e) => onThemeChange(e.target.value as ThemeMode)}
+                className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background text-foreground cursor-pointer hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                {themeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {t(themeLabels[option])}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-						{/* Force 16:9 Aspect Ratio Toggle */}
-						<div className="flex items-center justify-between px-1">
-							<span className="text-xs font-medium text-muted-foreground">{t("force16x9")}</span>
-							<Switch checked={force16x9} onCheckedChange={onForce16x9Change} aria-label={t("force16x9")} />
-						</div>
+            {/* Force 16:9 Aspect Ratio Toggle */}
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-medium text-muted-foreground">{t("force16x9")}</span>
+              <Switch checked={force16x9} onCheckedChange={onForce16x9Change} aria-label={t("force16x9")} />
+            </div>
 
-						{/* MP2 Audio Software Decode Toggle */}
-						<div className="flex items-center justify-between px-1">
-							<span className="text-xs font-medium text-muted-foreground">{t("mp2SoftDecode")}</span>
-							<Switch checked={mp2SoftDecode} onCheckedChange={onMp2SoftDecodeChange} aria-label={t("mp2SoftDecode")} />
-						</div>
-					</div>
-				</div>
-			)}
-		</div>
-	);
+            {/* MP2 Audio Software Decode Toggle */}
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-medium text-muted-foreground">{t("mp2SoftDecode")}</span>
+              <Switch checked={mp2SoftDecode} onCheckedChange={onMp2SoftDecodeChange} aria-label={t("mp2SoftDecode")} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export const SettingsDropdown = memo(SettingsDropdownComponent);
