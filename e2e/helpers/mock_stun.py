@@ -64,6 +64,7 @@ class MockSTUNServer:
         self._thread.start()
 
     def _loop(self) -> None:
+        assert self._sock is not None
         while not self._stop.is_set():
             try:
                 data, addr = self._sock.recvfrom(4096)

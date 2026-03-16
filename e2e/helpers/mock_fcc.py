@@ -198,6 +198,7 @@ class MockFCCServer:
     def _loop(self) -> None:
         """Receive loop — runs in a dedicated thread so it is never blocked
         by the unicast sender."""
+        assert self._sock is not None
         while not self._stop.is_set():
             try:
                 data, addr = self._sock.recvfrom(4096)
@@ -222,6 +223,7 @@ class MockFCCServer:
 
     def _handle_request(self, client_addr: tuple[str, int]) -> None:
         """Send response then start unicast streaming in a background thread."""
+        assert self._sock is not None
         if self.protocol == "huawei":
             resp = _build_huawei_response(self._mcast_ip_be)
         else:
@@ -239,6 +241,7 @@ class MockFCCServer:
 
     def _send_unicast(self, client_addr: tuple[str, int]) -> None:
         """Stream RTP unicast packets to the client."""
+        assert self._sock is not None
         interval = 1.0 / self.unicast_pps
         seq = 0
         ts = 0

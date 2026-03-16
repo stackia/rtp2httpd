@@ -24,7 +24,7 @@ class _RTSPServerBase:
     """
 
     def __init__(self, port: int = 0, sdp_control: str = "*",
-                 content_base: str = "auto", custom_sdp: str | None = None):
+                 content_base: str | None = "auto", custom_sdp: str | None = None):
         """
         Args:
             port: TCP port to listen on (0 = auto-select).
@@ -76,6 +76,7 @@ class _RTSPServerBase:
     # -- internals -----------------------------------------------------------
 
     def _accept(self) -> None:
+        assert self._server_sock is not None
         while not self._stop.is_set():
             try:
                 conn, addr = self._server_sock.accept()
@@ -181,7 +182,7 @@ class MockRTSPServer(_RTSPServerBase):
     """
 
     def __init__(self, port: int = 0, num_packets: int = 200,
-                 sdp_control: str = "*", content_base: str = "auto",
+                 sdp_control: str = "*", content_base: str | None = "auto",
                  custom_sdp: str | None = None):
         super().__init__(port, sdp_control=sdp_control,
                          content_base=content_base, custom_sdp=custom_sdp)

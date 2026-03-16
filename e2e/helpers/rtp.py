@@ -113,6 +113,7 @@ class MulticastSender:
             self._send(p)
 
     def _send(self, pkt: bytes) -> None:
+        assert self._sock is not None
         try:
             self._sock.sendto(pkt, (self.addr, self.port))
             self.packets_sent += 1

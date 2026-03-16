@@ -57,7 +57,7 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
         if not head:
             self.wfile.write(body)
 
-    def log_message(self, fmt, *args) -> None:  # noqa: ARG002
+    def log_message(self, format, *args) -> None:  # noqa: ARG002, A002
         pass  # silence
 
 
@@ -119,6 +119,7 @@ class MockHTTPUpstreamSilent:
             self._thread.join(timeout=3)
 
     def _accept(self) -> None:
+        assert self._server_sock is not None
         while not self._stop.is_set():
             try:
                 conn, addr = self._server_sock.accept()

@@ -14,11 +14,12 @@ import socket
 import struct
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread, Event, Lock
 
-from scapy.all import PcapNgReader, UDP, IP, Raw
+from scapy.all import PcapNgReader, UDP, IP, Raw  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def is_rtp_packet(payload: bytes) -> bool:
@@ -305,8 +306,8 @@ class IGMPMonitor(Thread):
         self,
         groups: dict[str, Event] | None = None,
         subnets: list[str] | None = None,
-        on_join: callable = None,
-        on_leave: callable = None,
+        on_join: Callable[[str], None] | None = None,
+        on_leave: Callable[[str], None] | None = None,
     ):
         super().__init__(daemon=True)
         self.groups = groups or {}  # {address: joined_event}
@@ -461,7 +462,7 @@ def replay_loop(
     monotonic = time.monotonic
     sleep = time.sleep
     sendto = sock.sendto
-    random_fn = random.random if (loss_rate > 0 or reorder_rate > 0) else None
+    random_fn = random.random
 
     # Always use timing for bandwidth/speed control
     # Timing is essential for controlled replay at specific speeds

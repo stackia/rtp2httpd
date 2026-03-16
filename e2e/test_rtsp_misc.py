@@ -44,9 +44,9 @@ def _get_status_clients(port: int, timeout: float = 3.0) -> list[dict]:
         sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
     except (OSError, socket.timeout):
         return []
+    data = b""
     try:
         sock.sendall(b"GET /status/sse HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
-        data = b""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             remaining = deadline - time.monotonic()
