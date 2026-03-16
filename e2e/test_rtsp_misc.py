@@ -447,7 +447,7 @@ class TestRTSPRecentPlayseek:
             return "custom_seek=%s-%s&r2h-seek-name=custom_seek" % (start_str, end_str)
         return "%s=%s-%s" % (param_name, start_str, end_str)
 
-    @pytest.mark.parametrize("param_name", ["playseek", "tvdr", "custom_seek"])
+    @pytest.mark.parametrize("param_name", ["playseek", "Playseek", "tvdr", "custom_seek"])
     def test_recent_playseek_uses_clock_range(self, shared_r2h, param_name):
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
@@ -514,7 +514,7 @@ class TestRTSPRecentPlayseek:
         finally:
             rtsp.stop()
 
-    @pytest.mark.parametrize("param_name", ["playseek", "tvdr", "custom_seek"])
+    @pytest.mark.parametrize("param_name", ["playseek", "Playseek", "tvdr", "custom_seek"])
     def test_boundary_playseek_is_forwarded(self, shared_r2h, param_name):
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()

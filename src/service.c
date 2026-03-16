@@ -273,6 +273,7 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
   const char *seek_param_name = NULL;
   char *seek_param_value = NULL;
   int seek_offset_seconds = 0;
+  char heuristic_seek_name[16];
 
   if (!query_start || *query_start != '?' || !out_seek_param_name ||
       !out_seek_param_value || !out_seek_offset_seconds) {
@@ -354,18 +355,25 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
     logger(LOG_DEBUG, "Using explicitly specified seek parameter name: %s",
            seek_param_name);
   } else if (query_start) {
-    /* Heuristic detection with fixed priority: playseek > tvdr */
-    char *playseek_check = strstr(query_start, "playseek=");
+    /* Heuristic detection with fixed priority: playseek > tvdr
+     * Use case-insensitive matching and preserve original case */
+    char *playseek_check = strcasestr(query_start, "playseek=");
     if (playseek_check &&
         (playseek_check == query_start + 1 || *(playseek_check - 1) == '&')) {
-      seek_param_name = "playseek";
-      logger(LOG_DEBUG, "Heuristic: detected playseek parameter");
+      memcpy(heuristic_seek_name, playseek_check, 8);
+      heuristic_seek_name[8] = '\0';
+      seek_param_name = heuristic_seek_name;
+      logger(LOG_DEBUG, "Heuristic: detected playseek parameter (%s)",
+             seek_param_name);
     } else {
-      char *tvdr_check = strstr(query_start, "tvdr=");
+      char *tvdr_check = strcasestr(query_start, "tvdr=");
       if (tvdr_check &&
           (tvdr_check == query_start + 1 || *(tvdr_check - 1) == '&')) {
-        seek_param_name = "tvdr";
-        logger(LOG_DEBUG, "Heuristic: detected tvdr parameter");
+        memcpy(heuristic_seek_name, tvdr_check, 4);
+        heuristic_seek_name[4] = '\0';
+        seek_param_name = heuristic_seek_name;
+        logger(LOG_DEBUG, "Heuristic: detected tvdr parameter (%s)",
+               seek_param_name);
       }
     }
   }
@@ -380,8 +388,8 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
     char *search_pos = query_start;
     char *seek_start, *seek_end;
 
-    /* Iterate through all occurrences of the seek parameter */
-    while ((seek_start = strstr(search_pos, search_pattern)) != NULL) {
+    /* Iterate through all occurrences of the seek parameter (case-insensitive) */
+    while ((seek_start = strcasestr(search_pos, search_pattern)) != NULL) {
       if (seek_start > query_start && *(seek_start - 1) != '?' &&
           *(seek_start - 1) != '&') {
         search_pos = seek_start + strlen(search_pattern);
@@ -445,10 +453,10 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name,
              seek_param_name, seek_param_value);
     }
 
-    /* Remove all seek parameters from URL */
+    /* Remove all seek parameters from URL (case-insensitive) */
     if (seek_param_value) {
       char *remove_pos = query_start;
-      while ((seek_start = strstr(remove_pos, search_pattern)) != NULL) {
+      while ((seek_start = strcasestr(remove_pos, search_pattern)) != NULL) {
         if (seek_start > query_start && *(seek_start - 1) != '?' &&
             *(seek_start - 1) != '&') {
           remove_pos = seek_start + strlen(search_pattern);
