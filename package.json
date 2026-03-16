@@ -10,7 +10,7 @@
     "type-check:basedpyright": "uv run --group dev basedpyright",
     "lint": "pnpm run lint:biome && pnpm run lint:ruff",
     "lint:biome": "biome check",
-    "lint:ruff": "uv run --group dev ruff check",
+    "lint:ruff": "uv run --group dev ruff check && uv run --group dev ruff format --check",
     "format": "pnpm run format:biome && pnpm run format:ruff",
     "format:biome": "biome check --fix",
     "format:ruff": "uv run --group dev ruff check --fix && uv run --group dev ruff format",
@@ -20,7 +20,8 @@
     "web-ui:preview": "vite preview web-ui",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "e2e": "./scripts/run-e2e.sh"
   },
   "dependencies": {
     "@rtp2httpd/mpegts.js": "^3.1.2",

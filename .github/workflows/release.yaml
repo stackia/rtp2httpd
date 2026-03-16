@@ -7,7 +7,7 @@ on:
 
 jobs:
   versioned:
-    name: Generate Versioned Makefiles
+    name: Generate versioned Makefiles
     if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     permissions:
@@ -35,7 +35,7 @@ jobs:
           git push origin HEAD:main
 
   frontend:
-    name: Build Frontend
+    name: Build frontend
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -85,7 +85,7 @@ jobs:
           echo "Frontend pages are up-to-date."
 
   docker:
-    name: Docker Release
+    name: Docker
     needs: frontend
     runs-on: ubuntu-latest
     permissions:
@@ -137,7 +137,7 @@ jobs:
             RELEASE_VERSION=${{ env.RELEASE_VERSION }}
 
   openwrt-packages:
-    name: Package ${{ matrix.arch }}-${{ matrix.sdk }}
+    name: OpenWRT ${{ matrix.sdk }}-${{ matrix.arch }}
     needs: frontend
     runs-on: ubuntu-latest
     permissions:
@@ -224,7 +224,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   linux-static-bin:
-    name: Static Binary ${{ matrix.arch }}
+    name: Linux binary ${{ matrix.arch }}
     needs: frontend
     runs-on: ubuntu-latest
     permissions:
@@ -310,7 +310,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   macos-static-bin:
-    name: macOS Binary ${{ matrix.arch }}
+    name: macOS binary ${{ matrix.arch }}
     needs: frontend
     runs-on: ${{ matrix.runner }}
     permissions:
@@ -378,7 +378,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   freebsd-bin:
-    name: FreeBSD ${{ matrix.freebsd_version }} Binary
+    name: FreeBSD binary ${{ matrix.freebsd_version }}-x86
     needs: frontend
     runs-on: ubuntu-latest
     permissions:

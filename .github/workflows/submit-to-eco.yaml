@@ -1,16 +1,17 @@
-name: Submit to iStore
+name: Submit to Ecosystem
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to update (e.g., 3.5.1)"
+        description: "Version to submit (e.g., 3.5.1)"
         required: true
         type: string
 
 jobs:
   submit-to-istore:
     runs-on: ubuntu-latest
+    name: iStore
     permissions:
       contents: read
     steps:
