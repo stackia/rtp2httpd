@@ -86,6 +86,7 @@ def _format_basic_utc(ts: int) -> str:
 
 
 def _format_local_compact(ts: int) -> str:
+    """Format a Unix timestamp as `yyyyMMddHHmmss` in Asia/Shanghai."""
     return datetime.fromtimestamp(ts, _SYSTEM_TZ).strftime("%Y%m%d%H%M%S")
 
 
@@ -502,7 +503,7 @@ class TestRTSPRecentPlayseek:
         finally:
             rtsp.stop()
 
-    def test_playseek_without_client_timezone_uses_system_timezone(self, r2h_binary):
+    def test_playseek_uses_system_timezone_without_client_timezone(self, r2h_binary):
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         r2h = R2HProcess(
@@ -517,6 +518,8 @@ class TestRTSPRecentPlayseek:
             end_ts = start_ts + 300
             start_local = _format_local_compact(start_ts)
             end_local = _format_local_compact(end_ts)
+            expected_range = "clock=%s-" % _format_basic_utc(start_ts)
+            incorrect_utc_range = "clock=%sT%sZ-" % (start_local[:8], start_local[8:])
             url = "/rtsp/127.0.0.1:%d/stream?playseek=%s-%s" % (
                 rtsp.port,
                 start_local,
@@ -537,7 +540,8 @@ class TestRTSPRecentPlayseek:
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert len(play_reqs) > 0, "Expected PLAY request"
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _format_basic_utc(start_ts)
+            assert play_reqs[0]["headers"].get("Range") == expected_range
+            assert expected_range != incorrect_utc_range
         finally:
             r2h.stop()
             rtsp.stop()

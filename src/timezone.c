@@ -15,13 +15,15 @@
 #define SECONDS_PER_DAY 86400
 #define MAX_TIMEZONE_OFFSET_SECONDS (TIMEZONE_MAX_OFFSET_HOURS * SECONDS_PER_HOUR)
 #define MIN_TIMEZONE_OFFSET_SECONDS (TIMEZONE_MIN_OFFSET_HOURS * SECONDS_PER_HOUR)
+#define COMPACT_DATETIME_LENGTH 14
+#define COMPACT_DATETIME_GMT_LENGTH 17
 
-static int timezone_use_system_local(int tz_offset_seconds) {
+static int timezone_is_using_system_local(int tz_offset_seconds) {
   return tz_offset_seconds == TIMEZONE_USE_SYSTEM_LOCAL_OFFSET;
 }
 
 static int timezone_validate_offset(int tz_offset_seconds) {
-  if (timezone_use_system_local(tz_offset_seconds))
+  if (timezone_is_using_system_local(tz_offset_seconds))
     return 0;
 
   if (tz_offset_seconds < MIN_TIMEZONE_OFFSET_SECONDS || tz_offset_seconds > MAX_TIMEZONE_OFFSET_SECONDS) {
@@ -304,9 +306,10 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
 
   /* Format 2: yyyyMMddHHmmss and yyyyMMddHHmmssGMT (14 digits, optionally
    * followed by "GMT") */
-  if ((input_len == 14 && digit_count == 14) ||
-      (input_len == 17 && digit_count == 14 && strcmp(input_time + 14, "GMT") == 0)) {
-    int has_gmt_suffix = (input_len == 17);
+  if ((input_len == COMPACT_DATETIME_LENGTH && digit_count == COMPACT_DATETIME_LENGTH) ||
+      (input_len == COMPACT_DATETIME_GMT_LENGTH && digit_count == COMPACT_DATETIME_LENGTH &&
+       strcmp(input_time + COMPACT_DATETIME_LENGTH, "GMT") == 0)) {
+    int has_gmt_suffix = (input_len == COMPACT_DATETIME_GMT_LENGTH);
 
     /* Parse the time string (first 14 digits) */
     if (sscanf(input_time, "%4d%2d%2d%2d%2d%2d", &year, &month, &day, &hour, &min, &sec) != 6) {
@@ -350,7 +353,7 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
     local_time.tm_sec = sec;
     local_time.tm_isdst = 0;
 
-    if (timezone_use_system_local(tz_offset_seconds) && !has_gmt_suffix) {
+    if (timezone_is_using_system_local(tz_offset_seconds) && !has_gmt_suffix) {
       if (timezone_local_tm_to_timestamp(&local_time, &timestamp) != 0)
         return -1;
     } else {
@@ -389,7 +392,7 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
     } else {
       strncpy(output_time, temp_time, output_size - 1);
       output_time[output_size - 1] = '\0';
-      if (timezone_use_system_local(tz_offset_seconds)) {
+      if (timezone_is_using_system_local(tz_offset_seconds)) {
         logger(LOG_DEBUG, "Timezone: yyyyMMddHHmmss '%s' (system TZ) + seek offset %d = '%s'", input_time,
                additional_offset_seconds, output_time);
       } else {
@@ -425,7 +428,7 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
       }
 
       timestamp -= timezone_offset;
-    } else if (timezone_use_system_local(tz_offset_seconds)) {
+    } else if (timezone_is_using_system_local(tz_offset_seconds)) {
       if (timezone_local_tm_to_timestamp(&tm, &timestamp) != 0)
         return -1;
     } else {
@@ -457,7 +460,7 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
       return -1;
     }
 
-    if (!has_timezone && timezone_use_system_local(tz_offset_seconds)) {
+    if (!has_timezone && timezone_is_using_system_local(tz_offset_seconds)) {
       logger(LOG_DEBUG, "Timezone: basic ISO 8601 '%s' (system TZ) + seek offset %d = '%s'", input_time,
              additional_offset_seconds, output_time);
     } else {
@@ -705,8 +708,9 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int add
   }
 
   /* Format 2: yyyyMMddHHmmss or yyyyMMddHHmmssGMT */
-  if ((input_len == 14 && digit_count == 14) ||
-      (input_len == 17 && digit_count == 14 && strcmp(input_time + 14, "GMT") == 0)) {
+  if ((input_len == COMPACT_DATETIME_LENGTH && digit_count == COMPACT_DATETIME_LENGTH) ||
+      (input_len == COMPACT_DATETIME_GMT_LENGTH && digit_count == COMPACT_DATETIME_LENGTH &&
+       strcmp(input_time + COMPACT_DATETIME_LENGTH, "GMT") == 0)) {
     if (sscanf(input_time, "%4d%2d%2d%2d%2d%2d", &year, &month, &day, &hour, &min, &sec) != 6) {
       return -1;
     }
@@ -722,7 +726,7 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int add
 
     /* Only bare yyyyMMddHHmmss should fall back to the daemon's system
      * timezone. yyyyMMddHHmmssGMT already carries explicit UTC semantics. */
-    if (timezone_use_system_local(tz_offset_seconds) && input_len == 14) {
+    if (timezone_is_using_system_local(tz_offset_seconds) && input_len == COMPACT_DATETIME_LENGTH) {
       if (timezone_local_tm_to_timestamp(&local_time, &timestamp) != 0)
         return -1;
     } else {
@@ -758,7 +762,7 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int add
         return -1;
 
       timestamp -= timezone_offset;
-    } else if (timezone_use_system_local(tz_offset_seconds)) {
+    } else if (timezone_is_using_system_local(tz_offset_seconds)) {
       if (timezone_local_tm_to_timestamp(&tm, &timestamp) != 0)
         return -1;
     } else {
@@ -795,7 +799,7 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int add
 
       timestamp -= timezone_offset;
       timestamp += additional_offset_seconds;
-    } else if (timezone_use_system_local(tz_offset_seconds)) {
+    } else if (timezone_is_using_system_local(tz_offset_seconds)) {
       if (timezone_local_tm_to_timestamp(&tm, &timestamp) != 0)
         return -1;
       timestamp += additional_offset_seconds;
@@ -867,7 +871,7 @@ int timezone_convert_iso8601_with_offset(const char *iso_str, int external_tz_of
            "Timezone: ISO 8601 has embedded timezone, only applying offset %d "
            "seconds",
            offset_seconds);
-  } else if (timezone_use_system_local(external_tz_offset)) {
+  } else if (timezone_is_using_system_local(external_tz_offset)) {
     if (timezone_local_tm_to_timestamp(&tm, &timestamp) != 0)
       return -1;
     timestamp += offset_seconds;

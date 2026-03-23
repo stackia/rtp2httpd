@@ -33,6 +33,8 @@ class R2HProcess:
 
     def start(self, wait: bool = True) -> None:
         args = self._build_args()
+        # Override only the keys provided by the test while preserving the rest
+        # of the parent environment for the child rtp2httpd process.
         self.process = subprocess.Popen(
             args,
             stdout=subprocess.DEVNULL,
