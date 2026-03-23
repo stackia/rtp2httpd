@@ -595,7 +595,6 @@ int service_parse_seek_value(const char *seek_param_value, int seek_offset_secon
   parse_result->tz_offset_seconds = TIMEZONE_USE_SYSTEM_LOCAL_OFFSET;
 
   if (user_agent && timezone_parse_from_user_agent(user_agent, &parse_result->tz_offset_seconds) != 0) {
-    parse_result->tz_offset_seconds = TIMEZONE_USE_SYSTEM_LOCAL_OFFSET;
     logger(LOG_DEBUG, "Timezone: Falling back to system timezone for seek parsing");
   }
 

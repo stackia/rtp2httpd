@@ -6,9 +6,10 @@ Covers HEAD requests, unreachable server handling, r2h-duration
 """
 
 import json
-import os
 import socket
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -27,6 +28,7 @@ from helpers import (
 pytestmark = pytest.mark.rtsp
 
 _STREAM_TIMEOUT = 20.0
+_SYSTEM_TZ = ZoneInfo("Asia/Shanghai")
 
 # Timeout constants matching C code (3s each)
 _RTSP_HANDSHAKE_TIMEOUT = 3
@@ -84,7 +86,7 @@ def _format_basic_utc(ts: int) -> str:
 
 
 def _format_local_compact(ts: int) -> str:
-    return time.strftime("%Y%m%d%H%M%S", time.localtime(ts))
+    return datetime.fromtimestamp(ts, _SYSTEM_TZ).strftime("%Y%m%d%H%M%S")
 
 
 @pytest.fixture(scope="module")
@@ -500,13 +502,15 @@ class TestRTSPRecentPlayseek:
         finally:
             rtsp.stop()
 
-    def test_recent_playseek_without_client_timezone_uses_system_timezone(self, r2h_binary):
+    def test_playseek_without_client_timezone_uses_system_timezone(self, r2h_binary):
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
-        old_tz = os.environ.get("TZ")
-        os.environ["TZ"] = "Asia/Shanghai"
-        time.tzset()
-        r2h = R2HProcess(r2h_binary, find_free_port(), extra_args=["-v", "4", "-m", "100"])
+        r2h = R2HProcess(
+            r2h_binary,
+            find_free_port(),
+            extra_args=["-v", "4", "-m", "100"],
+            env={"TZ": "Asia/Shanghai"},
+        )
         r2h.start()
         try:
             start_ts = int(time.time()) - 1800
@@ -536,11 +540,6 @@ class TestRTSPRecentPlayseek:
             assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _format_basic_utc(start_ts)
         finally:
             r2h.stop()
-            if old_tz is None:
-                os.environ.pop("TZ", None)
-            else:
-                os.environ["TZ"] = old_tz
-            time.tzset()
             rtsp.stop()
 
     @pytest.mark.parametrize("param_name", ["playseek", "Playseek", "tvdr", "custom_seek"])

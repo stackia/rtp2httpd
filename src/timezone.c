@@ -720,6 +720,8 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int add
     local_time.tm_sec = sec;
     local_time.tm_isdst = 0;
 
+    /* Only bare yyyyMMddHHmmss should fall back to the daemon's system
+     * timezone. yyyyMMddHHmmssGMT already carries explicit UTC semantics. */
     if (timezone_use_system_local(tz_offset_seconds) && input_len == 14) {
       if (timezone_local_tm_to_timestamp(&local_time, &timestamp) != 0)
         return -1;

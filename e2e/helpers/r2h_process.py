@@ -19,11 +19,13 @@ class R2HProcess:
         port: int,
         extra_args: list[str] | None = None,
         config_content: str | None = None,
+        env: dict[str, str] | None = None,
     ):
         self.binary = str(binary)
         self.port = port
         self.extra_args = list(extra_args or [])
         self.config_content = config_content
+        self.env = dict(env or {})
         self.process: subprocess.Popen | None = None
         self._config_path: str | None = None
 
@@ -35,6 +37,7 @@ class R2HProcess:
             args,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env={**os.environ, **self.env},
         )
         if wait and not wait_for_port(self.port, timeout=6.0):
             self.stop()

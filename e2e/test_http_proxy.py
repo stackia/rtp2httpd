@@ -6,7 +6,8 @@ These tests start a mock HTTP upstream, point rtp2httpd at it via
 """
 
 import time
-import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -20,6 +21,7 @@ from helpers import (
 )
 
 pytestmark = pytest.mark.http_proxy
+_SYSTEM_TZ = ZoneInfo("Asia/Shanghai")
 
 
 # ---------------------------------------------------------------------------
@@ -179,16 +181,18 @@ class TestProxyQueryParams:
             }
         )
         upstream.start()
-        old_tz = os.environ.get("TZ")
-        os.environ["TZ"] = "Asia/Shanghai"
-        time.tzset()
-        r2h = R2HProcess(r2h_binary, find_free_port(), extra_args=["-v", "4", "-m", "100"])
+        r2h = R2HProcess(
+            r2h_binary,
+            find_free_port(),
+            extra_args=["-v", "4", "-m", "100"],
+            env={"TZ": "Asia/Shanghai"},
+        )
         r2h.start()
         try:
             start_ts = int(time.time()) - 1800
             end_ts = start_ts + 300
-            start_local = time.strftime("%Y%m%d%H%M%S", time.localtime(start_ts))
-            end_local = time.strftime("%Y%m%d%H%M%S", time.localtime(end_ts))
+            start_local = datetime.fromtimestamp(start_ts, _SYSTEM_TZ).strftime("%Y%m%d%H%M%S")
+            end_local = datetime.fromtimestamp(end_ts, _SYSTEM_TZ).strftime("%Y%m%d%H%M%S")
             start_utc = time.strftime("%Y%m%d%H%M%S", time.gmtime(start_ts))
             end_utc = time.strftime("%Y%m%d%H%M%S", time.gmtime(end_ts))
 
@@ -205,11 +209,6 @@ class TestProxyQueryParams:
             assert "playseek=%s-%s" % (start_utc, end_utc) in upstream.requests_log[0]["path"]
         finally:
             r2h.stop()
-            if old_tz is None:
-                os.environ.pop("TZ", None)
-            else:
-                os.environ["TZ"] = old_tz
-            time.tzset()
             upstream.stop()
 
 
