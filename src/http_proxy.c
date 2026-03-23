@@ -1048,6 +1048,10 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
         if (strncasecmp(orig_line, "Location:", 9) == 0) {
           /* Replace Location header with rewritten value */
           written = snprintf(rebuild_ptr, rebuild_remaining, "Location: %s\r\n", rewritten_location);
+        } else if (strncasecmp(orig_line, "Connection:", 11) == 0) {
+          /* Skip Connection header from upstream - will add our own */
+          orig_line = strtok(NULL, "\r\n");
+          continue;
         } else {
           /* Copy other headers as-is */
           written = snprintf(rebuild_ptr, rebuild_remaining, "%s\r\n", orig_line);
@@ -1090,17 +1094,49 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
         session->conn->should_set_r2h_cookie = 0;
       }
 
+      /* Always add Connection: close header to ensure clients disconnect */
+      if (connection_queue_output(session->conn, (const uint8_t *)"Connection: close\r\n", 19) < 0) {
+        logger(LOG_ERROR, "HTTP Proxy: Failed to send Connection header");
+        return -1;
+      }
+
       /* Send final CRLF to end headers */
       if (connection_queue_output(session->conn, (const uint8_t *)"\r\n", 2) < 0) {
         logger(LOG_ERROR, "HTTP Proxy: Failed to send header terminator");
         return -1;
       }
     } else {
-      /* No Location rewriting needed - use original logic */
-      size_t headers_without_crlf = header_len - 2; /* Exclude final \r\n */
+      /* No Location rewriting needed - filter out Connection header from
+       * upstream and add our own */
+      char filtered_headers[HTTP_PROXY_RESPONSE_BUFFER_SIZE];
+      char *filter_ptr = filtered_headers;
+      size_t filter_remaining = sizeof(filtered_headers);
+      char *orig_line;
+      char orig_headers[HTTP_PROXY_RESPONSE_BUFFER_SIZE];
 
-      /* Send headers up to (but not including) final \r\n\r\n */
-      if (connection_queue_output(session->conn, session->response_buffer, headers_without_crlf) < 0) {
+      /* Copy headers for parsing */
+      memcpy(orig_headers, session->response_buffer, header_len - 2);
+      orig_headers[header_len - 2] = '\0';
+
+      /* Filter out Connection header */
+      orig_line = strtok(orig_headers, "\r\n");
+      while (orig_line != NULL) {
+        /* Skip Connection header from upstream - will add our own */
+        if (strncasecmp(orig_line, "Connection:", 11) != 0) {
+          int written = snprintf(filter_ptr, filter_remaining, "%s\r\n", orig_line);
+          if (written < 0 || (size_t)written >= filter_remaining) {
+            logger(LOG_ERROR, "HTTP Proxy: Filtered headers too large");
+            return -1;
+          }
+          filter_ptr += written;
+          filter_remaining -= written;
+        }
+        orig_line = strtok(NULL, "\r\n");
+      }
+
+      /* Send filtered headers */
+      size_t filtered_len = filter_ptr - filtered_headers;
+      if (connection_queue_output(session->conn, (const uint8_t *)filtered_headers, filtered_len) < 0) {
         logger(LOG_ERROR, "HTTP Proxy: Failed to forward headers to client");
         return -1;
       }
@@ -1120,6 +1156,12 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
           logger(LOG_DEBUG, "HTTP Proxy: Injected Set-Cookie header for r2h-token");
         }
         session->conn->should_set_r2h_cookie = 0; /* Only set once */
+      }
+
+      /* Always add Connection: close header to ensure clients disconnect */
+      if (connection_queue_output(session->conn, (const uint8_t *)"Connection: close\r\n", 19) < 0) {
+        logger(LOG_ERROR, "HTTP Proxy: Failed to send Connection header");
+        return -1;
       }
 
       /* Send final \r\n to end headers */
