@@ -6,6 +6,8 @@ These tests start a mock HTTP upstream, point rtp2httpd at it via
 """
 
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -19,6 +21,7 @@ from helpers import (
 )
 
 pytestmark = pytest.mark.http_proxy
+_SYSTEM_TZ = ZoneInfo("Asia/Shanghai")
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +171,48 @@ class TestProxyQueryParams:
                 timeout=5.0,
             )
             assert status == 200
+        finally:
+            upstream.stop()
+
+    def test_playseek_uses_system_timezone_without_client_timezone(self, r2h_binary):
+        upstream = MockHTTPUpstream(
+            routes={
+                "/vod": {"status": 200, "body": b"ok"},
+            }
+        )
+        upstream.start()
+        try:
+            r2h = R2HProcess(
+                r2h_binary,
+                find_free_port(),
+                extra_args=["-v", "4", "-m", "100"],
+                env={"TZ": "Asia/Shanghai"},
+            )
+            r2h.start()
+            try:
+                start_ts = int(time.time()) - 1800
+                end_ts = start_ts + 300
+                start_local = datetime.fromtimestamp(start_ts, _SYSTEM_TZ).strftime("%Y%m%d%H%M%S")
+                end_local = datetime.fromtimestamp(end_ts, _SYSTEM_TZ).strftime("%Y%m%d%H%M%S")
+                start_utc = time.strftime("%Y%m%d%H%M%S", time.gmtime(start_ts))
+                end_utc = time.strftime("%Y%m%d%H%M%S", time.gmtime(end_ts))
+                expected_playseek = "playseek=%s-%s" % (start_utc, end_utc)
+                local_playseek = "playseek=%s-%s" % (start_local, end_local)
+
+                status, _, body = http_get(
+                    "127.0.0.1",
+                    r2h.port,
+                    "/http/127.0.0.1:%d/vod?playseek=%s-%s" % (upstream.port, start_local, end_local),
+                    timeout=5.0,
+                )
+
+                assert status == 200
+                assert body == b"ok"
+                assert len(upstream.requests_log) > 0, "Expected upstream request"
+                assert expected_playseek in upstream.requests_log[0]["path"]
+                assert local_playseek not in upstream.requests_log[0]["path"]
+            finally:
+                r2h.stop()
         finally:
             upstream.stop()
 

@@ -190,14 +190,18 @@ playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
 
 #### 默认行为
 
-如果 User-Agent 中没有时区信息，则不进行任何时区转换，只应用 `r2h-seek-offset` 指定的秒数偏移。
+如果 User-Agent 中没有时区信息，则按以下规则处理：
+
+- 对 Unix 时间戳、带 `Z` / `±HH:MM` 的 ISO 8601、以及带 `GMT` 后缀的 `yyyyMMddHHmmssGMT`，继续使用时间字符串自身携带的时区语义
+- 对不带时区信息的 `yyyyMMddHHmmss`、简化 ISO 8601、完整 ISO 8601，默认按 **rtp2httpd 所在系统时区** 解析，而不是按 UTC 解析
+- 然后再应用 `r2h-seek-offset` 指定的额外秒数偏移
 
 > [!NOTE]
 > rtp2httpd 按以下步骤处理时间参数：
 >
 > 1. **解析时间格式** — 识别参数值属于哪种格式：Unix 时间戳（≤10 位数字）、`yyyyMMddHHmmss`（14 位数字）、`yyyyMMddHHmmssGMT`（14 位 + GMT 后缀）、简化 ISO 8601（`yyyyMMddTHHmmss`）、完整 ISO 8601（`yyyy-MM-ddTHH:mm:ss`）
-> 2. **解析 User-Agent 时区** — 从 User-Agent 中查找 `TZ/` 标记，提取 UTC 偏移量（秒）。如果没有时区信息，默认为 0（UTC）
-> 3. **时区转换** — Unix 时间戳和 ISO 8601 带时区的格式跳过转换；`yyyyMMddHHmmss` 和 ISO 8601 无时区的格式应用 User-Agent 时区转换
+> 2. **解析 User-Agent 时区** — 从 User-Agent 中查找 `TZ/` 标记，提取 UTC 偏移量（秒）。如果没有时区信息，则对“不带时区的日期时间格式”回退到系统时区
+> 3. **时区转换** — Unix 时间戳、`yyyyMMddHHmmssGMT` 和 ISO 8601 带时区的格式跳过该回退；`yyyyMMddHHmmss` 和 ISO 8601 无时区的格式应用 User-Agent 时区或系统时区转换
 > 4. **应用 `r2h-seek-offset`** — 如果指定了该参数，对所有格式应用额外的秒数偏移（可正可负）
 > 5. **格式化输出** — 保持原始格式，保留原有时区后缀（如有）
 > 6. **附加到上游 URL** — 将处理后的时间参数作为查询参数附加到上游请求中（RTSP 发送 DESCRIBE 请求，HTTP 转发给上游服务器）
