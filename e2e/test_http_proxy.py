@@ -6,6 +6,7 @@ These tests start a mock HTTP upstream, point rtp2httpd at it via
 """
 
 import time
+import os
 
 import pytest
 
@@ -169,6 +170,46 @@ class TestProxyQueryParams:
             )
             assert status == 200
         finally:
+            upstream.stop()
+
+    def test_playseek_without_client_timezone_uses_system_timezone(self, r2h_binary):
+        upstream = MockHTTPUpstream(
+            routes={
+                "/vod": {"status": 200, "body": b"ok"},
+            }
+        )
+        upstream.start()
+        old_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "Asia/Shanghai"
+        time.tzset()
+        r2h = R2HProcess(r2h_binary, find_free_port(), extra_args=["-v", "4", "-m", "100"])
+        r2h.start()
+        try:
+            start_ts = int(time.time()) - 1800
+            end_ts = start_ts + 300
+            start_local = time.strftime("%Y%m%d%H%M%S", time.localtime(start_ts))
+            end_local = time.strftime("%Y%m%d%H%M%S", time.localtime(end_ts))
+            start_utc = time.strftime("%Y%m%d%H%M%S", time.gmtime(start_ts))
+            end_utc = time.strftime("%Y%m%d%H%M%S", time.gmtime(end_ts))
+
+            status, _, body = http_get(
+                "127.0.0.1",
+                r2h.port,
+                "/http/127.0.0.1:%d/vod?playseek=%s-%s" % (upstream.port, start_local, end_local),
+                timeout=5.0,
+            )
+
+            assert status == 200
+            assert body == b"ok"
+            assert len(upstream.requests_log) > 0, "Expected upstream request"
+            assert "playseek=%s-%s" % (start_utc, end_utc) in upstream.requests_log[0]["path"]
+        finally:
+            r2h.stop()
+            if old_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = old_tz
+            time.tzset()
             upstream.stop()
 
 

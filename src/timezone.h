@@ -11,12 +11,14 @@
 #ifndef TIMEZONE_H
 #define TIMEZONE_H
 
+#include <limits.h>
 #include <stddef.h>
 #include <time.h>
 
 /* Constants */
 #define TIMEZONE_MAX_OFFSET_HOURS 14  /* Maximum timezone offset (UTC+14) */
 #define TIMEZONE_MIN_OFFSET_HOURS -12 /* Minimum timezone offset (UTC-12) */
+#define TIMEZONE_USE_SYSTEM_LOCAL_OFFSET INT_MAX
 
 /*
  * Parse timezone information from User-Agent header
@@ -76,7 +78,9 @@ int timezone_format_time_yyyyMMddHHmmss(const struct tm *utc_time, char *output_
  * @param input_time Input time string (must not be NULL)
  * @param tz_offset_seconds Timezone offset from User-Agent in seconds
  *                          (positive for east, negative for west)
- *                          Range: [-43200, 50400] seconds
+ *                          Range: [-43200, 50400] seconds, or
+ *                          TIMEZONE_USE_SYSTEM_LOCAL_OFFSET to parse naive
+ *                          datetimes in the daemon's system timezone.
  *                          Used only for formats without embedded timezone
  * @param additional_offset_seconds Additional offset in seconds to apply
  *                                  (can be positive or negative)
@@ -177,7 +181,8 @@ int timezone_format_time_iso8601(const struct tm *tm, int milliseconds, const ch
  *
  * @param iso_str Input ISO 8601 string (must not be NULL)
  * @param external_tz_offset Timezone offset from User-Agent in seconds (used
- * only if no embedded timezone)
+ * only if no embedded timezone), or TIMEZONE_USE_SYSTEM_LOCAL_OFFSET to use
+ * the daemon's system timezone
  * @param offset_seconds Additional offset to always apply in seconds
  * @param output Output buffer (must not be NULL)
  * @param output_size Size of output buffer (minimum 30 bytes)
@@ -197,7 +202,9 @@ int timezone_convert_iso8601_with_offset(const char *iso_str, int external_tz_of
  * Thread Safety: NOT thread-safe (uses gmtime() which returns static buffer)
  *
  * @param input_time Input time string (must not be NULL)
- * @param tz_offset_seconds Timezone offset in seconds from UTC
+ * @param tz_offset_seconds Timezone offset in seconds from UTC, or
+ * TIMEZONE_USE_SYSTEM_LOCAL_OFFSET to parse naive datetimes in the daemon's
+ * system timezone
  * @param additional_offset_seconds Additional offset in seconds
  * @param out_utc Output: resulting UTC epoch value (must not be NULL)
  * @return 0 on success, -1 on error

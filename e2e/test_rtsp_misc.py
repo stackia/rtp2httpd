@@ -6,6 +6,7 @@ Covers HEAD requests, unreachable server handling, r2h-duration
 """
 
 import json
+import os
 import socket
 import time
 
@@ -80,6 +81,10 @@ def _get_status_clients(port: int, timeout: float = 3.0) -> list[dict]:
 
 def _format_basic_utc(ts: int) -> str:
     return time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(ts))
+
+
+def _format_local_compact(ts: int) -> str:
+    return time.strftime("%Y%m%d%H%M%S", time.localtime(ts))
 
 
 @pytest.fixture(scope="module")
@@ -493,6 +498,49 @@ class TestRTSPRecentPlayseek:
             assert "npt=" not in play_range
             assert "120.5" not in play_range
         finally:
+            rtsp.stop()
+
+    def test_recent_playseek_without_client_timezone_uses_system_timezone(self, r2h_binary):
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        old_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "Asia/Shanghai"
+        time.tzset()
+        r2h = R2HProcess(r2h_binary, find_free_port(), extra_args=["-v", "4", "-m", "100"])
+        r2h.start()
+        try:
+            start_ts = int(time.time()) - 1800
+            end_ts = start_ts + 300
+            start_local = _format_local_compact(start_ts)
+            end_local = _format_local_compact(end_ts)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s-%s" % (
+                rtsp.port,
+                start_local,
+                end_local,
+            )
+
+            stream_get(
+                "127.0.0.1",
+                r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+            assert len(describe_reqs) > 0, "Expected DESCRIBE"
+            assert "playseek=" not in describe_reqs[0]["uri"]
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert len(play_reqs) > 0, "Expected PLAY request"
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _format_basic_utc(start_ts)
+        finally:
+            r2h.stop()
+            if old_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = old_tz
+            time.tzset()
             rtsp.stop()
 
     @pytest.mark.parametrize("param_name", ["playseek", "Playseek", "tvdr", "custom_seek"])
