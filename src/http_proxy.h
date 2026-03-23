@@ -107,6 +107,9 @@ typedef struct {
   /* Per-service upstream interface override (resolved at init, non-owning) */
   const char *upstream_ifname;
 
+  /* Flow control / backpressure state */
+  int upstream_paused; /* Flag: upstream recv paused due to client backpressure */
+
   /* Cleanup state */
   int cleanup_done; /* Flag: cleanup has been completed */
 } http_proxy_session_t;
