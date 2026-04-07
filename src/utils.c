@@ -85,7 +85,7 @@ int set_socket_rcvbuf(int fd, int size) {
  *
  * @param level Message log level
  * @param format printf style format string
- * @returns Whatever printf returns
+ * @return Message length (newline included)
  */
 int logger(loglevel_t level, const char *format, ...) {
   va_list ap;
@@ -120,7 +120,10 @@ int logger(loglevel_t level, const char *format, ...) {
     // Automatically add newline if format doesn't end with one
     if (format && strlen(format) > 0 && format[strlen(format) - 1] != '\n') {
       fputc('\n', stdout);
+      r++;
     }
+
+    fflush(stdout);
   }
   return r;
 }
