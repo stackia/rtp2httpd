@@ -85,7 +85,7 @@ int set_socket_rcvbuf(int fd, int size) {
  *
  * @param level Message log level
  * @param format printf style format string
- * @returns Whatever printf returns
+ * @return errno or return of fputs
  */
 int logger(loglevel_t level, const char *format, ...) {
   va_list ap;
@@ -106,21 +106,32 @@ int logger(loglevel_t level, const char *format, ...) {
       prefix_len = snprintf(message, sizeof(message), "[Worker %d] ", worker_id);
     }
 
+    if (prefix_len < 0)
+      return prefix_len;
+
     /* Format the actual message after the prefix (if any) */
     va_start(ap, format);
-    vsnprintf(message + prefix_len, sizeof(message) - prefix_len, format, ap);
+    r = vsnprintf(message + prefix_len, sizeof(message) - prefix_len, format, ap);
     va_end(ap);
+
+    if (r < 0)
+      return r;
+
+    /* Automatically add newline if format doesn't end with one */
+    if (format && strlen(format) > 0 && format[strlen(format) - 1] != '\n') {
+      if (r > (int)sizeof(message) - prefix_len - 2)
+        r = (int)sizeof(message) - prefix_len - 2;
+
+      message[prefix_len + r++] = '\n';
+      message[prefix_len + r] = '\0';
+    }
 
     /* Output to stdout */
     r = fputs(message, stdout);
+    fflush(stdout);
 
     /* Store in status log buffer */
     status_add_log_entry(level, message);
-
-    // Automatically add newline if format doesn't end with one
-    if (format && strlen(format) > 0 && format[strlen(format) - 1] != '\n') {
-      fputc('\n', stdout);
-    }
   }
   return r;
 }
