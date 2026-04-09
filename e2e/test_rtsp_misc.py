@@ -8,6 +8,8 @@ Covers HEAD requests, unreachable server handling, r2h-duration
 import json
 import socket
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -26,6 +28,7 @@ from helpers import (
 pytestmark = pytest.mark.rtsp
 
 _STREAM_TIMEOUT = 20.0
+_SYSTEM_TZ = ZoneInfo("Asia/Shanghai")
 
 # Timeout constants matching C code (3s each)
 _RTSP_HANDSHAKE_TIMEOUT = 3
@@ -80,6 +83,11 @@ def _get_status_clients(port: int, timeout: float = 3.0) -> list[dict]:
 
 def _format_basic_utc(ts: int) -> str:
     return time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(ts))
+
+
+def _format_local_compact(ts: int) -> str:
+    """Format a Unix timestamp as `yyyyMMddHHmmss` in Asia/Shanghai."""
+    return datetime.fromtimestamp(ts, _SYSTEM_TZ).strftime("%Y%m%d%H%M%S")
 
 
 @pytest.fixture(scope="module")
@@ -493,6 +501,49 @@ class TestRTSPRecentPlayseek:
             assert "npt=" not in play_range
             assert "120.5" not in play_range
         finally:
+            rtsp.stop()
+
+    def test_playseek_uses_system_timezone_without_client_timezone(self, r2h_binary):
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        r2h = R2HProcess(
+            r2h_binary,
+            find_free_port(),
+            extra_args=["-v", "4", "-m", "100"],
+            env={"TZ": "Asia/Shanghai"},
+        )
+        r2h.start()
+        try:
+            start_ts = int(time.time()) - 1800
+            end_ts = start_ts + 300
+            start_local = _format_local_compact(start_ts)
+            end_local = _format_local_compact(end_ts)
+            expected_range = "clock=%s-" % _format_basic_utc(start_ts)
+            incorrect_utc_range = "clock=%sT%sZ-" % (start_local[:8], start_local[8:])
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s-%s" % (
+                rtsp.port,
+                start_local,
+                end_local,
+            )
+
+            stream_get(
+                "127.0.0.1",
+                r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+            assert len(describe_reqs) > 0, "Expected DESCRIBE"
+            assert "playseek=" not in describe_reqs[0]["uri"]
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert len(play_reqs) > 0, "Expected PLAY request"
+            assert play_reqs[0]["headers"].get("Range") == expected_range
+            assert expected_range != incorrect_utc_range
+        finally:
+            r2h.stop()
             rtsp.stop()
 
     @pytest.mark.parametrize("param_name", ["playseek", "Playseek", "tvdr", "custom_seek"])

@@ -592,9 +592,11 @@ int service_parse_seek_value(const char *seek_param_value, int seek_offset_secon
   memset(parse_result, 0, sizeof(*parse_result));
   parse_result->seek_offset_seconds = seek_offset_seconds;
   parse_result->now_utc = time(NULL);
+  parse_result->tz_offset_seconds = TIMEZONE_USE_SYSTEM_LOCAL_OFFSET;
 
-  if (user_agent)
-    timezone_parse_from_user_agent(user_agent, &parse_result->tz_offset_seconds);
+  if (user_agent && timezone_parse_from_user_agent(user_agent, &parse_result->tz_offset_seconds) != 0) {
+    logger(LOG_DEBUG, "Timezone: Keeping system timezone fallback because User-Agent timezone parse failed");
+  }
 
   if (!seek_param_value || seek_param_value[0] == '\0')
     return 0;
@@ -638,8 +640,12 @@ int service_parse_seek_value(const char *seek_param_value, int seek_offset_secon
     if (!tmp)
       return -1;
     parse_result->begin_tm_utc = *tmp;
-    time_t local_ts = parse_result->begin_utc + parse_result->tz_offset_seconds;
-    tmp = gmtime(&local_ts);
+    if (parse_result->tz_offset_seconds == TIMEZONE_USE_SYSTEM_LOCAL_OFFSET)
+      tmp = localtime(&parse_result->begin_utc);
+    else {
+      time_t local_ts = parse_result->begin_utc + parse_result->tz_offset_seconds;
+      tmp = gmtime(&local_ts);
+    }
     if (!tmp)
       return -1;
     parse_result->begin_tm_local = *tmp;
@@ -651,8 +657,12 @@ int service_parse_seek_value(const char *seek_param_value, int seek_offset_secon
     if (!tmp)
       return -1;
     parse_result->end_tm_utc = *tmp;
-    time_t local_ts = parse_result->end_utc + parse_result->tz_offset_seconds;
-    tmp = gmtime(&local_ts);
+    if (parse_result->tz_offset_seconds == TIMEZONE_USE_SYSTEM_LOCAL_OFFSET)
+      tmp = localtime(&parse_result->end_utc);
+    else {
+      time_t local_ts = parse_result->end_utc + parse_result->tz_offset_seconds;
+      tmp = gmtime(&local_ts);
+    }
     if (!tmp)
       return -1;
     parse_result->end_tm_local = *tmp;

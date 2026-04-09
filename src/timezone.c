@@ -15,6 +15,44 @@
 #define SECONDS_PER_DAY 86400
 #define MAX_TIMEZONE_OFFSET_SECONDS (TIMEZONE_MAX_OFFSET_HOURS * SECONDS_PER_HOUR)
 #define MIN_TIMEZONE_OFFSET_SECONDS (TIMEZONE_MIN_OFFSET_HOURS * SECONDS_PER_HOUR)
+#define COMPACT_DATETIME_LENGTH 14
+#define COMPACT_DATETIME_GMT_LENGTH 17
+
+static int timezone_is_using_system_local(int tz_offset_seconds) {
+  return tz_offset_seconds == TIMEZONE_USE_SYSTEM_LOCAL_OFFSET;
+}
+
+static int timezone_validate_offset(int tz_offset_seconds) {
+  if (timezone_is_using_system_local(tz_offset_seconds))
+    return 0;
+
+  if (tz_offset_seconds < MIN_TIMEZONE_OFFSET_SECONDS || tz_offset_seconds > MAX_TIMEZONE_OFFSET_SECONDS) {
+    logger(LOG_ERROR, "Timezone: Invalid timezone offset %d seconds (range: [%d, %d])", tz_offset_seconds,
+           MIN_TIMEZONE_OFFSET_SECONDS, MAX_TIMEZONE_OFFSET_SECONDS);
+    return -1;
+  }
+
+  return 0;
+}
+
+static int timezone_local_tm_to_timestamp(struct tm *local_time, time_t *timestamp_out) {
+  time_t timestamp;
+
+  if (!local_time || !timestamp_out) {
+    logger(LOG_ERROR, "Timezone: NULL pointer in timezone_local_tm_to_timestamp");
+    return -1;
+  }
+
+  local_time->tm_isdst = -1;
+  timestamp = mktime(local_time);
+  if (timestamp == (time_t)-1) {
+    logger(LOG_ERROR, "Timezone: Failed to convert local time to timestamp");
+    return -1;
+  }
+
+  *timestamp_out = timestamp;
+  return 0;
+}
 
 /*
  * Parse timezone information from User-Agent header
@@ -249,9 +287,7 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
   }
 
   /* Validate timezone offset range */
-  if (tz_offset_seconds < MIN_TIMEZONE_OFFSET_SECONDS || tz_offset_seconds > MAX_TIMEZONE_OFFSET_SECONDS) {
-    logger(LOG_ERROR, "Timezone: Invalid timezone offset %d seconds (range: [%d, %d])", tz_offset_seconds,
-           MIN_TIMEZONE_OFFSET_SECONDS, MAX_TIMEZONE_OFFSET_SECONDS);
+  if (timezone_validate_offset(tz_offset_seconds) != 0) {
     return -1;
   }
 
@@ -270,9 +306,10 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
 
   /* Format 2: yyyyMMddHHmmss and yyyyMMddHHmmssGMT (14 digits, optionally
    * followed by "GMT") */
-  if ((input_len == 14 && digit_count == 14) ||
-      (input_len == 17 && digit_count == 14 && strcmp(input_time + 14, "GMT") == 0)) {
-    int has_gmt_suffix = (input_len == 17);
+  if ((input_len == COMPACT_DATETIME_LENGTH && digit_count == COMPACT_DATETIME_LENGTH) ||
+      (input_len == COMPACT_DATETIME_GMT_LENGTH && digit_count == COMPACT_DATETIME_LENGTH &&
+       strcmp(input_time + COMPACT_DATETIME_LENGTH, "GMT") == 0)) {
+    int has_gmt_suffix = (input_len == COMPACT_DATETIME_GMT_LENGTH);
 
     /* Parse the time string (first 14 digits) */
     if (sscanf(input_time, "%4d%2d%2d%2d%2d%2d", &year, &month, &day, &hour, &min, &sec) != 6) {
@@ -316,15 +353,21 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
     local_time.tm_sec = sec;
     local_time.tm_isdst = 0;
 
-    timestamp = timegm(&local_time);
+    if (timezone_is_using_system_local(tz_offset_seconds) && !has_gmt_suffix) {
+      if (timezone_local_tm_to_timestamp(&local_time, &timestamp) != 0)
+        return -1;
+    } else {
+      timestamp = timegm(&local_time);
 
-    if (timestamp == -1) {
-      logger(LOG_ERROR, "Timezone: Failed to convert time to timestamp");
-      return -1;
+      if (timestamp == -1) {
+        logger(LOG_ERROR, "Timezone: Failed to convert time to timestamp");
+        return -1;
+      }
+
+      timestamp -= tz_offset_seconds;
     }
 
     /* Apply timezone conversion and additional offset */
-    timestamp -= tz_offset_seconds;
     timestamp += additional_offset_seconds;
 
     /* Convert back to yyyyMMddHHmmss format */
@@ -349,10 +392,15 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
     } else {
       strncpy(output_time, temp_time, output_size - 1);
       output_time[output_size - 1] = '\0';
-      logger(LOG_DEBUG,
-             "Timezone: yyyyMMddHHmmss '%s' (TZ offset %d) + seek offset %d = "
-             "'%s'",
-             input_time, -tz_offset_seconds, additional_offset_seconds, output_time);
+      if (timezone_is_using_system_local(tz_offset_seconds)) {
+        logger(LOG_DEBUG, "Timezone: yyyyMMddHHmmss '%s' (system TZ) + seek offset %d = '%s'", input_time,
+               additional_offset_seconds, output_time);
+      } else {
+        logger(LOG_DEBUG,
+               "Timezone: yyyyMMddHHmmss '%s' (TZ offset %d) + seek offset %d = "
+               "'%s'",
+               input_time, -tz_offset_seconds, additional_offset_seconds, output_time);
+      }
     }
 
     return 0;
@@ -371,16 +419,26 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
       return -1;
     }
 
-    timestamp = timegm(&tm);
-
-    if (timestamp == -1) {
-      logger(LOG_ERROR, "Timezone: Failed to convert basic ISO 8601 time to timestamp");
-      return -1;
-    }
-
     if (has_timezone) {
+      timestamp = timegm(&tm);
+
+      if (timestamp == -1) {
+        logger(LOG_ERROR, "Timezone: Failed to convert basic ISO 8601 time to timestamp");
+        return -1;
+      }
+
       timestamp -= timezone_offset;
+    } else if (timezone_is_using_system_local(tz_offset_seconds)) {
+      if (timezone_local_tm_to_timestamp(&tm, &timestamp) != 0)
+        return -1;
     } else {
+      timestamp = timegm(&tm);
+
+      if (timestamp == -1) {
+        logger(LOG_ERROR, "Timezone: Failed to convert basic ISO 8601 time to timestamp");
+        return -1;
+      }
+
       timestamp -= tz_offset_seconds;
     }
     timestamp += additional_offset_seconds;
@@ -402,10 +460,15 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
       return -1;
     }
 
-    logger(LOG_DEBUG,
-           "Timezone: basic ISO 8601 '%s' (TZ offset %d) + seek offset %d = "
-           "'%s'",
-           input_time, has_timezone ? timezone_offset : -tz_offset_seconds, additional_offset_seconds, output_time);
+    if (!has_timezone && timezone_is_using_system_local(tz_offset_seconds)) {
+      logger(LOG_DEBUG, "Timezone: basic ISO 8601 '%s' (system TZ) + seek offset %d = '%s'", input_time,
+             additional_offset_seconds, output_time);
+    } else {
+      logger(LOG_DEBUG,
+             "Timezone: basic ISO 8601 '%s' (TZ offset %d) + seek offset %d = "
+             "'%s'",
+             input_time, has_timezone ? timezone_offset : -tz_offset_seconds, additional_offset_seconds, output_time);
+    }
     return 0;
   }
 
@@ -630,6 +693,9 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int add
     return -1;
   }
 
+  if (timezone_validate_offset(tz_offset_seconds) != 0)
+    return -1;
+
   input_len = strlen(input_time);
   digit_count = strspn(input_time, "0123456789");
 
@@ -642,8 +708,9 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int add
   }
 
   /* Format 2: yyyyMMddHHmmss or yyyyMMddHHmmssGMT */
-  if ((input_len == 14 && digit_count == 14) ||
-      (input_len == 17 && digit_count == 14 && strcmp(input_time + 14, "GMT") == 0)) {
+  if ((input_len == COMPACT_DATETIME_LENGTH && digit_count == COMPACT_DATETIME_LENGTH) ||
+      (input_len == COMPACT_DATETIME_GMT_LENGTH && digit_count == COMPACT_DATETIME_LENGTH &&
+       strcmp(input_time + COMPACT_DATETIME_LENGTH, "GMT") == 0)) {
     if (sscanf(input_time, "%4d%2d%2d%2d%2d%2d", &year, &month, &day, &hour, &min, &sec) != 6) {
       return -1;
     }
@@ -657,12 +724,20 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int add
     local_time.tm_sec = sec;
     local_time.tm_isdst = 0;
 
-    timestamp = timegm(&local_time);
+    /* Only bare yyyyMMddHHmmss should fall back to the daemon's system
+     * timezone. yyyyMMddHHmmssGMT already carries explicit UTC semantics. */
+    if (timezone_is_using_system_local(tz_offset_seconds) && input_len == COMPACT_DATETIME_LENGTH) {
+      if (timezone_local_tm_to_timestamp(&local_time, &timestamp) != 0)
+        return -1;
+    } else {
+      timestamp = timegm(&local_time);
 
-    if (timestamp == -1)
-      return -1;
+      if (timestamp == -1)
+        return -1;
 
-    timestamp -= tz_offset_seconds;
+      timestamp -= tz_offset_seconds;
+    }
+
     timestamp += additional_offset_seconds;
     *out_utc = timestamp;
     return 0;
@@ -680,14 +755,22 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int add
       return -1;
     }
 
-    timestamp = timegm(&tm);
-
-    if (timestamp == -1)
-      return -1;
-
     if (has_timezone) {
+      timestamp = timegm(&tm);
+
+      if (timestamp == -1)
+        return -1;
+
       timestamp -= timezone_offset;
+    } else if (timezone_is_using_system_local(tz_offset_seconds)) {
+      if (timezone_local_tm_to_timestamp(&tm, &timestamp) != 0)
+        return -1;
     } else {
+      timestamp = timegm(&tm);
+
+      if (timestamp == -1)
+        return -1;
+
       timestamp -= tz_offset_seconds;
     }
     timestamp += additional_offset_seconds;
@@ -708,15 +791,24 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int add
       return -1;
     }
 
-    timestamp = timegm(&tm);
-
-    if (timestamp == -1)
-      return -1;
-
     if (has_timezone) {
+      timestamp = timegm(&tm);
+
+      if (timestamp == -1)
+        return -1;
+
       timestamp -= timezone_offset;
       timestamp += additional_offset_seconds;
+    } else if (timezone_is_using_system_local(tz_offset_seconds)) {
+      if (timezone_local_tm_to_timestamp(&tm, &timestamp) != 0)
+        return -1;
+      timestamp += additional_offset_seconds;
     } else {
+      timestamp = timegm(&tm);
+
+      if (timestamp == -1)
+        return -1;
+
       timestamp -= tz_offset_seconds;
       timestamp += additional_offset_seconds;
     }
@@ -759,15 +851,15 @@ int timezone_convert_iso8601_with_offset(const char *iso_str, int external_tz_of
     return -1;
   }
 
-  timestamp = timegm(&tm);
-
-  if (timestamp == -1) {
-    logger(LOG_ERROR, "Timezone: Failed to convert time to timestamp");
-    return -1;
-  }
-
   /* Apply timezone conversion and offset */
   if (has_timezone) {
+    timestamp = timegm(&tm);
+
+    if (timestamp == -1) {
+      logger(LOG_ERROR, "Timezone: Failed to convert time to timestamp");
+      return -1;
+    }
+
     /* Input has embedded timezone
      * The tm structure represents the time as parsed (without timezone)
      * We need to:
@@ -779,7 +871,19 @@ int timezone_convert_iso8601_with_offset(const char *iso_str, int external_tz_of
            "Timezone: ISO 8601 has embedded timezone, only applying offset %d "
            "seconds",
            offset_seconds);
+  } else if (timezone_is_using_system_local(external_tz_offset)) {
+    if (timezone_local_tm_to_timestamp(&tm, &timestamp) != 0)
+      return -1;
+    timestamp += offset_seconds;
+    logger(LOG_DEBUG, "Timezone: ISO 8601 no timezone, using system TZ + offset %d seconds", offset_seconds);
   } else {
+    timestamp = timegm(&tm);
+
+    if (timestamp == -1) {
+      logger(LOG_ERROR, "Timezone: Failed to convert time to timestamp");
+      return -1;
+    }
+
     /* No embedded timezone - apply timezone conversion then offset */
     timestamp -= external_tz_offset;
     timestamp += offset_seconds;
