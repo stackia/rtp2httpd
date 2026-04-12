@@ -490,3 +490,103 @@ class TestProxyEmptyBody:
             assert body == b""
         finally:
             upstream.stop()
+
+
+# ---------------------------------------------------------------------------
+# Connection: close header enforcement
+# ---------------------------------------------------------------------------
+
+
+class TestProxyConnectionClose:
+    """Verify that rtp2httpd always sends Connection: close to clients."""
+
+    def test_connection_close_in_response(self, shared_r2h):
+        """HTTP proxy responses must include Connection: close header."""
+        upstream = MockHTTPUpstream(
+            routes={
+                "/test": {"status": 200, "body": b"test content", "headers": {"Content-Type": "text/plain"}},
+            }
+        )
+        upstream.start()
+        try:
+            status, hdrs, body = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                "/http/127.0.0.1:%d/test" % upstream.port,
+                timeout=5.0,
+            )
+            assert status == 200
+            assert body == b"test content"
+            # Verify Connection: close is present (case-insensitive)
+            connection_header = None
+            for k, v in hdrs.items():
+                if k.lower() == "connection":
+                    connection_header = v.lower()
+                    break
+            assert connection_header is not None, "Connection header is missing"
+            assert "close" in connection_header, f"Expected 'close' in Connection header, got '{connection_header}'"
+        finally:
+            upstream.stop()
+
+    def test_connection_close_with_redirect(self, shared_r2h):
+        """HTTP proxy redirect responses must include Connection: close."""
+        upstream = MockHTTPUpstream(
+            routes={
+                "/redirect": {
+                    "status": 302,
+                    "body": b"",
+                    "headers": {"Location": "http://10.0.0.1:8080/new"},
+                },
+            }
+        )
+        upstream.start()
+        try:
+            status, hdrs, _ = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                "/http/127.0.0.1:%d/redirect" % upstream.port,
+                timeout=5.0,
+            )
+            assert status == 302
+            # Verify Connection: close is present
+            connection_header = None
+            for k, v in hdrs.items():
+                if k.lower() == "connection":
+                    connection_header = v.lower()
+                    break
+            assert connection_header is not None, "Connection header is missing"
+            assert "close" in connection_header, f"Expected 'close' in Connection header, got '{connection_header}'"
+        finally:
+            upstream.stop()
+
+    def test_connection_close_with_upstream_keepalive(self, shared_r2h):
+        """Even if upstream sends keep-alive, rtp2httpd must send close."""
+        upstream = MockHTTPUpstream(
+            routes={
+                "/keepalive": {
+                    "status": 200,
+                    "body": b"content",
+                    "headers": {"Content-Type": "text/plain", "Connection": "keep-alive"},
+                },
+            }
+        )
+        upstream.start()
+        try:
+            status, hdrs, body = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                "/http/127.0.0.1:%d/keepalive" % upstream.port,
+                timeout=5.0,
+            )
+            assert status == 200
+            assert body == b"content"
+            # Verify rtp2httpd overrides upstream's keep-alive with close
+            connection_header = None
+            for k, v in hdrs.items():
+                if k.lower() == "connection":
+                    connection_header = v.lower()
+                    break
+            assert connection_header is not None, "Connection header is missing"
+            assert "close" in connection_header, f"Expected 'close' in Connection header, got '{connection_header}'"
+        finally:
+            upstream.stop()
