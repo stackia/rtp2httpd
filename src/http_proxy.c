@@ -791,11 +791,41 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
     buf->data_size = received;
     if (connection_queue_zerocopy(session->conn, buf) < 0) {
       buffer_ref_put(buf);
-      logger(LOG_ERROR, "HTTP Proxy: Failed to queue body data");
-      return -1;
+      /* Backpressure: client queue is full, pause upstream reads */
+      if (!session->upstream_paused) {
+        session->upstream_paused = 1;
+        logger(LOG_DEBUG,
+               "HTTP Proxy: Backpressure detected, pausing upstream reads "
+               "(queued=%zu bytes)",
+               session->conn->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE);
+
+        /* Remove POLLER_IN to stop reading from upstream */
+        if (session->epoll_fd >= 0) {
+          poller_mod(session->epoll_fd, session->socket, POLLER_HUP | POLLER_ERR | POLLER_RDHUP);
+        }
+      }
+      return 0; /* Return 0, not -1 - this is backpressure, not an error */
     }
     buffer_ref_put(buf);
     bytes_forwarded = (int)received;
+
+    /* If upstream was paused and queue is drained, resume */
+    if (session->upstream_paused) {
+      size_t queue_bytes = session->conn->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
+      /* Resume when queue drops below 25% of limit */
+      size_t resume_threshold = session->conn->queue_limit_bytes / 4;
+      if (queue_bytes < resume_threshold) {
+        session->upstream_paused = 0;
+        logger(LOG_DEBUG,
+               "HTTP Proxy: Queue drained, resuming upstream reads "
+               "(queued=%zu bytes)",
+               queue_bytes);
+        /* Re-enable POLLER_IN to resume reading from upstream */
+        if (session->epoll_fd >= 0) {
+          poller_mod(session->epoll_fd, session->socket, POLLER_IN | POLLER_HUP | POLLER_ERR | POLLER_RDHUP);
+        }
+      }
+    }
 
     /* Let connection_queue_zerocopy's internal batching mechanism handle
      * POLLER_OUT - it uses zerocopy_should_flush() for optimal batching */
@@ -1264,6 +1294,25 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t event
     }
   }
 
+  /* Check if upstream reads should resume after client queue drains.
+   * This happens when client socket becomes writable (POLLER_OUT on client)
+   * and we've successfully sent data, reducing the queue size. */
+  if (session->upstream_paused && session->state == HTTP_PROXY_STATE_STREAMING) {
+    size_t queue_bytes = session->conn->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
+    size_t resume_threshold = session->conn->queue_limit_bytes / 4;
+    if (queue_bytes < resume_threshold) {
+      session->upstream_paused = 0;
+      logger(LOG_DEBUG,
+             "HTTP Proxy: Queue drained below threshold, resuming upstream "
+             "reads (queued=%zu bytes)",
+             queue_bytes);
+      /* Re-enable POLLER_IN to resume reading from upstream */
+      if (session->epoll_fd >= 0) {
+        poller_mod(session->epoll_fd, session->socket, POLLER_IN | POLLER_HUP | POLLER_ERR | POLLER_RDHUP);
+      }
+    }
+  }
+
   /* Check for connection hangup AFTER processing data.
    * Only when POLLER_IN was NOT set — if POLLER_IN was set, recv already
    * handled EOF (returning 0) and set COMPLETE as needed.  Processing
@@ -1345,6 +1394,24 @@ int http_proxy_session_cleanup(http_proxy_session_t *session) {
 int http_proxy_session_tick(http_proxy_session_t *session, int64_t now) {
   if (!session || !session->initialized || session->last_state_change_ms <= 0)
     return 0;
+
+  /* Check if upstream reads should resume after client queue drains */
+  if (session->upstream_paused && session->state == HTTP_PROXY_STATE_STREAMING && session->conn) {
+    size_t queue_bytes = session->conn->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
+    size_t resume_threshold = session->conn->queue_limit_bytes / 4;
+    if (queue_bytes < resume_threshold) {
+      session->upstream_paused = 0;
+      logger(LOG_DEBUG,
+             "HTTP Proxy: Queue drained in tick, resuming upstream reads "
+             "(queued=%zu bytes)",
+             queue_bytes);
+      /* Re-enable POLLER_IN to resume reading from upstream */
+      if (session->epoll_fd >= 0) {
+        poller_mod(session->epoll_fd, session->socket, POLLER_IN | POLLER_HUP | POLLER_ERR | POLLER_RDHUP);
+      }
+    }
+  }
+
   switch (session->state) {
   case HTTP_PROXY_STATE_CONNECTING:
   case HTTP_PROXY_STATE_SENDING_REQUEST:
