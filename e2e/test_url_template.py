@@ -7,6 +7,7 @@ Covers two distinct layers:
 """
 
 import re
+import time
 
 import pytest
 
@@ -585,6 +586,36 @@ class TestHTTPPathTemplateTimezone:
             )
             assert status == 200
             assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_seek_mode_is_noop_for_http_template(self, shared_r2h):
+        """r2h-seek-mode is documented as RTSP-only — it must NOT shift HTTP
+        URL-template placeholders, even when the seek time is "recent" enough
+        for the RTSP clock= path to fire. Regression guard for the prior bug
+        where the recent-clock recompute mutated begin_tm_utc shared with the
+        URL-template path.
+        """
+        # Pick a recent-ish time in CST so range(UTC+8/3600) would normally
+        # interpret it as 8h earlier in UTC. The HTTP path must ignore that
+        # and render placeholders from the original begin_str unchanged.
+        ts_utc = int(time.time()) - 1500  # 25 min ago
+        cst_str = time.strftime("%Y%m%d%H%M%S", time.gmtime(ts_utc + 8 * 3600))
+        # The HTTP template uses local time (no UA TZ): the rendered path
+        # equals the input string verbatim.
+        expected_path = "/path/%s/file.m3u8" % cst_str
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file.m3u8?playseek=%s&r2h-seek-mode=range(UTC%%2B8/3600)"
+            ) % (upstream.port, cst_str)
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path, (
+                "r2h-seek-mode leaked into HTTP template: got %s, expected %s"
+                % (_get_upstream_path(upstream), expected_path)
+            )
         finally:
             upstream.stop()
 

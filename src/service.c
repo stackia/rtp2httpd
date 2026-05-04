@@ -826,7 +826,13 @@ int service_parse_seek_value(const char *seek_param_value, int seek_offset_secon
   /* Recent-clock optimization: opt-in via r2h-seek-mode=range(...). The TZ used
    * for the recency comparison may differ from the passthrough TZ when range()
    * supplies an explicit TZ that overrides the UA TZ. r2h-seek-offset is baked
-   * into begin_utc via timezone_parse_to_utc above and propagates here. */
+   * into begin_utc via timezone_parse_to_utc above and propagates here.
+   *
+   * The recent-clock UTC time is stored separately in recent_clock_tm_utc so
+   * the RTSP `Range: clock=` formatter can use it without disturbing
+   * begin_tm_utc. begin_tm_utc is shared with the HTTP URL-template path,
+   * which would otherwise render placeholders in the explicit-TZ frame even
+   * though r2h-seek-mode is documented as RTSP-only. */
   if (seek_mode == SEEK_MODE_RANGE && parse_result->begin_parsed && parse_result->now_utc != (time_t)-1) {
     time_t begin_utc_for_recent;
     int recompute = seek_mode_tz_explicit && seek_mode_tz_offset_seconds != parse_result->tz_offset_seconds;
@@ -843,7 +849,7 @@ int service_parse_seek_value(const char *seek_param_value, int seek_offset_secon
       parse_result->is_recent = 1;
       struct tm *tmp = gmtime(&begin_utc_for_recent);
       if (tmp)
-        parse_result->begin_tm_utc = *tmp;
+        parse_result->recent_clock_tm_utc = *tmp;
     }
   }
 
@@ -902,7 +908,7 @@ int service_format_recent_seek_range(const seek_parse_result_t *parse_result, ch
   if (output_size < 17)
     return -1;
 
-  if (strftime(output, output_size, "%Y%m%dT%H%M%SZ", &parse_result->begin_tm_utc) == 0)
+  if (strftime(output, output_size, "%Y%m%dT%H%M%SZ", &parse_result->recent_clock_tm_utc) == 0)
     return -1;
 
   return 1;

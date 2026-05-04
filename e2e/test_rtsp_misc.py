@@ -671,6 +671,36 @@ class TestRTSPSeekMode:
         finally:
             rtsp.stop()
 
+    @pytest.mark.parametrize(
+        "mode_value",
+        [
+            pytest.param("range", id="bare-range"),
+            pytest.param("range()", id="empty-parens"),
+            pytest.param("range(/3600)", id="slash-seconds-only"),
+        ],
+    )
+    def test_range_syntax_variants_default_to_utc_window_3600(self, shared_r2h, mode_value):
+        """Bare `range`, `range()`, and `range(/N)` should all parse as
+        SEEK_MODE_RANGE with TZ falling back to UTC and the explicit/default
+        window. Regression guard for the parse_seek_mode_value branches that
+        otherwise have no direct coverage.
+        """
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500  # within 1h, UTC interpretation
+            utc_str = _format_yyyyMMddHHmmss(start_ts)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=%s" % (rtsp.port, utc_str, mode_value)
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts), (
+                "syntax variant %r should enter the clock= path" % mode_value
+            )
+        finally:
+            rtsp.stop()
+
     def test_range_falls_back_to_ua_tz(self, shared_r2h):
         """range(3600) without explicit TZ should fall back to UA TZ/UTC+8."""
         rtsp = MockRTSPServer(num_packets=500)
@@ -992,5 +1022,62 @@ class TestRTSPSeekModeQueryMerge:
             # First value (passthrough) wins → no clock= header.
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert "Range" not in play_reqs[0]["headers"]
+        finally:
+            rtsp.stop()
+
+    def test_configured_ifname_does_not_leak(self, r2h_binary):
+        """r2h-ifname configured via M3U must not leak to the upstream URI."""
+        r2h_port = find_free_port()
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            config = self._config(r2h_port, rtsp.port, "IfnameFallback", "?r2h-ifname=lo0")
+            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
+            r2h.start()
+            try:
+                stream_get("127.0.0.1", r2h_port, "/IfnameFallback", read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+                assert describe_reqs, "expected at least one DESCRIBE"
+                assert "r2h-ifname" not in describe_reqs[0]["uri"], (
+                    "r2h-ifname leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                )
+            finally:
+                r2h.stop()
+        finally:
+            rtsp.stop()
+
+    def test_request_ifname_overrides_configured(self, r2h_binary):
+        """Configured r2h-ifname plus request r2h-ifname: request wins, neither
+        leaks. We can't directly observe which interface was bound from the
+        e2e harness, but we can verify the merged URL is well-formed (the
+        request goes through) and no r2h-ifname survives into the upstream
+        URI."""
+        r2h_port = find_free_port()
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            config = self._config(r2h_port, rtsp.port, "IfnameMerge", "?r2h-ifname=lo0")
+            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
+            r2h.start()
+            try:
+                # Same interface name on the request side; the goal is to
+                # exercise the merge path without depending on platform-specific
+                # interface availability for assertion.
+                stream_get(
+                    "127.0.0.1",
+                    r2h_port,
+                    "/IfnameMerge?r2h-ifname=lo0",
+                    read_bytes=4096,
+                    timeout=_STREAM_TIMEOUT,
+                )
+
+                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+                assert describe_reqs, "expected at least one DESCRIBE"
+                assert "r2h-ifname" not in describe_reqs[0]["uri"], (
+                    "r2h-ifname leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                )
+            finally:
+                r2h.stop()
         finally:
             rtsp.stop()

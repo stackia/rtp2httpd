@@ -21,6 +21,11 @@ typedef struct seek_parse_result_s {
   struct tm end_tm_utc;
   struct tm begin_tm_local;
   struct tm end_tm_local;
+  /* Begin time for the RTSP recent-clock path. Populated only when is_recent.
+   * Kept separate from begin_tm_utc so that an explicit r2h-seek-mode TZ
+   * override does not pollute the URL-template / passthrough begin_tm_utc
+   * shared with the HTTP proxy path. */
+  struct tm recent_clock_tm_utc;
   char begin_str[128];
   char end_str[128];
 } seek_parse_result_t;
