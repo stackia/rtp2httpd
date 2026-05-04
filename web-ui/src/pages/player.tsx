@@ -174,7 +174,7 @@ function PlayerPage() {
 
   const handleChannelNavigate = useCallback(
     (target: "prev" | "next" | number) => {
-      if (!metadata || !metadata.channels.length) return;
+      if (!metadata?.channels.length) return;
 
       if (target === "prev" || target === "next") {
         if (!currentChannel) return;
