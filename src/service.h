@@ -44,6 +44,17 @@ typedef enum {
   SERVICE_SOURCE_EXTERNAL = 1 /* From external M3U URL */
 } service_source_t;
 
+/* Seek mode enumeration - controls RTSP recent-clock optimization opt-in */
+typedef enum {
+  SEEK_MODE_PASSTHROUGH = 0, /* Default: never use Range: clock= path */
+  SEEK_MODE_RANGE = 1        /* Opt-in: enable Range: clock= path when in window */
+} seek_mode_t;
+
+/* Default recency window when r2h-seek-mode=range is given without seconds */
+#define SEEK_MODE_DEFAULT_WINDOW_SECONDS 3600
+/* Upper bound on a configurable window — 24 hours */
+#define SEEK_MODE_MAX_WINDOW_SECONDS 86400
+
 /**
  * Service configuration structure
  * Represents a single media service (multicast RTP/UDP or RTSP stream)
@@ -65,9 +76,13 @@ typedef struct service_s {
   char *seek_param_value;  /* Value of seek parameter for time range */
   int seek_offset_seconds; /* Additional offset in seconds from r2h-seek-offset
                               parameter */
-  char *user_agent;        /* User-Agent header for timezone detection */
-  char *ifname;            /* Per-service upstream interface override (from r2h-ifname) */
-  char *ifname_fcc;        /* Per-service FCC interface override (from r2h-ifname-fcc) */
+  seek_mode_t seek_mode;             /* Seek mode from r2h-seek-mode parameter */
+  int seek_mode_tz_explicit;         /* 1 if range(...) explicitly specified a TZ */
+  int seek_mode_tz_offset_seconds;   /* TZ offset from range(TZ/...) when explicit */
+  int seek_mode_window_seconds;      /* Recency window from range(.../seconds) */
+  char *user_agent;                  /* User-Agent header for timezone detection */
+  char *ifname;                      /* Per-service upstream interface override (from r2h-ifname) */
+  char *ifname_fcc;                  /* Per-service FCC interface override (from r2h-ifname-fcc) */
   struct service_s *next;
 } service_t;
 
@@ -125,18 +140,24 @@ service_t *service_create_from_rtp_url(const char *http_url);
 service_t *service_create_from_http_url(const char *http_url);
 
 /**
- * Extract seek parameters (r2h-seek-name, r2h-seek-offset, and the seek
- * parameter itself) from a URL query string, removing them in-place.
+ * Extract seek parameters (r2h-seek-name, r2h-seek-offset, r2h-seek-mode, and
+ * the seek parameter itself) from a URL query string, removing them in-place.
  *
  * @param query_start Pointer to the '?' in the URL (modified in-place)
  * @param out_seek_param_name Output: malloc'd seek parameter name (caller frees)
  * @param out_seek_param_value Output: malloc'd seek parameter value (caller
  * frees)
  * @param out_seek_offset_seconds Output: seek offset in seconds
+ * @param out_seek_mode Output: parsed seek mode (default SEEK_MODE_PASSTHROUGH)
+ * @param out_seek_mode_tz_explicit Output: 1 if range(...) explicitly gave a TZ
+ * @param out_seek_mode_tz_offset_seconds Output: TZ offset when explicit
+ * @param out_seek_mode_window_seconds Output: recency window in seconds
  * @return 0 on success, -1 on failure
  */
 int service_extract_seek_params(char *query_start, char **out_seek_param_name, char **out_seek_param_value,
-                                int *out_seek_offset_seconds);
+                                int *out_seek_offset_seconds, seek_mode_t *out_seek_mode,
+                                int *out_seek_mode_tz_explicit, int *out_seek_mode_tz_offset_seconds,
+                                int *out_seek_mode_window_seconds);
 
 /**
  * Analyze a seek parameter once and reuse the result across RTSP/HTTP flows.
@@ -144,11 +165,16 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name, c
  * @param seek_param_value Extracted seek parameter value
  * @param seek_offset_seconds Additional seek offset in seconds
  * @param user_agent User-Agent header for timezone detection
+ * @param seek_mode Seek mode from r2h-seek-mode parameter
+ * @param seek_mode_tz_explicit 1 if range(...) explicitly specified a TZ
+ * @param seek_mode_tz_offset_seconds TZ offset when explicit
+ * @param seek_mode_window_seconds Recency window in seconds (only meaningful for RANGE)
  * @param parse_result Output parse result structure
  * @return 0 on success, -1 on invalid parameters
  */
 int service_parse_seek_value(const char *seek_param_value, int seek_offset_seconds, const char *user_agent,
-                             seek_parse_result_t *parse_result);
+                             seek_mode_t seek_mode, int seek_mode_tz_explicit, int seek_mode_tz_offset_seconds,
+                             int seek_mode_window_seconds, seek_parse_result_t *parse_result);
 
 /**
  * Convert a parsed seek value to upstream UTC query form.

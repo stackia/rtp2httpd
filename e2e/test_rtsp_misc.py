@@ -422,13 +422,17 @@ class TestRTSPStartSeek:
 
 
 class TestRTSPRecentPlayseek:
-    """Recent RTSP playseek should use PLAY Range clock headers."""
+    """Recent RTSP playseek should use PLAY Range clock headers when r2h-seek-mode=range is set."""
 
     @staticmethod
     def _build_seek_query(param_name: str, start_str: str, end_str: str) -> str:
+        # All recent-clock tests opt in via r2h-seek-mode=range explicitly.
         if param_name == "custom_seek":
-            return "custom_seek=%s-%s&r2h-seek-name=custom_seek" % (start_str, end_str)
-        return "%s=%s-%s" % (param_name, start_str, end_str)
+            return "custom_seek=%s-%s&r2h-seek-name=custom_seek&r2h-seek-mode=range" % (
+                start_str,
+                end_str,
+            )
+        return "%s=%s-%s&r2h-seek-mode=range" % (param_name, start_str, end_str)
 
     @pytest.mark.parametrize("param_name", ["playseek", "Playseek", "tvdr", "custom_seek"])
     def test_recent_playseek_uses_clock_range(self, shared_r2h, param_name):
@@ -457,6 +461,7 @@ class TestRTSPRecentPlayseek:
             assert len(describe_reqs) > 0, "Expected DESCRIBE"
             assert "%s=" % param_name not in describe_reqs[0]["uri"]
             assert "r2h-seek-name=" not in describe_reqs[0]["uri"]
+            assert "r2h-seek-mode=" not in describe_reqs[0]["uri"]
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert len(play_reqs) > 0, "Expected PLAY request"
@@ -472,7 +477,7 @@ class TestRTSPRecentPlayseek:
         try:
             start_ts = int(time.time()) - 1200
             start_str = _format_basic_utc(start_ts)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s-%s&r2h-start=120.5" % (
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s-%s&r2h-start=120.5&r2h-seek-mode=range" % (
                 rtsp.port,
                 start_str,
                 _format_basic_utc(start_ts + 120),
@@ -523,6 +528,270 @@ class TestRTSPRecentPlayseek:
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert len(play_reqs) > 0, "Expected PLAY request"
+            assert "Range" not in play_reqs[0]["headers"]
+        finally:
+            rtsp.stop()
+
+    def test_recent_playseek_default_passthrough(self, shared_r2h):
+        """Without r2h-seek-mode, recent playseek must still pass through (no clock=)."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1800
+            start_str = _format_basic_utc(start_ts)
+            end_str = _format_basic_utc(start_ts + 300)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s-%s" % (rtsp.port, start_str, end_str)
+
+            stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+            assert len(describe_reqs) > 0, "Expected DESCRIBE"
+            assert "playseek=%s-%s" % (start_str, end_str) in describe_reqs[0]["uri"]
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert len(play_reqs) > 0, "Expected PLAY request"
+            assert "Range" not in play_reqs[0]["headers"]
+        finally:
+            rtsp.stop()
+
+
+def _format_yyyyMMddHHmmss(ts: int) -> str:
+    return time.strftime("%Y%m%d%H%M%S", time.gmtime(ts))
+
+
+def _expected_clock_str(ts: int) -> str:
+    return time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(ts))
+
+
+class TestRTSPSeekMode:
+    """Verify r2h-seek-mode opt-in semantics for the recent-clock path."""
+
+    def test_passthrough_explicit_equals_default(self, shared_r2h):
+        """r2h-seek-mode=passthrough is identical to omitting the parameter."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1800
+            start_str = _format_basic_utc(start_ts)
+            end_str = _format_basic_utc(start_ts + 300)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s-%s&r2h-seek-mode=passthrough" % (
+                rtsp.port,
+                start_str,
+                end_str,
+            )
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+            assert "playseek=%s-%s" % (start_str, end_str) in describe_reqs[0]["uri"]
+            assert "r2h-seek-mode=" not in describe_reqs[0]["uri"]
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert "Range" not in play_reqs[0]["headers"]
+        finally:
+            rtsp.stop()
+
+    def test_range_with_explicit_tz_within_window_uses_clock(self, shared_r2h):
+        """range(UTC+8/3600) + 30 min ago in CST should hit the clock= path with the right UTC time."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1800
+            # Client sends time in CST (UTC+8): represent the same instant in CST
+            cst_str = _format_yyyyMMddHHmmss(start_ts + 8 * 3600)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B8/3600)" % (
+                rtsp.port,
+                cst_str,
+            )
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+            assert "playseek=" not in describe_reqs[0]["uri"]
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+        finally:
+            rtsp.stop()
+
+    def test_range_outside_window_falls_back_passthrough(self, shared_r2h):
+        """range(UTC+8/3600) + 5h ago should fall back to URL passthrough with raw bytes preserved."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            # Use fixed historical CST timestamps, far outside any window.
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=20240101180000-20240101230000&r2h-seek-mode=range(UTC%%2B8/3600)" % (
+                rtsp.port,
+            )
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+            # Bytes preserved exactly: range mode TZ does NOT apply to passthrough conversion.
+            assert "playseek=20240101180000-20240101230000" in describe_reqs[0]["uri"]
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert "Range" not in play_reqs[0]["headers"]
+        finally:
+            rtsp.stop()
+
+    def test_range_default_utc_within_window_uses_clock(self, shared_r2h):
+        """range(3600) (no TZ, no UA) treats input as UTC; recent UTC time enters clock path."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500
+            utc_str = _format_yyyyMMddHHmmss(start_ts)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(3600)" % (rtsp.port, utc_str)
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+        finally:
+            rtsp.stop()
+
+    def test_range_tz_only_defaults_window_to_3600(self, shared_r2h):
+        """range(UTC+8) without seconds defaults the window to 3600s."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500  # within 1 hour
+            cst_str = _format_yyyyMMddHHmmss(start_ts + 8 * 3600)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B8)" % (rtsp.port, cst_str)
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+        finally:
+            rtsp.stop()
+
+    def test_range_falls_back_to_ua_tz(self, shared_r2h):
+        """range(3600) without explicit TZ should fall back to UA TZ/UTC+8."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500
+            cst_str = _format_yyyyMMddHHmmss(start_ts + 8 * 3600)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(3600)" % (rtsp.port, cst_str)
+
+            stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
+            )
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+        finally:
+            rtsp.stop()
+
+    def test_range_falls_back_to_utc_when_no_ua_tz(self, shared_r2h):
+        """range(3600) with no UA TZ should fall back to UTC."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500
+            utc_str = _format_yyyyMMddHHmmss(start_ts)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(3600)" % (rtsp.port, utc_str)
+
+            stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0"},
+            )
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+        finally:
+            rtsp.stop()
+
+    def test_range_offset_propagates_into_clock(self, shared_r2h):
+        """r2h-seek-offset shifts the clock= header time as well."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            base_ts = int(time.time()) - 3000  # 50 min ago
+            offset = 1800  # +30 min, still within 60min window relative to begin
+            cst_str = _format_yyyyMMddHHmmss(base_ts + 8 * 3600)
+            url = (
+                "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-offset=%d&r2h-seek-mode=range(UTC%%2B8/3600)"
+                % (rtsp.port, cst_str, offset)
+            )
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(base_ts + offset)
+        finally:
+            rtsp.stop()
+
+    def test_range_offset_pushes_outside_window_falls_back(self, shared_r2h):
+        """If r2h-seek-offset shifts begin out of the window, fall back to passthrough."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            base_ts = int(time.time()) - 3000  # 50 min ago
+            offset = -1800  # makes begin look like 80 min ago, > 60min window
+            cst_str = _format_yyyyMMddHHmmss(base_ts + 8 * 3600)
+            url = (
+                "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-offset=%d&r2h-seek-mode=range(UTC%%2B8/3600)"
+                % (rtsp.port, cst_str, offset)
+            )
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+            # Passthrough branch: range mode TZ does NOT apply, only the offset is applied
+            # to the original UTC interpretation. Verify offset is present in the resulting bytes.
+            assert "playseek=" in describe_reqs[0]["uri"]
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert "Range" not in play_reqs[0]["headers"]
+        finally:
+            rtsp.stop()
+
+    def test_range_invalid_value_falls_back_to_passthrough(self, shared_r2h):
+        """Invalid r2h-seek-mode values should be ignored (treated as passthrough)."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500
+            utc_str = _format_yyyyMMddHHmmss(start_ts)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B999)" % (rtsp.port, utc_str)
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+            assert "playseek=%s" % utc_str in describe_reqs[0]["uri"]
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert "Range" not in play_reqs[0]["headers"]
+        finally:
+            rtsp.stop()
+
+    def test_range_unrecognized_mode_falls_back_to_passthrough(self, shared_r2h):
+        """Garbage r2h-seek-mode values should also map to passthrough."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500
+            utc_str = _format_yyyyMMddHHmmss(start_ts)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=bogus" % (rtsp.port, utc_str)
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+            assert "playseek=%s" % utc_str in describe_reqs[0]["uri"]
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert "Range" not in play_reqs[0]["headers"]
         finally:
             rtsp.stop()

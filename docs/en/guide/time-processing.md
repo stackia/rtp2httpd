@@ -92,11 +92,43 @@ http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-2
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000&r2h-seek-offset=-30
 ```
 
+### r2h-seek-mode Parameter (Optional, RTSP Only)
+
+Controls whether the RTSP proxy enables the "near-realtime" branch (see "RTSP Recent Seek Handling" below). This parameter only affects the RTSP proxy.
+
+#### Values
+
+- `passthrough` (default, equivalent to omitting the parameter): the seek parameter is always passed through to the upstream as a URL query parameter
+- `range[(<TZ>[/<seconds>])]`: when the window condition is satisfied, switch to the `Range: clock=...Z-` header instead; if not satisfied, fall back to passthrough
+
+The contents inside `range(...)` can be omitted, and are parsed by the following rules:
+
+- `range`, `range()` — defaults: TZ falls back to UA `TZ/`, then to UTC if absent; window is 3600 seconds
+- `range(UTC+8)`, `range(UTC-5)`, `range(UTC)` — explicitly specify the timezone, window defaults to 3600 seconds
+- `range(7200)` — explicitly specify the window (in seconds), TZ falls back (as above)
+- `range(UTC+8/7200)` — specify both TZ and window
+- `range(/7200)` — TZ falls back, window is explicit
+
+The window must be in the range `[1, 86400]` seconds. Unrecognized values are logged at warn level and treated as `passthrough`; they do not fail the request.
+
+> [!IMPORTANT]
+> The TZ inside `range(...)` is **only used for the "near-realtime" window check**. When the start time falls outside the window and the request falls back to passthrough, the behavior is exactly the same as if `r2h-seek-mode` was not set — the TZ from `range()` will **not** be used to rewrite the passthrough string. This makes `r2h-seek-mode=range(...)` a purely additive optimization that never makes an otherwise-working passthrough query worse.
+
+#### Examples
+
+```url
+# Explicitly enable the RTSP near-realtime optimization, parse times in UTC+8, window of 1 hour
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(UTC%2B8/3600)
+
+# Specify only the window; the timezone falls back to the UA TZ/ marker or UTC
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(7200)
+```
+
 ### r2h-start Parameter (Optional, RTSP Only)
 
 Used to specify starting playback of an RTSP stream from a specific time point, implementing resume functionality. This parameter value will be sent as an NPT (Normal Play Time) format time point to the RTSP server in the RTSP PLAY request via the `Range: npt=<time-point>-` header. This parameter is only valid for RTSP proxy.
 
-To improve compatibility with RTSP servers of most ISPs in China, if the same RTSP request also contains a seek parameter (including `playseek`, `tvdr`, and custom `r2h-seek-name`) whose start time is less than 1 hour from the current time, `r2h-start` will be ignored and the seek start time will be used to generate a `Range: clock=` header instead.
+If the same RTSP request also includes `r2h-seek-mode=range(...)` and the seek start time falls within the window, `r2h-start` will be ignored and the seek start time will be used to generate a `Range: clock=` header instead.
 
 #### Example
 
@@ -172,11 +204,14 @@ playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
 
 For the RTSP proxy, in addition to passing seek parameters to the upstream as URL query parameters (same as HTTP proxy), a "near-realtime" branch is also supported. The seek parameters here include `playseek`, `tvdr`, and any custom parameter specified via `r2h-seek-name`:
 
-- When the seek start time satisfies "current time - start time < 3600 seconds", rtp2httpd will not pass the seek parameter through to the upstream RTSP URL
+- This branch is **disabled** by default and must be explicitly enabled via `r2h-seek-mode=range(...)` (see "r2h-seek-mode Parameter" above)
+- When enabled, if the seek start time satisfies "current time − start time < window seconds", rtp2httpd will no longer pass the seek parameter through to the upstream RTSP URL
 - This branch only uses the seek start time; the end time is ignored
 - The RTSP `PLAY` request will send `Range: clock=<yyyyMMddTHHmmssZ>-`
-- When the seek start time is exactly 1 hour ago, this branch is not triggered and the parameter is passed through as a normal URL parameter
+- The timezone of the start time is resolved in the following fallback order: explicit `range(<TZ>/...)` declaration → UA `TZ/UTC+N` → UTC
+- When the seek start time is exactly at the window boundary (i.e. `now − begin == window`), this branch is not triggered and the parameter is passed through as a normal URL parameter
 - If the seek value cannot be parsed, the original pass-through behavior is preserved
+- `r2h-seek-offset` affects both the window check and the final `clock=` time written out — once the offset-adjusted time falls outside the window, the request falls back to passthrough as well
 
 ### Timezone Recognition
 

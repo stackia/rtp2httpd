@@ -92,11 +92,43 @@ http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-2
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000&r2h-seek-offset=-30
 ```
 
+### r2h-seek-mode 参数（可选，仅 RTSP）
+
+控制 RTSP 代理是否启用「近实时」分支（参见下方「RTSP recent seek 特殊处理」）。此参数仅影响 RTSP 代理。
+
+#### 取值
+
+- `passthrough`（默认，等同于不传）：seek 参数始终作为 URL 查询透传到上游
+- `range[(<TZ>[/<seconds>])]`：满足窗口条件时改走 `Range: clock=...Z-` 头；不满足则回退为透传
+
+`range(...)` 括号内可省略，按以下规则解析：
+
+- `range`、`range()` — 默认，TZ 回退到 UA `TZ/`，没有再回退到 UTC；窗口 3600 秒
+- `range(UTC+8)`、`range(UTC-5)`、`range(UTC)` — 显式指定时区，窗口默认 3600 秒
+- `range(7200)` — 显式指定窗口（秒），TZ 回退（同上）
+- `range(UTC+8/7200)` — 同时指定 TZ 与窗口
+- `range(/7200)` — TZ 回退，显式窗口
+
+窗口取值范围 `[1, 86400]` 秒。无法识别的值会被记 warn 日志并按 `passthrough` 处理，不会让请求失败。
+
+> [!IMPORTANT]
+> `range(...)` 里的 TZ **只用于「近实时」窗口判定**。当起始时间落在窗口外回退到透传时，行为完全等同于不传 `r2h-seek-mode`，**不会**用 `range()` 里的 TZ 改写透传字符串——这样 `r2h-seek-mode=range(...)` 是纯增量优化，不会让原本能正常透传的查询变得更糟。
+
+#### 示例
+
+```url
+# 显式开启 RTSP 近实时优化，按 UTC+8 解析时间，窗口 1 小时
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(UTC%2B8/3600)
+
+# 仅指定窗口，时区从 UA TZ/ 标记或 UTC 回退
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(7200)
+```
+
 ### r2h-start 参数（可选，仅 RTSP）
 
 用于指定从特定时间点开始播放 RTSP 流，实现续播功能。此参数值会作为 NPT（Normal Play Time）格式的时间点，在 RTSP PLAY 请求中通过 `Range: npt=<时间点>-` 头发送给 RTSP 服务器。此参数仅对 RTSP 代理有效。
 
-为了改善对中国境内大多数运营商 RTSP 服务器兼容性，如果同一个 RTSP 请求里还带了“距离当前时刻小于 1 小时”的 seek 参数（包括 `playseek`、`tvdr` 和自定义 `r2h-seek-name`），则 `r2h-start` 会被忽略，改由 seek 的起始时间生成 `Range: clock=` 头。
+如果同一个 RTSP 请求里还带了 `r2h-seek-mode=range(...)` 且 seek 起始时间落在窗口内，则 `r2h-start` 会被忽略，改由 seek 的起始时间生成 `Range: clock=` 头。
 
 #### 示例
 
@@ -170,13 +202,16 @@ playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
 
 ### RTSP recent seek 特殊处理
 
-对于 RTSP 代理，seek 参数除了可以像 HTTP 代理那样继续作为 URL 参数传给上游，还支持一个“近实时”分支。这里的 seek 参数包括 `playseek`、`tvdr`，以及通过 `r2h-seek-name` 指定的自定义参数：
+对于 RTSP 代理，seek 参数除了可以像 HTTP 代理那样继续作为 URL 参数传给上游，还支持一个「近实时」分支。这里的 seek 参数包括 `playseek`、`tvdr`，以及通过 `r2h-seek-name` 指定的自定义参数：
 
-- 当 seek 起始时间满足“当前时间 - 起始时间 < 3600 秒”时，rtp2httpd 不再把该 seek 参数透传到 RTSP 上游 URL
+- 此分支默认**关闭**，需通过 `r2h-seek-mode=range(...)` 显式开启（参见上方「r2h-seek-mode 参数」）
+- 启用后，当 seek 起始时间满足「当前时间 − 起始时间 < 窗口秒数」时，rtp2httpd 不再把该 seek 参数透传到 RTSP 上游 URL
 - 该分支只取 seek 的起始时间，结束时间会被忽略
 - RTSP `PLAY` 请求会发送 `Range: clock=<yyyyMMddTHHmmssZ>-`
-- 当 seek 恰好等于 1 小时前时，不触发该分支，仍按普通 URL 参数透传
+- 起始时间所属时区按 `range(<TZ>/...)` 显式声明 → UA `TZ/UTC+N` → UTC 的顺序回退
+- 当 seek 起始时间恰好等于窗口边界（即 `now − begin == window`）时，不触发该分支，仍按普通 URL 参数透传
 - 如果 seek 无法解析，仍保持原有透传行为
+- `r2h-seek-offset` 会同时影响窗口判定与最终输出的 `clock=` 时间——offset 后的时间一旦落出窗口同样回退为透传
 
 ### 时区识别
 

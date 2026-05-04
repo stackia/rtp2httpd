@@ -174,6 +174,8 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, se
     }
 
     if (service_parse_seek_value(service->seek_param_value, service->seek_offset_seconds, service->user_agent,
+                                 service->seek_mode, service->seek_mode_tz_explicit,
+                                 service->seek_mode_tz_offset_seconds, service->seek_mode_window_seconds,
                                  &seek_parse_result) != 0) {
       logger(LOG_ERROR, "HTTP Proxy: Failed to parse seek parameters");
       return -1;
@@ -253,6 +255,8 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, se
       }
 
       if (service_parse_seek_value(service->seek_param_value, service->seek_offset_seconds, service->user_agent,
+                                   service->seek_mode, service->seek_mode_tz_explicit,
+                                   service->seek_mode_tz_offset_seconds, service->seek_mode_window_seconds,
                                    &seek_parse_result) != 0) {
         logger(LOG_ERROR, "RTSP: Failed to parse seek parameters");
         return -1;

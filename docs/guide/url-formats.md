@@ -65,6 +65,9 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000GM
 # 自定义时移参数名 + 时间偏移
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r2h-seek-name=seek&r2h-seek-offset=3600
 
+# 显式开启 RTSP 近实时优化（参见 r2h-seek-mode 文档）
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(UTC%2B8/3600)
+
 # 指定上游网络接口
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-ifname=eth0
 ```

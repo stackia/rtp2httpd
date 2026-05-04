@@ -65,6 +65,9 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000GM
 # Custom time-shift parameter name + time offset
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r2h-seek-name=seek&r2h-seek-offset=3600
 
+# Explicitly enable the RTSP near-realtime optimization (see r2h-seek-mode docs)
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(UTC%2B8/3600)
+
 # Specify upstream network interface
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-ifname=eth0
 ```

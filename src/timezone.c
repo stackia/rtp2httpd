@@ -10,11 +10,52 @@
 #include <string.h>
 #include <time.h>
 
-/* Constants for time calculations */
-#define SECONDS_PER_HOUR 3600
-#define SECONDS_PER_DAY 86400
-#define MAX_TIMEZONE_OFFSET_SECONDS (TIMEZONE_MAX_OFFSET_HOURS * SECONDS_PER_HOUR)
-#define MIN_TIMEZONE_OFFSET_SECONDS (TIMEZONE_MIN_OFFSET_HOURS * SECONDS_PER_HOUR)
+#define MAX_TIMEZONE_OFFSET_SECONDS (TIMEZONE_MAX_OFFSET_HOURS * 3600)
+#define MIN_TIMEZONE_OFFSET_SECONDS (TIMEZONE_MIN_OFFSET_HOURS * 3600)
+
+int timezone_parse_utc_offset(const char *str, int *tz_offset_seconds) {
+  if (!str || !tz_offset_seconds) {
+    return -1;
+  }
+
+  *tz_offset_seconds = 0;
+
+  if (strncmp(str, "UTC", 3) != 0) {
+    return -1;
+  }
+
+  str += 3;
+
+  if (*str == '\0') {
+    return 0;
+  }
+
+  /* Bare "UTC" followed by anything other than +/- means the offset spec ended. */
+  if (*str != '+' && *str != '-') {
+    return 0;
+  }
+
+  int sign = (*str == '+') ? 1 : -1;
+  str++;
+
+  char *endptr;
+  long offset_hours = strtol(str, &endptr, 10);
+  if (endptr == str) {
+    return -1;
+  }
+
+  if (offset_hours < 0 || offset_hours > abs(TIMEZONE_MAX_OFFSET_HOURS)) {
+    return -1;
+  }
+
+  int seconds = (int)(sign * offset_hours * 3600);
+  if (seconds < MIN_TIMEZONE_OFFSET_SECONDS || seconds > MAX_TIMEZONE_OFFSET_SECONDS) {
+    return -1;
+  }
+
+  *tz_offset_seconds = seconds;
+  return 0;
+}
 
 /*
  * Parse timezone information from User-Agent header
@@ -47,50 +88,15 @@ int timezone_parse_from_user_agent(const char *user_agent, int *tz_offset_second
 
   tz_marker += 3; /* Skip "TZ/" */
 
-  /* Check for UTC+offset or UTC-offset format */
-  if (strncmp(tz_marker, "UTC", 3) == 0) {
-    tz_marker += 3; /* Skip "UTC" */
-
-    /* Check for offset */
-    if (*tz_marker == '+' || *tz_marker == '-') {
-      int sign = (*tz_marker == '+') ? 1 : -1;
-      tz_marker++;
-
-      /* Parse offset hours */
-      int offset_hours = 0;
-      if (sscanf(tz_marker, "%d", &offset_hours) == 1) {
-        /* Validate offset range */
-        if (offset_hours < 0 || offset_hours > abs(TIMEZONE_MAX_OFFSET_HOURS)) {
-          logger(LOG_ERROR, "Timezone: Invalid offset hours %d (must be 0-%d)", offset_hours,
-                 abs(TIMEZONE_MAX_OFFSET_HOURS));
-          return -1;
-        }
-
-        *tz_offset_seconds = sign * offset_hours * SECONDS_PER_HOUR;
-
-        /* Double-check final offset is in valid range */
-        if (*tz_offset_seconds < MIN_TIMEZONE_OFFSET_SECONDS || *tz_offset_seconds > MAX_TIMEZONE_OFFSET_SECONDS) {
-          logger(LOG_ERROR, "Timezone: Calculated offset %d seconds out of range [%d, %d]", *tz_offset_seconds,
-                 MIN_TIMEZONE_OFFSET_SECONDS, MAX_TIMEZONE_OFFSET_SECONDS);
-          *tz_offset_seconds = 0;
-          return -1;
-        }
-
-        logger(LOG_DEBUG, "Timezone: Parsed timezone offset: UTC%+d (%d seconds)", sign * offset_hours,
-               *tz_offset_seconds);
-        return 0;
-      }
-    } else {
-      /* Just "UTC" with no offset */
-      logger(LOG_DEBUG, "Timezone: Parsed timezone: UTC (0 seconds)");
-      return 0;
-    }
+  if (timezone_parse_utc_offset(tz_marker, tz_offset_seconds) != 0) {
+    logger(LOG_INFO, "Timezone: Failed to parse timezone from User-Agent");
+    *tz_offset_seconds = 0;
+    return -1;
   }
 
-  /* Failed to parse timezone */
-  logger(LOG_INFO, "Timezone: Failed to parse timezone from User-Agent");
-  *tz_offset_seconds = 0;
-  return -1;
+  logger(LOG_DEBUG, "Timezone: Parsed timezone offset: UTC%+d (%d seconds)", *tz_offset_seconds / 3600,
+         *tz_offset_seconds);
+  return 0;
 }
 
 /*

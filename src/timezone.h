@@ -19,6 +19,22 @@
 #define TIMEZONE_MIN_OFFSET_HOURS -12 /* Minimum timezone offset (UTC-12) */
 
 /*
+ * Parse a UTC offset string like "UTC", "UTC+8", "UTC-5".
+ *
+ * Recognized syntax: literal "UTC" optionally followed by '+' or '-' and an
+ * integer hour count in [0, TIMEZONE_MAX_OFFSET_HOURS].
+ *
+ * Thread Safety: Thread-safe
+ *
+ * @param str Input pointer to the start of the offset spec (must not be NULL).
+ *            Parsing stops at the first character that is not part of the spec.
+ * @param tz_offset_seconds Output: timezone offset in seconds from UTC.
+ *                          Must not be NULL.
+ * @return 0 on success, -1 on parse failure or out-of-range value.
+ */
+int timezone_parse_utc_offset(const char *str, int *tz_offset_seconds);
+
+/*
  * Parse timezone information from User-Agent header
  *
  * Supports patterns like:
