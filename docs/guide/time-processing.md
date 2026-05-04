@@ -158,6 +158,8 @@ playseek=1704096000-1704099600
 playseek=20240101120000GMT-20240101130000GMT
 ```
 
+`GMT` 后缀是「自带时区」标记，语义等同于 ISO 8601 的 `Z` 后缀：该值固定按 UTC 解释，**任何**外部时区配置（User-Agent `TZ/UTC±N`、`r2h-seek-mode=range(<TZ>)`）都会被忽略。`r2h-seek-offset` 仍然生效（它是用户显式声明的时间平移，不是时区覆盖）。
+
 ### 4. 简化 ISO 8601 格式（yyyyMMddTHHmmss）
 
 紧凑的 ISO 8601 格式，不含短横线和冒号分隔符：
@@ -208,7 +210,7 @@ playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
 - 启用后，当 seek 起始时间满足「当前时间 − 起始时间 < 窗口秒数」时，rtp2httpd 不再把该 seek 参数透传到 RTSP 上游 URL
 - 该分支只取 seek 的起始时间，结束时间会被忽略
 - RTSP `PLAY` 请求会发送 `Range: clock=<yyyyMMddTHHmmssZ>-`
-- 起始时间所属时区按 `range(<TZ>/...)` 显式声明 → UA `TZ/UTC+N` → UTC 的顺序回退。该回退链对 14 位 `yyyyMMddHHmmss`、`yyyyMMddHHmmssGMT`，以及 ISO 8601 不带 `Z`/`±HH:MM` 的形式都生效（注意：`GMT` 后缀只是个标记，并不会让该值被当作「自带时区」处理）。**只有** ISO 8601 输入显式带 `Z` 或 `±HH:MM` 时区后缀，才会用输入里的时区，`range(<TZ>)` 与 UA `TZ/` 都被忽略。
+- 起始时间所属时区按 `range(<TZ>/...)` 显式声明 → UA `TZ/UTC+N` → UTC 的顺序回退。该回退链只对**不自带时区**的输入生效：14 位 `yyyyMMddHHmmss`，以及 ISO 8601 不带 `Z`/`±HH:MM` 的形式。**自带时区**的输入（`yyyyMMddHHmmssGMT`、ISO 8601 带 `Z` 或 `±HH:MM` 后缀）会用输入里的时区，`range(<TZ>)` 与 UA `TZ/` 都被忽略。
 - 当 seek 起始时间恰好等于窗口边界（即 `now − begin == window`）时，不触发该分支，仍按普通 URL 参数透传
 - 如果 seek 无法解析，仍保持原有透传行为
 - `r2h-seek-offset` 会同时影响窗口判定与最终输出的 `clock=` 时间——offset 后的时间一旦落出窗口同样回退为透传
@@ -232,7 +234,7 @@ playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
 >
 > 1. **解析时间格式** — 识别参数值属于哪种格式：Unix 时间戳（≤10 位数字）、`yyyyMMddHHmmss`（14 位数字）、`yyyyMMddHHmmssGMT`（14 位 + GMT 后缀）、简化 ISO 8601（`yyyyMMddTHHmmss`）、完整 ISO 8601（`yyyy-MM-ddTHH:mm:ss`）
 > 2. **解析 User-Agent 时区** — 从 User-Agent 中查找 `TZ/` 标记，提取 UTC 偏移量（秒）。如果没有时区信息，默认为 0（UTC）
-> 3. **时区转换** — Unix 时间戳和 ISO 8601 带时区的格式跳过转换；`yyyyMMddHHmmss` 和 ISO 8601 无时区的格式应用 User-Agent 时区转换
+> 3. **时区转换** — 自带时区的格式（Unix 时间戳、`yyyyMMddHHmmssGMT`、ISO 8601 带 `Z`/`±HH:MM`）跳过转换；不自带时区的格式（`yyyyMMddHHmmss` 和 ISO 8601 无时区后缀）应用 User-Agent 时区转换
 > 4. **应用 `r2h-seek-offset`** — 如果指定了该参数，对所有格式应用额外的秒数偏移（可正可负）
 > 5. **格式化输出** — 保持原始格式，保留原有时区后缀（如有）
 > 6. **附加到上游 URL** — 将处理后的时间参数作为查询参数附加到上游请求中（RTSP 发送 DESCRIBE 请求，HTTP 转发给上游服务器）

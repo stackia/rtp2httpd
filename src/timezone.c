@@ -338,8 +338,13 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
       return -1;
     }
 
-    /* Apply timezone conversion and additional offset */
-    timestamp -= tz_offset_seconds;
+    /* The GMT suffix marks the value as already in UTC, so any caller-supplied
+     * tz_offset_seconds (UA TZ or r2h-seek-mode TZ) must be ignored — same
+     * contract as ISO-8601 with a Z / ±HH:MM suffix. r2h-seek-offset still
+     * applies because it is a deliberate per-request shift, not a TZ override. */
+    if (!has_gmt_suffix) {
+      timestamp -= tz_offset_seconds;
+    }
     timestamp += additional_offset_seconds;
 
     /* Convert back to yyyyMMddHHmmss format */
@@ -357,10 +362,8 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
     /* Add GMT suffix back if original had it */
     if (has_gmt_suffix) {
       snprintf(output_time, output_size, "%sGMT", temp_time);
-      logger(LOG_DEBUG,
-             "Timezone: yyyyMMddHHmmssGMT '%s' (TZ offset %d) + seek offset %d "
-             "= '%s'",
-             input_time, -tz_offset_seconds, additional_offset_seconds, output_time);
+      logger(LOG_DEBUG, "Timezone: yyyyMMddHHmmssGMT '%s' (treated as UTC) + seek offset %d = '%s'", input_time,
+             additional_offset_seconds, output_time);
     } else {
       strncpy(output_time, temp_time, output_size - 1);
       output_time[output_size - 1] = '\0';
@@ -659,6 +662,8 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int add
   /* Format 2: yyyyMMddHHmmss or yyyyMMddHHmmssGMT */
   if ((input_len == 14 && digit_count == 14) ||
       (input_len == 17 && digit_count == 14 && strcmp(input_time + 14, "GMT") == 0)) {
+    int has_gmt_suffix = (input_len == 17);
+
     if (sscanf(input_time, "%4d%2d%2d%2d%2d%2d", &year, &month, &day, &hour, &min, &sec) != 6) {
       return -1;
     }
@@ -677,7 +682,11 @@ int timezone_parse_to_utc(const char *input_time, int tz_offset_seconds, int add
     if (timestamp == -1)
       return -1;
 
-    timestamp -= tz_offset_seconds;
+    /* GMT suffix is a self-contained UTC marker — same contract as
+     * ISO-8601 Z / ±HH:MM. Skip the caller-supplied tz_offset_seconds. */
+    if (!has_gmt_suffix) {
+      timestamp -= tz_offset_seconds;
+    }
     timestamp += additional_offset_seconds;
     *out_utc = timestamp;
     return 0;

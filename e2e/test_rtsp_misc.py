@@ -916,6 +916,36 @@ class TestRTSPSeekMode:
         finally:
             rtsp.stop()
 
+    def test_range_with_gmt_suffix_input_ignores_explicit_tz(self, shared_r2h):
+        """yyyyMMddHHmmssGMT is a self-contained UTC marker (same contract as
+        ISO-8601 `Z`). Both r2h-seek-mode=range(<TZ>) and UA TZ must be
+        ignored when the input carries a GMT suffix."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500  # 25 min ago, within 1h window
+            gmt_str = _format_yyyyMMddHHmmss(start_ts) + "GMT"
+            # range(UTC+9) AND a UA TZ that disagrees with both the range TZ
+            # and the GMT suffix — the GMT suffix wins regardless.
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B9/3600)" % (rtsp.port, gmt_str)
+
+            stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
+            )
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts), (
+                "GMT suffix must take precedence over both range(<TZ>) and UA TZ — "
+                "got Range header %r" % play_reqs[0]["headers"].get("Range")
+            )
+        finally:
+            rtsp.stop()
+
 
 class TestRTSPSeekModeQueryMerge:
     """Verify the request-wins precedence rule for the configured-service

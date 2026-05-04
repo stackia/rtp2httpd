@@ -158,6 +158,8 @@ playseek=1704096000-1704099600
 playseek=20240101120000GMT-20240101130000GMT
 ```
 
+The `GMT` suffix marks the value as carrying its own timezone, with semantics equivalent to the ISO 8601 `Z` suffix: the value is always interpreted as UTC, and **any** external timezone configuration (User-Agent `TZ/UTC±N`, `r2h-seek-mode=range(<TZ>)`) is ignored. `r2h-seek-offset` still applies (it is a user-declared time shift, not a timezone override).
+
 ### 4. Compact ISO 8601 Format (yyyyMMddTHHmmss)
 
 Compact ISO 8601 format without hyphen and colon separators:
@@ -208,7 +210,7 @@ For the RTSP proxy, in addition to passing seek parameters to the upstream as UR
 - When enabled, if the seek start time satisfies "current time − start time < window seconds", rtp2httpd will no longer pass the seek parameter through to the upstream RTSP URL
 - This branch only uses the seek start time; the end time is ignored
 - The RTSP `PLAY` request will send `Range: clock=<yyyyMMddTHHmmssZ>-`
-- The timezone of the start time is resolved in the following fallback order: explicit `range(<TZ>/...)` declaration → UA `TZ/UTC+N` → UTC. This fallback chain applies to 14-digit `yyyyMMddHHmmss`, `yyyyMMddHHmmssGMT`, and ISO 8601 without a `Z`/`±HH:MM` suffix (note: the `GMT` suffix is just a label and does **not** cause the value to be treated as having an embedded timezone). **Only** ISO 8601 inputs that explicitly carry a `Z` or `±HH:MM` timezone suffix bypass the fallback chain — for those, the embedded timezone is used and both `range(<TZ>)` and the UA `TZ/` marker are ignored.
+- The timezone of the start time is resolved in the following fallback order: explicit `range(<TZ>/...)` declaration → UA `TZ/UTC+N` → UTC. This fallback chain only applies to inputs **without an embedded timezone**: 14-digit `yyyyMMddHHmmss` and ISO 8601 without a `Z`/`±HH:MM` suffix. Inputs **with an embedded timezone** (`yyyyMMddHHmmssGMT`, ISO 8601 with a `Z` or `±HH:MM` suffix) use the timezone from the input itself; both `range(<TZ>)` and the UA `TZ/` marker are ignored.
 - When the seek start time is exactly at the window boundary (i.e. `now − begin == window`), this branch is not triggered and the parameter is passed through as a normal URL parameter
 - If the seek value cannot be parsed, the original pass-through behavior is preserved
 - `r2h-seek-offset` affects both the window check and the final `clock=` time written out — once the offset-adjusted time falls outside the window, the request falls back to passthrough as well
@@ -232,7 +234,7 @@ If there is no timezone information in the User-Agent, no timezone conversion is
 >
 > 1. **Parse time format** — Identify which format the parameter value belongs to: Unix timestamp (≤10 digits), `yyyyMMddHHmmss` (14 digits), `yyyyMMddHHmmssGMT` (14 digits + GMT suffix), compact ISO 8601 (`yyyyMMddTHHmmss`), full ISO 8601 (`yyyy-MM-ddTHH:mm:ss`)
 > 2. **Parse User-Agent timezone** — Search for the `TZ/` marker in the User-Agent, extract UTC offset (seconds). If no timezone information, defaults to 0 (UTC)
-> 3. **Timezone conversion** — Unix timestamp and ISO 8601 with timezone formats skip conversion; `yyyyMMddHHmmss` and ISO 8601 without timezone formats apply User-Agent timezone conversion
+> 3. **Timezone conversion** — Formats with an embedded timezone (Unix timestamp, `yyyyMMddHHmmssGMT`, ISO 8601 with `Z`/`±HH:MM`) skip conversion; formats without an embedded timezone (`yyyyMMddHHmmss` and ISO 8601 without a timezone suffix) have the User-Agent timezone conversion applied
 > 4. **Apply `r2h-seek-offset`** — If this parameter is specified, apply additional second offset (can be positive or negative) to all formats
 > 5. **Format output** — Maintain original format, preserve original timezone suffix (if any)
 > 6. **Append to upstream URL** — Append the processed time parameter as a query parameter to the upstream request (RTSP sends DESCRIBE request, HTTP forwards to upstream server)

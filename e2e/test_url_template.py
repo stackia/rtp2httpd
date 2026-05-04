@@ -1310,8 +1310,9 @@ class TestHTTPQueryAppendTimezoneAndFormat:
         finally:
             upstream.stop()
 
-    def test_gmt_suffix_with_tz_conversion(self, shared_r2h):
-        """yyyyMMddHHmmssGMT with TZ/UTC+8 should convert and keep GMT suffix."""
+    def test_gmt_suffix_ignores_ua_tz(self, shared_r2h):
+        """yyyyMMddHHmmssGMT is a self-contained UTC marker; UA TZ must NOT
+        shift the value, mirroring the ISO-8601 `Z` suffix contract."""
         upstream = _make_upstream("/stream")
         upstream.start()
         try:
@@ -1325,7 +1326,30 @@ class TestHTTPQueryAppendTimezoneAndFormat:
             )
 
             path = _get_upstream_path(upstream)
-            assert _extract_query_param(path, "playseek") == "20240101040000GMT-20240101050000GMT"
+            assert _extract_query_param(path, "playseek") == "20240101120000GMT-20240101130000GMT"
+        finally:
+            upstream.stop()
+
+    def test_gmt_suffix_with_ua_tz_still_applies_seek_offset(self, shared_r2h):
+        """GMT suffix overrides UA TZ, but r2h-seek-offset is a deliberate
+        per-request shift and must still apply (it is not a TZ override)."""
+        upstream = _make_upstream("/stream")
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream?playseek=20240101120000GMT-20240101130000GMT&r2h-seek-offset=3600"
+            ) % upstream.port
+            http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                timeout=_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
+            )
+
+            path = _get_upstream_path(upstream)
+            # 12:00 GMT (UA TZ ignored) + 3600s = 13:00 GMT, NOT 05:00 GMT.
+            assert _extract_query_param(path, "playseek") == "20240101130000GMT-20240101140000GMT"
         finally:
             upstream.stop()
 
@@ -2414,8 +2438,9 @@ class TestRTSPQueryAppendOffsetAndFormat:
         finally:
             rtsp.stop()
 
-    def test_gmt_suffix_with_tz_conversion(self, shared_r2h):
-        """yyyyMMddHHmmssGMT with TZ/UTC+8 should convert and keep GMT suffix."""
+    def test_gmt_suffix_ignores_ua_tz(self, shared_r2h):
+        """yyyyMMddHHmmssGMT is a self-contained UTC marker; UA TZ must NOT
+        shift the value in RTSP either, mirroring the ISO-8601 `Z` contract."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
@@ -2430,7 +2455,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
             )
 
             uri = _get_describe_uri(rtsp)
-            assert _extract_query_param(uri, "playseek") == "20240101040000GMT-20240101050000GMT"
+            assert _extract_query_param(uri, "playseek") == "20240101120000GMT-20240101130000GMT"
         finally:
             rtsp.stop()
 
