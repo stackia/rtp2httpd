@@ -858,21 +858,18 @@ int connection_route_and_start(connection_t *c) {
       service = service_create_from_udpxy_url(c->http_req.url);
     }
   } else {
-    /* Found configured service (RTP or RTSP) - try to merge query params if
-     * present */
+    /* Found configured service (RTP or RTSP) - merge with request query (or
+     * just clone the configured service if the request has no query params).
+     * service_create_with_query_merge returns NULL strictly on failure (e.g.
+     * merged URL too long); silently dropping a failure here would let the
+     * connection proceed with the configured service while the user's
+     * overrides are discarded, so we treat NULL as a hard error. */
     logger(LOG_INFO, "Service matched: %s", service->url);
-    service_t *merged_service = service_create_with_query_merge(service, url, service->service_type);
-    if (merged_service) {
-      service = merged_service;
-    } else {
-      /* No query params to merge - clone the configured service so connection
-       * owns its copy */
-      service = service_clone(service);
-      if (!service) {
-        logger(LOG_ERROR, "Failed to clone service for connection");
-        http_send_500(c);
-        return 0;
-      }
+    service = service_create_with_query_merge(service, url, service->service_type);
+    if (!service) {
+      logger(LOG_ERROR, "Failed to merge query params for service");
+      http_send_500(c);
+      return 0;
     }
   }
 

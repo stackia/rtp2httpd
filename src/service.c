@@ -1374,8 +1374,14 @@ service_t *service_create_with_query_merge(service_t *configured_service, const 
   /* Find query parameters in request URL */
   query_start = strchr(request_url, '?');
   if (!query_start) {
-    /* No query params in request, no merge needed */
-    return NULL;
+    /* No request query params: nothing to merge, just hand back a fresh clone
+     * of the configured service. We deliberately do NOT use NULL as the "no
+     * merge needed" sentinel — NULL is reserved strictly for failures (e.g.
+     * merged URL too long for the 2048-byte buffer). Otherwise the caller
+     * cannot tell apart "user sent no params" from "user's params were
+     * silently discarded by an overflow", and the latter would let long
+     * requests behave as if the client never sent its overrides. */
+    return service_clone(configured_service);
   }
 
   /* Find query parameters in configured service's URL */
