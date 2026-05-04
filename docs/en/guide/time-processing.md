@@ -34,12 +34,11 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=202401011200
 
 **Limitations**:
 
-1. **Not every RTSP server supports it** — this is the fundamental reason it is off by default and must be opted into
-2. **Servers usually cap the catch-up window** (commonly 1–3 hours, varies by operator). Requests beyond that cap automatically fall back to Playseek passthrough in rtp2httpd, so the request never fails
-3. **rtp2httpd has its own window** (default 1 hour, adjustable via `r2h-seek-mode=range(<TZ>/<seconds>)`): only start times within the window go through Range Seek; otherwise it falls back to passthrough
+1. **Not every RTSP server supports it** — this is the fundamental reason it is off by default and must be opted into. Once the Range Seek path engages, rtp2httpd unconditionally sends the `Range: clock=...` header upstream; if upstream doesn't recognize it, the request fails rather than falling back automatically
+2. **rtp2httpd has its own client-side window** (default 1 hour, adjustable via `r2h-seek-mode=range(<TZ>/<seconds>)`): only start times within the window go through Range Seek; everything else uses Playseek passthrough. Sizing the window so it doesn't exceed what the upstream actually supports (typically 1–3 hours, varies by operator) avoids hitting upstream with seeks too far in the past
 
 > [!TIP]
-> Enabling Range Seek is a "purely additive optimization" — within the window it takes the optimized path, and outside the window or when upstream doesn't support it, it falls back to Playseek passthrough with behavior **identical** to never having enabled Range Seek in the first place. So even if you're not sure whether your upstream supports it, enabling it has no downside — feel free to turn it on.
+> Outside rtp2httpd's client-side window, behavior is **identical** to never enabling Range Seek (Playseek passthrough). Inside the window, an RTSP request with a `Range: clock=` header is issued — only enable this when the upstream is known to support RTSP `Range` headers, and size the window to stay within the upstream's actual catch-up coverage.
 
 > [!NOTE]
 > Range Seek mode only looks at the **start time** of the seek — the end time is ignored, since live stitching takes over from there.

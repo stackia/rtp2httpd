@@ -1271,7 +1271,7 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
     logger(LOG_ERROR, "RTSP URL too long: %zu bytes", strlen(url_part) + 7);
     goto cleanup;
   }
-  snprintf(rtsp_url, sizeof(rtsp_url), "rtsp://%.1000s", url_part);
+  snprintf(rtsp_url, sizeof(rtsp_url), "rtsp://%s", url_part);
 
   /* Store RTSP URL and seek parameters */
   result->rtsp_url = strdup(rtsp_url);
@@ -1372,7 +1372,7 @@ service_t *service_create_with_query_merge(service_t *configured_service, const 
     /* No request query params: nothing to merge, just hand back a fresh clone
      * of the configured service. We deliberately do NOT use NULL as the "no
      * merge needed" sentinel — NULL is reserved strictly for failures (e.g.
-     * merged URL too long for the 2048-byte buffer). Otherwise the caller
+     * merged URL too long for HTTP_URL_BUFFER_SIZE). Otherwise the caller
      * cannot tell apart "user sent no params" from "user's params were
      * silently discarded by an overflow", and the latter would let long
      * requests behave as if the client never sent its overrides. */
@@ -1565,7 +1565,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
 
   /* Build and store full RTP URL (rtp://) - r2h-ifname already stripped */
   char rtp_url[HTTP_URL_BUFFER_SIZE];
-  snprintf(rtp_url, sizeof(rtp_url), "rtp://%.1000s", url_part);
+  snprintf(rtp_url, sizeof(rtp_url), "rtp://%s", url_part);
   result->rtp_url = strdup(rtp_url);
   if (!result->rtp_url) {
     logger(LOG_ERROR, "Failed to allocate memory for RTP URL");

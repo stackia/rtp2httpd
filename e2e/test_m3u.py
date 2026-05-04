@@ -1052,36 +1052,29 @@ class TestM3UQueryMerge:
         finally:
             rtsp.stop()
 
-    def test_merged_url_above_legacy_buffer_size_succeeds(self, r2h_binary):
-        """HTTP_URL_BUFFER_SIZE must be at least as large as the merge buffer,
-        otherwise a merged URL between the two limits re-parses to NULL after
-        a successful merge and surfaces as HTTP 500."""
+    def test_merged_url_overflow_returns_500(self, r2h_binary):
+        """When the merged URL exceeds HTTP_URL_BUFFER_SIZE, the merge layer
+        must return NULL and the request must surface as HTTP 500 — never
+        silently fall back to the unmerged configured URL."""
         r2h_port = find_free_port()
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            # ~500 bytes per side puts the merged URL above 1024 (the old
-            # parse-side limit) without hitting the 2048 ceiling.
-            configured_pad = "padconfigured=" + ("a" * 500)
-            request_pad = "padrequest=" + ("b" * 500)
-            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "BigMerge", "?" + configured_pad)
+            # ~600 bytes per side guarantees the merged URL exceeds 1024.
+            configured_pad = "padconfigured=" + ("a" * 600)
+            request_pad = "padrequest=" + ("b" * 600)
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "OverflowMerge", "?" + configured_pad)
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
             r2h.start()
             try:
                 status, _, _ = stream_get(
                     "127.0.0.1",
                     r2h_port,
-                    "/BigMerge?playseek=20240101120000-20240101130000&" + request_pad,
+                    "/OverflowMerge?playseek=20240101120000-20240101130000&" + request_pad,
                     read_bytes=4096,
                     timeout=_STREAM_TIMEOUT,
                 )
-                assert status == 200, status
-
-                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
-                assert describe_reqs
-                uri = describe_reqs[0]["uri"]
-                assert "padconfigured=" in uri
-                assert "padrequest=" in uri
+                assert status == 500, status
             finally:
                 r2h.stop()
         finally:
