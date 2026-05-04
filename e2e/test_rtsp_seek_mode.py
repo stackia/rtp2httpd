@@ -1,27 +1,4 @@
-"""
-E2E tests for RTSP seek-mode opt-in semantics and recent-clock playback.
-
-Covers:
-
-- `TestRTSPRecentPlayseek` — recent-clock path coverage across the
-  supported seek parameter names (`playseek`, `Playseek`, `tvdr`, and
-  the user-defined name via `r2h-seek-name`), interaction with
-  `r2h-start`, and the window-boundary / no-opt-in passthrough cases.
-- `TestRTSPSeekMode` — value-syntax grammar of `r2h-seek-mode`
-  (`passthrough` / `range` / `range(N)` / `range(UTC±N)` /
-  `range(UTC±N/N)`), TZ fallback chain, window edge cases, and
-  interaction with `r2h-seek-offset`. Input-format-specific behavior
-  (URL templates, ISO-8601 `Z` / `yyyyMMddHHmmssGMT` self-contained TZ
-  contracts) lives in `test_url_template.py` next to the other URL /
-  format tests.
-- `TestRTSPSeekModeQueryMerge` — seek-mode-flavored coverage of the
-  M3U-configured + request query-merge path: request-wins precedence
-  for `r2h-seek-mode` / `r2h-seek-offset` / `r2h-seek-name`, plus the
-  per-field strip checks for the two non-seek r2h-* params (ifname,
-  ifname-fcc). Generic merge-mechanism tests (buffer sizing, log-only
-  request-wins for ifname / ifname-fcc) live in
-  `test_m3u.py::TestM3UQueryMerge`.
-"""
+"""E2E tests for RTSP seek-mode opt-in semantics and recent-clock playback."""
 
 import time
 
@@ -31,6 +8,7 @@ from helpers import (
     MockRTSPServer,
     R2HProcess,
     find_free_port,
+    make_m3u_rtsp_config,
     stream_get,
 )
 
@@ -465,29 +443,8 @@ class TestRTSPSeekMode:
 
 
 class TestRTSPSeekModeQueryMerge:
-    """Seek-mode-specific behaviours of the configured-service query-merge
-    path: request-wins precedence and no-leak coverage for r2h-seek-mode,
-    r2h-seek-offset, and r2h-seek-name (plus the per-field strip checks for
-    r2h-ifname / r2h-ifname-fcc on this same merge code path).
-
-    Generic merge mechanism tests that aren't tied to a specific feature
-    (e.g. buffer sizing, log-only request-wins coverage for r2h-ifname /
-    r2h-ifname-fcc) live in test_m3u.py::TestM3UQueryMerge."""
-
-    @staticmethod
-    def _config(r2h_port: int, rtsp_port: int, channel_name: str, configured_url_query: str) -> str:
-        return (
-            "[global]\n"
-            "verbosity = 4\n"
-            "\n"
-            "[bind]\n"
-            "* %d\n"
-            "\n"
-            "[services]\n"
-            "#EXTM3U\n"
-            "#EXTINF:-1,%s\n"
-            "rtsp://127.0.0.1:%d/stream%s\n"
-        ) % (r2h_port, channel_name, rtsp_port, configured_url_query)
+    """Configured-service query-merge precedence and no-leak coverage for the
+    seek-related r2h-* parameters."""
 
     def test_configured_seek_mode_applies_when_request_silent(self, r2h_binary):
         """When the request supplies no r2h-seek-mode, the configured value
@@ -496,7 +453,7 @@ class TestRTSPSeekModeQueryMerge:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            config = self._config(r2h_port, rtsp.port, "SeekModeFallback", "?r2h-seek-mode=range(UTC%2B8/3600)")
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "SeekModeFallback", "?r2h-seek-mode=range(UTC%2B8/3600)")
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
             r2h.start()
             try:
@@ -525,7 +482,7 @@ class TestRTSPSeekModeQueryMerge:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            config = self._config(r2h_port, rtsp.port, "SeekModeMerge", "?r2h-seek-mode=range(UTC%2B8/3600)")
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "SeekModeMerge", "?r2h-seek-mode=range(UTC%2B8/3600)")
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
             r2h.start()
             try:
@@ -555,7 +512,7 @@ class TestRTSPSeekModeQueryMerge:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            config = self._config(r2h_port, rtsp.port, "SeekModeOff", "?r2h-seek-mode=passthrough")
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "SeekModeOff", "?r2h-seek-mode=passthrough")
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
             r2h.start()
             try:
@@ -585,7 +542,7 @@ class TestRTSPSeekModeQueryMerge:
         rtsp.start()
         try:
             # Configured offset = 3600 (1h forward).
-            config = self._config(r2h_port, rtsp.port, "OffsetMerge", "?r2h-seek-offset=3600")
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "OffsetMerge", "?r2h-seek-offset=3600")
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
             r2h.start()
             try:
@@ -650,7 +607,7 @@ class TestRTSPSeekModeQueryMerge:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            config = self._config(r2h_port, rtsp.port, "IfnameFallback", "?r2h-ifname=lo0")
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "IfnameFallback", "?r2h-ifname=lo0")
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
             r2h.start()
             try:
@@ -674,7 +631,7 @@ class TestRTSPSeekModeQueryMerge:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            config = self._config(r2h_port, rtsp.port, "SeekNameFallback", "?r2h-seek-name=customseek")
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "SeekNameFallback", "?r2h-seek-name=customseek")
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
             r2h.start()
             try:
@@ -709,7 +666,7 @@ class TestRTSPSeekModeQueryMerge:
         rtsp.start()
         try:
             # Configured custom name = "configured_name", but request asks for "request_name".
-            config = self._config(r2h_port, rtsp.port, "SeekNameMerge", "?r2h-seek-name=configured_name")
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "SeekNameMerge", "?r2h-seek-name=configured_name")
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
             r2h.start()
             try:
@@ -751,7 +708,7 @@ class TestRTSPSeekModeQueryMerge:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            config = self._config(r2h_port, rtsp.port, "IfnameFccFallback", "?r2h-ifname-fcc=lo0")
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "IfnameFccFallback", "?r2h-ifname-fcc=lo0")
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
             r2h.start()
             try:

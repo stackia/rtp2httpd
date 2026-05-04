@@ -40,7 +40,7 @@ from .ports import (
     find_free_udp_port_pair,
     wait_for_port,
 )
-from .r2h_process import R2HProcess
+from .r2h_process import R2HProcess, make_m3u_rtsp_config
 from .rtp import MulticastSender, make_rtp_packet
 
 __all__ = [
@@ -66,6 +66,7 @@ __all__ = [
     "find_free_udp_port_pair",
     "http_get",
     "http_request",
+    "make_m3u_rtsp_config",
     "make_rtp_packet",
     "stream_get",
     "wait_for_port",

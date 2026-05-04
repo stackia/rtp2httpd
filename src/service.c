@@ -1097,16 +1097,15 @@ service_t *service_create_from_http_url(const char *http_url) {
   service_t *result = NULL;
   char working_url[HTTP_URL_BUFFER_SIZE];
   const char *url_part;
+  size_t url_len;
 
-  /* Validate input */
-  if (!http_url || strlen(http_url) >= sizeof(working_url)) {
+  /* Validate input. strnlen + memcpy avoids strncpy's NUL-fill of the rest of
+   * the buffer, which is wasteful on the per-request URL parse path. */
+  if (!http_url || (url_len = strnlen(http_url, sizeof(working_url))) >= sizeof(working_url)) {
     logger(LOG_ERROR, "Invalid or too long HTTP proxy URL");
     return NULL;
   }
-
-  /* Copy URL to avoid modifying original */
-  strncpy(working_url, http_url, sizeof(working_url) - 1);
-  working_url[sizeof(working_url) - 1] = '\0';
+  memcpy(working_url, http_url, url_len + 1);
 
   /* Check URL format: /http/host:port/path or http://host:port/path */
   if (strncmp(working_url, "/http/", 6) == 0) {
@@ -1177,16 +1176,14 @@ service_t *service_create_from_http_url(const char *http_url) {
 
 service_t *service_create_from_udpxy_url(char *url) {
   char working_url[HTTP_URL_BUFFER_SIZE];
+  size_t url_len;
 
   /* Validate input */
-  if (!url || strlen(url) >= sizeof(working_url)) {
+  if (!url || (url_len = strnlen(url, sizeof(working_url))) >= sizeof(working_url)) {
     logger(LOG_ERROR, "Invalid or too long URL");
     return NULL;
   }
-
-  /* Copy URL to avoid modifying original */
-  strncpy(working_url, url, sizeof(working_url) - 1);
-  working_url[sizeof(working_url) - 1] = '\0';
+  memcpy(working_url, url, url_len + 1);
 
   /* Determine service type and delegate to appropriate function */
   if (strncmp(working_url, "/rtp/", 5) == 0 || strncmp(working_url, "/udp/", 5) == 0) {
@@ -1221,14 +1218,12 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   int seek_mode_window_seconds = SEEK_MODE_DEFAULT_WINDOW_SECONDS;
 
   /* Validate input */
-  if (!http_url || strlen(http_url) >= sizeof(working_url)) {
+  size_t url_len;
+  if (!http_url || (url_len = strnlen(http_url, sizeof(working_url))) >= sizeof(working_url)) {
     logger(LOG_ERROR, "Invalid or too long RTSP URL");
     return NULL;
   }
-
-  /* Copy URL to avoid modifying original */
-  strncpy(working_url, http_url, sizeof(working_url) - 1);
-  working_url[sizeof(working_url) - 1] = '\0';
+  memcpy(working_url, http_url, url_len + 1);
 
   /* Check if URL starts with rtsp:// or /rtsp/ and extract the part after
    * prefix */
@@ -1519,14 +1514,12 @@ service_t *service_create_from_rtp_url(const char *http_url) {
   int r = 0, rr = 0, rrr = 0;
 
   /* Validate input */
-  if (!http_url || strlen(http_url) >= sizeof(working_url)) {
+  size_t url_len;
+  if (!http_url || (url_len = strnlen(http_url, sizeof(working_url))) >= sizeof(working_url)) {
     logger(LOG_ERROR, "Invalid or too long RTP URL");
     return NULL;
   }
-
-  /* Copy URL to avoid modifying original */
-  strncpy(working_url, http_url, sizeof(working_url) - 1);
-  working_url[sizeof(working_url) - 1] = '\0';
+  memcpy(working_url, http_url, url_len + 1);
 
   /* Check URL format and extract the part after prefix */
   if (strncmp(working_url, "rtp://", 6) == 0) {

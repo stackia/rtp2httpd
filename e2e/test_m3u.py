@@ -18,6 +18,7 @@ from helpers import (
     find_free_port,
     http_get,
     http_request,
+    make_m3u_rtsp_config,
     stream_get,
 )
 
@@ -1004,24 +1005,8 @@ rtp://239.0.0.2:1234$SD
 _STREAM_TIMEOUT = 20.0
 
 
-def _merge_test_config(r2h_port: int, rtsp_port: int, channel_name: str, configured_url_query: str) -> str:
-    """Build a minimal config with a single M3U-configured RTSP channel that
-    has a preset query string. Used by the query-merge mechanism tests below."""
-    return (
-        "[global]\nverbosity = 4\n\n[bind]\n* %d\n\n[services]\n#EXTM3U\n#EXTINF:-1,%s\nrtsp://127.0.0.1:%d/stream%s\n"
-    ) % (r2h_port, channel_name, rtsp_port, configured_url_query)
-
-
 class TestM3UQueryMerge:
-    """Generic query-merge mechanism for M3U-configured services.
-
-    When a request hits a path that resolves to an M3U-configured service,
-    rtp2httpd merges the request query with the configured URL's query and
-    re-parses the result. These tests cover behaviours of that merge that
-    are NOT specific to any single feature — buffer sizing and per-field
-    request-wins precedence for the parameters that don't surface on the
-    upstream URI. Feature-specific merge tests (seek-mode / seek-offset /
-    seek-name request-wins, stripping) live in test_rtsp_seek_mode.py."""
+    """Generic query-merge mechanism for M3U-configured services."""
 
     @pytest.mark.parametrize(
         "param_name,configured_value,request_value",
@@ -1033,30 +1018,21 @@ class TestM3UQueryMerge:
     def test_request_overrides_configured_via_merged_url_log(
         self, r2h_binary, param_name, configured_value, request_value
     ):
-        """Per-field request-wins coverage for the two r2h-* parameters that
-        don't surface on the upstream URI (r2h-ifname / r2h-ifname-fcc).
-        The merge function strips both from the DESCRIBE URI, so the only
-        observable evidence of which side won is the merged-URL debug log
-        emitted by service_create_with_query_merge. We start rtp2httpd with
-        log capture enabled and assert the merged URL contains the request
-        value, not the configured value.
-
-        The seek-name / seek-offset / seek-mode equivalents already prove
-        request-wins via observable upstream behaviour and live in their own
-        feature-specific test file."""
+        """request-side r2h-ifname / r2h-ifname-fcc must win over the configured
+        value. Both are stripped from the upstream URI, so we observe the merge
+        result via the rtp2httpd debug log."""
         r2h_port = find_free_port()
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            config = _merge_test_config(
+            config = make_m3u_rtsp_config(
                 r2h_port, rtsp.port, "MergeWinsLog_%s" % param_name, "?%s=%s" % (param_name, configured_value)
             )
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config, capture_log=True)
             r2h.start()
             try:
-                # The interface names don't actually exist; rtp2httpd logs a
-                # bind error but doesn't fail the request. We only care about
-                # the merged URL the merge function produced.
+                # Bogus interface names — rtp2httpd logs a bind error but the
+                # request still goes through; we only inspect the merged URL.
                 stream_get(
                     "127.0.0.1",
                     r2h_port,
@@ -1069,40 +1045,26 @@ class TestM3UQueryMerge:
                 merged_lines = [line for line in log.splitlines() if "merged URL:" in line]
                 assert merged_lines, "expected a 'merged URL:' debug log line; got log:\n%s" % log
                 merged_line = merged_lines[-1]
-                assert "%s=%s" % (param_name, request_value) in merged_line, (
-                    "request-side %s=%s should win in merged URL; got: %s" % (param_name, request_value, merged_line)
-                )
-                assert "%s=%s" % (param_name, configured_value) not in merged_line, (
-                    "configured-side %s=%s must NOT survive merge when request supplies its own; got: %s"
-                    % (param_name, configured_value, merged_line)
-                )
+                assert "%s=%s" % (param_name, request_value) in merged_line, merged_line
+                assert "%s=%s" % (param_name, configured_value) not in merged_line, merged_line
             finally:
                 r2h.stop()
         finally:
             rtsp.stop()
 
     def test_merged_url_above_legacy_buffer_size_succeeds(self, r2h_binary):
-        """Regression: HTTP_URL_BUFFER_SIZE must be at least as large as the
-        merge buffer used in service_create_with_query_merge. Previously a
-        merged URL between the parse-side limit (1024 bytes) and the merge-
-        side limit (2048 bytes) would re-parse to NULL after a successful
-        merge, surfacing as HTTP 500 (or, before the silent-failure fix,
-        silently dropping the user's overrides).
-
-        We pad both the configured M3U query and the request query so the
-        merged URL lands well above the old 1024-byte cutoff and verify the
-        request still produces a DESCRIBE upstream (i.e. no 500)."""
+        """HTTP_URL_BUFFER_SIZE must be at least as large as the merge buffer,
+        otherwise a merged URL between the two limits re-parses to NULL after
+        a successful merge and surfaces as HTTP 500."""
         r2h_port = find_free_port()
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            # Mock RTSP server happily accepts arbitrary query params, so we
-            # can pad with arbitrary names. ~500 bytes on each side comfortably
-            # crosses the 1024-byte threshold without hitting the new 2048
-            # buffer ceiling.
+            # ~500 bytes per side puts the merged URL above 1024 (the old
+            # parse-side limit) without hitting the 2048 ceiling.
             configured_pad = "padconfigured=" + ("a" * 500)
             request_pad = "padrequest=" + ("b" * 500)
-            config = _merge_test_config(r2h_port, rtsp.port, "BigMerge", "?" + configured_pad)
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "BigMerge", "?" + configured_pad)
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
             r2h.start()
             try:
@@ -1113,10 +1075,10 @@ class TestM3UQueryMerge:
                     read_bytes=4096,
                     timeout=_STREAM_TIMEOUT,
                 )
-                assert status == 200, "merged URL > 1024 bytes must not 500; got status %d" % status
+                assert status == 200, status
 
                 describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
-                assert describe_reqs, "expected DESCRIBE — re-parse must accept merged URL above legacy buffer size"
+                assert describe_reqs
                 uri = describe_reqs[0]["uri"]
                 assert "padconfigured=" in uri
                 assert "padrequest=" in uri

@@ -396,13 +396,9 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
       return -1;
     }
 
-    /* If the input has its own TZ suffix (Z or ±HH:MM), preserve the original
-     * TZ frame in the output bytes — only apply the per-request offset. This
-     * mirrors the full ISO 8601 branch in timezone_convert_iso8601_with_offset.
-     * Doing `timestamp -= timezone_offset` here would shift the displayed clock
-     * to UTC while still emitting the original suffix, which is wrong (e.g.
-     * `20240101T200000+08:00` would become `20240101T120000+08:00`, a
-     * different instant). */
+    /* Self-contained TZ inputs (Z or ±HH:MM) round-trip in their own frame —
+     * only apply the per-request offset, never the caller TZ. Same contract
+     * as timezone_convert_iso8601_with_offset's full ISO branch. */
     if (!has_timezone) {
       timestamp -= tz_offset_seconds;
     }
