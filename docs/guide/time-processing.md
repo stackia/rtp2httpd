@@ -1,244 +1,152 @@
 # 时间处理说明
 
-本文档详细说明 rtp2httpd 如何处理时移回看功能中的时间参数和时区转换。此机制同时适用于 RTSP 代理和 HTTP 代理。
+本文档说明 rtp2httpd 如何处理「时移回看」（catchup）请求里的时间和时区。RTSP 和 HTTP 代理都适用，但 **Range Seek 模式** 是 RTSP 专属的。
 
-## 时移回看原理
+## 时移回看的两种模式
 
-IPTV 运营商的服务器通常支持时移回看功能，允许用户观看过去时间段的直播内容。这个功能通过在 URL 中添加时间范围参数（如 `playseek`、`tvdr` 等）来实现。
+IPTV 上游服务器通常支持「时移回看」——回放过去时段的直播内容。客户端通过在 URL 中加上时间范围参数（最常见的是 `playseek`、`tvdr`）告诉服务器要看哪一段：
 
-**基本工作流程**：
-
-1. **客户端请求**：客户端向上游服务器请求特定时间段的视频。
-
-   ```
-   # RTSP 上游
-   rtsp://iptv.example.com:554/channel1?playseek=20240101120000-20240101130000
-
-   # HTTP 上游
-   http://iptv.example.com/channel1?playseek=20240101120000-20240101130000
-   ```
-
-2. **服务器响应**：上游服务器根据时间参数，从录制的历史内容中返回对应时间段的视频流
-
-3. **时间格式要求**：各地区 IPTV 运营商要求时间格式和时区可能有不同，有些期望 UTC 时区，有些期望 GMT+8 时区，有些期望 `20240101120000` 这样的格式，有些期望 `20240101120000GMT` 这样的格式。各播放器对时区和时间格式的支持也五花八门。一旦播放器格式、时区和运营商不匹配，就会造成回看失败。
-
-## rtp2httpd 的作用
-
-rtp2httpd 作为中间代理，能够根据配置灵活转换时间格式和时区，把播放器发来的时间和运营商期望的时间进行匹配。
-
-**核心特性**：
-
-- 自动识别多种时间格式（Unix 时间戳、yyyyMMddHHmmss、ISO 8601 等）
-- 从 User-Agent 头解析客户端时区信息
-- 智能时区转换（仅对需要转换的格式）
-- 支持额外的时间偏移量（补偿时钟偏差）
-- 保持输出格式与输入格式一致
-
-## Seek 参数配置
-
-### r2h-seek-name 参数（可选）
-
-用于指定时移参数的名称。如果不指定，rtp2httpd 会自动识别常见的参数名。
-
-#### 自动识别的参数名（按优先级）
-
-1. `playseek` - 最常见的时移参数
-2. `tvdr` - 部分 IPTV 系统使用的参数名
-
-#### 使用方法
-
-- **标准参数名**：当上游服务器使用 `playseek` 或 `tvdr` 时，无需指定此参数
-- **自定义参数名**：当上游服务器使用其他参数名（如 `seek`、`timeshift` 等）时，需要通过 `r2h-seek-name` 显式指定
-
-#### 示例
-
-```url
-# RTSP 代理：自动识别 playseek 参数
+```
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000
-
-# RTSP 代理：自动识别 tvdr 参数
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000-20240101130000
-
-# RTSP 代理：使用自定义参数名
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?custom_seek=20240101120000&r2h-seek-name=custom_seek
-
-# HTTP 代理：自动识别 playseek 参数
-http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-20240101130000
-
-# HTTP 代理：使用自定义参数名
-http://192.168.1.1:5140/http/iptv.example.com/channel1?custom_seek=20240101120000&r2h-seek-name=custom_seek
 ```
 
-### r2h-seek-offset 参数（可选）
+rtp2httpd 在向上游转发时支持两种处理方式：
 
-当识别到时移参数时，额外增加的秒数偏移量，可以是正数或负数。
+### 模式 1：Playseek 透传（默认）
 
-#### 使用场景
+把客户端的 seek 参数原样作为 URL 查询转发给上游服务器（必要时按时区做格式调整）。
 
-- **补偿时钟偏差**：上游服务器与实际时间存在固定偏差时
-- **微调时移位置**：需要提前或延后若干秒开始播放时
-- **测试与调试**：验证不同时间点的内容
+**适用范围**：HTTP 代理 + RTSP 代理，所有支持时移的运营商都能用。
 
-#### 示例
+**局限**：上游会按客户端给的「结束时间」播完后关闭流。如果想把后续的实时直播无缝拼上，客户端必须**再发起一次新请求**——中间会有几百毫秒到几秒的间断，可能造成播放卡顿或音视频不同步。
 
-```url
-# RTSP 代理：在 playseek 指定的范围上增加 1 小时（3600 秒）
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000&r2h-seek-offset=3600
+### 模式 2：RTSP Range Seek（可选，需显式启用）
 
-# HTTP 代理：在 playseek 指定的范围上增加 1 小时（3600 秒）
-http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-20240101130000&r2h-seek-offset=3600
+利用 RTSP 协议自带的 `Range: clock=...` 头让上游从指定时间开始播放，**并在追到当前时间时自动无缝拼到实时直播流**——全程一次连接、无需重连。
 
-# 在 playseek 指定的范围上减少 30 秒
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000&r2h-seek-offset=-30
+启用方式：在 URL 里加 `r2h-seek-mode=range(...)`：
+
+```
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(UTC%2B8)
 ```
 
-### r2h-seek-mode 参数（可选，仅 RTSP）
+**优势**：从时移段过渡到直播实时段是一次连续播放，无间断。
 
-控制 RTSP 代理是否启用「近实时」分支（参见下方「RTSP recent seek 特殊处理」）。此参数仅影响 RTSP 代理。
+**限制**：
 
-#### 取值
+1. **不是所有 RTSP 服务器都支持**——这是默认关闭、需要显式启用的根本原因
+2. **服务器侧通常对回看窗口有上限**（常见 1–3 小时，因运营商而异）。超出上限的请求 rtp2httpd 会自动回退到 Playseek 透传，不会让请求失败
+3. **rtp2httpd 自己也有窗口**（默认 1 小时，可通过 `r2h-seek-mode=range(<TZ>/<秒>)` 调整）：起始时间在窗口内才走 Range Seek，否则回退到透传
 
-- `passthrough`（默认，等同于不传）：seek 参数始终作为 URL 查询透传到上游
-- `range[(<TZ>[/<seconds>])]`：满足窗口条件时改走 `Range: clock=...Z-` 头；不满足则回退为透传
+> [!TIP]
+> 启用 Range Seek 是「纯增量优化」——窗口内走优化路径，窗口外或上游不支持时自动回退到 Playseek 透传，行为与从未启用 Range Seek **完全一致**。所以即使不确定上游是否支持，启用它也没有副作用，可以放心打开。
 
-`range(...)` 括号内可省略，按以下规则解析：
+> [!NOTE]
+> Range Seek 模式只看 seek 的**起始时间**——结束时间被忽略，由实时拼接接管。
 
-- `range`、`range()` — 默认，TZ 回退到 UA `TZ/`，没有再回退到 UTC；窗口 3600 秒
-- `range(UTC+8)`、`range(UTC-5)`、`range(UTC)` — 显式指定时区，窗口默认 3600 秒
-- `range(7200)` — 显式指定窗口（秒），TZ 回退（同上）
-- `range(UTC+8/7200)` — 同时指定 TZ 与窗口
-- `range(/7200)` — TZ 回退，显式窗口
+## Seek 参数
 
-窗口取值范围 `[1, 86400]` 秒。无法识别的值会被记 warn 日志并按 `passthrough` 处理，不会让请求失败。
+### r2h-seek-name（可选）
+
+指定时移参数的名称。不指定时按以下顺序自动识别：`playseek` → `tvdr`（不区分大小写）。
+
+如果上游使用别的参数名（如 `seek`、`timeshift`），显式指定：
+
+```
+?custom_seek=20240101120000-20240101130000&r2h-seek-name=custom_seek
+```
+
+### r2h-seek-offset（可选）
+
+对识别出的时移时间额外加 / 减若干秒，可正可负。常用于补偿上游服务器的时钟偏差，或整体提前 / 延后开始时间。
+
+```
+# playseek 范围整体后移 1 小时（3600 秒）
+?playseek=20240101120000-20240101130000&r2h-seek-offset=3600
+
+# 提前 30 秒
+?playseek=20240101120000&r2h-seek-offset=-30
+```
 
 > [!IMPORTANT]
-> `range(...)` 里的 TZ **只在 clock= 路径上生效**：用它判断起始时间是否落在窗口内，并据此把客户端时间换算成发往上游的 `Range: clock=...Z` UTC 时间戳。当起始时间落在窗口外回退到透传时，行为完全等同于不传 `r2h-seek-mode`，**不会**用 `range()` 里的 TZ 改写透传字符串——这样 `r2h-seek-mode=range(...)` 是纯增量优化，不会让原本能正常透传的查询变得更糟。
+> `r2h-seek-offset` 是「人为时间平移」，不是时区修正。它**总是**叠加到最终结果上，即使输入时间已经自带时区（如 ISO 8601 `Z` 后缀、`yyyyMMddHHmmssGMT`），仍然生效。
+>
+> 在 Range Seek 模式下，offset 也会进入窗口判定——offset 后的时间一旦落出窗口，同样回退为透传。
 
-#### 示例
+### r2h-seek-mode（可选，仅 RTSP）
 
-```url
-# 显式开启 RTSP 近实时优化，按 UTC+8 解析时间，窗口 1 小时
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(UTC%2B8/3600)
+控制是否启用「Range Seek 模式」（参见上方[两种模式说明](#时移回看的两种模式)）。
 
-# 仅指定窗口，时区从 UA TZ/ 标记或 UTC 回退
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(7200)
+| 取值                                           | 行为                                                          |
+| ---------------------------------------------- | ------------------------------------------------------------- |
+| 不传 / `passthrough`                           | 默认。使用 Playseek 透传                                      |
+| `range` / `range()`                            | 启用 Range Seek，时区从 UA `TZ/` 推导（无则 UTC），窗口默认 1 小时 |
+| `range(UTC+8)` / `range(UTC-5)` / `range(UTC)` | 显式指定时区，窗口默认 1 小时                                 |
+| `range(7200)`                                  | 自动推导时区，窗口 7200 秒                                    |
+| `range(UTC+8/7200)`                            | 同时显式指定时区与窗口                                        |
+| `range(/7200)`                                 | 自动推导时区 + 显式窗口                                       |
+
+窗口取值范围 1–86400 秒。无法识别的值会按 `passthrough` 处理（不会让请求失败）。
+
+> [!IMPORTANT]
+> `range()` 里指定的时区**只在 Range Seek 模式中生效**——用来判断时间是否在窗口内、以及生成 `Range: clock=` 头里的 UTC 时间。一旦回退到 Playseek 透传，行为与不传 `r2h-seek-mode` 时**字节级完全相同**，`range(<TZ>)` 不会去改写透传字符串。
+
+### r2h-start（可选，仅 RTSP）
+
+从指定的 NPT 时间点（秒）开始播放，常用于续播：
+
+```
+?r2h-start=123.45
 ```
 
-### r2h-start 参数（可选，仅 RTSP）
-
-用于指定从特定时间点开始播放 RTSP 流，实现续播功能。此参数值会作为 NPT（Normal Play Time）格式的时间点，在 RTSP PLAY 请求中通过 `Range: npt=<时间点>-` 头发送给 RTSP 服务器。此参数仅对 RTSP 代理有效。
-
-如果同一个 RTSP 请求里还带了 `r2h-seek-mode=range(...)` 且 seek 起始时间落在窗口内，则 `r2h-start` 会被忽略，改由 seek 的起始时间生成 `Range: clock=` 头。
-
-#### 示例
-
-```url
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-start=123.45
-```
+在 RTSP `PLAY` 请求中以 `Range: npt=<时间>-` 头发送给上游。如果同一请求又带了 `r2h-seek-mode=range(...)` 且命中 Range Seek 模式，`r2h-start` 会被忽略，由 seek 起始时间生成 `Range: clock=` 头。
 
 ## 支持的时间格式
 
-rtp2httpd 支持解析以下时间格式。只有当时间能够被成功解析时，才可以进行时区转换或应用 r2h-seek-offset 秒数偏移。
+rtp2httpd 能识别下面的时间格式。**输出格式始终与输入保持一致**（保留 `Z`、`±HH:MM`、`GMT` 等后缀）。
 
-### 1. yyyyMMddHHmmss 格式（14 位数字）
+| 格式                                | 示例                          | 是否自带时区     |
+| ----------------------------------- | ----------------------------- | ---------------- |
+| Unix 时间戳（≤10 位数字）           | `1704096000`                  | 是（UTC）        |
+| 14 位 `yyyyMMddHHmmss`              | `20240101120000`              | 否               |
+| 14 位 + `GMT` 后缀                  | `20240101120000GMT`           | 是（UTC）        |
+| 紧凑 ISO 8601                       | `20240101T120000`             | 否               |
+| 紧凑 ISO 8601 + `Z`                 | `20240101T120000Z`            | 是（UTC）        |
+| 紧凑 ISO 8601 + `±HH:MM`            | `20240101T200000+08:00`       | 是               |
+| 完整 ISO 8601                       | `2024-01-01T12:00:00`         | 否               |
+| 完整 ISO 8601 + `Z` / `±HH:MM`      | `2024-01-01T12:00:00Z`        | 是               |
+| 完整 ISO 8601 + 毫秒                | `2024-01-01T12:00:00.123Z`    | 视后缀而定       |
 
-```
-playseek=20240101120000-20240101130000
-```
-
-### 2. Unix 时间戳格式（10 位以内数字）
-
-```
-playseek=1704096000-1704099600
-```
-
-### 3. yyyyMMddHHmmssGMT 格式（14 位数字 + GMT 后缀）
-
-```
-playseek=20240101120000GMT-20240101130000GMT
-```
-
-`GMT` 后缀是「自带时区」标记，语义等同于 ISO 8601 的 `Z` 后缀：该值固定按 UTC 解释，**任何**外部时区配置（User-Agent `TZ/UTC±N`、`r2h-seek-mode=range(<TZ>)`）都会被忽略。`r2h-seek-offset` 仍然生效（它是用户显式声明的时间平移，不是时区覆盖）。
-
-### 4. 简化 ISO 8601 格式（yyyyMMddTHHmmss）
-
-紧凑的 ISO 8601 格式，不含短横线和冒号分隔符：
-
-```
-# 不带时区（使用 User-Agent 时区）
-playseek=20240101T120000-20240101T130000
-
-# 带 Z 后缀（UTC 时区）
-playseek=20240101T120000Z-20240101T130000Z
-
-# 带时区偏移
-playseek=20240101T200000+08:00-20240101T210000+08:00
-```
-
-### 5. ISO 8601 格式（yyyy-MM-ddTHH:mm:ss）
-
-完整的 ISO 8601 格式，支持多种变体：
-
-```
-# 不带时区（使用 User-Agent 时区）
-playseek=2024-01-01T12:00:00-2024-01-01T13:00:00
-
-# 带 Z 后缀（UTC 时区，不做时区转换）
-playseek=2024-01-01T12:00:00Z-2024-01-01T13:00:00Z
-
-# 带时区偏移（保留原时区，不做时区转换）
-playseek=2024-01-01T12:00:00+08:00-2024-01-01T13:00:00+08:00
-
-# 带毫秒
-playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
-```
-
-**ISO 8601 格式共同特点**（适用于格式 4 和 5）：
-
-- 如果包含时区信息（Z 或 ±HH:MM），使用该时区，忽略 User-Agent 时区
-- 如果不包含时区信息，使用 User-Agent 中的时区进行转换
-- 输出格式保持原有的时区后缀（Z、±HH:MM 或无后缀）
-- 完整格式（格式 5）支持毫秒精度（.sss）
-
-## 时区处理机制
-
-### RTSP recent seek 特殊处理
-
-对于 RTSP 代理，seek 参数除了可以像 HTTP 代理那样继续作为 URL 参数传给上游，还支持一个「近实时」分支。这里的 seek 参数包括 `playseek`、`tvdr`，以及通过 `r2h-seek-name` 指定的自定义参数：
-
-- 此分支默认**关闭**，需通过 `r2h-seek-mode=range(...)` 显式开启（参见上方「r2h-seek-mode 参数」）
-- 启用后，当 seek 起始时间满足「当前时间 − 起始时间 < 窗口秒数」时，rtp2httpd 不再把该 seek 参数透传到 RTSP 上游 URL
-- 该分支只取 seek 的起始时间，结束时间会被忽略
-- RTSP `PLAY` 请求会发送 `Range: clock=<yyyyMMddTHHmmssZ>-`
-- 起始时间所属时区按 `range(<TZ>/...)` 显式声明 → UA `TZ/UTC+N` → UTC 的顺序回退。该回退链只对**不自带时区**的输入生效：14 位 `yyyyMMddHHmmss`，以及 ISO 8601 不带 `Z`/`±HH:MM` 的形式。**自带时区**的输入（`yyyyMMddHHmmssGMT`、ISO 8601 带 `Z` 或 `±HH:MM` 后缀）会用输入里的时区，`range(<TZ>)` 与 UA `TZ/` 都被忽略
-- 上述 `range(<TZ>)` **只作用于本节描述的 recent-clock 判定与 `clock=` 头格式化**。一旦回退到透传分支（不在窗口内、未启用 range、seek 解析失败等），上游 URL 的 seek 参数仍按 UA `TZ/UTC+N`（无 UA 即 UTC）做时区转换，**`range(<TZ>)` 完全不参与**。这种「绝不让 fallback 比禁用 range 更糟」是有意设计——`range(...)` 是纯增量优化，启用它在不命中时段时与不启用时**字节级一致**
-- 当 seek 起始时间恰好等于窗口边界（即 `now − begin == window`）时，不触发该分支，仍按普通 URL 参数透传
-- 如果 seek 无法解析，仍保持原有透传行为
-- `r2h-seek-offset` 会同时影响窗口判定与最终输出的 `clock=` 时间——offset 后的时间一旦落出窗口同样回退为透传
-
-### 时区识别
-
-服务器会解析 User-Agent 中的 `TZ/` 标记来获取客户端时区信息：
-
-#### 支持的时区格式
-
-- `TZ/UTC+8` - UTC 偏移格式（东八区）
-- `TZ/UTC-5` - UTC 偏移格式（西五区）
-- `TZ/UTC` - 标准 UTC 时区
-
-#### 默认行为
-
-如果 User-Agent 中没有时区信息，则不进行任何时区转换，只应用 `r2h-seek-offset` 指定的秒数偏移。
+「自带时区」的格式 rtp2httpd 不会再去推导时区——任何外部时区配置（UA `TZ/...`、`r2h-seek-mode=range(<TZ>)`）都被忽略，但 `r2h-seek-offset` 仍然会叠加。「不自带时区」的格式按下文「时区推导」处理。
 
 > [!NOTE]
-> rtp2httpd 按以下步骤处理时间参数：
->
-> 1. **解析时间格式** — 识别参数值属于哪种格式：Unix 时间戳（≤10 位数字）、`yyyyMMddHHmmss`（14 位数字）、`yyyyMMddHHmmssGMT`（14 位 + GMT 后缀）、简化 ISO 8601（`yyyyMMddTHHmmss`）、完整 ISO 8601（`yyyy-MM-ddTHH:mm:ss`）
-> 2. **解析 User-Agent 时区** — 从 User-Agent 中查找 `TZ/` 标记，提取 UTC 偏移量（秒）。如果没有时区信息，默认为 0（UTC）
-> 3. **时区转换** — 自带时区的格式（Unix 时间戳、`yyyyMMddHHmmssGMT`、ISO 8601 带 `Z`/`±HH:MM`）跳过转换；不自带时区的格式（`yyyyMMddHHmmss` 和 ISO 8601 无时区后缀）应用 User-Agent 时区转换
-> 4. **应用 `r2h-seek-offset`** — 如果指定了该参数，对所有格式应用额外的秒数偏移（可正可负）
-> 5. **格式化输出** — 保持原始格式，保留原有时区后缀（如有）
-> 6. **附加到上游 URL** — 将处理后的时间参数作为查询参数附加到上游请求中（RTSP 发送 DESCRIBE 请求，HTTP 转发给上游服务器）
+> `yyyyMMddHHmmssGMT` 的 `GMT` 后缀语义与 ISO 8601 的 `Z` 等价——都视为「自带 UTC 时区」。
+
+## 时区推导
+
+仅适用于「不自带时区」的格式（14 位 `yyyyMMddHHmmss`、不带 `Z`/`±HH:MM` 的 ISO 8601）。
+
+### 默认（Playseek 透传）
+
+rtp2httpd 从 User-Agent 头里查找 `TZ/` 标记获取客户端时区：
+
+```
+TZ/UTC      → UTC
+TZ/UTC+8    → 东八区
+TZ/UTC-5    → 西五区
+```
+
+UA 里没有 `TZ/` 标记时，按 UTC 处理（不做时区转换）。
+
+### Range Seek 模式
+
+启用 `r2h-seek-mode=range(...)` 时，**仅 Range Seek 路径**按下面的优先级取时区：
+
+1. `range(UTC+N)` 显式声明
+2. UA `TZ/UTC+N`
+3. UTC
+
+回退到 Playseek 透传时，时区推导回到上面「默认」一节的规则——`range()` 里的时区不参与。
 
 ## 相关文档
 

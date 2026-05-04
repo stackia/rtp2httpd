@@ -1,246 +1,154 @@
 # Time Processing
 
-This document explains in detail how rtp2httpd handles time parameters and timezone conversion in the timeshift/catch-up functionality. This mechanism applies to both RTSP proxy and HTTP proxy.
+This document explains how rtp2httpd handles the time and timezone in time-shifted playback (catch-up) requests. It applies to both RTSP and HTTP proxies, but **Range Seek mode** is RTSP-only.
 
-## Timeshift/Catch-up Principles
+## Two Modes for Time-Shifted Playback
 
-IPTV operator servers typically support timeshift/catch-up functionality, allowing users to watch live content from past time periods. This feature is implemented by adding time range parameters (such as `playseek`, `tvdr`, etc.) to the URL.
+IPTV upstream servers usually support time-shifted playback — replaying live content from a past time period. The client tells the server which segment it wants by adding a time-range parameter to the URL (most commonly `playseek` or `tvdr`):
 
-**Basic workflow**:
-
-1. **Client request**: The client requests video for a specific time period from the upstream server.
-
-   ```
-   # RTSP upstream
-   rtsp://iptv.example.com:554/channel1?playseek=20240101120000-20240101130000
-
-   # HTTP upstream
-   http://iptv.example.com/channel1?playseek=20240101120000-20240101130000
-   ```
-
-2. **Server response**: The upstream server returns video from the recorded historical content based on the time parameters
-
-3. **Time format requirements**: Different regional IPTV operators may have different requirements for time format and timezone. Some expect UTC timezone, some expect GMT+8 timezone, some expect the format `20240101120000`, and some expect `20240101120000GMT`. Different players also have varying support for timezones and time formats. If the player format, timezone, and operator requirements do not match, catch-up playback will fail.
-
-## The Role of rtp2httpd
-
-As an intermediary proxy, rtp2httpd can flexibly convert time formats and timezones according to configuration, matching the time sent by the player with the time expected by the operator.
-
-**Core features**:
-
-- Automatically recognizes multiple time formats (Unix timestamp, yyyyMMddHHmmss, ISO 8601, etc.)
-- Parses client timezone information from User-Agent header
-- Intelligent timezone conversion (only for formats that require conversion)
-- Supports additional time offset (to compensate for clock drift)
-- Maintains output format consistent with input format
-
-## Seek Parameter Configuration
-
-### r2h-seek-name Parameter (Optional)
-
-Used to specify the name of the timeshift parameter. If not specified, rtp2httpd will automatically recognize common parameter names.
-
-#### Auto-recognized Parameter Names (By Priority)
-
-1. `playseek` - Most common timeshift parameter
-2. `tvdr` - Parameter name used by some IPTV systems
-
-#### Usage
-
-- **Standard parameter names**: When the upstream server uses `playseek` or `tvdr`, this parameter does not need to be specified
-- **Custom parameter names**: When the upstream server uses other parameter names (such as `seek`, `timeshift`, etc.), you need to explicitly specify via `r2h-seek-name`
-
-#### Examples
-
-```url
-# RTSP proxy: auto-recognize playseek parameter
+```
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000
-
-# RTSP proxy: auto-recognize tvdr parameter
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000-20240101130000
-
-# RTSP proxy: use custom parameter name
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?custom_seek=20240101120000&r2h-seek-name=custom_seek
-
-# HTTP proxy: auto-recognize playseek parameter
-http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-20240101130000
-
-# HTTP proxy: use custom parameter name
-http://192.168.1.1:5140/http/iptv.example.com/channel1?custom_seek=20240101120000&r2h-seek-name=custom_seek
 ```
 
-### r2h-seek-offset Parameter (Optional)
+When forwarding to upstream, rtp2httpd supports two ways of handling this:
 
-When a timeshift parameter is recognized, an additional offset in seconds to add, which can be positive or negative.
+### Mode 1: Playseek Passthrough (default)
 
-#### Use Cases
+The client's seek parameter is forwarded to the upstream server as a URL query, untouched (with format adjustments for timezone if needed).
 
-- **Compensate for clock drift**: When the upstream server has a fixed offset from actual time
-- **Fine-tune timeshift position**: When you need to start playback a few seconds earlier or later
-- **Testing and debugging**: To verify content at different time points
+**Where it applies**: HTTP proxy + RTSP proxy. Works with every operator that supports time-shifting.
 
-#### Examples
+**Limitation**: Upstream finishes playback at the "end time" the client supplied and then closes the stream. To stitch the live stream onto the end seamlessly, the client must **issue a brand-new request** — there will be a gap of a few hundred milliseconds to several seconds in between, which can cause stuttering or audio/video desync.
 
-```url
-# RTSP proxy: add 1 hour (3600 seconds) to the playseek range
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000&r2h-seek-offset=3600
+### Mode 2: RTSP Range Seek (opt-in)
 
-# HTTP proxy: add 1 hour (3600 seconds) to the playseek range
-http://192.168.1.1:5140/http/iptv.example.com/channel1?playseek=20240101120000-20240101130000&r2h-seek-offset=3600
+Uses RTSP's built-in `Range: clock=...` header to make the upstream start playback at the specified time, **and seamlessly stitches into the live stream once playback catches up to "now"** — one connection from start to finish, no reconnection needed.
 
-# Subtract 30 seconds from the playseek range
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000&r2h-seek-offset=-30
+To enable, add `r2h-seek-mode=range(...)` to the URL:
+
+```
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(UTC%2B8)
 ```
 
-### r2h-seek-mode Parameter (Optional, RTSP Only)
+**Advantage**: The transition from the time-shifted segment to live playback is one continuous stream, with no gap.
 
-Controls whether the RTSP proxy enables the "near-realtime" branch (see "RTSP Recent Seek Handling" below). This parameter only affects the RTSP proxy.
+**Limitations**:
 
-#### Values
+1. **Not every RTSP server supports it** — this is the fundamental reason it is off by default and must be opted into
+2. **Servers usually cap the catch-up window** (commonly 1–3 hours, varies by operator). Requests beyond that cap automatically fall back to Playseek passthrough in rtp2httpd, so the request never fails
+3. **rtp2httpd has its own window** (default 1 hour, adjustable via `r2h-seek-mode=range(<TZ>/<seconds>)`): only start times within the window go through Range Seek; otherwise it falls back to passthrough
 
-- `passthrough` (default, equivalent to omitting the parameter): the seek parameter is always passed through to the upstream as a URL query parameter
-- `range[(<TZ>[/<seconds>])]`: when the window condition is satisfied, switch to the `Range: clock=...Z-` header instead; if not satisfied, fall back to passthrough
+> [!TIP]
+> Enabling Range Seek is a "purely additive optimization" — within the window it takes the optimized path, and outside the window or when upstream doesn't support it, it falls back to Playseek passthrough with behavior **identical** to never having enabled Range Seek in the first place. So even if you're not sure whether your upstream supports it, enabling it has no downside — feel free to turn it on.
 
-The contents inside `range(...)` can be omitted, and are parsed by the following rules:
+> [!NOTE]
+> Range Seek mode only looks at the **start time** of the seek — the end time is ignored, since live stitching takes over from there.
 
-- `range`, `range()` — defaults: TZ falls back to UA `TZ/`, then to UTC if absent; window is 3600 seconds
-- `range(UTC+8)`, `range(UTC-5)`, `range(UTC)` — explicitly specify the timezone, window defaults to 3600 seconds
-- `range(7200)` — explicitly specify the window (in seconds), TZ falls back (as above)
-- `range(UTC+8/7200)` — specify both TZ and window
-- `range(/7200)` — TZ falls back, window is explicit
+## Seek Parameters
 
-The window must be in the range `[1, 86400]` seconds. Unrecognized values are logged at warn level and treated as `passthrough`; they do not fail the request.
+### r2h-seek-name (optional)
+
+Specifies the name of the time-shift parameter. When omitted, rtp2httpd auto-detects in this order: `playseek` → `tvdr` (case-insensitive).
+
+If your upstream uses a different parameter name (e.g. `seek`, `timeshift`), specify it explicitly:
+
+```
+?custom_seek=20240101120000-20240101130000&r2h-seek-name=custom_seek
+```
+
+### r2h-seek-offset (optional)
+
+Adds or subtracts a number of seconds to the recognized time-shift time, positive or negative. Commonly used to compensate for clock drift on the upstream server, or to shift the start time earlier/later as a whole.
+
+```
+# Shift the entire playseek range later by 1 hour (3600 seconds)
+?playseek=20240101120000-20240101130000&r2h-seek-offset=3600
+
+# Shift earlier by 30 seconds
+?playseek=20240101120000&r2h-seek-offset=-30
+```
 
 > [!IMPORTANT]
-> The TZ inside `range(...)` **only takes effect on the clock= path**: it is used both to decide whether the start time falls inside the window, and to convert the client time into the UTC `Range: clock=...Z` timestamp sent upstream. When the start time falls outside the window and the request falls back to passthrough, the behavior is exactly the same as if `r2h-seek-mode` was not set — the TZ from `range()` will **not** be used to rewrite the passthrough string. This makes `r2h-seek-mode=range(...)` a purely additive optimization that never makes an otherwise-working passthrough query worse.
+> `r2h-seek-offset` is a "manual time shift", not a timezone correction. It is **always** applied to the final result, even when the input time already carries its own timezone (e.g. ISO 8601 `Z` suffix, `yyyyMMddHHmmssGMT`).
+>
+> In Range Seek mode the offset also enters the window check — once the offset-adjusted time falls outside the window, it likewise falls back to passthrough.
 
-#### Examples
+### r2h-seek-mode (optional, RTSP only)
 
-```url
-# Explicitly enable the RTSP near-realtime optimization, parse times in UTC+8, window of 1 hour
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(UTC%2B8/3600)
+Controls whether "Range Seek mode" is enabled (see [Two Modes for Time-Shifted Playback](#two-modes-for-time-shifted-playback) above).
 
-# Specify only the window; the timezone falls back to the UA TZ/ marker or UTC
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(7200)
+| Value                                          | Behavior                                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------------------- |
+| omitted / `passthrough`                        | Default. Use Playseek passthrough                                         |
+| `range` / `range()`                            | Enable Range Seek; TZ derived from UA `TZ/` (UTC if absent), window 1 hour |
+| `range(UTC+8)` / `range(UTC-5)` / `range(UTC)` | Explicit timezone, window defaults to 1 hour                              |
+| `range(7200)`                                  | TZ auto-derived, window 7200 seconds                                      |
+| `range(UTC+8/7200)`                            | Explicit TZ and explicit window                                           |
+| `range(/7200)`                                 | TZ auto-derived + explicit window                                         |
+
+Window must be in 1–86400 seconds. Unrecognized values are treated as `passthrough` (the request never fails).
+
+> [!IMPORTANT]
+> The timezone specified inside `range()` **only takes effect in Range Seek mode** — it is used to decide whether the time falls inside the window and to generate the UTC time in the `Range: clock=` header. Once it falls back to Playseek passthrough, the behavior is **byte-for-byte identical** to not passing `r2h-seek-mode`; the `range(<TZ>)` does not rewrite the passthrough string.
+
+### r2h-start (optional, RTSP only)
+
+Start playback from a specified NPT time point (in seconds), commonly used for resume playback:
+
+```
+?r2h-start=123.45
 ```
 
-### r2h-start Parameter (Optional, RTSP Only)
-
-Used to specify starting playback of an RTSP stream from a specific time point, implementing resume functionality. This parameter value will be sent as an NPT (Normal Play Time) format time point to the RTSP server in the RTSP PLAY request via the `Range: npt=<time-point>-` header. This parameter is only valid for RTSP proxy.
-
-If the same RTSP request also includes `r2h-seek-mode=range(...)` and the seek start time falls within the window, `r2h-start` will be ignored and the seek start time will be used to generate a `Range: clock=` header instead.
-
-#### Example
-
-```url
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-start=123.45
-```
+Sent to upstream as a `Range: npt=<time>-` header in the RTSP `PLAY` request. If the same request also carries `r2h-seek-mode=range(...)` and Range Seek mode is engaged, `r2h-start` is ignored, and the seek start time generates the `Range: clock=` header instead.
 
 ## Supported Time Formats
 
-rtp2httpd supports parsing the following time formats. Only when time can be successfully parsed can timezone conversion or r2h-seek-offset second offset be applied.
+rtp2httpd recognizes the time formats below. **Output format always matches the input** (preserves `Z`, `±HH:MM`, `GMT`, and similar suffixes).
 
-### 1. yyyyMMddHHmmss Format (14 digits)
+| Format                              | Example                       | Self-contained TZ |
+| ----------------------------------- | ----------------------------- | ----------------- |
+| Unix timestamp (≤10 digits)         | `1704096000`                  | Yes (UTC)         |
+| 14-digit `yyyyMMddHHmmss`           | `20240101120000`              | No                |
+| 14-digit + `GMT` suffix             | `20240101120000GMT`           | Yes (UTC)         |
+| Compact ISO 8601                    | `20240101T120000`             | No                |
+| Compact ISO 8601 + `Z`              | `20240101T120000Z`            | Yes (UTC)         |
+| Compact ISO 8601 + `±HH:MM`         | `20240101T200000+08:00`       | Yes               |
+| Full ISO 8601                       | `2024-01-01T12:00:00`         | No                |
+| Full ISO 8601 + `Z` / `±HH:MM`      | `2024-01-01T12:00:00Z`        | Yes               |
+| Full ISO 8601 + milliseconds        | `2024-01-01T12:00:00.123Z`    | Depends on suffix |
 
-```
-playseek=20240101120000-20240101130000
-```
-
-### 2. Unix Timestamp Format (Up to 10 digits)
-
-```
-playseek=1704096000-1704099600
-```
-
-### 3. yyyyMMddHHmmssGMT Format (14 digits + GMT suffix)
-
-```
-playseek=20240101120000GMT-20240101130000GMT
-```
-
-The `GMT` suffix marks the value as carrying its own timezone, with semantics equivalent to the ISO 8601 `Z` suffix: the value is always interpreted as UTC, and **any** external timezone configuration (User-Agent `TZ/UTC±N`, `r2h-seek-mode=range(<TZ>)`) is ignored. `r2h-seek-offset` still applies (it is a user-declared time shift, not a timezone override).
-
-### 4. Compact ISO 8601 Format (yyyyMMddTHHmmss)
-
-Compact ISO 8601 format without hyphen and colon separators:
-
-```
-# Without timezone (uses User-Agent timezone)
-playseek=20240101T120000-20240101T130000
-
-# With Z suffix (UTC timezone)
-playseek=20240101T120000Z-20240101T130000Z
-
-# With timezone offset
-playseek=20240101T200000+08:00-20240101T210000+08:00
-```
-
-### 5. ISO 8601 Format (yyyy-MM-ddTHH:mm:ss)
-
-Full ISO 8601 format, supporting multiple variants:
-
-```
-# Without timezone (uses User-Agent timezone)
-playseek=2024-01-01T12:00:00-2024-01-01T13:00:00
-
-# With Z suffix (UTC timezone, no timezone conversion)
-playseek=2024-01-01T12:00:00Z-2024-01-01T13:00:00Z
-
-# With timezone offset (preserves original timezone, no timezone conversion)
-playseek=2024-01-01T12:00:00+08:00-2024-01-01T13:00:00+08:00
-
-# With milliseconds
-playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
-```
-
-**Common characteristics of ISO 8601 formats** (applies to formats 4 and 5):
-
-- If timezone information is included (Z or ±HH:MM), uses that timezone and ignores User-Agent timezone
-- If no timezone information is included, uses the timezone from User-Agent for conversion
-- Output format preserves original timezone suffix (Z, ±HH:MM, or no suffix)
-- Full format (format 5) supports millisecond precision (.sss)
-
-## Timezone Handling Mechanism
-
-### RTSP Recent Seek Handling
-
-For the RTSP proxy, in addition to passing seek parameters to the upstream as URL query parameters (same as HTTP proxy), a "near-realtime" branch is also supported. The seek parameters here include `playseek`, `tvdr`, and any custom parameter specified via `r2h-seek-name`:
-
-- This branch is **disabled** by default and must be explicitly enabled via `r2h-seek-mode=range(...)` (see "r2h-seek-mode Parameter" above)
-- When enabled, if the seek start time satisfies "current time − start time < window seconds", rtp2httpd will no longer pass the seek parameter through to the upstream RTSP URL
-- This branch only uses the seek start time; the end time is ignored
-- The RTSP `PLAY` request will send `Range: clock=<yyyyMMddTHHmmssZ>-`
-- The timezone of the start time is resolved in the following fallback order: explicit `range(<TZ>/...)` declaration → UA `TZ/UTC+N` → UTC. This fallback chain only applies to inputs **without an embedded timezone**: 14-digit `yyyyMMddHHmmss` and ISO 8601 without a `Z`/`±HH:MM` suffix. Inputs **with an embedded timezone** (`yyyyMMddHHmmssGMT`, ISO 8601 with a `Z` or `±HH:MM` suffix) use the timezone from the input itself; both `range(<TZ>)` and the UA `TZ/` marker are ignored.
-- The `range(<TZ>)` above **only affects the recent-clock decision and the `clock=` header formatting described in this section**. Once the request falls back to the passthrough branch (start time outside the window, range not enabled, seek parsing failed, etc.), the seek parameter on the upstream URL is still timezone-converted using UA `TZ/UTC+N` (or UTC if no UA is present), and `range(<TZ>)` is **not involved at all**. This "never let the fallback be worse than disabling range" behavior is intentional — `range(...)` is a purely additive optimization, and when the start time is outside the window it produces a request that is **byte-for-byte identical** to one made without it.
-- When the seek start time is exactly at the window boundary (i.e. `now − begin == window`), this branch is not triggered and the parameter is passed through as a normal URL parameter
-- If the seek value cannot be parsed, the original pass-through behavior is preserved
-- `r2h-seek-offset` affects both the window check and the final `clock=` time written out — once the offset-adjusted time falls outside the window, the request falls back to passthrough as well
-
-### Timezone Recognition
-
-The server will parse the `TZ/` marker in the User-Agent to obtain client timezone information:
-
-#### Supported Timezone Formats
-
-- `TZ/UTC+8` - UTC offset format (GMT+8)
-- `TZ/UTC-5` - UTC offset format (GMT-5)
-- `TZ/UTC` - Standard UTC timezone
-
-#### Default Behavior
-
-If there is no timezone information in the User-Agent, no timezone conversion is performed, only the second offset specified by `r2h-seek-offset` is applied.
+For "self-contained TZ" formats rtp2httpd skips timezone derivation — any external timezone configuration (UA `TZ/...`, `r2h-seek-mode=range(<TZ>)`) is ignored, but `r2h-seek-offset` still applies. For "no TZ" formats, see "Timezone Derivation" below.
 
 > [!NOTE]
-> rtp2httpd processes time parameters in the following steps:
->
-> 1. **Parse time format** — Identify which format the parameter value belongs to: Unix timestamp (≤10 digits), `yyyyMMddHHmmss` (14 digits), `yyyyMMddHHmmssGMT` (14 digits + GMT suffix), compact ISO 8601 (`yyyyMMddTHHmmss`), full ISO 8601 (`yyyy-MM-ddTHH:mm:ss`)
-> 2. **Parse User-Agent timezone** — Search for the `TZ/` marker in the User-Agent, extract UTC offset (seconds). If no timezone information, defaults to 0 (UTC)
-> 3. **Timezone conversion** — Formats with an embedded timezone (Unix timestamp, `yyyyMMddHHmmssGMT`, ISO 8601 with `Z`/`±HH:MM`) skip conversion; formats without an embedded timezone (`yyyyMMddHHmmss` and ISO 8601 without a timezone suffix) have the User-Agent timezone conversion applied
-> 4. **Apply `r2h-seek-offset`** — If this parameter is specified, apply additional second offset (can be positive or negative) to all formats
-> 5. **Format output** — Maintain original format, preserve original timezone suffix (if any)
-> 6. **Append to upstream URL** — Append the processed time parameter as a query parameter to the upstream request (RTSP sends DESCRIBE request, HTTP forwards to upstream server)
+> The `GMT` suffix in `yyyyMMddHHmmssGMT` is semantically equivalent to ISO 8601's `Z` — both are treated as "self-contained UTC".
+
+## Timezone Derivation
+
+Only applies to formats that don't carry their own timezone (14-digit `yyyyMMddHHmmss`, ISO 8601 without `Z`/`±HH:MM`).
+
+### Default (Playseek passthrough)
+
+rtp2httpd looks for the `TZ/` marker in the User-Agent header to obtain the client's timezone:
+
+```
+TZ/UTC      → UTC
+TZ/UTC+8    → UTC+8
+TZ/UTC-5    → UTC-5
+```
+
+When there's no `TZ/` marker in the UA, UTC is used (no timezone conversion is applied).
+
+### Range Seek mode
+
+When `r2h-seek-mode=range(...)` is enabled, the **Range Seek path only** picks the timezone in this priority order:
+
+1. `range(UTC+N)` explicit declaration
+2. UA `TZ/UTC+N`
+3. UTC
+
+When the request falls back to Playseek passthrough, timezone derivation reverts to the rules under "Default" above — the timezone inside `range()` does not participate.
 
 ## Related Documentation
 
-- [URL Formats](/en/guide/url-formats): RTSP/HTTP proxy URL format
+- [URL Formats](/en/guide/url-formats): RTSP / HTTP proxy URL format
 - [Configuration Reference](/en/reference/configuration): Server configuration options
