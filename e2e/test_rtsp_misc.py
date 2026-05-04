@@ -795,3 +795,73 @@ class TestRTSPSeekMode:
             assert "Range" not in play_reqs[0]["headers"]
         finally:
             rtsp.stop()
+
+    def test_range_with_garbage_after_tz_falls_back_to_passthrough(self, shared_r2h):
+        """range(UTC+8junk) must reject the malformed TZ token and degrade to passthrough."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500
+            utc_str = _format_yyyyMMddHHmmss(start_ts)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B8junk/3600)" % (
+                rtsp.port,
+                utc_str,
+            )
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+            assert "playseek=%s" % utc_str in describe_reqs[0]["uri"]
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert "Range" not in play_reqs[0]["headers"]
+        finally:
+            rtsp.stop()
+
+
+class TestRTSPSeekModeQueryMerge:
+    """Verify r2h-seek-mode survives the configured-service query-merge path
+    without leaking duplicates upstream."""
+
+    def test_configured_seek_mode_wins_over_request(self, r2h_binary):
+        """A configured RTSP service with r2h-seek-mode=range(...) should beat
+        a request-side r2h-seek-mode=passthrough, and the resulting upstream
+        URI must contain no r2h-seek-mode at all (no leak)."""
+        r2h_port = find_free_port()
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            config = (
+                "[global]\n"
+                "verbosity = 4\n"
+                "\n"
+                "[bind]\n"
+                "* %d\n"
+                "\n"
+                "[services]\n"
+                "#EXTM3U\n"
+                "#EXTINF:-1,SeekModeMerge\n"
+                "rtsp://127.0.0.1:%d/stream?r2h-seek-mode=range(UTC%%2B8/3600)\n"
+            ) % (r2h_port, rtsp.port)
+            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
+            r2h.start()
+            try:
+                start_ts = int(time.time()) - 1500  # 25 min ago, well within 60min window
+                cst_str = _format_yyyyMMddHHmmss(start_ts + 8 * 3600)
+                # Request explicitly asks for passthrough, but configured value should win.
+                url = "/SeekModeMerge?playseek=%s&r2h-seek-mode=passthrough" % cst_str
+
+                stream_get("127.0.0.1", r2h_port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+                assert describe_reqs, "expected at least one DESCRIBE"
+                # No r2h-seek-mode should leak into the upstream URI in any form.
+                assert "r2h-seek-mode" not in describe_reqs[0]["uri"], (
+                    "r2h-seek-mode leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                )
+                # Configured range(...) wins → clock= header is emitted.
+                play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+                assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+            finally:
+                r2h.stop()
+        finally:
+            rtsp.stop()

@@ -13,18 +13,24 @@
 #define MAX_TIMEZONE_OFFSET_SECONDS (TIMEZONE_MAX_OFFSET_HOURS * 3600)
 #define MIN_TIMEZONE_OFFSET_SECONDS (TIMEZONE_MIN_OFFSET_HOURS * 3600)
 
-int timezone_parse_utc_offset(const char *str, int *tz_offset_seconds) {
+int timezone_parse_utc_offset(const char *str, int *tz_offset_seconds, const char **endptr_out) {
   if (!str || !tz_offset_seconds) {
     return -1;
   }
 
   *tz_offset_seconds = 0;
+  if (endptr_out) {
+    *endptr_out = str;
+  }
 
   if (strncmp(str, "UTC", 3) != 0) {
     return -1;
   }
 
   str += 3;
+  if (endptr_out) {
+    *endptr_out = str;
+  }
 
   if (*str == '\0') {
     return 0;
@@ -54,6 +60,9 @@ int timezone_parse_utc_offset(const char *str, int *tz_offset_seconds) {
   }
 
   *tz_offset_seconds = seconds;
+  if (endptr_out) {
+    *endptr_out = endptr;
+  }
   return 0;
 }
 
@@ -88,7 +97,7 @@ int timezone_parse_from_user_agent(const char *user_agent, int *tz_offset_second
 
   tz_marker += 3; /* Skip "TZ/" */
 
-  if (timezone_parse_utc_offset(tz_marker, tz_offset_seconds) != 0) {
+  if (timezone_parse_utc_offset(tz_marker, tz_offset_seconds, NULL) != 0) {
     logger(LOG_INFO, "Timezone: Failed to parse timezone from User-Agent");
     *tz_offset_seconds = 0;
     return -1;

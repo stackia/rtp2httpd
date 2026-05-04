@@ -253,6 +253,34 @@ static void remove_query_param(char **query_start, char *param_start, char *valu
   }
 }
 
+/* Helper: strip the first occurrence of `?param=...` or `&param=...` from a URL
+ * that already contains a '?'. Operates in-place on the supplied URL buffer.
+ * Returns 1 if a match was found and removed, 0 otherwise. */
+static int strip_query_param_from_url(char *url, const char *param_name) {
+  char *qs = strchr(url, '?');
+  if (!qs) {
+    return 0;
+  }
+
+  size_t name_len = strlen(param_name);
+  char *p = qs + 1;
+  while ((p = strstr(p, param_name)) != NULL) {
+    int leading_ok = (p == qs + 1) || (p > qs + 1 && *(p - 1) == '&');
+    int trailing_ok = (p[name_len] == '=');
+    if (leading_ok && trailing_ok) {
+      char *value_end = strchr(p + name_len + 1, '&');
+      if (!value_end) {
+        value_end = p + name_len + 1 + strlen(p + name_len + 1);
+      }
+      char *qs_local = qs;
+      remove_query_param(&qs_local, p, value_end);
+      return 1;
+    }
+    p++;
+  }
+  return 0;
+}
+
 /**
  * Parse the value of r2h-seek-mode.
  * Recognized syntax:
@@ -347,7 +375,8 @@ static int parse_seek_mode_value(const char *value, seek_mode_t *out_mode, int *
 
   if (tz_part && tz_part[0] != '\0') {
     int tz_seconds = 0;
-    if (timezone_parse_utc_offset(tz_part, &tz_seconds) != 0) {
+    const char *tz_endptr = NULL;
+    if (timezone_parse_utc_offset(tz_part, &tz_seconds, &tz_endptr) != 0 || !tz_endptr || *tz_endptr != '\0') {
       logger(LOG_WARN, "Invalid TZ '%s' in r2h-seek-mode, falling back to passthrough", tz_part);
       return 0;
     }
@@ -1435,10 +1464,16 @@ service_t *service_create_with_query_merge(service_t *configured_service, const 
     }
   }
 
-  /* Append r2h-seek-mode parameter if not default */
+  /* Append r2h-seek-mode parameter if not default. Strip any request-supplied
+   * r2h-seek-mode first so we don't end up with two entries — extract_query_param
+   * only consumes the first match, and the second would otherwise leak into the
+   * upstream URI as an unrecognized control parameter. */
   if (configured_service->seek_mode == SEEK_MODE_RANGE) {
     char seek_mode_param[96];
-    const char *separator = strchr(merged_url, '?') ? "&" : "?";
+    const char *separator;
+
+    strip_query_param_from_url(merged_url, "r2h-seek-mode");
+    separator = strchr(merged_url, '?') ? "&" : "?";
 
     if (configured_service->seek_mode_tz_explicit) {
       int tz_hours = configured_service->seek_mode_tz_offset_seconds / 3600;

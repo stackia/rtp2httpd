@@ -112,7 +112,7 @@ The contents inside `range(...)` can be omitted, and are parsed by the following
 The window must be in the range `[1, 86400]` seconds. Unrecognized values are logged at warn level and treated as `passthrough`; they do not fail the request.
 
 > [!IMPORTANT]
-> The TZ inside `range(...)` is **only used for the "near-realtime" window check**. When the start time falls outside the window and the request falls back to passthrough, the behavior is exactly the same as if `r2h-seek-mode` was not set — the TZ from `range()` will **not** be used to rewrite the passthrough string. This makes `r2h-seek-mode=range(...)` a purely additive optimization that never makes an otherwise-working passthrough query worse.
+> The TZ inside `range(...)` **only takes effect on the clock= path**: it is used both to decide whether the start time falls inside the window, and to convert the client time into the UTC `Range: clock=...Z` timestamp sent upstream. When the start time falls outside the window and the request falls back to passthrough, the behavior is exactly the same as if `r2h-seek-mode` was not set — the TZ from `range()` will **not** be used to rewrite the passthrough string. This makes `r2h-seek-mode=range(...)` a purely additive optimization that never makes an otherwise-working passthrough query worse.
 
 #### Examples
 

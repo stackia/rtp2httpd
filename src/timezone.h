@@ -22,17 +22,24 @@
  * Parse a UTC offset string like "UTC", "UTC+8", "UTC-5".
  *
  * Recognized syntax: literal "UTC" optionally followed by '+' or '-' and an
- * integer hour count in [0, TIMEZONE_MAX_OFFSET_HOURS].
+ * integer hour count. The accepted hour range is
+ * [TIMEZONE_MIN_OFFSET_HOURS, TIMEZONE_MAX_OFFSET_HOURS] (i.e., -12 to +14).
+ *
+ * Parsing is lenient: it stops at the first character that is not part of the
+ * spec and reports success. Callers that need strict full-token validation
+ * should pass a non-NULL endptr_out and verify it points to the expected
+ * terminator (e.g., '\0').
  *
  * Thread Safety: Thread-safe
  *
  * @param str Input pointer to the start of the offset spec (must not be NULL).
- *            Parsing stops at the first character that is not part of the spec.
  * @param tz_offset_seconds Output: timezone offset in seconds from UTC.
  *                          Must not be NULL.
+ * @param endptr_out Optional output: set to the first character not consumed
+ *                   by parsing. May be NULL if not needed.
  * @return 0 on success, -1 on parse failure or out-of-range value.
  */
-int timezone_parse_utc_offset(const char *str, int *tz_offset_seconds);
+int timezone_parse_utc_offset(const char *str, int *tz_offset_seconds, const char **endptr_out);
 
 /*
  * Parse timezone information from User-Agent header
