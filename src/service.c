@@ -318,8 +318,9 @@ static int parse_seek_mode_value(const char *value, seek_mode_t *out_mode, int *
   }
 
   if (rest[0] != '(') {
-    logger(LOG_WARN, "Invalid r2h-seek-mode value '%s' (expected 'range(...)' or 'range'), "
-                     "falling back to passthrough",
+    logger(LOG_WARN,
+           "Invalid r2h-seek-mode value '%s' (expected 'range(...)' or 'range'), "
+           "falling back to passthrough",
            value);
     return 0;
   }
@@ -333,8 +334,9 @@ static int parse_seek_mode_value(const char *value, seek_mode_t *out_mode, int *
   }
 
   if (close[1] != '\0') {
-    logger(LOG_WARN, "Invalid r2h-seek-mode value '%s' (trailing characters after ')'), "
-                     "falling back to passthrough",
+    logger(LOG_WARN,
+           "Invalid r2h-seek-mode value '%s' (trailing characters after ')'), "
+           "falling back to passthrough",
            value);
     return 0;
   }

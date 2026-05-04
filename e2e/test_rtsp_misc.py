@@ -624,8 +624,9 @@ class TestRTSPSeekMode:
         rtsp.start()
         try:
             # Use fixed historical CST timestamps, far outside any window.
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=20240101180000-20240101230000&r2h-seek-mode=range(UTC%%2B8/3600)" % (
-                rtsp.port,
+            url = (
+                "/rtsp/127.0.0.1:%d/stream?playseek=20240101180000-20240101230000&r2h-seek-mode=range(UTC%%2B8/3600)"
+                % (rtsp.port,)
             )
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
@@ -724,9 +725,10 @@ class TestRTSPSeekMode:
             base_ts = int(time.time()) - 3000  # 50 min ago
             offset = 1800  # +30 min, still within 60min window relative to begin
             cst_str = _format_yyyyMMddHHmmss(base_ts + 8 * 3600)
-            url = (
-                "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-offset=%d&r2h-seek-mode=range(UTC%%2B8/3600)"
-                % (rtsp.port, cst_str, offset)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-offset=%d&r2h-seek-mode=range(UTC%%2B8/3600)" % (
+                rtsp.port,
+                cst_str,
+                offset,
             )
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
@@ -744,9 +746,10 @@ class TestRTSPSeekMode:
             base_ts = int(time.time()) - 3000  # 50 min ago
             offset = -1800  # makes begin look like 80 min ago, > 60min window
             cst_str = _format_yyyyMMddHHmmss(base_ts + 8 * 3600)
-            url = (
-                "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-offset=%d&r2h-seek-mode=range(UTC%%2B8/3600)"
-                % (rtsp.port, cst_str, offset)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-offset=%d&r2h-seek-mode=range(UTC%%2B8/3600)" % (
+                rtsp.port,
+                cst_str,
+                offset,
             )
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)

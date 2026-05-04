@@ -67,22 +67,22 @@ typedef struct service_s {
   struct addrinfo *addr;
   struct addrinfo *msrc_addr;
   struct addrinfo *fcc_addr;
-  int fcc_type;            /* FCC protocol type */
-  uint16_t fec_port;       /* FEC multicast port (0 if not configured) */
-  char *rtp_url;           /* Full RTP URL for SERVICE_MRTP */
-  char *rtsp_url;          /* Full RTSP URL for SERVICE_RTSP */
-  char *http_url;          /* Full HTTP URL for SERVICE_HTTP */
-  char *seek_param_name;   /* Name of seek parameter (e.g., "playseek", "tvdr") */
-  char *seek_param_value;  /* Value of seek parameter for time range */
-  int seek_offset_seconds; /* Additional offset in seconds from r2h-seek-offset
-                              parameter */
-  seek_mode_t seek_mode;             /* Seek mode from r2h-seek-mode parameter */
-  int seek_mode_tz_explicit;         /* 1 if range(...) explicitly specified a TZ */
-  int seek_mode_tz_offset_seconds;   /* TZ offset from range(TZ/...) when explicit */
-  int seek_mode_window_seconds;      /* Recency window from range(.../seconds) */
-  char *user_agent;                  /* User-Agent header for timezone detection */
-  char *ifname;                      /* Per-service upstream interface override (from r2h-ifname) */
-  char *ifname_fcc;                  /* Per-service FCC interface override (from r2h-ifname-fcc) */
+  int fcc_type;                    /* FCC protocol type */
+  uint16_t fec_port;               /* FEC multicast port (0 if not configured) */
+  char *rtp_url;                   /* Full RTP URL for SERVICE_MRTP */
+  char *rtsp_url;                  /* Full RTSP URL for SERVICE_RTSP */
+  char *http_url;                  /* Full HTTP URL for SERVICE_HTTP */
+  char *seek_param_name;           /* Name of seek parameter (e.g., "playseek", "tvdr") */
+  char *seek_param_value;          /* Value of seek parameter for time range */
+  int seek_offset_seconds;         /* Additional offset in seconds from r2h-seek-offset
+                                      parameter */
+  seek_mode_t seek_mode;           /* Seek mode from r2h-seek-mode parameter */
+  int seek_mode_tz_explicit;       /* 1 if range(...) explicitly specified a TZ */
+  int seek_mode_tz_offset_seconds; /* TZ offset from range(TZ/...) when explicit */
+  int seek_mode_window_seconds;    /* Recency window from range(.../seconds) */
+  char *user_agent;                /* User-Agent header for timezone detection */
+  char *ifname;                    /* Per-service upstream interface override (from r2h-ifname) */
+  char *ifname_fcc;                /* Per-service FCC interface override (from r2h-ifname-fcc) */
   struct service_s *next;
 } service_t;
 
