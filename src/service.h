@@ -77,6 +77,7 @@ typedef struct service_s {
   int seek_offset_seconds;         /* Additional offset in seconds from r2h-seek-offset
                                       parameter */
   seek_mode_t seek_mode;           /* Seek mode from r2h-seek-mode parameter */
+  int seek_mode_explicit;          /* 1 if r2h-seek-mode was explicitly set on the configured URL */
   int seek_mode_tz_explicit;       /* 1 if range(...) explicitly specified a TZ */
   int seek_mode_tz_offset_seconds; /* TZ offset from range(TZ/...) when explicit */
   int seek_mode_window_seconds;    /* Recency window from range(.../seconds) */
@@ -149,13 +150,14 @@ service_t *service_create_from_http_url(const char *http_url);
  * frees)
  * @param out_seek_offset_seconds Output: seek offset in seconds
  * @param out_seek_mode Output: parsed seek mode (default SEEK_MODE_PASSTHROUGH)
+ * @param out_seek_mode_explicit Output: 1 if r2h-seek-mode was present in the URL
  * @param out_seek_mode_tz_explicit Output: 1 if range(...) explicitly gave a TZ
  * @param out_seek_mode_tz_offset_seconds Output: TZ offset when explicit
  * @param out_seek_mode_window_seconds Output: recency window in seconds
  * @return 0 on success, -1 on failure
  */
 int service_extract_seek_params(char *query_start, char **out_seek_param_name, char **out_seek_param_value,
-                                int *out_seek_offset_seconds, seek_mode_t *out_seek_mode,
+                                int *out_seek_offset_seconds, seek_mode_t *out_seek_mode, int *out_seek_mode_explicit,
                                 int *out_seek_mode_tz_explicit, int *out_seek_mode_tz_offset_seconds,
                                 int *out_seek_mode_window_seconds);
 

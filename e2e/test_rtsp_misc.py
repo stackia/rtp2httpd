@@ -868,3 +868,78 @@ class TestRTSPSeekModeQueryMerge:
                 r2h.stop()
         finally:
             rtsp.stop()
+
+    def test_configured_passthrough_wins_over_request_range(self, r2h_binary):
+        """A configured RTSP service with explicit r2h-seek-mode=passthrough
+        should disable a request-side r2h-seek-mode=range(...). Without
+        seek_mode_explicit tracking the configured passthrough would be
+        indistinguishable from 'not configured' and the request would win."""
+        r2h_port = find_free_port()
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            config = (
+                "[global]\n"
+                "verbosity = 4\n"
+                "\n"
+                "[bind]\n"
+                "* %d\n"
+                "\n"
+                "[services]\n"
+                "#EXTM3U\n"
+                "#EXTINF:-1,SeekModeOff\n"
+                "rtsp://127.0.0.1:%d/stream?r2h-seek-mode=passthrough\n"
+            ) % (r2h_port, rtsp.port)
+            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
+            r2h.start()
+            try:
+                start_ts = int(time.time()) - 1500
+                cst_str = _format_yyyyMMddHHmmss(start_ts + 8 * 3600)
+                # Request asks for range(); configured passthrough must override.
+                url = "/SeekModeOff?playseek=%s&r2h-seek-mode=range(UTC%%2B8/3600)" % cst_str
+
+                stream_get("127.0.0.1", r2h_port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+                assert describe_reqs, "expected at least one DESCRIBE"
+                # playseek must be passed through; no r2h-seek-mode should leak.
+                assert "playseek=%s" % cst_str in describe_reqs[0]["uri"]
+                assert "r2h-seek-mode" not in describe_reqs[0]["uri"], (
+                    "r2h-seek-mode leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                )
+                # Configured passthrough wins → no clock= header.
+                play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+                assert "Range" not in play_reqs[0]["headers"]
+            finally:
+                r2h.stop()
+        finally:
+            rtsp.stop()
+
+    def test_duplicate_request_seek_mode_does_not_leak(self, shared_r2h):
+        """A client that sends r2h-seek-mode twice must have BOTH copies stripped
+        from the upstream URI — the second copy could otherwise be re-parsed
+        and override the first or leak as an unknown control parameter."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500
+            utc_str = _format_yyyyMMddHHmmss(start_ts)
+            # Two distinct r2h-seek-mode values; the first one (passthrough) wins.
+            url = (
+                "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=passthrough&r2h-seek-mode=range(UTC%%2B8/3600)"
+                % (rtsp.port, utc_str)
+            )
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+            assert describe_reqs, "expected at least one DESCRIBE"
+            # No r2h-seek-mode should leak into the upstream URI.
+            assert "r2h-seek-mode" not in describe_reqs[0]["uri"], (
+                "r2h-seek-mode leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+            )
+            # First value (passthrough) wins → no clock= header.
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert "Range" not in play_reqs[0]["headers"]
+        finally:
+            rtsp.stop()

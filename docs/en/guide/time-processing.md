@@ -208,7 +208,7 @@ For the RTSP proxy, in addition to passing seek parameters to the upstream as UR
 - When enabled, if the seek start time satisfies "current time − start time < window seconds", rtp2httpd will no longer pass the seek parameter through to the upstream RTSP URL
 - This branch only uses the seek start time; the end time is ignored
 - The RTSP `PLAY` request will send `Range: clock=<yyyyMMddTHHmmssZ>-`
-- The timezone of the start time is resolved in the following fallback order: explicit `range(<TZ>/...)` declaration → UA `TZ/UTC+N` → UTC
+- The timezone of the start time is resolved in the following fallback order: explicit `range(<TZ>/...)` declaration → UA `TZ/UTC+N` → UTC. This fallback chain **only applies to formats without their own timezone** (such as 14-digit `yyyyMMddHHmmss`, or ISO 8601 without a `Z`/`±HH:MM` suffix). If the input already carries a timezone suffix, that embedded timezone is always used and both `range(<TZ>)` and the UA `TZ/` marker are ignored.
 - When the seek start time is exactly at the window boundary (i.e. `now − begin == window`), this branch is not triggered and the parameter is passed through as a normal URL parameter
 - If the seek value cannot be parsed, the original pass-through behavior is preserved
 - `r2h-seek-offset` affects both the window check and the final `clock=` time written out — once the offset-adjusted time falls outside the window, the request falls back to passthrough as well

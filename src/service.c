@@ -253,9 +253,25 @@ static void remove_query_param(char **query_start, char *param_start, char *valu
   }
 }
 
-/* Helper: strip the first occurrence of `?param=...` or `&param=...` from a URL
+/* Find first occurrence of `param_name=` in the query string anchored at qs
+ * (the '?' character). Returns pointer to the start of the param name, or NULL.
+ */
+static char *find_query_param(char *qs, const char *param_name, size_t name_len) {
+  char *p = qs;
+  while ((p = strstr(p, param_name)) != NULL) {
+    int leading_ok = (p == qs + 1) || (p > qs && *(p - 1) == '&');
+    int trailing_ok = (p[name_len] == '=');
+    if (leading_ok && trailing_ok) {
+      return p;
+    }
+    p++;
+  }
+  return NULL;
+}
+
+/* Helper: strip every occurrence of `?param=...` or `&param=...` from a URL
  * that already contains a '?'. Operates in-place on the supplied URL buffer.
- * Returns 1 if a match was found and removed, 0 otherwise. */
+ * Returns the number of matches removed. */
 static int strip_query_param_from_url(char *url, const char *param_name) {
   char *qs = strchr(url, '?');
   if (!qs) {
@@ -263,22 +279,25 @@ static int strip_query_param_from_url(char *url, const char *param_name) {
   }
 
   size_t name_len = strlen(param_name);
-  char *p = qs + 1;
-  while ((p = strstr(p, param_name)) != NULL) {
-    int leading_ok = (p == qs + 1) || (p > qs + 1 && *(p - 1) == '&');
-    int trailing_ok = (p[name_len] == '=');
-    if (leading_ok && trailing_ok) {
-      char *value_end = strchr(p + name_len + 1, '&');
-      if (!value_end) {
-        value_end = p + name_len + 1 + strlen(p + name_len + 1);
-      }
-      char *qs_local = qs;
-      remove_query_param(&qs_local, p, value_end);
-      return 1;
+  int removed = 0;
+  for (;;) {
+    char *match = find_query_param(qs, param_name, name_len);
+    if (!match) {
+      break;
     }
-    p++;
+    char *value_end = strchr(match + name_len + 1, '&');
+    if (!value_end) {
+      value_end = match + name_len + 1 + strlen(match + name_len + 1);
+    }
+    char *qs_local = qs;
+    remove_query_param(&qs_local, match, value_end);
+    removed++;
+    if (!qs_local) {
+      /* Whole query was wiped out. */
+      break;
+    }
   }
-  return 0;
+  return removed;
 }
 
 /**
@@ -404,9 +423,12 @@ static int parse_seek_mode_value(const char *value, seek_mode_t *out_mode, int *
 }
 
 /**
- * Find a single-occurrence query parameter, copy its URL-decoded value into
- * the caller's buffer, and remove the parameter from the query string in
- * place.
+ * Find a query parameter, copy its URL-decoded value into the caller's buffer,
+ * and remove the parameter from the query string in place. If the parameter is
+ * present multiple times, only the first occurrence's value is returned and
+ * every subsequent duplicate is also stripped to prevent the leftover copies
+ * from leaking into the upstream URI (where they could even override the value
+ * we just extracted).
  *
  * @return  1 if the param was present and decoded successfully,
  *          0 if the param was absent,
@@ -417,21 +439,8 @@ static int extract_query_param(char **query_start_ptr, const char *param_name, c
   if (!query_start_ptr || !*query_start_ptr || !param_name || !out_value || out_size == 0)
     return 0;
 
-  char *qs = *query_start_ptr;
   size_t name_len = strlen(param_name);
-  char *p = qs;
-  char *match = NULL;
-
-  while ((p = strstr(p, param_name)) != NULL) {
-    int leading_ok = (p == qs + 1) || (p > qs && *(p - 1) == '&');
-    int trailing_ok = (p[name_len] == '=');
-    if (leading_ok && trailing_ok) {
-      match = p;
-      break;
-    }
-    p++;
-  }
-
+  char *match = find_query_param(*query_start_ptr, param_name, name_len);
   if (!match)
     return 0;
 
@@ -441,29 +450,43 @@ static int extract_query_param(char **query_start_ptr, const char *param_name, c
     value_end = value_start + strlen(value_start);
 
   size_t value_len = (size_t)(value_end - value_start);
+  int rc = 1;
   if (value_len >= out_size) {
     logger(LOG_WARN, "Value for query param '%s' too long (max %zu bytes), ignoring", param_name, out_size - 1);
     out_value[0] = '\0';
-    remove_query_param(query_start_ptr, match, value_end);
-    return -1;
+    rc = -1;
+  } else {
+    memcpy(out_value, value_start, value_len);
+    out_value[value_len] = '\0';
   }
-
-  memcpy(out_value, value_start, value_len);
-  out_value[value_len] = '\0';
 
   remove_query_param(query_start_ptr, match, value_end);
 
-  if (http_url_decode(out_value) != 0) {
+  /* Strip any duplicate occurrences. A misbehaving client sending the param
+   * twice would otherwise leak the second copy into the upstream URI, where
+   * it could even be re-parsed before the value we just extracted. */
+  while (*query_start_ptr) {
+    char *dup = find_query_param(*query_start_ptr, param_name, name_len);
+    if (!dup)
+      break;
+    char *dup_value_end = strchr(dup + name_len + 1, '&');
+    if (!dup_value_end)
+      dup_value_end = dup + name_len + 1 + strlen(dup + name_len + 1);
+    logger(LOG_WARN, "Duplicate query param '%s' stripped to avoid upstream leak", param_name);
+    remove_query_param(query_start_ptr, dup, dup_value_end);
+  }
+
+  if (rc == 1 && http_url_decode(out_value) != 0) {
     logger(LOG_ERROR, "Failed to decode query param '%s'", param_name);
     out_value[0] = '\0';
     return -1;
   }
 
-  return 1;
+  return rc;
 }
 
 int service_extract_seek_params(char *query_start, char **out_seek_param_name, char **out_seek_param_value,
-                                int *out_seek_offset_seconds, seek_mode_t *out_seek_mode,
+                                int *out_seek_offset_seconds, seek_mode_t *out_seek_mode, int *out_seek_mode_explicit,
                                 int *out_seek_mode_tz_explicit, int *out_seek_mode_tz_offset_seconds,
                                 int *out_seek_mode_window_seconds) {
   char r2h_seek_name_buf[128];
@@ -472,14 +495,15 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name, c
   char *seek_param_value = NULL;
   int seek_offset_seconds = 0;
   seek_mode_t seek_mode = SEEK_MODE_PASSTHROUGH;
+  int seek_mode_explicit = 0;
   int seek_mode_tz_explicit = 0;
   int seek_mode_tz_offset_seconds = 0;
   int seek_mode_window_seconds = SEEK_MODE_DEFAULT_WINDOW_SECONDS;
   char heuristic_seek_name[16];
 
   if (!query_start || *query_start != '?' || !out_seek_param_name || !out_seek_param_value ||
-      !out_seek_offset_seconds || !out_seek_mode || !out_seek_mode_tz_explicit || !out_seek_mode_tz_offset_seconds ||
-      !out_seek_mode_window_seconds) {
+      !out_seek_offset_seconds || !out_seek_mode || !out_seek_mode_explicit || !out_seek_mode_tz_explicit ||
+      !out_seek_mode_tz_offset_seconds || !out_seek_mode_window_seconds) {
     return -1;
   }
 
@@ -487,6 +511,7 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name, c
   *out_seek_param_value = NULL;
   *out_seek_offset_seconds = 0;
   *out_seek_mode = SEEK_MODE_PASSTHROUGH;
+  *out_seek_mode_explicit = 0;
   *out_seek_mode_tz_explicit = 0;
   *out_seek_mode_tz_offset_seconds = 0;
   *out_seek_mode_window_seconds = SEEK_MODE_DEFAULT_WINDOW_SECONDS;
@@ -510,6 +535,7 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name, c
 
   char mode_buf[96];
   if (extract_query_param(&query_start, "r2h-seek-mode", mode_buf, sizeof(mode_buf)) == 1) {
+    seek_mode_explicit = 1;
     parse_seek_mode_value(mode_buf, &seek_mode, &seek_mode_tz_explicit, &seek_mode_tz_offset_seconds,
                           &seek_mode_window_seconds);
     if (seek_mode == SEEK_MODE_RANGE) {
@@ -656,6 +682,7 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name, c
   seek_param_value = NULL; /* Transfer ownership */
   *out_seek_offset_seconds = seek_offset_seconds;
   *out_seek_mode = seek_mode;
+  *out_seek_mode_explicit = seek_mode_explicit;
   *out_seek_mode_tz_explicit = seek_mode_tz_explicit;
   *out_seek_mode_tz_offset_seconds = seek_mode_tz_offset_seconds;
   *out_seek_mode_window_seconds = seek_mode_window_seconds;
@@ -1177,8 +1204,9 @@ service_t *service_create_from_http_url(const char *http_url) {
   char *query_start = strchr(result->http_url, '?');
   if (query_start) {
     service_extract_seek_params(query_start, &result->seek_param_name, &result->seek_param_value,
-                                &result->seek_offset_seconds, &result->seek_mode, &result->seek_mode_tz_explicit,
-                                &result->seek_mode_tz_offset_seconds, &result->seek_mode_window_seconds);
+                                &result->seek_offset_seconds, &result->seek_mode, &result->seek_mode_explicit,
+                                &result->seek_mode_tz_explicit, &result->seek_mode_tz_offset_seconds,
+                                &result->seek_mode_window_seconds);
     service_extract_ifname_params(query_start, &result->ifname, &result->ifname_fcc);
   }
 
@@ -1232,6 +1260,7 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   char *seek_param_value = NULL;
   int seek_offset_seconds = 0;
   seek_mode_t seek_mode = SEEK_MODE_PASSTHROUGH;
+  int seek_mode_explicit = 0;
   int seek_mode_tz_explicit = 0;
   int seek_mode_tz_offset_seconds = 0;
   int seek_mode_window_seconds = SEEK_MODE_DEFAULT_WINDOW_SECONDS;
@@ -1267,7 +1296,7 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   query_start = strchr(url_part, '?');
   if (query_start) {
     if (service_extract_seek_params(query_start, &seek_param_name, &seek_param_value, &seek_offset_seconds, &seek_mode,
-                                    &seek_mode_tz_explicit, &seek_mode_tz_offset_seconds,
+                                    &seek_mode_explicit, &seek_mode_tz_explicit, &seek_mode_tz_offset_seconds,
                                     &seek_mode_window_seconds) < 0) {
       return NULL;
     }
@@ -1307,6 +1336,7 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   seek_param_value = NULL; /* Transfer ownership */
   result->seek_offset_seconds = seek_offset_seconds;
   result->seek_mode = seek_mode;
+  result->seek_mode_explicit = seek_mode_explicit;
   result->seek_mode_tz_explicit = seek_mode_tz_explicit;
   result->seek_mode_tz_offset_seconds = seek_mode_tz_offset_seconds;
   result->seek_mode_window_seconds = seek_mode_window_seconds;
@@ -1466,24 +1496,28 @@ service_t *service_create_with_query_merge(service_t *configured_service, const 
     }
   }
 
-  /* Append r2h-seek-mode parameter if not default. Strip any request-supplied
-   * r2h-seek-mode first so we don't end up with two entries — extract_query_param
-   * only consumes the first match, and the second would otherwise leak into the
-   * upstream URI as an unrecognized control parameter. */
-  if (configured_service->seek_mode == SEEK_MODE_RANGE) {
+  /* Re-apply the configured r2h-seek-mode whenever the operator set it
+   * explicitly — including an explicit `passthrough`, which must be able to
+   * disable a request-side opt-in. Strip any request copy first so configured
+   * always wins and no duplicate leaks into the upstream URI. */
+  if (configured_service->seek_mode_explicit) {
     char seek_mode_param[96];
     const char *separator;
 
     strip_query_param_from_url(merged_url, "r2h-seek-mode");
     separator = strchr(merged_url, '?') ? "&" : "?";
 
-    if (configured_service->seek_mode_tz_explicit) {
-      int tz_hours = configured_service->seek_mode_tz_offset_seconds / 3600;
-      snprintf(seek_mode_param, sizeof(seek_mode_param), "%sr2h-seek-mode=range(UTC%+d/%d)", separator, tz_hours,
-               configured_service->seek_mode_window_seconds);
+    if (configured_service->seek_mode == SEEK_MODE_RANGE) {
+      if (configured_service->seek_mode_tz_explicit) {
+        int tz_hours = configured_service->seek_mode_tz_offset_seconds / 3600;
+        snprintf(seek_mode_param, sizeof(seek_mode_param), "%sr2h-seek-mode=range(UTC%+d/%d)", separator, tz_hours,
+                 configured_service->seek_mode_window_seconds);
+      } else {
+        snprintf(seek_mode_param, sizeof(seek_mode_param), "%sr2h-seek-mode=range(/%d)", separator,
+                 configured_service->seek_mode_window_seconds);
+      }
     } else {
-      snprintf(seek_mode_param, sizeof(seek_mode_param), "%sr2h-seek-mode=range(/%d)", separator,
-               configured_service->seek_mode_window_seconds);
+      snprintf(seek_mode_param, sizeof(seek_mode_param), "%sr2h-seek-mode=passthrough", separator);
     }
 
     if (strlen(merged_url) + strlen(seek_mode_param) < sizeof(merged_url)) {
@@ -1919,6 +1953,7 @@ service_t *service_clone(service_t *service) {
 
   cloned->seek_offset_seconds = service->seek_offset_seconds;
   cloned->seek_mode = service->seek_mode;
+  cloned->seek_mode_explicit = service->seek_mode_explicit;
   cloned->seek_mode_tz_explicit = service->seek_mode_tz_explicit;
   cloned->seek_mode_tz_offset_seconds = service->seek_mode_tz_offset_seconds;
   cloned->seek_mode_window_seconds = service->seek_mode_window_seconds;
