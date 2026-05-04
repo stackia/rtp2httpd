@@ -46,8 +46,8 @@ class R2HProcess:
     def start(self, wait: bool = True) -> None:
         args = self._build_args()
         if self.capture_log:
-            self._log_path = tempfile.mkstemp(suffix=".log", prefix="r2h_log_")[1]
-            self._log_handle = open(self._log_path, "w")
+            log_fd, self._log_path = tempfile.mkstemp(suffix=".log", prefix="r2h_log_")
+            self._log_handle = os.fdopen(log_fd, "w")
             self.process = subprocess.Popen(args, stdout=self._log_handle, stderr=self._log_handle)
         else:
             self.process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

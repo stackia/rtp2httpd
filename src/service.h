@@ -202,20 +202,25 @@ int service_convert_seek_value(const seek_parse_result_t *parse_result, char *ou
 int service_format_recent_seek_range(const seek_parse_result_t *parse_result, char *output, size_t output_size);
 
 /**
- * Create service from configured service with query parameter merging
- * If the request URL contains query parameters, they are merged with the
- * configured service's URL and a new service is created.
- * If no query parameters in request, returns NULL (use original service).
+ * Create a new service derived from a configured service, applying any
+ * request-side query parameters with request-wins precedence over
+ * M3U-configured r2h-* control parameters.
  *
- * This function works for both RTP and RTSP services based on expected_type.
- * For RTSP services, it merges query params with rtsp_url.
- * For RTP services, it merges query params with url.
+ * Always returns a freshly allocated service on success: a deep clone of the
+ * configured service when the request carries no query string, otherwise a
+ * service rebuilt from the merged URL. Works for RTP, RTSP, and HTTP services
+ * based on expected_type, merging into rtsp_url / http_url / rtp_url
+ * accordingly.
  *
- * @param configured_service The configured service (RTP or RTSP)
+ * @param configured_service The configured service (RTP, RTSP, or HTTP)
  * @param request_url The HTTP request URL (may contain query params)
- * @param expected_type Expected service type (SERVICE_MRTP or SERVICE_RTSP)
- * @return Pointer to newly allocated service structure or NULL if no merge
- * needed/on failure
+ * @param expected_type Expected service type (SERVICE_MRTP, SERVICE_RTSP, or
+ *                      SERVICE_HTTP)
+ * @return Newly allocated service on success; NULL strictly on failure (e.g.
+ *         merged URL exceeds HTTP_URL_BUFFER_SIZE, allocation failure, type
+ *         mismatch). Callers must treat NULL as a hard error and must not fall
+ *         back to the configured service, otherwise the user's overrides would
+ *         be silently dropped.
  */
 service_t *service_create_with_query_merge(service_t *configured_service, const char *request_url,
                                            service_type_t expected_type);

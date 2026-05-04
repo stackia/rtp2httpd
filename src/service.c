@@ -1565,6 +1565,11 @@ service_t *service_create_from_rtp_url(const char *http_url) {
 
   /* Build and store full RTP URL (rtp://) - r2h-ifname already stripped */
   char rtp_url[HTTP_URL_BUFFER_SIZE];
+  if (strlen(url_part) + 6 >= sizeof(rtp_url)) {
+    logger(LOG_ERROR, "RTP URL too long: %zu bytes", strlen(url_part) + 6);
+    service_free(result);
+    return NULL;
+  }
   snprintf(rtp_url, sizeof(rtp_url), "rtp://%s", url_part);
   result->rtp_url = strdup(rtp_url);
   if (!result->rtp_url) {
