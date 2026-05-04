@@ -850,6 +850,72 @@ class TestRTSPSeekMode:
         finally:
             rtsp.stop()
 
+    def test_range_with_url_template_still_expands_placeholders(self, shared_r2h):
+        """If the RTSP URL has ${...} placeholders AND r2h-seek-mode=range(...)
+        triggers the recent-clock path, the placeholders must still be expanded
+        in the upstream DESCRIBE URI. Previously the recent-clock path passed
+        a NULL parse_result to service_resolve_upstream_url, which left
+        placeholders unresolved in the DESCRIBE URI."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500  # 25 min ago, well within 1h window
+            # Send playseek as a UTC-format yyyyMMddHHmmss string (no UA TZ),
+            # so that begin_tm_utc echoes the same string back out via the
+            # ${(b)...} placeholder. The recent-clock TZ override (range(UTC+0))
+            # is a no-op TZ-wise but still flips the path to clock=.
+            utc_str = _format_yyyyMMddHHmmss(start_ts)
+            url = ("/rtsp/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/stream?playseek=%s&r2h-seek-mode=range(3600)") % (
+                rtsp.port,
+                utc_str,
+            )
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+            assert describe_reqs, "expected at least one DESCRIBE"
+            uri = describe_reqs[0]["uri"]
+            assert "${" not in uri, "Template placeholder left unresolved in DESCRIBE URI: %s" % uri
+            assert ("/path/%s/stream" % utc_str) in uri, (
+                "Begin template should be substituted in DESCRIBE URI, got: %s" % uri
+            )
+            # Recent-clock path must still fire.
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+        finally:
+            rtsp.stop()
+
+    def test_range_with_iso8601_z_input_ignores_explicit_tz(self, shared_r2h):
+        """When the seek input is ISO-8601 with an embedded `Z` suffix, the
+        embedded TZ is authoritative — neither r2h-seek-mode=range(<TZ>) nor
+        the UA `TZ/` marker may shift the parsed instant. Documented contract;
+        regression guard for the explicit-TZ recompute branch."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500  # 25 min ago, well within 1h window
+            iso_str = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(start_ts))
+            # range(UTC+9) AND a UA TZ that disagrees with both the range TZ and
+            # the embedded `Z` — the `Z` wins regardless.
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B9/3600)" % (rtsp.port, iso_str)
+
+            stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
+            )
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts), (
+                "Embedded `Z` must take precedence over both range(<TZ>) and UA TZ — "
+                "got Range header %r" % play_reqs[0]["headers"].get("Range")
+            )
+        finally:
+            rtsp.stop()
+
 
 class TestRTSPSeekModeQueryMerge:
     """Verify the request-wins precedence rule for the configured-service
@@ -1076,6 +1142,133 @@ class TestRTSPSeekModeQueryMerge:
                 assert describe_reqs, "expected at least one DESCRIBE"
                 assert "r2h-ifname" not in describe_reqs[0]["uri"], (
                     "r2h-ifname leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                )
+            finally:
+                r2h.stop()
+        finally:
+            rtsp.stop()
+
+    def test_configured_seek_name_does_not_leak(self, r2h_binary):
+        """Configured r2h-seek-name must not survive into the upstream URI;
+        the resolved seek param value does, but under the configured custom
+        name (not as r2h-seek-name=...)."""
+        r2h_port = find_free_port()
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            config = self._config(r2h_port, rtsp.port, "SeekNameFallback", "?r2h-seek-name=customseek")
+            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
+            r2h.start()
+            try:
+                # Request supplies the value under the configured custom name.
+                base_ts = 1717000000
+                base_str = _format_yyyyMMddHHmmss(base_ts)
+                stream_get(
+                    "127.0.0.1",
+                    r2h_port,
+                    "/SeekNameFallback?customseek=%s" % base_str,
+                    read_bytes=4096,
+                    timeout=_STREAM_TIMEOUT,
+                )
+
+                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+                assert describe_reqs, "expected at least one DESCRIBE"
+                uri = describe_reqs[0]["uri"]
+                assert "r2h-seek-name" not in uri, "r2h-seek-name leaked into upstream URI: %s" % uri
+                assert "customseek=%s" % base_str in uri, (
+                    "Custom-named seek value should be forwarded under the configured name; got: %s" % uri
+                )
+            finally:
+                r2h.stop()
+        finally:
+            rtsp.stop()
+
+    def test_request_seek_name_overrides_configured(self, r2h_binary):
+        """Request r2h-seek-name overrides M3U-configured r2h-seek-name, and
+        neither r2h-seek-name copy leaks upstream."""
+        r2h_port = find_free_port()
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            # Configured custom name = "configured_name", but request asks for "request_name".
+            config = self._config(r2h_port, rtsp.port, "SeekNameMerge", "?r2h-seek-name=configured_name")
+            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
+            r2h.start()
+            try:
+                base_ts = 1717000000
+                base_str = _format_yyyyMMddHHmmss(base_ts)
+                # Provide the seek value under the request-configured name.
+                stream_get(
+                    "127.0.0.1",
+                    r2h_port,
+                    "/SeekNameMerge?r2h-seek-name=request_name&request_name=%s" % base_str,
+                    read_bytes=4096,
+                    timeout=_STREAM_TIMEOUT,
+                )
+
+                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+                assert describe_reqs, "expected at least one DESCRIBE"
+                uri = describe_reqs[0]["uri"]
+                assert "r2h-seek-name" not in uri, "r2h-seek-name leaked into upstream URI: %s" % uri
+                # Request-side custom name wins.
+                assert "request_name=%s" % base_str in uri, (
+                    "request_name (request-side) should be forwarded; got: %s" % uri
+                )
+                assert "configured_name=" not in uri, (
+                    "configured_name (M3U-side) must NOT be used when request overrides; got: %s" % uri
+                )
+            finally:
+                r2h.stop()
+        finally:
+            rtsp.stop()
+
+    def test_configured_ifname_fcc_does_not_leak(self, r2h_binary):
+        """r2h-ifname-fcc configured via M3U must not leak to the upstream URI.
+        Mirrors the r2h-ifname coverage on the separate FCC ifname branch."""
+        r2h_port = find_free_port()
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            config = self._config(r2h_port, rtsp.port, "IfnameFccFallback", "?r2h-ifname-fcc=lo0")
+            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
+            r2h.start()
+            try:
+                stream_get("127.0.0.1", r2h_port, "/IfnameFccFallback", read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+                assert describe_reqs, "expected at least one DESCRIBE"
+                assert "r2h-ifname-fcc" not in describe_reqs[0]["uri"], (
+                    "r2h-ifname-fcc leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                )
+            finally:
+                r2h.stop()
+        finally:
+            rtsp.stop()
+
+    def test_request_ifname_fcc_overrides_configured(self, r2h_binary):
+        """Configured r2h-ifname-fcc plus request r2h-ifname-fcc: request wins,
+        neither leaks. Mirrors test_request_ifname_overrides_configured for
+        the separate FCC ifname branch."""
+        r2h_port = find_free_port()
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            config = self._config(r2h_port, rtsp.port, "IfnameFccMerge", "?r2h-ifname-fcc=lo0")
+            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
+            r2h.start()
+            try:
+                stream_get(
+                    "127.0.0.1",
+                    r2h_port,
+                    "/IfnameFccMerge?r2h-ifname-fcc=lo0",
+                    read_bytes=4096,
+                    timeout=_STREAM_TIMEOUT,
+                )
+
+                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+                assert describe_reqs, "expected at least one DESCRIBE"
+                assert "r2h-ifname-fcc" not in describe_reqs[0]["uri"], (
+                    "r2h-ifname-fcc leaked into upstream URI: %s" % describe_reqs[0]["uri"]
                 )
             finally:
                 r2h.stop()

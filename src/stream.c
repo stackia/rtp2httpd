@@ -268,11 +268,14 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, se
         resolved_seek_param_name = NULL;
       }
 
-      /* Resolve URL templates / seek params, then parse */
+      /* Resolve URL templates / seek params, then parse. Always forward the
+       * parsed seek result so URL templates (${start}/${end}/...) expand even
+       * when use_playseek_range=1; suppression of the literal playseek query
+       * append on the non-template branch is already handled via the
+       * resolved_seek_param_name=NULL gating above. */
       char resolved_rtsp_url[2048];
-      if (service_resolve_upstream_url(service->rtsp_url, resolved_seek_param_name,
-                                       ctx->rtsp.use_playseek_range ? NULL : &seek_parse_result, resolved_rtsp_url,
-                                       sizeof(resolved_rtsp_url)) < 0) {
+      if (service_resolve_upstream_url(service->rtsp_url, resolved_seek_param_name, &seek_parse_result,
+                                       resolved_rtsp_url, sizeof(resolved_rtsp_url)) < 0) {
         logger(LOG_ERROR, "RTSP: Failed to resolve upstream URL");
         return -1;
       }
