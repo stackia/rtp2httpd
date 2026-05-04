@@ -114,6 +114,7 @@ The following FCC (Fast Channel Change) server addresses were collected from the
   - `183.59.156.166:8027` (Guangzhou)
   - `183.59.160.61:8027` (Shenzhen)
   - `183.59.168.166:8027` (Dongguan)
+  - `183.59.144.166:8027` (Foshan)
 
 ## Guangxi
 
