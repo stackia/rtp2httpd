@@ -3295,3 +3295,51 @@ class TestSeekValueFormats:
             assert "playseek=20240101T120000-20240101T130000" in full_path
         finally:
             upstream.stop()
+
+    def test_basic_iso8601_with_tz_offset_preserves_bytes_in_query_append(self, shared_r2h):
+        """Basic ISO 8601 input with an embedded `±HH:MM` suffix is
+        self-contained — the query-append converter must preserve the original
+        bytes (clock + suffix) so the output represents the same instant.
+        Previously the converter shifted the displayed clock to UTC while
+        still emitting the original suffix, producing e.g.
+        `20240101T120000+08:00` from `20240101T200000+08:00` — the bytes
+        differ from the input AND represent a different instant (UTC 04:00 vs
+        the original UTC 12:00)."""
+        expected_path = "/stream/live.m3u8"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream/live.m3u8?playseek=20240101T200000%%2B08:00-20240101T210000%%2B08:00"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            full_path = _get_upstream_path(upstream)
+            # Bytes preserved verbatim — UTC 12:00 stays UTC 12:00 = 20:00+08:00.
+            assert "playseek=20240101T200000+08:00-20240101T210000+08:00" in full_path, (
+                "self-contained ±HH:MM input must round-trip byte-for-byte; got: %s" % full_path
+            )
+        finally:
+            upstream.stop()
+
+    def test_basic_iso8601_with_tz_offset_and_seek_offset_shifts_clock_in_original_tz(self, shared_r2h):
+        """When `r2h-seek-offset` is applied to a basic ISO 8601 input with an
+        embedded `±HH:MM` suffix, the suffix is preserved AND the displayed
+        clock is shifted in the original TZ frame (not converted to UTC).
+        E.g. `20240101T200000+08:00` + 3600s = `20240101T210000+08:00`."""
+        expected_path = "/stream/live.m3u8"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream/live.m3u8"
+                "?playseek=20240101T200000%%2B08:00-20240101T210000%%2B08:00&r2h-seek-offset=3600"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            full_path = _get_upstream_path(upstream)
+            assert "playseek=20240101T210000+08:00-20240101T220000+08:00" in full_path, (
+                "offset must shift the clock within the original TZ frame; got: %s" % full_path
+            )
+        finally:
+            upstream.stop()

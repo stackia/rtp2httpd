@@ -396,21 +396,26 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
       return -1;
     }
 
-    if (has_timezone) {
-      timestamp -= timezone_offset;
-    } else {
+    /* If the input has its own TZ suffix (Z or ±HH:MM), preserve the original
+     * TZ frame in the output bytes — only apply the per-request offset. This
+     * mirrors the full ISO 8601 branch in timezone_convert_iso8601_with_offset.
+     * Doing `timestamp -= timezone_offset` here would shift the displayed clock
+     * to UTC while still emitting the original suffix, which is wrong (e.g.
+     * `20240101T200000+08:00` would become `20240101T120000+08:00`, a
+     * different instant). */
+    if (!has_timezone) {
       timestamp -= tz_offset_seconds;
     }
     timestamp += additional_offset_seconds;
 
-    struct tm *utc_time = gmtime(&timestamp);
-    if (!utc_time) {
-      logger(LOG_ERROR, "Timezone: Failed to convert basic ISO 8601 timestamp to UTC");
+    struct tm *display_time = gmtime(&timestamp);
+    if (!display_time) {
+      logger(LOG_ERROR, "Timezone: Failed to convert basic ISO 8601 timestamp");
       return -1;
     }
 
-    struct tm utc_time_copy = *utc_time;
-    if (timezone_format_time_yyyyMMddHHmmss(&utc_time_copy, basic_time, sizeof(basic_time)) != 0) {
+    struct tm display_time_copy = *display_time;
+    if (timezone_format_time_yyyyMMddHHmmss(&display_time_copy, basic_time, sizeof(basic_time)) != 0) {
       return -1;
     }
 
@@ -420,10 +425,8 @@ int timezone_convert_time_with_offset(const char *input_time, int tz_offset_seco
       return -1;
     }
 
-    logger(LOG_DEBUG,
-           "Timezone: basic ISO 8601 '%s' (TZ offset %d) + seek offset %d = "
-           "'%s'",
-           input_time, has_timezone ? timezone_offset : -tz_offset_seconds, additional_offset_seconds, output_time);
+    logger(LOG_DEBUG, "Timezone: basic ISO 8601 '%s' (TZ offset %d) + seek offset %d = '%s'", input_time,
+           has_timezone ? timezone_offset : -tz_offset_seconds, additional_offset_seconds, output_time);
     return 0;
   }
 
