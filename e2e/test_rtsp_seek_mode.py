@@ -14,9 +14,13 @@ Covers:
   (URL templates, ISO-8601 `Z` / `yyyyMMddHHmmssGMT` self-contained TZ
   contracts) lives in `test_url_template.py` next to the other URL /
   format tests.
-- `TestRTSPSeekModeQueryMerge` — request-wins precedence rule for the
-  M3U-configured + request query-merge path across all five `r2h-*`
-  control parameters.
+- `TestRTSPSeekModeQueryMerge` — seek-mode-flavored coverage of the
+  M3U-configured + request query-merge path: request-wins precedence
+  for `r2h-seek-mode` / `r2h-seek-offset` / `r2h-seek-name`, plus the
+  per-field strip checks for the two non-seek r2h-* params (ifname,
+  ifname-fcc). Generic merge-mechanism tests (buffer sizing, log-only
+  request-wins for ifname / ifname-fcc) live in
+  `test_m3u.py::TestM3UQueryMerge`.
 """
 
 import time
@@ -461,10 +465,14 @@ class TestRTSPSeekMode:
 
 
 class TestRTSPSeekModeQueryMerge:
-    """Verify the request-wins precedence rule for the configured-service
-    query-merge path: any r2h-* parameter present in the request URL takes
-    precedence over the M3U-configured value, and neither side leaks to the
-    upstream URI."""
+    """Seek-mode-specific behaviours of the configured-service query-merge
+    path: request-wins precedence and no-leak coverage for r2h-seek-mode,
+    r2h-seek-offset, and r2h-seek-name (plus the per-field strip checks for
+    r2h-ifname / r2h-ifname-fcc on this same merge code path).
+
+    Generic merge mechanism tests that aren't tied to a specific feature
+    (e.g. buffer sizing, log-only request-wins coverage for r2h-ifname /
+    r2h-ifname-fcc) live in test_m3u.py::TestM3UQueryMerge."""
 
     @staticmethod
     def _config(r2h_port: int, rtsp_port: int, channel_name: str, configured_url_query: str) -> str:

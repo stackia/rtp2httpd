@@ -19,23 +19,29 @@ class R2HProcess:
         port: int,
         extra_args: list[str] | None = None,
         config_content: str | None = None,
+        capture_log: bool = False,
     ):
         self.binary = str(binary)
         self.port = port
         self.extra_args = list(extra_args or [])
         self.config_content = config_content
+        self.capture_log = capture_log
         self.process: subprocess.Popen | None = None
         self._config_path: str | None = None
+        self._log_path: str | None = None
+        self._log_fd: int | None = None
 
     # -- lifecycle -----------------------------------------------------------
 
     def start(self, wait: bool = True) -> None:
         args = self._build_args()
-        self.process = subprocess.Popen(
-            args,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        if self.capture_log:
+            fd, log_path = tempfile.mkstemp(suffix=".log", prefix="r2h_log_")
+            self._log_path = log_path
+            self._log_fd = fd
+            self.process = subprocess.Popen(args, stdout=fd, stderr=fd)
+        else:
+            self.process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if wait and not wait_for_port(self.port, timeout=6.0):
             self.stop()
             raise RuntimeError("rtp2httpd did not start on port %d.\nCommand: %s" % (self.port, " ".join(args)))
@@ -48,12 +54,35 @@ class R2HProcess:
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait()
+        if self._log_fd is not None:
+            try:
+                os.close(self._log_fd)
+            except OSError:
+                pass
+            self._log_fd = None
+        if self._log_path:
+            try:
+                os.unlink(self._log_path)
+            except FileNotFoundError:
+                pass
+            self._log_path = None
         if self._config_path:
             try:
                 os.unlink(self._config_path)
             except FileNotFoundError:
                 pass
             self._config_path = None
+
+    def read_log(self) -> str:
+        """Return the captured rtp2httpd stdout/stderr. Empty string if log
+        capture wasn't enabled at construction time."""
+        if not self._log_path:
+            return ""
+        try:
+            with open(self._log_path) as f:
+                return f.read()
+        except FileNotFoundError:
+            return ""
 
     # -- internals -----------------------------------------------------------
 
