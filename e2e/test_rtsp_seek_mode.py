@@ -9,10 +9,11 @@ Covers:
   `r2h-start`, and the window-boundary / no-opt-in passthrough cases.
 - `TestRTSPSeekMode` — value-syntax grammar of `r2h-seek-mode`
   (`passthrough` / `range` / `range(N)` / `range(UTC±N)` /
-  `range(UTC±N/N)`), TZ fallback chain, recompute branch coverage for
-  inputs with embedded timezones (ISO-8601 `Z`/`±HH:MM`,
-  `yyyyMMddHHmmssGMT`), and interaction with `r2h-seek-offset` and
-  URL templates.
+  `range(UTC±N/N)`), TZ fallback chain, window edge cases, and
+  interaction with `r2h-seek-offset`. Input-format-specific behavior
+  (URL templates, ISO-8601 `Z` / `yyyyMMddHHmmssGMT` self-contained TZ
+  contracts) lives in `test_url_template.py` next to the other URL /
+  format tests.
 - `TestRTSPSeekModeQueryMerge` — request-wins precedence rule for the
   M3U-configured + request query-merge path across all five `r2h-*`
   control parameters.
@@ -140,18 +141,22 @@ class TestRTSPRecentPlayseek:
         finally:
             rtsp.stop()
 
-    @pytest.mark.parametrize("param_name", ["playseek", "Playseek", "tvdr", "custom_seek"])
-    def test_boundary_playseek_is_forwarded(self, shared_r2h, param_name):
+    def test_boundary_playseek_is_forwarded(self, shared_r2h):
+        """Exactly at the window boundary (now - begin == window), the recent
+        check must NOT fire — fall back to URL passthrough. Window comparison
+        lives in `service_parse_seek_value` and is independent of the seek
+        param name (the per-name extraction paths are already covered by
+        `test_recent_playseek_uses_clock_range`)."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
             start_ts = int(time.time()) - 3600
             start_str = _format_basic_utc(start_ts)
             end_str = _format_basic_utc(start_ts + 120)
-            query = self._build_seek_query(param_name, start_str, end_str)
-            url = "/rtsp/127.0.0.1:%d/stream?%s" % (
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s-%s&r2h-seek-mode=range" % (
                 rtsp.port,
-                query,
+                start_str,
+                end_str,
             )
 
             stream_get(
@@ -164,7 +169,7 @@ class TestRTSPRecentPlayseek:
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE"
-            assert "%s=%s-%s" % (param_name, start_str, end_str) in describe_reqs[0]["uri"]
+            assert "playseek=%s-%s" % (start_str, end_str) in describe_reqs[0]["uri"]
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert len(play_reqs) > 0, "Expected PLAY request"
@@ -361,29 +366,6 @@ class TestRTSPSeekMode:
         finally:
             rtsp.stop()
 
-    def test_range_falls_back_to_utc_when_no_ua_tz(self, shared_r2h):
-        """range(3600) with no UA TZ should fall back to UTC."""
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            start_ts = int(time.time()) - 1500
-            utc_str = _format_yyyyMMddHHmmss(start_ts)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(3600)" % (rtsp.port, utc_str)
-
-            stream_get(
-                "127.0.0.1",
-                shared_r2h.port,
-                url,
-                read_bytes=4096,
-                timeout=_STREAM_TIMEOUT,
-                headers={"User-Agent": "TestPlayer/1.0"},
-            )
-
-            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
-        finally:
-            rtsp.stop()
-
     def test_range_offset_propagates_into_clock(self, shared_r2h):
         """r2h-seek-offset shifts the clock= header time as well."""
         rtsp = MockRTSPServer(num_packets=500)
@@ -431,7 +413,10 @@ class TestRTSPSeekMode:
             rtsp.stop()
 
     def test_range_invalid_value_falls_back_to_passthrough(self, shared_r2h):
-        """Invalid r2h-seek-mode values should be ignored (treated as passthrough)."""
+        """Out-of-range UTC offset (`UTC+999`) inside a well-formed `range(...)`
+        wrapper must be rejected by `timezone_parse_utc_offset` and degrade to
+        passthrough. Covers the inner TZ-parse failure branch — distinct from
+        the outer "value doesn't start with `range`" branch."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
@@ -449,7 +434,10 @@ class TestRTSPSeekMode:
             rtsp.stop()
 
     def test_range_unrecognized_mode_falls_back_to_passthrough(self, shared_r2h):
-        """Garbage r2h-seek-mode values should also map to passthrough."""
+        """A value that doesn't match the `range` keyword at all (`bogus`)
+        must be rejected at the outermost prefix check and degrade to
+        passthrough. Different parser branch from the inner TZ-parse failure
+        covered by `test_range_invalid_value_falls_back_to_passthrough`."""
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
@@ -465,124 +453,6 @@ class TestRTSPSeekMode:
             assert "Range" not in play_reqs[0]["headers"]
         finally:
             rtsp.stop()
-
-    def test_range_with_garbage_after_tz_falls_back_to_passthrough(self, shared_r2h):
-        """range(UTC+8junk) must reject the malformed TZ token and degrade to passthrough."""
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            start_ts = int(time.time()) - 1500
-            utc_str = _format_yyyyMMddHHmmss(start_ts)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B8junk/3600)" % (
-                rtsp.port,
-                utc_str,
-            )
-
-            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
-
-            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
-            assert "playseek=%s" % utc_str in describe_reqs[0]["uri"]
-            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert "Range" not in play_reqs[0]["headers"]
-        finally:
-            rtsp.stop()
-
-    def test_range_with_url_template_still_expands_placeholders(self, shared_r2h):
-        """If the RTSP URL has ${...} placeholders AND r2h-seek-mode=range(...)
-        triggers the recent-clock path, the placeholders must still be expanded
-        in the upstream DESCRIBE URI. Previously the recent-clock path passed
-        a NULL parse_result to service_resolve_upstream_url, which left
-        placeholders unresolved in the DESCRIBE URI."""
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            start_ts = int(time.time()) - 1500  # 25 min ago, well within 1h window
-            # Send playseek as a UTC-format yyyyMMddHHmmss string (no UA TZ),
-            # so that begin_tm_utc echoes the same string back out via the
-            # ${(b)...} placeholder. The recent-clock TZ override (range(UTC+0))
-            # is a no-op TZ-wise but still flips the path to clock=.
-            utc_str = _format_yyyyMMddHHmmss(start_ts)
-            url = ("/rtsp/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/stream?playseek=%s&r2h-seek-mode=range(3600)") % (
-                rtsp.port,
-                utc_str,
-            )
-
-            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
-
-            describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
-            assert describe_reqs, "expected at least one DESCRIBE"
-            uri = describe_reqs[0]["uri"]
-            assert "${" not in uri, "Template placeholder left unresolved in DESCRIBE URI: %s" % uri
-            assert ("/path/%s/stream" % utc_str) in uri, (
-                "Begin template should be substituted in DESCRIBE URI, got: %s" % uri
-            )
-            # Recent-clock path must still fire.
-            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
-        finally:
-            rtsp.stop()
-
-    def test_range_with_iso8601_z_input_ignores_explicit_tz(self, shared_r2h):
-        """When the seek input is ISO-8601 with an embedded `Z` suffix, the
-        embedded TZ is authoritative — neither r2h-seek-mode=range(<TZ>) nor
-        the UA `TZ/` marker may shift the parsed instant. Documented contract;
-        regression guard for the explicit-TZ recompute branch."""
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            start_ts = int(time.time()) - 1500  # 25 min ago, well within 1h window
-            iso_str = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(start_ts))
-            # range(UTC+9) AND a UA TZ that disagrees with both the range TZ and
-            # the embedded `Z` — the `Z` wins regardless.
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B9/3600)" % (rtsp.port, iso_str)
-
-            stream_get(
-                "127.0.0.1",
-                shared_r2h.port,
-                url,
-                read_bytes=4096,
-                timeout=_STREAM_TIMEOUT,
-                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
-            )
-
-            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts), (
-                "Embedded `Z` must take precedence over both range(<TZ>) and UA TZ — "
-                "got Range header %r" % play_reqs[0]["headers"].get("Range")
-            )
-        finally:
-            rtsp.stop()
-
-    def test_range_with_gmt_suffix_input_ignores_explicit_tz(self, shared_r2h):
-        """yyyyMMddHHmmssGMT is a self-contained UTC marker (same contract as
-        ISO-8601 `Z`). Both r2h-seek-mode=range(<TZ>) and UA TZ must be
-        ignored when the input carries a GMT suffix."""
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            start_ts = int(time.time()) - 1500  # 25 min ago, within 1h window
-            gmt_str = _format_yyyyMMddHHmmss(start_ts) + "GMT"
-            # range(UTC+9) AND a UA TZ that disagrees with both the range TZ
-            # and the GMT suffix — the GMT suffix wins regardless.
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B9/3600)" % (rtsp.port, gmt_str)
-
-            stream_get(
-                "127.0.0.1",
-                shared_r2h.port,
-                url,
-                read_bytes=4096,
-                timeout=_STREAM_TIMEOUT,
-                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
-            )
-
-            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts), (
-                "GMT suffix must take precedence over both range(<TZ>) and UA TZ — "
-                "got Range header %r" % play_reqs[0]["headers"].get("Range")
-            )
-        finally:
-            rtsp.stop()
-
 
 # ===================================================================
 # M3U-configured + request query-merge precedence (request wins, no leak)
@@ -764,7 +634,9 @@ class TestRTSPSeekModeQueryMerge:
             rtsp.stop()
 
     def test_configured_ifname_does_not_leak(self, r2h_binary):
-        """r2h-ifname configured via M3U must not leak to the upstream URI."""
+        """The merge function strips `r2h-ifname` from the upstream URI
+        (per-field append block, separate from r2h-ifname-fcc and the three
+        seek-related r2h-* params)."""
         r2h_port = find_free_port()
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
@@ -774,41 +646,6 @@ class TestRTSPSeekModeQueryMerge:
             r2h.start()
             try:
                 stream_get("127.0.0.1", r2h_port, "/IfnameFallback", read_bytes=4096, timeout=_STREAM_TIMEOUT)
-
-                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
-                assert describe_reqs, "expected at least one DESCRIBE"
-                assert "r2h-ifname" not in describe_reqs[0]["uri"], (
-                    "r2h-ifname leaked into upstream URI: %s" % describe_reqs[0]["uri"]
-                )
-            finally:
-                r2h.stop()
-        finally:
-            rtsp.stop()
-
-    def test_request_ifname_overrides_configured(self, r2h_binary):
-        """Configured r2h-ifname plus request r2h-ifname: request wins, neither
-        leaks. We can't directly observe which interface was bound from the
-        e2e harness, but we can verify the merged URL is well-formed (the
-        request goes through) and no r2h-ifname survives into the upstream
-        URI."""
-        r2h_port = find_free_port()
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            config = self._config(r2h_port, rtsp.port, "IfnameMerge", "?r2h-ifname=lo0")
-            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
-            r2h.start()
-            try:
-                # Same interface name on the request side; the goal is to
-                # exercise the merge path without depending on platform-specific
-                # interface availability for assertion.
-                stream_get(
-                    "127.0.0.1",
-                    r2h_port,
-                    "/IfnameMerge?r2h-ifname=lo0",
-                    read_bytes=4096,
-                    timeout=_STREAM_TIMEOUT,
-                )
 
                 describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
                 assert describe_reqs, "expected at least one DESCRIBE"
@@ -895,8 +732,12 @@ class TestRTSPSeekModeQueryMerge:
             rtsp.stop()
 
     def test_configured_ifname_fcc_does_not_leak(self, r2h_binary):
-        """r2h-ifname-fcc configured via M3U must not leak to the upstream URI.
-        Mirrors the r2h-ifname coverage on the separate FCC ifname branch."""
+        """The merge function strips `r2h-ifname-fcc` from the upstream URI
+        (per-field append block, not shared with the other 4 r2h-* params).
+        ifname-fcc is only consumed by FCC code paths at runtime, but the
+        merge-side strip behaviour is service-type independent, so plain
+        RTSP is sufficient to exercise it. End-to-end FCC binding is
+        covered by the dedicated FCC test suites."""
         r2h_port = find_free_port()
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
@@ -906,36 +747,6 @@ class TestRTSPSeekModeQueryMerge:
             r2h.start()
             try:
                 stream_get("127.0.0.1", r2h_port, "/IfnameFccFallback", read_bytes=4096, timeout=_STREAM_TIMEOUT)
-
-                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
-                assert describe_reqs, "expected at least one DESCRIBE"
-                assert "r2h-ifname-fcc" not in describe_reqs[0]["uri"], (
-                    "r2h-ifname-fcc leaked into upstream URI: %s" % describe_reqs[0]["uri"]
-                )
-            finally:
-                r2h.stop()
-        finally:
-            rtsp.stop()
-
-    def test_request_ifname_fcc_overrides_configured(self, r2h_binary):
-        """Configured r2h-ifname-fcc plus request r2h-ifname-fcc: request wins,
-        neither leaks. Mirrors test_request_ifname_overrides_configured for
-        the separate FCC ifname branch."""
-        r2h_port = find_free_port()
-        rtsp = MockRTSPServer(num_packets=500)
-        rtsp.start()
-        try:
-            config = self._config(r2h_port, rtsp.port, "IfnameFccMerge", "?r2h-ifname-fcc=lo0")
-            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
-            r2h.start()
-            try:
-                stream_get(
-                    "127.0.0.1",
-                    r2h_port,
-                    "/IfnameFccMerge?r2h-ifname-fcc=lo0",
-                    read_bytes=4096,
-                    timeout=_STREAM_TIMEOUT,
-                )
 
                 describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
                 assert describe_reqs, "expected at least one DESCRIBE"

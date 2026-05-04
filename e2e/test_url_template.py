@@ -1072,6 +1072,39 @@ class TestRTSPPathTemplate:
         finally:
             rtsp.stop()
 
+    def test_template_expands_when_recent_clock_path_fires(self, shared_r2h):
+        """${...} placeholders in the RTSP URL must still expand even when
+        the recent-clock path fires (r2h-seek-mode=range + begin within the
+        window). Regression guard for a bug where the recent-clock branch
+        forwarded a NULL parse_result to the URL resolver, leaving
+        placeholders unresolved in the DESCRIBE URI."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500  # 25 min ago, within 1h window
+            # UTC-format yyyyMMddHHmmss + no UA TZ + range(3600): begin_tm_utc
+            # echoes the same string back via ${(b)yyyyMMddHHmmss}, and the
+            # recent-clock path also fires (verified via PLAY Range header).
+            utc_str = time.strftime("%Y%m%d%H%M%S", time.gmtime(start_ts))
+            url = ("/rtsp/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/stream?playseek=%s&r2h-seek-mode=range(3600)") % (
+                rtsp.port,
+                utc_str,
+            )
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            uri = _get_describe_uri(rtsp)
+            assert "${" not in uri, "Template placeholder left unresolved in DESCRIBE URI: %s" % uri
+            assert ("/path/%s/stream" % utc_str) in uri, (
+                "Begin template should be substituted in DESCRIBE URI, got: %s" % uri
+            )
+            # Cross-check the recent-clock path actually fired.
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            expected_clock = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(start_ts))
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % expected_clock
+        finally:
+            rtsp.stop()
+
 
 # ===================================================================
 # Query-append mode (non-template URLs)
@@ -2456,6 +2489,69 @@ class TestRTSPQueryAppendOffsetAndFormat:
 
             uri = _get_describe_uri(rtsp)
             assert _extract_query_param(uri, "playseek") == "20240101120000GMT-20240101130000GMT"
+        finally:
+            rtsp.stop()
+
+    def test_iso8601_z_ignores_range_mode_tz(self, shared_r2h):
+        """Companion to the UA-TZ self-contained-TZ tests above: when the seek
+        input is ISO-8601 with an embedded `Z` suffix, neither UA TZ NOR
+        r2h-seek-mode=range(<TZ>) may shift the parsed instant. Exercises
+        the recent-clock path (PLAY Range: clock=...) since range(<TZ>) is
+        the only entry point for the explicit-TZ recompute branch."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500  # 25 min ago, within 1h window
+            iso_str = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(start_ts))
+            # range(UTC+9) AND a UA TZ that disagrees with both the range TZ
+            # and the embedded `Z` — the `Z` wins regardless.
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B9/3600)" % (rtsp.port, iso_str)
+
+            stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
+            )
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            expected_clock = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(start_ts))
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % expected_clock, (
+                "Embedded `Z` must take precedence over both range(<TZ>) and UA TZ — "
+                "got Range header %r" % play_reqs[0]["headers"].get("Range")
+            )
+        finally:
+            rtsp.stop()
+
+    def test_gmt_suffix_ignores_range_mode_tz(self, shared_r2h):
+        """Companion to test_gmt_suffix_ignores_ua_tz: same self-contained-TZ
+        contract on the recent-clock path. range(<TZ>) is the only entry
+        point for the explicit-TZ recompute branch, so it's the only way
+        to fully prove the GMT suffix is authoritative everywhere."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            start_ts = int(time.time()) - 1500  # 25 min ago, within 1h window
+            gmt_str = time.strftime("%Y%m%d%H%M%S", time.gmtime(start_ts)) + "GMT"
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B9/3600)" % (rtsp.port, gmt_str)
+
+            stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+                headers={"User-Agent": "TestPlayer/1.0 TZ/UTC+8"},
+            )
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            expected_clock = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(start_ts))
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % expected_clock, (
+                "GMT suffix must take precedence over both range(<TZ>) and UA TZ — "
+                "got Range header %r" % play_reqs[0]["headers"].get("Range")
+            )
         finally:
             rtsp.stop()
 
