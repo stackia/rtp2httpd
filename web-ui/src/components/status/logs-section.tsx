@@ -37,6 +37,23 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
     [options],
   );
 
+  const timestampFormatter = useMemo(() => {
+    const dateFormatter = new Intl.DateTimeFormat(locale, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const timeFormatter = new Intl.DateTimeFormat(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    return {
+      format: (date: Date) => `${dateFormatter.format(date)} ${timeFormatter.format(date)}`,
+    };
+  }, [locale]);
+
   return (
     <section className="flex flex-col rounded-3xl border border-border/60 bg-card/90 p-5 shadow-sm">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -85,7 +102,7 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
                 key={`${log.timestamp}-${log.message}`}
                 className="rounded-lg border border-transparent bg-card/40 p-2 transition hover:border-border/60 text-sm text-card-foreground whitespace-pre-wrap"
               >
-                <span className="text-muted-foreground">{new Date(log.timestamp).toLocaleTimeString()}</span>{" "}
+                <span className="text-muted-foreground">{timestampFormatter.format(new Date(log.timestamp))}</span>{" "}
                 <span className="font-semibold uppercase tracking-wide text-primary">{log.levelName}</span>{" "}
                 {log.message}
               </div>
