@@ -1328,7 +1328,7 @@ cleanup:
 
 service_t *service_create_with_query_merge(service_t *configured_service, const char *request_url,
                                            service_type_t expected_type) {
-  char merged_url[2048];
+  char merged_url[HTTP_URL_BUFFER_SIZE];
   char *query_start, *existing_query;
   const char *base_url;
   const char *type_name;
