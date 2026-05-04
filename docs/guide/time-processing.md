@@ -210,7 +210,8 @@ playseek=2024-01-01T12:00:00.123-2024-01-01T13:00:00.456
 - 启用后，当 seek 起始时间满足「当前时间 − 起始时间 < 窗口秒数」时，rtp2httpd 不再把该 seek 参数透传到 RTSP 上游 URL
 - 该分支只取 seek 的起始时间，结束时间会被忽略
 - RTSP `PLAY` 请求会发送 `Range: clock=<yyyyMMddTHHmmssZ>-`
-- 起始时间所属时区按 `range(<TZ>/...)` 显式声明 → UA `TZ/UTC+N` → UTC 的顺序回退。该回退链只对**不自带时区**的输入生效：14 位 `yyyyMMddHHmmss`，以及 ISO 8601 不带 `Z`/`±HH:MM` 的形式。**自带时区**的输入（`yyyyMMddHHmmssGMT`、ISO 8601 带 `Z` 或 `±HH:MM` 后缀）会用输入里的时区，`range(<TZ>)` 与 UA `TZ/` 都被忽略。
+- 起始时间所属时区按 `range(<TZ>/...)` 显式声明 → UA `TZ/UTC+N` → UTC 的顺序回退。该回退链只对**不自带时区**的输入生效：14 位 `yyyyMMddHHmmss`，以及 ISO 8601 不带 `Z`/`±HH:MM` 的形式。**自带时区**的输入（`yyyyMMddHHmmssGMT`、ISO 8601 带 `Z` 或 `±HH:MM` 后缀）会用输入里的时区，`range(<TZ>)` 与 UA `TZ/` 都被忽略
+- 上述 `range(<TZ>)` **只作用于本节描述的 recent-clock 判定与 `clock=` 头格式化**。一旦回退到透传分支（不在窗口内、未启用 range、seek 解析失败等），上游 URL 的 seek 参数仍按 UA `TZ/UTC+N`（无 UA 即 UTC）做时区转换，**`range(<TZ>)` 完全不参与**。这种「绝不让 fallback 比禁用 range 更糟」是有意设计——`range(...)` 是纯增量优化，启用它在不命中时段时与不启用时**字节级一致**
 - 当 seek 起始时间恰好等于窗口边界（即 `now − begin == window`）时，不触发该分支，仍按普通 URL 参数透传
 - 如果 seek 无法解析，仍保持原有透传行为
 - `r2h-seek-offset` 会同时影响窗口判定与最终输出的 `clock=` 时间——offset 后的时间一旦落出窗口同样回退为透传
