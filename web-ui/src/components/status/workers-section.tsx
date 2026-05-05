@@ -3,6 +3,7 @@ import { useStatusTranslation } from "../../hooks/use-status-translation";
 import { formatBandwidth, formatBytes } from "../../lib/format";
 import type { Locale } from "../../lib/locale";
 import type { PoolStats, WorkerEntry } from "../../types";
+import type { BandwidthUnit } from "../../types/ui";
 import { Badge } from "../ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Progress } from "../ui/progress";
@@ -11,9 +12,10 @@ import { Separator } from "../ui/separator";
 interface WorkersSectionProps {
   workers: WorkerEntry[];
   locale: Locale;
+  bandwidthUnit: BandwidthUnit;
 }
 
-export function WorkersSection({ workers, locale }: WorkersSectionProps) {
+export function WorkersSection({ workers, locale, bandwidthUnit }: WorkersSectionProps) {
   const t = useStatusTranslation(locale);
   return (
     <section className="rounded-3xl border border-border/60 bg-card/90 p-6 shadow-sm">
@@ -31,7 +33,7 @@ export function WorkersSection({ workers, locale }: WorkersSectionProps) {
               {
                 key: "bandwidth",
                 label: t("bandwidth"),
-                value: formatBandwidth(worker.totalBandwidth),
+                value: formatBandwidth(worker.totalBandwidth, bandwidthUnit),
               },
               {
                 key: "dataSent",

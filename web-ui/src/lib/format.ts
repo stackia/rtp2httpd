@@ -1,3 +1,5 @@
+import type { BandwidthUnit } from "../types/ui";
+
 export function formatBytes(bytes: number): string {
   if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(2)} GB`;
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(2)} MB`;
@@ -5,7 +7,12 @@ export function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
-export function formatBandwidth(bytesPerSec: number): string {
+export function formatBandwidth(bytesPerSec: number, unit: BandwidthUnit): string {
+  if (unit === "bytes") {
+    if (bytesPerSec >= 1_000_000) return `${(bytesPerSec / 1_000_000).toFixed(2)} MB/s`;
+    if (bytesPerSec >= 1_000) return `${(bytesPerSec / 1_000).toFixed(2)} KB/s`;
+    return `${bytesPerSec} B/s`;
+  }
   const bps = bytesPerSec * 8;
   if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(2)} Mbps`;
   if (bps >= 1_000) return `${(bps / 1_000).toFixed(2)} Kbps`;

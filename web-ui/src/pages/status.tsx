@@ -7,6 +7,7 @@ import { ServiceControlSection } from "../components/status/service-control-sect
 import { StatusHeader } from "../components/status/status-header";
 import { SummaryStats } from "../components/status/summary-stats";
 import { WorkersSection } from "../components/status/workers-section";
+import { useBandwidthUnit } from "../hooks/use-bandwidth-unit";
 import { useLocale } from "../hooks/use-locale";
 import { useSse } from "../hooks/use-sse";
 import { useStatusApi } from "../hooks/use-status-api";
@@ -47,6 +48,7 @@ function StatusPage() {
   const t = useStatusTranslation(locale);
 
   const { theme, setTheme } = useTheme("status-theme");
+  const { bandwidthUnit, setBandwidthUnit } = useBandwidthUnit("status-bandwidth-unit");
   const { disconnectClient, setLogLevel, clearLogs, reloadConfig, restartWorkers } = useStatusApi();
 
   const [connectionState, setConnectionState] = useState<ConnectionState>("reconnecting");
@@ -143,7 +145,7 @@ function StatusPage() {
 
   const uptime = payload ? formatDuration(payload.uptimeMs) : "--";
 
-  const totalBandwidthDisplay = payload ? formatBandwidth(payload.totalBandwidth) : "--";
+  const totalBandwidthDisplay = payload ? formatBandwidth(payload.totalBandwidth, bandwidthUnit) : "--";
   const totalTrafficDisplay = payload ? formatBytes(payload.totalBytesSent) : "--";
   const totalClients = payload ? payload.totalClients : 0;
   const maxClientsDisplay = payload ? String(payload.maxClients) : "--";
@@ -209,12 +211,14 @@ function StatusPage() {
             uptime={uptime}
             version={payload?.version ?? "--"}
             locale={locale}
-            onLocaleChange={(next) => setLocale(next)}
+            onLocaleChange={setLocale}
             localeOptions={localeOptions}
             theme={theme}
-            onThemeChange={(next) => setTheme(next)}
+            onThemeChange={setTheme}
             themeOptions={THEME_OPTIONS}
             themeLabels={THEME_LABELS}
+            bandwidthUnit={bandwidthUnit}
+            onBandwidthUnitChange={setBandwidthUnit}
           />
 
           <SummaryStats stats={stats} />
@@ -223,12 +227,13 @@ function StatusPage() {
             clients={clients}
             locale={locale}
             showDisconnected={showDisconnected}
-            onShowDisconnectedChange={(checked) => setShowDisconnected(checked)}
+            onShowDisconnectedChange={setShowDisconnected}
             disconnectingIds={disconnectingIds}
             onDisconnect={handleDisconnect}
+            bandwidthUnit={bandwidthUnit}
           />
 
-          <WorkersSection workers={payload?.workers ?? []} locale={locale} />
+          <WorkersSection workers={payload?.workers ?? []} locale={locale} bandwidthUnit={bandwidthUnit} />
 
           <LogsSection
             logs={logs}

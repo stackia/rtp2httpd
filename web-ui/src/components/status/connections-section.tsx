@@ -4,6 +4,7 @@ import { formatBandwidth, formatBytes, formatDuration } from "../../lib/format";
 import type { Locale } from "../../lib/locale";
 import { stateToLabel, stateToVariant } from "../../lib/status";
 import type { ClientRow } from "../../types";
+import type { BandwidthUnit } from "../../types/ui";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
@@ -18,6 +19,7 @@ interface ConnectionsSectionProps {
   onShowDisconnectedChange: (checked: boolean) => void;
   disconnectingIds: Set<string>;
   onDisconnect: (clientId: string) => void;
+  bandwidthUnit: BandwidthUnit;
 }
 
 export function ConnectionsSection({
@@ -27,6 +29,7 @@ export function ConnectionsSection({
   onShowDisconnectedChange,
   disconnectingIds,
   onDisconnect,
+  bandwidthUnit,
 }: ConnectionsSectionProps) {
   const t = useStatusTranslation(locale);
   return (
@@ -82,7 +85,7 @@ export function ConnectionsSection({
                     <TableCell>
                       {formatDuration(client.isDisconnected ? (client.disconnectDurationMs ?? 0) : client.durationMs)}
                     </TableCell>
-                    <TableCell>{formatBandwidth(client.currentBandwidth)}</TableCell>
+                    <TableCell>{formatBandwidth(client.currentBandwidth, bandwidthUnit)}</TableCell>
                     <TableCell>{formatBytes(client.bytesSent)}</TableCell>
                     <TableCell>
                       <QueueUsage
@@ -134,7 +137,7 @@ export function ConnectionsSection({
                       {formatDuration(client.isDisconnected ? (client.disconnectDurationMs ?? 0) : client.durationMs)}
                     </span>
                     <span>
-                      {t("bandwidth")}: {formatBandwidth(client.currentBandwidth)}
+                      {t("bandwidth")}: {formatBandwidth(client.currentBandwidth, bandwidthUnit)}
                     </span>
                     <span>
                       {t("dataSent")}: {formatBytes(client.bytesSent)}

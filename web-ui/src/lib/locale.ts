@@ -1,6 +1,5 @@
-export type Locale = "en" | "zh-Hans" | "zh-Hant";
-
-const SUPPORTED_LOCALES: Locale[] = ["en", "zh-Hans", "zh-Hant"];
+export const SUPPORTED_LOCALES = ["en", "zh-Hans", "zh-Hant"] as const;
+export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 export function normalizeLocale(locale: string | undefined): Locale | null {
   if (!locale) return null;
@@ -35,22 +34,4 @@ export function detectBrowserLocale(navigatorObject: Navigator | undefined): Loc
   }
 
   return "en";
-}
-
-export function ensureSupportedLocale(locale: string | null | undefined): Locale {
-  if (locale && (SUPPORTED_LOCALES as string[]).includes(locale)) {
-    return locale as Locale;
-  }
-  return "en";
-}
-
-export function detectInitialLocale(storageKey: string): Locale {
-  if (typeof window === "undefined") {
-    return "en";
-  }
-  const stored = window.localStorage.getItem(storageKey);
-  if (stored) {
-    return ensureSupportedLocale(stored);
-  }
-  return detectBrowserLocale(navigator);
 }

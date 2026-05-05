@@ -1,16 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ThemeMode } from "../types/ui";
+import { useCallback, useEffect, useMemo } from "react";
+import { THEME_MODES, type ThemeMode } from "../types/ui";
+import { usePersistedEnum } from "./use-persisted-enum";
 
-function readStoredTheme(storageKey: string): ThemeMode {
-  if (typeof window === "undefined") {
-    return "auto";
-  }
-  const stored = window.localStorage.getItem(storageKey);
-  return stored === "light" || stored === "dark" ? stored : "auto";
-}
+const DEFAULT_THEME: ThemeMode = "auto";
 
 export function useTheme(storageKey: string) {
-  const [theme, setTheme] = useState<ThemeMode>(() => readStoredTheme(storageKey));
+  const [theme, setTheme] = usePersistedEnum<ThemeMode>(storageKey, DEFAULT_THEME, THEME_MODES);
 
   const applyTheme = useCallback((mode: ThemeMode, systemDarkOverride?: boolean) => {
     if (typeof document === "undefined") return;
@@ -36,14 +31,7 @@ export function useTheme(storageKey: string) {
 
   useEffect(() => {
     applyTheme(theme);
-    if (typeof window !== "undefined") {
-      if (theme === "auto") {
-        window.localStorage.removeItem(storageKey);
-      } else {
-        window.localStorage.setItem(storageKey, theme);
-      }
-    }
-  }, [theme, storageKey, applyTheme]);
+  }, [theme, applyTheme]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -61,11 +49,5 @@ export function useTheme(storageKey: string) {
     return () => media.removeEventListener("change", handleChange);
   }, [theme, applyTheme]);
 
-  return useMemo(
-    () => ({
-      theme,
-      setTheme,
-    }),
-    [theme],
-  );
+  return useMemo(() => ({ theme, setTheme }), [theme, setTheme]);
 }
