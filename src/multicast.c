@@ -535,10 +535,7 @@ int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx, 
     /* Handle based on FCC state (if FCC initialized) */
     if (!ctx->fcc.initialized) {
       /* Direct multicast without FCC - forward to client */
-      int processed_bytes = stream_process_rtp_payload(ctx, recv_buf);
-      if (processed_bytes > 0) {
-        ctx->total_bytes_sent += (uint64_t)processed_bytes;
-      }
+      stream_process_rtp_payload(ctx, recv_buf);
       buffer_ref_put(recv_buf);
       continue; /* Read next packet */
     }
