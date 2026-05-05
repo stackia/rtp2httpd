@@ -625,6 +625,8 @@ connection_write_status_t connection_handle_write(connection_t *c) {
     size_t bytes_sent = 0;
     int ret = zerocopy_send(c->fd, &c->zc_queue, &bytes_sent);
     total_sent += bytes_sent;
+    /* Count post-send so per-client bandwidth reflects actual receive rate, not enqueue rate. */
+    c->stream.total_bytes_sent += (uint64_t)bytes_sent;
 
     if (ret < 0 && ret != -2) {
       c->state = CONN_CLOSING;

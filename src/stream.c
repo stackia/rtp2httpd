@@ -107,9 +107,6 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
       }
       return -1;
     }
-    if (result > 0) {
-      ctx->total_bytes_sent += (uint64_t)result;
-    }
     return 0;
   }
 
@@ -118,9 +115,6 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
     int result = rtsp_handle_udp_rtp_data(&ctx->rtsp, ctx->conn);
     if (result < 0) {
       return -1; /* Error */
-    }
-    if (result > 0) {
-      ctx->total_bytes_sent += (uint64_t)result;
     }
     return 0; /* Success - processed data, continue with other events */
   }
@@ -142,9 +136,6 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
     if (result < 0) {
       logger(LOG_ERROR, "HTTP Proxy: Socket event handling failed");
       return -1;
-    }
-    if (result > 0) {
-      ctx->total_bytes_sent += (uint64_t)result;
     }
     return 0;
   }
