@@ -191,6 +191,13 @@ static inline size_t connection_queue_bytes(const connection_t *c) {
   return c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
 }
 
+/* Record one upstream-pause edge.  Called by per-transport pause helpers
+ * (http_proxy_pause_upstream, rtsp_pause_upstream) on the 0->1 transition. */
+static inline void connection_record_pause(connection_t *c) {
+  if (c)
+    c->backpressure_events++;
+}
+
 /**
  * Returns true when the client send queue has reached the HWM and upstream
  * reads should be paused.  Refreshes c->queue_limit_bytes from current pool
