@@ -113,7 +113,9 @@ int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref);
  * the queue has fallen below the low watermark.
  *
  * Called from connection_handle_write after a successful zerocopy_send.
- * @param ctx Stream context (may be uninitialized — function tolerates that)
+ * The struct must be at least zero-initialized (the embedded stream context
+ * in connection_t is via calloc); passing uninitialized stack memory is
+ * unsafe — `conn` and the `*.initialized` flags are dereferenced.
  */
 void stream_on_client_drain(stream_context_t *ctx);
 

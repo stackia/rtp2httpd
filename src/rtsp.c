@@ -324,38 +324,22 @@ void rtsp_session_init(rtsp_session_t *session) {
  * connection. */
 #define RTSP_MAX_PAUSE_MS 30000
 
-/**
- * Compute the desired event mask for the RTSP TCP socket based on current
- * session state.  POLLER_IN is included only when not paused; POLLER_OUT is
- * included whenever there's outbound work pending (request headers not fully
- * sent or a keepalive queued).
- */
-static uint32_t rtsp_compute_socket_events(const rtsp_session_t *s) {
-  uint32_t mask = POLLER_HUP | POLLER_ERR | POLLER_RDHUP;
-  if (!s->upstream_paused)
-    mask |= POLLER_IN;
-  if (s->pending_request_sent < s->pending_request_len || s->keepalive_pending)
-    mask |= POLLER_OUT;
-  return mask;
-}
-
-/* The TCP socket carries both control-plane responses (PLAY/keepalive replies,
- * TEARDOWN) and `$`-prefixed media frames.  Pausing recv() delays control
- * responses too — acceptable because keepalives are sent FROM us and the
- * server's reply just sits in its TCP send buffer until we resume.
- * rtsp_session_tick() enforces RTSP_MAX_PAUSE_MS so we don't outlast the
- * server's session timeout. */
+/* Pause/resume are flag-only.  We deliberately avoid `poller_mod` because on
+ * kqueue (src/poller_kqueue.c) a mask without POLLER_IN/POLLER_OUT deletes
+ * the read AND write filters, silently losing HUP/EOF detection while
+ * paused.  The TCP socket also carries control-plane responses
+ * (PLAY/keepalive replies, TEARDOWN), and outbound work (state machine
+ * requests, keepalives) updates POLLER_OUT independently — keeping the read
+ * filter in place lets all of that continue to flow.  rtsp_handle_tcp_-
+ * interleaved_data() bails out via the HWM check when the queue is
+ * saturated; rtsp_session_tick() enforces RTSP_MAX_PAUSE_MS so we don't
+ * outlast the server's session timeout. */
 static void rtsp_pause_upstream(rtsp_session_t *session) {
-  if (!session || session->upstream_paused || session->socket < 0 || session->epoll_fd < 0)
+  if (!session || session->upstream_paused)
     return;
   if (session->transport_mode != RTSP_TRANSPORT_TCP)
     return;
   session->upstream_paused = 1;
-  if (poller_mod(session->epoll_fd, session->socket, rtsp_compute_socket_events(session)) < 0) {
-    logger(LOG_DEBUG, "RTSP TCP: poller_mod (pause) failed: %s", strerror(errno));
-    session->upstream_paused = 0;
-    return;
-  }
   session->pause_started_ms = get_time_ms();
   if (session->conn)
     session->conn->any_upstream_paused = 1;
@@ -365,25 +349,30 @@ static void rtsp_pause_upstream(rtsp_session_t *session) {
 }
 
 void rtsp_resume_upstream(rtsp_session_t *session) {
-  if (!session || !session->upstream_paused || session->socket < 0 || session->epoll_fd < 0)
+  if (!session || !session->upstream_paused)
     return;
-  /* Tentatively clear the paused flag so rtsp_compute_socket_events includes
-   * POLLER_IN; revert on poller_mod failure. */
   session->upstream_paused = 0;
-  if (poller_mod(session->epoll_fd, session->socket, rtsp_compute_socket_events(session)) < 0) {
-    logger(LOG_DEBUG, "RTSP TCP: poller_mod (resume) failed: %s", strerror(errno));
-    session->upstream_paused = 1;
-    return;
-  }
   session->pause_started_ms = 0;
   if (session->conn &&
       (!session->conn->stream.http_proxy.initialized || !session->conn->stream.http_proxy.upstream_paused))
     session->conn->any_upstream_paused = 0;
   logger(LOG_DEBUG, "RTSP TCP: Resumed upstream reads");
-  /* Edge-triggered pollers may not fire EPOLLIN on EPOLL_CTL_MOD if data
-   * arrived while paused.  Drain proactively to guarantee progress. */
-  if (session->conn)
-    rtsp_handle_tcp_interleaved_data(session, session->conn);
+  /* Drain everything we can in this call frame.  The function loops
+   * internally until EAGAIN, HWM re-pause, EOF, or buffer-full.  If it
+   * returns -1 (EOF/recv error), mirror the cleanup the IN-event handler
+   * would have done so the session is not orphaned. */
+  if (!session->conn)
+    return;
+  int result = rtsp_handle_tcp_interleaved_data(session, session->conn);
+  if (result < 0) {
+    logger(LOG_DEBUG, "RTSP TCP: Upstream EOF during resume drain, closing");
+    rtsp_force_cleanup(session);
+    if (session->conn->state != CONN_CLOSING) {
+      session->conn->state = CONN_CLOSING;
+      connection_epoll_update_events(session->conn->epfd, session->conn->fd,
+                                     POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+    }
+  }
 }
 
 /**

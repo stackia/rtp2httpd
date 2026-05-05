@@ -80,13 +80,17 @@ void http_proxy_session_init(http_proxy_session_t *session) {
   session->cleanup_done = 0;
 }
 
+/* Pause/resume are flag-only.  We deliberately avoid `poller_mod` because on
+ * kqueue (src/poller_kqueue.c) a mask without POLLER_IN/POLLER_OUT deletes
+ * the read AND write filters, silently losing HUP/EOF detection while
+ * paused.  Edge-triggered pollers will keep waking the worker for new data
+ * arrivals; the recv handler bails out via the HWM check when the queue is
+ * saturated.  This keeps the kernel TCP recv buffer the natural backstop:
+ * once it fills, the upstream sender's window closes naturally.
+ */
 static void http_proxy_pause_upstream(http_proxy_session_t *session) {
-  if (!session || session->upstream_paused || session->socket < 0 || session->epoll_fd < 0)
+  if (!session || session->upstream_paused)
     return;
-  if (poller_mod(session->epoll_fd, session->socket, POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
-    logger(LOG_DEBUG, "HTTP Proxy: poller_mod (pause) failed: %s", strerror(errno));
-    return;
-  }
   session->upstream_paused = 1;
   if (session->conn)
     session->conn->any_upstream_paused = 1;
@@ -96,19 +100,34 @@ static void http_proxy_pause_upstream(http_proxy_session_t *session) {
 }
 
 void http_proxy_resume_upstream(http_proxy_session_t *session) {
-  if (!session || !session->upstream_paused || session->socket < 0 || session->epoll_fd < 0)
+  if (!session || !session->upstream_paused)
     return;
-  if (poller_mod(session->epoll_fd, session->socket, POLLER_IN | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
-    logger(LOG_DEBUG, "HTTP Proxy: poller_mod (resume) failed: %s", strerror(errno));
-    return;
-  }
   session->upstream_paused = 0;
   if (session->conn && (!session->conn->stream.rtsp.initialized || !session->conn->stream.rtsp.upstream_paused))
     session->conn->any_upstream_paused = 0;
   logger(LOG_DEBUG, "HTTP Proxy: Resumed upstream reads");
-  /* Edge-triggered pollers may not fire EPOLLIN on EPOLL_CTL_MOD if data
-   * arrived while paused.  Drain proactively to guarantee progress. */
-  http_proxy_try_receive_response(session);
+  /* Drain everything we can in this call frame.  Loop until EAGAIN,
+   * HWM re-pause, EOF, or error so we don't leave bytes buffered in the
+   * kernel waiting for an edge that never comes. */
+  while (session->state == HTTP_PROXY_STATE_STREAMING && !session->upstream_paused) {
+    int ret = http_proxy_try_receive_response(session);
+    if (ret <= 0)
+      break;
+  }
+  /* If draining detected EOF, mirror the cleanup that
+   * http_proxy_handle_socket_event would do on STATE_COMPLETE so the session
+   * is not left orphaned waiting for an event that won't come. */
+  if (session->state == HTTP_PROXY_STATE_COMPLETE) {
+    if (session->socket >= 0) {
+      worker_cleanup_socket_from_epoll(session->epoll_fd, session->socket);
+      session->socket = -1;
+    }
+    if (session->conn && session->conn->state != CONN_CLOSING) {
+      session->conn->state = CONN_CLOSING;
+      connection_epoll_update_events(session->conn->epfd, session->conn->fd,
+                                     POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+    }
+  }
 }
 
 int http_proxy_parse_url(http_proxy_session_t *session, const char *url) {
