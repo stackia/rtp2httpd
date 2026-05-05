@@ -94,7 +94,12 @@ def _slow_drain_until_eof(
         header_text = buf[:header_end].decode(errors="replace")
         body = buf[header_end + 4 :]
         parts = header_text.split("\r\n")
-        status_code = int(parts[0].split()[1])
+        # Guard against malformed status lines (truncated/corrupted response)
+        # so the test fails on the assertion, not on a parse exception.
+        try:
+            status_code = int(parts[0].split()[1])
+        except (IndexError, ValueError):
+            return 0, {}, buf
         hdrs = {}
         for line in parts[1:]:
             if ":" in line:
