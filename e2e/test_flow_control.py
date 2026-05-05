@@ -98,7 +98,7 @@ def _slow_drain_until_eof(
         # so the test fails on the assertion, not on a parse exception.
         try:
             status_code = int(parts[0].split()[1])
-        except (IndexError, ValueError):
+        except IndexError, ValueError:
             return 0, {}, buf
         hdrs = {}
         for line in parts[1:]:
@@ -140,12 +140,10 @@ class TestHTTPProxyBackpressure:
                 overall_timeout=20.0,
             )
             assert status == 200, "Slow client should still receive a 200 response"
-            assert len(received) == body_size, (
-                "Slow client received %d/%d bytes — flow control regression?"
-                % (len(received), body_size)
+            assert len(received) == body_size, "Slow client received %d/%d bytes — flow control regression?" % (
+                len(received),
+                body_size,
             )
             assert received == payload, "Body content mismatch — corruption in proxy path"
         finally:
             upstream.stop()
-
-

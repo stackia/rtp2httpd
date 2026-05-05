@@ -353,9 +353,8 @@ int connection_can_resume_upstream(const connection_t *c) {
 void connection_recompute_any_upstream_paused(connection_t *c) {
   if (!c)
     return;
-  c->any_upstream_paused =
-      (c->stream.http_proxy.initialized && c->stream.http_proxy.upstream_paused) ||
-      (c->stream.rtsp.initialized && c->stream.rtsp.upstream_paused);
+  c->any_upstream_paused = (c->stream.http_proxy.initialized && c->stream.http_proxy.upstream_paused) ||
+                           (c->stream.rtsp.initialized && c->stream.rtsp.upstream_paused);
 }
 
 void connection_begin_drain_close(connection_t *c) {
