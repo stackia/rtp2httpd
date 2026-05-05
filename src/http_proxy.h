@@ -107,6 +107,9 @@ typedef struct {
   /* Per-service upstream interface override (resolved at init, non-owning) */
   const char *upstream_ifname;
 
+  /* Flow control state */
+  int upstream_paused; /* 1 = upstream POLLER_IN currently un-armed due to client backpressure */
+
   /* Cleanup state */
   int cleanup_done; /* Flag: cleanup has been completed */
 } http_proxy_session_t;
@@ -195,6 +198,13 @@ int http_proxy_session_cleanup(http_proxy_session_t *session);
  * @return 0 on success, -1 on timeout
  */
 int http_proxy_session_tick(http_proxy_session_t *session, int64_t now);
+
+/**
+ * Resume reading from upstream after client send queue has drained.
+ * Called from stream_on_client_drain when zc_queue falls below LWM.
+ * @param session HTTP proxy session
+ */
+void http_proxy_resume_upstream(http_proxy_session_t *session);
 
 /**
  * Build HTTP proxy URL for transformed M3U

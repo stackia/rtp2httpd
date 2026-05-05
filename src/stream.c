@@ -1,6 +1,7 @@
 #include "stream.h"
 #include "connection.h"
 #include "fcc.h"
+#include "http_proxy.h"
 #include "multicast.h"
 #include "rtp.h"
 #include "rtp_fec.h"
@@ -19,12 +20,20 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-/*
- * Process RTP payload with reordering - either forward to client (streaming)
- * or capture I-frame (snapshot)
- * Returns: bytes forwarded (>= 0), 1 if I-frame captured for snapshot, -1 on
- * error
- */
+void stream_on_client_drain(stream_context_t *ctx) {
+  /* Hot path: every successful client write hits this.  Bail out cheaply when
+   * no upstream is paused (vast majority of streams). */
+  if (!ctx || !ctx->conn || !ctx->conn->any_upstream_paused)
+    return;
+  if (!connection_can_resume_upstream(ctx->conn))
+    return;
+  /* Resume functions are no-ops if not paused; no need to re-check here. */
+  if (ctx->http_proxy.initialized)
+    http_proxy_resume_upstream(&ctx->http_proxy);
+  if (ctx->rtsp.initialized)
+    rtsp_resume_upstream(&ctx->rtsp);
+}
+
 int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref) {
   uint8_t *data_ptr = (uint8_t *)buf_ref->data + buf_ref->data_offset;
   uint8_t *payload;

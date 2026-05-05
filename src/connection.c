@@ -334,6 +334,22 @@ static void connection_report_queue(connection_t *c) {
                              c->queue_bytes_highwater, c->queue_buffers_highwater, c->dropped_packets, c->dropped_bytes,
                              c->backpressure_events, c->slow_active);
 }
+int connection_should_pause_upstream(const connection_t *c) {
+  if (!c || c->queue_limit_bytes == 0)
+    return 0;
+  size_t queued = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
+  size_t hwm = (c->queue_limit_bytes * CONN_FLOW_CONTROL_HWM_NUM) / CONN_FLOW_CONTROL_HWM_DEN;
+  return queued >= hwm;
+}
+
+int connection_can_resume_upstream(const connection_t *c) {
+  if (!c || c->queue_limit_bytes == 0)
+    return 0;
+  size_t queued = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
+  size_t lwm = (c->queue_limit_bytes * CONN_FLOW_CONTROL_LWM_NUM) / CONN_FLOW_CONTROL_LWM_DEN;
+  return queued <= lwm;
+}
+
 int connection_set_nonblocking(int fd) {
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags < 0)
@@ -532,11 +548,14 @@ connection_write_status_t connection_handle_write(connection_t *c) {
     return CONNECTION_WRITE_IDLE;
   }
 
+  size_t total_sent = 0;
+
   /* Loop to drain all writable data for edge-triggered pollers where
    * EPOLLOUT / EV_CLEAR fires only once when the socket becomes writable. */
   for (;;) {
     size_t bytes_sent = 0;
     int ret = zerocopy_send(c->fd, &c->zc_queue, &bytes_sent);
+    total_sent += bytes_sent;
 
     if (ret < 0 && ret != -2) {
       c->state = CONN_CLOSING;
@@ -548,6 +567,8 @@ connection_write_status_t connection_handle_write(connection_t *c) {
     if (ret == -2) {
       /* EAGAIN - socket send buffer full, wait for next writable event */
       connection_report_queue(c);
+      if (total_sent > 0)
+        stream_on_client_drain(&c->stream);
       return CONNECTION_WRITE_BLOCKED;
     }
 
@@ -557,6 +578,8 @@ connection_write_status_t connection_handle_write(connection_t *c) {
       connection_report_queue(c);
       if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
         return CONNECTION_WRITE_CLOSED;
+      if (total_sent > 0)
+        stream_on_client_drain(&c->stream);
       return CONNECTION_WRITE_IDLE;
     }
 
@@ -567,6 +590,8 @@ connection_write_status_t connection_handle_write(connection_t *c) {
 
   /* Queue still has data but we couldn't make progress */
   connection_report_queue(c);
+  if (total_sent > 0)
+    stream_on_client_drain(&c->stream);
   return CONNECTION_WRITE_PENDING;
 }
 

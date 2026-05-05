@@ -106,4 +106,15 @@ int stream_context_cleanup(stream_context_t *ctx);
  */
 int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref);
 
+/**
+ * Notify that the client send queue has just been drained (some buffers
+ * completed sending).  If any TCP-based upstream session attached to this
+ * connection is currently paused due to backpressure, this resumes it when
+ * the queue has fallen below the low watermark.
+ *
+ * Called from connection_handle_write after a successful zerocopy_send.
+ * @param ctx Stream context (may be uninitialized — function tolerates that)
+ */
+void stream_on_client_drain(stream_context_t *ctx);
+
 #endif /* __STREAM_H__ */

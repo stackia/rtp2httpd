@@ -35,6 +35,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session);
 static int http_proxy_parse_response_headers(http_proxy_session_t *session);
 static int http_proxy_append_raw_headers(http_proxy_session_t *session, char **dest, size_t *remaining, int *total_len,
                                          int filter_user_agent);
+static void http_proxy_pause_upstream(http_proxy_session_t *session);
 
 static const char *http_proxy_get_override_user_agent(void) {
   if (config.http_proxy_user_agent && config.http_proxy_user_agent[0] != '\0') {
@@ -75,7 +76,39 @@ void http_proxy_session_init(http_proxy_session_t *session) {
   session->bytes_received = 0;
   session->headers_received = 0;
   session->headers_forwarded = 0;
+  session->upstream_paused = 0;
   session->cleanup_done = 0;
+}
+
+static void http_proxy_pause_upstream(http_proxy_session_t *session) {
+  if (!session || session->upstream_paused || session->socket < 0 || session->epoll_fd < 0)
+    return;
+  if (poller_mod(session->epoll_fd, session->socket, POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
+    logger(LOG_DEBUG, "HTTP Proxy: poller_mod (pause) failed: %s", strerror(errno));
+    return;
+  }
+  session->upstream_paused = 1;
+  if (session->conn)
+    session->conn->any_upstream_paused = 1;
+  logger(LOG_DEBUG, "HTTP Proxy: Paused upstream reads (queued=%zu limit=%zu)",
+         session->conn ? session->conn->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE : 0,
+         session->conn ? session->conn->queue_limit_bytes : 0);
+}
+
+void http_proxy_resume_upstream(http_proxy_session_t *session) {
+  if (!session || !session->upstream_paused || session->socket < 0 || session->epoll_fd < 0)
+    return;
+  if (poller_mod(session->epoll_fd, session->socket, POLLER_IN | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
+    logger(LOG_DEBUG, "HTTP Proxy: poller_mod (resume) failed: %s", strerror(errno));
+    return;
+  }
+  session->upstream_paused = 0;
+  if (session->conn && (!session->conn->stream.rtsp.initialized || !session->conn->stream.rtsp.upstream_paused))
+    session->conn->any_upstream_paused = 0;
+  logger(LOG_DEBUG, "HTTP Proxy: Resumed upstream reads");
+  /* Edge-triggered pollers may not fire EPOLLIN on EPOLL_CTL_MOD if data
+   * arrived while paused.  Drain proactively to guarantee progress. */
+  http_proxy_try_receive_response(session);
 }
 
 int http_proxy_parse_url(http_proxy_session_t *session, const char *url) {
@@ -762,6 +795,15 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
     }
 
     /* Phase 2: Zero-copy streaming - recv directly to buffer pool */
+
+    /* Pause upstream BEFORE recv when client queue is near limit.  Dropping
+     * bytes mid-stream would corrupt the response body, so we instead push
+     * backpressure into the upstream TCP receive buffer. */
+    if (connection_should_pause_upstream(session->conn)) {
+      http_proxy_pause_upstream(session);
+      return 0;
+    }
+
     buffer_ref_t *buf = buffer_pool_alloc();
     if (!buf) {
       logger(LOG_ERROR, "HTTP Proxy: Buffer pool exhausted");

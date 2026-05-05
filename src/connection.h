@@ -67,6 +67,10 @@ typedef struct connection_s {
   double queue_avg_bytes;
   int slow_active;
   int64_t slow_candidate_since;
+  /* Set when any TCP upstream session attached to this connection has paused
+   * its reads due to client-side backpressure.  Lets the per-write notify
+   * fast-path skip cheaply when no upstream is paused (the common case). */
+  int any_upstream_paused;
   /* r2h-token Set-Cookie flag: set cookie when token was provided via URL
      query */
   int should_set_r2h_cookie;
@@ -176,5 +180,28 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref);
  * @return 0 on success, -1 on error
  */
 int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_t file_size);
+
+/* Backpressure watermarks for TCP-to-TCP relay flow control.  Upstream
+ * modules (HTTP proxy, RTSP TCP) pause reads when the client send queue
+ * exceeds HWM and resume when it falls back below LWM.  The 25% hysteresis
+ * band prevents thrash. */
+#define CONN_FLOW_CONTROL_HWM_NUM 3
+#define CONN_FLOW_CONTROL_HWM_DEN 4 /* HWM = 75% of queue_limit_bytes */
+#define CONN_FLOW_CONTROL_LWM_NUM 1
+#define CONN_FLOW_CONTROL_LWM_DEN 2 /* LWM = 50% of queue_limit_bytes */
+
+/**
+ * Returns true when the client send queue has reached the HWM and upstream
+ * reads should be paused.  Returns false if queue_limit_bytes is unset
+ * (e.g. before the first zerocopy enqueue).
+ */
+int connection_should_pause_upstream(const connection_t *c);
+
+/**
+ * Returns true when the client send queue has fallen back below the LWM and
+ * paused upstream reads should be resumed.  Returns false if queue_limit_bytes
+ * is unset.
+ */
+int connection_can_resume_upstream(const connection_t *c);
 
 #endif /* CONNECTION_H */

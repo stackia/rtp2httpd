@@ -312,6 +312,78 @@ void rtsp_session_init(rtsp_session_t *session) {
   session->teardown_requested = 0;
   session->teardown_reconnect_done = 0;
   session->state_before_teardown = RTSP_STATE_INIT;
+
+  /* Initialize flow control state (TCP transport only) */
+  session->upstream_paused = 0;
+  session->pause_started_ms = 0;
+}
+
+/* Maximum time the upstream socket may stay paused before we force-disconnect.
+ * Must be safely below typical RTSP session timeouts (60s on most servers) so
+ * the server does not silently reclaim the session, leaving us with a half-dead
+ * connection. */
+#define RTSP_MAX_PAUSE_MS 30000
+
+/**
+ * Compute the desired event mask for the RTSP TCP socket based on current
+ * session state.  POLLER_IN is included only when not paused; POLLER_OUT is
+ * included whenever there's outbound work pending (request headers not fully
+ * sent or a keepalive queued).
+ */
+static uint32_t rtsp_compute_socket_events(const rtsp_session_t *s) {
+  uint32_t mask = POLLER_HUP | POLLER_ERR | POLLER_RDHUP;
+  if (!s->upstream_paused)
+    mask |= POLLER_IN;
+  if (s->pending_request_sent < s->pending_request_len || s->keepalive_pending)
+    mask |= POLLER_OUT;
+  return mask;
+}
+
+/* The TCP socket carries both control-plane responses (PLAY/keepalive replies,
+ * TEARDOWN) and `$`-prefixed media frames.  Pausing recv() delays control
+ * responses too — acceptable because keepalives are sent FROM us and the
+ * server's reply just sits in its TCP send buffer until we resume.
+ * rtsp_session_tick() enforces RTSP_MAX_PAUSE_MS so we don't outlast the
+ * server's session timeout. */
+static void rtsp_pause_upstream(rtsp_session_t *session) {
+  if (!session || session->upstream_paused || session->socket < 0 || session->epoll_fd < 0)
+    return;
+  if (session->transport_mode != RTSP_TRANSPORT_TCP)
+    return;
+  session->upstream_paused = 1;
+  if (poller_mod(session->epoll_fd, session->socket, rtsp_compute_socket_events(session)) < 0) {
+    logger(LOG_DEBUG, "RTSP TCP: poller_mod (pause) failed: %s", strerror(errno));
+    session->upstream_paused = 0;
+    return;
+  }
+  session->pause_started_ms = get_time_ms();
+  if (session->conn)
+    session->conn->any_upstream_paused = 1;
+  logger(LOG_DEBUG, "RTSP TCP: Paused upstream reads (queued=%zu limit=%zu)",
+         session->conn ? session->conn->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE : 0,
+         session->conn ? session->conn->queue_limit_bytes : 0);
+}
+
+void rtsp_resume_upstream(rtsp_session_t *session) {
+  if (!session || !session->upstream_paused || session->socket < 0 || session->epoll_fd < 0)
+    return;
+  /* Tentatively clear the paused flag so rtsp_compute_socket_events includes
+   * POLLER_IN; revert on poller_mod failure. */
+  session->upstream_paused = 0;
+  if (poller_mod(session->epoll_fd, session->socket, rtsp_compute_socket_events(session)) < 0) {
+    logger(LOG_DEBUG, "RTSP TCP: poller_mod (resume) failed: %s", strerror(errno));
+    session->upstream_paused = 1;
+    return;
+  }
+  session->pause_started_ms = 0;
+  if (session->conn &&
+      (!session->conn->stream.http_proxy.initialized || !session->conn->stream.http_proxy.upstream_paused))
+    session->conn->any_upstream_paused = 0;
+  logger(LOG_DEBUG, "RTSP TCP: Resumed upstream reads");
+  /* Edge-triggered pollers may not fire EPOLLIN on EPOLL_CTL_MOD if data
+   * arrived while paused.  Drain proactively to guarantee progress. */
+  if (session->conn)
+    rtsp_handle_tcp_interleaved_data(session, session->conn);
 }
 
 /**
@@ -1595,6 +1667,17 @@ int rtsp_session_tick(rtsp_session_t *session, int64_t now) {
     }
   }
 
+  /* Max-pause guard for TCP transport: if the client has been too slow for
+   * too long, abort rather than risk the upstream server timing out our
+   * session (would leave a half-dead connection). */
+  if (session->upstream_paused && session->pause_started_ms > 0 &&
+      now - session->pause_started_ms > RTSP_MAX_PAUSE_MS) {
+    logger(LOG_WARN, "RTSP TCP: Client too slow, upstream paused for %lld ms — aborting session",
+           (long long)(now - session->pause_started_ms));
+    rtsp_session_set_state(session, RTSP_STATE_ERROR);
+    return -1;
+  }
+
   /* Send periodic keepalive to prevent server session timeout */
   if (session->state == RTSP_STATE_PLAYING && session->keepalive_interval_ms > 0 && session->session_id[0] != '\0') {
     if (session->last_keepalive_ms == 0) {
@@ -1751,6 +1834,14 @@ int rtsp_handle_tcp_interleaved_data(rtsp_session_t *session, connection_t *conn
    * per data arrival.  The inner recv loop may fill the small response buffer
    * before hitting EAGAIN; after processing we must loop back to recv more. */
   for (;;) {
+    /* Pause upstream BEFORE recv when client queue is near limit, so data
+     * accumulates in the upstream TCP receive buffer rather than being dropped
+     * at the application layer (which would tear holes in the RTP stream). */
+    if (connection_should_pause_upstream(conn)) {
+      rtsp_pause_upstream(session);
+      return total_forwarded;
+    }
+
     int hit_eagain = 0;
 
     /* Fill response buffer from socket */

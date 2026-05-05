@@ -196,6 +196,10 @@ typedef struct {
   uint8_t response_buffer[RTSP_RESPONSE_BUFFER_SIZE]; /* Buffer for RTSP
                                                          responses (control
                                                          plane, not media) */
+
+  /* Flow control state (TCP interleaved transport only) */
+  int upstream_paused;        /* 1 = upstream POLLER_IN currently un-armed due to client backpressure */
+  int64_t pause_started_ms;   /* When pause began; used by tick to enforce max-pause guard */
 } rtsp_session_t;
 
 /* Function prototypes */
@@ -287,11 +291,18 @@ int rtsp_send_keepalive(rtsp_session_t *session);
 int rtsp_state_machine_advance(rtsp_session_t *session);
 
 /**
- * Periodic tick for RTSP session (STUN timeout, keepalive)
+ * Periodic tick for RTSP session (STUN timeout, keepalive, max-pause guard)
  * @param session RTSP session
  * @param now Current timestamp in milliseconds
- * @return 0 on success
+ * @return 0 on success, -1 if session must be closed (e.g. paused too long)
  */
 int rtsp_session_tick(rtsp_session_t *session, int64_t now);
+
+/**
+ * Resume reading from upstream RTSP TCP socket after client send queue has
+ * drained.  No-op for UDP transport mode.  Called from stream_on_client_drain.
+ * @param session RTSP session
+ */
+void rtsp_resume_upstream(rtsp_session_t *session);
 
 #endif /* __RTSP_H__ */
