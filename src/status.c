@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -53,20 +54,45 @@ status_shared_t *status_shared = NULL;
 /* Path for shared memory file in /tmp */
 static char shm_path[256] = {0};
 
-int status_init(void) {
-  int fd;
+/* Held for the lifetime of the daemon. The exclusive flock on this fd
+ * advertises liveness so a future recovery attempt with the same PID (e.g.
+ * after PID reuse) can distinguish a stale leftover from an actively running
+ * sibling instance (e.g. another container sharing /tmp). Workers inherit
+ * this fd via fork(); the lock is per open file description so the
+ * supervisor's copy keeps it held even after workers close theirs. */
+static int shm_lock_fd = -1;
 
-  /* PID-keyed path: EEXIST can only be a stale leftover from a prior instance
-   * with the same PID (no live process can hold our PID in this namespace),
-   * so unlink-and-retry is safe. */
+int status_init(void) {
+  status_shared_t *shared = NULL;
+  int fd = -1;
+  int err;
+
   snprintf(shm_path, sizeof(shm_path), "/tmp/rtp2httpd_status_%d", getpid());
+
   fd = open(shm_path, O_CREAT | O_RDWR | O_EXCL, 0600);
   if (fd == -1 && errno == EEXIST) {
-    logger(LOG_WARN, "Stale shared memory file %s found, removing and retrying", shm_path);
+    /* The path is keyed only on PID, which is not unique across PID
+     * namespaces sharing /tmp. Use a non-blocking exclusive flock to tell
+     * stale-from-crash apart from actively-held-by-sibling: if we can lock
+     * it, no live process is using the file and unlink-and-recreate is safe;
+     * if not, refuse rather than corrupting the sibling's state. */
+    int existing = open(shm_path, O_RDWR);
+    if (existing == -1) {
+      logger(LOG_ERROR, "Failed to open existing shared memory file %s: %s", shm_path, strerror(errno));
+      return -1;
+    }
+    if (flock(existing, LOCK_EX | LOCK_NB) == -1) {
+      err = errno;
+      close(existing);
+      logger(LOG_ERROR, "Shared memory file %s is held by another live instance: %s", shm_path, strerror(err));
+      return -1;
+    }
+    close(existing); /* releases this transient lock; the file is about to go */
     if (unlink(shm_path) == -1 && errno != ENOENT) {
       logger(LOG_ERROR, "Failed to unlink stale shared memory file: %s", strerror(errno));
       return -1;
     }
+    logger(LOG_WARN, "Removed stale shared memory file %s", shm_path);
     fd = open(shm_path, O_CREAT | O_RDWR | O_EXCL, 0600);
   }
   if (fd == -1) {
@@ -74,45 +100,50 @@ int status_init(void) {
     return -1;
   }
 
-  /* Set size of shared memory */
+  if (flock(fd, LOCK_EX | LOCK_NB) == -1) {
+    err = errno;
+    close(fd);
+    unlink(shm_path);
+    logger(LOG_ERROR, "Failed to lock shared memory file: %s", strerror(err));
+    return -1;
+  }
+
   if (ftruncate(fd, sizeof(status_shared_t)) == -1) {
-    logger(LOG_ERROR, "Failed to set shared memory size: %s", strerror(errno));
+    err = errno;
     close(fd);
     unlink(shm_path);
+    logger(LOG_ERROR, "Failed to set shared memory size: %s", strerror(err));
     return -1;
   }
 
-  /* Map shared memory.
-   * logger() probes status_shared with a NULL check, not a MAP_FAILED check,
-   * so we must reset to NULL before logging or any failure path that calls
-   * logger() will dereference (void*)-1. */
-  void *mapped = mmap(NULL, sizeof(status_shared_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-  if (mapped == MAP_FAILED) {
-    int err = errno;
-    status_shared = NULL;
+  /* Stage everything on a local pointer; only publish to status_shared after
+   * the struct is fully usable. This keeps logger() (which gates on
+   * status_shared != NULL and may take log_mutex) from observing a
+   * partially-initialized region from any failure path. */
+  shared = mmap(NULL, sizeof(status_shared_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  if (shared == MAP_FAILED) {
+    err = errno;
+    close(fd);
+    unlink(shm_path);
     logger(LOG_ERROR, "Failed to map shared memory: %s", strerror(err));
-    close(fd);
-    unlink(shm_path);
     return -1;
   }
-  status_shared = mapped;
 
-  /* Close file descriptor immediately after mmap()
-   * Per POSIX: "closing the file descriptor does not unmap the region"
-   * This is best practice and avoids fd management issues after fork() */
-  close(fd);
-
-  /* Initialize shared memory structure */
-  memset(status_shared, 0, sizeof(status_shared_t));
-  status_shared->server_start_time = get_realtime_ms();
-  status_shared->current_log_level = config.verbosity;
-  status_shared->event_counter = 0;
-
-  /* Initialize pipe fds to -1 (invalid) */
+  memset(shared, 0, sizeof(status_shared_t));
+  shared->server_start_time = get_realtime_ms();
+  shared->current_log_level = config.verbosity;
+  shared->event_counter = 0;
   for (int i = 0; i < STATUS_MAX_WORKERS; i++) {
-    status_shared->worker_notification_pipe_read_fds[i] = -1;
-    status_shared->worker_notification_pipes[i] = -1;
+    shared->worker_notification_pipe_read_fds[i] = -1;
+    shared->worker_notification_pipes[i] = -1;
   }
+
+  pthread_mutexattr_t mutex_attr;
+  pthread_mutexattr_init(&mutex_attr);
+  pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
+  pthread_mutex_init(&shared->log_mutex, &mutex_attr);
+  pthread_mutex_init(&shared->clients_mutex, &mutex_attr);
+  pthread_mutexattr_destroy(&mutex_attr);
 
   /* Pre-create notification pipes for all possible workers (STATUS_MAX_WORKERS)
    * This is done BEFORE fork so all processes inherit the same pipe fds.
@@ -121,39 +152,33 @@ int status_init(void) {
   for (int i = 0; i < STATUS_MAX_WORKERS; i++) {
     int pipe_fds[2];
     if (pipe(pipe_fds) == -1) {
-      logger(LOG_ERROR, "Failed to create notification pipe for worker %d: %s", i, strerror(errno));
-      /* Clean up already created pipes */
+      err = errno;
       for (int j = 0; j < i; j++) {
-        if (status_shared->worker_notification_pipe_read_fds[j] != -1)
-          close(status_shared->worker_notification_pipe_read_fds[j]);
-        if (status_shared->worker_notification_pipes[j] != -1)
-          close(status_shared->worker_notification_pipes[j]);
+        if (shared->worker_notification_pipe_read_fds[j] != -1)
+          close(shared->worker_notification_pipe_read_fds[j]);
+        if (shared->worker_notification_pipes[j] != -1)
+          close(shared->worker_notification_pipes[j]);
       }
-      munmap(status_shared, sizeof(status_shared_t));
-      status_shared = NULL;
+      pthread_mutex_destroy(&shared->log_mutex);
+      pthread_mutex_destroy(&shared->clients_mutex);
+      munmap(shared, sizeof(status_shared_t));
+      close(fd);
       unlink(shm_path);
+      logger(LOG_ERROR, "Failed to create notification pipe for worker %d: %s", i, strerror(err));
       return -1;
     }
 
-    /* Set read end to non-blocking mode */
     int flags = fcntl(pipe_fds[0], F_GETFL, 0);
     fcntl(pipe_fds[0], F_SETFL, flags | O_NONBLOCK);
 
-    /* Store both ends in shared memory
-     * Read ends will be used by each worker after fork
-     * Write ends are accessible by all workers for cross-worker notification
-     */
-    status_shared->worker_notification_pipe_read_fds[i] = pipe_fds[0];
-    status_shared->worker_notification_pipes[i] = pipe_fds[1];
+    shared->worker_notification_pipe_read_fds[i] = pipe_fds[0];
+    shared->worker_notification_pipes[i] = pipe_fds[1];
   }
 
-  /* Initialize mutexes for multi-process safety */
-  pthread_mutexattr_t mutex_attr;
-  pthread_mutexattr_init(&mutex_attr);
-  pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
-  pthread_mutex_init(&status_shared->log_mutex, &mutex_attr);
-  pthread_mutex_init(&status_shared->clients_mutex, &mutex_attr);
-  pthread_mutexattr_destroy(&mutex_attr);
+  /* Publish. Keep fd open: it carries the liveness flock and will be closed
+   * by status_cleanup(). */
+  shm_lock_fd = fd;
+  status_shared = shared;
 
   logger(LOG_INFO, "Status tracking initialized");
   return 0;
@@ -210,6 +235,14 @@ void status_cleanup(void) {
      */
     munmap(status_shared, sizeof(status_shared_t));
     status_shared = NULL;
+  }
+
+  /* Close this process's copy of the liveness lock fd. The flock is per
+   * open-file-description, so the lock survives until the last process
+   * closes its inherited copy. */
+  if (shm_lock_fd != -1) {
+    close(shm_lock_fd);
+    shm_lock_fd = -1;
   }
 
   /* Only the final cleanup process unlinks shared memory file
