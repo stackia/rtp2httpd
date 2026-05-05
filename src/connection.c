@@ -573,13 +573,21 @@ connection_write_status_t connection_handle_write(connection_t *c) {
     }
 
     if (!c->zc_queue.head) {
-      /* All data sent - remove POLLER_OUT */
-      connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
-      connection_report_queue(c);
-      if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
+      if (c->state == CONN_CLOSING && !c->zc_queue.pending_head) {
+        connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+        connection_report_queue(c);
         return CONNECTION_WRITE_CLOSED;
+      }
+      /* Notify upstream BEFORE arming the poller mask: resume() may queue
+       * new buffers in this same call frame, in which case POLLER_OUT must
+       * stay armed so the worker re-enters this function to drain them. */
       if (total_sent > 0)
         stream_on_client_drain(&c->stream);
+      uint32_t mask = POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR;
+      if (c->zc_queue.head)
+        mask |= POLLER_OUT;
+      connection_epoll_update_events(c->epfd, c->fd, mask);
+      connection_report_queue(c);
       return CONNECTION_WRITE_IDLE;
     }
 
