@@ -204,4 +204,20 @@ int connection_should_pause_upstream(const connection_t *c);
  */
 int connection_can_resume_upstream(const connection_t *c);
 
+/**
+ * Recompute the connection-level `any_upstream_paused` bit by inspecting all
+ * attached upstream sessions.  Call after any individual upstream session
+ * toggles its own `upstream_paused` flag so the cheap per-write fast path in
+ * stream_on_client_drain() stays accurate.
+ */
+void connection_recompute_any_upstream_paused(connection_t *c);
+
+/**
+ * Mark the connection for orderly shutdown after upstream EOF/error: switch
+ * to CONN_CLOSING and re-arm the full event mask so the worker keeps draining
+ * any queued bytes to the client before tearing down.  No-op if the
+ * connection is already CONN_CLOSING.
+ */
+void connection_begin_drain_close(connection_t *c);
+
 #endif /* CONNECTION_H */

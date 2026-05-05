@@ -350,6 +350,21 @@ int connection_can_resume_upstream(const connection_t *c) {
   return queued <= lwm;
 }
 
+void connection_recompute_any_upstream_paused(connection_t *c) {
+  if (!c)
+    return;
+  c->any_upstream_paused =
+      (c->stream.http_proxy.initialized && c->stream.http_proxy.upstream_paused) ||
+      (c->stream.rtsp.initialized && c->stream.rtsp.upstream_paused);
+}
+
+void connection_begin_drain_close(connection_t *c) {
+  if (!c || c->state == CONN_CLOSING)
+    return;
+  c->state = CONN_CLOSING;
+  connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+}
+
 int connection_set_nonblocking(int fd) {
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags < 0)

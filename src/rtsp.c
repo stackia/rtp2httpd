@@ -341,8 +341,7 @@ static void rtsp_pause_upstream(rtsp_session_t *session) {
     return;
   session->upstream_paused = 1;
   session->pause_started_ms = get_time_ms();
-  if (session->conn)
-    session->conn->any_upstream_paused = 1;
+  connection_recompute_any_upstream_paused(session->conn);
   logger(LOG_DEBUG, "RTSP TCP: Paused upstream reads (queued=%zu limit=%zu)",
          session->conn ? session->conn->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE : 0,
          session->conn ? session->conn->queue_limit_bytes : 0);
@@ -353,25 +352,18 @@ void rtsp_resume_upstream(rtsp_session_t *session) {
     return;
   session->upstream_paused = 0;
   session->pause_started_ms = 0;
-  if (session->conn &&
-      (!session->conn->stream.http_proxy.initialized || !session->conn->stream.http_proxy.upstream_paused))
-    session->conn->any_upstream_paused = 0;
+  connection_recompute_any_upstream_paused(session->conn);
   logger(LOG_DEBUG, "RTSP TCP: Resumed upstream reads");
-  /* Drain everything we can in this call frame.  The function loops
-   * internally until EAGAIN, HWM re-pause, EOF, or buffer-full.  If it
-   * returns -1 (EOF/recv error), mirror the cleanup the IN-event handler
-   * would have done so the session is not orphaned. */
+  /* Drain synchronously here: edge-triggered pollers won't deliver another
+   * EPOLLIN edge for bytes that arrived while paused.  The drain function
+   * loops internally and returns -1 on EOF/recv error — close the upstream
+   * here in that case so the session isn't orphaned waiting for an event. */
   if (!session->conn)
     return;
-  int result = rtsp_handle_tcp_interleaved_data(session, session->conn);
-  if (result < 0) {
+  if (rtsp_handle_tcp_interleaved_data(session, session->conn) < 0) {
     logger(LOG_DEBUG, "RTSP TCP: Upstream EOF during resume drain, closing");
     rtsp_force_cleanup(session);
-    if (session->conn->state != CONN_CLOSING) {
-      session->conn->state = CONN_CLOSING;
-      connection_epoll_update_events(session->conn->epfd, session->conn->fd,
-                                     POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
-    }
+    connection_begin_drain_close(session->conn);
   }
 }
 
