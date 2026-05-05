@@ -80,7 +80,7 @@ typedef struct {
   uint32_t queue_buffers_highwater;  /* Peak queued buffers */
   uint64_t dropped_packets;          /* Total dropped packets */
   uint64_t dropped_bytes;            /* Total dropped bytes */
-  uint32_t backpressure_events;      /* Times backpressure triggered */
+  uint32_t backpressure_events;      /* Times upstream reads were paused due to client backpressure (TCP only) */
   int slow_active;
 } client_stats_t;
 

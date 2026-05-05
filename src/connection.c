@@ -343,7 +343,6 @@ static size_t connection_update_queue_limit(connection_t *c, int64_t now_ms) {
 static inline void connection_record_drop(connection_t *c, size_t len) {
   c->dropped_packets++;
   c->dropped_bytes += len;
-  c->backpressure_events++;
 }
 
 static void connection_report_queue(connection_t *c) {
@@ -1124,7 +1123,7 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref) {
   if (projected_bytes > limit_bytes) {
     connection_record_drop(c, buf_ref->data_size);
 
-    if (c->backpressure_events == 1 || (c->backpressure_events % 200) == 0) {
+    if (c->dropped_packets == 1 || (c->dropped_packets % 200) == 0) {
       logger(LOG_DEBUG,
              "Backpressure: dropping %zu bytes for client fd=%d (queued=%zu "
              "limit=%zu drops=%llu)",

@@ -62,6 +62,10 @@ typedef struct connection_s {
   size_t queue_buffers_highwater;
   uint64_t dropped_packets;
   uint64_t dropped_bytes;
+  /* Number of times an upstream TCP session attached to this connection paused
+   * its reads due to client-side backpressure (HWM crossed).  Pure pause
+   * counter — has no relation to dropped_packets.  UDP paths never increment
+   * this since they don't pause; their congestion shows up in dropped_packets. */
   uint32_t backpressure_events;
   int stream_registered;
   double queue_avg_bytes;

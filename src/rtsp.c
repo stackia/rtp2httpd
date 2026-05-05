@@ -341,6 +341,8 @@ static void rtsp_pause_upstream(rtsp_session_t *session) {
     return;
   session->upstream_paused = 1;
   session->pause_started_ms = get_time_ms();
+  if (session->conn)
+    session->conn->backpressure_events++;
   connection_recompute_any_upstream_paused(session->conn);
   logger(LOG_DEBUG, "RTSP TCP: Paused upstream reads (queued=%zu limit=%zu)",
          session->conn ? connection_queue_bytes(session->conn) : 0,
