@@ -181,28 +181,27 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref);
  */
 int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_t file_size);
 
-/* Backpressure watermarks for TCP-to-TCP relay flow control.  Upstream
- * modules (HTTP proxy, RTSP TCP) pause reads when the client send queue
- * exceeds HWM and resume when it falls back below LWM.  The 25% hysteresis
- * band prevents thrash. */
-#define CONN_FLOW_CONTROL_HWM_NUM 3
-#define CONN_FLOW_CONTROL_HWM_DEN 4 /* HWM = 75% of queue_limit_bytes */
-#define CONN_FLOW_CONTROL_LWM_NUM 1
-#define CONN_FLOW_CONTROL_LWM_DEN 2 /* LWM = 50% of queue_limit_bytes */
+/* Slot-equivalent bytes currently queued (each pending buffer counts as a full
+ * BUFFER_POOL_BUFFER_SIZE slot, matching the unit used by queue_limit_bytes). */
+static inline size_t connection_queue_bytes(const connection_t *c) {
+  return c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
+}
 
 /**
  * Returns true when the client send queue has reached the HWM and upstream
- * reads should be paused.  Returns false if queue_limit_bytes is unset
- * (e.g. before the first zerocopy enqueue).
+ * reads should be paused.  Refreshes c->queue_limit_bytes from current pool
+ * state when the queue rises above the absolute-minimum-limit fast-path
+ * threshold, so the decision uses fresh inputs (active stream count, pool
+ * utilization) rather than whatever was cached at the last enqueue.
  */
-int connection_should_pause_upstream(const connection_t *c);
+int connection_should_pause_upstream(connection_t *c);
 
 /**
  * Returns true when the client send queue has fallen back below the LWM and
- * paused upstream reads should be resumed.  Returns false if queue_limit_bytes
- * is unset.
+ * paused upstream reads should be resumed.  Refreshes c->queue_limit_bytes
+ * before deciding for the same reason as the pause helper.
  */
-int connection_can_resume_upstream(const connection_t *c);
+int connection_can_resume_upstream(connection_t *c);
 
 /**
  * Recompute the connection-level `any_upstream_paused` bit by inspecting all

@@ -94,7 +94,7 @@ static void http_proxy_pause_upstream(http_proxy_session_t *session) {
   session->upstream_paused = 1;
   connection_recompute_any_upstream_paused(session->conn);
   logger(LOG_DEBUG, "HTTP Proxy: Paused upstream reads (queued=%zu limit=%zu)",
-         session->conn ? session->conn->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE : 0,
+         session->conn ? connection_queue_bytes(session->conn) : 0,
          session->conn ? session->conn->queue_limit_bytes : 0);
 }
 

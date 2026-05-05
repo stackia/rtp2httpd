@@ -245,18 +245,26 @@ static size_t connection_compute_limit_bytes(buffer_pool_t *pool, size_t fair_by
   return limit_bytes;
 }
 
-static size_t connection_calculate_queue_limit(connection_t *c, int64_t now_ms) {
-  buffer_pool_t *pool = &zerocopy_state.pool;
-  size_t active = zerocopy_active_streams();
+/* Side-effect-free inputs into the queue-limit calculation. */
+typedef struct {
+  buffer_pool_t *pool;
+  size_t fair_bytes;
+  double burst_factor; /* before slow_active clamp */
+} queue_limit_inputs_t;
 
+static void connection_prepare_queue_limit_inputs(queue_limit_inputs_t *out) {
+  buffer_pool_t *pool = &zerocopy_state.pool;
+  out->pool = pool;
+
+  size_t active = zerocopy_active_streams();
   if (active == 0)
     active = 1;
 
   size_t total_buffers = pool->num_buffers ? pool->num_buffers : BUFFER_POOL_INITIAL_SIZE;
-
   size_t share_buffers = total_buffers / active;
   if (share_buffers < CONN_QUEUE_MIN_BUFFERS)
     share_buffers = CONN_QUEUE_MIN_BUFFERS;
+  out->fair_bytes = share_buffers * BUFFER_POOL_BUFFER_SIZE;
 
   double utilization = 0.0;
   if (pool->max_buffers > 0) {
@@ -264,29 +272,48 @@ static size_t connection_calculate_queue_limit(connection_t *c, int64_t now_ms) 
     utilization = (double)used_buffers / (double)pool->max_buffers;
   }
 
-  double burst_factor = CONN_QUEUE_BURST_FACTOR;
+  out->burst_factor = CONN_QUEUE_BURST_FACTOR;
   if (pool->num_buffers >= pool->max_buffers || utilization >= CONN_QUEUE_HIGH_UTIL_THRESHOLD)
-    burst_factor = CONN_QUEUE_BURST_FACTOR_CONGESTED;
+    out->burst_factor = CONN_QUEUE_BURST_FACTOR_CONGESTED;
   if (pool->num_free < pool->low_watermark / 2 || utilization >= CONN_QUEUE_DRAIN_UTIL_THRESHOLD)
-    burst_factor = CONN_QUEUE_BURST_FACTOR_DRAIN;
+    out->burst_factor = CONN_QUEUE_BURST_FACTOR_DRAIN;
+}
 
-  size_t fair_bytes = share_buffers * BUFFER_POOL_BUFFER_SIZE;
+static inline double connection_apply_slow_clamp(double burst_factor, int slow_active) {
+  return (slow_active && burst_factor > CONN_QUEUE_SLOW_CLAMP_FACTOR) ? CONN_QUEUE_SLOW_CLAMP_FACTOR : burst_factor;
+}
+
+/* Pure (no side effect) limit computation.  Reads current pool state and the
+ * connection's existing slow_active flag, but does NOT update the EWMA or the
+ * slow-state debounce machine.  Safe to call from hot-path checks where
+ * sampling EWMA at the wrong cadence would distort slow detection. */
+static inline size_t connection_compute_queue_limit(const connection_t *c) {
+  queue_limit_inputs_t in;
+  connection_prepare_queue_limit_inputs(&in);
+  double burst_factor = connection_apply_slow_clamp(in.burst_factor, c->slow_active);
+  return connection_compute_limit_bytes(in.pool, in.fair_bytes, burst_factor);
+}
+
+static size_t connection_update_queue_limit(connection_t *c, int64_t now_ms) {
+  queue_limit_inputs_t in;
+  connection_prepare_queue_limit_inputs(&in);
+
   double queue_mem_bytes = (double)c->zc_queue.num_queued * (double)BUFFER_POOL_BUFFER_SIZE;
-
   if (c->queue_avg_bytes <= 0.0)
     c->queue_avg_bytes = queue_mem_bytes;
   else
     c->queue_avg_bytes = (1.0 - CONN_QUEUE_EWMA_ALPHA) * c->queue_avg_bytes + CONN_QUEUE_EWMA_ALPHA * queue_mem_bytes;
 
-  size_t bursted_bytes = connection_compute_limit_bytes(pool, fair_bytes, burst_factor);
+  /* Use unclamped burst_factor for slow thresholds — the "ideal" reference
+   * the slow-state machine compares the EWMA against. */
+  size_t bursted_bytes = connection_compute_limit_bytes(in.pool, in.fair_bytes, in.burst_factor);
 
-  double slow_threshold = (double)fair_bytes * CONN_QUEUE_SLOW_FACTOR;
-
+  double slow_threshold = (double)in.fair_bytes * CONN_QUEUE_SLOW_FACTOR;
   double limit_based_threshold = (double)bursted_bytes * CONN_QUEUE_SLOW_LIMIT_RATIO;
   if (slow_threshold > limit_based_threshold)
     slow_threshold = limit_based_threshold;
 
-  double slow_exit_threshold = (double)fair_bytes * CONN_QUEUE_SLOW_EXIT_FACTOR;
+  double slow_exit_threshold = (double)in.fair_bytes * CONN_QUEUE_SLOW_EXIT_FACTOR;
   double limit_exit_threshold = (double)bursted_bytes * CONN_QUEUE_SLOW_EXIT_LIMIT_RATIO;
   if (slow_exit_threshold > limit_exit_threshold)
     slow_exit_threshold = limit_exit_threshold;
@@ -309,12 +336,8 @@ static size_t connection_calculate_queue_limit(connection_t *c, int64_t now_ms) 
     c->slow_candidate_since = 0;
   }
 
-  if (c->slow_active && burst_factor > CONN_QUEUE_SLOW_CLAMP_FACTOR)
-    burst_factor = CONN_QUEUE_SLOW_CLAMP_FACTOR;
-
-  size_t limit_bytes = connection_compute_limit_bytes(pool, fair_bytes, burst_factor);
-
-  return limit_bytes;
+  double burst_factor = connection_apply_slow_clamp(in.burst_factor, c->slow_active);
+  return connection_compute_limit_bytes(in.pool, in.fair_bytes, burst_factor);
 }
 
 static inline void connection_record_drop(connection_t *c, size_t len) {
@@ -328,26 +351,59 @@ static void connection_report_queue(connection_t *c) {
     return;
 
   size_t queue_buffers = c->zc_queue.num_queued;
-  size_t queue_bytes = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
+  size_t queue_bytes = connection_queue_bytes(c);
 
   status_update_client_queue(c->status_index, queue_bytes, queue_buffers, c->queue_limit_bytes,
                              c->queue_bytes_highwater, c->queue_buffers_highwater, c->dropped_packets, c->dropped_bytes,
                              c->backpressure_events, c->slow_active);
 }
-int connection_should_pause_upstream(const connection_t *c) {
-  if (!c || c->queue_limit_bytes == 0)
+
+/* Backpressure watermarks for TCP-to-TCP relay flow control.  Upstream modules
+ * (HTTP proxy, RTSP TCP) pause reads when the client send queue exceeds HWM
+ * and resume when it falls back below LWM.  The 25% hysteresis band prevents
+ * thrash. */
+#define CONN_FLOW_CONTROL_HWM_NUM 3
+#define CONN_FLOW_CONTROL_HWM_DEN 4 /* HWM = 75% of queue_limit_bytes */
+#define CONN_FLOW_CONTROL_LWM_NUM 1
+#define CONN_FLOW_CONTROL_LWM_DEN 2 /* LWM = 50% of queue_limit_bytes */
+
+#define CONN_HWM(limit) (((limit) * CONN_FLOW_CONTROL_HWM_NUM) / CONN_FLOW_CONTROL_HWM_DEN)
+#define CONN_LWM(limit) (((limit) * CONN_FLOW_CONTROL_LWM_NUM) / CONN_FLOW_CONTROL_LWM_DEN)
+
+/* Lower bound on the dynamic queue limit (in slot-equivalent bytes).  Derived
+ * from the CONN_QUEUE_MIN_BUFFERS clamp on share_buffers and the DRAIN burst
+ * factor floor of 1.0 — the dynamic limit can never drop below this value
+ * regardless of active_streams or pool utilization shifts.  Used to gate a
+ * fast-path early-out in the HWM/LWM hot-path checks. */
+#define CONN_FLOW_CONTROL_MIN_LIMIT_BYTES ((size_t)CONN_QUEUE_MIN_BUFFERS * (size_t)BUFFER_POOL_BUFFER_SIZE)
+#define CONN_FLOW_CONTROL_MIN_HWM_BYTES CONN_HWM(CONN_FLOW_CONTROL_MIN_LIMIT_BYTES)
+#define CONN_FLOW_CONTROL_MIN_LWM_BYTES CONN_LWM(CONN_FLOW_CONTROL_MIN_LIMIT_BYTES)
+
+int connection_should_pause_upstream(connection_t *c) {
+  if (!c)
     return 0;
-  size_t queued = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
-  size_t hwm = (c->queue_limit_bytes * CONN_FLOW_CONTROL_HWM_NUM) / CONN_FLOW_CONTROL_HWM_DEN;
-  return queued >= hwm;
+  size_t queued = connection_queue_bytes(c);
+  /* Fast path: queue is below the HWM of the absolute-minimum dynamic limit.
+   * No pause possible regardless of how active_streams / pool utilization /
+   * slow_active have shifted since the last enqueue. */
+  if (queued < CONN_FLOW_CONTROL_MIN_HWM_BYTES)
+    return 0;
+  /* Slow path: refresh limit so the decision uses current inputs. */
+  c->queue_limit_bytes = connection_compute_queue_limit(c);
+  return queued >= CONN_HWM(c->queue_limit_bytes);
 }
 
-int connection_can_resume_upstream(const connection_t *c) {
-  if (!c || c->queue_limit_bytes == 0)
+int connection_can_resume_upstream(connection_t *c) {
+  if (!c)
     return 0;
-  size_t queued = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
-  size_t lwm = (c->queue_limit_bytes * CONN_FLOW_CONTROL_LWM_NUM) / CONN_FLOW_CONTROL_LWM_DEN;
-  return queued <= lwm;
+  size_t queued = connection_queue_bytes(c);
+  /* Fast path: queue is below the LWM of the absolute-minimum dynamic limit.
+   * Always resumable regardless of input shifts. */
+  if (queued <= CONN_FLOW_CONTROL_MIN_LWM_BYTES)
+    return 1;
+  /* Slow path: refresh limit so the decision uses current inputs. */
+  c->queue_limit_bytes = connection_compute_queue_limit(c);
+  return queued <= CONN_LWM(c->queue_limit_bytes);
 }
 
 void connection_recompute_any_upstream_paused(connection_t *c) {
@@ -1059,8 +1115,8 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref) {
     return 0;
 
   int64_t now_ms = get_time_ms();
-  size_t limit_bytes = connection_calculate_queue_limit(c, now_ms);
-  size_t queued_bytes = c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
+  size_t limit_bytes = connection_update_queue_limit(c, now_ms);
+  size_t queued_bytes = connection_queue_bytes(c);
   size_t projected_bytes = queued_bytes + buf_ref->data_size;
 
   c->queue_limit_bytes = limit_bytes;
