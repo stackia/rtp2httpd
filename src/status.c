@@ -56,9 +56,25 @@ static char shm_path[256] = {0};
 int status_init(void) {
   int fd;
 
-  /* Create shared memory file in /tmp */
+  /* Create shared memory file in /tmp.
+   * The path is keyed on the supervisor PID, so a pre-existing file with the
+   * same name can only be a stale leftover from a previous instance that did
+   * not exit cleanly (SIGKILL, OOM, power loss) and happened to have the same
+   * PID. Within a single PID namespace no other live process can hold this
+   * PID, so the leftover is safe to unlink. This self-heal matters in
+   * environments where /tmp is persistent (some embedded/OpenWrt setups) or
+   * where PID reuse is highly likely (containers with restart=always always
+   * give the supervisor PID 1, small pid_max on embedded systems). */
   snprintf(shm_path, sizeof(shm_path), "/tmp/rtp2httpd_status_%d", getpid());
   fd = open(shm_path, O_CREAT | O_RDWR | O_EXCL, 0600);
+  if (fd == -1 && errno == EEXIST) {
+    logger(LOG_WARN, "Stale shared memory file %s found, removing and retrying", shm_path);
+    if (unlink(shm_path) == -1 && errno != ENOENT) {
+      logger(LOG_ERROR, "Failed to unlink stale shared memory file: %s", strerror(errno));
+      return -1;
+    }
+    fd = open(shm_path, O_CREAT | O_RDWR | O_EXCL, 0600);
+  }
   if (fd == -1) {
     logger(LOG_ERROR, "Failed to create shared memory file: %s", strerror(errno));
     return -1;
