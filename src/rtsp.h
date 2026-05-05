@@ -198,8 +198,7 @@ typedef struct {
                                                          plane, not media) */
 
   /* Flow control state (TCP interleaved transport only) */
-  int upstream_paused;      /* 1 = upstream POLLER_IN currently un-armed due to client backpressure */
-  int64_t pause_started_ms; /* When pause began; used by tick to enforce max-pause guard */
+  int upstream_paused; /* 1 = upstream recv currently suspended due to client backpressure */
 } rtsp_session_t;
 
 /* Function prototypes */

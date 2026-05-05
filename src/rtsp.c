@@ -315,14 +315,7 @@ void rtsp_session_init(rtsp_session_t *session) {
 
   /* Initialize flow control state (TCP transport only) */
   session->upstream_paused = 0;
-  session->pause_started_ms = 0;
 }
-
-/* Maximum time the upstream socket may stay paused before we force-disconnect.
- * Must be safely below typical RTSP session timeouts (60s on most servers) so
- * the server does not silently reclaim the session, leaving us with a half-dead
- * connection. */
-#define RTSP_MAX_PAUSE_MS 30000
 
 /* Pause/resume are flag-only.  We deliberately avoid `poller_mod` because on
  * kqueue (src/poller_kqueue.c) a mask without POLLER_IN/POLLER_OUT deletes
@@ -330,17 +323,16 @@ void rtsp_session_init(rtsp_session_t *session) {
  * paused.  The TCP socket also carries control-plane responses
  * (PLAY/keepalive replies, TEARDOWN), and outbound work (state machine
  * requests, keepalives) updates POLLER_OUT independently — keeping the read
- * filter in place lets all of that continue to flow.  rtsp_handle_tcp_-
- * interleaved_data() bails out via the HWM check when the queue is
- * saturated; rtsp_session_tick() enforces RTSP_MAX_PAUSE_MS so we don't
- * outlast the server's session timeout. */
+ * filter in place lets all of that continue to flow during pause, so the
+ * server's session timer keeps getting reset and never reclaims us.
+ * rtsp_handle_tcp_interleaved_data() bails out via the HWM check when the
+ * queue is saturated. */
 static void rtsp_pause_upstream(rtsp_session_t *session) {
   if (!session || session->upstream_paused)
     return;
   if (session->transport_mode != RTSP_TRANSPORT_TCP)
     return;
   session->upstream_paused = 1;
-  session->pause_started_ms = get_time_ms();
   if (session->conn)
     session->conn->backpressure_events++;
   connection_recompute_any_upstream_paused(session->conn);
@@ -353,7 +345,6 @@ void rtsp_resume_upstream(rtsp_session_t *session) {
   if (!session || !session->upstream_paused)
     return;
   session->upstream_paused = 0;
-  session->pause_started_ms = 0;
   connection_recompute_any_upstream_paused(session->conn);
   logger(LOG_DEBUG, "RTSP TCP: Resumed upstream reads");
   /* Drain synchronously here: edge-triggered pollers won't deliver another
@@ -1648,17 +1639,6 @@ int rtsp_session_tick(rtsp_session_t *session, int64_t now) {
         }
       }
     }
-  }
-
-  /* Max-pause guard for TCP transport: if the client has been too slow for
-   * too long, abort rather than risk the upstream server timing out our
-   * session (would leave a half-dead connection). */
-  if (session->upstream_paused && session->pause_started_ms > 0 &&
-      now - session->pause_started_ms > RTSP_MAX_PAUSE_MS) {
-    logger(LOG_WARN, "RTSP TCP: Client too slow, upstream paused for %lld ms — aborting session",
-           (long long)(now - session->pause_started_ms));
-    rtsp_session_set_state(session, RTSP_STATE_ERROR);
-    return -1;
   }
 
   /* Send periodic keepalive to prevent server session timeout */
