@@ -82,14 +82,20 @@ int status_init(void) {
     return -1;
   }
 
-  /* Map shared memory */
-  status_shared = mmap(NULL, sizeof(status_shared_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-  if (status_shared == MAP_FAILED) {
-    logger(LOG_ERROR, "Failed to map shared memory: %s", strerror(errno));
+  /* Map shared memory.
+   * logger() probes status_shared with a NULL check, not a MAP_FAILED check,
+   * so we must reset to NULL before logging or any failure path that calls
+   * logger() will dereference (void*)-1. */
+  void *mapped = mmap(NULL, sizeof(status_shared_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  if (mapped == MAP_FAILED) {
+    int err = errno;
+    status_shared = NULL;
+    logger(LOG_ERROR, "Failed to map shared memory: %s", strerror(err));
     close(fd);
     unlink(shm_path);
     return -1;
   }
+  status_shared = mapped;
 
   /* Close file descriptor immediately after mmap()
    * Per POSIX: "closing the file descriptor does not unmap the region"
@@ -124,6 +130,7 @@ int status_init(void) {
           close(status_shared->worker_notification_pipes[j]);
       }
       munmap(status_shared, sizeof(status_shared_t));
+      status_shared = NULL;
       unlink(shm_path);
       return -1;
     }
