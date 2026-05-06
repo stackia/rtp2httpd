@@ -23,44 +23,248 @@ static void log_fcc_state_transition(fcc_state_t from, fcc_state_t to, const cha
 static int fcc_send_term_packet(fcc_session_t *fcc, service_t *service, uint16_t seqn, const char *reason);
 static int fcc_send_termination_message(stream_context_t *ctx, uint16_t mcast_seqn);
 
-static int fcc_bind_socket_with_range(int sock, struct sockaddr_in *sin) {
-  if (!sin)
+static int fcc_create_configured_socket(service_t *service, const char *upstream_if, const char *label) {
+  int sock = socket(AF_INET, service->fcc_addr->ai_socktype, service->fcc_addr->ai_protocol);
+  if (sock < 0) {
+    logger(LOG_ERROR, "FCC: Failed to create %s socket: %s", label, strerror(errno));
     return -1;
-
-  if (config.fcc_listen_port_min <= 0 || config.fcc_listen_port_max <= 0) {
-    sin->sin_port = 0;
-    return bind(sock, (struct sockaddr *)sin, sizeof(*sin));
   }
 
-  int min_port = config.fcc_listen_port_min;
-  int max_port = config.fcc_listen_port_max;
-  if (max_port < min_port) {
-    int tmp = min_port;
-    min_port = max_port;
-    max_port = tmp;
+  if (connection_set_nonblocking(sock) < 0) {
+    logger(LOG_ERROR, "FCC: Failed to set %s socket non-blocking: %s", label, strerror(errno));
+    close(sock);
+    return -1;
+  }
+
+  if (set_socket_rcvbuf(sock, config.udp_rcvbuf_size) < 0) {
+    logger(LOG_WARN, "FCC: Failed to set %s SO_RCVBUF to %d: %s", label, config.udp_rcvbuf_size, strerror(errno));
+  }
+
+  bind_to_upstream_interface(sock, upstream_if);
+
+  return sock;
+}
+
+typedef int (*fcc_bind_port_fn)(int port, void *opaque);
+
+typedef struct {
+  int sock;
+  struct sockaddr_in *sin;
+} fcc_single_bind_attempt_t;
+
+typedef struct {
+  stream_context_t *ctx;
+  const char *upstream_if;
+  int media_sock;
+  int signal_sock;
+} fcc_double_bind_attempt_t;
+
+static int fcc_get_bind_port_range(int paired_port_offset, int *min_port, int *max_port, int *use_ephemeral) {
+  if (!min_port || !max_port || !use_ephemeral) {
+    return -1;
+  }
+
+  *use_ephemeral = 0;
+  if (config.fcc_listen_port_min <= 0 || config.fcc_listen_port_max <= 0) {
+    if (paired_port_offset == 0) {
+      *use_ephemeral = 1;
+      *min_port = 0;
+      *max_port = 0;
+      return 0;
+    }
+
+    *min_port = 10000;
+    *max_port = 65535;
+  } else {
+    *min_port = config.fcc_listen_port_min;
+    *max_port = config.fcc_listen_port_max;
+  }
+
+  if (*max_port < *min_port) {
+    int tmp = *min_port;
+    *min_port = *max_port;
+    *max_port = tmp;
+  }
+
+  *max_port -= paired_port_offset;
+
+  int max_allowed = 65535 - paired_port_offset;
+  if (*max_port > max_allowed) {
+    *max_port = max_allowed;
+  }
+  if (*min_port < 1) {
+    *min_port = 1;
+  }
+
+  return *max_port >= *min_port ? 0 : -1;
+}
+
+static int fcc_try_bind_port_range(int paired_port_offset, const char *label, fcc_bind_port_fn bind_port,
+                                   void *opaque) {
+  int min_port;
+  int max_port;
+  int use_ephemeral;
+
+  if (fcc_get_bind_port_range(paired_port_offset, &min_port, &max_port, &use_ephemeral) < 0) {
+    logger(LOG_ERROR, "FCC: Invalid %s port range", label);
+    return -1;
+  }
+
+  if (use_ephemeral) {
+    return bind_port(0, opaque);
   }
 
   int range = max_port - min_port + 1;
-  if (range <= 0)
-    range = 1;
-
   int start_offset = (int)(get_time_ms() % range);
 
   for (int i = 0; i < range; i++) {
     int port = min_port + ((start_offset + i) % range);
-    sin->sin_port = htons((uint16_t)port);
-    if (bind(sock, (struct sockaddr *)sin, sizeof(*sin)) == 0) {
-      logger(LOG_DEBUG, "FCC: Bound client socket to port %d", port);
+    int r = bind_port(port, opaque);
+    if (r == 0) {
       return 0;
     }
-
-    if (errno != EADDRINUSE && errno != EACCES) {
-      logger(LOG_DEBUG, "FCC: Failed to bind port %d: %s", port, strerror(errno));
+    if (r < -1) {
+      return -1;
     }
   }
 
-  logger(LOG_ERROR, "FCC: Unable to bind socket within configured port range %d-%d", min_port, max_port);
+  logger(LOG_ERROR, "FCC: Unable to bind %s within port range %d-%d", label, min_port, max_port);
   return -1;
+}
+
+static int fcc_bind_single_socket_port(int port, void *opaque) {
+  fcc_single_bind_attempt_t *attempt = (fcc_single_bind_attempt_t *)opaque;
+
+  attempt->sin->sin_port = htons((uint16_t)port);
+  if (bind(attempt->sock, (struct sockaddr *)attempt->sin, sizeof(*attempt->sin)) == 0) {
+    if (port != 0) {
+      logger(LOG_DEBUG, "FCC: Bound client socket to port %d", port);
+    }
+    return 0;
+  }
+
+  if (errno != EADDRINUSE && errno != EACCES) {
+    logger(LOG_DEBUG, "FCC: Failed to bind port %d: %s", port, strerror(errno));
+  }
+  return -1;
+}
+
+static int fcc_register_socket(stream_context_t *ctx, int sock, const char *label) {
+  if (poller_add(ctx->epoll_fd, sock, POLLER_IN) < 0) {
+    logger(LOG_ERROR, "FCC: Failed to add %s socket to poller: %s", label, strerror(errno));
+    return -1;
+  }
+
+  fdmap_set(sock, ctx->conn);
+  logger(LOG_DEBUG, "FCC: %s socket registered with poller", label);
+  return 0;
+}
+
+static int fcc_bind_double_socket_port(int media_port, void *opaque) {
+  fcc_double_bind_attempt_t *attempt = (fcc_double_bind_attempt_t *)opaque;
+  stream_context_t *ctx = attempt->ctx;
+  fcc_session_t *fcc = &ctx->fcc;
+  service_t *service = ctx->service;
+  int signal_port = media_port + 1;
+
+  if (attempt->media_sock < 0) {
+    attempt->media_sock = fcc_create_configured_socket(service, attempt->upstream_if, "media");
+  }
+  if (attempt->media_sock < 0) {
+    return -2;
+  }
+
+  struct sockaddr_in media_sin;
+  memset(&media_sin, 0, sizeof(media_sin));
+  media_sin.sin_family = AF_INET;
+  media_sin.sin_addr.s_addr = INADDR_ANY;
+  media_sin.sin_port = htons((uint16_t)media_port);
+
+  int media_bound = bind(attempt->media_sock, (struct sockaddr *)&media_sin, sizeof(media_sin));
+  int media_errno = errno;
+  if (media_bound < 0) {
+    if (media_errno != EADDRINUSE && media_errno != EACCES) {
+      logger(LOG_DEBUG, "FCC: Failed to bind media port %d: %s", media_port, strerror(media_errno));
+    }
+    return -1;
+  }
+
+  if (attempt->signal_sock < 0) {
+    attempt->signal_sock = fcc_create_configured_socket(service, attempt->upstream_if, "signal");
+  }
+  if (attempt->signal_sock < 0) {
+    close(attempt->media_sock);
+    attempt->media_sock = -1;
+    return -2;
+  }
+
+  struct sockaddr_in signal_sin;
+  memset(&signal_sin, 0, sizeof(signal_sin));
+  signal_sin.sin_family = AF_INET;
+  signal_sin.sin_addr.s_addr = INADDR_ANY;
+  signal_sin.sin_port = htons((uint16_t)signal_port);
+
+  int signal_bound = bind(attempt->signal_sock, (struct sockaddr *)&signal_sin, sizeof(signal_sin));
+  int signal_errno = errno;
+  if (signal_bound == 0) {
+    fcc->media_sock = attempt->media_sock;
+    fcc->fcc_sock = attempt->signal_sock;
+    attempt->media_sock = -1;
+    attempt->signal_sock = -1;
+    fcc->fcc_server = (struct sockaddr_in *)(uintptr_t)service->fcc_addr->ai_addr;
+
+    socklen_t media_len = sizeof(fcc->media_client);
+    socklen_t signal_len = sizeof(fcc->fcc_client);
+    getsockname(fcc->media_sock, (struct sockaddr *)&fcc->media_client, &media_len);
+    getsockname(fcc->fcc_sock, (struct sockaddr *)&fcc->fcc_client, &signal_len);
+
+    logger(LOG_DEBUG, "FCC: Bound media socket to port %u, signal socket to port %u", ntohs(fcc->media_client.sin_port),
+           ntohs(fcc->fcc_client.sin_port));
+    return 0;
+  }
+
+  if (signal_errno != EADDRINUSE && signal_errno != EACCES) {
+    logger(LOG_DEBUG, "FCC: Failed to bind signal port %d: %s", signal_port, strerror(signal_errno));
+  }
+
+  close(attempt->media_sock);
+  attempt->media_sock = -1;
+  return -1;
+}
+
+static int fcc_initialize_double_sockets(stream_context_t *ctx, const char *upstream_if) {
+  fcc_session_t *fcc = &ctx->fcc;
+  fcc_double_bind_attempt_t attempt = {.ctx = ctx, .upstream_if = upstream_if, .media_sock = -1, .signal_sock = -1};
+
+  if (fcc_try_bind_port_range(1, "media/signal socket pair", fcc_bind_double_socket_port, &attempt) < 0) {
+    if (attempt.media_sock >= 0) {
+      close(attempt.media_sock);
+    }
+    if (attempt.signal_sock >= 0) {
+      close(attempt.signal_sock);
+    }
+    return -1;
+  }
+
+  if (fcc_register_socket(ctx, fcc->fcc_sock, "signal") < 0) {
+    close(fcc->media_sock);
+    close(fcc->fcc_sock);
+    fcc->media_sock = -1;
+    fcc->fcc_sock = -1;
+    fcc->fcc_server = NULL;
+    return -1;
+  }
+
+  if (fcc_register_socket(ctx, fcc->media_sock, "media") < 0) {
+    worker_cleanup_socket_from_epoll(ctx->epoll_fd, fcc->fcc_sock);
+    close(fcc->media_sock);
+    fcc->media_sock = -1;
+    fcc->fcc_sock = -1;
+    fcc->fcc_server = NULL;
+    return -1;
+  }
+
+  return 0;
 }
 
 ssize_t sendto_triple(int fd, const void *buf, size_t n, int flags, struct sockaddr_in *addr, socklen_t addr_len) {
@@ -99,6 +303,13 @@ void fcc_session_cleanup(fcc_session_t *fcc, service_t *service, int epoll_fd) {
   fcc->pending_list_head = NULL;
   fcc->pending_list_tail = NULL;
 
+  /* Close media socket */
+  if (fcc->media_sock >= 0) {
+    worker_cleanup_socket_from_epoll(epoll_fd, fcc->media_sock);
+    fcc->media_sock = -1;
+    logger(LOG_DEBUG, "FCC: Media socket closed");
+  }
+
   /* Close FCC socket */
   if (fcc->fcc_sock >= 0) {
     worker_cleanup_socket_from_epoll(epoll_fd, fcc->fcc_sock);
@@ -115,6 +326,7 @@ void fcc_session_cleanup(fcc_session_t *fcc, service_t *service, int epoll_fd) {
 
   /* Clear client address structure */
   memset(&fcc->fcc_client, 0, sizeof(fcc->fcc_client));
+  memset(&fcc->media_client, 0, sizeof(fcc->media_client));
 
   /* Mark as not initialized */
   fcc->initialized = 0;
@@ -189,8 +401,13 @@ static bool is_rtcp_packet(const uint8_t *data, size_t len) {
   return packet_len > 0 && packet_len <= len;
 }
 
-int fcc_handle_socket_event(stream_context_t *ctx, int64_t now) {
+int fcc_handle_socket_event(stream_context_t *ctx, int fd, int64_t now) {
   fcc_session_t *fcc = &ctx->fcc;
+  int recv_sock = fd;
+
+  if (recv_sock < 0) {
+    return 0;
+  }
 
   /* Drain all available packets for edge-triggered pollers (epoll EPOLLET / kqueue EV_CLEAR)
    * where the read event fires only once per data arrival. */
@@ -206,13 +423,12 @@ int fcc_handle_socket_event(stream_context_t *ctx, int64_t now) {
       fcc->last_data_time = now;
       /* Drain the socket to prevent event loop spinning */
       uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
-      recvfrom(fcc->fcc_sock, dummy, sizeof(dummy), 0, NULL, NULL);
+      recvfrom(recv_sock, dummy, sizeof(dummy), 0, NULL, NULL);
       return 0;
     }
 
     /* Receive directly into zero-copy buffer (true zero-copy receive) */
-    int actualr =
-        recvfrom(fcc->fcc_sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE, 0, (struct sockaddr *)&peer_addr, &slen);
+    int actualr = recvfrom(recv_sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE, 0, (struct sockaddr *)&peer_addr, &slen);
     if (actualr < 0) {
       buffer_ref_put(recv_buf);
       if (errno != EAGAIN)
@@ -278,6 +494,7 @@ void fcc_session_init(fcc_session_t *fcc) {
   fcc->initialized = 1;
   fcc->state = FCC_STATE_INIT;
   fcc->fcc_sock = -1;
+  fcc->media_sock = -1;
   fcc->status_index = -1;
   fcc->redirect_count = 0;
 }
@@ -326,54 +543,45 @@ int fcc_initialize_and_request(stream_context_t *ctx) {
   logger(LOG_DEBUG, "FCC: Initializing FCC session and sending request");
 
   if (fcc->fcc_sock < 0) {
-    /* Create and configure FCC socket */
-    fcc->fcc_sock = socket(AF_INET, service->fcc_addr->ai_socktype, service->fcc_addr->ai_protocol);
-    if (fcc->fcc_sock < 0) {
-      logger(LOG_ERROR, "FCC: Failed to create socket: %s", strerror(errno));
-      return -1;
-    }
-
-    /* Set socket to non-blocking mode for poller */
-    if (connection_set_nonblocking(fcc->fcc_sock) < 0) {
-      logger(LOG_ERROR, "FCC: Failed to set socket non-blocking: %s", strerror(errno));
-      close(fcc->fcc_sock);
-      fcc->fcc_sock = -1;
-      return -1;
-    }
-
-    /* Set receive buffer size */
-    if (set_socket_rcvbuf(fcc->fcc_sock, config.udp_rcvbuf_size) < 0) {
-      logger(LOG_WARN, "FCC: Failed to set SO_RCVBUF to %d: %s", config.udp_rcvbuf_size, strerror(errno));
-    }
-
     upstream_if = get_upstream_interface_for_fcc(service->ifname, service->ifname_fcc);
-    bind_to_upstream_interface(fcc->fcc_sock, upstream_if);
 
-    /* Bind to configured or ephemeral port */
-    sin.sin_family = AF_INET;
-    sin.sin_addr.s_addr = INADDR_ANY;
-    if (fcc_bind_socket_with_range(fcc->fcc_sock, &sin) != 0) {
-      logger(LOG_ERROR, "FCC: Cannot bind socket within configured range");
-      close(fcc->fcc_sock);
-      fcc->fcc_sock = -1;
-      return -1;
+    if (fcc->type == FCC_TYPE_HUAWEI) {
+      if (fcc_initialize_double_sockets(ctx, upstream_if) < 0) {
+        logger(LOG_ERROR, "FCC (Huawei): Cannot bind media/signal socket pair");
+        return -1;
+      }
+    } else {
+      /* Create and configure FCC socket */
+      fcc->fcc_sock = fcc_create_configured_socket(service, upstream_if, "client");
+      if (fcc->fcc_sock < 0) {
+        return -1;
+      }
+
+      /* Bind to configured or ephemeral port */
+      memset(&sin, 0, sizeof(sin));
+      sin.sin_family = AF_INET;
+      sin.sin_addr.s_addr = INADDR_ANY;
+      fcc_single_bind_attempt_t bind_attempt = {.sock = fcc->fcc_sock, .sin = &sin};
+      if (fcc_try_bind_port_range(0, "client socket", fcc_bind_single_socket_port, &bind_attempt) != 0) {
+        logger(LOG_ERROR, "FCC: Cannot bind socket within configured range");
+        close(fcc->fcc_sock);
+        fcc->fcc_sock = -1;
+        return -1;
+      }
+
+      /* Get the assigned local address */
+      slen = sizeof(fcc->fcc_client);
+      getsockname(fcc->fcc_sock, (struct sockaddr *)&fcc->fcc_client, &slen);
+
+      fcc->fcc_server = (struct sockaddr_in *)(uintptr_t)service->fcc_addr->ai_addr;
+
+      /* Register socket with poller immediately after creation */
+      if (fcc_register_socket(ctx, fcc->fcc_sock, "client") < 0) {
+        close(fcc->fcc_sock);
+        fcc->fcc_sock = -1;
+        return -1;
+      }
     }
-
-    /* Get the assigned local address */
-    slen = sizeof(fcc->fcc_client);
-    getsockname(fcc->fcc_sock, (struct sockaddr *)&fcc->fcc_client, &slen);
-
-    fcc->fcc_server = (struct sockaddr_in *)(uintptr_t)service->fcc_addr->ai_addr;
-
-    /* Register socket with poller immediately after creation */
-    if (poller_add(ctx->epoll_fd, fcc->fcc_sock, POLLER_IN) < 0) {
-      logger(LOG_ERROR, "FCC: Failed to add socket to poller: %s", strerror(errno));
-      close(fcc->fcc_sock);
-      fcc->fcc_sock = -1;
-      return -1;
-    }
-    fdmap_set(fcc->fcc_sock, ctx->conn);
-    logger(LOG_DEBUG, "FCC: Socket registered with poller");
   }
 
   /* Send FCC request - different format for Huawei vs Telecom */

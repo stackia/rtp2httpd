@@ -49,8 +49,10 @@ typedef struct {
   int status_index; /* Index in status_shared->clients array for state updates
                      */
   int fcc_sock;
+  int media_sock; /* Huawei media socket; unused by Telecom/ZTE/Fiberhome */
   struct sockaddr_in *fcc_server;
   struct sockaddr_in fcc_client;
+  struct sockaddr_in media_client;
   uint16_t media_port;   /* RTP media port (network byte order, for direct
                             comparison with sin_port) */
   bool verify_server_ip; /* Verify server ip before processing packets */
@@ -114,10 +116,11 @@ int fcc_session_tick(stream_context_t *ctx, int64_t now);
  * Handle FCC socket events (receive and process packets)
  *
  * @param ctx Stream context
+ * @param fd Ready FCC socket descriptor
  * @param now Current timestamp in milliseconds
  * @return 0 on success, -1 on error
  */
-int fcc_handle_socket_event(stream_context_t *ctx, int64_t now);
+int fcc_handle_socket_event(stream_context_t *ctx, int fd, int64_t now);
 
 /**
  * Set FCC session state with logging and status update

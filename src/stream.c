@@ -75,7 +75,12 @@ int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref) {
 int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64_t now) {
   /* Process FCC socket events */
   if (ctx->fcc.initialized && ctx->fcc.fcc_sock >= 0 && fd == ctx->fcc.fcc_sock) {
-    return fcc_handle_socket_event(ctx, now);
+    return fcc_handle_socket_event(ctx, fd, now);
+  }
+
+  /* Process FCC media socket events */
+  if (ctx->fcc.initialized && ctx->fcc.media_sock >= 0 && fd == ctx->fcc.media_sock) {
+    return fcc_handle_socket_event(ctx, fd, now);
   }
 
   /* Process multicast socket events */

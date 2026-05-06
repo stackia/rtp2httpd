@@ -122,6 +122,26 @@ def _build_huawei_response(
     return bytes(pk)
 
 
+def _build_huawei_short_response(
+    mcast_ip_be: bytes,
+    result_code: int = 1,
+    resp_type: int = 2,
+    first_seq: int = 0,
+    bitrate_kbps: int = 8748,
+) -> bytes:
+    """Build Huawei FCC short response (FMT 6, PT 205). 24 bytes."""
+    pk = bytearray(24)
+    pk[0] = 0x80 | _HUAWEI_FMT_RESP
+    pk[1] = 205
+    struct.pack_into("!H", pk, 2, 24 // 4 - 1)
+    pk[8:12] = mcast_ip_be
+    pk[12] = result_code
+    struct.pack_into("!H", pk, 14, resp_type)
+    struct.pack_into("!H", pk, 16, first_seq)
+    struct.pack_into("!H", pk, 20, bitrate_kbps)
+    return bytes(pk)
+
+
 def _build_huawei_sync(mcast_ip_be: bytes) -> bytes:
     """Build Huawei FCC sync notification (FMT 8, PT 205). 12 bytes."""
     pk = bytearray(12)
@@ -153,6 +173,22 @@ class MockFCCServer:
     sync_after : int
         Send sync notification after this many unicast packets.
         Set to 0 to never send sync (unicast only test).
+    huawei_response_format : str
+        "full" (36-byte response) or "short" (24-byte non-NAT response).
+    redirect_to : tuple[str, int] | None
+        If set, send a redirect response to this FCC server instead of starting
+        unicast.
+    first_unicast_seq : int
+        Initial sequence number for mock unicast RTP packets and Huawei short
+        response.
+    bitrate_kbps : int
+        Bitrate value returned in Huawei short responses.
+    telecom_signal_port : int
+        Optional Telecom signal port returned in the FCC response.
+    telecom_media_port : int
+        Optional Telecom media port returned in the FCC response.
+    telecom_fcc_ip : str | None
+        Optional Telecom FCC IP returned in the FCC response.
     """
 
     def __init__(
@@ -162,12 +198,26 @@ class MockFCCServer:
         protocol: str = "telecom",
         unicast_pps: int = 300,
         sync_after: int = 100,
+        huawei_response_format: str = "full",
+        redirect_to: tuple[str, int] | None = None,
+        first_unicast_seq: int = 0,
+        bitrate_kbps: int = 8748,
+        telecom_signal_port: int = 0,
+        telecom_media_port: int = 0,
+        telecom_fcc_ip: str | None = None,
     ):
         self.port = port or find_free_udp_port()
         self.mcast_addr = mcast_addr
         self.protocol = protocol
         self.unicast_pps = unicast_pps
         self.sync_after = sync_after
+        self.huawei_response_format = huawei_response_format
+        self.redirect_to = redirect_to
+        self.first_unicast_seq = first_unicast_seq
+        self.bitrate_kbps = bitrate_kbps
+        self.telecom_signal_port = telecom_signal_port
+        self.telecom_media_port = telecom_media_port
+        self.telecom_fcc_ip = telecom_fcc_ip
 
         self._mcast_ip_be = socket.inet_aton(mcast_addr)
         self._sock: socket.socket | None = None
@@ -176,6 +226,7 @@ class MockFCCServer:
 
         # Observable state
         self.requests_received = 0
+        self.request_client_addrs: list[tuple[str, int]] = []
         self.terminations_received = 0
         self.unicast_packets_sent = 0
 
@@ -215,6 +266,7 @@ class MockFCCServer:
 
             if pt == 205 and fmt == self._fmt_req:
                 self.requests_received += 1
+                self.request_client_addrs.append(addr)
                 self._handle_request(addr)
             elif pt == 205 and fmt == self._fmt_term:
                 self.terminations_received += 1
@@ -224,13 +276,46 @@ class MockFCCServer:
     def _handle_request(self, client_addr: tuple[str, int]) -> None:
         """Send response then start unicast streaming in a background thread."""
         assert self._sock is not None
-        if self.protocol == "huawei":
+        if self.protocol == "huawei" and self.redirect_to is not None:
+            redirect_ip, redirect_port = self.redirect_to
+            resp = _build_huawei_response(
+                self._mcast_ip_be,
+                resp_type=3,
+                server_ip_be=socket.inet_aton(redirect_ip),
+                server_port=redirect_port,
+            )
+        elif self.protocol == "telecom" and self.redirect_to is not None:
+            redirect_ip, redirect_port = self.redirect_to
+            resp = _build_telecom_response(
+                self._mcast_ip_be,
+                resp_type=3,
+                signal_port=redirect_port,
+                fcc_ip=struct.unpack("!I", socket.inet_aton(redirect_ip))[0],
+            )
+        elif self.protocol == "huawei" and self.huawei_response_format == "short":
+            resp = _build_huawei_short_response(
+                self._mcast_ip_be,
+                first_seq=self.first_unicast_seq,
+                bitrate_kbps=self.bitrate_kbps,
+            )
+        elif self.protocol == "huawei":
             resp = _build_huawei_response(self._mcast_ip_be)
         else:
-            resp = _build_telecom_response(self._mcast_ip_be)
+            telecom_fcc_ip = 0
+            if self.telecom_fcc_ip is not None:
+                telecom_fcc_ip = struct.unpack("!I", socket.inet_aton(self.telecom_fcc_ip))[0]
+            resp = _build_telecom_response(
+                self._mcast_ip_be,
+                signal_port=self.telecom_signal_port,
+                media_port=self.telecom_media_port,
+                fcc_ip=telecom_fcc_ip,
+            )
 
         for _ in range(3):
             self._sock.sendto(resp, client_addr)
+
+        if self.redirect_to is not None:
+            return
 
         # Start unicast sender in a separate thread so the receive loop
         # keeps processing incoming packets (e.g. termination).
@@ -245,20 +330,25 @@ class MockFCCServer:
         """Stream RTP unicast packets to the client."""
         assert self._sock is not None
         interval = 1.0 / self.unicast_pps
-        seq = 0
+        send_addr = client_addr
+        if self.protocol == "huawei" and client_addr[1] > 0:
+            send_addr = (client_addr[0], client_addr[1] - 1)
+        seq = self.first_unicast_seq
         ts = 0
+        sent_count = 0
         while not self._stop.is_set():
             pkt = make_rtp_packet(seq, ts)
             try:
-                self._sock.sendto(pkt, client_addr)
+                self._sock.sendto(pkt, send_addr)
             except OSError:
                 break
             self.unicast_packets_sent += 1
+            sent_count += 1
             seq = (seq + 1) & 0xFFFF
             ts = (ts + 3600) & 0xFFFFFFFF
 
             # Send sync notification after configured packet count
-            if self.sync_after > 0 and seq == self.sync_after:
+            if self.sync_after > 0 and sent_count == self.sync_after:
                 if self.protocol == "huawei":
                     sync_pk = _build_huawei_sync(self._mcast_ip_be)
                 else:
