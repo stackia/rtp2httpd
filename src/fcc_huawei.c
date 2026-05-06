@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
 
@@ -179,9 +180,8 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf, int b
   memcpy(&type_be, buf + 14, sizeof(type_be));
   uint16_t type = ntohs(type_be); // 1=no unicast, 2=unicast, 3=redirect
 
-  logger(LOG_DEBUG, "FCC (Huawei): Response received: result=%u, type=%u", result_code, type);
-
   if (result_code != 1) {
+    logger(LOG_DEBUG, "FCC Response: FMT=6, result=%u, type=%u", result_code, type);
     logger(LOG_WARN,
            "FCC (Huawei): Server response error (result=%u), falling back to "
            "multicast",
@@ -193,63 +193,96 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf, int b
 
   if (type == 1) {
     /* No need for unicast, join multicast immediately */
+    logger(LOG_DEBUG, "FCC Response: FMT=6, result=%u, type=%u", result_code, type);
     logger(LOG_INFO, "FCC (Huawei): Server says no unicast needed, joining multicast");
     fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "No unicast needed");
     mcast_session_join(&ctx->mcast, ctx);
   } else if (type == 2) {
     /* Server will send unicast stream */
-    if (buf_len < 36) {
+    if (buf_len < 24) {
       logger(LOG_WARN, "FCC (Huawei): response too short for unicast fields (%d bytes)", buf_len);
       fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Short response");
       mcast_session_join(&ctx->mcast, ctx);
       return 0;
     }
 
-    uint8_t nat_flag = buf[24];
-    uint8_t need_nat_traversal = (nat_flag << 2) >> 7; // Extract bit 5
-    uint16_t server_port_be;
-    memcpy(&server_port_be, buf + 26, sizeof(server_port_be));
-    uint32_t server_ip_be;
-    memcpy(&server_ip_be, buf + 32, sizeof(server_ip_be));
+    uint16_t first_seq_be;
+    uint16_t bitrate_be;
+    uint16_t first_seq;
+    uint16_t bitrate_kbps;
+    char bitrate_str[32];
+    memcpy(&first_seq_be, buf + 16, sizeof(first_seq_be));
+    memcpy(&bitrate_be, buf + 20, sizeof(bitrate_be));
 
-    /* Extract session ID for NAT traversal */
-    {
-      uint32_t session_id_be;
-      memcpy(&session_id_be, buf + 28, sizeof(session_id_be));
-      fcc->session_id = ntohl(session_id_be);
+    first_seq = ntohs(first_seq_be);
+    bitrate_kbps = ntohs(bitrate_be);
+    if (bitrate_kbps >= 1024) {
+      snprintf(bitrate_str, sizeof(bitrate_str), "%.2f Mbps", bitrate_kbps / 1024.0);
+    } else {
+      snprintf(bitrate_str, sizeof(bitrate_str), "%u Kbps", bitrate_kbps);
     }
 
-    if (need_nat_traversal == 1 && fcc->session_id != 0) {
-      /* NAT traversal supported - update server address and send NAT packet */
-      fcc->need_nat_traversal = 1;
+    if (buf_len >= 36) {
+      uint8_t nat_flag = buf[24];
+      uint8_t need_nat_traversal = (nat_flag << 2) >> 7; // Extract bit 5
+      uint16_t server_port_be;
+      memcpy(&server_port_be, buf + 26, sizeof(server_port_be));
+      uint32_t server_ip_be;
+      memcpy(&server_ip_be, buf + 32, sizeof(server_ip_be));
 
-      /* Update unicast server IP and media port (keep fcc_server->sin_port as
-       * control port7) */
-      if (server_ip_be != 0) {
-        fcc->fcc_server->sin_addr.s_addr = server_ip_be;
-        fcc->verify_server_ip = true;
-      }
-      if (server_port_be != 0) {
-        fcc->media_port = server_port_be;
-      }
-
-      /* Build and send NAT traversal packet (FMT 12) to punch hole in NAT */
-      uint8_t *nat_pk = build_fcc_nat_pk_huawei(fcc->session_id);
-
-      /* Send NAT packet to media port (for NAT hole punching on RTP port) */
-      struct sockaddr_in media_addr;
-      memcpy(&media_addr, fcc->fcc_server, sizeof(media_addr));
-      if (fcc->media_port != 0) {
-        media_addr.sin_port = fcc->media_port;
+      /* Extract session ID for NAT traversal */
+      {
+        uint32_t session_id_be;
+        memcpy(&session_id_be, buf + 28, sizeof(session_id_be));
+        fcc->session_id = ntohl(session_id_be);
       }
 
-      int r = sendto_triple(fcc->fcc_sock, nat_pk, FCC_PK_LEN_NAT_HUAWEI, 0, (struct sockaddr_in *)&media_addr,
-                            sizeof(media_addr));
-      if (r < 0) {
-        logger(LOG_ERROR, "FCC (Huawei): Failed to send NAT packet: %s", strerror(errno));
-      }
+      struct in_addr server_addr;
+      char server_ip_str[INET_ADDRSTRLEN];
+      server_addr.s_addr = server_ip_be;
+      inet_ntop(AF_INET, &server_addr, server_ip_str, sizeof(server_ip_str));
+      logger(LOG_DEBUG,
+             "FCC Response: FMT=6, result=%u, type=%u, first_seq=%u, bitrate=%s, "
+             "nat_support=%u, server_port=%u, session_id=0x%08x, server_ip=%s",
+             result_code, type, first_seq, bitrate_str, need_nat_traversal, ntohs(server_port_be), fcc->session_id,
+             server_ip_str);
 
-      logger(LOG_DEBUG, "FCC (Huawei): NAT traversal packet sent");
+      if (need_nat_traversal == 1 && fcc->session_id != 0) {
+        /* NAT traversal supported - update server address and send NAT packet */
+        fcc->need_nat_traversal = 1;
+
+        /* Update unicast server IP and media port (keep fcc_server->sin_port as
+         * control port) */
+        if (server_ip_be != 0) {
+          fcc->fcc_server->sin_addr.s_addr = server_ip_be;
+          fcc->verify_server_ip = true;
+        }
+        if (server_port_be != 0) {
+          fcc->media_port = server_port_be;
+        }
+
+        /* Build and send NAT traversal packet (FMT 12) to punch hole in NAT */
+        uint8_t *nat_pk = build_fcc_nat_pk_huawei(fcc->session_id);
+
+        /* Send NAT packet to media port (for NAT hole punching on RTP port) */
+        struct sockaddr_in media_addr;
+        memcpy(&media_addr, fcc->fcc_server, sizeof(media_addr));
+        if (fcc->media_port != 0) {
+          media_addr.sin_port = fcc->media_port;
+        }
+
+        int nat_sock = fcc->media_sock >= 0 ? fcc->media_sock : fcc->fcc_sock;
+        int r = sendto_triple(nat_sock, nat_pk, FCC_PK_LEN_NAT_HUAWEI, 0, (struct sockaddr_in *)&media_addr,
+                              sizeof(media_addr));
+        if (r < 0) {
+          logger(LOG_ERROR, "FCC (Huawei): Failed to send NAT packet: %s", strerror(errno));
+        }
+
+        logger(LOG_DEBUG, "FCC (Huawei): NAT traversal packet sent");
+      }
+    } else {
+      logger(LOG_DEBUG, "FCC Response: FMT=6, result=%u, type=%u, first_seq=%u, bitrate=%s", result_code, type,
+             first_seq, bitrate_str);
     }
 
     /* Record start time and transition to waiting for unicast */
@@ -265,6 +298,18 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf, int b
       return 0;
     }
 
+    uint16_t server_port_be;
+    memcpy(&server_port_be, buf + 26, sizeof(server_port_be));
+    uint32_t server_ip_be;
+    memcpy(&server_ip_be, buf + 32, sizeof(server_ip_be));
+
+    uint32_t redirect_ip = server_ip_be != 0 ? server_ip_be : fcc->fcc_server->sin_addr.s_addr;
+    uint16_t redirect_port = server_port_be != 0 ? server_port_be : fcc->fcc_server->sin_port;
+    if (fcc->redirect_count > 0 && redirect_ip == fcc->fcc_server->sin_addr.s_addr &&
+        redirect_port == fcc->fcc_server->sin_port) {
+      return 0;
+    }
+
     fcc->redirect_count++;
     if (fcc->redirect_count > FCC_MAX_REDIRECTS) {
       logger(LOG_WARN, "FCC (Huawei): Too many redirects (%d), falling back to multicast", fcc->redirect_count);
@@ -273,10 +318,12 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf, int b
       return 0;
     }
 
-    uint16_t server_port_be;
-    memcpy(&server_port_be, buf + 26, sizeof(server_port_be));
-    uint32_t server_ip_be;
-    memcpy(&server_ip_be, buf + 32, sizeof(server_ip_be));
+    struct in_addr redirect_addr;
+    char redirect_ip_str[INET_ADDRSTRLEN];
+    redirect_addr.s_addr = redirect_ip;
+    inet_ntop(AF_INET, &redirect_addr, redirect_ip_str, sizeof(redirect_ip_str));
+    logger(LOG_DEBUG, "FCC Response: FMT=6, result=%u, type=%u, server_port=%u, server_ip=%s, redirect=%d", result_code,
+           type, ntohs(redirect_port), redirect_ip_str, fcc->redirect_count);
 
     if (server_ip_be != 0) {
       fcc->fcc_server->sin_addr.s_addr = server_ip_be;
@@ -286,11 +333,10 @@ int fcc_huawei_handle_server_response(stream_context_t *ctx, uint8_t *buf, int b
       fcc->fcc_server->sin_port = server_port_be;
     }
 
-    logger(LOG_DEBUG, "FCC (Huawei): Server redirect to %s:%u (redirect #%d)", inet_ntoa(fcc->fcc_server->sin_addr),
-           ntohs(fcc->fcc_server->sin_port), fcc->redirect_count);
     fcc_session_set_state(fcc, FCC_STATE_INIT, "Server redirect");
     return 1;
   } else {
+    logger(LOG_DEBUG, "FCC Response: FMT=6, result=%u, type=%u", result_code, type);
     logger(LOG_WARN, "FCC (Huawei): Unsupported type=%u, falling back to multicast", type);
     fcc_session_set_state(fcc, FCC_STATE_MCAST_ACTIVE, "Unsupported type");
     mcast_session_join(&ctx->mcast, ctx);

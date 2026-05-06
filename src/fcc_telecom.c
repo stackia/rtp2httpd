@@ -170,6 +170,13 @@ int fcc_telecom_handle_server_response(stream_context_t *ctx, uint8_t *buf, size
 
   /* Update server endpoints if provided */
   int signal_port_changed = 0, media_port_changed = 0;
+  uint32_t redirect_ip = new_fcc_ip_be != 0 ? new_fcc_ip_be : fcc->fcc_server->sin_addr.s_addr;
+  uint16_t redirect_port = new_signal_port_be != 0 ? new_signal_port_be : fcc->fcc_server->sin_port;
+
+  if (type == 3 && fcc->redirect_count > 0 && redirect_ip == fcc->fcc_server->sin_addr.s_addr &&
+      redirect_port == fcc->fcc_server->sin_port) {
+    return 0;
+  }
 
   if (new_signal_port_be && new_signal_port_be != fcc->fcc_server->sin_port) {
     fcc->fcc_server->sin_port = new_signal_port_be;
