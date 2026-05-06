@@ -10,7 +10,7 @@ description: >
   (6) asks about test infrastructure (markers, fixtures, scope, multicast setup, port allocation),
   (7) mentions "端到端测试", "e2e test", "integration test" in the context of rtp2httpd.
   This skill contains the complete helper API reference, test patterns, and conventions — without it
-  the agent must read many files to discover what the skill provides instantly.
+  the model must read many files to discover what the skill provides instantly.
 argument-hint: "[run|write|debug] [optional test file or keyword]"
 ---
 
