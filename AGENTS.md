@@ -30,7 +30,7 @@ RTP/IPTV multicast-to-HTTP streaming daemon written in C, with a React/TypeScrip
 ## Documentation
 
 - Chinese docs (`docs/`) are the **single source of truth**
-- English docs (`docs/en/`) are translations — always use `doc-translator-zh-en` agent, do not translate directly
+- English docs (`docs/en/`) are translations — always use the `translate-docs-zh-en` skill, do not translate directly
 - Built with VitePress: `pnpm run docs:build`
 
 ## Do NOT
