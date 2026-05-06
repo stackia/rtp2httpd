@@ -35,7 +35,7 @@ RTP/IPTV multicast-to-HTTP streaming daemon written in C, with a React/TypeScrip
 
 ## Git
 
-- Commit messages use Conventional Commits: `type(scope): subject`
+- Commit messages and PR titles use Conventional Commits: `type(scope): subject`
 
 ## Do NOT
 
