@@ -33,6 +33,10 @@ RTP/IPTV multicast-to-HTTP streaming daemon written in C, with a React/TypeScrip
 - English docs (`docs/en/`) are translations — always use the `translate-docs-zh-en` skill, do not translate directly
 - Built with VitePress: `pnpm run docs:build`
 
+## Git
+
+- Commit messages use Conventional Commits: `type(scope): subject`
+
 ## Do NOT
 
 - Use Linux-only APIs without `#ifdef` platform guards
