@@ -11,15 +11,15 @@
 
 - [浙江杭州电信 IPTV 内网融合教程：在局域网任意设备观看 IPTV](https://baiyun.me/zhejiang-hangzhou-telecom-iptv)
 - [自动抓取IPTV单播地址，实现时移回看](https://www.bandwh.com/net/2571.html)
-- [K2P 利用 rtp2httpd 刷 openwrt 单线复用双网融合完美解决看 IPTV 超简单详细](https://www.right.com.cn/forum/thread-8457970-1-1.html)
-- [重庆电信 IPTV 内网融合 抓包 rtp2httpd](https://www.right.com.cn/forum/thread-8457356-1-1.html)
-- [浙江 电信 IPTV 组播 转单播 rtp2httpd 去花屏](https://www.right.com.cn/forum/thread-8452510-1-1.html)
-- [使用 Rtp2httpd 酷 9 浙江 电信 IPTV 单播 回看](https://www.right.com.cn/forum/thread-8453715-1-1.html)
-- [上海电信 猫棒/光猫桥接 OpenWrt下实现 Internet+IPTV盒子+udpxy/rtp2httpd+VoIP](https://www.right.com.cn/forum/thread-8268077-1-1.html)
-- [上海电信 SDN光猫桥接 华硕路由器 单线复用 梅林固件 rtp2httpd 开启FCC 功能](https://www.right.com.cn/forum/thread-8467200-1-1.html)
-- [爱快主路由+rtp2httpd（运行在内网设备）开启FCC](https://www.right.com.cn/forum/thread-8469614-1-1.html)
-- [成都 电信IPTV 组播转换单播 openwrt/immortalwrt rtp2httpd](https://www.right.com.cn/forum/thread-8468805-1-1.html)
-- [RouterOS 容器安装 rtp2httpd 看 IPTV](https://www.right.com.cn/forum/thread-8470410-1-1.html)
+- [K2P 利用 rtp2httpd 刷 openwrt 单线复用双网融合完美解决看 IPTV 超简单详细](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8457970&fromuid=402348)
+- [重庆电信 IPTV 内网融合 抓包 rtp2httpd](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8457356&fromuid=402348)
+- [浙江 电信 IPTV 组播 转单播 rtp2httpd 去花屏](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8452510&fromuid=402348)
+- [使用 Rtp2httpd 酷 9 浙江 电信 IPTV 单播 回看](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8453715&fromuid=402348)
+- [上海电信 猫棒/光猫桥接 OpenWrt下实现 Internet+IPTV盒子+udpxy/rtp2httpd+VoIP](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8268077&fromuid=402348)
+- [上海电信 SDN光猫桥接 华硕路由器 单线复用 梅林固件 rtp2httpd 开启FCC 功能](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8467200&fromuid=402348)
+- [爱快主路由+rtp2httpd（运行在内网设备）开启FCC](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8469614&fromuid=402348)
+- [成都 电信IPTV 组播转换单播 openwrt/immortalwrt rtp2httpd](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8468805&fromuid=402348)
+- [RouterOS 容器安装 rtp2httpd 看 IPTV](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8470410&fromuid=402348)
 - [湖南电信 OpenWrt 拨号 IPTV 全流程教程 | 内网融合组播转单播 + 单播回看全搞定](https://mp.weixin.qq.com/s/_hEVbrgHll_qIePXGtATTw)
 - [折腾 IPTV 时一定会遇到的几个概念：IGMP Snooping、IGMP Proxy、泛洪，到底是啥？](https://mp.weixin.qq.com/s/oKS-tl1-hqgcZ_H01CTtXQ)
 - [IPTV 里的 FCC 和 FEC 到底是什么？为什么有些源“高级得多”？](https://mp.weixin.qq.com/s/5l2Cg204YdqtWAV-RnqiYw)
@@ -44,7 +44,7 @@
 - [cooluc's OpenWrt](https://github.com/sbwml/builder)（已内置 rtp2httpd）
 - [ImmortalWrt](https://github.com/immortalwrt/immortalwrt)（已加入官方源）
 - [AutoBuildImmortalWrt](https://github.com/wukongdaily/AutoBuildImmortalWrt)（[store](https://github.com/wukongdaily/store) 已内置 rtp2httpd，轻松构建）
-- [潘多拉 QWRT for K2P](https://www.right.com.cn/forum/thread-8346913-1-1.html)（已内置 rtp2httpd）
+- [潘多拉 QWRT for K2P](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8346913&fromuid=402348)（已内置 rtp2httpd）
 
 ## 相关软件
 

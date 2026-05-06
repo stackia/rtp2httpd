@@ -44,7 +44,7 @@ uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/s
 >
 > 有一些热心网友开发了 Lua 版本 luci-app-rtp2httpd，在这种情况下可以尝试使用（非 rtp2httpd 官方维护）
 >
-> - <https://www.right.com.cn/forum/thread-8461513-1-1.html>
+> - <https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8461513&fromuid=402348>
 > - <https://github.com/jarod360/rtp2httpd/releases>
 
 

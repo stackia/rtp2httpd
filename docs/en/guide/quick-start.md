@@ -44,7 +44,7 @@ After installation, find "rtp2httpd" in the "Services" menu of the LuCI manageme
 >
 > Some community members have developed Lua-based luci-app-rtp2httpd, which you can try in this case (not officially maintained by rtp2httpd)
 >
-> - <https://www.right.com.cn/forum/thread-8461513-1-1.html>
+> - <https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8461513&fromuid=402348>
 > - <https://github.com/jarod360/rtp2httpd/releases>
 
 ### Required Configuration Items

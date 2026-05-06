@@ -11,15 +11,15 @@ If you are new to setting up IPTV multicast forwarding services and unfamiliar w
 
 - [Zhejiang Hangzhou Telecom IPTV Intranet Integration Tutorial: Watch IPTV on Any Device in Your LAN](https://baiyun.me/zhejiang-hangzhou-telecom-iptv)
 - [Automatically Capture IPTV Unicast Addresses for Time-shift Playback](https://www.bandwh.com/net/2571.html)
-- [K2P Using rtp2httpd to Flash OpenWrt for Single-line Dual-network Integration to Perfectly Watch IPTV - Simple Detailed Guide](https://www.right.com.cn/forum/thread-8457970-1-1.html)
-- [Chongqing Telecom IPTV Intranet Integration Packet Capture rtp2httpd](https://www.right.com.cn/forum/thread-8457356-1-1.html)
-- [Zhejiang Telecom IPTV Multicast to Unicast rtp2httpd to Remove Screen Artifacts](https://www.right.com.cn/forum/thread-8452510-1-1.html)
-- [Using Rtp2httpd Cool 9 Zhejiang Telecom IPTV Unicast Playback](https://www.right.com.cn/forum/thread-8453715-1-1.html)
-- [Shanghai Telecom ONT Stick / ONU Bridge Mode: Internet + IPTV STB + udpxy/rtp2httpd + VoIP on OpenWrt](https://www.right.com.cn/forum/thread-8268077-1-1.html)
-- [Shanghai Telecom SDN ONT Bridge Mode + ASUS Router Single-Line Multiplexing + Merlin Firmware + rtp2httpd with FCC Enabled](https://www.right.com.cn/forum/thread-8467200-1-1.html)
-- [iKuai Main Router + rtp2httpd (Running on LAN Device) with FCC Enabled](https://www.right.com.cn/forum/thread-8469614-1-1.html)
-- [Chengdu Telecom IPTV Multicast-to-Unicast on openwrt/immortalwrt with rtp2httpd](https://www.right.com.cn/forum/thread-8468805-1-1.html)
-- [Watching IPTV with rtp2httpd Installed in a RouterOS Container](https://www.right.com.cn/forum/thread-8470410-1-1.html)
+- [K2P Using rtp2httpd to Flash OpenWrt for Single-line Dual-network Integration to Perfectly Watch IPTV - Simple Detailed Guide](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8457970&fromuid=402348)
+- [Chongqing Telecom IPTV Intranet Integration Packet Capture rtp2httpd](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8457356&fromuid=402348)
+- [Zhejiang Telecom IPTV Multicast to Unicast rtp2httpd to Remove Screen Artifacts](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8452510&fromuid=402348)
+- [Using Rtp2httpd Cool 9 Zhejiang Telecom IPTV Unicast Playback](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8453715&fromuid=402348)
+- [Shanghai Telecom ONT Stick / ONU Bridge Mode: Internet + IPTV STB + udpxy/rtp2httpd + VoIP on OpenWrt](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8268077&fromuid=402348)
+- [Shanghai Telecom SDN ONT Bridge Mode + ASUS Router Single-Line Multiplexing + Merlin Firmware + rtp2httpd with FCC Enabled](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8467200&fromuid=402348)
+- [iKuai Main Router + rtp2httpd (Running on LAN Device) with FCC Enabled](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8469614&fromuid=402348)
+- [Chengdu Telecom IPTV Multicast-to-Unicast on openwrt/immortalwrt with rtp2httpd](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8468805&fromuid=402348)
+- [Watching IPTV with rtp2httpd Installed in a RouterOS Container](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8470410&fromuid=402348)
 - [Hunan Telecom OpenWrt Dialing IPTV Complete Tutorial | Intranet Integration Multicast-to-Unicast + Unicast Playback All Settled](https://mp.weixin.qq.com/s/_hEVbrgHll_qIePXGtATTw)
 - [Key Concepts You Will Encounter When Tinkering with IPTV: IGMP Snooping, IGMP Proxy, and Flooding Explained](https://mp.weixin.qq.com/s/oKS-tl1-hqgcZ_H01CTtXQ)
 - [What Are FCC and FEC in IPTV? Why Are Some Sources "Much More Advanced"?](https://mp.weixin.qq.com/s/5l2Cg204YdqtWAV-RnqiYw)
@@ -44,7 +44,7 @@ The following firmware distributions have rtp2httpd built in, or offer it for di
 - [cooluc's OpenWrt](https://github.com/sbwml/builder) (rtp2httpd built in)
 - [ImmortalWrt](https://github.com/immortalwrt/immortalwrt) (added to the official repository)
 - [AutoBuildImmortalWrt](https://github.com/wukongdaily/AutoBuildImmortalWrt) (rtp2httpd built into [store](https://github.com/wukongdaily/store), easy to build)
-- [Pandora QWRT for K2P](https://www.right.com.cn/forum/thread-8346913-1-1.html) (rtp2httpd built in)
+- [Pandora QWRT for K2P](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8346913&fromuid=402348) (rtp2httpd built in)
 
 ## Related Software
 
