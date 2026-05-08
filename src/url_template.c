@@ -491,7 +491,7 @@ static int template_query_requirements(const char *url, int *has_template, int *
           return -1;
         if (!query_param_name[0]) {
           if (copy_template_value(query_param_name, query_param_name_size, param_start,
-                                    (size_t)(equals_pos - param_start)) == 0)
+                                  (size_t)(equals_pos - param_start)) == 0)
             *query_param_has_range = 1;
         }
       }
@@ -841,9 +841,8 @@ int url_template_analyze(const char *url, url_template_analysis_t *analysis) {
 
   if (template_query_requirements(url, &query_has_template, &query_needs_begin, &query_needs_end, query_begin_template,
                                   sizeof(query_begin_template), query_end_template, sizeof(query_end_template),
-                                  query_param_name, sizeof(query_param_name),
-                                  &query_param_has_range, explicit_seek_name,
-                                  sizeof(explicit_seek_name)) != 0)
+                                  query_param_name, sizeof(query_param_name), &query_param_has_range,
+                                  explicit_seek_name, sizeof(explicit_seek_name)) != 0)
     return -1;
 
   analysis->has_template = path_has_template || query_has_template;
