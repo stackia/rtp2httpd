@@ -40,21 +40,6 @@ static int copy_template_value(char *buffer, size_t buffer_size, const char *val
   return 0;
 }
 
-static int copy_query_param_name(char *buffer, size_t buffer_size, const char *param_start, const char *equals_pos) {
-  size_t name_len;
-
-  if (!buffer || !param_start || !equals_pos || equals_pos <= param_start)
-    return -1;
-
-  name_len = (size_t)(equals_pos - param_start);
-  if (name_len >= buffer_size)
-    return -1;
-
-  memcpy(buffer, param_start, name_len);
-  buffer[name_len] = '\0';
-  return 0;
-}
-
 static int query_param_name_equals(const char *param_start, const char *equals_pos, const char *name) {
   size_t param_len;
 
@@ -72,29 +57,27 @@ static int is_seek_param_name_builtin(const char *name) {
   return strcasecmp(name, "playseek") == 0 || strcasecmp(name, "tvdr") == 0;
 }
 
-static int copy_selected_seek_param_name(url_template_analysis_t *analysis, const char *explicit_seek_name) {
-  const char *selected_name;
-
+static int copy_selected_seek_param_name(url_template_analysis_t *analysis, const char *query_param_name,
+                                         int query_param_has_range, const char *explicit_seek_name) {
   if (!analysis)
     return -1;
 
   analysis->seek_param_name[0] = '\0';
 
-  if (!analysis->query_param_has_range || analysis->query_param_name[0] == '\0')
+  if (!query_param_has_range || !query_param_name || query_param_name[0] == '\0')
     return 0;
 
   if (explicit_seek_name && explicit_seek_name[0] != '\0') {
-    if (strcasecmp(analysis->query_param_name, explicit_seek_name) != 0)
+    if (strcasecmp(query_param_name, explicit_seek_name) != 0)
       return 0;
-  } else if (!is_seek_param_name_builtin(analysis->query_param_name)) {
+  } else if (!is_seek_param_name_builtin(query_param_name)) {
     return 0;
   }
 
-  selected_name = analysis->query_param_name;
-  if (strlen(selected_name) >= sizeof(analysis->seek_param_name))
+  if (strlen(query_param_name) >= sizeof(analysis->seek_param_name))
     return -1;
 
-  strncpy(analysis->seek_param_name, selected_name, sizeof(analysis->seek_param_name) - 1);
+  strncpy(analysis->seek_param_name, query_param_name, sizeof(analysis->seek_param_name) - 1);
   analysis->seek_param_name[sizeof(analysis->seek_param_name) - 1] = '\0';
   return 0;
 }
@@ -507,9 +490,9 @@ static int template_query_requirements(const char *url, int *has_template, int *
                                                     (size_t)(param_end - (separator + 1))) != 0)
           return -1;
         if (!query_param_name[0]) {
-          if (copy_query_param_name(query_param_name, query_param_name_size, param_start, equals_pos) != 0)
-            return -1;
-          *query_param_has_range = 1;
+          if (copy_template_value(query_param_name, query_param_name_size, param_start,
+                                    (size_t)(equals_pos - param_start)) == 0)
+            *query_param_has_range = 1;
         }
       }
     } else if (has_begin && !has_end) {
@@ -843,6 +826,8 @@ int url_template_analyze(const char *url, url_template_analysis_t *analysis) {
   char path_end_template[URL_TEMPLATE_FRAGMENT_SIZE];
   char query_begin_template[URL_TEMPLATE_FRAGMENT_SIZE];
   char query_end_template[URL_TEMPLATE_FRAGMENT_SIZE];
+  char query_param_name[128];
+  int query_param_has_range;
   char explicit_seek_name[128];
 
   if (!url || !analysis)
@@ -856,15 +841,15 @@ int url_template_analyze(const char *url, url_template_analysis_t *analysis) {
 
   if (template_query_requirements(url, &query_has_template, &query_needs_begin, &query_needs_end, query_begin_template,
                                   sizeof(query_begin_template), query_end_template, sizeof(query_end_template),
-                                  analysis->query_param_name, sizeof(analysis->query_param_name),
-                                  &analysis->query_param_has_range, explicit_seek_name,
+                                  query_param_name, sizeof(query_param_name),
+                                  &query_param_has_range, explicit_seek_name,
                                   sizeof(explicit_seek_name)) != 0)
     return -1;
 
   analysis->has_template = path_has_template || query_has_template;
   analysis->needs_begin = path_needs_begin || query_needs_begin;
   analysis->needs_end = path_needs_end || query_needs_end;
-  if (copy_selected_seek_param_name(analysis, explicit_seek_name) != 0)
+  if (copy_selected_seek_param_name(analysis, query_param_name, query_param_has_range, explicit_seek_name) != 0)
     return -1;
 
   if (query_begin_template[0]) {
