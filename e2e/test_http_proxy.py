@@ -171,6 +171,31 @@ class TestProxyQueryParams:
         finally:
             upstream.stop()
 
+    @pytest.mark.parametrize("token_param", ["r2h-token", "R2H-Token"])
+    def test_r2h_token_not_forwarded(self, shared_r2h, token_param):
+        """r2h-token is local auth metadata and should be stripped before upstream HTTP."""
+        upstream = MockHTTPUpstream(
+            routes={
+                "/search": {"status": 200, "body": b"found"},
+            }
+        )
+        upstream.start()
+        try:
+            status, _, body = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                "/http/127.0.0.1:%d/search?%s=secret-token&q=test" % (upstream.port, token_param),
+                timeout=5.0,
+            )
+            assert status == 200
+            assert body == b"found"
+            assert upstream.requests_log, "expected upstream HTTP request"
+            upstream_path = upstream.requests_log[0]["path"]
+            assert "r2h-token" not in upstream_path.lower()
+            assert "q=test" in upstream_path
+        finally:
+            upstream.stop()
+
 
 # ---------------------------------------------------------------------------
 # Upstream unreachable

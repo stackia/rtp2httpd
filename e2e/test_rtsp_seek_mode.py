@@ -658,6 +658,39 @@ class TestRTSPSeekModeQueryMerge:
         finally:
             rtsp.stop()
 
+    def test_configured_seek_name_does_not_remap_default_playseek_request(self, r2h_binary):
+        """Configured r2h-seek-name selects what to consume; it does not rename playseek."""
+        r2h_port = find_free_port()
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "SeekNameNoRemap", "?r2h-seek-name=tvdr")
+            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
+            r2h.start()
+            try:
+                base_ts = 1717000000
+                base_str = _format_yyyyMMddHHmmss(base_ts)
+                stream_get(
+                    "127.0.0.1",
+                    r2h_port,
+                    "/SeekNameNoRemap?playseek=%s" % base_str,
+                    read_bytes=4096,
+                    timeout=_STREAM_TIMEOUT,
+                )
+
+                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+                assert describe_reqs, "expected at least one DESCRIBE"
+                uri = describe_reqs[0]["uri"]
+                assert "r2h-seek-name" not in uri, "r2h-seek-name leaked into upstream URI: %s" % uri
+                assert "playseek=%s" % base_str in uri, (
+                    "playseek should be forwarded as-is when configured seek name is tvdr; got: %s" % uri
+                )
+                assert "tvdr=" not in uri, "playseek must not be remapped to tvdr: %s" % uri
+            finally:
+                r2h.stop()
+        finally:
+            rtsp.stop()
+
     def test_request_seek_name_overrides_configured(self, r2h_binary):
         """Request r2h-seek-name overrides M3U-configured r2h-seek-name, and
         neither r2h-seek-name copy leaks upstream."""
@@ -692,6 +725,37 @@ class TestRTSPSeekModeQueryMerge:
                 assert "configured_name=" not in uri, (
                     "configured_name (M3U-side) must NOT be used when request overrides; got: %s" % uri
                 )
+            finally:
+                r2h.stop()
+        finally:
+            rtsp.stop()
+
+    @pytest.mark.parametrize("token_param", ["r2h-token", "R2H-Token"])
+    def test_r2h_token_does_not_leak_to_rtsp_upstream(self, r2h_binary, token_param):
+        """URL-supplied r2h-token is local auth metadata and must not reach RTSP."""
+        r2h_port = find_free_port()
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "TokenStrip")
+            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
+            r2h.start()
+            try:
+                stream_get(
+                    "127.0.0.1",
+                    r2h_port,
+                    "/TokenStrip?%s=secret-token" % token_param,
+                    read_bytes=4096,
+                    timeout=_STREAM_TIMEOUT,
+                )
+
+                assert rtsp.requests_detailed, "expected RTSP requests"
+                for request in rtsp.requests_detailed:
+                    assert "r2h-token" not in request["uri"].lower(), "%s leaked into upstream %s URI: %s" % (
+                        token_param,
+                        request["method"],
+                        request["uri"],
+                    )
             finally:
                 r2h.stop()
         finally:

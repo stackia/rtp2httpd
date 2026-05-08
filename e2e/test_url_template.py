@@ -1547,6 +1547,68 @@ rtp://239.0.0.1:1234
         finally:
             r2h.stop()
 
+    def test_query_only_tvdr_range_preserves_seek_param_name(self, r2h_binary):
+        """A tvdr range template should keep tvdr as the playlist seek carrier."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+maxclients = 10
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 catchup="default" catchup-source="rtsp://10.0.0.50:554/playback?tvdr=${{(b)yyyyMMddHHmmss}}GMT-${{(e)yyyyMMddHHmmss}}GMT&r2h-seek-offset=-28800",TVDR Template Ch
+rtp://239.0.0.1:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+
+            assert status == 200
+            _, catchup_source = extract_catchup_source(text, "TVDR Template Ch")
+            assert "tvdr=${(b)yyyyMMddHHmmss}GMT-${(e)yyyyMMddHHmmss}GMT" in catchup_source, (
+                "Expected tvdr range to stay under tvdr, got: %s" % catchup_source
+            )
+            assert "playseek=" not in catchup_source
+        finally:
+            r2h.stop()
+
+    def test_query_only_explicit_seek_name_preserves_param_name(self, r2h_binary):
+        """A configured custom seek name should be preserved as the playlist seek carrier."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+maxclients = 10
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 catchup="default" catchup-source="rtsp://10.0.0.50:554/playback?customseek={{utc:YmdHMS}}-{{utcend:YmdHMS}}&r2h-seek-name=customseek",Custom Seek Template Ch
+rtp://239.0.0.1:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+
+            assert status == 200
+            _, catchup_source = extract_catchup_source(text, "Custom Seek Template Ch")
+            assert "customseek={utc:YmdHMS}-{utcend:YmdHMS}" in catchup_source, (
+                "Expected explicit seek name to stay under customseek, got: %s" % catchup_source
+            )
+            assert "playseek=" not in catchup_source
+        finally:
+            r2h.stop()
+
     def test_no_template_no_injection(self, r2h_binary):
         """Catchup-source without any templates should not get playseek injected."""
         port = find_free_port()

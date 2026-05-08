@@ -40,6 +40,9 @@ struct url_template_analysis_s {
   int needs_end;
   char begin_template[URL_TEMPLATE_FRAGMENT_SIZE];
   char end_template[URL_TEMPLATE_FRAGMENT_SIZE];
+  int query_param_has_range;
+  char query_param_name[128];
+  char seek_param_name[128];
 };
 
 typedef struct url_template_analysis_s url_template_analysis_t;

@@ -518,6 +518,7 @@ static char *extract_catchup_template_query(const char *url) {
   url_template_analysis_t analysis;
   const char *begin_value;
   const char *end_value;
+  const char *seek_param_name;
   char query[MAX_URL_LENGTH];
 
   if (!url)
@@ -532,16 +533,17 @@ static char *extract_catchup_template_query(const char *url) {
 
   begin_value = analysis.begin_template[0] ? analysis.begin_template : (analysis.needs_begin ? "${utc}" : "");
   end_value = analysis.end_template[0] ? analysis.end_template : (analysis.needs_end ? "${utcend}" : "");
+  seek_param_name = analysis.seek_param_name[0] ? analysis.seek_param_name : "playseek";
 
   if (analysis.needs_end) {
-    if (snprintf(query, sizeof(query), "playseek=%s-%s", begin_value, end_value) >= (int)sizeof(query)) {
+    if (snprintf(query, sizeof(query), "%s=%s-%s", seek_param_name, begin_value, end_value) >= (int)sizeof(query)) {
       logger(LOG_WARN, "Catchup template query exceeds buffer size");
       return NULL;
     }
     return strdup(query);
   }
 
-  if (snprintf(query, sizeof(query), "playseek=%s", begin_value) >= (int)sizeof(query)) {
+  if (snprintf(query, sizeof(query), "%s=%s", seek_param_name, begin_value) >= (int)sizeof(query)) {
     logger(LOG_WARN, "Catchup template query exceeds buffer size");
     return NULL;
   }
