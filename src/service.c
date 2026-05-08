@@ -255,10 +255,11 @@ static void remove_query_param(char **query_start, char *param_start, char *valu
 
 /* Find first occurrence of `param_name=` in the query string anchored at qs
  * (the '?' character). Returns pointer to the start of the param name, or NULL.
- * Read-only in practice; signature matches strstr's char*-in-char*-out idiom. */
+ * Matching is case-insensitive because r2h control parameters are treated that
+ * way throughout the request path. */
 static char *find_query_param(char *qs, const char *param_name, size_t name_len) {
   char *p = qs;
-  while ((p = strstr(p, param_name)) != NULL) {
+  while ((p = strcasestr(p, param_name)) != NULL) {
     int leading_ok = (p == qs + 1) || (p > qs && *(p - 1) == '&');
     int trailing_ok = (p[name_len] == '=');
     if (leading_ok && trailing_ok) {
@@ -705,6 +706,17 @@ static void service_extract_ifname_params(char *query_start, char **out_ifname, 
     if (*out_ifname) {
       logger(LOG_DEBUG, "Found r2h-ifname parameter: %s", *out_ifname);
     }
+  }
+}
+
+static void service_strip_query_param(char *query_start, const char *param_name) {
+  char ignored_value[256];
+
+  if (!query_start || *query_start != '?' || !param_name)
+    return;
+
+  if (extract_query_param(&query_start, param_name, ignored_value, sizeof(ignored_value)) == 1) {
+    logger(LOG_DEBUG, "Stripped %s from upstream URL", param_name);
   }
 }
 
@@ -1163,6 +1175,7 @@ service_t *service_create_from_http_url(const char *http_url) {
                                 &result->seek_offset_seconds, &result->seek_mode, &result->seek_mode_tz_explicit,
                                 &result->seek_mode_tz_offset_seconds, &result->seek_mode_window_seconds);
     service_extract_ifname_params(query_start, &result->ifname, &result->ifname_fcc);
+    service_strip_query_param(query_start, "r2h-token");
   }
 
   logger(LOG_DEBUG, "Created HTTP proxy service: %s -> %s", http_url, result->http_url);
@@ -1251,6 +1264,7 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
       return NULL;
     }
     service_extract_ifname_params(query_start, &ifname, &ifname_fcc);
+    service_strip_query_param(query_start, "r2h-token");
   }
 
   /* Allocate service structure */
