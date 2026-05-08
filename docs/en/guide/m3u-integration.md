@@ -78,8 +78,8 @@ rtp://239.253.64.120:5140
 #EXTINF:-1 tvg-id="CCTV2" tvg-name="CCTV2" group-title="CCTV",CCTV-2
 rtp://239.253.64.121:5140
 
-#EXTINF:-1 tvg-id="Other" tvg-name="Other Channel",Third-party Channel
-http://other-cdn.com/live/stream.m3u8
+#EXTINF:-1 tvg-id="HLS1" tvg-name="Internal HLS Source",Internal-HLS-Source
+http://10.0.0.60/live/stream.m3u8
 ```
 
 ### Output M3U (After Conversion)
@@ -93,15 +93,15 @@ http://192.168.1.1:5140/CCTV/CCTV-1
 #EXTINF:-1 tvg-id="CCTV2" tvg-name="CCTV2" group-title="CCTV",CCTV-2
 http://192.168.1.1:5140/CCTV/CCTV-2
 
-#EXTINF:-1 tvg-id="Other" tvg-name="Other Channel",Third-party Channel
-http://other-cdn.com/live/stream.m3u8
+#EXTINF:-1 tvg-id="HLS1" tvg-name="Internal HLS Source",Internal-HLS-Source
+http://192.168.1.1:5140/Internal-HLS-Source
 ```
 
 > [!NOTE]
 > - EPG URL has been converted to rtp2httpd proxy address
 > - CCTV-1 and CCTV-2 URLs have been converted to rtp2httpd proxy addresses
 > - CCTV-1's catchup-source has also been converted, preserving dynamic placeholders
-> - Third-party channel URL remains unchanged
+> - The HLS source's HTTP URL is also converted to an rtp2httpd proxy address, so internal HLS sources can be exposed through rtp2httpd
 
 ## Best Practices
 
@@ -117,6 +117,7 @@ http://other-cdn.com/live/stream.m3u8
 3. **Mixed Usage**
    - External M3U and inline M3U can be configured simultaneously
    - Both will be merged into the same converted playlist
+   - The built-in M3U conversion converts all recognizable URLs, including plain HTTP URLs. This is useful for converting internal HLS sources to rtp2httpd proxy addresses for external access. If you want some HTTP sources to keep their original URLs in the exported playlist, maintain your own M3U file for the player instead of relying on rtp2httpd's converted output.
 
 4. **Enable `xff` When Using Reverse Proxy**
    - During M3U conversion, rtp2httpd needs to know its full access address. Therefore, if using a reverse proxy, enable the `xff` option and ensure the proxy can pass through `X-Forwarded-*` headers. See [Public Access Guide](/en/guide/public-access) for details.
@@ -131,10 +132,12 @@ rtp2httpd can recognize and convert the following URL formats:
    - `rtp://[source@]multicast_addr:port[?query]`
    - `rtsp://server:port/path[?query]`
    - `udp://multicast_addr:port[?query]`
+   - `http://server/path[?query]` (as an HTTP reverse proxy service)
 
 2. **UDPxy-style HTTP URLs**:
    - `http://hostname:port/rtp/multicast_addr:port`
    - `http://hostname:port/rtsp/server:port/path`
+   - `http://hostname:port/http/server/path`
    - The `hostname:port` will be automatically replaced with rtp2httpd's actual address and port
 
 ### Conversion Examples
@@ -144,7 +147,7 @@ rtp2httpd can recognize and convert the following URL formats:
 | `rtp://239.253.64.120:5140`                 | `http://hostname:5140/CCTV-1`             |
 | `rtsp://10.0.0.50:554/live`                 | `http://hostname:5140/CCTV-2`             |
 | `http://router:5140/rtp/239.1.1.1:1234`     | `http://hostname:5140/ChannelName`        |
-| `http://other-server/stream.m3u8` (3rd party) | `http://other-server/stream.m3u8` (unchanged) |
+| `http://10.0.0.60/live/stream.m3u8` (HLS source) | `http://hostname:5140/ChannelName`        |
 
 **Service Name Extraction Rule**: Use the text after the last comma in the `#EXTINF` line as the service name.
 
@@ -181,7 +184,7 @@ http://iptv.example.com/live/channel1.m3u8
 
 ### Handling of Unrecognizable URLs
 
-If `catchup-source` is a third-party HTTP URL (such as `http://other-cdn.com/catchup`), it will be preserved as-is without conversion.
+Unrecognizable URLs are preserved as-is without conversion. For example, if `catchup-source` uses an unsupported HTTPS URL (such as `https://10.0.0.60/catchup`), it will remain unchanged.
 
 ## Source Labels
 

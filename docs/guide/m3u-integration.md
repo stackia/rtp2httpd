@@ -78,8 +78,8 @@ rtp://239.253.64.120:5140
 #EXTINF:-1 tvg-id="CCTV2" tvg-name="CCTV2" group-title="央视",CCTV-2
 rtp://239.253.64.121:5140
 
-#EXTINF:-1 tvg-id="Other" tvg-name="其他频道",第三方频道
-http://other-cdn.com/live/stream.m3u8
+#EXTINF:-1 tvg-id="HLS1" tvg-name="内网HLS源",内网HLS源
+http://10.0.0.60/live/stream.m3u8
 ```
 
 ### 输出 M3U（转换后）
@@ -93,15 +93,15 @@ http://192.168.1.1:5140/央视/CCTV-1
 #EXTINF:-1 tvg-id="CCTV2" tvg-name="CCTV2" group-title="央视",CCTV-2
 http://192.168.1.1:5140/央视/CCTV-2
 
-#EXTINF:-1 tvg-id="Other" tvg-name="其他频道",第三方频道
-http://other-cdn.com/live/stream.m3u8
+#EXTINF:-1 tvg-id="HLS1" tvg-name="内网HLS源",内网HLS源
+http://192.168.1.1:5140/内网HLS源
 ```
 
 > [!NOTE]
 > - EPG 的 URL 已转换为 rtp2httpd 代理地址
 > - CCTV-1 和 CCTV-2 的 URL 已转换为 rtp2httpd 代理地址
 > - CCTV-1 的 catchup-source 也已转换，并保留动态占位符
-> - 第三方频道的 URL 保持不变
+> - HLS 源的 HTTP URL 也会被转换为 rtp2httpd 代理地址，便于通过 rtp2httpd 为内网 HLS 源提供外网访问
 
 ## 使用建议
 
@@ -117,6 +117,7 @@ http://other-cdn.com/live/stream.m3u8
 3. **混合使用**
    - 可同时配置外部 M3U 和内联 M3U
    - 两者会合并到同一个转换后的播放列表中
+   - 内置 M3U 转换会转换所有可识别 URL（包括普通 HTTP URL）。这适合把内网 HLS 源转换为 rtp2httpd 代理地址后提供外网访问；如果希望某些 HTTP 源在导出的播放列表中保留原始 URL，请自行维护给播放器使用的 M3U 文件，而不要依赖 rtp2httpd 的转换输出。
 
 4. **使用反向代理时开启 `xff` 选项**
    - M3U 在转换过程中，需要知道自身的完整访问地址，因此如果使用反向代理，请开启 `xff` 选项，并确保反代程序可以透传 `X-Forwarded-*` 相关头。详见 [公网访问建议](./public-access.md)。
@@ -131,10 +132,12 @@ rtp2httpd 能够识别并转换以下格式的 URL：
    - `rtp://[source@]multicast_addr:port[?query]`
    - `rtsp://server:port/path[?query]`
    - `udp://multicast_addr:port[?query]`
+   - `http://server/path[?query]`（作为 HTTP 反向代理服务）
 
 2. **UDPxy 格式的 HTTP URL**：
    - `http://hostname:port/rtp/multicast_addr:port`
    - `http://hostname:port/rtsp/server:port/path`
+   - `http://hostname:port/http/server/path`
    - 会自动把 `hostname:port` 替换为 rtp2httpd 实际的地址和端口
 
 ### 转换示例
@@ -144,7 +147,7 @@ rtp2httpd 能够识别并转换以下格式的 URL：
 | `rtp://239.253.64.120:5140`                 | `http://hostname:5140/CCTV-1`                 |
 | `rtsp://10.0.0.50:554/live`                 | `http://hostname:5140/CCTV-2`                 |
 | `http://router:5140/rtp/239.1.1.1:1234`     | `http://hostname:5140/频道名`                 |
-| `http://other-server/stream.m3u8`（第三方） | `http://other-server/stream.m3u8`（保持原样） |
+| `http://10.0.0.60/live/stream.m3u8`（HLS 源） | `http://hostname:5140/频道名`                |
 
 **服务名称提取规则**：使用 `#EXTINF` 行中最后一个逗号后的文本作为服务名称。
 
@@ -181,7 +184,7 @@ http://iptv.example.com/live/channel1.m3u8
 
 ### 不可识别 URL 的处理
 
-如果 `catchup-source` 是第三方 HTTP URL（如 `http://other-cdn.com/catchup`），则会原样保留，不进行转换。
+无法识别的 URL 会原样保留，不进行转换。例如，`catchup-source` 使用不支持的 HTTPS URL（如 `https://10.0.0.60/catchup`）时会保持原样。
 
 ## 线路标签
 
