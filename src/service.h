@@ -15,7 +15,7 @@
  * rtsp.h) is sized to match. Keep all four in sync to avoid silent
  * mid-pipeline truncation. */
 #ifndef HTTP_URL_BUFFER_SIZE
-#define HTTP_URL_BUFFER_SIZE 1024
+#define HTTP_URL_BUFFER_SIZE 2048
 #endif
 
 /* HTTP URL component buffers - for parsing multicast URLs */

@@ -25,7 +25,7 @@ typedef enum { HTTP_PARSE_REQ_LINE = 0, HTTP_PARSE_HEADERS, HTTP_PARSE_BODY, HTT
 /* HTTP request structure */
 typedef struct {
   char method[16];
-  char url[1024];
+  char url[2048];
   char hostname[256];
   char user_agent[256];
   char accept[256];
@@ -212,7 +212,7 @@ void http_send_401(connection_t *conn);
  * @param port Output buffer for port (can be NULL), size should be at least 16
  * bytes
  * @param path Output buffer for path (can be NULL), size should be at least
- * 1024 bytes
+ * 2048 bytes
  * @return 0 on success, -1 on error
  */
 int http_parse_url_components(const char *url, char *protocol, char *host, char *port, char *path);
