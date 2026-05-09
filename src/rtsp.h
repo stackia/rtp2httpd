@@ -33,20 +33,20 @@
 /* RTSP server URL - complete RTSP URL. Kept in sync with HTTP_URL_BUFFER_SIZE
  * (service.h) so the entire pipeline shares one URL ceiling and there is no
  * silent mid-pipeline truncation. */
-#define RTSP_SERVER_URL_SIZE 1024
+#define RTSP_SERVER_URL_SIZE 2048
 
 /* RTSP server hostname - DNS name or IP address */
 #define RTSP_SERVER_HOST_SIZE 256
 
 /* RTSP server path - path component of URL with query string. Same sizing
  * rationale as RTSP_SERVER_URL_SIZE. */
-#define RTSP_SERVER_PATH_SIZE 1024
+#define RTSP_SERVER_PATH_SIZE 2048
 
 #define RTSP_CREDENTIAL_SIZE 128
 
 /* URL copy buffer - for URL parsing operations. Same sizing rationale as
  * RTSP_SERVER_URL_SIZE. */
-#define RTSP_URL_COPY_SIZE 1024
+#define RTSP_URL_COPY_SIZE 2048
 
 /* Time conversion buffers - for playseek time formatting */
 #define RTSP_TIME_STRING_SIZE 64

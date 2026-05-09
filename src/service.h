@@ -8,16 +8,6 @@
 
 /* ========== HTTP/SERVICE BUFFER SIZE CONFIGURATION ========== */
 
-/* HTTP URL working buffer - for URL manipulation. The query-merge path in
- * service_create_with_query_merge() builds into this same buffer and then
- * re-parses through service_create_from_*_url(), and the RTSP layer
- * (RTSP_SERVER_URL_SIZE / RTSP_SERVER_PATH_SIZE / RTSP_URL_COPY_SIZE in
- * rtsp.h) is sized to match. Keep all four in sync to avoid silent
- * mid-pipeline truncation. */
-#ifndef HTTP_URL_BUFFER_SIZE
-#define HTTP_URL_BUFFER_SIZE 1024
-#endif
-
 /* HTTP URL component buffers - for parsing multicast URLs */
 #ifndef HTTP_ADDR_COMPONENT_SIZE
 #define HTTP_ADDR_COMPONENT_SIZE 256

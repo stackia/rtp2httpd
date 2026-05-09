@@ -1060,9 +1060,9 @@ class TestM3UQueryMerge:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            # ~600 bytes per side guarantees the merged URL exceeds 1024.
-            configured_pad = "padconfigured=" + ("a" * 600)
-            request_pad = "padrequest=" + ("b" * 600)
+            # ~1200 bytes per side guarantees the merged URL exceeds 2048.
+            configured_pad = "padconfigured=" + ("a" * 1200)
+            request_pad = "padrequest=" + ("b" * 1200)
             config = make_m3u_rtsp_config(r2h_port, rtsp.port, "OverflowMerge", "?" + configured_pad)
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config, capture_log=True)
             r2h.start()

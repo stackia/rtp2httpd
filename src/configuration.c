@@ -1,5 +1,6 @@
 #include "configuration.h"
 #include "epg.h"
+#include "http.h"
 #include "m3u.h"
 #include "service.h"
 #include "utils.h"
@@ -13,7 +14,7 @@
 #include <string.h>
 #include <strings.h>
 
-#define MAX_LINE 1024
+#define MAX_LINE 4096
 
 /* GLOBAL */
 config_t config;
