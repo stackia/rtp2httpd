@@ -786,8 +786,8 @@ int http_parse_url_components(const char *url, char *protocol, char *host, char 
 
   /* Extract path if present */
   if (path_start && path) {
-    strncpy(path, path_start, 1023);
-    path[1023] = '\0';
+    strncpy(path, path_start, 2047);
+    path[2047] = '\0';
   }
 
   /* Parse host:port */

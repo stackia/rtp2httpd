@@ -3,6 +3,14 @@
 
 #include <sys/types.h>
 
+/* Maximum URL buffer size shared across the HTTP/RTSP pipeline.
+ * RTSP_SERVER_URL_SIZE, RTSP_SERVER_PATH_SIZE, and RTSP_URL_COPY_SIZE (rtsp.h)
+ * are sized to match. Keep all in sync to avoid silent mid-pipeline
+ * truncation. Compile-time override: -DHTTP_URL_BUFFER_SIZE=N */
+#ifndef HTTP_URL_BUFFER_SIZE
+#define HTTP_URL_BUFFER_SIZE 2048
+#endif
+
 /* Forward declaration */
 typedef struct connection_s connection_t;
 
@@ -25,7 +33,7 @@ typedef enum { HTTP_PARSE_REQ_LINE = 0, HTTP_PARSE_HEADERS, HTTP_PARSE_BODY, HTT
 /* HTTP request structure */
 typedef struct {
   char method[16];
-  char url[2048];
+  char url[HTTP_URL_BUFFER_SIZE];
   char hostname[256];
   char user_agent[256];
   char accept[256];
