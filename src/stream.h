@@ -89,7 +89,8 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
 int stream_tick(stream_context_t *ctx, int64_t now);
 
 /**
- * Cleanup all resources owned by the stream context and free dynamic service.
+ * Cleanup all resources owned by the stream context.
+ * The parent connection owns and frees the service pointer.
  * @param ctx Stream context to cleanup
  * @return 0 if cleanup completed, 1 if async TEARDOWN in progress (cleanup
  * deferred)

@@ -517,7 +517,7 @@ void connection_cleanup(connection_t *c) {
    * The function is lightweight and only acts if conditions are met */
   buffer_pool_try_shrink();
 
-  /* Free service if owned */
+  /* Free the per-connection service instance */
   if (c->service) {
     service_free(c->service);
     c->service = NULL;

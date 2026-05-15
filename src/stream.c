@@ -417,8 +417,7 @@ int stream_context_cleanup(stream_context_t *ctx) {
 
   /* NOTE: Do NOT free ctx->service here!
    * The service pointer is shared with the parent connection (c->service).
-   * The connection owns the service and will free it in connection_cleanup()
-   * based on the c->service_owned flag.
+   * The connection owns the service and will free it in connection_cleanup().
    * Freeing it here would cause double-free when connection_cleanup() is called.
    */
   ctx->service = NULL; /* Clear pointer but don't free */
