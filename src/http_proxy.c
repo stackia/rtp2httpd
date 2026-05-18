@@ -805,7 +805,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
         return http_proxy_finalize_rewrite(session);
       }
 
-      return 0; /* Keep buffering */
+      return (int)received; /* Progress: keep draining edge-triggered sockets */
     }
 
     /* Phase 2: Zero-copy streaming - recv directly to buffer pool */
@@ -891,6 +891,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
   }
 
   session->response_buffer_pos += received;
+  int socket_progress = (int)received;
 
   /* Try to parse headers */
   if (!session->headers_received) {
@@ -899,7 +900,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
       return -1;
     }
     if (result == 0) {
-      return 0; /* Need more data for headers */
+      return socket_progress; /* Progress: keep draining edge-triggered sockets */
     }
     /* result > 0 means headers complete, state is now STREAMING */
   }
@@ -930,6 +931,8 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
         logger(LOG_DEBUG, "HTTP Proxy: All M3U content received with headers (%zd bytes)", session->bytes_received);
         return http_proxy_finalize_rewrite(session);
       }
+
+      bytes_forwarded = (int)initial_size;
     } else {
       /* Normal mode: forward immediately */
       if (connection_queue_output(session->conn, session->response_buffer, session->response_buffer_pos) < 0) {
@@ -949,7 +952,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
     }
   }
 
-  return bytes_forwarded;
+  return bytes_forwarded > 0 ? bytes_forwarded : socket_progress;
 }
 
 /* Check if status code is a redirect that may have Location header */
@@ -1305,7 +1308,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t event
    * edge-triggered pollers (epoll EPOLLET / kqueue EV_CLEAR) where the read event fires
    * only once per data arrival and won't re-trigger while unread data
    * remains in the socket buffer. */
-  int bytes_forwarded = 0;
+  int progress = 0;
   if (events & POLLER_IN) {
     while (session->state == HTTP_PROXY_STATE_AWAITING_HEADERS || session->state == HTTP_PROXY_STATE_STREAMING) {
       result = http_proxy_try_receive_response(session);
@@ -1316,7 +1319,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t event
       }
       if (result == 0)
         break; /* EAGAIN or need more data - wait for next event */
-      bytes_forwarded += result;
+      progress += result;
     }
   }
 
@@ -1356,7 +1359,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t event
     }
   }
 
-  return bytes_forwarded;
+  return progress;
 }
 
 int http_proxy_session_cleanup(http_proxy_session_t *session) {
