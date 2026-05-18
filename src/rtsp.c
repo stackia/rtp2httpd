@@ -35,6 +35,7 @@ static const char rtsp_default_user_agent[] = "rtp2httpd/" VERSION;
 #define RTSP_RESPONSE_ADVANCE 1
 #define RTSP_RESPONSE_KEEPALIVE 2
 #define RTSP_RESPONSE_DURATION 3
+#define RTSP_RESPONSE_PROGRESS 4
 #define RTSP_RESPONSE_ERROR -1
 /* Helper function prototypes */
 static int rtsp_prepare_request(rtsp_session_t *session, const char *method, const char *url,
@@ -51,6 +52,7 @@ static void rtsp_send_udp_nat_probe(rtsp_session_t *session);
 static int rtsp_process_interleaved_buffer(rtsp_session_t *session, connection_t *conn);
 static int rtsp_handle_redirect(rtsp_session_t *session, const char *location);
 static void rtsp_parse_describe_sdp(rtsp_session_t *session, const char *header_start, const char *sdp_body);
+static int rtsp_handle_terminal_socket_event(rtsp_session_t *session, int is_error);
 static int rtsp_initiate_teardown(rtsp_session_t *session);
 static int rtsp_reconnect_for_teardown(rtsp_session_t *session);
 static void rtsp_force_cleanup(rtsp_session_t *session);
@@ -816,46 +818,47 @@ int rtsp_connect(rtsp_session_t *session) {
   return 0;
 }
 
+static int rtsp_handle_terminal_socket_event(rtsp_session_t *session, int is_error) {
+  if (!is_error) {
+    logger(LOG_INFO, "RTSP: Server closed connection");
+  }
+
+  /* Some servers close instead of sending a TEARDOWN response. */
+  if (session->state == RTSP_STATE_SENDING_TEARDOWN || session->state == RTSP_STATE_AWAITING_TEARDOWN) {
+    logger(LOG_DEBUG, "RTSP: Server closed connection during TEARDOWN (acceptable)");
+    rtsp_force_cleanup(session);
+    return -1;
+  }
+
+  if (session->state == RTSP_STATE_PLAYING) {
+    logger(LOG_INFO, "RTSP: Upstream closed during PLAYING, draining client");
+    rtsp_force_cleanup(session);
+    connection_begin_drain_close(session->conn);
+    return 0;
+  }
+
+  rtsp_session_set_state(session, RTSP_STATE_ERROR);
+  return -1;
+}
+
 int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
   int result;
 
-  /* Check for connection errors or hangup */
-  if (events & (POLLER_HUP | POLLER_ERR | POLLER_RDHUP)) {
-    if (events & POLLER_ERR) {
-      int sock_error = 0;
-      socklen_t error_len = sizeof(sock_error);
-      if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error, &error_len) == 0 && sock_error != 0) {
-        logger(LOG_ERROR, "RTSP: Socket error: %s", strerror(sock_error));
-      } else {
-        logger(LOG_ERROR, "RTSP: Socket error event received");
-      }
-    } else if (events & (POLLER_HUP | POLLER_RDHUP)) {
-      logger(LOG_INFO, "RTSP: Server closed connection");
+  /* Keep real socket errors strict; plain hangup is deferred below when
+   * readable data arrived in the same edge-triggered event. */
+  if (events & POLLER_ERR) {
+    int sock_error = 0;
+    socklen_t error_len = sizeof(sock_error);
+    if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error, &error_len) == 0 && sock_error != 0) {
+      logger(LOG_ERROR, "RTSP: Socket error: %s", strerror(sock_error));
+    } else {
+      logger(LOG_ERROR, "RTSP: Socket error event received");
     }
+    return rtsp_handle_terminal_socket_event(session, 1);
+  }
 
-    /* If we're in TEARDOWN states, server closing connection is acceptable
-     * (some servers don't send TEARDOWN response before closing) */
-    if (session->state == RTSP_STATE_SENDING_TEARDOWN || session->state == RTSP_STATE_AWAITING_TEARDOWN) {
-      logger(LOG_DEBUG, "RTSP: Server closed connection during TEARDOWN (acceptable)");
-      rtsp_force_cleanup(session);
-      return -1;
-    }
-
-    /* During PLAYING: upstream is done — drain pending client output
-     * before disconnecting regardless of error/hangup distinction. */
-    if (session->state == RTSP_STATE_PLAYING) {
-      logger(LOG_INFO, "RTSP: Upstream closed during PLAYING, draining client");
-      rtsp_force_cleanup(session);
-      if (session->conn && session->conn->state != CONN_CLOSING) {
-        session->conn->state = CONN_CLOSING;
-        connection_epoll_update_events(session->conn->epfd, session->conn->fd,
-                                       POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
-      }
-      return 0;
-    }
-
-    rtsp_session_set_state(session, RTSP_STATE_ERROR);
-    return -1; /* Connection closed or error */
+  if ((events & (POLLER_HUP | POLLER_RDHUP)) && !(events & POLLER_IN)) {
+    return rtsp_handle_terminal_socket_event(session, 0);
   }
 
   /* Handle connection completion (both initial and reconnect for TEARDOWN) */
@@ -944,65 +947,81 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
   /* Handle readable socket - try to receive response */
   if (events & POLLER_IN) {
     if (session->awaiting_response) {
-      int response_result = rtsp_try_receive_response(session);
-      if (response_result < 0) {
-        logger(LOG_ERROR, "RTSP: Failed to receive response");
-        rtsp_session_set_state(session, RTSP_STATE_ERROR);
-        return -1;
-      }
-
-      if (response_result == RTSP_RESPONSE_DURATION) {
-        return -2;
-      }
-
-      /* Re-enable POLLER_OUT for next request */
-      if (response_result == RTSP_RESPONSE_ADVANCE && session->epoll_fd >= 0) {
-        if (poller_mod(session->epoll_fd, session->socket,
-                       POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
-          logger(LOG_ERROR, "RTSP: Failed to modify poller events: %s", strerror(errno));
+      for (;;) {
+        int response_result = rtsp_try_receive_response(session);
+        if (response_result < 0) {
+          logger(LOG_ERROR, "RTSP: Failed to receive response");
           rtsp_session_set_state(session, RTSP_STATE_ERROR);
           return -1;
         }
-      }
 
-      if (response_result == RTSP_RESPONSE_KEEPALIVE) {
-        /* For TCP mode, process any preserved interleaved data in buffer
-         * (without recv - just drain what's already buffered) */
-        if (session->transport_mode == RTSP_TRANSPORT_TCP && session->response_buffer_pos > 0 && session->conn) {
-          result = rtsp_process_interleaved_buffer(session, session->conn);
-          if (result < 0) {
+        if (response_result == RTSP_RESPONSE_PROGRESS) {
+          continue;
+        }
+
+        if (response_result == RTSP_RESPONSE_DURATION) {
+          return -2;
+        }
+
+        /* Re-enable POLLER_OUT for next request */
+        if (response_result == RTSP_RESPONSE_ADVANCE && session->epoll_fd >= 0) {
+          if (poller_mod(session->epoll_fd, session->socket,
+                         POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
+            logger(LOG_ERROR, "RTSP: Failed to modify poller events: %s", strerror(errno));
             rtsp_session_set_state(session, RTSP_STATE_ERROR);
             return -1;
           }
+        }
+
+        if (response_result == RTSP_RESPONSE_KEEPALIVE) {
+          /* For TCP mode, process any preserved interleaved data in buffer
+           * (without recv - just drain what's already buffered) */
+          if (session->transport_mode == RTSP_TRANSPORT_TCP && session->response_buffer_pos > 0 && session->conn) {
+            result = rtsp_process_interleaved_buffer(session, session->conn);
+            if (result < 0) {
+              rtsp_session_set_state(session, RTSP_STATE_ERROR);
+              return -1;
+            }
+            if (events & (POLLER_HUP | POLLER_RDHUP)) {
+              return rtsp_handle_terminal_socket_event(session, 0);
+            }
+            return result;
+          }
+          if (events & (POLLER_HUP | POLLER_RDHUP)) {
+            return rtsp_handle_terminal_socket_event(session, 0);
+          }
+          return 0; /* Keepalive handled */
+        }
+
+        /* If response is still incomplete after draining to EAGAIN, wait for
+         * the next edge. */
+        if (session->awaiting_response) {
+          if (events & (POLLER_HUP | POLLER_RDHUP)) {
+            return rtsp_handle_terminal_socket_event(session, 0);
+          }
+          return 0;
+        }
+
+        /* Advance state machine to prepare next request (or enter PLAYING
+         * state). */
+        result = rtsp_state_machine_advance(session);
+        if (result < 0) {
+          if (result == -2)
+            return -1;
+          rtsp_session_set_state(session, RTSP_STATE_ERROR);
+          return -1;
+        }
+
+        /* For edge-triggered pollers: after transitioning to PLAYING, fall
+         * through to process any preserved RTP data in the response buffer
+         * and drain remaining socket data. */
+        if (session->state != RTSP_STATE_PLAYING) {
+          if (events & (POLLER_HUP | POLLER_RDHUP)) {
+            return rtsp_handle_terminal_socket_event(session, 0);
+          }
           return result;
         }
-        return 0; /* Keepalive handled */
-      }
-
-      /* If response is still incomplete (return 0 with awaiting_response
-       * still set), just return - don't advance state machine. This happens
-       * in TCP mode when interleaved data was drained but the RTSP response
-       * hasn't arrived yet. */
-      if (session->awaiting_response) {
-        return 0;
-      }
-
-      /* Advance state machine to prepare next request (or enter PLAYING state)
-       */
-      result = rtsp_state_machine_advance(session);
-      if (result < 0) {
-        if (result == -2)
-          return -1;
-        rtsp_session_set_state(session, RTSP_STATE_ERROR);
-        return -1;
-      }
-
-      /* For edge-triggered pollers: after transitioning to PLAYING, fall
-       * through to process any preserved RTP data in the response buffer
-       * and drain remaining socket data.  Without this, the preserved data
-       * would sit unprocessed until a new edge arrives. */
-      if (session->state != RTSP_STATE_PLAYING) {
-        return result;
+        break;
       }
     }
 
@@ -1020,8 +1039,15 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
         }
         return 0;
       }
+      if (events & (POLLER_HUP | POLLER_RDHUP)) {
+        return rtsp_handle_terminal_socket_event(session, 0);
+      }
       return result; /* Return number of bytes forwarded to client */
     }
+  }
+
+  if (events & (POLLER_HUP | POLLER_RDHUP)) {
+    return rtsp_handle_terminal_socket_event(session, 0);
   }
 
   /* Only advance state machine on initial connection or after response received
@@ -1222,10 +1248,13 @@ static int rtsp_try_send_pending(rtsp_session_t *session) {
  *   RTSP_RESPONSE_ADVANCE: Response complete, re-enable POLLER_OUT
  *   RTSP_RESPONSE_KEEPALIVE: Keepalive response handled
  *   RTSP_RESPONSE_OK: Waiting for more data, or response processed internally
+ *   RTSP_RESPONSE_PROGRESS: Bytes/buffered data consumed, response incomplete
  *   RTSP_RESPONSE_ERROR: recv failure, connection closed, or parse error
  *   RTSP_RESPONSE_DURATION: Duration query completed
  */
 static int rtsp_try_receive_response(rtsp_session_t *session) {
+  int made_progress = 0;
+
   if (!session->awaiting_response) {
     return RTSP_RESPONSE_OK;
   }
@@ -1252,6 +1281,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
     }
 
     session->response_buffer_pos += (size_t)received;
+    made_progress = 1;
   }
 
   /* NUL-terminate for strstr-based parsing. Clamp to buffer bounds since
@@ -1283,6 +1313,9 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
         session->awaiting_keepalive_response = 0;
         return RTSP_RESPONSE_ERROR;
       }
+      if (drain_result > 0) {
+        made_progress = 1;
+      }
       /* Buffer contents changed - skip stale response_offset logic */
     } else if (response_offset > 0 && response_offset != session->response_buffer_pos) {
       /* Move RTSP response start to buffer beginning to make room */
@@ -1291,6 +1324,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
       session->response_buffer_pos = remaining;
       session->response_buffer[session->response_buffer_pos] = '\0';
       logger(LOG_DEBUG, "RTSP: Moved incomplete RTSP header to buffer start");
+      made_progress = 1;
     } else if (session->response_buffer_pos >= sizeof(session->response_buffer) - 1) {
       /* Buffer full but no valid RTSP header - try to resync to next '$'
        * marker or RTSP response to minimize data loss */
@@ -1300,16 +1334,18 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
         memmove(session->response_buffer, next_dollar, session->response_buffer_pos - skip);
         session->response_buffer_pos -= skip;
         logger(LOG_DEBUG, "RTSP: Buffer full, resynced to '$' marker (skipped %zu bytes)", skip);
+        made_progress = 1;
       } else {
         logger(LOG_DEBUG,
                "RTSP: Buffer full with no RTSP header or '$' marker, "
                "discarding %zu bytes",
                session->response_buffer_pos);
         session->response_buffer_pos = 0;
+        made_progress = 1;
       }
     }
     /* Wait for more data */
-    return RTSP_RESPONSE_OK;
+    return made_progress ? RTSP_RESPONSE_PROGRESS : RTSP_RESPONSE_OK;
   }
 
   /* Complete response received */
@@ -1870,7 +1906,8 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
           }
         }
       }
-      return 0; /* STUN packet consumed, not RTP data */
+      /* STUN consumed socket data. Continue below so edge-triggered polling
+       * also drains any queued RTP datagrams behind it. */
     }
   }
 
@@ -1882,10 +1919,14 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
     if (!rtp_buf) {
       /* Buffer pool exhausted - drop this packet */
       logger(LOG_DEBUG, "RTSP UDP: Buffer pool exhausted, dropping packet");
-      session->packets_dropped++;
-      /* Drain the socket to prevent event loop spinning */
-      uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
-      recv(session->rtp_socket, dummy, sizeof(dummy), 0);
+      int drained = drain_socket_until_eagain(session->rtp_socket);
+      if (drained > 0) {
+        session->packets_dropped += (uint64_t)drained;
+      } else {
+        session->packets_dropped++;
+        if (drained < 0)
+          logger(LOG_ERROR, "RTSP: RTP drain failed: %s", strerror(errno));
+      }
       return total_bytes_written;
     }
 

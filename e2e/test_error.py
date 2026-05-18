@@ -186,6 +186,51 @@ class TestMalformedHTTP:
         status, _, _ = http_get("127.0.0.1", basic_r2h.port, "/status")
         assert status == 200
 
+    def _send_raw_request(self, port: int, request: bytes, timeout: float = 2.0) -> tuple[bytes, bool]:
+        sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+        sock.settimeout(timeout)
+        try:
+            sock.sendall(request)
+            data = b""
+            while True:
+                try:
+                    chunk = sock.recv(4096)
+                except socket.timeout:
+                    return data, True
+                if not chunk:
+                    return data, False
+                data += chunk
+                if b"\r\n\r\n" in data:
+                    return data, False
+        finally:
+            sock.close()
+
+    def test_oversized_incomplete_request_line_fails_deterministically(self, r2h_binary):
+        """An oversized request line without CRLF should not spin forever."""
+        port = find_free_port()
+        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
+        try:
+            r2h.start()
+            request = b"GET /" + (b"a" * 9000)
+            data, timed_out = self._send_raw_request(port, request)
+            assert not timed_out
+            assert data == b"" or b"400 Bad Request" in data
+        finally:
+            r2h.stop()
+
+    def test_oversized_incomplete_header_fails_deterministically(self, r2h_binary):
+        """Oversized headers without the terminating CRLF should not spin forever."""
+        port = find_free_port()
+        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100"])
+        try:
+            r2h.start()
+            request = b"GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Fill: " + (b"a" * 9000)
+            data, timed_out = self._send_raw_request(port, request)
+            assert not timed_out
+            assert data == b"" or b"400 Bad Request" in data
+        finally:
+            r2h.stop()
+
 
 # ---------------------------------------------------------------------------
 # Concurrent connections

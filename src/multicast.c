@@ -512,9 +512,9 @@ int mcast_session_handle_event(mcast_session_t *session, stream_context_t *ctx, 
     if (!recv_buf) {
       logger(LOG_DEBUG, "Multicast: Buffer pool exhausted, dropping packet");
       session->last_data_time = now;
-      /* Drain socket to prevent event loop spinning */
-      uint8_t dummy[BUFFER_POOL_BUFFER_SIZE];
-      recv(session->sock, dummy, sizeof(dummy), 0);
+      if (drain_socket_until_eagain(session->sock) < 0) {
+        logger(LOG_DEBUG, "Multicast: Drain failed: %s", strerror(errno));
+      }
       return 0;
     }
 

@@ -148,6 +148,29 @@ void bind_to_upstream_interface(int sock, const char *ifname) {
   }
 }
 
+int drain_socket_until_eagain(int fd) {
+  uint8_t dummy[2048];
+  int reads = 0;
+
+  for (;;) {
+    ssize_t nread = recv(fd, dummy, sizeof(dummy), 0);
+    if (nread > 0) {
+      reads++;
+      continue;
+    }
+    if (nread == 0) {
+      return reads;
+    }
+    if (errno == EINTR) {
+      continue;
+    }
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      return reads;
+    }
+    return -1;
+  }
+}
+
 const char *get_upstream_interface_for_fcc(const char *override, const char *override_fcc) {
   /* Priority: override_fcc > override > upstream_interface_fcc >
    * upstream_interface */

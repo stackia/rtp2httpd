@@ -67,6 +67,14 @@ int set_socket_rcvbuf(int fd, int size);
 void bind_to_upstream_interface(int sock, const char *ifname);
 
 /**
+ * Drain readable data from a non-blocking socket until EAGAIN/EWOULDBLOCK.
+ *
+ * @param fd Socket file descriptor
+ * @return Number of successful reads, or -1 on non-retryable recv error
+ */
+int drain_socket_until_eagain(int fd);
+
+/**
  * Select the appropriate upstream interface for FCC with priority logic
  * Priority: override_fcc > override > upstream_interface_fcc >
  * upstream_interface

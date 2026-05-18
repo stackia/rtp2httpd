@@ -899,7 +899,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
       return -1;
     }
     if (result == 0) {
-      return 0; /* Need more data for headers */
+      return (int)received; /* Progress: keep draining edge-triggered sockets */
     }
     /* result > 0 means headers complete, state is now STREAMING */
   }
