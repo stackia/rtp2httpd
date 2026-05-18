@@ -1308,7 +1308,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t event
    * edge-triggered pollers (epoll EPOLLET / kqueue EV_CLEAR) where the read event fires
    * only once per data arrival and won't re-trigger while unread data
    * remains in the socket buffer. */
-  int bytes_forwarded = 0;
+  int progress = 0;
   if (events & POLLER_IN) {
     while (session->state == HTTP_PROXY_STATE_AWAITING_HEADERS || session->state == HTTP_PROXY_STATE_STREAMING) {
       result = http_proxy_try_receive_response(session);
@@ -1319,7 +1319,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t event
       }
       if (result == 0)
         break; /* EAGAIN or need more data - wait for next event */
-      bytes_forwarded += result;
+      progress += result;
     }
   }
 
@@ -1359,7 +1359,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t event
     }
   }
 
-  return bytes_forwarded;
+  return progress;
 }
 
 int http_proxy_session_cleanup(http_proxy_session_t *session) {

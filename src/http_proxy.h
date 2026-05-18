@@ -178,8 +178,8 @@ int http_proxy_connect(http_proxy_session_t *session);
  * Called when socket has EPOLLIN or EPOLLOUT events
  * @param session HTTP proxy session
  * @param events Epoll events (EPOLLIN, EPOLLOUT, etc.)
- * @return Number of bytes forwarded to client (>0), 0 if no data forwarded, -1
- * on error
+ * @return Positive value if progress was made (data received/forwarded),
+ * 0 if no progress (EAGAIN), -1 on error
  */
 int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t events);
 
