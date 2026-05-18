@@ -12,11 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: main
 
       - name: Set version environment variable
         run: |
@@ -26,13 +27,54 @@ jobs:
       - name: Generate versioned Makefiles
         run: ./scripts/generate-versioned-makefiles.sh
 
-      - name: Commit and push versioned Makefiles
+      - name: Create pull request for versioned Makefiles
         run: |
+          set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet --exit-code -- \
+            openwrt-support/rtp2httpd/Makefile.versioned \
+            openwrt-support/luci-app-rtp2httpd/Makefile.versioned; then
+            echo "Versioned Makefiles are already up-to-date."
+            exit 0
+          fi
+
+          BRANCH="chore/versioned-makefiles-${{ github.event.release.tag_name }}"
+          TITLE="chore: update versioned Makefiles for ${{ github.event.release.tag_name }}"
+          BODY="Updates the OpenWrt versioned Makefiles generated for release ${{ github.event.release.tag_name }}."
+
+          git fetch origin "$BRANCH:refs/remotes/origin/$BRANCH" || true
+          git switch -c "$BRANCH"
           git add openwrt-support/rtp2httpd/Makefile.versioned openwrt-support/luci-app-rtp2httpd/Makefile.versioned
-          git commit -m "chore: update versioned Makefiles for ${{ github.event.release.tag_name }}"
-          git push origin HEAD:main
+          git commit -m "$TITLE"
+          git push --force-with-lease origin "$BRANCH"
+
+          PR_NUMBER=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --head "$BRANCH" \
+            --base main \
+            --state open \
+            --json number \
+            --jq '.[0].number // ""')
+
+          if [ -n "$PR_NUMBER" ]; then
+            echo "Pull request #$PR_NUMBER already exists."
+            gh pr edit "$PR_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --title "$TITLE" \
+              --body "$BODY"
+          else
+            gh pr create \
+              --repo "${{ github.repository }}" \
+              --base main \
+              --head "$BRANCH" \
+              --title "$TITLE" \
+              --body "$BODY"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   frontend:
     name: Build frontend
