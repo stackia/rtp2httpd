@@ -13,6 +13,7 @@ from helpers import (
     R2HProcess,
     find_free_port,
     http_get,
+    stream_get,
 )
 
 pytestmark = pytest.mark.http_proxy
@@ -568,6 +569,33 @@ class TestM3URewriteRealistic:
             assert f"/http/127.0.0.1:{upstream.port}/live/stream/seg2.ts" in text
             # Absolute path resolved to upstream host + rewritten
             assert f"/http/127.0.0.1:{upstream.port}/absolute/seg3.ts" in text
+        finally:
+            upstream.stop()
+
+    def test_large_playlist_body_is_fully_buffered(self, shared_r2h):
+        """A large M3U body should be fully read before rewriting."""
+        segment_count = 4096
+        segments = "".join("#EXTINF:10,\nsegment-%04d.ts?token=abcdef0123456789\n" % i for i in range(segment_count))
+        m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n" + segments + "#EXT-X-ENDLIST\n"
+        upstream = _make_m3u_upstream("/lookback/long.m3u8", m3u)
+        try:
+            status, hdrs, body = stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                f"/http/127.0.0.1:{upstream.port}/lookback/long.m3u8",
+                read_bytes=512 * 1024,
+                timeout=_TIMEOUT,
+            )
+            text = body.decode("utf-8", errors="replace")
+            assert status == 200
+            assert f"/http/127.0.0.1:{upstream.port}/lookback/segment-0000.ts?token=abcdef0123456789" in text
+            assert (
+                f"/http/127.0.0.1:{upstream.port}/lookback/segment-{segment_count - 1:04d}.ts?token=abcdef0123456789"
+                in text
+            )
+            cl = hdrs.get("content-length")
+            assert cl is not None
+            assert int(cl) == len(body)
         finally:
             upstream.stop()
 

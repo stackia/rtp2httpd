@@ -805,7 +805,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
         return http_proxy_finalize_rewrite(session);
       }
 
-      return 0; /* Keep buffering */
+      return (int)received; /* Progress: keep draining edge-triggered sockets */
     }
 
     /* Phase 2: Zero-copy streaming - recv directly to buffer pool */
@@ -930,6 +930,8 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
         logger(LOG_DEBUG, "HTTP Proxy: All M3U content received with headers (%zd bytes)", session->bytes_received);
         return http_proxy_finalize_rewrite(session);
       }
+
+      bytes_forwarded = (int)initial_size;
     } else {
       /* Normal mode: forward immediately */
       if (connection_queue_output(session->conn, session->response_buffer, session->response_buffer_pos) < 0) {
