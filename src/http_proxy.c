@@ -891,6 +891,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
   }
 
   session->response_buffer_pos += received;
+  int socket_progress = (int)received;
 
   /* Try to parse headers */
   if (!session->headers_received) {
@@ -899,7 +900,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
       return -1;
     }
     if (result == 0) {
-      return (int)received; /* Progress: keep draining edge-triggered sockets */
+      return socket_progress; /* Progress: keep draining edge-triggered sockets */
     }
     /* result > 0 means headers complete, state is now STREAMING */
   }
@@ -951,7 +952,7 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
     }
   }
 
-  return bytes_forwarded;
+  return bytes_forwarded > 0 ? bytes_forwarded : socket_progress;
 }
 
 /* Check if status code is a redirect that may have Location header */

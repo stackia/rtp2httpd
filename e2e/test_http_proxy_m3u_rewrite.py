@@ -6,6 +6,9 @@ playlist body so that segment / sub-playlist fetches also go through the
 proxy.  These tests verify the rewriting logic end-to-end.
 """
 
+import socket
+import threading
+
 import pytest
 
 from helpers import (
@@ -19,6 +22,7 @@ from helpers import (
 pytestmark = pytest.mark.http_proxy
 
 _TIMEOUT = 5.0
+_HEADER_PARSE_READ_SIZE = 8191  # HTTP_PROXY_RESPONSE_BUFFER_SIZE - 1
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +67,81 @@ def _make_m3u_upstream(path, body, content_type="application/vnd.apple.mpegurl")
             },
         }
     )
+    upstream.start()
+    return upstream
+
+
+class _RawHTTPResponseUpstream:
+    """Serve a prebuilt raw HTTP response and keep the connection open."""
+
+    def __init__(self, response):
+        self.port = find_free_port()
+        self.response = response
+        self._server_sock = None
+        self._thread = None
+        self._stop = threading.Event()
+        self._client_threads = []
+
+    def start(self):
+        self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._server_sock.bind(("127.0.0.1", self.port))
+        self._server_sock.listen(5)
+        self._server_sock.settimeout(0.5)
+        self._thread = threading.Thread(target=self._accept, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._server_sock:
+            self._server_sock.close()
+        for thread in self._client_threads:
+            thread.join(timeout=1)
+        if self._thread:
+            self._thread.join(timeout=3)
+
+    def _accept(self):
+        assert self._server_sock is not None
+        while not self._stop.is_set():
+            try:
+                conn, _ = self._server_sock.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            thread = threading.Thread(target=self._handle, args=(conn,), daemon=True)
+            self._client_threads.append(thread)
+            thread.start()
+
+    def _handle(self, conn):
+        try:
+            conn.settimeout(1.0)
+            request = b""
+            while b"\r\n\r\n" not in request:
+                chunk = conn.recv(1024)
+                if not chunk:
+                    return
+                request += chunk
+            conn.sendall(self.response)
+            self._stop.wait(_TIMEOUT * 2)
+        except OSError:
+            pass
+        finally:
+            conn.close()
+
+
+def _make_padded_header_m3u_upstream(body, content_type="application/vnd.apple.mpegurl"):
+    """Create an upstream whose first proxy header read contains no body bytes."""
+    if isinstance(body, str):
+        body = body.encode()
+    prefix = (f"HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {len(body)}\r\nX-Pad: ").encode()
+    suffix = b"\r\n\r\n"
+    pad_len = _HEADER_PARSE_READ_SIZE - len(prefix) - len(suffix)
+    assert pad_len > 0
+    headers = prefix + (b"a" * pad_len) + suffix
+    assert len(headers) == _HEADER_PARSE_READ_SIZE
+    response = headers + body
+    upstream = _RawHTTPResponseUpstream(response)
     upstream.start()
     return upstream
 
@@ -572,12 +651,16 @@ class TestM3URewriteRealistic:
         finally:
             upstream.stop()
 
-    def test_large_playlist_body_is_fully_buffered(self, shared_r2h):
-        """A large M3U body should be fully read before rewriting."""
+    @pytest.mark.parametrize("upstream_mode", ["normal_headers", "padded_header_only"], ids=["normal", "header-only"])
+    def test_large_playlist_body_is_fully_buffered(self, shared_r2h, upstream_mode):
+        """A large M3U body should be fully read after header parsing."""
         segment_count = 4096
         segments = "".join("#EXTINF:10,\nsegment-%04d.ts?token=abcdef0123456789\n" % i for i in range(segment_count))
         m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n" + segments + "#EXT-X-ENDLIST\n"
-        upstream = _make_m3u_upstream("/lookback/long.m3u8", m3u)
+        if upstream_mode == "normal_headers":
+            upstream = _make_m3u_upstream("/lookback/long.m3u8", m3u)
+        else:
+            upstream = _make_padded_header_m3u_upstream(m3u)
         try:
             status, hdrs, body = stream_get(
                 "127.0.0.1",
