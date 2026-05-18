@@ -421,7 +421,7 @@ int fcc_handle_socket_event(stream_context_t *ctx, int fd, int64_t now) {
       /* Buffer pool exhausted - drop this packet */
       logger(LOG_DEBUG, "FCC: Buffer pool exhausted, dropping packet");
       fcc->last_data_time = now;
-      if (drain_socket_until_eagain(recv_sock) < 0) {
+      if (drain_datagram_socket_until_eagain(recv_sock) < 0) {
         logger(LOG_ERROR, "FCC: Drain failed: %s", strerror(errno));
       }
       return 0;

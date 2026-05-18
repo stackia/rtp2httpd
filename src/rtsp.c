@@ -1919,13 +1919,14 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
     if (!rtp_buf) {
       /* Buffer pool exhausted - drop this packet */
       logger(LOG_DEBUG, "RTSP UDP: Buffer pool exhausted, dropping packet");
-      int drained = drain_socket_until_eagain(session->rtp_socket);
-      if (drained > 0) {
+      int drained = drain_datagram_socket_until_eagain(session->rtp_socket);
+      if (drained >= 0) {
+        /* The drain count includes the first queued datagram that could not
+         * get a buffer plus any additional datagrams dropped behind it. */
         session->packets_dropped += (uint64_t)drained;
       } else {
         session->packets_dropped++;
-        if (drained < 0)
-          logger(LOG_ERROR, "RTSP: RTP drain failed: %s", strerror(errno));
+        logger(LOG_ERROR, "RTSP: RTP drain failed: %s", strerror(errno));
       }
       return total_bytes_written;
     }

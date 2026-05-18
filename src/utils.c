@@ -148,18 +148,15 @@ void bind_to_upstream_interface(int sock, const char *ifname) {
   }
 }
 
-int drain_socket_until_eagain(int fd) {
+int drain_datagram_socket_until_eagain(int fd) {
   uint8_t dummy[2048];
   int reads = 0;
 
   for (;;) {
     ssize_t nread = recv(fd, dummy, sizeof(dummy), 0);
-    if (nread > 0) {
+    if (nread >= 0) {
       reads++;
       continue;
-    }
-    if (nread == 0) {
-      return reads;
     }
     if (errno == EINTR) {
       continue;
