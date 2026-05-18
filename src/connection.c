@@ -714,6 +714,7 @@ void connection_handle_read(connection_t *c) {
       if (c->in_len == INBUF_SIZE) {
         logger(LOG_WARN, "HTTP request exceeded input buffer before headers completed");
         http_send_400(c);
+        c->state = CONN_CLOSING;
         return;
       }
       /* else parse_result == 0: need more data, keep reading */

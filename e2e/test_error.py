@@ -214,7 +214,7 @@ class TestMalformedHTTP:
             request = b"GET /" + (b"a" * 9000)
             data, timed_out = self._send_raw_request(port, request)
             assert not timed_out
-            assert data == b"" or b"400 Bad Request" in data
+            assert b"400 Bad Request" in data
         finally:
             r2h.stop()
 
@@ -227,7 +227,7 @@ class TestMalformedHTTP:
             request = b"GET /status HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Fill: " + (b"a" * 9000)
             data, timed_out = self._send_raw_request(port, request)
             assert not timed_out
-            assert data == b"" or b"400 Bad Request" in data
+            assert b"400 Bad Request" in data
         finally:
             r2h.stop()
 
