@@ -36,10 +36,11 @@
 以下固件已经内置 rtp2httpd（或者可以在应用市场、官方源直接下载安装 rtp2httpd）。
 
 > [!IMPORTANT]
-> 固件为了保证稳定性，通常内置/上架的 rtp2httpd 版本比较老。如果你希望追新，建议使用 [官方支持的安装方式](../guide/installation.md) 来安装 rtp2httpd。
+> 固件为了保证稳定性，通常内置/上架的 rtp2httpd 版本落后于官方最新版。如果你希望追新，建议使用 [官方支持的安装方式](../guide/installation.md) 来安装 rtp2httpd。
 
 - [飞牛 fnOS](https://www.fnnas.com)（应用中心已上架 rtp2httpd）
 - [iStoreOS](https://site.istoreos.com)（iStore 已上架 rtp2httpd）
+- [懒猫微服](https://lazycat.cloud)（应用商店已上架 rtp2httpd）
 - [cooluc's OpenWrt](https://github.com/sbwml/builder)（已内置 rtp2httpd）
 - [ImmortalWrt](https://github.com/immortalwrt/immortalwrt)（已加入官方源）
 - [AutoBuildImmortalWrt](https://github.com/wukongdaily/AutoBuildImmortalWrt)（[store](https://github.com/wukongdaily/store) 已内置 rtp2httpd，轻松构建）

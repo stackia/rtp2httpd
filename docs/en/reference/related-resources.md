@@ -36,10 +36,11 @@ If you are new to setting up IPTV multicast forwarding services and unfamiliar w
 The following firmware distributions have rtp2httpd built in, or offer it for direct installation from their app stores or official package repositories.
 
 > [!IMPORTANT]
-> To ensure stability, firmware distributions typically ship or list older versions of rtp2httpd. If you want the latest version, it is recommended to install rtp2httpd using the [officially supported installation methods](../guide/installation.md).
+> To ensure stability, firmware distributions typically ship or list rtp2httpd versions behind the official latest release. If you want the latest version, it is recommended to install rtp2httpd using the [officially supported installation methods](../guide/installation.md).
 
 - [fnOS](https://www.fnnas.com) (rtp2httpd available in the App Center)
 - [iStoreOS](https://site.istoreos.com) (rtp2httpd available in iStore)
+- [LCMD MicroServer](https://lazycat.cloud) (rtp2httpd available in the App Store)
 - [cooluc's OpenWrt](https://github.com/sbwml/builder) (rtp2httpd built in)
 - [ImmortalWrt](https://github.com/immortalwrt/immortalwrt) (added to the official repository)
 - [AutoBuildImmortalWrt](https://github.com/wukongdaily/AutoBuildImmortalWrt) (rtp2httpd built into [store](https://github.com/wukongdaily/store), easy to build)
