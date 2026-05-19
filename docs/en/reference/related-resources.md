@@ -57,6 +57,12 @@ Android IPTV player with support for M3U playlists, FCC fast channel switching, 
 
 Currently the only player supporting rtp2httpd [video snapshots](../guide/video-snapshot.md).
 
+#### APTV
+
+- Project: <https://aptv.wegic.app>
+
+IPTV M3U player with a polished Apple ecosystem experience, covering iPhone, iPad, Mac, Apple Vision, Apple TV, and Apple Watch. It supports M3U playlists, EPG, iCloud configuration sync, live preview, catch-up playback, multiple source configurations, 4K/HDR/HLG, Picture in Picture, AirPlay/DLNA casting, and multicast FCC fast channel switching optimization.
+
 #### SrcBox
 
 - Project: <https://github.com/CGG888/SrcBox>
@@ -74,11 +80,17 @@ Cross-platform (Windows / macOS / Linux) IPTV player. This fork is enhanced for 
 - 4K/HD/SD quality strategy, channels with the same name prioritized by quality
 - Smart EPG channel name matching and Chinese localization
 
+#### iptvys
+
+- Project: <https://github.com/yydewf/iptvys/>
+
+Customized media player based on the Honey TV (TVBox) build, with support for RTSP sources proxied through rtp2httpd. After enabling RTSP proxy and setting the rtp2httpd address, it can play RTSP VOD programs through rtp2httpd and supports duration metadata, timeline seeking, fast-forward, and rewind.
+
 ### IPTV Subscription and Channel Tools
 
-#### IPTV Checker
+#### Channel Sentinel
 
-- Project: <https://github.com/CGG888/Iptv-Checker>
+- Project: <https://github.com/CGG888/channel-sentinel>
 
 Docker-based IPTV unicast/multicast batch scanning and detection tool. Main features:
 
@@ -99,6 +111,12 @@ Docker-based comprehensive IPTV management toolbox integrating EPG program guide
 - Fuzzy channel logo matching, supports tvbox interface
 - Channel aliases, regex matching, supports Traditional Chinese
 - Scheduled data updates, caching support (Memcached/Redis)
+
+#### IPTV Sniffer Web
+
+- Project: <https://github.com/roninriddle/IPTV-Sniffer-Web>
+
+IPTV multicast sniffing, operator channel discovery, and rtp2httpd playlist workbench for OpenWrt / iStoreOS / fnOS NAS / other Linux Docker hosts. It can parse channel lists and FCC parameters from set-top box startup traffic, sniff multicast streams from a selected network interface in the Web UI, detect encoding/resolution/screenshots/EPG, and export direct M3U, rtp2httpd external-source M3U, JSON, TXT, CSV, and other formats.
 
 #### IPTV-channels (Sichuan Telecom)
 
@@ -123,6 +141,12 @@ Beijing Unicom IPTV playlist, updated automatically every day. Provides M3U play
 - Project: <https://github.com/plsy1/iptv>
 
 Shandong Unicom IPTV playlist covering multicast sources for cities across Shandong province including Jinan, Qingdao, Yantai, and Weifang. Also provides unicast sources in multiple formats (APTV, Cool 9, rtp2httpd). Includes companion tools for set-top box login authentication simulation, EPG program guide, RTSP proxy, data capture, and M3U generation.
+
+#### SDU-IPTV-PRO (Shandong IPTV)
+
+- Project: <https://github.com/sggc/SDU-IPTV-PRO>
+
+Shandong IPTV playlist project aggregating intranet live sources from Shandong Unicom, Shandong Mobile, and Shandong Telecom, with localized channel ordering for different cities. It provides general and city-specific M3U playlists covering Shandong Unicom multicast/unicast, Shandong Mobile HTTP/RTSP unicast, Shandong Telecom unicast, and companion aggregated EPG sources. The Shandong Unicom multicast sources can be converted to HTTP streams with rtp2httpd and include FCC (Fast Channel Change) parameters, giving startup and channel switching behavior close to unicast.
 
 #### Shanghai-IPTV (Shanghai Telecom)
 
