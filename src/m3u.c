@@ -1150,7 +1150,8 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
         if (split_tvg_urls(tvg_url, &tvg_urls, &tvg_url_count) == 0 && tvg_url_count > 0) {
           const char **epg_urls = malloc(sizeof(*epg_urls) * tvg_url_count);
           if (!epg_urls) {
-            logger(LOG_ERROR, "Failed to allocate EPG URL view");
+            logger(LOG_ERROR, "Failed to allocate EPG URL view, clearing existing EPG URLs");
+            epg_set_url(NULL);
             free_tvg_urls(tvg_urls, tvg_url_count);
             free(tvg_url);
             continue;
@@ -1160,11 +1161,15 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
           }
           /* Set EPG URLs directly (don't fetch yet - will be triggered after
            * parsing) */
-          epg_set_urls(epg_urls, tvg_url_count);
+          if (epg_set_urls(epg_urls, tvg_url_count) < 0) {
+            logger(LOG_ERROR, "Failed to apply EPG URLs from M3U header, clearing existing EPG URLs");
+            epg_set_url(NULL);
+          }
           free(epg_urls);
           free_tvg_urls(tvg_urls, tvg_url_count);
         } else {
-          logger(LOG_WARN, "No valid EPG URLs found in M3U header");
+          logger(LOG_WARN, "No valid EPG URLs found in M3U header, clearing existing EPG URLs");
+          epg_set_url(NULL);
           free_tvg_urls(tvg_urls, tvg_url_count);
         }
         free(tvg_url);

@@ -50,6 +50,11 @@ static void epg_source_cleanup(epg_source_t *source) {
   source->next_retry_time = 0;
 }
 
+static int epg_url_has_supported_scheme(const char *url) {
+  return strncasecmp(url, "http://", 7) == 0 || strncasecmp(url, "https://", 8) == 0 ||
+         strncasecmp(url, "file://", 7) == 0;
+}
+
 /* Detect gzip-compressed data via gzip magic number (0x1f 0x8b) */
 static int epg_fd_is_gzipped(int fd) {
   unsigned char magic[2];
@@ -236,6 +241,15 @@ int epg_set_urls(const char **urls, size_t url_count) {
       return -1;
     }
 
+    if (!epg_url_has_supported_scheme(urls[i])) {
+      logger(LOG_ERROR, "Unsupported EPG URL scheme at position %zu: %s", i + 1, urls[i]);
+      for (size_t j = 0; j <= i; j++) {
+        epg_source_cleanup(&new_sources[j]);
+      }
+      free(new_sources);
+      return -1;
+    }
+
     new_sources[i].url = strdup(urls[i]);
     if (!new_sources[i].url) {
       logger(LOG_ERROR, "Failed to allocate memory for EPG URL");
@@ -336,17 +350,20 @@ int epg_fetch_source_async(int epfd, size_t index) {
    * invoked) */
   fetch_ctx = http_fetch_start_async_fd(source->url, epg_fetch_fd_callback, request, epfd);
 
-  /* NULL return value can mean:
-   * 1. file:// URL completed synchronously (callback already called) - SUCCESS
-   * 2. Error occurred (callback called with error) - also handled
-   * Non-NULL means HTTP(S) fetch started successfully and is in progress */
   if (fetch_ctx) {
     logger(LOG_DEBUG, "Async HTTP(S) EPG source %zu fetch started, waiting for completion", index + 1);
-  } else {
-    logger(LOG_DEBUG, "EPG source %zu fetch completed immediately (likely file:// URL)", index + 1);
+    return 0;
   }
 
-  return 0;
+  if (strncmp(source->url, "file://", 7) == 0) {
+    logger(LOG_DEBUG, "EPG source %zu fetch completed immediately (file:// URL)", index + 1);
+    return 0;
+  }
+
+  logger(LOG_ERROR, "Failed to start async EPG source %zu fetch from: %s", index + 1, source->url);
+  epg_fetch_fd_callback(NULL, -1, 0, request);
+
+  return -1;
 }
 
 int epg_fetch_async(int epfd) {

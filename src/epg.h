@@ -13,7 +13,7 @@ typedef struct {
   int data_fd;             /* tmpfs file descriptor for EPG data (zero-copy), or -1 if not
                               available */
   size_t data_size;        /* Size of EPG data */
-  int is_gzipped;          /* 1 if data is gzip compressed (based on URL), 0 otherwise */
+  int is_gzipped;          /* 1 if cached data has gzip magic bytes, 0 otherwise */
   int fetch_error_count;   /* Number of consecutive fetch errors */
   char etag[33];           /* MD5 hash of EPG data as hex string (for HTTP ETag caching) */
   int etag_valid;          /* 1 if etag is valid, 0 otherwise */

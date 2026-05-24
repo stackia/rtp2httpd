@@ -600,3 +600,69 @@ rtp://239.0.0.1:1234
         finally:
             r2h.stop()
             upstream.stop()
+
+    def test_invalid_updated_m3u_header_clears_previous_epg_sources(self, r2h_binary):
+        """An invalid updated M3U header should not keep serving EPG sources from the prior playlist."""
+        upstream = MockHTTPUpstream(
+            routes={
+                "/epg.xml": {
+                    "status": 200,
+                    "body": _epg_xml("CH1", "Channel 1", "Initial Programme"),
+                    "headers": {"Content-Type": "application/xml"},
+                },
+            }
+        )
+        upstream.start()
+        port = find_free_port()
+        upstream.routes["/m3u"] = {
+            "status": 200,
+            "body": ('#EXTM3U x-tvg-url="http://127.0.0.1:%d/epg.xml"\n#EXTINF:-1,Channel\nrtp://239.0.0.1:1234\n')
+            % upstream.port,
+            "headers": {"Content-Type": "audio/x-mpegurl"},
+        }
+        r2h = R2HProcess(
+            r2h_binary,
+            port,
+            extra_args=[
+                "-v",
+                "4",
+                "-m",
+                "100",
+                "-M",
+                "http://127.0.0.1:%d/m3u" % upstream.port,
+                "-I",
+                "1",
+            ],
+        )
+        try:
+            r2h.start()
+            deadline = time.monotonic() + 4.0
+            while time.monotonic() < deadline:
+                status, _, body = http_get("127.0.0.1", port, "/epg.xml")
+                if status == 200 and b"Initial Programme" in body:
+                    break
+                time.sleep(0.2)
+            else:
+                pytest.fail("initial EPG was not cached")
+
+            upstream.routes["/m3u"] = {
+                "status": 200,
+                "body": '#EXTM3U x-tvg-url="not-an-epg-url"\n#EXTINF:-1,Channel\nrtp://239.0.0.1:1234\n',
+                "headers": {"Content-Type": "audio/x-mpegurl"},
+            }
+
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+                text = body.decode()
+                if status == 200 and "x-tvg-url" not in text:
+                    break
+                time.sleep(0.2)
+            else:
+                pytest.fail("invalid M3U header still exposed previous EPG URLs")
+
+            status, _, _ = http_get("127.0.0.1", port, "/epg.xml")
+            assert status == 404
+        finally:
+            r2h.stop()
+            upstream.stop()
