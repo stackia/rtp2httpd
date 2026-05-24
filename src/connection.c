@@ -38,7 +38,7 @@
 
 /* Forward declarations */
 static void handle_playlist_request(connection_t *c);
-static void handle_epg_request(connection_t *c, int requested_gz);
+static void handle_epg_request(connection_t *c, int requested_gz, size_t source_index);
 
 /* Token source for r2h-token validation */
 typedef enum {
@@ -887,12 +887,33 @@ int connection_route_and_start(connection_t *c) {
   size_t epg_xml_route_len = strlen(epg_xml_route);
   size_t epg_xml_gz_route_len = strlen(epg_xml_gz_route);
   if (epg_xml_gz_route_len == path_len && strncmp(service_path, epg_xml_gz_route, path_len) == 0) {
-    handle_epg_request(c, 1);
+    handle_epg_request(c, 1, 0);
     return 0;
   }
   if (epg_xml_route_len == path_len && strncmp(service_path, epg_xml_route, path_len) == 0) {
-    handle_epg_request(c, 0);
+    handle_epg_request(c, 0, 0);
     return 0;
+  }
+
+  const char *epg_index_prefix = "epg/";
+  size_t epg_index_prefix_len = strlen(epg_index_prefix);
+  if (path_len > epg_index_prefix_len && strncmp(service_path, epg_index_prefix, epg_index_prefix_len) == 0) {
+    const char *route_start = service_path + epg_index_prefix_len;
+    const char *route_end = service_path + path_len;
+    char *number_end;
+    unsigned long source_number = strtoul(route_start, &number_end, 10);
+    size_t suffix_len = (size_t)(route_end - number_end);
+
+    if (number_end > route_start && source_number >= 2 && source_number <= EPG_MAX_SOURCES) {
+      if (suffix_len == strlen(".xml.gz") && strncmp(number_end, ".xml.gz", suffix_len) == 0) {
+        handle_epg_request(c, 1, (size_t)source_number - 1);
+        return 0;
+      }
+      if (suffix_len == strlen(".xml") && strncmp(number_end, ".xml", suffix_len) == 0) {
+        handle_epg_request(c, 0, (size_t)source_number - 1);
+        return 0;
+      }
+    }
   }
   size_t status_sse_len = strlen(status_sse_route);
   if (status_sse_len == path_len && strncmp(service_path, status_sse_route, path_len) == 0) {
@@ -1222,16 +1243,17 @@ static void handle_playlist_request(connection_t *c) {
 
 /* Handle /epg.xml or /epg.xml.gz request - serve cached EPG data
  * requested_gz: 1 if client requested .gz version, 0 for .xml version
+ * source_index: zero-based EPG source index
  */
-static void handle_epg_request(connection_t *c, int requested_gz) {
+static void handle_epg_request(connection_t *c, int requested_gz, size_t source_index) {
   if (!c)
     return;
 
-  /* Get EPG cache */
-  epg_cache_t *epg = epg_get_cache();
+  /* Get EPG source */
+  epg_source_t *epg = epg_get_source(source_index);
 
   /* Check if EPG data is available */
-  if (epg->data_fd < 0 || epg->data_size == 0) {
+  if (!epg || epg->data_fd < 0 || epg->data_size == 0) {
     /* No EPG data available */
     http_send_404(c);
     return;

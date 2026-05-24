@@ -245,6 +245,8 @@ ffmpeg-args = -hwaccel none
 # Similar to external-m3u functionality, but the M3U content is written directly in the config file
 [services]
 #EXTM3U x-tvg-url="https://example.com/epg.xml.gz"
+# Multiple EPG sources can be separated by commas:
+# #EXTM3U x-tvg-url="https://example.com/epg.xml.gz,https://example.com/backup-epg.xml.gz"
 #EXTINF:-1 tvg-id="CCTV1" tvg-name="CCTV1" tvg-logo="https://example.com/logo/CCTV1.png" group-title="CCTV" catchup="default" catchup-source="rtsp://10.0.0.50:554/catchup?playseek={utc:YmdHMS}-{utcend:YmdHMS}",CCTV-1
 rtp://239.253.64.120:5140
 #EXTINF:-1 tvg-id="CCTV2" tvg-name="CCTV2" group-title="CCTV",CCTV-2

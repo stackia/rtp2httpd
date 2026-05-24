@@ -245,6 +245,8 @@ ffmpeg-args = -hwaccel none
 # 和 external-m3u 功能类似，只是直接把 m3u 写在了配置文件内
 [services]
 #EXTM3U x-tvg-url="https://example.com/epg.xml.gz"
+# 多个 EPG 源可用逗号分隔：
+# #EXTM3U x-tvg-url="https://example.com/epg.xml.gz,https://example.com/backup-epg.xml.gz"
 #EXTINF:-1 tvg-id="CCTV1" tvg-name="CCTV1" tvg-logo="https://example.com/logo/CCTV1.png" group-title="央视" catchup="default" catchup-source="rtsp://10.0.0.50:554/catchup?playseek={utc:YmdHMS}-{utcend:YmdHMS}",CCTV-1
 rtp://239.253.64.120:5140
 #EXTINF:-1 tvg-id="CCTV2" tvg-name="CCTV2" group-title="央视",CCTV-2

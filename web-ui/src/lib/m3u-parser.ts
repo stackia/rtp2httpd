@@ -1,6 +1,44 @@
 import type { PlayerSegment } from "@rtp2httpd/mpegts.js";
 import type { Channel, M3UMetadata, Source } from "../types/player";
 
+function getHeaderAttribute(line: string, names: string[]): string | undefined {
+  for (const name of names) {
+    const match = line.match(new RegExp(`${name}="([^"]+)"`, "i"));
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return undefined;
+}
+
+function startsWithSupportedEPGScheme(value: string): boolean {
+  const trimmed = value.trimStart().toLowerCase();
+  return trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("file://");
+}
+
+function splitTVGUrls(value: string): string[] {
+  const urls: string[] = [];
+  let segmentStart = 0;
+
+  const addSegment = (end: number) => {
+    const url = value.slice(segmentStart, end).trim();
+    if (url && !urls.includes(url)) {
+      urls.push(url);
+    }
+  };
+
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] === "," && startsWithSupportedEPGScheme(value.slice(i + 1))) {
+      addSegment(i);
+      segmentStart = i + 1;
+    }
+  }
+
+  addSegment(value.length);
+  return urls;
+}
+
 /**
  * Parse M3U playlist content
  * @param content - The M3U playlist content
@@ -11,6 +49,7 @@ export function parseM3U(content: string): M3UMetadata {
   const groups: string[] = [];
   const seenGroups = new Set<string>();
   let tvgUrl: string | undefined;
+  let tvgUrls: string[] | undefined;
   let defaultCatchup: string | undefined;
   let defaultCatchupSource: string | undefined;
 
@@ -32,9 +71,10 @@ export function parseM3U(content: string): M3UMetadata {
 
     // Parse #EXTM3U header
     if (line.startsWith("#EXTM3U")) {
-      const tvgUrlMatch = line.match(/x-tvg-url="([^"]+)"/);
-      if (tvgUrlMatch) {
-        tvgUrl = tvgUrlMatch[1];
+      const tvgUrlValue = getHeaderAttribute(line, ["x-tvg-url", "url-tvg"]);
+      if (tvgUrlValue) {
+        tvgUrls = splitTVGUrls(tvgUrlValue);
+        tvgUrl = tvgUrls[0];
       }
       const catchupMatch = line.match(/catchup="([^"]+)"/);
       if (catchupMatch) {
@@ -110,6 +150,7 @@ export function parseM3U(content: string): M3UMetadata {
   }
 
   return {
+    tvgUrls,
     tvgUrl,
     channels: mergeChannelSources(channels),
     groups,

@@ -358,3 +358,46 @@ export async function loadEPG(url: string, validChannelIds?: Set<string>): Promi
     return {};
   }
 }
+
+export async function loadEPGs(urls: string[], validChannelIds?: Set<string>): Promise<EPGData[]> {
+  return Promise.all(urls.map((url) => loadEPG(url, validChannelIds)));
+}
+
+function getChannelLookupKeys(channel: { tvgId?: string; tvgName?: string; name: string }): string[] {
+  const keys: string[] = [];
+
+  if (channel.tvgId) keys.push(channel.tvgId);
+  if (channel.tvgName && !keys.includes(channel.tvgName)) keys.push(channel.tvgName);
+  if (channel.name && !keys.includes(channel.name)) keys.push(channel.name);
+
+  return keys;
+}
+
+export function mergeEPGByChannelPriority(
+  epgSources: EPGData[],
+  channels: { tvgId?: string; tvgName?: string; name: string }[],
+): EPGData {
+  const merged: EPGData = {};
+
+  for (const channel of channels) {
+    const lookupKeys = getChannelLookupKeys(channel);
+    if (lookupKeys.length === 0) {
+      continue;
+    }
+
+    for (const epg of epgSources) {
+      const matchedKey = lookupKeys.find((key) => epg[key] && epg[key].length > 0);
+      if (!matchedKey) {
+        continue;
+      }
+
+      const programs = epg[matchedKey];
+      for (const key of lookupKeys) {
+        merged[key] = programs;
+      }
+      break;
+    }
+  }
+
+  return merged;
+}
