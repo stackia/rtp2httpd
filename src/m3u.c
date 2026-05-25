@@ -1463,9 +1463,9 @@ char *m3u_generate_playlist(const char *host_header, const char *x_forwarded_hos
   size_t base_url_len = strlen(base_url);
   size_t placeholder_len = strlen(M3U_BASE_URL_PLACEHOLDER);
   size_t max_replacements = half_size / placeholder_len + 1;
-  size_t token_len = config.r2h_token ? strlen(config.r2h_token) : 0;
+  size_t encoded_token_max_len = config.r2h_token ? strlen(config.r2h_token) * 3 : 0;
   size_t epg_source_count = epg ? epg->source_count : 0;
-  size_t header_size = 512 + epg_source_count * (base_url_len + token_len + 128); /* Space for EPG URLs */
+  size_t header_size = 512 + epg_source_count * (base_url_len + encoded_token_max_len + 128); /* Space for EPG URLs */
   result_size = header_size + half_size + (max_replacements * base_url_len) + 1;
 
   result = malloc(result_size);

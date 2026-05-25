@@ -21,6 +21,7 @@ Four module-scoped rtp2httpd instances are used (one per distinct EPG config):
 import gzip
 import os
 import re
+import shutil
 import tempfile
 import time
 
@@ -552,6 +553,50 @@ rtp://239.0.0.1:1234
             r2h.stop()
             os.unlink(epg_one_path)
             os.unlink(epg_two_path)
+
+    def test_multi_epg_tvg_url_handles_url_encoded_token_growth(self, r2h_binary):
+        """Playlist generation should not fail when URL encoding expands r2h-token in every EPG URL."""
+        token = "%" * 240
+        encoded_token = "%25" * 240
+        epg_dir = tempfile.mkdtemp(prefix="r2h_epg_", dir="/tmp")
+        epg_paths = []
+        for i in range(1, 33):
+            epg_path = os.path.join(epg_dir, f"{i}.xml")
+            with open(epg_path, "wb") as f:
+                f.write(_epg_xml(f"CH{i}", f"Channel {i}", f"Encoded Token Programme {i}").encode())
+            epg_paths.append(epg_path)
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+r2h-token = {token}
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U x-tvg-url="{", ".join(f"file://{path}" for path in epg_paths)}"
+#EXTINF:-1,Channel
+rtp://239.0.0.1:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            time.sleep(0.5)
+            status, _, body = http_get(
+                "127.0.0.1",
+                port,
+                "/playlist.m3u",
+                headers={"Cookie": f"r2h-token={token}"},
+            )
+            assert status == 200
+            epg_urls = _extract_tvg_urls(body.decode())
+            assert len(epg_urls) == len(epg_paths)
+            assert epg_urls[0].endswith(f"/epg.xml?r2h-token={encoded_token}")
+            assert epg_urls[-1].endswith(f"/epg/{len(epg_paths)}.xml?r2h-token={encoded_token}")
+        finally:
+            r2h.stop()
+            shutil.rmtree(epg_dir)
 
     def test_later_epg_source_available_when_first_source_fails(self, r2h_binary):
         """A failed EPG source should not prevent later sources from being cached."""

@@ -15,6 +15,7 @@ static uint64_t epg_generation = 1;
 typedef struct {
   size_t index;
   uint64_t generation;
+  int *sync_result;
 } epg_fetch_request_t;
 
 /* Retry delays in seconds: 2, 4, 8, 16, 32, 64, 128, 256 */
@@ -131,6 +132,7 @@ static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd, size_t content_
   epg_fetch_request_t *request = (epg_fetch_request_t *)user_data;
   epg_source_t *source = NULL;
   size_t source_number = 0;
+  int *sync_result = request ? request->sync_result : NULL;
 
   if (request && request->generation == epg_generation && request->index < epg_cache.source_count) {
     source = &epg_cache.sources[request->index];
@@ -140,6 +142,8 @@ static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd, size_t content_
   if (!source) {
     if (fd >= 0)
       close(fd);
+    if (sync_result)
+      *sync_result = -1;
     if (request)
       free(request);
     logger(LOG_DEBUG, "Ignoring stale EPG fetch result");
@@ -167,6 +171,8 @@ static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd, size_t content_
       source->retry_count = 0;
       source->next_retry_time = 0;
     }
+    if (sync_result)
+      *sync_result = -1;
     free(request);
     return;
   }
@@ -192,6 +198,8 @@ static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd, size_t content_
   logger(LOG_INFO, "EPG source %zu data cached: %zu bytes, fd=%d (%s), ETag=%s", source_number, content_size, fd,
          source->is_gzipped ? "gzipped" : "uncompressed", source->etag_valid ? source->etag : "none");
 
+  if (sync_result)
+    *sync_result = 0;
   free(request);
 }
 
@@ -318,6 +326,7 @@ int epg_fetch_source_async(int epfd, size_t index) {
   http_fetch_ctx_t *fetch_ctx;
   epg_fetch_request_t *request;
   epg_source_t *source;
+  int sync_result = -2;
 
   if (index >= epg_cache.source_count) {
     logger(LOG_DEBUG, "Invalid EPG source index: %zu", index);
@@ -342,6 +351,7 @@ int epg_fetch_source_async(int epfd, size_t index) {
   }
   request->index = index;
   request->generation = epg_generation;
+  request->sync_result = &sync_result;
 
   logger(LOG_INFO, "Starting async EPG source %zu/%zu fetch from: %s", index + 1, epg_cache.source_count, source->url);
 
@@ -351,13 +361,14 @@ int epg_fetch_source_async(int epfd, size_t index) {
   fetch_ctx = http_fetch_start_async_fd(source->url, epg_fetch_fd_callback, request, epfd);
 
   if (fetch_ctx) {
+    request->sync_result = NULL;
     logger(LOG_DEBUG, "Async HTTP(S) EPG source %zu fetch started, waiting for completion", index + 1);
     return 0;
   }
 
   if (strncmp(source->url, "file://", 7) == 0) {
-    logger(LOG_DEBUG, "EPG source %zu fetch completed immediately (file:// URL)", index + 1);
-    return 0;
+    logger(LOG_DEBUG, "EPG source %zu fetch completed immediately (file:// URL), result=%d", index + 1, sync_result);
+    return sync_result == 0 ? 0 : -1;
   }
 
   logger(LOG_ERROR, "Failed to start async EPG source %zu fetch from: %s", index + 1, source->url);
