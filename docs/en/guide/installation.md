@@ -53,7 +53,7 @@ services:
   rtp2httpd:
     image: ghcr.io/stackia/rtp2httpd:latest
     network_mode: host
-    restart: unless-stopped
+    restart: always
     cap_add:
       - NET_ADMIN
     ulimits:
