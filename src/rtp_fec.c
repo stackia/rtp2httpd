@@ -462,7 +462,7 @@ int fec_attempt_recovery(fec_context_t *ctx, uint16_t seq, uint8_t **recovered_d
       logger(LOG_DEBUG, "FEC: Recovered RTP has truncated CSRC headers");
       goto decode_error;
     }
-    if (rtp_packet[0] & 0x10) {                /* Extension */
+    if (rtp_packet[0] & 0x10) { /* Extension */
       if (rtp_hdr_len + 4 > (int)grp->rtp_len) {
         goto decode_error;
       }
