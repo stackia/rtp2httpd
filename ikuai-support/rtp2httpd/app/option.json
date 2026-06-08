@@ -1,0 +1,80 @@
+[
+  {
+    "default": "0.0.0.0",
+    "attrname": "HOST_IP",
+    "label": {
+      "en": "Listen address",
+      "zh": "监听地址"
+    },
+    "required": true,
+    "scope": "config",
+    "type": "text",
+    "min": 1,
+    "max": 64
+  },
+  {
+    "default": 5140,
+    "attrname": "APP_PORT_WEB",
+    "label": {
+      "en": "Web and stream port",
+      "zh": "Web 与流服务端口"
+    },
+    "required": true,
+    "scope": "config",
+    "type": "integer",
+    "min": 1,
+    "max": 65535
+  },
+  {
+    "default": 20,
+    "attrname": "RTP2HTTPD_MAXCLIENTS",
+    "label": {
+      "en": "Maximum clients",
+      "zh": "最大客户端数"
+    },
+    "required": true,
+    "scope": "config",
+    "type": "integer",
+    "min": 1,
+    "max": 4096
+  },
+  {
+    "default": 1,
+    "attrname": "RTP2HTTPD_WORKERS",
+    "label": {
+      "en": "Worker processes",
+      "zh": "工作进程数"
+    },
+    "required": true,
+    "scope": "config",
+    "type": "integer",
+    "min": 1,
+    "max": 64
+  },
+  {
+    "default": 2,
+    "attrname": "RTP2HTTPD_VERBOSITY",
+    "label": {
+      "en": "Log verbosity",
+      "zh": "日志级别"
+    },
+    "required": true,
+    "scope": "config",
+    "type": "integer",
+    "min": 0,
+    "max": 4
+  },
+  {
+    "default": "",
+    "attrname": "RTP2HTTPD_EXTRA_ARGS",
+    "label": {
+      "en": "Extra command arguments",
+      "zh": "额外启动参数"
+    },
+    "required": false,
+    "scope": "config",
+    "type": "text",
+    "min": 0,
+    "max": 1024
+  }
+]

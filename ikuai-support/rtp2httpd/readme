@@ -1,0 +1,7 @@
+rtp2httpd 通过 scripts/start.sh 和 scripts/stop.sh 在爱快系统中以原生方式运行，不依赖 Docker Compose。
+
+此软件包需要在 app/bin/rtp2httpd 放置静态 Linux 二进制文件。可以使用 ikuai-support/build-rtp2httpd-ipkg.sh 从官方 Release 二进制构建完整 .ipkg，也可以通过 BINARY_PATH 指定本地二进制文件。
+
+服务监听 APP_PORT_WEB，默认端口为 5140，同时提供状态页面、Web 播放器和 IPTV 流媒体代理入口。默认状态页面为 /status，Web 播放器为 /player。
+
+组播接收依赖爱快主机网络环境。如果无法播放，请先确认爱快主机能够访问 IPTV 组播网络，并检查 IGMP、组播转发和路由配置。若系统路由不能正确选择 IPTV 接口，可在 app/config/rtp2httpd.conf 中配置 upstream-interface 相关参数。
