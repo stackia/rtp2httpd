@@ -37,6 +37,10 @@ int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, ui
 
     payloadstart = 12;                  /* basic RTP header length */
     payloadstart += (flags & 0x0F) * 4; /*CSRC headers*/
+    if (unlikely(payloadstart > recv_len)) {
+      logger(LOG_DEBUG, "Malformed RTP packet: CSRC headers exceed packet size");
+      return -1;
+    }
 
     /* Extension header is uncommon in most RTP streams */
     if (unlikely(flags & 0x10)) { /*Extension header*/
@@ -47,7 +51,12 @@ int rtp_get_payload(uint8_t *buf, int recv_len, uint8_t **payload, int *size, ui
       }
       uint16_t ext_len_be;
       memcpy(&ext_len_be, buf + payloadstart + 2, sizeof(ext_len_be));
-      payloadstart += 4 + 4 * ntohs(ext_len_be);
+      uint16_t ext_len = ntohs(ext_len_be);
+      if (unlikely(ext_len > (recv_len - payloadstart - 4) / 4)) {
+        logger(LOG_DEBUG, "Malformed RTP packet: extension data truncated");
+        return -1;
+      }
+      payloadstart += 4 + 4 * ext_len;
     }
 
     payloadlength = recv_len - payloadstart;

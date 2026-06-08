@@ -243,6 +243,10 @@ int fec_process_packet(fec_context_t *ctx, const uint8_t *data, int len) {
   redund_idx = hdr->redund_idx;
   fec_len = ntohs(hdr->fec_len);
   rtp_len = ntohs(hdr->rtp_len);
+  if (rtp_len < 12 || rtp_len > BUFFER_POOL_BUFFER_SIZE) {
+    logger(LOG_DEBUG, "FEC: Invalid RTP packet length %u", rtp_len);
+    return -1;
+  }
 
   /* Calculate k from sequence range */
   k = SEQ_DIFF(end_seq, begin_seq) + 1;
@@ -442,6 +446,11 @@ int fec_attempt_recovery(fec_context_t *ctx, uint16_t seq, uint8_t **recovered_d
   if (allocated[target_slot]) {
     uint8_t *rtp_packet = allocated[target_slot];
 
+    if (unlikely(grp->rtp_len < 12 || grp->rtp_len > BUFFER_POOL_BUFFER_SIZE)) {
+      logger(LOG_DEBUG, "FEC: Recovered RTP has invalid packet length %u", grp->rtp_len);
+      goto decode_error;
+    }
+
     /* Parse RTP header to find payload offset */
     int rtp_hdr_len = 12; /* Basic RTP header */
     if ((rtp_packet[0] & 0xC0) != 0x80) {
@@ -449,6 +458,10 @@ int fec_attempt_recovery(fec_context_t *ctx, uint16_t seq, uint8_t **recovered_d
       goto decode_error;
     }
     rtp_hdr_len += (rtp_packet[0] & 0x0F) * 4; /* CSRC */
+    if (unlikely(rtp_hdr_len > (int)grp->rtp_len)) {
+      logger(LOG_DEBUG, "FEC: Recovered RTP has truncated CSRC headers");
+      goto decode_error;
+    }
     if (rtp_packet[0] & 0x10) {                /* Extension */
       if (rtp_hdr_len + 4 > (int)grp->rtp_len) {
         goto decode_error;
@@ -456,6 +469,10 @@ int fec_attempt_recovery(fec_context_t *ctx, uint16_t seq, uint8_t **recovered_d
       uint16_t ext_len;
       memcpy(&ext_len, rtp_packet + rtp_hdr_len + 2, sizeof(ext_len));
       rtp_hdr_len += 4 + 4 * ntohs(ext_len);
+      if (unlikely(rtp_hdr_len > (int)grp->rtp_len)) {
+        logger(LOG_DEBUG, "FEC: Recovered RTP has truncated extension data");
+        goto decode_error;
+      }
     }
 
     int payload_len = (int)grp->rtp_len - rtp_hdr_len;
