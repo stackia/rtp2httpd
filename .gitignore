@@ -1,6 +1,5 @@
 .vscode/
 .zed/
-.DS_Store
 
 # clangd
 .cache/

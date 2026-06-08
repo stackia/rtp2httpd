@@ -6,10 +6,11 @@ export COPY_EXTENDED_ATTRIBUTES_DISABLE=1
 
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
-PACKAGE_SRC="$SCRIPT_DIR/rtp2httpd"
-STAGING_ROOT="$SCRIPT_DIR/.staging"
+SUPPORT_DIR="$PROJECT_ROOT/ikuai-support"
+PACKAGE_SRC="$SUPPORT_DIR/rtp2httpd"
+STAGING_ROOT="$SUPPORT_DIR/.staging"
 STAGING_PACKAGE="$STAGING_ROOT/rtp2httpd"
-DIST_DIR="$SCRIPT_DIR/dist"
+DIST_DIR="$SUPPORT_DIR/dist"
 MANIFEST="$PACKAGE_SRC/manifest.json"
 ICON_SOURCE="$PROJECT_ROOT/web-ui/public/assets/icon.png"
 
