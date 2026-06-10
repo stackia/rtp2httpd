@@ -20,6 +20,8 @@ Four module-scoped rtp2httpd instances are used (one per distinct EPG config):
 
 import gzip
 import os
+import re
+import shutil
 import tempfile
 import time
 
@@ -45,6 +47,26 @@ SAMPLE_EPG_XML = """\
 """
 
 SECRET = "s3cret-t0ken"
+
+
+def _epg_xml(channel_id: str, display_name: str, title: str) -> str:
+    return f"""\
+<?xml version="1.0" encoding="UTF-8"?>
+<tv generator-info-name="test">
+  <channel id="{channel_id}">
+    <display-name>{display_name}</display-name>
+  </channel>
+  <programme start="20260101000000 +0000" stop="20260101010000 +0000" channel="{channel_id}">
+    <title>{title}</title>
+  </programme>
+</tv>
+"""
+
+
+def _extract_tvg_urls(playlist_text: str) -> list[str]:
+    match = re.search(r'x-tvg-url="([^"]+)"', playlist_text)
+    assert match, "playlist should include x-tvg-url"
+    return match.group(1).split(",")
 
 
 def _write_tmp(data: bytes, suffix: str = ".xml") -> str:
@@ -396,3 +418,296 @@ class TestEPGAuth:
         text = body.decode()
         assert "x-tvg-url=" in text
         assert "r2h-token=" in text
+
+
+# ---------------------------------------------------------------------------
+# Multiple EPG sources
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def multi_epg_r2h(r2h_binary):
+    """rtp2httpd with comma-separated HTTP and file:// EPG sources."""
+    file_epg_path = _write_tmp(_epg_xml("FILE", "File Channel", "File Source Programme").encode())
+    upstream = MockHTTPUpstream(
+        routes={
+            "/epg-one.xml": {
+                "status": 200,
+                "body": _epg_xml("CH1", "Channel 1", "First Source Programme"),
+                "headers": {"Content-Type": "application/xml"},
+            },
+            "/epg-two.xml": {
+                "status": 200,
+                "body": _epg_xml("CH2", "Channel 2", "Second Source Programme"),
+                "headers": {"Content-Type": "application/xml"},
+            },
+        }
+    )
+    upstream.start()
+
+    port = find_free_port()
+    m3u_content = (
+        '#EXTM3U x-tvg-url="http://127.0.0.1:%d/epg-one.xml?labels=a,b, '
+        'http://127.0.0.1:%d/epg-two.xml, file://%s"\n'
+        '#EXTINF:-1 tvg-id="CH1",Channel 1\n'
+        "rtp://239.0.0.1:1234\n"
+    ) % (upstream.port, upstream.port, file_epg_path)
+    upstream.routes["/m3u"] = {
+        "status": 200,
+        "body": m3u_content,
+        "headers": {"Content-Type": "audio/x-mpegurl"},
+    }
+
+    r2h = R2HProcess(
+        r2h_binary,
+        port,
+        extra_args=[
+            "-v",
+            "4",
+            "-m",
+            "100",
+            "-M",
+            "http://127.0.0.1:%d/m3u" % upstream.port,
+        ],
+    )
+    r2h.start()
+    time.sleep(1.5)
+    yield r2h, upstream
+    r2h.stop()
+    upstream.stop()
+    os.unlink(file_epg_path)
+
+
+class TestMultipleEPGSources:
+    """Comma-separated EPG sources should be fetched and exposed independently."""
+
+    def test_epg_urls_split_only_before_supported_schemes(self, multi_epg_r2h):
+        """Comma inside query should not split, but comma before http/file URL should."""
+        _, upstream = multi_epg_r2h
+        epg_paths = [req["path"] for req in upstream.requests_log if req["path"].startswith("/epg")]
+
+        assert "/epg-one.xml?labels=a,b" in epg_paths
+        assert "/epg-two.xml" in epg_paths
+        assert not any("epg-one.xml?labels=a,b," in path for path in epg_paths)
+
+    def test_playlist_tvg_url_lists_local_epg_sources(self, multi_epg_r2h):
+        """Converted M3U should expose all cached EPG sources as ordered local URLs."""
+        r2h, _ = multi_epg_r2h
+        status, _, body = http_get("127.0.0.1", r2h.port, "/playlist.m3u")
+
+        assert status == 200
+        epg_urls = _extract_tvg_urls(body.decode())
+        assert len(epg_urls) == 3
+        assert epg_urls[0].endswith("/epg.xml")
+        assert epg_urls[1].endswith("/epg/2.xml")
+        assert epg_urls[2].endswith("/epg/3.xml")
+
+    def test_epg_sources_are_served_by_index(self, multi_epg_r2h):
+        """The first EPG remains on /epg.xml; later EPGs use /epg/N.xml."""
+        r2h, _ = multi_epg_r2h
+
+        status, _, body = http_get("127.0.0.1", r2h.port, "/epg.xml")
+        assert status == 200
+        assert b"First Source Programme" in body
+
+        status, _, body = http_get("127.0.0.1", r2h.port, "/epg/2.xml")
+        assert status == 200
+        assert b"Second Source Programme" in body
+
+        status, _, body = http_get("127.0.0.1", r2h.port, "/epg/3.xml")
+        assert status == 200
+        assert b"File Source Programme" in body
+
+        status, _, _ = http_get("127.0.0.1", r2h.port, "/epg/4.xml")
+        assert status == 404
+
+    def test_multi_epg_tvg_url_includes_token_for_each_source(self, r2h_binary):
+        """Each local EPG URL should receive r2h-token in protected playlists."""
+        epg_one_path = _write_tmp(_epg_xml("CH1", "Channel 1", "First Token Programme").encode())
+        epg_two_path = _write_tmp(_epg_xml("CH2", "Channel 2", "Second Token Programme").encode())
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+r2h-token = {SECRET}
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U x-tvg-url="file://{epg_one_path}, file://{epg_two_path}"
+#EXTINF:-1,Channel
+rtp://239.0.0.1:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            time.sleep(0.5)
+            status, _, body = http_get("127.0.0.1", port, f"/playlist.m3u?r2h-token={SECRET}")
+            assert status == 200
+            epg_urls = _extract_tvg_urls(body.decode())
+            assert len(epg_urls) == 2
+            assert epg_urls[0].endswith(f"/epg.xml?r2h-token={SECRET}")
+            assert epg_urls[1].endswith(f"/epg/2.xml?r2h-token={SECRET}")
+        finally:
+            r2h.stop()
+            os.unlink(epg_one_path)
+            os.unlink(epg_two_path)
+
+    def test_multi_epg_tvg_url_handles_url_encoded_token_growth(self, r2h_binary):
+        """Playlist generation should not fail when URL encoding expands r2h-token in every EPG URL."""
+        token = "%" * 240
+        encoded_token = "%25" * 240
+        epg_dir = tempfile.mkdtemp(prefix="r2h_epg_", dir="/tmp")
+        epg_paths = []
+        for i in range(1, 33):
+            epg_path = os.path.join(epg_dir, f"{i}.xml")
+            with open(epg_path, "wb") as f:
+                f.write(_epg_xml(f"CH{i}", f"Channel {i}", f"Encoded Token Programme {i}").encode())
+            epg_paths.append(epg_path)
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+r2h-token = {token}
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U x-tvg-url="{", ".join(f"file://{path}" for path in epg_paths)}"
+#EXTINF:-1,Channel
+rtp://239.0.0.1:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            time.sleep(0.5)
+            status, _, body = http_get(
+                "127.0.0.1",
+                port,
+                "/playlist.m3u",
+                headers={"Cookie": f"r2h-token={token}"},
+            )
+            assert status == 200
+            epg_urls = _extract_tvg_urls(body.decode())
+            assert len(epg_urls) == len(epg_paths)
+            assert epg_urls[0].endswith(f"/epg.xml?r2h-token={encoded_token}")
+            assert epg_urls[-1].endswith(f"/epg/{len(epg_paths)}.xml?r2h-token={encoded_token}")
+        finally:
+            r2h.stop()
+            shutil.rmtree(epg_dir)
+
+    def test_later_epg_source_available_when_first_source_fails(self, r2h_binary):
+        """A failed EPG source should not prevent later sources from being cached."""
+        upstream = MockHTTPUpstream(
+            routes={
+                "/ok.xml": {
+                    "status": 200,
+                    "body": _epg_xml("CH2", "Channel 2", "Later Source Programme"),
+                    "headers": {"Content-Type": "application/xml"},
+                },
+            }
+        )
+        upstream.start()
+        port = find_free_port()
+        m3u_content = (
+            '#EXTM3U x-tvg-url="http://127.0.0.1:%d/missing.xml,http://127.0.0.1:%d/ok.xml"\n'
+            "#EXTINF:-1,Channel\n"
+            "rtp://239.0.0.1:1234\n"
+        ) % (upstream.port, upstream.port)
+        upstream.routes["/m3u"] = {
+            "status": 200,
+            "body": m3u_content,
+            "headers": {"Content-Type": "audio/x-mpegurl"},
+        }
+        r2h = R2HProcess(
+            r2h_binary,
+            port,
+            extra_args=[
+                "-v",
+                "4",
+                "-m",
+                "100",
+                "-M",
+                "http://127.0.0.1:%d/m3u" % upstream.port,
+            ],
+        )
+        try:
+            r2h.start()
+            time.sleep(1.5)
+            status, _, _ = http_get("127.0.0.1", port, "/epg.xml")
+            assert status == 404
+
+            status, _, body = http_get("127.0.0.1", port, "/epg/2.xml")
+            assert status == 200
+            assert b"Later Source Programme" in body
+        finally:
+            r2h.stop()
+            upstream.stop()
+
+    def test_invalid_updated_m3u_header_clears_previous_epg_sources(self, r2h_binary):
+        """An invalid updated M3U header should not keep serving EPG sources from the prior playlist."""
+        upstream = MockHTTPUpstream(
+            routes={
+                "/epg.xml": {
+                    "status": 200,
+                    "body": _epg_xml("CH1", "Channel 1", "Initial Programme"),
+                    "headers": {"Content-Type": "application/xml"},
+                },
+            }
+        )
+        upstream.start()
+        port = find_free_port()
+        upstream.routes["/m3u"] = {
+            "status": 200,
+            "body": ('#EXTM3U x-tvg-url="http://127.0.0.1:%d/epg.xml"\n#EXTINF:-1,Channel\nrtp://239.0.0.1:1234\n')
+            % upstream.port,
+            "headers": {"Content-Type": "audio/x-mpegurl"},
+        }
+        r2h = R2HProcess(
+            r2h_binary,
+            port,
+            extra_args=[
+                "-v",
+                "4",
+                "-m",
+                "100",
+                "-M",
+                "http://127.0.0.1:%d/m3u" % upstream.port,
+                "-I",
+                "1",
+            ],
+        )
+        try:
+            r2h.start()
+            deadline = time.monotonic() + 4.0
+            while time.monotonic() < deadline:
+                status, _, body = http_get("127.0.0.1", port, "/epg.xml")
+                if status == 200 and b"Initial Programme" in body:
+                    break
+                time.sleep(0.2)
+            else:
+                pytest.fail("initial EPG was not cached")
+
+            upstream.routes["/m3u"] = {
+                "status": 200,
+                "body": '#EXTM3U x-tvg-url="not-an-epg-url"\n#EXTINF:-1,Channel\nrtp://239.0.0.1:1234\n',
+                "headers": {"Content-Type": "audio/x-mpegurl"},
+            }
+
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+                text = body.decode()
+                if status == 200 and "x-tvg-url" not in text:
+                    break
+                time.sleep(0.2)
+            else:
+                pytest.fail("invalid M3U header still exposed previous EPG URLs")
+
+            status, _, _ = http_get("127.0.0.1", port, "/epg.xml")
+            assert status == 404
+        finally:
+            r2h.stop()
+            upstream.stop()

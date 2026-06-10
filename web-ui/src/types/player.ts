@@ -23,6 +23,7 @@ export interface EPGProgram {
 }
 
 export interface M3UMetadata {
+  tvgUrls?: string[];
   tvgUrl?: string;
   channels: Channel[];
   groups: string[];

@@ -100,6 +100,120 @@ static char *extract_tvg_url(const char *line) {
   return result;
 }
 
+static int is_tvg_url_split_start(const char *value) {
+  while (*value && isspace((unsigned char)*value)) {
+    value++;
+  }
+
+  return strncasecmp(value, "http://", 7) == 0 || strncasecmp(value, "https://", 8) == 0 ||
+         strncasecmp(value, "file://", 7) == 0;
+}
+
+static char *trimmed_tvg_url_dup(const char *start, const char *end) {
+  size_t value_len;
+  char *result;
+
+  while (start < end && isspace((unsigned char)*start)) {
+    start++;
+  }
+  while (end > start && isspace((unsigned char)*(end - 1))) {
+    end--;
+  }
+
+  value_len = (size_t)(end - start);
+  if (value_len == 0 || value_len >= MAX_URL_LENGTH) {
+    return NULL;
+  }
+
+  result = malloc(value_len + 1);
+  if (!result)
+    return NULL;
+
+  memcpy(result, start, value_len);
+  result[value_len] = '\0';
+  return result;
+}
+
+static int tvg_url_exists(char **urls, size_t url_count, const char *url) {
+  for (size_t i = 0; i < url_count; i++) {
+    if (strcmp(urls[i], url) == 0) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static int append_tvg_url(char ***urls, size_t *url_count, const char *start, const char *end) {
+  char *url;
+  char **new_urls;
+
+  url = trimmed_tvg_url_dup(start, end);
+  if (!url)
+    return 0;
+
+  if (tvg_url_exists(*urls, *url_count, url)) {
+    free(url);
+    return 0;
+  }
+
+  if (*url_count >= EPG_MAX_SOURCES) {
+    logger(LOG_WARN, "Too many EPG URLs in M3U header, ignoring: %s", url);
+    free(url);
+    return 0;
+  }
+
+  new_urls = realloc(*urls, sizeof(**urls) * (*url_count + 1));
+  if (!new_urls) {
+    logger(LOG_ERROR, "Failed to allocate EPG URL list");
+    free(url);
+    return -1;
+  }
+
+  *urls = new_urls;
+  (*urls)[*url_count] = url;
+  (*url_count)++;
+  return 0;
+}
+
+/* Split comma-separated EPG URLs only when the comma is followed by a known URL
+ * scheme. This avoids treating ordinary commas inside query values as source
+ * separators. */
+static int split_tvg_urls(const char *value, char ***urls_out, size_t *url_count_out) {
+  const char *segment_start;
+  const char *p;
+
+  if (!value || !urls_out || !url_count_out)
+    return -1;
+
+  *urls_out = NULL;
+  *url_count_out = 0;
+  segment_start = value;
+
+  for (p = value; *p; p++) {
+    if (*p == ',' && is_tvg_url_split_start(p + 1)) {
+      if (append_tvg_url(urls_out, url_count_out, segment_start, p) < 0)
+        return -1;
+      segment_start = p + 1;
+    }
+  }
+
+  if (append_tvg_url(urls_out, url_count_out, segment_start, p) < 0)
+    return -1;
+
+  return *url_count_out > 0 ? 0 : -1;
+}
+
+static void free_tvg_urls(char **urls, size_t url_count) {
+  if (!urls)
+    return;
+
+  for (size_t i = 0; i < url_count; i++) {
+    free(urls[i]);
+  }
+  free(urls);
+}
+
 /* Check if an IPv4 address is private (RFC 1918, RFC 6598)
  * Returns: 1 if private, 0 if public
  */
@@ -1028,11 +1142,36 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
       /* Extract EPG URL from header if present */
       char *tvg_url = extract_tvg_url(line);
       if (tvg_url) {
+        char **tvg_urls = NULL;
+        size_t tvg_url_count = 0;
+
         logger(LOG_INFO, "Found EPG URL in M3U header: %s", tvg_url);
 
-        /* Set EPG URL directly (don't fetch yet - will be triggered after
-         * parsing) */
-        epg_set_url(tvg_url);
+        if (split_tvg_urls(tvg_url, &tvg_urls, &tvg_url_count) == 0 && tvg_url_count > 0) {
+          const char **epg_urls = malloc(sizeof(*epg_urls) * tvg_url_count);
+          if (!epg_urls) {
+            logger(LOG_ERROR, "Failed to allocate EPG URL view, clearing existing EPG URLs");
+            epg_set_url(NULL);
+            free_tvg_urls(tvg_urls, tvg_url_count);
+            free(tvg_url);
+            continue;
+          }
+          for (size_t i = 0; i < tvg_url_count; i++) {
+            epg_urls[i] = tvg_urls[i];
+          }
+          /* Set EPG URLs directly (don't fetch yet - will be triggered after
+           * parsing) */
+          if (epg_set_urls(epg_urls, tvg_url_count) < 0) {
+            logger(LOG_ERROR, "Failed to apply EPG URLs from M3U header, clearing existing EPG URLs");
+            epg_set_url(NULL);
+          }
+          free(epg_urls);
+          free_tvg_urls(tvg_urls, tvg_url_count);
+        } else {
+          logger(LOG_WARN, "No valid EPG URLs found in M3U header, clearing existing EPG URLs");
+          epg_set_url(NULL);
+          free_tvg_urls(tvg_urls, tvg_url_count);
+        }
         free(tvg_url);
       }
 
@@ -1317,12 +1456,16 @@ char *m3u_generate_playlist(const char *host_header, const char *x_forwarded_hos
 
   logger(LOG_DEBUG, "Generating M3U with base URL: %s", base_url);
 
+  epg = epg_get_cache();
+
   /* Calculate result size: header + EPG line + content with replacements
    * Estimate: assume worst case where every placeholder gets replaced */
   size_t base_url_len = strlen(base_url);
   size_t placeholder_len = strlen(M3U_BASE_URL_PLACEHOLDER);
   size_t max_replacements = half_size / placeholder_len + 1;
-  size_t header_size = 512; /* Space for #EXTM3U and EPG URL */
+  size_t encoded_token_max_len = config.r2h_token ? strlen(config.r2h_token) * 3 : 0;
+  size_t epg_source_count = epg ? epg->source_count : 0;
+  size_t header_size = 512 + epg_source_count * (base_url_len + encoded_token_max_len + 128); /* Space for EPG URLs */
   result_size = header_size + half_size + (max_replacements * base_url_len) + 1;
 
   result = malloc(result_size);
@@ -1335,8 +1478,7 @@ char *m3u_generate_playlist(const char *host_header, const char *x_forwarded_hos
   dst_ptr = result;
 
   /* Add #EXTM3U header */
-  epg = epg_get_cache();
-  if (epg && epg->url) {
+  if (epg && epg->source_count > 0) {
     /* Add header with EPG URL */
     int written;
     int has_r2h_token = (config.r2h_token && config.r2h_token[0] != '\0');
@@ -1352,28 +1494,62 @@ char *m3u_generate_playlist(const char *host_header, const char *x_forwarded_hos
       }
     }
 
-    if (has_r2h_token && encoded_token) {
-      /* Include r2h-token in EPG URL */
-      if (epg->is_gzipped) {
-        written = snprintf(dst_ptr, result_size - result_used, "#EXTM3U x-tvg-url=\"%sepg.xml.gz?r2h-token=%s\"\n\n",
-                           base_url, encoded_token);
-      } else {
-        written = snprintf(dst_ptr, result_size - result_used, "#EXTM3U x-tvg-url=\"%sepg.xml?r2h-token=%s\"\n\n",
-                           base_url, encoded_token);
-      }
-    } else {
-      /* No token, just basic EPG URL */
-      if (epg->is_gzipped) {
-        written = snprintf(dst_ptr, result_size - result_used, "#EXTM3U x-tvg-url=\"%sepg.xml.gz\"\n\n", base_url);
-      } else {
-        written = snprintf(dst_ptr, result_size - result_used, "#EXTM3U x-tvg-url=\"%sepg.xml\"\n\n", base_url);
-      }
+    written = snprintf(dst_ptr, result_size - result_used, "#EXTM3U x-tvg-url=\"");
+    if (written < 0 || (size_t)written >= result_size - result_used) {
+      logger(LOG_ERROR, "Failed to generate M3U EPG header");
+      if (encoded_token)
+        free(encoded_token);
+      free(result);
+      free(base_url);
+      return NULL;
     }
+    dst_ptr += written;
+    result_used += written;
 
-    if (written > 0) {
+    for (size_t i = 0; i < epg->source_count; i++) {
+      epg_source_t *source = &epg->sources[i];
+
+      if (i == 0) {
+        if (has_r2h_token && encoded_token) {
+          written = snprintf(dst_ptr, result_size - result_used, "%s%s?r2h-token=%s", base_url,
+                             source->is_gzipped ? "epg.xml.gz" : "epg.xml", encoded_token);
+        } else {
+          written = snprintf(dst_ptr, result_size - result_used, "%s%s", base_url,
+                             source->is_gzipped ? "epg.xml.gz" : "epg.xml");
+        }
+      } else {
+        if (has_r2h_token && encoded_token) {
+          written = snprintf(dst_ptr, result_size - result_used, ",%sepg/%zu.%s?r2h-token=%s", base_url, i + 1,
+                             source->is_gzipped ? "xml.gz" : "xml", encoded_token);
+        } else {
+          written = snprintf(dst_ptr, result_size - result_used, ",%sepg/%zu.%s", base_url, i + 1,
+                             source->is_gzipped ? "xml.gz" : "xml");
+        }
+      }
+
+      if (written < 0 || (size_t)written >= result_size - result_used) {
+        logger(LOG_ERROR, "Failed to generate M3U EPG URL list");
+        if (encoded_token)
+          free(encoded_token);
+        free(result);
+        free(base_url);
+        return NULL;
+      }
       dst_ptr += written;
       result_used += written;
     }
+
+    written = snprintf(dst_ptr, result_size - result_used, "\"\n\n");
+    if (written < 0 || (size_t)written >= result_size - result_used) {
+      logger(LOG_ERROR, "Failed to finish M3U EPG header");
+      if (encoded_token)
+        free(encoded_token);
+      free(result);
+      free(base_url);
+      return NULL;
+    }
+    dst_ptr += written;
+    result_used += written;
 
     if (encoded_token) {
       free(encoded_token);
@@ -1506,7 +1682,7 @@ static void m3u_process_and_fetch_epg(const char *m3u_content, const char *sourc
   m3u_parse_and_create_services(m3u_content, source);
 
   /* Trigger async EPG fetch if x-tvg-url was found in M3U and epfd is valid */
-  if (epg_get_cache()->url && epfd >= 0) {
+  if (epg_get_cache()->source_count > 0 && epfd >= 0) {
     epg_fetch_async(epfd);
   }
 }

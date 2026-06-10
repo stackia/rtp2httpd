@@ -28,7 +28,7 @@ Write M3U content directly in the `[services]` section:
 ```ini
 [services]
 # Write M3U content directly, starting with #EXTM3U
-#EXTM3U x-tvg-url="https://example.com/epg.xml.gz"
+#EXTM3U x-tvg-url="https://example.com/epg.xml.gz,https://example.com/backup-epg.xml.gz"
 
 # Basic channel configuration
 #EXTINF:-1 tvg-id="CCTV1" tvg-name="CCTV1" tvg-logo="https://example.com/logo/CCTV1.png" group-title="CCTV",CCTV-1
@@ -65,12 +65,30 @@ http://192.168.1.1:5140/playlist.m3u
 
 Add this URL to any M3U-compatible IPTV player (such as APTV, TiviMate, etc.) to use it.
 
+## Multiple EPG Sources
+
+`x-tvg-url` or `url-tvg` can contain multiple EPG sources separated by commas. rtp2httpd fetches these EPGs in order and converts them to local URLs in the exported playlist, for example:
+
+```m3u
+#EXTM3U x-tvg-url="https://example.com/epg.xml.gz,https://example.com/backup-epg.xml.gz"
+```
+
+After conversion, it becomes something like:
+
+```m3u
+#EXTM3U x-tvg-url="http://192.168.1.1:5140/epg.xml.gz,http://192.168.1.1:5140/epg/2.xml.gz"
+```
+
+The built-in web player matches channels by EPG source order. For the same channel, the first EPG source with matching programme data is used, and later EPG sources only fill channels that were not matched earlier.
+
+To avoid splitting commas inside URLs, rtp2httpd only treats a comma as a new EPG source separator when the text after it (allowing spaces) starts with `http://`, `https://`, or `file://`.
+
 ## Conversion Example
 
 ### Input M3U
 
 ```m3u
-#EXTM3U x-tvg-url="https://example.com/epg.xml.gz"
+#EXTM3U x-tvg-url="https://example.com/epg.xml.gz,https://example.com/backup-epg.xml.gz"
 
 #EXTINF:-1 tvg-id="CCTV1" tvg-name="CCTV1" tvg-logo="https://example.com/logo/CCTV1.png" group-title="CCTV" catchup="default" catchup-source="rtsp://10.0.0.50:554/catchup?auth=loremipsum&playseek={utc:YmdHMS}-{utcend:YmdHMS}",CCTV-1
 rtp://239.253.64.120:5140
@@ -85,7 +103,7 @@ http://10.0.0.60/live/stream.m3u8
 ### Output M3U (After Conversion)
 
 ```m3u
-#EXTM3U x-tvg-url="http://192.168.1.1:5140/epg.xml.gz"
+#EXTM3U x-tvg-url="http://192.168.1.1:5140/epg.xml.gz,http://192.168.1.1:5140/epg/2.xml.gz"
 
 #EXTINF:-1 tvg-id="CCTV1" tvg-name="CCTV1" tvg-logo="https://example.com/logo/CCTV1.png" group-title="CCTV" catchup="default" catchup-source="http://192.168.1.1:5140/CCTV-1/catchup?playseek={utc:YmdHMS}-{utcend:YmdHMS}",CCTV-1
 http://192.168.1.1:5140/CCTV/CCTV-1
@@ -98,7 +116,7 @@ http://192.168.1.1:5140/Internal-HLS-Source
 ```
 
 > [!NOTE]
-> - EPG URL has been converted to rtp2httpd proxy address
+> - EPG URLs have been converted to rtp2httpd proxy addresses in order
 > - CCTV-1 and CCTV-2 URLs have been converted to rtp2httpd proxy addresses
 > - CCTV-1's catchup-source has also been converted, preserving dynamic placeholders
 > - The HLS source's HTTP URL is also converted to an rtp2httpd proxy address, so internal HLS sources can be exposed through rtp2httpd

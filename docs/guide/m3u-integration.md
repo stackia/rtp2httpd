@@ -28,7 +28,7 @@ external-m3u-update-interval = 7200
 ```ini
 [services]
 # 直接编写 M3U 内容，以 #EXTM3U 开头
-#EXTM3U x-tvg-url="https://example.com/epg.xml.gz"
+#EXTM3U x-tvg-url="https://example.com/epg.xml.gz,https://example.com/backup-epg.xml.gz"
 
 # 基础频道配置
 #EXTINF:-1 tvg-id="CCTV1" tvg-name="CCTV1" tvg-logo="https://example.com/logo/CCTV1.png" group-title="央视",CCTV-1
@@ -65,12 +65,30 @@ http://192.168.1.1:5140/playlist.m3u
 
 将此 URL 添加到支持 M3U 的 IPTV 播放器（如 APTV、TiviMate 等）即可使用。
 
+## 多个 EPG 源
+
+`x-tvg-url` 或 `url-tvg` 可以配置多个 EPG 源，使用逗号分隔。rtp2httpd 会按顺序抓取这些 EPG，并在导出的播放列表中转换为本机地址，例如：
+
+```m3u
+#EXTM3U x-tvg-url="https://example.com/epg.xml.gz,https://example.com/backup-epg.xml.gz"
+```
+
+转换后会变成类似：
+
+```m3u
+#EXTM3U x-tvg-url="http://192.168.1.1:5140/epg.xml.gz,http://192.168.1.1:5140/epg/2.xml.gz"
+```
+
+内置 Web 播放器会按 EPG 源顺序匹配频道。对于同一个频道，第一个匹配到节目数据的 EPG 会被使用，后续 EPG 只会补充前面没有匹配到的频道。
+
+为避免误拆 URL 中的逗号，rtp2httpd 只有在逗号后面（允许有空格）是 `http://`、`https://` 或 `file://` 时才会把它识别为新的 EPG 源。
+
 ## 转换示例
 
 ### 输入 M3U
 
 ```m3u
-#EXTM3U x-tvg-url="https://example.com/epg.xml.gz"
+#EXTM3U x-tvg-url="https://example.com/epg.xml.gz,https://example.com/backup-epg.xml.gz"
 
 #EXTINF:-1 tvg-id="CCTV1" tvg-name="CCTV1" tvg-logo="https://example.com/logo/CCTV1.png" group-title="央视" catchup="default" catchup-source="rtsp://10.0.0.50:554/catchup?auth=loremipsum&playseek={utc:YmdHMS}-{utcend:YmdHMS}",CCTV-1
 rtp://239.253.64.120:5140
@@ -85,7 +103,7 @@ http://10.0.0.60/live/stream.m3u8
 ### 输出 M3U（转换后）
 
 ```m3u
-#EXTM3U x-tvg-url="http://192.168.1.1:5140/epg.xml.gz"
+#EXTM3U x-tvg-url="http://192.168.1.1:5140/epg.xml.gz,http://192.168.1.1:5140/epg/2.xml.gz"
 
 #EXTINF:-1 tvg-id="CCTV1" tvg-name="CCTV1" tvg-logo="https://example.com/logo/CCTV1.png" group-title="央视" catchup="default" catchup-source="http://192.168.1.1:5140/CCTV-1/catchup?playseek={utc:YmdHMS}-{utcend:YmdHMS}",CCTV-1
 http://192.168.1.1:5140/央视/CCTV-1
@@ -98,7 +116,7 @@ http://192.168.1.1:5140/内网HLS源
 ```
 
 > [!NOTE]
-> - EPG 的 URL 已转换为 rtp2httpd 代理地址
+> - EPG 的 URL 已按顺序转换为 rtp2httpd 代理地址
 > - CCTV-1 和 CCTV-2 的 URL 已转换为 rtp2httpd 代理地址
 > - CCTV-1 的 catchup-source 也已转换，并保留动态占位符
 > - HLS 源的 HTTP URL 也会被转换为 rtp2httpd 代理地址，便于通过 rtp2httpd 为内网 HLS 源提供外网访问

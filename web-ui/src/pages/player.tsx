@@ -13,7 +13,14 @@ import { Card } from "../components/ui/card";
 import { useLocale } from "../hooks/use-locale";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
-import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG } from "../lib/epg-parser";
+import {
+  type EPGData,
+  fillEPGGaps,
+  getCurrentProgram,
+  getEPGChannelId,
+  loadEPGs,
+  mergeEPGByChannelPriority,
+} from "../lib/epg-parser";
 import { buildCatchupSegments, parseM3U } from "../lib/m3u-parser";
 import {
   getForce16x9,
@@ -213,8 +220,11 @@ function PlayerPage() {
       const parsed = parseM3U(content);
       setMetadata(parsed);
 
+      const epgUrls =
+        parsed.tvgUrls && parsed.tvgUrls.length > 0 ? parsed.tvgUrls : parsed.tvgUrl ? [parsed.tvgUrl] : [];
+
       // Load EPG if available
-      if (parsed.tvgUrl) {
+      if (epgUrls.length > 0) {
         // Build set of valid channel IDs from M3U for filtering
         // Use tvgId, tvgName, and name for EPG matching (with fallback logic)
         const validChannelIds = new Set<string>();
@@ -224,12 +234,13 @@ function PlayerPage() {
           validChannelIds.add(channel.name);
         });
 
-        // Build EPG URL with token if available
-        const epgUrl = parsed.tvgUrl.replace(".gz", "");
+        // Build EPG URLs with token if available
+        const normalizedEpgUrls = epgUrls.map((url) => url.replace(".gz", ""));
 
         // Load EPG and filter to only channels in M3U
-        loadEPG(epgUrl, validChannelIds)
-          .then((epg) => {
+        loadEPGs(normalizedEpgUrls, validChannelIds)
+          .then((epgSources) => {
+            const epg = mergeEPGByChannelPriority(epgSources, parsed.channels);
             // Fill gaps in EPG data with 2-hour fallback programs for catchup-capable channels
             const filledEpg = fillEPGGaps(epg, parsed.channels);
             startTransition(() => setEpgData(filledEpg));
