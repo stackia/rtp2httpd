@@ -1,5 +1,4 @@
 import type { PlayerConfig } from "../config";
-import Browser from "../utils/browser";
 import Log from "../utils/logger";
 
 type Track = "video" | "audio";
@@ -31,9 +30,13 @@ export interface MSE {
   open(onOpen: () => void): void;
   appendInit(track: Track, data: ArrayBuffer, codec: string, container: string): void;
   appendMedia(track: Track, data: ArrayBuffer): void;
+  /** Set the MediaSource duration (e.g. from an HLS VOD playlist) so seeks beyond buffered data are not clamped. */
+  setDuration(seconds: number): void;
   endOfStream(): void;
   destroy(): void;
   onBufferFull: (() => void) | null;
+  /** Fired when buffer space becomes available again after a previous onBufferFull. */
+  onBufferAvailable: (() => void) | null;
   onError: ((info: { code: number; msg: string }) => void) | null;
 }
 
@@ -55,6 +58,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
   let isBufferFull = false;
   let hasPendingEos = false;
+  let pendingDuration: number | null = null;
 
   // Deferred init segments: queued before sourceopen fires
   let pendingSourceBufferInit: { track: Track; data: ArrayBuffer; codec: string; container: string }[] = [];
@@ -120,7 +124,10 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
         try {
           sb.appendBuffer(segment);
-          isBufferFull = false;
+          if (isBufferFull) {
+            isBufferFull = false;
+            mse.onBufferAvailable?.();
+          }
         } catch (error: unknown) {
           pendingSegments[track].unshift(segment);
           if ((error as DOMException).code === 22) {
@@ -191,13 +198,35 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     }
   }
 
+  function tryApplyDuration(): void {
+    if (pendingDuration === null || mediaSource?.readyState !== "open") {
+      return;
+    }
+    if (sourceBuffers.video?.updating || sourceBuffers.audio?.updating) {
+      return; // retried on the next updateend
+    }
+    try {
+      if (!(mediaSource.duration >= pendingDuration)) {
+        mediaSource.duration = pendingDuration;
+      }
+      pendingDuration = null;
+    } catch (error: unknown) {
+      Log.w(TAG, `Failed to set duration: ${(error as Error).message}`);
+    }
+  }
+
   function onSourceBufferUpdateEnd(): void {
+    tryApplyDuration();
     if (hasPendingRemoveRanges()) {
       doRemoveRanges();
     } else if (hasPendingSegments()) {
       doAppendSegments();
     } else if (hasPendingEos) {
       mse.endOfStream();
+    } else if (isBufferFull) {
+      // All queued segments drained and removals finished — buffer has room again
+      isBufferFull = false;
+      mse.onBufferAvailable?.();
     }
   }
 
@@ -210,14 +239,9 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
       return;
     }
 
-    let adjustedCodec = codec;
-    if (adjustedCodec === "opus" && Browser.safari) {
-      adjustedCodec = "Opus";
-    }
-
     let mimeType = container;
-    if (adjustedCodec && adjustedCodec.length > 0) {
-      mimeType += `;codecs=${adjustedCodec}`;
+    if (codec && codec.length > 0) {
+      mimeType += `;codecs=${codec}`;
     }
 
     if (mimeType !== mimeTypes[track]) {
@@ -250,6 +274,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
   const mse: MSE = {
     onBufferFull: null,
+    onBufferAvailable: null,
     onError: null,
 
     open(onOpen: () => void): void {
@@ -352,17 +377,12 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         return;
       }
 
-      let adjustedCodec = codec;
-      if (adjustedCodec === "opus" && Browser.safari) {
-        adjustedCodec = "Opus";
-      }
-
-      const mimePreview = adjustedCodec ? `${container};codecs=${adjustedCodec}` : container;
+      const mimePreview = codec ? `${container};codecs=${codec}` : container;
       Log.v(TAG, `Received Initialization Segment, mimeType: ${mimePreview}`);
-      lastInitSegments[track] = { data, codec: adjustedCodec, container };
+      lastInitSegments[track] = { data, codec, container };
 
       const firstInit = !mimeTypes[track];
-      createSourceBuffer(track, adjustedCodec, container);
+      createSourceBuffer(track, codec, container);
 
       pendingSegments[track].push(data);
 
@@ -385,6 +405,11 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
       if (sb && !sb.updating && !hasPendingRemoveRanges()) {
         doAppendSegments();
       }
+    },
+
+    setDuration(seconds: number): void {
+      pendingDuration = seconds;
+      tryApplyDuration();
     },
 
     endOfStream(): void {
@@ -463,6 +488,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         pendingSourceBufferInit = [];
         isBufferFull = false;
         hasPendingEos = false;
+        pendingDuration = null;
         mediaSource = null;
       }
 
@@ -478,6 +504,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
       }
 
       mse.onBufferFull = null;
+      mse.onBufferAvailable = null;
       mse.onError = null;
       sourceOpenCallback = null;
     },

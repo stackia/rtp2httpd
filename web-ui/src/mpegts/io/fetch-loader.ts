@@ -1,5 +1,4 @@
 import type { PlayerConfig } from "../config";
-import Browser from "../utils/browser";
 import { IllegalStateException, RuntimeException } from "../utils/exception";
 import Log from "../utils/logger";
 
@@ -369,11 +368,6 @@ class FetchLoader {
         const errCode = typeof err.code === "number" ? err.code : -1;
         const errMsg = typeof err.message === "string" ? err.message : "";
 
-        if (errCode === 11 && Browser.msedge) {
-          // InvalidStateError on Microsoft Edge – ignore
-          return;
-        }
-
         this._status = LoaderStatus.kError;
         let type: string;
         let info: LoaderErrorInfo;
@@ -396,13 +390,11 @@ class FetchLoader {
   private _abortFetch(): void {
     this._requestAbort = true;
 
-    if (this._status !== LoaderStatus.kBuffering || !Browser.chrome) {
-      if (this._abortController) {
-        try {
-          this._abortController.abort();
-        } catch (_e) {
-          /* swallow */
-        }
+    if (this._abortController) {
+      try {
+        this._abortController.abort();
+      } catch (_e) {
+        /* swallow */
       }
     }
   }

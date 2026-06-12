@@ -17,6 +17,10 @@ export function isBuffered(video: HTMLMediaElement, seconds: number): boolean {
   return false;
 }
 
+/** Forward buffer watermarks for HLS VOD/EVENT: pause fetching when far ahead of playback. */
+const VOD_FORWARD_BUFFER_PAUSE = 30;
+const VOD_FORWARD_BUFFER_RESUME = 15;
+
 export function createMpegtsPlayer(
   video: HTMLVideoElement,
   config: PlayerConfig,
@@ -30,6 +34,11 @@ export function createMpegtsPlayer(
   let destroyStallJumper: (() => void) | null = null;
   let mseGeneration = 0;
   let liveSyncEnabled = config.liveSync;
+
+  // HLS playlist info reported by the worker (null when playing a non-HLS source)
+  let hlsInfo: { live: boolean; totalDuration: number } | null = null;
+  let watermarkTimer: ReturnType<typeof setInterval> | null = null;
+  let watermarkPaused = false;
 
   // PCM audio player for software-decoded audio (MP2)
   let pcmPlayer: PCMAudioPlayer | null = null;
@@ -75,10 +84,12 @@ export function createMpegtsPlayer(
       case "complete":
         mse?.endOfStream();
         break;
-      case "media-info":
-        break;
-      case "hls-detected":
-        impl.onHLSDetected?.();
+      case "hls-info":
+        hlsInfo = { live: msg.live, totalDuration: msg.totalDuration };
+        if (!msg.live) {
+          mse?.setDuration(msg.totalDuration);
+          startWatermarkThrottle();
+        }
         break;
       case "pcm-audio-data": {
         const player = ensurePCMPlayer();
@@ -98,6 +109,31 @@ export function createMpegtsPlayer(
       workerInitialized = false;
     }
     return worker;
+  }
+
+  /** Throttle fetching for HLS VOD/EVENT: pause the worker when buffered far ahead of playback. */
+  function startWatermarkThrottle(): void {
+    if (watermarkTimer) return;
+    watermarkTimer = setInterval(() => {
+      const buffered = video.buffered;
+      if (buffered.length === 0) return;
+      const ahead = buffered.end(buffered.length - 1) - video.currentTime;
+      if (!watermarkPaused && ahead > VOD_FORWARD_BUFFER_PAUSE) {
+        watermarkPaused = true;
+        worker?.postMessage({ type: "pause" } satisfies WorkerCommand);
+      } else if (watermarkPaused && ahead < VOD_FORWARD_BUFFER_RESUME) {
+        watermarkPaused = false;
+        worker?.postMessage({ type: "resume" } satisfies WorkerCommand);
+      }
+    }, 1000);
+  }
+
+  function stopWatermarkThrottle(): void {
+    if (watermarkTimer) {
+      clearInterval(watermarkTimer);
+      watermarkTimer = null;
+    }
+    watermarkPaused = false;
   }
 
   function loadInWorker(segments: PlayerSegment[]): void {
@@ -130,6 +166,13 @@ export function createMpegtsPlayer(
       worker?.postMessage(cmd);
     };
 
+    mse.onBufferAvailable = () => {
+      // Don't resume while the VOD watermark throttle is intentionally holding the worker
+      if (watermarkPaused) return;
+      const cmd: WorkerCommand = { type: "resume" };
+      worker?.postMessage(cmd);
+    };
+
     mse.onError = (info) => {
       impl.onError?.({
         category: "media",
@@ -152,6 +195,8 @@ export function createMpegtsPlayer(
 
     loadSegments(segments: PlayerSegment[]) {
       mseGeneration++;
+      hlsInfo = null;
+      stopWatermarkThrottle();
       if (mse) {
         mse.destroy();
         mse = null;
@@ -176,6 +221,11 @@ export function createMpegtsPlayer(
     seek(seconds: number) {
       if (isBuffered(video, seconds)) {
         video.currentTime = seconds;
+      } else if (hlsInfo && !hlsInfo.live) {
+        // HLS VOD/EVENT: reposition inside the playlist (worker reschedules segments)
+        const cmd: WorkerCommand = { type: "seek", seconds };
+        worker?.postMessage(cmd);
+        video.currentTime = seconds;
       } else {
         for (const h of seekHandlers) {
           h(seconds);
@@ -184,6 +234,8 @@ export function createMpegtsPlayer(
     },
 
     suspend() {
+      stopWatermarkThrottle();
+      hlsInfo = null;
       if (mse) {
         mse.destroy();
         mse = null;
