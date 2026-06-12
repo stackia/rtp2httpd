@@ -1451,7 +1451,11 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
 
   case RTSP_STATE_AWAITING_OPTIONS:
     /* OPTIONS response received, ready to send DESCRIBE */
-    snprintf(extra_headers, sizeof(extra_headers), "Accept: application/sdp\r\n");
+    if (session->session_id[0] != '\0') {
+      snprintf(extra_headers, sizeof(extra_headers), "Accept: application/sdp\r\nSession: %s\r\n", session->session_id);
+    } else {
+      snprintf(extra_headers, sizeof(extra_headers), "Accept: application/sdp\r\n");
+    }
     if (rtsp_prepare_request(session, RTSP_METHOD_DESCRIBE, NULL, extra_headers) < 0) {
       logger(LOG_ERROR, "RTSP: Failed to prepare DESCRIBE request");
       return -1;

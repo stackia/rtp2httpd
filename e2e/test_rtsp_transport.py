@@ -92,6 +92,28 @@ class TestRTSPTCPStream:
         finally:
             rtsp.stop()
 
+    def test_describe_echoes_options_session(self, shared_r2h):
+        """HMS-style servers return Session in OPTIONS; DESCRIBE must echo it."""
+        session_id = "2728486233"
+        rtsp = MockRTSPServer(num_packets=200, options_session_id=session_id)
+        rtsp.start()
+        try:
+            status, _, body = stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+            assert status == 200, "Expected stream to succeed when DESCRIBE carries Session"
+            assert len(body) > 0
+
+            describe_req = next(r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE")
+            assert describe_req["headers"].get("Session") == session_id
+            assert rtsp.requests_received.index("OPTIONS") < rtsp.requests_received.index("DESCRIBE")
+        finally:
+            rtsp.stop()
+
 
 # ===================================================================
 # UDP transport
