@@ -12,7 +12,8 @@ typedef struct seek_parse_result_s {
   int begin_parsed;
   int end_parsed;
   int tz_offset_seconds;
-  int seek_offset_seconds;
+  int seek_begin_offset_seconds;
+  int seek_end_offset_seconds;
   int is_recent;
   time_t now_utc;
   time_t begin_utc;

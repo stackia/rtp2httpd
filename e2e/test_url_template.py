@@ -566,6 +566,39 @@ class TestHTTPPathTemplateTimezone:
         finally:
             upstream.stop()
 
+    def test_seek_offset_pair_applied(self, shared_r2h):
+        """r2h-seek-offset=a,b should shift template begin and end independently."""
+        # begin + 30s = 12:00:30, end - 60s = 12:59:00
+        expected_path = "/path/20240101120030/20240101125900/file.m3u8"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d"
+                "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file.m3u8"
+                "?playseek=20240101120000-20240101130000&r2h-seek-offset=30,-60"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_seek_offset_pair_begin_only_template(self, shared_r2h):
+        """When seek has no end time, r2h-seek-offset=a,b should use only begin offset."""
+        expected_path = "/path/20240101120030/file.m3u8"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/file.m3u8?playseek=20240101120000&r2h-seek-offset=30,-60"
+            ) % upstream.port
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
     def test_tz_and_offset_combined(self, shared_r2h):
         """TZ/UTC+8 + r2h-seek-offset=3600: 12:00 CST+1h=13:00 CST, end 14:00 CST (local time)."""
         expected_path = "/path/20240101130000/20240101140000/file.m3u8"
@@ -723,6 +756,23 @@ class TestHTTPPathTemplateTimezone:
                 "/http/127.0.0.1:%d"
                 "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file"
                 "?playseek=%d-%d&r2h-seek-offset=3600"
+            ) % (upstream.port, _BEGIN_EPOCH, _END_EPOCH)
+            status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+            assert status == 200
+            assert _get_upstream_path(upstream) == expected_path
+        finally:
+            upstream.stop()
+
+    def test_seek_offset_pair_with_unix_timestamp_seek(self, shared_r2h):
+        """r2h-seek-offset=a,b should shift Unix timestamp begin/end independently."""
+        expected_path = "/path/20240101120030/20240101125900/file"
+        upstream = _make_upstream(expected_path)
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d"
+                "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/file"
+                "?playseek=%d-%d&r2h-seek-offset=30,-60"
             ) % (upstream.port, _BEGIN_EPOCH, _END_EPOCH)
             status, _, _ = http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
             assert status == 200
@@ -1189,6 +1239,21 @@ class TestHTTPQueryAppendOffset:
         finally:
             upstream.stop()
 
+    def test_offset_pair(self, shared_r2h):
+        """r2h-seek-offset=a,b should add separate begin/end offsets."""
+        upstream = _make_upstream("/stream")
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=30,-60"
+            ) % upstream.port
+            http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+
+            path = _get_upstream_path(upstream)
+            assert _extract_query_param(path, "playseek") == "20240101120030-20240101125900"
+        finally:
+            upstream.stop()
+
     def test_negative_offset(self, shared_r2h):
         """r2h-seek-offset=-30 should subtract 30 seconds."""
         upstream = _make_upstream("/stream")
@@ -1201,6 +1266,23 @@ class TestHTTPQueryAppendOffset:
 
             path = _get_upstream_path(upstream)
             assert _extract_query_param(path, "playseek") == "20240101115930-20240101125930"
+        finally:
+            upstream.stop()
+
+    def test_overflow_offset_rejected(self, shared_r2h):
+        """Overflowing r2h-seek-offset should be ignored."""
+        upstream = _make_upstream("/stream")
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000"
+                "&r2h-seek-offset=999999999999999999999999999999"
+            ) % upstream.port
+            http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+
+            path = _get_upstream_path(upstream)
+            assert _extract_query_param(path, "playseek") == "20240101120000-20240101130000"
+            assert "r2h-seek-offset" not in path, "r2h-seek-offset should be stripped, got: %s" % path
         finally:
             upstream.stop()
 
@@ -1229,6 +1311,19 @@ class TestHTTPQueryAppendOffset:
 
             path = _get_upstream_path(upstream)
             assert _extract_query_param(path, "playseek") == "1704099600-1704103200"
+        finally:
+            upstream.stop()
+
+    def test_offset_pair_with_unix_timestamp(self, shared_r2h):
+        """r2h-seek-offset=a,b should preserve Unix timestamp output format."""
+        upstream = _make_upstream("/stream")
+        upstream.start()
+        try:
+            url = ("/http/127.0.0.1:%d/stream?playseek=1704096000-1704099600&r2h-seek-offset=30,-60") % upstream.port
+            http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+
+            path = _get_upstream_path(upstream)
+            assert _extract_query_param(path, "playseek") == "1704096030-1704099540"
         finally:
             upstream.stop()
 
@@ -2333,6 +2428,27 @@ class TestRTSPQueryAppendOffsetAndFormat:
 
             uri = _get_describe_uri(rtsp)
             assert _extract_query_param(uri, "playseek") == "20240101130000-20240101140000"
+        finally:
+            rtsp.stop()
+
+    def test_offset_pair(self, shared_r2h):
+        """r2h-seek-offset=a,b should add separate begin/end offsets in RTSP."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            url = (
+                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=30,-60"
+            ) % rtsp.port
+            stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                url,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+
+            uri = _get_describe_uri(rtsp)
+            assert _extract_query_param(uri, "playseek") == "20240101120030-20240101125900"
         finally:
             rtsp.stop()
 

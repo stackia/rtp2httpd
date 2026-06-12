@@ -369,6 +369,29 @@ class TestRTSPSeekMode:
         finally:
             rtsp.stop()
 
+    def test_range_offset_pair_uses_begin_for_clock(self, shared_r2h):
+        """r2h-seek-offset=a,b should use begin offset for the clock= header."""
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            base_ts = int(time.time()) - 3000  # 50 min ago
+            begin_offset = 1800  # +30 min, still within 60min window relative to begin
+            end_offset = -1800
+            cst_str = _format_yyyyMMddHHmmss(base_ts + 8 * 3600)
+            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-offset=%d,%d&r2h-seek-mode=range(UTC%%2B8/3600)" % (
+                rtsp.port,
+                cst_str,
+                begin_offset,
+                end_offset,
+            )
+
+            stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+            play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
+            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(base_ts + begin_offset)
+        finally:
+            rtsp.stop()
+
     def test_range_offset_pushes_outside_window_falls_back(self, shared_r2h):
         """If r2h-seek-offset shifts begin out of the window, fall back to passthrough."""
         rtsp = MockRTSPServer(num_packets=500)
@@ -564,6 +587,33 @@ class TestRTSPSeekModeQueryMerge:
                 expected_str = _format_yyyyMMddHHmmss(base_ts + 7200)
                 assert "playseek=%s" % expected_str in describe_reqs[0]["uri"], (
                     "request offset (7200) should have applied; got URI %s" % describe_reqs[0]["uri"]
+                )
+            finally:
+                r2h.stop()
+        finally:
+            rtsp.stop()
+
+    def test_configured_seek_offset_pair_fallback(self, r2h_binary):
+        """Configured r2h-seek-offset=a,b should be used when the request omits it."""
+        r2h_port = find_free_port()
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            config = make_m3u_rtsp_config(r2h_port, rtsp.port, "OffsetPairMerge", "?r2h-seek-offset=30,-60")
+            r2h = R2HProcess(r2h_binary, r2h_port, config_content=config)
+            r2h.start()
+            try:
+                url = "/OffsetPairMerge?playseek=20240101120000-20240101130000"
+
+                stream_get("127.0.0.1", r2h_port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
+
+                describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
+                assert describe_reqs, "expected at least one DESCRIBE"
+                assert "r2h-seek-offset" not in describe_reqs[0]["uri"], (
+                    "r2h-seek-offset leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                )
+                assert "playseek=20240101120030-20240101125900" in describe_reqs[0]["uri"], (
+                    "configured offset pair should have applied; got URI %s" % describe_reqs[0]["uri"]
                 )
             finally:
                 r2h.stop()

@@ -8,7 +8,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:622
+#: htdocs/luci-static/resources/view/rtp2httpd.js:788
 msgid ""
 "Additional FFmpeg arguments for snapshot generation. Common options: -"
 "hwaccel none, -hwaccel auto, -hwaccel vaapi (for Intel GPU)"
@@ -16,52 +16,52 @@ msgstr ""
 "生成快照时传递给 FFmpeg 的额外参数。常用选项：-hwaccel none（无硬件加速）、-"
 "hwaccel auto（自动）、-hwaccel vaapi（Intel GPU）"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:257
+#: htdocs/luci-static/resources/view/rtp2httpd.js:423
 msgid "Advanced Interface Settings"
 msgstr "高级接口设置"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:189
+#: htdocs/luci-static/resources/view/rtp2httpd.js:307
 msgid "Auto restart after crash"
 msgstr "程序崩溃后自动重启"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:172
+#: htdocs/luci-static/resources/view/rtp2httpd.js:290
 msgid "Basic Settings"
 msgstr "基础设置"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:357
+#: htdocs/luci-static/resources/view/rtp2httpd.js:523
 msgid "Buffer Pool Max Size"
 msgstr "缓冲池最大容量"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:551
+#: htdocs/luci-static/resources/view/rtp2httpd.js:717
 msgid "CORS Allow Origin"
 msgstr "CORS 允许的源"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:208
+#: htdocs/luci-static/resources/view/rtp2httpd.js:326
 msgid "Config File Content"
 msgstr "配置文件内容"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:258
+#: htdocs/luci-static/resources/view/rtp2httpd.js:424
 msgid "Configure separate interfaces for multicast, FCC and RTSP"
 msgstr "分别配置组播、FCC 和 RTSP 的接口"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:270
+#: htdocs/luci-static/resources/view/rtp2httpd.js:436
 msgid ""
 "Default interface for all upstream traffic (multicast, FCC and RTSP). Leave "
 "empty to use routing table."
 msgstr "所有上游流量（组播、FCC 和 RTSP）使用的默认接口。留空则使用路由表。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:209
+#: htdocs/luci-static/resources/view/rtp2httpd.js:327
 msgid "Edit the content of /etc/rtp2httpd.conf"
 msgstr "编辑 /etc/rtp2httpd.conf 的内容"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:598
+#: htdocs/luci-static/resources/view/rtp2httpd.js:764
 msgid ""
 "Enable video snapshot feature. When enabled, clients can request snapshots "
 "with snapshot=1 query parameter"
 msgstr ""
 "启用视频快照功能。启用后，客户端可以通过 snapshot=1 查询参数请求视频快照"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:410
+#: htdocs/luci-static/resources/view/rtp2httpd.js:576
 msgid ""
 "Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires "
 "kernel 4.14+ (MSG_ZEROCOPY support). On supported devices, this can improve "
@@ -72,38 +72,38 @@ msgstr ""
 "在支持的设备上，可提升吞吐量并降低 CPU 占用，特别是在高并发负载下。建议仅在遇"
 "到性能瓶颈时开启。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:178
+#: htdocs/luci-static/resources/view/rtp2httpd.js:296
 msgid "Enabled"
 msgstr "启用"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:433
+#: htdocs/luci-static/resources/view/rtp2httpd.js:599
 msgid "External M3U"
 msgstr "外部 M3U"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:445
+#: htdocs/luci-static/resources/view/rtp2httpd.js:611
 msgid "External M3U Update Interval"
 msgstr "外部 M3U 更新间隔"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:447
+#: htdocs/luci-static/resources/view/rtp2httpd.js:613
 msgid ""
 "External M3U automatic update interval in seconds (default: 7200 = 2 hours). "
 "Set to 0 to disable automatic updates."
 msgstr ""
 "外部 M3U 自动更新间隔（秒），默认 7200（2 小时）。设为 0 禁用自动更新。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:396
+#: htdocs/luci-static/resources/view/rtp2httpd.js:562
 msgid "FCC Listen Port Range"
 msgstr "FCC 监听端口范围"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:620
+#: htdocs/luci-static/resources/view/rtp2httpd.js:786
 msgid "FFmpeg Arguments"
 msgstr "FFmpeg 参数"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:608
+#: htdocs/luci-static/resources/view/rtp2httpd.js:774
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:435
+#: htdocs/luci-static/resources/view/rtp2httpd.js:601
 msgid ""
 "Fetch M3U playlist from a URL (file://, http://, https:// supported). "
 "Example: https://example.com/playlist.m3u or file:///path/to/playlist.m3u"
@@ -115,54 +115,9 @@ msgstr ""
 msgid "Grant UCI access for luci-app-rtp2httpd"
 msgstr "为 luci-app-rtp2httpd 授予 UCI 的访问权限"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:574
+#: htdocs/luci-static/resources/view/rtp2httpd.js:740
 msgid "HTTP Proxy User-Agent"
 msgstr "HTTP 代理 User-Agent"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:529
-msgid "Hostname"
-msgstr "主机名/域名"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:542
-msgid ""
-"If set, all HTTP requests must include r2h-token query parameter with "
-"matching value (e.g., http://server:port/rtp/ip:port?fcc=ip:port&r2h-"
-"token=your-token)"
-msgstr ""
-"设置后，所有 HTTP 请求必须携带 r2h-token 查询参数，且值与此配置匹配（例如："
-"http://server:port/rtp/ip:port?fcc=ip:port&r2h-token=your-token）"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:297
-msgid ""
-"Interface to use for FCC unicast upstream media stream (default: use routing "
-"table)"
-msgstr "用于 FCC 单播上游媒体流的接口（默认：使用路由表）"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:323
-msgid ""
-"Interface to use for HTTP proxy upstream requests (default: use routing "
-"table)"
-msgstr "用于 HTTP 代理上游请求的接口（默认：使用路由表）"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:310
-msgid ""
-"Interface to use for RTSP unicast upstream media stream (default: use "
-"routing table)"
-msgstr "用于 RTSP 单播上游媒体流的接口（默认：使用路由表）"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:284
-msgid ""
-"Interface to use for multicast (RTP/UDP) upstream media stream (default: use "
-"routing table)"
-msgstr "用于组播（RTP/UDP）上游媒体流的接口（默认：使用路由表）"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:398
-msgid ""
-"Local UDP port range for FCC client sockets (format: start-end, e.g., "
-"40000-40100). Leave empty to use random ports."
-msgstr ""
-"FCC 客户端套接字使用的本地 UDP 端口范围（格式：起始端口-结束端口，例如："
-"40000-40100）。留空则使用随机端口。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:361
 msgid ""
@@ -172,19 +127,64 @@ msgstr ""
 "HTTP 监听地址。使用裸端口表示监听所有地址（例如：5140），IPv4/主机名使用 "
 "address:port，IPv6 使用 [IPv6]:port。"
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js:695
+msgid "Hostname"
+msgstr "主机名/域名"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:708
+msgid ""
+"If set, all HTTP requests must include r2h-token query parameter with "
+"matching value (e.g., http://server:port/rtp/ip:port?fcc=ip:port&r2h-"
+"token=your-token)"
+msgstr ""
+"设置后，所有 HTTP 请求必须携带 r2h-token 查询参数，且值与此配置匹配（例如："
+"http://server:port/rtp/ip:port?fcc=ip:port&r2h-token=your-token）"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:463
+msgid ""
+"Interface to use for FCC unicast upstream media stream (default: use routing "
+"table)"
+msgstr "用于 FCC 单播上游媒体流的接口（默认：使用路由表）"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:489
+msgid ""
+"Interface to use for HTTP proxy upstream requests (default: use routing "
+"table)"
+msgstr "用于 HTTP 代理上游请求的接口（默认：使用路由表）"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:476
+msgid ""
+"Interface to use for RTSP unicast upstream media stream (default: use "
+"routing table)"
+msgstr "用于 RTSP 单播上游媒体流的接口（默认：使用路由表）"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:450
+msgid ""
+"Interface to use for multicast (RTP/UDP) upstream media stream (default: use "
+"routing table)"
+msgstr "用于组播（RTP/UDP）上游媒体流的接口（默认：使用路由表）"
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:359
 msgid "Listen Addresses"
 msgstr "监听地址"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:300
+#: htdocs/luci-static/resources/view/rtp2httpd.js:564
+msgid ""
+"Local UDP port range for FCC client sockets (format: start-end, e.g., "
+"40000-40100). Leave empty to use random ports."
+msgstr ""
+"FCC 客户端套接字使用的本地 UDP 端口范围（格式：起始端口-结束端口，例如："
+"40000-40100）。留空则使用随机端口。"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:408
 msgid "Logging level"
 msgstr "日志级别"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:334
+#: htdocs/luci-static/resources/view/rtp2httpd.js:500
 msgid "Max clients allowed"
 msgstr "最大客户端数"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:359
+#: htdocs/luci-static/resources/view/rtp2httpd.js:525
 msgid ""
 "Maximum number of buffers in zero-copy pool. Each buffer is 1536 bytes. "
 "Default is 16384 (~24MB). Increase to improve throughput for multi-client "
@@ -193,38 +193,38 @@ msgstr ""
 "零拷贝缓冲池的最大缓冲区数量。每个缓冲区 1536 字节，默认 16384 个（约 "
 "24MB）。增大此值以提高多客户端并发时的吞吐量。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:175
+#: htdocs/luci-static/resources/view/rtp2httpd.js:293
 msgid "Monitoring & Advanced"
 msgstr "监控与高级功能"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:383
+#: htdocs/luci-static/resources/view/rtp2httpd.js:549
 msgid "Multicast Rejoin Interval"
 msgstr "组播周期性重新加入间隔"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:173
+#: htdocs/luci-static/resources/view/rtp2httpd.js:291
 msgid "Network & Performance"
 msgstr "网络与性能"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:470
+#: htdocs/luci-static/resources/view/rtp2httpd.js:636
 msgid "Note: The player page requires External M3U URL to be configured first."
 msgstr "注意：播放器页面需要先配置外部 M3U URL 才能使用。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:346
+#: htdocs/luci-static/resources/view/rtp2httpd.js:512
 msgid ""
 "Number of worker processes. Set to 1 for resource-constrained devices, or "
 "CPU cores for best performance."
 msgstr ""
 "工作进程数量。资源紧凑设备建议设置为 1，最佳吞吐量可以设置为 CPU 核心数。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:477
+#: htdocs/luci-static/resources/view/rtp2httpd.js:643
 msgid "Open Player Page"
 msgstr "打开播放器页面"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:509
+#: htdocs/luci-static/resources/view/rtp2httpd.js:675
 msgid "Open Status Dashboard"
 msgstr "打开状态面板"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:576
+#: htdocs/luci-static/resources/view/rtp2httpd.js:742
 msgid ""
 "Override the User-Agent header sent to upstream HTTP proxy requests. Leave "
 "empty to forward the client User-Agent as-is."
@@ -232,12 +232,12 @@ msgstr ""
 "覆盖发送给上游 HTTP 代理请求的 User-Agent 请求头。留空则按原样转发客户端的 "
 "User-Agent。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:610
+#: htdocs/luci-static/resources/view/rtp2httpd.js:776
 msgid ""
 "Path to FFmpeg executable. Leave empty to use system PATH (default: ffmpeg)"
 msgstr "FFmpeg 可执行文件的路径。留空则使用系统 PATH（默认：ffmpeg）"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:385
+#: htdocs/luci-static/resources/view/rtp2httpd.js:551
 msgid ""
 "Periodic multicast rejoin interval in seconds (0=disabled, default 0). "
 "Enable this (e.g., 30-120 seconds) if your network switches timeout "
@@ -248,39 +248,39 @@ msgstr ""
 "机因缺少 IGMP Query 消息而导致组播成员关系超时，可以启用此功能（建议 30-120 "
 "秒）。仅在遭遇组播断流时需要启用。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:174
+#: htdocs/luci-static/resources/view/rtp2httpd.js:292
 msgid "Player & M3U"
 msgstr "播放器与 M3U"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:476
+#: htdocs/luci-static/resources/view/rtp2httpd.js:642
 msgid "Player Page"
 msgstr "播放器页面"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:458
+#: htdocs/luci-static/resources/view/rtp2httpd.js:624
 msgid "Player Page Path"
 msgstr "播放器页面路径"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:495
+#: htdocs/luci-static/resources/view/rtp2httpd.js:661
 msgid "Please configure External M3U URL first"
 msgstr "请先配置外部 M3U URL"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:540
+#: htdocs/luci-static/resources/view/rtp2httpd.js:706
 msgid "R2H Token"
 msgstr "HTTP 请求认证令牌"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:420
+#: htdocs/luci-static/resources/view/rtp2httpd.js:586
 msgid "RTSP STUN Server"
 msgstr "RTSP STUN 服务器"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:585
+#: htdocs/luci-static/resources/view/rtp2httpd.js:751
 msgid "RTSP User-Agent"
 msgstr "RTSP User-Agent"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:188
+#: htdocs/luci-static/resources/view/rtp2httpd.js:306
 msgid "Respawn"
 msgstr "自动重启"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:553
+#: htdocs/luci-static/resources/view/rtp2httpd.js:719
 msgid ""
 "Set Access-Control-Allow-Origin header to enable CORS. Use * to allow all "
 "origins, or specify a domain (e.g., https://example.com). Leave empty to "
@@ -289,33 +289,19 @@ msgstr ""
 "设置 Access-Control-Allow-Origin 响应头以启用 CORS 跨域访问。设为 * 允许所有"
 "来源，或指定域名（如 https://example.com）。留空则禁用 CORS。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:92
-msgid ""
-"Use a bare port such as 5140 to listen on all addresses; *:5140 is not "
-"supported here."
-msgstr "使用 5140 这样的裸端口监听所有地址；这里不支持 *:5140。"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:98
-msgid ""
-"Use port, address:port, hostname:port, or [IPv6]:port, for example 5140 or "
-"192.168.1.1:8081."
-msgstr ""
-"请使用端口、address:port、hostname:port 或 [IPv6]:port 格式，例如 5140 或 "
-"192.168.1.1:8081。"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:507
+#: htdocs/luci-static/resources/view/rtp2httpd.js:673
 msgid "Status Dashboard"
 msgstr "状态面板"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:519
+#: htdocs/luci-static/resources/view/rtp2httpd.js:685
 msgid "Status Page Path"
 msgstr "状态页面路径"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:370
+#: htdocs/luci-static/resources/view/rtp2httpd.js:536
 msgid "UDP Receive Buffer Size"
 msgstr "UDP 接收缓冲区大小"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:372
+#: htdocs/luci-static/resources/view/rtp2httpd.js:538
 msgid ""
 "UDP socket receive buffer size in bytes. Applies to multicast, FCC, and RTSP "
 "sockets. Default is 524288 (512KB). For 4K IPTV streams at ~30 Mbps, 512KB "
@@ -326,43 +312,57 @@ msgstr ""
 "（512KB）。对于 30 Mbps 的 4K IPTV 流，512KB 可提供约 140ms 的缓冲。增大此值"
 "以减少丢包。注意：实际大小可能受内核参数 net.core.rmem_max 限制。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:459
+#: htdocs/luci-static/resources/view/rtp2httpd.js:625
 msgid "URL path for the player page (default: /player)"
 msgstr "播放器页面的 URL 路径（默认：/player）"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:520
+#: htdocs/luci-static/resources/view/rtp2httpd.js:686
 msgid "URL path for the status page (default: /status)"
 msgstr "状态页面的 URL 路径（默认：/status）"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:295
+#: htdocs/luci-static/resources/view/rtp2httpd.js:461
 msgid "Upstream FCC Interface"
 msgstr "上游 FCC 接口"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:321
+#: htdocs/luci-static/resources/view/rtp2httpd.js:487
 msgid "Upstream HTTP Proxy Interface"
 msgstr "上游 HTTP 代理接口"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:268
+#: htdocs/luci-static/resources/view/rtp2httpd.js:434
 msgid "Upstream Interface"
 msgstr "上游接口"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:282
+#: htdocs/luci-static/resources/view/rtp2httpd.js:448
 msgid "Upstream Multicast Interface"
 msgstr "上游组播接口"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:308
+#: htdocs/luci-static/resources/view/rtp2httpd.js:474
 msgid "Upstream RTSP Interface"
 msgstr "上游 RTSP 接口"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:198
+#: htdocs/luci-static/resources/view/rtp2httpd.js:316
 msgid "Use Config File"
 msgstr "使用配置文件"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:199
+#: htdocs/luci-static/resources/view/rtp2httpd.js:92
+msgid ""
+"Use a bare port such as 5140 to listen on all addresses; *:5140 is not "
+"supported here."
+msgstr "使用 5140 这样的裸端口监听所有地址；这里不支持 *:5140。"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:317
 msgid "Use config file instead of individual options"
 msgstr "使用配置文件而不是单独的选项"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:587
+#: htdocs/luci-static/resources/view/rtp2httpd.js:98
+msgid ""
+"Use port, address:port, hostname:port, or [IPv6]:port, for example 5140 or "
+"192.168.1.1:8081."
+msgstr ""
+"请使用端口、address:port、hostname:port 或 [IPv6]:port 格式，例如 5140 或 "
+"192.168.1.1:8081。"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:753
 msgid ""
 "User-Agent header used for upstream RTSP requests. Leave empty to use the "
 "default rtp2httpd/{version}."
@@ -370,11 +370,11 @@ msgstr ""
 "用于上游 RTSP 请求的 User-Agent 请求头。留空则使用默认的 rtp2httpd/"
 "{version}。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:596
+#: htdocs/luci-static/resources/view/rtp2httpd.js:762
 msgid "Video Snapshot"
 msgstr "视频快照"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:422
+#: htdocs/luci-static/resources/view/rtp2httpd.js:588
 msgid ""
 "When RTSP server only supports UDP transport and client is behind NAT, try "
 "using STUN for NAT traversal (may not always succeed). Format: host:port or "
@@ -384,13 +384,13 @@ msgstr ""
 "穿透（可能不总是成功）。格式：host:port 或 host（默认端口 3478）。示例：stun."
 "miwifi.com"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:531
+#: htdocs/luci-static/resources/view/rtp2httpd.js:697
 msgid ""
 "When configured, HTTP Host header will be checked and must match this value "
 "to allow access."
 msgstr "配置后将会检查 HTTP Host 头，必须匹配这里的值才能访问。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:564
+#: htdocs/luci-static/resources/view/rtp2httpd.js:730
 msgid ""
 "When enabled, uses HTTP X-Forwarded-For header as client address for status "
 "page display. Also accepts X-Forwarded-Host / X-Forwarded-Proto headers as "
@@ -401,24 +401,24 @@ msgstr ""
 "并接受 X-Forwarded-Host / X-Forwarded-Proto 头作为 playlist.m3u 中的地址前"
 "缀。建议仅在使用反向代理时启用。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:344
+#: htdocs/luci-static/resources/view/rtp2httpd.js:510
 msgid "Workers"
 msgstr "工作进程数"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:562
+#: htdocs/luci-static/resources/view/rtp2httpd.js:728
 msgid "X-Forwarded-For"
 msgstr "X-Forwarded-For"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:408
+#: htdocs/luci-static/resources/view/rtp2httpd.js:574
 msgid "Zero-Copy on Send"
 msgstr "启用零拷贝发送"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:161
+#: htdocs/luci-static/resources/view/rtp2httpd.js:279
 #: root/usr/share/luci/menu.d/luci-app-rtp2httpd.json:3
 msgid "rtp2httpd"
 msgstr "rtp2httpd"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:163
+#: htdocs/luci-static/resources/view/rtp2httpd.js:281
 msgid ""
 "rtp2httpd converts RTP/UDP/RTSP media into http stream. Here you can "
 "configure the settings."

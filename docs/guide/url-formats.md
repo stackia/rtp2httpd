@@ -62,8 +62,8 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=202401011200
 # 时移回看（使用 tvdr 参数）
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000GMT-20240101130000GMT
 
-# 自定义时移参数名 + 时间偏移
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r2h-seek-name=seek&r2h-seek-offset=3600
+# 自定义时移参数名 + 起止时间独立偏移
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000-20240101130000&r2h-seek-name=seek&r2h-seek-offset=12,-12
 
 # 显式开启 RTSP 近实时优化（参见 r2h-seek-mode 文档）
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(UTC%2B8/3600)
@@ -85,7 +85,7 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-ifname=eth0
 这是由于时区未能匹配。需要做时区转换。你可以尝试以下几种方式。
 
 - 修改播放器 User Agent 设置，加上 `TZ/UTC+8` 或 `TZ/UTC-8`。例如 `AptvPlayer/1.3.3 TZ/UTC+8`。
-- 修改播放链接，加上参数 `&r2h-seek-offset=28800` 或 `&r2h-seek-offset=-28800`
+- 修改播放链接，加上参数 `&r2h-seek-offset=28800` 或 `&r2h-seek-offset=-28800`。如果只需要调整起始/结束边界，可以使用 `&r2h-seek-offset=12,-12` 这样的形式分别偏移起始和结束时间
 
 关于时移回看的参数处理（时区、偏移），详见 [时间处理说明](./time-processing.md)。
 
@@ -138,6 +138,34 @@ http://192.168.1.1:5140/http/iptv.example.com/channel1?r2h-ifname=eth0
 - 仅支持 HTTP 上游（不支持 HTTPS）
 - 可通过 `upstream-interface-http` 配置指定上游网络接口，也可以通过 `r2h-ifname` 参数在每次请求中指定
 - 如果被代理的目标 URL 是 m3u 类型，其中所有 `http://` URL 会被自动改写为经过 rtp2httpd 代理后的地址（为了保证 HLS 流能被正确代理）
+
+## IPv6 支持
+
+所有 URL 中的主机地址均支持 IPv6。在 URL 中书写 IPv6 字面量时，需要使用方括号 `[]` 包裹：
+
+```url
+# HTTP 反向代理（IPv6 上游）
+http://192.168.1.1:5140/http/[2001:db8::1]:8080/live/stream.m3u8
+
+# RTSP 转 HTTP（IPv6 上游）
+http://192.168.1.1:5140/rtsp/[2001:db8::1]:554/channel1
+
+# RTSP URL 带认证信息
+rtsp://user:pass@[2001:db8::1]:554/live
+
+# IPv6 组播（需要系统和网络接口支持 IPv6 组播）
+http://192.168.1.1:5140/rtp/[ff3e::1]:1234
+```
+
+### 行为说明
+
+- **域名自动双栈解析**：上游地址为域名时，按系统解析顺序依次尝试 IPv6 / IPv4 地址，连接失败时自动回退到下一个地址
+- **Host 校验**：配置了 `hostname` 时，请求头中的 `[IPv6]:端口` 格式 Host 也能正确通过校验
+- **服务监听**：`[bind]` 配置节和 `--listen` 参数均支持 IPv6 地址（如 `::1 5140` 或 `-l [::1]:5140`）
+
+### 限制
+
+- **`mcast-rejoin-interval` 不支持 IPv6**
 
 ## M3U 播放列表访问
 

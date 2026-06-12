@@ -38,6 +38,7 @@ from .ports import (
     find_free_port,
     find_free_udp_port,
     find_free_udp_port_pair,
+    ipv6_loopback_available,
     wait_for_port,
 )
 from .r2h_process import R2HProcess, make_m3u_rtsp_config
@@ -66,6 +67,7 @@ __all__ = [
     "find_free_udp_port_pair",
     "http_get",
     "http_request",
+    "ipv6_loopback_available",
     "make_m3u_rtsp_config",
     "make_rtp_packet",
     "stream_get",

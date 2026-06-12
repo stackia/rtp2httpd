@@ -165,6 +165,8 @@ char *get_server_address(void) {
   char *non_upstream_private_ip = NULL;
   char *non_upstream_public_ip = NULL;
   char *upstream_ip = NULL;
+  char *non_upstream_ipv6 = NULL;
+  char *upstream_ipv6 = NULL;
   char addr_str[INET6_ADDRSTRLEN];
   char server_port[16];
   char full_url[2048];
@@ -207,13 +209,19 @@ char *get_server_address(void) {
       }
     }
 
+    /* Re-bracket bare IPv6 literals for URL embedding */
+    char host_formatted[300];
+    if (format_host_for_url(host, host_formatted, sizeof(host_formatted)) != 0) {
+      snprintf(host_formatted, sizeof(host_formatted), "%s", host);
+    }
+
     /* Build base URL: protocol://host:port or protocol://host (if port is 80
      * and protocol is http) */
     if (port[0] == '\0' || (strcmp(protocol, "http") == 0 && strcmp(port, "80") == 0) ||
         (strcmp(protocol, "https") == 0 && strcmp(port, "443") == 0)) {
-      snprintf(full_url, sizeof(full_url), "%s://%s", protocol, host);
+      snprintf(full_url, sizeof(full_url), "%s://%s", protocol, host_formatted);
     } else {
-      snprintf(full_url, sizeof(full_url), "%s://%s:%s", protocol, host, port);
+      snprintf(full_url, sizeof(full_url), "%s://%s:%s", protocol, host_formatted, port);
     }
 
     /* Add path if present, ensuring it ends with slash */
@@ -254,29 +262,28 @@ char *get_server_address(void) {
     if (ifa->ifa_flags & IFF_LOOPBACK)
       continue;
 
-    /* Only process IPv4 for now */
+    /* Check if this is an upstream interface */
+    int is_upstream = 0;
+    if (config.upstream_interface[0] != '\0' && strcmp(ifa->ifa_name, config.upstream_interface) == 0) {
+      is_upstream = 1;
+    }
+    if (config.upstream_interface_fcc[0] != '\0' && strcmp(ifa->ifa_name, config.upstream_interface_fcc) == 0) {
+      is_upstream = 1;
+    }
+    if (config.upstream_interface_rtsp[0] != '\0' && strcmp(ifa->ifa_name, config.upstream_interface_rtsp) == 0) {
+      is_upstream = 1;
+    }
+    if (config.upstream_interface_multicast[0] != '\0' &&
+        strcmp(ifa->ifa_name, config.upstream_interface_multicast) == 0) {
+      is_upstream = 1;
+    }
+
     if (ifa->ifa_addr->sa_family == AF_INET) {
       struct sockaddr_in addr;
       memcpy(&addr, ifa->ifa_addr, sizeof(addr));
 
       if (inet_ntop(AF_INET, &addr.sin_addr, addr_str, sizeof(addr_str)) == NULL)
         continue;
-
-      /* Check if this is an upstream interface */
-      int is_upstream = 0;
-      if (config.upstream_interface[0] != '\0' && strcmp(ifa->ifa_name, config.upstream_interface) == 0) {
-        is_upstream = 1;
-      }
-      if (config.upstream_interface_fcc[0] != '\0' && strcmp(ifa->ifa_name, config.upstream_interface_fcc) == 0) {
-        is_upstream = 1;
-      }
-      if (config.upstream_interface_rtsp[0] != '\0' && strcmp(ifa->ifa_name, config.upstream_interface_rtsp) == 0) {
-        is_upstream = 1;
-      }
-      if (config.upstream_interface_multicast[0] != '\0' &&
-          strcmp(ifa->ifa_name, config.upstream_interface_multicast) == 0) {
-        is_upstream = 1;
-      }
 
       if (is_upstream) {
         /* Store as upstream IP (lowest priority) */
@@ -294,34 +301,68 @@ char *get_server_address(void) {
             non_upstream_public_ip = strdup(addr_str);
         }
       }
+    } else if (ifa->ifa_addr->sa_family == AF_INET6) {
+      /* IPv6 fallback (used when no IPv4 address is available) */
+      struct sockaddr_in6 addr6;
+      memcpy(&addr6, ifa->ifa_addr, sizeof(addr6));
+
+      /* Skip link-local addresses (fe80::/10) - not usable without zone ID */
+      if (IN6_IS_ADDR_LINKLOCAL(&addr6.sin6_addr))
+        continue;
+
+      if (inet_ntop(AF_INET6, &addr6.sin6_addr, addr_str, sizeof(addr_str)) == NULL)
+        continue;
+
+      if (is_upstream) {
+        if (!upstream_ipv6)
+          upstream_ipv6 = strdup(addr_str);
+      } else {
+        if (!non_upstream_ipv6)
+          non_upstream_ipv6 = strdup(addr_str);
+      }
     }
   }
 
   freeifaddrs(ifaddr);
 
-  /* Priority: non-upstream private > non-upstream public > upstream > localhost
-   */
+  /* Priority: non-upstream private v4 > non-upstream public v4 > upstream v4
+   * > non-upstream IPv6 > upstream IPv6 > localhost */
   if (non_upstream_private_ip) {
     host_ip = non_upstream_private_ip;
-    if (non_upstream_public_ip)
-      free(non_upstream_public_ip);
-    if (upstream_ip)
-      free(upstream_ip);
+    non_upstream_private_ip = NULL;
   } else if (non_upstream_public_ip) {
     host_ip = non_upstream_public_ip;
-    if (upstream_ip)
-      free(upstream_ip);
+    non_upstream_public_ip = NULL;
   } else if (upstream_ip) {
     host_ip = upstream_ip;
+    upstream_ip = NULL;
+  } else if (non_upstream_ipv6) {
+    host_ip = non_upstream_ipv6;
+    non_upstream_ipv6 = NULL;
+  } else if (upstream_ipv6) {
+    host_ip = upstream_ipv6;
+    upstream_ipv6 = NULL;
   } else {
     host_ip = strdup("localhost");
   }
 
-  /* Build complete URL with protocol, host, and port */
-  if (strcmp(server_port, "80") == 0) {
-    snprintf(full_url, sizeof(full_url), "http://%s/", host_ip);
-  } else {
-    snprintf(full_url, sizeof(full_url), "http://%s:%s/", host_ip, server_port);
+  free(non_upstream_private_ip);
+  free(non_upstream_public_ip);
+  free(upstream_ip);
+  free(non_upstream_ipv6);
+  free(upstream_ipv6);
+
+  /* Build complete URL with protocol, host, and port (bracket IPv6 hosts) */
+  {
+    char host_formatted[INET6_ADDRSTRLEN + 16];
+    if (format_host_for_url(host_ip, host_formatted, sizeof(host_formatted)) != 0) {
+      snprintf(host_formatted, sizeof(host_formatted), "%s", host_ip);
+    }
+    if (strcmp(server_port, "80") == 0) {
+      snprintf(full_url, sizeof(full_url), "http://%s/", host_formatted);
+    } else {
+      snprintf(full_url, sizeof(full_url), "http://%s:%s/", host_formatted, server_port);
+    }
   }
 
   free(host_ip);

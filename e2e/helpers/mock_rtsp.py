@@ -30,6 +30,7 @@ class _RTSPServerBase:
         content_base: str | None = "auto",
         custom_sdp: str | None = None,
         options_session_id: str | None = None,
+        host: str = "127.0.0.1",
     ):
         """
         Args:
@@ -42,8 +43,10 @@ class _RTSPServerBase:
             custom_sdp: If set, replaces the auto-generated SDP body.
             options_session_id: If set, OPTIONS responds with this Session ID
                 and DESCRIBE must echo it (simulates HMS-style servers).
+            host: Address to listen on (use "::1" for IPv6 loopback).
         """
-        self.port = port or find_free_port()
+        self.host = host
+        self.port = port or find_free_port(host)
         self._sdp_control = sdp_control
         self._content_base = content_base
         self._custom_sdp = custom_sdp
@@ -57,9 +60,10 @@ class _RTSPServerBase:
     # -- lifecycle -----------------------------------------------------------
 
     def start(self) -> None:
-        self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        family = socket.AF_INET6 if ":" in self.host else socket.AF_INET
+        self._server_sock = socket.socket(family, socket.SOCK_STREAM)
         self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._server_sock.bind(("127.0.0.1", self.port))
+        self._server_sock.bind((self.host, self.port))
         self._server_sock.listen(5)
         self._server_sock.settimeout(1.0)
         self._thread = threading.Thread(target=self._accept, daemon=True)
@@ -221,6 +225,7 @@ class MockRTSPServer(_RTSPServerBase):
         content_base: str | None = "auto",
         custom_sdp: str | None = None,
         options_session_id: str | None = None,
+        host: str = "127.0.0.1",
     ):
         super().__init__(
             port,
@@ -228,6 +233,7 @@ class MockRTSPServer(_RTSPServerBase):
             content_base=content_base,
             custom_sdp=custom_sdp,
             options_session_id=options_session_id,
+            host=host,
         )
         self._num_packets = num_packets
 

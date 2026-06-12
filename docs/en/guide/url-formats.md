@@ -62,8 +62,8 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=202401011200
 # Time-shifted playback (using tvdr parameter)
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000GMT-20240101130000GMT
 
-# Custom time-shift parameter name + time offset
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r2h-seek-name=seek&r2h-seek-offset=3600
+# Custom time-shift parameter name + independent begin/end offsets
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000-20240101130000&r2h-seek-name=seek&r2h-seek-offset=12,-12
 
 # Explicitly enable the RTSP near-realtime optimization (see r2h-seek-mode docs)
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(UTC%2B8/3600)
@@ -85,7 +85,7 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-ifname=eth0
 This is caused by timezone mismatch. You need to perform timezone conversion. Try the following methods:
 
 - Modify the player's User-Agent setting by adding `TZ/UTC+8` or `TZ/UTC-8`. For example, `AptvPlayer/1.3.3 TZ/UTC+8`.
-- Modify the playback URL by adding the parameter `&r2h-seek-offset=28800` or `&r2h-seek-offset=-28800`
+- Modify the playback URL by adding the parameter `&r2h-seek-offset=28800` or `&r2h-seek-offset=-28800`. If you only need to adjust the begin/end boundaries, use a form like `&r2h-seek-offset=12,-12` to offset them separately
 
 For detailed information on time-shift parameter handling (timezone, offset), see [Time Processing Guide](/en/guide/time-processing).
 
@@ -138,6 +138,34 @@ See [Time Processing Guide](/en/guide/time-processing) for details.
 - Only supports HTTP upstream (HTTPS is not supported)
 - Can be configured to use a specific network interface via `upstream-interface-http`, or overridden per request using the `r2h-ifname` parameter
 - If the proxied target URL is an m3u file, all `http://` URLs in it will be automatically rewritten to go through the rtp2httpd proxy (to ensure HLS streams are correctly proxied)
+
+## IPv6 Support
+
+Host addresses in all URLs support IPv6. When writing IPv6 literals in URLs, wrap them in square brackets `[]`:
+
+```url
+# HTTP reverse proxy (IPv6 upstream)
+http://192.168.1.1:5140/http/[2001:db8::1]:8080/live/stream.m3u8
+
+# RTSP to HTTP (IPv6 upstream)
+http://192.168.1.1:5140/rtsp/[2001:db8::1]:554/channel1
+
+# RTSP URL with credentials
+rtsp://user:pass@[2001:db8::1]:554/live
+
+# IPv6 multicast (requires IPv6 multicast support from the system and network interface)
+http://192.168.1.1:5140/rtp/[ff3e::1]:1234
+```
+
+### Behavior
+
+- **Automatic dual-stack resolution for hostnames**: when the upstream address is a hostname, IPv6 / IPv4 addresses are tried in system resolver order, automatically falling back to the next address on connection failure
+- **Host validation**: when `hostname` is configured, Host headers in `[IPv6]:port` format pass validation correctly
+- **Server listening**: both the `[bind]` config section and the `--listen` flag accept IPv6 addresses (e.g. `::1 5140` or `-l [::1]:5140`)
+
+### Limitations
+
+- **`mcast-rejoin-interval` does not support IPv6**
 
 ## M3U Playlist Access
 

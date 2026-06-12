@@ -5,6 +5,7 @@
 #include "timezone.h"
 #include "url_template.h"
 #include "utils.h"
+#include <errno.h>
 #include <limits.h>
 #include <net/if.h>
 #include <netdb.h>
@@ -400,6 +401,53 @@ static int parse_seek_mode_value(const char *value, seek_mode_t *out_mode, int *
   return 0;
 }
 
+static int parse_seek_offset_component(const char *value, int *out_offset_seconds) {
+  char *endptr;
+  long offset_val;
+
+  if (!value || !out_offset_seconds || value[0] == '\0')
+    return -1;
+
+  errno = 0;
+  offset_val = strtol(value, &endptr, 10);
+  if (errno == ERANGE || endptr == value || *endptr != '\0' || offset_val < INT_MIN || offset_val > INT_MAX)
+    return -1;
+
+  *out_offset_seconds = (int)offset_val;
+  return 0;
+}
+
+static int parse_seek_offset_value(char *value, int *out_begin_offset_seconds, int *out_end_offset_seconds) {
+  int begin_offset_seconds;
+  int end_offset_seconds;
+  char *comma;
+
+  if (!value || !out_begin_offset_seconds || !out_end_offset_seconds)
+    return -1;
+
+  comma = strchr(value, ',');
+  if (!comma) {
+    if (parse_seek_offset_component(value, &begin_offset_seconds) != 0)
+      return -1;
+    *out_begin_offset_seconds = begin_offset_seconds;
+    *out_end_offset_seconds = begin_offset_seconds;
+    return 0;
+  }
+
+  if (strchr(comma + 1, ','))
+    return -1;
+
+  *comma = '\0';
+  if (parse_seek_offset_component(value, &begin_offset_seconds) != 0 ||
+      parse_seek_offset_component(comma + 1, &end_offset_seconds) != 0) {
+    return -1;
+  }
+
+  *out_begin_offset_seconds = begin_offset_seconds;
+  *out_end_offset_seconds = end_offset_seconds;
+  return 0;
+}
+
 /**
  * Find a query parameter, copy its URL-decoded value into the caller's buffer,
  * and remove the parameter from the query string in place. If the parameter is
@@ -464,14 +512,15 @@ static int extract_query_param(char **query_start_ptr, const char *param_name, c
 }
 
 int service_extract_seek_params(char *query_start, char **out_seek_param_name, char **out_seek_param_value,
-                                int *out_seek_offset_seconds, seek_mode_t *out_seek_mode,
-                                int *out_seek_mode_tz_explicit, int *out_seek_mode_tz_offset_seconds,
-                                int *out_seek_mode_window_seconds) {
+                                int *out_seek_begin_offset_seconds, int *out_seek_end_offset_seconds,
+                                seek_mode_t *out_seek_mode, int *out_seek_mode_tz_explicit,
+                                int *out_seek_mode_tz_offset_seconds, int *out_seek_mode_window_seconds) {
   char r2h_seek_name_buf[128];
   int has_seek_name = 0;
   const char *seek_param_name = NULL;
   char *seek_param_value = NULL;
-  int seek_offset_seconds = 0;
+  int seek_begin_offset_seconds = 0;
+  int seek_end_offset_seconds = 0;
   seek_mode_t seek_mode = SEEK_MODE_PASSTHROUGH;
   int seek_mode_tz_explicit = 0;
   int seek_mode_tz_offset_seconds = 0;
@@ -479,14 +528,15 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name, c
   char heuristic_seek_name[16];
 
   if (!query_start || *query_start != '?' || !out_seek_param_name || !out_seek_param_value ||
-      !out_seek_offset_seconds || !out_seek_mode || !out_seek_mode_tz_explicit || !out_seek_mode_tz_offset_seconds ||
-      !out_seek_mode_window_seconds) {
+      !out_seek_begin_offset_seconds || !out_seek_end_offset_seconds || !out_seek_mode || !out_seek_mode_tz_explicit ||
+      !out_seek_mode_tz_offset_seconds || !out_seek_mode_window_seconds) {
     return -1;
   }
 
   *out_seek_param_name = NULL;
   *out_seek_param_value = NULL;
-  *out_seek_offset_seconds = 0;
+  *out_seek_begin_offset_seconds = 0;
+  *out_seek_end_offset_seconds = 0;
   *out_seek_mode = SEEK_MODE_PASSTHROUGH;
   *out_seek_mode_tz_explicit = 0;
   *out_seek_mode_tz_offset_seconds = 0;
@@ -499,13 +549,18 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name, c
 
   char offset_buf[32];
   if (extract_query_param(&query_start, "r2h-seek-offset", offset_buf, sizeof(offset_buf)) == 1) {
-    char *endptr;
-    long offset_val = strtol(offset_buf, &endptr, 10);
-    if (*endptr == '\0' && offset_val >= INT_MIN && offset_val <= INT_MAX) {
-      seek_offset_seconds = (int)offset_val;
-      logger(LOG_DEBUG, "Found r2h-seek-offset parameter: %d seconds", seek_offset_seconds);
+    char offset_log_buf[sizeof(offset_buf)];
+    strncpy(offset_log_buf, offset_buf, sizeof(offset_log_buf) - 1);
+    offset_log_buf[sizeof(offset_log_buf) - 1] = '\0';
+    if (parse_seek_offset_value(offset_buf, &seek_begin_offset_seconds, &seek_end_offset_seconds) == 0) {
+      if (seek_begin_offset_seconds == seek_end_offset_seconds) {
+        logger(LOG_DEBUG, "Found r2h-seek-offset parameter: %d seconds", seek_begin_offset_seconds);
+      } else {
+        logger(LOG_DEBUG, "Found r2h-seek-offset parameter: begin %+d seconds, end %+d seconds",
+               seek_begin_offset_seconds, seek_end_offset_seconds);
+      }
     } else {
-      logger(LOG_WARN, "Invalid r2h-seek-offset value: %s", offset_buf);
+      logger(LOG_WARN, "Invalid r2h-seek-offset value: %s", offset_log_buf);
     }
   }
 
@@ -655,7 +710,8 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name, c
     *out_seek_param_name = strdup(seek_param_name);
   *out_seek_param_value = seek_param_value;
   seek_param_value = NULL; /* Transfer ownership */
-  *out_seek_offset_seconds = seek_offset_seconds;
+  *out_seek_begin_offset_seconds = seek_begin_offset_seconds;
+  *out_seek_end_offset_seconds = seek_end_offset_seconds;
   *out_seek_mode = seek_mode;
   *out_seek_mode_tz_explicit = seek_mode_tz_explicit;
   *out_seek_mode_tz_offset_seconds = seek_mode_tz_offset_seconds;
@@ -758,16 +814,18 @@ static const char *find_seek_range_separator(const char *value) {
   return NULL;
 }
 
-int service_parse_seek_value(const char *seek_param_value, int seek_offset_seconds, const char *user_agent,
-                             seek_mode_t seek_mode, int seek_mode_tz_explicit, int seek_mode_tz_offset_seconds,
-                             int seek_mode_window_seconds, seek_parse_result_t *parse_result) {
+int service_parse_seek_value(const char *seek_param_value, int seek_begin_offset_seconds, int seek_end_offset_seconds,
+                             const char *user_agent, seek_mode_t seek_mode, int seek_mode_tz_explicit,
+                             int seek_mode_tz_offset_seconds, int seek_mode_window_seconds,
+                             seek_parse_result_t *parse_result) {
   const char *dash_pos;
 
   if (!parse_result)
     return -1;
 
   memset(parse_result, 0, sizeof(*parse_result));
-  parse_result->seek_offset_seconds = seek_offset_seconds;
+  parse_result->seek_begin_offset_seconds = seek_begin_offset_seconds;
+  parse_result->seek_end_offset_seconds = seek_end_offset_seconds;
   parse_result->now_utc = time(NULL);
 
   if (user_agent)
@@ -800,12 +858,12 @@ int service_parse_seek_value(const char *seek_param_value, int seek_offset_secon
   }
 
   if (parse_result->has_begin && timezone_parse_to_utc(parse_result->begin_str, parse_result->tz_offset_seconds,
-                                                       seek_offset_seconds, &parse_result->begin_utc) == 0) {
+                                                       seek_begin_offset_seconds, &parse_result->begin_utc) == 0) {
     parse_result->begin_parsed = 1;
   }
 
   if (parse_result->has_end && timezone_parse_to_utc(parse_result->end_str, parse_result->tz_offset_seconds,
-                                                     seek_offset_seconds, &parse_result->end_utc) == 0) {
+                                                     seek_end_offset_seconds, &parse_result->end_utc) == 0) {
     parse_result->end_parsed = 1;
   }
 
@@ -837,7 +895,7 @@ int service_parse_seek_value(const char *seek_param_value, int seek_offset_secon
 
   /* Recent-clock optimization: opt-in via r2h-seek-mode=range(...). The TZ used
    * for the recency comparison may differ from the passthrough TZ when range()
-   * supplies an explicit TZ that overrides the UA TZ. r2h-seek-offset is baked
+   * supplies an explicit TZ that overrides the UA TZ. The begin r2h-seek-offset is baked
    * into begin_utc via timezone_parse_to_utc above and propagates here.
    *
    * The recent-clock UTC time is stored separately in recent_clock_tm_utc so
@@ -849,7 +907,7 @@ int service_parse_seek_value(const char *seek_param_value, int seek_offset_secon
     time_t begin_utc_for_recent;
     int recompute = seek_mode_tz_explicit && seek_mode_tz_offset_seconds != parse_result->tz_offset_seconds;
     if (recompute) {
-      if (timezone_parse_to_utc(parse_result->begin_str, seek_mode_tz_offset_seconds, seek_offset_seconds,
+      if (timezone_parse_to_utc(parse_result->begin_str, seek_mode_tz_offset_seconds, seek_begin_offset_seconds,
                                 &begin_utc_for_recent) != 0) {
         return 0;
       }
@@ -882,7 +940,7 @@ int service_convert_seek_value(const seek_parse_result_t *parse_result, char *ou
 
   if (parse_result->has_begin &&
       timezone_convert_time_with_offset(parse_result->begin_str, parse_result->tz_offset_seconds,
-                                        parse_result->seek_offset_seconds, begin_utc, sizeof(begin_utc)) == 0) {
+                                        parse_result->seek_begin_offset_seconds, begin_utc, sizeof(begin_utc)) == 0) {
     logger(LOG_DEBUG, "Converted begin time '%s' to UTC '%s'", parse_result->begin_str, begin_utc);
   } else {
     strncpy(begin_utc, parse_result->begin_str, sizeof(begin_utc) - 1);
@@ -891,7 +949,7 @@ int service_convert_seek_value(const seek_parse_result_t *parse_result, char *ou
 
   if (parse_result->has_end) {
     if (timezone_convert_time_with_offset(parse_result->end_str, parse_result->tz_offset_seconds,
-                                          parse_result->seek_offset_seconds, end_utc, sizeof(end_utc)) == 0) {
+                                          parse_result->seek_end_offset_seconds, end_utc, sizeof(end_utc)) == 0) {
       logger(LOG_DEBUG, "Converted end time '%s' to UTC '%s'", parse_result->end_str, end_utc);
     } else {
       strncpy(end_utc, parse_result->end_str, sizeof(end_utc) - 1);
@@ -1172,7 +1230,8 @@ service_t *service_create_from_http_url(const char *http_url) {
   char *query_start = strchr(result->http_url, '?');
   if (query_start) {
     service_extract_seek_params(query_start, &result->seek_param_name, &result->seek_param_value,
-                                &result->seek_offset_seconds, &result->seek_mode, &result->seek_mode_tz_explicit,
+                                &result->seek_begin_offset_seconds, &result->seek_end_offset_seconds,
+                                &result->seek_mode, &result->seek_mode_tz_explicit,
                                 &result->seek_mode_tz_offset_seconds, &result->seek_mode_window_seconds);
     service_extract_ifname_params(query_start, &result->ifname, &result->ifname_fcc);
     service_strip_query_param(query_start, "r2h-token");
@@ -1224,7 +1283,8 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   char rtsp_url[HTTP_URL_BUFFER_SIZE];
   char *seek_param_name = NULL;
   char *seek_param_value = NULL;
-  int seek_offset_seconds = 0;
+  int seek_begin_offset_seconds = 0;
+  int seek_end_offset_seconds = 0;
   seek_mode_t seek_mode = SEEK_MODE_PASSTHROUGH;
   int seek_mode_tz_explicit = 0;
   int seek_mode_tz_offset_seconds = 0;
@@ -1258,9 +1318,9 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   char *ifname = NULL, *ifname_fcc = NULL;
   query_start = strchr(url_part, '?');
   if (query_start) {
-    if (service_extract_seek_params(query_start, &seek_param_name, &seek_param_value, &seek_offset_seconds, &seek_mode,
-                                    &seek_mode_tz_explicit, &seek_mode_tz_offset_seconds,
-                                    &seek_mode_window_seconds) < 0) {
+    if (service_extract_seek_params(query_start, &seek_param_name, &seek_param_value, &seek_begin_offset_seconds,
+                                    &seek_end_offset_seconds, &seek_mode, &seek_mode_tz_explicit,
+                                    &seek_mode_tz_offset_seconds, &seek_mode_window_seconds) < 0) {
       return NULL;
     }
     service_extract_ifname_params(query_start, &ifname, &ifname_fcc);
@@ -1298,7 +1358,8 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
   seek_param_name = NULL; /* Transfer ownership */
   result->seek_param_value = seek_param_value;
   seek_param_value = NULL; /* Transfer ownership */
-  result->seek_offset_seconds = seek_offset_seconds;
+  result->seek_begin_offset_seconds = seek_begin_offset_seconds;
+  result->seek_end_offset_seconds = seek_end_offset_seconds;
   result->seek_mode = seek_mode;
   result->seek_mode_tz_explicit = seek_mode_tz_explicit;
   result->seek_mode_tz_offset_seconds = seek_mode_tz_offset_seconds;
@@ -1447,11 +1508,17 @@ service_t *service_create_with_query_merge(service_t *configured_service, const 
     }
   }
 
-  if (configured_service->seek_offset_seconds != 0 && !request_query_has(query_start, "r2h-seek-offset")) {
+  if ((configured_service->seek_begin_offset_seconds != 0 || configured_service->seek_end_offset_seconds != 0) &&
+      !request_query_has(query_start, "r2h-seek-offset")) {
     char seek_offset_param[64];
     const char *separator = strchr(merged_url, '?') ? "&" : "?";
-    snprintf(seek_offset_param, sizeof(seek_offset_param), "%sr2h-seek-offset=%d", separator,
-             configured_service->seek_offset_seconds);
+    if (configured_service->seek_begin_offset_seconds == configured_service->seek_end_offset_seconds) {
+      snprintf(seek_offset_param, sizeof(seek_offset_param), "%sr2h-seek-offset=%d", separator,
+               configured_service->seek_begin_offset_seconds);
+    } else {
+      snprintf(seek_offset_param, sizeof(seek_offset_param), "%sr2h-seek-offset=%d,%d", separator,
+               configured_service->seek_begin_offset_seconds, configured_service->seek_end_offset_seconds);
+    }
     if (strlen(merged_url) + strlen(seek_offset_param) < sizeof(merged_url)) {
       strcat(merged_url, seek_offset_param);
     } else {
@@ -1744,6 +1811,14 @@ service_t *service_create_from_rtp_url(const char *http_url) {
   result->fcc_addr = NULL;
   result->fcc_type = components.fcc_type;
   result->fec_port = components.fec_port;
+  if (components.has_fcc && (fcc_res->ai_family != AF_INET || res->ai_family != AF_INET)) {
+    /* FCC protocol carries 4-byte IPv4 addresses in its packet body; there is
+     * no known IPv6 protocol variant. Disable FCC and fall back to plain
+     * multicast. */
+    logger(LOG_WARN, "FCC is IPv4-only (protocol limitation), ignoring fcc=%s:%s and falling back to plain multicast",
+           components.fcc_addr, components.fcc_port);
+    components.has_fcc = 0;
+  }
   if (components.has_fcc) {
     fcc_res_addr = malloc(sizeof(struct sockaddr_storage));
     fcc_res_ai = malloc(sizeof(struct addrinfo));
@@ -1899,7 +1974,8 @@ service_t *service_clone(service_t *service) {
     }
   }
 
-  cloned->seek_offset_seconds = service->seek_offset_seconds;
+  cloned->seek_begin_offset_seconds = service->seek_begin_offset_seconds;
+  cloned->seek_end_offset_seconds = service->seek_end_offset_seconds;
   cloned->seek_mode = service->seek_mode;
   cloned->seek_mode_tz_explicit = service->seek_mode_tz_explicit;
   cloned->seek_mode_tz_offset_seconds = service->seek_mode_tz_offset_seconds;

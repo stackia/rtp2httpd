@@ -57,11 +57,14 @@ If your upstream uses a different parameter name (e.g. `seek`, `timeshift`), spe
 
 ### r2h-seek-offset (optional)
 
-Adds or subtracts a number of seconds to the recognized time-shift time, positive or negative. Commonly used to compensate for clock drift on the upstream server, or to shift the start time earlier/later as a whole.
+Adds or subtracts a number of seconds to the recognized time-shift time, positive or negative. A single integer applies to both begin and end times; `a,b` applies `a` to the begin time and `b` to the end time. Commonly used to compensate for clock drift on the upstream server, or to shift playback begin/end boundaries independently.
 
 ```
 # Shift the entire playseek range later by 1 hour (3600 seconds)
 ?playseek=20240101120000-20240101130000&r2h-seek-offset=3600
+
+# Shift the begin time later by 12 seconds and the end time earlier by 12 seconds
+?playseek=20240101120000-20240101130000&r2h-seek-offset=12,-12
 
 # Shift earlier by 30 seconds
 ?playseek=20240101120000&r2h-seek-offset=-30
@@ -70,7 +73,7 @@ Adds or subtracts a number of seconds to the recognized time-shift time, positiv
 > [!IMPORTANT]
 > `r2h-seek-offset` is a "manual time shift", not a timezone correction. It is **always** applied to the final result, even when the input time already carries its own timezone (e.g. ISO 8601 `Z` suffix, `yyyyMMddHHmmssGMT`).
 >
-> In Range Seek mode the offset also enters the window check — once the offset-adjusted time falls outside the window, it likewise falls back to passthrough.
+> In Range Seek mode the offset also enters the window check — once the offset-adjusted begin time falls outside the window, it likewise falls back to passthrough. With the `a,b` form, Range Seek only uses the begin time, so only `a` affects the window check and the `Range: clock=` header.
 
 ### r2h-seek-mode (optional, RTSP only)
 

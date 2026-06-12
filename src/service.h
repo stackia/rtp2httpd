@@ -69,8 +69,8 @@ typedef struct service_s {
   char *http_url;                  /* Full HTTP URL for SERVICE_HTTP */
   char *seek_param_name;           /* Name of seek parameter (e.g., "playseek", "tvdr") */
   char *seek_param_value;          /* Value of seek parameter for time range */
-  int seek_offset_seconds;         /* Additional offset in seconds from r2h-seek-offset
-                                      parameter */
+  int seek_begin_offset_seconds;   /* Begin offset in seconds from r2h-seek-offset parameter */
+  int seek_end_offset_seconds;     /* End offset in seconds from r2h-seek-offset parameter */
   seek_mode_t seek_mode;           /* Seek mode from r2h-seek-mode parameter */
   int seek_mode_tz_explicit;       /* 1 if range(...) explicitly specified a TZ */
   int seek_mode_tz_offset_seconds; /* TZ offset from range(TZ/...) when explicit */
@@ -142,7 +142,8 @@ service_t *service_create_from_http_url(const char *http_url);
  * @param out_seek_param_name Output: malloc'd seek parameter name (caller frees)
  * @param out_seek_param_value Output: malloc'd seek parameter value (caller
  * frees)
- * @param out_seek_offset_seconds Output: seek offset in seconds
+ * @param out_seek_begin_offset_seconds Output: begin seek offset in seconds
+ * @param out_seek_end_offset_seconds Output: end seek offset in seconds
  * @param out_seek_mode Output: parsed seek mode (default SEEK_MODE_PASSTHROUGH)
  * @param out_seek_mode_tz_explicit Output: 1 if range(...) explicitly gave a TZ
  * @param out_seek_mode_tz_offset_seconds Output: TZ offset when explicit
@@ -150,15 +151,16 @@ service_t *service_create_from_http_url(const char *http_url);
  * @return 0 on success, -1 on failure
  */
 int service_extract_seek_params(char *query_start, char **out_seek_param_name, char **out_seek_param_value,
-                                int *out_seek_offset_seconds, seek_mode_t *out_seek_mode,
-                                int *out_seek_mode_tz_explicit, int *out_seek_mode_tz_offset_seconds,
-                                int *out_seek_mode_window_seconds);
+                                int *out_seek_begin_offset_seconds, int *out_seek_end_offset_seconds,
+                                seek_mode_t *out_seek_mode, int *out_seek_mode_tz_explicit,
+                                int *out_seek_mode_tz_offset_seconds, int *out_seek_mode_window_seconds);
 
 /**
  * Analyze a seek parameter once and reuse the result across RTSP/HTTP flows.
  *
  * @param seek_param_value Extracted seek parameter value
- * @param seek_offset_seconds Additional seek offset in seconds
+ * @param seek_begin_offset_seconds Additional begin seek offset in seconds
+ * @param seek_end_offset_seconds Additional end seek offset in seconds
  * @param user_agent User-Agent header for timezone detection
  * @param seek_mode Seek mode from r2h-seek-mode parameter
  * @param seek_mode_tz_explicit 1 if range(...) explicitly specified a TZ
@@ -167,9 +169,10 @@ int service_extract_seek_params(char *query_start, char **out_seek_param_name, c
  * @param parse_result Output parse result structure
  * @return 0 on success, -1 on invalid parameters
  */
-int service_parse_seek_value(const char *seek_param_value, int seek_offset_seconds, const char *user_agent,
-                             seek_mode_t seek_mode, int seek_mode_tz_explicit, int seek_mode_tz_offset_seconds,
-                             int seek_mode_window_seconds, seek_parse_result_t *parse_result);
+int service_parse_seek_value(const char *seek_param_value, int seek_begin_offset_seconds, int seek_end_offset_seconds,
+                             const char *user_agent, seek_mode_t seek_mode, int seek_mode_tz_explicit,
+                             int seek_mode_tz_offset_seconds, int seek_mode_window_seconds,
+                             seek_parse_result_t *parse_result);
 
 /**
  * Convert a parsed seek value to upstream UTC query form.

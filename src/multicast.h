@@ -13,10 +13,11 @@ struct buffer_ref_s;
  * Multicast session context - encapsulates all multicast-related state
  */
 typedef struct mcast_session_s {
-  int initialized;          /* Flag: session has been initialized */
-  int sock;                 /* Multicast socket (-1 if not joined) */
-  int64_t last_data_time;   /* Timestamp of last received data (ms) */
-  int64_t last_rejoin_time; /* Timestamp of last periodic rejoin (ms) */
+  int initialized;               /* Flag: session has been initialized */
+  int sock;                      /* Multicast socket (-1 if not joined) */
+  int64_t last_data_time;        /* Timestamp of last received data (ms) */
+  int64_t last_rejoin_time;      /* Timestamp of last periodic rejoin (ms) */
+  int rejoin_unsupported_warned; /* Warn-once flag for IPv6 rejoin no-op */
 } mcast_session_t;
 
 /**

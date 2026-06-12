@@ -127,7 +127,6 @@ void http_proxy_resume_upstream(http_proxy_session_t *session) {
 
 int http_proxy_parse_url(http_proxy_session_t *session, const char *url) {
   const char *p;
-  char *colon;
   char *slash;
   size_t host_len;
 
@@ -156,57 +155,20 @@ int http_proxy_parse_url(http_proxy_session_t *session, const char *url) {
     host_len = strlen(p);
   }
 
-  /* Check for port in host:port format */
-  /* Need to handle IPv6 addresses like [::1]:8080 */
-  if (p[0] == '[') {
-    /* IPv6 address */
-    char *bracket = strchr(p, ']');
-    if (bracket && bracket < p + host_len) {
-      colon = strchr(bracket, ':');
-      if (colon && colon < p + host_len) {
-        /* Has port after IPv6 address */
-        size_t addr_len = bracket - p + 1;
-        if (addr_len >= HTTP_PROXY_HOST_SIZE) {
-          logger(LOG_ERROR, "HTTP Proxy: Host too long");
-          return -1;
-        }
-        memcpy(session->target_host, p, addr_len);
-        session->target_host[addr_len] = '\0';
-        session->target_port = atoi(colon + 1);
-      } else {
-        /* No port, just IPv6 address */
-        if (host_len >= HTTP_PROXY_HOST_SIZE) {
-          logger(LOG_ERROR, "HTTP Proxy: Host too long");
-          return -1;
-        }
-        memcpy(session->target_host, p, host_len);
-        session->target_host[host_len] = '\0';
-      }
-    } else {
-      logger(LOG_ERROR, "HTTP Proxy: Invalid IPv6 address format");
+  /* Parse host[:port], handling "[IPv6]:port", bracketed/bare IPv6 literals,
+   * hostnames, and IPv4.  target_host stores the bare host (no brackets). */
+  {
+    char hostport[HTTP_PROXY_HOST_SIZE + 16];
+    if (host_len >= sizeof(hostport)) {
+      logger(LOG_ERROR, "HTTP Proxy: Host too long");
       return -1;
     }
-  } else {
-    /* IPv4 or hostname */
-    colon = memchr(p, ':', host_len);
-    if (colon) {
-      /* Has port */
-      size_t hostname_len = colon - p;
-      if (hostname_len >= HTTP_PROXY_HOST_SIZE) {
-        logger(LOG_ERROR, "HTTP Proxy: Host too long");
-        return -1;
-      }
-      memcpy(session->target_host, p, hostname_len);
-      session->target_host[hostname_len] = '\0';
-      session->target_port = atoi(colon + 1);
-    } else {
-      /* No port */
-      if (host_len >= HTTP_PROXY_HOST_SIZE) {
-        logger(LOG_ERROR, "HTTP Proxy: Host too long");
-        return -1;
-      }
-      memcpy(session->target_host, p, host_len);
-      session->target_host[host_len] = '\0';
+    memcpy(hostport, p, host_len);
+    hostport[host_len] = '\0';
+
+    if (parse_host_port(hostport, session->target_host, sizeof(session->target_host), &session->target_port) != 0) {
+      logger(LOG_ERROR, "HTTP Proxy: Invalid host format: %s", hostport);
+      return -1;
     }
   }
 
@@ -313,103 +275,19 @@ void http_proxy_set_request_headers(http_proxy_session_t *session, const char *h
   }
 }
 
-int http_proxy_connect(http_proxy_session_t *session) {
-  struct sockaddr_in server_addr;
-  struct hostent *he;
-  int connect_result;
-
-  if (!session || session->socket >= 0) {
-    logger(LOG_ERROR, "HTTP Proxy: Invalid session or already connected");
-    return -1;
+/* Free the getaddrinfo candidate list (after success or final failure) */
+static void http_proxy_free_connect_results(http_proxy_session_t *session) {
+  if (session->connect_results) {
+    freeaddrinfo(session->connect_results);
+    session->connect_results = NULL;
+    session->connect_next = NULL;
   }
+}
 
-  /* Resolve hostname */
-  he = gethostbyname(session->target_host);
-  if (!he) {
-    logger(LOG_ERROR, "HTTP Proxy: Cannot resolve hostname %s: %s", session->target_host, hstrerror(h_errno));
-    return -1;
-  }
-
-  /* Validate address list */
-  if (!he->h_addr_list[0]) {
-    logger(LOG_ERROR, "HTTP Proxy: No addresses for hostname %s", session->target_host);
-    return -1;
-  }
-
-  /* Create TCP socket */
-  session->socket = socket(AF_INET, SOCK_STREAM, 0);
-  if (session->socket < 0) {
-    logger(LOG_ERROR, "HTTP Proxy: Failed to create socket: %s", strerror(errno));
-    return -1;
-  }
-  platform_set_nosigpipe(session->socket);
-
-  /* Set socket to non-blocking mode */
-  if (connection_set_nonblocking(session->socket) < 0) {
-    logger(LOG_ERROR, "HTTP Proxy: Failed to set socket non-blocking: %s", strerror(errno));
-    close(session->socket);
-    session->socket = -1;
-    return -1;
-  }
-
-  /* Bind to upstream interface if configured */
-  bind_to_upstream_interface(session->socket, session->upstream_ifname);
-
-  /* Connect to server (non-blocking) */
-  memset(&server_addr, 0, sizeof(server_addr));
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(session->target_port);
-  memcpy(&server_addr.sin_addr.s_addr, he->h_addr_list[0], he->h_length);
-
-  connect_result = connect(session->socket, (struct sockaddr *)&server_addr, sizeof(server_addr));
-
-  /* Handle non-blocking connect result */
-  if (connect_result < 0) {
-    if (errno == EINPROGRESS || errno == EWOULDBLOCK) {
-      /* Connection in progress - normal for non-blocking sockets */
-      logger(LOG_DEBUG, "HTTP Proxy: Connection to %s:%d in progress (async)", session->target_host,
-             session->target_port);
-
-      /* Register socket with poller for POLLER_OUT to detect connection
-       * completion */
-      if (session->epoll_fd >= 0) {
-        if (poller_add(session->epoll_fd, session->socket,
-                       POLLER_OUT | POLLER_IN | POLLER_ERR | POLLER_HUP | POLLER_RDHUP) < 0) {
-          logger(LOG_ERROR, "HTTP Proxy: Failed to add socket to poller: %s", strerror(errno));
-          close(session->socket);
-          session->socket = -1;
-          return -1;
-        }
-        fdmap_set(session->socket, session->conn);
-        logger(LOG_DEBUG, "HTTP Proxy: Socket registered with poller for connection");
-      }
-
-      http_proxy_set_state(session, HTTP_PROXY_STATE_CONNECTING);
-      return 0; /* Success - connection in progress */
-    } else {
-      /* Real connection error */
-      logger(LOG_ERROR, "HTTP Proxy: Failed to connect to %s:%d: %s", session->target_host, session->target_port,
-             strerror(errno));
-      close(session->socket);
-      session->socket = -1;
-      return -1;
-    }
-  }
-
-  /* Immediate connection success (rare, but possible for localhost) */
-  logger(LOG_DEBUG, "HTTP Proxy: Connected immediately to %s:%d", session->target_host, session->target_port);
-
-  /* Register socket with poller */
-  if (session->epoll_fd >= 0) {
-    if (poller_add(session->epoll_fd, session->socket,
-                   POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
-      logger(LOG_ERROR, "HTTP Proxy: Failed to add socket to poller: %s", strerror(errno));
-      close(session->socket);
-      session->socket = -1;
-      return -1;
-    }
-    fdmap_set(session->socket, session->conn);
-  }
+/* Called when the current socket connected successfully: keep it, drop the
+ * remaining candidates, and queue the HTTP request. */
+static int http_proxy_on_connected(http_proxy_session_t *session) {
+  http_proxy_free_connect_results(session);
 
   http_proxy_set_state(session, HTTP_PROXY_STATE_CONNECTED);
 
@@ -424,6 +302,141 @@ int http_proxy_connect(http_proxy_session_t *session) {
   return 0;
 }
 
+/**
+ * Try connecting to the next candidate from the getaddrinfo result list
+ * (sequential dual-stack fallback, IPv6/IPv4 in resolver order).
+ * On EINPROGRESS the session enters CONNECTING and the poller drives
+ * completion; on hard failure the next candidate is tried immediately.
+ * @return 0 if a connection succeeded or is in progress, -1 when all
+ * candidates are exhausted
+ */
+static int http_proxy_try_next_candidate(http_proxy_session_t *session) {
+  while (session->connect_next) {
+    struct addrinfo *rp = session->connect_next;
+    session->connect_next = rp->ai_next;
+
+    int sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+    if (sock < 0) {
+      session->connect_last_errno = errno;
+      continue;
+    }
+    platform_set_nosigpipe(sock);
+
+    if (connection_set_nonblocking(sock) < 0) {
+      session->connect_last_errno = errno;
+      close(sock);
+      continue;
+    }
+
+    /* Bind to upstream interface if configured */
+    bind_to_upstream_interface(sock, session->upstream_ifname);
+
+    int connect_result = connect(sock, rp->ai_addr, rp->ai_addrlen);
+
+    if (connect_result == 0) {
+      /* Immediate connection success (rare, but possible for localhost) */
+      logger(LOG_DEBUG, "HTTP Proxy: Connected immediately to %s:%d (%s)", session->target_host, session->target_port,
+             rp->ai_family == AF_INET6 ? "IPv6" : "IPv4");
+
+      session->socket = sock;
+      if (session->epoll_fd >= 0) {
+        if (poller_add(session->epoll_fd, session->socket,
+                       POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
+          logger(LOG_ERROR, "HTTP Proxy: Failed to add socket to poller: %s", strerror(errno));
+          close(session->socket);
+          session->socket = -1;
+          return -1;
+        }
+        fdmap_set(session->socket, session->conn);
+      }
+
+      return http_proxy_on_connected(session);
+    }
+
+    if (errno == EINPROGRESS || errno == EWOULDBLOCK) {
+      /* Connection in progress - normal for non-blocking sockets */
+      logger(LOG_DEBUG, "HTTP Proxy: Connection to %s:%d in progress (async, %s)", session->target_host,
+             session->target_port, rp->ai_family == AF_INET6 ? "IPv6" : "IPv4");
+
+      session->socket = sock;
+      if (session->epoll_fd >= 0) {
+        if (poller_add(session->epoll_fd, session->socket,
+                       POLLER_OUT | POLLER_IN | POLLER_ERR | POLLER_HUP | POLLER_RDHUP) < 0) {
+          logger(LOG_ERROR, "HTTP Proxy: Failed to add socket to poller: %s", strerror(errno));
+          close(session->socket);
+          session->socket = -1;
+          return -1;
+        }
+        fdmap_set(session->socket, session->conn);
+      }
+
+      http_proxy_set_state(session, HTTP_PROXY_STATE_CONNECTING);
+      /* Restart the per-candidate timeout even if we were already in
+       * CONNECTING (set_state is a no-op for same-state transitions) */
+      session->last_state_change_ms = get_time_ms();
+      return 0;
+    }
+
+    /* Hard failure - try next candidate */
+    session->connect_last_errno = errno;
+    logger(LOG_DEBUG, "HTTP Proxy: connect() to %s:%d failed (%s): %s", session->target_host, session->target_port,
+           rp->ai_family == AF_INET6 ? "IPv6" : "IPv4", strerror(errno));
+    close(sock);
+  }
+
+  logger(LOG_ERROR, "HTTP Proxy: Failed to connect to %s:%d: %s", session->target_host, session->target_port,
+         session->connect_last_errno ? strerror(session->connect_last_errno) : "no usable address");
+  http_proxy_free_connect_results(session);
+  return -1;
+}
+
+/**
+ * Handle failure of the in-progress connect attempt: close the current
+ * socket and fall back to the next address candidate if one remains.
+ * @return 0 if another attempt was started, -1 if all candidates failed
+ */
+static int http_proxy_handle_connect_failure(http_proxy_session_t *session, int error) {
+  session->connect_last_errno = error;
+  logger(LOG_DEBUG, "HTTP Proxy: Async connect to %s:%d failed: %s", session->target_host, session->target_port,
+         strerror(error));
+
+  if (session->socket >= 0) {
+    worker_cleanup_socket_from_epoll(session->epoll_fd, session->socket);
+    session->socket = -1;
+  }
+
+  return http_proxy_try_next_candidate(session);
+}
+
+int http_proxy_connect(http_proxy_session_t *session) {
+  struct addrinfo hints;
+  char port_str[16];
+  int gai_result;
+
+  if (!session || session->socket >= 0) {
+    logger(LOG_ERROR, "HTTP Proxy: Invalid session or already connected");
+    return -1;
+  }
+
+  /* Resolve hostname (dual-stack: IPv6 and IPv4 candidates) */
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  snprintf(port_str, sizeof(port_str), "%d", session->target_port);
+
+  gai_result = getaddrinfo(session->target_host, port_str, &hints, &session->connect_results);
+  if (gai_result != 0) {
+    logger(LOG_ERROR, "HTTP Proxy: Cannot resolve hostname %s: %s", session->target_host, gai_strerror(gai_result));
+    session->connect_results = NULL;
+    return -1;
+  }
+
+  session->connect_next = session->connect_results;
+  session->connect_last_errno = 0;
+
+  return http_proxy_try_next_candidate(session);
+}
+
 static int http_proxy_build_request(http_proxy_session_t *session) {
   int len;
   char host_header[HTTP_PROXY_HOST_SIZE + 16];
@@ -431,11 +444,10 @@ static int http_proxy_build_request(http_proxy_session_t *session) {
   size_t remaining;
   const char *override_user_agent = http_proxy_get_override_user_agent();
 
-  /* Build Host header with port if non-standard */
-  if (session->target_port == 80) {
-    snprintf(host_header, sizeof(host_header), "%s", session->target_host);
-  } else {
-    snprintf(host_header, sizeof(host_header), "%s:%d", session->target_host, session->target_port);
+  /* Build Host header with port if non-standard (IPv6 hosts bracketed) */
+  if (format_host_port_for_url(session->target_host, session->target_port, 80, host_header, sizeof(host_header)) < 0) {
+    logger(LOG_ERROR, "HTTP Proxy: Host header too long");
+    return -1;
   }
 
   /* Use stored method or default to GET */
@@ -1223,27 +1235,9 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t event
     return -1;
   }
 
-  /* Check for hard socket errors first */
-  if (events & POLLER_ERR) {
-    int sock_error = 0;
-    socklen_t error_len = sizeof(sock_error);
-    if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error, &error_len) == 0 && sock_error != 0) {
-      logger(LOG_ERROR, "HTTP Proxy: Socket error: %s", strerror(sock_error));
-    } else {
-      logger(LOG_ERROR, "HTTP Proxy: Socket error event received");
-    }
-    /* During STREAMING: drain pending client output before disconnecting */
-    if (session->state == HTTP_PROXY_STATE_STREAMING) {
-      http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
-    } else {
-      http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
-      return -1;
-    }
-  }
-
-  /* Handle connection completion FIRST - before checking HUP events
-   * When TCP connect completes, we may get POLLER_OUT | POLLER_HUP together
-   * in some edge cases, so we must check connection state first */
+  /* Handle in-progress connect FIRST - before generic error/HUP handling.
+   * A failed candidate (POLLER_ERR/HUP or SO_ERROR) falls back to the next
+   * address from the getaddrinfo list instead of erroring out. */
   if (session->state == HTTP_PROXY_STATE_CONNECTING) {
     int sock_error = 0;
     socklen_t error_len = sizeof(sock_error);
@@ -1254,26 +1248,49 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t event
       return -1;
     }
 
+    if (sock_error == 0 && (events & (POLLER_ERR | POLLER_HUP)) && !(events & POLLER_OUT)) {
+      /* Error/hangup event without a definite SO_ERROR - treat as failure */
+      sock_error = ECONNREFUSED;
+    }
+
     if (sock_error != 0) {
-      logger(LOG_ERROR, "HTTP Proxy: Connection to %s:%d failed: %s", session->target_host, session->target_port,
-             strerror(sock_error));
-      http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
-      return -1;
+      if (http_proxy_handle_connect_failure(session, sock_error) < 0) {
+        http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
+        return -1;
+      }
+      return 0; /* Next candidate attempt in progress */
     }
 
     /* Connection succeeded */
     logger(LOG_INFO, "HTTP Proxy: Connected to %s:%d", session->target_host, session->target_port);
 
-    http_proxy_set_state(session, HTTP_PROXY_STATE_CONNECTED);
-
-    /* Build and queue HTTP request */
-    if (http_proxy_build_request(session) < 0) {
-      logger(LOG_ERROR, "HTTP Proxy: Failed to build request");
-      http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
+    if (http_proxy_on_connected(session) < 0) {
       return -1;
     }
+  }
 
-    http_proxy_set_state(session, HTTP_PROXY_STATE_SENDING_REQUEST);
+  /* Check for hard socket errors */
+  if (events & POLLER_ERR) {
+    int sock_error = 0;
+    socklen_t error_len = sizeof(sock_error);
+    if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error, &error_len) == 0 && sock_error != 0) {
+      logger(LOG_ERROR, "HTTP Proxy: Socket error: %s", strerror(sock_error));
+      /* During STREAMING: drain pending client output before disconnecting */
+      if (session->state == HTTP_PROXY_STATE_STREAMING) {
+        http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
+      } else {
+        http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
+        return -1;
+      }
+    } else if (session->state != HTTP_PROXY_STATE_SENDING_REQUEST) {
+      logger(LOG_ERROR, "HTTP Proxy: Socket error event received");
+      if (session->state == HTTP_PROXY_STATE_STREAMING) {
+        http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
+      } else {
+        http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
+        return -1;
+      }
+    }
   }
 
   /* Handle writable socket - send pending request */
@@ -1379,6 +1396,9 @@ int http_proxy_session_cleanup(http_proxy_session_t *session) {
     session->socket = -1;
   }
 
+  /* Free pending connect candidates if any */
+  http_proxy_free_connect_results(session);
+
   /* Free rewrite body buffer if allocated */
   if (session->rewrite_body_buffer) {
     free(session->rewrite_body_buffer);
@@ -1414,6 +1434,14 @@ int http_proxy_session_tick(http_proxy_session_t *session, int64_t now) {
   }
   int64_t elapsed = now - session->last_state_change_ms;
   if (elapsed >= HTTP_PROXY_TIMEOUT_SEC * 1000) {
+    /* Connect timeout: fall back to the next address candidate if any */
+    if (session->state == HTTP_PROXY_STATE_CONNECTING && session->connect_next) {
+      logger(LOG_INFO, "HTTP Proxy: Connect to %s:%d timed out, trying next address", session->target_host,
+             session->target_port);
+      if (http_proxy_handle_connect_failure(session, ETIMEDOUT) == 0) {
+        return 0;
+      }
+    }
     logger(LOG_ERROR, "HTTP Proxy: State %d timed out after %lld ms", session->state, (long long)elapsed);
     http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
     return -1;

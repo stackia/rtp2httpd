@@ -272,6 +272,7 @@ void rtsp_session_init(rtsp_session_t *session) {
   session->rtcp_socket = -1;
   session->cseq = 1;
   session->server_port = 554; /* Default RTSP port */
+  session->upstream_family = AF_INET;
   session->redirect_count = 0;
   session->r2h_start[0] = '\0';
   session->playseek_range_start[0] = '\0';
@@ -685,16 +686,17 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
     strcpy(session->server_path, "/");
   }
 
-  /* Build server_url without credentials (for RTSP requests and Digest auth) */
-  int url_len;
-  if (session->server_port == 554) {
-    /* Omit default port */
-    url_len = snprintf(session->server_url, sizeof(session->server_url), "rtsp://%s%s", session->server_host,
-                       session->server_path);
-  } else {
-    url_len = snprintf(session->server_url, sizeof(session->server_url), "rtsp://%s:%d%s", session->server_host,
-                       session->server_port, session->server_path);
+  /* Build server_url without credentials (for RTSP requests and Digest auth).
+   * IPv6 hosts are bracketed; default port 554 is omitted. */
+  char url_authority[RTSP_SERVER_HOST_SIZE + 16];
+  if (format_host_port_for_url(session->server_host, session->server_port, 554, url_authority, sizeof(url_authority)) <
+      0) {
+    logger(LOG_ERROR, "RTSP: Server authority too long");
+    return -1;
   }
+
+  int url_len =
+      snprintf(session->server_url, sizeof(session->server_url), "rtsp://%s%s", url_authority, session->server_path);
 
   if (url_len >= (int)sizeof(session->server_url)) {
     logger(LOG_ERROR, "RTSP: Server URL too long, truncated");
@@ -707,10 +709,140 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
   return 0;
 }
 
+/* Free the getaddrinfo candidate list (after success or final failure) */
+static void rtsp_free_connect_results(rtsp_session_t *session) {
+  if (session->connect_results) {
+    freeaddrinfo(session->connect_results);
+    session->connect_results = NULL;
+    session->connect_next = NULL;
+  }
+}
+
+/**
+ * Try connecting to the next candidate from the getaddrinfo result list
+ * (sequential dual-stack fallback, IPv6/IPv4 in resolver order).
+ * Both immediate success and EINPROGRESS leave the session in
+ * CONNECTING/RECONNECTING; the poller event drives completion via
+ * getsockopt(SO_ERROR).  A hard connect() failure moves on to the next
+ * candidate immediately.
+ * @return 0 if a connection is in progress, -1 when all candidates failed
+ */
+static int rtsp_try_next_candidate(rtsp_session_t *session) {
+  while (session->connect_next) {
+    struct addrinfo *rp = session->connect_next;
+    session->connect_next = rp->ai_next;
+
+    int sock = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+    if (sock < 0) {
+      session->connect_last_errno = errno;
+      continue;
+    }
+    platform_set_nosigpipe(sock);
+
+    if (connection_set_nonblocking(sock) < 0) {
+      session->connect_last_errno = errno;
+      close(sock);
+      continue;
+    }
+
+    bind_to_upstream_interface(sock, session->upstream_ifname);
+
+    int connect_result = connect(sock, rp->ai_addr, rp->ai_addrlen);
+
+    if (connect_result == 0 || errno == EINPROGRESS || errno == EWOULDBLOCK) {
+      logger(LOG_DEBUG, "RTSP: Connection to %s:%d in progress (%s)", session->server_host, session->server_port,
+             rp->ai_family == AF_INET6 ? "IPv6" : "IPv4");
+
+      /* If early STUN/UDP sockets were created for a different address family
+       * (dual-stack fallback switched family), drop them and reset STUN state;
+       * they will be recreated with the correct family before SETUP */
+      if (session->rtp_socket >= 0 && session->upstream_family != rp->ai_family) {
+        rtsp_close_udp_sockets(session, "upstream address family changed");
+        memset(&session->stun, 0, sizeof(session->stun));
+      }
+
+      session->socket = sock;
+      session->upstream_family = rp->ai_family;
+
+      /* Register socket with poller; completion is detected via POLLER_OUT
+       * (also for the rare immediate-success case, where SO_ERROR is 0) */
+      if (session->epoll_fd >= 0) {
+        if (poller_add(session->epoll_fd, session->socket,
+                       POLLER_OUT | POLLER_IN | POLLER_ERR | POLLER_HUP | POLLER_RDHUP) < 0) {
+          logger(LOG_ERROR, "RTSP: Failed to add socket to poller: %s", strerror(errno));
+          close(session->socket);
+          session->socket = -1;
+          return -1;
+        }
+        fdmap_set(session->socket, session->conn);
+      }
+
+      /* Keep RECONNECTING (teardown reconnect path) as-is; otherwise enter
+       * CONNECTING.  Refresh the timestamp manually for the per-candidate
+       * timeout because set_state is a no-op for same-state transitions. */
+      if (session->state != RTSP_STATE_RECONNECTING) {
+        rtsp_session_set_state(session, RTSP_STATE_CONNECTING);
+      }
+      session->last_state_change_ms = get_time_ms();
+      return 0;
+    }
+
+    /* Hard failure - try next candidate */
+    session->connect_last_errno = errno;
+    logger(LOG_DEBUG, "RTSP: connect() to %s:%d failed (%s): %s", session->server_host, session->server_port,
+           rp->ai_family == AF_INET6 ? "IPv6" : "IPv4", strerror(errno));
+    close(sock);
+  }
+
+  logger(LOG_ERROR, "RTSP: Failed to connect to %s:%d: %s", session->server_host, session->server_port,
+         session->connect_last_errno ? strerror(session->connect_last_errno) : "no usable address");
+  rtsp_free_connect_results(session);
+  return -1;
+}
+
+/**
+ * Handle failure of the in-progress connect attempt: close the current
+ * socket and fall back to the next address candidate if one remains.
+ * @return 0 if another attempt was started, -1 if all candidates failed
+ */
+static int rtsp_handle_connect_failure(rtsp_session_t *session, int error) {
+  session->connect_last_errno = error;
+  logger(LOG_DEBUG, "RTSP: Async connect to %s:%d failed: %s", session->server_host, session->server_port,
+         strerror(error));
+
+  if (session->socket >= 0) {
+    worker_cleanup_socket_from_epoll(session->epoll_fd, session->socket);
+    session->socket = -1;
+  }
+
+  return rtsp_try_next_candidate(session);
+}
+
 int rtsp_connect(rtsp_session_t *session) {
-  struct sockaddr_in server_addr;
-  struct hostent *he;
-  int connect_result;
+  struct addrinfo hints;
+  char port_str[16];
+  int gai_result;
+
+  /* Resolve hostname first (dual-stack: IPv6 and IPv4 candidates), so the
+   * upstream address family is known before creating UDP/STUN sockets */
+  rtsp_free_connect_results(session);
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  snprintf(port_str, sizeof(port_str), "%d", session->server_port);
+
+  gai_result = getaddrinfo(session->server_host, port_str, &hints, &session->connect_results);
+  if (gai_result != 0) {
+    logger(LOG_ERROR, "RTSP: Cannot resolve hostname %s: %s", session->server_host, gai_strerror(gai_result));
+    session->connect_results = NULL;
+    return -1;
+  }
+
+  session->connect_next = session->connect_results;
+  session->connect_last_errno = 0;
+  if (session->connect_results) {
+    session->upstream_family = session->connect_results->ai_family;
+  }
 
   /* Start STUN discovery early - before TCP connect
    * This allows STUN to run in parallel with TCP connection establishment
@@ -725,102 +857,76 @@ int rtsp_connect(rtsp_session_t *session) {
     }
   }
 
-  /* Resolve hostname */
-  he = gethostbyname(session->server_host);
-  if (!he) {
-    logger(LOG_ERROR, "RTSP: Cannot resolve hostname %s: %s", session->server_host, hstrerror(h_errno));
-    return -1;
-  }
-
-  /* Validate address list */
-  if (!he->h_addr_list[0]) {
-    logger(LOG_ERROR, "RTSP: No addresses for hostname %s", session->server_host);
-    return -1;
-  }
-
-  /* Create TCP socket */
-  session->socket = socket(AF_INET, SOCK_STREAM, 0);
-  if (session->socket < 0) {
-    logger(LOG_ERROR, "RTSP: Failed to create socket: %s", strerror(errno));
-    return -1;
-  }
-  platform_set_nosigpipe(session->socket);
-
-  /* Set socket to non-blocking mode for poller */
-  if (connection_set_nonblocking(session->socket) < 0) {
-    logger(LOG_ERROR, "RTSP: Failed to set socket non-blocking: %s", strerror(errno));
-    close(session->socket);
-    session->socket = -1;
-    return -1;
-  }
-
-  bind_to_upstream_interface(session->socket, session->upstream_ifname);
-
-  /* Connect to server (non-blocking) */
-  memset(&server_addr, 0, sizeof(server_addr));
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(session->server_port);
-  memcpy(&server_addr.sin_addr.s_addr, he->h_addr_list[0], he->h_length);
-
-  connect_result = connect(session->socket, (struct sockaddr *)&server_addr, sizeof(server_addr));
-
-  /* Handle non-blocking connect result */
-  if (connect_result < 0) {
-    if (errno == EINPROGRESS || errno == EWOULDBLOCK) {
-      /* Connection in progress - this is normal for non-blocking sockets */
-      logger(LOG_DEBUG, "RTSP: Connection to %s:%d in progress (async)", session->server_host, session->server_port);
-
-      /* Register socket with poller for writable to detect connection completion
-       */
-      if (session->epoll_fd >= 0) {
-        if (poller_add(session->epoll_fd, session->socket, POLLER_OUT | POLLER_IN | POLLER_ERR | POLLER_HUP) < 0) {
-          logger(LOG_ERROR, "RTSP: Failed to add socket to poller: %s", strerror(errno));
-          close(session->socket);
-          session->socket = -1;
-          return -1;
-        }
-        fdmap_set(session->socket, session->conn);
-        logger(LOG_DEBUG, "RTSP: Socket registered with poller for connection completion");
-      }
-
-      /* Set state to CONNECTING - connection will complete asynchronously */
-      rtsp_session_set_state(session, RTSP_STATE_CONNECTING);
-      return 0; /* Success - connection in progress */
-    } else {
-      /* Real connection error */
-      logger(LOG_ERROR, "RTSP: Failed to connect to %s:%d: %s", session->server_host, session->server_port,
-             strerror(errno));
-      close(session->socket);
-      session->socket = -1;
-      return -1;
-    }
-  }
-
-  /* Immediate connection success (rare for non-blocking, but possible for
-   * localhost) */
-  logger(LOG_DEBUG, "RTSP: Connected immediately to %s:%d", session->server_host, session->server_port);
-
-  /* Register socket with poller for read events */
-  if (session->epoll_fd >= 0) {
-    if (poller_add(session->epoll_fd, session->socket, POLLER_IN | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
-      logger(LOG_ERROR, "RTSP: Failed to add socket to poller: %s", strerror(errno));
-      close(session->socket);
-      session->socket = -1;
-      return -1;
-    }
-    fdmap_set(session->socket, session->conn);
-    logger(LOG_DEBUG, "RTSP: Socket registered with poller");
-  }
-
-  rtsp_session_set_state(session, RTSP_STATE_CONNECTED);
-  return 0;
+  return rtsp_try_next_candidate(session);
 }
 
 int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
   int result;
 
+  /* Handle in-progress connect FIRST (both initial and reconnect for
+   * TEARDOWN).  A failed candidate falls back to the next address from the
+   * getaddrinfo list instead of erroring out. */
+  if (session->state == RTSP_STATE_CONNECTING || session->state == RTSP_STATE_RECONNECTING) {
+    int sock_error = 0;
+    socklen_t error_len = sizeof(sock_error);
+
+    /* Check if connection succeeded using getsockopt */
+    if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error, &error_len) < 0) {
+      logger(LOG_ERROR, "RTSP: getsockopt(SO_ERROR) failed: %s", strerror(errno));
+      rtsp_session_set_state(session, RTSP_STATE_ERROR);
+      return -1;
+    }
+
+    if (sock_error == 0 && (events & (POLLER_ERR | POLLER_HUP | POLLER_RDHUP)) && !(events & POLLER_OUT)) {
+      /* Error/hangup event without a definite SO_ERROR - treat as failure */
+      sock_error = ECONNREFUSED;
+    }
+
+    if (sock_error != 0) {
+      if (rtsp_handle_connect_failure(session, sock_error) == 0) {
+        return 0; /* Next candidate attempt in progress */
+      }
+      rtsp_session_set_state(session, RTSP_STATE_ERROR);
+      return -1;
+    }
+
+    /* Connection succeeded - drop remaining candidates */
+    rtsp_free_connect_results(session);
+    logger(LOG_INFO, "RTSP: Connected to %s:%d", session->server_host, session->server_port);
+
+    /* Update poller to monitor both read and write */
+    if (session->epoll_fd >= 0) {
+      if (poller_mod(session->epoll_fd, session->socket,
+                     POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
+        logger(LOG_ERROR, "RTSP: Failed to modify socket poller events: %s", strerror(errno));
+        rtsp_session_set_state(session, RTSP_STATE_ERROR);
+        return -1;
+      }
+    }
+
+    /* Determine next state based on whether this is initial connect or
+     * reconnect */
+    if (session->state == RTSP_STATE_RECONNECTING) {
+      /* Reconnected for TEARDOWN - keep RECONNECTING state for state machine */
+      logger(LOG_INFO, "RTSP: Reconnected successfully for TEARDOWN");
+    } else {
+      /* Initial connection */
+      rtsp_session_set_state(session, RTSP_STATE_CONNECTED);
+    }
+
+    /* Advance state machine to prepare next request (DESCRIBE or TEARDOWN) */
+    result = rtsp_state_machine_advance(session);
+    if (result < 0) {
+      if (result == -2)
+        return -1;
+      rtsp_session_set_state(session, RTSP_STATE_ERROR);
+      return -1;
+    }
+    /* Now pending_request is ready, will be sent when POLLER_OUT fires */
+  }
+
   /* Check for connection errors or hangup */
-  if (events & (POLLER_HUP | POLLER_ERR | POLLER_RDHUP)) {
+  else if (events & (POLLER_HUP | POLLER_ERR | POLLER_RDHUP)) {
     if (events & POLLER_ERR) {
       int sock_error = 0;
       socklen_t error_len = sizeof(sock_error);
@@ -856,61 +962,6 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
 
     rtsp_session_set_state(session, RTSP_STATE_ERROR);
     return -1; /* Connection closed or error */
-  }
-
-  /* Handle connection completion (both initial and reconnect for TEARDOWN) */
-  if (session->state == RTSP_STATE_CONNECTING || session->state == RTSP_STATE_RECONNECTING) {
-    int sock_error = 0;
-    socklen_t error_len = sizeof(sock_error);
-
-    /* Check if connection succeeded using getsockopt */
-    if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error, &error_len) < 0) {
-      logger(LOG_ERROR, "RTSP: getsockopt(SO_ERROR) failed: %s", strerror(errno));
-      rtsp_session_set_state(session, RTSP_STATE_ERROR);
-      return -1;
-    }
-
-    if (sock_error != 0) {
-      /* Connection failed */
-      logger(LOG_ERROR, "RTSP: Connection to %s:%d failed: %s", session->server_host, session->server_port,
-             strerror(sock_error));
-      rtsp_session_set_state(session, RTSP_STATE_ERROR);
-      return -1;
-    }
-
-    /* Connection succeeded */
-    logger(LOG_INFO, "RTSP: Connected to %s:%d", session->server_host, session->server_port);
-    logger(LOG_DEBUG, "RTSP: Connection to %s:%d completed successfully", session->server_host, session->server_port);
-
-    /* Update poller to monitor both read and write */
-    if (session->epoll_fd >= 0) {
-      if (poller_mod(session->epoll_fd, session->socket,
-                     POLLER_IN | POLLER_OUT | POLLER_HUP | POLLER_ERR | POLLER_RDHUP) < 0) {
-        logger(LOG_ERROR, "RTSP: Failed to modify socket poller events: %s", strerror(errno));
-        rtsp_session_set_state(session, RTSP_STATE_ERROR);
-        return -1;
-      }
-    }
-
-    /* Determine next state based on whether this is initial connect or
-     * reconnect */
-    if (session->state == RTSP_STATE_RECONNECTING) {
-      /* Reconnected for TEARDOWN - keep RECONNECTING state for state machine */
-      logger(LOG_INFO, "RTSP: Reconnected successfully for TEARDOWN");
-    } else {
-      /* Initial connection */
-      rtsp_session_set_state(session, RTSP_STATE_CONNECTED);
-    }
-
-    /* Advance state machine to prepare next request (DESCRIBE or TEARDOWN) */
-    result = rtsp_state_machine_advance(session);
-    if (result < 0) {
-      if (result == -2)
-        return -1;
-      rtsp_session_set_state(session, RTSP_STATE_ERROR);
-      return -1;
-    }
-    /* Now pending_request is ready, will be sent when POLLER_OUT fires */
   }
 
   /* Handle writable socket - try to send pending data */
@@ -1623,6 +1674,15 @@ int rtsp_session_tick(rtsp_session_t *session, int64_t now) {
       break;
     }
     if (timeout_sec > 0 && elapsed >= timeout_sec * 1000) {
+      /* Connect timeout: fall back to the next address candidate if any */
+      if ((session->state == RTSP_STATE_CONNECTING || session->state == RTSP_STATE_RECONNECTING) &&
+          session->connect_next) {
+        logger(LOG_INFO, "RTSP: Connect to %s:%d timed out, trying next address", session->server_host,
+               session->server_port);
+        if (rtsp_handle_connect_failure(session, ETIMEDOUT) == 0) {
+          return 0;
+        }
+      }
       logger(LOG_ERROR, "RTSP: State %d timed out after %lld ms", session->state, (long long)elapsed);
       rtsp_session_set_state(session, RTSP_STATE_ERROR);
       return -1;
@@ -1935,6 +1995,9 @@ static void rtsp_force_cleanup(rtsp_session_t *session) {
   }
 
   rtsp_close_udp_sockets(session, "cleanup");
+
+  /* Free pending connect candidates if any */
+  rtsp_free_connect_results(session);
 
   /* Reset response buffer position */
   session->response_buffer_pos = 0;
@@ -2332,7 +2395,10 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
   const int port_range = 10000;
   const int port_min = 10000;
   const int port_start_offset = (int)(get_time_ms() % port_range);
-  struct sockaddr_in local_addr;
+  struct sockaddr_storage local_addr;
+  socklen_t local_addr_len;
+  /* Create UDP sockets matching the upstream address family */
+  int family = (session->upstream_family == AF_INET6) ? AF_INET6 : AF_INET;
   int port_base;
   int port_max;
   int pair_count;
@@ -2368,15 +2434,24 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
   start_pair_index = ((port_start_offset & ~1) / 2) % pair_count;
 
   memset(&local_addr, 0, sizeof(local_addr));
-  local_addr.sin_family = AF_INET;
-  local_addr.sin_addr.s_addr = INADDR_ANY;
+  if (family == AF_INET6) {
+    struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&local_addr;
+    sin6->sin6_family = AF_INET6;
+    sin6->sin6_addr = in6addr_any;
+    local_addr_len = sizeof(struct sockaddr_in6);
+  } else {
+    struct sockaddr_in *sin = (struct sockaddr_in *)&local_addr;
+    sin->sin_family = AF_INET;
+    sin->sin_addr.s_addr = INADDR_ANY;
+    local_addr_len = sizeof(struct sockaddr_in);
+  }
 
   for (int attempt = 0; attempt < pair_count; attempt++) {
     int pair_index = (start_pair_index + attempt) % pair_count;
     int candidate_rtp_port = port_base + pair_index * 2;
     int bind_errno = 0;
 
-    rtp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    rtp_socket = socket(family, SOCK_DGRAM, 0);
     if (rtp_socket < 0) {
       logger(LOG_ERROR, "RTSP: Failed to create RTP socket: %s", strerror(errno));
       return -1;
@@ -2396,8 +2471,8 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
 
     bind_to_upstream_interface(rtp_socket, session->upstream_ifname);
 
-    local_addr.sin_port = htons(candidate_rtp_port);
-    if (bind(rtp_socket, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0) {
+    sockaddr_set_port((struct sockaddr *)&local_addr, (uint16_t)candidate_rtp_port);
+    if (bind(rtp_socket, (struct sockaddr *)&local_addr, local_addr_len) < 0) {
       bind_errno = errno;
       close(rtp_socket);
       rtp_socket = -1;
@@ -2408,7 +2483,7 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
       return -1;
     }
 
-    rtcp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    rtcp_socket = socket(family, SOCK_DGRAM, 0);
     if (rtcp_socket < 0) {
       logger(LOG_ERROR, "RTSP: Failed to create RTCP socket: %s", strerror(errno));
       close(rtp_socket);
@@ -2430,8 +2505,8 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
 
     bind_to_upstream_interface(rtcp_socket, session->upstream_ifname);
 
-    local_addr.sin_port = htons(candidate_rtp_port + 1);
-    if (bind(rtcp_socket, (struct sockaddr *)&local_addr, sizeof(local_addr)) < 0) {
+    sockaddr_set_port((struct sockaddr *)&local_addr, (uint16_t)(candidate_rtp_port + 1));
+    if (bind(rtcp_socket, (struct sockaddr *)&local_addr, local_addr_len) < 0) {
       bind_errno = errno;
       close(rtp_socket);
       close(rtcp_socket);
@@ -2704,7 +2779,7 @@ static void rtsp_send_udp_nat_probe(rtsp_session_t *session) {
   rtcp_packet[3] = 0x01; /* length in words - 1 (low byte) = 1 */
 
   memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_INET;
+  hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_protocol = IPPROTO_UDP;
 
@@ -2714,24 +2789,28 @@ static void rtsp_send_udp_nat_probe(rtsp_session_t *session) {
     return;
   }
 
+  /* Pick the first address matching the UDP socket address family */
+  for (rp = result; rp != NULL; rp = rp->ai_next) {
+    if (rp->ai_family == session->upstream_family) {
+      break;
+    }
+  }
+  if (!rp) {
+    rp = result; /* Fallback: try the first resolved address */
+  }
+
   /* Send 3 NAT probe packets for both RTP and RTCP */
   for (int attempt = 0; attempt < 3; attempt++) {
-    for (rp = result; rp != NULL; rp = rp->ai_next) {
-      /* Send RTP probe */
-      if (session->server_rtp_port > 0 && session->rtp_socket >= 0) {
-        sendto(session->rtp_socket, rtp_packet, sizeof(rtp_packet), 0, rp->ai_addr, rp->ai_addrlen);
-      }
+    /* Send RTP probe */
+    if (session->server_rtp_port > 0 && session->rtp_socket >= 0) {
+      sockaddr_set_port(rp->ai_addr, (uint16_t)session->server_rtp_port);
+      sendto(session->rtp_socket, rtp_packet, sizeof(rtp_packet), 0, rp->ai_addr, rp->ai_addrlen);
+    }
 
-      /* Send RTCP probe - update port in sockaddr */
-      if (session->server_rtcp_port > 0 && session->rtcp_socket >= 0) {
-        if (rp->ai_family == AF_INET) {
-          struct sockaddr_in *addr = (struct sockaddr_in *)(uintptr_t)rp->ai_addr;
-          addr->sin_port = htons(session->server_rtcp_port);
-        }
-        sendto(session->rtcp_socket, rtcp_packet, sizeof(rtcp_packet), 0, rp->ai_addr, rp->ai_addrlen);
-      }
-
-      break; /* Only use first resolved address */
+    /* Send RTCP probe - update port in sockaddr */
+    if (session->server_rtcp_port > 0 && session->rtcp_socket >= 0) {
+      sockaddr_set_port(rp->ai_addr, (uint16_t)session->server_rtcp_port);
+      sendto(session->rtcp_socket, rtcp_packet, sizeof(rtcp_packet), 0, rp->ai_addr, rp->ai_addrlen);
     }
   }
 

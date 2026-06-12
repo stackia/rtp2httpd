@@ -6,6 +6,9 @@
 
 #include "stun.h"
 
+/* Forward declaration */
+struct addrinfo;
+
 #define RTSP_DISABLE_TCP_TRANSPORT 0 /* To debug UDP transport, set to 1 */
 
 /* Timeout constants for RTSP state machine */
@@ -120,10 +123,20 @@ typedef struct {
   char server_url[RTSP_SERVER_URL_SIZE];   /* Full RTSP URL */
   char setup_url[RTSP_SERVER_URL_SIZE];    /* Resolved SETUP URL (from
                                               Content-Base + a=control) */
-  char server_host[RTSP_SERVER_HOST_SIZE]; /* RTSP server hostname */
+  char server_host[RTSP_SERVER_HOST_SIZE]; /* RTSP server hostname (bare, no
+                                              IPv6 brackets) */
   int server_port;                         /* RTSP server port */
   char server_path[RTSP_SERVER_PATH_SIZE]; /* RTSP path with query string */
-  int redirect_count;                      /* Number of redirects followed */
+
+  /* Dual-stack async connect state (sequential candidate fallback).
+   * connect_results owns the getaddrinfo list; connect_next points to the
+   * next untried candidate. */
+  struct addrinfo *connect_results;
+  struct addrinfo *connect_next;
+  int connect_last_errno;
+  int upstream_family; /* Address family of the connected/connecting upstream
+                          (AF_INET / AF_INET6) */
+  int redirect_count;  /* Number of redirects followed */
   char r2h_start[RTSP_TIME_STRING_SIZE];
   char playseek_range_start[RTSP_TIME_STRING_SIZE];
   int use_playseek_range;

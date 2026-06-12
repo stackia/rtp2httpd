@@ -268,6 +268,113 @@ uint32_t get_local_ip_for_fcc(const char *override, const char *override_fcc) {
   return local_ip;
 }
 
+int host_needs_brackets(const char *host) {
+  if (!host || host[0] == '\0' || host[0] == '[')
+    return 0;
+  return strchr(host, ':') != NULL;
+}
+
+int format_host_for_url(const char *host, char *out, size_t out_size) {
+  int written;
+
+  if (!host || !out || out_size == 0)
+    return -1;
+
+  if (host_needs_brackets(host)) {
+    written = snprintf(out, out_size, "[%s]", host);
+  } else {
+    written = snprintf(out, out_size, "%s", host);
+  }
+
+  return (written < 0 || (size_t)written >= out_size) ? -1 : 0;
+}
+
+int format_host_port_for_url(const char *host, int port, int default_port, char *out, size_t out_size) {
+  char bracketed[512];
+  int written;
+
+  if (!host || !out || out_size == 0)
+    return -1;
+
+  if (format_host_for_url(host, bracketed, sizeof(bracketed)) < 0)
+    return -1;
+
+  if (default_port > 0 && port == default_port) {
+    written = snprintf(out, out_size, "%s", bracketed);
+  } else {
+    written = snprintf(out, out_size, "%s:%d", bracketed, port);
+  }
+
+  return (written < 0 || (size_t)written >= out_size) ? -1 : 0;
+}
+
+int parse_host_port(const char *input, char *host, size_t host_size, int *port) {
+  size_t host_len;
+  const char *port_str = NULL;
+
+  if (!input || !host || host_size == 0)
+    return -1;
+
+  if (input[0] == '[') {
+    /* Bracketed IPv6 literal: [addr][:port] */
+    const char *closing = strchr(input, ']');
+    if (!closing)
+      return -1;
+    host_len = (size_t)(closing - input - 1);
+    if (host_len == 0 || host_len >= host_size)
+      return -1;
+    memcpy(host, input + 1, host_len);
+    host[host_len] = '\0';
+    if (closing[1] == ':') {
+      port_str = closing + 2;
+    } else if (closing[1] != '\0') {
+      return -1;
+    }
+  } else {
+    const char *first_colon = strchr(input, ':');
+    if (first_colon && strchr(first_colon + 1, ':')) {
+      /* Multiple colons: bare IPv6 literal without port */
+      host_len = strlen(input);
+      if (host_len >= host_size)
+        return -1;
+      memcpy(host, input, host_len + 1);
+    } else if (first_colon) {
+      /* hostname:port or IPv4:port */
+      host_len = (size_t)(first_colon - input);
+      if (host_len == 0 || host_len >= host_size)
+        return -1;
+      memcpy(host, input, host_len);
+      host[host_len] = '\0';
+      port_str = first_colon + 1;
+    } else {
+      host_len = strlen(input);
+      if (host_len == 0 || host_len >= host_size)
+        return -1;
+      memcpy(host, input, host_len + 1);
+    }
+  }
+
+  if (port_str && *port_str && port) {
+    char *end = NULL;
+    long parsed = strtol(port_str, &end, 10);
+    if (end == port_str || *end != '\0' || parsed <= 0 || parsed > 65535)
+      return -1;
+    *port = (int)parsed;
+  }
+
+  return 0;
+}
+
+void sockaddr_set_port(struct sockaddr *sa, uint16_t port) {
+  if (!sa)
+    return;
+  if (sa->sa_family == AF_INET) {
+    ((struct sockaddr_in *)(uintptr_t)sa)->sin_port = htons(port);
+  } else if (sa->sa_family == AF_INET6) {
+    ((struct sockaddr_in6 *)(uintptr_t)sa)->sin6_port = htons(port);
+  }
+}
+
 char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host, const char *x_forwarded_proto) {
   const char *host = NULL;
   const char *proto = "http";
@@ -302,6 +409,17 @@ char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host
   }
 
   if (host) {
+    /* Normalize host: a bare IPv6 literal (no brackets) must be bracketed
+     * before being embedded in a URL.  "host:port" with a single colon is
+     * left untouched. */
+    char normalized_host[512];
+    const char *first_colon = strchr(host, ':');
+    if (host[0] != '[' && first_colon && strchr(first_colon + 1, ':')) {
+      if (format_host_for_url(host, normalized_host, sizeof(normalized_host)) == 0) {
+        host = normalized_host;
+      }
+    }
+
     /* Build base URL from host and proto */
     size_t url_len = strlen(proto) + 3 + strlen(host) + 2; /* proto://host/ */
     base_url = malloc(url_len);
