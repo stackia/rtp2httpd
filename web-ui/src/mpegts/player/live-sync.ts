@@ -39,11 +39,24 @@ export function setupLiveSync(video: HTMLMediaElement, config: PlayerConfig): ()
     // else: between target and max, keep current playbackRate
   }
 
+  function onWaiting(): void {
+    // Buffer underrun while rate-boosted: playback has caught up with the live
+    // edge. Reset immediately — timeupdate stops firing during the stall, so the
+    // regular latency check cannot run, and staying boosted would just starve
+    // playback again as soon as it resumes (rebuffer loop, esp. on iOS).
+    if (config.liveSync && video.playbackRate !== 1 && video.playbackRate !== 0) {
+      video.playbackRate = 1;
+      Log.v(TAG, "Buffer underrun, playback rate reset to 1");
+    }
+  }
+
   video.addEventListener("timeupdate", onTimeUpdate);
+  video.addEventListener("waiting", onWaiting);
 
   return () => {
     Log.v(TAG, "Video playback rate reset to 1, live sync disabled");
     video.removeEventListener("timeupdate", onTimeUpdate);
+    video.removeEventListener("waiting", onWaiting);
     video.playbackRate = 1;
   };
 }
