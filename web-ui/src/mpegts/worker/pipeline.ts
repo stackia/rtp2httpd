@@ -258,7 +258,7 @@ class Pipeline {
         }
         if (meta.initUrl && meta.initUrl !== this._lastInitUrl) {
           if (!(await this._waitIfPaused(runId))) return;
-          await this._loadFmp4Init(meta.initUrl);
+          await this._loadFmp4Init(meta.initUrl, runId);
           if (this._runId !== runId) return;
           this._lastInitUrl = meta.initUrl;
         }
@@ -421,16 +421,19 @@ class Pipeline {
 
   // ---- fMP4 passthrough path ----
 
-  private async _loadFmp4Init(initUrl: string): Promise<void> {
+  private async _loadFmp4Init(initUrl: string, runId: number): Promise<void> {
     this._fmp4Mode = true;
     const response = await fetch(initUrl, {
       headers: this._config.headers,
       referrerPolicy: (this._config.referrerPolicy as ReferrerPolicy | undefined) ?? "no-referrer-when-downgrade",
     });
+    if (this._runId !== runId) return;
     if (!response.ok) {
       throw new LoadError(LoaderErrors.HTTP_STATUS_CODE_INVALID, { code: response.status, msg: response.statusText });
     }
     const data = new Uint8Array(await response.arrayBuffer());
+    // Superseded mid-fetch (seek/reload/destroy): don't append a stale init segment
+    if (this._runId !== runId) return;
     this._sendFmp4Init(data);
   }
 

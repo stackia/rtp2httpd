@@ -307,7 +307,8 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
     let mimeType = container;
     if (codec && codec.length > 0) {
-      mimeType += `;codecs=${codec}`;
+      // Quoting is required when the codec list contains commas (muxed fMP4 renditions)
+      mimeType += `;codecs="${codec}"`;
     }
 
     if (mimeType !== mimeTypes[track]) {
@@ -447,7 +448,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         return;
       }
 
-      const mimePreview = codec ? `${container};codecs=${codec}` : container;
+      const mimePreview = codec ? `${container};codecs="${codec}"` : container;
       Log.v(TAG, `Received Initialization Segment, mimeType: ${mimePreview}`);
       lastInitSegments[track] = { data, codec, container };
 

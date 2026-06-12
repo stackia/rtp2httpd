@@ -1,8 +1,11 @@
 /**
  * Minimal m3u8 playlist parser. Supports only what the player needs:
  * - Media playlist: EXTINF, EXT-X-TARGETDURATION, EXT-X-MEDIA-SEQUENCE,
- *   EXT-X-DISCONTINUITY, EXT-X-ENDLIST, EXT-X-PLAYLIST-TYPE, EXT-X-MAP
+ *   EXT-X-DISCONTINUITY, EXT-X-ENDLIST, EXT-X-MAP
  * - Multivariant playlist: EXT-X-STREAM-INF (BANDWIDTH / CODECS)
+ *
+ * EXT-X-PLAYLIST-TYPE is ignored: any playlist without EXT-X-ENDLIST (including
+ * EVENT) is treated as live and keeps refreshing.
  *
  * Explicitly unsupported: LL-HLS, EXT-X-MEDIA renditions, encryption, byteranges.
  */

@@ -142,8 +142,15 @@ export function createMpegtsPlayer(
     if (watermarkTimer) return;
     watermarkTimer = setInterval(() => {
       const buffered = video.buffered;
-      if (buffered.length === 0) return;
-      const ahead = buffered.end(buffered.length - 1) - video.currentTime;
+      // Measure forward buffer within the range containing currentTime; after a seek
+      // to an unbuffered position, stale ranges further ahead must not count.
+      let ahead = 0;
+      for (let i = 0; i < buffered.length; i++) {
+        if (video.currentTime >= buffered.start(i) && video.currentTime <= buffered.end(i)) {
+          ahead = buffered.end(i) - video.currentTime;
+          break;
+        }
+      }
       if (!watermarkPaused && ahead > VOD_FORWARD_BUFFER_PAUSE) {
         watermarkPaused = true;
         worker?.postMessage({ type: "pause" } satisfies WorkerCommand);
@@ -287,6 +294,12 @@ export function createMpegtsPlayer(
         // HLS VOD/EVENT: reposition inside the playlist (worker reschedules segments)
         const cmd: WorkerCommand = { type: "seek", seconds };
         worker?.postMessage(cmd);
+        // The watermark throttle may be holding the worker paused; the seek target
+        // needs data now, so resume immediately (the throttle re-pauses if needed)
+        if (watermarkPaused) {
+          watermarkPaused = false;
+          worker?.postMessage({ type: "resume" } satisfies WorkerCommand);
+        }
         video.currentTime = seconds;
       } else {
         for (const h of seekHandlers) {
