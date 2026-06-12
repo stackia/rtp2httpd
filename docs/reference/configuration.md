@@ -20,6 +20,24 @@ rtp2httpd [选项]
 - `-m, --maxclients <数量>` - 最大并发客户端数 (默认: 5)
 - `-w, --workers <数量>` - 工作进程数 (默认: 1)
 
+`--listen` 可以重复指定，用于同时监听多个地址或端口：
+
+```bash
+rtp2httpd --listen 5140 --listen 192.168.1.1:8081 --listen '[::1]:5140'
+```
+
+OpenWrt UCI 配置中使用 `list listen` 表示多个监听地址。裸端口表示监听所有地址；
+旧版 `option port` 仍然兼容，但建议新配置使用 `list listen`：
+
+```uci
+config rtp2httpd
+    list listen '5140'
+    list listen '192.168.1.1:8081'
+    list listen '[::1]:5140'
+    # 旧版单端口写法（兼容保留）
+    # option port '5140'
+```
+
 #### 上游网络接口配置
 
 - `-i, --upstream-interface <接口>` - 默认上游接口（作用于所有流量类型，优先级最低）

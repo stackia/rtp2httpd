@@ -14,6 +14,27 @@ append_arg() {
   [ -n "$val" -o -n "$def" ] && procd_append_param command $opt "${val:-$def}"
 }
 
+append_listen_arg() {
+  local val="$1"
+
+  [ -n "$val" ] || return
+  procd_append_param command "--listen" "$val"
+  rtp2httpd_listen_count=$((rtp2httpd_listen_count + 1))
+}
+
+append_listen_args() {
+  local cfg="$1"
+
+  rtp2httpd_listen_count=0
+  config_list_foreach "$cfg" listen append_listen_arg
+
+  # Backward compatibility for existing installations using option port.
+  if [ "$rtp2httpd_listen_count" -eq 0 ]; then
+    append_arg "$cfg" port "--listen" || true
+  fi
+  return 0
+}
+
 start_instance() {
   local cfg="$1"
   local aux
@@ -34,7 +55,7 @@ start_instance() {
     procd_append_param command "--noconfig"
 
         append_arg "$cfg" verbose "--verbose"
-        append_arg "$cfg" port "--listen"
+        append_listen_args "$cfg"
 
         # Interface configuration - check advanced settings mode
         config_get_bool advanced_interface_settings "$cfg" 'advanced_interface_settings' '0'

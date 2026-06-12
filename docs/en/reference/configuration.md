@@ -20,6 +20,25 @@ rtp2httpd [options]
 - `-m, --maxclients <number>` - Maximum concurrent clients (default: 5)
 - `-w, --workers <number>` - Number of worker processes (default: 1)
 
+`--listen` can be specified multiple times to listen on multiple addresses or ports:
+
+```bash
+rtp2httpd --listen 5140 --listen 192.168.1.1:8081 --listen '[::1]:5140'
+```
+
+In OpenWrt UCI configuration, use `list listen` for multiple listen addresses. A bare port listens on all
+addresses. The legacy `option port` is still supported for compatibility, but new configurations should use
+`list listen`:
+
+```uci
+config rtp2httpd
+    list listen '5140'
+    list listen '192.168.1.1:8081'
+    list listen '[::1]:5140'
+    # Legacy single-port syntax (kept for compatibility)
+    # option port '5140'
+```
+
 #### Upstream Network Interface Configuration
 
 - `-i, --upstream-interface <interface>` - Default upstream interface (applies to all traffic types, lowest priority)

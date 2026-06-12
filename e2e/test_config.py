@@ -386,6 +386,21 @@ class TestCustomPort:
         finally:
             r2h.stop()
 
+    def test_multiple_listen_ports(self, r2h_binary):
+        """Repeated -l flags should expose the HTTP server on every port."""
+        port1 = find_free_port()
+        port2 = find_free_port()
+        r2h = R2HProcess(r2h_binary, port1, extra_args=["-v", "4", "-l", str(port2)])
+        try:
+            r2h.start()
+
+            for port in (port1, port2):
+                assert wait_for_port(port)
+                status, _, _ = http_get("127.0.0.1", port, "/status")
+                assert status == 200
+        finally:
+            r2h.stop()
+
 
 # ---------------------------------------------------------------------------
 # Max clients (-m)
