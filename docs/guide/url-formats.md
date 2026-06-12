@@ -62,8 +62,8 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=202401011200
 # 时移回看（使用 tvdr 参数）
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000GMT-20240101130000GMT
 
-# 自定义时移参数名 + 时间偏移
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r2h-seek-name=seek&r2h-seek-offset=3600
+# 自定义时移参数名 + 起止时间独立偏移
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000-20240101130000&r2h-seek-name=seek&r2h-seek-offset=12,-12
 
 # 显式开启 RTSP 近实时优化（参见 r2h-seek-mode 文档）
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(UTC%2B8/3600)
@@ -85,7 +85,7 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-ifname=eth0
 这是由于时区未能匹配。需要做时区转换。你可以尝试以下几种方式。
 
 - 修改播放器 User Agent 设置，加上 `TZ/UTC+8` 或 `TZ/UTC-8`。例如 `AptvPlayer/1.3.3 TZ/UTC+8`。
-- 修改播放链接，加上参数 `&r2h-seek-offset=28800` 或 `&r2h-seek-offset=-28800`
+- 修改播放链接，加上参数 `&r2h-seek-offset=28800` 或 `&r2h-seek-offset=-28800`。如果只需要调整起始/结束边界，可以使用 `&r2h-seek-offset=12,-12` 这样的形式分别偏移起始和结束时间
 
 关于时移回看的参数处理（时区、偏移），详见 [时间处理说明](./time-processing.md)。
 

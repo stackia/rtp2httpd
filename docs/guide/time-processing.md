@@ -57,11 +57,14 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=202401011200
 
 ### r2h-seek-offset（可选）
 
-对识别出的时移时间额外加 / 减若干秒，可正可负。常用于补偿上游服务器的时钟偏差，或整体提前 / 延后开始时间。
+对识别出的时移时间额外加 / 减若干秒，可正可负。传单个整数时同时作用于起始和结束时间；传 `a,b` 时分别作用于起始时间和结束时间。常用于补偿上游服务器的时钟偏差，或让起播/结束边界分别提前、延后。
 
 ```
 # playseek 范围整体后移 1 小时（3600 秒）
 ?playseek=20240101120000-20240101130000&r2h-seek-offset=3600
+
+# 起始时间后移 12 秒，结束时间提前 12 秒
+?playseek=20240101120000-20240101130000&r2h-seek-offset=12,-12
 
 # 提前 30 秒
 ?playseek=20240101120000&r2h-seek-offset=-30
@@ -70,7 +73,7 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=202401011200
 > [!IMPORTANT]
 > `r2h-seek-offset` 是「人为时间平移」，不是时区修正。它**总是**叠加到最终结果上，即使输入时间已经自带时区（如 ISO 8601 `Z` 后缀、`yyyyMMddHHmmssGMT`），仍然生效。
 >
-> 在 Range Seek 模式下，offset 也会进入窗口判定——offset 后的时间一旦落出窗口，同样回退为透传。
+> 在 Range Seek 模式下，offset 也会进入窗口判定——offset 后的起始时间一旦落出窗口，同样回退为透传。使用 `a,b` 形式时，Range Seek 只使用起始时间，因此只有 `a` 会影响窗口判定和 `Range: clock=` 头。
 
 ### r2h-seek-mode（可选，仅 RTSP）
 
