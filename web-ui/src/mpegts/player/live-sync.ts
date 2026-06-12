@@ -3,6 +3,11 @@ import Log from "../utils/logger";
 
 const TAG = "LiveSync";
 
+/** Each live-edge underrun raises the latency floor by this much (seconds). */
+const UNDERRUN_BACKOFF_STEP = 1;
+/** Upper bound for the adaptive latency increase (seconds). */
+const UNDERRUN_BACKOFF_MAX = 6;
+
 /** Sets up live latency synchronization by adjusting playbackRate on timeupdate events. */
 export function setupLiveSync(video: HTMLMediaElement, config: PlayerConfig): () => void {
   if (config.liveSync) {
@@ -15,6 +20,13 @@ export function setupLiveSync(video: HTMLMediaElement, config: PlayerConfig): ()
     );
   }
 
+  // Adaptive backoff: every genuine live-edge underrun raises the latency we
+  // are willing to tolerate, so devices with bursty data delivery (e.g. iOS
+  // Safari, where fetch chunks arrive in 1-2s batches) settle at a latency
+  // they can sustain instead of rebuffering in a loop. Devices that never
+  // underrun keep the configured low latency.
+  let extraLatency = 0;
+
   function onTimeUpdate(): void {
     if (!config.liveSync) return;
 
@@ -24,13 +36,13 @@ export function setupLiveSync(video: HTMLMediaElement, config: PlayerConfig): ()
     const bufferedEnd = buffered.end(buffered.length - 1);
     const latency = bufferedEnd - video.currentTime;
 
-    if (latency > config.liveSyncMaxLatency) {
+    if (latency > config.liveSyncMaxLatency + extraLatency) {
       const targetRate = Math.min(2, Math.max(1, config.liveSyncPlaybackRate));
       if (targetRate !== video.playbackRate) {
         Log.v(TAG, `Video playback rate set to ${targetRate}`);
-        video.playbackRate = Math.min(2, Math.max(1, config.liveSyncPlaybackRate));
+        video.playbackRate = targetRate;
       }
-    } else if (latency <= config.liveSyncTargetLatency) {
+    } else if (latency <= config.liveSyncTargetLatency + extraLatency) {
       if (video.playbackRate !== 1 && video.playbackRate !== 0) {
         video.playbackRate = 1;
         Log.v(TAG, "Video playback rate reset to 1");
@@ -40,14 +52,28 @@ export function setupLiveSync(video: HTMLMediaElement, config: PlayerConfig): ()
   }
 
   function onWaiting(): void {
-    // Buffer underrun while rate-boosted: playback has caught up with the live
-    // edge. Reset immediately — timeupdate stops firing during the stall, so the
-    // regular latency check cannot run, and staying boosted would just starve
-    // playback again as soon as it resumes (rebuffer loop, esp. on iOS).
-    if (config.liveSync && video.playbackRate !== 1 && video.playbackRate !== 0) {
+    if (!config.liveSync) return;
+
+    // Only count genuine live-edge underruns (playback caught up with the end
+    // of the buffer), not startup waits or seeks into unbuffered regions.
+    const buffered = video.buffered;
+    const atLiveEdge = buffered.length > 0 && buffered.end(buffered.length - 1) - video.currentTime < 0.5;
+    if (!atLiveEdge) return;
+
+    // Reset any boost immediately: timeupdate stops firing during the stall, so
+    // the regular latency check cannot run, and staying boosted would starve
+    // playback again as soon as it resumes.
+    if (video.playbackRate !== 1 && video.playbackRate !== 0) {
       video.playbackRate = 1;
-      Log.v(TAG, "Buffer underrun, playback rate reset to 1");
     }
+
+    if (extraLatency < UNDERRUN_BACKOFF_MAX) {
+      extraLatency = Math.min(extraLatency + UNDERRUN_BACKOFF_STEP, UNDERRUN_BACKOFF_MAX);
+    }
+    Log.w(
+      TAG,
+      `Live-edge underrun, raising latency tolerance: target ${(config.liveSyncTargetLatency + extraLatency).toFixed(1)}s, max ${(config.liveSyncMaxLatency + extraLatency).toFixed(1)}s`,
+    );
   }
 
   video.addEventListener("timeupdate", onTimeUpdate);
