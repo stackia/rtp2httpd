@@ -363,7 +363,6 @@ return view.extend({
     );
     o.placeholder = "5140";
     o.rmempty = true;
-    o.forcewrite = true;
     o.depends("use_config_file", "0");
     o.cfgvalue = function (section_id) {
       var values = self.getListenValues(section_id);
@@ -375,6 +374,11 @@ return view.extend({
 
       port = uci.get("rtp2httpd", section_id, "port");
       return port ? [port] : [];
+    };
+    o.formvalue = function (section_id) {
+      var elem = this.getUIElement(section_id);
+
+      return self.normalizeListenValues(elem ? elem.getValue() : null);
     };
     o.write = function (section_id, value) {
       var values = self.normalizeListenValues(value);
