@@ -882,6 +882,25 @@ class MP4Remuxer {
         }
       }
 
+      if (sampleDuration <= 0) {
+        // Spliced streams (e.g. telco catchup recordings) can regress dts mid-batch. A
+        // non-positive duration would be written into the trun box as a huge unsigned
+        // value and trigger a decode error, so clamp it to keep the timeline monotonic.
+        const fallbackDuration =
+          Math.floor(this._videoMeta?.refSampleDuration ?? 0) ||
+          (mp4Samples.length >= 1 ? (mp4Samples[mp4Samples.length - 1].duration as number) : 0) ||
+          40;
+        Log.w(
+          this.TAG,
+          `Video: non-monotonic dts detected (dts: ${dts} ms, duration: ${Math.round(sampleDuration)} ms), ` +
+            `clamping sample duration to ${fallbackDuration} ms`,
+        );
+        // Re-anchor the remaining samples of this batch so their dts continue right
+        // after the clamped sample (mirrors the inter-batch dtsCorrection behavior)
+        dtsCorrection = (dtsCorrection as number) + (sampleDuration - fallbackDuration);
+        sampleDuration = fallbackDuration;
+      }
+
       if (isKeyframe) {
         const syncPoint = new SampleInfo(dts, pts, sampleDuration, sample.dts, true);
         syncPoint.fileposition = sample.fileposition ?? null;
