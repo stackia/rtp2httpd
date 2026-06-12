@@ -753,6 +753,14 @@ static int rtsp_try_next_candidate(rtsp_session_t *session) {
       logger(LOG_DEBUG, "RTSP: Connection to %s:%d in progress (%s)", session->server_host, session->server_port,
              rp->ai_family == AF_INET6 ? "IPv6" : "IPv4");
 
+      /* If early STUN/UDP sockets were created for a different address family
+       * (dual-stack fallback switched family), drop them and reset STUN state;
+       * they will be recreated with the correct family before SETUP */
+      if (session->rtp_socket >= 0 && session->upstream_family != rp->ai_family) {
+        rtsp_close_udp_sockets(session, "upstream address family changed");
+        memset(&session->stun, 0, sizeof(session->stun));
+      }
+
       session->socket = sock;
       session->upstream_family = rp->ai_family;
 

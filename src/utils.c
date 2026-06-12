@@ -355,10 +355,11 @@ int parse_host_port(const char *input, char *host, size_t host_size, int *port) 
   }
 
   if (port_str && *port_str && port) {
-    int parsed = atoi(port_str);
-    if (parsed <= 0 || parsed > 65535)
+    char *end = NULL;
+    long parsed = strtol(port_str, &end, 10);
+    if (end == port_str || *end != '\0' || parsed <= 0 || parsed > 65535)
       return -1;
-    *port = parsed;
+    *port = (int)parsed;
   }
 
   return 0;

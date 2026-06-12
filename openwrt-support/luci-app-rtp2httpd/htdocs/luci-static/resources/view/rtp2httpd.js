@@ -192,13 +192,17 @@ return view.extend({
       var hasProtocol = /^https?:\/\//i.test(targetHostname);
 
       // Bracket bare IPv6 literals (multiple colons, no brackets) so URL
-      // parsing and final URL construction are valid
+      // parsing and final URL construction are valid; also handle hosts
+      // written with an explicit scheme (e.g. "http://::1")
+      var schemeMatch = targetHostname.match(/^https?:\/\//i);
+      var scheme = schemeMatch ? schemeMatch[0] : "";
+      var authority = targetHostname.slice(scheme.length);
       if (
-        !hasProtocol &&
-        targetHostname.indexOf("[") === -1 &&
-        targetHostname.indexOf(":") !== targetHostname.lastIndexOf(":")
+        authority.indexOf("[") === -1 &&
+        authority.indexOf("/") === -1 &&
+        authority.indexOf(":") !== authority.lastIndexOf(":")
       ) {
-        targetHostname = "[" + targetHostname + "]";
+        targetHostname = scheme + "[" + authority + "]";
       }
       var urlToParse = hasProtocol
         ? targetHostname
