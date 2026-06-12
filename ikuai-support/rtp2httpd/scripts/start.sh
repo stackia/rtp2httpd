@@ -11,7 +11,27 @@ PIDFILE="$PKG_DIR/app/cache/rtp2httpd.pid"
 RUN_LOG="$PKG_DIR/log/run.log"
 
 log() {
+  mkdir -p "$PKG_DIR/log"
   printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$RUN_LOG"
+}
+
+# Build a log-safe command line, redacting secret flag values.
+format_cmd_for_log() {
+  log_line=
+  skip_next=0
+  for arg in "$@"; do
+    if [ "$skip_next" -eq 1 ]; then
+      log_line="$log_line --r2h-token [redacted]"
+      skip_next=0
+      continue
+    fi
+    case "$arg" in
+    --r2h-token) skip_next=1 ;;
+    *) log_line="$log_line $arg" ;;
+    esac
+  done
+  log_line=${log_line# }
+  printf '%s' "$log_line"
 }
 
 CR=$(printf '\r')
@@ -178,7 +198,7 @@ if [ -n "$RTP2HTTPD_EXTRA_ARGS" ]; then
   set -- "$@" $RTP2HTTPD_EXTRA_ARGS
 fi
 
-log "Starting rtp2httpd: $*"
+log "Starting rtp2httpd: $(format_cmd_for_log "$@")"
 "$@" >> "$RUN_LOG" 2>&1 &
 PID=$!
 printf '%s\n' "$PID" > "$PIDFILE"
