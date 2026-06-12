@@ -672,11 +672,12 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
       char escaped[STATUS_LOG_ENTRY_LEN * 2];
       json_escape_string(status_shared->log_entries[log_idx].message, escaped, sizeof(escaped));
 
-      len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                      "{\"timestamp\":%ld,\"level\":%d,\"levelName\":\"%s\",\"message\":\"%"
-                      "s\"}",
-                      (long)status_shared->log_entries[log_idx].timestamp, status_shared->log_entries[log_idx].level,
-                      status_get_log_level_name(status_shared->log_entries[log_idx].level), escaped);
+      len +=
+          snprintf(buffer + len, buffer_capacity - (size_t)len,
+                   "{\"timestamp\":%lld,\"level\":%d,\"levelName\":\"%s\",\"message\":\"%"
+                   "s\"}",
+                   (long long)status_shared->log_entries[log_idx].timestamp, status_shared->log_entries[log_idx].level,
+                   status_get_log_level_name(status_shared->log_entries[log_idx].level), escaped);
     }
     last_write_index = cur_wi;
     last_log_count = cur_count;
