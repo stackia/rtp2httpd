@@ -40,6 +40,7 @@
 
 - [飞牛 fnOS](https://www.fnnas.com)（应用中心已上架 rtp2httpd）
 - [iStoreOS](https://site.istoreos.com)（iStore 已上架 rtp2httpd）
+- [爱快 iKuai](https://www.ikuai8.com)（应用市场已上架 rtp2httpd）
 - [懒猫微服](https://lazycat.cloud)（应用商店已上架 rtp2httpd）
 - [cooluc's OpenWrt](https://github.com/sbwml/builder)（已内置 rtp2httpd）
 - [ImmortalWrt](https://github.com/immortalwrt/immortalwrt)（已加入官方源）

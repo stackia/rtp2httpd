@@ -40,6 +40,7 @@ The following firmware distributions have rtp2httpd built in, or offer it for di
 
 - [fnOS](https://www.fnnas.com) (rtp2httpd available in the App Center)
 - [iStoreOS](https://site.istoreos.com) (rtp2httpd available in iStore)
+- [iKuai](https://www.ikuai8.com) (rtp2httpd available in the App Market)
 - [LCMD MicroServer](https://lazycat.cloud) (rtp2httpd available in the App Store)
 - [cooluc's OpenWrt](https://github.com/sbwml/builder) (rtp2httpd built in)
 - [ImmortalWrt](https://github.com/immortalwrt/immortalwrt) (added to the official repository)

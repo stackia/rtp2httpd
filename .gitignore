@@ -20,6 +20,7 @@ node_modules/
 web-ui/dist/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
+docs/.vitepress/.temp/
 
 # python
 __pycache__/
