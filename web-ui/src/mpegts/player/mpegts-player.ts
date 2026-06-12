@@ -173,6 +173,17 @@ export function createMpegtsPlayer(
       worker?.postMessage(cmd);
     };
 
+    mse.onStartStreaming = () => {
+      if (watermarkPaused) return;
+      const cmd: WorkerCommand = { type: "resume" };
+      worker?.postMessage(cmd);
+    };
+
+    mse.onEndStreaming = () => {
+      const cmd: WorkerCommand = { type: "pause" };
+      worker?.postMessage(cmd);
+    };
+
     mse.onError = (info) => {
       impl.onError?.({
         category: "media",
