@@ -1,5 +1,4 @@
 import type { PlayerConfig } from "../config";
-import Browser from "../utils/browser";
 import Log from "../utils/logger";
 
 type Track = "video" | "audio";
@@ -31,9 +30,21 @@ export interface MSE {
   open(onOpen: () => void): void;
   appendInit(track: Track, data: ArrayBuffer, codec: string, container: string): void;
   appendMedia(track: Track, data: ArrayBuffer): void;
+  /** Set the MediaSource duration (e.g. from an HLS VOD playlist) so seeks beyond buffered data are not clamped. */
+  setDuration(seconds: number): void;
   endOfStream(): void;
   destroy(): void;
   onBufferFull: (() => void) | null;
+  /** Fired when buffer space becomes available again after a previous onBufferFull. */
+  onBufferAvailable: (() => void) | null;
+  /** Fired after each SourceBuffer update completes (buffered ranges may have changed). */
+  onBufferedChange: (() => void) | null;
+  /** ManagedMediaSource: UA wants more media data appended (streaming → true). */
+  onStartStreaming: (() => void) | null;
+  /** ManagedMediaSource: UA has enough buffered data (streaming → false). */
+  onEndStreaming: (() => void) | null;
+  /** Fired when the MediaSource is closed by the UA (not by destroy), e.g. iOS reclaiming the media pipeline in background. */
+  onSourceClose: (() => void) | null;
   onError: ((info: { code: number; msg: string }) => void) | null;
 }
 
@@ -46,6 +57,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
   let mediaSource: MSEMediaSource | null = null;
   let objectURL: string | null = null;
+  let destroying = false;
 
   const sourceBuffers: Record<Track, SourceBuffer | null> = { video: null, audio: null };
   const pendingSegments: Record<Track, ArrayBuffer[]> = { video: [], audio: [] };
@@ -55,6 +67,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
   let isBufferFull = false;
   let hasPendingEos = false;
+  let pendingDuration: number | null = null;
 
   // Deferred init segments: queued before sourceopen fires
   let pendingSourceBufferInit: { track: Track; data: ArrayBuffer; codec: string; container: string }[] = [];
@@ -98,6 +111,63 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     }
   }
 
+  let appendGateLogged = false;
+
+  function canAppendToManagedSource(): boolean {
+    // ManagedMediaSource only accepts appends while streaming === true.
+    // When the property is absent (regular MediaSource), always allow appends.
+    const allowed = !useManagedMediaSource || mediaSource?.streaming !== false;
+    if (!allowed && !appendGateLogged) {
+      appendGateLogged = true;
+      Log.v(
+        TAG,
+        `Appends deferred: MMS streaming=false (pending video:${pendingSegments.video.length} audio:${pendingSegments.audio.length})`,
+      );
+    }
+    return allowed;
+  }
+
+  function bufferedSummary(): string {
+    const fmt = (sb: SourceBuffer | null): string => {
+      if (!sb) return "-";
+      const parts: string[] = [];
+      for (let i = 0; i < sb.buffered.length; i++) {
+        parts.push(`${sb.buffered.start(i).toFixed(2)}-${sb.buffered.end(i).toFixed(2)}`);
+      }
+      return parts.join(",") || "empty";
+    };
+    return `video[${fmt(sourceBuffers.video)}] audio[${fmt(sourceBuffers.audio)}]`;
+  }
+
+  function flushPendingSourceBufferInit(): void {
+    if (pendingSourceBufferInit.length === 0 || mediaSource?.readyState !== "open") {
+      return;
+    }
+    const pendings = pendingSourceBufferInit;
+    pendingSourceBufferInit = [];
+    for (const pending of pendings) {
+      createSourceBuffer(pending.track, pending.codec, pending.container);
+      lastInitSegments[pending.track] = {
+        data: pending.data,
+        codec: pending.codec,
+        container: pending.container,
+      };
+    }
+  }
+
+  function tryAppendPending(): void {
+    if (mediaSource?.readyState !== "open" || !canAppendToManagedSource()) {
+      return;
+    }
+    if (hasPendingRemoveRanges()) {
+      doRemoveRanges();
+      return;
+    }
+    if (hasPendingSegments()) {
+      doAppendSegments();
+    }
+  }
+
   function doAppendSegments(): void {
     const tracks: Track[] = ["video", "audio"];
     for (const track of tracks) {
@@ -105,9 +175,8 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
       if (!sb || sb.updating) {
         continue;
       }
-      // If ManagedMediaSource and streaming is false, do not append
-      if (mediaSource?.streaming === false) {
-        continue;
+      if (!canAppendToManagedSource()) {
+        return;
       }
 
       if (pendingSegments[track].length > 0) {
@@ -120,7 +189,10 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
         try {
           sb.appendBuffer(segment);
-          isBufferFull = false;
+          if (isBufferFull) {
+            isBufferFull = false;
+            mse.onBufferAvailable?.();
+          }
         } catch (error: unknown) {
           pendingSegments[track].unshift(segment);
           if ((error as DOMException).code === 22) {
@@ -191,13 +263,36 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     }
   }
 
+  function tryApplyDuration(): void {
+    if (pendingDuration === null || mediaSource?.readyState !== "open") {
+      return;
+    }
+    if (sourceBuffers.video?.updating || sourceBuffers.audio?.updating) {
+      return; // retried on the next updateend
+    }
+    try {
+      if (!(mediaSource.duration >= pendingDuration)) {
+        mediaSource.duration = pendingDuration;
+      }
+      pendingDuration = null;
+    } catch (error: unknown) {
+      Log.w(TAG, `Failed to set duration: ${(error as Error).message}`);
+    }
+  }
+
   function onSourceBufferUpdateEnd(): void {
+    mse.onBufferedChange?.();
+    tryApplyDuration();
     if (hasPendingRemoveRanges()) {
       doRemoveRanges();
     } else if (hasPendingSegments()) {
-      doAppendSegments();
+      tryAppendPending();
     } else if (hasPendingEos) {
       mse.endOfStream();
+    } else if (isBufferFull) {
+      // All queued segments drained and removals finished — buffer has room again
+      isBufferFull = false;
+      mse.onBufferAvailable?.();
     }
   }
 
@@ -210,14 +305,10 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
       return;
     }
 
-    let adjustedCodec = codec;
-    if (adjustedCodec === "opus" && Browser.safari) {
-      adjustedCodec = "Opus";
-    }
-
     let mimeType = container;
-    if (adjustedCodec && adjustedCodec.length > 0) {
-      mimeType += `;codecs=${adjustedCodec}`;
+    if (codec && codec.length > 0) {
+      // Quoting is required when the codec list contains commas (muxed fMP4 renditions)
+      mimeType += `;codecs="${codec}"`;
     }
 
     if (mimeType !== mimeTypes[track]) {
@@ -250,6 +341,11 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
   const mse: MSE = {
     onBufferFull: null,
+    onBufferAvailable: null,
+    onBufferedChange: null,
+    onStartStreaming: null,
+    onEndStreaming: null,
+    onSourceClose: null,
     onError: null,
 
     open(onOpen: () => void): void {
@@ -274,24 +370,8 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         Log.v(TAG, "MediaSource onSourceOpen");
         ms.removeEventListener("sourceopen", onSourceOpenHandler);
 
-        // Process deferred init segments
-        if (pendingSourceBufferInit.length > 0) {
-          const pendings = pendingSourceBufferInit;
-          pendingSourceBufferInit = [];
-          for (const pending of pendings) {
-            createSourceBuffer(pending.track, pending.codec, pending.container);
-            lastInitSegments[pending.track] = {
-              data: pending.data,
-              codec: pending.codec,
-              container: pending.container,
-            };
-          }
-        }
-
-        // There may be pending media segments; append them
-        if (hasPendingSegments()) {
-          doAppendSegments();
-        }
+        flushPendingSourceBufferInit();
+        tryAppendPending();
 
         sourceOpenCallback?.();
         sourceOpenCallback = null;
@@ -313,6 +393,16 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
             mediaSource.removeEventListener("qualitychange", onQualityChangeHandler);
           }
         }
+        // The SourceBuffers are detached now; accessing them (even .buffered)
+        // throws InvalidStateError. Drop the refs so queued appends become no-ops.
+        sourceBuffers.video = null;
+        sourceBuffers.audio = null;
+        mimeTypes.video = null;
+        mimeTypes.audio = null;
+        if (!destroying) {
+          Log.w(TAG, "MediaSource closed unexpectedly (e.g. reclaimed by the OS in background)");
+          mse.onSourceClose?.();
+        }
       };
 
       ms.addEventListener("sourceopen", onSourceOpenHandler);
@@ -321,10 +411,18 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
       if (useManagedMediaSource) {
         onStartStreamingHandler = () => {
-          Log.v(TAG, "ManagedMediaSource onStartStreaming");
+          appendGateLogged = false;
+          Log.v(
+            TAG,
+            `ManagedMediaSource onStartStreaming, pending video:${pendingSegments.video.length} audio:${pendingSegments.audio.length}, buffered: ${bufferedSummary()}`,
+          );
+          flushPendingSourceBufferInit();
+          tryAppendPending();
+          mse.onStartStreaming?.();
         };
         onEndStreamingHandler = () => {
-          Log.v(TAG, "ManagedMediaSource onEndStreaming");
+          Log.v(TAG, `ManagedMediaSource onEndStreaming, buffered: ${bufferedSummary()}`);
+          mse.onEndStreaming?.();
         };
         onQualityChangeHandler = () => {
           Log.v(TAG, "ManagedMediaSource onQualityChange");
@@ -335,14 +433,12 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         ms.addEventListener("qualitychange", onQualityChangeHandler);
       }
 
-      // Attach MediaSource to video element
+      // Attach MediaSource to video element (blob URL for both MSE and MMS per spec examples)
       if (useManagedMediaSource) {
-        (video as unknown as Record<string, unknown>).disableRemotePlayback = true;
-        (video as unknown as Record<string, unknown>).srcObject = ms;
-      } else {
-        objectURL = URL.createObjectURL(ms as unknown as MediaSource);
-        video.src = objectURL;
+        video.disableRemotePlayback = true;
       }
+      objectURL = URL.createObjectURL(ms as unknown as MediaSource);
+      video.src = objectURL;
     },
 
     appendInit(track: Track, data: ArrayBuffer, codec: string, container: string): void {
@@ -352,39 +448,34 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         return;
       }
 
-      let adjustedCodec = codec;
-      if (adjustedCodec === "opus" && Browser.safari) {
-        adjustedCodec = "Opus";
-      }
-
-      const mimePreview = adjustedCodec ? `${container};codecs=${adjustedCodec}` : container;
+      const mimePreview = codec ? `${container};codecs="${codec}"` : container;
       Log.v(TAG, `Received Initialization Segment, mimeType: ${mimePreview}`);
-      lastInitSegments[track] = { data, codec: adjustedCodec, container };
+      lastInitSegments[track] = { data, codec, container };
 
-      const firstInit = !mimeTypes[track];
-      createSourceBuffer(track, adjustedCodec, container);
-
+      createSourceBuffer(track, codec, container);
       pendingSegments[track].push(data);
-
-      if (!firstInit) {
-        const sb = sourceBuffers[track];
-        if (sb && !sb.updating) {
-          doAppendSegments();
-        }
-      }
+      tryAppendPending();
     },
 
     appendMedia(track: Track, data: ArrayBuffer): void {
       pendingSegments[track].push(data);
 
+      // After the MediaSource closes (e.g. iOS background reclaim), the
+      // SourceBuffers are dead — touching them throws InvalidStateError.
+      if (mediaSource?.readyState !== "open") {
+        return;
+      }
+
       if (needCleanupSourceBuffer()) {
         doCleanupSourceBuffer();
       }
 
-      const sb = sourceBuffers[track];
-      if (sb && !sb.updating && !hasPendingRemoveRanges()) {
-        doAppendSegments();
-      }
+      tryAppendPending();
+    },
+
+    setDuration(seconds: number): void {
+      pendingDuration = seconds;
+      tryApplyDuration();
     },
 
     endOfStream(): void {
@@ -405,6 +496,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     },
 
     destroy(): void {
+      destroying = true;
       if (mediaSource) {
         const ms = mediaSource;
         const tracks: Track[] = ["video", "audio"];
@@ -463,6 +555,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         pendingSourceBufferInit = [];
         isBufferFull = false;
         hasPendingEos = false;
+        pendingDuration = null;
         mediaSource = null;
       }
 
@@ -471,13 +564,14 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         objectURL = null;
       }
 
-      if (useManagedMediaSource) {
-        (video as unknown as Record<string, unknown>).srcObject = null;
-      } else {
-        video.removeAttribute("src");
-      }
+      video.removeAttribute("src");
 
       mse.onBufferFull = null;
+      mse.onBufferAvailable = null;
+      mse.onBufferedChange = null;
+      mse.onStartStreaming = null;
+      mse.onEndStreaming = null;
+      mse.onSourceClose = null;
       mse.onError = null;
       sourceOpenCallback = null;
     },

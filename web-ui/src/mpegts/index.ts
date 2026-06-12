@@ -1,5 +1,4 @@
 import { defaultConfig, type PlayerConfig } from "./config";
-import { createHlsPlayer } from "./player/hls-player";
 import { createMpegtsPlayer } from "./player/mpegts-player";
 import type { Player, PlayerError, PlayerEventMap, PlayerImpl, PlayerSegment } from "./types";
 
@@ -22,83 +21,43 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
   const seekHandlers = new Set<(s: number) => void>();
   const audioSuspendedHandlers = new Set<() => void>();
 
-  // Cached impls — created on demand, kept alive across type switches
-  const cache: Record<string, PlayerImpl> = {};
-  let activeType: string | null = null;
-  let lastSegments: PlayerSegment[] = [];
+  let impl: PlayerImpl | null = null;
 
-  function setHandlers(impl: PlayerImpl): void {
-    impl.onError = (e) => {
-      for (const h of errorHandlers) {
-        h(e);
-      }
-    };
-    impl.onAudioSuspended = () => {
-      for (const h of audioSuspendedHandlers) {
-        h();
-      }
-    };
-  }
-
-  function getOrCreateImpl(type: "mpegts" | "hls"): PlayerImpl {
-    if (!cache[type]) {
-      const impl =
-        type === "hls"
-          ? createHlsPlayer(video, fullConfig, seekHandlers)
-          : createMpegtsPlayer(video, fullConfig, seekHandlers);
-      setHandlers(impl);
-      cache[type] = impl;
+  function getImpl(): PlayerImpl {
+    if (!impl) {
+      impl = createMpegtsPlayer(video, fullConfig, seekHandlers);
+      impl.onError = (e) => {
+        for (const h of errorHandlers) {
+          h(e);
+        }
+      };
+      impl.onAudioSuspended = () => {
+        for (const h of audioSuspendedHandlers) {
+          h();
+        }
+      };
     }
-    return cache[type];
-  }
-
-  function switchTo(type: "mpegts" | "hls"): PlayerImpl {
-    if (activeType === type && cache[type]) {
-      return cache[type];
-    }
-
-    // Suspend current active impl (release video element, keep resources)
-    if (activeType && cache[activeType]) {
-      cache[activeType].suspend();
-    }
-
-    activeType = type;
-    return getOrCreateImpl(type);
-  }
-
-  function setupHLSDetection(impl: PlayerImpl): void {
-    impl.onHLSDetected = () => {
-      if (destroyed || !lastSegments.length) return;
-      const hlsImpl = switchTo("hls");
-      hlsImpl.loadSegments(lastSegments);
-    };
+    return impl;
   }
 
   return {
     loadSegments(segments: PlayerSegment[]) {
       if (destroyed || !segments.length) return;
-      lastSegments = segments;
-      const impl = switchTo("mpegts");
-      setupHLSDetection(impl);
-      impl.loadSegments(segments);
+      getImpl().loadSegments(segments);
     },
 
     seek(seconds: number) {
-      if (activeType) cache[activeType]?.seek(seconds);
+      impl?.seek(seconds);
     },
 
     setLiveSync(enabled: boolean) {
-      for (const impl of Object.values(cache)) {
-        impl.setLiveSync(enabled);
-      }
+      impl?.setLiveSync(enabled);
     },
 
     destroy() {
       destroyed = true;
-      for (const impl of Object.values(cache)) {
-        impl.destroy();
-      }
-      activeType = null;
+      impl?.destroy();
+      impl = null;
     },
 
     on<K extends keyof PlayerEventMap>(event: K, handler: PlayerEventMap[K]) {

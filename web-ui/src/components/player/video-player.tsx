@@ -75,6 +75,9 @@ export function VideoPlayer({
   const stablePlaybackTimeoutRef = useRef<number>(0);
   // Whether to auto-play after player recreation (true for initial load and "go live")
   const shouldAutoPlayRef = useRef(true);
+  // Whether the pause was an explicit user action (vs. the OS pausing on backgrounding).
+  // Used to decide if playback should auto-resume when the page returns to foreground.
+  const userPausedRef = useRef(false);
 
   // Digit input state
   const [digitBuffer, setDigitBuffer] = useState("");
@@ -107,6 +110,7 @@ export function VideoPlayer({
 
       if (goingLive && playMode === "live" && video) {
         // "Go Live": jump to the end of buffered range, resume playback and liveSync
+        userPausedRef.current = false;
         video.play();
         const buffered = video.buffered;
         if (buffered.length > 0) {
@@ -137,8 +141,10 @@ export function VideoPlayer({
     const video = videoRef.current;
     if (video) {
       if (video.paused) {
+        userPausedRef.current = false;
         video.play();
       } else {
+        userPausedRef.current = true;
         video.pause();
       }
     }
@@ -278,6 +284,42 @@ export function VideoPlayer({
     player?.setLiveSync(playMode === "live");
   }, [playMode, player]);
 
+  // Media Session: lock screen / control center metadata (esp. useful during PiP playback)
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    if (!channel) {
+      navigator.mediaSession.metadata = null;
+      return;
+    }
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: currentProgram?.title || channel.name,
+      artist: currentProgram?.title ? channel.name : channel.group,
+      artwork: channel.logo ? [{ src: channel.logo }] : [],
+    });
+  }, [channel, currentProgram]);
+
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+  }, [isPlaying]);
+
+  // Media Session action handlers (lock screen / control center play & pause)
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    navigator.mediaSession.setActionHandler("play", () => {
+      userPausedRef.current = false;
+      videoRef.current?.play();
+    });
+    navigator.mediaSession.setActionHandler("pause", () => {
+      userPausedRef.current = true;
+      videoRef.current?.pause();
+    });
+    return () => {
+      navigator.mediaSession.setActionHandler("play", null);
+      navigator.mediaSession.setActionHandler("pause", null);
+    };
+  }, []);
+
   // Load segments whenever they change (channel switch, seek, retry — all go through here)
   const handleLoadSegments = useEffectEvent((newSegments: PlayerSegment[]) => {
     if (!newSegments.length || !player) return;
@@ -298,6 +340,7 @@ export function VideoPlayer({
     if (shouldAutoPlayRef.current) {
       const video = videoRef.current;
       if (video) {
+        userPausedRef.current = false;
         const playPromise = video.play();
         if (playPromise) {
           playPromise
@@ -396,6 +439,55 @@ export function VideoPlayer({
   const handleVideoLeavePiP = useEffectEvent(() => {
     setIsPiP(false);
   });
+
+  // Foreground recovery: iOS pauses web media when the page goes to background
+  // without PiP, and may even tear down the whole media pipeline (MediaSource
+  // close + decode error). When the page becomes visible again, resume playback —
+  // rebuilding the stream when the old session is dead or stale.
+  const handleVisibilityChange = useEffectEvent(() => {
+    if (document.visibilityState !== "visible") return;
+    const video = videoRef.current;
+    if (!video || !player || error || needsUserInteraction) return;
+    // PiP keeps playing in background; nothing to recover
+    if (document.pictureInPictureElement) return;
+    // Respect an explicit user pause; only recover from OS-initiated interruptions
+    if (userPausedRef.current) return;
+
+    // Media element died in background (MediaSource closed / decode error).
+    // Note: video.paused may still report false in this state.
+    const mediaDead = video.error !== null;
+    const behindLiveMs = Date.now() - (streamStartTime.getTime() + currentVideoTime * 1000);
+
+    if (playMode === "live" && (mediaDead || behindLiveMs > 10000)) {
+      // Dead session or stale buffer — rebuild the stream at the live edge
+      console.log("Reloading at live edge after background suspension");
+      shouldAutoPlayRef.current = true;
+      onSeek?.(new Date());
+      return;
+    }
+
+    if (mediaDead) {
+      // Catchup: rebuild the stream at the current position
+      console.log("Reloading at current position after background suspension");
+      shouldAutoPlayRef.current = true;
+      onSeek?.(new Date(streamStartTime.getTime() + currentVideoTime * 1000));
+      return;
+    }
+
+    if (video.paused) {
+      video.play()?.catch((err: Error) => {
+        if (err.name === "NotAllowedError") {
+          setNeedsUserInteraction(true);
+        }
+      });
+    }
+  });
+
+  useEffect(() => {
+    const handler = () => handleVisibilityChange();
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, []);
 
   const handleKeyDown = useEffectEvent((e: KeyboardEvent) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
@@ -614,6 +706,7 @@ export function VideoPlayer({
     if (!videoRef.current) return;
     setNeedsUserInteraction(false);
     setIsPlaying(true);
+    userPausedRef.current = false;
     videoRef.current.play()?.catch((err: Error) => {
       console.error("Play error after user interaction:", err);
       setError(`${t("failedToPlay")}: ${err.message}`);

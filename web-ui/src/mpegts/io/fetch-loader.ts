@@ -1,5 +1,4 @@
 import type { PlayerConfig } from "../config";
-import Browser from "../utils/browser";
 import { IllegalStateException, RuntimeException } from "../utils/exception";
 import Log from "../utils/logger";
 
@@ -58,7 +57,8 @@ class FetchLoader {
   onSeeked: (() => void) | null;
   onError: ((type: string, info: LoaderErrorInfo) => void) | null;
   onComplete: ((extraData: unknown) => void) | null;
-  onHLSDetected: (() => void) | null;
+  /** Called with the playlist text and its final (post-redirect) URL when the response is an HLS playlist. */
+  onHLSDetected: ((text: string, url: string) => void) | null;
 
   // --- config / data source ---
   private _config: PlayerConfig;
@@ -284,10 +284,13 @@ class FetchLoader {
           // detect HLS content-type before processing body
           const ct = res.headers.get("Content-Type")?.toLowerCase() ?? "";
           if (ct.includes("mpegurl") || ct.includes("m3u")) {
-            res.body?.cancel();
             this._status = LoaderStatus.kIdle;
-            this.onHLSDetected?.();
-            return;
+            // Read the body so the already-fetched playlist can be reused (avoids a duplicate request)
+            return res.text().then((text) => {
+              if (!this._requestAbort) {
+                this.onHLSDetected?.(text, res.url || sourceURL);
+              }
+            });
           }
 
           // content-length
@@ -369,11 +372,6 @@ class FetchLoader {
         const errCode = typeof err.code === "number" ? err.code : -1;
         const errMsg = typeof err.message === "string" ? err.message : "";
 
-        if (errCode === 11 && Browser.msedge) {
-          // InvalidStateError on Microsoft Edge – ignore
-          return;
-        }
-
         this._status = LoaderStatus.kError;
         let type: string;
         let info: LoaderErrorInfo;
@@ -396,13 +394,11 @@ class FetchLoader {
   private _abortFetch(): void {
     this._requestAbort = true;
 
-    if (this._status !== LoaderStatus.kBuffering || !Browser.chrome) {
-      if (this._abortController) {
-        try {
-          this._abortController.abort();
-        } catch (_e) {
-          /* swallow */
-        }
+    if (this._abortController) {
+      try {
+        this._abortController.abort();
+      } catch (_e) {
+        /* swallow */
       }
     }
   }

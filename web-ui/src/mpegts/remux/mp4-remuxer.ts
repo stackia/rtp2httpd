@@ -1,5 +1,5 @@
 import { MediaSegmentInfo, MediaSegmentInfoList, SampleInfo } from "../core/media-segment-info";
-import Browser from "../utils/browser";
+import { isFirefox, isSafari } from "../utils/browser";
 import { IllegalStateException } from "../utils/exception";
 import Log from "../utils/logger";
 import AAC from "./aac-silent";
@@ -100,6 +100,7 @@ class MP4Remuxer {
 
   private _dtsBase: number;
   private _dtsBaseInited: boolean;
+  private _dtsBaseOffset: number;
   private _audioDtsBase: number;
   private _videoDtsBase: number;
   private _audioNextDts: number | undefined;
@@ -116,8 +117,6 @@ class MP4Remuxer {
   private _onInitSegment: InitSegmentCallback | null;
   private _onMediaSegment: MediaSegmentCallback | null;
 
-  private _forceFirstIDR: boolean;
-  private _fillSilentAfterSeek: boolean;
   private _mp3UseMpegAudio: boolean;
   private _fillAudioTimestampGap: boolean;
 
@@ -131,6 +130,7 @@ class MP4Remuxer {
 
     this._dtsBase = -1;
     this._dtsBaseInited = false;
+    this._dtsBaseOffset = 0;
     this._audioDtsBase = Infinity;
     this._videoDtsBase = Infinity;
     this._audioNextDts = undefined;
@@ -147,22 +147,8 @@ class MP4Remuxer {
     this._onInitSegment = null;
     this._onMediaSegment = null;
 
-    // Workaround for chrome < 50: Always force first sample as a Random Access Point in media segment
-    // see https://bugs.chromium.org/p/chromium/issues/detail?id=229412
-    const browser = Browser as Record<string, unknown>;
-    const version = browser.version as Record<string, number> | undefined;
-    this._forceFirstIDR = !!(
-      browser.chrome &&
-      version &&
-      (version.major < 50 || (version.major === 50 && version.build < 2661))
-    );
-
-    // Workaround for IE11/Edge: Fill silent aac frame after keyframe-seeking
-    // Make audio beginDts equals with video beginDts, in order to fix seek freeze
-    this._fillSilentAfterSeek = !!(browser.msedge || browser.msie);
-
     // While only FireFox supports 'audio/mp4, codecs="mp3"', use 'audio/mpeg' for chrome, safari, ...
-    this._mp3UseMpegAudio = !browser.firefox;
+    this._mp3UseMpegAudio = !isFirefox;
 
     this._fillAudioTimestampGap = this._config.fixAudioTimestampGap || false;
 
@@ -228,12 +214,12 @@ class MP4Remuxer {
     this._silentAudioLastDts = undefined;
   }
 
-  seek(_originalDts: number): void {
-    this._audioStashedLastSample = null;
-    this._videoStashedLastSample = null;
-    this._videoSegmentInfoList?.clear();
-    this._audioSegmentInfoList?.clear();
-    this._silentAudioLastDts = undefined;
+  /**
+   * Position the output timeline: the first remuxed sample will be emitted at `offsetMs`
+   * instead of 0. Must be called before any samples are remuxed.
+   */
+  setDtsBaseOffset(offsetMs: number): void {
+    this._dtsBaseOffset = offsetMs;
   }
 
   remux(audioTrack: DemuxTrack | undefined, videoTrack: DemuxTrack | undefined): void {
@@ -428,6 +414,7 @@ class MP4Remuxer {
     } else {
       this._dtsBase = Math.min(this._audioDtsBase, this._videoDtsBase);
     }
+    this._dtsBase -= this._dtsBaseOffset;
     this._dtsBaseInited = true;
   }
 
@@ -491,8 +478,6 @@ class MP4Remuxer {
     const mpegRawTrack = this._audioMeta.codec === "mp3" && this._mp3UseMpegAudio;
     const firstSegmentAfterSeek = this._dtsBaseInited && this._audioNextDts === undefined;
 
-    let insertPrefixSilentFrame = false;
-
     if (!samples || samples.length === 0) {
       return;
     }
@@ -547,11 +532,6 @@ class MP4Remuxer {
       // this._audioNextDts == undefined
       if (this._audioSegmentInfoList?.isEmpty()) {
         dtsCorrection = 0;
-        if (this._fillSilentAfterSeek && !this._videoSegmentInfoList?.isEmpty()) {
-          if (this._audioMeta.originalCodec !== "mp3") {
-            insertPrefixSilentFrame = true;
-          }
-        }
       } else {
         const prevSample = this._audioSegmentInfoList?.getLastSampleBefore(firstSampleOriginalDts);
         if (prevSample != null) {
@@ -565,24 +545,6 @@ class MP4Remuxer {
           // prevSample == null, cannot found
           dtsCorrection = 0;
         }
-      }
-    }
-
-    if (insertPrefixSilentFrame) {
-      // align audio segment beginDts to match with current video segment's beginDts
-      const firstSampleDts = firstSampleOriginalDts - (dtsCorrection as number);
-      const videoSegment = this._videoSegmentInfoList?.getLastSegmentBefore(firstSampleOriginalDts);
-      if (videoSegment != null && videoSegment.beginDts < firstSampleDts) {
-        const silentUnit = AAC.getSilentFrame(this._audioMeta.originalCodec ?? "", this._audioMeta.channelCount ?? 0);
-        if (silentUnit) {
-          const dts = videoSegment.beginDts;
-          const silentFrameDuration = firstSampleDts - videoSegment.beginDts;
-          Log.v(this.TAG, `InsertPrefixSilentAudio: dts: ${dts}, duration: ${silentFrameDuration}`);
-          samples.unshift({ unit: silentUnit, dts: dts, pts: dts });
-          mdatBytes += silentUnit.byteLength;
-        } // silentUnit == null: Cannot generate, skip
-      } else {
-        insertPrefixSilentFrame = false;
       }
     }
 
@@ -621,7 +583,7 @@ class MP4Remuxer {
         } else if (
           dtsCorrection >= maxAudioFramesDrift * refSampleDuration &&
           this._fillAudioTimestampGap &&
-          !(Browser as Record<string, unknown>).safari
+          !isSafari
         ) {
           // Silent frame generation, if large timestamp gap detected && config.fixAudioTimestampGap
           needFillSilentFrames = true;
@@ -992,14 +954,6 @@ class MP4Remuxer {
     );
     track.samples = mp4Samples;
     track.sequenceNumber++;
-
-    // workaround for chrome < 50: force first sample as a random access point
-    // see https://bugs.chromium.org/p/chromium/issues/detail?id=229412
-    if (this._forceFirstIDR) {
-      const flags = mp4Samples[0].flags;
-      flags.dependsOn = 2;
-      flags.isNonSync = 0;
-    }
 
     const moofbox = MP4.moof(track as unknown as import("./mp4-generator").MP4Track, firstDts);
     track.samples = [];

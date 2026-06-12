@@ -35,10 +35,8 @@ interface MP4Meta {
   duration: number;
   avcc?: Uint8Array;
   hvcc?: Uint8Array;
-  av1c?: Uint8Array;
   audioSampleRate?: number;
   channelCount?: number;
-  channelConfigCode?: number;
   config?: number[] | Uint8Array;
   originalCodec?: string;
   refSampleDuration?: number;
@@ -46,8 +44,6 @@ interface MP4Meta {
   codecHeight?: number;
   presentWidth?: number;
   presentHeight?: number;
-  sampleSize?: number;
-  littleEndian?: boolean;
 }
 
 interface MP4Constants {
@@ -89,8 +85,6 @@ class MP4 {
       hdlr: [],
       hvc1: [],
       hvcC: [],
-      av01: [],
-      av1C: [],
       mdat: [],
       mdhd: [],
       mdia: [],
@@ -117,14 +111,7 @@ class MP4 {
       tkhd: [],
       vmhd: [],
       smhd: [],
-      chnl: [],
       ".mp3": [],
-      Opus: [],
-      dOps: [],
-      fLaC: [],
-      dfLa: [],
-      ipcm: [],
-      pcmC: [],
       "ac-3": [],
       dac3: [],
       "ec-3": [],
@@ -679,19 +666,11 @@ class MP4 {
         return MP4.box(MP4.types.stsd, MP4.constants.STSD_PREFIX, MP4.ac3(meta));
       } else if (meta.codec === "ec-3") {
         return MP4.box(MP4.types.stsd, MP4.constants.STSD_PREFIX, MP4.ec3(meta));
-      } else if (meta.codec === "opus") {
-        return MP4.box(MP4.types.stsd, MP4.constants.STSD_PREFIX, MP4.Opus(meta));
-      } else if (meta.codec === "flac") {
-        return MP4.box(MP4.types.stsd, MP4.constants.STSD_PREFIX, MP4.fLaC(meta));
-      } else if (meta.codec === "ipcm") {
-        return MP4.box(MP4.types.stsd, MP4.constants.STSD_PREFIX, MP4.ipcm(meta));
       }
       // else: aac -> mp4a
       return MP4.box(MP4.types.stsd, MP4.constants.STSD_PREFIX, MP4.mp4a(meta));
     } else if (meta.type === "video" && meta.codec.startsWith("hvc1")) {
       return MP4.box(MP4.types.stsd, MP4.constants.STSD_PREFIX, MP4.hvc1(meta));
-    } else if (meta.type === "video" && meta.codec.startsWith("av01")) {
-      return MP4.box(MP4.types.stsd, MP4.constants.STSD_PREFIX, MP4.av01(meta));
     } else {
       return MP4.box(MP4.types.stsd, MP4.constants.STSD_PREFIX, MP4.avc1(meta));
     }
@@ -894,249 +873,6 @@ class MP4 {
     return MP4.box(MP4.types.esds, data);
   }
 
-  static Opus(meta: MP4Meta): Uint8Array {
-    const channelCount = meta.channelCount || 0;
-    const sampleRate = meta.audioSampleRate || 0;
-
-    const data = new Uint8Array([
-      0x00,
-      0x00,
-      0x00,
-      0x00, // reserved(4)
-      0x00,
-      0x00,
-      0x00,
-      0x01, // reserved(2) + data_reference_index(2)
-      0x00,
-      0x00,
-      0x00,
-      0x00, // reserved: 2 * 4 bytes
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      channelCount, // channelCount(2)
-      0x00,
-      0x10, // sampleSize(2)
-      0x00,
-      0x00,
-      0x00,
-      0x00, // reserved(4)
-      (sampleRate >>> 8) & 0xff, // Audio sample rate
-      sampleRate & 0xff,
-      0x00,
-      0x00,
-    ]);
-
-    return MP4.box(MP4.types.Opus, data, MP4.dOps(meta));
-  }
-
-  static dOps(meta: MP4Meta): Uint8Array {
-    const channelCount = meta.channelCount || 0;
-    const channelConfigCode = meta.channelConfigCode || 0;
-    const sampleRate = meta.audioSampleRate || 0;
-
-    if (meta.config) {
-      return MP4.box(MP4.types.dOps, meta.config as Uint8Array);
-    }
-
-    let mapping: number[] = [];
-    switch (channelConfigCode) {
-      case 0x01:
-      case 0x02:
-        mapping = [0x0];
-        break;
-      case 0x00: // dualmono
-        mapping = [0xff, 1, 1, 0, 1];
-        break;
-      case 0x80: // dualmono
-        mapping = [0xff, 2, 0, 0, 1];
-        break;
-      case 0x03:
-        mapping = [0x01, 2, 1, 0, 2, 1];
-        break;
-      case 0x04:
-        mapping = [0x01, 2, 2, 0, 1, 2, 3];
-        break;
-      case 0x05:
-        mapping = [0x01, 3, 2, 0, 4, 1, 2, 3];
-        break;
-      case 0x06:
-        mapping = [0x01, 4, 2, 0, 4, 1, 2, 3, 5];
-        break;
-      case 0x07:
-        mapping = [0x01, 4, 2, 0, 4, 1, 2, 3, 5, 6];
-        break;
-      case 0x08:
-        mapping = [0x01, 5, 3, 0, 6, 1, 2, 3, 4, 5, 7];
-        break;
-      case 0x82:
-        mapping = [0x01, 1, 2, 0, 1];
-        break;
-      case 0x83:
-        mapping = [0x01, 1, 3, 0, 1, 2];
-        break;
-      case 0x84:
-        mapping = [0x01, 1, 4, 0, 1, 2, 3];
-        break;
-      case 0x85:
-        mapping = [0x01, 1, 5, 0, 1, 2, 3, 4];
-        break;
-      case 0x86:
-        mapping = [0x01, 1, 6, 0, 1, 2, 3, 4, 5];
-        break;
-      case 0x87:
-        mapping = [0x01, 1, 7, 0, 1, 2, 3, 4, 5, 6];
-        break;
-      case 0x88:
-        mapping = [0x01, 1, 8, 0, 1, 2, 3, 4, 5, 6, 7];
-        break;
-    }
-
-    const data = new Uint8Array([
-      0x00, // Version (1)
-      channelCount, // OutputChannelCount: 2
-      0x00,
-      0x00, // PreSkip: 2
-      (sampleRate >>> 24) & 0xff, // Audio sample rate: 4
-      (sampleRate >>> 17) & 0xff,
-      (sampleRate >>> 8) & 0xff,
-      (sampleRate >>> 0) & 0xff,
-      0x00,
-      0x00, // Global Gain : 2
-      ...mapping,
-    ]);
-    return MP4.box(MP4.types.dOps, data);
-  }
-
-  static fLaC(meta: MP4Meta): Uint8Array {
-    const channelCount = meta.channelCount || 0;
-    const sampleRate = Math.min(meta.audioSampleRate || 0, 65535);
-    const sampleSize = meta.sampleSize || 0;
-
-    const data = new Uint8Array([
-      0x00,
-      0x00,
-      0x00,
-      0x00, // reserved(4)
-      0x00,
-      0x00,
-      0x00,
-      0x01, // reserved(2) + data_reference_index(2)
-      0x00,
-      0x00,
-      0x00,
-      0x00, // reserved: 2 * 4 bytes
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      channelCount, // channelCount(2)
-      0x00,
-      sampleSize, // sampleSize(2)
-      0x00,
-      0x00,
-      0x00,
-      0x00, // reserved(4)
-      (sampleRate >>> 8) & 0xff, // Audio sample rate
-      sampleRate & 0xff,
-      0x00,
-      0x00,
-    ]);
-
-    return MP4.box(MP4.types.fLaC, data, MP4.dfLa(meta));
-  }
-
-  static dfLa(meta: MP4Meta): Uint8Array {
-    const data = new Uint8Array([
-      0x00,
-      0x00,
-      0x00,
-      0x00, // version, flag
-      ...(meta.config as number[]),
-    ]);
-    return MP4.box(MP4.types.dfLa, data);
-  }
-
-  static ipcm(meta: MP4Meta): Uint8Array {
-    const channelCount = meta.channelCount || 0;
-    const sampleRate = Math.min(meta.audioSampleRate || 0, 65535);
-    const sampleSize = meta.sampleSize || 0;
-
-    const data = new Uint8Array([
-      0x00,
-      0x00,
-      0x00,
-      0x00, // reserved(4)
-      0x00,
-      0x00,
-      0x00,
-      0x01, // reserved(2) + data_reference_index(2)
-      0x00,
-      0x00,
-      0x00,
-      0x00, // reserved: 2 * 4 bytes
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      channelCount, // channelCount(2)
-      0x00,
-      sampleSize, // sampleSize(2)
-      0x00,
-      0x00,
-      0x00,
-      0x00, // reserved(4)
-      (sampleRate >>> 8) & 0xff, // Audio sample rate
-      sampleRate & 0xff,
-      0x00,
-      0x00,
-    ]);
-
-    if (meta.channelCount === 1) {
-      return MP4.box(MP4.types.ipcm, data, MP4.pcmC(meta));
-    } else {
-      return MP4.box(MP4.types.ipcm, data, MP4.chnl(meta), MP4.pcmC(meta));
-    }
-  }
-
-  static chnl(meta: MP4Meta): Uint8Array {
-    const data = new Uint8Array([
-      0x00,
-      0x00,
-      0x00,
-      0x00, // version, flag
-      0x01, // Channel Based Layout
-      meta.channelCount || 0, // AudioConfiguration
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00, // omittedChannelsMap
-    ]);
-    return MP4.box(MP4.types.chnl, data);
-  }
-
-  static pcmC(meta: MP4Meta): Uint8Array {
-    const littleEndian = meta.littleEndian ? 0x01 : 0x00;
-    const sampleSize = meta.sampleSize || 0;
-    const data = new Uint8Array([
-      0x00,
-      0x00,
-      0x00,
-      0x00, // version, flag
-      littleEndian,
-      sampleSize,
-    ]);
-    return MP4.box(MP4.types.pcmC, data);
-  }
-
   static avc1(meta: MP4Meta): Uint8Array {
     if (meta.avcc == null) {
       throw new Error("MP4: avcc is required for avc1 box");
@@ -1317,97 +1053,6 @@ class MP4 {
       0xff, // pre_defined = -1
     ]);
     return MP4.box(MP4.types.hvc1, data, MP4.box(MP4.types.hvcC, hvcc));
-  }
-
-  static av01(meta: MP4Meta): Uint8Array {
-    if (meta.av1c == null) {
-      throw new Error("MP4: av1c is required for av01 box");
-    }
-    const av1c = meta.av1c;
-    const width = meta.codecWidth || 192,
-      height = meta.codecHeight || 108;
-
-    const data = new Uint8Array([
-      0x00,
-      0x00,
-      0x00,
-      0x00, // reserved(4)
-      0x00,
-      0x00,
-      0x00,
-      0x01, // reserved(2) + data_reference_index(2)
-      0x00,
-      0x00,
-      0x00,
-      0x00, // pre_defined(2) + reserved(2)
-      0x00,
-      0x00,
-      0x00,
-      0x00, // pre_defined: 3 * 4 bytes
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      (width >>> 8) & 0xff, // width: 2 bytes
-      width & 0xff,
-      (height >>> 8) & 0xff, // height: 2 bytes
-      height & 0xff,
-      0x00,
-      0x48,
-      0x00,
-      0x00, // horizresolution: 4 bytes
-      0x00,
-      0x48,
-      0x00,
-      0x00, // vertresolution: 4 bytes
-      0x00,
-      0x00,
-      0x00,
-      0x00, // reserved: 4 bytes
-      0x00,
-      0x01, // frame_count
-      0x0a, // strlen
-      0x78,
-      0x71,
-      0x71,
-      0x2f, // compressorname: 32 bytes
-      0x66,
-      0x6c,
-      0x76,
-      0x2e,
-      0x6a,
-      0x73,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x18, // depth
-      0xff,
-      0xff, // pre_defined = -1
-    ]);
-    return MP4.box(MP4.types.av01, data, MP4.box(MP4.types.av1C, av1c));
   }
 
   // Movie Extends box

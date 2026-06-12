@@ -1,13 +1,15 @@
 import type { PlayerConfig } from "../config";
 import { createDefaultConfig } from "../config";
-import MediaInfo from "../core/media-info";
 import { WorkerAudioDecoder } from "../decoder/worker-audio-decoder";
 import DemuxErrors from "../demux/demux-errors";
 import TSDemuxer from "../demux/ts-demuxer";
-import FetchLoader from "../io/fetch-loader";
+import { containsMoov, parseInitSegment, probeFmp4, splitInitFromSegment } from "../hls/fmp4";
+import { type HlsInfo, HlsSource } from "../hls/hls-source";
+import FetchLoader, { LoaderErrors } from "../io/fetch-loader";
 import MP4Remuxer from "../remux/mp4-remuxer";
 import type { PlayerSegment } from "../types";
 import Log from "../utils/logger";
+import { type SegmentMeta, type SegmentSource, StaticSegmentSource } from "./segment-source";
 
 export interface PipelineCallbacks {
   onInitSegment: (
@@ -29,20 +31,32 @@ export interface PipelineCallbacks {
     },
   ) => void;
   onLoadingComplete: () => void;
-  onMediaInfo: (mediaInfo: unknown) => void;
   onIOError: (type: string, info: { code: number; msg: string }) => void;
   onDemuxError: (type: string, info: string) => void;
-  onHLSDetected: () => void;
+  onHlsInfo: (info: HlsInfo) => void;
   onPCMAudioData: (pcm: Float32Array, channels: number, sampleRate: number, pts: number) => void;
 }
 
-interface InternalSegment {
-  duration: number;
-  url: string;
-  timestampBase: number;
-  cors: boolean;
-  withCredentials: boolean;
-  referrerPolicy?: ReferrerPolicy;
+class LoadError extends Error {
+  constructor(
+    public errorType: string,
+    public info: { code: number; msg: string },
+  ) {
+    super(info.msg);
+  }
+}
+
+const HLS_URL_RE = /\.m3u8?($|\?)/i;
+
+/** Sentinel rejection value for intentionally cancelled segment loads. */
+const CANCELLED = Symbol("cancelled");
+
+/** Copy a Uint8Array view into a standalone (transferable) ArrayBuffer. */
+function toArrayBuffer(view: Uint8Array): ArrayBuffer {
+  if (view.byteOffset === 0 && view.byteLength === view.buffer.byteLength) {
+    return view.buffer as ArrayBuffer;
+  }
+  return view.slice().buffer as ArrayBuffer;
 }
 
 class Pipeline {
@@ -51,112 +65,87 @@ class Pipeline {
   private _config: PlayerConfig;
   private _callbacks: PipelineCallbacks;
 
-  private _segments: InternalSegment[];
-  private _currentSegmentIndex: number;
+  private _initialSegments: PlayerSegment[];
 
-  private _mediaInfo: MediaInfo | null;
-  private _demuxer: TSDemuxer | null;
-  private _remuxer: MP4Remuxer | null;
-  private _ioctl: FetchLoader | null;
+  /** Increments to invalidate the currently running load loop. */
+  private _runId = 0;
+
+  private _source: SegmentSource | null = null;
+  private _hlsSource: HlsSource | null = null;
+
+  private _demuxer: TSDemuxer | null = null;
+  private _remuxer: MP4Remuxer | null = null;
+  private _ioctl: FetchLoader | null = null;
+  /** Settles the in-flight segment load promise (so a cancelled loop can exit). */
+  private _cancelLoad: (() => void) | null = null;
+
+  private _paused = false;
+  private _resumeGate: (() => void) | null = null;
+  /**
+   * Discrete segment sources (HLS, catchup lists) load one short URL per iteration.
+   * For these, pause only gates between segments — never abort an in-flight fetch
+   * (which shows up as immediate cancel/retry on later segments).
+   */
+  private _discreteSegments = false;
+
+  /** dts offset (ms) to apply when the remuxer is next created (HLS discontinuity / seek). */
+  private _pendingDtsOffsetMs = 0;
+
+  // --- fMP4 passthrough state ---
+  private _fmp4Mode = false;
+  private _fmp4InitSent = false;
+  private _fmp4Chunks: Uint8Array[] = [];
+  private _lastInitUrl: string | null = null;
+
   private _workerAudioDecoder: WorkerAudioDecoder | null = null;
   private _workerAudioDecoderInitPromise: Promise<boolean> | null = null;
 
   constructor(segments: PlayerSegment[], config: PlayerConfig, callbacks: PipelineCallbacks) {
     this._callbacks = callbacks;
     this._config = { ...createDefaultConfig(), ...config };
-
-    this._segments = this._buildSegments(segments);
-    this._currentSegmentIndex = 0;
-
-    this._mediaInfo = null;
-    this._demuxer = null;
-    this._remuxer = null;
-    this._ioctl = null;
-  }
-
-  private _buildSegments(playerSegments: PlayerSegment[]): InternalSegment[] {
-    let totalDuration = 0;
-    const segments: InternalSegment[] = playerSegments.map((seg) => {
-      const duration = seg.duration ?? 0;
-      const internal: InternalSegment = {
-        duration,
-        url: seg.url,
-        timestampBase: totalDuration,
-        cors: true,
-        withCredentials: false,
-      };
-      if (this._config.referrerPolicy) {
-        internal.referrerPolicy = this._config.referrerPolicy as ReferrerPolicy;
-      }
-      totalDuration += duration;
-      return internal;
-    });
-    return segments;
+    this._initialSegments = segments;
   }
 
   start(): void {
-    this._loadSegment(0);
+    this._load(this._initialSegments);
   }
 
-  stop(): void {
-    this._internalAbort();
+  loadSegments(newSegments: PlayerSegment[]): void {
+    this._load(newSegments);
   }
 
   pause(): void {
-    if (this._ioctl?.isWorking()) {
-      this._ioctl.pause();
+    this._paused = true;
+    // Continuous single-URL TS streams can pause mid-fetch and resume via Range.
+    if (!this._discreteSegments) {
+      this._ioctl?.pause();
     }
   }
 
   resume(): void {
-    if (this._ioctl?.isPaused()) {
-      this._ioctl.resume();
+    this._paused = false;
+    if (!this._discreteSegments) {
+      this._ioctl?.resume();
     }
+    this._resumeGate?.();
+    this._resumeGate = null;
   }
 
-  loadSegments(newSegments: PlayerSegment[]): void {
-    // Stop current loading
-    this._internalAbort();
-
-    // Reset internal state
-    this._mediaInfo = null;
-
-    // Setup new segments
-    this._segments = this._buildSegments(newSegments);
-    this._currentSegmentIndex = 0;
-
-    // Destroy demuxer and remuxer for clean state (handles codec/container changes)
-    if (this._demuxer) {
-      this._demuxer.destroy();
-      this._demuxer = null;
+  /** Seek within an HLS VOD/EVENT playlist. No-op for live or non-HLS sources. */
+  seek(seconds: number): void {
+    if (!this._hlsSource || this._hlsSource.info.live) {
+      return;
     }
-    if (this._remuxer) {
-      this._remuxer.destroy();
-      this._remuxer = null;
-    }
-
-    // Reset WASM audio decoder state (clear stale mdct/qmf from previous stream)
-    this._workerAudioDecoder?.reset();
-
-    // Start from segment 0 — will re-probe format and recreate demuxer+remuxer
-    this._loadSegment(0);
+    this._runId++;
+    this._abortCurrentLoad();
+    this._fmp4Chunks = [];
+    this._hlsSource.seek(seconds);
+    void this._run(this._runId);
   }
 
   destroy(): void {
-    this._mediaInfo = null;
-
-    if (this._ioctl) {
-      this._ioctl.destroy();
-      this._ioctl = null;
-    }
-    if (this._demuxer) {
-      this._demuxer.destroy();
-      this._demuxer = null;
-    }
-    if (this._remuxer) {
-      this._remuxer.destroy();
-      this._remuxer = null;
-    }
+    this._runId++;
+    this._teardown();
     if (this._workerAudioDecoder) {
       this._workerAudioDecoder.destroy();
       this._workerAudioDecoder = null;
@@ -166,89 +155,239 @@ class Pipeline {
 
   // ---- Private methods ----
 
-  private _loadSegment(segmentIndex: number): void {
-    this._currentSegmentIndex = segmentIndex;
-    const segment = this._segments[segmentIndex];
+  private _load(segments: PlayerSegment[]): void {
+    this._runId++;
+    this._teardown();
 
-    const dataSource = {
-      url: segment.url,
-      cors: segment.cors,
-      withCredentials: segment.withCredentials,
-      referrerPolicy: segment.referrerPolicy,
-    };
+    // Reset WASM audio decoder state (clear stale mdct/qmf from previous stream)
+    this._workerAudioDecoder?.reset();
 
-    const ioctl = new FetchLoader(dataSource, this._config, segmentIndex);
-    this._ioctl = ioctl;
-
-    ioctl.onError = this._onIOException.bind(this);
-    ioctl.onSeeked = this._onIOSeeked.bind(this);
-    ioctl.onComplete = this._onIOComplete.bind(this) as (extraData: unknown) => void;
-    ioctl.onHLSDetected = () => this._callbacks.onHLSDetected();
-
-    ioctl.onDataArrival = this._onInitChunkArrival.bind(this);
-    ioctl.open();
+    const url = segments[0]?.url ?? "";
+    this._discreteSegments = segments.length > 1 || HLS_URL_RE.test(url);
+    if (segments.length === 1 && HLS_URL_RE.test(url)) {
+      // Fast path: known playlist URL, skip the content-type detection round-trip
+      this._startHls(url);
+    } else {
+      this._source = new StaticSegmentSource(segments);
+      void this._run(this._runId);
+    }
   }
 
-  private _internalAbort(): void {
+  private _startHls(url: string, preloaded?: { text: string; url: string }): void {
+    this._discreteSegments = true;
+    const hls = new HlsSource(url, this._config, preloaded);
+    hls.onInfo = (info) => this._callbacks.onHlsInfo(info);
+    this._hlsSource = hls;
+    this._source = hls;
+    void this._run(this._runId);
+  }
+
+  /** Stop all loading and demux/remux state, keeping the worker reusable. */
+  private _teardown(): void {
+    this._abortCurrentLoad();
+    this._source?.destroy();
+    this._source = null;
+    this._hlsSource = null;
+    if (this._demuxer) {
+      this._demuxer.destroy();
+      this._demuxer = null;
+    }
+    if (this._remuxer) {
+      this._remuxer.destroy();
+      this._remuxer = null;
+    }
+    this._pendingDtsOffsetMs = 0;
+    this._fmp4Mode = false;
+    this._fmp4InitSent = false;
+    this._fmp4Chunks = [];
+    this._lastInitUrl = null;
+    this._paused = false;
+    this._resumeGate?.();
+    this._resumeGate = null;
+  }
+
+  private _abortCurrentLoad(): void {
     if (this._ioctl) {
       this._ioctl.destroy();
       this._ioctl = null;
     }
+    this._cancelLoad?.();
+    this._cancelLoad = null;
   }
 
-  private _onInitChunkArrival(data: ArrayBuffer, byteStart: number): number {
-    const probeData = TSDemuxer.probe(data);
+  /** Block until unpaused or this run is superseded (seek / reload). */
+  private async _waitIfPaused(runId: number): Promise<boolean> {
+    while (this._paused && this._runId === runId) {
+      await new Promise<void>((resolve) => {
+        this._resumeGate = resolve;
+      });
+    }
+    return this._runId === runId;
+  }
 
-    if (!(probeData as Record<string, unknown>).match) {
-      if (!(probeData as Record<string, unknown>).needMoreData) {
-        Log.e(this.TAG, "Non MPEG-TS, Unsupported media type!");
-        Promise.resolve().then(() => {
-          this._internalAbort();
-        });
-        this._callbacks.onDemuxError(DemuxErrors.FORMAT_UNSUPPORTED, "Non MPEG-TS, Unsupported media type!");
+  // ---- Load loop ----
+
+  private async _run(runId: number): Promise<void> {
+    const source = this._source;
+    if (!source) return;
+
+    while (this._runId === runId) {
+      if (!(await this._waitIfPaused(runId))) return;
+
+      let meta: SegmentMeta | null;
+      try {
+        meta = await source.next();
+      } catch (e) {
+        if (this._runId === runId) {
+          Log.e(this.TAG, `Segment source failed: ${(e as Error).message}`);
+          this._callbacks.onIOError(LoaderErrors.EXCEPTION, { code: -1, msg: (e as Error).message });
+        }
+        return;
       }
-      return 0;
+      if (this._runId !== runId) return;
+
+      if (!meta) {
+        this._remuxer?.flushStashedSamples();
+        this._callbacks.onLoadingComplete();
+        return;
+      }
+
+      try {
+        if (meta.resetRemuxer) {
+          this._resetTransmux(meta.start);
+        }
+        if (meta.initUrl && meta.initUrl !== this._lastInitUrl) {
+          if (!(await this._waitIfPaused(runId))) return;
+          await this._loadFmp4Init(meta.initUrl, runId);
+          if (this._runId !== runId) return;
+          this._lastInitUrl = meta.initUrl;
+        }
+        if (!(await this._waitIfPaused(runId))) return;
+        await this._loadSegment(meta);
+        if (this._runId !== runId) return;
+
+        if (this._fmp4Mode) {
+          this._flushFmp4Segment();
+        }
+        // HLS TS segments carry continuous timestamps: keep the stashed samples so the
+        // remuxer splices segments seamlessly. Static (catchup) segments each restart
+        // their own timeline, so flush between them.
+        if (!this._hlsSource) {
+          this._remuxer?.flushStashedSamples();
+        }
+      } catch (e) {
+        if (this._runId !== runId || e === CANCELLED) return;
+        if (e instanceof LoadError) {
+          Log.e(this.TAG, `IOException: type = ${e.errorType}, code = ${e.info.code}, msg = ${e.info.msg}`);
+          this._callbacks.onIOError(e.errorType, e.info);
+        } else {
+          Log.e(this.TAG, `Segment load failed: ${(e as Error).message}`);
+          this._callbacks.onIOError(LoaderErrors.EXCEPTION, { code: -1, msg: (e as Error).message });
+        }
+        return;
+      }
     }
-
-    this._setupTSDemuxerRemuxer(probeData);
-
-    // Set timestampBase for multi-segment time continuity
-    const segment = this._segments[this._currentSegmentIndex];
-    if (segment && this._demuxer) {
-      this._demuxer.timestampBase = segment.timestampBase * 90000; // seconds → 90kHz ticks
-    }
-
-    // Switch from probe handler to direct demuxer parsing for subsequent chunks
-    if (this._ioctl && this._demuxer) {
-      (this._ioctl as unknown as Record<string, unknown>).onDataArrival = this._demuxer.parseChunks.bind(this._demuxer);
-    }
-
-    return this._demuxer?.parseChunks(data, byteStart) ?? 0;
   }
 
-  private _setupTSDemuxerRemuxer(probeData: unknown): void {
+  /** Destroy demuxer + remuxer so the next segment re-anchors the output timeline at `startSeconds`. */
+  private _resetTransmux(startSeconds: number): void {
+    if (this._demuxer) {
+      this._demuxer.destroy();
+      this._demuxer = null;
+    }
+    if (this._remuxer) {
+      this._remuxer.destroy();
+      this._remuxer = null;
+    }
+    this._pendingDtsOffsetMs = startSeconds * 1000;
+  }
+
+  private _loadSegment(meta: SegmentMeta): Promise<void> {
+    const ioctl = new FetchLoader(
+      {
+        url: meta.url,
+        cors: true,
+        withCredentials: false,
+        referrerPolicy: this._config.referrerPolicy as ReferrerPolicy | undefined,
+      },
+      this._config,
+    );
+    this._ioctl = ioctl;
+
+    return new Promise<void>((resolve, reject) => {
+      this._cancelLoad = () => reject(CANCELLED);
+
+      ioctl.onError = (type, info) => reject(new LoadError(type, info));
+      ioctl.onSeeked = () => this._remuxer?.insertDiscontinuity();
+      ioctl.onComplete = () => resolve();
+      ioctl.onHLSDetected = (text, url) => {
+        // Playlist served from a non-.m3u8 URL: switch the pipeline to the HLS source,
+        // reusing the playlist content we already downloaded
+        this._runId++;
+        reject(CANCELLED);
+        this._startHls(meta.url, { text, url });
+      };
+      ioctl.onDataArrival = (data, byteStart) => this._onProbeChunk(meta, data, byteStart);
+      ioctl.open();
+    }).finally(() => {
+      ioctl.destroy();
+      if (this._ioctl === ioctl) {
+        this._ioctl = null;
+        this._cancelLoad = null;
+      }
+    });
+  }
+
+  /** First-chunk handler: probe the container format, then hand off to the right path. */
+  private _onProbeChunk(meta: SegmentMeta, data: ArrayBuffer, byteStart: number): number {
+    if (this._fmp4Mode) {
+      return this._onFmp4Chunk(data);
+    }
+
+    const probeData = TSDemuxer.probe(data);
+    if (probeData.match) {
+      this._setupTSDemuxerRemuxer(probeData, meta);
+      if (this._ioctl && this._demuxer) {
+        this._ioctl.onDataArrival = this._demuxer.parseChunks.bind(this._demuxer);
+      }
+      return this._demuxer?.parseChunks(data, byteStart) ?? 0;
+    }
+
+    if (probeFmp4(data)) {
+      this._fmp4Mode = true;
+      if (this._ioctl) {
+        this._ioctl.onDataArrival = (chunk) => this._onFmp4Chunk(chunk);
+      }
+      return this._onFmp4Chunk(data);
+    }
+
+    if (!probeData.needMoreData) {
+      Log.e(this.TAG, "Unsupported media type (neither MPEG-TS nor fMP4)");
+      Promise.resolve().then(() => this._abortCurrentLoad());
+      this._callbacks.onDemuxError(DemuxErrors.FORMAT_UNSUPPORTED, "Unsupported media type!");
+    }
+    return 0;
+  }
+
+  // ---- MPEG-TS path ----
+
+  private _setupTSDemuxerRemuxer(probeData: unknown, meta: SegmentMeta): void {
     if (this._demuxer) {
       this._demuxer.destroy();
     }
-    const demuxer = new TSDemuxer(probeData as Record<string, unknown>, this._config);
+    const demuxer = new TSDemuxer(probeData as ConstructorParameters<typeof TSDemuxer>[0]);
     this._demuxer = demuxer;
 
     if (!this._remuxer) {
       this._remuxer = new MP4Remuxer(this._config);
+      if (this._pendingDtsOffsetMs !== 0) {
+        this._remuxer.setDtsBaseOffset(this._pendingDtsOffsetMs);
+        this._pendingDtsOffsetMs = 0;
+      }
     }
 
     demuxer.onError = this._onDemuxException.bind(this);
-    demuxer.onMediaInfo = this._onMediaInfo.bind(this);
-
-    // Metadata event callbacks: ignored (not forwarded to web-ui)
-    demuxer.onTimedID3Metadata = () => {};
-    demuxer.onPGSSubtitleData = () => {};
-    demuxer.onSynchronousKLVMetadata = () => {};
-    demuxer.onAsynchronousKLVMetadata = () => {};
-    demuxer.onSMPTE2038Metadata = () => {};
-    demuxer.onSCTE35Metadata = () => {};
-    demuxer.onPESPrivateDataDescriptor = () => {};
-    demuxer.onPESPrivateData = () => {};
+    demuxer.timestampBase = meta.timestampBase * 90000; // seconds → 90kHz ticks
 
     // Set up software audio decode callback when MP2 WASM URL is configured
     if (this._config.wasmDecoders.mp2) {
@@ -257,62 +396,22 @@ class Pipeline {
       };
     }
 
-    (this._remuxer as MP4Remuxer).bindDataSource(
-      this._demuxer as unknown as {
+    this._remuxer.bindDataSource(
+      demuxer as unknown as {
         onDataAvailable: (...args: unknown[]) => void;
         onTrackMetadata: (...args: unknown[]) => void;
       },
     );
-    (this._demuxer as TSDemuxer).bindDataSource(this._ioctl as unknown as Record<string, unknown>);
 
-    this._remuxer.onInitSegment = this._onRemuxerInitSegmentArrival.bind(this);
-    this._remuxer.onMediaSegment = this._onRemuxerMediaSegmentArrival.bind(
-      this,
-    ) as unknown as typeof this._remuxer.onMediaSegment;
-  }
-
-  private _onMediaInfo(mediaInfo: MediaInfo): void {
-    if (this._mediaInfo == null) {
-      // Store first segment's mediainfo as global mediaInfo
-      this._mediaInfo = Object.assign({}, mediaInfo) as MediaInfo;
-      this._mediaInfo.segments = [];
-      this._mediaInfo.segmentCount = this._segments.length;
-      Object.setPrototypeOf(this._mediaInfo, MediaInfo.prototype);
-    }
-
-    const segmentInfo = Object.assign({}, mediaInfo) as MediaInfo;
-    Object.setPrototypeOf(segmentInfo, MediaInfo.prototype);
-    (this._mediaInfo.segments as MediaInfo[])[this._currentSegmentIndex] = segmentInfo;
-
-    // Notify mediaInfo update
-    this._reportSegmentMediaInfo(this._currentSegmentIndex);
-  }
-
-  private _onIOSeeked(): void {
-    (this._remuxer as MP4Remuxer).insertDiscontinuity();
-  }
-
-  private _onIOComplete(extraData: number): void {
-    const segmentIndex = extraData;
-    const nextSegmentIndex = segmentIndex + 1;
-
-    if (nextSegmentIndex < this._segments.length) {
-      this._internalAbort();
-      if (this._remuxer) {
-        this._remuxer.flushStashedSamples();
-      }
-      this._loadSegment(nextSegmentIndex);
-    } else {
-      if (this._remuxer) {
-        this._remuxer.flushStashedSamples();
-      }
-      this._callbacks.onLoadingComplete();
-    }
-  }
-
-  private _onIOException(type: string, info: { code: number; msg: string }): void {
-    Log.e(this.TAG, `IOException: type = ${type}, code = ${info.code}, msg = ${info.msg}`);
-    this._callbacks.onIOError(type, info);
+    this._remuxer.onInitSegment = (type, initSegment) => {
+      this._callbacks.onInitSegment(type, initSegment as unknown as Parameters<PipelineCallbacks["onInitSegment"]>[1]);
+    };
+    this._remuxer.onMediaSegment = (type, mediaSegment) => {
+      this._callbacks.onMediaSegment(
+        type,
+        mediaSegment as unknown as Parameters<PipelineCallbacks["onMediaSegment"]>[1],
+      );
+    };
   }
 
   private _onDemuxException(type: string, info: string): void {
@@ -320,32 +419,71 @@ class Pipeline {
     this._callbacks.onDemuxError(type, info);
   }
 
-  private _onRemuxerInitSegmentArrival(type: string, initSegment: unknown): void {
-    this._callbacks.onInitSegment(
-      type,
-      initSegment as {
-        type: string;
-        container: string;
-        codec?: string;
-        data?: ArrayBuffer;
-      },
-    );
+  // ---- fMP4 passthrough path ----
+
+  private async _loadFmp4Init(initUrl: string, runId: number): Promise<void> {
+    this._fmp4Mode = true;
+    const response = await fetch(initUrl, {
+      headers: this._config.headers,
+      referrerPolicy: (this._config.referrerPolicy as ReferrerPolicy | undefined) ?? "no-referrer-when-downgrade",
+    });
+    if (this._runId !== runId) return;
+    if (!response.ok) {
+      throw new LoadError(LoaderErrors.HTTP_STATUS_CODE_INVALID, { code: response.status, msg: response.statusText });
+    }
+    const data = new Uint8Array(await response.arrayBuffer());
+    // Superseded mid-fetch (seek/reload/destroy): don't append a stale init segment
+    if (this._runId !== runId) return;
+    this._sendFmp4Init(data);
   }
 
-  private _onRemuxerMediaSegmentArrival(type: string, mediaSegment: Record<string, unknown>): void {
-    this._callbacks.onMediaSegment(type, mediaSegment as { type: string; data?: ArrayBuffer });
+  private _sendFmp4Init(data: Uint8Array): void {
+    const codec = this._hlsSource?.info.codecs ?? parseInitSegment(data).codecs.join(",");
+    this._callbacks.onInitSegment("video", {
+      type: "video",
+      container: "video/mp4",
+      codec,
+      data: toArrayBuffer(data),
+    });
+    this._fmp4InitSent = true;
   }
 
-  private _reportSegmentMediaInfo(segmentIndex: number): void {
-    const segmentInfo = this._mediaInfo?.segments?.[segmentIndex];
-    const exportInfo: Record<string, unknown> = Object.assign({}, segmentInfo) as unknown as Record<string, unknown>;
-
-    exportInfo.duration = this._mediaInfo?.duration;
-    exportInfo.segmentCount = this._mediaInfo?.segmentCount;
-    delete exportInfo.segments;
-
-    this._callbacks.onMediaInfo(exportInfo);
+  private _onFmp4Chunk(data: ArrayBuffer): number {
+    this._fmp4Chunks.push(new Uint8Array(data));
+    return data.byteLength;
   }
+
+  /** Forward a fully buffered fMP4 segment to MSE (extracting the init part on first use). */
+  private _flushFmp4Segment(): void {
+    if (this._fmp4Chunks.length === 0) {
+      return;
+    }
+    const total = this._fmp4Chunks.reduce((sum, c) => sum + c.byteLength, 0);
+    const segment = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of this._fmp4Chunks) {
+      segment.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    this._fmp4Chunks = [];
+
+    let media: Uint8Array = segment;
+    if (!this._fmp4InitSent) {
+      if (!containsMoov(segment)) {
+        this._callbacks.onDemuxError(DemuxErrors.FORMAT_ERROR, "fMP4 stream has no initialization segment (moov)");
+        return;
+      }
+      const parts = splitInitFromSegment(segment);
+      this._sendFmp4Init(parts.init);
+      media = parts.media;
+    }
+
+    if (media.byteLength > 0) {
+      this._callbacks.onMediaSegment("video", { type: "video", data: toArrayBuffer(media) });
+    }
+  }
+
+  // ---- MP2 software audio decode ----
 
   private _handleRawAudioFrame(frame: { codec: "mp2"; data: Uint8Array; pts: number }): void {
     // Lazily create WorkerAudioDecoder on first raw audio frame

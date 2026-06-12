@@ -29,8 +29,8 @@ export interface PlayerConfig {
 
 export const defaultConfig: PlayerConfig = {
   liveSync: true,
-  liveSyncMaxLatency: 1.2,
-  liveSyncTargetLatency: 0.8,
+  liveSyncMaxLatency: 3,
+  liveSyncTargetLatency: 1.5,
   liveSyncPlaybackRate: 1.2,
 
   fixAudioTimestampGap: true,
