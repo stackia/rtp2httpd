@@ -126,6 +126,7 @@ The following FCC (Fast Channel Change) server addresses were collected from the
   - `171.104.238.90:8027` (Liuzhou)
   - `10.255.136.86:8027` (Liuzhou)
   - `10.255.165.82:8027` (Fangchenggang)
+  - `124.226.158.81:8027` (Hezhou, Wuzhou)
 
 ## Sichuan
 
