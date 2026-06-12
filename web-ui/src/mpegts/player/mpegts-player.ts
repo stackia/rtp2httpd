@@ -88,14 +88,35 @@ export function createMpegtsPlayer(
     }
   }
 
+  // Init segments are batched and flushed together when the first non-init message
+  // arrives. Each worker message is delivered in its own event-loop task; appending
+  // the video init segment and yielding lets the UA finish parsing it and lock the
+  // SourceBuffer set before the audio init arrives — addSourceBuffer then throws
+  // QuotaExceededError ("reached the limit") and the stream plays without sound.
+  // Flushing both inits in one task creates all SourceBuffers before any init
+  // segment parse can complete (the append algorithm runs as a queued task).
+  let pendingInits: { track: "video" | "audio"; data: ArrayBuffer; codec: string; container: string }[] = [];
+
+  function flushPendingInits(): void {
+    if (pendingInits.length === 0) return;
+    const inits = pendingInits;
+    pendingInits = [];
+    for (const init of inits) {
+      mse?.appendInit(init.track, init.data, init.codec, init.container);
+    }
+  }
+
   function handleWorkerMessage(e: MessageEvent): void {
     const msg = e.data as WorkerEvent | { type: "destroyed" };
     if (msg.type === "destroyed") return;
     // Discard stale messages from a previous load generation
     if (msg.gen !== mseGeneration) return;
+    if (msg.type !== "init-segment") {
+      flushPendingInits();
+    }
     switch (msg.type) {
       case "init-segment":
-        mse?.appendInit(msg.track, msg.data, msg.codec, msg.container);
+        pendingInits.push({ track: msg.track, data: msg.data, codec: msg.codec, container: msg.container });
         break;
       case "media-segment":
         mse?.appendMedia(msg.track, msg.data);
@@ -264,6 +285,7 @@ export function createMpegtsPlayer(
 
     loadSegments(segments: PlayerSegment[]) {
       mseGeneration++;
+      pendingInits = [];
       hlsInfo = null;
       stopWatermarkThrottle();
       if (mse) {
@@ -310,6 +332,7 @@ export function createMpegtsPlayer(
 
     suspend() {
       stopWatermarkThrottle();
+      pendingInits = [];
       hlsInfo = null;
       if (mse) {
         mse.destroy();
