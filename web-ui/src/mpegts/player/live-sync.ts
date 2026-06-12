@@ -53,23 +53,18 @@ export function setupLiveSync(video: HTMLMediaElement, config: PlayerConfig): ()
  * If the video is stalled or hasn't received canplay and the currentTime is before
  * the first buffered range, seek to the start of the buffered range.
  */
-export function setupStartupStallJumper(video: HTMLMediaElement): () => void {
-  let canplayReceived = false;
-  // Poll as a fallback: iOS Safari (ManagedMediaSource) does not reliably fire
-  // progress/stalled while playback is stuck before the first buffered range.
-  let pollTimer: ReturnType<typeof setInterval> | null = null;
+export interface StallJumper {
+  /** Re-run stall detection. Call whenever buffered ranges change (e.g. after a SourceBuffer append). */
+  check(): void;
+  destroy(): void;
+}
 
-  function stopPolling(): void {
-    if (pollTimer !== null) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-  }
+export function setupStartupStallJumper(video: HTMLMediaElement): StallJumper {
+  let canplayReceived = false;
 
   function onCanPlay(): void {
     canplayReceived = true;
     video.removeEventListener("canplay", onCanPlay);
-    stopPolling();
   }
 
   function detectAndFix(isStalled?: boolean): void {
@@ -79,11 +74,7 @@ export function setupStartupStallJumper(video: HTMLMediaElement): () => void {
         const target = buffered.start(0);
         Log.w(TAG, `Playback stuck at ${video.currentTime}, seeking to ${target}`);
         video.currentTime = target;
-        video.removeEventListener("progress", onProgress);
       }
-    } else {
-      video.removeEventListener("progress", onProgress);
-      stopPolling();
     }
   }
 
@@ -91,19 +82,14 @@ export function setupStartupStallJumper(video: HTMLMediaElement): () => void {
     detectAndFix(true);
   }
 
-  function onProgress(): void {
-    detectAndFix();
-  }
-
   video.addEventListener("canplay", onCanPlay);
   video.addEventListener("stalled", onStalled);
-  video.addEventListener("progress", onProgress);
-  pollTimer = setInterval(() => detectAndFix(), 500);
 
-  return () => {
-    video.removeEventListener("canplay", onCanPlay);
-    video.removeEventListener("stalled", onStalled);
-    video.removeEventListener("progress", onProgress);
-    stopPolling();
+  return {
+    check: () => detectAndFix(),
+    destroy: () => {
+      video.removeEventListener("canplay", onCanPlay);
+      video.removeEventListener("stalled", onStalled);
+    },
   };
 }

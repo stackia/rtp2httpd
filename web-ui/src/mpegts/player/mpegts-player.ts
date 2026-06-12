@@ -4,7 +4,7 @@ import type { PlayerImpl, PlayerSegment } from "../types";
 import Log from "../utils/logger";
 import type { WorkerCommand, WorkerEvent } from "../worker/messages";
 import TransmuxWorker from "../worker/transmux-worker.ts?worker&inline";
-import { setupLiveSync, setupStartupStallJumper } from "./live-sync";
+import { type StallJumper, setupLiveSync, setupStartupStallJumper } from "./live-sync";
 import { createMSE, type MSE } from "./mse";
 
 const TAG = "Player";
@@ -57,7 +57,7 @@ export function createMpegtsPlayer(
   let workerInitialized = false;
   let pendingSegments: PlayerSegment[] | null = null;
   let destroyLiveSync: (() => void) | null = null;
-  let destroyStallJumper: (() => void) | null = null;
+  let stallJumper: StallJumper | null = null;
   let mseGeneration = 0;
   let liveSyncEnabled = config.liveSync;
 
@@ -210,6 +210,10 @@ export function createMpegtsPlayer(
     // request, which restarts a live stream mid-flow and corrupts the timeline.
     // The MSE layer already defers appends while ManagedMediaSource streaming=false.
 
+    // Buffered ranges change exactly on SourceBuffer updateend; re-check for startup
+    // stalls there (iOS does not reliably fire progress/stalled on the media element).
+    mse.onBufferedChange = () => stallJumper?.check();
+
     mse.onError = (info) => {
       impl.onError?.({
         category: "media",
@@ -225,8 +229,8 @@ export function createMpegtsPlayer(
     if (!destroyLiveSync && liveSyncEnabled) {
       destroyLiveSync = setupLiveSync(video, config);
     }
-    destroyStallJumper?.();
-    destroyStallJumper = setupStartupStallJumper(video);
+    stallJumper?.destroy();
+    stallJumper = setupStartupStallJumper(video);
     destroyVideoDebugLogs?.();
     destroyVideoDebugLogs = setupVideoDebugLogs(video);
   }
@@ -284,8 +288,8 @@ export function createMpegtsPlayer(
       destroyPCMPlayer();
       destroyLiveSync?.();
       destroyLiveSync = null;
-      destroyStallJumper?.();
-      destroyStallJumper = null;
+      stallJumper?.destroy();
+      stallJumper = null;
       destroyVideoDebugLogs?.();
       destroyVideoDebugLogs = null;
     },
