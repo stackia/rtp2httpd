@@ -440,35 +440,47 @@ export function VideoPlayer({
     setIsPiP(false);
   });
 
-  // Foreground recovery: iOS pauses (and eventually suspends) web media when the
-  // page goes to background without PiP. When the page becomes visible again,
-  // resume playback — for live streams that went stale, reload at the live edge.
+  // Foreground recovery: iOS pauses web media when the page goes to background
+  // without PiP, and may even tear down the whole media pipeline (MediaSource
+  // close + decode error). When the page becomes visible again, resume playback —
+  // rebuilding the stream when the old session is dead or stale.
   const handleVisibilityChange = useEffectEvent(() => {
     if (document.visibilityState !== "visible") return;
     const video = videoRef.current;
     if (!video || !player || error || needsUserInteraction) return;
     // PiP keeps playing in background; nothing to recover
     if (document.pictureInPictureElement) return;
-    // Respect an explicit user pause; only recover from the OS-initiated pause
-    if (!video.paused || userPausedRef.current) return;
+    // Respect an explicit user pause; only recover from OS-initiated interruptions
+    if (userPausedRef.current) return;
 
-    if (playMode === "live") {
-      const behindLiveMs = Date.now() - (streamStartTime.getTime() + currentVideoTime * 1000);
-      if (behindLiveMs > 10000) {
-        // Background suspension killed the connection and the buffer is stale —
-        // rebuild the stream at the live edge instead of resuming the old position
-        console.log("Resuming at live edge after background suspension");
-        shouldAutoPlayRef.current = true;
-        onSeek?.(new Date());
-        return;
-      }
+    // Media element died in background (MediaSource closed / decode error).
+    // Note: video.paused may still report false in this state.
+    const mediaDead = video.error !== null;
+    const behindLiveMs = Date.now() - (streamStartTime.getTime() + currentVideoTime * 1000);
+
+    if (playMode === "live" && (mediaDead || behindLiveMs > 10000)) {
+      // Dead session or stale buffer — rebuild the stream at the live edge
+      console.log("Reloading at live edge after background suspension");
+      shouldAutoPlayRef.current = true;
+      onSeek?.(new Date());
+      return;
     }
 
-    video.play()?.catch((err: Error) => {
-      if (err.name === "NotAllowedError") {
-        setNeedsUserInteraction(true);
-      }
-    });
+    if (mediaDead) {
+      // Catchup: rebuild the stream at the current position
+      console.log("Reloading at current position after background suspension");
+      shouldAutoPlayRef.current = true;
+      onSeek?.(new Date(streamStartTime.getTime() + currentVideoTime * 1000));
+      return;
+    }
+
+    if (video.paused) {
+      video.play()?.catch((err: Error) => {
+        if (err.name === "NotAllowedError") {
+          setNeedsUserInteraction(true);
+        }
+      });
+    }
   });
 
   useEffect(() => {

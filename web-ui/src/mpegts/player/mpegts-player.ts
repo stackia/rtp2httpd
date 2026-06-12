@@ -214,6 +214,23 @@ export function createMpegtsPlayer(
     // stalls there (iOS does not reliably fire progress/stalled on the media element).
     mse.onBufferedChange = () => stallJumper?.check();
 
+    mse.onSourceClose = () => {
+      // The UA killed the media pipeline (e.g. iOS reclaiming resources in
+      // background). Stop fetching — this session cannot be revived.
+      const cmd: WorkerCommand = { type: "pause" };
+      worker?.postMessage(cmd);
+      if (document.visibilityState === "visible") {
+        // Unexpected closure while visible: surface as an error so the app retries
+        impl.onError?.({
+          category: "media",
+          detail: "MediaSourceClosed",
+          info: "MediaSource was closed unexpectedly",
+        });
+      }
+      // When hidden, stay quiet: retrying in background would fail repeatedly and
+      // exhaust the app's retry budget. The app reloads the stream on foreground.
+    };
+
     mse.onError = (info) => {
       impl.onError?.({
         category: "media",

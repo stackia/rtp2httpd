@@ -43,6 +43,8 @@ export interface MSE {
   onStartStreaming: (() => void) | null;
   /** ManagedMediaSource: UA has enough buffered data (streaming → false). */
   onEndStreaming: (() => void) | null;
+  /** Fired when the MediaSource is closed by the UA (not by destroy), e.g. iOS reclaiming the media pipeline in background. */
+  onSourceClose: (() => void) | null;
   onError: ((info: { code: number; msg: string }) => void) | null;
 }
 
@@ -55,6 +57,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
   let mediaSource: MSEMediaSource | null = null;
   let objectURL: string | null = null;
+  let destroying = false;
 
   const sourceBuffers: Record<Track, SourceBuffer | null> = { video: null, audio: null };
   const pendingSegments: Record<Track, ArrayBuffer[]> = { video: [], audio: [] };
@@ -153,7 +156,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   }
 
   function tryAppendPending(): void {
-    if (!canAppendToManagedSource()) {
+    if (mediaSource?.readyState !== "open" || !canAppendToManagedSource()) {
       return;
     }
     if (hasPendingRemoveRanges()) {
@@ -341,6 +344,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     onBufferedChange: null,
     onStartStreaming: null,
     onEndStreaming: null,
+    onSourceClose: null,
     onError: null,
 
     open(onOpen: () => void): void {
@@ -387,6 +391,16 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
             mediaSource.removeEventListener("endstreaming", onEndStreamingHandler);
             mediaSource.removeEventListener("qualitychange", onQualityChangeHandler);
           }
+        }
+        // The SourceBuffers are detached now; accessing them (even .buffered)
+        // throws InvalidStateError. Drop the refs so queued appends become no-ops.
+        sourceBuffers.video = null;
+        sourceBuffers.audio = null;
+        mimeTypes.video = null;
+        mimeTypes.audio = null;
+        if (!destroying) {
+          Log.w(TAG, "MediaSource closed unexpectedly (e.g. reclaimed by the OS in background)");
+          mse.onSourceClose?.();
         }
       };
 
@@ -445,6 +459,12 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     appendMedia(track: Track, data: ArrayBuffer): void {
       pendingSegments[track].push(data);
 
+      // After the MediaSource closes (e.g. iOS background reclaim), the
+      // SourceBuffers are dead — touching them throws InvalidStateError.
+      if (mediaSource?.readyState !== "open") {
+        return;
+      }
+
       if (needCleanupSourceBuffer()) {
         doCleanupSourceBuffer();
       }
@@ -475,6 +495,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     },
 
     destroy(): void {
+      destroying = true;
       if (mediaSource) {
         const ms = mediaSource;
         const tracks: Track[] = ["video", "audio"];
@@ -549,6 +570,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
       mse.onBufferedChange = null;
       mse.onStartStreaming = null;
       mse.onEndStreaming = null;
+      mse.onSourceClose = null;
       mse.onError = null;
       sourceOpenCallback = null;
     },
