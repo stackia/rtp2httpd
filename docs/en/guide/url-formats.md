@@ -62,8 +62,8 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=202401011200
 # Time-shifted playback (using tvdr parameter)
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?tvdr=20240101120000GMT-20240101130000GMT
 
-# Custom time-shift parameter name + time offset
-http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000&r2h-seek-name=seek&r2h-seek-offset=3600
+# Custom time-shift parameter name + independent begin/end offsets
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?seek=20240101120000-20240101130000&r2h-seek-name=seek&r2h-seek-offset=12,-12
 
 # Explicitly enable the RTSP near-realtime optimization (see r2h-seek-mode docs)
 http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000&r2h-seek-mode=range(UTC%2B8/3600)
@@ -85,7 +85,7 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-ifname=eth0
 This is caused by timezone mismatch. You need to perform timezone conversion. Try the following methods:
 
 - Modify the player's User-Agent setting by adding `TZ/UTC+8` or `TZ/UTC-8`. For example, `AptvPlayer/1.3.3 TZ/UTC+8`.
-- Modify the playback URL by adding the parameter `&r2h-seek-offset=28800` or `&r2h-seek-offset=-28800`
+- Modify the playback URL by adding the parameter `&r2h-seek-offset=28800` or `&r2h-seek-offset=-28800`. If you only need to adjust the begin/end boundaries, use a form like `&r2h-seek-offset=12,-12` to offset them separately
 
 For detailed information on time-shift parameter handling (timezone, offset), see [Time Processing Guide](/en/guide/time-processing).
 
