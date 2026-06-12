@@ -57,7 +57,8 @@ class FetchLoader {
   onSeeked: (() => void) | null;
   onError: ((type: string, info: LoaderErrorInfo) => void) | null;
   onComplete: ((extraData: unknown) => void) | null;
-  onHLSDetected: (() => void) | null;
+  /** Called with the playlist text and its final (post-redirect) URL when the response is an HLS playlist. */
+  onHLSDetected: ((text: string, url: string) => void) | null;
 
   // --- config / data source ---
   private _config: PlayerConfig;
@@ -283,10 +284,13 @@ class FetchLoader {
           // detect HLS content-type before processing body
           const ct = res.headers.get("Content-Type")?.toLowerCase() ?? "";
           if (ct.includes("mpegurl") || ct.includes("m3u")) {
-            res.body?.cancel();
             this._status = LoaderStatus.kIdle;
-            this.onHLSDetected?.();
-            return;
+            // Read the body so the already-fetched playlist can be reused (avoids a duplicate request)
+            return res.text().then((text) => {
+              if (!this._requestAbort) {
+                this.onHLSDetected?.(text, res.url || sourceURL);
+              }
+            });
           }
 
           // content-length

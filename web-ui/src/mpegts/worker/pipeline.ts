@@ -81,6 +81,12 @@ class Pipeline {
 
   private _paused = false;
   private _resumeGate: (() => void) | null = null;
+  /**
+   * Discrete segment sources (HLS, catchup lists) load one short URL per iteration.
+   * For these, pause only gates between segments — never abort an in-flight fetch
+   * (which shows up as immediate cancel/retry on later segments).
+   */
+  private _discreteSegments = false;
 
   /** dts offset (ms) to apply when the remuxer is next created (HLS discontinuity / seek). */
   private _pendingDtsOffsetMs = 0;
@@ -110,12 +116,17 @@ class Pipeline {
 
   pause(): void {
     this._paused = true;
-    this._ioctl?.pause();
+    // Continuous single-URL TS streams can pause mid-fetch and resume via Range.
+    if (!this._discreteSegments) {
+      this._ioctl?.pause();
+    }
   }
 
   resume(): void {
     this._paused = false;
-    this._ioctl?.resume();
+    if (!this._discreteSegments) {
+      this._ioctl?.resume();
+    }
     this._resumeGate?.();
     this._resumeGate = null;
   }
@@ -152,6 +163,7 @@ class Pipeline {
     this._workerAudioDecoder?.reset();
 
     const url = segments[0]?.url ?? "";
+    this._discreteSegments = segments.length > 1 || HLS_URL_RE.test(url);
     if (segments.length === 1 && HLS_URL_RE.test(url)) {
       // Fast path: known playlist URL, skip the content-type detection round-trip
       this._startHls(url);
@@ -161,8 +173,9 @@ class Pipeline {
     }
   }
 
-  private _startHls(url: string): void {
-    const hls = new HlsSource(url, this._config);
+  private _startHls(url: string, preloaded?: { text: string; url: string }): void {
+    this._discreteSegments = true;
+    const hls = new HlsSource(url, this._config, preloaded);
     hls.onInfo = (info) => this._callbacks.onHlsInfo(info);
     this._hlsSource = hls;
     this._source = hls;
@@ -202,6 +215,16 @@ class Pipeline {
     this._cancelLoad = null;
   }
 
+  /** Block until unpaused or this run is superseded (seek / reload). */
+  private async _waitIfPaused(runId: number): Promise<boolean> {
+    while (this._paused && this._runId === runId) {
+      await new Promise<void>((resolve) => {
+        this._resumeGate = resolve;
+      });
+    }
+    return this._runId === runId;
+  }
+
   // ---- Load loop ----
 
   private async _run(runId: number): Promise<void> {
@@ -209,12 +232,7 @@ class Pipeline {
     if (!source) return;
 
     while (this._runId === runId) {
-      if (this._paused) {
-        await new Promise<void>((resolve) => {
-          this._resumeGate = resolve;
-        });
-        if (this._runId !== runId) return;
-      }
+      if (!(await this._waitIfPaused(runId))) return;
 
       let meta: SegmentMeta | null;
       try {
@@ -239,10 +257,12 @@ class Pipeline {
           this._resetTransmux(meta.start);
         }
         if (meta.initUrl && meta.initUrl !== this._lastInitUrl) {
+          if (!(await this._waitIfPaused(runId))) return;
           await this._loadFmp4Init(meta.initUrl);
           if (this._runId !== runId) return;
           this._lastInitUrl = meta.initUrl;
         }
+        if (!(await this._waitIfPaused(runId))) return;
         await this._loadSegment(meta);
         if (this._runId !== runId) return;
 
@@ -300,11 +320,12 @@ class Pipeline {
       ioctl.onError = (type, info) => reject(new LoadError(type, info));
       ioctl.onSeeked = () => this._remuxer?.insertDiscontinuity();
       ioctl.onComplete = () => resolve();
-      ioctl.onHLSDetected = () => {
-        // Playlist served from a non-.m3u8 URL: switch the pipeline to the HLS source
+      ioctl.onHLSDetected = (text, url) => {
+        // Playlist served from a non-.m3u8 URL: switch the pipeline to the HLS source,
+        // reusing the playlist content we already downloaded
         this._runId++;
         reject(CANCELLED);
-        this._startHls(meta.url);
+        this._startHls(meta.url, { text, url });
       };
       ioctl.onDataArrival = (data, byteStart) => this._onProbeChunk(meta, data, byteStart);
       ioctl.open();

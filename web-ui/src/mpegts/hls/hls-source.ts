@@ -42,10 +42,13 @@ export class HlsSource implements SegmentSource {
   private resetPending = true;
   private refreshFailures = 0;
   private lastPlaylistHadNews = true;
+  /** Playlist content already fetched during HLS detection, consumed on the first load. */
+  private preloaded: { text: string; url: string } | null;
 
-  constructor(url: string, config: PlayerConfig) {
-    this.url = url;
+  constructor(url: string, config: PlayerConfig, preloaded?: { text: string; url: string }) {
+    this.url = preloaded?.url ?? url;
     this.config = config;
+    this.preloaded = preloaded ?? null;
   }
 
   get info(): HlsInfo {
@@ -204,6 +207,11 @@ export class HlsSource implements SegmentSource {
   }
 
   private async fetchOnce(url: string) {
+    if (this.preloaded) {
+      const { text, url: baseUrl } = this.preloaded;
+      this.preloaded = null;
+      return parseM3U8(text, baseUrl);
+    }
     const response = await fetch(url, {
       headers: this.config.headers,
       signal: this.abort.signal,
