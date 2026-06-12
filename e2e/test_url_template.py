@@ -1269,6 +1269,23 @@ class TestHTTPQueryAppendOffset:
         finally:
             upstream.stop()
 
+    def test_overflow_offset_rejected(self, shared_r2h):
+        """Overflowing r2h-seek-offset should be ignored."""
+        upstream = _make_upstream("/stream")
+        upstream.start()
+        try:
+            url = (
+                "/http/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000"
+                "&r2h-seek-offset=999999999999999999999999999999"
+            ) % upstream.port
+            http_get("127.0.0.1", shared_r2h.port, url, timeout=_TIMEOUT)
+
+            path = _get_upstream_path(upstream)
+            assert _extract_query_param(path, "playseek") == "20240101120000-20240101130000"
+            assert "r2h-seek-offset" not in path, "r2h-seek-offset should be stripped, got: %s" % path
+        finally:
+            upstream.stop()
+
     def test_offset_stripped_from_upstream(self, shared_r2h):
         """r2h-seek-offset should be stripped from the upstream URL."""
         upstream = _make_upstream("/stream")

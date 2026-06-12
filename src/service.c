@@ -5,6 +5,7 @@
 #include "timezone.h"
 #include "url_template.h"
 #include "utils.h"
+#include <errno.h>
 #include <limits.h>
 #include <net/if.h>
 #include <netdb.h>
@@ -407,8 +408,9 @@ static int parse_seek_offset_component(const char *value, int *out_offset_second
   if (!value || !out_offset_seconds || value[0] == '\0')
     return -1;
 
+  errno = 0;
   offset_val = strtol(value, &endptr, 10);
-  if (endptr == value || *endptr != '\0' || offset_val < INT_MIN || offset_val > INT_MAX)
+  if (errno == ERANGE || endptr == value || *endptr != '\0' || offset_val < INT_MIN || offset_val > INT_MAX)
     return -1;
 
   *out_offset_seconds = (int)offset_val;
