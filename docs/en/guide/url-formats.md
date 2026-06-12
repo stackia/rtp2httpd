@@ -139,6 +139,34 @@ See [Time Processing Guide](/en/guide/time-processing) for details.
 - Can be configured to use a specific network interface via `upstream-interface-http`, or overridden per request using the `r2h-ifname` parameter
 - If the proxied target URL is an m3u file, all `http://` URLs in it will be automatically rewritten to go through the rtp2httpd proxy (to ensure HLS streams are correctly proxied)
 
+## IPv6 Support
+
+Host addresses in all URLs support IPv6. When writing IPv6 literals in URLs, wrap them in square brackets `[]`:
+
+```url
+# HTTP reverse proxy (IPv6 upstream)
+http://192.168.1.1:5140/http/[2001:db8::1]:8080/live/stream.m3u8
+
+# RTSP to HTTP (IPv6 upstream)
+http://192.168.1.1:5140/rtsp/[2001:db8::1]:554/channel1
+
+# RTSP URL with credentials
+rtsp://user:pass@[2001:db8::1]:554/live
+
+# IPv6 multicast (requires IPv6 multicast support from the system and network interface)
+http://192.168.1.1:5140/rtp/[ff3e::1]:1234
+```
+
+### Behavior
+
+- **Automatic dual-stack resolution for hostnames**: when the upstream address is a hostname, IPv6 / IPv4 addresses are tried in system resolver order, automatically falling back to the next address on connection failure
+- **Host validation**: when `hostname` is configured, Host headers in `[IPv6]:port` format pass validation correctly
+- **Server listening**: both the `[bind]` config section and the `--listen` flag accept IPv6 addresses (e.g. `::1 5140` or `-l [::1]:5140`)
+
+### Limitations
+
+- **`mcast-rejoin-interval` does not support IPv6**
+
 ## M3U Playlist Access
 
 ```url

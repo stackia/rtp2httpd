@@ -1744,6 +1744,14 @@ service_t *service_create_from_rtp_url(const char *http_url) {
   result->fcc_addr = NULL;
   result->fcc_type = components.fcc_type;
   result->fec_port = components.fec_port;
+  if (components.has_fcc && (fcc_res->ai_family != AF_INET || res->ai_family != AF_INET)) {
+    /* FCC protocol carries 4-byte IPv4 addresses in its packet body; there is
+     * no known IPv6 protocol variant. Disable FCC and fall back to plain
+     * multicast. */
+    logger(LOG_WARN, "FCC is IPv4-only (protocol limitation), ignoring fcc=%s:%s and falling back to plain multicast",
+           components.fcc_addr, components.fcc_port);
+    components.has_fcc = 0;
+  }
   if (components.has_fcc) {
     fcc_res_addr = malloc(sizeof(struct sockaddr_storage));
     fcc_res_ai = malloc(sizeof(struct addrinfo));

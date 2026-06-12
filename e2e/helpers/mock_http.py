@@ -63,11 +63,19 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
         pass  # silence
 
 
-class MockHTTPUpstream:
-    """Start a throwaway HTTP server with pre-configured routes."""
+class _HTTPServerV6(HTTPServer):
+    address_family = socket.AF_INET6
 
-    def __init__(self, port: int = 0, routes: dict | None = None):
-        self.port = port or find_free_port()
+
+class MockHTTPUpstream:
+    """Start a throwaway HTTP server with pre-configured routes.
+
+    Pass ``host="::1"`` to serve on the IPv6 loopback instead of 127.0.0.1.
+    """
+
+    def __init__(self, port: int = 0, routes: dict | None = None, host: str = "127.0.0.1"):
+        self.host = host
+        self.port = port or find_free_port(host)
         self.routes = routes or {}
         self.requests_log: list[dict] = []
         self._server: HTTPServer | None = None
@@ -79,7 +87,8 @@ class MockHTTPUpstream:
             (_UpstreamHandler,),
             {"routes": self.routes, "requests_log": self.requests_log},
         )
-        self._server = HTTPServer(("127.0.0.1", self.port), handler)
+        server_cls = _HTTPServerV6 if ":" in self.host else HTTPServer
+        self._server = server_cls((self.host, self.port), handler)
         self._thread = threading.Thread(
             target=self._server.serve_forever,
             daemon=True,

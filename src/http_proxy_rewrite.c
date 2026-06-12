@@ -47,14 +47,17 @@ int rewrite_resolve_relative_url(const char *relative_url, const char *base_host
     return -1;
 
   int result;
+  char authority[HTTP_PROXY_HOST_SIZE + 16];
+
+  /* Build host[:port] authority with IPv6 brackets, omitting default port */
+  if (format_host_port_for_url(base_host, base_port, 80, authority, sizeof(authority)) < 0) {
+    logger(LOG_ERROR, "rewrite_resolve_relative_url: authority too long");
+    return -1;
+  }
 
   if (relative_url[0] == '/') {
     /* Absolute path - use host:port directly */
-    if (base_port == 80) {
-      result = snprintf(output, output_size, "http://%s%s", base_host, relative_url);
-    } else {
-      result = snprintf(output, output_size, "http://%s:%d%s", base_host, base_port, relative_url);
-    }
+    result = snprintf(output, output_size, "http://%s%s", authority, relative_url);
   } else {
     /* Relative path - need to extract directory from base_path */
     char dir_path[HTTP_PROXY_PATH_SIZE];
@@ -77,11 +80,7 @@ int rewrite_resolve_relative_url(const char *relative_url, const char *base_host
       strcpy(dir_path, "/");
     }
 
-    if (base_port == 80) {
-      result = snprintf(output, output_size, "http://%s%s%s", base_host, dir_path, relative_url);
-    } else {
-      result = snprintf(output, output_size, "http://%s:%d%s%s", base_host, base_port, dir_path, relative_url);
-    }
+    result = snprintf(output, output_size, "http://%s%s%s", authority, dir_path, relative_url);
   }
 
   if (result < 0 || (size_t)result >= output_size) {

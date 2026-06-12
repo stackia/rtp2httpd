@@ -183,6 +183,7 @@ external-m3u-update-interval = 7200
 # - Misconfigured network devices that drop multicast memberships
 # Recommended value: 30-120 seconds (less than typical switch timeout of 260 seconds)
 # Note: Disabled by default (0), only enable when experiencing multicast stream interruptions
+# Note: Does not support IPv6
 mcast-rejoin-interval = 0
 
 # FCC media stream listening port range (optional, format: start-end, default: random ports)
@@ -244,6 +245,9 @@ ffmpeg-args = -hwaccel none
 
 # Listen on specific IP, port 8081
 192.168.1.1 8081
+
+# Listen on an IPv6 address (brackets optional)
+2001:db8::1 5140
 
 # Multiple listen addresses are supported
 

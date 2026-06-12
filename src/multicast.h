@@ -17,6 +17,7 @@ typedef struct mcast_session_s {
   int sock;                 /* Multicast socket (-1 if not joined) */
   int64_t last_data_time;   /* Timestamp of last received data (ms) */
   int64_t last_rejoin_time; /* Timestamp of last periodic rejoin (ms) */
+  int rejoin_unsupported_warned; /* Warn-once flag for IPv6 rejoin no-op */
 } mcast_session_t;
 
 /**

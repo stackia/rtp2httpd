@@ -2,7 +2,9 @@
 #define __UTILS_H__
 
 #include "configuration.h"
+#include <stddef.h>
 #include <stdint.h>
+#include <sys/socket.h>
 
 /**
  * Logger function. Show the message if current verbosity is above
@@ -127,6 +129,63 @@ char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host
  * @return Local IP address in host byte order, or 0 if unable to determine
  */
 uint32_t get_local_ip_for_fcc(const char *override, const char *override_fcc);
+
+/**
+ * Check if a host string is a bare IPv6 literal that needs brackets when
+ * embedded into a URL authority or Host header (contains ':' and is not
+ * already bracketed).
+ *
+ * @param host Host string (hostname, IPv4, or IPv6 literal)
+ * @return 1 if brackets are needed, 0 otherwise
+ */
+int host_needs_brackets(const char *host);
+
+/**
+ * Format a host for use inside a URL authority or Host header.
+ * Bare IPv6 literals are wrapped in brackets; everything else is copied
+ * verbatim.
+ *
+ * @param host Input host (without brackets)
+ * @param out Output buffer
+ * @param out_size Output buffer size
+ * @return 0 on success, -1 if the output buffer is too small
+ */
+int format_host_for_url(const char *host, char *out, size_t out_size);
+
+/**
+ * Format a host[:port] authority for URLs / Host headers.
+ * Bare IPv6 literals are bracketed.  The port is omitted when it equals
+ * default_port (pass 0 / negative default_port to always include the port).
+ *
+ * @param host Input host (without brackets)
+ * @param port Port number
+ * @param default_port Port to omit from output (e.g. 80 for HTTP), or 0
+ * @param out Output buffer
+ * @param out_size Output buffer size
+ * @return 0 on success, -1 if the output buffer is too small
+ */
+int format_host_port_for_url(const char *host, int port, int default_port, char *out, size_t out_size);
+
+/**
+ * Parse a "host[:port]" string supporting "[IPv6]:port", bracketed and bare
+ * IPv6 literals, hostnames, and IPv4.  A bare string with more than one ':'
+ * is treated as an IPv6 literal without port.
+ *
+ * @param input Input string
+ * @param host Output host buffer (brackets stripped)
+ * @param host_size Output host buffer size
+ * @param port Output port (untouched when no port is present)
+ * @return 0 on success, -1 on parse error / overflow
+ */
+int parse_host_port(const char *input, char *host, size_t host_size, int *port);
+
+/**
+ * Set the port on a sockaddr (AF_INET or AF_INET6).
+ *
+ * @param sa Socket address
+ * @param port Port number (host byte order)
+ */
+void sockaddr_set_port(struct sockaddr *sa, uint16_t port);
 
 /* Array size calculation macro */
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))

@@ -6,11 +6,22 @@ import socket
 import time
 
 
-def find_free_port() -> int:
-    """Find a free TCP port on localhost."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
+def find_free_port(host: str = "127.0.0.1") -> int:
+    """Find a free TCP port on *host* (use "::1" for IPv6 loopback)."""
+    family = socket.AF_INET6 if ":" in host else socket.AF_INET
+    with socket.socket(family, socket.SOCK_STREAM) as s:
+        s.bind((host, 0))
         return s.getsockname()[1]
+
+
+def ipv6_loopback_available() -> bool:
+    """Return True when binding a TCP socket to ::1 works on this host."""
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as s:
+            s.bind(("::1", 0))
+        return True
+    except OSError:
+        return False
 
 
 def find_free_udp_port() -> int:

@@ -190,6 +190,16 @@ return view.extend({
 
       // If hostname doesn't have protocol, prepend http:// for URL parsing
       var hasProtocol = /^https?:\/\//i.test(targetHostname);
+
+      // Bracket bare IPv6 literals (multiple colons, no brackets) so URL
+      // parsing and final URL construction are valid
+      if (
+        !hasProtocol &&
+        targetHostname.indexOf("[") === -1 &&
+        targetHostname.indexOf(":") !== targetHostname.lastIndexOf(":")
+      ) {
+        targetHostname = "[" + targetHostname + "]";
+      }
       var urlToParse = hasProtocol
         ? targetHostname
         : "http://" + targetHostname;

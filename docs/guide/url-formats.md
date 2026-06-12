@@ -139,6 +139,34 @@ http://192.168.1.1:5140/http/iptv.example.com/channel1?r2h-ifname=eth0
 - 可通过 `upstream-interface-http` 配置指定上游网络接口，也可以通过 `r2h-ifname` 参数在每次请求中指定
 - 如果被代理的目标 URL 是 m3u 类型，其中所有 `http://` URL 会被自动改写为经过 rtp2httpd 代理后的地址（为了保证 HLS 流能被正确代理）
 
+## IPv6 支持
+
+所有 URL 中的主机地址均支持 IPv6。在 URL 中书写 IPv6 字面量时，需要使用方括号 `[]` 包裹：
+
+```url
+# HTTP 反向代理（IPv6 上游）
+http://192.168.1.1:5140/http/[2001:db8::1]:8080/live/stream.m3u8
+
+# RTSP 转 HTTP（IPv6 上游）
+http://192.168.1.1:5140/rtsp/[2001:db8::1]:554/channel1
+
+# RTSP URL 带认证信息
+rtsp://user:pass@[2001:db8::1]:554/live
+
+# IPv6 组播（需要系统和网络接口支持 IPv6 组播）
+http://192.168.1.1:5140/rtp/[ff3e::1]:1234
+```
+
+### 行为说明
+
+- **域名自动双栈解析**：上游地址为域名时，按系统解析顺序依次尝试 IPv6 / IPv4 地址，连接失败时自动回退到下一个地址
+- **Host 校验**：配置了 `hostname` 时，请求头中的 `[IPv6]:端口` 格式 Host 也能正确通过校验
+- **服务监听**：`[bind]` 配置节和 `--listen` 参数均支持 IPv6 地址（如 `::1 5140` 或 `-l [::1]:5140`）
+
+### 限制
+
+- **`mcast-rejoin-interval` 不支持 IPv6**
+
 ## M3U 播放列表访问
 
 ```url

@@ -568,16 +568,26 @@ int mcast_session_tick(mcast_session_t *session, service_t *service, int64_t now
     return 0;
   }
 
-  /* Periodic multicast rejoin (if enabled) */
+  /* Periodic multicast rejoin (if enabled).
+   * Raw-socket rejoin is IGMP (IPv4) only; for IPv6 groups an MLD equivalent
+   * is not implemented yet, so warn once and skip. */
   if (config.mcast_rejoin_interval > 0) {
-    int64_t elapsed_ms = now - session->last_rejoin_time;
-    if (elapsed_ms >= config.mcast_rejoin_interval * 1000) {
-      logger(LOG_DEBUG, "Multicast: Periodic rejoin (interval: %d seconds)", config.mcast_rejoin_interval);
+    if (service->addr->ai_family != AF_INET) {
+      if (!session->rejoin_unsupported_warned) {
+        logger(LOG_WARN, "Multicast: mcast-rejoin-interval is not supported for IPv6 groups (no MLD "
+                         "raw-socket rejoin), skipping periodic rejoin");
+        session->rejoin_unsupported_warned = 1;
+      }
+    } else {
+      int64_t elapsed_ms = now - session->last_rejoin_time;
+      if (elapsed_ms >= config.mcast_rejoin_interval * 1000) {
+        logger(LOG_DEBUG, "Multicast: Periodic rejoin (interval: %d seconds)", config.mcast_rejoin_interval);
 
-      if (rejoin_mcast_group(service) == 0) {
-        session->last_rejoin_time = now;
-      } else {
-        logger(LOG_ERROR, "Multicast: Failed to rejoin group, will retry next interval");
+        if (rejoin_mcast_group(service) == 0) {
+          session->last_rejoin_time = now;
+        } else {
+          logger(LOG_ERROR, "Multicast: Failed to rejoin group, will retry next interval");
+        }
       }
     }
   }
