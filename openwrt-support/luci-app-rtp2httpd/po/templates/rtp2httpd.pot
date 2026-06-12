@@ -144,7 +144,17 @@ msgid ""
 "40000-40100). Leave empty to use random ports."
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:242
+#: htdocs/luci-static/resources/view/rtp2httpd.js:361
+msgid ""
+"HTTP listen addresses. Use a bare port for all addresses (e.g., 5140), "
+"address:port for IPv4/hostnames, or [IPv6]:port."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:359
+msgid "Listen Addresses"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:300
 msgid "Logging level"
 msgstr ""
 
@@ -224,10 +234,6 @@ msgstr ""
 msgid "Please configure External M3U URL first"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:237
-msgid "Port"
-msgstr ""
-
 #: htdocs/luci-static/resources/view/rtp2httpd.js:540
 msgid "R2H Token"
 msgstr ""
@@ -249,6 +255,18 @@ msgid ""
 "Set Access-Control-Allow-Origin header to enable CORS. Use * to allow all "
 "origins, or specify a domain (e.g., https://example.com). Leave empty to "
 "disable CORS."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:92
+msgid ""
+"Use a bare port such as 5140 to listen on all addresses; *:5140 is not "
+"supported here."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:98
+msgid ""
+"Use port, address:port, hostname:port, or [IPv6]:port, for example 5140 or "
+"192.168.1.1:8081."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:507

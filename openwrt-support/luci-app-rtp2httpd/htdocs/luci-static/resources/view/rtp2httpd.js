@@ -6,6 +6,115 @@
 "require uci";
 
 return view.extend({
+  normalizeListenValues: function (value) {
+    var input = Array.isArray(value) ? value : value ? [value] : [];
+    var values = [];
+
+    for (var i = 0; i < input.length; i++) {
+      var listen = String(input[i]).trim();
+      if (listen) {
+        values.push(listen);
+      }
+    }
+
+    return values;
+  },
+
+  getListenValues: function (section_id) {
+    return this.normalizeListenValues(
+      uci.get("rtp2httpd", section_id, "listen")
+    );
+  },
+
+  parseListenValue: function (value) {
+    var listen = String(value || "").trim();
+    var host = null;
+    var port = null;
+    var match;
+    var pos;
+
+    if (!listen) {
+      return null;
+    }
+
+    if (/^\d+$/.test(listen)) {
+      port = listen;
+    } else if (listen.charAt(0) === "[") {
+      match = listen.match(/^\[([^\]]+)\]:(\d+)$/);
+      if (!match) {
+        return null;
+      }
+      host = "[" + match[1] + "]";
+      port = match[2];
+    } else {
+      pos = listen.lastIndexOf(":");
+      if (pos <= 0 || pos !== listen.indexOf(":")) {
+        return null;
+      }
+      host = listen.substring(0, pos);
+      port = listen.substring(pos + 1);
+    }
+
+    if (!/^\d+$/.test(port)) {
+      return null;
+    }
+
+    var portNumber = Number(port);
+    if (portNumber < 1 || portNumber > 65535) {
+      return null;
+    }
+
+    if (host !== null) {
+      if (
+        host === "*" ||
+        host.indexOf("/") >= 0 ||
+        /\s/.test(host)
+      ) {
+        return null;
+      }
+    }
+
+    return {
+      host: host,
+      port: port,
+    };
+  },
+
+  validateListenValue: function (value) {
+    var listen = String(value || "").trim();
+
+    if (!listen) {
+      return true;
+    }
+
+    if (/^\*:/.test(listen)) {
+      return _(
+        "Use a bare port such as 5140 to listen on all addresses; *:5140 is not supported here."
+      );
+    }
+
+    if (!this.parseListenValue(listen)) {
+      return _(
+        "Use port, address:port, hostname:port, or [IPv6]:port, for example 5140 or 192.168.1.1:8081."
+      );
+    }
+
+    return true;
+  },
+
+  getPrimaryListenTarget: function (section_id) {
+    var values = this.getListenValues(section_id);
+    var target = values.length > 0 ? this.parseListenValue(values[0]) : null;
+    var port;
+
+    if (target) {
+      return target;
+    }
+
+    port = uci.get("rtp2httpd", section_id, "port") || "5140";
+    return this.parseListenValue(port) || { host: null, port: "5140" };
+  },
+
   // Helper function to open a page (status or player)
   openPage: function (section_id, pageType) {
     var pathConfigKey =
@@ -24,6 +133,7 @@ return view.extend({
       var token = null;
       var pagePath = defaultPath;
       var hostname = null;
+      var listenTarget = null;
       var use_config_file = uci.get("rtp2httpd", section_id, "use_config_file");
 
       if (use_config_file === "1") {
@@ -59,8 +169,9 @@ return view.extend({
           pagePath = pagePathMatch[1];
         }
       } else {
-        // Get port, token, hostname and page path from UCI config
-        port = uci.get("rtp2httpd", section_id, "port") || "5140";
+        // Get listen address, token, hostname and page path from UCI config
+        listenTarget = self.getPrimaryListenTarget(section_id);
+        port = listenTarget.port;
         token = uci.get("rtp2httpd", section_id, "r2h_token");
         hostname = uci.get("rtp2httpd", section_id, "hostname");
         pagePath = uci.get("rtp2httpd", section_id, uciPathKey) || defaultPath;
@@ -72,7 +183,10 @@ return view.extend({
       }
 
       // Use configured hostname or fallback to window.location.hostname
-      var targetHostname = hostname || window.location.hostname;
+      var targetHostname =
+        hostname ||
+        (listenTarget && listenTarget.host) ||
+        window.location.hostname;
 
       // If hostname doesn't have protocol, prepend http:// for URL parsing
       var hasProtocol = /^https?:\/\//i.test(targetHostname);
@@ -99,6 +213,10 @@ return view.extend({
       var finalProtocol = url.protocol.replace(":", "");
       var finalHost = url.hostname;
       var finalPort = "";
+
+      if (finalHost.indexOf(":") >= 0 && finalHost.charAt(0) !== "[") {
+        finalHost = "[" + finalHost + "]";
+      }
 
       if (!hasProtocol) {
         // No protocol in original hostname: use configured port if URL port is empty
@@ -234,10 +352,58 @@ return view.extend({
       });
     };
 
-    o = s.taboption("basic", form.Value, "port", _("Port"));
-    o.datatype = "port";
+    o = s.taboption(
+      "basic",
+      form.DynamicList,
+      "listen",
+      _("Listen Addresses"),
+      _(
+        "HTTP listen addresses. Use a bare port for all addresses (e.g., 5140), address:port for IPv4/hostnames, or [IPv6]:port."
+      )
+    );
     o.placeholder = "5140";
+    o.rmempty = true;
     o.depends("use_config_file", "0");
+    o.cfgvalue = function (section_id) {
+      var values = self.getListenValues(section_id);
+      var port;
+
+      if (values.length > 0) {
+        return values;
+      }
+
+      port = uci.get("rtp2httpd", section_id, "port");
+      return port ? [port] : [];
+    };
+    o.formvalue = function (section_id) {
+      var elem = this.getUIElement(section_id);
+
+      return self.normalizeListenValues(elem ? elem.getValue() : null);
+    };
+    o.write = function (section_id, value) {
+      var values = self.normalizeListenValues(value);
+      var config = this.uciconfig || this.section.uciconfig || this.map.config;
+      var sid = this.ucisection || section_id;
+      var option = this.ucioption || this.option;
+
+      if (values.length > 0) {
+        this.map.data.set(config, sid, option, values);
+      } else {
+        this.map.data.unset(config, sid, option);
+      }
+
+      this.map.data.unset(config, sid, "port");
+    };
+    o.remove = function (section_id) {
+      var config = this.uciconfig || this.section.uciconfig || this.map.config;
+      var sid = this.ucisection || section_id;
+
+      this.map.data.unset(config, sid, this.ucioption || this.option);
+      this.map.data.unset(config, sid, "port");
+    };
+    o.validate = function (section_id, value) {
+      return self.validateListenValue(value);
+    };
 
     o = s.taboption("basic", form.ListValue, "verbose", _("Logging level"));
     o.value("0", "Fatal");

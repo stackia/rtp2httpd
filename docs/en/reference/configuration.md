@@ -20,6 +20,12 @@ rtp2httpd [options]
 - `-m, --maxclients <number>` - Maximum concurrent clients (default: 5)
 - `-w, --workers <number>` - Number of worker processes (default: 1)
 
+`--listen` can be specified multiple times to listen on multiple addresses or ports:
+
+```bash
+rtp2httpd --listen 5140 --listen 192.168.1.1:8081 --listen '[::1]:5140'
+```
+
 #### Upstream Network Interface Configuration
 
 - `-i, --upstream-interface <interface>` - Default upstream interface (applies to all traffic types, lowest priority)
