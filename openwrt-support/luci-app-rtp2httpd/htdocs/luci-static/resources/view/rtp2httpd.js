@@ -84,7 +84,7 @@ return view.extend({
     var listen = String(value || "").trim();
 
     if (!listen) {
-      return _("Listen address cannot be empty");
+      return true;
     }
 
     if (/^\*:/.test(listen)) {

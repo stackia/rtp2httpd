@@ -172,10 +172,6 @@ msgstr ""
 "HTTP 监听地址。使用裸端口表示监听所有地址（例如：5140），IPv4/主机名使用 "
 "address:port，IPv6 使用 [IPv6]:port。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:87
-msgid "Listen address cannot be empty"
-msgstr "监听地址不能为空"
-
 #: htdocs/luci-static/resources/view/rtp2httpd.js:359
 msgid "Listen Addresses"
 msgstr "监听地址"
