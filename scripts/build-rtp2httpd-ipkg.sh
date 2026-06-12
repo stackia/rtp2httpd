@@ -29,7 +29,12 @@ RELEASE_URL="https://github.com/stackia/rtp2httpd/releases/download/v$VERSION/$B
 rm -rf "$STAGING_ROOT"
 mkdir -p "$STAGING_PACKAGE" "$DIST_DIR"
 cp -R "$PACKAGE_SRC"/. "$STAGING_PACKAGE"/
-rm -f "$STAGING_PACKAGE/app/bin/.gitkeep"
+find "$STAGING_PACKAGE" -name .gitkeep -exec rm -f {} +
+
+# Keep the staged manifest in sync with the requested version and arch.
+sed -e "s/\"version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"version\": \"v$VERSION\"/" \
+  -e "s/\"image\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"image\": \"$BINARY_NAME\"/" \
+  "$MANIFEST" > "$STAGING_PACKAGE/manifest.json"
 
 if [ ! -f "$ICON_SOURCE" ]; then
   echo "Icon source does not exist: $ICON_SOURCE" >&2
