@@ -312,6 +312,22 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     }
 
     if (mimeType !== mimeTypes[track]) {
+      const existing = sourceBuffers[track];
+      if (existing) {
+        // Mid-stream codec change: addSourceBuffer would throw QuotaExceededError once
+        // the media engine has initialized, so switch the existing SourceBuffer's type.
+        try {
+          existing.changeType(mimeType);
+          mimeTypes[track] = mimeType;
+        } catch (error: unknown) {
+          Log.e(TAG, `changeType failed: ${(error as Error).message}`);
+          mse.onError?.({
+            code: (error as DOMException).code,
+            msg: (error as Error).message,
+          });
+        }
+        return;
+      }
       try {
         const sb = mediaSource.addSourceBuffer(mimeType);
         sourceBuffers[track] = sb;
