@@ -1223,9 +1223,9 @@ class TSDemuxer {
       aac_frame = adts_parser.readNextAACFrame();
     }
 
-    if (adts_parser.hasIncompleteData()) {
-      this.aac_last_incomplete_data_ = adts_parser.getIncompleteData();
-    }
+    // getIncompleteData() returns null when fully consumed — always assign so a stale
+    // buffer from a previous payload is not prepended again on the next call
+    this.aac_last_incomplete_data_ = adts_parser.getIncompleteData();
 
     if (last_sample_pts_ms) {
       this.audio_last_sample_pts_ = last_sample_pts_ms;
@@ -1319,9 +1319,9 @@ class TSDemuxer {
       aac_frame = loas_parser.readNextAACFrame(this.loas_previous_frame ?? undefined);
     }
 
-    if (loas_parser.hasIncompleteData()) {
-      this.aac_last_incomplete_data_ = loas_parser.getIncompleteData();
-    }
+    // getIncompleteData() returns null when fully consumed — always assign so a stale
+    // buffer from a previous payload is not prepended again on the next call
+    this.aac_last_incomplete_data_ = loas_parser.getIncompleteData();
 
     if (last_sample_pts_ms) {
       this.audio_last_sample_pts_ = last_sample_pts_ms;
