@@ -83,7 +83,8 @@ def stream_get(
     except OSError, socket.timeout:
         return 0, {}, b""
     try:
-        req_lines = ["GET %s HTTP/1.0" % path, "Host: %s" % host]
+        host_hdr = "[%s]" % host if ":" in host and not host.startswith("[") else host
+        req_lines = ["GET %s HTTP/1.0" % path, "Host: %s" % host_hdr]
         for k, v in (headers or {}).items():
             req_lines.append("%s: %s" % (k, v))
         req_lines.append("")

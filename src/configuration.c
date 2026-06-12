@@ -214,6 +214,13 @@ void parse_bind_sec(char *line) {
   if (strcmp("*", node) == 0) {
     free(node);
     node = NULL;
+  } else if (node && node[0] == '[') {
+    /* Strip brackets from "[IPv6]" notation for getaddrinfo */
+    char *closing = strchr(node, ']');
+    if (closing) {
+      *closing = '\0';
+      memmove(node, node + 1, strlen(node + 1) + 1);
+    }
   }
   logger(LOG_DEBUG, "node: %s, port: %s", node, service);
 

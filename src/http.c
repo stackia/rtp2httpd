@@ -1,6 +1,7 @@
 #include "http.h"
 #include "configuration.h"
 #include "connection.h"
+#include "utils.h"
 #include <ctype.h>
 #include <limits.h>
 #include <stdio.h>
@@ -860,27 +861,22 @@ int http_parse_url_components(const char *url, char *protocol, char *host, char 
 
 int http_match_host_header(const char *request_host_header, const char *expected_host) {
   char request_hostname[256];
+  char expected_hostname[256];
 
   if (!request_host_header || !expected_host)
     return -1;
 
-  /* Extract hostname from Host header (ignore port part) */
-  const char *request_colon = strchr(request_host_header, ':');
-  if (request_colon) {
-    /* Host header has port, extract hostname part only */
-    size_t host_len = (size_t)(request_colon - request_host_header);
-    if (host_len >= sizeof(request_hostname))
-      host_len = sizeof(request_hostname) - 1;
-    strncpy(request_hostname, request_host_header, host_len);
-    request_hostname[host_len] = '\0';
-  } else {
-    /* Host header has no port */
-    strncpy(request_hostname, request_host_header, sizeof(request_hostname) - 1);
-    request_hostname[sizeof(request_hostname) - 1] = '\0';
-  }
+  /* Extract hostname from Host header (ignore port part).  Handles
+   * "[IPv6]:port", bracketed/bare IPv6 literals, hostnames, and IPv4. */
+  if (parse_host_port(request_host_header, request_hostname, sizeof(request_hostname), NULL) != 0)
+    return 0;
+
+  /* Normalize expected host: strip brackets if configured as "[IPv6]" */
+  if (parse_host_port(expected_host, expected_hostname, sizeof(expected_hostname), NULL) != 0)
+    return 0;
 
   /* Compare only the hostname parts (case-insensitive) */
-  return (strcasecmp(request_hostname, expected_host) == 0) ? 1 : 0;
+  return (strcasecmp(request_hostname, expected_hostname) == 0) ? 1 : 0;
 }
 
 /**

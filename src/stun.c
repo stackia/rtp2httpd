@@ -43,49 +43,27 @@ static void stun_gen_transaction_id(unsigned char tid[STUN_TRANSACTION_ID_SIZE])
 }
 
 /**
- * Parse host:port string
- * @param server_str Input string like "stun.miwifi.com:3478" or
- * "stun.miwifi.com"
- * @param host Output host buffer
+ * Parse host[:port] string, supporting "[IPv6]:port", bracketed and bare
+ * IPv6 literals, hostnames, and IPv4.
+ * @param server_str Input string like "stun.miwifi.com:3478" or "[2001:db8::1]:3478"
+ * @param host Output host buffer (brackets stripped)
  * @param host_size Size of host buffer
  * @param port Output port (default STUN_DEFAULT_PORT if not specified)
  * @return 0 on success, -1 on error
  */
 static int stun_parse_server(const char *server_str, char *host, size_t host_size, int *port) {
-  const char *colon;
-  size_t host_len;
-
-  if (!server_str || !host || host_size == 0) {
+  *port = STUN_DEFAULT_PORT;
+  if (parse_host_port(server_str, host, host_size, port) < 0) {
     return -1;
   }
-
-  /* Find last colon (for IPv6 compatibility, though we only support IPv4) */
-  colon = strrchr(server_str, ':');
-
-  if (colon && colon != server_str) {
-    /* Has port */
-    host_len = colon - server_str;
-    if (host_len >= host_size) {
-      host_len = host_size - 1;
-    }
-    memcpy(host, server_str, host_len);
-    host[host_len] = '\0';
-    *port = atoi(colon + 1);
-    if (*port <= 0 || *port > 65535) {
-      *port = STUN_DEFAULT_PORT;
-    }
-  } else {
-    /* No port, use default */
-    strncpy(host, server_str, host_size - 1);
-    host[host_size - 1] = '\0';
-    *port = STUN_DEFAULT_PORT;
-  }
-
   return 0;
 }
 
 int stun_send_request(stun_state_t *state, int socket_fd) {
-  struct addrinfo hints, *res = NULL;
+  struct addrinfo hints, *res = NULL, *rp = NULL;
+  struct sockaddr_storage local_addr;
+  socklen_t local_addr_len = sizeof(local_addr);
+  int socket_family = AF_UNSPEC;
   char host[256];
   char port_str[16];
   int port;
@@ -107,15 +85,33 @@ int stun_send_request(stun_state_t *state, int socket_fd) {
     return -1;
   }
 
-  /* Resolve STUN server */
+  /* Determine the socket's address family so we only send to a compatible
+   * STUN server address */
+  if (getsockname(socket_fd, (struct sockaddr *)&local_addr, &local_addr_len) == 0) {
+    socket_family = local_addr.ss_family;
+  }
+
+  /* Resolve STUN server (dual-stack) */
   memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_INET;
+  hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_DGRAM;
   hints.ai_protocol = IPPROTO_UDP;
 
   snprintf(port_str, sizeof(port_str), "%d", port);
   if (getaddrinfo(host, port_str, &hints, &res) != 0) {
     logger(LOG_WARN, "STUN: Failed to resolve server: %s", host);
+    return -1;
+  }
+
+  /* Pick the first address compatible with the socket's family */
+  for (rp = res; rp != NULL; rp = rp->ai_next) {
+    if (socket_family == AF_UNSPEC || rp->ai_family == socket_family) {
+      break;
+    }
+  }
+  if (!rp) {
+    logger(LOG_WARN, "STUN: No %s address for server %s", socket_family == AF_INET6 ? "IPv6" : "IPv4", host);
+    freeaddrinfo(res);
     return -1;
   }
 
@@ -143,7 +139,7 @@ int stun_send_request(stun_state_t *state, int socket_fd) {
   memcpy(request + 8, state->transaction_id, STUN_TRANSACTION_ID_SIZE);
 
   /* Send request */
-  sent = sendto(socket_fd, request, sizeof(request), 0, res->ai_addr, res->ai_addrlen);
+  sent = sendto(socket_fd, request, sizeof(request), 0, rp->ai_addr, rp->ai_addrlen);
   freeaddrinfo(res);
 
   if (sent != sizeof(request)) {
@@ -207,13 +203,12 @@ int stun_parse_response(stun_state_t *state, const uint8_t *data, size_t len) {
     /* XOR-MAPPED-ADDRESS (preferred) */
     if (attr_type == STUN_ATTR_XOR_MAPPED_ADDR && attr_len >= 8) {
       uint8_t family = data[val_off + 1];
+      uint16_t xport = ((uint16_t)data[val_off + 2] << 8) | data[val_off + 3];
+      uint16_t port = xport ^ (STUN_MAGIC_COOKIE >> 16);
+
       if (family == STUN_ADDR_FAMILY_IPV4) {
-        uint16_t xport = ((uint16_t)data[val_off + 2] << 8) | data[val_off + 3];
         uint32_t xaddr = ((uint32_t)data[val_off + 4] << 24) | ((uint32_t)data[val_off + 5] << 16) |
                          ((uint32_t)data[val_off + 6] << 8) | data[val_off + 7];
-
-        /* XOR decode */
-        uint16_t port = xport ^ (STUN_MAGIC_COOKIE >> 16);
         uint32_t addr = xaddr ^ STUN_MAGIC_COOKIE;
 
         state->mapped_rtp_port = port;
@@ -230,12 +225,37 @@ int stun_parse_response(stun_state_t *state, const uint8_t *data, size_t len) {
         logger(LOG_INFO, "STUN: Discovered mapped address %s:%d", ip_str, port);
         return 0;
       }
+
+      if (family == STUN_ADDR_FAMILY_IPV6 && attr_len >= 20) {
+        /* IPv6: address is XORed with magic cookie || transaction ID */
+        struct in6_addr in6;
+        uint8_t xor_key[16];
+        xor_key[0] = (STUN_MAGIC_COOKIE >> 24) & 0xFF;
+        xor_key[1] = (STUN_MAGIC_COOKIE >> 16) & 0xFF;
+        xor_key[2] = (STUN_MAGIC_COOKIE >> 8) & 0xFF;
+        xor_key[3] = STUN_MAGIC_COOKIE & 0xFF;
+        memcpy(xor_key + 4, state->transaction_id, STUN_TRANSACTION_ID_SIZE);
+        for (int i = 0; i < 16; i++) {
+          in6.s6_addr[i] = data[val_off + 4 + i] ^ xor_key[i];
+        }
+
+        state->mapped_rtp_port = port;
+        state->mapped_rtcp_port = port + 1;
+        state->in_progress = 0;
+        state->completed = 1;
+
+        char ip_str[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &in6, ip_str, sizeof(ip_str));
+
+        logger(LOG_INFO, "STUN: Discovered mapped address [%s]:%d", ip_str, port);
+        return 0;
+      }
     }
 
     /* MAPPED-ADDRESS (fallback for older servers) */
     if (attr_type == STUN_ATTR_MAPPED_ADDR && attr_len >= 8) {
       uint8_t family = data[val_off + 1];
-      if (family == STUN_ADDR_FAMILY_IPV4) {
+      if (family == STUN_ADDR_FAMILY_IPV4 || (family == STUN_ADDR_FAMILY_IPV6 && attr_len >= 20)) {
         uint16_t port = ((uint16_t)data[val_off + 2] << 8) | data[val_off + 3];
 
         state->mapped_rtp_port = port;

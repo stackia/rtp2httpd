@@ -4,8 +4,9 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-/* Forward declaration */
+/* Forward declarations */
 struct connection_s;
+struct addrinfo;
 
 /* ========== HTTP PROXY BUFFER SIZE CONFIGURATION ========== */
 
@@ -55,10 +56,18 @@ typedef struct {
   int64_t last_state_change_ms; /* Timestamp of last state change */
   int status_index;             /* Index in status_shared->clients array */
 
-  /* Target server info */
+  /* Target server info (target_host stores the bare host without IPv6
+   * brackets; brackets are re-added by URL/Host header formatters) */
   char target_host[HTTP_PROXY_HOST_SIZE];
   int target_port;
   char target_path[HTTP_PROXY_PATH_SIZE];
+
+  /* Dual-stack async connect state (sequential candidate fallback).
+   * connect_results owns the getaddrinfo list; connect_next points to the
+   * next untried candidate. */
+  struct addrinfo *connect_results;
+  struct addrinfo *connect_next;
+  int connect_last_errno;
 
   /* Request method from client (GET, POST, PUT, DELETE, etc.) */
   char method[16];

@@ -24,7 +24,12 @@ class _RTSPServerBase:
     """
 
     def __init__(
-        self, port: int = 0, sdp_control: str = "*", content_base: str | None = "auto", custom_sdp: str | None = None
+        self,
+        port: int = 0,
+        sdp_control: str = "*",
+        content_base: str | None = "auto",
+        custom_sdp: str | None = None,
+        host: str = "127.0.0.1",
     ):
         """
         Args:
@@ -35,8 +40,10 @@ class _RTSPServerBase:
                 for relative controls); ``None`` omits the header entirely;
                 any other string is sent verbatim.
             custom_sdp: If set, replaces the auto-generated SDP body.
+            host: Address to listen on (use "::1" for IPv6 loopback).
         """
-        self.port = port or find_free_port()
+        self.host = host
+        self.port = port or find_free_port(host)
         self._sdp_control = sdp_control
         self._content_base = content_base
         self._custom_sdp = custom_sdp
@@ -49,9 +56,10 @@ class _RTSPServerBase:
     # -- lifecycle -----------------------------------------------------------
 
     def start(self) -> None:
-        self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        family = socket.AF_INET6 if ":" in self.host else socket.AF_INET
+        self._server_sock = socket.socket(family, socket.SOCK_STREAM)
         self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._server_sock.bind(("127.0.0.1", self.port))
+        self._server_sock.bind((self.host, self.port))
         self._server_sock.listen(5)
         self._server_sock.settimeout(1.0)
         self._thread = threading.Thread(target=self._accept, daemon=True)
@@ -198,8 +206,9 @@ class MockRTSPServer(_RTSPServerBase):
         sdp_control: str = "*",
         content_base: str | None = "auto",
         custom_sdp: str | None = None,
+        host: str = "127.0.0.1",
     ):
-        super().__init__(port, sdp_control=sdp_control, content_base=content_base, custom_sdp=custom_sdp)
+        super().__init__(port, sdp_control=sdp_control, content_base=content_base, custom_sdp=custom_sdp, host=host)
         self._num_packets = num_packets
 
     def _setup_response(self, cseq: str, transport_hdr: str) -> str:
