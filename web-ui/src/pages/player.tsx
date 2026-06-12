@@ -1,4 +1,3 @@
-import type { PlayerSegment } from "@rtp2httpd/mpegts.js";
 import { clsx } from "clsx";
 import { Activity, StrictMode, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -27,6 +26,7 @@ import {
   saveMp2SoftDecode,
   saveSidebarVisible,
 } from "../lib/player-storage";
+import type { PlayerSegment } from "../mpegts";
 import type { Channel, M3UMetadata } from "../types/player";
 
 function PlayerPage() {

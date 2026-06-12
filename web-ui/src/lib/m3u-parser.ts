@@ -1,4 +1,4 @@
-import type { PlayerSegment } from "@rtp2httpd/mpegts.js";
+import type { PlayerSegment } from "../mpegts";
 import type { Channel, M3UMetadata, Source } from "../types/player";
 
 /**

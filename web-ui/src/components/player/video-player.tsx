@@ -1,10 +1,10 @@
-import { createPlayer, isSupported, type Player, type PlayerError, type PlayerSegment } from "@rtp2httpd/mpegts.js";
-import mp2WasmUrl from "@rtp2httpd/mpegts.js/wasm/mp2_decoder.wasm?url";
 import { clsx } from "clsx";
 import { Play } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
+import { createPlayer, isSupported, type Player, type PlayerError, type PlayerSegment } from "../../mpegts";
+import mp2WasmUrl from "../../mpegts/wasm/minimp3/mp2_decoder.wasm?url";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PlayerControls } from "./player-controls";
 
