@@ -55,10 +55,21 @@ export function setupLiveSync(video: HTMLMediaElement, config: PlayerConfig): ()
  */
 export function setupStartupStallJumper(video: HTMLMediaElement): () => void {
   let canplayReceived = false;
+  // Poll as a fallback: iOS Safari (ManagedMediaSource) does not reliably fire
+  // progress/stalled while playback is stuck before the first buffered range.
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  function stopPolling(): void {
+    if (pollTimer !== null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
 
   function onCanPlay(): void {
     canplayReceived = true;
     video.removeEventListener("canplay", onCanPlay);
+    stopPolling();
   }
 
   function detectAndFix(isStalled?: boolean): void {
@@ -72,6 +83,7 @@ export function setupStartupStallJumper(video: HTMLMediaElement): () => void {
       }
     } else {
       video.removeEventListener("progress", onProgress);
+      stopPolling();
     }
   }
 
@@ -86,10 +98,12 @@ export function setupStartupStallJumper(video: HTMLMediaElement): () => void {
   video.addEventListener("canplay", onCanPlay);
   video.addEventListener("stalled", onStalled);
   video.addEventListener("progress", onProgress);
+  pollTimer = setInterval(() => detectAndFix(), 500);
 
   return () => {
     video.removeEventListener("canplay", onCanPlay);
     video.removeEventListener("stalled", onStalled);
     video.removeEventListener("progress", onProgress);
+    stopPolling();
   };
 }

@@ -106,10 +106,32 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     }
   }
 
+  let appendGateLogged = false;
+
   function canAppendToManagedSource(): boolean {
     // ManagedMediaSource only accepts appends while streaming === true.
     // When the property is absent (regular MediaSource), always allow appends.
-    return !useManagedMediaSource || mediaSource?.streaming !== false;
+    const allowed = !useManagedMediaSource || mediaSource?.streaming !== false;
+    if (!allowed && !appendGateLogged) {
+      appendGateLogged = true;
+      Log.v(
+        TAG,
+        `Appends deferred: MMS streaming=false (pending video:${pendingSegments.video.length} audio:${pendingSegments.audio.length})`,
+      );
+    }
+    return allowed;
+  }
+
+  function bufferedSummary(): string {
+    const fmt = (sb: SourceBuffer | null): string => {
+      if (!sb) return "-";
+      const parts: string[] = [];
+      for (let i = 0; i < sb.buffered.length; i++) {
+        parts.push(`${sb.buffered.start(i).toFixed(2)}-${sb.buffered.end(i).toFixed(2)}`);
+      }
+      return parts.join(",") || "empty";
+    };
+    return `video[${fmt(sourceBuffers.video)}] audio[${fmt(sourceBuffers.audio)}]`;
   }
 
   function flushPendingSourceBufferInit(): void {
@@ -253,7 +275,17 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     }
   }
 
+  let lastBufferLogTime = 0;
+
   function onSourceBufferUpdateEnd(): void {
+    const now = Date.now();
+    if (now - lastBufferLogTime > 2000) {
+      lastBufferLogTime = now;
+      Log.v(
+        TAG,
+        `Append progress: buffered ${bufferedSummary()}, currentTime=${video.currentTime.toFixed(2)}, readyState=${video.readyState}${useManagedMediaSource ? `, streaming=${mediaSource?.streaming}` : ""}`,
+      );
+    }
     tryApplyDuration();
     if (hasPendingRemoveRanges()) {
       doRemoveRanges();
@@ -370,13 +402,17 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
       if (useManagedMediaSource) {
         onStartStreamingHandler = () => {
-          Log.v(TAG, "ManagedMediaSource onStartStreaming");
+          appendGateLogged = false;
+          Log.v(
+            TAG,
+            `ManagedMediaSource onStartStreaming, pending video:${pendingSegments.video.length} audio:${pendingSegments.audio.length}, buffered: ${bufferedSummary()}`,
+          );
           flushPendingSourceBufferInit();
           tryAppendPending();
           mse.onStartStreaming?.();
         };
         onEndStreamingHandler = () => {
-          Log.v(TAG, "ManagedMediaSource onEndStreaming");
+          Log.v(TAG, `ManagedMediaSource onEndStreaming, buffered: ${bufferedSummary()}`);
           mse.onEndStreaming?.();
         };
         onQualityChangeHandler = () => {

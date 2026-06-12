@@ -1,10 +1,36 @@
 import { PCMAudioPlayer } from "../audio/pcm-audio-player";
 import type { PlayerConfig } from "../config";
 import type { PlayerImpl, PlayerSegment } from "../types";
+import Log from "../utils/logger";
 import type { WorkerCommand, WorkerEvent } from "../worker/messages";
 import TransmuxWorker from "../worker/transmux-worker.ts?worker&inline";
 import { setupLiveSync, setupStartupStallJumper } from "./live-sync";
 import { createMSE, type MSE } from "./mse";
+
+const TAG = "Player";
+
+/** Attach verbose listeners to media element events for diagnosing playback stalls. */
+function setupVideoDebugLogs(video: HTMLVideoElement): () => void {
+  const events = ["loadedmetadata", "canplay", "playing", "waiting", "stalled", "pause", "seeking", "seeked", "error"];
+  const handler = (e: Event) => {
+    const buffered: string[] = [];
+    for (let i = 0; i < video.buffered.length; i++) {
+      buffered.push(`${video.buffered.start(i).toFixed(2)}-${video.buffered.end(i).toFixed(2)}`);
+    }
+    Log.v(
+      TAG,
+      `video event '${e.type}': currentTime=${video.currentTime.toFixed(2)}, readyState=${video.readyState}, paused=${video.paused}, buffered=[${buffered.join(",")}]${e.type === "error" ? `, error=${video.error?.code}:${video.error?.message}` : ""}`,
+    );
+  };
+  for (const ev of events) {
+    video.addEventListener(ev, handler);
+  }
+  return () => {
+    for (const ev of events) {
+      video.removeEventListener(ev, handler);
+    }
+  };
+}
 
 /** Check if a given time position is within any buffered range of the video element. */
 export function isBuffered(video: HTMLMediaElement, seconds: number): boolean {
@@ -179,10 +205,10 @@ export function createMpegtsPlayer(
       worker?.postMessage(cmd);
     };
 
-    mse.onEndStreaming = () => {
-      const cmd: WorkerCommand = { type: "pause" };
-      worker?.postMessage(cmd);
-    };
+    // Note: onEndStreaming intentionally does NOT pause the worker. For continuous
+    // live TS streams, pausing aborts the in-flight fetch and resumes via a Range
+    // request, which restarts a live stream mid-flow and corrupts the timeline.
+    // The MSE layer already defers appends while ManagedMediaSource streaming=false.
 
     mse.onError = (info) => {
       impl.onError?.({
@@ -193,12 +219,16 @@ export function createMpegtsPlayer(
     };
   }
 
+  let destroyVideoDebugLogs: (() => void) | null = null;
+
   function initLiveHelpers(): void {
     if (!destroyLiveSync && liveSyncEnabled) {
       destroyLiveSync = setupLiveSync(video, config);
     }
     destroyStallJumper?.();
     destroyStallJumper = setupStartupStallJumper(video);
+    destroyVideoDebugLogs?.();
+    destroyVideoDebugLogs = setupVideoDebugLogs(video);
   }
 
   const impl: PlayerImpl = {
@@ -256,6 +286,8 @@ export function createMpegtsPlayer(
       destroyLiveSync = null;
       destroyStallJumper?.();
       destroyStallJumper = null;
+      destroyVideoDebugLogs?.();
+      destroyVideoDebugLogs = null;
     },
 
     destroy() {
