@@ -136,7 +136,7 @@ typedef struct {
   int connect_last_errno;
   int upstream_family; /* Address family of the connected/connecting upstream
                           (AF_INET / AF_INET6) */
-  int redirect_count;                      /* Number of redirects followed */
+  int redirect_count;  /* Number of redirects followed */
   char r2h_start[RTSP_TIME_STRING_SIZE];
   char playseek_range_start[RTSP_TIME_STRING_SIZE];
   int use_playseek_range;

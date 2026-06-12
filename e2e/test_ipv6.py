@@ -238,7 +238,9 @@ rtp://239.0.0.1:1234
         assert b"#EXTM3U" in body
 
     def test_request_with_wrong_host_rejected(self, v6_r2h):
-        status, _, _ = http_get("::1", v6_r2h.port, "/playlist.m3u", timeout=_TIMEOUT, headers={"Host": "evil.example.com"})
+        status, _, _ = http_get(
+            "::1", v6_r2h.port, "/playlist.m3u", timeout=_TIMEOUT, headers={"Host": "evil.example.com"}
+        )
         assert status == 400
 
     def test_playlist_base_url_bracketed(self, v6_r2h):
