@@ -1126,6 +1126,16 @@ static int rtsp_prepare_request(rtsp_session_t *session, const char *method, con
     }
   }
 
+  /* RFC 2326 section 12.37: once a session has been established, every
+   * request within that session must carry the Session header.  Some servers
+   * (e.g. Huawei HMS edge nodes) assign the session ID as early as the
+   * OPTIONS response and close the connection if subsequent requests
+   * (DESCRIBE, SETUP, ...) do not echo it, so inject it centrally here. */
+  char session_header[RTSP_SESSION_ID_SIZE + 16] = "";
+  if (session->session_id[0] != '\0') {
+    snprintf(session_header, sizeof(session_header), "Session: %s\r\n", session->session_id);
+  }
+
   /* Build RTSP request */
   int len = snprintf(session->pending_request, sizeof(session->pending_request),
                      "%s %s %s\r\n"
@@ -1133,8 +1143,10 @@ static int rtsp_prepare_request(rtsp_session_t *session, const char *method, con
                      "User-Agent: %s\r\n"
                      "%s"
                      "%s"
+                     "%s"
                      "\r\n",
-                     method, request_url, RTSP_VERSION, session->cseq++, rtsp_get_user_agent(), auth_header, extra);
+                     method, request_url, RTSP_VERSION, session->cseq++, rtsp_get_user_agent(), session_header,
+                     auth_header, extra);
 
   if (len < 0 || len >= (int)sizeof(session->pending_request)) {
     logger(LOG_ERROR, "RTSP: Request buffer overflow");
@@ -1166,16 +1178,10 @@ int rtsp_send_keepalive(rtsp_session_t *session) {
     return 1; /* Busy with another request */
   }
 
-  char extra_headers[RTSP_HEADERS_BUFFER_SIZE];
-  if (snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\n", session->session_id) >=
-      (int)sizeof(extra_headers)) {
-    logger(LOG_ERROR, "RTSP: Failed to format keepalive headers");
-    return -1;
-  }
-
-  /* Use GET_PARAMETER if supported, otherwise use OPTIONS */
+  /* Use GET_PARAMETER if supported, otherwise use OPTIONS
+   * (Session header is injected automatically by rtsp_prepare_request) */
   const char *method = session->use_get_parameter ? RTSP_METHOD_GET_PARAMETER : RTSP_METHOD_OPTIONS;
-  if (rtsp_prepare_request(session, method, NULL, extra_headers) < 0) {
+  if (rtsp_prepare_request(session, method, NULL, NULL) < 0) {
     logger(LOG_ERROR, "RTSP: Failed to prepare %s keepalive request", method);
     return -1;
   }
@@ -1502,11 +1508,7 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
 
   case RTSP_STATE_AWAITING_OPTIONS:
     /* OPTIONS response received, ready to send DESCRIBE */
-    if (session->session_id[0] != '\0') {
-      snprintf(extra_headers, sizeof(extra_headers), "Accept: application/sdp\r\nSession: %s\r\n", session->session_id);
-    } else {
-      snprintf(extra_headers, sizeof(extra_headers), "Accept: application/sdp\r\n");
-    }
+    snprintf(extra_headers, sizeof(extra_headers), "Accept: application/sdp\r\n");
     if (rtsp_prepare_request(session, RTSP_METHOD_DESCRIBE, NULL, extra_headers) < 0) {
       logger(LOG_ERROR, "RTSP: Failed to prepare DESCRIBE request");
       return -1;
@@ -1593,13 +1595,11 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
 
   case RTSP_STATE_SETUP:
     if (session->use_playseek_range && session->playseek_range_start[0] != '\0') {
-      snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\nRange: clock=%s-\r\n", session->session_id,
-               session->playseek_range_start);
+      snprintf(extra_headers, sizeof(extra_headers), "Range: clock=%s-\r\n", session->playseek_range_start);
     } else if (session->r2h_start[0] != '\0') {
-      snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\nRange: npt=%s-\r\n", session->session_id,
-               session->r2h_start);
+      snprintf(extra_headers, sizeof(extra_headers), "Range: npt=%s-\r\n", session->r2h_start);
     } else {
-      snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\n", session->session_id);
+      extra_headers[0] = '\0';
     }
     if (rtsp_prepare_request(session, RTSP_METHOD_PLAY, NULL, extra_headers) < 0) {
       logger(LOG_ERROR, "RTSP: Failed to prepare PLAY request");
@@ -1619,8 +1619,7 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
   case RTSP_STATE_RECONNECTING:
     /* Reconnection completed, now send TEARDOWN */
     if (session->teardown_requested) {
-      snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\n", session->session_id);
-      if (rtsp_prepare_request(session, RTSP_METHOD_TEARDOWN, NULL, extra_headers) < 0) {
+      if (rtsp_prepare_request(session, RTSP_METHOD_TEARDOWN, NULL, NULL) < 0) {
         logger(LOG_ERROR, "RTSP: Failed to prepare TEARDOWN after reconnect");
         return -1;
       }
@@ -2064,8 +2063,6 @@ static int rtsp_reconnect_for_teardown(rtsp_session_t *session) {
  * Returns: 0 if TEARDOWN initiated, 1 if reconnect needed, -1 on error
  */
 static int rtsp_initiate_teardown(rtsp_session_t *session) {
-  char extra_headers[RTSP_HEADERS_BUFFER_SIZE];
-
   /* Check if socket is still valid */
   if (session->socket >= 0) {
     int sock_error = 0;
@@ -2083,9 +2080,7 @@ static int rtsp_initiate_teardown(rtsp_session_t *session) {
       session->awaiting_response = 0;
       session->response_buffer_pos = 0;
 
-      snprintf(extra_headers, sizeof(extra_headers), "Session: %s\r\n", session->session_id);
-
-      if (rtsp_prepare_request(session, RTSP_METHOD_TEARDOWN, NULL, extra_headers) < 0) {
+      if (rtsp_prepare_request(session, RTSP_METHOD_TEARDOWN, NULL, NULL) < 0) {
         logger(LOG_ERROR, "RTSP: Failed to prepare TEARDOWN request");
         return -1;
       }
@@ -2939,6 +2934,11 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location) {
   }
 
   session->redirect_count++;
+
+  /* The session ID is scoped to the server that issued it.  Drop any
+   * session learned from the previous server so requests to the
+   * redirected-to server don't carry a stale Session header. */
+  session->session_id[0] = '\0';
 
   /* Close current connection and remove from poller properly */
   if (session->socket >= 0) {

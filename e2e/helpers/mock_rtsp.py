@@ -42,7 +42,8 @@ class _RTSPServerBase:
                 any other string is sent verbatim.
             custom_sdp: If set, replaces the auto-generated SDP body.
             options_session_id: If set, OPTIONS responds with this Session ID
-                and DESCRIBE must echo it (simulates HMS-style servers).
+                and every subsequent request (DESCRIBE, SETUP, PLAY, ...)
+                must echo it (simulates HMS-style servers).
             host: Address to listen on (use "::1" for IPv6 loopback).
         """
         self.host = host
@@ -139,6 +140,15 @@ class _RTSPServerBase:
                     }
                 )
 
+                # HMS-style servers assign the session at OPTIONS time and
+                # close the connection if any later request doesn't echo it.
+                if (
+                    self._options_session_id
+                    and method != "OPTIONS"
+                    and req_headers_map.get("Session") != self._options_session_id
+                ):
+                    return
+
                 if method == "OPTIONS":
                     session_line = ""
                     if self._options_session_id:
@@ -147,12 +157,10 @@ class _RTSPServerBase:
                         (
                             "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
                             "%s"
-                            "Public: DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE\r\n\r\n" % (cseq, session_line)
+                            "Public: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN\r\n\r\n" % (cseq, session_line)
                         ).encode()
                     )
                 elif method == "DESCRIBE":
-                    if self._options_session_id and req_headers_map.get("Session") != self._options_session_id:
-                        return
                     if self._custom_sdp is not None:
                         sdp = self._custom_sdp
                     else:
