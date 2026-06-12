@@ -1,6 +1,9 @@
 .vscode/
 .zed/
 
+# macOS
+.DS_Store
+
 # clangd
 .cache/
 compile_commands.json
@@ -27,3 +30,7 @@ __pycache__/
 
 # Benchmark results
 tools/benchmark_results_*.txt
+
+# iKuai package outputs
+ikuai-support/.staging/
+ikuai-support/dist/
