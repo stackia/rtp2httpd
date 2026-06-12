@@ -32,7 +32,7 @@ cp -R "$PACKAGE_SRC"/. "$STAGING_PACKAGE"/
 find "$STAGING_PACKAGE" -name .gitkeep -exec rm -f {} +
 
 # Keep the staged manifest in sync with the requested version and arch.
-sed -e "s/\"version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"version\": \"v$VERSION\"/" \
+sed -e "s/\"version\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"version\": \"$VERSION\"/" \
   -e "s/\"image\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"image\": \"$BINARY_NAME\"/" \
   "$MANIFEST" > "$STAGING_PACKAGE/manifest.json"
 

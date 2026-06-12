@@ -179,7 +179,7 @@ if [ -n "$RTP2HTTPD_EXTRA_ARGS" ]; then
 fi
 
 log "Starting rtp2httpd: $*"
-nohup "$@" >> "$RUN_LOG" 2>&1 &
+"$@" >> "$RUN_LOG" 2>&1 &
 PID=$!
 printf '%s\n' "$PID" > "$PIDFILE"
 
