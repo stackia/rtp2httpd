@@ -38,7 +38,7 @@ features:
     details: Web 状态页面，连接统计、带宽监控、日志查看、远程管理
   - icon: 🚀
     title: 轻量高性能
-    details: 纯 C 零依赖，epoll + 多核 + 零拷贝，x86_64 仅 340KB
+    details: 纯 C 零依赖，epoll + 多核 + 零拷贝，x86_64 仅 368KB
 ---
 
 <style>

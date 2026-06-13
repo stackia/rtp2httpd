@@ -38,7 +38,7 @@ features:
     details: Web status page with connection statistics, bandwidth monitoring, log viewing, remote management
   - icon: 🚀
     title: Lightweight & High Performance
-    details: Pure C with zero dependencies, epoll + multi-core + zero-copy, only 340KB for x86_64
+    details: Pure C with zero dependencies, epoll + multi-core + zero-copy, only 368KB for x86_64
 ---
 
 <style>
