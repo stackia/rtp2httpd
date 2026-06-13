@@ -13,7 +13,7 @@ EMFLAGS = -O2 \
 	-s STACK_SIZE=65536 \
 	--no-entry
 
-SOURCES = mp2_decoder.c
+SOURCES = mp2_decoder.c wsola.c
 
 .PHONY: all clean
 

@@ -34,7 +34,8 @@ export interface PipelineCallbacks {
   onIOError: (type: string, info: { code: number; msg: string }) => void;
   onDemuxError: (type: string, info: string) => void;
   onHlsInfo: (info: HlsInfo) => void;
-  onPCMAudioData: (pcm: Float32Array, channels: number, sampleRate: number, pts: number) => void;
+  /** `time` is normalized to the MSE timeline (seconds, same space as video.currentTime). */
+  onPCMAudioData: (pcm: Float32Array, channels: number, sampleRate: number, time: number) => void;
 }
 
 class LoadError extends Error {
@@ -100,6 +101,16 @@ class Pipeline {
   private _workerAudioDecoder: WorkerAudioDecoder | null = null;
   private _workerAudioDecoderInitPromise: Promise<boolean> | null = null;
 
+  // --- MP2 software decode timing state ---
+  /** PTS anchor (ms) for sample-count extrapolation across PES packets. */
+  private _audioAnchorPtsMs: number | null = null;
+  private _audioSamplesSinceAnchor = 0;
+  private _audioSampleRate = 0;
+  /** PCM decoded before the remuxer dts base is known (flushed once available). */
+  private _pendingPcm: Array<{ pcm: Float32Array; channels: number; sampleRate: number; ptsMs: number }> = [];
+  /** Incremented on audio timing resets to invalidate decode callbacks queued before the reset. */
+  private _audioGen = 0;
+
   constructor(segments: PlayerSegment[], config: PlayerConfig, callbacks: PipelineCallbacks) {
     this._callbacks = callbacks;
     this._config = { ...createDefaultConfig(), ...config };
@@ -159,8 +170,9 @@ class Pipeline {
     this._runId++;
     this._teardown();
 
-    // Reset WASM audio decoder state (clear stale mdct/qmf from previous stream)
+    // Reset WASM audio decoder state (clear stale mdct/qmf + carry from previous stream)
     this._workerAudioDecoder?.reset();
+    this._resetAudioTiming();
 
     const url = segments[0]?.url ?? "";
     this._discreteSegments = segments.length > 1 || HLS_URL_RE.test(url);
@@ -274,6 +286,11 @@ class Pipeline {
         // their own timeline, so flush between them.
         if (!this._hlsSource) {
           this._remuxer?.flushStashedSamples();
+          // Each static segment is an independent TS timeline: a partial MP2
+          // frame carried from the previous URL must not be prepended to the
+          // next one, and the PTS anchor must re-establish from the new PES
+          this._workerAudioDecoder?.reset();
+          this._resetAudioTiming();
         }
       } catch (e) {
         if (this._runId !== runId || e === CANCELLED) return;
@@ -300,6 +317,17 @@ class Pipeline {
       this._remuxer = null;
     }
     this._pendingDtsOffsetMs = startSeconds * 1000;
+    // The output timeline restarts: stale carry bytes and the PTS anchor are invalid
+    this._workerAudioDecoder?.reset();
+    this._resetAudioTiming();
+  }
+
+  private _resetAudioTiming(): void {
+    this._audioGen++;
+    this._audioAnchorPtsMs = null;
+    this._audioSamplesSinceAnchor = 0;
+    this._audioSampleRate = 0;
+    this._pendingPcm = [];
   }
 
   private _loadSegment(meta: SegmentMeta): Promise<void> {
@@ -494,15 +522,62 @@ class Pipeline {
       this._workerAudioDecoderInitPromise = this._workerAudioDecoder.initDecoder();
     }
 
-    // Queue decode after init completes
+    // Queue decode after init completes; gen guard drops frames queued before a reset
+    const gen = this._audioGen;
     this._workerAudioDecoderInitPromise?.then((ready) => {
-      if (!ready || !this._workerAudioDecoder) return;
+      if (!ready || !this._workerAudioDecoder || gen !== this._audioGen) return;
 
-      const result = this._workerAudioDecoder.decode(frame.data, frame.pts);
-      if (result) {
-        this._callbacks.onPCMAudioData(result.pcm, result.channels, result.sampleRate, result.pts);
+      const result = this._workerAudioDecoder.decode(frame.data);
+      if (!result) return;
+
+      // PTS extrapolation: anchor on the PES PTS, advance by decoded sample count.
+      // This gives every decoded chunk a jitter-free timestamp even when frames
+      // straddle PES boundaries or a PES contains multiple frames. Re-anchor only
+      // on genuine discontinuities (> 100ms deviation).
+      const sr = result.sampleRate;
+      if (this._audioAnchorPtsMs === null || this._audioSampleRate !== sr) {
+        this._audioAnchorPtsMs = frame.pts;
+        this._audioSamplesSinceAnchor = 0;
+        this._audioSampleRate = sr;
+      } else {
+        const extrapolatedMs = this._audioAnchorPtsMs + (this._audioSamplesSinceAnchor / sr) * 1000;
+        if (Math.abs(frame.pts - extrapolatedMs) > 100) {
+          Log.v(
+            this.TAG,
+            `Audio PTS discontinuity: pes=${frame.pts.toFixed(1)}ms extrap=${extrapolatedMs.toFixed(1)}ms`,
+          );
+          this._audioAnchorPtsMs = frame.pts;
+          this._audioSamplesSinceAnchor = 0;
+        }
       }
+      const ptsMs = this._audioAnchorPtsMs + (this._audioSamplesSinceAnchor / sr) * 1000;
+      this._audioSamplesSinceAnchor += result.samplesPerChannel;
+
+      this._emitPcm(result.pcm, result.channels, sr, ptsMs);
     });
+  }
+
+  /**
+   * Normalize PCM timestamps to the MSE timeline using the remuxer's dts base
+   * (the exact mapping used for video), then forward to the main thread.
+   * PCM decoded before the first remux (dts base unknown) is queued.
+   */
+  private _emitPcm(pcm: Float32Array, channels: number, sampleRate: number, ptsMs: number): void {
+    this._pendingPcm.push({ pcm, channels, sampleRate, ptsMs });
+
+    const dtsBase = this._remuxer?.getTimestampBase();
+    if (dtsBase === undefined) {
+      // Bound the queue: ~25s of audio at one payload per ~72ms is plenty
+      if (this._pendingPcm.length > 512) {
+        this._pendingPcm.shift();
+      }
+      return;
+    }
+
+    for (const item of this._pendingPcm) {
+      this._callbacks.onPCMAudioData(item.pcm, item.channels, item.sampleRate, (item.ptsMs - dtsBase) / 1000);
+    }
+    this._pendingPcm = [];
   }
 }
 

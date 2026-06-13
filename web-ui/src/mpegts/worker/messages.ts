@@ -16,4 +16,12 @@ export type WorkerEvent =
   | { type: "complete"; gen: number }
   | { type: "error"; category: "io" | "demux"; detail: string; info?: string; gen: number }
   | { type: "hls-info"; live: boolean; totalDuration: number; gen: number }
-  | { type: "pcm-audio-data"; pcm: ArrayBuffer; channels: number; sampleRate: number; pts: number; gen: number };
+  | {
+      type: "pcm-audio-data";
+      pcm: ArrayBuffer;
+      channels: number;
+      sampleRate: number;
+      /** Start time normalized to the MSE timeline (seconds). */
+      time: number;
+      gen: number;
+    };

@@ -1,31 +1,76 @@
 /*
  * PCM Audio Player
  *
- * Plays decoded PCM audio using Web Audio API with video synchronization support.
+ * Plays decoded PCM audio using the Web Audio API, kept in sync with the
+ * video element's clock.
  *
- * All PTS values stored internally are normalized to the video timeline
- * (same space as video.currentTime), enabling correct seek across segments
- * with discontinuous raw PTS values.
+ * Design (no AudioWorklet — must work in non-secure contexts):
+ *
+ *  - Continuous scheduling chain: output chunks are scheduled strictly
+ *    back-to-back on the AudioContext clock (`nextStartTime` accumulates),
+ *    which is sample-accurate and therefore gapless. Chunk timing is never
+ *    derived from video.currentTime (whose jitter caused audible clicks).
+ *
+ *  - Rate matching instead of frame dropping: PCM passes through a WSOLA
+ *    time stretcher (WASM) before scheduling. A low-frequency control loop
+ *    measures drift between the audio chain and video.currentTime and sets
+ *    ratio = playbackRate * (1 - k*drift), so audio genuinely follows
+ *    live-sync playbackRate (pitch preserved) and small drift converges
+ *    smoothly. Large drift (> 250ms) triggers a hard resync with short fades.
+ *
+ *  - Stream timestamps arrive from the worker already normalized to the MSE
+ *    timeline (same space as video.currentTime), using the remuxer dts base.
  */
 
 import type { PlayerConfig } from "../config";
 import Log from "../utils/logger";
+import { PassthroughStretcher, type Stretcher, WasmStretcher } from "./wasm-stretcher";
 
 const TAG = "PCMAudioPlayer";
+
+/** Max seconds of audio scheduled ahead of the AudioContext clock.
+ *  Also bounds how long a ratio change takes to reach the speakers, so it is
+ *  kept small (rate changes during live-sync catch-up respond within this). */
+const SCHEDULE_AHEAD = 0.6;
+/** Delay before the first chunk when (re)starting the scheduling chain. */
+const CHAIN_RESTART_DELAY = 0.04;
+/** Drift beyond this triggers a hard resync (cancel + rebuild from buffer). */
+const HARD_RESYNC_THRESHOLD = 0.25;
+/** Input gaps/overlaps within this are absorbed silently (PTS jitter). */
+const GAP_SNAP = 0.005;
+/** Input gaps up to this long are filled with silence; larger ones re-anchor. */
+const MAX_SILENCE_GAP = 2.0;
+/** Fade-in length applied when the chain (re)starts, to avoid clicks. */
+const FADE_SEC = 0.005;
+/** Proportional gain for drift correction via stretch ratio. */
+const RATIO_DRIFT_GAIN = 0.5;
+/** Max stretch ratio deviation used for drift correction. WSOLA preserves
+ *  pitch, so a transient 10% tempo offset is inaudible while it converges. */
+const RATIO_DRIFT_MAX = 0.1;
+/** EMA smoothing factor for drift measurements. */
+const DRIFT_EMA_ALPHA = 0.4;
+/** Control loop period (ms). */
+const CONTROL_INTERVAL_MS = 250;
+/** Upper bound for pending (not yet scheduled) chunks. */
+const MAX_PENDING_CHUNKS = 600;
+/** Control ticks between verbose drift diagnostics (~10s). */
+const DRIFT_LOG_TICKS = 40;
 
 interface AudioChunk {
   samples: Float32Array;
   channels: number;
   sampleRate: number;
-  time: number; // normalized to video timeline (seconds)
+  time: number; // MSE timeline (seconds)
   duration: number;
   endTime: number;
 }
 
-interface ScheduledSource {
+interface ScheduledSpan {
   source: AudioBufferSourceNode;
-  startTime: number;
-  endTime: number;
+  ctxStart: number;
+  ctxEnd: number;
+  streamStart: number;
+  streamEnd: number;
 }
 
 let suspendedNotified = false;
@@ -34,29 +79,41 @@ export class PCMAudioPlayer {
   private config: PlayerConfig;
   private context: AudioContext | null = null;
   private gainNode: GainNode | null = null;
-  private pendingChunks: AudioChunk[] = [];
   private volume: number = 1.0;
   private muted: boolean = false;
 
-  // Sync state
   private videoElement: HTMLVideoElement | null = null;
-  // basePtsOffset: rawAudioPTS - videoTime, used to normalize raw PTS to video timeline
-  private basePtsOffset: number = 0;
-  private basePtsEstablished: boolean = false;
-  private lastScheduledEndTime: number = 0;
-  private lastFeedPts: number = -1; // last raw PTS from feed(), for discontinuity detection
 
   // iOS Silent Mode bypass
   private audioElement: HTMLAudioElement | null = null;
   private mediaStreamDestination: MediaStreamAudioDestinationNode | null = null;
 
-  // Buffer management for seek support (all PTS values are in video timeline)
+  // Buffer management for seek support (chunk times are MSE timeline)
   private audioBuffer: AudioChunk[] = [];
+  private pendingChunks: AudioChunk[] = [];
 
-  // Track scheduled sources for cancellation
-  private scheduledSources: ScheduledSource[] = [];
+  // Time stretcher
+  private stretcher: Stretcher | null = null;
+  private stretcherLoading = false;
 
-  // Seek state
+  // Input-side state: stream time of the next sample to feed the stretcher.
+  // null = not anchored (anchors at the next chunk's time).
+  private inputCursor: number | null = null;
+  /** Stream time corresponding to stretcher input position 0. */
+  private stretcherBase = 0;
+  /** Stream time of the end of all output scheduled so far. */
+  private outputStreamCursor = 0;
+
+  // Output-side scheduling chain
+  private nextStartTime = 0;
+  private scheduledSpans: ScheduledSpan[] = [];
+
+  // Drift control
+  private driftEma = 0;
+  private hasDriftEma = false;
+  private driftLogCounter = 0;
+  private controlTimer: ReturnType<typeof setInterval> | null = null;
+
   private isSeeking: boolean = false;
 
   // Bound event handlers for cleanup
@@ -66,6 +123,7 @@ export class PCMAudioPlayer {
   private boundOnVideoPause: (() => void) | null = null;
   private boundOnVolumeChange: (() => void) | null = null;
   private boundOnTimeUpdate: (() => void) | null = null;
+  private boundOnRateChange: (() => void) | null = null;
 
   /** Called when AudioContext is blocked by autoplay policy (needs user interaction). */
   onSuspended: (() => void) | null = null;
@@ -109,7 +167,7 @@ export class PCMAudioPlayer {
     this.context.onstatechange = () => {
       Log.v(TAG, `AudioContext state changed to: ${this.context?.state}`);
       if (this.context?.state === "running") {
-        this.seekToTime(this.videoElement?.currentTime ?? 0);
+        this.resyncFromBuffer(this.videoElement?.currentTime ?? 0);
       }
     };
 
@@ -132,9 +190,16 @@ export class PCMAudioPlayer {
       this.setMuted(video.muted);
     };
     this.boundOnTimeUpdate = () => {
-      if (this.pendingChunks.length > 0) {
-        this.scheduleChunks();
-      }
+      this.controlTick();
+      this.pump();
+    };
+    this.boundOnRateChange = () => {
+      // Apply the new rate to the stretcher immediately instead of waiting for
+      // drift to build through the already-scheduled pipeline. The remaining
+      // mismatch (scheduled-ahead audio at the old rate) is absorbed by the
+      // drift correction, so moderate rate changes (live sync 1 ↔ 1.2) cause
+      // no audible interruption.
+      this.controlTick();
     };
 
     video.addEventListener("seeking", this.boundOnVideoSeeking);
@@ -143,9 +208,19 @@ export class PCMAudioPlayer {
     video.addEventListener("pause", this.boundOnVideoPause);
     video.addEventListener("volumechange", this.boundOnVolumeChange);
     video.addEventListener("timeupdate", this.boundOnTimeUpdate);
+    video.addEventListener("ratechange", this.boundOnRateChange);
+
+    this.controlTimer = setInterval(() => {
+      this.controlTick();
+      this.pump();
+    }, CONTROL_INTERVAL_MS);
   }
 
   detachVideo(): void {
+    if (this.controlTimer) {
+      clearInterval(this.controlTimer);
+      this.controlTimer = null;
+    }
     if (this.videoElement) {
       if (this.boundOnVideoSeeking) this.videoElement.removeEventListener("seeking", this.boundOnVideoSeeking);
       if (this.boundOnVideoSeeked) this.videoElement.removeEventListener("seeked", this.boundOnVideoSeeked);
@@ -153,6 +228,7 @@ export class PCMAudioPlayer {
       if (this.boundOnVideoPause) this.videoElement.removeEventListener("pause", this.boundOnVideoPause);
       if (this.boundOnVolumeChange) this.videoElement.removeEventListener("volumechange", this.boundOnVolumeChange);
       if (this.boundOnTimeUpdate) this.videoElement.removeEventListener("timeupdate", this.boundOnTimeUpdate);
+      if (this.boundOnRateChange) this.videoElement.removeEventListener("ratechange", this.boundOnRateChange);
     }
     this.boundOnVideoSeeking = null;
     this.boundOnVideoSeeked = null;
@@ -160,76 +236,95 @@ export class PCMAudioPlayer {
     this.boundOnVideoPause = null;
     this.boundOnVolumeChange = null;
     this.boundOnTimeUpdate = null;
+    this.boundOnRateChange = null;
     this.videoElement = null;
   }
 
-  feed(samples: Float32Array, channels: number, sampleRate: number, rawPts: number): void {
+  /** `time` is normalized to the MSE timeline (same space as video.currentTime). */
+  feed(samples: Float32Array, channels: number, sampleRate: number, time: number): void {
     if (!this.context || !this.gainNode) {
       Log.w(TAG, "AudioContext not initialized, dropping audio");
       return;
     }
 
-    // Detect PTS discontinuity (segment switch with non-continuous timestamps)
-    if (this.lastFeedPts >= 0 && this.basePtsEstablished) {
-      const ptsJump = Math.abs(rawPts - this.lastFeedPts);
-      if (ptsJump > 1.0) {
-        // Absorb the PTS jump into basePtsOffset so the normalized timeline stays continuous.
-        // This maps the new frame to lastFeedPts-oldOffset (≈ previous frame's normalized time),
-        // keeping audio seamless across segments. The one-frame-duration overlap is handled
-        // by drift-based sync in scheduleChunks().
-        this.basePtsOffset += rawPts - this.lastFeedPts;
-        Log.v(
-          TAG,
-          `PTS discontinuity: jump=${ptsJump.toFixed(3)}s, basePtsOffset adjusted to ${this.basePtsOffset.toFixed(3)}s`,
-        );
-      }
-    }
-    this.lastFeedPts = rawPts;
-
-    // Establish basePtsOffset if not yet done (maps raw audio PTS → video timeline)
-    if (!this.basePtsEstablished && this.videoElement && this.videoElement.readyState >= 2) {
-      const videoTime = this.videoElement.buffered.end(this.videoElement.buffered.length - 1);
-      this.basePtsOffset = rawPts - videoTime;
-      this.basePtsEstablished = true;
-      Log.v(
-        TAG,
-        `Base PTS offset established: ${this.basePtsOffset.toFixed(3)}s ` +
-          `(rawPTS=${rawPts.toFixed(3)}, videoTime=${videoTime.toFixed(3)})`,
-      );
-    }
-
-    // Can't normalize PTS without basePtsOffset — drop frames until established
-    if (!this.basePtsEstablished) {
+    const samplesPerChannel = Math.floor(samples.length / channels);
+    if (samplesPerChannel === 0) {
       return;
     }
-
-    // Normalize PTS to video timeline before storing
-    const time = rawPts - this.basePtsOffset;
-    const samplesPerChannel = Math.floor(samples.length / channels);
     const duration = samplesPerChannel / sampleRate;
     const chunk: AudioChunk = { samples, channels, sampleRate, time, duration, endTime: time + duration };
 
     this.insertToBuffer(chunk);
     this.cleanupBuffer();
 
-    if (!this.isSeeking) {
+    if (!this.isSeeking && !this.videoElement?.paused) {
       this.pendingChunks.push(chunk);
-      this.scheduleChunks();
+      if (this.pendingChunks.length > MAX_PENDING_CHUNKS) {
+        this.pendingChunks.shift();
+      }
+      this.pump();
     }
   }
 
+  // ==================== Stretcher ====================
+
+  /** Returns the stretcher if ready for this chunk's format, else kicks off (re)creation. */
+  private ensureStretcher(chunk: AudioChunk): Stretcher | null {
+    if (this.stretcher) {
+      if (this.stretcher.sampleRate === chunk.sampleRate && this.stretcher.channels === chunk.channels) {
+        return this.stretcher;
+      }
+      // Format change: rebuild the stretcher and re-anchor
+      Log.v(TAG, `Audio format change: ${chunk.sampleRate}Hz/${chunk.channels}ch, rebuilding stretcher`);
+      this.stretcher.destroy();
+      this.stretcher = null;
+      this.cancelChain(true);
+      this.inputCursor = null;
+    }
+
+    if (this.stretcherLoading) {
+      return null;
+    }
+    this.stretcherLoading = true;
+
+    const wasmUrl = this.config.wasmDecoders.mp2;
+    const fallback = () => new PassthroughStretcher(chunk.sampleRate, chunk.channels);
+    const promise = wasmUrl
+      ? WasmStretcher.create(wasmUrl, chunk.sampleRate, chunk.channels)
+      : Promise.reject(new Error("no wasm url"));
+
+    promise
+      .catch((err) => {
+        Log.w(TAG, `WASM stretcher unavailable, using passthrough (no rate matching): ${err}`);
+        return fallback();
+      })
+      .then((stretcher) => {
+        this.stretcherLoading = false;
+        if (!this.context) {
+          stretcher.destroy();
+          return;
+        }
+        this.stretcher = stretcher;
+        this.pump();
+      });
+
+    return null;
+  }
+
+  // ==================== Input pump ====================
+
   /**
-   * All audio scheduling goes through this single method — drift-based sync
-   * is always active, whether chunks come from live feed() or buffer refill.
-   * All PTS values here are in video timeline space.
+   * Feed pending chunks through the stretcher and schedule the output
+   * back-to-back on the AudioContext clock.
    */
-  private scheduleChunks(): void {
-    if (!this.context || !this.gainNode || this.pendingChunks.length === 0 || this.videoElement?.paused) {
+  private pump(): void {
+    const ctx = this.context;
+    if (!ctx || !this.gainNode || this.isSeeking || this.pendingChunks.length === 0 || this.videoElement?.paused) {
       return;
     }
 
-    if (this.context.state === "suspended") {
-      this.context.resume();
+    if (ctx.state === "suspended") {
+      ctx.resume();
       if (!suspendedNotified) {
         suspendedNotified = true;
         Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
@@ -239,69 +334,244 @@ export class PCMAudioPlayer {
       return;
     }
 
-    const ctxTime = this.context.currentTime;
-    const videoTime = this.videoElement?.currentTime ?? 0;
-
     while (this.pendingChunks.length > 0) {
-      const chunk = this.pendingChunks[0];
-      const drift = chunk.time - videoTime;
-      let scheduleTime = ctxTime + drift;
-
-      // Ensure continuity: snap small gaps to lastScheduledEndTime
-      if (this.lastScheduledEndTime > 0) {
-        const gap = scheduleTime - this.lastScheduledEndTime;
-        if (gap < 0.005 && gap > -0.05) {
-          scheduleTime = this.lastScheduledEndTime;
-        } else if (gap < -0.05) {
-          this.lastScheduledEndTime = 0;
-        }
-      }
-
-      // Drop late chunks (> 100ms behind AudioContext clock)
-      if (scheduleTime < ctxTime - 0.1) {
-        this.pendingChunks.shift();
-        continue;
-      }
-
-      // Defer chunks too far ahead (> 1s)
-      if (scheduleTime > ctxTime + 1.0) {
+      // Throttle: keep at most SCHEDULE_AHEAD seconds scheduled ahead
+      if (this.nextStartTime - ctx.currentTime >= SCHEDULE_AHEAD) {
         break;
       }
 
+      const chunk = this.pendingChunks[0];
+      const stretcher = this.ensureStretcher(chunk);
+      if (!stretcher) {
+        break; // stretcher loading; chunks stay pending
+      }
+
+      if (this.inputCursor === null) {
+        this.anchor(chunk.time);
+      }
+
+      const cursor = this.inputCursor as number;
+      const delta = chunk.time - cursor;
+
+      if (delta > MAX_SILENCE_GAP) {
+        // Forward discontinuity: re-anchor at the new position
+        Log.v(TAG, `Audio stream jump +${delta.toFixed(3)}s, re-anchoring`);
+        this.cancelChain(true);
+        this.anchor(chunk.time);
+        continue;
+      }
+
+      if (delta > GAP_SNAP) {
+        // Small gap: fill with silence to keep the timeline correct
+        const gapFrames = Math.round(delta * chunk.sampleRate);
+        if (gapFrames > 0) {
+          this.feedStretcher(stretcher, new Float32Array(gapFrames * chunk.channels), chunk.sampleRate);
+          this.inputCursor = cursor + gapFrames / chunk.sampleRate;
+        }
+      }
+
+      let samples = chunk.samples;
+      if (delta < -GAP_SNAP) {
+        // Overlap: trim the already-covered head of this chunk
+        const cutFrames = Math.round((cursor - chunk.time) * chunk.sampleRate);
+        const totalFrames = Math.floor(samples.length / chunk.channels);
+        if (cutFrames >= totalFrames) {
+          this.pendingChunks.shift();
+          continue;
+        }
+        samples = samples.subarray(cutFrames * chunk.channels);
+      }
+
       this.pendingChunks.shift();
-      const actualScheduleTime = Math.max(scheduleTime, ctxTime);
-      const duration = this.scheduleChunk(chunk, actualScheduleTime);
-      this.lastScheduledEndTime = actualScheduleTime + duration;
+      this.feedStretcher(stretcher, samples, chunk.sampleRate);
+      this.inputCursor = chunk.endTime;
     }
   }
 
-  private scheduleChunk(chunk: AudioChunk, startTime: number): number {
-    if (!this.context || !this.gainNode) {
-      return 0;
+  private anchor(time: number): void {
+    this.stretcher?.reset();
+    // Feedforward the current playback rate immediately: waiting for the next
+    // control tick would let drift build up through the scheduling pipeline
+    // and re-trigger a hard resync when the video is in catch-up mode.
+    const rate = Math.min(2, Math.max(0.5, this.videoElement?.playbackRate || 1));
+    this.stretcher?.setRatio(rate);
+    this.inputCursor = time;
+    this.stretcherBase = time;
+    this.outputStreamCursor = time;
+  }
+
+  private feedStretcher(stretcher: Stretcher, samples: Float32Array, sampleRate: number): void {
+    const out = stretcher.process(samples);
+    if (out.length === 0) {
+      return;
+    }
+    const streamEnd = this.stretcherBase + stretcher.position / sampleRate;
+    this.scheduleOutput(out, stretcher.channels, sampleRate, streamEnd);
+  }
+
+  // ==================== Output scheduling chain ====================
+
+  private scheduleOutput(out: Float32Array, channels: number, sampleRate: number, streamEnd: number): void {
+    const ctx = this.context;
+    if (!ctx || !this.gainNode) {
+      return;
     }
 
-    const { samples, channels, sampleRate } = chunk;
-    const samplesPerChannel = Math.floor(samples.length / channels);
+    const frames = Math.floor(out.length / channels);
+    const ctxNow = ctx.currentTime;
 
-    const buffer = this.context.createBuffer(channels, samplesPerChannel, sampleRate);
+    let chainRestart = false;
+    if (this.nextStartTime < ctxNow + 0.005) {
+      // Chain (re)start: if the audio about to play is ahead of the video
+      // clock, delay the chain start so it lines up instead of drifting.
+      const lead = this.videoElement ? this.outputStreamCursor - this.videoElement.currentTime : 0;
+      this.nextStartTime = ctxNow + Math.max(CHAIN_RESTART_DELAY, Math.min(lead, 2));
+      chainRestart = true;
+    }
 
+    const buffer = ctx.createBuffer(channels, frames, sampleRate);
     for (let ch = 0; ch < channels; ch++) {
       const channelData = buffer.getChannelData(ch);
-      for (let i = 0; i < samplesPerChannel; i++) {
-        channelData[i] = samples[i * channels + ch];
+      for (let i = 0; i < frames; i++) {
+        channelData[i] = out[i * channels + ch];
       }
     }
+    if (chainRestart) {
+      this.applyFadeIn(buffer);
+    }
 
-    const source = this.context.createBufferSource();
+    const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(this.gainNode);
-    source.start(startTime);
+    source.start(this.nextStartTime);
 
-    const endTime = startTime + buffer.duration;
-    this.scheduledSources.push({ source, startTime, endTime });
-    this.cleanupCompletedSources();
+    this.scheduledSpans.push({
+      source,
+      ctxStart: this.nextStartTime,
+      ctxEnd: this.nextStartTime + buffer.duration,
+      streamStart: this.outputStreamCursor,
+      streamEnd,
+    });
+    this.nextStartTime += buffer.duration;
+    this.outputStreamCursor = streamEnd;
 
-    return buffer.duration;
+    this.pruneSpans();
+  }
+
+  private applyFadeIn(buffer: AudioBuffer): void {
+    const fadeFrames = Math.min(Math.floor(FADE_SEC * buffer.sampleRate), buffer.length);
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let i = 0; i < fadeFrames; i++) {
+        data[i] *= (i + 1) / fadeFrames;
+      }
+    }
+  }
+
+  private pruneSpans(): void {
+    const ctx = this.context;
+    if (!ctx) return;
+    const ctxNow = ctx.currentTime;
+    while (this.scheduledSpans.length > 0 && this.scheduledSpans[0].ctxEnd < ctxNow - 0.5) {
+      try {
+        this.scheduledSpans[0].source.disconnect();
+      } catch (_e) {}
+      this.scheduledSpans.shift();
+    }
+  }
+
+  /** Stream time currently being played, derived from the scheduling chain. */
+  private audioStreamTimeNow(): number | null {
+    const ctx = this.context;
+    if (!ctx || this.scheduledSpans.length === 0) {
+      return null;
+    }
+    const ctxNow = ctx.currentTime;
+    for (const span of this.scheduledSpans) {
+      if (ctxNow >= span.ctxStart && ctxNow < span.ctxEnd) {
+        const f = (ctxNow - span.ctxStart) / (span.ctxEnd - span.ctxStart);
+        return span.streamStart + f * (span.streamEnd - span.streamStart);
+      }
+    }
+    return null; // before the chain starts or after it drained
+  }
+
+  private cancelChain(smooth = false): void {
+    const ctx = this.context;
+    if (smooth && ctx && this.gainNode && this.scheduledSpans.length > 0 && ctx.state === "running") {
+      // Quick gain dip so already-playing audio doesn't click when stopped
+      const now = ctx.currentTime;
+      const target = this.muted ? 0 : this.volume;
+      const g = this.gainNode.gain;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(target, now);
+      g.linearRampToValueAtTime(0, now + FADE_SEC);
+      g.setValueAtTime(target, now + 0.03);
+      for (const span of this.scheduledSpans) {
+        try {
+          span.source.stop(now + FADE_SEC + 0.001);
+        } catch (_e) {}
+      }
+    } else {
+      for (const span of this.scheduledSpans) {
+        try {
+          span.source.stop();
+          span.source.disconnect();
+        } catch (_e) {}
+      }
+    }
+    this.scheduledSpans = [];
+    this.nextStartTime = 0;
+  }
+
+  // ==================== Drift control ====================
+
+  private controlTick(): void {
+    const ctx = this.context;
+    const video = this.videoElement;
+    if (!ctx || !video || ctx.state !== "running" || video.paused || this.isSeeking || !this.stretcher) {
+      return;
+    }
+
+    const audioTime = this.audioStreamTimeNow();
+    if (audioTime === null) {
+      // Chain idle: if nothing is pending but the seek buffer covers the
+      // current position (e.g. after resume), rebuild from it.
+      if (this.pendingChunks.length === 0 && this.scheduledSpans.length === 0 && this.audioBuffer.length > 0) {
+        const target = video.currentTime;
+        const idx = this.findChunkIndexByTime(target);
+        if (idx >= 0 && this.audioBuffer[this.audioBuffer.length - 1].endTime > target + 0.1) {
+          this.resyncFromBuffer(target);
+        }
+      }
+      return;
+    }
+
+    const drift = audioTime - video.currentTime;
+    if (this.hasDriftEma) {
+      this.driftEma = this.driftEma + DRIFT_EMA_ALPHA * (drift - this.driftEma);
+    } else {
+      this.driftEma = drift;
+      this.hasDriftEma = true;
+    }
+
+    if (Math.abs(this.driftEma) > HARD_RESYNC_THRESHOLD) {
+      Log.v(TAG, `Hard resync: drift=${this.driftEma.toFixed(3)}s`);
+      this.resyncFromBuffer(video.currentTime);
+      return;
+    }
+
+    // Rate matching: follow video.playbackRate, correct residual drift.
+    // Positive drift = audio ahead → slow down (smaller ratio).
+    const rate = Math.min(2, Math.max(0.5, video.playbackRate || 1));
+    const correction = Math.min(RATIO_DRIFT_MAX, Math.max(-RATIO_DRIFT_MAX, this.driftEma * RATIO_DRIFT_GAIN));
+    const ratio = Math.min(2, Math.max(0.5, rate * (1 - correction)));
+    this.stretcher.setRatio(ratio);
+
+    if (++this.driftLogCounter >= DRIFT_LOG_TICKS) {
+      this.driftLogCounter = 0;
+      Log.v(TAG, `A/V drift=${(this.driftEma * 1000).toFixed(1)}ms, rate=${rate}, stretch ratio=${ratio.toFixed(4)}`);
+    }
   }
 
   // ==================== Buffer Management ====================
@@ -369,50 +639,54 @@ export class PCMAudioPlayer {
     return low < this.audioBuffer.length ? low : -1;
   }
 
+  // ==================== Resync / Seek ====================
+
   /**
-   * Push all audioBuffer chunks from startIndex into pendingChunks.
-   * Only references are copied (no PCM data duplication).
-   * scheduleChunks() applies drift-based sync and only schedules up to 5s ahead.
+   * Rebuild the scheduling chain from the seek buffer at a target position
+   * (used for seeks, resume after pause/suspend, and hard resyncs).
    */
-  private refillFromBuffer(startIndex: number): void {
+  private resyncFromBuffer(targetTime: number): void {
+    this.cancelChain(true);
+    this.pendingChunks = [];
+    this.inputCursor = null;
+    this.driftEma = 0;
+    this.hasDriftEma = false;
+
+    const startIndex = this.findChunkIndexByTime(targetTime);
+    if (startIndex < 0) {
+      Log.v(TAG, "Resync target not in buffer, waiting for new data");
+      return;
+    }
+
     for (let i = startIndex; i < this.audioBuffer.length; i++) {
-      this.pendingChunks.push(this.audioBuffer[i]);
-    }
-  }
-
-  // ==================== Source Tracking ====================
-
-  private cancelScheduledAudio(): void {
-    for (const scheduled of this.scheduledSources) {
-      try {
-        scheduled.source.stop();
-        scheduled.source.disconnect();
-      } catch (_e) {}
-    }
-    this.scheduledSources = [];
-    this.lastScheduledEndTime = 0;
-  }
-
-  private cleanupCompletedSources(): void {
-    if (!this.context) return;
-    const ctxTime = this.context.currentTime;
-    this.scheduledSources = this.scheduledSources.filter((scheduled) => {
-      if (scheduled.endTime < ctxTime - 0.1) {
-        try {
-          scheduled.source.disconnect();
-        } catch (_e) {}
-        return false;
+      let chunk = this.audioBuffer[i];
+      if (i === startIndex && targetTime > chunk.time + GAP_SNAP) {
+        // Trim the head so the chain starts exactly at the target position
+        const cutFrames = Math.round((targetTime - chunk.time) * chunk.sampleRate);
+        const totalFrames = Math.floor(chunk.samples.length / chunk.channels);
+        if (cutFrames >= totalFrames) {
+          continue;
+        }
+        const time = chunk.time + cutFrames / chunk.sampleRate;
+        chunk = {
+          samples: chunk.samples.subarray(cutFrames * chunk.channels),
+          channels: chunk.channels,
+          sampleRate: chunk.sampleRate,
+          time,
+          duration: chunk.endTime - time,
+          endTime: chunk.endTime,
+        };
       }
-      return true;
-    });
+      this.pendingChunks.push(chunk);
+    }
+    Log.v(TAG, `Resync at ${targetTime.toFixed(3)}s, refilled ${this.pendingChunks.length} chunks`);
+    this.pump();
   }
-
-  // ==================== Seek Event Handlers ====================
 
   private onVideoSeeking(): void {
     Log.v(TAG, "Video seeking, canceling scheduled audio");
     this.isSeeking = true;
-    this.cancelScheduledAudio();
+    this.cancelChain();
     this.pendingChunks = [];
   }
 
@@ -421,24 +695,7 @@ export class PCMAudioPlayer {
     const targetTime = this.videoElement.currentTime;
     Log.v(TAG, `Video seeked to ${targetTime.toFixed(3)}`);
     this.isSeeking = false;
-    this.seekToTime(targetTime);
-  }
-
-  /** Seek audio to a video timeline position. Buffer PTS is in video timeline, so
-   *  targetTime can be used directly for buffer lookup — works across segments. */
-  seekToTime(targetTime: number): void {
-    this.cancelScheduledAudio();
-    this.pendingChunks = [];
-
-    const startIndex = this.findChunkIndexByTime(targetTime);
-    if (startIndex >= 0) {
-      Log.v(TAG, `Seek hit buffer at chunk ${startIndex}, refilling ${this.audioBuffer.length - startIndex} chunks`);
-      this.refillFromBuffer(startIndex);
-      this.scheduleChunks();
-      return;
-    }
-
-    Log.v(TAG, "Seek target not in buffer, waiting for new data");
+    this.resyncFromBuffer(targetTime);
   }
 
   // ==================== Playback Control ====================
@@ -447,9 +704,12 @@ export class PCMAudioPlayer {
     if (this.context?.state === "suspended") {
       try {
         await this.context.resume();
+        // onstatechange → resyncFromBuffer
       } catch (_e) {
         Log.w(TAG, "Failed to resume AudioContext on play()");
       }
+    } else if (this.videoElement) {
+      this.resyncFromBuffer(this.videoElement.currentTime);
     }
 
     if (this.audioElement) {
@@ -462,8 +722,9 @@ export class PCMAudioPlayer {
   }
 
   pause(): void {
-    this.cancelScheduledAudio();
+    this.cancelChain();
     this.pendingChunks = [];
+    this.inputCursor = null;
 
     if (this.context?.state === "running") {
       this.context.suspend();
@@ -475,17 +736,16 @@ export class PCMAudioPlayer {
   }
 
   stop(): void {
-    this.cancelScheduledAudio();
+    this.cancelChain();
 
     this.pendingChunks = [];
     this.audioBuffer = [];
 
     this.isSeeking = false;
-    this.lastScheduledEndTime = 0;
-
-    this.basePtsEstablished = false;
-    this.basePtsOffset = 0;
-    this.lastFeedPts = -1;
+    this.inputCursor = null;
+    this.stretcher?.reset();
+    this.driftEma = 0;
+    this.hasDriftEma = false;
   }
 
   setVolume(volume: number): void {
@@ -499,8 +759,10 @@ export class PCMAudioPlayer {
   }
 
   private updateGain(): void {
-    if (this.gainNode) {
-      this.gainNode.gain.value = this.muted ? 0 : this.volume;
+    if (this.gainNode && this.context) {
+      const g = this.gainNode.gain;
+      g.cancelScheduledValues(this.context.currentTime);
+      g.value = this.muted ? 0 : this.volume;
     }
     if (this.audioElement) {
       this.audioElement.volume = this.muted ? 0 : this.volume;
@@ -510,6 +772,11 @@ export class PCMAudioPlayer {
   async destroy(): Promise<void> {
     this.stop();
     this.detachVideo();
+
+    if (this.stretcher) {
+      this.stretcher.destroy();
+      this.stretcher = null;
+    }
 
     if (this.audioElement) {
       this.audioElement.pause();

@@ -4,22 +4,35 @@
  * Minimal WASM wrapper for minimp3 — directly calls WASM exports
  * without the Emscripten JS glue.
  *
+ * Decodes whole PES payloads: the WASM side loops over all complete frames
+ * and keeps trailing partial frames in an internal carry buffer, so frames
+ * split across PES packets are handled transparently.
+ *
  * The WASM is built as standalone (`-o .wasm`) with -O2 to preserve
  * readable export/import names.
  */
 
-// Maximum samples per frame for MPEG audio
-const MAX_SAMPLES_PER_FRAME = 1152 * 2; // 1152 samples × 2 channels
+// Maximum samples per frame for MPEG audio (all channels interleaved)
+const MAX_SAMPLES_PER_FRAME = 1152 * 2;
 
-// Info array layout (6 × i32): [samples, sampleRate, channels, layer, bitrate, frameBytes]
+// Smallest valid Layer II frame (32kbps @ 48kHz): used to bound the
+// number of frames a payload can contain when sizing the output buffer.
+const MIN_FRAME_BYTES = 96;
+
+// Carry buffer size on the WASM side (one partial frame at most)
+const CARRY_MAX = 2048;
+
+// Info array layout (6 × i32):
+// [samplesPerChannel, sampleRate, channels, frames, carryBytes, consumedBytes]
 const INFO_SAMPLES = 0;
 const INFO_SAMPLE_RATE = 1;
 const INFO_CHANNELS = 2;
 const INFO_I32_COUNT = 6;
 
-interface DecodedAudio {
+export interface DecodedAudio {
+  /** Interleaved float32 PCM for all decoded frames. */
   pcm: Float32Array;
-  samples: number;
+  samplesPerChannel: number;
   sampleRate: number;
   channels: number;
 }
@@ -43,6 +56,7 @@ export class MpegAudioDecoder {
   private outputPtr = 0;
   private infoPtr = 0;
   private inputBufSize = 0;
+  private outputBufFloats = 0;
 
   private _ready: Promise<void>;
   private _isReady = false;
@@ -77,8 +91,7 @@ export class MpegAudioDecoder {
     }
 
     const malloc = ex.malloc as (size: number) => number;
-    this.outputPtr = malloc(MAX_SAMPLES_PER_FRAME * 2); // int16 output
-    this.infoPtr = malloc(INFO_I32_COUNT * 4); // int32 array
+    this.infoPtr = malloc(INFO_I32_COUNT * 4);
 
     this._isReady = true;
   }
@@ -96,37 +109,51 @@ export class MpegAudioDecoder {
       this.inputPtr = malloc(this.inputBufSize);
     }
 
+    // Grow output buffer to hold every frame the payload could contain
+    const maxFrames = Math.floor((CARRY_MAX + input.length) / MIN_FRAME_BYTES) + 2;
+    const neededFloats = maxFrames * MAX_SAMPLES_PER_FRAME;
+    if (neededFloats > this.outputBufFloats) {
+      if (this.outputPtr) free(this.outputPtr);
+      this.outputBufFloats = neededFloats;
+      this.outputPtr = malloc(neededFloats * 4);
+    }
+
     // Copy input into WASM memory
     const heap = new Uint8Array(this.memoryRef.memory.buffer);
     heap.set(input, this.inputPtr);
 
-    const decodeFn = this.exports.mpeg_audio_decode_frame as (
+    const decodeFn = this.exports.mpeg_audio_decode_payload as (
       dec: number,
       inp: number,
       inpSz: number,
       out: number,
+      outCap: number,
       info: number,
     ) => number;
-    const samples = decodeFn(this.decoderPtr, this.inputPtr, input.length, this.outputPtr, this.infoPtr);
+    const samples = decodeFn(
+      this.decoderPtr,
+      this.inputPtr,
+      input.length,
+      this.outputPtr,
+      this.outputBufFloats,
+      this.infoPtr,
+    );
     if (samples <= 0) return null;
 
     // Read info from WASM memory (may have changed due to memory growth)
     const i32 = new Int32Array(this.memoryRef.memory.buffer);
     const infoBase = this.infoPtr >> 2;
-    const infoSamples = i32[infoBase + INFO_SAMPLES];
+    const samplesPerChannel = i32[infoBase + INFO_SAMPLES];
     const sampleRate = i32[infoBase + INFO_SAMPLE_RATE];
     const channels = i32[infoBase + INFO_CHANNELS];
 
-    // Read int16 output and convert to float32
-    const totalSamples = infoSamples * channels;
-    const i16 = new Int16Array(this.memoryRef.memory.buffer, this.outputPtr, totalSamples);
-    const pcm = new Float32Array(totalSamples);
-    const scale = 1.0 / 32768.0;
-    for (let j = 0; j < totalSamples; j++) {
-      pcm[j] = i16[j] * scale;
-    }
+    // Copy float32 PCM out of WASM memory
+    const totalFloats = samplesPerChannel * channels;
+    const view = new Float32Array(this.memoryRef.memory.buffer, this.outputPtr, totalFloats);
+    const pcm = new Float32Array(totalFloats);
+    pcm.set(view);
 
-    return { pcm, samples: infoSamples, sampleRate, channels };
+    return { pcm, samplesPerChannel, sampleRate, channels };
   }
 
   /** Reset decoder state (call on stream switch to avoid stale mdct/qmf state) */
