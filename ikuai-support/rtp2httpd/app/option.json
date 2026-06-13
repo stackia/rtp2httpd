@@ -56,7 +56,7 @@
     "attrname": "RTP2HTTPD_UPSTREAM_INTERFACE",
     "label": {
       "en": "Default upstream interface (empty = routing table)",
-      "zh": "默认上游接口（留空自动）"
+      "zh": "默认上游接口（留空按照路由表）"
     },
     "required": false,
     "scope": "config",
