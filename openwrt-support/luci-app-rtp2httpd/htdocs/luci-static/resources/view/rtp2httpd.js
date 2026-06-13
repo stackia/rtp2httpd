@@ -117,6 +117,7 @@ return view.extend({
 
   // Helper function to open a page (status or player)
   openPage: function (section_id, pageType) {
+    var self = this;
     var pathConfigKey =
       pageType === "status" ? "status-page-path" : "player-page-path";
     var uciPathKey =
