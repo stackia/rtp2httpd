@@ -79,16 +79,13 @@ load_env_file "$RUNTIME_ENV"
 : "${RTP2HTTPD_EXTERNAL_M3U:=}"
 : "${RTP2HTTPD_EXTERNAL_M3U_UPDATE_INTERVAL:=7200}"
 : "${RTP2HTTPD_PLAYER_PAGE_PATH:=}"
-: "${RTP2HTTPD_STATUS_PAGE_PATH:=}"
+: "${APP_WEB_LOGIN_URI:=}"
 : "${RTP2HTTPD_HOSTNAME:=}"
 : "${RTP2HTTPD_R2H_TOKEN:=}"
 : "${RTP2HTTPD_CORS_ALLOW_ORIGIN:=}"
 : "${RTP2HTTPD_XFF:=0}"
 : "${RTP2HTTPD_HTTP_PROXY_USER_AGENT:=}"
 : "${RTP2HTTPD_RTSP_USER_AGENT:=}"
-: "${RTP2HTTPD_VIDEO_SNAPSHOT:=0}"
-: "${RTP2HTTPD_FFMPEG_PATH:=}"
-: "${RTP2HTTPD_FFMPEG_ARGS:=}"
 : "${RTP2HTTPD_EXTRA_ARGS:=}"
 
 if [ ! -x "$BIN" ]; then
@@ -155,8 +152,8 @@ fi
 if [ -n "$RTP2HTTPD_PLAYER_PAGE_PATH" ]; then
   set -- "$@" --player-page-path "$RTP2HTTPD_PLAYER_PAGE_PATH"
 fi
-if [ -n "$RTP2HTTPD_STATUS_PAGE_PATH" ]; then
-  set -- "$@" --status-page-path "$RTP2HTTPD_STATUS_PAGE_PATH"
+if [ -n "$APP_WEB_LOGIN_URI" ]; then
+  set -- "$@" --status-page-path "$APP_WEB_LOGIN_URI"
 fi
 if [ -n "$RTP2HTTPD_HOSTNAME" ]; then
   set -- "$@" --hostname "$RTP2HTTPD_HOSTNAME"
@@ -175,15 +172,6 @@ if [ -n "$RTP2HTTPD_HTTP_PROXY_USER_AGENT" ]; then
 fi
 if [ -n "$RTP2HTTPD_RTSP_USER_AGENT" ]; then
   set -- "$@" --rtsp-user-agent "$RTP2HTTPD_RTSP_USER_AGENT"
-fi
-if [ "$RTP2HTTPD_VIDEO_SNAPSHOT" = "1" ]; then
-  set -- "$@" --video-snapshot
-fi
-if [ -n "$RTP2HTTPD_FFMPEG_PATH" ]; then
-  set -- "$@" --ffmpeg-path "$RTP2HTTPD_FFMPEG_PATH"
-fi
-if [ -n "$RTP2HTTPD_FFMPEG_ARGS" ]; then
-  set -- "$@" --ffmpeg-args "$RTP2HTTPD_FFMPEG_ARGS"
 fi
 
 if [ -f "$CONFIG_FILE" ]; then

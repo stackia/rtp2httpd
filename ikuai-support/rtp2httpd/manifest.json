@@ -8,7 +8,7 @@
   "maintainer": "stackia",
   "maintainer_url": "https://github.com/stackia/rtp2httpd",
   "distributor": "stackia",
-  "distributor_url": "https://github.com/stackia/rtp2httpd",
+  "distributor_url": "https://rtp2httpd.com",
   "requirements": {
     "memory": "64MB",
     "storage": "16MB",

@@ -52,24 +52,11 @@
     "max": 5000
   },
   {
-    "default": 1,
-    "attrname": "RTP2HTTPD_WORKERS",
-    "label": {
-      "en": "Worker processes (1 for low-end devices, CPU cores for best throughput)",
-      "zh": "工作进程数（低配设备建议 1，追求吞吐量可设为 CPU 核心数）"
-    },
-    "required": true,
-    "scope": "config",
-    "type": "integer",
-    "min": 1,
-    "max": 64
-  },
-  {
     "default": "",
     "attrname": "RTP2HTTPD_UPSTREAM_INTERFACE",
     "label": {
-      "en": "Upstream interface for all traffic, e.g. eth1 (empty = use routing table)",
-      "zh": "上游接口，所有上游流量默认使用的网卡，如 eth1（留空使用路由表）"
+      "en": "Default upstream interface (empty = routing table)",
+      "zh": "默认上游接口（留空自动）"
     },
     "required": false,
     "scope": "config",
@@ -81,8 +68,8 @@
     "default": "",
     "attrname": "RTP2HTTPD_UPSTREAM_INTERFACE_MULTICAST",
     "label": {
-      "en": "Upstream multicast interface (advanced, overrides upstream interface)",
-      "zh": "上游组播接口（高级，覆盖上面的上游接口）"
+      "en": "Multicast upstream interface (overrides default)",
+      "zh": "组播上游接口（覆盖默认）"
     },
     "required": false,
     "scope": "config",
@@ -94,8 +81,8 @@
     "default": "",
     "attrname": "RTP2HTTPD_UPSTREAM_INTERFACE_FCC",
     "label": {
-      "en": "Upstream FCC interface (advanced)",
-      "zh": "上游 FCC 接口（高级）"
+      "en": "FCC upstream interface (overrides default)",
+      "zh": "FCC 上游接口（覆盖默认）"
     },
     "required": false,
     "scope": "config",
@@ -107,8 +94,8 @@
     "default": "",
     "attrname": "RTP2HTTPD_UPSTREAM_INTERFACE_RTSP",
     "label": {
-      "en": "Upstream RTSP interface (advanced)",
-      "zh": "上游 RTSP 接口（高级）"
+      "en": "RTSP upstream interface (overrides default)",
+      "zh": "RTSP 上游接口（覆盖默认）"
     },
     "required": false,
     "scope": "config",
@@ -120,92 +107,14 @@
     "default": "",
     "attrname": "RTP2HTTPD_UPSTREAM_INTERFACE_HTTP",
     "label": {
-      "en": "Upstream HTTP proxy interface (advanced)",
-      "zh": "上游 HTTP 代理接口（高级）"
+      "en": "HTTP proxy upstream interface (overrides default)",
+      "zh": "HTTP 代理上游接口（覆盖默认）"
     },
     "required": false,
     "scope": "config",
     "type": "text",
     "min": 0,
     "max": 16
-  },
-  {
-    "default": 16384,
-    "attrname": "RTP2HTTPD_BUFFER_POOL_MAX_SIZE",
-    "label": {
-      "en": "Buffer pool max size (1536 bytes each, default 16384 = ~24MB)",
-      "zh": "缓冲池最大容量（每个 1536 字节，默认 16384 约 24MB）"
-    },
-    "required": true,
-    "scope": "config",
-    "type": "integer",
-    "min": 1024,
-    "max": 1048576
-  },
-  {
-    "default": 524288,
-    "attrname": "RTP2HTTPD_UDP_RCVBUF_SIZE",
-    "label": {
-      "en": "UDP receive buffer size in bytes (default 524288 = 512KB)",
-      "zh": "UDP 接收缓冲区大小（字节，默认 524288 即 512KB）"
-    },
-    "required": true,
-    "scope": "config",
-    "type": "integer",
-    "min": 65536,
-    "max": 16777216
-  },
-  {
-    "default": 0,
-    "attrname": "RTP2HTTPD_MCAST_REJOIN_INTERVAL",
-    "label": {
-      "en": "Multicast rejoin interval in seconds (0 = disabled, use only on stream interruptions)",
-      "zh": "组播周期性重加入间隔（秒，0=禁用，仅在组播断流时启用）"
-    },
-    "required": true,
-    "scope": "config",
-    "type": "integer",
-    "min": 0,
-    "max": 86400
-  },
-  {
-    "default": "",
-    "attrname": "RTP2HTTPD_FCC_LISTEN_PORT_RANGE",
-    "label": {
-      "en": "FCC listen port range, e.g. 40000-40100 (empty = random)",
-      "zh": "FCC 监听端口范围，如 40000-40100（留空使用随机端口）"
-    },
-    "required": false,
-    "scope": "config",
-    "type": "text",
-    "min": 0,
-    "max": 16
-  },
-  {
-    "default": 0,
-    "attrname": "RTP2HTTPD_ZEROCOPY_ON_SEND",
-    "label": {
-      "en": "Zero-copy on send (0=off 1=on, requires kernel 4.14+)",
-      "zh": "零拷贝发送（0=关闭 1=开启，需内核 4.14+，仅在性能瓶颈时开启）"
-    },
-    "required": true,
-    "scope": "config",
-    "type": "integer",
-    "min": 0,
-    "max": 1
-  },
-  {
-    "default": "",
-    "attrname": "RTP2HTTPD_RTSP_STUN_SERVER",
-    "label": {
-      "en": "RTSP STUN server for NAT traversal, e.g. stun.miwifi.com",
-      "zh": "RTSP STUN 服务器（NAT 穿透用，如 stun.miwifi.com）"
-    },
-    "required": false,
-    "scope": "config",
-    "type": "text",
-    "min": 0,
-    "max": 128
   },
   {
     "default": "",
@@ -248,7 +157,7 @@
   },
   {
     "default": "/status",
-    "attrname": "RTP2HTTPD_STATUS_PAGE_PATH",
+    "attrname": "APP_WEB_LOGIN_URI",
     "label": {
       "en": "Status page path (default /status)",
       "zh": "状态页面路径（默认 /status）"
@@ -286,6 +195,110 @@
     "max": 128
   },
   {
+    "default": 0,
+    "attrname": "RTP2HTTPD_MCAST_REJOIN_INTERVAL",
+    "label": {
+      "en": "Multicast rejoin interval in seconds (0 = disabled, use only on stream interruptions)",
+      "zh": "组播周期性重加入间隔（秒，0=禁用，仅在组播断流时启用）"
+    },
+    "required": true,
+    "scope": "config",
+    "type": "integer",
+    "min": 0,
+    "max": 86400
+  },
+  {
+    "default": 0,
+    "attrname": "RTP2HTTPD_XFF",
+    "label": {
+      "en": "Trust X-Forwarded-For headers (0=off 1=on, only behind reverse proxy)",
+      "zh": "信任 X-Forwarded-For 头（0=关闭 1=开启，使用前置反代需开启）"
+    },
+    "required": true,
+    "scope": "config",
+    "type": "integer",
+    "min": 0,
+    "max": 1
+  },
+  {
+    "default": 1,
+    "attrname": "RTP2HTTPD_WORKERS",
+    "label": {
+      "en": "Worker processes (1 for low-end devices, CPU cores for best throughput)",
+      "zh": "工作进程数（低配设备建议 1，追求吞吐量可设为 CPU 核心数）"
+    },
+    "required": true,
+    "scope": "config",
+    "type": "integer",
+    "min": 1,
+    "max": 64
+  },
+  {
+    "default": 16384,
+    "attrname": "RTP2HTTPD_BUFFER_POOL_MAX_SIZE",
+    "label": {
+      "en": "Buffer pool max size (1536 bytes each, default 16384 = ~24MB)",
+      "zh": "缓冲池最大容量（每个 1536 字节，默认 16384 约 24MB）"
+    },
+    "required": true,
+    "scope": "config",
+    "type": "integer",
+    "min": 1024,
+    "max": 1048576
+  },
+  {
+    "default": 524288,
+    "attrname": "RTP2HTTPD_UDP_RCVBUF_SIZE",
+    "label": {
+      "en": "UDP receive buffer size in bytes (default 524288 = 512KB)",
+      "zh": "UDP 接收缓冲区大小（字节，默认 524288 即 512KB）"
+    },
+    "required": true,
+    "scope": "config",
+    "type": "integer",
+    "min": 65536,
+    "max": 16777216
+  },
+  {
+    "default": "",
+    "attrname": "RTP2HTTPD_FCC_LISTEN_PORT_RANGE",
+    "label": {
+      "en": "FCC listen port range, e.g. 40000-40100 (empty = random)",
+      "zh": "FCC 监听端口范围，如 40000-40100（留空使用随机端口）"
+    },
+    "required": false,
+    "scope": "config",
+    "type": "text",
+    "min": 0,
+    "max": 16
+  },
+  {
+    "default": 0,
+    "attrname": "RTP2HTTPD_ZEROCOPY_ON_SEND",
+    "label": {
+      "en": "Zero-copy on send (0=off 1=on, enable only for performance bottlenecks)",
+      "zh": "零拷贝发送（0=关闭 1=开启，仅在性能瓶颈时开启）"
+    },
+    "required": true,
+    "scope": "config",
+    "type": "integer",
+    "min": 0,
+    "max": 1
+  },
+  {
+    "default": "",
+    "attrname": "RTP2HTTPD_RTSP_STUN_SERVER",
+    "label": {
+      "en": "RTSP STUN server for NAT traversal, e.g. stun.miwifi.com",
+      "zh": "RTSP STUN 服务器（NAT 穿透用，如 stun.miwifi.com）"
+    },
+    "required": false,
+    "scope": "config",
+    "type": "text",
+    "min": 0,
+    "max": 128
+  },
+  {
     "default": "",
     "attrname": "RTP2HTTPD_CORS_ALLOW_ORIGIN",
     "label": {
@@ -297,19 +310,6 @@
     "type": "text",
     "min": 0,
     "max": 256
-  },
-  {
-    "default": 0,
-    "attrname": "RTP2HTTPD_XFF",
-    "label": {
-      "en": "Trust X-Forwarded-For headers (0=off 1=on, only behind reverse proxy)",
-      "zh": "信任 X-Forwarded-For 头（0=关闭 1=开启，仅反向代理场景）"
-    },
-    "required": true,
-    "scope": "config",
-    "type": "integer",
-    "min": 0,
-    "max": 1
   },
   {
     "default": "",
@@ -338,50 +338,11 @@
     "max": 256
   },
   {
-    "default": 0,
-    "attrname": "RTP2HTTPD_VIDEO_SNAPSHOT",
-    "label": {
-      "en": "Video snapshot (0=off 1=on, requires ffmpeg on the host)",
-      "zh": "视频快照（0=关闭 1=开启，需要主机已安装 ffmpeg）"
-    },
-    "required": true,
-    "scope": "config",
-    "type": "integer",
-    "min": 0,
-    "max": 1
-  },
-  {
-    "default": "",
-    "attrname": "RTP2HTTPD_FFMPEG_PATH",
-    "label": {
-      "en": "FFmpeg executable path (empty = find in PATH)",
-      "zh": "FFmpeg 可执行文件路径（留空则在 PATH 中查找）"
-    },
-    "required": false,
-    "scope": "config",
-    "type": "text",
-    "min": 0,
-    "max": 256
-  },
-  {
-    "default": "",
-    "attrname": "RTP2HTTPD_FFMPEG_ARGS",
-    "label": {
-      "en": "Extra FFmpeg arguments for snapshot, e.g. -hwaccel auto",
-      "zh": "FFmpeg 额外参数（生成快照用，如 -hwaccel auto）"
-    },
-    "required": false,
-    "scope": "config",
-    "type": "text",
-    "min": 0,
-    "max": 256
-  },
-  {
     "default": "",
     "attrname": "RTP2HTTPD_EXTRA_ARGS",
     "label": {
-      "en": "Extra command line arguments (advanced)",
-      "zh": "额外启动参数（高级）"
+      "en": "Extra command line arguments",
+      "zh": "额外启动参数"
     },
     "required": false,
     "scope": "config",
