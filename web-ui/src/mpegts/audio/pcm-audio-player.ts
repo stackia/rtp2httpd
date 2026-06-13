@@ -463,7 +463,7 @@ export class PCMAudioPlayer {
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
       const data = buffer.getChannelData(ch);
       for (let i = 0; i < fadeFrames; i++) {
-        data[i] *= i / fadeFrames;
+        data[i] *= (i + 1) / fadeFrames;
       }
     }
   }

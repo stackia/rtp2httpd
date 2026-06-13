@@ -286,6 +286,11 @@ class Pipeline {
         // their own timeline, so flush between them.
         if (!this._hlsSource) {
           this._remuxer?.flushStashedSamples();
+          // Each static segment is an independent TS timeline: a partial MP2
+          // frame carried from the previous URL must not be prepended to the
+          // next one, and the PTS anchor must re-establish from the new PES
+          this._workerAudioDecoder?.reset();
+          this._resetAudioTiming();
         }
       } catch (e) {
         if (this._runId !== runId || e === CANCELLED) return;
