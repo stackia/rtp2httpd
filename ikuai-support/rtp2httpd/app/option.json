@@ -26,7 +26,7 @@
     "max": 65535
   },
   {
-    "default": 2,
+    "default": 1,
     "attrname": "RTP2HTTPD_VERBOSITY",
     "label": {
       "en": "Logging level (0=Fatal 1=Error 2=Warn 3=Info 4=Debug)",
@@ -39,7 +39,7 @@
     "max": 4
   },
   {
-    "default": 20,
+    "default": 5,
     "attrname": "RTP2HTTPD_MAXCLIENTS",
     "label": {
       "en": "Max clients allowed",
