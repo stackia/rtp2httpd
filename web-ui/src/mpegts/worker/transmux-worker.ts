@@ -46,9 +46,9 @@ function createPipeline(segments: PlayerSegment[], config: PlayerConfig): Pipeli
     onHlsInfo(info) {
       post({ type: "hls-info", live: info.live, totalDuration: info.totalDuration, gen });
     },
-    onPCMAudioData(pcm, channels, sampleRate, pts) {
+    onPCMAudioData(pcm, channels, sampleRate, time) {
       const buffer = pcm.buffer as ArrayBuffer;
-      post({ type: "pcm-audio-data", pcm: buffer, channels, sampleRate, pts, gen }, [buffer]);
+      post({ type: "pcm-audio-data", pcm: buffer, channels, sampleRate, time, gen }, [buffer]);
     },
   };
 

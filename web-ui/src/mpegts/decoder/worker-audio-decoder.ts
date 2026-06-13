@@ -6,16 +6,9 @@
  */
 
 import Log from "../utils/logger";
-import { MpegAudioDecoder } from "./mpeg-audio-decoder";
+import { type DecodedAudio, MpegAudioDecoder } from "./mpeg-audio-decoder";
 
 const TAG = "WorkerAudioDecoder";
-
-interface PCMAudioData {
-  pcm: Float32Array;
-  channels: number;
-  sampleRate: number;
-  pts: number; // PTS in milliseconds
-}
 
 /**
  * Audio decoder for use in Web Worker (MP2 only).
@@ -50,18 +43,10 @@ export class WorkerAudioDecoder {
     }
   }
 
-  decode(data: Uint8Array, pts: number): PCMAudioData | null {
+  /** Decode all complete frames in a PES payload (partial frames are carried over). */
+  decode(data: Uint8Array): DecodedAudio | null {
     if (!this.decoder?.isReady) return null;
-
-    const result = this.decoder.decode(data);
-    if (!result) return null;
-
-    return {
-      pcm: result.pcm,
-      channels: result.channels,
-      sampleRate: result.sampleRate,
-      pts,
-    };
+    return this.decoder.decode(data);
   }
 
   reset(): void {

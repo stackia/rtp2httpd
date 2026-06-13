@@ -142,7 +142,7 @@ export function createMpegtsPlayer(
         const player = ensurePCMPlayer();
         const pcm = new Float32Array(msg.pcm);
         pcmPlayerInitPromise?.then(() => {
-          player.feed(pcm, msg.channels, msg.sampleRate, msg.pts / 1000);
+          player.feed(pcm, msg.channels, msg.sampleRate, msg.time);
         });
         break;
       }
