@@ -13,6 +13,8 @@ interface SettingsDropdownProps {
   onThemeChange: (theme: ThemeMode) => void;
   force16x9: boolean;
   onForce16x9Change: (enabled: boolean) => void;
+  smoothSwitch: boolean;
+  onSmoothSwitchChange: (enabled: boolean) => void;
   mp2SoftDecode: boolean;
   onMp2SoftDecodeChange: (enabled: boolean) => void;
 }
@@ -38,6 +40,8 @@ function SettingsDropdownComponent({
   onThemeChange,
   force16x9,
   onForce16x9Change,
+  smoothSwitch,
+  onSmoothSwitchChange,
   mp2SoftDecode,
   onMp2SoftDecodeChange,
 }: SettingsDropdownProps) {
@@ -108,6 +112,12 @@ function SettingsDropdownComponent({
             <div className="flex items-center justify-between px-1">
               <span className="text-xs font-medium text-muted-foreground">{t("force16x9")}</span>
               <Switch checked={force16x9} onCheckedChange={onForce16x9Change} aria-label={t("force16x9")} />
+            </div>
+
+            {/* Seamless channel/source switch (dual-slot preload) */}
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-medium text-muted-foreground">{t("smoothSwitch")}</span>
+              <Switch checked={smoothSwitch} onCheckedChange={onSmoothSwitchChange} aria-label={t("smoothSwitch")} />
             </div>
 
             {/* MP2 Audio Software Decode Toggle */}

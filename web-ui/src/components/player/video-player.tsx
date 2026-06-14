@@ -42,6 +42,7 @@ interface VideoPlayerProps {
   onToggleSidebar?: () => void;
   onFullscreenToggle?: () => void;
   force16x9?: boolean;
+  smoothSwitch?: boolean;
   mp2SoftDecode?: boolean;
   activeSourceIndex?: number;
   onSourceChange?: (index: number) => void;
@@ -73,6 +74,7 @@ export function VideoPlayer({
   onToggleSidebar,
   onFullscreenToggle,
   force16x9 = true,
+  smoothSwitch = true,
   mp2SoftDecode = false,
   activeSourceIndex = 0,
   onSourceChange,
@@ -541,6 +543,7 @@ export function VideoPlayer({
       (channel.id !== prevStreamRef.current.channelId || activeSourceIndex !== prevStreamRef.current.sourceIndex);
     const activeVideo = slotVideoRef(activeId).current;
     const useSeamlessSwitch =
+      smoothSwitch &&
       hasStartedPlaybackRef.current &&
       isStreamSwitch &&
       playMode === "live" &&
@@ -647,6 +650,13 @@ export function VideoPlayer({
       destroySlot("b");
     };
   }, [mp2SoftDecode]);
+
+  useEffect(() => {
+    if (!smoothSwitch && pendingTransitionRef.current) {
+      destroySlot(pendingTransitionRef.current.slotId);
+      cancelPendingTransition();
+    }
+  }, [smoothSwitch]);
 
   // Propagate live sync mode to any mounted player (active or pending slot)
   useEffect(() => {
@@ -1088,20 +1098,19 @@ export function VideoPlayer({
       {/* Mobile: 16:9 aspect ratio container, Desktop: full height */}
       <div
         className={clsx(
-          "video-container relative w-full aspect-video md:aspect-auto md:h-full flex items-center justify-center",
+          "video-container relative w-full min-h-0 aspect-video md:aspect-auto md:h-full flex items-center justify-center",
           !showControls && "cursor-none",
         )}
       >
-        <div className="relative grid max-w-full max-h-full [&>video]:col-start-1 [&>video]:row-start-1">
+        <div className="relative grid size-full min-h-0 min-w-0 max-w-full max-h-full place-items-center [&>video]:col-start-1 [&>video]:row-start-1">
           {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
             // biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks
             <video
               key={slotId}
               ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
               className={clsx(
-                "max-w-full max-h-full",
-                force16x9 ? "object-fill aspect-video" : "w-full h-full",
-                visibleSlotId !== slotId && "invisible pointer-events-none",
+                force16x9 ? "max-w-full max-h-full object-fill aspect-video" : "size-full max-w-full max-h-full",
+                visibleSlotId !== slotId && "absolute inset-0 m-auto invisible pointer-events-none",
               )}
               playsInline
               webkit-playsinline="true"
