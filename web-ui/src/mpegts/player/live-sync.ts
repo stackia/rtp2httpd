@@ -1,6 +1,6 @@
 import type { PlayerConfig } from "../config";
-import { type LiveSessionAnchor, lagBehindLiveEdge } from "./wall-clock";
 import Log from "../utils/logger";
+import { type LiveSessionAnchor, lagBehindLiveEdge } from "./wall-clock";
 
 const TAG = "LiveSync";
 const STALL_TAG = "StallJumper";
@@ -12,97 +12,97 @@ const UNDERRUN_BACKOFF_MAX = 6;
 
 /** Forward buffer seconds ahead of currentTime within the containing range. */
 function forwardBufferAhead(video: HTMLMediaElement): number {
-	const t = video.currentTime;
-	const buffered = video.buffered;
-	for (let i = 0; i < buffered.length; i++) {
-		if (t >= buffered.start(i) && t <= buffered.end(i)) {
-			return buffered.end(i) - t;
-		}
-	}
-	return 0;
+  const t = video.currentTime;
+  const buffered = video.buffered;
+  for (let i = 0; i < buffered.length; i++) {
+    if (t >= buffered.start(i) && t <= buffered.end(i)) {
+      return buffered.end(i) - t;
+    }
+  }
+  return 0;
 }
 
 /** Sets up live latency synchronization by adjusting playbackRate on timeupdate events. */
 export function setupLiveSync(
-	video: HTMLMediaElement,
-	config: PlayerConfig,
-	getLiveSessionAnchor: () => LiveSessionAnchor | null,
+  video: HTMLMediaElement,
+  config: PlayerConfig,
+  getLiveSessionAnchor: () => LiveSessionAnchor | null,
 ): () => void {
-	if (config.liveSync) {
-		Log.v(
-			TAG,
-			"Live sync enabled, target latency:",
-			config.liveSyncTargetLatency,
-			"max latency:",
-			config.liveSyncMaxLatency,
-		);
-	}
+  if (config.liveSync) {
+    Log.v(
+      TAG,
+      "Live sync enabled, target latency:",
+      config.liveSyncTargetLatency,
+      "max latency:",
+      config.liveSyncMaxLatency,
+    );
+  }
 
-	let extraLatency = 0;
+  let extraLatency = 0;
 
-	function onTimeUpdate(): void {
-		if (!config.liveSync) return;
+  function onTimeUpdate(): void {
+    if (!config.liveSync) return;
 
-		const anchor = getLiveSessionAnchor();
-		if (!anchor) return;
+    const anchor = getLiveSessionAnchor();
+    if (!anchor) return;
 
-		const latency = lagBehindLiveEdge(anchor, video.currentTime);
+    const latency = lagBehindLiveEdge(anchor, video.currentTime);
 
-		if (latency > config.liveSyncMaxLatency + extraLatency) {
-			const targetRate = Math.min(2, Math.max(1, config.liveSyncPlaybackRate));
-			if (targetRate !== video.playbackRate) {
-				Log.v(TAG, `Video playback rate set to ${targetRate}`);
-				video.playbackRate = targetRate;
-			}
-		} else if (latency <= config.liveSyncTargetLatency + extraLatency) {
-			if (video.playbackRate !== 1 && video.playbackRate !== 0) {
-				video.playbackRate = 1;
-				Log.v(TAG, "Video playback rate reset to 1");
-			}
-			// Recovered — drop adaptive backoff
-			if (extraLatency > 0 && latency <= config.liveSyncTargetLatency) {
-				extraLatency = 0;
-			}
-		}
-	}
+    if (latency > config.liveSyncMaxLatency + extraLatency) {
+      const targetRate = Math.min(2, Math.max(1, config.liveSyncPlaybackRate));
+      if (targetRate !== video.playbackRate) {
+        Log.v(TAG, `Video playback rate set to ${targetRate}`);
+        video.playbackRate = targetRate;
+      }
+    } else if (latency <= config.liveSyncTargetLatency + extraLatency) {
+      if (video.playbackRate !== 1 && video.playbackRate !== 0) {
+        video.playbackRate = 1;
+        Log.v(TAG, "Video playback rate reset to 1");
+      }
+      // Recovered — drop adaptive backoff
+      if (extraLatency > 0 && latency <= config.liveSyncTargetLatency) {
+        extraLatency = 0;
+      }
+    }
+  }
 
-	function onWaiting(): void {
-		if (!config.liveSync) return;
+  function onWaiting(): void {
+    if (!config.liveSync) return;
 
-		// Seek/Go Live often fires waiting while data is still buffered ahead — not an underrun.
-		if (video.seeking) return;
+    // Seek/Go Live often fires waiting while data is still buffered ahead — not an underrun.
+    if (video.seeking) return;
 
-		const anchor = getLiveSessionAnchor();
-		if (!anchor) return;
+    const anchor = getLiveSessionAnchor();
+    if (!anchor) return;
 
-		const lag = lagBehindLiveEdge(anchor, video.currentTime);
-		const ahead = forwardBufferAhead(video);
-		// Near session live edge AND playhead has caught up with its forward buffer.
-		const atLiveEdge = lag < 0.5 && ahead < 0.5;
-		if (!atLiveEdge) return;
+    const lag = lagBehindLiveEdge(anchor, video.currentTime);
+    const ahead = forwardBufferAhead(video);
+    // Near session live edge AND playhead has caught up with its forward buffer.
+    const atLiveEdge = lag < 0.5 && ahead < 0.5;
+    if (!atLiveEdge) return;
 
-		if (video.playbackRate !== 1 && video.playbackRate !== 0) {
-			video.playbackRate = 1;
-		}
+    if (video.playbackRate !== 1 && video.playbackRate !== 0) {
+      video.playbackRate = 1;
+    }
 
-		if (extraLatency < UNDERRUN_BACKOFF_MAX) {
-			extraLatency = Math.min(extraLatency + UNDERRUN_BACKOFF_STEP, UNDERRUN_BACKOFF_MAX);
-		}
-		Log.w(
-			TAG,
-			`Live-edge underrun, raising latency tolerance: target ${(config.liveSyncTargetLatency + extraLatency).toFixed(1)}s, max ${(config.liveSyncMaxLatency + extraLatency).toFixed(1)}s`,
-		);
-	}
+    if (extraLatency < UNDERRUN_BACKOFF_MAX) {
+      extraLatency = Math.min(extraLatency + UNDERRUN_BACKOFF_STEP, UNDERRUN_BACKOFF_MAX);
+    }
+    Log.w(
+      TAG,
+      `Live-edge underrun, raising latency tolerance: target ${(config.liveSyncTargetLatency + extraLatency).toFixed(1)}s, max ${(config.liveSyncMaxLatency + extraLatency).toFixed(1)}s`,
+    );
+  }
 
-	video.addEventListener("timeupdate", onTimeUpdate);
-	video.addEventListener("waiting", onWaiting);
+  video.addEventListener("timeupdate", onTimeUpdate);
+  video.addEventListener("waiting", onWaiting);
 
-	return () => {
-		Log.v(TAG, "Video playback rate reset to 1, live sync disabled");
-		video.removeEventListener("timeupdate", onTimeUpdate);
-		video.removeEventListener("waiting", onWaiting);
-		video.playbackRate = 1;
-	};
+  return () => {
+    Log.v(TAG, "Video playback rate reset to 1, live sync disabled");
+    video.removeEventListener("timeupdate", onTimeUpdate);
+    video.removeEventListener("waiting", onWaiting);
+    video.playbackRate = 1;
+  };
 }
 
 /**
@@ -111,41 +111,41 @@ export function setupLiveSync(
  * the first buffered range, seek to the start of the buffered range.
  */
 export interface StallJumper {
-	check(): void;
-	destroy(): void;
+  check(): void;
+  destroy(): void;
 }
 
 export function setupStartupStallJumper(video: HTMLMediaElement): StallJumper {
-	let canplayReceived = false;
+  let canplayReceived = false;
 
-	function onCanPlay(): void {
-		canplayReceived = true;
-		video.removeEventListener("canplay", onCanPlay);
-	}
+  function onCanPlay(): void {
+    canplayReceived = true;
+    video.removeEventListener("canplay", onCanPlay);
+  }
 
-	function detectAndFix(isStalled?: boolean): void {
-		const buffered = video.buffered;
-		if (isStalled || !canplayReceived || video.readyState < 2) {
-			if (buffered.length > 0 && video.currentTime < buffered.start(0)) {
-				const target = buffered.start(0);
-				Log.w(STALL_TAG, `Playback stuck at ${video.currentTime}, seeking to ${target}`);
-				video.currentTime = target;
-			}
-		}
-	}
+  function detectAndFix(isStalled?: boolean): void {
+    const buffered = video.buffered;
+    if (isStalled || !canplayReceived || video.readyState < 2) {
+      if (buffered.length > 0 && video.currentTime < buffered.start(0)) {
+        const target = buffered.start(0);
+        Log.w(STALL_TAG, `Playback stuck at ${video.currentTime}, seeking to ${target}`);
+        video.currentTime = target;
+      }
+    }
+  }
 
-	function onStalled(): void {
-		detectAndFix(true);
-	}
+  function onStalled(): void {
+    detectAndFix(true);
+  }
 
-	video.addEventListener("canplay", onCanPlay);
-	video.addEventListener("stalled", onStalled);
+  video.addEventListener("canplay", onCanPlay);
+  video.addEventListener("stalled", onStalled);
 
-	return {
-		check: () => detectAndFix(),
-		destroy: () => {
-			video.removeEventListener("canplay", onCanPlay);
-			video.removeEventListener("stalled", onStalled);
-		},
-	};
+  return {
+    check: () => detectAndFix(),
+    destroy: () => {
+      video.removeEventListener("canplay", onCanPlay);
+      video.removeEventListener("stalled", onStalled);
+    },
+  };
 }

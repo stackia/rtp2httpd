@@ -13,7 +13,7 @@ import { useLocale } from "../hooks/use-locale";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
 import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG } from "../lib/epg-parser";
-import { buildCatchupSegments, parseM3U } from "../lib/m3u-parser";
+import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
 import {
   getForce16x9,
   getLastChannelId,
@@ -132,7 +132,7 @@ function PlayerPage() {
     if (goingLive) {
       setStreamStartTime(new Date());
     } else {
-      setStreamStartTime(seekTime);
+      setStreamStartTime(clampCatchupStartTime(seekTime));
     }
   }, []);
 

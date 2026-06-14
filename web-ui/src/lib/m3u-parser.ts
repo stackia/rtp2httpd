@@ -145,19 +145,29 @@ function mergeChannelSources(channels: Channel[]): Channel[] {
   return merged;
 }
 
+/** Minimum catchup window (ms). Shorter playseek ranges can fail on some servers. */
+export const CATCHUP_MIN_DURATION_MS = 20_000;
+
+/** Clamp catchup start so the window back to `now` is at least {@link CATCHUP_MIN_DURATION_MS}. */
+export function clampCatchupStartTime(seekTime: Date, now = new Date()): Date {
+  const minStartMs = now.getTime() - CATCHUP_MIN_DURATION_MS;
+  return new Date(Math.min(seekTime.getTime(), minStartMs));
+}
+
 /**
  * Build catchup segments with playseek parameter
  * @param source - The source containing url, catchup mode, and catchupSource
  * @param startTime - Start time for playback
  * @returns Array of media segments for catchup playback
  */
-export function buildCatchupSegments(source: Source, startTime: Date): PlayerSegment[] {
+export function buildCatchupSegments(source: Source, startTimeArg: Date): PlayerSegment[] {
   if (!source.catchupSource) {
     throw new Error("Source does not have catchup source configured");
   }
 
   const catchupMode = source.catchup || "default";
   const now = new Date();
+  const startTime = clampCatchupStartTime(startTimeArg, now);
   const endingFuture = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   const segments: PlayerSegment[] = [];
 
@@ -441,7 +451,7 @@ export function buildCatchupSegments(source: Source, startTime: Date): PlayerSeg
 
   // Segment duration: (now - startTime) in both seconds and milliseconds
   const segmentDurationMs = Math.min(
-    Math.max(now.getTime() - startTime.getTime(), 10000), // min 10s
+    Math.max(now.getTime() - startTime.getTime(), CATCHUP_MIN_DURATION_MS),
     5 * 60 * 60 * 1000, // max 5 hours
   );
   const segmentDurationSec = segmentDurationMs / 1000;

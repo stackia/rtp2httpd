@@ -83,7 +83,9 @@ export function VideoPlayer({
   const [isMuted, setIsMuted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [liveSessionAnchor, setLiveSessionAnchor] = useState<LiveSessionAnchor | null>(null);
-  const isLive = liveSessionAnchor !== null && lagBehindLiveEdge(liveSessionAnchor, currentVideoTime) < 3;
+  // Before session calibration (initial load / reload), treat live mode as Live — not Go Live.
+  const isLive =
+    playMode === "live" && (liveSessionAnchor === null || lagBehindLiveEdge(liveSessionAnchor, currentVideoTime) < 3);
   const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isPiP, setIsPiP] = useState(false);
@@ -307,6 +309,8 @@ export function VideoPlayer({
   const [prevSegments, setPrevSegments] = useState(segments);
   if (segments !== prevSegments) {
     setPrevSegments(segments);
+    wallClockCalibratedRef.current = false;
+    setLiveSessionAnchor(null);
     if (isRetrySeek) {
       setIsRetrySeek(false);
     } else {
@@ -351,11 +355,6 @@ export function VideoPlayer({
       player?.setLiveSessionAnchor(liveSessionAnchor);
     }
   }, [player, liveSessionAnchor]);
-
-  useEffect(() => {
-    wallClockCalibratedRef.current = false;
-    setLiveSessionAnchor(null);
-  }, [segments]);
 
   // Media Session: lock screen / control center metadata (esp. useful during PiP playback)
   useEffect(() => {
