@@ -45,7 +45,7 @@ interface VideoPlayerProps {
   mp2SoftDecode?: boolean;
   activeSourceIndex?: number;
   onSourceChange?: (index: number) => void;
-  onPlaybackStarted?: (channelId: string, sourceIndex: number) => void;
+  onPlaybackStarted?: () => void;
 }
 
 const MAX_RETRIES = 3;
@@ -690,12 +690,6 @@ export function VideoPlayer({
     setIsMuted(video.muted);
   });
 
-  const reportPlaybackStarted = useEffectEvent(() => {
-    if (channel) {
-      onPlaybackStarted?.(channel.id, activeSourceIndex);
-    }
-  });
-
   const handleVideoPlaying = useEffectEvent((slotId: SlotId) => {
     completePendingSwitchIfNeeded(slotId);
 
@@ -704,7 +698,7 @@ export function VideoPlayer({
     hasStartedPlaybackRef.current = true;
     setIsLoading(false);
     setIsPlaying(true);
-    reportPlaybackStarted();
+    onPlaybackStarted?.();
 
     const video = slotVideoRef(slotId).current;
     if (playMode === "live" && video && !wallClockCalibratedRef.current) {

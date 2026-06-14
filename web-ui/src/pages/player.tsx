@@ -158,9 +158,11 @@ function PlayerPage() {
     [playMode, streamStartTime, currentVideoTime],
   );
 
-  const handlePlaybackStarted = useCallback((channelId: string, sourceIndex: number) => {
-    saveLastSourceIndex(channelId, sourceIndex);
-  }, []);
+  const handlePlaybackStarted = useCallback(() => {
+    if (currentChannel) {
+      saveLastSourceIndex(currentChannel.id, activeSourceIndex);
+    }
+  }, [currentChannel, activeSourceIndex]);
 
   const selectChannel = useCallback((channel: Channel) => {
     setCurrentChannel(channel);
