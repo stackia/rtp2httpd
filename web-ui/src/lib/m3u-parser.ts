@@ -146,7 +146,7 @@ function mergeChannelSources(channels: Channel[]): Channel[] {
 }
 
 /** Minimum catchup window (ms). Shorter playseek ranges can fail on some servers. */
-export const CATCHUP_MIN_DURATION_MS = 20_000;
+export const CATCHUP_MIN_DURATION_MS = 30_000;
 
 /** Clamp catchup start so the window back to `now` is at least {@link CATCHUP_MIN_DURATION_MS}. */
 export function clampCatchupStartTime(seekTime: Date, now = new Date()): Date {
@@ -458,6 +458,8 @@ export function buildCatchupSegments(source: Source, startTimeArg: Date): Player
 
   // Build segments from startTime to now (catchup/replay segments)
   let currentTime = new Date(startTime.getTime());
+  // End replay chunks at (now - 10s): avoid passing local `now` to servers that may
+  // be clock-skewed and reject requests whose end time looks like the future.
   const splitPoint = new Date(now.getTime() - 10000);
 
   while (currentTime < splitPoint) {
