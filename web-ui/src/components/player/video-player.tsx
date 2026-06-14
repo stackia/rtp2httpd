@@ -41,7 +41,6 @@ interface VideoPlayerProps {
   showSidebar?: boolean;
   onToggleSidebar?: () => void;
   onFullscreenToggle?: () => void;
-  force16x9?: boolean;
   smoothSwitch?: boolean;
   mp2SoftDecode?: boolean;
   activeSourceIndex?: number;
@@ -73,7 +72,6 @@ export function VideoPlayer({
   showSidebar = true,
   onToggleSidebar,
   onFullscreenToggle,
-  force16x9 = true,
   smoothSwitch = true,
   mp2SoftDecode = false,
   activeSourceIndex = 0,
@@ -1095,29 +1093,21 @@ export function VideoPlayer({
       onMouseMove={showControlsImmediately}
       onMouseLeave={hideControlsImmediately}
     >
-      {/* Mobile: 16:9 container when force 16:9; otherwise height follows native video ratio */}
+      {/* Mobile: 16:9 aspect ratio container, Desktop: full height */}
       <div
         className={clsx(
-          "video-container relative w-full min-h-0 flex items-center justify-center md:h-full",
-          force16x9 ? "aspect-video md:aspect-auto" : "md:aspect-auto",
+          "video-container relative w-full min-h-0 aspect-video md:aspect-auto md:h-full flex items-center justify-center",
           !showControls && "cursor-none",
         )}
       >
-        <div
-          className={clsx(
-            "relative grid min-h-0 min-w-0 place-items-center [&>video]:col-start-1 [&>video]:row-start-1",
-            force16x9 ? "size-full max-w-full max-h-full" : "w-full md:size-full md:max-w-full md:max-h-full",
-          )}
-        >
+        <div className="relative grid size-full min-h-0 min-w-0 max-w-full max-h-full place-items-center [&>video]:col-start-1 [&>video]:row-start-1">
           {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
             // biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks
             <video
               key={slotId}
               ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
               className={clsx(
-                force16x9
-                  ? "max-w-full max-h-full object-fill aspect-video"
-                  : "w-full h-auto max-w-full md:max-h-full md:w-full md:h-full",
+                "max-w-full max-h-full object-fill aspect-video",
                 visibleSlotId !== slotId && "absolute inset-0 m-auto invisible pointer-events-none",
               )}
               playsInline

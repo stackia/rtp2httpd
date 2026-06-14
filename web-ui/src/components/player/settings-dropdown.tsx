@@ -11,8 +11,6 @@ interface SettingsDropdownProps {
   onLocaleChange: (locale: Locale) => void;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
-  force16x9: boolean;
-  onForce16x9Change: (enabled: boolean) => void;
   smoothSwitch: boolean;
   onSmoothSwitchChange: (enabled: boolean) => void;
   mp2SoftDecode: boolean;
@@ -38,8 +36,6 @@ function SettingsDropdownComponent({
   onLocaleChange,
   theme,
   onThemeChange,
-  force16x9,
-  onForce16x9Change,
   smoothSwitch,
   onSmoothSwitchChange,
   mp2SoftDecode,
@@ -107,12 +103,6 @@ function SettingsDropdownComponent({
                 ))}
               </select>
             </label>
-
-            {/* Force 16:9 Aspect Ratio Toggle */}
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-medium text-muted-foreground">{t("force16x9")}</span>
-              <Switch checked={force16x9} onCheckedChange={onForce16x9Change} aria-label={t("force16x9")} />
-            </div>
 
             {/* Seamless channel/source switch (dual-slot preload) */}
             <div className="flex items-center justify-between px-1">
