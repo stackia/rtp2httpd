@@ -88,6 +88,7 @@ export function VideoPlayer({
   const transitionGenRef = useRef(0);
   const pendingTransitionRef = useRef<{ gen: number; slotId: SlotId } | null>(null);
   const hasStartedPlaybackRef = useRef(false);
+  const prevStreamRef = useRef<{ channelId: string; sourceIndex: number } | null>(null);
 
   const slotVideoRef = (id: SlotId) => (id === "a" ? slotAVideoRef : slotBVideoRef);
   const slotPlayerRef = (id: SlotId) => (id === "a" ? slotAPlayerRef : slotBPlayerRef);
@@ -283,23 +284,39 @@ export function VideoPlayer({
     const savedVolume = oldVideo?.volume ?? 1;
     const savedMuted = oldVideo?.muted ?? false;
 
-    if (oldActiveId !== newActiveId) {
-      destroySlot(oldActiveId);
-    }
-
     const newVideo = slotVideoRef(newActiveId).current;
     if (newVideo) {
       newVideo.volume = savedVolume;
       newVideo.muted = savedMuted;
     }
 
+    // Hard switch: reveal new stream first, then tear down the old slot
     activeSlotIdRef.current = newActiveId;
     setVisibleSlotId(newActiveId);
     setIsLoading(false);
+
+    if (oldActiveId !== newActiveId) {
+      destroySlot(oldActiveId);
+    }
+  });
+
+  /** Finish a pending channel switch (success or failure) by hard-switching to the new slot. */
+  const completePendingSwitchIfNeeded = useEffectEvent((slotId: SlotId): boolean => {
+    const pending = pendingTransitionRef.current;
+    if (!pending || pending.slotId !== slotId) return false;
+    if (pending.gen !== transitionGenRef.current) return false;
+    cancelPendingTransition();
+    completeTransition(slotId);
+    return true;
   });
 
   const runPlayerErrorRecovery = useEffectEvent((playerError: PlayerError, slotId: SlotId) => {
     console.error("Player error:", playerError);
+
+    const isPendingTransition = pendingTransitionRef.current?.slotId === slotId;
+    if (isPendingTransition) {
+      completePendingSwitchIfNeeded(slotId);
+    }
 
     let errorMessage = t("playbackError");
     let decodingErrorRetry = false;
@@ -328,8 +345,6 @@ export function VideoPlayer({
       errorMessage = `${t("networkError")}: ${playerError.detail}`;
     }
 
-    const isPendingTransition = pendingTransitionRef.current?.slotId === slotId;
-
     // Check if we should retry
     if (retryCount < retryBaseline + MAX_RETRIES) {
       setRetryCount(retryCount + 1);
@@ -340,11 +355,6 @@ export function VideoPlayer({
         console.log(`Retrying playback due to decoding error...`);
       }
       setIsRetrySeek(true);
-      if (isPendingTransition) {
-        cancelPendingTransition();
-        destroySlot(slotId);
-        setIsLoading(false);
-      }
       if (onSeek) {
         if (playMode === "live") {
           onSeek(new Date(), true);
@@ -358,21 +368,11 @@ export function VideoPlayer({
     // Max retries reached, try fallback to next source
     if (channel && onSourceChange && activeSourceIndex + 1 < channel.sources.length) {
       console.log("Falling back to next source...");
-      if (isPendingTransition) {
-        cancelPendingTransition();
-        destroySlot(slotId);
-        setIsLoading(false);
-      }
       onSourceChange(activeSourceIndex + 1);
       return;
     }
 
     // No more sources to try, show error
-    if (isPendingTransition) {
-      cancelPendingTransition();
-      destroySlot(slotId);
-      setIsLoading(false);
-    }
     setError(errorMessage);
     onError?.(errorMessage);
     setIsLoading(false);
@@ -423,7 +423,7 @@ export function VideoPlayer({
     return p;
   });
 
-  const playVideoWithAutoplayFallback = useEffectEvent((video: HTMLVideoElement) => {
+  const playVideoWithAutoplayFallback = useEffectEvent((video: HTMLVideoElement, slotId?: SlotId) => {
     userPausedRef.current = false;
     const playPromise = video.play();
     if (playPromise) {
@@ -431,6 +431,9 @@ export function VideoPlayer({
         .catch((err: Error) => {
           if (err.name === "NotAllowedError" || err.message.includes("user didn't interact")) {
             setNeedsUserInteraction(true);
+            if (slotId) completePendingSwitchIfNeeded(slotId);
+          } else if (slotId) {
+            completePendingSwitchIfNeeded(slotId);
           }
         })
         .finally(() => {
@@ -507,7 +510,7 @@ export function VideoPlayer({
     };
   }, []);
 
-  // Load segments whenever they change (channel switch, seek, retry — all go through here)
+  // Load segments whenever they change (channel/source switch, seek, retry — all go through here)
   const handleLoadSegments = useEffectEvent((newSegments: PlayerSegment[]) => {
     const activeId = getActiveSlotId();
     const activePlayer = slotPlayerRef(activeId).current;
@@ -524,45 +527,60 @@ export function VideoPlayer({
     setIsLoading(true);
     setError(null);
 
-    const canCrossfade = hasStartedPlaybackRef.current;
+    const isStreamSwitch =
+      channel != null &&
+      prevStreamRef.current != null &&
+      (channel.id !== prevStreamRef.current.channelId ||
+        activeSourceIndex !== prevStreamRef.current.sourceIndex);
+    const useSeamlessSwitch = hasStartedPlaybackRef.current && isStreamSwitch;
 
-    if (canCrossfade) {
-      cancelPendingTransition();
-      transitionGenRef.current++;
-      const gen = transitionGenRef.current;
+    if (channel) {
+      prevStreamRef.current = { channelId: channel.id, sourceIndex: activeSourceIndex };
+    }
 
-      const pendingId = otherSlot(activeId);
-      destroySlot(pendingId);
-
-      const pendingPlayer = createPlayerForSlot(pendingId);
-      const pendingVideo = slotVideoRef(pendingId).current;
-      const activeVideo = slotVideoRef(activeId).current;
-      if (!pendingPlayer || !pendingVideo) return;
-
-      if (activeVideo) {
-        pendingVideo.volume = activeVideo.volume;
-        pendingVideo.muted = true;
+    if (!useSeamlessSwitch) {
+      if (pendingTransitionRef.current) {
+        destroySlot(pendingTransitionRef.current.slotId);
+        cancelPendingTransition();
       }
 
-      pendingPlayer.setLiveSync(playMode === "live");
-      pendingTransitionRef.current = { gen, slotId: pendingId };
-      pendingPlayer.loadSegments(newSegments);
+      activePlayer.loadSegments(newSegments);
 
       if (shouldAutoPlayRef.current) {
-        playVideoWithAutoplayFallback(pendingVideo);
+        const video = slotVideoRef(activeId).current;
+        if (video) {
+          playVideoWithAutoplayFallback(video);
+        }
       } else {
         setIsLoading(false);
       }
       return;
     }
 
-    activePlayer.loadSegments(newSegments);
+    // Channel or source switch with active playback: load on hidden slot, hard-switch when ready
+    cancelPendingTransition();
+    transitionGenRef.current++;
+    const gen = transitionGenRef.current;
+
+    const pendingId = otherSlot(activeId);
+    destroySlot(pendingId);
+
+    const pendingPlayer = createPlayerForSlot(pendingId);
+    const pendingVideo = slotVideoRef(pendingId).current;
+    const activeVideo = slotVideoRef(activeId).current;
+    if (!pendingPlayer || !pendingVideo) return;
+
+    if (activeVideo) {
+      pendingVideo.volume = activeVideo.volume;
+      pendingVideo.muted = true;
+    }
+
+    pendingPlayer.setLiveSync(playMode === "live");
+    pendingTransitionRef.current = { gen, slotId: pendingId };
+    pendingPlayer.loadSegments(newSegments);
 
     if (shouldAutoPlayRef.current) {
-      const video = slotVideoRef(activeId).current;
-      if (video) {
-        playVideoWithAutoplayFallback(video);
-      }
+      playVideoWithAutoplayFallback(pendingVideo, pendingId);
     } else {
       setIsLoading(false);
     }
@@ -596,12 +614,7 @@ export function VideoPlayer({
   });
 
   const handleVideoPlaying = useEffectEvent((slotId: SlotId) => {
-    const pending = pendingTransitionRef.current;
-    if (pending && pending.slotId === slotId) {
-      if (pending.gen !== transitionGenRef.current) return;
-      cancelPendingTransition();
-      completeTransition(slotId);
-    }
+    completePendingSwitchIfNeeded(slotId);
 
     if (slotId !== getActiveSlotId()) return;
 
@@ -836,6 +849,10 @@ export function VideoPlayer({
     }
   });
 
+  const handleVideoElementError = useEffectEvent((slotId: SlotId) => {
+    completePendingSwitchIfNeeded(slotId);
+  });
+
   useEffect(() => {
     const attachSlot = (slotId: SlotId) => {
       const video = slotVideoRef(slotId).current;
@@ -850,6 +867,7 @@ export function VideoPlayer({
       const onEnded = () => handleVideoEnded(slotId);
       const onEnterPiP = () => handleVideoEnterPiP(slotId);
       const onLeavePiP = () => handleVideoLeavePiP(slotId);
+      const onError = () => handleVideoElementError(slotId);
 
       video.addEventListener("canplay", onCanPlay);
       video.addEventListener("waiting", onWaiting);
@@ -860,6 +878,7 @@ export function VideoPlayer({
       video.addEventListener("ended", onEnded);
       video.addEventListener("enterpictureinpicture", onEnterPiP);
       video.addEventListener("leavepictureinpicture", onLeavePiP);
+      video.addEventListener("error", onError);
 
       return () => {
         video.removeEventListener("canplay", onCanPlay);
@@ -871,6 +890,7 @@ export function VideoPlayer({
         video.removeEventListener("ended", onEnded);
         video.removeEventListener("enterpictureinpicture", onEnterPiP);
         video.removeEventListener("leavepictureinpicture", onLeavePiP);
+        video.removeEventListener("error", onError);
       };
     };
 
@@ -992,24 +1012,26 @@ export function VideoPlayer({
         )}
       >
         {/* biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks */}
-        {(["a", "b"] as const).map((slotId) => (
-          <video
-            key={slotId}
-            ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
-            className={clsx(
-              "absolute inset-0 mx-auto max-w-full max-h-full",
-              force16x9 ? "object-fill aspect-video" : "w-full h-full",
-              visibleSlotId === slotId ? "z-10 opacity-100" : "z-0 opacity-0 pointer-events-none",
-            )}
-            playsInline
-            webkit-playsinline="true"
-            x5-playsinline="true"
-            onClick={visibleSlotId === slotId ? handleVideoClick : undefined}
-          />
-        ))}
+        <div className="grid max-w-full max-h-full place-items-center [&>video]:col-start-1 [&>video]:row-start-1">
+          {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
+            <video
+              key={slotId}
+              ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
+              className={clsx(
+                "max-w-full max-h-full",
+                force16x9 ? "object-fill aspect-video" : "w-full h-full",
+                visibleSlotId !== slotId && "invisible pointer-events-none",
+              )}
+              playsInline
+              webkit-playsinline="true"
+              x5-playsinline="true"
+              onClick={visibleSlotId === slotId ? handleVideoClick : undefined}
+            />
+          ))}
+        </div>
 
         {showLoading && (
-          <div className="absolute top-4 left-4 md:top-8 md:left-8 flex items-center gap-2 md:gap-3 rounded-lg bg-white/10 ring-1 ring-white/20 backdrop-blur-sm px-3 py-2 md:px-4 md:py-3">
+          <div className="absolute top-4 left-4 md:top-8 md:left-8 z-10 flex items-center gap-2 md:gap-3 rounded-lg bg-white/10 ring-1 ring-white/20 backdrop-blur-sm px-3 py-2 md:px-4 md:py-3">
             <div className="relative h-4 w-4 md:h-5 md:w-5">
               <div className="absolute inset-0 rounded-full border-2 border-white/30" />
               <div className="absolute inset-0 rounded-full border-2 border-white border-t-transparent animate-spin" />
@@ -1028,7 +1050,7 @@ export function VideoPlayer({
         {channel && (
           <div
             className={clsx(
-              "absolute top-4 right-4 md:top-8 md:right-8 flex flex-col gap-2 md:gap-3 items-end transition-opacity duration-300",
+              "absolute top-4 right-4 md:top-8 md:right-8 z-10 flex flex-col gap-2 md:gap-3 items-end transition-opacity duration-300",
               showControls ? "opacity-100" : "opacity-0",
             )}
           >
@@ -1072,7 +1094,7 @@ export function VideoPlayer({
         {needsUserInteraction && (
           <button
             type="button"
-            className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/80 p-4 transition-opacity hover:bg-black/85 border-none"
+            className="absolute inset-0 z-10 flex cursor-pointer items-center justify-center bg-black/80 p-4 transition-opacity hover:bg-black/85 border-none"
             onClick={handleUserInteraction}
           >
             <div className="flex flex-col items-center gap-4 text-white">
@@ -1086,7 +1108,7 @@ export function VideoPlayer({
         )}
 
         {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/90 p-4">
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/90 p-4">
             <div className="max-w-md rounded-lg bg-red-500/20 p-4 text-white">
               <div className="mb-2 text-lg font-semibold">{t("playbackError")}</div>
               <div className="text-sm">{error}</div>
@@ -1098,7 +1120,7 @@ export function VideoPlayer({
           <div
             role="toolbar"
             className={clsx(
-              "absolute bottom-0 left-0 right-0 transition-opacity duration-300",
+              "absolute bottom-0 left-0 right-0 z-10 transition-opacity duration-300",
               showControls ? "opacity-100" : "opacity-0 has-focus-visible:opacity-100",
             )}
             onMouseEnter={showControlsImmediately}
