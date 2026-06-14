@@ -11,8 +11,6 @@ interface SettingsDropdownProps {
   onLocaleChange: (locale: Locale) => void;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
-  force16x9: boolean;
-  onForce16x9Change: (enabled: boolean) => void;
   mp2SoftDecode: boolean;
   onMp2SoftDecodeChange: (enabled: boolean) => void;
 }
@@ -36,8 +34,6 @@ function SettingsDropdownComponent({
   onLocaleChange,
   theme,
   onThemeChange,
-  force16x9,
-  onForce16x9Change,
   mp2SoftDecode,
   onMp2SoftDecodeChange,
 }: SettingsDropdownProps) {
@@ -103,12 +99,6 @@ function SettingsDropdownComponent({
                 ))}
               </select>
             </label>
-
-            {/* Force 16:9 Aspect Ratio Toggle */}
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-medium text-muted-foreground">{t("force16x9")}</span>
-              <Switch checked={force16x9} onCheckedChange={onForce16x9Change} aria-label={t("force16x9")} />
-            </div>
 
             {/* MP2 Audio Software Decode Toggle */}
             <div className="flex items-center justify-between px-1">

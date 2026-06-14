@@ -40,7 +40,6 @@ interface VideoPlayerProps {
   showSidebar?: boolean;
   onToggleSidebar?: () => void;
   onFullscreenToggle?: () => void;
-  force16x9?: boolean;
   mp2SoftDecode?: boolean;
   activeSourceIndex?: number;
   onSourceChange?: (index: number) => void;
@@ -53,6 +52,17 @@ type SlotId = "a" | "b";
 
 function otherSlot(id: SlotId): SlotId {
   return id === "a" ? "b" : "a";
+}
+
+const DISPLAY_ASPECT = 16 / 9;
+
+/** Largest axis-aligned rect with `aspect` that fits inside a width×height box. */
+function fitAspectInBox(boxW: number, boxH: number, aspect: number): { width: number; height: number } {
+  if (boxW <= 0 || boxH <= 0) return { width: 0, height: 0 };
+  if (boxW / boxH > aspect) {
+    return { width: boxH * aspect, height: boxH };
+  }
+  return { width: boxW, height: boxW / aspect };
 }
 
 export function VideoPlayer({
@@ -71,7 +81,6 @@ export function VideoPlayer({
   showSidebar = true,
   onToggleSidebar,
   onFullscreenToggle,
-  force16x9 = true,
   mp2SoftDecode = false,
   activeSourceIndex = 0,
   onSourceChange,
@@ -89,6 +98,8 @@ export function VideoPlayer({
   const pendingTransitionRef = useRef<{ gen: number; slotId: SlotId } | null>(null);
   const hasStartedPlaybackRef = useRef(false);
   const prevStreamRef = useRef<{ channelId: string; sourceIndex: number } | null>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+  const videoFrameRef = useRef<HTMLDivElement>(null);
 
   const slotVideoRef = (id: SlotId) => (id === "a" ? slotAVideoRef : slotBVideoRef);
   const slotPlayerRef = (id: SlotId) => (id === "a" ? slotAPlayerRef : slotBPlayerRef);
@@ -473,6 +484,25 @@ export function VideoPlayer({
       getActivePlayer()?.setLiveSessionAnchor(liveSessionAnchor);
     }
   }, [liveSessionAnchor, visibleSlotId]);
+
+  // Size the 16:9 frame to fill the player area (letterbox on one axis). ResizeObserver avoids container queries.
+  useEffect(() => {
+    const container = videoContainerRef.current;
+    const frame = videoFrameRef.current;
+    if (!container || !frame) return;
+
+    const update = () => {
+      const { width, height } = container.getBoundingClientRect();
+      const size = fitAspectInBox(width, height, DISPLAY_ASPECT);
+      frame.style.width = `${size.width}px`;
+      frame.style.height = `${size.height}px`;
+    };
+
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    update();
+    return () => observer.disconnect();
+  }, []);
 
   // Media Session: lock screen / control center metadata (esp. useful during PiP playback)
   useEffect(() => {
@@ -1006,28 +1036,30 @@ export function VideoPlayer({
     >
       {/* Mobile: 16:9 aspect ratio container, Desktop: full height */}
       <div
+        ref={videoContainerRef}
         className={clsx(
-          "video-container relative w-full aspect-video md:aspect-auto md:h-full flex items-center justify-center",
+          "video-container relative w-full min-h-0 aspect-video md:aspect-auto md:h-full flex items-center justify-center",
           !showControls && "cursor-none",
         )}
       >
         {/* biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks */}
-        <div className="grid max-w-full max-h-full place-items-center [&>video]:col-start-1 [&>video]:row-start-1">
-          {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
-            <video
-              key={slotId}
-              ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
-              className={clsx(
-                "max-w-full max-h-full",
-                force16x9 ? "object-fill aspect-video" : "w-full h-full",
-                visibleSlotId !== slotId && "invisible pointer-events-none",
-              )}
-              playsInline
-              webkit-playsinline="true"
-              x5-playsinline="true"
-              onClick={visibleSlotId === slotId ? handleVideoClick : undefined}
-            />
-          ))}
+        <div className="absolute inset-0 flex items-center justify-center min-h-0 min-w-0">
+          <div
+            ref={videoFrameRef}
+            className="video-frame grid min-h-0 min-w-0 [&>video]:col-start-1 [&>video]:row-start-1"
+          >
+            {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
+              <video
+                key={slotId}
+                ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
+                className={clsx(visibleSlotId !== slotId && "invisible pointer-events-none")}
+                playsInline
+                webkit-playsinline="true"
+                x5-playsinline="true"
+                onClick={visibleSlotId === slotId ? handleVideoClick : undefined}
+              />
+            ))}
+          </div>
         </div>
 
         {showLoading && (
