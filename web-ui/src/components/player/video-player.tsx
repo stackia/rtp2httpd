@@ -541,7 +541,11 @@ export function VideoPlayer({
       (channel.id !== prevStreamRef.current.channelId || activeSourceIndex !== prevStreamRef.current.sourceIndex);
     const activeVideo = slotVideoRef(activeId).current;
     const useSeamlessSwitch =
-      hasStartedPlaybackRef.current && isStreamSwitch && shouldAutoPlayRef.current && !activeVideo?.paused;
+      hasStartedPlaybackRef.current &&
+      isStreamSwitch &&
+      playMode === "live" &&
+      shouldAutoPlayRef.current &&
+      !activeVideo?.paused;
 
     if (channel) {
       prevStreamRef.current = { channelId: channel.id, sourceIndex: activeSourceIndex };
