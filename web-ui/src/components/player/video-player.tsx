@@ -3,6 +3,7 @@ import { Play } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
+import { buildCatchupSegments } from "../../lib/m3u-parser";
 import {
   createPlayer,
   defaultConfig,
@@ -100,6 +101,8 @@ export function VideoPlayer({
   const prevStreamRef = useRef<{ channelId: string; sourceIndex: number } | null>(null);
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const videoFrameRef = useRef<HTMLDivElement>(null);
+  /** Skip one segments effect after inline retry reload (parent may emit same URL). */
+  const skipNextSegmentsLoadRef = useRef(false);
 
   const slotVideoRef = (id: SlotId) => (id === "a" ? slotAVideoRef : slotBVideoRef);
   const slotPlayerRef = (id: SlotId) => (id === "a" ? slotAPlayerRef : slotBPlayerRef);
@@ -198,43 +201,40 @@ export function VideoPlayer({
   });
 
   // Progress seek: in-buffer → buffer seek; outside buffer → seek-needed → onSeek rebuild
-  const handleSeek = useCallback(
-    (seekTime: Date) => {
-      const activePlayer = getActivePlayer();
-      if (!activePlayer) return;
-      const video = getActiveVideo();
-      const goingLive = isNearLiveEdge(seekTime);
+  const handleSeek = useEffectEvent((seekTime: Date) => {
+    const activePlayer = getActivePlayer();
+    if (!activePlayer) return;
+    const video = getActiveVideo();
+    const goingLive = isNearLiveEdge(seekTime);
 
-      if (goingLive) {
-        userPausedRef.current = false;
-        if (playMode === "live") {
-          goLiveToSessionEdge();
-          video?.play();
-          return;
-        }
-        shouldAutoPlayRef.current = !video?.paused;
-        onSeek?.(new Date(), true);
-        return;
-      }
-
-      shouldAutoPlayRef.current = !video?.paused;
+    if (goingLive) {
+      userPausedRef.current = false;
       if (playMode === "live") {
-        activePlayer.setLiveSync(false);
-        seekLiveByWallClock(seekTime);
+        goLiveToSessionEdge();
+        video?.play();
         return;
       }
+      shouldAutoPlayRef.current = !video?.paused;
+      onSeek?.(new Date(), true);
+      return;
+    }
 
-      const seekSeconds = (seekTime.getTime() - streamStartTime.getTime()) / 1000;
-      if (seekSeconds >= 0) {
-        activePlayer.seek(seekSeconds);
-      } else {
-        onSeek?.(seekTime, false);
-      }
-    },
-    [streamStartTime, onSeek, playMode],
-  );
+    shouldAutoPlayRef.current = !video?.paused;
+    if (playMode === "live") {
+      activePlayer.setLiveSync(false);
+      seekLiveByWallClock(seekTime);
+      return;
+    }
 
-  const togglePlayPause = useCallback(() => {
+    const seekSeconds = (seekTime.getTime() - streamStartTime.getTime()) / 1000;
+    if (seekSeconds >= 0) {
+      activePlayer.seek(seekSeconds);
+    } else {
+      onSeek?.(seekTime, false);
+    }
+  });
+
+  const togglePlayPause = useEffectEvent(() => {
     const video = getActiveVideo();
     if (video) {
       if (video.paused) {
@@ -245,7 +245,7 @@ export function VideoPlayer({
         video.pause();
       }
     }
-  }, []);
+  });
 
   const resetControlsTimer = useCallback(() => {
     if (hideControlsTimeoutRef.current) {
@@ -283,6 +283,13 @@ export function VideoPlayer({
     pendingTransitionRef.current = null;
   });
 
+  const applyPlayerSettings = useEffectEvent((player: Player) => {
+    player.setLiveSync(playMode === "live");
+    if (liveSessionAnchor) {
+      player.setLiveSessionAnchor(liveSessionAnchor);
+    }
+  });
+
   const destroySlot = useEffectEvent((slotId: SlotId) => {
     slotPlayerRef(slotId).current?.destroy();
     slotPlayerRef(slotId).current = null;
@@ -299,6 +306,11 @@ export function VideoPlayer({
     if (newVideo) {
       newVideo.volume = savedVolume;
       newVideo.muted = savedMuted;
+    }
+
+    const newPlayer = slotPlayerRef(newActiveId).current;
+    if (newPlayer) {
+      applyPlayerSettings(newPlayer);
     }
 
     // Hard switch: reveal new stream first, then tear down the old slot
@@ -319,6 +331,18 @@ export function VideoPlayer({
     cancelPendingTransition();
     completeTransition(slotId);
     return true;
+  });
+
+  const getRetrySegments = useEffectEvent((): PlayerSegment[] => {
+    if (playMode === "live") {
+      return segments;
+    }
+    const source = channel?.sources[activeSourceIndex];
+    if (source?.catchupSource) {
+      const seekTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
+      return buildCatchupSegments(source, seekTime);
+    }
+    return segments;
   });
 
   const runPlayerErrorRecovery = useEffectEvent((playerError: PlayerError, slotId: SlotId) => {
@@ -373,6 +397,11 @@ export function VideoPlayer({
           onSeek(new Date(streamStartTime.getTime() + currentVideoTime * 1000), false);
         }
       }
+      if (playMode === "catchup") {
+        skipNextSegmentsLoadRef.current = true;
+      }
+      scheduleRetryReload(getRetrySegments());
+      setIsRetrySeek(false);
       return;
     }
 
@@ -398,11 +427,20 @@ export function VideoPlayer({
     setPrevSegments(segments);
     wallClockCalibratedRef.current = false;
     setLiveSessionAnchor(null);
-    if (isRetrySeek) {
+
+    const isStreamChange =
+      channel != null &&
+      prevStreamRef.current != null &&
+      (channel.id !== prevStreamRef.current.channelId || activeSourceIndex !== prevStreamRef.current.sourceIndex);
+
+    if (isRetrySeek && !isStreamChange) {
       setIsRetrySeek(false);
     } else {
       setRetryCount(0);
       setRetryBaseline(0);
+      if (isRetrySeek) {
+        setIsRetrySeek(false);
+      }
     }
   }
 
@@ -430,6 +468,7 @@ export function VideoPlayer({
     p.on("error", (e) => handlePlayerError(e, slotId));
     p.on("seek-needed", handleSeekNeeded);
     p.on("audio-suspended", handleAudioSuspended);
+    applyPlayerSettings(p);
     slotPlayerRef(slotId).current = p;
     return p;
   });
@@ -452,38 +491,6 @@ export function VideoPlayer({
         });
     }
   });
-
-  // Create player on the primary slot; recreated when mp2SoftDecode changes
-  useEffect(() => {
-    if (!slotAVideoRef.current || !isSupported()) return;
-
-    cancelPendingTransition();
-    transitionGenRef.current++;
-    destroySlot("a");
-    destroySlot("b");
-    hasStartedPlaybackRef.current = false;
-    activeSlotIdRef.current = "a";
-    setVisibleSlotId("a");
-
-    createPlayerForSlot("a");
-
-    return () => {
-      cancelPendingTransition();
-      destroySlot("a");
-      destroySlot("b");
-    };
-  }, [mp2SoftDecode]);
-
-  // Toggle live sync at runtime without recreating the player
-  useEffect(() => {
-    getActivePlayer()?.setLiveSync(playMode === "live");
-  }, [playMode, visibleSlotId]);
-
-  useEffect(() => {
-    if (liveSessionAnchor) {
-      getActivePlayer()?.setLiveSessionAnchor(liveSessionAnchor);
-    }
-  }, [liveSessionAnchor, visibleSlotId]);
 
   // Size the 16:9 frame to fill the player area (letterbox on one axis). ResizeObserver avoids container queries.
   useEffect(() => {
@@ -526,13 +533,14 @@ export function VideoPlayer({
   // Media Session action handlers (lock screen / control center play & pause)
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
+    const videoForActiveSlot = () => (activeSlotIdRef.current === "a" ? slotAVideoRef : slotBVideoRef).current;
     navigator.mediaSession.setActionHandler("play", () => {
       userPausedRef.current = false;
-      getActiveVideo()?.play();
+      videoForActiveSlot()?.play();
     });
     navigator.mediaSession.setActionHandler("pause", () => {
       userPausedRef.current = true;
-      getActiveVideo()?.pause();
+      videoForActiveSlot()?.pause();
     });
     return () => {
       navigator.mediaSession.setActionHandler("play", null);
@@ -560,9 +568,10 @@ export function VideoPlayer({
     const isStreamSwitch =
       channel != null &&
       prevStreamRef.current != null &&
-      (channel.id !== prevStreamRef.current.channelId ||
-        activeSourceIndex !== prevStreamRef.current.sourceIndex);
-    const useSeamlessSwitch = hasStartedPlaybackRef.current && isStreamSwitch;
+      (channel.id !== prevStreamRef.current.channelId || activeSourceIndex !== prevStreamRef.current.sourceIndex);
+    const activeVideo = slotVideoRef(activeId).current;
+    const useSeamlessSwitch =
+      hasStartedPlaybackRef.current && isStreamSwitch && shouldAutoPlayRef.current && !activeVideo?.paused;
 
     if (channel) {
       prevStreamRef.current = { channelId: channel.id, sourceIndex: activeSourceIndex };
@@ -597,7 +606,6 @@ export function VideoPlayer({
 
     const pendingPlayer = createPlayerForSlot(pendingId);
     const pendingVideo = slotVideoRef(pendingId).current;
-    const activeVideo = slotVideoRef(activeId).current;
     if (!pendingPlayer || !pendingVideo) return;
 
     if (activeVideo) {
@@ -605,7 +613,6 @@ export function VideoPlayer({
       pendingVideo.muted = true;
     }
 
-    pendingPlayer.setLiveSync(playMode === "live");
     pendingTransitionRef.current = { gen, slotId: pendingId };
     pendingPlayer.loadSegments(newSegments);
 
@@ -616,10 +623,69 @@ export function VideoPlayer({
     }
   });
 
-  useEffect(() => {
-    if (!getActivePlayer()) return;
+  const scheduleRetryReload = useEffectEvent((newSegments: PlayerSegment[]) => {
+    handleLoadSegments(newSegments);
+  });
+
+  const reloadAfterDecoderChange = useEffectEvent(() => {
     handleLoadSegments(segments);
-  }, [segments, mp2SoftDecode]);
+  });
+
+  // Recreate decoder pipeline when mp2SoftDecode toggles
+  useEffect(() => {
+    if (!slotAVideoRef.current || !isSupported()) return;
+    const wasmDecoders = mp2SoftDecode ? { mp2: mp2WasmUrl } : {};
+    const hadPlayer = slotAPlayerRef.current !== null || slotBPlayerRef.current !== null;
+
+    cancelPendingTransition();
+    transitionGenRef.current++;
+    destroySlot("a");
+    destroySlot("b");
+    hasStartedPlaybackRef.current = false;
+    activeSlotIdRef.current = "a";
+    setVisibleSlotId("a");
+
+    const player = createPlayer(slotAVideoRef.current, { wasmDecoders });
+    player.on("error", (e) => handlePlayerError(e, "a"));
+    player.on("seek-needed", handleSeekNeeded);
+    player.on("audio-suspended", handleAudioSuspended);
+    applyPlayerSettings(player);
+    slotAPlayerRef.current = player;
+
+    if (hadPlayer) {
+      reloadAfterDecoderChange();
+    }
+
+    return () => {
+      cancelPendingTransition();
+      destroySlot("a");
+      destroySlot("b");
+    };
+  }, [mp2SoftDecode]);
+
+  // Propagate live sync mode to any mounted player (active or pending slot)
+  useEffect(() => {
+    const liveSync = playMode === "live";
+    slotAPlayerRef.current?.setLiveSync(liveSync);
+    slotBPlayerRef.current?.setLiveSync(liveSync);
+  }, [playMode]);
+
+  useEffect(() => {
+    if (!liveSessionAnchor) return;
+    slotAPlayerRef.current?.setLiveSessionAnchor(liveSessionAnchor);
+    slotBPlayerRef.current?.setLiveSessionAnchor(liveSessionAnchor);
+  }, [liveSessionAnchor]);
+
+  useEffect(() => {
+    const activeId = activeSlotIdRef.current;
+    const player = (activeId === "a" ? slotAPlayerRef : slotBPlayerRef).current;
+    if (!player) return;
+    if (skipNextSegmentsLoadRef.current) {
+      skipNextSegmentsLoadRef.current = false;
+      return;
+    }
+    handleLoadSegments(segments);
+  }, [segments]);
 
   const handleVideoCanPlay = useEffectEvent((slotId: SlotId) => {
     if (slotId !== getActiveSlotId() && pendingTransitionRef.current?.slotId !== slotId) return;
@@ -885,7 +951,7 @@ export function VideoPlayer({
 
   useEffect(() => {
     const attachSlot = (slotId: SlotId) => {
-      const video = slotVideoRef(slotId).current;
+      const video = (slotId === "a" ? slotAVideoRef : slotBVideoRef).current;
       if (!video) return () => {};
 
       const onCanPlay = () => handleVideoCanPlay(slotId);
@@ -952,21 +1018,21 @@ export function VideoPlayer({
     }
   }, [showControls, hideControlsImmediately, showControlsImmediately]);
 
-  const handleMuteToggle = useCallback(() => {
+  const handleMuteToggle = useEffectEvent(() => {
     const video = getActiveVideo();
     if (video) {
       video.muted = !video.muted;
     }
-  }, []);
+  });
 
-  const handleVolumeChange = useCallback((newVolume: number) => {
+  const handleVolumeChange = useEffectEvent((newVolume: number) => {
     const video = getActiveVideo();
     if (video) {
       video.volume = newVolume;
     }
-  }, []);
+  });
 
-  const handleFullscreen = useCallback(() => {
+  const handleFullscreen = useEffectEvent(() => {
     const isIOS = /iPhone|iPod/.test(navigator.userAgent);
 
     const video = getActiveVideo();
@@ -983,9 +1049,9 @@ export function VideoPlayer({
     } else if (onFullscreenToggle) {
       onFullscreenToggle();
     }
-  }, [onFullscreenToggle]);
+  });
 
-  const handlePiPToggle = useCallback(async () => {
+  const handlePiPToggle = useEffectEvent(async () => {
     const video = getActiveVideo();
     if (!video) return;
 
@@ -998,7 +1064,7 @@ export function VideoPlayer({
     } catch (err) {
       console.error("Picture-in-Picture error:", err);
     }
-  }, []);
+  });
 
   const handleUserInteraction = useEffectEvent(() => {
     const video = getActiveVideo();
@@ -1042,13 +1108,13 @@ export function VideoPlayer({
           !showControls && "cursor-none",
         )}
       >
-        {/* biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks */}
         <div className="absolute inset-0 flex items-center justify-center min-h-0 min-w-0">
           <div
             ref={videoFrameRef}
             className="video-frame grid min-h-0 min-w-0 [&>video]:col-start-1 [&>video]:row-start-1"
           >
             {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
+              // biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks
               <video
                 key={slotId}
                 ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
