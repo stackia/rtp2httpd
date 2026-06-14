@@ -22,6 +22,7 @@
  *    timeline (same space as video.currentTime), using the remuxer dts base.
  */
 
+import { isIOS } from "../../lib/platform";
 import { maxBufferHoleSec, type PlayerConfig } from "../config";
 import Log from "../utils/logger";
 import { PassthroughStretcher, type Stretcher, WasmStretcher } from "./wasm-stretcher";
@@ -144,9 +145,7 @@ export class PCMAudioPlayer {
     this.context = new AudioContext();
     this.gainNode = this.context.createGain();
 
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-
-    if (isIOS) {
+    if (isIOS()) {
       try {
         this.mediaStreamDestination = this.context.createMediaStreamDestination();
         this.gainNode.connect(this.mediaStreamDestination);

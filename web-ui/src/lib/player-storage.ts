@@ -5,6 +5,8 @@
  * JSON serialization, error handling, and backward-compatible reads.
  */
 
+import { isIOS } from "./platform";
+
 function cloneDefaultValue<T>(value: T): T {
   if (value === null || typeof value !== "object") {
     return value;
@@ -43,10 +45,7 @@ export const [getLastChannelId, saveLastChannelId] = createStore<string | null>(
 );
 export const [getSidebarVisible, saveSidebarVisible] = createStore("rtp2httpd-player-sidebar-visible", true);
 export const [getSeamlessSwitch, saveSeamlessSwitch] = createStore("rtp2httpd-player-seamless-switch", true);
-export const [getMp2SoftDecode, saveMp2SoftDecode] = createStore(
-  "rtp2httpd-player-mp2-soft-decode",
-  /iPhone|iPad|iPod/.test(navigator.userAgent),
-);
+export const [getMp2SoftDecode, saveMp2SoftDecode] = createStore("rtp2httpd-player-mp2-soft-decode", isIOS());
 
 // Per-channel source index uses a JSON object map, so it needs custom logic
 const [getSourceIndexMap, saveSourceIndexMap] = createStore<Record<string, number>>(
