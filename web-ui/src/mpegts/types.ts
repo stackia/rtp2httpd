@@ -3,6 +3,10 @@ export interface PlayerSegment {
   duration?: number;
 }
 
+import type { LiveSessionAnchor } from "./player/wall-clock";
+
+export type { LiveSessionAnchor };
+
 export interface PlayerError {
   category: "io" | "demux" | "media";
   detail: string;
@@ -19,6 +23,10 @@ export interface PlayerEventMap {
 export interface Player {
   loadSegments(segments: PlayerSegment[]): void;
   seek(seconds: number): void;
+  /** Seek to session live edge (continuous since tune-in) minus target latency, as MSE seconds. */
+  goLive(targetMseSeconds: number): void;
+  /** Anchor for session live edge (continuous live playback since tune-in). */
+  setLiveSessionAnchor(anchor: LiveSessionAnchor): void;
   setLiveSync(enabled: boolean): void;
   destroy(): void;
   on<K extends keyof PlayerEventMap>(event: K, handler: PlayerEventMap[K]): void;
@@ -31,6 +39,8 @@ export interface PlayerImpl {
   onAudioSuspended?: (() => void) | null;
   loadSegments(segments: PlayerSegment[]): void;
   seek(seconds: number): void;
+  goLive(targetMseSeconds: number): void;
+  setLiveSessionAnchor(anchor: LiveSessionAnchor): void;
   setLiveSync(enabled: boolean): void;
   /** Release the video element (stop feeding, detach source) but keep reusable resources (worker) alive. */
   suspend(): void;

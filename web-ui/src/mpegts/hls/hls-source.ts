@@ -38,7 +38,7 @@ export class HlsSource implements SegmentSource {
   /** Accumulated timeline position for the next appended segment, in seconds. */
   private timelinePos = 0;
   private initialized = false;
-  /** Force a remuxer reset on the next returned segment (initial load / after seek). */
+  /** Force a remuxer reset on the next returned segment (initial load). */
   private resetPending = true;
   private refreshFailures = 0;
   private lastPlaylistHadNews = true;
@@ -80,20 +80,6 @@ export class HlsSource implements SegmentSource {
       await this.refresh();
     }
     return null;
-  }
-
-  /** Reposition to the segment containing `seconds` (VOD/EVENT only). */
-  seek(seconds: number): void {
-    let index = 0;
-    for (let i = 0; i < this.segments.length; i++) {
-      if (this.segments[i].start <= seconds) {
-        index = i;
-      } else {
-        break;
-      }
-    }
-    this.nextIndex = index;
-    this.resetPending = true;
   }
 
   destroy(): void {
@@ -167,8 +153,8 @@ export class HlsSource implements SegmentSource {
 
   private async refresh(): Promise<void> {
     // Per spec: reload after targetDuration; after an unchanged playlist, retry after half of it
-    const delay = (this.lastPlaylistHadNews ? this.targetDuration : this.targetDuration / 2) * 1000;
-    await this.sleep(delay);
+    const delayMs = (this.lastPlaylistHadNews ? this.targetDuration : this.targetDuration / 2) * 1000;
+    await this.sleep(delayMs);
     if (this.destroyed) return;
 
     const playlist = await this.fetchPlaylist();

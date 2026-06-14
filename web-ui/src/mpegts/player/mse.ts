@@ -8,6 +8,11 @@ interface RemoveRange {
   end: number;
 }
 
+interface PendingSegment {
+  data: ArrayBuffer;
+  timestampOffset?: number;
+}
+
 interface InitSegmentRecord {
   data: ArrayBuffer;
   codec: string;
@@ -29,7 +34,7 @@ interface MSEMediaSource {
 export interface MSE {
   open(onOpen: () => void): void;
   appendInit(track: Track, data: ArrayBuffer, codec: string, container: string): void;
-  appendMedia(track: Track, data: ArrayBuffer): void;
+  appendMedia(track: Track, data: ArrayBuffer, timestampOffset?: number): void;
   /** Set the MediaSource duration (e.g. from an HLS VOD playlist) so seeks beyond buffered data are not clamped. */
   setDuration(seconds: number): void;
   endOfStream(): void;
@@ -60,7 +65,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   let destroying = false;
 
   const sourceBuffers: Record<Track, SourceBuffer | null> = { video: null, audio: null };
-  const pendingSegments: Record<Track, ArrayBuffer[]> = { video: [], audio: [] };
+  const pendingSegments: Record<Track, PendingSegment[]> = { video: [], audio: [] };
   const pendingRemoveRanges: Record<Track, RemoveRange[]> = { video: [], audio: [] };
   const mimeTypes: Record<Track, string | null> = { video: null, audio: null };
   const lastInitSegments: Record<Track, InitSegmentRecord | null> = { video: null, audio: null };
@@ -180,21 +185,23 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
       }
 
       if (pendingSegments[track].length > 0) {
-        const segment = pendingSegments[track].shift() as ArrayBuffer;
+        const entry = pendingSegments[track].shift() as PendingSegment;
 
-        if (!segment || segment.byteLength === 0) {
-          // Ignore empty buffer
+        if (!entry || entry.data.byteLength === 0) {
           continue;
         }
 
         try {
-          sb.appendBuffer(segment);
+          if (entry.timestampOffset !== undefined) {
+            sb.timestampOffset = entry.timestampOffset / 1000;
+          }
+          sb.appendBuffer(entry.data);
           if (isBufferFull) {
             isBufferFull = false;
             mse.onBufferAvailable?.();
           }
         } catch (error: unknown) {
-          pendingSegments[track].unshift(segment);
+          pendingSegments[track].unshift(entry);
           if ((error as DOMException).code === 22) {
             // QuotaExceededError
             if (!isBufferFull) {
@@ -250,7 +257,10 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
               const removeEnd = currentTime - config.bufferCleanupMinBackward;
               pendingRemoveRanges[track].push({ start, end: removeEnd });
             }
-          } else if (end < currentTime) {
+          } else if (end < currentTime - config.bufferCleanupMaxBackward) {
+            // Drop stale ranges left behind after a forward seek (e.g. Go Live), but
+            // keep recent rewind history — immediate removal on end < currentTime was
+            // wiping the DVR window users expect to seek back into.
             doRemove = true;
             pendingRemoveRanges[track].push({ start, end });
           }
@@ -460,7 +470,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     appendInit(track: Track, data: ArrayBuffer, codec: string, container: string): void {
       if (mediaSource?.readyState !== "open" || mediaSource.streaming === false) {
         pendingSourceBufferInit.push({ track, data, codec, container });
-        pendingSegments[track].push(data);
+        pendingSegments[track].push({ data });
         return;
       }
 
@@ -469,12 +479,12 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
       lastInitSegments[track] = { data, codec, container };
 
       createSourceBuffer(track, codec, container);
-      pendingSegments[track].push(data);
+      pendingSegments[track].push({ data });
       tryAppendPending();
     },
 
-    appendMedia(track: Track, data: ArrayBuffer): void {
-      pendingSegments[track].push(data);
+    appendMedia(track: Track, data: ArrayBuffer, timestampOffset?: number): void {
+      pendingSegments[track].push({ data, timestampOffset });
 
       // After the MediaSource closes (e.g. iOS background reclaim), the
       // SourceBuffers are dead — touching them throws InvalidStateError.

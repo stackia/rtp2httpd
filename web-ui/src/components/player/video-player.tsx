@@ -3,7 +3,22 @@ import { Play } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
-import { createPlayer, isSupported, type Player, type PlayerError, type PlayerSegment } from "../../mpegts";
+import {
+  createPlayer,
+  defaultConfig,
+  isSupported,
+  type Player,
+  type PlayerError,
+  type PlayerSegment,
+} from "../../mpegts";
+import {
+  createLiveSessionAnchor,
+  goLiveTargetMse,
+  isNearLiveWallClock,
+  type LiveSessionAnchor,
+  lagBehindLiveEdge,
+  wallClockToMse,
+} from "../../mpegts/player/wall-clock";
 import mp2WasmUrl from "../../mpegts/wasm/minimp3/mp2_decoder.wasm?url";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PlayerControls } from "./player-controls";
@@ -15,7 +30,9 @@ interface VideoPlayerProps {
   onError?: (error: string) => void;
   locale: Locale;
   currentProgram?: EPGProgram | null;
-  onSeek?: (seekTime: Date) => void;
+  onSeek?: (seekTime: Date, goingLive: boolean) => void;
+  /** Recalibrate MSE t=0 → wall-clock mapping (live mode). */
+  onStreamStartTimeChange?: (time: Date) => void;
   streamStartTime: Date;
   currentVideoTime: number;
   onCurrentVideoTimeChange: (time: number) => void;
@@ -40,6 +57,7 @@ export function VideoPlayer({
   playMode,
   currentProgram = null,
   onSeek,
+  onStreamStartTimeChange,
   streamStartTime,
   currentVideoTime,
   onCurrentVideoTimeChange,
@@ -64,7 +82,8 @@ export function VideoPlayer({
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const isLive = streamStartTime.getTime() + currentVideoTime * 1000 >= Date.now() - 3000;
+  const [liveSessionAnchor, setLiveSessionAnchor] = useState<LiveSessionAnchor | null>(null);
+  const isLive = liveSessionAnchor !== null && lagBehindLiveEdge(liveSessionAnchor, currentVideoTime) < 3;
   const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isPiP, setIsPiP] = useState(false);
@@ -78,6 +97,8 @@ export function VideoPlayer({
   // Whether the pause was an explicit user action (vs. the OS pausing on backgrounding).
   // Used to decide if playback should auto-resume when the page returns to foreground.
   const userPausedRef = useRef(false);
+  /** Reset wall-clock calibration after each new segment load. */
+  const wallClockCalibratedRef = useRef(false);
 
   // Digit input state
   const [digitBuffer, setDigitBuffer] = useState("");
@@ -101,37 +122,76 @@ export function VideoPlayer({
     };
   }, [isLoading]);
 
-  // Simplified seek: buffer checking is done inside the library
+  const handleRelativeSeek = useEffectEvent((deltaSeconds: number) => {
+    if (!player) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    shouldAutoPlayRef.current = !video.paused;
+    if (playMode === "live") {
+      player.setLiveSync(false);
+    }
+    // Relative to current playback position on the MSE timeline (not wall clock)
+    player.seek(video.currentTime + deltaSeconds);
+  });
+
+  const calibrateLiveSession = useEffectEvent((video: HTMLVideoElement) => {
+    const origin = new Date(Date.now() - video.currentTime * 1000);
+    const anchor = createLiveSessionAnchor(video.currentTime);
+    setLiveSessionAnchor(anchor);
+    onStreamStartTimeChange?.(origin);
+    player?.setLiveSessionAnchor(anchor);
+  });
+
+  const seekLiveByWallClock = useEffectEvent((seekTime: Date) => {
+    const targetMse = wallClockToMse(seekTime, streamStartTime);
+    player?.seek(targetMse);
+  });
+
+  const goLiveToSessionEdge = useEffectEvent(() => {
+    if (!liveSessionAnchor) return;
+    const video = videoRef.current;
+    const currentTime = video?.currentTime ?? 0;
+    const targetMse = goLiveTargetMse(liveSessionAnchor, defaultConfig.liveSyncTargetLatency, currentTime);
+    player?.goLive(targetMse);
+    player?.setLiveSync(true);
+  });
+
+  const isNearLiveEdge = useEffectEvent((seekTime: Date): boolean => {
+    return isNearLiveWallClock(seekTime, liveSessionAnchor, streamStartTime);
+  });
+
+  // Progress seek: in-buffer → buffer seek; outside buffer → seek-needed → onSeek rebuild
   const handleSeek = useCallback(
     (seekTime: Date) => {
       if (!player) return;
       const video = videoRef.current;
-      const goingLive = seekTime.getTime() >= Date.now() - 3000;
+      const goingLive = isNearLiveEdge(seekTime);
 
-      if (goingLive && playMode === "live" && video) {
-        // "Go Live": jump to the end of buffered range, resume playback and liveSync
+      if (goingLive) {
         userPausedRef.current = false;
-        video.play();
-        const buffered = video.buffered;
-        if (buffered.length > 0) {
-          video.currentTime = Math.max(Math.max(buffered.end(buffered.length - 1) - 0.5, 0), buffered.start(0));
+        if (playMode === "live") {
+          goLiveToSessionEdge();
+          video?.play();
+          return;
         }
-        player.setLiveSync(true);
+        shouldAutoPlayRef.current = !video?.paused;
+        onSeek?.(new Date(), true);
         return;
       }
 
-      // Regular seek: preserve current play/pause state, disable liveSync to avoid auto-catchup
+      shouldAutoPlayRef.current = !video?.paused;
       if (playMode === "live") {
         player.setLiveSync(false);
+        seekLiveByWallClock(seekTime);
+        return;
       }
-      shouldAutoPlayRef.current = !video?.paused;
+
       const seekSeconds = (seekTime.getTime() - streamStartTime.getTime()) / 1000;
       if (seekSeconds >= 0) {
         player.seek(seekSeconds);
-        // If not in buffer, library emits "seek-needed" -> onSeek -> parent rebuilds segments
       } else {
-        // Seeking before current stream start — need entirely new stream
-        onSeek?.(seekTime);
+        onSeek?.(seekTime, false);
       }
     },
     [streamStartTime, onSeek, playMode, player],
@@ -223,9 +283,9 @@ export function VideoPlayer({
       setIsRetrySeek(true);
       if (onSeek) {
         if (playMode === "live") {
-          onSeek(new Date());
+          onSeek(new Date(), true);
         } else {
-          onSeek(new Date(streamStartTime.getTime() + currentVideoTime * 1000));
+          onSeek(new Date(streamStartTime.getTime() + currentVideoTime * 1000), false);
         }
       }
       return;
@@ -256,8 +316,10 @@ export function VideoPlayer({
   }
 
   const handleSeekNeeded = useEffectEvent((seconds: number) => {
+    const video = videoRef.current;
+    shouldAutoPlayRef.current = !video?.paused;
     const seekTime = new Date(streamStartTime.getTime() + seconds * 1000);
-    onSeek?.(seekTime);
+    onSeek?.(seekTime, isNearLiveWallClock(seekTime, liveSessionAnchor, streamStartTime));
   });
 
   const handleAudioSuspended = useEffectEvent(() => {
@@ -283,6 +345,17 @@ export function VideoPlayer({
   useEffect(() => {
     player?.setLiveSync(playMode === "live");
   }, [playMode, player]);
+
+  useEffect(() => {
+    if (liveSessionAnchor) {
+      player?.setLiveSessionAnchor(liveSessionAnchor);
+    }
+  }, [player, liveSessionAnchor]);
+
+  useEffect(() => {
+    wallClockCalibratedRef.current = false;
+    setLiveSessionAnchor(null);
+  }, [segments]);
 
   // Media Session: lock screen / control center metadata (esp. useful during PiP playback)
   useEffect(() => {
@@ -388,14 +461,9 @@ export function VideoPlayer({
     onPlaybackStarted?.();
 
     const video = videoRef.current;
-
-    if (
-      playMode === "live" &&
-      video &&
-      video.buffered.length > 0 &&
-      video.currentTime < video.buffered.end(video.buffered.length - 1) - 4
-    ) {
-      player?.setLiveSync(false);
+    if (playMode === "live" && video && !wallClockCalibratedRef.current) {
+      wallClockCalibratedRef.current = true;
+      calibrateLiveSession(video);
     }
 
     if (stablePlaybackTimeoutRef.current) {
@@ -428,7 +496,7 @@ export function VideoPlayer({
     const video = videoRef.current;
     if (onSeek && video?.duration) {
       const seekTime = new Date(streamStartTime.getTime() + video.duration * 1000);
-      onSeek(seekTime);
+      onSeek(seekTime, isNearLiveWallClock(seekTime, liveSessionAnchor, streamStartTime));
     }
   });
 
@@ -462,7 +530,7 @@ export function VideoPlayer({
       // Dead session or stale buffer — rebuild the stream at the live edge
       console.log("Reloading at live edge after background suspension");
       shouldAutoPlayRef.current = true;
-      onSeek?.(new Date());
+      onSeek?.(new Date(), true);
       return;
     }
 
@@ -470,7 +538,8 @@ export function VideoPlayer({
       // Catchup: rebuild the stream at the current position
       console.log("Reloading at current position after background suspension");
       shouldAutoPlayRef.current = true;
-      onSeek?.(new Date(streamStartTime.getTime() + currentVideoTime * 1000));
+      const seekTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
+      onSeek?.(seekTime, isNearLiveWallClock(seekTime, liveSessionAnchor, streamStartTime));
       return;
     }
 
@@ -566,18 +635,14 @@ export function VideoPlayer({
       case "ArrowLeft": {
         e.preventDefault();
         (document.activeElement as HTMLElement)?.blur();
-        const currentAbsoluteTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
-        const newSeekTime = new Date(currentAbsoluteTime.getTime() - 5000);
-        handleSeek(newSeekTime);
+        handleRelativeSeek(-5);
         break;
       }
 
       case "ArrowRight": {
         e.preventDefault();
         (document.activeElement as HTMLElement)?.blur();
-        const currentAbsoluteTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
-        const newSeekTime = new Date(currentAbsoluteTime.getTime() + 5000);
-        handleSeek(newSeekTime);
+        handleRelativeSeek(5);
         break;
       }
 

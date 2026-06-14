@@ -1,13 +1,12 @@
+import { defaultConfig, type PlayerConfig } from "../config";
 import { MediaSegmentInfo, MediaSegmentInfoList, SampleInfo } from "../core/media-segment-info";
-import { isFirefox, isSafari } from "../utils/browser";
+import { isFirefox } from "../utils/browser";
 import { IllegalStateException } from "../utils/exception";
 import Log from "../utils/logger";
 import AAC from "./aac-silent";
 import MP4 from "./mp4-generator";
 
-interface RemuxerConfig {
-  fixAudioTimestampGap?: boolean;
-}
+type RemuxerConfig = Pick<PlayerConfig, "maxBufferHoleMs">;
 
 interface AudioSample {
   unit: Uint8Array;
@@ -118,7 +117,6 @@ class MP4Remuxer {
   private _onMediaSegment: MediaSegmentCallback | null;
 
   private _mp3UseMpegAudio: boolean;
-  private _fillAudioTimestampGap: boolean;
 
   private _silentAudioMode: boolean;
   private _silentAudioLastDts: number | undefined;
@@ -149,8 +147,6 @@ class MP4Remuxer {
 
     // While only FireFox supports 'audio/mp4, codecs="mp3"', use 'audio/mpeg' for chrome, safari, ...
     this._mp3UseMpegAudio = !isFirefox;
-
-    this._fillAudioTimestampGap = this._config.fixAudioTimestampGap || false;
 
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
@@ -212,6 +208,45 @@ class MP4Remuxer {
   insertDiscontinuity(): void {
     this._audioNextDts = this._videoNextDts = undefined;
     this._silentAudioLastDts = undefined;
+  }
+
+  /**
+   * Map upstream timestamps onto a continuous output timeline.
+   * When `_nextDts` is set (continuous playback), always splice to it.
+   * After a discontinuity, bridge only small forward gaps (<= maxBufferHoleMs).
+   */
+  private _computeDtsCorrection(
+    firstSampleOriginalDts: number,
+    nextDts: number | undefined,
+    segmentInfoList: MediaSegmentInfoList | null,
+  ): number {
+    if (nextDts !== undefined) {
+      return firstSampleOriginalDts - nextDts;
+    }
+
+    if (!segmentInfoList || segmentInfoList.isEmpty()) {
+      return 0;
+    }
+
+    let prevSample = segmentInfoList.getLastSampleBefore(firstSampleOriginalDts);
+    if (prevSample == null) {
+      const lastSample = segmentInfoList.getLastSample();
+      // Fall back only when upstream time moved forward but binary search missed (e.g. HLS segment splice).
+      if (lastSample != null && firstSampleOriginalDts >= lastSample.originalDts) {
+        prevSample = lastSample;
+      }
+    }
+    if (prevSample == null) {
+      return 0;
+    }
+
+    let distance = firstSampleOriginalDts - (prevSample.originalDts + prevSample.duration);
+    const maxBufferHoleMs = this._config.maxBufferHoleMs ?? defaultConfig.maxBufferHoleMs;
+    if (distance > 0 && distance <= maxBufferHoleMs) {
+      distance = 0;
+    }
+    const expectedDts = prevSample.dts + prevSample.duration + distance;
+    return firstSampleOriginalDts - expectedDts;
   }
 
   /**
@@ -525,145 +560,55 @@ class MP4Remuxer {
 
     const firstSampleOriginalDts = (samples[0] as AudioSample).dts - this._dtsBase;
 
-    // calculate dtsCorrection
-    if (this._audioNextDts) {
-      dtsCorrection = firstSampleOriginalDts - this._audioNextDts;
-    } else {
-      // this._audioNextDts == undefined
-      if (this._audioSegmentInfoList?.isEmpty()) {
-        dtsCorrection = 0;
-      } else {
-        const prevSample = this._audioSegmentInfoList?.getLastSampleBefore(firstSampleOriginalDts);
-        if (prevSample != null) {
-          let distance = firstSampleOriginalDts - (prevSample.originalDts + prevSample.duration);
-          if (distance <= 3) {
-            distance = 0;
-          }
-          const expectedDts = prevSample.dts + prevSample.duration + distance;
-          dtsCorrection = firstSampleOriginalDts - expectedDts;
-        } else {
-          // prevSample == null, cannot found
-          dtsCorrection = 0;
-        }
-      }
-    }
+    dtsCorrection = this._computeDtsCorrection(firstSampleOriginalDts, this._audioNextDts, this._audioSegmentInfoList);
 
     const mp4Samples: MP4Sample[] = [];
 
     // Correct dts for each sample, and calculate sample duration. Then output to mp4Samples
     for (let i = 0; i < samples.length; i++) {
       const sample = samples[i] as AudioSample;
-      const unit = sample.unit;
       const originalDts = sample.dts - this._dtsBase;
-      let dts = originalDts;
-      let needFillSilentFrames = false;
-      let silentFrames: MP4Sample[] | null = null;
       let sampleDuration = 0;
 
       if (originalDts < -0.001) {
         continue; //pass the first sample with the invalid dts
       }
 
-      if (this._audioMeta?.codec !== "mp3" && refSampleDuration != null) {
-        // for AAC codec, we need to keep dts increase based on refSampleDuration
-        let curRefDts = originalDts;
-        const maxAudioFramesDrift = 3;
-        if (this._audioNextDts) {
-          curRefDts = this._audioNextDts;
-        }
+      const dts = originalDts - (dtsCorrection as number);
 
-        dtsCorrection = originalDts - curRefDts;
-        if (dtsCorrection <= -maxAudioFramesDrift * refSampleDuration) {
-          // If we're overlapping by more than maxAudioFramesDrift number of frame, drop this sample
-          Log.w(
-            this.TAG,
-            `Dropping 1 audio frame (originalDts: ${originalDts} ms ,curRefDts: ${curRefDts} ms)  due to dtsCorrection: ${dtsCorrection} ms overlap.`,
-          );
-          continue;
-        } else if (
-          dtsCorrection >= maxAudioFramesDrift * refSampleDuration &&
-          this._fillAudioTimestampGap &&
-          !isSafari
-        ) {
-          // Silent frame generation, if large timestamp gap detected && config.fixAudioTimestampGap
-          needFillSilentFrames = true;
-          // We need to insert silent frames to fill timestamp gap
-          const frameCount = Math.floor(dtsCorrection / refSampleDuration);
-          Log.w(
-            this.TAG,
-            "Large audio timestamp gap detected, may cause AV sync to drift. " +
-              "Silent frames will be generated to avoid unsync.\n" +
-              `originalDts: ${originalDts} ms, curRefDts: ${curRefDts} ms, ` +
-              `dtsCorrection: ${Math.round(dtsCorrection)} ms, generate: ${frameCount} frames`,
-          );
-
-          dts = Math.floor(curRefDts);
-          sampleDuration = Math.floor(curRefDts + refSampleDuration) - dts;
-
-          let silentUnit = AAC.getSilentFrame(this._audioMeta?.originalCodec ?? "", this._audioMeta?.channelCount ?? 0);
-          if (silentUnit == null) {
-            Log.w(
-              this.TAG,
-              "Unable to generate silent frame for " +
-                `${this._audioMeta?.originalCodec} with ${this._audioMeta?.channelCount} channels, repeat last frame`,
-            );
-            // Repeat last frame
-            silentUnit = unit;
-          }
-          silentFrames = [];
-
-          for (let j = 0; j < frameCount; j++) {
-            curRefDts = curRefDts + refSampleDuration;
-            const intDts = Math.floor(curRefDts); // change to integer
-            const intDuration = Math.floor(curRefDts + refSampleDuration) - intDts;
-            const frame: MP4Sample = {
-              dts: intDts,
-              pts: intDts,
-              cts: 0,
-              unit: silentUnit,
-              size: silentUnit?.byteLength ?? 0,
-              duration: intDuration, // wait for next sample
-              originalDts: originalDts,
-              flags: {
-                isLeading: 0,
-                dependsOn: 1,
-                isDependedOn: 0,
-                hasRedundancy: 0,
-              },
-            };
-            silentFrames.push(frame);
-            mdatBytes += frame.size;
-          }
-
-          this._audioNextDts = curRefDts + refSampleDuration;
-        } else {
-          dts = Math.floor(curRefDts);
-          sampleDuration = Math.floor(curRefDts + refSampleDuration) - dts;
-          this._audioNextDts = curRefDts + refSampleDuration;
-        }
+      if (i !== samples.length - 1) {
+        const nextDts = (samples[i + 1] as AudioSample).dts - this._dtsBase - (dtsCorrection as number);
+        sampleDuration = nextDts - dts;
       } else {
-        // keep the original dts calculate algorithm for mp3
-        dts = originalDts - (dtsCorrection as number);
-
-        if (i !== samples.length - 1) {
-          const nextDts = (samples[i + 1] as AudioSample).dts - this._dtsBase - (dtsCorrection as number);
+        // the last sample
+        if (lastSample != null) {
+          // use stashed sample's dts to calculate sample duration
+          const nextDts = lastSample.dts - this._dtsBase - (dtsCorrection as number);
           sampleDuration = nextDts - dts;
+        } else if (mp4Samples.length >= 1) {
+          // use second last sample duration
+          sampleDuration = mp4Samples[mp4Samples.length - 1].duration as number;
         } else {
-          // the last sample
-          if (lastSample != null) {
-            // use stashed sample's dts to calculate sample duration
-            const nextDts = lastSample.dts - this._dtsBase - (dtsCorrection as number);
-            sampleDuration = nextDts - dts;
-          } else if (mp4Samples.length >= 1) {
-            // use second last sample duration
-            sampleDuration = mp4Samples[mp4Samples.length - 1].duration as number;
-          } else {
-            // the only one sample, use reference sample duration
-            sampleDuration = Math.floor(refSampleDuration as number);
-          }
+          // the only one sample, use reference sample duration
+          sampleDuration = Math.floor(refSampleDuration as number);
         }
-        this._audioNextDts = dts + sampleDuration;
       }
+
+      if (sampleDuration <= 0) {
+        const fallbackDuration =
+          Math.floor(refSampleDuration as number) ||
+          (mp4Samples.length >= 1 ? (mp4Samples[mp4Samples.length - 1].duration as number) : 0) ||
+          26;
+        Log.w(
+          this.TAG,
+          `Audio: non-monotonic dts detected (dts: ${dts} ms, duration: ${Math.round(sampleDuration)} ms), ` +
+            `clamping sample duration to ${fallbackDuration} ms`,
+        );
+        dtsCorrection = (dtsCorrection as number) + (sampleDuration - fallbackDuration);
+        sampleDuration = fallbackDuration;
+      }
+
+      this._audioNextDts = dts + sampleDuration;
 
       if (firstDts === -1) {
         firstDts = dts;
@@ -683,11 +628,6 @@ class MP4Remuxer {
           hasRedundancy: 0,
         },
       });
-
-      if (needFillSilentFrames && silentFrames) {
-        // Silent frames should be inserted after wrong-duration frame
-        mp4Samples.push.apply(mp4Samples, silentFrames);
-      }
     }
 
     if (mp4Samples.length === 0) {
@@ -822,28 +762,7 @@ class MP4Remuxer {
 
     const firstSampleOriginalDts = (samples[0] as VideoSample).dts - this._dtsBase;
 
-    // calculate dtsCorrection
-    if (this._videoNextDts) {
-      dtsCorrection = firstSampleOriginalDts - this._videoNextDts;
-    } else {
-      // this._videoNextDts == undefined
-      if (this._videoSegmentInfoList?.isEmpty()) {
-        dtsCorrection = 0;
-      } else {
-        const prevSample = this._videoSegmentInfoList?.getLastSampleBefore(firstSampleOriginalDts);
-        if (prevSample != null) {
-          let distance = firstSampleOriginalDts - (prevSample.originalDts + prevSample.duration);
-          if (distance <= 3) {
-            distance = 0;
-          }
-          const expectedDts = prevSample.dts + prevSample.duration + distance;
-          dtsCorrection = firstSampleOriginalDts - expectedDts;
-        } else {
-          // prevSample == null, cannot found
-          dtsCorrection = 0;
-        }
-      }
-    }
+    dtsCorrection = this._computeDtsCorrection(firstSampleOriginalDts, this._videoNextDts, this._videoSegmentInfoList);
 
     const info = new MediaSegmentInfo();
     const mp4Samples: MP4Sample[] = [];

@@ -1,8 +1,9 @@
 import { defaultConfig, type PlayerConfig } from "./config";
 import { createMpegtsPlayer } from "./player/mpegts-player";
-import type { Player, PlayerError, PlayerEventMap, PlayerImpl, PlayerSegment } from "./types";
+import type { LiveSessionAnchor, Player, PlayerError, PlayerEventMap, PlayerImpl, PlayerSegment } from "./types";
 
-export type { Player, PlayerConfig, PlayerError, PlayerEventMap, PlayerSegment };
+export { defaultConfig } from "./config";
+export type { LiveSessionAnchor, Player, PlayerConfig, PlayerError, PlayerEventMap, PlayerSegment };
 
 export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerConfig>): Player {
   const fullConfig: PlayerConfig = { ...defaultConfig, ...config };
@@ -48,6 +49,14 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
 
     seek(seconds: number) {
       impl?.seek(seconds);
+    },
+
+    goLive(targetMseSeconds: number) {
+      impl?.goLive(targetMseSeconds);
+    },
+
+    setLiveSessionAnchor(anchor: LiveSessionAnchor) {
+      impl?.setLiveSessionAnchor(anchor);
     },
 
     setLiveSync(enabled: boolean) {

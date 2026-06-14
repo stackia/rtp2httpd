@@ -9,8 +9,13 @@ export interface PlayerConfig {
   /** PlaybackRate (clamped to [1, 2]) used for latency chasing. Requires `liveSync: true`. @default 1.2 */
   liveSyncPlaybackRate: number;
 
-  /** Fill silent audio frames to avoid A/V desync on large audio timestamp gaps. @default true */
-  fixAudioTimestampGap: boolean;
+  /**
+   * Maximum media timestamp hole (milliseconds) treated as continuous at remux time;
+   * gaps at or below this size are bridged onto the output timeline. Also used by the
+   * PCM audio player to skip resync on small forward seeks.
+   * @default 300
+   */
+  maxBufferHoleMs: number;
 
   /** URLs to WASM decoder files, keyed by codec. Omit to disable software decoding for that codec.
    *  e.g. `{ mp2: "/assets/mp2_decoder.wasm" }` */
@@ -33,7 +38,7 @@ export const defaultConfig: PlayerConfig = {
   liveSyncTargetLatency: 1.5,
   liveSyncPlaybackRate: 1.2,
 
-  fixAudioTimestampGap: true,
+  maxBufferHoleMs: 300,
 
   wasmDecoders: {},
 
@@ -46,4 +51,9 @@ export const defaultConfig: PlayerConfig = {
 
 export function createDefaultConfig(): PlayerConfig {
   return { ...defaultConfig };
+}
+
+/** `maxBufferHoleMs` as seconds for MSE / Web Audio timeline comparisons. */
+export function maxBufferHoleSec(config: Pick<PlayerConfig, "maxBufferHoleMs">): number {
+  return config.maxBufferHoleMs / 1000;
 }

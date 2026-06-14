@@ -218,6 +218,13 @@ export class MediaSegmentInfoList {
     }
   }
 
+  getLastSample(): SampleInfo | null {
+    if (this._list.length === 0) {
+      return null;
+    }
+    return this._list[this._list.length - 1].lastSample;
+  }
+
   getLastSyncPointBefore(originalBeginDts: number): SampleInfo | null {
     let segmentIdx = this._searchNearestSegmentBefore(originalBeginDts);
     let syncPoints = this._list[segmentIdx].syncPoints;

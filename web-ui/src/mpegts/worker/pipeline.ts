@@ -27,6 +27,7 @@ export interface PipelineCallbacks {
     mediaSegment: {
       type: string;
       data?: ArrayBuffer;
+      timestampOffset?: number;
       [key: string]: unknown;
     },
   ) => void;
@@ -140,18 +141,6 @@ class Pipeline {
     }
     this._resumeGate?.();
     this._resumeGate = null;
-  }
-
-  /** Seek within an HLS VOD/EVENT playlist. No-op for live or non-HLS sources. */
-  seek(seconds: number): void {
-    if (!this._hlsSource || this._hlsSource.info.live) {
-      return;
-    }
-    this._runId++;
-    this._abortCurrentLoad();
-    this._fmp4Chunks = [];
-    this._hlsSource.seek(seconds);
-    void this._run(this._runId);
   }
 
   destroy(): void {
@@ -281,11 +270,11 @@ class Pipeline {
         if (this._fmp4Mode) {
           this._flushFmp4Segment();
         }
-        // HLS TS segments carry continuous timestamps: keep the stashed samples so the
-        // remuxer splices segments seamlessly. Static (catchup) segments each restart
-        // their own timeline, so flush between them.
+        // Flush stashed samples at every segment boundary so the next segment's first
+        // remux batch is not mixed with the previous segment's tail (which would share
+        // one dtsCorrection and preserve upstream HLS timestamp gaps in MSE).
+        this._remuxer?.flushStashedSamples();
         if (!this._hlsSource) {
-          this._remuxer?.flushStashedSamples();
           // Each static segment is an independent TS timeline: a partial MP2
           // frame carried from the previous URL must not be prepended to the
           // next one, and the PTS anchor must re-establish from the new PES

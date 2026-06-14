@@ -6,6 +6,7 @@ import type { WorkerCommand, WorkerEvent } from "../worker/messages";
 import TransmuxWorker from "../worker/transmux-worker.ts?worker&inline";
 import { type StallJumper, setupLiveSync, setupStartupStallJumper } from "./live-sync";
 import { createMSE, type MSE } from "./mse";
+import type { LiveSessionAnchor } from "./wall-clock";
 
 const TAG = "Player";
 
@@ -60,9 +61,9 @@ export function createMpegtsPlayer(
   let stallJumper: StallJumper | null = null;
   let mseGeneration = 0;
   let liveSyncEnabled = config.liveSync;
+  /** Live edge assuming continuous playback since session start. */
+  let liveSessionAnchor: LiveSessionAnchor | null = null;
 
-  // HLS playlist info reported by the worker (null when playing a non-HLS source)
-  let hlsInfo: { live: boolean; totalDuration: number } | null = null;
   let watermarkTimer: ReturnType<typeof setInterval> | null = null;
   let watermarkPaused = false;
 
@@ -119,7 +120,7 @@ export function createMpegtsPlayer(
         pendingInits.push({ track: msg.track, data: msg.data, codec: msg.codec, container: msg.container });
         break;
       case "media-segment":
-        mse?.appendMedia(msg.track, msg.data);
+        mse?.appendMedia(msg.track, msg.data, msg.timestampOffset);
         break;
       case "error":
         impl.onError?.({
@@ -132,7 +133,6 @@ export function createMpegtsPlayer(
         mse?.endOfStream();
         break;
       case "hls-info":
-        hlsInfo = { live: msg.live, totalDuration: msg.totalDuration };
         if (!msg.live) {
           mse?.setDuration(msg.totalDuration);
           startWatermarkThrottle();
@@ -180,6 +180,33 @@ export function createMpegtsPlayer(
         worker?.postMessage({ type: "resume" } satisfies WorkerCommand);
       }
     }, 1000);
+  }
+
+  /** Resume segment fetching after an in-buffer seek (worker may have paused on buffer full). */
+  function resumeWorkerAfterBufferSeek(): void {
+    if (watermarkPaused) {
+      watermarkPaused = false;
+    }
+    worker?.postMessage({ type: "resume" } satisfies WorkerCommand);
+  }
+
+  /** Seek within existing MSE buffer without reloading the stream. */
+  function bufferSeek(seconds: number): boolean {
+    if (!isBuffered(video, seconds)) {
+      return false;
+    }
+    video.currentTime = seconds;
+    resumeWorkerAfterBufferSeek();
+    return true;
+  }
+
+  function seekTo(seconds: number): void {
+    if (bufferSeek(seconds)) {
+      return;
+    }
+    for (const h of seekHandlers) {
+      h(seconds);
+    }
   }
 
   function stopWatermarkThrottle(): void {
@@ -272,7 +299,7 @@ export function createMpegtsPlayer(
 
   function initLiveHelpers(): void {
     if (!destroyLiveSync && liveSyncEnabled) {
-      destroyLiveSync = setupLiveSync(video, config);
+      destroyLiveSync = setupLiveSync(video, config, () => liveSessionAnchor);
     }
     stallJumper?.destroy();
     stallJumper = setupStartupStallJumper(video);
@@ -286,7 +313,6 @@ export function createMpegtsPlayer(
     loadSegments(segments: PlayerSegment[]) {
       mseGeneration++;
       pendingInits = [];
-      hlsInfo = null;
       stopWatermarkThrottle();
       if (mse) {
         mse.destroy();
@@ -301,7 +327,7 @@ export function createMpegtsPlayer(
     setLiveSync(enabled: boolean) {
       if (enabled && !destroyLiveSync) {
         liveSyncEnabled = true;
-        destroyLiveSync = setupLiveSync(video, config);
+        destroyLiveSync = setupLiveSync(video, config, () => liveSessionAnchor);
       } else if (!enabled && destroyLiveSync) {
         liveSyncEnabled = false;
         destroyLiveSync();
@@ -310,30 +336,20 @@ export function createMpegtsPlayer(
     },
 
     seek(seconds: number) {
-      if (isBuffered(video, seconds)) {
-        video.currentTime = seconds;
-      } else if (hlsInfo && !hlsInfo.live) {
-        // HLS VOD/EVENT: reposition inside the playlist (worker reschedules segments)
-        const cmd: WorkerCommand = { type: "seek", seconds };
-        worker?.postMessage(cmd);
-        // The watermark throttle may be holding the worker paused; the seek target
-        // needs data now, so resume immediately (the throttle re-pauses if needed)
-        if (watermarkPaused) {
-          watermarkPaused = false;
-          worker?.postMessage({ type: "resume" } satisfies WorkerCommand);
-        }
-        video.currentTime = seconds;
-      } else {
-        for (const h of seekHandlers) {
-          h(seconds);
-        }
-      }
+      seekTo(seconds);
+    },
+
+    goLive(targetMseSeconds: number) {
+      seekTo(targetMseSeconds);
+    },
+
+    setLiveSessionAnchor(anchor: LiveSessionAnchor) {
+      liveSessionAnchor = anchor;
     },
 
     suspend() {
       stopWatermarkThrottle();
       pendingInits = [];
-      hlsInfo = null;
       if (mse) {
         mse.destroy();
         mse = null;

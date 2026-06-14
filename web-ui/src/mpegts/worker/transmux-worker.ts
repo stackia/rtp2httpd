@@ -32,7 +32,16 @@ function createPipeline(segments: PlayerSegment[], config: PlayerConfig): Pipeli
     },
     onMediaSegment(type, mediaSegment) {
       const data = mediaSegment.data as ArrayBuffer;
-      post({ type: "media-segment", track: type as "video" | "audio", data, gen }, [data]);
+      post(
+        {
+          type: "media-segment",
+          track: type as "video" | "audio",
+          data,
+          timestampOffset: mediaSegment.timestampOffset,
+          gen,
+        },
+        [data],
+      );
     },
     onLoadingComplete() {
       post({ type: "complete", gen });
@@ -69,9 +78,6 @@ self.addEventListener("message", (e: MessageEvent) => {
     case "load-segments":
       gen = cmd.gen;
       pipeline?.loadSegments(cmd.segments);
-      break;
-    case "seek":
-      pipeline?.seek(cmd.seconds);
       break;
     case "pause":
       pipeline?.pause();
