@@ -15,10 +15,12 @@ import { useTheme } from "../hooks/use-theme";
 import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG } from "../lib/epg-parser";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
 import {
+  getForce16x9,
   getLastChannelId,
   getLastSourceIndex,
   getMp2SoftDecode,
   getSidebarVisible,
+  saveForce16x9,
   saveLastChannelId,
   saveLastSourceIndex,
   saveMp2SoftDecode,
@@ -45,6 +47,7 @@ function PlayerPage() {
   const [sidebarView, setSidebarView] = useState<"channels" | "epg">("channels");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [force16x9, setForce16x9] = useState(() => getForce16x9());
   const [mp2SoftDecode, setMp2SoftDecode] = useState(() => getMp2SoftDecode());
   const pageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -318,6 +321,11 @@ function PlayerPage() {
     }
   }, []);
 
+  const handleForce16x9Change = useCallback((enabled: boolean) => {
+    setForce16x9(enabled);
+    saveForce16x9(enabled);
+  }, []);
+
   const handleMp2SoftDecodeChange = useCallback((enabled: boolean) => {
     setMp2SoftDecode(enabled);
     saveMp2SoftDecode(enabled);
@@ -339,12 +347,14 @@ function PlayerPage() {
           onLocaleChange={setLocale}
           theme={theme}
           onThemeChange={setTheme}
+          force16x9={force16x9}
+          onForce16x9Change={handleForce16x9Change}
           mp2SoftDecode={mp2SoftDecode}
           onMp2SoftDecodeChange={handleMp2SoftDecodeChange}
         />
       </div>
     );
-  }, [locale, theme, mp2SoftDecode, setLocale, setTheme, handleMp2SoftDecodeChange]);
+  }, [locale, theme, force16x9, mp2SoftDecode, setLocale, setTheme, handleForce16x9Change, handleMp2SoftDecodeChange]);
 
   // Main UI content
   const mainContent = (
@@ -371,6 +381,7 @@ function PlayerPage() {
             showSidebar={showSidebar}
             onToggleSidebar={handleToggleSidebar}
             onFullscreenToggle={handleFullscreenToggle}
+            force16x9={force16x9}
             mp2SoftDecode={mp2SoftDecode}
             activeSourceIndex={activeSourceIndex}
             onSourceChange={handleSourceChange}
