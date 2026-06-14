@@ -11,8 +11,8 @@ interface SettingsDropdownProps {
   onLocaleChange: (locale: Locale) => void;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
-  smoothSwitch: boolean;
-  onSmoothSwitchChange: (enabled: boolean) => void;
+  seamlessSwitch: boolean;
+  onSeamlessSwitchChange: (enabled: boolean) => void;
   mp2SoftDecode: boolean;
   onMp2SoftDecodeChange: (enabled: boolean) => void;
 }
@@ -36,8 +36,8 @@ function SettingsDropdownComponent({
   onLocaleChange,
   theme,
   onThemeChange,
-  smoothSwitch,
-  onSmoothSwitchChange,
+  seamlessSwitch,
+  onSeamlessSwitchChange,
   mp2SoftDecode,
   onMp2SoftDecodeChange,
 }: SettingsDropdownProps) {
@@ -106,8 +106,12 @@ function SettingsDropdownComponent({
 
             {/* Seamless channel/source switch (dual-slot preload) */}
             <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-medium text-muted-foreground">{t("smoothSwitch")}</span>
-              <Switch checked={smoothSwitch} onCheckedChange={onSmoothSwitchChange} aria-label={t("smoothSwitch")} />
+              <span className="text-xs font-medium text-muted-foreground">{t("seamlessSwitch")}</span>
+              <Switch
+                checked={seamlessSwitch}
+                onCheckedChange={onSeamlessSwitchChange}
+                aria-label={t("seamlessSwitch")}
+              />
             </div>
 
             {/* MP2 Audio Software Decode Toggle */}

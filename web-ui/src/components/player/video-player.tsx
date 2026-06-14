@@ -41,7 +41,7 @@ interface VideoPlayerProps {
   showSidebar?: boolean;
   onToggleSidebar?: () => void;
   onFullscreenToggle?: () => void;
-  smoothSwitch?: boolean;
+  seamlessSwitch?: boolean;
   mp2SoftDecode?: boolean;
   activeSourceIndex?: number;
   onSourceChange?: (index: number) => void;
@@ -72,7 +72,7 @@ export function VideoPlayer({
   showSidebar = true,
   onToggleSidebar,
   onFullscreenToggle,
-  smoothSwitch = true,
+  seamlessSwitch = true,
   mp2SoftDecode = false,
   activeSourceIndex = 0,
   onSourceChange,
@@ -539,7 +539,7 @@ export function VideoPlayer({
       (channel.id !== prevStreamRef.current.channelId || activeSourceIndex !== prevStreamRef.current.sourceIndex);
     const activeVideo = slotVideoRef(activeId).current;
     const useSeamlessSwitch =
-      smoothSwitch &&
+      seamlessSwitch &&
       hasStartedPlaybackRef.current &&
       isStreamSwitch &&
       playMode === "live" &&
@@ -648,11 +648,11 @@ export function VideoPlayer({
   }, [mp2SoftDecode]);
 
   useEffect(() => {
-    if (!smoothSwitch && pendingTransitionRef.current) {
+    if (!seamlessSwitch && pendingTransitionRef.current) {
       destroySlot(pendingTransitionRef.current.slotId);
       cancelPendingTransition();
     }
-  }, [smoothSwitch]);
+  }, [seamlessSwitch]);
 
   // Propagate live sync mode to any mounted player (active or pending slot)
   useEffect(() => {

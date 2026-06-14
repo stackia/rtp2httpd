@@ -18,13 +18,13 @@ import {
   getLastChannelId,
   getLastSourceIndex,
   getMp2SoftDecode,
+  getSeamlessSwitch,
   getSidebarVisible,
-  getSmoothSwitch,
   saveLastChannelId,
   saveLastSourceIndex,
   saveMp2SoftDecode,
+  saveSeamlessSwitch,
   saveSidebarVisible,
-  saveSmoothSwitch,
 } from "../lib/player-storage";
 import type { PlayerSegment } from "../mpegts";
 import { NEAR_LIVE_EDGE_MS } from "../mpegts/player/wall-clock";
@@ -47,7 +47,7 @@ function PlayerPage() {
   const [sidebarView, setSidebarView] = useState<"channels" | "epg">("channels");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
-  const [smoothSwitch, setSmoothSwitch] = useState(() => getSmoothSwitch());
+  const [seamlessSwitch, setSeamlessSwitch] = useState(() => getSeamlessSwitch());
   const [mp2SoftDecode, setMp2SoftDecode] = useState(() => getMp2SoftDecode());
   const pageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -321,9 +321,9 @@ function PlayerPage() {
     }
   }, []);
 
-  const handleSmoothSwitchChange = useCallback((enabled: boolean) => {
-    setSmoothSwitch(enabled);
-    saveSmoothSwitch(enabled);
+  const handleSeamlessSwitchChange = useCallback((enabled: boolean) => {
+    setSeamlessSwitch(enabled);
+    saveSeamlessSwitch(enabled);
   }, []);
 
   const handleMp2SoftDecodeChange = useCallback((enabled: boolean) => {
@@ -347,8 +347,8 @@ function PlayerPage() {
           onLocaleChange={setLocale}
           theme={theme}
           onThemeChange={setTheme}
-          smoothSwitch={smoothSwitch}
-          onSmoothSwitchChange={handleSmoothSwitchChange}
+          seamlessSwitch={seamlessSwitch}
+          onSeamlessSwitchChange={handleSeamlessSwitchChange}
           mp2SoftDecode={mp2SoftDecode}
           onMp2SoftDecodeChange={handleMp2SoftDecodeChange}
         />
@@ -357,11 +357,11 @@ function PlayerPage() {
   }, [
     locale,
     theme,
-    smoothSwitch,
+    seamlessSwitch,
     mp2SoftDecode,
     setLocale,
     setTheme,
-    handleSmoothSwitchChange,
+    handleSeamlessSwitchChange,
     handleMp2SoftDecodeChange,
   ]);
 
@@ -390,7 +390,7 @@ function PlayerPage() {
             showSidebar={showSidebar}
             onToggleSidebar={handleToggleSidebar}
             onFullscreenToggle={handleFullscreenToggle}
-            smoothSwitch={smoothSwitch}
+            seamlessSwitch={seamlessSwitch}
             mp2SoftDecode={mp2SoftDecode}
             activeSourceIndex={activeSourceIndex}
             onSourceChange={handleSourceChange}

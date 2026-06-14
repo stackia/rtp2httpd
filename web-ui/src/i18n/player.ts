@@ -86,7 +86,7 @@ const base: TranslationDict = {
   themeAuto: "Auto",
   themeLight: "Light",
   themeDark: "Dark",
-  smoothSwitch: "Seamless switch",
+  seamlessSwitch: "Seamless switch",
   mp2SoftDecode: "MP2 Audio Software Decoder",
 };
 
@@ -174,7 +174,7 @@ const zhHans: TranslationDict = {
   themeAuto: "自动",
   themeLight: "浅色",
   themeDark: "深色",
-  smoothSwitch: "无缝换台",
+  seamlessSwitch: "无缝换台",
   mp2SoftDecode: "MP2 音频软解",
 };
 
@@ -263,7 +263,7 @@ const zhHant: TranslationDict = {
   themeAuto: "自動",
   themeLight: "淺色",
   themeDark: "深色",
-  smoothSwitch: "無縫換台",
+  seamlessSwitch: "無縫換台",
   mp2SoftDecode: "MP2 音頻軟解",
 };
 

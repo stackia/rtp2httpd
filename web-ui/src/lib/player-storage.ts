@@ -42,7 +42,7 @@ export const [getLastChannelId, saveLastChannelId] = createStore<string | null>(
   null,
 );
 export const [getSidebarVisible, saveSidebarVisible] = createStore("rtp2httpd-player-sidebar-visible", true);
-export const [getSmoothSwitch, saveSmoothSwitch] = createStore("rtp2httpd-player-smooth-switch", true);
+export const [getSeamlessSwitch, saveSeamlessSwitch] = createStore("rtp2httpd-player-seamless-switch", true);
 export const [getMp2SoftDecode, saveMp2SoftDecode] = createStore(
   "rtp2httpd-player-mp2-soft-decode",
   /iPhone|iPad|iPod/.test(navigator.userAgent),
