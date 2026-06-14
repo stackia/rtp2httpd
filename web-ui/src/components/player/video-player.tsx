@@ -117,7 +117,8 @@ export function VideoPlayer({
   const hideControlsTimeoutRef = useRef<number>(0);
   const [retryCount, setRetryCount] = useState(0);
   const [retryBaseline, setRetryBaseline] = useState(0);
-  const [isRetrySeek, setIsRetrySeek] = useState(false);
+  /** Synchronous flag: segments reload is error recovery, not a user/channel switch. */
+  const isRetrySeekRef = useRef(false);
   const stablePlaybackTimeoutRef = useRef<number>(0);
   // Whether to auto-play after player recreation (true for initial load and "go live")
   const shouldAutoPlayRef = useRef(true);
@@ -378,7 +379,7 @@ export function VideoPlayer({
         setRetryBaseline(retryBaseline + 1);
         console.log(`Retrying playback due to decoding error...`);
       }
-      setIsRetrySeek(true);
+      isRetrySeekRef.current = true;
       if (onSeek) {
         if (playMode === "live") {
           onSeek(new Date(), true);
@@ -390,7 +391,6 @@ export function VideoPlayer({
         skipNextSegmentsLoadRef.current = true;
       }
       scheduleRetryReload(getRetrySegments());
-      setIsRetrySeek(false);
       return;
     }
 
@@ -422,14 +422,12 @@ export function VideoPlayer({
       prevStreamRef.current != null &&
       (channel.id !== prevStreamRef.current.channelId || activeSourceIndex !== prevStreamRef.current.sourceIndex);
 
-    if (isRetrySeek && !isStreamChange) {
-      setIsRetrySeek(false);
+    if (isRetrySeekRef.current && !isStreamChange) {
+      isRetrySeekRef.current = false;
     } else {
       setRetryCount(0);
       setRetryBaseline(0);
-      if (isRetrySeek) {
-        setIsRetrySeek(false);
-      }
+      isRetrySeekRef.current = false;
     }
   }
 
