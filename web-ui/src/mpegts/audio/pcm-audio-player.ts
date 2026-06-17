@@ -29,9 +29,12 @@ import { PassthroughStretcher, type Stretcher, WasmStretcher } from "./wasm-stre
 
 const TAG = "PCMAudioPlayer";
 
-/** Page-level one-shot flag: only surface the autoplay interaction prompt once per session. */
-let suspendedNotified = false;
-/** Set once the user has started playback on this page (any codec path counts). */
+/**
+ * Page-level one-shot autoplay gate for Web Audio.
+ * Set when playback has started (any codec), the click-to-resume prompt was
+ * already shown, or AudioContext.resume() succeeded — suppresses re-prompting
+ * on later channel switches that create a new AudioContext.
+ */
 let playbackUnlocked = false;
 
 /** Call when video playback has been allowed by a user gesture or successful play(). */
@@ -411,8 +414,8 @@ export class PCMAudioPlayer {
   }
 
   private notifyAutoplayBlocked(): void {
-    if (suspendedNotified) return;
-    suspendedNotified = true;
+    if (playbackUnlocked) return;
+    playbackUnlocked = true;
     Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
     this.onSuspended?.();
     this.videoElement?.pause();
