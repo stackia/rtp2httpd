@@ -2,7 +2,7 @@
 
 ## Processing Checkpoint
 
-last_processed_comment_date: 2026-06-11T04:17:03Z
+last_processed_comment_date: 2026-06-12T18:18:51Z
 
 ## Document Paths
 
@@ -44,6 +44,7 @@ annotations.
 
 ## Update Log
 
+- 2026-06-17: Processed 1 new comment. No update: Hubei Enshi Telecom `121.60.255.120:15970` (comment ID 4694053536) was already documented at province level; Qianjiang redirect to `121.60.193.229` is normal load-balancing behavior.
 - 2026-06-12: Processed 3 new comments. Added Guangxi Hezhou/Wuzhou Telecom `124.226.158.81:8027` (comment ID 4658533810). Other comments: one Shanghai Unicom packet-capture question with empty `ChannelFCCIP`, and one Jilin Changchun Telecom address request.
 - 2026-05-05: Processed 2 new comments. Added Zhejiang Huzhou Telecom `115.208.248.108:8027` (comment ID 4376934403, reaction added). One Chengdu CCTV13 entry (`118.123.55.74:8027`) was already documented.
 - 2026-05-04: Processed 7 new comments. Added Guangdong Foshan Telecom `183.59.144.166:8027` (comment ID 4143424499). Other comments: one already documented Baoding entry with reaction added, one already documented Chengdu CCTV13 entry, one Tianjin Unicom inquiry, one Shandong Yantai inquiry/single-point non-working report with no Yantai Unicom doc entry, one Shanghai Telecom timeout note where `124.75.25.211` was confirmed working by another user, and one Shanghai Telecom rebuttal to the timeout report.
