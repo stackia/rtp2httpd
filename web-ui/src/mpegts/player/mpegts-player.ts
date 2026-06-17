@@ -145,7 +145,9 @@ export function createMpegtsPlayer(
       case "pcm-audio-data": {
         const player = ensurePCMPlayer();
         const pcm = new Float32Array(msg.pcm);
+        const gen = mseGeneration;
         pcmPlayerInitPromise?.then(() => {
+          if (gen !== mseGeneration) return;
           player.feed(pcm, msg.channels, msg.sampleRate, msg.time);
         });
         break;
@@ -365,7 +367,7 @@ export function createMpegtsPlayer(
         mse.destroy();
         mse = null;
       }
-      resetPCMPlayer();
+      destroyPCMPlayer();
       destroyLiveSync?.();
       destroyLiveSync = null;
       stallJumper?.destroy();

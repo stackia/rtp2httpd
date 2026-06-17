@@ -141,6 +141,8 @@ export class PCMAudioPlayer {
   private largeSeekCancelled: boolean = false;
   private suspendedNotified: boolean = false;
   private resumePromise: Promise<void> | null = null;
+  /** Set by stop(); cleared by play(). Blocks scheduling/resync while a stream is torn down. */
+  private stopped: boolean = false;
 
   // Bound event handlers for cleanup
   private boundOnContextStateChange: (() => void) | null = null;
@@ -288,13 +290,15 @@ export class PCMAudioPlayer {
     this.insertToBuffer(chunk);
     this.cleanupBuffer();
 
-    if (!this.isSeeking && !this.videoElement?.paused) {
-      this.pendingChunks.push(chunk);
-      if (this.pendingChunks.length > MAX_PENDING_CHUNKS) {
-        this.pendingChunks.shift();
-      }
-      this.pump();
+    if (this.stopped || this.isSeeking || this.videoElement?.paused) {
+      return;
     }
+
+    this.pendingChunks.push(chunk);
+    if (this.pendingChunks.length > MAX_PENDING_CHUNKS) {
+      this.pendingChunks.shift();
+    }
+    this.pump();
   }
 
   // ==================== Stretcher ====================
@@ -350,7 +354,14 @@ export class PCMAudioPlayer {
    */
   private pump(): void {
     const ctx = this.context;
-    if (!ctx || !this.gainNode || this.isSeeking || this.pendingChunks.length === 0 || this.videoElement?.paused) {
+    if (
+      this.stopped ||
+      !ctx ||
+      !this.gainNode ||
+      this.isSeeking ||
+      this.pendingChunks.length === 0 ||
+      this.videoElement?.paused
+    ) {
       return;
     }
 
@@ -578,7 +589,15 @@ export class PCMAudioPlayer {
   private controlTick(): void {
     const ctx = this.context;
     const video = this.videoElement;
-    if (!ctx || !video || ctx.state !== "running" || video.paused || this.isSeeking || !this.stretcher) {
+    if (
+      this.stopped ||
+      !ctx ||
+      !video ||
+      ctx.state !== "running" ||
+      video.paused ||
+      this.isSeeking ||
+      !this.stretcher
+    ) {
       return;
     }
 
@@ -774,6 +793,11 @@ export class PCMAudioPlayer {
   // ==================== Playback Control ====================
 
   async play(): Promise<void> {
+    this.stopped = false;
+    if (this.gainNode && this.context) {
+      this.updateGain();
+    }
+
     if (this.context?.state === "suspended") {
       try {
         await this.context.resume();
@@ -805,6 +829,8 @@ export class PCMAudioPlayer {
   }
 
   stop(): void {
+    this.stopped = true;
+    this.resumePromise = null;
     this.cancelChain();
 
     this.pendingChunks = [];
@@ -815,6 +841,16 @@ export class PCMAudioPlayer {
     this.stretcher?.reset();
     this.driftEma = 0;
     this.hasDriftEma = false;
+
+    if (this.gainNode && this.context) {
+      const g = this.gainNode.gain;
+      g.cancelScheduledValues(this.context.currentTime);
+      g.value = 0;
+    }
+
+    if (this.audioElement) {
+      this.audioElement.pause();
+    }
   }
 
   setVolume(volume: number): void {
