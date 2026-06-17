@@ -203,7 +203,7 @@ function ChannelListComponent({
               type="button"
               onClick={() => setSelectedGroup(null)}
               className={clsx(
-                "rounded-lg px-2.5 md:px-2 py-0.5 md:py-1 text-xs font-medium transition",
+                "rounded-lg px-2.5 md:px-2 py-0.5 md:py-1 text-xs font-medium transition-[color,background-color,box-shadow]",
                 selectedGroup === null
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "bg-background text-muted-foreground cursor-pointer hover:bg-background/80 hover:text-foreground",
@@ -217,7 +217,7 @@ function ChannelListComponent({
                 key={group}
                 onClick={() => setSelectedGroup(group)}
                 className={clsx(
-                  "rounded-lg px-2.5 md:px-2 py-0.5 md:py-1 text-xs font-medium transition",
+                  "rounded-lg px-2.5 md:px-2 py-0.5 md:py-1 text-xs font-medium transition-[color,background-color,box-shadow]",
                   selectedGroup === group
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "cursor-pointer bg-background text-muted-foreground hover:bg-background/80 hover:text-foreground",

@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import type { Channel, EPGProgram } from "../../types/player";
+import { PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 
 interface PlayerControlsProps {
   // Channel information
@@ -295,7 +296,12 @@ export function PlayerControls({
             </button>
 
             {/* Volume Slider */}
-            <div className="player-overlay-surface absolute bottom-full left-1/2 -translate-x-1/2 rounded-lg px-2 md:px-3 py-2 cursor-pointer opacity-0 invisible group-hover/volume:opacity-100 group-hover/volume:visible transition-[opacity,visibility] duration-150">
+            <div
+              className={clsx(
+                PLAYER_OVERLAY_SURFACE_CLASS,
+                "invisible absolute bottom-full left-1/2 -translate-x-1/2 cursor-pointer rounded-lg px-2 py-2 opacity-0 transition-[opacity,visibility] duration-150 group-hover/volume:visible group-hover/volume:opacity-100 md:px-3",
+              )}
+            >
               <input
                 type="range"
                 min="0"
@@ -352,7 +358,12 @@ export function PlayerControls({
               >
                 {channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}
               </button>
-              <div className="player-overlay-surface absolute bottom-full left-1/2 -translate-x-1/2 rounded-lg py-1 opacity-0 invisible group-hover/source:opacity-100 group-hover/source:visible group-focus-within/source:opacity-100 group-focus-within/source:visible transition-[opacity,visibility] duration-150">
+              <div
+                className={clsx(
+                  PLAYER_OVERLAY_SURFACE_CLASS,
+                  "invisible absolute bottom-full left-1/2 -translate-x-1/2 rounded-lg py-1 opacity-0 transition-[opacity,visibility] duration-150 group-hover/source:visible group-hover/source:opacity-100 group-focus-within/source:visible group-focus-within/source:opacity-100",
+                )}
+              >
                 {channel.sources
                   .map((source, index) => ({ source, index }))
                   .filter(({ source }) => isLive || (source.catchup && source.catchupSource))

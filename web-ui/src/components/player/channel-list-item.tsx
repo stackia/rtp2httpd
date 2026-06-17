@@ -27,7 +27,7 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
         key={channel.id}
         ref={ref}
         className={clsx(
-          "rounded-xl border bg-card text-card-foreground shadow group cursor-pointer overflow-hidden transition duration-200 flex items-center gap-2 p-2 w-full text-left",
+          "rounded-xl border bg-card text-card-foreground shadow group cursor-pointer overflow-hidden transition-[color,background-color,border-color,box-shadow] duration-200 flex items-center gap-2 p-2 w-full text-left",
           isCurrentChannel
             ? "border-primary bg-primary/5 shadow-md"
             : "border-border hover:border-primary/50 hover:bg-muted/50 hover:shadow-sm",
@@ -59,7 +59,7 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
         </div>
         {/* Right: Logo */}
         {channel.logo && (
-          <div className="channel-logo-tile flex h-8 w-14 md:h-10 md:w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg px-1.5 py-0.5 md:px-2 md:py-1">
+          <div className="flex h-8 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[#404d6a] px-1.5 py-0.5 dark:bg-transparent md:h-10 md:w-20 md:px-2 md:py-1">
             <img
               src={channel.logo}
               alt={channel.name}

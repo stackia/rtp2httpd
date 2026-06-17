@@ -78,7 +78,7 @@ function SettingsDropdownComponent({
               <select
                 value={locale}
                 onChange={(e) => onLocaleChange(e.target.value as Locale)}
-                className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background text-foreground cursor-pointer hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background text-foreground cursor-pointer transition-[color,background-color,border-color,box-shadow] hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 {localeOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -94,7 +94,7 @@ function SettingsDropdownComponent({
               <select
                 value={theme}
                 onChange={(e) => onThemeChange(e.target.value as ThemeMode)}
-                className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background text-foreground cursor-pointer hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background text-foreground cursor-pointer transition-[color,background-color,border-color,box-shadow] hover:bg-muted focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 {themeOptions.map((option) => (
                   <option key={option} value={option}>

@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
@@ -20,6 +22,18 @@
   --color-popover-foreground: hsl(var(--popover-foreground));
   --color-card: hsl(var(--card));
   --color-card-foreground: hsl(var(--card-foreground));
+  --animate-zoom-fade-out: zoom-fade-out 0.5s ease-out forwards;
+
+  @keyframes zoom-fade-out {
+    0% {
+      transform: scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1.4);
+      opacity: 0;
+    }
+  }
 }
 
 :root {
@@ -67,95 +81,8 @@
   --ring: 224 76% 48%;
 }
 
-body {
-  @apply bg-background text-foreground antialiased;
-}
-
 @layer base {
   :focus-visible {
     @apply outline-none ring-2 ring-ring;
   }
-
-  * {
-    @apply transition-shadow;
-  }
-}
-
-.scrollbar-thin {
-  scrollbar-width: thin;
-}
-
-.scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
-}
-
-.scrollbar-thin::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--muted-foreground));
-  border-radius: 9999px;
-}
-
-.channel-logo-tile {
-  background: #404d6a;
-}
-
-.dark .channel-logo-tile {
-  background: transparent;
-}
-
-.player-overlay-surface {
-  background: rgba(9, 9, 11, 0.58);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(12px) saturate(1.15);
-}
-
-@keyframes zoom-fade-out {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1.4);
-    opacity: 0;
-  }
-}
-
-.video-container {
-  container: video / size;
-}
-
-/* Largest 16:9 rect that fits the player area (contain in viewport). */
-.video-frame {
-  aspect-ratio: 16 / 9;
-  position: relative;
-  max-width: 100%;
-  max-height: 100%;
-  width: 100%;
-  height: auto;
-  overflow: hidden;
-}
-
-@container video (min-aspect-ratio: 16 / 9) {
-  .video-frame {
-    height: 100%;
-    width: auto;
-  }
-}
-
-@container video (max-aspect-ratio: 16 / 9) {
-  .video-frame {
-    width: 100%;
-    height: auto;
-  }
-}
-
-/* Stretch any source aspect ratio to 16:9 inside the frame. */
-.video-frame video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  object-fit: fill;
 }
