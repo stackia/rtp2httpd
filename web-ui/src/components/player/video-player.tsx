@@ -95,11 +95,11 @@ function PlayerTopLeftOverlay({
   return (
     <div
       className={clsx(
-        "player-overlay-surface absolute top-4 left-4 md:top-8 md:left-8 z-10 flex items-center gap-2 md:gap-3 rounded-lg px-3 py-2 md:px-4 md:py-3 transition-opacity duration-300",
+        "player-overlay-surface absolute top-4 left-4 md:top-8 md:left-8 z-10 flex items-center gap-1.5 md:gap-2 rounded-lg px-2 py-1.5 md:px-3 md:py-2 transition-opacity duration-300",
         visible ? "opacity-100" : "opacity-0 pointer-events-none",
       )}
     >
-      <span className="text-sm md:text-base text-white font-medium tabular-nums">
+      <span className="text-xs md:text-base text-white font-medium tabular-nums">
         {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
       </span>
       {loading && (
