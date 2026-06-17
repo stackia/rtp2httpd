@@ -10,7 +10,6 @@ import {
   PictureInPicture2,
   Play,
   Tv,
-  Volume,
   Volume1,
   Volume2,
   VolumeX,
@@ -286,10 +285,8 @@ export function PlayerControls({
               className="rounded-full p-1.5 md:p-2 text-white transition cursor-pointer hover:bg-white/20 active:scale-95"
               title={isMuted ? t("unmute") : t("mute")}
             >
-              {isMuted ? (
+              {isMuted || volume === 0 ? (
                 <VolumeX className="h-5 w-5 md:h-7 md:w-7" />
-              ) : volume === 0 ? (
-                <Volume className="h-5 w-5 md:h-7 md:w-7" />
               ) : volume < 0.5 ? (
                 <Volume1 className="h-5 w-5 md:h-7 md:w-7" />
               ) : (
