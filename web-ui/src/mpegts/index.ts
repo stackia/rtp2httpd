@@ -63,6 +63,11 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
       impl?.setLiveSync(enabled);
     },
 
+    stop() {
+      if (destroyed) return;
+      impl?.suspend();
+    },
+
     destroy() {
       destroyed = true;
       impl?.destroy();
