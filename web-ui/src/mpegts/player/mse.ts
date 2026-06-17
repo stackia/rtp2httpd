@@ -591,6 +591,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
       }
 
       video.removeAttribute("src");
+      video.load();
 
       mse.onBufferFull = null;
       mse.onBufferAvailable = null;

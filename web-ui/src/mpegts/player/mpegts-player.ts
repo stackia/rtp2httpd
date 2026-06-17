@@ -313,6 +313,7 @@ export function createMpegtsPlayer(
     loadSegments(segments: PlayerSegment[]) {
       mseGeneration++;
       pendingInits = [];
+      pendingSegments = segments;
       stopWatermarkThrottle();
       if (mse) {
         mse.destroy();
@@ -321,7 +322,6 @@ export function createMpegtsPlayer(
       destroyPCMPlayer();
       initMSE();
       initLiveHelpers();
-      pendingSegments = segments;
     },
 
     setLiveSync(enabled: boolean) {
@@ -348,8 +348,15 @@ export function createMpegtsPlayer(
     },
 
     suspend() {
+      mseGeneration++;
       stopWatermarkThrottle();
       pendingInits = [];
+      pendingSegments = null;
+      if (worker) {
+        const cmd: WorkerCommand = { type: "reset" };
+        worker.postMessage(cmd);
+        workerInitialized = false;
+      }
       if (mse) {
         mse.destroy();
         mse = null;

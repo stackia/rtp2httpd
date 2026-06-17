@@ -74,8 +74,6 @@ interface ScheduledSpan {
   streamEnd: number;
 }
 
-let suspendedNotified = false;
-
 export class PCMAudioPlayer {
   private config: PlayerConfig;
   private context: AudioContext | null = null;
@@ -120,6 +118,7 @@ export class PCMAudioPlayer {
   private lastKnownVideoTime: number = 0;
   /** Set when a large seek already cancelled the scheduling chain in `onVideoSeeking`. */
   private largeSeekCancelled: boolean = false;
+  private suspendedNotified: boolean = false;
 
   // Bound event handlers for cleanup
   private boundOnVideoSeeking: (() => void) | null = null;
@@ -170,6 +169,7 @@ export class PCMAudioPlayer {
     this.context.onstatechange = () => {
       Log.v(TAG, `AudioContext state changed to: ${this.context?.state}`);
       if (this.context?.state === "running") {
+        this.suspendedNotified = false;
         this.resyncFromBuffer(this.videoElement?.currentTime ?? 0);
       }
     };
@@ -331,8 +331,8 @@ export class PCMAudioPlayer {
 
     if (ctx.state === "suspended") {
       ctx.resume();
-      if (!suspendedNotified) {
-        suspendedNotified = true;
+      if (!this.suspendedNotified) {
+        this.suspendedNotified = true;
         Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
         this.onSuspended?.();
         this.videoElement?.pause();

@@ -28,6 +28,8 @@ export interface Player {
   /** Anchor for session live edge (continuous live playback since tune-in). */
   setLiveSessionAnchor(anchor: LiveSessionAnchor): void;
   setLiveSync(enabled: boolean): void;
+  /** Stop the current stream and reset the bound video element while keeping reusable resources alive. */
+  stop(): void;
   destroy(): void;
   on<K extends keyof PlayerEventMap>(event: K, handler: PlayerEventMap[K]): void;
   off<K extends keyof PlayerEventMap>(event: K, handler: PlayerEventMap[K]): void;

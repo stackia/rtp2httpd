@@ -85,6 +85,12 @@ self.addEventListener("message", (e: MessageEvent) => {
     case "resume":
       pipeline?.resume();
       break;
+    case "reset":
+      if (pipeline) {
+        pipeline.destroy();
+        pipeline = null;
+      }
+      break;
     case "destroy":
       if (pipeline) {
         pipeline.destroy();

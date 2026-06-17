@@ -7,6 +7,7 @@ export type WorkerCommand =
   | { type: "load-segments"; segments: PlayerSegment[]; gen: number }
   | { type: "pause" }
   | { type: "resume" }
+  | { type: "reset" }
   | { type: "destroy" };
 
 export type WorkerEvent =
