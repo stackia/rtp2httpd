@@ -91,7 +91,7 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
       </div>
       <div
         ref={viewportRef}
-        className="scrollbar-thin mt-5 h-100 overflow-y-auto rounded-2xl border border-border/50 bg-muted/20 p-4 backdrop-blur-sm"
+        className="mt-5 h-100 overflow-y-auto rounded-2xl border border-border/50 bg-muted/20 p-4 backdrop-blur-sm scrollbar-thin scrollbar-thumb-muted-foreground scrollbar-track-transparent [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground"
       >
         {logs.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">--</div>

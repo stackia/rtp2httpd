@@ -167,7 +167,7 @@ function EPGViewComponent({
                         key={program.id}
                         ref={playing ? currentProgramRef : null}
                         className={clsx(
-                          "rounded-xl border bg-card text-card-foreground shadow overflow-hidden transition duration-200 w-full text-left",
+                          "rounded-xl border bg-card text-card-foreground shadow overflow-hidden transition-[color,background-color,border-color,box-shadow,opacity] duration-200 w-full text-left",
                           playing
                             ? "border-primary bg-primary/5 shadow-md"
                             : isPast

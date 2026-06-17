@@ -290,7 +290,7 @@ function PlayerPage() {
       setIsRevealing(true);
       window.setTimeout(() => {
         setIsLoading(false);
-      }, 500); // Match zoom-fade-out animation duration
+      }, 500); // Match animate-zoom-fade-out duration
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : t("failedToLoadPlaylist");
       setError(errorMsg);
@@ -428,7 +428,7 @@ function PlayerPage() {
                 setSidebarView("channels");
               }}
               className={clsx(
-                "flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium",
+                "flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium transition-[color,border-color]",
                 sidebarView === "channels"
                   ? "border-b-2 border-primary text-primary"
                   : "text-muted-foreground cursor-pointer hover:text-foreground",
@@ -443,7 +443,7 @@ function PlayerPage() {
                 setSidebarView("epg");
               }}
               className={clsx(
-                "flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium",
+                "flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium transition-[color,border-color]",
                 sidebarView === "epg"
                   ? "border-b-2 border-primary text-primary"
                   : "text-muted-foreground cursor-pointer hover:text-foreground",
@@ -558,7 +558,7 @@ function PlayerPage() {
         <div
           className={clsx(
             "fixed inset-0 z-50 flex items-center justify-center bg-background",
-            isRevealing && "animate-[zoom-fade-out_0.5s_ease-out_forwards]",
+            isRevealing && "animate-zoom-fade-out",
           )}
         >
           <div className="text-center space-y-4">

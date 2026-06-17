@@ -23,6 +23,7 @@ import {
 } from "../../mpegts/player/wall-clock";
 import mp2WasmUrl from "../../mpegts/wasm/minimp3/mp2_decoder.wasm?url";
 import type { Channel, EPGProgram } from "../../types/player";
+import { PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 import { PlayerControls } from "./player-controls";
 
 interface VideoPlayerProps {
@@ -95,7 +96,8 @@ function PlayerTopLeftOverlay({
   return (
     <div
       className={clsx(
-        "player-overlay-surface absolute top-4 left-4 md:top-8 md:left-8 z-10 flex items-center gap-1.5 md:gap-2 rounded-lg px-2 py-1.5 md:px-3 md:py-2 transition-opacity duration-300",
+        PLAYER_OVERLAY_SURFACE_CLASS,
+        "absolute top-4 left-4 z-10 flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-opacity duration-300 md:top-8 md:left-8 md:gap-2 md:px-3 md:py-2",
         visible ? "opacity-100" : "opacity-0 pointer-events-none",
       )}
     >
@@ -1223,17 +1225,20 @@ export function VideoPlayer({
       {/* Player area sizes the 16:9 frame via container queries; sources stretch to 16:9 inside it. */}
       <div
         className={clsx(
-          "video-container relative w-full min-h-0 aspect-video md:aspect-auto md:h-full flex items-center justify-center",
+          "@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center md:aspect-auto md:h-full",
           !showControls && "cursor-none",
         )}
       >
-        <div className="video-frame">
+        <div className="relative aspect-video h-auto max-h-full w-full max-w-full overflow-hidden [@container_video_(max-aspect-ratio:_16/9)]:h-auto [@container_video_(max-aspect-ratio:_16/9)]:w-full [@container_video_(min-aspect-ratio:_16/9)]:h-full [@container_video_(min-aspect-ratio:_16/9)]:w-auto">
           {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
             // biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks
             <video
               key={slotId}
               ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
-              className={clsx(visibleSlotId !== slotId && "invisible pointer-events-none")}
+              className={clsx(
+                "absolute inset-0 size-full min-h-0 min-w-0 object-fill",
+                visibleSlotId !== slotId && "invisible pointer-events-none",
+              )}
               playsInline
               webkit-playsinline="true"
               x5-playsinline="true"
@@ -1262,7 +1267,12 @@ export function VideoPlayer({
               showControls ? "opacity-100" : "opacity-0",
             )}
           >
-            <div className="player-overlay-surface flex flex-col gap-1.5 md:gap-2 px-2 py-1.5 md:px-3 md:py-2 items-center justify-center overflow-hidden rounded-lg max-w-[calc(100vw-2rem)] md:max-w-none">
+            <div
+              className={clsx(
+                PLAYER_OVERLAY_SURFACE_CLASS,
+                "flex max-w-[calc(100vw-2rem)] flex-col items-center justify-center gap-1.5 overflow-hidden rounded-lg px-2 py-1.5 md:max-w-none md:gap-2 md:px-3 md:py-2",
+              )}
+            >
               {channel.logo && (
                 <img
                   src={channel.logo}
@@ -1278,7 +1288,7 @@ export function VideoPlayer({
                 <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
                   <span
                     className={clsx(
-                      "rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition duration-300",
+                      "rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition-[color,background-color,box-shadow,scale] duration-300",
                       digitBuffer
                         ? "bg-primary text-primary-foreground scale-110 shadow-lg ring-2 ring-primary/50"
                         : "bg-white/10 text-white/60",
