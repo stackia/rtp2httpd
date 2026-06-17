@@ -64,6 +64,60 @@ function otherSlot(id: SlotId): SlotId {
   return id === "a" ? "b" : "a";
 }
 
+function PlayerTopLeftOverlay({
+  visible,
+  loading,
+  loadingText,
+}: {
+  visible: boolean;
+  loading: boolean;
+  loadingText: string;
+}) {
+  const [time, setTime] = useState(() => new Date());
+
+  useEffect(() => {
+    const tick = () => setTime(new Date());
+    tick();
+
+    const msUntilNextMinute = 60_000 - (Date.now() % 60_000);
+    let intervalId = 0;
+    const timeoutId = window.setTimeout(() => {
+      tick();
+      intervalId = window.setInterval(tick, 60_000);
+    }, msUntilNextMinute);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, []);
+
+  return (
+    <div
+      className={clsx(
+        "player-overlay-surface absolute top-4 left-4 md:top-8 md:left-8 z-10 flex items-center gap-1.5 md:gap-2 rounded-lg px-2 py-1.5 md:px-3 md:py-2 transition-opacity duration-300",
+        visible ? "opacity-100" : "opacity-0 pointer-events-none",
+      )}
+    >
+      <span className="text-xs md:text-base text-white font-medium tabular-nums">
+        {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+      </span>
+      {loading && (
+        <>
+          <span className="text-xs md:text-sm text-white/50" aria-hidden="true">
+            ·
+          </span>
+          <div className="relative h-3 w-3 md:h-3.5 md:w-3.5 shrink-0">
+            <div className="absolute inset-0 rounded-full border border-white/30" />
+            <div className="absolute inset-0 rounded-full border border-white border-t-transparent animate-spin" />
+          </div>
+          <span className="text-xs md:text-sm text-white/70">{loadingText}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function VideoPlayer({
   channel,
   segments,
@@ -1188,20 +1242,16 @@ export function VideoPlayer({
           ))}
         </div>
 
-        {showLoading && (
-          <div className="player-overlay-surface absolute top-4 left-4 md:top-8 md:left-8 z-10 flex items-center gap-2 md:gap-3 rounded-lg px-3 py-2 md:px-4 md:py-3">
-            <div className="relative h-4 w-4 md:h-5 md:w-5">
-              <div className="absolute inset-0 rounded-full border-2 border-white/30" />
-              <div className="absolute inset-0 rounded-full border-2 border-white border-t-transparent animate-spin" />
-            </div>
-            <span className="text-xs md:text-sm text-white font-medium">
-              {channel &&
-                channel.sources.length > 1 &&
-                `[${channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}] `}
-              {t("loadingVideo")}
-              {retryCount - retryBaseline > 0 && ` (${retryCount - retryBaseline}/${MAX_RETRIES})`}
-            </span>
-          </div>
+        {!needsUserInteraction && !error && (
+          <PlayerTopLeftOverlay
+            visible={showControls || showLoading}
+            loading={showLoading}
+            loadingText={`${
+              channel && channel.sources.length > 1
+                ? `[${channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}] `
+                : ""
+            }${t("loadingVideo")}${retryCount - retryBaseline > 0 ? ` (${retryCount - retryBaseline}/${MAX_RETRIES})` : ""}`}
+          />
         )}
 
         {/* Channel Info and Controls */}
