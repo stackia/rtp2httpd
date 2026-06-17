@@ -428,7 +428,7 @@ function PlayerPage() {
                 setSidebarView("channels");
               }}
               className={clsx(
-                "flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium transition-[color,border-color]",
+                "flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium transition-[color]",
                 sidebarView === "channels"
                   ? "border-b-2 border-primary text-primary"
                   : "text-muted-foreground cursor-pointer hover:text-foreground",
@@ -443,7 +443,7 @@ function PlayerPage() {
                 setSidebarView("epg");
               }}
               className={clsx(
-                "flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium transition-[color,border-color]",
+                "flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium transition-[color]",
                 sidebarView === "epg"
                   ? "border-b-2 border-primary text-primary"
                   : "text-muted-foreground cursor-pointer hover:text-foreground",
