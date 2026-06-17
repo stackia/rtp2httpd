@@ -1,4 +1,4 @@
-import { PCMAudioPlayer } from "../audio/pcm-audio-player";
+import { markPlaybackUnlocked, PCMAudioPlayer } from "../audio/pcm-audio-player";
 import type { PlayerConfig } from "../config";
 import type { PlayerImpl, PlayerSegment } from "../types";
 import Log from "../utils/logger";
@@ -309,6 +309,9 @@ export function createMpegtsPlayer(
     destroyVideoDebugLogs = setupVideoDebugLogs(video);
   }
 
+  const onVideoPlay = () => markPlaybackUnlocked();
+  video.addEventListener("play", onVideoPlay);
+
   const impl: PlayerImpl = {
     onError: null,
 
@@ -374,6 +377,7 @@ export function createMpegtsPlayer(
 
     destroy() {
       impl.suspend();
+      video.removeEventListener("play", onVideoPlay);
       if (worker) {
         const cmd: WorkerCommand = { type: "destroy" };
         worker.postMessage(cmd);
