@@ -1180,7 +1180,7 @@ export function VideoPlayer({
         </div>
 
         {showLoading && (
-          <div className="absolute top-4 left-4 md:top-8 md:left-8 z-10 flex items-center gap-2 md:gap-3 rounded-lg bg-white/10 ring-1 ring-white/20 backdrop-blur-sm px-3 py-2 md:px-4 md:py-3">
+          <div className="player-overlay-surface absolute top-4 left-4 md:top-8 md:left-8 z-10 flex items-center gap-2 md:gap-3 rounded-lg px-3 py-2 md:px-4 md:py-3">
             <div className="relative h-4 w-4 md:h-5 md:w-5">
               <div className="absolute inset-0 rounded-full border-2 border-white/30" />
               <div className="absolute inset-0 rounded-full border-2 border-white border-t-transparent animate-spin" />
@@ -1203,7 +1203,7 @@ export function VideoPlayer({
               showControls ? "opacity-100" : "opacity-0",
             )}
           >
-            <div className="flex flex-col gap-1.5 md:gap-2 px-2 py-1.5 md:px-3 md:py-2 items-center justify-center overflow-hidden rounded-lg bg-white/10 ring-1 ring-white/20 backdrop-blur-sm max-w-[calc(100vw-2rem)] md:max-w-none">
+            <div className="player-overlay-surface flex flex-col gap-1.5 md:gap-2 px-2 py-1.5 md:px-3 md:py-2 items-center justify-center overflow-hidden rounded-lg max-w-[calc(100vw-2rem)] md:max-w-none">
               {channel.logo && (
                 <img
                   src={channel.logo}

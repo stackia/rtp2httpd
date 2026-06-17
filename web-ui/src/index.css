@@ -94,6 +94,21 @@ body {
   border-radius: 9999px;
 }
 
+.channel-logo-tile {
+  background: #404d6a;
+}
+
+.dark .channel-logo-tile {
+  background: transparent;
+}
+
+.player-overlay-surface {
+  background: rgba(9, 9, 11, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px) saturate(1.15);
+}
+
 @keyframes zoom-fade-out {
   0% {
     transform: scale(1);
