@@ -43,7 +43,7 @@ const base: TranslationDict = {
   playlistLoadEyebrow: "M3U playlist",
   playlistLoadTitle: "Playlist is not ready yet",
   playlistLoadDescription:
-    "The Web Player loads channels from /playlist.m3u, but the playlist is unavailable right now. Configure an M3U playlist, then retry.",
+    "The Player loads channels from /playlist.m3u, but the playlist is unavailable right now. Configure an M3U playlist, then retry.",
   playlistErrorChecklist: "Check your M3U setup",
   playlistErrorHintReachable: "Make sure the external M3U URL is reachable by rtp2httpd.",
   playlistErrorHintFormat: "Confirm the playlist contains valid #EXTINF entries and channel URLs.",
@@ -142,7 +142,7 @@ const zhHans: TranslationDict = {
   playlistLoadEyebrow: "M3U 播放列表",
   playlistLoadTitle: "播放列表还没有准备好",
   playlistLoadDescription:
-    "Web Player 会从 /playlist.m3u 加载频道，但当前无法获取播放列表。请先配置 M3U 播放列表，然后重试。",
+    "播放器会从 /playlist.m3u 加载频道，但当前无法获取播放列表。请先配置 M3U 播放列表，然后重试。",
   playlistErrorChecklist: "请检查 M3U 配置",
   playlistErrorHintReachable: "确认外部 M3U 地址可以被 rtp2httpd 正常访问。",
   playlistErrorHintFormat: "确认播放列表包含有效的 #EXTINF 条目和频道地址。",
@@ -242,7 +242,7 @@ const zhHant: TranslationDict = {
   playlistLoadEyebrow: "M3U 播放列表",
   playlistLoadTitle: "播放列表尚未準備好",
   playlistLoadDescription:
-    "Web Player 會從 /playlist.m3u 載入頻道，但目前無法取得播放列表。請先配置 M3U 播放列表，然後重試。",
+    "播放器會從 /playlist.m3u 載入頻道，但目前無法取得播放列表。請先配置 M3U 播放列表，然後重試。",
   playlistErrorChecklist: "請檢查 M3U 配置",
   playlistErrorHintReachable: "確認外部 M3U 地址可以被 rtp2httpd 正常存取。",
   playlistErrorHintFormat: "確認播放列表包含有效的 #EXTINF 條目和頻道地址。",
