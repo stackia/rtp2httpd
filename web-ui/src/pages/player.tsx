@@ -15,6 +15,7 @@ import { useLocale } from "../hooks/use-locale";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
 import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG } from "../lib/epg-parser";
+import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
 import {
   getLastChannelId,
@@ -32,7 +33,11 @@ import type { PlayerSegment } from "../mpegts";
 import { NEAR_LIVE_EDGE_MS } from "../mpegts/player/wall-clock";
 import type { Channel, M3UMetadata } from "../types/player";
 
-const M3U_INTEGRATION_GUIDE_URL = "https://rtp2httpd.com/guide/m3u-integration";
+function getM3UIntegrationGuideUrl(locale: Locale) {
+  return locale === "en"
+    ? "https://rtp2httpd.com/en/guide/m3u-integration"
+    : "https://rtp2httpd.com/guide/m3u-integration";
+}
 
 function PlayerPage() {
   const { locale, setLocale } = useLocale("player-locale");
@@ -518,7 +523,7 @@ function PlayerPage() {
                     {t("retry")}
                   </Button>
                   <a
-                    href={M3U_INTEGRATION_GUIDE_URL}
+                    href={getM3UIntegrationGuideUrl(locale)}
                     target="_blank"
                     rel="noreferrer"
                     className={buttonVariants({ variant: "outline", className: "gap-2" })}
