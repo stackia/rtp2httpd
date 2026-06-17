@@ -21,6 +21,7 @@ RTP/IPTV multicast-to-HTTP streaming daemon written in C, with a React/TypeScrip
 ## Code Style — TypeScript / JavaScript
 
 - Formatter/linter: Biome (`biome.json`), line width 120, indent with tabs
+- Prefer Tailwind CSS utilities for styling; add custom CSS classes only when Tailwind cannot express the behavior clearly.
 
 ## Code Style — Python
 
