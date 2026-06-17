@@ -1092,6 +1092,9 @@ export function VideoPlayer({
     const video = getActiveVideo();
     if (video) {
       video.volume = newVolume;
+      if (video.muted && newVolume > 0) {
+        video.muted = false;
+      }
     }
   });
 
