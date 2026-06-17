@@ -29,26 +29,8 @@ import { PassthroughStretcher, type Stretcher, WasmStretcher } from "./wasm-stre
 
 const TAG = "PCMAudioPlayer";
 
-/** Shared across PCM player instances so iOS keeps WebAudio unlocked after the first user gesture. */
-let sharedAudioContext: AudioContext | null = null;
-let sharedAudioContextRefCount = 0;
-
-function acquireSharedAudioContext(): AudioContext {
-  if (!sharedAudioContext || sharedAudioContext.state === "closed") {
-    sharedAudioContext = new AudioContext();
-    Log.v(TAG, `Shared AudioContext created, sampleRate: ${sharedAudioContext.sampleRate}`);
-  }
-  sharedAudioContextRefCount++;
-  return sharedAudioContext;
-}
-
-function releaseSharedAudioContext(): void {
-  if (sharedAudioContextRefCount > 0) {
-    sharedAudioContextRefCount--;
-  }
-  // Keep the context open for the page session — recreating it on iOS would
-  // require a fresh user gesture on every channel switch.
-}
+/** Page-level one-shot flag: only surface the autoplay interaction prompt once per session. */
+let suspendedNotified = false;
 
 /** Max seconds of audio scheduled ahead of the AudioContext clock.
  *  Also bounds how long a ratio change takes to reach the speakers, so it is
@@ -139,13 +121,8 @@ export class PCMAudioPlayer {
   private lastKnownVideoTime: number = 0;
   /** Set when a large seek already cancelled the scheduling chain in `onVideoSeeking`. */
   private largeSeekCancelled: boolean = false;
-  private suspendedNotified: boolean = false;
-  private resumePromise: Promise<void> | null = null;
-  /** Set by stop(); cleared by play(). Blocks scheduling/resync while a stream is torn down. */
-  private stopped: boolean = false;
 
   // Bound event handlers for cleanup
-  private boundOnContextStateChange: (() => void) | null = null;
   private boundOnVideoSeeking: (() => void) | null = null;
   private boundOnVideoSeeked: (() => void) | null = null;
   private boundOnVideoPlay: (() => void) | null = null;
@@ -166,7 +143,7 @@ export class PCMAudioPlayer {
       return;
     }
 
-    this.context = acquireSharedAudioContext();
+    this.context = new AudioContext();
     this.gainNode = this.context.createGain();
 
     if (isIOS()) {
@@ -191,15 +168,12 @@ export class PCMAudioPlayer {
 
     this.updateGain();
 
-    this.boundOnContextStateChange = () => {
+    this.context.onstatechange = () => {
       Log.v(TAG, `AudioContext state changed to: ${this.context?.state}`);
       if (this.context?.state === "running") {
-        this.suspendedNotified = false;
-        this.resumePromise = null;
         this.resyncFromBuffer(this.videoElement?.currentTime ?? 0);
       }
     };
-    this.context.addEventListener("statechange", this.boundOnContextStateChange);
 
     Log.v(TAG, `AudioContext initialized, sampleRate: ${this.context.sampleRate}, state: ${this.context.state}`);
   }
@@ -290,15 +264,13 @@ export class PCMAudioPlayer {
     this.insertToBuffer(chunk);
     this.cleanupBuffer();
 
-    if (this.stopped || this.isSeeking || this.videoElement?.paused) {
-      return;
+    if (!this.isSeeking && !this.videoElement?.paused) {
+      this.pendingChunks.push(chunk);
+      if (this.pendingChunks.length > MAX_PENDING_CHUNKS) {
+        this.pendingChunks.shift();
+      }
+      this.pump();
     }
-
-    this.pendingChunks.push(chunk);
-    if (this.pendingChunks.length > MAX_PENDING_CHUNKS) {
-      this.pendingChunks.shift();
-    }
-    this.pump();
   }
 
   // ==================== Stretcher ====================
@@ -354,34 +326,17 @@ export class PCMAudioPlayer {
    */
   private pump(): void {
     const ctx = this.context;
-    if (
-      this.stopped ||
-      !ctx ||
-      !this.gainNode ||
-      this.isSeeking ||
-      this.pendingChunks.length === 0 ||
-      this.videoElement?.paused
-    ) {
+    if (!ctx || !this.gainNode || this.isSeeking || this.pendingChunks.length === 0 || this.videoElement?.paused) {
       return;
     }
 
     if (ctx.state === "suspended") {
-      if (!this.resumePromise) {
-        this.resumePromise = ctx
-          .resume()
-          .then(() => {
-            this.resumePromise = null;
-            if (ctx.state === "running") {
-              this.suspendedNotified = false;
-              this.pump();
-              return;
-            }
-            this.notifyAutoplayBlocked();
-          })
-          .catch(() => {
-            this.resumePromise = null;
-            this.notifyAutoplayBlocked();
-          });
+      ctx.resume();
+      if (!suspendedNotified) {
+        suspendedNotified = true;
+        Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
+        this.onSuspended?.();
+        this.videoElement?.pause();
       }
       return;
     }
@@ -438,14 +393,6 @@ export class PCMAudioPlayer {
       this.feedStretcher(stretcher, samples, chunk.sampleRate);
       this.inputCursor = chunk.endTime;
     }
-  }
-
-  private notifyAutoplayBlocked(): void {
-    if (this.suspendedNotified) return;
-    this.suspendedNotified = true;
-    Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
-    this.onSuspended?.();
-    this.videoElement?.pause();
   }
 
   private anchor(time: number): void {
@@ -589,15 +536,7 @@ export class PCMAudioPlayer {
   private controlTick(): void {
     const ctx = this.context;
     const video = this.videoElement;
-    if (
-      this.stopped ||
-      !ctx ||
-      !video ||
-      ctx.state !== "running" ||
-      video.paused ||
-      this.isSeeking ||
-      !this.stretcher
-    ) {
+    if (!ctx || !video || ctx.state !== "running" || video.paused || this.isSeeking || !this.stretcher) {
       return;
     }
 
@@ -793,11 +732,6 @@ export class PCMAudioPlayer {
   // ==================== Playback Control ====================
 
   async play(): Promise<void> {
-    this.stopped = false;
-    if (this.gainNode && this.context) {
-      this.updateGain();
-    }
-
     if (this.context?.state === "suspended") {
       try {
         await this.context.resume();
@@ -823,14 +757,16 @@ export class PCMAudioPlayer {
     this.pendingChunks = [];
     this.inputCursor = null;
 
+    if (this.context?.state === "running") {
+      this.context.suspend();
+    }
+
     if (this.audioElement) {
       this.audioElement.pause();
     }
   }
 
   stop(): void {
-    this.stopped = true;
-    this.resumePromise = null;
     this.cancelChain();
 
     this.pendingChunks = [];
@@ -841,16 +777,6 @@ export class PCMAudioPlayer {
     this.stretcher?.reset();
     this.driftEma = 0;
     this.hasDriftEma = false;
-
-    if (this.gainNode && this.context) {
-      const g = this.gainNode.gain;
-      g.cancelScheduledValues(this.context.currentTime);
-      g.value = 0;
-    }
-
-    if (this.audioElement) {
-      this.audioElement.pause();
-    }
   }
 
   setVolume(volume: number): void {
@@ -900,11 +826,8 @@ export class PCMAudioPlayer {
     }
 
     if (this.context) {
-      if (this.boundOnContextStateChange) {
-        this.context.removeEventListener("statechange", this.boundOnContextStateChange);
-        this.boundOnContextStateChange = null;
-      }
-      releaseSharedAudioContext();
+      this.context.onstatechange = null;
+      await this.context.close();
       this.context = null;
     }
   }
