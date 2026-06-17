@@ -21,6 +21,7 @@ import {
   wallClockToMse,
 } from "../../mpegts/player/wall-clock";
 import mp2WasmUrl from "../../mpegts/wasm/minimp3/mp2_decoder.wasm?url";
+import { getMuted, getVolume, saveMuted, saveVolume } from "../../lib/player-storage";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PlayerControls } from "./player-controls";
 
@@ -112,8 +113,8 @@ export function VideoPlayer({
   const [showLoading, setShowLoading] = useState(false);
   const loadingTimeoutRef = useRef<number>(0);
   const [error, setError] = useState<string | null>(() => (isSupported() ? null : t("mseNotSupported")));
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(() => getVolume());
+  const [isMuted, setIsMuted] = useState(() => getMuted());
   const [isPlaying, setIsPlaying] = useState(false);
   const [liveSessionAnchor, setLiveSessionAnchor] = useState<LiveSessionAnchor | null>(null);
   // Before session calibration (initial load / reload), treat live mode as Live — not Go Live.
@@ -318,8 +319,8 @@ export function VideoPlayer({
     const oldActiveId = getActiveSlotId();
     const oldVideo = slotVideoRef(oldActiveId).current;
     const oldPlayer = slotPlayerRef(oldActiveId).current;
-    const savedVolume = oldVideo?.volume ?? 1;
-    const savedMuted = oldVideo?.muted ?? false;
+    const savedVolume = oldVideo?.volume ?? volume;
+    const savedMuted = oldVideo?.muted ?? isMuted;
 
     const newVideo = slotVideoRef(newActiveId).current;
     if (newVideo) {
@@ -506,6 +507,9 @@ export function VideoPlayer({
 
     const existing = slotPlayerRef(slotId).current;
     if (existing) return existing;
+
+    video.volume = volume;
+    video.muted = isMuted;
 
     const p = createPlayer(video, {
       wasmDecoders: useMp2SoftDecode ? { mp2: mp2WasmUrl } : {},
@@ -773,6 +777,8 @@ export function VideoPlayer({
     if (!video) return;
     setVolume(video.volume);
     setIsMuted(video.muted);
+    saveVolume(video.volume);
+    saveMuted(video.muted);
   });
 
   const handleVideoPlaying = useEffectEvent((slotId: SlotId, eventTimeStamp: number) => {
