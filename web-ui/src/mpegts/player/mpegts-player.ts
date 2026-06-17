@@ -81,6 +81,10 @@ export function createMpegtsPlayer(
     return pcmPlayer;
   }
 
+  function resetPCMPlayer(): void {
+    pcmPlayer?.stop();
+  }
+
   function destroyPCMPlayer(): void {
     if (pcmPlayer) {
       pcmPlayer.destroy();
@@ -319,7 +323,7 @@ export function createMpegtsPlayer(
         mse.destroy();
         mse = null;
       }
-      destroyPCMPlayer();
+      resetPCMPlayer();
       initMSE();
       initLiveHelpers();
     },
@@ -361,7 +365,7 @@ export function createMpegtsPlayer(
         mse.destroy();
         mse = null;
       }
-      destroyPCMPlayer();
+      resetPCMPlayer();
       destroyLiveSync?.();
       destroyLiveSync = null;
       stallJumper?.destroy();
@@ -372,6 +376,7 @@ export function createMpegtsPlayer(
 
     destroy() {
       impl.suspend();
+      destroyPCMPlayer();
       if (worker) {
         const cmd: WorkerCommand = { type: "destroy" };
         worker.postMessage(cmd);

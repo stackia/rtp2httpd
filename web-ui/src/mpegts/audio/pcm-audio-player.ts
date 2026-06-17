@@ -29,6 +29,27 @@ import { PassthroughStretcher, type Stretcher, WasmStretcher } from "./wasm-stre
 
 const TAG = "PCMAudioPlayer";
 
+/** Shared across PCM player instances so iOS keeps WebAudio unlocked after the first user gesture. */
+let sharedAudioContext: AudioContext | null = null;
+let sharedAudioContextRefCount = 0;
+
+function acquireSharedAudioContext(): AudioContext {
+  if (!sharedAudioContext || sharedAudioContext.state === "closed") {
+    sharedAudioContext = new AudioContext();
+    Log.v(TAG, `Shared AudioContext created, sampleRate: ${sharedAudioContext.sampleRate}`);
+  }
+  sharedAudioContextRefCount++;
+  return sharedAudioContext;
+}
+
+function releaseSharedAudioContext(): void {
+  if (sharedAudioContextRefCount > 0) {
+    sharedAudioContextRefCount--;
+  }
+  // Keep the context open for the page session — recreating it on iOS would
+  // require a fresh user gesture on every channel switch.
+}
+
 /** Max seconds of audio scheduled ahead of the AudioContext clock.
  *  Also bounds how long a ratio change takes to reach the speakers, so it is
  *  kept small (rate changes during live-sync catch-up respond within this). */
@@ -119,8 +140,10 @@ export class PCMAudioPlayer {
   /** Set when a large seek already cancelled the scheduling chain in `onVideoSeeking`. */
   private largeSeekCancelled: boolean = false;
   private suspendedNotified: boolean = false;
+  private resumePromise: Promise<void> | null = null;
 
   // Bound event handlers for cleanup
+  private boundOnContextStateChange: (() => void) | null = null;
   private boundOnVideoSeeking: (() => void) | null = null;
   private boundOnVideoSeeked: (() => void) | null = null;
   private boundOnVideoPlay: (() => void) | null = null;
@@ -141,7 +164,7 @@ export class PCMAudioPlayer {
       return;
     }
 
-    this.context = new AudioContext();
+    this.context = acquireSharedAudioContext();
     this.gainNode = this.context.createGain();
 
     if (isIOS()) {
@@ -166,13 +189,15 @@ export class PCMAudioPlayer {
 
     this.updateGain();
 
-    this.context.onstatechange = () => {
+    this.boundOnContextStateChange = () => {
       Log.v(TAG, `AudioContext state changed to: ${this.context?.state}`);
       if (this.context?.state === "running") {
         this.suspendedNotified = false;
+        this.resumePromise = null;
         this.resyncFromBuffer(this.videoElement?.currentTime ?? 0);
       }
     };
+    this.context.addEventListener("statechange", this.boundOnContextStateChange);
 
     Log.v(TAG, `AudioContext initialized, sampleRate: ${this.context.sampleRate}, state: ${this.context.state}`);
   }
@@ -330,12 +355,22 @@ export class PCMAudioPlayer {
     }
 
     if (ctx.state === "suspended") {
-      ctx.resume();
-      if (!this.suspendedNotified) {
-        this.suspendedNotified = true;
-        Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
-        this.onSuspended?.();
-        this.videoElement?.pause();
+      if (!this.resumePromise) {
+        this.resumePromise = ctx
+          .resume()
+          .then(() => {
+            this.resumePromise = null;
+            if (ctx.state === "running") {
+              this.suspendedNotified = false;
+              this.pump();
+              return;
+            }
+            this.notifyAutoplayBlocked();
+          })
+          .catch(() => {
+            this.resumePromise = null;
+            this.notifyAutoplayBlocked();
+          });
       }
       return;
     }
@@ -392,6 +427,14 @@ export class PCMAudioPlayer {
       this.feedStretcher(stretcher, samples, chunk.sampleRate);
       this.inputCursor = chunk.endTime;
     }
+  }
+
+  private notifyAutoplayBlocked(): void {
+    if (this.suspendedNotified) return;
+    this.suspendedNotified = true;
+    Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
+    this.onSuspended?.();
+    this.videoElement?.pause();
   }
 
   private anchor(time: number): void {
@@ -756,10 +799,6 @@ export class PCMAudioPlayer {
     this.pendingChunks = [];
     this.inputCursor = null;
 
-    if (this.context?.state === "running") {
-      this.context.suspend();
-    }
-
     if (this.audioElement) {
       this.audioElement.pause();
     }
@@ -825,8 +864,11 @@ export class PCMAudioPlayer {
     }
 
     if (this.context) {
-      this.context.onstatechange = null;
-      await this.context.close();
+      if (this.boundOnContextStateChange) {
+        this.context.removeEventListener("statechange", this.boundOnContextStateChange);
+        this.boundOnContextStateChange = null;
+      }
+      releaseSharedAudioContext();
       this.context = null;
     }
   }
