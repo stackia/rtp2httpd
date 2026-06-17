@@ -4,6 +4,7 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react"
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import { buildCatchupSegments } from "../../lib/m3u-parser";
+import { getMuted, getVolume, saveMuted, saveVolume } from "../../lib/player-storage";
 import {
   createPlayer,
   defaultConfig,
@@ -21,7 +22,6 @@ import {
   wallClockToMse,
 } from "../../mpegts/player/wall-clock";
 import mp2WasmUrl from "../../mpegts/wasm/minimp3/mp2_decoder.wasm?url";
-import { getMuted, getVolume, saveMuted, saveVolume } from "../../lib/player-storage";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PlayerControls } from "./player-controls";
 
