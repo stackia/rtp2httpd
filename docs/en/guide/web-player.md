@@ -25,6 +25,7 @@ The player page path can be customized via the `player-page-path` configuration 
 - **Time-Shifted Playback**: Supports EPG (Electronic Program Guide) and time-shifted playback (requires catchup source)
 - **Fast Startup**: Achieves millisecond-level channel switching with FCC
 - **Responsive Design**: UI adapts to both desktop and mobile devices
+- **PWA Support**: Can be added to the home screen on phones, tablets, desktops, or LG webOS TVs for app-like quick access
 - **Zero Overhead**: Pure web frontend implementation with virtually no resource overhead on rtp2httpd (no decoding/transcoding overhead)
 
 > [!IMPORTANT]
@@ -41,6 +42,48 @@ The player has built-in MP2 audio software decoding capability:
 
 > [!NOTE]
 > Audio software decoding relies on browser Web Workers and WebAssembly for background decoding, which consumes some computational resources and may cause slight heating on mobile devices — this is normal. Additionally, due to browser limitations, background playback on mobile devices is not supported when using software decoding.
+
+## PWA Support and Add to Home Screen
+
+The built-in web player supports PWA (Progressive Web App). You can add the player page to your device's home screen (including phones, tablets, computers, and LG webOS smart TVs) and launch it like a native app for a full-screen, immersive viewing experience.
+
+After adding to the home screen, the desktop icon is named **IPTV** by default and uses the built-in app icon. The player retains local settings such as theme preferences.
+
+### iOS / iPadOS (Safari)
+
+1. Open the player page in Safari (for example, `http://192.168.1.1:5140/player`)
+2. Tap **Share** in the extensions menu on the left side of the address bar
+3. Scroll down in the share menu and select **Add to Home Screen**
+4. Confirm the name and tap **Add**
+
+### Android (Chrome, Edge, etc.)
+
+1. Open the player page in your browser
+2. Tap the **Menu** button (⋮) in the top-right corner
+3. Select **Add to Home screen** or **Install app**
+4. Confirm when prompted
+
+Some browsers also show an install banner in the address bar or at the bottom of the page. Tap **Install** or **Add** to complete the process.
+
+### Desktop (Chrome, Edge)
+
+1. Open the player page in your browser
+2. Click the **Install** icon in the address bar (if available), or choose **Cast, save, and share** → **Create shortcut** from the browser menu
+3. Confirm when prompted
+
+Once installed, the player runs in a standalone window and can be launched quickly from the system app list, Dock, or taskbar.
+
+### LG TV (webOS)
+
+LG webOS smart TVs can also use the built-in browser to open the player and pin it to the TV home screen:
+
+1. Open the **Web Browser** app on your TV
+2. Enter the player page URL in the address bar (for example, `http://192.168.1.1:5140/player`)
+3. Open the browser menu and select **Add shortcut to the Home screen**
+4. Return to the TV home screen and launch the player from the shortcut
+
+> [!NOTE]
+> If you customized the player path via `player-page-path`, use the actual path when adding to the home screen. The shortcut is pinned to the URL used at the time of adding, including query parameters such as `r2h-token` (if present).
 
 ## Channel Aggregation
 
