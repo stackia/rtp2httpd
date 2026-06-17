@@ -9,6 +9,7 @@ import {
   createPlayer,
   defaultConfig,
   isSupported,
+  markPlaybackUnlocked,
   type Player,
   type PlayerError,
   type PlayerSegment,
@@ -846,6 +847,7 @@ export function VideoPlayer({
     hasStartedPlaybackRef.current = true;
     setIsLoading(false);
     setIsPlaying(true);
+    markPlaybackUnlocked();
     onPlaybackStarted?.();
 
     const video = slotVideoRef(slotId).current;
@@ -1189,6 +1191,7 @@ export function VideoPlayer({
   const handleUserInteraction = useEffectEvent(() => {
     const video = getActiveVideo();
     if (!video) return;
+    markPlaybackUnlocked();
     setNeedsUserInteraction(false);
     setIsPlaying(true);
     userPausedRef.current = false;

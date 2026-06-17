@@ -2,6 +2,7 @@ import { defaultConfig, type PlayerConfig } from "./config";
 import { createMpegtsPlayer } from "./player/mpegts-player";
 import type { LiveSessionAnchor, Player, PlayerError, PlayerEventMap, PlayerImpl, PlayerSegment } from "./types";
 
+export { markPlaybackUnlocked } from "./audio/pcm-audio-player";
 export { defaultConfig } from "./config";
 export type { LiveSessionAnchor, Player, PlayerConfig, PlayerError, PlayerEventMap, PlayerSegment };
 

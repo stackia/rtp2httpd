@@ -31,6 +31,13 @@ const TAG = "PCMAudioPlayer";
 
 /** Page-level one-shot flag: only surface the autoplay interaction prompt once per session. */
 let suspendedNotified = false;
+/** Set once the user has started playback on this page (any codec path counts). */
+let playbackUnlocked = false;
+
+/** Call when video playback has been allowed by a user gesture or successful play(). */
+export function markPlaybackUnlocked(): void {
+  playbackUnlocked = true;
+}
 
 /** Max seconds of audio scheduled ahead of the AudioContext clock.
  *  Also bounds how long a ratio change takes to reach the speakers, so it is
@@ -331,13 +338,21 @@ export class PCMAudioPlayer {
     }
 
     if (ctx.state === "suspended") {
-      ctx.resume();
-      if (!suspendedNotified) {
-        suspendedNotified = true;
-        Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
-        this.onSuspended?.();
-        this.videoElement?.pause();
-      }
+      void ctx
+        .resume()
+        .then(() => {
+          if (ctx.state === "running") {
+            playbackUnlocked = true;
+            this.pump();
+          } else if (!playbackUnlocked) {
+            this.notifyAutoplayBlocked();
+          }
+        })
+        .catch(() => {
+          if (!playbackUnlocked) {
+            this.notifyAutoplayBlocked();
+          }
+        });
       return;
     }
 
@@ -393,6 +408,14 @@ export class PCMAudioPlayer {
       this.feedStretcher(stretcher, samples, chunk.sampleRate);
       this.inputCursor = chunk.endTime;
     }
+  }
+
+  private notifyAutoplayBlocked(): void {
+    if (suspendedNotified) return;
+    suspendedNotified = true;
+    Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
+    this.onSuspended?.();
+    this.videoElement?.pause();
   }
 
   private anchor(time: number): void {
@@ -735,6 +758,7 @@ export class PCMAudioPlayer {
     if (this.context?.state === "suspended") {
       try {
         await this.context.resume();
+        playbackUnlocked = true;
         // onstatechange → resyncFromBuffer
       } catch (_e) {
         Log.w(TAG, "Failed to resume AudioContext on play()");
