@@ -104,14 +104,14 @@ function PlayerTopLeftOverlay({
       </span>
       {loading && (
         <>
-          <span className="text-white/40" aria-hidden="true">
-            |
+          <span className="text-xs md:text-sm text-white/50" aria-hidden="true">
+            ·
           </span>
-          <div className="relative h-4 w-4 md:h-5 md:w-5 shrink-0">
-            <div className="absolute inset-0 rounded-full border-2 border-white/30" />
-            <div className="absolute inset-0 rounded-full border-2 border-white border-t-transparent animate-spin" />
+          <div className="relative h-3 w-3 md:h-3.5 md:w-3.5 shrink-0">
+            <div className="absolute inset-0 rounded-full border border-white/30" />
+            <div className="absolute inset-0 rounded-full border border-white border-t-transparent animate-spin" />
           </div>
-          <span className="text-xs md:text-sm text-white font-medium">{loadingText}</span>
+          <span className="text-xs md:text-sm text-white/70">{loadingText}</span>
         </>
       )}
     </div>
