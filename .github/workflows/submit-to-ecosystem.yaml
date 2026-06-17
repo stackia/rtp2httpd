@@ -18,20 +18,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download IPK files from release
+      - name: Download OpenWrt packages from release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ inputs.version }}"
           TAG="v${VERSION}"
 
-          echo "Downloading IPK files from release ${TAG}..."
+          echo "Downloading OpenWrt packages from release ${TAG}..."
 
-          mkdir -p ipk-files
-          cd ipk-files
+          mkdir -p package-files
+          cd package-files
 
-          # Download all IPK files from the release
+          # Download all OpenWrt package formats from the release
           gh release download "${TAG}" --repo stackia/rtp2httpd --pattern "*.ipk"
+          gh release download "${TAG}" --repo stackia/rtp2httpd --pattern "*.apk"
 
           echo "Downloaded files:"
           ls -la
@@ -42,8 +43,13 @@ jobs:
           GH_TOKEN: ${{ secrets.ISTORE_PAT }}
         run: |
           VERSION="${{ inputs.version }}"
-          # Extract release number from IPK filename
-          RELEASE=$(ls ../ipk-files/rtp2httpd_${VERSION}-r*.ipk 2>/dev/null | head -1 | sed -n 's/.*-r\([0-9]*\)_.*/\1/p')
+          # Extract release number from package filenames
+          RELEASE=""
+          for package_file in package-files/rtp2httpd_${VERSION}-r*.ipk package-files/rtp2httpd-${VERSION}-r*.apk; do
+            [ -e "${package_file}" ] || continue
+            RELEASE=$(echo "${package_file}" | sed -n 's/.*-r\([0-9][0-9]*\)[_.].*/\1/p')
+            [ -n "${RELEASE}" ] && break
+          done
           if [ -z "$RELEASE" ]; then
             RELEASE="1"
           fi
@@ -113,8 +119,13 @@ jobs:
           META_PR_URL: ${{ steps.meta-pr.outputs.meta_pr_url }}
         run: |
           VERSION="${{ inputs.version }}"
-          # Extract release number from IPK filename
-          RELEASE=$(ls ipk-files/rtp2httpd_${VERSION}-r*.ipk 2>/dev/null | head -1 | sed -n 's/.*-r\([0-9]*\)_.*/\1/p')
+          # Extract release number from package filenames
+          RELEASE=""
+          for package_file in package-files/rtp2httpd_${VERSION}-r*.ipk package-files/rtp2httpd-${VERSION}-r*.apk; do
+            [ -e "${package_file}" ] || continue
+            RELEASE=$(echo "${package_file}" | sed -n 's/.*-r\([0-9][0-9]*\)[_.].*/\1/p')
+            [ -n "${RELEASE}" ] && break
+          done
           if [ -z "$RELEASE" ]; then
             RELEASE="1"
           fi
@@ -139,34 +150,64 @@ jobs:
           BRANCH_NAME="update-rtp2httpd-${VERSION}-r${RELEASE}"
           git checkout -b "${BRANCH_NAME}" upstream/pending
 
-          # Copy IPK files to appropriate directories
-          # Architecture-specific packages go to nas/
-          # Only submit aarch64_cortex-a53 and x86_64
-          for arch in aarch64_cortex-a53 x86_64; do
-            IPK_FILE="../ipk-files/rtp2httpd_${VERSION}-r${RELEASE}_${arch}.ipk"
-            if [ -f "${IPK_FILE}" ]; then
-              mkdir -p "bin/packages/${arch}/nas"
-              cp "${IPK_FILE}" "bin/packages/${arch}/nas/"
-              echo "Copied rtp2httpd IPK for ${arch}"
+          copy_required() {
+            local source_file="$1"
+            local target_dir="$2"
+            local label="$3"
+
+            if [ ! -f "${source_file}" ]; then
+              echo "Error: missing ${label}: ${source_file}"
+              exit 1
             fi
+
+            mkdir -p "${target_dir}"
+            cp "${source_file}" "${target_dir}/"
+            echo "Copied ${label}"
+          }
+
+          copy_required_as() {
+            local source_file="$1"
+            local target_file="$2"
+            local label="$3"
+
+            if [ ! -f "${source_file}" ]; then
+              echo "Error: missing ${label}: ${source_file}"
+              exit 1
+            fi
+
+            mkdir -p "$(dirname "${target_file}")"
+            cp "${source_file}" "${target_file}"
+            echo "Copied ${label}"
+          }
+
+          # IPK aarch64 uses aarch64_cortex-a53, while APK aarch64 uses aarch64_generic in istore-repo.
+          for arch_pair in aarch64_cortex-a53:aarch64_generic x86_64:x86_64; do
+            IPK_ARCH="${arch_pair%%:*}"
+            APK_ARCH="${arch_pair##*:}"
+
+            IPK_FILE="../package-files/rtp2httpd_${VERSION}-r${RELEASE}_${IPK_ARCH}.ipk"
+            copy_required "${IPK_FILE}" "bin/packages/${IPK_ARCH}/nas" "rtp2httpd IPK for ${IPK_ARCH}"
+
+            APK_FILE="../package-files/rtp2httpd-${VERSION}-r${RELEASE}_${APK_ARCH}.apk"
+            APK_TARGET="bin/apks/${APK_ARCH}/nas/rtp2httpd-${VERSION}-r${RELEASE}.apk"
+            copy_required_as "${APK_FILE}" "${APK_TARGET}" "rtp2httpd APK for ${APK_ARCH}"
           done
 
           # LuCI packages go to all/nas_luci/
-          mkdir -p "bin/packages/all/nas_luci"
+          LUCI_IPK_TARGET_DIR="bin/packages/all/nas_luci"
+          LUCI_APK_TARGET_DIR="bin/apks/all/nas_luci"
 
-          # luci-app-rtp2httpd
-          LUCI_APP_IPK="../ipk-files/luci-app-rtp2httpd_${VERSION}-r${RELEASE}_all.ipk"
-          if [ -f "${LUCI_APP_IPK}" ]; then
-            cp "${LUCI_APP_IPK}" "bin/packages/all/nas_luci/"
-            echo "Copied luci-app-rtp2httpd IPK"
-          fi
+          LUCI_APP_IPK="../package-files/luci-app-rtp2httpd_${VERSION}-r${RELEASE}_all.ipk"
+          copy_required "${LUCI_APP_IPK}" "${LUCI_IPK_TARGET_DIR}" "luci-app-rtp2httpd IPK"
 
-          # luci-i18n-rtp2httpd-zh-cn
-          LUCI_I18N_IPK="../ipk-files/luci-i18n-rtp2httpd-zh-cn_${VERSION}_all.ipk"
-          if [ -f "${LUCI_I18N_IPK}" ]; then
-            cp "${LUCI_I18N_IPK}" "bin/packages/all/nas_luci/"
-            echo "Copied luci-i18n-rtp2httpd-zh-cn IPK"
-          fi
+          LUCI_APP_APK="../package-files/luci-app-rtp2httpd-${VERSION}-r${RELEASE}.apk"
+          copy_required "${LUCI_APP_APK}" "${LUCI_APK_TARGET_DIR}" "luci-app-rtp2httpd APK"
+
+          LUCI_I18N_IPK="../package-files/luci-i18n-rtp2httpd-zh-cn_${VERSION}_all.ipk"
+          copy_required "${LUCI_I18N_IPK}" "${LUCI_IPK_TARGET_DIR}" "luci-i18n-rtp2httpd-zh-cn IPK"
+
+          LUCI_I18N_APK="../package-files/luci-i18n-rtp2httpd-zh-cn-${VERSION}.apk"
+          copy_required "${LUCI_I18N_APK}" "${LUCI_APK_TARGET_DIR}" "luci-i18n-rtp2httpd-zh-cn APK"
 
           # Configure git
           git config user.name "github-actions[bot]"
@@ -184,10 +225,7 @@ jobs:
             --title "update rtp2httpd to ${VERSION}-r${RELEASE}" \
             --body "更新 rtp2httpd 到版本 ${VERSION}-r${RELEASE}
 
-          本 PR 更新了以下软件包：
-          - \`rtp2httpd\` (aarch64_cortex-a53, x86_64)
-          - \`luci-app-rtp2httpd\`
-          - \`luci-i18n-rtp2httpd-zh-cn\`
+          本 PR 同时上传 IPK 和 APK，覆盖 rtp2httpd (aarch64, x86_64)、luci-app-rtp2httpd 和 luci-i18n-rtp2httpd-zh-cn。
 
           自动化 PR 来自 [stackia/rtp2httpd](https://github.com/stackia/rtp2httpd)
 
