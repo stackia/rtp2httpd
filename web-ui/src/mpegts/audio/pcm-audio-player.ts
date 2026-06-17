@@ -29,6 +29,19 @@ import { PassthroughStretcher, type Stretcher, WasmStretcher } from "./wasm-stre
 
 const TAG = "PCMAudioPlayer";
 
+/**
+ * Page-level one-shot autoplay gate for Web Audio.
+ * Set when playback has started (any codec), the click-to-resume prompt was
+ * already shown, or AudioContext.resume() succeeded — suppresses re-prompting
+ * on later channel switches that create a new AudioContext.
+ */
+let playbackUnlocked = false;
+
+/** Call when video playback has been allowed by a user gesture or successful play(). */
+export function markPlaybackUnlocked(): void {
+  playbackUnlocked = true;
+}
+
 /** Max seconds of audio scheduled ahead of the AudioContext clock.
  *  Also bounds how long a ratio change takes to reach the speakers, so it is
  *  kept small (rate changes during live-sync catch-up respond within this). */
@@ -118,7 +131,6 @@ export class PCMAudioPlayer {
   private lastKnownVideoTime: number = 0;
   /** Set when a large seek already cancelled the scheduling chain in `onVideoSeeking`. */
   private largeSeekCancelled: boolean = false;
-  private suspendedNotified: boolean = false;
 
   // Bound event handlers for cleanup
   private boundOnVideoSeeking: (() => void) | null = null;
@@ -169,7 +181,6 @@ export class PCMAudioPlayer {
     this.context.onstatechange = () => {
       Log.v(TAG, `AudioContext state changed to: ${this.context?.state}`);
       if (this.context?.state === "running") {
-        this.suspendedNotified = false;
         this.resyncFromBuffer(this.videoElement?.currentTime ?? 0);
       }
     };
@@ -330,13 +341,21 @@ export class PCMAudioPlayer {
     }
 
     if (ctx.state === "suspended") {
-      ctx.resume();
-      if (!this.suspendedNotified) {
-        this.suspendedNotified = true;
-        Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
-        this.onSuspended?.();
-        this.videoElement?.pause();
-      }
+      void ctx
+        .resume()
+        .then(() => {
+          if (ctx.state === "running") {
+            playbackUnlocked = true;
+            this.pump();
+          } else if (!playbackUnlocked) {
+            this.notifyAutoplayBlocked();
+          }
+        })
+        .catch(() => {
+          if (!playbackUnlocked) {
+            this.notifyAutoplayBlocked();
+          }
+        });
       return;
     }
 
@@ -392,6 +411,14 @@ export class PCMAudioPlayer {
       this.feedStretcher(stretcher, samples, chunk.sampleRate);
       this.inputCursor = chunk.endTime;
     }
+  }
+
+  private notifyAutoplayBlocked(): void {
+    if (playbackUnlocked) return;
+    playbackUnlocked = true;
+    Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
+    this.onSuspended?.();
+    this.videoElement?.pause();
   }
 
   private anchor(time: number): void {
@@ -734,6 +761,7 @@ export class PCMAudioPlayer {
     if (this.context?.state === "suspended") {
       try {
         await this.context.resume();
+        playbackUnlocked = true;
         // onstatechange → resyncFromBuffer
       } catch (_e) {
         Log.w(TAG, "Failed to resume AudioContext on play()");
