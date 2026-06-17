@@ -1099,20 +1099,18 @@ export function VideoPlayer({
         )}
       >
         <div className="video-frame">
-          <div className="grid size-full place-items-center [&>video]:col-start-1 [&>video]:row-start-1">
-            {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
-              // biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks
-              <video
-                key={slotId}
-                ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
-                className={clsx(visibleSlotId !== slotId && "invisible pointer-events-none")}
-                playsInline
-                webkit-playsinline="true"
-                x5-playsinline="true"
-                onClick={visibleSlotId === slotId ? handleVideoClick : undefined}
-              />
-            ))}
-          </div>
+          {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
+            // biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks
+            <video
+              key={slotId}
+              ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
+              className={clsx(visibleSlotId !== slotId && "invisible pointer-events-none")}
+              playsInline
+              webkit-playsinline="true"
+              x5-playsinline="true"
+              onClick={visibleSlotId === slotId ? handleVideoClick : undefined}
+            />
+          ))}
         </div>
 
         {showLoading && (
