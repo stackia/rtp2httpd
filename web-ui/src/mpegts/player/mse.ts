@@ -554,14 +554,6 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
           }
         }
 
-        if (ms.readyState === "open") {
-          try {
-            ms.endOfStream();
-          } catch (error: unknown) {
-            Log.e(TAG, (error as Error).message);
-          }
-        }
-
         ms.removeEventListener("sourceopen", onSourceOpenHandler);
         ms.removeEventListener("sourceended", onSourceEndedHandler);
         ms.removeEventListener("sourceclose", onSourceCloseHandler);
@@ -570,6 +562,9 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
           ms.removeEventListener("endstreaming", onEndStreamingHandler);
           ms.removeEventListener("qualitychange", onQualityChangeHandler);
         }
+
+        video.removeAttribute("src");
+        video.load();
 
         onSourceOpenHandler = null;
         onSourceEndedHandler = null;
@@ -589,9 +584,6 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         URL.revokeObjectURL(objectURL);
         objectURL = null;
       }
-
-      video.removeAttribute("src");
-      video.load();
 
       mse.onBufferFull = null;
       mse.onBufferAvailable = null;

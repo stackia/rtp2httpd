@@ -151,7 +151,6 @@ export function VideoPlayer({
   const activeSlotIdRef = useRef<SlotId>("a");
   const [visibleSlotId, setVisibleSlotId] = useState<SlotId>("a");
   const transitionGenRef = useRef(0);
-  const deferredStopFrameRef = useRef<Record<SlotId, number | null>>({ a: null, b: null });
   const pendingTransitionRef = useRef<PendingTransition | null>(null);
   const hasStartedPlaybackRef = useRef(false);
   const prevStreamRef = useRef<{ channelId: string; sourceIndex: number } | null>(null);
@@ -345,15 +344,7 @@ export function VideoPlayer({
     }
   });
 
-  const cancelDeferredSlotStop = useEffectEvent((slotId: SlotId) => {
-    const frame = deferredStopFrameRef.current[slotId];
-    if (frame === null) return;
-    window.cancelAnimationFrame(frame);
-    deferredStopFrameRef.current[slotId] = null;
-  });
-
   const destroySlot = useEffectEvent((slotId: SlotId) => {
-    cancelDeferredSlotStop(slotId);
     slotPlayerRef(slotId).current?.destroy();
     slotPlayerRef(slotId).current = null;
   });
@@ -361,7 +352,6 @@ export function VideoPlayer({
   const stopPendingTransition = useEffectEvent(() => {
     const pending = pendingTransitionRef.current;
     if (!pending) return;
-    cancelDeferredSlotStop(pending.slotId);
     slotPlayerRef(pending.slotId).current?.stop();
     cancelPendingTransition();
   });
@@ -394,14 +384,8 @@ export function VideoPlayer({
     setVisibleSlotId(newActiveId);
     setIsLoading(false);
 
-    if (oldActiveId !== newActiveId) {
-      if (oldPlayer) {
-        cancelDeferredSlotStop(oldActiveId);
-        deferredStopFrameRef.current[oldActiveId] = window.requestAnimationFrame(() => {
-          deferredStopFrameRef.current[oldActiveId] = null;
-          stopSlotIfPlayerStillMatches(oldActiveId, oldPlayer);
-        });
-      }
+    if (oldActiveId !== newActiveId && oldPlayer) {
+      stopSlotIfPlayerStillMatches(oldActiveId, oldPlayer);
     }
   });
 
@@ -710,7 +694,6 @@ export function VideoPlayer({
     const gen = transitionGenRef.current;
 
     const pendingId = otherSlot(activeId);
-    cancelDeferredSlotStop(pendingId);
     slotPlayerRef(pendingId).current?.stop();
 
     const pendingPlayer = createPlayerForSlot(pendingId);
