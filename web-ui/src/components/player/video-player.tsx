@@ -1091,23 +1091,20 @@ export function VideoPlayer({
       onMouseMove={showControlsImmediately}
       onMouseLeave={hideControlsImmediately}
     >
-      {/* Mobile: 16:9 aspect ratio container, Desktop: full height */}
+      {/* Player area sizes the 16:9 frame via container queries; sources stretch to 16:9 inside it. */}
       <div
         className={clsx(
           "video-container relative w-full min-h-0 aspect-video md:aspect-auto md:h-full flex items-center justify-center",
           !showControls && "cursor-none",
         )}
       >
-        <div className="relative grid size-full min-h-0 min-w-0 max-w-full max-h-full place-items-center [&>video]:col-start-1 [&>video]:row-start-1">
+        <div className="video-frame">
           {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
             // biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks
             <video
               key={slotId}
               ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
-              className={clsx(
-                "max-w-full max-h-full object-fill aspect-video",
-                visibleSlotId !== slotId && "absolute inset-0 m-auto invisible pointer-events-none",
-              )}
+              className={clsx(visibleSlotId !== slotId && "invisible pointer-events-none")}
               playsInline
               webkit-playsinline="true"
               x5-playsinline="true"

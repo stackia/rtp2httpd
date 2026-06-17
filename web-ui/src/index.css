@@ -105,20 +105,42 @@ body {
   }
 }
 
+.video-container {
+  container: video / size;
+}
+
+/* Largest 16:9 rect that fits the player area (contain in viewport). */
+.video-frame {
+  aspect-ratio: 16 / 9;
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: auto;
+  overflow: hidden;
+}
+
 @container video (min-aspect-ratio: 16 / 9) {
-  .video-container video {
-    width: auto;
+  .video-frame {
     height: 100%;
+    width: auto;
   }
 }
 
 @container video (max-aspect-ratio: 16 / 9) {
-  .video-container video {
+  .video-frame {
     width: 100%;
     height: auto;
   }
 }
 
-.video-container {
-  container: video / size;
+/* Stretch any source aspect ratio to 16:9 inside the frame. */
+.video-frame video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  object-fit: fill;
 }
