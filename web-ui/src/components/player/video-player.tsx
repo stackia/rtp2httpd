@@ -64,7 +64,15 @@ function otherSlot(id: SlotId): SlotId {
   return id === "a" ? "b" : "a";
 }
 
-function WallClockOverlay({ visible }: { visible: boolean }) {
+function PlayerTopLeftOverlay({
+  visible,
+  loading,
+  loadingText,
+}: {
+  visible: boolean;
+  loading: boolean;
+  loadingText: string;
+}) {
   const [time, setTime] = useState(() => new Date());
 
   useEffect(() => {
@@ -87,13 +95,25 @@ function WallClockOverlay({ visible }: { visible: boolean }) {
   return (
     <div
       className={clsx(
-        "player-overlay-surface absolute top-4 left-4 md:top-8 md:left-8 z-10 rounded-lg px-3 py-2 md:px-4 md:py-3 transition-opacity duration-300",
+        "player-overlay-surface absolute top-4 left-4 md:top-8 md:left-8 z-10 flex items-center gap-2 md:gap-3 rounded-lg px-3 py-2 md:px-4 md:py-3 transition-opacity duration-300",
         visible ? "opacity-100" : "opacity-0 pointer-events-none",
       )}
     >
       <span className="text-sm md:text-base text-white font-medium tabular-nums">
         {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
       </span>
+      {loading && (
+        <>
+          <span className="text-white/40" aria-hidden="true">
+            |
+          </span>
+          <div className="relative h-4 w-4 md:h-5 md:w-5 shrink-0">
+            <div className="absolute inset-0 rounded-full border-2 border-white/30" />
+            <div className="absolute inset-0 rounded-full border-2 border-white border-t-transparent animate-spin" />
+          </div>
+          <span className="text-xs md:text-sm text-white font-medium">{loadingText}</span>
+        </>
+      )}
     </div>
   );
 }
@@ -1222,23 +1242,17 @@ export function VideoPlayer({
           ))}
         </div>
 
-        {showLoading && (
-          <div className="player-overlay-surface absolute top-4 left-4 md:top-8 md:left-8 z-10 flex items-center gap-2 md:gap-3 rounded-lg px-3 py-2 md:px-4 md:py-3">
-            <div className="relative h-4 w-4 md:h-5 md:w-5">
-              <div className="absolute inset-0 rounded-full border-2 border-white/30" />
-              <div className="absolute inset-0 rounded-full border-2 border-white border-t-transparent animate-spin" />
-            </div>
-            <span className="text-xs md:text-sm text-white font-medium">
-              {channel &&
-                channel.sources.length > 1 &&
-                `[${channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}] `}
-              {t("loadingVideo")}
-              {retryCount - retryBaseline > 0 && ` (${retryCount - retryBaseline}/${MAX_RETRIES})`}
-            </span>
-          </div>
+        {!needsUserInteraction && !error && (
+          <PlayerTopLeftOverlay
+            visible={showControls || showLoading}
+            loading={showLoading}
+            loadingText={`${
+              channel && channel.sources.length > 1
+                ? `[${channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}] `
+                : ""
+            }${t("loadingVideo")}${retryCount - retryBaseline > 0 ? ` (${retryCount - retryBaseline}/${MAX_RETRIES})` : ""}`}
+          />
         )}
-
-        {!showLoading && !needsUserInteraction && !error && <WallClockOverlay visible={showControls} />}
 
         {/* Channel Info and Controls */}
         {channel && (
