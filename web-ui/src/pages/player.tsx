@@ -1,4 +1,5 @@
 import { clsx } from "clsx";
+import { AlertTriangle, ExternalLink, ListChecks, RefreshCw } from "lucide-react";
 import { Activity, StrictMode, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -8,11 +9,13 @@ import {
 import { EPGView, nextScrollBehaviorRef as epgViewNextScrollBehaviorRef } from "../components/player/epg-view";
 import { SettingsDropdown } from "../components/player/settings-dropdown";
 import { VideoPlayer } from "../components/player/video-player";
+import { Button, buttonVariants } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useLocale } from "../hooks/use-locale";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
 import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG } from "../lib/epg-parser";
+import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
 import {
   getLastChannelId,
@@ -29,6 +32,12 @@ import {
 import type { PlayerSegment } from "../mpegts";
 import { NEAR_LIVE_EDGE_MS } from "../mpegts/player/wall-clock";
 import type { Channel, M3UMetadata } from "../types/player";
+
+function getM3UIntegrationGuideUrl(locale: Locale) {
+  return locale === "en"
+    ? "https://rtp2httpd.com/en/guide/m3u-integration"
+    : "https://rtp2httpd.com/guide/m3u-integration";
+}
 
 function PlayerPage() {
   const { locale, setLocale } = useLocale("player-locale");
@@ -222,6 +231,11 @@ function PlayerPage() {
 
       const content = await response.text();
       const parsed = parseM3U(content);
+
+      if (parsed.channels.length === 0) {
+        throw new Error(t("emptyPlaylist"));
+      }
+
       setMetadata(parsed);
 
       // Load EPG if available
@@ -469,19 +483,68 @@ function PlayerPage() {
   );
 
   if (error && !metadata) {
+    const playlistErrorHints = [t("playlistErrorHintReachable"), t("playlistErrorHintFormat")];
+
     return (
-      <div className="flex h-dvh items-center justify-center bg-background">
-        <Card className="max-w-md p-6">
-          <div className="mb-4 text-xl font-semibold text-destructive">{t("error")}</div>
-          <div className="mb-4">{error}</div>
-          <button
-            type="button"
-            onClick={loadPlaylist}
-            className="rounded bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
-          >
-            {t("retry")}
-          </button>
-        </Card>
+      <div className="min-h-dvh bg-background">
+        <title>{t("title")}</title>
+        <div className="mx-auto flex min-h-dvh w-[calc(100%-2rem)] max-w-5xl items-center py-8 sm:w-[calc(100%-3rem)]">
+          <Card className="min-w-0 w-full overflow-hidden rounded-lg border-border/70 bg-card shadow-xl shadow-black/5 dark:shadow-black/40">
+            <div className="grid min-w-0 md:grid-cols-[minmax(0,1fr)_18rem]">
+              <div className="min-w-0 p-6 sm:p-8 md:p-10">
+                <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                  <AlertTriangle className="h-6 w-6" aria-hidden="true" />
+                </div>
+
+                <div className="text-sm font-semibold text-primary">{t("playlistLoadEyebrow")}</div>
+                <h1 className="mt-2 text-2xl font-semibold text-foreground sm:text-3xl">{t("playlistLoadTitle")}</h1>
+                <p className="mt-3 max-w-2xl break-words text-sm leading-6 text-muted-foreground sm:text-base">
+                  {t("playlistLoadDescription")}
+                </p>
+
+                <div className="mt-6 min-w-0 rounded-lg border border-border/70 bg-muted/40 p-4">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <ListChecks className="h-4 w-4 text-primary" aria-hidden="true" />
+                    {t("playlistErrorChecklist")}
+                  </div>
+                  <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+                    {playlistErrorHints.map((hint) => (
+                      <li key={hint} className="flex min-w-0 gap-2">
+                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+                        <span className="min-w-0 break-words">{hint}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                  <Button type="button" onClick={loadPlaylist} className="gap-2">
+                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                    {t("retry")}
+                  </Button>
+                  <a
+                    href={getM3UIntegrationGuideUrl(locale)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={buttonVariants({ variant: "outline", className: "gap-2" })}
+                  >
+                    {t("m3uIntegrationGuide")}
+                    <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                  </a>
+                </div>
+              </div>
+
+              <div className="min-w-0 border-t border-border/70 bg-muted/30 p-6 md:border-t-0 md:border-l md:p-8">
+                <div className="text-sm font-semibold text-foreground">{t("playlistEndpoint")}</div>
+                <div className="mt-3 rounded-lg border border-border/70 bg-background px-3 py-2 font-mono text-sm text-foreground">
+                  /playlist.m3u
+                </div>
+                <div className="mt-6 text-sm font-semibold text-foreground">{t("technicalDetails")}</div>
+                <p className="mt-2 break-words text-sm leading-6 text-muted-foreground">{error}</p>
+              </div>
+            </div>
+          </Card>
+        </div>
       </div>
     );
   }

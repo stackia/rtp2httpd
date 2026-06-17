@@ -39,6 +39,17 @@ const base: TranslationDict = {
 
   // Errors
   failedToLoadPlaylist: "Failed to load playlist",
+  emptyPlaylist: "No playable channels were found in the playlist",
+  playlistLoadEyebrow: "M3U playlist",
+  playlistLoadTitle: "Playlist is not ready yet",
+  playlistLoadDescription:
+    "The Player loads channels from /playlist.m3u, but the playlist is unavailable right now. Configure an M3U playlist, then retry.",
+  playlistErrorChecklist: "Check your M3U setup",
+  playlistErrorHintReachable: "Make sure the external M3U URL is reachable by rtp2httpd.",
+  playlistErrorHintFormat: "Confirm the playlist contains valid #EXTINF entries and channel URLs.",
+  m3uIntegrationGuide: "View M3U setup guide",
+  playlistEndpoint: "Playlist endpoint",
+  technicalDetails: "Technical details",
   noCatchupSupport: "This channel does not support catchup playback",
   noRewindSupport: "This channel does not support rewind",
   codecError: "Unsupported video/audio codec. Your browser cannot decode this stream.",
@@ -127,6 +138,17 @@ const zhHans: TranslationDict = {
 
   // 错误信息
   failedToLoadPlaylist: "加载播放列表失败",
+  emptyPlaylist: "播放列表中没有可播放频道",
+  playlistLoadEyebrow: "M3U 播放列表",
+  playlistLoadTitle: "播放列表还没有准备好",
+  playlistLoadDescription:
+    "播放器会从 /playlist.m3u 加载频道，但当前无法获取播放列表。请先配置 M3U 播放列表，然后重试。",
+  playlistErrorChecklist: "请检查 M3U 配置",
+  playlistErrorHintReachable: "确认外部 M3U 地址可以被 rtp2httpd 正常访问。",
+  playlistErrorHintFormat: "确认播放列表包含有效的 #EXTINF 条目和频道地址。",
+  m3uIntegrationGuide: "查看 M3U 配置指南",
+  playlistEndpoint: "播放列表地址",
+  technicalDetails: "错误详情",
   noCatchupSupport: "此频道不支持回看功能",
   noRewindSupport: "此频道不支持时移功能",
   codecError: "不支持的视频/音频编码。您的浏览器无法解码此流。",
@@ -216,6 +238,17 @@ const zhHant: TranslationDict = {
 
   // 錯誤訊息
   failedToLoadPlaylist: "載入播放列表失敗",
+  emptyPlaylist: "播放列表中沒有可播放頻道",
+  playlistLoadEyebrow: "M3U 播放列表",
+  playlistLoadTitle: "播放列表尚未準備好",
+  playlistLoadDescription:
+    "播放器會從 /playlist.m3u 載入頻道，但目前無法取得播放列表。請先配置 M3U 播放列表，然後重試。",
+  playlistErrorChecklist: "請檢查 M3U 配置",
+  playlistErrorHintReachable: "確認外部 M3U 地址可以被 rtp2httpd 正常存取。",
+  playlistErrorHintFormat: "確認播放列表包含有效的 #EXTINF 條目和頻道地址。",
+  m3uIntegrationGuide: "查看 M3U 配置指南",
+  playlistEndpoint: "播放列表地址",
+  technicalDetails: "錯誤詳情",
   noCatchupSupport: "此頻道不支援回看功能",
   noRewindSupport: "此頻道不支援時移功能",
   codecError: "不支援的視頻/音頻編碼。您的瀏覽器無法解碼此串流。",
