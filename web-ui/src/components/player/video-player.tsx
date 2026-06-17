@@ -64,6 +64,40 @@ function otherSlot(id: SlotId): SlotId {
   return id === "a" ? "b" : "a";
 }
 
+function WallClockOverlay({ visible }: { visible: boolean }) {
+  const [time, setTime] = useState(() => new Date());
+
+  useEffect(() => {
+    const tick = () => setTime(new Date());
+    tick();
+
+    const msUntilNextMinute = 60_000 - (Date.now() % 60_000);
+    let intervalId = 0;
+    const timeoutId = window.setTimeout(() => {
+      tick();
+      intervalId = window.setInterval(tick, 60_000);
+    }, msUntilNextMinute);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, []);
+
+  return (
+    <div
+      className={clsx(
+        "player-overlay-surface absolute top-4 left-4 md:top-8 md:left-8 z-10 rounded-lg px-3 py-2 md:px-4 md:py-3 transition-opacity duration-300",
+        visible ? "opacity-100" : "opacity-0 pointer-events-none",
+      )}
+    >
+      <span className="text-sm md:text-base text-white font-medium tabular-nums">
+        {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+      </span>
+    </div>
+  );
+}
+
 export function VideoPlayer({
   channel,
   segments,
@@ -1203,6 +1237,8 @@ export function VideoPlayer({
             </span>
           </div>
         )}
+
+        {!showLoading && !needsUserInteraction && !error && <WallClockOverlay visible={showControls} />}
 
         {/* Channel Info and Controls */}
         {channel && (
