@@ -25,35 +25,6 @@ export interface Stretcher {
   destroy(): void;
 }
 
-/**
- * Fallback when WASM is unavailable on the main thread: identity passthrough.
- * Sync then degrades to occasional hard resyncs instead of smooth rate matching,
- * but the scheduling chain stays gapless.
- */
-export class PassthroughStretcher implements Stretcher {
-  readonly sampleRate: number;
-  readonly channels: number;
-  position = 0;
-
-  constructor(sampleRate: number, channels: number) {
-    this.sampleRate = sampleRate;
-    this.channels = channels;
-  }
-
-  setRatio(_ratio: number): void {}
-
-  process(input: Float32Array): Float32Array {
-    this.position += input.length / this.channels;
-    return input;
-  }
-
-  reset(): void {
-    this.position = 0;
-  }
-
-  destroy(): void {}
-}
-
 interface WsolaExports {
   memory: WebAssembly.Memory;
   _initialize: () => void;

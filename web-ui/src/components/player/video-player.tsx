@@ -64,6 +64,16 @@ function otherSlot(id: SlotId): SlotId {
   return id === "a" ? "b" : "a";
 }
 
+function isInterruptedPlayError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const message = err.message.toLowerCase();
+  return err.name === "AbortError" && (message.includes("interrupted") || message.includes("new load request"));
+}
+
+function ignoreInterruptedPlayError(err: unknown): void {
+  if (!isInterruptedPlayError(err)) throw err;
+}
+
 function PlayerTopLeftOverlay({
   visible,
   loading,
@@ -263,7 +273,7 @@ export function VideoPlayer({
       userPausedRef.current = false;
       if (playMode === "live") {
         goLiveToSessionEdge();
-        video?.play();
+        video?.play()?.catch(ignoreInterruptedPlayError);
         return;
       }
       shouldAutoPlayRef.current = !video?.paused;
@@ -291,7 +301,7 @@ export function VideoPlayer({
     if (video) {
       if (video.paused) {
         userPausedRef.current = false;
-        video.play();
+        video.play().catch(ignoreInterruptedPlayError);
       } else {
         userPausedRef.current = true;
         video.pause();
@@ -579,6 +589,7 @@ export function VideoPlayer({
       if (playPromise) {
         playPromise
           .catch((err: Error) => {
+            if (isInterruptedPlayError(err)) return;
             if (slotId && !isPendingTransitionExpected(slotId, expected)) return;
             if (err.name === "NotAllowedError" || err.message.includes("user didn't interact")) {
               setNeedsUserInteraction(true);
@@ -634,7 +645,7 @@ export function VideoPlayer({
     const videoForActiveSlot = () => (activeSlotIdRef.current === "a" ? slotAVideoRef : slotBVideoRef).current;
     navigator.mediaSession.setActionHandler("play", () => {
       userPausedRef.current = false;
-      videoForActiveSlot()?.play();
+      videoForActiveSlot()?.play()?.catch(ignoreInterruptedPlayError);
     });
     navigator.mediaSession.setActionHandler("pause", () => {
       userPausedRef.current = true;
@@ -751,9 +762,6 @@ export function VideoPlayer({
   }, [liveSessionAnchor]);
 
   useEffect(() => {
-    const activeId = activeSlotIdRef.current;
-    const player = (activeId === "a" ? slotAPlayerRef : slotBPlayerRef).current;
-    if (!player) return;
     if (skipNextSegmentsLoadRef.current) {
       skipNextSegmentsLoadRef.current = false;
       return;
@@ -889,6 +897,7 @@ export function VideoPlayer({
 
     if (video.paused) {
       video.play()?.catch((err: Error) => {
+        if (isInterruptedPlayError(err)) return;
         if (err.name === "NotAllowedError") {
           setNeedsUserInteraction(true);
         }
@@ -1143,6 +1152,7 @@ export function VideoPlayer({
     setIsPlaying(true);
     userPausedRef.current = false;
     video.play()?.catch((err: Error) => {
+      if (isInterruptedPlayError(err)) return;
       console.error("Play error after user interaction:", err);
       setError(`${t("failedToPlay")}: ${err.message}`);
       onError?.(`${t("failedToPlay")}: ${err.message}`);

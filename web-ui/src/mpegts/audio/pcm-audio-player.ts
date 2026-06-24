@@ -16,7 +16,7 @@
  *    measures drift between the audio chain and video.currentTime and sets
  *    ratio = playbackRate * (1 - k*drift), so audio genuinely follows
  *    live-sync playbackRate (pitch preserved) and small drift converges
- *    smoothly. Large drift (> 250ms) triggers a hard resync with short fades.
+ *    smoothly. Large discontinuities trigger a hard resync with short fades.
  *
  *  - Stream timestamps arrive from the worker already normalized to the MSE
  *    timeline (same space as video.currentTime), using the remuxer dts base.
@@ -25,7 +25,7 @@
 import { isIOS } from "../../lib/platform";
 import { maxBufferHoleSec, type PlayerConfig } from "../config";
 import Log from "../utils/logger";
-import { PassthroughStretcher, type Stretcher, WasmStretcher } from "./wasm-stretcher";
+import { type Stretcher, WasmStretcher } from "./wasm-stretcher";
 
 const TAG = "PCMAudioPlayer";
 
@@ -48,8 +48,8 @@ export function markPlaybackUnlocked(): void {
 const SCHEDULE_AHEAD = 0.6;
 /** Delay before the first chunk when (re)starting the scheduling chain. */
 const CHAIN_RESTART_DELAY = 0.04;
-/** Drift beyond this triggers a hard resync (cancel + rebuild from buffer). */
-const HARD_RESYNC_THRESHOLD = 0.25;
+/** Drift beyond this is treated as an emergency discontinuity and rebuilt from buffer. */
+const HARD_RESYNC_THRESHOLD = 1.5;
 /** Input gaps/overlaps within this are absorbed silently (PTS jitter). */
 const GAP_SNAP = 0.005;
 /** Input gaps up to this long are filled with silence; larger ones re-anchor. */
@@ -61,6 +61,11 @@ const RATIO_DRIFT_GAIN = 0.5;
 /** Max stretch ratio deviation used for drift correction. WSOLA preserves
  *  pitch, so a transient 10% tempo offset is inaudible while it converges. */
 const RATIO_DRIFT_MAX = 0.1;
+/** Initial/large-drift mode: allow stronger WSOLA correction before falling back to hard resync. */
+const SOFT_SYNC_WINDOW_SEC = 3.0;
+const SOFT_SYNC_EXIT_DRIFT = 0.08;
+const SOFT_SYNC_DRIFT_GAIN = 1.0;
+const SOFT_SYNC_RATIO_DRIFT_MAX = 0.35;
 /** EMA smoothing factor for drift measurements. */
 const DRIFT_EMA_ALPHA = 0.4;
 /** Control loop period (ms). */
@@ -107,6 +112,7 @@ export class PCMAudioPlayer {
   // Time stretcher
   private stretcher: Stretcher | null = null;
   private stretcherLoading = false;
+  private stretcherFailed = false;
 
   // Input-side state: stream time of the next sample to feed the stretcher.
   // null = not anchored (anchors at the next chunk's time).
@@ -123,6 +129,7 @@ export class PCMAudioPlayer {
   // Drift control
   private driftEma = 0;
   private hasDriftEma = false;
+  private softSyncUntil = 0;
   private driftLogCounter = 0;
   private controlTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -299,22 +306,21 @@ export class PCMAudioPlayer {
       this.inputCursor = null;
     }
 
+    if (this.stretcherFailed) {
+      return null;
+    }
+
     if (this.stretcherLoading) {
       return null;
     }
     this.stretcherLoading = true;
 
     const wasmUrl = this.config.wasmDecoders.mp2;
-    const fallback = () => new PassthroughStretcher(chunk.sampleRate, chunk.channels);
     const promise = wasmUrl
       ? WasmStretcher.create(wasmUrl, chunk.sampleRate, chunk.channels)
-      : Promise.reject(new Error("no wasm url"));
+      : Promise.reject(new Error("MP2 WASM URL is not configured"));
 
     promise
-      .catch((err) => {
-        Log.w(TAG, `WASM stretcher unavailable, using passthrough (no rate matching): ${err}`);
-        return fallback();
-      })
       .then((stretcher) => {
         this.stretcherLoading = false;
         if (!this.context) {
@@ -323,6 +329,12 @@ export class PCMAudioPlayer {
         }
         this.stretcher = stretcher;
         this.pump();
+      })
+      .catch((err) => {
+        this.stretcherLoading = false;
+        this.stretcherFailed = true;
+        this.pendingChunks = [];
+        Log.e(TAG, `WASM stretcher unavailable; cannot play software-decoded audio: ${err}`);
       });
 
     return null;
@@ -431,6 +443,7 @@ export class PCMAudioPlayer {
     this.inputCursor = time;
     this.stretcherBase = time;
     this.outputStreamCursor = time;
+    this.softSyncUntil = (this.context?.currentTime ?? 0) + SOFT_SYNC_WINDOW_SEC;
   }
 
   private feedStretcher(stretcher: Stretcher, samples: Float32Array, sampleRate: number): void {
@@ -588,8 +601,8 @@ export class PCMAudioPlayer {
       this.hasDriftEma = true;
     }
 
-    if (Math.abs(this.driftEma) > HARD_RESYNC_THRESHOLD) {
-      Log.v(TAG, `Hard resync: drift=${this.driftEma.toFixed(3)}s`);
+    if (Math.abs(drift) > HARD_RESYNC_THRESHOLD) {
+      Log.v(TAG, `Emergency hard resync: drift=${drift.toFixed(3)}s`);
       this.resyncFromBuffer(video.currentTime);
       return;
     }
@@ -597,13 +610,20 @@ export class PCMAudioPlayer {
     // Rate matching: follow video.playbackRate, correct residual drift.
     // Positive drift = audio ahead → slow down (smaller ratio).
     const rate = Math.min(2, Math.max(0.5, video.playbackRate || 1));
-    const correction = Math.min(RATIO_DRIFT_MAX, Math.max(-RATIO_DRIFT_MAX, this.driftEma * RATIO_DRIFT_GAIN));
+    const softSyncActive = ctx.currentTime < this.softSyncUntil || Math.abs(this.driftEma) > SOFT_SYNC_EXIT_DRIFT;
+    const correctionDrift = softSyncActive ? drift : this.driftEma;
+    const correctionMax = softSyncActive ? SOFT_SYNC_RATIO_DRIFT_MAX : RATIO_DRIFT_MAX;
+    const correctionGain = softSyncActive ? SOFT_SYNC_DRIFT_GAIN : RATIO_DRIFT_GAIN;
+    const correction = Math.min(correctionMax, Math.max(-correctionMax, correctionDrift * correctionGain));
     const ratio = Math.min(2, Math.max(0.5, rate * (1 - correction)));
     this.stretcher.setRatio(ratio);
 
     if (++this.driftLogCounter >= DRIFT_LOG_TICKS) {
       this.driftLogCounter = 0;
-      Log.v(TAG, `A/V drift=${(this.driftEma * 1000).toFixed(1)}ms, rate=${rate}, stretch ratio=${ratio.toFixed(4)}`);
+      Log.v(
+        TAG,
+        `A/V drift=${(this.driftEma * 1000).toFixed(1)}ms, rate=${rate}, stretch ratio=${ratio.toFixed(4)}, mode=${softSyncActive ? "soft" : "steady"}`,
+      );
     }
   }
 
@@ -802,6 +822,8 @@ export class PCMAudioPlayer {
     this.isSeeking = false;
     this.inputCursor = null;
     this.stretcher?.reset();
+    this.stretcherFailed = false;
+    this.softSyncUntil = 0;
     this.driftEma = 0;
     this.hasDriftEma = false;
   }
