@@ -88,6 +88,7 @@ The following FCC (Fast Channel Change) server addresses were collected from the
 - China Unicom:
   - `10.7.50.172:8027` (Tangshan)
   - `10.7.35.172:8027` (Qinhuangdao)
+  - `10.7.10.172:8027` (Shijiazhuang)
 
 ## Shandong
 

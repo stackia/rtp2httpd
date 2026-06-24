@@ -21,6 +21,7 @@ If you are new to setting up IPTV multicast forwarding services and unfamiliar w
 - [Chengdu Telecom IPTV Multicast-to-Unicast on openwrt/immortalwrt with rtp2httpd](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8468805&fromuid=402348)
 - [Watching IPTV with rtp2httpd Installed in a RouterOS Container](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8470410&fromuid=402348)
 - [Hunan Telecom OpenWrt Dialing IPTV Complete Tutorial | Intranet Integration Multicast-to-Unicast + Unicast Playback All Settled](https://mp.weixin.qq.com/s/_hEVbrgHll_qIePXGtATTw)
+- [Ultimate World Cup IPTV Setup: rtp2httpd + VLAN Single-Line Multiplexing + Watch on All Devices](https://mp.weixin.qq.com/s/zwPMAkIaHhQ2R6FsuVl0ZQ)
 - [Key Concepts You Will Encounter When Tinkering with IPTV: IGMP Snooping, IGMP Proxy, and Flooding Explained](https://mp.weixin.qq.com/s/oKS-tl1-hqgcZ_H01CTtXQ)
 - [What Are FCC and FEC in IPTV? Why Are Some Sources "Much More Advanced"?](https://mp.weixin.qq.com/s/5l2Cg204YdqtWAV-RnqiYw)
 - [The Final Step of IPTV Tinkering: Different Ways to Write Playlists, Explained in One Article](https://mp.weixin.qq.com/s/wZpO74_NJvlwBbI9uvEhWw)
@@ -40,7 +41,7 @@ The following firmware distributions have rtp2httpd built in, or offer it for di
 
 - [fnOS](https://www.fnnas.com) (rtp2httpd available in the App Center)
 - [iStoreOS](https://site.istoreos.com) (rtp2httpd available in iStore)
-- [iKuai](https://www.ikuai8.com) (rtp2httpd available in the App Market)
+- [iKuai](https://www.ikuai8.com) (rtp2httpd coming soon to the App Market)
 - [LCMD MicroServer](https://lazycat.cloud) (rtp2httpd available in the App Store)
 - [cooluc's OpenWrt](https://github.com/sbwml/builder) (rtp2httpd built in)
 - [ImmortalWrt](https://github.com/immortalwrt/immortalwrt) (added to the official repository)

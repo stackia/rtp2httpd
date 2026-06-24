@@ -21,6 +21,7 @@
 - [成都 电信IPTV 组播转换单播 openwrt/immortalwrt rtp2httpd](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8468805&fromuid=402348)
 - [RouterOS 容器安装 rtp2httpd 看 IPTV](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8470410&fromuid=402348)
 - [湖南电信 OpenWrt 拨号 IPTV 全流程教程 | 内网融合组播转单播 + 单播回看全搞定](https://mp.weixin.qq.com/s/_hEVbrgHll_qIePXGtATTw)
+- [世界杯最强 IPTV 方案：rtp2httpd + VLAN 单线复用 + 全设备可看](https://mp.weixin.qq.com/s/zwPMAkIaHhQ2R6FsuVl0ZQ)
 - [折腾 IPTV 时一定会遇到的几个概念：IGMP Snooping、IGMP Proxy、泛洪，到底是啥？](https://mp.weixin.qq.com/s/oKS-tl1-hqgcZ_H01CTtXQ)
 - [IPTV 里的 FCC 和 FEC 到底是什么？为什么有些源“高级得多”？](https://mp.weixin.qq.com/s/5l2Cg204YdqtWAV-RnqiYw)
 - [IPTV 折腾到最后一步：播放列表的几种写法，一篇讲清](https://mp.weixin.qq.com/s/wZpO74_NJvlwBbI9uvEhWw)
@@ -40,7 +41,7 @@
 
 - [飞牛 fnOS](https://www.fnnas.com)（应用中心已上架 rtp2httpd）
 - [iStoreOS](https://site.istoreos.com)（iStore 已上架 rtp2httpd）
-- [爱快 iKuai](https://www.ikuai8.com)（应用市场已上架 rtp2httpd）
+- [爱快 iKuai](https://www.ikuai8.com)（应用市场即将上架 rtp2httpd）
 - [懒猫微服](https://lazycat.cloud)（应用商店已上架 rtp2httpd）
 - [cooluc's OpenWrt](https://github.com/sbwml/builder)（已内置 rtp2httpd）
 - [ImmortalWrt](https://github.com/immortalwrt/immortalwrt)（已加入官方源）
