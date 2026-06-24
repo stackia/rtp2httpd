@@ -31,6 +31,35 @@ static int temp_unix_listener_path_exists(char **paths, int count, const char *p
   return 0;
 }
 
+static int unix_socket_path_is_active(const char *path) {
+  struct sockaddr_un addr;
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  int saved_errno;
+
+  if (sock < 0) {
+    logger(LOG_FATAL, "Cannot create probe socket for Unix socket %s: %s", path, strerror(errno));
+    return -1;
+  }
+
+  memset(&addr, 0, sizeof(addr));
+  addr.sun_family = AF_UNIX;
+  strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+
+  if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+    close(sock);
+    return 1;
+  }
+
+  saved_errno = errno;
+  close(sock);
+
+  if (saved_errno == ECONNREFUSED || saved_errno == ENOENT)
+    return 0;
+
+  logger(LOG_FATAL, "Cannot verify Unix socket path is stale: %s: %s", path, strerror(saved_errno));
+  return -1;
+}
+
 static void cleanup_temp_unix_listeners(int *sockets, char **paths, int *owned, int count) {
   for (int i = 0; i < count; i++) {
     if (owned[i] && sockets[i] >= 0) {
@@ -69,7 +98,7 @@ static int build_unix_listener_set(bindaddr_t *bind_list, int *sockets, char **p
       continue;
 
     if (!bind_addr->path || bind_addr->path[0] != '/') {
-      logger(LOG_FATAL, "Invalid Unix socket path");
+      logger(LOG_FATAL, "Invalid Unix socket path: %s", bind_addr->path ? bind_addr->path : "(null)");
       cleanup_temp_unix_listeners(sockets, paths, owned, *count);
       return -1;
     }
@@ -112,6 +141,16 @@ static int build_unix_listener_set(bindaddr_t *bind_list, int *sockets, char **p
     if (lstat(bind_addr->path, &st) == 0) {
       if (!S_ISSOCK(st.st_mode)) {
         logger(LOG_FATAL, "Unix socket path exists and is not a socket: %s", bind_addr->path);
+        cleanup_temp_unix_listeners(sockets, paths, owned, *count);
+        return -1;
+      }
+      int active = unix_socket_path_is_active(bind_addr->path);
+      if (active < 0) {
+        cleanup_temp_unix_listeners(sockets, paths, owned, *count);
+        return -1;
+      }
+      if (active) {
+        logger(LOG_FATAL, "Unix socket path is already in use: %s", bind_addr->path);
         cleanup_temp_unix_listeners(sockets, paths, owned, *count);
         return -1;
       }

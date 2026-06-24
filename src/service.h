@@ -230,11 +230,42 @@ service_t *service_create_with_query_merge(service_t *configured_service, const 
 service_t *service_clone(service_t *service);
 
 /**
+ * Clone a linked list of services.
+ * The cloned services are not added to the global services list.
+ *
+ * @param head First service in the list
+ * @return Pointer to cloned list or NULL if the input is NULL or cloning fails
+ */
+service_t *service_clone_list(service_t *head);
+
+/**
  * Free service structure allocated by service creation functions
  *
  * @param service Service structure to free
  */
 void service_free(service_t *service);
+
+/**
+ * Free a linked list of services.
+ *
+ * @param head First service in the list
+ */
+void service_free_list(service_t *head);
+
+/**
+ * Clone the global services list.
+ *
+ * @return Pointer to cloned global services list or NULL if there are no services
+ */
+service_t *service_clone_all(void);
+
+/**
+ * Replace the global services list with a previously cloned list.
+ * Rebuilds the service lookup hashmap for the new list.
+ *
+ * @param new_services New global services list, or NULL to clear services
+ */
+void service_replace_all(service_t *new_services);
 
 /**
  * Free services from external M3U in the global services list

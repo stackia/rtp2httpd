@@ -46,6 +46,21 @@ def _write_tmp(data: bytes, suffix: str = ".xml") -> str:
     return path
 
 
+def _wait_unix_http_status(socket_path: str, path: str, expected_status: int = 200, timeout: float = 5.0) -> None:
+    deadline = time.time() + timeout
+    last_status = None
+    while time.time() < deadline:
+        try:
+            status, _, _ = unix_http_get(socket_path, path)
+            last_status = status
+            if status == expected_status:
+                return
+        except OSError:
+            pass
+        time.sleep(0.1)
+    assert last_status == expected_status
+
+
 class TestUnixSocketListen:
     def test_cli_unix_socket_serves_status(self, r2h_binary):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -126,6 +141,25 @@ verbosity = 4
             finally:
                 r2h.stop()
 
+    def test_active_socket_path_fails_startup(self, r2h_binary):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sock_path = _socket_path(tmpdir)
+            active = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            active.bind(sock_path)
+            active.listen(1)
+
+            r2h = R2HProcess(r2h_binary, None, extra_args=["-v", "4"], capture_log=True, listen=sock_path)
+            try:
+                r2h.start(wait=False)
+                assert r2h.process is not None
+                r2h.process.wait(timeout=5)
+                assert r2h.process.returncode != 0
+                log = r2h.read_log()
+                assert "already in use" in log
+            finally:
+                r2h.stop()
+                active.close()
+
     def test_regular_file_socket_path_fails_startup(self, r2h_binary):
         with tempfile.TemporaryDirectory() as tmpdir:
             sock_path = _socket_path(tmpdir)
@@ -153,6 +187,8 @@ verbosity = 4
             old_config = f"""\
 [global]
 verbosity = 4
+workers = 1
+status-page-path = /oldstatus
 
 [bind]
 {old_sock_path}
@@ -160,6 +196,8 @@ verbosity = 4
             bad_config = f"""\
 [global]
 verbosity = 4
+workers = 2
+status-page-path = /newstatus
 
 [bind]
 {bad_sock_path}
@@ -169,7 +207,7 @@ verbosity = 4
             )
             try:
                 r2h.start()
-                status, _, _ = unix_http_get(old_sock_path, "/status")
+                status, _, _ = unix_http_get(old_sock_path, "/oldstatus")
                 assert status == 200
 
                 assert r2h._config_path is not None
@@ -179,11 +217,16 @@ verbosity = 4
                 os.kill(r2h.process.pid, signal.SIGHUP)
                 time.sleep(0.5)
 
-                status, _, _ = unix_http_get(old_sock_path, "/status")
+                status, _, _ = unix_http_get(old_sock_path, "/oldstatus")
                 assert status == 200
                 log = r2h.read_log()
                 assert "Unix socket path exists and is not a socket" in log
                 assert "keeping existing workers and listeners" in log
+
+                os.kill(r2h.process.pid, signal.SIGUSR1)
+                _wait_unix_http_status(old_sock_path, "/oldstatus")
+                status, _, _ = unix_http_get(old_sock_path, "/newstatus")
+                assert status != 200
             finally:
                 r2h.stop()
 

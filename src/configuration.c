@@ -100,6 +100,50 @@ static void safe_free_string(char **str) {
   }
 }
 
+static void free_config_strings(config_t *target, bool force_free) {
+  if (!cmd_hostname_set || force_free)
+    safe_free_string(&target->hostname);
+  if (!cmd_r2h_token_set || force_free)
+    safe_free_string(&target->r2h_token);
+  if (!cmd_ffmpeg_path_set || force_free)
+    safe_free_string(&target->ffmpeg_path);
+  if (!cmd_ffmpeg_args_set || force_free)
+    safe_free_string(&target->ffmpeg_args);
+  if (!cmd_status_page_path_set || force_free) {
+    safe_free_string(&target->status_page_path);
+    safe_free_string(&target->status_page_route);
+  }
+  if (!cmd_player_page_path_set || force_free) {
+    safe_free_string(&target->player_page_path);
+    safe_free_string(&target->player_page_route);
+  }
+  if (!cmd_external_m3u_url_set || force_free)
+    safe_free_string(&target->external_m3u_url);
+  if (!cmd_rtsp_stun_server_set || force_free)
+    safe_free_string(&target->rtsp_stun_server);
+  if (!cmd_http_proxy_user_agent_set || force_free)
+    safe_free_string(&target->http_proxy_user_agent);
+  if (!cmd_rtsp_user_agent_set || force_free)
+    safe_free_string(&target->rtsp_user_agent);
+  if (!cmd_cors_allow_origin_set || force_free)
+    safe_free_string(&target->cors_allow_origin);
+}
+
+static int snapshot_string(char **dst, char *src, int keep_shallow) {
+  if (keep_shallow) {
+    *dst = src;
+    return 0;
+  }
+
+  if (!src) {
+    *dst = NULL;
+    return 0;
+  }
+
+  *dst = strdup(src);
+  return *dst ? 0 : -1;
+}
+
 static int bind_path_is_valid(const char *path) {
   if (!path || path[0] != '/')
     return 0;
@@ -904,38 +948,78 @@ void config_cleanup(bool force_free) {
   epg_cleanup();
 
   /* Free string config values */
-  if (!cmd_hostname_set || force_free)
-    safe_free_string(&config.hostname);
-  if (!cmd_r2h_token_set || force_free)
-    safe_free_string(&config.r2h_token);
-  if (!cmd_ffmpeg_path_set || force_free)
-    safe_free_string(&config.ffmpeg_path);
-  if (!cmd_ffmpeg_args_set || force_free)
-    safe_free_string(&config.ffmpeg_args);
-  if (!cmd_status_page_path_set || force_free) {
-    safe_free_string(&config.status_page_path);
-    safe_free_string(&config.status_page_route);
-  }
-  if (!cmd_player_page_path_set || force_free) {
-    safe_free_string(&config.player_page_path);
-    safe_free_string(&config.player_page_route);
-  }
-  if (!cmd_external_m3u_url_set || force_free)
-    safe_free_string(&config.external_m3u_url);
-  if (!cmd_rtsp_stun_server_set || force_free)
-    safe_free_string(&config.rtsp_stun_server);
-  if (!cmd_http_proxy_user_agent_set || force_free)
-    safe_free_string(&config.http_proxy_user_agent);
-  if (!cmd_rtsp_user_agent_set || force_free)
-    safe_free_string(&config.rtsp_user_agent);
-  if (!cmd_cors_allow_origin_set || force_free)
-    safe_free_string(&config.cors_allow_origin);
+  free_config_strings(&config, force_free);
 
   /* Free bind addresses */
   if (!cmd_bind_set || force_free) {
     free_bindaddr(bind_addresses);
     bind_addresses = NULL;
   }
+}
+
+int config_snapshot(config_t *snapshot) {
+  if (!snapshot)
+    return -1;
+
+  *snapshot = config;
+  snapshot->hostname = NULL;
+  snapshot->r2h_token = NULL;
+  snapshot->ffmpeg_path = NULL;
+  snapshot->ffmpeg_args = NULL;
+  snapshot->status_page_path = NULL;
+  snapshot->status_page_route = NULL;
+  snapshot->player_page_path = NULL;
+  snapshot->player_page_route = NULL;
+  snapshot->external_m3u_url = NULL;
+  snapshot->rtsp_stun_server = NULL;
+  snapshot->http_proxy_user_agent = NULL;
+  snapshot->rtsp_user_agent = NULL;
+  snapshot->cors_allow_origin = NULL;
+
+#define SNAPSHOT_STRING(field, cmd_flag)                                                                               \
+  do {                                                                                                                 \
+    if (snapshot_string(&snapshot->field, config.field, cmd_flag) < 0)                                                 \
+      goto error;                                                                                                      \
+  } while (0)
+
+  SNAPSHOT_STRING(hostname, cmd_hostname_set);
+  SNAPSHOT_STRING(r2h_token, cmd_r2h_token_set);
+  SNAPSHOT_STRING(ffmpeg_path, cmd_ffmpeg_path_set);
+  SNAPSHOT_STRING(ffmpeg_args, cmd_ffmpeg_args_set);
+  SNAPSHOT_STRING(status_page_path, cmd_status_page_path_set);
+  SNAPSHOT_STRING(status_page_route, cmd_status_page_path_set);
+  SNAPSHOT_STRING(player_page_path, cmd_player_page_path_set);
+  SNAPSHOT_STRING(player_page_route, cmd_player_page_path_set);
+  SNAPSHOT_STRING(external_m3u_url, cmd_external_m3u_url_set);
+  SNAPSHOT_STRING(rtsp_stun_server, cmd_rtsp_stun_server_set);
+  SNAPSHOT_STRING(http_proxy_user_agent, cmd_http_proxy_user_agent_set);
+  SNAPSHOT_STRING(rtsp_user_agent, cmd_rtsp_user_agent_set);
+  SNAPSHOT_STRING(cors_allow_origin, cmd_cors_allow_origin_set);
+
+#undef SNAPSHOT_STRING
+
+  return 0;
+
+error:
+  config_snapshot_free(snapshot);
+  return -1;
+}
+
+void config_snapshot_free(config_t *snapshot) {
+  if (!snapshot)
+    return;
+
+  free_config_strings(snapshot, false);
+  memset(snapshot, 0, sizeof(*snapshot));
+}
+
+void config_restore_snapshot(config_t *snapshot) {
+  if (!snapshot)
+    return;
+
+  free_config_strings(&config, false);
+  config = *snapshot;
+  memset(snapshot, 0, sizeof(*snapshot));
 }
 
 /**

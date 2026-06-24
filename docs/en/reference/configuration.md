@@ -26,7 +26,7 @@ rtp2httpd [options]
 rtp2httpd --listen 5140 --listen 192.168.1.1:8081 --listen '[::1]:5140' --listen /var/run/rtp2httpd.sock
 ```
 
-Unix socket listen paths must be absolute and must not contain whitespace. At startup, if the same path already contains a socket file, rtp2httpd removes it automatically. If the path is a regular file, directory, or symbolic link, startup is rejected to avoid deleting user data. When any Unix socket listener is enabled, `zerocopy-on-send` is disabled globally.
+Unix socket listen paths must be absolute and must not contain whitespace. At startup, if the same path already contains a socket file, rtp2httpd first probes whether the socket is still in use: if another process is listening on that path, startup is rejected; only confirmed stale socket files are removed automatically. If the path is a regular file, directory, or symbolic link, startup is rejected to avoid deleting user data. When any Unix socket listener is enabled, `zerocopy-on-send` is disabled globally.
 
 #### Upstream Network Interface Configuration
 

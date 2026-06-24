@@ -26,7 +26,7 @@ rtp2httpd [选项]
 rtp2httpd --listen 5140 --listen 192.168.1.1:8081 --listen '[::1]:5140' --listen /var/run/rtp2httpd.sock
 ```
 
-Unix socket 监听路径必须是绝对路径，且路径中不能包含空白字符。启动时如果同路径已存在 socket 文件，rtp2httpd 会自动清理；如果同路径是普通文件、目录或符号链接，则会拒绝启动以避免误删数据。启用任意 Unix socket 监听时，`zerocopy-on-send` 会被全局关闭。
+Unix socket 监听路径必须是绝对路径，且路径中不能包含空白字符。启动时如果同路径已存在 socket 文件，rtp2httpd 会先探测该 socket 是否仍在使用：如果已有进程正在监听该路径，则拒绝启动；只有确认是残留 socket 文件时才会自动清理。如果同路径是普通文件、目录或符号链接，则会拒绝启动以避免误删数据。启用任意 Unix socket 监听时，`zerocopy-on-send` 会被全局关闭。
 
 #### 上游网络接口配置
 

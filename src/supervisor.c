@@ -2,6 +2,7 @@
 #include "configuration.h"
 #include "platform_compat.h"
 #include "rtp2httpd.h"
+#include "service.h"
 #include "status.h"
 #include "unix_socket.h"
 #include "utils.h"
@@ -45,6 +46,8 @@ static void supervisor_sighup_handler(int signum);
 static void supervisor_sigusr1_handler(int signum);
 static int spawn_worker(int worker_idx);
 static void cleanup_workers(void);
+static void restore_reload_snapshot(config_t *old_config, service_t **old_services, bindaddr_t **old_bind_addresses);
+static void free_reload_snapshot(config_t *old_config, service_t *old_services, bindaddr_t *old_bind_addresses);
 
 /**
  * Signal handler for supervisor process (SIGTERM/SIGINT)
@@ -190,6 +193,29 @@ static void cleanup_workers(void) {
   num_workers = 0;
 }
 
+static void restore_reload_snapshot(config_t *old_config, service_t **old_services, bindaddr_t **old_bind_addresses) {
+  if (old_bind_addresses) {
+    free_bindaddr(bind_addresses);
+    bind_addresses = *old_bind_addresses;
+    *old_bind_addresses = NULL;
+  }
+
+  if (old_services) {
+    service_replace_all(*old_services);
+    *old_services = NULL;
+  }
+
+  config_restore_snapshot(old_config);
+}
+
+static void free_reload_snapshot(config_t *old_config, service_t *old_services, bindaddr_t *old_bind_addresses) {
+  if (old_bind_addresses)
+    free_bindaddr(old_bind_addresses);
+  if (old_services)
+    service_free_list(old_services);
+  config_snapshot_free(old_config);
+}
+
 int supervisor_run(void) {
   int i;
 
@@ -318,23 +344,38 @@ int supervisor_run(void) {
       logger(LOG_INFO, "Received SIGHUP, reloading configuration");
 
       int bind_changed = 0;
+      config_t old_config;
+      service_t *old_services;
       bindaddr_t *old_bind_addresses = bindaddr_copy(bind_addresses);
+      if (config_snapshot(&old_config) < 0) {
+        logger(LOG_ERROR, "Failed to snapshot configuration, not reloading");
+        if (old_bind_addresses)
+          free_bindaddr(old_bind_addresses);
+        continue;
+      }
+      old_services = service_clone_all();
+      if (services && !old_services) {
+        logger(LOG_ERROR, "Failed to snapshot services, not reloading");
+        free_reload_snapshot(&old_config, old_services, old_bind_addresses);
+        continue;
+      }
+      if (bind_addresses && !old_bind_addresses) {
+        logger(LOG_ERROR, "Failed to snapshot bind addresses, not reloading");
+        free_reload_snapshot(&old_config, old_services, old_bind_addresses);
+        continue;
+      }
+
       if (config_reload(&bind_changed) == 0) {
         int reload_failed = 0;
         if (bind_changed) {
           if (unix_socket_listeners_replace(bind_addresses) < 0) {
             logger(LOG_ERROR, "Failed to set up Unix socket listeners after configuration reload");
-            if (old_bind_addresses) {
-              free_bindaddr(bind_addresses);
-              bind_addresses = old_bind_addresses;
-              old_bind_addresses = NULL;
-            }
+            restore_reload_snapshot(&old_config, &old_services, &old_bind_addresses);
             reload_failed = 1;
           }
         }
 
-        if (old_bind_addresses)
-          free_bindaddr(old_bind_addresses);
+        free_reload_snapshot(&old_config, old_services, old_bind_addresses);
 
         if (reload_failed) {
           logger(LOG_ERROR, "Configuration reload failed, keeping existing workers and listeners");
@@ -403,8 +444,8 @@ int supervisor_run(void) {
           }
         }
       } else {
-        if (old_bind_addresses)
-          free_bindaddr(old_bind_addresses);
+        restore_reload_snapshot(&old_config, &old_services, &old_bind_addresses);
+        free_reload_snapshot(&old_config, old_services, old_bind_addresses);
         logger(LOG_ERROR, "Configuration reload failed, not forwarding SIGHUP to workers");
       }
     }

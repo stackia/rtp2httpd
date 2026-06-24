@@ -164,6 +164,30 @@ void config_init(void);
 void config_cleanup(bool force_free);
 
 /**
+ * Create a restorable snapshot of the current scalar/string configuration.
+ * Does not include bind addresses or services; snapshot/free those separately.
+ *
+ * @param snapshot Destination snapshot
+ * @return 0 on success, -1 on allocation failure
+ */
+int config_snapshot(config_t *snapshot);
+
+/**
+ * Free resources owned by a configuration snapshot created by config_snapshot().
+ *
+ * @param snapshot Snapshot to free
+ */
+void config_snapshot_free(config_t *snapshot);
+
+/**
+ * Restore global configuration from a snapshot created by config_snapshot().
+ * The snapshot ownership is moved into the global config.
+ *
+ * @param snapshot Snapshot to restore
+ */
+void config_restore_snapshot(config_t *snapshot);
+
+/**
  * Reload configuration from file
  * Sequence: config_cleanup() -> config_init() -> parse_config_file()
  * Respects command line overrides (cmd_*_set flags).
