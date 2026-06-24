@@ -20,10 +20,7 @@ typedef enum loglevel {
   LOG_DEBUG      /* Detailed diagnostic information */
 } loglevel_t;
 
-typedef enum {
-  BIND_ADDR_TCP = 0,
-  BIND_ADDR_UNIX
-} bindaddr_type_t;
+typedef enum { BIND_ADDR_TCP = 0, BIND_ADDR_UNIX } bindaddr_type_t;
 
 /*
  * Linked list of addresses to bind

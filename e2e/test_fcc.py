@@ -285,6 +285,7 @@ class TestHuaweiFCC:
         r2h.start()
         fcc.start()
         try:
+            assert r2h.port is not None
             url = f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{fcc.port}&fcc-type=huawei"
             status, _, body = stream_get(
                 "127.0.0.1",
