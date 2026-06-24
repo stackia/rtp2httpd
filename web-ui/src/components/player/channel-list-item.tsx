@@ -16,6 +16,7 @@ interface ChannelListItemProps {
 const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemProps>(
   ({ channel, isCurrentChannel, handleChannelClick, locale, currentProgram }, ref) => {
     const t = usePlayerTranslation(locale);
+    const groupLabel = channel.groups.join(" / ");
 
     const handleClick = useCallback(() => {
       handleChannelClick(channel);
@@ -48,7 +49,7 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
             )}
           </div>
           <div className="mt-0.5 truncate text-[10px] md:text-xs text-muted-foreground">
-            {channel.group}
+            {groupLabel}
             {currentProgram && (
               <>
                 <span className="mx-1">·</span>

@@ -627,9 +627,10 @@ export function VideoPlayer({
       navigator.mediaSession.metadata = null;
       return;
     }
+    const groupLabel = channel.groups.join(" / ");
     navigator.mediaSession.metadata = new MediaMetadata({
       title: currentProgram?.title || channel.name,
-      artist: currentProgram?.title ? channel.name : channel.group,
+      artist: currentProgram?.title ? channel.name : groupLabel,
       artwork: channel.logo ? [{ src: channel.logo }] : [],
     });
   }, [channel, currentProgram]);
@@ -1255,10 +1256,12 @@ export function VideoPlayer({
                     {digitBuffer || channel.id}
                   </span>
                   <h2 className="text-xs md:text-base font-bold text-white truncate">{channel.name}</h2>
-                  {channel.group && (
+                  {channel.groups.length > 0 && (
                     <>
                       <span className="text-xs md:text-sm text-white/50 hidden sm:inline">·</span>
-                      <div className="text-xs md:text-sm text-white/70 truncate hidden sm:block">{channel.group}</div>
+                      <div className="text-xs md:text-sm text-white/70 truncate hidden sm:block">
+                        {channel.groups.join(" / ")}
+                      </div>
                     </>
                   )}
                 </div>

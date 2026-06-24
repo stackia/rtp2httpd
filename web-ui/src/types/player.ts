@@ -9,7 +9,7 @@ export interface Channel {
   id: string;
   name: string;
   logo?: string;
-  group: string;
+  groups: string[];
   tvgId?: string;
   tvgName?: string;
   sources: Source[];
