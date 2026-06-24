@@ -1,4 +1,5 @@
 #include "connection.h"
+#include "access_log.h"
 #include "embedded_web.h"
 #include "epg.h"
 #include "http.h"
@@ -1135,6 +1136,8 @@ int connection_route_and_start(connection_t *c) {
     c->status_index = status_register_client(client_addr_str, display_url);
     if (c->status_index < 0) {
       logger(LOG_ERROR, "Failed to register streaming client in status tracking");
+    } else {
+      access_log_write_connection(c, service, c->status_index);
     }
   } else {
     c->status_index = -1;

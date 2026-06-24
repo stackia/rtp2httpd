@@ -79,6 +79,8 @@ start_instance() {
         append_arg "$cfg" status_page_path "--status-page-path"
         append_arg "$cfg" player_page_path "--player-page-path"
         append_arg "$cfg" r2h_token "--r2h-token"
+        append_arg "$cfg" access_log "--access-log"
+        append_arg "$cfg" log_format "--log-format"
         append_arg "$cfg" external_m3u "--external-m3u"
         append_arg "$cfg" external_m3u_update_interval "--external-m3u-update-interval"
         append_arg "$cfg" mcast_rejoin_interval "--mcast-rejoin-interval"
