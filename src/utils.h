@@ -167,6 +167,34 @@ int format_host_for_url(const char *host, char *out, size_t out_size);
 int format_host_port_for_url(const char *host, int port, int default_port, char *out, size_t out_size);
 
 /**
+ * Calculate the escaped length of a string when encoded as JSON string content.
+ * The returned size does not include the terminating NUL byte.
+ *
+ * @param value Input string (may be NULL)
+ * @return Escaped string length in bytes
+ */
+size_t json_escaped_len(const char *value);
+
+/**
+ * Escape a string for use inside JSON string quotes.
+ *
+ * @param value Input string (may be NULL)
+ * @return malloc'd escaped string (caller must free), or NULL on allocation error
+ */
+char *json_escape_string(const char *value);
+
+/**
+ * Escape a string for JSON into a fixed-size output buffer. The output is
+ * always NUL-terminated when out_size is greater than zero. If the buffer is
+ * too small, output is truncated at a complete escape sequence boundary.
+ *
+ * @param value Input string (may be NULL)
+ * @param out Output buffer
+ * @param out_size Output buffer size
+ */
+void json_escape_string_to_buffer(const char *value, char *out, size_t out_size);
+
+/**
  * Parse a "host[:port]" string supporting "[IPv6]:port", bracketed and bare
  * IPv6 literals, hostnames, and IPv4.  A bare string with more than one ':'
  * is treated as an IPv6 literal without port.
