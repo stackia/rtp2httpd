@@ -2,6 +2,7 @@
 #include "http_fetch.h"
 #include "md5.h"
 #include "utils.h"
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -146,7 +147,63 @@ void epg_cleanup(void) {
   epg_cache.fetch_error_count = 0;
   epg_cache.etag_valid = 0;
   epg_cache.etag[0] = '\0';
+  epg_cache.retry_count = 0;
+  epg_cache.next_retry_time = 0;
   logger(LOG_DEBUG, "EPG cache cleaned up");
+}
+
+int epg_cache_snapshot(epg_cache_t *snapshot) {
+  if (!snapshot)
+    return -1;
+
+  *snapshot = epg_cache;
+  snapshot->url = NULL;
+  snapshot->data_fd = -1;
+
+  if (epg_cache.url) {
+    snapshot->url = strdup(epg_cache.url);
+    if (!snapshot->url) {
+      epg_cache_snapshot_free(snapshot);
+      return -1;
+    }
+  }
+
+  if (epg_cache.data_fd >= 0) {
+    snapshot->data_fd = dup(epg_cache.data_fd);
+    if (snapshot->data_fd < 0) {
+      logger(LOG_ERROR, "Failed to duplicate EPG cache fd: %s", strerror(errno));
+      epg_cache_snapshot_free(snapshot);
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+void epg_cache_snapshot_free(epg_cache_t *snapshot) {
+  if (!snapshot)
+    return;
+
+  if (snapshot->url) {
+    free(snapshot->url);
+    snapshot->url = NULL;
+  }
+  if (snapshot->data_fd >= 0) {
+    close(snapshot->data_fd);
+    snapshot->data_fd = -1;
+  }
+  memset(snapshot, 0, sizeof(*snapshot));
+  snapshot->data_fd = -1;
+}
+
+void epg_cache_restore_snapshot(epg_cache_t *snapshot) {
+  if (!snapshot)
+    return;
+
+  epg_cleanup();
+  epg_cache = *snapshot;
+  memset(snapshot, 0, sizeof(*snapshot));
+  snapshot->data_fd = -1;
 }
 
 int epg_set_url(const char *url) {

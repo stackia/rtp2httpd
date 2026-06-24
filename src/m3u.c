@@ -842,6 +842,19 @@ static int append_to_transformed_m3u(const char *str, service_source_t source) {
   return 0;
 }
 
+static void free_transformed_m3u_buffer(m3u_cache_t *cache) {
+  if (cache->transformed_m3u) {
+    free(cache->transformed_m3u);
+    cache->transformed_m3u = NULL;
+  }
+  cache->transformed_m3u_size = 0;
+  cache->transformed_m3u_used = 0;
+  cache->transformed_m3u_inline_end = 0;
+  cache->transformed_m3u_has_header = 0;
+  cache->transformed_m3u_etag_valid = 0;
+  cache->transformed_m3u_etag[0] = '\0';
+}
+
 /* Find a unique service name by adding numeric suffix if needed
  * Returns: malloc'd string containing unique name (caller must free), or NULL
  * on error
@@ -1500,22 +1513,42 @@ const char *m3u_get_etag(void) {
   return m3u_cache.transformed_m3u_etag;
 }
 
-void m3u_reset_transformed_playlist(void) {
-  /* Clear entire buffer */
-  if (m3u_cache.transformed_m3u) {
-    free(m3u_cache.transformed_m3u);
-    m3u_cache.transformed_m3u = NULL;
+void m3u_reset_transformed_playlist(void) { free_transformed_m3u_buffer(&m3u_cache); }
+
+int m3u_cache_snapshot(m3u_cache_t *snapshot) {
+  if (!snapshot)
+    return -1;
+
+  *snapshot = m3u_cache;
+  snapshot->transformed_m3u = NULL;
+
+  if (m3u_cache.transformed_m3u && m3u_cache.transformed_m3u_size > 0) {
+    snapshot->transformed_m3u = malloc(m3u_cache.transformed_m3u_size);
+    if (!snapshot->transformed_m3u) {
+      memset(snapshot, 0, sizeof(*snapshot));
+      return -1;
+    }
+    memcpy(snapshot->transformed_m3u, m3u_cache.transformed_m3u, m3u_cache.transformed_m3u_size);
   }
-  m3u_cache.transformed_m3u_size = 0;
-  m3u_cache.transformed_m3u_used = 0;
-  m3u_cache.transformed_m3u_inline_end = 0;
 
-  /* Reset header flag */
-  m3u_cache.transformed_m3u_has_header = 0;
+  return 0;
+}
 
-  /* Invalidate ETag */
-  m3u_cache.transformed_m3u_etag_valid = 0;
-  m3u_cache.transformed_m3u_etag[0] = '\0';
+void m3u_cache_snapshot_free(m3u_cache_t *snapshot) {
+  if (!snapshot)
+    return;
+
+  free_transformed_m3u_buffer(snapshot);
+  memset(snapshot, 0, sizeof(*snapshot));
+}
+
+void m3u_cache_restore_snapshot(m3u_cache_t *snapshot) {
+  if (!snapshot)
+    return;
+
+  free_transformed_m3u_buffer(&m3u_cache);
+  m3u_cache = *snapshot;
+  memset(snapshot, 0, sizeof(*snapshot));
 }
 
 void m3u_reset_external_playlist(void) {

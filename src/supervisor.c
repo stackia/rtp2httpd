@@ -1,5 +1,7 @@
 #include "supervisor.h"
 #include "configuration.h"
+#include "epg.h"
+#include "m3u.h"
 #include "platform_compat.h"
 #include "rtp2httpd.h"
 #include "service.h"
@@ -46,8 +48,10 @@ static void supervisor_sighup_handler(int signum);
 static void supervisor_sigusr1_handler(int signum);
 static int spawn_worker(int worker_idx);
 static void cleanup_workers(void);
-static void restore_reload_snapshot(config_t *old_config, service_t **old_services, bindaddr_t **old_bind_addresses);
-static void free_reload_snapshot(config_t *old_config, service_t *old_services, bindaddr_t *old_bind_addresses);
+static void restore_reload_snapshot(config_t *old_config, service_t **old_services, bindaddr_t **old_bind_addresses,
+                                    m3u_cache_t *old_m3u_cache, epg_cache_t *old_epg_cache);
+static void free_reload_snapshot(config_t *old_config, service_t *old_services, bindaddr_t *old_bind_addresses,
+                                 m3u_cache_t *old_m3u_cache, epg_cache_t *old_epg_cache);
 
 /**
  * Signal handler for supervisor process (SIGTERM/SIGINT)
@@ -193,7 +197,8 @@ static void cleanup_workers(void) {
   num_workers = 0;
 }
 
-static void restore_reload_snapshot(config_t *old_config, service_t **old_services, bindaddr_t **old_bind_addresses) {
+static void restore_reload_snapshot(config_t *old_config, service_t **old_services, bindaddr_t **old_bind_addresses,
+                                    m3u_cache_t *old_m3u_cache, epg_cache_t *old_epg_cache) {
   if (old_bind_addresses) {
     free_bindaddr(bind_addresses);
     bind_addresses = *old_bind_addresses;
@@ -206,14 +211,19 @@ static void restore_reload_snapshot(config_t *old_config, service_t **old_servic
   }
 
   config_restore_snapshot(old_config);
+  m3u_cache_restore_snapshot(old_m3u_cache);
+  epg_cache_restore_snapshot(old_epg_cache);
 }
 
-static void free_reload_snapshot(config_t *old_config, service_t *old_services, bindaddr_t *old_bind_addresses) {
+static void free_reload_snapshot(config_t *old_config, service_t *old_services, bindaddr_t *old_bind_addresses,
+                                 m3u_cache_t *old_m3u_cache, epg_cache_t *old_epg_cache) {
   if (old_bind_addresses)
     free_bindaddr(old_bind_addresses);
   if (old_services)
     service_free_list(old_services);
   config_snapshot_free(old_config);
+  m3u_cache_snapshot_free(old_m3u_cache);
+  epg_cache_snapshot_free(old_epg_cache);
 }
 
 int supervisor_run(void) {
@@ -345,6 +355,8 @@ int supervisor_run(void) {
 
       int bind_changed = 0;
       config_t old_config;
+      m3u_cache_t old_m3u_cache;
+      epg_cache_t old_epg_cache;
       service_t *old_services;
       bindaddr_t *old_bind_addresses = bindaddr_copy(bind_addresses);
       if (config_snapshot(&old_config) < 0) {
@@ -353,15 +365,25 @@ int supervisor_run(void) {
           free_bindaddr(old_bind_addresses);
         continue;
       }
+      if (m3u_cache_snapshot(&old_m3u_cache) < 0) {
+        logger(LOG_ERROR, "Failed to snapshot M3U cache, not reloading");
+        free_reload_snapshot(&old_config, NULL, old_bind_addresses, &old_m3u_cache, NULL);
+        continue;
+      }
+      if (epg_cache_snapshot(&old_epg_cache) < 0) {
+        logger(LOG_ERROR, "Failed to snapshot EPG cache, not reloading");
+        free_reload_snapshot(&old_config, NULL, old_bind_addresses, &old_m3u_cache, &old_epg_cache);
+        continue;
+      }
       old_services = service_clone_all();
       if (services && !old_services) {
         logger(LOG_ERROR, "Failed to snapshot services, not reloading");
-        free_reload_snapshot(&old_config, old_services, old_bind_addresses);
+        free_reload_snapshot(&old_config, old_services, old_bind_addresses, &old_m3u_cache, &old_epg_cache);
         continue;
       }
       if (bind_addresses && !old_bind_addresses) {
         logger(LOG_ERROR, "Failed to snapshot bind addresses, not reloading");
-        free_reload_snapshot(&old_config, old_services, old_bind_addresses);
+        free_reload_snapshot(&old_config, old_services, old_bind_addresses, &old_m3u_cache, &old_epg_cache);
         continue;
       }
 
@@ -370,12 +392,12 @@ int supervisor_run(void) {
         if (bind_changed) {
           if (unix_socket_listeners_replace(bind_addresses) < 0) {
             logger(LOG_ERROR, "Failed to set up Unix socket listeners after configuration reload");
-            restore_reload_snapshot(&old_config, &old_services, &old_bind_addresses);
+            restore_reload_snapshot(&old_config, &old_services, &old_bind_addresses, &old_m3u_cache, &old_epg_cache);
             reload_failed = 1;
           }
         }
 
-        free_reload_snapshot(&old_config, old_services, old_bind_addresses);
+        free_reload_snapshot(&old_config, old_services, old_bind_addresses, &old_m3u_cache, &old_epg_cache);
 
         if (reload_failed) {
           logger(LOG_ERROR, "Configuration reload failed, keeping existing workers and listeners");
@@ -444,8 +466,8 @@ int supervisor_run(void) {
           }
         }
       } else {
-        restore_reload_snapshot(&old_config, &old_services, &old_bind_addresses);
-        free_reload_snapshot(&old_config, old_services, old_bind_addresses);
+        restore_reload_snapshot(&old_config, &old_services, &old_bind_addresses, &old_m3u_cache, &old_epg_cache);
+        free_reload_snapshot(&old_config, old_services, old_bind_addresses, &old_m3u_cache, &old_epg_cache);
         logger(LOG_ERROR, "Configuration reload failed, not forwarding SIGHUP to workers");
       }
     }

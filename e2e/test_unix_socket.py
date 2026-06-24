@@ -61,6 +61,22 @@ def _wait_unix_http_status(socket_path: str, path: str, expected_status: int = 2
     assert last_status == expected_status
 
 
+def _wait_unix_http_body_contains(socket_path: str, path: str, needle: bytes, timeout: float = 5.0) -> None:
+    deadline = time.time() + timeout
+    last_body = b""
+    while time.time() < deadline:
+        try:
+            status, _, body = unix_http_get(socket_path, path)
+            if status == 200:
+                last_body = body
+                if needle in body:
+                    return
+        except OSError:
+            pass
+        time.sleep(0.1)
+    assert needle in last_body
+
+
 class TestUnixSocketListen:
     def test_cli_unix_socket_serves_status(self, r2h_binary):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -181,8 +197,14 @@ verbosity = 4
         with tempfile.TemporaryDirectory() as tmpdir:
             old_sock_path = os.path.join(tmpdir, "old.sock")
             bad_sock_path = os.path.join(tmpdir, "bad.sock")
+            old_epg_path = os.path.join(tmpdir, "old-epg.xml")
+            new_epg_path = os.path.join(tmpdir, "new-epg.xml")
             with open(bad_sock_path, "wb") as f:
                 f.write(b"not a socket")
+            with open(old_epg_path, "wb") as f:
+                f.write(SAMPLE_EPG_XML.replace("Unix Socket Programme", "Old Programme").encode())
+            with open(new_epg_path, "wb") as f:
+                f.write(SAMPLE_EPG_XML.replace("Unix Socket Programme", "New Programme").encode())
 
             old_config = f"""\
 [global]
@@ -192,6 +214,11 @@ status-page-path = /oldstatus
 
 [bind]
 {old_sock_path}
+
+[services]
+#EXTM3U x-tvg-url="file://{old_epg_path}"
+#EXTINF:-1,Old Channel
+rtp://239.0.0.1:1234
 """
             bad_config = f"""\
 [global]
@@ -201,6 +228,11 @@ status-page-path = /newstatus
 
 [bind]
 {bad_sock_path}
+
+[services]
+#EXTM3U x-tvg-url="file://{new_epg_path}"
+#EXTINF:-1,New Channel
+rtp://239.0.0.2:1234
 """
             r2h = R2HProcess(
                 r2h_binary, None, config_content=old_config, capture_log=True, wait_socket_path=old_sock_path
@@ -209,6 +241,12 @@ status-page-path = /newstatus
                 r2h.start()
                 status, _, _ = unix_http_get(old_sock_path, "/oldstatus")
                 assert status == 200
+                status, _, body = unix_http_get(old_sock_path, "/playlist.m3u")
+                assert status == 200
+                playlist = body.decode()
+                assert "Old Channel" in playlist
+                assert "New Channel" not in playlist
+                _wait_unix_http_body_contains(old_sock_path, "/epg.xml", b"Old Programme")
 
                 assert r2h._config_path is not None
                 with open(r2h._config_path, "w") as f:
@@ -225,6 +263,15 @@ status-page-path = /newstatus
 
                 os.kill(r2h.process.pid, signal.SIGUSR1)
                 _wait_unix_http_status(old_sock_path, "/oldstatus")
+                status, _, body = unix_http_get(old_sock_path, "/playlist.m3u")
+                assert status == 200
+                playlist = body.decode()
+                assert "Old Channel" in playlist
+                assert "New Channel" not in playlist
+                _wait_unix_http_body_contains(old_sock_path, "/epg.xml", b"Old Programme")
+                status, _, body = unix_http_get(old_sock_path, "/epg.xml")
+                assert b"Old Programme" in body
+                assert b"New Programme" not in body
                 status, _, _ = unix_http_get(old_sock_path, "/newstatus")
                 assert status != 200
             finally:
