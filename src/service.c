@@ -1246,7 +1246,7 @@ service_t *service_create_from_http_url(const char *http_url) {
   return result;
 }
 
-service_t *service_create_from_udpxy_url(char *url) {
+service_t *service_create_from_udpxy_url(const char *url) {
   char working_url[HTTP_URL_BUFFER_SIZE];
   size_t url_len;
 

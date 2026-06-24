@@ -52,6 +52,146 @@ int64_t get_realtime_ms(void) {
   return (int64_t)ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
 }
 
+size_t json_escaped_len(const char *value) {
+  size_t len = 0;
+
+  if (!value)
+    return 0;
+
+  for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
+    switch (*p) {
+    case '"':
+    case '\\':
+      len += 2;
+      break;
+    case '\b':
+    case '\f':
+    case '\n':
+    case '\r':
+    case '\t':
+      len += 2;
+      break;
+    case '<':
+    case '>':
+    case '&':
+      len += 6;
+      break;
+    default:
+      len += (*p < 0x20) ? 6 : 1;
+      break;
+    }
+  }
+
+  return len;
+}
+
+static size_t json_escape_char(unsigned char c, char *out, size_t out_size) {
+  static const char hex[] = "0123456789abcdef";
+
+  switch (c) {
+  case '"':
+  case '\\':
+    if (out_size < 2)
+      return 0;
+    out[0] = '\\';
+    out[1] = (char)c;
+    return 2;
+  case '\b':
+    if (out_size < 2)
+      return 0;
+    out[0] = '\\';
+    out[1] = 'b';
+    return 2;
+  case '\f':
+    if (out_size < 2)
+      return 0;
+    out[0] = '\\';
+    out[1] = 'f';
+    return 2;
+  case '\n':
+    if (out_size < 2)
+      return 0;
+    out[0] = '\\';
+    out[1] = 'n';
+    return 2;
+  case '\r':
+    if (out_size < 2)
+      return 0;
+    out[0] = '\\';
+    out[1] = 'r';
+    return 2;
+  case '\t':
+    if (out_size < 2)
+      return 0;
+    out[0] = '\\';
+    out[1] = 't';
+    return 2;
+  case '<':
+    if (out_size < 6)
+      return 0;
+    memcpy(out, "\\u003c", 6);
+    return 6;
+  case '>':
+    if (out_size < 6)
+      return 0;
+    memcpy(out, "\\u003e", 6);
+    return 6;
+  case '&':
+    if (out_size < 6)
+      return 0;
+    memcpy(out, "\\u0026", 6);
+    return 6;
+  default:
+    if (c < 0x20) {
+      if (out_size < 6)
+        return 0;
+      memcpy(out, "\\u00", 4);
+      out[4] = hex[c >> 4];
+      out[5] = hex[c & 0x0f];
+      return 6;
+    }
+
+    if (out_size < 1)
+      return 0;
+    out[0] = (char)c;
+    return 1;
+  }
+}
+
+char *json_escape_string(const char *value) {
+  size_t len = json_escaped_len(value);
+  char *result = malloc(len + 1);
+  char *out = result;
+
+  if (!result)
+    return NULL;
+
+  for (const unsigned char *p = (const unsigned char *)value; value && *p; p++) {
+    size_t written = json_escape_char(*p, out, len - (size_t)(out - result));
+    out += written;
+  }
+  *out = '\0';
+
+  return result;
+}
+
+void json_escape_string_to_buffer(const char *value, char *out, size_t out_size) {
+  char *dst = out;
+
+  if (!out || out_size == 0)
+    return;
+
+  for (const unsigned char *p = (const unsigned char *)value; value && *p; p++) {
+    size_t used = (size_t)(dst - out);
+    size_t remaining = out_size - used - 1;
+    size_t written = json_escape_char(*p, dst, remaining);
+    if (written == 0)
+      break;
+    dst += written;
+  }
+  *dst = '\0';
+}
+
 /**
  * Set socket receive buffer size, trying SO_RCVBUFFORCE first.
  * SO_RCVBUFFORCE can exceed system limits but requires CAP_NET_ADMIN.
@@ -420,14 +560,16 @@ char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host
       }
     }
 
-    /* Build base URL from host and proto */
-    size_t url_len = strlen(proto) + 3 + strlen(host) + 2; /* proto://host/ */
+    const char *prefix = (config.app_path_prefix && config.app_path_prefix[0] != '\0') ? config.app_path_prefix : "";
+
+    /* Build base URL from host, proto, and public app path prefix */
+    size_t url_len = strlen(proto) + 3 + strlen(host) + strlen(prefix) + 2; /* proto://host[/prefix]/ */
     base_url = malloc(url_len);
     if (!base_url) {
       logger(LOG_ERROR, "Failed to allocate base URL");
       return NULL;
     }
-    snprintf(base_url, url_len, "%s://%s/", proto, host);
+    snprintf(base_url, url_len, "%s://%s%s/", proto, host, prefix);
   } else {
     /* Fallback to get_server_address */
     base_url = get_server_address();

@@ -1,3 +1,24 @@
+type RuntimeConfig = {
+  appPathPrefix?: string;
+};
+
+declare global {
+  interface Window {
+    __RTP2HTTPD_CONFIG__?: RuntimeConfig;
+  }
+}
+
+export function getAppPathPrefix(): string {
+  if (typeof window === "undefined") return "";
+  return window.__RTP2HTTPD_CONFIG__?.appPathPrefix ?? "";
+}
+
+export function buildAppPath(path: string): string {
+  const prefix = getAppPathPrefix();
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${prefix}${normalizedPath}`;
+}
+
 export function getStatusBasePath(): string {
   const currentPath = window.location.pathname.replace(/\/+$/, "");
   return currentPath === "" ? "/" : currentPath;

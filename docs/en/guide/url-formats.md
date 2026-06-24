@@ -4,6 +4,8 @@ rtp2httpd supports multiple streaming protocols, distinguished by different URL 
 
 Basic format: `http://server:port/path[?param1=value1][&param2=value2][&param3=value3]`
 
+If `app-path-prefix` is configured, add that prefix to every path. For example, with `app-path-prefix = /app/rtp2httpd`, `/rtp/...`, `/status`, `/player`, and `/playlist.m3u` become `/app/rtp2httpd/rtp/...`, `/app/rtp2httpd/status`, `/app/rtp2httpd/player`, and `/app/rtp2httpd/playlist.m3u`.
+
 When `r2h-token` (HTTP request authentication token) is configured, all URLs must include the `r2h-token=<your token>` parameter to be accessible.
 
 > [!TIP]

@@ -148,6 +148,7 @@ return view.extend({
       var port = "5140"; // default port
       var token = null;
       var pagePath = defaultPath;
+      var appPathPrefix = "";
       var hostname = null;
       var listenTarget = null;
       var use_config_file = uci.get("rtp2httpd", section_id, "use_config_file");
@@ -184,6 +185,12 @@ return view.extend({
         if (pagePathMatch && pagePathMatch[1]) {
           pagePath = pagePathMatch[1];
         }
+        var appPathPrefixMatch = configContent.match(
+          /^\s*app-path-prefix\s*=?\s*(.+?)\s*$/m
+        );
+        if (appPathPrefixMatch && appPathPrefixMatch[1]) {
+          appPathPrefix = appPathPrefixMatch[1];
+        }
       } else {
         // Get listen address, token, hostname and page path from UCI config
         listenTarget = self.getPrimaryListenTarget(section_id);
@@ -191,11 +198,16 @@ return view.extend({
         token = uci.get("rtp2httpd", section_id, "r2h_token");
         hostname = uci.get("rtp2httpd", section_id, "hostname");
         pagePath = uci.get("rtp2httpd", section_id, uciPathKey) || defaultPath;
+        appPathPrefix = uci.get("rtp2httpd", section_id, "app_path_prefix") || "";
       }
 
       // Ensure pagePath starts with /
       if (pagePath && !pagePath.startsWith("/")) {
         pagePath = "/" + pagePath;
+      }
+      appPathPrefix = (appPathPrefix || "").replace(/^\/+/, "").replace(/\/+$/, "");
+      if (appPathPrefix) {
+        appPathPrefix = "/" + appPathPrefix;
       }
 
       // Use configured hostname or fallback to window.location.hostname
@@ -273,9 +285,10 @@ return view.extend({
         pageUrl = finalProtocol + "://" + finalHost + ":" + finalPort;
       }
 
-      // Add base path from hostname if present
+      // Add base path from hostname if present. rtp2httpd ignores hostname path
+      // when app-path-prefix is configured, so the preview should do the same.
       var basePath = url.pathname;
-      if (basePath && basePath !== "/") {
+      if (!appPathPrefix && basePath && basePath !== "/") {
         // Ensure base path ends with '/'
         if (!basePath.endsWith("/")) {
           pageUrl += basePath + "/";
@@ -285,6 +298,18 @@ return view.extend({
         // Remove leading slash from pagePath to avoid double slash
         if (pagePath.startsWith("/")) {
           pagePath = pagePath.substring(1);
+        }
+      }
+
+      if (appPathPrefix) {
+        pageUrl += pageUrl.endsWith("/")
+          ? appPathPrefix.substring(1)
+          : appPathPrefix;
+        if (pagePath.startsWith("/")) {
+          pagePath = pagePath.substring(1);
+        }
+        if (!pageUrl.endsWith("/")) {
+          pageUrl += "/";
         }
       }
 
@@ -716,6 +741,16 @@ return view.extend({
       _("URL path for the status page (default: /status)")
     );
     o.placeholder = "/status";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "advanced",
+      form.Value,
+      "app_path_prefix",
+      _("App Path Prefix"),
+      _("Public mount path prefix for all rtp2httpd HTTP resources, for example /app/rtp2httpd.")
+    );
+    o.placeholder = "/app/rtp2httpd";
     o.depends("use_config_file", "0");
 
     o = s.taboption(

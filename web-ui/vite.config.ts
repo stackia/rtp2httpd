@@ -7,6 +7,7 @@ import { defineConfig } from "vite";
 export default defineConfig(({ mode }) => {
   const isDev = mode === "development";
   return {
+    base: "./",
     plugins: [react(), tailwindcss()],
     define: {
       "process.env.NODE_ENV": JSON.stringify(mode),

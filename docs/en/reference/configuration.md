@@ -81,6 +81,7 @@ Unix socket listen paths must be absolute and must not contain whitespace. At st
   - Set to `*` to allow all origins, or specify a domain (e.g., `https://example.com`)
 - `-s, --status-page-path <path>` - Status page and API root path (default: /status)
 - `-p, --player-page-path <path>` - Built-in player page path (default: /player)
+- `--app-path-prefix <path>` - Public access prefix for all HTTP resources (default: none)
 
 ### Compatibility
 
@@ -143,11 +144,17 @@ xff = no
 # http://server:5140/player?r2h-token=your-secret-token
 r2h-token = your-secret-token-here
 
-# Status page path (default: /status)
+# Status page app path (default: /status; mounted under app-path-prefix when configured)
 status-page-path = /status
 
-# Player page path (default: /player)
+# Player page app path (default: /player; mounted under app-path-prefix when configured)
 player-page-path = /player
+
+# Public access prefix for all HTTP resources (default: none)
+# After this is set, the status page, player, static assets,
+# playlist.m3u, epg.xml, and stream URLs are all served under this
+# prefix, for example /app/rtp2httpd/player.
+app-path-prefix = /app/rtp2httpd
 
 # Upstream network interface configuration (optional)
 #

@@ -13,40 +13,6 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-/* Helper: escape JSON string into out buffer */
-static void json_escape_string(const char *in, char *out, size_t out_sz) {
-  const unsigned char *src = (const unsigned char *)in;
-  char *dst = out;
-  if (out_sz == 0)
-    return;
-  while (*src && (size_t)(dst - out) < out_sz - 1) {
-    unsigned char c = *src++;
-    if (c == '"' || c == '\\') {
-      if ((size_t)(dst - out) + 2 >= out_sz)
-        break;
-      *dst++ = '\\';
-      *dst++ = (char)c;
-    } else if (c == '\n' || c == '\r' || c == '\t' || c == '\b' || c == '\f') {
-      if ((size_t)(dst - out) + 2 >= out_sz)
-        break;
-      *dst++ = '\\';
-      *dst++ = (c == '\n') ? 'n' : (c == '\r') ? 'r' : (c == '\t') ? 't' : (c == '\b') ? 'b' : 'f';
-    } else if (c < 0x20) {
-      /* Control chars as \u00XX */
-      size_t rem = out_sz - (size_t)(dst - out);
-      if (rem < 7)
-        break;
-      int n = snprintf(dst, rem, "\\u%04X", c);
-      if (n <= 0 || (size_t)n >= rem)
-        break;
-      dst += n;
-    } else {
-      *dst++ = (char)c;
-    }
-  }
-  *dst = '\0';
-}
-
 /* Global pointer to shared memory */
 status_shared_t *status_shared = NULL;
 
@@ -515,7 +481,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
 
       /* Escape client_id for JSON */
       char escaped_client_id[256];
-      json_escape_string(status_shared->clients[i].client_id, escaped_client_id, sizeof(escaped_client_id));
+      json_escape_string_to_buffer(status_shared->clients[i].client_id, escaped_client_id, sizeof(escaped_client_id));
 
       len +=
           snprintf(buffer + len, buffer_capacity - (size_t)len,
@@ -648,7 +614,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
         first_log = 0;
 
         char escaped[STATUS_LOG_ENTRY_LEN * 2];
-        json_escape_string(status_shared->log_entries[log_idx].message, escaped, sizeof(escaped));
+        json_escape_string_to_buffer(status_shared->log_entries[log_idx].message, escaped, sizeof(escaped));
 
         len += snprintf(buffer + len, buffer_capacity - (size_t)len,
                         "{\"timestamp\":%lld,\"levelName\":\"%s\",\"message\":\"%s\"}",
@@ -670,7 +636,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
       first_log = 0;
 
       char escaped[STATUS_LOG_ENTRY_LEN * 2];
-      json_escape_string(status_shared->log_entries[log_idx].message, escaped, sizeof(escaped));
+      json_escape_string_to_buffer(status_shared->log_entries[log_idx].message, escaped, sizeof(escaped));
 
       len +=
           snprintf(buffer + len, buffer_capacity - (size_t)len,

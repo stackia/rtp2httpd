@@ -104,6 +104,14 @@ def _assert_player_page_path(port: int, expected_path: str):
         assert status2 == 404
 
 
+def _assert_app_path_prefix(port: int, expected_prefix: str):
+    normalized = "/" + expected_prefix.strip("/")
+    status, _, _ = http_get("127.0.0.1", port, f"{normalized}/status")
+    assert status == 200
+    status2, _, _ = http_get("127.0.0.1", port, "/status")
+    assert status2 == 404
+
+
 def _assert_hostname(port: int, expected_hosts: tuple[str, str]):
     allowed_host, rejected_host = expected_hosts
 
@@ -229,6 +237,19 @@ OPTION_SOURCE_PRIORITY_CASES = [
             "assertion": _assert_player_page_path,
         },
         id="player-page-path",
+    ),
+    pytest.param(
+        {
+            "name": "app-path-prefix",
+            "config_lines": _value_config_line("app-path-prefix"),
+            "cli_args": _value_cli_args("--app-path-prefix"),
+            "config_source_value": "cfg-prefix/",
+            "cli_source_value": "/cli-prefix",
+            "priority_config_value": "/config-prefix",
+            "priority_cli_value": "override-prefix/",
+            "assertion": _assert_app_path_prefix,
+        },
+        id="app-path-prefix",
     ),
     pytest.param(
         {

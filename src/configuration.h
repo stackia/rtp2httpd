@@ -96,6 +96,10 @@ typedef struct {
   char *player_page_route; /* Player page path without leading slash (may be
                               empty) */
 
+  /* Public app mount path settings */
+  char *app_path_prefix; /* Absolute public app path prefix, or empty string */
+  char *app_path_route;  /* App path prefix without leading slash, or empty string */
+
   /* External M3U settings */
   char *external_m3u_url;                /* External M3U URL (NULL=none) */
   int external_m3u_update_interval;      /* Update interval in seconds (0=disabled)

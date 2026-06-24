@@ -80,6 +80,10 @@ function hasHashInFilename(filename) {
   return /-[a-zA-Z0-9_-]{6,}\.(js|css|png|jpg|svg|woff2?|wasm)$/i.test(filename);
 }
 
+function shouldGzip(filePath) {
+  return extname(filePath).toLowerCase() !== ".html";
+}
+
 function scanDirectory(dir, baseDir = dir) {
   const files = [];
   const entries = readdirSync(dir).sort();
@@ -128,26 +132,28 @@ function main() {
   // Process each file
   for (const file of files) {
     const content = readFileSync(file.fullPath);
-    const compressed = gzipDeterministic(content);
+    const gzipEncoded = shouldGzip(file.path);
+    const embeddedContent = gzipEncoded ? gzipDeterministic(content) : content;
     const varName = sanitizeVarName(file.path);
     const mimeType = getMimeType(file.path);
-    const etag = file.hasHash ? null : generateEtag(compressed);
+    const etag = file.hasHash || !gzipEncoded ? null : generateEtag(embeddedContent);
 
     totalOriginalSize += content.length;
-    totalCompressedSize += compressed.length;
+    totalCompressedSize += embeddedContent.length;
 
     embeddedFiles.push({
       path: file.path,
       varName,
       mimeType,
       etag,
-      compressed,
+      content: embeddedContent,
       hasHash: file.hasHash,
+      gzipEncoded,
     });
 
-    const cacheType = file.hasHash ? "immutable" : "etag";
+    const cacheType = file.hasHash ? "immutable" : gzipEncoded ? "etag" : "runtime";
     console.log(
-      `  ${file.path} (${(content.length / 1000).toFixed(1)}KB → ${(compressed.length / 1000).toFixed(1)}KB, ${cacheType})`,
+      `  ${file.path} (${(content.length / 1000).toFixed(1)}KB → ${(embeddedContent.length / 1000).toFixed(1)}KB, ${cacheType})`,
     );
   }
 
@@ -171,9 +177,11 @@ function main() {
 
   // Declare data arrays for each file
   for (const file of embeddedFiles) {
-    lines.push(`/* ${file.path} (${(file.compressed.length / 1000).toFixed(1)}KB gzipped) */`);
+    lines.push(
+      `/* ${file.path} (${(file.content.length / 1000).toFixed(1)}KB ${file.gzipEncoded ? "gzipped" : "plain"}) */`,
+    );
     lines.push(`static const uint8_t ${file.varName}[] = {`);
-    lines.push(formatByteArray(file.compressed));
+    lines.push(formatByteArray(file.content));
     lines.push("};");
     lines.push("");
   }
@@ -188,8 +196,9 @@ function main() {
   for (const file of embeddedFiles) {
     const etagStr = file.etag ? file.etag : "NULL";
     const hasHashStr = file.hasHash ? "true" : "false";
+    const gzipEncodedStr = file.gzipEncoded ? "true" : "false";
     lines.push(
-      `    {"${file.path}", "${file.mimeType}", ${etagStr}, ${file.varName}, sizeof(${file.varName}), ${hasHashStr}},`,
+      `    {"${file.path}", "${file.mimeType}", ${etagStr}, ${file.varName}, sizeof(${file.varName}), ${hasHashStr}, ${gzipEncodedStr}},`,
     );
   }
   lines.push("};");

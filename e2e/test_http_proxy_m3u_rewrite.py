@@ -23,6 +23,7 @@ pytestmark = pytest.mark.http_proxy
 
 _TIMEOUT = 5.0
 _HEADER_PARSE_READ_SIZE = 8191  # HTTP_PROXY_RESPONSE_BUFFER_SIZE - 1
+APP_PREFIX = "/app/rtp2httpd"
 
 
 # ---------------------------------------------------------------------------
@@ -40,17 +41,36 @@ def shared_r2h(r2h_binary):
     r2h.stop()
 
 
+@pytest.fixture(scope="module")
+def prefixed_r2h(r2h_binary):
+    """A shared rtp2httpd instance mounted under app-path-prefix."""
+    port = find_free_port()
+    config = f"""\
+[global]
+verbosity = 4
+maxclients = 100
+app-path-prefix = {APP_PREFIX}
+
+[bind]
+* {port}
+"""
+    r2h = R2HProcess(r2h_binary, port, config_content=config)
+    r2h.start()
+    yield r2h
+    r2h.stop()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _m3u_get(shared_r2h, upstream_port, path, content_type="application/vnd.apple.mpegurl"):
+def _m3u_get(shared_r2h, upstream_port, path, content_type="application/vnd.apple.mpegurl", path_prefix=""):
     """Convenience: GET an M3U path through the proxy and return decoded text."""
     status, hdrs, body = http_get(
         "127.0.0.1",
         shared_r2h.port,
-        f"/http/127.0.0.1:{upstream_port}{path}",
+        f"{path_prefix}/http/127.0.0.1:{upstream_port}{path}",
         timeout=_TIMEOUT,
     )
     return status, hdrs, body.decode("utf-8", errors="replace")
@@ -175,6 +195,23 @@ class TestM3URewriteAbsoluteHTTP:
             assert "http://10.0.0.1:8080/seg2.ts" not in text
             assert "/http/10.0.0.1:8080/seg1.ts" in text
             assert "/http/10.0.0.1:8080/seg2.ts" in text
+        finally:
+            upstream.stop()
+
+    def test_segment_urls_rewritten_with_app_path_prefix(self, prefixed_r2h):
+        """Rewritten segment URLs should include app-path-prefix."""
+        m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nhttp://10.0.0.1:8080/seg1.ts\n"
+        upstream = _make_m3u_upstream("/live/playlist.m3u8", m3u)
+        try:
+            status, _, text = _m3u_get(
+                prefixed_r2h,
+                upstream.port,
+                "/live/playlist.m3u8",
+                path_prefix=APP_PREFIX,
+            )
+            assert status == 200
+            assert "http://10.0.0.1:8080/seg1.ts" not in text
+            assert f"{APP_PREFIX}/http/10.0.0.1:8080/seg1.ts" in text
         finally:
             upstream.stop()
 
