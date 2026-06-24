@@ -195,6 +195,37 @@ def test_client_addr_uses_x_forwarded_for_when_enabled(r2h_binary, tmp_path):
         upstream.stop()
 
 
+def test_user_agent_token_is_redacted(r2h_binary, tmp_path):
+    port = find_free_port()
+    log_path = tmp_path / "access.log"
+    r2h = R2HProcess(
+        r2h_binary,
+        port,
+        config_content=_config(
+            port,
+            [
+                f"access_log = {log_path}",
+                "log_format = $http_user_agent",
+                "r2h-token = secret-token",
+            ],
+        ),
+    )
+    upstream = _start_upstream()
+    try:
+        r2h.start()
+        status, _, body = _request_proxy(
+            port,
+            upstream,
+            headers={"User-Agent": "Player/1.0 R2HTOKEN/secret-token TZ/UTC+8"},
+        )
+        assert status == 200
+        assert body == b"world"
+        assert log_path.read_text().strip() == "Player/1.0 TZ/UTC+8"
+    finally:
+        r2h.stop()
+        upstream.stop()
+
+
 def test_non_media_requests_are_not_logged(r2h_binary, tmp_path):
     port = find_free_port()
     log_path = tmp_path / "access.log"

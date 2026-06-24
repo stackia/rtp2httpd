@@ -54,6 +54,19 @@ void access_log_cleanup(void) {
 
 void access_log_reopen(void) { access_log_cleanup(); }
 
+static int access_log_set_cloexec(int fd) {
+#if O_CLOEXEC == 0 && defined(FD_CLOEXEC)
+  int flags = fcntl(fd, F_GETFD);
+  if (flags < 0)
+    return -1;
+  if (fcntl(fd, F_SETFD, flags | FD_CLOEXEC) < 0)
+    return -1;
+#else
+  (void)fd;
+#endif
+  return 0;
+}
+
 static int access_log_ensure_fd(const char *path) {
   if (!path || path[0] == '\0')
     return -1;
@@ -70,6 +83,12 @@ static int access_log_ensure_fd(const char *path) {
       free(access_log_last_failed_path);
       access_log_last_failed_path = strdup(path);
     }
+    return -1;
+  }
+
+  if (access_log_set_cloexec(fd) < 0) {
+    logger(LOG_ERROR, "Failed to set access log close-on-exec flag for %s: %s", path, strerror(errno));
+    close(fd);
     return -1;
   }
 
@@ -331,6 +350,7 @@ static int access_log_append_placeholder(access_log_buffer_t *buf, const char *n
                                          const char *time_local, const char *msec, const char *remote_addr,
                                          const char *remote_port, const char *request) {
   char numeric[64];
+  char filtered_user_agent[sizeof(c->http_req.user_agent)];
 
 #define MATCH(name_literal) (name_len == strlen(name_literal) && strncmp(name, name_literal, name_len) == 0)
 
@@ -358,8 +378,11 @@ static int access_log_append_placeholder(access_log_buffer_t *buf, const char *n
     return access_log_append_escaped(buf, client->service_url);
   if (MATCH("host"))
     return access_log_append_escaped(buf, c->http_req.hostname);
-  if (MATCH("http_user_agent"))
-    return access_log_append_escaped(buf, c->http_req.user_agent);
+  if (MATCH("http_user_agent")) {
+    if (http_filter_user_agent_token(c->http_req.user_agent, filtered_user_agent, sizeof(filtered_user_agent)) < 0)
+      filtered_user_agent[0] = '\0';
+    return access_log_append_escaped(buf, filtered_user_agent);
+  }
   if (MATCH("http_x_forwarded_for"))
     return access_log_append_escaped(buf, c->http_req.x_forwarded_for);
   if (MATCH("service_type"))
@@ -426,6 +449,26 @@ static int access_log_render(access_log_buffer_t *buf, connection_t *c, service_
   return 0;
 }
 
+static int access_log_write_full(int fd, const char *data, size_t len) {
+  size_t offset = 0;
+
+  while (offset < len) {
+    ssize_t written = write(fd, data + offset, len - offset);
+    if (written < 0) {
+      if (errno == EINTR)
+        continue;
+      return -1;
+    }
+    if (written == 0) {
+      errno = EIO;
+      return -1;
+    }
+    offset += (size_t)written;
+  }
+
+  return 0;
+}
+
 void access_log_write_connection(connection_t *c, service_t *service, int status_index) {
   if (!c || !service || !config.access_log || config.access_log[0] == '\0' || !status_shared)
     return;
@@ -456,10 +499,8 @@ void access_log_write_connection(connection_t *c, service_t *service, int status
     return;
   }
 
-  ssize_t written = write(fd, buf.data, buf.len);
-  if (written < 0 || (size_t)written != buf.len) {
-    logger(LOG_ERROR, "Failed to write access log %s: %s", config.access_log,
-           written < 0 ? strerror(errno) : "short write");
+  if (access_log_write_full(fd, buf.data, buf.len) < 0) {
+    logger(LOG_ERROR, "Failed to write access log %s: %s", config.access_log, strerror(errno));
     access_log_close_fd();
   }
 
