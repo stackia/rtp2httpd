@@ -20,12 +20,10 @@ import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3
 import {
   getLastChannelId,
   getLastSourceIndex,
-  getMp2SoftDecode,
   getSeamlessSwitch,
   getSidebarVisible,
   saveLastChannelId,
   saveLastSourceIndex,
-  saveMp2SoftDecode,
   saveSeamlessSwitch,
   saveSidebarVisible,
 } from "../lib/player-storage";
@@ -57,7 +55,6 @@ function PlayerPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [seamlessSwitch, setSeamlessSwitch] = useState(() => getSeamlessSwitch());
-  const [mp2SoftDecode, setMp2SoftDecode] = useState(() => getMp2SoftDecode());
   const pageContainerRef = useRef<HTMLDivElement>(null);
 
   // Track stream start time - the absolute time position when current stream started
@@ -340,11 +337,6 @@ function PlayerPage() {
     saveSeamlessSwitch(enabled);
   }, []);
 
-  const handleMp2SoftDecodeChange = useCallback((enabled: boolean) => {
-    setMp2SoftDecode(enabled);
-    saveMp2SoftDecode(enabled);
-  }, []);
-
   const handleToggleSidebar = useCallback(() => {
     setShowSidebar((prev) => {
       const newState = !prev;
@@ -363,21 +355,10 @@ function PlayerPage() {
           onThemeChange={setTheme}
           seamlessSwitch={seamlessSwitch}
           onSeamlessSwitchChange={handleSeamlessSwitchChange}
-          mp2SoftDecode={mp2SoftDecode}
-          onMp2SoftDecodeChange={handleMp2SoftDecodeChange}
         />
       </div>
     );
-  }, [
-    locale,
-    theme,
-    seamlessSwitch,
-    mp2SoftDecode,
-    setLocale,
-    setTheme,
-    handleSeamlessSwitchChange,
-    handleMp2SoftDecodeChange,
-  ]);
+  }, [locale, theme, seamlessSwitch, setLocale, setTheme, handleSeamlessSwitchChange]);
 
   // Main UI content
   const mainContent = (
@@ -405,7 +386,6 @@ function PlayerPage() {
             onToggleSidebar={handleToggleSidebar}
             onFullscreenToggle={handleFullscreenToggle}
             seamlessSwitch={seamlessSwitch}
-            mp2SoftDecode={mp2SoftDecode}
             activeSourceIndex={activeSourceIndex}
             onSourceChange={handleSourceChange}
             onPlaybackStarted={handlePlaybackStarted}

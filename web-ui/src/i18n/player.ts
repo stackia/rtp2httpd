@@ -98,7 +98,6 @@ const base: TranslationDict = {
   themeLight: "Light",
   themeDark: "Dark",
   seamlessSwitch: "Seamless switch",
-  mp2SoftDecode: "MP2 Audio Software Decoder",
 };
 
 const zhHans: TranslationDict = {
@@ -197,7 +196,6 @@ const zhHans: TranslationDict = {
   themeLight: "浅色",
   themeDark: "深色",
   seamlessSwitch: "无缝换台",
-  mp2SoftDecode: "MP2 音频软解",
 };
 
 // 繁體中文（偏好香港用語）
@@ -297,7 +295,6 @@ const zhHant: TranslationDict = {
   themeLight: "淺色",
   themeDark: "深色",
   seamlessSwitch: "無縫換台",
-  mp2SoftDecode: "MP2 音頻軟解",
 };
 
 export const translations: Record<Locale, TranslationDict> = {

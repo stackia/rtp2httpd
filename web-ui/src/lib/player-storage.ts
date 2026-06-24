@@ -5,8 +5,6 @@
  * JSON serialization, error handling, and backward-compatible reads.
  */
 
-import { isIOS } from "./platform";
-
 function cloneDefaultValue<T>(value: T): T {
   if (value === null || typeof value !== "object") {
     return value;
@@ -45,7 +43,6 @@ export const [getLastChannelId, saveLastChannelId] = createStore<string | null>(
 );
 export const [getSidebarVisible, saveSidebarVisible] = createStore("rtp2httpd-player-sidebar-visible", true);
 export const [getSeamlessSwitch, saveSeamlessSwitch] = createStore("rtp2httpd-player-seamless-switch", true);
-export const [getMp2SoftDecode, saveMp2SoftDecode] = createStore("rtp2httpd-player-mp2-soft-decode", isIOS());
 export const [getVolume, saveVolume] = createStore("rtp2httpd-player-volume", 1);
 export const [getMuted, saveMuted] = createStore("rtp2httpd-player-muted", false);
 
