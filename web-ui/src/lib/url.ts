@@ -8,15 +8,9 @@ declare global {
   }
 }
 
-function normalizePathPrefix(value: string | undefined): string {
-  if (!value) return "";
-  const trimmed = value.replace(/^\/+/, "").replace(/\/+$/, "");
-  return trimmed ? `/${trimmed}` : "";
-}
-
 export function getAppPathPrefix(): string {
   if (typeof window === "undefined") return "";
-  return normalizePathPrefix(window.__RTP2HTTPD_CONFIG__?.appPathPrefix);
+  return window.__RTP2HTTPD_CONFIG__?.appPathPrefix ?? "";
 }
 
 export function buildAppPath(path: string): string {
