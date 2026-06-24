@@ -76,7 +76,7 @@ function ChannelListComponent({
   const filteredChannels = useMemo(() => {
     if (!channels) return [];
     const filtered = channels.filter((ch) => {
-      const matchesGroup = !selectedGroup || ch.group === selectedGroup;
+      const matchesGroup = !selectedGroup || ch.groups.includes(selectedGroup);
       if (!matchesGroup) return false;
 
       if (!searchQuery) return true;

@@ -8,7 +8,7 @@ import type { Channel, M3UMetadata, Source } from "../types/player";
 export function parseM3U(content: string): M3UMetadata {
   const lines = content.split("\n");
   const channels: Channel[] = [];
-  const groups: string[] = [];
+  const playlistGroups: string[] = [];
   const seenGroups = new Set<string>();
   let tvgUrl: string | undefined;
   let defaultCatchup: string | undefined;
@@ -17,7 +17,7 @@ export function parseM3U(content: string): M3UMetadata {
   let currentExtinf: {
     name: string;
     logo?: string;
-    group: string;
+    groups: string[];
     tvgId?: string;
     tvgName?: string;
     catchup?: string;
@@ -53,7 +53,6 @@ export function parseM3U(content: string): M3UMetadata {
       const tvgIdMatch = line.match(/tvg-id="([^"]+)"/);
       const tvgNameMatch = line.match(/tvg-name="([^"]+)"/);
       const tvgLogoMatch = line.match(/tvg-logo="([^"]+)"/);
-      const groupTitleMatch = line.match(/group-title="([^"]+)"/);
       const catchupMatch = line.match(/catchup="([^"]+)"/);
       const catchupSourceMatch = line.match(/catchup-source="([^"]+)"/);
 
@@ -61,18 +60,20 @@ export function parseM3U(content: string): M3UMetadata {
       const nameMatch = line.match(/,(.+)$/);
       const name = nameMatch ? nameMatch[1].trim() : "Unknown";
 
-      const group = groupTitleMatch?.[1] || "";
+      const groups = parseGroupTitles(line);
 
       // Collect group in order if not seen before
-      if (group && !seenGroups.has(group)) {
-        groups.push(group);
-        seenGroups.add(group);
+      for (const group of groups) {
+        if (!seenGroups.has(group)) {
+          playlistGroups.push(group);
+          seenGroups.add(group);
+        }
       }
 
       currentExtinf = {
         name,
         logo: tvgLogoMatch?.[1],
-        group,
+        groups,
         tvgId: tvgIdMatch?.[1],
         tvgName: tvgNameMatch?.[1],
         catchup: catchupMatch?.[1] || defaultCatchup,
@@ -98,7 +99,7 @@ export function parseM3U(content: string): M3UMetadata {
         id: `${channels.length + 1}`,
         name: currentExtinf.name,
         logo: currentExtinf.logo,
-        group: currentExtinf.group,
+        groups: currentExtinf.groups,
         tvgId: currentExtinf.tvgId,
         tvgName: currentExtinf.tvgName,
         sources: [
@@ -112,19 +113,37 @@ export function parseM3U(content: string): M3UMetadata {
   return {
     tvgUrl,
     channels: mergeChannelSources(channels),
-    groups,
+    groups: playlistGroups,
   };
 }
 
+function parseGroupTitles(line: string): string[] {
+  const seenGroups = new Set<string>();
+  const groups: string[] = [];
+
+  for (const match of line.matchAll(/group-title="([^"]+)"/g)) {
+    const groupTitles = match[1].split(";");
+    for (const groupTitle of groupTitles) {
+      const group = groupTitle.trim();
+      if (group && !seenGroups.has(group)) {
+        groups.push(group);
+        seenGroups.add(group);
+      }
+    }
+  }
+
+  return groups;
+}
+
 /**
- * Merge channels with the same name and group into a single channel with multiple sources.
- * Channels are considered duplicates if they share the same group + name combination.
+ * Merge channels with the same name and groups into a single channel with multiple sources.
+ * Channels are considered duplicates if they share the same group list + name combination.
  */
 function mergeChannelSources(channels: Channel[]): Channel[] {
   const mergeMap = new Map<string, Channel>();
 
   for (const ch of channels) {
-    const key = `${ch.group}\0${ch.name}`;
+    const key = `${ch.groups.join("\0")}\0${ch.name}`;
     const existing = mergeMap.get(key);
 
     if (existing) {
@@ -133,7 +152,7 @@ function mergeChannelSources(channels: Channel[]): Channel[] {
         existing.logo = ch.logo;
       }
     } else {
-      mergeMap.set(key, { ...ch });
+      mergeMap.set(key, { ...ch, groups: [...ch.groups] });
     }
   }
 
