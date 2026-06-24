@@ -260,3 +260,46 @@ rtp://239.253.64.120:5140
 #EXTINF:-1 tvg-id="CCTV2" tvg-name="CCTV2" group-title="央视",CCTV-2
 rtp://239.253.64.121:5140
 ```
+
+## 运行时配置管理
+
+rtp2httpd 支持配置热重载：修改配置文件后，通过发送信号或状态页面触发重载，即可应用变更，无需重启整个进程。rtp2httpd 采用 supervisor + worker 多进程架构，信号应发送给 **supervisor 进程**（即主 `rtp2httpd` 进程，而非 worker 子进程）。
+
+### 信号说明
+
+| 信号 | 作用 |
+| --- | --- |
+| `SIGHUP` | 热重载配置：从配置文件重新读取并应用 |
+| `SIGUSR1` | 重启所有工作进程 |
+
+**示例**（将 `12345` 替换为 supervisor 进程的 PID）：
+
+```bash
+# 热重载配置
+kill -HUP 12345
+
+# 重启所有工作进程
+kill -USR1 12345
+```
+
+### SIGHUP 热重载行为
+
+- 从配置文件（默认 `/etc/rtp2httpd.conf`，或通过 `--config` 指定的路径）重新读取配置
+- 若 `[bind]` 监听地址发生变化，supervisor 会向所有工作进程发送 `SIGTERM` 并重新拉起，以应用新的监听地址
+- 若 `workers` 数量发生变化，supervisor 会自动增减工作进程
+- 其他配置变更会转发 `SIGHUP` 给各工作进程，由工作进程在运行时应用
+- 若配置文件解析失败，保留旧配置，不会中断现有连接
+
+> [!NOTE]
+> 使用 `--noconfig` 启动时，没有配置文件可供重载；此时 `SIGHUP` 仅触发 M3U/EPG 的重新加载。
+
+### SIGUSR1 重启工作进程
+
+向 supervisor 发送 `SIGUSR1` 后，所有工作进程会被终止并由 supervisor 自动重新拉起。适用于需要刷新工作进程状态、但不修改配置文件的场景。进行中的客户端连接会被中断。
+
+### 通过状态页面操作
+
+[状态页面](../guide/url-formats.md#状态页面) 提供了等效的管理功能，无需手动查找 PID：
+
+- **重载配置**：对应 `SIGHUP`（API：`POST <status-page-path>/api/reload-config`）
+- **重启工作进程**：对应 `SIGUSR1`（API：`POST <status-page-path>/api/restart-workers`）

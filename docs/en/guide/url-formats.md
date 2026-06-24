@@ -222,7 +222,17 @@ Access the web status page to view:
 - Real-time client connection statistics
 - IP, status, bandwidth usage, and data transferred for each connection
 - System log viewer
-- Remote management functions (force disconnect, etc.)
+- Remote management functions (force disconnect, adjust log level, etc.)
+- Service control: reload configuration, restart worker processes
+
+**Service control** (equivalent to sending Unix signals to the supervisor):
+
+| Action | Equivalent Signal | API |
+| --- | --- | --- |
+| Reload config | `SIGHUP` | `POST /status/api/reload-config` |
+| Restart workers | `SIGUSR1` | `POST /status/api/restart-workers` |
+
+Replace `/status` with your actual `status-page-path` value. See [Configuration Reference — Runtime Configuration Management](/en/reference/configuration#runtime-configuration-management) for details.
 
 The status page path can be customized via the `status-page-path` configuration option. Setting it to `/` enables direct access without any path.
 

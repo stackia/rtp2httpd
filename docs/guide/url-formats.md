@@ -222,7 +222,17 @@ http://192.168.1.1:5140/status
 - 实时客户端连接统计
 - 每个连接的 IP、状态、带宽使用、传输数据量
 - 系统日志查看
-- 远程管理功能（强制断开连接等）
+- 远程管理功能（强制断开连接、调整日志级别等）
+- 服务控制：重载配置、重启工作进程
+
+**服务控制**（等效于向 supervisor 发送 Unix 信号）：
+
+| 操作 | 等效信号 | API |
+| --- | --- | --- |
+| 重载配置 | `SIGHUP` | `POST /status/api/reload-config` |
+| 重启工作进程 | `SIGUSR1` | `POST /status/api/restart-workers` |
+
+将 `/status` 替换为实际的 `status-page-path` 配置值。详见 [配置参数详解 — 运行时配置管理](../reference/configuration.md#运行时配置管理)。
 
 状态页面路径可以通过配置项 `status-page-path` 自定义。设置为 `/` 可以实现不带任何路径直接访问。
 

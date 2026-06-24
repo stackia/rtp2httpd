@@ -260,3 +260,46 @@ rtp://239.253.64.120:5140
 #EXTINF:-1 tvg-id="CCTV2" tvg-name="CCTV2" group-title="CCTV",CCTV-2
 rtp://239.253.64.121:5140
 ```
+
+## Runtime Configuration Management
+
+rtp2httpd supports configuration hot reload: after editing the configuration file, trigger a reload via signal or the status page to apply changes without restarting the entire process. rtp2httpd uses a supervisor + worker multi-process architecture. Signals must be sent to the **supervisor process** (the main `rtp2httpd` process, not worker child processes).
+
+### Signal Reference
+
+| Signal | Action |
+| --- | --- |
+| `SIGHUP` | Hot reload configuration: re-read and apply settings from the config file |
+| `SIGUSR1` | Restart all worker processes |
+
+**Examples** (replace `12345` with the supervisor process PID):
+
+```bash
+# Hot reload configuration
+kill -HUP 12345
+
+# Restart all workers
+kill -USR1 12345
+```
+
+### SIGHUP Hot Reload Behavior
+
+- Re-reads configuration from the config file (default `/etc/rtp2httpd.conf`, or the path specified via `--config`)
+- If `[bind]` listen addresses change, the supervisor sends `SIGTERM` to all workers and respawns them to apply the new listen addresses
+- If the `workers` count changes, the supervisor automatically adds or removes worker processes
+- For other configuration changes, the supervisor forwards `SIGHUP` to each worker, which applies them at runtime
+- If the config file fails to parse, the old configuration is kept and existing connections are not interrupted
+
+> [!NOTE]
+> When started with `--noconfig`, there is no config file to reload. In that case, `SIGHUP` only triggers M3U/EPG reload.
+
+### SIGUSR1 Worker Restart
+
+Sending `SIGUSR1` to the supervisor terminates all worker processes, which the supervisor then automatically respawns. Use this when you need to refresh worker state without modifying the configuration file. Active client connections will be interrupted.
+
+### Via the Status Page
+
+The [status page](/en/guide/url-formats#status-page) provides equivalent management functions without manually looking up the PID:
+
+- **Reload Config**: equivalent to `SIGHUP` (API: `POST <status-page-path>/api/reload-config`)
+- **Restart Workers**: equivalent to `SIGUSR1` (API: `POST <status-page-path>/api/restart-workers`)
