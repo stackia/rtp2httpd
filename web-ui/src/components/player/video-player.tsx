@@ -751,9 +751,6 @@ export function VideoPlayer({
   }, [liveSessionAnchor]);
 
   useEffect(() => {
-    const activeId = activeSlotIdRef.current;
-    const player = (activeId === "a" ? slotAPlayerRef : slotBPlayerRef).current;
-    if (!player) return;
     if (skipNextSegmentsLoadRef.current) {
       skipNextSegmentsLoadRef.current = false;
       return;
