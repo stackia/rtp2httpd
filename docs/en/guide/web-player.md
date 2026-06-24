@@ -24,6 +24,7 @@ The player page path can be customized via the `player-page-path` configuration 
 - **Live Streaming**: Watch live broadcasts directly in the browser
 - **Time-Shifted Playback**: Supports EPG (Electronic Program Guide) and time-shifted playback (requires catchup source)
 - **Fast Startup**: Achieves millisecond-level channel switching with FCC
+- **Seamless Channel Switching**: Preloads the new stream when switching channels to reduce black screens
 - **Responsive Design**: UI adapts to both desktop and mobile devices
 - **PWA Support**: Can be added to the home screen on phones, tablets, desktops, or LG webOS TVs for app-like quick access
 - **Zero Overhead**: Pure web frontend implementation with virtually no resource overhead on rtp2httpd (no decoding/transcoding overhead)
@@ -85,6 +86,12 @@ If a source URL has a `$label` suffix, the player extracts it as the source's di
 > Channel aggregation is a frontend feature of the **built-in web player**, not a server-side behavior of rtp2httpd. Whether third-party players (such as APTV, TiviMate, etc.) support similar aggregated display depends on their own implementation. The rtp2httpd server only parses `$label`, generates independent service paths, and preserves `$label` in the converted M3U.
 
 For M3U configuration of source labels, see [M3U Playlist Integration](/en/guide/m3u-integration#source-labels).
+
+## Seamless Channel Switching
+
+The built-in web player enables **seamless channel switching** by default. When you change channels or switch sources, the player preloads the new stream in the background and switches the video once the new stream is ready, reducing black screens and wait time. Combined with [FCC Fast Channel Change](/en/guide/fcc-setup), this delivers a smoother channel switching experience.
+
+This feature uses dual-slot preloading. Because two video streams are pulled simultaneously for a brief period during channel switching, you may experience stuttering when switching channels if your bandwidth is limited (for example, when accessing rtp2httpd over the public internet), or if the upstream only supports a single multicast stream. In that case, you can manually disable this option in the **Settings** menu (gear icon) at the top-right of the player page by turning off **Seamless switch**. When disabled, the player stops the current stream before loading the new one, using less bandwidth but may show a brief black screen during switching.
 
 ## Time Placeholders
 

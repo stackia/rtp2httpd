@@ -15,6 +15,7 @@
 - 组播 -> multicast
 - 单播 -> unicast
 - 快速换台 -> fast channel change / channel switching
+- 无缝换台 -> seamless channel switching / Seamless switch (player setting label)
 - 时移回看 -> time-shifted playback / time-shift / catch-up
 - 电子节目单 -> EPG (Electronic Program Guide)
 - 频道 -> channel
