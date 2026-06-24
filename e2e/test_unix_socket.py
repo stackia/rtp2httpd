@@ -9,6 +9,7 @@ zero-copy disablement, and file responses over Unix sockets.
 from __future__ import annotations
 
 import os
+import signal
 import socket
 import tempfile
 import time
@@ -139,6 +140,50 @@ verbosity = 4
                 assert r2h.process.returncode != 0
                 log = r2h.read_log()
                 assert "not a socket" in log
+            finally:
+                r2h.stop()
+
+    def test_reload_keeps_old_unix_listener_when_new_path_fails(self, r2h_binary):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_sock_path = os.path.join(tmpdir, "old.sock")
+            bad_sock_path = os.path.join(tmpdir, "bad.sock")
+            with open(bad_sock_path, "wb") as f:
+                f.write(b"not a socket")
+
+            old_config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+{old_sock_path}
+"""
+            bad_config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+{bad_sock_path}
+"""
+            r2h = R2HProcess(
+                r2h_binary, None, config_content=old_config, capture_log=True, wait_socket_path=old_sock_path
+            )
+            try:
+                r2h.start()
+                status, _, _ = unix_http_get(old_sock_path, "/status")
+                assert status == 200
+
+                assert r2h._config_path is not None
+                with open(r2h._config_path, "w") as f:
+                    f.write(bad_config)
+                assert r2h.process is not None
+                os.kill(r2h.process.pid, signal.SIGHUP)
+                time.sleep(0.5)
+
+                status, _, _ = unix_http_get(old_sock_path, "/status")
+                assert status == 200
+                log = r2h.read_log()
+                assert "Unix socket path exists and is not a socket" in log
+                assert "keeping existing workers and listeners" in log
             finally:
                 r2h.stop()
 

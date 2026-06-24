@@ -52,6 +52,7 @@ static int spawn_worker(int worker_idx);
 static void cleanup_workers(void);
 static int setup_unix_listeners(void);
 static void cleanup_unix_listeners(void);
+static int replace_unix_listeners_atomically(void);
 
 /**
  * Signal handler for supervisor process (SIGTERM/SIGINT)
@@ -217,57 +218,120 @@ static void cleanup_unix_listeners(void) {
   unix_listen_count = 0;
 }
 
-static int setup_unix_listeners(void) {
+static int find_current_unix_listener(const char *path) {
+  for (int i = 0; i < unix_listen_count; i++) {
+    if (unix_listen_paths[i] && strcmp(unix_listen_paths[i], path) == 0)
+      return i;
+  }
+  return -1;
+}
+
+static int temp_unix_listener_path_exists(char **paths, int count, const char *path) {
+  for (int i = 0; i < count; i++) {
+    if (paths[i] && strcmp(paths[i], path) == 0)
+      return 1;
+  }
+  return 0;
+}
+
+static void cleanup_temp_unix_listeners(int *sockets, char **paths, int *owned, int count) {
+  for (int i = 0; i < count; i++) {
+    if (owned[i] && sockets[i] >= 0) {
+      close(sockets[i]);
+      sockets[i] = -1;
+      if (paths[i])
+        unlink(paths[i]);
+    }
+    if (paths[i]) {
+      free(paths[i]);
+      paths[i] = NULL;
+    }
+  }
+}
+
+static int build_unix_listener_set(int *sockets, char **paths, int *owned, int *reused, int *count) {
   bindaddr_t *bind_addr;
+
+  *count = 0;
+  for (int i = 0; i < MAX_S; i++) {
+    sockets[i] = -1;
+    paths[i] = NULL;
+    owned[i] = 0;
+    reused[i] = 0;
+  }
 
   for (bind_addr = bind_addresses; bind_addr; bind_addr = bind_addr->next) {
     struct sockaddr_un addr;
     struct stat st;
     int sock = -1;
     char *path_copy = NULL;
+    int current_idx;
 
     if (bind_addr->type != BIND_ADDR_UNIX)
       continue;
 
     if (!bind_addr->path || bind_addr->path[0] != '/') {
       logger(LOG_FATAL, "Invalid Unix socket path");
-      cleanup_unix_listeners();
+      cleanup_temp_unix_listeners(sockets, paths, owned, *count);
       return -1;
     }
 
     if (strlen(bind_addr->path) >= sizeof(addr.sun_path)) {
       logger(LOG_FATAL, "Unix socket path is too long: %s", bind_addr->path);
-      cleanup_unix_listeners();
+      cleanup_temp_unix_listeners(sockets, paths, owned, *count);
       return -1;
     }
 
-    if (unix_listen_count >= MAX_S) {
+    if (*count >= MAX_S) {
       logger(LOG_FATAL, "Too many listening sockets (max %d)", MAX_S);
-      cleanup_unix_listeners();
+      cleanup_temp_unix_listeners(sockets, paths, owned, *count);
       return -1;
+    }
+
+    if (temp_unix_listener_path_exists(paths, *count, bind_addr->path)) {
+      logger(LOG_FATAL, "Duplicate Unix socket listener path: %s", bind_addr->path);
+      cleanup_temp_unix_listeners(sockets, paths, owned, *count);
+      return -1;
+    }
+
+    current_idx = find_current_unix_listener(bind_addr->path);
+    if (current_idx >= 0) {
+      path_copy = strdup(bind_addr->path);
+      if (!path_copy) {
+        logger(LOG_FATAL, "Failed to allocate Unix socket path");
+        cleanup_temp_unix_listeners(sockets, paths, owned, *count);
+        return -1;
+      }
+      sockets[*count] = unix_listen_sockets[current_idx];
+      paths[*count] = path_copy;
+      owned[*count] = 0;
+      reused[current_idx] = 1;
+      (*count)++;
+      logger(LOG_INFO, "Keeping Unix socket listener %s", bind_addr->path);
+      continue;
     }
 
     if (lstat(bind_addr->path, &st) == 0) {
       if (!S_ISSOCK(st.st_mode)) {
         logger(LOG_FATAL, "Unix socket path exists and is not a socket: %s", bind_addr->path);
-        cleanup_unix_listeners();
+        cleanup_temp_unix_listeners(sockets, paths, owned, *count);
         return -1;
       }
       if (unlink(bind_addr->path) < 0) {
         logger(LOG_FATAL, "Failed to remove stale Unix socket %s: %s", bind_addr->path, strerror(errno));
-        cleanup_unix_listeners();
+        cleanup_temp_unix_listeners(sockets, paths, owned, *count);
         return -1;
       }
     } else if (errno != ENOENT) {
       logger(LOG_FATAL, "Failed to inspect Unix socket path %s: %s", bind_addr->path, strerror(errno));
-      cleanup_unix_listeners();
+      cleanup_temp_unix_listeners(sockets, paths, owned, *count);
       return -1;
     }
 
     path_copy = strdup(bind_addr->path);
     if (!path_copy) {
       logger(LOG_FATAL, "Failed to allocate Unix socket path");
-      cleanup_unix_listeners();
+      cleanup_temp_unix_listeners(sockets, paths, owned, *count);
       return -1;
     }
 
@@ -275,7 +339,7 @@ static int setup_unix_listeners(void) {
     if (sock < 0) {
       logger(LOG_FATAL, "Cannot create Unix socket %s: %s", bind_addr->path, strerror(errno));
       free(path_copy);
-      cleanup_unix_listeners();
+      cleanup_temp_unix_listeners(sockets, paths, owned, *count);
       return -1;
     }
 
@@ -287,7 +351,7 @@ static int setup_unix_listeners(void) {
       logger(LOG_FATAL, "Cannot bind Unix socket %s: %s", bind_addr->path, strerror(errno));
       close(sock);
       free(path_copy);
-      cleanup_unix_listeners();
+      cleanup_temp_unix_listeners(sockets, paths, owned, *count);
       return -1;
     }
 
@@ -296,19 +360,64 @@ static int setup_unix_listeners(void) {
       close(sock);
       unlink(bind_addr->path);
       free(path_copy);
-      cleanup_unix_listeners();
+      cleanup_temp_unix_listeners(sockets, paths, owned, *count);
       return -1;
     }
 
-    unix_listen_sockets[unix_listen_count] = sock;
-    unix_listen_paths[unix_listen_count] = path_copy;
-    unix_listen_count++;
-
+    sockets[*count] = sock;
+    paths[*count] = path_copy;
+    owned[*count] = 1;
+    (*count)++;
     logger(LOG_INFO, "Listening on Unix socket %s", bind_addr->path);
   }
 
   return 0;
 }
+
+static int replace_unix_listeners_atomically(void) {
+  int sockets[MAX_S];
+  char *paths[MAX_S];
+  int owned[MAX_S];
+  int reused[MAX_S];
+  int count = 0;
+
+  if (build_unix_listener_set(sockets, paths, owned, reused, &count) < 0)
+    return -1;
+
+  for (int i = 0; i < unix_listen_count; i++) {
+    if (reused[i]) {
+      if (unix_listen_paths[i]) {
+        free(unix_listen_paths[i]);
+        unix_listen_paths[i] = NULL;
+      }
+      continue;
+    }
+    if (unix_listen_sockets[i] >= 0) {
+      close(unix_listen_sockets[i]);
+      unix_listen_sockets[i] = -1;
+    }
+    if (unix_listen_paths[i]) {
+      struct stat st;
+      if (lstat(unix_listen_paths[i], &st) == 0 && S_ISSOCK(st.st_mode)) {
+        if (unlink(unix_listen_paths[i]) < 0) {
+          logger(LOG_WARN, "Failed to unlink Unix socket %s: %s", unix_listen_paths[i], strerror(errno));
+        }
+      }
+      free(unix_listen_paths[i]);
+      unix_listen_paths[i] = NULL;
+    }
+  }
+
+  for (int i = 0; i < count; i++) {
+    unix_listen_sockets[i] = sockets[i];
+    unix_listen_paths[i] = paths[i];
+  }
+  unix_listen_count = count;
+
+  return 0;
+}
+
+static int setup_unix_listeners(void) { return replace_unix_listeners_atomically(); }
 
 int supervisor_run(void) {
   int i;
@@ -438,12 +547,27 @@ int supervisor_run(void) {
       logger(LOG_INFO, "Received SIGHUP, reloading configuration");
 
       int bind_changed = 0;
+      bindaddr_t *old_bind_addresses = bindaddr_copy(bind_addresses);
       if (config_reload(&bind_changed) == 0) {
+        int reload_failed = 0;
         if (bind_changed) {
-          cleanup_unix_listeners();
-          if (setup_unix_listeners() < 0) {
+          if (replace_unix_listeners_atomically() < 0) {
             logger(LOG_ERROR, "Failed to set up Unix socket listeners after configuration reload");
+            if (old_bind_addresses) {
+              free_bindaddr(bind_addresses);
+              bind_addresses = old_bind_addresses;
+              old_bind_addresses = NULL;
+            }
+            reload_failed = 1;
           }
+        }
+
+        if (old_bind_addresses)
+          free_bindaddr(old_bind_addresses);
+
+        if (reload_failed) {
+          logger(LOG_ERROR, "Configuration reload failed, keeping existing workers and listeners");
+          continue;
         }
 
         /* Handle worker count changes */
@@ -508,6 +632,8 @@ int supervisor_run(void) {
           }
         }
       } else {
+        if (old_bind_addresses)
+          free_bindaddr(old_bind_addresses);
         logger(LOG_ERROR, "Configuration reload failed, not forwarding SIGHUP to workers");
       }
     }

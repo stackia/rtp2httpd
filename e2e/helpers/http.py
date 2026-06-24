@@ -54,7 +54,13 @@ def _parse_raw_http_response(data: bytes, lower_header_names: bool = False) -> t
     header_text = data[:header_end].decode(errors="replace")
     body = data[header_end + 4 :]
     parts = header_text.split("\r\n")
-    status_code = int(parts[0].split()[1])
+    status_line = parts[0].split()
+    if len(status_line) < 2:
+        return 0, {}, b""
+    try:
+        status_code = int(status_line[1])
+    except ValueError:
+        return 0, {}, b""
 
     hdrs: dict[str, str] = {}
     for line in parts[1:]:

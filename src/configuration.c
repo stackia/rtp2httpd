@@ -798,7 +798,7 @@ void free_bindaddr(bindaddr_t *ba) {
 /**
  * Deep copy a bind address list
  */
-static bindaddr_t *copy_bindaddr(bindaddr_t *src) {
+bindaddr_t *bindaddr_copy(bindaddr_t *src) {
   bindaddr_t *head = NULL;
   bindaddr_t **tail = &head;
 
@@ -1020,7 +1020,7 @@ int config_reload(int *out_bind_changed) {
   }
 
   /* Save current bind addresses for comparison and potential rollback */
-  old_bind_addresses = copy_bindaddr(bind_addresses);
+  old_bind_addresses = bindaddr_copy(bind_addresses);
 
   /* Step 1: Cleanup all configuration resources */
   config_cleanup(false);

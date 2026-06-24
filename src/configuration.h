@@ -144,6 +144,7 @@ void parse_cmd_line(int argc, char *argv[]);
 /* Memory management */
 bindaddr_t *new_empty_bindaddr(void);
 void free_bindaddr(bindaddr_t *);
+bindaddr_t *bindaddr_copy(bindaddr_t *);
 
 /* Configuration lifecycle */
 
