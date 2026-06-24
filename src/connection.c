@@ -48,6 +48,12 @@ typedef enum {
   TOKEN_SOURCE_UA      /* From User-Agent R2HTOKEN/xxx */
 } token_source_t;
 
+static int connection_client_is_tcp(const connection_t *c) {
+  if (!c || c->client_addr_len == 0)
+    return 0;
+  return c->client_addr.ss_family == AF_INET || c->client_addr.ss_family == AF_INET6;
+}
+
 /**
  * Parse cookie value from Cookie header string
  * Format: "name1=value1; name2=value2"
@@ -472,14 +478,16 @@ connection_t *connection_create(int fd, int epfd, struct sockaddr_storage *clien
 
   /* Enforce TCP user timeout so unacknowledged data fails quickly */
 #ifdef TCP_USER_TIMEOUT
-  int tcp_user_timeout = CONNECTION_TCP_USER_TIMEOUT_MS;
-  if (setsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &tcp_user_timeout, sizeof(tcp_user_timeout)) < 0) {
-    logger(LOG_DEBUG, "connection_create: Failed to set TCP_USER_TIMEOUT: %s", strerror(errno));
+  if (connection_client_is_tcp(c)) {
+    int tcp_user_timeout = CONNECTION_TCP_USER_TIMEOUT_MS;
+    if (setsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &tcp_user_timeout, sizeof(tcp_user_timeout)) < 0) {
+      logger(LOG_DEBUG, "connection_create: Failed to set TCP_USER_TIMEOUT: %s", strerror(errno));
+    }
   }
 #endif
 
   /* Enable SO_ZEROCOPY on socket if supported */
-  if (config.zerocopy_on_send) {
+  if (config.zerocopy_on_send && connection_client_is_tcp(c)) {
     int one = 1;
     if (setsockopt(fd, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one)) == 0) {
       c->zerocopy_enabled = 1;
@@ -729,7 +737,9 @@ int connection_route_and_start(connection_t *c) {
   /* Format client address string (will be overridden by X-Forwarded-For if
    * present later) */
   char client_addr_str[NI_MAXHOST + NI_MAXSERV + 4] = "unknown";
-  if (c->client_addr_len > 0) {
+  if (c->client_addr_len > 0 && c->client_addr.ss_family == AF_UNIX) {
+    snprintf(client_addr_str, sizeof(client_addr_str), "unix");
+  } else if (c->client_addr_len > 0) {
     char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
     int r = getnameinfo((struct sockaddr *)&c->client_addr, c->client_addr_len, hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
                         NI_NUMERICHOST | NI_NUMERICSERV);

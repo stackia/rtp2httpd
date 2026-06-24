@@ -22,6 +22,20 @@ typedef struct {
  */
 void epg_cleanup(void);
 
+/* Create a restorable snapshot of the EPG cache.
+ * Duplicates the cached data fd if present.
+ * Returns 0 on success, -1 on allocation or fd duplication failure.
+ */
+int epg_cache_snapshot(epg_cache_t *snapshot);
+
+/* Free resources owned by an EPG cache snapshot. */
+void epg_cache_snapshot_free(epg_cache_t *snapshot);
+
+/* Restore the global EPG cache from a snapshot.
+ * The snapshot ownership is moved into the global cache.
+ */
+void epg_cache_restore_snapshot(epg_cache_t *snapshot);
+
 /* Set EPG source URL (without fetching)
  * url: EPG source URL (will be copied), or NULL to clear
  * Returns: 0 on success, -1 on error

@@ -59,3 +59,17 @@ def wait_for_port(port: int, host: str = "127.0.0.1", timeout: float = 5.0) -> b
         except ConnectionRefusedError, OSError, socket.timeout:
             time.sleep(0.05)
     return False
+
+
+def wait_for_unix_socket(path: str, timeout: float = 5.0) -> bool:
+    """Block until *path* is accepting Unix stream socket connections."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.5)
+                sock.connect(path)
+                return True
+        except OSError:
+            time.sleep(0.05)
+    return False

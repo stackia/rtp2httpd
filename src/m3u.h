@@ -64,6 +64,19 @@ void m3u_reset_transformed_playlist(void);
  */
 void m3u_reset_external_playlist(void);
 
+/* Create a restorable snapshot of the M3U cache.
+ * Returns 0 on success, -1 on allocation failure.
+ */
+int m3u_cache_snapshot(m3u_cache_t *snapshot);
+
+/* Free resources owned by an M3U cache snapshot. */
+void m3u_cache_snapshot_free(m3u_cache_t *snapshot);
+
+/* Restore the global M3U cache from a snapshot.
+ * The snapshot ownership is moved into the global cache.
+ */
+void m3u_cache_restore_snapshot(m3u_cache_t *snapshot);
+
 /* Get server address as complete URL
  * Priority: hostname config > non-upstream interface private IP > non-upstream
  * interface public IP > upstream interface IP > localhost Returns: malloc'd

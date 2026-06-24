@@ -16,15 +16,17 @@ rtp2httpd [options]
 
 ### Network Configuration
 
-- `-l, --listen [address:]port` - Bind address and port (default: \*:5140)
+- `-l, --listen [address:]port|/path/to/rtp2httpd.sock` - Bind a TCP listen address/port, or listen on a Unix domain socket (default: \*:5140)
 - `-m, --maxclients <number>` - Maximum concurrent clients (default: 5)
 - `-w, --workers <number>` - Number of worker processes (default: 1)
 
-`--listen` can be specified multiple times to listen on multiple addresses or ports:
+`--listen` can be specified multiple times to listen on multiple TCP addresses/ports or Unix sockets:
 
 ```bash
-rtp2httpd --listen 5140 --listen 192.168.1.1:8081 --listen '[::1]:5140'
+rtp2httpd --listen 5140 --listen 192.168.1.1:8081 --listen '[::1]:5140' --listen /var/run/rtp2httpd.sock
 ```
+
+Unix socket listen paths must be absolute and must not contain whitespace. At startup, if the same path already contains a socket file, rtp2httpd first probes whether the socket is still in use: if another process is listening on that path, startup is rejected; only confirmed stale socket files are removed automatically. If the path is a regular file, directory, or symbolic link, startup is rejected to avoid deleting user data. When any Unix socket listener is enabled, `zerocopy-on-send` is disabled globally.
 
 #### Upstream Network Interface Configuration
 
@@ -248,6 +250,9 @@ ffmpeg-args = -hwaccel none
 
 # Listen on an IPv6 address (brackets optional)
 2001:db8::1 5140
+
+# Listen on a Unix domain socket (path must be absolute)
+/var/run/rtp2httpd.sock
 
 # Multiple listen addresses are supported
 

@@ -106,7 +106,8 @@ msgstr ""
 #: htdocs/luci-static/resources/view/rtp2httpd.js:361
 msgid ""
 "HTTP listen addresses. Use a bare port for all addresses (e.g., 5140), "
-"address:port for IPv4/hostnames, or [IPv6]:port."
+"address:port for IPv4/hostnames, [IPv6]:port, or an absolute Unix socket "
+"path."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:695
@@ -321,8 +322,8 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:98
 msgid ""
-"Use port, address:port, hostname:port, or [IPv6]:port, for example 5140 or "
-"192.168.1.1:8081."
+"Use port, address:port, hostname:port, [IPv6]:port, or an absolute Unix "
+"socket path, for example 5140, 192.168.1.1:8081, or /var/run/rtp2httpd.sock."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:753

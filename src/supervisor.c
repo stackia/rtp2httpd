@@ -1,15 +1,18 @@
 #include "supervisor.h"
 #include "configuration.h"
+#include "epg.h"
+#include "m3u.h"
 #include "platform_compat.h"
 #include "rtp2httpd.h"
+#include "service.h"
 #include "status.h"
+#include "unix_socket.h"
 #include "utils.h"
 #include "worker.h"
 #include "zerocopy.h"
 #include <errno.h>
 #include <netdb.h>
 #include <signal.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -17,7 +20,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define MAX_S 10
+#define MAX_S 32
 
 /* Restart rate limiting constants */
 #define RESTART_WINDOW_SEC 5     /* Time window for restart counting */
@@ -45,6 +48,10 @@ static void supervisor_sighup_handler(int signum);
 static void supervisor_sigusr1_handler(int signum);
 static int spawn_worker(int worker_idx);
 static void cleanup_workers(void);
+static void restore_reload_snapshot(config_t *old_config, service_t **old_services, bindaddr_t **old_bind_addresses,
+                                    m3u_cache_t *old_m3u_cache, epg_cache_t *old_epg_cache);
+static void free_reload_snapshot(config_t *old_config, service_t *old_services, bindaddr_t *old_bind_addresses,
+                                 m3u_cache_t *old_m3u_cache, epg_cache_t *old_epg_cache);
 
 /**
  * Signal handler for supervisor process (SIGTERM/SIGINT)
@@ -190,6 +197,35 @@ static void cleanup_workers(void) {
   num_workers = 0;
 }
 
+static void restore_reload_snapshot(config_t *old_config, service_t **old_services, bindaddr_t **old_bind_addresses,
+                                    m3u_cache_t *old_m3u_cache, epg_cache_t *old_epg_cache) {
+  if (old_bind_addresses) {
+    free_bindaddr(bind_addresses);
+    bind_addresses = *old_bind_addresses;
+    *old_bind_addresses = NULL;
+  }
+
+  if (old_services) {
+    service_replace_all(*old_services);
+    *old_services = NULL;
+  }
+
+  config_restore_snapshot(old_config);
+  m3u_cache_restore_snapshot(old_m3u_cache);
+  epg_cache_restore_snapshot(old_epg_cache);
+}
+
+static void free_reload_snapshot(config_t *old_config, service_t *old_services, bindaddr_t *old_bind_addresses,
+                                 m3u_cache_t *old_m3u_cache, epg_cache_t *old_epg_cache) {
+  if (old_bind_addresses)
+    free_bindaddr(old_bind_addresses);
+  if (old_services)
+    service_free_list(old_services);
+  config_snapshot_free(old_config);
+  m3u_cache_snapshot_free(old_m3u_cache);
+  epg_cache_snapshot_free(old_epg_cache);
+}
+
 int supervisor_run(void) {
   int i;
 
@@ -209,6 +245,16 @@ int supervisor_run(void) {
     for (int j = 0; j < MAX_RESTARTS_IN_WINDOW; j++) {
       workers[i].restart_times[j] = 0;
     }
+  }
+
+  if (bind_addresses == NULL) {
+    bind_addresses = new_empty_bindaddr();
+  }
+
+  if (unix_socket_listeners_replace(bind_addresses) < 0) {
+    cleanup_workers();
+    status_cleanup();
+    return -1;
   }
 
   /* Spawn all workers */
@@ -308,7 +354,56 @@ int supervisor_run(void) {
       logger(LOG_INFO, "Received SIGHUP, reloading configuration");
 
       int bind_changed = 0;
+      config_t old_config;
+      m3u_cache_t old_m3u_cache;
+      epg_cache_t old_epg_cache;
+      service_t *old_services;
+      bindaddr_t *old_bind_addresses = bindaddr_copy(bind_addresses);
+      if (config_snapshot(&old_config) < 0) {
+        logger(LOG_ERROR, "Failed to snapshot configuration, not reloading");
+        if (old_bind_addresses)
+          free_bindaddr(old_bind_addresses);
+        continue;
+      }
+      if (m3u_cache_snapshot(&old_m3u_cache) < 0) {
+        logger(LOG_ERROR, "Failed to snapshot M3U cache, not reloading");
+        free_reload_snapshot(&old_config, NULL, old_bind_addresses, &old_m3u_cache, NULL);
+        continue;
+      }
+      if (epg_cache_snapshot(&old_epg_cache) < 0) {
+        logger(LOG_ERROR, "Failed to snapshot EPG cache, not reloading");
+        free_reload_snapshot(&old_config, NULL, old_bind_addresses, &old_m3u_cache, &old_epg_cache);
+        continue;
+      }
+      old_services = service_clone_all();
+      if (services && !old_services) {
+        logger(LOG_ERROR, "Failed to snapshot services, not reloading");
+        free_reload_snapshot(&old_config, old_services, old_bind_addresses, &old_m3u_cache, &old_epg_cache);
+        continue;
+      }
+      if (bind_addresses && !old_bind_addresses) {
+        logger(LOG_ERROR, "Failed to snapshot bind addresses, not reloading");
+        free_reload_snapshot(&old_config, old_services, old_bind_addresses, &old_m3u_cache, &old_epg_cache);
+        continue;
+      }
+
       if (config_reload(&bind_changed) == 0) {
+        int reload_failed = 0;
+        if (bind_changed) {
+          if (unix_socket_listeners_replace(bind_addresses) < 0) {
+            logger(LOG_ERROR, "Failed to set up Unix socket listeners after configuration reload");
+            restore_reload_snapshot(&old_config, &old_services, &old_bind_addresses, &old_m3u_cache, &old_epg_cache);
+            reload_failed = 1;
+          }
+        }
+
+        free_reload_snapshot(&old_config, old_services, old_bind_addresses, &old_m3u_cache, &old_epg_cache);
+
+        if (reload_failed) {
+          logger(LOG_ERROR, "Configuration reload failed, keeping existing workers and listeners");
+          continue;
+        }
+
         /* Handle worker count changes */
         if (config.workers > num_workers) {
           if (bind_changed) {
@@ -371,6 +466,8 @@ int supervisor_run(void) {
           }
         }
       } else {
+        restore_reload_snapshot(&old_config, &old_services, &old_bind_addresses, &old_m3u_cache, &old_epg_cache);
+        free_reload_snapshot(&old_config, old_services, old_bind_addresses, &old_m3u_cache, &old_epg_cache);
         logger(LOG_ERROR, "Configuration reload failed, not forwarding SIGHUP to workers");
       }
     }
@@ -427,6 +524,9 @@ int supervisor_run(void) {
 
   logger(LOG_INFO, "All workers stopped, cleaning up");
 
+  /* Close supervisor-owned Unix listeners and remove socket paths */
+  unix_socket_listeners_cleanup();
+
   /* Clean up worker array */
   cleanup_workers();
 
@@ -443,6 +543,7 @@ int run_worker(void) {
   int r;
   int s[MAX_S];
   int maxs, nfds;
+  int max_tcp_sockets;
   char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
   const int on = 1;
   int notif_fd = -1;
@@ -466,19 +567,25 @@ int run_worker(void) {
   hints.ai_flags = AI_PASSIVE;
   maxs = 0;
   nfds = -1;
+  max_tcp_sockets = MAX_S - unix_socket_listeners_count();
+  if (max_tcp_sockets < 0)
+    max_tcp_sockets = 0;
 
   if (bind_addresses == NULL) {
     bind_addresses = new_empty_bindaddr();
   }
 
   for (bind_addr = bind_addresses; bind_addr; bind_addr = bind_addr->next) {
+    if (bind_addr->type == BIND_ADDR_UNIX)
+      continue;
+
     r = getaddrinfo(bind_addr->node, bind_addr->service, &hints, &res);
     if (r) {
       logger(LOG_FATAL, "GAI: %s", gai_strerror(r));
       return EXIT_FAILURE;
     }
 
-    for (ai = res; ai && maxs < MAX_S; ai = ai->ai_next) {
+    for (ai = res; ai && maxs < max_tcp_sockets; ai = ai->ai_next) {
       s[maxs] = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
       if (s[maxs] < 0)
         continue;
@@ -530,6 +637,11 @@ int run_worker(void) {
       maxs++;
     }
     freeaddrinfo(res);
+  }
+
+  if (unix_socket_listeners_append(s, MAX_S, &maxs, &nfds) < 0) {
+    logger(LOG_FATAL, "Too many listening sockets (max %d)", MAX_S);
+    return EXIT_FAILURE;
   }
 
   if (maxs == 0) {

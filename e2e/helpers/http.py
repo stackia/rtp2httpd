@@ -46,6 +46,79 @@ def http_request(
         conn.close()
 
 
+def _parse_raw_http_response(data: bytes, lower_header_names: bool = False) -> tuple[int, dict, bytes]:
+    header_end = data.find(b"\r\n\r\n")
+    if header_end < 0:
+        return 0, {}, b""
+
+    header_text = data[:header_end].decode(errors="replace")
+    body = data[header_end + 4 :]
+    parts = header_text.split("\r\n")
+    status_line = parts[0].split()
+    if len(status_line) < 2:
+        return 0, {}, b""
+    try:
+        status_code = int(status_line[1])
+    except ValueError:
+        return 0, {}, b""
+
+    hdrs: dict[str, str] = {}
+    for line in parts[1:]:
+        if ":" in line:
+            k, v = line.split(":", 1)
+            key = k.strip().lower() if lower_header_names else k.strip()
+            hdrs[key] = v.strip()
+
+    return status_code, hdrs, body
+
+
+def unix_http_request(
+    socket_path: str,
+    method: str,
+    path: str,
+    timeout: float = 5.0,
+    headers: dict | None = None,
+    body: bytes | None = None,
+) -> tuple[int, dict, bytes]:
+    """HTTP request over a Unix domain socket. Returns (status, headers, body)."""
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect(socket_path)
+        req_lines = ["%s %s HTTP/1.0" % (method, path), "Host: localhost"]
+        payload = body or b""
+        for k, v in (headers or {}).items():
+            req_lines.append("%s: %s" % (k, v))
+        if payload:
+            req_lines.append("Content-Length: %d" % len(payload))
+        req_lines.append("")
+        req_lines.append("")
+        sock.sendall("\r\n".join(req_lines).encode() + payload)
+
+        data = b""
+        while True:
+            try:
+                chunk = sock.recv(4096)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            data += chunk
+        return _parse_raw_http_response(data)
+    finally:
+        sock.close()
+
+
+def unix_http_get(
+    socket_path: str,
+    path: str,
+    timeout: float = 5.0,
+    headers: dict | None = None,
+) -> tuple[int, dict, bytes]:
+    """HTTP GET over a Unix domain socket. Returns (status, headers, body)."""
+    return unix_http_request(socket_path, "GET", path, timeout=timeout, headers=headers)
+
+
 def extract_catchup_source(playlist_text, channel_name):
     """Extract catchup-source URL from the EXTINF line for a channel.
 
@@ -108,23 +181,7 @@ def stream_get(
                 break
             data += chunk
 
-        header_end = data.find(b"\r\n\r\n")
-        if header_end < 0:
-            return 0, {}, b""
-
-        header_text = data[:header_end].decode(errors="replace")
-        body = data[header_end + 4 :]
-
-        parts = header_text.split("\r\n")
-        status_code = int(parts[0].split()[1])
-
-        hdrs: dict[str, str] = {}
-        for line in parts[1:]:
-            if ":" in line:
-                k, v = line.split(":", 1)
-                hdrs[k.strip().lower()] = v.strip()
-
-        return status_code, hdrs, body
+        return _parse_raw_http_response(data, lower_header_names=True)
     except socket.timeout, OSError:
         return 0, {}, b""
     finally:

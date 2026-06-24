@@ -20,12 +20,16 @@ typedef enum loglevel {
   LOG_DEBUG      /* Detailed diagnostic information */
 } loglevel_t;
 
+typedef enum { BIND_ADDR_TCP = 0, BIND_ADDR_UNIX } bindaddr_type_t;
+
 /*
  * Linked list of addresses to bind
  */
 typedef struct bindaddr_s {
+  bindaddr_type_t type;
   char *node;
   char *service;
+  char *path;
   struct bindaddr_s *next;
 } bindaddr_t;
 
@@ -140,6 +144,7 @@ void parse_cmd_line(int argc, char *argv[]);
 /* Memory management */
 bindaddr_t *new_empty_bindaddr(void);
 void free_bindaddr(bindaddr_t *);
+bindaddr_t *bindaddr_copy(bindaddr_t *);
 
 /* Configuration lifecycle */
 
@@ -157,6 +162,30 @@ void config_init(void);
  * If force_free is true, all resources are freed regardless of cmd_*_set flags.
  */
 void config_cleanup(bool force_free);
+
+/**
+ * Create a restorable snapshot of the current scalar/string configuration.
+ * Does not include bind addresses or services; snapshot/free those separately.
+ *
+ * @param snapshot Destination snapshot
+ * @return 0 on success, -1 on allocation failure
+ */
+int config_snapshot(config_t *snapshot);
+
+/**
+ * Free resources owned by a configuration snapshot created by config_snapshot().
+ *
+ * @param snapshot Snapshot to free
+ */
+void config_snapshot_free(config_t *snapshot);
+
+/**
+ * Restore global configuration from a snapshot created by config_snapshot().
+ * The snapshot ownership is moved into the global config.
+ *
+ * @param snapshot Snapshot to restore
+ */
+void config_restore_snapshot(config_t *snapshot);
 
 /**
  * Reload configuration from file
@@ -185,5 +214,11 @@ void set_config_file_path(const char *path);
  * @return 1 if equal, 0 if different
  */
 int bind_addresses_equal(bindaddr_t *a, bindaddr_t *b);
+
+/**
+ * Check whether any configured bind address is a Unix domain socket path.
+ * @return 1 if at least one Unix socket listener is configured, 0 otherwise
+ */
+int bind_addresses_has_unix(void);
 
 #endif /* __CONFIGURATION_H__ */

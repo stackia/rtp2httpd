@@ -23,7 +23,7 @@ from .constants import (
     MCAST_ADDR,
     PROJECT_ROOT,
 )
-from .http import extract_catchup_source, http_get, http_request, stream_get
+from .http import extract_catchup_source, http_get, http_request, stream_get, unix_http_get, unix_http_request
 from .mock_fcc import MockFCCServer
 from .mock_http import MockHTTPUpstream, MockHTTPUpstreamSilent
 from .mock_rtsp import (
@@ -40,6 +40,7 @@ from .ports import (
     find_free_udp_port_pair,
     ipv6_loopback_available,
     wait_for_port,
+    wait_for_unix_socket,
 )
 from .r2h_process import R2HProcess, make_m3u_rtsp_config
 from .rtp import MulticastSender, make_rtp_packet
@@ -71,5 +72,8 @@ __all__ = [
     "make_m3u_rtsp_config",
     "make_rtp_packet",
     "stream_get",
+    "unix_http_get",
+    "unix_http_request",
     "wait_for_port",
+    "wait_for_unix_socket",
 ]
