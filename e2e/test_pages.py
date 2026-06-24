@@ -43,6 +43,20 @@ def _write_tmp(data: bytes, suffix: str = ".xml") -> str:
     return path
 
 
+def _wait_for_http_status(port: int, path: str, expected: int = 200, timeout: float = 3.0) -> None:
+    deadline = time.monotonic() + timeout
+    last_status = None
+
+    while time.monotonic() < deadline:
+        status, _, _ = http_get("127.0.0.1", port, path, timeout=1.0)
+        last_status = status
+        if status == expected:
+            return
+        time.sleep(0.05)
+
+    raise AssertionError(f"{path} did not return {expected} before timeout; last status was {last_status}")
+
+
 # ---------------------------------------------------------------------------
 # Module-scoped shared rtp2httpd instance
 # ---------------------------------------------------------------------------
@@ -79,7 +93,7 @@ rtp://239.0.0.1:1234
     r2h = R2HProcess(r2h_binary, port, config_content=config)
     try:
         r2h.start()
-        time.sleep(0.5)
+        _wait_for_http_status(port, f"{APP_PREFIX}/epg.xml")
         yield r2h
     finally:
         r2h.stop()

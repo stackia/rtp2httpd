@@ -285,9 +285,10 @@ return view.extend({
         pageUrl = finalProtocol + "://" + finalHost + ":" + finalPort;
       }
 
-      // Add base path from hostname if present
+      // Add base path from hostname if present. rtp2httpd ignores hostname path
+      // when app-path-prefix is configured, so the preview should do the same.
       var basePath = url.pathname;
-      if (basePath && basePath !== "/") {
+      if (!appPathPrefix && basePath && basePath !== "/") {
         // Ensure base path ends with '/'
         if (!basePath.endsWith("/")) {
           pageUrl += basePath + "/";
