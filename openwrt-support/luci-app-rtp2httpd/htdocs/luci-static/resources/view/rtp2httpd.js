@@ -37,6 +37,17 @@ return view.extend({
       return null;
     }
 
+    if (listen.charAt(0) === "/") {
+      if (/\s/.test(listen)) {
+        return null;
+      }
+      return {
+        host: null,
+        port: null,
+        socketPath: listen,
+      };
+    }
+
     if (/^\d+$/.test(listen)) {
       port = listen;
     } else if (listen.charAt(0) === "[") {
@@ -77,6 +88,7 @@ return view.extend({
     return {
       host: host,
       port: port,
+      socketPath: null,
     };
   },
 
@@ -95,7 +107,7 @@ return view.extend({
 
     if (!this.parseListenValue(listen)) {
       return _(
-        "Use port, address:port, hostname:port, or [IPv6]:port, for example 5140 or 192.168.1.1:8081."
+        "Use port, address:port, hostname:port, [IPv6]:port, or an absolute Unix socket path, for example 5140, 192.168.1.1:8081, or /var/run/rtp2httpd.sock."
       );
     }
 
@@ -104,11 +116,14 @@ return view.extend({
 
   getPrimaryListenTarget: function (section_id) {
     var values = this.getListenValues(section_id);
-    var target = values.length > 0 ? this.parseListenValue(values[0]) : null;
+    var target = null;
     var port;
 
-    if (target) {
-      return target;
+    for (var i = 0; i < values.length; i++) {
+      target = this.parseListenValue(values[i]);
+      if (target && target.port) {
+        return target;
+      }
     }
 
     port = uci.get("rtp2httpd", section_id, "port") || "5140";
@@ -373,7 +388,7 @@ return view.extend({
       "listen",
       _("Listen Addresses"),
       _(
-        "HTTP listen addresses. Use a bare port for all addresses (e.g., 5140), address:port for IPv4/hostnames, or [IPv6]:port."
+        "HTTP listen addresses. Use a bare port for all addresses (e.g., 5140), address:port for IPv4/hostnames, [IPv6]:port, or an absolute Unix socket path."
       )
     );
     o.placeholder = "5140";

@@ -13,11 +13,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
-#define MAX_S 10
+#define MAX_S 32
 
 /* Restart rate limiting constants */
 #define RESTART_WINDOW_SEC 5     /* Time window for restart counting */
@@ -38,6 +40,9 @@ static int num_workers = 0;
 static volatile sig_atomic_t supervisor_stop_flag = 0;
 static volatile sig_atomic_t supervisor_reload_flag = 0;
 static volatile sig_atomic_t supervisor_restart_workers_flag = 0;
+static int unix_listen_sockets[MAX_S];
+static char *unix_listen_paths[MAX_S];
+static int unix_listen_count = 0;
 
 /* Forward declarations */
 static void supervisor_signal_handler(int signum);
@@ -45,6 +50,8 @@ static void supervisor_sighup_handler(int signum);
 static void supervisor_sigusr1_handler(int signum);
 static int spawn_worker(int worker_idx);
 static void cleanup_workers(void);
+static int setup_unix_listeners(void);
+static void cleanup_unix_listeners(void);
 
 /**
  * Signal handler for supervisor process (SIGTERM/SIGINT)
@@ -190,6 +197,119 @@ static void cleanup_workers(void) {
   num_workers = 0;
 }
 
+static void cleanup_unix_listeners(void) {
+  for (int i = 0; i < unix_listen_count; i++) {
+    if (unix_listen_sockets[i] >= 0) {
+      close(unix_listen_sockets[i]);
+      unix_listen_sockets[i] = -1;
+    }
+    if (unix_listen_paths[i]) {
+      struct stat st;
+      if (lstat(unix_listen_paths[i], &st) == 0 && S_ISSOCK(st.st_mode)) {
+        if (unlink(unix_listen_paths[i]) < 0) {
+          logger(LOG_WARN, "Failed to unlink Unix socket %s: %s", unix_listen_paths[i], strerror(errno));
+        }
+      }
+      free(unix_listen_paths[i]);
+      unix_listen_paths[i] = NULL;
+    }
+  }
+  unix_listen_count = 0;
+}
+
+static int setup_unix_listeners(void) {
+  bindaddr_t *bind_addr;
+
+  for (bind_addr = bind_addresses; bind_addr; bind_addr = bind_addr->next) {
+    struct sockaddr_un addr;
+    struct stat st;
+    int sock = -1;
+    char *path_copy = NULL;
+
+    if (bind_addr->type != BIND_ADDR_UNIX)
+      continue;
+
+    if (!bind_addr->path || bind_addr->path[0] != '/') {
+      logger(LOG_FATAL, "Invalid Unix socket path");
+      cleanup_unix_listeners();
+      return -1;
+    }
+
+    if (strlen(bind_addr->path) >= sizeof(addr.sun_path)) {
+      logger(LOG_FATAL, "Unix socket path is too long: %s", bind_addr->path);
+      cleanup_unix_listeners();
+      return -1;
+    }
+
+    if (unix_listen_count >= MAX_S) {
+      logger(LOG_FATAL, "Too many listening sockets (max %d)", MAX_S);
+      cleanup_unix_listeners();
+      return -1;
+    }
+
+    if (lstat(bind_addr->path, &st) == 0) {
+      if (!S_ISSOCK(st.st_mode)) {
+        logger(LOG_FATAL, "Unix socket path exists and is not a socket: %s", bind_addr->path);
+        cleanup_unix_listeners();
+        return -1;
+      }
+      if (unlink(bind_addr->path) < 0) {
+        logger(LOG_FATAL, "Failed to remove stale Unix socket %s: %s", bind_addr->path, strerror(errno));
+        cleanup_unix_listeners();
+        return -1;
+      }
+    } else if (errno != ENOENT) {
+      logger(LOG_FATAL, "Failed to inspect Unix socket path %s: %s", bind_addr->path, strerror(errno));
+      cleanup_unix_listeners();
+      return -1;
+    }
+
+    path_copy = strdup(bind_addr->path);
+    if (!path_copy) {
+      logger(LOG_FATAL, "Failed to allocate Unix socket path");
+      cleanup_unix_listeners();
+      return -1;
+    }
+
+    sock = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sock < 0) {
+      logger(LOG_FATAL, "Cannot create Unix socket %s: %s", bind_addr->path, strerror(errno));
+      free(path_copy);
+      cleanup_unix_listeners();
+      return -1;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, bind_addr->path, sizeof(addr.sun_path) - 1);
+
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+      logger(LOG_FATAL, "Cannot bind Unix socket %s: %s", bind_addr->path, strerror(errno));
+      close(sock);
+      free(path_copy);
+      cleanup_unix_listeners();
+      return -1;
+    }
+
+    if (listen(sock, 128) < 0) {
+      logger(LOG_FATAL, "Cannot listen on Unix socket %s: %s", bind_addr->path, strerror(errno));
+      close(sock);
+      unlink(bind_addr->path);
+      free(path_copy);
+      cleanup_unix_listeners();
+      return -1;
+    }
+
+    unix_listen_sockets[unix_listen_count] = sock;
+    unix_listen_paths[unix_listen_count] = path_copy;
+    unix_listen_count++;
+
+    logger(LOG_INFO, "Listening on Unix socket %s", bind_addr->path);
+  }
+
+  return 0;
+}
+
 int supervisor_run(void) {
   int i;
 
@@ -209,6 +329,16 @@ int supervisor_run(void) {
     for (int j = 0; j < MAX_RESTARTS_IN_WINDOW; j++) {
       workers[i].restart_times[j] = 0;
     }
+  }
+
+  if (bind_addresses == NULL) {
+    bind_addresses = new_empty_bindaddr();
+  }
+
+  if (setup_unix_listeners() < 0) {
+    cleanup_workers();
+    status_cleanup();
+    return -1;
   }
 
   /* Spawn all workers */
@@ -309,6 +439,13 @@ int supervisor_run(void) {
 
       int bind_changed = 0;
       if (config_reload(&bind_changed) == 0) {
+        if (bind_changed) {
+          cleanup_unix_listeners();
+          if (setup_unix_listeners() < 0) {
+            logger(LOG_ERROR, "Failed to set up Unix socket listeners after configuration reload");
+          }
+        }
+
         /* Handle worker count changes */
         if (config.workers > num_workers) {
           if (bind_changed) {
@@ -427,6 +564,9 @@ int supervisor_run(void) {
 
   logger(LOG_INFO, "All workers stopped, cleaning up");
 
+  /* Close supervisor-owned Unix listeners and remove socket paths */
+  cleanup_unix_listeners();
+
   /* Clean up worker array */
   cleanup_workers();
 
@@ -440,9 +580,11 @@ int supervisor_run(void) {
 int run_worker(void) {
   struct addrinfo hints, *res, *ai;
   bindaddr_t *bind_addr;
+  int i;
   int r;
   int s[MAX_S];
   int maxs, nfds;
+  int max_tcp_sockets;
   char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
   const int on = 1;
   int notif_fd = -1;
@@ -466,19 +608,25 @@ int run_worker(void) {
   hints.ai_flags = AI_PASSIVE;
   maxs = 0;
   nfds = -1;
+  max_tcp_sockets = MAX_S - unix_listen_count;
+  if (max_tcp_sockets < 0)
+    max_tcp_sockets = 0;
 
   if (bind_addresses == NULL) {
     bind_addresses = new_empty_bindaddr();
   }
 
   for (bind_addr = bind_addresses; bind_addr; bind_addr = bind_addr->next) {
+    if (bind_addr->type == BIND_ADDR_UNIX)
+      continue;
+
     r = getaddrinfo(bind_addr->node, bind_addr->service, &hints, &res);
     if (r) {
       logger(LOG_FATAL, "GAI: %s", gai_strerror(r));
       return EXIT_FAILURE;
     }
 
-    for (ai = res; ai && maxs < MAX_S; ai = ai->ai_next) {
+    for (ai = res; ai && maxs < max_tcp_sockets; ai = ai->ai_next) {
       s[maxs] = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
       if (s[maxs] < 0)
         continue;
@@ -530,6 +678,18 @@ int run_worker(void) {
       maxs++;
     }
     freeaddrinfo(res);
+  }
+
+  for (i = 0; i < unix_listen_count && maxs < MAX_S; i++) {
+    s[maxs] = unix_listen_sockets[i];
+    if (s[maxs] > nfds)
+      nfds = s[maxs];
+    maxs++;
+  }
+
+  if (i < unix_listen_count) {
+    logger(LOG_FATAL, "Too many listening sockets (max %d)", MAX_S);
+    return EXIT_FAILURE;
   }
 
   if (maxs == 0) {

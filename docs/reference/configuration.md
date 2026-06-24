@@ -16,15 +16,17 @@ rtp2httpd [选项]
 
 ### 网络配置
 
-- `-l, --listen [地址:]端口` - 绑定监听地址和端口 (默认: \*:5140)
+- `-l, --listen [地址:]端口|/path/to/rtp2httpd.sock` - 绑定 TCP 监听地址/端口，或监听 Unix domain socket (默认: \*:5140)
 - `-m, --maxclients <数量>` - 最大并发客户端数 (默认: 5)
 - `-w, --workers <数量>` - 工作进程数 (默认: 1)
 
-`--listen` 可以重复指定，用于同时监听多个地址或端口：
+`--listen` 可以重复指定，用于同时监听多个 TCP 地址/端口或 Unix socket：
 
 ```bash
-rtp2httpd --listen 5140 --listen 192.168.1.1:8081 --listen '[::1]:5140'
+rtp2httpd --listen 5140 --listen 192.168.1.1:8081 --listen '[::1]:5140' --listen /var/run/rtp2httpd.sock
 ```
+
+Unix socket 监听路径必须是绝对路径，且路径中不能包含空白字符。启动时如果同路径已存在 socket 文件，rtp2httpd 会自动清理；如果同路径是普通文件、目录或符号链接，则会拒绝启动以避免误删数据。启用任意 Unix socket 监听时，`zerocopy-on-send` 会被全局关闭。
 
 #### 上游网络接口配置
 
@@ -248,6 +250,9 @@ ffmpeg-args = -hwaccel none
 
 # 监听 IPv6 地址（可省略方括号）
 2001:db8::1 5140
+
+# 监听 Unix domain socket（路径必须是绝对路径）
+/var/run/rtp2httpd.sock
 
 # 支持多个监听地址
 

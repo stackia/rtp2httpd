@@ -171,12 +171,16 @@ char *get_server_address(void) {
   char server_port[16];
   char full_url[2048];
 
-  /* Get first listening port from bind_addresses */
-  if (bind_addresses && bind_addresses->service) {
-    strncpy(server_port, bind_addresses->service, sizeof(server_port) - 1);
-    server_port[sizeof(server_port) - 1] = '\0';
-  } else {
-    strcpy(server_port, "5140");
+  snprintf(server_port, sizeof(server_port), "5140");
+
+  /* Get first TCP listening port from bind_addresses. Unix socket listeners
+   * do not provide a usable HTTP authority for generated playlist URLs. */
+  for (bindaddr_t *ba = bind_addresses; ba; ba = ba->next) {
+    if (ba->type == BIND_ADDR_TCP && ba->service) {
+      strncpy(server_port, ba->service, sizeof(server_port) - 1);
+      server_port[sizeof(server_port) - 1] = '\0';
+      break;
+    }
   }
 
   /* Priority 1: Use configured hostname */
@@ -200,7 +204,7 @@ char *get_server_address(void) {
     /* Build full URL */
     /* Default protocol to http if not specified */
     if (protocol[0] == '\0') {
-      strcpy(protocol, "http");
+      snprintf(protocol, sizeof(protocol), "http");
 
       /* Use port from config if specified, otherwise use server_port */
       if (port[0] == '\0') {

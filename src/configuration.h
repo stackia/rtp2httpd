@@ -20,12 +20,19 @@ typedef enum loglevel {
   LOG_DEBUG      /* Detailed diagnostic information */
 } loglevel_t;
 
+typedef enum {
+  BIND_ADDR_TCP = 0,
+  BIND_ADDR_UNIX
+} bindaddr_type_t;
+
 /*
  * Linked list of addresses to bind
  */
 typedef struct bindaddr_s {
+  bindaddr_type_t type;
   char *node;
   char *service;
+  char *path;
   struct bindaddr_s *next;
 } bindaddr_t;
 
@@ -185,5 +192,11 @@ void set_config_file_path(const char *path);
  * @return 1 if equal, 0 if different
  */
 int bind_addresses_equal(bindaddr_t *a, bindaddr_t *b);
+
+/**
+ * Check whether any configured bind address is a Unix domain socket path.
+ * @return 1 if at least one Unix socket listener is configured, 0 otherwise
+ */
+int bind_addresses_has_unix(void);
 
 #endif /* __CONFIGURATION_H__ */

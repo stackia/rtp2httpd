@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from .ports import wait_for_port
+from .ports import wait_for_port, wait_for_unix_socket
 
 
 def make_m3u_rtsp_config(r2h_port: int, rtsp_port: int, channel_name: str, configured_url_query: str = "") -> str:
@@ -26,16 +26,20 @@ class R2HProcess:
     def __init__(
         self,
         binary: str | Path,
-        port: int,
+        port: int | None,
         extra_args: list[str] | None = None,
         config_content: str | None = None,
         capture_log: bool = False,
+        listen: str | None = None,
+        wait_socket_path: str | None = None,
     ):
         self.binary = str(binary)
         self.port = port
         self.extra_args = list(extra_args or [])
         self.config_content = config_content
         self.capture_log = capture_log
+        self.listen = listen
+        self.wait_socket_path = wait_socket_path
         self.process: subprocess.Popen | None = None
         self._config_path: str | None = None
         self._log_path: str | None = None
@@ -51,9 +55,23 @@ class R2HProcess:
             self.process = subprocess.Popen(args, stdout=self._log_handle, stderr=self._log_handle)
         else:
             self.process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if wait and not wait_for_port(self.port, timeout=6.0):
-            self.stop()
-            raise RuntimeError("rtp2httpd did not start on port %d.\nCommand: %s" % (self.port, " ".join(args)))
+        if wait:
+            if self.wait_socket_path:
+                if not wait_for_unix_socket(self.wait_socket_path, timeout=6.0):
+                    self.stop()
+                    raise RuntimeError(
+                        "rtp2httpd did not start on Unix socket %s.\nCommand: %s"
+                        % (self.wait_socket_path, " ".join(args))
+                    )
+            elif self.listen and self.listen.startswith("/"):
+                if not wait_for_unix_socket(self.listen, timeout=6.0):
+                    self.stop()
+                    raise RuntimeError(
+                        "rtp2httpd did not start on Unix socket %s.\nCommand: %s" % (self.listen, " ".join(args))
+                    )
+            elif self.port is not None and not wait_for_port(self.port, timeout=6.0):
+                self.stop()
+                raise RuntimeError("rtp2httpd did not start on port %d.\nCommand: %s" % (self.port, " ".join(args)))
 
     def stop(self) -> None:
         if self.process and self.process.poll() is None:
@@ -97,6 +115,9 @@ class R2HProcess:
         else:
             args = [self.binary, "-C"]
 
-        args.extend(["-l", str(self.port)])
+        if self.listen is not None:
+            args.extend(["-l", self.listen])
+        elif self.port is not None:
+            args.extend(["-l", str(self.port)])
         args.extend(self.extra_args)
         return args

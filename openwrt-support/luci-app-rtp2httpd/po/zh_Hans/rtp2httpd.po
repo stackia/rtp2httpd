@@ -122,10 +122,11 @@ msgstr "HTTP 代理 User-Agent"
 #: htdocs/luci-static/resources/view/rtp2httpd.js:361
 msgid ""
 "HTTP listen addresses. Use a bare port for all addresses (e.g., 5140), "
-"address:port for IPv4/hostnames, or [IPv6]:port."
+"address:port for IPv4/hostnames, [IPv6]:port, or an absolute Unix socket "
+"path."
 msgstr ""
 "HTTP 监听地址。使用裸端口表示监听所有地址（例如：5140），IPv4/主机名使用 "
-"address:port，IPv6 使用 [IPv6]:port。"
+"address:port，IPv6 使用 [IPv6]:port，也可以使用 Unix socket 绝对路径。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:695
 msgid "Hostname"
@@ -356,11 +357,11 @@ msgstr "使用配置文件而不是单独的选项"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:98
 msgid ""
-"Use port, address:port, hostname:port, or [IPv6]:port, for example 5140 or "
-"192.168.1.1:8081."
+"Use port, address:port, hostname:port, [IPv6]:port, or an absolute Unix "
+"socket path, for example 5140, 192.168.1.1:8081, or /var/run/rtp2httpd.sock."
 msgstr ""
-"请使用端口、address:port、hostname:port 或 [IPv6]:port 格式，例如 5140 或 "
-"192.168.1.1:8081。"
+"请使用端口、address:port、hostname:port、[IPv6]:port 或 Unix socket 绝对路径，"
+"例如 5140、192.168.1.1:8081 或 /var/run/rtp2httpd.sock。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:753
 msgid ""

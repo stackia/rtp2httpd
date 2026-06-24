@@ -100,6 +100,53 @@ static void safe_free_string(char **str) {
   }
 }
 
+static int bind_path_is_valid(const char *path) {
+  if (!path || path[0] != '/')
+    return 0;
+  return strpbrk(path, " \t\r\n") == NULL;
+}
+
+static void add_bindaddr_tcp(char *node, char *service) {
+  bindaddr_t *ba = malloc(sizeof(bindaddr_t));
+  if (!ba) {
+    logger(LOG_ERROR, "Failed to allocate bind address");
+    free(node);
+    free(service);
+    return;
+  }
+  memset(ba, 0, sizeof(*ba));
+  ba->type = BIND_ADDR_TCP;
+  ba->node = node;
+  ba->service = service;
+  ba->next = bind_addresses;
+  bind_addresses = ba;
+}
+
+static void add_bindaddr_unix(char *path) {
+  bindaddr_t *ba = malloc(sizeof(bindaddr_t));
+  if (!ba) {
+    logger(LOG_ERROR, "Failed to allocate Unix socket bind address");
+    free(path);
+    return;
+  }
+  memset(ba, 0, sizeof(*ba));
+  ba->type = BIND_ADDR_UNIX;
+  ba->path = path;
+  ba->next = bind_addresses;
+  bind_addresses = ba;
+}
+
+static void apply_bind_side_effects(void) {
+  int has_unix = bind_addresses_has_unix();
+  if (has_unix) {
+    if (config.zerocopy_on_send)
+      config.zerocopy_on_send = 0;
+    logger(LOG_WARN, "Zero-copy send disabled because Unix socket listener is configured");
+  } else if (!has_unix && cmd_zerocopy_on_send_set) {
+    config.zerocopy_on_send = 1;
+  }
+}
+
 static int parse_port_range_value(const char *value, int *min_port, int *max_port) {
   char *endptr = NULL;
   long start = 0;
@@ -206,10 +253,42 @@ static void set_player_page_path_value(const char *value) {
 void parse_bind_sec(char *line) {
   int pos = 0;
   char *node, *service;
-  bindaddr_t *ba;
 
   node = extract_token(line, &pos);
   service = extract_token(line, &pos);
+
+  if (!node || node[0] == '\0') {
+    logger(LOG_ERROR, "Invalid empty bind address line");
+    free(node);
+    free(service);
+    return;
+  }
+
+  if (node[0] == '/') {
+    if (service && service[0] != '\0') {
+      logger(LOG_ERROR, "Invalid Unix socket bind path (whitespace is not supported): %s", node);
+      free(node);
+      free(service);
+      return;
+    }
+    if (!bind_path_is_valid(node)) {
+      logger(LOG_ERROR, "Invalid Unix socket bind path: %s", node);
+      free(node);
+      free(service);
+      return;
+    }
+    logger(LOG_DEBUG, "unix socket path: %s", node);
+    add_bindaddr_unix(node);
+    free(service);
+    return;
+  }
+
+  if (!service || service[0] == '\0') {
+    logger(LOG_ERROR, "Invalid TCP bind address line: missing port for %s", node);
+    free(node);
+    free(service);
+    return;
+  }
 
   if (strcmp("*", node) == 0) {
     free(node);
@@ -224,11 +303,7 @@ void parse_bind_sec(char *line) {
   }
   logger(LOG_DEBUG, "node: %s, port: %s", node, service);
 
-  ba = malloc(sizeof(bindaddr_t));
-  ba->node = node;
-  ba->service = service;
-  ba->next = bind_addresses;
-  bind_addresses = ba;
+  add_bindaddr_tcp(node, service);
 }
 
 void parse_services_sec(char *line) {
@@ -700,6 +775,7 @@ bindaddr_t *new_empty_bindaddr(void) {
   bindaddr_t *ba;
   ba = malloc(sizeof(bindaddr_t));
   memset(ba, 0, sizeof(*ba));
+  ba->type = BIND_ADDR_TCP;
   ba->service = strdup("5140");
   return ba;
 }
@@ -713,6 +789,8 @@ void free_bindaddr(bindaddr_t *ba) {
       free(bat->node);
     if (bat->service)
       free(bat->service);
+    if (bat->path)
+      free(bat->path);
     free(bat);
   }
 }
@@ -730,8 +808,11 @@ static bindaddr_t *copy_bindaddr(bindaddr_t *src) {
       free_bindaddr(head);
       return NULL;
     }
+    memset(copy, 0, sizeof(*copy));
+    copy->type = src->type;
     copy->node = src->node ? strdup(src->node) : NULL;
     copy->service = src->service ? strdup(src->service) : NULL;
+    copy->path = src->path ? strdup(src->path) : NULL;
     copy->next = NULL;
     *tail = copy;
     tail = &copy->next;
@@ -747,6 +828,9 @@ static bindaddr_t *copy_bindaddr(bindaddr_t *src) {
  */
 int bind_addresses_equal(bindaddr_t *a, bindaddr_t *b) {
   while (a && b) {
+    if (a->type != b->type)
+      return 0;
+
     /* Compare node (both NULL or both equal) */
     if (a->node == NULL && b->node != NULL)
       return 0;
@@ -763,12 +847,29 @@ int bind_addresses_equal(bindaddr_t *a, bindaddr_t *b) {
     if (a->service && b->service && strcmp(a->service, b->service) != 0)
       return 0;
 
+    /* Compare path (both NULL or both equal) */
+    if (a->path == NULL && b->path != NULL)
+      return 0;
+    if (a->path != NULL && b->path == NULL)
+      return 0;
+    if (a->path && b->path && strcmp(a->path, b->path) != 0)
+      return 0;
+
     a = a->next;
     b = b->next;
   }
 
   /* Both should be NULL at the end for equality */
   return (a == NULL && b == NULL);
+}
+
+int bind_addresses_has_unix(void) {
+  bindaddr_t *ba;
+  for (ba = bind_addresses; ba; ba = ba->next) {
+    if (ba->type == BIND_ADDR_UNIX)
+      return 1;
+  }
+  return 0;
 }
 
 /**
@@ -940,6 +1041,8 @@ int config_reload(int *out_bind_changed) {
     return -1;
   }
 
+  apply_bind_side_effects();
+
   /* Check if bind addresses changed */
   if (out_bind_changed) {
     *out_bind_changed = !bind_addresses_equal(bind_addresses, old_bind_addresses);
@@ -980,7 +1083,8 @@ void usage(FILE *f, char *progname) {
           "pool (default 16384)\n"
           "\t-B --udp-rcvbuf-size <bytes> UDP socket receive buffer size for "
           "multicast/FCC/RTSP (default 524288 = 512KB)\n"
-          "\t-l --listen [addr:]port  Address/port to bind (default ANY:5140)\n"
+          "\t-l --listen [addr:]port|/path.sock  TCP address/port or Unix "
+          "socket path to bind (default ANY:5140)\n"
           "\t-c --config <file>   Read this file for configuration, instead of the "
           "default one\n"
           "\t-C --noconfig        Do not read the default config\n"
@@ -1032,7 +1136,22 @@ void usage(FILE *f, char *progname) {
 
 void parse_bind_cmd(char *arg) {
   char *p, *node, *service;
-  bindaddr_t *ba;
+
+  if (arg && arg[0] == '/') {
+    char *path;
+    if (!bind_path_is_valid(arg)) {
+      logger(LOG_ERROR, "Invalid Unix socket bind path: %s", arg);
+      return;
+    }
+    path = strdup(arg);
+    if (!path) {
+      logger(LOG_ERROR, "Failed to allocate Unix socket bind path");
+      return;
+    }
+    logger(LOG_DEBUG, "unix socket path: %s", path);
+    add_bindaddr_unix(path);
+    return;
+  }
 
   if (arg[0] == '[') {
     p = index(arg++, ']');
@@ -1053,11 +1172,7 @@ void parse_bind_cmd(char *arg) {
   }
 
   logger(LOG_DEBUG, "node: %s, port: %s", node, service);
-  ba = malloc(sizeof(bindaddr_t));
-  ba->node = node;
-  ba->service = service;
-  ba->next = bind_addresses;
-  bind_addresses = ba;
+  add_bindaddr_tcp(node, service);
 }
 
 void parse_cmd_line(int argc, char *argv[]) {
@@ -1167,6 +1282,10 @@ void parse_cmd_line(int argc, char *argv[]) {
       set_config_file_path(NULL); /* No config file */
       break;
     case 'l':
+      if (!cmd_bind_set && bind_addresses) {
+        free_bindaddr(bind_addresses);
+        bind_addresses = NULL;
+      }
       parse_bind_cmd(optarg);
       cmd_bind_set = 1;
       break;
@@ -1313,6 +1432,8 @@ void parse_cmd_line(int argc, char *argv[]) {
     logger(LOG_WARN, "No config file found");
     set_config_file_path(NULL);
   }
+
+  apply_bind_side_effects();
 
   /* External M3U will be loaded asynchronously by workers after startup
    * This avoids blocking the startup process waiting for network resources */
