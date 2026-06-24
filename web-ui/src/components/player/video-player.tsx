@@ -44,7 +44,6 @@ interface VideoPlayerProps {
   onToggleSidebar?: () => void;
   onFullscreenToggle?: () => void;
   seamlessSwitch?: boolean;
-  mp2SoftDecode?: boolean;
   activeSourceIndex?: number;
   onSourceChange?: (index: number) => void;
   onPlaybackStarted?: () => void;
@@ -137,7 +136,6 @@ export function VideoPlayer({
   onToggleSidebar,
   onFullscreenToggle,
   seamlessSwitch = true,
-  mp2SoftDecode = false,
   activeSourceIndex = 0,
   onSourceChange,
   onPlaybackStarted,
@@ -541,7 +539,7 @@ export function VideoPlayer({
     setNeedsUserInteraction(true);
   });
 
-  const createPlayerForSlot = useEffectEvent((slotId: SlotId, useMp2SoftDecode = mp2SoftDecode): Player | null => {
+  const createPlayerForSlot = useEffectEvent((slotId: SlotId): Player | null => {
     const video = slotVideoRef(slotId).current;
     if (!video || !isSupported()) return null;
 
@@ -552,7 +550,7 @@ export function VideoPlayer({
     video.muted = isMuted;
 
     const p = createPlayer(video, {
-      wasmDecoders: useMp2SoftDecode ? { mp2: mp2WasmUrl } : {},
+      wasmDecoders: { mp2: mp2WasmUrl },
     });
     p.on("error", (e) => {
       if (slotPlayerRef(slotId).current === p) {
@@ -650,9 +648,11 @@ export function VideoPlayer({
 
   // Load segments whenever they change (channel/source switch, seek, retry — all go through here)
   const handleLoadSegments = useEffectEvent((newSegments: PlayerSegment[]) => {
+    if (!newSegments.length) return;
+
     const activeId = getActiveSlotId();
-    const activePlayer = slotPlayerRef(activeId).current;
-    if (!newSegments.length || !activePlayer) return;
+    const activePlayer = slotPlayerRef(activeId).current ?? createPlayerForSlot(activeId);
+    if (!activePlayer) return;
 
     console.log("Loading segments...");
 
@@ -723,10 +723,6 @@ export function VideoPlayer({
     handleLoadSegments(newSegments);
   });
 
-  const reloadAfterDecoderChange = useEffectEvent(() => {
-    handleLoadSegments(segments);
-  });
-
   useEffect(() => {
     return () => {
       cancelPendingTransition();
@@ -734,37 +730,6 @@ export function VideoPlayer({
       destroySlot("b");
     };
   }, []);
-
-  // Recreate decoder pipeline when mp2SoftDecode toggles
-  useEffect(() => {
-    if (!slotAVideoRef.current || !isSupported()) return;
-    const hadPlayer = slotAPlayerRef.current !== null || slotBPlayerRef.current !== null;
-    const activeVideo = (activeSlotIdRef.current === "a" ? slotAVideoRef : slotBVideoRef).current;
-    const shouldResumeAfterRecreate = activeVideo
-      ? !activeVideo.paused && !activeVideo.ended
-      : shouldAutoPlayRef.current;
-
-    cancelPendingTransition();
-    transitionGenRef.current++;
-    if (hadPlayer) {
-      shouldAutoPlayRef.current = shouldResumeAfterRecreate;
-      userPausedRef.current = !shouldResumeAfterRecreate;
-      setNeedsUserInteraction(false);
-    }
-    wallClockCalibratedRef.current = false;
-    setLiveSessionAnchor(null);
-    destroySlot("a");
-    destroySlot("b");
-    hasStartedPlaybackRef.current = false;
-    activeSlotIdRef.current = "a";
-    setVisibleSlotId("a");
-
-    createPlayerForSlot("a", mp2SoftDecode);
-
-    if (hadPlayer) {
-      reloadAfterDecoderChange();
-    }
-  }, [mp2SoftDecode]);
 
   useEffect(() => {
     if (!seamlessSwitch) {

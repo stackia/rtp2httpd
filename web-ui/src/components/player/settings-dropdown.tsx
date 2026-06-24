@@ -13,8 +13,6 @@ interface SettingsDropdownProps {
   onThemeChange: (theme: ThemeMode) => void;
   seamlessSwitch: boolean;
   onSeamlessSwitchChange: (enabled: boolean) => void;
-  mp2SoftDecode: boolean;
-  onMp2SoftDecodeChange: (enabled: boolean) => void;
 }
 
 const localeOptions: Array<{ value: Locale; label: string }> = [
@@ -38,8 +36,6 @@ function SettingsDropdownComponent({
   onThemeChange,
   seamlessSwitch,
   onSeamlessSwitchChange,
-  mp2SoftDecode,
-  onMp2SoftDecodeChange,
 }: SettingsDropdownProps) {
   const t = usePlayerTranslation(locale);
   const [isOpen, setIsOpen] = useState(false);
@@ -112,12 +108,6 @@ function SettingsDropdownComponent({
                 onCheckedChange={onSeamlessSwitchChange}
                 aria-label={t("seamlessSwitch")}
               />
-            </div>
-
-            {/* MP2 Audio Software Decode Toggle */}
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-medium text-muted-foreground">{t("mp2SoftDecode")}</span>
-              <Switch checked={mp2SoftDecode} onCheckedChange={onMp2SoftDecodeChange} aria-label={t("mp2SoftDecode")} />
             </div>
           </div>
         </div>

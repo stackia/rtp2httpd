@@ -31,18 +31,6 @@ The player page path can be customized via the `player-page-path` configuration 
 > [!IMPORTANT]
 > The player relies on the browser's native decoding capabilities. Some encoding formats (such as E-AC3) may not play in certain browsers (manifested as no audio or black screen). We recommend using the latest versions of Chrome, Edge, or Safari.
 
-## MP2 Audio Software Decoding
-
-Most IPTV HD and SD channels use MPEG-1 Layer 2 (MP2) audio encoding. Some browsers (such as iOS Safari) do not natively support MP2 decoding, causing programs to fail to play or play with video only (no audio).
-
-The player has built-in MP2 audio software decoding capability:
-
-- **iOS Safari**: Enabled by default. Testing shows most programs can now play normally.
-- **Other browsers**: Disabled by default. You can manually enable the "MP2 Audio Software Decoding" option by clicking the sidebar settings button.
-
-> [!NOTE]
-> Audio software decoding relies on browser Web Workers and WebAssembly for background decoding, which consumes some computational resources and may cause slight heating on mobile devices — this is normal. Additionally, due to browser limitations, background playback on mobile devices is not supported when using software decoding.
-
 ## PWA Support and Add to Home Screen
 
 The built-in web player supports PWA (Progressive Web App). You can add the player page to your device's home screen (including phones, tablets, computers, and LG webOS smart TVs) and launch it like a native app for a full-screen, immersive viewing experience.
