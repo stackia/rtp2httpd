@@ -40,6 +40,44 @@
 static void handle_playlist_request(connection_t *c);
 static void handle_epg_request(connection_t *c, int requested_gz);
 
+static int strip_app_path_prefix(const char *url, char *out, size_t out_size) {
+  const char *prefix = config.app_path_prefix;
+  const char *query_start;
+  size_t prefix_len;
+  size_t path_len;
+
+  if (!url || !out || out_size == 0)
+    return -1;
+
+  if (!prefix || prefix[0] == '\0') {
+    if (strlen(url) >= out_size)
+      return -1;
+    strcpy(out, url);
+    return 0;
+  }
+
+  prefix_len = strlen(prefix);
+  query_start = strchr(url, '?');
+  path_len = query_start ? (size_t)(query_start - url) : strlen(url);
+
+  if (path_len < prefix_len || strncmp(url, prefix, prefix_len) != 0)
+    return -1;
+
+  if (path_len == prefix_len) {
+    int written = snprintf(out, out_size, "/%s", query_start ? query_start : "");
+    return (written >= 0 && (size_t)written < out_size) ? 0 : -1;
+  }
+
+  if (url[prefix_len] != '/')
+    return -1;
+
+  if (strlen(url + prefix_len) >= out_size)
+    return -1;
+
+  strcpy(out, url + prefix_len);
+  return 0;
+}
+
 /* Token source for r2h-token validation */
 typedef enum {
   TOKEN_SOURCE_NONE = 0,
@@ -729,6 +767,7 @@ void connection_handle_read(connection_t *c) {
 int connection_route_and_start(connection_t *c) {
   /* Copy URL and strip $label suffix (UI display tag at URL end) */
   char url_buf[HTTP_URL_BUFFER_SIZE];
+  char internal_url_buf[HTTP_URL_BUFFER_SIZE];
   strncpy(url_buf, c->http_req.url, sizeof(url_buf) - 1);
   url_buf[sizeof(url_buf) - 1] = '\0';
   http_strip_url_label(url_buf);
@@ -801,6 +840,12 @@ int connection_route_and_start(connection_t *c) {
 
     logger(LOG_DEBUG, "Host header validated: %s", c->http_req.hostname);
   }
+
+  if (strip_app_path_prefix(url, internal_url_buf, sizeof(internal_url_buf)) != 0) {
+    http_send_404(c);
+    return 0;
+  }
+  url = internal_url_buf;
 
   /* Handle CORS preflight (OPTIONS) before r2h-token check */
   if (config.cors_allow_origin && config.cors_allow_origin[0] && strcasecmp(c->http_req.method, "OPTIONS") == 0) {
@@ -969,7 +1014,7 @@ int connection_route_and_start(connection_t *c) {
   /* Dynamic parsing for RTSP and UDPxy if needed */
   if (service == NULL) {
     if (config.udpxy) {
-      service = service_create_from_udpxy_url(c->http_req.url);
+      service = service_create_from_udpxy_url(internal_url_buf);
     }
   } else {
     /* Found configured service (RTP or RTSP) - merge with request query (or

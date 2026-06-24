@@ -52,10 +52,12 @@ void send_http_headers(connection_t *c, http_status_t status, const char *conten
 
   /* Set-Cookie for r2h-token if needed (token was provided via URL query) */
   if (c->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
+    const char *cookie_path =
+        (config.app_path_prefix && config.app_path_prefix[0] != '\0') ? config.app_path_prefix : "/";
     len += snprintf(headers + len, sizeof(headers) - len,
-                    "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; "
+                    "Set-Cookie: r2h-token=%s; Path=%s; HttpOnly; "
                     "SameSite=Strict\r\n",
-                    config.r2h_token);
+                    config.r2h_token, cookie_path);
     c->should_set_r2h_cookie = 0; /* Only set once */
   }
 

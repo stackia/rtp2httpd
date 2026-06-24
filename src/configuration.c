@@ -44,6 +44,7 @@ int cmd_upstream_interface_http_set = 0;
 int cmd_fcc_listen_port_range_set = 0;
 int cmd_status_page_path_set = 0;
 int cmd_player_page_path_set = 0;
+int cmd_app_path_prefix_set = 0;
 int cmd_zerocopy_on_send_set = 0;
 int cmd_workers_set = 0;
 int cmd_external_m3u_url_set = 0;
@@ -54,6 +55,8 @@ int cmd_rtsp_user_agent_set = 0;
 int cmd_cors_allow_origin_set = 0;
 
 enum section_e { SEC_NONE = 0, SEC_BIND, SEC_SERVICES, SEC_GLOBAL };
+
+enum long_option_e { OPT_APP_PATH_PREFIX = 1000 };
 
 /* M3U parsing state variables */
 static char *inline_m3u_buffer = NULL;
@@ -116,6 +119,10 @@ static void free_config_strings(config_t *target, bool force_free) {
   if (!cmd_player_page_path_set || force_free) {
     safe_free_string(&target->player_page_path);
     safe_free_string(&target->player_page_route);
+  }
+  if (!cmd_app_path_prefix_set || force_free) {
+    safe_free_string(&target->app_path_prefix);
+    safe_free_string(&target->app_path_route);
   }
   if (!cmd_external_m3u_url_set || force_free)
     safe_free_string(&target->external_m3u_url);
@@ -292,6 +299,58 @@ static void set_status_page_path_value(const char *value) {
 
 static void set_player_page_path_value(const char *value) {
   set_page_path_value(value, "player", &config.player_page_path, &config.player_page_route);
+}
+
+static void set_app_path_prefix_value(const char *value) {
+  char normalized[HTTP_URL_BUFFER_SIZE];
+  size_t len = 0;
+  const char *src;
+
+  normalized[0] = '\0';
+
+  if (!value)
+    value = "";
+
+  src = value;
+  while (*src == '/')
+    src++;
+
+  if (*src != '\0') {
+    normalized[len++] = '/';
+
+    while (*src && len < sizeof(normalized) - 1)
+      normalized[len++] = *src++;
+
+    if (*src != '\0') {
+      logger(LOG_ERROR, "app-path-prefix is too long, keeping previous value");
+      return;
+    }
+
+    while (len > 0 && normalized[len - 1] == '/')
+      len--;
+  }
+
+  normalized[len] = '\0';
+
+  safe_free_string(&config.app_path_prefix);
+  safe_free_string(&config.app_path_route);
+
+  config.app_path_prefix = strdup(normalized);
+  if (!config.app_path_prefix) {
+    logger(LOG_ERROR, "Failed to allocate app-path-prefix");
+    config.app_path_route = NULL;
+    return;
+  }
+
+  if (normalized[0] != '\0')
+    config.app_path_route = strdup(normalized + 1);
+  else
+    config.app_path_route = strdup("");
+
+  if (!config.app_path_route) {
+    logger(LOG_ERROR, "Failed to allocate app-path-prefix route");
+    safe_free_string(&config.app_path_prefix);
+  }
 }
 
 void parse_bind_sec(char *line) {
@@ -570,6 +629,12 @@ void parse_global_sec(char *line) {
   if (strcasecmp("player-page-path", param) == 0) {
     if (set_if_not_cmd_override(cmd_player_page_path_set, "player-page-path"))
       set_player_page_path_value(value);
+    return;
+  }
+
+  if (strcasecmp("app-path-prefix", param) == 0) {
+    if (set_if_not_cmd_override(cmd_app_path_prefix_set, "app-path-prefix"))
+      set_app_path_prefix_value(value);
     return;
   }
 
@@ -970,6 +1035,8 @@ int config_snapshot(config_t *snapshot) {
   snapshot->status_page_route = NULL;
   snapshot->player_page_path = NULL;
   snapshot->player_page_route = NULL;
+  snapshot->app_path_prefix = NULL;
+  snapshot->app_path_route = NULL;
   snapshot->external_m3u_url = NULL;
   snapshot->rtsp_stun_server = NULL;
   snapshot->http_proxy_user_agent = NULL;
@@ -990,6 +1057,8 @@ int config_snapshot(config_t *snapshot) {
   SNAPSHOT_STRING(status_page_route, cmd_status_page_path_set);
   SNAPSHOT_STRING(player_page_path, cmd_player_page_path_set);
   SNAPSHOT_STRING(player_page_route, cmd_player_page_path_set);
+  SNAPSHOT_STRING(app_path_prefix, cmd_app_path_prefix_set);
+  SNAPSHOT_STRING(app_path_route, cmd_app_path_prefix_set);
   SNAPSHOT_STRING(external_m3u_url, cmd_external_m3u_url_set);
   SNAPSHOT_STRING(rtsp_stun_server, cmd_rtsp_stun_server_set);
   SNAPSHOT_STRING(http_proxy_user_agent, cmd_http_proxy_user_agent_set);
@@ -1064,6 +1133,8 @@ void config_init(void) {
     set_status_page_path_value("/status");
   if (!cmd_player_page_path_set)
     set_player_page_path_value("/player");
+  if (!cmd_app_path_prefix_set)
+    set_app_path_prefix_value("");
 
   /* Reset interface settings (only if not set by command line) */
   if (!cmd_upstream_interface_set)
@@ -1201,6 +1272,8 @@ void usage(FILE *f, char *progname) {
           "/status)\n"
           "\t-p --player-page-path <path>  HTTP path for player UI (default: "
           "/player)\n"
+          "\t   --app-path-prefix <path>  Public mount path prefix for all HTTP "
+          "resources (default: none)\n"
           "\t-M --external-m3u <url>  External M3U playlist URL (file://, http://, "
           "https://)\n"
           "\t-I --external-m3u-update-interval <seconds>  Auto-update interval "
@@ -1286,6 +1359,7 @@ void parse_cmd_line(int argc, char *argv[]) {
                                     {"video-snapshot", no_argument, 0, 'S'},
                                     {"status-page-path", required_argument, 0, 's'},
                                     {"player-page-path", required_argument, 0, 'p'},
+                                    {"app-path-prefix", required_argument, 0, OPT_APP_PATH_PREFIX},
                                     {"external-m3u", required_argument, 0, 'M'},
                                     {"external-m3u-update-interval", required_argument, 0, 'I'},
                                     {"zerocopy-on-send", no_argument, 0, 'Z'},
@@ -1408,6 +1482,10 @@ void parse_cmd_line(int argc, char *argv[]) {
     case 'p':
       set_player_page_path_value(optarg);
       cmd_player_page_path_set = 1;
+      break;
+    case OPT_APP_PATH_PREFIX:
+      set_app_path_prefix_value(optarg);
+      cmd_app_path_prefix_set = 1;
       break;
     case 'i':
       strncpy(config.upstream_interface, optarg, IFNAMSIZ - 1);

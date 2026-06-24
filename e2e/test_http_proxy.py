@@ -19,6 +19,7 @@ from helpers import (
 )
 
 pytestmark = pytest.mark.http_proxy
+APP_PREFIX = "/app/rtp2httpd"
 
 
 # ---------------------------------------------------------------------------
@@ -351,6 +352,43 @@ class TestProxyRedirectLocationRewrite:
             assert location is not None, "Location header missing"
             assert location == "/http/10.0.0.1:8080/new/page"
         finally:
+            upstream.stop()
+
+    def test_302_location_rewritten_with_app_path_prefix(self, r2h_binary):
+        """Redirect Location should include app-path-prefix when configured."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+app-path-prefix = {APP_PREFIX}
+
+[bind]
+* {port}
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        upstream = MockHTTPUpstream(
+            routes={
+                "/old": {
+                    "status": 302,
+                    "body": b"",
+                    "headers": {"Location": "http://10.0.0.1:8080/new/page"},
+                },
+            }
+        )
+        upstream.start()
+        try:
+            r2h.start()
+            status, hdrs, _ = http_get(
+                "127.0.0.1",
+                port,
+                f"{APP_PREFIX}/http/127.0.0.1:{upstream.port}/old",
+                timeout=5.0,
+            )
+            assert status == 302
+            location = _get_location(hdrs)
+            assert location == f"{APP_PREFIX}/http/10.0.0.1:8080/new/page"
+        finally:
+            r2h.stop()
             upstream.stop()
 
     def test_301_location_rewritten(self, shared_r2h):

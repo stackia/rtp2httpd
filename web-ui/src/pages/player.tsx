@@ -27,6 +27,7 @@ import {
   saveSeamlessSwitch,
   saveSidebarVisible,
 } from "../lib/player-storage";
+import { buildAppPath } from "../lib/url";
 import type { PlayerSegment } from "../mpegts";
 import { NEAR_LIVE_EDGE_MS } from "../mpegts/player/wall-clock";
 import type { Channel, M3UMetadata } from "../types/player";
@@ -221,7 +222,7 @@ function PlayerPage() {
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch("/playlist.m3u");
+      const response = await fetch(buildAppPath("/playlist.m3u"));
       if (!response.ok) {
         throw new Error(t("failedToLoadPlaylist"));
       }
@@ -517,7 +518,7 @@ function PlayerPage() {
               <div className="min-w-0 border-t border-border/70 bg-muted/30 p-6 md:border-t-0 md:border-l md:p-8">
                 <div className="text-sm font-semibold text-foreground">{t("playlistEndpoint")}</div>
                 <div className="mt-3 rounded-lg border border-border/70 bg-background px-3 py-2 font-mono text-sm text-foreground">
-                  /playlist.m3u
+                  {buildAppPath("/playlist.m3u")}
                 </div>
                 <div className="mt-6 text-sm font-semibold text-foreground">{t("technicalDetails")}</div>
                 <p className="mt-2 break-words text-sm leading-6 text-muted-foreground">{error}</p>

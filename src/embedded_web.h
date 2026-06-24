@@ -14,6 +14,7 @@ typedef struct {
   const uint8_t *data;
   size_t size;
   bool has_hash;
+  bool gzip_encoded;
 } embedded_file_t;
 
 /**

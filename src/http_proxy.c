@@ -37,6 +37,24 @@ static int http_proxy_append_raw_headers(http_proxy_session_t *session, char **d
                                          int filter_user_agent);
 static void http_proxy_pause_upstream(http_proxy_session_t *session);
 
+static int http_proxy_get_app_base_path(char *output, size_t output_size) {
+  int written;
+
+  if (!output || output_size == 0)
+    return -1;
+
+  if (config.app_path_prefix && config.app_path_prefix[0] != '\0')
+    written = snprintf(output, output_size, "%s/", config.app_path_prefix);
+  else
+    written = snprintf(output, output_size, "/");
+
+  return (written >= 0 && (size_t)written < output_size) ? 0 : -1;
+}
+
+static const char *http_proxy_get_cookie_path(void) {
+  return (config.app_path_prefix && config.app_path_prefix[0] != '\0') ? config.app_path_prefix : "/";
+}
+
 static const char *http_proxy_get_override_user_agent(void) {
   if (config.http_proxy_user_agent && config.http_proxy_user_agent[0] != '\0') {
     return config.http_proxy_user_agent;
@@ -711,8 +729,9 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
 
     /* Inject Set-Cookie header if needed */
     if (session->conn && session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
-      int cookie_written = snprintf(
-          hdr_ptr, hdr_remaining, "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; SameSite=Strict\r\n", config.r2h_token);
+      int cookie_written =
+          snprintf(hdr_ptr, hdr_remaining, "Set-Cookie: r2h-token=%s; Path=%s; HttpOnly; SameSite=Strict\r\n",
+                   config.r2h_token, http_proxy_get_cookie_path());
       if (cookie_written > 0 && (size_t)cookie_written < hdr_remaining) {
         hdr_ptr += cookie_written;
         hdr_remaining -= cookie_written;
@@ -1089,7 +1108,9 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
     /* Rewrite Location header for redirects */
     if (is_redirect && has_location) {
-      if (http_proxy_build_url(location_header, "/", rewritten_location, sizeof(rewritten_location)) == 0) {
+      char app_base_path[HTTP_URL_BUFFER_SIZE];
+      if (http_proxy_get_app_base_path(app_base_path, sizeof(app_base_path)) == 0 &&
+          http_proxy_build_url(location_header, app_base_path, rewritten_location, sizeof(rewritten_location)) == 0) {
         location_rewritten = 1;
         logger(LOG_DEBUG, "HTTP Proxy: Rewritten Location: %s -> %s", location_header, rewritten_location);
       }
@@ -1148,9 +1169,9 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
       if (session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
         char set_cookie_header[512];
         int cookie_len = snprintf(set_cookie_header, sizeof(set_cookie_header),
-                                  "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; "
+                                  "Set-Cookie: r2h-token=%s; Path=%s; HttpOnly; "
                                   "SameSite=Strict\r\n",
-                                  config.r2h_token);
+                                  config.r2h_token, http_proxy_get_cookie_path());
         if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
           if (connection_queue_output(session->conn, (const uint8_t *)set_cookie_header, cookie_len) < 0) {
             logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
@@ -1180,9 +1201,9 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
       if (session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
         char set_cookie_header[512];
         int cookie_len = snprintf(set_cookie_header, sizeof(set_cookie_header),
-                                  "Set-Cookie: r2h-token=%s; Path=/; HttpOnly; "
+                                  "Set-Cookie: r2h-token=%s; Path=%s; HttpOnly; "
                                   "SameSite=Strict\r\n",
-                                  config.r2h_token);
+                                  config.r2h_token, http_proxy_get_cookie_path());
         if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
           if (connection_queue_output(session->conn, (const uint8_t *)set_cookie_header, cookie_len) < 0) {
             logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");

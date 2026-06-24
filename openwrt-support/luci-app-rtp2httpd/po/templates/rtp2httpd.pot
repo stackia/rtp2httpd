@@ -11,6 +11,10 @@ msgstr ""
 msgid "Advanced Interface Settings"
 msgstr ""
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js
+msgid "App Path Prefix"
+msgstr ""
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:307
 msgid "Auto restart after crash"
 msgstr ""
@@ -233,6 +237,10 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:661
 msgid "Please configure External M3U URL first"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js
+msgid "Public mount path prefix for all rtp2httpd HTTP resources, for example /app/rtp2httpd."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:706

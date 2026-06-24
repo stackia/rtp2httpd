@@ -92,7 +92,7 @@ extern service_t *services;
  * @param url URL string to parse
  * @return Pointer to newly allocated service structure or NULL on failure
  */
-service_t *service_create_from_udpxy_url(char *url);
+service_t *service_create_from_udpxy_url(const char *url);
 
 /**
  * Create service from RTSP URL

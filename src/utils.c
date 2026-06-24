@@ -420,14 +420,16 @@ char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host
       }
     }
 
-    /* Build base URL from host and proto */
-    size_t url_len = strlen(proto) + 3 + strlen(host) + 2; /* proto://host/ */
+    const char *prefix = (config.app_path_prefix && config.app_path_prefix[0] != '\0') ? config.app_path_prefix : "";
+
+    /* Build base URL from host, proto, and public app path prefix */
+    size_t url_len = strlen(proto) + 3 + strlen(host) + strlen(prefix) + 2; /* proto://host[/prefix]/ */
     base_url = malloc(url_len);
     if (!base_url) {
       logger(LOG_ERROR, "Failed to allocate base URL");
       return NULL;
     }
-    snprintf(base_url, url_len, "%s://%s/", proto, host);
+    snprintf(base_url, url_len, "%s://%s%s/", proto, host, prefix);
   } else {
     /* Fallback to get_server_address */
     base_url = get_server_address();

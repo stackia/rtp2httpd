@@ -20,6 +20,10 @@ msgstr ""
 msgid "Advanced Interface Settings"
 msgstr "高级接口设置"
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js
+msgid "App Path Prefix"
+msgstr "应用路径前缀"
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:307
 msgid "Auto restart after crash"
 msgstr "程序崩溃后自动重启"
@@ -264,6 +268,10 @@ msgstr "播放器页面路径"
 #: htdocs/luci-static/resources/view/rtp2httpd.js:661
 msgid "Please configure External M3U URL first"
 msgstr "请先配置外部 M3U URL"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js
+msgid "Public mount path prefix for all rtp2httpd HTTP resources, for example /app/rtp2httpd."
+msgstr "所有 rtp2httpd HTTP 资源的公开挂载路径前缀，例如 /app/rtp2httpd。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:706
 msgid "R2H Token"

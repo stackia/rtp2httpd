@@ -198,6 +198,11 @@ char *get_server_address(void) {
       } else {
         snprintf(full_url, sizeof(full_url), "http://%s:%s/", config.hostname, server_port);
       }
+      if (config.app_path_prefix && config.app_path_prefix[0] != '\0') {
+        full_url[strlen(full_url) - 1] = '\0';
+        strncat(full_url, config.app_path_prefix, sizeof(full_url) - strlen(full_url) - 2);
+        strcat(full_url, "/");
+      }
       return strdup(full_url);
     }
 
@@ -228,8 +233,11 @@ char *get_server_address(void) {
       snprintf(full_url, sizeof(full_url), "%s://%s:%s", protocol, host_formatted, port);
     }
 
-    /* Add path if present, ensuring it ends with slash */
-    if (path[0] != '\0') {
+    /* Add app path prefix when configured; otherwise preserve hostname path. */
+    if (config.app_path_prefix && config.app_path_prefix[0] != '\0') {
+      strncat(full_url, config.app_path_prefix, sizeof(full_url) - strlen(full_url) - 2);
+      strcat(full_url, "/");
+    } else if (path[0] != '\0') {
       size_t path_len = strlen(path);
       /* Ensure path ends with '/' */
       if (path[path_len - 1] != '/') {
@@ -254,6 +262,11 @@ char *get_server_address(void) {
       snprintf(full_url, sizeof(full_url), "http://localhost/");
     } else {
       snprintf(full_url, sizeof(full_url), "http://localhost:%s/", server_port);
+    }
+    if (config.app_path_prefix && config.app_path_prefix[0] != '\0') {
+      full_url[strlen(full_url) - 1] = '\0';
+      strncat(full_url, config.app_path_prefix, sizeof(full_url) - strlen(full_url) - 2);
+      strcat(full_url, "/");
     }
     return strdup(full_url);
   }
@@ -366,6 +379,11 @@ char *get_server_address(void) {
       snprintf(full_url, sizeof(full_url), "http://%s/", host_formatted);
     } else {
       snprintf(full_url, sizeof(full_url), "http://%s:%s/", host_formatted, server_port);
+    }
+    if (config.app_path_prefix && config.app_path_prefix[0] != '\0') {
+      full_url[strlen(full_url) - 1] = '\0';
+      strncat(full_url, config.app_path_prefix, sizeof(full_url) - strlen(full_url) - 2);
+      strcat(full_url, "/");
     }
   }
 
@@ -665,6 +683,13 @@ static int extract_wrapped_url(const char *url, char *extracted, size_t extracte
   }
 
   path_start++; /* Skip the slash */
+
+  if (config.app_path_route && config.app_path_route[0] != '\0') {
+    size_t prefix_len = strlen(config.app_path_route);
+    if (strncmp(path_start, config.app_path_route, prefix_len) == 0 && path_start[prefix_len] == '/') {
+      path_start += prefix_len + 1;
+    }
+  }
 
   /* Extract protocol (rtp, udp, rtsp) */
   protocol_end = strchr(path_start, '/');
