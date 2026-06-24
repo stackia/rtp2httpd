@@ -38,6 +38,43 @@ static m3u_cache_t m3u_cache = {0};
 static const int m3u_retry_delays[] = {2, 4, 8, 16, 32, 64, 128, 256};
 #define M3U_MAX_RETRY_COUNT 8
 
+static int append_path_with_trailing_slash(char *base, size_t base_size, const char *path) {
+  size_t len;
+  size_t path_len;
+  int written;
+
+  if (!base || base_size == 0 || !path)
+    return -1;
+
+  len = strlen(base);
+  if (len >= base_size)
+    return -1;
+
+  path_len = strlen(path);
+  written = snprintf(base + len, base_size - len, "%s%s", path, (path_len > 0 && path[path_len - 1] == '/') ? "" : "/");
+  return (written >= 0 && (size_t)written < base_size - len) ? 0 : -1;
+}
+
+static int append_app_path_prefix_to_url(char *base, size_t base_size) {
+  size_t len;
+
+  if (!config.app_path_prefix || config.app_path_prefix[0] == '\0')
+    return 0;
+
+  if (!base || base_size == 0)
+    return -1;
+
+  len = strlen(base);
+  if (len >= base_size)
+    return -1;
+
+  if (len > 0 && base[len - 1] == '/') {
+    base[len - 1] = '\0';
+  }
+
+  return append_path_with_trailing_slash(base, base_size, config.app_path_prefix);
+}
+
 int m3u_is_header(const char *line) { return (strncmp(line, "#EXTM3U", 7) == 0); }
 
 /* Extract x-tvg-url attribute from #EXTM3U header line
@@ -198,10 +235,9 @@ char *get_server_address(void) {
       } else {
         snprintf(full_url, sizeof(full_url), "http://%s:%s/", config.hostname, server_port);
       }
-      if (config.app_path_prefix && config.app_path_prefix[0] != '\0') {
-        full_url[strlen(full_url) - 1] = '\0';
-        strncat(full_url, config.app_path_prefix, sizeof(full_url) - strlen(full_url) - 2);
-        strcat(full_url, "/");
+      if (append_app_path_prefix_to_url(full_url, sizeof(full_url)) != 0) {
+        logger(LOG_ERROR, "Failed to append app-path-prefix to server address");
+        return NULL;
       }
       return strdup(full_url);
     }
@@ -235,20 +271,21 @@ char *get_server_address(void) {
 
     /* Add app path prefix when configured; otherwise preserve hostname path. */
     if (config.app_path_prefix && config.app_path_prefix[0] != '\0') {
-      strncat(full_url, config.app_path_prefix, sizeof(full_url) - strlen(full_url) - 2);
-      strcat(full_url, "/");
+      if (append_app_path_prefix_to_url(full_url, sizeof(full_url)) != 0) {
+        logger(LOG_ERROR, "Failed to append app-path-prefix to server address");
+        return NULL;
+      }
     } else if (path[0] != '\0') {
-      size_t path_len = strlen(path);
-      /* Ensure path ends with '/' */
-      if (path[path_len - 1] != '/') {
-        strncat(full_url, path, sizeof(full_url) - strlen(full_url) - 2);
-        strcat(full_url, "/");
-      } else {
-        strncat(full_url, path, sizeof(full_url) - strlen(full_url) - 1);
+      if (append_path_with_trailing_slash(full_url, sizeof(full_url), path) != 0) {
+        logger(LOG_ERROR, "Failed to append hostname path to server address");
+        return NULL;
       }
     } else {
       /* No path specified, add trailing slash */
-      strcat(full_url, "/");
+      if (append_path_with_trailing_slash(full_url, sizeof(full_url), "/") != 0) {
+        logger(LOG_ERROR, "Failed to append trailing slash to server address");
+        return NULL;
+      }
     }
 
     return strdup(full_url);
@@ -263,10 +300,9 @@ char *get_server_address(void) {
     } else {
       snprintf(full_url, sizeof(full_url), "http://localhost:%s/", server_port);
     }
-    if (config.app_path_prefix && config.app_path_prefix[0] != '\0') {
-      full_url[strlen(full_url) - 1] = '\0';
-      strncat(full_url, config.app_path_prefix, sizeof(full_url) - strlen(full_url) - 2);
-      strcat(full_url, "/");
+    if (append_app_path_prefix_to_url(full_url, sizeof(full_url)) != 0) {
+      logger(LOG_ERROR, "Failed to append app-path-prefix to server address");
+      return NULL;
     }
     return strdup(full_url);
   }
@@ -380,10 +416,10 @@ char *get_server_address(void) {
     } else {
       snprintf(full_url, sizeof(full_url), "http://%s:%s/", host_formatted, server_port);
     }
-    if (config.app_path_prefix && config.app_path_prefix[0] != '\0') {
-      full_url[strlen(full_url) - 1] = '\0';
-      strncat(full_url, config.app_path_prefix, sizeof(full_url) - strlen(full_url) - 2);
-      strcat(full_url, "/");
+    if (append_app_path_prefix_to_url(full_url, sizeof(full_url)) != 0) {
+      free(host_ip);
+      logger(LOG_ERROR, "Failed to append app-path-prefix to server address");
+      return NULL;
     }
   }
 

@@ -50,10 +50,11 @@ static int strip_app_path_prefix(const char *url, char *out, size_t out_size) {
     return -1;
 
   if (!prefix || prefix[0] == '\0') {
+    int written;
     if (strlen(url) >= out_size)
       return -1;
-    strcpy(out, url);
-    return 0;
+    written = snprintf(out, out_size, "%s", url);
+    return (written >= 0 && (size_t)written < out_size) ? 0 : -1;
   }
 
   prefix_len = strlen(prefix);
@@ -74,8 +75,8 @@ static int strip_app_path_prefix(const char *url, char *out, size_t out_size) {
   if (strlen(url + prefix_len) >= out_size)
     return -1;
 
-  strcpy(out, url + prefix_len);
-  return 0;
+  int written = snprintf(out, out_size, "%s", url + prefix_len);
+  return (written >= 0 && (size_t)written < out_size) ? 0 : -1;
 }
 
 /* Token source for r2h-token validation */
