@@ -16,7 +16,7 @@
  *    measures drift between the audio chain and video.currentTime and sets
  *    ratio = playbackRate * (1 - k*drift), so audio genuinely follows
  *    live-sync playbackRate (pitch preserved) and small drift converges
- *    smoothly. Large drift (> 250ms) triggers a hard resync with short fades.
+ *    smoothly. Large discontinuities trigger a hard resync with short fades.
  *
  *  - Stream timestamps arrive from the worker already normalized to the MSE
  *    timeline (same space as video.currentTime), using the remuxer dts base.
@@ -25,7 +25,7 @@
 import { isIOS } from "../../lib/platform";
 import { maxBufferHoleSec, type PlayerConfig } from "../config";
 import Log from "../utils/logger";
-import { PassthroughStretcher, type Stretcher, WasmStretcher } from "./wasm-stretcher";
+import { type Stretcher, WasmStretcher } from "./wasm-stretcher";
 
 const TAG = "PCMAudioPlayer";
 
@@ -112,6 +112,7 @@ export class PCMAudioPlayer {
   // Time stretcher
   private stretcher: Stretcher | null = null;
   private stretcherLoading = false;
+  private stretcherFailed = false;
 
   // Input-side state: stream time of the next sample to feed the stretcher.
   // null = not anchored (anchors at the next chunk's time).
@@ -305,22 +306,21 @@ export class PCMAudioPlayer {
       this.inputCursor = null;
     }
 
+    if (this.stretcherFailed) {
+      return null;
+    }
+
     if (this.stretcherLoading) {
       return null;
     }
     this.stretcherLoading = true;
 
     const wasmUrl = this.config.wasmDecoders.mp2;
-    const fallback = () => new PassthroughStretcher(chunk.sampleRate, chunk.channels);
     const promise = wasmUrl
       ? WasmStretcher.create(wasmUrl, chunk.sampleRate, chunk.channels)
-      : Promise.reject(new Error("no wasm url"));
+      : Promise.reject(new Error("MP2 WASM URL is not configured"));
 
     promise
-      .catch((err) => {
-        Log.w(TAG, `WASM stretcher unavailable, using passthrough (no rate matching): ${err}`);
-        return fallback();
-      })
       .then((stretcher) => {
         this.stretcherLoading = false;
         if (!this.context) {
@@ -329,6 +329,12 @@ export class PCMAudioPlayer {
         }
         this.stretcher = stretcher;
         this.pump();
+      })
+      .catch((err) => {
+        this.stretcherLoading = false;
+        this.stretcherFailed = true;
+        this.pendingChunks = [];
+        Log.e(TAG, `WASM stretcher unavailable; cannot play software-decoded audio: ${err}`);
       });
 
     return null;
@@ -816,6 +822,7 @@ export class PCMAudioPlayer {
     this.isSeeking = false;
     this.inputCursor = null;
     this.stretcher?.reset();
+    this.stretcherFailed = false;
     this.softSyncUntil = 0;
     this.driftEma = 0;
     this.hasDriftEma = false;
