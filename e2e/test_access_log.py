@@ -9,7 +9,17 @@ import re
 
 import pytest
 
-from helpers import MockHTTPUpstream, R2HProcess, find_free_port, http_get
+from helpers import (
+    LOOPBACK_IF,
+    MCAST_ADDR,
+    MockHTTPUpstream,
+    MulticastSender,
+    R2HProcess,
+    find_free_port,
+    find_free_udp_port,
+    http_get,
+    stream_get,
+)
 
 pytestmark = pytest.mark.http_proxy
 
@@ -224,6 +234,56 @@ def test_user_agent_token_is_redacted(r2h_binary, tmp_path):
     finally:
         r2h.stop()
         upstream.stop()
+
+
+@pytest.mark.multicast
+def test_rtp_upstream_url_filters_token(r2h_binary, tmp_path):
+    port = find_free_port()
+    mcast_port = find_free_udp_port()
+    log_path = tmp_path / "access.log"
+    config = f"""\
+[global]
+verbosity = 4
+access_log = {log_path}
+log_format = $service_url|$upstream_url
+r2h-token = secret-token
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1,RTP Channel
+rtp://{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:15970
+"""
+    r2h = R2HProcess(
+        r2h_binary,
+        port,
+        config_content=config,
+        extra_args=["-m", "100", "-r", LOOPBACK_IF],
+    )
+    sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=200)
+    sender.start()
+    try:
+        r2h.start()
+        status, _, _ = stream_get(
+            "127.0.0.1",
+            port,
+            "/RTP%20Channel?r2h-token=secret-token&snapshot=1",
+            read_bytes=4096,
+            timeout=10.0,
+        )
+        assert status == 200
+
+        line = log_path.read_text().strip()
+        assert "secret-token" not in line
+        assert "snapshot=1" in line
+        assert f"rtp://{MCAST_ADDR}:{mcast_port}" in line
+        assert "fcc=127.0.0.1:15970" in line
+        assert "r2h-token" not in line
+    finally:
+        r2h.stop()
+        sender.stop()
 
 
 def test_non_media_requests_are_not_logged(r2h_binary, tmp_path):

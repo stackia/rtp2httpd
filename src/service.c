@@ -1642,9 +1642,10 @@ service_t *service_create_from_rtp_url(const char *http_url) {
   {
     char *qstart = strchr(url_part, '?');
     service_extract_ifname_params(qstart, &result->ifname, &result->ifname_fcc);
+    service_strip_query_param(qstart, "r2h-token");
   }
 
-  /* Build and store full RTP URL (rtp://) - r2h-ifname already stripped */
+  /* Build and store full RTP URL (rtp://) - r2h-* auth/control params stripped */
   char rtp_url[HTTP_URL_BUFFER_SIZE];
   if (strlen(url_part) + 6 >= sizeof(rtp_url)) {
     logger(LOG_ERROR, "RTP URL too long: %zu bytes", strlen(url_part) + 6);

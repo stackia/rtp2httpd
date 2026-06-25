@@ -70,7 +70,7 @@ $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
 
 ## 令牌隐藏
 
-如果请求 URL 中包含 `r2h-token` 查询参数，访问日志中的 `$service_url` 不会包含该参数。`$http_user_agent` 也会隐藏 `R2HTOKEN/...` 片段，避免令牌通过访问日志泄露。
+如果请求 URL 中包含 `r2h-token` 查询参数，访问日志中的 `$service_url` 和 `$upstream_url` 不会包含该参数。`$http_user_agent` 也会隐藏 `R2HTOKEN/...` 片段，避免令牌通过访问日志泄露。
 
 ## 配合 logrotate
 

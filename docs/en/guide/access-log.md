@@ -70,7 +70,7 @@ After `xff` is enabled, if the request's `X-Forwarded-For` header is accepted, `
 
 ## Token Hiding
 
-If the request URL contains the `r2h-token` query parameter, `$service_url` in the access log does not include that parameter. `$http_user_agent` also hides `R2HTOKEN/...` fragments to avoid leaking tokens through access logs.
+If the request URL contains the `r2h-token` query parameter, `$service_url` and `$upstream_url` in the access log do not include that parameter. `$http_user_agent` also hides `R2HTOKEN/...` fragments to avoid leaking tokens through access logs.
 
 ## Using logrotate
 
