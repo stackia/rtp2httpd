@@ -2,8 +2,6 @@
 
 rtp2httpd can write access logs for media requests. This is useful for auditing which channels clients access, identifying client sources behind a reverse proxy, and integrating with external logging systems.
 
-Access logging only records media requests that appear on the status page. Each media request writes one log line at connection start, so the log does not include values that are only known after the connection closes, such as actual bytes sent or playback duration.
-
 ## Enabling Access Logging
 
 Access logging is disabled by default. Logs are written only after `access_log` is configured.
@@ -36,10 +34,8 @@ $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
 Example output:
 
 ```text
-192.0.2.10:53124 [2026-06-25T20:10:12+08:00] "/rtp/239.0.0.1:1234" rtp "rtp://239.0.0.1:1234"
+192.0.2.10:53124 [2026-06-25T20:10:12+08:00] "/CCTV-1" rtp "rtp://239.0.0.1:1234"
 ```
-
-These fields prioritize the client address and the Service URL requested by the client, making it easy to answer "who accessed which channel".
 
 ## Placeholders
 
