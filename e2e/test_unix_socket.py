@@ -149,8 +149,8 @@ class TestUnixSocketListen:
             config = f"""\
 [global]
 verbosity = 4
-access_log = {access_log_path}
-log_format = $client_addr|$remote_addr|$remote_port
+access-log = {access_log_path}
+log-format = $client_addr|$remote_addr|$remote_port
 
 [bind]
 {sock_path}

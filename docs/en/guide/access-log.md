@@ -4,14 +4,14 @@ rtp2httpd can write access logs for media requests. This is useful for auditing 
 
 ## Enabling Access Logging
 
-Access logging is disabled by default. Logs are written only after `access_log` is configured.
+Access logging is disabled by default. Logs are written only after `access-log` is configured.
 
 ### Configuration File
 
 ```ini
 [global]
-access_log = /var/log/rtp2httpd/access.log
-log_format = $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
+access-log = /var/log/rtp2httpd/access.log
+log-format = $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
 ```
 
 ### Command Line
@@ -25,7 +25,7 @@ The OpenWrt LuCI page also supports configuring the access log path and format.
 
 ## Default Format
 
-When `log_format` is unset or empty, this default format is used:
+When `log-format` is unset or empty, this default format is used:
 
 ```text
 $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
@@ -39,7 +39,7 @@ Example output:
 
 ## Placeholders
 
-`log_format` uses nginx-style `$variable` placeholders. The following placeholders are supported:
+`log-format` uses nginx-style `$variable` placeholders. The following placeholders are supported:
 
 | Placeholder | Description |
 | --- | --- |

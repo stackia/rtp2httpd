@@ -74,7 +74,7 @@ def test_config_access_log_writes_default_line(r2h_binary, tmp_path):
     r2h = R2HProcess(
         r2h_binary,
         port,
-        config_content=_config(port, [f"access_log = {log_path}"]),
+        config_content=_config(port, [f"access-log = {log_path}"]),
     )
     upstream = _start_upstream()
     try:
@@ -104,8 +104,8 @@ def test_cli_access_log_overrides_config(r2h_binary, tmp_path):
         config_content=_config(
             port,
             [
-                f"access_log = {config_log_path}",
-                "log_format = config $service_type",
+                f"access-log = {config_log_path}",
+                "log-format = config $service_type",
             ],
         ),
         extra_args=[
@@ -142,8 +142,8 @@ def test_custom_format_filters_token_and_expands_placeholders(r2h_binary, tmp_pa
         config_content=_config(
             port,
             [
-                f"access_log = {log_path}",
-                f"log_format = {log_format}",
+                f"access-log = {log_path}",
+                f"log-format = {log_format}",
                 "r2h-token = secret-token",
             ],
         ),
@@ -183,8 +183,8 @@ def test_client_addr_uses_x_forwarded_for_when_enabled(r2h_binary, tmp_path):
         config_content=_config(
             port,
             [
-                f"access_log = {log_path}",
-                "log_format = $client_addr|$remote_addr|$remote_port|$http_x_forwarded_for",
+                f"access-log = {log_path}",
+                "log-format = $client_addr|$remote_addr|$remote_port|$http_x_forwarded_for",
                 "xff = 1",
             ],
         ),
@@ -214,8 +214,8 @@ def test_user_agent_token_is_redacted(r2h_binary, tmp_path):
         config_content=_config(
             port,
             [
-                f"access_log = {log_path}",
-                "log_format = $http_user_agent",
+                f"access-log = {log_path}",
+                "log-format = $http_user_agent",
                 "r2h-token = secret-token",
             ],
         ),
@@ -244,8 +244,8 @@ def test_rtp_upstream_url_filters_token(r2h_binary, tmp_path):
     config = f"""\
 [global]
 verbosity = 4
-access_log = {log_path}
-log_format = $service_url|$upstream_url
+access-log = {log_path}
+log-format = $service_url|$upstream_url
 r2h-token = secret-token
 
 [bind]
@@ -292,7 +292,7 @@ def test_non_media_requests_are_not_logged(r2h_binary, tmp_path):
     r2h = R2HProcess(
         r2h_binary,
         port,
-        config_content=_config(port, [f"access_log = {log_path}"]),
+        config_content=_config(port, [f"access-log = {log_path}"]),
     )
     try:
         r2h.start()

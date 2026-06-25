@@ -782,6 +782,7 @@ void parse_global_sec(char *line) {
     return;
   }
 
+  /* Keep legacy snake_case config names working for existing files. */
   if (strcasecmp("access-log", param) == 0 || strcasecmp("access_log", param) == 0) {
     if (set_if_not_cmd_override(cmd_access_log_set, "access-log")) {
       safe_free_string(&config.access_log);

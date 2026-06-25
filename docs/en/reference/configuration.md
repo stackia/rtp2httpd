@@ -124,11 +124,11 @@ Configuration file path: `/etc/rtp2httpd.conf`. Lines starting with `#` or `;` a
 verbosity = 3
 
 # Access log file path (empty or unset means disabled)
-access_log = /var/log/rtp2httpd/access.log
+access-log = /var/log/rtp2httpd/access.log
 
 # Access log format (optional, nginx-style $variables)
 # Default: $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
-log_format = $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
+log-format = $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
 
 # Maximum concurrent clients
 maxclients = 20
