@@ -58,7 +58,7 @@ int cmd_log_format_set = 0;
 
 enum section_e { SEC_NONE = 0, SEC_BIND, SEC_SERVICES, SEC_GLOBAL };
 
-enum long_option_e { OPT_APP_PATH_PREFIX = 1000 };
+enum long_option_e { OPT_APP_PATH_PREFIX = 1000, OPT_ACCESS_LOG, OPT_LOG_FORMAT };
 
 /* M3U parsing state variables */
 static char *inline_m3u_buffer = NULL;
@@ -1365,9 +1365,6 @@ void parse_bind_cmd(char *arg) {
 }
 
 void parse_cmd_line(int argc, char *argv[]) {
-#define OPT_ACCESS_LOG 1000
-#define OPT_LOG_FORMAT 1001
-
   const struct option longopts[] = {{"verbose", required_argument, 0, 'v'},
                                     {"quiet", no_argument, 0, 'q'},
                                     {"help", no_argument, 0, 'h'},
@@ -1657,7 +1654,4 @@ void parse_cmd_line(int argc, char *argv[]) {
   }
 
   logger(LOG_DEBUG, "Verbosity: %d, Maxclients: %d, Workers: %d", config.verbosity, config.maxclients, config.workers);
-
-#undef OPT_ACCESS_LOG
-#undef OPT_LOG_FORMAT
 }
