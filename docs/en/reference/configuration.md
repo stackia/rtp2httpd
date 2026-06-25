@@ -72,7 +72,7 @@ Unix socket listen paths must be absolute and must not contain whitespace. At st
 - `-v, --verbose` - Logging verbosity (0=FATAL, 1=ERROR, 2=WARN, 3=INFO, 4=DEBUG)
 - `-q, --quiet` - Show only fatal errors
 - `--access-log <path>` - Write access logs to the specified file (default: disabled)
-- `--log-format <format>` - Access log format using nginx-style `$variable` placeholders
+- `--log-format <format>` - Access log format using nginx-style `$variable` placeholders. See [Access Logging](/en/guide/access-log)
 
 ### Security Control
 
@@ -122,11 +122,10 @@ Configuration file path: `/etc/rtp2httpd.conf`. Lines starting with `#` or `;` a
 # Logging verbosity: 0=FATAL 1=ERROR 2=WARN 3=INFO 4=DEBUG
 verbosity = 3
 
-# Access log file path (default: disabled)
-# Each media request writes one access log line at connection start
+# Access log file path (empty or unset means disabled)
 access_log = /var/log/rtp2httpd/access.log
 
-# Access log format (nginx-style $variables)
+# Access log format (optional, nginx-style $variables)
 # Default: $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
 log_format = $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
 
@@ -283,40 +282,7 @@ rtp://239.253.64.120:5140
 rtp://239.253.64.121:5140
 ```
 
-### Access Log Placeholders
-
-When `access_log` is empty or unset, access logging is disabled.
-
-`log_format` supports these placeholders:
-
-- Time: `$time_iso8601`, `$time_local`, `$msec`
-- Client and worker: `$client_addr`, `$remote_addr`, `$remote_port`, `$worker_pid`
-- Request: `$request`, `$request_method`, `$service_url`, `$host`, `$http_user_agent`, `$http_x_forwarded_for`
-- Stream: `$service_type`, `$upstream_url`
-- Literal: `$$` outputs `$`
-
-`$client_addr` matches the client address shown on the status page. When the request's `X-Forwarded-For` is accepted, for example after enabling `xff`, it uses the first address from `X-Forwarded-For`; in that case there is usually no port, so `$remote_port` outputs `-`.
-
-Example logrotate config:
-
-```text
-/var/log/rtp2httpd/access.log {
-    daily
-    rotate 7
-    missingok
-    notifempty
-    compress
-    create 0644 root root
-    sharedscripts
-    postrotate
-        for pid in $(pidof rtp2httpd); do
-            ppid="$(awk '/^PPid:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)"
-            [ "$(cat "/proc/$ppid/comm" 2>/dev/null)" = "rtp2httpd" ] && continue
-            kill -HUP "$pid" 2>/dev/null || true
-        done
-    endscript
-}
-```
+For how to enable access logging, configure placeholders, and use logrotate, see [Access Logging](/en/guide/access-log).
 
 ## Runtime Configuration Management
 
@@ -345,7 +311,7 @@ kill -USR1 12345
 - If `[bind]` listen addresses change, the supervisor sends `SIGTERM` to all workers and respawns them to apply the new listen addresses
 - If the `workers` count changes, the supervisor automatically adds or removes worker processes
 - For other configuration changes, the supervisor forwards `SIGHUP` to each worker, which applies them at runtime
-- Workers reopen the access log file during reload, which helps with logrotate
+- Workers reopen the [access log](/en/guide/access-log) file during reload, which helps with logrotate
 - If the config file fails to parse, the old configuration is kept and existing connections are not interrupted
 
 > [!NOTE]
