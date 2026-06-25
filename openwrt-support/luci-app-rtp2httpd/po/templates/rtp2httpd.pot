@@ -349,12 +349,6 @@ msgid ""
 "socket path, for example 5140, 192.168.1.1:8081, or /var/run/rtp2httpd.sock."
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:737
-msgid ""
-"Use an absolute file path without whitespace, for example /tmp/rtp2httpd-"
-"access.log."
-msgstr ""
-
 #: htdocs/luci-static/resources/view/rtp2httpd.js:753
 msgid ""
 "User-Agent header used for upstream RTSP requests. Leave empty to use the "
@@ -388,8 +382,7 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:725
 msgid ""
-"Write one access log line for each media request. Leave empty to disable "
-"access logging. Use an absolute path such as /tmp/rtp2httpd-access.log."
+"Write one access log line for each media request. Leave empty to disable access logging."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:510

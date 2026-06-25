@@ -388,12 +388,6 @@ msgstr ""
 "请使用端口、address:port、hostname:port、[IPv6]:port 或 Unix socket 绝对路径，"
 "例如 5140、192.168.1.1:8081 或 /var/run/rtp2httpd.sock。"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:737
-msgid ""
-"Use an absolute file path without whitespace, for example /tmp/rtp2httpd-"
-"access.log."
-msgstr "请使用不含空白字符的绝对文件路径，例如 /tmp/rtp2httpd-access.log。"
-
 #: htdocs/luci-static/resources/view/rtp2httpd.js:753
 msgid ""
 "User-Agent header used for upstream RTSP requests. Leave empty to use the "
@@ -435,11 +429,8 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:725
 msgid ""
-"Write one access log line for each media request. Leave empty to disable "
-"access logging. Use an absolute path such as /tmp/rtp2httpd-access.log."
-msgstr ""
-"为每个媒体请求写入一行访问日志。留空则禁用访问日志。请使用绝对路径，例如 "
-"/tmp/rtp2httpd-access.log。"
+"Write one access log line for each media request. Leave empty to disable access logging."
+msgstr "为每个媒体请求写入一行访问日志。留空则禁用访问日志。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:510
 msgid "Workers"

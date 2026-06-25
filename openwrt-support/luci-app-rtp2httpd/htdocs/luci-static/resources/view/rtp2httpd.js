@@ -803,25 +803,10 @@ return view.extend({
       form.Value,
       "access_log",
       _("Access Log Path"),
-      _(
-        "Write one access log line for each media request. Leave empty to disable access logging. Use an absolute path such as /tmp/rtp2httpd-access.log."
-      )
+      _("Write one access log line for each media request. Leave empty to disable access logging.")
     );
     o.placeholder = "/tmp/rtp2httpd-access.log";
     o.depends("use_config_file", "0");
-    o.validate = function (section_id, value) {
-      var path = String(value || "").trim();
-
-      if (!path) {
-        return true;
-      }
-
-      if (path.charAt(0) !== "/" || /\s/.test(path)) {
-        return _("Use an absolute file path without whitespace, for example /tmp/rtp2httpd-access.log.");
-      }
-
-      return true;
-    };
 
     o = s.taboption(
       "advanced",
