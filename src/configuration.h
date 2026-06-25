@@ -12,6 +12,8 @@
 
 #define CONFIGFILE SYSCONFDIR "/rtp2httpd.conf"
 
+#define DEFAULT_ACCESS_LOG_FORMAT "$client_addr [$time_iso8601] \"$service_url\" $service_type \"$upstream_url\""
+
 typedef enum loglevel {
   LOG_FATAL = 0, /* Always shown */
   LOG_ERROR,     /* Critical failures that prevent functionality */
@@ -40,6 +42,8 @@ typedef struct bindaddr_s {
 typedef struct {
   /* Logging settings */
   loglevel_t verbosity; /* Log verbosity level (LOG_FATAL to LOG_DEBUG) */
+  char *access_log;     /* Access log file path (NULL=disabled) */
+  char *log_format;     /* Access log format string */
 
   /* Network and service settings */
   int udpxy;       /* Enable UDPxy URL format support (0=no, 1=yes) */

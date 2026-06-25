@@ -24,6 +24,14 @@ msgstr "高级接口设置"
 msgid "App Path Prefix"
 msgstr "应用路径前缀"
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js:746
+msgid "Access Log Format"
+msgstr "访问日志格式"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:723
+msgid "Access Log Path"
+msgstr "访问日志路径"
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:307
 msgid "Auto restart after crash"
 msgstr "程序崩溃后自动重启"
@@ -43,6 +51,15 @@ msgstr "CORS 允许的源"
 #: htdocs/luci-static/resources/view/rtp2httpd.js:326
 msgid "Config File Content"
 msgstr "配置文件内容"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:748
+msgid ""
+"Nginx-style access log format. Empty uses the default format. Supported "
+"variables include $client_addr, $time_iso8601, $service_url, $service_type "
+"and $upstream_url."
+msgstr ""
+"Nginx 风格的访问日志格式。留空则使用默认格式。支持的变量包括 $client_addr、"
+"$time_iso8601、$service_url、$service_type 和 $upstream_url。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:424
 msgid "Configure separate interfaces for multicast, FCC and RTSP"
@@ -409,6 +426,11 @@ msgstr ""
 "启用后，将使用 HTTP X-Forwarded-For 头作为客户端地址，用于显示在状态面板上。"
 "并接受 X-Forwarded-Host / X-Forwarded-Proto 头作为 playlist.m3u 中的地址前"
 "缀。建议仅在使用反向代理时启用。"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:725
+msgid ""
+"Write one access log line for each media request. Leave empty to disable access logging."
+msgstr "为每个媒体请求写入一行访问日志。留空则禁用访问日志。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:510
 msgid "Workers"

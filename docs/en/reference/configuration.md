@@ -71,6 +71,8 @@ Unix socket listen paths must be absolute and must not contain whitespace. At st
 
 - `-v, --verbose` - Logging verbosity (0=FATAL, 1=ERROR, 2=WARN, 3=INFO, 4=DEBUG)
 - `-q, --quiet` - Show only fatal errors
+- `--access-log <path>` - Write access logs to the specified file (default: disabled)
+- `--log-format <format>` - Access log format using nginx-style `$variable` placeholders. See [Access Logging](/en/guide/access-log)
 
 ### Security Control
 
@@ -119,6 +121,13 @@ Configuration file path: `/etc/rtp2httpd.conf`. Lines starting with `#` or `;` a
 [global]
 # Logging verbosity: 0=FATAL 1=ERROR 2=WARN 3=INFO 4=DEBUG
 verbosity = 3
+
+# Access log file path (empty or unset means disabled)
+access_log = /var/log/rtp2httpd/access.log
+
+# Access log format (optional, nginx-style $variables)
+# Default: $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
+log_format = $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
 
 # Maximum concurrent clients
 maxclients = 20
@@ -273,6 +282,8 @@ rtp://239.253.64.120:5140
 rtp://239.253.64.121:5140
 ```
 
+For how to enable access logging, configure placeholders, and use logrotate, see [Access Logging](/en/guide/access-log).
+
 ## Runtime Configuration Management
 
 rtp2httpd supports configuration hot reload: after editing the configuration file, trigger a reload via signal or the status page to apply changes without restarting the entire process. rtp2httpd uses a supervisor + worker multi-process architecture. Signals must be sent to the **supervisor process** (the main `rtp2httpd` process, not worker child processes).
@@ -300,6 +311,7 @@ kill -USR1 12345
 - If `[bind]` listen addresses change, the supervisor sends `SIGTERM` to all workers and respawns them to apply the new listen addresses
 - If the `workers` count changes, the supervisor automatically adds or removes worker processes
 - For other configuration changes, the supervisor forwards `SIGHUP` to each worker, which applies them at runtime
+- Workers reopen the [access log](/en/guide/access-log) file during reload, which helps with logrotate
 - If the config file fails to parse, the old configuration is kept and existing connections are not interrupted
 
 > [!NOTE]

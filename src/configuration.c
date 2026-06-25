@@ -53,10 +53,12 @@ int cmd_rtsp_stun_server_set = 0;
 int cmd_http_proxy_user_agent_set = 0;
 int cmd_rtsp_user_agent_set = 0;
 int cmd_cors_allow_origin_set = 0;
+int cmd_access_log_set = 0;
+int cmd_log_format_set = 0;
 
 enum section_e { SEC_NONE = 0, SEC_BIND, SEC_SERVICES, SEC_GLOBAL };
 
-enum long_option_e { OPT_APP_PATH_PREFIX = 1000 };
+enum long_option_e { OPT_APP_PATH_PREFIX = 1000, OPT_ACCESS_LOG, OPT_LOG_FORMAT };
 
 /* M3U parsing state variables */
 static char *inline_m3u_buffer = NULL;
@@ -134,6 +136,10 @@ static void free_config_strings(config_t *target, bool force_free) {
     safe_free_string(&target->rtsp_user_agent);
   if (!cmd_cors_allow_origin_set || force_free)
     safe_free_string(&target->cors_allow_origin);
+  if (!cmd_access_log_set || force_free)
+    safe_free_string(&target->access_log);
+  if (!cmd_log_format_set || force_free)
+    safe_free_string(&target->log_format);
 }
 
 static int snapshot_string(char **dst, char *src, int keep_shallow) {
@@ -769,6 +775,24 @@ void parse_global_sec(char *line) {
     return;
   }
 
+  if (strcasecmp("access-log", param) == 0 || strcasecmp("access_log", param) == 0) {
+    if (set_if_not_cmd_override(cmd_access_log_set, "access-log")) {
+      safe_free_string(&config.access_log);
+      if (value[0] != '\0')
+        config.access_log = strdup(value);
+    }
+    return;
+  }
+
+  if (strcasecmp("log-format", param) == 0 || strcasecmp("log_format", param) == 0) {
+    if (set_if_not_cmd_override(cmd_log_format_set, "log-format")) {
+      safe_free_string(&config.log_format);
+      if (value[0] != '\0')
+        config.log_format = strdup(value);
+    }
+    return;
+  }
+
   logger(LOG_ERROR, "Unknown config parameter: %s", param);
 }
 
@@ -1042,6 +1066,8 @@ int config_snapshot(config_t *snapshot) {
   snapshot->http_proxy_user_agent = NULL;
   snapshot->rtsp_user_agent = NULL;
   snapshot->cors_allow_origin = NULL;
+  snapshot->access_log = NULL;
+  snapshot->log_format = NULL;
 
 #define SNAPSHOT_STRING(field, cmd_flag)                                                                               \
   do {                                                                                                                 \
@@ -1064,6 +1090,8 @@ int config_snapshot(config_t *snapshot) {
   SNAPSHOT_STRING(http_proxy_user_agent, cmd_http_proxy_user_agent_set);
   SNAPSHOT_STRING(rtsp_user_agent, cmd_rtsp_user_agent_set);
   SNAPSHOT_STRING(cors_allow_origin, cmd_cors_allow_origin_set);
+  SNAPSHOT_STRING(access_log, cmd_access_log_set);
+  SNAPSHOT_STRING(log_format, cmd_log_format_set);
 
 #undef SNAPSHOT_STRING
 
@@ -1135,6 +1163,8 @@ void config_init(void) {
     set_player_page_path_value("/player");
   if (!cmd_app_path_prefix_set)
     set_app_path_prefix_value("");
+  if (!cmd_log_format_set)
+    config.log_format = strdup(DEFAULT_ACCESS_LOG_FORMAT);
 
   /* Reset interface settings (only if not set by command line) */
   if (!cmd_upstream_interface_set)
@@ -1287,6 +1317,8 @@ void usage(FILE *f, char *progname) {
           "(default: disabled)\n"
           "\t-O --cors-allow-origin <origin>  Set Access-Control-Allow-Origin header "
           "(default: disabled)\n"
+          "\t   --access-log <path>  Write access logs to this file (default: disabled)\n"
+          "\t   --log-format <format>  Access log format (nginx-style $variables)\n"
           "\t                     default " CONFIGFILE "\n",
           prog);
 }
@@ -1367,6 +1399,8 @@ void parse_cmd_line(int argc, char *argv[]) {
                                     {"rtsp-stun-server", required_argument, 0, 'N'},
                                     {"rtsp-user-agent", required_argument, 0, 'u'},
                                     {"cors-allow-origin", required_argument, 0, 'O'},
+                                    {"access-log", required_argument, 0, OPT_ACCESS_LOG},
+                                    {"log-format", required_argument, 0, OPT_LOG_FORMAT},
                                     {0, 0, 0, 0}};
 
   const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:y:R:F:A:s:p:M:I:SCZg:N:u:O:";
@@ -1577,6 +1611,20 @@ void parse_cmd_line(int argc, char *argv[]) {
       safe_free_string(&config.cors_allow_origin);
       config.cors_allow_origin = strdup(optarg);
       cmd_cors_allow_origin_set = 1;
+      break;
+    case OPT_ACCESS_LOG:
+      safe_free_string(&config.access_log);
+      if (optarg[0] != '\0') {
+        config.access_log = strdup(optarg);
+      }
+      cmd_access_log_set = 1;
+      break;
+    case OPT_LOG_FORMAT:
+      safe_free_string(&config.log_format);
+      if (optarg[0] != '\0') {
+        config.log_format = strdup(optarg);
+      }
+      cmd_log_format_set = 1;
       break;
     default:
       logger(LOG_FATAL, "Unknown option! %d ", opt);

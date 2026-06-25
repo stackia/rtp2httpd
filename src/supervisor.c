@@ -1,4 +1,5 @@
 #include "supervisor.h"
+#include "access_log.h"
 #include "configuration.h"
 #include "epg.h"
 #include "m3u.h"
@@ -661,6 +662,7 @@ int run_worker(void) {
   /* Run worker event loop */
   int result = worker_run_event_loop(s, maxs, notif_fd);
 
+  access_log_cleanup();
   zerocopy_cleanup();
   status_cleanup();
   config_cleanup(true);
