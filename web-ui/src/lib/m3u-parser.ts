@@ -83,14 +83,7 @@ export function parseM3U(content: string): M3UMetadata {
     }
 
     // Parse URL line
-    if (
-      currentExtinf &&
-      (line.startsWith("http://") ||
-        line.startsWith("https://") ||
-        line.startsWith("rtp://") ||
-        line.startsWith("rtsp://") ||
-        line.startsWith("udp://"))
-    ) {
+    if (currentExtinf && isPlaylistUrl(line)) {
       // Extract optional $<label> suffix from URL (e.g., "http://...url$UHD" → label "UHD")
       const labelMatch = line.match(/\$([^$]+)$/);
       const sourceLabel = labelMatch ? labelMatch[1] : undefined;
@@ -115,6 +108,10 @@ export function parseM3U(content: string): M3UMetadata {
     channels: mergeChannelSources(channels),
     groups: playlistGroups,
   };
+}
+
+function isPlaylistUrl(line: string): boolean {
+  return line.startsWith("/") || line.startsWith("http://") || line.startsWith("https://");
 }
 
 function parseGroupTitles(line: string): string[] {
