@@ -5,6 +5,21 @@ import type { LiveSessionAnchor, Player, PlayerError, PlayerEventMap, PlayerImpl
 export { defaultConfig } from "./config";
 export type { LiveSessionAnchor, Player, PlayerConfig, PlayerError, PlayerEventMap, PlayerSegment };
 
+function resolveSegmentUrl(url: string): string {
+  try {
+    return new URL(url, document.baseURI).href;
+  } catch {
+    return url;
+  }
+}
+
+function resolveSegmentUrls(segments: PlayerSegment[]): PlayerSegment[] {
+  return segments.map((segment) => ({
+    ...segment,
+    url: resolveSegmentUrl(segment.url),
+  }));
+}
+
 export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerConfig>): Player {
   const fullConfig: PlayerConfig = { ...defaultConfig, ...config };
 
@@ -44,7 +59,7 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
   return {
     loadSegments(segments: PlayerSegment[]) {
       if (destroyed || !segments.length) return;
-      getImpl().loadSegments(segments);
+      getImpl().loadSegments(resolveSegmentUrls(segments));
     },
 
     seek(seconds: number) {

@@ -290,6 +290,14 @@ msgstr "请先配置外部 M3U URL"
 msgid "Public mount path prefix for all rtp2httpd HTTP resources, for example /app/rtp2httpd."
 msgstr "所有 rtp2httpd HTTP 资源的公开挂载路径前缀，例如 /app/rtp2httpd。"
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js:760
+msgid "Use Relative Paths in M3U"
+msgstr "M3U 使用相对路径"
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:762
+msgid "When enabled, generated and rewritten M3U playlists omit the http://host prefix and use root-relative paths."
+msgstr "启用后，生成和改写后的 M3U 播放列表会省略 http://host 前缀，并使用站点根相对路径。"
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:706
 msgid "R2H Token"
 msgstr "HTTP 请求认证令牌"

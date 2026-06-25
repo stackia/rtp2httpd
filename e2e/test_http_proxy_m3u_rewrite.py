@@ -60,6 +60,26 @@ app-path-prefix = {APP_PREFIX}
     r2h.stop()
 
 
+@pytest.fixture(scope="module")
+def relative_path_prefixed_r2h(r2h_binary):
+    """A shared rtp2httpd instance with app-path-prefix and relative M3U URLs."""
+    port = find_free_port()
+    config = f"""\
+[global]
+verbosity = 4
+maxclients = 100
+app-path-prefix = {APP_PREFIX}
+use-relative-path-in-m3u = yes
+
+[bind]
+* {port}
+"""
+    r2h = R2HProcess(r2h_binary, port, config_content=config)
+    r2h.start()
+    yield r2h
+    r2h.stop()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -212,6 +232,25 @@ class TestM3URewriteAbsoluteHTTP:
             assert status == 200
             assert "http://10.0.0.1:8080/seg1.ts" not in text
             assert f"{APP_PREFIX}/http/10.0.0.1:8080/seg1.ts" in text
+        finally:
+            upstream.stop()
+
+    def test_segment_urls_rewritten_as_relative_with_app_path_prefix(self, relative_path_prefixed_r2h):
+        """Relative M3U mode should omit scheme/host and keep app-path-prefix."""
+        m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\nhttp://10.0.0.1:8080/seg1.ts\n"
+        upstream = _make_m3u_upstream("/live/playlist.m3u8", m3u)
+        try:
+            status, _, text = _m3u_get(
+                relative_path_prefixed_r2h,
+                upstream.port,
+                "/live/playlist.m3u8",
+                path_prefix=APP_PREFIX,
+            )
+            urls = [line for line in text.splitlines() if "seg1.ts" in line]
+
+            assert status == 200
+            assert urls == [f"{APP_PREFIX}/http/10.0.0.1:8080/seg1.ts"]
+            assert "http://" not in text
         finally:
             upstream.stop()
 

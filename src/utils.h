@@ -110,6 +110,7 @@ const char *get_upstream_interface_for_http(const char *override);
 /**
  * Build base URL for proxy based on request headers and config
  * Priority: XFF headers (if enabled) > Host header > get_server_address()
+ * When use-relative-path-in-m3u is enabled, returns a root-relative base path.
  *
  * @param host_header HTTP Host header (can be NULL)
  * @param x_forwarded_host X-Forwarded-Host header (can be NULL)
