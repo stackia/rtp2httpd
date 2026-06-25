@@ -755,6 +755,18 @@ return view.extend({
 
     o = s.taboption(
       "advanced",
+      form.Flag,
+      "use_relative_path_in_m3u",
+      _("Use Relative Paths in M3U"),
+      _(
+        "When enabled, generated and rewritten M3U playlists omit the http://host prefix and use root-relative paths."
+      )
+    );
+    o.default = "0";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "advanced",
       form.Value,
       "hostname",
       _("Hostname"),

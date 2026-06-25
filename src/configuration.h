@@ -101,8 +101,9 @@ typedef struct {
                               empty) */
 
   /* Public app mount path settings */
-  char *app_path_prefix; /* Absolute public app path prefix, or empty string */
-  char *app_path_route;  /* App path prefix without leading slash, or empty string */
+  char *app_path_prefix;          /* Absolute public app path prefix, or empty string */
+  char *app_path_route;           /* App path prefix without leading slash, or empty string */
+  int use_relative_path_in_m3u;   /* Use root-relative URLs in generated/rewritten M3U (0=no, 1=yes) */
 
   /* External M3U settings */
   char *external_m3u_url;                /* External M3U URL (NULL=none) */

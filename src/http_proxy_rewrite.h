@@ -22,8 +22,8 @@ typedef struct {
   const char *upstream_path; /* Current request path, for relative URL resolution
                               */
 
-  /* Proxy base URL (for generating absolute proxy URLs) */
-  const char *base_url; /* e.g., "http://router:5140/" */
+  /* Proxy base URL/path for generating playlist URLs */
+  const char *base_url; /* e.g., "http://router:5140/" or "/app/rtp2httpd/" */
 } rewrite_context_t;
 
 /* ========== M3U/HLS Rewriting ========== */

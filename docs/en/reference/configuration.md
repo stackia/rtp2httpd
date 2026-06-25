@@ -84,6 +84,7 @@ Unix socket listen paths must be absolute and must not contain whitespace. At st
 - `-s, --status-page-path <path>` - Status page and API root path (default: /status)
 - `-p, --player-page-path <path>` - Built-in player page path (default: /player)
 - `--app-path-prefix <path>` - Public access prefix for all HTTP resources (default: none)
+- `--use-relative-path-in-m3u` - Use root-relative URLs when generating playlist.m3u or rewriting M3U through the HTTP proxy (default: disabled)
 
 ### Compatibility
 
@@ -164,6 +165,12 @@ player-page-path = /player
 # playlist.m3u, epg.xml, and stream URLs are all served under this
 # prefix, for example /app/rtp2httpd/player.
 app-path-prefix = /app/rtp2httpd
+
+# Use root-relative paths in M3U output (default: no)
+# When enabled, playlist.m3u and M3U rewritten through the HTTP proxy
+# omit the http://host prefix and keep only paths starting with / or app-path-prefix,
+# for example /app/rtp2httpd/rtp/...
+use-relative-path-in-m3u = no
 
 # Upstream network interface configuration (optional)
 #

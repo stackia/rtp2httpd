@@ -258,6 +258,14 @@ msgstr ""
 msgid "Public mount path prefix for all rtp2httpd HTTP resources, for example /app/rtp2httpd."
 msgstr ""
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js:760
+msgid "Use Relative Paths in M3U"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:762
+msgid "When enabled, generated and rewritten M3U playlists omit the http://host prefix and use root-relative paths."
+msgstr ""
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:706
 msgid "R2H Token"
 msgstr ""

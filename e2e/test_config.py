@@ -156,6 +156,19 @@ def _assert_xff_enabled(port: int, expected_host: str):
     assert expected_host in body.decode()
 
 
+def _assert_use_relative_path_in_m3u(port: int, expected_enabled: bool):
+    status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+    text = body.decode()
+
+    assert status == 200
+    assert "Config Test" in text
+    if expected_enabled:
+        assert "http://" not in text
+        assert "/Config%20Test" in text
+    else:
+        assert "http://127.0.0.1:" in text
+
+
 def _assert_udpxy_state(port: int, expected_enabled: bool):
     status, _, _ = http_request(
         "127.0.0.1",
@@ -304,6 +317,20 @@ OPTION_SOURCE_PRIORITY_CASES = [
             "assertion": _assert_udpxy_state,
         },
         id="udpxy",
+    ),
+    pytest.param(
+        {
+            "name": "use-relative-path-in-m3u",
+            "config_lines": _bool_config_line("use-relative-path-in-m3u"),
+            "cli_args": _enable_flag("--use-relative-path-in-m3u"),
+            "config_source_value": True,
+            "cli_source_value": True,
+            "priority_config_value": False,
+            "priority_cli_value": True,
+            "assertion": _assert_use_relative_path_in_m3u,
+            "services_content": _INLINE_M3U,
+        },
+        id="use-relative-path-in-m3u",
     ),
     pytest.param(
         {

@@ -45,6 +45,7 @@ int cmd_fcc_listen_port_range_set = 0;
 int cmd_status_page_path_set = 0;
 int cmd_player_page_path_set = 0;
 int cmd_app_path_prefix_set = 0;
+int cmd_use_relative_path_in_m3u_set = 0;
 int cmd_zerocopy_on_send_set = 0;
 int cmd_workers_set = 0;
 int cmd_external_m3u_url_set = 0;
@@ -58,7 +59,7 @@ int cmd_log_format_set = 0;
 
 enum section_e { SEC_NONE = 0, SEC_BIND, SEC_SERVICES, SEC_GLOBAL };
 
-enum long_option_e { OPT_APP_PATH_PREFIX = 1000, OPT_ACCESS_LOG, OPT_LOG_FORMAT };
+enum long_option_e { OPT_APP_PATH_PREFIX = 1000, OPT_USE_RELATIVE_PATH_IN_M3U, OPT_ACCESS_LOG, OPT_LOG_FORMAT };
 
 /* M3U parsing state variables */
 static char *inline_m3u_buffer = NULL;
@@ -611,6 +612,12 @@ void parse_global_sec(char *line) {
     return;
   }
 
+  if (strcasecmp("use-relative-path-in-m3u", param) == 0) {
+    if (set_if_not_cmd_override(cmd_use_relative_path_in_m3u_set, "use-relative-path-in-m3u"))
+      config.use_relative_path_in_m3u = parse_bool(value);
+    return;
+  }
+
   /* String parameters with command line override */
   if (strcasecmp("hostname", param) == 0) {
     if (set_if_not_cmd_override(cmd_hostname_set, "hostname")) {
@@ -1145,6 +1152,8 @@ void config_init(void) {
     config.mcast_rejoin_interval = 0;
   if (!cmd_zerocopy_on_send_set)
     config.zerocopy_on_send = 0;
+  if (!cmd_use_relative_path_in_m3u_set)
+    config.use_relative_path_in_m3u = 0;
   if (!cmd_fcc_listen_port_range_set) {
     config.fcc_listen_port_min = 0;
     config.fcc_listen_port_max = 0;
@@ -1304,6 +1313,8 @@ void usage(FILE *f, char *progname) {
           "/player)\n"
           "\t   --app-path-prefix <path>  Public mount path prefix for all HTTP "
           "resources (default: none)\n"
+          "\t   --use-relative-path-in-m3u  Use root-relative URLs in generated "
+          "and rewritten M3U playlists (default: off)\n"
           "\t-M --external-m3u <url>  External M3U playlist URL (file://, http://, "
           "https://)\n"
           "\t-I --external-m3u-update-interval <seconds>  Auto-update interval "
@@ -1392,6 +1403,7 @@ void parse_cmd_line(int argc, char *argv[]) {
                                     {"status-page-path", required_argument, 0, 's'},
                                     {"player-page-path", required_argument, 0, 'p'},
                                     {"app-path-prefix", required_argument, 0, OPT_APP_PATH_PREFIX},
+                                    {"use-relative-path-in-m3u", no_argument, 0, OPT_USE_RELATIVE_PATH_IN_M3U},
                                     {"external-m3u", required_argument, 0, 'M'},
                                     {"external-m3u-update-interval", required_argument, 0, 'I'},
                                     {"zerocopy-on-send", no_argument, 0, 'Z'},
@@ -1520,6 +1532,11 @@ void parse_cmd_line(int argc, char *argv[]) {
     case OPT_APP_PATH_PREFIX:
       set_app_path_prefix_value(optarg);
       cmd_app_path_prefix_set = 1;
+      break;
+    case OPT_USE_RELATIVE_PATH_IN_M3U:
+      config.use_relative_path_in_m3u = 1;
+      cmd_use_relative_path_in_m3u_set = 1;
+      logger(LOG_INFO, "Using root-relative URLs in M3U playlists");
       break;
     case 'i':
       strncpy(config.upstream_interface, optarg, IFNAMSIZ - 1);

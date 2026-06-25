@@ -84,6 +84,7 @@ load_env_file "$RUNTIME_ENV"
 : "${RTP2HTTPD_R2H_TOKEN:=}"
 : "${RTP2HTTPD_CORS_ALLOW_ORIGIN:=}"
 : "${RTP2HTTPD_XFF:=0}"
+: "${RTP2HTTPD_USE_RELATIVE_PATH_IN_M3U:=0}"
 : "${RTP2HTTPD_HTTP_PROXY_USER_AGENT:=}"
 : "${RTP2HTTPD_RTSP_USER_AGENT:=}"
 : "${RTP2HTTPD_EXTRA_ARGS:=}"
@@ -166,6 +167,9 @@ if [ -n "$RTP2HTTPD_CORS_ALLOW_ORIGIN" ]; then
 fi
 if [ "$RTP2HTTPD_XFF" = "1" ]; then
   set -- "$@" --xff
+fi
+if [ "$RTP2HTTPD_USE_RELATIVE_PATH_IN_M3U" = "1" ]; then
+  set -- "$@" --use-relative-path-in-m3u
 fi
 if [ -n "$RTP2HTTPD_HTTP_PROXY_USER_AGENT" ]; then
   set -- "$@" --http-proxy-user-agent "$RTP2HTTPD_HTTP_PROXY_USER_AGENT"

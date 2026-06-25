@@ -234,6 +234,38 @@ http://example.com:8080/live.m3u8
         finally:
             r2h.stop()
 
+    def test_relative_path_output_with_app_path_prefix(self, r2h_binary):
+        """When enabled, playlist URLs should omit scheme/host and keep app-path-prefix."""
+        port = find_free_port()
+        app_prefix = "/app/rtp2httpd"
+        config = f"""\
+[global]
+verbosity = 4
+app-path-prefix = {app_prefix}
+use-relative-path-in-m3u = yes
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1,Relative Channel
+rtp://239.0.0.1:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, f"{app_prefix}/playlist.m3u")
+            text = body.decode()
+            urls = [line for line in text.splitlines() if "Relative%20Channel" in line]
+
+            assert status == 200
+            assert len(urls) == 1
+            assert urls[0] == f"{app_prefix}/Relative%20Channel"
+            assert "http://" not in text
+        finally:
+            r2h.stop()
+
 
 # ---------------------------------------------------------------------------
 # ETag and conditional GET

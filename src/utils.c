@@ -520,6 +520,20 @@ char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host
   const char *proto = "http";
   char *base_url = NULL;
 
+  if (config.use_relative_path_in_m3u) {
+    const char *prefix = (config.app_path_prefix && config.app_path_prefix[0] != '\0') ? config.app_path_prefix : "";
+    size_t url_len = strlen(prefix) + 2; /* [prefix]/ + NUL */
+
+    base_url = malloc(url_len);
+    if (!base_url) {
+      logger(LOG_ERROR, "Failed to allocate relative base URL");
+      return NULL;
+    }
+
+    snprintf(base_url, url_len, "%s/", prefix);
+    return base_url;
+  }
+
   /* Extract protocol from config.hostname if configured */
   char config_protocol[16] = {0};
   if (config.hostname && config.hostname[0] != '\0') {
