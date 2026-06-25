@@ -214,7 +214,8 @@ int status_register_client(const char *client_addr_str, const char *service_url)
       status_shared->clients[i].connect_time = get_realtime_ms();
       status_shared->clients[i].disconnect_requested = 0;
 
-      /* Copy client address string (format: "IP:port" or "[IPv6]:port") */
+      /* Copy client address string (format: "IP:port", "[IPv6]:port", or
+       * "localhost" for Unix socket clients) */
       strncpy(status_shared->clients[i].client_addr, client_addr_str,
               sizeof(status_shared->clients[i].client_addr) - 1);
       status_shared->clients[i].client_addr[sizeof(status_shared->clients[i].client_addr) - 1] = '\0';

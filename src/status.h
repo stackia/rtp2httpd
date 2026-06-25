@@ -190,8 +190,8 @@ void status_cleanup(void);
  * Only called for media streaming clients, not for status/API requests
  * Called after routing determines the connection is for a media service
  * Allocates a free slot in the clients array under mutex protection
- * @param client_addr_str Client address string (format: "IP:port" or
- * "[IPv6]:port")
+ * @param client_addr_str Client address string (format: "IP:port",
+ * "[IPv6]:port", or "localhost" for Unix socket clients)
  * @param service_url Service URL string (e.g., HTTP request path)
  * @return Client slot index (status_index) on success, -1 on error
  */

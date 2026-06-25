@@ -15,6 +15,7 @@ import tempfile
 import time
 
 from helpers import (
+    MockHTTPUpstreamSilent,
     R2HProcess,
     find_free_port,
     http_get,
@@ -89,6 +90,40 @@ def _wait_log_contains(r2h: R2HProcess, needle: str, timeout: float = 5.0) -> No
     assert needle in last_log
 
 
+def _wait_file_contains(path: str, needle: str, timeout: float = 5.0) -> None:
+    deadline = time.time() + timeout
+    last_text = ""
+    while time.time() < deadline:
+        if os.path.exists(path):
+            with open(path) as f:
+                last_text = f.read()
+            if needle in last_text:
+                return
+        time.sleep(0.1)
+    assert needle in last_text
+
+
+def _open_unix_http_stream(socket_path: str, path: str) -> socket.socket:
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(5.0)
+    sock.connect(socket_path)
+    request = "GET %s HTTP/1.0\r\nHost: localhost\r\n\r\n" % path
+    sock.sendall(request.encode())
+    return sock
+
+
+def _wait_status_sse_contains(socket_path: str, needle: str, timeout: float = 5.0) -> None:
+    deadline = time.time() + timeout
+    last_body = ""
+    while time.time() < deadline:
+        status, _, body = unix_http_get(socket_path, "/status/sse", timeout=0.5)
+        last_body = body.decode(errors="replace")
+        if status == 200 and needle in last_body:
+            return
+        time.sleep(0.1)
+    assert needle in last_body
+
+
 class TestUnixSocketListen:
     def test_cli_unix_socket_serves_status(self, r2h_binary):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -101,9 +136,38 @@ class TestUnixSocketListen:
                 assert status == 200
                 assert "text/html" in content_type
                 assert len(body) > 0
-                assert "New client unix requested URL: /status" in r2h.read_log()
+                assert "New client localhost requested URL: /status" in r2h.read_log()
             finally:
                 r2h.stop()
+
+    def test_unix_socket_client_addr_displays_as_localhost(self, r2h_binary):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sock_path = _socket_path(tmpdir)
+            access_log_path = os.path.join(tmpdir, "access.log")
+            upstream = MockHTTPUpstreamSilent()
+            upstream.start()
+            config = f"""\
+[global]
+verbosity = 4
+access_log = {access_log_path}
+log_format = $client_addr|$remote_addr|$remote_port
+
+[bind]
+{sock_path}
+"""
+            r2h = R2HProcess(r2h_binary, None, config_content=config, wait_socket_path=sock_path)
+            media_sock = None
+            try:
+                r2h.start()
+                media_sock = _open_unix_http_stream(sock_path, f"/http/127.0.0.1:{upstream.port}/hello")
+
+                _wait_file_contains(access_log_path, "localhost|localhost|-")
+                _wait_status_sse_contains(sock_path, '"clientAddr":"localhost"')
+            finally:
+                if media_sock:
+                    media_sock.close()
+                r2h.stop()
+                upstream.stop()
 
     def test_config_unix_socket_serves_status(self, r2h_binary):
         with tempfile.TemporaryDirectory() as tmpdir:
