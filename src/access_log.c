@@ -449,23 +449,19 @@ static int access_log_render(access_log_buffer_t *buf, connection_t *c, service_
   return 0;
 }
 
-static int access_log_write_full(int fd, const char *data, size_t len) {
-  size_t offset = 0;
+static int access_log_write_line(int fd, const char *data, size_t len) {
+  ssize_t written;
 
-  while (offset < len) {
-    ssize_t written = write(fd, data + offset, len - offset);
-    if (written < 0) {
-      if (errno == EINTR)
-        continue;
-      return -1;
-    }
-    if (written == 0) {
-      errno = EIO;
-      return -1;
-    }
-    offset += (size_t)written;
+  do {
+    written = write(fd, data, len);
+  } while (written < 0 && errno == EINTR);
+
+  if (written < 0)
+    return -1;
+  if ((size_t)written != len) {
+    errno = EIO;
+    return -1;
   }
-
   return 0;
 }
 
@@ -499,7 +495,7 @@ void access_log_write_connection(connection_t *c, service_t *service, int status
     return;
   }
 
-  if (access_log_write_full(fd, buf.data, buf.len) < 0) {
+  if (access_log_write_line(fd, buf.data, buf.len) < 0) {
     logger(LOG_ERROR, "Failed to write access log %s: %s", config.access_log, strerror(errno));
     access_log_close_fd();
   }
