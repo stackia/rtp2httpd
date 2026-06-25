@@ -1,5 +1,4 @@
 #include "unix_socket.h"
-#include "rtp2httpd.h"
 #include "utils.h"
 #include <errno.h>
 #include <stdlib.h>

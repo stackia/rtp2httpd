@@ -11,7 +11,6 @@
 #include "status.h"
 #include "utils.h"
 #include <arpa/inet.h>
-#include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdbool.h>

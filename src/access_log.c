@@ -1,7 +1,6 @@
 #include "access_log.h"
 #include "configuration.h"
 #include "connection.h"
-#include "rtp2httpd.h"
 #include "service.h"
 #include "status.h"
 #include "utils.h"
