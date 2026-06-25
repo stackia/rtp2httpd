@@ -61,7 +61,7 @@ def _wait_unix_http_status(socket_path: str, path: str, expected_status: int = 2
     assert last_status == expected_status
 
 
-def _wait_unix_http_body_contains(socket_path: str, path: str, needle: bytes, timeout: float = 5.0) -> None:
+def _wait_unix_http_body_contains(socket_path: str, path: str, needle: bytes, timeout: float = 5.0) -> bytes:
     deadline = time.time() + timeout
     last_body = b""
     while time.time() < deadline:
@@ -70,11 +70,23 @@ def _wait_unix_http_body_contains(socket_path: str, path: str, needle: bytes, ti
             if status == 200:
                 last_body = body
                 if needle in body:
-                    return
+                    return body
         except OSError:
             pass
         time.sleep(0.1)
     assert needle in last_body
+    return last_body
+
+
+def _wait_log_contains(r2h: R2HProcess, needle: str, timeout: float = 5.0) -> None:
+    deadline = time.time() + timeout
+    last_log = ""
+    while time.time() < deadline:
+        last_log = r2h.read_log()
+        if needle in last_log:
+            return
+        time.sleep(0.1)
+    assert needle in last_log
 
 
 class TestUnixSocketListen:
@@ -262,14 +274,13 @@ rtp://239.0.0.2:1234
                 assert "keeping existing workers and listeners" in log
 
                 os.kill(r2h.process.pid, signal.SIGUSR1)
+                _wait_log_contains(r2h, "Restarting worker 0")
                 _wait_unix_http_status(old_sock_path, "/oldstatus")
-                status, _, body = unix_http_get(old_sock_path, "/playlist.m3u")
-                assert status == 200
+                body = _wait_unix_http_body_contains(old_sock_path, "/playlist.m3u", b"Old Channel")
                 playlist = body.decode()
                 assert "Old Channel" in playlist
                 assert "New Channel" not in playlist
-                _wait_unix_http_body_contains(old_sock_path, "/epg.xml", b"Old Programme")
-                status, _, body = unix_http_get(old_sock_path, "/epg.xml")
+                body = _wait_unix_http_body_contains(old_sock_path, "/epg.xml", b"Old Programme")
                 assert b"Old Programme" in body
                 assert b"New Programme" not in body
                 status, _, _ = unix_http_get(old_sock_path, "/newstatus")
