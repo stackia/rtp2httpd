@@ -2,6 +2,7 @@
 #include "buffer_pool.h"
 #include "connection.h"
 #include "fcc.h"
+#include "platform_compat.h"
 #include "poller.h"
 #include "rtp_fec.h"
 #include "service.h"
