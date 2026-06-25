@@ -1,5 +1,6 @@
 import type { PlayerSegment } from "../mpegts";
 import type { Channel, M3UMetadata, Source } from "../types/player";
+import { toPlaylistRelativePath } from "./url";
 
 /**
  * Parse M3U playlist content
@@ -34,7 +35,7 @@ export function parseM3U(content: string): M3UMetadata {
     if (line.startsWith("#EXTM3U")) {
       const tvgUrlMatch = line.match(/x-tvg-url="([^"]+)"/);
       if (tvgUrlMatch) {
-        tvgUrl = tvgUrlMatch[1];
+        tvgUrl = toPlaylistRelativePath(tvgUrlMatch[1]);
       }
       const catchupMatch = line.match(/catchup="([^"]+)"/);
       if (catchupMatch) {
@@ -42,7 +43,7 @@ export function parseM3U(content: string): M3UMetadata {
       }
       const catchupSourceMatch = line.match(/catchup-source="([^"]+)"/);
       if (catchupSourceMatch) {
-        defaultCatchupSource = catchupSourceMatch[1];
+        defaultCatchupSource = toPlaylistRelativePath(catchupSourceMatch[1]);
       }
       continue;
     }
@@ -77,7 +78,7 @@ export function parseM3U(content: string): M3UMetadata {
         tvgId: tvgIdMatch?.[1],
         tvgName: tvgNameMatch?.[1],
         catchup: catchupMatch?.[1] || defaultCatchup,
-        catchupSource: catchupSourceMatch?.[1] || defaultCatchupSource,
+        catchupSource: resolveCatchupSource(catchupSourceMatch?.[1] || defaultCatchupSource),
       };
       continue;
     }
@@ -87,6 +88,9 @@ export function parseM3U(content: string): M3UMetadata {
       // Extract optional $<label> suffix from URL (e.g., "http://...url$UHD" → label "UHD")
       const labelMatch = line.match(/\$([^$]+)$/);
       const sourceLabel = labelMatch ? labelMatch[1] : undefined;
+      const urlWithoutLabel = labelMatch ? line.slice(0, line.lastIndexOf("$")) : line;
+      const resolvedUrl =
+        toPlaylistRelativePath(urlWithoutLabel) + (labelMatch ? line.slice(line.lastIndexOf("$")) : "");
 
       channels.push({
         id: `${channels.length + 1}`,
@@ -96,7 +100,12 @@ export function parseM3U(content: string): M3UMetadata {
         tvgId: currentExtinf.tvgId,
         tvgName: currentExtinf.tvgName,
         sources: [
-          { url: line, catchup: currentExtinf.catchup, catchupSource: currentExtinf.catchupSource, label: sourceLabel },
+          {
+            url: resolvedUrl,
+            catchup: currentExtinf.catchup,
+            catchupSource: currentExtinf.catchupSource,
+            label: sourceLabel,
+          },
         ],
       });
       currentExtinf = null;
@@ -112,6 +121,13 @@ export function parseM3U(content: string): M3UMetadata {
 
 function isPlaylistUrl(line: string): boolean {
   return line.startsWith("/") || line.startsWith("http://") || line.startsWith("https://");
+}
+
+function resolveCatchupSource(value: string | undefined): string | undefined {
+  if (!value) {
+    return value;
+  }
+  return toPlaylistRelativePath(value);
 }
 
 function parseGroupTitles(line: string): string[] {
