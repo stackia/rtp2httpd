@@ -53,6 +53,8 @@ def _extract_query_param(path, param_name):
     match = re.search(r"[?&]%s=([^&]+)" % re.escape(param_name), path)
     assert match, "Expected %s= in path, got: %s" % (param_name, path)
     return match.group(1)
+
+
 @pytest.mark.http_proxy
 class TestHTTPTemplateResolver:
     """Verify resolver-layer template substitution in HTTP proxy paths."""
@@ -473,6 +475,7 @@ class TestHTTPTemplateResolver:
         finally:
             upstream.stop()
 
+
 @pytest.mark.http_proxy
 class TestHTTPPathTemplateTimezone:
     """Verify timezone and offset interaction with path-level templates."""
@@ -740,6 +743,7 @@ class TestHTTPPathTemplateTimezone:
         finally:
             upstream.stop()
 
+
 @pytest.mark.http_proxy
 class TestHTTPPathTemplateEdgeCases:
     """Edge cases for URL template substitution."""
@@ -966,6 +970,7 @@ class TestHTTPPathTemplateEdgeCases:
         finally:
             upstream.stop()
 
+
 @pytest.mark.http_proxy
 class TestQueryAppendMode:
     """Verify that non-template URLs append seek params as query parameters."""
@@ -986,6 +991,7 @@ class TestQueryAppendMode:
             )
         finally:
             upstream.stop()
+
 
 @pytest.mark.http_proxy
 class TestHTTPQueryAppendMetaParams:
@@ -1022,6 +1028,7 @@ class TestHTTPQueryAppendMetaParams:
             assert "myseek=" in path
         finally:
             upstream.stop()
+
 
 @pytest.mark.http_proxy
 class TestHTTPQueryAppendOffset:
@@ -1129,6 +1136,7 @@ class TestHTTPQueryAppendOffset:
             assert _extract_query_param(path, "playseek") == "1704096030-1704099540"
         finally:
             upstream.stop()
+
 
 @pytest.mark.http_proxy
 class TestHTTPQueryAppendTimezoneAndFormat:

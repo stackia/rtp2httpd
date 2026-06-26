@@ -131,6 +131,7 @@ class TestPlaceholderSyntaxTimestamp:
         finally:
             upstream.stop()
 
+
 @pytest.mark.http_proxy
 class TestPlaceholderSyntaxCurrentTime:
     """Placeholders for current wall-clock time."""
@@ -148,6 +149,7 @@ class TestPlaceholderSyntaxCurrentTime:
             assert match, "Expected ISO8601 format for {now}, got: %s" % path
         finally:
             upstream.stop()
+
 
 @pytest.mark.http_proxy
 class TestPlaceholderSyntaxComponentsAndDuration:
@@ -168,6 +170,7 @@ class TestPlaceholderSyntaxComponentsAndDuration:
         """Component and duration placeholders should resolve to the expected path."""
         _assert_template_path(shared_r2h, path_template, expected_path)
 
+
 @pytest.mark.http_proxy
 class TestPlaceholderSyntaxModifiers:
     """Placeholder modifiers like |UTC."""
@@ -182,6 +185,7 @@ class TestPlaceholderSyntaxModifiers:
     def test_pipe_utc_modifier(self, shared_r2h, path_template, expected_path):
         """The |UTC modifier should force UTC output even with a timezone header."""
         _assert_template_path(shared_r2h, path_template, expected_path, headers=_TZ_PLUS_8_HEADERS)
+
 
 @pytest.mark.http_proxy
 class TestPlaceholderSyntaxLongKeywords:
@@ -241,6 +245,7 @@ class TestPlaceholderSyntaxLongKeywords:
             assert int(match.group(1)) > 1000000
         finally:
             upstream.stop()
+
 
 @pytest.mark.http_proxy
 class TestPlaceholderSyntaxKeywordFormats:
@@ -352,6 +357,7 @@ class TestPlaceholderSyntaxKeywordFormats:
         finally:
             upstream.stop()
 
+
 @pytest.mark.http_proxy
 class TestPlaceholderSyntaxShortBeginEnd:
     """{(b)FORMAT} and {(e)FORMAT} short syntax without $ prefix."""
@@ -381,6 +387,7 @@ class TestPlaceholderSyntaxShortBeginEnd:
     def test_short_begin_end_syntax(self, shared_r2h, path_template, expected_path, headers):
         """Short begin/end syntax variants should resolve to the expected path."""
         _assert_template_path(shared_r2h, path_template, expected_path, headers=headers)
+
 
 @pytest.mark.http_proxy
 class TestSeekValueFormats:

@@ -175,20 +175,15 @@ class TestM3UCatchupRewrite:
     def test_append_query_templates_become_playseek_carrier(self, catchup_rewrite_playlist):
         """Append-mode start/end query templates should be folded into playseek."""
         _, catchup_source = extract_catchup_source(catchup_rewrite_playlist, "Append Offset Ch")
-        assert (
-            "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}"
-            in catchup_source
-        ), "Expected append-mode query templates to become playseek carrier, got: %s" % catchup_source
+        assert "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}" in catchup_source, (
+            "Expected append-mode query templates to become playseek carrier, got: %s" % catchup_source
+        )
 
     def test_append_query_templates_without_prefix_become_playseek_carrier(self, catchup_rewrite_playlist):
         """Append-mode query templates without a leading separator should also be folded into playseek."""
         _, catchup_source = extract_catchup_source(catchup_rewrite_playlist, "Append No Prefix Ch")
-        assert (
-            "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}"
-            in catchup_source
-        ), (
-            "Expected append-mode query templates without prefix to become playseek carrier, got: %s"
-            % catchup_source
+        assert "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}" in catchup_source, (
+            "Expected append-mode query templates without prefix to become playseek carrier, got: %s" % catchup_source
         )
 
 

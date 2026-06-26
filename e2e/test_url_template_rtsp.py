@@ -48,6 +48,8 @@ def _get_describe_uri(rtsp):
     describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
     assert len(describe_reqs) > 0, "Expected DESCRIBE request"
     return describe_reqs[0]["uri"]
+
+
 @pytest.mark.rtsp
 class TestRTSPPathTemplate:
     """Verify template substitution in RTSP URIs."""
@@ -185,6 +187,7 @@ class TestRTSPPathTemplate:
         finally:
             rtsp.stop()
 
+
 @pytest.mark.rtsp
 class TestRTSPQueryAppendMode:
     """RTSP query-append seek handling without URL templates."""
@@ -288,6 +291,7 @@ class TestRTSPQueryAppendMode:
             assert "r2h-seek-name" not in uri, "r2h-seek-name should be stripped"
         finally:
             rtsp.stop()
+
 
 @pytest.mark.rtsp
 class TestRTSPQueryAppendOffsetAndFormat:
