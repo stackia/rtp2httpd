@@ -2,7 +2,7 @@
 #include "buffer_pool.h"
 #include "configuration.h"
 #include "connection.h"
-#include "http.h" /* For http_url_encode */
+#include "http.h"
 #include "http_proxy_rewrite.h"
 #include "platform_compat.h"
 #include "poller.h"
@@ -729,13 +729,13 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
 
     /* Inject Set-Cookie header if needed */
     if (session->conn && session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
-      int cookie_written =
-          snprintf(hdr_ptr, hdr_remaining, "Set-Cookie: r2h-token=%s; Path=%s; HttpOnly; SameSite=Strict\r\n",
-                   config.r2h_token, http_proxy_get_cookie_path());
+      int cookie_written = http_build_r2h_token_cookie_header(hdr_ptr, hdr_remaining, http_proxy_get_cookie_path());
       if (cookie_written > 0 && (size_t)cookie_written < hdr_remaining) {
         hdr_ptr += cookie_written;
         hdr_remaining -= cookie_written;
         headers_len += cookie_written;
+      } else if (cookie_written < 0) {
+        logger(LOG_ERROR, "HTTP Proxy: Failed to build Set-Cookie header for r2h-token");
       }
       session->conn->should_set_r2h_cookie = 0;
     }
@@ -1167,17 +1167,17 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
       /* Inject Set-Cookie header if needed */
       if (session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
-        char set_cookie_header[512];
-        int cookie_len = snprintf(set_cookie_header, sizeof(set_cookie_header),
-                                  "Set-Cookie: r2h-token=%s; Path=%s; HttpOnly; "
-                                  "SameSite=Strict\r\n",
-                                  config.r2h_token, http_proxy_get_cookie_path());
+        char set_cookie_header[HTTP_COOKIE_BUFFER_SIZE];
+        int cookie_len = http_build_r2h_token_cookie_header(set_cookie_header, sizeof(set_cookie_header),
+                                                            http_proxy_get_cookie_path());
         if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
           if (connection_queue_output(session->conn, (const uint8_t *)set_cookie_header, cookie_len) < 0) {
             logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
             return -1;
           }
           logger(LOG_DEBUG, "HTTP Proxy: Injected Set-Cookie header for r2h-token");
+        } else if (cookie_len < 0) {
+          logger(LOG_ERROR, "HTTP Proxy: Failed to build Set-Cookie header for r2h-token");
         }
         session->conn->should_set_r2h_cookie = 0;
       }
@@ -1199,17 +1199,17 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
       /* Inject Set-Cookie header if needed */
       if (session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
-        char set_cookie_header[512];
-        int cookie_len = snprintf(set_cookie_header, sizeof(set_cookie_header),
-                                  "Set-Cookie: r2h-token=%s; Path=%s; HttpOnly; "
-                                  "SameSite=Strict\r\n",
-                                  config.r2h_token, http_proxy_get_cookie_path());
+        char set_cookie_header[HTTP_COOKIE_BUFFER_SIZE];
+        int cookie_len = http_build_r2h_token_cookie_header(set_cookie_header, sizeof(set_cookie_header),
+                                                            http_proxy_get_cookie_path());
         if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
           if (connection_queue_output(session->conn, (const uint8_t *)set_cookie_header, cookie_len) < 0) {
             logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
             return -1;
           }
           logger(LOG_DEBUG, "HTTP Proxy: Injected Set-Cookie header for r2h-token");
+        } else if (cookie_len < 0) {
+          logger(LOG_ERROR, "HTTP Proxy: Failed to build Set-Cookie header for r2h-token");
         }
         session->conn->should_set_r2h_cookie = 0; /* Only set once */
       }

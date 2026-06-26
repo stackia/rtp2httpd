@@ -11,6 +11,13 @@
 #define HTTP_URL_BUFFER_SIZE 2048
 #endif
 
+/* Maximum Cookie header value retained for r2h-token extraction.
+ * Browsers may send many unrelated cookies for the same domain, so keep this
+ * large enough for common shared-domain deployments. */
+#ifndef HTTP_COOKIE_BUFFER_SIZE
+#define HTTP_COOKIE_BUFFER_SIZE 4096
+#endif
+
 /* Forward declaration */
 typedef struct connection_s connection_t;
 
@@ -42,7 +49,7 @@ typedef struct {
   char x_forwarded_host[256];
   char x_forwarded_proto[16];
   int x_request_snapshot;
-  char cookie[1024];                        /* Cookie header value for r2h-token extraction */
+  char cookie[HTTP_COOKIE_BUFFER_SIZE];     /* Cookie header value for r2h-token extraction */
   char access_control_request_method[64];   /* CORS preflight method */
   char access_control_request_headers[512]; /* CORS preflight headers */
   http_parse_state_t parse_state;
@@ -108,6 +115,18 @@ int http_url_decode(char *str);
  * @return Newly allocated encoded string (caller must free), or NULL on error
  */
 char *http_url_encode(const char *str);
+
+/**
+ * Build a Set-Cookie header for the configured r2h-token.
+ * The cookie value is URL-encoded so token characters such as ';' remain safe
+ * in Cookie/Set-Cookie syntax.
+ *
+ * @param buffer Output buffer
+ * @param buffer_size Output buffer size
+ * @param path Cookie Path attribute
+ * @return Header length, 0 if no token is configured, or -1 on error
+ */
+int http_build_r2h_token_cookie_header(char *buffer, size_t buffer_size, const char *path);
 
 /**
  * Parse query parameter value from query/form string (case-insensitive

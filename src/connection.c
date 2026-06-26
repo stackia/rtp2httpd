@@ -229,6 +229,10 @@ static token_source_t validate_r2h_token(connection_t *c, const char *query_star
   /* Source 2: Cookie header */
   if (c->http_req.cookie[0] != '\0') {
     if (parse_cookie_value(c->http_req.cookie, "r2h-token", token_value, sizeof(token_value)) == 0) {
+      if (http_url_decode(token_value) != 0) {
+        logger(LOG_WARN, "r2h-token invalid URL encoding (source: cookie)");
+        return TOKEN_SOURCE_NONE;
+      }
       if (strcmp(token_value, config.r2h_token) == 0) {
         logger(LOG_DEBUG, "r2h-token validated (source: cookie)");
         return TOKEN_SOURCE_COOKIE;
