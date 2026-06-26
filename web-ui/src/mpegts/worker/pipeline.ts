@@ -114,6 +114,7 @@ class Pipeline {
   /** Incremented on audio timing resets to invalidate decode callbacks queued before the reset. */
   private _audioGen = 0;
   private _audioStretchRatio = 1;
+  private _audioProcessChain: Promise<void> = Promise.resolve();
 
   constructor(segments: PlayerSegment[], config: PlayerConfig, callbacks: PipelineCallbacks) {
     this._callbacks = callbacks;
@@ -159,6 +160,7 @@ class Pipeline {
   destroy(): void {
     this._runId++;
     this._teardown();
+    this._resetAudioTiming();
     if (this._workerAudioProcessor) {
       this._workerAudioProcessor.destroy();
       this._workerAudioProcessor = null;
@@ -518,12 +520,25 @@ class Pipeline {
       this._workerAudioProcessor.setStretchRatio(this._audioStretchRatio);
     }
 
-    // Queue processing after lazy WASM init; gen guard drops frames queued before a reset.
+    // The WASM processor is stateful (decoder carry, WSOLA tail, timeline cursor).
+    // Serialize frames explicitly so lazy init and promise scheduling cannot reorder
+    // processed PCM chunks.
     const gen = this._audioGen;
-    void this._workerAudioProcessor.process(frame).then((result) => {
-      if (!result || gen !== this._audioGen) return;
-      this._emitProcessedAudio(result);
-    });
+    const processor = this._workerAudioProcessor;
+    this._audioProcessChain = this._audioProcessChain
+      .then(async () => {
+        if (gen !== this._audioGen) return;
+        const audioProcessor = await processor.getProcessor(frame.codec);
+        if (!audioProcessor || gen !== this._audioGen) return;
+        const result = audioProcessor.process(frame);
+        if (!result || gen !== this._audioGen) return;
+        this._emitProcessedAudio(result);
+      })
+      .catch((err) => {
+        if (gen === this._audioGen) {
+          Log.e(this.TAG, `Software audio processing failed: ${(err as Error).message}`);
+        }
+      });
   }
 
   /**

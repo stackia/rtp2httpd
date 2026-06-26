@@ -6,12 +6,7 @@
  */
 
 import Log from "../utils/logger";
-import {
-  type EncodedAudioFrame,
-  type ProcessedAudioChunk,
-  type SoftwareAudioCodec,
-  SoftwareAudioProcessor,
-} from "./software-audio-processor";
+import { type SoftwareAudioCodec, SoftwareAudioProcessor } from "./software-audio-processor";
 
 const TAG = "WorkerSoftwareAudioProcessor";
 
@@ -59,11 +54,11 @@ export class WorkerSoftwareAudioProcessor {
     return promise;
   }
 
-  async process(frame: EncodedAudioFrame): Promise<ProcessedAudioChunk | null> {
-    if (!(await this.initProcessor(frame.codec))) {
+  async getProcessor(codec: SoftwareAudioCodec): Promise<SoftwareAudioProcessor | null> {
+    if (!(await this.initProcessor(codec))) {
       return null;
     }
-    return this.processors.get(frame.codec)?.process(frame) ?? null;
+    return this.processors.get(codec) ?? null;
   }
 
   setStretchRatio(ratio: number): void {

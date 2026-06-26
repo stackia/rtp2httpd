@@ -282,10 +282,7 @@ export class PCMAudioPlayer {
     this.cleanupBuffer();
 
     if (!this.isSeeking && !this.videoElement?.paused) {
-      this.pendingChunks.push(chunk);
-      if (this.pendingChunks.length > MAX_PENDING_CHUNKS) {
-        this.pendingChunks.shift();
-      }
+      this.insertPendingChunk(chunk);
       this.pump();
     }
   }
@@ -543,6 +540,32 @@ export class PCMAudioPlayer {
     }
   }
 
+  private insertPendingChunk(chunk: AudioChunk): void {
+    if (this.scheduledSpans.length > 0 && chunk.time < this.outputStreamCursor - GAP_SNAP) {
+      return;
+    }
+
+    let low = 0;
+    let high = this.pendingChunks.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if (this.pendingChunks[mid].time < chunk.time) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+
+    if (low < this.pendingChunks.length && Math.abs(this.pendingChunks[low].time - chunk.time) < 0.001) {
+      this.pendingChunks[low] = chunk;
+    } else {
+      this.pendingChunks.splice(low, 0, chunk);
+    }
+    if (this.pendingChunks.length > MAX_PENDING_CHUNKS) {
+      this.pendingChunks.pop();
+    }
+  }
+
   /** Remove buffered audio that is too far behind the current playback position.
    *  Same strategy as MSE SourceBuffer cleanup: relative to currentTime. */
   private cleanupBuffer(): void {
@@ -628,6 +651,9 @@ export class PCMAudioPlayer {
         };
       }
       this.pendingChunks.push(chunk);
+      if (this.pendingChunks.length >= MAX_PENDING_CHUNKS) {
+        break;
+      }
     }
     Log.v(TAG, `Resync at ${targetTime.toFixed(3)}s, refilled ${this.pendingChunks.length} chunks`);
     this.pump();
