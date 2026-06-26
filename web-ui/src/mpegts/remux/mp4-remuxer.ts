@@ -135,8 +135,6 @@ class MP4Remuxer {
 
   private _silentAudioMode: boolean;
   private _silentAudioLastDts: number | undefined;
-  private _startupDebugAudioSegments: number;
-  private _startupDebugVideoSegments: number;
 
   constructor() {
     this.TAG = "MP4Remuxer";
@@ -168,8 +166,6 @@ class MP4Remuxer {
 
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
-    this._startupDebugAudioSegments = 0;
-    this._startupDebugVideoSegments = 0;
   }
 
   destroy(): void {
@@ -177,8 +173,6 @@ class MP4Remuxer {
     this._dtsBaseInited = false;
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
-    this._startupDebugAudioSegments = 0;
-    this._startupDebugVideoSegments = 0;
     this._audioTiming = this._createTrackTimingState();
     this._videoTiming = this._createTrackTimingState();
     this._pcmTiming = this._createTrackTimingState();
@@ -471,10 +465,6 @@ class MP4Remuxer {
     }
     this._dtsBase -= this._dtsBaseOffset;
     this._dtsBaseInited = true;
-    Log.v(
-      this.TAG,
-      `[startup-debug] dts base selected=${this._dtsBase.toFixed(3)}ms, videoBase=${this._videoDtsBase === Infinity ? "none" : this._videoDtsBase.toFixed(3)}, audioBase=${this._audioDtsBase === Infinity ? "none" : this._audioDtsBase.toFixed(3)}, offset=${this._dtsBaseOffset.toFixed(3)}`,
-    );
   }
 
   getTimestampBase(): number | undefined {
@@ -692,13 +682,6 @@ class MP4Remuxer {
     const latest = mp4Samples[mp4Samples.length - 1];
     this._audioNextDts = latest.dts + latest.duration;
     this._recordTrackTiming(this._audioTiming, latest);
-    if (this._startupDebugAudioSegments++ < 8) {
-      const first = mp4Samples[0];
-      Log.v(
-        this.TAG,
-        `[startup-debug] audio segment#${this._startupDebugAudioSegments}: samples=${mp4Samples.length}, firstDts=${first.dts.toFixed(3)}, firstOrig=${first.originalDts.toFixed(3)}, lastEnd=${this._audioNextDts.toFixed(3)}, correction=${dtsCorrection.toFixed(3)}, mdat=${mdatBytes}`,
-      );
-    }
 
     let moofbox: Uint8Array;
 
@@ -779,8 +762,7 @@ class MP4Remuxer {
 
     const mp4Samples: MP4Sample[] = [];
     let nextOutputDts = firstSampleOriginalDts - dtsCorrection;
-    const dropNegativePts = this._videoTiming.lastOutputEndDts === undefined && this._videoNextDts === undefined;
-    let droppedNegativePts = 0;
+    const presentationFloor = this._videoInitialOutputTime ?? this._dtsBaseOffset;
 
     // Correct dts for each sample, and calculate sample duration. Then output to mp4Samples
     for (let i = 0; i < samples.length; i++) {
@@ -794,11 +776,9 @@ class MP4Remuxer {
       }
 
       const dts = nextOutputDts;
-      const pts = dts + sample.cts - this._videoCtsOffset;
-      const cts = pts - dts;
-      if (dropNegativePts && pts < 0) {
+      const pts = originalDts - dtsCorrection + sample.cts - this._videoCtsOffset;
+      if (pts < presentationFloor - 0.001) {
         mdatBytes -= sample.length;
-        droppedNegativePts++;
         continue;
       }
 
@@ -811,6 +791,7 @@ class MP4Remuxer {
 
       const sampleDuration = this._nextSampleDuration(this._videoTiming, this._videoMeta?.refSampleDuration, 40);
       nextOutputDts += sampleDuration;
+      const cts = pts - dts;
 
       mp4Samples.push({
         dts: dts,
@@ -832,10 +813,6 @@ class MP4Remuxer {
     }
 
     if (mp4Samples.length === 0) {
-      Log.v(
-        this.TAG,
-        `[startup-debug] video segment skipped: raw=${samples.length}, droppedNegativePts=${droppedNegativePts}, firstOrigDts=${firstSampleOriginalDts.toFixed(3)}, correction=${dtsCorrection.toFixed(3)}`,
-      );
       track.samples = [];
       track.length = 0;
       return;
@@ -844,13 +821,6 @@ class MP4Remuxer {
     const latest = mp4Samples[mp4Samples.length - 1];
     this._videoNextDts = latest.dts + latest.duration;
     this._recordTrackTiming(this._videoTiming, latest);
-    if (this._startupDebugVideoSegments++ < 8) {
-      const first = mp4Samples[0];
-      Log.v(
-        this.TAG,
-        `[startup-debug] video segment#${this._startupDebugVideoSegments}: raw=${samples.length}, out=${mp4Samples.length}, droppedNegativePts=${droppedNegativePts}, firstDts=${first.dts.toFixed(3)}, firstPts=${first.pts.toFixed(3)}, firstCts=${first.cts.toFixed(3)}, firstKey=${first.isKeyframe ? "yes" : "no"}, firstOrig=${first.originalDts.toFixed(3)}, lastEnd=${this._videoNextDts.toFixed(3)}, correction=${dtsCorrection.toFixed(3)}, ctsOffset=${this._videoCtsOffset?.toFixed(3) ?? "-"}, mdat=${mdatBytes}`,
-      );
-    }
 
     track.samples = mp4Samples;
     track.sequenceNumber++;

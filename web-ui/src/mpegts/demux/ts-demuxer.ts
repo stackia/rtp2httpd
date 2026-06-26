@@ -984,10 +984,6 @@ class TSDemuxer {
       if (!keyframe || units.length === 0) {
         return;
       }
-      Log.v(
-        this.TAG,
-        `[startup-debug] h264 keyframe anchor: pts=${pts_ms}ms, dts=${dts_ms}ms, cts=${pts_ms - dts_ms}ms, units=${units.length}, bytes=${length}, randomAccess=${random_access_indicator}`,
-      );
       this.resumeVideoOutputFromKeyframe();
     }
 
@@ -1098,10 +1094,6 @@ class TSDemuxer {
       if (!keyframe || units.length === 0) {
         return;
       }
-      Log.v(
-        this.TAG,
-        `[startup-debug] h265 keyframe anchor: pts=${pts_ms}ms, dts=${dts_ms}ms, cts=${pts_ms - dts_ms}ms, units=${units.length}, bytes=${length}, randomAccess=${random_access_indicator}`,
-      );
       this.resumeVideoOutputFromKeyframe();
     }
 
