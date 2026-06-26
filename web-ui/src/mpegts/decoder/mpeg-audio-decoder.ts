@@ -48,6 +48,9 @@ function createWasmImports() {
   };
 }
 
+let cachedWasmUrl: string | null = null;
+let cachedWasmInstance: WebAssembly.Instance | null = null;
+
 export class MpegAudioDecoder {
   private exports: Record<string, CallableFunction> | null = null;
   private memoryRef: { memory: WebAssembly.Memory | null } = { memory: null };
@@ -74,15 +77,21 @@ export class MpegAudioDecoder {
   }
 
   private async init(wasmUrl: string): Promise<void> {
-    const imports = createWasmImports();
-    const { instance } = await WebAssembly.instantiateStreaming(fetch(wasmUrl), imports);
+    if (!cachedWasmInstance || cachedWasmUrl !== wasmUrl) {
+      const imports = createWasmImports();
+      const { instance } = await WebAssembly.instantiateStreaming(fetch(wasmUrl), imports);
+      const ex = instance.exports as Record<string, WebAssembly.Global | WebAssembly.Memory | CallableFunction>;
+      // Standalone WASM reactor initialization, once per cached instance.
+      (ex._initialize as CallableFunction)();
+      cachedWasmInstance = instance;
+      cachedWasmUrl = wasmUrl;
+    }
+
+    const instance = cachedWasmInstance;
     const ex = instance.exports as Record<string, WebAssembly.Global | WebAssembly.Memory | CallableFunction>;
 
     this.memoryRef.memory = ex.memory as WebAssembly.Memory;
     this.exports = ex as unknown as Record<string, CallableFunction>;
-
-    // Standalone WASM reactor initialization
-    (ex._initialize as CallableFunction)();
 
     const create = ex.mpeg_audio_decoder_create as () => number;
     this.decoderPtr = create();
