@@ -153,6 +153,7 @@ int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref) {
   if (!queue || !buf_ref || buf_ref->data_size == 0)
     return 0;
 
+  int was_empty = queue->head == NULL;
   uint8_t *base = (uint8_t *)buf_ref->data;
 
   if (!base || buf_ref->data_offset > BUFFER_POOL_BUFFER_SIZE ||
@@ -185,6 +186,9 @@ int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref) {
     queue->head = queue->tail = buf_ref;
   }
 
+  if (was_empty)
+    queue->first_enqueue_time_ms = get_time_ms();
+
   queue->total_bytes += buf_ref->data_size;
   queue->num_queued++;
 
@@ -194,6 +198,8 @@ int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref) {
 int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd, off_t file_offset, size_t file_size) {
   if (file_fd < 0 || file_size == 0)
     return -1;
+
+  int was_empty = queue->head == NULL;
 
   /* Allocate a buffer_ref_t to represent the file (not from pool) */
   buffer_ref_t *buf_ref = calloc(1, sizeof(buffer_ref_t));
@@ -222,6 +228,9 @@ int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd, off_t file_off
     queue->head = queue->tail = buf_ref;
   }
 
+  if (was_empty)
+    queue->first_enqueue_time_ms = get_time_ms();
+
   /* Note: File buffers do NOT count towards total_bytes for batching logic
    * because they are always flushed immediately and don't participate in
    * the batching optimization designed for small RTP packets.
@@ -235,16 +244,29 @@ int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd, off_t file_off
 }
 
 int zerocopy_should_flush(zerocopy_queue_t *queue) {
-  if (!queue || !queue->head)
-    return 0; /* Nothing to flush */
-
-  /* Flush if accumulated bytes >= threshold */
-  if (queue->total_bytes >= ZEROCOPY_BATCH_BYTES) {
+  if (zerocopy_flush_delay_ms(queue, get_time_ms()) == 0) {
     WORKER_STATS_INC(batch_sends);
     return 1;
   }
 
   return 0; /* Not ready to flush yet */
+}
+
+int zerocopy_flush_delay_ms(const zerocopy_queue_t *queue, int64_t now_ms) {
+  if (!queue || !queue->head)
+    return -1;
+
+  if (queue->total_bytes >= ZEROCOPY_BATCH_BYTES)
+    return 0;
+
+  if (queue->first_enqueue_time_ms <= 0)
+    return ZEROCOPY_BATCH_MAX_DELAY_MS;
+
+  int64_t elapsed = now_ms - queue->first_enqueue_time_ms;
+  if (elapsed >= ZEROCOPY_BATCH_MAX_DELAY_MS)
+    return 0;
+
+  return (int)(ZEROCOPY_BATCH_MAX_DELAY_MS - elapsed);
 }
 
 int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
@@ -283,8 +305,10 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
       size_t total_file_size = file_buf->file_size; /* Save before put */
 
       queue->head = file_buf->send_next;
-      if (!queue->head)
+      if (!queue->head) {
         queue->tail = NULL;
+        queue->first_enqueue_time_ms = 0;
+      }
 
       /* Note: File buffers don't count towards total_bytes, so no need to
        * update it */
@@ -401,8 +425,10 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
         queue->num_queued--;
         queue->head = current->send_next;
 
-        if (!queue->head)
+        if (!queue->head) {
           queue->tail = NULL;
+          queue->first_enqueue_time_ms = 0;
+        }
 
         /* Add to pending completion queue */
         current->send_next = NULL;
@@ -445,8 +471,10 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
         queue->num_queued--;
         queue->head = current->send_next;
 
-        if (!queue->head)
+        if (!queue->head) {
           queue->tail = NULL;
+          queue->first_enqueue_time_ms = 0;
+        }
 
         /* Free buffer immediately since kernel has copied the data */
         buffer_ref_put(current);

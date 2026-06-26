@@ -69,6 +69,8 @@ def parse_args() -> argparse.Namespace:
 Examples:
   %(prog)s fixtures/fec_sample.pcapng
   %(prog)s fixtures/fec_sample.pcapng -i eth0
+  %(prog)s fixtures/fec_sample.pcapng --target 239.81.0.1 --multicast-if-addr 127.0.0.1
+  %(prog)s fixtures/fec_sample.pcapng --target-base 239.81.0 --target-count 8
   %(prog)s fixtures/fec_sample.pcapng -v
   %(prog)s fixtures/fec_sample.pcapng --speed 2.0           # 2x speed
   %(prog)s fixtures/fec_sample.pcapng --speed 10 --continuous  # Stress test
@@ -80,6 +82,29 @@ Examples:
         "-i",
         "--interface",
         help="Network interface for multicast (e.g., eth0)",
+    )
+    parser.add_argument(
+        "--multicast-if-addr",
+        help="IPv4 address to use for IP_MULTICAST_IF (e.g., 127.0.0.1 on macOS lo0)",
+    )
+    parser.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        metavar="ADDR",
+        help="Explicit multicast target address. Can be specified multiple times.",
+    )
+    parser.add_argument(
+        "--target-base",
+        metavar="A.B.C",
+        help="Generate explicit targets from a /24 prefix, starting at .1 (e.g., 239.81.0)",
+    )
+    parser.add_argument(
+        "--target-count",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of targets to generate with --target-base",
     )
     parser.add_argument(
         "-v",
@@ -264,6 +289,7 @@ def get_interface_ip(interface: str) -> str:
 
 def create_multicast_socket(
     interface: str | None = None,
+    interface_addr: str | None = None,
     ttl: int = 1,
 ) -> socket.socket:
     """Create UDP socket configured for multicast sending."""
@@ -271,7 +297,12 @@ def create_multicast_socket(
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
 
-    if interface:
+    if interface_addr:
+        try:
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(interface_addr))
+        except OSError as e:
+            raise OSError(f"Failed to use multicast interface address {interface_addr}: {e}") from e
+    elif interface:
         try:
             ip_addr = get_interface_ip(interface)
             sock.setsockopt(
@@ -367,6 +398,7 @@ def replay_loop(
     sock: socket.socket,
     group_events: dict[str, Event] | None = None,
     igmp_monitor: IGMPMonitor | None = None,
+    explicit_targets: set[str] | None = None,
     loss_rate: float = 0.0,
     reorder_rate: float = 0.0,
     speed: float = 1.0,
@@ -410,7 +442,16 @@ def replay_loop(
     # Get unique ports from pcap
     pcap_ports = set(p.dst_port for p in packets)
 
-    if igmp_monitor and igmp_monitor.subnets:
+    if explicit_targets:
+        print(
+            f"Using explicit replay target(s): {', '.join(sorted(explicit_targets))}",
+            flush=True,
+        )
+        print(
+            f"Will replay using ports: {', '.join(str(p) for p in sorted(pcap_ports))}",
+            flush=True,
+        )
+    elif igmp_monitor and igmp_monitor.subnets:
         print(
             f"Waiting for IGMP Join on subnets: {', '.join(igmp_monitor.subnets)}",
             flush=True,
@@ -458,6 +499,8 @@ def replay_loop(
     # Timing is essential for controlled replay at specific speeds
 
     def get_target_addresses() -> set[str]:
+        if explicit_targets:
+            return explicit_targets
         if igmp_monitor and igmp_monitor.subnets:
             return igmp_monitor.get_active_groups()
         return {addr for addr, event in group_events.items() if event.is_set()}
@@ -718,6 +761,46 @@ def replay_loop(
         )
 
 
+def _validate_ipv4(addr: str) -> str:
+    try:
+        socket.inet_aton(addr)
+    except OSError as e:
+        raise ValueError(f"Invalid IPv4 address: {addr}") from e
+    if addr.count(".") != 3:
+        raise ValueError(f"Invalid IPv4 address: {addr}")
+    return addr
+
+
+def build_explicit_targets(args: argparse.Namespace) -> set[str]:
+    """Build explicit target addresses from --target and --target-base."""
+    targets = set(_validate_ipv4(addr) for addr in args.target)
+
+    if args.target_count < 0:
+        raise ValueError("--target-count must be >= 0")
+
+    if args.target_base:
+        if args.target_count <= 0:
+            raise ValueError("--target-count must be > 0 when --target-base is set")
+        parts = args.target_base.split(".")
+        if len(parts) != 3:
+            raise ValueError("--target-base must use A.B.C format, e.g. 239.81.0")
+        try:
+            octets = [int(part) for part in parts]
+        except ValueError as e:
+            raise ValueError("--target-base contains a non-numeric octet") from e
+        if any(octet < 0 or octet > 255 for octet in octets):
+            raise ValueError("--target-base octets must be in 0..255")
+        if args.target_count > 254:
+            raise ValueError("--target-count must be <= 254")
+        prefix = ".".join(str(octet) for octet in octets)
+        for host in range(1, args.target_count + 1):
+            targets.add(f"{prefix}.{host}")
+    elif args.target_count > 0:
+        raise ValueError("--target-count requires --target-base")
+
+    return targets
+
+
 def main() -> int:
     """Main entry point."""
     args = parse_args()
@@ -738,6 +821,19 @@ def main() -> int:
         print("Error: --speed must be greater than 0", file=sys.stderr)
         return 1
 
+    if args.multicast_if_addr:
+        try:
+            _validate_ipv4(args.multicast_if_addr)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+    try:
+        explicit_targets = build_explicit_targets(args)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
     try:
         packets = load_packets(args.pcapng_file)
     except Exception as e:
@@ -748,24 +844,30 @@ def main() -> int:
         print("Error: No UDP packets found in file", file=sys.stderr)
         return 1
 
-    # Calculate subnets to monitor based on destination addresses in pcap
-    # Each unique destination IP gets its corresponding /24 subnet monitored
-    pcap_addrs = set(p.dst_addr for p in packets)
-    subnets = sorted(set(get_subnet_for_ip(addr) for addr in pcap_addrs))
+    igmp_monitor = None
+    if explicit_targets:
+        print("Explicit target mode enabled; IGMP monitoring is disabled", flush=True)
+    else:
+        # Calculate subnets to monitor based on destination addresses in pcap
+        # Each unique destination IP gets its corresponding /24 subnet monitored
+        pcap_addrs = set(p.dst_addr for p in packets)
+        subnets = sorted(set(get_subnet_for_ip(addr) for addr in pcap_addrs))
 
-    print(
-        f"Monitoring IGMP for subnets (based on pcap): {', '.join(subnets)}",
-        flush=True,
-    )
+        print(
+            f"Monitoring IGMP for subnets (based on pcap): {', '.join(subnets)}",
+            flush=True,
+        )
 
-    # Start IGMP monitor in subnet mode
-    igmp_monitor = IGMPMonitor(subnets=subnets)
-    igmp_monitor.start()
+        # Start IGMP monitor in subnet mode
+        igmp_monitor = IGMPMonitor(subnets=subnets)
+        igmp_monitor.start()
 
     try:
-        sock = create_multicast_socket(args.interface)
+        sock = create_multicast_socket(args.interface, args.multicast_if_addr)
     except OSError as e:
         print(f"Error creating socket: {e}", file=sys.stderr)
+        if igmp_monitor:
+            igmp_monitor.stop()
         return 1
 
     try:
@@ -773,6 +875,7 @@ def main() -> int:
             packets,
             sock,
             igmp_monitor=igmp_monitor,
+            explicit_targets=explicit_targets,
             loss_rate=args.loss,
             reorder_rate=args.reorder,
             speed=args.speed,
@@ -780,7 +883,8 @@ def main() -> int:
             verbose=args.verbose,
         )
     finally:
-        igmp_monitor.stop()
+        if igmp_monitor:
+            igmp_monitor.stop()
         sock.close()
 
     return 0

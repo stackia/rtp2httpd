@@ -22,6 +22,8 @@ static uint64_t buffer_pool_time_us(void) {
 }
 
 void buffer_pool_update_stats(buffer_pool_t *pool) {
+  if (!pool)
+    return;
   if (!status_shared || worker_id < 0 || worker_id >= STATUS_MAX_WORKERS)
     return;
 
@@ -36,6 +38,20 @@ void buffer_pool_update_stats(buffer_pool_t *pool) {
     stats->control_pool_free_buffers = pool->num_free;
     stats->control_pool_max_buffers = pool->max_buffers;
   }
+
+  pool->stats_dirty = 0;
+}
+
+void buffer_pool_mark_stats_dirty(buffer_pool_t *pool) {
+  if (pool)
+    pool->stats_dirty = 1;
+}
+
+void buffer_pool_flush_stats(void) {
+  if (zerocopy_state.pool.stats_dirty)
+    buffer_pool_update_stats(&zerocopy_state.pool);
+  if (zerocopy_state.control_pool.stats_dirty)
+    buffer_pool_update_stats(&zerocopy_state.control_pool);
 }
 
 static buffer_pool_segment_t *buffer_pool_segment_create(size_t buffer_size, size_t num_buffers, buffer_pool_t *pool) {
@@ -192,7 +208,7 @@ void buffer_ref_put(buffer_ref_t *ref) {
     pool->free_list = ref;
     pool->num_free++;
 
-    buffer_pool_update_stats(pool);
+    buffer_pool_mark_stats_dirty(pool);
   }
 }
 
@@ -241,7 +257,7 @@ buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool) {
   ref->data_size = 0;
   ref->send_next = NULL;
 
-  buffer_pool_update_stats(pool);
+  buffer_pool_mark_stats_dirty(pool);
 
   return ref;
 }

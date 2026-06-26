@@ -373,6 +373,7 @@ int stream_tick(stream_context_t *ctx, int64_t now) {
 
     /* Update bytes and bandwidth in status */
     status_update_client_bytes(ctx->status_index, ctx->total_bytes_sent, current_bandwidth);
+    connection_flush_queue_report(ctx->conn);
 
     /* Save current bytes for next calculation */
     ctx->last_bytes_sent = ctx->total_bytes_sent;

@@ -71,6 +71,10 @@ typedef struct connection_s {
   double queue_avg_bytes;
   int slow_active;
   int64_t slow_candidate_since;
+  int64_t queue_limit_last_update_ms;
+  uint32_t queue_limit_packets_since_update;
+  int queue_report_dirty;
+  int queue_flush_armed;
   /* Set when any TCP upstream session attached to this connection has paused
    * its reads due to client-side backpressure.  Lets the per-write notify
    * fast-path skip cheaply when no upstream is paused (the common case). */
@@ -221,6 +225,10 @@ int connection_can_resume_upstream(connection_t *c);
  * stream_on_client_drain() stays accurate.
  */
 void connection_recompute_any_upstream_paused(connection_t *c);
+void connection_mark_queue_dirty(connection_t *c);
+void connection_flush_queue_report(connection_t *c);
+void connection_flush_batch_if_ready(connection_t *c);
+int connection_batch_flush_delay_ms(connection_t *c, int64_t now_ms);
 
 /**
  * Mark the connection for orderly shutdown after upstream EOF/error: switch

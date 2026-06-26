@@ -263,9 +263,17 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
 
   /* Unified event loop: accept + clients + stream fds */
   int64_t last_tick = get_time_ms();
+  int64_t last_pool_stats_flush = last_tick;
 
   while (!stop_flag) {
     int timeout_ms = 100;
+    int64_t wait_now = get_time_ms();
+    for (connection_t *c = conn_head; c; c = c->next) {
+      int delay_ms = connection_batch_flush_delay_ms(c, wait_now);
+      if (delay_ms >= 0 && delay_ms < timeout_ms)
+        timeout_ms = delay_ms;
+    }
+
     int n = poller_wait(epfd, events, (int)(sizeof(events) / sizeof(events[0])), timeout_ms);
     if (n < 0) {
       if (errno == EINTR)
@@ -520,6 +528,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
       connection_t *c = conn_head;
       while (c) {
         connection_t *next = c->next; /* Save next pointer before potential cleanup */
+        connection_flush_batch_if_ready(c);
         if (c->streaming) {
           if (stream_tick(&c->stream, now) < 0) {
             /* Send 503 if headers not sent yet (no data ever arrived) */
@@ -633,6 +642,11 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
             }
           }
         }
+      }
+
+      if (now - last_pool_stats_flush >= 1000) {
+        last_pool_stats_flush = now;
+        buffer_pool_flush_stats();
       }
     }
   }

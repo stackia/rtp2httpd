@@ -18,7 +18,8 @@ Multicast UDP replay tool for testing rtp2httpd.
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/)
-- Linux (uses `/proc/net/igmp` for IGMP monitoring)
+- Linux for IGMP monitoring via `/proc/net/igmp`
+- macOS or Linux for explicit target replay mode
 
 ## Usage
 
@@ -28,14 +29,18 @@ uv run python tools/main.py <pcapng_file> [options]
 
 ### Options
 
-| Option                  | Description                                                       |
-| ----------------------- | ----------------------------------------------------------------- |
-| `-i, --interface IFACE` | Network interface for multicast (e.g., eth0)                      |
-| `-v, --verbose`         | Show verbose output                                               |
-| `--loss PERCENT`        | Simulate packet loss (0-100%, default: 0)                         |
-| `--reorder PERCENT`     | Simulate packet reordering (0-100%, default: 0)                   |
-| `--speed MULTIPLIER`    | Playback speed multiplier (e.g., 2.0 for 2x, default: 1)          |
-| `--continuous`          | Continuous replay without gaps, with incrementing RTP seq numbers |
+| Option                     | Description                                                            |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `-i, --interface IFACE`    | Network interface for multicast (e.g., eth0)                           |
+| `--multicast-if-addr ADDR` | IPv4 address for `IP_MULTICAST_IF` (e.g., `127.0.0.1` on macOS lo0)    |
+| `--target ADDR`            | Explicit replay target address; can be specified multiple times        |
+| `--target-base A.B.C`      | Generate explicit targets from a `/24` prefix, starting at `.1`        |
+| `--target-count N`         | Number of generated targets for `--target-base`                        |
+| `-v, --verbose`            | Show verbose output                                                    |
+| `--loss PERCENT`           | Simulate packet loss (0-100%, default: 0)                              |
+| `--reorder PERCENT`        | Simulate packet reordering (0-100%, default: 0)                        |
+| `--speed MULTIPLIER`       | Playback speed multiplier (e.g., 2.0 for 2x, default: 1)               |
+| `--continuous`             | Continuous replay without gaps, with incrementing RTP seq numbers      |
 
 ### Examples
 
@@ -63,6 +68,14 @@ uv run python tools/main.py tools/fixtures/fec_sample.pcapng --speed 2.0 -v
 
 # 10x speed continuous stress test (no gaps between loops)
 uv run python tools/main.py tools/fixtures/fec_sample.pcapng --speed 10 --continuous -v
+
+# macOS/local explicit targets (no /proc/net/igmp required)
+uv run python tools/main.py tools/fixtures/fec_sample.pcapng --continuous --speed 5 \
+  --multicast-if-addr 127.0.0.1 --target 239.81.0.1
+
+# Generate 8 explicit targets in 239.81.0.0/24
+uv run python tools/main.py tools/fixtures/fec_sample.pcapng --continuous --speed 5 \
+  --multicast-if-addr 127.0.0.1 --target-base 239.81.0 --target-count 8
 
 # Continuous replay with packet loss simulation
 uv run python tools/main.py tools/fixtures/fec_sample.pcapng --continuous --loss 1.0 -v
@@ -106,6 +119,19 @@ curl http://localhost:5140/rtp/239.81.0.3:4056 -o /dev/null
 ```
 
 The replay tool will simultaneously send packets to all joined addresses.
+
+### Explicit Targets
+
+On macOS, the Linux `/proc/net/igmp` membership monitor is not available. Use
+explicit targets to send continuously without waiting for IGMP joins:
+
+```bash
+uv run python tools/main.py tools/fixtures/fec_sample.pcapng --continuous --speed 5 \
+  --multicast-if-addr 127.0.0.1 --target 239.81.0.1
+```
+
+This mode is also useful for repeatable performance tests because the replay
+target set is fixed by the command line.
 
 ## How It Works
 
@@ -276,6 +302,48 @@ This tests the server's ability to handle multiple independent streams. Use `--s
 - Uses `top -b -n 2` for accurate CPU sampling (first sample is cumulative, second is actual usage)
 - Aggregates CPU usage across parent process and all forked child processes
 - More accurate than `/proc/[pid]/stat` for programs using io_uring
+
+## rtp2httpd Before/After Performance Benchmark
+
+`perf_benchmark.py` is the macOS-first benchmark harness for measuring rtp2httpd
+optimization changes. It starts explicit-target multicast replay, starts
+rtp2httpd, launches curl clients, samples the rtp2httpd supervisor/worker
+process tree with `ps`, and writes JSON results for comparison.
+
+Build the benchmark binary first:
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON
+cmake --build build -j$(sysctl -n hw.ncpu)
+```
+
+Run the quick suite:
+
+```bash
+uv run python tools/perf_benchmark.py run --suite quick --label baseline
+uv run python tools/perf_benchmark.py run --suite quick --label candidate
+uv run python tools/perf_benchmark.py compare perf-results/baseline.json perf-results/candidate.json
+```
+
+Useful short smoke run while developing the harness:
+
+```bash
+uv run python tools/perf_benchmark.py run --suite quick --label smoke --warmup 1 --measure 3 --repeat 1
+```
+
+Default macOS runtime settings are `-C -l 5140 -m 999 -w 1 -r lo0` for
+rtp2httpd and `--continuous --multicast-if-addr 127.0.0.1` for replay.
+
+### Benchmark Suites
+
+- `quick`: `same_8_40m`, 8 clients on one multicast address, 5x replay speed,
+  10s warmup, 30s measurement, 3 repeats.
+- `full`: `same_1_40m`, `same_8_40m`, `same_16_40m`, `unique_8_40m`, and
+  `single_400m`, each with 10s warmup, 60s measurement, 5 repeats.
+
+Results are marked noisy when repeat CPU averages have a coefficient of
+variation above 5%. A CPU improvement is considered effective when the average
+CPU drop is at least 3% relative and 0.5 percentage points absolute.
 
 ### Memory Measurement
 

@@ -225,6 +225,11 @@ int rtp_reorder_insert(rtp_reorder_t *r, buffer_ref_t *buf_ref, uint16_t seqn, c
 
   /* Case 1: Expected sequence -> store and flush */
   if (likely(seq_diff == 0)) {
+    if (likely(!is_snapshot && !fec_is_enabled(fec) && r->count == 0)) {
+      r->base_seq++;
+      return rtp_queue_buf_direct(conn, buf_ref);
+    }
+
     int slot = seqn & r->window_mask;
     if (r->slots[slot]) {
       /* Old packet from ring wrap-around, release it */

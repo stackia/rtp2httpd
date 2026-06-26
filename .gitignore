@@ -31,6 +31,7 @@ __pycache__/
 
 # Benchmark results
 tools/benchmark_results_*.txt
+perf-results/
 
 # iKuai package outputs
 ikuai-support/.staging/

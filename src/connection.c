@@ -36,6 +36,7 @@
 #define CONN_QUEUE_SLOW_LIMIT_RATIO 0.9
 #define CONN_QUEUE_SLOW_EXIT_LIMIT_RATIO 0.75
 #define CONN_QUEUE_SLOW_CLAMP_FACTOR 0.8
+#define CONN_QUEUE_LIMIT_REFRESH_PACKETS 32
 
 /* Forward declarations */
 static void handle_playlist_request(connection_t *c);
@@ -395,8 +396,17 @@ static inline void connection_record_drop(connection_t *c, size_t len) {
   c->dropped_bytes += len;
 }
 
-static void connection_report_queue(connection_t *c) {
+void connection_mark_queue_dirty(connection_t *c) {
+  if (c)
+    c->queue_report_dirty = 1;
+}
+
+void connection_flush_queue_report(connection_t *c) {
+  if (!c)
+    return;
   if (c->status_index < 0)
+    return;
+  if (!c->queue_report_dirty)
     return;
 
   size_t queue_buffers = c->zc_queue.num_queued;
@@ -405,6 +415,34 @@ static void connection_report_queue(connection_t *c) {
   status_update_client_queue(c->status_index, queue_bytes, queue_buffers, c->queue_limit_bytes,
                              c->queue_bytes_highwater, c->queue_buffers_highwater, c->dropped_packets, c->dropped_bytes,
                              c->backpressure_events, c->slow_active);
+  c->queue_report_dirty = 0;
+}
+
+static void connection_arm_write(connection_t *c) {
+  if (!c)
+    return;
+  c->queue_flush_armed = 1;
+  connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+}
+
+static void connection_disarm_write(connection_t *c) {
+  if (!c)
+    return;
+  c->queue_flush_armed = 0;
+  connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+}
+
+void connection_flush_batch_if_ready(connection_t *c) {
+  if (!c || !c->zc_queue.head || c->queue_flush_armed)
+    return;
+  if (zerocopy_should_flush(&c->zc_queue))
+    connection_arm_write(c);
+}
+
+int connection_batch_flush_delay_ms(connection_t *c, int64_t now_ms) {
+  if (!c || c->queue_flush_armed)
+    return -1;
+  return zerocopy_flush_delay_ms(&c->zc_queue, now_ms);
 }
 
 /* Backpressure watermarks for TCP-to-TCP relay flow control.  Upstream modules
@@ -466,7 +504,21 @@ void connection_begin_drain_close(connection_t *c) {
   if (!c || c->state == CONN_CLOSING)
     return;
   c->state = CONN_CLOSING;
-  connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+  connection_arm_write(c);
+}
+
+static size_t connection_queue_limit_for_enqueue(connection_t *c) {
+  if (c->queue_limit_bytes == 0 ||
+      c->queue_limit_packets_since_update >= (uint32_t)CONN_QUEUE_LIMIT_REFRESH_PACKETS) {
+    int64_t now_ms = get_time_ms();
+    c->queue_limit_bytes = connection_update_queue_limit(c, now_ms);
+    c->queue_limit_last_update_ms = now_ms;
+    c->queue_limit_packets_since_update = 0;
+  } else {
+    c->queue_limit_packets_since_update++;
+  }
+
+  return c->queue_limit_bytes;
 }
 
 int connection_set_nonblocking(int fd) {
@@ -519,6 +571,10 @@ connection_t *connection_create(int fd, int epfd, struct sockaddr_storage *clien
   c->queue_avg_bytes = 0.0;
   c->slow_active = 0;
   c->slow_candidate_since = 0;
+  c->queue_limit_last_update_ms = 0;
+  c->queue_limit_packets_since_update = 0;
+  c->queue_report_dirty = 0;
+  c->queue_flush_armed = 0;
 
   /* Enforce TCP user timeout so unacknowledged data fails quickly */
 #ifdef TCP_USER_TIMEOUT
@@ -563,6 +619,8 @@ void connection_cleanup(connection_t *c) {
 
   /* Cleanup zero-copy queue - this releases all buffer references */
   zerocopy_queue_cleanup(&c->zc_queue);
+  connection_mark_queue_dirty(c);
+  connection_flush_queue_report(c);
 
   /* Try to shrink buffer pool after connection cleanup
    * This is an ideal time to reclaim memory as buffers are likely freed
@@ -648,9 +706,9 @@ int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size
   int result = connection_queue_output(c, data, len);
   if (result < 0)
     return result;
-  connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
 
   if (c) {
+    connection_arm_write(c);
     c->state = CONN_CLOSING;
   }
 
@@ -662,8 +720,8 @@ connection_write_status_t connection_handle_write(connection_t *c) {
     return CONNECTION_WRITE_IDLE;
 
   if (!c->zc_queue.head) {
-    connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
-    connection_report_queue(c);
+    connection_disarm_write(c);
+    connection_mark_queue_dirty(c);
     if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
       return CONNECTION_WRITE_CLOSED;
     return CONNECTION_WRITE_IDLE;
@@ -682,14 +740,14 @@ connection_write_status_t connection_handle_write(connection_t *c) {
 
     if (ret < 0 && ret != -2) {
       c->state = CONN_CLOSING;
-      connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
-      connection_report_queue(c);
+      connection_disarm_write(c);
+      connection_mark_queue_dirty(c);
       return CONNECTION_WRITE_CLOSED;
     }
 
     if (ret == -2) {
       /* EAGAIN - socket send buffer full, wait for next writable event */
-      connection_report_queue(c);
+      connection_mark_queue_dirty(c);
       if (total_sent > 0)
         stream_on_client_drain(&c->stream);
       return CONNECTION_WRITE_BLOCKED;
@@ -697,8 +755,8 @@ connection_write_status_t connection_handle_write(connection_t *c) {
 
     if (!c->zc_queue.head) {
       if (c->state == CONN_CLOSING && !c->zc_queue.pending_head) {
-        connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
-        connection_report_queue(c);
+        connection_disarm_write(c);
+        connection_mark_queue_dirty(c);
         return CONNECTION_WRITE_CLOSED;
       }
       /* Notify upstream BEFORE arming the poller mask: resume() may queue
@@ -709,8 +767,9 @@ connection_write_status_t connection_handle_write(connection_t *c) {
       uint32_t mask = POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR;
       if (c->zc_queue.head)
         mask |= POLLER_OUT;
+      c->queue_flush_armed = c->zc_queue.head ? 1 : 0;
       connection_epoll_update_events(c->epfd, c->fd, mask);
-      connection_report_queue(c);
+      connection_mark_queue_dirty(c);
       return CONNECTION_WRITE_IDLE;
     }
 
@@ -720,7 +779,7 @@ connection_write_status_t connection_handle_write(connection_t *c) {
   }
 
   /* Queue still has data but we couldn't make progress */
-  connection_report_queue(c);
+  connection_mark_queue_dirty(c);
   if (total_sent > 0)
     stream_on_client_drain(&c->stream);
   return CONNECTION_WRITE_PENDING;
@@ -1178,8 +1237,7 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref) {
   if (!c || !buf_ref || buf_ref->data_size == 0)
     return 0;
 
-  int64_t now_ms = get_time_ms();
-  size_t limit_bytes = connection_update_queue_limit(c, now_ms);
+  size_t limit_bytes = connection_queue_limit_for_enqueue(c);
   size_t queued_bytes = connection_queue_bytes(c);
   size_t projected_bytes = queued_bytes + buf_ref->data_size;
 
@@ -1195,7 +1253,7 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref) {
              buf_ref->data_size, c->fd, queued_bytes, limit_bytes, (unsigned long long)c->dropped_packets);
     }
 
-    connection_report_queue(c);
+    connection_mark_queue_dirty(c);
     return -1;
   }
 
@@ -1210,18 +1268,17 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref) {
   if (c->zc_queue.num_queued > c->queue_buffers_highwater)
     c->queue_buffers_highwater = c->zc_queue.num_queued;
 
-  connection_report_queue(c);
+  connection_mark_queue_dirty(c);
 
   /* Batching optimization: Only enable EPOLLOUT when flush threshold is reached
    * Benefits:
    * - Reduces sendmsg() syscall overhead (fewer calls)
    * - Reduces MSG_ZEROCOPY optmem consumption (fewer operations)
    * - Better batching with iovec (up to 64 packets per sendmsg)
-   * - Lower latency impact (100ms is acceptable for streaming)
+   * - Bounded latency for low-rate streams via the first-packet age threshold
    */
-  if (zerocopy_should_flush(&c->zc_queue)) {
-    connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
-  }
+  if (zerocopy_should_flush(&c->zc_queue))
+    connection_arm_write(c);
 
   return 0;
 }
@@ -1236,7 +1293,7 @@ int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_
     return -1;
 
   /* Always flush immediately for file sends (no batching) */
-  connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+  connection_arm_write(c);
 
   /* Set connection to closing state after file transfer */
   c->state = CONN_CLOSING;

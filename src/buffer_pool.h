@@ -95,12 +95,15 @@ typedef struct buffer_pool_s {
   size_t expand_size;
   size_t low_watermark;
   size_t high_watermark;
+  int stats_dirty;
 } buffer_pool_t;
 
 int buffer_pool_init(buffer_pool_t *pool, size_t buffer_size, size_t initial_buffers, size_t max_buffers,
                      size_t expand_size, size_t low_watermark, size_t high_watermark);
 void buffer_pool_cleanup(buffer_pool_t *pool);
 void buffer_pool_update_stats(buffer_pool_t *pool);
+void buffer_pool_mark_stats_dirty(buffer_pool_t *pool);
+void buffer_pool_flush_stats(void);
 void buffer_ref_get(buffer_ref_t *ref);
 void buffer_ref_put(buffer_ref_t *ref);
 buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool);

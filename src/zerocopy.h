@@ -20,6 +20,7 @@
 
 /* Batching configuration - accumulate small packets before sending */
 #define ZEROCOPY_BATCH_BYTES 65536 /* Send when accumulated >= 64KB */
+#define ZEROCOPY_BATCH_MAX_DELAY_MS 20
 
 /**
  * Zero-copy send queue for a connection
@@ -32,6 +33,7 @@ typedef struct zerocopy_queue_s {
   size_t total_bytes;         /* Total bytes queued */
   size_t num_queued;          /* Number of buffers in send queue */
   size_t num_pending;         /* Number of buffers pending completion */
+  int64_t first_enqueue_time_ms;
   uint32_t next_zerocopy_id;  /* Next ID for MSG_ZEROCOPY tracking */
   uint32_t last_completed_id; /* Last completed MSG_ZEROCOPY ID */
 } zerocopy_queue_t;
@@ -112,6 +114,14 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent);
  * @return 1 if should flush, 0 otherwise
  */
 int zerocopy_should_flush(zerocopy_queue_t *queue);
+
+/**
+ * Return milliseconds until a queued batch should flush.
+ * @param queue Send queue
+ * @param now_ms Current monotonic time in milliseconds
+ * @return 0 if ready, positive delay if pending, -1 if no queued batch
+ */
+int zerocopy_flush_delay_ms(const zerocopy_queue_t *queue, int64_t now_ms);
 
 /**
  * Handle MSG_ZEROCOPY completion notifications
