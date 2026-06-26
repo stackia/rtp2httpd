@@ -1056,7 +1056,7 @@ class TSDemuxer {
     pts: number | undefined,
     dts: number | undefined,
     file_position: number,
-    random_access_indicator: number,
+    random_access_indicator?: number,
   ) {
     const annexb_parser = new H265AnnexBParser(data);
     let nalu_payload: H265NaluPayload | null = null;

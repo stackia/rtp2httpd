@@ -1176,10 +1176,10 @@ class MP4 {
 
     data.set(
       [
-        0x01,
+        0x01, // version
         0x00,
         0x0f,
-        0x01, // version(1) & flags
+        0x01, // flags: data-offset + sample duration/size/flags/cts
         (sampleCount >>> 24) & 0xff, // sample_count
         (sampleCount >>> 16) & 0xff,
         (sampleCount >>> 8) & 0xff,
