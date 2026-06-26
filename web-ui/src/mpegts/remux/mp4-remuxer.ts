@@ -1,3 +1,4 @@
+import { defaultConfig, type PlayerConfig } from "../config";
 import { isFirefox } from "../utils/browser";
 import { IllegalStateException } from "../utils/exception";
 import Log from "../utils/logger";
@@ -83,6 +84,13 @@ interface MP4Sample {
   flags: MP4SampleFlags;
 }
 
+type RemuxerConfig = Pick<PlayerConfig, "maxBufferHoleMs">;
+
+interface TrackTimingState {
+  lastOriginalEndDts: number | undefined;
+  lastOutputEndDts: number | undefined;
+}
+
 type InitSegmentCallback = (type: string, segment: InitSegment) => void;
 type MediaSegmentCallback = (type: string, segment: MediaSegment) => void;
 
@@ -102,6 +110,8 @@ function writeUint32(data: Uint8Array, offset: number, value: number): void {
 class MP4Remuxer {
   TAG: string;
 
+  private _config: RemuxerConfig;
+
   private _dtsBase: number;
   private _dtsBaseInited: boolean;
   private _dtsBaseOffset: number;
@@ -111,6 +121,8 @@ class MP4Remuxer {
   private _videoNextDts: number | undefined;
   private _audioStashedLastSample: AudioSample | null;
   private _videoStashedLastSample: VideoSample | null;
+  private _audioTiming: TrackTimingState;
+  private _videoTiming: TrackTimingState;
 
   private _audioMeta: TrackMetadata | null;
   private _videoMeta: TrackMetadata | null;
@@ -123,8 +135,12 @@ class MP4Remuxer {
   private _silentAudioMode: boolean;
   private _silentAudioLastDts: number | undefined;
 
-  constructor() {
+  constructor(config: RemuxerConfig = defaultConfig) {
     this.TAG = "MP4Remuxer";
+
+    this._config = {
+      maxBufferHoleMs: config.maxBufferHoleMs ?? defaultConfig.maxBufferHoleMs,
+    };
 
     this._dtsBase = -1;
     this._dtsBaseInited = false;
@@ -135,6 +151,8 @@ class MP4Remuxer {
     this._videoNextDts = undefined;
     this._audioStashedLastSample = null;
     this._videoStashedLastSample = null;
+    this._audioTiming = this._createTrackTimingState();
+    this._videoTiming = this._createTrackTimingState();
 
     this._audioMeta = null;
     this._videoMeta = null;
@@ -154,6 +172,8 @@ class MP4Remuxer {
     this._dtsBaseInited = false;
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
+    this._audioTiming = this._createTrackTimingState();
+    this._videoTiming = this._createTrackTimingState();
     this._audioMeta = null;
     this._videoMeta = null;
     this._onInitSegment = null;
@@ -196,13 +216,49 @@ class MP4Remuxer {
     this._silentAudioLastDts = undefined;
   }
 
+  private _createTrackTimingState(): TrackTimingState {
+    return {
+      lastOriginalEndDts: undefined,
+      lastOutputEndDts: undefined,
+    };
+  }
+
   /**
    * Map upstream timestamps onto a continuous output timeline.
    * When `_nextDts` is set (continuous playback), always splice to it.
-   * After a discontinuity, keep upstream timing relative to the current remux base.
+   * After a discontinuity, preserve the last timeline correction and bridge
+   * small forward holes so MSE does not expose tiny buffered range gaps.
    */
-  private _computeDtsCorrection(firstSampleOriginalDts: number, nextDts: number | undefined): number {
-    return nextDts !== undefined ? firstSampleOriginalDts - nextDts : 0;
+  private _computeDtsCorrection(
+    type: "audio" | "video",
+    firstSampleOriginalDts: number,
+    nextDts: number | undefined,
+    timing: TrackTimingState,
+  ): number {
+    if (nextDts !== undefined) {
+      return firstSampleOriginalDts - nextDts;
+    }
+
+    if (timing.lastOriginalEndDts === undefined || timing.lastOutputEndDts === undefined) {
+      return 0;
+    }
+
+    const distance = firstSampleOriginalDts - timing.lastOriginalEndDts;
+    const maxBufferHoleMs = this._config.maxBufferHoleMs ?? defaultConfig.maxBufferHoleMs;
+    const bridgedDistance = distance > 0 && distance <= maxBufferHoleMs ? 0 : distance;
+    if (bridgedDistance !== distance) {
+      Log.v(
+        this.TAG,
+        `${type}: bridging ${Math.round(distance)}ms timestamp hole after discontinuity (max ${maxBufferHoleMs}ms)`,
+      );
+    }
+    const expectedDts = timing.lastOutputEndDts + bridgedDistance;
+    return firstSampleOriginalDts - expectedDts;
+  }
+
+  private _recordTrackTiming(timing: TrackTimingState, sample: MP4Sample): void {
+    timing.lastOriginalEndDts = sample.originalDts + sample.duration;
+    timing.lastOutputEndDts = sample.dts + sample.duration;
   }
 
   /**
@@ -226,10 +282,6 @@ class MP4Remuxer {
     if (audioTrack) {
       this._remuxAudio(audioTrack);
     }
-    // In silent audio mode, generate silent frames synced to video
-    if (this._silentAudioMode && videoTrack?.samples?.length) {
-      this._generateSilentAudio(videoTrack);
-    }
   }
 
   /**
@@ -237,7 +289,7 @@ class MP4Remuxer {
    * Used in soft decode mode to keep MSE audio track active (prevents
    * Safari/Chrome from pausing video when tab goes to background).
    */
-  private _generateSilentAudio(videoTrack: DemuxTrack): void {
+  private _generateSilentAudio(videoSamples: MP4Sample[]): void {
     if (!this._audioMeta || !this._onMediaSegment) {
       return;
     }
@@ -251,11 +303,14 @@ class MP4Remuxer {
       return;
     }
 
-    const videoSamples = videoTrack.samples as VideoSample[];
-    const videoEndDts = videoSamples[videoSamples.length - 1].dts - this._dtsBase;
+    if (videoSamples.length === 0) {
+      return;
+    }
+
+    const videoEndDts = videoSamples[videoSamples.length - 1].dts + videoSamples[videoSamples.length - 1].duration;
 
     if (this._silentAudioLastDts === undefined) {
-      this._silentAudioLastDts = videoSamples[0].dts - this._dtsBase;
+      this._silentAudioLastDts = videoSamples[0].dts;
     }
 
     const samples: Array<{ unit: Uint8Array; dts: number; pts: number }> = [];
@@ -500,7 +555,7 @@ class MP4Remuxer {
 
     const firstSampleOriginalDts = (samples[0] as AudioSample).dts - this._dtsBase;
 
-    dtsCorrection = this._computeDtsCorrection(firstSampleOriginalDts, this._audioNextDts);
+    dtsCorrection = this._computeDtsCorrection("audio", firstSampleOriginalDts, this._audioNextDts, this._audioTiming);
 
     const mp4Samples: MP4Sample[] = [];
 
@@ -602,6 +657,7 @@ class MP4Remuxer {
 
     track.samples = mp4Samples;
     track.sequenceNumber++;
+    this._recordTrackTiming(this._audioTiming, mp4Samples[mp4Samples.length - 1]);
 
     let moofbox: Uint8Array;
 
@@ -674,7 +730,7 @@ class MP4Remuxer {
 
     const firstSampleOriginalDts = (samples[0] as VideoSample).dts - this._dtsBase;
 
-    dtsCorrection = this._computeDtsCorrection(firstSampleOriginalDts, this._videoNextDts);
+    dtsCorrection = this._computeDtsCorrection("video", firstSampleOriginalDts, this._videoNextDts, this._videoTiming);
 
     const mp4Samples: MP4Sample[] = [];
 
@@ -751,6 +807,7 @@ class MP4Remuxer {
 
     const latest = mp4Samples[mp4Samples.length - 1];
     this._videoNextDts = latest.dts + latest.duration;
+    this._recordTrackTiming(this._videoTiming, latest);
 
     track.samples = mp4Samples;
     track.sequenceNumber++;
@@ -783,6 +840,9 @@ class MP4Remuxer {
       type: "video",
       data: segment.buffer,
     });
+    if (this._silentAudioMode) {
+      this._generateSilentAudio(mp4Samples);
+    }
   }
 
   private _mergeBoxes(moof: Uint8Array, mdat: Uint8Array): Uint8Array {

@@ -396,7 +396,7 @@ class Pipeline {
     this._demuxer = demuxer;
 
     if (!this._remuxer) {
-      this._remuxer = new MP4Remuxer();
+      this._remuxer = new MP4Remuxer(this._config);
       if (this._pendingDtsOffsetMs !== 0) {
         this._remuxer.setDtsBaseOffset(this._pendingDtsOffsetMs);
         this._pendingDtsOffsetMs = 0;
