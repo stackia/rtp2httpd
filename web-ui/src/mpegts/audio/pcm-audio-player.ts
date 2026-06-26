@@ -11,10 +11,9 @@
  *    which is sample-accurate and therefore gapless. Chunk timing is never
  *    derived from video.currentTime (whose jitter caused audible clicks).
  *
- *  - Rate matching instead of frame dropping: a low-frequency control loop
- *    measures drift between the audio chain and video.currentTime and sends
- *    ratio = playbackRate * (1 - k*drift) to the worker-side software audio
- *    processor. Large discontinuities trigger a hard resync with short fades.
+ *  - Rate matching instead of frame dropping: worker-side WSOLA follows
+ *    video.playbackRate for live-sync catch-up. A low-frequency control loop
+ *    measures drift and uses hard resync for large discontinuities.
  *
  *  - Stream timestamps arrive from the worker already normalized to the MSE
  *    timeline (same space as video.currentTime), using the remuxer dts base.
@@ -51,16 +50,6 @@ const HARD_RESYNC_THRESHOLD = 1.5;
 const GAP_SNAP = 0.005;
 /** Fade-in length applied when the chain (re)starts, to avoid clicks. */
 const FADE_SEC = 0.005;
-/** Proportional gain for drift correction via stretch ratio. */
-const RATIO_DRIFT_GAIN = 0.5;
-/** Max stretch ratio deviation used for drift correction. WSOLA preserves
- *  pitch, so a transient 10% tempo offset is inaudible while it converges. */
-const RATIO_DRIFT_MAX = 0.1;
-/** Initial/large-drift mode: allow stronger WSOLA correction before falling back to hard resync. */
-const SOFT_SYNC_WINDOW_SEC = 3.0;
-const SOFT_SYNC_EXIT_DRIFT = 0.08;
-const SOFT_SYNC_DRIFT_GAIN = 1.0;
-const SOFT_SYNC_RATIO_DRIFT_MAX = 0.35;
 /** EMA smoothing factor for drift measurements. */
 const DRIFT_EMA_ALPHA = 0.4;
 /** Control loop period (ms). */
@@ -115,7 +104,6 @@ export class PCMAudioPlayer {
   // Drift control
   private driftEma = 0;
   private hasDriftEma = false;
-  private softSyncUntil = 0;
   private driftLogCounter = 0;
   private controlTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -206,11 +194,7 @@ export class PCMAudioPlayer {
       this.pump();
     };
     this.boundOnRateChange = () => {
-      // Apply the new rate to the worker processor immediately instead of waiting
-      // for drift to build through the already-scheduled pipeline. The remaining
-      // mismatch (scheduled-ahead audio at the old rate) is absorbed by the
-      // drift correction, so moderate rate changes (live sync 1 ↔ 1.2) cause
-      // no audible interruption.
+      // Apply playbackRate changes to future worker-side WSOLA output immediately.
       this.controlTick();
     };
 
@@ -357,7 +341,6 @@ export class PCMAudioPlayer {
       // Chain (re)start: if the audio about to play is ahead of the video
       // clock, delay the chain start so it lines up instead of drifting.
       this.outputStreamCursor = chunk.time;
-      this.softSyncUntil = ctxNow + SOFT_SYNC_WINDOW_SEC;
       const lead = this.videoElement ? chunk.time - this.videoElement.currentTime : 0;
       this.nextStartTime = ctxNow + Math.max(CHAIN_RESTART_DELAY, Math.min(lead, 2));
       chainRestart = true;
@@ -492,21 +475,16 @@ export class PCMAudioPlayer {
       return;
     }
 
-    // Rate matching: follow video.playbackRate, correct residual drift.
-    // Positive drift = audio ahead → slow down (smaller ratio).
-    const softSyncActive = ctx.currentTime < this.softSyncUntil || Math.abs(this.driftEma) > SOFT_SYNC_EXIT_DRIFT;
-    const correctionDrift = softSyncActive ? drift : this.driftEma;
-    const correctionMax = softSyncActive ? SOFT_SYNC_RATIO_DRIFT_MAX : RATIO_DRIFT_MAX;
-    const correctionGain = softSyncActive ? SOFT_SYNC_DRIFT_GAIN : RATIO_DRIFT_GAIN;
-    const correction = Math.min(correctionMax, Math.max(-correctionMax, correctionDrift * correctionGain));
-    const ratio = Math.min(2, Math.max(0.5, rate * (1 - correction)));
-    this.updateStretchRatio(ratio);
+    // Worker-side WSOLA runs before scheduling, so drift feedback would affect
+    // future decoded chunks rather than the audio currently near the speaker.
+    // Keep tempo tied to playbackRate; large drift is handled by hard resync.
+    this.updateStretchRatio(rate);
 
     if (++this.driftLogCounter >= DRIFT_LOG_TICKS) {
       this.driftLogCounter = 0;
       Log.v(
         TAG,
-        `A/V drift=${(this.driftEma * 1000).toFixed(1)}ms, rate=${rate}, stretch ratio=${ratio.toFixed(4)}, mode=${softSyncActive ? "soft" : "steady"}`,
+        `A/V drift=${(this.driftEma * 1000).toFixed(1)}ms, rate=${rate}, stretch ratio=${this.currentStretchRatio.toFixed(4)}`,
       );
     }
   }
@@ -742,7 +720,6 @@ export class PCMAudioPlayer {
     this.audioBuffer = [];
 
     this.isSeeking = false;
-    this.softSyncUntil = 0;
     this.driftEma = 0;
     this.hasDriftEma = false;
   }
