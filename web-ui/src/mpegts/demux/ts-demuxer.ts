@@ -162,11 +162,13 @@ class TSDemuxer {
   private video_init_segment_dispatched_ = false;
   private audio_init_segment_dispatched_ = false;
   private video_metadata_changed_ = false;
+  private video_output_started_ = false;
+  private video_discontinuity_pending_ = false;
   private loas_previous_frame: LOASAACFrame | null = null;
 
   private soft_decode_audio_codec_: "mp2" | null = null;
   private audio_drop_until_sync_ = false;
-  private drop_video_until_keyframe_ = false;
+  private drop_video_until_keyframe_ = true;
 
   private video_track_ = {
     type: "video",
@@ -288,11 +290,34 @@ class TSDemuxer {
     this.audio_drop_until_sync_ = true;
   }
 
+  private clearAudioTrack(): void {
+    this.audio_track_.samples = [];
+    this.audio_track_.length = 0;
+  }
+
+  private shouldWaitForVideoKeyframe(): boolean {
+    return this.has_video_ && !this.video_output_started_;
+  }
+
+  private resumeVideoOutputFromKeyframe(): void {
+    const reason = this.video_discontinuity_pending_ ? "after TS discontinuity; resuming" : "at stream start; starting";
+    this.drop_video_until_keyframe_ = false;
+    this.video_output_started_ = true;
+    this.video_discontinuity_pending_ = false;
+    this.clearAudioTrack();
+    this.resetAudioParserState();
+    Log.v(this.TAG, `Video keyframe found ${reason} video output timeline`);
+  }
+
   private handleTrackDiscontinuity(pid: number, reason: string): void {
     delete this.pes_slice_queues_[pid];
 
     if (this.isVideoPid(pid)) {
       this.drop_video_until_keyframe_ = true;
+      this.video_output_started_ = false;
+      this.video_discontinuity_pending_ = true;
+      this.clearAudioTrack();
+      this.resetAudioParserState();
       Log.w(this.TAG, `Video TS discontinuity on pid ${pid}: ${reason}; dropping until keyframe`);
       this.onTrackDiscontinuity?.("video");
       return;
@@ -955,12 +980,11 @@ class TSDemuxer {
     const pts_ms = Math.floor(pts / this.timescale_);
     const dts_ms = Math.floor(dts / this.timescale_);
 
-    if (this.drop_video_until_keyframe_) {
-      if (!keyframe) {
+    if (this.drop_video_until_keyframe_ || !this.video_output_started_) {
+      if (!keyframe || units.length === 0) {
         return;
       }
-      this.drop_video_until_keyframe_ = false;
-      Log.v(this.TAG, "Video keyframe found after TS discontinuity; resuming video output");
+      this.resumeVideoOutputFromKeyframe();
     }
 
     if (units.length) {
@@ -1066,12 +1090,11 @@ class TSDemuxer {
     const pts_ms = Math.floor(pts / this.timescale_);
     const dts_ms = Math.floor(dts / this.timescale_);
 
-    if (this.drop_video_until_keyframe_) {
-      if (!keyframe) {
+    if (this.drop_video_until_keyframe_ || !this.video_output_started_) {
+      if (!keyframe || units.length === 0) {
         return;
       }
-      this.drop_video_until_keyframe_ = false;
-      Log.v(this.TAG, "Video keyframe found after TS discontinuity; resuming video output");
+      this.resumeVideoOutputFromKeyframe();
     }
 
     if (units.length) {
@@ -1209,6 +1232,9 @@ class TSDemuxer {
   }
 
   private dispatchVideoMediaSegment() {
+    if (this.shouldWaitForVideoKeyframe()) {
+      return;
+    }
     if (this.isInitSegmentDispatched()) {
       if (this.video_track_.length) {
         this.onDataAvailable?.(null, this.video_track_);
@@ -1217,6 +1243,9 @@ class TSDemuxer {
   }
 
   private dispatchAudioMediaSegment() {
+    if (this.shouldWaitForVideoKeyframe()) {
+      return;
+    }
     if (this.isInitSegmentDispatched()) {
       if (this.audio_track_.length) {
         this.onDataAvailable?.(this.audio_track_, null);
@@ -1225,6 +1254,9 @@ class TSDemuxer {
   }
 
   private dispatchAudioVideoMediaSegment() {
+    if (this.shouldWaitForVideoKeyframe()) {
+      return;
+    }
     if (this.isInitSegmentDispatched()) {
       if (this.audio_track_.length || this.video_track_.length) {
         this.onDataAvailable?.(this.audio_track_, this.video_track_);
@@ -1236,6 +1268,9 @@ class TSDemuxer {
     if (this.has_video_ && !this.video_init_segment_dispatched_) {
       // If first video IDR frame hasn't been detected,
       // Wait for first IDR frame and video init segment being dispatched
+      return;
+    }
+    if (this.shouldWaitForVideoKeyframe()) {
       return;
     }
 
@@ -1334,6 +1369,9 @@ class TSDemuxer {
     if (this.has_video_ && !this.video_init_segment_dispatched_) {
       // If first video IDR frame hasn't been detected,
       // Wait for first IDR frame and video init segment being dispatched
+      return;
+    }
+    if (this.shouldWaitForVideoKeyframe()) {
       return;
     }
 
@@ -1435,6 +1473,9 @@ class TSDemuxer {
       // Wait for first IDR frame and video init segment being dispatched
       return;
     }
+    if (this.shouldWaitForVideoKeyframe()) {
+      return;
+    }
 
     let ref_sample_duration: number;
     let base_pts_ms!: number;
@@ -1514,6 +1555,9 @@ class TSDemuxer {
       // Wait for first IDR frame and video init segment being dispatched
       return;
     }
+    if (this.shouldWaitForVideoKeyframe()) {
+      return;
+    }
 
     let ref_sample_duration: number;
     let base_pts_ms!: number;
@@ -1591,6 +1635,9 @@ class TSDemuxer {
     if (this.has_video_ && !this.video_init_segment_dispatched_) {
       // If first video IDR frame hasn't been detected,
       // Wait for first IDR frame and video init segment being dispatched
+      return;
+    }
+    if (this.shouldWaitForVideoKeyframe()) {
       return;
     }
 

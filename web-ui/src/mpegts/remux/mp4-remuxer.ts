@@ -455,11 +455,13 @@ class MP4Remuxer {
       this._videoDtsBase = (videoTrack.samples[0] as VideoSample).dts;
     }
 
-    // In silent audio mode, use video DTS as base (no real audio samples)
-    if (this._silentAudioMode) {
+    // With video present, the output timeline starts at the first emitted
+    // keyframe. Audio before that point is discarded/compressed onto this same
+    // video anchor so MSE never starts at an audio-only offset.
+    if (this._videoDtsBase !== Infinity) {
       this._dtsBase = this._videoDtsBase;
     } else {
-      this._dtsBase = Math.min(this._audioDtsBase, this._videoDtsBase);
+      this._dtsBase = this._audioDtsBase;
     }
     this._dtsBase -= this._dtsBaseOffset;
     this._dtsBaseInited = true;
@@ -760,13 +762,26 @@ class MP4Remuxer {
 
     const mp4Samples: MP4Sample[] = [];
     let nextOutputDts = firstSampleOriginalDts - dtsCorrection;
+    const dropNegativePts = this._videoTiming.lastOutputEndDts === undefined && this._videoNextDts === undefined;
 
     // Correct dts for each sample, and calculate sample duration. Then output to mp4Samples
     for (let i = 0; i < samples.length; i++) {
       const sample = samples[i] as VideoSample;
       const originalDts = sample.dts - this._dtsBase;
       const isKeyframe = sample.isKeyframe;
+
+      if (this._videoCtsOffset === undefined) {
+        this._videoCtsOffset = sample.cts;
+        this._videoInitialCtsOffset = sample.cts;
+      }
+
       const dts = nextOutputDts;
+      const pts = dts + sample.cts - this._videoCtsOffset;
+      const cts = pts - dts;
+      if (dropNegativePts && pts < 0) {
+        mdatBytes -= sample.length;
+        continue;
+      }
 
       if (firstDts === -1) {
         firstDts = dts;
@@ -777,14 +792,6 @@ class MP4Remuxer {
 
       const sampleDuration = this._nextSampleDuration(this._videoTiming, this._videoMeta?.refSampleDuration, 40);
       nextOutputDts += sampleDuration;
-
-      if (this._videoCtsOffset === undefined) {
-        this._videoCtsOffset = sample.cts;
-        this._videoInitialCtsOffset = sample.cts;
-      }
-
-      const pts = dts + sample.cts - this._videoCtsOffset;
-      const cts = pts - dts;
 
       mp4Samples.push({
         dts: dts,
@@ -803,6 +810,12 @@ class MP4Remuxer {
           isNonSync: isKeyframe ? 0 : 1,
         },
       });
+    }
+
+    if (mp4Samples.length === 0) {
+      track.samples = [];
+      track.length = 0;
+      return;
     }
 
     const latest = mp4Samples[mp4Samples.length - 1];
