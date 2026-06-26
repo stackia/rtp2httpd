@@ -38,6 +38,9 @@ interface WsolaExports {
   wsola_process: (ptr: number, input: number, inFrames: number, output: number, outCapacity: number) => number;
 }
 
+let cachedWasmUrl: string | null = null;
+let cachedWasmInstance: WebAssembly.Instance | null = null;
+
 export class WasmStretcher implements Stretcher {
   readonly sampleRate: number;
   readonly channels: number;
@@ -57,14 +60,21 @@ export class WasmStretcher implements Stretcher {
   }
 
   static async create(wasmUrl: string, sampleRate: number, channels: number): Promise<WasmStretcher> {
-    const imports = {
-      env: {
-        emscripten_notify_memory_growth: () => {},
-      },
-    };
-    const { instance } = await WebAssembly.instantiateStreaming(fetch(wasmUrl), imports);
+    if (!cachedWasmInstance || cachedWasmUrl !== wasmUrl) {
+      const imports = {
+        env: {
+          emscripten_notify_memory_growth: () => {},
+        },
+      };
+      const { instance } = await WebAssembly.instantiateStreaming(fetch(wasmUrl), imports);
+      const ex = instance.exports as unknown as WsolaExports;
+      ex._initialize();
+      cachedWasmInstance = instance;
+      cachedWasmUrl = wasmUrl;
+    }
+
+    const instance = cachedWasmInstance;
     const ex = instance.exports as unknown as WsolaExports;
-    ex._initialize();
     const handle = ex.wsola_create(sampleRate, channels);
     if (!handle) {
       throw new Error("wsola_create failed");

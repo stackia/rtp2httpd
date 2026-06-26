@@ -15,7 +15,7 @@ export default defineConfig(({ mode }) => {
     build: {
       sourcemap: isDev,
       minify: !isDev,
-      rollupOptions: {
+      rolldownOptions: {
         input: {
           status: resolve(__dirname, "status.html"),
           player: resolve(__dirname, "player.html"),
