@@ -52,8 +52,6 @@ const CHAIN_RESTART_DELAY = 0.04;
 const HARD_RESYNC_THRESHOLD = 1.5;
 /** Input gaps/overlaps within this are absorbed silently (PTS jitter). */
 const GAP_SNAP = 0.005;
-/** Input gaps up to this long are filled with silence; larger ones re-anchor. */
-const MAX_SILENCE_GAP = 2.0;
 /** Fade-in length applied when the chain (re)starts, to avoid clicks. */
 const FADE_SEC = 0.005;
 /** Proportional gain for drift correction via stretch ratio. */
@@ -72,6 +70,8 @@ const DRIFT_EMA_ALPHA = 0.4;
 const CONTROL_INTERVAL_MS = 250;
 /** Upper bound for pending (not yet scheduled) chunks. */
 const MAX_PENDING_CHUNKS = 600;
+/** Seconds of decoded PCM to keep in the pending scheduling window after a resync. */
+const PENDING_REFILL_WINDOW_SEC = 2.0;
 /** Control ticks between verbose drift diagnostics (~10s). */
 const DRIFT_LOG_TICKS = 40;
 
@@ -300,10 +300,6 @@ export class PCMAudioPlayer {
     this.cleanupBuffer();
 
     if (this.canScheduleAudio()) {
-      this.pendingChunks.push(chunk);
-      if (this.pendingChunks.length > MAX_PENDING_CHUNKS) {
-        this.pendingChunks.shift();
-      }
       this.pump();
     }
   }
@@ -366,7 +362,7 @@ export class PCMAudioPlayer {
    */
   private pump(): void {
     const ctx = this.context;
-    if (!ctx || !this.gainNode || this.pendingChunks.length === 0 || !this.canScheduleAudio()) {
+    if (!ctx || !this.gainNode || !this.canScheduleAudio()) {
       return;
     }
 
@@ -389,7 +385,14 @@ export class PCMAudioPlayer {
       return;
     }
 
-    while (this.pendingChunks.length > 0) {
+    while (true) {
+      if (this.pendingChunks.length === 0) {
+        this.refillPendingFromBuffer(this.inputCursor ?? this.videoElement?.currentTime ?? 0);
+      }
+      if (this.pendingChunks.length === 0) {
+        break;
+      }
+
       // Throttle: keep at most SCHEDULE_AHEAD seconds scheduled ahead
       if (this.nextStartTime - ctx.currentTime >= SCHEDULE_AHEAD) {
         break;
@@ -408,21 +411,10 @@ export class PCMAudioPlayer {
       const cursor = this.inputCursor as number;
       const delta = chunk.time - cursor;
 
-      if (delta > MAX_SILENCE_GAP) {
-        // Forward discontinuity: re-anchor at the new position
-        Log.v(TAG, `Audio stream jump +${delta.toFixed(3)}s, re-anchoring`);
-        this.cancelChain(true);
-        this.anchor(chunk.time);
-        continue;
-      }
-
+      let chunkEndTime = chunk.endTime;
       if (delta > GAP_SNAP) {
-        // Small gap: fill with silence to keep the timeline correct
-        const gapFrames = Math.round(delta * chunk.sampleRate);
-        if (gapFrames > 0) {
-          this.feedStretcher(stretcher, new Float32Array(gapFrames * chunk.channels), chunk.sampleRate);
-          this.inputCursor = cursor + gapFrames / chunk.sampleRate;
-        }
+        Log.w(TAG, `Unexpected PCM pending gap ${delta.toFixed(3)}s; snapping to cursor`);
+        chunkEndTime = cursor + chunk.duration;
       }
 
       let samples = chunk.samples;
@@ -439,7 +431,7 @@ export class PCMAudioPlayer {
 
       this.pendingChunks.shift();
       this.feedStretcher(stretcher, samples, chunk.sampleRate);
-      this.inputCursor = chunk.endTime;
+      this.inputCursor = chunkEndTime;
     }
   }
 
@@ -688,6 +680,7 @@ export class PCMAudioPlayer {
     const correction = Math.min(correctionMax, Math.max(-correctionMax, correctionDrift * correctionGain));
     const ratio = Math.min(2, Math.max(0.5, rate * (1 - correction)));
     this.stretcher.setRatio(ratio);
+    this.pump();
 
     if (++this.driftLogCounter >= DRIFT_LOG_TICKS) {
       this.driftLogCounter = 0;
@@ -699,6 +692,53 @@ export class PCMAudioPlayer {
   }
 
   // ==================== Buffer Management ====================
+
+  private trimChunkStart(chunk: AudioChunk, targetTime: number): AudioChunk | null {
+    if (targetTime <= chunk.time + GAP_SNAP) {
+      return chunk;
+    }
+
+    const cutFrames = Math.round((targetTime - chunk.time) * chunk.sampleRate);
+    const totalFrames = Math.floor(chunk.samples.length / chunk.channels);
+    if (cutFrames >= totalFrames) {
+      return null;
+    }
+
+    const time = chunk.time + cutFrames / chunk.sampleRate;
+    return {
+      samples: chunk.samples.subarray(cutFrames * chunk.channels),
+      channels: chunk.channels,
+      sampleRate: chunk.sampleRate,
+      time,
+      duration: chunk.endTime - time,
+      endTime: chunk.endTime,
+    };
+  }
+
+  private refillPendingFromBuffer(startTime: number): void {
+    if (this.pendingChunks.length >= MAX_PENDING_CHUNKS) return;
+
+    const startIndex = this.findChunkIndexByTime(startTime);
+    if (startIndex < 0) return;
+
+    const endTime = startTime + PENDING_REFILL_WINDOW_SEC;
+    for (let i = startIndex; i < this.audioBuffer.length && this.pendingChunks.length < MAX_PENDING_CHUNKS; i++) {
+      const source = this.audioBuffer[i];
+      if (source.endTime <= startTime + GAP_SNAP) {
+        continue;
+      }
+      if (source.time >= endTime) {
+        break;
+      }
+
+      const chunk = this.trimChunkStart(source, startTime);
+      if (!chunk) {
+        continue;
+      }
+      this.pendingChunks.push(chunk);
+      startTime = chunk.endTime;
+    }
+  }
 
   private insertToBuffer(chunk: AudioChunk): void {
     let low = 0;
@@ -712,10 +752,41 @@ export class PCMAudioPlayer {
       }
     }
 
-    if (low < this.audioBuffer.length && Math.abs(this.audioBuffer[low].time - chunk.time) < 0.001) {
-      this.audioBuffer[low] = chunk;
+    let normalized = chunk;
+    if (low > 0) {
+      const prev = this.audioBuffer[low - 1];
+      if (normalized.time > prev.endTime) {
+        normalized = { ...normalized, time: prev.endTime, endTime: prev.endTime + normalized.duration };
+      } else if (normalized.time < prev.endTime) {
+        const trimmed = this.trimChunkStart(normalized, prev.endTime);
+        if (!trimmed) {
+          return;
+        }
+        normalized = trimmed;
+      }
+    }
+
+    if (low < this.audioBuffer.length && Math.abs(this.audioBuffer[low].time - normalized.time) < 0.001) {
+      this.audioBuffer[low] = normalized;
+    } else if (low < this.audioBuffer.length && normalized.endTime > this.audioBuffer[low].time) {
+      const next = this.audioBuffer[low];
+      const keepFrames = Math.max(0, Math.round((next.time - normalized.time) * normalized.sampleRate));
+      if (keepFrames === 0) {
+        return;
+      }
+      const totalFrames = Math.floor(normalized.samples.length / normalized.channels);
+      const frames = Math.min(keepFrames, totalFrames);
+      const endTime = normalized.time + frames / normalized.sampleRate;
+      this.audioBuffer.splice(low, 0, {
+        samples: normalized.samples.subarray(0, frames * normalized.channels),
+        channels: normalized.channels,
+        sampleRate: normalized.sampleRate,
+        time: normalized.time,
+        duration: endTime - normalized.time,
+        endTime,
+      });
     } else {
-      this.audioBuffer.splice(low, 0, chunk);
+      this.audioBuffer.splice(low, 0, normalized);
     }
   }
 
@@ -781,27 +852,7 @@ export class PCMAudioPlayer {
       return;
     }
 
-    for (let i = startIndex; i < this.audioBuffer.length; i++) {
-      let chunk = this.audioBuffer[i];
-      if (i === startIndex && targetTime > chunk.time + GAP_SNAP) {
-        // Trim the head so the chain starts exactly at the target position
-        const cutFrames = Math.round((targetTime - chunk.time) * chunk.sampleRate);
-        const totalFrames = Math.floor(chunk.samples.length / chunk.channels);
-        if (cutFrames >= totalFrames) {
-          continue;
-        }
-        const time = chunk.time + cutFrames / chunk.sampleRate;
-        chunk = {
-          samples: chunk.samples.subarray(cutFrames * chunk.channels),
-          channels: chunk.channels,
-          sampleRate: chunk.sampleRate,
-          time,
-          duration: chunk.endTime - time,
-          endTime: chunk.endTime,
-        };
-      }
-      this.pendingChunks.push(chunk);
-    }
+    this.refillPendingFromBuffer(targetTime);
     Log.v(TAG, `Resync at ${targetTime.toFixed(3)}s, refilled ${this.pendingChunks.length} chunks`);
     this.pump();
   }

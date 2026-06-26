@@ -3,7 +3,6 @@ import Log from "../utils/logger";
 import { type LiveSessionAnchor, lagBehindLiveEdge } from "./wall-clock";
 
 const TAG = "LiveSync";
-const STALL_TAG = "StallJumper";
 
 /** Each live-edge underrun raises the latency floor by this much (seconds). */
 const UNDERRUN_BACKOFF_STEP = 1;
@@ -102,50 +101,5 @@ export function setupLiveSync(
     video.removeEventListener("timeupdate", onTimeUpdate);
     video.removeEventListener("waiting", onWaiting);
     video.playbackRate = 1;
-  };
-}
-
-/**
- * Detect and fix stuck playback at startup.
- * If the video is stalled or hasn't received canplay and the currentTime is before
- * the first buffered range, seek to the start of the buffered range.
- */
-export interface StallJumper {
-  check(): void;
-  destroy(): void;
-}
-
-export function setupStartupStallJumper(video: HTMLMediaElement): StallJumper {
-  let canplayReceived = false;
-
-  function onCanPlay(): void {
-    canplayReceived = true;
-    video.removeEventListener("canplay", onCanPlay);
-  }
-
-  function detectAndFix(isStalled?: boolean): void {
-    const buffered = video.buffered;
-    if (isStalled || !canplayReceived || video.readyState < 2) {
-      if (buffered.length > 0 && video.currentTime < buffered.start(0)) {
-        const target = buffered.start(0);
-        Log.w(STALL_TAG, `Playback stuck at ${video.currentTime}, seeking to ${target}`);
-        video.currentTime = target;
-      }
-    }
-  }
-
-  function onStalled(): void {
-    detectAndFix(true);
-  }
-
-  video.addEventListener("canplay", onCanPlay);
-  video.addEventListener("stalled", onStalled);
-
-  return {
-    check: () => detectAndFix(),
-    destroy: () => {
-      video.removeEventListener("canplay", onCanPlay);
-      video.removeEventListener("stalled", onStalled);
-    },
   };
 }

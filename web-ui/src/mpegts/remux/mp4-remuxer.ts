@@ -87,6 +87,8 @@ interface TrackTimingState {
   lastOriginalEndDts: number | undefined;
   lastOutputEndDts: number | undefined;
   lastOutputEndPts: number | undefined;
+  lastOutputDuration: number | undefined;
+  durationResidual: number;
 }
 
 type InitSegmentCallback = (type: string, segment: InitSegment) => void;
@@ -119,6 +121,7 @@ class MP4Remuxer {
   private _videoStashedLastSample: VideoSample | null;
   private _audioTiming: TrackTimingState;
   private _videoTiming: TrackTimingState;
+  private _pcmTiming: TrackTimingState;
   private _videoCtsOffset: number | undefined;
   private _videoInitialCtsOffset: number | undefined;
   private _videoInitialOutputTime: number | undefined;
@@ -148,6 +151,7 @@ class MP4Remuxer {
     this._videoStashedLastSample = null;
     this._audioTiming = this._createTrackTimingState();
     this._videoTiming = this._createTrackTimingState();
+    this._pcmTiming = this._createTrackTimingState();
     this._videoCtsOffset = undefined;
     this._videoInitialCtsOffset = undefined;
     this._videoInitialOutputTime = undefined;
@@ -172,6 +176,7 @@ class MP4Remuxer {
     this._silentAudioLastDts = undefined;
     this._audioTiming = this._createTrackTimingState();
     this._videoTiming = this._createTrackTimingState();
+    this._pcmTiming = this._createTrackTimingState();
     this._videoCtsOffset = undefined;
     this._videoInitialCtsOffset = undefined;
     this._videoInitialOutputTime = undefined;
@@ -222,6 +227,8 @@ class MP4Remuxer {
       lastOriginalEndDts: undefined,
       lastOutputEndDts: undefined,
       lastOutputEndPts: undefined,
+      lastOutputDuration: undefined,
+      durationResidual: 0,
     };
   }
 
@@ -258,6 +265,18 @@ class MP4Remuxer {
     timing.lastOriginalEndDts = sample.originalDts + sample.duration;
     timing.lastOutputEndDts = sample.dts + sample.duration;
     timing.lastOutputEndPts = lastOutputEndPts ?? sample.pts + sample.duration;
+  }
+
+  private _nextSampleDuration(timing: TrackTimingState, refSampleDuration: unknown, fallbackDuration: number): number {
+    const reference =
+      typeof refSampleDuration === "number" && Number.isFinite(refSampleDuration) && refSampleDuration > 0
+        ? refSampleDuration
+        : (timing.lastOutputDuration ?? fallbackDuration);
+    const withResidual = reference + timing.durationResidual;
+    const duration = Math.max(1, Math.round(withResidual));
+    timing.durationResidual = withResidual - duration;
+    timing.lastOutputDuration = duration;
+    return duration;
   }
 
   /**
@@ -464,6 +483,32 @@ class MP4Remuxer {
     return this._videoInitialOutputTime ?? 0;
   }
 
+  mapPcmTimestamp(ptsMs: number, durationMs: number): number | undefined {
+    if (!this._dtsBaseInited) {
+      return undefined;
+    }
+
+    const originalTime = ptsMs - this._dtsBase;
+    const duration = Math.max(0, durationMs);
+    let outputTime: number;
+
+    if (this._pcmTiming.lastOriginalEndDts === undefined || this._pcmTiming.lastOutputEndDts === undefined) {
+      outputTime = Math.max(this.getInitialOutputTime(), originalTime - this.getInitialPresentationOffset());
+    } else {
+      const distance = originalTime - this._pcmTiming.lastOriginalEndDts;
+      outputTime = this._pcmTiming.lastOutputEndDts + (distance > 0 ? 0 : distance);
+      if (distance > 0) {
+        Log.v(this.TAG, `PCM: bridging ${Math.round(distance)}ms timestamp hole`);
+      }
+    }
+
+    this._pcmTiming.lastOriginalEndDts = originalTime + duration;
+    this._pcmTiming.lastOutputEndDts = outputTime + duration;
+    this._pcmTiming.lastOutputEndPts = outputTime + duration;
+    this._pcmTiming.lastOutputDuration = duration;
+    return outputTime / 1000;
+  }
+
   flushStashedSamples(): void {
     const videoSample = this._videoStashedLastSample;
     const audioSample = this._audioStashedLastSample;
@@ -508,7 +553,6 @@ class MP4Remuxer {
 
     const track = audioTrack;
     const samples = track.samples;
-    let dtsCorrection: number | undefined;
     let firstDts = -1;
     const refSampleDuration = this._audioMeta.refSampleDuration;
 
@@ -562,55 +606,28 @@ class MP4Remuxer {
 
     const firstSampleOriginalDts = (samples[0] as AudioSample).dts - this._dtsBase;
 
-    dtsCorrection = this._computeDtsCorrection("audio", firstSampleOriginalDts, this._audioNextDts, this._audioTiming);
+    const dtsCorrection = this._computeDtsCorrection(
+      "audio",
+      firstSampleOriginalDts,
+      this._audioNextDts,
+      this._audioTiming,
+    );
 
     const mp4Samples: MP4Sample[] = [];
+    let nextOutputDts = firstSampleOriginalDts - dtsCorrection;
 
     // Correct dts for each sample, and calculate sample duration. Then output to mp4Samples
     for (let i = 0; i < samples.length; i++) {
       const sample = samples[i] as AudioSample;
       const originalDts = sample.dts - this._dtsBase;
-      let sampleDuration = 0;
 
       if (originalDts < -0.001) {
         continue; //pass the first sample with the invalid dts
       }
 
-      const dts = originalDts - (dtsCorrection as number);
-
-      if (i !== samples.length - 1) {
-        const nextDts = (samples[i + 1] as AudioSample).dts - this._dtsBase - (dtsCorrection as number);
-        sampleDuration = nextDts - dts;
-      } else {
-        // the last sample
-        if (lastSample != null) {
-          // use stashed sample's dts to calculate sample duration
-          const nextDts = lastSample.dts - this._dtsBase - (dtsCorrection as number);
-          sampleDuration = nextDts - dts;
-        } else if (mp4Samples.length >= 1) {
-          // use second last sample duration
-          sampleDuration = mp4Samples[mp4Samples.length - 1].duration as number;
-        } else {
-          // the only one sample, use reference sample duration
-          sampleDuration = Math.floor(refSampleDuration as number);
-        }
-      }
-
-      if (sampleDuration <= 0) {
-        const fallbackDuration =
-          Math.floor(refSampleDuration as number) ||
-          (mp4Samples.length >= 1 ? (mp4Samples[mp4Samples.length - 1].duration as number) : 0) ||
-          26;
-        Log.w(
-          this.TAG,
-          `Audio: non-monotonic dts detected (dts: ${dts} ms, duration: ${Math.round(sampleDuration)} ms), ` +
-            `clamping sample duration to ${fallbackDuration} ms`,
-        );
-        dtsCorrection = (dtsCorrection as number) + (sampleDuration - fallbackDuration);
-        sampleDuration = fallbackDuration;
-      }
-
-      this._audioNextDts = dts + sampleDuration;
+      const dts = nextOutputDts;
+      const sampleDuration = this._nextSampleDuration(this._audioTiming, refSampleDuration, 26);
+      nextOutputDts += sampleDuration;
 
       if (firstDts === -1) {
         firstDts = dts;
@@ -664,7 +681,9 @@ class MP4Remuxer {
 
     track.samples = mp4Samples;
     track.sequenceNumber++;
-    this._recordTrackTiming(this._audioTiming, mp4Samples[mp4Samples.length - 1]);
+    const latest = mp4Samples[mp4Samples.length - 1];
+    this._audioNextDts = latest.dts + latest.duration;
+    this._recordTrackTiming(this._audioTiming, latest);
 
     let moofbox: Uint8Array;
 
@@ -700,7 +719,6 @@ class MP4Remuxer {
 
     const track = videoTrack;
     const samples = track.samples;
-    let dtsCorrection: number | undefined;
     let firstDts = -1;
 
     if (!samples || samples.length === 0) {
@@ -737,17 +755,23 @@ class MP4Remuxer {
 
     const firstSampleOriginalDts = (samples[0] as VideoSample).dts - this._dtsBase;
 
-    dtsCorrection = this._computeDtsCorrection("video", firstSampleOriginalDts, this._videoNextDts, this._videoTiming);
+    const dtsCorrection = this._computeDtsCorrection(
+      "video",
+      firstSampleOriginalDts,
+      this._videoNextDts,
+      this._videoTiming,
+    );
 
     const mp4Samples: MP4Sample[] = [];
     let lastOutputEndPts = this._videoTiming.lastOutputEndPts;
+    let nextOutputDts = firstSampleOriginalDts - dtsCorrection;
 
     // Correct dts for each sample, and calculate sample duration. Then output to mp4Samples
     for (let i = 0; i < samples.length; i++) {
       const sample = samples[i] as VideoSample;
       const originalDts = sample.dts - this._dtsBase;
       const isKeyframe = sample.isKeyframe;
-      const dts = originalDts - (dtsCorrection as number);
+      const dts = nextOutputDts;
 
       if (firstDts === -1) {
         firstDts = dts;
@@ -756,44 +780,8 @@ class MP4Remuxer {
         this._videoInitialOutputTime = dts;
       }
 
-      let sampleDuration = 0;
-
-      if (i !== samples.length - 1) {
-        const nextDts = (samples[i + 1] as VideoSample).dts - this._dtsBase - (dtsCorrection as number);
-        sampleDuration = nextDts - dts;
-      } else {
-        // the last sample
-        if (lastSample != null) {
-          // use stashed sample's dts to calculate sample duration
-          const nextDts = lastSample.dts - this._dtsBase - (dtsCorrection as number);
-          sampleDuration = nextDts - dts;
-        } else if (mp4Samples.length >= 1) {
-          // use second last sample duration
-          sampleDuration = mp4Samples[mp4Samples.length - 1].duration as number;
-        } else {
-          // the only one sample, use reference sample duration
-          sampleDuration = Math.floor(this._videoMeta?.refSampleDuration ?? 0);
-        }
-      }
-
-      if (sampleDuration <= 0) {
-        // Spliced streams (e.g. telco catchup recordings) can regress dts mid-batch. A
-        // non-positive duration would be written into the trun box as a huge unsigned
-        // value and trigger a decode error, so clamp it to keep the timeline monotonic.
-        const fallbackDuration =
-          Math.floor(this._videoMeta?.refSampleDuration ?? 0) ||
-          (mp4Samples.length >= 1 ? (mp4Samples[mp4Samples.length - 1].duration as number) : 0) ||
-          40;
-        Log.w(
-          this.TAG,
-          `Video: non-monotonic dts detected (dts: ${dts} ms, duration: ${Math.round(sampleDuration)} ms), ` +
-            `clamping sample duration to ${fallbackDuration} ms`,
-        );
-        // Re-anchor the remaining samples of this batch so their dts continue right
-        // after the clamped sample (mirrors the inter-batch dtsCorrection behavior)
-        dtsCorrection = (dtsCorrection as number) + (sampleDuration - fallbackDuration);
-        sampleDuration = fallbackDuration;
-      }
+      const sampleDuration = this._nextSampleDuration(this._videoTiming, this._videoMeta?.refSampleDuration, 40);
+      nextOutputDts += sampleDuration;
 
       if (this._videoCtsOffset === undefined) {
         this._videoCtsOffset = sample.cts;
