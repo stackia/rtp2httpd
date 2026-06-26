@@ -2,6 +2,7 @@
  * Worker Audio Decoder
  *
  * Manages MP2 audio decoding in Web Worker environment via WASM.
+ * Accepts a URL to the .wasm file (provided by consumer via config).
  */
 
 import Log from "../utils/logger";
@@ -11,9 +12,15 @@ const TAG = "WorkerAudioDecoder";
 
 /**
  * Audio decoder for use in Web Worker (MP2 only).
+ * The consumer provides the WASM URL via config — the library does NOT bundle WASM.
  */
 export class WorkerAudioDecoder {
   private decoder: MpegAudioDecoder | null = null;
+  private wasmUrl: string;
+
+  constructor(wasmUrl: string) {
+    this.wasmUrl = wasmUrl;
+  }
 
   async initDecoder(): Promise<boolean> {
     if (this.decoder?.isReady) {
@@ -22,10 +29,10 @@ export class WorkerAudioDecoder {
 
     this.destroyDecoder();
 
-    Log.i(TAG, "Initializing MP2 decoder");
+    Log.i(TAG, `Initializing MP2 decoder from ${this.wasmUrl}`);
 
     try {
-      this.decoder = new MpegAudioDecoder();
+      this.decoder = new MpegAudioDecoder(this.wasmUrl);
       await this.decoder.ready;
       Log.i(TAG, "MP2 decoder initialized successfully");
       return true;

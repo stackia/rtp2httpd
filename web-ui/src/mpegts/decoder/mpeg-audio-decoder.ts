@@ -12,8 +12,6 @@
  * readable export/import names.
  */
 
-import { getMp2DecoderWasmExports, type Mp2DecoderWasmExports } from "../wasm/mp2-decoder";
-
 // Maximum samples per frame for MPEG audio (all channels interleaved)
 const MAX_SAMPLES_PER_FRAME = 1152 * 2;
 
@@ -39,8 +37,19 @@ export interface DecodedAudio {
   channels: number;
 }
 
+/**
+ * WASM import: standalone mode only requires a memory-growth notification callback.
+ */
+function createWasmImports() {
+  return {
+    env: {
+      emscripten_notify_memory_growth: () => {},
+    },
+  };
+}
+
 export class MpegAudioDecoder {
-  private exports: Mp2DecoderWasmExports | null = null;
+  private exports: Record<string, CallableFunction> | null = null;
   private memoryRef: { memory: WebAssembly.Memory | null } = { memory: null };
   private decoderPtr = 0;
   private inputPtr = 0;
@@ -52,8 +61,8 @@ export class MpegAudioDecoder {
   private _ready: Promise<void>;
   private _isReady = false;
 
-  constructor() {
-    this._ready = this.init();
+  constructor(wasmUrl: string) {
+    this._ready = this.init(wasmUrl);
   }
 
   get ready(): Promise<void> {
@@ -64,19 +73,24 @@ export class MpegAudioDecoder {
     return this._isReady;
   }
 
-  private async init(): Promise<void> {
-    const ex = getMp2DecoderWasmExports();
+  private async init(wasmUrl: string): Promise<void> {
+    const imports = createWasmImports();
+    const { instance } = await WebAssembly.instantiateStreaming(fetch(wasmUrl), imports);
+    const ex = instance.exports as Record<string, WebAssembly.Global | WebAssembly.Memory | CallableFunction>;
 
-    this.memoryRef.memory = ex.memory;
-    this.exports = ex;
+    this.memoryRef.memory = ex.memory as WebAssembly.Memory;
+    this.exports = ex as unknown as Record<string, CallableFunction>;
 
-    const create = ex.mpeg_audio_decoder_create;
+    // Standalone WASM reactor initialization
+    (ex._initialize as CallableFunction)();
+
+    const create = ex.mpeg_audio_decoder_create as () => number;
     this.decoderPtr = create();
     if (!this.decoderPtr) {
       throw new Error("Failed to create MPEG audio decoder");
     }
 
-    const malloc = ex.malloc;
+    const malloc = ex.malloc as (size: number) => number;
     this.infoPtr = malloc(INFO_I32_COUNT * 4);
 
     this._isReady = true;
@@ -85,8 +99,8 @@ export class MpegAudioDecoder {
   decode(input: Uint8Array): DecodedAudio | null {
     if (!this._isReady || !this.exports || !this.memoryRef.memory) return null;
 
-    const malloc = this.exports.malloc;
-    const free = this.exports.free;
+    const malloc = this.exports.malloc as (size: number) => number;
+    const free = this.exports.free as (ptr: number) => void;
 
     // Grow input buffer if needed
     if (input.length > this.inputBufSize) {
@@ -108,7 +122,14 @@ export class MpegAudioDecoder {
     const heap = new Uint8Array(this.memoryRef.memory.buffer);
     heap.set(input, this.inputPtr);
 
-    const decodeFn = this.exports.mpeg_audio_decode_payload;
+    const decodeFn = this.exports.mpeg_audio_decode_payload as (
+      dec: number,
+      inp: number,
+      inpSz: number,
+      out: number,
+      outCap: number,
+      info: number,
+    ) => number;
     const samples = decodeFn(
       this.decoderPtr,
       this.inputPtr,
@@ -138,13 +159,13 @@ export class MpegAudioDecoder {
   /** Reset decoder state (call on stream switch to avoid stale mdct/qmf state) */
   reset(): void {
     if (!this._isReady || !this.exports) return;
-    this.exports.mpeg_audio_decoder_reset(this.decoderPtr);
+    (this.exports.mpeg_audio_decoder_reset as (dec: number) => void)(this.decoderPtr);
   }
 
   destroy(): void {
     if (!this.exports) return;
-    const free = this.exports.free;
-    const destroyFn = this.exports.mpeg_audio_decoder_destroy;
+    const free = this.exports.free as (ptr: number) => void;
+    const destroyFn = this.exports.mpeg_audio_decoder_destroy as (dec: number) => void;
 
     if (this.decoderPtr) {
       destroyFn(this.decoderPtr);

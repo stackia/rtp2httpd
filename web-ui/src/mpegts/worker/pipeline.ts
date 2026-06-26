@@ -406,9 +406,12 @@ class Pipeline {
     demuxer.onError = this._onDemuxException.bind(this);
     demuxer.timestampBase = meta.timestampBase * 90000; // seconds → 90kHz ticks
 
-    demuxer.onRawAudioData = (frame) => {
-      this._handleRawAudioFrame(frame);
-    };
+    // Set up software audio decode callback when MP2 WASM URL is configured
+    if (this._config.wasmDecoders.mp2) {
+      demuxer.onRawAudioData = (frame) => {
+        this._handleRawAudioFrame(frame);
+      };
+    }
 
     this._remuxer.bindDataSource(
       demuxer as unknown as {
@@ -502,7 +505,9 @@ class Pipeline {
   private _handleRawAudioFrame(frame: { codec: "mp2"; data: Uint8Array; pts: number }): void {
     // Lazily create WorkerAudioDecoder on first raw audio frame
     if (!this._workerAudioDecoder) {
-      this._workerAudioDecoder = new WorkerAudioDecoder();
+      const mp2Url = this._config.wasmDecoders.mp2;
+      if (!mp2Url) return;
+      this._workerAudioDecoder = new WorkerAudioDecoder(mp2Url);
       this._workerAudioDecoderInitPromise = this._workerAudioDecoder.initDecoder();
     }
 

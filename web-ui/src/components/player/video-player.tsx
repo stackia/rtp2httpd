@@ -21,6 +21,7 @@ import {
   lagBehindLiveEdge,
   wallClockToMse,
 } from "../../mpegts/player/wall-clock";
+import mp2WasmUrl from "../../mpegts/wasm/minimp3/mp2_decoder.wasm?url";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 import { PlayerControls } from "./player-controls";
@@ -558,7 +559,9 @@ export function VideoPlayer({
     video.volume = volume;
     video.muted = isMuted;
 
-    const p = createPlayer(video);
+    const p = createPlayer(video, {
+      wasmDecoders: { mp2: mp2WasmUrl },
+    });
     p.on("error", (e) => {
       if (slotPlayerRef(slotId).current === p) {
         handlePlayerError(e, slotId);

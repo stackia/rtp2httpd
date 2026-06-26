@@ -17,6 +17,10 @@ export interface PlayerConfig {
    */
   maxBufferHoleMs: number;
 
+  /** URLs to WASM decoder files, keyed by codec. Omit to disable software decoding for that codec.
+   *  e.g. `{ mp2: "/assets/mp2_decoder.wasm" }` */
+  wasmDecoders: { mp2?: string };
+
   /** Max backward buffer duration in seconds. Cleanup triggers when buffer exceeds this. @default 180 */
   bufferCleanupMaxBackward: number;
   /** Min backward buffer to retain after cleanup in seconds. @default 120 */
@@ -35,6 +39,8 @@ export const defaultConfig: PlayerConfig = {
   liveSyncPlaybackRate: 1.2,
 
   maxBufferHoleMs: 300,
+
+  wasmDecoders: {},
 
   bufferCleanupMaxBackward: 180,
   bufferCleanupMinBackward: 120,
