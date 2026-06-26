@@ -95,7 +95,8 @@ int http_url_decode(char *str) {
 
   while (*src) {
     if (*src == '%') {
-      if (strlen(src) >= 3 && sscanf(src + 1, "%2x", &hex_value) == 1) {
+      if (isxdigit((unsigned char)src[1]) && isxdigit((unsigned char)src[2]) &&
+          sscanf(src + 1, "%2x", &hex_value) == 1) {
         *dst++ = (char)hex_value;
         src += 3;
       } else {
@@ -287,7 +288,7 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
             strcasecmp(inbuf, "Accept-Encoding") != 0 && strcasecmp(inbuf, "X-Forwarded-For") != 0 &&
             strcasecmp(inbuf, "X-Forwarded-Host") != 0 && strcasecmp(inbuf, "X-Forwarded-Proto") != 0) {
           const char *filtered_value = value;
-          char filter_buf[2048];
+          char filter_buf[HTTP_COOKIE_BUFFER_SIZE];
 
           /* Filter r2h-token from Cookie header */
           if (strcasecmp(inbuf, "Cookie") == 0 && config.r2h_token && config.r2h_token[0] != '\0') {
@@ -296,6 +297,9 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
               filtered_value = filter_buf;
             } else if (flen == 0) {
               /* Cookie is empty after filtering, skip this header */
+              filtered_value = NULL;
+            } else {
+              logger(LOG_WARN, "Dropping Cookie header after r2h-token filtering failed");
               filtered_value = NULL;
             }
           }
