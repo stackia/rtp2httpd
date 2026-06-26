@@ -86,7 +86,6 @@ interface MP4Sample {
 interface TrackTimingState {
   lastOriginalEndDts: number | undefined;
   lastOutputEndDts: number | undefined;
-  lastOutputEndPts: number | undefined;
   lastOutputDuration: number | undefined;
   durationResidual: number;
 }
@@ -226,7 +225,6 @@ class MP4Remuxer {
     return {
       lastOriginalEndDts: undefined,
       lastOutputEndDts: undefined,
-      lastOutputEndPts: undefined,
       lastOutputDuration: undefined,
       durationResidual: 0,
     };
@@ -249,7 +247,7 @@ class MP4Remuxer {
     }
 
     if (timing.lastOriginalEndDts === undefined || timing.lastOutputEndDts === undefined) {
-      return 0;
+      return firstSampleOriginalDts - this._dtsBaseOffset;
     }
 
     const distance = firstSampleOriginalDts - timing.lastOriginalEndDts;
@@ -261,10 +259,9 @@ class MP4Remuxer {
     return firstSampleOriginalDts - expectedDts;
   }
 
-  private _recordTrackTiming(timing: TrackTimingState, sample: MP4Sample, lastOutputEndPts?: number): void {
+  private _recordTrackTiming(timing: TrackTimingState, sample: MP4Sample): void {
     timing.lastOriginalEndDts = sample.originalDts + sample.duration;
     timing.lastOutputEndDts = sample.dts + sample.duration;
-    timing.lastOutputEndPts = lastOutputEndPts ?? sample.pts + sample.duration;
   }
 
   private _nextSampleDuration(timing: TrackTimingState, refSampleDuration: unknown, fallbackDuration: number): number {
@@ -504,7 +501,6 @@ class MP4Remuxer {
 
     this._pcmTiming.lastOriginalEndDts = originalTime + duration;
     this._pcmTiming.lastOutputEndDts = outputTime + duration;
-    this._pcmTiming.lastOutputEndPts = outputTime + duration;
     this._pcmTiming.lastOutputDuration = duration;
     return outputTime / 1000;
   }
@@ -763,7 +759,6 @@ class MP4Remuxer {
     );
 
     const mp4Samples: MP4Sample[] = [];
-    let lastOutputEndPts = this._videoTiming.lastOutputEndPts;
     let nextOutputDts = firstSampleOriginalDts - dtsCorrection;
 
     // Correct dts for each sample, and calculate sample duration. Then output to mp4Samples
@@ -788,16 +783,8 @@ class MP4Remuxer {
         this._videoInitialCtsOffset = sample.cts;
       }
 
-      let pts = dts + sample.cts - this._videoCtsOffset;
-      if (i === 0 && lastOutputEndPts !== undefined && pts > lastOutputEndPts) {
-        const gap = pts - lastOutputEndPts;
-        this._videoCtsOffset += gap;
-        pts -= gap;
-        Log.v(this.TAG, `video: bridging ${Math.round(gap)}ms presentation timestamp hole`);
-      }
+      const pts = dts + sample.cts - this._videoCtsOffset;
       const cts = pts - dts;
-      const outputEndPts = pts + sampleDuration;
-      lastOutputEndPts = lastOutputEndPts === undefined ? outputEndPts : Math.max(lastOutputEndPts, outputEndPts);
 
       mp4Samples.push({
         dts: dts,
@@ -820,7 +807,7 @@ class MP4Remuxer {
 
     const latest = mp4Samples[mp4Samples.length - 1];
     this._videoNextDts = latest.dts + latest.duration;
-    this._recordTrackTiming(this._videoTiming, latest, lastOutputEndPts);
+    this._recordTrackTiming(this._videoTiming, latest);
 
     track.samples = mp4Samples;
     track.sequenceNumber++;
