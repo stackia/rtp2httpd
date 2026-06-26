@@ -104,8 +104,6 @@ function writeUint32(data: Uint8Array, offset: number, value: number): void {
   data[offset + 3] = value & 0xff;
 }
 
-const PRESENTATION_GAP_TOLERANCE_MS = 1;
-
 // Fragmented mp4 remuxer
 class MP4Remuxer {
   TAG: string;
@@ -803,7 +801,7 @@ class MP4Remuxer {
       }
 
       let pts = dts + sample.cts - this._videoCtsOffset;
-      if (i === 0 && lastOutputEndPts !== undefined && pts > lastOutputEndPts + PRESENTATION_GAP_TOLERANCE_MS) {
+      if (i === 0 && lastOutputEndPts !== undefined && pts > lastOutputEndPts) {
         const gap = pts - lastOutputEndPts;
         this._videoCtsOffset += gap;
         pts -= gap;

@@ -49,8 +49,6 @@ class LoadError extends Error {
 }
 
 const HLS_URL_RE = /\.m3u8?($|\?)/i;
-const PCM_TIMELINE_GAP_TOLERANCE_MS = 5;
-
 /** Sentinel rejection value for intentionally cancelled segment loads. */
 const CANCELLED = Symbol("cancelled");
 
@@ -605,7 +603,7 @@ class Pipeline {
     }
 
     let outputTimeMs = originalTimeMs - this._pcmTimelineCorrectionMs;
-    if (this._pcmLastOutputEndMs !== null && outputTimeMs > this._pcmLastOutputEndMs + PCM_TIMELINE_GAP_TOLERANCE_MS) {
+    if (this._pcmLastOutputEndMs !== null && outputTimeMs > this._pcmLastOutputEndMs) {
       const gap = outputTimeMs - this._pcmLastOutputEndMs;
       this._pcmTimelineCorrectionMs += gap;
       outputTimeMs -= gap;
