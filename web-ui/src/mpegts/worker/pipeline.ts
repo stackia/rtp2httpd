@@ -49,6 +49,7 @@ class LoadError extends Error {
 }
 
 const HLS_URL_RE = /\.m3u8?($|\?)/i;
+const PCM_TIMELINE_GAP_TOLERANCE_MS = 5;
 
 /** Sentinel rejection value for intentionally cancelled segment loads. */
 const CANCELLED = Symbol("cancelled");
@@ -108,7 +109,15 @@ class Pipeline {
   private _audioSamplesSinceAnchor = 0;
   private _audioSampleRate = 0;
   /** PCM decoded before the remuxer dts base is known (flushed once available). */
-  private _pendingPcm: Array<{ pcm: Float32Array; channels: number; sampleRate: number; ptsMs: number }> = [];
+  private _pendingPcm: Array<{
+    pcm: Float32Array;
+    channels: number;
+    sampleRate: number;
+    ptsMs: number;
+    durationMs: number;
+  }> = [];
+  private _pcmTimelineCorrectionMs: number | null = null;
+  private _pcmLastOutputEndMs: number | null = null;
   /** Incremented on audio timing resets to invalidate decode callbacks queued before the reset. */
   private _audioGen = 0;
 
@@ -279,7 +288,7 @@ class Pipeline {
           // frame carried from the previous URL must not be prepended to the
           // next one, and the PTS anchor must re-establish from the new PES
           this._workerAudioDecoder?.reset();
-          this._resetAudioTiming();
+          this._resetAudioTiming(false);
         }
       } catch (e) {
         if (this._runId !== runId || e === CANCELLED) return;
@@ -311,12 +320,20 @@ class Pipeline {
     this._resetAudioTiming();
   }
 
-  private _resetAudioTiming(): void {
+  private _resetAudioTiming(resetPcmTimeline = true): void {
     this._audioGen++;
     this._audioAnchorPtsMs = null;
     this._audioSamplesSinceAnchor = 0;
     this._audioSampleRate = 0;
     this._pendingPcm = [];
+    if (resetPcmTimeline) {
+      this._resetPcmTimeline();
+    }
+  }
+
+  private _resetPcmTimeline(): void {
+    this._pcmTimelineCorrectionMs = null;
+    this._pcmLastOutputEndMs = null;
   }
 
   private _loadSegment(meta: SegmentMeta): Promise<void> {
@@ -552,7 +569,8 @@ class Pipeline {
    * PCM decoded before the first remux (dts base unknown) is queued.
    */
   private _emitPcm(pcm: Float32Array, channels: number, sampleRate: number, ptsMs: number): void {
-    this._pendingPcm.push({ pcm, channels, sampleRate, ptsMs });
+    const durationMs = (Math.floor(pcm.length / channels) / sampleRate) * 1000;
+    this._pendingPcm.push({ pcm, channels, sampleRate, ptsMs, durationMs });
 
     const dtsBase = this._remuxer?.getTimestampBase();
     if (dtsBase === undefined) {
@@ -564,9 +582,38 @@ class Pipeline {
     }
 
     for (const item of this._pendingPcm) {
-      this._callbacks.onPCMAudioData(item.pcm, item.channels, item.sampleRate, (item.ptsMs - dtsBase) / 1000);
+      this._callbacks.onPCMAudioData(
+        item.pcm,
+        item.channels,
+        item.sampleRate,
+        this._mapPcmTimestamp(item.ptsMs, item.durationMs, dtsBase),
+      );
     }
     this._pendingPcm = [];
+  }
+
+  private _mapPcmTimestamp(ptsMs: number, durationMs: number, dtsBase: number): number {
+    const originalTimeMs = ptsMs - dtsBase;
+
+    if (this._pcmTimelineCorrectionMs === null) {
+      const initialPresentationOffset = this._remuxer?.getInitialPresentationOffset() ?? 0;
+      const initialOutputTime = this._remuxer?.getInitialOutputTime() ?? 0;
+      const outputTimeMs = Math.max(initialOutputTime, originalTimeMs - initialPresentationOffset);
+      this._pcmTimelineCorrectionMs = originalTimeMs - outputTimeMs;
+      this._pcmLastOutputEndMs = outputTimeMs + durationMs;
+      return outputTimeMs / 1000;
+    }
+
+    let outputTimeMs = originalTimeMs - this._pcmTimelineCorrectionMs;
+    if (this._pcmLastOutputEndMs !== null && outputTimeMs > this._pcmLastOutputEndMs + PCM_TIMELINE_GAP_TOLERANCE_MS) {
+      const gap = outputTimeMs - this._pcmLastOutputEndMs;
+      this._pcmTimelineCorrectionMs += gap;
+      outputTimeMs -= gap;
+      Log.v(this.TAG, `PCM: bridging ${Math.round(gap)}ms timestamp hole`);
+    }
+
+    this._pcmLastOutputEndMs = outputTimeMs + durationMs;
+    return outputTimeMs / 1000;
   }
 }
 
