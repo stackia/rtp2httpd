@@ -53,6 +53,7 @@ type AdaptationFieldInfo = {
   random_access_indicator?: number;
   elementary_stream_priority_indicator?: number;
 };
+type CommonPidKey = keyof PMT["common_pids"];
 type TSDemuxerOptions = {
   waitForInitialVideoKeyframe?: boolean;
 };
@@ -102,6 +103,9 @@ type AudioData =
       codec: "mp3";
       data: MP3Data;
     };
+
+const VIDEO_PID_KEYS: readonly CommonPidKey[] = ["h264", "h265"];
+const AUDIO_PID_KEYS: readonly CommonPidKey[] = ["adts_aac", "loas_aac", "ac3", "eac3", "mp3"];
 
 export type OnErrorCallback = (type: string, info: string) => void;
 export type OnTrackMetadataCallback = (type: string, metadata: unknown) => void;
@@ -287,18 +291,21 @@ class TSDemuxer {
     };
   }
 
+  private isCommonPid(pid: number, keys: readonly CommonPidKey[]): boolean {
+    const commonPids = this.pmt_?.common_pids;
+    return !!commonPids && keys.some((key) => commonPids[key] === pid);
+  }
+
   private isVideoPid(pid: number): boolean {
-    return pid === this.pmt_?.common_pids.h264 || pid === this.pmt_?.common_pids.h265;
+    return this.isCommonPid(pid, VIDEO_PID_KEYS);
   }
 
   private isAudioPid(pid: number): boolean {
-    return (
-      pid === this.pmt_?.common_pids.adts_aac ||
-      pid === this.pmt_?.common_pids.loas_aac ||
-      pid === this.pmt_?.common_pids.ac3 ||
-      pid === this.pmt_?.common_pids.eac3 ||
-      pid === this.pmt_?.common_pids.mp3
-    );
+    return this.isCommonPid(pid, AUDIO_PID_KEYS);
+  }
+
+  private isMediaPid(pid: number): boolean {
+    return this.isVideoPid(pid) || this.isAudioPid(pid);
   }
 
   private resetAudioParserState(): void {
@@ -324,7 +331,8 @@ class TSDemuxer {
       return;
     }
 
-    for (const pid of [commonPids.adts_aac, commonPids.loas_aac, commonPids.ac3, commonPids.eac3, commonPids.mp3]) {
+    for (const key of AUDIO_PID_KEYS) {
+      const pid = commonPids[key];
       if (pid !== undefined) {
         delete this.pes_slice_queues_[pid];
       }
@@ -491,15 +499,7 @@ class TSDemuxer {
           const stream_type = this.pmt_.pid_stream_type[pid];
 
           // process PES only for known common_pids
-          if (
-            pid === this.pmt_.common_pids.h264 ||
-            pid === this.pmt_.common_pids.h265 ||
-            pid === this.pmt_.common_pids.adts_aac ||
-            pid === this.pmt_.common_pids.loas_aac ||
-            pid === this.pmt_.common_pids.ac3 ||
-            pid === this.pmt_.common_pids.eac3 ||
-            pid === this.pmt_.common_pids.mp3
-          ) {
+          if (this.isMediaPid(pid)) {
             if (!this.shouldProcessPayload(pid, continuity_conunter, adaptation_field_info.discontinuity_indicator)) {
               offset += 188;
               if (this.ts_packet_size_ === 204) {
