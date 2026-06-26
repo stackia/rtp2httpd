@@ -14,6 +14,7 @@ import pytest
 from helpers import (
     MockRTSPServer,
     R2HProcess,
+    assert_etag_cache_behavior,
     extract_catchup_source,
     find_free_port,
     http_get,
@@ -292,66 +293,12 @@ rtp://239.0.0.1:1234
         r2h.start()
         return r2h
 
-    def test_etag_present(self, r2h_binary):
-        """The playlist response should include an ETag header."""
+    def test_etag_cache_behavior(self, r2h_binary):
+        """Playlist endpoint should implement stable ETag cache semantics."""
         port = find_free_port()
         r2h = self._start_with_m3u(r2h_binary, port)
         try:
-            status, hdrs, _ = http_get("127.0.0.1", port, "/playlist.m3u")
-            assert status == 200
-            etag = hdrs.get("ETag", hdrs.get("etag", ""))
-            assert etag, "ETag header expected"
-        finally:
-            r2h.stop()
-
-    def test_if_none_match_304(self, r2h_binary):
-        """If-None-Match with matching ETag should return 304."""
-        port = find_free_port()
-        r2h = self._start_with_m3u(r2h_binary, port)
-        try:
-            # First request to get ETag
-            _, hdrs1, _ = http_get("127.0.0.1", port, "/playlist.m3u")
-            etag = hdrs1.get("ETag", hdrs1.get("etag", ""))
-            assert etag
-
-            # Second request with If-None-Match
-            status, _, body = http_get(
-                "127.0.0.1",
-                port,
-                "/playlist.m3u",
-                headers={"If-None-Match": etag},
-            )
-            assert status == 304
-            assert len(body) == 0
-        finally:
-            r2h.stop()
-
-    def test_if_none_match_mismatch(self, r2h_binary):
-        """If-None-Match with wrong ETag should return 200."""
-        port = find_free_port()
-        r2h = self._start_with_m3u(r2h_binary, port)
-        try:
-            status, _, body = http_get(
-                "127.0.0.1",
-                port,
-                "/playlist.m3u",
-                headers={"If-None-Match": '"wrong-etag"'},
-            )
-            assert status == 200
-            assert len(body) > 0
-        finally:
-            r2h.stop()
-
-    def test_etag_consistent(self, r2h_binary):
-        """Two GETs with the same playlist should yield the same ETag."""
-        port = find_free_port()
-        r2h = self._start_with_m3u(r2h_binary, port)
-        try:
-            _, h1, _ = http_get("127.0.0.1", port, "/playlist.m3u")
-            _, h2, _ = http_get("127.0.0.1", port, "/playlist.m3u")
-            e1 = h1.get("ETag", h1.get("etag", ""))
-            e2 = h2.get("ETag", h2.get("etag", ""))
-            assert e1 == e2 and e1 != ""
+            assert_etag_cache_behavior("127.0.0.1", port, "/playlist.m3u")
         finally:
             r2h.stop()
 

@@ -4,7 +4,6 @@ playlist endpoint.
 """
 
 import os
-import tempfile
 import time
 
 import pytest
@@ -12,8 +11,10 @@ import pytest
 from helpers import (
     R2HProcess,
     find_free_port,
+    get_header,
     http_get,
     stream_get,
+    write_temp_file,
 )
 
 
@@ -27,20 +28,6 @@ SAMPLE_EPG_XML = """\
   </programme>
 </tv>
 """
-
-
-def _header(hdrs, name: str) -> str:
-    for key, value in hdrs.items():
-        if key.lower() == name.lower():
-            return value
-    return ""
-
-
-def _write_tmp(data: bytes, suffix: str = ".xml") -> str:
-    fd, path = tempfile.mkstemp(suffix=suffix, prefix="r2h_pages_epg_")
-    with os.fdopen(fd, "wb") as f:
-        f.write(data)
-    return path
 
 
 def _wait_for_http_status(port: int, path: str, expected: int = 200, timeout: float = 3.0) -> None:
@@ -76,7 +63,7 @@ def basic_r2h(r2h_binary):
 def prefixed_r2h(r2h_binary):
     """A shared rtp2httpd instance mounted under app-path-prefix."""
     port = find_free_port()
-    epg_path = _write_tmp(SAMPLE_EPG_XML.encode())
+    epg_path = write_temp_file(SAMPLE_EPG_XML.encode(), suffix=".xml", prefix="r2h_pages_epg_")
     config = f"""\
 [global]
 verbosity = 4
@@ -111,7 +98,7 @@ class TestStatusPage:
     def test_status_returns_html(self, basic_r2h):
         status, hdrs, body = http_get("127.0.0.1", basic_r2h.port, "/status")
         assert status == 200
-        ct = hdrs.get("Content-Type", hdrs.get("content-type", ""))
+        ct = get_header(hdrs, "Content-Type")
         assert "html" in ct.lower()
         assert len(body) > 100  # non-trivial HTML page
 
@@ -144,7 +131,7 @@ class TestPlayerPage:
     def test_player_returns_html(self, basic_r2h):
         status, hdrs, body = http_get("127.0.0.1", basic_r2h.port, "/player")
         assert status == 200
-        ct = hdrs.get("Content-Type", hdrs.get("content-type", ""))
+        ct = get_header(hdrs, "Content-Type")
         assert "html" in ct.lower()
         assert len(body) > 100
 
@@ -195,8 +182,6 @@ class TestStatusSSE:
     """The status SSE endpoint should respond with event-stream type."""
 
     def test_status_sse_content_type(self, basic_r2h):
-        from helpers import stream_get
-
         status, hdrs, _ = stream_get(
             "127.0.0.1",
             basic_r2h.port,
@@ -220,8 +205,8 @@ class TestAppPathPrefix:
     def test_prefixed_status_html_injects_runtime_paths(self, prefixed_r2h):
         status, hdrs, body = http_get("127.0.0.1", prefixed_r2h.port, f"{APP_PREFIX}/status")
         assert status == 200
-        assert "html" in _header(hdrs, "Content-Type").lower()
-        assert _header(hdrs, "Content-Encoding") == ""
+        assert "html" in get_header(hdrs, "Content-Type").lower()
+        assert get_header(hdrs, "Content-Encoding") == ""
         text = body.decode("utf-8", errors="replace")
         assert f'<base href="{APP_PREFIX}/">' in text
         assert f'"appPathPrefix":"{APP_PREFIX}"' in text
@@ -229,13 +214,13 @@ class TestAppPathPrefix:
     def test_prefixed_player_html(self, prefixed_r2h):
         status, hdrs, body = http_get("127.0.0.1", prefixed_r2h.port, f"{APP_PREFIX}/player")
         assert status == 200
-        assert "html" in _header(hdrs, "Content-Type").lower()
+        assert "html" in get_header(hdrs, "Content-Type").lower()
         assert len(body) > 100
 
     def test_prefixed_static_asset(self, prefixed_r2h):
         status, hdrs, body = http_get("127.0.0.1", prefixed_r2h.port, f"{APP_PREFIX}/assets/icon.png")
         assert status == 200
-        assert "image/png" in _header(hdrs, "Content-Type").lower()
+        assert "image/png" in get_header(hdrs, "Content-Type").lower()
         assert len(body) > 0
 
     def test_prefixed_playlist_contains_prefixed_urls(self, prefixed_r2h):
@@ -249,7 +234,7 @@ class TestAppPathPrefix:
     def test_prefixed_epg_endpoint(self, prefixed_r2h):
         status, hdrs, body = http_get("127.0.0.1", prefixed_r2h.port, f"{APP_PREFIX}/epg.xml")
         assert status == 200
-        assert "xml" in _header(hdrs, "Content-Type").lower()
+        assert "xml" in get_header(hdrs, "Content-Type").lower()
         assert b"Prefixed Programme" in body
 
     def test_prefixed_status_sse(self, prefixed_r2h):
@@ -293,7 +278,7 @@ r2h-token = secret-token
             r2h.start()
             status, hdrs, _ = http_get("127.0.0.1", port, f"{APP_PREFIX}/status?r2h-token=secret-token")
             assert status == 200
-            set_cookie = _header(hdrs, "Set-Cookie")
+            set_cookie = get_header(hdrs, "Set-Cookie")
             assert "r2h-token=secret-token" in set_cookie
             assert f"Path={APP_PREFIX}" in set_cookie
 

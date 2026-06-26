@@ -18,26 +18,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BINARY="$PROJECT_ROOT/build/rtp2httpd"
 
-# ── Pre-flight checks ──────────────────────────────────────────────────────
-
-if ! command -v uv &>/dev/null; then
-    echo "ERROR: uv is not installed. See https://docs.astral.sh/uv/"
-    exit 1
-fi
-
-if [ ! -f "$BINARY" ]; then
-    echo "ERROR: rtp2httpd binary not found at $BINARY"
-    echo "Build the project first:  cd $PROJECT_ROOT && cmake -B build && cmake --build build"
-    exit 1
-fi
-
-echo "Binary:  $BINARY"
-echo ""
-
 # ── Parse parallelism flag ────────────────────────────────────────────────
 
 PARALLEL="auto"
 EXTRA_ARGS=()
+COLLECT_ONLY=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -49,12 +34,37 @@ while [[ $# -gt 0 ]]; do
             PARALLEL="${1#*=}"
             shift
             ;;
+        --co|--collect-only)
+            COLLECT_ONLY=1
+            EXTRA_ARGS+=("$1")
+            shift
+            ;;
         *)
             EXTRA_ARGS+=("$1")
             shift
             ;;
     esac
 done
+
+# ── Pre-flight checks ──────────────────────────────────────────────────────
+
+if ! command -v uv &>/dev/null; then
+    echo "ERROR: uv is not installed. See https://docs.astral.sh/uv/"
+    exit 1
+fi
+
+if [[ "$COLLECT_ONLY" != "1" && ! -f "$BINARY" ]]; then
+    echo "ERROR: rtp2httpd binary not found at $BINARY"
+    echo "Build the project first:  cd $PROJECT_ROOT && cmake -B build && cmake --build build"
+    exit 1
+fi
+
+if [[ -f "$BINARY" ]]; then
+    echo "Binary:  $BINARY"
+else
+    echo "Binary:  <not required for collect-only>"
+fi
+echo ""
 
 # ── Resolve test file paths ───────────────────────────────────────────────
 # Supports both bare names (test_m3u.py) and full paths (e2e/test_m3u.py).

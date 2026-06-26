@@ -54,6 +54,7 @@ def shared_r2h(r2h_binary):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.http_proxy
 class TestHTTPProxyIPv6Upstream:
     """`/http/[::1]:port/...` should proxy to an IPv6-only upstream."""
 
@@ -258,6 +259,7 @@ rtp://239.0.0.1:1234
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.fcc
 class TestFCCIPv6Fallback:
     """`fcc=[::1]:port` must not crash; FCC is disabled with a warning and the
     stream falls back to plain multicast."""

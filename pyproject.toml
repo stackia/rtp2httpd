@@ -27,6 +27,7 @@ testpaths = ["e2e"]
 markers = [
     "multicast: requires multicast on loopback",
     "rtsp: requires mock RTSP server",
+    "fcc: requires mock FCC server",
     "http_proxy: requires mock HTTP upstream",
     "slow: tests that take longer",
 ]
