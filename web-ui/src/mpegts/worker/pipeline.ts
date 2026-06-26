@@ -118,6 +118,11 @@ class Pipeline {
   constructor(segments: PlayerSegment[], config: PlayerConfig, callbacks: PipelineCallbacks) {
     this._callbacks = callbacks;
     this._config = { ...createDefaultConfig(), ...config };
+    this._config.wasmAudioProcessors = {
+      ...this._config.wasmDecoders,
+      ...this._config.wasmAudioProcessors,
+    };
+    this._config.wasmDecoders = this._config.wasmAudioProcessors;
     this._initialSegments = segments;
   }
 
@@ -412,7 +417,7 @@ class Pipeline {
     demuxer.timestampBase = meta.timestampBase * 90000; // seconds → 90kHz ticks
 
     // Set up software audio processing callback when a matching WASM URL is configured
-    if (this._config.wasmAudioProcessors.mp2 || this._config.wasmDecoders.mp2) {
+    if (this._config.wasmAudioProcessors.mp2) {
       demuxer.onEncodedAudioData = (frame) => {
         this._handleEncodedAudioFrame(frame);
       };
@@ -509,10 +514,7 @@ class Pipeline {
 
   private _handleEncodedAudioFrame(frame: EncodedAudioFrame): void {
     if (!this._workerAudioProcessor) {
-      this._workerAudioProcessor = new WorkerSoftwareAudioProcessor({
-        ...this._config.wasmDecoders,
-        ...this._config.wasmAudioProcessors,
-      });
+      this._workerAudioProcessor = new WorkerSoftwareAudioProcessor(this._config.wasmAudioProcessors);
       this._workerAudioProcessor.setStretchRatio(this._audioStretchRatio);
     }
 

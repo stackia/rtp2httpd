@@ -69,26 +69,30 @@ export function createMpegtsPlayer(
 
   // PCM audio player for software-decoded audio (MP2)
   let pcmPlayer: PCMAudioPlayer | null = null;
-  let pcmPlayerInitPromise: Promise<void> | null = null;
+  let pcmPlayerReady: Promise<PCMAudioPlayer> | null = null;
 
-  function ensurePCMPlayer(): PCMAudioPlayer {
-    if (!pcmPlayer) {
-      pcmPlayer = new PCMAudioPlayer(config);
-      pcmPlayer.onSuspended = () => impl.onAudioSuspended?.();
-      pcmPlayer.onStretchRatioChange = (ratio) => {
-        worker?.postMessage({ type: "set-audio-stretch-ratio", ratio, gen: mseGeneration } satisfies WorkerCommand);
-      };
-      pcmPlayerInitPromise = pcmPlayer.init();
-      pcmPlayer.attachVideo(video);
+  function ensurePCMPlayer(): Promise<PCMAudioPlayer> {
+    if (pcmPlayerReady) {
+      return pcmPlayerReady;
     }
-    return pcmPlayer;
+
+    const player = new PCMAudioPlayer(config);
+    player.onSuspended = () => impl.onAudioSuspended?.();
+    player.onStretchRatioChange = (ratio) => {
+      worker?.postMessage({ type: "set-audio-stretch-ratio", ratio, gen: mseGeneration } satisfies WorkerCommand);
+    };
+
+    pcmPlayerReady = player.init().then(() => player);
+    player.attachVideo(video);
+    pcmPlayer = player;
+    return pcmPlayerReady;
   }
 
   function destroyPCMPlayer(): void {
     if (pcmPlayer) {
       pcmPlayer.destroy();
       pcmPlayer = null;
-      pcmPlayerInitPromise = null;
+      pcmPlayerReady = null;
     }
   }
 
@@ -142,10 +146,9 @@ export function createMpegtsPlayer(
         }
         break;
       case "pcm-audio-data": {
-        const player = ensurePCMPlayer();
         const planes = msg.planes.map((plane) => new Float32Array(plane));
         const gen = mseGeneration;
-        pcmPlayerInitPromise?.then(() => {
+        ensurePCMPlayer().then((player) => {
           if (gen !== mseGeneration) return;
           player.feed(planes, msg.channels, msg.sampleRate, msg.frames, msg.streamStart, msg.streamEnd);
         });

@@ -1,4 +1,5 @@
 import { defaultConfig, type PlayerConfig } from "./config";
+import type { SoftwareAudioCodec } from "./decoder/software-audio-processor";
 import { createMpegtsPlayer } from "./player/mpegts-player";
 import type { LiveSessionAnchor, Player, PlayerError, PlayerEventMap, PlayerImpl, PlayerSegment } from "./types";
 
@@ -20,21 +21,27 @@ function resolveSegmentUrls(segments: PlayerSegment[]): PlayerSegment[] {
   }));
 }
 
+function resolveWasmUrls(
+  urls: Partial<Record<SoftwareAudioCodec, string>>,
+): Partial<Record<SoftwareAudioCodec, string>> {
+  const resolved: Partial<Record<SoftwareAudioCodec, string>> = {};
+  for (const codec of Object.keys(urls) as SoftwareAudioCodec[]) {
+    const url = urls[codec];
+    if (url) {
+      resolved[codec] = new URL(url, document.baseURI).href;
+    }
+  }
+  return resolved;
+}
+
 export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerConfig>): Player {
   const fullConfig: PlayerConfig = { ...defaultConfig, ...config };
-  fullConfig.wasmAudioProcessors = {
+  fullConfig.wasmAudioProcessors = resolveWasmUrls({
     ...fullConfig.wasmDecoders,
     ...fullConfig.wasmAudioProcessors,
-  };
-
-  // Resolve WASM URLs to absolute so they work inside inline blob workers
-  if (fullConfig.wasmAudioProcessors.mp2) {
-    fullConfig.wasmAudioProcessors = {
-      ...fullConfig.wasmAudioProcessors,
-      mp2: new URL(fullConfig.wasmAudioProcessors.mp2, document.baseURI).href,
-    };
-    fullConfig.wasmDecoders = fullConfig.wasmAudioProcessors;
-  }
+  });
+  // Keep the deprecated alias mapped for callers that still inspect the final config.
+  fullConfig.wasmDecoders = fullConfig.wasmAudioProcessors;
 
   let destroyed = false;
 

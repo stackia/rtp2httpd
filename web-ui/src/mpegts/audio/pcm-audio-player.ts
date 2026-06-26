@@ -76,7 +76,6 @@ interface AudioChunk {
   sampleRate: number;
   frames: number;
   time: number; // MSE timeline (seconds)
-  duration: number;
   endTime: number;
 }
 
@@ -270,14 +269,12 @@ export class PCMAudioPlayer {
     if (frames <= 0 || channels <= 0 || planes.length !== channels) {
       return;
     }
-    const duration = frames / sampleRate;
     const chunk: AudioChunk = {
       planes,
       channels,
       sampleRate,
       frames,
       time: streamStart,
-      duration,
       endTime: streamEnd,
     };
 
@@ -300,7 +297,8 @@ export class PCMAudioPlayer {
    */
   private pump(): void {
     const ctx = this.context;
-    if (!ctx || !this.gainNode || this.isSeeking || this.pendingChunks.length === 0 || this.videoElement?.paused) {
+    const gainNode = this.gainNode;
+    if (!ctx || !gainNode || this.isSeeking || this.pendingChunks.length === 0 || this.videoElement?.paused) {
       return;
     }
 
@@ -331,7 +329,7 @@ export class PCMAudioPlayer {
 
       const chunk = this.pendingChunks[0];
       this.pendingChunks.shift();
-      this.scheduleOutput(chunk);
+      this.scheduleOutput(chunk, ctx, gainNode);
     }
   }
 
@@ -345,12 +343,7 @@ export class PCMAudioPlayer {
 
   // ==================== Output scheduling chain ====================
 
-  private scheduleOutput(chunk: AudioChunk): void {
-    const ctx = this.context;
-    if (!ctx || !this.gainNode) {
-      return;
-    }
-
+  private scheduleOutput(chunk: AudioChunk, ctx: AudioContext, gainNode: GainNode): void {
     const { planes, channels, sampleRate, frames, endTime: streamEnd } = chunk;
     const ctxNow = ctx.currentTime;
 
@@ -383,7 +376,7 @@ export class PCMAudioPlayer {
 
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.gainNode);
+    source.connect(gainNode);
     source.start(this.nextStartTime);
 
     this.scheduledSpans.push({
@@ -396,7 +389,7 @@ export class PCMAudioPlayer {
     this.nextStartTime += buffer.duration;
     this.outputStreamCursor = streamEnd;
 
-    this.pruneSpans();
+    this.pruneSpans(ctx);
   }
 
   private applyFadeIn(buffer: AudioBuffer): void {
@@ -409,9 +402,7 @@ export class PCMAudioPlayer {
     }
   }
 
-  private pruneSpans(): void {
-    const ctx = this.context;
-    if (!ctx) return;
+  private pruneSpans(ctx: AudioContext): void {
     const ctxNow = ctx.currentTime;
     while (this.scheduledSpans.length > 0 && this.scheduledSpans[0].ctxEnd < ctxNow - 0.5) {
       try {
@@ -633,7 +624,6 @@ export class PCMAudioPlayer {
           sampleRate: chunk.sampleRate,
           frames,
           time: targetTime,
-          duration: frames / chunk.sampleRate,
           endTime: chunk.endTime,
         };
       }

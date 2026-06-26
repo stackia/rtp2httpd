@@ -6,12 +6,13 @@ import Pipeline, { type PipelineCallbacks } from "./pipeline";
 let pipeline: Pipeline | null = null;
 let gen = 0;
 
-function post(msg: WorkerEvent, transfer?: Transferable[]): void {
-  if (transfer) {
-    (self as unknown as { postMessage(msg: unknown, transfer: Transferable[]): void }).postMessage(msg, transfer);
-  } else {
-    (self as unknown as { postMessage(msg: unknown): void }).postMessage(msg);
-  }
+function post(msg: WorkerEvent | { type: "destroyed" }, transfer: Transferable[] = []): void {
+  (self as unknown as { postMessage(msg: unknown, transfer?: Transferable[]): void }).postMessage(msg, transfer);
+}
+
+function destroyPipeline(): void {
+  pipeline?.destroy();
+  pipeline = null;
 }
 
 function createPipeline(segments: PlayerSegment[], config: PlayerConfig): Pipeline {
@@ -94,17 +95,11 @@ self.addEventListener("message", (e: MessageEvent) => {
       }
       break;
     case "reset":
-      if (pipeline) {
-        pipeline.destroy();
-        pipeline = null;
-      }
+      destroyPipeline();
       break;
     case "destroy":
-      if (pipeline) {
-        pipeline.destroy();
-        pipeline = null;
-      }
-      (self as unknown as { postMessage(msg: unknown): void }).postMessage({ type: "destroyed" });
+      destroyPipeline();
+      post({ type: "destroyed" });
       break;
   }
 });

@@ -18,16 +18,12 @@ const TAG = "WorkerSoftwareAudioProcessor";
 export class WorkerSoftwareAudioProcessor {
   private processors = new Map<SoftwareAudioCodec, SoftwareAudioProcessor>();
   private initPromises = new Map<SoftwareAudioCodec, Promise<boolean>>();
-  private wasmUrls: Partial<Record<SoftwareAudioCodec, string>>;
   private stretchRatio = 1;
 
-  constructor(wasmUrls: Partial<Record<SoftwareAudioCodec, string>>) {
-    this.wasmUrls = wasmUrls;
-  }
+  constructor(private readonly wasmUrls: Partial<Record<SoftwareAudioCodec, string>>) {}
 
   private async initProcessor(codec: SoftwareAudioCodec): Promise<boolean> {
-    const existing = this.processors.get(codec);
-    if (existing?.isReady) {
+    if (this.processors.has(codec)) {
       return true;
     }
 
@@ -52,7 +48,6 @@ export class WorkerSoftwareAudioProcessor {
         return true;
       } catch (err) {
         Log.e(TAG, `Failed to initialize ${codec} software audio processor: ${err}`);
-        this.processors.get(codec)?.destroy();
         this.processors.delete(codec);
         return false;
       } finally {

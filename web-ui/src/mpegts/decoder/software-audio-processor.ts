@@ -67,8 +67,6 @@ function createWasmImports() {
 }
 
 export class SoftwareAudioProcessor {
-  readonly codec: SoftwareAudioCodec;
-
   private exports: ProcessorExports | null = null;
   private processorPtr = 0;
   private inputPtr = 0;
@@ -77,19 +75,13 @@ export class SoftwareAudioProcessor {
   private outputCapacityFrames = 0;
   private infoPtr = 0;
   private _ready: Promise<void>;
-  private _isReady = false;
 
   constructor(codec: SoftwareAudioCodec, wasmUrl: string) {
-    this.codec = codec;
     this._ready = this.init(codec, wasmUrl);
   }
 
   get ready(): Promise<void> {
     return this._ready;
-  }
-
-  get isReady(): boolean {
-    return this._isReady;
   }
 
   private async init(codec: SoftwareAudioCodec, wasmUrl: string): Promise<void> {
@@ -105,11 +97,10 @@ export class SoftwareAudioProcessor {
     this.exports = ex;
     this.processorPtr = processorPtr;
     this.infoPtr = ex.malloc(PROCESSOR_INFO_F64_COUNT * 8);
-    this._isReady = true;
   }
 
   process(frame: EncodedAudioFrame): ProcessedAudioChunk | null {
-    if (!this._isReady || !this.exports || !this.processorPtr) {
+    if (!this.exports || !this.processorPtr) {
       return null;
     }
     const ex = this.exports;
@@ -120,7 +111,7 @@ export class SoftwareAudioProcessor {
       this.inputBufSize = Math.max(input.length, 4096);
       this.inputPtr = ex.malloc(this.inputBufSize);
     }
-    new Uint8Array(ex.memory.buffer, this.inputPtr, this.inputBufSize).set(input);
+    new Uint8Array(ex.memory.buffer, this.inputPtr, input.length).set(input);
 
     const maxDecodedFrames = (Math.floor((CARRY_MAX + input.length) / MIN_FRAME_BYTES) + 2) * MAX_SAMPLES_PER_FRAME;
     const neededFrames = (maxDecodedFrames + MAX_SILENCE_GAP_FRAMES) * 2 + 8192;
@@ -169,14 +160,14 @@ export class SoftwareAudioProcessor {
   }
 
   setStretchRatio(ratio: number): void {
-    if (!this._isReady || !this.exports || !this.processorPtr) {
+    if (!this.exports || !this.processorPtr) {
       return;
     }
     this.exports.software_audio_processor_set_ratio(this.processorPtr, ratio);
   }
 
   reset(): void {
-    if (!this._isReady || !this.exports || !this.processorPtr) {
+    if (!this.exports || !this.processorPtr) {
       return;
     }
     this.exports.software_audio_processor_reset(this.processorPtr);
@@ -204,6 +195,5 @@ export class SoftwareAudioProcessor {
       this.infoPtr = 0;
     }
     this.exports = null;
-    this._isReady = false;
   }
 }
