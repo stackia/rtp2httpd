@@ -356,7 +356,7 @@ class Pipeline {
   }
 
   /** First-chunk handler: probe the container format, then hand off to the right path. */
-  private _onProbeChunk(meta: SegmentMeta, data: ArrayBuffer, byteStart: number): number {
+  private _onProbeChunk(meta: SegmentMeta, data: Uint8Array, byteStart: number): number {
     if (this._fmp4Mode) {
       return this._onFmp4Chunk(data);
     }
@@ -396,7 +396,7 @@ class Pipeline {
     this._demuxer = demuxer;
 
     if (!this._remuxer) {
-      this._remuxer = new MP4Remuxer(this._config);
+      this._remuxer = new MP4Remuxer();
       if (this._pendingDtsOffsetMs !== 0) {
         this._remuxer.setDtsBaseOffset(this._pendingDtsOffsetMs);
         this._pendingDtsOffsetMs = 0;
@@ -465,8 +465,8 @@ class Pipeline {
     this._fmp4InitSent = true;
   }
 
-  private _onFmp4Chunk(data: ArrayBuffer): number {
-    this._fmp4Chunks.push(new Uint8Array(data));
+  private _onFmp4Chunk(data: Uint8Array): number {
+    this._fmp4Chunks.push(data);
     return data.byteLength;
   }
 

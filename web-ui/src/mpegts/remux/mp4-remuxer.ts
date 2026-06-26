@@ -1,12 +1,8 @@
-import { defaultConfig, type PlayerConfig } from "../config";
-import { MediaSegmentInfo, MediaSegmentInfoList, SampleInfo } from "../core/media-segment-info";
 import { isFirefox } from "../utils/browser";
 import { IllegalStateException } from "../utils/exception";
 import Log from "../utils/logger";
 import AAC from "./aac-silent";
 import MP4 from "./mp4-generator";
-
-type RemuxerConfig = Pick<PlayerConfig, "maxBufferHoleMs">;
 
 interface AudioSample {
   unit: Uint8Array;
@@ -16,8 +12,14 @@ interface AudioSample {
   [key: string]: unknown;
 }
 
+interface VideoUnit {
+  data: Uint8Array;
+  /** false for H.264 AnnexB payloads that need AVC length-prefixes written at remux time. */
+  lengthPrefixed?: boolean;
+}
+
 interface VideoSample {
-  units: Array<{ data: Uint8Array }>;
+  units: VideoUnit[];
   dts: number;
   pts: number;
   cts: number;
@@ -57,8 +59,6 @@ interface InitSegment {
 interface MediaSegment {
   type: string;
   data: ArrayBufferLike;
-  sampleCount: number;
-  info: MediaSegmentInfo;
   timestampOffset?: number;
 }
 
@@ -75,7 +75,7 @@ interface MP4Sample {
   pts: number;
   cts: number;
   unit?: Uint8Array;
-  units?: Array<{ data: Uint8Array }>;
+  units?: VideoUnit[];
   size: number;
   duration: number;
   originalDts: number;
@@ -91,11 +91,16 @@ interface DataProducer {
   onTrackMetadata: (...args: unknown[]) => void;
 }
 
+function writeUint32(data: Uint8Array, offset: number, value: number): void {
+  data[offset] = (value >>> 24) & 0xff;
+  data[offset + 1] = (value >>> 16) & 0xff;
+  data[offset + 2] = (value >>> 8) & 0xff;
+  data[offset + 3] = value & 0xff;
+}
+
 // Fragmented mp4 remuxer
 class MP4Remuxer {
   TAG: string;
-
-  private _config: RemuxerConfig;
 
   private _dtsBase: number;
   private _dtsBaseInited: boolean;
@@ -110,9 +115,6 @@ class MP4Remuxer {
   private _audioMeta: TrackMetadata | null;
   private _videoMeta: TrackMetadata | null;
 
-  private _audioSegmentInfoList: MediaSegmentInfoList | null;
-  private _videoSegmentInfoList: MediaSegmentInfoList | null;
-
   private _onInitSegment: InitSegmentCallback | null;
   private _onMediaSegment: MediaSegmentCallback | null;
 
@@ -121,10 +123,8 @@ class MP4Remuxer {
   private _silentAudioMode: boolean;
   private _silentAudioLastDts: number | undefined;
 
-  constructor(config: RemuxerConfig) {
+  constructor() {
     this.TAG = "MP4Remuxer";
-
-    this._config = config;
 
     this._dtsBase = -1;
     this._dtsBaseInited = false;
@@ -138,9 +138,6 @@ class MP4Remuxer {
 
     this._audioMeta = null;
     this._videoMeta = null;
-
-    this._audioSegmentInfoList = new MediaSegmentInfoList("audio");
-    this._videoSegmentInfoList = new MediaSegmentInfoList("video");
 
     this._onInitSegment = null;
     this._onMediaSegment = null;
@@ -159,10 +156,6 @@ class MP4Remuxer {
     this._silentAudioLastDts = undefined;
     this._audioMeta = null;
     this._videoMeta = null;
-    this._audioSegmentInfoList?.clear();
-    this._audioSegmentInfoList = null;
-    this._videoSegmentInfoList?.clear();
-    this._videoSegmentInfoList = null;
     this._onInitSegment = null;
     this._onMediaSegment = null;
   }
@@ -189,14 +182,7 @@ class MP4Remuxer {
     this._onInitSegment = callback;
   }
 
-  /* prototype: function onMediaSegment(type: string, mediaSegment: MediaSegment): void
-       MediaSegment: {
-           type: string,
-           data: ArrayBuffer,
-           sampleCount: int32
-           info: MediaSegmentInfo
-       }
-    */
+  /* prototype: function onMediaSegment(type: string, mediaSegment: MediaSegment): void */
   get onMediaSegment(): MediaSegmentCallback | null {
     return this._onMediaSegment;
   }
@@ -213,40 +199,10 @@ class MP4Remuxer {
   /**
    * Map upstream timestamps onto a continuous output timeline.
    * When `_nextDts` is set (continuous playback), always splice to it.
-   * After a discontinuity, bridge only small forward gaps (<= maxBufferHoleMs).
+   * After a discontinuity, keep upstream timing relative to the current remux base.
    */
-  private _computeDtsCorrection(
-    firstSampleOriginalDts: number,
-    nextDts: number | undefined,
-    segmentInfoList: MediaSegmentInfoList | null,
-  ): number {
-    if (nextDts !== undefined) {
-      return firstSampleOriginalDts - nextDts;
-    }
-
-    if (!segmentInfoList || segmentInfoList.isEmpty()) {
-      return 0;
-    }
-
-    let prevSample = segmentInfoList.getLastSampleBefore(firstSampleOriginalDts);
-    if (prevSample == null) {
-      const lastSample = segmentInfoList.getLastSample();
-      // Fall back only when upstream time moved forward but binary search missed (e.g. HLS segment splice).
-      if (lastSample != null && firstSampleOriginalDts >= lastSample.originalDts) {
-        prevSample = lastSample;
-      }
-    }
-    if (prevSample == null) {
-      return 0;
-    }
-
-    let distance = firstSampleOriginalDts - (prevSample.originalDts + prevSample.duration);
-    const maxBufferHoleMs = this._config.maxBufferHoleMs ?? defaultConfig.maxBufferHoleMs;
-    if (distance > 0 && distance <= maxBufferHoleMs) {
-      distance = 0;
-    }
-    const expectedDts = prevSample.dts + prevSample.duration + distance;
-    return firstSampleOriginalDts - expectedDts;
+  private _computeDtsCorrection(firstSampleOriginalDts: number, nextDts: number | undefined): number {
+    return nextDts !== undefined ? firstSampleOriginalDts - nextDts : 0;
   }
 
   /**
@@ -371,23 +327,9 @@ class MP4Remuxer {
     segment.set(moofbox, 0);
     segment.set(mdatbox, moofbox.byteLength);
 
-    const info = new MediaSegmentInfo();
-    info.beginDts = firstDts;
-    info.endDts = mp4Samples[mp4Samples.length - 1].dts + mp4Samples[mp4Samples.length - 1].duration;
-    info.beginPts = firstDts;
-    info.endPts = info.endDts;
-    info.originalBeginDts = firstDts;
-    info.originalEndDts = info.endDts;
-    info.syncPoints = [];
-    info.firstSample = new SampleInfo(firstDts, firstDts, frameDuration, firstDts, true);
-    const lastSample = mp4Samples[mp4Samples.length - 1];
-    info.lastSample = new SampleInfo(lastSample.dts, lastSample.pts, lastSample.duration, lastSample.originalDts, true);
-
     this._onMediaSegment("audio", {
       type: "audio",
       data: segment.buffer,
-      sampleCount: mp4Samples.length,
-      info,
     });
   }
 
@@ -505,9 +447,7 @@ class MP4Remuxer {
     const track = audioTrack;
     const samples = track.samples;
     let dtsCorrection: number | undefined;
-    let firstDts = -1,
-      lastDts = -1,
-      _lastPts = -1;
+    let firstDts = -1;
     const refSampleDuration = this._audioMeta.refSampleDuration;
 
     const mpegRawTrack = this._audioMeta.codec === "mp3" && this._mp3UseMpegAudio;
@@ -560,7 +500,7 @@ class MP4Remuxer {
 
     const firstSampleOriginalDts = (samples[0] as AudioSample).dts - this._dtsBase;
 
-    dtsCorrection = this._computeDtsCorrection(firstSampleOriginalDts, this._audioNextDts, this._audioSegmentInfoList);
+    dtsCorrection = this._computeDtsCorrection(firstSampleOriginalDts, this._audioNextDts);
 
     const mp4Samples: MP4Sample[] = [];
 
@@ -660,27 +600,6 @@ class MP4Remuxer {
       offset += unit.byteLength;
     }
 
-    const latest = mp4Samples[mp4Samples.length - 1];
-    lastDts = latest.dts + latest.duration;
-    //this._audioNextDts = lastDts;
-
-    // fill media segment info & add to info list
-    const info = new MediaSegmentInfo();
-    info.beginDts = firstDts;
-    info.endDts = lastDts;
-    info.beginPts = firstDts;
-    info.endPts = lastDts;
-    info.originalBeginDts = mp4Samples[0].originalDts;
-    info.originalEndDts = latest.originalDts + latest.duration;
-    info.firstSample = new SampleInfo(
-      mp4Samples[0].dts,
-      mp4Samples[0].pts,
-      mp4Samples[0].duration,
-      mp4Samples[0].originalDts,
-      false,
-    );
-    info.lastSample = new SampleInfo(latest.dts, latest.pts, latest.duration, latest.originalDts, false);
-
     track.samples = mp4Samples;
     track.sequenceNumber++;
 
@@ -700,8 +619,6 @@ class MP4Remuxer {
     const segment: MediaSegment = {
       type: "audio",
       data: this._mergeBoxes(moofbox, mdatbox).buffer,
-      sampleCount: mp4Samples.length,
-      info: info,
     };
 
     if (mpegRawTrack && firstSegmentAfterSeek) {
@@ -721,10 +638,7 @@ class MP4Remuxer {
     const track = videoTrack;
     const samples = track.samples;
     let dtsCorrection: number | undefined;
-    let firstDts = -1,
-      lastDts = -1;
-    let firstPts = -1,
-      lastPts = -1;
+    let firstDts = -1;
 
     if (!samples || samples.length === 0) {
       return;
@@ -735,8 +649,6 @@ class MP4Remuxer {
       return;
     } // else if (force === true) do remux
 
-    let offset = 8;
-    let mdatbox: Uint8Array | null = null;
     let mdatBytes = 8 + videoTrack.length;
 
     let lastSample: VideoSample | null = null;
@@ -762,9 +674,8 @@ class MP4Remuxer {
 
     const firstSampleOriginalDts = (samples[0] as VideoSample).dts - this._dtsBase;
 
-    dtsCorrection = this._computeDtsCorrection(firstSampleOriginalDts, this._videoNextDts, this._videoSegmentInfoList);
+    dtsCorrection = this._computeDtsCorrection(firstSampleOriginalDts, this._videoNextDts);
 
-    const info = new MediaSegmentInfo();
     const mp4Samples: MP4Sample[] = [];
 
     // Correct dts for each sample, and calculate sample duration. Then output to mp4Samples
@@ -778,7 +689,6 @@ class MP4Remuxer {
 
       if (firstDts === -1) {
         firstDts = dts;
-        firstPts = pts;
       }
 
       let sampleDuration = 0;
@@ -820,12 +730,6 @@ class MP4Remuxer {
         sampleDuration = fallbackDuration;
       }
 
-      if (isKeyframe) {
-        const syncPoint = new SampleInfo(dts, pts, sampleDuration, sample.dts, true);
-        syncPoint.fileposition = sample.fileposition ?? null;
-        info.appendSyncPoint(syncPoint);
-      }
-
       mp4Samples.push({
         dts: dts,
         pts: pts,
@@ -845,51 +749,9 @@ class MP4Remuxer {
       });
     }
 
-    // allocate mdatbox
-    mdatbox = new Uint8Array(mdatBytes);
-    mdatbox[0] = (mdatBytes >>> 24) & 0xff;
-    mdatbox[1] = (mdatBytes >>> 16) & 0xff;
-    mdatbox[2] = (mdatBytes >>> 8) & 0xff;
-    mdatbox[3] = mdatBytes & 0xff;
-    mdatbox.set(MP4.types.mdat, 4);
-
-    // Write samples into mdatbox
-    for (let i = 0; i < mp4Samples.length; i++) {
-      const units = mp4Samples[i].units as Array<{ data: Uint8Array }>;
-      while (units.length) {
-        const unit = units.shift() as { data: Uint8Array };
-        const data = unit.data;
-        mdatbox.set(data, offset);
-        offset += data.byteLength;
-      }
-    }
-
     const latest = mp4Samples[mp4Samples.length - 1];
-    lastDts = latest.dts + latest.duration;
-    lastPts = latest.pts + latest.duration;
-    this._videoNextDts = lastDts;
+    this._videoNextDts = latest.dts + latest.duration;
 
-    // fill media segment info & add to info list
-    info.beginDts = firstDts;
-    info.endDts = lastDts;
-    info.beginPts = firstPts;
-    info.endPts = lastPts;
-    info.originalBeginDts = mp4Samples[0].originalDts;
-    info.originalEndDts = latest.originalDts + latest.duration;
-    info.firstSample = new SampleInfo(
-      mp4Samples[0].dts,
-      mp4Samples[0].pts,
-      mp4Samples[0].duration,
-      mp4Samples[0].originalDts,
-      mp4Samples[0].isKeyframe ?? false,
-    );
-    info.lastSample = new SampleInfo(
-      latest.dts,
-      latest.pts,
-      latest.duration,
-      latest.originalDts,
-      latest.isKeyframe ?? false,
-    );
     track.samples = mp4Samples;
     track.sequenceNumber++;
 
@@ -897,11 +759,29 @@ class MP4Remuxer {
     track.samples = [];
     track.length = 0;
 
+    const segment = new Uint8Array(moofbox.byteLength + mdatBytes);
+    segment.set(moofbox, 0);
+    let offset = moofbox.byteLength;
+    writeUint32(segment, offset, mdatBytes);
+    segment.set(MP4.types.mdat, offset + 4);
+    offset += 8;
+
+    for (const sample of mp4Samples) {
+      const units = sample.units as VideoUnit[];
+      for (const unit of units) {
+        const data = unit.data;
+        if (unit.lengthPrefixed === false) {
+          writeUint32(segment, offset, data.byteLength);
+          offset += 4;
+        }
+        segment.set(data, offset);
+        offset += data.byteLength;
+      }
+    }
+
     this._onMediaSegment?.("video", {
       type: "video",
-      data: this._mergeBoxes(moofbox, mdatbox).buffer,
-      sampleCount: mp4Samples.length,
-      info: info,
+      data: segment.buffer,
     });
   }
 

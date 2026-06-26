@@ -41,8 +41,7 @@ function findBox(data: Uint8Array, start: number, end: number, type: string): Bo
 }
 
 /** Probe whether the buffer looks like the start of an ISO BMFF (fMP4) stream. */
-export function probeFmp4(buffer: ArrayBuffer): boolean {
-  const data = new Uint8Array(buffer);
+export function probeFmp4(data: Uint8Array): boolean {
   if (data.byteLength < 8) return false;
   const type = String.fromCharCode(data[4], data[5], data[6], data[7]);
   return ["ftyp", "styp", "moov", "moof", "sidx", "emsg", "prft", "free"].includes(type);
