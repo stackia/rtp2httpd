@@ -53,7 +53,7 @@ class FetchLoader {
   TAG = "FetchLoader";
 
   // --- public callbacks (set by consumer, e.g. TSDemuxer) ---
-  onDataArrival: ((data: ArrayBuffer, byteStart: number) => number) | null;
+  onDataArrival: ((data: Uint8Array, byteStart: number) => number) | null;
   onSeeked: (() => void) | null;
   onError: ((type: string, info: LoaderErrorInfo) => void) | null;
   onComplete: ((extraData: unknown) => void) | null;
@@ -353,7 +353,7 @@ class FetchLoader {
 
           this._status = LoaderStatus.kBuffering;
 
-          const chunk = result.value?.buffer as ArrayBuffer;
+          const chunk = result.value as Uint8Array;
           const byteStart = range.from + this._receivedLength;
           this._receivedLength += chunk.byteLength;
 
@@ -447,14 +447,14 @@ class FetchLoader {
     this._bufferSize = bufferNewSize;
   }
 
-  private _dispatchChunks(chunks: ArrayBuffer, byteStart: number): number {
+  private _dispatchChunks(chunks: Uint8Array, byteStart: number): number {
     (this._currentRange as LoaderRange).to = byteStart + chunks.byteLength - 1;
     return this.onDataArrival?.(chunks, byteStart) ?? 0;
   }
 
   private _flushStashBuffer(dropUnconsumed: boolean): number {
     if (this._stashUsed > 0) {
-      const buffer = (this._stashBuffer as ArrayBuffer).slice(0, this._stashUsed);
+      const buffer = new Uint8Array((this._stashBuffer as ArrayBuffer).slice(0, this._stashUsed));
       const consumed = this._dispatchChunks(buffer, this._stashByteStart);
       const remain = buffer.byteLength - consumed;
 
@@ -464,7 +464,7 @@ class FetchLoader {
         } else {
           if (consumed > 0) {
             const stashArray = new Uint8Array(this._stashBuffer as ArrayBuffer, 0, this._bufferSize);
-            const remainArray = new Uint8Array(buffer, consumed);
+            const remainArray = buffer.subarray(consumed);
             stashArray.set(remainArray, 0);
             this._stashUsed = remainArray.byteLength;
             this._stashByteStart += consumed;
@@ -481,7 +481,23 @@ class FetchLoader {
 
   // --- loader event handlers (bridge between fetch and stash) ---------------
 
-  private _onFetchChunkArrival(chunk: ArrayBuffer, byteStart: number): void {
+  private _stashUnconsumed(data: Uint8Array, consumed: number, byteStart: number): void {
+    const remain = data.byteLength - consumed;
+    if (remain <= 0) {
+      this._stashUsed = 0;
+      this._stashByteStart = 0;
+      return;
+    }
+    if (remain > this._bufferSize) {
+      this._expandBuffer(remain);
+    }
+    const stashArray = new Uint8Array(this._stashBuffer as ArrayBuffer, 0, this._bufferSize);
+    stashArray.set(data.subarray(consumed), 0);
+    this._stashUsed = remain;
+    this._stashByteStart = byteStart + consumed;
+  }
+
+  private _onFetchChunkArrival(chunk: Uint8Array, byteStart: number): void {
     if (!this.onDataArrival) {
       throw new IllegalStateException("FetchLoader: No existing consumer (onDataArrival) callback!");
     }
@@ -492,33 +508,15 @@ class FetchLoader {
     if (this._stashUsed === 0) {
       const consumed = this._dispatchChunks(chunk, byteStart);
       if (consumed < chunk.byteLength) {
-        const remain = chunk.byteLength - consumed;
-        if (remain > this._bufferSize) {
-          this._expandBuffer(remain);
-        }
-        const stashArray = new Uint8Array(this._stashBuffer as ArrayBuffer, 0, this._bufferSize);
-        stashArray.set(new Uint8Array(chunk, consumed), 0);
-        this._stashUsed += remain;
-        this._stashByteStart = byteStart + consumed;
+        this._stashUnconsumed(chunk, consumed, byteStart);
       }
     } else {
-      // merge chunk into stash, then dispatch
-      if (this._stashUsed + chunk.byteLength > this._bufferSize) {
-        this._expandBuffer(this._stashUsed + chunk.byteLength);
-      }
-      const stashArray = new Uint8Array(this._stashBuffer as ArrayBuffer, 0, this._bufferSize);
-      stashArray.set(new Uint8Array(chunk), this._stashUsed);
-      this._stashUsed += chunk.byteLength;
-      const consumed = this._dispatchChunks(
-        (this._stashBuffer as ArrayBuffer).slice(0, this._stashUsed),
-        this._stashByteStart,
-      );
-      if (consumed < this._stashUsed && consumed > 0) {
-        const remainArray = new Uint8Array(this._stashBuffer as ArrayBuffer, consumed);
-        stashArray.set(remainArray, 0);
-      }
-      this._stashUsed -= consumed;
-      this._stashByteStart += consumed;
+      // Dispatch a standalone bridge buffer: demuxer may retain views into consumed PES slices.
+      const bridge = new Uint8Array(this._stashUsed + chunk.byteLength);
+      bridge.set(new Uint8Array(this._stashBuffer as ArrayBuffer, 0, this._stashUsed), 0);
+      bridge.set(chunk, this._stashUsed);
+      const consumed = this._dispatchChunks(bridge, this._stashByteStart);
+      this._stashUnconsumed(bridge, consumed, this._stashByteStart);
     }
   }
 

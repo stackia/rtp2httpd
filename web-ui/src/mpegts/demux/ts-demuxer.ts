@@ -205,8 +205,7 @@ class TSDemuxer {
     this.soft_decode_audio_codec_ = null;
   }
 
-  public static probe(buffer: ArrayBuffer): TSProbeResult {
-    const data = new Uint8Array(buffer);
+  public static probe(data: Uint8Array): TSProbeResult {
     let sync_offset = -1;
     let ts_packet_size = 188;
 
@@ -262,7 +261,7 @@ class TSDemuxer {
     };
   }
 
-  public parseChunks(chunk: ArrayBuffer, byte_start: number): number {
+  public parseChunks(chunk: Uint8Array, byte_start: number): number {
     if (!this.onError || !this.onTrackMetadata || !this.onDataAvailable) {
       throw new IllegalStateException("onError & onTrackMetadata & onDataAvailable callback must be specified");
     }
@@ -282,7 +281,7 @@ class TSDemuxer {
         offset += 4;
       }
 
-      const data = new Uint8Array(chunk, offset, 188);
+      const data = chunk.subarray(offset, offset + 188);
 
       const sync_byte = data[0];
       if (sync_byte !== 0x47) {
@@ -383,15 +382,15 @@ class TSDemuxer {
     return offset; // consumed bytes
   }
 
-  private handleSectionSlice(buffer: ArrayBuffer, offset: number, length: number, misc: TSSliceMisc): void {
-    const data = new Uint8Array(buffer, offset, length);
+  private handleSectionSlice(buffer: Uint8Array, offset: number, length: number, misc: TSSliceMisc): void {
+    const data = buffer.subarray(offset, offset + length);
     let slice_queue = this.section_slice_queues_[misc.pid];
 
     if (misc.payload_unit_start_indicator) {
       const pointer_field = data[0];
 
       if (slice_queue !== undefined && slice_queue.total_length !== 0) {
-        const remain_section = new Uint8Array(buffer, offset + 1, Math.min(length, pointer_field));
+        const remain_section = buffer.subarray(offset + 1, offset + 1 + Math.min(length, pointer_field));
         slice_queue.slices.push(remain_section);
         slice_queue.total_length += remain_section.byteLength;
 
@@ -417,11 +416,8 @@ class TSDemuxer {
         slice_queue.file_position = misc.file_position;
         slice_queue.random_access_indicator = misc.random_access_indicator ?? 0;
 
-        const remain_section = new Uint8Array(
-          buffer,
-          offset + i,
-          Math.min(length - i, slice_queue.expected_length - slice_queue.total_length),
-        );
+        const remain_length = Math.min(length - i, slice_queue.expected_length - slice_queue.total_length);
+        const remain_section = buffer.subarray(offset + i, offset + i + remain_length);
         slice_queue.slices.push(remain_section);
         slice_queue.total_length += remain_section.byteLength;
 
@@ -434,11 +430,8 @@ class TSDemuxer {
         i += remain_section.byteLength;
       }
     } else if (slice_queue !== undefined && slice_queue.total_length !== 0) {
-      const remain_section = new Uint8Array(
-        buffer,
-        offset,
-        Math.min(length, slice_queue.expected_length - slice_queue.total_length),
-      );
+      const remain_length = Math.min(length, slice_queue.expected_length - slice_queue.total_length);
+      const remain_section = buffer.subarray(offset, offset + remain_length);
       slice_queue.slices.push(remain_section);
       slice_queue.total_length += remain_section.byteLength;
 
@@ -450,8 +443,8 @@ class TSDemuxer {
     }
   }
 
-  private handlePESSlice(buffer: ArrayBuffer, offset: number, length: number, misc: TSSliceMisc): void {
-    const data = new Uint8Array(buffer, offset, length);
+  private handlePESSlice(buffer: Uint8Array, offset: number, length: number, misc: TSSliceMisc): void {
+    const data = buffer.subarray(offset, offset + length);
 
     const packet_start_code_prefix = (data[0] << 16) | (data[1] << 8) | data[2];
     const PES_packet_length = (data[4] << 8) | data[5];
@@ -826,15 +819,14 @@ class TSDemuxer {
   ) {
     const annexb_parser = new H264AnnexBParser(data);
     let nalu_payload: H264NaluPayload | null = null;
-    const units: { type: H264NaluType; data: Uint8Array }[] = [];
+    const units: { type: H264NaluType; data: Uint8Array; lengthPrefixed: false }[] = [];
     let length = 0;
     let keyframe = false;
 
     nalu_payload = annexb_parser.readNextNaluPayload();
     while (nalu_payload != null) {
-      const nalu_avc1 = new H264NaluAVC1(nalu_payload);
-
-      if (nalu_avc1.type === H264NaluType.kSliceSPS) {
+      if (nalu_payload.type === H264NaluType.kSliceSPS) {
+        const nalu_avc1 = new H264NaluAVC1(nalu_payload);
         // Notice: parseSPS requires Nalu without startcode or length-header
         const details = SPSParser.parseSPS(nalu_payload.data) as unknown as Record<string, unknown>;
         if (!this.video_init_segment_dispatched_) {
@@ -850,7 +842,8 @@ class TSDemuxer {
             details: details,
           };
         }
-      } else if (nalu_avc1.type === H264NaluType.kSlicePPS) {
+      } else if (nalu_payload.type === H264NaluType.kSlicePPS) {
+        const nalu_avc1 = new H264NaluAVC1(nalu_payload);
         if (!this.video_init_segment_dispatched_ || this.video_metadata_changed_) {
           this.video_metadata_.pps = nalu_avc1;
           if (this.video_metadata_.sps && this.video_metadata_.pps) {
@@ -862,17 +855,17 @@ class TSDemuxer {
             this.dispatchVideoInitSegment();
           }
         }
-      } else if (nalu_avc1.type === H264NaluType.kSliceIDR) {
+      } else if (nalu_payload.type === H264NaluType.kSliceIDR) {
         keyframe = true;
-      } else if (nalu_avc1.type === H264NaluType.kSliceNonIDR && random_access_indicator === 1) {
+      } else if (nalu_payload.type === H264NaluType.kSliceNonIDR && random_access_indicator === 1) {
         // For open-gop stream, use random_access_indicator to identify keyframe
         keyframe = true;
       }
 
       // Push samples to remuxer only if initialization metadata has been dispatched
       if (this.video_init_segment_dispatched_) {
-        units.push(nalu_avc1);
-        length += nalu_avc1.data.byteLength;
+        units.push({ type: nalu_payload.type, data: nalu_payload.data, lengthPrefixed: false });
+        length += 4 + nalu_payload.data.byteLength;
       }
 
       nalu_payload = annexb_parser.readNextNaluPayload();
