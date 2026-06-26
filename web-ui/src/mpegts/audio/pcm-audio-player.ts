@@ -133,6 +133,7 @@ export class PCMAudioPlayer {
   private driftLogCounter = 0;
   private controlTimer: ReturnType<typeof setInterval> | null = null;
 
+  private isBuffering: boolean = false;
   private isSeeking: boolean = false;
   /** Last `timeupdate` playback position, used to measure seek delta (seeking may already show the target time). */
   private lastKnownVideoTime: number = 0;
@@ -147,6 +148,10 @@ export class PCMAudioPlayer {
   private boundOnVolumeChange: (() => void) | null = null;
   private boundOnTimeUpdate: (() => void) | null = null;
   private boundOnRateChange: (() => void) | null = null;
+  private boundOnVideoWaiting: (() => void) | null = null;
+  private boundOnVideoStalled: (() => void) | null = null;
+  private boundOnVideoPlaying: (() => void) | null = null;
+  private boundOnVideoCanPlay: (() => void) | null = null;
 
   /** Called when AudioContext is blocked by autoplay policy (needs user interaction). */
   onSuspended: (() => void) | null = null;
@@ -187,7 +192,7 @@ export class PCMAudioPlayer {
 
     this.context.onstatechange = () => {
       Log.v(TAG, `AudioContext state changed to: ${this.context?.state}`);
-      if (this.context?.state === "running") {
+      if (this.context?.state === "running" && this.canScheduleAudio()) {
         this.resyncFromBuffer(this.videoElement?.currentTime ?? 0);
       }
     };
@@ -225,6 +230,14 @@ export class PCMAudioPlayer {
       // no audible interruption.
       this.controlTick();
     };
+    this.boundOnVideoWaiting = () => this.enterBuffering("waiting");
+    this.boundOnVideoStalled = () => {
+      if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
+        this.enterBuffering("stalled");
+      }
+    };
+    this.boundOnVideoPlaying = () => this.maybeExitBuffering();
+    this.boundOnVideoCanPlay = () => this.maybeExitBuffering();
 
     video.addEventListener("seeking", this.boundOnVideoSeeking);
     video.addEventListener("seeked", this.boundOnVideoSeeked);
@@ -233,6 +246,10 @@ export class PCMAudioPlayer {
     video.addEventListener("volumechange", this.boundOnVolumeChange);
     video.addEventListener("timeupdate", this.boundOnTimeUpdate);
     video.addEventListener("ratechange", this.boundOnRateChange);
+    video.addEventListener("waiting", this.boundOnVideoWaiting);
+    video.addEventListener("stalled", this.boundOnVideoStalled);
+    video.addEventListener("playing", this.boundOnVideoPlaying);
+    video.addEventListener("canplay", this.boundOnVideoCanPlay);
 
     this.controlTimer = setInterval(() => {
       this.controlTick();
@@ -253,6 +270,10 @@ export class PCMAudioPlayer {
       if (this.boundOnVolumeChange) this.videoElement.removeEventListener("volumechange", this.boundOnVolumeChange);
       if (this.boundOnTimeUpdate) this.videoElement.removeEventListener("timeupdate", this.boundOnTimeUpdate);
       if (this.boundOnRateChange) this.videoElement.removeEventListener("ratechange", this.boundOnRateChange);
+      if (this.boundOnVideoWaiting) this.videoElement.removeEventListener("waiting", this.boundOnVideoWaiting);
+      if (this.boundOnVideoStalled) this.videoElement.removeEventListener("stalled", this.boundOnVideoStalled);
+      if (this.boundOnVideoPlaying) this.videoElement.removeEventListener("playing", this.boundOnVideoPlaying);
+      if (this.boundOnVideoCanPlay) this.videoElement.removeEventListener("canplay", this.boundOnVideoCanPlay);
     }
     this.boundOnVideoSeeking = null;
     this.boundOnVideoSeeked = null;
@@ -261,6 +282,10 @@ export class PCMAudioPlayer {
     this.boundOnVolumeChange = null;
     this.boundOnTimeUpdate = null;
     this.boundOnRateChange = null;
+    this.boundOnVideoWaiting = null;
+    this.boundOnVideoStalled = null;
+    this.boundOnVideoPlaying = null;
+    this.boundOnVideoCanPlay = null;
     this.videoElement = null;
   }
 
@@ -281,7 +306,7 @@ export class PCMAudioPlayer {
     this.insertToBuffer(chunk);
     this.cleanupBuffer();
 
-    if (!this.isSeeking && !this.videoElement?.paused) {
+    if (this.canScheduleAudio()) {
       this.pendingChunks.push(chunk);
       if (this.pendingChunks.length > MAX_PENDING_CHUNKS) {
         this.pendingChunks.shift();
@@ -348,7 +373,7 @@ export class PCMAudioPlayer {
    */
   private pump(): void {
     const ctx = this.context;
-    if (!ctx || !this.gainNode || this.isSeeking || this.pendingChunks.length === 0 || this.videoElement?.paused) {
+    if (!ctx || !this.gainNode || this.pendingChunks.length === 0 || !this.canScheduleAudio()) {
       return;
     }
 
@@ -431,6 +456,59 @@ export class PCMAudioPlayer {
     Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
     this.onSuspended?.();
     this.videoElement?.pause();
+  }
+
+  // ==================== Media readiness ====================
+
+  private hasPlayableVideoData(): boolean {
+    const video = this.videoElement;
+    return (
+      !!video &&
+      !video.paused &&
+      !video.seeking &&
+      !this.isSeeking &&
+      video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+    );
+  }
+
+  private canScheduleAudio(): boolean {
+    return !this.isBuffering && this.hasPlayableVideoData();
+  }
+
+  private resetDriftState(): void {
+    this.driftEma = 0;
+    this.hasDriftEma = false;
+  }
+
+  private enterBuffering(reason: "waiting" | "stalled"): void {
+    const video = this.videoElement;
+    if (!video || video.paused || video.seeking || this.isSeeking) {
+      return;
+    }
+
+    if (!this.isBuffering) {
+      Log.v(TAG, `Video ${reason}; pausing PCM audio scheduling`);
+    }
+    this.isBuffering = true;
+    this.cancelChain(true);
+    this.pendingChunks = [];
+    this.inputCursor = null;
+    this.resetDriftState();
+  }
+
+  private maybeExitBuffering(): void {
+    const video = this.videoElement;
+    if (!video || !this.hasPlayableVideoData()) {
+      return;
+    }
+
+    if (!this.isBuffering) {
+      return;
+    }
+
+    this.isBuffering = false;
+    Log.v(TAG, "Video playback resumed; resyncing PCM audio");
+    this.resyncFromBuffer(video.currentTime);
   }
 
   private anchor(time: number): void {
@@ -575,7 +653,7 @@ export class PCMAudioPlayer {
   private controlTick(): void {
     const ctx = this.context;
     const video = this.videoElement;
-    if (!ctx || !video || ctx.state !== "running" || video.paused || this.isSeeking || !this.stretcher) {
+    if (!ctx || !video || ctx.state !== "running" || !this.canScheduleAudio() || !this.stretcher) {
       return;
     }
 
@@ -702,8 +780,7 @@ export class PCMAudioPlayer {
     this.cancelChain(true);
     this.pendingChunks = [];
     this.inputCursor = null;
-    this.driftEma = 0;
-    this.hasDriftEma = false;
+    this.resetDriftState();
 
     const startIndex = this.findChunkIndexByTime(targetTime);
     if (startIndex < 0) {
@@ -737,6 +814,7 @@ export class PCMAudioPlayer {
   }
 
   private onVideoSeeking(): void {
+    this.isBuffering = false;
     this.largeSeekCancelled = false;
     const video = this.videoElement;
     if (video) {
@@ -786,8 +864,11 @@ export class PCMAudioPlayer {
       } catch (_e) {
         Log.w(TAG, "Failed to resume AudioContext on play()");
       }
-    } else if (this.videoElement) {
-      this.resyncFromBuffer(this.videoElement.currentTime);
+    } else {
+      const video = this.videoElement;
+      if (video && this.canScheduleAudio()) {
+        this.resyncFromBuffer(video.currentTime);
+      }
     }
 
     if (this.audioElement) {
@@ -800,6 +881,7 @@ export class PCMAudioPlayer {
   }
 
   pause(): void {
+    this.isBuffering = false;
     this.cancelChain();
     this.pendingChunks = [];
     this.inputCursor = null;
@@ -819,13 +901,13 @@ export class PCMAudioPlayer {
     this.pendingChunks = [];
     this.audioBuffer = [];
 
+    this.isBuffering = false;
     this.isSeeking = false;
     this.inputCursor = null;
     this.stretcher?.reset();
     this.stretcherFailed = false;
     this.softSyncUntil = 0;
-    this.driftEma = 0;
-    this.hasDriftEma = false;
+    this.resetDriftState();
   }
 
   setVolume(volume: number): void {
