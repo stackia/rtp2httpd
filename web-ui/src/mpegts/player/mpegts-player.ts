@@ -1,37 +1,11 @@
 import { markPlaybackUnlocked, PCMAudioPlayer } from "../audio/pcm-audio-player";
 import type { PlayerConfig } from "../config";
 import type { PlayerImpl, PlayerSegment } from "../types";
-import Log from "../utils/logger";
 import type { WorkerCommand, WorkerEvent } from "../worker/messages";
 import TransmuxWorker from "../worker/transmux-worker.ts?worker&inline";
-import { type StallJumper, setupLiveSync, setupStartupStallJumper } from "./live-sync";
+import { setupLiveSync } from "./live-sync";
 import { createMSE, type MSE } from "./mse";
 import type { LiveSessionAnchor } from "./wall-clock";
-
-const TAG = "Player";
-
-/** Attach verbose listeners to media element events for diagnosing playback stalls. */
-function setupVideoDebugLogs(video: HTMLVideoElement): () => void {
-  const events = ["loadedmetadata", "canplay", "playing", "waiting", "stalled", "pause", "seeking", "seeked", "error"];
-  const handler = (e: Event) => {
-    const buffered: string[] = [];
-    for (let i = 0; i < video.buffered.length; i++) {
-      buffered.push(`${video.buffered.start(i).toFixed(2)}-${video.buffered.end(i).toFixed(2)}`);
-    }
-    Log.v(
-      TAG,
-      `video event '${e.type}': currentTime=${video.currentTime.toFixed(2)}, readyState=${video.readyState}, paused=${video.paused}, buffered=[${buffered.join(",")}]${e.type === "error" ? `, error=${video.error?.code}:${video.error?.message}` : ""}`,
-    );
-  };
-  for (const ev of events) {
-    video.addEventListener(ev, handler);
-  }
-  return () => {
-    for (const ev of events) {
-      video.removeEventListener(ev, handler);
-    }
-  };
-}
 
 /** Check if a given time position is within any buffered range of the video element. */
 export function isBuffered(video: HTMLMediaElement, seconds: number): boolean {
@@ -58,7 +32,6 @@ export function createMpegtsPlayer(
   let workerInitialized = false;
   let pendingSegments: PlayerSegment[] | null = null;
   let destroyLiveSync: (() => void) | null = null;
-  let stallJumper: StallJumper | null = null;
   let mseGeneration = 0;
   let liveSyncEnabled = config.liveSync;
   /** Live edge assuming continuous playback since session start. */
@@ -267,10 +240,6 @@ export function createMpegtsPlayer(
     // request, which restarts a live stream mid-flow and corrupts the timeline.
     // The MSE layer already defers appends while ManagedMediaSource streaming=false.
 
-    // Buffered ranges change exactly on SourceBuffer updateend; re-check for startup
-    // stalls there (iOS does not reliably fire progress/stalled on the media element).
-    mse.onBufferedChange = () => stallJumper?.check();
-
     mse.onSourceClose = () => {
       // The UA killed the media pipeline (e.g. iOS reclaiming resources in
       // background). Stop fetching — this session cannot be revived.
@@ -297,16 +266,10 @@ export function createMpegtsPlayer(
     };
   }
 
-  let destroyVideoDebugLogs: (() => void) | null = null;
-
   function initLiveHelpers(): void {
     if (!destroyLiveSync && liveSyncEnabled) {
       destroyLiveSync = setupLiveSync(video, config, () => liveSessionAnchor);
     }
-    stallJumper?.destroy();
-    stallJumper = setupStartupStallJumper(video);
-    destroyVideoDebugLogs?.();
-    destroyVideoDebugLogs = setupVideoDebugLogs(video);
   }
 
   const onVideoPlay = () => markPlaybackUnlocked();
@@ -369,10 +332,6 @@ export function createMpegtsPlayer(
       destroyPCMPlayer();
       destroyLiveSync?.();
       destroyLiveSync = null;
-      stallJumper?.destroy();
-      stallJumper = null;
-      destroyVideoDebugLogs?.();
-      destroyVideoDebugLogs = null;
     },
 
     destroy() {

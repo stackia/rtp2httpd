@@ -1176,10 +1176,10 @@ class MP4 {
 
     data.set(
       [
-        0x00,
+        0x01, // version
         0x00,
         0x0f,
-        0x01, // version(0) & flags
+        0x01, // flags: data-offset + sample duration/size/flags/cts
         (sampleCount >>> 24) & 0xff, // sample_count
         (sampleCount >>> 16) & 0xff,
         (sampleCount >>> 8) & 0xff,
@@ -1211,7 +1211,7 @@ class MP4 {
           (flags.isDependedOn << 6) | (flags.hasRedundancy << 4) | (flags.isNonSync || 0),
           0x00,
           0x00, // sample_degradation_priority
-          (cts >>> 24) & 0xff, // sample_composition_time_offset
+          (cts >>> 24) & 0xff, // sample_composition_time_offset (signed in trun version 1)
           (cts >>> 16) & 0xff,
           (cts >>> 8) & 0xff,
           cts & 0xff,

@@ -23,7 +23,7 @@
  */
 
 import { isIOS } from "../../lib/platform";
-import { maxBufferHoleSec, type PlayerConfig } from "../config";
+import type { PlayerConfig } from "../config";
 import Log from "../utils/logger";
 import { type Stretcher, WasmStretcher } from "./wasm-stretcher";
 
@@ -52,8 +52,6 @@ const CHAIN_RESTART_DELAY = 0.04;
 const HARD_RESYNC_THRESHOLD = 1.5;
 /** Input gaps/overlaps within this are absorbed silently (PTS jitter). */
 const GAP_SNAP = 0.005;
-/** Input gaps up to this long are filled with silence; larger ones re-anchor. */
-const MAX_SILENCE_GAP = 2.0;
 /** Fade-in length applied when the chain (re)starts, to avoid clicks. */
 const FADE_SEC = 0.005;
 /** Proportional gain for drift correction via stretch ratio. */
@@ -72,6 +70,8 @@ const DRIFT_EMA_ALPHA = 0.4;
 const CONTROL_INTERVAL_MS = 250;
 /** Upper bound for pending (not yet scheduled) chunks. */
 const MAX_PENDING_CHUNKS = 600;
+/** Seconds of decoded PCM to keep in the pending scheduling window after a resync. */
+const PENDING_REFILL_WINDOW_SEC = 2.0;
 /** Control ticks between verbose drift diagnostics (~10s). */
 const DRIFT_LOG_TICKS = 40;
 
@@ -133,11 +133,8 @@ export class PCMAudioPlayer {
   private driftLogCounter = 0;
   private controlTimer: ReturnType<typeof setInterval> | null = null;
 
+  private isBuffering: boolean = false;
   private isSeeking: boolean = false;
-  /** Last `timeupdate` playback position, used to measure seek delta (seeking may already show the target time). */
-  private lastKnownVideoTime: number = 0;
-  /** Set when a large seek already cancelled the scheduling chain in `onVideoSeeking`. */
-  private largeSeekCancelled: boolean = false;
 
   // Bound event handlers for cleanup
   private boundOnVideoSeeking: (() => void) | null = null;
@@ -147,6 +144,10 @@ export class PCMAudioPlayer {
   private boundOnVolumeChange: (() => void) | null = null;
   private boundOnTimeUpdate: (() => void) | null = null;
   private boundOnRateChange: (() => void) | null = null;
+  private boundOnVideoWaiting: (() => void) | null = null;
+  private boundOnVideoStalled: (() => void) | null = null;
+  private boundOnVideoPlaying: (() => void) | null = null;
+  private boundOnVideoCanPlay: (() => void) | null = null;
 
   /** Called when AudioContext is blocked by autoplay policy (needs user interaction). */
   onSuspended: (() => void) | null = null;
@@ -187,7 +188,7 @@ export class PCMAudioPlayer {
 
     this.context.onstatechange = () => {
       Log.v(TAG, `AudioContext state changed to: ${this.context?.state}`);
-      if (this.context?.state === "running") {
+      if (this.context?.state === "running" && this.canScheduleAudio()) {
         this.resyncFromBuffer(this.videoElement?.currentTime ?? 0);
       }
     };
@@ -211,9 +212,6 @@ export class PCMAudioPlayer {
       this.setMuted(video.muted);
     };
     this.boundOnTimeUpdate = () => {
-      if (!video.seeking) {
-        this.lastKnownVideoTime = video.currentTime;
-      }
       this.controlTick();
       this.pump();
     };
@@ -225,6 +223,14 @@ export class PCMAudioPlayer {
       // no audible interruption.
       this.controlTick();
     };
+    this.boundOnVideoWaiting = () => this.enterBuffering("waiting");
+    this.boundOnVideoStalled = () => {
+      if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
+        this.enterBuffering("stalled");
+      }
+    };
+    this.boundOnVideoPlaying = () => this.maybeExitBuffering();
+    this.boundOnVideoCanPlay = () => this.maybeExitBuffering();
 
     video.addEventListener("seeking", this.boundOnVideoSeeking);
     video.addEventListener("seeked", this.boundOnVideoSeeked);
@@ -233,6 +239,10 @@ export class PCMAudioPlayer {
     video.addEventListener("volumechange", this.boundOnVolumeChange);
     video.addEventListener("timeupdate", this.boundOnTimeUpdate);
     video.addEventListener("ratechange", this.boundOnRateChange);
+    video.addEventListener("waiting", this.boundOnVideoWaiting);
+    video.addEventListener("stalled", this.boundOnVideoStalled);
+    video.addEventListener("playing", this.boundOnVideoPlaying);
+    video.addEventListener("canplay", this.boundOnVideoCanPlay);
 
     this.controlTimer = setInterval(() => {
       this.controlTick();
@@ -253,6 +263,10 @@ export class PCMAudioPlayer {
       if (this.boundOnVolumeChange) this.videoElement.removeEventListener("volumechange", this.boundOnVolumeChange);
       if (this.boundOnTimeUpdate) this.videoElement.removeEventListener("timeupdate", this.boundOnTimeUpdate);
       if (this.boundOnRateChange) this.videoElement.removeEventListener("ratechange", this.boundOnRateChange);
+      if (this.boundOnVideoWaiting) this.videoElement.removeEventListener("waiting", this.boundOnVideoWaiting);
+      if (this.boundOnVideoStalled) this.videoElement.removeEventListener("stalled", this.boundOnVideoStalled);
+      if (this.boundOnVideoPlaying) this.videoElement.removeEventListener("playing", this.boundOnVideoPlaying);
+      if (this.boundOnVideoCanPlay) this.videoElement.removeEventListener("canplay", this.boundOnVideoCanPlay);
     }
     this.boundOnVideoSeeking = null;
     this.boundOnVideoSeeked = null;
@@ -261,6 +275,10 @@ export class PCMAudioPlayer {
     this.boundOnVolumeChange = null;
     this.boundOnTimeUpdate = null;
     this.boundOnRateChange = null;
+    this.boundOnVideoWaiting = null;
+    this.boundOnVideoStalled = null;
+    this.boundOnVideoPlaying = null;
+    this.boundOnVideoCanPlay = null;
     this.videoElement = null;
   }
 
@@ -281,11 +299,7 @@ export class PCMAudioPlayer {
     this.insertToBuffer(chunk);
     this.cleanupBuffer();
 
-    if (!this.isSeeking && !this.videoElement?.paused) {
-      this.pendingChunks.push(chunk);
-      if (this.pendingChunks.length > MAX_PENDING_CHUNKS) {
-        this.pendingChunks.shift();
-      }
+    if (this.canScheduleAudio()) {
       this.pump();
     }
   }
@@ -348,7 +362,7 @@ export class PCMAudioPlayer {
    */
   private pump(): void {
     const ctx = this.context;
-    if (!ctx || !this.gainNode || this.isSeeking || this.pendingChunks.length === 0 || this.videoElement?.paused) {
+    if (!ctx || !this.gainNode || !this.canScheduleAudio()) {
       return;
     }
 
@@ -371,7 +385,14 @@ export class PCMAudioPlayer {
       return;
     }
 
-    while (this.pendingChunks.length > 0) {
+    while (true) {
+      if (this.pendingChunks.length === 0) {
+        this.refillPendingFromBuffer(this.inputCursor ?? this.videoElement?.currentTime ?? 0);
+      }
+      if (this.pendingChunks.length === 0) {
+        break;
+      }
+
       // Throttle: keep at most SCHEDULE_AHEAD seconds scheduled ahead
       if (this.nextStartTime - ctx.currentTime >= SCHEDULE_AHEAD) {
         break;
@@ -390,21 +411,10 @@ export class PCMAudioPlayer {
       const cursor = this.inputCursor as number;
       const delta = chunk.time - cursor;
 
-      if (delta > MAX_SILENCE_GAP) {
-        // Forward discontinuity: re-anchor at the new position
-        Log.v(TAG, `Audio stream jump +${delta.toFixed(3)}s, re-anchoring`);
-        this.cancelChain(true);
-        this.anchor(chunk.time);
-        continue;
-      }
-
+      let chunkEndTime = chunk.endTime;
       if (delta > GAP_SNAP) {
-        // Small gap: fill with silence to keep the timeline correct
-        const gapFrames = Math.round(delta * chunk.sampleRate);
-        if (gapFrames > 0) {
-          this.feedStretcher(stretcher, new Float32Array(gapFrames * chunk.channels), chunk.sampleRate);
-          this.inputCursor = cursor + gapFrames / chunk.sampleRate;
-        }
+        Log.w(TAG, `Unexpected PCM pending gap ${delta.toFixed(3)}s; snapping to cursor`);
+        chunkEndTime = cursor + chunk.duration;
       }
 
       let samples = chunk.samples;
@@ -421,7 +431,7 @@ export class PCMAudioPlayer {
 
       this.pendingChunks.shift();
       this.feedStretcher(stretcher, samples, chunk.sampleRate);
-      this.inputCursor = chunk.endTime;
+      this.inputCursor = chunkEndTime;
     }
   }
 
@@ -431,6 +441,59 @@ export class PCMAudioPlayer {
     Log.w(TAG, "AudioContext blocked by autoplay policy, waiting for user interaction");
     this.onSuspended?.();
     this.videoElement?.pause();
+  }
+
+  // ==================== Media readiness ====================
+
+  private hasPlayableVideoData(): boolean {
+    const video = this.videoElement;
+    return (
+      !!video &&
+      !video.paused &&
+      !video.seeking &&
+      !this.isSeeking &&
+      video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+    );
+  }
+
+  private canScheduleAudio(): boolean {
+    return !this.isBuffering && this.hasPlayableVideoData();
+  }
+
+  private resetDriftState(): void {
+    this.driftEma = 0;
+    this.hasDriftEma = false;
+  }
+
+  private enterBuffering(reason: "waiting" | "stalled"): void {
+    const video = this.videoElement;
+    if (!video || video.paused || video.seeking || this.isSeeking) {
+      return;
+    }
+
+    if (!this.isBuffering) {
+      Log.v(TAG, `Video ${reason}; pausing PCM audio scheduling`);
+    }
+    this.isBuffering = true;
+    this.cancelChain(true);
+    this.pendingChunks = [];
+    this.inputCursor = null;
+    this.resetDriftState();
+  }
+
+  private maybeExitBuffering(): void {
+    const video = this.videoElement;
+    if (!video || !this.hasPlayableVideoData()) {
+      return;
+    }
+
+    if (!this.isBuffering) {
+      return;
+    }
+
+    this.isBuffering = false;
+    Log.v(TAG, "Video playback resumed; resyncing PCM audio");
+    this.resyncFromBuffer(video.currentTime);
   }
 
   private anchor(time: number): void {
@@ -575,7 +638,7 @@ export class PCMAudioPlayer {
   private controlTick(): void {
     const ctx = this.context;
     const video = this.videoElement;
-    if (!ctx || !video || ctx.state !== "running" || video.paused || this.isSeeking || !this.stretcher) {
+    if (!ctx || !video || ctx.state !== "running" || !this.canScheduleAudio() || !this.stretcher) {
       return;
     }
 
@@ -617,6 +680,7 @@ export class PCMAudioPlayer {
     const correction = Math.min(correctionMax, Math.max(-correctionMax, correctionDrift * correctionGain));
     const ratio = Math.min(2, Math.max(0.5, rate * (1 - correction)));
     this.stretcher.setRatio(ratio);
+    this.pump();
 
     if (++this.driftLogCounter >= DRIFT_LOG_TICKS) {
       this.driftLogCounter = 0;
@@ -628,6 +692,53 @@ export class PCMAudioPlayer {
   }
 
   // ==================== Buffer Management ====================
+
+  private trimChunkStart(chunk: AudioChunk, targetTime: number): AudioChunk | null {
+    if (targetTime <= chunk.time + GAP_SNAP) {
+      return chunk;
+    }
+
+    const cutFrames = Math.round((targetTime - chunk.time) * chunk.sampleRate);
+    const totalFrames = Math.floor(chunk.samples.length / chunk.channels);
+    if (cutFrames >= totalFrames) {
+      return null;
+    }
+
+    const time = chunk.time + cutFrames / chunk.sampleRate;
+    return {
+      samples: chunk.samples.subarray(cutFrames * chunk.channels),
+      channels: chunk.channels,
+      sampleRate: chunk.sampleRate,
+      time,
+      duration: chunk.endTime - time,
+      endTime: chunk.endTime,
+    };
+  }
+
+  private refillPendingFromBuffer(startTime: number): void {
+    if (this.pendingChunks.length >= MAX_PENDING_CHUNKS) return;
+
+    const startIndex = this.findChunkIndexByTime(startTime);
+    if (startIndex < 0) return;
+
+    const endTime = startTime + PENDING_REFILL_WINDOW_SEC;
+    for (let i = startIndex; i < this.audioBuffer.length && this.pendingChunks.length < MAX_PENDING_CHUNKS; i++) {
+      const source = this.audioBuffer[i];
+      if (source.endTime <= startTime + GAP_SNAP) {
+        continue;
+      }
+      if (source.time >= endTime) {
+        break;
+      }
+
+      const chunk = this.trimChunkStart(source, startTime);
+      if (!chunk) {
+        continue;
+      }
+      this.pendingChunks.push(chunk);
+      startTime = chunk.endTime;
+    }
+  }
 
   private insertToBuffer(chunk: AudioChunk): void {
     let low = 0;
@@ -641,10 +752,41 @@ export class PCMAudioPlayer {
       }
     }
 
-    if (low < this.audioBuffer.length && Math.abs(this.audioBuffer[low].time - chunk.time) < 0.001) {
-      this.audioBuffer[low] = chunk;
+    let normalized = chunk;
+    if (low > 0) {
+      const prev = this.audioBuffer[low - 1];
+      if (normalized.time > prev.endTime) {
+        normalized = { ...normalized, time: prev.endTime, endTime: prev.endTime + normalized.duration };
+      } else if (normalized.time < prev.endTime) {
+        const trimmed = this.trimChunkStart(normalized, prev.endTime);
+        if (!trimmed) {
+          return;
+        }
+        normalized = trimmed;
+      }
+    }
+
+    if (low < this.audioBuffer.length && Math.abs(this.audioBuffer[low].time - normalized.time) < 0.001) {
+      this.audioBuffer[low] = normalized;
+    } else if (low < this.audioBuffer.length && normalized.endTime > this.audioBuffer[low].time) {
+      const next = this.audioBuffer[low];
+      const keepFrames = Math.max(0, Math.round((next.time - normalized.time) * normalized.sampleRate));
+      if (keepFrames === 0) {
+        return;
+      }
+      const totalFrames = Math.floor(normalized.samples.length / normalized.channels);
+      const frames = Math.min(keepFrames, totalFrames);
+      const endTime = normalized.time + frames / normalized.sampleRate;
+      this.audioBuffer.splice(low, 0, {
+        samples: normalized.samples.subarray(0, frames * normalized.channels),
+        channels: normalized.channels,
+        sampleRate: normalized.sampleRate,
+        time: normalized.time,
+        duration: endTime - normalized.time,
+        endTime,
+      });
     } else {
-      this.audioBuffer.splice(low, 0, chunk);
+      this.audioBuffer.splice(low, 0, normalized);
     }
   }
 
@@ -702,8 +844,7 @@ export class PCMAudioPlayer {
     this.cancelChain(true);
     this.pendingChunks = [];
     this.inputCursor = null;
-    this.driftEma = 0;
-    this.hasDriftEma = false;
+    this.resetDriftState();
 
     const startIndex = this.findChunkIndexByTime(targetTime);
     if (startIndex < 0) {
@@ -711,67 +852,24 @@ export class PCMAudioPlayer {
       return;
     }
 
-    for (let i = startIndex; i < this.audioBuffer.length; i++) {
-      let chunk = this.audioBuffer[i];
-      if (i === startIndex && targetTime > chunk.time + GAP_SNAP) {
-        // Trim the head so the chain starts exactly at the target position
-        const cutFrames = Math.round((targetTime - chunk.time) * chunk.sampleRate);
-        const totalFrames = Math.floor(chunk.samples.length / chunk.channels);
-        if (cutFrames >= totalFrames) {
-          continue;
-        }
-        const time = chunk.time + cutFrames / chunk.sampleRate;
-        chunk = {
-          samples: chunk.samples.subarray(cutFrames * chunk.channels),
-          channels: chunk.channels,
-          sampleRate: chunk.sampleRate,
-          time,
-          duration: chunk.endTime - time,
-          endTime: chunk.endTime,
-        };
-      }
-      this.pendingChunks.push(chunk);
-    }
+    this.refillPendingFromBuffer(targetTime);
     Log.v(TAG, `Resync at ${targetTime.toFixed(3)}s, refilled ${this.pendingChunks.length} chunks`);
     this.pump();
   }
 
   private onVideoSeeking(): void {
-    this.largeSeekCancelled = false;
-    const video = this.videoElement;
-    if (video) {
-      const delta = Math.abs(video.currentTime - this.lastKnownVideoTime);
-      if (delta > maxBufferHoleSec(this.config)) {
-        this.cancelChain();
-        this.pendingChunks = [];
-        this.largeSeekCancelled = true;
-      }
-    }
+    this.isBuffering = false;
+    this.cancelChain();
+    this.pendingChunks = [];
     this.isSeeking = true;
   }
 
   private onVideoSeeked(): void {
     if (!this.videoElement) return;
     const targetTime = this.videoElement.currentTime;
-    const prevTime = this.lastKnownVideoTime;
-    const delta = targetTime - prevTime;
-
-    if (delta > 0 && delta <= maxBufferHoleSec(this.config)) {
-      Log.v(TAG, `Small forward seek (${(delta * 1000).toFixed(0)}ms), skipping audio resync`);
-      this.isSeeking = false;
-      this.lastKnownVideoTime = targetTime;
-      this.pump();
-      return;
-    }
 
     Log.v(TAG, `Video seeked to ${targetTime.toFixed(3)}, resyncing audio`);
-    if (!this.largeSeekCancelled) {
-      this.cancelChain();
-      this.pendingChunks = [];
-    }
-    this.largeSeekCancelled = false;
     this.isSeeking = false;
-    this.lastKnownVideoTime = targetTime;
     this.resyncFromBuffer(targetTime);
   }
 
@@ -786,8 +884,11 @@ export class PCMAudioPlayer {
       } catch (_e) {
         Log.w(TAG, "Failed to resume AudioContext on play()");
       }
-    } else if (this.videoElement) {
-      this.resyncFromBuffer(this.videoElement.currentTime);
+    } else {
+      const video = this.videoElement;
+      if (video && this.canScheduleAudio()) {
+        this.resyncFromBuffer(video.currentTime);
+      }
     }
 
     if (this.audioElement) {
@@ -800,6 +901,7 @@ export class PCMAudioPlayer {
   }
 
   pause(): void {
+    this.isBuffering = false;
     this.cancelChain();
     this.pendingChunks = [];
     this.inputCursor = null;
@@ -819,13 +921,13 @@ export class PCMAudioPlayer {
     this.pendingChunks = [];
     this.audioBuffer = [];
 
+    this.isBuffering = false;
     this.isSeeking = false;
     this.inputCursor = null;
     this.stretcher?.reset();
     this.stretcherFailed = false;
     this.softSyncUntil = 0;
-    this.driftEma = 0;
-    this.hasDriftEma = false;
+    this.resetDriftState();
   }
 
   setVolume(volume: number): void {

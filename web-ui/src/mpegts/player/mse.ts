@@ -42,8 +42,6 @@ export interface MSE {
   onBufferFull: (() => void) | null;
   /** Fired when buffer space becomes available again after a previous onBufferFull. */
   onBufferAvailable: (() => void) | null;
-  /** Fired after each SourceBuffer update completes (buffered ranges may have changed). */
-  onBufferedChange: (() => void) | null;
   /** ManagedMediaSource: UA wants more media data appended (streaming → true). */
   onStartStreaming: (() => void) | null;
   /** ManagedMediaSource: UA has enough buffered data (streaming → false). */
@@ -291,7 +289,6 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   }
 
   function onSourceBufferUpdateEnd(): void {
-    mse.onBufferedChange?.();
     tryApplyDuration();
     if (hasPendingRemoveRanges()) {
       doRemoveRanges();
@@ -368,7 +365,6 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   const mse: MSE = {
     onBufferFull: null,
     onBufferAvailable: null,
-    onBufferedChange: null,
     onStartStreaming: null,
     onEndStreaming: null,
     onSourceClose: null,
@@ -587,7 +583,6 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
       mse.onBufferFull = null;
       mse.onBufferAvailable = null;
-      mse.onBufferedChange = null;
       mse.onStartStreaming = null;
       mse.onEndStreaming = null;
       mse.onSourceClose = null;
