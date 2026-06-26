@@ -145,6 +145,11 @@ double wsola_position(Wsola* w) {
     return w ? w->pos : 0.0;
 }
 
+EXPORT
+int wsola_has_tail(Wsola* w) {
+    return w ? w->has_tail : 0;
+}
+
 static int wsola_ensure_in_capacity(Wsola* w, int frames) {
     if (frames <= w->in_capacity) {
         return 1;

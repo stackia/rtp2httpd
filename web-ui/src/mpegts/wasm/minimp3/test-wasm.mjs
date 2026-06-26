@@ -116,4 +116,67 @@ for (const ratio of [1.0, 1.2, 2.0]) {
   ex.wsola_destroy(w);
 }
 
+// ---- Fused software audio processor: decode + optional WSOLA + planar output ----
+for (const ratio of [1.0, 1.2, 2.0]) {
+  const processor = ex.software_audio_processor_create(1); // 1 = mp2
+  if (!processor) throw new Error("software_audio_processor_create failed");
+  ex.software_audio_processor_set_ratio(processor, ratio);
+  const infoPtr2 = ex.malloc(6 * 8);
+  const inPtr2 = ex.malloc(8192);
+  const outCapFrames = 200_000;
+  const outPtr2 = ex.malloc(outCapFrames * 2 * 4);
+  let outFrames = 0;
+  let lastEnd = Number.NEGATIVE_INFINITY;
+  let inputPtsFrames = 0;
+  const leftChunks = [];
+  pos = 0;
+  chunkIdx = 0;
+  while (pos < mp2.length) {
+    const size = Math.min([512, 1733, 97, 4096, 2304, 333][chunkIdx++ % 6], mp2.length - pos, 8192);
+    const chunk = mp2.subarray(pos, pos + size);
+    pos += size;
+    new Uint8Array(ex.memory.buffer).set(chunk, inPtr2);
+    const ptsMs = (inputPtsFrames / sr) * 1000;
+    const got = ex.software_audio_processor_process(
+      processor,
+      inPtr2,
+      chunk.length,
+      ptsMs,
+      outPtr2,
+      outCapFrames,
+      infoPtr2,
+    );
+    const info = new Float64Array(ex.memory.buffer, infoPtr2, 6);
+    inputPtsFrames += info[5];
+    if (got > 0) {
+      const streamStart = info[3];
+      const streamEnd = info[4];
+      if (streamStart + 1 < lastEnd) throw new Error("processor stream timeline moved backwards");
+      lastEnd = streamEnd;
+      leftChunks.push(new Float32Array(ex.memory.buffer, outPtr2, got).slice());
+      outFrames += got;
+    }
+  }
+  const left = new Float32Array(outFrames);
+  {
+    let off = 0;
+    for (const p of leftChunks) {
+      left.set(p, off);
+      off += p.length;
+    }
+  }
+  const durationRatio = totalSamples / outFrames;
+  const fProcessor = zeroCrossFreq(left, 1, sr);
+  console.log(
+    `processor ratio=${ratio}: in=${totalSamples}f out=${outFrames}f ` +
+      `(eff ratio ${durationRatio.toFixed(3)}), tone ≈ ${fProcessor.toFixed(1)} Hz`,
+  );
+  if (Math.abs(durationRatio - ratio) > 0.08) throw new Error(`processor duration ratio off for ${ratio}`);
+  if (Math.abs(fProcessor - 440) > 12) throw new Error(`processor pitch not preserved at ratio ${ratio}`);
+  ex.free(infoPtr2);
+  ex.free(inPtr2);
+  ex.free(outPtr2);
+  ex.software_audio_processor_destroy(processor);
+}
+
 console.log("ALL OK");

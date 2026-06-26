@@ -1,3 +1,5 @@
+import type { SoftwareAudioCodec } from "./decoder/software-audio-processor";
+
 /** Player configuration options. All fields are optional when passed to `createPlayer()`. */
 export interface PlayerConfig {
   /** Chase live stream latency by changing playbackRate. @default true */
@@ -17,9 +19,11 @@ export interface PlayerConfig {
    */
   maxBufferHoleMs: number;
 
-  /** URLs to WASM decoder files, keyed by codec. Omit to disable software decoding for that codec.
+  /** URLs to WASM audio processor files, keyed by codec. Omit to disable software processing for that codec.
    *  e.g. `{ mp2: "/assets/mp2_decoder.wasm" }` */
-  wasmDecoders: { mp2?: string };
+  wasmAudioProcessors: Partial<Record<SoftwareAudioCodec, string>>;
+  /** @deprecated Use `wasmAudioProcessors`. Kept as a compatibility alias. */
+  wasmDecoders: Partial<Record<SoftwareAudioCodec, string>>;
 
   /** Max backward buffer duration in seconds. Cleanup triggers when buffer exceeds this. @default 180 */
   bufferCleanupMaxBackward: number;
@@ -40,6 +44,7 @@ export const defaultConfig: PlayerConfig = {
 
   maxBufferHoleMs: 300,
 
+  wasmAudioProcessors: {},
   wasmDecoders: {},
 
   bufferCleanupMaxBackward: 180,

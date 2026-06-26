@@ -75,6 +75,9 @@ export function createMpegtsPlayer(
     if (!pcmPlayer) {
       pcmPlayer = new PCMAudioPlayer(config);
       pcmPlayer.onSuspended = () => impl.onAudioSuspended?.();
+      pcmPlayer.onStretchRatioChange = (ratio) => {
+        worker?.postMessage({ type: "set-audio-stretch-ratio", ratio, gen: mseGeneration } satisfies WorkerCommand);
+      };
       pcmPlayerInitPromise = pcmPlayer.init();
       pcmPlayer.attachVideo(video);
     }
@@ -140,11 +143,11 @@ export function createMpegtsPlayer(
         break;
       case "pcm-audio-data": {
         const player = ensurePCMPlayer();
-        const pcm = new Float32Array(msg.pcm);
+        const planes = msg.planes.map((plane) => new Float32Array(plane));
         const gen = mseGeneration;
         pcmPlayerInitPromise?.then(() => {
           if (gen !== mseGeneration) return;
-          player.feed(pcm, msg.channels, msg.sampleRate, msg.time);
+          player.feed(planes, msg.channels, msg.sampleRate, msg.frames, msg.streamStart, msg.streamEnd);
         });
         break;
       }

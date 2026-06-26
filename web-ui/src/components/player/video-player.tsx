@@ -560,7 +560,7 @@ export function VideoPlayer({
     video.muted = isMuted;
 
     const p = createPlayer(video, {
-      wasmDecoders: { mp2: mp2WasmUrl },
+      wasmAudioProcessors: { mp2: mp2WasmUrl },
     });
     p.on("error", (e) => {
       if (slotPlayerRef(slotId).current === p) {

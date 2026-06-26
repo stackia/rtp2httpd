@@ -22,13 +22,18 @@ function resolveSegmentUrls(segments: PlayerSegment[]): PlayerSegment[] {
 
 export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerConfig>): Player {
   const fullConfig: PlayerConfig = { ...defaultConfig, ...config };
+  fullConfig.wasmAudioProcessors = {
+    ...fullConfig.wasmDecoders,
+    ...fullConfig.wasmAudioProcessors,
+  };
 
   // Resolve WASM URLs to absolute so they work inside inline blob workers
-  if (fullConfig.wasmDecoders.mp2) {
-    fullConfig.wasmDecoders = {
-      ...fullConfig.wasmDecoders,
-      mp2: new URL(fullConfig.wasmDecoders.mp2, document.baseURI).href,
+  if (fullConfig.wasmAudioProcessors.mp2) {
+    fullConfig.wasmAudioProcessors = {
+      ...fullConfig.wasmAudioProcessors,
+      mp2: new URL(fullConfig.wasmAudioProcessors.mp2, document.baseURI).href,
     };
+    fullConfig.wasmDecoders = fullConfig.wasmAudioProcessors;
   }
 
   let destroyed = false;

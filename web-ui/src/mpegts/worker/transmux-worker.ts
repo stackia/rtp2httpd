@@ -55,9 +55,12 @@ function createPipeline(segments: PlayerSegment[], config: PlayerConfig): Pipeli
     onHlsInfo(info) {
       post({ type: "hls-info", live: info.live, totalDuration: info.totalDuration, gen });
     },
-    onPCMAudioData(pcm, channels, sampleRate, time) {
-      const buffer = pcm.buffer as ArrayBuffer;
-      post({ type: "pcm-audio-data", pcm: buffer, channels, sampleRate, time, gen }, [buffer]);
+    onPCMAudioData(planes, channels, sampleRate, frames, streamStart, streamEnd) {
+      const buffers = planes.map((plane) => plane.buffer as ArrayBuffer);
+      post(
+        { type: "pcm-audio-data", planes: buffers, channels, sampleRate, frames, streamStart, streamEnd, gen },
+        buffers,
+      );
     },
   };
 
@@ -84,6 +87,11 @@ self.addEventListener("message", (e: MessageEvent) => {
       break;
     case "resume":
       pipeline?.resume();
+      break;
+    case "set-audio-stretch-ratio":
+      if (cmd.gen === gen) {
+        pipeline?.setAudioStretchRatio(cmd.ratio);
+      }
       break;
     case "reset":
       if (pipeline) {

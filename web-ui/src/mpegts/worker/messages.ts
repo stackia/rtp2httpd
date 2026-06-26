@@ -7,6 +7,7 @@ export type WorkerCommand =
   | { type: "load-segments"; segments: PlayerSegment[]; gen: number }
   | { type: "pause" }
   | { type: "resume" }
+  | { type: "set-audio-stretch-ratio"; ratio: number; gen: number }
   | { type: "reset" }
   | { type: "destroy" };
 
@@ -18,10 +19,13 @@ export type WorkerEvent =
   | { type: "hls-info"; live: boolean; totalDuration: number; gen: number }
   | {
       type: "pcm-audio-data";
-      pcm: ArrayBuffer;
+      planes: ArrayBuffer[];
       channels: number;
       sampleRate: number;
+      frames: number;
       /** Start time normalized to the MSE timeline (seconds). */
-      time: number;
+      streamStart: number;
+      /** End time normalized to the MSE timeline (seconds). */
+      streamEnd: number;
       gen: number;
     };

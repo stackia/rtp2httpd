@@ -1,6 +1,7 @@
 import type { PlayerConfig } from "../config";
 import { createDefaultConfig } from "../config";
-import { WorkerAudioDecoder } from "../decoder/worker-audio-decoder";
+import type { EncodedAudioFrame, ProcessedAudioChunk } from "../decoder/software-audio-processor";
+import { WorkerSoftwareAudioProcessor } from "../decoder/worker-software-audio-processor";
 import DemuxErrors from "../demux/demux-errors";
 import TSDemuxer from "../demux/ts-demuxer";
 import { containsMoov, parseInitSegment, probeFmp4, splitInitFromSegment } from "../hls/fmp4";
@@ -35,8 +36,15 @@ export interface PipelineCallbacks {
   onIOError: (type: string, info: { code: number; msg: string }) => void;
   onDemuxError: (type: string, info: string) => void;
   onHlsInfo: (info: HlsInfo) => void;
-  /** `time` is normalized to the MSE timeline (seconds, same space as video.currentTime). */
-  onPCMAudioData: (pcm: Float32Array, channels: number, sampleRate: number, time: number) => void;
+  /** `streamStart`/`streamEnd` are normalized to the MSE timeline (seconds). */
+  onPCMAudioData: (
+    planes: Float32Array[],
+    channels: number,
+    sampleRate: number,
+    frames: number,
+    streamStart: number,
+    streamEnd: number,
+  ) => void;
 }
 
 class LoadError extends Error {
@@ -99,18 +107,13 @@ class Pipeline {
   private _fmp4Chunks: Uint8Array[] = [];
   private _lastInitUrl: string | null = null;
 
-  private _workerAudioDecoder: WorkerAudioDecoder | null = null;
-  private _workerAudioDecoderInitPromise: Promise<boolean> | null = null;
+  private _workerAudioProcessor: WorkerSoftwareAudioProcessor | null = null;
 
-  // --- MP2 software decode timing state ---
-  /** PTS anchor (ms) for sample-count extrapolation across PES packets. */
-  private _audioAnchorPtsMs: number | null = null;
-  private _audioSamplesSinceAnchor = 0;
-  private _audioSampleRate = 0;
-  /** PCM decoded before the remuxer dts base is known (flushed once available). */
-  private _pendingPcm: Array<{ pcm: Float32Array; channels: number; sampleRate: number; ptsMs: number }> = [];
+  /** Processed PCM before the remuxer dts base is known (flushed once available). */
+  private _pendingPcm: Array<ProcessedAudioChunk> = [];
   /** Incremented on audio timing resets to invalidate decode callbacks queued before the reset. */
   private _audioGen = 0;
+  private _audioStretchRatio = 1;
 
   constructor(segments: PlayerSegment[], config: PlayerConfig, callbacks: PipelineCallbacks) {
     this._callbacks = callbacks;
@@ -143,14 +146,18 @@ class Pipeline {
     this._resumeGate = null;
   }
 
+  setAudioStretchRatio(ratio: number): void {
+    this._audioStretchRatio = Math.min(2, Math.max(0.5, ratio));
+    this._workerAudioProcessor?.setStretchRatio(this._audioStretchRatio);
+  }
+
   destroy(): void {
     this._runId++;
     this._teardown();
-    if (this._workerAudioDecoder) {
-      this._workerAudioDecoder.destroy();
-      this._workerAudioDecoder = null;
+    if (this._workerAudioProcessor) {
+      this._workerAudioProcessor.destroy();
+      this._workerAudioProcessor = null;
     }
-    this._workerAudioDecoderInitPromise = null;
   }
 
   // ---- Private methods ----
@@ -159,8 +166,9 @@ class Pipeline {
     this._runId++;
     this._teardown();
 
-    // Reset WASM audio decoder state (clear stale mdct/qmf + carry from previous stream)
-    this._workerAudioDecoder?.reset();
+    // Reset WASM audio processor state (clear stale decoder/WSOLA/carry from previous stream)
+    this.setAudioStretchRatio(1);
+    this._workerAudioProcessor?.reset();
     this._resetAudioTiming();
 
     const url = segments[0]?.url ?? "";
@@ -278,7 +286,7 @@ class Pipeline {
           // Each static segment is an independent TS timeline: a partial MP2
           // frame carried from the previous URL must not be prepended to the
           // next one, and the PTS anchor must re-establish from the new PES
-          this._workerAudioDecoder?.reset();
+          this._workerAudioProcessor?.reset();
           this._resetAudioTiming();
         }
       } catch (e) {
@@ -307,15 +315,12 @@ class Pipeline {
     }
     this._pendingDtsOffsetMs = startSeconds * 1000;
     // The output timeline restarts: stale carry bytes and the PTS anchor are invalid
-    this._workerAudioDecoder?.reset();
+    this._workerAudioProcessor?.reset();
     this._resetAudioTiming();
   }
 
   private _resetAudioTiming(): void {
     this._audioGen++;
-    this._audioAnchorPtsMs = null;
-    this._audioSamplesSinceAnchor = 0;
-    this._audioSampleRate = 0;
     this._pendingPcm = [];
   }
 
@@ -406,10 +411,10 @@ class Pipeline {
     demuxer.onError = this._onDemuxException.bind(this);
     demuxer.timestampBase = meta.timestampBase * 90000; // seconds → 90kHz ticks
 
-    // Set up software audio decode callback when MP2 WASM URL is configured
-    if (this._config.wasmDecoders.mp2) {
-      demuxer.onRawAudioData = (frame) => {
-        this._handleRawAudioFrame(frame);
+    // Set up software audio processing callback when a matching WASM URL is configured
+    if (this._config.wasmAudioProcessors.mp2 || this._config.wasmDecoders.mp2) {
+      demuxer.onEncodedAudioData = (frame) => {
+        this._handleEncodedAudioFrame(frame);
       };
     }
 
@@ -500,59 +505,32 @@ class Pipeline {
     }
   }
 
-  // ---- MP2 software audio decode ----
+  // ---- Software audio processing ----
 
-  private _handleRawAudioFrame(frame: { codec: "mp2"; data: Uint8Array; pts: number }): void {
-    // Lazily create WorkerAudioDecoder on first raw audio frame
-    if (!this._workerAudioDecoder) {
-      const mp2Url = this._config.wasmDecoders.mp2;
-      if (!mp2Url) return;
-      this._workerAudioDecoder = new WorkerAudioDecoder(mp2Url);
-      this._workerAudioDecoderInitPromise = this._workerAudioDecoder.initDecoder();
+  private _handleEncodedAudioFrame(frame: EncodedAudioFrame): void {
+    if (!this._workerAudioProcessor) {
+      this._workerAudioProcessor = new WorkerSoftwareAudioProcessor({
+        ...this._config.wasmDecoders,
+        ...this._config.wasmAudioProcessors,
+      });
+      this._workerAudioProcessor.setStretchRatio(this._audioStretchRatio);
     }
 
-    // Queue decode after init completes; gen guard drops frames queued before a reset
+    // Queue processing after lazy WASM init; gen guard drops frames queued before a reset.
     const gen = this._audioGen;
-    this._workerAudioDecoderInitPromise?.then((ready) => {
-      if (!ready || !this._workerAudioDecoder || gen !== this._audioGen) return;
-
-      const result = this._workerAudioDecoder.decode(frame.data);
-      if (!result) return;
-
-      // PTS extrapolation: anchor on the PES PTS, advance by decoded sample count.
-      // This gives every decoded chunk a jitter-free timestamp even when frames
-      // straddle PES boundaries or a PES contains multiple frames. Re-anchor only
-      // on genuine discontinuities (> 100ms deviation).
-      const sr = result.sampleRate;
-      if (this._audioAnchorPtsMs === null || this._audioSampleRate !== sr) {
-        this._audioAnchorPtsMs = frame.pts;
-        this._audioSamplesSinceAnchor = 0;
-        this._audioSampleRate = sr;
-      } else {
-        const extrapolatedMs = this._audioAnchorPtsMs + (this._audioSamplesSinceAnchor / sr) * 1000;
-        if (Math.abs(frame.pts - extrapolatedMs) > 100) {
-          Log.v(
-            this.TAG,
-            `Audio PTS discontinuity: pes=${frame.pts.toFixed(1)}ms extrap=${extrapolatedMs.toFixed(1)}ms`,
-          );
-          this._audioAnchorPtsMs = frame.pts;
-          this._audioSamplesSinceAnchor = 0;
-        }
-      }
-      const ptsMs = this._audioAnchorPtsMs + (this._audioSamplesSinceAnchor / sr) * 1000;
-      this._audioSamplesSinceAnchor += result.samplesPerChannel;
-
-      this._emitPcm(result.pcm, result.channels, sr, ptsMs);
+    void this._workerAudioProcessor.process(frame).then((result) => {
+      if (!result || gen !== this._audioGen) return;
+      this._emitProcessedAudio(result);
     });
   }
 
   /**
    * Normalize PCM timestamps to the MSE timeline using the remuxer's dts base
    * (the exact mapping used for video), then forward to the main thread.
-   * PCM decoded before the first remux (dts base unknown) is queued.
+   * PCM processed before the first remux (dts base unknown) is queued.
    */
-  private _emitPcm(pcm: Float32Array, channels: number, sampleRate: number, ptsMs: number): void {
-    this._pendingPcm.push({ pcm, channels, sampleRate, ptsMs });
+  private _emitProcessedAudio(chunk: ProcessedAudioChunk): void {
+    this._pendingPcm.push(chunk);
 
     const dtsBase = this._remuxer?.getTimestampBase();
     if (dtsBase === undefined) {
@@ -564,7 +542,14 @@ class Pipeline {
     }
 
     for (const item of this._pendingPcm) {
-      this._callbacks.onPCMAudioData(item.pcm, item.channels, item.sampleRate, (item.ptsMs - dtsBase) / 1000);
+      this._callbacks.onPCMAudioData(
+        item.planes,
+        item.channels,
+        item.sampleRate,
+        item.frames,
+        (item.streamStartMs - dtsBase) / 1000,
+        (item.streamEndMs - dtsBase) / 1000,
+      );
     }
     this._pendingPcm = [];
   }

@@ -1,3 +1,4 @@
+import type { EncodedAudioFrame } from "../decoder/software-audio-processor";
 import { IllegalStateException } from "../utils/exception";
 import Log from "../utils/logger";
 import { AACADTSParser, type AACFrame, AACLOASParser, AudioSpecificConfig, type LOASAACFrame } from "./aac";
@@ -110,8 +111,8 @@ class TSDemuxer {
   public onError: OnErrorCallback | null = null;
   public onTrackMetadata: OnTrackMetadataCallback | null = null;
   public onDataAvailable: OnDataAvailableCallback | null = null;
-  /** Software audio decode support (MP2) */
-  public onRawAudioData: ((frame: { codec: "mp2"; data: Uint8Array; pts: number }) => void) | null = null;
+  /** Software audio processing support (currently MP2) */
+  public onEncodedAudioData: ((frame: EncodedAudioFrame) => void) | null = null;
 
   private ts_packet_size_: number;
   private sync_offset_: number;
@@ -201,7 +202,7 @@ class TSDemuxer {
     this.onError = null;
     this.onTrackMetadata = null;
     this.onDataAvailable = null;
-    this.onRawAudioData = null;
+    this.onEncodedAudioData = null;
     this.soft_decode_audio_codec_ = null;
   }
 
@@ -1530,11 +1531,11 @@ class TSDemuxer {
     // A payload may start mid-frame (frame straddling a PES boundary); header
     // fields parsed from such payloads are garbage and must not drive metadata.
     const sync_at_start = data.length >= 4 && data[0] === 0xff && (data[1] & 0xe0) === 0xe0;
-    if (this.onRawAudioData && !soft_decode_active && !sync_at_start) {
+    if (this.onEncodedAudioData && !soft_decode_active && !sync_at_start) {
       // Can't classify a payload that starts mid-frame; wait for an aligned one
       return;
     }
-    if ((object_type === 33 || soft_decode_active) && this.onRawAudioData) {
+    if ((object_type === 33 || soft_decode_active) && this.onEncodedAudioData) {
       if (!this.soft_decode_audio_codec_) {
         this.soft_decode_audio_codec_ = "mp2";
         Log.i(this.TAG, `MP2 audio detected, enabling software decode`);
@@ -1572,7 +1573,7 @@ class TSDemuxer {
       // Dispatch the raw payload for software decoding (the WASM decoder
       // splits it into frames and carries partial frames across payloads)
       const pts_ms = (pts ?? 0) / this.timescale_;
-      this.onRawAudioData({ codec: "mp2", data, pts: pts_ms });
+      this.onEncodedAudioData({ codec: "mp2", data, pts: pts_ms });
 
       // Don't push samples to audio track — the remuxer generates
       // silent AAC frames synced to video DTS instead
