@@ -3,7 +3,7 @@ import { createDefaultConfig } from "../config";
 import { WorkerAudioDecoder } from "../decoder/worker-audio-decoder";
 import DemuxErrors from "../demux/demux-errors";
 import TSDemuxer from "../demux/ts-demuxer";
-import { containsMoov, parseInitSegment, probeFmp4, splitInitFromSegment } from "../hls/fmp4";
+import { containsMoov, getSegmentStartTime, parseInitSegment, probeFmp4, splitInitFromSegment } from "../hls/fmp4";
 import { type HlsInfo, HlsSource } from "../hls/hls-source";
 import FetchLoader, { LoaderErrors } from "../io/fetch-loader";
 import MP4Remuxer from "../remux/mp4-remuxer";
@@ -97,6 +97,8 @@ class Pipeline {
   private _fmp4InitSent = false;
   private _fmp4Chunks: Uint8Array[] = [];
   private _lastInitUrl: string | null = null;
+  private _fmp4Timescales = new Map<number, number>();
+  private _fmp4TimestampOffsetWarningLogged = false;
 
   private _workerAudioDecoder: WorkerAudioDecoder | null = null;
   private _workerAudioDecoderInitPromise: Promise<boolean> | null = null;
@@ -207,6 +209,8 @@ class Pipeline {
     this._fmp4InitSent = false;
     this._fmp4Chunks = [];
     this._lastInitUrl = null;
+    this._fmp4Timescales = new Map();
+    this._fmp4TimestampOffsetWarningLogged = false;
     this._paused = false;
     this._resumeGate?.();
     this._resumeGate = null;
@@ -273,7 +277,7 @@ class Pipeline {
         if (this._runId !== runId) return;
 
         if (this._fmp4Mode) {
-          this._flushFmp4Segment();
+          this._flushFmp4Segment(meta);
         }
         // Flush stashed samples at every segment boundary so the next segment's first
         // remux batch is not mixed with the previous segment's tail (which would share
@@ -314,6 +318,10 @@ class Pipeline {
     // The output timeline restarts: stale carry bytes and the PTS anchor are invalid
     this._workerAudioDecoder?.reset();
     this._resetAudioTiming();
+  }
+
+  private _shouldAnchorSegment(meta: SegmentMeta): boolean {
+    return meta.resetRemuxer || !this._hlsSource;
   }
 
   private _resetAudioTiming(): void {
@@ -394,10 +402,19 @@ class Pipeline {
   // ---- MPEG-TS path ----
 
   private _setupTSDemuxerRemuxer(probeData: unknown, meta: SegmentMeta): void {
+    const shouldAnchor = this._shouldAnchorSegment(meta);
+    if (this._hlsSource && !shouldAnchor && this._demuxer && this._remuxer) {
+      this._demuxer.resetSegmentBoundary(probeData as ConstructorParameters<typeof TSDemuxer>[0]);
+      return;
+    }
+
+    const waitForInitialVideoKeyframe = shouldAnchor || !this._demuxer || !this._remuxer;
     if (this._demuxer) {
       this._demuxer.destroy();
     }
-    const demuxer = new TSDemuxer(probeData as ConstructorParameters<typeof TSDemuxer>[0]);
+    const demuxer = new TSDemuxer(probeData as ConstructorParameters<typeof TSDemuxer>[0], {
+      waitForInitialVideoKeyframe,
+    });
     this._demuxer = demuxer;
 
     if (!this._remuxer) {
@@ -467,7 +484,10 @@ class Pipeline {
   }
 
   private _sendFmp4Init(data: Uint8Array): void {
-    const codec = this._hlsSource?.info.codecs ?? parseInitSegment(data).codecs.join(",");
+    const initInfo = parseInitSegment(data);
+    this._fmp4Timescales = initInfo.timescales;
+    this._fmp4TimestampOffsetWarningLogged = false;
+    const codec = this._hlsSource?.info.codecs ?? initInfo.codecs.join(",");
     this._callbacks.onInitSegment("video", {
       type: "video",
       container: "video/mp4",
@@ -477,13 +497,37 @@ class Pipeline {
     this._fmp4InitSent = true;
   }
 
+  private _warnFmp4TimestampOffsetUnavailable(reason: string): void {
+    if (this._fmp4TimestampOffsetWarningLogged) {
+      return;
+    }
+    this._fmp4TimestampOffsetWarningLogged = true;
+    Log.w(this.TAG, `fMP4 timestampOffset unavailable: ${reason}; appending media with original tfdt`);
+  }
+
+  private _getFmp4TimestampOffset(meta: SegmentMeta, media: Uint8Array): number | undefined {
+    if (this._fmp4Timescales.size === 0) {
+      this._warnFmp4TimestampOffsetUnavailable("init segment timescales missing");
+      return undefined;
+    }
+
+    const segmentStart = getSegmentStartTime(media, this._fmp4Timescales);
+    if (segmentStart === null) {
+      this._warnFmp4TimestampOffsetUnavailable("media segment has no tfdt");
+      return undefined;
+    }
+
+    const timestampOffset = (meta.start - segmentStart) * 1000;
+    return Math.abs(timestampOffset) < 0.001 ? 0 : timestampOffset;
+  }
+
   private _onFmp4Chunk(data: Uint8Array): number {
     this._fmp4Chunks.push(data);
     return data.byteLength;
   }
 
   /** Forward a fully buffered fMP4 segment to MSE (extracting the init part on first use). */
-  private _flushFmp4Segment(): void {
+  private _flushFmp4Segment(meta: SegmentMeta): void {
     if (this._fmp4Chunks.length === 0) {
       return;
     }
@@ -508,7 +552,12 @@ class Pipeline {
     }
 
     if (media.byteLength > 0) {
-      this._callbacks.onMediaSegment("video", { type: "video", data: toArrayBuffer(media) });
+      this._pendingDtsOffsetMs = 0;
+      this._callbacks.onMediaSegment("video", {
+        type: "video",
+        data: toArrayBuffer(media),
+        timestampOffset: this._getFmp4TimestampOffset(meta, media),
+      });
     }
   }
 

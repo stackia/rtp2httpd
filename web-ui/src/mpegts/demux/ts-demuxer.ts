@@ -53,6 +53,9 @@ type AdaptationFieldInfo = {
   random_access_indicator?: number;
   elementary_stream_priority_indicator?: number;
 };
+type TSDemuxerOptions = {
+  waitForInitialVideoKeyframe?: boolean;
+};
 type AACAudioMetadata = {
   codec: "aac";
   audio_object_type: MPEG4AudioObjectTypes;
@@ -189,9 +192,13 @@ class TSDemuxer {
     this.timestamp_offset_ = value;
   }
 
-  public constructor(probe_data: TSProbeResult) {
+  public constructor(probe_data: TSProbeResult, options: TSDemuxerOptions = {}) {
     this.ts_packet_size_ = probe_data.ts_packet_size as number;
     this.sync_offset_ = probe_data.sync_offset as number;
+    if (options.waitForInitialVideoKeyframe === false) {
+      this.drop_video_until_keyframe_ = false;
+      this.video_output_started_ = true;
+    }
   }
 
   public destroy() {
@@ -211,6 +218,17 @@ class TSDemuxer {
     this.onTrackDiscontinuity = null;
     this.onRawAudioData = null;
     this.soft_decode_audio_codec_ = null;
+  }
+
+  public resetSegmentBoundary(probe_data?: TSProbeResult): void {
+    if (probe_data) {
+      this.ts_packet_size_ = probe_data.ts_packet_size as number;
+      this.sync_offset_ = probe_data.sync_offset as number;
+    }
+    this.first_parse_ = true;
+    this.pes_slice_queues_ = {};
+    this.section_slice_queues_ = {};
+    this.continuity_counters_ = {};
   }
 
   public static probe(data: Uint8Array): TSProbeResult {
