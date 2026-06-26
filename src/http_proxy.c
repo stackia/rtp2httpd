@@ -1168,8 +1168,8 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
       /* Inject Set-Cookie header if needed */
       if (session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
         char set_cookie_header[HTTP_COOKIE_BUFFER_SIZE];
-        int cookie_len =
-            http_build_r2h_token_cookie_header(set_cookie_header, sizeof(set_cookie_header), http_proxy_get_cookie_path());
+        int cookie_len = http_build_r2h_token_cookie_header(set_cookie_header, sizeof(set_cookie_header),
+                                                            http_proxy_get_cookie_path());
         if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
           if (connection_queue_output(session->conn, (const uint8_t *)set_cookie_header, cookie_len) < 0) {
             logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
@@ -1200,8 +1200,8 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
       /* Inject Set-Cookie header if needed */
       if (session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
         char set_cookie_header[HTTP_COOKIE_BUFFER_SIZE];
-        int cookie_len =
-            http_build_r2h_token_cookie_header(set_cookie_header, sizeof(set_cookie_header), http_proxy_get_cookie_path());
+        int cookie_len = http_build_r2h_token_cookie_header(set_cookie_header, sizeof(set_cookie_header),
+                                                            http_proxy_get_cookie_path());
         if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
           if (connection_queue_output(session->conn, (const uint8_t *)set_cookie_header, cookie_len) < 0) {
             logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
