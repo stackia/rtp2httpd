@@ -1,4 +1,3 @@
-import { defaultConfig, type PlayerConfig } from "../config";
 import { isFirefox } from "../utils/browser";
 import { IllegalStateException } from "../utils/exception";
 import Log from "../utils/logger";
@@ -84,8 +83,6 @@ interface MP4Sample {
   flags: MP4SampleFlags;
 }
 
-type RemuxerConfig = Pick<PlayerConfig, "maxBufferHoleMs">;
-
 interface TrackTimingState {
   lastOriginalEndDts: number | undefined;
   lastOutputEndDts: number | undefined;
@@ -110,8 +107,6 @@ function writeUint32(data: Uint8Array, offset: number, value: number): void {
 class MP4Remuxer {
   TAG: string;
 
-  private _config: RemuxerConfig;
-
   private _dtsBase: number;
   private _dtsBaseInited: boolean;
   private _dtsBaseOffset: number;
@@ -135,12 +130,8 @@ class MP4Remuxer {
   private _silentAudioMode: boolean;
   private _silentAudioLastDts: number | undefined;
 
-  constructor(config: RemuxerConfig = defaultConfig) {
+  constructor() {
     this.TAG = "MP4Remuxer";
-
-    this._config = {
-      maxBufferHoleMs: config.maxBufferHoleMs ?? defaultConfig.maxBufferHoleMs,
-    };
 
     this._dtsBase = -1;
     this._dtsBaseInited = false;
@@ -227,7 +218,7 @@ class MP4Remuxer {
    * Map upstream timestamps onto a continuous output timeline.
    * When `_nextDts` is set (continuous playback), always splice to it.
    * After a discontinuity, preserve the last timeline correction and bridge
-   * small forward holes so MSE does not expose tiny buffered range gaps.
+   * forward holes so MSE stays on a continuous output timeline.
    */
   private _computeDtsCorrection(
     type: "audio" | "video",
@@ -244,13 +235,9 @@ class MP4Remuxer {
     }
 
     const distance = firstSampleOriginalDts - timing.lastOriginalEndDts;
-    const maxBufferHoleMs = this._config.maxBufferHoleMs ?? defaultConfig.maxBufferHoleMs;
-    const bridgedDistance = distance > 0 && distance <= maxBufferHoleMs ? 0 : distance;
+    const bridgedDistance = distance > 0 ? 0 : distance;
     if (bridgedDistance !== distance) {
-      Log.v(
-        this.TAG,
-        `${type}: bridging ${Math.round(distance)}ms timestamp hole after discontinuity (max ${maxBufferHoleMs}ms)`,
-      );
+      Log.v(this.TAG, `${type}: bridging ${Math.round(distance)}ms timestamp hole after discontinuity`);
     }
     const expectedDts = timing.lastOutputEndDts + bridgedDistance;
     return firstSampleOriginalDts - expectedDts;

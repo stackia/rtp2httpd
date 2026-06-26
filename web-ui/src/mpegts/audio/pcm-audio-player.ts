@@ -23,7 +23,7 @@
  */
 
 import { isIOS } from "../../lib/platform";
-import { maxBufferHoleSec, type PlayerConfig } from "../config";
+import type { PlayerConfig } from "../config";
 import Log from "../utils/logger";
 import { type Stretcher, WasmStretcher } from "./wasm-stretcher";
 
@@ -135,10 +135,6 @@ export class PCMAudioPlayer {
 
   private isBuffering: boolean = false;
   private isSeeking: boolean = false;
-  /** Last `timeupdate` playback position, used to measure seek delta (seeking may already show the target time). */
-  private lastKnownVideoTime: number = 0;
-  /** Set when a large seek already cancelled the scheduling chain in `onVideoSeeking`. */
-  private largeSeekCancelled: boolean = false;
 
   // Bound event handlers for cleanup
   private boundOnVideoSeeking: (() => void) | null = null;
@@ -216,9 +212,6 @@ export class PCMAudioPlayer {
       this.setMuted(video.muted);
     };
     this.boundOnTimeUpdate = () => {
-      if (!video.seeking) {
-        this.lastKnownVideoTime = video.currentTime;
-      }
       this.controlTick();
       this.pump();
     };
@@ -815,41 +808,17 @@ export class PCMAudioPlayer {
 
   private onVideoSeeking(): void {
     this.isBuffering = false;
-    this.largeSeekCancelled = false;
-    const video = this.videoElement;
-    if (video) {
-      const delta = Math.abs(video.currentTime - this.lastKnownVideoTime);
-      if (delta > maxBufferHoleSec(this.config)) {
-        this.cancelChain();
-        this.pendingChunks = [];
-        this.largeSeekCancelled = true;
-      }
-    }
+    this.cancelChain();
+    this.pendingChunks = [];
     this.isSeeking = true;
   }
 
   private onVideoSeeked(): void {
     if (!this.videoElement) return;
     const targetTime = this.videoElement.currentTime;
-    const prevTime = this.lastKnownVideoTime;
-    const delta = targetTime - prevTime;
-
-    if (delta > 0 && delta <= maxBufferHoleSec(this.config)) {
-      Log.v(TAG, `Small forward seek (${(delta * 1000).toFixed(0)}ms), skipping audio resync`);
-      this.isSeeking = false;
-      this.lastKnownVideoTime = targetTime;
-      this.pump();
-      return;
-    }
 
     Log.v(TAG, `Video seeked to ${targetTime.toFixed(3)}, resyncing audio`);
-    if (!this.largeSeekCancelled) {
-      this.cancelChain();
-      this.pendingChunks = [];
-    }
-    this.largeSeekCancelled = false;
     this.isSeeking = false;
-    this.lastKnownVideoTime = targetTime;
     this.resyncFromBuffer(targetTime);
   }
 
