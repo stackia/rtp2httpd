@@ -54,10 +54,11 @@ void send_http_headers(connection_t *c, http_status_t status, const char *conten
   if (c->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
     const char *cookie_path =
         (config.app_path_prefix && config.app_path_prefix[0] != '\0') ? config.app_path_prefix : "/";
-    len += snprintf(headers + len, sizeof(headers) - len,
-                    "Set-Cookie: r2h-token=%s; Path=%s; HttpOnly; "
-                    "SameSite=Strict\r\n",
-                    config.r2h_token, cookie_path);
+    int cookie_len = http_build_r2h_token_cookie_header(headers + len, sizeof(headers) - (size_t)len, cookie_path);
+    if (cookie_len > 0)
+      len += cookie_len;
+    else if (cookie_len < 0)
+      logger(LOG_ERROR, "Failed to build Set-Cookie header for r2h-token");
     c->should_set_r2h_cookie = 0; /* Only set once */
   }
 
@@ -150,6 +151,32 @@ char *http_url_encode(const char *str) {
   encoded[j] = '\0';
 
   return encoded;
+}
+
+int http_build_r2h_token_cookie_header(char *buffer, size_t buffer_size, const char *path) {
+  char *encoded_token;
+  int written;
+
+  if (!buffer || buffer_size == 0)
+    return -1;
+
+  if (!config.r2h_token || config.r2h_token[0] == '\0')
+    return 0;
+
+  encoded_token = http_url_encode(config.r2h_token);
+  if (!encoded_token)
+    return -1;
+
+  written = snprintf(buffer, buffer_size,
+                     "Set-Cookie: r2h-token=%s; Path=%s; HttpOnly; "
+                     "SameSite=Strict\r\n",
+                     encoded_token, path && path[0] ? path : "/");
+  free(encoded_token);
+
+  if (written < 0 || (size_t)written >= buffer_size)
+    return -1;
+
+  return written;
 }
 
 void http_request_init(http_request_t *req) {

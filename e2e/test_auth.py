@@ -5,6 +5,8 @@ Tests verify token validation via query parameter, cookie, and User-Agent,
 as well as rejection on mismatch or absence.
 """
 
+from urllib.parse import quote
+
 import pytest
 
 from helpers import (
@@ -13,7 +15,8 @@ from helpers import (
     http_get,
 )
 
-SECRET = "s3cret-t0ken"
+SECRET = "semi;and&tilde~dollar$token"
+SECRET_ENCODED = quote(SECRET, safe="")
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +90,7 @@ class TestAuthQueryParam:
         status, _, _ = http_get(
             "127.0.0.1",
             token_r2h.port,
-            f"/status?r2h-token={SECRET}",
+            f"/status?r2h-token={SECRET_ENCODED}",
         )
         assert status == 200
 
@@ -96,11 +99,15 @@ class TestAuthQueryParam:
         status, hdrs, _ = http_get(
             "127.0.0.1",
             token_r2h.port,
-            f"/status?r2h-token={SECRET}",
+            f"/status?r2h-token={SECRET_ENCODED}",
         )
         assert status == 200
         set_cookie = hdrs.get("Set-Cookie", hdrs.get("set-cookie", ""))
-        assert "r2h-token=" in set_cookie
+        assert f"r2h-token={SECRET_ENCODED}" in set_cookie
+        assert "%3B" in set_cookie
+        assert "%26" in set_cookie
+        assert "%24" in set_cookie
+        assert "~" in set_cookie
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +123,7 @@ class TestAuthCookie:
             "127.0.0.1",
             token_r2h.port,
             "/status",
-            headers={"Cookie": f"r2h-token={SECRET}"},
+            headers={"Cookie": f"r2h-token={SECRET_ENCODED}"},
         )
         assert status == 200
 
@@ -191,7 +198,7 @@ rtp://239.0.0.1:1234
             status_auth, _, body = http_get(
                 "127.0.0.1",
                 port,
-                f"/playlist.m3u?r2h-token={SECRET}",
+                f"/playlist.m3u?r2h-token={SECRET_ENCODED}",
             )
             assert status_auth == 200
             assert b"Secured Channel" in body
@@ -220,7 +227,7 @@ rtp://239.0.0.1:1234
             status, _, body = http_get(
                 "127.0.0.1",
                 port,
-                f"/playlist.m3u?r2h-token={SECRET}",
+                f"/playlist.m3u?r2h-token={SECRET_ENCODED}",
             )
             assert status == 200
             text = body.decode()
