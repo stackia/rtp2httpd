@@ -23,14 +23,6 @@ function resolveSegmentUrls(segments: PlayerSegment[]): PlayerSegment[] {
 export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerConfig>): Player {
   const fullConfig: PlayerConfig = { ...defaultConfig, ...config };
 
-  // Resolve WASM URLs to absolute so they work inside inline blob workers
-  if (fullConfig.wasmDecoders.mp2) {
-    fullConfig.wasmDecoders = {
-      ...fullConfig.wasmDecoders,
-      mp2: new URL(fullConfig.wasmDecoders.mp2, document.baseURI).href,
-    };
-  }
-
   let destroyed = false;
 
   const errorHandlers = new Set<(e: PlayerError) => void>();

@@ -9,13 +9,21 @@ export default defineConfig(({ mode }) => {
   return {
     base: "./",
     plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: {
+        env: resolve(__dirname, "src/mpegts/wasm/env.ts"),
+      },
+    },
     define: {
       "process.env.NODE_ENV": JSON.stringify(mode),
+    },
+    worker: {
+      format: "es",
     },
     build: {
       sourcemap: isDev,
       minify: !isDev,
-      rollupOptions: {
+      rolldownOptions: {
         input: {
           status: resolve(__dirname, "status.html"),
           player: resolve(__dirname, "player.html"),

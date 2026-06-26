@@ -10,6 +10,7 @@
  */
 
 import Log from "../utils/logger";
+import { getMp2DecoderWasmExports, type Mp2DecoderWasmExports } from "../wasm/mp2-decoder";
 
 const TAG = "WasmStretcher";
 
@@ -25,46 +26,26 @@ export interface Stretcher {
   destroy(): void;
 }
 
-interface WsolaExports {
-  memory: WebAssembly.Memory;
-  _initialize: () => void;
-  malloc: (size: number) => number;
-  free: (ptr: number) => void;
-  wsola_create: (sampleRate: number, channels: number) => number;
-  wsola_destroy: (ptr: number) => void;
-  wsola_reset: (ptr: number) => void;
-  wsola_set_ratio: (ptr: number, ratio: number) => void;
-  wsola_position: (ptr: number) => number;
-  wsola_process: (ptr: number, input: number, inFrames: number, output: number, outCapacity: number) => number;
-}
-
 export class WasmStretcher implements Stretcher {
   readonly sampleRate: number;
   readonly channels: number;
 
-  private exports: WsolaExports;
+  private exports: Mp2DecoderWasmExports;
   private handle: number;
   private inPtr = 0;
   private inCapacityFrames = 0;
   private outPtr = 0;
   private outCapacityFrames = 0;
 
-  private constructor(exports: WsolaExports, handle: number, sampleRate: number, channels: number) {
+  private constructor(exports: Mp2DecoderWasmExports, handle: number, sampleRate: number, channels: number) {
     this.exports = exports;
     this.handle = handle;
     this.sampleRate = sampleRate;
     this.channels = channels;
   }
 
-  static async create(wasmUrl: string, sampleRate: number, channels: number): Promise<WasmStretcher> {
-    const imports = {
-      env: {
-        emscripten_notify_memory_growth: () => {},
-      },
-    };
-    const { instance } = await WebAssembly.instantiateStreaming(fetch(wasmUrl), imports);
-    const ex = instance.exports as unknown as WsolaExports;
-    ex._initialize();
+  static async create(sampleRate: number, channels: number): Promise<WasmStretcher> {
+    const ex = getMp2DecoderWasmExports();
     const handle = ex.wsola_create(sampleRate, channels);
     if (!handle) {
       throw new Error("wsola_create failed");

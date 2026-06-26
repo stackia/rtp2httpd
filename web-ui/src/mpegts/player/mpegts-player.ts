@@ -3,7 +3,6 @@ import type { PlayerConfig } from "../config";
 import type { PlayerImpl, PlayerSegment } from "../types";
 import Log from "../utils/logger";
 import type { WorkerCommand, WorkerEvent } from "../worker/messages";
-import TransmuxWorker from "../worker/transmux-worker.ts?worker&inline";
 import { type StallJumper, setupLiveSync, setupStartupStallJumper } from "./live-sync";
 import { createMSE, type MSE } from "./mse";
 import type { LiveSessionAnchor } from "./wall-clock";
@@ -153,7 +152,7 @@ export function createMpegtsPlayer(
 
   function ensureWorker(): Worker {
     if (!worker) {
-      worker = new TransmuxWorker();
+      worker = new Worker(new URL("../worker/transmux-worker.ts", import.meta.url), { type: "module" });
       worker.onmessage = handleWorkerMessage;
       workerInitialized = false;
     }

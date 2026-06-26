@@ -315,10 +315,7 @@ export class PCMAudioPlayer {
     }
     this.stretcherLoading = true;
 
-    const wasmUrl = this.config.wasmDecoders.mp2;
-    const promise = wasmUrl
-      ? WasmStretcher.create(wasmUrl, chunk.sampleRate, chunk.channels)
-      : Promise.reject(new Error("MP2 WASM URL is not configured"));
+    const promise = WasmStretcher.create(chunk.sampleRate, chunk.channels);
 
     promise
       .then((stretcher) => {
