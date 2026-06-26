@@ -105,7 +105,7 @@ type AudioData =
 
 export type OnErrorCallback = (type: string, info: string) => void;
 export type OnTrackMetadataCallback = (type: string, metadata: unknown) => void;
-export type OnDataAvailableCallback = (audioTrack: unknown, videoTrack: unknown) => void;
+export type OnDataAvailableCallback = (audioTrack: unknown, videoTrack: unknown, force?: boolean) => void;
 export type OnTrackDiscontinuityCallback = (track: "audio" | "video") => void;
 
 class TSDemuxer {
@@ -313,8 +313,35 @@ class TSDemuxer {
     this.audio_track_.length = 0;
   }
 
+  private clearVideoTrack(): void {
+    this.video_track_.samples = [];
+    this.video_track_.length = 0;
+  }
+
+  private clearAudioPESQueues(): void {
+    const commonPids = this.pmt_?.common_pids;
+    if (!commonPids) {
+      return;
+    }
+
+    for (const pid of [commonPids.adts_aac, commonPids.loas_aac, commonPids.ac3, commonPids.eac3, commonPids.mp3]) {
+      if (pid !== undefined) {
+        delete this.pes_slice_queues_[pid];
+      }
+    }
+  }
+
   private shouldWaitForVideoKeyframe(): boolean {
     return this.has_video_ && !this.video_output_started_;
+  }
+
+  private flushMediaBeforeTrackDiscontinuity(): void {
+    if (this.shouldWaitForVideoKeyframe() || !this.isInitSegmentDispatched()) {
+      return;
+    }
+    if (this.audio_track_.length || this.video_track_.length) {
+      this.onDataAvailable?.(this.audio_track_, this.video_track_, true);
+    }
   }
 
   private resumeVideoOutputFromKeyframe(): void {
@@ -331,10 +358,13 @@ class TSDemuxer {
     delete this.pes_slice_queues_[pid];
 
     if (this.isVideoPid(pid)) {
+      this.flushMediaBeforeTrackDiscontinuity();
+      this.clearVideoTrack();
       this.drop_video_until_keyframe_ = true;
       this.video_output_started_ = false;
       this.video_discontinuity_pending_ = true;
       this.clearAudioTrack();
+      this.clearAudioPESQueues();
       this.resetAudioParserState();
       Log.w(this.TAG, `Video TS discontinuity on pid ${pid}: ${reason}; dropping until keyframe`);
       this.onTrackDiscontinuity?.("video");

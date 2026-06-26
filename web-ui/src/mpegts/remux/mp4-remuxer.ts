@@ -284,7 +284,7 @@ class MP4Remuxer {
     this._dtsBaseOffset = offsetMs;
   }
 
-  remux(audioTrack: DemuxTrack | undefined, videoTrack: DemuxTrack | undefined): void {
+  remux(audioTrack: DemuxTrack | null | undefined, videoTrack: DemuxTrack | null | undefined, force = false): void {
     if (!this._onMediaSegment) {
       throw new IllegalStateException("MP4Remuxer: onMediaSegment callback must be specificed!");
     }
@@ -292,10 +292,10 @@ class MP4Remuxer {
       this._calculateDtsBase(audioTrack, videoTrack);
     }
     if (videoTrack) {
-      this._remuxVideo(videoTrack);
+      this._remuxVideo(videoTrack, force);
     }
     if (audioTrack) {
-      this._remuxAudio(audioTrack);
+      this._remuxAudio(audioTrack, force);
     }
   }
 
@@ -443,7 +443,10 @@ class MP4Remuxer {
     });
   }
 
-  private _calculateDtsBase(audioTrack: DemuxTrack | undefined, videoTrack: DemuxTrack | undefined): void {
+  private _calculateDtsBase(
+    audioTrack: DemuxTrack | null | undefined,
+    videoTrack: DemuxTrack | null | undefined,
+  ): void {
     if (this._dtsBaseInited) {
       return;
     }

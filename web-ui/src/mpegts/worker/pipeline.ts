@@ -429,6 +429,7 @@ class Pipeline {
     demuxer.timestampBase = meta.timestampBase * 90000; // seconds → 90kHz ticks
     demuxer.onTrackDiscontinuity = (track) => {
       if (track === "video") {
+        this._remuxer?.flushStashedSamples();
         this._remuxer?.insertDiscontinuity();
       }
       this._workerAudioDecoder?.reset();
