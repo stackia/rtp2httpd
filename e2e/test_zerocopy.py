@@ -78,6 +78,7 @@ def zc_r2h(r2h_binary):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.multicast
 class TestZerocopyMulticast:
     """Verify multicast RTP streaming works with MSG_ZEROCOPY enabled."""
 

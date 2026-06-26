@@ -46,6 +46,44 @@ def http_request(
         conn.close()
 
 
+def get_header(headers: dict, name: str, default: str = "") -> str:
+    """Return a response header by case-insensitive name."""
+    wanted = name.lower()
+    for key, value in headers.items():
+        if key.lower() == wanted:
+            return value
+    return default
+
+
+def assert_etag_cache_behavior(host: str, port: int, path: str) -> None:
+    """Assert basic ETag and If-None-Match behavior for a stable endpoint."""
+    status, hdrs, body = http_get(host, port, path)
+    assert status == 200
+    assert body
+    etag = get_header(hdrs, "ETag")
+    assert etag, "ETag header expected"
+
+    status, _, body = http_get(host, port, path, headers={"If-None-Match": etag})
+    assert status == 304
+    assert len(body) == 0
+
+    status, _, body = http_get(host, port, path, headers={"If-None-Match": '"wrong-etag"'})
+    assert status == 200
+    assert len(body) > 0
+
+    _, h1, _ = http_get(host, port, path)
+    _, h2, _ = http_get(host, port, path)
+    e1 = get_header(h1, "ETag")
+    e2 = get_header(h2, "ETag")
+    assert e1 == e2 and e1 != ""
+
+
+def get_upstream_path(upstream) -> str:
+    """Return the full path from the first MockHTTPUpstream request."""
+    assert len(upstream.requests_log) > 0, "Expected at least one request to upstream"
+    return upstream.requests_log[0]["path"]
+
+
 def _parse_raw_http_response(data: bytes, lower_header_names: bool = False) -> tuple[int, dict, bytes]:
     header_end = data.find(b"\r\n\r\n")
     if header_end < 0:

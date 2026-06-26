@@ -20,7 +20,6 @@ Four module-scoped rtp2httpd instances are used (one per distinct EPG config):
 
 import gzip
 import os
-import tempfile
 import time
 
 import pytest
@@ -28,8 +27,10 @@ import pytest
 from helpers import (
     MockHTTPUpstream,
     R2HProcess,
+    assert_etag_cache_behavior,
     find_free_port,
     http_get,
+    write_temp_file,
 )
 
 SAMPLE_EPG_XML = """\
@@ -45,14 +46,6 @@ SAMPLE_EPG_XML = """\
 """
 
 SECRET = "s3cret-t0ken"
-
-
-def _write_tmp(data: bytes, suffix: str = ".xml") -> str:
-    """Write data to a temp file and return its path."""
-    fd, path = tempfile.mkstemp(suffix=suffix, prefix="r2h_epg_")
-    with os.fdopen(fd, "wb") as f:
-        f.write(data)
-    return path
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +163,7 @@ def gz_epg_r2h(r2h_binary):
 @pytest.fixture(scope="module")
 def auth_epg_r2h(r2h_binary):
     """rtp2httpd with uncompressed EPG from file:// and r2h-token."""
-    epg_path = _write_tmp(SAMPLE_EPG_XML.encode())
+    epg_path = write_temp_file(SAMPLE_EPG_XML.encode(), suffix=".xml", prefix="r2h_epg_")
     port = find_free_port()
     config = f"""\
 [global]
@@ -312,54 +305,9 @@ class TestGzippedEPG:
 class TestEPGETag:
     """ETag-based caching on EPG endpoints."""
 
-    def test_etag_present(self, plain_epg_r2h):
-        """EPG response should include an ETag header."""
-        status, hdrs, _ = http_get(
-            "127.0.0.1",
-            plain_epg_r2h.port,
-            "/epg.xml",
-        )
-        assert status == 200
-        etag = hdrs.get("ETag", hdrs.get("etag", ""))
-        assert etag, "ETag header expected"
-
-    def test_if_none_match_304(self, plain_epg_r2h):
-        """If-None-Match with matching ETag should return 304."""
-        _, hdrs1, _ = http_get(
-            "127.0.0.1",
-            plain_epg_r2h.port,
-            "/epg.xml",
-        )
-        etag = hdrs1.get("ETag", hdrs1.get("etag", ""))
-        assert etag
-
-        status, _, body = http_get(
-            "127.0.0.1",
-            plain_epg_r2h.port,
-            "/epg.xml",
-            headers={"If-None-Match": etag},
-        )
-        assert status == 304
-        assert len(body) == 0
-
-    def test_if_none_match_mismatch(self, plain_epg_r2h):
-        """If-None-Match with wrong ETag should return 200."""
-        status, _, body = http_get(
-            "127.0.0.1",
-            plain_epg_r2h.port,
-            "/epg.xml",
-            headers={"If-None-Match": '"wrong-etag"'},
-        )
-        assert status == 200
-        assert len(body) > 0
-
-    def test_etag_consistent(self, plain_epg_r2h):
-        """Two GETs should yield the same ETag."""
-        _, h1, _ = http_get("127.0.0.1", plain_epg_r2h.port, "/epg.xml")
-        _, h2, _ = http_get("127.0.0.1", plain_epg_r2h.port, "/epg.xml")
-        e1 = h1.get("ETag", h1.get("etag", ""))
-        e2 = h2.get("ETag", h2.get("etag", ""))
-        assert e1 == e2 and e1 != ""
+    def test_etag_cache_behavior(self, plain_epg_r2h):
+        """EPG endpoint should implement stable ETag cache semantics."""
+        assert_etag_cache_behavior("127.0.0.1", plain_epg_r2h.port, "/epg.xml")
 
 
 # ---------------------------------------------------------------------------

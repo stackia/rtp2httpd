@@ -21,6 +21,7 @@ from helpers import (
     http_get,
     unix_http_get,
     wait_for_unix_socket,
+    write_temp_file,
 )
 
 SAMPLE_EPG_XML = """\
@@ -38,13 +39,6 @@ SAMPLE_EPG_XML = """\
 
 def _socket_path(tmpdir: str) -> str:
     return os.path.join(tmpdir, "rtp2httpd.sock")
-
-
-def _write_tmp(data: bytes, suffix: str = ".xml") -> str:
-    fd, path = tempfile.mkstemp(suffix=suffix, prefix="r2h_unix_epg_")
-    with os.fdopen(fd, "wb") as f:
-        f.write(data)
-    return path
 
 
 def _wait_unix_http_status(socket_path: str, path: str, expected_status: int = 200, timeout: float = 5.0) -> None:
@@ -372,7 +366,7 @@ rtp://239.0.0.2:1234
                 r2h.stop()
 
     def test_epg_file_response_over_unix_socket(self, r2h_binary):
-        epg_path = _write_tmp(SAMPLE_EPG_XML.encode())
+        epg_path = write_temp_file(SAMPLE_EPG_XML.encode(), suffix=".xml", prefix="r2h_unix_epg_")
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 sock_path = _socket_path(tmpdir)
