@@ -52,6 +52,7 @@ export interface MSE {
 }
 
 const TAG = "MSE";
+const STARTUP_DEBUG_LOG_LIMIT = 40;
 
 export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   // Use ManagedMediaSource only if w3c MediaSource is not available (e.g. iOS Safari)
@@ -71,6 +72,8 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   let isBufferFull = false;
   let hasPendingEos = false;
   let pendingDuration: number | null = null;
+  let startupDebugLogCount = 0;
+  const appendSequence: Record<Track, number> = { video: 0, audio: 0 };
 
   // Deferred init segments: queued before sourceopen fires
   let pendingSourceBufferInit: { track: Track; data: ArrayBuffer; codec: string; container: string }[] = [];
@@ -193,6 +196,13 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
           if (entry.timestampOffset !== undefined) {
             sb.timestampOffset = entry.timestampOffset / 1000;
           }
+          const sequence = ++appendSequence[track];
+          if (startupDebugLogCount++ < STARTUP_DEBUG_LOG_LIMIT) {
+            Log.v(
+              TAG,
+              `[startup-debug] append ${track}#${sequence}: bytes=${entry.data.byteLength}, timestampOffset=${entry.timestampOffset ?? "-"}, pending video:${pendingSegments.video.length} audio:${pendingSegments.audio.length}, before=${bufferedSummary()}`,
+            );
+          }
           sb.appendBuffer(entry.data);
           if (isBufferFull) {
             isBufferFull = false;
@@ -288,7 +298,13 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     }
   }
 
-  function onSourceBufferUpdateEnd(): void {
+  function onSourceBufferUpdateEnd(track: Track): void {
+    if (startupDebugLogCount++ < STARTUP_DEBUG_LOG_LIMIT) {
+      Log.v(
+        TAG,
+        `[startup-debug] updateend ${track}: pending video:${pendingSegments.video.length} audio:${pendingSegments.audio.length}, buffered=${bufferedSummary()}`,
+      );
+    }
     tryApplyDuration();
     if (hasPendingRemoveRanges()) {
       doRemoveRanges();
@@ -303,8 +319,8 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     }
   }
 
-  function onSourceBufferError(e: Event): void {
-    Log.e(TAG, `SourceBuffer Error:`, e);
+  function onSourceBufferError(track: Track, e: Event): void {
+    Log.e(TAG, `SourceBuffer Error (${track}):`, e);
   }
 
   function createSourceBuffer(track: Track, codec: string, container: string): void {
@@ -339,8 +355,8 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         const sb = mediaSource.addSourceBuffer(mimeType);
         sourceBuffers[track] = sb;
 
-        const errorHandler = (e: Event) => onSourceBufferError(e);
-        const updateEndHandler = () => onSourceBufferUpdateEnd();
+        const errorHandler = (e: Event) => onSourceBufferError(track, e);
+        const updateEndHandler = () => onSourceBufferUpdateEnd(track);
         sbErrorHandlers[track] = errorHandler;
         sbUpdateEndHandlers[track] = updateEndHandler;
 
