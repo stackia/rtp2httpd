@@ -678,13 +678,13 @@ class Pipeline {
 
       let pcm = item.pcm;
       if (mapping.trimStartMs > 0) {
-        const cutFrames = Math.floor((mapping.trimStartMs / 1000) * item.sampleRate);
+        const cutFrames = Math.round((mapping.trimStartMs / 1000) * item.sampleRate);
         const totalFrames = Math.floor(pcm.length / item.channels);
         if (cutFrames >= totalFrames) {
           continue;
         }
         if (cutFrames > 0) {
-          pcm = pcm.subarray(cutFrames * item.channels);
+          pcm = pcm.slice(cutFrames * item.channels);
         }
       }
       this._callbacks.onPCMAudioData(pcm, item.channels, item.sampleRate, mapping.time);
