@@ -320,7 +320,6 @@ class Pipeline {
   private _finishStaticTsSegmentBoundary(): void {
     // Flush stashed samples at every TS segment boundary so the next segment's first
     // remux batch is not mixed with the previous segment's tail.
-    Log.v(this.TAG, `[segment-debug] finish TS segment: source=${this._discreteSegments ? "static" : "single"}`);
     this._demuxer?.flushSegmentBoundary();
     this._remuxer?.flushStashedSamples();
     this._workerAudioDecoder?.reset();
@@ -406,25 +405,13 @@ class Pipeline {
 
   private _setupTSDemuxerRemuxer(probeData: unknown, meta: SegmentMeta): void {
     const shouldAnchor = this._shouldAnchorSegment(meta);
-    const sourceKind = this._hlsSource ? "hls" : this._discreteSegments ? "static" : "single";
     const canReuseHls = this._hlsSource !== null && !shouldAnchor && this._demuxer !== null && this._remuxer !== null;
     const canReuseStatic =
       this._hlsSource === null && this._discreteSegments && this._demuxer !== null && this._remuxer !== null;
     const canReuse = canReuseHls || canReuseStatic;
-    if (canReuseStatic) {
-      Log.v(
-        this.TAG,
-        `[segment-debug] setup TS segment: source=${sourceKind}, reuse=${canReuse}, ` +
-          `start=${meta.start.toFixed(3)}, duration=${meta.duration.toFixed(3)}, ` +
-          `resetRemuxer=${meta.resetRemuxer}, shouldAnchor=${shouldAnchor}`,
-      );
-    }
     if (canReuse) {
       this._demuxer?.resetSegmentBoundary(probeData as ConstructorParameters<typeof TSDemuxer>[0]);
       this._remuxer?.setTsSegmentContinuityNormalization(canReuseStatic);
-      if (canReuseStatic) {
-        this._remuxer?.debugLogNextVideoSegments(`${sourceKind} segment start ${meta.start.toFixed(3)}s`);
-      }
       return;
     }
 
@@ -444,9 +431,6 @@ class Pipeline {
       }
     }
     this._remuxer.setTsSegmentContinuityNormalization(false);
-    if (!this._hlsSource) {
-      this._remuxer.debugLogNextVideoSegments(`${sourceKind} segment start ${meta.start.toFixed(3)}s`);
-    }
 
     demuxer.onError = this._onDemuxException.bind(this);
     demuxer.timestampBase = 0;

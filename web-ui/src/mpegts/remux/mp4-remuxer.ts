@@ -137,8 +137,6 @@ class MP4Remuxer {
   private _silentAudioMode: boolean;
   private _silentAudioLastDts: number | undefined;
   private _tsSegmentContinuityNormalization: boolean;
-  private _debugVideoSegmentsRemaining: number;
-  private _debugVideoSegmentsReason: string;
 
   constructor() {
     this.TAG = "MP4Remuxer";
@@ -171,8 +169,6 @@ class MP4Remuxer {
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
     this._tsSegmentContinuityNormalization = false;
-    this._debugVideoSegmentsRemaining = 0;
-    this._debugVideoSegmentsReason = "";
   }
 
   destroy(): void {
@@ -181,8 +177,6 @@ class MP4Remuxer {
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
     this._tsSegmentContinuityNormalization = false;
-    this._debugVideoSegmentsRemaining = 0;
-    this._debugVideoSegmentsReason = "";
     this._audioTiming = this._createTrackTimingState();
     this._videoTiming = this._createTrackTimingState();
     this._pcmTiming = this._createTrackTimingState();
@@ -230,11 +224,6 @@ class MP4Remuxer {
     this._audioNextDts = this._videoNextDts = undefined;
     this._silentAudioLastDts = undefined;
     this._videoPresentationOffset = undefined;
-  }
-
-  debugLogNextVideoSegments(reason: string, count = 3): void {
-    this._debugVideoSegmentsReason = reason;
-    this._debugVideoSegmentsRemaining = Math.max(this._debugVideoSegmentsRemaining, count);
   }
 
   setTsSegmentContinuityNormalization(enabled: boolean): void {
@@ -287,7 +276,6 @@ class MP4Remuxer {
   }
 
   private _dropOverlappingTrackSamples<T extends { dts: number; length: number }>(
-    type: "audio" | "video",
     samples: T[],
     timing: TrackTimingState,
     mdatBytes: number,
@@ -301,9 +289,6 @@ class MP4Remuxer {
       return mdatBytes;
     }
 
-    let dropped = 0;
-    let firstDroppedDts = 0;
-    let lastDroppedDts = 0;
     while (samples.length > 0) {
       const originalDts = samples[0].dts - this._dtsBase;
       if (originalDts > lastOriginalDts) {
@@ -312,20 +297,6 @@ class MP4Remuxer {
 
       const sample = samples.shift() as T;
       mdatBytes -= sample.length;
-      if (dropped === 0) {
-        firstDroppedDts = originalDts;
-      }
-      lastDroppedDts = originalDts;
-      dropped++;
-    }
-
-    if (dropped > 0) {
-      Log.v(
-        this.TAG,
-        `${type}: dropping ${dropped} overlapping sample(s), ` +
-          `rawDts=${Math.round(firstDroppedDts)}-${Math.round(lastDroppedDts)}ms, ` +
-          `lastRawDts=${Math.round(lastOriginalDts)}ms`,
-      );
     }
 
     return mdatBytes;
@@ -672,7 +643,7 @@ class MP4Remuxer {
       this._audioStashedLastSample = lastSample;
     }
 
-    mdatBytes = this._dropOverlappingTrackSamples("audio", samples, this._audioTiming, mdatBytes);
+    mdatBytes = this._dropOverlappingTrackSamples(samples, this._audioTiming, mdatBytes);
     if (samples.length === 0) {
       track.samples = [];
       track.length = 0;
@@ -828,16 +799,8 @@ class MP4Remuxer {
       this._videoStashedLastSample = lastSample;
     }
 
-    mdatBytes = this._dropOverlappingTrackSamples("video", samples, this._videoTiming, mdatBytes);
+    mdatBytes = this._dropOverlappingTrackSamples(samples, this._videoTiming, mdatBytes);
     if (samples.length === 0) {
-      if (this._debugVideoSegmentsRemaining > 0) {
-        Log.v(
-          this.TAG,
-          `[segment-debug] video segment skipped (${this._debugVideoSegmentsReason}): all samples overlap, ` +
-            `lastRawDts=${this._videoTiming.lastOriginalDts?.toFixed(3) ?? "unset"}`,
-        );
-        this._debugVideoSegmentsRemaining--;
-      }
       track.samples = [];
       track.length = 0;
       return;
@@ -909,15 +872,6 @@ class MP4Remuxer {
     }
 
     if (mp4Samples.length === 0) {
-      if (this._debugVideoSegmentsRemaining > 0) {
-        Log.v(
-          this.TAG,
-          `[segment-debug] video segment skipped (${this._debugVideoSegmentsReason}): ` +
-            `inputSamples=${samples.length}, presentationFloor=${presentationFloor.toFixed(3)}, ` +
-            `presentationOffset=${this._videoPresentationOffset?.toFixed(3) ?? "unset"}`,
-        );
-        this._debugVideoSegmentsRemaining--;
-      }
       track.samples = [];
       track.length = 0;
       return;
@@ -926,22 +880,6 @@ class MP4Remuxer {
     const latest = mp4Samples[mp4Samples.length - 1];
     this._videoNextDts = latest.dts + latest.duration;
     this._recordTrackTiming(this._videoTiming, latest);
-
-    if (this._debugVideoSegmentsRemaining > 0) {
-      const first = mp4Samples[0];
-      const last = mp4Samples[mp4Samples.length - 1];
-      Log.v(
-        this.TAG,
-        `[segment-debug] video segment (${this._debugVideoSegmentsReason}): ` +
-          `count=${mp4Samples.length}, first={dts=${first.dts.toFixed(3)},pts=${first.pts.toFixed(3)},` +
-          `cts=${first.cts.toFixed(3)},dur=${first.duration},key=${first.isKeyframe === true},` +
-          `orig=${first.originalDts.toFixed(3)}} ` +
-          `last={dts=${last.dts.toFixed(3)},pts=${last.pts.toFixed(3)},cts=${last.cts.toFixed(3)},` +
-          `dur=${last.duration},key=${last.isKeyframe === true},orig=${last.originalDts.toFixed(3)}} ` +
-          `next=${this._videoNextDts.toFixed(3)}, presentationOffset=${this._videoPresentationOffset?.toFixed(3) ?? "unset"}`,
-      );
-      this._debugVideoSegmentsRemaining--;
-    }
 
     track.samples = mp4Samples;
     track.sequenceNumber++;
