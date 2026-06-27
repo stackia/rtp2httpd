@@ -135,6 +135,8 @@ class MP4Remuxer {
 
   private _silentAudioMode: boolean;
   private _silentAudioLastDts: number | undefined;
+  private _debugVideoSegmentsRemaining: number;
+  private _debugVideoSegmentsReason: string;
 
   constructor() {
     this.TAG = "MP4Remuxer";
@@ -166,6 +168,8 @@ class MP4Remuxer {
 
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
+    this._debugVideoSegmentsRemaining = 0;
+    this._debugVideoSegmentsReason = "";
   }
 
   destroy(): void {
@@ -173,6 +177,8 @@ class MP4Remuxer {
     this._dtsBaseInited = false;
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
+    this._debugVideoSegmentsRemaining = 0;
+    this._debugVideoSegmentsReason = "";
     this._audioTiming = this._createTrackTimingState();
     this._videoTiming = this._createTrackTimingState();
     this._pcmTiming = this._createTrackTimingState();
@@ -220,6 +226,11 @@ class MP4Remuxer {
     this._audioNextDts = this._videoNextDts = undefined;
     this._silentAudioLastDts = undefined;
     this._videoPresentationOffset = undefined;
+  }
+
+  debugLogNextVideoSegments(reason: string, count = 3): void {
+    this._debugVideoSegmentsReason = reason;
+    this._debugVideoSegmentsRemaining = Math.max(this._debugVideoSegmentsRemaining, count);
   }
 
   private _createTrackTimingState(): TrackTimingState {
@@ -820,6 +831,15 @@ class MP4Remuxer {
     }
 
     if (mp4Samples.length === 0) {
+      if (this._debugVideoSegmentsRemaining > 0) {
+        Log.v(
+          this.TAG,
+          `[segment-debug] video segment skipped (${this._debugVideoSegmentsReason}): ` +
+            `inputSamples=${samples.length}, presentationFloor=${presentationFloor.toFixed(3)}, ` +
+            `presentationOffset=${this._videoPresentationOffset?.toFixed(3) ?? "unset"}`,
+        );
+        this._debugVideoSegmentsRemaining--;
+      }
       track.samples = [];
       track.length = 0;
       return;
@@ -828,6 +848,22 @@ class MP4Remuxer {
     const latest = mp4Samples[mp4Samples.length - 1];
     this._videoNextDts = latest.dts + latest.duration;
     this._recordTrackTiming(this._videoTiming, latest);
+
+    if (this._debugVideoSegmentsRemaining > 0) {
+      const first = mp4Samples[0];
+      const last = mp4Samples[mp4Samples.length - 1];
+      Log.v(
+        this.TAG,
+        `[segment-debug] video segment (${this._debugVideoSegmentsReason}): ` +
+          `count=${mp4Samples.length}, first={dts=${first.dts.toFixed(3)},pts=${first.pts.toFixed(3)},` +
+          `cts=${first.cts.toFixed(3)},dur=${first.duration},key=${first.isKeyframe === true},` +
+          `orig=${first.originalDts.toFixed(3)}} ` +
+          `last={dts=${last.dts.toFixed(3)},pts=${last.pts.toFixed(3)},cts=${last.cts.toFixed(3)},` +
+          `dur=${last.duration},key=${last.isKeyframe === true},orig=${last.originalDts.toFixed(3)}} ` +
+          `next=${this._videoNextDts.toFixed(3)}, presentationOffset=${this._videoPresentationOffset?.toFixed(3) ?? "unset"}`,
+      );
+      this._debugVideoSegmentsRemaining--;
+    }
 
     track.samples = mp4Samples;
     track.sequenceNumber++;

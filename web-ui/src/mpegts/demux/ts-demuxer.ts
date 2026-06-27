@@ -225,6 +225,15 @@ class TSDemuxer {
   }
 
   public resetSegmentBoundary(probe_data?: TSProbeResult): void {
+    const pesQueuePids = Object.keys(this.pes_slice_queues_);
+    if (pesQueuePids.length > 0 || this.video_track_.samples.length > 0 || this.audio_track_.samples.length > 0) {
+      Log.v(
+        this.TAG,
+        `[segment-debug] reset TS boundary: pesQueues=${pesQueuePids.join(",") || "none"}, ` +
+          `videoSamples=${this.video_track_.samples.length}, audioSamples=${this.audio_track_.samples.length}, ` +
+          `videoStarted=${this.video_output_started_}`,
+      );
+    }
     if (probe_data) {
       this.ts_packet_size_ = probe_data.ts_packet_size as number;
       this.sync_offset_ = probe_data.sync_offset as number;
