@@ -1027,6 +1027,7 @@ class TSDemuxer {
     }
     const pts_ms = Math.floor(pts / this.timescale_);
     const dts_ms = Math.floor(dts / this.timescale_);
+
     if (this.drop_video_until_keyframe_ || !this.video_output_started_) {
       if (!keyframe || units.length === 0) {
         return;
@@ -1136,6 +1137,7 @@ class TSDemuxer {
     }
     const pts_ms = Math.floor(pts / this.timescale_);
     const dts_ms = Math.floor(dts / this.timescale_);
+
     if (this.drop_video_until_keyframe_ || !this.video_output_started_) {
       if (!keyframe || units.length === 0) {
         return;
