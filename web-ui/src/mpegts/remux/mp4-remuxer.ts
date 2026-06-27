@@ -233,6 +233,10 @@ class MP4Remuxer {
     this._debugVideoSegmentsRemaining = Math.max(this._debugVideoSegmentsRemaining, count);
   }
 
+  resetVideoPresentationOffset(): void {
+    this._videoPresentationOffset = undefined;
+  }
+
   private _createTrackTimingState(): TrackTimingState {
     return {
       lastOriginalEndDts: undefined,
