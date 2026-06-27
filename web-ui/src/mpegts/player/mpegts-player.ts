@@ -20,7 +20,7 @@ export function isBuffered(video: HTMLMediaElement, seconds: number): boolean {
 
 /** Forward buffer watermarks for HLS VOD/EVENT: pause fetching when far ahead of playback. */
 const VOD_FORWARD_BUFFER_PAUSE = 30;
-const VOD_FORWARD_BUFFER_RESUME = 15;
+const BACKPRESSURE_RESUME_BUFFER_AHEAD = 15;
 
 export function createMpegtsPlayer(
   video: HTMLVideoElement,
@@ -166,7 +166,7 @@ export function createMpegtsPlayer(
     const ahead = getForwardBufferAhead();
 
     if (watermarkPaused || bufferFullPaused) {
-      if (ahead < VOD_FORWARD_BUFFER_RESUME) {
+      if (ahead < BACKPRESSURE_RESUME_BUFFER_AHEAD) {
         resumeWorkerFromBackpressure();
       }
       return;
@@ -237,6 +237,10 @@ export function createMpegtsPlayer(
     };
 
     mse.onBufferAvailable = () => {
+      updateFetchBackpressure();
+    };
+
+    mse.onBufferUpdated = () => {
       updateFetchBackpressure();
     };
 

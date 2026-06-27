@@ -291,7 +291,7 @@ class Pipeline {
         } else if (this._hlsSource) {
           this._remuxer?.flushStashedSamples();
         } else {
-          this._finishStaticTsSegmentBoundary();
+          this._finishTsInputBoundary();
         }
       } catch (e) {
         if (this._runId !== runId || e === CANCELLED) return;
@@ -327,7 +327,7 @@ class Pipeline {
     return meta.resetRemuxer || !this._hlsSource;
   }
 
-  private _finishStaticTsSegmentBoundary(): void {
+  private _finishTsInputBoundary(): void {
     // Flush stashed samples at every TS segment boundary so the next segment's first
     // remux batch is not mixed with the previous segment's tail.
     this._demuxer?.flushSegmentBoundary();
@@ -341,7 +341,7 @@ class Pipeline {
       return;
     }
 
-    this._finishStaticTsSegmentBoundary();
+    this._finishTsInputBoundary();
     this._fmp4Mode = false;
     this._fmp4Chunks = [];
     ioctl.onDataArrival = (data, byteStart) => this._onProbeChunk(meta, data, byteStart);
