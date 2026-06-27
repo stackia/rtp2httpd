@@ -4,6 +4,8 @@ import Log from "../utils/logger";
 import AAC from "./aac-silent";
 import MP4 from "./mp4-generator";
 
+const PRESENTATION_REANCHOR_THRESHOLD_MS = 500;
+
 interface AudioSample {
   unit: Uint8Array;
   dts: number;
@@ -124,6 +126,7 @@ class MP4Remuxer {
   private _videoPresentationOffset: number | undefined;
   private _videoInitialPresentationOffset: number | undefined;
   private _videoInitialOutputTime: number | undefined;
+  private _needsVideoPresentationBoundaryCheck: boolean;
 
   private _audioMeta: TrackMetadata | null;
   private _videoMeta: TrackMetadata | null;
@@ -156,6 +159,7 @@ class MP4Remuxer {
     this._videoPresentationOffset = undefined;
     this._videoInitialPresentationOffset = undefined;
     this._videoInitialOutputTime = undefined;
+    this._needsVideoPresentationBoundaryCheck = false;
 
     this._audioMeta = null;
     this._videoMeta = null;
@@ -185,6 +189,7 @@ class MP4Remuxer {
     this._videoPresentationOffset = undefined;
     this._videoInitialPresentationOffset = undefined;
     this._videoInitialOutputTime = undefined;
+    this._needsVideoPresentationBoundaryCheck = false;
     this._audioMeta = null;
     this._videoMeta = null;
     this._onInitSegment = null;
@@ -233,8 +238,8 @@ class MP4Remuxer {
     this._debugVideoSegmentsRemaining = Math.max(this._debugVideoSegmentsRemaining, count);
   }
 
-  resetVideoPresentationOffset(): void {
-    this._videoPresentationOffset = undefined;
+  markVideoPresentationBoundary(): void {
+    this._needsVideoPresentationBoundaryCheck = true;
   }
 
   private _createTrackTimingState(): TrackTimingState {
@@ -782,6 +787,17 @@ class MP4Remuxer {
     const mp4Samples: MP4Sample[] = [];
     let nextOutputDts = firstSampleOriginalDts - dtsCorrection;
     const presentationFloor = this._videoInitialOutputTime ?? this._dtsBaseOffset;
+    const firstOriginalPts = firstSampleOriginalDts + (samples[0] as VideoSample).cts;
+
+    if (this._needsVideoPresentationBoundaryCheck && this._videoPresentationOffset !== undefined) {
+      const projectedPts = firstOriginalPts - this._videoPresentationOffset;
+      const drift = projectedPts - nextOutputDts;
+      if (Math.abs(drift) > PRESENTATION_REANCHOR_THRESHOLD_MS) {
+        this._videoPresentationOffset = undefined;
+        Log.v(this.TAG, `video: re-anchoring presentation offset at TS boundary, drift=${Math.round(drift)}ms`);
+      }
+      this._needsVideoPresentationBoundaryCheck = false;
+    }
 
     // Correct dts for each sample, and calculate sample duration. Then output to mp4Samples
     for (let i = 0; i < samples.length; i++) {

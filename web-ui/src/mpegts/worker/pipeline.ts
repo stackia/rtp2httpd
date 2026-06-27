@@ -331,9 +331,7 @@ class Pipeline {
     );
     this._demuxer?.flushSegmentBoundary();
     this._remuxer?.flushStashedSamples();
-    if (!this._hlsSource && this._discreteSegments) {
-      this._remuxer?.resetVideoPresentationOffset();
-    }
+    this._remuxer?.markVideoPresentationBoundary();
   }
 
   private _resetAudioTiming(): void {
