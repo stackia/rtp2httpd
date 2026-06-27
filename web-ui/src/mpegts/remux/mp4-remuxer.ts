@@ -105,6 +105,9 @@ function writeUint32(data: Uint8Array, offset: number, value: number): void {
   data[offset + 3] = value & 0xff;
 }
 
+const STARTUP_DEBUG_PREFIX = "[startup-debug]";
+const STARTUP_DEBUG_REMUX_LIMIT = 8;
+
 // Fragmented mp4 remuxer
 class MP4Remuxer {
   TAG: string;
@@ -124,6 +127,8 @@ class MP4Remuxer {
   private _videoCtsOffset: number | undefined;
   private _videoInitialCtsOffset: number | undefined;
   private _videoInitialOutputTime: number | undefined;
+  private _debugAudioSegmentCount: number;
+  private _debugVideoSegmentCount: number;
 
   private _audioMeta: TrackMetadata | null;
   private _videoMeta: TrackMetadata | null;
@@ -154,6 +159,8 @@ class MP4Remuxer {
     this._videoCtsOffset = undefined;
     this._videoInitialCtsOffset = undefined;
     this._videoInitialOutputTime = undefined;
+    this._debugAudioSegmentCount = 0;
+    this._debugVideoSegmentCount = 0;
 
     this._audioMeta = null;
     this._videoMeta = null;
@@ -179,6 +186,8 @@ class MP4Remuxer {
     this._videoCtsOffset = undefined;
     this._videoInitialCtsOffset = undefined;
     this._videoInitialOutputTime = undefined;
+    this._debugAudioSegmentCount = 0;
+    this._debugVideoSegmentCount = 0;
     this._audioMeta = null;
     this._videoMeta = null;
     this._onInitSegment = null;
@@ -274,6 +283,10 @@ class MP4Remuxer {
     timing.durationResidual = withResidual - duration;
     timing.lastOutputDuration = duration;
     return duration;
+  }
+
+  private _logStartupDebug(message: string): void {
+    Log.v(this.TAG, `${STARTUP_DEBUG_PREFIX} ${message}`);
   }
 
   /**
@@ -605,7 +618,9 @@ class MP4Remuxer {
       this._audioStashedLastSample = lastSample;
     }
 
-    const firstSampleOriginalDts = (samples[0] as AudioSample).dts - this._dtsBase;
+    const candidateSampleCount = samples.length;
+    const firstCandidate = samples[0] as AudioSample;
+    const firstSampleOriginalDts = firstCandidate.dts - this._dtsBase;
 
     const dtsCorrection = this._computeDtsCorrection(
       "audio",
@@ -655,6 +670,18 @@ class MP4Remuxer {
       track.samples = [];
       track.length = 0;
       return;
+    }
+
+    const audioDebugIndex = ++this._debugAudioSegmentCount;
+    if (audioDebugIndex <= STARTUP_DEBUG_REMUX_LIMIT) {
+      const first = mp4Samples[0];
+      const last = mp4Samples[mp4Samples.length - 1];
+      this._logStartupDebug(
+        `audio segment#${audioDebugIndex}: codec=${this._audioMeta.codec}, force=${force === true}, ` +
+          `candidates=${candidateSampleCount}, output=${mp4Samples.length}, firstRawDts=${firstCandidate.dts.toFixed(3)}, ` +
+          `firstDts=${first.dts.toFixed(3)}, lastEnd=${(last.dts + last.duration).toFixed(3)}, ` +
+          `duration=${last.duration.toFixed(3)}, dtsCorrection=${dtsCorrection.toFixed(3)}, bytes=${mdatBytes}`,
+      );
     }
 
     // allocate mdatbox
@@ -754,7 +781,9 @@ class MP4Remuxer {
       this._videoStashedLastSample = lastSample;
     }
 
-    const firstSampleOriginalDts = (samples[0] as VideoSample).dts - this._dtsBase;
+    const candidateSampleCount = samples.length;
+    const firstCandidate = samples[0] as VideoSample;
+    const firstSampleOriginalDts = firstCandidate.dts - this._dtsBase;
 
     const dtsCorrection = this._computeDtsCorrection(
       "video",
@@ -766,6 +795,7 @@ class MP4Remuxer {
     const mp4Samples: MP4Sample[] = [];
     let nextOutputDts = firstSampleOriginalDts - dtsCorrection;
     const presentationFloor = this._videoInitialOutputTime ?? this._dtsBaseOffset;
+    let droppedBeforeStart = 0;
 
     // Correct dts for each sample, and calculate sample duration. Then output to mp4Samples
     for (let i = 0; i < samples.length; i++) {
@@ -782,6 +812,7 @@ class MP4Remuxer {
       const pts = originalDts - dtsCorrection + sample.cts - this._videoCtsOffset;
       if (pts < presentationFloor - 0.001) {
         mdatBytes -= sample.length;
+        droppedBeforeStart++;
         continue;
       }
 
@@ -816,9 +847,33 @@ class MP4Remuxer {
     }
 
     if (mp4Samples.length === 0) {
+      const videoDebugIndex = ++this._debugVideoSegmentCount;
+      if (videoDebugIndex <= STARTUP_DEBUG_REMUX_LIMIT) {
+        this._logStartupDebug(
+          `video segment#${videoDebugIndex}: no output, force=${force === true}, candidates=${candidateSampleCount}, ` +
+            `droppedBeforeStart=${droppedBeforeStart}, firstRawDts=${firstCandidate.dts.toFixed(3)}, ` +
+            `firstRawPts=${firstCandidate.pts.toFixed(3)}, firstRawCts=${firstCandidate.cts.toFixed(3)}, ` +
+            `dtsCorrection=${dtsCorrection.toFixed(3)}, presentationFloor=${presentationFloor.toFixed(3)}`,
+        );
+      }
       track.samples = [];
       track.length = 0;
       return;
+    }
+
+    const videoDebugIndex = ++this._debugVideoSegmentCount;
+    if (videoDebugIndex <= STARTUP_DEBUG_REMUX_LIMIT) {
+      const first = mp4Samples[0];
+      const last = mp4Samples[mp4Samples.length - 1];
+      this._logStartupDebug(
+        `video segment#${videoDebugIndex}: force=${force === true}, candidates=${candidateSampleCount}, ` +
+          `output=${mp4Samples.length}, droppedBeforeStart=${droppedBeforeStart}, ` +
+          `keyframes=${mp4Samples.filter((sample) => sample.isKeyframe).length}, ` +
+          `firstRawDts=${firstCandidate.dts.toFixed(3)}, firstRawPts=${firstCandidate.pts.toFixed(3)}, ` +
+          `firstDts=${first.dts.toFixed(3)}, firstPts=${first.pts.toFixed(3)}, firstCts=${first.cts.toFixed(3)}, ` +
+          `lastEnd=${(last.dts + last.duration).toFixed(3)}, duration=${last.duration.toFixed(3)}, ` +
+          `dtsCorrection=${dtsCorrection.toFixed(3)}, ctsOffset=${this._videoCtsOffset?.toFixed(3) ?? "-"}, bytes=${mdatBytes}`,
+      );
     }
 
     const latest = mp4Samples[mp4Samples.length - 1];

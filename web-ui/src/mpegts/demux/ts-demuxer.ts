@@ -106,6 +106,7 @@ type AudioData =
 
 const VIDEO_PID_KEYS: readonly CommonPidKey[] = ["h264", "h265"];
 const AUDIO_PID_KEYS: readonly CommonPidKey[] = ["adts_aac", "loas_aac", "ac3", "eac3", "mp3"];
+const STARTUP_DEBUG_PREFIX = "[startup-debug]";
 
 export type OnErrorCallback = (type: string, info: string) => void;
 export type OnTrackMetadataCallback = (type: string, metadata: unknown) => void;
@@ -1027,8 +1028,9 @@ class TSDemuxer {
     }
     const pts_ms = Math.floor(pts / this.timescale_);
     const dts_ms = Math.floor(dts / this.timescale_);
+    const wasWaitingForKeyframe = this.drop_video_until_keyframe_ || !this.video_output_started_;
 
-    if (this.drop_video_until_keyframe_ || !this.video_output_started_) {
+    if (wasWaitingForKeyframe) {
       if (!keyframe || units.length === 0) {
         return;
       }
@@ -1048,6 +1050,13 @@ class TSDemuxer {
       };
       track.samples.push(avc_sample);
       track.length += length;
+      if (wasWaitingForKeyframe) {
+        Log.v(
+          this.TAG,
+          `${STARTUP_DEBUG_PREFIX} h264 keyframe anchor: pts=${pts_ms.toFixed(3)}, dts=${dts_ms.toFixed(3)}, ` +
+            `cts=${(pts_ms - dts_ms).toFixed(3)}, units=${units.length}, bytes=${length}, rai=${random_access_indicator}`,
+        );
+      }
     }
   }
 
@@ -1137,8 +1146,9 @@ class TSDemuxer {
     }
     const pts_ms = Math.floor(pts / this.timescale_);
     const dts_ms = Math.floor(dts / this.timescale_);
+    const wasWaitingForKeyframe = this.drop_video_until_keyframe_ || !this.video_output_started_;
 
-    if (this.drop_video_until_keyframe_ || !this.video_output_started_) {
+    if (wasWaitingForKeyframe) {
       if (!keyframe || units.length === 0) {
         return;
       }
@@ -1158,6 +1168,13 @@ class TSDemuxer {
       };
       track.samples.push(hvc_sample);
       track.length += length;
+      if (wasWaitingForKeyframe) {
+        Log.v(
+          this.TAG,
+          `${STARTUP_DEBUG_PREFIX} h265 keyframe anchor: pts=${pts_ms.toFixed(3)}, dts=${dts_ms.toFixed(3)}, ` +
+            `cts=${(pts_ms - dts_ms).toFixed(3)}, units=${units.length}, bytes=${length}, rai=${random_access_indicator ?? "-"}`,
+        );
+      }
     }
   }
 
