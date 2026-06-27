@@ -39,6 +39,12 @@ interface LoaderRange {
   to: number;
 }
 
+type ResumeMode = "range" | "restart";
+
+interface FetchLoaderOptions {
+  resumeMode?: ResumeMode;
+}
+
 enum LoaderStatus {
   kIdle = 0,
   kConnecting = 1,
@@ -55,6 +61,7 @@ class FetchLoader {
   // --- public callbacks (set by consumer, e.g. TSDemuxer) ---
   onDataArrival: ((data: Uint8Array, byteStart: number) => number) | null;
   onSeeked: (() => void) | null;
+  onRestarted: (() => void) | null;
   onError: ((type: string, info: LoaderErrorInfo) => void) | null;
   onComplete: ((extraData: unknown) => void) | null;
   /** Called with the playlist text and its final (post-redirect) URL when the response is an HLS playlist. */
@@ -64,6 +71,7 @@ class FetchLoader {
   private _config: PlayerConfig;
   private _dataSource: DataSource | null;
   private _extraData: unknown;
+  private _resumeMode: ResumeMode;
 
   // --- stash buffer ---
   private _stashUsed: number;
@@ -85,10 +93,11 @@ class FetchLoader {
   private _contentLength: number | null;
   private _receivedLength: number;
 
-  constructor(dataSource: DataSource, config: PlayerConfig, extraData?: unknown) {
+  constructor(dataSource: DataSource, config: PlayerConfig, extraData?: unknown, options: FetchLoaderOptions = {}) {
     this._config = config;
     this._dataSource = dataSource;
     this._extraData = extraData;
+    this._resumeMode = options.resumeMode ?? "range";
 
     // stash buffer setup
     this._stashUsed = 0;
@@ -112,6 +121,7 @@ class FetchLoader {
     // callbacks
     this.onDataArrival = null;
     this.onSeeked = null;
+    this.onRestarted = null;
     this.onError = null;
     this.onComplete = null;
     this.onHLSDetected = null;
@@ -130,6 +140,7 @@ class FetchLoader {
 
     this.onDataArrival = null;
     this.onSeeked = null;
+    this.onRestarted = null;
     this.onError = null;
     this.onComplete = null;
     this.onHLSDetected = null;
@@ -196,7 +207,11 @@ class FetchLoader {
       this._paused = false;
       const bytes = this._resumeFrom;
       this._resumeFrom = 0;
-      this._internalSeek(bytes);
+      if (this._resumeMode === "restart") {
+        this._internalRestart();
+      } else {
+        this._internalSeek(bytes);
+      }
     }
   }
 
@@ -422,6 +437,23 @@ class FetchLoader {
     if (this.onSeeked) {
       this.onSeeked();
     }
+  }
+
+  private _internalRestart(): void {
+    if (this._status === LoaderStatus.kConnecting || this._status === LoaderStatus.kBuffering) {
+      this._abortFetch();
+    }
+
+    // Flush old-stream stash before the caller marks the next bytes as a new TS input boundary.
+    this._flushStashBuffer(true);
+
+    this.onRestarted?.();
+
+    const requestRange: LoaderRange = { from: 0, to: -1 };
+    this._currentRange = { from: requestRange.from, to: -1 };
+
+    this._requestAbort = false;
+    this._startFetch(requestRange);
   }
 
   // --- stash buffer management (from IOController) -------------------------

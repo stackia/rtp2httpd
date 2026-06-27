@@ -37,8 +37,9 @@ export function createMpegtsPlayer(
   /** Live edge assuming continuous playback since session start. */
   let liveSessionAnchor: LiveSessionAnchor | null = null;
 
-  let watermarkTimer: ReturnType<typeof setInterval> | null = null;
+  let hlsVodThrottleEnabled = false;
   let watermarkPaused = false;
+  let bufferFullPaused = false;
 
   // PCM audio player for software-decoded audio (MP2)
   let pcmPlayer: PCMAudioPlayer | null = null;
@@ -108,7 +109,8 @@ export function createMpegtsPlayer(
       case "hls-info":
         if (!msg.live) {
           mse?.setDuration(msg.totalDuration);
-          startWatermarkThrottle();
+          hlsVodThrottleEnabled = true;
+          updateFetchBackpressure();
         }
         break;
       case "pcm-audio-data": {
@@ -133,36 +135,51 @@ export function createMpegtsPlayer(
     return worker;
   }
 
-  /** Throttle fetching for HLS VOD/EVENT: pause the worker when buffered far ahead of playback. */
-  function startWatermarkThrottle(): void {
-    if (watermarkTimer) return;
-    watermarkTimer = setInterval(() => {
-      const buffered = video.buffered;
-      // Measure forward buffer within the range containing currentTime; after a seek
-      // to an unbuffered position, stale ranges further ahead must not count.
-      let ahead = 0;
-      for (let i = 0; i < buffered.length; i++) {
-        if (video.currentTime >= buffered.start(i) && video.currentTime <= buffered.end(i)) {
-          ahead = buffered.end(i) - video.currentTime;
-          break;
-        }
+  function getForwardBufferAhead(): number {
+    const buffered = video.buffered;
+    // Measure forward buffer within the range containing currentTime; after a seek
+    // to an unbuffered position, stale ranges further ahead must not count.
+    for (let i = 0; i < buffered.length; i++) {
+      if (video.currentTime >= buffered.start(i) && video.currentTime <= buffered.end(i)) {
+        return buffered.end(i) - video.currentTime;
       }
-      if (!watermarkPaused && ahead > VOD_FORWARD_BUFFER_PAUSE) {
-        watermarkPaused = true;
-        worker?.postMessage({ type: "pause" } satisfies WorkerCommand);
-      } else if (watermarkPaused && ahead < VOD_FORWARD_BUFFER_RESUME) {
-        watermarkPaused = false;
-        worker?.postMessage({ type: "resume" } satisfies WorkerCommand);
-      }
-    }, 1000);
+    }
+    return 0;
   }
 
-  /** Resume segment fetching after an in-buffer seek (worker may have paused on buffer full). */
-  function resumeWorkerAfterBufferSeek(): void {
-    if (watermarkPaused) {
-      watermarkPaused = false;
+  function pauseWorkerForBackpressure(kind: "watermark" | "buffer-full"): void {
+    if (kind === "watermark") {
+      watermarkPaused = true;
+    } else {
+      bufferFullPaused = true;
     }
+    worker?.postMessage({ type: "pause" } satisfies WorkerCommand);
+  }
+
+  function resumeWorkerFromBackpressure(): void {
+    watermarkPaused = false;
+    bufferFullPaused = false;
     worker?.postMessage({ type: "resume" } satisfies WorkerCommand);
+  }
+
+  function updateFetchBackpressure(): void {
+    const ahead = getForwardBufferAhead();
+
+    if (watermarkPaused || bufferFullPaused) {
+      if (ahead < VOD_FORWARD_BUFFER_RESUME) {
+        resumeWorkerFromBackpressure();
+      }
+      return;
+    }
+
+    if (hlsVodThrottleEnabled && ahead > VOD_FORWARD_BUFFER_PAUSE) {
+      pauseWorkerForBackpressure("watermark");
+    }
+  }
+
+  /** Re-evaluate fetching after an in-buffer seek (worker may have paused on buffer full). */
+  function resumeWorkerAfterBufferSeek(): void {
+    updateFetchBackpressure();
   }
 
   /** Seek within existing MSE buffer without reloading the stream. */
@@ -184,12 +201,10 @@ export function createMpegtsPlayer(
     }
   }
 
-  function stopWatermarkThrottle(): void {
-    if (watermarkTimer) {
-      clearInterval(watermarkTimer);
-      watermarkTimer = null;
-    }
+  function resetFetchBackpressure(): void {
+    hlsVodThrottleEnabled = false;
     watermarkPaused = false;
+    bufferFullPaused = false;
   }
 
   function loadInWorker(segments: PlayerSegment[]): void {
@@ -218,27 +233,23 @@ export function createMpegtsPlayer(
     });
 
     mse.onBufferFull = () => {
-      const cmd: WorkerCommand = { type: "pause" };
-      worker?.postMessage(cmd);
+      pauseWorkerForBackpressure("buffer-full");
     };
 
     mse.onBufferAvailable = () => {
-      // Don't resume while the VOD watermark throttle is intentionally holding the worker
-      if (watermarkPaused) return;
-      const cmd: WorkerCommand = { type: "resume" };
-      worker?.postMessage(cmd);
+      updateFetchBackpressure();
     };
 
     mse.onStartStreaming = () => {
-      if (watermarkPaused) return;
-      const cmd: WorkerCommand = { type: "resume" };
-      worker?.postMessage(cmd);
+      if (watermarkPaused || bufferFullPaused) {
+        updateFetchBackpressure();
+        return;
+      }
+      worker?.postMessage({ type: "resume" } satisfies WorkerCommand);
     };
 
-    // Note: onEndStreaming intentionally does NOT pause the worker. For continuous
-    // live TS streams, pausing aborts the in-flight fetch and resumes via a Range
-    // request, which restarts a live stream mid-flow and corrupts the timeline.
-    // The MSE layer already defers appends while ManagedMediaSource streaming=false.
+    // Note: onEndStreaming intentionally does NOT pause the worker. The MSE layer
+    // already defers appends while ManagedMediaSource streaming=false.
 
     mse.onSourceClose = () => {
       // The UA killed the media pipeline (e.g. iOS reclaiming resources in
@@ -273,7 +284,9 @@ export function createMpegtsPlayer(
   }
 
   const onVideoPlay = () => markPlaybackUnlocked();
+  const onVideoTimeUpdate = () => updateFetchBackpressure();
   video.addEventListener("play", onVideoPlay);
+  video.addEventListener("timeupdate", onVideoTimeUpdate);
 
   const impl: PlayerImpl = {
     onError: null,
@@ -282,7 +295,7 @@ export function createMpegtsPlayer(
       mseGeneration++;
       pendingInits = [];
       pendingSegments = segments;
-      stopWatermarkThrottle();
+      resetFetchBackpressure();
       if (mse) {
         mse.destroy();
         mse = null;
@@ -317,7 +330,7 @@ export function createMpegtsPlayer(
 
     suspend() {
       mseGeneration++;
-      stopWatermarkThrottle();
+      resetFetchBackpressure();
       pendingInits = [];
       pendingSegments = null;
       if (worker) {
@@ -337,6 +350,7 @@ export function createMpegtsPlayer(
     destroy() {
       impl.suspend();
       video.removeEventListener("play", onVideoPlay);
+      video.removeEventListener("timeupdate", onVideoTimeUpdate);
       if (worker) {
         const cmd: WorkerCommand = { type: "destroy" };
         worker.postMessage(cmd);

@@ -9,7 +9,12 @@ import FetchLoader, { LoaderErrors } from "../io/fetch-loader";
 import MP4Remuxer from "../remux/mp4-remuxer";
 import type { PlayerSegment } from "../types";
 import Log from "../utils/logger";
-import { type SegmentMeta, type SegmentSource, StaticSegmentSource } from "./segment-source";
+import {
+  ContinuousLiveSegmentSource,
+  type SegmentMeta,
+  type SegmentSource,
+  StaticSegmentSource,
+} from "./segment-source";
 
 export interface PipelineCallbacks {
   onInitSegment: (
@@ -51,6 +56,7 @@ class LoadError extends Error {
 const HLS_URL_RE = /\.m3u8?($|\?)/i;
 /** Sentinel rejection value for intentionally cancelled segment loads. */
 const CANCELLED = Symbol("cancelled");
+type SourceMode = "continuous-live-ts" | "static-ts-list" | "hls";
 
 /** Copy a Uint8Array view into a standalone (transferable) ArrayBuffer. */
 function toArrayBuffer(view: Uint8Array): ArrayBuffer {
@@ -73,6 +79,7 @@ class Pipeline {
 
   private _source: SegmentSource | null = null;
   private _hlsSource: HlsSource | null = null;
+  private _sourceMode: SourceMode = "static-ts-list";
 
   private _demuxer: TSDemuxer | null = null;
   private _remuxer: MP4Remuxer | null = null;
@@ -82,13 +89,6 @@ class Pipeline {
 
   private _paused = false;
   private _resumeGate: (() => void) | null = null;
-  /**
-   * Discrete segment sources (HLS, catchup lists) load one short URL per iteration.
-   * For these, pause only gates between segments — never abort an in-flight fetch
-   * (which shows up as immediate cancel/retry on later segments).
-   */
-  private _discreteSegments = false;
-
   /** dts offset (ms) to apply when the remuxer is next created (HLS discontinuity / seek). */
   private _pendingDtsOffsetMs = 0;
 
@@ -135,15 +135,15 @@ class Pipeline {
 
   pause(): void {
     this._paused = true;
-    // Continuous single-URL TS streams can pause mid-fetch and resume via Range.
-    if (!this._discreteSegments) {
+    // Continuous live TS streams pause mid-fetch and resume with a fresh request.
+    if (this._sourceMode === "continuous-live-ts") {
       this._ioctl?.pause();
     }
   }
 
   resume(): void {
     this._paused = false;
-    if (!this._discreteSegments) {
+    if (this._sourceMode === "continuous-live-ts") {
       this._ioctl?.resume();
     }
     this._resumeGate?.();
@@ -170,11 +170,20 @@ class Pipeline {
     this._workerAudioDecoder?.reset();
     this._resetAudioTiming();
 
-    const url = segments[0]?.url ?? "";
-    this._discreteSegments = segments.length > 1 || HLS_URL_RE.test(url);
-    if (segments.length === 1 && HLS_URL_RE.test(url)) {
+    const firstSegment = segments[0];
+    if (!firstSegment) return;
+    const url = firstSegment.url;
+    const isHls = segments.length === 1 && HLS_URL_RE.test(url);
+    const isContinuousLiveTs = segments.length === 1 && !isHls && (firstSegment.duration ?? 0) === 0;
+
+    this._sourceMode = isHls ? "hls" : isContinuousLiveTs ? "continuous-live-ts" : "static-ts-list";
+
+    if (isHls) {
       // Fast path: known playlist URL, skip the content-type detection round-trip
       this._startHls(url);
+    } else if (isContinuousLiveTs) {
+      this._source = new ContinuousLiveSegmentSource(firstSegment);
+      void this._run(this._runId);
     } else {
       this._source = new StaticSegmentSource(segments);
       void this._run(this._runId);
@@ -182,7 +191,7 @@ class Pipeline {
   }
 
   private _startHls(url: string, preloaded?: { text: string; url: string }): void {
-    this._discreteSegments = true;
+    this._sourceMode = "hls";
     const hls = new HlsSource(url, this._config, preloaded);
     hls.onInfo = (info) => this._callbacks.onHlsInfo(info);
     this._hlsSource = hls;
@@ -212,6 +221,7 @@ class Pipeline {
     this._fmp4Timescales = new Map();
     this._fmp4TimestampOffsetWarningLogged = false;
     this._paused = false;
+    this._sourceMode = "static-ts-list";
     this._resumeGate?.();
     this._resumeGate = null;
   }
@@ -326,6 +336,17 @@ class Pipeline {
     this._resetAudioTiming();
   }
 
+  private _prepareContinuousLiveTsRestart(meta: SegmentMeta, ioctl: FetchLoader): void {
+    if (this._sourceMode !== "continuous-live-ts") {
+      return;
+    }
+
+    this._finishStaticTsSegmentBoundary();
+    this._fmp4Mode = false;
+    this._fmp4Chunks = [];
+    ioctl.onDataArrival = (data, byteStart) => this._onProbeChunk(meta, data, byteStart);
+  }
+
   private _resetAudioTiming(): void {
     this._audioGen++;
     this._audioAnchorPtsMs = null;
@@ -343,6 +364,8 @@ class Pipeline {
         referrerPolicy: this._config.referrerPolicy as ReferrerPolicy | undefined,
       },
       this._config,
+      undefined,
+      { resumeMode: this._sourceMode === "continuous-live-ts" ? "restart" : "range" },
     );
     this._ioctl = ioctl;
 
@@ -351,6 +374,7 @@ class Pipeline {
 
       ioctl.onError = (type, info) => reject(new LoadError(type, info));
       ioctl.onSeeked = () => this._remuxer?.insertDiscontinuity();
+      ioctl.onRestarted = () => this._prepareContinuousLiveTsRestart(meta, ioctl);
       ioctl.onComplete = () => resolve();
       ioctl.onHLSDetected = (text, url) => {
         // Playlist served from a non-.m3u8 URL: switch the pipeline to the HLS source,
@@ -406,14 +430,13 @@ class Pipeline {
   private _setupTSDemuxerRemuxer(probeData: unknown, meta: SegmentMeta): void {
     const shouldAnchor = this._shouldAnchorSegment(meta);
     const canReuseHls = this._hlsSource !== null && !shouldAnchor && this._demuxer !== null && this._remuxer !== null;
-    const canReuseStatic =
-      this._hlsSource === null && this._discreteSegments && this._demuxer !== null && this._remuxer !== null;
-    const canReuse = canReuseHls || canReuseStatic;
+    const canReuseTsInputBoundary = this._sourceMode !== "hls" && this._demuxer !== null && this._remuxer !== null;
+    const canReuse = canReuseHls || canReuseTsInputBoundary;
     if (canReuse) {
       this._demuxer?.resetSegmentBoundary(probeData as ConstructorParameters<typeof TSDemuxer>[0], {
-        resetAudioParserState: canReuseStatic,
+        resetAudioParserState: canReuseTsInputBoundary,
       });
-      this._remuxer?.setTsSegmentContinuityNormalization(canReuseStatic);
+      this._remuxer?.setTsSegmentContinuityNormalization(canReuseTsInputBoundary);
       return;
     }
 
