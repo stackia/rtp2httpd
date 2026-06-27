@@ -278,8 +278,10 @@ class Pipeline {
 
         if (this._fmp4Mode) {
           this._flushFmp4Segment(meta);
+        } else if (this._hlsSource) {
+          this._remuxer?.flushStashedSamples();
         } else {
-          this._finishTsSegmentBoundary();
+          this._finishStaticTsSegmentBoundary();
         }
       } catch (e) {
         if (this._runId !== runId || e === CANCELLED) return;
@@ -315,22 +317,21 @@ class Pipeline {
     return meta.resetRemuxer || !this._hlsSource;
   }
 
-  private _getTsTimestampBase(meta: SegmentMeta, reuseDemuxer: boolean): number {
+  private _getTsTimestampBase(meta: SegmentMeta, normalizeStaticSegmentContinuity: boolean): number {
     // Reused TS demuxer/remuxer paths are continuous segment boundaries, same as
     // ordinary HLS-TS segments. Do not add static segment.start to raw PTS/DTS,
     // otherwise remux DTS continues but PTS jumps forward by the segment start.
-    return reuseDemuxer ? 0 : meta.timestampBase;
+    return normalizeStaticSegmentContinuity ? 0 : meta.timestampBase;
   }
 
-  private _finishTsSegmentBoundary(): void {
+  private _finishStaticTsSegmentBoundary(): void {
     // Flush stashed samples at every TS segment boundary so the next segment's first
     // remux batch is not mixed with the previous segment's tail.
-    Log.v(
-      this.TAG,
-      `[segment-debug] finish TS segment: source=${this._hlsSource ? "hls" : this._discreteSegments ? "static" : "single"}`,
-    );
+    Log.v(this.TAG, `[segment-debug] finish TS segment: source=${this._discreteSegments ? "static" : "single"}`);
     this._demuxer?.flushSegmentBoundary();
     this._remuxer?.flushStashedSamples();
+    this._workerAudioDecoder?.reset();
+    this._resetAudioTiming();
   }
 
   private _resetAudioTiming(): void {
@@ -413,21 +414,29 @@ class Pipeline {
   private _setupTSDemuxerRemuxer(probeData: unknown, meta: SegmentMeta): void {
     const shouldAnchor = this._shouldAnchorSegment(meta);
     const sourceKind = this._hlsSource ? "hls" : this._discreteSegments ? "static" : "single";
-    const canReuse = this._demuxer !== null && this._remuxer !== null;
-    const timestampBase = this._getTsTimestampBase(meta, canReuse);
-    Log.v(
-      this.TAG,
-      `[segment-debug] setup TS segment: source=${sourceKind}, reuse=${canReuse}, ` +
-        `start=${meta.start.toFixed(3)}, duration=${meta.duration.toFixed(3)}, ` +
-        `timestampBase=${timestampBase.toFixed(3)}, metaTimestampBase=${meta.timestampBase.toFixed(3)}, ` +
-        `resetRemuxer=${meta.resetRemuxer}, shouldAnchor=${shouldAnchor}`,
-    );
+    const canReuseHls = this._hlsSource !== null && !shouldAnchor && this._demuxer !== null && this._remuxer !== null;
+    const canReuseStatic =
+      this._hlsSource === null && this._discreteSegments && this._demuxer !== null && this._remuxer !== null;
+    const canReuse = canReuseHls || canReuseStatic;
+    const timestampBase = this._getTsTimestampBase(meta, canReuseStatic);
+    if (canReuseStatic) {
+      Log.v(
+        this.TAG,
+        `[segment-debug] setup TS segment: source=${sourceKind}, reuse=${canReuse}, ` +
+          `start=${meta.start.toFixed(3)}, duration=${meta.duration.toFixed(3)}, ` +
+          `timestampBase=${timestampBase.toFixed(3)}, metaTimestampBase=${meta.timestampBase.toFixed(3)}, ` +
+          `resetRemuxer=${meta.resetRemuxer}, shouldAnchor=${shouldAnchor}`,
+      );
+    }
     if (canReuse) {
       this._demuxer?.resetSegmentBoundary(probeData as ConstructorParameters<typeof TSDemuxer>[0]);
-      if (this._demuxer) {
+      if (this._demuxer && canReuseStatic) {
         this._demuxer.timestampBase = timestampBase * 90000; // seconds → 90kHz ticks
       }
-      this._remuxer?.debugLogNextVideoSegments(`${sourceKind} segment start ${meta.start.toFixed(3)}s`);
+      this._remuxer?.setTsSegmentContinuityNormalization(canReuseStatic);
+      if (canReuseStatic) {
+        this._remuxer?.debugLogNextVideoSegments(`${sourceKind} segment start ${meta.start.toFixed(3)}s`);
+      }
       return;
     }
 
@@ -435,7 +444,7 @@ class Pipeline {
       this._demuxer.destroy();
     }
     const demuxer = new TSDemuxer(probeData as ConstructorParameters<typeof TSDemuxer>[0], {
-      waitForInitialVideoKeyframe: true,
+      waitForInitialVideoKeyframe: shouldAnchor || !this._demuxer || !this._remuxer,
     });
     this._demuxer = demuxer;
 
@@ -446,7 +455,10 @@ class Pipeline {
         this._pendingDtsOffsetMs = 0;
       }
     }
-    this._remuxer.debugLogNextVideoSegments(`${sourceKind} segment start ${meta.start.toFixed(3)}s`);
+    this._remuxer.setTsSegmentContinuityNormalization(false);
+    if (!this._hlsSource) {
+      this._remuxer.debugLogNextVideoSegments(`${sourceKind} segment start ${meta.start.toFixed(3)}s`);
+    }
 
     demuxer.onError = this._onDemuxException.bind(this);
     demuxer.timestampBase = timestampBase * 90000; // seconds → 90kHz ticks

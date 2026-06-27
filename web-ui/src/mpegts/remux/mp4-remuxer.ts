@@ -136,6 +136,7 @@ class MP4Remuxer {
 
   private _silentAudioMode: boolean;
   private _silentAudioLastDts: number | undefined;
+  private _tsSegmentContinuityNormalization: boolean;
   private _debugVideoSegmentsRemaining: number;
   private _debugVideoSegmentsReason: string;
 
@@ -169,6 +170,7 @@ class MP4Remuxer {
 
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
+    this._tsSegmentContinuityNormalization = false;
     this._debugVideoSegmentsRemaining = 0;
     this._debugVideoSegmentsReason = "";
   }
@@ -178,6 +180,7 @@ class MP4Remuxer {
     this._dtsBaseInited = false;
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
+    this._tsSegmentContinuityNormalization = false;
     this._debugVideoSegmentsRemaining = 0;
     this._debugVideoSegmentsReason = "";
     this._audioTiming = this._createTrackTimingState();
@@ -234,6 +237,10 @@ class MP4Remuxer {
     this._debugVideoSegmentsRemaining = Math.max(this._debugVideoSegmentsRemaining, count);
   }
 
+  setTsSegmentContinuityNormalization(enabled: boolean): void {
+    this._tsSegmentContinuityNormalization = enabled;
+  }
+
   private _createTrackTimingState(): TrackTimingState {
     return {
       lastOriginalDts: undefined,
@@ -260,11 +267,11 @@ class MP4Remuxer {
       return firstSampleOriginalDts - nextDts;
     }
 
-    if (timing.lastOriginalDts === undefined || timing.lastOutputEndDts === undefined) {
+    if (timing.lastOriginalEndDts === undefined || timing.lastOutputEndDts === undefined) {
       return firstSampleOriginalDts - this._dtsBaseOffset;
     }
 
-    const distance = firstSampleOriginalDts - timing.lastOriginalDts;
+    const distance = firstSampleOriginalDts - timing.lastOriginalEndDts;
     const bridgedDistance = distance > 0 ? 0 : distance;
     if (bridgedDistance !== distance) {
       Log.v(this.TAG, `${type}: bridging ${Math.round(distance)}ms timestamp hole after discontinuity`);
@@ -285,6 +292,10 @@ class MP4Remuxer {
     timing: TrackTimingState,
     mdatBytes: number,
   ): number {
+    if (!this._tsSegmentContinuityNormalization) {
+      return mdatBytes;
+    }
+
     const lastOriginalDts = timing.lastOriginalDts;
     if (lastOriginalDts === undefined) {
       return mdatBytes;
@@ -853,7 +864,7 @@ class MP4Remuxer {
 
       const dts = nextOutputDts;
       const originalPts = originalDts + sample.cts;
-      const correctedPtsBase = originalPts - dtsCorrection;
+      const correctedPtsBase = this._tsSegmentContinuityNormalization ? originalPts - dtsCorrection : originalPts;
       if (this._videoPresentationOffset === undefined) {
         this._videoPresentationOffset = correctedPtsBase - dts;
         if (this._videoInitialPresentationOffset === undefined) {
