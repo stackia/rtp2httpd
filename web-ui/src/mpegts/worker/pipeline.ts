@@ -278,17 +278,8 @@ class Pipeline {
 
         if (this._fmp4Mode) {
           this._flushFmp4Segment(meta);
-        }
-        // Flush stashed samples at every segment boundary so the next segment's first
-        // remux batch is not mixed with the previous segment's tail (which would share
-        // one dtsCorrection and preserve upstream HLS timestamp gaps in MSE).
-        this._remuxer?.flushStashedSamples();
-        if (!this._hlsSource) {
-          // Each static segment is an independent TS timeline: a partial MP2
-          // frame carried from the previous URL must not be prepended to the
-          // next one, and the PTS anchor must re-establish from the new PES
-          this._workerAudioDecoder?.reset();
-          this._resetAudioTiming();
+        } else {
+          this._finishTsSegmentBoundary();
         }
       } catch (e) {
         if (this._runId !== runId || e === CANCELLED) return;
@@ -322,6 +313,23 @@ class Pipeline {
 
   private _shouldAnchorSegment(meta: SegmentMeta): boolean {
     return meta.resetRemuxer || !this._hlsSource;
+  }
+
+  private _isStaticSegmentList(): boolean {
+    return !this._hlsSource && this._discreteSegments;
+  }
+
+  private _canReuseTsDemuxer(shouldAnchor: boolean): boolean {
+    if (!this._demuxer || !this._remuxer) {
+      return false;
+    }
+    return this._isStaticSegmentList() || (this._hlsSource !== null && !shouldAnchor);
+  }
+
+  private _finishTsSegmentBoundary(): void {
+    // Flush stashed samples at every TS segment boundary so the next segment's first
+    // remux batch is not mixed with the previous segment's tail.
+    this._remuxer?.flushStashedSamples();
   }
 
   private _resetAudioTiming(): void {
@@ -403,8 +411,11 @@ class Pipeline {
 
   private _setupTSDemuxerRemuxer(probeData: unknown, meta: SegmentMeta): void {
     const shouldAnchor = this._shouldAnchorSegment(meta);
-    if (this._hlsSource && !shouldAnchor && this._demuxer && this._remuxer) {
-      this._demuxer.resetSegmentBoundary(probeData as ConstructorParameters<typeof TSDemuxer>[0]);
+    if (this._canReuseTsDemuxer(shouldAnchor)) {
+      this._demuxer?.resetSegmentBoundary(probeData as ConstructorParameters<typeof TSDemuxer>[0]);
+      if (this._demuxer) {
+        this._demuxer.timestampBase = meta.timestampBase * 90000; // seconds → 90kHz ticks
+      }
       return;
     }
 
