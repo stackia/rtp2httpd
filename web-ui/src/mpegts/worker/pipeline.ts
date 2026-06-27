@@ -326,6 +326,13 @@ class Pipeline {
     return this._isStaticSegmentList() || (this._hlsSource !== null && !shouldAnchor);
   }
 
+  private _getTsTimestampBase(meta: SegmentMeta, reuseDemuxer: boolean): number {
+    // Reused TS demuxer/remuxer paths are continuous segment boundaries, same as
+    // ordinary HLS-TS segments. Do not add static segment.start to raw PTS/DTS,
+    // otherwise remux DTS continues but PTS jumps forward by the segment start.
+    return reuseDemuxer ? 0 : meta.timestampBase;
+  }
+
   private _finishTsSegmentBoundary(): void {
     // Flush stashed samples at every TS segment boundary so the next segment's first
     // remux batch is not mixed with the previous segment's tail.
@@ -417,16 +424,18 @@ class Pipeline {
     const shouldAnchor = this._shouldAnchorSegment(meta);
     const sourceKind = this._hlsSource ? "hls" : this._discreteSegments ? "static" : "single";
     const canReuse = this._canReuseTsDemuxer(shouldAnchor);
+    const timestampBase = this._getTsTimestampBase(meta, canReuse);
     Log.v(
       this.TAG,
       `[segment-debug] setup TS segment: source=${sourceKind}, reuse=${canReuse}, ` +
         `start=${meta.start.toFixed(3)}, duration=${meta.duration.toFixed(3)}, ` +
-        `timestampBase=${meta.timestampBase.toFixed(3)}, resetRemuxer=${meta.resetRemuxer}, shouldAnchor=${shouldAnchor}`,
+        `timestampBase=${timestampBase.toFixed(3)}, metaTimestampBase=${meta.timestampBase.toFixed(3)}, ` +
+        `resetRemuxer=${meta.resetRemuxer}, shouldAnchor=${shouldAnchor}`,
     );
     if (canReuse) {
       this._demuxer?.resetSegmentBoundary(probeData as ConstructorParameters<typeof TSDemuxer>[0]);
       if (this._demuxer) {
-        this._demuxer.timestampBase = meta.timestampBase * 90000; // seconds → 90kHz ticks
+        this._demuxer.timestampBase = timestampBase * 90000; // seconds → 90kHz ticks
       }
       this._remuxer?.debugLogNextVideoSegments(`${sourceKind} segment start ${meta.start.toFixed(3)}s`);
       return;
@@ -451,7 +460,7 @@ class Pipeline {
     this._remuxer.debugLogNextVideoSegments(`${sourceKind} segment start ${meta.start.toFixed(3)}s`);
 
     demuxer.onError = this._onDemuxException.bind(this);
-    demuxer.timestampBase = meta.timestampBase * 90000; // seconds → 90kHz ticks
+    demuxer.timestampBase = timestampBase * 90000; // seconds → 90kHz ticks
     demuxer.onTrackDiscontinuity = (track) => {
       if (track === "video") {
         this._remuxer?.flushStashedSamples();
