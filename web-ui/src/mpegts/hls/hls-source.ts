@@ -131,7 +131,6 @@ export class HlsSource implements SegmentSource {
         url: seg.url,
         start: this.timelinePos,
         duration: seg.duration,
-        timestampBase: 0,
         resetRemuxer: seg.discontinuity || skipped,
         initUrl: seg.initUrl,
       });

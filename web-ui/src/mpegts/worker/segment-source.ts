@@ -6,8 +6,6 @@ export interface SegmentMeta {
   start: number;
   /** Segment duration in seconds (0 if unknown / live). */
   duration: number;
-  /** Value added to demuxed PTS/DTS (seconds). Used by the static (catchup) path where each URL restarts its own timeline. */
-  timestampBase: number;
   /** Destroy and recreate the remuxer before this segment, re-anchoring output at `start` (HLS discontinuity / seek). */
   resetRemuxer: boolean;
   /** fMP4 initialization segment URL (HLS EXT-X-MAP), if any. */
@@ -32,7 +30,6 @@ export class StaticSegmentSource implements SegmentSource {
         url: seg.url,
         start,
         duration: seg.duration ?? 0,
-        timestampBase: start,
         resetRemuxer: false,
       };
       start += seg.duration ?? 0;

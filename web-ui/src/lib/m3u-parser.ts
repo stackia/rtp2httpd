@@ -179,6 +179,7 @@ function mergeChannelSources(channels: Channel[]): Channel[] {
 
 /** Minimum catchup window (ms). Shorter playseek ranges can fail on some servers. */
 export const CATCHUP_MIN_DURATION_MS = 30_000;
+const CATCHUP_SEGMENT_OVERLAP_MS = 1_000;
 
 /** Clamp catchup start so the window back to `now` is at least {@link CATCHUP_MIN_DURATION_MS}. */
 export function clampCatchupStartTime(seekTime: Date, now = new Date()): Date {
@@ -487,6 +488,13 @@ export function buildCatchupSegments(source: Source, startTimeArg: Date): Player
     5 * 60 * 60 * 1000, // max 5 hours
   );
   const segmentDurationSec = segmentDurationMs / 1000;
+  const buildOverlappedSegmentUrl = (segmentStartTime: Date, segmentEndTime: Date): string => {
+    const requestStartTime =
+      segments.length === 0
+        ? segmentStartTime
+        : new Date(Math.max(startTime.getTime(), segmentStartTime.getTime() - CATCHUP_SEGMENT_OVERLAP_MS));
+    return buildCatchupUrl(requestStartTime, segmentEndTime);
+  };
 
   // Build segments from startTime to now (catchup/replay segments)
   let currentTime = new Date(startTime.getTime());
@@ -499,7 +507,7 @@ export function buildCatchupSegments(source: Source, startTimeArg: Date): Player
 
     segments.push({
       duration: segmentDurationSec,
-      url: buildCatchupUrl(currentTime, segmentEndTime),
+      url: buildOverlappedSegmentUrl(currentTime, segmentEndTime),
     });
 
     currentTime = segmentEndTime;
@@ -511,7 +519,7 @@ export function buildCatchupSegments(source: Source, startTimeArg: Date): Player
 
     segments.push({
       duration: segmentDurationSec / 2,
-      url: buildCatchupUrl(currentTime, segmentEndTime),
+      url: buildOverlappedSegmentUrl(currentTime, segmentEndTime),
     });
 
     currentTime = segmentEndTime;

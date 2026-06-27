@@ -278,17 +278,10 @@ class Pipeline {
 
         if (this._fmp4Mode) {
           this._flushFmp4Segment(meta);
-        }
-        // Flush stashed samples at every segment boundary so the next segment's first
-        // remux batch is not mixed with the previous segment's tail (which would share
-        // one dtsCorrection and preserve upstream HLS timestamp gaps in MSE).
-        this._remuxer?.flushStashedSamples();
-        if (!this._hlsSource) {
-          // Each static segment is an independent TS timeline: a partial MP2
-          // frame carried from the previous URL must not be prepended to the
-          // next one, and the PTS anchor must re-establish from the new PES
-          this._workerAudioDecoder?.reset();
-          this._resetAudioTiming();
+        } else if (this._hlsSource) {
+          this._remuxer?.flushStashedSamples();
+        } else {
+          this._finishStaticTsSegmentBoundary();
         }
       } catch (e) {
         if (this._runId !== runId || e === CANCELLED) return;
@@ -322,6 +315,15 @@ class Pipeline {
 
   private _shouldAnchorSegment(meta: SegmentMeta): boolean {
     return meta.resetRemuxer || !this._hlsSource;
+  }
+
+  private _finishStaticTsSegmentBoundary(): void {
+    // Flush stashed samples at every TS segment boundary so the next segment's first
+    // remux batch is not mixed with the previous segment's tail.
+    this._demuxer?.flushSegmentBoundary();
+    this._remuxer?.flushStashedSamples();
+    this._workerAudioDecoder?.reset();
+    this._resetAudioTiming();
   }
 
   private _resetAudioTiming(): void {
@@ -403,17 +405,23 @@ class Pipeline {
 
   private _setupTSDemuxerRemuxer(probeData: unknown, meta: SegmentMeta): void {
     const shouldAnchor = this._shouldAnchorSegment(meta);
-    if (this._hlsSource && !shouldAnchor && this._demuxer && this._remuxer) {
-      this._demuxer.resetSegmentBoundary(probeData as ConstructorParameters<typeof TSDemuxer>[0]);
+    const canReuseHls = this._hlsSource !== null && !shouldAnchor && this._demuxer !== null && this._remuxer !== null;
+    const canReuseStatic =
+      this._hlsSource === null && this._discreteSegments && this._demuxer !== null && this._remuxer !== null;
+    const canReuse = canReuseHls || canReuseStatic;
+    if (canReuse) {
+      this._demuxer?.resetSegmentBoundary(probeData as ConstructorParameters<typeof TSDemuxer>[0], {
+        resetAudioParserState: canReuseStatic,
+      });
+      this._remuxer?.setTsSegmentContinuityNormalization(canReuseStatic);
       return;
     }
 
-    const waitForInitialVideoKeyframe = shouldAnchor || !this._demuxer || !this._remuxer;
     if (this._demuxer) {
       this._demuxer.destroy();
     }
     const demuxer = new TSDemuxer(probeData as ConstructorParameters<typeof TSDemuxer>[0], {
-      waitForInitialVideoKeyframe,
+      waitForInitialVideoKeyframe: shouldAnchor || !this._demuxer || !this._remuxer,
     });
     this._demuxer = demuxer;
 
@@ -424,9 +432,10 @@ class Pipeline {
         this._pendingDtsOffsetMs = 0;
       }
     }
+    this._remuxer.setTsSegmentContinuityNormalization(false);
 
     demuxer.onError = this._onDemuxException.bind(this);
-    demuxer.timestampBase = meta.timestampBase * 90000; // seconds → 90kHz ticks
+    demuxer.timestampBase = 0;
     demuxer.onTrackDiscontinuity = (track) => {
       if (track === "video") {
         this._remuxer?.flushStashedSamples();

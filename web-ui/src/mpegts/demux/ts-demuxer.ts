@@ -57,6 +57,9 @@ type CommonPidKey = keyof PMT["common_pids"];
 type TSDemuxerOptions = {
   waitForInitialVideoKeyframe?: boolean;
 };
+type TSSegmentBoundaryOptions = {
+  resetAudioParserState?: boolean;
+};
 type AACAudioMetadata = {
   codec: "aac";
   audio_object_type: MPEG4AudioObjectTypes;
@@ -224,7 +227,7 @@ class TSDemuxer {
     this.soft_decode_audio_codec_ = null;
   }
 
-  public resetSegmentBoundary(probe_data?: TSProbeResult): void {
+  public resetSegmentBoundary(probe_data?: TSProbeResult, options: TSSegmentBoundaryOptions = {}): void {
     if (probe_data) {
       this.ts_packet_size_ = probe_data.ts_packet_size as number;
       this.sync_offset_ = probe_data.sync_offset as number;
@@ -233,6 +236,18 @@ class TSDemuxer {
     this.pes_slice_queues_ = {};
     this.section_slice_queues_ = {};
     this.continuity_counters_ = {};
+    if (options.resetAudioParserState === true) {
+      this.resetAudioParserState();
+    }
+  }
+
+  public flushSegmentBoundary(): void {
+    if (this.shouldWaitForVideoKeyframe() || !this.isInitSegmentDispatched()) {
+      return;
+    }
+    if (this.audio_track_.length || this.video_track_.length) {
+      this.onDataAvailable?.(this.audio_track_, this.video_track_, true);
+    }
   }
 
   public static probe(data: Uint8Array): TSProbeResult {
