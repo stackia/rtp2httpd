@@ -18,7 +18,6 @@ import {
   goLiveTargetMse,
   isNearLiveWallClock,
   type LiveSessionAnchor,
-  lagBehindLiveEdge,
   wallClockToMse,
 } from "../../mpegts/player/wall-clock";
 import mp2WasmUrl from "../../mpegts/wasm/minimp3/mp2_decoder.wasm?url";
@@ -156,6 +155,7 @@ export function VideoPlayer({
   const slotBVideoRef = useRef<HTMLVideoElement>(null);
   const slotAPlayerRef = useRef<Player | null>(null);
   const slotBPlayerRef = useRef<Player | null>(null);
+  const slotLiveStateRef = useRef<Record<SlotId, boolean>>({ a: true, b: true });
   const activeSlotIdRef = useRef<SlotId>("a");
   const [visibleSlotId, setVisibleSlotId] = useState<SlotId>("a");
   const transitionGenRef = useRef(0);
@@ -180,9 +180,7 @@ export function VideoPlayer({
   const [isMuted, setIsMuted] = useState(() => getMuted());
   const [isPlaying, setIsPlaying] = useState(false);
   const [liveSessionAnchor, setLiveSessionAnchor] = useState<LiveSessionAnchor | null>(null);
-  // Before session calibration (initial load / reload), treat live mode as Live — not Go Live.
-  const isLive =
-    playMode === "live" && (liveSessionAnchor === null || lagBehindLiveEdge(liveSessionAnchor, currentVideoTime) < 3);
+  const [isLive, setIsLive] = useState(true);
   const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isPiP, setIsPiP] = useState(false);
@@ -251,9 +249,7 @@ export function VideoPlayer({
 
   const goLiveToSessionEdge = useEffectEvent(() => {
     if (!liveSessionAnchor) return;
-    const video = getActiveVideo();
-    const currentTime = video?.currentTime ?? 0;
-    const targetMse = goLiveTargetMse(liveSessionAnchor, defaultConfig.liveSyncTargetLatency, currentTime);
+    const targetMse = goLiveTargetMse(liveSessionAnchor, defaultConfig.liveSyncTargetLatency);
     getActivePlayer()?.goLive(targetMse);
     getActivePlayer()?.setLiveSync(true);
   });
@@ -390,6 +386,7 @@ export function VideoPlayer({
     // Hard switch: reveal new stream first, then tear down the old slot
     activeSlotIdRef.current = newActiveId;
     setVisibleSlotId(newActiveId);
+    setIsLive(slotLiveStateRef.current[newActiveId]);
     setIsLoading(false);
 
     if (oldActiveId !== newActiveId && oldPlayer) {
@@ -570,6 +567,17 @@ export function VideoPlayer({
     p.on("seek-needed", (seconds) => {
       if (slotPlayerRef(slotId).current === p) {
         handleSeekNeeded(seconds);
+      }
+    });
+    p.on("live-state-change", (live) => {
+      if (slotPlayerRef(slotId).current !== p) return;
+      slotLiveStateRef.current[slotId] = live;
+      if (slotId === getActiveSlotId()) {
+        setIsLive(live);
+        const video = slotVideoRef(slotId).current;
+        if (!live && video?.paused && playMode === "live") {
+          p.setLiveSync(false);
+        }
       }
     });
     p.on("audio-suspended", () => {

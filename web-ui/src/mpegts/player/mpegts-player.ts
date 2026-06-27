@@ -5,7 +5,7 @@ import type { WorkerCommand, WorkerEvent } from "../worker/messages";
 import TransmuxWorker from "../worker/transmux-worker.ts?worker&inline";
 import { setupLiveSync } from "./live-sync";
 import { createMSE, type MSE } from "./mse";
-import type { LiveSessionAnchor } from "./wall-clock";
+import { type LiveSessionAnchor, lagBehindLiveEdge } from "./wall-clock";
 
 /** Check if a given time position is within any buffered range of the video element. */
 export function isBuffered(video: HTMLMediaElement, seconds: number): boolean {
@@ -20,7 +20,11 @@ export function isBuffered(video: HTMLMediaElement, seconds: number): boolean {
 
 /** Forward buffer watermarks for HLS VOD/EVENT: pause fetching when far ahead of playback. */
 const VOD_FORWARD_BUFFER_PAUSE = 30;
-const VOD_FORWARD_BUFFER_RESUME = 15;
+const BACKPRESSURE_RESUME_BUFFER_AHEAD = 15;
+const LIVE_STATE_TOLERANCE = 3;
+const HLS_URL_RE = /\.m3u8?($|\?)/i;
+
+type SourceMode = "continuous-live-ts" | "static-ts-list" | "hls";
 
 export function createMpegtsPlayer(
   video: HTMLVideoElement,
@@ -36,9 +40,13 @@ export function createMpegtsPlayer(
   let liveSyncEnabled = config.liveSync;
   /** Live edge assuming continuous playback since session start. */
   let liveSessionAnchor: LiveSessionAnchor | null = null;
+  let sourceMode: SourceMode = "static-ts-list";
+  let hlsLive: boolean | null = null;
+  let lastLiveState: boolean | null = null;
 
-  let watermarkTimer: ReturnType<typeof setInterval> | null = null;
+  let hlsVodThrottleEnabled = false;
   let watermarkPaused = false;
+  let bufferFullPaused = false;
 
   // PCM audio player for software-decoded audio (MP2)
   let pcmPlayer: PCMAudioPlayer | null = null;
@@ -106,9 +114,13 @@ export function createMpegtsPlayer(
         mse?.endOfStream();
         break;
       case "hls-info":
+        sourceMode = "hls";
+        hlsLive = msg.live;
+        updateLiveState();
         if (!msg.live) {
           mse?.setDuration(msg.totalDuration);
-          startWatermarkThrottle();
+          hlsVodThrottleEnabled = true;
+          updateFetchBackpressure();
         }
         break;
       case "pcm-audio-data": {
@@ -133,36 +145,126 @@ export function createMpegtsPlayer(
     return worker;
   }
 
-  /** Throttle fetching for HLS VOD/EVENT: pause the worker when buffered far ahead of playback. */
-  function startWatermarkThrottle(): void {
-    if (watermarkTimer) return;
-    watermarkTimer = setInterval(() => {
-      const buffered = video.buffered;
-      // Measure forward buffer within the range containing currentTime; after a seek
-      // to an unbuffered position, stale ranges further ahead must not count.
-      let ahead = 0;
-      for (let i = 0; i < buffered.length; i++) {
-        if (video.currentTime >= buffered.start(i) && video.currentTime <= buffered.end(i)) {
-          ahead = buffered.end(i) - video.currentTime;
-          break;
-        }
+  function getForwardBufferAhead(): number {
+    const buffered = video.buffered;
+    // Measure forward buffer within the range containing currentTime; after a seek
+    // to an unbuffered position, stale ranges further ahead must not count.
+    for (let i = 0; i < buffered.length; i++) {
+      if (video.currentTime >= buffered.start(i) && video.currentTime <= buffered.end(i)) {
+        return buffered.end(i) - video.currentTime;
       }
-      if (!watermarkPaused && ahead > VOD_FORWARD_BUFFER_PAUSE) {
-        watermarkPaused = true;
-        worker?.postMessage({ type: "pause" } satisfies WorkerCommand);
-      } else if (watermarkPaused && ahead < VOD_FORWARD_BUFFER_RESUME) {
-        watermarkPaused = false;
-        worker?.postMessage({ type: "resume" } satisfies WorkerCommand);
-      }
-    }, 1000);
+    }
+    return 0;
   }
 
-  /** Resume segment fetching after an in-buffer seek (worker may have paused on buffer full). */
-  function resumeWorkerAfterBufferSeek(): void {
-    if (watermarkPaused) {
-      watermarkPaused = false;
+  function getLastBufferedRange(): { start: number; end: number } | null {
+    const buffered = video.buffered;
+    if (buffered.length === 0) {
+      return null;
     }
+
+    const lastRange = buffered.length - 1;
+    return { start: buffered.start(lastRange), end: buffered.end(lastRange) };
+  }
+
+  function getContinuousLiveTsGoLiveTarget(): number | null {
+    const range = getLastBufferedRange();
+    if (!range) {
+      return null;
+    }
+
+    const target = range.end - config.liveSyncTargetLatency;
+
+    if (target < range.start || target > range.end) {
+      return null;
+    }
+    return target;
+  }
+
+  function isContinuousLiveTsLive(): boolean {
+    const range = getLastBufferedRange();
+    if (!range) {
+      return true;
+    }
+
+    const target = Math.max(range.start, range.end - config.liveSyncTargetLatency);
+    return video.currentTime >= target - LIVE_STATE_TOLERANCE && video.currentTime <= range.end + LIVE_STATE_TOLERANCE;
+  }
+
+  /** Seconds behind the source-mode live edge; live-sync keeps this near the target latency. */
+  function getLiveEdgeLatency(): number | null {
+    if (sourceMode === "continuous-live-ts") {
+      const range = getLastBufferedRange();
+      return range ? range.end - video.currentTime : null;
+    }
+    if (sourceMode === "hls") {
+      if (hlsLive === false || !liveSessionAnchor) {
+        return null;
+      }
+      return lagBehindLiveEdge(liveSessionAnchor, video.currentTime);
+    }
+    return null;
+  }
+
+  function computeLiveState(): boolean {
+    if (sourceMode === "continuous-live-ts") {
+      return isContinuousLiveTsLive();
+    }
+    if (sourceMode === "hls") {
+      if (hlsLive === false) {
+        return false;
+      }
+      if (!liveSessionAnchor) {
+        return true;
+      }
+      return lagBehindLiveEdge(liveSessionAnchor, video.currentTime) < LIVE_STATE_TOLERANCE;
+    }
+    return false;
+  }
+
+  function updateLiveState(): void {
+    const next = computeLiveState();
+    if (next === lastLiveState) {
+      return;
+    }
+    lastLiveState = next;
+    impl.onLiveStateChange?.(next);
+  }
+
+  function pauseWorkerForBackpressure(kind: "watermark" | "buffer-full"): void {
+    if (kind === "watermark") {
+      watermarkPaused = true;
+    } else {
+      bufferFullPaused = true;
+    }
+    worker?.postMessage({ type: "pause" } satisfies WorkerCommand);
+  }
+
+  function resumeWorkerFromBackpressure(): void {
+    watermarkPaused = false;
+    bufferFullPaused = false;
     worker?.postMessage({ type: "resume" } satisfies WorkerCommand);
+  }
+
+  function updateFetchBackpressure(): void {
+    const ahead = getForwardBufferAhead();
+
+    if (watermarkPaused || bufferFullPaused) {
+      if (ahead < BACKPRESSURE_RESUME_BUFFER_AHEAD) {
+        resumeWorkerFromBackpressure();
+      }
+      return;
+    }
+
+    if (hlsVodThrottleEnabled && ahead > VOD_FORWARD_BUFFER_PAUSE) {
+      pauseWorkerForBackpressure("watermark");
+    }
+  }
+
+  /** Re-evaluate fetching after an in-buffer seek (worker may have paused on buffer full). */
+  function resumeWorkerAfterBufferSeek(): void {
+    updateFetchBackpressure();
+    updateLiveState();
   }
 
   /** Seek within existing MSE buffer without reloading the stream. */
@@ -184,12 +286,40 @@ export function createMpegtsPlayer(
     }
   }
 
-  function stopWatermarkThrottle(): void {
-    if (watermarkTimer) {
-      clearInterval(watermarkTimer);
-      watermarkTimer = null;
+  function goLiveTo(targetMseSeconds: number): void {
+    if (sourceMode === "continuous-live-ts") {
+      const bufferedTarget = getContinuousLiveTsGoLiveTarget();
+      if (bufferedTarget !== null && bufferSeek(bufferedTarget)) {
+        return;
+      }
+      // Use the session target for the fallback so the outer handler treats it as a live-edge reload.
+      for (const h of seekHandlers) {
+        h(targetMseSeconds);
+      }
+      return;
     }
+
+    seekTo(targetMseSeconds);
+  }
+
+  function inferSourceMode(segments: PlayerSegment[]): SourceMode {
+    const firstSegment = segments[0];
+    if (!firstSegment) {
+      return "static-ts-list";
+    }
+    if (segments.length === 1 && HLS_URL_RE.test(firstSegment.url)) {
+      return "hls";
+    }
+    if (segments.length === 1 && (firstSegment.duration ?? 0) === 0) {
+      return "continuous-live-ts";
+    }
+    return "static-ts-list";
+  }
+
+  function resetFetchBackpressure(): void {
+    hlsVodThrottleEnabled = false;
     watermarkPaused = false;
+    bufferFullPaused = false;
   }
 
   function loadInWorker(segments: PlayerSegment[]): void {
@@ -218,27 +348,28 @@ export function createMpegtsPlayer(
     });
 
     mse.onBufferFull = () => {
-      const cmd: WorkerCommand = { type: "pause" };
-      worker?.postMessage(cmd);
+      pauseWorkerForBackpressure("buffer-full");
     };
 
     mse.onBufferAvailable = () => {
-      // Don't resume while the VOD watermark throttle is intentionally holding the worker
-      if (watermarkPaused) return;
-      const cmd: WorkerCommand = { type: "resume" };
-      worker?.postMessage(cmd);
+      updateFetchBackpressure();
+    };
+
+    mse.onBufferUpdated = () => {
+      updateFetchBackpressure();
+      updateLiveState();
     };
 
     mse.onStartStreaming = () => {
-      if (watermarkPaused) return;
-      const cmd: WorkerCommand = { type: "resume" };
-      worker?.postMessage(cmd);
+      if (watermarkPaused || bufferFullPaused) {
+        updateFetchBackpressure();
+        return;
+      }
+      worker?.postMessage({ type: "resume" } satisfies WorkerCommand);
     };
 
-    // Note: onEndStreaming intentionally does NOT pause the worker. For continuous
-    // live TS streams, pausing aborts the in-flight fetch and resumes via a Range
-    // request, which restarts a live stream mid-flow and corrupts the timeline.
-    // The MSE layer already defers appends while ManagedMediaSource streaming=false.
+    // Note: onEndStreaming intentionally does NOT pause the worker. The MSE layer
+    // already defers appends while ManagedMediaSource streaming=false.
 
     mse.onSourceClose = () => {
       // The UA killed the media pipeline (e.g. iOS reclaiming resources in
@@ -268,12 +399,20 @@ export function createMpegtsPlayer(
 
   function initLiveHelpers(): void {
     if (!destroyLiveSync && liveSyncEnabled) {
-      destroyLiveSync = setupLiveSync(video, config, () => liveSessionAnchor);
+      destroyLiveSync = setupLiveSync(video, config, getLiveEdgeLatency);
     }
   }
 
-  const onVideoPlay = () => markPlaybackUnlocked();
+  const onVideoPlay = () => {
+    markPlaybackUnlocked();
+    updateLiveState();
+  };
+  const onVideoTimeUpdate = () => {
+    updateFetchBackpressure();
+    updateLiveState();
+  };
   video.addEventListener("play", onVideoPlay);
+  video.addEventListener("timeupdate", onVideoTimeUpdate);
 
   const impl: PlayerImpl = {
     onError: null,
@@ -282,7 +421,10 @@ export function createMpegtsPlayer(
       mseGeneration++;
       pendingInits = [];
       pendingSegments = segments;
-      stopWatermarkThrottle();
+      sourceMode = inferSourceMode(segments);
+      hlsLive = null;
+      resetFetchBackpressure();
+      updateLiveState();
       if (mse) {
         mse.destroy();
         mse = null;
@@ -295,7 +437,7 @@ export function createMpegtsPlayer(
     setLiveSync(enabled: boolean) {
       if (enabled && !destroyLiveSync) {
         liveSyncEnabled = true;
-        destroyLiveSync = setupLiveSync(video, config, () => liveSessionAnchor);
+        destroyLiveSync = setupLiveSync(video, config, getLiveEdgeLatency);
       } else if (!enabled && destroyLiveSync) {
         liveSyncEnabled = false;
         destroyLiveSync();
@@ -308,18 +450,22 @@ export function createMpegtsPlayer(
     },
 
     goLive(targetMseSeconds: number) {
-      seekTo(targetMseSeconds);
+      goLiveTo(targetMseSeconds);
     },
 
     setLiveSessionAnchor(anchor: LiveSessionAnchor) {
       liveSessionAnchor = anchor;
+      updateLiveState();
     },
 
     suspend() {
       mseGeneration++;
-      stopWatermarkThrottle();
+      resetFetchBackpressure();
       pendingInits = [];
       pendingSegments = null;
+      sourceMode = "static-ts-list";
+      hlsLive = null;
+      updateLiveState();
       if (worker) {
         const cmd: WorkerCommand = { type: "reset" };
         worker.postMessage(cmd);
@@ -337,6 +483,7 @@ export function createMpegtsPlayer(
     destroy() {
       impl.suspend();
       video.removeEventListener("play", onVideoPlay);
+      video.removeEventListener("timeupdate", onVideoTimeUpdate);
       if (worker) {
         const cmd: WorkerCommand = { type: "destroy" };
         worker.postMessage(cmd);

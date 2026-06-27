@@ -40,6 +40,7 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
 
   const errorHandlers = new Set<(e: PlayerError) => void>();
   const seekHandlers = new Set<(s: number) => void>();
+  const liveStateHandlers = new Set<(isLive: boolean) => void>();
   const audioSuspendedHandlers = new Set<() => void>();
 
   let impl: PlayerImpl | null = null;
@@ -50,6 +51,11 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
       impl.onError = (e) => {
         for (const h of errorHandlers) {
           h(e);
+        }
+      };
+      impl.onLiveStateChange = (isLive) => {
+        for (const h of liveStateHandlers) {
+          h(isLive);
         }
       };
       impl.onAudioSuspended = () => {
@@ -97,12 +103,14 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
     on<K extends keyof PlayerEventMap>(event: K, handler: PlayerEventMap[K]) {
       if (event === "error") errorHandlers.add(handler as (e: PlayerError) => void);
       if (event === "seek-needed") seekHandlers.add(handler as (s: number) => void);
+      if (event === "live-state-change") liveStateHandlers.add(handler as (isLive: boolean) => void);
       if (event === "audio-suspended") audioSuspendedHandlers.add(handler as () => void);
     },
 
     off<K extends keyof PlayerEventMap>(event: K, handler: PlayerEventMap[K]) {
       if (event === "error") errorHandlers.delete(handler as (e: PlayerError) => void);
       if (event === "seek-needed") seekHandlers.delete(handler as (s: number) => void);
+      if (event === "live-state-change") liveStateHandlers.delete(handler as (isLive: boolean) => void);
       if (event === "audio-suspended") audioSuspendedHandlers.delete(handler as () => void);
     },
   };

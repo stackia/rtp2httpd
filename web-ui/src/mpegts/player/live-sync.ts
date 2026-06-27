@@ -1,6 +1,5 @@
 import type { PlayerConfig } from "../config";
 import Log from "../utils/logger";
-import { type LiveSessionAnchor, lagBehindLiveEdge } from "./wall-clock";
 
 const TAG = "LiveSync";
 
@@ -25,7 +24,7 @@ function forwardBufferAhead(video: HTMLMediaElement): number {
 export function setupLiveSync(
   video: HTMLMediaElement,
   config: PlayerConfig,
-  getLiveSessionAnchor: () => LiveSessionAnchor | null,
+  getLiveEdgeLatency: () => number | null,
 ): () => void {
   if (config.liveSync) {
     Log.v(
@@ -42,10 +41,8 @@ export function setupLiveSync(
   function onTimeUpdate(): void {
     if (!config.liveSync) return;
 
-    const anchor = getLiveSessionAnchor();
-    if (!anchor) return;
-
-    const latency = lagBehindLiveEdge(anchor, video.currentTime);
+    const latency = getLiveEdgeLatency();
+    if (latency === null) return;
 
     if (latency > config.liveSyncMaxLatency + extraLatency) {
       const targetRate = Math.min(2, Math.max(1, config.liveSyncPlaybackRate));
@@ -71,12 +68,11 @@ export function setupLiveSync(
     // Seek/Go Live often fires waiting while data is still buffered ahead — not an underrun.
     if (video.seeking) return;
 
-    const anchor = getLiveSessionAnchor();
-    if (!anchor) return;
+    const lag = getLiveEdgeLatency();
+    if (lag === null) return;
 
-    const lag = lagBehindLiveEdge(anchor, video.currentTime);
     const ahead = forwardBufferAhead(video);
-    // Near session live edge AND playhead has caught up with its forward buffer.
+    // Near source-mode live edge AND playhead has caught up with its forward buffer.
     const atLiveEdge = lag < 0.5 && ahead < 0.5;
     if (!atLiveEdge) return;
 

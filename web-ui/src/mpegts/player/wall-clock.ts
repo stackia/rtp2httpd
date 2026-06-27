@@ -35,18 +35,10 @@ export function lagBehindLiveEdge(anchor: LiveSessionAnchor, currentTime: number
   return liveEdgeMse(anchor, nowMs) - currentTime;
 }
 
-/** MSE seek target for Go Live: session live edge minus target latency, never behind currentTime. */
-export function goLiveTargetMse(
-  anchor: LiveSessionAnchor,
-  targetLatencySec: number,
-  currentTime: number,
-  nowMs = Date.now(),
-): number {
+/** MSE seek target for Go Live: session live edge minus target latency. */
+export function goLiveTargetMse(anchor: LiveSessionAnchor, targetLatencySec: number, nowMs = Date.now()): number {
   const edge = liveEdgeMse(anchor, nowMs);
-  const target = edge - targetLatencySec;
-  // HLS startup often places the playhead near the live edge already (e.g. ~2s in);
-  // clamp so Go Live never seeks backward when already live enough.
-  return Math.max(currentTime, target);
+  return edge - targetLatencySec;
 }
 
 /** Create anchor at the current playhead (call once when live session begins). */

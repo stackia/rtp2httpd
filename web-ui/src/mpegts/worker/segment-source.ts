@@ -45,3 +45,29 @@ export class StaticSegmentSource implements SegmentSource {
     this.index = this.metas.length;
   }
 }
+
+/** Single-URL live TS source: each request is a new live stream cycle, not a byte-range continuation. */
+export class ContinuousLiveSegmentSource implements SegmentSource {
+  private destroyed = false;
+  private readonly meta: SegmentMeta;
+
+  constructor(segment: PlayerSegment) {
+    this.meta = {
+      url: segment.url,
+      start: 0,
+      duration: 0,
+      resetRemuxer: false,
+    };
+  }
+
+  next(): Promise<SegmentMeta | null> {
+    if (this.destroyed) {
+      return Promise.resolve(null);
+    }
+    return Promise.resolve({ ...this.meta });
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+  }
+}

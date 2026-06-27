@@ -16,6 +16,7 @@ export interface PlayerError {
 export interface PlayerEventMap {
   error: (error: PlayerError) => void;
   "seek-needed": (seconds: number) => void;
+  "live-state-change": (isLive: boolean) => void;
   /** Fired when audio playback is blocked by autoplay policy and requires user interaction. */
   "audio-suspended": () => void;
 }
@@ -38,6 +39,7 @@ export interface Player {
 /** Internal player implementation interface */
 export interface PlayerImpl {
   onError: ((error: PlayerError) => void) | null;
+  onLiveStateChange?: ((isLive: boolean) => void) | null;
   onAudioSuspended?: (() => void) | null;
   loadSegments(segments: PlayerSegment[]): void;
   seek(seconds: number): void;
