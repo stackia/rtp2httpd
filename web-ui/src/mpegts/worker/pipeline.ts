@@ -317,13 +317,6 @@ class Pipeline {
     return meta.resetRemuxer || !this._hlsSource;
   }
 
-  private _getTsTimestampBase(meta: SegmentMeta, normalizeStaticSegmentContinuity: boolean): number {
-    // Reused TS demuxer/remuxer paths are continuous segment boundaries, same as
-    // ordinary HLS-TS segments. Do not add static segment.start to raw PTS/DTS,
-    // otherwise remux DTS continues but PTS jumps forward by the segment start.
-    return normalizeStaticSegmentContinuity ? 0 : meta.timestampBase;
-  }
-
   private _finishStaticTsSegmentBoundary(): void {
     // Flush stashed samples at every TS segment boundary so the next segment's first
     // remux batch is not mixed with the previous segment's tail.
@@ -418,21 +411,16 @@ class Pipeline {
     const canReuseStatic =
       this._hlsSource === null && this._discreteSegments && this._demuxer !== null && this._remuxer !== null;
     const canReuse = canReuseHls || canReuseStatic;
-    const timestampBase = this._getTsTimestampBase(meta, canReuseStatic);
     if (canReuseStatic) {
       Log.v(
         this.TAG,
         `[segment-debug] setup TS segment: source=${sourceKind}, reuse=${canReuse}, ` +
           `start=${meta.start.toFixed(3)}, duration=${meta.duration.toFixed(3)}, ` +
-          `timestampBase=${timestampBase.toFixed(3)}, metaTimestampBase=${meta.timestampBase.toFixed(3)}, ` +
           `resetRemuxer=${meta.resetRemuxer}, shouldAnchor=${shouldAnchor}`,
       );
     }
     if (canReuse) {
       this._demuxer?.resetSegmentBoundary(probeData as ConstructorParameters<typeof TSDemuxer>[0]);
-      if (this._demuxer && canReuseStatic) {
-        this._demuxer.timestampBase = timestampBase * 90000; // seconds → 90kHz ticks
-      }
       this._remuxer?.setTsSegmentContinuityNormalization(canReuseStatic);
       if (canReuseStatic) {
         this._remuxer?.debugLogNextVideoSegments(`${sourceKind} segment start ${meta.start.toFixed(3)}s`);
@@ -461,7 +449,7 @@ class Pipeline {
     }
 
     demuxer.onError = this._onDemuxException.bind(this);
-    demuxer.timestampBase = timestampBase * 90000; // seconds → 90kHz ticks
+    demuxer.timestampBase = 0;
     demuxer.onTrackDiscontinuity = (track) => {
       if (track === "video") {
         this._remuxer?.flushStashedSamples();
