@@ -329,6 +329,7 @@ class Pipeline {
       this.TAG,
       `[segment-debug] finish TS segment: source=${this._hlsSource ? "hls" : this._discreteSegments ? "static" : "single"}`,
     );
+    this._demuxer?.flushSegmentBoundary();
     this._remuxer?.flushStashedSamples();
   }
 

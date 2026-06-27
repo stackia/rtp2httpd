@@ -244,6 +244,20 @@ class TSDemuxer {
     this.continuity_counters_ = {};
   }
 
+  public flushSegmentBoundary(): void {
+    if (this.shouldWaitForVideoKeyframe() || !this.isInitSegmentDispatched()) {
+      return;
+    }
+    if (this.audio_track_.length || this.video_track_.length) {
+      Log.v(
+        this.TAG,
+        `[segment-debug] flush TS segment boundary: videoSamples=${this.video_track_.samples.length}, ` +
+          `audioSamples=${this.audio_track_.samples.length}`,
+      );
+      this.onDataAvailable?.(this.audio_track_, this.video_track_, true);
+    }
+  }
+
   public static probe(data: Uint8Array): TSProbeResult {
     let sync_offset = -1;
     let ts_packet_size = 188;
