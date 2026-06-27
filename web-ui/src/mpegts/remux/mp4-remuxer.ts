@@ -4,8 +4,6 @@ import Log from "../utils/logger";
 import AAC from "./aac-silent";
 import MP4 from "./mp4-generator";
 
-const PRESENTATION_REANCHOR_THRESHOLD_MS = 500;
-
 interface AudioSample {
   unit: Uint8Array;
   dts: number;
@@ -126,7 +124,6 @@ class MP4Remuxer {
   private _videoPresentationOffset: number | undefined;
   private _videoInitialPresentationOffset: number | undefined;
   private _videoInitialOutputTime: number | undefined;
-  private _needsVideoPresentationBoundaryCheck: boolean;
 
   private _audioMeta: TrackMetadata | null;
   private _videoMeta: TrackMetadata | null;
@@ -159,7 +156,6 @@ class MP4Remuxer {
     this._videoPresentationOffset = undefined;
     this._videoInitialPresentationOffset = undefined;
     this._videoInitialOutputTime = undefined;
-    this._needsVideoPresentationBoundaryCheck = false;
 
     this._audioMeta = null;
     this._videoMeta = null;
@@ -189,7 +185,6 @@ class MP4Remuxer {
     this._videoPresentationOffset = undefined;
     this._videoInitialPresentationOffset = undefined;
     this._videoInitialOutputTime = undefined;
-    this._needsVideoPresentationBoundaryCheck = false;
     this._audioMeta = null;
     this._videoMeta = null;
     this._onInitSegment = null;
@@ -238,10 +233,6 @@ class MP4Remuxer {
     this._debugVideoSegmentsRemaining = Math.max(this._debugVideoSegmentsRemaining, count);
   }
 
-  markVideoPresentationBoundary(): void {
-    this._needsVideoPresentationBoundaryCheck = true;
-  }
-
   private _createTrackTimingState(): TrackTimingState {
     return {
       lastOriginalEndDts: undefined,
@@ -283,6 +274,47 @@ class MP4Remuxer {
   private _recordTrackTiming(timing: TrackTimingState, sample: MP4Sample): void {
     timing.lastOriginalEndDts = sample.originalDts + sample.duration;
     timing.lastOutputEndDts = sample.dts + sample.duration;
+  }
+
+  private _dropOverlappingTrackSamples<T extends { dts: number; length: number }>(
+    type: "audio" | "video",
+    samples: T[],
+    timing: TrackTimingState,
+    mdatBytes: number,
+  ): number {
+    const lastOriginalEndDts = timing.lastOriginalEndDts;
+    if (lastOriginalEndDts === undefined) {
+      return mdatBytes;
+    }
+
+    let dropped = 0;
+    let firstDroppedDts = 0;
+    let lastDroppedDts = 0;
+    while (samples.length > 0) {
+      const originalDts = samples[0].dts - this._dtsBase;
+      if (originalDts >= lastOriginalEndDts) {
+        break;
+      }
+
+      const sample = samples.shift() as T;
+      mdatBytes -= sample.length;
+      if (dropped === 0) {
+        firstDroppedDts = originalDts;
+      }
+      lastDroppedDts = originalDts;
+      dropped++;
+    }
+
+    if (dropped > 0) {
+      Log.v(
+        this.TAG,
+        `${type}: dropping ${dropped} overlapping sample(s), ` +
+          `rawDts=${Math.round(firstDroppedDts)}-${Math.round(lastDroppedDts)}ms, ` +
+          `lastRawEnd=${Math.round(lastOriginalEndDts)}ms`,
+      );
+    }
+
+    return mdatBytes;
   }
 
   private _nextSampleDuration(timing: TrackTimingState, refSampleDuration: unknown, fallbackDuration: number): number {
@@ -574,7 +606,7 @@ class MP4Remuxer {
     }
 
     const track = audioTrack;
-    const samples = track.samples;
+    const samples = track.samples as AudioSample[];
     let firstDts = -1;
     const refSampleDuration = this._audioMeta.refSampleDuration;
 
@@ -624,6 +656,13 @@ class MP4Remuxer {
     // Stash the lastSample of current batch, waiting for next batch
     if (lastSample != null) {
       this._audioStashedLastSample = lastSample;
+    }
+
+    mdatBytes = this._dropOverlappingTrackSamples("audio", samples, this._audioTiming, mdatBytes);
+    if (samples.length === 0) {
+      track.samples = [];
+      track.length = 0;
+      return;
     }
 
     const firstSampleOriginalDts = (samples[0] as AudioSample).dts - this._dtsBase;
@@ -740,7 +779,7 @@ class MP4Remuxer {
     }
 
     const track = videoTrack;
-    const samples = track.samples;
+    const samples = track.samples as VideoSample[];
     let firstDts = -1;
 
     if (!samples || samples.length === 0) {
@@ -775,6 +814,21 @@ class MP4Remuxer {
       this._videoStashedLastSample = lastSample;
     }
 
+    mdatBytes = this._dropOverlappingTrackSamples("video", samples, this._videoTiming, mdatBytes);
+    if (samples.length === 0) {
+      if (this._debugVideoSegmentsRemaining > 0) {
+        Log.v(
+          this.TAG,
+          `[segment-debug] video segment skipped (${this._debugVideoSegmentsReason}): all samples overlap, ` +
+            `lastRawEnd=${this._videoTiming.lastOriginalEndDts?.toFixed(3) ?? "unset"}`,
+        );
+        this._debugVideoSegmentsRemaining--;
+      }
+      track.samples = [];
+      track.length = 0;
+      return;
+    }
+
     const firstSampleOriginalDts = (samples[0] as VideoSample).dts - this._dtsBase;
 
     const dtsCorrection = this._computeDtsCorrection(
@@ -787,17 +841,6 @@ class MP4Remuxer {
     const mp4Samples: MP4Sample[] = [];
     let nextOutputDts = firstSampleOriginalDts - dtsCorrection;
     const presentationFloor = this._videoInitialOutputTime ?? this._dtsBaseOffset;
-    const firstOriginalPts = firstSampleOriginalDts + (samples[0] as VideoSample).cts;
-
-    if (this._needsVideoPresentationBoundaryCheck && this._videoPresentationOffset !== undefined) {
-      const projectedPts = firstOriginalPts - this._videoPresentationOffset;
-      const drift = projectedPts - nextOutputDts;
-      if (Math.abs(drift) > PRESENTATION_REANCHOR_THRESHOLD_MS) {
-        this._videoPresentationOffset = undefined;
-        Log.v(this.TAG, `video: re-anchoring presentation offset at TS boundary, drift=${Math.round(drift)}ms`);
-      }
-      this._needsVideoPresentationBoundaryCheck = false;
-    }
 
     // Correct dts for each sample, and calculate sample duration. Then output to mp4Samples
     for (let i = 0; i < samples.length; i++) {
@@ -807,14 +850,15 @@ class MP4Remuxer {
 
       const dts = nextOutputDts;
       const originalPts = originalDts + sample.cts;
+      const correctedPtsBase = originalPts - dtsCorrection;
       if (this._videoPresentationOffset === undefined) {
-        this._videoPresentationOffset = originalPts - dts;
+        this._videoPresentationOffset = correctedPtsBase - dts;
         if (this._videoInitialPresentationOffset === undefined) {
           this._videoInitialPresentationOffset = this._videoPresentationOffset;
         }
       }
 
-      const pts = originalPts - this._videoPresentationOffset;
+      const pts = correctedPtsBase - this._videoPresentationOffset;
       if (pts < presentationFloor - 0.001) {
         mdatBytes -= sample.length;
         continue;
