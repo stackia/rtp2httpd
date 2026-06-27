@@ -1,4 +1,5 @@
 #include "rtsp.h"
+#include "buffer_pool.h"
 #include "configuration.h"
 #include "connection.h"
 #include "http.h"
@@ -1796,12 +1797,12 @@ static int rtsp_process_interleaved_buffer(rtsp_session_t *session, connection_t
       break; /* Wait for more data */
     }
 
-    /* Sanity check: prevent processing packets that are too large */
-    if (packet_length > RTSP_RESPONSE_BUFFER_SIZE - 4) {
+    /* Sanity check: bound against the zero-copy destination buffer. */
+    if (packet_length > BUFFER_POOL_BUFFER_SIZE) {
       logger(LOG_ERROR,
              "RTSP: Received packet too large (%d bytes, max %d), attempting "
              "resync",
-             packet_length, RTSP_RESPONSE_BUFFER_SIZE - 4);
+             packet_length, BUFFER_POOL_BUFFER_SIZE);
       uint8_t *next_marker = memchr(session->response_buffer + 1, '$', session->response_buffer_pos - 1);
       if (next_marker) {
         size_t skip = next_marker - session->response_buffer;
