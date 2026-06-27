@@ -52,7 +52,6 @@ export interface MSE {
 }
 
 const TAG = "MSE";
-const STARTUP_APPEND_LOG_LIMIT = 12;
 
 export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   // Use ManagedMediaSource only if w3c MediaSource is not available (e.g. iOS Safari)
@@ -72,8 +71,6 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   let isBufferFull = false;
   let hasPendingEos = false;
   let pendingDuration: number | null = null;
-  const startupAppendLogCounts: Record<Track, number> = { video: 0, audio: 0 };
-  const startupUpdateEndLogCounts: Record<Track, number> = { video: 0, audio: 0 };
 
   // Deferred init segments: queued before sourceopen fires
   let pendingSourceBufferInit: { track: Track; data: ArrayBuffer; codec: string; container: string }[] = [];
@@ -196,16 +193,6 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
           if (entry.timestampOffset !== undefined) {
             sb.timestampOffset = entry.timestampOffset / 1000;
           }
-          const appendIndex = ++startupAppendLogCounts[track];
-          if (appendIndex <= STARTUP_APPEND_LOG_LIMIT) {
-            Log.v(
-              TAG,
-              `append ${track}#${appendIndex}: bytes=${entry.data.byteLength}, ` +
-                `timestampOffset=${entry.timestampOffset?.toFixed(3) ?? "-"}ms, ` +
-                `sbTimestampOffset=${sb.timestampOffset.toFixed(3)}s, pending(v=${pendingSegments.video.length},a=${pendingSegments.audio.length}), ` +
-                `videoTime=${video.currentTime.toFixed(3)}, readyState=${video.readyState}, buffered=${bufferedSummary()}`,
-            );
-          }
           sb.appendBuffer(entry.data);
           if (isBufferFull) {
             isBufferFull = false;
@@ -301,16 +288,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     }
   }
 
-  function onSourceBufferUpdateEnd(track: Track): void {
-    const updateEndIndex = ++startupUpdateEndLogCounts[track];
-    if (updateEndIndex <= STARTUP_APPEND_LOG_LIMIT) {
-      Log.v(
-        TAG,
-        `updateend ${track}#${updateEndIndex}: ` +
-          `videoTime=${video.currentTime.toFixed(3)}, readyState=${video.readyState}, mediaSource=${mediaSource?.readyState ?? "-"}, ` +
-          `pending(v=${pendingSegments.video.length},a=${pendingSegments.audio.length}), buffered=${bufferedSummary()}`,
-      );
-    }
+  function onSourceBufferUpdateEnd(): void {
     tryApplyDuration();
     if (hasPendingRemoveRanges()) {
       doRemoveRanges();
@@ -362,7 +340,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         sourceBuffers[track] = sb;
 
         const errorHandler = (e: Event) => onSourceBufferError(e);
-        const updateEndHandler = () => onSourceBufferUpdateEnd(track);
+        const updateEndHandler = () => onSourceBufferUpdateEnd();
         sbErrorHandlers[track] = errorHandler;
         sbUpdateEndHandlers[track] = updateEndHandler;
 
