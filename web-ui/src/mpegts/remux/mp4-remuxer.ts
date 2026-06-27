@@ -84,6 +84,7 @@ interface MP4Sample {
 }
 
 interface TrackTimingState {
+  lastOriginalDts: number | undefined;
   lastOriginalEndDts: number | undefined;
   lastOutputEndDts: number | undefined;
   lastOutputDuration: number | undefined;
@@ -235,6 +236,7 @@ class MP4Remuxer {
 
   private _createTrackTimingState(): TrackTimingState {
     return {
+      lastOriginalDts: undefined,
       lastOriginalEndDts: undefined,
       lastOutputEndDts: undefined,
       lastOutputDuration: undefined,
@@ -258,11 +260,11 @@ class MP4Remuxer {
       return firstSampleOriginalDts - nextDts;
     }
 
-    if (timing.lastOriginalEndDts === undefined || timing.lastOutputEndDts === undefined) {
+    if (timing.lastOriginalDts === undefined || timing.lastOutputEndDts === undefined) {
       return firstSampleOriginalDts - this._dtsBaseOffset;
     }
 
-    const distance = firstSampleOriginalDts - timing.lastOriginalEndDts;
+    const distance = firstSampleOriginalDts - timing.lastOriginalDts;
     const bridgedDistance = distance > 0 ? 0 : distance;
     if (bridgedDistance !== distance) {
       Log.v(this.TAG, `${type}: bridging ${Math.round(distance)}ms timestamp hole after discontinuity`);
@@ -272,6 +274,7 @@ class MP4Remuxer {
   }
 
   private _recordTrackTiming(timing: TrackTimingState, sample: MP4Sample): void {
+    timing.lastOriginalDts = sample.originalDts;
     timing.lastOriginalEndDts = sample.originalDts + sample.duration;
     timing.lastOutputEndDts = sample.dts + sample.duration;
   }
@@ -282,8 +285,8 @@ class MP4Remuxer {
     timing: TrackTimingState,
     mdatBytes: number,
   ): number {
-    const lastOriginalEndDts = timing.lastOriginalEndDts;
-    if (lastOriginalEndDts === undefined) {
+    const lastOriginalDts = timing.lastOriginalDts;
+    if (lastOriginalDts === undefined) {
       return mdatBytes;
     }
 
@@ -292,7 +295,7 @@ class MP4Remuxer {
     let lastDroppedDts = 0;
     while (samples.length > 0) {
       const originalDts = samples[0].dts - this._dtsBase;
-      if (originalDts >= lastOriginalEndDts) {
+      if (originalDts > lastOriginalDts) {
         break;
       }
 
@@ -310,7 +313,7 @@ class MP4Remuxer {
         this.TAG,
         `${type}: dropping ${dropped} overlapping sample(s), ` +
           `rawDts=${Math.round(firstDroppedDts)}-${Math.round(lastDroppedDts)}ms, ` +
-          `lastRawEnd=${Math.round(lastOriginalEndDts)}ms`,
+          `lastRawDts=${Math.round(lastOriginalDts)}ms`,
       );
     }
 
@@ -820,7 +823,7 @@ class MP4Remuxer {
         Log.v(
           this.TAG,
           `[segment-debug] video segment skipped (${this._debugVideoSegmentsReason}): all samples overlap, ` +
-            `lastRawEnd=${this._videoTiming.lastOriginalEndDts?.toFixed(3) ?? "unset"}`,
+            `lastRawDts=${this._videoTiming.lastOriginalDts?.toFixed(3) ?? "unset"}`,
         );
         this._debugVideoSegmentsRemaining--;
       }
