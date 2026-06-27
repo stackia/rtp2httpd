@@ -91,6 +91,8 @@ interface TrackTimingState {
   durationResidual: number;
 }
 
+type PcmTimestampMapping = { action: "drop" } | { action: "emit"; time: number; trimStartMs: number };
+
 type InitSegmentCallback = (type: string, segment: InitSegment) => void;
 type MediaSegmentCallback = (type: string, segment: MediaSegment) => void;
 
@@ -523,7 +525,7 @@ class MP4Remuxer {
     return this._videoInitialOutputTime ?? 0;
   }
 
-  mapPcmTimestamp(ptsMs: number, durationMs: number): number | undefined {
+  mapPcmTimestamp(ptsMs: number, durationMs: number): PcmTimestampMapping | undefined {
     if (!this._dtsBaseInited) {
       return undefined;
     }
@@ -531,9 +533,26 @@ class MP4Remuxer {
     const originalTime = ptsMs - this._dtsBase;
     const duration = Math.max(0, durationMs);
     let outputTime: number;
+    let trimStartMs = 0;
 
     if (this._pcmTiming.lastOriginalEndDts === undefined || this._pcmTiming.lastOutputEndDts === undefined) {
-      outputTime = Math.max(this.getInitialOutputTime(), originalTime - this.getInitialPresentationOffset());
+      if (
+        this._videoDtsBase !== Infinity &&
+        (this._videoInitialPresentationOffset === undefined || this._videoInitialOutputTime === undefined)
+      ) {
+        return undefined;
+      }
+
+      const presentationFloor = this.getInitialOutputTime();
+      const presentationStart = originalTime - this.getInitialPresentationOffset();
+      const presentationEnd = presentationStart + duration;
+
+      if (presentationEnd <= presentationFloor) {
+        return { action: "drop" };
+      }
+
+      trimStartMs = Math.max(0, presentationFloor - presentationStart);
+      outputTime = Math.max(presentationFloor, presentationStart);
     } else {
       const distance = originalTime - this._pcmTiming.lastOriginalEndDts;
       outputTime = this._pcmTiming.lastOutputEndDts + (distance > 0 ? 0 : distance);
@@ -542,10 +561,15 @@ class MP4Remuxer {
       }
     }
 
+    const emittedDuration = duration - trimStartMs;
+    if (emittedDuration <= 0) {
+      return { action: "drop" };
+    }
+
     this._pcmTiming.lastOriginalEndDts = originalTime + duration;
-    this._pcmTiming.lastOutputEndDts = outputTime + duration;
-    this._pcmTiming.lastOutputDuration = duration;
-    return outputTime / 1000;
+    this._pcmTiming.lastOutputEndDts = outputTime + emittedDuration;
+    this._pcmTiming.lastOutputDuration = emittedDuration;
+    return { action: "emit", time: outputTime / 1000, trimStartMs };
   }
 
   flushStashedSamples(): void {

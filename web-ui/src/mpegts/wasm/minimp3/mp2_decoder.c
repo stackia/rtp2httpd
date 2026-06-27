@@ -81,6 +81,7 @@ void mpeg_audio_decoder_destroy(MpegAudioDecoder* decoder) {
  *                     [3] frames decoded
  *                     [4] bytes kept in carry buffer
  *                     [5] input bytes consumed (incl. previous carry)
+ *                     [6] samples/ch decoded from frames that began before this input
  *
  * Returns: total samples decoded per channel (0 if no complete frame found)
  */
@@ -97,7 +98,8 @@ int mpeg_audio_decode_payload(
         return 0;
     }
 
-    int total_in = decoder->carry_size + input_size;
+    int carry_at_start = decoder->carry_size;
+    int total_in = carry_at_start + input_size;
     if (total_in > decoder->work_capacity) {
         int new_cap = total_in < 8192 ? 8192 : total_in;
         unsigned char* grown = (unsigned char*)realloc(decoder->work, new_cap);
@@ -117,6 +119,7 @@ int mpeg_audio_decode_payload(
     int sample_rate = 0;
     int channels = 0;
     int frames = 0;
+    int samples_before_input = 0;
 
     /*
      * Frame boundaries are determined here (using minimp3's header helpers)
@@ -183,6 +186,9 @@ int mpeg_audio_decode_payload(
                 decoder->synced = 0;
                 break;
             }
+            if (offset < carry_at_start) {
+                samples_before_input += samples;
+            }
             total_samples += samples;
             frames++;
             decoder->synced = 1;
@@ -210,6 +216,7 @@ int mpeg_audio_decode_payload(
     out_info[3] = frames;
     out_info[4] = remaining;
     out_info[5] = offset;
+    out_info[6] = samples_before_input;
 
     return total_samples;
 }

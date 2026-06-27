@@ -22,12 +22,13 @@ const MIN_FRAME_BYTES = 96;
 // Carry buffer size on the WASM side (one partial frame at most)
 const CARRY_MAX = 2048;
 
-// Info array layout (6 × i32):
-// [samplesPerChannel, sampleRate, channels, frames, carryBytes, consumedBytes]
+// Info array layout (7 × i32):
+// [samplesPerChannel, sampleRate, channels, frames, carryBytes, consumedBytes, samplesBeforeInput]
 const INFO_SAMPLES = 0;
 const INFO_SAMPLE_RATE = 1;
 const INFO_CHANNELS = 2;
-const INFO_I32_COUNT = 6;
+const INFO_SAMPLES_BEFORE_INPUT = 6;
+const INFO_I32_COUNT = 7;
 
 export interface DecodedAudio {
   /** Interleaved float32 PCM for all decoded frames. */
@@ -35,6 +36,8 @@ export interface DecodedAudio {
   samplesPerChannel: number;
   sampleRate: number;
   channels: number;
+  /** Samples/ch in this decoded output that came from frames carried over from before the current PES payload. */
+  samplesBeforeInput: number;
 }
 
 /**
@@ -155,6 +158,7 @@ export class MpegAudioDecoder {
     const samplesPerChannel = i32[infoBase + INFO_SAMPLES];
     const sampleRate = i32[infoBase + INFO_SAMPLE_RATE];
     const channels = i32[infoBase + INFO_CHANNELS];
+    const samplesBeforeInput = i32[infoBase + INFO_SAMPLES_BEFORE_INPUT];
 
     // Copy float32 PCM out of WASM memory
     const totalFloats = samplesPerChannel * channels;
@@ -162,7 +166,7 @@ export class MpegAudioDecoder {
     const pcm = new Float32Array(totalFloats);
     pcm.set(view);
 
-    return { pcm, samplesPerChannel, sampleRate, channels };
+    return { pcm, samplesPerChannel, sampleRate, channels, samplesBeforeInput };
   }
 
   /** Reset decoder state (call on stream switch to avoid stale mdct/qmf state) */
