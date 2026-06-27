@@ -26,6 +26,7 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
   const fullConfig: PlayerConfig = { ...defaultConfig, ...config };
   fullConfig.logLevel = config?.logLevel ?? getRuntimeLogLevel() ?? fullConfig.logLevel;
   Log.setLogLevel(fullConfig.logLevel);
+  fullConfig.logLevel = Log.LOG_LEVEL;
 
   // Resolve WASM URLs to absolute so they work inside inline blob workers
   if (fullConfig.wasmDecoders.mp2) {
