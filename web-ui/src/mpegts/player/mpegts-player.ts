@@ -5,7 +5,7 @@ import type { WorkerCommand, WorkerEvent } from "../worker/messages";
 import TransmuxWorker from "../worker/transmux-worker.ts?worker&inline";
 import { setupLiveSync } from "./live-sync";
 import { createMSE, type MSE } from "./mse";
-import type { LiveSessionAnchor } from "./wall-clock";
+import { type LiveSessionAnchor, lagBehindLiveEdge } from "./wall-clock";
 
 /** Check if a given time position is within any buffered range of the video element. */
 export function isBuffered(video: HTMLMediaElement, seconds: number): boolean {
@@ -21,6 +21,7 @@ export function isBuffered(video: HTMLMediaElement, seconds: number): boolean {
 /** Forward buffer watermarks for HLS VOD/EVENT: pause fetching when far ahead of playback. */
 const VOD_FORWARD_BUFFER_PAUSE = 30;
 const BACKPRESSURE_RESUME_BUFFER_AHEAD = 15;
+const LIVE_STATE_TOLERANCE = 3;
 const HLS_URL_RE = /\.m3u8?($|\?)/i;
 
 type SourceMode = "continuous-live-ts" | "static-ts-list" | "hls";
@@ -40,6 +41,8 @@ export function createMpegtsPlayer(
   /** Live edge assuming continuous playback since session start. */
   let liveSessionAnchor: LiveSessionAnchor | null = null;
   let sourceMode: SourceMode = "static-ts-list";
+  let hlsLive: boolean | null = null;
+  let lastLiveState: boolean | null = null;
 
   let hlsVodThrottleEnabled = false;
   let watermarkPaused = false;
@@ -112,6 +115,8 @@ export function createMpegtsPlayer(
         break;
       case "hls-info":
         sourceMode = "hls";
+        hlsLive = msg.live;
+        updateLiveState();
         if (!msg.live) {
           mse?.setDuration(msg.totalDuration);
           hlsVodThrottleEnabled = true;
@@ -152,21 +157,63 @@ export function createMpegtsPlayer(
     return 0;
   }
 
-  function getContinuousLiveTsGoLiveTarget(): number | null {
+  function getLastBufferedRange(): { start: number; end: number } | null {
     const buffered = video.buffered;
     if (buffered.length === 0) {
       return null;
     }
 
     const lastRange = buffered.length - 1;
-    const start = buffered.start(lastRange);
-    const end = buffered.end(lastRange);
-    const target = end - config.liveSyncTargetLatency;
+    return { start: buffered.start(lastRange), end: buffered.end(lastRange) };
+  }
 
-    if (target < start || target > end) {
+  function getContinuousLiveTsGoLiveTarget(): number | null {
+    const range = getLastBufferedRange();
+    if (!range) {
+      return null;
+    }
+
+    const target = range.end - config.liveSyncTargetLatency;
+
+    if (target < range.start || target > range.end) {
       return null;
     }
     return target;
+  }
+
+  function isContinuousLiveTsLive(): boolean {
+    const range = getLastBufferedRange();
+    if (!range) {
+      return true;
+    }
+
+    const target = Math.max(range.start, range.end - config.liveSyncTargetLatency);
+    return video.currentTime >= target - LIVE_STATE_TOLERANCE && video.currentTime <= range.end + LIVE_STATE_TOLERANCE;
+  }
+
+  function computeLiveState(): boolean {
+    if (sourceMode === "continuous-live-ts") {
+      return isContinuousLiveTsLive();
+    }
+    if (sourceMode === "hls") {
+      if (hlsLive === false) {
+        return false;
+      }
+      if (!liveSessionAnchor) {
+        return true;
+      }
+      return lagBehindLiveEdge(liveSessionAnchor, video.currentTime) < LIVE_STATE_TOLERANCE;
+    }
+    return false;
+  }
+
+  function updateLiveState(): void {
+    const next = computeLiveState();
+    if (next === lastLiveState) {
+      return;
+    }
+    lastLiveState = next;
+    impl.onLiveStateChange?.(next);
   }
 
   function pauseWorkerForBackpressure(kind: "watermark" | "buffer-full"): void {
@@ -202,6 +249,7 @@ export function createMpegtsPlayer(
   /** Re-evaluate fetching after an in-buffer seek (worker may have paused on buffer full). */
   function resumeWorkerAfterBufferSeek(): void {
     updateFetchBackpressure();
+    updateLiveState();
   }
 
   /** Seek within existing MSE buffer without reloading the stream. */
@@ -294,6 +342,7 @@ export function createMpegtsPlayer(
 
     mse.onBufferUpdated = () => {
       updateFetchBackpressure();
+      updateLiveState();
     };
 
     mse.onStartStreaming = () => {
@@ -339,8 +388,14 @@ export function createMpegtsPlayer(
     }
   }
 
-  const onVideoPlay = () => markPlaybackUnlocked();
-  const onVideoTimeUpdate = () => updateFetchBackpressure();
+  const onVideoPlay = () => {
+    markPlaybackUnlocked();
+    updateLiveState();
+  };
+  const onVideoTimeUpdate = () => {
+    updateFetchBackpressure();
+    updateLiveState();
+  };
   video.addEventListener("play", onVideoPlay);
   video.addEventListener("timeupdate", onVideoTimeUpdate);
 
@@ -352,7 +407,9 @@ export function createMpegtsPlayer(
       pendingInits = [];
       pendingSegments = segments;
       sourceMode = inferSourceMode(segments);
+      hlsLive = null;
       resetFetchBackpressure();
+      updateLiveState();
       if (mse) {
         mse.destroy();
         mse = null;
@@ -383,6 +440,7 @@ export function createMpegtsPlayer(
 
     setLiveSessionAnchor(anchor: LiveSessionAnchor) {
       liveSessionAnchor = anchor;
+      updateLiveState();
     },
 
     suspend() {
@@ -391,6 +449,8 @@ export function createMpegtsPlayer(
       pendingInits = [];
       pendingSegments = null;
       sourceMode = "static-ts-list";
+      hlsLive = null;
+      updateLiveState();
       if (worker) {
         const cmd: WorkerCommand = { type: "reset" };
         worker.postMessage(cmd);
