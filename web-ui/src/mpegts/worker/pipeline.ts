@@ -618,18 +618,20 @@ class Pipeline {
       // straddle PES boundaries or a PES contains multiple frames. Re-anchor only
       // on genuine discontinuities (> 100ms deviation).
       const sr = result.sampleRate;
+      const carriedSamples = Math.min(Math.max(0, result.samplesBeforeInput), result.samplesPerChannel);
+      const decodedStartPts = frame.pts - (carriedSamples / sr) * 1000;
       if (this._audioAnchorPtsMs === null || this._audioSampleRate !== sr) {
-        this._audioAnchorPtsMs = frame.pts;
+        this._audioAnchorPtsMs = decodedStartPts;
         this._audioSamplesSinceAnchor = 0;
         this._audioSampleRate = sr;
       } else {
         const extrapolatedMs = this._audioAnchorPtsMs + (this._audioSamplesSinceAnchor / sr) * 1000;
-        if (Math.abs(frame.pts - extrapolatedMs) > 100) {
+        if (Math.abs(decodedStartPts - extrapolatedMs) > 100) {
           Log.v(
             this.TAG,
-            `Audio PTS discontinuity: pes=${frame.pts.toFixed(1)}ms extrap=${extrapolatedMs.toFixed(1)}ms`,
+            `Audio PTS discontinuity: decoded=${decodedStartPts.toFixed(1)}ms extrap=${extrapolatedMs.toFixed(1)}ms`,
           );
-          this._audioAnchorPtsMs = frame.pts;
+          this._audioAnchorPtsMs = decodedStartPts;
           this._audioSamplesSinceAnchor = 0;
         }
       }
@@ -657,14 +659,36 @@ class Pipeline {
       return;
     }
 
-    for (const item of this._pendingPcm) {
-      const time = this._remuxer?.mapPcmTimestamp(item.ptsMs, item.durationMs);
-      if (time === undefined) {
+    const pending = this._pendingPcm;
+    this._pendingPcm = [];
+
+    for (let i = 0; i < pending.length; i++) {
+      const item = pending[i];
+      const mapping = this._remuxer?.mapPcmTimestamp(item.ptsMs, item.durationMs);
+      if (mapping === undefined) {
+        this._pendingPcm.push(...pending.slice(i));
+        if (this._pendingPcm.length > 512) {
+          this._pendingPcm.splice(0, this._pendingPcm.length - 512);
+        }
         break;
       }
-      this._callbacks.onPCMAudioData(item.pcm, item.channels, item.sampleRate, time);
+      if (mapping.action === "drop") {
+        continue;
+      }
+
+      let pcm = item.pcm;
+      if (mapping.trimStartMs > 0) {
+        const cutFrames = Math.floor((mapping.trimStartMs / 1000) * item.sampleRate);
+        const totalFrames = Math.floor(pcm.length / item.channels);
+        if (cutFrames >= totalFrames) {
+          continue;
+        }
+        if (cutFrames > 0) {
+          pcm = pcm.subarray(cutFrames * item.channels);
+        }
+      }
+      this._callbacks.onPCMAudioData(pcm, item.channels, item.sampleRate, mapping.time);
     }
-    this._pendingPcm = [];
   }
 }
 

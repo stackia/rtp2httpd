@@ -13,13 +13,14 @@ ex._initialize();
 // ---- Decoder: feed in irregular chunks to exercise the carry buffer ----
 const mp2 = readFileSync("/tmp/test.mp2");
 const dec = ex.mpeg_audio_decoder_create();
-const infoPtr = ex.malloc(6 * 4);
+const infoPtr = ex.malloc(7 * 4);
 const inPtr = ex.malloc(8192);
 const outCap = 200 * 2304;
 const outPtr = ex.malloc(outCap * 4);
 
 let totalSamples = 0;
 let totalFrames = 0;
+let totalSamplesBeforeInput = 0;
 let sr = 0;
 let ch = 0;
 let pos = 0;
@@ -32,10 +33,11 @@ while (pos < mp2.length) {
   pos += size;
   new Uint8Array(ex.memory.buffer).set(chunk, inPtr);
   const n = ex.mpeg_audio_decode_payload(dec, inPtr, chunk.length, outPtr, outCap, infoPtr);
-  const info = new Int32Array(ex.memory.buffer, infoPtr, 6);
+  const info = new Int32Array(ex.memory.buffer, infoPtr, 7);
   if (n > 0) {
     totalSamples += info[0];
     totalFrames += info[3];
+    totalSamplesBeforeInput += info[6];
     sr = info[1];
     ch = info[2];
     pcmAll.push(new Float32Array(ex.memory.buffer, outPtr, info[0] * info[2]).slice());
@@ -43,7 +45,8 @@ while (pos < mp2.length) {
 }
 const expected = 5 * 48000;
 console.log(
-  `decoded: ${totalSamples} samples/ch (${(totalSamples / sr).toFixed(3)}s), ${totalFrames} frames, ${sr}Hz ${ch}ch`,
+  `decoded: ${totalSamples} samples/ch (${(totalSamples / sr).toFixed(3)}s), ${totalFrames} frames, ${sr}Hz ${ch}ch, ` +
+    `${totalSamplesBeforeInput} samples/ch before input`,
 );
 if (Math.abs(totalSamples - expected) > 1152 * 2) throw new Error("sample count mismatch");
 if (sr !== 48000 || ch !== 2) throw new Error("format mismatch");
