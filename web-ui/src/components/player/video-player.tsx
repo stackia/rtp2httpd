@@ -251,9 +251,7 @@ export function VideoPlayer({
 
   const goLiveToSessionEdge = useEffectEvent(() => {
     if (!liveSessionAnchor) return;
-    const video = getActiveVideo();
-    const currentTime = video?.currentTime ?? 0;
-    const targetMse = goLiveTargetMse(liveSessionAnchor, defaultConfig.liveSyncTargetLatency, currentTime);
+    const targetMse = goLiveTargetMse(liveSessionAnchor, defaultConfig.liveSyncTargetLatency);
     getActivePlayer()?.goLive(targetMse);
     getActivePlayer()?.setLiveSync(true);
   });

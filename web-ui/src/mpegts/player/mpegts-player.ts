@@ -21,6 +21,9 @@ export function isBuffered(video: HTMLMediaElement, seconds: number): boolean {
 /** Forward buffer watermarks for HLS VOD/EVENT: pause fetching when far ahead of playback. */
 const VOD_FORWARD_BUFFER_PAUSE = 30;
 const BACKPRESSURE_RESUME_BUFFER_AHEAD = 15;
+const HLS_URL_RE = /\.m3u8?($|\?)/i;
+
+type SourceMode = "continuous-live-ts" | "static-ts-list" | "hls";
 
 export function createMpegtsPlayer(
   video: HTMLVideoElement,
@@ -36,6 +39,7 @@ export function createMpegtsPlayer(
   let liveSyncEnabled = config.liveSync;
   /** Live edge assuming continuous playback since session start. */
   let liveSessionAnchor: LiveSessionAnchor | null = null;
+  let sourceMode: SourceMode = "static-ts-list";
 
   let hlsVodThrottleEnabled = false;
   let watermarkPaused = false;
@@ -107,6 +111,7 @@ export function createMpegtsPlayer(
         mse?.endOfStream();
         break;
       case "hls-info":
+        sourceMode = "hls";
         if (!msg.live) {
           mse?.setDuration(msg.totalDuration);
           hlsVodThrottleEnabled = true;
@@ -145,6 +150,23 @@ export function createMpegtsPlayer(
       }
     }
     return 0;
+  }
+
+  function getContinuousLiveTsGoLiveTarget(): number | null {
+    const buffered = video.buffered;
+    if (buffered.length === 0) {
+      return null;
+    }
+
+    const lastRange = buffered.length - 1;
+    const start = buffered.start(lastRange);
+    const end = buffered.end(lastRange);
+    const target = end - config.liveSyncTargetLatency;
+
+    if (target < start || target > end) {
+      return null;
+    }
+    return target;
   }
 
   function pauseWorkerForBackpressure(kind: "watermark" | "buffer-full"): void {
@@ -199,6 +221,36 @@ export function createMpegtsPlayer(
     for (const h of seekHandlers) {
       h(seconds);
     }
+  }
+
+  function goLiveTo(targetMseSeconds: number): void {
+    if (sourceMode === "continuous-live-ts") {
+      const bufferedTarget = getContinuousLiveTsGoLiveTarget();
+      if (bufferedTarget !== null && bufferSeek(bufferedTarget)) {
+        return;
+      }
+      // Use the session target for the fallback so the outer handler treats it as a live-edge reload.
+      for (const h of seekHandlers) {
+        h(targetMseSeconds);
+      }
+      return;
+    }
+
+    seekTo(targetMseSeconds);
+  }
+
+  function inferSourceMode(segments: PlayerSegment[]): SourceMode {
+    const firstSegment = segments[0];
+    if (!firstSegment) {
+      return "static-ts-list";
+    }
+    if (segments.length === 1 && HLS_URL_RE.test(firstSegment.url)) {
+      return "hls";
+    }
+    if (segments.length === 1 && (firstSegment.duration ?? 0) === 0) {
+      return "continuous-live-ts";
+    }
+    return "static-ts-list";
   }
 
   function resetFetchBackpressure(): void {
@@ -299,6 +351,7 @@ export function createMpegtsPlayer(
       mseGeneration++;
       pendingInits = [];
       pendingSegments = segments;
+      sourceMode = inferSourceMode(segments);
       resetFetchBackpressure();
       if (mse) {
         mse.destroy();
@@ -325,7 +378,7 @@ export function createMpegtsPlayer(
     },
 
     goLive(targetMseSeconds: number) {
-      seekTo(targetMseSeconds);
+      goLiveTo(targetMseSeconds);
     },
 
     setLiveSessionAnchor(anchor: LiveSessionAnchor) {
@@ -337,6 +390,7 @@ export function createMpegtsPlayer(
       resetFetchBackpressure();
       pendingInits = [];
       pendingSegments = null;
+      sourceMode = "static-ts-list";
       if (worker) {
         const cmd: WorkerCommand = { type: "reset" };
         worker.postMessage(cmd);
