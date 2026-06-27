@@ -410,7 +410,9 @@ class Pipeline {
       this._hlsSource === null && this._discreteSegments && this._demuxer !== null && this._remuxer !== null;
     const canReuse = canReuseHls || canReuseStatic;
     if (canReuse) {
-      this._demuxer?.resetSegmentBoundary(probeData as ConstructorParameters<typeof TSDemuxer>[0]);
+      this._demuxer?.resetSegmentBoundary(probeData as ConstructorParameters<typeof TSDemuxer>[0], {
+        resetAudioParserState: canReuseStatic,
+      });
       this._remuxer?.setTsSegmentContinuityNormalization(canReuseStatic);
       return;
     }
