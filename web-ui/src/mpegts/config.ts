@@ -22,6 +22,8 @@ export interface PlayerConfig {
   referrerPolicy: string | undefined;
   /** Additional headers to add to HTTP requests. */
   headers: Record<string, string> | undefined;
+  /** Frontend log level: 0=FATAL, 1=ERROR, 2=WARN, 3=INFO, 4=DEBUG/VERBOSE. */
+  logLevel: number | undefined;
 }
 
 export const defaultConfig: PlayerConfig = {
@@ -37,6 +39,7 @@ export const defaultConfig: PlayerConfig = {
 
   referrerPolicy: undefined,
   headers: undefined,
+  logLevel: undefined,
 };
 
 export function createDefaultConfig(): PlayerConfig {

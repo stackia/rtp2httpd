@@ -210,6 +210,7 @@ class TestAppPathPrefix:
         text = body.decode("utf-8", errors="replace")
         assert f'<base href="{APP_PREFIX}/">' in text
         assert f'"appPathPrefix":"{APP_PREFIX}"' in text
+        assert '"logLevel":4' in text
 
     def test_prefixed_player_html(self, prefixed_r2h):
         status, hdrs, body = http_get("127.0.0.1", prefixed_r2h.port, f"{APP_PREFIX}/player")

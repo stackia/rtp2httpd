@@ -51,8 +51,7 @@ class LoadError extends Error {
 const HLS_URL_RE = /\.m3u8?($|\?)/i;
 /** Sentinel rejection value for intentionally cancelled segment loads. */
 const CANCELLED = Symbol("cancelled");
-const STARTUP_DEBUG_PREFIX = "[startup-debug]";
-const STARTUP_DEBUG_MEDIA_LIMIT = 12;
+const STARTUP_MEDIA_LOG_LIMIT = 12;
 
 /** Copy a Uint8Array view into a standalone (transferable) ArrayBuffer. */
 function toArrayBuffer(view: Uint8Array): ArrayBuffer {
@@ -101,7 +100,7 @@ class Pipeline {
   private _lastInitUrl: string | null = null;
   private _fmp4Timescales = new Map<number, number>();
   private _fmp4TimestampOffsetWarningLogged = false;
-  private _debugMediaSegmentCounts: Record<"video" | "audio", number> = { video: 0, audio: 0 };
+  private _startupMediaSegmentLogCounts: Record<"video" | "audio", number> = { video: 0, audio: 0 };
 
   private _workerAudioDecoder: WorkerAudioDecoder | null = null;
   private _workerAudioDecoderInitPromise: Promise<boolean> | null = null;
@@ -214,7 +213,7 @@ class Pipeline {
     this._lastInitUrl = null;
     this._fmp4Timescales = new Map();
     this._fmp4TimestampOffsetWarningLogged = false;
-    this._debugMediaSegmentCounts = { video: 0, audio: 0 };
+    this._startupMediaSegmentLogCounts = { video: 0, audio: 0 };
     this._paused = false;
     this._resumeGate?.();
     this._resumeGate = null;
@@ -459,11 +458,11 @@ class Pipeline {
     };
     this._remuxer.onMediaSegment = (type, mediaSegment) => {
       const track = type as "video" | "audio";
-      const debugIndex = ++this._debugMediaSegmentCounts[track];
-      if (debugIndex <= STARTUP_DEBUG_MEDIA_LIMIT) {
+      const logIndex = ++this._startupMediaSegmentLogCounts[track];
+      if (logIndex <= STARTUP_MEDIA_LOG_LIMIT) {
         Log.v(
           this.TAG,
-          `${STARTUP_DEBUG_PREFIX} emit ${track}#${debugIndex}: bytes=${mediaSegment.data?.byteLength ?? 0}, ` +
+          `emit ${track}#${logIndex}: bytes=${mediaSegment.data?.byteLength ?? 0}, ` +
             `timestampOffset=${mediaSegment.timestampOffset?.toFixed(3) ?? "-"}ms`,
         );
       }

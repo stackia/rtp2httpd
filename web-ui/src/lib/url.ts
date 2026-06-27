@@ -1,17 +1,6 @@
-type RuntimeConfig = {
-  appPathPrefix?: string;
-};
+import { getAppPathPrefix } from "./runtime-config";
 
-declare global {
-  interface Window {
-    __RTP2HTTPD_CONFIG__?: RuntimeConfig;
-  }
-}
-
-export function getAppPathPrefix(): string {
-  if (typeof window === "undefined") return "";
-  return window.__RTP2HTTPD_CONFIG__?.appPathPrefix ?? "";
-}
+export { getAppPathPrefix } from "./runtime-config";
 
 export function buildAppPath(path: string): string {
   const prefix = getAppPathPrefix();

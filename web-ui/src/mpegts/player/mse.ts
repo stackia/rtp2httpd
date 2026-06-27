@@ -52,8 +52,7 @@ export interface MSE {
 }
 
 const TAG = "MSE";
-const STARTUP_DEBUG_PREFIX = "[startup-debug]";
-const STARTUP_DEBUG_APPEND_LIMIT = 12;
+const STARTUP_APPEND_LOG_LIMIT = 12;
 
 export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   // Use ManagedMediaSource only if w3c MediaSource is not available (e.g. iOS Safari)
@@ -73,8 +72,8 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   let isBufferFull = false;
   let hasPendingEos = false;
   let pendingDuration: number | null = null;
-  const debugAppendCounts: Record<Track, number> = { video: 0, audio: 0 };
-  const debugUpdateEndCounts: Record<Track, number> = { video: 0, audio: 0 };
+  const startupAppendLogCounts: Record<Track, number> = { video: 0, audio: 0 };
+  const startupUpdateEndLogCounts: Record<Track, number> = { video: 0, audio: 0 };
 
   // Deferred init segments: queued before sourceopen fires
   let pendingSourceBufferInit: { track: Track; data: ArrayBuffer; codec: string; container: string }[] = [];
@@ -146,10 +145,6 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     return `video[${fmt(sourceBuffers.video)}] audio[${fmt(sourceBuffers.audio)}]`;
   }
 
-  function logStartupDebug(message: string): void {
-    Log.v(TAG, `${STARTUP_DEBUG_PREFIX} ${message}`);
-  }
-
   function flushPendingSourceBufferInit(): void {
     if (pendingSourceBufferInit.length === 0 || mediaSource?.readyState !== "open") {
       return;
@@ -201,9 +196,10 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
           if (entry.timestampOffset !== undefined) {
             sb.timestampOffset = entry.timestampOffset / 1000;
           }
-          const appendIndex = ++debugAppendCounts[track];
-          if (appendIndex <= STARTUP_DEBUG_APPEND_LIMIT) {
-            logStartupDebug(
+          const appendIndex = ++startupAppendLogCounts[track];
+          if (appendIndex <= STARTUP_APPEND_LOG_LIMIT) {
+            Log.v(
+              TAG,
               `append ${track}#${appendIndex}: bytes=${entry.data.byteLength}, ` +
                 `timestampOffset=${entry.timestampOffset?.toFixed(3) ?? "-"}ms, ` +
                 `sbTimestampOffset=${sb.timestampOffset.toFixed(3)}s, pending(v=${pendingSegments.video.length},a=${pendingSegments.audio.length}), ` +
@@ -306,9 +302,10 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   }
 
   function onSourceBufferUpdateEnd(track: Track): void {
-    const updateEndIndex = ++debugUpdateEndCounts[track];
-    if (updateEndIndex <= STARTUP_DEBUG_APPEND_LIMIT) {
-      logStartupDebug(
+    const updateEndIndex = ++startupUpdateEndLogCounts[track];
+    if (updateEndIndex <= STARTUP_APPEND_LOG_LIMIT) {
+      Log.v(
+        TAG,
         `updateend ${track}#${updateEndIndex}: ` +
           `videoTime=${video.currentTime.toFixed(3)}, readyState=${video.readyState}, mediaSource=${mediaSource?.readyState ?? "-"}, ` +
           `pending(v=${pendingSegments.video.length},a=${pendingSegments.audio.length}), buffered=${bufferedSummary()}`,
