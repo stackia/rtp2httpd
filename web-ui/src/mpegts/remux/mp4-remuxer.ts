@@ -13,6 +13,7 @@ interface AudioSample {
 }
 
 interface VideoUnit {
+  type?: number;
   data: Uint8Array;
   /** false for H.264 AnnexB payloads that need AVC length-prefixes written at remux time. */
   lengthPrefixed?: boolean;
@@ -282,6 +283,22 @@ class MP4Remuxer {
     timing.durationResidual = withResidual - duration;
     timing.lastOutputDuration = duration;
     return duration;
+  }
+
+  private _formatVideoUnitTypes(sample: { units?: VideoUnit[] } | null | undefined): string {
+    const units = sample?.units;
+    if (!units?.length) {
+      return "-";
+    }
+    return units.map((unit) => (typeof unit.type === "number" ? unit.type.toString() : "?")).join(",");
+  }
+
+  private _formatInputVideoSample(sample: VideoSample): string {
+    return `{rawDts=${sample.dts.toFixed(3)},rawPts=${sample.pts.toFixed(3)},rawCts=${sample.cts.toFixed(3)},key=${sample.isKeyframe},types=${this._formatVideoUnitTypes(sample)}}`;
+  }
+
+  private _formatOutputVideoSample(sample: MP4Sample): string {
+    return `{dts=${sample.dts.toFixed(3)},pts=${sample.pts.toFixed(3)},cts=${sample.cts.toFixed(3)},key=${sample.isKeyframe === true},types=${this._formatVideoUnitTypes(sample)}}`;
   }
 
   /**
@@ -792,6 +809,7 @@ class MP4Remuxer {
     let nextOutputDts = firstSampleOriginalDts - dtsCorrection;
     const presentationFloor = this._videoInitialOutputTime ?? this._dtsBaseOffset;
     let droppedBeforeStart = 0;
+    const droppedVideoSamples: VideoSample[] = [];
 
     // Correct dts for each sample, and calculate sample duration. Then output to mp4Samples
     for (let i = 0; i < samples.length; i++) {
@@ -809,6 +827,7 @@ class MP4Remuxer {
       if (pts < presentationFloor - 0.001) {
         mdatBytes -= sample.length;
         droppedBeforeStart++;
+        droppedVideoSamples.push(sample);
         continue;
       }
 
@@ -850,7 +869,10 @@ class MP4Remuxer {
           `video segment#${videoLogIndex}: no output, force=${force === true}, candidates=${candidateSampleCount}, ` +
             `droppedBeforeStart=${droppedBeforeStart}, firstRawDts=${firstCandidate.dts.toFixed(3)}, ` +
             `firstRawPts=${firstCandidate.pts.toFixed(3)}, firstRawCts=${firstCandidate.cts.toFixed(3)}, ` +
-            `dtsCorrection=${dtsCorrection.toFixed(3)}, presentationFloor=${presentationFloor.toFixed(3)}`,
+            `firstTypes=${this._formatVideoUnitTypes(firstCandidate)}, dtsCorrection=${dtsCorrection.toFixed(3)}, ` +
+            `presentationFloor=${presentationFloor.toFixed(3)}, dropped=${droppedVideoSamples
+              .map((sample) => this._formatInputVideoSample(sample))
+              .join("|")}`,
         );
       }
       track.samples = [];
@@ -870,7 +892,10 @@ class MP4Remuxer {
           `firstRawDts=${firstCandidate.dts.toFixed(3)}, firstRawPts=${firstCandidate.pts.toFixed(3)}, ` +
           `firstDts=${first.dts.toFixed(3)}, firstPts=${first.pts.toFixed(3)}, firstCts=${first.cts.toFixed(3)}, ` +
           `lastEnd=${(last.dts + last.duration).toFixed(3)}, duration=${last.duration.toFixed(3)}, ` +
-          `dtsCorrection=${dtsCorrection.toFixed(3)}, ctsOffset=${this._videoCtsOffset?.toFixed(3) ?? "-"}, bytes=${mdatBytes}`,
+          `dtsCorrection=${dtsCorrection.toFixed(3)}, ctsOffset=${this._videoCtsOffset?.toFixed(3) ?? "-"}, bytes=${mdatBytes}, ` +
+          `candidates=${samples.map((sample) => this._formatInputVideoSample(sample as VideoSample)).join("|")}, ` +
+          `dropped=${droppedVideoSamples.map((sample) => this._formatInputVideoSample(sample)).join("|") || "-"}, ` +
+          `output=${mp4Samples.map((sample) => this._formatOutputVideoSample(sample)).join("|")}`,
       );
     }
 

@@ -362,6 +362,31 @@ class TSDemuxer {
     Log.v(this.TAG, `Video keyframe found ${reason} video output timeline`);
   }
 
+  private h265NaluTypeName(type: H265NaluType): string {
+    switch (type) {
+      case H265NaluType.kSliceIDR_W_RADL:
+        return "IDR_W_RADL";
+      case H265NaluType.kSliceIDR_N_LP:
+        return "IDR_N_LP";
+      case H265NaluType.kSliceCRA_NUT:
+        return "CRA_NUT";
+      case H265NaluType.kSliceVPS:
+        return "VPS";
+      case H265NaluType.kSliceSPS:
+        return "SPS";
+      case H265NaluType.kSlicePPS:
+        return "PPS";
+      case H265NaluType.kSliceAUD:
+        return "AUD";
+      default:
+        return `NAL_${type}`;
+    }
+  }
+
+  private formatH265UnitTypes(units: Array<{ type: H265NaluType }>): string {
+    return units.map((unit) => `${unit.type}:${this.h265NaluTypeName(unit.type)}`).join(",");
+  }
+
   private handleTrackDiscontinuity(pid: number, reason: string): void {
     delete this.pes_slice_queues_[pid];
 
@@ -1171,7 +1196,8 @@ class TSDemuxer {
         Log.v(
           this.TAG,
           `h265 keyframe anchor: pts=${pts_ms.toFixed(3)}, dts=${dts_ms.toFixed(3)}, ` +
-            `cts=${(pts_ms - dts_ms).toFixed(3)}, units=${units.length}, bytes=${length}, rai=${random_access_indicator ?? "-"}`,
+            `cts=${(pts_ms - dts_ms).toFixed(3)}, units=${units.length}, bytes=${length}, ` +
+            `rai=${random_access_indicator ?? "-"}, types=${this.formatH265UnitTypes(units)}`,
         );
       }
     }
