@@ -45,6 +45,12 @@ interface FetchLoaderOptions {
   resumeMode?: ResumeMode;
 }
 
+interface FetchRequestContext {
+  abortController: AbortController;
+  contentLength: number | null;
+  receivedLength: number;
+}
+
 enum LoaderStatus {
   kIdle = 0,
   kConnecting = 1,
@@ -88,10 +94,7 @@ class FetchLoader {
 
   // --- fetch internals ---
   private _status: LoaderStatus;
-  private _requestAbort: boolean;
   private _abortController: AbortController | null;
-  private _contentLength: number | null;
-  private _receivedLength: number;
 
   constructor(dataSource: DataSource, config: PlayerConfig, extraData?: unknown, options: FetchLoaderOptions = {}) {
     this._config = config;
@@ -113,10 +116,7 @@ class FetchLoader {
 
     // fetch state
     this._status = LoaderStatus.kIdle;
-    this._requestAbort = false;
     this._abortController = null;
-    this._contentLength = null;
-    this._receivedLength = 0;
 
     // callbacks
     this.onDataArrival = null;
@@ -236,9 +236,11 @@ class FetchLoader {
   // --- fetch + ReadableStream logic (inlined FetchStreamLoader) ------------
 
   private _startFetch(range: LoaderRange): void {
-    this._requestAbort = false;
-    this._contentLength = null;
-    this._receivedLength = 0;
+    const request: FetchRequestContext = {
+      abortController: new self.AbortController(),
+      contentLength: null,
+      receivedLength: 0,
+    };
 
     const dataSource = this._dataSource as DataSource;
     const sourceURL = dataSource.url;
@@ -279,18 +281,15 @@ class FetchLoader {
       params.referrerPolicy = dataSource.referrerPolicy;
     }
 
-    if (self.AbortController) {
-      this._abortController = new self.AbortController();
-      params.signal = this._abortController.signal;
-    }
+    this._abortController = request.abortController;
+    params.signal = request.abortController.signal;
 
     this._status = LoaderStatus.kConnecting;
 
     self
       .fetch(seekConfig.url, params)
       .then((res: Response) => {
-        if (this._requestAbort) {
-          this._status = LoaderStatus.kIdle;
+        if (this._isRequestAborted(request)) {
           res.body?.cancel();
           return;
         }
@@ -302,7 +301,7 @@ class FetchLoader {
             this._status = LoaderStatus.kIdle;
             // Read the body so the already-fetched playlist can be reused (avoids a duplicate request)
             return res.text().then((text) => {
-              if (!this._requestAbort) {
+              if (!this._isRequestAborted(request)) {
                 this.onHLSDetected?.(text, res.url || sourceURL);
               }
             });
@@ -313,11 +312,11 @@ class FetchLoader {
           if (lengthHeader != null) {
             const cl = parseInt(lengthHeader, 10);
             if (cl !== 0) {
-              this._contentLength = cl;
+              request.contentLength = cl;
             }
           }
 
-          return this._pump((res.body as ReadableStream<Uint8Array>).getReader(), range);
+          return this._pump((res.body as ReadableStream<Uint8Array>).getReader(), range, request);
         } else {
           this._status = LoaderStatus.kError;
           const errInfo: LoaderErrorInfo = { code: res.status, msg: res.statusText };
@@ -329,7 +328,7 @@ class FetchLoader {
         }
       })
       .catch((e: unknown) => {
-        if (this._abortController?.signal.aborted) {
+        if (this._isRequestAborted(request)) {
           return;
         }
 
@@ -344,42 +343,45 @@ class FetchLoader {
       });
   }
 
-  private _pump(reader: ReadableStreamDefaultReader<Uint8Array>, range: LoaderRange): Promise<void> {
+  private _isRequestAborted(request: FetchRequestContext): boolean {
+    return request.abortController.signal.aborted;
+  }
+
+  private _pump(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    range: LoaderRange,
+    request: FetchRequestContext,
+  ): Promise<void> {
     return reader
       .read()
       .then((result: ReadableStreamReadResult<Uint8Array>) => {
+        if (this._isRequestAborted(request)) {
+          return;
+        }
+
         if (result.done) {
-          if (this._contentLength !== null && this._receivedLength < this._contentLength) {
+          if (request.contentLength !== null && request.receivedLength < request.contentLength) {
             this._status = LoaderStatus.kError;
             const info: LoaderErrorInfo = { code: -1, msg: "Fetch stream meet Early-EOF" };
             this._handleLoaderError(LoaderErrors.EARLY_EOF, info);
           } else {
             this._status = LoaderStatus.kComplete;
-            this._onFetchComplete(range.from, range.from + this._receivedLength - 1);
+            this._onFetchComplete(range.from, range.from + request.receivedLength - 1);
           }
         } else {
-          if (this._abortController?.signal.aborted) {
-            this._status = LoaderStatus.kComplete;
-            return;
-          } else if (this._requestAbort === true) {
-            this._status = LoaderStatus.kComplete;
-            return reader.cancel() as unknown as undefined;
-          }
-
           this._status = LoaderStatus.kBuffering;
 
           const chunk = result.value as Uint8Array;
-          const byteStart = range.from + this._receivedLength;
-          this._receivedLength += chunk.byteLength;
+          const byteStart = range.from + request.receivedLength;
+          request.receivedLength += chunk.byteLength;
 
           this._onFetchChunkArrival(chunk, byteStart);
 
-          this._pump(reader, range);
+          this._pump(reader, range, request);
         }
       })
       .catch((e: unknown) => {
-        if (this._abortController?.signal.aborted) {
-          this._status = LoaderStatus.kComplete;
+        if (this._isRequestAborted(request)) {
           return;
         }
 
@@ -393,7 +395,8 @@ class FetchLoader {
 
         if (
           (errCode === 19 || errMsg === "network error") &&
-          (this._contentLength === null || (this._contentLength !== null && this._receivedLength < this._contentLength))
+          (request.contentLength === null ||
+            (request.contentLength !== null && request.receivedLength < request.contentLength))
         ) {
           type = LoaderErrors.EARLY_EOF;
           info = { code: errCode, msg: "Fetch stream meet Early-EOF" };
@@ -407,8 +410,6 @@ class FetchLoader {
   }
 
   private _abortFetch(): void {
-    this._requestAbort = true;
-
     if (this._abortController) {
       try {
         this._abortController.abort();
@@ -431,7 +432,6 @@ class FetchLoader {
     const requestRange: LoaderRange = { from: bytes, to: -1 };
     this._currentRange = { from: requestRange.from, to: -1 };
 
-    this._requestAbort = false;
     this._startFetch(requestRange);
 
     if (this.onSeeked) {
@@ -452,7 +452,6 @@ class FetchLoader {
     const requestRange: LoaderRange = { from: 0, to: -1 };
     this._currentRange = { from: requestRange.from, to: -1 };
 
-    this._requestAbort = false;
     this._startFetch(requestRange);
   }
 
