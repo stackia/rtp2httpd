@@ -1,37 +1,50 @@
+import { getRuntimeLogLevel } from "../../lib/runtime-config";
+
 let GLOBAL_TAG = "mpegts.js";
 let FORCE_GLOBAL_TAG = false;
-let ENABLE_ERROR = true;
-let ENABLE_INFO = true;
-let ENABLE_WARN = true;
-let ENABLE_DEBUG = true;
-let ENABLE_VERBOSE = true;
+let LOG_LEVEL = normalizeLogLevel(getRuntimeLogLevel());
+
+function normalizeLogLevel(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 4;
+  }
+  return Math.max(0, Math.min(4, Math.trunc(value)));
+}
+
+function setLogLevel(value: unknown): void {
+  LOG_LEVEL = normalizeLogLevel(value);
+}
+
+function shouldLog(level: number): boolean {
+  return LOG_LEVEL >= level;
+}
 
 function e(tag: string, ...args: unknown[]): void {
-  if (!ENABLE_ERROR) return;
+  if (!shouldLog(1)) return;
   if (!tag || FORCE_GLOBAL_TAG) tag = GLOBAL_TAG;
   (console.error || console.log)(`[${tag}] >`, ...args);
 }
 
 function i(tag: string, ...args: unknown[]): void {
-  if (!ENABLE_INFO) return;
+  if (!shouldLog(3)) return;
   if (!tag || FORCE_GLOBAL_TAG) tag = GLOBAL_TAG;
   (console.info || console.log)(`[${tag}] >`, ...args);
 }
 
 function w(tag: string, ...args: unknown[]): void {
-  if (!ENABLE_WARN) return;
+  if (!shouldLog(2)) return;
   if (!tag || FORCE_GLOBAL_TAG) tag = GLOBAL_TAG;
   (console.warn || console.log)(`[${tag}] >`, ...args);
 }
 
 function d(tag: string, ...args: unknown[]): void {
-  if (!ENABLE_DEBUG) return;
+  if (!shouldLog(4)) return;
   if (!tag || FORCE_GLOBAL_TAG) tag = GLOBAL_TAG;
   (console.debug || console.log)(`[${tag}] >`, ...args);
 }
 
 function v(tag: string, ...args: unknown[]): void {
-  if (!ENABLE_VERBOSE) return;
+  if (!shouldLog(4)) return;
   if (!tag || FORCE_GLOBAL_TAG) tag = GLOBAL_TAG;
   console.log(`[${tag}] >`, ...args);
 }
@@ -49,38 +62,13 @@ const Log = {
   set FORCE_GLOBAL_TAG(value: boolean) {
     FORCE_GLOBAL_TAG = value;
   },
-  get ENABLE_ERROR(): boolean {
-    return ENABLE_ERROR;
+  get LOG_LEVEL(): number {
+    return LOG_LEVEL;
   },
-  set ENABLE_ERROR(value: boolean) {
-    ENABLE_ERROR = value;
+  set LOG_LEVEL(value: number) {
+    setLogLevel(value);
   },
-  get ENABLE_INFO(): boolean {
-    return ENABLE_INFO;
-  },
-  set ENABLE_INFO(value: boolean) {
-    ENABLE_INFO = value;
-  },
-  get ENABLE_WARN(): boolean {
-    return ENABLE_WARN;
-  },
-  set ENABLE_WARN(value: boolean) {
-    ENABLE_WARN = value;
-  },
-  get ENABLE_DEBUG(): boolean {
-    return ENABLE_DEBUG;
-  },
-  set ENABLE_DEBUG(value: boolean) {
-    ENABLE_DEBUG = value;
-  },
-  get ENABLE_VERBOSE(): boolean {
-    return ENABLE_VERBOSE;
-  },
-  set ENABLE_VERBOSE(value: boolean) {
-    ENABLE_VERBOSE = value;
-  },
-  // Kept for compatibility with internal modules that reference Log.ENABLE_CALLBACK
-  ENABLE_CALLBACK: false,
+  setLogLevel,
   e,
   i,
   w,

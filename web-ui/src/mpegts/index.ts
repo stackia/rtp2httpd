@@ -1,6 +1,8 @@
+import { getRuntimeLogLevel } from "../lib/runtime-config";
 import { defaultConfig, type PlayerConfig } from "./config";
 import { createMpegtsPlayer } from "./player/mpegts-player";
 import type { LiveSessionAnchor, Player, PlayerError, PlayerEventMap, PlayerImpl, PlayerSegment } from "./types";
+import Log from "./utils/logger";
 
 export { defaultConfig } from "./config";
 export type { LiveSessionAnchor, Player, PlayerConfig, PlayerError, PlayerEventMap, PlayerSegment };
@@ -22,6 +24,9 @@ function resolveSegmentUrls(segments: PlayerSegment[]): PlayerSegment[] {
 
 export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerConfig>): Player {
   const fullConfig: PlayerConfig = { ...defaultConfig, ...config };
+  fullConfig.logLevel = config?.logLevel ?? getRuntimeLogLevel() ?? fullConfig.logLevel;
+  Log.setLogLevel(fullConfig.logLevel);
+  fullConfig.logLevel = Log.LOG_LEVEL;
 
   // Resolve WASM URLs to absolute so they work inside inline blob workers
   if (fullConfig.wasmDecoders.mp2) {

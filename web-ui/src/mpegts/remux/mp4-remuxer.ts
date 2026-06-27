@@ -121,8 +121,8 @@ class MP4Remuxer {
   private _audioTiming: TrackTimingState;
   private _videoTiming: TrackTimingState;
   private _pcmTiming: TrackTimingState;
-  private _videoCtsOffset: number | undefined;
-  private _videoInitialCtsOffset: number | undefined;
+  private _videoPresentationOffset: number | undefined;
+  private _videoInitialPresentationOffset: number | undefined;
   private _videoInitialOutputTime: number | undefined;
 
   private _audioMeta: TrackMetadata | null;
@@ -151,8 +151,8 @@ class MP4Remuxer {
     this._audioTiming = this._createTrackTimingState();
     this._videoTiming = this._createTrackTimingState();
     this._pcmTiming = this._createTrackTimingState();
-    this._videoCtsOffset = undefined;
-    this._videoInitialCtsOffset = undefined;
+    this._videoPresentationOffset = undefined;
+    this._videoInitialPresentationOffset = undefined;
     this._videoInitialOutputTime = undefined;
 
     this._audioMeta = null;
@@ -176,8 +176,8 @@ class MP4Remuxer {
     this._audioTiming = this._createTrackTimingState();
     this._videoTiming = this._createTrackTimingState();
     this._pcmTiming = this._createTrackTimingState();
-    this._videoCtsOffset = undefined;
-    this._videoInitialCtsOffset = undefined;
+    this._videoPresentationOffset = undefined;
+    this._videoInitialPresentationOffset = undefined;
     this._videoInitialOutputTime = undefined;
     this._audioMeta = null;
     this._videoMeta = null;
@@ -219,6 +219,7 @@ class MP4Remuxer {
   insertDiscontinuity(): void {
     this._audioNextDts = this._videoNextDts = undefined;
     this._silentAudioLastDts = undefined;
+    this._videoPresentationOffset = undefined;
   }
 
   private _createTrackTimingState(): TrackTimingState {
@@ -478,7 +479,7 @@ class MP4Remuxer {
   }
 
   getInitialPresentationOffset(): number {
-    return this._videoInitialCtsOffset ?? 0;
+    return this._videoInitialPresentationOffset ?? 0;
   }
 
   getInitialOutputTime(): number {
@@ -773,13 +774,16 @@ class MP4Remuxer {
       const originalDts = sample.dts - this._dtsBase;
       const isKeyframe = sample.isKeyframe;
 
-      if (this._videoCtsOffset === undefined) {
-        this._videoCtsOffset = sample.cts;
-        this._videoInitialCtsOffset = sample.cts;
+      const dts = nextOutputDts;
+      const originalPts = originalDts + sample.cts;
+      if (this._videoPresentationOffset === undefined) {
+        this._videoPresentationOffset = originalPts - dts;
+        if (this._videoInitialPresentationOffset === undefined) {
+          this._videoInitialPresentationOffset = this._videoPresentationOffset;
+        }
       }
 
-      const dts = nextOutputDts;
-      const pts = originalDts - dtsCorrection + sample.cts - this._videoCtsOffset;
+      const pts = originalPts - this._videoPresentationOffset;
       if (pts < presentationFloor - 0.001) {
         mdatBytes -= sample.length;
         continue;

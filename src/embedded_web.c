@@ -186,7 +186,7 @@ static int handle_embedded_html(connection_t *c, const embedded_file_t *file) {
     return -1;
   }
 
-  injection_size = strlen(escaped_base_href) + strlen(escaped_prefix) + 128;
+  injection_size = strlen(escaped_base_href) + strlen(escaped_prefix) + 160;
   injection = malloc(injection_size);
   if (!injection) {
     free(escaped_base_href);
@@ -197,8 +197,8 @@ static int handle_embedded_html(connection_t *c, const embedded_file_t *file) {
 
   injection_len = snprintf(injection, injection_size,
                            "<base href=\"%s\">\n"
-                           "<script>window.__RTP2HTTPD_CONFIG__={\"appPathPrefix\":\"%s\"};</script>\n",
-                           escaped_base_href, escaped_prefix);
+                           "<script>window.__RTP2HTTPD_CONFIG__={\"appPathPrefix\":\"%s\",\"logLevel\":%d};</script>\n",
+                           escaped_base_href, escaped_prefix, config.verbosity);
   free(escaped_base_href);
   free(escaped_prefix);
 

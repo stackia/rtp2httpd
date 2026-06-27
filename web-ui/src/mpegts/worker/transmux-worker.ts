@@ -1,5 +1,6 @@
 import type { PlayerConfig } from "../config";
 import type { PlayerSegment } from "../types";
+import Log from "../utils/logger";
 import type { WorkerCommand, WorkerEvent } from "./messages";
 import Pipeline, { type PipelineCallbacks } from "./pipeline";
 
@@ -70,6 +71,7 @@ self.addEventListener("message", (e: MessageEvent) => {
   switch (cmd.type) {
     case "init":
       gen = cmd.gen;
+      Log.setLogLevel(cmd.config.logLevel);
       pipeline = createPipeline(cmd.segments, cmd.config);
       break;
     case "start":
