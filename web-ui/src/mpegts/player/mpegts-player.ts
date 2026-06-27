@@ -191,6 +191,21 @@ export function createMpegtsPlayer(
     return video.currentTime >= target - LIVE_STATE_TOLERANCE && video.currentTime <= range.end + LIVE_STATE_TOLERANCE;
   }
 
+  /** Seconds behind the source-mode live edge; live-sync keeps this near the target latency. */
+  function getLiveEdgeLatency(): number | null {
+    if (sourceMode === "continuous-live-ts") {
+      const range = getLastBufferedRange();
+      return range ? range.end - video.currentTime : null;
+    }
+    if (sourceMode === "hls") {
+      if (hlsLive === false || !liveSessionAnchor) {
+        return null;
+      }
+      return lagBehindLiveEdge(liveSessionAnchor, video.currentTime);
+    }
+    return null;
+  }
+
   function computeLiveState(): boolean {
     if (sourceMode === "continuous-live-ts") {
       return isContinuousLiveTsLive();
@@ -384,7 +399,7 @@ export function createMpegtsPlayer(
 
   function initLiveHelpers(): void {
     if (!destroyLiveSync && liveSyncEnabled) {
-      destroyLiveSync = setupLiveSync(video, config, () => liveSessionAnchor);
+      destroyLiveSync = setupLiveSync(video, config, getLiveEdgeLatency);
     }
   }
 
@@ -422,7 +437,7 @@ export function createMpegtsPlayer(
     setLiveSync(enabled: boolean) {
       if (enabled && !destroyLiveSync) {
         liveSyncEnabled = true;
-        destroyLiveSync = setupLiveSync(video, config, () => liveSessionAnchor);
+        destroyLiveSync = setupLiveSync(video, config, getLiveEdgeLatency);
       } else if (!enabled && destroyLiveSync) {
         liveSyncEnabled = false;
         destroyLiveSync();
