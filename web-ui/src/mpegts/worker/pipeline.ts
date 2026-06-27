@@ -315,17 +315,6 @@ class Pipeline {
     return meta.resetRemuxer || !this._hlsSource;
   }
 
-  private _isStaticSegmentList(): boolean {
-    return !this._hlsSource && this._discreteSegments;
-  }
-
-  private _canReuseTsDemuxer(shouldAnchor: boolean): boolean {
-    if (!this._demuxer || !this._remuxer) {
-      return false;
-    }
-    return this._isStaticSegmentList() || (this._hlsSource !== null && !shouldAnchor);
-  }
-
   private _getTsTimestampBase(meta: SegmentMeta, reuseDemuxer: boolean): number {
     // Reused TS demuxer/remuxer paths are continuous segment boundaries, same as
     // ordinary HLS-TS segments. Do not add static segment.start to raw PTS/DTS,
@@ -423,7 +412,7 @@ class Pipeline {
   private _setupTSDemuxerRemuxer(probeData: unknown, meta: SegmentMeta): void {
     const shouldAnchor = this._shouldAnchorSegment(meta);
     const sourceKind = this._hlsSource ? "hls" : this._discreteSegments ? "static" : "single";
-    const canReuse = this._canReuseTsDemuxer(shouldAnchor);
+    const canReuse = this._demuxer !== null && this._remuxer !== null;
     const timestampBase = this._getTsTimestampBase(meta, canReuse);
     Log.v(
       this.TAG,
@@ -441,12 +430,11 @@ class Pipeline {
       return;
     }
 
-    const waitForInitialVideoKeyframe = shouldAnchor || !this._demuxer || !this._remuxer;
     if (this._demuxer) {
       this._demuxer.destroy();
     }
     const demuxer = new TSDemuxer(probeData as ConstructorParameters<typeof TSDemuxer>[0], {
-      waitForInitialVideoKeyframe,
+      waitForInitialVideoKeyframe: true,
     });
     this._demuxer = demuxer;
 
