@@ -7,21 +7,27 @@ can proxy, covering the scenarios needed to develop the web player:
   * HLS live           (HTTP, .m3u8 + TS segments)
   * HLS catchup        (HTTP, time-shift driven by the ``playseek`` query)
   * mpegts catchup     (RTSP time-shift driven by ``playseek`` on the URI)
+  * mpegts live        (RTP multicast / 组播, joined by rtp2httpd via ``-r lo``)
 
-Each scenario is generated for two codec combinations:
+Codec combinations covered:
 
-  * ``h264-mp2``  : H.264 video + MPEG-1/2 Layer II audio
-  * ``hevc-aac``  : H.265/HEVC video + AAC audio
+  * ``h264-mp2``   : H.264 video + MPEG-1/2 Layer II audio
+  * ``hevc-aac``   : H.265/HEVC video + AAC audio
+  * ``hevc-ac3``   : H.265/HEVC video + AC-3 audio   (北京卫视 4K style)
+  * ``hevc-eac3``  : H.265/HEVC video + E-AC-3 audio (北京卫视 4K style)
 
-Catchup correctness is made *visible*: catchup video burns the requested wall
-clock into every frame using ffmpeg ``drawtext`` with ``%{pts:gmtime:<begin>}``.
-So if you request ``playseek`` starting at 12:00:00 UTC, the picture shows a
-clock that starts at 12:00:00 UTC and advances -- proving the time -> picture
-mapping end to end.
+Any external .ts file can also be published as a multicast live channel
+(looped, stream-copied) via ``--ts-file PATH`` -- handy for debugging a stream
+a user attached to an issue.
+
+Catchup correctness is made *visible*: catchup video burns the requested time
+into every frame (``SEEK <yyyy-mm-dd hh-mm-ss> UTC`` + an advancing counter).
+So if you request ``playseek`` starting at 12:00:00 UTC, the picture shows
+``SEEK 2026-06-30 12-00-00 UTC`` -- proving the time -> picture mapping.
 
 The script only starts the *upstreams* and writes an rtp2httpd config; it does
-not launch rtp2httpd itself (run that separately, see ``--print-run-cmd``).
-Requires ``ffmpeg`` on PATH (or pass ``--ffmpeg``).
+not launch rtp2httpd itself (it prints the run command). Requires ``ffmpeg`` on
+PATH (or pass ``--ffmpeg``); multicast channels need ``rtp2httpd ... -r lo``.
 """
 
 from __future__ import annotations
@@ -42,7 +48,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+# Profiles used for HLS/RTSP scenarios (must be browser-friendly enough to test).
 PROFILES = ("h264-mp2", "hevc-aac")
+# Profiles offered as multicast (组播) live channels, incl. 北京卫视 4K style combos.
+MCAST_PROFILES = ("h264-mp2", "hevc-ac3", "hevc-eac3")
 
 # ---------------------------------------------------------------------------
 # ffmpeg argument helpers
@@ -52,7 +61,7 @@ PROFILES = ("h264-mp2", "hevc-aac")
 def video_args(profile: str) -> list[str]:
     """Encoder args for the video stream of *profile* (keyframe every second,
     headers repeated so a client joining mid-stream can start decoding)."""
-    if profile == "h264-mp2":
+    if profile.startswith("h264"):
         return [
             "-c:v",
             "libx264",
@@ -88,10 +97,10 @@ def video_args(profile: str) -> list[str]:
 
 
 def audio_args(profile: str) -> list[str]:
-    """Encoder args for the audio stream of *profile*."""
-    if profile == "h264-mp2":
-        return ["-c:a", "mp2", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
-    return ["-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-ac", "2"]
+    """Encoder args for the audio stream of *profile* (codec from the suffix)."""
+    acodec = profile.split("-", 1)[1]  # mp2 | aac | ac3 | eac3
+    bitrate = {"mp2": "192k", "aac": "128k", "ac3": "192k", "eac3": "192k"}.get(acodec, "128k")
+    return ["-c:a", acodec, "-b:a", bitrate, "-ar", "48000", "-ac", "2"]
 
 
 def _esc(text: str) -> str:
@@ -125,12 +134,12 @@ def catchup_filter(profile: str, begin_epoch: int) -> str:
     return f"{label},{seek},{elapsed}"
 
 
-def lavfi_inputs() -> list[str]:
+def lavfi_inputs(size: str = "1280x720") -> list[str]:
     return [
         "-f",
         "lavfi",
         "-i",
-        "testsrc2=size=1280x720:rate=25",
+        f"testsrc2=size={size}:rate=25",
         "-f",
         "lavfi",
         "-i",
@@ -537,17 +546,81 @@ class RTSPOrigin:
 
 
 # ---------------------------------------------------------------------------
+# Multicast (组播) live sender
+# ---------------------------------------------------------------------------
+
+
+class MulticastLive:
+    """Streams RTP/MPEG-TS to a multicast group (rtp2httpd joins it via -r lo).
+
+    Either generates content for a codec *profile* (with a LIVE overlay) or
+    stream-copies an arbitrary external .ts *ts_file* (looped) so a real-world
+    stream from a bug report can be replayed for debugging.
+    """
+
+    def __init__(
+        self,
+        ffmpeg: str,
+        host: str,
+        group: str,
+        port: int,
+        profile: str | None = None,
+        ts_file: str | None = None,
+        size: str = "960x540",
+    ):
+        self.ffmpeg = ffmpeg
+        self.host = host
+        self.group = group
+        self.port = port
+        self.profile = profile
+        self.ts_file = ts_file
+        self.size = size
+        self.proc: subprocess.Popen[bytes] | None = None
+
+    def url(self) -> str:
+        return f"rtp://{self.group}:{self.port}"
+
+    def _cmd(self) -> list[str]:
+        common = [self.ffmpeg, "-hide_banner", "-loglevel", "error"]
+        out = f"{self.url()}?localaddr={self.host}&ttl=1&pkt_size=1316"
+        if self.ts_file:
+            # Stream-copy the original bitstream so the exact codecs are relayed.
+            return [*common, "-re", "-stream_loop", "-1", "-i", self.ts_file, "-c", "copy", "-f", "rtp_mpegts", out]
+        prof = self.profile or "h264-mp2"
+        return [
+            *common,
+            "-re",
+            *lavfi_inputs(self.size),
+            "-vf",
+            live_filter(prof),
+            *video_args(prof),
+            *audio_args(prof),
+            "-f",
+            "rtp_mpegts",
+            out,
+        ]
+
+    def start(self) -> None:
+        self.proc = subprocess.Popen(self._cmd(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def stop(self) -> None:
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+
+
+# ---------------------------------------------------------------------------
 # Config generation
 # ---------------------------------------------------------------------------
 
 
-def build_services_m3u(http_hostport: str, rtsp_hostport: str) -> str:
-    """Build the [services] M3U covering all scenarios x both codecs.
+def build_services_m3u(http_hostport: str, rtsp_hostport: str, mcast_channels: list[tuple[str, str, str]]) -> str:
+    """Build the [services] M3U covering all scenarios.
 
-    Each HLS channel is HLS-live (``.m3u8``) with HTTP catchup; each mpegts
-    channel is RTSP-live with RTSP catchup. Catchup sources stream TS per time
-    window (what the web player's ``buildCatchupSegments`` expects) so playback
-    starts immediately and the requested time is burned into the picture.
+    HLS channels are HLS-live (``.m3u8``) with HTTP catchup; RTSP channels are
+    mpegts-live with RTSP catchup. Catchup sources stream TS per time window
+    (what the web player's ``buildCatchupSegments`` expects) so playback starts
+    immediately and the requested time is burned into the picture. ``mcast_channels``
+    are RTP-multicast (组播) live channels passed as ``(group_title, name, rtp_url)``.
     """
     tpl = "playseek={utc:YmdHMS}-{utcend:YmdHMS}"
     lines = ["#EXTM3U"]
@@ -565,6 +638,8 @@ def build_services_m3u(http_hostport: str, rtsp_hostport: str) -> str:
             f'#EXTINF:-1 group-title="mpegts" catchup="default" catchup-source="{src}",mpegts ({prof})',
             f"rtsp://{rtsp_hostport}/live/{prof}",
         ]
+    for group_title, name, rtp_url in mcast_channels:
+        lines += [f'#EXTINF:-1 group-title="{group_title}",{name}', rtp_url]
     return "\n".join(lines) + "\n"
 
 
@@ -589,6 +664,15 @@ def main() -> int:
     ap.add_argument("--ffmpeg", default=shutil.which("ffmpeg") or "ffmpeg")
     ap.add_argument("--config", default="/tmp/r2h-devlab.conf")
     ap.add_argument("--workdir", default=tempfile.mkdtemp(prefix="r2h-devlab-"))
+    ap.add_argument("--mcast-port", type=int, default=5004, help="UDP port for multicast (组播) live channels")
+    ap.add_argument("--mcast-base", type=int, default=20, help="last octet of first 239.255.0.x multicast group")
+    ap.add_argument(
+        "--ts-file",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="publish an external .ts file as a multicast live channel (repeatable; for debugging)",
+    )
     args = ap.parse_args()
 
     if not shutil.which(args.ffmpeg) and not os.path.isfile(args.ffmpeg):
@@ -611,11 +695,41 @@ def main() -> int:
     rtsp = RTSPOrigin(args.ffmpeg, args.host, args.rtsp_port)
     rtsp.start()
 
+    # Multicast (组播) live: generated codec profiles + any external .ts files.
+    mcast_labels = {
+        "h264-mp2": "mcast (h264-mp2)",
+        "hevc-ac3": "BTV-4K sim (hevc-ac3)",
+        "hevc-eac3": "BTV-4K sim (hevc-eac3)",
+    }
+    senders: list[MulticastLive] = []
+    mcast_channels: list[tuple[str, str, str]] = []
+    octet = args.mcast_base
+    for prof in MCAST_PROFILES:
+        group = f"239.255.0.{octet}"
+        octet += 1
+        s = MulticastLive(args.ffmpeg, args.host, group, args.mcast_port, profile=prof)
+        senders.append(s)
+        mcast_channels.append(("mpegts (multicast)", mcast_labels.get(prof, f"mcast ({prof})"), s.url()))
+    for path in args.ts_file:
+        if not os.path.isfile(path):
+            print(f"WARNING: --ts-file not found, skipping: {path}", file=sys.stderr)
+            continue
+        group = f"239.255.0.{octet}"
+        octet += 1
+        s = MulticastLive(args.ffmpeg, args.host, group, args.mcast_port, ts_file=path)
+        senders.append(s)
+        mcast_channels.append(("mpegts (file)", f"file {os.path.basename(path)}", s.url()))
+    for s in senders:
+        s.start()
+
     http_hostport = f"{args.host}:{args.http_port}"
     rtsp_hostport = f"{args.host}:{args.rtsp_port}"
-    write_config(args.config, args.r2h_port, build_services_m3u(http_hostport, rtsp_hostport))
+    write_config(args.config, args.r2h_port, build_services_m3u(http_hostport, rtsp_hostport, mcast_channels))
 
     print(f"devlab up: HTTP {http_hostport}  RTSP {rtsp_hostport}  workdir {args.workdir}")
+    print(
+        f"multicast live channels: {len(mcast_channels)} (groups 239.255.0.{args.mcast_base}+, port {args.mcast_port})"
+    )
     print(f"wrote rtp2httpd config: {args.config}")
     print(f"run rtp2httpd:  ./build/rtp2httpd -c {args.config} -r lo")
     print("Ctrl-C to stop.")
@@ -630,6 +744,8 @@ def main() -> int:
         rtsp.stop()
         for gen in live:
             gen.stop()
+        for s in senders:
+            s.stop()
     return 0
 
 

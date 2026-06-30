@@ -4,17 +4,32 @@
 rtp2httpd can proxy, so you can develop the web player against the scenarios it
 needs to support:
 
-| Scenario        | Delivery            | rtp2httpd proxy | Codecs                    |
-| --------------- | ------------------- | --------------- | ------------------------- |
-| HLS live        | HTTP `.m3u8` + TS   | `/http`         | `h264-mp2`, `hevc-aac`    |
-| HLS catchup     | HTTP TS (`playseek`)| `/http`         | `h264-mp2`, `hevc-aac`    |
-| mpegts catchup  | RTSP TS (`playseek`)| `/rtsp`         | `h264-mp2`, `hevc-aac`    |
+| Scenario        | Delivery                | rtp2httpd proxy | Codecs                              |
+| --------------- | ----------------------- | --------------- | ----------------------------------- |
+| HLS live        | HTTP `.m3u8` + TS       | `/http`         | `h264-mp2`, `hevc-aac`              |
+| HLS catchup     | HTTP TS (`playseek`)    | `/http`         | `h264-mp2`, `hevc-aac`              |
+| mpegts catchup  | RTSP TS (`playseek`)    | `/rtsp`         | `h264-mp2`, `hevc-aac`              |
+| mpegts live     | RTP multicast (组播)    | `/rtp` (`-r lo`)| `h264-mp2`, `hevc-ac3`, `hevc-eac3` |
+| external file   | RTP multicast (looped)  | `/rtp` (`-r lo`)| whatever the `.ts` file contains    |
 
-(Plain multicast mpegts live is already covered without this lab — see the
-`build-run` skill.)
+- `h264-mp2`  = H.264 video + MPEG-1/2 Layer II audio
+- `hevc-aac`  = H.265/HEVC video + AAC audio
+- `hevc-ac3`  = H.265/HEVC video + AC-3 audio   (北京卫视 4K style)
+- `hevc-eac3` = H.265/HEVC video + E-AC-3 audio (北京卫视 4K style)
 
-- `h264-mp2` = H.264 video + MPEG-1/2 Layer II audio
-- `hevc-aac` = H.265/HEVC video + AAC audio
+Multicast channels use groups `239.255.0.20+` on `--mcast-port` (default 5004);
+rtp2httpd must be run with `-r lo` to join them on loopback.
+
+## Debugging a user-provided .ts file
+
+Publish any external `.ts` as a multicast live channel (stream-copied, so the
+exact codecs/bitstream are relayed) — useful for reproducing a stream attached
+to a bug report:
+
+```bash
+uv run python tools/devlab/devlab.py --ts-file /path/to/user-report.ts
+# adds a "file <name>" channel proxied through rtp2httpd
+```
 
 ## Catchup correctness is visible
 
@@ -54,9 +69,11 @@ ffmpeg -ss 9 -i "http://127.0.0.1:5140/mpegts/mpegts%20%28h264-mp2%29/catchup?pl
 
 ## Notes
 
-- HEVC video playback in the browser depends on the browser's Media Source
-  Extensions HEVC support; Chromium on Linux often lacks it even though the
-  stream/relay is correct. Use `ffprobe`/frame extraction to validate the relay.
+- HEVC video and AC-3/E-AC-3 audio playback in the browser depend on the
+  browser's Media Source Extensions support; Chromium on Linux usually lacks
+  both even though the stream/relay is correct. Use `ffprobe`/frame extraction
+  to validate the relay (the `hevc-ac3`/`hevc-eac3` channels are mainly for
+  relay/transmux development and capable players/devices).
 - The catchup endpoints stream TS per requested window (what the player's
   `buildCatchupSegments` expects), so playback starts immediately. An additional
   HLS-VOD catchup endpoint (`/catchup/<profile>/index.m3u8?playseek=...`) exists

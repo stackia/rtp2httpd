@@ -72,9 +72,12 @@ Non-obvious gotchas discovered during setup:
   Without `repeat-headers=1` / `+resend_headers` the player stalls or shows a decode/playback error
   even though the bytes are flowing.
 - **Multi-scenario player dev lab**: `tools/devlab/devlab.py` (run via `uv run python`) starts mock
-  upstreams for HLS live, HLS catchup, and RTSP/mpegts catchup across `h264-mp2` and `hevc-aac`, and
-  writes an rtp2httpd config; see `tools/devlab/README.md`. Catchup video burns the requested
-  `playseek` time into the picture so seek correctness is visible. Two non-obvious gotchas it encodes:
+  upstreams for HLS live/catchup, RTSP/mpegts catchup, and RTP multicast (组播) mpegts live, across
+  `h264-mp2`, `hevc-aac`, `hevc-ac3`, `hevc-eac3`; `--ts-file PATH` republishes an arbitrary `.ts`
+  file (stream-copied, looped) as a multicast channel for debugging user-reported streams. It writes
+  an rtp2httpd config (run the daemon with `-r lo` for the multicast channels); see
+  `tools/devlab/README.md`. Catchup video burns the requested `playseek` time into the picture so
+  seek correctness is visible. Two non-obvious gotchas it encodes:
   (1) the web player's `buildCatchupSegments` expects each `catchup-source` window to return TS, not a
   sub-`.m3u8`, so catchup endpoints stream TS per window; (2) ffmpeg `drawtext` mis-parses a `box*`
   option placed before a `text=` containing a `%{...}` expansion, and `%{...:...}` expansions with
