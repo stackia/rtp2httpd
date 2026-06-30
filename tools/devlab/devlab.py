@@ -48,10 +48,21 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-# Profiles used for HLS/RTSP scenarios (must be browser-friendly enough to test).
+# Profiles used for RTSP scenarios (must be browser-friendly enough to test).
 PROFILES = ("h264-mp2", "hevc-aac")
 # Profiles offered as multicast (组播) live channels, incl. 北京卫视 4K style combos.
 MCAST_PROFILES = ("h264-mp2", "hevc-ac3", "hevc-eac3")
+
+# HLS live channels covering both segment specs: HLS-TS (MPEG-TS segments) and
+# HLS-fMP4 (fragmented MP4: an init.mp4 + .m4s segments). fMP4 carries AAC audio
+# (MP2-in-MP4 is not well supported), so the fMP4 rows use *-aac profiles.
+# Tuple: (channel_label, profile, seg_type, live_key).
+HLS_CHANNELS = (
+    ("HLS-TS (h264-mp2)", "h264-mp2", "mpegts", "h264-mp2-ts"),
+    ("HLS-TS (hevc-aac)", "hevc-aac", "mpegts", "hevc-aac-ts"),
+    ("HLS-fMP4 (h264-aac)", "h264-aac", "fmp4", "h264-aac-fmp4"),
+    ("HLS-fMP4 (hevc-aac)", "hevc-aac", "fmp4", "hevc-aac-fmp4"),
+)
 
 # ---------------------------------------------------------------------------
 # ffmpeg argument helpers
@@ -175,16 +186,47 @@ def parse_playseek_begin(playseek: str) -> int:
 
 
 class LiveHLS:
-    """Runs a background ffmpeg that continuously writes a live HLS playlist."""
+    """Runs a background ffmpeg that continuously writes a live HLS playlist.
 
-    def __init__(self, ffmpeg: str, profile: str, outdir: str):
+    ``seg_type`` selects the HLS specification: ``mpegts`` (HLS-TS, .ts segments)
+    or ``fmp4`` (HLS-fMP4, an init.mp4 + .m4s fragments referenced via EXT-X-MAP).
+    """
+
+    def __init__(self, ffmpeg: str, profile: str, outdir: str, seg_type: str = "mpegts"):
         self.ffmpeg = ffmpeg
         self.profile = profile
         self.outdir = outdir
+        self.seg_type = seg_type
         self.proc: subprocess.Popen[bytes] | None = None
 
     def start(self) -> None:
         os.makedirs(self.outdir, exist_ok=True)
+        hls_opts = [
+            "-f",
+            "hls",
+            "-hls_time",
+            "2",
+            "-hls_list_size",
+            "6",
+            "-hls_flags",
+            "delete_segments+append_list+omit_endlist",
+        ]
+        if self.seg_type == "fmp4":
+            hls_opts += [
+                "-hls_segment_type",
+                "fmp4",
+                "-hls_fmp4_init_filename",
+                "init.mp4",
+                "-hls_segment_filename",
+                os.path.join(self.outdir, "seg_%05d.m4s"),
+            ]
+        else:
+            hls_opts += [
+                "-hls_segment_type",
+                "mpegts",
+                "-hls_segment_filename",
+                os.path.join(self.outdir, "seg_%05d.ts"),
+            ]
         cmd = [
             self.ffmpeg,
             "-hide_banner",
@@ -196,16 +238,7 @@ class LiveHLS:
             live_filter(self.profile),
             *video_args(self.profile),
             *audio_args(self.profile),
-            "-f",
-            "hls",
-            "-hls_time",
-            "2",
-            "-hls_list_size",
-            "6",
-            "-hls_flags",
-            "delete_segments+append_list+omit_endlist",
-            "-hls_segment_filename",
-            os.path.join(self.outdir, "seg_%05d.ts"),
+            *hls_opts,
             os.path.join(self.outdir, "index.m3u8"),
         ]
         self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -302,7 +335,12 @@ def make_http_handler(
             if not os.path.isfile(path):
                 self._send(404, "text/plain", b"not found")
                 return
-            ctype = "application/vnd.apple.mpegurl" if path.endswith(".m3u8") else "video/mp2t"
+            if path.endswith(".m3u8"):
+                ctype = "application/vnd.apple.mpegurl"
+            elif path.endswith((".mp4", ".m4s")):
+                ctype = "video/mp4"  # fMP4 init.mp4 + .m4s fragments
+            else:
+                ctype = "video/mp2t"
             with open(path, "rb") as fh:
                 self._send(200, ctype, fh.read())
 
@@ -624,12 +662,13 @@ def build_services_m3u(http_hostport: str, rtsp_hostport: str, mcast_channels: l
     """
     tpl = "playseek={utc:YmdHMS}-{utcend:YmdHMS}"
     lines = ["#EXTM3U"]
-    for prof in PROFILES:
-        # HLS live (.m3u8) + HLS catchup (HTTP TS window): covers HLS 直播 + HLS 回看
+    for label, prof, _seg_type, key in HLS_CHANNELS:
+        # HLS live (.m3u8, TS or fMP4 segments) + HLS catchup (HTTP TS window):
+        # covers HLS 直播 + HLS 回看 across both segment specs.
         src = f"http://{http_hostport}/catchup-ts/{prof}?{tpl}"
         lines += [
-            f'#EXTINF:-1 group-title="HLS" catchup="default" catchup-source="{src}",HLS ({prof})',
-            f"http://{http_hostport}/live/{prof}/index.m3u8",
+            f'#EXTINF:-1 group-title="HLS" catchup="default" catchup-source="{src}",{label}',
+            f"http://{http_hostport}/live/{key}/index.m3u8",
         ]
     for prof in PROFILES:
         # mpegts live (RTSP) + mpegts catchup (RTSP TS window): covers mpegts 回看
@@ -683,7 +722,10 @@ def main() -> int:
     catchup_root = os.path.join(args.workdir, "catchup")
     os.makedirs(catchup_root, exist_ok=True)
 
-    live = [LiveHLS(args.ffmpeg, p, os.path.join(live_root, p)) for p in PROFILES]
+    live = [
+        LiveHLS(args.ffmpeg, prof, os.path.join(live_root, key), seg_type)
+        for _label, prof, seg_type, key in HLS_CHANNELS
+    ]
     for gen in live:
         gen.start()
 

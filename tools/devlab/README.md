@@ -6,8 +6,9 @@ needs to support:
 
 | Scenario        | Delivery                | rtp2httpd proxy | Codecs                              |
 | --------------- | ----------------------- | --------------- | ----------------------------------- |
-| HLS live        | HTTP `.m3u8` + TS       | `/http`         | `h264-mp2`, `hevc-aac`              |
-| HLS catchup     | HTTP TS (`playseek`)    | `/http`         | `h264-mp2`, `hevc-aac`              |
+| HLS-TS live     | HTTP `.m3u8` + `.ts`    | `/http`         | `h264-mp2`, `hevc-aac`              |
+| HLS-fMP4 live   | HTTP `.m3u8` + `.m4s`   | `/http`         | `h264-aac`, `hevc-aac`              |
+| HLS catchup     | HTTP TS (`playseek`)    | `/http`         | all of the above                    |
 | mpegts catchup  | RTSP TS (`playseek`)    | `/rtsp`         | `h264-mp2`, `hevc-aac`              |
 | mpegts live     | RTP multicast (组播)    | `/rtp` (`-r lo`)| `h264-mp2`, `hevc-ac3`, `hevc-eac3` |
 | external file   | RTP multicast (looped)  | `/rtp` (`-r lo`)| whatever the `.ts` file contains    |
@@ -16,6 +17,10 @@ needs to support:
 - `hevc-aac`  = H.265/HEVC video + AAC audio
 - `hevc-ac3`  = H.265/HEVC video + AC-3 audio   (北京卫视 4K style)
 - `hevc-eac3` = H.265/HEVC video + E-AC-3 audio (北京卫视 4K style)
+
+HLS live is offered in both segment specs: **HLS-TS** (MPEG-TS `.ts` segments)
+and **HLS-fMP4** (an `init.mp4` referenced via `#EXT-X-MAP` + `.m4s` fragments).
+fMP4 carries AAC audio (MP2-in-MP4 is unsupported), so fMP4 channels use AAC.
 
 Multicast channels use groups `239.255.0.20+` on `--mcast-port` (default 5004);
 rtp2httpd must be run with `-r lo` to join them on loopback.

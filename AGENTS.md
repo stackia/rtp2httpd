@@ -72,8 +72,9 @@ Non-obvious gotchas discovered during setup:
   Without `repeat-headers=1` / `+resend_headers` the player stalls or shows a decode/playback error
   even though the bytes are flowing.
 - **Multi-scenario player dev lab**: `tools/devlab/devlab.py` (run via `uv run python`) starts mock
-  upstreams for HLS live/catchup, RTSP/mpegts catchup, and RTP multicast (组播) mpegts live, across
-  `h264-mp2`, `hevc-aac`, `hevc-ac3`, `hevc-eac3`; `--ts-file PATH` republishes an arbitrary `.ts`
+  upstreams for HLS live (both HLS-TS and HLS-fMP4 segment specs), HLS/RTSP catchup, and RTP multicast
+  (组播) mpegts live, across `h264-mp2`, `h264-aac`, `hevc-aac`, `hevc-ac3`, `hevc-eac3`; `--ts-file
+  PATH` republishes an arbitrary `.ts`
   file (stream-copied, looped) as a multicast channel for debugging user-reported streams. It writes
   an rtp2httpd config (run the daemon with `-r lo` for the multicast channels); see
   `tools/devlab/README.md`. Catchup video burns the requested `playseek` time into the picture so
