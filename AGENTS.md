@@ -63,3 +63,11 @@ Non-obvious gotchas discovered during setup:
 - **Loopback multicast**: to stream/receive RTP multicast on this VM (manual testing or multicast e2e
   tests), start the daemon with `-r lo` so it joins the group on the loopback interface; senders must
   set `IP_MULTICAST_IF` to `127.0.0.1`. The e2e multicast fixtures already pass `-r lo`.
+- **Decodable stream for the web player**: the e2e RTP helpers emit TS *null* packets, which relay
+  fine but cannot be decoded by `/player`. To actually exercise playback/decoding, feed the daemon a
+  real H.264+AAC MPEG-TS via `ffmpeg` (installed at `/usr/bin/ffmpeg`) over RTP multicast on
+  loopback, then point a channel at that group. A client (the player) joining a live stream mid-GOP
+  can only start decoding once it sees SPS/PPS + PAT/PMT, so the encoder MUST repeat headers:
+  `ffmpeg -re -f lavfi -i testsrc2=size=1280x720:rate=25 -f lavfi -i sine=frequency=440 -c:v libx264 -tune zerolatency -x264-params "keyint=25:min-keyint=25:scenecut=0:repeat-headers=1" -c:a aac -ac 2 -mpegts_flags +resend_headers -pat_period 0.2 -f rtp_mpegts "rtp://239.255.0.1:9988?localaddr=127.0.0.1&ttl=1&pkt_size=1316"`.
+  Without `repeat-headers=1` / `+resend_headers` the player stalls or shows a decode/playback error
+  even though the bytes are flowing.
