@@ -5,7 +5,7 @@ SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 PKG_DIR=$(dirname "$SCRIPT_DIR")
 CONFIG_ENV="$PKG_DIR/app/.env"
 RUNTIME_ENV="$PKG_DIR/app/environment"
-BIN="$PKG_DIR/app/bin/rtp2httpd"
+BIN_DIR="$PKG_DIR/app/bin"
 CONFIG_FILE="$PKG_DIR/app/config/rtp2httpd.conf"
 PIDFILE="$PKG_DIR/app/cache/rtp2httpd.pid"
 RUN_LOG="$PKG_DIR/log/run.log"
@@ -13,6 +13,26 @@ RUN_LOG="$PKG_DIR/log/run.log"
 log() {
   mkdir -p "$PKG_DIR/log"
   printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$RUN_LOG"
+}
+
+select_binary() {
+  machine=$(uname -m 2>/dev/null || true)
+
+  case "$machine" in
+  aarch64 | arm64) bin="$BIN_DIR/rtp2httpd-aarch64" ;;
+  x86_64 | amd64) bin="$BIN_DIR/rtp2httpd-x86_64" ;;
+  *)
+    log "Unsupported platform architecture: ${machine:-unknown}"
+    exit 1
+    ;;
+  esac
+
+  if [ ! -x "$bin" ]; then
+    log "Binary is missing or not executable: $bin"
+    exit 1
+  fi
+
+  printf '%s' "$bin"
 }
 
 # Build a log-safe command line, redacting secret flag values.
@@ -89,10 +109,7 @@ load_env_file "$RUNTIME_ENV"
 : "${RTP2HTTPD_RTSP_USER_AGENT:=}"
 : "${RTP2HTTPD_EXTRA_ARGS:=}"
 
-if [ ! -x "$BIN" ]; then
-  log "Binary is missing or not executable: $BIN"
-  exit 1
-fi
+BIN=$(select_binary)
 
 if [ -f "$PIDFILE" ]; then
   OLD_PID=$(cat "$PIDFILE" 2>/dev/null || true)
