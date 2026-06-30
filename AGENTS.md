@@ -65,7 +65,8 @@ Non-obvious notes:
   an rtp2httpd config (run the daemon with `-r lo` for the multicast channels); see
   `tools/devlab/README.md`. Catchup video burns the requested `playseek` time into the picture so
   seek correctness is visible. Two non-obvious gotchas it encodes:
-  (1) the web player's `buildCatchupSegments` expects each `catchup-source` window to return TS, not a
-  sub-`.m3u8`, so catchup endpoints stream TS per window; (2) ffmpeg `drawtext` mis-parses a `box*`
+  (1) the web player's `buildCatchupSegments` expands `catchup-source` per time window — HLS catchup
+  returns an HLS VOD `m3u8`+`.ts` per window (the loader detects the nested playlist), while
+  mpegts/RTSP catchup streams continuous TS per window; (2) ffmpeg `drawtext` mis-parses a `box*`
   option placed before a `text=` containing a `%{...}` expansion, and `%{...:...}` expansions with
   colon args fight filtergraph escaping — prefer `borderw`/`bordercolor` and colon-free text.

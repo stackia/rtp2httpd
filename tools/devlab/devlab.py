@@ -33,8 +33,8 @@ PATH (or pass ``--ffmpeg``); multicast channels need ``rtp2httpd ... -r lo``.
 from __future__ import annotations
 
 import argparse
+import math
 import os
-import re
 import shutil
 import socket
 import struct
@@ -163,21 +163,37 @@ def lavfi_inputs(size: str = "1280x720") -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def parse_playseek_begin(playseek: str) -> int:
-    """Return the begin time of a playseek value as a UTC epoch (seconds).
+def _parse_time_token(tok: str) -> int:
+    """Parse one playseek time token to a UTC epoch (seconds).
 
     Accepts the formats rtp2httpd forwards to upstreams: compact
     ``yyyyMMddHHmmss`` (optionally ``GMT``/``Z`` suffixed) and unix seconds.
-    Falls back to "now" if the value cannot be parsed.
+    Falls back to "now" if the token cannot be parsed.
     """
-    begin = playseek.split("-")[0].strip() if playseek else ""
-    begin = begin.replace("GMT", "").replace("Z", "").replace("T", "")
-    if begin.isdigit() and len(begin) <= 10:
-        return int(begin)
-    if len(begin) >= 14 and begin[:14].isdigit():
-        dt = datetime.strptime(begin[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+    tok = tok.replace("GMT", "").replace("Z", "").replace("T", "").strip()
+    if tok.isdigit() and len(tok) <= 10:
+        return int(tok)
+    if len(tok) >= 14 and tok[:14].isdigit():
+        dt = datetime.strptime(tok[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
         return int(dt.timestamp())
     return int(time.time())
+
+
+def parse_playseek_begin(playseek: str) -> int:
+    """Return the begin time of a playseek value as a UTC epoch (seconds)."""
+    return _parse_time_token(playseek.split("-")[0]) if playseek else int(time.time())
+
+
+def parse_playseek_range(playseek: str) -> tuple[int, int]:
+    """Return ``(begin, end)`` UTC epochs for a ``BEGIN-END`` playseek value.
+
+    rtp2httpd forwards compact ``yyyyMMddHHmmss`` times (no internal dashes) so a
+    plain ``-`` split is safe. A missing/!invalid end defaults to begin + 60s.
+    """
+    toks = [t for t in playseek.split("-") if t.strip()] if playseek else []
+    begin = _parse_time_token(toks[0]) if toks else int(time.time())
+    end = _parse_time_token(toks[1]) if len(toks) >= 2 else begin + 60
+    return begin, (end if end > begin else begin + 60)
 
 
 # ---------------------------------------------------------------------------
@@ -249,62 +265,57 @@ class LiveHLS:
 
 
 # ---------------------------------------------------------------------------
-# Catchup HLS VOD generation (on demand, cached by begin time)
+# HLS VOD catchup (m3u8 + .ts slices, slices encoded lazily on demand)
 # ---------------------------------------------------------------------------
 
 
 class CatchupHLS:
-    """Generates short VOD HLS trees on demand, one per (profile, begin)."""
+    """Serves catchup as a real HLS VOD: an ``index.m3u8`` listing fixed-duration
+    ``.ts`` slices for the requested ``playseek`` window.
 
-    def __init__(self, ffmpeg: str, root: str, duration: int = 120):
+    The playlist is produced instantly (just text); each ``.ts`` slice is encoded
+    on demand when the client fetches it, with that slice's absolute wall-clock
+    time burned in -- so the VOD is time-correct without pre-encoding the whole
+    (possibly hours-long) window.
+    """
+
+    def __init__(self, ffmpeg: str, seg_dur: int = 6, max_segs: int = 900):
         self.ffmpeg = ffmpeg
-        self.root = root
-        self.duration = duration
-        self._locks: dict[str, threading.Lock] = {}
-        self._guard = threading.Lock()
+        self.seg_dur = seg_dur
+        self.max_segs = max_segs
 
-    def _lock_for(self, key: str) -> threading.Lock:
-        with self._guard:
-            return self._locks.setdefault(key, threading.Lock())
+    def playlist(self, base: str, profile: str, begin: int, end: int) -> str:
+        nseg = min(self.max_segs, max(1, math.ceil((end - begin) / self.seg_dur)))
+        lines = [
+            "#EXTM3U",
+            "#EXT-X-VERSION:3",
+            f"#EXT-X-TARGETDURATION:{self.seg_dur}",
+            "#EXT-X-MEDIA-SEQUENCE:0",
+            "#EXT-X-PLAYLIST-TYPE:VOD",
+        ]
+        for i in range(nseg):
+            lines += [f"#EXTINF:{self.seg_dur}.000,", f"{base}/catchup-seg/{profile}/{begin}/{i}.ts"]
+        lines.append("#EXT-X-ENDLIST")
+        return "\n".join(lines) + "\n"
 
-    def ensure(self, profile: str, begin_epoch: int) -> str:
-        """Generate (if needed) the VOD for (profile, begin) and return its dir."""
-        key = f"{profile}-{begin_epoch}"
-        outdir = os.path.join(self.root, key)
-        with self._lock_for(key):
-            ready = os.path.join(outdir, "index.m3u8")
-            if os.path.exists(ready):
-                return outdir
-            tmp = outdir + ".tmp"
-            shutil.rmtree(tmp, ignore_errors=True)
-            os.makedirs(tmp, exist_ok=True)
-            cmd = [
-                self.ffmpeg,
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                *lavfi_inputs(),
-                "-t",
-                str(self.duration),
-                "-vf",
-                catchup_filter(profile, begin_epoch),
-                *video_args(profile),
-                *audio_args(profile),
-                "-f",
-                "hls",
-                "-hls_time",
-                "2",
-                "-hls_list_size",
-                "0",
-                "-hls_playlist_type",
-                "vod",
-                "-hls_segment_filename",
-                os.path.join(tmp, "seg_%05d.ts"),
-                os.path.join(tmp, "index.m3u8"),
-            ]
-            subprocess.run(cmd, check=True)
-            os.replace(tmp, outdir)
-            return outdir
+    def segment_cmd(self, profile: str, begin: int, idx: int) -> list[str]:
+        seg_start = begin + idx * self.seg_dur
+        return [
+            self.ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            *lavfi_inputs(),
+            "-t",
+            str(self.seg_dur),
+            "-vf",
+            catchup_filter(profile, seg_start),
+            *video_args(profile),
+            *audio_args(profile),
+            "-f",
+            "mpegts",
+            "-",
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -312,9 +323,7 @@ class CatchupHLS:
 # ---------------------------------------------------------------------------
 
 
-def make_http_handler(
-    host: str, port: int, live_root: str, catchup: CatchupHLS, ffmpeg: str
-) -> type[BaseHTTPRequestHandler]:
+def make_http_handler(host: str, port: int, live_root: str, catchup: CatchupHLS) -> type[BaseHTTPRequestHandler]:
     base = f"http://{host}:{port}"
 
     class Handler(BaseHTTPRequestHandler):
@@ -351,45 +360,20 @@ def make_http_handler(
 
         def _catchup_playlist(self, profile: str, qs: dict[str, list[str]]) -> None:
             playseek = (qs.get("playseek") or qs.get("tvdr") or [""])[0]
-            begin = parse_playseek_begin(playseek)
-            outdir = catchup.ensure(profile, begin)
-            with open(os.path.join(outdir, "index.m3u8"), encoding="utf-8") as fh:
-                text = fh.read()
-            # Rewrite relative segment names to absolute URLs that embed begin, so
-            # rtp2httpd rewrites them onto its /http proxy and they never collide.
-            text = re.sub(
-                r"^(seg_\d+\.ts)$",
-                lambda m: f"{base}/catchup-seg/{profile}/{begin}/{m.group(1)}",
-                text,
-                flags=re.MULTILINE,
-            )
+            begin, end = parse_playseek_range(playseek)
+            # Absolute slice URLs (embed begin) so rtp2httpd rewrites them onto its
+            # /http proxy and they never collide across windows.
+            text = catchup.playlist(base, profile, begin, end)
             self._send(200, "application/vnd.apple.mpegurl", text.encode())
 
-        def _catchup_ts(self, profile: str, qs: dict[str, list[str]]) -> None:
-            playseek = (qs.get("playseek") or qs.get("tvdr") or [""])[0]
-            begin = parse_playseek_begin(playseek)
-            cmd = [
-                ffmpeg,
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-re",
-                *lavfi_inputs(),
-                "-t",
-                "120",
-                "-vf",
-                catchup_filter(profile, begin),
-                *video_args(profile),
-                *audio_args(profile),
-                "-f",
-                "mpegts",
-                "-",
-            ]
+        def _catchup_seg(self, profile: str, begin: int, idx: int) -> None:
             self.send_response(200)
             self.send_header("Content-Type", "video/mp2t")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            proc = subprocess.Popen(
+                catchup.segment_cmd(profile, begin, idx), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+            )
             assert proc.stdout is not None
             try:
                 while True:
@@ -413,9 +397,8 @@ def make_http_handler(
                 elif len(parts) >= 2 and parts[0] == "catchup" and parts[-1] == "index.m3u8":
                     self._catchup_playlist(parts[1], qs)
                 elif len(parts) == 4 and parts[0] == "catchup-seg":
-                    self._serve_file(os.path.join(catchup.root, f"{parts[1]}-{parts[2]}", parts[3]))
-                elif len(parts) == 2 and parts[0] == "catchup-ts":
-                    self._catchup_ts(parts[1], qs)
+                    # /catchup-seg/<profile>/<begin>/<idx>.ts
+                    self._catchup_seg(parts[1], int(parts[2]), int(parts[3].removesuffix(".ts")))
                 else:
                     self._send(404, "text/plain", b"not found")
             except BrokenPipeError, ConnectionError:
@@ -663,9 +646,9 @@ def build_services_m3u(http_hostport: str, rtsp_hostport: str, mcast_channels: l
     tpl = "playseek={utc:YmdHMS}-{utcend:YmdHMS}"
     lines = ["#EXTM3U"]
     for label, prof, _seg_type, key in HLS_CHANNELS:
-        # HLS live (.m3u8, TS or fMP4 segments) + HLS catchup (HTTP TS window):
-        # covers HLS 直播 + HLS 回看 across both segment specs.
-        src = f"http://{http_hostport}/catchup-ts/{prof}?{tpl}"
+        # HLS live (.m3u8, TS or fMP4 segments) + HLS catchup (HLS VOD m3u8+ts per
+        # window): covers HLS 直播 + HLS 回看 across both segment specs.
+        src = f"http://{http_hostport}/catchup/{prof}/index.m3u8?{tpl}"
         lines += [
             f'#EXTINF:-1 group-title="HLS" catchup="default" catchup-source="{src}",{label}',
             f"http://{http_hostport}/live/{key}/index.m3u8",
@@ -719,8 +702,6 @@ def main() -> int:
         return 1
 
     live_root = os.path.join(args.workdir, "live")
-    catchup_root = os.path.join(args.workdir, "catchup")
-    os.makedirs(catchup_root, exist_ok=True)
 
     live = [
         LiveHLS(args.ffmpeg, prof, os.path.join(live_root, key), seg_type)
@@ -729,8 +710,8 @@ def main() -> int:
     for gen in live:
         gen.start()
 
-    catchup = CatchupHLS(args.ffmpeg, catchup_root)
-    handler = make_http_handler(args.host, args.http_port, live_root, catchup, args.ffmpeg)
+    catchup = CatchupHLS(args.ffmpeg)
+    handler = make_http_handler(args.host, args.http_port, live_root, catchup)
     httpd = ThreadingHTTPServer((args.host, args.http_port), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
