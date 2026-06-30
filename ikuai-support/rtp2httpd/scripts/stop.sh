@@ -3,13 +3,33 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 PKG_DIR=$(dirname "$SCRIPT_DIR")
-BIN="$PKG_DIR/app/bin/rtp2httpd"
+BIN_DIR="$PKG_DIR/app/bin"
 PIDFILE="$PKG_DIR/app/cache/rtp2httpd.pid"
 RUN_LOG="$PKG_DIR/log/run.log"
 
 log() {
   mkdir -p "$PKG_DIR/log"
   printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$RUN_LOG"
+}
+
+select_binary() {
+  machine=$(uname -m 2>/dev/null || true)
+
+  case "$machine" in
+  aarch64 | arm64) bin="$BIN_DIR/rtp2httpd-aarch64" ;;
+  x86_64 | amd64) bin="$BIN_DIR/rtp2httpd-x86_64" ;;
+  *)
+    log "Unsupported platform architecture: ${machine:-unknown}"
+    return 1
+    ;;
+  esac
+
+  if [ ! -x "$bin" ]; then
+    log "Binary is missing or not executable: $bin"
+    return 1
+  fi
+
+  printf '%s' "$bin"
 }
 
 pid_belongs_to_us() {
@@ -47,6 +67,8 @@ if [ -z "$PID" ] || ! kill -0 "$PID" 2>/dev/null; then
   log "rtp2httpd is not running: stale pid file removed"
   exit 0
 fi
+
+BIN=$(select_binary) || exit 1
 
 if [ -d "/proc/$PID" ] && ! pid_belongs_to_us "$PID"; then
   rm -f "$PIDFILE"

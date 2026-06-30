@@ -1,6 +1,6 @@
 {
   "name": "rtp2httpd",
-  "version": "3.12.2",
+  "version": "3.14.2",
   "display_name": "rtp2httpd",
   "description": "面向 IPTV 场景的组播、RTSP、HTTP 流媒体转发服务，内置状态页面和 Web 播放器。可替代 udpxy 和 msd_lite。",
   "type": "0",

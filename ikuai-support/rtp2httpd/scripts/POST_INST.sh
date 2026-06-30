@@ -7,10 +7,18 @@ INSTALL_LOG="$PKG_DIR/log/install.log"
 
 mkdir -p "$PKG_DIR/log"
 
-if [ -f "$PKG_DIR/app/bin/rtp2httpd" ]; then
-  chmod 755 "$PKG_DIR/app/bin/rtp2httpd"
-else
-  printf '%s POST_INST warning: app/bin/rtp2httpd is missing\n' "$(date '+%Y-%m-%d %H:%M:%S')" >> "$INSTALL_LOG"
+missing=0
+for arch in aarch64 x86_64; do
+  bin="$PKG_DIR/app/bin/rtp2httpd-$arch"
+  if [ -f "$bin" ]; then
+    chmod 755 "$bin"
+  else
+    printf '%s POST_INST warning: app/bin/rtp2httpd-%s is missing\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$arch" >> "$INSTALL_LOG"
+    missing=1
+  fi
+done
+
+if [ "$missing" -eq 1 ]; then
   exit 0
 fi
 
