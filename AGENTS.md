@@ -51,26 +51,12 @@ Toolchain is pre-installed and refreshed by the startup update script (`pnpm ins
 then `uv sync --group dev`). Standard commands live in `package.json` scripts and the `build-run` /
 `e2e` skills — use those rather than reinventing them.
 
-Non-obvious gotchas discovered during setup:
+Non-obvious notes:
 
 - **Node version**: the project pins Node `lts/krypton` (v24) via `.nvmrc`; nvm's default alias is set
   to it, so a login shell resolves Node 24, the corepack `pnpm@11.9.0`, and `uv`. A bare non-login
   shell may instead pick up the system `/exec-daemon/node` (v22) that shadows nvm — run inside a login
   shell (or `nvm use`) when the exact version matters.
-- **`-v` takes a numeric argument**: in this build `-v` is `--verbose <level>` (e.g. `-v 4`), NOT a
-  stackable flag. `./build/rtp2httpd ... -v -v -v` fails with "option requires an argument". Set
-  `verbosity` in the config file or pass `-v <0-4>`.
-- **Loopback multicast**: to stream/receive RTP multicast on this VM (manual testing or multicast e2e
-  tests), start the daemon with `-r lo` so it joins the group on the loopback interface; senders must
-  set `IP_MULTICAST_IF` to `127.0.0.1`. The e2e multicast fixtures already pass `-r lo`.
-- **Decodable stream for the web player**: the e2e RTP helpers emit TS *null* packets, which relay
-  fine but cannot be decoded by `/player`. To actually exercise playback/decoding, feed the daemon a
-  real H.264+AAC MPEG-TS via `ffmpeg` (installed at `/usr/bin/ffmpeg`) over RTP multicast on
-  loopback, then point a channel at that group. A client (the player) joining a live stream mid-GOP
-  can only start decoding once it sees SPS/PPS + PAT/PMT, so the encoder MUST repeat headers:
-  `ffmpeg -re -f lavfi -i testsrc2=size=1280x720:rate=25 -f lavfi -i sine=frequency=440 -c:v libx264 -tune zerolatency -x264-params "keyint=25:min-keyint=25:scenecut=0:repeat-headers=1" -c:a aac -ac 2 -mpegts_flags +resend_headers -pat_period 0.2 -f rtp_mpegts "rtp://239.255.0.1:9988?localaddr=127.0.0.1&ttl=1&pkt_size=1316"`.
-  Without `repeat-headers=1` / `+resend_headers` the player stalls or shows a decode/playback error
-  even though the bytes are flowing.
 - **Multi-scenario player dev lab**: `tools/devlab/devlab.py` (run via `uv run python`) starts mock
   upstreams for HLS live (both HLS-TS and HLS-fMP4 segment specs), HLS/RTSP catchup, and RTP multicast
   (组播) mpegts live, across `h264-mp2`, `h264-aac`, `hevc-aac`, `hevc-ac3`, `hevc-eac3`; `--ts-file
