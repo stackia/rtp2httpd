@@ -11,7 +11,7 @@ on:
 jobs:
   e2e:
     runs-on: ${{ matrix.os }}
-    name: Run
+    name: Run (${{ matrix.os }})
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -27,3 +27,23 @@ jobs:
 
       - name: Run E2E tests
         run: ./scripts/run-e2e.sh
+
+  e2e-freebsd:
+    runs-on: ubuntu-latest
+    name: Run (freebsd)
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run E2E tests in FreeBSD
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          copyback: false
+          prepare: |
+            pkg install -y bash cmake python314 uv
+          run: |
+            export UV_PYTHON=/usr/local/bin/python3.14
+            export UV_PYTHON_DOWNLOADS=never
+            cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON
+            cmake --build build -j$(sysctl -n hw.ncpu)
+            ./scripts/run-e2e.sh
