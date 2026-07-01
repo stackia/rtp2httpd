@@ -40,6 +40,7 @@ interface MP4Meta {
   config?: number[] | Uint8Array;
   originalCodec?: string;
   refSampleDuration?: number;
+  bitrate?: number;
   codecWidth?: number;
   codecHeight?: number;
   presentWidth?: number;
@@ -48,6 +49,7 @@ interface MP4Meta {
 
 interface MP4Constants {
   FTYP: Uint8Array;
+  DOLBY_FTYP: Uint8Array;
   STSD_PREFIX: Uint8Array;
   STTS: Uint8Array;
   STSC: Uint8Array;
@@ -144,6 +146,33 @@ class MP4 {
       0x76,
       0x63,
       0x31, // avc1
+    ]);
+
+    constants.DOLBY_FTYP = new Uint8Array([
+      0x69,
+      0x73,
+      0x6f,
+      0x35, // major_brand: iso5
+      0x00,
+      0x00,
+      0x02,
+      0x00, // minor_version: 0x200
+      0x69,
+      0x73,
+      0x6f,
+      0x35, // iso5
+      0x69,
+      0x73,
+      0x6f,
+      0x36, // iso6
+      0x64,
+      0x62,
+      0x79,
+      0x31, // dby1
+      0x6d,
+      0x70,
+      0x34,
+      0x31, // mp41
     ]);
 
     constants.STSD_PREFIX = new Uint8Array([
@@ -347,13 +376,17 @@ class MP4 {
 
   // emit ftyp & moov
   static generateInitSegment(meta: MP4Meta): Uint8Array {
-    const ftyp = MP4.box(MP4.types.ftyp, MP4.constants.FTYP);
+    const ftyp = MP4.box(MP4.types.ftyp, MP4.ftyp(meta));
     const moov = MP4.moov(meta);
 
     const result = new Uint8Array(ftyp.byteLength + moov.byteLength);
     result.set(ftyp, 0);
     result.set(moov, ftyp.byteLength);
     return result;
+  }
+
+  static ftyp(meta: MP4Meta): Uint8Array {
+    return meta.codec === "ac-3" || meta.codec === "ec-3" ? MP4.constants.DOLBY_FTYP : MP4.constants.FTYP;
   }
 
   // Movie metadata box
@@ -787,7 +820,12 @@ class MP4 {
       0x00,
     ]);
 
-    return MP4.box(MP4.types["ac-3"], data, MP4.box(MP4.types.dac3, new Uint8Array(meta.config as ArrayLike<number>)));
+    return MP4.box(
+      MP4.types["ac-3"],
+      data,
+      MP4.box(MP4.types.dac3, new Uint8Array(meta.config as ArrayLike<number>)),
+      MP4.btrt(meta),
+    );
   }
 
   static ec3(meta: MP4Meta): Uint8Array {
@@ -825,7 +863,33 @@ class MP4 {
       0x00,
     ]);
 
-    return MP4.box(MP4.types["ec-3"], data, MP4.box(MP4.types.dec3, new Uint8Array(meta.config as ArrayLike<number>)));
+    return MP4.box(
+      MP4.types["ec-3"],
+      data,
+      MP4.box(MP4.types.dec3, new Uint8Array(meta.config as ArrayLike<number>)),
+      MP4.btrt(meta),
+    );
+  }
+
+  static btrt(meta: MP4Meta): Uint8Array {
+    const bitrate = Math.max(0, Math.round(meta.bitrate ?? 0));
+    return MP4.box(
+      MP4.types.btrt,
+      new Uint8Array([
+        0x00,
+        0x00,
+        0x00,
+        0x00, // bufferSizeDB
+        (bitrate >>> 24) & 0xff,
+        (bitrate >>> 16) & 0xff,
+        (bitrate >>> 8) & 0xff,
+        bitrate & 0xff, // maxBitrate
+        (bitrate >>> 24) & 0xff,
+        (bitrate >>> 16) & 0xff,
+        (bitrate >>> 8) & 0xff,
+        bitrate & 0xff, // avgBitrate
+      ]),
+    );
   }
 
   static esds(meta: MP4Meta): Uint8Array {

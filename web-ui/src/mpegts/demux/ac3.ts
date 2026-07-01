@@ -8,11 +8,15 @@ export class AC3Frame {
   bit_stream_mode!: number;
   low_frequency_effects_channel_on!: number;
   frame_size_code!: number;
+  frame_size!: number;
+  bitrate!: number;
   channel_count!: number;
   channel_mode!: number;
 
   data!: Uint8Array;
 }
+
+const AC3_SAMPLING_FREQUENCIES = [48000, 44100, 32000] as const;
 
 const frame_size_code_table = [
   [
@@ -34,8 +38,8 @@ export class AC3Parser {
 
   private data_!: Uint8Array;
   private current_syncword_offset_!: number;
-  private eof_flag_!: boolean;
-  private has_last_incomplete_data!: boolean;
+  private eof_flag_ = false;
+  private has_last_incomplete_data = false;
 
   public constructor(data: Uint8Array) {
     this.data_ = data;
@@ -78,10 +82,15 @@ export class AC3Parser {
       const offset = syncword_offset;
 
       const sampling_rate_code = data[offset + 4] >> 6;
-      const sampling_frequency = [48000, 44200, 33000][sampling_rate_code];
-
+      const sampling_frequency = AC3_SAMPLING_FREQUENCIES[sampling_rate_code];
       const frame_size_code = data[offset + 4] & 0x3f;
-      const frame_size = frame_size_code_table[sampling_rate_code][frame_size_code] * 2;
+      const frame_size_words = frame_size_code_table[sampling_rate_code]?.[frame_size_code];
+      const frame_size = frame_size_words !== undefined ? frame_size_words * 2 : NaN;
+
+      if (sampling_frequency === undefined || !Number.isFinite(frame_size)) {
+        this.current_syncword_offset_ = this.findNextSyncwordOffset(offset + 2);
+        continue;
+      }
 
       if (Number.isNaN(frame_size) || offset + frame_size > this.data_.byteLength) {
         // data not enough for extracting last sample
@@ -116,12 +125,15 @@ export class AC3Parser {
 
       ac3_frame = new AC3Frame();
       ac3_frame.sampling_frequency = sampling_frequency;
+      ac3_frame.sampling_rate_code = sampling_rate_code;
       ac3_frame.channel_count = channel_count;
       ac3_frame.channel_mode = channel_mode;
       ac3_frame.bit_stream_identification = bit_stream_identification;
       ac3_frame.low_frequency_effects_channel_on = low_frequency_effects_channel_on;
       ac3_frame.bit_stream_mode = bit_stream_mode;
       ac3_frame.frame_size_code = frame_size_code;
+      ac3_frame.frame_size = frame_size;
+      ac3_frame.bitrate = Math.round((frame_size * 8 * sampling_frequency) / 1536);
       ac3_frame.data = data.subarray(offset, offset + frame_size);
     }
 
@@ -148,13 +160,12 @@ export class AC3Config {
   public low_frequency_effects_channel_on!: number;
   public channel_count!: number;
   public channel_mode!: number;
+  public bitrate!: number;
   public codec_mimetype!: string;
   public original_codec_mimetype!: string;
 
   public constructor(frame: AC3Frame) {
-    let config: Array<number> | null = null;
-
-    config = [
+    const config = [
       (frame.sampling_rate_code << 6) | (frame.bit_stream_identification << 1) | (frame.bit_stream_mode >> 2),
       ((frame.bit_stream_mode & 0x03) << 6) |
         (frame.channel_mode << 3) |
@@ -170,10 +181,15 @@ export class AC3Config {
     this.low_frequency_effects_channel_on = frame.low_frequency_effects_channel_on;
     this.channel_count = frame.channel_count;
     this.channel_mode = frame.channel_mode;
+    this.bitrate = frame.bitrate;
     this.codec_mimetype = "ac-3";
     this.original_codec_mimetype = "ac-3";
   }
 }
+
+const EAC3_SAMPLING_FREQUENCIES = [48000, 44100, 32000] as const;
+const EAC3_HALF_SAMPLING_FREQUENCIES = [24000, 22050, 16000] as const;
+const EAC3_BLOCKS_PER_SYNCFRAME = [1, 2, 3, 6] as const;
 
 export class EAC3Frame {
   sampling_frequency!: number;
@@ -182,6 +198,7 @@ export class EAC3Frame {
   low_frequency_effects_channel_on!: number;
   num_blks!: number;
   frame_size!: number;
+  bitrate!: number;
   channel_count!: number;
   channel_mode!: number;
 
@@ -192,8 +209,8 @@ export class EAC3Parser {
 
   private data_!: Uint8Array;
   private current_syncword_offset_!: number;
-  private eof_flag_!: boolean;
-  private has_last_incomplete_data!: boolean;
+  private eof_flag_ = false;
+  private has_last_incomplete_data = false;
 
   public constructor(data: Uint8Array) {
     this.data_ = data;
@@ -237,19 +254,29 @@ export class EAC3Parser {
 
       const gb = new ExpGolomb(data.subarray(offset + 2));
 
-      const _stream_type = gb.readBits(2);
-      const _sub_stream_id = gb.readBits(3);
+      gb.readBits(2); // stream_type
+      gb.readBits(3); // sub_stream_id
       const frame_size = (gb.readBits(11) + 1) << 1;
-      let sampling_rate_code = gb.readBits(2);
+      const sampling_rate_code = gb.readBits(2);
       let sampling_frequency: number | null = null;
       let num_blocks_code: number | null = null;
       if (sampling_rate_code === 0x03) {
-        sampling_rate_code = gb.readBits(2);
-        sampling_frequency = [24000, 22060, 16000][sampling_rate_code];
+        const half_sampling_rate_code = gb.readBits(2);
+        sampling_frequency = EAC3_HALF_SAMPLING_FREQUENCIES[half_sampling_rate_code] ?? null;
         num_blocks_code = 3;
       } else {
-        sampling_frequency = [48000, 44100, 32000][sampling_rate_code];
+        sampling_frequency = EAC3_SAMPLING_FREQUENCIES[sampling_rate_code] ?? null;
         num_blocks_code = gb.readBits(2);
+      }
+
+      if (
+        sampling_frequency === null ||
+        num_blocks_code === null ||
+        EAC3_BLOCKS_PER_SYNCFRAME[num_blocks_code] === undefined
+      ) {
+        gb.destroy();
+        this.current_syncword_offset_ = this.findNextSyncwordOffset(offset + 2);
+        continue;
       }
 
       const channel_mode = gb.readBits(3);
@@ -277,7 +304,9 @@ export class EAC3Parser {
       eac3_frame.bit_stream_identification = bit_stream_identification;
       eac3_frame.low_frequency_effects_channel_on = low_frequency_effects_channel_on;
       eac3_frame.frame_size = frame_size;
-      eac3_frame.num_blks = [1, 2, 3, 6][num_blocks_code];
+      eac3_frame.sampling_rate_code = sampling_rate_code;
+      eac3_frame.num_blks = EAC3_BLOCKS_PER_SYNCFRAME[num_blocks_code];
+      eac3_frame.bitrate = Math.round((frame_size * 8 * sampling_frequency) / (256 * eac3_frame.num_blks));
       eac3_frame.data = data.subarray(offset, offset + frame_size);
     }
 
@@ -304,17 +333,19 @@ export class EAC3Config {
   public low_frequency_effects_channel_on!: number;
   public channel_count!: number;
   public channel_mode!: number;
+  public bitrate!: number;
   public codec_mimetype!: string;
   public original_codec_mimetype!: string;
 
   public constructor(frame: EAC3Frame) {
-    let config: Array<number> | null = null;
+    const data_rate = Math.min(
+      0x1fff,
+      Math.ceil((frame.frame_size * 8 * frame.sampling_frequency) / (frame.num_blks * 256 * 1000)),
+    );
 
-    const data_rate_sub = Math.floor((frame.frame_size * frame.sampling_frequency) / (frame.num_blks * 16));
-
-    config = [
-      data_rate_sub & (0x1fe0 >> 5),
-      data_rate_sub & (0x001f << 3), // num_ind_sub = zero
+    const config = [
+      (data_rate >> 5) & 0xff,
+      (data_rate & 0x1f) << 3, // num_ind_sub = zero
       (frame.sampling_rate_code << 6) | (frame.bit_stream_identification << 1) | (0 << 0),
       (0 << 7) | (0 << 4) | (frame.channel_mode << 1) | (frame.low_frequency_effects_channel_on << 0),
       (0 << 5) | (0 << 1) | (0 << 0),
@@ -327,6 +358,7 @@ export class EAC3Config {
     this.low_frequency_effects_channel_on = frame.low_frequency_effects_channel_on;
     this.channel_count = frame.channel_count;
     this.channel_mode = frame.channel_mode;
+    this.bitrate = frame.bitrate;
     this.codec_mimetype = "ec-3";
     this.original_codec_mimetype = "ec-3";
   }
