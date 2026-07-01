@@ -11,6 +11,7 @@
 #   ./scripts/run-e2e.sh -m "not multicast"# Skip multicast tests
 #   ./scripts/run-e2e.sh -x                # Stop on first failure
 #   ./scripts/run-e2e.sh --co              # Collect & list tests (dry run)
+#   R2H_E2E_NO_DEV=1 ./scripts/run-e2e.sh  # Skip dependency-group dev tools
 #
 set -euo pipefail
 
@@ -91,8 +92,13 @@ echo ""
 
 cd "$PROJECT_ROOT"
 
+UV_RUN_ARGS=()
+if [[ "${R2H_E2E_NO_DEV:-0}" == "1" ]]; then
+    UV_RUN_ARGS+=(--no-dev)
+fi
+
 if [[ "$PARALLEL" == "1" ]]; then
-    exec uv run pytest "$TEST_PATH" -v "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"
+    exec uv run "${UV_RUN_ARGS[@]}" pytest "$TEST_PATH" -v "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"
 else
-    exec uv run pytest "$TEST_PATH" -v -n "$PARALLEL" --dist loadscope "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"
+    exec uv run "${UV_RUN_ARGS[@]}" pytest "$TEST_PATH" -v -n "$PARALLEL" --dist loadscope "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"
 fi

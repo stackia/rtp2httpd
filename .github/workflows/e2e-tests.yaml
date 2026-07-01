@@ -8,6 +8,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   e2e:
     runs-on: ${{ matrix.os }}
@@ -46,4 +49,4 @@ jobs:
             export UV_PYTHON_DOWNLOADS=never
             cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON
             cmake --build build -j$(sysctl -n hw.ncpu)
-            ./scripts/run-e2e.sh
+            R2H_E2E_NO_DEV=1 ./scripts/run-e2e.sh

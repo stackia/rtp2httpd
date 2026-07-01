@@ -756,8 +756,7 @@ def build_services_m3u(http_hostport: str, rtsp_hostport: str, mcast_channels: l
         # mpegts-over-RTSP live + RTSP TS catchup window: covers mpegts 回看
         src = f"rtsp://{rtsp_hostport}/catchup/{prof}?{tpl}"
         extinf = (
-            f'#EXTINF:-1 group-title="mpegts (RTSP)" catchup="default" '
-            f'catchup-source="{src}",mpegts (RTSP) ({prof})'
+            f'#EXTINF:-1 group-title="mpegts (RTSP)" catchup="default" catchup-source="{src}",mpegts (RTSP) ({prof})'
         )
         lines += [
             extinf,
