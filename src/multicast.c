@@ -11,7 +11,6 @@
 #include "worker.h"
 #include <arpa/inet.h>
 #include <errno.h>
-#include <ifaddrs.h>
 #include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -120,106 +119,54 @@ static int create_igmp_raw_socket(service_t *service) {
 }
 
 /*
- * Helper function to prepare multicast group request structures
- * Returns the socket level (SOL_IP or SOL_IPV6) and fills gr/gsr structures
- */
-static int prepare_mcast_group_req(service_t *service, struct group_req *gr, struct group_source_req *gsr) {
-  int level;
-  const char *upstream_if;
-
-  memcpy(&(gr->gr_group), service->addr->ai_addr, service->addr->ai_addrlen);
-
-  switch (service->addr->ai_family) {
-  case AF_INET:
-    level = SOL_IP;
-    gr->gr_interface = 0;
-    break;
-
-  case AF_INET6:
-    level = SOL_IPV6;
-    gr->gr_interface = ((struct sockaddr_in6 *)(uintptr_t)service->addr->ai_addr)->sin6_scope_id;
-    break;
-  default:
-    logger(LOG_ERROR, "Address family don't support mcast.");
-    return -1;
-  }
-
-  upstream_if = get_upstream_interface_for_multicast(service ? service->ifname : NULL);
-  if (upstream_if && upstream_if[0] != '\0') {
-    gr->gr_interface = if_nametoindex(upstream_if);
-  }
-
-#if defined(__APPLE__) || defined(__FreeBSD__)
-  /* macOS/FreeBSD may require a valid interface index for multicast join
-   * (unlike Linux where 0 means "any"). Fall back to the first non-loopback
-   * interface. */
-  if (gr->gr_interface == 0 && service->addr->ai_family == AF_INET) {
-    struct ifaddrs *ifaddr, *ifa;
-    if (getifaddrs(&ifaddr) == 0) {
-      for (ifa = ifaddr; ifa; ifa = ifa->ifa_next) {
-        if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET)
-          continue;
-        if (ifa->ifa_flags & IFF_LOOPBACK)
-          continue;
-        if (!(ifa->ifa_flags & IFF_MULTICAST))
-          continue;
-        if (!(ifa->ifa_flags & IFF_UP))
-          continue;
-        unsigned int idx = if_nametoindex(ifa->ifa_name);
-        if (idx > 0) {
-          gr->gr_interface = idx;
-          logger(LOG_DEBUG, "Multicast: Auto-selected interface %s (index %u) for join", ifa->ifa_name, idx);
-          break;
-        }
-      }
-      freeifaddrs(ifaddr);
-    }
-  }
-#endif
-
-  /* Prepare source-specific multicast structure if needed */
-  if (service->msrc != NULL && strcmp(service->msrc, "") != 0) {
-    gsr->gsr_group = gr->gr_group;
-    gsr->gsr_interface = gr->gr_interface;
-    memcpy(&(gsr->gsr_source), service->msrc_addr->ai_addr, service->msrc_addr->ai_addrlen);
-  }
-
-  return level;
-}
-
-/*
  * Helper function to perform multicast group join/leave operation
  * is_join: 1 for join, 0 for leave
  */
 static int mcast_group_op(int sock, service_t *service, int is_join, const char *op_name) {
-  struct group_req gr;
-  struct group_source_req gsr;
-  int level, r;
-  int op;
+  const char *upstream_if;
+  const struct sockaddr *source_addr = NULL;
+  socklen_t source_addr_len = 0;
+  unsigned int ifindex = 0;
+  int r;
   int is_ssm; /* Source-Specific Multicast */
 
-  /* Zero-initialize to avoid garbage in sockaddr_storage padding
-   * (required on macOS where kernel may inspect full struct) */
-  memset(&gr, 0, sizeof(gr));
-  memset(&gsr, 0, sizeof(gsr));
-
-  level = prepare_mcast_group_req(service, &gr, &gsr);
-  if (level < 0) {
+  if (!service || !service->addr || !service->addr->ai_addr) {
+    logger(LOG_ERROR, "Multicast: invalid service address");
     return -1;
   }
 
-  /* Determine if this is source-specific multicast */
-  is_ssm = (service->msrc != NULL && strcmp(service->msrc, "") != 0);
-
-  /* Select the appropriate operation */
-  if (is_ssm) {
-    op = is_join ? MCAST_JOIN_SOURCE_GROUP : MCAST_LEAVE_SOURCE_GROUP;
-    r = setsockopt(sock, level, op, &gsr, sizeof(gsr));
-  } else {
-    op = is_join ? MCAST_JOIN_GROUP : MCAST_LEAVE_GROUP;
-    r = setsockopt(sock, level, op, &gr, sizeof(gr));
+  if (service->addr->ai_family != AF_INET && service->addr->ai_family != AF_INET6) {
+    logger(LOG_ERROR, "Multicast: address family is not supported");
+    return -1;
   }
 
+  upstream_if = get_upstream_interface_for_multicast(service->ifname);
+  if (upstream_if && upstream_if[0] != '\0') {
+    ifindex = if_nametoindex(upstream_if);
+    if (ifindex == 0) {
+      logger(LOG_ERROR, "Multicast: interface %s does not exist", upstream_if);
+      return -1;
+    }
+  } else if (service->addr->ai_family == AF_INET6) {
+    ifindex = ((struct sockaddr_in6 *)(uintptr_t)service->addr->ai_addr)->sin6_scope_id;
+  }
+
+  is_ssm = (service->msrc != NULL && strcmp(service->msrc, "") != 0);
+  if (is_ssm) {
+    if (!service->msrc_addr || !service->msrc_addr->ai_addr) {
+      logger(LOG_ERROR, "Multicast: source-specific group has no source address");
+      return -1;
+    }
+    if (service->msrc_addr->ai_family != service->addr->ai_family) {
+      logger(LOG_ERROR, "Multicast: source address family must match group address family");
+      return -1;
+    }
+    source_addr = service->msrc_addr->ai_addr;
+    source_addr_len = service->msrc_addr->ai_addrlen;
+  }
+
+  r = platform_mcast_group_op(sock, service->addr->ai_family, service->addr->ai_addr, service->addr->ai_addrlen,
+                              source_addr, source_addr_len, ifindex, is_join);
   if (r < 0) {
     logger(LOG_ERROR, "Multicast: %s failed: %s", op_name, strerror(errno));
     return -1;
