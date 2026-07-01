@@ -166,6 +166,8 @@ class TSDemuxer {
 
   private audio_last_sample_pts_: number | undefined = undefined;
   private aac_last_incomplete_data_: Uint8Array | null = null;
+  private ac3_last_incomplete_data_: Uint8Array | null = null;
+  private eac3_last_incomplete_data_: Uint8Array | null = null;
 
   private has_video_ = false;
   private has_audio_ = false;
@@ -215,6 +217,8 @@ class TSDemuxer {
     this.video_metadata_ = null as unknown as typeof this.video_metadata_;
     this.audio_metadata_ = null as unknown as typeof this.audio_metadata_;
     this.aac_last_incomplete_data_ = null;
+    this.ac3_last_incomplete_data_ = null;
+    this.eac3_last_incomplete_data_ = null;
 
     this.video_track_ = null as unknown as typeof this.video_track_;
     this.audio_track_ = null as unknown as typeof this.audio_track_;
@@ -326,6 +330,8 @@ class TSDemuxer {
   private resetAudioParserState(): void {
     this.audio_last_sample_pts_ = undefined;
     this.aac_last_incomplete_data_ = null;
+    this.ac3_last_incomplete_data_ = null;
+    this.eac3_last_incomplete_data_ = null;
     this.loas_previous_frame = null;
     this.audio_drop_until_sync_ = true;
   }
@@ -1530,6 +1536,28 @@ class TSDemuxer {
     }
   }
 
+  private setAC3AudioMetadata(frame: AC3Frame): void {
+    this.audio_metadata_ = {
+      codec: "ac-3",
+      sampling_frequency: frame.sampling_frequency,
+      bit_stream_identification: frame.bit_stream_identification,
+      bit_stream_mode: frame.bit_stream_mode,
+      low_frequency_effects_channel_on: frame.low_frequency_effects_channel_on,
+      channel_mode: frame.channel_mode,
+    };
+  }
+
+  private setEAC3AudioMetadata(frame: EAC3Frame): void {
+    this.audio_metadata_ = {
+      codec: "ec-3",
+      sampling_frequency: frame.sampling_frequency,
+      bit_stream_identification: frame.bit_stream_identification,
+      low_frequency_effects_channel_on: frame.low_frequency_effects_channel_on,
+      num_blks: frame.num_blks,
+      channel_mode: frame.channel_mode,
+    };
+  }
+
   private parseAC3Payload(data: Uint8Array, pts: number | undefined) {
     if (this.has_video_ && !this.video_init_segment_dispatched_) {
       // If first video IDR frame hasn't been detected,
@@ -1538,6 +1566,14 @@ class TSDemuxer {
     }
     if (this.shouldWaitForVideoKeyframe()) {
       return;
+    }
+
+    const had_incomplete_data = this.ac3_last_incomplete_data_ !== null;
+    if (this.ac3_last_incomplete_data_) {
+      const buf = new Uint8Array(data.byteLength + this.ac3_last_incomplete_data_.byteLength);
+      buf.set(this.ac3_last_incomplete_data_, 0);
+      buf.set(data, this.ac3_last_incomplete_data_.byteLength);
+      data = buf;
     }
 
     let ref_sample_duration: number;
@@ -1555,6 +1591,19 @@ class TSDemuxer {
         Log.w(this.TAG, `AC3: Unknown pts`);
         return;
       }
+
+      if (had_incomplete_data && this.audio_last_sample_pts_ !== undefined) {
+        ref_sample_duration = (1536 / this.audio_metadata_.sampling_frequency) * 1000;
+        const new_pts_ms = this.audio_last_sample_pts_ + ref_sample_duration;
+
+        if (Math.abs(new_pts_ms - base_pts_ms) > 1) {
+          Log.w(this.TAG, `AC3: Detected pts overlapped, expected: ${new_pts_ms}ms, PES pts: ${base_pts_ms}ms`);
+          base_pts_ms = new_pts_ms;
+        }
+      }
+    } else if (pts === undefined) {
+      Log.w(this.TAG, `AC3: Unknown pts`);
+      return;
     }
 
     const adts_parser = new AC3Parser(data);
@@ -1574,18 +1623,12 @@ class TSDemuxer {
       } as const;
 
       if (this.audio_init_segment_dispatched_ === false) {
-        this.audio_metadata_ = {
-          codec: "ac-3",
-          sampling_frequency: ac3_frame.sampling_frequency,
-          bit_stream_identification: ac3_frame.bit_stream_identification,
-          bit_stream_mode: ac3_frame.bit_stream_mode,
-          low_frequency_effects_channel_on: ac3_frame.low_frequency_effects_channel_on,
-          channel_mode: ac3_frame.channel_mode,
-        };
+        this.setAC3AudioMetadata(ac3_frame);
         this.dispatchAudioInitSegment(audio_sample);
       } else if (this.detectAudioMetadataChange(audio_sample)) {
         // flush stashed frames before notify new config
         this.dispatchAudioMediaSegment();
+        this.setAC3AudioMetadata(ac3_frame);
         this.dispatchAudioInitSegment(audio_sample);
       }
 
@@ -1607,7 +1650,11 @@ class TSDemuxer {
       ac3_frame = adts_parser.readNextAC3Frame();
     }
 
-    if (last_sample_pts_ms) {
+    // getIncompleteData() returns null when fully consumed — always assign so a stale
+    // buffer from a previous payload is not prepended again on the next call
+    this.ac3_last_incomplete_data_ = adts_parser.getIncompleteData();
+
+    if (last_sample_pts_ms !== undefined) {
       this.audio_last_sample_pts_ = last_sample_pts_ms;
     }
   }
@@ -1620,6 +1667,14 @@ class TSDemuxer {
     }
     if (this.shouldWaitForVideoKeyframe()) {
       return;
+    }
+
+    const had_incomplete_data = this.eac3_last_incomplete_data_ !== null;
+    if (this.eac3_last_incomplete_data_) {
+      const buf = new Uint8Array(data.byteLength + this.eac3_last_incomplete_data_.byteLength);
+      buf.set(this.eac3_last_incomplete_data_, 0);
+      buf.set(data, this.eac3_last_incomplete_data_.byteLength);
+      data = buf;
     }
 
     let ref_sample_duration: number;
@@ -1637,6 +1692,19 @@ class TSDemuxer {
         Log.w(this.TAG, `EAC3: Unknown pts`);
         return;
       }
+
+      if (had_incomplete_data && this.audio_last_sample_pts_ !== undefined) {
+        ref_sample_duration = ((256 * this.audio_metadata_.num_blks) / this.audio_metadata_.sampling_frequency) * 1000;
+        const new_pts_ms = this.audio_last_sample_pts_ + ref_sample_duration;
+
+        if (Math.abs(new_pts_ms - base_pts_ms) > 1) {
+          Log.w(this.TAG, `EAC3: Detected pts overlapped, expected: ${new_pts_ms}ms, PES pts: ${base_pts_ms}ms`);
+          base_pts_ms = new_pts_ms;
+        }
+      }
+    } else if (pts === undefined) {
+      Log.w(this.TAG, `EAC3: Unknown pts`);
+      return;
     }
 
     const adts_parser = new EAC3Parser(data);
@@ -1649,25 +1717,19 @@ class TSDemuxer {
       this.audio_drop_until_sync_ = false;
     }
     while (eac3_frame != null) {
-      ref_sample_duration = (1536 / eac3_frame.sampling_frequency) * 1000;
+      ref_sample_duration = ((256 * eac3_frame.num_blks) / eac3_frame.sampling_frequency) * 1000;
       const audio_sample = {
         codec: "ec-3",
         data: eac3_frame,
       } as const;
 
       if (this.audio_init_segment_dispatched_ === false) {
-        this.audio_metadata_ = {
-          codec: "ec-3",
-          sampling_frequency: eac3_frame.sampling_frequency,
-          bit_stream_identification: eac3_frame.bit_stream_identification,
-          low_frequency_effects_channel_on: eac3_frame.low_frequency_effects_channel_on,
-          num_blks: eac3_frame.num_blks,
-          channel_mode: eac3_frame.channel_mode,
-        };
+        this.setEAC3AudioMetadata(eac3_frame);
         this.dispatchAudioInitSegment(audio_sample);
       } else if (this.detectAudioMetadataChange(audio_sample)) {
         // flush stashed frames before notify new config
         this.dispatchAudioMediaSegment();
+        this.setEAC3AudioMetadata(eac3_frame);
         this.dispatchAudioInitSegment(audio_sample);
       }
 
@@ -1689,7 +1751,11 @@ class TSDemuxer {
       eac3_frame = adts_parser.readNextEAC3Frame();
     }
 
-    if (last_sample_pts_ms) {
+    // getIncompleteData() returns null when fully consumed — always assign so a stale
+    // buffer from a previous payload is not prepended again on the next call
+    this.eac3_last_incomplete_data_ = adts_parser.getIncompleteData();
+
+    if (last_sample_pts_ms !== undefined) {
       this.audio_last_sample_pts_ = last_sample_pts_ms;
     }
   }
@@ -1911,6 +1977,47 @@ class TSDemuxer {
         );
         return true;
       }
+    } else if (sample.codec === "ec-3" && this.audio_metadata_.codec === "ec-3") {
+      const frame = sample.data;
+      if (frame.sampling_frequency !== this.audio_metadata_.sampling_frequency) {
+        Log.v(
+          this.TAG,
+          `EAC3: Sampling Frequency changed from ` +
+            `${this.audio_metadata_.sampling_frequency} to ${frame.sampling_frequency}`,
+        );
+        return true;
+      }
+
+      if (frame.bit_stream_identification !== this.audio_metadata_.bit_stream_identification) {
+        Log.v(
+          this.TAG,
+          `EAC3: Bit Stream Identification changed from ` +
+            `${this.audio_metadata_.bit_stream_identification} to ${frame.bit_stream_identification}`,
+        );
+        return true;
+      }
+
+      if (frame.num_blks !== this.audio_metadata_.num_blks) {
+        Log.v(this.TAG, `EAC3: Audio blocks changed from ${this.audio_metadata_.num_blks} to ${frame.num_blks}`);
+        return true;
+      }
+
+      if (frame.channel_mode !== this.audio_metadata_.channel_mode) {
+        Log.v(
+          this.TAG,
+          `EAC3: Channel Mode changed from ${this.audio_metadata_.channel_mode} to ${frame.channel_mode}`,
+        );
+        return true;
+      }
+
+      if (frame.low_frequency_effects_channel_on !== this.audio_metadata_.low_frequency_effects_channel_on) {
+        Log.v(
+          this.TAG,
+          `EAC3: Low Frequency Effects Channel On changed from ` +
+            `${this.audio_metadata_.low_frequency_effects_channel_on} to ${frame.low_frequency_effects_channel_on}`,
+        );
+        return true;
+      }
     } else if (sample.codec === "mp3" && this.audio_metadata_.codec === "mp3") {
       const data = sample.data;
       if (data.object_type !== this.audio_metadata_.object_type) {
@@ -1967,6 +2074,7 @@ class TSDemuxer {
       meta.codec = ac3_config.codec_mimetype;
       meta.originalCodec = ac3_config.original_codec_mimetype;
       meta.config = ac3_config.config;
+      meta.bitrate = ac3_config.bitrate;
       meta.refSampleDuration = (1536 / (meta.audioSampleRate as number)) * (meta.timescale as number);
     } else if (this.audio_metadata_.codec === "ec-3") {
       if (sample.codec !== "ec-3") {
@@ -1978,6 +2086,7 @@ class TSDemuxer {
       meta.codec = ec3_config.codec_mimetype;
       meta.originalCodec = ec3_config.original_codec_mimetype;
       meta.config = ec3_config.config;
+      meta.bitrate = ec3_config.bitrate;
       meta.refSampleDuration =
         ((256 * ec3_config.num_blks) / (meta.audioSampleRate as number)) * (meta.timescale as number);
     } else if (this.audio_metadata_.codec === "mp3") {
