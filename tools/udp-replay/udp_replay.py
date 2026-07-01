@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Multicast UDP Replay Tool with IGMP Monitoring
+Multicast UDP Replay Tool
 
 Reads a pcapng file containing UDP multicast packets (RTP/FEC data)
-and replays them when a process joins the multicast group.
-Stops replaying when no process is subscribed to the group.
+and replays them either when a process joins the multicast group on Linux
+or directly to the captured destinations on systems without IGMP monitoring.
 Used for testing rtp2httpd with controlled data sources.
 """
 
@@ -69,6 +69,7 @@ def parse_args() -> argparse.Namespace:
 Examples:
   %(prog)s tools/fixtures/fec_sample.pcapng
   %(prog)s tools/fixtures/fec_sample.pcapng -i eth0
+  %(prog)s tools/fixtures/fec_sample.pcapng --direct
   %(prog)s tools/fixtures/fec_sample.pcapng -v
   %(prog)s tools/fixtures/fec_sample.pcapng --speed 2.0              # 2x speed
   %(prog)s tools/fixtures/fec_sample.pcapng --speed 10 --continuous  # Stress test
@@ -79,7 +80,12 @@ Examples:
     parser.add_argument(
         "-i",
         "--interface",
-        help="Network interface for multicast (e.g., eth0)",
+        help="Linux-only multicast interface override (omit to use the OS default route)",
+    )
+    parser.add_argument(
+        "--direct",
+        action="store_true",
+        help="Replay immediately to captured multicast destinations instead of waiting for IGMP joins",
     )
     parser.add_argument(
         "-v",
@@ -251,6 +257,9 @@ def get_igmp_joined_groups(subnets: list[str]) -> set[str]:
 
 def get_interface_ip(interface: str) -> str:
     """Get IP address of a network interface."""
+    if not sys.platform.startswith("linux"):
+        raise OSError("--interface is only supported on Linux; omit it to use the OS default multicast route")
+
     import fcntl
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -266,7 +275,11 @@ def create_multicast_socket(
     interface: str | None = None,
     ttl: int = 1,
 ) -> socket.socket:
-    """Create UDP socket configured for multicast sending."""
+    """Create UDP socket configured for multicast sending.
+
+    By default no outbound interface is forced, so the kernel selects it using
+    the OS multicast routing table. This matches devlab and works on macOS.
+    """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
@@ -367,6 +380,7 @@ def replay_loop(
     sock: socket.socket,
     group_events: dict[str, Event] | None = None,
     igmp_monitor: IGMPMonitor | None = None,
+    direct: bool = False,
     loss_rate: float = 0.0,
     reorder_rate: float = 0.0,
     speed: float = 1.0,
@@ -394,14 +408,14 @@ def replay_loop(
     base_ts = packets[0].timestamp
     relative_times = tuple((p.timestamp - base_ts) / speed for p in packets)
 
-    # Pre-extract payload and port for faster access
-    packet_data = tuple((p.payload, p.dst_port) for p in packets)
+    # Pre-extract payload, address and port for faster access
+    packet_data = tuple((p.payload, p.dst_addr, p.dst_port) for p in packets)
     num_packets = len(packets)
 
     # For continuous mode: track RTP sequence offset per stream (by dest port)
     stream_seq_offsets: dict[int, int] = {}
     stream_rtp_counts: dict[int, int] = {}
-    for payload, port in packet_data:
+    for payload, _dst_addr, port in packet_data:
         if is_rtp_packet(payload):
             stream_rtp_counts[port] = stream_rtp_counts.get(port, 0) + 1
             if port not in stream_seq_offsets:
@@ -410,7 +424,13 @@ def replay_loop(
     # Get unique ports from pcap
     pcap_ports = set(p.dst_port for p in packets)
 
-    if igmp_monitor and igmp_monitor.subnets:
+    pcap_dests = set((p.dst_addr, p.dst_port) for p in packets)
+    pcap_addrs = set(p.dst_addr for p in packets)
+
+    if direct:
+        dest_str = ", ".join(f"{addr}:{port}" for addr, port in sorted(pcap_dests))
+        print(f"Direct replay to captured destinations: {dest_str}", flush=True)
+    elif igmp_monitor and igmp_monitor.subnets:
         print(
             f"Waiting for IGMP Join on subnets: {', '.join(igmp_monitor.subnets)}",
             flush=True,
@@ -420,7 +440,6 @@ def replay_loop(
             flush=True,
         )
     else:
-        pcap_dests = set((p.dst_addr, p.dst_port) for p in packets)
         dest_str = ", ".join(f"{addr}:{port}" for addr, port in sorted(pcap_dests))
         print(f"Waiting for IGMP Join on {dest_str}...", flush=True)
 
@@ -458,6 +477,8 @@ def replay_loop(
     # Timing is essential for controlled replay at specific speeds
 
     def get_target_addresses() -> set[str]:
+        if direct:
+            return pcap_addrs
         if igmp_monitor and igmp_monitor.subnets:
             return igmp_monitor.get_active_groups()
         return {addr for addr, event in group_events.items() if event.is_set()}
@@ -517,7 +538,7 @@ def replay_loop(
             if not use_loss and not use_reorder:
                 while i < num_packets:
                     # Refresh targets periodically
-                    if i >= next_target_refresh:
+                    if not direct and i >= next_target_refresh:
                         targets = get_target_addresses()
                         if not targets:
                             break
@@ -525,7 +546,9 @@ def replay_loop(
                         target_count = len(target_list)
                         next_target_refresh = i + 500
 
-                    payload, port = packet_data[i]
+                    payload, dst_addr, port = packet_data[i]
+                    send_targets = [dst_addr] if direct else target_list
+                    send_target_count = 1 if direct else target_count
 
                     # Timing: single monotonic() call, sleep handles the wait
                     target_time = loop_start + relative_times[i]
@@ -541,36 +564,36 @@ def replay_loop(
 
                     # Send to all targets - unrolled for common cases
                     payload_len = len(payload)
-                    if target_count == 1:
-                        sendto(payload, (target_list[0], port))
+                    if send_target_count == 1:
+                        sendto(payload, (send_targets[0], port))
                         total_packets_sent += 1
                         total_bytes_sent += payload_len
                         packets_this_loop += 1
                         interval_packets += 1
                         interval_bytes += payload_len
-                    elif target_count == 2:
-                        sendto(payload, (target_list[0], port))
-                        sendto(payload, (target_list[1], port))
+                    elif send_target_count == 2:
+                        sendto(payload, (send_targets[0], port))
+                        sendto(payload, (send_targets[1], port))
                         total_packets_sent += 2
                         total_bytes_sent += payload_len * 2
                         packets_this_loop += 2
                         interval_packets += 2
                         interval_bytes += payload_len * 2
                     else:
-                        for dst_addr in target_list:
-                            sendto(payload, (dst_addr, port))
-                        total_packets_sent += target_count
-                        total_bytes_sent += payload_len * target_count
-                        packets_this_loop += target_count
-                        interval_packets += target_count
-                        interval_bytes += payload_len * target_count
+                        for target_addr in send_targets:
+                            sendto(payload, (target_addr, port))
+                        total_packets_sent += send_target_count
+                        total_bytes_sent += payload_len * send_target_count
+                        packets_this_loop += send_target_count
+                        interval_packets += send_target_count
+                        interval_bytes += payload_len * send_target_count
 
                     i += 1
             else:
                 # Slow path: with loss/reorder simulation
                 while i < num_packets:
                     # Refresh targets periodically
-                    if i >= next_target_refresh:
+                    if not direct and i >= next_target_refresh:
                         targets = get_target_addresses()
                         if not targets:
                             break
@@ -578,7 +601,9 @@ def replay_loop(
                         target_count = len(target_list)
                         next_target_refresh = i + 500
 
-                    payload, port = packet_data[i]
+                    payload, dst_addr, port = packet_data[i]
+                    send_targets = [dst_addr] if direct else target_list
+                    send_target_count = 1 if direct else target_count
 
                     # Timing control
                     target_time = loop_start + relative_times[i]
@@ -614,7 +639,7 @@ def replay_loop(
                     # Simulate packet reordering
                     if use_reorder and random_fn() * 100 < reorder_rate:
                         delay_time = random.uniform(0.001, 0.01)
-                        reorder_buffer.append((payload, port, now + delay_time, target_list.copy()))
+                        reorder_buffer.append((payload, port, now + delay_time, send_targets.copy()))
                         reordered_this_loop += 1
                         total_packets_reordered += 1
                         i += 1
@@ -628,29 +653,29 @@ def replay_loop(
 
                     # Send to all targets
                     payload_len = len(payload)
-                    if target_count == 1:
-                        sendto(payload, (target_list[0], port))
+                    if send_target_count == 1:
+                        sendto(payload, (send_targets[0], port))
                         total_packets_sent += 1
                         total_bytes_sent += payload_len
                         packets_this_loop += 1
                         interval_packets += 1
                         interval_bytes += payload_len
-                    elif target_count == 2:
-                        sendto(payload, (target_list[0], port))
-                        sendto(payload, (target_list[1], port))
+                    elif send_target_count == 2:
+                        sendto(payload, (send_targets[0], port))
+                        sendto(payload, (send_targets[1], port))
                         total_packets_sent += 2
                         total_bytes_sent += payload_len * 2
                         packets_this_loop += 2
                         interval_packets += 2
                         interval_bytes += payload_len * 2
                     else:
-                        for dst_addr in target_list:
-                            sendto(payload, (dst_addr, port))
-                        total_packets_sent += target_count
-                        total_bytes_sent += payload_len * target_count
-                        packets_this_loop += target_count
-                        interval_packets += target_count
-                        interval_bytes += payload_len * target_count
+                        for target_addr in send_targets:
+                            sendto(payload, (target_addr, port))
+                        total_packets_sent += send_target_count
+                        total_bytes_sent += payload_len * send_target_count
+                        packets_this_loop += send_target_count
+                        interval_packets += send_target_count
+                        interval_bytes += payload_len * send_target_count
 
                     i += 1
 
@@ -753,14 +778,26 @@ def main() -> int:
     pcap_addrs = set(p.dst_addr for p in packets)
     subnets = sorted(set(get_subnet_for_ip(addr) for addr in pcap_addrs))
 
-    print(
-        f"Monitoring IGMP for subnets (based on pcap): {', '.join(subnets)}",
-        flush=True,
-    )
+    igmp_available = Path("/proc/net/igmp").is_file()
+    direct = args.direct or not igmp_available
+    igmp_monitor: IGMPMonitor | None = None
 
-    # Start IGMP monitor in subnet mode
-    igmp_monitor = IGMPMonitor(subnets=subnets)
-    igmp_monitor.start()
+    if direct:
+        if not args.direct:
+            print(
+                "IGMP monitor unavailable (/proc/net/igmp not found); using direct replay mode",
+                flush=True,
+            )
+        print("Multicast route: OS default route", flush=True)
+    else:
+        print(
+            f"Monitoring IGMP for subnets (based on pcap): {', '.join(subnets)}",
+            flush=True,
+        )
+
+        # Start IGMP monitor in subnet mode
+        igmp_monitor = IGMPMonitor(subnets=subnets)
+        igmp_monitor.start()
 
     try:
         sock = create_multicast_socket(args.interface)
@@ -773,6 +810,7 @@ def main() -> int:
             packets,
             sock,
             igmp_monitor=igmp_monitor,
+            direct=direct,
             loss_rate=args.loss,
             reorder_rate=args.reorder,
             speed=args.speed,
@@ -780,7 +818,8 @@ def main() -> int:
             verbose=args.verbose,
         )
     finally:
-        igmp_monitor.stop()
+        if igmp_monitor:
+            igmp_monitor.stop()
         sock.close()
 
     return 0
