@@ -43,7 +43,7 @@ jobs:
           usesh: true
           copyback: false
           prepare: |
-            pkg install -y bash cmake python314 uv
+            pkg install -y bash cmake curl python314 uv
           run: |
             export UV_PYTHON=/usr/local/bin/python3.14
             export UV_PYTHON_DOWNLOADS=never

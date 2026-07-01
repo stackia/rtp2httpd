@@ -92,13 +92,13 @@ echo ""
 
 cd "$PROJECT_ROOT"
 
-UV_RUN_ARGS=()
+UV_RUN_CMD=(uv run)
 if [[ "${R2H_E2E_NO_DEV:-0}" == "1" ]]; then
-    UV_RUN_ARGS+=(--no-dev)
+    UV_RUN_CMD+=(--no-dev)
 fi
 
 if [[ "$PARALLEL" == "1" ]]; then
-    exec uv run "${UV_RUN_ARGS[@]}" pytest "$TEST_PATH" -v "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"
+    exec "${UV_RUN_CMD[@]}" pytest "$TEST_PATH" -v "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"
 else
-    exec uv run "${UV_RUN_ARGS[@]}" pytest "$TEST_PATH" -v -n "$PARALLEL" --dist loadscope "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"
+    exec "${UV_RUN_CMD[@]}" pytest "$TEST_PATH" -v -n "$PARALLEL" --dist loadscope "${PYTEST_ARGS[@]+"${PYTEST_ARGS[@]}"}"
 fi
