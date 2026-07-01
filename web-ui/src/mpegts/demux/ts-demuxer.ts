@@ -1601,6 +1601,9 @@ class TSDemuxer {
           base_pts_ms = new_pts_ms;
         }
       }
+    } else if (pts === undefined) {
+      Log.w(this.TAG, `AC3: Unknown pts`);
+      return;
     }
 
     const adts_parser = new AC3Parser(data);
@@ -1699,6 +1702,9 @@ class TSDemuxer {
           base_pts_ms = new_pts_ms;
         }
       }
+    } else if (pts === undefined) {
+      Log.w(this.TAG, `EAC3: Unknown pts`);
+      return;
     }
 
     const adts_parser = new EAC3Parser(data);
