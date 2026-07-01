@@ -6,8 +6,8 @@ can proxy, covering the scenarios needed to develop the web player:
 
   * HLS live           (HTTP, .m3u8 + TS segments)
   * HLS catchup        (HTTP, time-shift driven by the ``playseek`` query)
-  * mpegts catchup     (RTSP time-shift driven by ``playseek`` on the URI)
-  * mpegts live        (RTP multicast over the OS default route)
+  * mpegts (RTSP)      (live + time-shift driven by ``playseek`` on the URI)
+  * mpegts (multicast) (RTP multicast over the OS default route)
 
 Codec combinations covered:
 
@@ -61,8 +61,8 @@ FONT_CANDIDATES = (
     "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     "/System/Library/Fonts/Helvetica.ttc",
 )
-# Profiles used for RTSP scenarios (must be browser-friendly enough to test).
-PROFILES = ("h264-mp2", "hevc-aac")
+# Profiles used for mpegts-over-RTSP scenarios (must be browser-friendly enough to test).
+RTSP_PROFILES = ("h264-mp2", "hevc-aac")
 # Profiles offered as multicast live channels.
 MCAST_PROFILES = ("h264-mp2", "hevc-ac3", "hevc-eac3")
 
@@ -508,7 +508,7 @@ def make_http_handler(host: str, port: int, live_root: str, catchup: CatchupHLS)
 
 
 # ---------------------------------------------------------------------------
-# RTSP origin server (mpegts catchup + live)
+# RTSP origin server (mpegts-over-RTSP catchup + live)
 # ---------------------------------------------------------------------------
 
 
@@ -553,7 +553,7 @@ class RTSPOrigin:
     @staticmethod
     def _profile_from_uri(uri: str) -> str:
         path = urlparse(uri).path
-        for p in PROFILES:
+        for p in RTSP_PROFILES:
             if p in path:
                 return p
         return "h264-mp2"
@@ -736,10 +736,11 @@ def build_services_m3u(http_hostport: str, rtsp_hostport: str, mcast_channels: l
     """Build the [services] M3U covering all scenarios.
 
     HLS channels are HLS-live (``.m3u8``) with HTTP catchup; RTSP channels are
-    mpegts-live with RTSP catchup. Catchup sources stream TS per time window
-    (what the web player's ``buildCatchupSegments`` expects) so playback starts
-    immediately and the requested time is burned into the picture. ``mcast_channels``
-    are RTP-multicast live channels passed as ``(group_title, name, rtp_url)``.
+    mpegts-over-RTSP live with RTSP catchup. Catchup sources stream TS per time
+    window (what the web player's ``buildCatchupSegments`` expects) so playback
+    starts immediately and the requested time is burned into the picture.
+    ``mcast_channels`` are RTP-multicast live channels passed as
+    ``(group_title, name, rtp_url)``.
     """
     tpl = "playseek={utc:YmdHMS}-{utcend:YmdHMS}"
     lines = ["#EXTM3U"]
@@ -751,11 +752,15 @@ def build_services_m3u(http_hostport: str, rtsp_hostport: str, mcast_channels: l
             f'#EXTINF:-1 group-title="HLS" catchup="default" catchup-source="{src}",{label}',
             f"http://{http_hostport}/live/{key}/index.m3u8",
         ]
-    for prof in PROFILES:
-        # mpegts live (RTSP) + mpegts catchup (RTSP TS window): covers mpegts 回看
+    for prof in RTSP_PROFILES:
+        # mpegts-over-RTSP live + RTSP TS catchup window: covers mpegts 回看
         src = f"rtsp://{rtsp_hostport}/catchup/{prof}?{tpl}"
+        extinf = (
+            f'#EXTINF:-1 group-title="mpegts (RTSP)" catchup="default" '
+            f'catchup-source="{src}",mpegts (RTSP) ({prof})'
+        )
         lines += [
-            f'#EXTINF:-1 group-title="mpegts" catchup="default" catchup-source="{src}",mpegts ({prof})',
+            extinf,
             f"rtsp://{rtsp_hostport}/live/{prof}",
         ]
     for group_title, name, rtp_url in mcast_channels:

@@ -4,14 +4,14 @@
 rtp2httpd can proxy, so you can develop the web player against the scenarios it
 needs to support:
 
-| Scenario        | Delivery                | rtp2httpd proxy | Codecs                              |
-| --------------- | ----------------------- | --------------- | ----------------------------------- |
-| HLS-TS live     | HTTP `.m3u8` + `.ts`    | `/http`         | `h264-mp2`, `hevc-aac`              |
-| HLS-fMP4 live   | HTTP `.m3u8` + `.m4s`   | `/http`         | `h264-aac`, `hevc-aac`              |
-| HLS catchup     | HTTP HLS VOD (`playseek`)| `/http`        | all of the above                    |
-| mpegts catchup  | RTSP TS (`playseek`)    | `/rtsp`         | `h264-mp2`, `hevc-aac`              |
-| mpegts live     | RTP multicast           | `/rtp`         | `h264-mp2`, `hevc-ac3`, `hevc-eac3` |
-| external file   | RTP multicast (looped)  | `/rtp`         | whatever the `.ts` file contains    |
+| Scenario           | Delivery                  | rtp2httpd proxy | Codecs                              |
+| ------------------ | ------------------------- | --------------- | ----------------------------------- |
+| HLS-TS live        | HTTP `.m3u8` + `.ts`      | `/http`         | `h264-mp2`, `hevc-aac`              |
+| HLS-fMP4 live      | HTTP `.m3u8` + `.m4s`     | `/http`         | `h264-aac`, `hevc-aac`              |
+| HLS catchup        | HTTP HLS VOD (`playseek`) | `/http`         | all of the above                    |
+| mpegts (RTSP)      | RTSP TS live + catchup    | `/rtsp`         | `h264-mp2`, `hevc-aac`              |
+| mpegts (multicast) | RTP multicast live        | `/rtp`          | `h264-mp2`, `hevc-ac3`, `hevc-eac3` |
+| external file      | RTP multicast (looped)    | `/rtp`          | whatever the `.ts` file contains    |
 
 - `h264-mp2`  = H.264 video + MPEG-1/2 Layer II audio
 - `hevc-aac`  = H.265/HEVC video + AAC audio
@@ -27,6 +27,10 @@ fMP4 carries AAC audio (MP2-in-MP4 is unsupported), so fMP4 channels use AAC.
 The playlist is produced instantly; each slice is encoded lazily on first
 request with that slice's absolute wall-clock time burned in, so even a
 multi-hour window is time-correct without pre-encoding the whole thing.
+
+The generated channel list names RTSP MPEG-TS channels as `mpegts (RTSP)` and
+multicast MPEG-TS channels as `mpegts (multicast)`, matching the separate
+`RTSP_PROFILES` and `MCAST_PROFILES` sets in `devlab.py`.
 
 Multicast channels use groups `239.255.0.20+` on `--mcast-port` (default 5004).
 ffmpeg sends them via the OS default multicast route, and rtp2httpd joins them
@@ -89,7 +93,7 @@ ffprobe -v error -show_entries stream=codec_type,codec_name \
   "http://127.0.0.1:5140/HLS/HLS%20%28hevc-aac%29"
 
 # catchup: extract a frame and confirm the burned SEEK time matches the request
-ffmpeg -ss 9 -i "http://127.0.0.1:5140/mpegts/mpegts%20%28h264-mp2%29/catchup?playseek=20260630083000-20260630093000" \
+ffmpeg -ss 9 -i "http://127.0.0.1:5140/mpegts%20%28RTSP%29/mpegts%20%28RTSP%29%20%28h264-mp2%29/catchup?playseek=20260630083000-20260630093000" \
   -frames:v 1 -y /tmp/seek.png
 ```
 
