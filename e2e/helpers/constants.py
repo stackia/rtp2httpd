@@ -9,5 +9,5 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 BINARY_PATH = PROJECT_ROOT / "build" / "rtp2httpd"
 FIXTURES_DIR = PROJECT_ROOT / "tools" / "fixtures"
 
-LOOPBACK_IF = "lo0" if sys.platform == "darwin" else "lo"
+LOOPBACK_IF = "lo0" if sys.platform == "darwin" or sys.platform.startswith("freebsd") else "lo"
 MCAST_ADDR = "239.255.0.1"
