@@ -7,7 +7,7 @@ can proxy, covering the scenarios needed to develop the web player:
   * HLS live           (HTTP, .m3u8 + TS segments)
   * HLS catchup        (HTTP, time-shift driven by the ``playseek`` query)
   * mpegts catchup     (RTSP time-shift driven by ``playseek`` on the URI)
-  * mpegts live        (RTP multicast / 组播, joined by rtp2httpd via ``-r lo``)
+  * mpegts live        (RTP multicast over the OS default route)
 
 Codec combinations covered:
 
@@ -27,7 +27,8 @@ So if you request ``playseek`` starting at 12:00:00 UTC, the picture shows
 
 The script only starts the *upstreams* and writes an rtp2httpd config; it does
 not launch rtp2httpd itself (it prints the run command). Requires ``ffmpeg`` on
-PATH (or pass ``--ffmpeg``); multicast channels need ``rtp2httpd ... -r lo``.
+PATH (or pass ``--ffmpeg``). Multicast send and receive both use the OS default
+route; no rtp2httpd ``-r`` option is needed.
 """
 
 from __future__ import annotations
@@ -47,10 +48,22 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FONT: str | None = None
+FONT_CANDIDATES = (
+    # Linux
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    # macOS
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/Library/Fonts/Arial.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+)
 # Profiles used for RTSP scenarios (must be browser-friendly enough to test).
 PROFILES = ("h264-mp2", "hevc-aac")
-# Profiles offered as multicast (组播) live channels.
+# Profiles offered as multicast live channels.
 MCAST_PROFILES = ("h264-mp2", "hevc-ac3", "hevc-eac3")
 
 # HLS live channels covering both segment specs: HLS-TS (MPEG-TS segments) and
@@ -67,6 +80,54 @@ HLS_CHANNELS = (
 # ---------------------------------------------------------------------------
 # ffmpeg argument helpers
 # ---------------------------------------------------------------------------
+
+
+def resolve_font(path: str | None) -> str:
+    if path:
+        if os.path.isfile(path):
+            return path
+        raise RuntimeError(f"font file not found: {path}")
+
+    for candidate in FONT_CANDIDATES:
+        if os.path.isfile(candidate):
+            return candidate
+
+    raise RuntimeError("no usable font found; pass --font /path/to/font.ttf")
+
+
+def get_font() -> str:
+    global FONT
+    if FONT is None:
+        FONT = resolve_font(None)
+    return FONT
+
+
+def ffmpeg_has_filter(ffmpeg: str, filter_name: str) -> bool:
+    try:
+        proc = subprocess.run(
+            [ffmpeg, "-hide_banner", "-filters"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+    needle = f" {filter_name} "
+    return proc.returncode == 0 and any(needle in line for line in proc.stdout.splitlines())
+
+
+def _tail_file(path: str, max_bytes: int = 4096) -> str:
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - max_bytes))
+            return fh.read().decode(errors="replace").strip()
+    except OSError:
+        return ""
 
 
 def video_args(profile: str) -> list[str]:
@@ -119,10 +180,14 @@ def _esc(text: str) -> str:
     return text.replace("\\", "\\\\").replace(":", r"\:").replace("'", r"\'")
 
 
+def _filter_esc(value: str) -> str:
+    return value.replace("\\", "\\\\").replace(":", r"\:").replace("'", r"\'").replace(",", r"\,")
+
+
 def _drawtext(text: str, y: int, expansion: bool) -> str:
     # Use border (not box) for legibility: ffmpeg's drawtext mis-parses a box*
     # option that precedes a text= value containing a %{...} expansion.
-    style = f"fontfile={FONT}:fontcolor=white:fontsize=44:borderw=4:bordercolor=black:x=24:y={y}"
+    style = f"fontfile={_filter_esc(get_font())}:fontcolor=white:fontsize=44:borderw=4:bordercolor=black:x=24:y={y}"
     if expansion:
         return f"drawtext={style}:text={text}"
     return f"drawtext={style}:text={_esc(text)}"
@@ -213,7 +278,9 @@ class LiveHLS:
         self.profile = profile
         self.outdir = outdir
         self.seg_type = seg_type
+        self.log_path = os.path.join(outdir, "ffmpeg.log")
         self.proc: subprocess.Popen[bytes] | None = None
+        self._stderr = None
 
     def start(self) -> None:
         os.makedirs(self.outdir, exist_ok=True)
@@ -257,11 +324,44 @@ class LiveHLS:
             *hls_opts,
             os.path.join(self.outdir, "index.m3u8"),
         ]
-        self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self._stderr = open(self.log_path, "ab")
+        self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=self._stderr)
+
+    def ready(self) -> bool:
+        return os.path.isfile(os.path.join(self.outdir, "index.m3u8"))
+
+    def failure_message(self) -> str:
+        detail = _tail_file(self.log_path)
+        header = f"live HLS generator failed for {self.profile} ({self.seg_type}); log: {self.log_path}"
+        return f"{header}\n{detail}" if detail else header
 
     def stop(self) -> None:
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
+        if self._stderr:
+            self._stderr.close()
+
+
+def wait_for_live_hls(gens: list[LiveHLS], timeout: float) -> None:
+    if timeout <= 0:
+        return
+
+    deadline = time.monotonic() + timeout
+    pending = set(gens)
+    while pending and time.monotonic() < deadline:
+        for gen in list(pending):
+            if gen.ready():
+                pending.remove(gen)
+                continue
+            if gen.proc and gen.proc.poll() is not None:
+                raise RuntimeError(gen.failure_message())
+        if pending:
+            time.sleep(0.2)
+
+    if pending:
+        names = ", ".join(f"{gen.profile}/{gen.seg_type}" for gen in pending)
+        logs = ", ".join(gen.log_path for gen in pending)
+        raise RuntimeError(f"timed out waiting for live HLS playlists: {names}; logs: {logs}")
 
 
 # ---------------------------------------------------------------------------
@@ -567,12 +667,12 @@ class RTSPOrigin:
 
 
 # ---------------------------------------------------------------------------
-# Multicast (组播) live sender
+# Multicast live sender
 # ---------------------------------------------------------------------------
 
 
 class MulticastLive:
-    """Streams RTP/MPEG-TS to a multicast group (rtp2httpd joins it via -r lo).
+    """Streams RTP/MPEG-TS to a multicast group using the OS default route.
 
     Either generates content for a codec *profile* (with a LIVE overlay) or
     stream-copies an arbitrary external .ts *ts_file* (looped) so a real-world
@@ -582,7 +682,6 @@ class MulticastLive:
     def __init__(
         self,
         ffmpeg: str,
-        host: str,
         group: str,
         port: int,
         profile: str | None = None,
@@ -590,7 +689,6 @@ class MulticastLive:
         size: str = "960x540",
     ):
         self.ffmpeg = ffmpeg
-        self.host = host
         self.group = group
         self.port = port
         self.profile = profile
@@ -603,7 +701,7 @@ class MulticastLive:
 
     def _cmd(self) -> list[str]:
         common = [self.ffmpeg, "-hide_banner", "-loglevel", "error"]
-        out = f"{self.url()}?localaddr={self.host}&ttl=1&pkt_size=1316"
+        out = f"{self.url()}?ttl=1&pkt_size=1316"
         if self.ts_file:
             # Stream-copy the original bitstream so the exact codecs are relayed.
             return [*common, "-re", "-stream_loop", "-1", "-i", self.ts_file, "-c", "copy", "-f", "rtp_mpegts", out]
@@ -641,7 +739,7 @@ def build_services_m3u(http_hostport: str, rtsp_hostport: str, mcast_channels: l
     mpegts-live with RTSP catchup. Catchup sources stream TS per time window
     (what the web player's ``buildCatchupSegments`` expects) so playback starts
     immediately and the requested time is burned into the picture. ``mcast_channels``
-    are RTP-multicast (组播) live channels passed as ``(group_title, name, rtp_url)``.
+    are RTP-multicast live channels passed as ``(group_title, name, rtp_url)``.
     """
     tpl = "playseek={utc:YmdHMS}-{utcend:YmdHMS}"
     lines = ["#EXTM3U"]
@@ -684,9 +782,16 @@ def main() -> int:
     ap.add_argument("--rtsp-port", type=int, default=8554)
     ap.add_argument("--r2h-port", type=int, default=5140, help="port rtp2httpd will listen on (for config)")
     ap.add_argument("--ffmpeg", default=shutil.which("ffmpeg") or "ffmpeg")
+    ap.add_argument("--font", help="font file used by ffmpeg drawtext")
     ap.add_argument("--config", default="/tmp/r2h-devlab.conf")
     ap.add_argument("--workdir", default=tempfile.mkdtemp(prefix="r2h-devlab-"))
-    ap.add_argument("--mcast-port", type=int, default=5004, help="UDP port for multicast (组播) live channels")
+    ap.add_argument(
+        "--startup-timeout",
+        type=float,
+        default=20.0,
+        help="seconds to wait for live HLS playlists before reporting startup failure (0 disables)",
+    )
+    ap.add_argument("--mcast-port", type=int, default=5004, help="UDP port for multicast live channels")
     ap.add_argument("--mcast-base", type=int, default=20, help="last octet of first 239.255.0.x multicast group")
     ap.add_argument(
         "--ts-file",
@@ -700,6 +805,20 @@ def main() -> int:
     if not shutil.which(args.ffmpeg) and not os.path.isfile(args.ffmpeg):
         print(f"ERROR: ffmpeg not found ({args.ffmpeg})", file=sys.stderr)
         return 1
+    if not ffmpeg_has_filter(args.ffmpeg, "drawtext"):
+        print(
+            f"ERROR: ffmpeg at {args.ffmpeg} does not provide the drawtext filter. "
+            "Install a full ffmpeg build (on macOS/Homebrew: brew install ffmpeg-full) or pass --ffmpeg.",
+            file=sys.stderr,
+        )
+        return 1
+
+    global FONT
+    try:
+        FONT = resolve_font(args.font)
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
 
     live_root = os.path.join(args.workdir, "live")
 
@@ -709,6 +828,13 @@ def main() -> int:
     ]
     for gen in live:
         gen.start()
+    try:
+        wait_for_live_hls(live, args.startup_timeout)
+    except RuntimeError as exc:
+        for gen in live:
+            gen.stop()
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
 
     catchup = CatchupHLS(args.ffmpeg)
     handler = make_http_handler(args.host, args.http_port, live_root, catchup)
@@ -718,7 +844,7 @@ def main() -> int:
     rtsp = RTSPOrigin(args.ffmpeg, args.host, args.rtsp_port)
     rtsp.start()
 
-    # Multicast (组播) live: generated codec profiles + any external .ts files.
+    # Multicast live: generated codec profiles + any external .ts files.
     mcast_labels = {
         "h264-mp2": "mcast (h264-mp2)",
         "hevc-ac3": "mcast (hevc-ac3)",
@@ -730,7 +856,7 @@ def main() -> int:
     for prof in MCAST_PROFILES:
         group = f"239.255.0.{octet}"
         octet += 1
-        s = MulticastLive(args.ffmpeg, args.host, group, args.mcast_port, profile=prof)
+        s = MulticastLive(args.ffmpeg, group, args.mcast_port, profile=prof)
         senders.append(s)
         mcast_channels.append(("mpegts (multicast)", mcast_labels.get(prof, f"mcast ({prof})"), s.url()))
     for path in args.ts_file:
@@ -739,7 +865,7 @@ def main() -> int:
             continue
         group = f"239.255.0.{octet}"
         octet += 1
-        s = MulticastLive(args.ffmpeg, args.host, group, args.mcast_port, ts_file=path)
+        s = MulticastLive(args.ffmpeg, group, args.mcast_port, ts_file=path)
         senders.append(s)
         mcast_channels.append(("mpegts (file)", f"file {os.path.basename(path)}", s.url()))
     for s in senders:
@@ -753,8 +879,10 @@ def main() -> int:
     print(
         f"multicast live channels: {len(mcast_channels)} (groups 239.255.0.{args.mcast_base}+, port {args.mcast_port})"
     )
+    print("multicast route: OS default route (no rtp2httpd -r option)")
+    print(f"drawtext font: {FONT}")
     print(f"wrote rtp2httpd config: {args.config}")
-    print(f"run rtp2httpd:  ./build/rtp2httpd -c {args.config} -r lo")
+    print(f"run rtp2httpd:  ./build/rtp2httpd -c {args.config}")
     print("Ctrl-C to stop.")
 
     try:

@@ -10,8 +10,8 @@ needs to support:
 | HLS-fMP4 live   | HTTP `.m3u8` + `.m4s`   | `/http`         | `h264-aac`, `hevc-aac`              |
 | HLS catchup     | HTTP HLS VOD (`playseek`)| `/http`        | all of the above                    |
 | mpegts catchup  | RTSP TS (`playseek`)    | `/rtsp`         | `h264-mp2`, `hevc-aac`              |
-| mpegts live     | RTP multicast (组播)    | `/rtp` (`-r lo`)| `h264-mp2`, `hevc-ac3`, `hevc-eac3` |
-| external file   | RTP multicast (looped)  | `/rtp` (`-r lo`)| whatever the `.ts` file contains    |
+| mpegts live     | RTP multicast           | `/rtp`         | `h264-mp2`, `hevc-ac3`, `hevc-eac3` |
+| external file   | RTP multicast (looped)  | `/rtp`         | whatever the `.ts` file contains    |
 
 - `h264-mp2`  = H.264 video + MPEG-1/2 Layer II audio
 - `hevc-aac`  = H.265/HEVC video + AAC audio
@@ -28,8 +28,9 @@ The playlist is produced instantly; each slice is encoded lazily on first
 request with that slice's absolute wall-clock time burned in, so even a
 multi-hour window is time-correct without pre-encoding the whole thing.
 
-Multicast channels use groups `239.255.0.20+` on `--mcast-port` (default 5004);
-rtp2httpd must be run with `-r lo` to join them on loopback.
+Multicast channels use groups `239.255.0.20+` on `--mcast-port` (default 5004).
+ffmpeg sends them via the OS default multicast route, and rtp2httpd joins them
+without an explicit upstream interface.
 
 ## Debugging a user-provided .ts file
 
@@ -54,17 +55,31 @@ UTC` — proving the time → picture mapping end to end.
 ```bash
 # 1. start the upstreams (writes /tmp/r2h-devlab.conf)
 uv run python tools/devlab/devlab.py
+# The script prints the rtp2httpd command.
 
 # 2. in another shell, run rtp2httpd against the generated config
-./build/rtp2httpd -c /tmp/r2h-devlab.conf -r lo
+./build/rtp2httpd -c /tmp/r2h-devlab.conf
 
 # 3. open the player and pick a channel
 #    http://127.0.0.1:5140/player
 ```
 
-Requires `ffmpeg` on PATH (`libx264`, `libx265`, `aac`, `mp2`). Defaults: HTTP
-origin `127.0.0.1:8881`, RTSP origin `127.0.0.1:8554`, rtp2httpd port `5140`.
-Run `uv run python tools/devlab/devlab.py --help` for options.
+Requires `ffmpeg` on PATH with `drawtext`, `libx264`, `libx265`, `aac`, and
+`mp2`. On macOS with Homebrew, install a full build:
+
+```bash
+brew install ffmpeg-full
+```
+
+Verify `drawtext` before starting the lab:
+
+```bash
+ffmpeg -hide_banner -filters | grep drawtext
+```
+
+Defaults: HTTP origin `127.0.0.1:8881`, RTSP origin `127.0.0.1:8554`,
+rtp2httpd port `5140`. Run `uv run python tools/devlab/devlab.py --help` for
+options.
 
 ## Verifying a scenario without the browser
 
