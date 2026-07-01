@@ -112,7 +112,7 @@ def ffmpeg_has_filter(ffmpeg: str, filter_name: str) -> bool:
             timeout=10,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return False
 
     needle = f" {filter_name} "

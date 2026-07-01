@@ -6,16 +6,18 @@
 # Results are collected and summarized at the end.
 #
 # Usage:
-#   ./benchmark.sh              # Run all programs
-#   ./benchmark.sh rtp2httpd    # Run only rtp2httpd tests
-#   ./benchmark.sh tvgate       # Run only tvgate tests
+#   scripts/benchmark.sh              # Run all programs
+#   scripts/benchmark.sh rtp2httpd    # Run only rtp2httpd tests
+#   scripts/benchmark.sh tvgate       # Run only tvgate tests
 #
 
 set -e
+set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-cd "$PROJECT_ROOT/tools"
+STRESS_TEST_DIR="$PROJECT_ROOT/tools/stress-test"
+cd "$PROJECT_ROOT"
 
 # All available programs
 ALL_PROGRAMS=("rtp2httpd" "msd_lite" "udpxy" "tvgate")
@@ -40,17 +42,17 @@ else
     PROGRAMS=("${ALL_PROGRAMS[@]}")
 fi
 
-# Activate virtual environment
-if [ -f "$PROJECT_ROOT/.venv/bin/activate" ]; then
-    source "$PROJECT_ROOT/.venv/bin/activate"
+# Check Python tooling
+if command -v uv >/dev/null 2>&1; then
+    UV_BIN="uv"
 else
-    echo "Error: Virtual environment not found at $PROJECT_ROOT/.venv"
-    echo "Please run: uv sync"
+    echo "Error: uv not found"
+    echo "Please install uv and run: uv sync"
     exit 1
 fi
 
 # Output file for results
-RESULTS_FILE="benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
+RESULTS_FILE="$STRESS_TEST_DIR/benchmark_results_$(date +%Y%m%d_%H%M%S).txt"
 
 # Test duration
 DURATION=10
@@ -99,7 +101,7 @@ run_test() {
     echo "------------------------------------------------------------" >> "$RESULTS_FILE"
 
     # Run the test and capture output
-    if python stress_test.py --program "$program" --duration "$DURATION" $extra_args 2>&1 | tee -a "$RESULTS_FILE"; then
+    if "$UV_BIN" run python "$STRESS_TEST_DIR/stress_test.py" --program "$program" --duration "$DURATION" $extra_args 2>&1 | tee -a "$RESULTS_FILE"; then
         echo "✓ Test completed"
     else
         echo "✗ Test failed"
@@ -118,16 +120,16 @@ for program in "${PROGRAMS[@]}"; do
     # Check if program binary exists
     case "$program" in
         rtp2httpd)
-            binary="../build/rtp2httpd"
+            binary="$PROJECT_ROOT/build/rtp2httpd"
             ;;
         msd_lite)
-            binary="../../msd_lite/build/src/msd_lite"
+            binary="$PROJECT_ROOT/../msd_lite/build/src/msd_lite"
             ;;
         udpxy)
-            binary="../../udpxy/chipmunk/udpxy"
+            binary="$PROJECT_ROOT/../udpxy/chipmunk/udpxy"
             ;;
         tvgate)
-            binary="../../tvgate/TVGate-linux-arm64"
+            binary="$PROJECT_ROOT/../tvgate/TVGate-linux-arm64"
             ;;
     esac
 

@@ -89,13 +89,18 @@ Compared to udpxy's fork-per-client model, rtp2httpd uses a more efficient event
 
 ## Running the Benchmark
 
-See [tools/README.md](https://github.com/stackia/rtp2httpd/blob/main/tools/README.md) for testing tools and methodology.
+See [tools/stress-test/README.md](https://github.com/stackia/rtp2httpd/blob/main/tools/stress-test/README.md) for stress test tooling and methodology.
 
-Quick run:
+Single stress test:
 
 ```bash
-cd tools
-./benchmark.sh
+uv run python tools/stress-test/stress_test.py --program rtp2httpd --duration 10 --clients 8 --speed 5
 ```
 
-Test results are saved to `benchmark_results_YYYYMMDD_HHMMSS.txt`.
+Full benchmark suite:
+
+```bash
+scripts/benchmark.sh
+```
+
+Test results are saved to `tools/stress-test/benchmark_results_YYYYMMDD_HHMMSS.txt`.

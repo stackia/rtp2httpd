@@ -67,12 +67,12 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s fixtures/fec_sample.pcapng
-  %(prog)s fixtures/fec_sample.pcapng -i eth0
-  %(prog)s fixtures/fec_sample.pcapng -v
-  %(prog)s fixtures/fec_sample.pcapng --speed 2.0           # 2x speed
-  %(prog)s fixtures/fec_sample.pcapng --speed 10 --continuous  # Stress test
-  %(prog)s fixtures/fec_sample.pcapng --loss 1.0 --reorder 2.0
+  %(prog)s tools/fixtures/fec_sample.pcapng
+  %(prog)s tools/fixtures/fec_sample.pcapng -i eth0
+  %(prog)s tools/fixtures/fec_sample.pcapng -v
+  %(prog)s tools/fixtures/fec_sample.pcapng --speed 2.0              # 2x speed
+  %(prog)s tools/fixtures/fec_sample.pcapng --speed 10 --continuous  # Stress test
+  %(prog)s tools/fixtures/fec_sample.pcapng --loss 1.0 --reorder 2.0
 """,
     )
     parser.add_argument("pcapng_file", type=Path, help="Path to pcapng file")

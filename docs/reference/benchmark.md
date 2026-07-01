@@ -89,13 +89,18 @@
 
 ## 运行基准测试
 
-详见 [tools/README.md](https://github.com/stackia/rtp2httpd/blob/main/tools/README.md) 了解测试工具和方法。
+详见 [tools/stress-test/README.md](https://github.com/stackia/rtp2httpd/blob/main/tools/stress-test/README.md) 了解压力测试工具和方法。
 
-快速运行：
+单次压力测试：
 
 ```bash
-cd tools
-./benchmark.sh
+uv run python tools/stress-test/stress_test.py --program rtp2httpd --duration 10 --clients 8 --speed 5
 ```
 
-测试结果保存至 `benchmark_results_YYYYMMDD_HHMMSS.txt`。
+完整基准测试：
+
+```bash
+scripts/benchmark.sh
+```
+
+测试结果保存至 `tools/stress-test/benchmark_results_YYYYMMDD_HHMMSS.txt`。

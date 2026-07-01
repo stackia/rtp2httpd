@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stress Test for rtp2httpd / msd_lite / udpxy
+Stress Test for rtp2httpd / msd_lite / udpxy / tvgate
 
 Runs a multicast replay, streaming server, and multiple curl clients
 concurrently to measure CPU and memory usage under load.
@@ -39,10 +39,10 @@ def get_stream_url(client_index: int) -> str:
     return f"rtp/{MULTICAST_BASE}.{host}:{MULTICAST_PORT}"
 
 
-# Program configurations with relative paths (relative to tools directory)
+# Program configurations with relative paths (relative to project root)
 PROGRAM_CONFIGS: dict[str, dict] = {
     "rtp2httpd": {
-        "binary": "../build/rtp2httpd",
+        "binary": "build/rtp2httpd",
         "port": 5140,
         # Args builder: receives (binary_path, m3u_file, port, config_path) -> list of args
         "build_args": lambda binary, m3u, port, config: [
@@ -58,9 +58,9 @@ PROGRAM_CONFIGS: dict[str, dict] = {
         ],
     },
     "msd_lite": {
-        "binary": "../../msd_lite/build/src/msd_lite",
+        "binary": "../msd_lite/build/src/msd_lite",
         "port": 7088,
-        "config": "stress-test-conf/msd_lite.conf",  # Relative to tools directory
+        "config": "tools/stress-test/conf/msd_lite.conf",
         "build_args": lambda binary, m3u, port, config: [
             str(binary),
             "-c",
@@ -68,7 +68,7 @@ PROGRAM_CONFIGS: dict[str, dict] = {
         ],
     },
     "udpxy": {
-        "binary": "../../udpxy/chipmunk/udpxy",
+        "binary": "../udpxy/chipmunk/udpxy",
         "port": 4022,
         "build_args": lambda binary, m3u, port, config: [
             str(binary),
@@ -80,9 +80,9 @@ PROGRAM_CONFIGS: dict[str, dict] = {
         ],
     },
     "tvgate": {
-        "binary": "../../tvgate/TVGate-linux-arm64",
+        "binary": "../tvgate/TVGate-linux-arm64",
         "port": 8888,
-        "config": "stress-test-conf/tvgate-config.yaml",  # Relative to tools directory
+        "config": "tools/stress-test/conf/tvgate-config.yaml",
         "build_args": lambda binary, m3u, port, config: [
             str(binary),
             "-config",
@@ -407,10 +407,10 @@ def find_project_root() -> Path:
     """Find the project root directory."""
     current = Path(__file__).resolve().parent
     while current != current.parent:
-        if (current / "build" / "rtp2httpd").exists() or (current / "rtp2httpd").exists():
+        if (current / "CMakeLists.txt").exists() and (current / "tools").exists():
             return current
         current = current.parent
-    return Path(__file__).resolve().parent.parent
+    return Path(__file__).resolve().parents[2]
 
 
 def main() -> int:
@@ -423,13 +423,15 @@ def main() -> int:
 
     project_root = find_project_root()
     tools_dir = project_root / "tools"
+    stress_test_dir = tools_dir / "stress-test"
 
-    # Resolve binary path (relative to tools directory)
-    binary_path = (tools_dir / config["binary"]).resolve()
+    # Resolve binary path (relative to project root)
+    binary_path = (project_root / config["binary"]).resolve()
 
     # Paths
     pcapng_file = tools_dir / "fixtures" / "fec_sample.pcapng"
     m3u_file = tools_dir / "fixtures" / "sample.m3u"
+    udp_replay_script = tools_dir / "udp-replay" / "udp_replay.py"
 
     # Validate paths
     if not pcapng_file.exists():
@@ -440,6 +442,9 @@ def main() -> int:
         return 1
     if not binary_path.exists():
         print(f"Error: {args.program} binary not found: {binary_path}", file=sys.stderr)
+        return 1
+    if not udp_replay_script.exists():
+        print(f"Error: UDP replay script not found: {udp_replay_script}", file=sys.stderr)
         return 1
 
     # Check for venv
@@ -475,7 +480,7 @@ def main() -> int:
         print("\n[1/3] Starting multicast replay...")
         replay_cmd = [
             str(venv_python),
-            str(tools_dir / "main.py"),
+            str(udp_replay_script),
             str(pcapng_file),
             "--continuous",
             "--speed",
@@ -485,7 +490,7 @@ def main() -> int:
             replay_cmd,
             stdout=subprocess.PIPE if not args.verbose else None,
             stderr=subprocess.STDOUT if not args.verbose else None,
-            cwd=str(tools_dir),
+            cwd=str(stress_test_dir),
         )
         processes.append(replay_proc)
         print(f"  PID: {replay_proc.pid}")
@@ -495,10 +500,13 @@ def main() -> int:
 
         # 2. Start streaming server
         print(f"\n[2/3] Starting {args.program}...")
-        # Resolve config path if specified (relative to tools directory)
+        # Resolve config path if specified (relative to project root)
         config_path = None
         if "config" in config:
-            config_path = (tools_dir / config["config"]).resolve()
+            config_path = (project_root / config["config"]).resolve()
+            if not config_path.exists():
+                print(f"Error: {args.program} config not found: {config_path}", file=sys.stderr)
+                return 1
         server_cmd = build_args(binary_path, m3u_file, port, config_path)
         server_proc = subprocess.Popen(
             server_cmd,
@@ -637,7 +645,7 @@ def main() -> int:
 
         # Replay stats
         if replay_stats and replay_stats.cpu_samples:
-            print("\n[replay (main.py)]")
+            print("\n[replay (udp_replay.py)]")
             print(f"  CPU:  avg={replay_stats.cpu_avg:6.2f}%  max={replay_stats.cpu_max:6.2f}%")
             print(f"  PSS:  avg={replay_stats.pss_avg:6.2f}MB max={replay_stats.pss_max:6.2f}MB")
             print(f"  USS:  avg={replay_stats.uss_avg:6.2f}MB max={replay_stats.uss_max:6.2f}MB")
