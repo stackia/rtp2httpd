@@ -8,6 +8,7 @@ RTP/IPTV multicast-to-HTTP streaming daemon written in C, with a React/TypeScrip
 - Multi-worker model via `fork()` — workers are independent, only sharing stats via shared memory
 - Cross-platform: Linux, macOS, FreeBSD — use `#ifdef` for platform-specific APIs
 - Web UI (React/Vite) is compiled and embedded as `src/embedded_web_data.h` — never edit this file directly
+- If `src/embedded_web_data.h` changes from a Web UI rebuild, do not commit it unless explicitly requested.
 - Config file format is INI (`rtp2httpd.conf`), not YAML/JSON
 
 ## Code Style — C
@@ -21,6 +22,7 @@ RTP/IPTV multicast-to-HTTP streaming daemon written in C, with a React/TypeScrip
 ## Code Style — TypeScript / JavaScript
 
 - Formatter/linter: Biome (`biome.json`), line width 120, indent with tabs
+- Follow `.nvmrc` via `nvm` + Corepack (`pnpm`) for JS tooling when available; if `nvm` is unavailable, fall back to the system `node`.
 - Prefer Tailwind CSS utilities for styling; add custom CSS classes only when Tailwind cannot express the behavior clearly.
 
 ## Code Style — Python
@@ -53,20 +55,5 @@ then `uv sync --group dev`). Standard commands live in `package.json` scripts an
 
 Non-obvious notes:
 
-- **Node version**: the project pins Node `lts/krypton` (v24) via `.nvmrc`; nvm's default alias is set
-  to it, so a login shell resolves Node 24, the corepack `pnpm@11.9.0`, and `uv`. A bare non-login
-  shell may instead pick up the system `/exec-daemon/node` (v22) that shadows nvm — run inside a login
-  shell (or `nvm use`) when the exact version matters.
-- **Multi-scenario player dev lab**: `tools/devlab/devlab.py` (run via `uv run python`) starts mock
-  upstreams for HLS live (both HLS-TS and HLS-fMP4 segment specs), HLS/RTSP catchup, and RTP multicast
-  (组播) mpegts live, across `h264-mp2`, `h264-aac`, `hevc-aac`, `hevc-ac3`, `hevc-eac3`; `--ts-file
-  PATH` republishes an arbitrary `.ts`
-  file (stream-copied, looped) as a multicast channel for debugging user-reported streams. It writes
-  an rtp2httpd config (run the daemon with `-r lo` for the multicast channels); see
-  `tools/devlab/README.md`. Catchup video burns the requested `playseek` time into the picture so
-  seek correctness is visible. Two non-obvious gotchas it encodes:
-  (1) the web player's `buildCatchupSegments` expands `catchup-source` per time window — HLS catchup
-  returns an HLS VOD `m3u8`+`.ts` per window (the loader detects the nested playlist), while
-  mpegts/RTSP catchup streams continuous TS per window; (2) ffmpeg `drawtext` mis-parses a `box*`
-  option placed before a `text=` containing a `%{...}` expansion, and `%{...:...}` expansions with
-  colon args fight filtergraph escaping — prefer `borderw`/`bordercolor` and colon-free text.
+- **Dev lab**: `tools/devlab/devlab.py` starts local mock upstreams for Web UI/player debugging,
+  including live, catchup, RTP multicast, HLS, and RTSP scenarios. See `tools/devlab/README.md`.
