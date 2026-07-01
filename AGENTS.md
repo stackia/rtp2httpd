@@ -44,3 +44,29 @@ RTP/IPTV multicast-to-HTTP streaming daemon written in C, with a React/TypeScrip
 - Use npm/yarn — this project uses pnpm
 - Use autotools — this project uses CMake
 - Add dependencies without discussing first
+
+## Cursor Cloud specific instructions
+
+Toolchain is pre-installed and refreshed by the startup update script (`pnpm install --frozen-lockfile`
+then `uv sync --group dev`). Standard commands live in `package.json` scripts and the `build-run` /
+`e2e` skills — use those rather than reinventing them.
+
+Non-obvious notes:
+
+- **Node version**: the project pins Node `lts/krypton` (v24) via `.nvmrc`; nvm's default alias is set
+  to it, so a login shell resolves Node 24, the corepack `pnpm@11.9.0`, and `uv`. A bare non-login
+  shell may instead pick up the system `/exec-daemon/node` (v22) that shadows nvm — run inside a login
+  shell (or `nvm use`) when the exact version matters.
+- **Multi-scenario player dev lab**: `tools/devlab/devlab.py` (run via `uv run python`) starts mock
+  upstreams for HLS live (both HLS-TS and HLS-fMP4 segment specs), HLS/RTSP catchup, and RTP multicast
+  (组播) mpegts live, across `h264-mp2`, `h264-aac`, `hevc-aac`, `hevc-ac3`, `hevc-eac3`; `--ts-file
+  PATH` republishes an arbitrary `.ts`
+  file (stream-copied, looped) as a multicast channel for debugging user-reported streams. It writes
+  an rtp2httpd config (run the daemon with `-r lo` for the multicast channels); see
+  `tools/devlab/README.md`. Catchup video burns the requested `playseek` time into the picture so
+  seek correctness is visible. Two non-obvious gotchas it encodes:
+  (1) the web player's `buildCatchupSegments` expands `catchup-source` per time window — HLS catchup
+  returns an HLS VOD `m3u8`+`.ts` per window (the loader detects the nested playlist), while
+  mpegts/RTSP catchup streams continuous TS per window; (2) ffmpeg `drawtext` mis-parses a `box*`
+  option placed before a `text=` containing a `%{...}` expansion, and `%{...:...}` expansions with
+  colon args fight filtergraph escaping — prefer `borderw`/`bordercolor` and colon-free text.
