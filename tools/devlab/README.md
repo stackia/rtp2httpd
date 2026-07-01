@@ -15,8 +15,8 @@ needs to support:
 
 - `h264-mp2`  = H.264 video + MPEG-1/2 Layer II audio
 - `hevc-aac`  = H.265/HEVC video + AAC audio
-- `hevc-ac3`  = H.265/HEVC video + AC-3 audio   (北京卫视 4K style)
-- `hevc-eac3` = H.265/HEVC video + E-AC-3 audio (北京卫视 4K style)
+- `hevc-ac3`  = H.265/HEVC video + AC-3 audio
+- `hevc-eac3` = H.265/HEVC video + E-AC-3 audio
 
 HLS live is offered in both segment specs: **HLS-TS** (MPEG-TS `.ts` segments)
 and **HLS-fMP4** (an `init.mp4` referenced via `#EXT-X-MAP` + `.m4s` fragments).

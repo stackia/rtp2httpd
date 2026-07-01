@@ -13,8 +13,8 @@ Codec combinations covered:
 
   * ``h264-mp2``   : H.264 video + MPEG-1/2 Layer II audio
   * ``hevc-aac``   : H.265/HEVC video + AAC audio
-  * ``hevc-ac3``   : H.265/HEVC video + AC-3 audio   (北京卫视 4K style)
-  * ``hevc-eac3``  : H.265/HEVC video + E-AC-3 audio (北京卫视 4K style)
+  * ``hevc-ac3``   : H.265/HEVC video + AC-3 audio
+  * ``hevc-eac3``  : H.265/HEVC video + E-AC-3 audio
 
 Any external .ts file can also be published as a multicast live channel
 (looped, stream-copied) via ``--ts-file PATH`` -- handy for debugging a stream
@@ -50,7 +50,7 @@ from urllib.parse import parse_qs, urlparse
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 # Profiles used for RTSP scenarios (must be browser-friendly enough to test).
 PROFILES = ("h264-mp2", "hevc-aac")
-# Profiles offered as multicast (组播) live channels, incl. 北京卫视 4K style combos.
+# Profiles offered as multicast (组播) live channels.
 MCAST_PROFILES = ("h264-mp2", "hevc-ac3", "hevc-eac3")
 
 # HLS live channels covering both segment specs: HLS-TS (MPEG-TS segments) and
@@ -721,8 +721,8 @@ def main() -> int:
     # Multicast (组播) live: generated codec profiles + any external .ts files.
     mcast_labels = {
         "h264-mp2": "mcast (h264-mp2)",
-        "hevc-ac3": "BTV-4K sim (hevc-ac3)",
-        "hevc-eac3": "BTV-4K sim (hevc-eac3)",
+        "hevc-ac3": "mcast (hevc-ac3)",
+        "hevc-eac3": "mcast (hevc-eac3)",
     }
     senders: list[MulticastLive] = []
     mcast_channels: list[tuple[str, str, str]] = []
