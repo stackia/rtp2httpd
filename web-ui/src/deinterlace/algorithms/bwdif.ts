@@ -8,11 +8,12 @@ import { type DeinterlaceAlgorithm, type FrameParams, registerAlgorithm } from "
  * areas are reconstructed with an edge-preserving spatio-temporal filter,
  * clamped to the temporal neighborhood exactly like the C reference.
  *
- * Field timing (TFF): deinterlacing field F of frame N needs the fields before
- * and after it, i.e. frames N-1 and N+1 as weaved textures. The renderer
- * therefore runs one frame behind the video (u_next is the newest upload) —
- * ~40 ms extra latency, irrelevant for IPTV. Rendered at field rate
- * (top field first, bottom half a frame later) for 50p motion.
+ * Field timing: deinterlacing field F of frame N needs the fields before and
+ * after it, i.e. frames N-1 and N+1 as weaved textures. The renderer therefore
+ * runs one frame behind the video (u_next is the newest upload) — ~40 ms extra
+ * latency, irrelevant for IPTV. Rendered at field rate (first field, then the
+ * other half a frame later) for 50p motion; which spatial field comes first is
+ * the detector-determined field order (TFF/BFF).
  *
  * Luma and chroma are treated separately, same rationale as before: the
  * decoder upsamples 4:2:0 interlaced chroma progressively, baking
@@ -29,8 +30,9 @@ precision highp float;
 uniform sampler2D u_prev; // frame N-1 (weaved)
 uniform sampler2D u_cur;  // frame N   (the frame being deinterlaced)
 uniform sampler2D u_next; // frame N+1 (weaved)
-uniform float u_height;    // frame height in pixels
-uniform float u_keepField; // 0.0 = render top field (even rows kept), 1.0 = bottom field
+uniform float u_height;      // frame height in pixels
+uniform float u_keepField;   // 0.0 = render top field (even rows kept), 1.0 = bottom field
+uniform float u_secondField; // 1.0 = this is the temporally second field of the frame
 
 in vec2 v_texCoord;
 out vec4 outColor;
@@ -57,14 +59,14 @@ float rowLuma(sampler2D t, float dy) {
 
 // prev2/next2: frames whose rows at the MISSING parity are the temporally
 // previous/next fields of the field being rendered (see FFmpeg bwdif).
-// TFF first field (keepField 0): prev2 = prev frame, next2 = cur frame.
-// TFF second field (keepField 1): prev2 = cur frame, next2 = next frame.
+// First field of the frame: the missing field is newer in prev, older in cur.
+// Second field: the missing field is older in cur, newer in next.
 float prev2Luma(float dy) {
-  return u_keepField < 0.5 ? rowLuma(u_prev, dy) : rowLuma(u_cur, dy);
+  return u_secondField < 0.5 ? rowLuma(u_prev, dy) : rowLuma(u_cur, dy);
 }
 
 float next2Luma(float dy) {
-  return u_keepField < 0.5 ? rowLuma(u_cur, dy) : rowLuma(u_next, dy);
+  return u_secondField < 0.5 ? rowLuma(u_cur, dy) : rowLuma(u_next, dy);
 }
 
 // FFmpeg bwdif filter_line_c in float form (coefficients are /8192 fixed-point)
@@ -148,6 +150,7 @@ class BwdifAlgorithm implements DeinterlaceAlgorithm {
   private program: WebGLProgram | null = null;
   private uHeight: WebGLUniformLocation | null = null;
   private uKeepField: WebGLUniformLocation | null = null;
+  private uSecondField: WebGLUniformLocation | null = null;
 
   init(gl: WebGL2RenderingContext): void {
     this.program = createProgram(gl, FULLSCREEN_VERTEX_SHADER, FRAGMENT_SHADER);
@@ -158,6 +161,7 @@ class BwdifAlgorithm implements DeinterlaceAlgorithm {
     gl.uniform1i(gl.getUniformLocation(this.program, "u_prev"), 2);
     this.uHeight = gl.getUniformLocation(this.program, "u_height");
     this.uKeepField = gl.getUniformLocation(this.program, "u_keepField");
+    this.uSecondField = gl.getUniformLocation(this.program, "u_secondField");
   }
 
   render(gl: WebGL2RenderingContext, textures: WebGLTexture[], params: FrameParams): void {
@@ -171,6 +175,7 @@ class BwdifAlgorithm implements DeinterlaceAlgorithm {
     }
     gl.uniform1f(this.uHeight, params.height);
     gl.uniform1f(this.uKeepField, params.keepField);
+    gl.uniform1f(this.uSecondField, params.isSecondField ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 

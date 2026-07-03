@@ -65,14 +65,16 @@ FONT_CANDIDATES = (
 RTSP_PROFILES = ("h264-mp2", "hevc-aac")
 # Profiles offered as multicast live channels.
 MCAST_PROFILES = ("h264-mp2", "hevc-ac3", "hevc-eac3")
-# Interlaced multicast channels for web-player deinterlacing work: 1080i (should
-# trigger the heuristic detector) plus progressive controls at the gate boundary
-# (1080p must not false-positive, 2160p must be gated off entirely).
-# Tuple: (profile, size, interlaced).
+# Interlaced multicast channels for web-player deinterlacing work: 1080i TFF and
+# BFF (both should trigger the heuristic detector, and the field-order vote must
+# pick the right one) plus progressive controls at the gate boundary (1080p must
+# not false-positive, 2160p must be gated off entirely).
+# Tuple: (profile, size, scan) where scan is "tff" | "bff" | "p".
 MCAST_SCAN_CHANNELS = (
-    ("h264-mp2", "1920x1080", True),
-    ("h264-mp2", "1920x1080", False),
-    ("hevc-aac", "3840x2160", False),
+    ("h264-mp2", "1920x1080", "tff"),
+    ("h264-mp2", "1920x1080", "bff"),
+    ("h264-mp2", "1920x1080", "p"),
+    ("hevc-aac", "3840x2160", "p"),
 )
 
 # HLS live channels covering both segment specs: HLS-TS (MPEG-TS segments) and
@@ -139,14 +141,15 @@ def _tail_file(path: str, max_bytes: int = 4096) -> str:
         return ""
 
 
-def video_args(profile: str, interlaced: bool = False) -> list[str]:
+def video_args(profile: str, scan: str = "p") -> list[str]:
     """Encoder args for the video stream of *profile* (keyframe every second,
     headers repeated so a client joining mid-stream can start decoding).
-    ``interlaced`` encodes true interlaced (TFF) H.264 for deinterlace testing."""
+    ``scan`` is "p" (progressive) or "tff"/"bff" for true interlaced H.264."""
+    interlaced = scan in ("tff", "bff")
     if profile.startswith("h264"):
         x264_params = "keyint=25:min-keyint=25:scenecut=0:repeat-headers=1"
         if interlaced:
-            x264_params += ":tff=1"
+            x264_params += f":{scan}=1"
         return [
             "-c:v",
             "libx264",
@@ -701,7 +704,7 @@ class MulticastLive:
         profile: str | None = None,
         ts_file: str | None = None,
         size: str = "960x540",
-        interlaced: bool = False,
+        scan: str = "p",
     ):
         self.ffmpeg = ffmpeg
         self.group = group
@@ -709,7 +712,7 @@ class MulticastLive:
         self.profile = profile
         self.ts_file = ts_file
         self.size = size
-        self.interlaced = interlaced
+        self.scan = scan
         self.proc: subprocess.Popen[bytes] | None = None
 
     def url(self) -> str:
@@ -722,13 +725,14 @@ class MulticastLive:
             # Stream-copy the original bitstream so the exact codecs are relayed.
             return [*common, "-re", "-stream_loop", "-1", "-i", self.ts_file, "-c", "copy", "-f", "rtp_mpegts", out]
         prof = self.profile or "h264-mp2"
-        if self.interlaced:
+        if self.scan in ("tff", "bff"):
             # True interlaced content with real motion between fields: generate at
             # field rate (50fps), then tinterlace weaves adjacent frames into the
             # two fields of one 25fps interlaced frame. The moving testsrc2
             # pattern guarantees combing on any motion, which is exactly what the
             # web player's heuristic detector needs to see.
-            vf = f"{live_filter(prof)},tinterlace=mode=interleave_top,fieldorder=tff"
+            mode = "interleave_top" if self.scan == "tff" else "interleave_bottom"
+            vf = f"{live_filter(prof)},tinterlace=mode={mode},fieldorder={self.scan}"
             inputs = lavfi_inputs(self.size, rate=50)
         else:
             vf = live_filter(prof)
@@ -739,7 +743,7 @@ class MulticastLive:
             *inputs,
             "-vf",
             vf,
-            *video_args(prof, interlaced=self.interlaced),
+            *video_args(prof, scan=self.scan),
             *audio_args(prof),
             "-f",
             "rtp_mpegts",
@@ -890,13 +894,13 @@ def main() -> int:
         s = MulticastLive(args.ffmpeg, group, args.mcast_port, profile=prof)
         senders.append(s)
         mcast_channels.append(("mpegts (multicast)", mcast_labels.get(prof, f"mcast ({prof})"), s.url()))
-    for prof, size, interlaced in MCAST_SCAN_CHANNELS:
+    for prof, size, scan in MCAST_SCAN_CHANNELS:
         group = f"239.255.0.{octet}"
         octet += 1
-        s = MulticastLive(args.ffmpeg, group, args.mcast_port, profile=prof, size=size, interlaced=interlaced)
+        s = MulticastLive(args.ffmpeg, group, args.mcast_port, profile=prof, size=size, scan=scan)
         senders.append(s)
         height = size.split("x")[1]
-        scan_label = f"{height}{'i' if interlaced else 'p'}"
+        scan_label = f"{height}p" if scan == "p" else f"{height}i-{scan}"
         mcast_channels.append(("mpegts (scan)", f"mcast {scan_label} ({prof})", s.url()))
     for path in args.ts_file:
         if not os.path.isfile(path):

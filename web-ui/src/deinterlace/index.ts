@@ -1,7 +1,7 @@
 import "./algorithms/bwdif";
 import Log from "../mpegts/utils/logger";
 import { type DetectorVerdict, InterlaceDetector } from "./detector";
-import { DeinterlaceRenderer } from "./renderer";
+import { DeinterlaceRenderer, type FieldOrder } from "./renderer";
 
 const TAG = "DeinterlacePipeline";
 
@@ -37,9 +37,9 @@ export function createDeinterlacePipeline(
 
   const renderer = new DeinterlaceRenderer(video, canvas);
 
-  const setActive = (next: boolean, algorithm: string) => {
+  const setActive = (next: boolean, algorithm: string, fieldOrder: FieldOrder = "tff") => {
     if (destroyed) return;
-    if (next && !renderer.start(algorithm)) return; // e.g. WebGL unavailable → keep raw video visible
+    if (next && !renderer.start(algorithm, fieldOrder)) return; // e.g. WebGL unavailable → keep raw video visible
     if (!next) renderer.stop();
     if (active !== next) {
       active = next;
@@ -50,7 +50,7 @@ export function createDeinterlacePipeline(
   const detector = new InterlaceDetector(video, (verdict) => {
     lastVerdict = verdict;
     if (mode === "auto") {
-      setActive(verdict.interlaced, verdict.algorithm);
+      setActive(verdict.interlaced, verdict.algorithm, verdict.fieldOrder);
     }
   });
 
@@ -65,7 +65,11 @@ export function createDeinterlacePipeline(
         setActive(true, "bwdif");
         break;
       case "auto":
-        setActive(lastVerdict?.interlaced === true, lastVerdict?.algorithm ?? "bwdif");
+        setActive(
+          lastVerdict?.interlaced === true,
+          lastVerdict?.algorithm ?? "bwdif",
+          lastVerdict?.fieldOrder ?? "tff",
+        );
         detector.start();
         break;
     }

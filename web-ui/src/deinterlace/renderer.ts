@@ -3,6 +3,9 @@ import { createAlgorithm, type DeinterlaceAlgorithm } from "./algorithms/types";
 
 const TAG = "DeinterlaceRenderer";
 
+/** Field order of the interlaced source: top field first or bottom field first. */
+export type FieldOrder = "tff" | "bff";
+
 /**
  * WebGL2 render loop: pulls decoded (weaved) frames from the <video> element via
  * requestVideoFrameCallback, uploads them as textures and runs the active
@@ -23,6 +26,7 @@ export class DeinterlaceRenderer {
   private secondFieldTimer = 0;
   private running = false;
   private contextLost = false;
+  private fieldOrder: FieldOrder = "tff";
   private readonly onFrameRendered?: () => void;
 
   private readonly handleContextLost = (event: Event) => {
@@ -60,15 +64,16 @@ export class DeinterlaceRenderer {
     return this.running;
   }
 
-  /** Start rendering with the given algorithm. Safe to call repeatedly. */
-  start(algorithmName: string): boolean {
+  /** Start rendering with the given algorithm and field order. Safe to call repeatedly. */
+  start(algorithmName: string, fieldOrder: FieldOrder = "tff"): boolean {
+    this.fieldOrder = fieldOrder;
     if (this.running && this.algorithmName === algorithmName) return true;
     if (this.running) this.stop();
 
     if (!this.setupAlgorithm(algorithmName)) return false;
     this.running = true;
     this.scheduleFrame();
-    Log.i(TAG, `Started with algorithm '${algorithmName}'`);
+    Log.i(TAG, `Started with algorithm '${algorithmName}' (${fieldOrder})`);
     return true;
   }
 
@@ -156,16 +161,18 @@ export class DeinterlaceRenderer {
         window.clearTimeout(this.secondFieldTimer);
         this.secondFieldTimer = 0;
       }
-      // Field-rate bob: render the first (top, TFF) field now, the second field
-      // half a frame duration later — 25i becomes 50p motion. While paused no
-      // new frames arrive and the last rendered field simply stays: a single
-      // clean field, so the paused still shows no tearing.
-      this.renderFrame(0);
+      // Field-rate output: render the temporally first field now, the second
+      // half a frame duration later — 25i becomes 50p motion. Which spatial
+      // field comes first depends on the source field order (TFF: top first).
+      // While paused no new frames arrive and the last rendered field simply
+      // stays: a single clean field, so the paused still shows no tearing.
+      const firstField = this.fieldOrder === "tff" ? 0 : 1;
+      this.renderFrame(firstField, false);
       const frameDurationMs = this.frameDurationMs(metadata);
       if (!this.video.paused && frameDurationMs > 10) {
         this.secondFieldTimer = window.setTimeout(() => {
           this.secondFieldTimer = 0;
-          if (this.running) this.renderFrame(1);
+          if (this.running) this.renderFrame(firstField === 0 ? 1 : 0, true);
         }, frameDurationMs / 2);
       }
       this.scheduleFrame();
@@ -196,7 +203,7 @@ export class DeinterlaceRenderer {
     return texture;
   }
 
-  private renderFrame(field: 0 | 1): void {
+  private renderFrame(field: 0 | 1, isSecondField: boolean): void {
     const gl = this.gl;
     const algorithm = this.algorithm;
     if (!gl || !algorithm || this.contextLost) return;
@@ -210,7 +217,7 @@ export class DeinterlaceRenderer {
       this.canvas.height = height;
     }
 
-    if (field === 0) {
+    if (!isSecondField) {
       // Rotate the texture ring: oldest becomes the upload target for the current frame
       const ringSize = algorithm.historyFrames + 1;
       while (this.textures.length < ringSize) {
@@ -233,12 +240,10 @@ export class DeinterlaceRenderer {
         return;
       }
     }
-    // field === 1 re-renders from the already-uploaded texture with opposite parity
+    // The second field re-renders from the already-uploaded texture ring
 
     gl.viewport(0, 0, width, height);
-    // TFF is the overwhelming norm for 1080i broadcast (and what the devlab scan
-    // channel encodes); field order detection is a future detector heuristic.
-    algorithm.render(gl, this.textures, { width, height, keepField: field });
+    algorithm.render(gl, this.textures, { width, height, keepField: field, isSecondField });
     this.onFrameRendered?.();
   }
 }

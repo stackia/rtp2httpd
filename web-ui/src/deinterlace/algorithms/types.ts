@@ -15,6 +15,12 @@ export interface FrameParams {
   height: number;
   /** Which field to keep: 0 = top field (even lines), 1 = bottom field (odd lines). */
   keepField: 0 | 1;
+  /**
+   * Whether this render is the temporally second field of the frame. Decides
+   * which neighboring frames hold the temporally adjacent fields (independent
+   * of keepField now that field order can be TFF or BFF).
+   */
+  isSecondField: boolean;
 }
 
 export interface DeinterlaceAlgorithm {
