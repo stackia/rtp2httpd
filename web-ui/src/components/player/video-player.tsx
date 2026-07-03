@@ -1,6 +1,8 @@
 import { clsx } from "clsx";
 import { Play } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import type { DeinterlaceMode } from "../../deinterlace";
+import { useDeinterlace } from "../../hooks/use-deinterlace";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import { buildCatchupSegments } from "../../lib/m3u-parser";
@@ -43,6 +45,7 @@ interface VideoPlayerProps {
   onToggleSidebar?: () => void;
   onFullscreenToggle?: () => void;
   seamlessSwitch?: boolean;
+  deinterlaceMode?: DeinterlaceMode;
   activeSourceIndex?: number;
   onSourceChange?: (index: number) => void;
   onPlaybackStarted?: () => void;
@@ -145,6 +148,7 @@ export function VideoPlayer({
   onToggleSidebar,
   onFullscreenToggle,
   seamlessSwitch = true,
+  deinterlaceMode = "auto",
   activeSourceIndex = 0,
   onSourceChange,
   onPlaybackStarted,
@@ -153,6 +157,8 @@ export function VideoPlayer({
 
   const slotAVideoRef = useRef<HTMLVideoElement>(null);
   const slotBVideoRef = useRef<HTMLVideoElement>(null);
+  const slotACanvasRef = useRef<HTMLCanvasElement>(null);
+  const slotBCanvasRef = useRef<HTMLCanvasElement>(null);
   const slotAPlayerRef = useRef<Player | null>(null);
   const slotBPlayerRef = useRef<Player | null>(null);
   const slotLiveStateRef = useRef<Record<SlotId, boolean>>({ a: true, b: true });
@@ -167,6 +173,14 @@ export function VideoPlayer({
 
   const slotVideoRef = (id: SlotId) => (id === "a" ? slotAVideoRef : slotBVideoRef);
   const slotPlayerRef = (id: SlotId) => (id === "a" ? slotAPlayerRef : slotBPlayerRef);
+
+  const { activeSlots: deinterlaceActiveSlots, resetSlot: resetDeinterlaceSlot } = useDeinterlace(
+    {
+      a: { video: slotAVideoRef, canvas: slotACanvasRef },
+      b: { video: slotBVideoRef, canvas: slotBCanvasRef },
+    },
+    deinterlaceMode,
+  );
 
   const getActiveSlotId = () => activeSlotIdRef.current;
   const getActiveVideo = () => slotVideoRef(getActiveSlotId()).current;
@@ -616,6 +630,7 @@ export function VideoPlayer({
   );
 
   const loadActiveSlotSegments = useEffectEvent((player: Player, slotId: SlotId, newSegments: PlayerSegment[]) => {
+    resetDeinterlaceSlot(slotId);
     player.loadSegments(newSegments);
 
     if (shouldAutoPlayRef.current) {
@@ -730,6 +745,9 @@ export function VideoPlayer({
 
     const pendingTransition = { gen, slotId: pendingId, player: pendingPlayer, startedAt: performance.now() };
     pendingTransitionRef.current = pendingTransition;
+    // Pending slot starts detecting while hidden, so an interlaced verdict can be
+    // ready the moment the switch completes (no combing flash on channel change)
+    resetDeinterlaceSlot(pendingId);
     pendingPlayer.loadSegments(newSegments);
 
     if (shouldAutoPlayRef.current) {
@@ -1198,19 +1216,30 @@ export function VideoPlayer({
       >
         <div className="relative aspect-video h-auto max-h-full w-full max-w-full overflow-hidden [@container_video_(max-aspect-ratio:_16/9)]:h-auto [@container_video_(max-aspect-ratio:_16/9)]:w-full [@container_video_(min-aspect-ratio:_16/9)]:h-full [@container_video_(min-aspect-ratio:_16/9)]:w-auto">
           {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
-            // biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks
-            <video
-              key={slotId}
-              ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
-              className={clsx(
-                "absolute inset-0 size-full min-h-0 min-w-0 object-fill",
-                visibleSlotId !== slotId && "invisible pointer-events-none",
-              )}
-              playsInline
-              webkit-playsinline="true"
-              x5-playsinline="true"
-              onClick={visibleSlotId === slotId ? handleVideoClick : undefined}
-            />
+            <div key={slotId} className="contents">
+              {/* biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks */}
+              <video
+                ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
+                className={clsx(
+                  "absolute inset-0 size-full min-h-0 min-w-0 object-fill",
+                  visibleSlotId !== slotId && "invisible pointer-events-none",
+                  // Deinterlaced output replaces the raw frames visually; keep the video
+                  // composited (opacity, not visibility) so requestVideoFrameCallback keeps firing
+                  visibleSlotId === slotId && deinterlaceActiveSlots[slotId] && "opacity-0",
+                )}
+                playsInline
+                webkit-playsinline="true"
+                x5-playsinline="true"
+                onClick={visibleSlotId === slotId ? handleVideoClick : undefined}
+              />
+              <canvas
+                ref={slotId === "a" ? slotACanvasRef : slotBCanvasRef}
+                className={clsx(
+                  "pointer-events-none absolute inset-0 size-full min-h-0 min-w-0",
+                  (visibleSlotId !== slotId || !deinterlaceActiveSlots[slotId]) && "hidden",
+                )}
+              />
+            </div>
           ))}
         </div>
 

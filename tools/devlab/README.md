@@ -11,6 +11,7 @@ needs to support:
 | HLS catchup        | HTTP HLS VOD (`playseek`) | `/http`         | all of the above                    |
 | mpegts (RTSP)      | RTSP TS live + catchup    | `/rtsp`         | `h264-mp2`, `hevc-aac`              |
 | mpegts (multicast) | RTP multicast live        | `/rtp`          | `h264-mp2`, `hevc-ac3`, `hevc-eac3` |
+| mpegts (scan)      | RTP multicast live        | `/rtp`          | 1080i / 1080p / 2160p (see below)   |
 | external file      | RTP multicast (looped)    | `/rtp`          | whatever the `.ts` file contains    |
 
 - `h264-mp2`  = H.264 video + MPEG-1/2 Layer II audio
@@ -35,6 +36,20 @@ multicast MPEG-TS channels as `mpegts (multicast)`, matching the separate
 Multicast channels use groups `239.255.0.20+` on `--mcast-port` (default 5004).
 ffmpeg sends them via the OS default multicast route, and rtp2httpd joins them
 without an explicit upstream interface.
+
+## Interlace-scan channels (`mpegts (scan)`)
+
+Channels for the web player's automatic deinterlacing (`MCAST_SCAN_CHANNELS`):
+
+- **mcast 1080i (h264-mp2)** — true interlaced TFF H.264: testsrc2 generated at
+  50 fps, `tinterlace=interleave_top` weaves adjacent frames into the fields of
+  one 25 fps frame, so the moving pattern combs on every motion. The player's
+  heuristic detector must activate on this channel and the combing must
+  disappear.
+- **mcast 1080p (h264-mp2)** — progressive control at the resolution gate; the
+  detector must NOT activate (no false positive).
+- **mcast 2160p (hevc-aac)** — above-1080 control; deinterlacing is gated off
+  regardless of content (browser HEVC support permitting, see Notes).
 
 ## Debugging a user-provided .ts file
 

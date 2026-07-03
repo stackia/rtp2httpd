@@ -18,10 +18,12 @@ import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG 
 import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
 import {
+  getDeinterlaceMode,
   getLastChannelId,
   getLastSourceIndex,
   getSeamlessSwitch,
   getSidebarVisible,
+  saveDeinterlaceMode,
   saveLastChannelId,
   saveLastSourceIndex,
   saveSeamlessSwitch,
@@ -56,6 +58,7 @@ function PlayerPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [seamlessSwitch, setSeamlessSwitch] = useState(() => getSeamlessSwitch());
+  const [deinterlaceMode, setDeinterlaceMode] = useState(() => getDeinterlaceMode());
   const pageContainerRef = useRef<HTMLDivElement>(null);
 
   // Track stream start time - the absolute time position when current stream started
@@ -338,6 +341,12 @@ function PlayerPage() {
     saveSeamlessSwitch(enabled);
   }, []);
 
+  const handleDeinterlaceChange = useCallback((enabled: boolean) => {
+    const mode = enabled ? "auto" : "off";
+    setDeinterlaceMode(mode);
+    saveDeinterlaceMode(mode);
+  }, []);
+
   const handleToggleSidebar = useCallback(() => {
     setShowSidebar((prev) => {
       const newState = !prev;
@@ -356,10 +365,21 @@ function PlayerPage() {
           onThemeChange={setTheme}
           seamlessSwitch={seamlessSwitch}
           onSeamlessSwitchChange={handleSeamlessSwitchChange}
+          deinterlace={deinterlaceMode === "auto"}
+          onDeinterlaceChange={handleDeinterlaceChange}
         />
       </div>
     );
-  }, [locale, theme, seamlessSwitch, setLocale, setTheme, handleSeamlessSwitchChange]);
+  }, [
+    locale,
+    theme,
+    seamlessSwitch,
+    deinterlaceMode,
+    setLocale,
+    setTheme,
+    handleSeamlessSwitchChange,
+    handleDeinterlaceChange,
+  ]);
 
   // Main UI content
   const mainContent = (
@@ -387,6 +407,7 @@ function PlayerPage() {
             onToggleSidebar={handleToggleSidebar}
             onFullscreenToggle={handleFullscreenToggle}
             seamlessSwitch={seamlessSwitch}
+            deinterlaceMode={deinterlaceMode}
             activeSourceIndex={activeSourceIndex}
             onSourceChange={handleSourceChange}
             onPlaybackStarted={handlePlaybackStarted}

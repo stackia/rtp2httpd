@@ -43,6 +43,10 @@ export const [getLastChannelId, saveLastChannelId] = createStore<string | null>(
 );
 export const [getSidebarVisible, saveSidebarVisible] = createStore("rtp2httpd-player-sidebar-visible", true);
 export const [getSeamlessSwitch, saveSeamlessSwitch] = createStore("rtp2httpd-player-seamless-switch", true);
+export const [getDeinterlaceMode, saveDeinterlaceMode] = createStore<"auto" | "off">(
+  "rtp2httpd-player-deinterlace-mode",
+  "auto",
+);
 export const [getVolume, saveVolume] = createStore("rtp2httpd-player-volume", 1);
 export const [getMuted, saveMuted] = createStore("rtp2httpd-player-muted", false);
 

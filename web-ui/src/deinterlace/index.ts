@@ -1,0 +1,108 @@
+import "./algorithms/bob";
+import Log from "../mpegts/utils/logger";
+import { type DetectorVerdict, InterlaceDetector } from "./detector";
+import { DeinterlaceRenderer } from "./renderer";
+
+const TAG = "DeinterlacePipeline";
+
+export type DeinterlaceMode = "auto" | "off" | "force";
+
+export interface DeinterlacePipeline {
+  setMode(mode: DeinterlaceMode): void;
+  /** Forget the detection verdict — call on channel/source switch. */
+  reset(): void;
+  /** True while the deinterlaced canvas is being drawn (drive UI visibility from this). */
+  readonly active: boolean;
+  destroy(): void;
+}
+
+export function isDeinterlaceSupported(): boolean {
+  return DeinterlaceRenderer.isSupported();
+}
+
+/**
+ * Wires the heuristic detector to the WebGL renderer for one video/canvas pair.
+ * In "auto" mode the detector decides when combing appears and which algorithm to
+ * use; "force" activates bob unconditionally (debug aid); "off" disables both.
+ */
+export function createDeinterlacePipeline(
+  video: HTMLVideoElement,
+  canvas: HTMLCanvasElement,
+  onActiveChange?: (active: boolean) => void,
+): DeinterlacePipeline {
+  let mode: DeinterlaceMode = "auto";
+  let active = false;
+  let destroyed = false;
+  let lastVerdict: DetectorVerdict | null = null;
+
+  const renderer = new DeinterlaceRenderer(video, canvas);
+
+  const setActive = (next: boolean, algorithm: string) => {
+    if (destroyed) return;
+    if (next && !renderer.start(algorithm)) return; // e.g. WebGL unavailable → keep raw video visible
+    if (!next) renderer.stop();
+    if (active !== next) {
+      active = next;
+      onActiveChange?.(next);
+    }
+  };
+
+  const detector = new InterlaceDetector(video, (verdict) => {
+    lastVerdict = verdict;
+    if (mode === "auto") {
+      setActive(verdict.interlaced, verdict.algorithm);
+    }
+  });
+
+  const applyMode = () => {
+    switch (mode) {
+      case "off":
+        detector.stop();
+        setActive(false, "bob");
+        break;
+      case "force":
+        detector.stop();
+        setActive(true, "bob");
+        break;
+      case "auto":
+        setActive(lastVerdict?.interlaced === true, lastVerdict?.algorithm ?? "bob");
+        detector.start();
+        break;
+    }
+  };
+
+  if (!DeinterlaceRenderer.isSupported()) {
+    Log.i(TAG, "requestVideoFrameCallback unavailable; deinterlacing disabled");
+    return {
+      setMode() {},
+      reset() {},
+      get active() {
+        return false;
+      },
+      destroy() {},
+    };
+  }
+
+  applyMode();
+
+  return {
+    setMode(next: DeinterlaceMode) {
+      if (mode === next) return;
+      mode = next;
+      applyMode();
+    },
+    reset() {
+      lastVerdict = null;
+      detector.reset();
+      if (mode === "auto") setActive(false, "bob");
+    },
+    get active() {
+      return active;
+    },
+    destroy() {
+      destroyed = true;
+      detector.destroy();
+      renderer.destroy();
+    },
+  };
+}
