@@ -23,9 +23,9 @@ const TAG = "InterlaceDetector";
  * verdict is sticky until reset() (channel/source/resolution change).
  */
 
-/** Only 1080-class content is eligible; above 1080 deinterlacing is never enabled. */
+/** 1080-class content and below (720i, 576i, 480i, …); above 1080 deinterlacing is never enabled. */
 const GATE_MAX_WIDTH = 1920;
-const GATE_HEIGHTS = new Set([1080, 1088]);
+const GATE_MAX_HEIGHT = 1088;
 
 /** Sampling width — horizontal resolution barely matters for comb detection. */
 const SAMPLE_WIDTH = 256;
@@ -190,7 +190,7 @@ export class InterlaceDetector {
    * frame_mbs_only_flag == 0, H.265 field_seq/interlaced_source). Skip the
    * comb-detection warm-up and activate right away — width/height come from
    * the codec (the video element may not have decoded a frame yet), gated by
-   * the same 1080-class rule. Field-order voting still runs on real frames.
+   * the same ≤1080 resolution rule. Field-order voting still runs on real frames.
    */
   hintInterlaced(width: number, height: number): void {
     if (this.interlaced) return;
@@ -224,7 +224,7 @@ export class InterlaceDetector {
   }
 
   private resolutionEligible(width: number, height: number): boolean {
-    return width > 0 && width <= GATE_MAX_WIDTH && GATE_HEIGHTS.has(height);
+    return width > 0 && width <= GATE_MAX_WIDTH && height > 0 && height <= GATE_MAX_HEIGHT;
   }
 
   private sample(): void {

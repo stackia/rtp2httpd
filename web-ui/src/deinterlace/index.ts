@@ -11,7 +11,7 @@ export interface DeinterlacePipeline {
   setMode(mode: DeinterlaceMode): void;
   /**
    * Codec metadata hint: the stream may contain interlaced pictures. In auto
-   * mode this activates deinterlacing immediately (same 1080-class gate)
+   * mode this activates deinterlacing immediately (same ≤1080 resolution gate)
    * instead of waiting for the heuristic detector to accumulate evidence.
    */
   hintInterlaced(width: number, height: number): void;
