@@ -14,15 +14,7 @@ import type {
 import Log from "./utils/logger";
 
 export { defaultConfig } from "./config";
-export type {
-  LiveSessionAnchor,
-  Player,
-  PlayerConfig,
-  PlayerError,
-  PlayerEventMap,
-  PlayerSegment,
-  VideoTrackInfo,
-};
+export type { LiveSessionAnchor, Player, PlayerConfig, PlayerError, PlayerEventMap, PlayerSegment, VideoTrackInfo };
 
 function resolveSegmentUrl(url: string): string {
   try {

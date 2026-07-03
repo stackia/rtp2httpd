@@ -60,11 +60,7 @@ export function createDeinterlacePipeline(
 
   const apply = () => {
     if (enabled) {
-      setActive(
-        lastVerdict?.interlaced === true,
-        lastVerdict?.algorithm ?? "bwdif",
-        lastVerdict?.fieldOrder ?? "tff",
-      );
+      setActive(lastVerdict?.interlaced === true, lastVerdict?.algorithm ?? "bwdif", lastVerdict?.fieldOrder ?? "tff");
       detector.start();
     } else {
       detector.stop();
