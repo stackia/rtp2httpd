@@ -33,6 +33,7 @@ export interface H265SPSInfo {
   chroma_format_idc: number;
   bit_depth_luma_minus8: number;
   bit_depth_chroma_minus8: number;
+  interlaced_source: boolean;
   frame_rate: {
     fixed: boolean;
     fps: number;
@@ -281,6 +282,7 @@ const H265NaluParser = {
     let fps_fixed: boolean = false,
       fps_den: number = 1,
       fps_num: number = 1;
+    let field_seq_flag: boolean = false;
     //*/
     const _sps_temporal_mvp_enabled_flag: boolean = gb.readBool();
     const _strong_intra_smoothing_enabled_flag: boolean = gb.readBool();
@@ -322,7 +324,7 @@ const H265NaluParser = {
         gb.readUEG();
       }
       const _neutral_chroma_indication_flag: boolean = gb.readBool();
-      const _field_seq_flag: boolean = gb.readBool();
+      field_seq_flag = gb.readBool();
       const _frame_field_info_present_flag: boolean = gb.readBool();
       default_display_window_flag = gb.readBool();
       if (default_display_window_flag) {
@@ -465,6 +467,9 @@ const H265NaluParser = {
       chroma_format_idc,
       bit_depth_luma_minus8,
       bit_depth_chroma_minus8,
+      // VUI field_seq_flag OR PTL general_interlaced_source_flag (bit 6 of the
+      // first constraint byte) — either signals interlaced-capable content
+      interlaced_source: field_seq_flag || (general_constraint_indicator_flags_1 & 0x40) !== 0,
 
       frame_rate: {
         fixed: fps_fixed,

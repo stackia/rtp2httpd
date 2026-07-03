@@ -1264,6 +1264,12 @@ class TSDemuxer {
 
     meta.codec = details.codec_mimetype;
 
+    // Interlace hint from codec metadata: H.264 frame_mbs_only_flag == 0 or
+    // H.265 field_seq/interlaced_source. Only a hint — many progressive
+    // streams still set these — the render side verifies heuristically.
+    meta.mayBeInterlaced =
+      (details.frame_mbs_only_flag as unknown) === 0 || (details.interlaced_source as unknown) === true;
+
     if (this.video_metadata_.vps) {
       const vps_without_header = this.video_metadata_.vps.data.subarray(4);
       const sps_without_header = this.video_metadata_.sps?.data.subarray(4);

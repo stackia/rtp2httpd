@@ -21,6 +21,13 @@ export interface FrameParams {
    * of keepField now that field order can be TFF or BFF).
    */
   isSecondField: boolean;
+  /**
+   * The texture ring does not hold real history yet (just started / primed
+   * while paused) — temporal filtering would see duplicated frames and
+   * degenerate to weave. Algorithms must fall back to spatial-only
+   * interpolation of the current frame.
+   */
+  spatialOnly: boolean;
 }
 
 export interface DeinterlaceAlgorithm {

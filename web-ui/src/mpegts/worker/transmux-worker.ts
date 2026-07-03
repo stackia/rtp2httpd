@@ -18,6 +18,12 @@ function post(msg: WorkerEvent, transfer?: Transferable[]): void {
 function createPipeline(segments: PlayerSegment[], config: PlayerConfig): Pipeline {
   const callbacks: PipelineCallbacks = {
     onInitSegment(type, initSegment) {
+      const videoInfo = initSegment.videoInfo as
+        | { width: number; height: number; mayBeInterlaced: boolean }
+        | undefined;
+      if (type === "video" && videoInfo) {
+        post({ type: "video-info", ...videoInfo, gen });
+      }
       const data = initSegment.data as ArrayBuffer;
       post(
         {

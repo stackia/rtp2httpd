@@ -72,6 +72,13 @@ export class DeinterlaceRenderer {
 
     if (!this.setupAlgorithm(algorithmName)) return false;
     this.running = true;
+    // Prime the canvas from the current video frame right away. Without this,
+    // (re)enabling while paused leaves whatever the canvas last showed —
+    // possibly a stale frame from a previous run — since rVFC only fires on
+    // new presented frames. Renders spatial-only until real history arrives.
+    if (this.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      this.renderFrame(this.fieldOrder === "tff" ? 0 : 1, false);
+    }
     this.scheduleFrame();
     Log.i(TAG, `Started with algorithm '${algorithmName}' (${fieldOrder})`);
     return true;
@@ -218,32 +225,39 @@ export class DeinterlaceRenderer {
     }
 
     if (!isSecondField) {
-      // Rotate the texture ring: oldest becomes the upload target for the current frame
+      // The ring grows one texture per uploaded frame (so every entry holds a
+      // real frame — algorithms clamp their history binds while it fills up);
+      // once full, the oldest entry is rotated to the front as upload target.
       const ringSize = algorithm.historyFrames + 1;
-      while (this.textures.length < ringSize) {
-        const texture = this.createFrameTexture(gl);
-        if (!texture) return;
-        this.textures.push(texture);
+      const isNew = this.textures.length < ringSize;
+      let target: WebGLTexture | null;
+      if (isNew) {
+        target = this.createFrameTexture(gl);
+      } else {
+        target = this.textures[this.textures.length - 1];
       }
-      if (ringSize > 1) {
-        const oldest = this.textures.pop();
-        if (oldest) this.textures.unshift(oldest);
-      }
+      if (!target) return;
 
       gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, this.textures[0]);
+      gl.bindTexture(gl.TEXTURE_2D, target);
       try {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, this.video);
       } catch (err) {
         // Upload can fail transiently (e.g. video element in a broken state); skip the frame
         Log.w(TAG, "Frame texture upload failed:", err);
+        if (isNew) gl.deleteTexture(target);
         return;
       }
+      if (!isNew) this.textures.pop();
+      this.textures.unshift(target);
     }
     // The second field re-renders from the already-uploaded texture ring
 
     gl.viewport(0, 0, width, height);
-    algorithm.render(gl, this.textures, { width, height, keepField: field, isSecondField });
+    // Until the ring holds a distinct frame for every history slot, temporal
+    // filtering would compare a frame with itself — force spatial-only
+    const spatialOnly = this.textures.length <= algorithm.historyFrames;
+    algorithm.render(gl, this.textures, { width, height, keepField: field, isSecondField, spatialOnly });
     this.onFrameRendered?.();
   }
 }

@@ -4,7 +4,7 @@ import type { FieldOrder } from "./renderer";
 const TAG = "InterlaceDetector";
 
 /**
- * Heuristic interlace detection — no reliance on stream metadata.
+ * Heuristic interlace detection.
  *
  * Interlaced content decoded as weaved frames shows "combing": on rows where the
  * two fields captured different moments, a pixel deviates from both its vertical
@@ -12,6 +12,11 @@ const TAG = "InterlaceDetector";
  * offscreen canvas (horizontal downscale only — vertical scaling would destroy
  * the comb signal), compute a per-frame comb score on luma, and feed a rolling
  * window. Enough combed frames in the window → verdict "interlaced".
+ *
+ * Codec metadata can pre-seed the verdict via hintInterlaced() (H.264
+ * frame_mbs_only_flag == 0 etc.) so eligible streams start deinterlaced without
+ * the detection warm-up; the heuristic remains the only path for streams whose
+ * metadata claims progressive but carry combed content.
  *
  * Static scenes produce no combing even in interlaced streams, so absence of
  * combing is NOT evidence of progressive content: once interlaced is decided the
@@ -180,6 +185,22 @@ export class InterlaceDetector {
     this.voteGen++;
   }
 
+  /**
+   * Codec metadata says the stream may contain interlaced pictures (H.264
+   * frame_mbs_only_flag == 0, H.265 field_seq/interlaced_source). Skip the
+   * comb-detection warm-up and activate right away — width/height come from
+   * the codec (the video element may not have decoded a frame yet), gated by
+   * the same 1080-class rule. Field-order voting still runs on real frames.
+   */
+  hintInterlaced(width: number, height: number): void {
+    if (this.interlaced) return;
+    if (!this.resolutionEligible(width, height)) return;
+    this.interlaced = true;
+    Log.i(TAG, `Interlaced per codec metadata hint (${width}x${height})`);
+    this.onVerdict({ interlaced: true, algorithm: "bwdif", fieldOrder: this.fieldOrder });
+    this.scheduleFieldOrderVote();
+  }
+
   /** Forget everything — call on channel/source switch or resolution change. */
   reset(): void {
     this.window = [];
@@ -226,14 +247,10 @@ export class InterlaceDetector {
     // Sticky verdict: once interlaced, stay until reset()
     if (this.interlaced) return;
 
-    if (!this.sampleCtx) {
-      this.sampleCanvas = document.createElement("canvas");
-      this.sampleCtx = this.sampleCanvas.getContext("2d", { willReadFrequently: true, alpha: false });
-      if (!this.sampleCtx) {
-        Log.e(TAG, "2D sampling context unavailable; detector disabled");
-        this.stop();
-        return;
-      }
+    if (!this.ensureSampleCtx()) {
+      Log.e(TAG, "2D sampling context unavailable; detector disabled");
+      this.stop();
+      return;
     }
     const canvas = this.sampleCanvas as HTMLCanvasElement;
     // Downscale horizontally only; vertical must stay 1:1 to preserve combing
@@ -242,10 +259,11 @@ export class InterlaceDetector {
       canvas.height = height;
     }
 
+    const ctx = this.sampleCtx as CanvasRenderingContext2D;
     let imageData: ImageData;
     try {
-      this.sampleCtx.drawImage(video, 0, 0, SAMPLE_WIDTH, height);
-      imageData = this.sampleCtx.getImageData(0, 0, SAMPLE_WIDTH, height);
+      ctx.drawImage(video, 0, 0, SAMPLE_WIDTH, height);
+      imageData = ctx.getImageData(0, 0, SAMPLE_WIDTH, height);
     } catch (err) {
       // drawImage can throw while the pipeline is in a transient bad state
       Log.d(TAG, "Frame sampling failed:", err);
@@ -274,8 +292,16 @@ export class InterlaceDetector {
     }
   }
 
+  private ensureSampleCtx(): boolean {
+    if (this.sampleCtx) return true;
+    this.sampleCanvas = document.createElement("canvas");
+    this.sampleCtx = this.sampleCanvas.getContext("2d", { willReadFrequently: true, alpha: false });
+    return this.sampleCtx !== null;
+  }
+
   private grabLuma(width: number, height: number): Uint8Array | null {
-    const ctx = this.sampleCtx;
+    if (!this.ensureSampleCtx()) return null;
+    const ctx = this.sampleCtx as CanvasRenderingContext2D;
     const canvas = this.sampleCanvas;
     if (!ctx || !canvas) return null;
     if (canvas.width !== width || canvas.height !== height) {
@@ -305,10 +331,25 @@ export class InterlaceDetector {
     const gen = this.voteGen;
     const video = this.video;
     const height = video.videoHeight;
-    if (!height || !this.resolutionEligible(video.videoWidth, height)) return;
+
+    // No decodable frame yet (e.g. activated from the codec metadata hint
+    // before playback starts) — retry until frames arrive
+    const retry = () => {
+      window.setTimeout(() => {
+        if (gen === this.voteGen) this.scheduleFieldOrderVote();
+      }, SAMPLE_INTERVAL_MS);
+    };
+    if (!height || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      retry();
+      return;
+    }
+    if (!this.resolutionEligible(video.videoWidth, height)) return;
 
     const prevLuma = this.grabLuma(SAMPLE_WIDTH, height);
-    if (!prevLuma) return;
+    if (!prevLuma) {
+      retry();
+      return;
+    }
 
     video.requestVideoFrameCallback(() => {
       if (gen !== this.voteGen) return;

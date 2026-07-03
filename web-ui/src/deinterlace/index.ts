@@ -9,6 +9,12 @@ export type DeinterlaceMode = "auto" | "off" | "force";
 
 export interface DeinterlacePipeline {
   setMode(mode: DeinterlaceMode): void;
+  /**
+   * Codec metadata hint: the stream may contain interlaced pictures. In auto
+   * mode this activates deinterlacing immediately (same 1080-class gate)
+   * instead of waiting for the heuristic detector to accumulate evidence.
+   */
+  hintInterlaced(width: number, height: number): void;
   /** Forget the detection verdict — call on channel/source switch. */
   reset(): void;
   /** True while the deinterlaced canvas is being drawn (drive UI visibility from this). */
@@ -79,6 +85,7 @@ export function createDeinterlacePipeline(
     Log.i(TAG, "requestVideoFrameCallback unavailable; deinterlacing disabled");
     return {
       setMode() {},
+      hintInterlaced() {},
       reset() {},
       get active() {
         return false;
@@ -94,6 +101,11 @@ export function createDeinterlacePipeline(
       if (mode === next) return;
       mode = next;
       applyMode();
+    },
+    hintInterlaced(width: number, height: number) {
+      // The detector applies the resolution gate and emits the verdict, which
+      // activates rendering in auto mode via the callback above
+      detector.hintInterlaced(width, height);
     },
     reset() {
       lastVerdict = null;

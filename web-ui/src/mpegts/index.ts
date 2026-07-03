@@ -1,11 +1,19 @@
 import { getRuntimeLogLevel } from "../lib/runtime-config";
 import { defaultConfig, type PlayerConfig } from "./config";
 import { createMpegtsPlayer } from "./player/mpegts-player";
-import type { LiveSessionAnchor, Player, PlayerError, PlayerEventMap, PlayerImpl, PlayerSegment } from "./types";
+import type {
+  LiveSessionAnchor,
+  Player,
+  PlayerError,
+  PlayerEventMap,
+  PlayerImpl,
+  PlayerSegment,
+  VideoTrackInfo,
+} from "./types";
 import Log from "./utils/logger";
 
 export { defaultConfig } from "./config";
-export type { LiveSessionAnchor, Player, PlayerConfig, PlayerError, PlayerEventMap, PlayerSegment };
+export type { LiveSessionAnchor, Player, PlayerConfig, PlayerError, PlayerEventMap, PlayerSegment, VideoTrackInfo };
 
 function resolveSegmentUrl(url: string): string {
   try {
@@ -42,6 +50,7 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
   const seekHandlers = new Set<(s: number) => void>();
   const liveStateHandlers = new Set<(isLive: boolean) => void>();
   const audioSuspendedHandlers = new Set<() => void>();
+  const videoInfoHandlers = new Set<(info: VideoTrackInfo) => void>();
 
   let impl: PlayerImpl | null = null;
 
@@ -61,6 +70,11 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
       impl.onAudioSuspended = () => {
         for (const h of audioSuspendedHandlers) {
           h();
+        }
+      };
+      impl.onVideoInfo = (info) => {
+        for (const h of videoInfoHandlers) {
+          h(info);
         }
       };
     }
@@ -105,6 +119,7 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
       if (event === "seek-needed") seekHandlers.add(handler as (s: number) => void);
       if (event === "live-state-change") liveStateHandlers.add(handler as (isLive: boolean) => void);
       if (event === "audio-suspended") audioSuspendedHandlers.add(handler as () => void);
+      if (event === "video-info") videoInfoHandlers.add(handler as (info: VideoTrackInfo) => void);
     },
 
     off<K extends keyof PlayerEventMap>(event: K, handler: PlayerEventMap[K]) {
@@ -112,6 +127,7 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
       if (event === "seek-needed") seekHandlers.delete(handler as (s: number) => void);
       if (event === "live-state-change") liveStateHandlers.delete(handler as (isLive: boolean) => void);
       if (event === "audio-suspended") audioSuspendedHandlers.delete(handler as () => void);
+      if (event === "video-info") videoInfoHandlers.delete(handler as (info: VideoTrackInfo) => void);
     },
   };
 }

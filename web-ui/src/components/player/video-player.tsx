@@ -174,7 +174,11 @@ export function VideoPlayer({
   const slotVideoRef = (id: SlotId) => (id === "a" ? slotAVideoRef : slotBVideoRef);
   const slotPlayerRef = (id: SlotId) => (id === "a" ? slotAPlayerRef : slotBPlayerRef);
 
-  const { activeSlots: deinterlaceActiveSlots, resetSlot: resetDeinterlaceSlot } = useDeinterlace(
+  const {
+    activeSlots: deinterlaceActiveSlots,
+    resetSlot: resetDeinterlaceSlot,
+    hintSlot: hintDeinterlaceSlot,
+  } = useDeinterlace(
     {
       a: { video: slotAVideoRef, canvas: slotACanvasRef },
       b: { video: slotBVideoRef, canvas: slotBCanvasRef },
@@ -597,6 +601,11 @@ export function VideoPlayer({
     p.on("audio-suspended", () => {
       if (slotPlayerRef(slotId).current === p) {
         handleAudioSuspended();
+      }
+    });
+    p.on("video-info", (info) => {
+      if (slotPlayerRef(slotId).current === p) {
+        hintDeinterlaceSlot(slotId, info);
       }
     });
     applyPlayerSettings(p);

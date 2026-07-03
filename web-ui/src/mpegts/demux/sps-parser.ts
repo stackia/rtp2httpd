@@ -13,6 +13,8 @@ export interface SPSInfo {
   ref_frames: number;
   chroma_format: number;
   chroma_format_string: string;
+  /** 0 → the stream may contain field-coded (interlaced) pictures. */
+  frame_mbs_only_flag: number;
   frame_rate: {
     fixed: boolean;
     fps: number;
@@ -252,6 +254,8 @@ const SPSParser = {
       ref_frames,
       chroma_format, // 4:2:0, 4:2:2, ...
       chroma_format_string: SPSParser.getChromaFormatString(chroma_format),
+      // 0 → the stream may contain field-coded (interlaced) pictures
+      frame_mbs_only_flag,
 
       frame_rate: {
         fixed: fps_fixed,

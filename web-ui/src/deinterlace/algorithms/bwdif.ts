@@ -43,6 +43,7 @@ uniform sampler2D u_next; // frame N+1 (weaved)
 uniform float u_height;      // frame height in pixels
 uniform float u_keepField;   // 0.0 = render top field (even rows kept), 1.0 = bottom field
 uniform float u_secondField; // 1.0 = this is the temporally second field of the frame
+uniform float u_spatialOnly; // 1.0 = no real frame history yet: spatial-only interpolation
 
 in vec2 v_texCoord;
 out vec4 outColor;
@@ -174,6 +175,13 @@ void main() {
   if (parity == u_keepField) {
     // Kept field line: pass through
     luma = rowLuma(u_cur, 0.0);
+  } else if (u_spatialOnly > 0.5) {
+    // No real history in the ring (just started / primed while paused):
+    // temporal terms would see duplicated frames and weave the combing
+    // through. Interpolate spatially from the kept field only.
+    float c = rowLuma(u_cur, -1.0);
+    float e = rowLuma(u_cur, 1.0);
+    luma = isEdge ? 0.5 * (c + e) : (5077.0 * (c + e) - 981.0 * (rowLuma(u_cur, -3.0) + rowLuma(u_cur, 3.0))) / 8192.0;
   } else {
     luma = bwdifLuma(isEdge, spatCheck);
   }
@@ -186,8 +194,10 @@ void main() {
   vec2 chromaLP = (chromaOf(rowRGB(u_cur, -2.0)) + 2.0 * chromaOf(rowRGB(u_cur, -1.0)) + 2.0 * chromaOrig +
                    2.0 * chromaOf(rowRGB(u_cur, 1.0)) + chromaOf(rowRGB(u_cur, 2.0))) /
                   8.0;
-  // Ramp: fully original below ~1/255 motion, fully low-passed above ~4/255
-  float t = smoothstep(1.0 / 255.0, 4.0 / 255.0, chromaMotion());
+  // Ramp: fully original below ~1/255 motion, fully low-passed above ~4/255.
+  // Without real history chromaMotion() compares duplicated frames (always 0),
+  // so force the low-pass — the combing is baked in regardless of motion.
+  float t = u_spatialOnly > 0.5 ? 1.0 : smoothstep(1.0 / 255.0, 4.0 / 255.0, chromaMotion());
   vec2 chroma = mix(chromaOrig, chromaLP, t);
 
   float r = luma + 1.5748 * chroma.y;
@@ -206,6 +216,7 @@ class BwdifAlgorithm implements DeinterlaceAlgorithm {
   private uHeight: WebGLUniformLocation | null = null;
   private uKeepField: WebGLUniformLocation | null = null;
   private uSecondField: WebGLUniformLocation | null = null;
+  private uSpatialOnly: WebGLUniformLocation | null = null;
 
   init(gl: WebGL2RenderingContext): void {
     this.program = createProgram(gl, FULLSCREEN_VERTEX_SHADER, FRAGMENT_SHADER);
@@ -217,6 +228,7 @@ class BwdifAlgorithm implements DeinterlaceAlgorithm {
     this.uHeight = gl.getUniformLocation(this.program, "u_height");
     this.uKeepField = gl.getUniformLocation(this.program, "u_keepField");
     this.uSecondField = gl.getUniformLocation(this.program, "u_secondField");
+    this.uSpatialOnly = gl.getUniformLocation(this.program, "u_spatialOnly");
   }
 
   render(gl: WebGL2RenderingContext, textures: WebGLTexture[], params: FrameParams): void {
@@ -231,6 +243,7 @@ class BwdifAlgorithm implements DeinterlaceAlgorithm {
     gl.uniform1f(this.uHeight, params.height);
     gl.uniform1f(this.uKeepField, params.keepField);
     gl.uniform1f(this.uSecondField, params.isSecondField ? 1 : 0);
+    gl.uniform1f(this.uSpatialOnly, params.spatialOnly ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 

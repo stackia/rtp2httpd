@@ -47,5 +47,12 @@ export function useDeinterlace(slots: Record<SlotId, SlotRefs>, mode: Deinterlac
     pipelinesRef.current[slotId]?.reset();
   };
 
-  return { activeSlots, resetSlot };
+  /** Codec metadata hint for a slot's stream (from the player's video-info event). */
+  const hintSlot = (slotId: SlotId, info: { width: number; height: number; mayBeInterlaced: boolean }) => {
+    if (info.mayBeInterlaced) {
+      pipelinesRef.current[slotId]?.hintInterlaced(info.width, info.height);
+    }
+  };
+
+  return { activeSlots, resetSlot, hintSlot };
 }

@@ -93,12 +93,17 @@ export function createMpegtsPlayer(
     if (msg.type === "destroyed") return;
     // Discard stale messages from a previous load generation
     if (msg.gen !== mseGeneration) return;
-    if (msg.type !== "init-segment") {
+    // video-info is posted right before its init-segment; flushing on it would
+    // split the batched init appends (see comment above pendingInits)
+    if (msg.type !== "init-segment" && msg.type !== "video-info") {
       flushPendingInits();
     }
     switch (msg.type) {
       case "init-segment":
         pendingInits.push({ track: msg.track, data: msg.data, codec: msg.codec, container: msg.container });
+        break;
+      case "video-info":
+        impl.onVideoInfo?.({ width: msg.width, height: msg.height, mayBeInterlaced: msg.mayBeInterlaced });
         break;
       case "media-segment":
         mse?.appendMedia(msg.track, msg.data, msg.timestampOffset);

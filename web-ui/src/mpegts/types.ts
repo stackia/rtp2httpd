@@ -13,12 +13,21 @@ export interface PlayerError {
   info?: string;
 }
 
+export interface VideoTrackInfo {
+  width: number;
+  height: number;
+  /** Codec metadata says the stream may contain interlaced pictures (hint, not proof). */
+  mayBeInterlaced: boolean;
+}
+
 export interface PlayerEventMap {
   error: (error: PlayerError) => void;
   "seek-needed": (seconds: number) => void;
   "live-state-change": (isLive: boolean) => void;
   /** Fired when audio playback is blocked by autoplay policy and requires user interaction. */
   "audio-suspended": () => void;
+  /** Fired when codec-level video track info is parsed from the stream. */
+  "video-info": (info: VideoTrackInfo) => void;
 }
 
 export interface Player {
@@ -41,6 +50,7 @@ export interface PlayerImpl {
   onError: ((error: PlayerError) => void) | null;
   onLiveStateChange?: ((isLive: boolean) => void) | null;
   onAudioSuspended?: (() => void) | null;
+  onVideoInfo?: ((info: VideoTrackInfo) => void) | null;
   loadSegments(segments: PlayerSegment[]): void;
   seek(seconds: number): void;
   goLive(targetMseSeconds: number): void;

@@ -12,6 +12,15 @@ export type WorkerCommand =
 
 export type WorkerEvent =
   | { type: "init-segment"; track: "video" | "audio"; data: ArrayBuffer; codec: string; container: string; gen: number }
+  | {
+      /** Codec-level video track info parsed from the stream (sent alongside each video init segment). */
+      type: "video-info";
+      width: number;
+      height: number;
+      /** Codec metadata says the stream may contain interlaced pictures (hint, not proof). */
+      mayBeInterlaced: boolean;
+      gen: number;
+    }
   | { type: "media-segment"; track: "video" | "audio"; data: ArrayBuffer; timestampOffset?: number; gen: number }
   | { type: "complete"; gen: number }
   | { type: "error"; category: "io" | "demux"; detail: string; info?: string; gen: number }
