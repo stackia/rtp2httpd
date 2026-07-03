@@ -38,8 +38,11 @@ const COMBED_FRAMES_REQUIRED = 3;
 
 export interface DetectorVerdict {
   interlaced: boolean;
-  /** Algorithm the detector recommends; extension point for future heuristics. */
-  algorithm: "bob";
+  /**
+   * Algorithm the detector recommends; extension point for future heuristics
+   * (e.g. field-order detection, telecine patterns → different algorithms).
+   */
+  algorithm: "bwdif";
 }
 
 /**
@@ -98,7 +101,7 @@ export class InterlaceDetector {
     this.window = [];
     if (this.interlaced) {
       this.interlaced = false;
-      this.onVerdict({ interlaced: false, algorithm: "bob" });
+      this.onVerdict({ interlaced: false, algorithm: "bwdif" });
     }
     this.gated = false;
   }
@@ -174,7 +177,7 @@ export class InterlaceDetector {
     if (combedFrames >= COMBED_FRAMES_REQUIRED) {
       this.interlaced = true;
       Log.i(TAG, `Interlaced content detected (${combedFrames}/${this.window.length} combed frames)`);
-      this.onVerdict({ interlaced: true, algorithm: "bob" });
+      this.onVerdict({ interlaced: true, algorithm: "bwdif" });
     }
   }
 }

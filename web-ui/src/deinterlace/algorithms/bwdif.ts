@@ -1,0 +1,185 @@
+import { createProgram, FULLSCREEN_VERTEX_SHADER } from "./gl-utils";
+import { type DeinterlaceAlgorithm, type FrameParams, registerAlgorithm } from "./types";
+
+/**
+ * BWDIF (bob-weaver deinterlacing filter) — GLSL port of FFmpeg's bwdif,
+ * the successor to yadif. Motion-adaptive per pixel: still areas keep both
+ * fields (full vertical resolution, no bob shimmer on static detail), moving
+ * areas are reconstructed with an edge-preserving spatio-temporal filter,
+ * clamped to the temporal neighborhood exactly like the C reference.
+ *
+ * Field timing (TFF): deinterlacing field F of frame N needs the fields before
+ * and after it, i.e. frames N-1 and N+1 as weaved textures. The renderer
+ * therefore runs one frame behind the video (u_next is the newest upload) —
+ * ~40 ms extra latency, irrelevant for IPTV. Rendered at field rate
+ * (top field first, bottom half a frame later) for 50p motion.
+ *
+ * Luma and chroma are treated separately, same rationale as before: the
+ * decoder upsamples 4:2:0 interlaced chroma progressively, baking
+ * field-interleaved color combing (row periods 2 and 4) into the weaved RGB.
+ * That pollution sits on KEPT lines too, so no line-reconstruction filter can
+ * remove it — chroma instead gets a vertical [1,2,2,2,1]/8 low-pass that nulls
+ * both periods. Chroma is half vertical resolution to begin with, so the cost
+ * is invisible; luma gets the full bwdif treatment where resolution matters.
+ */
+
+const FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_prev; // frame N-1 (weaved)
+uniform sampler2D u_cur;  // frame N   (the frame being deinterlaced)
+uniform sampler2D u_next; // frame N+1 (weaved)
+uniform float u_height;    // frame height in pixels
+uniform float u_keepField; // 0.0 = render top field (even rows kept), 1.0 = bottom field
+
+in vec2 v_texCoord;
+out vec4 outColor;
+
+// BT.709 luma/chroma split (only mixed and unmixed inside the shader, so the
+// exact matrix does not matter for the round trip)
+float lumaOf(vec3 rgb) {
+  return dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+}
+
+vec2 chromaOf(vec3 rgb) {
+  float y = lumaOf(rgb);
+  return vec2((rgb.b - y) * 0.5389, (rgb.r - y) * 0.6350);
+}
+
+vec3 rowRGB(sampler2D t, float dy) {
+  float texelH = 1.0 / u_height;
+  return texture(t, vec2(v_texCoord.x, clamp(v_texCoord.y + dy * texelH, 0.0, 1.0))).rgb;
+}
+
+float rowLuma(sampler2D t, float dy) {
+  return lumaOf(rowRGB(t, dy));
+}
+
+// prev2/next2: frames whose rows at the MISSING parity are the temporally
+// previous/next fields of the field being rendered (see FFmpeg bwdif).
+// TFF first field (keepField 0): prev2 = prev frame, next2 = cur frame.
+// TFF second field (keepField 1): prev2 = cur frame, next2 = next frame.
+float prev2Luma(float dy) {
+  return u_keepField < 0.5 ? rowLuma(u_prev, dy) : rowLuma(u_cur, dy);
+}
+
+float next2Luma(float dy) {
+  return u_keepField < 0.5 ? rowLuma(u_cur, dy) : rowLuma(u_next, dy);
+}
+
+// FFmpeg bwdif filter_line_c in float form (coefficients are /8192 fixed-point)
+float bwdifLuma() {
+  float c = rowLuma(u_cur, -1.0);
+  float e = rowLuma(u_cur, 1.0);
+  float p2_0 = prev2Luma(0.0);
+  float n2_0 = next2Luma(0.0);
+  float d = 0.5 * (p2_0 + n2_0);
+
+  float td0 = abs(p2_0 - n2_0);
+  float td1 = 0.5 * (abs(rowLuma(u_prev, -1.0) - c) + abs(rowLuma(u_prev, 1.0) - e));
+  float td2 = 0.5 * (abs(rowLuma(u_next, -1.0) - c) + abs(rowLuma(u_next, 1.0) - e));
+  float diff = max(max(td0 * 0.5, td1), td2);
+
+  // No temporal change at this pixel: pure temporal average (weave) — this is
+  // what preserves full vertical resolution in static areas
+  if (diff < 0.5 / 255.0) {
+    return d;
+  }
+
+  float p2_m2 = prev2Luma(-2.0);
+  float n2_m2 = next2Luma(-2.0);
+  float p2_p2 = prev2Luma(2.0);
+  float n2_p2 = next2Luma(2.0);
+
+  float b = 0.5 * (p2_m2 + n2_m2) - c;
+  float f = 0.5 * (p2_p2 + n2_p2) - e;
+  float dc = d - c;
+  float de = d - e;
+  float mx = max(max(de, dc), min(b, f));
+  float mn = min(min(de, dc), max(b, f));
+  diff = max(max(diff, mn), -mx);
+
+  float curM3 = rowLuma(u_cur, -3.0);
+  float curP3 = rowLuma(u_cur, 3.0);
+  float interpol;
+  if (abs(c - e) > td0) {
+    // High-frequency content across the gap: 4-tap temporal + spatial filter
+    float hf = (5570.0 * (p2_0 + n2_0) - 3801.0 * (p2_m2 + n2_m2 + p2_p2 + n2_p2) +
+                1016.0 * (prev2Luma(-4.0) + next2Luma(-4.0) + prev2Luma(4.0) + next2Luma(4.0))) /
+               4.0;
+    interpol = (hf + 4309.0 * (c + e) - 213.0 * (curM3 + curP3)) / 8192.0;
+  } else {
+    interpol = (5077.0 * (c + e) - 981.0 * (curM3 + curP3)) / 8192.0;
+  }
+  return clamp(interpol, d - diff, d + diff);
+}
+
+void main() {
+  float row = v_texCoord.y * u_height;
+  float parity = mod(floor(row), 2.0);
+
+  float luma;
+  if (parity == u_keepField) {
+    // Kept field line: pass through
+    luma = rowLuma(u_cur, 0.0);
+  } else {
+    luma = bwdifLuma();
+  }
+
+  // Chroma: 5-tap vertical low-pass over the current weaved frame, kills the
+  // period-2/period-4 field-interleaved chroma combing on kept lines too
+  vec2 chroma = (chromaOf(rowRGB(u_cur, -2.0)) + 2.0 * chromaOf(rowRGB(u_cur, -1.0)) +
+                 2.0 * chromaOf(rowRGB(u_cur, 0.0)) + 2.0 * chromaOf(rowRGB(u_cur, 1.0)) +
+                 chromaOf(rowRGB(u_cur, 2.0))) /
+                8.0;
+
+  float r = luma + 1.5748 * chroma.y;
+  float bl = luma + 1.8556 * chroma.x;
+  float g = (luma - 0.2126 * r - 0.0722 * bl) / 0.7152;
+  outColor = vec4(clamp(vec3(r, g, bl), 0.0, 1.0), 1.0);
+}
+`;
+
+class BwdifAlgorithm implements DeinterlaceAlgorithm {
+  readonly name = "bwdif";
+  // Ring of 3 weaved frames: [0] = newest (u_next), [1] = current, [2] = previous
+  readonly historyFrames = 2;
+
+  private program: WebGLProgram | null = null;
+  private uHeight: WebGLUniformLocation | null = null;
+  private uKeepField: WebGLUniformLocation | null = null;
+
+  init(gl: WebGL2RenderingContext): void {
+    this.program = createProgram(gl, FULLSCREEN_VERTEX_SHADER, FRAGMENT_SHADER);
+    // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
+    gl.useProgram(this.program);
+    gl.uniform1i(gl.getUniformLocation(this.program, "u_next"), 0);
+    gl.uniform1i(gl.getUniformLocation(this.program, "u_cur"), 1);
+    gl.uniform1i(gl.getUniformLocation(this.program, "u_prev"), 2);
+    this.uHeight = gl.getUniformLocation(this.program, "u_height");
+    this.uKeepField = gl.getUniformLocation(this.program, "u_keepField");
+  }
+
+  render(gl: WebGL2RenderingContext, textures: WebGLTexture[], params: FrameParams): void {
+    if (!this.program) return;
+    // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
+    gl.useProgram(this.program);
+    for (let unit = 0; unit < 3; unit++) {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      // Clamp for the priming phase where the ring is still filling up
+      gl.bindTexture(gl.TEXTURE_2D, textures[Math.min(unit, textures.length - 1)]);
+    }
+    gl.uniform1f(this.uHeight, params.height);
+    gl.uniform1f(this.uKeepField, params.keepField);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  destroy(gl: WebGL2RenderingContext): void {
+    if (this.program) {
+      gl.deleteProgram(this.program);
+      this.program = null;
+    }
+  }
+}
+
+registerAlgorithm("bwdif", () => new BwdifAlgorithm());

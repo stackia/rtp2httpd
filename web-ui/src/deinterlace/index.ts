@@ -1,4 +1,4 @@
-import "./algorithms/bob";
+import "./algorithms/bwdif";
 import Log from "../mpegts/utils/logger";
 import { type DetectorVerdict, InterlaceDetector } from "./detector";
 import { DeinterlaceRenderer } from "./renderer";
@@ -23,7 +23,7 @@ export function isDeinterlaceSupported(): boolean {
 /**
  * Wires the heuristic detector to the WebGL renderer for one video/canvas pair.
  * In "auto" mode the detector decides when combing appears and which algorithm to
- * use; "force" activates bob unconditionally (debug aid); "off" disables both.
+ * use; "force" activates bwdif unconditionally (debug aid); "off" disables both.
  */
 export function createDeinterlacePipeline(
   video: HTMLVideoElement,
@@ -58,14 +58,14 @@ export function createDeinterlacePipeline(
     switch (mode) {
       case "off":
         detector.stop();
-        setActive(false, "bob");
+        setActive(false, "bwdif");
         break;
       case "force":
         detector.stop();
-        setActive(true, "bob");
+        setActive(true, "bwdif");
         break;
       case "auto":
-        setActive(lastVerdict?.interlaced === true, lastVerdict?.algorithm ?? "bob");
+        setActive(lastVerdict?.interlaced === true, lastVerdict?.algorithm ?? "bwdif");
         detector.start();
         break;
     }
@@ -94,7 +94,7 @@ export function createDeinterlacePipeline(
     reset() {
       lastVerdict = null;
       detector.reset();
-      if (mode === "auto") setActive(false, "bob");
+      if (mode === "auto") setActive(false, "bwdif");
     },
     get active() {
       return active;
