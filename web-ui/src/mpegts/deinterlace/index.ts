@@ -1,5 +1,5 @@
 import "./algorithms/bwdif";
-import Log from "../mpegts/utils/logger";
+import Log from "../utils/logger";
 import { type DetectorVerdict, InterlaceDetector } from "./detector";
 import { DeinterlaceRenderer, type FieldOrder } from "./renderer";
 

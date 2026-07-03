@@ -1,4 +1,4 @@
-import Log from "../mpegts/utils/logger";
+import Log from "../utils/logger";
 import { createAlgorithm, type DeinterlaceAlgorithm } from "./algorithms/types";
 
 const TAG = "DeinterlaceRenderer";

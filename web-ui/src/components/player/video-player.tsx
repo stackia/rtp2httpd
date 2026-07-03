@@ -1,14 +1,13 @@
 import { clsx } from "clsx";
 import { Play } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import type { DeinterlaceMode } from "../../deinterlace";
-import { useDeinterlace } from "../../hooks/use-deinterlace";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import { buildCatchupSegments } from "../../lib/m3u-parser";
 import { getMuted, getVolume, saveMuted, saveVolume } from "../../lib/player-storage";
 import {
   createPlayer,
+  type DeinterlaceMode,
   defaultConfig,
   isSupported,
   type Player,
@@ -172,19 +171,15 @@ export function VideoPlayer({
   const skipNextSegmentsLoadRef = useRef(false);
 
   const slotVideoRef = (id: SlotId) => (id === "a" ? slotAVideoRef : slotBVideoRef);
+  const slotCanvasRef = (id: SlotId) => (id === "a" ? slotACanvasRef : slotBCanvasRef);
   const slotPlayerRef = (id: SlotId) => (id === "a" ? slotAPlayerRef : slotBPlayerRef);
 
-  const {
-    activeSlots: deinterlaceActiveSlots,
-    resetSlot: resetDeinterlaceSlot,
-    hintSlot: hintDeinterlaceSlot,
-  } = useDeinterlace(
-    {
-      a: { video: slotAVideoRef, canvas: slotACanvasRef },
-      b: { video: slotBVideoRef, canvas: slotBCanvasRef },
-    },
-    deinterlaceMode,
-  );
+  const [deinterlaceActiveSlots, setDeinterlaceActiveSlots] = useState<Record<SlotId, boolean>>({
+    a: false,
+    b: false,
+  });
+  const setDeinterlaceActiveSlot = (slotId: SlotId, active: boolean) =>
+    setDeinterlaceActiveSlots((prev) => (prev[slotId] === active ? prev : { ...prev, [slotId]: active }));
 
   const getActiveSlotId = () => activeSlotIdRef.current;
   const getActiveVideo = () => slotVideoRef(getActiveSlotId()).current;
@@ -369,6 +364,7 @@ export function VideoPlayer({
   const destroySlot = useEffectEvent((slotId: SlotId) => {
     slotPlayerRef(slotId).current?.destroy();
     slotPlayerRef(slotId).current = null;
+    setDeinterlaceActiveSlot(slotId, false);
   });
 
   const stopPendingTransition = useEffectEvent(() => {
@@ -576,6 +572,8 @@ export function VideoPlayer({
 
     const p = createPlayer(video, {
       wasmDecoders: { mp2: mp2WasmUrl },
+      deinterlaceCanvas: slotCanvasRef(slotId).current ?? undefined,
+      deinterlaceMode,
     });
     p.on("error", (e) => {
       if (slotPlayerRef(slotId).current === p) {
@@ -603,9 +601,9 @@ export function VideoPlayer({
         handleAudioSuspended();
       }
     });
-    p.on("video-info", (info) => {
+    p.on("deinterlace-active-change", (active) => {
       if (slotPlayerRef(slotId).current === p) {
-        hintDeinterlaceSlot(slotId, info);
+        setDeinterlaceActiveSlot(slotId, active);
       }
     });
     applyPlayerSettings(p);
@@ -639,7 +637,6 @@ export function VideoPlayer({
   );
 
   const loadActiveSlotSegments = useEffectEvent((player: Player, slotId: SlotId, newSegments: PlayerSegment[]) => {
-    resetDeinterlaceSlot(slotId);
     player.loadSegments(newSegments);
 
     if (shouldAutoPlayRef.current) {
@@ -754,9 +751,9 @@ export function VideoPlayer({
 
     const pendingTransition = { gen, slotId: pendingId, player: pendingPlayer, startedAt: performance.now() };
     pendingTransitionRef.current = pendingTransition;
-    // Pending slot starts detecting while hidden, so an interlaced verdict can be
-    // ready the moment the switch completes (no combing flash on channel change)
-    resetDeinterlaceSlot(pendingId);
+    // The pending slot's player resets its interlace verdict on loadSegments and
+    // starts detecting while hidden, so an interlaced verdict can be ready the
+    // moment the switch completes (no combing flash on channel change)
     pendingPlayer.loadSegments(newSegments);
 
     if (shouldAutoPlayRef.current) {
@@ -777,6 +774,11 @@ export function VideoPlayer({
       destroySlot("b");
     };
   }, []);
+
+  useEffect(() => {
+    slotAPlayerRef.current?.setDeinterlaceMode(deinterlaceMode);
+    slotBPlayerRef.current?.setDeinterlaceMode(deinterlaceMode);
+  }, [deinterlaceMode]);
 
   useEffect(() => {
     if (!seamlessSwitch) {

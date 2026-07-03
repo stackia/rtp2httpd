@@ -1,7 +1,9 @@
 import { getRuntimeLogLevel } from "../lib/runtime-config";
 import { defaultConfig, type PlayerConfig } from "./config";
+import { createDeinterlacePipeline, type DeinterlacePipeline } from "./deinterlace";
 import { createMpegtsPlayer } from "./player/mpegts-player";
 import type {
+  DeinterlaceMode,
   LiveSessionAnchor,
   Player,
   PlayerError,
@@ -13,7 +15,16 @@ import type {
 import Log from "./utils/logger";
 
 export { defaultConfig } from "./config";
-export type { LiveSessionAnchor, Player, PlayerConfig, PlayerError, PlayerEventMap, PlayerSegment, VideoTrackInfo };
+export type {
+  DeinterlaceMode,
+  LiveSessionAnchor,
+  Player,
+  PlayerConfig,
+  PlayerError,
+  PlayerEventMap,
+  PlayerSegment,
+  VideoTrackInfo,
+};
 
 function resolveSegmentUrl(url: string): string {
   try {
@@ -51,12 +62,25 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
   const liveStateHandlers = new Set<(isLive: boolean) => void>();
   const audioSuspendedHandlers = new Set<() => void>();
   const videoInfoHandlers = new Set<(info: VideoTrackInfo) => void>();
+  const deinterlaceActiveHandlers = new Set<(active: boolean) => void>();
+
+  let deinterlace: DeinterlacePipeline | null = null;
+  if (fullConfig.deinterlaceCanvas) {
+    deinterlace = createDeinterlacePipeline(video, fullConfig.deinterlaceCanvas, (active) => {
+      for (const h of deinterlaceActiveHandlers) {
+        h(active);
+      }
+    });
+    deinterlace.setMode(fullConfig.deinterlaceMode);
+  }
 
   let impl: PlayerImpl | null = null;
 
   function getImpl(): PlayerImpl {
     if (!impl) {
-      impl = createMpegtsPlayer(video, fullConfig, seekHandlers);
+      // The impl posts its config to the transmux worker; DOM elements are not
+      // structured-cloneable, so keep the canvas out of it
+      impl = createMpegtsPlayer(video, { ...fullConfig, deinterlaceCanvas: undefined }, seekHandlers);
       impl.onError = (e) => {
         for (const h of errorHandlers) {
           h(e);
@@ -73,6 +97,7 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
         }
       };
       impl.onVideoInfo = (info) => {
+        if (info.mayBeInterlaced) deinterlace?.hintInterlaced(info.width, info.height);
         for (const h of videoInfoHandlers) {
           h(info);
         }
@@ -84,6 +109,8 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
   return {
     loadSegments(segments: PlayerSegment[]) {
       if (destroyed || !segments.length) return;
+      // New source — forget the previous stream's interlace verdict
+      deinterlace?.reset();
       getImpl().loadSegments(resolveSegmentUrls(segments));
     },
 
@@ -103,13 +130,20 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
       impl?.setLiveSync(enabled);
     },
 
+    setDeinterlaceMode(mode: DeinterlaceMode) {
+      deinterlace?.setMode(mode);
+    },
+
     stop() {
       if (destroyed) return;
+      deinterlace?.reset();
       impl?.suspend();
     },
 
     destroy() {
       destroyed = true;
+      deinterlace?.destroy();
+      deinterlace = null;
       impl?.destroy();
       impl = null;
     },
@@ -120,6 +154,7 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
       if (event === "live-state-change") liveStateHandlers.add(handler as (isLive: boolean) => void);
       if (event === "audio-suspended") audioSuspendedHandlers.add(handler as () => void);
       if (event === "video-info") videoInfoHandlers.add(handler as (info: VideoTrackInfo) => void);
+      if (event === "deinterlace-active-change") deinterlaceActiveHandlers.add(handler as (active: boolean) => void);
     },
 
     off<K extends keyof PlayerEventMap>(event: K, handler: PlayerEventMap[K]) {
@@ -128,6 +163,7 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
       if (event === "live-state-change") liveStateHandlers.delete(handler as (isLive: boolean) => void);
       if (event === "audio-suspended") audioSuspendedHandlers.delete(handler as () => void);
       if (event === "video-info") videoInfoHandlers.delete(handler as (info: VideoTrackInfo) => void);
+      if (event === "deinterlace-active-change") deinterlaceActiveHandlers.delete(handler as (active: boolean) => void);
     },
   };
 }

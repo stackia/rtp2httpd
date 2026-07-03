@@ -24,6 +24,13 @@ export interface PlayerConfig {
   headers: Record<string, string> | undefined;
   /** Frontend log level: 0=FATAL, 1=ERROR, 2=WARN, 3=INFO, 4=DEBUG/VERBOSE. */
   logLevel: number | undefined;
+
+  /** Overlay canvas the player draws deinterlaced frames onto. Omit to disable deinterlacing entirely.
+   *  The player never touches the canvas' style/visibility — drive that from the
+   *  `deinterlace-active-change` event. */
+  deinterlaceCanvas: HTMLCanvasElement | undefined;
+  /** Deinterlacing mode. @default "auto" */
+  deinterlaceMode: "auto" | "off";
 }
 
 export const defaultConfig: PlayerConfig = {
@@ -40,6 +47,9 @@ export const defaultConfig: PlayerConfig = {
   referrerPolicy: undefined,
   headers: undefined,
   logLevel: undefined,
+
+  deinterlaceCanvas: undefined,
+  deinterlaceMode: "auto",
 };
 
 export function createDefaultConfig(): PlayerConfig {

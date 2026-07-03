@@ -1,4 +1,4 @@
-import Log from "../mpegts/utils/logger";
+import Log from "../utils/logger";
 import type { FieldOrder } from "./renderer";
 
 const TAG = "InterlaceDetector";
@@ -33,14 +33,17 @@ const SAMPLE_WIDTH = 256;
 const SAMPLE_INTERVAL_MS = 500;
 /**
  * Per-pixel comb test: (above - cur) * (below - cur) > threshold, on 0-255 luma.
- * Both neighbors deviating in the same direction by ~11+ levels marks a comb pixel.
+ * Both neighbors deviating in the same direction by ~20+ levels marks a comb pixel.
+ * Measured in-browser on 1080 content: at ±11 levels (121) sharp progressive
+ * detail already produced frame ratios up to 0.011 (false positive); at ±20
+ * levels progressive peaks at 0.005 while weaved interlaced frames stay ≥0.011.
  */
-const COMB_PIXEL_THRESHOLD = 121;
+const COMB_PIXEL_THRESHOLD = 400;
 /**
- * Fraction of comb pixels for a frame to count as combed. Measured in-browser:
- * weaved interlaced frames with motion score 0.018-0.022, progressive frames
- * with equivalent motion 0.004-0.005 — 0.01 splits the two populations with
- * margin on both sides.
+ * Fraction of comb pixels for a frame to count as combed. With the ±20-level
+ * pixel threshold, progressive frames measure ≤0.005 and interlaced frames
+ * with motion ≥0.011 — 0.01 splits the two populations with ~2x margin on
+ * both sides.
  */
 const COMBED_FRAME_RATIO = 0.01;
 /** Rolling window: this many combed frames out of WINDOW_SIZE → interlaced. */
