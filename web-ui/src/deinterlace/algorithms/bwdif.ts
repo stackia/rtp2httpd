@@ -15,13 +15,23 @@ import { type DeinterlaceAlgorithm, type FrameParams, registerAlgorithm } from "
  * other half a frame later) for 50p motion; which spatial field comes first is
  * the detector-determined field order (TFF/BFF).
  *
- * Luma and chroma are treated separately, same rationale as before: the
- * decoder upsamples 4:2:0 interlaced chroma progressively, baking
- * field-interleaved color combing (row periods 2 and 4) into the weaved RGB.
- * That pollution sits on KEPT lines too, so no line-reconstruction filter can
- * remove it — chroma instead gets a vertical [1,2,2,2,1]/8 low-pass that nulls
- * both periods. Chroma is half vertical resolution to begin with, so the cost
- * is invisible; luma gets the full bwdif treatment where resolution matters.
+ * Deviations from the FFmpeg reference, both forced by the input being
+ * RGB-decoded frames rather than raw YUV planes:
+ *
+ * - Luma is reconstructed from RGB (the matrix cancels on the round trip, so
+ *   the filter effectively runs on a luma-equivalent plane).
+ * - Chroma cannot get true per-plane bwdif: the browser upsamples 4:2:0
+ *   interlaced chroma progressively, baking field-interleaved color combing
+ *   (row periods 2 and 4) into the weaved RGB on ALL rows, kept lines
+ *   included, so field-pure chroma samples no longer exist. Instead chroma is
+ *   motion-adaptive in the same spirit as bwdif's weave test: temporally
+ *   static pixels pass the original chroma through (full detail, matching
+ *   FFmpeg's weave behavior), moving pixels blend toward a vertical
+ *   [1,2,2,2,1]/8 low-pass that nulls both combing periods.
+ *
+ * Frame-boundary rows (y<4 or y+5>h) use FFmpeg's FILTER_EDGE variant: plain
+ * (c+e)/2 spatial average with the spatial check only where its ±2 taps fit,
+ * instead of running the wide filter into clamped (duplicated) edge rows.
  */
 
 const FRAGMENT_SHADER = `#version 300 es
@@ -69,14 +79,19 @@ float next2Luma(float dy) {
   return u_secondField < 0.5 ? rowLuma(u_cur, dy) : rowLuma(u_next, dy);
 }
 
-// FFmpeg bwdif filter_line_c in float form (coefficients are /8192 fixed-point)
-float bwdifLuma() {
+// FFmpeg bwdif FILTER1 + SPAT_CHECK + FILTER_LINE/FILTER_EDGE + FILTER2 in
+// float form (integer coefficients are /8192 fixed-point in the reference).
+// isEdge selects FFmpeg's filter_edge variant for rows whose wide-filter taps
+// (rows +-3, +-4) would cross the frame boundary; spatCheck mirrors its spat flag.
+float bwdifLuma(bool isEdge, bool spatCheck) {
   float c = rowLuma(u_cur, -1.0);
   float e = rowLuma(u_cur, 1.0);
   float p2_0 = prev2Luma(0.0);
   float n2_0 = next2Luma(0.0);
   float d = 0.5 * (p2_0 + n2_0);
 
+  // FILTER1: temporal difference — FFmpeg works on 8-bit integers, so its
+  // "!diff" test means diff < 1 after halving; 0.5/255 is that exact threshold
   float td0 = abs(p2_0 - n2_0);
   float td1 = 0.5 * (abs(rowLuma(u_prev, -1.0) - c) + abs(rowLuma(u_prev, 1.0) - e));
   float td2 = 0.5 * (abs(rowLuma(u_next, -1.0) - c) + abs(rowLuma(u_next, 1.0) - e));
@@ -88,52 +103,92 @@ float bwdifLuma() {
     return d;
   }
 
-  float p2_m2 = prev2Luma(-2.0);
-  float n2_m2 = next2Luma(-2.0);
-  float p2_p2 = prev2Luma(2.0);
-  float n2_p2 = next2Luma(2.0);
-
-  float b = 0.5 * (p2_m2 + n2_m2) - c;
-  float f = 0.5 * (p2_p2 + n2_p2) - e;
-  float dc = d - c;
-  float de = d - e;
-  float mx = max(max(de, dc), min(b, f));
-  float mn = min(min(de, dc), max(b, f));
-  diff = max(max(diff, mn), -mx);
-
-  float curM3 = rowLuma(u_cur, -3.0);
-  float curP3 = rowLuma(u_cur, 3.0);
   float interpol;
-  if (abs(c - e) > td0) {
-    // High-frequency content across the gap: 4-tap temporal + spatial filter
-    float hf = (5570.0 * (p2_0 + n2_0) - 3801.0 * (p2_m2 + n2_m2 + p2_p2 + n2_p2) +
-                1016.0 * (prev2Luma(-4.0) + next2Luma(-4.0) + prev2Luma(4.0) + next2Luma(4.0))) /
-               4.0;
-    interpol = (hf + 4309.0 * (c + e) - 213.0 * (curM3 + curP3)) / 8192.0;
+  if (isEdge) {
+    // FILTER_EDGE: spatial check only when the ±2 taps are in-frame, then a
+    // plain spatial average — the reference never runs the wide filters here
+    if (spatCheck) {
+      float b = 0.5 * (prev2Luma(-2.0) + next2Luma(-2.0)) - c;
+      float f = 0.5 * (prev2Luma(2.0) + next2Luma(2.0)) - e;
+      float dc = d - c;
+      float de = d - e;
+      float mx = max(max(de, dc), min(b, f));
+      float mn = min(min(de, dc), max(b, f));
+      diff = max(max(diff, mn), -mx);
+    }
+    interpol = 0.5 * (c + e);
   } else {
-    interpol = (5077.0 * (c + e) - 981.0 * (curM3 + curP3)) / 8192.0;
+    // SPAT_CHECK
+    float p2_m2 = prev2Luma(-2.0);
+    float n2_m2 = next2Luma(-2.0);
+    float p2_p2 = prev2Luma(2.0);
+    float n2_p2 = next2Luma(2.0);
+
+    float b = 0.5 * (p2_m2 + n2_m2) - c;
+    float f = 0.5 * (p2_p2 + n2_p2) - e;
+    float dc = d - c;
+    float de = d - e;
+    float mx = max(max(de, dc), min(b, f));
+    float mn = min(min(de, dc), max(b, f));
+    diff = max(max(diff, mn), -mx);
+
+    // FILTER_LINE
+    float curM3 = rowLuma(u_cur, -3.0);
+    float curP3 = rowLuma(u_cur, 3.0);
+    if (abs(c - e) > td0) {
+      // High-frequency content across the gap: Weston 3-field HF term + LF term
+      float hf = (5570.0 * (p2_0 + n2_0) - 3801.0 * (p2_m2 + n2_m2 + p2_p2 + n2_p2) +
+                  1016.0 * (prev2Luma(-4.0) + next2Luma(-4.0) + prev2Luma(4.0) + next2Luma(4.0))) /
+                 4.0;
+      interpol = (hf + 4309.0 * (c + e) - 213.0 * (curM3 + curP3)) / 8192.0;
+    } else {
+      interpol = (5077.0 * (c + e) - 981.0 * (curM3 + curP3)) / 8192.0;
+    }
   }
+
+  // FILTER2: clamp to the temporal neighborhood
   return clamp(interpol, d - diff, d + diff);
+}
+
+// Motion measure for the chroma path: reuse bwdif's FILTER1 temporal diff on
+// the chroma channels of the same rows the luma filter reads
+float chromaMotion() {
+  vec2 cCur = chromaOf(rowRGB(u_cur, 0.0));
+  vec2 cPrev = chromaOf(rowRGB(u_prev, 0.0));
+  vec2 cNext = chromaOf(rowRGB(u_next, 0.0));
+  vec2 d1 = abs(cPrev - cCur);
+  vec2 d2 = abs(cNext - cCur);
+  return max(max(d1.x, d1.y), max(d2.x, d2.y));
 }
 
 void main() {
   float row = v_texCoord.y * u_height;
   float parity = mod(floor(row), 2.0);
 
+  // FFmpeg row dispatch: rows y<4 or y+5>h use filter_edge (wide taps would
+  // cross the boundary); the spatial check needs the ±2 taps in-frame
+  bool isEdge = row < 4.0 || row + 5.0 > u_height;
+  bool spatCheck = row >= 2.0 && row + 3.0 <= u_height;
+
   float luma;
   if (parity == u_keepField) {
     // Kept field line: pass through
     luma = rowLuma(u_cur, 0.0);
   } else {
-    luma = bwdifLuma();
+    luma = bwdifLuma(isEdge, spatCheck);
   }
 
-  // Chroma: 5-tap vertical low-pass over the current weaved frame, kills the
-  // period-2/period-4 field-interleaved chroma combing on kept lines too
-  vec2 chroma = (chromaOf(rowRGB(u_cur, -2.0)) + 2.0 * chromaOf(rowRGB(u_cur, -1.0)) +
-                 2.0 * chromaOf(rowRGB(u_cur, 0.0)) + 2.0 * chromaOf(rowRGB(u_cur, 1.0)) +
-                 chromaOf(rowRGB(u_cur, 2.0))) /
-                8.0;
+  // Chroma: motion-adaptive. Static pixels keep original chroma (full detail,
+  // analogous to bwdif's weave path); moving pixels blend toward a vertical
+  // [1,2,2,2,1]/8 low-pass that nulls the period-2/period-4 field-interleaved
+  // chroma combing the progressive 4:2:0 upsample bakes into ALL rows.
+  vec2 chromaOrig = chromaOf(rowRGB(u_cur, 0.0));
+  vec2 chromaLP = (chromaOf(rowRGB(u_cur, -2.0)) + 2.0 * chromaOf(rowRGB(u_cur, -1.0)) + 2.0 * chromaOrig +
+                   2.0 * chromaOf(rowRGB(u_cur, 1.0)) + chromaOf(rowRGB(u_cur, 2.0))) /
+                  8.0;
+  // Ramp: fully original below ~1/255 motion, fully low-passed above ~4/255
+  float t = smoothstep(1.0 / 255.0, 4.0 / 255.0, chromaMotion());
+  vec2 chroma = mix(chromaOrig, chromaLP, t);
 
   float r = luma + 1.5748 * chroma.y;
   float bl = luma + 1.8556 * chroma.x;
