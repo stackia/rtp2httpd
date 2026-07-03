@@ -23,6 +23,9 @@
 #include <unistd.h>
 
 #define CONNECTION_TCP_USER_TIMEOUT_MS 10000
+#define CONNECTION_TCP_KEEPALIVE_IDLE_SEC 30
+#define CONNECTION_TCP_KEEPALIVE_INTVL_SEC 5
+#define CONNECTION_TCP_KEEPALIVE_CNT 3
 #define CONN_QUEUE_MIN_BUFFERS 64
 #define CONN_QUEUE_BURST_FACTOR 3.0
 #define CONN_QUEUE_BURST_FACTOR_CONGESTED 1.5
@@ -529,6 +532,19 @@ connection_t *connection_create(int fd, int epfd, struct sockaddr_storage *clien
     }
   }
 #endif
+
+  /* Enable TCP keepalive for early dead-peer detection on idle
+   * connections.  Combined with the TCP_USER_TIMEOUT above this
+   * covers both the data-pending and idle cases:
+   *   - Data in-flight & ACK'd but peer gone → TCP_USER_TIMEOUT
+   *   - Socket idle (no data to send)      → keepalive probes
+   *
+   * Total detection window ≈ KEEPALIVE_IDLE_SEC + KEEPALIVE_INTVL_SEC ×
+   * KEEPALIVE_CNT  (30 + 5×3 = 45 seconds with the defaults below). */
+  if (connection_client_is_tcp(c)) {
+    platform_set_tcp_keepalive(c->fd, CONNECTION_TCP_KEEPALIVE_IDLE_SEC, CONNECTION_TCP_KEEPALIVE_INTVL_SEC,
+                               CONNECTION_TCP_KEEPALIVE_CNT);
+  }
 
   /* Enable SO_ZEROCOPY on socket if supported */
   if (config.zerocopy_on_send && connection_client_is_tcp(c)) {

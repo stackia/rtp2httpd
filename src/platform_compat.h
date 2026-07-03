@@ -409,6 +409,47 @@ static inline int platform_mcast_group_op(int sock, int family, const struct soc
 #define IPV6_RECVERR 25
 #endif
 
+/* ── TCP keepalive ──────────────────────────────────────────────────
+ * Configure TCP keepalive for early dead-peer detection on TCP
+ * client sockets.  Supports fine-grained control on all three target
+ * platforms:
+ *   - Linux / FreeBSD: TCP_KEEPIDLE, TCP_KEEPINTVL, TCP_KEEPCNT
+ *   - macOS:           TCP_KEEPALIVE (idle), TCP_KEEPINTVL, TCP_KEEPCNT
+ *
+ * If fine-grained options are unavailable (older kernel / unusual
+ * platform) the function silently falls back to bare SO_KEEPALIVE
+ * with system-default timing — still strictly better than nothing.
+ *
+ * Call from connection_create() for every TCP client socket.
+ */
+#include <netinet/tcp.h>
+static inline void platform_set_tcp_keepalive(int fd, int idle_sec, int interval_sec, int count) {
+  int keepalive = 1;
+  if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive)) < 0)
+    return;
+
+  /* macOS uses TCP_KEEPALIVE for the idle timer; Linux/FreeBSD use
+   * TCP_KEEPIDLE.  Both control the same thing in seconds — just a
+   * naming difference. */
+#ifdef __APPLE__
+  if (idle_sec > 0)
+    (void)setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &idle_sec, sizeof(idle_sec));
+#elif defined(TCP_KEEPIDLE)
+  if (idle_sec > 0)
+    (void)setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle_sec, sizeof(idle_sec));
+#endif
+
+#if defined(TCP_KEEPINTVL)
+  if (interval_sec > 0)
+    (void)setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval_sec, sizeof(interval_sec));
+#endif
+
+#if defined(TCP_KEEPCNT)
+  if (count > 0)
+    (void)setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &count, sizeof(count));
+#endif
+}
+
 /* ── clock_gettime ───────────────────────────────────────────────────
  * Available on both Linux and macOS (10.12+). No compatibility shim needed.
  */
