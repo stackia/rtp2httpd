@@ -20,9 +20,6 @@ export interface VideoTrackInfo {
   mayBeInterlaced: boolean;
 }
 
-/** Public deinterlacing mode (the internal pipeline also supports a "force" debug mode). */
-export type DeinterlaceMode = "auto" | "off";
-
 export interface PlayerEventMap {
   error: (error: PlayerError) => void;
   "seek-needed": (seconds: number) => void;
@@ -43,8 +40,8 @@ export interface Player {
   /** Anchor for session live edge (continuous live playback since tune-in). */
   setLiveSessionAnchor(anchor: LiveSessionAnchor): void;
   setLiveSync(enabled: boolean): void;
-  /** Switch deinterlacing mode at runtime. No-op when no `deinterlaceCanvas` was configured. */
-  setDeinterlaceMode(mode: DeinterlaceMode): void;
+  /** Switch deinterlacing at runtime. No-op when no `deinterlaceCanvas` was configured. */
+  setDeinterlace(enabled: boolean): void;
   /** Stop the current stream and reset the bound video element while keeping reusable resources alive. */
   stop(): void;
   destroy(): void;

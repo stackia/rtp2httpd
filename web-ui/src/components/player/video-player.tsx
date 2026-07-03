@@ -7,7 +7,6 @@ import { buildCatchupSegments } from "../../lib/m3u-parser";
 import { getMuted, getVolume, saveMuted, saveVolume } from "../../lib/player-storage";
 import {
   createPlayer,
-  type DeinterlaceMode,
   defaultConfig,
   isSupported,
   type Player,
@@ -44,7 +43,7 @@ interface VideoPlayerProps {
   onToggleSidebar?: () => void;
   onFullscreenToggle?: () => void;
   seamlessSwitch?: boolean;
-  deinterlaceMode?: DeinterlaceMode;
+  deinterlace?: boolean;
   activeSourceIndex?: number;
   onSourceChange?: (index: number) => void;
   onPlaybackStarted?: () => void;
@@ -147,7 +146,7 @@ export function VideoPlayer({
   onToggleSidebar,
   onFullscreenToggle,
   seamlessSwitch = true,
-  deinterlaceMode = "auto",
+  deinterlace = true,
   activeSourceIndex = 0,
   onSourceChange,
   onPlaybackStarted,
@@ -573,7 +572,7 @@ export function VideoPlayer({
     const p = createPlayer(video, {
       wasmDecoders: { mp2: mp2WasmUrl },
       deinterlaceCanvas: slotCanvasRef(slotId).current ?? undefined,
-      deinterlaceMode,
+      deinterlace,
     });
     p.on("error", (e) => {
       if (slotPlayerRef(slotId).current === p) {
@@ -776,9 +775,9 @@ export function VideoPlayer({
   }, []);
 
   useEffect(() => {
-    slotAPlayerRef.current?.setDeinterlaceMode(deinterlaceMode);
-    slotBPlayerRef.current?.setDeinterlaceMode(deinterlaceMode);
-  }, [deinterlaceMode]);
+    slotAPlayerRef.current?.setDeinterlace(deinterlace);
+    slotBPlayerRef.current?.setDeinterlace(deinterlace);
+  }, [deinterlace]);
 
   useEffect(() => {
     if (!seamlessSwitch) {

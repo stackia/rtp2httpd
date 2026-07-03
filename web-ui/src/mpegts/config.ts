@@ -29,8 +29,8 @@ export interface PlayerConfig {
    *  The player never touches the canvas' style/visibility — drive that from the
    *  `deinterlace-active-change` event. */
   deinterlaceCanvas: HTMLCanvasElement | undefined;
-  /** Deinterlacing mode. @default "auto" */
-  deinterlaceMode: "auto" | "off";
+  /** Deinterlacing enabled. @default true */
+  deinterlace: boolean;
 }
 
 export const defaultConfig: PlayerConfig = {
@@ -49,7 +49,7 @@ export const defaultConfig: PlayerConfig = {
   logLevel: undefined,
 
   deinterlaceCanvas: undefined,
-  deinterlaceMode: "auto",
+  deinterlace: true,
 };
 
 export function createDefaultConfig(): PlayerConfig {

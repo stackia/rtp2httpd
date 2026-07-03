@@ -5,14 +5,12 @@ import { DeinterlaceRenderer, type FieldOrder } from "./renderer";
 
 const TAG = "DeinterlacePipeline";
 
-export type DeinterlaceMode = "auto" | "off" | "force";
-
 export interface DeinterlacePipeline {
-  setMode(mode: DeinterlaceMode): void;
+  setEnabled(enabled: boolean): void;
   /**
-   * Codec metadata hint: the stream may contain interlaced pictures. In auto
-   * mode this activates deinterlacing immediately (same ≤1080 resolution gate)
-   * instead of waiting for the heuristic detector to accumulate evidence.
+   * Codec metadata hint: the stream may contain interlaced pictures. When
+   * enabled this activates deinterlacing immediately (same ≤1080 resolution
+   * gate) instead of waiting for the heuristic detector to accumulate evidence.
    */
   hintInterlaced(width: number, height: number): void;
   /** Forget the detection verdict — call on channel/source switch. */
@@ -28,15 +26,15 @@ export function isDeinterlaceSupported(): boolean {
 
 /**
  * Wires the heuristic detector to the WebGL renderer for one video/canvas pair.
- * In "auto" mode the detector decides when combing appears and which algorithm to
- * use; "force" activates bwdif unconditionally (debug aid); "off" disables both.
+ * When enabled the detector decides when combing appears and which algorithm to use;
+ * disabled stops both.
  */
 export function createDeinterlacePipeline(
   video: HTMLVideoElement,
   canvas: HTMLCanvasElement,
   onActiveChange?: (active: boolean) => void,
 ): DeinterlacePipeline {
-  let mode: DeinterlaceMode = "auto";
+  let enabled = true;
   let active = false;
   let destroyed = false;
   let lastVerdict: DetectorVerdict | null = null;
@@ -55,36 +53,29 @@ export function createDeinterlacePipeline(
 
   const detector = new InterlaceDetector(video, (verdict) => {
     lastVerdict = verdict;
-    if (mode === "auto") {
+    if (enabled) {
       setActive(verdict.interlaced, verdict.algorithm, verdict.fieldOrder);
     }
   });
 
-  const applyMode = () => {
-    switch (mode) {
-      case "off":
-        detector.stop();
-        setActive(false, "bwdif");
-        break;
-      case "force":
-        detector.stop();
-        setActive(true, "bwdif");
-        break;
-      case "auto":
-        setActive(
-          lastVerdict?.interlaced === true,
-          lastVerdict?.algorithm ?? "bwdif",
-          lastVerdict?.fieldOrder ?? "tff",
-        );
-        detector.start();
-        break;
+  const apply = () => {
+    if (enabled) {
+      setActive(
+        lastVerdict?.interlaced === true,
+        lastVerdict?.algorithm ?? "bwdif",
+        lastVerdict?.fieldOrder ?? "tff",
+      );
+      detector.start();
+    } else {
+      detector.stop();
+      setActive(false, "bwdif");
     }
   };
 
   if (!DeinterlaceRenderer.isSupported()) {
     Log.i(TAG, "requestVideoFrameCallback unavailable; deinterlacing disabled");
     return {
-      setMode() {},
+      setEnabled() {},
       hintInterlaced() {},
       reset() {},
       get active() {
@@ -94,23 +85,23 @@ export function createDeinterlacePipeline(
     };
   }
 
-  applyMode();
+  apply();
 
   return {
-    setMode(next: DeinterlaceMode) {
-      if (mode === next) return;
-      mode = next;
-      applyMode();
+    setEnabled(next: boolean) {
+      if (enabled === next) return;
+      enabled = next;
+      apply();
     },
     hintInterlaced(width: number, height: number) {
       // The detector applies the resolution gate and emits the verdict, which
-      // activates rendering in auto mode via the callback above
+      // activates rendering when enabled via the callback above
       detector.hintInterlaced(width, height);
     },
     reset() {
       lastVerdict = null;
       detector.reset();
-      if (mode === "auto") setActive(false, "bwdif");
+      if (enabled) setActive(false, "bwdif");
     },
     get active() {
       return active;

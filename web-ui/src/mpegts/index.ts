@@ -3,7 +3,6 @@ import { defaultConfig, type PlayerConfig } from "./config";
 import { createDeinterlacePipeline, type DeinterlacePipeline } from "./deinterlace";
 import { createMpegtsPlayer } from "./player/mpegts-player";
 import type {
-  DeinterlaceMode,
   LiveSessionAnchor,
   Player,
   PlayerError,
@@ -16,7 +15,6 @@ import Log from "./utils/logger";
 
 export { defaultConfig } from "./config";
 export type {
-  DeinterlaceMode,
   LiveSessionAnchor,
   Player,
   PlayerConfig,
@@ -71,7 +69,7 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
         h(active);
       }
     });
-    deinterlace.setMode(fullConfig.deinterlaceMode);
+    deinterlace.setEnabled(fullConfig.deinterlace);
   }
 
   let impl: PlayerImpl | null = null;
@@ -130,8 +128,8 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
       impl?.setLiveSync(enabled);
     },
 
-    setDeinterlaceMode(mode: DeinterlaceMode) {
-      deinterlace?.setMode(mode);
+    setDeinterlace(enabled: boolean) {
+      deinterlace?.setEnabled(enabled);
     },
 
     stop() {
