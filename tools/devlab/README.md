@@ -46,6 +46,10 @@ Channels for the web player's automatic deinterlacing (`MCAST_SCAN_CHANNELS`):
   one 25 fps frame, so the moving pattern combs on every motion. The player's
   heuristic detector must activate on this channel and the combing must
   disappear.
+- **mcast 1080p-combed (h264-mp2)** — same weaved TFF content but encoded and
+  flagged as progressive (no `fieldorder`, no interlaced encoder flags), so the
+  codec-metadata hint stays silent. Only the heuristic comb detector can
+  activate deinterlacing — this validates the heuristic path end to end.
 - **mcast 1080p (h264-mp2)** — progressive control at the resolution gate; the
   detector must NOT activate (no false positive).
 - **mcast 2160p (hevc-aac)** — above-1080 control; deinterlacing is gated off
