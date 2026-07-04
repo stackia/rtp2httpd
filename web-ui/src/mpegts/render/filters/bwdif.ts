@@ -15,11 +15,17 @@ import { type RenderParams, registerFilter, type VideoFilter } from "./types";
  * other half a frame later) for 50p motion; which spatial field comes first is
  * the detector-determined field order (TFF/BFF).
  *
- * Deviations from the FFmpeg reference, both forced by the input being
+ * Deviations from the FFmpeg reference, all forced by the input being
  * RGB-decoded frames rather than raw YUV planes:
  *
  * - Luma is reconstructed from RGB (the matrix cancels on the round trip, so
  *   the filter effectively runs on a luma-equivalent plane).
+ * - The FILTER1 weave gate quantizes lumas back to the 8-bit code grid and
+ *   uses a widened tolerance (WEAVE_TOLERANCE codes instead of FFmpeg's
+ *   implicit 1): limited->full range expansion (x255/219) plus RGB rounding
+ *   and clipping crosstalk make static high-frequency detail show ~1-2 codes
+ *   of spurious temporal diff, which would flicker near-Nyquist stripes
+ *   through the spatial path frame by frame.
  * - Chroma cannot get true per-plane bwdif: the browser upsamples 4:2:0
  *   interlaced chroma progressively, baking field-interleaved color combing
  *   (row periods 2 and 4) into the weaved RGB on ALL rows, kept lines
@@ -48,10 +54,25 @@ uniform float u_spatialOnly; // 1.0 = no real frame history yet: spatial-only in
 in vec2 v_texCoord;
 out vec4 outColor;
 
+// Weave-gate tolerance for FILTER1, in full-range 8-bit code units. FFmpeg's
+// integer "!diff" test weaves anything below 1 limited-range Y code of
+// temporal change; one limited code expands to 255/219 ~= 1.164 full-range
+// codes after the browser's range conversion, and the RGB round trip adds up
+// to ~1 more code of rounding/clipping crosstalk, so 1.5 covers both without
+// letting real motion through the gate.
+const float WEAVE_TOLERANCE = 1.5;
+
 // BT.709 luma/chroma split (only mixed and unmixed inside the shader, so the
 // exact matrix does not matter for the round trip)
 float lumaOf(vec3 rgb) {
   return dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+}
+
+// Snap a reconstructed luma back onto the 8-bit code grid. FFmpeg's temporal
+// diffs compare integer code values; the RGB->luma dot product leaves
+// sub-code float residue that would otherwise register as spurious motion.
+float quant8(float v) {
+  return floor(v * 255.0 + 0.5);
 }
 
 vec2 chromaOf(vec3 rgb) {
@@ -91,18 +112,24 @@ float bwdifLuma(bool isEdge, bool spatCheck) {
   float n2_0 = next2Luma(0.0);
   float d = 0.5 * (p2_0 + n2_0);
 
-  // FILTER1: temporal difference — FFmpeg works on 8-bit integers, so its
-  // "!diff" test means diff < 1 after halving; 0.5/255 is that exact threshold
-  float td0 = abs(p2_0 - n2_0);
-  float td1 = 0.5 * (abs(rowLuma(u_prev, -1.0) - c) + abs(rowLuma(u_prev, 1.0) - e));
-  float td2 = 0.5 * (abs(rowLuma(u_next, -1.0) - c) + abs(rowLuma(u_next, 1.0) - e));
-  float diff = max(max(td0 * 0.5, td1), td2);
+  // FILTER1: temporal difference, evaluated on the 8-bit code grid like the
+  // integer reference — sub-code float residue from the RGB round trip must
+  // not count as motion, and the gate needs the widened WEAVE_TOLERANCE to
+  // absorb range expansion and RGB rounding noise on top of FFmpeg's own
+  // "diff < 1 code" weave condition.
+  float td0 = abs(quant8(p2_0) - quant8(n2_0));
+  float td1 = 0.5 * (abs(quant8(rowLuma(u_prev, -1.0)) - quant8(c)) + abs(quant8(rowLuma(u_prev, 1.0)) - quant8(e)));
+  float td2 = 0.5 * (abs(quant8(rowLuma(u_next, -1.0)) - quant8(c)) + abs(quant8(rowLuma(u_next, 1.0)) - quant8(e)));
+  float diffCodes = max(max(td0 * 0.5, td1), td2);
 
   // No temporal change at this pixel: pure temporal average (weave) — this is
   // what preserves full vertical resolution in static areas
-  if (diff < 0.5 / 255.0) {
+  if (diffCodes <= WEAVE_TOLERANCE) {
     return d;
   }
+
+  float diff = diffCodes / 255.0;
+  td0 /= 255.0;
 
   float interpol;
   if (isEdge) {
