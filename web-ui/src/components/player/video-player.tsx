@@ -203,6 +203,7 @@ export function VideoPlayer({
   const playerDockRef = useRef<HTMLDivElement>(null);
   const playerSurfaceRef = useRef<HTMLDivElement>(null);
   const documentPiPWindowRef = useRef<Window | null>(null);
+  const isUnmountingRef = useRef(false);
   const [playerPortalHost] = useState(() => {
     const host = document.createElement("div");
     host.style.display = "contents";
@@ -420,6 +421,8 @@ export function VideoPlayer({
   }, [isDocumentPiP, playerPortalHost]);
 
   const restoreDocumentPiPPlayer = useEffectEvent(() => {
+    if (isUnmountingRef.current) return;
+
     const dock = playerDockRef.current;
     if (dock && playerPortalHost.parentNode !== dock) {
       dock.append(playerPortalHost);
@@ -431,7 +434,10 @@ export function VideoPlayer({
 
   useEffect(() => {
     return () => {
-      documentPiPWindowRef.current?.close();
+      isUnmountingRef.current = true;
+      const pipWindow = documentPiPWindowRef.current;
+      documentPiPWindowRef.current = null;
+      pipWindow?.close();
       if (playerPortalHost.parentNode) {
         playerPortalHost.parentNode.removeChild(playerPortalHost);
       }
