@@ -34,6 +34,18 @@ export function createDeinterlacePipeline(
   canvas: HTMLCanvasElement,
   onActiveChange?: (active: boolean) => void,
 ): DeinterlacePipeline {
+  if (!DeinterlaceRenderer.isSupported()) {
+    Log.i(TAG, "requestVideoFrameCallback unavailable; deinterlacing disabled");
+    return {
+      setEnabled() {},
+      reset() {},
+      get active() {
+        return false;
+      },
+      destroy() {},
+    };
+  }
+
   let enabled = true;
   let active = false;
   /**
@@ -162,18 +174,6 @@ export function createDeinterlacePipeline(
       setActive(false, "bwdif");
     }
   };
-
-  if (!DeinterlaceRenderer.isSupported()) {
-    Log.i(TAG, "requestVideoFrameCallback unavailable; deinterlacing disabled");
-    return {
-      setEnabled() {},
-      reset() {},
-      get active() {
-        return false;
-      },
-      destroy() {},
-    };
-  }
 
   apply();
 
