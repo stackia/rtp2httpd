@@ -1,6 +1,6 @@
 import "./algorithms/bwdif";
 import Log from "../utils/logger";
-import { type DetectorVerdict, InterlaceDetector } from "./detector";
+import { type DetectorVerdict, InterlaceDetector, isResolutionEligible } from "./detector";
 import { DeinterlaceRenderer, type FieldOrder } from "./renderer";
 
 const TAG = "DeinterlacePipeline";
@@ -18,16 +18,24 @@ export function isDeinterlaceSupported(): boolean {
   return DeinterlaceRenderer.isSupported();
 }
 
+/** Frames sampled back-to-back right after start/reset, before the steady interval kicks in. */
+const FAST_SAMPLE_COUNT = 3;
+/** Steady-state gap between detection samples. Also guarantees the PBO readback never stalls. */
+const SAMPLE_INTERVAL_MS = 500;
+
 /**
- * Wires the heuristic detector to the WebGL renderer for one video/canvas pair.
- * When enabled the detector decides when combing appears and which algorithm to use;
- * disabled stops both.
+ * Wires the GPU interlace detector to the WebGL renderer for one video/canvas pair.
  *
- * Detection runs in GPU mode whenever the renderer's GL context is available:
- * the detector borrows the texture ring uploaded by the renderer, runs marker +
- * reduction shader passes, and retrieves the result via a PBO the following
- * sample cycle (500 ms later).  Before the renderer starts (initial progressive
- * channel scan), detection falls back to the Canvas 2D CPU path automatically.
+ * Resource discipline: the whole GPU chain (frame uploads, bwdif pass, detection
+ * shaders) only runs for frame sizes within the SD/HD deinterlacing gate. A
+ * stream's resolution is assumed constant, so the gate is evaluated once the size
+ * is known (the video element's `resize` event) and never polled per frame.
+ * Larger frames run no algorithm at all — the raw video simply plays.
+ *
+ * Within the gate the renderer runs continuously: it uploads every decoded frame,
+ * runs bwdif, and lets the detector borrow the same texture ring for its marker +
+ * reduction passes. The canvas is only *revealed* (active = true) once the
+ * detector declares the source interlaced; until then the raw video shows through.
  */
 export function createDeinterlacePipeline(
   video: HTMLVideoElement,
@@ -48,53 +56,50 @@ export function createDeinterlacePipeline(
 
   let enabled = true;
   let active = false;
-  /**
-   * True while the renderer has been started but the first canvas frame has not
-   * yet been drawn. During this window we keep the raw video visible (no opacity-0)
-   * so there is no black flash between the deinterlace verdict arriving and the
-   * first WebGL frame being painted.
-   */
-  let pendingFirstFrame = false;
   let destroyed = false;
-  let lastVerdict: DetectorVerdict | null = null;
+  /** True while the full GPU chain (renderer + detector) is running. */
+  let gpuRunning = false;
+  /** Latest verdict; drives canvas visibility and the renderer's field order. */
+  let interlaced = false;
+  let fieldOrder: FieldOrder = "tff";
 
-  // ---- GPU detection cadence state ----
-  // Tracks when the last GPU sample was issued so we can enforce the 500 ms
-  // steady-state interval without a separate setInterval.
-  let lastGpuSampleMs = -Infinity;
-  /** Counts frames sampled in the fast phase (first 3 after start/reset). */
-  let gpuFastPhaseSamples = 0;
-  const GPU_FAST_SAMPLE_COUNT = 3;
-  const GPU_SAMPLE_INTERVAL_MS = 500;
+  // ---- Detection cadence ----
+  // The renderer's per-frame hook enforces the sampling schedule without a
+  // separate timer: the first few frames sample back-to-back, then every 500 ms.
+  let lastSampleMs = -Infinity;
+  let fastPhaseSamples = 0;
 
-  const resetGpuCadence = () => {
-    lastGpuSampleMs = -Infinity;
-    gpuFastPhaseSamples = 0;
+  const resetCadence = () => {
+    lastSampleMs = -Infinity;
+    fastPhaseSamples = 0;
   };
 
-  const notifyFirstFrameRendered = () => {
-    if (!pendingFirstFrame || !enabled || destroyed) return;
-    pendingFirstFrame = false;
-    if (!active) {
-      active = true;
-      onActiveChange?.(true);
-    }
+  const setActive = (next: boolean) => {
+    if (active === next) return;
+    active = next;
+    onActiveChange?.(next);
   };
+
+  // The source size is only known once the video element reports it. `resize`
+  // fires on first metadata and on any later change, so it is the single trigger
+  // for (re)evaluating the resolution gate — no per-frame polling.
+  const handleVideoResize = () => {
+    if (destroyed) return;
+    apply();
+  };
+  video.addEventListener("resize", handleVideoResize);
 
   const renderer = new DeinterlaceRenderer(
     video,
     canvas,
-    notifyFirstFrameRendered,
-    // Context lost: reveal raw video; notify detector to fall back to CPU path
+    // Context lost: hide the canvas and tell the detector its resources are gone.
     () => {
       if (destroyed) return;
       detector.onGlContextLost();
-      if (!active) return;
-      pendingFirstFrame = false;
-      active = false;
-      onActiveChange?.(false);
+      gpuRunning = false;
+      setActive(false);
     },
-    // Context restored: rebuild renderer state then re-activate GPU detection
+    // Context restored: rebuild the pipeline from the last known verdict.
     () => {
       if (destroyed) return;
       Log.i(TAG, "WebGL context restored; re-establishing deinterlace pipeline");
@@ -102,76 +107,74 @@ export function createDeinterlacePipeline(
     },
   );
 
-  // Wire the per-frame GPU detection hook.  This is set once and stays for the
-  // lifetime of the renderer; sampleGpu/readPendingGpu are no-ops unless the
-  // detector is in GPU mode (i.e. initGl has been called).
+  // Per-frame detection hook, set once for the renderer's lifetime. It reads the
+  // previous non-blocking PBO result, then issues the next sample on schedule.
   renderer.onDetectionFrame = (gl, curTexture, prevTexture, videoWidth, videoHeight) => {
     if (destroyed) return;
-
-    // Retrieve the result from the previous non-blocking PBO readback first so
-    // metrics are processed before issuing the next sample.
-    const pendingMetrics = detector.readPendingGpu(gl);
-    if (pendingMetrics !== null) {
-      detector.processSampleMetrics(pendingMetrics);
-    }
+    detector.readPending(gl);
 
     const now = performance.now();
-    const isFastPhase = gpuFastPhaseSamples < GPU_FAST_SAMPLE_COUNT;
-    const isIntervalDue = now - lastGpuSampleMs >= GPU_SAMPLE_INTERVAL_MS;
+    const isFastPhase = fastPhaseSamples < FAST_SAMPLE_COUNT;
+    const isIntervalDue = now - lastSampleMs >= SAMPLE_INTERVAL_MS;
     if (!isFastPhase && !isIntervalDue) return;
 
-    detector.sampleGpu(gl, curTexture, prevTexture, videoWidth, videoHeight, isFastPhase);
-    lastGpuSampleMs = now;
-    if (isFastPhase) gpuFastPhaseSamples++;
+    detector.sample(gl, curTexture, prevTexture, videoWidth, videoHeight, isFastPhase);
+    lastSampleMs = now;
+    if (isFastPhase) fastPhaseSamples++;
   };
 
-  const setActive = (next: boolean, algorithm: string, fieldOrder: FieldOrder = "tff") => {
-    if (destroyed) return;
-    if (next) {
-      pendingFirstFrame = true;
-      if (!renderer.start(algorithm, fieldOrder)) {
-        // WebGL unavailable or algorithm init failed — leave raw video visible
-        pendingFirstFrame = false;
-        return;
-      }
-      // The renderer just created (or reused) a GL context.  Hand it to the
-      // detector so GPU detection can replace the CPU path going forward.
-      const gl = renderer.currentGl;
-      if (gl) {
-        detector.initGl(gl);
-        resetGpuCadence();
-      }
-    } else {
-      pendingFirstFrame = false;
-      renderer.stop();
-      if (active) {
-        active = false;
-        onActiveChange?.(false);
-      }
-    }
-  };
-
-  const detector = new InterlaceDetector(video, (verdict) => {
-    lastVerdict = verdict;
-    if (enabled) {
-      setActive(verdict.interlaced, verdict.algorithm, verdict.fieldOrder);
-    }
+  const detector = new InterlaceDetector((verdict: DetectorVerdict) => {
+    interlaced = verdict.interlaced;
+    fieldOrder = verdict.fieldOrder;
+    if (destroyed || !enabled) return;
+    // Keep the renderer's field order in sync, then reveal or hide the canvas.
+    renderer.setFieldOrder(fieldOrder);
+    setActive(interlaced);
   });
 
+  const startGpuChain = () => {
+    if (gpuRunning || destroyed || !enabled) return;
+
+    if (!renderer.start("bwdif", fieldOrder)) {
+      // WebGL unavailable or algorithm init failed — leave raw video visible.
+      setActive(false);
+      return;
+    }
+    const gl = renderer.currentGl;
+    if (!gl || !detector.initGl(gl)) {
+      // Detection cannot run on this context; don't burn GPU on an output that
+      // can never be revealed.
+      renderer.stop();
+      setActive(false);
+      return;
+    }
+    gpuRunning = true;
+    resetCadence();
+    detector.start();
+    setActive(interlaced);
+  };
+
+  const stopGpuChain = () => {
+    if (!gpuRunning) return;
+    gpuRunning = false;
+    detector.stop();
+    renderer.stop();
+    setActive(false);
+  };
+
+  /**
+   * Bring the pipeline into the state implied by `enabled` and the source size.
+   * The GPU chain starts only once the size is known and within the gate, so
+   * oversized streams never run any algorithm. Called on enable toggle, reset,
+   * context restore, and every `resize` event.
+   */
   const apply = () => {
-    if (enabled) {
-      setActive(lastVerdict?.interlaced === true, lastVerdict?.algorithm ?? "bwdif", lastVerdict?.fieldOrder ?? "tff");
-      detector.start();
-      // If the renderer already has a context (e.g. after context restore),
-      // activate GPU detection immediately without waiting for a new verdict.
-      const gl = renderer.currentGl;
-      if (gl) {
-        detector.onGlContextRestored(gl);
-        resetGpuCadence();
-      }
+    const eligible =
+      video.videoWidth > 0 && video.videoHeight > 0 && isResolutionEligible(video.videoWidth, video.videoHeight);
+    if (enabled && eligible) {
+      startGpuChain();
     } else {
-      detector.stop();
-      setActive(false, "bwdif");
+      stopGpuChain();
     }
   };
 
@@ -184,19 +187,22 @@ export function createDeinterlacePipeline(
       apply();
     },
     reset() {
-      lastVerdict = null;
-      resetGpuCadence();
+      interlaced = false;
+      fieldOrder = "tff";
+      resetCadence();
       detector.reset();
-      if (enabled) setActive(false, "bwdif");
+      setActive(false);
+      // Re-evaluate against the (possibly new) source resolution.
+      apply();
     },
     get active() {
       return active;
     },
     destroy() {
       destroyed = true;
+      video.removeEventListener("resize", handleVideoResize);
       const gl = renderer.currentGl;
       if (gl) detector.destroyGl(gl);
-      detector.destroy();
       renderer.destroy();
     },
   };

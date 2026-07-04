@@ -5,70 +5,53 @@ import type { FieldOrder } from "./renderer";
 const TAG = "InterlaceDetector";
 
 /**
- * Heuristic interlace detection with bidirectional adaptive verdicts.
+ * Heuristic interlace detection running entirely on the GPU.
  *
- * Detection runs in one of two modes depending on whether a WebGL2 context has
- * been supplied via initGl():
+ * Frames already resident in the renderer's texture ring are processed by
+ * fragment shaders that compute a comb score and an abs-diff motion measure,
+ * then reduced to an 8×8 summary via a multi-pass box filter. A PBO carries the
+ * result back to JS asynchronously — only a few hundred bytes cross the GPU→CPU
+ * boundary per sample, and readPixels never stalls the bwdif render path.
  *
- * GPU mode (preferred): frames already resident in the renderer's texture ring
- * are processed by fragment shaders that compute comb score and abs-diff, then
- * reduced to an 8×8 summary via a multi-pass box filter.  A PBO carries the
- * result back to JS asynchronously — only 512 bytes cross the GPU→CPU boundary
- * per sample, and readPixels never stalls the bwdif render path.
- *
- * CPU mode (fallback): the existing Canvas 2D drawImage + getImageData path
- * used before the renderer's GL context is available or when EXT_color_buffer_float
- * is unsupported.
- *
- * The rolling-window verdict logic, reversion heuristic, and field-order vote
- * counting are identical in both modes.
+ * The detector borrows the WebGL2 context and texture ring owned by the
+ * renderer; it never uploads frames itself. It requires EXT_color_buffer_float
+ * (RGBA16F render targets); when that extension is unavailable detection is
+ * simply disabled and the raw video keeps playing.
  */
 
 // ---------------------------------------------------------------------------
-// Constants shared by both detection modes
+// Detection tuning constants
 // ---------------------------------------------------------------------------
 
+/** Deinterlacing only targets SD/HD interlaced broadcast; larger frames are gated out. */
 const GATE_MAX_WIDTH = 1920;
 const GATE_MAX_HEIGHT = 1088;
-const SAMPLE_WIDTH = 256;
-const FAST_SAMPLE_COUNT = 3;
-const SAMPLE_INTERVAL_MS = 500;
+/** Horizontal domain of the detection FBOs; also the threshold calibration domain. */
+const DETECTION_WIDTH = 256;
+/** Pixels with (above-cur)*(below-cur) above this (in [0,255]² luma) are combed. */
 const COMB_PIXEL_THRESHOLD = 400;
+/** A frame is "combed" when at least this fraction of its pixels are flagged. */
 const COMBED_FRAME_RATIO = 0.01;
+/** Rolling window of recent frame verdicts used to debounce the interlaced flag. */
 const WINDOW_SIZE = 12;
+/** Combed frames required within the window to declare the source interlaced. */
 const COMBED_FRAMES_REQUIRED = 3;
+/** Minimum motion (mean abs luma diff, [0,255]) for a sample to count toward reversion. */
+const MOTION_FLOOR = 1.5;
+/** Consecutive clean+moving frames required to revert an interlaced verdict. */
+const REVERSION_FRAMES_REQUIRED = 4;
+
+// ---- Field-order voting ----
 const FIELD_ORDER_MIN_VOTES = 4;
 const FIELD_ORDER_MIN_MARGIN = 2;
 const FIELD_ORDER_MAX_VOTES = 10;
-const MOTION_FLOOR = 1.5;
-const REVERSION_FRAMES_REQUIRED = 4;
 
-// ---------------------------------------------------------------------------
-// GPU-mode constants
-// ---------------------------------------------------------------------------
-
-/**
- * Width of the intermediate detection FBO.  Matches SAMPLE_WIDTH so the GPU
- * and CPU paths share the same horizontal domain and threshold calibration.
- */
-const DETECTION_WIDTH = SAMPLE_WIDTH;
-
-/**
- * Final reduction target: the chain reduces to at most this many texels in
- * each dimension.  JS sums the resulting ≤64 values — negligible cost.
- */
+// ---- GPU reduction ----
+/** The reduction chain halves each dimension until it reaches at most this size. */
 const REDUCTION_TARGET = 8;
-
-/**
- * COMB_PIXEL_THRESHOLD normalised to the [0,1]² luma space used by the GPU
- * path (original threshold is on [0,255]² integer luma).
- */
+/** COMB_PIXEL_THRESHOLD normalised to the [0,1]² luma space the shaders use. */
 const COMB_THRESHOLD_NORMALISED = COMB_PIXEL_THRESHOLD / (255 * 255);
-
-/**
- * MOTION_FLOOR normalised to the [0,1] range returned by the GPU abs-diff
- * shader (original value is in [0,255] integer luma).
- */
+/** MOTION_FLOOR normalised to the [0,1] range the abs-diff shader returns. */
 const MOTION_FLOOR_NORMALISED = MOTION_FLOOR / 255;
 
 // ---------------------------------------------------------------------------
@@ -76,13 +59,27 @@ const MOTION_FLOOR_NORMALISED = MOTION_FLOOR / 255;
 // ---------------------------------------------------------------------------
 
 /**
- * Marker pass — one fullscreen pass over the video texture.
- * Output: R = combed (0.0 or 1.0), G = abs luma diff vs prev frame [0,1].
- * Uses the same BT.709 luma weights as the bwdif algorithm.
+ * Shared GLSL prelude: BT.709 luma extraction, matching the bwdif algorithm.
+ * Prepended to every detection fragment shader so the luma weights live in one
+ * place.
  */
-const MARKER_FRAGMENT_SHADER = `#version 300 es
+const GLSL_LUMA_PRELUDE = `#version 300 es
 precision highp float;
 
+float lumaOfRgb(vec3 rgb) {
+  return dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+}
+
+float lumaAt(sampler2D tex, vec2 uv) {
+  return lumaOfRgb(texture(tex, uv).rgb);
+}
+`;
+
+/**
+ * Marker pass — one fullscreen pass over the video texture.
+ * Output: R = combed (0.0 or 1.0), G = abs luma diff vs prev frame [0,1].
+ */
+const MARKER_FRAGMENT_SHADER = `${GLSL_LUMA_PRELUDE}
 uniform sampler2D u_cur;
 uniform sampler2D u_prev;
 uniform float u_height;
@@ -90,19 +87,15 @@ uniform float u_height;
 in vec2 v_texCoord;
 out vec4 outColor;
 
-float luma(sampler2D t, vec2 uv) {
-  return dot(texture(t, uv).rgb, vec3(0.2126, 0.7152, 0.0722));
-}
-
 void main() {
   float texelH = 1.0 / u_height;
-  float cur   = luma(u_cur, v_texCoord);
-  float above = luma(u_cur, vec2(v_texCoord.x, v_texCoord.y - texelH));
-  float below = luma(u_cur, vec2(v_texCoord.x, v_texCoord.y + texelH));
+  float cur   = lumaAt(u_cur, v_texCoord);
+  float above = lumaAt(u_cur, vec2(v_texCoord.x, v_texCoord.y - texelH));
+  float below = lumaAt(u_cur, vec2(v_texCoord.x, v_texCoord.y + texelH));
   float dA = above - cur;
   float dB = below - cur;
   float combed  = (dA * dB > ${COMB_THRESHOLD_NORMALISED.toFixed(8)}) ? 1.0 : 0.0;
-  float absDiff = abs(cur - luma(u_prev, v_texCoord));
+  float absDiff = abs(cur - lumaAt(u_prev, v_texCoord));
   outColor = vec4(combed, absDiff, 0.0, 1.0);
 }
 `;
@@ -131,13 +124,10 @@ void main() {
 
 /**
  * Field-order pass — renders to a half-height FBO (one output row per even
- * input row).  Mirrors the fieldOrderVote() formula: compares the TFF and BFF
- * temporal midpoint predictions for each row pair.
- * Output: R = errTff, G = errBff (per-row mean absolute error).
+ * input row). Compares the TFF and BFF temporal midpoint predictions for each
+ * row pair. Output: R = errTff, G = errBff (per-row mean absolute error).
  */
-const FIELD_ORDER_FRAGMENT_SHADER = `#version 300 es
-precision highp float;
-
+const FIELD_ORDER_FRAGMENT_SHADER = `${GLSL_LUMA_PRELUDE}
 uniform sampler2D u_prev;
 uniform sampler2D u_cur;
 uniform float u_height;
@@ -145,8 +135,8 @@ uniform float u_height;
 in vec2 v_texCoord;
 out vec4 outColor;
 
-float L(sampler2D t, float x, float rowF) {
-  return dot(texture(t, vec2(x, rowF / u_height)).rgb, vec3(0.2126, 0.7152, 0.0722));
+float rowLuma(sampler2D tex, float x, float rowF) {
+  return lumaAt(tex, vec2(x, rowF / u_height));
 }
 
 void main() {
@@ -155,14 +145,14 @@ void main() {
   float row = floor(v_texCoord.y * (u_height * 0.5)) * 2.0;
   float x   = v_texCoord.x;
 
-  float tPrev      = L(u_prev, x, row);
-  float tPrevBelow = L(u_prev, x, row + 2.0);
-  float tCur       = L(u_cur,  x, row);
-  float tCurBelow  = L(u_cur,  x, row + 2.0);
-  float bPrevAbove = L(u_prev, x, row - 1.0);
-  float bPrev      = L(u_prev, x, row + 1.0);
-  float bCurAbove  = L(u_cur,  x, row - 1.0);
-  float bCur       = L(u_cur,  x, row + 1.0);
+  float tPrev      = rowLuma(u_prev, x, row);
+  float tPrevBelow = rowLuma(u_prev, x, row + 2.0);
+  float tCur       = rowLuma(u_cur,  x, row);
+  float tCurBelow  = rowLuma(u_cur,  x, row + 2.0);
+  float bPrevAbove = rowLuma(u_prev, x, row - 1.0);
+  float bPrev      = rowLuma(u_prev, x, row + 1.0);
+  float bCurAbove  = rowLuma(u_cur,  x, row - 1.0);
+  float bCur       = rowLuma(u_cur,  x, row + 1.0);
 
   float errTff = abs(bPrev - (tPrev + tPrevBelow + tCur + tCurBelow) * 0.25);
   float errBff = abs(tPrev - (bPrevAbove + bPrev + bCurAbove + bCur) * 0.25);
@@ -181,8 +171,8 @@ export interface DetectorVerdict {
   fieldOrder: FieldOrder;
 }
 
-/** Metrics returned by the GPU detection path after readPendingGpu(). */
-export interface DetectionGpuMetrics {
+/** Metrics extracted from one detection sample after GPU readback. */
+interface DetectionMetrics {
   /** Fraction of pixels flagged as combed, [0,1]. */
   combRatio: number;
   /** Mean per-pixel abs luma diff vs previous frame, [0,1]. */
@@ -193,69 +183,6 @@ export interface DetectionGpuMetrics {
   errBff: number;
   /** True when errTff/errBff are valid (field-order pass was issued). */
   hasFieldOrder: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Exported pure functions (used by tests)
-// ---------------------------------------------------------------------------
-
-/**
- * Field-order vote from two consecutive weaved frames.
- * Returns "tff", "bff", or undefined when there is insufficient motion.
- */
-export function fieldOrderVote(
-  prevLuma: Uint8Array,
-  curLuma: Uint8Array,
-  width: number,
-  height: number,
-): FieldOrder | undefined {
-  let errTff = 0;
-  let errBff = 0;
-  for (let y = 2; y + 2 < height; y += 2) {
-    for (let x = 0; x < width; x++) {
-      const i = y * width + x;
-      const tPrev = prevLuma[i];
-      const tPrevBelow = prevLuma[i + 2 * width];
-      const tCur = curLuma[i];
-      const tCurBelow = curLuma[i + 2 * width];
-      const bPrevAbove = prevLuma[i - width];
-      const bPrev = prevLuma[i + width];
-      const bCurAbove = curLuma[i - width];
-      const bCur = curLuma[i + width];
-      errTff += Math.abs(bPrev - (tPrev + tPrevBelow + tCur + tCurBelow) / 4);
-      errBff += Math.abs(tPrev - (bPrevAbove + bPrev + bCurAbove + bCur) / 4);
-    }
-  }
-  const samples = width * Math.floor((height - 4) / 2);
-  if (samples <= 0) return undefined;
-  if ((errTff + errBff) / samples < 1.0) return undefined;
-  if (errTff < errBff * 0.9) return "tff";
-  if (errBff < errTff * 0.9) return "bff";
-  return undefined;
-}
-
-/**
- * Comb metric on a grayscale (luma) plane.
- * Returns the fraction of pixels flagged as combed.
- */
-export function combScore(luma: Uint8ClampedArray | Uint8Array, width: number, height: number): number {
-  if (height < 3) return 0;
-  let combed = 0;
-  const total = width * (height - 2);
-  for (let y = 1; y < height - 1; y++) {
-    const rowAbove = (y - 1) * width;
-    const row = y * width;
-    const rowBelow = (y + 1) * width;
-    for (let x = 0; x < width; x++) {
-      const cur = luma[row + x];
-      const dAbove = luma[rowAbove + x] - cur;
-      const dBelow = luma[rowBelow + x] - cur;
-      if (dAbove * dBelow > COMB_PIXEL_THRESHOLD) {
-        combed++;
-      }
-    }
-  }
-  return combed / total;
 }
 
 // ---------------------------------------------------------------------------
@@ -270,29 +197,21 @@ interface DetectionFbo {
 }
 
 export class InterlaceDetector {
-  private readonly video: HTMLVideoElement;
   private readonly onVerdict: (verdict: DetectorVerdict) => void;
 
-  // ---- CPU-mode state ----
-  private sampleCanvas: HTMLCanvasElement | null = null;
-  private sampleCtx: CanvasRenderingContext2D | null = null;
-  private timer = 0;
+  // ---- Verdict state ----
+  private running = false;
   private window: boolean[] = [];
   private interlaced = false;
-  private prevLuma: Uint8Array | null = null;
   private reversionConsecutiveCount = 0;
-  private gated = false;
   private fieldOrder: FieldOrder = "tff";
   private fieldOrderDecided = false;
   private votesTff = 0;
   private votesBff = 0;
   private votingRounds = 0;
-  /** Invalidates in-flight rVFC vote captures across reset/stop. */
-  private voteGen = 0;
 
-  // ---- GPU-mode state ----
-  private useGpu = false;
-  /** Compiled programs; non-null while GPU mode is active. */
+  // ---- GPU resources ----
+  private ready = false;
   private markerProgram: WebGLProgram | null = null;
   private reductionProgram: WebGLProgram | null = null;
   private fieldOrderProgram: WebGLProgram | null = null;
@@ -304,23 +223,19 @@ export class InterlaceDetector {
   private fieldOrderFbo: DetectionFbo | null = null;
   /** Reduction chain for the field-order pass, same structure. */
   private fieldOrderReductionFbos: DetectionFbo[] = [];
-  /**
-   * Pixel Buffer Object for async readback.
-   * Sized to hold REDUCTION_TARGET×REDUCTION_TARGET RGBA float values.
-   */
+  /** Pixel Buffer Objects for async readback of the final reduction texel. */
   private pbo: WebGLBuffer | null = null;
   private fieldOrderPbo: WebGLBuffer | null = null;
-  /** True while a non-blocking readPixels result is pending in pbo. */
+  /** True while a non-blocking readPixels result is pending in the matching PBO. */
   private pboPending = false;
   private fieldOrderPboPending = false;
   /** Tracked to detect resolution changes that require FBO reallocation. */
   private gpuVideoWidth = 0;
   private gpuVideoHeight = 0;
-  /** Whether the field-order pass should be included in the next sampleGpu call. */
+  /** Whether the field-order pass should be included in the next sample. */
   private gpuFieldOrderDue = false;
 
-  constructor(video: HTMLVideoElement, onVerdict: (verdict: DetectorVerdict) => void) {
-    this.video = video;
+  constructor(onVerdict: (verdict: DetectorVerdict) => void) {
     this.onVerdict = onVerdict;
   }
 
@@ -328,146 +243,85 @@ export class InterlaceDetector {
   // Public lifecycle
   // -------------------------------------------------------------------------
 
-  start(): void {
-    if (this.timer) return;
-    this.scheduleInitialFastSamples();
-    if (!this.useGpu) {
-      // GPU cadence is driven externally via onDetectionFrame; CPU mode uses a
-      // timer.
-      this.timer = window.setInterval(() => this.sample(), SAMPLE_INTERVAL_MS);
-    } else {
-      // Use a sentinel value so start() is idempotent and stop() can clear it.
-      this.timer = -1;
-    }
-    if (this.interlaced && !this.fieldOrderDecided) {
-      this.scheduleFieldOrderVote();
-    }
-  }
-
-  stop(): void {
-    if (!this.timer) return;
-    if (this.timer > 0) window.clearInterval(this.timer);
-    this.timer = 0;
-    this.voteGen++;
-  }
-
-  reset(): void {
-    this.window = [];
-    this.prevLuma = null;
-    this.reversionConsecutiveCount = 0;
-    if (this.interlaced) {
-      this.interlaced = false;
-      this.onVerdict({ interlaced: false, algorithm: "bwdif", fieldOrder: "tff" });
-    }
-    this.gated = false;
-    this.fieldOrder = "tff";
-    this.fieldOrderDecided = false;
-    this.votesTff = 0;
-    this.votesBff = 0;
-    this.votingRounds = 0;
-    this.voteGen++;
-    this.pboPending = false;
-    this.fieldOrderPboPending = false;
-    this.gpuFieldOrderDue = false;
-    if (this.timer) {
-      this.scheduleInitialFastSamples();
-    }
-  }
-
-  destroy(): void {
-    this.stop();
-    this.sampleCanvas = null;
-    this.sampleCtx = null;
-  }
-
-  // -------------------------------------------------------------------------
-  // GPU-mode lifecycle (called from index.ts)
-  // -------------------------------------------------------------------------
-
   /** Returns true when EXT_color_buffer_float is available (RGBA16F FBO support). */
-  static isGpuDetectionSupported(gl: WebGL2RenderingContext): boolean {
+  static isSupported(gl: WebGL2RenderingContext): boolean {
     return gl.getExtension("EXT_color_buffer_float") !== null;
   }
 
+  /** Begin accepting detection samples. Idempotent. */
+  start(): void {
+    this.running = true;
+  }
+
+  /** Stop accepting samples. GPU resources are retained for a later start(). */
+  stop(): void {
+    this.running = false;
+  }
+
+  /** Forget the current verdict and voting state — call on source/channel switch. */
+  reset(): void {
+    this.resetVerdictState(true);
+    this.pboPending = false;
+    this.fieldOrderPboPending = false;
+    this.gpuFieldOrderDue = false;
+  }
+
   /**
-   * Compile shaders and allocate the PBO.  FBOs are allocated lazily on the
-   * first sampleGpu() call (resolution is not yet known here).
-   * Calling this switches the detector to GPU mode and clears any CPU timer.
+   * Compile shaders and allocate readback PBOs against the renderer's context.
+   * FBOs are allocated lazily on the first sample (resolution is not known yet).
+   * Returns false when the context cannot support GPU detection.
    */
-  initGl(gl: WebGL2RenderingContext): void {
-    if (this.useGpu) return;
-    if (!InterlaceDetector.isGpuDetectionSupported(gl)) {
-      Log.w(TAG, "EXT_color_buffer_float unavailable; staying on CPU detection path");
-      return;
+  initGl(gl: WebGL2RenderingContext): boolean {
+    if (this.ready) return true;
+    if (!InterlaceDetector.isSupported(gl)) {
+      Log.w(TAG, "EXT_color_buffer_float unavailable; deinterlace detection disabled");
+      return false;
     }
     try {
       this.markerProgram = createProgram(gl, FULLSCREEN_VERTEX_SHADER, MARKER_FRAGMENT_SHADER);
       this.reductionProgram = createProgram(gl, FULLSCREEN_VERTEX_SHADER, REDUCTION_FRAGMENT_SHADER);
       this.fieldOrderProgram = createProgram(gl, FULLSCREEN_VERTEX_SHADER, FIELD_ORDER_FRAGMENT_SHADER);
     } catch (err) {
-      Log.e(TAG, "Failed to compile detection shaders; staying on CPU path:", err);
-      this.cleanupGlPrograms(gl);
-      return;
+      Log.e(TAG, "Failed to compile detection shaders; detection disabled:", err);
+      this.cleanupPrograms(gl);
+      return false;
     }
 
-    const pboBytes = REDUCTION_TARGET * REDUCTION_TARGET * 4 * 4; // 4 floats × 4 bytes per RGBA16F texel
-    this.pbo = gl.createBuffer();
-    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
-    gl.bufferData(gl.PIXEL_PACK_BUFFER, pboBytes, gl.STREAM_READ);
-    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    // 4 floats × 4 bytes per RGBA16F texel, sized for the final reduction target.
+    const pboBytes = REDUCTION_TARGET * REDUCTION_TARGET * 4 * 4;
+    this.pbo = this.createReadbackPbo(gl, pboBytes);
+    this.fieldOrderPbo = this.createReadbackPbo(gl, pboBytes);
 
-    this.fieldOrderPbo = gl.createBuffer();
-    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.fieldOrderPbo);
-    gl.bufferData(gl.PIXEL_PACK_BUFFER, pboBytes, gl.STREAM_READ);
-    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
-
-    this.useGpu = true;
-    Log.i(TAG, "GPU detection path initialised");
-
-    // Switch the running timer from CPU setInterval to the GPU sentinel value.
-    if (this.timer > 0) {
-      window.clearInterval(this.timer);
-      this.timer = -1;
-    }
+    this.ready = true;
+    Log.i(TAG, "GPU detection initialised");
+    return true;
   }
 
-  /**
-   * Release all GPU resources.  Switches the detector back to CPU mode and
-   * restarts the CPU timer if the detector is currently running.
-   */
+  /** Release all GPU resources. Safe to call with a valid or lost context. */
   destroyGl(gl: WebGL2RenderingContext): void {
-    if (!this.useGpu) return;
-    this.useGpu = false;
+    this.ready = false;
     this.pboPending = false;
     this.fieldOrderPboPending = false;
     this.gpuFieldOrderDue = false;
 
-    this.cleanupGlPrograms(gl);
-    this.freeDetectionFbo(gl, this.markerFbo);
-    this.markerFbo = null;
-    for (const fbo of this.reductionFbos) this.freeDetectionFbo(gl, fbo);
-    this.reductionFbos = [];
-    this.freeDetectionFbo(gl, this.fieldOrderFbo);
-    this.fieldOrderFbo = null;
-    for (const fbo of this.fieldOrderReductionFbos) this.freeDetectionFbo(gl, fbo);
-    this.fieldOrderReductionFbos = [];
+    this.cleanupPrograms(gl);
+    this.clearAllFbos(gl);
 
-    if (this.pbo) { gl.deleteBuffer(this.pbo); this.pbo = null; }
-    if (this.fieldOrderPbo) { gl.deleteBuffer(this.fieldOrderPbo); this.fieldOrderPbo = null; }
+    if (this.pbo) {
+      gl.deleteBuffer(this.pbo);
+      this.pbo = null;
+    }
+    if (this.fieldOrderPbo) {
+      gl.deleteBuffer(this.fieldOrderPbo);
+      this.fieldOrderPbo = null;
+    }
     this.gpuVideoWidth = 0;
     this.gpuVideoHeight = 0;
-
-    // Restart CPU sampling if the detector is still active.
-    if (this.timer === -1) {
-      this.timer = window.setInterval(() => this.sample(), SAMPLE_INTERVAL_MS);
-    }
-    Log.i(TAG, "GPU detection path destroyed; reverting to CPU path");
   }
 
+  /** The GL context was lost — all objects are already gone; just reset bookkeeping. */
   onGlContextLost(): void {
-    if (!this.useGpu) return;
-    // Resources are already gone at the driver level; just reset bookkeeping.
-    this.useGpu = false;
+    this.ready = false;
     this.markerProgram = null;
     this.reductionProgram = null;
     this.fieldOrderProgram = null;
@@ -482,31 +336,28 @@ export class InterlaceDetector {
     this.gpuFieldOrderDue = false;
     this.gpuVideoWidth = 0;
     this.gpuVideoHeight = 0;
-    if (this.timer === -1) {
-      this.timer = window.setInterval(() => this.sample(), SAMPLE_INTERVAL_MS);
-    }
-    Log.w(TAG, "GL context lost; reverting to CPU detection path");
   }
 
+  /** The GL context was restored — rebuild programs and PBOs. */
   onGlContextRestored(gl: WebGL2RenderingContext): void {
     this.initGl(gl);
   }
 
   // -------------------------------------------------------------------------
-  // GPU sampling (called from index.ts via renderer.onDetectionFrame)
+  // Sampling (called from index.ts via renderer.onDetectionFrame)
   // -------------------------------------------------------------------------
 
   /**
-   * Issue a GPU detection sample.  Must only be called when useGpu is true.
+   * Issue a detection sample against the current/previous frame textures.
    *
-   * syncReadback = true (fast phase at startup): issues a synchronous
-   * readPixels so processSampleMetrics() can run immediately.  The brief stall
-   * is acceptable because it only happens on the first few frames.
+   * syncReadback = true (fast phase at startup): reads the result back
+   * synchronously so the verdict updates immediately. The brief stall is
+   * acceptable because it only happens on the first few frames.
    *
    * syncReadback = false (steady state): non-blocking readPixels into a PBO;
-   * result is retrieved via readPendingGpu() on the NEXT sampleGpu() call.
+   * the result is retrieved via readPending() on the next sample cycle.
    */
-  sampleGpu(
+  sample(
     gl: WebGL2RenderingContext,
     curTexture: WebGLTexture,
     prevTexture: WebGLTexture | null,
@@ -514,182 +365,87 @@ export class InterlaceDetector {
     videoHeight: number,
     syncReadback: boolean,
   ): void {
-    if (!this.useGpu || !this.markerProgram || !this.reductionProgram) return;
+    if (!this.ready || !this.markerProgram || !this.reductionProgram) return;
 
+    // The pipeline only samples frames within the resolution gate (a stream's
+    // size is constant), so no per-sample gate check is needed here.
     if (videoWidth !== this.gpuVideoWidth || videoHeight !== this.gpuVideoHeight) {
-      this.reallocGlFbos(gl, videoWidth, videoHeight);
+      this.reallocFbos(gl, videoWidth, videoHeight);
     }
     if (!this.markerFbo || this.reductionFbos.length === 0) return;
 
     const effectivePrev = prevTexture ?? curTexture;
 
-    // ---- Marker pass ----
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.markerFbo.fbo);
-    gl.viewport(0, 0, this.markerFbo.width, this.markerFbo.height);
-    gl.useProgram(this.markerProgram);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, curTexture);
-    gl.uniform1i(gl.getUniformLocation(this.markerProgram, "u_cur"), 0);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, effectivePrev);
-    gl.uniform1i(gl.getUniformLocation(this.markerProgram, "u_prev"), 1);
-    gl.uniform1f(gl.getUniformLocation(this.markerProgram, "u_height"), videoHeight);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-    // ---- Reduction chain ----
+    this.runMarkerPass(gl, curTexture, effectivePrev, videoHeight);
     this.runReductionChain(gl, this.markerFbo, this.reductionFbos);
 
-    // ---- Readback ----
     const finalFbo = this.reductionFbos[this.reductionFbos.length - 1];
-    gl.bindFramebuffer(gl.FRAMEBUFFER, finalFbo.fbo);
     if (syncReadback) {
-      const result = new Float32Array(finalFbo.width * finalFbo.height * 4);
-      gl.readPixels(0, 0, finalFbo.width, finalFbo.height, gl.RGBA, gl.FLOAT, result);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      const metrics = this.computeMetricsFromBuffer(result, finalFbo.width * finalFbo.height, false, null);
-      this.processSampleMetrics(metrics);
+      const buffer = this.readFboSync(gl, finalFbo);
+      const metrics = this.computeMetrics(buffer, finalFbo.width * finalFbo.height, false, null);
+      this.applyMetrics(metrics);
     } else {
-      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
-      gl.readPixels(0, 0, finalFbo.width, finalFbo.height, gl.RGBA, gl.FLOAT, 0);
-      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      this.readFboIntoPbo(gl, finalFbo, this.pbo);
       this.pboPending = true;
     }
 
-    // ---- Optional field-order pass ----
-    if (
-      this.gpuFieldOrderDue &&
-      this.fieldOrderFbo &&
-      this.fieldOrderProgram &&
-      this.fieldOrderReductionFbos.length > 0
-    ) {
+    if (this.isFieldOrderPassDue()) {
       this.gpuFieldOrderDue = false;
-      gl.bindFramebuffer(gl.FRAMEBUFFER, this.fieldOrderFbo.fbo);
-      gl.viewport(0, 0, this.fieldOrderFbo.width, this.fieldOrderFbo.height);
-      gl.useProgram(this.fieldOrderProgram);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, effectivePrev);
-      gl.uniform1i(gl.getUniformLocation(this.fieldOrderProgram, "u_prev"), 0);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, curTexture);
-      gl.uniform1i(gl.getUniformLocation(this.fieldOrderProgram, "u_cur"), 1);
-      gl.uniform1f(gl.getUniformLocation(this.fieldOrderProgram, "u_height"), videoHeight);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-      this.runReductionChain(gl, this.fieldOrderFbo, this.fieldOrderReductionFbos);
-
-      const foFinal = this.fieldOrderReductionFbos[this.fieldOrderReductionFbos.length - 1];
-      gl.bindFramebuffer(gl.FRAMEBUFFER, foFinal.fbo);
-      if (syncReadback) {
-        const foResult = new Float32Array(foFinal.width * foFinal.height * 4);
-        gl.readPixels(0, 0, foFinal.width, foFinal.height, gl.RGBA, gl.FLOAT, foResult);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        this.applyFieldOrderReadback(foResult, foFinal.width * foFinal.height);
-      } else {
-        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.fieldOrderPbo);
-        gl.readPixels(0, 0, foFinal.width, foFinal.height, gl.RGBA, gl.FLOAT, 0);
-        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        this.fieldOrderPboPending = true;
-      }
+      this.runFieldOrderSample(gl, curTexture, effectivePrev, videoHeight, syncReadback);
     }
 
     // Restore GL state so the bwdif renderer's next draw call starts clean.
+    // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
     gl.useProgram(null);
     gl.bindTexture(gl.TEXTURE_2D, null);
     gl.activeTexture(gl.TEXTURE0);
   }
 
   /**
-   * Retrieve the result of the previous non-blocking sampleGpu() call.
-   * The 500 ms steady-state interval guarantees the GPU has finished writing
-   * to the PBO, so getBufferSubData does not stall.
-   * Returns null if no PBO readback is pending.
+   * Retrieve the result of the previous non-blocking sample() call and fold it
+   * into the verdict. The ≥500 ms steady-state interval guarantees the GPU has
+   * finished writing to the PBO, so getBufferSubData does not stall.
+   * No-op when no readback is pending.
    */
-  readPendingGpu(gl: WebGL2RenderingContext): DetectionGpuMetrics | null {
-    if (!this.pboPending || !this.pbo) return null;
+  readPending(gl: WebGL2RenderingContext): void {
+    if (!this.pboPending || !this.pbo) return;
     this.pboPending = false;
 
     const finalFbo = this.reductionFbos[this.reductionFbos.length - 1];
-    if (!finalFbo) return null;
+    if (!finalFbo) return;
     const texelCount = finalFbo.width * finalFbo.height;
-    const mainBuffer = new Float32Array(texelCount * 4);
-    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.pbo);
-    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, mainBuffer);
-    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    const mainBuffer = this.readPboIntoArray(gl, this.pbo, texelCount);
 
     let foBuffer: Float32Array | null = null;
     if (this.fieldOrderPboPending && this.fieldOrderPbo) {
       this.fieldOrderPboPending = false;
       const foFinal = this.fieldOrderReductionFbos[this.fieldOrderReductionFbos.length - 1];
       if (foFinal) {
-        foBuffer = new Float32Array(foFinal.width * foFinal.height * 4);
-        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, this.fieldOrderPbo);
-        gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, foBuffer);
-        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+        foBuffer = this.readPboIntoArray(gl, this.fieldOrderPbo, foFinal.width * foFinal.height);
       }
     }
 
-    return this.computeMetricsFromBuffer(mainBuffer, texelCount, foBuffer !== null, foBuffer);
+    const metrics = this.computeMetrics(mainBuffer, texelCount, foBuffer !== null, foBuffer);
+    this.applyMetrics(metrics);
   }
 
   // -------------------------------------------------------------------------
-  // GPU shared verdict logic
+  // Verdict engine
   // -------------------------------------------------------------------------
 
   /**
-   * Apply detection metrics (from either GPU or CPU path) to the rolling
-   * window and emit a verdict when warranted.  The logic mirrors the body of
-   * the CPU sample() method exactly; only the data source differs.
+   * Fold one detection sample into the rolling window and emit a verdict when
+   * warranted. Also feeds the field-order voting once interlacing is confirmed.
    */
-  processSampleMetrics(metrics: DetectionGpuMetrics): void {
+  private applyMetrics(metrics: DetectionMetrics): void {
+    if (!this.running) return;
+
     const isCombed = metrics.combRatio >= COMBED_FRAME_RATIO;
-    const hasPrevFrame = metrics.motionScore > 0;
-    const motionSufficient = metrics.motionScore >= MOTION_FLOOR_NORMALISED;
 
     if (this.interlaced) {
-      if (!hasPrevFrame || !motionSufficient) {
-        this.reversionConsecutiveCount = 0;
-        return;
-      }
-      if (isCombed) {
-        this.reversionConsecutiveCount = 0;
-        return;
-      }
-      this.reversionConsecutiveCount++;
-      Log.d(
-        TAG,
-        `Reversion candidate ${this.reversionConsecutiveCount}/${REVERSION_FRAMES_REQUIRED} ` +
-          `(motion=${metrics.motionScore.toFixed(4)}, comb=${metrics.combRatio.toFixed(4)})`,
-      );
-      if (this.reversionConsecutiveCount >= REVERSION_FRAMES_REQUIRED) {
-        Log.i(TAG, "Progressive content detected; reverting interlaced verdict");
-        this.resetVerdict();
-      }
-      return;
-    }
-
-    this.window.push(isCombed);
-    if (this.window.length > WINDOW_SIZE) this.window.shift();
-
-    const combedFrames = this.window.filter(Boolean).length;
-    if (combedFrames >= COMBED_FRAMES_REQUIRED) {
-      this.interlaced = true;
-      this.reversionConsecutiveCount = 0;
-      Log.i(
-        TAG,
-        `Interlaced content detected via comb heuristic (${combedFrames}/${this.window.length} combed frames)`,
-      );
-      this.onVerdict({ interlaced: true, algorithm: "bwdif", fieldOrder: this.fieldOrder });
-      if (this.useGpu) {
-        // In GPU mode trigger the field-order pass on the next sampleGpu() call
-        // rather than scheduling a separate rVFC pair as the CPU path does.
-        if (!this.fieldOrderDecided && this.votingRounds < FIELD_ORDER_MAX_VOTES) {
-          this.gpuFieldOrderDue = true;
-        }
-      } else {
-        this.scheduleFieldOrderVote();
-      }
+      this.updateReversion(isCombed, metrics.motionScore);
+    } else {
+      this.updateInterlacedVerdict(isCombed);
     }
 
     if (metrics.hasFieldOrder) {
@@ -697,48 +453,40 @@ export class InterlaceDetector {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // GPU private helpers
-  // -------------------------------------------------------------------------
-
-  private computeMetricsFromBuffer(
-    buffer: Float32Array,
-    texelCount: number,
-    hasFieldOrder: boolean,
-    foBuffer: Float32Array | null,
-  ): DetectionGpuMetrics {
-    let combSum = 0;
-    let diffSum = 0;
-    for (let i = 0; i < texelCount; i++) {
-      combSum += buffer[i * 4];
-      diffSum += buffer[i * 4 + 1];
+  /** While interlaced: count clean+moving frames toward reverting to progressive. */
+  private updateReversion(isCombed: boolean, motionScore: number): void {
+    const hasMotion = motionScore >= MOTION_FLOOR_NORMALISED;
+    if (!hasMotion || isCombed) {
+      this.reversionConsecutiveCount = 0;
+      return;
     }
-    const combRatio = texelCount > 0 ? combSum / texelCount : 0;
-    const motionScore = texelCount > 0 ? diffSum / texelCount : 0;
-
-    let errTff = 0;
-    let errBff = 0;
-    if (hasFieldOrder && foBuffer) {
-      const foTexels = foBuffer.length / 4;
-      for (let i = 0; i < foTexels; i++) {
-        errTff += foBuffer[i * 4];
-        errBff += foBuffer[i * 4 + 1];
-      }
-      if (foTexels > 0) { errTff /= foTexels; errBff /= foTexels; }
+    this.reversionConsecutiveCount++;
+    Log.d(
+      TAG,
+      `Reversion candidate ${this.reversionConsecutiveCount}/${REVERSION_FRAMES_REQUIRED} ` +
+        `(motion=${motionScore.toFixed(4)})`,
+    );
+    if (this.reversionConsecutiveCount >= REVERSION_FRAMES_REQUIRED) {
+      Log.i(TAG, "Progressive content detected; reverting interlaced verdict");
+      this.resetVerdictState(true);
     }
-
-    return { combRatio, motionScore, errTff, errBff, hasFieldOrder };
   }
 
-  private applyFieldOrderReadback(foResult: Float32Array, texelCount: number): void {
-    let errTff = 0;
-    let errBff = 0;
-    for (let i = 0; i < texelCount; i++) {
-      errTff += foResult[i * 4];
-      errBff += foResult[i * 4 + 1];
+  /** While progressive: debounce combed frames before declaring the source interlaced. */
+  private updateInterlacedVerdict(isCombed: boolean): void {
+    this.window.push(isCombed);
+    if (this.window.length > WINDOW_SIZE) this.window.shift();
+
+    const combedFrames = this.window.filter(Boolean).length;
+    if (combedFrames < COMBED_FRAMES_REQUIRED) return;
+
+    this.interlaced = true;
+    this.reversionConsecutiveCount = 0;
+    Log.i(TAG, `Interlaced content detected via comb heuristic (${combedFrames}/${this.window.length} combed frames)`);
+    this.onVerdict({ interlaced: true, algorithm: "bwdif", fieldOrder: this.fieldOrder });
+    if (!this.fieldOrderDecided && this.votingRounds < FIELD_ORDER_MAX_VOTES) {
+      this.gpuFieldOrderDue = true;
     }
-    if (texelCount > 0) { errTff /= texelCount; errBff /= texelCount; }
-    this.applyFieldOrderMetrics(errTff, errBff);
   }
 
   private applyFieldOrderMetrics(errTff: number, errBff: number): void {
@@ -749,52 +497,214 @@ export class InterlaceDetector {
     if (errTff < errBff * 0.9) this.votesTff++;
     else if (errBff < errTff * 0.9) this.votesBff++;
     this.maybeDecideFieldOrder();
-    // Schedule more field-order passes until the verdict is settled.
-    if (!this.fieldOrderDecided && this.votingRounds < FIELD_ORDER_MAX_VOTES && this.useGpu) {
+    if (!this.fieldOrderDecided && this.votingRounds < FIELD_ORDER_MAX_VOTES) {
       this.gpuFieldOrderDue = true;
     }
   }
 
-  private runReductionChain(
+  private maybeDecideFieldOrder(): void {
+    const total = this.votesTff + this.votesBff;
+    const margin = Math.abs(this.votesTff - this.votesBff);
+    const exhausted = this.votingRounds >= FIELD_ORDER_MAX_VOTES;
+    if (total < FIELD_ORDER_MIN_VOTES && !exhausted) return;
+    if (margin < FIELD_ORDER_MIN_MARGIN && !exhausted) return;
+
+    this.fieldOrderDecided = true;
+    const winner: FieldOrder = margin >= FIELD_ORDER_MIN_MARGIN && this.votesBff > this.votesTff ? "bff" : "tff";
+    Log.i(TAG, `Field order: ${winner} (tff=${this.votesTff}, bff=${this.votesBff}, rounds=${this.votingRounds})`);
+    if (winner !== this.fieldOrder) {
+      this.fieldOrder = winner;
+      if (this.interlaced) {
+        this.onVerdict({ interlaced: true, algorithm: "bwdif", fieldOrder: winner });
+      }
+    }
+  }
+
+  /** Whether the field-order pass is scheduled and its GPU resources are ready. */
+  private isFieldOrderPassDue(): boolean {
+    return (
+      this.gpuFieldOrderDue &&
+      this.fieldOrderFbo !== null &&
+      this.fieldOrderProgram !== null &&
+      this.fieldOrderReductionFbos.length > 0
+    );
+  }
+
+  /**
+   * Reset the verdict and voting state. When emitVerdict is true and the source
+   * was interlaced, notify listeners that it is now progressive.
+   */
+  private resetVerdictState(emitVerdict: boolean): void {
+    const wasInterlaced = this.interlaced;
+    this.window = [];
+    this.interlaced = false;
+    this.reversionConsecutiveCount = 0;
+    this.fieldOrder = "tff";
+    this.fieldOrderDecided = false;
+    this.votesTff = 0;
+    this.votesBff = 0;
+    this.votingRounds = 0;
+    if (emitVerdict && wasInterlaced) {
+      this.onVerdict({ interlaced: false, algorithm: "bwdif", fieldOrder: "tff" });
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // GPU pass helpers
+  // -------------------------------------------------------------------------
+
+  private runMarkerPass(
     gl: WebGL2RenderingContext,
-    seedFbo: DetectionFbo,
-    reductionFbos: DetectionFbo[],
+    curTexture: WebGLTexture,
+    prevTexture: WebGLTexture,
+    videoHeight: number,
   ): void {
+    const program = this.markerProgram;
+    const fbo = this.markerFbo;
+    if (!program || !fbo) return;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
+    gl.viewport(0, 0, fbo.width, fbo.height);
+    // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
+    gl.useProgram(program);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, curTexture);
+    gl.uniform1i(gl.getUniformLocation(program, "u_cur"), 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, prevTexture);
+    gl.uniform1i(gl.getUniformLocation(program, "u_prev"), 1);
+    gl.uniform1f(gl.getUniformLocation(program, "u_height"), videoHeight);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  private runFieldOrderSample(
+    gl: WebGL2RenderingContext,
+    curTexture: WebGLTexture,
+    prevTexture: WebGLTexture,
+    videoHeight: number,
+    syncReadback: boolean,
+  ): void {
+    const program = this.fieldOrderProgram;
+    const fbo = this.fieldOrderFbo;
+    if (!program || !fbo) return;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
+    gl.viewport(0, 0, fbo.width, fbo.height);
+    // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
+    gl.useProgram(program);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, prevTexture);
+    gl.uniform1i(gl.getUniformLocation(program, "u_prev"), 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, curTexture);
+    gl.uniform1i(gl.getUniformLocation(program, "u_cur"), 1);
+    gl.uniform1f(gl.getUniformLocation(program, "u_height"), videoHeight);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    this.runReductionChain(gl, fbo, this.fieldOrderReductionFbos);
+
+    const foFinal = this.fieldOrderReductionFbos[this.fieldOrderReductionFbos.length - 1];
+    if (syncReadback) {
+      const buffer = this.readFboSync(gl, foFinal);
+      this.applyFieldOrderReadback(buffer, foFinal.width * foFinal.height);
+    } else {
+      this.readFboIntoPbo(gl, foFinal, this.fieldOrderPbo);
+      this.fieldOrderPboPending = true;
+    }
+  }
+
+  private runReductionChain(gl: WebGL2RenderingContext, seedFbo: DetectionFbo, reductionFbos: DetectionFbo[]): void {
+    const program = this.reductionProgram;
+    if (!program) return;
     let inputFbo = seedFbo;
     for (const outputFbo of reductionFbos) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, outputFbo.fbo);
       gl.viewport(0, 0, outputFbo.width, outputFbo.height);
-      gl.useProgram(this.reductionProgram);
+      // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
+      gl.useProgram(program);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, inputFbo.tex);
-      gl.uniform1i(gl.getUniformLocation(this.reductionProgram!, "u_input"), 0);
-      gl.uniform2f(
-        gl.getUniformLocation(this.reductionProgram!, "u_texelSize"),
-        1.0 / inputFbo.width,
-        1.0 / inputFbo.height,
-      );
+      gl.uniform1i(gl.getUniformLocation(program, "u_input"), 0);
+      gl.uniform2f(gl.getUniformLocation(program, "u_texelSize"), 1.0 / inputFbo.width, 1.0 / inputFbo.height);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       inputFbo = outputFbo;
     }
   }
 
-  private reallocGlFbos(gl: WebGL2RenderingContext, videoWidth: number, videoHeight: number): void {
-    for (const fbo of this.reductionFbos) this.freeDetectionFbo(gl, fbo);
-    this.reductionFbos = [];
-    this.freeDetectionFbo(gl, this.markerFbo);
-    this.markerFbo = null;
-    for (const fbo of this.fieldOrderReductionFbos) this.freeDetectionFbo(gl, fbo);
-    this.fieldOrderReductionFbos = [];
-    this.freeDetectionFbo(gl, this.fieldOrderFbo);
-    this.fieldOrderFbo = null;
+  private applyFieldOrderReadback(buffer: Float32Array, texelCount: number): void {
+    const { errTff, errBff } = meanChannels(buffer, texelCount);
+    this.applyFieldOrderMetrics(errTff, errBff);
+  }
 
+  // -------------------------------------------------------------------------
+  // GPU readback helpers
+  // -------------------------------------------------------------------------
+
+  private computeMetrics(
+    buffer: Float32Array,
+    texelCount: number,
+    hasFieldOrder: boolean,
+    foBuffer: Float32Array | null,
+  ): DetectionMetrics {
+    const { errTff: combSum, errBff: diffSum } = meanChannels(buffer, texelCount);
+    const combRatio = combSum;
+    const motionScore = diffSum;
+
+    let errTff = 0;
+    let errBff = 0;
+    if (hasFieldOrder && foBuffer) {
+      const means = meanChannels(foBuffer, foBuffer.length / 4);
+      errTff = means.errTff;
+      errBff = means.errBff;
+    }
+
+    return { combRatio, motionScore, errTff, errBff, hasFieldOrder };
+  }
+
+  private readFboSync(gl: WebGL2RenderingContext, fbo: DetectionFbo): Float32Array {
+    const result = new Float32Array(fbo.width * fbo.height * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
+    gl.readPixels(0, 0, fbo.width, fbo.height, gl.RGBA, gl.FLOAT, result);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return result;
+  }
+
+  private readFboIntoPbo(gl: WebGL2RenderingContext, fbo: DetectionFbo, pbo: WebGLBuffer | null): void {
+    if (!pbo) return;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.readPixels(0, 0, fbo.width, fbo.height, gl.RGBA, gl.FLOAT, 0);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  private readPboIntoArray(gl: WebGL2RenderingContext, pbo: WebGLBuffer, texelCount: number): Float32Array {
+    const buffer = new Float32Array(texelCount * 4);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, buffer);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    return buffer;
+  }
+
+  private createReadbackPbo(gl: WebGL2RenderingContext, byteLength: number): WebGLBuffer | null {
+    const pbo = gl.createBuffer();
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, byteLength, gl.STREAM_READ);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    return pbo;
+  }
+
+  // -------------------------------------------------------------------------
+  // FBO allocation
+  // -------------------------------------------------------------------------
+
+  private reallocFbos(gl: WebGL2RenderingContext, videoWidth: number, videoHeight: number): void {
+    this.clearAllFbos(gl);
     this.gpuVideoWidth = videoWidth;
     this.gpuVideoHeight = videoHeight;
 
-    const markerHeight = videoHeight;
-    this.markerFbo = this.createDetectionFbo(gl, DETECTION_WIDTH, markerHeight);
+    this.markerFbo = this.createDetectionFbo(gl, DETECTION_WIDTH, videoHeight);
     if (!this.markerFbo) return;
-    this.reductionFbos = this.buildReductionChain(gl, DETECTION_WIDTH, markerHeight);
+    this.reductionFbos = this.buildReductionChain(gl, DETECTION_WIDTH, videoHeight);
 
     const foHeight = Math.max(1, Math.ceil(videoHeight / 2));
     this.fieldOrderFbo = this.createDetectionFbo(gl, DETECTION_WIDTH, foHeight);
@@ -803,11 +713,7 @@ export class InterlaceDetector {
     }
   }
 
-  private buildReductionChain(
-    gl: WebGL2RenderingContext,
-    seedWidth: number,
-    seedHeight: number,
-  ): DetectionFbo[] {
+  private buildReductionChain(gl: WebGL2RenderingContext, seedWidth: number, seedHeight: number): DetectionFbo[] {
     const chain: DetectionFbo[] = [];
     let width = seedWidth;
     let height = seedHeight;
@@ -821,11 +727,7 @@ export class InterlaceDetector {
     return chain;
   }
 
-  private createDetectionFbo(
-    gl: WebGL2RenderingContext,
-    width: number,
-    height: number,
-  ): DetectionFbo | null {
+  private createDetectionFbo(gl: WebGL2RenderingContext, width: number, height: number): DetectionFbo | null {
     const tex = gl.createTexture();
     if (!tex) return null;
     gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -837,7 +739,10 @@ export class InterlaceDetector {
     gl.bindTexture(gl.TEXTURE_2D, null);
 
     const fbo = gl.createFramebuffer();
-    if (!fbo) { gl.deleteTexture(tex); return null; }
+    if (!fbo) {
+      gl.deleteTexture(tex);
+      return null;
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
     const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
@@ -850,240 +755,59 @@ export class InterlaceDetector {
     return { fbo, tex, width, height };
   }
 
+  private clearAllFbos(gl: WebGL2RenderingContext): void {
+    this.freeDetectionFbo(gl, this.markerFbo);
+    this.markerFbo = null;
+    for (const fbo of this.reductionFbos) this.freeDetectionFbo(gl, fbo);
+    this.reductionFbos = [];
+    this.freeDetectionFbo(gl, this.fieldOrderFbo);
+    this.fieldOrderFbo = null;
+    for (const fbo of this.fieldOrderReductionFbos) this.freeDetectionFbo(gl, fbo);
+    this.fieldOrderReductionFbos = [];
+  }
+
   private freeDetectionFbo(gl: WebGL2RenderingContext, fbo: DetectionFbo | null): void {
     if (!fbo) return;
     gl.deleteFramebuffer(fbo.fbo);
     gl.deleteTexture(fbo.tex);
   }
 
-  private cleanupGlPrograms(gl: WebGL2RenderingContext): void {
-    if (this.markerProgram) { gl.deleteProgram(this.markerProgram); this.markerProgram = null; }
-    if (this.reductionProgram) { gl.deleteProgram(this.reductionProgram); this.reductionProgram = null; }
-    if (this.fieldOrderProgram) { gl.deleteProgram(this.fieldOrderProgram); this.fieldOrderProgram = null; }
-  }
-
-  // -------------------------------------------------------------------------
-  // CPU-mode private methods (unchanged from original implementation)
-  // -------------------------------------------------------------------------
-
-  private scheduleInitialFastSamples(): void {
-    const gen = this.voteGen;
-    let remaining = FAST_SAMPLE_COUNT;
-    const onFrame = () => {
-      if (gen !== this.voteGen || this.timer === 0) return;
-      const sampled = this.sample();
-      if (sampled) remaining--;
-      if (remaining > 0) {
-        this.video.requestVideoFrameCallback(onFrame);
-      }
-    };
-    this.video.requestVideoFrameCallback(onFrame);
-  }
-
-  private resolutionEligible(width: number, height: number): boolean {
-    return width > 0 && width <= GATE_MAX_WIDTH && height > 0 && height <= GATE_MAX_HEIGHT;
-  }
-
-  private sample(): boolean {
-    const video = this.video;
-    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.paused || video.seeking) {
-      return false;
+  private cleanupPrograms(gl: WebGL2RenderingContext): void {
+    if (this.markerProgram) {
+      gl.deleteProgram(this.markerProgram);
+      this.markerProgram = null;
     }
-
-    const width = video.videoWidth;
-    const height = video.videoHeight;
-    if (!this.resolutionEligible(width, height)) {
-      if (!this.gated && width > 0) {
-        this.gated = true;
-        Log.d(TAG, `Resolution ${width}x${height} not eligible for deinterlacing`);
-      }
-      if (this.interlaced || this.window.length) this.reset();
-      return false;
+    if (this.reductionProgram) {
+      gl.deleteProgram(this.reductionProgram);
+      this.reductionProgram = null;
     }
-    this.gated = false;
-
-    if (!this.ensureSampleCtx()) {
-      Log.e(TAG, "2D sampling context unavailable; detector disabled");
-      this.stop();
-      return false;
-    }
-    const canvas = this.sampleCanvas as HTMLCanvasElement;
-    if (canvas.width !== SAMPLE_WIDTH || canvas.height !== height) {
-      canvas.width = SAMPLE_WIDTH;
-      canvas.height = height;
-    }
-
-    const ctx = this.sampleCtx as CanvasRenderingContext2D;
-    let imageData: ImageData;
-    try {
-      ctx.drawImage(video, 0, 0, SAMPLE_WIDTH, height);
-      imageData = ctx.getImageData(0, 0, SAMPLE_WIDTH, height);
-    } catch (err) {
-      Log.d(TAG, "Frame sampling failed:", err);
-      return false;
-    }
-
-    const rgba = imageData.data;
-    const luma = new Uint8Array(SAMPLE_WIDTH * height);
-    for (let i = 0, p = 0; i < luma.length; i++, p += 4) {
-      luma[i] = (77 * rgba[p] + 150 * rgba[p + 1] + 29 * rgba[p + 2]) >> 8;
-    }
-
-    const motionScore = this.computeMotionScore(luma);
-    const prevLumaSnapshot = this.prevLuma;
-    this.prevLuma = luma;
-
-    const score = combScore(luma, SAMPLE_WIDTH, height);
-
-    if (this.interlaced) {
-      if (prevLumaSnapshot === null || motionScore < MOTION_FLOOR) {
-        this.reversionConsecutiveCount = 0;
-        return true;
-      }
-      if (score >= COMBED_FRAME_RATIO) {
-        this.reversionConsecutiveCount = 0;
-        return true;
-      }
-      this.reversionConsecutiveCount++;
-      Log.d(
-        TAG,
-        `Reversion candidate ${this.reversionConsecutiveCount}/${REVERSION_FRAMES_REQUIRED} (motion=${motionScore.toFixed(2)}, comb=${score.toFixed(4)})`,
-      );
-      if (this.reversionConsecutiveCount >= REVERSION_FRAMES_REQUIRED) {
-        Log.i(TAG, "Progressive content detected; reverting interlaced verdict");
-        this.resetVerdict();
-      }
-      return true;
-    }
-
-    this.window.push(score >= COMBED_FRAME_RATIO);
-    if (this.window.length > WINDOW_SIZE) this.window.shift();
-
-    const combedFrames = this.window.filter(Boolean).length;
-    if (combedFrames >= COMBED_FRAMES_REQUIRED) {
-      this.interlaced = true;
-      this.reversionConsecutiveCount = 0;
-      Log.i(
-        TAG,
-        `Interlaced content detected via comb heuristic (${combedFrames}/${this.window.length} combed frames)`,
-      );
-      this.onVerdict({ interlaced: true, algorithm: "bwdif", fieldOrder: this.fieldOrder });
-      this.scheduleFieldOrderVote();
-    }
-    return true;
-  }
-
-  private computeMotionScore(currentLuma: Uint8Array): number {
-    const previousLuma = this.prevLuma;
-    if (!previousLuma || previousLuma.length !== currentLuma.length) return 0;
-    let totalAbsDiff = 0;
-    for (let i = 0; i < currentLuma.length; i++) {
-      totalAbsDiff += Math.abs(currentLuma[i] - previousLuma[i]);
-    }
-    return totalAbsDiff / currentLuma.length;
-  }
-
-  private resetVerdict(): void {
-    this.interlaced = false;
-    this.window = [];
-    this.prevLuma = null;
-    this.reversionConsecutiveCount = 0;
-    this.fieldOrder = "tff";
-    this.fieldOrderDecided = false;
-    this.votesTff = 0;
-    this.votesBff = 0;
-    this.votingRounds = 0;
-    this.voteGen++;
-    this.onVerdict({ interlaced: false, algorithm: "bwdif", fieldOrder: "tff" });
-  }
-
-  private ensureSampleCtx(): boolean {
-    if (this.sampleCtx) return true;
-    this.sampleCanvas = document.createElement("canvas");
-    this.sampleCtx = this.sampleCanvas.getContext("2d", { willReadFrequently: true, alpha: false });
-    return this.sampleCtx !== null;
-  }
-
-  private grabLuma(width: number, height: number): Uint8Array | null {
-    if (!this.ensureSampleCtx()) return null;
-    const ctx = this.sampleCtx as CanvasRenderingContext2D;
-    const canvas = this.sampleCanvas;
-    if (!ctx || !canvas) return null;
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-    }
-    try {
-      ctx.drawImage(this.video, 0, 0, width, height);
-      const rgba = ctx.getImageData(0, 0, width, height).data;
-      const luma = new Uint8Array(width * height);
-      for (let i = 0, p = 0; i < luma.length; i++, p += 4) {
-        luma[i] = (77 * rgba[p] + 150 * rgba[p + 1] + 29 * rgba[p + 2]) >> 8;
-      }
-      return luma;
-    } catch {
-      return null;
+    if (this.fieldOrderProgram) {
+      gl.deleteProgram(this.fieldOrderProgram);
+      this.fieldOrderProgram = null;
     }
   }
+}
 
-  private scheduleFieldOrderVote(): void {
-    if (this.fieldOrderDecided || this.votingRounds >= FIELD_ORDER_MAX_VOTES) return;
-    const gen = this.voteGen;
-    const video = this.video;
-    const height = video.videoHeight;
+/**
+ * Whether a frame size falls within the SD/HD interlaced deinterlacing gate.
+ * The pipeline uses this to keep the whole GPU chain (bwdif + detection) idle
+ * for larger frames, so exported for reuse there.
+ */
+export function isResolutionEligible(width: number, height: number): boolean {
+  return width > 0 && width <= GATE_MAX_WIDTH && height > 0 && height <= GATE_MAX_HEIGHT;
+}
 
-    const retry = () => {
-      window.setTimeout(() => {
-        if (gen === this.voteGen) this.scheduleFieldOrderVote();
-      }, SAMPLE_INTERVAL_MS);
-    };
-    if (!height || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-      retry();
-      return;
-    }
-    if (!this.resolutionEligible(video.videoWidth, height)) return;
-
-    const prevLuma = this.grabLuma(SAMPLE_WIDTH, height);
-    if (!prevLuma) {
-      retry();
-      return;
-    }
-
-    video.requestVideoFrameCallback(() => {
-      if (gen !== this.voteGen) return;
-      const curLuma = this.grabLuma(SAMPLE_WIDTH, video.videoHeight);
-      if (curLuma && curLuma.length === prevLuma.length) {
-        this.votingRounds++;
-        const vote = fieldOrderVote(prevLuma, curLuma, SAMPLE_WIDTH, video.videoHeight);
-        if (vote === "tff") this.votesTff++;
-        else if (vote === "bff") this.votesBff++;
-        this.maybeDecideFieldOrder();
-      }
-      if (!this.fieldOrderDecided && this.votingRounds < FIELD_ORDER_MAX_VOTES) {
-        window.setTimeout(() => {
-          if (gen === this.voteGen) this.scheduleFieldOrderVote();
-        }, SAMPLE_INTERVAL_MS);
-      }
-    });
+/**
+ * Mean of the R and G channels of an RGBA float buffer over the given texel
+ * count. R is returned as errTff, G as errBff (also used for combRatio/motion).
+ */
+function meanChannels(buffer: Float32Array, texelCount: number): { errTff: number; errBff: number } {
+  if (texelCount <= 0) return { errTff: 0, errBff: 0 };
+  let rSum = 0;
+  let gSum = 0;
+  for (let i = 0; i < texelCount; i++) {
+    rSum += buffer[i * 4];
+    gSum += buffer[i * 4 + 1];
   }
-
-  private maybeDecideFieldOrder(): void {
-    const votesTff = this.votesTff;
-    const votesBff = this.votesBff;
-    const total = votesTff + votesBff;
-    const margin = Math.abs(votesTff - votesBff);
-    const exhausted = this.votingRounds >= FIELD_ORDER_MAX_VOTES;
-    if (total < FIELD_ORDER_MIN_VOTES && !exhausted) return;
-    if (margin < FIELD_ORDER_MIN_MARGIN && !exhausted) return;
-
-    this.fieldOrderDecided = true;
-    const winner: FieldOrder = margin >= FIELD_ORDER_MIN_MARGIN && votesBff > votesTff ? "bff" : "tff";
-    Log.i(TAG, `Field order: ${winner} (tff=${votesTff}, bff=${votesBff}, rounds=${this.votingRounds})`);
-    if (winner !== this.fieldOrder) {
-      this.fieldOrder = winner;
-      if (this.interlaced) {
-        this.onVerdict({ interlaced: true, algorithm: "bwdif", fieldOrder: winner });
-      }
-    }
-  }
+  return { errTff: rSum / texelCount, errBff: gSum / texelCount };
 }

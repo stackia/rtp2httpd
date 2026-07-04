@@ -27,7 +27,6 @@ export class DeinterlaceRenderer {
   private running = false;
   private contextLost = false;
   private fieldOrder: FieldOrder = "tff";
-  private readonly onFrameRendered?: () => void;
   private readonly onContextLost?: () => void;
   private readonly onContextRestored?: () => void;
 
@@ -77,13 +76,11 @@ export class DeinterlaceRenderer {
   constructor(
     video: HTMLVideoElement,
     canvas: HTMLCanvasElement,
-    onFrameRendered?: () => void,
     onContextLost?: () => void,
     onContextRestored?: () => void,
   ) {
     this.video = video;
     this.canvas = canvas;
-    this.onFrameRendered = onFrameRendered;
     this.onContextLost = onContextLost;
     this.onContextRestored = onContextRestored;
     canvas.addEventListener("webglcontextlost", this.handleContextLost);
@@ -97,6 +94,11 @@ export class DeinterlaceRenderer {
 
   get isRunning(): boolean {
     return this.running;
+  }
+
+  /** Update the source field order for subsequent frames (TFF/BFF). */
+  setFieldOrder(fieldOrder: FieldOrder): void {
+    this.fieldOrder = fieldOrder;
   }
 
   /** Start rendering with the given algorithm and field order. Safe to call repeatedly. */
@@ -293,7 +295,6 @@ export class DeinterlaceRenderer {
     // filtering would compare a frame with itself — force spatial-only
     const spatialOnly = this.textures.length <= algorithm.historyFrames;
     algorithm.render(gl, this.textures, { width, height, keepField: field, isSecondField, spatialOnly });
-    this.onFrameRendered?.();
 
     if (!isSecondField && this.onDetectionFrame && !this.contextLost) {
       const prevTexture = this.textures.length >= 2 ? this.textures[1] : null;
