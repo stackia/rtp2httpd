@@ -1232,12 +1232,9 @@ export function VideoPlayer({
                 ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
                 className={clsx(
                   "absolute inset-0 size-full min-h-0 min-w-0 object-fill",
-                  // Background slot: when deinterlacing is active use opacity (not visibility)
-                  // so requestVideoFrameCallback keeps firing during seamless-switch warm-up.
-                  visibleSlotId !== slotId &&
-                    (deinterlaceActiveSlots[slotId]
-                      ? "opacity-0 pointer-events-none"
-                      : "invisible pointer-events-none"),
+                  // Background slot: opacity (not visibility) keeps requestVideoFrameCallback
+                  // firing so interlace detection can warm up during seamless switch.
+                  visibleSlotId !== slotId && "opacity-0 pointer-events-none",
                   // Active slot: hide raw video behind the deinterlaced canvas output
                   visibleSlotId === slotId && deinterlaceActiveSlots[slotId] && "opacity-0",
                 )}

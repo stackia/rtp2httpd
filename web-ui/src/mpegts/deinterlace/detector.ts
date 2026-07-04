@@ -9,9 +9,10 @@ const TAG = "InterlaceDetector";
  *
  * Frames already resident in the renderer's texture ring are processed by
  * fragment shaders that compute a comb score and an abs-diff motion measure,
- * then reduced to an 8×8 summary via a multi-pass box filter. A PBO carries the
- * result back to JS asynchronously — only a few hundred bytes cross the GPU→CPU
- * boundary per sample, and readPixels never stalls the bwdif render path.
+ * then reduced to an 8×8 summary via a multi-pass box filter. Each sample's
+ * result travels back through a PBO guarded by a GL fence: poll() drains
+ * completed readbacks on later frames, so only a few hundred bytes cross the
+ * GPU→CPU boundary per sample and nothing ever blocks on the GPU.
  *
  * The detector borrows the WebGL2 context and texture ring owned by the
  * renderer; it never uploads frames itself. It requires EXT_color_buffer_float
@@ -53,6 +54,14 @@ const REDUCTION_TARGET = 8;
 const COMB_THRESHOLD_NORMALISED = COMB_PIXEL_THRESHOLD / (255 * 255);
 /** MOTION_FLOOR normalised to the [0,1] range the abs-diff shader returns. */
 const MOTION_FLOOR_NORMALISED = MOTION_FLOOR / 255;
+
+// ---- Async readback ----
+/**
+ * Readback slots; sized for the fast phase / field-order voting where samples
+ * are issued on consecutive frames while earlier ones are still in flight
+ * (fence wait ≈ 1-2 frames, plus one deferred-read frame).
+ */
+const READBACK_POOL_SIZE = 4;
 
 // ---------------------------------------------------------------------------
 // GPU shader sources
@@ -136,7 +145,11 @@ in vec2 v_texCoord;
 out vec4 outColor;
 
 float rowLuma(sampler2D tex, float x, float rowF) {
-  return lumaAt(tex, vec2(x, rowF / u_height));
+  // +0.5: sample at the texel CENTER of that row. The video textures use
+  // LINEAR filtering, so sampling at rowF exactly (a texel boundary) would
+  // average two adjacent rows — i.e. blend the two fields together and
+  // corrupt both hypotheses.
+  return lumaAt(tex, vec2(x, (rowF + 0.5) / u_height));
 }
 
 void main() {
@@ -196,6 +209,21 @@ interface DetectionFbo {
   height: number;
 }
 
+/** One in-flight async readback: PBOs filled by readPixels, gated by a fence. */
+interface ReadbackSlot {
+  pbo: WebGLBuffer;
+  fieldOrderPbo: WebGLBuffer;
+  /** Set while the slot is in flight; null when the slot is free. */
+  fence: WebGLSync | null;
+  /** Whether fieldOrderPbo holds data for this sample. */
+  hasFieldOrder: boolean;
+  /** Result is from a source that was reset — drain the PBO but drop the metrics. */
+  stale: boolean;
+  /** Texel counts captured at issue time (FBOs may be reallocated while in flight). */
+  texelCount: number;
+  foTexelCount: number;
+}
+
 export class InterlaceDetector {
   private readonly onVerdict: (verdict: DetectorVerdict) => void;
 
@@ -215,6 +243,20 @@ export class InterlaceDetector {
   private markerProgram: WebGLProgram | null = null;
   private reductionProgram: WebGLProgram | null = null;
   private fieldOrderProgram: WebGLProgram | null = null;
+  // Uniform locations, cached once per program compile (lookups are not free
+  // and the reduction pass runs ~9 times per sample).
+  private markerUniforms: {
+    cur: WebGLUniformLocation | null;
+    prev: WebGLUniformLocation | null;
+    height: WebGLUniformLocation | null;
+  } | null = null;
+  private reductionUniforms: { input: WebGLUniformLocation | null; texelSize: WebGLUniformLocation | null } | null =
+    null;
+  private fieldOrderUniforms: {
+    prev: WebGLUniformLocation | null;
+    cur: WebGLUniformLocation | null;
+    height: WebGLUniformLocation | null;
+  } | null = null;
   /** Marker FBO: DETECTION_WIDTH × videoHeight, RGBA16F. */
   private markerFbo: DetectionFbo | null = null;
   /** Reduction chain: progressively halved until ≤ REDUCTION_TARGET. */
@@ -223,17 +265,29 @@ export class InterlaceDetector {
   private fieldOrderFbo: DetectionFbo | null = null;
   /** Reduction chain for the field-order pass, same structure. */
   private fieldOrderReductionFbos: DetectionFbo[] = [];
-  /** Pixel Buffer Objects for async readback of the final reduction texel. */
-  private pbo: WebGLBuffer | null = null;
-  private fieldOrderPbo: WebGLBuffer | null = null;
-  /** True while a non-blocking readPixels result is pending in the matching PBO. */
-  private pboPending = false;
-  private fieldOrderPboPending = false;
+  /** Fence-gated PBO pool; samples are drained in issue order by poll(). */
+  private readbackSlots: ReadbackSlot[] = [];
+  /**
+   * Free slots, least-recently-read first. FIFO reuse maximises the distance
+   * between reading a slot back and rewriting it — rewriting a just-read PBO
+   * defeats Chrome's readback shadow-copy optimisation (it logs a performance
+   * warning when that happens).
+   */
+  private freeSlots: ReadbackSlot[] = [];
+  /** Slots currently in flight, oldest first. */
+  private inFlight: ReadbackSlot[] = [];
+  /**
+   * Slots whose fence has signaled, to be read on the NEXT poll. Chrome
+   * populates its readback shadow copy asynchronously after it sees the fence
+   * signal; reading getBufferSubData in the same frame would race that copy
+   * (slow blocking path + a "shadow copy discarded" performance warning when
+   * the buffer is rewritten). One frame later the shadow is ready and the read
+   * is served from it without touching the GPU.
+   */
+  private readyToRead: ReadbackSlot[] = [];
   /** Tracked to detect resolution changes that require FBO reallocation. */
   private gpuVideoWidth = 0;
   private gpuVideoHeight = 0;
-  /** Whether the field-order pass should be included in the next sample. */
-  private gpuFieldOrderDue = false;
 
   constructor(onVerdict: (verdict: DetectorVerdict) => void) {
     this.onVerdict = onVerdict;
@@ -253,6 +307,15 @@ export class InterlaceDetector {
     this.running = true;
   }
 
+  /**
+   * True while an interlaced verdict awaits a field-order decision. The
+   * pipeline uses this to sample back-to-back frames so voting converges in
+   * frames instead of one vote per steady-state interval.
+   */
+  get fieldOrderVotingActive(): boolean {
+    return this.running && this.interlaced && !this.fieldOrderDecided && this.votingRounds < FIELD_ORDER_MAX_VOTES;
+  }
+
   /** Stop accepting samples. GPU resources are retained for a later start(). */
   stop(): void {
     this.running = false;
@@ -261,9 +324,9 @@ export class InterlaceDetector {
   /** Forget the current verdict and voting state — call on source/channel switch. */
   reset(): void {
     this.resetVerdictState(true);
-    this.pboPending = false;
-    this.fieldOrderPboPending = false;
-    this.gpuFieldOrderDue = false;
+    // In-flight samples belong to the old source; drop their results when they land.
+    for (const slot of this.inFlight) slot.stale = true;
+    for (const slot of this.readyToRead) slot.stale = true;
   }
 
   /**
@@ -281,6 +344,20 @@ export class InterlaceDetector {
       this.markerProgram = createProgram(gl, FULLSCREEN_VERTEX_SHADER, MARKER_FRAGMENT_SHADER);
       this.reductionProgram = createProgram(gl, FULLSCREEN_VERTEX_SHADER, REDUCTION_FRAGMENT_SHADER);
       this.fieldOrderProgram = createProgram(gl, FULLSCREEN_VERTEX_SHADER, FIELD_ORDER_FRAGMENT_SHADER);
+      this.markerUniforms = {
+        cur: gl.getUniformLocation(this.markerProgram, "u_cur"),
+        prev: gl.getUniformLocation(this.markerProgram, "u_prev"),
+        height: gl.getUniformLocation(this.markerProgram, "u_height"),
+      };
+      this.reductionUniforms = {
+        input: gl.getUniformLocation(this.reductionProgram, "u_input"),
+        texelSize: gl.getUniformLocation(this.reductionProgram, "u_texelSize"),
+      };
+      this.fieldOrderUniforms = {
+        prev: gl.getUniformLocation(this.fieldOrderProgram, "u_prev"),
+        cur: gl.getUniformLocation(this.fieldOrderProgram, "u_cur"),
+        height: gl.getUniformLocation(this.fieldOrderProgram, "u_height"),
+      };
     } catch (err) {
       Log.e(TAG, "Failed to compile detection shaders; detection disabled:", err);
       this.cleanupPrograms(gl);
@@ -289,8 +366,26 @@ export class InterlaceDetector {
 
     // 4 floats × 4 bytes per RGBA16F texel, sized for the final reduction target.
     const pboBytes = REDUCTION_TARGET * REDUCTION_TARGET * 4 * 4;
-    this.pbo = this.createReadbackPbo(gl, pboBytes);
-    this.fieldOrderPbo = this.createReadbackPbo(gl, pboBytes);
+    this.readbackSlots = [];
+    this.freeSlots = [];
+    this.inFlight = [];
+    this.readyToRead = [];
+    for (let i = 0; i < READBACK_POOL_SIZE; i++) {
+      const pbo = this.createReadbackPbo(gl, pboBytes);
+      const fieldOrderPbo = this.createReadbackPbo(gl, pboBytes);
+      if (!pbo || !fieldOrderPbo) break;
+      const slot: ReadbackSlot = {
+        pbo,
+        fieldOrderPbo,
+        fence: null,
+        hasFieldOrder: false,
+        stale: false,
+        texelCount: 0,
+        foTexelCount: 0,
+      };
+      this.readbackSlots.push(slot);
+      this.freeSlots.push(slot);
+    }
 
     this.ready = true;
     Log.i(TAG, "GPU detection initialised");
@@ -300,21 +395,19 @@ export class InterlaceDetector {
   /** Release all GPU resources. Safe to call with a valid or lost context. */
   destroyGl(gl: WebGL2RenderingContext): void {
     this.ready = false;
-    this.pboPending = false;
-    this.fieldOrderPboPending = false;
-    this.gpuFieldOrderDue = false;
 
     this.cleanupPrograms(gl);
     this.clearAllFbos(gl);
 
-    if (this.pbo) {
-      gl.deleteBuffer(this.pbo);
-      this.pbo = null;
+    for (const slot of this.readbackSlots) {
+      if (slot.fence) gl.deleteSync(slot.fence);
+      gl.deleteBuffer(slot.pbo);
+      gl.deleteBuffer(slot.fieldOrderPbo);
     }
-    if (this.fieldOrderPbo) {
-      gl.deleteBuffer(this.fieldOrderPbo);
-      this.fieldOrderPbo = null;
-    }
+    this.readbackSlots = [];
+    this.freeSlots = [];
+    this.inFlight = [];
+    this.readyToRead = [];
     this.gpuVideoWidth = 0;
     this.gpuVideoHeight = 0;
   }
@@ -325,15 +418,17 @@ export class InterlaceDetector {
     this.markerProgram = null;
     this.reductionProgram = null;
     this.fieldOrderProgram = null;
+    this.markerUniforms = null;
+    this.reductionUniforms = null;
+    this.fieldOrderUniforms = null;
     this.markerFbo = null;
     this.reductionFbos = [];
     this.fieldOrderFbo = null;
     this.fieldOrderReductionFbos = [];
-    this.pbo = null;
-    this.fieldOrderPbo = null;
-    this.pboPending = false;
-    this.fieldOrderPboPending = false;
-    this.gpuFieldOrderDue = false;
+    this.readbackSlots = [];
+    this.freeSlots = [];
+    this.inFlight = [];
+    this.readyToRead = [];
     this.gpuVideoWidth = 0;
     this.gpuVideoHeight = 0;
   }
@@ -349,13 +444,9 @@ export class InterlaceDetector {
 
   /**
    * Issue a detection sample against the current/previous frame textures.
-   *
-   * syncReadback = true (fast phase at startup): reads the result back
-   * synchronously so the verdict updates immediately. The brief stall is
-   * acceptable because it only happens on the first few frames.
-   *
-   * syncReadback = false (steady state): non-blocking readPixels into a PBO;
-   * the result is retrieved via readPending() on the next sample cycle.
+   * Fully asynchronous: results land in a fence-gated PBO slot and are folded
+   * into the verdict by a later poll() call. If every slot is still in flight
+   * (GPU badly backlogged), the sample is skipped.
    */
   sample(
     gl: WebGL2RenderingContext,
@@ -363,9 +454,11 @@ export class InterlaceDetector {
     prevTexture: WebGLTexture | null,
     videoWidth: number,
     videoHeight: number,
-    syncReadback: boolean,
   ): void {
     if (!this.ready || !this.markerProgram || !this.reductionProgram) return;
+
+    const slot = this.freeSlots[0];
+    if (!slot) return;
 
     // The pipeline only samples frames within the resolution gate (a stream's
     // size is constant), so no per-sample gate check is needed here.
@@ -380,19 +473,25 @@ export class InterlaceDetector {
     this.runReductionChain(gl, this.markerFbo, this.reductionFbos);
 
     const finalFbo = this.reductionFbos[this.reductionFbos.length - 1];
-    if (syncReadback) {
-      const buffer = this.readFboSync(gl, finalFbo);
-      const metrics = this.computeMetrics(buffer, finalFbo.width * finalFbo.height, false, null);
-      this.applyMetrics(metrics);
-    } else {
-      this.readFboIntoPbo(gl, finalFbo, this.pbo);
-      this.pboPending = true;
-    }
+    this.readFboIntoPbo(gl, finalFbo, slot.pbo);
+    slot.texelCount = finalFbo.width * finalFbo.height;
+    slot.hasFieldOrder = false;
+    slot.foTexelCount = 0;
 
     if (this.isFieldOrderPassDue()) {
-      this.gpuFieldOrderDue = false;
-      this.runFieldOrderSample(gl, curTexture, effectivePrev, videoHeight, syncReadback);
+      const foFinal = this.runFieldOrderSample(gl, curTexture, effectivePrev, videoHeight, slot.fieldOrderPbo);
+      if (foFinal) {
+        slot.hasFieldOrder = true;
+        slot.foTexelCount = foFinal.width * foFinal.height;
+      }
     }
+
+    slot.stale = false;
+    slot.fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+    // Fences only signal once queued work is submitted to the GPU.
+    gl.flush();
+    this.freeSlots.shift();
+    this.inFlight.push(slot);
 
     // Restore GL state so the bwdif renderer's next draw call starts clean.
     // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
@@ -402,31 +501,47 @@ export class InterlaceDetector {
   }
 
   /**
-   * Retrieve the result of the previous non-blocking sample() call and fold it
-   * into the verdict. The ≥500 ms steady-state interval guarantees the GPU has
-   * finished writing to the PBO, so getBufferSubData does not stall.
-   * No-op when no readback is pending.
+   * Drain completed readbacks and fold them into the verdict. Called on every
+   * frame; strictly non-blocking. Two phases, one frame apart: fences that
+   * signaled on an earlier poll are read now (Chrome's shadow copy is ready by
+   * then, so getBufferSubData is served client-side), and in-flight fences are
+   * checked and promoted for the next poll. Slots complete in issue order (GL
+   * commands are ordered), so both queues drain from the front.
    */
-  readPending(gl: WebGL2RenderingContext): void {
-    if (!this.pboPending || !this.pbo) return;
-    this.pboPending = false;
+  poll(gl: WebGL2RenderingContext): void {
+    // Phase 1: read slots whose fence signaled on a previous poll.
+    while (this.readyToRead.length > 0) {
+      const slot = this.readyToRead[0];
+      this.readyToRead.shift();
+      this.freeSlots.push(slot);
 
-    const finalFbo = this.reductionFbos[this.reductionFbos.length - 1];
-    if (!finalFbo) return;
-    const texelCount = finalFbo.width * finalFbo.height;
-    const mainBuffer = this.readPboIntoArray(gl, this.pbo, texelCount);
+      const mainBuffer = this.readPboIntoArray(gl, slot.pbo, slot.texelCount);
+      const foBuffer = slot.hasFieldOrder ? this.readPboIntoArray(gl, slot.fieldOrderPbo, slot.foTexelCount) : null;
+      if (slot.stale) continue;
 
-    let foBuffer: Float32Array | null = null;
-    if (this.fieldOrderPboPending && this.fieldOrderPbo) {
-      this.fieldOrderPboPending = false;
-      const foFinal = this.fieldOrderReductionFbos[this.fieldOrderReductionFbos.length - 1];
-      if (foFinal) {
-        foBuffer = this.readPboIntoArray(gl, this.fieldOrderPbo, foFinal.width * foFinal.height);
-      }
+      const metrics = this.computeMetrics(mainBuffer, slot.texelCount, foBuffer !== null, foBuffer);
+      this.applyMetrics(metrics);
     }
 
-    const metrics = this.computeMetrics(mainBuffer, texelCount, foBuffer !== null, foBuffer);
-    this.applyMetrics(metrics);
+    // Phase 2: promote signaled fences; their PBOs are read on the next poll.
+    while (this.inFlight.length > 0) {
+      const slot = this.inFlight[0];
+      if (!slot.fence) {
+        this.inFlight.shift();
+        this.freeSlots.push(slot);
+        continue;
+      }
+      const status = gl.clientWaitSync(slot.fence, 0, 0);
+      if (status === gl.TIMEOUT_EXPIRED) return;
+      gl.deleteSync(slot.fence);
+      slot.fence = null;
+      this.inFlight.shift();
+      if (status === gl.WAIT_FAILED) {
+        this.freeSlots.push(slot);
+        continue;
+      }
+      this.readyToRead.push(slot);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -484,22 +599,18 @@ export class InterlaceDetector {
     this.reversionConsecutiveCount = 0;
     Log.i(TAG, `Interlaced content detected via comb heuristic (${combedFrames}/${this.window.length} combed frames)`);
     this.onVerdict({ interlaced: true, algorithm: "bwdif", fieldOrder: this.fieldOrder });
-    if (!this.fieldOrderDecided && this.votingRounds < FIELD_ORDER_MAX_VOTES) {
-      this.gpuFieldOrderDue = true;
-    }
   }
 
   private applyFieldOrderMetrics(errTff: number, errBff: number): void {
     if (this.fieldOrderDecided || this.votingRounds >= FIELD_ORDER_MAX_VOTES) return;
-    // Motion gate: total error too small means the scene is static, abstain.
+    // Motion gate: total error too small means the scene is static — abstain.
+    // The pass stays scheduled via fieldOrderVotingActive, so voting simply
+    // waits for motion instead of stopping.
     if (errTff + errBff < 1.0 / 255) return;
     this.votingRounds++;
     if (errTff < errBff * 0.9) this.votesTff++;
     else if (errBff < errTff * 0.9) this.votesBff++;
     this.maybeDecideFieldOrder();
-    if (!this.fieldOrderDecided && this.votingRounds < FIELD_ORDER_MAX_VOTES) {
-      this.gpuFieldOrderDue = true;
-    }
   }
 
   private maybeDecideFieldOrder(): void {
@@ -520,10 +631,10 @@ export class InterlaceDetector {
     }
   }
 
-  /** Whether the field-order pass is scheduled and its GPU resources are ready. */
+  /** Whether field-order voting is open and the pass's GPU resources are ready. */
   private isFieldOrderPassDue(): boolean {
     return (
-      this.gpuFieldOrderDue &&
+      this.fieldOrderVotingActive &&
       this.fieldOrderFbo !== null &&
       this.fieldOrderProgram !== null &&
       this.fieldOrderReductionFbos.length > 0
@@ -560,32 +671,35 @@ export class InterlaceDetector {
     videoHeight: number,
   ): void {
     const program = this.markerProgram;
+    const uniforms = this.markerUniforms;
     const fbo = this.markerFbo;
-    if (!program || !fbo) return;
+    if (!program || !uniforms || !fbo) return;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
     gl.viewport(0, 0, fbo.width, fbo.height);
     // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
     gl.useProgram(program);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, curTexture);
-    gl.uniform1i(gl.getUniformLocation(program, "u_cur"), 0);
+    gl.uniform1i(uniforms.cur, 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, prevTexture);
-    gl.uniform1i(gl.getUniformLocation(program, "u_prev"), 1);
-    gl.uniform1f(gl.getUniformLocation(program, "u_height"), videoHeight);
+    gl.uniform1i(uniforms.prev, 1);
+    gl.uniform1f(uniforms.height, videoHeight);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
+  /** Runs the field-order pass into the given PBO; returns its final reduction FBO. */
   private runFieldOrderSample(
     gl: WebGL2RenderingContext,
     curTexture: WebGLTexture,
     prevTexture: WebGLTexture,
     videoHeight: number,
-    syncReadback: boolean,
-  ): void {
+    pbo: WebGLBuffer,
+  ): DetectionFbo | null {
     const program = this.fieldOrderProgram;
+    const uniforms = this.fieldOrderUniforms;
     const fbo = this.fieldOrderFbo;
-    if (!program || !fbo) return;
+    if (!program || !uniforms || !fbo) return null;
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
     gl.viewport(0, 0, fbo.width, fbo.height);
@@ -593,46 +707,38 @@ export class InterlaceDetector {
     gl.useProgram(program);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, prevTexture);
-    gl.uniform1i(gl.getUniformLocation(program, "u_prev"), 0);
+    gl.uniform1i(uniforms.prev, 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, curTexture);
-    gl.uniform1i(gl.getUniformLocation(program, "u_cur"), 1);
-    gl.uniform1f(gl.getUniformLocation(program, "u_height"), videoHeight);
+    gl.uniform1i(uniforms.cur, 1);
+    gl.uniform1f(uniforms.height, videoHeight);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
     this.runReductionChain(gl, fbo, this.fieldOrderReductionFbos);
 
     const foFinal = this.fieldOrderReductionFbos[this.fieldOrderReductionFbos.length - 1];
-    if (syncReadback) {
-      const buffer = this.readFboSync(gl, foFinal);
-      this.applyFieldOrderReadback(buffer, foFinal.width * foFinal.height);
-    } else {
-      this.readFboIntoPbo(gl, foFinal, this.fieldOrderPbo);
-      this.fieldOrderPboPending = true;
-    }
+    if (!foFinal) return null;
+    this.readFboIntoPbo(gl, foFinal, pbo);
+    return foFinal;
   }
 
   private runReductionChain(gl: WebGL2RenderingContext, seedFbo: DetectionFbo, reductionFbos: DetectionFbo[]): void {
     const program = this.reductionProgram;
-    if (!program) return;
+    const uniforms = this.reductionUniforms;
+    if (!program || !uniforms) return;
+    // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
+    gl.useProgram(program);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(uniforms.input, 0);
     let inputFbo = seedFbo;
     for (const outputFbo of reductionFbos) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, outputFbo.fbo);
       gl.viewport(0, 0, outputFbo.width, outputFbo.height);
-      // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
-      gl.useProgram(program);
-      gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, inputFbo.tex);
-      gl.uniform1i(gl.getUniformLocation(program, "u_input"), 0);
-      gl.uniform2f(gl.getUniformLocation(program, "u_texelSize"), 1.0 / inputFbo.width, 1.0 / inputFbo.height);
+      gl.uniform2f(uniforms.texelSize, 1.0 / inputFbo.width, 1.0 / inputFbo.height);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       inputFbo = outputFbo;
     }
-  }
-
-  private applyFieldOrderReadback(buffer: Float32Array, texelCount: number): void {
-    const { errTff, errBff } = meanChannels(buffer, texelCount);
-    this.applyFieldOrderMetrics(errTff, errBff);
   }
 
   // -------------------------------------------------------------------------
@@ -660,18 +766,16 @@ export class InterlaceDetector {
     return { combRatio, motionScore, errTff, errBff, hasFieldOrder };
   }
 
-  private readFboSync(gl: WebGL2RenderingContext, fbo: DetectionFbo): Float32Array {
-    const result = new Float32Array(fbo.width * fbo.height * 4);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
-    gl.readPixels(0, 0, fbo.width, fbo.height, gl.RGBA, gl.FLOAT, result);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    return result;
-  }
-
   private readFboIntoPbo(gl: WebGL2RenderingContext, fbo: DetectionFbo, pbo: WebGLBuffer | null): void {
     if (!pbo) return;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.fbo);
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    // Orphan the buffer with the exact payload size before writing: readPixels
+    // then covers the whole (fresh) data store, so Chrome's readback shadow
+    // copy is cleanly created per sample and consumed by getBufferSubData —
+    // reusing the old store would trigger a "shadow copy discarded"
+    // performance warning and fall off the accelerated readback path.
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, fbo.width * fbo.height * 4 * 4, gl.STREAM_READ);
     gl.readPixels(0, 0, fbo.width, fbo.height, gl.RGBA, gl.FLOAT, 0);
     gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -785,6 +889,9 @@ export class InterlaceDetector {
       gl.deleteProgram(this.fieldOrderProgram);
       this.fieldOrderProgram = null;
     }
+    this.markerUniforms = null;
+    this.reductionUniforms = null;
+    this.fieldOrderUniforms = null;
   }
 }
 

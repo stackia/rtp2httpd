@@ -41,11 +41,14 @@ without an explicit upstream interface.
 
 Channels for the web player's automatic deinterlacing (`MCAST_SCAN_CHANNELS`):
 
-- **mcast 1080i (h264-mp2)** — true interlaced TFF H.264: testsrc2 generated at
-  50 fps, `tinterlace=interleave_top` weaves adjacent frames into the fields of
-  one 25 fps frame, so the moving pattern combs on every motion. The player's
-  heuristic detector must activate on this channel and the combing must
-  disappear.
+- **mcast 1080i-tff (h264-mp2)** — true interlaced TFF H.264: testsrc2 generated
+  at 50 fps, `tinterlace=interleave_top` weaves adjacent frames into the fields
+  of one 25 fps frame, so the moving pattern combs on every motion. The player's
+  heuristic detector must activate on this channel, the combing must disappear,
+  and the field-order vote must pick TFF.
+- **mcast 1080i-bff (h264-mp2)** — same content weaved bottom-field-first
+  (`interleave_bottom`). The detector must activate and the field-order vote
+  must pick BFF; a TFF misdetection shows as juddery back-and-forth motion.
 - **mcast 1080p-combed (h264-mp2)** — same weaved TFF content but encoded and
   flagged as progressive (no `fieldorder`, no interlaced encoder flags), so the
   codec-metadata hint stays silent. Only the heuristic comb detector can

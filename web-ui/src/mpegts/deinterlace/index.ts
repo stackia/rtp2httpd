@@ -29,13 +29,19 @@ const SAMPLE_INTERVAL_MS = 500;
  * Resource discipline: the whole GPU chain (frame uploads, bwdif pass, detection
  * shaders) only runs for frame sizes within the SD/HD deinterlacing gate. A
  * stream's resolution is assumed constant, so the gate is evaluated once the size
- * is known (the video element's `resize` event) and never polled per frame.
- * Larger frames run no algorithm at all — the raw video simply plays.
+ * is known (the video element's `resize` event) and never polled per frame; the
+ * renderer additionally skips any transiently oversized frame that presents
+ * before the resize event lands. Larger frames run no algorithm at all — the
+ * raw video simply plays.
  *
- * Within the gate the renderer runs continuously: it uploads every decoded frame,
- * runs bwdif, and lets the detector borrow the same texture ring for its marker +
- * reduction passes. The canvas is only *revealed* (active = true) once the
- * detector declares the source interlaced; until then the raw video shows through.
+ * Within the gate the verdict drives two modes. While the content is deemed
+ * progressive the renderer stays in detection-only mode: frames are uploaded
+ * and analysed only on the sampling cadence (first frames back-to-back, then
+ * every 500 ms) and nothing is drawn — the raw video stays visible and the GPU
+ * is idle between samples. When the detector declares the source interlaced the
+ * renderer switches to full mode (per-frame uploads, field-rate bwdif onto the
+ * canvas) and the canvas is revealed (active = true); a later progressive
+ * verdict reverts both.
  */
 export function createDeinterlacePipeline(
   video: HTMLVideoElement,
@@ -107,28 +113,37 @@ export function createDeinterlacePipeline(
     },
   );
 
-  // Per-frame detection hook, set once for the renderer's lifetime. It reads the
-  // previous non-blocking PBO result, then issues the next sample on schedule.
-  renderer.onDetectionFrame = (gl, curTexture, prevTexture, videoWidth, videoHeight) => {
-    if (destroyed) return;
-    detector.readPending(gl);
+  // Per-frame hooks, set once for the renderer's lifetime. onFrame drains
+  // pending async readbacks and decides whether this frame should be sampled;
+  // onSample issues the detection passes against the uploaded texture.
+  renderer.onFrame = (gl) => {
+    if (destroyed) return false;
+    detector.poll(gl);
 
     const now = performance.now();
     const isFastPhase = fastPhaseSamples < FAST_SAMPLE_COUNT;
-    const isIntervalDue = now - lastSampleMs >= SAMPLE_INTERVAL_MS;
-    if (!isFastPhase && !isIntervalDue) return;
+    // While field-order voting is open, sample every frame: votes need real
+    // inter-frame motion, and at one vote per steady interval a decision would
+    // take seconds. In this state the renderer uploads per frame anyway.
+    if (!isFastPhase && !detector.fieldOrderVotingActive && now - lastSampleMs < SAMPLE_INTERVAL_MS) return false;
+    return true;
+  };
 
-    detector.sample(gl, curTexture, prevTexture, videoWidth, videoHeight, isFastPhase);
-    lastSampleMs = now;
-    if (isFastPhase) fastPhaseSamples++;
+  renderer.onSample = (gl, curTexture, prevTexture, videoWidth, videoHeight) => {
+    if (destroyed) return;
+    detector.sample(gl, curTexture, prevTexture, videoWidth, videoHeight);
+    lastSampleMs = performance.now();
+    if (fastPhaseSamples < FAST_SAMPLE_COUNT) fastPhaseSamples++;
   };
 
   const detector = new InterlaceDetector((verdict: DetectorVerdict) => {
     interlaced = verdict.interlaced;
     fieldOrder = verdict.fieldOrder;
     if (destroyed || !enabled) return;
-    // Keep the renderer's field order in sync, then reveal or hide the canvas.
+    // Keep the renderer's field order in sync, switch render mode, then
+    // reveal or hide the canvas.
     renderer.setFieldOrder(fieldOrder);
+    renderer.setRenderingEnabled(interlaced);
     setActive(interlaced);
   });
 
@@ -151,6 +166,9 @@ export function createDeinterlacePipeline(
     gpuRunning = true;
     resetCadence();
     detector.start();
+    // Restore the mode implied by the last verdict (e.g. context restore or
+    // re-enable while a stream was already deemed interlaced).
+    renderer.setRenderingEnabled(interlaced);
     setActive(interlaced);
   };
 
@@ -191,6 +209,9 @@ export function createDeinterlacePipeline(
       fieldOrder = "tff";
       resetCadence();
       detector.reset();
+      // Back to detection-only until the new source earns an interlaced verdict.
+      renderer.setFieldOrder(fieldOrder);
+      renderer.setRenderingEnabled(false);
       setActive(false);
       // Re-evaluate against the (possibly new) source resolution.
       apply();

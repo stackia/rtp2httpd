@@ -1,5 +1,6 @@
 import Log from "../utils/logger";
 import { createAlgorithm, type DeinterlaceAlgorithm } from "./algorithms/types";
+import { isResolutionEligible } from "./detector";
 
 const TAG = "DeinterlaceRenderer";
 
@@ -8,8 +9,14 @@ export type FieldOrder = "tff" | "bff";
 
 /**
  * WebGL2 render loop: pulls decoded (weaved) frames from the <video> element via
- * requestVideoFrameCallback, uploads them as textures and runs the active
- * deinterlacing algorithm, drawing to an overlay canvas.
+ * requestVideoFrameCallback and runs in one of two modes:
+ *
+ * - Detection-only (renderingEnabled = false, the default): frames are uploaded
+ *   only when the pipeline requests a detection sample; between samples the
+ *   loop does nothing on the GPU beyond draining async readbacks. No bwdif
+ *   draws, no canvas writes — progressive content costs almost nothing.
+ * - Full render (renderingEnabled = true): every decoded frame is uploaded into
+ *   the texture ring and deinterlaced at field rate onto the overlay canvas.
  *
  * The renderer is passive until start() is called and goes back to passive on
  * stop(); the video element keeps driving the playback clock and audio either way.
@@ -25,17 +32,26 @@ export class DeinterlaceRenderer {
   private rvfcHandle = 0;
   private secondFieldTimer = 0;
   private running = false;
+  private renderingEnabled = false;
   private contextLost = false;
   private fieldOrder: FieldOrder = "tff";
   private readonly onContextLost?: () => void;
   private readonly onContextRestored?: () => void;
 
   /**
-   * Called after the first-field texture upload and bwdif draw on every new
-   * decoded frame. The GL context and textures[0]/[1] are valid at call time.
-   * The callee MUST NOT issue a synchronous readPixels — use PBO only.
+   * Called once per new decoded frame while running, before any upload or draw.
+   * Use it to drain async detection readbacks (strictly non-blocking GL only).
+   * Return true to request a detection sample for this frame — the renderer
+   * then uploads the frame and invokes onSample with the texture ring.
    */
-  onDetectionFrame:
+  onFrame: ((gl: WebGL2RenderingContext) => boolean) | null = null;
+
+  /**
+   * Called when onFrame requested a sample and the frame texture upload
+   * succeeded. In detection-only mode prevTexture is the previous *sample*
+   * (~500 ms old), not the previous frame. Must not issue blocking readbacks.
+   */
+  onSample:
     | ((
         gl: WebGL2RenderingContext,
         curTexture: WebGLTexture,
@@ -101,7 +117,30 @@ export class DeinterlaceRenderer {
     this.fieldOrder = fieldOrder;
   }
 
-  /** Start rendering with the given algorithm and field order. Safe to call repeatedly. */
+  /**
+   * Switch between detection-only and full-render mode. Turning rendering on
+   * clears the texture ring (detection-only entries can be sampled seconds
+   * apart — weaving them would mix distant frames; the algorithm's spatialOnly
+   * warm-up covers the refill) and primes the canvas from the current frame so
+   * there is a valid picture before it is revealed.
+   */
+  setRenderingEnabled(enabled: boolean): void {
+    if (this.renderingEnabled === enabled) return;
+    this.renderingEnabled = enabled;
+    if (!enabled) {
+      if (this.secondFieldTimer) {
+        window.clearTimeout(this.secondFieldTimer);
+        this.secondFieldTimer = 0;
+      }
+      Log.i(TAG, "Detection-only mode (rendering off)");
+      return;
+    }
+    this.clearTextureRing();
+    this.primeCanvas();
+    Log.i(TAG, "Full render mode (rendering on)");
+  }
+
+  /** Start the frame loop with the given algorithm and field order. Safe to call repeatedly. */
   start(algorithmName: string, fieldOrder: FieldOrder = "tff"): boolean {
     this.fieldOrder = fieldOrder;
     if (this.running && this.algorithmName === algorithmName) return true;
@@ -109,19 +148,20 @@ export class DeinterlaceRenderer {
 
     if (!this.setupAlgorithm(algorithmName)) return false;
     this.running = true;
-    // Prime the canvas from the current video frame right away. Without this,
-    // (re)enabling while paused leaves whatever the canvas last showed —
-    // possibly a stale frame from a previous run — since rVFC only fires on
-    // new presented frames. Renders spatial-only until real history arrives.
-    if (this.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-      this.renderFrame(this.fieldOrder === "tff" ? 0 : 1, false);
-    }
+    // Re-starting with rendering already enabled (e.g. deinterlace toggled off
+    // and back on while paused): prime the canvas right away, since rVFC only
+    // fires on new presented frames and the canvas may hold a stale picture.
+    this.primeCanvas();
     this.scheduleFrame();
-    Log.i(TAG, `Started with algorithm '${algorithmName}' (${fieldOrder})`);
+    Log.i(
+      TAG,
+      `Frame loop started (algorithm '${algorithmName}', ${fieldOrder}, ` +
+        `${this.renderingEnabled ? "full render" : "detection-only"})`,
+    );
     return true;
   }
 
-  /** Stop rendering and release per-run GL resources. The canvas keeps its last frame. */
+  /** Stop the loop and release per-run GL resources. The canvas keeps its last frame. */
   stop(): void {
     if (!this.running) return;
     this.running = false;
@@ -168,13 +208,17 @@ export class DeinterlaceRenderer {
     if (this.gl && this.algorithm) {
       this.algorithm.destroy(this.gl);
     }
-    if (this.gl) {
+    this.clearTextureRing();
+    this.algorithm = null;
+  }
+
+  private clearTextureRing(): void {
+    if (this.gl && !this.contextLost) {
       for (const texture of this.textures) {
         this.gl.deleteTexture(texture);
       }
     }
     this.textures = [];
-    this.algorithm = null;
   }
 
   private ensureContext(): WebGL2RenderingContext | null {
@@ -197,6 +241,18 @@ export class DeinterlaceRenderer {
     return gl;
   }
 
+  /** Upload the current frame and draw the first field (start / mode switch while paused). */
+  private primeCanvas(): void {
+    if (!this.running || !this.renderingEnabled) return;
+    if (this.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+    const gl = this.gl;
+    const width = this.video.videoWidth;
+    const height = this.video.videoHeight;
+    if (!gl || this.contextLost || !isResolutionEligible(width, height)) return;
+    if (!this.uploadFrame(gl, width, height)) return;
+    this.drawField(this.fieldOrder === "tff" ? 0 : 1, false);
+  }
+
   private scheduleFrame(): void {
     this.rvfcHandle = this.video.requestVideoFrameCallback((_now, metadata) => {
       this.rvfcHandle = 0;
@@ -205,22 +261,51 @@ export class DeinterlaceRenderer {
         window.clearTimeout(this.secondFieldTimer);
         this.secondFieldTimer = 0;
       }
+      this.processFrame(metadata);
+      this.scheduleFrame();
+    });
+  }
+
+  private processFrame(metadata: VideoFrameCallbackMetadata): void {
+    const gl = this.gl;
+    if (!gl || this.contextLost) return;
+
+    // Drain async detection readbacks and get the pipeline's sampling decision.
+    const sampleDue = this.onFrame?.(gl) ?? false;
+    const frameDurationMs = this.frameDurationMs(metadata);
+
+    const width = this.video.videoWidth;
+    const height = this.video.videoHeight;
+    // Per-frame resolution-gate guard: on a stream switch the first oversized
+    // frame can present before the `resize` event stops the GPU chain — skip
+    // such frames entirely (no upload, no draw, no detection).
+    if (!isResolutionEligible(width, height)) return;
+
+    // Detection-only mode between samples: nothing else to do this frame.
+    if (!this.renderingEnabled && !sampleDue) return;
+
+    if (!this.uploadFrame(gl, width, height)) return;
+
+    if (this.renderingEnabled) {
       // Field-rate output: render the temporally first field now, the second
       // half a frame duration later — 25i becomes 50p motion. Which spatial
       // field comes first depends on the source field order (TFF: top first).
       // While paused no new frames arrive and the last rendered field simply
       // stays: a single clean field, so the paused still shows no tearing.
       const firstField = this.fieldOrder === "tff" ? 0 : 1;
-      this.renderFrame(firstField, false);
-      const frameDurationMs = this.frameDurationMs(metadata);
+      this.drawField(firstField, false);
       if (!this.video.paused && frameDurationMs > 10) {
         this.secondFieldTimer = window.setTimeout(() => {
           this.secondFieldTimer = 0;
-          if (this.running) this.renderFrame(firstField === 0 ? 1 : 0, true);
+          if (this.running && this.renderingEnabled) this.drawField(firstField === 0 ? 1 : 0, true);
         }, frameDurationMs / 2);
       }
-      this.scheduleFrame();
-    });
+    }
+
+    if (sampleDue && this.onSample) {
+      const prevTexture = this.textures.length >= 2 ? this.textures[1] : null;
+      this.onSample(gl, this.textures[0], prevTexture, width, height);
+    }
   }
 
   private lastMediaTime = -1;
@@ -247,7 +332,41 @@ export class DeinterlaceRenderer {
     return texture;
   }
 
-  private renderFrame(field: 0 | 1, isSecondField: boolean): void {
+  /** Upload the current video frame into the texture ring. Returns false on failure. */
+  private uploadFrame(gl: WebGL2RenderingContext, width: number, height: number): boolean {
+    const algorithm = this.algorithm;
+    if (!algorithm || !width || !height) return false;
+
+    // The ring grows one texture per uploaded frame (so every entry holds a
+    // real frame — algorithms clamp their history binds while it fills up);
+    // once full, the oldest entry is rotated to the front as upload target.
+    const ringSize = algorithm.historyFrames + 1;
+    const isNew = this.textures.length < ringSize;
+    let target: WebGLTexture | null;
+    if (isNew) {
+      target = this.createFrameTexture(gl);
+    } else {
+      target = this.textures[this.textures.length - 1];
+    }
+    if (!target) return false;
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, target);
+    try {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, this.video);
+    } catch (err) {
+      // Upload can fail transiently (e.g. video element in a broken state); skip the frame
+      Log.w(TAG, "Frame texture upload failed:", err);
+      if (isNew) gl.deleteTexture(target);
+      return false;
+    }
+    if (!isNew) this.textures.pop();
+    this.textures.unshift(target);
+    return true;
+  }
+
+  /** Run the deinterlacing algorithm for one field onto the canvas. */
+  private drawField(field: 0 | 1, isSecondField: boolean): void {
     const gl = this.gl;
     const algorithm = this.algorithm;
     if (!gl || !algorithm || this.contextLost) return;
@@ -261,45 +380,11 @@ export class DeinterlaceRenderer {
       this.canvas.height = height;
     }
 
-    if (!isSecondField) {
-      // The ring grows one texture per uploaded frame (so every entry holds a
-      // real frame — algorithms clamp their history binds while it fills up);
-      // once full, the oldest entry is rotated to the front as upload target.
-      const ringSize = algorithm.historyFrames + 1;
-      const isNew = this.textures.length < ringSize;
-      let target: WebGLTexture | null;
-      if (isNew) {
-        target = this.createFrameTexture(gl);
-      } else {
-        target = this.textures[this.textures.length - 1];
-      }
-      if (!target) return;
-
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, target);
-      try {
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, this.video);
-      } catch (err) {
-        // Upload can fail transiently (e.g. video element in a broken state); skip the frame
-        Log.w(TAG, "Frame texture upload failed:", err);
-        if (isNew) gl.deleteTexture(target);
-        return;
-      }
-      if (!isNew) this.textures.pop();
-      this.textures.unshift(target);
-    }
-    // The second field re-renders from the already-uploaded texture ring
-
     gl.viewport(0, 0, width, height);
     // Until the ring holds a distinct frame for every history slot, temporal
     // filtering would compare a frame with itself — force spatial-only
     const spatialOnly = this.textures.length <= algorithm.historyFrames;
     algorithm.render(gl, this.textures, { width, height, keepField: field, isSecondField, spatialOnly });
-
-    if (!isSecondField && this.onDetectionFrame && !this.contextLost) {
-      const prevTexture = this.textures.length >= 2 ? this.textures[1] : null;
-      this.onDetectionFrame(gl, this.textures[0], prevTexture, width, height);
-    }
   }
 
   /** The active WebGL2 context, or null if not yet created or context is lost. */
