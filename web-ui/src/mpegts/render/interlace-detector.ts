@@ -320,6 +320,25 @@ export class InterlaceDetector {
     this.running = false;
   }
 
+  /** Drop pending async readbacks when detection is disabled or the render gate closes. */
+  discardPendingReadbacks(gl: WebGL2RenderingContext): void {
+    for (const slot of this.inFlight) {
+      if (slot.fence) {
+        gl.deleteSync(slot.fence);
+        slot.fence = null;
+      }
+      slot.stale = false;
+      this.freeSlots.push(slot);
+    }
+    this.inFlight = [];
+
+    for (const slot of this.readyToRead) {
+      slot.stale = false;
+      this.freeSlots.push(slot);
+    }
+    this.readyToRead = [];
+  }
+
   /** Forget the current verdict and voting state — call on source/channel switch. */
   reset(): void {
     this.resetVerdictState(true);

@@ -105,6 +105,9 @@ export class VideoRenderer {
       ) => void)
     | null = null;
 
+  /** Called when a presented frame is outside the render gate before resize handling catches up. */
+  onFrameOutsideRenderGate: ((videoWidth: number, videoHeight: number) => void) | null = null;
+
   private readonly handleContextLost = (event: Event) => {
     event.preventDefault();
     this.contextLost = true;
@@ -344,7 +347,7 @@ export class VideoRenderer {
       if (!this.running) return;
       this.clearSecondFieldTimer();
       this.processFrame(metadata);
-      this.scheduleFrame();
+      if (this.running) this.scheduleFrame();
     });
   }
 
@@ -354,7 +357,10 @@ export class VideoRenderer {
 
     const width = this.video.videoWidth;
     const height = this.video.videoHeight;
-    if (!isRenderResolutionEligible(width, height)) return;
+    if (!isRenderResolutionEligible(width, height)) {
+      this.onFrameOutsideRenderGate?.(width, height);
+      return;
+    }
 
     const sampleDue = this.onFrame?.(gl) ?? false;
     const frameDurationMs = this.frameDurationMs(metadata);

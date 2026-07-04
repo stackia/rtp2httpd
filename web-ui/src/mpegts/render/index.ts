@@ -88,6 +88,8 @@ export function createVideoRenderPipeline(
 
   const stopDetector = (reason: string) => {
     detector.stop();
+    const gl = renderer.currentGl;
+    if (gl && detectorReady) detector.discardPendingReadbacks(gl);
     if (!detectorRunning) return;
     detectorRunning = false;
     Log.i(TAG, `Interlace detector stopped: ${reason}`);
@@ -127,6 +129,12 @@ export function createVideoRenderPipeline(
     detector.sample(gl, curTexture, prevTexture, videoWidth, videoHeight);
     lastSampleMs = performance.now();
     if (fastPhaseSamples < FAST_SAMPLE_COUNT) fastPhaseSamples++;
+  };
+
+  renderer.onFrameOutsideRenderGate = () => {
+    if (destroyed) return;
+    lastEligibility = null;
+    apply();
   };
 
   const detector = new InterlaceDetector((verdict: DetectorVerdict) => {
