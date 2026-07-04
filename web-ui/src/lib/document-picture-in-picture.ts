@@ -24,7 +24,7 @@ export function getDocumentPictureInPicture(): DocumentPictureInPictureControlle
 }
 
 export function isPictureInPictureSupported(): boolean {
-  return getDocumentPictureInPicture() !== null || document.pictureInPictureEnabled;
+  return getDocumentPictureInPicture() !== null || Boolean(document.pictureInPictureEnabled);
 }
 
 export function isAnyPictureInPictureActive(): boolean {

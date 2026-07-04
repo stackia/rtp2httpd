@@ -1239,6 +1239,8 @@ export function VideoPlayer({
     const video = getActiveVideo();
     if (!video) return;
 
+    let openedDocumentPiPWindow: Window | null = null;
+
     try {
       if (await exitPictureInPicture()) {
         return;
@@ -1251,6 +1253,7 @@ export function VideoPlayer({
 
         const pipWindowOptions = getDocumentPiPWindowOptions(playerElement);
         const pipWindow = await documentPictureInPicture.requestWindow(pipWindowOptions);
+        openedDocumentPiPWindow = pipWindow;
         documentPiPWindowRef.current = pipWindow;
         setupDocumentPiPWindow(pipWindow);
         pipWindow.addEventListener("pagehide", () => restoreDocumentPiPPlayer(), { once: true });
@@ -1267,7 +1270,9 @@ export function VideoPlayer({
 
       await video.requestPictureInPicture();
     } catch (err) {
+      const pipWindow = openedDocumentPiPWindow ?? documentPiPWindowRef.current;
       restoreDocumentPiPPlayer();
+      pipWindow?.close();
       console.error("Picture-in-Picture error:", err);
     }
   });
