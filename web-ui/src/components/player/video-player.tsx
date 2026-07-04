@@ -941,9 +941,8 @@ export function VideoPlayer({
     setIsPiP(true);
   });
 
-  const handleVideoLeavePiP = useEffectEvent((slotId: SlotId) => {
-    if (slotId !== getActiveSlotId()) return;
-    setIsPiP(false);
+  const handleVideoLeavePiP = useEffectEvent(() => {
+    setIsPiP(isDocumentPiP || Boolean(document.pictureInPictureElement));
   });
 
   // Foreground recovery: iOS pauses web media when the page goes to background
@@ -1138,7 +1137,7 @@ export function VideoPlayer({
         ["timeupdate", () => handleVideoTimeUpdate(slotId)],
         ["ended", () => handleVideoEnded(slotId)],
         ["enterpictureinpicture", () => handleVideoEnterPiP(slotId)],
-        ["leavepictureinpicture", () => handleVideoLeavePiP(slotId)],
+        ["leavepictureinpicture", () => handleVideoLeavePiP()],
         ["error", (event) => handleVideoElementError(slotId, event.timeStamp)],
       ];
 
