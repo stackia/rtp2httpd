@@ -49,7 +49,24 @@ export function createDeinterlacePipeline(
     }
   };
 
-  const renderer = new DeinterlaceRenderer(video, canvas, notifyFirstFrameRendered);
+  const renderer = new DeinterlaceRenderer(
+    video,
+    canvas,
+    notifyFirstFrameRendered,
+    // Context lost: reveal raw video while deinterlacing is unavailable
+    () => {
+      if (destroyed || !active) return;
+      pendingFirstFrame = false;
+      active = false;
+      onActiveChange?.(false);
+    },
+    // Context restored: attempt to re-establish the pipeline
+    () => {
+      if (destroyed) return;
+      Log.i(TAG, "WebGL context restored; re-establishing deinterlace pipeline");
+      apply();
+    },
+  );
 
   const setActive = (next: boolean, algorithm: string, fieldOrder: FieldOrder = "tff") => {
     if (destroyed) return;

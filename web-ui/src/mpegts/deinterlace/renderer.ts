@@ -28,29 +28,49 @@ export class DeinterlaceRenderer {
   private contextLost = false;
   private fieldOrder: FieldOrder = "tff";
   private readonly onFrameRendered?: () => void;
+  private readonly onContextLost?: () => void;
+  private readonly onContextRestored?: () => void;
 
   private readonly handleContextLost = (event: Event) => {
     event.preventDefault();
     this.contextLost = true;
+    // Stop the render loop — frames cannot render without a GL context.
+    // The pipeline is notified via onContextLost so it can fall back to raw video.
+    if (this.rvfcHandle) {
+      this.video.cancelVideoFrameCallback(this.rvfcHandle);
+      this.rvfcHandle = 0;
+    }
+    if (this.secondFieldTimer) {
+      window.clearTimeout(this.secondFieldTimer);
+      this.secondFieldTimer = 0;
+    }
+    this.running = false;
     Log.w(TAG, "WebGL context lost");
+    this.onContextLost?.();
   };
 
   private readonly handleContextRestored = () => {
     Log.i(TAG, "WebGL context restored");
     this.contextLost = false;
-    // All GL objects are gone; rebuild lazily on the next frame
+    // All GL objects were destroyed — clear references so the pipeline can
+    // re‑establish everything via start().
     this.textures = [];
     this.algorithm = null;
-    const name = this.algorithmName;
-    if (name && this.running) {
-      this.setupAlgorithm(name);
-    }
+    this.onContextRestored?.();
   };
 
-  constructor(video: HTMLVideoElement, canvas: HTMLCanvasElement, onFrameRendered?: () => void) {
+  constructor(
+    video: HTMLVideoElement,
+    canvas: HTMLCanvasElement,
+    onFrameRendered?: () => void,
+    onContextLost?: () => void,
+    onContextRestored?: () => void,
+  ) {
     this.video = video;
     this.canvas = canvas;
     this.onFrameRendered = onFrameRendered;
+    this.onContextLost = onContextLost;
+    this.onContextRestored = onContextRestored;
     canvas.addEventListener("webglcontextlost", this.handleContextLost);
     canvas.addEventListener("webglcontextrestored", this.handleContextRestored);
   }

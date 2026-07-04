@@ -341,9 +341,13 @@ export class InterlaceDetector {
       // Reversion path: look for sustained progressive evidence under motion.
       // Static frames (motionScore < MOTION_FLOOR) are abstained — they carry
       // no information because interlaced content also produces no combing when
-      // the scene is still. Only when there is enough motion AND no combing do
-      // we count toward reversion.
-      if (prevLumaSnapshot === null || motionScore < MOTION_FLOOR) return true;
+      // the scene is still. However, an abstention breaks the consecutive run
+      // of qualifying samples, so the counter must be reset. Only when there is
+      // enough motion AND no combing do we count toward reversion.
+      if (prevLumaSnapshot === null || motionScore < MOTION_FLOOR) {
+        this.reversionConsecutiveCount = 0;
+        return true;
+      }
       if (score >= COMBED_FRAME_RATIO) {
         // Frame is combed: still interlaced, reset consecutive counter.
         this.reversionConsecutiveCount = 0;
