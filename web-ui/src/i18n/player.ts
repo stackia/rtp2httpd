@@ -99,6 +99,7 @@ const base: TranslationDict = {
   themeDark: "Dark",
   seamlessSwitch: "Seamless switch",
   deinterlace: "Auto Deinterlacing",
+  pictureEnhancement: "Picture Enhancement",
 };
 
 const zhHans: TranslationDict = {
@@ -198,6 +199,7 @@ const zhHans: TranslationDict = {
   themeDark: "深色",
   seamlessSwitch: "无缝换台",
   deinterlace: "自动反交错",
+  pictureEnhancement: "画质增强",
 };
 
 // 繁體中文（偏好香港用語）
@@ -298,6 +300,7 @@ const zhHant: TranslationDict = {
   themeDark: "深色",
   seamlessSwitch: "無縫換台",
   deinterlace: "自動反交錯",
+  pictureEnhancement: "畫質增強",
 };
 
 export const translations: Record<Locale, TranslationDict> = {

@@ -31,6 +31,8 @@ export interface PlayerConfig {
   renderCanvas: HTMLCanvasElement | undefined;
   /** Automatic bwdif deinterlacing enabled for detected interlaced content. @default true */
   autoDeinterlace: boolean;
+  /** Lightweight WebGL picture enhancement enabled inside the render gate. @default true */
+  pictureEnhancement: boolean;
 }
 
 export const defaultConfig: PlayerConfig = {
@@ -50,6 +52,7 @@ export const defaultConfig: PlayerConfig = {
 
   renderCanvas: undefined,
   autoDeinterlace: true,
+  pictureEnhancement: true,
 };
 
 export function createDefaultConfig(): PlayerConfig {

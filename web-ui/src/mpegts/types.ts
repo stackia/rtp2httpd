@@ -42,6 +42,8 @@ export interface Player {
   setLiveSync(enabled: boolean): void;
   /** Switch automatic bwdif deinterlacing at runtime. No-op when no `renderCanvas` was configured. */
   setAutoDeinterlace(enabled: boolean): void;
+  /** Switch WebGL picture enhancement at runtime. No-op when no `renderCanvas` was configured. */
+  setPictureEnhancement(enabled: boolean): void;
   /** Stop the current stream and reset the bound video element while keeping reusable resources alive. */
   stop(): void;
   destroy(): void;

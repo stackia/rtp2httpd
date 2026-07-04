@@ -62,6 +62,7 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
       }
     });
     renderPipeline.setAutoDeinterlaceEnabled(fullConfig.autoDeinterlace);
+    renderPipeline.setPictureEnhancementEnabled(fullConfig.pictureEnhancement);
   }
 
   let impl: PlayerImpl | null = null;
@@ -121,6 +122,10 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
 
     setAutoDeinterlace(enabled: boolean) {
       renderPipeline?.setAutoDeinterlaceEnabled(enabled);
+    },
+
+    setPictureEnhancement(enabled: boolean) {
+      renderPipeline?.setPictureEnhancementEnabled(enabled);
     },
 
     stop() {

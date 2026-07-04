@@ -21,11 +21,13 @@ import {
   getAutoDeinterlace,
   getLastChannelId,
   getLastSourceIndex,
+  getPictureEnhancement,
   getSeamlessSwitch,
   getSidebarVisible,
   saveAutoDeinterlace,
   saveLastChannelId,
   saveLastSourceIndex,
+  savePictureEnhancement,
   saveSeamlessSwitch,
   saveSidebarVisible,
 } from "../lib/player-storage";
@@ -59,6 +61,7 @@ function PlayerPage() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [seamlessSwitch, setSeamlessSwitch] = useState(() => getSeamlessSwitch());
   const [autoDeinterlace, setAutoDeinterlace] = useState(() => getAutoDeinterlace());
+  const [pictureEnhancement, setPictureEnhancement] = useState(() => getPictureEnhancement());
   const pageContainerRef = useRef<HTMLDivElement>(null);
 
   // Track stream start time - the absolute time position when current stream started
@@ -346,6 +349,11 @@ function PlayerPage() {
     saveAutoDeinterlace(enabled);
   }, []);
 
+  const handlePictureEnhancementChange = useCallback((enabled: boolean) => {
+    setPictureEnhancement(enabled);
+    savePictureEnhancement(enabled);
+  }, []);
+
   const handleToggleSidebar = useCallback(() => {
     setShowSidebar((prev) => {
       const newState = !prev;
@@ -366,6 +374,8 @@ function PlayerPage() {
           onSeamlessSwitchChange={handleSeamlessSwitchChange}
           autoDeinterlace={autoDeinterlace}
           onAutoDeinterlaceChange={handleAutoDeinterlaceChange}
+          pictureEnhancement={pictureEnhancement}
+          onPictureEnhancementChange={handlePictureEnhancementChange}
         />
       </div>
     );
@@ -374,10 +384,12 @@ function PlayerPage() {
     theme,
     seamlessSwitch,
     autoDeinterlace,
+    pictureEnhancement,
     setLocale,
     setTheme,
     handleSeamlessSwitchChange,
     handleAutoDeinterlaceChange,
+    handlePictureEnhancementChange,
   ]);
 
   // Main UI content
@@ -407,6 +419,7 @@ function PlayerPage() {
             onFullscreenToggle={handleFullscreenToggle}
             seamlessSwitch={seamlessSwitch}
             autoDeinterlace={autoDeinterlace}
+            pictureEnhancement={pictureEnhancement}
             activeSourceIndex={activeSourceIndex}
             onSourceChange={handleSourceChange}
             onPlaybackStarted={handlePlaybackStarted}

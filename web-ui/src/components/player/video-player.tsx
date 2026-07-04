@@ -52,6 +52,7 @@ interface VideoPlayerProps {
   onFullscreenToggle?: () => void;
   seamlessSwitch?: boolean;
   autoDeinterlace?: boolean;
+  pictureEnhancement?: boolean;
   activeSourceIndex?: number;
   onSourceChange?: (index: number) => void;
   onPlaybackStarted?: () => void;
@@ -194,6 +195,7 @@ export function VideoPlayer({
   onFullscreenToggle,
   seamlessSwitch = true,
   autoDeinterlace = true,
+  pictureEnhancement = true,
   activeSourceIndex = 0,
   onSourceChange,
   onPlaybackStarted,
@@ -668,6 +670,7 @@ export function VideoPlayer({
       wasmDecoders: { mp2: mp2WasmUrl },
       renderCanvas: slotCanvasRef(slotId).current ?? undefined,
       autoDeinterlace,
+      pictureEnhancement,
     });
     p.on("error", (e) => {
       if (slotPlayerRef(slotId).current === p) {
@@ -874,6 +877,11 @@ export function VideoPlayer({
     slotAPlayerRef.current?.setAutoDeinterlace(autoDeinterlace);
     slotBPlayerRef.current?.setAutoDeinterlace(autoDeinterlace);
   }, [autoDeinterlace]);
+
+  useEffect(() => {
+    slotAPlayerRef.current?.setPictureEnhancement(pictureEnhancement);
+    slotBPlayerRef.current?.setPictureEnhancement(pictureEnhancement);
+  }, [pictureEnhancement]);
 
   useEffect(() => {
     if (!seamlessSwitch) {

@@ -1,4 +1,5 @@
 import Log from "../utils/logger";
+import { EnhancementChain } from "./enhancement-chain";
 import { createProgram, FRAMEBUFFER_VERTEX_SHADER } from "./filters/gl-utils";
 import { createFilter, type RenderParams, type VideoFilter } from "./filters/types";
 import { isRenderResolutionEligible } from "./interlace-detector";
@@ -72,6 +73,7 @@ export class VideoRenderer {
   private gl: WebGL2RenderingContext | null = null;
   private stageFilter: VideoFilter | null = null;
   private presentFilter: VideoFilter | null = null;
+  private enhancementChain: EnhancementChain | null = null;
   private stageTarget: RenderTarget | null = null;
   /** Ring of frame textures: [0] = newest, [1..] = history (most recent first). */
   private textures: WebGLTexture[] = [];
@@ -79,6 +81,8 @@ export class VideoRenderer {
   private secondFieldTimer = 0;
   private running = false;
   private contextLost = false;
+  private pictureEnhancementEnabled = true;
+  private enhancementInitFailed = false;
   private stageName: RenderStageName = "passthrough";
   private fieldOrder: FieldOrder = "tff";
   private readonly onContextLost?: () => void;
@@ -117,6 +121,8 @@ export class VideoRenderer {
     this.stageTarget = null;
     this.stageFilter = null;
     this.presentFilter = null;
+    this.enhancementChain = null;
+    this.enhancementInitFailed = false;
     Log.w(TAG, "WebGL context lost");
     this.onContextLost?.();
   };
@@ -128,6 +134,8 @@ export class VideoRenderer {
     this.stageTarget = null;
     this.stageFilter = null;
     this.presentFilter = null;
+    this.enhancementChain = null;
+    this.enhancementInitFailed = false;
     this.onContextRestored?.();
   };
 
@@ -161,7 +169,28 @@ export class VideoRenderer {
 
   /** Update the source field order for subsequent bwdif frames. */
   setFieldOrder(fieldOrder: FieldOrder): void {
+    if (this.fieldOrder !== fieldOrder) {
+      this.resetEnhancementHistory();
+    }
     this.fieldOrder = fieldOrder;
+  }
+
+  /** Toggle post-stage picture enhancement without rebuilding the media pipeline. */
+  setPictureEnhancementEnabled(enabled: boolean): void {
+    if (this.pictureEnhancementEnabled === enabled) return;
+    this.pictureEnhancementEnabled = enabled;
+    this.resetEnhancementHistory();
+    this.enhancementInitFailed = false;
+    if (!enabled && this.gl && !this.contextLost && this.enhancementChain) {
+      this.enhancementChain.destroy(this.gl);
+      this.enhancementChain = null;
+    }
+    this.primeCanvas();
+  }
+
+  /** Forget post-stage temporal history without changing the active render stage. */
+  resetPictureEnhancementHistory(): void {
+    this.resetEnhancementHistory();
   }
 
   /** Switch the source stage while keeping the frame loop running. */
@@ -178,6 +207,7 @@ export class VideoRenderer {
     }
     this.clearSecondFieldTimer();
     this.clearTextureRing();
+    this.resetEnhancementHistory();
     this.primeCanvas();
     Log.i(TAG, `Render stage switched to '${stageName}'`);
     return true;
@@ -299,12 +329,15 @@ export class VideoRenderer {
     if (gl && !this.contextLost) {
       if (this.stageFilter) this.stageFilter.destroy(gl);
       if (this.presentFilter) this.presentFilter.destroy(gl);
+      if (this.enhancementChain) this.enhancementChain.destroy(gl);
       this.deleteRenderTarget(this.stageTarget);
     }
     this.clearTextureRing();
     this.stageFilter = null;
     this.presentFilter = null;
+    this.enhancementChain = null;
     this.stageTarget = null;
+    this.enhancementInitFailed = false;
   }
 
   private clearTextureRing(): void {
@@ -314,6 +347,10 @@ export class VideoRenderer {
       }
     }
     this.textures = [];
+  }
+
+  private resetEnhancementHistory(): void {
+    this.enhancementChain?.resetHistory();
   }
 
   private cancelFrameCallbacks(): void {
@@ -444,10 +481,9 @@ export class VideoRenderer {
     const height = this.video.videoHeight;
     if (!width || !height) return;
 
-    if (this.canvas.width !== width || this.canvas.height !== height) {
-      this.canvas.width = width;
-      this.canvas.height = height;
-    }
+    const enhancementReady = this.pictureEnhancementEnabled && this.ensureEnhancementChain();
+    const desiredSize = enhancementReady ? this.desiredEnhancedCanvasSize(width, height) : { width, height };
+    this.resizeCanvas(desiredSize.width, desiredSize.height);
 
     const target = this.ensureRenderTarget(gl, width, height);
     if (!target) return;
@@ -459,9 +495,66 @@ export class VideoRenderer {
     gl.viewport(0, 0, width, height);
     stageFilter.render(gl, this.textures, params);
 
+    if (enhancementReady && this.enhancementChain) {
+      try {
+        if (this.enhancementChain.render(gl, target.texture, params, desiredSize.width, desiredSize.height)) return;
+      } catch (err) {
+        Log.w(TAG, "Picture enhancement render failed; falling back to canvas presenter:", err);
+      }
+    }
+
+    this.resizeCanvas(width, height);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, width, height);
     presentFilter.render(gl, [target.texture], params);
+  }
+
+  private ensureEnhancementChain(): boolean {
+    if (this.enhancementChain) return true;
+    if (this.enhancementInitFailed) return false;
+    const gl = this.ensureContext();
+    if (!gl) return false;
+
+    const chain = new EnhancementChain();
+    try {
+      chain.init(gl);
+    } catch (err) {
+      Log.w(TAG, "Failed to init picture enhancement; using passthrough presenter:", err);
+      chain.destroy(gl);
+      this.enhancementInitFailed = true;
+      return false;
+    }
+
+    this.enhancementChain = chain;
+    return true;
+  }
+
+  private resizeCanvas(width: number, height: number): void {
+    if (this.canvas.width === width && this.canvas.height === height) return;
+    this.canvas.width = width;
+    this.canvas.height = height;
+  }
+
+  private desiredEnhancedCanvasSize(sourceWidth: number, sourceHeight: number): { width: number; height: number } {
+    const rect = this.findVisibleCanvasRect();
+    if (!rect) return { width: sourceWidth, height: sourceHeight };
+
+    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+    const maxWidth = Math.min(sourceWidth * 2, 1920);
+    const maxHeight = Math.min(sourceHeight * 2, 1088);
+    const width = Math.max(sourceWidth, Math.min(Math.round(rect.width * dpr), maxWidth));
+    const height = Math.max(sourceHeight, Math.min(Math.round(rect.height * dpr), maxHeight));
+    return { width, height };
+  }
+
+  private findVisibleCanvasRect(): DOMRect | null {
+    let element: HTMLElement | null = this.canvas;
+    while (element) {
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) return rect;
+      element = element.parentElement;
+    }
+    return null;
   }
 
   private ensureRenderTarget(gl: WebGL2RenderingContext, width: number, height: number): RenderTarget | null {

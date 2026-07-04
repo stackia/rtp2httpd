@@ -15,6 +15,8 @@ interface SettingsDropdownProps {
   onSeamlessSwitchChange: (enabled: boolean) => void;
   autoDeinterlace: boolean;
   onAutoDeinterlaceChange: (enabled: boolean) => void;
+  pictureEnhancement: boolean;
+  onPictureEnhancementChange: (enabled: boolean) => void;
 }
 
 const localeOptions: Array<{ value: Locale; label: string }> = [
@@ -40,6 +42,8 @@ function SettingsDropdownComponent({
   onSeamlessSwitchChange,
   autoDeinterlace,
   onAutoDeinterlaceChange,
+  pictureEnhancement,
+  onPictureEnhancementChange,
 }: SettingsDropdownProps) {
   const t = usePlayerTranslation(locale);
   const [isOpen, setIsOpen] = useState(false);
@@ -121,6 +125,16 @@ function SettingsDropdownComponent({
                 checked={autoDeinterlace}
                 onCheckedChange={onAutoDeinterlaceChange}
                 aria-label={t("deinterlace")}
+              />
+            </div>
+
+            {/* Picture enhancement (WebGL post-processing inside the render gate) */}
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-medium text-muted-foreground">{t("pictureEnhancement")}</span>
+              <Switch
+                checked={pictureEnhancement}
+                onCheckedChange={onPictureEnhancementChange}
+                aria-label={t("pictureEnhancement")}
               />
             </div>
           </div>

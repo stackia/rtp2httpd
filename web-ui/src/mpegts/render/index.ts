@@ -8,6 +8,7 @@ const TAG = "VideoRenderPipeline";
 
 export interface VideoRenderPipeline {
   setAutoDeinterlaceEnabled(enabled: boolean): void;
+  setPictureEnhancementEnabled(enabled: boolean): void;
   /** Forget the detection verdict; call on channel/source switch. */
   reset(): void;
   /** True while the WebGL canvas is the visible video output. */
@@ -42,6 +43,7 @@ export function createVideoRenderPipeline(
     Log.i(TAG, "requestVideoFrameCallback unavailable; WebGL video rendering disabled");
     return {
       setAutoDeinterlaceEnabled() {},
+      setPictureEnhancementEnabled() {},
       reset() {},
       get active() {
         return false;
@@ -51,6 +53,7 @@ export function createVideoRenderPipeline(
   }
 
   let autoDeinterlaceEnabled = true;
+  let pictureEnhancementEnabled = true;
   let active = false;
   let destroyed = false;
   let renderRunning = false;
@@ -113,6 +116,7 @@ export function createVideoRenderPipeline(
       apply();
     },
   );
+  renderer.setPictureEnhancementEnabled(pictureEnhancementEnabled);
 
   renderer.onFrame = (gl) => {
     if (destroyed || !autoDeinterlaceEnabled || !detectorReady) return false;
@@ -262,6 +266,11 @@ export function createVideoRenderPipeline(
       autoDeinterlaceEnabled = next;
       apply();
     },
+    setPictureEnhancementEnabled(next: boolean) {
+      if (pictureEnhancementEnabled === next) return;
+      pictureEnhancementEnabled = next;
+      renderer.setPictureEnhancementEnabled(next);
+    },
     reset() {
       interlaced = false;
       fieldOrder = "tff";
@@ -269,6 +278,7 @@ export function createVideoRenderPipeline(
       detector.reset();
       renderer.setFieldOrder(fieldOrder);
       renderer.setStage("passthrough");
+      renderer.resetPictureEnhancementHistory();
       renderer.clearCanvas();
       apply();
     },
