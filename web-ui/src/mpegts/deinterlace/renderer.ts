@@ -31,6 +31,21 @@ export class DeinterlaceRenderer {
   private readonly onContextLost?: () => void;
   private readonly onContextRestored?: () => void;
 
+  /**
+   * Called after the first-field texture upload and bwdif draw on every new
+   * decoded frame. The GL context and textures[0]/[1] are valid at call time.
+   * The callee MUST NOT issue a synchronous readPixels — use PBO only.
+   */
+  onDetectionFrame:
+    | ((
+        gl: WebGL2RenderingContext,
+        curTexture: WebGLTexture,
+        prevTexture: WebGLTexture | null,
+        videoWidth: number,
+        videoHeight: number,
+      ) => void)
+    | null = null;
+
   private readonly handleContextLost = (event: Event) => {
     event.preventDefault();
     this.contextLost = true;
@@ -279,5 +294,15 @@ export class DeinterlaceRenderer {
     const spatialOnly = this.textures.length <= algorithm.historyFrames;
     algorithm.render(gl, this.textures, { width, height, keepField: field, isSecondField, spatialOnly });
     this.onFrameRendered?.();
+
+    if (!isSecondField && this.onDetectionFrame && !this.contextLost) {
+      const prevTexture = this.textures.length >= 2 ? this.textures[1] : null;
+      this.onDetectionFrame(gl, this.textures[0], prevTexture, width, height);
+    }
+  }
+
+  /** The active WebGL2 context, or null if not yet created or context is lost. */
+  get currentGl(): WebGL2RenderingContext | null {
+    return this.contextLost ? null : this.gl;
   }
 }
