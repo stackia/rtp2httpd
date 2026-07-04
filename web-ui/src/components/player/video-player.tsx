@@ -82,6 +82,45 @@ function ignoreInterruptedPlayError(err: unknown): void {
   if (!isInterruptedPlayError(err)) throw err;
 }
 
+function getEventDocument(event: Event): Document {
+  const target = event.target;
+  if (target && "ownerDocument" in target) {
+    const ownerDocument = (target as { ownerDocument?: Document | null }).ownerDocument;
+    if (ownerDocument) return ownerDocument;
+  }
+  if (target && "document" in target) {
+    const targetDocument = (target as { document?: Document | null }).document;
+    if (targetDocument) return targetDocument;
+  }
+  if (target && "nodeType" in target && (target as { nodeType?: number }).nodeType === 9) {
+    return target as Document;
+  }
+  return document;
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!target || !("tagName" in target)) return false;
+  const tagName = String((target as { tagName?: unknown }).tagName).toUpperCase();
+  return (
+    tagName === "INPUT" ||
+    tagName === "TEXTAREA" ||
+    tagName === "SELECT" ||
+    !!(target as { isContentEditable?: boolean }).isContentEditable
+  );
+}
+
+function isDocumentBodyActive(targetDocument: Document): boolean {
+  const activeElement = targetDocument.activeElement;
+  return !activeElement || activeElement === targetDocument.body;
+}
+
+function blurActiveElement(targetDocument: Document): void {
+  const activeElement = targetDocument.activeElement;
+  if (!activeElement || activeElement === targetDocument.body) return;
+  const blur = (activeElement as { blur?: () => void }).blur;
+  if (blur) blur.call(activeElement);
+}
+
 function PlayerTopLeftOverlay({
   visible,
   loading,
@@ -762,6 +801,7 @@ export function VideoPlayer({
     const activeVideo = slotVideoRef(activeId).current;
     const useSeamlessSwitch =
       seamlessSwitch &&
+      !isAnyPictureInPictureActive() &&
       hasStartedPlaybackRef.current &&
       isStreamSwitch &&
       playMode === "live" &&
@@ -998,7 +1038,8 @@ export function VideoPlayer({
   }, []);
 
   const handleKeyDown = useEffectEvent((e: KeyboardEvent) => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+    const eventDocument = getEventDocument(e);
+    if (isEditableKeyboardTarget(e.target)) {
       return;
     }
 
@@ -1032,7 +1073,7 @@ export function VideoPlayer({
           }
           onChannelNavigate?.(parseInt(digitBuffer, 10));
           setDigitBuffer("");
-        } else if (!document.activeElement || document.activeElement === document.body) {
+        } else if (isDocumentBodyActive(eventDocument)) {
           e.preventDefault();
           onToggleSidebar?.();
         }
@@ -1040,8 +1081,8 @@ export function VideoPlayer({
 
       case "Escape":
         e.preventDefault();
-        if (document.activeElement && document.activeElement !== document.body) {
-          (document.activeElement as HTMLElement).blur();
+        if (!isDocumentBodyActive(eventDocument)) {
+          blurActiveElement(eventDocument);
         } else if (digitBuffer) {
           setDigitBuffer("");
           if (digitTimeoutRef.current) {
@@ -1059,7 +1100,7 @@ export function VideoPlayer({
       case "PageDown":
       case "ChannelDown":
         e.preventDefault();
-        (document.activeElement as HTMLElement)?.blur();
+        blurActiveElement(eventDocument);
         onChannelNavigate?.("prev");
         break;
 
@@ -1067,26 +1108,26 @@ export function VideoPlayer({
       case "PageUp":
       case "ChannelUp":
         e.preventDefault();
-        (document.activeElement as HTMLElement)?.blur();
+        blurActiveElement(eventDocument);
         onChannelNavigate?.("next");
         break;
 
       case "ArrowLeft": {
         e.preventDefault();
-        (document.activeElement as HTMLElement)?.blur();
+        blurActiveElement(eventDocument);
         handleRelativeSeek(-5);
         break;
       }
 
       case "ArrowRight": {
         e.preventDefault();
-        (document.activeElement as HTMLElement)?.blur();
+        blurActiveElement(eventDocument);
         handleRelativeSeek(5);
         break;
       }
 
       case " ":
-        if (document.activeElement && document.activeElement !== document.body) {
+        if (!isDocumentBodyActive(eventDocument)) {
           break;
         }
         e.preventDefault();
@@ -1154,12 +1195,10 @@ export function VideoPlayer({
 
     const cleanupA = attachSlot("a");
     const cleanupB = attachSlot("b");
-    window.addEventListener("keydown", handleKeyDown);
 
     return () => {
       cleanupA();
       cleanupB();
-      window.removeEventListener("keydown", handleKeyDown);
 
       if (stablePlaybackTimeoutRef.current) {
         window.clearTimeout(stablePlaybackTimeoutRef.current);
@@ -1171,6 +1210,21 @@ export function VideoPlayer({
       }
     };
   }, []);
+
+  useEffect(() => {
+    const pipWindow = isDocumentPiP ? documentPiPWindowRef.current : null;
+    const targetWindows = pipWindow && pipWindow !== window ? [window, pipWindow] : [window];
+
+    for (const targetWindow of targetWindows) {
+      targetWindow.addEventListener("keydown", handleKeyDown);
+    }
+
+    return () => {
+      for (const targetWindow of targetWindows) {
+        targetWindow.removeEventListener("keydown", handleKeyDown);
+      }
+    };
+  }, [isDocumentPiP]);
 
   const handleVideoClick = useCallback(() => {
     if (showControls) {
@@ -1295,14 +1349,21 @@ export function VideoPlayer({
     if (!needsUserInteraction) return;
 
     const handler = () => handleUserInteraction();
-    document.addEventListener("click", handler);
-    document.addEventListener("keydown", handler);
+    const pipDocument = isDocumentPiP ? documentPiPWindowRef.current?.document : null;
+    const targetDocuments = pipDocument && pipDocument !== document ? [document, pipDocument] : [document];
+
+    for (const targetDocument of targetDocuments) {
+      targetDocument.addEventListener("click", handler);
+      targetDocument.addEventListener("keydown", handler);
+    }
 
     return () => {
-      document.removeEventListener("click", handler);
-      document.removeEventListener("keydown", handler);
+      for (const targetDocument of targetDocuments) {
+        targetDocument.removeEventListener("click", handler);
+        targetDocument.removeEventListener("keydown", handler);
+      }
     };
-  }, [needsUserInteraction]);
+  }, [needsUserInteraction, isDocumentPiP]);
 
   const isVideoPiP = isPiP && !isDocumentPiP;
   const playerSurface = (
