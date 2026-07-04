@@ -161,6 +161,8 @@ export class InterlaceDetector {
   private timer = 0;
   private window: boolean[] = [];
   private interlaced = false;
+  /** Codec metadata hint received but not yet confirmed by a comb-score sample. */
+  private hintPending = false;
   private gated = false;
   private fieldOrder: FieldOrder = "tff";
   private fieldOrderDecided = false;
@@ -178,6 +180,12 @@ export class InterlaceDetector {
   start(): void {
     if (this.timer) return;
     this.timer = window.setInterval(() => this.sample(), SAMPLE_INTERVAL_MS);
+    // If interlaced was already confirmed while the detector was stopped (e.g. via
+    // a codec hint confirmed before the user turned deinterlacing off), resume
+    // field-order voting so the BFF/TFF result is settled on re-enable.
+    if (this.interlaced && !this.fieldOrderDecided) {
+      this.scheduleFieldOrderVote();
+    }
   }
 
   stop(): void {
@@ -190,23 +198,24 @@ export class InterlaceDetector {
 
   /**
    * Codec metadata says the stream may contain interlaced pictures (H.264
-   * frame_mbs_only_flag == 0, H.265 field_seq/interlaced_source). Skip the
-   * comb-detection warm-up and activate right away — width/height come from
-   * the codec (the video element may not have decoded a frame yet), gated by
-   * the same ≤1080 resolution rule. Field-order voting still runs on real frames.
+   * frame_mbs_only_flag == 0, H.265 field_seq/interlaced_source). Lower the
+   * comb-confirmation threshold to a single combed frame so detection is fast
+   * for genuinely interlaced content, while still requiring at least one
+   * measured comb sample before activating — this prevents progressive streams
+   * encoded with permissive metadata flags from being permanently processed by
+   * bwdif. The hint is discarded if a full sampling window finds no combing.
    */
   hintInterlaced(width: number, height: number): void {
-    if (this.interlaced) return;
+    if (this.interlaced || this.hintPending) return;
     if (!this.resolutionEligible(width, height)) return;
-    this.interlaced = true;
-    Log.i(TAG, `Interlaced per codec metadata hint (${width}x${height})`);
-    this.onVerdict({ interlaced: true, algorithm: "bwdif", fieldOrder: this.fieldOrder });
-    this.scheduleFieldOrderVote();
+    this.hintPending = true;
+    Log.i(TAG, `Codec metadata hints possible interlaced stream (${width}x${height}); awaiting comb confirmation`);
   }
 
   /** Forget everything — call on channel/source switch or resolution change. */
   reset(): void {
     this.window = [];
+    this.hintPending = false;
     if (this.interlaced) {
       this.interlaced = false;
       this.onVerdict({ interlaced: false, algorithm: "bwdif", fieldOrder: "tff" });
@@ -285,13 +294,27 @@ export class InterlaceDetector {
     if (this.window.length > WINDOW_SIZE) this.window.shift();
 
     const combedFrames = this.window.filter(Boolean).length;
-    if (combedFrames >= COMBED_FRAMES_REQUIRED) {
+    // When a codec metadata hint is pending, a single combed frame is enough to
+    // confirm interlaced content — the hint provides strong prior evidence. Without
+    // a hint the full COMBED_FRAMES_REQUIRED is required to avoid false positives.
+    const combedFramesRequired = this.hintPending ? 1 : COMBED_FRAMES_REQUIRED;
+    if (combedFrames >= combedFramesRequired) {
+      this.hintPending = false;
       this.interlaced = true;
-      Log.i(TAG, `Interlaced content detected (${combedFrames}/${this.window.length} combed frames)`);
+      const detectionSource = combedFramesRequired === 1 ? "codec metadata + comb confirmation" : "comb heuristic";
+      Log.i(
+        TAG,
+        `Interlaced content detected via ${detectionSource} (${combedFrames}/${this.window.length} combed frames)`,
+      );
       // Activate immediately with the TFF default; field-order voting continues
       // in the background and re-emits if the source turns out to be BFF.
       this.onVerdict({ interlaced: true, algorithm: "bwdif", fieldOrder: this.fieldOrder });
       this.scheduleFieldOrderVote();
+    } else if (this.hintPending && this.window.length >= WINDOW_SIZE) {
+      // A full sampling window passed without any combing — the codec metadata flag
+      // was set on a genuinely progressive stream. Fall back to the pure heuristic path.
+      this.hintPending = false;
+      Log.i(TAG, "Codec metadata hint discarded: no combing detected in full analysis window");
     }
   }
 

@@ -36,18 +36,47 @@ export function createDeinterlacePipeline(
 ): DeinterlacePipeline {
   let enabled = true;
   let active = false;
+  /**
+   * True while the renderer has been started but the first canvas frame has not
+   * yet been drawn. During this window we keep the raw video visible (no opacity-0)
+   * so there is no black flash between the deinterlace verdict arriving and the
+   * first WebGL frame being painted — this matters most for codec-metadata hints
+   * that arrive before any decoded frames are available.
+   */
+  let pendingFirstFrame = false;
   let destroyed = false;
   let lastVerdict: DetectorVerdict | null = null;
 
-  const renderer = new DeinterlaceRenderer(video, canvas);
+  const notifyFirstFrameRendered = () => {
+    if (!pendingFirstFrame || !enabled || destroyed) return;
+    pendingFirstFrame = false;
+    if (!active) {
+      active = true;
+      onActiveChange?.(true);
+    }
+  };
+
+  const renderer = new DeinterlaceRenderer(video, canvas, notifyFirstFrameRendered);
 
   const setActive = (next: boolean, algorithm: string, fieldOrder: FieldOrder = "tff") => {
     if (destroyed) return;
-    if (next && !renderer.start(algorithm, fieldOrder)) return; // e.g. WebGL unavailable → keep raw video visible
-    if (!next) renderer.stop();
-    if (active !== next) {
-      active = next;
-      onActiveChange?.(next);
+    if (next) {
+      pendingFirstFrame = true;
+      if (!renderer.start(algorithm, fieldOrder)) {
+        // WebGL unavailable or algorithm init failed — leave raw video visible
+        pendingFirstFrame = false;
+        return;
+      }
+      // Do not emit active=true yet; notifyFirstFrameRendered() fires after the
+      // first WebGL frame is drawn (synchronously from start() when readyState is
+      // already sufficient, or via the next rVFC callback otherwise).
+    } else {
+      pendingFirstFrame = false;
+      renderer.stop();
+      if (active) {
+        active = false;
+        onActiveChange?.(false);
+      }
     }
   };
 
