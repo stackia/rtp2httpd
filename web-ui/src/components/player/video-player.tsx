@@ -1,7 +1,15 @@
 import { clsx } from "clsx";
 import { Play } from "lucide-react";
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
+import {
+  getDocumentPictureInPicture,
+  getDocumentPiPWindowOptions,
+  isAnyPictureInPictureActive,
+  isPictureInPictureSupported,
+  setupDocumentPiPWindow,
+} from "../../lib/document-picture-in-picture";
 import type { Locale } from "../../lib/locale";
 import { buildCatchupSegments } from "../../lib/m3u-parser";
 import { getMuted, getVolume, saveMuted, saveVolume } from "../../lib/player-storage";
@@ -153,6 +161,14 @@ export function VideoPlayer({
 }: VideoPlayerProps) {
   const t = usePlayerTranslation(locale);
 
+  const playerDockRef = useRef<HTMLDivElement>(null);
+  const playerSurfaceRef = useRef<HTMLDivElement>(null);
+  const documentPiPWindowRef = useRef<Window | null>(null);
+  const [playerPortalHost] = useState(() => {
+    const host = document.createElement("div");
+    host.style.display = "contents";
+    return host;
+  });
   const slotAVideoRef = useRef<HTMLVideoElement>(null);
   const slotBVideoRef = useRef<HTMLVideoElement>(null);
   const slotACanvasRef = useRef<HTMLCanvasElement>(null);
@@ -196,6 +212,7 @@ export function VideoPlayer({
   const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isPiP, setIsPiP] = useState(false);
+  const [isDocumentPiP, setIsDocumentPiP] = useState(false);
   const hideControlsTimeoutRef = useRef<number>(0);
   const [retryCount, setRetryCount] = useState(0);
   const [retryBaseline, setRetryBaseline] = useState(0);
@@ -348,6 +365,39 @@ export function VideoPlayer({
       }
     };
   }, [resetControlsTimer]);
+
+  useLayoutEffect(() => {
+    if (isDocumentPiP) return;
+    const dock = playerDockRef.current;
+    if (!dock) return;
+
+    dock.append(playerPortalHost);
+
+    return () => {
+      if (playerPortalHost.parentNode === dock) {
+        dock.removeChild(playerPortalHost);
+      }
+    };
+  }, [isDocumentPiP, playerPortalHost]);
+
+  const restoreDocumentPiPPlayer = useEffectEvent(() => {
+    const dock = playerDockRef.current;
+    if (dock && playerPortalHost.parentNode !== dock) {
+      dock.append(playerPortalHost);
+    }
+    documentPiPWindowRef.current = null;
+    setIsDocumentPiP(false);
+    setIsPiP(!!document.pictureInPictureElement);
+  });
+
+  useEffect(() => {
+    return () => {
+      documentPiPWindowRef.current?.close();
+      if (playerPortalHost.parentNode) {
+        playerPortalHost.parentNode.removeChild(playerPortalHost);
+      }
+    };
+  }, [playerPortalHost]);
 
   const cancelPendingTransition = useEffectEvent(() => {
     pendingTransitionRef.current = null;
@@ -906,7 +956,7 @@ export function VideoPlayer({
     const activePlayer = getActivePlayer();
     if (!video || !activePlayer || error || needsUserInteraction) return;
     // PiP keeps playing in background; nothing to recover
-    if (document.pictureInPictureElement) return;
+    if (isAnyPictureInPictureActive()) return;
     // Respect an explicit user pause; only recover from OS-initiated interruptions
     if (userPausedRef.current) return;
 
@@ -1148,8 +1198,26 @@ export function VideoPlayer({
     }
   });
 
-  const handleFullscreen = useEffectEvent(() => {
+  const exitPictureInPicture = useEffectEvent(async (): Promise<boolean> => {
+    const documentPictureInPicture = getDocumentPictureInPicture();
+    const pipWindow = documentPictureInPicture?.window ?? documentPiPWindowRef.current;
+    if (pipWindow) {
+      restoreDocumentPiPPlayer();
+      pipWindow.close();
+      return true;
+    }
+
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture();
+      return true;
+    }
+
+    return false;
+  });
+
+  const handleFullscreen = useEffectEvent(async () => {
     const isIOS = /iPhone|iPod/.test(navigator.userAgent);
+    await exitPictureInPicture();
 
     const video = getActiveVideo();
     if (isIOS && video) {
@@ -1172,12 +1240,34 @@ export function VideoPlayer({
     if (!video) return;
 
     try {
-      if (document.pictureInPictureElement) {
-        await document.exitPictureInPicture();
-      } else {
-        await video.requestPictureInPicture();
+      if (await exitPictureInPicture()) {
+        return;
       }
+
+      const documentPictureInPicture = getDocumentPictureInPicture();
+      if (documentPictureInPicture) {
+        const playerElement = playerSurfaceRef.current;
+        if (!playerElement) return;
+
+        const pipWindowOptions = getDocumentPiPWindowOptions(playerElement);
+        const pipWindow = await documentPictureInPicture.requestWindow(pipWindowOptions);
+        documentPiPWindowRef.current = pipWindow;
+        setupDocumentPiPWindow(pipWindow);
+        pipWindow.addEventListener("pagehide", () => restoreDocumentPiPPlayer(), { once: true });
+        setIsDocumentPiP(true);
+        setIsPiP(true);
+        showControlsImmediately();
+        pipWindow.document.body.append(playerPortalHost);
+        return;
+      }
+
+      if (!document.pictureInPictureEnabled || !video.requestPictureInPicture) {
+        return;
+      }
+
+      await video.requestPictureInPicture();
     } catch (err) {
+      restoreDocumentPiPPlayer();
       console.error("Picture-in-Picture error:", err);
     }
   });
@@ -1210,173 +1300,187 @@ export function VideoPlayer({
     };
   }, [needsUserInteraction]);
 
-  return (
+  const isVideoPiP = isPiP && !isDocumentPiP;
+  const playerSurface = (
     <div
       role="application"
-      className="relative w-full bg-black md:h-full pt-[env(safe-area-inset-top)]"
+      ref={playerSurfaceRef}
+      className={clsx(
+        "@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-black",
+        isDocumentPiP ? "h-screen min-h-screen aspect-auto" : "md:aspect-auto md:h-full",
+        !showControls && "cursor-none",
+      )}
       onMouseMove={showControlsImmediately}
       onMouseLeave={hideControlsImmediately}
     >
       {/* Player area sizes the 16:9 frame via container queries; sources stretch to 16:9 inside it. */}
-      <div
-        className={clsx(
-          "@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center md:aspect-auto md:h-full",
-          !showControls && "cursor-none",
-        )}
-      >
-        <div className="relative aspect-video h-auto max-h-full w-full max-w-full overflow-hidden [@container_video_(max-aspect-ratio:_16/9)]:h-auto [@container_video_(max-aspect-ratio:_16/9)]:w-full [@container_video_(min-aspect-ratio:_16/9)]:h-full [@container_video_(min-aspect-ratio:_16/9)]:w-auto">
-          {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
-            <div key={slotId} className="contents">
-              {/* biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks */}
-              <video
-                ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
-                className={clsx(
-                  "absolute inset-0 size-full min-h-0 min-w-0 object-fill",
-                  // Background slot: opacity (not visibility) keeps requestVideoFrameCallback
-                  // firing so interlace detection can warm up during seamless switch.
-                  visibleSlotId !== slotId && "opacity-0 pointer-events-none",
-                  // Active slot: hide raw video behind the deinterlaced canvas output
-                  visibleSlotId === slotId && deinterlaceActiveSlots[slotId] && "opacity-0",
-                )}
-                playsInline
-                webkit-playsinline="true"
-                x5-playsinline="true"
-                onClick={visibleSlotId === slotId ? handleVideoClick : undefined}
-              />
-              <canvas
-                ref={slotId === "a" ? slotACanvasRef : slotBCanvasRef}
-                className={clsx(
-                  "pointer-events-none absolute inset-0 size-full min-h-0 min-w-0",
-                  (visibleSlotId !== slotId || !deinterlaceActiveSlots[slotId]) && "hidden",
-                )}
-              />
-            </div>
-          ))}
-        </div>
-
-        {!needsUserInteraction && !error && (
-          <PlayerTopLeftOverlay
-            visible={showControls || showLoading}
-            loading={showLoading}
-            loadingText={`${
-              channel && channel.sources.length > 1
-                ? `[${channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}] `
-                : ""
-            }${t("loadingVideo")}${retryCount - retryBaseline > 0 ? ` (${retryCount - retryBaseline}/${MAX_RETRIES})` : ""}`}
-          />
-        )}
-
-        {/* Channel Info and Controls */}
-        {channel && (
-          <div
-            className={clsx(
-              "absolute top-4 right-4 md:top-8 md:right-8 z-10 flex flex-col gap-2 md:gap-3 items-end transition-opacity duration-300",
-              showControls ? "opacity-100" : "opacity-0",
-            )}
-          >
-            <div
+      <div className="relative aspect-video h-auto max-h-full w-full max-w-full overflow-hidden [@container_video_(max-aspect-ratio:_16/9)]:h-auto [@container_video_(max-aspect-ratio:_16/9)]:w-full [@container_video_(min-aspect-ratio:_16/9)]:h-full [@container_video_(min-aspect-ratio:_16/9)]:w-auto">
+        {(visibleSlotId === "a" ? (["b", "a"] as const) : (["a", "b"] as const)).map((slotId) => (
+          <div key={slotId} className="contents">
+            {/* biome-ignore lint/a11y/useMediaCaption: live streaming video has no caption tracks */}
+            <video
+              ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
               className={clsx(
-                PLAYER_OVERLAY_SURFACE_CLASS,
-                "flex max-w-[calc(100vw-2rem)] flex-col items-center justify-center gap-1.5 overflow-hidden rounded-lg px-2 py-1.5 md:max-w-none md:gap-2 md:px-3 md:py-2",
+                "absolute inset-0 size-full min-h-0 min-w-0 object-fill",
+                // Background slot: opacity (not visibility) keeps requestVideoFrameCallback
+                // firing so interlace detection can warm up during seamless switch.
+                visibleSlotId !== slotId && "opacity-0 pointer-events-none",
+                // Active slot: hide raw video behind the deinterlaced canvas output.
+                // Traditional video PiP uses the video element itself, so keep it visible and hide canvas instead.
+                visibleSlotId === slotId && deinterlaceActiveSlots[slotId] && !isVideoPiP && "opacity-0",
               )}
-            >
-              {channel.logo && (
-                <img
-                  src={channel.logo}
-                  alt={channel.name}
-                  referrerPolicy="no-referrer"
-                  className="h-8 w-20 md:h-14 md:w-36 object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              )}
-              <div className="flex items-center justify-center w-full">
-                <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
-                  <span
-                    className={clsx(
-                      "rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition-[color,background-color,box-shadow,scale] duration-300",
-                      digitBuffer
-                        ? "bg-primary text-primary-foreground scale-110 shadow-lg ring-2 ring-primary/50"
-                        : "bg-white/10 text-white/60",
-                    )}
-                  >
-                    {digitBuffer || channel.id}
-                  </span>
-                  <h2 className="text-xs md:text-base font-bold text-white truncate">{channel.name}</h2>
-                  {channel.groups.length > 0 && (
-                    <>
-                      <span className="text-xs md:text-sm text-white/50 hidden sm:inline">·</span>
-                      <div className="text-xs md:text-sm text-white/70 truncate hidden sm:block">
-                        {channel.groups.join(" / ")}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {needsUserInteraction && (
-          <button
-            type="button"
-            className="absolute inset-0 z-10 flex cursor-pointer items-center justify-center bg-black/80 p-4 transition-opacity hover:bg-black/85 border-none"
-            onClick={handleUserInteraction}
-          >
-            <div className="flex flex-col items-center gap-4 text-white">
-              <Play className="h-20 w-20 opacity-90 fill-current" />
-              <div className="text-center">
-                <div className="mb-2 text-2xl font-semibold">{t("clickToPlay")}</div>
-                <div className="text-sm text-white/70">{t("autoplayBlocked")}</div>
-              </div>
-            </div>
-          </button>
-        )}
-
-        {error && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/90 p-4">
-            <div className="max-w-md rounded-lg bg-red-500/20 p-4 text-white">
-              <div className="mb-2 text-lg font-semibold">{t("playbackError")}</div>
-              <div className="text-sm">{error}</div>
-            </div>
-          </div>
-        )}
-
-        {channel && !error && !needsUserInteraction && (
-          <div
-            role="toolbar"
-            className={clsx(
-              "absolute bottom-0 left-0 right-0 z-10 transition-opacity duration-300",
-              showControls ? "opacity-100" : "opacity-0 has-focus-visible:opacity-100",
-            )}
-            onMouseEnter={showControlsImmediately}
-          >
-            <PlayerControls
-              channel={channel}
-              currentTime={currentVideoTime}
-              currentProgram={currentProgram}
-              isLive={isLive}
-              onSeek={handleSeek}
-              locale={locale}
-              seekStartTime={streamStartTime}
-              isPlaying={isPlaying}
-              onPlayPause={togglePlayPause}
-              volume={volume}
-              onVolumeChange={handleVolumeChange}
-              isMuted={isMuted}
-              onMuteToggle={handleMuteToggle}
-              onFullscreen={handleFullscreen}
-              showSidebar={showSidebar}
-              onToggleSidebar={onToggleSidebar}
-              isPiP={isPiP}
-              onPiPToggle={handlePiPToggle}
-              activeSourceIndex={activeSourceIndex}
-              onSourceChange={onSourceChange}
+              playsInline
+              webkit-playsinline="true"
+              x5-playsinline="true"
+              onClick={visibleSlotId === slotId ? handleVideoClick : undefined}
             />
+            <canvas
+              ref={slotId === "a" ? slotACanvasRef : slotBCanvasRef}
+              className={clsx(
+                "pointer-events-none absolute inset-0 size-full min-h-0 min-w-0",
+                (isVideoPiP || visibleSlotId !== slotId || !deinterlaceActiveSlots[slotId]) && "hidden",
+              )}
+            />
+          </div>
+        ))}
+      </div>
+
+      {!needsUserInteraction && !error && (
+        <PlayerTopLeftOverlay
+          visible={showControls || showLoading}
+          loading={showLoading}
+          loadingText={`${
+            channel && channel.sources.length > 1
+              ? `[${channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}] `
+              : ""
+          }${t("loadingVideo")}${retryCount - retryBaseline > 0 ? ` (${retryCount - retryBaseline}/${MAX_RETRIES})` : ""}`}
+        />
+      )}
+
+      {/* Channel Info and Controls */}
+      {channel && (
+        <div
+          className={clsx(
+            "absolute top-4 right-4 md:top-8 md:right-8 z-10 flex flex-col gap-2 md:gap-3 items-end transition-opacity duration-300",
+            showControls ? "opacity-100" : "opacity-0",
+          )}
+        >
+          <div
+            className={clsx(
+              PLAYER_OVERLAY_SURFACE_CLASS,
+              "flex max-w-[calc(100vw-2rem)] flex-col items-center justify-center gap-1.5 overflow-hidden rounded-lg px-2 py-1.5 md:max-w-none md:gap-2 md:px-3 md:py-2",
+            )}
+          >
+            {channel.logo && (
+              <img
+                src={channel.logo}
+                alt={channel.name}
+                referrerPolicy="no-referrer"
+                className="h-8 w-20 md:h-14 md:w-36 object-contain"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = "none";
+                }}
+              />
+            )}
+            <div className="flex items-center justify-center w-full">
+              <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
+                <span
+                  className={clsx(
+                    "rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition-[color,background-color,box-shadow,scale] duration-300",
+                    digitBuffer
+                      ? "bg-primary text-primary-foreground scale-110 shadow-lg ring-2 ring-primary/50"
+                      : "bg-white/10 text-white/60",
+                  )}
+                >
+                  {digitBuffer || channel.id}
+                </span>
+                <h2 className="text-xs md:text-base font-bold text-white truncate">{channel.name}</h2>
+                {channel.groups.length > 0 && (
+                  <>
+                    <span className="text-xs md:text-sm text-white/50 hidden sm:inline">·</span>
+                    <div className="text-xs md:text-sm text-white/70 truncate hidden sm:block">
+                      {channel.groups.join(" / ")}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {needsUserInteraction && (
+        <button
+          type="button"
+          className="absolute inset-0 z-10 flex cursor-pointer items-center justify-center bg-black/80 p-4 transition-opacity hover:bg-black/85 border-none"
+          onClick={handleUserInteraction}
+        >
+          <div className="flex flex-col items-center gap-4 text-white">
+            <Play className="h-20 w-20 opacity-90 fill-current" />
+            <div className="text-center">
+              <div className="mb-2 text-2xl font-semibold">{t("clickToPlay")}</div>
+              <div className="text-sm text-white/70">{t("autoplayBlocked")}</div>
+            </div>
+          </div>
+        </button>
+      )}
+
+      {error && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/90 p-4">
+          <div className="max-w-md rounded-lg bg-red-500/20 p-4 text-white">
+            <div className="mb-2 text-lg font-semibold">{t("playbackError")}</div>
+            <div className="text-sm">{error}</div>
+          </div>
+        </div>
+      )}
+
+      {channel && !error && !needsUserInteraction && (
+        <div
+          role="toolbar"
+          className={clsx(
+            "absolute bottom-0 left-0 right-0 z-10 transition-opacity duration-300",
+            showControls ? "opacity-100" : "opacity-0 has-focus-visible:opacity-100",
+          )}
+          onMouseEnter={showControlsImmediately}
+        >
+          <PlayerControls
+            channel={channel}
+            currentTime={currentVideoTime}
+            currentProgram={currentProgram}
+            isLive={isLive}
+            onSeek={handleSeek}
+            locale={locale}
+            seekStartTime={streamStartTime}
+            isPlaying={isPlaying}
+            onPlayPause={togglePlayPause}
+            volume={volume}
+            onVolumeChange={handleVolumeChange}
+            isMuted={isMuted}
+            onMuteToggle={handleMuteToggle}
+            onFullscreen={handleFullscreen}
+            showSidebar={showSidebar}
+            onToggleSidebar={onToggleSidebar}
+            isPiP={isPiP}
+            isPiPSupported={isPictureInPictureSupported()}
+            onPiPToggle={handlePiPToggle}
+            activeSourceIndex={activeSourceIndex}
+            onSourceChange={onSourceChange}
+          />
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="relative w-full bg-black md:h-full pt-[env(safe-area-inset-top)]">
+      <div ref={playerDockRef} className="contents">
+        {isDocumentPiP && (
+          <div className="@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-black px-4 text-center text-sm font-medium text-white/70 md:aspect-auto md:h-full md:text-base">
+            {t("playingInPictureInPicture")}
           </div>
         )}
       </div>
+      {createPortal(playerSurface, playerPortalHost)}
     </div>
   );
 }

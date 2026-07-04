@@ -7,7 +7,6 @@ import {
   PanelRightOpen,
   Pause,
   PictureInPicture,
-  PictureInPicture2,
   Play,
   Tv,
   Volume1,
@@ -45,6 +44,7 @@ interface PlayerControlsProps {
   onFullscreen: () => void;
   // Picture-in-Picture controls
   isPiP?: boolean;
+  isPiPSupported?: boolean;
   onPiPToggle?: () => void;
   // Sidebar controls
   showSidebar?: boolean;
@@ -70,6 +70,7 @@ export function PlayerControls({
   onMuteToggle,
   onFullscreen,
   isPiP = false,
+  isPiPSupported = false,
   onPiPToggle,
   showSidebar = true,
   onToggleSidebar,
@@ -404,19 +405,15 @@ export function PlayerControls({
             )}
           </button>
 
-          {/* Picture-in-Picture - Only show if supported and handler is provided */}
-          {onPiPToggle && document.pictureInPictureEnabled && (
+          {/* Picture-in-Picture - Only show before entering PiP. Exiting uses the browser PiP window controls. */}
+          {onPiPToggle && isPiPSupported && !isPiP && (
             <button
               type="button"
               onClick={onPiPToggle}
               className="rounded-full p-1.5 md:p-2 text-white transition hover:bg-white/20 active:scale-95 cursor-pointer"
-              title={isPiP ? t("exitPictureInPicture") : t("pictureInPicture")}
+              title={t("pictureInPicture")}
             >
-              {isPiP ? (
-                <PictureInPicture2 className="h-5 w-5 md:h-6 md:w-6" />
-              ) : (
-                <PictureInPicture className="h-5 w-5 md:h-6 md:w-6" />
-              )}
+              <PictureInPicture className="h-5 w-5 md:h-6 md:w-6" />
             </button>
           )}
 
