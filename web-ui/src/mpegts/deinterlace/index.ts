@@ -7,12 +7,6 @@ const TAG = "DeinterlacePipeline";
 
 export interface DeinterlacePipeline {
   setEnabled(enabled: boolean): void;
-  /**
-   * Codec metadata hint: the stream may contain interlaced pictures. When
-   * enabled this activates deinterlacing immediately (same ≤1080 resolution
-   * gate) instead of waiting for the heuristic detector to accumulate evidence.
-   */
-  hintInterlaced(width: number, height: number): void;
   /** Forget the detection verdict — call on channel/source switch. */
   reset(): void;
   /** True while the deinterlaced canvas is being drawn (drive UI visibility from this). */
@@ -40,8 +34,7 @@ export function createDeinterlacePipeline(
    * True while the renderer has been started but the first canvas frame has not
    * yet been drawn. During this window we keep the raw video visible (no opacity-0)
    * so there is no black flash between the deinterlace verdict arriving and the
-   * first WebGL frame being painted — this matters most for codec-metadata hints
-   * that arrive before any decoded frames are available.
+   * first WebGL frame being painted.
    */
   let pendingFirstFrame = false;
   let destroyed = false;
@@ -101,7 +94,6 @@ export function createDeinterlacePipeline(
     Log.i(TAG, "requestVideoFrameCallback unavailable; deinterlacing disabled");
     return {
       setEnabled() {},
-      hintInterlaced() {},
       reset() {},
       get active() {
         return false;
@@ -117,11 +109,6 @@ export function createDeinterlacePipeline(
       if (enabled === next) return;
       enabled = next;
       apply();
-    },
-    hintInterlaced(width: number, height: number) {
-      // The detector applies the resolution gate and emits the verdict, which
-      // activates rendering when enabled via the callback above
-      detector.hintInterlaced(width, height);
     },
     reset() {
       lastVerdict = null;

@@ -87,7 +87,6 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
         }
       };
       impl.onVideoInfo = (info) => {
-        if (info.mayBeInterlaced) deinterlace?.hintInterlaced(info.width, info.height);
         for (const h of videoInfoHandlers) {
           h(info);
         }

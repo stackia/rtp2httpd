@@ -4,7 +4,7 @@ import type { FieldOrder } from "./renderer";
 const TAG = "InterlaceDetector";
 
 /**
- * Heuristic interlace detection.
+ * Heuristic interlace detection with bidirectional adaptive verdicts.
  *
  * Interlaced content decoded as weaved frames shows "combing": on rows where the
  * two fields captured different moments, a pixel deviates from both its vertical
@@ -13,14 +13,15 @@ const TAG = "InterlaceDetector";
  * the comb signal), compute a per-frame comb score on luma, and feed a rolling
  * window. Enough combed frames in the window → verdict "interlaced".
  *
- * Codec metadata can pre-seed the verdict via hintInterlaced() (H.264
- * frame_mbs_only_flag == 0 etc.) so eligible streams start deinterlaced without
- * the detection warm-up; the heuristic remains the only path for streams whose
- * metadata claims progressive but carry combed content.
+ * Detection is bidirectional: once interlaced is decided, the detector continues
+ * sampling to watch for a sustained return to progressive content. Reversion
+ * requires REVERSION_FRAMES_REQUIRED consecutive samples that each show both
+ * sufficient inter-frame motion (MAD ≥ MOTION_FLOOR) and no combing. The motion
+ * gate is essential: static scenes produce no combing even in interlaced streams,
+ * so absence of combing alone is not evidence of progressive content — we only
+ * trust "no combing" when the scene has enough motion to be discriminating.
  *
- * Static scenes produce no combing even in interlaced streams, so absence of
- * combing is NOT evidence of progressive content: once interlaced is decided the
- * verdict is sticky until reset() (channel/source/resolution change).
+ * The verdict is fully reset on channel/source/resolution change via reset().
  */
 
 /** 1080-class content and below (720i, 576i, 480i, …); above 1080 deinterlacing is never enabled. */
@@ -29,7 +30,14 @@ const GATE_MAX_HEIGHT = 1088;
 
 /** Sampling width — horizontal resolution barely matters for comb detection. */
 const SAMPLE_WIDTH = 256;
-/** How often to sample a frame for analysis. */
+/**
+ * Number of consecutive frames sampled via requestVideoFrameCallback immediately
+ * after the detector starts or resets. Chaining rVFC calls guarantees that each
+ * sample lands on a distinct decoded frame with zero wasted overhead — no timer
+ * is needed for this phase.
+ */
+const FAST_SAMPLE_COUNT = 3;
+/** Steady-state sampling interval once the fast pre-sample phase is complete. */
 const SAMPLE_INTERVAL_MS = 500;
 /**
  * Per-pixel comb test: (above - cur) * (below - cur) > threshold, on 0-255 luma.
@@ -57,6 +65,21 @@ const COMBED_FRAMES_REQUIRED = 3;
 const FIELD_ORDER_MIN_VOTES = 4;
 const FIELD_ORDER_MIN_MARGIN = 2;
 const FIELD_ORDER_MAX_VOTES = 10;
+/**
+ * Minimum inter-frame mean absolute difference (0-255 luma, per-pixel average)
+ * required for a reversion sample to count. Below this threshold the scene is
+ * considered effectively static — absence of combing on a static frame carries
+ * no information about whether the source is interlaced or progressive.
+ */
+const MOTION_FLOOR = 1.5;
+/**
+ * Consecutive samples that must each satisfy (motion ≥ MOTION_FLOOR AND
+ * combScore < COMBED_FRAME_RATIO) before the interlaced verdict is reverted.
+ * At the 500 ms steady-state sampling interval this equals 4 × 0.5 s = 2 s of
+ * sustained progressive-looking motion — enough hysteresis to survive static
+ * shots without triggering premature reversion.
+ */
+const REVERSION_FRAMES_REQUIRED = 4;
 
 export interface DetectorVerdict {
   interlaced: boolean;
@@ -161,8 +184,10 @@ export class InterlaceDetector {
   private timer = 0;
   private window: boolean[] = [];
   private interlaced = false;
-  /** Codec metadata hint received but not yet confirmed by a comb-score sample. */
-  private hintPending = false;
+  /** Luma buffer from the previous sample, used to compute inter-frame motion score. */
+  private prevLuma: Uint8Array | null = null;
+  /** Consecutive samples satisfying the motion-gated reversion criterion. */
+  private reversionConsecutiveCount = 0;
   private gated = false;
   private fieldOrder: FieldOrder = "tff";
   private fieldOrderDecided = false;
@@ -179,10 +204,11 @@ export class InterlaceDetector {
 
   start(): void {
     if (this.timer) return;
+    this.scheduleInitialFastSamples();
     this.timer = window.setInterval(() => this.sample(), SAMPLE_INTERVAL_MS);
-    // If interlaced was already confirmed while the detector was stopped (e.g. via
-    // a codec hint confirmed before the user turned deinterlacing off), resume
-    // field-order voting so the BFF/TFF result is settled on re-enable.
+    // If an interlaced verdict was held while the detector was stopped (e.g. the
+    // user turned deinterlacing off then back on), resume field-order voting so
+    // the BFF/TFF result is settled on re-enable.
     if (this.interlaced && !this.fieldOrderDecided) {
       this.scheduleFieldOrderVote();
     }
@@ -196,26 +222,11 @@ export class InterlaceDetector {
     this.voteGen++;
   }
 
-  /**
-   * Codec metadata says the stream may contain interlaced pictures (H.264
-   * frame_mbs_only_flag == 0, H.265 field_seq/interlaced_source). Lower the
-   * comb-confirmation threshold to a single combed frame so detection is fast
-   * for genuinely interlaced content, while still requiring at least one
-   * measured comb sample before activating — this prevents progressive streams
-   * encoded with permissive metadata flags from being permanently processed by
-   * bwdif. The hint is discarded if a full sampling window finds no combing.
-   */
-  hintInterlaced(width: number, height: number): void {
-    if (this.interlaced || this.hintPending) return;
-    if (!this.resolutionEligible(width, height)) return;
-    this.hintPending = true;
-    Log.i(TAG, `Codec metadata hints possible interlaced stream (${width}x${height}); awaiting comb confirmation`);
-  }
-
   /** Forget everything — call on channel/source switch or resolution change. */
   reset(): void {
     this.window = [];
-    this.hintPending = false;
+    this.prevLuma = null;
+    this.reversionConsecutiveCount = 0;
     if (this.interlaced) {
       this.interlaced = false;
       this.onVerdict({ interlaced: false, algorithm: "bwdif", fieldOrder: "tff" });
@@ -227,6 +238,10 @@ export class InterlaceDetector {
     this.votesBff = 0;
     this.votingRounds = 0;
     this.voteGen++;
+    // Re-arm the fast pre-sample burst so the new channel is diagnosed quickly.
+    if (this.timer) {
+      this.scheduleInitialFastSamples();
+    }
   }
 
   destroy(): void {
@@ -235,13 +250,43 @@ export class InterlaceDetector {
     this.sampleCtx = null;
   }
 
+  /**
+   * Chain FAST_SAMPLE_COUNT requestVideoFrameCallback calls so that the first
+   * decoded frames of the current channel are sampled back-to-back without any
+   * timer overhead. Each callback samples immediately, then re-registers itself
+   * until the quota is exhausted. The captured voteGen invalidates stale
+   * callbacks that survive a reset() or stop() call.
+   */
+  private scheduleInitialFastSamples(): void {
+    const gen = this.voteGen;
+    let remaining = FAST_SAMPLE_COUNT;
+
+    const onFrame = () => {
+      if (gen !== this.voteGen || this.timer === 0) return;
+      const sampled = this.sample();
+      if (sampled) remaining--;
+      if (remaining > 0) {
+        this.video.requestVideoFrameCallback(onFrame);
+      }
+    };
+
+    this.video.requestVideoFrameCallback(onFrame);
+  }
+
   private resolutionEligible(width: number, height: number): boolean {
     return width > 0 && width <= GATE_MAX_WIDTH && height > 0 && height <= GATE_MAX_HEIGHT;
   }
 
-  private sample(): void {
+  /**
+   * Returns true if a frame was actually processed (readyState sufficient,
+   * not paused/seeking, canvas draw succeeded). The rVFC fast-sample chain
+   * uses this to avoid counting wasted fires against the remaining quota.
+   */
+  private sample(): boolean {
     const video = this.video;
-    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.paused || video.seeking) return;
+    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.paused || video.seeking) {
+      return false;
+    }
 
     const width = video.videoWidth;
     const height = video.videoHeight;
@@ -252,17 +297,14 @@ export class InterlaceDetector {
       }
       // Resolution may have changed mid-stream (e.g. codec change) — drop any verdict
       if (this.interlaced || this.window.length) this.reset();
-      return;
+      return false;
     }
     this.gated = false;
-
-    // Sticky verdict: once interlaced, stay until reset()
-    if (this.interlaced) return;
 
     if (!this.ensureSampleCtx()) {
       Log.e(TAG, "2D sampling context unavailable; detector disabled");
       this.stop();
-      return;
+      return false;
     }
     const canvas = this.sampleCanvas as HTMLCanvasElement;
     // Downscale horizontally only; vertical must stay 1:1 to preserve combing
@@ -279,7 +321,7 @@ export class InterlaceDetector {
     } catch (err) {
       // drawImage can throw while the pipeline is in a transient bad state
       Log.d(TAG, "Frame sampling failed:", err);
-      return;
+      return false;
     }
 
     const rgba = imageData.data;
@@ -289,33 +331,88 @@ export class InterlaceDetector {
       luma[i] = (77 * rgba[p] + 150 * rgba[p + 1] + 29 * rgba[p + 2]) >> 8;
     }
 
+    const motionScore = this.computeMotionScore(luma);
+    const prevLumaSnapshot = this.prevLuma;
+    this.prevLuma = luma;
+
     const score = combScore(luma, SAMPLE_WIDTH, height);
+
+    if (this.interlaced) {
+      // Reversion path: look for sustained progressive evidence under motion.
+      // Static frames (motionScore < MOTION_FLOOR) are abstained — they carry
+      // no information because interlaced content also produces no combing when
+      // the scene is still. Only when there is enough motion AND no combing do
+      // we count toward reversion.
+      if (prevLumaSnapshot === null || motionScore < MOTION_FLOOR) return true;
+      if (score >= COMBED_FRAME_RATIO) {
+        // Frame is combed: still interlaced, reset consecutive counter.
+        this.reversionConsecutiveCount = 0;
+        return true;
+      }
+      this.reversionConsecutiveCount++;
+      Log.d(
+        TAG,
+        `Reversion candidate ${this.reversionConsecutiveCount}/${REVERSION_FRAMES_REQUIRED} (motion=${motionScore.toFixed(2)}, comb=${score.toFixed(4)})`,
+      );
+      if (this.reversionConsecutiveCount >= REVERSION_FRAMES_REQUIRED) {
+        Log.i(TAG, `Progressive content detected; reverting interlaced verdict`);
+        this.resetVerdict();
+      }
+      return true;
+    }
+
+    // Activation path: accumulate evidence in a rolling window.
     this.window.push(score >= COMBED_FRAME_RATIO);
     if (this.window.length > WINDOW_SIZE) this.window.shift();
 
     const combedFrames = this.window.filter(Boolean).length;
-    // When a codec metadata hint is pending, a single combed frame is enough to
-    // confirm interlaced content — the hint provides strong prior evidence. Without
-    // a hint the full COMBED_FRAMES_REQUIRED is required to avoid false positives.
-    const combedFramesRequired = this.hintPending ? 1 : COMBED_FRAMES_REQUIRED;
-    if (combedFrames >= combedFramesRequired) {
-      this.hintPending = false;
+    if (combedFrames >= COMBED_FRAMES_REQUIRED) {
       this.interlaced = true;
-      const detectionSource = combedFramesRequired === 1 ? "codec metadata + comb confirmation" : "comb heuristic";
+      this.reversionConsecutiveCount = 0;
       Log.i(
         TAG,
-        `Interlaced content detected via ${detectionSource} (${combedFrames}/${this.window.length} combed frames)`,
+        `Interlaced content detected via comb heuristic (${combedFrames}/${this.window.length} combed frames)`,
       );
       // Activate immediately with the TFF default; field-order voting continues
       // in the background and re-emits if the source turns out to be BFF.
       this.onVerdict({ interlaced: true, algorithm: "bwdif", fieldOrder: this.fieldOrder });
       this.scheduleFieldOrderVote();
-    } else if (this.hintPending && this.window.length >= WINDOW_SIZE) {
-      // A full sampling window passed without any combing — the codec metadata flag
-      // was set on a genuinely progressive stream. Fall back to the pure heuristic path.
-      this.hintPending = false;
-      Log.i(TAG, "Codec metadata hint discarded: no combing detected in full analysis window");
     }
+    return true;
+  }
+
+  /**
+   * Mean absolute difference between the current and previous luma buffers,
+   * in 0-255 luma units per pixel. Returns 0 when no previous frame is available.
+   */
+  private computeMotionScore(currentLuma: Uint8Array): number {
+    const previousLuma = this.prevLuma;
+    if (!previousLuma || previousLuma.length !== currentLuma.length) return 0;
+    let totalAbsDiff = 0;
+    for (let i = 0; i < currentLuma.length; i++) {
+      totalAbsDiff += Math.abs(currentLuma[i] - previousLuma[i]);
+    }
+    return totalAbsDiff / currentLuma.length;
+  }
+
+  /**
+   * Revert an interlaced verdict to progressive without a full channel reset.
+   * Clears all detection windows and field-order votes so the detector starts
+   * fresh; the sampling timer keeps running so re-detection is immediate if
+   * interlaced content returns.
+   */
+  private resetVerdict(): void {
+    this.interlaced = false;
+    this.window = [];
+    this.prevLuma = null;
+    this.reversionConsecutiveCount = 0;
+    this.fieldOrder = "tff";
+    this.fieldOrderDecided = false;
+    this.votesTff = 0;
+    this.votesBff = 0;
+    this.votingRounds = 0;
+    this.voteGen++;
+    this.onVerdict({ interlaced: false, algorithm: "bwdif", fieldOrder: "tff" });
   }
 
   private ensureSampleCtx(): boolean {
