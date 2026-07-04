@@ -1,5 +1,5 @@
 import { createProgram, FULLSCREEN_VERTEX_SHADER } from "./gl-utils";
-import { type DeinterlaceAlgorithm, type FrameParams, registerAlgorithm } from "./types";
+import { type RenderParams, registerFilter, type VideoFilter } from "./types";
 
 /**
  * BWDIF (bob-weaver deinterlacing filter) — GLSL port of FFmpeg's bwdif,
@@ -207,7 +207,7 @@ void main() {
 }
 `;
 
-class BwdifAlgorithm implements DeinterlaceAlgorithm {
+class BwdifFilter implements VideoFilter {
   readonly name = "bwdif";
   // Ring of 3 weaved frames: [0] = newest (u_next), [1] = current, [2] = previous
   readonly historyFrames = 2;
@@ -231,7 +231,7 @@ class BwdifAlgorithm implements DeinterlaceAlgorithm {
     this.uSpatialOnly = gl.getUniformLocation(this.program, "u_spatialOnly");
   }
 
-  render(gl: WebGL2RenderingContext, textures: WebGLTexture[], params: FrameParams): void {
+  render(gl: WebGL2RenderingContext, textures: WebGLTexture[], params: RenderParams): void {
     if (!this.program) return;
     // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
     gl.useProgram(this.program);
@@ -255,4 +255,4 @@ class BwdifAlgorithm implements DeinterlaceAlgorithm {
   }
 }
 
-registerAlgorithm("bwdif", () => new BwdifAlgorithm());
+registerFilter("bwdif", () => new BwdifFilter());

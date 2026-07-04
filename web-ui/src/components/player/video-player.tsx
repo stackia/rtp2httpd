@@ -51,7 +51,7 @@ interface VideoPlayerProps {
   onToggleSidebar?: () => void;
   onFullscreenToggle?: () => void;
   seamlessSwitch?: boolean;
-  deinterlace?: boolean;
+  autoDeinterlace?: boolean;
   activeSourceIndex?: number;
   onSourceChange?: (index: number) => void;
   onPlaybackStarted?: () => void;
@@ -193,7 +193,7 @@ export function VideoPlayer({
   onToggleSidebar,
   onFullscreenToggle,
   seamlessSwitch = true,
-  deinterlace = true,
+  autoDeinterlace = true,
   activeSourceIndex = 0,
   onSourceChange,
   onPlaybackStarted,
@@ -229,12 +229,12 @@ export function VideoPlayer({
   const slotCanvasRef = (id: SlotId) => (id === "a" ? slotACanvasRef : slotBCanvasRef);
   const slotPlayerRef = (id: SlotId) => (id === "a" ? slotAPlayerRef : slotBPlayerRef);
 
-  const [deinterlaceActiveSlots, setDeinterlaceActiveSlots] = useState<Record<SlotId, boolean>>({
+  const [renderActiveSlots, setRenderActiveSlots] = useState<Record<SlotId, boolean>>({
     a: false,
     b: false,
   });
-  const setDeinterlaceActiveSlot = (slotId: SlotId, active: boolean) =>
-    setDeinterlaceActiveSlots((prev) => (prev[slotId] === active ? prev : { ...prev, [slotId]: active }));
+  const setRenderActiveSlot = (slotId: SlotId, active: boolean) =>
+    setRenderActiveSlots((prev) => (prev[slotId] === active ? prev : { ...prev, [slotId]: active }));
 
   const getActiveSlotId = () => activeSlotIdRef.current;
   const getActiveVideo = () => slotVideoRef(getActiveSlotId()).current;
@@ -458,7 +458,7 @@ export function VideoPlayer({
   const destroySlot = useEffectEvent((slotId: SlotId) => {
     slotPlayerRef(slotId).current?.destroy();
     slotPlayerRef(slotId).current = null;
-    setDeinterlaceActiveSlot(slotId, false);
+    setRenderActiveSlot(slotId, false);
   });
 
   const stopPendingTransition = useEffectEvent(() => {
@@ -666,8 +666,8 @@ export function VideoPlayer({
 
     const p = createPlayer(video, {
       wasmDecoders: { mp2: mp2WasmUrl },
-      deinterlaceCanvas: slotCanvasRef(slotId).current ?? undefined,
-      deinterlace,
+      renderCanvas: slotCanvasRef(slotId).current ?? undefined,
+      autoDeinterlace,
     });
     p.on("error", (e) => {
       if (slotPlayerRef(slotId).current === p) {
@@ -695,9 +695,9 @@ export function VideoPlayer({
         handleAudioSuspended();
       }
     });
-    p.on("deinterlace-active-change", (active) => {
+    p.on("render-active-change", (active) => {
       if (slotPlayerRef(slotId).current === p) {
-        setDeinterlaceActiveSlot(slotId, active);
+        setRenderActiveSlot(slotId, active);
       }
     });
     applyPlayerSettings(p);
@@ -871,9 +871,9 @@ export function VideoPlayer({
   }, []);
 
   useEffect(() => {
-    slotAPlayerRef.current?.setDeinterlace(deinterlace);
-    slotBPlayerRef.current?.setDeinterlace(deinterlace);
-  }, [deinterlace]);
+    slotAPlayerRef.current?.setAutoDeinterlace(autoDeinterlace);
+    slotBPlayerRef.current?.setAutoDeinterlace(autoDeinterlace);
+  }, [autoDeinterlace]);
 
   useEffect(() => {
     if (!seamlessSwitch) {
@@ -1393,12 +1393,12 @@ export function VideoPlayer({
               ref={slotId === "a" ? slotAVideoRef : slotBVideoRef}
               className={clsx(
                 "absolute inset-0 size-full min-h-0 min-w-0 object-fill",
-                // Background slot: opacity (not visibility) keeps requestVideoFrameCallback
-                // firing so interlace detection can warm up during seamless switch.
+                // Background slot: opacity keeps requestVideoFrameCallback firing so
+                // WebGL rendering/detection can warm up during seamless switch.
                 visibleSlotId !== slotId && "opacity-0 pointer-events-none",
-                // Active slot: hide raw video behind the deinterlaced canvas output.
+                // Active slot: hide raw video behind the WebGL canvas output.
                 // Traditional video PiP uses the video element itself, so keep it visible and hide canvas instead.
-                visibleSlotId === slotId && deinterlaceActiveSlots[slotId] && !isVideoPiP && "opacity-0",
+                visibleSlotId === slotId && renderActiveSlots[slotId] && !isVideoPiP && "opacity-0",
               )}
               playsInline
               webkit-playsinline="true"
@@ -1409,7 +1409,7 @@ export function VideoPlayer({
               ref={slotId === "a" ? slotACanvasRef : slotBCanvasRef}
               className={clsx(
                 "pointer-events-none absolute inset-0 size-full min-h-0 min-w-0",
-                (isVideoPiP || visibleSlotId !== slotId || !deinterlaceActiveSlots[slotId]) && "hidden",
+                (isVideoPiP || visibleSlotId !== slotId || !renderActiveSlots[slotId]) && "hidden",
               )}
             />
           </div>

@@ -1,5 +1,5 @@
 import Log from "../utils/logger";
-import { createProgram, FULLSCREEN_VERTEX_SHADER } from "./algorithms/gl-utils";
+import { createProgram, FULLSCREEN_VERTEX_SHADER } from "./filters/gl-utils";
 import type { FieldOrder } from "./renderer";
 
 const TAG = "InterlaceDetector";
@@ -17,14 +17,14 @@ const TAG = "InterlaceDetector";
  * The detector borrows the WebGL2 context and texture ring owned by the
  * renderer; it never uploads frames itself. It requires EXT_color_buffer_float
  * (RGBA16F render targets); when that extension is unavailable detection is
- * simply disabled and the raw video keeps playing.
+ * simply disabled and the renderer keeps using passthrough output.
  */
 
 // ---------------------------------------------------------------------------
 // Detection tuning constants
 // ---------------------------------------------------------------------------
 
-/** Deinterlacing only targets SD/HD interlaced broadcast; larger frames are gated out. */
+/** WebGL video rendering targets SD/HD broadcast frames; larger frames are gated out. */
 const GATE_MAX_WIDTH = 1920;
 const GATE_MAX_HEIGHT = 1088;
 /** Horizontal domain of the detection FBOs; also the threshold calibration domain. */
@@ -180,7 +180,6 @@ void main() {
 
 export interface DetectorVerdict {
   interlaced: boolean;
-  algorithm: "bwdif";
   fieldOrder: FieldOrder;
 }
 
@@ -337,7 +336,7 @@ export class InterlaceDetector {
   initGl(gl: WebGL2RenderingContext): boolean {
     if (this.ready) return true;
     if (!InterlaceDetector.isSupported(gl)) {
-      Log.w(TAG, "EXT_color_buffer_float unavailable; deinterlace detection disabled");
+      Log.w(TAG, "EXT_color_buffer_float unavailable; interlace detection disabled");
       return false;
     }
     try {
@@ -493,7 +492,7 @@ export class InterlaceDetector {
     this.freeSlots.shift();
     this.inFlight.push(slot);
 
-    // Restore GL state so the bwdif renderer's next draw call starts clean.
+    // Restore GL state so the video renderer's next draw call starts clean.
     // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
     gl.useProgram(null);
     gl.bindTexture(gl.TEXTURE_2D, null);
@@ -598,7 +597,7 @@ export class InterlaceDetector {
     this.interlaced = true;
     this.reversionConsecutiveCount = 0;
     Log.i(TAG, `Interlaced content detected via comb heuristic (${combedFrames}/${this.window.length} combed frames)`);
-    this.onVerdict({ interlaced: true, algorithm: "bwdif", fieldOrder: this.fieldOrder });
+    this.onVerdict({ interlaced: true, fieldOrder: this.fieldOrder });
   }
 
   private applyFieldOrderMetrics(errTff: number, errBff: number): void {
@@ -626,7 +625,7 @@ export class InterlaceDetector {
     if (winner !== this.fieldOrder) {
       this.fieldOrder = winner;
       if (this.interlaced) {
-        this.onVerdict({ interlaced: true, algorithm: "bwdif", fieldOrder: winner });
+        this.onVerdict({ interlaced: true, fieldOrder: winner });
       }
     }
   }
@@ -656,7 +655,7 @@ export class InterlaceDetector {
     this.votesBff = 0;
     this.votingRounds = 0;
     if (emitVerdict && wasInterlaced) {
-      this.onVerdict({ interlaced: false, algorithm: "bwdif", fieldOrder: "tff" });
+      this.onVerdict({ interlaced: false, fieldOrder: "tff" });
     }
   }
 
@@ -896,11 +895,10 @@ export class InterlaceDetector {
 }
 
 /**
- * Whether a frame size falls within the SD/HD interlaced deinterlacing gate.
- * The pipeline uses this to keep the whole GPU chain (bwdif + detection) idle
- * for larger frames, so exported for reuse there.
+ * Whether a frame size falls within the SD/HD WebGL render gate.
+ * Larger frames fall back to the raw video element.
  */
-export function isResolutionEligible(width: number, height: number): boolean {
+export function isRenderResolutionEligible(width: number, height: number): boolean {
   return width > 0 && width <= GATE_MAX_WIDTH && height > 0 && height <= GATE_MAX_HEIGHT;
 }
 

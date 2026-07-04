@@ -1,14 +1,13 @@
 /**
- * Pluggable deinterlacing algorithm interface.
+ * Pluggable WebGL video filter interface.
  *
- * The heuristic detector decides *which* algorithm fits the content (e.g. plain
- * combing → bob, telecine → field matching in the future) and the renderer looks
- * the implementation up in the registry by name. Algorithms are pure GPU passes:
- * they receive the current frame texture (plus optional history frames) and draw
- * the deinterlaced result to the currently bound framebuffer (the canvas).
+ * Filters are pure GPU passes. They receive the current decoded video frame
+ * texture plus any history frames they requested, then draw to the currently
+ * bound framebuffer. The renderer owns upload, frame history, intermediate
+ * targets, and final presentation to the canvas.
  */
 
-export interface FrameParams {
+export interface RenderParams {
   /** Source frame width in pixels. */
   width: number;
   /** Source frame height in pixels. */
@@ -30,33 +29,33 @@ export interface FrameParams {
   spatialOnly: boolean;
 }
 
-export interface DeinterlaceAlgorithm {
+export interface VideoFilter {
   readonly name: string;
   /**
    * Number of previous frames the algorithm needs in addition to the current one
-   * (bob = 0; a future motion-adaptive filter would need 1-2).
+   * (passthrough = 0; bwdif = 2).
    */
   readonly historyFrames: number;
   /** Compile shaders / allocate GL resources. Called once per GL context. */
   init(gl: WebGL2RenderingContext): void;
   /**
-   * Draw the deinterlaced frame to the bound framebuffer.
+   * Draw the filtered frame to the bound framebuffer.
    * `textures[0]` is the current frame, `textures[1..]` are history frames
    * (most recent first), at most `historyFrames` of them.
    */
-  render(gl: WebGL2RenderingContext, textures: WebGLTexture[], params: FrameParams): void;
+  render(gl: WebGL2RenderingContext, textures: WebGLTexture[], params: RenderParams): void;
   /** Release GL resources. The context may already be lost; guard accordingly. */
   destroy(gl: WebGL2RenderingContext): void;
 }
 
-export type AlgorithmFactory = () => DeinterlaceAlgorithm;
+export type FilterFactory = () => VideoFilter;
 
-const registry = new Map<string, AlgorithmFactory>();
+const registry = new Map<string, FilterFactory>();
 
-export function registerAlgorithm(name: string, factory: AlgorithmFactory): void {
+export function registerFilter(name: string, factory: FilterFactory): void {
   registry.set(name, factory);
 }
 
-export function createAlgorithm(name: string): DeinterlaceAlgorithm | undefined {
+export function createFilter(name: string): VideoFilter | undefined {
   return registry.get(name)?.();
 }

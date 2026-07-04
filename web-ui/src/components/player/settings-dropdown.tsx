@@ -13,8 +13,8 @@ interface SettingsDropdownProps {
   onThemeChange: (theme: ThemeMode) => void;
   seamlessSwitch: boolean;
   onSeamlessSwitchChange: (enabled: boolean) => void;
-  deinterlace: boolean;
-  onDeinterlaceChange: (enabled: boolean) => void;
+  autoDeinterlace: boolean;
+  onAutoDeinterlaceChange: (enabled: boolean) => void;
 }
 
 const localeOptions: Array<{ value: Locale; label: string }> = [
@@ -38,8 +38,8 @@ function SettingsDropdownComponent({
   onThemeChange,
   seamlessSwitch,
   onSeamlessSwitchChange,
-  deinterlace,
-  onDeinterlaceChange,
+  autoDeinterlace,
+  onAutoDeinterlaceChange,
 }: SettingsDropdownProps) {
   const t = usePlayerTranslation(locale);
   const [isOpen, setIsOpen] = useState(false);
@@ -117,7 +117,11 @@ function SettingsDropdownComponent({
             {/* Automatic deinterlacing (heuristic detection, ≤1080 content only) */}
             <div className="flex items-center justify-between px-1">
               <span className="text-xs font-medium text-muted-foreground">{t("deinterlace")}</span>
-              <Switch checked={deinterlace} onCheckedChange={onDeinterlaceChange} aria-label={t("deinterlace")} />
+              <Switch
+                checked={autoDeinterlace}
+                onCheckedChange={onAutoDeinterlaceChange}
+                aria-label={t("deinterlace")}
+              />
             </div>
           </div>
         </div>
