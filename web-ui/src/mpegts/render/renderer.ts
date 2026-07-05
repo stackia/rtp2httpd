@@ -76,6 +76,14 @@ export class VideoRenderer {
   private refreshDeltasMs: number[] = [];
   private refreshIntervalMs = 1000 / 60;
 
+  private resizeObserver: ResizeObserver | null = null;
+  private observedSizeEl: HTMLElement | null = null;
+  /**
+   * Latest **device-pixel** content size of the sized container; null until first
+   * measured. Stored in device pixels so the per-frame path needs no DPR read.
+   */
+  private cachedDisplaySize: { width: number; height: number } | null = null;
+
   /**
    * Called once per new decoded frame while running, before any upload or draw.
    * Use it to drain async detection readbacks. Return true to request a detection
@@ -227,6 +235,10 @@ export class VideoRenderer {
     this.stop();
     this.canvas.removeEventListener("webglcontextlost", this.handleContextLost);
     this.canvas.removeEventListener("webglcontextrestored", this.handleContextRestored);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    this.observedSizeEl = null;
+    this.cachedDisplaySize = null;
     this.gl = null;
   }
 
@@ -702,25 +714,102 @@ export class VideoRenderer {
   }
 
   private desiredEnhancedCanvasSize(sourceWidth: number, sourceHeight: number): { width: number; height: number } {
-    const rect = this.findVisibleCanvasRect();
-    if (!rect) return { width: sourceWidth, height: sourceHeight };
+    // Re-resolve when we have no cached size yet, the observed element detached, or the
+    // canvas moved to a different document (Document Picture-in-Picture re-parents the
+    // whole player surface into a floating window). Both checks are layout-free, so the
+    // steady-state per-frame path never forces a layout.
+    if (
+      !this.cachedDisplaySize ||
+      !this.observedSizeEl?.isConnected ||
+      this.observedSizeEl.ownerDocument !== this.canvas.ownerDocument
+    ) {
+      this.ensureSizeObserved();
+    }
+    const size = this.cachedDisplaySize; // already in device pixels
+    if (!size) return { width: sourceWidth, height: sourceHeight };
 
-    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
     const maxWidth = Math.min(sourceWidth * 2, 1920);
     const maxHeight = Math.min(sourceHeight * 2, 1088);
-    const width = Math.max(sourceWidth, Math.min(Math.round(rect.width * dpr), maxWidth));
-    const height = Math.max(sourceHeight, Math.min(Math.round(rect.height * dpr), maxHeight));
+    const width = Math.max(sourceWidth, Math.min(Math.round(size.width), maxWidth));
+    const height = Math.max(sourceHeight, Math.min(Math.round(size.height), maxHeight));
     return { width, height };
   }
 
-  private findVisibleCanvasRect(): DOMRect | null {
-    let element: HTMLElement | null = this.canvas;
-    while (element) {
-      const rect = element.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) return rect;
-      element = element.parentElement;
+  private readonly handleResize = (entries: ResizeObserverEntry[]) => {
+    const entry = entries[entries.length - 1];
+    if (!entry) return;
+    const size = this.deviceSizeFromEntry(entry);
+    // Keep the last nonzero size; ignore transient 0×0 (e.g. ancestor briefly hidden).
+    if (size.width > 0 && size.height > 0) this.cachedDisplaySize = size;
+  };
+
+  /**
+   * Convert a RO entry to device pixels. Prefers `devicePixelContentBoxSize` (exact
+   * device pixels, tracks DPR automatically); falls back to CSS content box × clamped
+   * DPR for engines (e.g. older Safari) that don't report it. Reads DPR from the
+   * target's own window (not the global `window`) so a Document Picture-in-Picture
+   * window on a different monitor/scale factor is measured correctly.
+   */
+  private deviceSizeFromEntry(entry: ResizeObserverEntry): { width: number; height: number } {
+    const dpx = entry.devicePixelContentBoxSize?.[0];
+    if (dpx) return { width: dpx.inlineSize, height: dpx.blockSize };
+    const css = entry.contentBoxSize?.[0];
+    const cssWidth = css ? css.inlineSize : entry.contentRect.width;
+    const cssHeight = css ? css.blockSize : entry.contentRect.height;
+    const view = (entry.target as HTMLElement).ownerDocument?.defaultView;
+    const dpr = Math.max(1, Math.min(view?.devicePixelRatio || 1, 2));
+    return { width: cssWidth * dpr, height: cssHeight * dpr };
+  }
+
+  /**
+   * Nearest ancestor that generates a sized box. Starts at the canvas's parent so
+   * we skip the canvas (can be display:none on the hidden slot) and its display:contents
+   * wrapper, landing on the stable aspect-video container the canvas fills.
+   */
+  private resolveSizedAncestor(): HTMLElement | null {
+    let el: HTMLElement | null = this.canvas.parentElement;
+    while (el) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) return el;
+      el = el.parentElement;
     }
     return null;
+  }
+
+  /**
+   * Attach the observer to the sized container and seed the cache synchronously.
+   * Does DOM work only until successfully attached (RO delivers updates thereafter),
+   * so the per-frame path pays no layout cost in steady state.
+   *
+   * The observer is (re)created in the target's own window whenever the owning document
+   * changes, rather than reused across documents: ResizeObserver delivery is driven by
+   * the rendering steps of the document the observer's global belongs to, so an observer
+   * left behind in the original document would go stale once the canvas is re-parented
+   * into a Document Picture-in-Picture window (or restored back out of one).
+   */
+  private ensureSizeObserved(): void {
+    const target = this.resolveSizedAncestor();
+    if (!target) return;
+    if (target === this.observedSizeEl && this.resizeObserver) return;
+
+    const targetWindow = target.ownerDocument.defaultView;
+    if (!targetWindow || typeof targetWindow.ResizeObserver === "undefined") return;
+
+    if (!this.resizeObserver || this.observedSizeEl?.ownerDocument !== target.ownerDocument) {
+      this.resizeObserver?.disconnect();
+      this.resizeObserver = new targetWindow.ResizeObserver(this.handleResize);
+    } else if (this.observedSizeEl) {
+      this.resizeObserver.unobserve(this.observedSizeEl);
+    }
+
+    this.observedSizeEl = target;
+    this.resizeObserver.observe(target, { box: "device-pixel-content-box" });
+    // Seed synchronously (device px) so the current frame is correct before RO fires.
+    const rect = target.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      const dpr = Math.max(1, Math.min(targetWindow.devicePixelRatio || 1, 2));
+      this.cachedDisplaySize = { width: rect.width * dpr, height: rect.height * dpr };
+    }
   }
 
   private ensureStageTarget(gl: WebGL2RenderingContext, width: number, height: number): RenderTarget | null {
