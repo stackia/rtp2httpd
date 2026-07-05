@@ -1,7 +1,8 @@
 import Log from "../utils/logger";
 import { createFilter, type RenderParams, type VideoFilter } from "./filters/types";
+import { FsrPresenter } from "./fsr";
 import { isRenderResolutionEligible } from "./interlace-detector";
-import { BicubicPresenter, PassthroughPresenter } from "./presenters";
+import { BicubicPresenter, PassthroughPresenter, type Presenter } from "./presenters";
 
 const TAG = "VideoRenderer";
 
@@ -13,9 +14,20 @@ export type RenderStageName = "passthrough" | "bwdif";
  * Post-stage enhancement filters, applied in order between the source stage
  * and presentation. All are registered in the filter registry and must be
  * stateless (historyFrames = 0): the renderer re-runs the whole list per
- * frame and assumes channel/stage switches need no per-filter reset.
+ * frame and assumes channel/stage switches need no per-filter reset. Empty
+ * for now — RCAS (inside the FSR upscale presenter) has taken over the
+ * sharpening role the old standalone "sharpen" filter used to play; the
+ * mechanism is kept for any future stateless filter.
  */
-const ENHANCEMENT_FILTER_NAMES = ["sharpen"] as const;
+const ENHANCEMENT_FILTER_NAMES: readonly string[] = [];
+
+/**
+ * Safety ceiling for the enhanced canvas backing store, so a very large
+ * display rect (or a stray devicePixelRatio) cannot push the per-frame
+ * EASU+RCAS cost past what a 4K display already asks for.
+ */
+const MAX_UPSCALE_WIDTH = 3840;
+const MAX_UPSCALE_HEIGHT = 2160;
 
 interface RenderTarget {
   fbo: WebGLFramebuffer;
@@ -28,9 +40,9 @@ interface RenderTarget {
  * WebGL2 render loop. It pulls decoded frames from the <video> element via
  * requestVideoFrameCallback, uploads them into a history ring, runs the active
  * source stage (`passthrough` or `bwdif`) plus the enhancement filter list
- * into per-field presentation targets, then presents to the canvas (bicubic
- * upscale when enhancement sized the canvas to the display, plain blit
- * otherwise).
+ * into per-field presentation targets, then presents to the canvas (FSR 1
+ * EASU+RCAS upscale when enhancement sized the canvas to the display, plain
+ * blit otherwise).
  *
  * Rendering and presentation are decoupled for bwdif: both fields of a frame
  * are rendered up front when the frame arrives, the first field is presented
@@ -57,7 +69,8 @@ export class VideoRenderer {
 
   private passthroughPresenter: PassthroughPresenter | null = null;
   private enhancementFilters: VideoFilter[] = [];
-  private bicubicPresenter: BicubicPresenter | null = null;
+  /** FSR (EASU+RCAS) upscale presenter, or BicubicPresenter if FSR failed to compile. */
+  private upscalePresenter: Presenter | null = null;
   /** Ping-pong targets for the enhancement filter list (allocated lazily). */
   private enhancementTargets: [RenderTarget | null, RenderTarget | null] = [null, null];
   private pictureEnhancementEnabled = true;
@@ -310,17 +323,20 @@ export class VideoRenderer {
   }
 
   /**
-   * Lazily build the enhancement filter list and the bicubic presenter. All
+   * Lazily build the enhancement filter list and the upscale presenter. All
    * succeed or none are kept: a partial chain would silently change the look.
+   *
+   * The upscale presenter prefers FSR 1 (EASU+RCAS); if it fails to compile
+   * (unsupported driver quirk, etc.) this falls back to the Catmull-Rom
+   * bicubic presenter before giving up on enhancement entirely.
    */
   private ensureEnhancementResources(): boolean {
-    if (this.bicubicPresenter) return true;
+    if (this.upscalePresenter) return true;
     if (this.enhancementInitFailed) return false;
     const gl = this.ensureContext();
     if (!gl) return false;
 
     const filters: VideoFilter[] = [];
-    const presenter = new BicubicPresenter();
     try {
       for (const name of ENHANCEMENT_FILTER_NAMES) {
         const filter = createFilter(name);
@@ -334,29 +350,37 @@ export class VideoRenderer {
         filter.init(gl);
         filters.push(filter);
       }
-      presenter.init(gl);
+
+      let presenter: Presenter = new FsrPresenter();
+      try {
+        presenter.init(gl);
+      } catch (err) {
+        Log.w(TAG, "FSR upscale presenter failed to init; falling back to bicubic:", err);
+        presenter.destroy(gl);
+        presenter = new BicubicPresenter();
+        presenter.init(gl);
+      }
+
+      this.enhancementFilters = filters;
+      this.upscalePresenter = presenter;
+      return true;
     } catch (err) {
       Log.w(TAG, "Failed to init picture enhancement; using passthrough presenter:", err);
       for (const filter of filters) filter.destroy(gl);
-      presenter.destroy(gl);
       this.enhancementInitFailed = true;
       return false;
     }
-
-    this.enhancementFilters = filters;
-    this.bicubicPresenter = presenter;
-    return true;
   }
 
   private teardownEnhancementResources(): void {
     const gl = this.gl;
     if (gl && !this.contextLost) {
       for (const filter of this.enhancementFilters) filter.destroy(gl);
-      this.bicubicPresenter?.destroy(gl);
+      this.upscalePresenter?.destroy(gl);
       for (const target of this.enhancementTargets) this.deleteRenderTarget(target);
     }
     this.enhancementFilters = [];
-    this.bicubicPresenter = null;
+    this.upscalePresenter = null;
     this.enhancementTargets = [null, null];
   }
 
@@ -387,7 +411,7 @@ export class VideoRenderer {
     this.stageFilter = null;
     this.passthroughPresenter = null;
     this.enhancementFilters = [];
-    this.bicubicPresenter = null;
+    this.upscalePresenter = null;
     this.enhancementTargets = [null, null];
     this.enhancementInitFailed = false;
   }
@@ -647,7 +671,7 @@ export class VideoRenderer {
     const canvasHeight = this.canvas.height;
     if (!canvasWidth || !canvasHeight) return;
 
-    const presenter = enhanced && this.bicubicPresenter ? this.bicubicPresenter : this.passthroughPresenter;
+    const presenter = enhanced && this.upscalePresenter ? this.upscalePresenter : this.passthroughPresenter;
     if (!presenter) return;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvasWidth, canvasHeight);
@@ -679,12 +703,12 @@ export class VideoRenderer {
     gl.viewport(0, 0, width, height);
     stageFilter.render(gl, this.textures, params);
 
-    if (enhancementReady && this.bicubicPresenter) {
+    if (enhancementReady && this.upscalePresenter) {
       try {
         const enhanced = this.runEnhancementFilters(gl, target.texture, params);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, desiredSize.width, desiredSize.height);
-        this.bicubicPresenter.present(gl, enhanced, width, height, desiredSize.width, desiredSize.height);
+        this.upscalePresenter.present(gl, enhanced, width, height, desiredSize.width, desiredSize.height);
         return;
       } catch (err) {
         Log.w(TAG, "Picture enhancement render failed; falling back to canvas presenter:", err);
@@ -737,10 +761,8 @@ export class VideoRenderer {
     const size = this.cachedDisplaySize; // already in device pixels
     if (!size) return { width: sourceWidth, height: sourceHeight };
 
-    const maxWidth = Math.min(sourceWidth * 2, 1920);
-    const maxHeight = Math.min(sourceHeight * 2, 1088);
-    const width = Math.max(sourceWidth, Math.min(Math.round(size.width), maxWidth));
-    const height = Math.max(sourceHeight, Math.min(Math.round(size.height), maxHeight));
+    const width = Math.max(sourceWidth, Math.min(Math.round(size.width), MAX_UPSCALE_WIDTH));
+    const height = Math.max(sourceHeight, Math.min(Math.round(size.height), MAX_UPSCALE_HEIGHT));
     return { width, height };
   }
 

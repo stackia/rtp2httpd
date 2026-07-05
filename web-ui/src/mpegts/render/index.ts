@@ -1,6 +1,5 @@
 import "./filters/bwdif";
 import "./filters/passthrough";
-import "./filters/sharpen";
 import Log from "../utils/logger";
 import { type DetectorVerdict, InterlaceDetector, isRenderResolutionEligible } from "./interlace-detector";
 import { type FieldOrder, type RenderStageName, VideoRenderer } from "./renderer";
