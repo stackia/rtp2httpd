@@ -21,6 +21,8 @@ line-length = 120
 [tool.basedpyright]
 pythonVersion = "3.14"
 typeCheckingMode = "standard"
+include = ["e2e", "tools"]
+exclude = ["**/node_modules", "**/__pycache__", "toolchain"]
 
 [tool.pytest.ini_options]
 testpaths = ["e2e"]
