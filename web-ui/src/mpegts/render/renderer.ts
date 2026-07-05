@@ -305,6 +305,12 @@ export class VideoRenderer {
       for (const name of ENHANCEMENT_FILTER_NAMES) {
         const filter = createFilter(name);
         if (!filter) throw new Error(`Unknown enhancement filter '${name}'`);
+        // The list is re-run per frame with a single input texture; a temporal
+        // filter would silently never see its history. Enforce the documented
+        // stateless invariant here rather than degrade quietly.
+        if (filter.historyFrames !== 0) {
+          throw new Error(`Enhancement filter '${name}' must be stateless (historyFrames = 0)`);
+        }
         filter.init(gl);
         filters.push(filter);
       }
@@ -428,8 +434,11 @@ export class VideoRenderer {
       }
     }
 
-    // Keep ticking while playback can queue more fields; stop when idle so a
-    // paused/stalled video does not keep a rAF loop alive.
+    // Keep ticking through playback even with no field queued: updateRefreshEstimate
+    // needs a continuous stream of consecutive vsync deltas to hold a stable median
+    // refresh interval, and that estimate is what aligns field flips to vsync. Only
+    // present short bursts per frame would never accumulate enough clean samples.
+    // Stop when idle so a paused/stalled video does not keep a rAF loop alive.
     if (this.pendingSecondField || !this.video.paused) this.startPresentClock();
     else this.lastPresentClockTs = -1;
   };
