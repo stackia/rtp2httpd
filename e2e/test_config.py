@@ -27,6 +27,17 @@ _INLINE_M3U = """\
 rtp://239.0.0.1:1234
 """
 
+_RTSP_DURATION_SDP = (
+    "v=0\r\n"
+    "o=- 0 0 IN IP4 127.0.0.1\r\n"
+    "s=T\r\n"
+    "c=IN IP4 0.0.0.0\r\n"
+    "t=0 0\r\n"
+    "a=range:npt=0.000-60.000\r\n"
+    "m=video 0 RTP/AVP 33\r\n"
+    "a=control:*\r\n"
+)
+
 
 def _build_config(
     port: int,
@@ -181,22 +192,24 @@ def _assert_udpxy_state(port: int, expected_enabled: bool):
 
 
 def _assert_rtsp_user_agent(port: int, expected_user_agent: str):
-    rtsp = MockRTSPServer(num_packets=50)
+    rtsp = MockRTSPServer(custom_sdp=_RTSP_DURATION_SDP)
     rtsp.start()
     try:
-        status, _, body = stream_get(
+        status, _, body = http_get(
             "127.0.0.1",
             port,
-            "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
-            read_bytes=1024,
+            "/rtsp/127.0.0.1:%d/stream?r2h-duration=1" % rtsp.port,
             timeout=10.0,
         )
         assert status == 200, f"Expected 200, got {status}"
-        assert len(body) > 0, "Expected RTSP stream body"
+        assert b'"duration"' in body, "Expected RTSP duration response"
 
         option_reqs = [req for req in rtsp.requests_detailed if req["method"] == "OPTIONS"]
         assert option_reqs, "Expected OPTIONS request"
         assert option_reqs[0]["headers"].get("User-Agent") == expected_user_agent
+        describe_reqs = [req for req in rtsp.requests_detailed if req["method"] == "DESCRIBE"]
+        assert describe_reqs, "Expected DESCRIBE request"
+        assert describe_reqs[0]["headers"].get("User-Agent") == expected_user_agent
     finally:
         rtsp.stop()
 
