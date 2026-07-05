@@ -51,14 +51,18 @@ void main() {
 `;
 
 /**
- * Vertex shader for framebuffer-backed textures. Unlike DOM video uploads,
- * framebuffer textures use WebGL's native bottom-left texture origin.
+ * Vertex shader for presenters, which may sample either orientation depending
+ * on whether a source stage ran first: framebuffer-backed textures use
+ * WebGL's native bottom-left origin (no flip), while a raw DOM video upload
+ * fed to a presenter directly (no source stage) needs the same Y-flip as
+ * `FULLSCREEN_VERTEX_SHADER`. `u_flipY` selects which one applies per draw.
  */
 export const FRAMEBUFFER_VERTEX_SHADER = `#version 300 es
+uniform bool u_flipY;
 out vec2 v_texCoord;
 void main() {
   vec2 pos = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
-  v_texCoord = pos;
+  v_texCoord = u_flipY ? vec2(pos.x, 1.0 - pos.y) : pos;
   gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0);
 }
 `;

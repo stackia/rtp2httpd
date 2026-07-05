@@ -8,6 +8,7 @@ const TAG = "VideoRenderer";
 
 /** Field order of the interlaced source: top field first or bottom field first. */
 export type FieldOrder = "tff" | "bff";
+/** `"passthrough"` means no GL source stage: the uploaded frame texture is presented directly. */
 export type RenderStageName = "passthrough" | "bwdif";
 
 /**
@@ -39,10 +40,10 @@ interface RenderTarget {
 /**
  * WebGL2 render loop. It pulls decoded frames from the <video> element via
  * requestVideoFrameCallback, uploads them into a history ring, runs the active
- * source stage (`passthrough` or `bwdif`) plus the enhancement filter list
- * into per-field presentation targets, then presents to the canvas (FSR 1
- * EASU+RCAS upscale when enhancement sized the canvas to the display, plain
- * blit otherwise).
+ * source stage (`bwdif`, or nothing when `passthrough` — the uploaded frame
+ * texture is used as-is) plus the enhancement filter list into per-field
+ * presentation targets, then presents to the canvas (FSR 1 EASU+RCAS upscale
+ * when enhancement sized the canvas to the display, plain blit otherwise).
  *
  * Rendering and presentation are decoupled for bwdif: both fields of a frame
  * are rendered up front when the frame arrives, the first field is presented
@@ -189,7 +190,9 @@ export class VideoRenderer {
 
   /** Switch the source stage while keeping the frame loop running. */
   setStage(stageName: RenderStageName): boolean {
-    if (this.stageName === stageName && (!this.running || this.stageFilter?.name === stageName)) return true;
+    const stageFilterReady =
+      stageName === "passthrough" ? this.stageFilter === null : this.stageFilter?.name === stageName;
+    if (this.stageName === stageName && (!this.running || stageFilterReady)) return true;
 
     const previousStageName = this.stageName;
     this.stageName = stageName;
@@ -299,6 +302,12 @@ export class VideoRenderer {
   }
 
   private ensureStageFilter(name: RenderStageName): boolean {
+    if (name === "passthrough") {
+      // No GL source stage needed: the uploaded frame texture is presented directly.
+      if (this.stageFilter && this.gl && !this.contextLost) this.stageFilter.destroy(this.gl);
+      this.stageFilter = null;
+      return true;
+    }
     if (this.stageFilter?.name === name) return true;
     const gl = this.ensureContext();
     if (!gl) return false;
@@ -356,6 +365,7 @@ export class VideoRenderer {
 
       this.enhancementFilters = filters;
       this.upscalePresenter = presenter;
+      Log.i(TAG, `Picture enhancement enabled (${presenter.name} upscale presenter active)`);
       return true;
     } catch (err) {
       Log.w(TAG, "Failed to init picture enhancement; using passthrough presenter:", err);
@@ -576,10 +586,9 @@ export class VideoRenderer {
 
   /** Upload the current video frame into the texture ring. Returns false on failure. */
   private uploadFrame(gl: WebGL2RenderingContext, width: number, height: number): boolean {
-    const filter = this.stageFilter;
-    if (!filter || !width || !height) return false;
+    if (!width || !height) return false;
 
-    const ringSize = filter.historyFrames + 1;
+    const ringSize = (this.stageFilter?.historyFrames ?? 0) + 1;
     const isNew = this.textures.length < ringSize;
     const target = isNew ? this.createFrameTexture(gl) : this.textures[this.textures.length - 1];
     if (!target) return false;
@@ -669,13 +678,15 @@ export class VideoRenderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvasWidth, canvasHeight);
     try {
-      presenter.present(gl, dest.texture, dest.width, dest.height, canvasWidth, canvasHeight);
+      // `dest` is always rendered by queueSecondField's stage filter (bwdif), so it's
+      // already in native (framebuffer) orientation and never needs a Y-flip.
+      presenter.present(gl, dest.texture, dest.width, dest.height, canvasWidth, canvasHeight, false);
     } catch (err) {
       // Never let a failed present escape into the rAF present clock. Fall back
       // to a plain passthrough blit so the field still reaches the canvas.
       Log.w(TAG, "Second field enhancement present failed; falling back to passthrough:", err);
       if (presenter !== this.passthroughPresenter) {
-        this.passthroughPresenter?.present(gl, dest.texture, dest.width, dest.height, canvasWidth, canvasHeight);
+        this.passthroughPresenter?.present(gl, dest.texture, dest.width, dest.height, canvasWidth, canvasHeight, false);
       }
     }
   }
@@ -685,7 +696,7 @@ export class VideoRenderer {
     const gl = this.gl;
     const stageFilter = this.stageFilter;
     const passthroughPresenter = this.passthroughPresenter;
-    if (!gl || !stageFilter || !passthroughPresenter || this.contextLost || this.textures.length === 0) return;
+    if (!gl || !passthroughPresenter || this.contextLost || this.textures.length === 0) return;
 
     const width = this.video.videoWidth;
     const height = this.video.videoHeight;
@@ -695,22 +706,33 @@ export class VideoRenderer {
     const desiredSize = enhancementReady ? this.desiredEnhancedCanvasSize(width, height) : { width, height };
     this.resizeCanvas(desiredSize.width, desiredSize.height);
 
-    const target = this.ensureStageTarget(gl, width, height);
-    if (!target) return;
-
-    const spatialOnly = this.textures.length <= stageFilter.historyFrames;
+    const spatialOnly = this.textures.length <= (stageFilter?.historyFrames ?? 0);
     const params: RenderParams = { width, height, keepField: field, isSecondField: false, spatialOnly };
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
-    gl.viewport(0, 0, width, height);
-    stageFilter.render(gl, this.textures, params);
+    // No stage filter (plain passthrough) means the uploaded frame texture is already the
+    // source: sampling it directly skips a redundant copy into an intermediate target.
+    let sourceTexture: WebGLTexture;
+    if (stageFilter) {
+      const target = this.ensureStageTarget(gl, width, height);
+      if (!target) return;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+      gl.viewport(0, 0, width, height);
+      stageFilter.render(gl, this.textures, params);
+      sourceTexture = target.texture;
+    } else {
+      sourceTexture = this.textures[0];
+    }
+
+    // A framebuffer-rendered stage output is already in native orientation; the raw
+    // video upload sampled directly (no stage filter) needs the presenter to flip Y.
+    const flipY = !stageFilter;
 
     if (enhancementReady && this.upscalePresenter) {
       try {
-        const enhanced = this.runEnhancementFilters(gl, target.texture, params);
+        const enhanced = this.runEnhancementFilters(gl, sourceTexture, params);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, desiredSize.width, desiredSize.height);
-        this.upscalePresenter.present(gl, enhanced, width, height, desiredSize.width, desiredSize.height);
+        this.upscalePresenter.present(gl, enhanced, width, height, desiredSize.width, desiredSize.height, flipY);
         return;
       } catch (err) {
         Log.w(TAG, "Picture enhancement render failed; falling back to canvas presenter:", err);
@@ -720,7 +742,7 @@ export class VideoRenderer {
     this.resizeCanvas(width, height);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, width, height);
-    passthroughPresenter.present(gl, target.texture, width, height, width, height);
+    passthroughPresenter.present(gl, sourceTexture, width, height, width, height, flipY);
   }
 
   /**
@@ -775,6 +797,10 @@ export class VideoRenderer {
     if (!box) return;
     // Keep the last nonzero size; ignore transient 0×0 (e.g. ancestor briefly hidden).
     if (box.inlineSize > 0 && box.blockSize > 0) {
+      const prev = this.cachedDisplaySize;
+      if (!prev || prev.width !== box.inlineSize || prev.height !== box.blockSize) {
+        Log.i(TAG, `Display size changed to ${box.inlineSize}x${box.blockSize} (device px)`);
+      }
       this.cachedDisplaySize = { width: box.inlineSize, height: box.blockSize };
     }
   };

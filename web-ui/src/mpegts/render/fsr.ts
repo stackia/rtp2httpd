@@ -22,6 +22,38 @@ import type { Presenter } from "./presenters";
  * mild contrast/saturation lift that filter used to apply.
  */
 
+/**
+ * EASU (Edge-Adaptive Spatial Upsampling), ported from AMD's FsrEasuF.
+ *
+ * easuRcp/easuRsqrt: AMD's AAxxRcpF1/RsqF1 fast bit-hack approximations.
+ * Unlike a native 1.0/x, these return a large finite value at x=0 instead of
+ * Infinity -- flat image regions hit x=0 constantly, and a subsequent
+ * 0 * Infinity would poison the result with NaN.
+ *
+ * easuTap (AMD's FsrEasuTap): accumulates one Lanczos-2-approximation tap
+ * into the RGB/weight accumulators, via a base*window product that avoids
+ * sin()/rcp()/sqrt().
+ *
+ * easuSet (AMD's FsrEasuSet): accumulates gradient direction and length from
+ * one bilinear-weighted corner of the 2x2 center cell, given that corner's
+ * local "+"-shaped luma neighborhood (lA..lE). Called once per corner
+ * (S/T/U/V).
+ *
+ * main samples the 12-tap "+"-shaped neighborhood around the output pixel
+ * (named b,c,e,f,g,h,i,j,k,l,n,o per AMD's reference diagram):
+ *     b c
+ *   e f g h
+ *   i j k l
+ *     n o
+ * `pp` is the position of `f` in source-pixel units (equivalent to
+ * outputPixelCenterUV * srcSize - 0.5, with no viewport cropping). Gradient
+ * direction/length are estimated from the four corners, normalized and
+ * reshaped (direction via rsqrt, length squared into {0,1}, then stretched
+ * {1.0 vert/horz to sqrt(2.0) diagonal}) to set the Lanczos lobe/clip window,
+ * which widens from +/-sqrt(2.0) to just past 2.0 with edge strength. The 12
+ * taps are accumulated through easuTap and normalized, then de-ringed by
+ * clamping to the range of the four central texels (f,g,j,k).
+ */
 const EASU_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 precision highp int;
@@ -29,15 +61,12 @@ precision highp int;
 uniform sampler2D u_input;
 uniform vec2 u_srcSize;
 uniform vec2 u_dstSize;
+uniform bool u_flipY;
 
 out vec4 outColor;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 
-// Fast reciprocal / rsqrt bit-hack approximations (AMD's AAxxRcpF1/RsqF1).
-// Unlike a native 1.0/x, these return a large finite value at x=0 instead of
-// Infinity -- flat image regions hit x=0 constantly, and a subsequent
-// 0 * Infinity would poison the result with NaN.
 float easuRcp(float x) {
   return uintBitsToFloat(0x7ef07ebbu - floatBitsToUint(x));
 }
@@ -52,7 +81,6 @@ vec3 sampleSrc(vec2 pixelPos) {
   return texture(u_input, (pixelPos + 0.5) / u_srcSize).rgb;
 }
 
-/** Accumulate one Lanczos-2-approximation tap (AMD's FsrEasuTap, RGB accumulator). */
 void easuTap(
   inout vec3 accumColor,
   inout float accumWeight,
@@ -65,7 +93,6 @@ void easuTap(
 ) {
   vec2 v = vec2(offset.x * dir.x + offset.y * dir.y, -offset.x * dir.y + offset.y * dir.x) * len;
   float d2 = min(v.x * v.x + v.y * v.y, clip);
-  // Lanczos-2 approximation without sin()/rcp()/sqrt(): (base) * (window).
   float wB = (2.0 / 5.0) * d2 - 1.0;
   float wA = lobe * d2 - 1.0;
   wB *= wB;
@@ -76,11 +103,6 @@ void easuTap(
   accumWeight += w;
 }
 
-/**
- * Accumulate gradient direction and length from one bilinear-weighted corner
- * of the 2x2 center cell (AMD's FsrEasuSet). Called once per corner (S/T/U/V)
- * with that corner's local "+"-shaped luma neighborhood (lA..lE).
- */
 void easuSet(
   inout vec2 dir,
   inout float len,
@@ -120,13 +142,9 @@ void easuSet(
 }
 
 void main() {
-  //      b c
-  //    e f g h
-  //    i j k l
-  //      n o
-  // 'pp' is the position of 'f' in source-pixel units: equivalent to
-  // (outputPixelCenterUV * srcSize - 0.5) with no viewport cropping.
-  vec2 pp = gl_FragCoord.xy * (u_srcSize / u_dstSize) - vec2(0.5);
+  vec2 fragCoord = gl_FragCoord.xy;
+  if (u_flipY) fragCoord.y = u_dstSize.y - fragCoord.y;
+  vec2 pp = fragCoord * (u_srcSize / u_dstSize) - vec2(0.5);
   vec2 fp = floor(pp);
   pp -= fp;
 
@@ -163,7 +181,6 @@ void main() {
   easuSet(dir, len, pp, false, false, true, false, fL, iL, jL, kL, nL);
   easuSet(dir, len, pp, false, false, false, true, gL, jL, kL, lL, oL);
 
-  // Normalize direction with approximation, and clean up near-zero (flat/no-edge) cases.
   vec2 dir2 = dir * dir;
   float dirR = dir2.x + dir2.y;
   bool zero = dirR < (1.0 / 32768.0);
@@ -172,13 +189,10 @@ void main() {
   dir.x = zero ? 1.0 : dir.x;
   dir *= vec2(dirR);
 
-  // Transform length from {0,2} to {0,1} range, shaped with a square.
   len = len * 0.5;
   len *= len;
-  // Stretch kernel {1.0 vert|horz, to sqrt(2.0) on diagonal}.
   float stretch = (dir.x * dir.x + dir.y * dir.y) * easuRcp(max(abs(dir.x), abs(dir.y)));
   vec2 len2 = vec2(1.0 + (stretch - 1.0) * len, 1.0 - 0.5 * len);
-  // Window shifts from +/-{sqrt(2.0) to slightly beyond 2.0} based on edge strength.
   float lobe = 0.5 + ((1.0 / 4.0 - 0.04) - 0.5) * len;
   float clip = easuRcp(lobe);
 
@@ -199,7 +213,6 @@ void main() {
 
   vec3 rgb = accumColor / accumWeight;
 
-  // Dering: clamp each channel to the range of the four central texels.
   vec3 lo = min(min3(f, g, j), k);
   vec3 hi = max(max3(f, g, j), k);
   rgb = clamp(rgb, lo, hi);
@@ -208,34 +221,49 @@ void main() {
 }
 `;
 
+/**
+ * RCAS (Robust Contrast Adaptive Sharpening), ported from AMD's FsrRcasF.
+ *
+ * SHARPNESS: AMD scale, 0.0 = strongest sharpening, higher N = N stops
+ * (halvings) weaker. RCAS_LIMIT (AMD FSR_RCAS_LIMIT): clamps the sharpening
+ * lobe to avoid unnatural results. CONTRAST/SATURATION: the same mild tone
+ * lift the old dedicated "sharpen" enhancement filter used to apply.
+ *
+ * rcasRcp: medium-precision reciprocal (fast bit-hack estimate plus one
+ * Newton-Raphson refinement step), used in place of AMD's plain division
+ * because RCAS's clipping-lobe math divides by neighborhood min/max ranges
+ * that legitimately hit exactly zero on flat video content (solid black
+ * letterboxing, blown-out highlights), where native division would yield
+ * 0/0 = NaN. This approximation returns a large finite value at zero
+ * instead, so the following multiply-by-numerator collapses cleanly to zero
+ * rather than propagating NaN.
+ *
+ * main reads the 3x3 cross neighborhood around the output pixel:
+ *     b
+ *   d e f
+ *     h
+ * derives a sharpening lobe from the local min/max contrast range (clamped
+ * by RCAS_LIMIT/SHARPNESS), de-weights it in flat/noisy regions (comparing
+ * the 4-neighbor average against the center to avoid amplifying compression
+ * noise/grain), and blends the cross taps with the center by that lobe
+ * before applying the CONTRAST/SATURATION lift.
+ */
 const RCAS_FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 precision highp int;
 
 uniform sampler2D u_input;
 uniform vec2 u_texelSize;
+uniform bool u_flipY;
 
 out vec4 outColor;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
-// AMD scale: 0.0 = strongest sharpening, higher N = N stops (halvings) weaker.
 const float SHARPNESS = 0.2;
-// Limit of providing unnatural results for sharpening (AMD FSR_RCAS_LIMIT).
 const float RCAS_LIMIT = 0.25 - 1.0 / 16.0;
-// Same mild tone lift the old "sharpen" enhancement filter applied.
 const float CONTRAST = 1.04;
 const float SATURATION = 1.03;
 
-/**
- * Medium-precision reciprocal (fast bit-hack estimate plus one
- * Newton-Raphson refinement step). Deliberately used in place of AMD's plain
- * division here: RCAS's clipping-lobe math divides by neighborhood min/max
- * ranges that legitimately hit exactly zero on flat video content (solid
- * black letterboxing, blown-out highlights), where native division would
- * yield 0/0 = NaN. This approximation returns a large finite value at zero
- * instead of Infinity, so the following multiply-by-numerator collapses
- * cleanly to zero rather than propagating NaN.
- */
 float rcasRcp(float a) {
   float b = uintBitsToFloat(0x7ef19fffu - floatBitsToUint(a));
   return b * (-b * a + 2.0);
@@ -245,11 +273,8 @@ float min3(float a, float b, float c) { return min(a, min(b, c)); }
 float max3(float a, float b, float c) { return max(a, max(b, c)); }
 
 void main() {
-  // 3x3 cross neighborhood.
-  //   b
-  // d e f
-  //   h
   vec2 uv = gl_FragCoord.xy * u_texelSize;
+  if (u_flipY) uv.y = 1.0 - uv.y;
   vec3 b = texture(u_input, uv + vec2(0.0, -1.0) * u_texelSize).rgb;
   vec3 d = texture(u_input, uv + vec2(-1.0, 0.0) * u_texelSize).rgb;
   vec3 e = texture(u_input, uv).rgb;
@@ -262,7 +287,6 @@ void main() {
   float fL = dot(f, LUMA);
   float hL = dot(h, LUMA);
 
-  // Min/max of the ring (excludes the center).
   float mn = min(min3(bL, dL, fL), hL);
   float mx = max(max3(bL, dL, fL), hL);
 
@@ -271,9 +295,6 @@ void main() {
   float lobeShape = max(-hitMin, hitMax);
   float lobe = max(-RCAS_LIMIT, min(lobeShape, 0.0)) * exp2(-SHARPNESS);
 
-  // Noise detection: de-weight sharpening where the neighborhood (including
-  // the center) is flat relative to its own contrast range, so compression
-  // noise/grain in low-contrast areas is not amplified.
   float mn5 = min(mn, eL);
   float mx5 = max(mx, eL);
   float noise = 0.25 * (bL + dL + fL + hL) - eL;
@@ -311,10 +332,12 @@ export class FsrPresenter implements Presenter {
   private easuInputLocation: WebGLUniformLocation | null = null;
   private easuSrcSizeLocation: WebGLUniformLocation | null = null;
   private easuDstSizeLocation: WebGLUniformLocation | null = null;
+  private easuFlipYLocation: WebGLUniformLocation | null = null;
 
   private rcasProgram: WebGLProgram | null = null;
   private rcasInputLocation: WebGLUniformLocation | null = null;
   private rcasTexelSizeLocation: WebGLUniformLocation | null = null;
+  private rcasFlipYLocation: WebGLUniformLocation | null = null;
 
   private intermediate: IntermediateTarget | null = null;
 
@@ -323,6 +346,7 @@ export class FsrPresenter implements Presenter {
     this.easuInputLocation = gl.getUniformLocation(this.easuProgram, "u_input");
     this.easuSrcSizeLocation = gl.getUniformLocation(this.easuProgram, "u_srcSize");
     this.easuDstSizeLocation = gl.getUniformLocation(this.easuProgram, "u_dstSize");
+    this.easuFlipYLocation = gl.getUniformLocation(this.easuProgram, "u_flipY");
 
     try {
       this.rcasProgram = createProgram(gl, FRAMEBUFFER_VERTEX_SHADER, RCAS_FRAGMENT_SHADER);
@@ -333,6 +357,7 @@ export class FsrPresenter implements Presenter {
     }
     this.rcasInputLocation = gl.getUniformLocation(this.rcasProgram, "u_input");
     this.rcasTexelSizeLocation = gl.getUniformLocation(this.rcasProgram, "u_texelSize");
+    this.rcasFlipYLocation = gl.getUniformLocation(this.rcasProgram, "u_flipY");
   }
 
   present(
@@ -342,6 +367,7 @@ export class FsrPresenter implements Presenter {
     srcHeight: number,
     dstWidth: number,
     dstHeight: number,
+    flipY: boolean,
   ): void {
     if (!this.easuProgram || !this.rcasProgram) {
       throw new Error("FsrPresenter.present() called before init()");
@@ -354,7 +380,7 @@ export class FsrPresenter implements Presenter {
 
     const upscaling = dstWidth > srcWidth + 0.5 || dstHeight > srcHeight + 0.5;
     if (!upscaling) {
-      this.runRcas(gl, texture, dstWidth, dstHeight, outputFbo);
+      this.runRcas(gl, texture, dstWidth, dstHeight, outputFbo, flipY);
       return;
     }
 
@@ -376,9 +402,12 @@ export class FsrPresenter implements Presenter {
     gl.uniform1i(this.easuInputLocation, 0);
     gl.uniform2f(this.easuSrcSizeLocation, srcWidth, srcHeight);
     gl.uniform2f(this.easuDstSizeLocation, dstWidth, dstHeight);
+    gl.uniform1i(this.easuFlipYLocation, flipY ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    this.runRcas(gl, target.texture, dstWidth, dstHeight, outputFbo);
+    // The intermediate is a framebuffer-rendered texture (native orientation),
+    // regardless of whether the EASU input needed a flip.
+    this.runRcas(gl, target.texture, dstWidth, dstHeight, outputFbo, false);
   }
 
   private runRcas(
@@ -387,6 +416,7 @@ export class FsrPresenter implements Presenter {
     width: number,
     height: number,
     targetFbo: WebGLFramebuffer | null,
+    flipY: boolean,
   ): void {
     gl.bindFramebuffer(gl.FRAMEBUFFER, targetFbo);
     gl.viewport(0, 0, width, height);
@@ -396,6 +426,7 @@ export class FsrPresenter implements Presenter {
     gl.bindTexture(gl.TEXTURE_2D, inputTexture);
     gl.uniform1i(this.rcasInputLocation, 0);
     gl.uniform2f(this.rcasTexelSizeLocation, 1 / width, 1 / height);
+    gl.uniform1i(this.rcasFlipYLocation, flipY ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 

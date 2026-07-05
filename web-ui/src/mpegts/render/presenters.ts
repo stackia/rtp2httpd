@@ -11,7 +11,12 @@ export interface Presenter {
   readonly name: string;
   /** Compile shaders / allocate GL resources. Called once per GL context. */
   init(gl: WebGL2RenderingContext): void;
-  /** Draw `texture` (srcWidth x srcHeight) to the bound framebuffer (dstWidth x dstHeight). */
+  /**
+   * Draw `texture` (srcWidth x srcHeight) to the bound framebuffer (dstWidth x dstHeight).
+   * `flipY` must be true when `texture` is a raw DOM video upload sampled without an
+   * intervening source-stage render pass (bwdif's output and other framebuffer-backed
+   * textures are already in native orientation and want `flipY: false`).
+   */
   present(
     gl: WebGL2RenderingContext,
     texture: WebGLTexture,
@@ -19,6 +24,7 @@ export interface Presenter {
     srcHeight: number,
     dstWidth: number,
     dstHeight: number,
+    flipY: boolean,
   ): void;
   /** Release GL resources. The context may already be lost; guard accordingly. */
   destroy(gl: WebGL2RenderingContext): void;
@@ -42,9 +48,11 @@ export class PassthroughPresenter implements Presenter {
   readonly name = "passthrough-present";
 
   private program: WebGLProgram | null = null;
+  private flipYLocation: WebGLUniformLocation | null = null;
 
   init(gl: WebGL2RenderingContext): void {
     this.program = createProgram(gl, FRAMEBUFFER_VERTEX_SHADER, PASSTHROUGH_FRAGMENT_SHADER);
+    this.flipYLocation = gl.getUniformLocation(this.program, "u_flipY");
     // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
     gl.useProgram(this.program);
     gl.uniform1i(gl.getUniformLocation(this.program, "u_input"), 0);
@@ -57,10 +65,12 @@ export class PassthroughPresenter implements Presenter {
     _srcHeight: number,
     _dstWidth: number,
     _dstHeight: number,
+    flipY: boolean,
   ): void {
     if (!this.program) return;
     // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
     gl.useProgram(this.program);
+    gl.uniform1i(this.flipYLocation, flipY ? 1 : 0);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
