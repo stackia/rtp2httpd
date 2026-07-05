@@ -8,6 +8,9 @@ import { type RenderParams, registerFilter, type VideoFilter } from "./types";
  *
  * Unlike source stage filters (passthrough/bwdif), the input is a framebuffer
  * texture rather than a DOM video upload, hence FRAMEBUFFER_VERTEX_SHADER.
+ *
+ * CONTRAST/SATURATION are a mild tone tweak applied together with the sharpen;
+ * part of the enhancement look.
  */
 
 const FRAGMENT_SHADER = `#version 300 es
@@ -21,7 +24,6 @@ out vec4 outColor;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 
-// Tone tweak applied together with sharpening; part of the enhancement look.
 const float CONTRAST = 1.04;
 const float SATURATION = 1.03;
 const float SHARPEN_STRENGTH = 0.22;

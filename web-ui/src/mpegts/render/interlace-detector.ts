@@ -135,6 +135,13 @@ void main() {
  * Field-order pass — renders to a half-height FBO (one output row per even
  * input row). Compares the TFF and BFF temporal midpoint predictions for each
  * row pair. Output: R = errTff, G = errBff (per-row mean absolute error).
+ *
+ * rowLuma samples at rowF + 0.5, the texel CENTER: the video textures use
+ * LINEAR filtering, so sampling at a texel boundary would average two adjacent
+ * rows — blending the two fields and corrupting both hypotheses.
+ *
+ * main maps v_texCoord.y in [0,1] to half-height FBO rows, each corresponding to
+ * an even source row (0, 2, 4, ...).
  */
 const FIELD_ORDER_FRAGMENT_SHADER = `${GLSL_LUMA_PRELUDE}
 uniform sampler2D u_prev;
@@ -145,16 +152,10 @@ in vec2 v_texCoord;
 out vec4 outColor;
 
 float rowLuma(sampler2D tex, float x, float rowF) {
-  // +0.5: sample at the texel CENTER of that row. The video textures use
-  // LINEAR filtering, so sampling at rowF exactly (a texel boundary) would
-  // average two adjacent rows — i.e. blend the two fields together and
-  // corrupt both hypotheses.
   return lumaAt(tex, vec2(x, (rowF + 0.5) / u_height));
 }
 
 void main() {
-  // v_texCoord.y in [0,1] maps to half-height FBO rows; each corresponds to
-  // an even row of the source frame (0, 2, 4, ...).
   float row = floor(v_texCoord.y * (u_height * 0.5)) * 2.0;
   float x   = v_texCoord.x;
 
