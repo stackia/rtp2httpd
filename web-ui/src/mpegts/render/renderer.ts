@@ -1,14 +1,21 @@
 import Log from "../utils/logger";
-import { EnhancementChain } from "./enhancement-chain";
-import { createProgram, FRAMEBUFFER_VERTEX_SHADER } from "./filters/gl-utils";
 import { createFilter, type RenderParams, type VideoFilter } from "./filters/types";
 import { isRenderResolutionEligible } from "./interlace-detector";
+import { BicubicPresenter, PassthroughPresenter } from "./presenters";
 
 const TAG = "VideoRenderer";
 
 /** Field order of the interlaced source: top field first or bottom field first. */
 export type FieldOrder = "tff" | "bff";
 export type RenderStageName = "passthrough" | "bwdif";
+
+/**
+ * Post-stage enhancement filters, applied in order between the source stage
+ * and presentation. All are registered in the filter registry and must be
+ * stateless (historyFrames = 0): the renderer re-runs the whole list per
+ * frame and assumes channel/stage switches need no per-filter reset.
+ */
+const ENHANCEMENT_FILTER_NAMES = ["sharpen"] as const;
 
 interface RenderTarget {
   fbo: WebGLFramebuffer;
@@ -17,63 +24,19 @@ interface RenderTarget {
   height: number;
 }
 
-const PRESENT_FRAGMENT_SHADER = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_input;
-
-in vec2 v_texCoord;
-out vec4 outColor;
-
-void main() {
-  outColor = texture(u_input, v_texCoord);
-}
-`;
-
-class CanvasPresenter implements VideoFilter {
-  readonly name = "canvas-present";
-  readonly historyFrames = 0;
-
-  private program: WebGLProgram | null = null;
-
-  init(gl: WebGL2RenderingContext): void {
-    this.program = createProgram(gl, FRAMEBUFFER_VERTEX_SHADER, PRESENT_FRAGMENT_SHADER);
-    // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
-    gl.useProgram(this.program);
-    gl.uniform1i(gl.getUniformLocation(this.program, "u_input"), 0);
-  }
-
-  render(gl: WebGL2RenderingContext, textures: WebGLTexture[], _params: RenderParams): void {
-    if (!this.program || textures.length === 0) return;
-    // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
-    gl.useProgram(this.program);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, textures[0]);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-  }
-
-  destroy(gl: WebGL2RenderingContext): void {
-    if (this.program) {
-      gl.deleteProgram(this.program);
-      this.program = null;
-    }
-  }
-}
-
 /**
  * WebGL2 render loop. It pulls decoded frames from the <video> element via
  * requestVideoFrameCallback, uploads them into a history ring, runs the active
- * source stage (`passthrough` or `bwdif`) into an offscreen target, then presents
- * that target to the canvas. The offscreen boundary is intentional: later WebGL
- * post filters can be inserted between the source stage and the final present.
+ * source stage (`passthrough` or `bwdif`) into an offscreen target, optionally
+ * runs the enhancement filter list over ping-pong targets, then presents the
+ * result to the canvas (bicubic upscale when enhancement sized the canvas to
+ * the display, plain blit otherwise).
  */
 export class VideoRenderer {
   private readonly video: HTMLVideoElement;
   private readonly canvas: HTMLCanvasElement;
   private gl: WebGL2RenderingContext | null = null;
   private stageFilter: VideoFilter | null = null;
-  private presentFilter: VideoFilter | null = null;
-  private enhancementChain: EnhancementChain | null = null;
   private stageTarget: RenderTarget | null = null;
   /** Ring of frame textures: [0] = newest, [1..] = history (most recent first). */
   private textures: WebGLTexture[] = [];
@@ -81,12 +44,18 @@ export class VideoRenderer {
   private secondFieldTimer = 0;
   private running = false;
   private contextLost = false;
-  private pictureEnhancementEnabled = true;
-  private enhancementInitFailed = false;
   private stageName: RenderStageName = "passthrough";
   private fieldOrder: FieldOrder = "tff";
   private readonly onContextLost?: () => void;
   private readonly onContextRestored?: () => void;
+
+  private passthroughPresenter: PassthroughPresenter | null = null;
+  private enhancementFilters: VideoFilter[] = [];
+  private bicubicPresenter: BicubicPresenter | null = null;
+  /** Ping-pong targets for the enhancement filter list (allocated lazily). */
+  private enhancementTargets: [RenderTarget | null, RenderTarget | null] = [null, null];
+  private pictureEnhancementEnabled = true;
+  private enhancementInitFailed = false;
 
   /**
    * Called once per new decoded frame while running, before any upload or draw.
@@ -117,12 +86,7 @@ export class VideoRenderer {
     this.contextLost = true;
     this.cancelFrameCallbacks();
     this.running = false;
-    this.textures = [];
-    this.stageTarget = null;
-    this.stageFilter = null;
-    this.presentFilter = null;
-    this.enhancementChain = null;
-    this.enhancementInitFailed = false;
+    this.forgetGlResources();
     Log.w(TAG, "WebGL context lost");
     this.onContextLost?.();
   };
@@ -130,12 +94,7 @@ export class VideoRenderer {
   private readonly handleContextRestored = () => {
     Log.i(TAG, "WebGL context restored");
     this.contextLost = false;
-    this.textures = [];
-    this.stageTarget = null;
-    this.stageFilter = null;
-    this.presentFilter = null;
-    this.enhancementChain = null;
-    this.enhancementInitFailed = false;
+    this.forgetGlResources();
     this.onContextRestored?.();
   };
 
@@ -169,9 +128,6 @@ export class VideoRenderer {
 
   /** Update the source field order for subsequent bwdif frames. */
   setFieldOrder(fieldOrder: FieldOrder): void {
-    if (this.fieldOrder !== fieldOrder) {
-      this.resetEnhancementHistory();
-    }
     this.fieldOrder = fieldOrder;
   }
 
@@ -179,18 +135,9 @@ export class VideoRenderer {
   setPictureEnhancementEnabled(enabled: boolean): void {
     if (this.pictureEnhancementEnabled === enabled) return;
     this.pictureEnhancementEnabled = enabled;
-    this.resetEnhancementHistory();
     this.enhancementInitFailed = false;
-    if (!enabled && this.gl && !this.contextLost && this.enhancementChain) {
-      this.enhancementChain.destroy(this.gl);
-      this.enhancementChain = null;
-    }
+    if (!enabled) this.teardownEnhancementResources();
     this.primeCanvas();
-  }
-
-  /** Forget post-stage temporal history without changing the active render stage. */
-  resetPictureEnhancementHistory(): void {
-    this.resetEnhancementHistory();
   }
 
   /** Switch the source stage while keeping the frame loop running. */
@@ -207,7 +154,6 @@ export class VideoRenderer {
     }
     this.clearSecondFieldTimer();
     this.clearTextureRing();
-    this.resetEnhancementHistory();
     this.primeCanvas();
     Log.i(TAG, `Render stage switched to '${stageName}'`);
     return true;
@@ -228,7 +174,7 @@ export class VideoRenderer {
     const gl = this.ensureContext();
     if (!gl) return false;
 
-    if (!this.ensurePresentFilter() || !this.ensureStageFilter(stageName)) {
+    if (!this.ensurePassthroughPresenter() || !this.ensureStageFilter(stageName)) {
       this.teardownFilters();
       return false;
     }
@@ -284,19 +230,19 @@ export class VideoRenderer {
     return gl;
   }
 
-  private ensurePresentFilter(): boolean {
-    if (this.presentFilter) return true;
+  private ensurePassthroughPresenter(): boolean {
+    if (this.passthroughPresenter) return true;
     const gl = this.ensureContext();
     if (!gl) return false;
-    const filter = new CanvasPresenter();
+    const presenter = new PassthroughPresenter();
     try {
-      filter.init(gl);
+      presenter.init(gl);
     } catch (err) {
       Log.e(TAG, "Failed to init canvas presenter:", err);
-      filter.destroy(gl);
+      presenter.destroy(gl);
       return false;
     }
-    this.presentFilter = filter;
+    this.passthroughPresenter = presenter;
     return true;
   }
 
@@ -324,19 +270,75 @@ export class VideoRenderer {
     return true;
   }
 
+  /**
+   * Lazily build the enhancement filter list and the bicubic presenter. All
+   * succeed or none are kept: a partial chain would silently change the look.
+   */
+  private ensureEnhancementResources(): boolean {
+    if (this.bicubicPresenter) return true;
+    if (this.enhancementInitFailed) return false;
+    const gl = this.ensureContext();
+    if (!gl) return false;
+
+    const filters: VideoFilter[] = [];
+    const presenter = new BicubicPresenter();
+    try {
+      for (const name of ENHANCEMENT_FILTER_NAMES) {
+        const filter = createFilter(name);
+        if (!filter) throw new Error(`Unknown enhancement filter '${name}'`);
+        filter.init(gl);
+        filters.push(filter);
+      }
+      presenter.init(gl);
+    } catch (err) {
+      Log.w(TAG, "Failed to init picture enhancement; using passthrough presenter:", err);
+      for (const filter of filters) filter.destroy(gl);
+      presenter.destroy(gl);
+      this.enhancementInitFailed = true;
+      return false;
+    }
+
+    this.enhancementFilters = filters;
+    this.bicubicPresenter = presenter;
+    return true;
+  }
+
+  private teardownEnhancementResources(): void {
+    const gl = this.gl;
+    if (gl && !this.contextLost) {
+      for (const filter of this.enhancementFilters) filter.destroy(gl);
+      this.bicubicPresenter?.destroy(gl);
+      for (const target of this.enhancementTargets) this.deleteRenderTarget(target);
+    }
+    this.enhancementFilters = [];
+    this.bicubicPresenter = null;
+    this.enhancementTargets = [null, null];
+  }
+
   private teardownFilters(): void {
     const gl = this.gl;
     if (gl && !this.contextLost) {
       if (this.stageFilter) this.stageFilter.destroy(gl);
-      if (this.presentFilter) this.presentFilter.destroy(gl);
-      if (this.enhancementChain) this.enhancementChain.destroy(gl);
+      this.passthroughPresenter?.destroy(gl);
       this.deleteRenderTarget(this.stageTarget);
     }
+    this.teardownEnhancementResources();
     this.clearTextureRing();
     this.stageFilter = null;
-    this.presentFilter = null;
-    this.enhancementChain = null;
+    this.passthroughPresenter = null;
     this.stageTarget = null;
+    this.enhancementInitFailed = false;
+  }
+
+  /** Drop all references to GL objects without deleting them (context is gone). */
+  private forgetGlResources(): void {
+    this.textures = [];
+    this.stageTarget = null;
+    this.stageFilter = null;
+    this.passthroughPresenter = null;
+    this.enhancementFilters = [];
+    this.bicubicPresenter = null;
+    this.enhancementTargets = [null, null];
     this.enhancementInitFailed = false;
   }
 
@@ -347,10 +349,6 @@ export class VideoRenderer {
       }
     }
     this.textures = [];
-  }
-
-  private resetEnhancementHistory(): void {
-    this.enhancementChain?.resetHistory();
   }
 
   private cancelFrameCallbacks(): void {
@@ -474,18 +472,18 @@ export class VideoRenderer {
   private drawCurrentOutput(field: 0 | 1, isSecondField: boolean): void {
     const gl = this.gl;
     const stageFilter = this.stageFilter;
-    const presentFilter = this.presentFilter;
-    if (!gl || !stageFilter || !presentFilter || this.contextLost || this.textures.length === 0) return;
+    const passthroughPresenter = this.passthroughPresenter;
+    if (!gl || !stageFilter || !passthroughPresenter || this.contextLost || this.textures.length === 0) return;
 
     const width = this.video.videoWidth;
     const height = this.video.videoHeight;
     if (!width || !height) return;
 
-    const enhancementReady = this.pictureEnhancementEnabled && this.ensureEnhancementChain();
+    const enhancementReady = this.pictureEnhancementEnabled && this.ensureEnhancementResources();
     const desiredSize = enhancementReady ? this.desiredEnhancedCanvasSize(width, height) : { width, height };
     this.resizeCanvas(desiredSize.width, desiredSize.height);
 
-    const target = this.ensureRenderTarget(gl, width, height);
+    const target = this.ensureStageTarget(gl, width, height);
     if (!target) return;
 
     const spatialOnly = this.textures.length <= stageFilter.historyFrames;
@@ -495,9 +493,13 @@ export class VideoRenderer {
     gl.viewport(0, 0, width, height);
     stageFilter.render(gl, this.textures, params);
 
-    if (enhancementReady && this.enhancementChain) {
+    if (enhancementReady && this.bicubicPresenter) {
       try {
-        if (this.enhancementChain.render(gl, target.texture, params, desiredSize.width, desiredSize.height)) return;
+        const enhanced = this.runEnhancementFilters(gl, target.texture, params);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, desiredSize.width, desiredSize.height);
+        this.bicubicPresenter.present(gl, enhanced, width, height, desiredSize.width, desiredSize.height);
+        return;
       } catch (err) {
         Log.w(TAG, "Picture enhancement render failed; falling back to canvas presenter:", err);
       }
@@ -506,27 +508,25 @@ export class VideoRenderer {
     this.resizeCanvas(width, height);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, width, height);
-    presentFilter.render(gl, [target.texture], params);
+    passthroughPresenter.present(gl, target.texture, width, height, width, height);
   }
 
-  private ensureEnhancementChain(): boolean {
-    if (this.enhancementChain) return true;
-    if (this.enhancementInitFailed) return false;
-    const gl = this.ensureContext();
-    if (!gl) return false;
-
-    const chain = new EnhancementChain();
-    try {
-      chain.init(gl);
-    } catch (err) {
-      Log.w(TAG, "Failed to init picture enhancement; using passthrough presenter:", err);
-      chain.destroy(gl);
-      this.enhancementInitFailed = true;
-      return false;
+  /**
+   * Run the enhancement filter list over ping-pong targets at source
+   * resolution. Returns the texture holding the final result (the stage
+   * output itself when the list is empty).
+   */
+  private runEnhancementFilters(gl: WebGL2RenderingContext, input: WebGLTexture, params: RenderParams): WebGLTexture {
+    let current = input;
+    for (let i = 0; i < this.enhancementFilters.length; i++) {
+      const target = this.ensureEnhancementTarget(gl, i % 2 === 0 ? 0 : 1, params.width, params.height);
+      if (!target) throw new Error("Failed to create enhancement render target");
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+      gl.viewport(0, 0, params.width, params.height);
+      this.enhancementFilters[i].render(gl, [current], params);
+      current = target.texture;
     }
-
-    this.enhancementChain = chain;
-    return true;
+    return current;
   }
 
   private resizeCanvas(width: number, height: number): void {
@@ -557,12 +557,28 @@ export class VideoRenderer {
     return null;
   }
 
-  private ensureRenderTarget(gl: WebGL2RenderingContext, width: number, height: number): RenderTarget | null {
+  private ensureStageTarget(gl: WebGL2RenderingContext, width: number, height: number): RenderTarget | null {
     if (this.stageTarget?.width === width && this.stageTarget.height === height) return this.stageTarget;
-
     this.deleteRenderTarget(this.stageTarget);
-    this.stageTarget = null;
+    this.stageTarget = this.createRenderTarget(gl, width, height);
+    return this.stageTarget;
+  }
 
+  private ensureEnhancementTarget(
+    gl: WebGL2RenderingContext,
+    slot: 0 | 1,
+    width: number,
+    height: number,
+  ): RenderTarget | null {
+    const existing = this.enhancementTargets[slot];
+    if (existing?.width === width && existing.height === height) return existing;
+    this.deleteRenderTarget(existing);
+    const next = this.createRenderTarget(gl, width, height);
+    this.enhancementTargets[slot] = next;
+    return next;
+  }
+
+  private createRenderTarget(gl: WebGL2RenderingContext, width: number, height: number): RenderTarget | null {
     const texture = gl.createTexture();
     if (!texture) return null;
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -587,8 +603,7 @@ export class VideoRenderer {
       return null;
     }
 
-    this.stageTarget = { fbo, texture, width, height };
-    return this.stageTarget;
+    return { fbo, texture, width, height };
   }
 
   private deleteRenderTarget(target: RenderTarget | null): void {

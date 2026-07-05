@@ -65,7 +65,7 @@ out vec4 outColor;
 // i.e. ~this many codes (~5%), masked by motion. Raising it further buys
 // nothing; lowering it re-introduces flicker on fine static detail. Validate
 // changes against low-contrast slow motion (scrolling credits, dark pans).
-const float WEAVE_TOLERANCE = 12.0;
+const float WEAVE_TOLERANCE = 10.0;
 
 // BT.709 luma/chroma split (only mixed and unmixed inside the shader, so the
 // exact matrix does not matter for the round trip)

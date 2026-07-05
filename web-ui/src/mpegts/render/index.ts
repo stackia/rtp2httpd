@@ -1,5 +1,6 @@
 import "./filters/bwdif";
 import "./filters/passthrough";
+import "./filters/sharpen";
 import Log from "../utils/logger";
 import { type DetectorVerdict, InterlaceDetector, isRenderResolutionEligible } from "./interlace-detector";
 import { type FieldOrder, type RenderStageName, VideoRenderer } from "./renderer";
@@ -278,7 +279,6 @@ export function createVideoRenderPipeline(
       detector.reset();
       renderer.setFieldOrder(fieldOrder);
       renderer.setStage("passthrough");
-      renderer.resetPictureEnhancementHistory();
       renderer.clearCanvas();
       apply();
     },
