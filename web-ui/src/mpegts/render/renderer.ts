@@ -2,7 +2,7 @@ import Log from "../utils/logger";
 import { createFilter, type RenderParams, type VideoFilter } from "./filters/types";
 import { FsrPresenter } from "./fsr";
 import { isRenderResolutionEligible } from "./interlace-detector";
-import { BicubicPresenter, PassthroughPresenter, type Presenter } from "./presenters";
+import { PassthroughPresenter, type Presenter } from "./presenters";
 
 const TAG = "VideoRenderer";
 
@@ -69,7 +69,7 @@ export class VideoRenderer {
 
   private passthroughPresenter: PassthroughPresenter | null = null;
   private enhancementFilters: VideoFilter[] = [];
-  /** FSR (EASU+RCAS) upscale presenter, or BicubicPresenter if FSR failed to compile. */
+  /** FSR (EASU+RCAS) upscale presenter for the enhancement path. */
   private upscalePresenter: Presenter | null = null;
   /** Ping-pong targets for the enhancement filter list (allocated lazily). */
   private enhancementTargets: [RenderTarget | null, RenderTarget | null] = [null, null];
@@ -326,9 +326,9 @@ export class VideoRenderer {
    * Lazily build the enhancement filter list and the upscale presenter. All
    * succeed or none are kept: a partial chain would silently change the look.
    *
-   * The upscale presenter prefers FSR 1 (EASU+RCAS); if it fails to compile
-   * (unsupported driver quirk, etc.) this falls back to the Catmull-Rom
-   * bicubic presenter before giving up on enhancement entirely.
+   * The upscale presenter is FSR 1 (EASU+RCAS); if it fails to compile
+   * (unsupported driver quirk, etc.) enhancement is disabled and the raw
+   * passthrough presenter is used instead.
    */
   private ensureEnhancementResources(): boolean {
     if (this.upscalePresenter) return true;
@@ -351,15 +351,8 @@ export class VideoRenderer {
         filters.push(filter);
       }
 
-      let presenter: Presenter = new FsrPresenter();
-      try {
-        presenter.init(gl);
-      } catch (err) {
-        Log.w(TAG, "FSR upscale presenter failed to init; falling back to bicubic:", err);
-        presenter.destroy(gl);
-        presenter = new BicubicPresenter();
-        presenter.init(gl);
-      }
+      const presenter: Presenter = new FsrPresenter();
+      presenter.init(gl);
 
       this.enhancementFilters = filters;
       this.upscalePresenter = presenter;
@@ -675,7 +668,16 @@ export class VideoRenderer {
     if (!presenter) return;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvasWidth, canvasHeight);
-    presenter.present(gl, dest.texture, dest.width, dest.height, canvasWidth, canvasHeight);
+    try {
+      presenter.present(gl, dest.texture, dest.width, dest.height, canvasWidth, canvasHeight);
+    } catch (err) {
+      // Never let a failed present escape into the rAF present clock. Fall back
+      // to a plain passthrough blit so the field still reaches the canvas.
+      Log.w(TAG, "Second field enhancement present failed; falling back to passthrough:", err);
+      if (presenter !== this.passthroughPresenter) {
+        this.passthroughPresenter?.present(gl, dest.texture, dest.width, dest.height, canvasWidth, canvasHeight);
+      }
+    }
   }
 
   /** Render `field` of the newest frame through the full chain and present it immediately. */

@@ -343,18 +343,29 @@ export class FsrPresenter implements Presenter {
     dstWidth: number,
     dstHeight: number,
   ): void {
-    if (!this.easuProgram || !this.rcasProgram) return;
+    if (!this.easuProgram || !this.rcasProgram) {
+      throw new Error("FsrPresenter.present() called before init()");
+    }
+
+    // Respect the framebuffer the caller bound (Presenter contract), for both
+    // the upscaling and native-size paths: RCAS renders into it last, with
+    // EASU rendering into the intermediate target in between.
+    const outputFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
 
     const upscaling = dstWidth > srcWidth + 0.5 || dstHeight > srcHeight + 0.5;
     if (!upscaling) {
-      this.runRcas(gl, texture, dstWidth, dstHeight, null);
+      this.runRcas(gl, texture, dstWidth, dstHeight, outputFbo);
       return;
     }
 
+    // A failed intermediate allocation (e.g. a 4K target on a device with a
+    // smaller max texture/FBO size, or under GPU memory pressure) must surface
+    // so the caller can run its passthrough fallback instead of treating the
+    // present as successful and leaving the canvas blank or stale.
     const target = this.ensureIntermediateTarget(gl, dstWidth, dstHeight);
-    if (!target) return;
-
-    const outputFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
+    if (!target) {
+      throw new Error(`FsrPresenter failed to allocate ${dstWidth}x${dstHeight} intermediate target`);
+    }
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
     gl.viewport(0, 0, dstWidth, dstHeight);
@@ -377,7 +388,6 @@ export class FsrPresenter implements Presenter {
     height: number,
     targetFbo: WebGLFramebuffer | null,
   ): void {
-    if (!this.rcasProgram) return;
     gl.bindFramebuffer(gl.FRAMEBUFFER, targetFbo);
     gl.viewport(0, 0, width, height);
     // biome-ignore lint/correctness/useHookAtTopLevel: WebGL useProgram, not a React hook
