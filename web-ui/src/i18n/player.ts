@@ -98,6 +98,8 @@ const base: TranslationDict = {
   themeLight: "Light",
   themeDark: "Dark",
   seamlessSwitch: "Seamless switch",
+  videoProcessing: "Video Processing",
+  resolutionLimitHint: "1080p and below only",
   deinterlace: "Auto Deinterlacing",
   pictureEnhancement: "Picture Enhancement",
 };
@@ -198,6 +200,8 @@ const zhHans: TranslationDict = {
   themeLight: "浅色",
   themeDark: "深色",
   seamlessSwitch: "无缝换台",
+  videoProcessing: "画质处理",
+  resolutionLimitHint: "仅 1080P 及以下生效",
   deinterlace: "自动反交错",
   pictureEnhancement: "画质增强",
 };
@@ -299,6 +303,8 @@ const zhHant: TranslationDict = {
   themeLight: "淺色",
   themeDark: "深色",
   seamlessSwitch: "無縫換台",
+  videoProcessing: "畫質處理",
+  resolutionLimitHint: "僅 1080P 及以下生效",
   deinterlace: "自動反交錯",
   pictureEnhancement: "畫質增強",
 };

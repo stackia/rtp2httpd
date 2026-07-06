@@ -118,24 +118,34 @@ function SettingsDropdownComponent({
               />
             </div>
 
-            {/* Automatic deinterlacing (heuristic detection, ≤1080 content only) */}
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-medium text-muted-foreground">{t("deinterlace")}</span>
-              <Switch
-                checked={autoDeinterlace}
-                onCheckedChange={onAutoDeinterlaceChange}
-                aria-label={t("deinterlace")}
-              />
-            </div>
+            {/* Video processing group: deinterlace + picture enhancement.
+                Both only take effect for 1080p-and-below content, so the
+                resolution caveat is stated once as a shared group note. */}
+            <div className="space-y-3 border-t border-border pt-3">
+              <div className="px-1">
+                <span className="block text-xs font-medium text-muted-foreground">{t("videoProcessing")}</span>
+                <span className="block text-[11px] text-muted-foreground/70 mt-0.5">{t("resolutionLimitHint")}</span>
+              </div>
 
-            {/* Picture enhancement (WebGL post-processing inside the render gate) */}
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-medium text-muted-foreground">{t("pictureEnhancement")}</span>
-              <Switch
-                checked={pictureEnhancement}
-                onCheckedChange={onPictureEnhancementChange}
-                aria-label={t("pictureEnhancement")}
-              />
+              {/* Automatic deinterlacing (heuristic detection, ≤1080 content only) */}
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-medium text-muted-foreground">{t("deinterlace")}</span>
+                <Switch
+                  checked={autoDeinterlace}
+                  onCheckedChange={onAutoDeinterlaceChange}
+                  aria-label={t("deinterlace")}
+                />
+              </div>
+
+              {/* Picture enhancement (WebGL post-processing inside the render gate) */}
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-medium text-muted-foreground">{t("pictureEnhancement")}</span>
+                <Switch
+                  checked={pictureEnhancement}
+                  onCheckedChange={onPictureEnhancementChange}
+                  aria-label={t("pictureEnhancement")}
+                />
+              </div>
             </div>
           </div>
         </div>
