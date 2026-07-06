@@ -27,6 +27,17 @@ export function isPictureInPictureSupported(): boolean {
   return getDocumentPictureInPicture() !== null || Boolean(document.pictureInPictureEnabled);
 }
 
+/**
+ * Document Picture-in-Picture (`requestWindow`) is only permitted from a top-level
+ * browsing context. When the player runs inside an iframe the call rejects with a
+ * `NotAllowedError` DOMException ("Opening a PiP window is only allowed from a
+ * top-level browsing context"). Detect that so callers can fall back to the
+ * traditional video Picture-in-Picture API.
+ */
+export function isDocumentPictureInPictureBlockedError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "NotAllowedError";
+}
+
 export function isAnyPictureInPictureActive(): boolean {
   return !!(document.pictureInPictureElement || getDocumentPictureInPicture()?.window);
 }

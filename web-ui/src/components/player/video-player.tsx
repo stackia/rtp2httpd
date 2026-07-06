@@ -7,6 +7,7 @@ import {
   getDocumentPictureInPicture,
   getDocumentPiPWindowOptions,
   isAnyPictureInPictureActive,
+  isDocumentPictureInPictureBlockedError,
   isPictureInPictureSupported,
   setupDocumentPiPWindow,
 } from "../../lib/document-picture-in-picture";
@@ -1302,6 +1303,13 @@ export function VideoPlayer({
     }
   });
 
+  const requestVideoPictureInPicture = useEffectEvent(async (video: HTMLVideoElement) => {
+    if (!document.pictureInPictureEnabled || !video.requestPictureInPicture) {
+      return;
+    }
+    await video.requestPictureInPicture();
+  });
+
   const handlePiPToggle = useEffectEvent(async () => {
     const video = getActiveVideo();
     if (!video) return;
@@ -1319,7 +1327,19 @@ export function VideoPlayer({
         if (!playerElement) return;
 
         const pipWindowOptions = getDocumentPiPWindowOptions(playerElement);
-        const pipWindow = await documentPictureInPicture.requestWindow(pipWindowOptions);
+        let pipWindow: Window;
+        try {
+          pipWindow = await documentPictureInPicture.requestWindow(pipWindowOptions);
+        } catch (err) {
+          // Document PiP is only allowed from a top-level browsing context. When the
+          // player is embedded in an iframe, requestWindow rejects with NotAllowedError —
+          // fall back to the traditional video Picture-in-Picture API instead.
+          if (isDocumentPictureInPictureBlockedError(err)) {
+            await requestVideoPictureInPicture(video);
+            return;
+          }
+          throw err;
+        }
         openedDocumentPiPWindow = pipWindow;
         documentPiPWindowRef.current = pipWindow;
         setupDocumentPiPWindow(pipWindow);
@@ -1331,11 +1351,7 @@ export function VideoPlayer({
         return;
       }
 
-      if (!document.pictureInPictureEnabled || !video.requestPictureInPicture) {
-        return;
-      }
-
-      await video.requestPictureInPicture();
+      await requestVideoPictureInPicture(video);
     } catch (err) {
       const pipWindow = openedDocumentPiPWindow ?? documentPiPWindowRef.current;
       restoreDocumentPiPPlayer();
