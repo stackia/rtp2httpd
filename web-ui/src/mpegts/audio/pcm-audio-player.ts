@@ -988,19 +988,22 @@ export class PCMAudioPlayer {
 
   /** Remove buffered audio that is too far behind the current playback position.
    *  Same strategy as MSE SourceBuffer cleanup: relative to currentTime.
-   *  Outside ACTIVE the video clock may be frozen (background free-run), so the
-   *  audio playhead is the reference — otherwise the buffer grows unbounded. */
+   *  Outside ACTIVE, video.currentTime may be frozen (background free-run —
+   *  exactly the case motivating this state), so it must not be the fallback
+   *  reference: that would stop advancing and let the buffer grow unbounded.
+   *  Prefer the live audio playhead, then the newest buffered timestamp —
+   *  both keep advancing as data arrives even if every clock is stalled. */
   private cleanupBuffer(): void {
     if (this.audioBuffer.length === 0 || !this.videoElement) return;
 
-    const videoTime =
+    const referenceTime =
       this.syncState === "active"
         ? this.videoElement.currentTime
-        : (this.audioStreamTimeNow() ?? this.videoElement.currentTime);
+        : (this.audioStreamTimeNow() ?? this.audioBuffer[this.audioBuffer.length - 1].endTime);
 
-    if (videoTime - this.audioBuffer[0].time < this.config.bufferCleanupMaxBackward) return;
+    if (referenceTime - this.audioBuffer[0].time < this.config.bufferCleanupMaxBackward) return;
 
-    const cutoff = videoTime - this.config.bufferCleanupMinBackward;
+    const cutoff = referenceTime - this.config.bufferCleanupMinBackward;
     let removeCount = 0;
     for (let i = 0; i < this.audioBuffer.length; i++) {
       if (this.audioBuffer[i].endTime < cutoff) {
@@ -1055,6 +1058,16 @@ export class PCMAudioPlayer {
     }
 
     this.refillPendingFromBuffer(targetTime);
+    if (this.pendingChunks.length === 0) {
+      // findChunkIndexByTime clamps to the nearest chunk instead of returning
+      // -1 for a target before/after all buffered data (e.g. the video clock
+      // moved outside the retained window during a long background stay), so
+      // startIndex >= 0 above does not guarantee targetTime is covered. Treat
+      // "nothing to schedule" the same as "not in buffer" so callers (notably
+      // completeRecovery) escalate instead of silently leaving audio muted.
+      Log.v(TAG, "Resync target not covered by buffer, waiting for new data");
+      return false;
+    }
     Log.v(TAG, `Resync at ${targetTime.toFixed(3)}s, refilled ${this.pendingChunks.length} chunks`);
     this.pump();
     return true;
