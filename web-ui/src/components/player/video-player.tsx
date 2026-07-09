@@ -1,6 +1,14 @@
 import { clsx } from "clsx";
 import { Play } from "lucide-react";
-import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import {
@@ -386,8 +394,6 @@ export function VideoPlayer({
     }, 3000);
   }, []);
 
-  // Wake / keep-alive: mouseenter + mousemove (including touch-synthesized move on iOS).
-  // Auto-hide is timer-only.
   const showControlsImmediately = useCallback(() => {
     setShowControls(true);
     resetControlsTimer();
@@ -400,6 +406,37 @@ export function VideoPlayer({
     }
     setShowControls(false);
   }, []);
+
+  // Hover model for pointers that have a real hover state (mouse / pen):
+  // enter or move shows controls and resets the 3s idle timer, leaving hides them.
+  // Touch has no hover — taps synthesize compatibility mouse events that would
+  // otherwise race enter/leave — so we ignore touch here and let the click
+  // handler own toggling for that input type. No conflict detection needed.
+  const handlePointerHover = useCallback(
+    (event: ReactPointerEvent) => {
+      if (event.pointerType === "touch") return;
+      showControlsImmediately();
+    },
+    [showControlsImmediately],
+  );
+
+  const handlePointerLeave = useCallback(
+    (event: ReactPointerEvent) => {
+      if (event.pointerType === "touch") return;
+      hideControlsImmediately();
+    },
+    [hideControlsImmediately],
+  );
+
+  // Click / tap anywhere on the player surface toggles controls. On touch this is
+  // the sole visibility control; on mouse it supplements hover (e.g. tap to dismiss).
+  const handleSurfaceClick = useCallback(() => {
+    if (showControls) {
+      hideControlsImmediately();
+    } else {
+      showControlsImmediately();
+    }
+  }, [showControls, hideControlsImmediately, showControlsImmediately]);
 
   // Start auto-hide timer on mount
   useEffect(() => {
@@ -1399,8 +1436,9 @@ export function VideoPlayer({
         isDocumentPiP ? "h-screen min-h-screen aspect-auto" : "md:aspect-auto md:h-full",
         !showControls && "cursor-none",
       )}
-      onMouseEnter={showControlsImmediately}
-      onMouseMove={showControlsImmediately}
+      onPointerEnter={handlePointerHover}
+      onPointerMove={handlePointerHover}
+      onPointerLeave={handlePointerLeave}
     >
       {/* Player area sizes the 16:9 frame via container queries; sources stretch to 16:9 inside it. */}
       <div className="relative aspect-video h-auto max-h-full w-full max-w-full overflow-hidden [@container_video_(max-aspect-ratio:_16/9)]:h-auto [@container_video_(max-aspect-ratio:_16/9)]:w-full [@container_video_(min-aspect-ratio:_16/9)]:h-full [@container_video_(min-aspect-ratio:_16/9)]:w-auto">
@@ -1421,6 +1459,7 @@ export function VideoPlayer({
               playsInline
               webkit-playsinline="true"
               x5-playsinline="true"
+              onClick={visibleSlotId === slotId ? handleSurfaceClick : undefined}
             />
             <canvas
               ref={slotId === "a" ? slotACanvasRef : slotBCanvasRef}
