@@ -3,7 +3,10 @@
  *
  * createStore<T>(key, defaultValue) returns a [get, save] tuple that handles
  * JSON serialization, error handling, and backward-compatible reads.
+ * defaultValue may be a value or a lazy getter (e.g. platform-dependent defaults).
  */
+
+import { isPerformanceConstrainedDevice } from "./platform";
 
 function cloneDefaultValue<T>(value: T): T {
   if (value === null || typeof value !== "object") {
@@ -12,22 +15,26 @@ function cloneDefaultValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function createStore<T>(key: string, defaultValue: T): [get: () => T, save: (value: T) => void] {
-  const defaultSnapshot = JSON.stringify(defaultValue);
+function createStore<T>(
+  key: string,
+  defaultValue: T | (() => T),
+): [get: () => T, save: (value: T) => void] {
+  const resolveDefault = (): T =>
+    typeof defaultValue === "function" ? (defaultValue as () => T)() : defaultValue;
 
   return [
     (): T => {
       try {
         const raw = localStorage.getItem(key);
-        if (raw === null) return cloneDefaultValue(defaultValue);
+        if (raw === null) return cloneDefaultValue(resolveDefault());
         return JSON.parse(raw) as T;
       } catch {
-        return cloneDefaultValue(defaultValue);
+        return cloneDefaultValue(resolveDefault());
       }
     },
     (value: T): void => {
       try {
-        if (JSON.stringify(value) === defaultSnapshot) {
+        if (JSON.stringify(value) === JSON.stringify(resolveDefault())) {
           localStorage.removeItem(key);
         } else {
           localStorage.setItem(key, JSON.stringify(value));
@@ -42,11 +49,17 @@ export const [getLastChannelId, saveLastChannelId] = createStore<string | null>(
   null,
 );
 export const [getSidebarVisible, saveSidebarVisible] = createStore("rtp2httpd-player-sidebar-visible", true);
-export const [getSeamlessSwitch, saveSeamlessSwitch] = createStore("rtp2httpd-player-seamless-switch", true);
-export const [getAutoDeinterlace, saveAutoDeinterlace] = createStore("rtp2httpd-player-auto-deinterlace", true);
+export const [getSeamlessSwitch, saveSeamlessSwitch] = createStore(
+  "rtp2httpd-player-seamless-switch",
+  () => !isPerformanceConstrainedDevice(),
+);
+export const [getAutoDeinterlace, saveAutoDeinterlace] = createStore(
+  "rtp2httpd-player-auto-deinterlace",
+  () => !isPerformanceConstrainedDevice(),
+);
 export const [getPictureEnhancement, savePictureEnhancement] = createStore(
   "rtp2httpd-player-picture-enhancement",
-  true,
+  () => !isPerformanceConstrainedDevice(),
 );
 export const [getVolume, saveVolume] = createStore("rtp2httpd-player-volume", 1);
 export const [getMuted, saveMuted] = createStore("rtp2httpd-player-muted", false);
