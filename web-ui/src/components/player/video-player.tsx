@@ -42,13 +42,9 @@ import type { Channel, EPGProgram } from "../../types/player";
 import { PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 import { PlayerControls } from "./player-controls";
 
-/** Window after touchstart during which synthesized mouse events are ignored. */
+/** Ignore WebKit mouse events synthesized from a finger tap (they race click toggle). */
 const TOUCH_MOUSE_SUPPRESS_MS = 700;
 
-/**
- * True for mouse events that WebKit synthesizes from a finger tap.
- * Prefer InputDeviceCapabilities when present; otherwise use a recent touchstart timestamp.
- */
 function isTouchDerivedMouseEvent(event: ReactMouseEvent, lastTouchAt: number): boolean {
   const native = event.nativeEvent as MouseEvent & {
     sourceCapabilities?: { firesTouchEvents?: boolean } | null;
@@ -430,23 +426,9 @@ export function VideoPlayer({
     setShowControls(false);
   }, []);
 
+  // Desktop hover wakes controls; touch-synthesized mousemove is ignored so it
+  // cannot race the click toggle. Auto-hide is timer-only (no mouseleave hide).
   const handlePlayerMouseMove = useCallback(
-    (event: ReactMouseEvent) => {
-      if (isTouchDerivedMouseEvent(event, lastTouchAtRef.current)) return;
-      showControlsImmediately();
-    },
-    [showControlsImmediately],
-  );
-
-  const handlePlayerMouseLeave = useCallback(
-    (event: ReactMouseEvent) => {
-      if (isTouchDerivedMouseEvent(event, lastTouchAtRef.current)) return;
-      hideControlsImmediately();
-    },
-    [hideControlsImmediately],
-  );
-
-  const handleControlsMouseEnter = useCallback(
     (event: ReactMouseEvent) => {
       if (isTouchDerivedMouseEvent(event, lastTouchAtRef.current)) return;
       showControlsImmediately();
@@ -1467,7 +1449,6 @@ export function VideoPlayer({
         !showControls && "cursor-none",
       )}
       onMouseMove={handlePlayerMouseMove}
-      onMouseLeave={handlePlayerMouseLeave}
       onTouchStart={markTouchInteraction}
     >
       {/* Player area sizes the 16:9 frame via container queries; sources stretch to 16:9 inside it. */}
@@ -1600,7 +1581,6 @@ export function VideoPlayer({
               ? "opacity-100"
               : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
           )}
-          onMouseEnter={handleControlsMouseEnter}
         >
           <PlayerControls
             channel={channel}
