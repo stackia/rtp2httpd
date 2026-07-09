@@ -1,6 +1,14 @@
 import { clsx } from "clsx";
 import { Play } from "lucide-react";
-import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import {
+  type MouseEvent as ReactMouseEvent,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import {
@@ -33,6 +41,23 @@ import mp2WasmUrl from "../../mpegts/wasm/minimp3/mp2_decoder.wasm?url";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 import { PlayerControls } from "./player-controls";
+
+/** Window after touchstart during which synthesized mouse events are ignored. */
+const TOUCH_MOUSE_SUPPRESS_MS = 700;
+
+/**
+ * True for mouse events that WebKit synthesizes from a finger tap.
+ * Prefer InputDeviceCapabilities when present; otherwise use a recent touchstart timestamp.
+ */
+function isTouchDerivedMouseEvent(event: ReactMouseEvent, lastTouchAt: number): boolean {
+  const native = event.nativeEvent as MouseEvent & {
+    sourceCapabilities?: { firesTouchEvents?: boolean } | null;
+  };
+  if (native.sourceCapabilities?.firesTouchEvents) {
+    return true;
+  }
+  return Date.now() - lastTouchAt < TOUCH_MOUSE_SUPPRESS_MS;
+}
 
 interface VideoPlayerProps {
   channel: Channel | null;
@@ -254,9 +279,12 @@ export function VideoPlayer({
   const [isLive, setIsLive] = useState(true);
   const [needsUserInteraction, setNeedsUserInteraction] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  const showControlsRef = useRef(showControls);
   const [isPiP, setIsPiP] = useState(false);
   const [isDocumentPiP, setIsDocumentPiP] = useState(false);
   const hideControlsTimeoutRef = useRef<number>(0);
+  /** Ignore mouse move/leave synthesized from touch (iOS Safari wakes then immediately hides controls). */
+  const lastTouchAtRef = useRef(0);
   const [retryCount, setRetryCount] = useState(0);
   const [retryBaseline, setRetryBaseline] = useState(0);
   /** Synchronous flag: segments reload is error recovery, not a user/channel switch. */
@@ -382,11 +410,13 @@ export function VideoPlayer({
       window.clearTimeout(hideControlsTimeoutRef.current);
     }
     hideControlsTimeoutRef.current = window.setTimeout(() => {
+      showControlsRef.current = false;
       setShowControls(false);
     }, 3000);
   }, []);
 
   const showControlsImmediately = useCallback(() => {
+    showControlsRef.current = true;
     setShowControls(true);
     resetControlsTimer();
   }, [resetControlsTimer]);
@@ -396,7 +426,36 @@ export function VideoPlayer({
       window.clearTimeout(hideControlsTimeoutRef.current);
       hideControlsTimeoutRef.current = 0;
     }
+    showControlsRef.current = false;
     setShowControls(false);
+  }, []);
+
+  const handlePlayerMouseMove = useCallback(
+    (event: ReactMouseEvent) => {
+      if (isTouchDerivedMouseEvent(event, lastTouchAtRef.current)) return;
+      showControlsImmediately();
+    },
+    [showControlsImmediately],
+  );
+
+  const handlePlayerMouseLeave = useCallback(
+    (event: ReactMouseEvent) => {
+      if (isTouchDerivedMouseEvent(event, lastTouchAtRef.current)) return;
+      hideControlsImmediately();
+    },
+    [hideControlsImmediately],
+  );
+
+  const handleControlsMouseEnter = useCallback(
+    (event: ReactMouseEvent) => {
+      if (isTouchDerivedMouseEvent(event, lastTouchAtRef.current)) return;
+      showControlsImmediately();
+    },
+    [showControlsImmediately],
+  );
+
+  const markTouchInteraction = useCallback(() => {
+    lastTouchAtRef.current = Date.now();
   }, []);
 
   // Start auto-hide timer on mount
@@ -1242,12 +1301,14 @@ export function VideoPlayer({
   }, [isDocumentPiP]);
 
   const handleVideoClick = useCallback(() => {
-    if (showControls) {
+    // Use the ref so a touch-synthesized mousemove that already scheduled a show
+    // cannot race a stale closed-over showControls and double-toggle.
+    if (showControlsRef.current) {
       hideControlsImmediately();
     } else {
       showControlsImmediately();
     }
-  }, [showControls, hideControlsImmediately, showControlsImmediately]);
+  }, [hideControlsImmediately, showControlsImmediately]);
 
   const handleMuteToggle = useEffectEvent(() => {
     const video = getActiveVideo();
@@ -1405,8 +1466,9 @@ export function VideoPlayer({
         isDocumentPiP ? "h-screen min-h-screen aspect-auto" : "md:aspect-auto md:h-full",
         !showControls && "cursor-none",
       )}
-      onMouseMove={showControlsImmediately}
-      onMouseLeave={hideControlsImmediately}
+      onMouseMove={handlePlayerMouseMove}
+      onMouseLeave={handlePlayerMouseLeave}
+      onTouchStart={markTouchInteraction}
     >
       {/* Player area sizes the 16:9 frame via container queries; sources stretch to 16:9 inside it. */}
       <div className="relative aspect-video h-auto max-h-full w-full max-w-full overflow-hidden [@container_video_(max-aspect-ratio:_16/9)]:h-auto [@container_video_(max-aspect-ratio:_16/9)]:w-full [@container_video_(min-aspect-ratio:_16/9)]:h-full [@container_video_(min-aspect-ratio:_16/9)]:w-auto">
@@ -1457,7 +1519,7 @@ export function VideoPlayer({
         <div
           className={clsx(
             "absolute top-4 right-4 md:top-8 md:right-8 z-10 flex flex-col gap-2 md:gap-3 items-end transition-opacity duration-300",
-            showControls ? "opacity-100" : "opacity-0",
+            showControls ? "opacity-100" : "opacity-0 pointer-events-none",
           )}
         >
           <div
@@ -1534,9 +1596,11 @@ export function VideoPlayer({
           role="toolbar"
           className={clsx(
             "absolute bottom-0 left-0 right-0 z-10 transition-opacity duration-300",
-            showControls ? "opacity-100" : "opacity-0 has-focus-visible:opacity-100",
+            showControls
+              ? "opacity-100"
+              : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
           )}
-          onMouseEnter={showControlsImmediately}
+          onMouseEnter={handleControlsMouseEnter}
         >
           <PlayerControls
             channel={channel}
