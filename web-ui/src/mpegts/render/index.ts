@@ -8,11 +8,6 @@ const TAG = "VideoRenderPipeline";
 export interface VideoRenderPipeline {
   setAutoDeinterlaceEnabled(enabled: boolean): void;
   setPictureEnhancementEnabled(enabled: boolean): void;
-  /**
-   * Optional codec-level interlace hint from demuxer SPS/VUI metadata.
-   * Used only to accelerate detection cadence; the GPU heuristic remains authoritative.
-   */
-  setMayBeInterlacedHint(mayBeInterlaced: boolean | null): void;
   /** Forget the detection verdict; call on channel/source switch. */
   reset(): void;
   /** True while the WebGL canvas is the visible video output. */
@@ -26,15 +21,17 @@ export function isVideoRenderSupported(): boolean {
 
 /** Frames sampled back-to-back right after start/reset, before the steady interval kicks in. */
 const FAST_SAMPLE_COUNT = 3;
-/** Steady-state gap between detection samples when content may be interlaced. */
+/** Steady-state gap between detection samples. */
 const SAMPLE_INTERVAL_MS = 500;
 /**
- * After the source has been confidently progressive for a while, sample less often.
- * Detection still runs (so a mid-stream interlaced switch can be caught), but the
- * GPU marker/reduction chain is no longer a steady ~2 Hz tax on mobile SoCs.
+ * After the GPU heuristic has been confidently progressive for a while, sample
+ * less often. Codec `mayBeInterlaced` metadata is intentionally ignored — it is
+ * often wrong (progressive-flagged combed streams, etc.), so detection always
+ * runs from the heuristic. The slower cadence still catches mid-stream switches
+ * without a steady ~2 Hz GPU tax on mobile SoCs.
  */
 const PROGRESSIVE_SAMPLE_INTERVAL_MS = 2000;
-/** Consecutive progressive verdicts before switching to the slow sample cadence. */
+/** Consecutive progressive heuristic verdicts before switching to the slow cadence. */
 const PROGRESSIVE_CONFIDENCE_SAMPLES = 6;
 
 /**
@@ -65,7 +62,6 @@ export function createVideoRenderPipeline(
     return {
       setAutoDeinterlaceEnabled() {},
       setPictureEnhancementEnabled() {},
-      setMayBeInterlacedHint() {},
       reset() {},
       get active() {
         return false;
@@ -84,8 +80,6 @@ export function createVideoRenderPipeline(
   let interlaced = false;
   let fieldOrder: FieldOrder = "tff";
   let lastEligibility: boolean | null = null;
-  /** Codec metadata hint; null means unknown / not yet received. */
-  let mayBeInterlacedHint: boolean | null = null;
   let progressiveConfidence = 0;
 
   let lastSampleMs = -Infinity;
@@ -121,16 +115,9 @@ export function createVideoRenderPipeline(
     video.videoWidth > 0 && video.videoHeight > 0 ? `${video.videoWidth}x${video.videoHeight}` : "unknown";
 
   const sampleIntervalMs = (): number => {
-    // Codec says interlaced, or we have not yet built progressive confidence: keep the
-    // responsive cadence so field-order voting and first-comb detection stay snappy.
-    if (mayBeInterlacedHint === true || interlaced) {
-      return SAMPLE_INTERVAL_MS;
-    }
-    // Codec metadata says progressive: trust it sooner and drop to the slow cadence
-    // after fewer clean samples (heuristic still runs for falsely-flagged progressive).
-    const needed =
-      mayBeInterlacedHint === false ? Math.min(3, PROGRESSIVE_CONFIDENCE_SAMPLES) : PROGRESSIVE_CONFIDENCE_SAMPLES;
-    if (progressiveConfidence < needed) {
+    // Keep the responsive cadence until the heuristic itself is confident the
+    // source is progressive (or while already interlaced / field-order voting).
+    if (interlaced || progressiveConfidence < PROGRESSIVE_CONFIDENCE_SAMPLES) {
       return SAMPLE_INTERVAL_MS;
     }
     return PROGRESSIVE_SAMPLE_INTERVAL_MS;
@@ -365,19 +352,9 @@ export function createVideoRenderPipeline(
       renderer.setPictureEnhancementEnabled(next);
       apply();
     },
-    setMayBeInterlacedHint(next: boolean | null) {
-      if (mayBeInterlacedHint === next) return;
-      mayBeInterlacedHint = next;
-      // A positive hint should re-arm the fast sample cadence immediately.
-      if (next === true) {
-        progressiveConfidence = 0;
-        lastSampleMs = -Infinity;
-      }
-    },
     reset() {
       interlaced = false;
       fieldOrder = "tff";
-      mayBeInterlacedHint = null;
       resetCadence();
       detector.reset();
       renderer.setFieldOrder(fieldOrder);
