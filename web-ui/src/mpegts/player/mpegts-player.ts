@@ -56,6 +56,17 @@ export function createMpegtsPlayer(
     if (!pcmPlayer) {
       pcmPlayer = new PCMAudioPlayer(config);
       pcmPlayer.onSuspended = () => impl.onAudioSuspended?.();
+      pcmPlayer.onResyncFailed = () => {
+        // Post-background audio recovery failed (video clock never came back,
+        // or drifted past the audio buffer) — the session must be rebuilt.
+        // Route through the normal error path so the app's retry/reload logic
+        // (live edge for live, current position for catchup) takes over.
+        impl.onError?.({
+          category: "media",
+          detail: "AudioResyncFailed",
+          info: "Audio could not re-anchor to the video clock after an interruption",
+        });
+      };
       pcmPlayerInitPromise = pcmPlayer.init();
       pcmPlayer.attachVideo(video);
     }

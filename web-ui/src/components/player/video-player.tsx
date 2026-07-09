@@ -1020,8 +1020,11 @@ export function VideoPlayer({
     // Note: video.paused may still report false in this state.
     const mediaDead = video.error !== null;
     const behindLiveMs = Date.now() - (streamStartTime.getTime() + currentVideoTime * 1000);
+    // Beyond this lag a live-edge reload beats letting live-sync chase at 2x
+    // for tens of seconds; tied to the sync config rather than a magic 10s.
+    const staleLiveMs = (defaultConfig.liveSyncMaxLatency + 5) * 1000;
 
-    if (playMode === "live" && (mediaDead || behindLiveMs > 10000)) {
+    if (playMode === "live" && (mediaDead || behindLiveMs > staleLiveMs)) {
       // Dead session or stale buffer — rebuild the stream at the live edge
       console.log("Reloading at live edge after background suspension");
       shouldAutoPlayRef.current = true;
