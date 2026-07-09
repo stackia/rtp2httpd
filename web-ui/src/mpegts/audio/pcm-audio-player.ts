@@ -218,25 +218,46 @@ export class PCMAudioPlayer {
     this.context.onstatechange = () => {
       const state = this.context?.state as string | undefined;
       Log.v(TAG, `AudioContext state changed to: ${state}`);
+
+      if (state === "interrupted") {
+        // WebKit-only: the OS revoked the audio session (backgrounding, but
+        // also e.g. an incoming call while the tab stays visible — no
+        // visibilitychange in that case). Unambiguous background signal on
+        // its own, independent of visibilitychange ordering.
+        this.cancelChain();
+        this.pendingChunks = [];
+        this.inputCursor = null;
+        this.resetDriftState();
+        this.setSyncState("background");
+        return;
+      }
+
       if (state !== "running") {
-        // Clock frozen ("suspended", or WebKit's "interrupted" when iOS moves
-        // Safari to background). Everything scheduled on it would burst out as
-        // stale audio on resume — drop the chain now, keep the seek buffer.
+        // "suspended": either the pre-first-activation autoplay gate or our
+        // own deliberate suspend() in pause() — neither implies backgrounding,
+        // so syncState is left untouched. Drop the chain so resume doesn't
+        // burst out stale audio.
         this.cancelChain();
         this.pendingChunks = [];
         this.inputCursor = null;
         this.resetDriftState();
         return;
       }
+
+      // state === "running"
       playbackUnlocked = true;
-      // Clock is live again, but video.currentTime is not proven yet (iOS
-      // rebuilds the media pipeline after background) — never anchor here.
-      // BACKGROUND free-runs; RECOVERING anchors on the next timeupdate.
-      if (document.visibilityState === "hidden") {
-        this.setSyncState("background");
+      if (this.syncState === "background") {
+        // Confirmed a real background period happened (via "interrupted"
+        // above, and/or visibilitychange->hidden already set this). Only
+        // anchor once the page is visible too — video.currentTime is not
+        // proven yet while the media pipeline may still be rebuilding.
+        this.setSyncState(document.visibilityState === "hidden" ? "background" : "recovering");
         this.pump();
-      } else {
-        this.setSyncState("recovering");
+      } else if (this.canScheduleAudio()) {
+        // First activation (autoplay gate lifting) or resume from our own
+        // pause() — the video clock was never untrusted; anchor immediately,
+        // same as before the sync state machine existed.
+        this.resyncFromBuffer(this.videoElement?.currentTime ?? 0);
       }
     };
 
