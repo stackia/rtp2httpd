@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 import { Play } from "lucide-react";
 import {
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -428,15 +429,24 @@ export function VideoPlayer({
     [hideControlsImmediately],
   );
 
-  // Click / tap anywhere on the player surface toggles controls. On touch this is
-  // the sole visibility control; on mouse it supplements hover (e.g. tap to dismiss).
-  const handleSurfaceClick = useCallback(() => {
-    if (showControls) {
-      hideControlsImmediately();
-    } else {
-      showControlsImmediately();
-    }
-  }, [showControls, hideControlsImmediately, showControlsImmediately]);
+  // Click / tap toggles controls. The handler lives on the whole player surface (not
+  // just the <video>) so taps on the letterbox bars outside the 16:9 frame — common on
+  // desktop/tablet where the surface is taller/wider than the video — toggle too. We
+  // only act when the click lands on the surface itself or the video element; overlays
+  // (toolbar buttons, channel info) sit above and own their own clicks, so a click that
+  // bubbles up from them is ignored and never dismisses the controls.
+  const handleSurfaceClick = useCallback(
+    (event: ReactMouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (target !== event.currentTarget && target.tagName !== "VIDEO") return;
+      if (showControls) {
+        hideControlsImmediately();
+      } else {
+        showControlsImmediately();
+      }
+    },
+    [showControls, hideControlsImmediately, showControlsImmediately],
+  );
 
   // Start auto-hide timer on mount
   useEffect(() => {
@@ -1428,6 +1438,7 @@ export function VideoPlayer({
 
   const isVideoPiP = isPiP && !isDocumentPiP;
   const playerSurface = (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: surface click only toggles chrome visibility; keyboard users drive the real controls via focusable buttons and global key shortcuts
     <div
       role="application"
       ref={playerSurfaceRef}
@@ -1439,6 +1450,7 @@ export function VideoPlayer({
       onPointerEnter={handlePointerHover}
       onPointerMove={handlePointerHover}
       onPointerLeave={handlePointerLeave}
+      onClick={handleSurfaceClick}
     >
       {/* Player area sizes the 16:9 frame via container queries; sources stretch to 16:9 inside it. */}
       <div className="relative aspect-video h-auto max-h-full w-full max-w-full overflow-hidden [@container_video_(max-aspect-ratio:_16/9)]:h-auto [@container_video_(max-aspect-ratio:_16/9)]:w-full [@container_video_(min-aspect-ratio:_16/9)]:h-full [@container_video_(min-aspect-ratio:_16/9)]:w-auto">
@@ -1459,7 +1471,6 @@ export function VideoPlayer({
               playsInline
               webkit-playsinline="true"
               x5-playsinline="true"
-              onClick={visibleSlotId === slotId ? handleSurfaceClick : undefined}
             />
             <canvas
               ref={slotId === "a" ? slotACanvasRef : slotBCanvasRef}
