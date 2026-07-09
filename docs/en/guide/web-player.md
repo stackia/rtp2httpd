@@ -93,6 +93,22 @@ The built-in web player enables **seamless channel switching** by default. When 
 
 This feature uses dual-slot preloading. Because two video streams are pulled simultaneously for a brief period during channel switching, you may experience stuttering when switching channels if your bandwidth is limited (for example, when accessing rtp2httpd over the public internet), or if the upstream only supports a single multicast stream. In that case, you can manually disable this option in the **Settings** menu (gear icon) at the top-right of the player page by turning off **Seamless switch**. When disabled, the player stops the current stream before loading the new one, using less bandwidth but may show a brief black screen during switching.
 
+## Video Post-Processing (Deinterlace / Picture Enhancement)
+
+The **Video Processing** options in player settings apply WebGL post-processing to already-decoded frames in the browser (1080p and below only):
+
+| Option | Default | Effect |
+| ---- | ---- | ---- |
+| **Auto Deinterlacing** | On | GPU heuristic detects interlaced content; enables BWDIF once confirmed |
+| **Picture Enhancement** | Off | FSR (EASU + RCAS) sharpening / upscaling to the display resolution |
+
+For **progressive** sources, auto deinterlacing only samples at a low rate for detection; the picture still comes from the native `<video>` element and does not run a full WebGL composite every frame. Once interlacing is detected, output switches to the canvas and BWDIF runs (two fields per source frame — roughly 2× the GPU cost of a plain passthrough).
+
+**Picture Enhancement** keeps the canvas path active continuously. Even progressive sources upload a texture and run FSR every frame, which tends to increase heat and battery use on phones. Turn it on only when you want sharpening or upscaling.
+
+> [!TIP]
+> If a phone feels hot, turn off **Picture Enhancement** first. For progressive channels, leaving **Auto Deinterlacing** on usually does not add much heat.
+
 ## Time Placeholders
 
 The built-in web player supports the following time placeholder formats, which can be used in M3U `catchup-source` URLs:

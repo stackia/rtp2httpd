@@ -8,6 +8,11 @@ const TAG = "VideoRenderPipeline";
 export interface VideoRenderPipeline {
   setAutoDeinterlaceEnabled(enabled: boolean): void;
   setPictureEnhancementEnabled(enabled: boolean): void;
+  /**
+   * Optional codec-level interlace hint from demuxer SPS/VUI metadata.
+   * Used only to accelerate detection cadence; the GPU heuristic remains authoritative.
+   */
+  setMayBeInterlacedHint(mayBeInterlaced: boolean | null): void;
   /** Forget the detection verdict; call on channel/source switch. */
   reset(): void;
   /** True while the WebGL canvas is the visible video output. */
@@ -21,8 +26,16 @@ export function isVideoRenderSupported(): boolean {
 
 /** Frames sampled back-to-back right after start/reset, before the steady interval kicks in. */
 const FAST_SAMPLE_COUNT = 3;
-/** Steady-state gap between detection samples. Also guarantees the PBO readback never stalls. */
+/** Steady-state gap between detection samples when content may be interlaced. */
 const SAMPLE_INTERVAL_MS = 500;
+/**
+ * After the source has been confidently progressive for a while, sample less often.
+ * Detection still runs (so a mid-stream interlaced switch can be caught), but the
+ * GPU marker/reduction chain is no longer a steady ~2 Hz tax on mobile SoCs.
+ */
+const PROGRESSIVE_SAMPLE_INTERVAL_MS = 2000;
+/** Consecutive progressive verdicts before switching to the slow sample cadence. */
+const PROGRESSIVE_CONFIDENCE_SAMPLES = 6;
 
 /**
  * Wires the GPU interlace detector to the WebGL renderer for one video/canvas pair.
@@ -30,8 +43,15 @@ const SAMPLE_INTERVAL_MS = 500;
  * The renderer runs only while the decoded frame size is inside the SD/HD render
  * gate AND at least one of auto deinterlacing / picture enhancement is enabled —
  * with both off the pipeline would only reproduce the raw video, so it is skipped
- * like an ineligible resolution. Eligible interlaced frames switch to bwdif when
- * auto deinterlacing is on; otherwise the source frame is presented directly.
+ * like an ineligible resolution.
+ *
+ * When auto deinterlace is on but the source is progressive (and picture
+ * enhancement is off), the pipeline stays in a **detect-only** mode: frames are
+ * still uploaded for the GPU heuristic, but the canvas is not the visible output
+ * (`active = false`). That avoids a continuous texImage2D + present path on the
+ * common progressive-IPTV case while still allowing the detector to flip to bwdif
+ * when combing appears. Eligible interlaced frames switch to bwdif; picture
+ * enhancement keeps the canvas path active even for progressive sources.
  * Larger frames, both features disabled, WebGL failures, or missing rVFC support
  * all fall back to the raw video element by reporting active = false.
  */
@@ -45,6 +65,7 @@ export function createVideoRenderPipeline(
     return {
       setAutoDeinterlaceEnabled() {},
       setPictureEnhancementEnabled() {},
+      setMayBeInterlacedHint() {},
       reset() {},
       get active() {
         return false;
@@ -54,7 +75,7 @@ export function createVideoRenderPipeline(
   }
 
   let autoDeinterlaceEnabled = true;
-  let pictureEnhancementEnabled = true;
+  let pictureEnhancementEnabled = false;
   let active = false;
   let destroyed = false;
   let renderRunning = false;
@@ -63,6 +84,9 @@ export function createVideoRenderPipeline(
   let interlaced = false;
   let fieldOrder: FieldOrder = "tff";
   let lastEligibility: boolean | null = null;
+  /** Codec metadata hint; null means unknown / not yet received. */
+  let mayBeInterlacedHint: boolean | null = null;
+  let progressiveConfidence = 0;
 
   let lastSampleMs = -Infinity;
   let fastPhaseSamples = 0;
@@ -70,6 +94,7 @@ export function createVideoRenderPipeline(
   const resetCadence = () => {
     lastSampleMs = -Infinity;
     fastPhaseSamples = 0;
+    progressiveConfidence = 0;
   };
 
   const setActive = (next: boolean) => {
@@ -78,10 +103,38 @@ export function createVideoRenderPipeline(
     onActiveChange?.(next);
   };
 
+  /**
+   * Canvas must be the visible output when we are actually transforming pixels
+   * (bwdif and/or picture enhancement). Pure detection on progressive content
+   * keeps the raw <video> visible to avoid a continuous GPU present path.
+   */
+  const canvasShouldBeVisible = (): boolean =>
+    renderRunning && ((autoDeinterlaceEnabled && interlaced) || pictureEnhancementEnabled);
+
+  /** Detect-only: upload + sample, skip canvas present / FSR / second-field work. */
+  const detectOnlyMode = (): boolean =>
+    autoDeinterlaceEnabled && !interlaced && !pictureEnhancementEnabled && renderRunning;
+
   const desiredStage = (): RenderStageName => (autoDeinterlaceEnabled && interlaced ? "bwdif" : "passthrough");
 
   const formatVideoSize = () =>
     video.videoWidth > 0 && video.videoHeight > 0 ? `${video.videoWidth}x${video.videoHeight}` : "unknown";
+
+  const sampleIntervalMs = (): number => {
+    // Codec says interlaced, or we have not yet built progressive confidence: keep the
+    // responsive cadence so field-order voting and first-comb detection stay snappy.
+    if (mayBeInterlacedHint === true || interlaced) {
+      return SAMPLE_INTERVAL_MS;
+    }
+    // Codec metadata says progressive: trust it sooner and drop to the slow cadence
+    // after fewer clean samples (heuristic still runs for falsely-flagged progressive).
+    const needed =
+      mayBeInterlacedHint === false ? Math.min(3, PROGRESSIVE_CONFIDENCE_SAMPLES) : PROGRESSIVE_CONFIDENCE_SAMPLES;
+    if (progressiveConfidence < needed) {
+      return SAMPLE_INTERVAL_MS;
+    }
+    return PROGRESSIVE_SAMPLE_INTERVAL_MS;
+  };
 
   const startDetector = () => {
     detector.start();
@@ -118,6 +171,7 @@ export function createVideoRenderPipeline(
     },
   );
   renderer.setPictureEnhancementEnabled(pictureEnhancementEnabled);
+  renderer.setPresentEnabled(true);
 
   renderer.onFrame = (gl) => {
     if (destroyed || !autoDeinterlaceEnabled || !detectorReady) return false;
@@ -125,7 +179,9 @@ export function createVideoRenderPipeline(
 
     const now = performance.now();
     const isFastPhase = fastPhaseSamples < FAST_SAMPLE_COUNT;
-    if (!isFastPhase && !detector.fieldOrderVotingActive && now - lastSampleMs < SAMPLE_INTERVAL_MS) return false;
+    if (!isFastPhase && !detector.fieldOrderVotingActive && now - lastSampleMs < sampleIntervalMs()) {
+      return false;
+    }
     return true;
   };
 
@@ -143,11 +199,19 @@ export function createVideoRenderPipeline(
   };
 
   const detector = new InterlaceDetector((verdict: DetectorVerdict) => {
+    const wasInterlaced = interlaced;
     interlaced = verdict.interlaced;
     fieldOrder = verdict.fieldOrder;
+    if (interlaced) {
+      progressiveConfidence = 0;
+    } else if (!wasInterlaced) {
+      progressiveConfidence++;
+    }
+
     if (destroyed || !renderRunning) return;
     renderer.setFieldOrder(fieldOrder);
     applyRenderStage();
+    syncPresentAndActive();
   });
 
   const syncDetector = () => {
@@ -183,6 +247,21 @@ export function createVideoRenderPipeline(
     startDetector();
   };
 
+  const syncPresentAndActive = () => {
+    if (!renderRunning) {
+      setActive(false);
+      return;
+    }
+    // Detect-only: keep uploading for the heuristic, but do not present to canvas.
+    const present = !detectOnlyMode();
+    const wasPresent = renderer.isPresentEnabled;
+    renderer.setPresentEnabled(present);
+    if (present !== wasPresent) {
+      Log.i(TAG, present ? "Canvas presentation enabled" : "Detect-only mode (raw video visible)");
+    }
+    setActive(canvasShouldBeVisible());
+  };
+
   const applyRenderStage = () => {
     const stage = desiredStage();
     renderer.setFieldOrder(fieldOrder);
@@ -200,11 +279,20 @@ export function createVideoRenderPipeline(
   const startRenderChain = () => {
     if (renderRunning || destroyed) return;
 
+    // Apply detect-only before start() so the first primeCanvas / rVFC frames
+    // do not pay a full present path on progressive sources.
+    const willDetectOnly = autoDeinterlaceEnabled && !interlaced && !pictureEnhancementEnabled;
+    renderer.setPresentEnabled(!willDetectOnly);
+    if (willDetectOnly) {
+      Log.i(TAG, "Starting in detect-only mode (raw video visible until interlaced)");
+    }
+
     const stage = desiredStage();
     if (!renderer.start(stage, fieldOrder)) {
       if (stage !== "passthrough" && renderer.start("passthrough", fieldOrder)) {
         interlaced = false;
       } else {
+        renderer.setPresentEnabled(true);
         setActive(false);
         return;
       }
@@ -213,7 +301,7 @@ export function createVideoRenderPipeline(
     renderRunning = true;
     resetCadence();
     syncDetector();
-    setActive(true);
+    syncPresentAndActive();
   };
 
   const stopRenderChain = () => {
@@ -223,6 +311,7 @@ export function createVideoRenderPipeline(
     }
     renderRunning = false;
     stopDetector("render pipeline stopped");
+    renderer.setPresentEnabled(true);
     renderer.stop();
     setActive(false);
   };
@@ -253,7 +342,7 @@ export function createVideoRenderPipeline(
 
     applyRenderStage();
     syncDetector();
-    setActive(true);
+    syncPresentAndActive();
   };
 
   const handleVideoResize = () => {
@@ -276,9 +365,19 @@ export function createVideoRenderPipeline(
       renderer.setPictureEnhancementEnabled(next);
       apply();
     },
+    setMayBeInterlacedHint(next: boolean | null) {
+      if (mayBeInterlacedHint === next) return;
+      mayBeInterlacedHint = next;
+      // A positive hint should re-arm the fast sample cadence immediately.
+      if (next === true) {
+        progressiveConfidence = 0;
+        lastSampleMs = -Infinity;
+      }
+    },
     reset() {
       interlaced = false;
       fieldOrder = "tff";
+      mayBeInterlacedHint = null;
       resetCadence();
       detector.reset();
       renderer.setFieldOrder(fieldOrder);

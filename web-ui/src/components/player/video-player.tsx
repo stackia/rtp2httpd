@@ -205,7 +205,7 @@ export function VideoPlayer({
   onFullscreenToggle,
   seamlessSwitch = true,
   autoDeinterlace = true,
-  pictureEnhancement = true,
+  pictureEnhancement = false,
   activeSourceIndex = 0,
   onSourceChange,
   onPlaybackStarted,

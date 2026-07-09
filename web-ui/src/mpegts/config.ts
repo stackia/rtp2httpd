@@ -31,7 +31,11 @@ export interface PlayerConfig {
   renderCanvas: HTMLCanvasElement | undefined;
   /** Automatic bwdif deinterlacing enabled for detected interlaced content. @default true */
   autoDeinterlace: boolean;
-  /** Lightweight WebGL picture enhancement enabled inside the render gate. @default true */
+  /**
+   * WebGL picture enhancement (FSR EASU+RCAS) inside the render gate.
+   * Off by default: the per-frame GPU cost is significant on mobile even for
+   * progressive sources. @default false
+   */
   pictureEnhancement: boolean;
 }
 
@@ -52,7 +56,7 @@ export const defaultConfig: PlayerConfig = {
 
   renderCanvas: undefined,
   autoDeinterlace: true,
-  pictureEnhancement: true,
+  pictureEnhancement: false,
 };
 
 export function createDefaultConfig(): PlayerConfig {
