@@ -15,12 +15,8 @@ function cloneDefaultValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function createStore<T>(
-  key: string,
-  defaultValue: T | (() => T),
-): [get: () => T, save: (value: T) => void] {
-  const resolveDefault = (): T =>
-    typeof defaultValue === "function" ? (defaultValue as () => T)() : defaultValue;
+function createStore<T>(key: string, defaultValue: T | (() => T)): [get: () => T, save: (value: T) => void] {
+  const resolveDefault = (): T => (typeof defaultValue === "function" ? (defaultValue as () => T)() : defaultValue);
 
   return [
     (): T => {
