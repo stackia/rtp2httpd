@@ -29,14 +29,6 @@ const ENHANCEMENT_FILTER_NAMES: readonly string[] = [];
  */
 const MAX_UPSCALE_WIDTH = 3840;
 const MAX_UPSCALE_HEIGHT = 2160;
-/**
- * Cap how far FSR may enlarge past the source frame. High-DPR phones often
- * report a device-pixel content box 2–3× the 1080p source; unrestricted
- * upscaling turns every frame into near-4K EASU+RCAS work and dominates
- * mobile thermals while picture enhancement stays on (the product default).
- * CSS compositing still scales the canvas to the display.
- */
-const MAX_UPSCALE_FACTOR = 1.5;
 
 interface RenderTarget {
   fbo: WebGLFramebuffer;
@@ -85,12 +77,6 @@ export class VideoRenderer {
   private enhancementTargets: [RenderTarget | null, RenderTarget | null] = [null, null];
   private pictureEnhancementEnabled = true;
   private enhancementInitFailed = false;
-  /**
-   * When false, the frame loop still runs (for interlace detection uploads/samples)
-   * but skips canvas presentation, FSR, and second-field work. Used by the pipeline's
-   * detect-only mode on progressive sources.
-   */
-  private presentEnabled = true;
   /** Last uploaded frame size; enables texSubImage2D on subsequent uploads. */
   private uploadedWidth = 0;
   private uploadedHeight = 0;
@@ -211,26 +197,6 @@ export class VideoRenderer {
     this.enhancementInitFailed = false;
     if (!enabled) this.teardownEnhancementResources();
     this.primeCanvas();
-  }
-
-  /**
-   * Enable/disable canvas presentation. Detection sampling still works when
-   * presentation is off (detect-only mode); `primeCanvas` is a no-op then.
-   */
-  setPresentEnabled(enabled: boolean): void {
-    if (this.presentEnabled === enabled) return;
-    this.presentEnabled = enabled;
-    if (!enabled) {
-      this.clearPendingSecondField();
-      this.stopPresentClock();
-    } else {
-      this.primeCanvas();
-    }
-  }
-
-  /** Whether canvas presentation is currently enabled. */
-  get isPresentEnabled(): boolean {
-    return this.presentEnabled;
   }
 
   /** Switch the source stage while keeping the frame loop running. */
@@ -554,7 +520,7 @@ export class VideoRenderer {
   }
 
   private primeCanvas(): void {
-    if (!this.running || !this.presentEnabled) return;
+    if (!this.running) return;
     if (this.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
     const gl = this.gl;
     const width = this.video.videoWidth;
@@ -587,25 +553,18 @@ export class VideoRenderer {
     const sampleDue = this.onFrame?.(gl) ?? false;
     const frameDurationMs = this.frameDurationMs(metadata);
 
-    // Detect-only: skip GPU upload/present on frames that are not being sampled.
-    // Interlace detection runs at ~0.5–2 Hz; uploading every decoded frame would
-    // dominate mobile GPU/memory bandwidth for no visible benefit.
-    if (!this.presentEnabled && !sampleDue) return;
-
     if (!this.uploadFrame(gl, width, height)) return;
 
-    if (this.presentEnabled) {
-      if (this.stageName === "bwdif") {
-        // A new frame supersedes any not-yet-presented second field.
-        this.clearPendingSecondField();
-        const firstField = this.fieldOrder === "tff" ? 0 : 1;
-        this.drawCurrentOutput(firstField);
-        if (!this.video.paused && frameDurationMs > 10) {
-          this.queueSecondField(firstField === 0 ? 1 : 0, this.secondFieldPresentAt(now, frameDurationMs));
-        }
-      } else {
-        this.drawCurrentOutput(0);
+    if (this.stageName === "bwdif") {
+      // A new frame supersedes any not-yet-presented second field.
+      this.clearPendingSecondField();
+      const firstField = this.fieldOrder === "tff" ? 0 : 1;
+      this.drawCurrentOutput(firstField);
+      if (!this.video.paused && frameDurationMs > 10) {
+        this.queueSecondField(firstField === 0 ? 1 : 0, this.secondFieldPresentAt(now, frameDurationMs));
       }
+    } else {
+      this.drawCurrentOutput(0);
     }
 
     if (sampleDue && this.onSample) {
@@ -660,10 +619,7 @@ export class VideoRenderer {
   private uploadFrame(gl: WebGL2RenderingContext, width: number, height: number): boolean {
     if (!width || !height) return false;
 
-    // Detect-only only needs the current + previous frame for the comb/motion heuristic.
-    // Cap the ring at 2 so we do not allocate bwdif's 3-deep history while presenting is off.
-    const historyFrames = this.presentEnabled ? (this.stageFilter?.historyFrames ?? 0) : 1;
-    const ringSize = historyFrames + 1;
+    const ringSize = (this.stageFilter?.historyFrames ?? 0) + 1;
     const isNew = this.textures.length < ringSize;
     const target = isNew ? this.createFrameTexture(gl) : this.textures[this.textures.length - 1];
     if (!target) return false;
@@ -687,11 +643,6 @@ export class VideoRenderer {
     }
     if (!isNew) this.textures.pop();
     this.textures.unshift(target);
-    // Drop surplus textures if the ring shrank (e.g. leaving bwdif / entering detect-only).
-    while (this.textures.length > ringSize) {
-      const extra = this.textures.pop();
-      if (extra) gl.deleteTexture(extra);
-    }
     return true;
   }
 
@@ -873,10 +824,8 @@ export class VideoRenderer {
     const size = this.cachedDisplaySize; // already in device pixels
     if (!size) return { width: sourceWidth, height: sourceHeight };
 
-    const maxW = Math.min(MAX_UPSCALE_WIDTH, Math.round(sourceWidth * MAX_UPSCALE_FACTOR));
-    const maxH = Math.min(MAX_UPSCALE_HEIGHT, Math.round(sourceHeight * MAX_UPSCALE_FACTOR));
-    const width = Math.max(sourceWidth, Math.min(Math.round(size.width), maxW));
-    const height = Math.max(sourceHeight, Math.min(Math.round(size.height), maxH));
+    const width = Math.max(sourceWidth, Math.min(Math.round(size.width), MAX_UPSCALE_WIDTH));
+    const height = Math.max(sourceHeight, Math.min(Math.round(size.height), MAX_UPSCALE_HEIGHT));
     return { width, height };
   }
 

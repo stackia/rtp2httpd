@@ -31,7 +31,7 @@ export interface PlayerConfig {
   renderCanvas: HTMLCanvasElement | undefined;
   /** Automatic bwdif deinterlacing enabled for detected interlaced content. @default true */
   autoDeinterlace: boolean;
-  /** WebGL picture enhancement (FSR EASU+RCAS) inside the render gate. @default true */
+  /** Lightweight WebGL picture enhancement enabled inside the render gate. @default true */
   pictureEnhancement: boolean;
 }
 
