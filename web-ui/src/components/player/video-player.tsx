@@ -387,7 +387,7 @@ export function VideoPlayer({
   }, []);
 
   // Wake / keep-alive: mouseenter + mousemove (including touch-synthesized move on iOS).
-  // Auto-hide is timer-only; video click no longer toggles.
+  // Auto-hide is timer-only.
   const showControlsImmediately = useCallback(() => {
     setShowControls(true);
     resetControlsTimer();
