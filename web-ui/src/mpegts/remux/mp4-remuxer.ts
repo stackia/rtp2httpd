@@ -2,6 +2,12 @@ import { isFirefox } from "../utils/browser";
 import { IllegalStateException } from "../utils/exception";
 import Log from "../utils/logger";
 import AAC from "./aac-silent";
+import {
+  DEFAULT_MEDIA_SEGMENT_BATCH_DURATION_MS,
+  DEFAULT_MEDIA_SEGMENT_BATCH_MAX_BYTES,
+  isMediaBatchReady,
+  normalizeMediaBatchLimit,
+} from "./media-batch";
 import MP4 from "./mp4-generator";
 
 interface AudioSample {
@@ -103,6 +109,11 @@ interface DataProducer {
   onTrackMetadata: (...args: unknown[]) => void;
 }
 
+export interface MP4RemuxerOptions {
+  mediaSegmentBatchDurationMs?: number;
+  mediaSegmentBatchMaxBytes?: number;
+}
+
 function writeUint32(data: Uint8Array, offset: number, value: number): void {
   data[offset] = (value >>> 24) & 0xff;
   data[offset + 1] = (value >>> 16) & 0xff;
@@ -140,9 +151,14 @@ class MP4Remuxer {
 
   private _silentAudioMode: boolean;
   private _silentAudioLastDts: number | undefined;
+  private _silentAudioDurationResidual: number;
   private _tsSegmentContinuityNormalization: boolean;
+  private _mediaSegmentBatchDurationMs: number;
+  private _mediaSegmentBatchMaxBytes: number;
+  private _audioMediaSegmentEmitted: boolean;
+  private _videoMediaSegmentEmitted: boolean;
 
-  constructor() {
+  constructor(options: MP4RemuxerOptions = {}) {
     this.TAG = "MP4Remuxer";
 
     this._dtsBase = -1;
@@ -172,7 +188,18 @@ class MP4Remuxer {
 
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
+    this._silentAudioDurationResidual = 0;
     this._tsSegmentContinuityNormalization = false;
+    this._mediaSegmentBatchDurationMs = normalizeMediaBatchLimit(
+      options.mediaSegmentBatchDurationMs,
+      DEFAULT_MEDIA_SEGMENT_BATCH_DURATION_MS,
+    );
+    this._mediaSegmentBatchMaxBytes = normalizeMediaBatchLimit(
+      options.mediaSegmentBatchMaxBytes,
+      DEFAULT_MEDIA_SEGMENT_BATCH_MAX_BYTES,
+    );
+    this._audioMediaSegmentEmitted = false;
+    this._videoMediaSegmentEmitted = false;
   }
 
   destroy(): void {
@@ -180,7 +207,10 @@ class MP4Remuxer {
     this._dtsBaseInited = false;
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
+    this._silentAudioDurationResidual = 0;
     this._tsSegmentContinuityNormalization = false;
+    this._audioMediaSegmentEmitted = false;
+    this._videoMediaSegmentEmitted = false;
     this._audioTiming = this._createTrackTimingState();
     this._videoTiming = this._createTrackTimingState();
     this._pcmTiming = this._createTrackTimingState();
@@ -227,7 +257,12 @@ class MP4Remuxer {
   insertDiscontinuity(): void {
     this._audioNextDts = this._videoNextDts = undefined;
     this._silentAudioLastDts = undefined;
+    this._silentAudioDurationResidual = 0;
     this._videoPresentationOffset = undefined;
+    // Resume quickly after a seek or stream discontinuity instead of waiting
+    // for a complete steady-state batch.
+    this._audioMediaSegmentEmitted = false;
+    this._videoMediaSegmentEmitted = false;
   }
 
   setTsSegmentContinuityNormalization(enabled: boolean): void {
@@ -333,11 +368,28 @@ class MP4Remuxer {
     if (!this._dtsBaseInited) {
       this._calculateDtsBase(audioTrack, videoTrack);
     }
-    if (videoTrack) {
-      this._remuxVideo(videoTrack, force);
+
+    const batchReady =
+      force ||
+      isMediaBatchReady(audioTrack, videoTrack, this._mediaSegmentBatchDurationMs, this._mediaSegmentBatchMaxBytes);
+
+    if (batchReady) {
+      if (videoTrack) {
+        this._remuxVideo(videoTrack, force);
+      }
+      if (audioTrack) {
+        this._remuxAudio(audioTrack, force);
+      }
+      return;
     }
-    if (audioTrack) {
-      this._remuxAudio(audioTrack, force);
+
+    // Preserve the existing startup behavior: each track gets its first
+    // fragment as soon as enough samples exist to determine a duration.
+    if (videoTrack?.samples.length && !this._videoMediaSegmentEmitted) {
+      this._remuxVideo(videoTrack);
+    }
+    if (audioTrack?.samples.length && !this._audioMediaSegmentEmitted) {
+      this._remuxAudio(audioTrack);
     }
   }
 
@@ -370,14 +422,17 @@ class MP4Remuxer {
       this._silentAudioLastDts = videoSamples[0].dts;
     }
 
-    const samples: Array<{ unit: Uint8Array; dts: number; pts: number }> = [];
+    const samples: Array<{ unit: Uint8Array; dts: number; pts: number; duration: number }> = [];
     let mdatBytes = 0;
     let dts = this._silentAudioLastDts;
 
     while (dts < videoEndDts) {
-      samples.push({ unit: silentUnit, dts, pts: dts });
+      const durationWithResidual = frameDuration + this._silentAudioDurationResidual;
+      const duration = Math.max(1, Math.round(durationWithResidual));
+      this._silentAudioDurationResidual = durationWithResidual - duration;
+      samples.push({ unit: silentUnit, dts, pts: dts, duration });
       mdatBytes += silentUnit.byteLength;
-      dts += frameDuration;
+      dts += duration;
     }
 
     this._silentAudioLastDts = dts;
@@ -390,7 +445,6 @@ class MP4Remuxer {
     const mp4Samples: MP4Sample[] = [];
     for (let i = 0; i < samples.length; i++) {
       const sample = samples[i];
-      const sampleDuration = i < samples.length - 1 ? samples[i + 1].dts - sample.dts : frameDuration;
 
       mp4Samples.push({
         dts: sample.dts,
@@ -398,7 +452,7 @@ class MP4Remuxer {
         cts: 0,
         unit: sample.unit,
         size: sample.unit.byteLength,
-        duration: sampleDuration,
+        duration: sample.duration,
         originalDts: sample.dts,
         flags: {
           isLeading: 0,
@@ -443,6 +497,7 @@ class MP4Remuxer {
       type: "audio",
       data: segment.buffer,
     });
+    this._audioMediaSegmentEmitted = true;
   }
 
   private _onTrackMetadataReceived(type: string, metadata: TrackMetadata): void {
@@ -452,9 +507,14 @@ class MP4Remuxer {
     let codec = metadata.codec;
 
     if (type === "audio") {
+      const previousSampleRate = this._audioMeta?.audioSampleRate;
       this._audioMeta = metadata;
+      this._audioMediaSegmentEmitted = false;
       if (metadata.silentAudioMode === true) {
         this._silentAudioMode = true;
+        if (metadata.audioSampleRate !== previousSampleRate) {
+          this._silentAudioDurationResidual = 0;
+        }
       }
       if (metadata.codec === "mp3" && this._mp3UseMpegAudio) {
         // 'audio/mpeg' for MP3 audio track
@@ -467,6 +527,7 @@ class MP4Remuxer {
       }
     } else if (type === "video") {
       this._videoMeta = metadata;
+      this._videoMediaSegmentEmitted = false;
       metabox = MP4.generateInitSegment(metadata as unknown as import("./mp4-generator").MP4Meta);
     } else {
       return;
@@ -659,7 +720,7 @@ class MP4Remuxer {
     let lastSample: AudioSample | null = null;
 
     // Pop the lastSample and waiting for stash
-    if (samples.length > 1) {
+    if (samples.length > 1 && !force) {
       lastSample = samples.pop() as AudioSample;
       mdatBytes -= lastSample.length;
     }
@@ -702,6 +763,7 @@ class MP4Remuxer {
       const originalDts = sample.dts - this._dtsBase;
 
       if (originalDts < -0.001) {
+        mdatBytes -= sample.length;
         continue; //pass the first sample with the invalid dts
       }
 
@@ -790,6 +852,7 @@ class MP4Remuxer {
     }
 
     this._onMediaSegment?.("audio", segment);
+    this._audioMediaSegmentEmitted = true;
   }
 
   private _remuxVideo(videoTrack: DemuxTrack, force?: boolean): void {
@@ -815,7 +878,7 @@ class MP4Remuxer {
     let lastSample: VideoSample | null = null;
 
     // Pop the lastSample and waiting for stash
-    if (samples.length > 1) {
+    if (samples.length > 1 && !force) {
       lastSample = samples.pop() as VideoSample;
       mdatBytes -= lastSample.length;
     }
@@ -946,6 +1009,7 @@ class MP4Remuxer {
       type: "video",
       data: segment.buffer,
     });
+    this._videoMediaSegmentEmitted = true;
     if (this._silentAudioMode) {
       this._generateSilentAudio(mp4Samples);
     }

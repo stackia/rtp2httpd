@@ -267,6 +267,7 @@ class Pipeline {
       if (this._runId !== runId) return;
 
       if (!meta) {
+        this._demuxer?.flushSegmentBoundary();
         this._remuxer?.flushStashedSamples();
         this._callbacks.onLoadingComplete();
         return;
@@ -289,6 +290,10 @@ class Pipeline {
         if (this._fmp4Mode) {
           this._flushFmp4Segment(meta);
         } else if (this._hlsSource) {
+          // Keep each HLS TS input segment as a hard batching boundary. Codec
+          // metadata remains reusable, but all complete media samples must be
+          // emitted before loading the next playlist segment.
+          this._demuxer?.flushSegmentBoundary();
           this._remuxer?.flushStashedSamples();
         } else {
           this._finishTsInputBoundary();

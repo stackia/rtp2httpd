@@ -401,6 +401,7 @@ class TSDemuxer {
     }
 
     if (this.isAudioPid(pid)) {
+      this.flushMediaBeforeTrackDiscontinuity();
       this.resetAudioParserState();
       Log.w(this.TAG, `Audio TS discontinuity on pid ${pid}: ${reason}; resetting audio parser state`);
       this.onTrackDiscontinuity?.("audio");
@@ -1312,7 +1313,7 @@ class TSDemuxer {
     }
     if (this.isInitSegmentDispatched()) {
       if (this.video_track_.length) {
-        this.onDataAvailable?.(null, this.video_track_);
+        this.onDataAvailable?.(null, this.video_track_, true);
       }
     }
   }
@@ -1323,7 +1324,7 @@ class TSDemuxer {
     }
     if (this.isInitSegmentDispatched()) {
       if (this.audio_track_.length) {
-        this.onDataAvailable?.(this.audio_track_, null);
+        this.onDataAvailable?.(this.audio_track_, null, true);
       }
     }
   }

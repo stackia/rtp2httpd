@@ -62,6 +62,11 @@ const RATIO_DRIFT_GAIN = 0.5;
 /** Max stretch ratio deviation used for drift correction. WSOLA preserves
  *  pitch, so a transient 10% tempo offset is inaudible while it converges. */
 const RATIO_DRIFT_MAX = 0.1;
+/** At normal playback speed, let an already-synchronized chain free-run
+ *  inside this deadband so WSOLA can use its ratio=1 memcpy bypass. Enter at
+ *  half the limit and exit at the full limit to avoid toggling at the edge. */
+const WSOLA_BYPASS_ENTER_DRIFT = 0.01;
+const WSOLA_BYPASS_EXIT_DRIFT = 0.02;
 /** Initial/large-drift mode: allow stronger WSOLA correction before falling back to hard resync. */
 const SOFT_SYNC_WINDOW_SEC = 3.0;
 const SOFT_SYNC_EXIT_DRIFT = 0.08;
@@ -93,6 +98,7 @@ const RECOVERY_TIMEOUT_MS = 4000;
  *    timeupdate while visible, or seeked); then one deterministic resync.
  */
 type SyncState = "active" | "background" | "recovering";
+type ControlTickResult = "skipped" | "updated" | "pumped";
 
 interface AudioChunk {
   samples: Float32Array;
@@ -149,6 +155,7 @@ export class PCMAudioPlayer {
   private driftEma = 0;
   private hasDriftEma = false;
   private softSyncUntil = 0;
+  private wsolaBypassActive = false;
   private driftLogCounter = 0;
   private controlTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -286,8 +293,7 @@ export class PCMAudioPlayer {
         this.completeRecovery("timeupdate");
         return;
       }
-      this.controlTick();
-      this.pump();
+      this.controlAndPump();
     };
     this.boundOnRateChange = () => {
       // Apply the new rate to the stretcher immediately instead of waiting for
@@ -295,7 +301,7 @@ export class PCMAudioPlayer {
       // mismatch (scheduled-ahead audio at the old rate) is absorbed by the
       // drift correction, so moderate rate changes (live sync 1 ↔ 1.2) cause
       // no audible interruption.
-      this.controlTick();
+      this.controlAndPump(false);
     };
     this.boundOnVideoWaiting = () => this.enterBuffering("waiting");
     this.boundOnVideoStalled = () => {
@@ -325,8 +331,7 @@ export class PCMAudioPlayer {
     }
 
     this.controlTimer = setInterval(() => {
-      this.controlTick();
-      this.pump();
+      this.controlAndPump();
     }, CONTROL_INTERVAL_MS);
   }
 
@@ -644,6 +649,7 @@ export class PCMAudioPlayer {
   private resetDriftState(): void {
     this.driftEma = 0;
     this.hasDriftEma = false;
+    this.wsolaBypassActive = false;
   }
 
   private enterBuffering(reason: "waiting" | "stalled"): void {
@@ -825,17 +831,28 @@ export class PCMAudioPlayer {
 
   // ==================== Drift control ====================
 
-  private controlTick(): void {
+  /** Run drift control and then keep the scheduling window filled exactly
+   *  once. A successful resync pumps internally, so do not repeat it.
+   *  Ratechange passes false to preserve its old no-op behavior when drift
+   *  control is not currently applicable. */
+  private controlAndPump(pumpWhenSkipped = true): void {
+    const result = this.controlTick();
+    if (result === "updated" || (result === "skipped" && pumpWhenSkipped)) {
+      this.pump();
+    }
+  }
+
+  private controlTick(): ControlTickResult {
     const ctx = this.context;
     const video = this.videoElement;
     if (!ctx || !video || ctx.state !== "running" || !this.stretcher) {
-      return;
+      return "skipped";
     }
     // Drift control and hard resync are meaningful only when the video clock
     // is trusted. BACKGROUND/RECOVERING free-run: correcting against a frozen
     // or rebuilding video clock replays audio (the "broken record" loop).
     if (this.syncState !== "active" || !this.canScheduleAudio()) {
-      return;
+      return "skipped";
     }
 
     const audioTime = this.audioStreamTimeNow();
@@ -846,10 +863,10 @@ export class PCMAudioPlayer {
         const target = video.currentTime;
         const idx = this.findChunkIndexByTime(target);
         if (idx >= 0 && this.audioBuffer[this.audioBuffer.length - 1].endTime > target + 0.1) {
-          this.resyncFromBuffer(target);
+          return this.resyncFromBuffer(target) ? "pumped" : "skipped";
         }
       }
-      return;
+      return "skipped";
     }
 
     const drift = audioTime - video.currentTime;
@@ -862,8 +879,7 @@ export class PCMAudioPlayer {
 
     if (Math.abs(drift) > HARD_RESYNC_THRESHOLD) {
       Log.v(TAG, `Emergency hard resync: drift=${drift.toFixed(3)}s`);
-      this.resyncFromBuffer(video.currentTime);
-      return;
+      return this.resyncFromBuffer(video.currentTime) ? "pumped" : "skipped";
     }
 
     // Rate matching: follow video.playbackRate, correct residual drift.
@@ -874,17 +890,23 @@ export class PCMAudioPlayer {
     const correctionMax = softSyncActive ? SOFT_SYNC_RATIO_DRIFT_MAX : RATIO_DRIFT_MAX;
     const correctionGain = softSyncActive ? SOFT_SYNC_DRIFT_GAIN : RATIO_DRIFT_GAIN;
     const correction = Math.min(correctionMax, Math.max(-correctionMax, correctionDrift * correctionGain));
-    const ratio = Math.min(2, Math.max(0.5, rate * (1 - correction)));
+    const bypassDriftLimit = this.wsolaBypassActive ? WSOLA_BYPASS_EXIT_DRIFT : WSOLA_BYPASS_ENTER_DRIFT;
+    this.wsolaBypassActive =
+      video.playbackRate === 1 &&
+      !softSyncActive &&
+      Math.abs(drift) <= bypassDriftLimit &&
+      Math.abs(this.driftEma) <= bypassDriftLimit;
+    const ratio = this.wsolaBypassActive ? 1 : Math.min(2, Math.max(0.5, rate * (1 - correction)));
     this.stretcher.setRatio(ratio);
-    this.pump();
 
     if (++this.driftLogCounter >= DRIFT_LOG_TICKS) {
       this.driftLogCounter = 0;
       Log.v(
         TAG,
-        `A/V drift=${(this.driftEma * 1000).toFixed(1)}ms, rate=${rate}, stretch ratio=${ratio.toFixed(4)}, mode=${softSyncActive ? "soft" : "steady"}`,
+        `A/V drift=${(this.driftEma * 1000).toFixed(1)}ms, rate=${rate}, stretch ratio=${ratio.toFixed(4)}, mode=${this.wsolaBypassActive ? "bypass" : softSyncActive ? "soft" : "steady"}`,
       );
     }
+    return "updated";
   }
 
   // ==================== Buffer Management ====================

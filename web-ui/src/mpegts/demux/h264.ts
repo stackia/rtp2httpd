@@ -1,4 +1,5 @@
 import Log from "../utils/logger";
+import { findAnnexBStartCodeOffset } from "./annexb";
 
 export enum H264NaluType {
   kUnspecified = 0,
@@ -57,24 +58,11 @@ export class H264AnnexBParser {
   }
 
   private findNextStartCodeOffset(start_offset: number) {
-    let i = start_offset;
-    const data = this.data_;
-
-    while (true) {
-      if (i + 3 >= data.byteLength) {
-        this.eof_flag_ = true;
-        return data.byteLength;
-      }
-
-      // search 00 00 00 01 or 00 00 01
-      const uint32 = (data[i + 0] << 24) | (data[i + 1] << 16) | (data[i + 2] << 8) | data[i + 3];
-      const uint24 = (data[i + 0] << 16) | (data[i + 1] << 8) | data[i + 2];
-      if (uint32 === 0x00000001 || uint24 === 0x000001) {
-        return i;
-      } else {
-        i++;
-      }
+    const offset = findAnnexBStartCodeOffset(this.data_, start_offset);
+    if (offset === this.data_.byteLength) {
+      this.eof_flag_ = true;
     }
+    return offset;
   }
 
   public readNextNaluPayload(): H264NaluPayload | null {
