@@ -45,6 +45,9 @@ const REVERSION_FRAMES_REQUIRED = 4;
 // ---- Field-order voting ----
 const FIELD_ORDER_MIN_VOTES = 4;
 const FIELD_ORDER_MIN_MARGIN = 2;
+/** BFF is non-default and must have sustained, decisive support before it wins. */
+const FIELD_ORDER_BFF_MIN_VOTES = 6;
+const FIELD_ORDER_BFF_MIN_MARGIN = 4;
 const FIELD_ORDER_MAX_VOTES = 10;
 
 // ---- GPU reduction ----
@@ -634,13 +637,14 @@ export class InterlaceDetector {
 
   private maybeDecideFieldOrder(): void {
     const total = this.votesTff + this.votesBff;
-    const margin = Math.abs(this.votesTff - this.votesBff);
     const exhausted = this.votingRounds >= FIELD_ORDER_MAX_VOTES;
-    if (total < FIELD_ORDER_MIN_VOTES && !exhausted) return;
-    if (margin < FIELD_ORDER_MIN_MARGIN && !exhausted) return;
+    const tffDecided = total >= FIELD_ORDER_MIN_VOTES && this.votesTff - this.votesBff >= FIELD_ORDER_MIN_MARGIN;
+    const bffDecided =
+      this.votesBff >= FIELD_ORDER_BFF_MIN_VOTES && this.votesBff - this.votesTff >= FIELD_ORDER_BFF_MIN_MARGIN;
+    if (!tffDecided && !bffDecided && !exhausted) return;
 
     this.fieldOrderDecided = true;
-    const winner: FieldOrder = margin >= FIELD_ORDER_MIN_MARGIN && this.votesBff > this.votesTff ? "bff" : "tff";
+    const winner: FieldOrder = bffDecided ? "bff" : "tff";
     Log.i(TAG, `Field order: ${winner} (tff=${this.votesTff}, bff=${this.votesBff}, rounds=${this.votingRounds})`);
     if (winner !== this.fieldOrder) {
       this.fieldOrder = winner;
