@@ -26,6 +26,8 @@ export interface Presenter {
     dstHeight: number,
     flipY: boolean,
   ): void;
+  /** Release resolution-dependent textures/FBOs while keeping compiled programs reusable. */
+  releaseTransientResources(gl: WebGL2RenderingContext): void;
   /** Release GL resources. The context may already be lost; guard accordingly. */
   destroy(gl: WebGL2RenderingContext): void;
 }
@@ -74,6 +76,10 @@ export class PassthroughPresenter implements Presenter {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  releaseTransientResources(_gl: WebGL2RenderingContext): void {
+    // Passthrough owns only its context-lifetime program.
   }
 
   destroy(gl: WebGL2RenderingContext): void {

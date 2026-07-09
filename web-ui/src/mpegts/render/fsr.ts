@@ -473,6 +473,10 @@ export class FsrPresenter implements Presenter {
     this.intermediate = null;
   }
 
+  releaseTransientResources(gl: WebGL2RenderingContext): void {
+    this.deleteIntermediateTarget(gl);
+  }
+
   destroy(gl: WebGL2RenderingContext): void {
     if (this.easuProgram) {
       gl.deleteProgram(this.easuProgram);
@@ -482,11 +486,13 @@ export class FsrPresenter implements Presenter {
       gl.deleteProgram(this.rcasProgram);
       this.rcasProgram = null;
     }
-    this.deleteIntermediateTarget(gl);
+    this.releaseTransientResources(gl);
     this.easuInputLocation = null;
     this.easuSrcSizeLocation = null;
     this.easuDstSizeLocation = null;
+    this.easuFlipYLocation = null;
     this.rcasInputLocation = null;
     this.rcasTexelSizeLocation = null;
+    this.rcasFlipYLocation = null;
   }
 }

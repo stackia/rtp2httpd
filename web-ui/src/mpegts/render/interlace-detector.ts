@@ -243,6 +243,8 @@ export class InterlaceDetector {
   private markerProgram: WebGLProgram | null = null;
   private reductionProgram: WebGLProgram | null = null;
   private fieldOrderProgram: WebGLProgram | null = null;
+  /** Program/extension initialisation failures stay sticky for this context lifetime. */
+  private initFailed = false;
   // Uniform locations, cached once per program compile (lookups are not free
   // and the reduction pass runs ~9 times per sample).
   private markerUniforms: {
@@ -355,8 +357,10 @@ export class InterlaceDetector {
    */
   initGl(gl: WebGL2RenderingContext): boolean {
     if (this.ready) return true;
+    if (this.initFailed) return false;
     if (!InterlaceDetector.isSupported(gl)) {
       Log.w(TAG, "EXT_color_buffer_float unavailable; interlace detection disabled");
+      this.initFailed = true;
       return false;
     }
     try {
@@ -380,6 +384,7 @@ export class InterlaceDetector {
     } catch (err) {
       Log.e(TAG, "Failed to compile detection shaders; detection disabled:", err);
       this.cleanupPrograms(gl);
+      this.initFailed = true;
       return false;
     }
 
@@ -414,6 +419,7 @@ export class InterlaceDetector {
   /** Release all GPU resources. Safe to call with a valid or lost context. */
   destroyGl(gl: WebGL2RenderingContext): void {
     this.ready = false;
+    this.initFailed = false;
 
     this.cleanupPrograms(gl);
     this.clearAllFbos(gl);
@@ -434,6 +440,7 @@ export class InterlaceDetector {
   /** The GL context was lost — all objects are already gone; just reset bookkeeping. */
   onGlContextLost(): void {
     this.ready = false;
+    this.initFailed = false;
     this.markerProgram = null;
     this.reductionProgram = null;
     this.fieldOrderProgram = null;

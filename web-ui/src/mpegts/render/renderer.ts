@@ -57,7 +57,12 @@ export class VideoRenderer {
   private readonly video: HTMLVideoElement;
   private readonly canvas: HTMLCanvasElement;
   private gl: WebGL2RenderingContext | null = null;
+  /** Active source-stage filter; compiled filters remain cached while inactive. */
   private stageFilter: VideoFilter | null = null;
+  /** Context-bound source-stage programs, compiled at most once per context. */
+  private readonly stageFilterCache = new Map<RenderStageName, VideoFilter>();
+  /** Stage programs that failed to initialise are not retried until context restoration. */
+  private readonly stageFilterInitFailures = new Set<RenderStageName>();
   private stageTarget: RenderTarget | null = null;
   /** Ring of frame textures: [0] = newest, [1..] = history (most recent first). */
   private textures: WebGLTexture[] = [];
@@ -70,6 +75,7 @@ export class VideoRenderer {
   private readonly onContextRestored?: () => void;
 
   private passthroughPresenter: PassthroughPresenter | null = null;
+  private passthroughInitFailed = false;
   private enhancementFilters: VideoFilter[] = [];
   /** FSR (EASU+RCAS) upscale presenter for the enhancement path. */
   private upscalePresenter: Presenter | null = null;
@@ -194,8 +200,7 @@ export class VideoRenderer {
   setPictureEnhancementEnabled(enabled: boolean): void {
     if (this.pictureEnhancementEnabled === enabled) return;
     this.pictureEnhancementEnabled = enabled;
-    this.enhancementInitFailed = false;
-    if (!enabled) this.teardownEnhancementResources();
+    if (!enabled) this.releaseEnhancementTargets();
     this.primeCanvas();
   }
 
@@ -220,6 +225,14 @@ export class VideoRenderer {
     return true;
   }
 
+  /** Reset source-specific state while retaining this canvas's context and compiled programs. */
+  resetStream(fieldOrder: FieldOrder = "tff"): void {
+    this.stageName = "passthrough";
+    this.stageFilter = null;
+    this.fieldOrder = fieldOrder;
+    this.releaseStreamResources();
+  }
+
   /** Start the frame loop with the given source stage. Safe to call repeatedly. */
   start(stageName: RenderStageName = this.stageName, fieldOrder: FieldOrder = "tff"): boolean {
     this.fieldOrder = fieldOrder;
@@ -236,7 +249,7 @@ export class VideoRenderer {
     if (!gl) return false;
 
     if (!this.ensurePassthroughPresenter() || !this.ensureStageFilter(stageName)) {
-      this.teardownFilters();
+      this.releaseStreamResources();
       return false;
     }
 
@@ -252,7 +265,7 @@ export class VideoRenderer {
     if (!this.running) return;
     this.running = false;
     this.cancelFrameCallbacks();
-    this.teardownFilters();
+    this.releaseStreamResources();
     Log.i(TAG, "Stopped");
   }
 
@@ -266,7 +279,13 @@ export class VideoRenderer {
   }
 
   destroy(): void {
-    this.stop();
+    if (this.running) {
+      this.stop();
+    } else {
+      this.cancelFrameCallbacks();
+      this.releaseStreamResources();
+    }
+    this.destroyContextResources();
     this.canvas.removeEventListener("webglcontextlost", this.handleContextLost);
     this.canvas.removeEventListener("webglcontextrestored", this.handleContextRestored);
     this.resizeObserver?.disconnect();
@@ -298,6 +317,7 @@ export class VideoRenderer {
 
   private ensurePassthroughPresenter(): boolean {
     if (this.passthroughPresenter) return true;
+    if (this.passthroughInitFailed) return false;
     const gl = this.ensureContext();
     if (!gl) return false;
     const presenter = new PassthroughPresenter();
@@ -306,6 +326,7 @@ export class VideoRenderer {
     } catch (err) {
       Log.e(TAG, "Failed to init canvas presenter:", err);
       presenter.destroy(gl);
+      this.passthroughInitFailed = true;
       return false;
     }
     this.passthroughPresenter = presenter;
@@ -315,11 +336,16 @@ export class VideoRenderer {
   private ensureStageFilter(name: RenderStageName): boolean {
     if (name === "passthrough") {
       // No GL source stage needed: the uploaded frame texture is presented directly.
-      if (this.stageFilter && this.gl && !this.contextLost) this.stageFilter.destroy(this.gl);
       this.stageFilter = null;
       return true;
     }
     if (this.stageFilter?.name === name) return true;
+    const cached = this.stageFilterCache.get(name);
+    if (cached) {
+      this.stageFilter = cached;
+      return true;
+    }
+    if (this.stageFilterInitFailures.has(name)) return false;
     const gl = this.ensureContext();
     if (!gl) return false;
 
@@ -334,10 +360,11 @@ export class VideoRenderer {
     } catch (err) {
       Log.e(TAG, `Failed to init render filter '${name}':`, err);
       filter.destroy(gl);
+      this.stageFilterInitFailures.add(name);
       return false;
     }
 
-    if (this.stageFilter) this.stageFilter.destroy(gl);
+    this.stageFilterCache.set(name, filter);
     this.stageFilter = filter;
     return true;
   }
@@ -386,48 +413,79 @@ export class VideoRenderer {
     }
   }
 
-  private teardownEnhancementResources(): void {
+  /** Release large enhancement targets while retaining filters and presenter programs. */
+  private releaseEnhancementTargets(): void {
     const gl = this.gl;
     if (gl && !this.contextLost) {
-      for (const filter of this.enhancementFilters) filter.destroy(gl);
-      this.upscalePresenter?.destroy(gl);
       for (const target of this.enhancementTargets) this.deleteRenderTarget(target);
+      this.upscalePresenter?.releaseTransientResources(gl);
     }
-    this.enhancementFilters = [];
-    this.upscalePresenter = null;
     this.enhancementTargets = [null, null];
   }
 
-  private teardownFilters(): void {
+  /** Release all source-specific textures/FBOs while keeping context-bound programs alive. */
+  private releaseStreamResources(): void {
+    this.stopPresentClock();
+    this.pendingSecondField = null;
+
     const gl = this.gl;
     if (gl && !this.contextLost) {
-      if (this.stageFilter) this.stageFilter.destroy(gl);
-      this.passthroughPresenter?.destroy(gl);
       this.deleteRenderTarget(this.stageTarget);
       this.deleteRenderTarget(this.secondFieldTarget);
     }
-    this.teardownEnhancementResources();
+    this.releaseEnhancementTargets();
     this.clearTextureRing();
-    this.stageFilter = null;
-    this.passthroughPresenter = null;
     this.stageTarget = null;
     this.secondFieldTarget = null;
-    this.pendingSecondField = null;
+    this.lastMediaTime = -1;
+    this.frameDurationEstimateMs = 40;
+    this.lastPresentClockTs = -1;
+    this.refreshDeltasMs = [];
+    this.refreshIntervalMs = 1000 / 60;
+  }
+
+  /** Permanently release every GL object owned by this renderer. Called only by destroy(). */
+  private destroyContextResources(): void {
+    const gl = this.gl;
+    if (gl && !this.contextLost) {
+      for (const filter of this.stageFilterCache.values()) filter.destroy(gl);
+      this.passthroughPresenter?.destroy(gl);
+      for (const filter of this.enhancementFilters) filter.destroy(gl);
+      this.upscalePresenter?.destroy(gl);
+    }
+    this.stageFilterCache.clear();
+    this.stageFilterInitFailures.clear();
+    this.stageFilter = null;
+    this.passthroughPresenter = null;
+    this.passthroughInitFailed = false;
+    this.enhancementFilters = [];
+    this.upscalePresenter = null;
+    this.enhancementTargets = [null, null];
     this.enhancementInitFailed = false;
   }
 
   /** Drop all references to GL objects without deleting them (context is gone). */
   private forgetGlResources(): void {
     this.textures = [];
+    this.uploadedWidth = 0;
+    this.uploadedHeight = 0;
     this.stageTarget = null;
     this.secondFieldTarget = null;
     this.pendingSecondField = null;
     this.stageFilter = null;
+    this.stageFilterCache.clear();
+    this.stageFilterInitFailures.clear();
     this.passthroughPresenter = null;
+    this.passthroughInitFailed = false;
     this.enhancementFilters = [];
     this.upscalePresenter = null;
     this.enhancementTargets = [null, null];
     this.enhancementInitFailed = false;
+    this.lastMediaTime = -1;
+    this.frameDurationEstimateMs = 40;
+    this.lastPresentClockTs = -1;
+    this.refreshDeltasMs = [];
+    this.refreshIntervalMs = 1000 / 60;
   }
 
   private clearTextureRing(): void {

@@ -281,8 +281,7 @@ export function createVideoRenderPipeline(
       fieldOrder = "tff";
       resetCadence();
       detector.reset();
-      renderer.setFieldOrder(fieldOrder);
-      renderer.setStage("passthrough");
+      renderer.resetStream(fieldOrder);
       renderer.clearCanvas();
       apply();
     },
