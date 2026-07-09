@@ -201,7 +201,7 @@ static void rtsp_build_digest_response(rtsp_session_t *session, const char *meth
 
   /* Convert HA1 to hex */
   for (int i = 0; i < 16; i++)
-    sprintf(&ha1_hex[i * 2], "%02x", ha1_digest[i]);
+    snprintf(&ha1_hex[i * 2], 3, "%02x", ha1_digest[i]);
   ha1_hex[32] = '\0';
 
   /* Calculate HA2 = MD5(method:uri) */
@@ -214,7 +214,7 @@ static void rtsp_build_digest_response(rtsp_session_t *session, const char *meth
 
   /* Convert HA2 to hex */
   for (int i = 0; i < 16; i++)
-    sprintf(&ha2_hex[i * 2], "%02x", ha2_digest[i]);
+    snprintf(&ha2_hex[i * 2], 3, "%02x", ha2_digest[i]);
   ha2_hex[32] = '\0';
 
   /* Calculate response = MD5(HA1:nonce:HA2) */
@@ -223,7 +223,7 @@ static void rtsp_build_digest_response(rtsp_session_t *session, const char *meth
 
   /* Convert response to hex */
   for (int i = 0; i < 16; i++)
-    sprintf(&response_hex[i * 2], "%02x", response_digest[i]);
+    snprintf(&response_hex[i * 2], 3, "%02x", response_digest[i]);
   response_hex[32] = '\0';
 
   /* Copy response (response_hex is always 32 chars + null) */
@@ -430,16 +430,16 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
   }
 
   /* Copy URL to avoid modifying original */
-  strncpy(url_copy, rtsp_url, sizeof(url_copy) - 1);
+  snprintf(url_copy, sizeof(url_copy), "%s", rtsp_url);
   url_copy[sizeof(url_copy) - 1] = '\0';
 
   if (fallback_username) {
-    strncpy(fallback_user_copy, fallback_username, sizeof(fallback_user_copy) - 1);
+    snprintf(fallback_user_copy, sizeof(fallback_user_copy), "%s", fallback_username);
     fallback_user_copy[sizeof(fallback_user_copy) - 1] = '\0';
     fallback_user_source = fallback_user_copy;
 
     if (fallback_password) {
-      strncpy(fallback_pass_copy, fallback_password, sizeof(fallback_pass_copy) - 1);
+      snprintf(fallback_pass_copy, sizeof(fallback_pass_copy), "%s", fallback_password);
       fallback_pass_copy[sizeof(fallback_pass_copy) - 1] = '\0';
       fallback_pass_source = fallback_pass_copy;
     } else {
@@ -452,11 +452,11 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
   session->password[0] = '\0';
 
   if (fallback_user_source) {
-    strncpy(session->username, fallback_user_source, sizeof(session->username) - 1);
+    snprintf(session->username, sizeof(session->username), "%s", fallback_user_source);
     session->username[sizeof(session->username) - 1] = '\0';
 
     if (fallback_pass_source) {
-      strncpy(session->password, fallback_pass_source, sizeof(session->password) - 1);
+      snprintf(session->password, sizeof(session->password), "%s", fallback_pass_source);
       session->password[sizeof(session->password) - 1] = '\0';
     } else {
       session->password[0] = '\0';
@@ -528,7 +528,7 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
     logger(LOG_ERROR, "RTSP: Hostname too long");
     return -1;
   }
-  strncpy(session->server_host, hostport, sizeof(session->server_host) - 1);
+  snprintf(session->server_host, sizeof(session->server_host), "%s", hostport);
   session->server_host[sizeof(session->server_host) - 1] = '\0';
 
   if (port_str && *port_str) {
@@ -555,7 +555,7 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
       logger(LOG_ERROR, "RTSP: Decoded username too long");
       return -1;
     }
-    strncpy(decoded_user, user_part, sizeof(decoded_user) - 1);
+    snprintf(decoded_user, sizeof(decoded_user), "%s", user_part);
     decoded_user[sizeof(decoded_user) - 1] = '\0';
 
     if (pass_part) {
@@ -567,15 +567,15 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
         logger(LOG_ERROR, "RTSP: Decoded password too long");
         return -1;
       }
-      strncpy(decoded_pass, pass_part, sizeof(decoded_pass) - 1);
+      snprintf(decoded_pass, sizeof(decoded_pass), "%s", pass_part);
       decoded_pass[sizeof(decoded_pass) - 1] = '\0';
     } else {
       decoded_pass[0] = '\0';
     }
 
-    strncpy(session->username, decoded_user, sizeof(session->username) - 1);
+    snprintf(session->username, sizeof(session->username), "%s", decoded_user);
     session->username[sizeof(session->username) - 1] = '\0';
-    strncpy(session->password, decoded_pass, sizeof(session->password) - 1);
+    snprintf(session->password, sizeof(session->password), "%s", decoded_pass);
     session->password[sizeof(session->password) - 1] = '\0';
   }
 
@@ -599,7 +599,7 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
         size_t value_len = value_end - value_start;
         char *start_str = malloc(value_len + 1);
         if (start_str) {
-          strncpy(start_str, value_start, value_len);
+          snprintf(start_str, value_len + 1, "%s", value_start);
           start_str[value_len] = '\0';
 
           /* URL decode */
@@ -647,7 +647,7 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
         size_t value_len = value_end - value_start;
         char *duration_str = malloc(value_len + 1);
         if (duration_str) {
-          strncpy(duration_str, value_start, value_len);
+          snprintf(duration_str, value_len + 1, "%s", value_start);
           duration_str[value_len] = '\0';
           if (strcmp(duration_str, "1") == 0) {
             session->r2h_duration = 1;
@@ -681,10 +681,10 @@ int rtsp_parse_server_url(rtsp_session_t *session, const char *rtsp_url, const c
 
   /* Extract path and query string (playseek already removed by http.c) */
   if (path_start) {
-    strncpy(session->server_path, path_start, sizeof(session->server_path) - 1);
+    snprintf(session->server_path, sizeof(session->server_path), "%s", path_start);
     session->server_path[sizeof(session->server_path) - 1] = '\0';
   } else {
-    strcpy(session->server_path, "/");
+    snprintf(session->server_path, sizeof(session->server_path), "/");
   }
 
   /* Build server_url without credentials (for RTSP requests and Digest auth).
@@ -1118,7 +1118,7 @@ static int rtsp_prepare_request(rtsp_session_t *session, const char *method, con
         logger(LOG_ERROR, "RTSP: Digest authorization header too long, truncated");
       }
       auth_header = auth_header_buf;
-    } else if (session->auth_type == RTSP_AUTH_BASIC || session->auth_type == RTSP_AUTH_NONE) {
+    } else if (session->auth_type == RTSP_AUTH_BASIC) {
       /* Build Basic authentication header (also used for preemptive auth when
        * type is NONE) */
       if (rtsp_build_basic_auth_header(session, auth_header_buf, sizeof(auth_header_buf)) == 0) {
@@ -2357,7 +2357,7 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
     char *semicolon = strchr(session_header, ';');
     if (semicolon)
       *semicolon = '\0'; /* Remove timeout info */
-    strncpy(session->session_id, session_header, sizeof(session->session_id) - 1);
+    snprintf(session->session_id, sizeof(session->session_id), "%s", session_header);
     session->session_id[sizeof(session->session_id) - 1] = '\0';
   }
 
@@ -2614,7 +2614,7 @@ static char *rtsp_find_header(const char *response, const char *header_name) {
     logger(LOG_ERROR, "RTSP: Failed to allocate memory for header");
     return NULL;
   }
-  strncpy(result, header_start, header_len);
+  snprintf(result, header_len + 1, "%s", header_start);
   result[header_len] = '\0';
 
   return result;
@@ -2705,7 +2705,7 @@ static void rtsp_parse_describe_sdp(rtsp_session_t *session, const char *header_
         if (strcmp(attr, "*") == 0) {
           logger(LOG_DEBUG, "RTSP: SDP a=control:* (aggregate)");
         } else if (strncmp(attr, "rtsp://", 7) == 0) {
-          strncpy(session->setup_url, attr, sizeof(session->setup_url) - 1);
+          snprintf(session->setup_url, sizeof(session->setup_url), "%s", attr);
           session->setup_url[sizeof(session->setup_url) - 1] = '\0';
           logger(LOG_DEBUG, "RTSP: Resolved SETUP URL (absolute): %s", session->setup_url);
         } else {
@@ -2888,7 +2888,7 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
       source_address[idx] = '\0';
       if (source_address[0] != '\0') {
         /* Save source address to session for NAT keepalive */
-        strncpy(session->server_source_addr, source_address, sizeof(session->server_source_addr) - 1);
+        snprintf(session->server_source_addr, sizeof(session->server_source_addr), "%s", source_address);
         session->server_source_addr[sizeof(session->server_source_addr) - 1] = '\0';
         logger(LOG_DEBUG, "RTSP: Server UDP source address: %s", source_address);
       }
