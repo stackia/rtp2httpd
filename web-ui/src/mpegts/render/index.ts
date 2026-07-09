@@ -75,7 +75,7 @@ export function createVideoRenderPipeline(
   }
 
   let autoDeinterlaceEnabled = true;
-  let pictureEnhancementEnabled = false;
+  let pictureEnhancementEnabled = true;
   let active = false;
   let destroyed = false;
   let renderRunning = false;

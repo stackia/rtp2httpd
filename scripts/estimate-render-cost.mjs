@@ -42,11 +42,20 @@ const MODES = [
     canvasPresent: true,
   },
   {
-    name: "after: auto-DI + enhancement, progressive",
+    name: "after: auto-DI + enhancement, progressive (≤1.5× upscale cap)",
     uploadsPerSec: 25,
     bwdifPassesPerSec: 0,
     fsrPassesPerSec: 25,
     detectSamplesPerSec: 0.5,
+    canvasPresent: true,
+  },
+  {
+    name: "pre-opt risk: enhancement upscale to ~3× DPR (uncapped)",
+    uploadsPerSec: 25,
+    bwdifPassesPerSec: 0,
+    // Approximate: EASU+RCAS over ~3× pixel area ≈ 9× fragment work vs native RCAS
+    fsrPassesPerSec: 25 * 9,
+    detectSamplesPerSec: 2,
     canvasPresent: true,
   },
 ];

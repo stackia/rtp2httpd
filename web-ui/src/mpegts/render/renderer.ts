@@ -29,6 +29,14 @@ const ENHANCEMENT_FILTER_NAMES: readonly string[] = [];
  */
 const MAX_UPSCALE_WIDTH = 3840;
 const MAX_UPSCALE_HEIGHT = 2160;
+/**
+ * Cap how far FSR may enlarge past the source frame. High-DPR phones often
+ * report a device-pixel content box 2–3× the 1080p source; unrestricted
+ * upscaling turns every frame into near-4K EASU+RCAS work and dominates
+ * mobile thermals while picture enhancement stays on (the product default).
+ * CSS compositing still scales the canvas to the display.
+ */
+const MAX_UPSCALE_FACTOR = 1.5;
 
 interface RenderTarget {
   fbo: WebGLFramebuffer;
@@ -75,7 +83,7 @@ export class VideoRenderer {
   private upscalePresenter: Presenter | null = null;
   /** Ping-pong targets for the enhancement filter list (allocated lazily). */
   private enhancementTargets: [RenderTarget | null, RenderTarget | null] = [null, null];
-  private pictureEnhancementEnabled = false;
+  private pictureEnhancementEnabled = true;
   private enhancementInitFailed = false;
   /**
    * When false, the frame loop still runs (for interlace detection uploads/samples)
@@ -865,8 +873,10 @@ export class VideoRenderer {
     const size = this.cachedDisplaySize; // already in device pixels
     if (!size) return { width: sourceWidth, height: sourceHeight };
 
-    const width = Math.max(sourceWidth, Math.min(Math.round(size.width), MAX_UPSCALE_WIDTH));
-    const height = Math.max(sourceHeight, Math.min(Math.round(size.height), MAX_UPSCALE_HEIGHT));
+    const maxW = Math.min(MAX_UPSCALE_WIDTH, Math.round(sourceWidth * MAX_UPSCALE_FACTOR));
+    const maxH = Math.min(MAX_UPSCALE_HEIGHT, Math.round(sourceHeight * MAX_UPSCALE_FACTOR));
+    const width = Math.max(sourceWidth, Math.min(Math.round(size.width), maxW));
+    const height = Math.max(sourceHeight, Math.min(Math.round(size.height), maxH));
     return { width, height };
   }
 

@@ -100,14 +100,12 @@ The **Video Processing** options in player settings apply WebGL post-processing 
 | Option | Default | Effect |
 | ---- | ---- | ---- |
 | **Auto Deinterlacing** | On | GPU heuristic detects interlaced content; enables BWDIF once confirmed |
-| **Picture Enhancement** | Off | FSR (EASU + RCAS) sharpening / upscaling to the display resolution |
+| **Picture Enhancement** | On | FSR (EASU + RCAS) sharpening / upscaling to the display resolution (upscale factor is capped so high-DPR phones do not pay near-4K cost every frame) |
 
-For **progressive** sources, auto deinterlacing only samples at a low rate for detection; the picture still comes from the native `<video>` element and does not run a full WebGL composite every frame. Once interlacing is detected, output switches to the canvas and BWDIF runs (two fields per source frame — roughly 2× the GPU cost of a plain passthrough).
-
-**Picture Enhancement** keeps the canvas path active continuously. Even progressive sources upload a texture and run FSR every frame, which tends to increase heat and battery use on phones. Turn it on only when you want sharpening or upscaling.
+With **Picture Enhancement** on, output uses the WebGL canvas path: every frame uploads a texture and runs FSR. If you turn enhancement off and the source is **progressive**, auto deinterlacing only samples at a low rate for detection and the picture comes from the native `<video>` element (detect-only) instead of a full WebGL composite every frame. Once interlacing is detected, output switches to the canvas and BWDIF runs (two fields per source frame — roughly 2× the GPU cost of a plain passthrough).
 
 > [!TIP]
-> If a phone feels hot, turn off **Picture Enhancement** first. For progressive channels, leaving **Auto Deinterlacing** on usually does not add much heat.
+> If a phone feels hot, try turning off **Picture Enhancement** first (auto deinterlace detection can stay on). Interlaced channels with BWDIF active use noticeably more GPU — that cost is inherent to the deinterlace algorithm.
 
 ## Time Placeholders
 
