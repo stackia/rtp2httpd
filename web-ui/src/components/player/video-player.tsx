@@ -41,8 +41,8 @@ import {
 import mp2WasmUrl from "../../mpegts/wasm/minimp3/mp2_decoder.wasm?url";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
-import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 import { PlayerControls } from "./player-controls";
+import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
 interface VideoPlayerProps {
   channel: Channel | null;
