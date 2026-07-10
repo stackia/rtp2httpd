@@ -11,7 +11,7 @@ export function SelectBox({ containerClassName = "min-w-[120px]", className, chi
     <div className={clsx("relative inline-flex items-center justify-end", containerClassName)}>
       <select
         className={clsx(
-          "ui-select peer h-9 w-full cursor-pointer appearance-none px-3 pr-10 text-sm text-foreground transition-[color,background-color,border-color,box-shadow] motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+          "peer h-9 w-full cursor-pointer appearance-none rounded-[var(--radius)] border border-input/80 bg-background/82 px-3 pr-10 font-semibold text-foreground text-sm shadow-none transition-[color,background-color,border-color,box-shadow] hover:border-primary/30 hover:bg-background/75 motion-reduce:transition-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 dark:bg-secondary/72",
           className,
         )}
         {...props}

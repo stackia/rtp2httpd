@@ -38,47 +38,15 @@ export function WorkersSection({ workers, locale, bandwidthUnit }: WorkersSectio
         <div className={clsx("grid gap-6", workers.length > 1 && "lg:grid-cols-2")}>
           {workers.map((worker) => {
             const metrics = [
-              {
-                key: "bandwidth",
-                label: t("bandwidth"),
-                value: formatBandwidth(worker.totalBandwidth, bandwidthUnit),
-              },
-              {
-                key: "dataSent",
-                label: t("dataSent"),
-                value: formatBytes(worker.totalBytes),
-              },
-              {
-                key: "sendTotal",
-                label: t("sendTotal"),
-                value: worker.send.total.toLocaleString(),
-              },
-              {
-                key: "sendCompletions",
-                label: t("sendCompletions"),
-                value: worker.send.completions.toLocaleString(),
-              },
-              {
-                key: "sendCopied",
-                label: t("sendCopied"),
-                value: worker.send.copied.toLocaleString(),
-              },
-              {
-                key: "sendBatch",
-                label: t("sendBatch"),
-                value: worker.send.batch.toLocaleString(),
-              },
-              {
-                key: "sendEagain",
-                label: t("sendEagain"),
-                value: worker.send.eagain.toLocaleString(),
-              },
-              {
-                key: "sendEnobufs",
-                label: t("sendEnobufs"),
-                value: worker.send.enobufs.toLocaleString(),
-              },
-            ];
+              ["bandwidth", t("bandwidth"), formatBandwidth(worker.totalBandwidth, bandwidthUnit)],
+              ["dataSent", t("dataSent"), formatBytes(worker.totalBytes)],
+              ["sendTotal", t("sendTotal"), worker.send.total.toLocaleString()],
+              ["sendCompletions", t("sendCompletions"), worker.send.completions.toLocaleString()],
+              ["sendCopied", t("sendCopied"), worker.send.copied.toLocaleString()],
+              ["sendBatch", t("sendBatch"), worker.send.batch.toLocaleString()],
+              ["sendEagain", t("sendEagain"), worker.send.eagain.toLocaleString()],
+              ["sendEnobufs", t("sendEnobufs"), worker.send.enobufs.toLocaleString()],
+            ] as const;
             return (
               <Card
                 key={worker.id}
@@ -102,17 +70,17 @@ export function WorkersSection({ workers, locale, bandwidthUnit }: WorkersSectio
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-                    {metrics.map((metric) => (
+                    {metrics.map(([key, label, value]) => (
                       <div
-                        key={metric.key}
+                        key={key}
                         className={clsx(
                           STATUS_METRIC_TILE_CLASS,
                           "flex min-h-9 items-center justify-between gap-3 px-3 py-2 transition-colors hover:border-primary/15 hover:bg-primary/3",
                         )}
                       >
-                        <span className="min-w-0 font-medium leading-4 text-muted-foreground/80">{metric.label}</span>
+                        <span className="min-w-0 font-medium leading-4 text-muted-foreground/80">{label}</span>
                         <span className="shrink-0 text-right font-mono font-medium text-card-foreground tabular-nums">
-                          {metric.value}
+                          {value}
                         </span>
                       </div>
                     ))}
@@ -142,13 +110,13 @@ function PoolCard({ title, pool, locale }: PoolCardProps) {
   const t = useStatusTranslation(locale);
   const utilization = Math.min(100, Math.max(0, pool.utilization));
   const metrics = [
-    { key: "total", label: t("poolTotal"), value: pool.total },
-    { key: "free", label: t("poolFree"), value: pool.free },
-    { key: "used", label: t("poolUsed"), value: pool.used },
-    { key: "max", label: t("poolMax"), value: pool.max },
-    { key: "expansions", label: t("poolExpansions"), value: pool.expansions },
-    { key: "exhaustions", label: t("poolExhaustions"), value: pool.exhaustions },
-  ];
+    ["total", t("poolTotal"), pool.total],
+    ["free", t("poolFree"), pool.free],
+    ["used", t("poolUsed"), pool.used],
+    ["max", t("poolMax"), pool.max],
+    ["expansions", t("poolExpansions"), pool.expansions],
+    ["exhaustions", t("poolExhaustions"), pool.exhaustions],
+  ] as const;
   const indicatorClassName =
     utilization >= 90
       ? "bg-gradient-to-r from-rose-400 to-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.45)]"
@@ -167,10 +135,10 @@ function PoolCard({ title, pool, locale }: PoolCardProps) {
         indicatorClassName={indicatorClassName}
       />
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-muted-foreground">
-        {metrics.map((metric) => (
-          <div key={metric.key} className="flex min-w-0 items-baseline justify-between gap-2">
-            <span className="min-w-0 leading-4">{metric.label}</span>
-            <span className="shrink-0 font-mono text-foreground/75 tabular-nums">{metric.value}</span>
+        {metrics.map(([key, label, value]) => (
+          <div key={key} className="flex min-w-0 items-baseline justify-between gap-2">
+            <span className="min-w-0 leading-4">{label}</span>
+            <span className="shrink-0 font-mono text-foreground/75 tabular-nums">{value}</span>
           </div>
         ))}
       </div>

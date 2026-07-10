@@ -438,36 +438,25 @@ function PlayerPage() {
         >
           {/* Sidebar Tabs */}
           <div className="flex shrink-0 items-center border-blue-950/10 border-b bg-white/44 shadow-[0_8px_24px_rgba(30,64,175,0.045)] backdrop-blur-xl dark:border-blue-100/10 dark:bg-slate-950/28">
-            <button
-              type="button"
-              onClick={() => {
-                channelListNextScrollBehaviorRef.current = "instant";
-                setSidebarView("channels");
-              }}
-              className={clsx(
-                "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2 text-center font-semibold text-xs leading-5 tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] md:px-4 md:py-3 md:text-sm",
-                sidebarView === "channels"
-                  ? "border-blue-500 border-b-2 bg-[linear-gradient(to_top,rgba(59,130,246,0.12),transparent)] text-blue-700 shadow-[inset_0_-1px_0_rgba(59,130,246,0.18)] dark:border-blue-300 dark:text-blue-200"
-                  : "cursor-pointer border-transparent border-b-2 text-slate-500 hover:bg-blue-400/5 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-100",
-              )}
-            >
-              {t("channels")} ({metadata?.channels.length || 0})
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                epgViewNextScrollBehaviorRef.current = "instant";
-                setSidebarView("epg");
-              }}
-              className={clsx(
-                "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2 text-center font-semibold text-xs leading-5 tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] md:px-4 md:py-3 md:text-sm",
-                sidebarView === "epg"
-                  ? "border-blue-500 border-b-2 bg-[linear-gradient(to_top,rgba(59,130,246,0.12),transparent)] text-blue-700 shadow-[inset_0_-1px_0_rgba(59,130,246,0.18)] dark:border-blue-300 dark:text-blue-200"
-                  : "cursor-pointer border-transparent border-b-2 text-slate-500 hover:bg-blue-400/5 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-100",
-              )}
-            >
-              {t("programGuide")}
-            </button>
+            {(["channels", "epg"] as const).map((view) => (
+              <button
+                type="button"
+                key={view}
+                onClick={() => {
+                  (view === "channels" ? channelListNextScrollBehaviorRef : epgViewNextScrollBehaviorRef).current =
+                    "instant";
+                  setSidebarView(view);
+                }}
+                className={clsx(
+                  "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap border-b-2 px-3 py-2 text-center font-semibold text-xs leading-5 tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] md:px-4 md:py-3 md:text-sm",
+                  sidebarView === view
+                    ? "border-blue-500 bg-[linear-gradient(to_top,rgba(59,130,246,0.12),transparent)] text-blue-700 shadow-[inset_0_-1px_0_rgba(59,130,246,0.18)] dark:border-blue-300 dark:text-blue-200"
+                    : "cursor-pointer border-transparent text-slate-500 hover:bg-blue-400/5 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-100",
+                )}
+              >
+                {view === "channels" ? `${t("channels")} (${metadata?.channels.length || 0})` : t("programGuide")}
+              </button>
+            ))}
           </div>
 
           {/* Sidebar Content */}

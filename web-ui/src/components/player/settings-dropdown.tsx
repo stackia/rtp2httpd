@@ -33,6 +33,30 @@ const themeLabels: Record<ThemeMode, TranslationKey> = {
   dark: "themeDark",
 };
 
+const SETTING_LABEL_CLASS = "mb-1.5 block px-0.5 font-medium text-slate-500 text-xs leading-4 dark:text-blue-50/55";
+const SETTING_SELECT_CLASS =
+  "h-9 w-full cursor-pointer rounded-xl border border-blue-900/10 bg-white/78 px-3 py-0 pr-8 text-foreground text-sm shadow-none transition-[color,background-color,border-color] hover:border-blue-400/25 hover:bg-blue-50/70 focus:outline-none focus:ring-2 focus:ring-blue-400/35 dark:border-blue-100/10 dark:bg-slate-900/85 dark:hover:bg-slate-800/90";
+
+interface SettingSwitchProps {
+  label: string;
+  value: boolean;
+  onChange: (checked: boolean) => void;
+}
+
+function SettingSwitch({ label, value, onChange }: SettingSwitchProps) {
+  return (
+    <div className="flex min-h-6 items-center justify-between gap-3 px-0.5">
+      <span className="min-w-0 flex-1 font-medium text-slate-600 text-xs leading-4 dark:text-blue-50/65">{label}</span>
+      <Switch
+        checked={value}
+        onCheckedChange={onChange}
+        aria-label={label}
+        className="border-blue-900/10 bg-slate-200/75 shadow-inner data-[state=checked]:border-blue-300/35 data-[state=checked]:bg-blue-500 data-[state=checked]:shadow-[0_0_16px_rgba(59,130,246,0.24)] dark:border-blue-100/10 dark:bg-slate-800/80"
+      />
+    </div>
+  );
+}
+
 function SettingsDropdownComponent({
   locale,
   onLocaleChange,
@@ -78,13 +102,11 @@ function SettingsDropdownComponent({
           <div className="space-y-3.5 p-3">
             {/* Language Select */}
             <label className="block">
-              <span className="mb-1.5 block px-0.5 font-medium text-slate-500 text-xs leading-4 dark:text-blue-50/55">
-                {t("language")}
-              </span>
+              <span className={SETTING_LABEL_CLASS}>{t("language")}</span>
               <select
                 value={locale}
                 onChange={(e) => onLocaleChange(e.target.value as Locale)}
-                className="h-9 w-full cursor-pointer rounded-xl border border-blue-900/10 bg-white/78 px-3 py-0 pr-8 text-foreground text-sm shadow-none transition-[color,background-color,border-color] hover:border-blue-400/25 hover:bg-blue-50/70 focus:outline-none focus:ring-2 focus:ring-blue-400/35 dark:border-blue-100/10 dark:bg-slate-900/85 dark:hover:bg-slate-800/90"
+                className={SETTING_SELECT_CLASS}
               >
                 {localeOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -96,13 +118,11 @@ function SettingsDropdownComponent({
 
             {/* Theme Select */}
             <label className="block">
-              <span className="mb-1.5 block px-0.5 font-medium text-slate-500 text-xs leading-4 dark:text-blue-50/55">
-                {t("theme")}
-              </span>
+              <span className={SETTING_LABEL_CLASS}>{t("theme")}</span>
               <select
                 value={theme}
                 onChange={(e) => onThemeChange(e.target.value as ThemeMode)}
-                className="h-9 w-full cursor-pointer rounded-xl border border-blue-900/10 bg-white/78 px-3 py-0 pr-8 text-foreground text-sm shadow-none transition-[color,background-color,border-color] hover:border-blue-400/25 hover:bg-blue-50/70 focus:outline-none focus:ring-2 focus:ring-blue-400/35 dark:border-blue-100/10 dark:bg-slate-900/85 dark:hover:bg-slate-800/90"
+                className={SETTING_SELECT_CLASS}
               >
                 {themeOptions.map((option) => (
                   <option key={option} value={option}>
@@ -113,17 +133,7 @@ function SettingsDropdownComponent({
             </label>
 
             {/* Seamless channel/source switch (dual-slot preload) */}
-            <div className="flex min-h-6 items-center justify-between gap-3 px-0.5">
-              <span className="min-w-0 flex-1 font-medium text-slate-600 text-xs leading-4 dark:text-blue-50/65">
-                {t("seamlessSwitch")}
-              </span>
-              <Switch
-                checked={seamlessSwitch}
-                onCheckedChange={onSeamlessSwitchChange}
-                aria-label={t("seamlessSwitch")}
-                className="border-blue-900/10 bg-slate-200/75 shadow-inner data-[state=checked]:border-blue-300/35 data-[state=checked]:bg-blue-500 data-[state=checked]:shadow-[0_0_16px_rgba(59,130,246,0.24)] dark:border-blue-100/10 dark:bg-slate-800/80"
-              />
-            </div>
+            <SettingSwitch label={t("seamlessSwitch")} value={seamlessSwitch} onChange={onSeamlessSwitchChange} />
 
             {/* Video processing group: deinterlace + picture enhancement.
                 Both only take effect for 1080p-and-below content, so the
@@ -139,30 +149,14 @@ function SettingsDropdownComponent({
               </div>
 
               {/* Automatic deinterlacing (heuristic detection, ≤1080 content only) */}
-              <div className="flex min-h-6 items-center justify-between gap-3 px-0.5">
-                <span className="min-w-0 flex-1 font-medium text-slate-600 text-xs leading-4 dark:text-blue-50/65">
-                  {t("deinterlace")}
-                </span>
-                <Switch
-                  checked={autoDeinterlace}
-                  onCheckedChange={onAutoDeinterlaceChange}
-                  aria-label={t("deinterlace")}
-                  className="border-blue-900/10 bg-slate-200/75 shadow-inner data-[state=checked]:border-blue-300/35 data-[state=checked]:bg-blue-500 data-[state=checked]:shadow-[0_0_16px_rgba(59,130,246,0.24)] dark:border-blue-100/10 dark:bg-slate-800/80"
-                />
-              </div>
+              <SettingSwitch label={t("deinterlace")} value={autoDeinterlace} onChange={onAutoDeinterlaceChange} />
 
               {/* Picture enhancement (WebGL post-processing inside the render gate) */}
-              <div className="flex min-h-6 items-center justify-between gap-3 px-0.5">
-                <span className="min-w-0 flex-1 font-medium text-slate-600 text-xs leading-4 dark:text-blue-50/65">
-                  {t("pictureEnhancement")}
-                </span>
-                <Switch
-                  checked={pictureEnhancement}
-                  onCheckedChange={onPictureEnhancementChange}
-                  aria-label={t("pictureEnhancement")}
-                  className="border-blue-900/10 bg-slate-200/75 shadow-inner data-[state=checked]:border-blue-300/35 data-[state=checked]:bg-blue-500 data-[state=checked]:shadow-[0_0_16px_rgba(59,130,246,0.24)] dark:border-blue-100/10 dark:bg-slate-800/80"
-                />
-              </div>
+              <SettingSwitch
+                label={t("pictureEnhancement")}
+                value={pictureEnhancement}
+                onChange={onPictureEnhancementChange}
+              />
             </div>
           </div>
         </div>

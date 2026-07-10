@@ -91,11 +91,10 @@ export function StatusHeader({
   const themeSelectOptions = themeOptions.map((option) => ({ value: option, label: t(themeLabels[option]) }));
   return (
     <header
-      className={clsx(STATUS_PANEL_CLASS, "overflow-hidden p-4 sm:p-5")}
-      style={{
-        backgroundImage:
-          "radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.14), transparent 36%), radial-gradient(circle at 92% -20%, rgba(14, 165, 233, 0.12), transparent 34%)",
-      }}
+      className={clsx(
+        STATUS_PANEL_CLASS,
+        "overflow-hidden bg-[radial-gradient(circle_at_0%_0%,rgba(99,102,241,0.14),transparent_36%),radial-gradient(circle_at_92%_-20%,rgba(14,165,233,0.12),transparent_34%)] p-4 sm:p-5",
+      )}
     >
       <div className="relative flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-3">

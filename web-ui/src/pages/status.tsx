@@ -202,7 +202,7 @@ function StatusPage() {
   return (
     <>
       <title>{t("title")}</title>
-      <div className="app-ambient relative isolate min-h-screen overflow-x-hidden bg-background pb-12">
+      <div className="relative isolate min-h-screen overflow-x-hidden bg-background bg-[radial-gradient(circle_at_8%_-8%,hsl(252_92%_72%/0.2),transparent_34rem),radial-gradient(circle_at_96%_2%,hsl(190_96%_60%/0.14),transparent_30rem),linear-gradient(180deg,hsl(226_56%_98%/0.68),hsl(var(--background))_28rem)] bg-fixed pb-12 dark:bg-[radial-gradient(circle_at_8%_-10%,hsl(252_92%_66%/0.18),transparent_36rem),radial-gradient(circle_at_94%_0%,hsl(190_96%_52%/0.11),transparent_32rem),linear-gradient(180deg,hsl(231_48%_9%/0.8),hsl(var(--background))_30rem)] max-md:bg-scroll">
         <div className="relative z-10 mx-auto flex w-full flex-col gap-4 p-3 sm:gap-6 sm:p-6">
           <StatusHeader
             statusAccent={statusAccent}

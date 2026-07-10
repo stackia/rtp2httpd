@@ -8,10 +8,17 @@ export interface ProgressProps extends React.HTMLAttributes<HTMLDivElement> {
 
 const Progress = React.forwardRef<HTMLDivElement, ProgressProps>(
   ({ className, value = 0, indicatorClassName, ...props }, ref) => (
-    <div ref={ref} className={clsx("ui-progress relative w-full overflow-hidden", className)} {...props}>
+    <div
+      ref={ref}
+      className={clsx(
+        "relative h-2 w-full overflow-hidden rounded-full bg-muted/90 shadow-[inset_0_1px_2px_rgba(15,23,42,0.12),inset_0_0_0_1px_hsl(var(--border)/0.3)]",
+        className,
+      )}
+      {...props}
+    >
       <div
         className={clsx(
-          "ui-progress-indicator h-full w-full flex-1 transition-transform duration-300 motion-reduce:transition-none",
+          "h-full w-full flex-1 rounded-full bg-primary shadow-[0_0_12px_hsl(var(--primary)/0.35)] transition-transform duration-300 motion-reduce:transition-none",
           indicatorClassName,
         )}
         style={{
