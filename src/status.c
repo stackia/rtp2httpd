@@ -757,9 +757,9 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
   if (append_sse_data(buffer, buffer_capacity, &len,
                       "data: "
                       "{\"serverStartTime\":%lld,\"uptimeMs\":%lld,\"currentLogLevel\":%d,"
-                      "\"version\":\"" VERSION "\",\"maxClients\":%d,\"clients\":[",
+                      "\"version\":\"%s\",\"maxClients\":%d,\"clients\":[",
                       (long long)status_shared->server_start_time, (long long)uptime_ms,
-                      status_shared->current_log_level, config.maxclients) < 0)
+                      status_shared->current_log_level, VERSION, config.maxclients) < 0)
     return 0;
 
   /* Add client data (only real media streams: have a service_url) */
