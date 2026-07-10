@@ -10,6 +10,7 @@ import {
   PLAYER_LIST_SURFACE_DEFAULT_CLASS,
   PLAYER_LIST_SURFACE_HOVER_CLASS,
   PLAYER_LIST_SURFACE_SELECTED_CLASS,
+  PLAYER_SCROLL_LIST_ITEM_CLASS,
 } from "./classnames";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
@@ -186,6 +187,7 @@ function EPGViewComponent({
                         ref={playing ? currentProgramRef : null}
                         className={clsx(
                           PLAYER_LIST_SURFACE_BASE_CLASS,
+                          PLAYER_SCROLL_LIST_ITEM_CLASS,
                           "w-full text-left",
                           playing ? PLAYER_LIST_SURFACE_SELECTED_CLASS : PLAYER_LIST_SURFACE_DEFAULT_CLASS,
                           !playing && isPast && "opacity-65",

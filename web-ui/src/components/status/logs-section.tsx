@@ -6,7 +6,12 @@ import type { Locale } from "../../lib/locale";
 import type { LogEntry } from "../../types";
 import { SelectBox } from "../ui/select-box";
 import { Switch } from "../ui/switch";
-import { STATUS_CONTROL_GROUP_CLASS, STATUS_PANEL_CLASS, STATUS_SECTION_TITLE_CLASS } from "./classnames";
+import {
+  STATUS_CONTROL_GROUP_CLASS,
+  STATUS_LOG_ENTRY_CLASS,
+  STATUS_PANEL_CLASS,
+  STATUS_SECTION_TITLE_CLASS,
+} from "./classnames";
 
 function getLogLevelClass(levelName: string): string {
   switch (levelName.toUpperCase()) {
@@ -119,7 +124,10 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
             {logs.map((log) => (
               <div
                 key={`${log.timestamp}-${log.message}`}
-                className="rounded-lg border border-white/4 bg-white/[0.025] p-2 text-sm text-slate-200 whitespace-pre-wrap transition-colors hover:border-white/8 hover:bg-white/4"
+                className={clsx(
+                  STATUS_LOG_ENTRY_CLASS,
+                  "rounded-lg border border-white/4 bg-white/[0.025] p-2 text-sm text-slate-200 whitespace-pre-wrap transition-colors hover:border-white/8 hover:bg-white/4",
+                )}
               >
                 <span className="text-slate-500 tabular-nums sm:inline-block sm:min-w-[10.5rem]">
                   {timestampFormatter.format(new Date(log.timestamp))}

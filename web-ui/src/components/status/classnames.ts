@@ -11,3 +11,5 @@ export const STATUS_SECTION_TITLE_CLASS = "text-xl font-semibold tracking-[-0.02
 
 export const STATUS_CONTROL_GROUP_CLASS =
   "min-h-11 rounded-xl border border-border/40 bg-background/35 px-3 py-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] backdrop-blur-md dark:border-white/8 dark:bg-background/25 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]";
+
+export const STATUS_LOG_ENTRY_CLASS = "[content-visibility:auto] [contain-intrinsic-size:auto_2.5rem]";

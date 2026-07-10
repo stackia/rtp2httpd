@@ -7,6 +7,9 @@ export const PLAYER_CONTROL_BUTTON_CLASS =
 export const PLAYER_LIST_SURFACE_BASE_CLASS =
   "relative isolate overflow-hidden rounded-2xl border text-card-foreground transition-[color,background-color,border-color,box-shadow,backdrop-filter] duration-300 ease-out motion-reduce:transition-none";
 
+export const PLAYER_SCROLL_LIST_ITEM_CLASS =
+  "[content-visibility:auto] [contain-intrinsic-size:auto_3.25rem] md:[contain-intrinsic-size:auto_3.75rem]";
+
 export const PLAYER_LIST_SURFACE_SELECTED_CLASS =
   "border-blue-300/65 bg-white/38 shadow-[0_16px_32px_-18px_rgba(37,99,235,0.46),0_0_20px_-12px_rgba(59,130,246,0.42),inset_0_1px_0_rgba(255,255,255,0.78),inset_0_-1px_0_rgba(37,99,235,0.12)] backdrop-blur-md backdrop-saturate-150 dark:border-blue-200/55 dark:bg-slate-900/30 dark:shadow-[0_18px_36px_-18px_rgba(0,0,0,0.82),0_0_28px_-12px_rgba(59,130,246,0.62),inset_0_1px_0_rgba(255,255,255,0.17),inset_0_-1px_0_rgba(59,130,246,0.14)]";
 
