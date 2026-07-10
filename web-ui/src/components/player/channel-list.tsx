@@ -210,7 +210,7 @@ function ChannelListComponent({
               className={clsx(
                 "min-h-7 max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-2.5 py-1 font-medium text-xs leading-none transition-[color,background-color,border-color,box-shadow]",
                 selectedGroup === null
-                  ? "border-blue-400/25 bg-[linear-gradient(135deg,#2563eb,#4f46e5)] text-white shadow-[0_5px_14px_rgba(37,99,235,0.25)]"
+                  ? "border-blue-400/30 bg-blue-500/10 text-blue-700 shadow-[0_4px_12px_rgba(37,99,235,0.1)] dark:border-blue-300/20 dark:bg-blue-400/14 dark:text-blue-200 dark:shadow-[0_4px_12px_rgba(37,99,235,0.08)]"
                   : "cursor-pointer border border-blue-900/8 bg-white/55 text-slate-500 hover:border-blue-400/30 hover:bg-blue-50/80 hover:text-blue-800 dark:border-blue-100/10 dark:bg-slate-950/35 dark:text-slate-400 dark:hover:bg-blue-300/10 dark:hover:text-blue-100",
               )}
             >
@@ -224,7 +224,7 @@ function ChannelListComponent({
                 className={clsx(
                   "min-h-7 max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-2.5 py-1 font-medium text-xs leading-none transition-[color,background-color,border-color,box-shadow]",
                   selectedGroup === group
-                    ? "border-blue-400/25 bg-[linear-gradient(135deg,#2563eb,#4f46e5)] text-white shadow-[0_5px_14px_rgba(37,99,235,0.25)]"
+                    ? "border-blue-400/30 bg-blue-500/10 text-blue-700 shadow-[0_4px_12px_rgba(37,99,235,0.1)] dark:border-blue-300/20 dark:bg-blue-400/14 dark:text-blue-200 dark:shadow-[0_4px_12px_rgba(37,99,235,0.08)]"
                     : "cursor-pointer border border-blue-900/8 bg-white/55 text-slate-500 hover:border-blue-400/30 hover:bg-blue-50/80 hover:text-blue-800 dark:border-blue-100/10 dark:bg-slate-950/35 dark:text-slate-400 dark:hover:bg-blue-300/10 dark:hover:text-blue-100",
                 )}
               >
