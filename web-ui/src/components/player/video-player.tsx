@@ -106,6 +106,15 @@ function ignoreInterruptedPlayError(err: unknown): void {
   if (!isInterruptedPlayError(err)) throw err;
 }
 
+function decodeRequestUrl(url: string): string {
+  try {
+    return decodeURI(url);
+  } catch {
+    // Keep the original URL visible when an upstream returns malformed percent encoding.
+    return url;
+  }
+}
+
 function getEventDocument(event: Event): Document {
   const target = event.target;
   if (target && "ownerDocument" in target) {
@@ -677,7 +686,7 @@ export function VideoPlayer({
           description: t("upstreamRequestFailedDescription"),
           statusCode: playerError.code,
           statusText: playerError.info,
-          requestUrl: playerError.url,
+          requestUrl: playerError.url ? decodeRequestUrl(playerError.url) : undefined,
           suggestion: t("upstreamRequestFailedSuggestion"),
         };
       } else {
@@ -1664,7 +1673,7 @@ export function VideoPlayer({
                   <div className="rounded-lg bg-black/20 px-3 py-2 [@media(max-height:360px)]:grid [@media(max-height:360px)]:grid-cols-[auto_1fr] [@media(max-height:360px)]:items-baseline [@media(max-height:360px)]:gap-3 [@media(max-height:360px)]:py-1.5">
                     <div className="mb-1 text-rose-100/55 [@media(max-height:360px)]:mb-0">{t("requestUrl")}</div>
                     <div
-                      className="min-w-0 overflow-x-auto whitespace-nowrap font-mono text-rose-50"
+                      className="min-w-0 whitespace-normal break-all font-mono text-rose-50"
                       title={error.requestUrl}
                     >
                       {error.requestUrl}
