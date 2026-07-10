@@ -1022,13 +1022,37 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  html:has(.VPHome) {
     scroll-behavior: auto;
-    animation-duration: 0.01ms;
-    animation-iteration-count: 1;
-    transition-duration: 0.01ms;
+  }
+
+  .VPHome::before,
+  .VPHome::after,
+  .VPHomeHero .image-bg,
+  .VPHomeHero .VPImage {
+    animation: none;
+  }
+
+  .VPHomeHero .VPButton,
+  .VPHomeHero .VPButton.brand::before,
+  .VPHomeFeatures .VPFeature,
+  .VPHomeFeatures .VPFeature::before,
+  .demo-card,
+  .demo-card::before,
+  .demo-card__media :is(video, img) {
+    transition: none;
+  }
+
+  .VPHomeHero .VPButton:hover,
+  .VPHomeHero .VPButton:active,
+  .VPHomeFeatures .VPFeature:hover,
+  .demo-card:hover,
+  .demo-card:hover .demo-card__media :is(video, img) {
+    transform: none;
+  }
+
+  .VPHomeHero .VPButton.brand::before {
+    display: none;
   }
 }
 
