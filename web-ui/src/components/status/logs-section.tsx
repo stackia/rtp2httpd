@@ -76,8 +76,10 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h2 className={STATUS_SECTION_TITLE_CLASS}>{t("logs")}</h2>
         <div className="flex flex-wrap items-center justify-start gap-3 text-sm text-muted-foreground sm:justify-end">
-          <div className={clsx("flex items-center gap-2", STATUS_CONTROL_GROUP_CLASS)}>
-            <List className="h-4 w-4" />
+          <div className={clsx("flex items-center gap-1.5", STATUS_CONTROL_GROUP_CLASS)}>
+            <span className="flex size-6 shrink-0 items-center justify-center text-primary/75">
+              <List className="h-4 w-4" />
+            </span>
             <span className="whitespace-nowrap">{t("logLevel")}:</span>
             <SelectBox
               value={logLevelValue ?? ""}

@@ -50,7 +50,9 @@ function HeaderSelect<T extends string>({
 }: HeaderSelectProps<T>) {
   return (
     <div className={clsx("group flex w-full items-center gap-1.5 md:w-auto md:shrink-0", STATUS_CONTROL_GROUP_CLASS)}>
-      <span className="shrink-0 text-primary/75 transition-colors group-hover:text-primary">{icon}</span>
+      <span className="flex size-6 shrink-0 items-center justify-center text-primary/75 transition-colors group-hover:text-primary">
+        {icon}
+      </span>
       <span className="hidden whitespace-nowrap text-xs font-semibold tracking-[0.06em] xl:inline">{label}</span>
       <SelectBox
         value={value}

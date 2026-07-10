@@ -208,10 +208,10 @@ export function PlayerControls({
     <div className="flex w-full flex-col gap-2 bg-[linear-gradient(to_top,rgba(2,8,23,0.98)_0%,rgba(8,22,51,0.9)_46%,rgba(21,27,69,0.48)_72%,transparent_100%)] px-3 pt-8 pb-3 md:gap-3 md:px-4 md:pt-12 md:pb-4">
       {/* Program Info */}
       {currentProgram && (
-        <div className="flex min-w-0 items-center justify-between gap-2 text-xs tracking-[0.01em] text-cyan-50/80 md:text-sm">
+        <div className="flex min-w-0 items-center justify-between gap-2 text-xs tracking-[0.01em] text-blue-50/80 md:text-sm">
           <div className="min-w-0 flex-1 truncate">
-            <span className="font-medium text-cyan-100">{formatTime(startTime)}</span>
-            <span className="mx-1 text-cyan-100/30 md:mx-2">|</span>
+            <span className="font-medium text-blue-100">{formatTime(startTime)}</span>
+            <span className="mx-1 text-blue-100/30 md:mx-2">|</span>
             <span className="text-white/90">{currentProgram.title || t("excellentProgram")}</span>
           </div>
           <span className="shrink-0 font-medium tabular-nums">{formatTime(endTime)}</span>
@@ -229,9 +229,9 @@ export function PlayerControls({
           aria-valuenow={Math.round(progress)}
           aria-label={t("seekTo")}
           className={clsx(
-            "group relative h-2 rounded-full bg-cyan-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-[height,box-shadow] duration-150",
+            "group relative h-2 rounded-full bg-blue-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-[height,box-shadow] duration-150",
             isCatchupSupported
-              ? "cursor-pointer hover:h-3 hover:shadow-[0_0_20px_rgba(34,211,238,0.16),inset_0_1px_3px_rgba(0,0,0,0.45)]"
+              ? "cursor-pointer hover:h-3 hover:shadow-[0_0_20px_rgba(59,130,246,0.16),inset_0_1px_3px_rgba(0,0,0,0.45)]"
               : "cursor-default",
           )}
           onMouseDown={isCatchupSupported ? handleMouseDown : undefined}
@@ -239,21 +239,21 @@ export function PlayerControls({
           onMouseLeave={isCatchupSupported ? handleMouseLeave : undefined}
         >
           <div
-            className="absolute top-0 left-0 h-full rounded-full bg-[linear-gradient(90deg,#22d3ee_0%,#38bdf8_52%,#6366f1_100%)] shadow-[0_0_18px_rgba(34,211,238,0.4)] transition-[width] duration-150"
+            className="absolute top-0 left-0 h-full rounded-full bg-[linear-gradient(90deg,#3b82f6_0%,#38bdf8_52%,#6366f1_100%)] shadow-[0_0_18px_rgba(59,130,246,0.4)] transition-[width] duration-150"
             style={{ width: `${progress}%` }}
           />
 
           {isCatchupSupported && hoverPosition !== null && (
             <>
               <div
-                className="absolute top-0 h-full w-0.5 bg-cyan-50/80 shadow-[0_0_8px_rgba(103,232,249,0.7)]"
+                className="absolute top-0 h-full w-0.5 bg-blue-50/80 shadow-[0_0_8px_rgba(147,197,253,0.7)]"
                 style={{ left: `${hoverPosition}%` }}
               />
               {hoverTime && (
                 <div
                   className={clsx(
                     PLAYER_OVERLAY_SURFACE_CLASS,
-                    "absolute bottom-full mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-medium text-cyan-50",
+                    "absolute bottom-full mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-medium text-blue-50",
                   )}
                   style={{ left: `${hoverPosition}%` }}
                 >
@@ -265,7 +265,7 @@ export function PlayerControls({
 
           <div
             className={clsx(
-              "absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-cyan-300 shadow-[0_0_16px_rgba(103,232,249,0.75)] transition-[left,width,height] duration-150",
+              "absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-blue-300 shadow-[0_0_16px_rgba(147,197,253,0.75)] transition-[left,width,height] duration-150",
               isCatchupSupported && "group-hover:h-4 group-hover:w-4",
             )}
             style={{ left: `${progress}%` }}
@@ -320,14 +320,14 @@ export function PlayerControls({
                 onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
                 className="h-16 md:h-20 w-1 cursor-pointer appearance-none bg-transparent [writing-mode:vertical-lr] [direction:rtl]"
                 style={{
-                  background: `linear-gradient(to top, #22d3ee 0%, #6366f1 ${(isMuted ? 0 : volume) * 100}%, rgba(207,250,254,0.18) ${(isMuted ? 0 : volume) * 100}%, rgba(207,250,254,0.18) 100%)`,
+                  background: `linear-gradient(to top, #3b82f6 0%, #6366f1 ${(isMuted ? 0 : volume) * 100}%, rgba(219,234,254,0.18) ${(isMuted ? 0 : volume) * 100}%, rgba(219,234,254,0.18) 100%)`,
                 }}
               />
             </div>
           </div>
 
           {/* Time Display */}
-          <div className="hidden whitespace-nowrap text-xs text-cyan-50/75 tabular-nums min-[360px]:block md:text-sm">
+          <div className="hidden whitespace-nowrap text-xs text-blue-50/75 tabular-nums min-[360px]:block md:text-sm">
             {currentProgram ? (
               <span>
                 {formatDuration(elapsedTime)} / {formatDuration(duration)}
@@ -354,7 +354,7 @@ export function PlayerControls({
               onClick={() => onSeek(new Date())}
               className={clsx(
                 PLAYER_CONTROL_BUTTON_CLASS,
-                "cursor-pointer whitespace-nowrap bg-cyan-300/10 px-2 py-1 text-xs font-medium text-cyan-50 md:px-2.5 md:py-1.5 md:text-sm",
+                "cursor-pointer whitespace-nowrap bg-blue-300/10 px-2 py-1 text-xs font-medium text-blue-50 md:px-2.5 md:py-1.5 md:text-sm",
               )}
             >
               {t("goLive")}
@@ -393,8 +393,8 @@ export function PlayerControls({
                       className={clsx(
                         "block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs transition-colors md:text-sm",
                         index === activeSourceIndex
-                          ? "bg-cyan-300/10 font-medium text-cyan-200"
-                          : "text-white/75 hover:bg-cyan-200/10 hover:text-cyan-50",
+                          ? "bg-blue-300/10 font-medium text-blue-200"
+                          : "text-white/75 hover:bg-blue-200/10 hover:text-blue-50",
                       )}
                     >
                       <span className="flex items-center gap-2">

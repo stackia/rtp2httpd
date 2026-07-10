@@ -168,19 +168,19 @@ function PlayerTopLeftOverlay({
         visible ? "opacity-100" : "opacity-0 pointer-events-none",
       )}
     >
-      <span className="shrink-0 font-medium text-xs text-cyan-50 tabular-nums drop-shadow-sm md:text-base">
+      <span className="shrink-0 font-medium text-xs text-blue-50 tabular-nums drop-shadow-sm md:text-base">
         {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
       </span>
       {loading && (
         <>
-          <span className="shrink-0 text-cyan-100/35 text-xs md:text-sm" aria-hidden="true">
+          <span className="shrink-0 text-blue-100/35 text-xs md:text-sm" aria-hidden="true">
             ·
           </span>
           <div className="relative h-3 w-3 md:h-3.5 md:w-3.5 shrink-0">
-            <div className="absolute inset-0 rounded-full border border-cyan-100/25" />
-            <div className="absolute inset-0 animate-spin rounded-full border border-cyan-200 border-t-transparent shadow-[0_0_8px_rgba(103,232,249,0.5)]" />
+            <div className="absolute inset-0 rounded-full border border-blue-100/25" />
+            <div className="absolute inset-0 animate-spin rounded-full border border-blue-200 border-t-transparent shadow-[0_0_8px_rgba(147,197,253,0.5)]" />
           </div>
-          <span className="min-w-0 truncate text-cyan-50/70 text-xs md:text-sm">{loadingText}</span>
+          <span className="min-w-0 truncate text-blue-50/70 text-xs md:text-sm">{loadingText}</span>
         </>
       )}
     </div>
@@ -1517,7 +1517,7 @@ export function VideoPlayer({
                 src={channel.logo}
                 alt={channel.name}
                 referrerPolicy="no-referrer"
-                className="h-8 w-20 object-contain drop-shadow-[0_0_14px_rgba(103,232,249,0.2)] md:h-14 md:w-36"
+                className="h-8 w-20 object-contain drop-shadow-[0_0_14px_rgba(147,197,253,0.2)] md:h-14 md:w-36"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}
@@ -1529,8 +1529,8 @@ export function VideoPlayer({
                   className={clsx(
                     "shrink-0 rounded-md px-1 py-0.5 font-semibold text-[10px] transition-[color,background-color,box-shadow,scale] duration-300 md:px-1.5 md:text-xs",
                     digitBuffer
-                      ? "scale-110 bg-[linear-gradient(135deg,#22d3ee,#6366f1)] text-white shadow-[0_0_20px_rgba(34,211,238,0.45)] ring-2 ring-cyan-200/40"
-                      : "bg-cyan-100/10 text-cyan-50/65 ring-1 ring-cyan-100/10",
+                      ? "scale-110 bg-[linear-gradient(135deg,#3b82f6,#6366f1)] text-white shadow-[0_0_20px_rgba(59,130,246,0.45)] ring-2 ring-blue-200/40"
+                      : "bg-blue-100/10 text-blue-50/65 ring-1 ring-blue-100/10",
                   )}
                 >
                   {digitBuffer || channel.id}
@@ -1538,8 +1538,8 @@ export function VideoPlayer({
                 <h2 className="truncate font-bold text-white text-xs tracking-[0.01em] md:text-base">{channel.name}</h2>
                 {channel.groups.length > 0 && (
                   <>
-                    <span className="hidden text-cyan-100/35 text-xs sm:inline md:text-sm">·</span>
-                    <div className="hidden truncate text-cyan-50/65 text-xs sm:block md:text-sm">
+                    <span className="hidden text-blue-100/35 text-xs sm:inline md:text-sm">·</span>
+                    <div className="hidden truncate text-blue-50/65 text-xs sm:block md:text-sm">
                       {channel.groups.join(" / ")}
                     </div>
                   </>
@@ -1557,10 +1557,10 @@ export function VideoPlayer({
           onClick={handleUserInteraction}
         >
           <div className="flex flex-col items-center gap-4 text-white">
-            <Play className="h-20 w-20 fill-cyan-100/20 text-cyan-100 opacity-95 drop-shadow-[0_0_24px_rgba(34,211,238,0.55)]" />
+            <Play className="h-20 w-20 fill-blue-100/20 text-blue-100 opacity-95 drop-shadow-[0_0_24px_rgba(59,130,246,0.55)]" />
             <div className="max-w-lg px-2 text-center">
-              <div className="mb-2 font-semibold text-2xl tracking-tight text-cyan-50">{t("clickToPlay")}</div>
-              <div className="text-pretty text-cyan-50/65 text-sm leading-5">{t("autoplayBlocked")}</div>
+              <div className="mb-2 font-semibold text-2xl tracking-tight text-blue-50">{t("clickToPlay")}</div>
+              <div className="text-pretty text-blue-50/65 text-sm leading-5">{t("autoplayBlocked")}</div>
             </div>
           </div>
         </button>
@@ -1623,7 +1623,7 @@ export function VideoPlayer({
     <div className="relative w-full bg-[radial-gradient(circle_at_50%_20%,#102044_0%,#050b18_52%,#01030a_100%)] pt-[env(safe-area-inset-top)] md:h-full">
       <div ref={playerDockRef} className="contents">
         {isDocumentPiP && (
-          <div className="@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-[radial-gradient(circle_at_center,#102044_0%,#050b18_62%,#01030a_100%)] px-4 text-center font-medium text-cyan-50/65 text-sm md:aspect-auto md:h-full md:text-base">
+          <div className="@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-[radial-gradient(circle_at_center,#102044_0%,#050b18_62%,#01030a_100%)] px-4 text-center font-medium text-blue-50/65 text-sm md:aspect-auto md:h-full md:text-base">
             {t("playingInPictureInPicture")}
           </div>
         )}
