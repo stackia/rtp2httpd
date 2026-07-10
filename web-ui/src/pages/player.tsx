@@ -532,7 +532,7 @@ function PlayerPage() {
                   <Button
                     type="button"
                     onClick={loadPlaylist}
-                    className="w-full gap-2 rounded-xl bg-[linear-gradient(135deg,#0e7490,#4338ca)] text-white shadow-[0_10px_28px_rgba(37,99,235,0.24)] hover:brightness-105 sm:w-auto"
+                    className="w-full gap-2 rounded-xl bg-[linear-gradient(135deg,#0e7490,#4338ca)] text-white shadow-[0_10px_28px_rgba(37,99,235,0.24)] sm:w-auto"
                   >
                     <RefreshCw className="h-4 w-4" aria-hidden="true" />
                     {t("retry")}

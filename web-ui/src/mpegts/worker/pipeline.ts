@@ -416,7 +416,7 @@ class Pipeline {
     }
 
     if (type === "audio") {
-      const sourceCodec = trackMetadata.originalCodec ?? trackMetadata.codec;
+      const sourceCodec = trackMetadata.sourceCodec ?? trackMetadata.originalCodec ?? trackMetadata.codec;
       this._hasActualAudioInfo = true;
       this._mergeMediaInfo({
         audio: {
