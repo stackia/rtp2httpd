@@ -1,10 +1,10 @@
 import { Settings } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import type { TranslationKey } from "../../i18n/player";
-import type { Locale } from "../../lib/locale";
-import type { ThemeMode } from "../../types/ui";
-import { Switch } from "../ui/switch";
+import { LOCALE_OPTIONS, type Locale } from "../../lib/locale";
+import { THEME_LABEL_KEYS, THEME_MODES, type ThemeMode } from "../../types/ui";
+import { LabeledSwitch } from "../ui/labeled-switch";
+import { SelectBox } from "../ui/select-box";
 
 interface SettingsDropdownProps {
   locale: Locale;
@@ -19,43 +19,11 @@ interface SettingsDropdownProps {
   onPictureEnhancementChange: (enabled: boolean) => void;
 }
 
-const localeOptions: Array<{ value: Locale; label: string }> = [
-  { value: "en", label: "English" },
-  { value: "zh-Hans", label: "简体中文" },
-  { value: "zh-Hant", label: "繁體中文" },
-];
-
-const themeOptions: ThemeMode[] = ["auto", "light", "dark"];
-
-const themeLabels: Record<ThemeMode, TranslationKey> = {
-  auto: "themeAuto",
-  light: "themeLight",
-  dark: "themeDark",
-};
-
 const SETTING_LABEL_CLASS = "mb-1.5 block px-0.5 font-medium text-slate-500 text-xs leading-4 dark:text-blue-50/55";
-const SETTING_SELECT_CLASS =
-  "h-9 w-full cursor-pointer rounded-xl border border-blue-900/10 bg-white/78 px-3 py-0 pr-8 text-foreground text-sm shadow-none transition-[color,background-color,border-color] hover:border-blue-400/25 hover:bg-blue-50/70 focus:outline-none focus:ring-2 focus:ring-blue-400/35 dark:border-blue-100/10 dark:bg-slate-900/85 dark:hover:bg-slate-800/90";
-
-interface SettingSwitchProps {
-  label: string;
-  value: boolean;
-  onChange: (checked: boolean) => void;
-}
-
-function SettingSwitch({ label, value, onChange }: SettingSwitchProps) {
-  return (
-    <div className="flex min-h-6 items-center justify-between gap-3 px-0.5">
-      <span className="min-w-0 flex-1 font-medium text-slate-600 text-xs leading-4 dark:text-blue-50/65">{label}</span>
-      <Switch
-        checked={value}
-        onCheckedChange={onChange}
-        aria-label={label}
-        className="border-blue-900/10 bg-slate-200/75 shadow-inner data-[state=checked]:border-blue-300/35 data-[state=checked]:bg-blue-500 data-[state=checked]:shadow-[0_0_16px_rgba(59,130,246,0.24)] dark:border-blue-100/10 dark:bg-slate-800/80"
-      />
-    </div>
-  );
-}
+const SETTING_SWITCH_CLASS = "min-h-6 gap-3 px-0.5";
+const SETTING_SWITCH_LABEL_CLASS = "flex-1 font-medium text-slate-600 text-xs leading-4 dark:text-blue-50/65";
+const SETTING_SWITCH_CONTROL_CLASS =
+  "border-blue-900/10 bg-slate-200/75 shadow-inner data-[state=checked]:border-blue-300/35 data-[state=checked]:bg-blue-500 data-[state=checked]:shadow-[0_0_16px_rgba(59,130,246,0.24)] dark:border-blue-100/10 dark:bg-slate-800/80";
 
 function SettingsDropdownComponent({
   locale,
@@ -101,39 +69,54 @@ function SettingsDropdownComponent({
         <div className="absolute top-full right-0 z-50 mt-1 w-52 max-w-[calc(100vw-1rem)] rounded-2xl border border-blue-900/12 bg-[linear-gradient(145deg,rgba(255,255,255,0.9),rgba(238,242,255,0.82))] shadow-[0_20px_55px_rgba(30,64,175,0.18),inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-2xl dark:border-blue-100/15 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.94),rgba(26,24,72,0.9))] dark:shadow-[0_22px_60px_rgba(1,7,24,0.62),inset_0_1px_0_rgba(255,255,255,0.08)]">
           <div className="space-y-3.5 p-3">
             {/* Language Select */}
-            <label className="block">
-              <span className={SETTING_LABEL_CLASS}>{t("language")}</span>
-              <select
+            <div>
+              <label htmlFor="player-settings-locale" className={SETTING_LABEL_CLASS}>
+                {t("language")}
+              </label>
+              <SelectBox
+                id="player-settings-locale"
                 value={locale}
                 onChange={(e) => onLocaleChange(e.target.value as Locale)}
-                className={SETTING_SELECT_CLASS}
+                containerClassName="w-full min-w-0"
+                aria-label={t("language")}
               >
-                {localeOptions.map((option) => (
+                {LOCALE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
                 ))}
-              </select>
-            </label>
+              </SelectBox>
+            </div>
 
             {/* Theme Select */}
-            <label className="block">
-              <span className={SETTING_LABEL_CLASS}>{t("theme")}</span>
-              <select
+            <div>
+              <label htmlFor="player-settings-theme" className={SETTING_LABEL_CLASS}>
+                {t("theme")}
+              </label>
+              <SelectBox
+                id="player-settings-theme"
                 value={theme}
                 onChange={(e) => onThemeChange(e.target.value as ThemeMode)}
-                className={SETTING_SELECT_CLASS}
+                containerClassName="w-full min-w-0"
+                aria-label={t("theme")}
               >
-                {themeOptions.map((option) => (
+                {THEME_MODES.map((option) => (
                   <option key={option} value={option}>
-                    {t(themeLabels[option])}
+                    {t(THEME_LABEL_KEYS[option])}
                   </option>
                 ))}
-              </select>
-            </label>
+              </SelectBox>
+            </div>
 
             {/* Seamless channel/source switch (dual-slot preload) */}
-            <SettingSwitch label={t("seamlessSwitch")} value={seamlessSwitch} onChange={onSeamlessSwitchChange} />
+            <LabeledSwitch
+              label={t("seamlessSwitch")}
+              checked={seamlessSwitch}
+              onCheckedChange={onSeamlessSwitchChange}
+              className={SETTING_SWITCH_CLASS}
+              labelClassName={SETTING_SWITCH_LABEL_CLASS}
+              switchClassName={SETTING_SWITCH_CONTROL_CLASS}
+            />
 
             {/* Video processing group: deinterlace + picture enhancement.
                 Both only take effect for 1080p-and-below content, so the
@@ -149,13 +132,23 @@ function SettingsDropdownComponent({
               </div>
 
               {/* Automatic deinterlacing (heuristic detection, ≤1080 content only) */}
-              <SettingSwitch label={t("deinterlace")} value={autoDeinterlace} onChange={onAutoDeinterlaceChange} />
+              <LabeledSwitch
+                label={t("deinterlace")}
+                checked={autoDeinterlace}
+                onCheckedChange={onAutoDeinterlaceChange}
+                className={SETTING_SWITCH_CLASS}
+                labelClassName={SETTING_SWITCH_LABEL_CLASS}
+                switchClassName={SETTING_SWITCH_CONTROL_CLASS}
+              />
 
               {/* Picture enhancement (WebGL post-processing inside the render gate) */}
-              <SettingSwitch
+              <LabeledSwitch
                 label={t("pictureEnhancement")}
-                value={pictureEnhancement}
-                onChange={onPictureEnhancementChange}
+                checked={pictureEnhancement}
+                onCheckedChange={onPictureEnhancementChange}
+                className={SETTING_SWITCH_CLASS}
+                labelClassName={SETTING_SWITCH_LABEL_CLASS}
+                switchClassName={SETTING_SWITCH_CONTROL_CLASS}
               />
             </div>
           </div>

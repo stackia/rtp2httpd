@@ -1,6 +1,14 @@
 export const SUPPORTED_LOCALES = ["en", "zh-Hans", "zh-Hant"] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
+export const LOCALE_LABELS: Record<Locale, string> = {
+  en: "English",
+  "zh-Hans": "简体中文",
+  "zh-Hant": "繁體中文",
+};
+
+export const LOCALE_OPTIONS = SUPPORTED_LOCALES.map((value) => ({ value, label: LOCALE_LABELS[value] }));
+
 export function normalizeLocale(locale: string | undefined): Locale | null {
   if (!locale) return null;
   const lower = locale.toLowerCase();

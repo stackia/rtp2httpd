@@ -2,9 +2,8 @@ import { clsx } from "clsx";
 import { Activity, Globe, Moon, Sun, Wifi } from "lucide-react";
 import type { ReactNode } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
-import type { TranslationKey } from "../../i18n/status";
-import type { Locale } from "../../lib/locale";
-import type { BandwidthUnit, ThemeMode } from "../../types/ui";
+import { LOCALE_OPTIONS, type Locale } from "../../lib/locale";
+import { type BandwidthUnit, THEME_LABEL_KEYS, THEME_MODES, type ThemeMode } from "../../types/ui";
 import { Badge } from "../ui/badge";
 import { SelectBox } from "../ui/select-box";
 import { STATUS_CONTROL_GROUP_CLASS, STATUS_PANEL_CLASS } from "./classnames";
@@ -17,11 +16,8 @@ interface StatusHeaderProps {
   version: string;
   locale: Locale;
   onLocaleChange: (locale: Locale) => void;
-  localeOptions: Array<{ value: Locale; label: string }>;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
-  themeOptions: ThemeMode[];
-  themeLabels: Record<ThemeMode, TranslationKey>;
   bandwidthUnit: BandwidthUnit;
   onBandwidthUnitChange: (unit: BandwidthUnit) => void;
 }
@@ -58,7 +54,6 @@ function HeaderSelect<T extends string>({
         value={value}
         onChange={(event) => onChange(event.target.value as T)}
         containerClassName={clsx("min-w-0 flex-1 md:flex-none", containerClassName)}
-        className="border-border/40 bg-background/70 shadow-none backdrop-blur-none transition-colors hover:border-primary/30"
         aria-label={label}
       >
         {options.map((option) => (
@@ -79,16 +74,13 @@ export function StatusHeader({
   version,
   locale,
   onLocaleChange,
-  localeOptions,
   theme,
   onThemeChange,
-  themeOptions,
-  themeLabels,
   bandwidthUnit,
   onBandwidthUnitChange,
 }: StatusHeaderProps) {
   const t = useStatusTranslation(locale);
-  const themeSelectOptions = themeOptions.map((option) => ({ value: option, label: t(themeLabels[option]) }));
+  const themeSelectOptions = THEME_MODES.map((option) => ({ value: option, label: t(THEME_LABEL_KEYS[option]) }));
   return (
     <header
       className={clsx(
@@ -130,7 +122,7 @@ export function StatusHeader({
             label={t("language")}
             value={locale}
             onChange={onLocaleChange}
-            options={localeOptions}
+            options={LOCALE_OPTIONS}
           />
           <HeaderSelect
             icon={theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}

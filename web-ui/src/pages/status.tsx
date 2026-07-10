@@ -13,12 +13,10 @@ import { useSse } from "../hooks/use-sse";
 import { useStatusApi } from "../hooks/use-status-api";
 import { useStatusTranslation } from "../hooks/use-status-translation";
 import { useTheme } from "../hooks/use-theme";
-import type { TranslationKey } from "../i18n/status";
 import { formatBandwidth, formatBytes, formatDuration } from "../lib/format";
-import type { Locale } from "../lib/locale";
 import { mergeClients } from "../lib/status";
 import type { ClientRow, LogEntry, StatusPayload } from "../types";
-import type { ConnectionState, ThemeMode } from "../types/ui";
+import type { ConnectionState } from "../types/ui";
 
 const LOG_LEVELS: Array<{ value: number; label: string }> = [
   { value: 0, label: "FATAL" },
@@ -27,19 +25,6 @@ const LOG_LEVELS: Array<{ value: number; label: string }> = [
   { value: 3, label: "INFO" },
   { value: 4, label: "DEBUG" },
 ];
-
-const localeOptions: Array<{ value: Locale; label: string }> = [
-  { value: "en", label: "English" },
-  { value: "zh-Hans", label: "简体中文" },
-  { value: "zh-Hant", label: "繁體中文" },
-];
-
-const THEME_OPTIONS: ThemeMode[] = ["auto", "light", "dark"];
-const THEME_LABELS: Record<ThemeMode, TranslationKey> = {
-  auto: "themeAuto",
-  light: "themeLight",
-  dark: "themeDark",
-};
 
 const MAX_LOG_ENTRIES = 500;
 
@@ -212,11 +197,8 @@ function StatusPage() {
             version={payload?.version ?? "--"}
             locale={locale}
             onLocaleChange={setLocale}
-            localeOptions={localeOptions}
             theme={theme}
             onThemeChange={setTheme}
-            themeOptions={THEME_OPTIONS}
-            themeLabels={THEME_LABELS}
             bandwidthUnit={bandwidthUnit}
             onBandwidthUnitChange={setBandwidthUnit}
           />

@@ -8,7 +8,7 @@ import type { BandwidthUnit } from "../../types/ui";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Card, CardContent } from "../ui/card";
-import { Switch } from "../ui/switch";
+import { LabeledSwitch } from "../ui/labeled-switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import {
   STATUS_CONTROL_GROUP_CLASS,
@@ -76,14 +76,13 @@ export function ConnectionsSection({
     <section className={clsx(STATUS_PANEL_CLASS, "flex flex-col p-5 sm:p-6")}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <h2 className={STATUS_SECTION_TITLE_CLASS}>{t("connections")}</h2>
-        <div className={clsx("flex items-center gap-3 text-sm text-muted-foreground", STATUS_CONTROL_GROUP_CLASS)}>
-          <span className="whitespace-nowrap font-medium text-card-foreground">{t("showDisconnected")}</span>
-          <Switch
-            checked={showDisconnected}
-            onCheckedChange={onShowDisconnectedChange}
-            aria-label={t("showDisconnected")}
-          />
-        </div>
+        <LabeledSwitch
+          label={t("showDisconnected")}
+          checked={showDisconnected}
+          onCheckedChange={onShowDisconnectedChange}
+          className={clsx("gap-3 text-sm text-muted-foreground", STATUS_CONTROL_GROUP_CLASS)}
+          labelClassName="whitespace-nowrap font-medium text-card-foreground"
+        />
       </div>
 
       {clients.length === 0 ? (

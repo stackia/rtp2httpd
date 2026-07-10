@@ -4,8 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
 import type { Locale } from "../../lib/locale";
 import type { LogEntry } from "../../types";
+import { LabeledSwitch } from "../ui/labeled-switch";
 import { SelectBox } from "../ui/select-box";
-import { Switch } from "../ui/switch";
 import {
   STATUS_CONTROL_GROUP_CLASS,
   STATUS_LOG_ENTRY_CLASS,
@@ -91,7 +91,7 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
               onChange={(event) => onLogLevelChange(event.target.value)}
               disabled={disabled}
               containerClassName="min-w-[120px]"
-              className="border-border/40 bg-background/70 text-sm font-medium shadow-none backdrop-blur-none hover:border-primary/30"
+              className="text-sm font-medium"
               aria-label={t("logLevel")}
             >
               {!logLevelValue && <option value="">--</option>}
@@ -102,15 +102,14 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
               ))}
             </SelectBox>
           </div>
-          <div className={clsx("flex items-center gap-2", STATUS_CONTROL_GROUP_CLASS)}>
-            <span className="whitespace-nowrap">{t("autoScroll")}:</span>
-            <Switch
-              checked={autoScroll}
-              onCheckedChange={setAutoScroll}
-              disabled={disabled}
-              aria-label={t("autoScroll")}
-            />
-          </div>
+          <LabeledSwitch
+            label={`${t("autoScroll")}:`}
+            checked={autoScroll}
+            onCheckedChange={setAutoScroll}
+            disabled={disabled}
+            className={clsx("gap-2", STATUS_CONTROL_GROUP_CLASS)}
+            labelClassName="whitespace-nowrap"
+          />
         </div>
       </div>
       <div
