@@ -547,8 +547,8 @@ void parse_global_sec(char *line) {
 
   if (strcasecmp("workers", param) == 0) {
     int n = atoi(value);
-    if (n < 1) {
-      logger(LOG_ERROR, "Invalid workers value! Must be >= 1. Ignoring.");
+    if (n < 1 || n > CONFIG_MAX_WORKERS) {
+      logger(LOG_ERROR, "Invalid workers value! Must be between 1 and %d. Ignoring.", CONFIG_MAX_WORKERS);
       return;
     }
     config.workers = n;
@@ -1453,8 +1453,8 @@ void parse_cmd_line(int argc, char *argv[]) {
       }
       break;
     case 'w':
-      if (atoi(optarg) < 1) {
-        logger(LOG_ERROR, "Invalid workers! Ignoring.");
+      if (atoi(optarg) < 1 || atoi(optarg) > CONFIG_MAX_WORKERS) {
+        logger(LOG_ERROR, "Invalid workers! Must be between 1 and %d. Ignoring.", CONFIG_MAX_WORKERS);
       } else {
         config.workers = atoi(optarg);
         cmd_workers_set = 1;

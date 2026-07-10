@@ -1075,13 +1075,6 @@ int connection_route_and_start(connection_t *c) {
     service->user_agent = strdup(c->http_req.user_agent);
   }
 
-  /* Capacity check */
-  if (status_shared && status_shared->total_clients >= config.maxclients) {
-    http_send_503(c);
-    service_free(service);
-    return 0;
-  }
-
   /* Check if this is a snapshot request (X-Request-Snapshot, Accept:
    * image/jpeg, or snapshot=1) */
   /* 1 = snapshot=1, 2 = X-Request-Snapshot or Accept: image/jpeg */
@@ -1156,6 +1149,9 @@ int connection_route_and_start(connection_t *c) {
     c->status_index = status_register_client(client_addr_str, display_url);
     if (c->status_index < 0) {
       logger(LOG_ERROR, "Failed to register streaming client in status tracking");
+      http_send_503(c);
+      service_free(service);
+      return 0;
     } else {
       access_log_write_connection(c, service, c->status_index);
     }

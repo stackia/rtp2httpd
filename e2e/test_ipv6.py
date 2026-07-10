@@ -211,7 +211,8 @@ class TestHTTPServerIPv6Listen:
     """rtp2httpd bound to ::1 should serve requests and validate IPv6 Hosts."""
 
     @pytest.fixture(scope="class")
-    def v6_r2h(self, r2h_binary):
+    @classmethod
+    def v6_r2h(cls, r2h_binary):
         port = find_free_port("::1")
         config = f"""\
 [global]

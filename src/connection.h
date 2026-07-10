@@ -43,8 +43,8 @@ typedef struct connection_s {
   /* SSE */
   int64_t next_sse_ts; /* Next SSE heartbeat time in milliseconds */
   int sse_sent_initial;
-  int sse_last_write_index;
-  int sse_last_log_count;
+  uint32_t sse_last_log_epoch;
+  uint32_t sse_last_log_sequence;
   /* status tracking */
   int status_index; /* Index in status_shared->clients array, -1 if not
                        registered */

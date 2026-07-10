@@ -326,10 +326,11 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
             connection_t *next = c->next;
 
             /* Check if disconnect was requested for this client */
-            if (c->status_index >= 0 && status_shared->clients[c->status_index].active &&
-                status_shared->clients[c->status_index].disconnect_requested) {
-              logger(LOG_INFO, "Disconnect requested for client %s via API",
-                     status_shared->clients[c->status_index].client_addr);
+            if (c->status_index >= 0 &&
+                atomic_load_explicit(&status_shared->clients[c->status_index].active, memory_order_acquire) &&
+                atomic_load_explicit(&status_shared->clients[c->status_index].disconnect_requested,
+                                     memory_order_acquire)) {
+              logger(LOG_INFO, "Disconnect requested for status slot %d via API", c->status_index);
               worker_close_and_free_connection(c);
             }
 

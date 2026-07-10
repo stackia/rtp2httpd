@@ -34,11 +34,12 @@ typedef struct {
   int64_t restart_times[MAX_RESTARTS_IN_WINDOW]; /* Recent restart timestamps */
   int restart_count;                             /* Number of restarts in current window */
   int rate_limited;                              /* 1 if currently rate limited, 0 otherwise */
+  int retiring;                                  /* 1 when removed by a worker-count reduction */
 } worker_info_t;
 
 /* Supervisor state */
-static worker_info_t *workers = NULL;
-static int num_workers = 0;
+static worker_info_t workers[STATUS_MAX_WORKERS];
+static int desired_workers = 0;
 static volatile sig_atomic_t supervisor_stop_flag = 0;
 static volatile sig_atomic_t supervisor_reload_flag = 0;
 static volatile sig_atomic_t supervisor_restart_workers_flag = 0;
@@ -48,7 +49,6 @@ static void supervisor_signal_handler(int signum);
 static void supervisor_sighup_handler(int signum);
 static void supervisor_sigusr1_handler(int signum);
 static int spawn_worker(int worker_idx);
-static void cleanup_workers(void);
 static void restore_reload_snapshot(config_t *old_config, service_t **old_services, bindaddr_t **old_bind_addresses,
                                     m3u_cache_t *old_m3u_cache, epg_cache_t *old_epg_cache);
 static void free_reload_snapshot(config_t *old_config, service_t *old_services, bindaddr_t *old_bind_addresses,
@@ -139,6 +139,7 @@ static int spawn_worker(int worker_idx) {
 
     /* Set worker ID */
     worker_id = worker_idx;
+    status_worker_init();
 
     /* Run worker business logic */
     int result = run_worker();
@@ -150,6 +151,7 @@ static int spawn_worker(int worker_idx) {
   /* Parent: record worker info */
   workers[worker_idx].pid = pid;
   workers[worker_idx].worker_id = worker_idx;
+  workers[worker_idx].retiring = 0;
 
   logger(LOG_INFO, "Spawned worker %d with pid %d", worker_idx, (int)pid);
 
@@ -162,12 +164,11 @@ static int spawn_worker(int worker_idx) {
  * @param reason Log message describing why the signal is being sent
  */
 static void broadcast_signal_to_workers(int signum, const char *reason) {
-  logger(LOG_INFO, "%s, sending %s to %d workers", reason,
+  logger(LOG_INFO, "%s, sending %s to tracked workers", reason,
          signum == SIGTERM  ? "SIGTERM"
          : signum == SIGHUP ? "SIGHUP"
-                            : "signal",
-         num_workers);
-  for (int i = 0; i < num_workers; i++) {
+                            : "signal");
+  for (int i = 0; i < STATUS_MAX_WORKERS; i++) {
     if (workers[i].pid > 0) {
       kill(workers[i].pid, signum);
     }
@@ -179,7 +180,7 @@ static void broadcast_signal_to_workers(int signum, const char *reason) {
  * @return worker index, or -1 if not found
  */
 static int find_worker_by_pid(pid_t pid) {
-  for (int i = 0; i < num_workers; i++) {
+  for (int i = 0; i < STATUS_MAX_WORKERS; i++) {
     if (workers[i].pid == pid) {
       return i;
     }
@@ -187,15 +188,13 @@ static int find_worker_by_pid(pid_t pid) {
   return -1;
 }
 
-/**
- * Clean up worker array
- */
-static void cleanup_workers(void) {
-  if (workers) {
-    free(workers);
-    workers = NULL;
+static int count_running_workers(void) {
+  int count = 0;
+  for (int i = 0; i < STATUS_MAX_WORKERS; i++) {
+    if (workers[i].pid > 0)
+      count++;
   }
-  num_workers = 0;
+  return count;
 }
 
 static void restore_reload_snapshot(config_t *old_config, service_t **old_services, bindaddr_t **old_bind_addresses,
@@ -230,19 +229,16 @@ static void free_reload_snapshot(config_t *old_config, service_t *old_services, 
 int supervisor_run(void) {
   int i;
 
-  num_workers = config.workers;
-  workers = calloc(num_workers, sizeof(worker_info_t));
-  if (!workers) {
-    logger(LOG_FATAL, "Failed to allocate worker array");
-    return -1;
-  }
+  desired_workers = config.workers;
 
   /* Initialize worker info */
-  for (i = 0; i < num_workers; i++) {
+  memset(workers, 0, sizeof(workers));
+  for (i = 0; i < STATUS_MAX_WORKERS; i++) {
     workers[i].pid = 0;
     workers[i].worker_id = i;
     workers[i].restart_count = 0;
     workers[i].rate_limited = 0;
+    workers[i].retiring = 0;
     for (int j = 0; j < MAX_RESTARTS_IN_WINDOW; j++) {
       workers[i].restart_times[j] = 0;
     }
@@ -253,13 +249,12 @@ int supervisor_run(void) {
   }
 
   if (unix_socket_listeners_replace(bind_addresses) < 0) {
-    cleanup_workers();
     status_cleanup();
     return -1;
   }
 
   /* Spawn all workers */
-  for (i = 0; i < num_workers; i++) {
+  for (i = 0; i < desired_workers; i++) {
     if (spawn_worker(i) < 0) {
       logger(LOG_ERROR, "Failed to spawn worker %d", i);
     }
@@ -301,6 +296,8 @@ int supervisor_run(void) {
     int status;
     pid_t pid;
 
+    status_supervisor_drain_logs();
+
     /* Non-blocking wait for any child */
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
       int worker_idx = find_worker_by_pid(pid);
@@ -309,6 +306,10 @@ int supervisor_run(void) {
         continue;
       }
 
+      /* Reclaim shared status state before this worker index can be reused. */
+      status_reap_worker(pid, worker_idx);
+      workers[worker_idx].pid = 0;
+
       /* Log exit reason */
       if (WIFEXITED(status)) {
         logger(LOG_WARN, "Worker %d (pid %d) exited with status %d", worker_idx, (int)pid, WEXITSTATUS(status));
@@ -316,10 +317,8 @@ int supervisor_run(void) {
         logger(LOG_WARN, "Worker %d (pid %d) killed by signal %d", worker_idx, (int)pid, WTERMSIG(status));
       }
 
-      workers[worker_idx].pid = 0;
-
-      /* Restart if not stopping */
-      if (!supervisor_stop_flag) {
+      /* Restart only worker indexes still desired by the current config. */
+      if (!supervisor_stop_flag && worker_idx < desired_workers && !workers[worker_idx].retiring) {
         if (restart_allowed(&workers[worker_idx])) {
           record_restart(&workers[worker_idx]);
           workers[worker_idx].rate_limited = 0;
@@ -336,8 +335,8 @@ int supervisor_run(void) {
     }
 
     /* Check for rate-limited workers that can now be restarted */
-    for (i = 0; i < num_workers; i++) {
-      if (workers[i].rate_limited && workers[i].pid == 0 && !supervisor_stop_flag) {
+    for (i = 0; i < desired_workers; i++) {
+      if (workers[i].rate_limited && workers[i].pid == 0 && !workers[i].retiring && !supervisor_stop_flag) {
         if (restart_allowed(&workers[i])) {
           record_restart(&workers[i]);
           workers[i].rate_limited = 0;
@@ -405,53 +404,37 @@ int supervisor_run(void) {
           continue;
         }
 
-        /* Handle worker count changes */
-        if (config.workers > num_workers) {
+        /* Handle worker count changes without dropping tracking records for
+         * workers that have not reached waitpid() yet. */
+        int previous_desired = desired_workers;
+        desired_workers = config.workers;
+        if (desired_workers > previous_desired) {
+          for (i = previous_desired; i < desired_workers; i++)
+            workers[i].retiring = 0;
+
           if (bind_changed) {
             broadcast_signal_to_workers(SIGTERM, "Bind addresses changed");
           } else {
             broadcast_signal_to_workers(SIGHUP, "Forwarding config reload");
           }
 
-          /* Need to spawn more workers */
-          int new_count = config.workers;
-          worker_info_t *new_workers = realloc(workers, new_count * sizeof(worker_info_t));
-          if (new_workers) {
-            workers = new_workers;
-            /* Initialize new worker slots */
-            for (i = num_workers; i < new_count; i++) {
-              workers[i].pid = 0;
-              workers[i].worker_id = i;
-              workers[i].restart_count = 0;
-              workers[i].rate_limited = 0;
-              for (int j = 0; j < MAX_RESTARTS_IN_WINDOW; j++) {
-                workers[i].restart_times[j] = 0;
-              }
-              /* Spawn new worker - it inherits new config automatically */
+          for (i = previous_desired; i < desired_workers; i++) {
+            if (workers[i].pid == 0) {
               logger(LOG_INFO, "Spawning new worker %d", i);
-              if (spawn_worker(i) < 0) {
+              if (spawn_worker(i) < 0)
                 logger(LOG_ERROR, "Failed to spawn new worker %d", i);
-              }
             }
-            num_workers = new_count;
-          } else {
-            logger(LOG_ERROR, "Failed to allocate memory for new workers");
           }
-        } else if (config.workers < num_workers) {
+        } else if (desired_workers < previous_desired) {
           /* Need to terminate excess workers */
-          logger(LOG_INFO, "Reducing worker count from %d to %d", num_workers, config.workers);
-          for (i = config.workers; i < num_workers; i++) {
+          logger(LOG_INFO, "Reducing worker count from %d to %d", previous_desired, desired_workers);
+          for (i = desired_workers; i < previous_desired; i++) {
+            workers[i].retiring = 1;
+            workers[i].rate_limited = 0;
             if (workers[i].pid > 0) {
               logger(LOG_INFO, "Sending SIGTERM to excess worker %d (pid %d)", i, (int)workers[i].pid);
               kill(workers[i].pid, SIGTERM);
             }
-          }
-          /* Update num_workers - excess workers will be reaped normally */
-          num_workers = config.workers;
-          /* Shrink array */
-          worker_info_t *new_workers = realloc(workers, num_workers * sizeof(worker_info_t));
-          if (new_workers) {
-            workers = new_workers;
           }
 
           if (bind_changed) {
@@ -479,6 +462,8 @@ int supervisor_run(void) {
       broadcast_signal_to_workers(SIGTERM, "Received SIGUSR1, restarting workers");
     }
 
+    status_supervisor_drain_logs();
+
     /* Sleep before next check */
     usleep(100000); /* 100ms */
   }
@@ -486,7 +471,7 @@ int supervisor_run(void) {
   broadcast_signal_to_workers(SIGTERM, "Received stop signal, shutting down");
 
   /* Wait for all workers to exit with timeout */
-  int remaining = num_workers;
+  int remaining = count_running_workers();
   int timeout_count = 0;
   const int max_timeout = 50; /* 5 seconds (50 * 100ms) */
 
@@ -497,6 +482,7 @@ int supervisor_run(void) {
     if (pid > 0) {
       int worker_idx = find_worker_by_pid(pid);
       if (worker_idx >= 0) {
+        status_reap_worker(pid, worker_idx);
         workers[worker_idx].pid = 0;
         remaining--;
         logger(LOG_INFO, "Worker %d exited", worker_idx);
@@ -509,15 +495,18 @@ int supervisor_run(void) {
       /* No more children or error */
       break;
     }
+    status_supervisor_drain_logs();
   }
 
   /* Force kill any remaining workers */
   if (remaining > 0) {
     logger(LOG_WARN, "%d workers didn't exit gracefully, sending SIGKILL", remaining);
-    for (i = 0; i < num_workers; i++) {
+    for (i = 0; i < STATUS_MAX_WORKERS; i++) {
       if (workers[i].pid > 0) {
-        kill(workers[i].pid, SIGKILL);
-        waitpid(workers[i].pid, NULL, 0);
+        pid_t pid = workers[i].pid;
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        status_reap_worker(pid, i);
         workers[i].pid = 0;
       }
     }
@@ -527,9 +516,6 @@ int supervisor_run(void) {
 
   /* Close supervisor-owned Unix listeners and remove socket paths */
   unix_socket_listeners_cleanup();
-
-  /* Clean up worker array */
-  cleanup_workers();
 
   /* Clean up shared memory and other resources
    * Supervisor is now the last process, so it does final cleanup */

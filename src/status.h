@@ -3,6 +3,7 @@
 
 #include "configuration.h"
 #include "connection.h"
+#include <stdatomic.h>
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -16,7 +17,7 @@ typedef enum {
 } status_event_type_t;
 
 /* Maximum number of workers for per-worker statistics */
-#define STATUS_MAX_WORKERS 32
+#define STATUS_MAX_WORKERS CONFIG_MAX_WORKERS
 
 /* Maximum number of log entries to keep in circular buffer */
 #define STATUS_MAX_LOG_ENTRIES 100
@@ -60,33 +61,42 @@ typedef enum {
   CLIENT_STATE_DISCONNECTED
 } client_state_type_t;
 
-/* Per-client statistics stored in shared memory */
+/* Per-client payload. Atomic slot lifecycle fields live in client_stats_t so
+ * this payload can be cleared safely without touching atomic objects. */
 typedef struct {
-  int active;                        /* 1 if slot is active, 0 if free */
-  char client_id[128];               /* Unique client ID: "IP:port-workerN-seqM" */
-  pid_t worker_pid;                  /* Actual worker thread/process PID */
-  int worker_index;                  /* Worker index (0-based, matches worker_id) */
-  int64_t connect_time;              /* Connection timestamp in milliseconds */
-  char client_addr[128];             /* Client address (IP:port format, IPv6 uses []:port) */
-  char service_url[256];             /* Service URL being accessed */
-  client_state_type_t state;         /* Current connection state */
-  uint64_t bytes_sent;               /* Total bytes sent to client */
-  uint32_t current_bandwidth;        /* Current bandwidth in bytes/sec */
-  volatile int disconnect_requested; /* Set to 1 when disconnect is requested from API */
-  size_t queue_bytes;                /* Current queued bytes */
-  uint32_t queue_buffers;            /* Current queued buffers */
-  size_t queue_limit_bytes;          /* Dynamic queue limit snapshot */
-  size_t queue_bytes_highwater;      /* Peak queued bytes */
-  uint32_t queue_buffers_highwater;  /* Peak queued buffers */
-  uint64_t dropped_packets;          /* Total dropped packets */
-  uint64_t dropped_bytes;            /* Total dropped bytes */
-  uint32_t backpressure_events;      /* Times upstream reads were paused due to client backpressure (TCP only) */
+  char client_id[128];              /* Unique client ID: "IP:port-workerN-seqM" */
+  int worker_index;                 /* Worker index (0-based, matches worker_id) */
+  int64_t connect_time;             /* Connection timestamp in milliseconds */
+  char client_addr[128];            /* Client address (IP:port format, IPv6 uses []:port) */
+  char service_url[256];            /* Service URL being accessed */
+  client_state_type_t state;        /* Current connection state */
+  uint64_t bytes_sent;              /* Total bytes sent to client */
+  uint32_t current_bandwidth;       /* Current bandwidth in bytes/sec */
+  size_t queue_bytes;               /* Current queued bytes */
+  uint32_t queue_buffers;           /* Current queued buffers */
+  size_t queue_limit_bytes;         /* Dynamic queue limit snapshot */
+  size_t queue_bytes_highwater;     /* Peak queued bytes */
+  uint32_t queue_buffers_highwater; /* Peak queued buffers */
+  uint64_t dropped_packets;         /* Total dropped packets */
+  uint64_t dropped_bytes;           /* Total dropped bytes */
+  uint32_t backpressure_events;     /* Times upstream reads were paused due to client backpressure (TCP only) */
   int slow_active;
+} client_stats_payload_t;
+
+/* Per-client statistics stored in shared memory. owner_pid is also the
+ * reservation token: it is released only after every other field is reset. */
+typedef struct {
+  _Atomic uint32_t owner_pid;            /* 0 if free, otherwise owning worker PID */
+  _Atomic uint32_t active;               /* 1 once payload is fully published */
+  _Atomic uint32_t disconnect_requested; /* Set by status API, consumed by owner */
+  _Atomic uint32_t data_version;         /* Odd while payload statistics are being updated */
+  client_stats_payload_t payload;
 } client_stats_t;
 
 /* Log entry structure for circular buffer */
 typedef struct {
-  int64_t timestamp; /* Timestamp in milliseconds */
+  _Atomic uint32_t sequence; /* 0 while invalid/writing, otherwise published sequence */
+  int64_t timestamp;         /* Timestamp in milliseconds */
   loglevel_t level;
   char message[STATUS_LOG_ENTRY_LEN];
 } log_entry_t;
@@ -134,9 +144,8 @@ typedef struct {
 /* Shared memory structure for status information */
 typedef struct {
   /* Global statistics */
-  int total_clients;
-  uint64_t total_bytes_sent_cumulative; /* Bytes sent to clients that have
-                                           disconnected */
+  _Atomic uint32_t total_clients;
+  uint64_t client_bytes_cumulative[STATUS_MAX_WORKERS]; /* Single-writer shard per worker index */
   uint32_t total_bandwidth;
   int64_t server_start_time; /* Server start time in milliseconds */
 
@@ -155,17 +164,15 @@ typedef struct {
   int worker_notification_pipes[STATUS_MAX_WORKERS];         /* Write ends of worker
                                                                 pipes, -1 if inactive */
 
-  /* Log circular buffer */
-  pthread_mutex_t log_mutex; /* Mutex to protect log buffer writes */
-  int log_write_index;
-  int log_count;
+  /* Supervisor-owned log circular buffer */
+  _Atomic uint32_t log_epoch;
+  _Atomic uint32_t log_sequence;
   log_entry_t log_entries[STATUS_MAX_LOG_ENTRIES];
 
   /* Per-worker statistics (lock-free, each worker writes to its own slot) */
   worker_stats_t worker_stats[STATUS_MAX_WORKERS]; /* Per-worker statistics */
 
   /* Per-client statistics array */
-  pthread_mutex_t clients_mutex; /* Mutex to protect client slot allocation */
   client_stats_t clients[STATUS_MAX_CLIENTS];
 } status_shared_t;
 
@@ -185,11 +192,20 @@ int status_init(void);
  */
 void status_cleanup(void);
 
+/* Close supervisor-only status descriptors in a newly forked worker. */
+void status_worker_init(void);
+
+/* Drain worker log/control datagrams in the supervisor. */
+void status_supervisor_drain_logs(void);
+
+/* Reclaim every client slot owned by a worker confirmed dead by waitpid(). */
+int status_reap_worker(pid_t dead_pid, int worker_index);
+
 /**
  * Register a new streaming client connection in shared memory
  * Only called for media streaming clients, not for status/API requests
  * Called after routing determines the connection is for a media service
- * Allocates a free slot in the clients array under mutex protection
+ * Atomically reserves and publishes a free slot in the clients array
  * @param client_addr_str Client address string (format: "IP:port",
  * "[IPv6]:port", or "localhost" for Unix socket clients)
  * @param service_url Service URL string (e.g., HTTP request path)
@@ -301,12 +317,12 @@ const char *status_get_log_level_name(loglevel_t level);
  * @param buffer Output buffer
  * @param buffer_capacity Buffer size
  * @param p_sent_initial Pointer to sent_initial flag (in/out)
- * @param p_last_write_index Pointer to last write index (in/out)
- * @param p_last_log_count Pointer to last log count (in/out)
+ * @param p_last_log_epoch Pointer to last observed log epoch (in/out)
+ * @param p_last_log_sequence Pointer to last observed log sequence (in/out)
  * @return Number of bytes written to buffer
  */
-int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_initial, int *p_last_write_index,
-                          int *p_last_log_count);
+int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_initial, uint32_t *p_last_log_epoch,
+                          uint32_t *p_last_log_sequence);
 
 /**
  * Initialize SSE connection for a client

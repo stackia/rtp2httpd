@@ -13,6 +13,7 @@
 #define CONFIGFILE SYSCONFDIR "/rtp2httpd.conf"
 
 #define DEFAULT_ACCESS_LOG_FORMAT "$client_addr [$time_iso8601] \"$service_url\" $service_type \"$upstream_url\""
+#define CONFIG_MAX_WORKERS 32
 
 typedef enum loglevel {
   LOG_FATAL = 0, /* Always shown */

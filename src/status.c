@@ -2,15 +2,16 @@
 #include "connection.h"
 #include "http.h"
 #include "rtp2httpd.h"
+#include "supervisor.h"
 #include "utils.h"
 #include <errno.h>
 #include <fcntl.h>
-#include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 /* Global pointer to shared memory */
@@ -18,6 +19,98 @@ status_shared_t *status_shared = NULL;
 
 /* Path for shared memory file in /tmp */
 static char shm_path[256] = {0};
+
+typedef enum { STATUS_LOG_EVENT_ADD = 1, STATUS_LOG_EVENT_CLEAR = 2 } status_log_event_type_t;
+
+typedef struct {
+  uint32_t type;
+  int64_t timestamp;
+  loglevel_t level;
+  char message[STATUS_LOG_ENTRY_LEN];
+} status_log_event_t;
+
+static int log_event_recv_fd = -1;
+static int log_event_send_fd = -1;
+
+static void set_fd_nonblocking(int fd) {
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags >= 0)
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+static void reset_client_payload(client_stats_t *client) {
+  memset(&client->payload, 0, sizeof(client->payload));
+  client->payload.worker_index = -1;
+  client->payload.state = CLIENT_STATE_DISCONNECTED;
+  atomic_store_explicit(&client->disconnect_requested, 0, memory_order_relaxed);
+  atomic_store_explicit(&client->data_version, 0, memory_order_relaxed);
+}
+
+static int reserve_client_capacity(void) {
+  uint32_t count = atomic_load_explicit(&status_shared->total_clients, memory_order_relaxed);
+  while (count < (uint32_t)config.maxclients) {
+    if (atomic_compare_exchange_weak_explicit(&status_shared->total_clients, &count, count + 1, memory_order_acq_rel,
+                                              memory_order_relaxed))
+      return 0;
+  }
+  return -1;
+}
+
+static void client_write_begin(client_stats_t *client) {
+  atomic_fetch_add_explicit(&client->data_version, 1, memory_order_acq_rel);
+}
+
+static void client_write_end(client_stats_t *client) {
+  atomic_fetch_add_explicit(&client->data_version, 1, memory_order_release);
+}
+
+static int snapshot_client(const client_stats_t *client, client_stats_payload_t *snapshot, uint32_t *owner_pid) {
+  for (int attempt = 0; attempt < 3; attempt++) {
+    if (!atomic_load_explicit(&client->active, memory_order_acquire))
+      return 0;
+    uint32_t version_before = atomic_load_explicit(&client->data_version, memory_order_acquire);
+    if (version_before & 1U)
+      continue;
+    *owner_pid = atomic_load_explicit(&client->owner_pid, memory_order_relaxed);
+    memcpy(snapshot, &client->payload, sizeof(*snapshot));
+    atomic_thread_fence(memory_order_acquire);
+    uint32_t version_after = atomic_load_explicit(&client->data_version, memory_order_relaxed);
+    if (version_before == version_after && !(version_after & 1U) &&
+        atomic_load_explicit(&client->active, memory_order_acquire))
+      return 1;
+  }
+  return 0;
+}
+
+static void invalidate_log_ring(void) {
+  for (int i = 0; i < STATUS_MAX_LOG_ENTRIES; i++)
+    atomic_store_explicit(&status_shared->log_entries[i].sequence, 0, memory_order_relaxed);
+}
+
+static void clear_log_ring(void) {
+  invalidate_log_ring();
+  atomic_store_explicit(&status_shared->log_sequence, 0, memory_order_release);
+  uint32_t epoch = atomic_fetch_add_explicit(&status_shared->log_epoch, 1, memory_order_acq_rel) + 1;
+  if (epoch == 0)
+    atomic_store_explicit(&status_shared->log_epoch, 1, memory_order_release);
+}
+
+static void append_log_entry(int64_t timestamp, loglevel_t level, const char *message) {
+  uint32_t sequence = atomic_load_explicit(&status_shared->log_sequence, memory_order_relaxed);
+  if (sequence == UINT32_MAX) {
+    clear_log_ring();
+    sequence = 0;
+  }
+  sequence++;
+  log_entry_t *entry = &status_shared->log_entries[(sequence - 1) % STATUS_MAX_LOG_ENTRIES];
+  atomic_store_explicit(&entry->sequence, 0, memory_order_release);
+  entry->timestamp = timestamp;
+  entry->level = level;
+  strncpy(entry->message, message, sizeof(entry->message) - 1);
+  entry->message[sizeof(entry->message) - 1] = '\0';
+  atomic_store_explicit(&entry->sequence, sequence, memory_order_release);
+  atomic_store_explicit(&status_shared->log_sequence, sequence, memory_order_release);
+}
 
 int status_init(void) {
   int fd;
@@ -73,6 +166,43 @@ int status_init(void) {
   status_shared->server_start_time = get_realtime_ms();
   status_shared->current_log_level = config.verbosity;
   status_shared->event_counter = 0;
+  atomic_init(&status_shared->total_clients, 0);
+  atomic_init(&status_shared->log_epoch, 1);
+  atomic_init(&status_shared->log_sequence, 0);
+
+  for (int i = 0; i < STATUS_MAX_CLIENTS; i++) {
+    atomic_init(&status_shared->clients[i].owner_pid, 0);
+    atomic_init(&status_shared->clients[i].active, 0);
+    atomic_init(&status_shared->clients[i].disconnect_requested, 0);
+    atomic_init(&status_shared->clients[i].data_version, 0);
+    status_shared->clients[i].payload.worker_index = -1;
+  }
+  for (int i = 0; i < STATUS_MAX_LOG_ENTRIES; i++)
+    atomic_init(&status_shared->log_entries[i].sequence, 0);
+
+  if (!atomic_is_lock_free(&status_shared->total_clients) ||
+      !atomic_is_lock_free(&status_shared->clients[0].owner_pid) ||
+      !atomic_is_lock_free(&status_shared->clients[0].active) || !atomic_is_lock_free(&status_shared->log_sequence)) {
+    status_shared = NULL;
+    munmap(mapped, sizeof(status_shared_t));
+    unlink(shm_path);
+    logger(LOG_ERROR, "Required 32-bit shared-memory atomics are not lock-free");
+    return -1;
+  }
+
+  int log_fds[2];
+  if (socketpair(AF_UNIX, SOCK_DGRAM, 0, log_fds) == -1) {
+    int err = errno;
+    status_shared = NULL;
+    munmap(mapped, sizeof(status_shared_t));
+    unlink(shm_path);
+    logger(LOG_ERROR, "Failed to create status log socketpair: %s", strerror(err));
+    return -1;
+  }
+  log_event_recv_fd = log_fds[0];
+  log_event_send_fd = log_fds[1];
+  set_fd_nonblocking(log_event_recv_fd);
+  set_fd_nonblocking(log_event_send_fd);
 
   /* Initialize pipe fds to -1 (invalid) */
   for (int i = 0; i < STATUS_MAX_WORKERS; i++) {
@@ -95,6 +225,10 @@ int status_init(void) {
         if (status_shared->worker_notification_pipes[j] != -1)
           close(status_shared->worker_notification_pipes[j]);
       }
+      close(log_event_recv_fd);
+      close(log_event_send_fd);
+      log_event_recv_fd = -1;
+      log_event_send_fd = -1;
       munmap(status_shared, sizeof(status_shared_t));
       status_shared = NULL;
       unlink(shm_path);
@@ -113,14 +247,6 @@ int status_init(void) {
     status_shared->worker_notification_pipes[i] = pipe_fds[1];
   }
 
-  /* Initialize mutexes for multi-process safety */
-  pthread_mutexattr_t mutex_attr;
-  pthread_mutexattr_init(&mutex_attr);
-  pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
-  pthread_mutex_init(&status_shared->log_mutex, &mutex_attr);
-  pthread_mutex_init(&status_shared->clients_mutex, &mutex_attr);
-  pthread_mutexattr_destroy(&mutex_attr);
-
   logger(LOG_INFO, "Status tracking initialized");
   return 0;
 }
@@ -138,9 +264,8 @@ int status_init(void) {
  *   status_worker_get_notif_fd)
  * - Its view of shared memory (munmap)
  *
- * Only the final cleanup process (supervisor or single worker) should:
- * - Destroy shared mutexes
- * - Unlink the shared memory file
+ * Only the final cleanup process (supervisor or single worker) unlinks the
+ * shared memory file.
  *
  * In supervisor mode, the supervisor waits for all workers to exit before
  * calling this function, ensuring it's the last process.
@@ -150,6 +275,18 @@ void status_cleanup(void) {
    * - In supervisor mode: supervisor (worker_id == -1) does final cleanup
    * - In single-worker mode: worker 0 does final cleanup */
   int is_final_cleanup = (worker_id == -1) || (worker_id == 0 && config.workers <= 1);
+
+  if (worker_id == SUPERVISOR_WORKER_ID)
+    status_supervisor_drain_logs();
+
+  if (log_event_recv_fd >= 0) {
+    close(log_event_recv_fd);
+    log_event_recv_fd = -1;
+  }
+  if (log_event_send_fd >= 0) {
+    close(log_event_send_fd);
+    log_event_send_fd = -1;
+  }
 
   if (status_shared != NULL && status_shared != MAP_FAILED) {
     /* Close all pipe fds (this process's copies)
@@ -161,14 +298,6 @@ void status_cleanup(void) {
       if (status_shared->worker_notification_pipe_read_fds[i] != -1) {
         close(status_shared->worker_notification_pipe_read_fds[i]);
       }
-    }
-
-    /* Only the final cleanup process destroys shared mutexes
-     * Destroying a mutex that other processes might still be using causes
-     * undefined behavior */
-    if (is_final_cleanup) {
-      pthread_mutex_destroy(&status_shared->log_mutex);
-      pthread_mutex_destroy(&status_shared->clients_mutex);
     }
 
     /* Each process unmaps its own view of shared memory
@@ -194,32 +323,36 @@ void status_cleanup(void) {
   }
 }
 
+void status_worker_init(void) {
+  if (log_event_recv_fd >= 0) {
+    close(log_event_recv_fd);
+    log_event_recv_fd = -1;
+  }
+}
+
 int status_register_client(const char *client_addr_str, const char *service_url) {
   int status_index = -1;
+  uint32_t owner_pid = (uint32_t)getpid();
 
   if (!status_shared || !client_addr_str)
     return -1;
 
-  /* Lock mutex to protect client slot allocation */
-  pthread_mutex_lock(&status_shared->clients_mutex);
-
-  /* Find free slot */
+  /* Reserve a slot by PID. owner_pid remains set while the slot is being
+   * initialized so the supervisor can recover a worker killed mid-register. */
   for (int i = 0; i < STATUS_MAX_CLIENTS; i++) {
-    if (!status_shared->clients[i].active) {
-      /* Initialize client slot */
-      memset(&status_shared->clients[i], 0, sizeof(client_stats_t));
-      status_shared->clients[i].active = 1;
-      status_shared->clients[i].worker_pid = getpid(); /* Store actual worker PID */
-      status_shared->clients[i].worker_index = worker_id;
-      status_shared->clients[i].connect_time = get_realtime_ms();
-      status_shared->clients[i].disconnect_requested = 0;
+    client_stats_t *client = &status_shared->clients[i];
+    uint32_t expected = 0;
+    if (atomic_compare_exchange_strong_explicit(&client->owner_pid, &expected, owner_pid, memory_order_acq_rel,
+                                                memory_order_relaxed)) {
+      reset_client_payload(client);
+      client->payload.worker_index = worker_id;
+      client->payload.connect_time = get_realtime_ms();
+      client->payload.state = CLIENT_STATE_CONNECTING;
 
       /* Copy client address string (format: "IP:port", "[IPv6]:port", or
        * "localhost" for Unix socket clients) */
-      strncpy(status_shared->clients[i].client_addr, client_addr_str,
-              sizeof(status_shared->clients[i].client_addr) - 1);
-      status_shared->clients[i].client_addr[sizeof(status_shared->clients[i].client_addr) - 1] = '\0';
-      status_shared->clients[i].state = CLIENT_STATE_CONNECTING;
+      strncpy(client->payload.client_addr, client_addr_str, sizeof(client->payload.client_addr) - 1);
+      client->payload.client_addr[sizeof(client->payload.client_addr) - 1] = '\0';
 
       /* Generate unique client ID: "IP:port-workerN-seqM"
        * Use real client IP (not X-Forwarded-For) + port + worker index +
@@ -228,23 +361,27 @@ int status_register_client(const char *client_addr_str, const char *service_url)
       if (worker_id >= 0 && worker_id < STATUS_MAX_WORKERS) {
         seq = status_shared->worker_stats[worker_id].client_id_counter++;
       }
-      snprintf(status_shared->clients[i].client_id, sizeof(status_shared->clients[i].client_id), "%s-worker%d-seq%llu",
-               client_addr_str, worker_id, (unsigned long long)seq);
+      snprintf(client->payload.client_id, sizeof(client->payload.client_id), "%s-worker%d-seq%llu", client_addr_str,
+               worker_id, (unsigned long long)seq);
 
       /* Copy service URL */
       if (service_url) {
-        strncpy(status_shared->clients[i].service_url, service_url, sizeof(status_shared->clients[i].service_url) - 1);
-        status_shared->clients[i].service_url[sizeof(status_shared->clients[i].service_url) - 1] = '\0';
+        strncpy(client->payload.service_url, service_url, sizeof(client->payload.service_url) - 1);
+        client->payload.service_url[sizeof(client->payload.service_url) - 1] = '\0';
       }
 
-      status_shared->total_clients++;
+      if (reserve_client_capacity() < 0) {
+        reset_client_payload(client);
+        atomic_store_explicit(&client->owner_pid, 0, memory_order_release);
+        logger(LOG_WARN, "Maximum client limit reached");
+        return -1;
+      }
+
+      atomic_store_explicit(&client->active, 1, memory_order_release);
       status_index = i;
       break;
     }
   }
-
-  /* Unlock mutex */
-  pthread_mutex_unlock(&status_shared->clients_mutex);
 
   if (status_index < 0) {
     logger(LOG_ERROR, "No free client slots in status tracking");
@@ -264,26 +401,69 @@ void status_unregister_client(int status_index) {
   if (status_index < 0 || status_index >= STATUS_MAX_CLIENTS)
     return;
 
-  if (!status_shared->clients[status_index].active)
+  client_stats_t *client = &status_shared->clients[status_index];
+  if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != (uint32_t)getpid())
     return;
 
-  client_stats_t *client = &status_shared->clients[status_index];
+  if (!atomic_exchange_explicit(&client->active, 0, memory_order_acq_rel))
+    return;
 
-  /* Accumulate this client's bytes_sent to global total before unregistering */
-  status_shared->total_bytes_sent_cumulative += client->bytes_sent;
+  /* Accumulate this client's bytes_sent in its single-writer worker shard. */
+  int client_worker_index = client->payload.worker_index;
+  uint64_t bytes_sent = client->payload.bytes_sent;
 
-  if (client->worker_index >= 0 && client->worker_index < STATUS_MAX_WORKERS) {
-    status_shared->worker_stats[client->worker_index].client_bytes_cumulative += client->bytes_sent;
+  if (client_worker_index >= 0 && client_worker_index < STATUS_MAX_WORKERS) {
+    status_shared->client_bytes_cumulative[client_worker_index] += bytes_sent;
+    status_shared->worker_stats[client_worker_index].client_bytes_cumulative += bytes_sent;
   }
 
-  client->active = 0;
-  client->state = CLIENT_STATE_DISCONNECTED;
-  client->disconnect_requested = 0;
-  client->worker_index = -1;
-  status_shared->total_clients--;
+  atomic_fetch_sub_explicit(&status_shared->total_clients, 1, memory_order_acq_rel);
+  reset_client_payload(client);
+  atomic_store_explicit(&client->owner_pid, 0, memory_order_release);
 
   /* Trigger event notification for client disconnect */
   status_trigger_event(STATUS_EVENT_SSE_UPDATE);
+}
+
+int status_reap_worker(pid_t dead_pid, int worker_index) {
+  if (!status_shared || dead_pid <= 0)
+    return 0;
+
+  uint32_t dead_owner = (uint32_t)dead_pid;
+  int reclaimed = 0;
+  for (int i = 0; i < STATUS_MAX_CLIENTS; i++) {
+    client_stats_t *client = &status_shared->clients[i];
+    if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != dead_owner)
+      continue;
+
+    if (atomic_exchange_explicit(&client->active, 0, memory_order_acq_rel)) {
+      int client_worker_index = client->payload.worker_index;
+      if (client_worker_index >= 0 && client_worker_index < STATUS_MAX_WORKERS)
+        status_shared->client_bytes_cumulative[client_worker_index] += client->payload.bytes_sent;
+    }
+    reset_client_payload(client);
+    atomic_store_explicit(&client->owner_pid, 0, memory_order_release);
+    reclaimed++;
+  }
+
+  uint32_t active_count = 0;
+  for (int i = 0; i < STATUS_MAX_CLIENTS; i++) {
+    if (atomic_load_explicit(&status_shared->clients[i].active, memory_order_acquire))
+      active_count++;
+  }
+  atomic_store_explicit(&status_shared->total_clients, active_count, memory_order_release);
+
+  if (worker_index >= 0 && worker_index < STATUS_MAX_WORKERS &&
+      status_shared->worker_stats[worker_index].worker_pid == dead_pid) {
+    memset(&status_shared->worker_stats[worker_index], 0, sizeof(worker_stats_t));
+  }
+
+  if (reclaimed > 0) {
+    logger(LOG_INFO, "Reclaimed %d status client slot(s) from worker %d (pid %d)", reclaimed, worker_index,
+           (int)dead_pid);
+    status_trigger_event(STATUS_EVENT_SSE_UPDATE);
+  }
+  return reclaimed;
 }
 
 int status_worker_get_notif_fd(void) {
@@ -339,12 +519,15 @@ void status_update_client_bytes(int status_index, uint64_t bytes_sent, uint32_t 
   if (status_index < 0 || status_index >= STATUS_MAX_CLIENTS)
     return;
 
-  if (!status_shared->clients[status_index].active)
+  client_stats_t *client = &status_shared->clients[status_index];
+  if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != (uint32_t)getpid() ||
+      !atomic_load_explicit(&client->active, memory_order_acquire))
     return;
 
-  /* Update client statistics */
-  status_shared->clients[status_index].bytes_sent = bytes_sent;
-  status_shared->clients[status_index].current_bandwidth = current_bandwidth;
+  client_write_begin(client);
+  client->payload.bytes_sent = bytes_sent;
+  client->payload.current_bandwidth = current_bandwidth;
+  client_write_end(client);
 }
 
 void status_update_client_state(int status_index, client_state_type_t state) {
@@ -354,11 +537,14 @@ void status_update_client_state(int status_index, client_state_type_t state) {
   if (status_index < 0 || status_index >= STATUS_MAX_CLIENTS)
     return;
 
-  if (!status_shared->clients[status_index].active)
+  client_stats_t *client = &status_shared->clients[status_index];
+  if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != (uint32_t)getpid() ||
+      !atomic_load_explicit(&client->active, memory_order_acquire))
     return;
 
-  /* Update client state */
-  status_shared->clients[status_index].state = state;
+  client_write_begin(client);
+  client->payload.state = state;
+  client_write_end(client);
 
   /* Always trigger event notification */
   status_trigger_event(STATUS_EVENT_SSE_UPDATE);
@@ -373,51 +559,72 @@ void status_update_client_queue(int status_index, size_t queue_bytes, size_t que
   if (status_index < 0 || status_index >= STATUS_MAX_CLIENTS)
     return;
 
-  if (!status_shared->clients[status_index].active)
+  client_stats_t *client = &status_shared->clients[status_index];
+  if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != (uint32_t)getpid() ||
+      !atomic_load_explicit(&client->active, memory_order_acquire))
     return;
 
-  status_shared->clients[status_index].queue_bytes = queue_bytes;
-  status_shared->clients[status_index].queue_buffers = (uint32_t)queue_buffers;
-  status_shared->clients[status_index].queue_limit_bytes = queue_limit_bytes;
-  status_shared->clients[status_index].queue_bytes_highwater = queue_bytes_highwater;
-  status_shared->clients[status_index].queue_buffers_highwater = (uint32_t)queue_buffers_highwater;
-  status_shared->clients[status_index].dropped_packets = dropped_packets;
-  status_shared->clients[status_index].dropped_bytes = dropped_bytes;
-  status_shared->clients[status_index].backpressure_events = backpressure_events;
-  status_shared->clients[status_index].slow_active = slow_active;
+  client_write_begin(client);
+  client->payload.queue_bytes = queue_bytes;
+  client->payload.queue_buffers = (uint32_t)queue_buffers;
+  client->payload.queue_limit_bytes = queue_limit_bytes;
+  client->payload.queue_bytes_highwater = queue_bytes_highwater;
+  client->payload.queue_buffers_highwater = (uint32_t)queue_buffers_highwater;
+  client->payload.dropped_packets = dropped_packets;
+  client->payload.dropped_bytes = dropped_bytes;
+  client->payload.backpressure_events = backpressure_events;
+  client->payload.slow_active = slow_active;
+  client_write_end(client);
 }
 
 void status_add_log_entry(enum loglevel level, const char *message) {
-  int index;
-
   if (!status_shared || !message)
     return;
 
-  /* Lock mutex to prevent race conditions in multi-worker environment */
-  pthread_mutex_lock(&status_shared->log_mutex);
-
-  /* Get next write index */
-  index = status_shared->log_write_index;
-
-  /* Store log entry */
-  status_shared->log_entries[index].timestamp = get_realtime_ms();
-  status_shared->log_entries[index].level = level;
-  strncpy(status_shared->log_entries[index].message, message, sizeof(status_shared->log_entries[index].message) - 1);
-  status_shared->log_entries[index].message[sizeof(status_shared->log_entries[index].message) - 1] = '\0';
-
-  /* Update write index (circular) */
-  status_shared->log_write_index = (index + 1) % STATUS_MAX_LOG_ENTRIES;
-
-  /* Update count */
-  if (status_shared->log_count < STATUS_MAX_LOG_ENTRIES) {
-    status_shared->log_count++;
+  if (worker_id == SUPERVISOR_WORKER_ID) {
+    append_log_entry(get_realtime_ms(), level, message);
+    status_trigger_event(STATUS_EVENT_SSE_UPDATE);
+    return;
   }
 
-  /* Unlock mutex */
-  pthread_mutex_unlock(&status_shared->log_mutex);
+  if (log_event_send_fd < 0)
+    return;
 
-  /* Trigger SSE event for new log entries */
-  status_trigger_event(STATUS_EVENT_SSE_UPDATE);
+  status_log_event_t event;
+  memset(&event, 0, sizeof(event));
+  event.type = STATUS_LOG_EVENT_ADD;
+  event.timestamp = get_realtime_ms();
+  event.level = level;
+  strncpy(event.message, message, sizeof(event.message) - 1);
+  (void)send(log_event_send_fd, &event, sizeof(event), MSG_DONTWAIT);
+}
+
+void status_supervisor_drain_logs(void) {
+  if (!status_shared || worker_id != SUPERVISOR_WORKER_ID || log_event_recv_fd < 0)
+    return;
+
+  int changed = 0;
+  for (;;) {
+    status_log_event_t event;
+    ssize_t received = recv(log_event_recv_fd, &event, sizeof(event), MSG_DONTWAIT);
+    if (received < 0) {
+      if (errno == EINTR)
+        continue;
+      break;
+    }
+    if ((size_t)received != sizeof(event))
+      continue;
+    if (event.type == STATUS_LOG_EVENT_ADD) {
+      event.message[sizeof(event.message) - 1] = '\0';
+      append_log_entry(event.timestamp, event.level, event.message);
+      changed = 1;
+    } else if (event.type == STATUS_LOG_EVENT_CLEAR) {
+      clear_log_ring();
+      changed = 1;
+    }
+  }
+  if (changed)
+    status_trigger_event(STATUS_EVENT_SSE_UPDATE);
 }
 
 /* Removed format_bytes and format_bandwidth - formatting is done in JavaScript
@@ -440,15 +647,15 @@ const char *status_get_log_level_name(enum loglevel level) {
   }
 }
 
-int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_initial, int *p_last_write_index,
-                          int *p_last_log_count) {
+int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_initial, uint32_t *p_last_log_epoch,
+                          uint32_t *p_last_log_sequence) {
   if (!status_shared)
     return 0;
 
   int sent_initial = *p_sent_initial;
-  int last_write_index = *p_last_write_index;
-  int last_log_count = *p_last_log_count;
-  int i, log_start, log_idx;
+  uint32_t last_log_epoch = *p_last_log_epoch;
+  uint32_t last_log_sequence = *p_last_log_sequence;
+  int i;
   uint64_t total_bytes = 0;
   uint32_t total_bw = 0;
   int streams_count = 0;
@@ -473,41 +680,40 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
   /* Add client data (only real media streams: have a service_url) */
   int first_client = 1;
   for (i = 0; i < STATUS_MAX_CLIENTS; i++) {
-    if (status_shared->clients[i].active && status_shared->clients[i].service_url[0] != '\0') {
+    client_stats_payload_t client;
+    uint32_t owner_pid = 0;
+    if (snapshot_client(&status_shared->clients[i], &client, &owner_pid) && client.service_url[0] != '\0') {
       if (!first_client)
         len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",");
       first_client = 0;
 
-      int64_t duration_ms = current_time - status_shared->clients[i].connect_time;
+      int64_t duration_ms = current_time - client.connect_time;
 
       /* Escape client_id for JSON */
       char escaped_client_id[256];
-      json_escape_string_to_buffer(status_shared->clients[i].client_id, escaped_client_id, sizeof(escaped_client_id));
+      json_escape_string_to_buffer(client.client_id, escaped_client_id, sizeof(escaped_client_id));
 
-      len +=
-          snprintf(buffer + len, buffer_capacity - (size_t)len,
-                   "{\"clientId\":\"%s\",\"workerPid\":%d,\"durationMs\":%lld,"
-                   "\"clientAddr\":\"%s\","
-                   "\"serviceUrl\":\"%s\",\"state\":%d,\"bytesSent\":%llu,"
-                   "\"currentBandwidth\":%u,\"queueBytes\":%zu,"
-                   "\"queueLimitBytes\":%zu,\"queueBytesHighwater\":%zu,"
-                   "\"droppedBytes\":%llu,\"slow\":%d}",
-                   escaped_client_id, status_shared->clients[i].worker_pid, (long long)duration_ms,
-                   status_shared->clients[i].client_addr, status_shared->clients[i].service_url,
-                   (int)status_shared->clients[i].state, (unsigned long long)status_shared->clients[i].bytes_sent,
-                   status_shared->clients[i].current_bandwidth, status_shared->clients[i].queue_bytes,
-                   status_shared->clients[i].queue_limit_bytes, status_shared->clients[i].queue_bytes_highwater,
-                   (unsigned long long)status_shared->clients[i].dropped_bytes, status_shared->clients[i].slow_active);
+      len += snprintf(buffer + len, buffer_capacity - (size_t)len,
+                      "{\"clientId\":\"%s\",\"workerPid\":%d,\"durationMs\":%lld,"
+                      "\"clientAddr\":\"%s\","
+                      "\"serviceUrl\":\"%s\",\"state\":%d,\"bytesSent\":%llu,"
+                      "\"currentBandwidth\":%u,\"queueBytes\":%zu,"
+                      "\"queueLimitBytes\":%zu,\"queueBytesHighwater\":%zu,"
+                      "\"droppedBytes\":%llu,\"slow\":%d}",
+                      escaped_client_id, (int)owner_pid, (long long)duration_ms, client.client_addr, client.service_url,
+                      (int)client.state, (unsigned long long)client.bytes_sent, client.current_bandwidth,
+                      client.queue_bytes, client.queue_limit_bytes, client.queue_bytes_highwater,
+                      (unsigned long long)client.dropped_bytes, client.slow_active);
 
       streams_count++;
-      total_bytes += status_shared->clients[i].bytes_sent;
-      total_bw += status_shared->clients[i].current_bandwidth;
+      total_bytes += client.bytes_sent;
+      total_bw += client.current_bandwidth;
 
-      int worker_index = status_shared->clients[i].worker_index;
+      int worker_index = client.worker_index;
       if (worker_index >= 0 && worker_index < STATUS_MAX_WORKERS) {
         worker_active_clients[worker_index]++;
-        worker_active_bytes[worker_index] += status_shared->clients[i].bytes_sent;
-        worker_bandwidth_sum[worker_index] += status_shared->clients[i].current_bandwidth;
+        worker_active_bytes[worker_index] += client.bytes_sent;
+        worker_bandwidth_sum[worker_index] += client.current_bandwidth;
       }
     }
   }
@@ -515,7 +721,9 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
   /* Close clients array and add computed totals
    * total_bytes_sent = accumulated bytes from disconnected clients + current
    * active clients */
-  uint64_t total_bytes_sent = status_shared->total_bytes_sent_cumulative + total_bytes;
+  uint64_t total_bytes_sent = total_bytes;
+  for (i = 0; i < STATUS_MAX_WORKERS; i++)
+    total_bytes_sent += status_shared->client_bytes_cumulative[i];
   len += snprintf(buffer + len, buffer_capacity - (size_t)len,
                   "],\"totalClients\":%d,\"totalBytesSent\":%llu,\"totalBandwidth\":%u", streams_count,
                   (unsigned long long)total_bytes_sent, total_bw);
@@ -566,96 +774,62 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
   }
   len += snprintf(buffer + len, buffer_capacity - (size_t)len, "]");
 
-  /* Decide logs mode */
-  const char *logs_mode = "none";
-  int cur_wi = status_shared->log_write_index;
-  int cur_count = status_shared->log_count;
-  int new_entries = 0;
-  int logs_cleared = 0;
-
-  /* Detect log clear: count decreased or write_index reset while count is less
-   */
-  if (sent_initial && cur_count < last_log_count) {
-    logs_cleared = 1;
+  uint32_t current_log_epoch = atomic_load_explicit(&status_shared->log_epoch, memory_order_acquire);
+  uint32_t current_log_sequence = atomic_load_explicit(&status_shared->log_sequence, memory_order_acquire);
+  int full_logs = !sent_initial || current_log_epoch != last_log_epoch || current_log_sequence < last_log_sequence ||
+                  current_log_sequence - last_log_sequence > STATUS_MAX_LOG_ENTRIES;
+  uint32_t first_sequence = 0;
+  if (full_logs) {
+    first_sequence = current_log_sequence > STATUS_MAX_LOG_ENTRIES ? current_log_sequence - STATUS_MAX_LOG_ENTRIES + 1
+                                                                   : (current_log_sequence > 0 ? 1 : 0);
+  } else if (current_log_sequence > last_log_sequence) {
+    first_sequence = last_log_sequence + 1;
   }
-
-  if (!sent_initial || logs_cleared) {
-    logs_mode = "full";
-  } else {
-    int delta_idx = (cur_wi - last_write_index + STATUS_MAX_LOG_ENTRIES) % STATUS_MAX_LOG_ENTRIES;
-    new_entries = delta_idx;
-    if (cur_count < STATUS_MAX_LOG_ENTRIES) {
-      int count_delta = cur_count - last_log_count;
-      if (count_delta < 0)
-        count_delta = 0;
-      if (new_entries > count_delta)
-        new_entries = count_delta;
-    }
-    logs_mode = (new_entries > 0) ? "incremental" : "none";
-  }
+  const char *logs_mode = full_logs ? "full" : (first_sequence ? "incremental" : "none");
 
   /* Add logs section */
   len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",\"logsMode\":\"%s\",\"logs\":[", logs_mode);
 
-  /* Add logs according to mode */
-  if (!sent_initial || logs_cleared) {
-    /* Full dump: all available logs (also used after log clear) */
-    int full_count = cur_count;
-    if (full_count > 0) {
-      if (cur_count < STATUS_MAX_LOG_ENTRIES)
-        log_start = 0;
-      else
-        log_start = cur_wi;
+  int first_log = 1;
+  for (uint32_t sequence = first_sequence; sequence > 0 && sequence <= current_log_sequence; sequence++) {
+    log_entry_t *entry = &status_shared->log_entries[(sequence - 1) % STATUS_MAX_LOG_ENTRIES];
+    uint32_t sequence_before = atomic_load_explicit(&entry->sequence, memory_order_acquire);
+    if (sequence_before != sequence)
+      continue;
+    int64_t timestamp = entry->timestamp;
+    loglevel_t level = entry->level;
+    char message[STATUS_LOG_ENTRY_LEN];
+    memcpy(message, entry->message, sizeof(message));
+    message[sizeof(message) - 1] = '\0';
+    atomic_thread_fence(memory_order_acquire);
+    if (atomic_load_explicit(&entry->sequence, memory_order_relaxed) != sequence)
+      continue;
 
-      int first_log = 1;
-      for (i = 0; i < full_count; i++) {
-        log_idx = (log_start + cur_count - full_count + i) % STATUS_MAX_LOG_ENTRIES;
-        if (!first_log)
-          len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",");
-        first_log = 0;
-
-        char escaped[STATUS_LOG_ENTRY_LEN * 2];
-        json_escape_string_to_buffer(status_shared->log_entries[log_idx].message, escaped, sizeof(escaped));
-
-        len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                        "{\"timestamp\":%lld,\"levelName\":\"%s\",\"message\":\"%s\"}",
-                        (long long)status_shared->log_entries[log_idx].timestamp,
-                        status_get_log_level_name(status_shared->log_entries[log_idx].level), escaped);
-      }
+    if (!first_log)
+      len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",");
+    first_log = 0;
+    char escaped[STATUS_LOG_ENTRY_LEN * 2];
+    json_escape_string_to_buffer(message, escaped, sizeof(escaped));
+    if (full_logs) {
+      len += snprintf(buffer + len, buffer_capacity - (size_t)len,
+                      "{\"timestamp\":%lld,\"levelName\":\"%s\",\"message\":\"%s\"}", (long long)timestamp,
+                      status_get_log_level_name(level), escaped);
+    } else {
+      len += snprintf(buffer + len, buffer_capacity - (size_t)len,
+                      "{\"timestamp\":%lld,\"level\":%d,\"levelName\":\"%s\",\"message\":\"%s\"}", (long long)timestamp,
+                      level, status_get_log_level_name(level), escaped);
     }
-    sent_initial = 1;
-    last_write_index = cur_wi;
-    last_log_count = cur_count;
-  } else if (new_entries > 0) {
-    /* Incremental: only new entries since last_write_index */
-    int first_log = 1;
-    int start_idx = (cur_wi - new_entries + STATUS_MAX_LOG_ENTRIES) % STATUS_MAX_LOG_ENTRIES;
-    for (i = 0; i < new_entries; i++) {
-      log_idx = (start_idx + i) % STATUS_MAX_LOG_ENTRIES;
-      if (!first_log)
-        len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",");
-      first_log = 0;
-
-      char escaped[STATUS_LOG_ENTRY_LEN * 2];
-      json_escape_string_to_buffer(status_shared->log_entries[log_idx].message, escaped, sizeof(escaped));
-
-      len +=
-          snprintf(buffer + len, buffer_capacity - (size_t)len,
-                   "{\"timestamp\":%lld,\"level\":%d,\"levelName\":\"%s\",\"message\":\"%"
-                   "s\"}",
-                   (long long)status_shared->log_entries[log_idx].timestamp, status_shared->log_entries[log_idx].level,
-                   status_get_log_level_name(status_shared->log_entries[log_idx].level), escaped);
-    }
-    last_write_index = cur_wi;
-    last_log_count = cur_count;
   }
+  sent_initial = 1;
+  last_log_epoch = current_log_epoch;
+  last_log_sequence = current_log_sequence;
 
   len += snprintf(buffer + len, buffer_capacity - (size_t)len, "]}\n\n");
 
   /* Update output parameters */
   *p_sent_initial = sent_initial;
-  *p_last_write_index = last_write_index;
-  *p_last_log_count = last_log_count;
+  *p_last_log_epoch = last_log_epoch;
+  *p_last_log_sequence = last_log_sequence;
 
   /* Update global bandwidth statistics */
   status_shared->total_bandwidth = total_bw;
@@ -712,13 +886,17 @@ void handle_disconnect_client(connection_t *c) {
 
   /* Find client by client_id string */
   for (int i = 0; i < STATUS_MAX_CLIENTS; i++) {
-    logger(LOG_DEBUG, "Checking client slot %d: active=%d, client_id=%s, to match=%s", i,
-           status_shared->clients[i].active, status_shared->clients[i].client_id, client_id_str);
-    if (status_shared->clients[i].active && strcmp(status_shared->clients[i].client_id, client_id_str) == 0) {
+    client_stats_payload_t client;
+    uint32_t owner_pid;
+    if (!snapshot_client(&status_shared->clients[i], &client, &owner_pid))
+      continue;
+    logger(LOG_DEBUG, "Checking client slot %d: active=1, client_id=%s, to match=%s", i, client.client_id,
+           client_id_str);
+    if (strcmp(client.client_id, client_id_str) == 0) {
       found = 1;
       /* Set disconnect flag - worker will check this and close the connection
        */
-      status_shared->clients[i].disconnect_requested = 1;
+      atomic_store_explicit(&status_shared->clients[i].disconnect_requested, 1, memory_order_release);
 
       /* Trigger disconnect request event to wake up workers */
       status_trigger_event(STATUS_EVENT_DISCONNECT_REQUEST);
@@ -757,11 +935,11 @@ void handle_clear_logs(connection_t *c) {
     return;
   }
 
-  /* Clear logs under mutex protection */
-  pthread_mutex_lock(&status_shared->log_mutex);
-  status_shared->log_write_index = 0;
-  status_shared->log_count = 0;
-  pthread_mutex_unlock(&status_shared->log_mutex);
+  status_log_event_t event;
+  memset(&event, 0, sizeof(event));
+  event.type = STATUS_LOG_EVENT_CLEAR;
+  if (log_event_send_fd >= 0)
+    (void)send(log_event_send_fd, &event, sizeof(event), MSG_DONTWAIT);
 
   /* Trigger SSE update to notify clients */
   status_trigger_event(STATUS_EVENT_SSE_UPDATE);
@@ -887,14 +1065,14 @@ int status_handle_sse_init(connection_t *c) {
   send_http_headers(c, STATUS_200, "text/event-stream", NULL);
 
   c->sse_sent_initial = 0;
-  c->sse_last_write_index = -1;
-  c->sse_last_log_count = 0;
+  c->sse_last_log_epoch = 0;
+  c->sse_last_log_sequence = 0;
   c->next_sse_ts = get_time_ms();
 
   /* Build and send initial SSE payload immediately */
   char tmp[SSE_BUFFER_SIZE];
   int len =
-      status_build_sse_json(tmp, sizeof(tmp), &c->sse_sent_initial, &c->sse_last_write_index, &c->sse_last_log_count);
+      status_build_sse_json(tmp, sizeof(tmp), &c->sse_sent_initial, &c->sse_last_log_epoch, &c->sse_last_log_sequence);
 
   if (len > 0) {
     connection_queue_output_and_flush(c, (const uint8_t *)tmp, (size_t)len);
@@ -913,15 +1091,15 @@ int status_handle_sse_notification(connection_t *conn_head) {
 
   /* Build and enqueue SSE payloads for all SSE connections
    * Note: Each connection has its own state (sse_sent_initial,
-   * sse_last_write_index, sse_last_log_count) so we must build a separate
+   * per-connection log cursors, so we must build a separate
    * payload for each connection */
   for (connection_t *cc = conn_head; cc; cc = cc->next) {
     if (cc->state != CONN_SSE)
       continue;
 
     char tmp[SSE_BUFFER_SIZE];
-    int len = status_build_sse_json(tmp, sizeof(tmp), &cc->sse_sent_initial, &cc->sse_last_write_index,
-                                    &cc->sse_last_log_count);
+    int len = status_build_sse_json(tmp, sizeof(tmp), &cc->sse_sent_initial, &cc->sse_last_log_epoch,
+                                    &cc->sse_last_log_sequence);
 
     if (len > 0) {
       if (connection_queue_output_and_flush(cc, (const uint8_t *)tmp, (size_t)len) == 0) {

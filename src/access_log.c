@@ -345,9 +345,9 @@ static void access_log_parse_remote_addr(const char *client_addr, char *remote_a
 }
 
 static int access_log_append_placeholder(access_log_buffer_t *buf, const char *name, size_t name_len, connection_t *c,
-                                         service_t *service, const client_stats_t *client, const char *time_iso8601,
-                                         const char *time_local, const char *msec, const char *remote_addr,
-                                         const char *remote_port, const char *request) {
+                                         service_t *service, const client_stats_payload_t *client, pid_t worker_pid,
+                                         const char *time_iso8601, const char *time_local, const char *msec,
+                                         const char *remote_addr, const char *remote_port, const char *request) {
   char numeric[64];
   char filtered_user_agent[sizeof(c->http_req.user_agent)];
 
@@ -366,7 +366,7 @@ static int access_log_append_placeholder(access_log_buffer_t *buf, const char *n
   if (MATCH("remote_port"))
     return access_log_append_escaped(buf, remote_port);
   if (MATCH("worker_pid")) {
-    snprintf(numeric, sizeof(numeric), "%d", (int)client->worker_pid);
+    snprintf(numeric, sizeof(numeric), "%d", (int)worker_pid);
     return access_log_append_escaped(buf, numeric);
   }
   if (MATCH("request"))
@@ -397,7 +397,7 @@ static int access_log_append_placeholder(access_log_buffer_t *buf, const char *n
 }
 
 static int access_log_render(access_log_buffer_t *buf, connection_t *c, service_t *service,
-                             const client_stats_t *client, const char *format) {
+                             const client_stats_payload_t *client, pid_t worker_pid, const char *format) {
   char time_iso8601[64];
   char time_local[64];
   char msec[32];
@@ -436,8 +436,8 @@ static int access_log_render(access_log_buffer_t *buf, connection_t *c, service_
     while (isalnum((unsigned char)*end) || *end == '_')
       end++;
 
-    if (access_log_append_placeholder(buf, name, (size_t)(end - name), c, service, client, time_iso8601, time_local,
-                                      msec, remote_addr, remote_port, request) < 0) {
+    if (access_log_append_placeholder(buf, name, (size_t)(end - name), c, service, client, worker_pid, time_iso8601,
+                                      time_local, msec, remote_addr, remote_port, request) < 0) {
       return -1;
     }
     p = end - 1;
@@ -472,8 +472,9 @@ void access_log_write_connection(connection_t *c, service_t *service, int status
     return;
 
   client_stats_t *client = &status_shared->clients[status_index];
-  if (!client->active || client->service_url[0] == '\0')
+  if (!atomic_load_explicit(&client->active, memory_order_acquire) || client->payload.service_url[0] == '\0')
     return;
+  pid_t owner_pid = (pid_t)atomic_load_explicit(&client->owner_pid, memory_order_relaxed);
 
   int fd = access_log_ensure_fd(config.access_log);
   if (fd < 0)
@@ -488,7 +489,7 @@ void access_log_write_connection(connection_t *c, service_t *service, int status
     return;
   }
 
-  if (access_log_render(&buf, c, service, client, format) < 0) {
+  if (access_log_render(&buf, c, service, &client->payload, owner_pid, format) < 0) {
     logger(LOG_ERROR, "Failed to render access log line");
     access_log_buffer_free(&buf);
     return;
