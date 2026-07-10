@@ -5,6 +5,14 @@ import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { EPGData } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
 import type { EPGProgram } from "../../types/player";
+import {
+  PLAYER_LIST_SURFACE_BASE_CLASS,
+  PLAYER_LIST_SURFACE_DEFAULT_CLASS,
+  PLAYER_LIST_SURFACE_HOVER_CLASS,
+  PLAYER_LIST_SURFACE_SELECTED_CLASS,
+  PLAYER_SELECTED_GLASS_LAYER_CLASS,
+  PLAYER_SELECTED_TOP_HIGHLIGHT_CLASS,
+} from "./classnames";
 
 interface EPGViewProps {
   channelId: string | null;
@@ -178,14 +186,15 @@ function EPGViewComponent({
                         key={program.id}
                         ref={playing ? currentProgramRef : null}
                         className={clsx(
-                          "relative isolate w-full overflow-hidden rounded-2xl border text-left text-card-foreground transition-[color,background-color,border-color,box-shadow,opacity] duration-200",
-                          playing
-                            ? "border-blue-400/50 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(99,102,241,0.13))] shadow-[0_14px_30px_-18px_rgba(37,99,235,0.42),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-1px_0_rgba(37,99,235,0.1)] ring-1 ring-blue-400/10 backdrop-blur-md backdrop-saturate-150 before:pointer-events-none before:absolute before:inset-x-3 before:top-0 before:h-px before:bg-[linear-gradient(90deg,transparent,rgba(191,219,254,0.76),transparent)] before:content-[''] dark:border-blue-300/40 dark:shadow-[0_16px_34px_-18px_rgba(0,0,0,0.78),0_0_24px_-12px_rgba(59,130,246,0.54),inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(59,130,246,0.12)] dark:ring-blue-300/10 dark:before:bg-[linear-gradient(90deg,transparent,rgba(191,219,254,0.34),transparent)]"
-                            : isPast
-                              ? "border-slate-200/65 bg-white/38 opacity-65 dark:border-white/8 dark:bg-slate-950/28"
-                              : "border-slate-200/70 bg-white/48 shadow-[inset_0_1px_0_rgba(255,255,255,0.44)] dark:border-white/8 dark:bg-slate-950/34 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]",
-                          ((isPast && supportsCatchup) || onAir) &&
-                            "cursor-pointer hover:border-blue-400/35 hover:bg-blue-50/52 hover:opacity-100 dark:hover:border-blue-300/25 dark:hover:bg-blue-300/7",
+                          PLAYER_LIST_SURFACE_BASE_CLASS,
+                          "w-full text-left",
+                          playing ? PLAYER_LIST_SURFACE_SELECTED_CLASS : PLAYER_LIST_SURFACE_DEFAULT_CLASS,
+                          !playing && isPast && "opacity-65",
+                          ((isPast && supportsCatchup) || onAir) && "cursor-pointer",
+                          !playing && ((isPast && supportsCatchup) || onAir) && [
+                            "hover:opacity-100",
+                            PLAYER_LIST_SURFACE_HOVER_CLASS,
+                          ],
                         )}
                         onClick={() => {
                           if (isPast && supportsCatchup) {
@@ -197,7 +206,15 @@ function EPGViewComponent({
                           }
                         }}
                       >
-                        <div className="flex items-center gap-2 md:gap-2.5 p-2 md:p-2.5">
+                        <span
+                          aria-hidden
+                          className={clsx(PLAYER_SELECTED_GLASS_LAYER_CLASS, playing && "opacity-100")}
+                        />
+                        <span
+                          aria-hidden
+                          className={clsx(PLAYER_SELECTED_TOP_HIGHLIGHT_CLASS, playing && "opacity-100")}
+                        />
+                        <div className="relative z-10 flex items-center gap-2 p-2 md:gap-2.5 md:p-2.5">
                           {/* Left: Status Indicator Bar */}
                           <div className="flex shrink-0">
                             {playing ? (
@@ -216,16 +233,16 @@ function EPGViewComponent({
                           </div>
 
                           {/* Middle-Left: Time */}
-                          <div className="flex w-14 shrink-0 flex-col items-end md:w-16">
+                          <div className="flex w-[4.75rem] shrink-0 flex-col items-end md:w-[5.25rem]">
                             <span
                               className={clsx(
-                                "font-semibold text-xs tabular-nums leading-tight md:text-sm",
+                                "whitespace-nowrap font-semibold text-xs tabular-nums leading-tight md:text-sm",
                                 playing && "text-blue-700 dark:text-blue-200",
                               )}
                             >
                               {formatTime(program.start)}
                             </span>
-                            <span className="text-[10px] text-slate-500 tabular-nums leading-4 dark:text-slate-400 md:text-xs">
+                            <span className="whitespace-nowrap text-[10px] text-slate-500 tabular-nums leading-4 dark:text-slate-400 md:text-xs">
                               {formatDuration(program.start, program.end)}
                             </span>
                           </div>
