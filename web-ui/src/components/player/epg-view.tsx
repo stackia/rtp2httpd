@@ -11,6 +11,7 @@ import {
   PLAYER_LIST_SURFACE_HOVER_CLASS,
   PLAYER_LIST_SURFACE_SELECTED_CLASS,
   PLAYER_SELECTED_GLASS_LAYER_CLASS,
+  PLAYER_SELECTED_TOP_HIGHLIGHT_CLASS,
 } from "./classnames";
 
 interface EPGViewProps {
@@ -208,6 +209,10 @@ function EPGViewComponent({
                         <span
                           aria-hidden
                           className={clsx(PLAYER_SELECTED_GLASS_LAYER_CLASS, playing && "opacity-100")}
+                        />
+                        <span
+                          aria-hidden
+                          className={clsx(PLAYER_SELECTED_TOP_HIGHLIGHT_CLASS, playing && "opacity-100")}
                         />
                         <div className="relative z-10 flex items-center gap-2 p-2 md:gap-2.5 md:p-2.5">
                           {/* Left: Status Indicator Bar */}
