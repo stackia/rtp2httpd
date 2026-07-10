@@ -201,10 +201,9 @@
 
   :where(.ui-button--outline) {
     border-color: hsl(var(--input) / 0.8);
-    background: hsl(var(--background) / 0.6);
+    background: hsl(var(--secondary) / 0.9);
     color: hsl(var(--foreground));
-    box-shadow: 0 4px 12px -8px rgba(15, 23, 42, 0.28);
-    backdrop-filter: blur(12px);
+    box-shadow: none;
   }
 
   :where(.ui-button--outline:hover) {
@@ -215,9 +214,9 @@
 
   :where(.ui-button--secondary) {
     border-color: hsl(var(--border) / 0.6);
-    background: hsl(var(--secondary) / 0.85);
+    background: hsl(var(--secondary) / 0.9);
     color: hsl(var(--secondary-foreground));
-    box-shadow: 0 4px 12px -8px rgba(15, 23, 42, 0.24);
+    box-shadow: none;
   }
 
   :where(.ui-button--secondary:hover) {
@@ -297,9 +296,8 @@
   :where(.ui-select) {
     border: 1px solid hsl(var(--input) / 0.8);
     border-radius: var(--radius);
-    background: hsl(var(--background) / 0.55);
-    box-shadow: 0 4px 12px -8px rgba(15, 23, 42, 0.28);
-    backdrop-filter: blur(12px);
+    background: hsl(var(--background) / 0.82);
+    box-shadow: none;
     font-weight: 600;
   }
 
@@ -313,7 +311,7 @@
   }
 
   .dark :where(.ui-select) {
-    box-shadow: 0 4px 12px -8px rgba(0, 0, 0, 0.55);
+    background: hsl(var(--secondary) / 0.72);
   }
 
   :where(.ui-progress) {
@@ -347,16 +345,12 @@
 
   @media (prefers-reduced-motion: no-preference) {
     :where(.ui-button--default:hover),
-    :where(.ui-button--destructive:hover),
-    :where(.ui-button--outline:hover),
-    :where(.ui-button--secondary:hover) {
+    :where(.ui-button--destructive:hover) {
       transform: translateY(-0.125rem);
     }
 
     :where(.ui-button--default:active),
-    :where(.ui-button--destructive:active),
-    :where(.ui-button--outline:active),
-    :where(.ui-button--secondary:active) {
+    :where(.ui-button--destructive:active) {
       transform: translateY(0);
     }
   }

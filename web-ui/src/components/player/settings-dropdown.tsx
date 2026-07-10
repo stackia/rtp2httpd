@@ -84,7 +84,7 @@ function SettingsDropdownComponent({
               <select
                 value={locale}
                 onChange={(e) => onLocaleChange(e.target.value as Locale)}
-                className="h-9 w-full cursor-pointer rounded-xl border border-blue-900/10 bg-white/60 px-3 py-0 pr-8 text-foreground text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition-[color,background-color,border-color,box-shadow] hover:border-blue-400/25 hover:bg-blue-50/75 focus:outline-none focus:ring-2 focus:ring-blue-400/35 dark:border-blue-100/10 dark:bg-slate-950/45 dark:shadow-none dark:hover:bg-blue-300/8"
+                className="h-9 w-full cursor-pointer rounded-xl border border-blue-900/10 bg-white/78 px-3 py-0 pr-8 text-foreground text-sm shadow-none transition-[color,background-color,border-color] hover:border-blue-400/25 hover:bg-blue-50/70 focus:outline-none focus:ring-2 focus:ring-blue-400/35 dark:border-blue-100/10 dark:bg-slate-900/85 dark:hover:bg-slate-800/90"
               >
                 {localeOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -102,7 +102,7 @@ function SettingsDropdownComponent({
               <select
                 value={theme}
                 onChange={(e) => onThemeChange(e.target.value as ThemeMode)}
-                className="h-9 w-full cursor-pointer rounded-xl border border-blue-900/10 bg-white/60 px-3 py-0 pr-8 text-foreground text-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition-[color,background-color,border-color,box-shadow] hover:border-blue-400/25 hover:bg-blue-50/75 focus:outline-none focus:ring-2 focus:ring-blue-400/35 dark:border-blue-100/10 dark:bg-slate-950/45 dark:shadow-none dark:hover:bg-blue-300/8"
+                className="h-9 w-full cursor-pointer rounded-xl border border-blue-900/10 bg-white/78 px-3 py-0 pr-8 text-foreground text-sm shadow-none transition-[color,background-color,border-color] hover:border-blue-400/25 hover:bg-blue-50/70 focus:outline-none focus:ring-2 focus:ring-blue-400/35 dark:border-blue-100/10 dark:bg-slate-900/85 dark:hover:bg-slate-800/90"
               >
                 {themeOptions.map((option) => (
                   <option key={option} value={option}>

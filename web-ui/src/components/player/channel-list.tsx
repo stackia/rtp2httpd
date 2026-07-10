@@ -192,7 +192,7 @@ function ChannelListComponent({
               value={searchQuery}
               onChange={handleSearchInputChange}
               onKeyDown={handleSearchKeyDown}
-              className="h-8 w-full rounded-xl border border-blue-900/10 bg-white/60 px-3 py-0 pl-8 text-slate-800 text-xs shadow-[0_8px_24px_rgba(30,64,175,0.06),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl transition placeholder:text-slate-400 focus:border-blue-400/60 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-blue-100/10 dark:bg-slate-950/45 dark:text-blue-50 dark:placeholder:text-slate-500 md:h-9 md:pl-9 md:text-sm"
+              className="h-8 w-full rounded-xl border border-blue-900/10 bg-white/78 px-3 py-0 pl-8 text-slate-800 text-xs shadow-none transition placeholder:text-slate-400 focus:border-blue-400/60 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-blue-100/10 dark:bg-slate-900/85 dark:text-blue-50 dark:placeholder:text-slate-500 md:h-9 md:pl-9 md:text-sm"
             />
             <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-blue-600/65 dark:text-blue-300/55 md:h-4 md:w-4" />
           </div>
