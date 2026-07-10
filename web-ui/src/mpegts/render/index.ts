@@ -1,4 +1,5 @@
 import "./filters/bwdif";
+import type { PlayerRenderState, PlayerVideoScanType } from "../types";
 import Log from "../utils/logger";
 import { type DetectorVerdict, InterlaceDetector, isRenderResolutionEligible } from "./interlace-detector";
 import { type FieldOrder, type RenderStageName, VideoRenderer } from "./renderer";
@@ -38,7 +39,7 @@ const SAMPLE_INTERVAL_MS = 500;
 export function createVideoRenderPipeline(
   video: HTMLVideoElement,
   canvas: HTMLCanvasElement,
-  onActiveChange?: (active: boolean) => void,
+  onStateChange?: (state: PlayerRenderState) => void,
 ): VideoRenderPipeline {
   if (!VideoRenderer.isSupported()) {
     Log.i(TAG, "requestVideoFrameCallback unavailable; WebGL video rendering disabled");
@@ -61,8 +62,11 @@ export function createVideoRenderPipeline(
   let detectorReady = false;
   let detectorRunning = false;
   let interlaced = false;
+  let detectedScanType: PlayerVideoScanType | undefined;
   let fieldOrder: FieldOrder = "tff";
+  let currentStage: RenderStageName = "passthrough";
   let lastEligibility: boolean | null = null;
+  let serializedState = "";
 
   let lastSampleMs = -Infinity;
   let fastPhaseSamples = 0;
@@ -72,10 +76,28 @@ export function createVideoRenderPipeline(
     fastPhaseSamples = 0;
   };
 
-  const setActive = (next: boolean) => {
-    if (active === next) return;
-    active = next;
-    onActiveChange?.(next);
+  const publishState = () => {
+    const state: PlayerRenderState = {
+      active,
+      detectedScanType,
+      deinterlacing: active && currentStage === "bwdif",
+    };
+    const nextSerializedState = JSON.stringify(state);
+    if (nextSerializedState === serializedState) return;
+    serializedState = nextSerializedState;
+    onStateChange?.(state);
+  };
+
+  const setActive = (nextActive: boolean) => {
+    if (active === nextActive) return;
+    active = nextActive;
+    publishState();
+  };
+
+  const setCurrentStage = (nextStage: RenderStageName) => {
+    if (currentStage === nextStage) return;
+    currentStage = nextStage;
+    publishState();
   };
 
   const desiredStage = (): RenderStageName => (autoDeinterlaceEnabled && interlaced ? "bwdif" : "passthrough");
@@ -108,6 +130,7 @@ export function createVideoRenderPipeline(
       detectorReady = false;
       detectorRunning = false;
       renderRunning = false;
+      setCurrentStage("passthrough");
       Log.i(TAG, "Interlace detector stopped: WebGL context lost");
       setActive(false);
     },
@@ -144,8 +167,12 @@ export function createVideoRenderPipeline(
 
   const detector = new InterlaceDetector((verdict: DetectorVerdict) => {
     interlaced = verdict.interlaced;
+    detectedScanType = verdict.interlaced ? "interlaced" : "progressive";
     fieldOrder = verdict.fieldOrder;
-    if (destroyed || !renderRunning) return;
+    if (destroyed || !renderRunning) {
+      publishState();
+      return;
+    }
     renderer.setFieldOrder(fieldOrder);
     applyRenderStage();
   });
@@ -173,9 +200,12 @@ export function createVideoRenderPipeline(
       if (!detectorReady) {
         stopDetector("GPU detector unavailable");
         interlaced = false;
+        detectedScanType = undefined;
         fieldOrder = "tff";
         renderer.setFieldOrder(fieldOrder);
         renderer.setStage("passthrough");
+        setCurrentStage("passthrough");
+        publishState();
         return;
       }
     }
@@ -186,14 +216,17 @@ export function createVideoRenderPipeline(
   const applyRenderStage = () => {
     const stage = desiredStage();
     renderer.setFieldOrder(fieldOrder);
-    if (renderer.setStage(stage)) return;
+    if (renderer.setStage(stage)) {
+      setCurrentStage(stage);
+      return;
+    }
 
     if (stage === "bwdif") {
       Log.w(TAG, "Falling back to passthrough after bwdif stage setup failed");
-      interlaced = false;
       fieldOrder = "tff";
       renderer.setFieldOrder(fieldOrder);
       renderer.setStage("passthrough");
+      setCurrentStage("passthrough");
     }
   };
 
@@ -203,11 +236,14 @@ export function createVideoRenderPipeline(
     const stage = desiredStage();
     if (!renderer.start(stage, fieldOrder)) {
       if (stage !== "passthrough" && renderer.start("passthrough", fieldOrder)) {
-        interlaced = false;
+        setCurrentStage("passthrough");
       } else {
+        setCurrentStage("passthrough");
         setActive(false);
         return;
       }
+    } else {
+      setCurrentStage(stage);
     }
 
     renderRunning = true;
@@ -224,6 +260,7 @@ export function createVideoRenderPipeline(
     renderRunning = false;
     stopDetector("render pipeline stopped");
     renderer.stop();
+    setCurrentStage("passthrough");
     setActive(false);
   };
 
@@ -278,12 +315,15 @@ export function createVideoRenderPipeline(
     },
     reset() {
       interlaced = false;
+      detectedScanType = undefined;
       fieldOrder = "tff";
+      setCurrentStage("passthrough");
       resetCadence();
       detector.reset();
       renderer.resetStream(fieldOrder);
       renderer.clearCanvas();
       apply();
+      publishState();
     },
     get active() {
       return active;

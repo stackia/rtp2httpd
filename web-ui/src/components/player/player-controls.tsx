@@ -16,8 +16,10 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
+import type { PlayerMediaInfo, PlayerRenderState } from "../../mpegts";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PLAYER_CONTROL_BUTTON_CLASS, PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
+import { PlayerMediaBadges } from "./player-media-badges";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
 interface PlayerControlsProps {
@@ -33,6 +35,9 @@ interface PlayerControlsProps {
   locale: Locale;
   // Current video playback time from video element (in seconds)
   currentTime: number;
+  // Technical information for the currently visible player slot
+  mediaInfo: PlayerMediaInfo | null;
+  renderState: PlayerRenderState;
   // The absolute time of the last seek position (null for live mode)
   seekStartTime: Date;
   // Video element controls
@@ -62,6 +67,8 @@ export function PlayerControls({
   onSeek,
   locale,
   currentTime,
+  mediaInfo,
+  renderState,
   seekStartTime,
   isPlaying,
   onPlayPause,
@@ -206,7 +213,7 @@ export function PlayerControls({
   }, []);
 
   return (
-    <div className="flex w-full flex-col gap-2 bg-[linear-gradient(to_top,rgba(2,8,23,0.98)_0%,rgba(8,22,51,0.9)_46%,rgba(21,27,69,0.48)_72%,transparent_100%)] px-3 pt-8 pb-3 md:gap-3 md:px-4 md:pt-12 md:pb-4">
+    <div className="flex w-full flex-col gap-1.5 bg-[linear-gradient(to_top,rgba(2,8,23,0.98)_0%,rgba(8,22,51,0.9)_46%,rgba(21,27,69,0.48)_72%,transparent_100%)] px-2 pt-6 pb-2 md:gap-2 md:px-3 md:pt-9 md:pb-3">
       {/* Program Info */}
       {currentProgram && (
         <div className="flex min-w-0 items-center justify-between gap-2 text-xs tracking-[0.01em] text-blue-50/80 md:text-sm">
@@ -276,9 +283,9 @@ export function PlayerControls({
       )}
 
       {/* Control Bar */}
-      <div className="flex min-w-0 items-center justify-between gap-1">
+      <div className="flex min-h-14 min-w-0 items-center justify-between gap-1">
         {/* Left Controls */}
-        <div className="flex min-w-0 items-center gap-0.5 sm:gap-1.5 md:gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-0.5 sm:gap-1.5 md:gap-3">
           {/* Play/Pause */}
           <button
             type="button"
@@ -340,6 +347,10 @@ export function PlayerControls({
                 {formatTime(new Date(startTime.getTime() + elapsedTime * 1000), true)}
               </span>
             )}
+          </div>
+
+          <div className="flex h-12 min-w-0 basis-0 flex-1 items-center overflow-hidden">
+            <PlayerMediaBadges mediaInfo={mediaInfo} locale={locale} renderState={renderState} />
           </div>
         </div>
 

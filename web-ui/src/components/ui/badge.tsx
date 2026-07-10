@@ -3,7 +3,7 @@ import { clsx } from "clsx";
 import type * as React from "react";
 
 const badgeVariants = cva(
-  "inline-flex items-center whitespace-nowrap rounded-full border border-transparent px-2.5 py-1 text-[11px] font-semibold tracking-wide shadow-[0_4px_12px_-10px_rgba(15,23,42,0.35)] transition-[color,background-color,border-color,box-shadow] motion-reduce:transition-none focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  "inline-flex items-center whitespace-nowrap rounded-full border border-transparent transition-[color,background-color,border-color,box-shadow] motion-reduce:transition-none focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
   {
     variants: {
       variant: {
@@ -14,17 +14,22 @@ const badgeVariants = cva(
           "border-destructive/24 bg-destructive/12 text-[hsl(354_76%_34%)] hover:bg-destructive/18 dark:text-[hsl(350_100%_88%)]",
         outline: "border-border/65 bg-background/35 text-foreground backdrop-blur-sm",
       },
+      size: {
+        default: "px-2.5 py-1 text-[11px] font-semibold tracking-wide shadow-[0_4px_12px_-10px_rgba(15,23,42,0.35)]",
+        compact: "h-5 px-1.5 text-[9px] leading-none font-medium tracking-normal shadow-none md:text-[10px]",
+      },
     },
     defaultVariants: {
       variant: "default",
+      size: "default",
     },
   },
 );
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof badgeVariants> {}
 
-function Badge({ className, variant, ...props }: BadgeProps) {
-  return <div className={clsx(badgeVariants({ variant }), className)} {...props} />;
+function Badge({ className, variant, size, ...props }: BadgeProps) {
+  return <div className={clsx(badgeVariants({ variant, size }), className)} {...props} />;
 }
 
 export { Badge, badgeVariants };

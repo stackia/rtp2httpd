@@ -60,8 +60,6 @@ interface InitSegment {
   codec: string;
   container: string;
   mediaDuration?: number;
-  /** Codec-level video info for the video track (metadata interlace hint etc.). */
-  videoInfo?: { width: number; height: number; mayBeInterlaced: boolean };
 }
 
 interface MediaSegment {
@@ -543,14 +541,6 @@ class MP4Remuxer {
       codec: codec,
       container: `${type}/${container}`,
       mediaDuration: metadata.duration, // in timescale 1000 (milliseconds)
-      videoInfo:
-        type === "video"
-          ? {
-              width: (metadata.codecWidth as number) ?? 0,
-              height: (metadata.codecHeight as number) ?? 0,
-              mayBeInterlaced: metadata.mayBeInterlaced === true,
-            }
-          : undefined,
     });
   }
 

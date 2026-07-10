@@ -2,19 +2,22 @@ import { getRuntimeLogLevel } from "../lib/runtime-config";
 import { defaultConfig, type PlayerConfig } from "./config";
 import { createMpegtsPlayer } from "./player/mpegts-player";
 import { createVideoRenderPipeline, type VideoRenderPipeline } from "./render";
-import type {
-  LiveSessionAnchor,
-  Player,
-  PlayerError,
-  PlayerEventMap,
-  PlayerImpl,
-  PlayerSegment,
-  VideoTrackInfo,
-} from "./types";
+import type { LiveSessionAnchor, Player, PlayerEventMap, PlayerImpl, PlayerSegment } from "./types";
 import Log from "./utils/logger";
 
+export type { PlayerConfig } from "./config";
 export { defaultConfig } from "./config";
-export type { LiveSessionAnchor, Player, PlayerConfig, PlayerError, PlayerEventMap, PlayerSegment, VideoTrackInfo };
+export type {
+  LiveSessionAnchor,
+  Player,
+  PlayerDynamicRange,
+  PlayerError,
+  PlayerEventMap,
+  PlayerMediaInfo,
+  PlayerRenderState,
+  PlayerSegment,
+  PlayerVideoScanType,
+} from "./types";
 
 function resolveSegmentUrl(url: string): string {
   try {
@@ -47,20 +50,34 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
 
   let destroyed = false;
 
-  const errorHandlers = new Set<(e: PlayerError) => void>();
-  const seekHandlers = new Set<(s: number) => void>();
-  const liveStateHandlers = new Set<(isLive: boolean) => void>();
-  const audioSuspendedHandlers = new Set<() => void>();
-  const videoInfoHandlers = new Set<(info: VideoTrackInfo) => void>();
-  const renderActiveHandlers = new Set<(active: boolean) => void>();
+  const eventHandlers: { [EventName in keyof PlayerEventMap]: Set<PlayerEventMap[EventName]> } = {
+    error: new Set(),
+    "seek-needed": new Set(),
+    "live-state-change": new Set(),
+    "audio-suspended": new Set(),
+    "media-info": new Set(),
+    "render-state-change": new Set(),
+  };
+
+  function getEventHandlers<EventName extends keyof PlayerEventMap>(event: EventName): Set<PlayerEventMap[EventName]> {
+    return eventHandlers[event] as Set<PlayerEventMap[EventName]>;
+  }
+
+  function emitPlayerEvent<EventName extends keyof PlayerEventMap>(
+    event: EventName,
+    ...eventArguments: Parameters<PlayerEventMap[EventName]>
+  ): void {
+    for (const handler of getEventHandlers(event)) {
+      const invokeHandler = handler as (...handlerArguments: Parameters<PlayerEventMap[EventName]>) => void;
+      invokeHandler(...eventArguments);
+    }
+  }
 
   let renderPipeline: VideoRenderPipeline | null = null;
   if (fullConfig.renderCanvas) {
-    renderPipeline = createVideoRenderPipeline(video, fullConfig.renderCanvas, (active) => {
-      for (const h of renderActiveHandlers) {
-        h(active);
-      }
-    });
+    renderPipeline = createVideoRenderPipeline(video, fullConfig.renderCanvas, (state) =>
+      emitPlayerEvent("render-state-change", state),
+    );
     renderPipeline.setAutoDeinterlaceEnabled(fullConfig.autoDeinterlace);
     renderPipeline.setPictureEnhancementEnabled(fullConfig.pictureEnhancement);
   }
@@ -71,27 +88,11 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
     if (!impl) {
       // The impl posts its config to the transmux worker; DOM elements are not
       // structured-cloneable, so keep the canvas out of it
-      impl = createMpegtsPlayer(video, { ...fullConfig, renderCanvas: undefined }, seekHandlers);
-      impl.onError = (e) => {
-        for (const h of errorHandlers) {
-          h(e);
-        }
-      };
-      impl.onLiveStateChange = (isLive) => {
-        for (const h of liveStateHandlers) {
-          h(isLive);
-        }
-      };
-      impl.onAudioSuspended = () => {
-        for (const h of audioSuspendedHandlers) {
-          h();
-        }
-      };
-      impl.onVideoInfo = (info) => {
-        for (const h of videoInfoHandlers) {
-          h(info);
-        }
-      };
+      impl = createMpegtsPlayer(video, { ...fullConfig, renderCanvas: undefined }, getEventHandlers("seek-needed"));
+      impl.onError = (error) => emitPlayerEvent("error", error);
+      impl.onLiveStateChange = (isLive) => emitPlayerEvent("live-state-change", isLive);
+      impl.onAudioSuspended = () => emitPlayerEvent("audio-suspended");
+      impl.onMediaInfo = (info) => emitPlayerEvent("media-info", info);
     }
     return impl;
   }
@@ -143,21 +144,11 @@ export function createPlayer(video: HTMLVideoElement, config?: Partial<PlayerCon
     },
 
     on<K extends keyof PlayerEventMap>(event: K, handler: PlayerEventMap[K]) {
-      if (event === "error") errorHandlers.add(handler as (e: PlayerError) => void);
-      if (event === "seek-needed") seekHandlers.add(handler as (s: number) => void);
-      if (event === "live-state-change") liveStateHandlers.add(handler as (isLive: boolean) => void);
-      if (event === "audio-suspended") audioSuspendedHandlers.add(handler as () => void);
-      if (event === "video-info") videoInfoHandlers.add(handler as (info: VideoTrackInfo) => void);
-      if (event === "render-active-change") renderActiveHandlers.add(handler as (active: boolean) => void);
+      getEventHandlers(event).add(handler);
     },
 
     off<K extends keyof PlayerEventMap>(event: K, handler: PlayerEventMap[K]) {
-      if (event === "error") errorHandlers.delete(handler as (e: PlayerError) => void);
-      if (event === "seek-needed") seekHandlers.delete(handler as (s: number) => void);
-      if (event === "live-state-change") liveStateHandlers.delete(handler as (isLive: boolean) => void);
-      if (event === "audio-suspended") audioSuspendedHandlers.delete(handler as () => void);
-      if (event === "video-info") videoInfoHandlers.delete(handler as (info: VideoTrackInfo) => void);
-      if (event === "render-active-change") renderActiveHandlers.delete(handler as (active: boolean) => void);
+      getEventHandlers(event).delete(handler);
     },
   };
 }

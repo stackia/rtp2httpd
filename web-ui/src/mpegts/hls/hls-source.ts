@@ -1,14 +1,19 @@
 import type { PlayerConfig } from "../config";
 import Log from "../utils/logger";
 import type { SegmentMeta, SegmentSource } from "../worker/segment-source";
-import { type HlsMediaPlaylist, parseM3U8 } from "./m3u8";
+import { type HlsMediaPlaylist, type HlsVariant, parseM3U8 } from "./m3u8";
 
 export interface HlsInfo {
   live: boolean;
   targetDuration: number;
   totalDuration: number;
-  /** CODECS attribute from the multivariant playlist, if any. */
+  /** Selected variant hints from the multivariant playlist, if any. */
+  bandwidth?: number;
+  averageBandwidth?: number;
   codecs?: string;
+  resolution?: { width: number; height: number };
+  frameRate?: number;
+  videoRange?: string;
 }
 
 const TAG = "HlsSource";
@@ -29,7 +34,7 @@ export class HlsSource implements SegmentSource {
   private ended = false;
   private targetDuration = 6;
   private totalDuration = 0;
-  private codecs: string | undefined;
+  private selectedVariant: Omit<HlsVariant, "url"> | undefined;
 
   private segments: SegmentMeta[] = [];
   private nextIndex = 0;
@@ -56,7 +61,7 @@ export class HlsSource implements SegmentSource {
       live: this.live,
       targetDuration: this.targetDuration,
       totalDuration: this.totalDuration,
-      codecs: this.codecs,
+      ...this.selectedVariant,
     };
   }
 
@@ -172,7 +177,8 @@ export class HlsSource implements SegmentSource {
           if (!best) {
             throw new Error("Multivariant playlist contains no variants");
           }
-          this.codecs = best.codecs;
+          const { url: _url, ...selectedVariant } = best;
+          this.selectedVariant = selectedVariant;
           this.url = best.url;
           continue; // fetch the selected media playlist
         }

@@ -15,6 +15,10 @@ export interface SPSInfo {
   chroma_format_string: string;
   /** 0 → the stream may contain field-coded (interlaced) pictures. */
   frame_mbs_only_flag: number;
+  colour_primaries?: number;
+  transfer_characteristics?: number;
+  matrix_coefficients?: number;
+  video_full_range_flag?: boolean;
   frame_rate: {
     fixed: boolean;
     fps: number;
@@ -167,6 +171,10 @@ const SPSParser = {
       fps_fixed: boolean = true,
       fps_num: number = 0,
       fps_den: number = 0;
+    let colour_primaries: number | undefined;
+    let transfer_characteristics: number | undefined;
+    let matrix_coefficients: number | undefined;
+    let video_full_range_flag: boolean | undefined;
 
     const vui_parameters_present_flag: boolean = gb.readBool();
     if (vui_parameters_present_flag) {
@@ -191,10 +199,13 @@ const SPSParser = {
       }
       if (gb.readBool()) {
         // video_signal_type_present_flag
-        gb.readBits(4); // video_format & video_full_range_flag
+        gb.readBits(3); // video_format
+        video_full_range_flag = gb.readBool();
         if (gb.readBool()) {
           // colour_description_present_flag
-          gb.readBits(24); // colour_primaries & transfer_characteristics & matrix_coefficients
+          colour_primaries = gb.readByte();
+          transfer_characteristics = gb.readByte();
+          matrix_coefficients = gb.readByte();
         }
       }
       if (gb.readBool()) {
@@ -256,6 +267,10 @@ const SPSParser = {
       chroma_format_string: SPSParser.getChromaFormatString(chroma_format),
       // 0 → the stream may contain field-coded (interlaced) pictures
       frame_mbs_only_flag,
+      colour_primaries,
+      transfer_characteristics,
+      matrix_coefficients,
+      video_full_range_flag,
 
       frame_rate: {
         fixed: fps_fixed,

@@ -2,7 +2,7 @@
  * Minimal m3u8 playlist parser. Supports only what the player needs:
  * - Media playlist: EXTINF, EXT-X-TARGETDURATION, EXT-X-MEDIA-SEQUENCE,
  *   EXT-X-DISCONTINUITY, EXT-X-ENDLIST, EXT-X-MAP
- * - Multivariant playlist: EXT-X-STREAM-INF (BANDWIDTH / CODECS)
+ * - Multivariant playlist: EXT-X-STREAM-INF media hints
  *
  * EXT-X-PLAYLIST-TYPE is ignored: any playlist without EXT-X-ENDLIST (including
  * EVENT) is treated as live and keeps refreshing.
@@ -31,7 +31,11 @@ export interface HlsMediaPlaylist {
 export interface HlsVariant {
   url: string;
   bandwidth: number;
+  averageBandwidth?: number;
   codecs?: string;
+  resolution?: { width: number; height: number };
+  frameRate?: number;
+  videoRange?: string;
 }
 
 export interface HlsMultivariantPlaylist {
@@ -71,14 +75,23 @@ export function parseM3U8(text: string, baseUrl: string): HlsPlaylist {
 
 function parseMultivariant(lines: string[], baseUrl: string): HlsMultivariantPlaylist {
   const variants: HlsVariant[] = [];
-  let pending: { bandwidth: number; codecs?: string } | null = null;
+  let pending: Omit<HlsVariant, "url"> | null = null;
 
   for (const line of lines) {
     if (line.startsWith("#EXT-X-STREAM-INF:")) {
       const attrs = parseAttributes(line.slice("#EXT-X-STREAM-INF:".length));
+      const resolutionMatch = /^(\d+)x(\d+)$/i.exec(attrs.RESOLUTION ?? "");
+      const averageBandwidth = Number.parseInt(attrs["AVERAGE-BANDWIDTH"] ?? "", 10);
+      const frameRate = Number.parseFloat(attrs["FRAME-RATE"] ?? "");
       pending = {
         bandwidth: Number.parseInt(attrs.BANDWIDTH ?? "0", 10) || 0,
+        averageBandwidth: Number.isFinite(averageBandwidth) && averageBandwidth > 0 ? averageBandwidth : undefined,
         codecs: attrs.CODECS,
+        resolution: resolutionMatch
+          ? { width: Number.parseInt(resolutionMatch[1], 10), height: Number.parseInt(resolutionMatch[2], 10) }
+          : undefined,
+        frameRate: Number.isFinite(frameRate) && frameRate > 0 ? frameRate : undefined,
+        videoRange: attrs["VIDEO-RANGE"],
       };
     } else if (pending && line.length > 0 && !line.startsWith("#")) {
       variants.push({ url: new URL(line, baseUrl).href, ...pending });

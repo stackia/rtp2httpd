@@ -18,12 +18,6 @@ function post(msg: WorkerEvent, transfer?: Transferable[]): void {
 function createPipeline(segments: PlayerSegment[], config: PlayerConfig): Pipeline {
   const callbacks: PipelineCallbacks = {
     onInitSegment(type, initSegment) {
-      const videoInfo = initSegment.videoInfo as
-        | { width: number; height: number; mayBeInterlaced: boolean }
-        | undefined;
-      if (type === "video" && videoInfo) {
-        post({ type: "video-info", ...videoInfo, gen });
-      }
       const data = initSegment.data as ArrayBuffer;
       post(
         {
@@ -61,6 +55,9 @@ function createPipeline(segments: PlayerSegment[], config: PlayerConfig): Pipeli
     },
     onHlsInfo(info) {
       post({ type: "hls-info", live: info.live, totalDuration: info.totalDuration, gen });
+    },
+    onMediaInfo(info) {
+      post({ type: "media-info", info, gen });
     },
     onPCMAudioData(pcm, channels, sampleRate, time) {
       const buffer = pcm.buffer as ArrayBuffer;

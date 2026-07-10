@@ -34,6 +34,10 @@ export interface H265SPSInfo {
   bit_depth_luma_minus8: number;
   bit_depth_chroma_minus8: number;
   interlaced_source: boolean;
+  colour_primaries?: number;
+  transfer_characteristics?: number;
+  matrix_coefficients?: number;
+  video_full_range_flag?: boolean;
   frame_rate: {
     fixed: boolean;
     fps: number;
@@ -280,9 +284,13 @@ const H265NaluParser = {
     let sar_width: number = 1,
       sar_height: number = 1;
     let fps_fixed: boolean = false,
-      fps_den: number = 1,
-      fps_num: number = 1;
+      fps_den: number = 0,
+      fps_num: number = 0;
     let field_seq_flag: boolean = false;
+    let colour_primaries: number | undefined;
+    let transfer_characteristics: number | undefined;
+    let matrix_coefficients: number | undefined;
+    let video_full_range_flag: boolean | undefined;
     //*/
     const _sps_temporal_mvp_enabled_flag: boolean = gb.readBool();
     const _strong_intra_smoothing_enabled_flag: boolean = gb.readBool();
@@ -310,12 +318,12 @@ const H265NaluParser = {
       const video_signal_type_present_flag: boolean = gb.readBool();
       if (video_signal_type_present_flag) {
         gb.readBits(3);
-        gb.readBool();
+        video_full_range_flag = gb.readBool();
         const colour_description_present_flag: boolean = gb.readBool();
         if (colour_description_present_flag) {
-          gb.readByte();
-          gb.readByte();
-          gb.readByte();
+          colour_primaries = gb.readByte();
+          transfer_characteristics = gb.readByte();
+          matrix_coefficients = gb.readByte();
         }
       }
       const chroma_loc_info_present_flag: boolean = gb.readBool();
@@ -470,10 +478,14 @@ const H265NaluParser = {
       // VUI field_seq_flag OR PTL general_interlaced_source_flag (bit 6 of the
       // first constraint byte) — either signals interlaced-capable content
       interlaced_source: field_seq_flag || (general_constraint_indicator_flags_1 & 0x40) !== 0,
+      colour_primaries,
+      transfer_characteristics,
+      matrix_coefficients,
+      video_full_range_flag,
 
       frame_rate: {
         fixed: fps_fixed,
-        fps: fps_num / fps_den,
+        fps: fps_den > 0 ? fps_num / fps_den : 0,
         fps_den: fps_den,
         fps_num: fps_num,
       },

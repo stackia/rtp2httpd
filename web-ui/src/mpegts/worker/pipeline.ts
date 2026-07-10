@@ -3,11 +3,19 @@ import { createDefaultConfig } from "../config";
 import { WorkerAudioDecoder } from "../decoder/worker-audio-decoder";
 import DemuxErrors from "../demux/demux-errors";
 import TSDemuxer from "../demux/ts-demuxer";
-import { containsMoov, getSegmentStartTime, parseInitSegment, probeFmp4, splitInitFromSegment } from "../hls/fmp4";
+import {
+  containsMoov,
+  getSegmentStartTime,
+  type InitSegmentTrackInfo,
+  parseInitSegment,
+  probeFmp4,
+  splitInitFromSegment,
+} from "../hls/fmp4";
 import { type HlsInfo, HlsSource } from "../hls/hls-source";
 import FetchLoader, { LoaderErrors } from "../io/fetch-loader";
+import { identifyAudioCodec, identifyVideoCodec } from "../media-codecs";
 import MP4Remuxer from "../remux/mp4-remuxer";
-import type { PlayerSegment } from "../types";
+import type { PlayerDynamicRange, PlayerMediaInfo, PlayerSegment } from "../types";
 import Log from "../utils/logger";
 import {
   ContinuousLiveSegmentSource,
@@ -40,6 +48,7 @@ export interface PipelineCallbacks {
   onIOError: (type: string, info: { code: number; msg: string }) => void;
   onDemuxError: (type: string, info: string) => void;
   onHlsInfo: (info: HlsInfo) => void;
+  onMediaInfo: (info: PlayerMediaInfo) => void;
   /** `time` is normalized to the MSE timeline (seconds, same space as video.currentTime). */
   onPCMAudioData: (pcm: Float32Array, channels: number, sampleRate: number, time: number) => void;
 }
@@ -57,6 +66,46 @@ const HLS_URL_RE = /\.m3u8?($|\?)/i;
 /** Sentinel rejection value for intentionally cancelled segment loads. */
 const CANCELLED = Symbol("cancelled");
 type SourceMode = "continuous-live-ts" | "static-ts-list" | "hls";
+const BITRATE_WINDOW_MS = 5000;
+const BITRATE_STABLE_AFTER_MS = 2000;
+const BITRATE_UPDATE_INTERVAL_MS = 1000;
+const BITRATE_MINIMUM_SAMPLES = 3;
+const SEGMENT_BITRATE_SAMPLE_COUNT = 5;
+
+type MediaInfoVideo = NonNullable<PlayerMediaInfo["video"]>;
+type MediaInfoAudio = NonNullable<PlayerMediaInfo["audio"]>;
+
+function mergeDefinedProperties<T extends object>(current: T | undefined, update: T): T {
+  const merged = { ...(current ?? {}) } as Record<string, unknown>;
+  for (const [property, value] of Object.entries(update)) {
+    if (value !== undefined) {
+      merged[property] = value;
+    }
+  }
+  return merged as T;
+}
+
+function dynamicRangeFromTransfer(transferCharacteristics: unknown): PlayerDynamicRange | undefined {
+  if (transferCharacteristics === 16) return "hdr10";
+  if (transferCharacteristics === 18) return "hlg";
+  if ([1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17].includes(transferCharacteristics as number)) {
+    return "sdr";
+  }
+  return undefined;
+}
+
+function dynamicRangeFromHlsVideoRange(videoRange: string | undefined): PlayerDynamicRange | undefined {
+  switch (videoRange?.toUpperCase()) {
+    case "PQ":
+      return "hdr10";
+    case "HLG":
+      return "hlg";
+    case "SDR":
+      return "sdr";
+    default:
+      return undefined;
+  }
+}
 
 /** Copy a Uint8Array view into a standalone (transferable) ArrayBuffer. */
 function toArrayBuffer(view: Uint8Array): ArrayBuffer {
@@ -99,6 +148,19 @@ class Pipeline {
   private _lastInitUrl: string | null = null;
   private _fmp4Timescales = new Map<number, number>();
   private _fmp4TimestampOffsetWarningLogged = false;
+
+  // --- player-facing media metadata ---
+  private _mediaInfo: PlayerMediaInfo = {};
+  private _serializedMediaInfo = "{}";
+  private _hasActualVideoInfo = false;
+  private _hasActualAudioInfo = false;
+  private _advertisedBitrate: number | undefined;
+  private _lastHlsInfo: HlsInfo | undefined;
+  private _bitrateSamples: Array<{ timestamp: number; bytes: number }> = [];
+  private _segmentBitrateSamples: number[] = [];
+  private _currentSegmentBytes = 0;
+  private _lastBitrateUpdateTimestamp = 0;
+  private _measuredBitrateStable = false;
 
   private _workerAudioDecoder: WorkerAudioDecoder | null = null;
   private _workerAudioDecoderInitPromise: Promise<boolean> | null = null;
@@ -162,9 +224,231 @@ class Pipeline {
 
   // ---- Private methods ----
 
+  private _publishMediaInfo(nextMediaInfo: PlayerMediaInfo): void {
+    const serialized = JSON.stringify(nextMediaInfo);
+    if (serialized === this._serializedMediaInfo) return;
+
+    this._mediaInfo = nextMediaInfo;
+    this._serializedMediaInfo = serialized;
+    this._callbacks.onMediaInfo({
+      ...nextMediaInfo,
+      video: nextMediaInfo.video ? { ...nextMediaInfo.video } : undefined,
+      audio: nextMediaInfo.audio ? { ...nextMediaInfo.audio } : undefined,
+      bitrate: nextMediaInfo.bitrate ? { ...nextMediaInfo.bitrate } : undefined,
+    });
+  }
+
+  private _mergeMediaInfo(update: PlayerMediaInfo): void {
+    this._publishMediaInfo({
+      ...this._mediaInfo,
+      video: update.video
+        ? mergeDefinedProperties(this._mediaInfo.video, update.video as MediaInfoVideo)
+        : this._mediaInfo.video,
+      audio: update.audio
+        ? mergeDefinedProperties(this._mediaInfo.audio, update.audio as MediaInfoAudio)
+        : this._mediaInfo.audio,
+      bitrate: update.bitrate ?? this._mediaInfo.bitrate,
+    });
+  }
+
+  private _replaceBitrate(bitrate: PlayerMediaInfo["bitrate"]): void {
+    const nextMediaInfo = { ...this._mediaInfo };
+    if (bitrate) {
+      nextMediaInfo.bitrate = bitrate;
+    } else {
+      delete nextMediaInfo.bitrate;
+    }
+    this._publishMediaInfo(nextMediaInfo);
+  }
+
+  private _resetMediaInfo(): void {
+    this._mediaInfo = {};
+    this._serializedMediaInfo = "{}";
+    this._hasActualVideoInfo = false;
+    this._hasActualAudioInfo = false;
+    this._advertisedBitrate = undefined;
+    this._lastHlsInfo = undefined;
+    this._bitrateSamples = [];
+    this._segmentBitrateSamples = [];
+    this._currentSegmentBytes = 0;
+    this._lastBitrateUpdateTimestamp = 0;
+    this._measuredBitrateStable = false;
+    // A new generation must clear the previous stream's badges immediately.
+    this._callbacks.onMediaInfo({});
+  }
+
+  private _resetBitrateMeasurement(): void {
+    this._bitrateSamples = [];
+    this._segmentBitrateSamples = [];
+    this._currentSegmentBytes = 0;
+    this._lastBitrateUpdateTimestamp = 0;
+    this._measuredBitrateStable = false;
+    this._replaceBitrate(
+      this._advertisedBitrate ? { bitsPerSecond: this._advertisedBitrate, source: "advertised" } : undefined,
+    );
+  }
+
+  private _resetPeriodMediaInfo(): void {
+    this._hasActualVideoInfo = false;
+    this._hasActualAudioInfo = false;
+    this._publishMediaInfo(this._mediaInfo.bitrate ? { bitrate: { ...this._mediaInfo.bitrate } } : {});
+    if (this._lastHlsInfo) {
+      this._applyHlsInfo(this._lastHlsInfo);
+    }
+  }
+
+  private _recordInputBytes(bytes: number): void {
+    if (bytes <= 0) return;
+
+    if (this._sourceMode !== "continuous-live-ts") {
+      this._currentSegmentBytes += bytes;
+      return;
+    }
+
+    const timestamp = performance.now();
+    this._bitrateSamples.push({ timestamp, bytes });
+    const windowStart = timestamp - BITRATE_WINDOW_MS;
+    while (this._bitrateSamples.length > 0 && this._bitrateSamples[0].timestamp < windowStart) {
+      this._bitrateSamples.shift();
+    }
+
+    const firstSample = this._bitrateSamples[0];
+    if (!firstSample) return;
+    const elapsedMilliseconds = timestamp - firstSample.timestamp;
+    const estimateStable =
+      elapsedMilliseconds >= BITRATE_STABLE_AFTER_MS && this._bitrateSamples.length >= BITRATE_MINIMUM_SAMPLES;
+    if (!estimateStable || timestamp - this._lastBitrateUpdateTimestamp < BITRATE_UPDATE_INTERVAL_MS) return;
+
+    // The first sample establishes the window's time baseline; only bytes that
+    // arrived after that point belong to the measured interval.
+    const totalBytes = this._bitrateSamples.slice(1).reduce((sum, sample) => sum + sample.bytes, 0);
+    const bitsPerSecond = Math.round((totalBytes * 8 * 1000) / elapsedMilliseconds / 1000) * 1000;
+    if (!Number.isFinite(bitsPerSecond) || bitsPerSecond <= 0) return;
+
+    this._lastBitrateUpdateTimestamp = timestamp;
+    this._measuredBitrateStable = true;
+    this._replaceBitrate({ bitsPerSecond, source: "measured" });
+  }
+
+  private _publishSegmentBitrate(durationSeconds: number): void {
+    if (durationSeconds <= 0 || this._currentSegmentBytes <= 0) return;
+
+    const sampleBitsPerSecond = (this._currentSegmentBytes * 8) / durationSeconds;
+    if (!Number.isFinite(sampleBitsPerSecond) || sampleBitsPerSecond <= 0) return;
+
+    this._segmentBitrateSamples.push(sampleBitsPerSecond);
+    if (this._segmentBitrateSamples.length > SEGMENT_BITRATE_SAMPLE_COUNT) {
+      this._segmentBitrateSamples.shift();
+    }
+    const averageBitsPerSecond =
+      this._segmentBitrateSamples.reduce((sum, bitsPerSecond) => sum + bitsPerSecond, 0) /
+      this._segmentBitrateSamples.length;
+    const roundedBitsPerSecond = Math.round(averageBitsPerSecond / 1000) * 1000;
+    if (!Number.isFinite(roundedBitsPerSecond) || roundedBitsPerSecond <= 0) return;
+
+    this._measuredBitrateStable = true;
+    this._replaceBitrate({ bitsPerSecond: roundedBitsPerSecond, source: "measured" });
+  }
+
+  private _handleHlsInfo(info: HlsInfo): void {
+    this._lastHlsInfo = info;
+    this._applyHlsInfo(info);
+  }
+
+  private _applyHlsInfo(info: HlsInfo): void {
+    const codecHints =
+      info.codecs
+        ?.split(",")
+        .map((codec) => codec.trim())
+        .filter(Boolean) ?? [];
+    const videoCodec = codecHints.find((codec) => identifyVideoCodec(codec) !== undefined);
+    const audioCodec = codecHints.find((codec) => identifyAudioCodec(codec) !== undefined);
+
+    const update: PlayerMediaInfo = {};
+    if (!this._hasActualVideoInfo) {
+      const videoHints: MediaInfoVideo = {
+        codec: videoCodec,
+        width: info.resolution?.width,
+        height: info.resolution?.height,
+        frameRate: info.frameRate,
+        dynamicRange: dynamicRangeFromHlsVideoRange(info.videoRange),
+      };
+      if (Object.values(videoHints).some((value) => value !== undefined)) {
+        update.video = videoHints;
+      }
+    }
+    if (!this._hasActualAudioInfo && audioCodec) {
+      update.audio = { codec: audioCodec };
+    }
+
+    const advertisedBitrate = info.averageBandwidth ?? info.bandwidth;
+    if (advertisedBitrate && advertisedBitrate > 0) {
+      this._advertisedBitrate = advertisedBitrate;
+      if (!this._measuredBitrateStable) {
+        update.bitrate = { bitsPerSecond: advertisedBitrate, source: "advertised" };
+      }
+    }
+    this._mergeMediaInfo(update);
+  }
+
+  private _handleTsTrackMetadata(type: string, metadata: unknown): void {
+    if (!metadata || typeof metadata !== "object") return;
+    const trackMetadata = metadata as Record<string, unknown>;
+
+    if (type === "video") {
+      const frameRateMetadata = trackMetadata.frameRate;
+      const frameRate =
+        frameRateMetadata && typeof frameRateMetadata === "object"
+          ? (frameRateMetadata as Record<string, unknown>).fps
+          : frameRateMetadata;
+      this._hasActualVideoInfo = true;
+      this._mergeMediaInfo({
+        video: {
+          codec: typeof trackMetadata.codec === "string" ? trackMetadata.codec : undefined,
+          width: typeof trackMetadata.presentWidth === "number" ? trackMetadata.presentWidth : undefined,
+          height: typeof trackMetadata.presentHeight === "number" ? trackMetadata.presentHeight : undefined,
+          scanType: trackMetadata.mayBeInterlaced === false ? "progressive" : undefined,
+          frameRate: typeof frameRate === "number" && frameRate > 0 ? frameRate : undefined,
+          dynamicRange: dynamicRangeFromTransfer(trackMetadata.transferCharacteristics),
+        },
+      });
+      return;
+    }
+
+    if (type === "audio") {
+      const sourceCodec = trackMetadata.originalCodec ?? trackMetadata.codec;
+      this._hasActualAudioInfo = true;
+      this._mergeMediaInfo({
+        audio: {
+          codec: typeof sourceCodec === "string" ? sourceCodec : undefined,
+          channelCount: typeof trackMetadata.channelCount === "number" ? trackMetadata.channelCount : undefined,
+        },
+      });
+    }
+  }
+
+  private _handleFmp4TrackMetadata(track: InitSegmentTrackInfo): void {
+    if (track.type === "video") {
+      this._hasActualVideoInfo = true;
+      this._mergeMediaInfo({
+        video: {
+          codec: track.codec,
+          width: track.width,
+          height: track.height,
+          scanType: track.scanType,
+          dynamicRange: dynamicRangeFromTransfer(track.transferCharacteristics),
+        },
+      });
+    } else {
+      this._hasActualAudioInfo = true;
+      this._mergeMediaInfo({ audio: { codec: track.codec, channelCount: track.channelCount } });
+    }
+  }
+
   private _load(segments: PlayerSegment[]): void {
     this._runId++;
     this._teardown();
+    this._resetMediaInfo();
 
     // Reset WASM audio decoder state (clear stale mdct/qmf + carry from previous stream)
     this._workerAudioDecoder?.reset();
@@ -193,7 +477,10 @@ class Pipeline {
   private _startHls(url: string, preloaded?: { text: string; url: string }): void {
     this._sourceMode = "hls";
     const hls = new HlsSource(url, this._config, preloaded);
-    hls.onInfo = (info) => this._callbacks.onHlsInfo(info);
+    hls.onInfo = (info) => {
+      this._callbacks.onHlsInfo(info);
+      this._handleHlsInfo(info);
+    };
     this._hlsSource = hls;
     this._source = hls;
     void this._run(this._runId);
@@ -275,7 +562,8 @@ class Pipeline {
 
       try {
         if (meta.resetRemuxer) {
-          this._resetTransmux(meta.start);
+          const initSegmentChanged = meta.initUrl !== undefined && meta.initUrl !== this._lastInitUrl;
+          this._resetTransmux(meta.start, !this._fmp4Mode || initSegmentChanged);
         }
         if (meta.initUrl && meta.initUrl !== this._lastInitUrl) {
           if (!(await this._waitIfPaused(runId))) return;
@@ -284,8 +572,12 @@ class Pipeline {
           this._lastInitUrl = meta.initUrl;
         }
         if (!(await this._waitIfPaused(runId))) return;
+        this._currentSegmentBytes = 0;
         await this._loadSegment(meta);
         if (this._runId !== runId) return;
+        if (this._sourceMode !== "continuous-live-ts") {
+          this._publishSegmentBitrate(meta.duration);
+        }
 
         if (this._fmp4Mode) {
           this._flushFmp4Segment(meta);
@@ -313,7 +605,11 @@ class Pipeline {
   }
 
   /** Destroy demuxer + remuxer so the next segment re-anchors the output timeline at `startSeconds`. */
-  private _resetTransmux(startSeconds: number): void {
+  private _resetTransmux(startSeconds: number, resetPeriodMediaInfo: boolean): void {
+    this._resetBitrateMeasurement();
+    if (resetPeriodMediaInfo) {
+      this._resetPeriodMediaInfo();
+    }
     if (this._demuxer) {
       this._demuxer.destroy();
       this._demuxer = null;
@@ -349,7 +645,7 @@ class Pipeline {
     this._finishTsInputBoundary();
     this._fmp4Mode = false;
     this._fmp4Chunks = [];
-    ioctl.onDataArrival = (data, byteStart) => this._onProbeChunk(meta, data, byteStart);
+    ioctl.onDataArrival = (data, byteStart) => this._onInputChunk(meta, data, byteStart);
   }
 
   private _resetAudioTiming(): void {
@@ -388,7 +684,7 @@ class Pipeline {
         reject(CANCELLED);
         this._startHls(meta.url, { text, url });
       };
-      ioctl.onDataArrival = (data, byteStart) => this._onProbeChunk(meta, data, byteStart);
+      ioctl.onDataArrival = (data, byteStart) => this._onInputChunk(meta, data, byteStart);
       ioctl.open();
     }).finally(() => {
       ioctl.destroy();
@@ -400,6 +696,11 @@ class Pipeline {
   }
 
   /** First-chunk handler: probe the container format, then hand off to the right path. */
+  private _onInputChunk(meta: SegmentMeta, data: Uint8Array, byteStart: number): number {
+    this._recordInputBytes(data.byteLength);
+    return this._onProbeChunk(meta, data, byteStart);
+  }
+
   private _onProbeChunk(meta: SegmentMeta, data: Uint8Array, byteStart: number): number {
     if (this._fmp4Mode) {
       return this._onFmp4Chunk(data);
@@ -409,7 +710,11 @@ class Pipeline {
     if (probeData.match) {
       this._setupTSDemuxerRemuxer(probeData, meta);
       if (this._ioctl && this._demuxer) {
-        this._ioctl.onDataArrival = this._demuxer.parseChunks.bind(this._demuxer);
+        const demuxer = this._demuxer;
+        this._ioctl.onDataArrival = (chunk, chunkByteStart) => {
+          this._recordInputBytes(chunk.byteLength);
+          return demuxer.parseChunks(chunk, chunkByteStart);
+        };
       }
       return this._demuxer?.parseChunks(data, byteStart) ?? 0;
     }
@@ -417,7 +722,10 @@ class Pipeline {
     if (probeFmp4(data)) {
       this._fmp4Mode = true;
       if (this._ioctl) {
-        this._ioctl.onDataArrival = (chunk) => this._onFmp4Chunk(chunk);
+        this._ioctl.onDataArrival = (chunk) => {
+          this._recordInputBytes(chunk.byteLength);
+          return this._onFmp4Chunk(chunk);
+        };
       }
       return this._onFmp4Chunk(data);
     }
@@ -486,6 +794,11 @@ class Pipeline {
         onTrackMetadata: (...args: unknown[]) => void;
       },
     );
+    const remuxTrackMetadata = demuxer.onTrackMetadata;
+    demuxer.onTrackMetadata = (type, metadata) => {
+      this._handleTsTrackMetadata(type, metadata);
+      remuxTrackMetadata?.(type, metadata);
+    };
 
     this._remuxer.onInitSegment = (type, initSegment) => {
       this._callbacks.onInitSegment(type, initSegment as unknown as Parameters<PipelineCallbacks["onInitSegment"]>[1]);
@@ -525,7 +838,10 @@ class Pipeline {
     const initInfo = parseInitSegment(data);
     this._fmp4Timescales = initInfo.timescales;
     this._fmp4TimestampOffsetWarningLogged = false;
-    const codec = this._hlsSource?.info.codecs ?? initInfo.codecs.join(",");
+    for (const track of initInfo.tracks) {
+      this._handleFmp4TrackMetadata(track);
+    }
+    const codec = initInfo.codecs.join(",") || this._hlsSource?.info.codecs || "";
     this._callbacks.onInitSegment("video", {
       type: "video",
       container: "video/mp4",

@@ -27,7 +27,7 @@ export interface PlayerConfig {
 
   /** Overlay canvas the player draws WebGL-rendered frames onto. Omit to disable WebGL video rendering.
    *  The player never touches the canvas' style/visibility — drive that from the
-   *  `render-active-change` event. */
+   *  `render-state-change` event. */
   renderCanvas: HTMLCanvasElement | undefined;
   /** Automatic bwdif deinterlacing enabled for detected interlaced content. @default true */
   autoDeinterlace: boolean;

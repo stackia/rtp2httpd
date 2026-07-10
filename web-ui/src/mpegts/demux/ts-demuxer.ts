@@ -1258,6 +1258,10 @@ class TSDemuxer {
     meta.chromaFormat = details.chroma_format;
     meta.sarRatio = sar_ratio;
     meta.frameRate = frame_rate;
+    meta.colourPrimaries = details.colour_primaries;
+    meta.transferCharacteristics = details.transfer_characteristics;
+    meta.matrixCoefficients = details.matrix_coefficients;
+    meta.videoFullRange = details.video_full_range_flag;
 
     const fps_den = frame_rate.fps_den as number;
     const fps_num = frame_rate.fps_num as number;
@@ -2124,7 +2128,7 @@ class TSDemuxer {
         audioSampleRate: sampleRate,
         channelCount: channelCount,
         codec: "mp4a.40.2",
-        originalCodec: "mp4a.40.2",
+        originalCodec: this.soft_decode_audio_codec_,
         config: [(2 << 3) | ((freqIdx & 0x0f) >>> 1), ((freqIdx & 0x01) << 7) | ((channelCount & 0x0f) << 3)],
         refSampleDuration: (1024 / sampleRate) * 1000,
         silentAudioMode: true,

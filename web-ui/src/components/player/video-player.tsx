@@ -29,6 +29,8 @@ import {
   isSupported,
   type Player,
   type PlayerError,
+  type PlayerMediaInfo,
+  type PlayerRenderState,
   type PlayerSegment,
 } from "../../mpegts";
 import {
@@ -70,6 +72,7 @@ interface VideoPlayerProps {
 }
 
 const MAX_RETRIES = 3;
+const INACTIVE_RENDER_STATE: PlayerRenderState = { active: false, deinterlacing: false };
 
 type SlotId = "a" | "b";
 
@@ -165,7 +168,7 @@ function PlayerTopLeftOverlay({
     <div
       className={clsx(
         PLAYER_OVERLAY_SURFACE_CLASS,
-        "absolute top-4 left-4 z-10 flex max-w-[calc(100%-2rem)] items-center gap-1.5 rounded-xl px-2 py-1.5 transition-opacity duration-300 md:top-8 md:left-8 md:gap-2 md:px-3 md:py-2",
+        "absolute top-4 left-4 z-10 max-w-[calc(100%-2rem)] rounded-xl px-2 py-1.5 transition-opacity duration-300 md:top-8 md:left-8 md:px-3 md:py-2",
         visible ? "opacity-100" : "opacity-0 pointer-events-none",
       )}
     >
@@ -234,6 +237,10 @@ export function VideoPlayer({
   const slotLiveStateRef = useRef<Record<SlotId, boolean>>({ a: true, b: true });
   const activeSlotIdRef = useRef<SlotId>("a");
   const [visibleSlotId, setVisibleSlotId] = useState<SlotId>("a");
+  const [slotMediaInfo, setSlotMediaInfo] = useState<Record<SlotId, PlayerMediaInfo | null>>({
+    a: null,
+    b: null,
+  });
   const transitionGenRef = useRef(0);
   const pendingTransitionRef = useRef<PendingTransition | null>(null);
   const hasStartedPlaybackRef = useRef(false);
@@ -245,12 +252,22 @@ export function VideoPlayer({
   const slotCanvasRef = (id: SlotId) => (id === "a" ? slotACanvasRef : slotBCanvasRef);
   const slotPlayerRef = (id: SlotId) => (id === "a" ? slotAPlayerRef : slotBPlayerRef);
 
-  const [renderActiveSlots, setRenderActiveSlots] = useState<Record<SlotId, boolean>>({
-    a: false,
-    b: false,
+  const [slotRenderStates, setSlotRenderStates] = useState<Record<SlotId, PlayerRenderState>>({
+    a: INACTIVE_RENDER_STATE,
+    b: INACTIVE_RENDER_STATE,
   });
-  const setRenderActiveSlot = (slotId: SlotId, active: boolean) =>
-    setRenderActiveSlots((prev) => (prev[slotId] === active ? prev : { ...prev, [slotId]: active }));
+  const setSlotRenderState = (slotId: SlotId, renderState: PlayerRenderState) =>
+    setSlotRenderStates((previousStates) =>
+      previousStates[slotId].active === renderState.active &&
+      previousStates[slotId].detectedScanType === renderState.detectedScanType &&
+      previousStates[slotId].deinterlacing === renderState.deinterlacing
+        ? previousStates
+        : { ...previousStates, [slotId]: renderState },
+    );
+  const renderActiveSlots = {
+    a: slotRenderStates.a.active,
+    b: slotRenderStates.b.active,
+  };
 
   const getActiveSlotId = () => activeSlotIdRef.current;
   const getActiveVideo = () => slotVideoRef(getActiveSlotId()).current;
@@ -514,7 +531,7 @@ export function VideoPlayer({
   const destroySlot = useEffectEvent((slotId: SlotId) => {
     slotPlayerRef(slotId).current?.destroy();
     slotPlayerRef(slotId).current = null;
-    setRenderActiveSlot(slotId, false);
+    setSlotRenderState(slotId, INACTIVE_RENDER_STATE);
   });
 
   const stopPendingTransition = useEffectEvent(() => {
@@ -752,9 +769,14 @@ export function VideoPlayer({
         handleAudioSuspended();
       }
     });
-    p.on("render-active-change", (active) => {
+    p.on("render-state-change", (renderState) => {
       if (slotPlayerRef(slotId).current === p) {
-        setRenderActiveSlot(slotId, active);
+        setSlotRenderState(slotId, renderState);
+      }
+    });
+    p.on("media-info", (mediaInfo) => {
+      if (slotPlayerRef(slotId).current === p) {
+        setSlotMediaInfo((previousMediaInfo) => ({ ...previousMediaInfo, [slotId]: mediaInfo }));
       }
     });
     applyPlayerSettings(p);
@@ -788,6 +810,7 @@ export function VideoPlayer({
   );
 
   const loadActiveSlotSegments = useEffectEvent((player: Player, slotId: SlotId, newSegments: PlayerSegment[]) => {
+    setSlotMediaInfo((previousMediaInfo) => ({ ...previousMediaInfo, [slotId]: null }));
     player.loadSegments(newSegments);
 
     if (shouldAutoPlayRef.current) {
@@ -906,6 +929,7 @@ export function VideoPlayer({
     // The pending slot's player resets its interlace verdict on loadSegments and
     // starts detecting while hidden, so an interlaced verdict can be ready the
     // moment the switch completes (no combing flash on channel change)
+    setSlotMediaInfo((previousMediaInfo) => ({ ...previousMediaInfo, [pendingId]: null }));
     pendingPlayer.loadSegments(newSegments);
 
     if (shouldAutoPlayRef.current) {
@@ -1603,6 +1627,8 @@ export function VideoPlayer({
             isLive={isLive}
             onSeek={handleSeek}
             locale={locale}
+            mediaInfo={slotMediaInfo[visibleSlotId]}
+            renderState={slotRenderStates[visibleSlotId]}
             seekStartTime={streamStartTime}
             isPlaying={isPlaying}
             onPlayPause={togglePlayPause}
