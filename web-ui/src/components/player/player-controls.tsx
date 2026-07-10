@@ -18,6 +18,7 @@ import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PLAYER_CONTROL_BUTTON_CLASS, PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
+import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
 interface PlayerControlsProps {
   // Channel information
@@ -257,7 +258,8 @@ export function PlayerControls({
                   )}
                   style={{ left: `${hoverPosition}%` }}
                 >
-                  {formatTime(hoverTime, true)}
+                  <PlayerSelectedGlassLayers />
+                  <span className="relative z-10">{formatTime(hoverTime, true)}</span>
                 </div>
               )}
             </>
@@ -311,6 +313,7 @@ export function PlayerControls({
                 "invisible absolute bottom-full left-1/2 -translate-x-1/2 cursor-pointer rounded-xl px-2 py-2 opacity-0 transition-[opacity,visibility] duration-150 group-hover/volume:visible group-hover/volume:opacity-100 group-focus-within/volume:visible group-focus-within/volume:opacity-100 md:px-3",
               )}
             >
+              <PlayerSelectedGlassLayers />
               <input
                 type="range"
                 min="0"
@@ -318,7 +321,7 @@ export function PlayerControls({
                 step="0.01"
                 value={isMuted ? 0 : volume}
                 onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-                className="h-16 md:h-20 w-1 cursor-pointer appearance-none bg-transparent [writing-mode:vertical-lr] [direction:rtl]"
+                className="relative z-10 h-16 w-1 cursor-pointer appearance-none bg-transparent [writing-mode:vertical-lr] [direction:rtl] md:h-20"
                 style={{
                   background: `linear-gradient(to top, #3b82f6 0%, #6366f1 ${(isMuted ? 0 : volume) * 100}%, rgba(219,234,254,0.18) ${(isMuted ? 0 : volume) * 100}%, rgba(219,234,254,0.18) 100%)`,
                 }}
@@ -379,6 +382,7 @@ export function PlayerControls({
                   "invisible absolute bottom-full left-1/2 -translate-x-1/2 overflow-hidden rounded-xl py-1 opacity-0 transition-[opacity,visibility] duration-150 group-hover/source:visible group-hover/source:opacity-100 group-focus-within/source:visible group-focus-within/source:opacity-100",
                 )}
               >
+                <PlayerSelectedGlassLayers />
                 {channel.sources
                   .map((source, index) => ({ source, index }))
                   .filter(({ source }) => isLive || (source.catchup && source.catchupSource))
@@ -391,7 +395,7 @@ export function PlayerControls({
                         e.currentTarget.blur();
                       }}
                       className={clsx(
-                        "block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs transition-colors md:text-sm",
+                        "relative z-10 block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs transition-colors md:text-sm",
                         index === activeSourceIndex
                           ? "bg-blue-300/10 font-medium text-blue-200"
                           : "text-white/75 hover:bg-blue-200/10 hover:text-blue-50",

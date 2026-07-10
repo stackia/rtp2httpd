@@ -10,9 +10,8 @@ import {
   PLAYER_LIST_SURFACE_DEFAULT_CLASS,
   PLAYER_LIST_SURFACE_HOVER_CLASS,
   PLAYER_LIST_SURFACE_SELECTED_CLASS,
-  PLAYER_SELECTED_GLASS_LAYER_CLASS,
-  PLAYER_SELECTED_TOP_HIGHLIGHT_CLASS,
 } from "./classnames";
+import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
 interface EPGViewProps {
   channelId: string | null;
@@ -191,10 +190,11 @@ function EPGViewComponent({
                           playing ? PLAYER_LIST_SURFACE_SELECTED_CLASS : PLAYER_LIST_SURFACE_DEFAULT_CLASS,
                           !playing && isPast && "opacity-65",
                           ((isPast && supportsCatchup) || onAir) && "cursor-pointer",
-                          !playing && ((isPast && supportsCatchup) || onAir) && [
-                            "hover:opacity-100",
-                            PLAYER_LIST_SURFACE_HOVER_CLASS,
-                          ],
+                          !playing &&
+                            ((isPast && supportsCatchup) || onAir) && [
+                              "hover:opacity-100",
+                              PLAYER_LIST_SURFACE_HOVER_CLASS,
+                            ],
                         )}
                         onClick={() => {
                           if (isPast && supportsCatchup) {
@@ -206,14 +206,7 @@ function EPGViewComponent({
                           }
                         }}
                       >
-                        <span
-                          aria-hidden
-                          className={clsx(PLAYER_SELECTED_GLASS_LAYER_CLASS, playing && "opacity-100")}
-                        />
-                        <span
-                          aria-hidden
-                          className={clsx(PLAYER_SELECTED_TOP_HIGHLIGHT_CLASS, playing && "opacity-100")}
-                        />
+                        <PlayerSelectedGlassLayers visible={playing} />
                         <div className="relative z-10 flex items-center gap-2 p-2 md:gap-2.5 md:p-2.5">
                           {/* Left: Status Indicator Bar */}
                           <div className="flex shrink-0">

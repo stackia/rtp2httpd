@@ -41,6 +41,7 @@ import {
 import mp2WasmUrl from "../../mpegts/wasm/minimp3/mp2_decoder.wasm?url";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
+import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 import { PlayerControls } from "./player-controls";
 
 interface VideoPlayerProps {
@@ -168,21 +169,24 @@ function PlayerTopLeftOverlay({
         visible ? "opacity-100" : "opacity-0 pointer-events-none",
       )}
     >
-      <span className="shrink-0 font-medium text-xs text-blue-50 tabular-nums drop-shadow-sm md:text-base">
-        {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-      </span>
-      {loading && (
-        <>
-          <span className="shrink-0 text-blue-100/35 text-xs md:text-sm" aria-hidden="true">
-            ·
-          </span>
-          <div className="relative h-3 w-3 md:h-3.5 md:w-3.5 shrink-0">
-            <div className="absolute inset-0 rounded-full border border-blue-100/25" />
-            <div className="absolute inset-0 animate-spin rounded-full border border-blue-200 border-t-transparent shadow-[0_0_8px_rgba(147,197,253,0.5)]" />
-          </div>
-          <span className="min-w-0 truncate text-blue-50/70 text-xs md:text-sm">{loadingText}</span>
-        </>
-      )}
+      <PlayerSelectedGlassLayers />
+      <div className="relative z-10 flex min-w-0 items-center gap-1.5 md:gap-2">
+        <span className="shrink-0 font-medium text-xs text-blue-50 tabular-nums drop-shadow-sm md:text-base">
+          {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        </span>
+        {loading && (
+          <>
+            <span className="shrink-0 text-blue-100/35 text-xs md:text-sm" aria-hidden="true">
+              ·
+            </span>
+            <div className="relative h-3 w-3 shrink-0 md:h-3.5 md:w-3.5">
+              <div className="absolute inset-0 rounded-full border border-blue-100/25" />
+              <div className="absolute inset-0 animate-spin rounded-full border border-blue-200 border-t-transparent shadow-[0_0_8px_rgba(147,197,253,0.5)]" />
+            </div>
+            <span className="min-w-0 truncate text-blue-50/70 text-xs md:text-sm">{loadingText}</span>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -1509,21 +1513,22 @@ export function VideoPlayer({
           <div
             className={clsx(
               PLAYER_OVERLAY_SURFACE_CLASS,
-              "flex max-w-[calc(100vw-2rem)] flex-col items-center justify-center gap-1.5 overflow-hidden rounded-xl px-2 py-1.5 md:max-w-none md:gap-2 md:px-3 md:py-2",
+              "relative flex max-w-[calc(100vw-2rem)] flex-col items-center justify-center gap-1.5 overflow-hidden rounded-xl px-2 py-1.5 md:max-w-none md:gap-2 md:px-3 md:py-2",
             )}
           >
+            <PlayerSelectedGlassLayers />
             {channel.logo && (
               <img
                 src={channel.logo}
                 alt={channel.name}
                 referrerPolicy="no-referrer"
-                className="h-8 w-20 object-contain drop-shadow-[0_0_14px_rgba(147,197,253,0.2)] md:h-14 md:w-36"
+                className="relative z-10 h-8 w-20 object-contain drop-shadow-[0_0_14px_rgba(147,197,253,0.2)] md:h-14 md:w-36"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}
               />
             )}
-            <div className="flex w-full min-w-0 items-center justify-center">
+            <div className="relative z-10 flex w-full min-w-0 items-center justify-center">
               <div className="flex min-w-0 items-center gap-1.5 md:gap-2">
                 <span
                   className={clsx(
