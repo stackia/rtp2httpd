@@ -536,11 +536,12 @@ void parse_global_sec(char *line) {
 
   if (strcasecmp("maxclients", param) == 0) {
     if (set_if_not_cmd_override(cmd_maxclients_set, "maxclients")) {
-      if (atoi(value) < 1) {
-        logger(LOG_ERROR, "Invalid maxclients! Ignoring.");
+      int max_clients = atoi(value);
+      if (max_clients < 1 || max_clients > CONFIG_MAX_CLIENTS) {
+        logger(LOG_ERROR, "Invalid maxclients! Must be between 1 and %d. Ignoring.", CONFIG_MAX_CLIENTS);
         return;
       }
-      config.maxclients = atoi(value);
+      config.maxclients = max_clients;
     }
     return;
   }
@@ -1444,22 +1445,26 @@ void parse_cmd_line(int argc, char *argv[]) {
       config.udpxy = 0;
       cmd_udpxy_set = 1;
       break;
-    case 'm':
-      if (atoi(optarg) < 1) {
-        logger(LOG_ERROR, "Invalid maxclients! Ignoring.");
+    case 'm': {
+      int max_clients = atoi(optarg);
+      if (max_clients < 1 || max_clients > CONFIG_MAX_CLIENTS) {
+        logger(LOG_ERROR, "Invalid maxclients! Must be between 1 and %d. Ignoring.", CONFIG_MAX_CLIENTS);
       } else {
-        config.maxclients = atoi(optarg);
+        config.maxclients = max_clients;
         cmd_maxclients_set = 1;
       }
       break;
-    case 'w':
-      if (atoi(optarg) < 1 || atoi(optarg) > CONFIG_MAX_WORKERS) {
+    }
+    case 'w': {
+      int worker_count = atoi(optarg);
+      if (worker_count < 1 || worker_count > CONFIG_MAX_WORKERS) {
         logger(LOG_ERROR, "Invalid workers! Must be between 1 and %d. Ignoring.", CONFIG_MAX_WORKERS);
       } else {
-        config.workers = atoi(optarg);
+        config.workers = worker_count;
         cmd_workers_set = 1;
       }
       break;
+    }
     case 'b':
       if (atoi(optarg) < 1) {
         logger(LOG_ERROR, "Invalid buffer-pool-max-size! Ignoring.");

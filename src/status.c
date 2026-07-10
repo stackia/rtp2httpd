@@ -20,7 +20,9 @@ status_shared_t *status_shared = NULL;
 /* Path for shared memory file in /tmp */
 static char shm_path[256] = {0};
 
-typedef enum { STATUS_LOG_EVENT_ADD = 1, STATUS_LOG_EVENT_CLEAR = 2 } status_log_event_type_t;
+typedef enum { STATUS_LOG_EVENT_ADD = 1 } status_log_event_type_t;
+
+typedef enum { STATUS_CONTROL_EVENT_CLEAR_LOGS = 1 } status_control_event_type_t;
 
 typedef struct {
   uint32_t type;
@@ -29,8 +31,14 @@ typedef struct {
   char message[STATUS_LOG_ENTRY_LEN];
 } status_log_event_t;
 
+typedef struct {
+  uint32_t type;
+} status_control_event_t;
+
 static int log_event_recv_fd = -1;
 static int log_event_send_fd = -1;
+static int control_event_recv_fd = -1;
+static int control_event_send_fd = -1;
 
 static void set_fd_nonblocking(int fd) {
   int flags = fcntl(fd, F_GETFL, 0);
@@ -46,14 +54,15 @@ static void reset_client_payload(client_stats_t *client) {
   atomic_store_explicit(&client->data_version, 0, memory_order_relaxed);
 }
 
-static int reserve_client_capacity(void) {
-  uint32_t count = atomic_load_explicit(&status_shared->total_clients, memory_order_relaxed);
-  while (count < (uint32_t)config.maxclients) {
-    if (atomic_compare_exchange_weak_explicit(&status_shared->total_clients, &count, count + 1, memory_order_acq_rel,
-                                              memory_order_relaxed))
-      return 0;
+static int client_capacity_is_available(void) {
+  uint32_t reserved_slots = 0;
+
+  for (int client_index = 0; client_index < STATUS_MAX_CLIENTS; client_index++) {
+    if (atomic_load_explicit(&status_shared->clients[client_index].owner_pid, memory_order_seq_cst) != 0)
+      reserved_slots++;
   }
-  return -1;
+
+  return reserved_slots <= (uint32_t)config.maxclients;
 }
 
 static void client_write_begin(client_stats_t *client) {
@@ -64,20 +73,26 @@ static void client_write_end(client_stats_t *client) {
   atomic_fetch_add_explicit(&client->data_version, 1, memory_order_release);
 }
 
-static int snapshot_client(const client_stats_t *client, client_stats_payload_t *snapshot, uint32_t *owner_pid) {
+static int snapshot_client(const client_stats_t *client, client_stats_payload_t *snapshot, uint32_t *owner_pid,
+                           uint32_t *generation) {
   for (int attempt = 0; attempt < 3; attempt++) {
     if (!atomic_load_explicit(&client->active, memory_order_acquire))
       return 0;
     uint32_t version_before = atomic_load_explicit(&client->data_version, memory_order_acquire);
     if (version_before & 1U)
       continue;
+    uint32_t generation_before = atomic_load_explicit(&client->generation, memory_order_acquire);
     *owner_pid = atomic_load_explicit(&client->owner_pid, memory_order_relaxed);
     memcpy(snapshot, &client->payload, sizeof(*snapshot));
     atomic_thread_fence(memory_order_acquire);
     uint32_t version_after = atomic_load_explicit(&client->data_version, memory_order_relaxed);
-    if (version_before == version_after && !(version_after & 1U) &&
-        atomic_load_explicit(&client->active, memory_order_acquire))
+    uint32_t generation_after = atomic_load_explicit(&client->generation, memory_order_relaxed);
+    if (version_before == version_after && !(version_after & 1U) && generation_before == generation_after &&
+        atomic_load_explicit(&client->active, memory_order_acquire)) {
+      if (generation)
+        *generation = generation_after;
       return 1;
+    }
   }
   return 0;
 }
@@ -166,13 +181,13 @@ int status_init(void) {
   status_shared->server_start_time = get_realtime_ms();
   status_shared->current_log_level = config.verbosity;
   status_shared->event_counter = 0;
-  atomic_init(&status_shared->total_clients, 0);
   atomic_init(&status_shared->log_epoch, 1);
   atomic_init(&status_shared->log_sequence, 0);
 
   for (int i = 0; i < STATUS_MAX_CLIENTS; i++) {
     atomic_init(&status_shared->clients[i].owner_pid, 0);
     atomic_init(&status_shared->clients[i].active, 0);
+    atomic_init(&status_shared->clients[i].generation, 0);
     atomic_init(&status_shared->clients[i].disconnect_requested, 0);
     atomic_init(&status_shared->clients[i].data_version, 0);
     status_shared->clients[i].payload.worker_index = -1;
@@ -180,9 +195,10 @@ int status_init(void) {
   for (int i = 0; i < STATUS_MAX_LOG_ENTRIES; i++)
     atomic_init(&status_shared->log_entries[i].sequence, 0);
 
-  if (!atomic_is_lock_free(&status_shared->total_clients) ||
-      !atomic_is_lock_free(&status_shared->clients[0].owner_pid) ||
-      !atomic_is_lock_free(&status_shared->clients[0].active) || !atomic_is_lock_free(&status_shared->log_sequence)) {
+  if (!atomic_is_lock_free(&status_shared->clients[0].owner_pid) ||
+      !atomic_is_lock_free(&status_shared->clients[0].active) ||
+      !atomic_is_lock_free(&status_shared->clients[0].generation) ||
+      !atomic_is_lock_free(&status_shared->log_sequence)) {
     status_shared = NULL;
     munmap(mapped, sizeof(status_shared_t));
     unlink(shm_path);
@@ -203,6 +219,24 @@ int status_init(void) {
   log_event_send_fd = log_fds[1];
   set_fd_nonblocking(log_event_recv_fd);
   set_fd_nonblocking(log_event_send_fd);
+
+  int control_fds[2];
+  if (socketpair(AF_UNIX, SOCK_DGRAM, 0, control_fds) == -1) {
+    int err = errno;
+    close(log_event_recv_fd);
+    close(log_event_send_fd);
+    log_event_recv_fd = -1;
+    log_event_send_fd = -1;
+    status_shared = NULL;
+    munmap(mapped, sizeof(status_shared_t));
+    unlink(shm_path);
+    logger(LOG_ERROR, "Failed to create status control socketpair: %s", strerror(err));
+    return -1;
+  }
+  control_event_recv_fd = control_fds[0];
+  control_event_send_fd = control_fds[1];
+  set_fd_nonblocking(control_event_recv_fd);
+  set_fd_nonblocking(control_event_send_fd);
 
   /* Initialize pipe fds to -1 (invalid) */
   for (int i = 0; i < STATUS_MAX_WORKERS; i++) {
@@ -229,6 +263,10 @@ int status_init(void) {
       close(log_event_send_fd);
       log_event_recv_fd = -1;
       log_event_send_fd = -1;
+      close(control_event_recv_fd);
+      close(control_event_send_fd);
+      control_event_recv_fd = -1;
+      control_event_send_fd = -1;
       munmap(status_shared, sizeof(status_shared_t));
       status_shared = NULL;
       unlink(shm_path);
@@ -287,6 +325,14 @@ void status_cleanup(void) {
     close(log_event_send_fd);
     log_event_send_fd = -1;
   }
+  if (control_event_recv_fd >= 0) {
+    close(control_event_recv_fd);
+    control_event_recv_fd = -1;
+  }
+  if (control_event_send_fd >= 0) {
+    close(control_event_send_fd);
+    control_event_send_fd = -1;
+  }
 
   if (status_shared != NULL && status_shared != MAP_FAILED) {
     /* Close all pipe fds (this process's copies)
@@ -328,6 +374,10 @@ void status_worker_init(void) {
     close(log_event_recv_fd);
     log_event_recv_fd = -1;
   }
+  if (control_event_recv_fd >= 0) {
+    close(control_event_recv_fd);
+    control_event_recv_fd = -1;
+  }
 }
 
 int status_register_client(const char *client_addr_str, const char *service_url) {
@@ -342,9 +392,18 @@ int status_register_client(const char *client_addr_str, const char *service_url)
   for (int i = 0; i < STATUS_MAX_CLIENTS; i++) {
     client_stats_t *client = &status_shared->clients[i];
     uint32_t expected = 0;
-    if (atomic_compare_exchange_strong_explicit(&client->owner_pid, &expected, owner_pid, memory_order_acq_rel,
-                                                memory_order_relaxed)) {
+    if (atomic_compare_exchange_strong_explicit(&client->owner_pid, &expected, owner_pid, memory_order_seq_cst,
+                                                memory_order_seq_cst)) {
+      if (!client_capacity_is_available()) {
+        atomic_store_explicit(&client->owner_pid, 0, memory_order_seq_cst);
+        logger(LOG_WARN, "Maximum client limit reached");
+        return -1;
+      }
+
       reset_client_payload(client);
+      uint32_t generation = atomic_fetch_add_explicit(&client->generation, 1, memory_order_acq_rel) + 1;
+      if (generation == 0)
+        atomic_fetch_add_explicit(&client->generation, 1, memory_order_acq_rel);
       client->payload.worker_index = worker_id;
       client->payload.connect_time = get_realtime_ms();
       client->payload.state = CLIENT_STATE_CONNECTING;
@@ -368,13 +427,6 @@ int status_register_client(const char *client_addr_str, const char *service_url)
       if (service_url) {
         strncpy(client->payload.service_url, service_url, sizeof(client->payload.service_url) - 1);
         client->payload.service_url[sizeof(client->payload.service_url) - 1] = '\0';
-      }
-
-      if (reserve_client_capacity() < 0) {
-        reset_client_payload(client);
-        atomic_store_explicit(&client->owner_pid, 0, memory_order_release);
-        logger(LOG_WARN, "Maximum client limit reached");
-        return -1;
       }
 
       atomic_store_explicit(&client->active, 1, memory_order_release);
@@ -417,9 +469,8 @@ void status_unregister_client(int status_index) {
     status_shared->worker_stats[client_worker_index].client_bytes_cumulative += bytes_sent;
   }
 
-  atomic_fetch_sub_explicit(&status_shared->total_clients, 1, memory_order_acq_rel);
   reset_client_payload(client);
-  atomic_store_explicit(&client->owner_pid, 0, memory_order_release);
+  atomic_store_explicit(&client->owner_pid, 0, memory_order_seq_cst);
 
   /* Trigger event notification for client disconnect */
   status_trigger_event(STATUS_EVENT_SSE_UPDATE);
@@ -442,16 +493,9 @@ int status_reap_worker(pid_t dead_pid, int worker_index) {
         status_shared->client_bytes_cumulative[client_worker_index] += client->payload.bytes_sent;
     }
     reset_client_payload(client);
-    atomic_store_explicit(&client->owner_pid, 0, memory_order_release);
+    atomic_store_explicit(&client->owner_pid, 0, memory_order_seq_cst);
     reclaimed++;
   }
-
-  uint32_t active_count = 0;
-  for (int i = 0; i < STATUS_MAX_CLIENTS; i++) {
-    if (atomic_load_explicit(&status_shared->clients[i].active, memory_order_acquire))
-      active_count++;
-  }
-  atomic_store_explicit(&status_shared->total_clients, active_count, memory_order_release);
 
   if (worker_index >= 0 && worker_index < STATUS_MAX_WORKERS &&
       status_shared->worker_stats[worker_index].worker_pid == dead_pid) {
@@ -600,29 +644,47 @@ void status_add_log_entry(enum loglevel level, const char *message) {
 }
 
 void status_supervisor_drain_logs(void) {
-  if (!status_shared || worker_id != SUPERVISOR_WORKER_ID || log_event_recv_fd < 0)
+  if (!status_shared || worker_id != SUPERVISOR_WORKER_ID)
     return;
 
   int changed = 0;
-  for (;;) {
-    status_log_event_t event;
-    ssize_t received = recv(log_event_recv_fd, &event, sizeof(event), MSG_DONTWAIT);
-    if (received < 0) {
-      if (errno == EINTR)
+  if (log_event_recv_fd >= 0) {
+    for (;;) {
+      status_log_event_t event;
+      ssize_t received = recv(log_event_recv_fd, &event, sizeof(event), MSG_DONTWAIT);
+      if (received < 0) {
+        if (errno == EINTR)
+          continue;
+        break;
+      }
+      if ((size_t)received != sizeof(event))
         continue;
-      break;
-    }
-    if ((size_t)received != sizeof(event))
-      continue;
-    if (event.type == STATUS_LOG_EVENT_ADD) {
-      event.message[sizeof(event.message) - 1] = '\0';
-      append_log_entry(event.timestamp, event.level, event.message);
-      changed = 1;
-    } else if (event.type == STATUS_LOG_EVENT_CLEAR) {
-      clear_log_ring();
-      changed = 1;
+      if (event.type == STATUS_LOG_EVENT_ADD) {
+        event.message[sizeof(event.message) - 1] = '\0';
+        append_log_entry(event.timestamp, event.level, event.message);
+        changed = 1;
+      }
     }
   }
+
+  if (control_event_recv_fd >= 0) {
+    for (;;) {
+      status_control_event_t event;
+      ssize_t received = recv(control_event_recv_fd, &event, sizeof(event), MSG_DONTWAIT);
+      if (received < 0) {
+        if (errno == EINTR)
+          continue;
+        break;
+      }
+      if ((size_t)received != sizeof(event))
+        continue;
+      if (event.type == STATUS_CONTROL_EVENT_CLEAR_LOGS) {
+        clear_log_ring();
+        changed = 1;
+      }
+    }
+  }
+
   if (changed)
     status_trigger_event(STATUS_EVENT_SSE_UPDATE);
 }
@@ -682,7 +744,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
   for (i = 0; i < STATUS_MAX_CLIENTS; i++) {
     client_stats_payload_t client;
     uint32_t owner_pid = 0;
-    if (snapshot_client(&status_shared->clients[i], &client, &owner_pid) && client.service_url[0] != '\0') {
+    if (snapshot_client(&status_shared->clients[i], &client, &owner_pid, NULL) && client.service_url[0] != '\0') {
       if (!first_client)
         len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",");
       first_client = 0;
@@ -888,15 +950,19 @@ void handle_disconnect_client(connection_t *c) {
   for (int i = 0; i < STATUS_MAX_CLIENTS; i++) {
     client_stats_payload_t client;
     uint32_t owner_pid;
-    if (!snapshot_client(&status_shared->clients[i], &client, &owner_pid))
+    uint32_t generation;
+    if (!snapshot_client(&status_shared->clients[i], &client, &owner_pid, &generation))
       continue;
     logger(LOG_DEBUG, "Checking client slot %d: active=1, client_id=%s, to match=%s", i, client.client_id,
            client_id_str);
     if (strcmp(client.client_id, client_id_str) == 0) {
-      found = 1;
-      /* Set disconnect flag - worker will check this and close the connection
-       */
-      atomic_store_explicit(&status_shared->clients[i].disconnect_requested, 1, memory_order_release);
+      client_stats_t *shared_client = &status_shared->clients[i];
+      atomic_store_explicit(&shared_client->disconnect_requested, generation, memory_order_release);
+
+      found = atomic_load_explicit(&shared_client->active, memory_order_acquire) &&
+              atomic_load_explicit(&shared_client->generation, memory_order_acquire) == generation;
+      if (!found)
+        continue;
 
       /* Trigger disconnect request event to wake up workers */
       status_trigger_event(STATUS_EVENT_DISCONNECT_REQUEST);
@@ -935,11 +1001,19 @@ void handle_clear_logs(connection_t *c) {
     return;
   }
 
-  status_log_event_t event;
+  status_control_event_t event;
   memset(&event, 0, sizeof(event));
-  event.type = STATUS_LOG_EVENT_CLEAR;
-  if (log_event_send_fd >= 0)
-    (void)send(log_event_send_fd, &event, sizeof(event), MSG_DONTWAIT);
+  event.type = STATUS_CONTROL_EVENT_CLEAR_LOGS;
+  ssize_t bytes_sent = -1;
+  if (control_event_send_fd >= 0)
+    bytes_sent = send(control_event_send_fd, &event, sizeof(event), MSG_DONTWAIT);
+
+  if (bytes_sent != (ssize_t)sizeof(event)) {
+    send_http_headers(c, STATUS_503, "application/json", NULL);
+    snprintf(response, sizeof(response), "{\"success\":false,\"error\":\"Failed to queue log clear request\"}");
+    connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+    return;
+  }
 
   /* Trigger SSE update to notify clients */
   status_trigger_event(STATUS_EVENT_SSE_UPDATE);

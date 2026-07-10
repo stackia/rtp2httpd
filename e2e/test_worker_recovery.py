@@ -100,9 +100,9 @@ def test_crashed_worker_releases_maxclient_slot_and_logs_recovery(r2h_binary):
         recovered = wait_for_status_payload(
             "127.0.0.1",
             port,
-            lambda value: not value["clients"]
-            and value["totalClients"] == 0
-            and _worker_pids(value).get(0, dead_pid) != dead_pid,
+            lambda value: (
+                not value["clients"] and value["totalClients"] == 0 and _worker_pids(value).get(0, dead_pid) != dead_pid
+            ),
             timeout=8,
         )
         assert _worker_pids(recovered)[0] > 0
@@ -126,8 +126,10 @@ def test_crashed_worker_releases_maxclient_slot_and_logs_recovery(r2h_binary):
         wait_for_status_payload(
             "127.0.0.1",
             port,
-            lambda value: value["logsMode"] == "full"
-            and all("Reclaimed 1 status client slot" not in entry["message"] for entry in value["logs"]),
+            lambda value: (
+                value["logsMode"] == "full"
+                and all("Reclaimed 1 status client slot" not in entry["message"] for entry in value["logs"])
+            ),
         )
     finally:
         for sock in sockets:
@@ -156,9 +158,11 @@ def test_crashed_worker_does_not_restart_other_worker(r2h_binary):
         recovered = wait_for_status_payload(
             "127.0.0.1",
             port,
-            lambda value: all(client["workerPid"] != dead_pid for client in value["clients"])
-            and survivor_pid in _worker_pids(value).values()
-            and len(_worker_pids(value)) == 2,
+            lambda value: (
+                all(client["workerPid"] != dead_pid for client in value["clients"])
+                and survivor_pid in _worker_pids(value).values()
+                and len(_worker_pids(value)) == 2
+            ),
             timeout=8,
         )
         assert survivor_pid in _worker_pids(recovered).values()
@@ -204,8 +208,10 @@ def test_worker_reduction_reaps_retiring_worker(r2h_binary):
         reduced = wait_for_status_payload(
             "127.0.0.1",
             port,
-            lambda value: len(value.get("workers", [])) == 1
-            and all(client["workerPid"] != retiring_pid for client in value["clients"]),
+            lambda value: (
+                len(value.get("workers", [])) == 1
+                and all(client["workerPid"] != retiring_pid for client in value["clients"])
+            ),
             timeout=8,
         )
         assert len(reduced["workers"]) == 1

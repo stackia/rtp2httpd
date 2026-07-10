@@ -8,7 +8,7 @@
 #include <sys/types.h>
 
 /* Maximum number of clients we can track in shared memory */
-#define STATUS_MAX_CLIENTS 256
+#define STATUS_MAX_CLIENTS CONFIG_MAX_CLIENTS
 
 /* Event types for worker notification */
 typedef enum {
@@ -88,7 +88,8 @@ typedef struct {
 typedef struct {
   _Atomic uint32_t owner_pid;            /* 0 if free, otherwise owning worker PID */
   _Atomic uint32_t active;               /* 1 once payload is fully published */
-  _Atomic uint32_t disconnect_requested; /* Set by status API, consumed by owner */
+  _Atomic uint32_t generation;           /* Incremented whenever the slot is reused */
+  _Atomic uint32_t disconnect_requested; /* Requested generation, 0 if none */
   _Atomic uint32_t data_version;         /* Odd while payload statistics are being updated */
   client_stats_payload_t payload;
 } client_stats_t;
@@ -144,7 +145,6 @@ typedef struct {
 /* Shared memory structure for status information */
 typedef struct {
   /* Global statistics */
-  _Atomic uint32_t total_clients;
   uint64_t client_bytes_cumulative[STATUS_MAX_WORKERS]; /* Single-writer shard per worker index */
   uint32_t total_bandwidth;
   int64_t server_start_time; /* Server start time in milliseconds */

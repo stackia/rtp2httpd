@@ -34,14 +34,18 @@ def get_status_payload(host: str, port: int, timeout: float = 3.0, status_path: 
     return None
 
 
-def wait_for_status_payload(host: str, port: int, predicate, timeout: float = 6.0, status_path: str = "/status") -> dict:
+def wait_for_status_payload(
+    host: str, port: int, predicate, timeout: float = 6.0, status_path: str = "/status"
+) -> dict:
     """Poll status SSE until predicate(payload) succeeds."""
     deadline = time.monotonic() + timeout
     last_payload = None
     while time.monotonic() < deadline:
         try:
-            last_payload = get_status_payload(host, port, timeout=min(2.0, max(0.2, deadline - time.monotonic())), status_path=status_path)
-        except (OSError, TimeoutError, json.JSONDecodeError):
+            last_payload = get_status_payload(
+                host, port, timeout=min(2.0, max(0.2, deadline - time.monotonic())), status_path=status_path
+            )
+        except OSError, TimeoutError, json.JSONDecodeError:
             last_payload = None
         if last_payload is not None and predicate(last_payload):
             return last_payload
