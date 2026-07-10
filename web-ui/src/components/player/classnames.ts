@@ -21,3 +21,6 @@ export const PLAYER_SELECTED_GLASS_LAYER_CLASS =
 
 export const PLAYER_SELECTED_TOP_HIGHLIGHT_CLASS =
   "pointer-events-none absolute inset-x-3 top-0 z-20 h-px rounded-full bg-[linear-gradient(90deg,transparent_0%,rgba(147,197,253,0.42)_14%,rgba(219,234,254,0.96)_48%,rgba(165,180,252,0.68)_78%,transparent_100%)] opacity-0 shadow-[0_0_8px_rgba(147,197,253,0.46)] transition-opacity duration-300 ease-out motion-reduce:transition-none";
+
+export const PLAYER_SELECTED_COMPACT_TOP_HIGHLIGHT_CLASS =
+  "pointer-events-none absolute inset-x-1 top-px z-20 h-5 rounded-t-xl bg-[radial-gradient(ellipse_at_top,rgba(219,234,254,0.3)_0%,rgba(147,197,253,0.11)_42%,transparent_76%)] opacity-0 transition-opacity duration-300 ease-out motion-reduce:transition-none";

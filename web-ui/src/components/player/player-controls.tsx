@@ -310,10 +310,10 @@ export function PlayerControls({
             <div
               className={clsx(
                 PLAYER_OVERLAY_SURFACE_CLASS,
-                "invisible absolute bottom-full left-1/2 -translate-x-1/2 cursor-pointer rounded-xl px-2 py-2 opacity-0 transition-[opacity,visibility] duration-150 group-hover/volume:visible group-hover/volume:opacity-100 group-focus-within/volume:visible group-focus-within/volume:opacity-100 md:px-3",
+                "invisible absolute bottom-full left-1/2 flex -translate-x-1/2 cursor-pointer items-center justify-center rounded-xl px-2 py-2 opacity-0 transition-[opacity,visibility] duration-150 group-hover/volume:visible group-hover/volume:opacity-100 group-focus-within/volume:visible group-focus-within/volume:opacity-100 md:px-3",
               )}
             >
-              <PlayerSelectedGlassLayers />
+              <PlayerSelectedGlassLayers compact />
               <input
                 type="range"
                 min="0"
@@ -321,7 +321,7 @@ export function PlayerControls({
                 step="0.01"
                 value={isMuted ? 0 : volume}
                 onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-                className="relative z-10 h-16 w-1 cursor-pointer appearance-none bg-transparent [writing-mode:vertical-lr] [direction:rtl] md:h-20"
+                className="relative z-10 m-0 block h-16 w-1 cursor-pointer appearance-none bg-transparent [writing-mode:vertical-lr] [direction:rtl] md:h-20"
                 style={{
                   background: `linear-gradient(to top, #3b82f6 0%, #6366f1 ${(isMuted ? 0 : volume) * 100}%, rgba(219,234,254,0.18) ${(isMuted ? 0 : volume) * 100}%, rgba(219,234,254,0.18) 100%)`,
                 }}
