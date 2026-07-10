@@ -164,23 +164,23 @@ function PlayerTopLeftOverlay({
     <div
       className={clsx(
         PLAYER_OVERLAY_SURFACE_CLASS,
-        "absolute top-4 left-4 z-10 flex items-center gap-1.5 rounded-lg px-2 py-1.5 transition-opacity duration-300 md:top-8 md:left-8 md:gap-2 md:px-3 md:py-2",
+        "absolute top-4 left-4 z-10 flex max-w-[calc(100%-2rem)] items-center gap-1.5 rounded-xl px-2 py-1.5 transition-opacity duration-300 md:top-8 md:left-8 md:gap-2 md:px-3 md:py-2",
         visible ? "opacity-100" : "opacity-0 pointer-events-none",
       )}
     >
-      <span className="text-xs md:text-base text-white font-medium tabular-nums">
+      <span className="shrink-0 font-medium text-xs text-cyan-50 tabular-nums drop-shadow-sm md:text-base">
         {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
       </span>
       {loading && (
         <>
-          <span className="text-xs md:text-sm text-white/50" aria-hidden="true">
+          <span className="shrink-0 text-cyan-100/35 text-xs md:text-sm" aria-hidden="true">
             ·
           </span>
           <div className="relative h-3 w-3 md:h-3.5 md:w-3.5 shrink-0">
-            <div className="absolute inset-0 rounded-full border border-white/30" />
-            <div className="absolute inset-0 rounded-full border border-white border-t-transparent animate-spin" />
+            <div className="absolute inset-0 rounded-full border border-cyan-100/25" />
+            <div className="absolute inset-0 animate-spin rounded-full border border-cyan-200 border-t-transparent shadow-[0_0_8px_rgba(103,232,249,0.5)]" />
           </div>
-          <span className="text-xs md:text-sm text-white/70">{loadingText}</span>
+          <span className="min-w-0 truncate text-cyan-50/70 text-xs md:text-sm">{loadingText}</span>
         </>
       )}
     </div>
@@ -1446,7 +1446,7 @@ export function VideoPlayer({
       role="application"
       ref={playerSurfaceRef}
       className={clsx(
-        "@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-black",
+        "@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)]",
         isDocumentPiP ? "h-screen min-h-screen aspect-auto" : "md:aspect-auto md:h-full",
         !showControls && "cursor-none",
       )}
@@ -1509,7 +1509,7 @@ export function VideoPlayer({
           <div
             className={clsx(
               PLAYER_OVERLAY_SURFACE_CLASS,
-              "flex max-w-[calc(100vw-2rem)] flex-col items-center justify-center gap-1.5 overflow-hidden rounded-lg px-2 py-1.5 md:max-w-none md:gap-2 md:px-3 md:py-2",
+              "flex max-w-[calc(100vw-2rem)] flex-col items-center justify-center gap-1.5 overflow-hidden rounded-xl px-2 py-1.5 md:max-w-none md:gap-2 md:px-3 md:py-2",
             )}
           >
             {channel.logo && (
@@ -1517,29 +1517,29 @@ export function VideoPlayer({
                 src={channel.logo}
                 alt={channel.name}
                 referrerPolicy="no-referrer"
-                className="h-8 w-20 md:h-14 md:w-36 object-contain"
+                className="h-8 w-20 object-contain drop-shadow-[0_0_14px_rgba(103,232,249,0.2)] md:h-14 md:w-36"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}
               />
             )}
-            <div className="flex items-center justify-center w-full">
-              <div className="flex items-center gap-1.5 md:gap-2 min-w-0">
+            <div className="flex w-full min-w-0 items-center justify-center">
+              <div className="flex min-w-0 items-center gap-1.5 md:gap-2">
                 <span
                   className={clsx(
-                    "rounded px-1 py-0.5 md:px-1.5 text-[10px] md:text-xs font-medium shrink-0 transition-[color,background-color,box-shadow,scale] duration-300",
+                    "shrink-0 rounded-md px-1 py-0.5 font-semibold text-[10px] transition-[color,background-color,box-shadow,scale] duration-300 md:px-1.5 md:text-xs",
                     digitBuffer
-                      ? "bg-primary text-primary-foreground scale-110 shadow-lg ring-2 ring-primary/50"
-                      : "bg-white/10 text-white/60",
+                      ? "scale-110 bg-[linear-gradient(135deg,#22d3ee,#6366f1)] text-white shadow-[0_0_20px_rgba(34,211,238,0.45)] ring-2 ring-cyan-200/40"
+                      : "bg-cyan-100/10 text-cyan-50/65 ring-1 ring-cyan-100/10",
                   )}
                 >
                   {digitBuffer || channel.id}
                 </span>
-                <h2 className="text-xs md:text-base font-bold text-white truncate">{channel.name}</h2>
+                <h2 className="truncate font-bold text-white text-xs tracking-[0.01em] md:text-base">{channel.name}</h2>
                 {channel.groups.length > 0 && (
                   <>
-                    <span className="text-xs md:text-sm text-white/50 hidden sm:inline">·</span>
-                    <div className="text-xs md:text-sm text-white/70 truncate hidden sm:block">
+                    <span className="hidden text-cyan-100/35 text-xs sm:inline md:text-sm">·</span>
+                    <div className="hidden truncate text-cyan-50/65 text-xs sm:block md:text-sm">
                       {channel.groups.join(" / ")}
                     </div>
                   </>
@@ -1553,24 +1553,29 @@ export function VideoPlayer({
       {needsUserInteraction && (
         <button
           type="button"
-          className="absolute inset-0 z-10 flex cursor-pointer items-center justify-center bg-black/80 p-4 transition-opacity hover:bg-black/85 border-none"
+          className="absolute inset-0 z-10 flex cursor-pointer items-center justify-center border-none bg-[radial-gradient(circle_at_center,rgba(18,50,91,0.78),rgba(2,6,23,0.94)_68%)] p-4 transition-[filter,background-color] backdrop-blur-[2px] hover:brightness-110"
           onClick={handleUserInteraction}
         >
           <div className="flex flex-col items-center gap-4 text-white">
-            <Play className="h-20 w-20 opacity-90 fill-current" />
-            <div className="text-center">
-              <div className="mb-2 text-2xl font-semibold">{t("clickToPlay")}</div>
-              <div className="text-sm text-white/70">{t("autoplayBlocked")}</div>
+            <Play className="h-20 w-20 fill-cyan-100/20 text-cyan-100 opacity-95 drop-shadow-[0_0_24px_rgba(34,211,238,0.55)]" />
+            <div className="max-w-lg px-2 text-center">
+              <div className="mb-2 font-semibold text-2xl tracking-tight text-cyan-50">{t("clickToPlay")}</div>
+              <div className="text-pretty text-cyan-50/65 text-sm leading-5">{t("autoplayBlocked")}</div>
             </div>
           </div>
         </button>
       )}
 
       {error && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/90 p-4">
-          <div className="max-w-md rounded-lg bg-red-500/20 p-4 text-white">
-            <div className="mb-2 text-lg font-semibold">{t("playbackError")}</div>
-            <div className="text-sm">{error}</div>
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(76,20,55,0.46),rgba(2,6,23,0.96)_72%)] p-4 backdrop-blur-[3px]">
+          <div
+            className={clsx(
+              PLAYER_OVERLAY_SURFACE_CLASS,
+              "w-full max-w-md rounded-2xl border-rose-300/25 bg-[linear-gradient(145deg,rgba(52,18,50,0.82),rgba(12,22,51,0.8))] p-5 text-white shadow-[0_20px_60px_rgba(43,5,32,0.58)]",
+            )}
+          >
+            <div className="mb-2 font-semibold text-lg text-rose-100">{t("playbackError")}</div>
+            <div className="break-words text-pretty text-rose-50/75 text-sm leading-relaxed">{error}</div>
           </div>
         </div>
       )}
@@ -1615,10 +1620,10 @@ export function VideoPlayer({
   );
 
   return (
-    <div className="relative w-full bg-black md:h-full pt-[env(safe-area-inset-top)]">
+    <div className="relative w-full bg-[radial-gradient(circle_at_50%_20%,#102044_0%,#050b18_52%,#01030a_100%)] pt-[env(safe-area-inset-top)] md:h-full">
       <div ref={playerDockRef} className="contents">
         {isDocumentPiP && (
-          <div className="@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-black px-4 text-center text-sm font-medium text-white/70 md:aspect-auto md:h-full md:text-base">
+          <div className="@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-[radial-gradient(circle_at_center,#102044_0%,#050b18_62%,#01030a_100%)] px-4 text-center font-medium text-cyan-50/65 text-sm md:aspect-auto md:h-full md:text-base">
             {t("playingInPictureInPicture")}
           </div>
         )}

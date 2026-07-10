@@ -364,7 +364,7 @@ function PlayerPage() {
 
   const settingsSlot = useMemo(() => {
     return (
-      <div className="ml-2">
+      <div className="shrink-0">
         <SettingsDropdown
           locale={locale}
           onLocaleChange={setLocale}
@@ -394,7 +394,10 @@ function PlayerPage() {
 
   // Main UI content
   const mainContent = (
-    <div ref={pageContainerRef} className="flex h-dvh flex-col bg-background">
+    <div
+      ref={pageContainerRef}
+      className="flex h-dvh flex-col bg-[radial-gradient(circle_at_92%_8%,rgba(34,211,238,0.15),transparent_28%),radial-gradient(circle_at_72%_92%,rgba(99,102,241,0.13),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_88%_10%,rgba(34,211,238,0.1),transparent_30%),radial-gradient(circle_at_70%_88%,rgba(99,102,241,0.12),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]"
+    >
       <title>{t("title")}</title>
 
       {/* Main Content */}
@@ -429,12 +432,12 @@ function PlayerPage() {
         {/* Sidebar - Mobile: always visible (below video, hidden in fullscreen), Desktop: toggle-able side panel (visible in fullscreen) */}
         <div
           className={clsx(
-            "flex flex-col w-full md:w-80 md:border-l border-t md:border-t-0 border-border bg-card flex-1 md:flex-initial overflow-hidden",
+            "flex w-full flex-1 flex-col overflow-hidden border-cyan-950/10 border-t bg-white/68 shadow-[-14px_0_40px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-cyan-100/10 dark:bg-[linear-gradient(160deg,rgba(8,20,43,0.82),rgba(22,24,65,0.74))] dark:shadow-[-18px_0_48px_rgba(1,7,24,0.28)] md:w-80 md:flex-initial md:border-t-0 md:border-l",
             (showSidebar || isMobile) && !(isFullscreen && isMobile) ? "" : "hidden",
           )}
         >
           {/* Sidebar Tabs */}
-          <div className="flex items-center border-b border-border shrink-0">
+          <div className="flex shrink-0 items-center border-cyan-950/10 border-b bg-white/44 shadow-[0_8px_24px_rgba(30,64,175,0.045)] backdrop-blur-xl dark:border-cyan-100/10 dark:bg-slate-950/28">
             <button
               type="button"
               onClick={() => {
@@ -442,10 +445,10 @@ function PlayerPage() {
                 setSidebarView("channels");
               }}
               className={clsx(
-                "flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium transition-[color]",
+                "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2 text-center font-semibold text-xs leading-5 tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] md:px-4 md:py-3 md:text-sm",
                 sidebarView === "channels"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground cursor-pointer hover:text-foreground",
+                  ? "border-cyan-500 border-b-2 bg-[linear-gradient(to_top,rgba(34,211,238,0.12),transparent)] text-cyan-700 shadow-[inset_0_-1px_0_rgba(34,211,238,0.18)] dark:border-cyan-300 dark:text-cyan-200"
+                  : "cursor-pointer border-transparent border-b-2 text-slate-500 hover:bg-cyan-400/5 hover:text-cyan-700 dark:text-slate-400 dark:hover:text-cyan-100",
               )}
             >
               {t("channels")} ({metadata?.channels.length || 0})
@@ -457,10 +460,10 @@ function PlayerPage() {
                 setSidebarView("epg");
               }}
               className={clsx(
-                "flex-1 px-3 md:px-4 py-2 md:py-3 text-xs md:text-sm font-medium transition-[color]",
+                "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap px-3 py-2 text-center font-semibold text-xs leading-5 tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] md:px-4 md:py-3 md:text-sm",
                 sidebarView === "epg"
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground cursor-pointer hover:text-foreground",
+                  ? "border-cyan-500 border-b-2 bg-[linear-gradient(to_top,rgba(34,211,238,0.12),transparent)] text-cyan-700 shadow-[inset_0_-1px_0_rgba(34,211,238,0.18)] dark:border-cyan-300 dark:text-cyan-200"
+                  : "cursor-pointer border-transparent border-b-2 text-slate-500 hover:bg-cyan-400/5 hover:text-cyan-700 dark:text-slate-400 dark:hover:text-cyan-100",
               )}
             >
               {t("programGuide")}
@@ -500,39 +503,48 @@ function PlayerPage() {
     const playlistErrorHints = [t("playlistErrorHintReachable"), t("playlistErrorHintFormat")];
 
     return (
-      <div className="min-h-dvh bg-background">
+      <div className="min-h-dvh bg-[radial-gradient(circle_at_18%_14%,rgba(34,211,238,0.16),transparent_28%),radial-gradient(circle_at_84%_82%,rgba(99,102,241,0.16),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_18%_14%,rgba(34,211,238,0.1),transparent_30%),radial-gradient(circle_at_84%_82%,rgba(99,102,241,0.13),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]">
         <title>{t("title")}</title>
         <div className="mx-auto flex min-h-dvh w-[calc(100%-2rem)] max-w-5xl items-center py-8 sm:w-[calc(100%-3rem)]">
-          <Card className="min-w-0 w-full overflow-hidden rounded-lg border-border/70 bg-card shadow-xl shadow-black/5 dark:shadow-black/40">
+          <Card className="min-w-0 w-full overflow-hidden rounded-3xl border-cyan-900/10 bg-white/72 shadow-[0_28px_80px_rgba(30,64,175,0.16),inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-2xl dark:border-cyan-100/12 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.9),rgba(26,24,72,0.82))] dark:shadow-[0_30px_90px_rgba(1,7,24,0.62),inset_0_1px_0_rgba(255,255,255,0.08)]">
             <div className="grid min-w-0 md:grid-cols-[minmax(0,1fr)_18rem]">
               <div className="min-w-0 p-6 sm:p-8 md:p-10">
-                <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-300/20 bg-[linear-gradient(145deg,rgba(251,113,133,0.16),rgba(99,102,241,0.12))] text-rose-500 shadow-[0_12px_28px_rgba(225,29,72,0.12)] dark:text-rose-300">
                   <AlertTriangle className="h-6 w-6" aria-hidden="true" />
                 </div>
 
-                <div className="text-sm font-semibold text-primary">{t("playlistLoadEyebrow")}</div>
-                <h1 className="mt-2 text-2xl font-semibold text-foreground sm:text-3xl">{t("playlistLoadTitle")}</h1>
-                <p className="mt-3 max-w-2xl break-words text-sm leading-6 text-muted-foreground sm:text-base">
+                <div className="font-semibold text-cyan-700 text-sm dark:text-cyan-200">{t("playlistLoadEyebrow")}</div>
+                <h1 className="mt-2 text-balance font-semibold text-2xl text-foreground leading-tight tracking-tight sm:text-3xl">
+                  {t("playlistLoadTitle")}
+                </h1>
+                <p className="mt-3 max-w-2xl text-pretty break-words text-sm leading-6 text-muted-foreground sm:text-base">
                   {t("playlistLoadDescription")}
                 </p>
 
-                <div className="mt-6 min-w-0 rounded-lg border border-border/70 bg-muted/40 p-4">
+                <div className="mt-6 min-w-0 rounded-2xl border border-cyan-900/10 bg-cyan-50/45 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-cyan-100/10 dark:bg-cyan-300/6">
                   <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <ListChecks className="h-4 w-4 text-primary" aria-hidden="true" />
+                    <ListChecks className="h-4 w-4 text-cyan-600 dark:text-cyan-300" aria-hidden="true" />
                     {t("playlistErrorChecklist")}
                   </div>
-                  <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+                  <ul className="mt-3 space-y-2 text-sm leading-5 text-muted-foreground">
                     {playlistErrorHints.map((hint) => (
                       <li key={hint} className="flex min-w-0 gap-2">
-                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+                        <span
+                          className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(34,211,238,0.45)]"
+                          aria-hidden="true"
+                        />
                         <span className="min-w-0 break-words">{hint}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
 
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                  <Button type="button" onClick={loadPlaylist} className="gap-2">
+                <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+                  <Button
+                    type="button"
+                    onClick={loadPlaylist}
+                    className="w-full gap-2 rounded-xl bg-[linear-gradient(135deg,#0e7490,#4338ca)] text-white shadow-[0_10px_28px_rgba(8,145,178,0.24)] hover:brightness-105 sm:w-auto"
+                  >
                     <RefreshCw className="h-4 w-4" aria-hidden="true" />
                     {t("retry")}
                   </Button>
@@ -540,7 +552,11 @@ function PlayerPage() {
                     href={getM3UIntegrationGuideUrl(locale)}
                     target="_blank"
                     rel="noreferrer"
-                    className={buttonVariants({ variant: "outline", className: "gap-2" })}
+                    className={buttonVariants({
+                      variant: "outline",
+                      className:
+                        "w-full gap-2 rounded-xl border-cyan-900/12 bg-white/55 text-cyan-800 shadow-sm hover:bg-cyan-50 dark:border-cyan-100/15 dark:bg-slate-950/35 dark:text-cyan-100 dark:hover:bg-cyan-300/10 sm:w-auto",
+                    })}
                   >
                     {t("m3uIntegrationGuide")}
                     <ExternalLink className="h-4 w-4" aria-hidden="true" />
@@ -548,9 +564,9 @@ function PlayerPage() {
                 </div>
               </div>
 
-              <div className="min-w-0 border-t border-border/70 bg-muted/30 p-6 md:border-t-0 md:border-l md:p-8">
+              <div className="min-w-0 border-cyan-900/10 border-t bg-[linear-gradient(145deg,rgba(224,242,254,0.42),rgba(238,242,255,0.58))] p-6 dark:border-cyan-100/10 dark:bg-[linear-gradient(145deg,rgba(8,47,73,0.22),rgba(30,27,75,0.3))] md:border-t-0 md:border-l md:p-8">
                 <div className="text-sm font-semibold text-foreground">{t("playlistEndpoint")}</div>
-                <div className="mt-3 rounded-lg border border-border/70 bg-background px-3 py-2 font-mono text-sm text-foreground">
+                <div className="mt-3 break-all rounded-xl border border-cyan-900/10 bg-white/55 px-3 py-2 font-mono text-foreground text-sm leading-5 shadow-inner dark:border-cyan-100/10 dark:bg-slate-950/42">
                   {buildAppPath("/playlist.m3u")}
                 </div>
                 <div className="mt-6 text-sm font-semibold text-foreground">{t("technicalDetails")}</div>
@@ -571,13 +587,13 @@ function PlayerPage() {
       {isLoading && (
         <div
           className={clsx(
-            "fixed inset-0 z-50 flex items-center justify-center bg-background",
+            "fixed inset-0 z-50 flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.16),transparent_28%),radial-gradient(circle_at_65%_60%,rgba(99,102,241,0.14),transparent_35%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.11),transparent_30%),radial-gradient(circle_at_65%_60%,rgba(99,102,241,0.12),transparent_38%),linear-gradient(145deg,#050b18,#090d24)]",
             isRevealing && "animate-zoom-fade-out",
           )}
         >
           <div className="text-center space-y-4">
             {/* Loading spinner */}
-            <div className="h-12 w-12 mx-auto rounded-full border-4 border-muted border-t-primary animate-spin" />
+            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-cyan-950/10 border-t-cyan-500 border-r-indigo-500 shadow-[0_0_28px_rgba(34,211,238,0.22)] dark:border-cyan-100/10 dark:border-t-cyan-300 dark:border-r-indigo-400" />
           </div>
         </div>
       )}

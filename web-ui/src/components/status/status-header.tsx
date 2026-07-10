@@ -7,6 +7,7 @@ import type { Locale } from "../../lib/locale";
 import type { BandwidthUnit, ThemeMode } from "../../types/ui";
 import { Badge } from "../ui/badge";
 import { SelectBox } from "../ui/select-box";
+import { STATUS_CONTROL_GROUP_CLASS, STATUS_PANEL_CLASS } from "./classnames";
 
 interface StatusHeaderProps {
   statusAccent: string;
@@ -45,16 +46,17 @@ function HeaderSelect<T extends string>({
   value,
   onChange,
   options,
-  containerClassName = "min-w-[140px]",
+  containerClassName = "md:min-w-[128px]",
 }: HeaderSelectProps<T>) {
   return (
-    <div className="flex items-center gap-2">
-      {icon}
-      <span className="hidden text-xs font-semibold uppercase tracking-wide md:inline">{label}</span>
+    <div className={clsx("group flex w-full items-center gap-1.5 md:w-auto md:shrink-0", STATUS_CONTROL_GROUP_CLASS)}>
+      <span className="shrink-0 text-primary/75 transition-colors group-hover:text-primary">{icon}</span>
+      <span className="hidden whitespace-nowrap text-xs font-semibold tracking-[0.06em] xl:inline">{label}</span>
       <SelectBox
         value={value}
         onChange={(event) => onChange(event.target.value as T)}
-        containerClassName={containerClassName}
+        containerClassName={clsx("min-w-0 flex-1 md:flex-none", containerClassName)}
+        className="border-border/40 bg-background/60 shadow-none transition-colors hover:border-primary/30"
         aria-label={label}
       >
         {options.map((option) => (
@@ -86,55 +88,63 @@ export function StatusHeader({
   const t = useStatusTranslation(locale);
   const themeSelectOptions = themeOptions.map((option) => ({ value: option, label: t(themeLabels[option]) }));
   return (
-    <header className="rounded-3xl border border-border/60 bg-card/85 p-4 shadow-sm backdrop-blur">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <header
+      className={clsx(STATUS_PANEL_CLASS, "overflow-hidden p-4 sm:p-5")}
+      style={{
+        backgroundImage:
+          "radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.14), transparent 36%), radial-gradient(circle at 92% -20%, rgba(14, 165, 233, 0.12), transparent 34%)",
+      }}
+    >
+      <div className="relative flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className={clsx("inline-flex items-center gap-2 font-medium", statusAccent)}>
+          <div className="flex min-h-11 flex-wrap items-center gap-2 text-sm">
+            <span
+              className={clsx(
+                "inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-full border px-3 text-xs font-semibold tracking-wide",
+                statusAccent,
+              )}
+            >
               <Wifi className="h-4 w-4" />
               {statusLabel}
             </span>
-            <Badge variant="outline" className="border-border/60">
-              {t("lastUpdated")}: {lastUpdated}
+            <Badge
+              variant="outline"
+              className="h-9 whitespace-nowrap border-border/50 bg-background/45 px-3 font-medium text-muted-foreground shadow-sm backdrop-blur-md dark:border-white/10"
+            >
+              {t("lastUpdated")}: <span className="ml-1 font-mono tabular-nums">{lastUpdated}</span>
             </Badge>
           </div>
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">
-              {t("uptime")}: {uptime}
+              {t("uptime")}: <span className="font-mono font-medium tabular-nums text-foreground/85">{uptime}</span>
             </p>
             <p className="text-sm text-muted-foreground">
-              {t("version")}: {version}
+              {t("version")}: <span className="font-mono font-medium text-foreground/85">{version}</span>
             </p>
           </div>
         </div>
-        <div className="flex flex-col gap-2 text-sm text-muted-foreground md:flex-row md:flex-wrap md:items-start lg:justify-end">
+        <div className="flex flex-col gap-2 text-sm text-muted-foreground md:flex-row md:flex-wrap md:items-start lg:flex-nowrap lg:justify-end">
           <HeaderSelect
-            icon={<Globe className="h-4 w-4 text-muted-foreground" />}
+            icon={<Globe className="h-4 w-4" />}
             label={t("language")}
             value={locale}
             onChange={onLocaleChange}
             options={localeOptions}
           />
           <HeaderSelect
-            icon={
-              theme === "dark" ? (
-                <Moon className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <Sun className="h-4 w-4 text-muted-foreground" />
-              )
-            }
+            icon={theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             label={t("appearance")}
             value={theme}
             onChange={onThemeChange}
             options={themeSelectOptions}
           />
           <HeaderSelect
-            icon={<Activity className="h-4 w-4 text-muted-foreground" />}
+            icon={<Activity className="h-4 w-4" />}
             label={t("bandwidthUnit")}
             value={bandwidthUnit}
             onChange={onBandwidthUnitChange}
             options={BANDWIDTH_UNIT_OPTIONS}
-            containerClassName="min-w-[120px]"
+            containerClassName="md:min-w-[108px]"
           />
         </div>
       </div>

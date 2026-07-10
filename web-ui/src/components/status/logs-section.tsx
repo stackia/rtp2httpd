@@ -1,3 +1,4 @@
+import { clsx } from "clsx";
 import { List } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
@@ -5,6 +6,22 @@ import type { Locale } from "../../lib/locale";
 import type { LogEntry } from "../../types";
 import { SelectBox } from "../ui/select-box";
 import { Switch } from "../ui/switch";
+import { STATUS_CONTROL_GROUP_CLASS, STATUS_PANEL_CLASS, STATUS_SECTION_TITLE_CLASS } from "./classnames";
+
+function getLogLevelClass(levelName: string): string {
+  switch (levelName.toUpperCase()) {
+    case "FATAL":
+    case "ERROR":
+      return "text-rose-300 drop-shadow-[0_0_8px_rgba(251,113,133,0.3)]";
+    case "WARN":
+    case "WARNING":
+      return "text-amber-300 drop-shadow-[0_0_8px_rgba(252,211,77,0.25)]";
+    case "DEBUG":
+      return "text-violet-300";
+    default:
+      return "text-cyan-300";
+  }
+}
 
 interface LogsSectionProps {
   logs: LogEntry[];
@@ -55,19 +72,19 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
   }, [locale]);
 
   return (
-    <section className="flex flex-col rounded-3xl border border-border/60 bg-card/90 p-5 shadow-sm">
+    <section className={clsx(STATUS_PANEL_CLASS, "flex flex-col p-5 sm:p-6")}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-xl font-semibold tracking-tight text-card-foreground">{t("logs")}</h2>
-        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
+        <h2 className={STATUS_SECTION_TITLE_CLASS}>{t("logs")}</h2>
+        <div className="flex flex-wrap items-center justify-start gap-3 text-sm text-muted-foreground sm:justify-end">
+          <div className={clsx("flex items-center gap-2", STATUS_CONTROL_GROUP_CLASS)}>
             <List className="h-4 w-4" />
-            <span>{t("logLevel")}:</span>
+            <span className="whitespace-nowrap">{t("logLevel")}:</span>
             <SelectBox
               value={logLevelValue ?? ""}
               onChange={(event) => onLogLevelChange(event.target.value)}
               disabled={disabled}
               containerClassName="min-w-[120px]"
-              className="text-sm font-medium"
+              className="border-border/40 bg-background/60 text-sm font-medium shadow-none hover:border-primary/30"
               aria-label={t("logLevel")}
             >
               {!logLevelValue && <option value="">--</option>}
@@ -78,8 +95,8 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
               ))}
             </SelectBox>
           </div>
-          <div className="flex items-center gap-2">
-            <span>{t("autoScroll")}:</span>
+          <div className={clsx("flex items-center gap-2", STATUS_CONTROL_GROUP_CLASS)}>
+            <span className="whitespace-nowrap">{t("autoScroll")}:</span>
             <Switch
               checked={autoScroll}
               onCheckedChange={setAutoScroll}
@@ -91,19 +108,28 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
       </div>
       <div
         ref={viewportRef}
-        className="mt-5 h-100 overflow-y-auto rounded-2xl border border-border/50 bg-muted/20 p-4 backdrop-blur-sm scrollbar-thin scrollbar-thumb-muted-foreground scrollbar-track-transparent [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground"
+        className="mt-5 h-100 overflow-y-auto rounded-2xl border border-slate-700/70 bg-slate-950/95 p-3 text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_20px_80px_rgba(15,23,42,0.42),0_20px_54px_-36px_rgba(2,6,23,0.9)] backdrop-blur-xl scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700 sm:p-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700"
       >
         {logs.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">--</div>
+          <div className="flex h-full items-center justify-center text-sm text-slate-500">--</div>
         ) : (
-          <div className="space-y-1 font-mono text-sm">
+          <div className="space-y-1.5 font-mono text-sm">
             {logs.map((log) => (
               <div
                 key={`${log.timestamp}-${log.message}`}
-                className="rounded-lg border border-transparent bg-card/40 p-2 transition hover:border-border/60 text-sm text-card-foreground whitespace-pre-wrap"
+                className="rounded-lg border border-white/4 bg-white/[0.025] p-2 text-sm text-slate-200 whitespace-pre-wrap transition-colors hover:border-white/8 hover:bg-white/4"
               >
-                <span className="text-muted-foreground">{timestampFormatter.format(new Date(log.timestamp))}</span>{" "}
-                <span className="font-semibold uppercase tracking-wide text-primary">{log.levelName}</span>{" "}
+                <span className="text-slate-500 tabular-nums sm:inline-block sm:min-w-[10.5rem]">
+                  {timestampFormatter.format(new Date(log.timestamp))}
+                </span>{" "}
+                <span
+                  className={clsx(
+                    "inline-block w-14 font-semibold uppercase tracking-wide",
+                    getLogLevelClass(log.levelName),
+                  )}
+                >
+                  {log.levelName}
+                </span>{" "}
                 {log.message}
               </div>
             ))}

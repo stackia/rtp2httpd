@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import type { Channel, EPGProgram } from "../../types/player";
-import { PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
+import { PLAYER_CONTROL_BUTTON_CLASS, PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 
 interface PlayerControlsProps {
   // Channel information
@@ -205,16 +205,16 @@ export function PlayerControls({
   }, []);
 
   return (
-    <div className="w-full bg-linear-to-t from-black/95 via-black/70 to-transparent px-3 md:px-4 pb-3 md:pb-4 pt-8 md:pt-12 flex flex-col gap-2 md:gap-3">
+    <div className="flex w-full flex-col gap-2 bg-[linear-gradient(to_top,rgba(2,8,23,0.98)_0%,rgba(8,22,51,0.9)_46%,rgba(21,27,69,0.48)_72%,transparent_100%)] px-3 pt-8 pb-3 md:gap-3 md:px-4 md:pt-12 md:pb-4">
       {/* Program Info */}
       {currentProgram && (
-        <div className="flex items-center justify-between text-xs md:text-sm text-white/80">
-          <div className="flex-1 truncate">
-            <span className="font-medium">{formatTime(startTime)}</span>
-            <span className="mx-1 md:mx-2 text-white/40">|</span>
+        <div className="flex min-w-0 items-center justify-between gap-2 text-xs tracking-[0.01em] text-cyan-50/80 md:text-sm">
+          <div className="min-w-0 flex-1 truncate">
+            <span className="font-medium text-cyan-100">{formatTime(startTime)}</span>
+            <span className="mx-1 text-cyan-100/30 md:mx-2">|</span>
             <span className="text-white/90">{currentProgram.title || t("excellentProgram")}</span>
           </div>
-          <span className="font-medium ml-2">{formatTime(endTime)}</span>
+          <span className="shrink-0 font-medium tabular-nums">{formatTime(endTime)}</span>
         </div>
       )}
 
@@ -229,24 +229,32 @@ export function PlayerControls({
           aria-valuenow={Math.round(progress)}
           aria-label={t("seekTo")}
           className={clsx(
-            "group relative h-2 rounded-full bg-white/20 transition-[height,box-shadow] duration-150",
-            isCatchupSupported ? "cursor-pointer hover:h-3" : "cursor-default",
+            "group relative h-2 rounded-full bg-cyan-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-[height,box-shadow] duration-150",
+            isCatchupSupported
+              ? "cursor-pointer hover:h-3 hover:shadow-[0_0_20px_rgba(34,211,238,0.16),inset_0_1px_3px_rgba(0,0,0,0.45)]"
+              : "cursor-default",
           )}
           onMouseDown={isCatchupSupported ? handleMouseDown : undefined}
           onMouseMove={isCatchupSupported ? handleMouseMove : undefined}
           onMouseLeave={isCatchupSupported ? handleMouseLeave : undefined}
         >
           <div
-            className="absolute left-0 top-0 h-full rounded-full bg-blue-500 transition-[width] duration-150"
+            className="absolute top-0 left-0 h-full rounded-full bg-[linear-gradient(90deg,#22d3ee_0%,#38bdf8_52%,#6366f1_100%)] shadow-[0_0_18px_rgba(34,211,238,0.4)] transition-[width] duration-150"
             style={{ width: `${progress}%` }}
           />
 
           {isCatchupSupported && hoverPosition !== null && (
             <>
-              <div className="absolute top-0 h-full w-0.5 bg-white/60" style={{ left: `${hoverPosition}%` }} />
+              <div
+                className="absolute top-0 h-full w-0.5 bg-cyan-50/80 shadow-[0_0_8px_rgba(103,232,249,0.7)]"
+                style={{ left: `${hoverPosition}%` }}
+              />
               {hoverTime && (
                 <div
-                  className="absolute bottom-full mb-2 -translate-x-1/2 whitespace-nowrap rounded bg-black/90 px-2 py-1 text-xs text-white shadow-lg"
+                  className={clsx(
+                    PLAYER_OVERLAY_SURFACE_CLASS,
+                    "absolute bottom-full mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-medium text-cyan-50",
+                  )}
                   style={{ left: `${hoverPosition}%` }}
                 >
                   {formatTime(hoverTime, true)}
@@ -257,7 +265,7 @@ export function PlayerControls({
 
           <div
             className={clsx(
-              "absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-lg transition-[left] duration-150",
+              "absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-cyan-300 shadow-[0_0_16px_rgba(103,232,249,0.75)] transition-[left,width,height] duration-150",
               isCatchupSupported && "group-hover:h-4 group-hover:w-4",
             )}
             style={{ left: `${progress}%` }}
@@ -266,14 +274,14 @@ export function PlayerControls({
       )}
 
       {/* Control Bar */}
-      <div className="flex items-center justify-between">
+      <div className="flex min-w-0 items-center justify-between gap-1">
         {/* Left Controls */}
-        <div className="flex items-center gap-1.5 md:gap-3">
+        <div className="flex min-w-0 items-center gap-0.5 sm:gap-1.5 md:gap-3">
           {/* Play/Pause */}
           <button
             type="button"
             onClick={onPlayPause}
-            className="rounded-full p-1.5 md:p-2 text-white transition cursor-pointer hover:bg-white/20 active:scale-95"
+            className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1.5 md:p-2")}
             title={isPlaying ? t("pause") : t("play")}
           >
             {isPlaying ? <Pause className="h-5 w-5 md:h-7 md:w-7" /> : <Play className="h-5 w-5 md:h-7 md:w-7" />}
@@ -284,7 +292,7 @@ export function PlayerControls({
             <button
               type="button"
               onClick={onMuteToggle}
-              className="rounded-full p-1.5 md:p-2 text-white transition cursor-pointer hover:bg-white/20 active:scale-95"
+              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1.5 md:p-2")}
               title={isMuted ? t("unmute") : t("mute")}
             >
               {isMuted || volume === 0 ? (
@@ -300,7 +308,7 @@ export function PlayerControls({
             <div
               className={clsx(
                 PLAYER_OVERLAY_SURFACE_CLASS,
-                "invisible absolute bottom-full left-1/2 -translate-x-1/2 cursor-pointer rounded-lg px-2 py-2 opacity-0 transition-[opacity,visibility] duration-150 group-hover/volume:visible group-hover/volume:opacity-100 md:px-3",
+                "invisible absolute bottom-full left-1/2 -translate-x-1/2 cursor-pointer rounded-xl px-2 py-2 opacity-0 transition-[opacity,visibility] duration-150 group-hover/volume:visible group-hover/volume:opacity-100 group-focus-within/volume:visible group-focus-within/volume:opacity-100 md:px-3",
               )}
             >
               <input
@@ -312,14 +320,14 @@ export function PlayerControls({
                 onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
                 className="h-16 md:h-20 w-1 cursor-pointer appearance-none bg-transparent [writing-mode:vertical-lr] [direction:rtl]"
                 style={{
-                  background: `linear-gradient(to top, #3b82f6 0%, #3b82f6 ${(isMuted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) ${(isMuted ? 0 : volume) * 100}%, rgba(255,255,255,0.2) 100%)`,
+                  background: `linear-gradient(to top, #22d3ee 0%, #6366f1 ${(isMuted ? 0 : volume) * 100}%, rgba(207,250,254,0.18) ${(isMuted ? 0 : volume) * 100}%, rgba(207,250,254,0.18) 100%)`,
                 }}
               />
             </div>
           </div>
 
           {/* Time Display */}
-          <div className="text-xs md:text-sm text-white/80">
+          <div className="hidden whitespace-nowrap text-xs text-cyan-50/75 tabular-nums min-[360px]:block md:text-sm">
             {currentProgram ? (
               <span>
                 {formatDuration(elapsedTime)} / {formatDuration(duration)}
@@ -333,18 +341,21 @@ export function PlayerControls({
         </div>
 
         {/* Right Controls */}
-        <div className="flex items-center gap-1 md:gap-2">
+        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1 md:gap-2">
           {/* Live/Catchup Indicator & Go Live Button */}
           {isLive ? (
-            <span className="flex items-center gap-1 md:gap-1.5 p-1.5 md:p-2 text-xs md:text-sm font-medium text-white">
-              <span className="h-1.5 w-1.5 md:h-2 md:w-2 animate-pulse rounded-full bg-red-600" />
+            <span className="flex items-center gap-1 whitespace-nowrap p-1.5 text-xs font-semibold tracking-wide text-white md:gap-1.5 md:p-2 md:text-sm">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400 shadow-[0_0_12px_rgba(251,113,133,0.85)] md:h-2 md:w-2" />
               {t("live")}
             </span>
           ) : (
             <button
               type="button"
               onClick={() => onSeek(new Date())}
-              className="rounded-full px-2 py-1 md:px-2.5 md:py-1.5 text-white transition hover:bg-white/20 active:scale-95 cursor-pointer text-xs md:text-sm font-medium"
+              className={clsx(
+                PLAYER_CONTROL_BUTTON_CLASS,
+                "cursor-pointer whitespace-nowrap bg-cyan-300/10 px-2 py-1 text-xs font-medium text-cyan-50 md:px-2.5 md:py-1.5 md:text-sm",
+              )}
             >
               {t("goLive")}
             </button>
@@ -355,14 +366,17 @@ export function PlayerControls({
             <div className="group/source relative flex items-center focus-within:z-10" tabIndex={-1}>
               <button
                 type="button"
-                className="rounded-full px-2 py-1 md:px-2.5 md:py-1.5 text-xs md:text-sm font-medium text-white transition hover:bg-white/20 active:scale-95 cursor-pointer"
+                className={clsx(
+                  PLAYER_CONTROL_BUTTON_CLASS,
+                  "max-w-16 cursor-pointer truncate px-2 py-1 text-xs font-medium min-[360px]:max-w-24 md:max-w-40 md:px-2.5 md:py-1.5 md:text-sm",
+                )}
               >
                 {channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}
               </button>
               <div
                 className={clsx(
                   PLAYER_OVERLAY_SURFACE_CLASS,
-                  "invisible absolute bottom-full left-1/2 -translate-x-1/2 rounded-lg py-1 opacity-0 transition-[opacity,visibility] duration-150 group-hover/source:visible group-hover/source:opacity-100 group-focus-within/source:visible group-focus-within/source:opacity-100",
+                  "invisible absolute bottom-full left-1/2 -translate-x-1/2 overflow-hidden rounded-xl py-1 opacity-0 transition-[opacity,visibility] duration-150 group-hover/source:visible group-hover/source:opacity-100 group-focus-within/source:visible group-focus-within/source:opacity-100",
                 )}
               >
                 {channel.sources
@@ -377,8 +391,10 @@ export function PlayerControls({
                         e.currentTarget.blur();
                       }}
                       className={clsx(
-                        "block w-full whitespace-nowrap px-3 py-1.5 text-xs md:text-sm text-left transition-colors cursor-pointer",
-                        index === activeSourceIndex ? "text-primary font-medium" : "text-white/80 hover:bg-white/10",
+                        "block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs transition-colors md:text-sm",
+                        index === activeSourceIndex
+                          ? "bg-cyan-300/10 font-medium text-cyan-200"
+                          : "text-white/75 hover:bg-cyan-200/10 hover:text-cyan-50",
                       )}
                     >
                       <span className="flex items-center gap-2">
@@ -395,7 +411,7 @@ export function PlayerControls({
           <button
             type="button"
             onClick={onFullscreen}
-            className="rounded-full p-1.5 md:p-2 text-white transition hover:bg-white/20 active:scale-95 cursor-pointer"
+            className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1.5 md:p-2")}
             title={isFullscreen ? t("exitFullscreen") : t("fullscreen")}
           >
             {isFullscreen ? (
@@ -410,7 +426,7 @@ export function PlayerControls({
             <button
               type="button"
               onClick={onPiPToggle}
-              className="rounded-full p-1.5 md:p-2 text-white transition hover:bg-white/20 active:scale-95 cursor-pointer"
+              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1.5 md:p-2")}
               title={t("pictureInPicture")}
             >
               <PictureInPicture className="h-5 w-5 md:h-6 md:w-6" />
@@ -422,7 +438,7 @@ export function PlayerControls({
             <button
               type="button"
               onClick={onToggleSidebar}
-              className="hidden md:flex rounded-full p-1.5 md:p-2 text-white transition hover:bg-white/20 active:scale-95 cursor-pointer"
+              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "hidden cursor-pointer p-1.5 md:flex md:p-2")}
               title={showSidebar ? t("hideSidebar") : t("showSidebar")}
             >
               {showSidebar ? (

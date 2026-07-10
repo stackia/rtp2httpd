@@ -129,10 +129,15 @@ function ChannelListComponent({
     }, 0);
 
     if (!currentChannel) return;
-    if (nextScrollBehaviorRef.current === "skip") return;
+    const requestedBehavior = nextScrollBehaviorRef.current;
+    if (requestedBehavior === "skip") return;
+    const behavior =
+      requestedBehavior === "smooth" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : requestedBehavior;
 
     currentChannelRef.current?.scrollIntoView({
-      behavior: nextScrollBehaviorRef.current,
+      behavior,
       block: "center",
     });
   }, [currentChannel]);
@@ -176,37 +181,37 @@ function ChannelListComponent({
   }, []);
 
   return (
-    <div className="flex h-full flex-col bg-card">
+    <div className="flex h-full flex-col bg-transparent">
       {/* Search */}
       <div className="px-2 pt-2 pb-0">
-        <div className="flex items-center">
-          <div className="relative flex-1">
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
             <input
               type="text"
               placeholder={t("searchChannels")}
               value={searchQuery}
               onChange={handleSearchInputChange}
               onKeyDown={handleSearchKeyDown}
-              className="w-full rounded-lg border border-border bg-background px-3 py-1 md:py-1.5 pl-8 md:pl-9 text-xs md:text-sm shadow-sm transition focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="h-8 w-full rounded-xl border border-cyan-900/10 bg-white/60 px-3 py-0 pl-8 text-slate-800 text-xs shadow-[0_8px_24px_rgba(30,64,175,0.06),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-xl transition placeholder:text-slate-400 focus:border-cyan-400/60 focus:outline-none focus:ring-2 focus:ring-cyan-400/20 dark:border-cyan-100/10 dark:bg-slate-950/45 dark:text-cyan-50 dark:placeholder:text-slate-500 md:h-9 md:pl-9 md:text-sm"
             />
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 md:h-4 md:w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-cyan-600/65 dark:text-cyan-300/55 md:h-4 md:w-4" />
           </div>
-          {settingsSlot && <div>{settingsSlot}</div>}
+          {settingsSlot && <div className="shrink-0">{settingsSlot}</div>}
         </div>
       </div>
 
       {/* Groups */}
       {groups && groups.length > 0 && (
-        <div className="border-y border-border bg-muted/30 px-2 py-2 mt-2">
-          <div className="flex flex-wrap gap-1.5">
+        <div className="mt-2 border-cyan-950/10 border-y bg-[linear-gradient(90deg,rgba(224,242,254,0.55),rgba(238,242,255,0.68))] px-2 py-2 backdrop-blur-xl dark:border-cyan-100/10 dark:bg-[linear-gradient(90deg,rgba(8,47,73,0.3),rgba(30,27,75,0.36))]">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               onClick={() => setSelectedGroup(null)}
               className={clsx(
-                "rounded-lg px-2.5 md:px-2 py-0.5 md:py-1 text-xs font-medium transition-[color,background-color,box-shadow]",
+                "min-h-7 max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-2.5 py-1 font-medium text-xs leading-none transition-[color,background-color,border-color,box-shadow]",
                 selectedGroup === null
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "bg-background text-muted-foreground cursor-pointer hover:bg-background/80 hover:text-foreground",
+                  ? "border-cyan-400/25 bg-[linear-gradient(135deg,#0891b2,#4f46e5)] text-white shadow-[0_5px_14px_rgba(8,145,178,0.25)]"
+                  : "cursor-pointer border border-cyan-900/8 bg-white/55 text-slate-500 hover:border-cyan-400/30 hover:bg-cyan-50/80 hover:text-cyan-800 dark:border-cyan-100/10 dark:bg-slate-950/35 dark:text-slate-400 dark:hover:bg-cyan-300/10 dark:hover:text-cyan-100",
               )}
             >
               {t("allChannels")}
@@ -217,10 +222,10 @@ function ChannelListComponent({
                 key={group}
                 onClick={() => setSelectedGroup(group)}
                 className={clsx(
-                  "rounded-lg px-2.5 md:px-2 py-0.5 md:py-1 text-xs font-medium transition-[color,background-color,box-shadow]",
+                  "min-h-7 max-w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-2.5 py-1 font-medium text-xs leading-none transition-[color,background-color,border-color,box-shadow]",
                   selectedGroup === group
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "cursor-pointer bg-background text-muted-foreground hover:bg-background/80 hover:text-foreground",
+                    ? "border-cyan-400/25 bg-[linear-gradient(135deg,#0891b2,#4f46e5)] text-white shadow-[0_5px_14px_rgba(8,145,178,0.25)]"
+                    : "cursor-pointer border border-cyan-900/8 bg-white/55 text-slate-500 hover:border-cyan-400/30 hover:bg-cyan-50/80 hover:text-cyan-800 dark:border-cyan-100/10 dark:bg-slate-950/35 dark:text-slate-400 dark:hover:bg-cyan-300/10 dark:hover:text-cyan-100",
                 )}
               >
                 {group}

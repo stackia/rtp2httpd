@@ -31,15 +31,15 @@ export const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
         onClick={toggle}
         onKeyDown={handleKeyDown}
         className={clsx(
-          "relative shrink-0 inline-flex h-6 w-11 items-center rounded-full border border-input bg-input transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50",
-          checked ? "bg-primary" : "bg-input",
+          "ui-switch relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border transition-[background-color,border-color,box-shadow] duration-200 motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50",
+          checked ? "ui-switch--checked" : "ui-switch--unchecked",
           className,
         )}
         {...props}
       >
         <span
           className={clsx(
-            "ml-0.5 inline-block h-5 w-5 rounded-full bg-background shadow transition-transform",
+            "ml-0.5 inline-block h-5 w-5 rounded-full bg-white shadow-md ring-1 ring-black/5 transition-transform duration-200 motion-reduce:transition-none",
             checked ? "translate-x-5" : "translate-x-0",
           )}
         />

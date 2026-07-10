@@ -74,10 +74,15 @@ function EPGViewComponent({
     }, 0);
 
     if (!currentPlayingProgram || !channelId || !channelPrograms.length) return;
-    if (nextScrollBehaviorRef.current === "skip") return;
+    const requestedBehavior = nextScrollBehaviorRef.current;
+    if (requestedBehavior === "skip") return;
+    const behavior =
+      requestedBehavior === "smooth" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "instant"
+        : requestedBehavior;
 
     currentProgramRef.current?.scrollIntoView({
-      behavior: nextScrollBehaviorRef.current,
+      behavior,
       block: "center",
     });
   }, [currentPlayingProgram, channelId, channelPrograms]);
@@ -138,7 +143,11 @@ function EPGViewComponent({
   };
 
   if (!channelId || channelPrograms.length === 0) {
-    return <div className="flex h-full items-center justify-center text-muted-foreground">{t("noEpgAvailable")}</div>;
+    return (
+      <div className="flex h-full items-center justify-center bg-transparent px-6 text-center text-slate-500 text-sm leading-6 dark:text-slate-400">
+        {t("noEpgAvailable")}
+      </div>
+    );
   }
 
   return (
@@ -149,8 +158,10 @@ function EPGViewComponent({
           return (
             <div key={dateKey} className="relative">
               {/* Date Header */}
-              <div className="sticky top-0 z-10 border-b border-border bg-card px-3 md:px-4 py-1.5 md:py-2 shadow-sm">
-                <h3 className="text-xs md:text-sm font-semibold text-foreground">{formatRelativeDate(date)}</h3>
+              <div className="sticky top-0 z-10 border-cyan-950/10 border-b bg-white/66 px-3 py-1.5 shadow-[0_8px_20px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-cyan-100/10 dark:bg-slate-950/62 dark:shadow-[0_8px_20px_rgba(0,0,0,0.18)] md:px-4 md:py-2">
+                <h3 className="font-semibold text-cyan-800 text-xs tracking-wide dark:text-cyan-100 md:text-sm">
+                  {formatRelativeDate(date)}
+                </h3>
               </div>
 
               {/* Programs for this date */}
@@ -167,14 +178,14 @@ function EPGViewComponent({
                         key={program.id}
                         ref={playing ? currentProgramRef : null}
                         className={clsx(
-                          "rounded-xl border bg-card text-card-foreground shadow overflow-hidden transition-[color,background-color,border-color,box-shadow,opacity] duration-200 w-full text-left",
+                          "w-full overflow-hidden rounded-2xl border text-left text-card-foreground transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200",
                           playing
-                            ? "border-primary bg-primary/5 shadow-md"
+                            ? "border-cyan-400/45 bg-[linear-gradient(135deg,rgba(34,211,238,0.14),rgba(99,102,241,0.12))] shadow-[0_12px_28px_rgba(8,145,178,0.13),inset_0_1px_0_rgba(255,255,255,0.55)] dark:border-cyan-300/35 dark:shadow-[0_12px_30px_rgba(2,8,23,0.34),0_0_20px_rgba(34,211,238,0.06)]"
                             : isPast
-                              ? "border-border opacity-70"
-                              : "border-border",
+                              ? "border-slate-200/65 bg-white/38 opacity-65 dark:border-white/8 dark:bg-slate-950/28"
+                              : "border-slate-200/70 bg-white/52 shadow-[0_8px_22px_rgba(30,64,175,0.05),inset_0_1px_0_rgba(255,255,255,0.5)] dark:border-white/8 dark:bg-slate-950/36 dark:shadow-[0_8px_22px_rgba(0,0,0,0.16)]",
                           ((isPast && supportsCatchup) || onAir) &&
-                            "cursor-pointer hover:border-primary/50 hover:bg-muted/50 hover:opacity-100 hover:shadow-sm",
+                            "cursor-pointer motion-safe:hover:-translate-y-px hover:border-cyan-400/35 hover:bg-cyan-50/55 hover:opacity-100 hover:shadow-[0_12px_28px_rgba(8,145,178,0.1)] dark:hover:border-cyan-300/25 dark:hover:bg-cyan-300/7",
                         )}
                         onClick={() => {
                           if (isPast && supportsCatchup) {
@@ -190,10 +201,13 @@ function EPGViewComponent({
                           {/* Left: Status Indicator Bar */}
                           <div className="flex shrink-0">
                             {playing ? (
-                              <div className="h-8 md:h-10 w-1 rounded-full bg-primary" title={t("nowPlaying")} />
+                              <div
+                                className="h-8 w-1 rounded-full bg-[linear-gradient(to_bottom,#22d3ee,#6366f1)] shadow-[0_0_12px_rgba(34,211,238,0.48)] md:h-10"
+                                title={t("nowPlaying")}
+                              />
                             ) : isPast && supportsCatchup ? (
                               <div
-                                className="h-8 md:h-10 w-1 rounded-full bg-muted-foreground/30"
+                                className="h-8 w-1 rounded-full bg-slate-400/25 dark:bg-cyan-100/18 md:h-10"
                                 title={t("replay")}
                               />
                             ) : (
@@ -202,23 +216,23 @@ function EPGViewComponent({
                           </div>
 
                           {/* Middle-Left: Time */}
-                          <div className="flex shrink-0 flex-col items-end">
+                          <div className="flex w-14 shrink-0 flex-col items-end md:w-16">
                             <span
                               className={clsx(
-                                "text-xs md:text-sm font-semibold tabular-nums leading-tight",
-                                playing && "text-primary",
+                                "font-semibold text-xs tabular-nums leading-tight md:text-sm",
+                                playing && "text-cyan-700 dark:text-cyan-200",
                               )}
                             >
                               {formatTime(program.start)}
                             </span>
-                            <span className="text-[10px] md:text-xs text-muted-foreground tabular-nums">
+                            <span className="text-[10px] text-slate-500 tabular-nums leading-4 dark:text-slate-400 md:text-xs">
                               {formatDuration(program.start, program.end)}
                             </span>
                           </div>
 
                           {/* Middle-Right: Title and Description */}
-                          <div className="flex-1 overflow-hidden min-w-0">
-                            <div className="text-sm md:text-base font-semibold leading-tight">
+                          <div className="min-w-0 flex-1 overflow-hidden">
+                            <div className="line-clamp-2 break-words font-semibold text-sm leading-tight tracking-[0.005em] md:text-base">
                               {program.title || t("excellentProgram")}
                             </div>
                           </div>
@@ -227,12 +241,12 @@ function EPGViewComponent({
                           <div className="flex h-8 md:h-10 w-3 md:w-4 shrink-0 items-center justify-center">
                             {onAir && (
                               <span title={t("onAir")}>
-                                <Circle className="h-2.5 w-2.5 md:h-3 md:w-3 text-primary fill-current" />
+                                <Circle className="h-2.5 w-2.5 fill-current text-cyan-500 drop-shadow-[0_0_5px_rgba(34,211,238,0.65)] md:h-3 md:w-3" />
                               </span>
                             )}
                             {isPast && supportsCatchup && (
                               <span title={t("replay")}>
-                                <History className="h-3 w-3 md:h-3.5 md:w-3.5 text-muted-foreground" />
+                                <History className="h-3 w-3 text-slate-400 dark:text-cyan-100/45 md:h-3.5 md:w-3.5" />
                               </span>
                             )}
                           </div>

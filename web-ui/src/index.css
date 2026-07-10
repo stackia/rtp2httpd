@@ -3,6 +3,10 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
+  --font-sans:
+    "Inter Variable", "SF Pro Display", "SF Pro Text", "Segoe UI Variable", "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", ui-monospace, monospace;
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
@@ -37,52 +41,358 @@
 }
 
 :root {
-  --background: 0 0% 98%;
-  --foreground: 220 15% 15%;
+  --background: 226 44% 97%;
+  --foreground: 229 36% 14%;
   --card: 0 0% 100%;
-  --card-foreground: 220 15% 15%;
+  --card-foreground: 229 36% 14%;
   --popover: 0 0% 100%;
-  --popover-foreground: 220 15% 15%;
-  --primary: 221 83% 53%;
+  --popover-foreground: 229 36% 14%;
+  --primary: 252 82% 59%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 210 40% 96%;
-  --secondary-foreground: 222 47% 11%;
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 46%;
-  --accent: 210 40% 96%;
-  --accent-foreground: 222 47% 11%;
-  --destructive: 0 84% 60%;
+  --secondary: 228 46% 94%;
+  --secondary-foreground: 232 36% 22%;
+  --muted: 225 31% 93%;
+  --muted-foreground: 226 15% 43%;
+  --accent: 250 58% 94%;
+  --accent-foreground: 252 52% 29%;
+  --destructive: 354 75% 48%;
   --destructive-foreground: 0 0% 98%;
-  --border: 214 32% 91%;
-  --input: 214 32% 91%;
-  --ring: 221 83% 53%;
-  --radius: 0.75rem;
+  --border: 226 27% 86%;
+  --input: 226 27% 82%;
+  --ring: 252 82% 59%;
+  --radius: 0.875rem;
 }
 
 .dark {
-  --background: 222 47% 8%;
-  --foreground: 210 40% 98%;
-  --card: 222 47% 11%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222 47% 11%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 217 91% 60%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 217 32% 17%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217 32% 17%;
-  --muted-foreground: 215 20% 65%;
-  --accent: 217 32% 17%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 63% 47%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217 32% 17%;
-  --input: 217 32% 17%;
-  --ring: 224 76% 48%;
+  --background: 231 46% 7%;
+  --foreground: 220 32% 96%;
+  --card: 229 37% 11%;
+  --card-foreground: 220 32% 96%;
+  --popover: 229 38% 10%;
+  --popover-foreground: 220 32% 96%;
+  --primary: 252 92% 70%;
+  --primary-foreground: 235 44% 10%;
+  --secondary: 228 30% 17%;
+  --secondary-foreground: 220 32% 96%;
+  --muted: 228 25% 17%;
+  --muted-foreground: 224 16% 66%;
+  --accent: 248 33% 19%;
+  --accent-foreground: 246 82% 88%;
+  --destructive: 354 72% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 228 23% 22%;
+  --input: 228 24% 24%;
+  --ring: 252 92% 70%;
 }
 
 @layer base {
+  html {
+    min-height: 100%;
+    background: hsl(var(--background));
+    font-family: var(--font-sans);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    min-height: 100%;
+    min-width: 320px;
+    font-feature-settings:
+      "kern" 1,
+      "liga" 1,
+      "calt" 1;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.2);
+    color: hsl(var(--foreground));
+  }
+
   :focus-visible {
-    @apply outline-none ring-2 ring-ring;
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+@layer components {
+  :where(.ui-card) {
+    border: 1px solid hsl(var(--border) / 0.55);
+    border-radius: 1.5rem;
+    background: hsl(var(--card) / 0.8);
+    box-shadow:
+      0 18px 55px -36px rgba(45, 39, 94, 0.42),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+  }
+
+  .dark :where(.ui-card) {
+    box-shadow:
+      0 22px 65px -38px rgba(0, 0, 0, 0.9),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  }
+
+  :where(.ui-card-header) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    padding: 1.5rem;
+  }
+
+  :where(.ui-card-title) {
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+
+  :where(.ui-card-description) {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+
+  :where(.ui-card-content) {
+    padding: 0 1.5rem 1.5rem;
+  }
+
+  :where(.ui-card-footer) {
+    display: flex;
+    align-items: center;
+    padding: 0 1.5rem 1.5rem;
+  }
+
+  :where(.ui-button) {
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+  }
+
+  :where(.ui-button--default) {
+    border-color: hsl(var(--primary) / 0.2);
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    box-shadow: 0 8px 20px -10px hsl(var(--primary) / 0.55);
+  }
+
+  :where(.ui-button--default:hover) {
+    background: hsl(var(--primary));
+    box-shadow: 0 12px 26px -10px hsl(var(--primary) / 0.68);
+  }
+
+  :where(.ui-button--default:active) {
+    filter: brightness(0.94);
+  }
+
+  :where(.ui-button--destructive) {
+    border-color: hsl(var(--destructive) / 0.24);
+    background: hsl(var(--destructive));
+    color: hsl(var(--destructive-foreground));
+    box-shadow: 0 8px 20px -10px hsl(var(--destructive) / 0.5);
+  }
+
+  :where(.ui-button--destructive:hover) {
+    background: hsl(var(--destructive));
+    filter: brightness(0.92);
+  }
+
+  :where(.ui-button--outline) {
+    border-color: hsl(var(--input) / 0.8);
+    background: hsl(var(--background) / 0.6);
+    color: hsl(var(--foreground));
+    box-shadow: 0 4px 12px -8px rgba(15, 23, 42, 0.28);
+    backdrop-filter: blur(12px);
+  }
+
+  :where(.ui-button--outline:hover) {
+    border-color: hsl(var(--primary) / 0.3);
+    background: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+  }
+
+  :where(.ui-button--secondary) {
+    border-color: hsl(var(--border) / 0.6);
+    background: hsl(var(--secondary) / 0.85);
+    color: hsl(var(--secondary-foreground));
+    box-shadow: 0 4px 12px -8px rgba(15, 23, 42, 0.24);
+  }
+
+  :where(.ui-button--secondary:hover) {
+    background: hsl(var(--secondary));
+  }
+
+  :where(.ui-button--ghost) {
+    color: hsl(var(--foreground));
+  }
+
+  :where(.ui-button--ghost:hover),
+  :where(.ui-button--ghost:active) {
+    background: hsl(var(--accent) / 0.82);
+    color: hsl(var(--accent-foreground));
+  }
+
+  :where(.ui-button--link) {
+    color: hsl(var(--primary));
+    text-underline-offset: 4px;
+  }
+
+  :where(.ui-button--link:hover) {
+    text-decoration: underline;
+  }
+
+  :where(.ui-badge) {
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    box-shadow: 0 4px 12px -10px rgba(15, 23, 42, 0.35);
+  }
+
+  :where(.ui-badge--default) {
+    border-color: hsl(var(--primary) / 0.24);
+    background: hsl(var(--primary) / 0.12);
+    color: hsl(252 72% 34%);
+  }
+
+  :where(.ui-badge--default:hover) {
+    background: hsl(var(--primary) / 0.18);
+  }
+
+  .dark :where(.ui-badge--default) {
+    color: hsl(250 100% 88%);
+  }
+
+  :where(.ui-badge--secondary) {
+    border-color: hsl(var(--border) / 0.7);
+    background: hsl(var(--secondary) / 0.8);
+    color: hsl(var(--secondary-foreground));
+  }
+
+  :where(.ui-badge--secondary:hover) {
+    background: hsl(var(--secondary));
+  }
+
+  :where(.ui-badge--destructive) {
+    border-color: hsl(var(--destructive) / 0.24);
+    background: hsl(var(--destructive) / 0.12);
+    color: hsl(354 76% 34%);
+  }
+
+  :where(.ui-badge--destructive:hover) {
+    background: hsl(var(--destructive) / 0.18);
+  }
+
+  .dark :where(.ui-badge--destructive) {
+    color: hsl(350 100% 88%);
+  }
+
+  :where(.ui-badge--outline) {
+    border-color: hsl(var(--border) / 0.65);
+    background: hsl(var(--background) / 0.35);
+    color: hsl(var(--foreground));
+    backdrop-filter: blur(4px);
+  }
+
+  :where(.ui-select) {
+    border: 1px solid hsl(var(--input) / 0.8);
+    border-radius: var(--radius);
+    background: hsl(var(--background) / 0.55);
+    box-shadow: 0 4px 12px -8px rgba(15, 23, 42, 0.28);
+    backdrop-filter: blur(12px);
+    font-weight: 600;
+  }
+
+  :where(.ui-select:hover) {
+    border-color: hsl(var(--primary) / 0.3);
+    background: hsl(var(--background) / 0.75);
+  }
+
+  :where(.ui-select:focus-visible) {
+    border-color: hsl(var(--primary) / 0.5);
+  }
+
+  .dark :where(.ui-select) {
+    box-shadow: 0 4px 12px -8px rgba(0, 0, 0, 0.55);
+  }
+
+  :where(.ui-progress) {
+    height: 0.5rem;
+    border-radius: 9999px;
+    background: hsl(var(--muted) / 0.9);
+    box-shadow:
+      inset 0 1px 2px rgba(15, 23, 42, 0.12),
+      inset 0 0 0 1px hsl(var(--border) / 0.3);
+  }
+
+  :where(.ui-progress-indicator) {
+    border-radius: 9999px;
+    background: hsl(var(--primary));
+    box-shadow: 0 0 12px hsl(var(--primary) / 0.35);
+  }
+
+  :where(.ui-switch) {
+    box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.16);
+  }
+
+  :where(.ui-switch--checked) {
+    border-color: hsl(var(--primary) / 0.3);
+    background: hsl(var(--primary));
+  }
+
+  :where(.ui-switch--unchecked) {
+    border-color: hsl(var(--input) / 0.8);
+    background: hsl(var(--muted) / 0.9);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :where(.ui-button--default:hover),
+    :where(.ui-button--destructive:hover),
+    :where(.ui-button--outline:hover),
+    :where(.ui-button--secondary:hover) {
+      transform: translateY(-0.125rem);
+    }
+
+    :where(.ui-button--default:active),
+    :where(.ui-button--destructive:active),
+    :where(.ui-button--outline:active),
+    :where(.ui-button--secondary:active) {
+      transform: translateY(0);
+    }
+  }
+}
+
+@layer utilities {
+  .app-ambient {
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(circle at 8% -8%, hsl(252 92% 72% / 0.2), transparent 34rem),
+      radial-gradient(circle at 96% 2%, hsl(190 96% 60% / 0.14), transparent 30rem),
+      linear-gradient(180deg, hsl(226 56% 98% / 0.68), hsl(var(--background)) 28rem);
+    background-attachment: fixed;
+  }
+
+  .dark .app-ambient {
+    background-image:
+      radial-gradient(circle at 8% -10%, hsl(252 92% 66% / 0.18), transparent 36rem),
+      radial-gradient(circle at 94% 0%, hsl(190 96% 52% / 0.11), transparent 32rem),
+      linear-gradient(180deg, hsl(231 48% 9% / 0.8), hsl(var(--background)) 30rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-ambient {
+    background-attachment: scroll;
   }
 }

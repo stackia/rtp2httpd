@@ -164,10 +164,10 @@ function StatusPage() {
 
   const statusAccent =
     connectionState === "connected"
-      ? "text-emerald-500"
+      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 shadow-[0_0_24px_-12px_rgba(16,185,129,0.85)] dark:text-emerald-300"
       : connectionState === "reconnecting"
-        ? "text-amber-500"
-        : "text-destructive";
+        ? "border-amber-500/25 bg-amber-500/10 text-amber-700 shadow-[0_0_24px_-12px_rgba(245,158,11,0.8)] dark:text-amber-300"
+        : "border-rose-500/25 bg-rose-500/10 text-rose-700 shadow-[0_0_24px_-12px_rgba(244,63,94,0.8)] dark:text-rose-300";
 
   const stats = useMemo(
     () => [
@@ -202,8 +202,8 @@ function StatusPage() {
   return (
     <>
       <title>{t("title")}</title>
-      <div className="min-h-screen bg-background pb-12">
-        <div className="mx-auto flex w-full flex-col gap-4 sm:gap-6 p-3 sm:p-6">
+      <div className="app-ambient relative isolate min-h-screen overflow-x-hidden bg-background pb-12">
+        <div className="relative z-10 mx-auto flex w-full flex-col gap-4 p-3 sm:gap-6 sm:p-6">
           <StatusHeader
             statusAccent={statusAccent}
             statusLabel={statusLabel}

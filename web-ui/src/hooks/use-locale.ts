@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { detectBrowserLocale, type Locale, SUPPORTED_LOCALES } from "../lib/locale";
 import { usePersistedEnum } from "./use-persisted-enum";
 
@@ -8,5 +8,10 @@ export function useLocale(storageKey: string) {
     [],
   );
   const [locale, setLocale] = usePersistedEnum<Locale>(storageKey, browserLocale, SUPPORTED_LOCALES);
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
+
   return { locale, setLocale };
 }
