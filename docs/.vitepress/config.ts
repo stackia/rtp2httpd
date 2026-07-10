@@ -8,7 +8,7 @@ export default defineConfig({
 
   title: "rtp2httpd",
   cleanUrls: true,
-  head: [["link", { rel: "icon", href: "/icon.svg", type: "image/svg+xml" }]],
+  head: [["link", { rel: "icon", href: "/icon.png", type: "image/png" }]],
 
   sitemap: {
     hostname: "https://rtp2httpd.com",
@@ -156,7 +156,7 @@ export default defineConfig({
   },
 
   themeConfig: {
-    logo: "/icon.svg",
+    logo: "/icon.png",
     socialLinks: [{ icon: "github", link: "https://github.com/stackia/rtp2httpd" }],
     search: {
       provider: "algolia",

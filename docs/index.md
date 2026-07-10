@@ -5,7 +5,7 @@ hero:
   text: IPTV 转发服务器
   tagline: 将组播 RTP / RTSP / HLS 转为 HTTP 单播媒体流
   image:
-    src: /icon.svg
+    src: /icon.png
     alt: rtp2httpd
   actions:
     - theme: brand

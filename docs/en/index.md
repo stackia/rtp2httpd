@@ -5,7 +5,7 @@ hero:
   text: IPTV Streaming Media Forwarding Server
   tagline: Convert Multicast RTP / RTSP / HLS to HTTP Unicast Media Streams
   image:
-    src: /icon.svg
+    src: /icon.png
     alt: rtp2httpd
   actions:
     - theme: brand
