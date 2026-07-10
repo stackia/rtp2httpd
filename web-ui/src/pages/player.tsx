@@ -531,8 +531,9 @@ function PlayerPage() {
                 <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
                   <Button
                     type="button"
+                    variant="outline"
                     onClick={loadPlaylist}
-                    className="w-full gap-2 rounded-xl bg-[linear-gradient(135deg,#0e7490,#4338ca)] text-white shadow-[0_10px_28px_rgba(37,99,235,0.24)] sm:w-auto"
+                    className="w-full gap-2 rounded-xl border-primary/20 bg-[linear-gradient(135deg,#0e7490,#4338ca)] text-white shadow-[0_10px_28px_rgba(37,99,235,0.24)] transition-[color,background-color,border-color] hover:border-primary/30 hover:bg-[linear-gradient(135deg,#0e7490,#4338ca)] hover:text-white sm:w-auto"
                   >
                     <RefreshCw className="h-4 w-4" aria-hidden="true" />
                     {t("retry")}
