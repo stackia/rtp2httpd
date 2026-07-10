@@ -41,65 +41,63 @@ features:
     details: 纯 C 零依赖，epoll + 多核 + 零拷贝，x86_64 仅 368KB
 ---
 
-<style>
-.demo-section {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 0 24px;
-}
-.demo-section h2 {
-  font-size: 28px;
-  font-weight: 700;
-  text-align: center;
-  margin-bottom: 48px;
-  letter-spacing: -0.02em;
-}
-.demo-section h3 {
-  font-size: 20px;
-  font-weight: 600;
-  margin-top: 48px;
-  margin-bottom: 16px;
-}
-.demo-section video {
-  width: 100%;
-  border-radius: 8px;
-  border: 1px solid var(--vp-c-divider);
-}
-</style>
-
 <div class="demo-section">
+  <div class="demo-section__heading">
+    <span class="demo-section__eyebrow">Live showcase</span>
+    <h2>效果演示</h2>
+  </div>
 
-## 效果演示
-
-### 快速换台 + 时移回看
-
-<video controls muted src="https://github.com/user-attachments/assets/ca1a332f-d6e7-4a1e-be88-92bef67758b3" />
-
-> [!TIP]
-> 快速换台需要搭配使用针对 IPTV 优化的播放器，例如 [mytv-android](https://github.com/mytv-android/mytv-android) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) / 内置 Web 播放器等。视频中的播放器是 mytv-android。
->
-> 一些常见的万能播放器（如 PotPlayer / IINA）没有针对起播速度做优化，不会有明显效果。
-
-### 内置 Web 播放器
-
-<video controls muted src="https://github.com/user-attachments/assets/b32f134d-87ac-46d0-90fe-50ffa410069a" />
-
-> [!TIP]
-> 需要配置 M3U 播放列表后使用，通过浏览器访问 `http://<server:port>/player` 即可打开。
->
-> 受限于浏览器解码能力，一些频道可能不支持（表现为无音频、画面黑屏）。
-
-### 实时状态监控
-
-![实时状态监控](./images/web-dashboard.png)
-
-### 25 条 1080p 组播流同时播放
-
-<video controls muted src="https://github.com/user-attachments/assets/9d531ab6-6c35-4c50-802a-71f88b6b22c5" />
-
-> [!NOTE]
-> 单流码率 8 Mbps。总仅占用 25% CPU 单核 (i3-N305)，消耗 4MB 内存。
->
-> 与 udpxy / msd_lite / tvgate 的对比，详见 [性能测试报告](./reference/benchmark.md)。
-
+  <div class="demo-grid">
+    <article class="demo-card">
+      <header class="demo-card__header">
+        <span class="demo-card__index">01</span>
+        <h3>快速换台 + 时移回看</h3>
+      </header>
+      <div class="demo-card__media">
+        <video controls muted playsinline preload="metadata" src="https://github.com/user-attachments/assets/ca1a332f-d6e7-4a1e-be88-92bef67758b3"></video>
+      </div>
+      <aside class="demo-callout">
+        <span class="demo-callout__label">提示</span>
+        <p>快速换台需要搭配使用针对 IPTV 优化的播放器，例如 <a href="https://github.com/mytv-android/mytv-android" target="_blank" rel="noreferrer">mytv-android</a> / <a href="https://tivimate.com" target="_blank" rel="noreferrer">TiviMate</a> / <a href="https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135" target="_blank" rel="noreferrer">Cloud Stream</a> / 内置 Web 播放器等。视频中的播放器是 mytv-android。</p>
+        <p>一些常见的万能播放器（如 PotPlayer / IINA）没有针对起播速度做优化，不会有明显效果。</p>
+      </aside>
+    </article>
+    <article class="demo-card demo-card--cyan">
+      <header class="demo-card__header">
+        <span class="demo-card__index">02</span>
+        <h3>内置 Web 播放器</h3>
+      </header>
+      <div class="demo-card__media">
+        <video controls muted playsinline preload="metadata" src="https://github.com/user-attachments/assets/b32f134d-87ac-46d0-90fe-50ffa410069a"></video>
+      </div>
+      <aside class="demo-callout">
+        <span class="demo-callout__label">提示</span>
+        <p>需要配置 M3U 播放列表后使用，通过浏览器访问 <code>http://&lt;server:port&gt;/player</code> 即可打开。</p>
+        <p>受限于浏览器解码能力，一些频道可能不支持（表现为无音频、画面黑屏）。</p>
+      </aside>
+    </article>
+    <article class="demo-card demo-card--emerald">
+      <header class="demo-card__header">
+        <span class="demo-card__index">03</span>
+        <h3>实时状态监控</h3>
+      </header>
+      <div class="demo-card__media">
+        <img src="./images/web-dashboard.png" alt="实时状态监控" loading="lazy" />
+      </div>
+    </article>
+    <article class="demo-card demo-card--amber">
+      <header class="demo-card__header">
+        <span class="demo-card__index">04</span>
+        <h3>25 条 1080p 组播流同时播放</h3>
+      </header>
+      <div class="demo-card__media">
+        <video controls muted playsinline preload="metadata" src="https://github.com/user-attachments/assets/9d531ab6-6c35-4c50-802a-71f88b6b22c5"></video>
+      </div>
+      <aside class="demo-callout">
+        <span class="demo-callout__label">性能</span>
+        <p>单流码率 8 Mbps。总仅占用 25% CPU 单核 (i3-N305)，消耗 4MB 内存。</p>
+        <p>与 udpxy / msd_lite / tvgate 的对比，详见 <a href="/reference/benchmark">性能测试报告</a>。</p>
+      </aside>
+    </article>
+  </div>
 </div>

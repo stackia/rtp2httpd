@@ -41,65 +41,63 @@ features:
     details: Pure C with zero dependencies, epoll + multi-core + zero-copy, only 368KB for x86_64
 ---
 
-<style>
-.demo-section {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 0 24px;
-}
-.demo-section h2 {
-  font-size: 28px;
-  font-weight: 700;
-  text-align: center;
-  margin-bottom: 48px;
-  letter-spacing: -0.02em;
-}
-.demo-section h3 {
-  font-size: 20px;
-  font-weight: 600;
-  margin-top: 48px;
-  margin-bottom: 16px;
-}
-.demo-section video {
-  width: 100%;
-  border-radius: 8px;
-  border: 1px solid var(--vp-c-divider);
-}
-</style>
-
 <div class="demo-section">
+  <div class="demo-section__heading">
+    <span class="demo-section__eyebrow">Live showcase</span>
+    <h2>Demos</h2>
+  </div>
 
-## Demos
-
-### Fast Channel Change + Time-Shift Playback
-
-<video controls muted src="https://github.com/user-attachments/assets/ca1a332f-d6e7-4a1e-be88-92bef67758b3" />
-
-> [!TIP]
-> Fast channel change requires using IPTV-optimized players, such as [mytv-android](https://github.com/mytv-android/mytv-android) / [TiviMate](https://tivimate.com) / [Cloud Stream](https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135) / built-in web player. The player in the video is mytv-android.
->
-> Some common general-purpose players (such as PotPlayer / IINA) are not optimized for startup speed and will not show significant improvement.
-
-### Built-in Web Player
-
-<video controls muted src="https://github.com/user-attachments/assets/b32f134d-87ac-46d0-90fe-50ffa410069a" />
-
-> [!TIP]
-> Requires M3U playlist configuration. Access via browser at `http://<server:port>/player` to open.
->
-> Due to browser decoding limitations, some channels may not be supported (manifested as no audio or black screen).
-
-### Real-time Status Monitoring
-
-![Real-time Status Monitoring](../images/web-dashboard-en.png)
-
-### 25 Concurrent 1080p Multicast Streams
-
-<video controls muted src="https://github.com/user-attachments/assets/9d531ab6-6c35-4c50-802a-71f88b6b22c5" />
-
-> [!NOTE]
-> Single stream bitrate 8 Mbps. Total CPU usage only 25% of a single core (i3-N305), 4MB memory.
->
-> For comparison with udpxy / msd_lite / tvgate, see the [Performance Benchmark](./reference/benchmark.md).
-
+  <div class="demo-grid">
+    <article class="demo-card">
+      <header class="demo-card__header">
+        <span class="demo-card__index">01</span>
+        <h3>Fast Channel Change + Time-Shift Playback</h3>
+      </header>
+      <div class="demo-card__media">
+        <video controls muted playsinline preload="metadata" src="https://github.com/user-attachments/assets/ca1a332f-d6e7-4a1e-be88-92bef67758b3"></video>
+      </div>
+      <aside class="demo-callout">
+        <span class="demo-callout__label">Tip</span>
+        <p>Fast channel change requires using IPTV-optimized players, such as <a href="https://github.com/mytv-android/mytv-android" target="_blank" rel="noreferrer">mytv-android</a> / <a href="https://tivimate.com" target="_blank" rel="noreferrer">TiviMate</a> / <a href="https://apps.apple.com/us/app/cloud-stream-iptv-player/id1138002135" target="_blank" rel="noreferrer">Cloud Stream</a> / built-in web player. The player in the video is mytv-android.</p>
+        <p>Some common general-purpose players (such as PotPlayer / IINA) are not optimized for startup speed and will not show significant improvement.</p>
+      </aside>
+    </article>
+    <article class="demo-card demo-card--cyan">
+      <header class="demo-card__header">
+        <span class="demo-card__index">02</span>
+        <h3>Built-in Web Player</h3>
+      </header>
+      <div class="demo-card__media">
+        <video controls muted playsinline preload="metadata" src="https://github.com/user-attachments/assets/b32f134d-87ac-46d0-90fe-50ffa410069a"></video>
+      </div>
+      <aside class="demo-callout">
+        <span class="demo-callout__label">Tip</span>
+        <p>Requires M3U playlist configuration. Access via browser at <code>http://&lt;server:port&gt;/player</code> to open.</p>
+        <p>Due to browser decoding limitations, some channels may not be supported (manifested as no audio or black screen).</p>
+      </aside>
+    </article>
+    <article class="demo-card demo-card--emerald">
+      <header class="demo-card__header">
+        <span class="demo-card__index">03</span>
+        <h3>Real-time Status Monitoring</h3>
+      </header>
+      <div class="demo-card__media">
+        <img src="../images/web-dashboard-en.png" alt="Real-time Status Monitoring" loading="lazy" />
+      </div>
+    </article>
+    <article class="demo-card demo-card--amber">
+      <header class="demo-card__header">
+        <span class="demo-card__index">04</span>
+        <h3>25 Concurrent 1080p Multicast Streams</h3>
+      </header>
+      <div class="demo-card__media">
+        <video controls muted playsinline preload="metadata" src="https://github.com/user-attachments/assets/9d531ab6-6c35-4c50-802a-71f88b6b22c5"></video>
+      </div>
+      <aside class="demo-callout">
+        <span class="demo-callout__label">Performance</span>
+        <p>Single stream bitrate 8 Mbps. Total CPU usage only 25% of a single core (i3-N305), 4MB memory.</p>
+        <p>For comparison with udpxy / msd_lite / tvgate, see the <a href="/en/reference/benchmark">Performance Benchmark</a>.</p>
+      </aside>
+    </article>
+  </div>
 </div>
