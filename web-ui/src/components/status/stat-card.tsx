@@ -11,8 +11,6 @@ const STAT_CARD_TONES: Record<
     iconBackground: string;
     iconShadow: string;
     gradient: string;
-    spotlight: string;
-    cardShadowClass: string;
   }
 > = {
   violet: {
@@ -20,36 +18,24 @@ const STAT_CARD_TONES: Record<
     iconBackground: "hsla(262, 83%, 62%, 0.14)",
     iconShadow: "0 10px 28px -14px rgba(139, 92, 246, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
     gradient: "radial-gradient(120% 120% at 0% 0%, rgba(139, 92, 246, 0.22), transparent 66%)",
-    spotlight: "radial-gradient(70% 90% at 88% 115%, rgba(99, 102, 241, 0.2), transparent 72%)",
-    cardShadowClass:
-      "shadow-[0_18px_50px_-36px_rgba(124,58,237,0.78)] hover:shadow-[0_24px_60px_-34px_rgba(124,58,237,0.9)]",
   },
   emerald: {
     iconColor: "hsl(158 72% 38%)",
     iconBackground: "hsla(152, 76%, 38%, 0.14)",
     iconShadow: "0 10px 28px -14px rgba(16, 185, 129, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
     gradient: "radial-gradient(120% 120% at 0% 0%, rgba(16, 185, 129, 0.2), transparent 66%)",
-    spotlight: "radial-gradient(70% 90% at 88% 115%, rgba(6, 182, 212, 0.18), transparent 72%)",
-    cardShadowClass:
-      "shadow-[0_18px_50px_-36px_rgba(16,185,129,0.72)] hover:shadow-[0_24px_60px_-34px_rgba(16,185,129,0.84)]",
   },
   sky: {
     iconColor: "hsl(197 92% 45%)",
     iconBackground: "hsla(197, 92%, 45%, 0.16)",
     iconShadow: "0 10px 28px -14px rgba(14, 165, 233, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
     gradient: "radial-gradient(120% 120% at 0% 0%, rgba(14, 165, 233, 0.21), transparent 66%)",
-    spotlight: "radial-gradient(70% 90% at 88% 115%, rgba(59, 130, 246, 0.18), transparent 72%)",
-    cardShadowClass:
-      "shadow-[0_18px_50px_-36px_rgba(14,165,233,0.72)] hover:shadow-[0_24px_60px_-34px_rgba(14,165,233,0.84)]",
   },
   amber: {
     iconColor: "hsl(35 92% 47%)",
     iconBackground: "hsla(38, 92%, 50%, 0.18)",
     iconShadow: "0 10px 28px -14px rgba(245, 158, 11, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.35)",
     gradient: "radial-gradient(120% 120% at 0% 0%, rgba(245, 158, 11, 0.2), transparent 66%)",
-    spotlight: "radial-gradient(70% 90% at 88% 115%, rgba(249, 115, 22, 0.17), transparent 72%)",
-    cardShadowClass:
-      "shadow-[0_18px_50px_-36px_rgba(245,158,11,0.7)] hover:shadow-[0_24px_60px_-34px_rgba(245,158,11,0.82)]",
   },
 } as const;
 
@@ -65,26 +51,20 @@ export function StatCard({ title, value, icon: Icon, tone = "violet" }: StatCard
   return (
     <Card
       className={clsx(
-        "group relative overflow-hidden rounded-2xl border border-border/45 bg-card/75 backdrop-blur-xl backdrop-saturate-150 transition-[translate,box-shadow,border-color] duration-300 motion-reduce:transition-none motion-safe:hover:-translate-y-1 hover:border-white/60 dark:border-white/10 dark:bg-card/65 dark:hover:border-white/20",
-        palette.cardShadowClass,
+        "group relative overflow-hidden rounded-2xl border border-border/45 bg-card/78 shadow-[0_18px_50px_-36px_rgba(15,23,42,0.44),inset_0_1px_0_rgba(255,255,255,0.56)] backdrop-blur-lg backdrop-saturate-125 transition-[box-shadow,border-color] duration-300 motion-reduce:transition-none hover:border-white/60 hover:shadow-[0_22px_56px_-36px_rgba(15,23,42,0.56),inset_0_1px_0_rgba(255,255,255,0.62)] dark:border-white/10 dark:bg-card/68 dark:shadow-[0_22px_56px_-38px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.07)] dark:hover:border-white/20 dark:hover:shadow-[0_24px_60px_-38px_rgba(0,0,0,0.86),inset_0_1px_0_rgba(255,255,255,0.09)]",
       )}
     >
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-95 transition-opacity duration-300 group-hover:opacity-100"
+        className="pointer-events-none absolute inset-0 opacity-85 transition-opacity duration-300 group-hover:opacity-95"
         style={{ background: palette.gradient }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-10 top-1/2 h-40 w-40 -translate-y-1/2 rounded-full opacity-70 blur-3xl transition-[opacity,scale] duration-500 motion-reduce:transition-none motion-safe:group-hover:scale-110 group-hover:opacity-95"
-        style={{ background: palette.spotlight }}
       />
       <CardHeader className="relative flex flex-row items-center justify-between gap-0 pb-2">
         <CardDescription className="flex min-h-8 min-w-0 flex-1 items-center pr-3 text-xs font-semibold leading-4 tracking-[0.04em] text-muted-foreground/90">
           {title}
         </CardDescription>
         <span
-          className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/30 backdrop-blur-md transition-transform duration-300 motion-reduce:transition-none motion-safe:group-hover:scale-105 motion-safe:group-hover:-rotate-3 dark:border-white/10"
+          className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/30 dark:border-white/10"
           style={{
             color: palette.iconColor,
             background: palette.iconBackground,

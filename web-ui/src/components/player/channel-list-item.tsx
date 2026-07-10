@@ -28,15 +28,22 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
         key={channel.id}
         ref={ref}
         className={clsx(
-          "group flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-2xl border p-2 text-left text-card-foreground transition-[color,background-color,border-color,box-shadow] duration-200",
+          "group relative isolate flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-2xl border p-2 text-left text-card-foreground transition-[color,background-color,border-color,box-shadow] duration-200",
           isCurrentChannel
-            ? "border-blue-400/45 bg-[linear-gradient(135deg,rgba(59,130,246,0.14),rgba(99,102,241,0.12))] shadow-[0_12px_28px_rgba(37,99,235,0.13),inset_0_1px_0_rgba(255,255,255,0.55)] dark:border-blue-300/35 dark:shadow-[0_12px_30px_rgba(2,8,23,0.36),0_0_20px_rgba(59,130,246,0.06)]"
-            : "border-slate-200/70 bg-white/52 shadow-[0_8px_22px_rgba(30,64,175,0.055),inset_0_1px_0_rgba(255,255,255,0.5)] hover:border-blue-400/35 hover:bg-blue-50/55 hover:shadow-[0_12px_28px_rgba(37,99,235,0.1)] dark:border-white/8 dark:bg-slate-950/36 dark:shadow-[0_8px_22px_rgba(0,0,0,0.18)] dark:hover:border-blue-300/25 dark:hover:bg-blue-300/7",
+            ? "border-blue-400/50 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(99,102,241,0.13))] shadow-[0_14px_30px_-18px_rgba(37,99,235,0.42),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-1px_0_rgba(37,99,235,0.1)] ring-1 ring-blue-400/10 backdrop-blur-md backdrop-saturate-150 before:pointer-events-none before:absolute before:inset-x-3 before:top-0 before:h-px before:bg-[linear-gradient(90deg,transparent,rgba(191,219,254,0.76),transparent)] before:content-[''] dark:border-blue-300/40 dark:shadow-[0_16px_34px_-18px_rgba(0,0,0,0.78),0_0_24px_-12px_rgba(59,130,246,0.54),inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(59,130,246,0.12)] dark:ring-blue-300/10 dark:before:bg-[linear-gradient(90deg,transparent,rgba(191,219,254,0.34),transparent)]"
+            : "border-slate-200/70 bg-white/48 shadow-[inset_0_1px_0_rgba(255,255,255,0.44)] hover:border-blue-400/35 hover:bg-blue-50/52 dark:border-white/8 dark:bg-slate-950/34 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.045)] dark:hover:border-blue-300/25 dark:hover:bg-blue-300/7",
         )}
         onClick={handleClick}
       >
         {/* Left: Channel Number and Info */}
-        <span className="flex h-5 min-w-7 shrink-0 items-center justify-center rounded-lg bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(99,102,241,0.16))] px-1.5 font-semibold text-[10px] text-blue-700 ring-1 ring-blue-500/10 dark:text-blue-200 md:h-6 md:min-w-8 md:px-2 md:text-xs">
+        <span
+          className={clsx(
+            "flex h-5 min-w-7 shrink-0 items-center justify-center rounded-lg px-1.5 font-semibold text-[10px] md:h-6 md:min-w-8 md:px-2 md:text-xs",
+            isCurrentChannel
+              ? "bg-[linear-gradient(135deg,rgba(59,130,246,0.26),rgba(99,102,241,0.2))] text-blue-700 shadow-[0_6px_16px_-10px_rgba(37,99,235,0.7),inset_0_1px_0_rgba(255,255,255,0.42)] ring-1 ring-blue-400/25 dark:text-blue-100"
+              : "bg-[linear-gradient(135deg,rgba(59,130,246,0.15),rgba(99,102,241,0.13))] text-blue-700 ring-1 ring-blue-500/10 dark:text-blue-200",
+          )}
+        >
           {channel.id}
         </span>
         <div className="min-w-0 flex-1 overflow-hidden">

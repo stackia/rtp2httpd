@@ -82,7 +82,7 @@ export function WorkersSection({ workers, locale, bandwidthUnit }: WorkersSectio
             return (
               <Card
                 key={worker.id}
-                className="overflow-hidden rounded-2xl border border-border/50 bg-card/65 shadow-[0_18px_46px_-34px_rgba(15,23,42,0.55)] backdrop-blur-lg dark:border-white/8 dark:bg-white/3 dark:shadow-[0_22px_52px_-34px_rgba(0,0,0,0.8)]"
+                className="overflow-hidden rounded-2xl border border-border/50 bg-card/72 shadow-[0_16px_42px_-34px_rgba(15,23,42,0.46)] dark:border-white/8 dark:bg-white/4 dark:shadow-[0_20px_48px_-36px_rgba(0,0,0,0.68)]"
               >
                 <CardHeader className="pb-4">
                   <div className="flex items-start justify-between gap-4">

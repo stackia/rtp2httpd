@@ -58,7 +58,7 @@ function HeaderSelect<T extends string>({
         value={value}
         onChange={(event) => onChange(event.target.value as T)}
         containerClassName={clsx("min-w-0 flex-1 md:flex-none", containerClassName)}
-        className="border-border/40 bg-background/60 shadow-none transition-colors hover:border-primary/30"
+        className="border-border/40 bg-background/70 shadow-none backdrop-blur-none transition-colors hover:border-primary/30"
         aria-label={label}
       >
         {options.map((option) => (

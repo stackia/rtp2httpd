@@ -86,7 +86,7 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
               onChange={(event) => onLogLevelChange(event.target.value)}
               disabled={disabled}
               containerClassName="min-w-[120px]"
-              className="border-border/40 bg-background/60 text-sm font-medium shadow-none hover:border-primary/30"
+              className="border-border/40 bg-background/70 text-sm font-medium shadow-none backdrop-blur-none hover:border-primary/30"
               aria-label={t("logLevel")}
             >
               {!logLevelValue && <option value="">--</option>}
@@ -110,7 +110,7 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
       </div>
       <div
         ref={viewportRef}
-        className="mt-5 h-100 overflow-y-auto rounded-2xl border border-slate-700/70 bg-slate-950/95 p-3 text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_20px_80px_rgba(15,23,42,0.42),0_20px_54px_-36px_rgba(2,6,23,0.9)] backdrop-blur-xl scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700 sm:p-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700"
+        className="mt-5 h-100 overflow-y-auto rounded-2xl border border-slate-700/70 bg-slate-950/95 p-3 text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_20px_80px_rgba(15,23,42,0.42),0_20px_54px_-36px_rgba(2,6,23,0.9)] scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700 sm:p-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700"
       >
         {logs.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-slate-500">--</div>

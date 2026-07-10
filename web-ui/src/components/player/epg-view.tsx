@@ -178,14 +178,14 @@ function EPGViewComponent({
                         key={program.id}
                         ref={playing ? currentProgramRef : null}
                         className={clsx(
-                          "w-full overflow-hidden rounded-2xl border text-left text-card-foreground transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-200",
+                          "relative isolate w-full overflow-hidden rounded-2xl border text-left text-card-foreground transition-[color,background-color,border-color,box-shadow,opacity] duration-200",
                           playing
-                            ? "border-blue-400/45 bg-[linear-gradient(135deg,rgba(59,130,246,0.14),rgba(99,102,241,0.12))] shadow-[0_12px_28px_rgba(37,99,235,0.13),inset_0_1px_0_rgba(255,255,255,0.55)] dark:border-blue-300/35 dark:shadow-[0_12px_30px_rgba(2,8,23,0.34),0_0_20px_rgba(59,130,246,0.06)]"
+                            ? "border-blue-400/50 bg-[linear-gradient(135deg,rgba(59,130,246,0.18),rgba(99,102,241,0.13))] shadow-[0_14px_30px_-18px_rgba(37,99,235,0.42),inset_0_1px_0_rgba(255,255,255,0.72),inset_0_-1px_0_rgba(37,99,235,0.1)] ring-1 ring-blue-400/10 backdrop-blur-md backdrop-saturate-150 before:pointer-events-none before:absolute before:inset-x-3 before:top-0 before:h-px before:bg-[linear-gradient(90deg,transparent,rgba(191,219,254,0.76),transparent)] before:content-[''] dark:border-blue-300/40 dark:shadow-[0_16px_34px_-18px_rgba(0,0,0,0.78),0_0_24px_-12px_rgba(59,130,246,0.54),inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(59,130,246,0.12)] dark:ring-blue-300/10 dark:before:bg-[linear-gradient(90deg,transparent,rgba(191,219,254,0.34),transparent)]"
                             : isPast
                               ? "border-slate-200/65 bg-white/38 opacity-65 dark:border-white/8 dark:bg-slate-950/28"
-                              : "border-slate-200/70 bg-white/52 shadow-[0_8px_22px_rgba(30,64,175,0.05),inset_0_1px_0_rgba(255,255,255,0.5)] dark:border-white/8 dark:bg-slate-950/36 dark:shadow-[0_8px_22px_rgba(0,0,0,0.16)]",
+                              : "border-slate-200/70 bg-white/48 shadow-[inset_0_1px_0_rgba(255,255,255,0.44)] dark:border-white/8 dark:bg-slate-950/34 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]",
                           ((isPast && supportsCatchup) || onAir) &&
-                            "cursor-pointer motion-safe:hover:-translate-y-px hover:border-blue-400/35 hover:bg-blue-50/55 hover:opacity-100 hover:shadow-[0_12px_28px_rgba(37,99,235,0.1)] dark:hover:border-blue-300/25 dark:hover:bg-blue-300/7",
+                            "cursor-pointer hover:border-blue-400/35 hover:bg-blue-50/52 hover:opacity-100 dark:hover:border-blue-300/25 dark:hover:bg-blue-300/7",
                         )}
                         onClick={() => {
                           if (isPast && supportsCatchup) {
