@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,10 +41,30 @@ static int log_event_send_fd = -1;
 static int control_event_recv_fd = -1;
 static int control_event_send_fd = -1;
 
+static int append_sse_data(char *buffer, size_t buffer_capacity, size_t *buffer_length, const char *format, ...)
+    __attribute__((format(printf, 4, 5)));
+
 static void set_fd_nonblocking(int fd) {
   int flags = fcntl(fd, F_GETFL, 0);
   if (flags >= 0)
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+static int append_sse_data(char *buffer, size_t buffer_capacity, size_t *buffer_length, const char *format, ...) {
+  if (*buffer_length >= buffer_capacity)
+    return -1;
+
+  size_t remaining_capacity = buffer_capacity - *buffer_length;
+  va_list arguments;
+  va_start(arguments, format);
+  int formatted_length = vsnprintf(buffer + *buffer_length, remaining_capacity, format, arguments);
+  va_end(arguments);
+
+  if (formatted_length < 0 || (size_t)formatted_length >= remaining_capacity)
+    return -1;
+
+  *buffer_length += (size_t)formatted_length;
+  return 0;
 }
 
 static void reset_client_payload(client_stats_t *client) {
@@ -84,9 +105,9 @@ static int snapshot_client(const client_stats_t *client, client_stats_payload_t 
     uint32_t generation_before = atomic_load_explicit(&client->generation, memory_order_acquire);
     *owner_pid = atomic_load_explicit(&client->owner_pid, memory_order_relaxed);
     memcpy(snapshot, &client->payload, sizeof(*snapshot));
-    atomic_thread_fence(memory_order_acquire);
-    uint32_t version_after = atomic_load_explicit(&client->data_version, memory_order_relaxed);
-    uint32_t generation_after = atomic_load_explicit(&client->generation, memory_order_relaxed);
+    atomic_thread_fence(memory_order_acq_rel);
+    uint32_t version_after = atomic_load_explicit(&client->data_version, memory_order_acquire);
+    uint32_t generation_after = atomic_load_explicit(&client->generation, memory_order_acquire);
     if (version_before == version_after && !(version_after & 1U) && generation_before == generation_after &&
         atomic_load_explicit(&client->active, memory_order_acquire)) {
       if (generation)
@@ -732,12 +753,14 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
   int64_t current_time = get_realtime_ms();
   int64_t uptime_ms = current_time - status_shared->server_start_time;
 
-  int len = snprintf(buffer, buffer_capacity,
-                     "data: "
-                     "{\"serverStartTime\":%lld,\"uptimeMs\":%lld,\"currentLogLevel\":%d,"
-                     "\"version\":\"" VERSION "\",\"maxClients\":%d,\"clients\":[",
-                     (long long)status_shared->server_start_time, (long long)uptime_ms,
-                     status_shared->current_log_level, config.maxclients);
+  size_t len = 0;
+  if (append_sse_data(buffer, buffer_capacity, &len,
+                      "data: "
+                      "{\"serverStartTime\":%lld,\"uptimeMs\":%lld,\"currentLogLevel\":%d,"
+                      "\"version\":\"" VERSION "\",\"maxClients\":%d,\"clients\":[",
+                      (long long)status_shared->server_start_time, (long long)uptime_ms,
+                      status_shared->current_log_level, config.maxclients) < 0)
+    return 0;
 
   /* Add client data (only real media streams: have a service_url) */
   int first_client = 1;
@@ -745,8 +768,8 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
     client_stats_payload_t client;
     uint32_t owner_pid = 0;
     if (snapshot_client(&status_shared->clients[i], &client, &owner_pid, NULL) && client.service_url[0] != '\0') {
-      if (!first_client)
-        len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",");
+      if (!first_client && append_sse_data(buffer, buffer_capacity, &len, ",") < 0)
+        return 0;
       first_client = 0;
 
       int64_t duration_ms = current_time - client.connect_time;
@@ -755,17 +778,19 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
       char escaped_client_id[256];
       json_escape_string_to_buffer(client.client_id, escaped_client_id, sizeof(escaped_client_id));
 
-      len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                      "{\"clientId\":\"%s\",\"workerPid\":%d,\"durationMs\":%lld,"
-                      "\"clientAddr\":\"%s\","
-                      "\"serviceUrl\":\"%s\",\"state\":%d,\"bytesSent\":%llu,"
-                      "\"currentBandwidth\":%u,\"queueBytes\":%zu,"
-                      "\"queueLimitBytes\":%zu,\"queueBytesHighwater\":%zu,"
-                      "\"droppedBytes\":%llu,\"slow\":%d}",
-                      escaped_client_id, (int)owner_pid, (long long)duration_ms, client.client_addr, client.service_url,
-                      (int)client.state, (unsigned long long)client.bytes_sent, client.current_bandwidth,
-                      client.queue_bytes, client.queue_limit_bytes, client.queue_bytes_highwater,
-                      (unsigned long long)client.dropped_bytes, client.slow_active);
+      if (append_sse_data(buffer, buffer_capacity, &len,
+                          "{\"clientId\":\"%s\",\"workerPid\":%d,\"durationMs\":%lld,"
+                          "\"clientAddr\":\"%s\","
+                          "\"serviceUrl\":\"%s\",\"state\":%d,\"bytesSent\":%llu,"
+                          "\"currentBandwidth\":%u,\"queueBytes\":%zu,"
+                          "\"queueLimitBytes\":%zu,\"queueBytesHighwater\":%zu,"
+                          "\"droppedBytes\":%llu,\"slow\":%d}",
+                          escaped_client_id, (int)owner_pid, (long long)duration_ms, client.client_addr,
+                          client.service_url, (int)client.state, (unsigned long long)client.bytes_sent,
+                          client.current_bandwidth, client.queue_bytes, client.queue_limit_bytes,
+                          client.queue_bytes_highwater, (unsigned long long)client.dropped_bytes,
+                          client.slow_active) < 0)
+        return 0;
 
       streams_count++;
       total_bytes += client.bytes_sent;
@@ -786,17 +811,19 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
   uint64_t total_bytes_sent = total_bytes;
   for (i = 0; i < STATUS_MAX_WORKERS; i++)
     total_bytes_sent += status_shared->client_bytes_cumulative[i];
-  len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                  "],\"totalClients\":%d,\"totalBytesSent\":%llu,\"totalBandwidth\":%u", streams_count,
-                  (unsigned long long)total_bytes_sent, total_bw);
+  if (append_sse_data(buffer, buffer_capacity, &len,
+                      "],\"totalClients\":%d,\"totalBytesSent\":%llu,\"totalBandwidth\":%u", streams_count,
+                      (unsigned long long)total_bytes_sent, total_bw) < 0)
+    return 0;
 
   /* Add per-worker breakdown */
-  len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",\"workers\":[");
+  if (append_sse_data(buffer, buffer_capacity, &len, ",\"workers\":[") < 0)
+    return 0;
   int first_worker_entry = 1;
   for (i = 0; i < config.workers && i < STATUS_MAX_WORKERS; i++) {
     worker_stats_t *ws = &status_shared->worker_stats[i];
-    if (!first_worker_entry)
-      len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",");
+    if (!first_worker_entry && append_sse_data(buffer, buffer_capacity, &len, ",") < 0)
+      return 0;
     first_worker_entry = 0;
 
     uint64_t w_pool_total = ws->pool_total_buffers;
@@ -809,32 +836,34 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
     uint64_t w_bandwidth = worker_bandwidth_sum[i];
     uint64_t w_total_bytes = ws->client_bytes_cumulative + worker_active_bytes[i];
 
-    len +=
-        snprintf(buffer + len, buffer_capacity - (size_t)len,
-                 "{\"id\":%d,\"pid\":%d,\"activeClients\":%u,\"totalBandwidth\":%llu,"
-                 "\"totalBytes\":%llu,"
-                 "\"send\":{\"total\":%llu,\"completions\":%llu,\"copied\":%llu,"
-                 "\"eagain\":%llu,\"enobufs\":%llu,\"batch\":%llu},"
-                 "\"pool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,"
-                 "\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,"
-                 "\"utilization\":%.1f},"
-                 "\"controlPool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%"
-                 "llu,\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,"
-                 "\"utilization\":%.1f}}",
-                 i, (int)ws->worker_pid, (unsigned int)w_active, (unsigned long long)w_bandwidth,
-                 (unsigned long long)w_total_bytes, (unsigned long long)ws->total_sends,
-                 (unsigned long long)ws->total_completions, (unsigned long long)ws->total_copied,
-                 (unsigned long long)ws->eagain_count, (unsigned long long)ws->enobufs_count,
-                 (unsigned long long)ws->batch_sends, (unsigned long long)w_pool_total, (unsigned long long)w_pool_free,
-                 (unsigned long long)w_pool_used, (unsigned long long)ws->pool_max_buffers,
-                 (unsigned long long)ws->pool_expansions, (unsigned long long)ws->pool_exhaustions,
-                 (unsigned long long)ws->pool_shrinks, w_pool_total > 0 ? (100.0 * w_pool_used / w_pool_total) : 0.0,
-                 (unsigned long long)w_ctrl_total, (unsigned long long)w_ctrl_free, (unsigned long long)w_ctrl_used,
-                 (unsigned long long)ws->control_pool_max_buffers, (unsigned long long)ws->control_pool_expansions,
-                 (unsigned long long)ws->control_pool_exhaustions, (unsigned long long)ws->control_pool_shrinks,
-                 w_ctrl_total > 0 ? (100.0 * w_ctrl_used / w_ctrl_total) : 0.0);
+    if (append_sse_data(
+            buffer, buffer_capacity, &len,
+            "{\"id\":%d,\"pid\":%d,\"activeClients\":%u,\"totalBandwidth\":%llu,"
+            "\"totalBytes\":%llu,"
+            "\"send\":{\"total\":%llu,\"completions\":%llu,\"copied\":%llu,"
+            "\"eagain\":%llu,\"enobufs\":%llu,\"batch\":%llu},"
+            "\"pool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,"
+            "\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,"
+            "\"utilization\":%.1f},"
+            "\"controlPool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%"
+            "llu,\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,"
+            "\"utilization\":%.1f}}",
+            i, (int)ws->worker_pid, (unsigned int)w_active, (unsigned long long)w_bandwidth,
+            (unsigned long long)w_total_bytes, (unsigned long long)ws->total_sends,
+            (unsigned long long)ws->total_completions, (unsigned long long)ws->total_copied,
+            (unsigned long long)ws->eagain_count, (unsigned long long)ws->enobufs_count,
+            (unsigned long long)ws->batch_sends, (unsigned long long)w_pool_total, (unsigned long long)w_pool_free,
+            (unsigned long long)w_pool_used, (unsigned long long)ws->pool_max_buffers,
+            (unsigned long long)ws->pool_expansions, (unsigned long long)ws->pool_exhaustions,
+            (unsigned long long)ws->pool_shrinks, w_pool_total > 0 ? (100.0 * w_pool_used / w_pool_total) : 0.0,
+            (unsigned long long)w_ctrl_total, (unsigned long long)w_ctrl_free, (unsigned long long)w_ctrl_used,
+            (unsigned long long)ws->control_pool_max_buffers, (unsigned long long)ws->control_pool_expansions,
+            (unsigned long long)ws->control_pool_exhaustions, (unsigned long long)ws->control_pool_shrinks,
+            w_ctrl_total > 0 ? (100.0 * w_ctrl_used / w_ctrl_total) : 0.0) < 0)
+      return 0;
   }
-  len += snprintf(buffer + len, buffer_capacity - (size_t)len, "]");
+  if (append_sse_data(buffer, buffer_capacity, &len, "]") < 0)
+    return 0;
 
   uint32_t current_log_epoch = atomic_load_explicit(&status_shared->log_epoch, memory_order_acquire);
   uint32_t current_log_sequence = atomic_load_explicit(&status_shared->log_sequence, memory_order_acquire);
@@ -850,7 +879,8 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
   const char *logs_mode = full_logs ? "full" : (first_sequence ? "incremental" : "none");
 
   /* Add logs section */
-  len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",\"logsMode\":\"%s\",\"logs\":[", logs_mode);
+  if (append_sse_data(buffer, buffer_capacity, &len, ",\"logsMode\":\"%s\",\"logs\":[", logs_mode) < 0)
+    return 0;
 
   int first_log = 1;
   for (uint32_t sequence = first_sequence; sequence > 0 && sequence <= current_log_sequence; sequence++) {
@@ -863,30 +893,32 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
     char message[STATUS_LOG_ENTRY_LEN];
     memcpy(message, entry->message, sizeof(message));
     message[sizeof(message) - 1] = '\0';
-    atomic_thread_fence(memory_order_acquire);
-    if (atomic_load_explicit(&entry->sequence, memory_order_relaxed) != sequence)
+    atomic_thread_fence(memory_order_acq_rel);
+    if (atomic_load_explicit(&entry->sequence, memory_order_acquire) != sequence)
       continue;
 
-    if (!first_log)
-      len += snprintf(buffer + len, buffer_capacity - (size_t)len, ",");
+    if (!first_log && append_sse_data(buffer, buffer_capacity, &len, ",") < 0)
+      return 0;
     first_log = 0;
     char escaped[STATUS_LOG_ENTRY_LEN * 2];
     json_escape_string_to_buffer(message, escaped, sizeof(escaped));
     if (full_logs) {
-      len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                      "{\"timestamp\":%lld,\"levelName\":\"%s\",\"message\":\"%s\"}", (long long)timestamp,
-                      status_get_log_level_name(level), escaped);
+      if (append_sse_data(buffer, buffer_capacity, &len, "{\"timestamp\":%lld,\"levelName\":\"%s\",\"message\":\"%s\"}",
+                          (long long)timestamp, status_get_log_level_name(level), escaped) < 0)
+        return 0;
     } else {
-      len += snprintf(buffer + len, buffer_capacity - (size_t)len,
-                      "{\"timestamp\":%lld,\"level\":%d,\"levelName\":\"%s\",\"message\":\"%s\"}", (long long)timestamp,
-                      level, status_get_log_level_name(level), escaped);
+      if (append_sse_data(buffer, buffer_capacity, &len,
+                          "{\"timestamp\":%lld,\"level\":%d,\"levelName\":\"%s\",\"message\":\"%s\"}",
+                          (long long)timestamp, level, status_get_log_level_name(level), escaped) < 0)
+        return 0;
     }
   }
   sent_initial = 1;
   last_log_epoch = current_log_epoch;
   last_log_sequence = current_log_sequence;
 
-  len += snprintf(buffer + len, buffer_capacity - (size_t)len, "]}\n\n");
+  if (append_sse_data(buffer, buffer_capacity, &len, "]}\n\n") < 0)
+    return 0;
 
   /* Update output parameters */
   *p_sent_initial = sent_initial;
@@ -896,7 +928,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
   /* Update global bandwidth statistics */
   status_shared->total_bandwidth = total_bw;
 
-  return len;
+  return (int)len;
 }
 
 void handle_disconnect_client(connection_t *c) {
