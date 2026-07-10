@@ -30,6 +30,8 @@ export const LoaderErrors = {
 export interface LoaderErrorInfo {
   code: number;
   msg: string;
+  /** Final request URL when available (after redirects). */
+  url?: string;
 }
 
 // ---- internal types --------------------------------------------------------
@@ -49,6 +51,7 @@ interface FetchRequestContext {
   abortController: AbortController;
   contentLength: number | null;
   receivedLength: number;
+  url: string;
 }
 
 enum LoaderStatus {
@@ -236,16 +239,16 @@ class FetchLoader {
   // --- fetch + ReadableStream logic (inlined FetchStreamLoader) ------------
 
   private _startFetch(range: LoaderRange): void {
-    const request: FetchRequestContext = {
-      abortController: new self.AbortController(),
-      contentLength: null,
-      receivedLength: 0,
-    };
-
     const dataSource = this._dataSource as DataSource;
     const sourceURL = dataSource.url;
 
     const seekConfig = this._buildRangeHeaders(sourceURL, range);
+    const request: FetchRequestContext = {
+      abortController: new self.AbortController(),
+      contentLength: null,
+      receivedLength: 0,
+      url: seekConfig.url,
+    };
 
     const headers = new self.Headers();
     for (const key in seekConfig.headers) {
@@ -293,6 +296,7 @@ class FetchLoader {
           res.body?.cancel();
           return;
         }
+        request.url = res.url || request.url;
 
         if (res.ok && res.status >= 200 && res.status <= 299) {
           // detect HLS content-type before processing body
@@ -319,7 +323,7 @@ class FetchLoader {
           return this._pump((res.body as ReadableStream<Uint8Array>).getReader(), range, request);
         } else {
           this._status = LoaderStatus.kError;
-          const errInfo: LoaderErrorInfo = { code: res.status, msg: res.statusText };
+          const errInfo: LoaderErrorInfo = { code: res.status, msg: res.statusText, url: request.url };
           if (this.onError) {
             this._handleLoaderError(LoaderErrors.HTTP_STATUS_CODE_INVALID, errInfo);
           } else {
@@ -334,7 +338,7 @@ class FetchLoader {
 
         this._status = LoaderStatus.kError;
         const err = e as Record<string, unknown>;
-        const errInfo: LoaderErrorInfo = { code: -1, msg: String(err.message ?? "") };
+        const errInfo: LoaderErrorInfo = { code: -1, msg: String(err.message ?? ""), url: request.url };
         if (this.onError) {
           this._handleLoaderError(LoaderErrors.EXCEPTION, errInfo);
         } else {
@@ -362,7 +366,7 @@ class FetchLoader {
         if (result.done) {
           if (request.contentLength !== null && request.receivedLength < request.contentLength) {
             this._status = LoaderStatus.kError;
-            const info: LoaderErrorInfo = { code: -1, msg: "Fetch stream meet Early-EOF" };
+            const info: LoaderErrorInfo = { code: -1, msg: "Fetch stream meet Early-EOF", url: request.url };
             this._handleLoaderError(LoaderErrors.EARLY_EOF, info);
           } else {
             this._status = LoaderStatus.kComplete;
@@ -399,10 +403,10 @@ class FetchLoader {
             (request.contentLength !== null && request.receivedLength < request.contentLength))
         ) {
           type = LoaderErrors.EARLY_EOF;
-          info = { code: errCode, msg: "Fetch stream meet Early-EOF" };
+          info = { code: errCode, msg: "Fetch stream meet Early-EOF", url: request.url };
         } else {
           type = LoaderErrors.EXCEPTION;
-          info = { code: errCode, msg: errMsg };
+          info = { code: errCode, msg: errMsg, url: request.url };
         }
 
         this._handleLoaderError(type, info);
@@ -561,7 +565,7 @@ class FetchLoader {
   }
 
   private _handleLoaderError(type: string, data: LoaderErrorInfo): void {
-    Log.e(this.TAG, `Loader error, code = ${data.code}, msg = ${data.msg}`);
+    Log.e(this.TAG, `Loader error, code = ${data.code}, msg = ${data.msg}, url = ${data.url ?? "unknown"}`);
 
     this._flushStashBuffer(false);
 

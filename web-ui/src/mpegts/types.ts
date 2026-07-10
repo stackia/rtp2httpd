@@ -11,6 +11,8 @@ export interface PlayerError {
   category: "io" | "demux" | "media";
   detail: string;
   info?: string;
+  code?: number;
+  url?: string;
 }
 
 export type PlayerVideoScanType = "progressive" | "interlaced";

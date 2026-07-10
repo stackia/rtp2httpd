@@ -58,6 +58,14 @@ const base: TranslationDict = {
   mediaError: "Media error",
   networkError: "Network error",
   failedToPlay: "Failed to play",
+  upstreamRequestFailed: "Upstream stream request failed",
+  upstreamRequestFailedDescription:
+    "The player received an unsuccessful HTTP response while rtp2httpd was forwarding this stream.",
+  httpStatus: "HTTP status",
+  requestUrl: "Request URL",
+  suggestedAction: "What to check",
+  upstreamRequestFailedSuggestion:
+    "Check that the upstream service is reachable and the channel URL and credentials are valid. Review the rtp2httpd logs, then retry.",
 
   // Rewind buttons
   rewind30m: "-30m",
@@ -172,6 +180,13 @@ const zhHans: TranslationDict = {
   mediaError: "媒体错误",
   networkError: "网络错误",
   failedToPlay: "播放失败",
+  upstreamRequestFailed: "上游流请求失败",
+  upstreamRequestFailedDescription: "rtp2httpd 转发此视频流时，播放器收到了异常的 HTTP 响应。",
+  httpStatus: "HTTP 状态",
+  requestUrl: "请求地址",
+  suggestedAction: "建议检查",
+  upstreamRequestFailedSuggestion:
+    "确认上游服务可以访问，频道地址和鉴权参数有效；查看 rtp2httpd 日志中的上游转发错误，修复后重试。",
 
   // 时移按钮
   rewind30m: "-30分钟",
@@ -287,6 +302,13 @@ const zhHant: TranslationDict = {
   mediaError: "媒體錯誤",
   networkError: "網絡錯誤",
   failedToPlay: "播放失敗",
+  upstreamRequestFailed: "上游串流請求失敗",
+  upstreamRequestFailedDescription: "rtp2httpd 轉發此串流時，播放器收到了異常的 HTTP 回應。",
+  httpStatus: "HTTP 狀態",
+  requestUrl: "請求地址",
+  suggestedAction: "建議檢查",
+  upstreamRequestFailedSuggestion:
+    "確認上游服務可以存取，頻道地址和驗證參數有效；查看 rtp2httpd 日誌中的上游轉發錯誤，修復後重試。",
 
   // 時移按鈕
   rewind30m: "-30分鐘",

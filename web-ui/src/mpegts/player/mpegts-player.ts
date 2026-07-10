@@ -124,6 +124,8 @@ export function createMpegtsPlayer(
           category: msg.category === "io" ? "io" : "demux",
           detail: msg.detail,
           info: msg.info,
+          code: msg.code,
+          url: msg.url,
         });
         break;
       case "complete":

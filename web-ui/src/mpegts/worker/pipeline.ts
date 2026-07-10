@@ -11,8 +11,8 @@ import {
   probeFmp4,
   splitInitFromSegment,
 } from "../hls/fmp4";
-import { type HlsInfo, HlsSource } from "../hls/hls-source";
-import FetchLoader, { LoaderErrors } from "../io/fetch-loader";
+import { type HlsInfo, HlsRequestError, HlsSource } from "../hls/hls-source";
+import FetchLoader, { type LoaderErrorInfo, LoaderErrors } from "../io/fetch-loader";
 import { identifyAudioCodec, identifyVideoCodec } from "../media-codecs";
 import MP4Remuxer from "../remux/mp4-remuxer";
 import type { PlayerDynamicRange, PlayerMediaInfo, PlayerSegment } from "../types";
@@ -45,7 +45,7 @@ export interface PipelineCallbacks {
     },
   ) => void;
   onLoadingComplete: () => void;
-  onIOError: (type: string, info: { code: number; msg: string }) => void;
+  onIOError: (type: string, info: LoaderErrorInfo) => void;
   onDemuxError: (type: string, info: string) => void;
   onHlsInfo: (info: HlsInfo) => void;
   onMediaInfo: (info: PlayerMediaInfo) => void;
@@ -56,7 +56,7 @@ export interface PipelineCallbacks {
 class LoadError extends Error {
   constructor(
     public errorType: string,
-    public info: { code: number; msg: string },
+    public info: LoaderErrorInfo,
   ) {
     super(info.msg);
   }
@@ -546,8 +546,17 @@ class Pipeline {
         meta = await source.next();
       } catch (e) {
         if (this._runId === runId) {
-          Log.e(this.TAG, `Segment source failed: ${(e as Error).message}`);
-          this._callbacks.onIOError(LoaderErrors.EXCEPTION, { code: -1, msg: (e as Error).message });
+          const error = e as Error;
+          Log.e(this.TAG, `Segment source failed: ${error.message}`);
+          if (e instanceof HlsRequestError) {
+            this._callbacks.onIOError(LoaderErrors.HTTP_STATUS_CODE_INVALID, {
+              code: e.code,
+              msg: e.statusText,
+              url: e.url,
+            });
+          } else {
+            this._callbacks.onIOError(LoaderErrors.EXCEPTION, { code: -1, msg: error.message });
+          }
         }
         return;
       }
@@ -826,7 +835,11 @@ class Pipeline {
     });
     if (this._runId !== runId) return;
     if (!response.ok) {
-      throw new LoadError(LoaderErrors.HTTP_STATUS_CODE_INVALID, { code: response.status, msg: response.statusText });
+      throw new LoadError(LoaderErrors.HTTP_STATUS_CODE_INVALID, {
+        code: response.status,
+        msg: response.statusText,
+        url: response.url || initUrl,
+      });
     }
     const data = new Uint8Array(await response.arrayBuffer());
     // Superseded mid-fetch (seek/reload/destroy): don't append a stale init segment

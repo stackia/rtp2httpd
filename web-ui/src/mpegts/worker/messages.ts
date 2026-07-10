@@ -15,7 +15,15 @@ export type WorkerEvent =
   | { type: "media-info"; info: PlayerMediaInfo; gen: number }
   | { type: "media-segment"; track: "video" | "audio"; data: ArrayBuffer; timestampOffset?: number; gen: number }
   | { type: "complete"; gen: number }
-  | { type: "error"; category: "io" | "demux"; detail: string; info?: string; gen: number }
+  | {
+      type: "error";
+      category: "io" | "demux";
+      detail: string;
+      info?: string;
+      code?: number;
+      url?: string;
+      gen: number;
+    }
   | { type: "hls-info"; live: boolean; totalDuration: number; gen: number }
   | {
       type: "pcm-audio-data";

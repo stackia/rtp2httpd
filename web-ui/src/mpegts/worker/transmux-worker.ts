@@ -48,7 +48,7 @@ function createPipeline(segments: PlayerSegment[], config: PlayerConfig): Pipeli
       post({ type: "complete", gen });
     },
     onIOError(type, info) {
-      post({ type: "error", category: "io", detail: type, info: info.msg, gen });
+      post({ type: "error", category: "io", detail: type, info: info.msg, code: info.code, url: info.url, gen });
     },
     onDemuxError(type, info) {
       post({ type: "error", category: "demux", detail: type, info, gen });

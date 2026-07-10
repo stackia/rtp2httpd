@@ -21,6 +21,17 @@ const TAG = "HlsSource";
 const LIVE_EDGE_SEGMENTS = 3;
 const MAX_REFRESH_FAILURES = 5;
 
+export class HlsRequestError extends Error {
+  constructor(
+    public readonly code: number,
+    public readonly statusText: string,
+    public readonly url: string,
+  ) {
+    super(`HTTP ${code}${statusText ? ` ${statusText}` : ""}`);
+    this.name = "HlsRequestError";
+  }
+}
+
 /** SegmentSource driven by an HLS media playlist (with live refresh). */
 export class HlsSource implements SegmentSource {
   onInfo: ((info: HlsInfo) => void) | null = null;
@@ -209,7 +220,7 @@ export class HlsSource implements SegmentSource {
       referrerPolicy: (this.config.referrerPolicy as ReferrerPolicy | undefined) ?? "no-referrer-when-downgrade",
     });
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      throw new HlsRequestError(response.status, response.statusText, response.url || url);
     }
     const text = await response.text();
     return parseM3U8(text, response.url || url);
