@@ -1,1 +1,95 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><title>rtp2httpd icon</title><defs><linearGradient id="bgGradient" x1="0%" x2="100%" y1="0%" y2="100%"><stop offset="0%" style="stop-color:#5b8def"/><stop offset="100%" style="stop-color:#8b5cf6"/></linearGradient></defs><rect width="128" height="128" x="0" y="0" fill="url(#bgGradient)" rx="24"/><g fill="none" stroke="#fff" stroke-linecap="round" stroke-width="8"><path d="M 18 42 L 48 42"/><path d="M 18 64 L 48 64"/><path d="M 18 86 L 48 86"/></g><path fill="#fff" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M 68 36 L 68 92 L 110 64 Z"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">rtp2httpd icon</title>
+  <defs>
+    <linearGradient id="panelColor" x1="8" y1="5" x2="121" y2="123" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9c80f7"/>
+      <stop offset="0.34" stop-color="#825feb"/>
+      <stop offset="0.7" stop-color="#6845df"/>
+      <stop offset="1" stop-color="#4c2bc5"/>
+    </linearGradient>
+
+    <radialGradient id="ambientLight" cx="0" cy="0" r="1" gradientTransform="translate(17 11) rotate(42) scale(105)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.44"/>
+      <stop offset="0.24" stop-color="#e9e0ff" stop-opacity="0.16"/>
+      <stop offset="0.62" stop-color="#b49df9" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#7a55e6" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="deepTint" cx="0" cy="0" r="1" gradientTransform="translate(111 112) rotate(-135) scale(79)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3516a4" stop-opacity="0.48"/>
+      <stop offset="0.66" stop-color="#4f2cc8" stop-opacity="0.1"/>
+      <stop offset="1" stop-color="#6642db" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="glassWash" x1="26" y1="2" x2="91" y2="124" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.13"/>
+      <stop offset="0.42" stop-color="#fff" stop-opacity="0.025"/>
+      <stop offset="0.7" stop-color="#c6b2ff" stop-opacity="0.045"/>
+      <stop offset="1" stop-color="#8b6bf0" stop-opacity="0.1"/>
+    </linearGradient>
+
+    <linearGradient id="rimLight" x1="14" y1="4" x2="113" y2="124" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.68"/>
+      <stop offset="0.22" stop-color="#f0eaff" stop-opacity="0.3"/>
+      <stop offset="0.55" stop-color="#a78df3" stop-opacity="0.08"/>
+      <stop offset="0.82" stop-color="#4a28be" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#d8caff" stop-opacity="0.34"/>
+    </linearGradient>
+
+    <linearGradient id="glyphGlass" x1="31" y1="35" x2="86" y2="94" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.98"/>
+      <stop offset="0.52" stop-color="#fbf9ff" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#eae4f9" stop-opacity="0.94"/>
+    </linearGradient>
+
+    <clipPath id="panelClip">
+      <rect width="128" height="128" rx="27"/>
+    </clipPath>
+
+    <filter id="panelDepth" x="-12" y="-12" width="152" height="154" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="3" stdDeviation="3.5" flood-color="#261063" flood-opacity="0.28"/>
+    </filter>
+
+    <filter id="blurredLight" x="-30%" y="-50%" width="160%" height="200%">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+
+    <filter id="glyphDepth" x="-25%" y="-25%" width="150%" height="160%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="1.4" stdDeviation="1.15" flood-color="#2a106e" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#panelDepth)">
+    <rect width="128" height="128" rx="27" fill="url(#panelColor)"/>
+
+    <g clip-path="url(#panelClip)">
+      <rect width="128" height="128" fill="url(#ambientLight)"/>
+      <rect width="128" height="128" fill="url(#deepTint)"/>
+      <rect x="2" y="2" width="124" height="124" rx="25" fill="url(#glassWash)"/>
+
+      <ellipse cx="23" cy="6" rx="38" ry="17" fill="#fff" opacity="0.16" filter="url(#blurredLight)"/>
+      <ellipse cx="112" cy="116" rx="32" ry="22" fill="#9173f6" opacity="0.13" filter="url(#blurredLight)"/>
+
+    </g>
+
+    <rect x="0.75" y="0.75" width="126.5" height="126.5" rx="26.25" fill="none" stroke="url(#rimLight)" stroke-width="1.25"/>
+  </g>
+
+  <g transform="translate(2 0) translate(64 64) skewX(-6) translate(-64 -64)">
+    <g filter="url(#glyphDepth)">
+      <g fill="none" stroke="url(#glyphGlass)" stroke-linecap="round" stroke-width="8">
+        <path d="M18 42h30"/>
+        <path d="M18 64h30"/>
+        <path d="M18 86h30"/>
+      </g>
+      <path d="M74 36.8c11 6.7 23 14.5 34.1 22.9 3.1 2.1 3.1 6.4-0.1 8.5-10.6 7.2-21.5 14.9-32.8 23-2.8 2-6.5 0.1-6.6-3.3l-1.3-47.7c-0.1-3.4 3.7-5.3 6.7-3.4Z" fill="url(#glyphGlass)" stroke="#fff" stroke-opacity="0.82" stroke-width="1.4"/>
+    </g>
+
+    <g fill="none" stroke="#fff" stroke-linecap="round" opacity="0.18">
+      <path d="M18 41h30" stroke-width="0.8"/>
+      <path d="M18 63h30" stroke-width="0.8"/>
+      <path d="M18 85h30" stroke-width="0.8"/>
+      <path d="M68.9 40.5l1.2 46.8" stroke-width="0.9"/>
+    </g>
+  </g>
+</svg>
