@@ -460,7 +460,7 @@ function PlayerPage() {
     handlePictureEnhancementChange,
   ]);
 
-  const hasPlaylistLoadError = error !== null && !metadata;
+  const hasPlaylistLoadError = Boolean(error && !metadata);
   if (!hasPlaylistLoadError) {
     return (
       <div
