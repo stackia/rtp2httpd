@@ -460,200 +460,198 @@ function PlayerPage() {
     handlePictureEnhancementChange,
   ]);
 
-  // Main UI content
-  const mainContent = (
-    <div
-      ref={pageContainerRef}
-      className="player-viewport-height relative flex flex-col bg-[radial-gradient(circle_at_92%_8%,rgba(59,130,246,0.15),transparent_28%),radial-gradient(circle_at_72%_92%,rgba(99,102,241,0.13),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_88%_10%,rgba(59,130,246,0.1),transparent_30%),radial-gradient(circle_at_70%_88%,rgba(99,102,241,0.12),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]"
-    >
-      <title>{t("title")}</title>
-
-      {/* Main Content */}
-      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-        {/* Video Player - Mobile: fixed aspect ratio at top, Desktop: fills left side */}
-        <div className="w-full sticky md:static md:flex-1 shrink-0">
-          <VideoPlayer
-            channel={currentChannel}
-            segments={playbackSegments}
-            playMode={playMode}
-            onError={handleVideoError}
-            locale={locale}
-            currentProgram={currentVideoProgram}
-            onSeek={handleVideoSeek}
-            onStreamStartTimeChange={setStreamStartTime}
-            streamStartTime={streamStartTime}
-            currentVideoTime={currentVideoTime}
-            onCurrentVideoTimeChange={handleCurrentVideoTimeChange}
-            onChannelNavigate={handleChannelNavigate}
-            showSidebar={showSidebar}
-            onToggleSidebar={handleToggleSidebar}
-            isFullscreen={isFullscreen}
-            onFullscreenToggle={handleFullscreenToggle}
-            seamlessSwitch={seamlessSwitch}
-            autoDeinterlace={autoDeinterlace}
-            pictureEnhancement={pictureEnhancement}
-            activeSourceIndex={activeSourceIndex}
-            onSourceChange={handleSourceChange}
-            onPlaybackStarted={handlePlaybackStarted}
-          />
-        </div>
-
-        {/* Sidebar - Mobile: always visible (below video, hidden in fullscreen), Desktop: toggle-able side panel (visible in fullscreen) */}
-        <div
-          className={clsx(
-            "flex w-full flex-1 flex-col overflow-hidden border-blue-950/10 border-t bg-white/68 pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] shadow-[-14px_0_40px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(160deg,rgba(5,13,32,0.96),rgba(17,16,49,0.92))] dark:shadow-[-18px_0_48px_rgba(1,7,24,0.28)] md:w-80 md:flex-initial md:border-t-0 md:border-l md:pt-[env(safe-area-inset-top)] md:pl-0",
-            (showSidebar || isMobile) && !(isFullscreen && isMobile) ? "" : "hidden",
-          )}
-        >
-          {/* Sidebar Tabs */}
-          <div className="flex shrink-0 items-center border-blue-950/10 border-b bg-white/44 shadow-[0_8px_24px_rgba(30,64,175,0.045)] backdrop-blur-xl dark:border-blue-100/10 dark:bg-[linear-gradient(90deg,#1a2035,#292643)]">
-            {(["channels", "epg"] as const).map((view) => (
-              <button
-                type="button"
-                key={view}
-                onClick={() => {
-                  (view === "channels" ? channelListNextScrollBehaviorRef : epgViewNextScrollBehaviorRef).current =
-                    "instant";
-                  setSidebarView(view);
-                }}
-                className={clsx(
-                  "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap border-b-2 px-3 py-2 text-center font-semibold text-xs leading-5 tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] md:px-4 md:py-3 md:text-sm",
-                  sidebarView === view
-                    ? "border-blue-500 bg-[linear-gradient(to_top,rgba(59,130,246,0.12),transparent)] text-blue-700 shadow-[inset_0_-1px_0_rgba(59,130,246,0.18)] dark:border-blue-300 dark:text-blue-200"
-                    : "cursor-pointer border-transparent text-slate-500 hover:bg-blue-400/5 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-100",
-                )}
-              >
-                {view === "channels" ? `${t("channels")} (${metadata?.channels.length || 0})` : t("programGuide")}
-              </button>
-            ))}
-          </div>
-
-          {/* Sidebar Content */}
-          <div className="flex-1 overflow-hidden">
-            <Activity mode={sidebarView === "channels" ? "visible" : "hidden"}>
-              <ChannelList
-                channels={metadata?.channels}
-                groups={metadata?.groups}
-                currentChannel={currentChannel}
-                onChannelSelect={selectChannel}
-                locale={locale}
-                settingsSlot={settingsSlot}
-                epgData={epgData}
-              />
-            </Activity>
-            <Activity mode={sidebarView === "epg" ? "visible" : "hidden"}>
-              <EPGView
-                channelId={currentChannel ? getEPGChannelId(currentChannel, epgData) : null}
-                epgData={epgData}
-                onProgramSelect={handleProgramSelect}
-                locale={locale}
-                supportsCatchup={!!currentChannel?.sources.some((s) => s.catchup && s.catchupSource)}
-                currentPlayingProgram={currentVideoProgram}
-              />
-            </Activity>
-          </div>
-        </div>
-      </div>
-
-      {/* Loading overlay shares the player viewport to avoid iOS standalone fixed-position gaps. */}
-      {isLoading && (
-        <div
-          className={clsx(
-            "absolute inset-0 z-50 flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_65%_60%,rgba(99,102,241,0.14),transparent_35%),linear-gradient(145deg,#f8fbff,#edf2ff)] pt-[max(1rem,env(safe-area-inset-top))] pr-[max(1rem,env(safe-area-inset-right))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] dark:bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.11),transparent_30%),radial-gradient(circle_at_65%_60%,rgba(99,102,241,0.12),transparent_38%),linear-gradient(145deg,#050b18,#090d24)]",
-            isRevealing && "animate-zoom-fade-out",
-          )}
-        >
-          <div className="text-center space-y-4">
-            {/* Loading spinner */}
-            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-blue-950/10 border-t-blue-500 border-r-indigo-500 shadow-[0_0_28px_rgba(59,130,246,0.22)] dark:border-blue-100/10 dark:border-t-blue-300 dark:border-r-indigo-400" />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  if (error && !metadata) {
-    const playlistErrorHints = [t("playlistErrorHintReachable"), t("playlistErrorHintFormat")];
-
+  const hasPlaylistLoadError = error !== null && !metadata;
+  if (!hasPlaylistLoadError) {
     return (
-      <div className="player-viewport-height overflow-y-auto bg-[radial-gradient(circle_at_18%_14%,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_84%_82%,rgba(99,102,241,0.16),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_18%_14%,rgba(59,130,246,0.1),transparent_30%),radial-gradient(circle_at_84%_82%,rgba(99,102,241,0.13),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]">
+      <div
+        ref={pageContainerRef}
+        className="player-viewport-height relative flex flex-col bg-[radial-gradient(circle_at_92%_8%,rgba(59,130,246,0.15),transparent_28%),radial-gradient(circle_at_72%_92%,rgba(99,102,241,0.13),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_88%_10%,rgba(59,130,246,0.1),transparent_30%),radial-gradient(circle_at_70%_88%,rgba(99,102,241,0.12),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]"
+      >
         <title>{t("title")}</title>
-        <div className="mx-auto flex min-h-full w-[calc(100%-2rem)] max-w-5xl items-center py-8 sm:w-[calc(100%-3rem)]">
-          <Card className="min-w-0 w-full overflow-hidden rounded-3xl border-blue-900/10 bg-white/72 shadow-[0_28px_80px_rgba(30,64,175,0.16),inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-2xl dark:border-blue-100/12 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.9),rgba(26,24,72,0.82))] dark:shadow-[0_30px_90px_rgba(1,7,24,0.62),inset_0_1px_0_rgba(255,255,255,0.08)]">
-            <div className="grid min-w-0 md:grid-cols-[minmax(0,1fr)_18rem]">
-              <div className="min-w-0 p-6 sm:p-8 md:p-10">
-                <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-300/20 bg-[linear-gradient(145deg,rgba(251,113,133,0.16),rgba(99,102,241,0.12))] text-rose-500 shadow-[0_12px_28px_rgba(225,29,72,0.12)] dark:text-rose-300">
-                  <AlertTriangle className="h-6 w-6" aria-hidden="true" />
-                </div>
 
-                <div className="font-semibold text-blue-700 text-sm dark:text-blue-200">{t("playlistLoadEyebrow")}</div>
-                <h1 className="mt-2 text-balance font-semibold text-2xl text-foreground leading-tight tracking-tight sm:text-3xl">
-                  {t("playlistLoadTitle")}
-                </h1>
-                <p className="mt-3 max-w-2xl text-pretty break-words text-sm leading-6 text-muted-foreground sm:text-base">
-                  {t("playlistLoadDescription")}
-                </p>
+        {/* Main Content */}
+        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+          {/* Video Player - Mobile: fixed aspect ratio at top, Desktop: fills left side */}
+          <div className="w-full sticky md:static md:flex-1 shrink-0">
+            <VideoPlayer
+              channel={currentChannel}
+              segments={playbackSegments}
+              playMode={playMode}
+              onError={handleVideoError}
+              locale={locale}
+              currentProgram={currentVideoProgram}
+              onSeek={handleVideoSeek}
+              onStreamStartTimeChange={setStreamStartTime}
+              streamStartTime={streamStartTime}
+              currentVideoTime={currentVideoTime}
+              onCurrentVideoTimeChange={handleCurrentVideoTimeChange}
+              onChannelNavigate={handleChannelNavigate}
+              showSidebar={showSidebar}
+              onToggleSidebar={handleToggleSidebar}
+              isFullscreen={isFullscreen}
+              onFullscreenToggle={handleFullscreenToggle}
+              seamlessSwitch={seamlessSwitch}
+              autoDeinterlace={autoDeinterlace}
+              pictureEnhancement={pictureEnhancement}
+              activeSourceIndex={activeSourceIndex}
+              onSourceChange={handleSourceChange}
+              onPlaybackStarted={handlePlaybackStarted}
+            />
+          </div>
 
-                <div className="mt-6 min-w-0 rounded-2xl border border-blue-900/10 bg-blue-50/45 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-blue-100/10 dark:bg-blue-300/6">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <ListChecks className="h-4 w-4 text-blue-600 dark:text-blue-300" aria-hidden="true" />
-                    {t("playlistErrorChecklist")}
-                  </div>
-                  <ul className="mt-3 space-y-2 text-sm leading-5 text-muted-foreground">
-                    {playlistErrorHints.map((hint) => (
-                      <li key={hint} className="flex min-w-0 gap-2">
-                        <span
-                          className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.45)]"
-                          aria-hidden="true"
-                        />
-                        <span className="min-w-0 break-words">{hint}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={loadPlaylist}
-                    className="w-full gap-2 rounded-xl border-primary/20 bg-[linear-gradient(135deg,#0e7490,#4338ca)] text-white shadow-[0_10px_28px_rgba(37,99,235,0.24)] transition-[color,background-color,border-color] hover:border-primary/30 hover:bg-[linear-gradient(135deg,#0e7490,#4338ca)] hover:text-white sm:w-auto"
-                  >
-                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                    {t("retry")}
-                  </Button>
-                  <a
-                    href={getM3UIntegrationGuideUrl(locale)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={buttonVariants({
-                      variant: "outline",
-                      className:
-                        "w-full gap-2 rounded-xl border-blue-900/12 bg-white/55 text-blue-800 shadow-sm hover:bg-blue-50 dark:border-blue-100/15 dark:bg-slate-950/35 dark:text-blue-100 dark:hover:bg-blue-300/10 sm:w-auto",
-                    })}
-                  >
-                    {t("m3uIntegrationGuide")}
-                    <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                  </a>
-                </div>
-              </div>
-
-              <div className="min-w-0 border-blue-900/10 border-t bg-[linear-gradient(145deg,rgba(224,242,254,0.42),rgba(238,242,255,0.58))] p-6 dark:border-blue-100/10 dark:bg-[linear-gradient(145deg,rgba(8,47,73,0.22),rgba(30,27,75,0.3))] md:border-t-0 md:border-l md:p-8">
-                <div className="text-sm font-semibold text-foreground">{t("playlistEndpoint")}</div>
-                <div className="mt-3 break-all rounded-xl border border-blue-900/10 bg-white/55 px-3 py-2 font-mono text-foreground text-sm leading-5 shadow-inner dark:border-blue-100/10 dark:bg-slate-950/42">
-                  {buildAppPath("/playlist.m3u")}
-                </div>
-                <div className="mt-6 text-sm font-semibold text-foreground">{t("technicalDetails")}</div>
-                <p className="mt-2 break-words text-sm leading-6 text-muted-foreground">{error}</p>
-              </div>
+          {/* Sidebar - Mobile: always visible (below video, hidden in fullscreen), Desktop: toggle-able side panel (visible in fullscreen) */}
+          <div
+            className={clsx(
+              "flex w-full flex-1 flex-col overflow-hidden border-blue-950/10 border-t bg-white/68 pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] shadow-[-14px_0_40px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(160deg,rgba(5,13,32,0.96),rgba(17,16,49,0.92))] dark:shadow-[-18px_0_48px_rgba(1,7,24,0.28)] md:w-80 md:flex-initial md:border-t-0 md:border-l md:pt-[env(safe-area-inset-top)] md:pl-0",
+              (showSidebar || isMobile) && !(isFullscreen && isMobile) ? "" : "hidden",
+            )}
+          >
+            {/* Sidebar Tabs */}
+            <div className="flex shrink-0 items-center border-blue-950/10 border-b bg-white/44 shadow-[0_8px_24px_rgba(30,64,175,0.045)] backdrop-blur-xl dark:border-blue-100/10 dark:bg-[linear-gradient(90deg,#1a2035,#292643)]">
+              {(["channels", "epg"] as const).map((view) => (
+                <button
+                  type="button"
+                  key={view}
+                  onClick={() => {
+                    (view === "channels" ? channelListNextScrollBehaviorRef : epgViewNextScrollBehaviorRef).current =
+                      "instant";
+                    setSidebarView(view);
+                  }}
+                  className={clsx(
+                    "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap border-b-2 px-3 py-2 text-center font-semibold text-xs leading-5 tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] md:px-4 md:py-3 md:text-sm",
+                    sidebarView === view
+                      ? "border-blue-500 bg-[linear-gradient(to_top,rgba(59,130,246,0.12),transparent)] text-blue-700 shadow-[inset_0_-1px_0_rgba(59,130,246,0.18)] dark:border-blue-300 dark:text-blue-200"
+                      : "cursor-pointer border-transparent text-slate-500 hover:bg-blue-400/5 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-100",
+                  )}
+                >
+                  {view === "channels" ? `${t("channels")} (${metadata?.channels.length || 0})` : t("programGuide")}
+                </button>
+              ))}
             </div>
-          </Card>
+
+            {/* Sidebar Content */}
+            <div className="flex-1 overflow-hidden">
+              <Activity mode={sidebarView === "channels" ? "visible" : "hidden"}>
+                <ChannelList
+                  channels={metadata?.channels}
+                  groups={metadata?.groups}
+                  currentChannel={currentChannel}
+                  onChannelSelect={selectChannel}
+                  locale={locale}
+                  settingsSlot={settingsSlot}
+                  epgData={epgData}
+                />
+              </Activity>
+              <Activity mode={sidebarView === "epg" ? "visible" : "hidden"}>
+                <EPGView
+                  channelId={currentChannel ? getEPGChannelId(currentChannel, epgData) : null}
+                  epgData={epgData}
+                  onProgramSelect={handleProgramSelect}
+                  locale={locale}
+                  supportsCatchup={!!currentChannel?.sources.some((s) => s.catchup && s.catchupSource)}
+                  currentPlayingProgram={currentVideoProgram}
+                />
+              </Activity>
+            </div>
+          </div>
         </div>
+
+        {/* Loading overlay shares the player viewport to avoid iOS standalone fixed-position gaps. */}
+        {isLoading && (
+          <div
+            className={clsx(
+              "absolute inset-0 z-50 flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_65%_60%,rgba(99,102,241,0.14),transparent_35%),linear-gradient(145deg,#f8fbff,#edf2ff)] pt-[max(1rem,env(safe-area-inset-top))] pr-[max(1rem,env(safe-area-inset-right))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] dark:bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.11),transparent_30%),radial-gradient(circle_at_65%_60%,rgba(99,102,241,0.12),transparent_38%),linear-gradient(145deg,#050b18,#090d24)]",
+              isRevealing && "animate-zoom-fade-out",
+            )}
+          >
+            <div className="text-center space-y-4">
+              {/* Loading spinner */}
+              <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-blue-950/10 border-t-blue-500 border-r-indigo-500 shadow-[0_0_28px_rgba(59,130,246,0.22)] dark:border-blue-100/10 dark:border-t-blue-300 dark:border-r-indigo-400" />
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
-  return mainContent;
+  const playlistErrorHints = [t("playlistErrorHintReachable"), t("playlistErrorHintFormat")];
+
+  return (
+    <div className="player-viewport-height overflow-y-auto bg-[radial-gradient(circle_at_18%_14%,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_84%_82%,rgba(99,102,241,0.16),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_18%_14%,rgba(59,130,246,0.1),transparent_30%),radial-gradient(circle_at_84%_82%,rgba(99,102,241,0.13),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]">
+      <title>{t("title")}</title>
+      <div className="mx-auto flex min-h-full w-[calc(100%-2rem)] max-w-5xl items-center py-8 sm:w-[calc(100%-3rem)]">
+        <Card className="min-w-0 w-full overflow-hidden rounded-3xl border-blue-900/10 bg-white/72 shadow-[0_28px_80px_rgba(30,64,175,0.16),inset_0_1px_0_rgba(255,255,255,0.85)] backdrop-blur-2xl dark:border-blue-100/12 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.9),rgba(26,24,72,0.82))] dark:shadow-[0_30px_90px_rgba(1,7,24,0.62),inset_0_1px_0_rgba(255,255,255,0.08)]">
+          <div className="grid min-w-0 md:grid-cols-[minmax(0,1fr)_18rem]">
+            <div className="min-w-0 p-6 sm:p-8 md:p-10">
+              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-300/20 bg-[linear-gradient(145deg,rgba(251,113,133,0.16),rgba(99,102,241,0.12))] text-rose-500 shadow-[0_12px_28px_rgba(225,29,72,0.12)] dark:text-rose-300">
+                <AlertTriangle className="h-6 w-6" aria-hidden="true" />
+              </div>
+
+              <div className="font-semibold text-blue-700 text-sm dark:text-blue-200">{t("playlistLoadEyebrow")}</div>
+              <h1 className="mt-2 text-balance font-semibold text-2xl text-foreground leading-tight tracking-tight sm:text-3xl">
+                {t("playlistLoadTitle")}
+              </h1>
+              <p className="mt-3 max-w-2xl text-pretty break-words text-sm leading-6 text-muted-foreground sm:text-base">
+                {t("playlistLoadDescription")}
+              </p>
+
+              <div className="mt-6 min-w-0 rounded-2xl border border-blue-900/10 bg-blue-50/45 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-blue-100/10 dark:bg-blue-300/6">
+                <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <ListChecks className="h-4 w-4 text-blue-600 dark:text-blue-300" aria-hidden="true" />
+                  {t("playlistErrorChecklist")}
+                </div>
+                <ul className="mt-3 space-y-2 text-sm leading-5 text-muted-foreground">
+                  {playlistErrorHints.map((hint) => (
+                    <li key={hint} className="flex min-w-0 gap-2">
+                      <span
+                        className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.45)]"
+                        aria-hidden="true"
+                      />
+                      <span className="min-w-0 break-words">{hint}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={loadPlaylist}
+                  className="w-full gap-2 rounded-xl border-primary/20 bg-[linear-gradient(135deg,#0e7490,#4338ca)] text-white shadow-[0_10px_28px_rgba(37,99,235,0.24)] transition-[color,background-color,border-color] hover:border-primary/30 hover:bg-[linear-gradient(135deg,#0e7490,#4338ca)] hover:text-white sm:w-auto"
+                >
+                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                  {t("retry")}
+                </Button>
+                <a
+                  href={getM3UIntegrationGuideUrl(locale)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={buttonVariants({
+                    variant: "outline",
+                    className:
+                      "w-full gap-2 rounded-xl border-blue-900/12 bg-white/55 text-blue-800 shadow-sm hover:bg-blue-50 dark:border-blue-100/15 dark:bg-slate-950/35 dark:text-blue-100 dark:hover:bg-blue-300/10 sm:w-auto",
+                  })}
+                >
+                  {t("m3uIntegrationGuide")}
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                </a>
+              </div>
+            </div>
+
+            <div className="min-w-0 border-blue-900/10 border-t bg-[linear-gradient(145deg,rgba(224,242,254,0.42),rgba(238,242,255,0.58))] p-6 dark:border-blue-100/10 dark:bg-[linear-gradient(145deg,rgba(8,47,73,0.22),rgba(30,27,75,0.3))] md:border-t-0 md:border-l md:p-8">
+              <div className="text-sm font-semibold text-foreground">{t("playlistEndpoint")}</div>
+              <div className="mt-3 break-all rounded-xl border border-blue-900/10 bg-white/55 px-3 py-2 font-mono text-foreground text-sm leading-5 shadow-inner dark:border-blue-100/10 dark:bg-slate-950/42">
+                {buildAppPath("/playlist.m3u")}
+              </div>
+              <div className="mt-6 text-sm font-semibold text-foreground">{t("technicalDetails")}</div>
+              <p className="mt-2 break-words text-sm leading-6 text-muted-foreground">{error}</p>
+            </div>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
 }
 
 // Mount the app
