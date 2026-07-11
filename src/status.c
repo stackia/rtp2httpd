@@ -802,9 +802,13 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
 
       int64_t duration_ms = current_time - client.connect_time;
 
-      /* Escape client_id for JSON */
-      char escaped_client_id[256];
+      /* Escape client-controlled strings before embedding them in JSON. */
+      char escaped_client_id[sizeof(client.client_id) * 6 + 1];
+      char escaped_client_addr[sizeof(client.client_addr) * 6 + 1];
+      char escaped_service_url[sizeof(client.service_url) * 6 + 1];
       json_escape_string_to_buffer(client.client_id, escaped_client_id, sizeof(escaped_client_id));
+      json_escape_string_to_buffer(client.client_addr, escaped_client_addr, sizeof(escaped_client_addr));
+      json_escape_string_to_buffer(client.service_url, escaped_service_url, sizeof(escaped_service_url));
 
       if (append_sse_data(buffer, buffer_capacity, &len,
                           "{\"clientId\":\"%s\",\"workerPid\":%d,\"durationMs\":%lld,"
@@ -813,8 +817,8 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
                           "\"currentBandwidth\":%u,\"queueBytes\":%zu,"
                           "\"queueLimitBytes\":%zu,\"queueBytesHighwater\":%zu,"
                           "\"droppedBytes\":%llu,\"slow\":%d}",
-                          escaped_client_id, (int)owner_pid, (long long)duration_ms, client.client_addr,
-                          client.service_url, (int)client.state, (unsigned long long)client.bytes_sent,
+                          escaped_client_id, (int)owner_pid, (long long)duration_ms, escaped_client_addr,
+                          escaped_service_url, (int)client.state, (unsigned long long)client.bytes_sent,
                           client.current_bandwidth, client.queue_bytes, client.queue_limit_bytes,
                           client.queue_bytes_highwater, (unsigned long long)client.dropped_bytes,
                           client.slow_active) < 0)
