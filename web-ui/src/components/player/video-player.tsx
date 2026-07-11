@@ -1853,7 +1853,8 @@ export function VideoPlayer({
         <div
           role="toolbar"
           className={clsx(
-            "absolute bottom-0 left-0 right-0 z-10 transition-opacity duration-300",
+            "absolute bottom-0 left-[calc(0px_-_env(safe-area-inset-left))] right-[calc(0px_-_env(safe-area-inset-right))] z-10 transition-opacity duration-300",
+            showSidebar && "md:right-0",
             showControls
               ? "opacity-100"
               : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",

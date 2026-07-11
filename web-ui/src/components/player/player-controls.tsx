@@ -227,7 +227,12 @@ export function PlayerControls({
   }, [hoverPosition, getTimeAtPosition]);
 
   return (
-    <div className="flex w-full flex-col gap-1 bg-[linear-gradient(to_top,rgba(2,8,23,0.98)_0%,rgba(8,22,51,0.9)_46%,rgba(21,27,69,0.48)_72%,transparent_100%)] px-1.5 pt-4 pb-1 md:gap-2 md:px-3 md:pt-9 md:pb-3">
+    <div
+      className={clsx(
+        "flex w-full flex-col gap-1 bg-[linear-gradient(to_top,rgba(2,8,23,0.98)_0%,rgba(8,22,51,0.9)_46%,rgba(21,27,69,0.48)_72%,transparent_100%)] pt-4 pr-[max(0.375rem,env(safe-area-inset-right))] pb-1 pl-[max(0.375rem,env(safe-area-inset-left))] md:gap-2 md:pt-9 md:pb-3 md:pl-[max(0.75rem,env(safe-area-inset-left))]",
+        showSidebar ? "md:pr-3" : "md:pr-[max(0.75rem,env(safe-area-inset-right))]",
+      )}
+    >
       {/* Program Info */}
       {currentProgram && (
         <div className="flex min-w-0 items-center justify-between gap-1 text-xs leading-tight tracking-[0.01em] text-blue-50/80 md:gap-2 md:text-sm md:leading-normal">
