@@ -37,8 +37,8 @@ export class WorkerAudioDecoder {
       await this.decoder.ready;
       Log.i(TAG, "MP2 decoder initialized successfully");
       return true;
-    } catch (err) {
-      Log.e(TAG, `Failed to initialize MP2 decoder: ${err}`);
+    } catch (error) {
+      Log.e(TAG, "Failed to initialize MP2 decoder", error);
       this.destroyDecoder();
       return false;
     }
@@ -52,7 +52,7 @@ export class WorkerAudioDecoder {
     try {
       decodedAudio = this.decoder.decode(data);
     } catch (error) {
-      Log.e(TAG, `MP2 decode failed: ${String(error)}`);
+      Log.e(TAG, "MP2 decode failed", error);
       return null;
     }
 
@@ -73,6 +73,7 @@ export class WorkerAudioDecoder {
 
   reset(): void {
     this.decoder?.reset();
+    this.lastDecodedFormat = null;
   }
 
   private destroyDecoder(): void {
@@ -80,6 +81,7 @@ export class WorkerAudioDecoder {
       this.decoder.destroy();
       this.decoder = null;
     }
+    this.lastDecodedFormat = null;
   }
 
   destroy(): void {
