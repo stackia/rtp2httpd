@@ -17,6 +17,7 @@ const TAG = "WorkerAudioDecoder";
 export class WorkerAudioDecoder {
   private decoder: MpegAudioDecoder | null = null;
   private wasmUrl: string;
+  private lastDecodedFormat: string | null = null;
 
   constructor(wasmUrl: string) {
     this.wasmUrl = wasmUrl;
@@ -46,7 +47,28 @@ export class WorkerAudioDecoder {
   /** Decode all complete frames in a PES payload (partial frames are carried over). */
   decode(data: Uint8Array): DecodedAudio | null {
     if (!this.decoder?.isReady) return null;
-    return this.decoder.decode(data);
+
+    let decodedAudio: DecodedAudio | null;
+    try {
+      decodedAudio = this.decoder.decode(data);
+    } catch (error) {
+      Log.e(TAG, `MP2 decode failed: ${String(error)}`);
+      return null;
+    }
+
+    if (!decodedAudio) return null;
+
+    const decodedFormat = `${decodedAudio.sampleRate}Hz/${decodedAudio.channels}ch`;
+    if (this.lastDecodedFormat !== decodedFormat) {
+      Log.i(
+        TAG,
+        `MP2 decoded format${this.lastDecodedFormat ? " changed" : " detected"}: ` +
+          `${this.lastDecodedFormat ?? "none"} -> ${decodedFormat}`,
+      );
+      this.lastDecodedFormat = decodedFormat;
+    }
+
+    return decodedAudio;
   }
 
   reset(): void {

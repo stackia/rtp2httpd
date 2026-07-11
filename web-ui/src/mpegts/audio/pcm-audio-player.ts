@@ -84,6 +84,13 @@ const PENDING_REFILL_WINDOW_SEC = 2.0;
 const DRIFT_LOG_TICKS = 40;
 /** RECOVERING must anchor within this window or escalate via onResyncFailed. */
 const RECOVERY_TIMEOUT_MS = 4000;
+/** Minimum contiguous PCM retained after the startup anchor. */
+const STARTUP_MINIMUM_LEAD_SEC = 0.096;
+/** Keep video nearly stationary while software-decoded PCM catches the initial video clock.
+ *  Chromium rejects positive playback rates below 1/16, so use that portable lower bound. */
+const STARTUP_VIDEO_PLAYBACK_RATE = 0.0625;
+/** Do not leave a stream silently waiting forever when startup cannot be aligned. */
+const STARTUP_SYNC_TIMEOUT_MS = 4000;
 
 /**
  * Lifecycle-driven sync state. The drift control loop and hard resync only run
@@ -98,6 +105,7 @@ const RECOVERY_TIMEOUT_MS = 4000;
  *    timeupdate while visible, or seeked); then one deterministic resync.
  */
 type SyncState = "active" | "background" | "recovering";
+type StartupSyncState = "waiting" | "slowing" | "anchoring" | "complete" | "disabled" | "failed";
 type ControlTickResult = "skipped" | "updated" | "pumped";
 
 interface AudioChunk {
@@ -162,6 +170,14 @@ export class PCMAudioPlayer {
   private isBuffering: boolean = false;
   private isSeeking: boolean = false;
 
+  // Initial MP2 PCM can arrive consistently behind an already-running video.
+  // This state is independent from lifecycle recovery: only first startup may
+  // temporarily slow video while PCM establishes a shared anchor.
+  private startupSyncState: StartupSyncState = "waiting";
+  private startupSyncWaitStartedAt: number | null = null;
+  private startupWaitLogged = false;
+  private startupOriginalPlaybackRate: number | null = null;
+
   // Lifecycle-driven sync state (see SyncState docs)
   private syncState: SyncState = "active";
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -187,6 +203,12 @@ export class PCMAudioPlayer {
    *  (video clock never came back, or the target left the audio buffer) —
    *  the stream needs to be rebuilt by the app layer. */
   onResyncFailed: (() => void) | null = null;
+
+  /** Called when initial PCM and video cannot establish a bounded shared anchor. */
+  onStartupSyncFailed: (() => void) | null = null;
+
+  /** Prevents live-sync from competing for playbackRate during initial PCM alignment. */
+  onStartupRateControlChange: ((active: boolean) => void) | null = null;
 
   constructor(config: PlayerConfig) {
     this.config = config;
@@ -235,6 +257,7 @@ export class PCMAudioPlayer {
         this.pendingChunks = [];
         this.inputCursor = null;
         this.resetDriftState();
+        this.resetStartupSyncWait();
         this.setSyncState("background");
         return;
       }
@@ -248,6 +271,7 @@ export class PCMAudioPlayer {
         this.pendingChunks = [];
         this.inputCursor = null;
         this.resetDriftState();
+        this.resetStartupSyncWait();
         return;
       }
 
@@ -264,7 +288,11 @@ export class PCMAudioPlayer {
         // First activation (autoplay gate lifting) or resume from our own
         // pause() — the video clock was never untrusted; anchor immediately,
         // same as before the sync state machine existed.
-        this.resyncFromBuffer(this.videoElement?.currentTime ?? 0);
+        if (this.startupSyncState === "waiting" || this.startupSyncState === "slowing") {
+          this.tryStartInitialSync();
+        } else {
+          this.resyncFromBuffer(this.videoElement?.currentTime ?? 0);
+        }
       }
     };
 
@@ -393,7 +421,11 @@ export class PCMAudioPlayer {
     this.cleanupBuffer();
 
     if (this.canScheduleAudio()) {
-      this.pump();
+      if (this.startupSyncState === "waiting" || this.startupSyncState === "slowing") {
+        this.tryStartInitialSync();
+      } else {
+        this.pump();
+      }
     }
   }
 
@@ -442,6 +474,9 @@ export class PCMAudioPlayer {
         this.stretcherFailed = true;
         this.pendingChunks = [];
         Log.e(TAG, `WASM stretcher unavailable; cannot play software-decoded audio: ${err}`);
+        if (this.startupSyncState !== "complete" && this.startupSyncState !== "disabled") {
+          this.failStartupSync("WSOLA stretcher initialization failed");
+        }
       });
 
     return null;
@@ -456,6 +491,14 @@ export class PCMAudioPlayer {
   private pump(): void {
     const ctx = this.context;
     if (!ctx || !this.gainNode || !this.canScheduleAudio()) {
+      return;
+    }
+
+    if (this.startupSyncState === "waiting" || this.startupSyncState === "slowing") {
+      this.tryStartInitialSync();
+      return;
+    }
+    if (this.startupSyncState === "failed") {
       return;
     }
 
@@ -576,6 +619,7 @@ export class PCMAudioPlayer {
     if (document.visibilityState === "hidden") {
       // Video decode is about to be suspended; its clock is no longer a sync
       // reference. Audio free-runs (Control Center playback keeps it alive).
+      this.resetStartupSyncWait();
       this.setSyncState("background");
     } else {
       // Pipeline rebuild starts now; wait for proof (timeupdate) before anchoring.
@@ -588,6 +632,19 @@ export class PCMAudioPlayer {
     const video = this.videoElement;
     this.setSyncState("active");
     if (!video) {
+      return;
+    }
+
+    // Startup alignment is deliberately separate from recovery. Once video
+    // progress proves the clock is trustworthy again, resume startup range
+    // evaluation without applying recovery's stale-buffer failure policy.
+    if (this.startupSyncState !== "complete" && this.startupSyncState !== "disabled") {
+      if (this.startupSyncState !== "failed") {
+        this.startupSyncState = "waiting";
+        this.startupSyncWaitStartedAt = null;
+        Log.v(TAG, `Recovery (${reason}): resuming initial startup synchronization`);
+        this.tryStartInitialSync();
+      }
       return;
     }
 
@@ -646,6 +703,124 @@ export class PCMAudioPlayer {
     return !this.isBuffering && this.hasPlayableVideoData();
   }
 
+  private getLatestContiguousAudioRange(): { start: number; end: number } | null {
+    if (this.audioBuffer.length === 0) return null;
+
+    const newestChunkIndex = this.audioBuffer.length - 1;
+    let rangeStart = this.audioBuffer[newestChunkIndex].time;
+    const rangeEnd = this.audioBuffer[newestChunkIndex].endTime;
+
+    for (let chunkIndex = newestChunkIndex - 1; chunkIndex >= 0; chunkIndex--) {
+      const previousChunk = this.audioBuffer[chunkIndex];
+      if (rangeStart - previousChunk.endTime > GAP_SNAP) break;
+      rangeStart = previousChunk.time;
+    }
+
+    return { start: rangeStart, end: rangeEnd };
+  }
+
+  /**
+   * Establish the first shared video/PCM anchor. Unlike seek and recovery,
+   * startup may temporarily slow video because its clock can begin advancing
+   * before software-decoded PCM reaches the main thread.
+   */
+  private tryStartInitialSync(): void {
+    if (this.startupSyncState !== "waiting" && this.startupSyncState !== "slowing") return;
+
+    const video = this.videoElement;
+    if (!video || this.syncState !== "active" || document.visibilityState === "hidden" || !this.canScheduleAudio()) {
+      return;
+    }
+
+    const audioRange = this.getLatestContiguousAudioRange();
+    if (!audioRange) return;
+
+    const now = performance.now();
+    this.startupSyncWaitStartedAt ??= now;
+
+    const videoTime = video.currentTime;
+    const targetHasLead =
+      videoTime >= audioRange.start - GAP_SNAP && videoTime + STARTUP_MINIMUM_LEAD_SEC <= audioRange.end + GAP_SNAP;
+    if (targetHasLead) {
+      this.startupSyncState = "anchoring";
+      Log.i(
+        TAG,
+        `Startup PCM caught video: target=${videoTime.toFixed(3)}s, ` +
+          `buffer=${audioRange.start.toFixed(3)}-${audioRange.end.toFixed(3)}s`,
+      );
+      if (!this.resyncFromBuffer(videoTime)) {
+        this.startupSyncState = this.startupOriginalPlaybackRate === null ? "waiting" : "slowing";
+      }
+      return;
+    }
+
+    const contiguousDuration = audioRange.end - audioRange.start;
+    const lagBehindVideo = videoTime - audioRange.end;
+
+    if (!this.startupWaitLogged && lagBehindVideo > GAP_SNAP) {
+      Log.i(
+        TAG,
+        `Startup PCM trails video by ${(lagBehindVideo * 1000).toFixed(1)}ms; ` +
+          `slowing video to ${STARTUP_VIDEO_PLAYBACK_RATE}x until PCM has ` +
+          `${Math.round(STARTUP_MINIMUM_LEAD_SEC * 1000)}ms lead`,
+      );
+      this.startupWaitLogged = true;
+    }
+
+    if (this.startupSyncState === "waiting") {
+      this.beginStartupRateControl();
+    } else if (video.playbackRate !== STARTUP_VIDEO_PLAYBACK_RATE) {
+      video.playbackRate = STARTUP_VIDEO_PLAYBACK_RATE;
+    }
+
+    if (now - this.startupSyncWaitStartedAt < STARTUP_SYNC_TIMEOUT_MS) return;
+
+    this.failStartupSync(
+      `Startup sync failed: videoTime=${videoTime.toFixed(3)}s, ` +
+        `pcmRange=${audioRange.start.toFixed(3)}-${audioRange.end.toFixed(3)}s, ` +
+        `contiguous=${contiguousDuration.toFixed(3)}s, lag=${lagBehindVideo.toFixed(3)}s`,
+    );
+  }
+
+  private beginStartupRateControl(): void {
+    const video = this.videoElement;
+    if (!video || this.startupOriginalPlaybackRate !== null) return;
+
+    this.startupOriginalPlaybackRate = video.playbackRate > 0 ? video.playbackRate : 1;
+    this.startupSyncState = "slowing";
+    this.onStartupRateControlChange?.(true);
+    video.playbackRate = STARTUP_VIDEO_PLAYBACK_RATE;
+  }
+
+  private restoreStartupPlaybackRate(): void {
+    const originalPlaybackRate = this.startupOriginalPlaybackRate;
+    if (originalPlaybackRate === null) return;
+
+    this.startupOriginalPlaybackRate = null;
+    if (this.videoElement) {
+      this.videoElement.playbackRate = originalPlaybackRate;
+    }
+    this.onStartupRateControlChange?.(false);
+  }
+
+  private failStartupSync(reason: string): void {
+    if (this.startupSyncState === "failed") return;
+
+    this.restoreStartupPlaybackRate();
+    this.startupSyncState = "failed";
+    this.startupSyncWaitStartedAt = null;
+    Log.e(TAG, reason);
+    this.onStartupSyncFailed?.();
+  }
+
+  private resetStartupSyncWait(): void {
+    if (this.startupSyncState === "waiting" || this.startupSyncState === "slowing") {
+      this.restoreStartupPlaybackRate();
+      this.startupSyncState = "waiting";
+      this.startupSyncWaitStartedAt = null;
+    }
+  }
+
   private resetDriftState(): void {
     this.driftEma = 0;
     this.hasDriftEma = false;
@@ -666,6 +841,7 @@ export class PCMAudioPlayer {
     this.pendingChunks = [];
     this.inputCursor = null;
     this.resetDriftState();
+    this.resetStartupSyncWait();
   }
 
   private maybeExitBuffering(): void {
@@ -683,6 +859,10 @@ export class PCMAudioPlayer {
       // Video clock not trusted yet; the state machine anchors on its own
       // events (recovery timeupdate / background free-run via pump).
       this.pump();
+      return;
+    }
+    if (this.startupSyncState === "waiting") {
+      this.tryStartInitialSync();
       return;
     }
     Log.v(TAG, "Video playback resumed; resyncing PCM audio");
@@ -759,6 +939,17 @@ export class PCMAudioPlayer {
     });
     this.nextStartTime += buffer.duration;
     this.outputStreamCursor = streamEnd;
+
+    if (this.startupSyncState === "anchoring") {
+      this.startupSyncState = "complete";
+      this.startupSyncWaitStartedAt = null;
+      this.restoreStartupPlaybackRate();
+      Log.i(
+        TAG,
+        `Startup sync complete: audio=${this.outputStreamCursor.toFixed(3)}s, ` +
+          `video=${this.videoElement?.currentTime.toFixed(3) ?? "none"}s`,
+      );
+    }
 
     this.pruneSpans();
   }
@@ -1100,6 +1291,13 @@ export class PCMAudioPlayer {
     this.cancelChain();
     this.pendingChunks = [];
     this.isSeeking = true;
+
+    if (this.startupSyncState !== "complete") {
+      // User/media seeks remain exact and cancel startup rate control.
+      this.restoreStartupPlaybackRate();
+      this.startupSyncState = "disabled";
+      this.startupSyncWaitStartedAt = null;
+    }
   }
 
   private onVideoSeeked(): void {
@@ -1129,7 +1327,11 @@ export class PCMAudioPlayer {
     } else {
       const video = this.videoElement;
       if (video && this.syncState === "active" && this.canScheduleAudio()) {
-        this.resyncFromBuffer(video.currentTime);
+        if (this.startupSyncState === "waiting" || this.startupSyncState === "slowing") {
+          this.tryStartInitialSync();
+        } else {
+          this.resyncFromBuffer(video.currentTime);
+        }
       }
     }
 
@@ -1147,6 +1349,7 @@ export class PCMAudioPlayer {
     this.cancelChain();
     this.pendingChunks = [];
     this.inputCursor = null;
+    this.resetStartupSyncWait();
 
     if (this.context?.state === "running") {
       this.context.suspend();
@@ -1159,9 +1362,13 @@ export class PCMAudioPlayer {
 
   stop(): void {
     this.cancelChain();
+    this.restoreStartupPlaybackRate();
 
     this.pendingChunks = [];
     this.audioBuffer = [];
+    this.startupSyncState = "waiting";
+    this.startupSyncWaitStartedAt = null;
+    this.startupWaitLogged = false;
 
     this.isBuffering = false;
     this.isSeeking = false;
