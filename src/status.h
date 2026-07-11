@@ -145,7 +145,7 @@ typedef struct {
 /* Shared memory structure for status information */
 typedef struct {
   /* Global statistics */
-  _Atomic uint32_t client_admission_owner_pid; /* Worker PID holding the short client admission guard */
+  _Atomic uint32_t client_admission_owner_pid;          /* Worker PID holding the short client admission guard */
   uint64_t client_bytes_cumulative[STATUS_MAX_WORKERS]; /* Single-writer shard per worker index */
   uint32_t total_bandwidth;
   int64_t server_start_time; /* Server start time in milliseconds */
