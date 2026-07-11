@@ -36,7 +36,7 @@ The player page path can be customized via the `player-page-path` configuration 
 
 The built-in web player supports PWA (Progressive Web App). You can add the player page to your device's home screen (including phones, tablets, computers, and LG webOS smart TVs) and launch it like a native app for a full-screen, immersive viewing experience.
 
-After adding to the home screen, the desktop icon is named **IPTV** by default and uses the built-in app icon. The player retains local settings such as theme preferences.
+After adding to the home screen, the desktop icon is named **R2H Player** by default and uses the built-in app icon. The player retains local settings such as theme preferences.
 
 ### iOS / iPadOS (Safari)
 

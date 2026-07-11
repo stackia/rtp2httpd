@@ -12,7 +12,7 @@ STAGING_ROOT="$SUPPORT_DIR/.staging"
 STAGING_PACKAGE="$STAGING_ROOT/rtp2httpd"
 DIST_DIR="$SUPPORT_DIR/dist"
 MANIFEST="$PACKAGE_SRC/manifest.json"
-ICON_SOURCE="$PROJECT_ROOT/web-ui/public/assets/icon.png"
+ICON_SOURCE="$PROJECT_ROOT/web-ui/public/assets/icon-192.png"
 
 VERSION=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"v\{0,1\}\([^"]*\)".*/\1/p' "$MANIFEST" | head -1)
 VERSION=${1:-$VERSION}

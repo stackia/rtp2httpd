@@ -85,6 +85,183 @@ static const embedded_file_t *find_embedded_file(const char *path) {
   return hashmap_get(embedded_files_map, &key);
 }
 
+/* Configuration parsing normalizes the prefix to empty or /prefix (no trailing slash), and page paths to /path
+ * (no trailing slash) or /. Concatenating those normalized forms therefore also handles root pages correctly. */
+static char *build_public_path(const char *page_path) {
+  const char *prefix = (config.app_path_prefix && config.app_path_prefix[0] != '\0') ? config.app_path_prefix : "";
+  const char *path = (page_path && page_path[0] != '\0') ? page_path : "/";
+  size_t prefix_len = strlen(prefix);
+  size_t path_len = strlen(path);
+  size_t result_len = prefix_len + path_len;
+  char *result;
+
+  if (result_len >= HTTP_URL_BUFFER_SIZE)
+    return NULL;
+
+  result = malloc(result_len + 1);
+  if (!result)
+    return NULL;
+
+  snprintf(result, result_len + 1, "%s%s", prefix, path);
+  return result;
+}
+
+static char *build_manifest_start_url(const char *page_path) {
+  char *public_path = build_public_path(page_path);
+  char *encoded_token = NULL;
+  char *start_url = NULL;
+  size_t start_url_len;
+
+  if (!public_path)
+    return NULL;
+
+  if (!config.r2h_token || config.r2h_token[0] == '\0')
+    return public_path;
+
+  encoded_token = http_url_encode(config.r2h_token);
+  if (!encoded_token) {
+    free(public_path);
+    return NULL;
+  }
+
+  start_url_len = strlen(public_path) + strlen("?r2h-token=") + strlen(encoded_token);
+  if (start_url_len >= HTTP_URL_BUFFER_SIZE) {
+    free(encoded_token);
+    free(public_path);
+    return NULL;
+  }
+
+  start_url = malloc(start_url_len + 1);
+  if (start_url)
+    snprintf(start_url, start_url_len + 1, "%s?r2h-token=%s", public_path, encoded_token);
+
+  free(encoded_token);
+  free(public_path);
+  return start_url;
+}
+
+static int format_web_app_manifest(char *buffer, size_t buffer_size, const char *name, const char *short_name,
+                                   const char *english_name, const char *english_short_name, const char *public_path,
+                                   const char *start_url, const char *theme_color, const char *background_color,
+                                   const char *icon_192_path, const char *icon_512_path) {
+  return snprintf(buffer, buffer_size,
+                  "{\n"
+                  "  \"lang\": \"zh-Hans\",\n"
+                  "  \"dir\": \"ltr\",\n"
+                  "  \"name\": \"%s\",\n"
+                  "  \"short_name\": \"%s\",\n"
+                  "  \"name_localized\": {\n"
+                  "    \"zh-Hans\": \"%s\",\n"
+                  "    \"zh-Hant\": \"%s\",\n"
+                  "    \"en\": \"%s\"\n"
+                  "  },\n"
+                  "  \"short_name_localized\": {\n"
+                  "    \"zh-Hans\": \"%s\",\n"
+                  "    \"zh-Hant\": \"%s\",\n"
+                  "    \"en\": \"%s\"\n"
+                  "  },\n"
+                  "  \"id\": \"%s\",\n"
+                  "  \"scope\": \"%s\",\n"
+                  "  \"start_url\": \"%s\",\n"
+                  "  \"display\": \"standalone\",\n"
+                  "  \"theme_color\": \"%s\",\n"
+                  "  \"background_color\": \"%s\",\n"
+                  "  \"icons\": [\n"
+                  "    {\"src\": \"%s\", \"sizes\": \"192x192\", \"type\": \"image/png\"},\n"
+                  "    {\"src\": \"%s\", \"sizes\": \"512x512\", \"type\": \"image/png\"}\n"
+                  "  ]\n"
+                  "}\n",
+                  name, short_name, name, name, english_name, short_name, short_name, english_short_name, public_path,
+                  public_path, start_url, theme_color, background_color, icon_192_path, icon_512_path);
+}
+
+void handle_web_app_manifest(connection_t *c, bool player_page) {
+  const char *page_path = player_page ? config.player_page_path : config.status_page_path;
+  /* JSON Unicode escapes preserve an ASCII-only payload template: \u64ad\u653e\u5668 is "播放器" and
+   * \u9762\u677f is "面板". */
+  const char *name = player_page ? "rtp2httpd \\u64ad\\u653e\\u5668" : "rtp2httpd \\u9762\\u677f";
+  const char *short_name = player_page ? "R2H \\u64ad\\u653e\\u5668" : "R2H \\u9762\\u677f";
+  const char *english_name = player_page ? "rtp2httpd Player" : "rtp2httpd Status";
+  const char *english_short_name = player_page ? "R2H Player" : "R2H Status";
+  /* Manifest colors cannot vary with prefers-color-scheme. Use each page's dark background for both fields to keep
+   * the installed-app splash and browser chrome consistent and avoid a bright flash during launch. */
+  const char *theme_color = player_page ? "#050b18" : "#090b1a";
+  const char *background_color = theme_color;
+  char *public_path = NULL;
+  char *start_url = NULL;
+  char *icon_192_path = NULL;
+  char *icon_512_path = NULL;
+  char *escaped_public_path = NULL;
+  char *escaped_start_url = NULL;
+  char *escaped_icon_192_path = NULL;
+  char *escaped_icon_512_path = NULL;
+  char *manifest = NULL;
+  char extra_headers[256];
+  int manifest_len;
+
+  if (!c)
+    return;
+
+  public_path = build_public_path(page_path);
+  start_url = build_manifest_start_url(page_path);
+  icon_192_path = build_public_path("/assets/icon-192.png");
+  icon_512_path = build_public_path("/assets/icon-512.png");
+  if (!public_path || !start_url || !icon_192_path || !icon_512_path)
+    goto error;
+
+  escaped_public_path = json_escape_string(public_path);
+  escaped_start_url = json_escape_string(start_url);
+  escaped_icon_192_path = json_escape_string(icon_192_path);
+  escaped_icon_512_path = json_escape_string(icon_512_path);
+  if (!escaped_public_path || !escaped_start_url || !escaped_icon_192_path || !escaped_icon_512_path)
+    goto error;
+
+  manifest_len = format_web_app_manifest(NULL, 0, name, short_name, english_name, english_short_name,
+                                         escaped_public_path, escaped_start_url, theme_color, background_color,
+                                         escaped_icon_192_path, escaped_icon_512_path);
+  if (manifest_len < 0)
+    goto error;
+
+  manifest = malloc((size_t)manifest_len + 1);
+  if (!manifest)
+    goto error;
+
+  if (format_web_app_manifest(manifest, (size_t)manifest_len + 1, name, short_name, english_name, english_short_name,
+                              escaped_public_path, escaped_start_url, theme_color, background_color,
+                              escaped_icon_192_path, escaped_icon_512_path) != manifest_len)
+    goto error;
+
+  snprintf(extra_headers, sizeof(extra_headers),
+           "Content-Length: %d\r\n"
+           "Cache-Control: no-cache\r\n",
+           manifest_len);
+  send_http_headers(c, STATUS_200, "application/manifest+json; charset=utf-8", extra_headers);
+  connection_queue_output_and_flush(c, (const uint8_t *)manifest, (size_t)manifest_len);
+
+  free(manifest);
+  free(escaped_icon_512_path);
+  free(escaped_icon_192_path);
+  free(escaped_start_url);
+  free(escaped_public_path);
+  free(icon_512_path);
+  free(icon_192_path);
+  free(start_url);
+  free(public_path);
+  return;
+
+error:
+  free(manifest);
+  free(escaped_icon_512_path);
+  free(escaped_icon_192_path);
+  free(escaped_start_url);
+  free(escaped_public_path);
+  free(icon_512_path);
+  free(icon_192_path);
+  free(start_url);
+  free(public_path);
+  http_send_500(c);
+}
+
 static size_t html_attr_escaped_len(const char *value) {
   size_t len = 0;
 

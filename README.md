@@ -1,4 +1,4 @@
-# <img src="./web-ui/public/assets/icon.png" width="24" height="24"> rtp2httpd - IPTV 流媒体转发服务器
+# <img src="./web-ui/public/assets/icon-192.png" width="24" height="24"> rtp2httpd - IPTV 流媒体转发服务器
 
 [>> 访问官方文档网站 <<](https://rtp2httpd.com)
 
