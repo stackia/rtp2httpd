@@ -15,13 +15,20 @@
     <link rel="apple-touch-icon" href="./assets/icon.png" />
     <script>
       (() => {
+        const root = document.documentElement;
+        const navigatorStandalone = navigator.standalone;
+        const isStandalone =
+          typeof navigatorStandalone === "boolean"
+            ? navigatorStandalone
+            : window.matchMedia("(display-mode: standalone)").matches;
+        root.classList.toggle("player-standalone", isStandalone);
+
         try {
           const storageKey = "player-theme";
           const stored = localStorage.getItem(storageKey);
           const theme = stored === "light" || stored === "dark" ? stored : "auto";
           const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
           const isDark = theme === "dark" || (theme === "auto" && prefersDark);
-          const root = document.documentElement;
           if (isDark) {
             root.classList.add("dark");
             root.style.colorScheme = "dark";

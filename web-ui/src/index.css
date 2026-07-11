@@ -126,3 +126,11 @@
     transition-duration: 0.01ms;
   }
 }
+
+.player-viewport-height {
+  height: 100dvh;
+}
+
+.player-standalone .player-viewport-height {
+  height: 100vh;
+}
