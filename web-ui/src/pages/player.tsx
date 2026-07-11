@@ -464,7 +464,7 @@ function PlayerPage() {
   const mainContent = (
     <div
       ref={pageContainerRef}
-      className="player-viewport-height flex flex-col bg-[radial-gradient(circle_at_92%_8%,rgba(59,130,246,0.15),transparent_28%),radial-gradient(circle_at_72%_92%,rgba(99,102,241,0.13),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_88%_10%,rgba(59,130,246,0.1),transparent_30%),radial-gradient(circle_at_70%_88%,rgba(99,102,241,0.12),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]"
+      className="player-viewport-height relative flex flex-col bg-[radial-gradient(circle_at_92%_8%,rgba(59,130,246,0.15),transparent_28%),radial-gradient(circle_at_72%_92%,rgba(99,102,241,0.13),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_88%_10%,rgba(59,130,246,0.1),transparent_30%),radial-gradient(circle_at_70%_88%,rgba(99,102,241,0.12),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]"
     >
       <title>{t("title")}</title>
 
@@ -554,6 +554,21 @@ function PlayerPage() {
           </div>
         </div>
       </div>
+
+      {/* Loading overlay shares the player viewport to avoid iOS standalone fixed-position gaps. */}
+      {isLoading && (
+        <div
+          className={clsx(
+            "absolute inset-0 z-50 flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_65%_60%,rgba(99,102,241,0.14),transparent_35%),linear-gradient(145deg,#f8fbff,#edf2ff)] pt-[max(1rem,env(safe-area-inset-top))] pr-[max(1rem,env(safe-area-inset-right))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] dark:bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.11),transparent_30%),radial-gradient(circle_at_65%_60%,rgba(99,102,241,0.12),transparent_38%),linear-gradient(145deg,#050b18,#090d24)]",
+            isRevealing && "animate-zoom-fade-out",
+          )}
+        >
+          <div className="text-center space-y-4">
+            {/* Loading spinner */}
+            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-blue-950/10 border-t-blue-500 border-r-indigo-500 shadow-[0_0_28px_rgba(59,130,246,0.22)] dark:border-blue-100/10 dark:border-t-blue-300 dark:border-r-indigo-400" />
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -638,26 +653,7 @@ function PlayerPage() {
     );
   }
 
-  return (
-    <>
-      {/* Main content rendered below (will be revealed) */}
-      {mainContent}
-      {/* Loading overlay */}
-      {isLoading && (
-        <div
-          className={clsx(
-            "player-viewport-height fixed top-0 left-0 z-50 flex w-full items-center justify-center bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_65%_60%,rgba(99,102,241,0.14),transparent_35%),linear-gradient(145deg,#f8fbff,#edf2ff)] pt-[max(1rem,env(safe-area-inset-top))] pr-[max(1rem,env(safe-area-inset-right))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] dark:bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.11),transparent_30%),radial-gradient(circle_at_65%_60%,rgba(99,102,241,0.12),transparent_38%),linear-gradient(145deg,#050b18,#090d24)]",
-            isRevealing && "animate-zoom-fade-out",
-          )}
-        >
-          <div className="text-center space-y-4">
-            {/* Loading spinner */}
-            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-blue-950/10 border-t-blue-500 border-r-indigo-500 shadow-[0_0_28px_rgba(59,130,246,0.22)] dark:border-blue-100/10 dark:border-t-blue-300 dark:border-r-indigo-400" />
-          </div>
-        </div>
-      )}
-    </>
-  );
+  return mainContent;
 }
 
 // Mount the app
