@@ -41,7 +41,6 @@
 }
 
 :root {
-  --player-surface-background: radial-gradient(circle at 50% 35%, #102044 0%, #050b18 58%, #01030a 100%);
   --background: 226 44% 97%;
   --foreground: 229 36% 14%;
   --card: 0 0% 100%;
@@ -134,15 +133,4 @@
 
 .player-standalone .player-viewport-height {
   height: 100vh;
-}
-
-.player-surface-background {
-  background: var(--player-surface-background);
-}
-
-@media (orientation: portrait) {
-  html.player-surface-active,
-  html.player-surface-active body {
-    background: var(--player-surface-background);
-  }
 }

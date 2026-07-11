@@ -1674,9 +1674,8 @@ export function VideoPlayer({
       role="application"
       ref={playerSurfaceRef}
       className={clsx(
-        "dark @container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center",
+        "dark @container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)]",
         isDocumentPiP ? "h-screen min-h-screen aspect-auto" : "md:aspect-auto md:h-full",
-        isDocumentPiP && "player-surface-background",
         !showControls && "cursor-none",
       )}
       onPointerEnter={handlePointerHover}
@@ -1897,7 +1896,7 @@ export function VideoPlayer({
   return (
     <div
       className={clsx(
-        "player-surface-background relative w-full pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:h-full",
+        "relative w-full bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)] pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:h-full",
         showSidebar && "md:pr-0",
       )}
     >
