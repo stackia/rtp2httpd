@@ -70,10 +70,10 @@ function shouldInsetSidebarRight(): boolean {
   const { angle, type } = screen.orientation;
   if (!type.startsWith("landscape")) return true;
 
-  // On naturally portrait screens, 90° puts the device top on the right and
-  // 270° puts it on the left. Preserve the inset for other angles, including
-  // naturally landscape devices.
-  return angle !== 270;
+  // At 90°, the sidebar's right edge is on the device-bottom side and may
+  // overlap the smaller system area. Preserve the inset at 270° and for other
+  // angles, including naturally landscape devices.
+  return angle !== 90;
 }
 
 function PlayerPage() {
