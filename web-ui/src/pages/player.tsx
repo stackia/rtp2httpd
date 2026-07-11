@@ -66,6 +66,18 @@ function unlockScreenOrientation(): void {
   }
 }
 
+function shouldInsetSidebarRight(): boolean {
+  if (!("standalone" in navigator)) return true;
+
+  const { angle, type } = screen.orientation;
+  if (!type.startsWith("landscape")) return true;
+
+  // On naturally portrait iPhones, Safari reports 90° with the notch on the
+  // right and 270° with the notch on the left. Preserve the inset for other
+  // angles, including naturally landscape iPads.
+  return angle !== 270;
+}
+
 function PlayerPage() {
   const { locale, setLocale } = useLocale("player-locale");
   const { theme, setTheme } = useTheme("player-theme");
@@ -83,6 +95,7 @@ function PlayerPage() {
   const [sidebarView, setSidebarView] = useState<"channels" | "epg">("channels");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [insetSidebarRight, setInsetSidebarRight] = useState(shouldInsetSidebarRight);
   const [seamlessSwitch, setSeamlessSwitch] = useState(() => getSeamlessSwitch());
   const [autoDeinterlace, setAutoDeinterlace] = useState(() => getAutoDeinterlace());
   const [pictureEnhancement, setPictureEnhancement] = useState(() => getPictureEnhancement());
@@ -124,15 +137,20 @@ function PlayerPage() {
     };
   }, []);
 
-  // Track mobile/desktop state
+  // Track responsive layout and which physical edge is on the sidebar's right.
   useEffect(() => {
-    const handleResize = () => {
-      startTransition(() => setIsMobile(window.innerWidth < 768));
+    const handleViewportChange = () => {
+      startTransition(() => {
+        setIsMobile(window.innerWidth < 768);
+        setInsetSidebarRight(shouldInsetSidebarRight());
+      });
     };
 
-    window.addEventListener("resize", handleResize);
+    window.addEventListener("resize", handleViewportChange);
+    screen.orientation.addEventListener("change", handleViewportChange);
     return () => {
-      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("resize", handleViewportChange);
+      screen.orientation.removeEventListener("change", handleViewportChange);
     };
   }, []);
 
@@ -502,7 +520,8 @@ function PlayerPage() {
           {/* Sidebar - Mobile: always visible (below video, hidden in fullscreen), Desktop: toggle-able side panel (visible in fullscreen) */}
           <div
             className={clsx(
-              "flex w-full flex-1 flex-col overflow-hidden border-blue-950/10 border-t bg-white/68 pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] shadow-[-14px_0_40px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(160deg,rgba(5,13,32,0.96),rgba(17,16,49,0.92))] dark:shadow-[-18px_0_48px_rgba(1,7,24,0.28)] md:w-80 md:flex-initial md:border-t-0 md:border-l md:pt-[env(safe-area-inset-top)] md:pl-0",
+              "flex w-full flex-1 flex-col overflow-hidden border-blue-950/10 border-t bg-white/68 pl-[env(safe-area-inset-left)] shadow-[-14px_0_40px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(160deg,rgba(5,13,32,0.96),rgba(17,16,49,0.92))] dark:shadow-[-18px_0_48px_rgba(1,7,24,0.28)] md:w-80 md:flex-initial md:border-t-0 md:border-l md:pt-[env(safe-area-inset-top)] md:pl-0",
+              insetSidebarRight && "pr-[env(safe-area-inset-right)]",
               (showSidebar || isMobile) && !(isFullscreen && isMobile) ? "" : "hidden",
             )}
           >
