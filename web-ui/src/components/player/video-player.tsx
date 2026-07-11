@@ -7,6 +7,7 @@ import {
   useEffect,
   useEffectEvent,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -23,6 +24,7 @@ import {
 import type { Locale } from "../../lib/locale";
 import { buildCatchupSegments } from "../../lib/m3u-parser";
 import { getMuted, getVolume, saveMuted, saveVolume } from "../../lib/player-storage";
+import { createProgramTimeline, programPositionToWallClock } from "../../lib/program-timeline";
 import {
   createPlayer,
   defaultConfig,
@@ -38,6 +40,7 @@ import {
   goLiveTargetMse,
   isNearLiveWallClock,
   type LiveSessionAnchor,
+  mseToWallClock,
   wallClockToMse,
 } from "../../mpegts/player/wall-clock";
 import mp2WasmUrl from "../../mpegts/wasm/minimp3/mp2_decoder.wasm?url";
@@ -104,6 +107,18 @@ function isInterruptedPlayError(err: unknown): boolean {
 
 function ignoreInterruptedPlayError(err: unknown): void {
   if (!isInterruptedPlayError(err)) throw err;
+}
+
+function setMediaSessionAction(
+  mediaSession: MediaSession,
+  action: MediaSessionAction,
+  handler: MediaSessionActionHandler | null,
+): void {
+  try {
+    mediaSession.setActionHandler(action, handler);
+  } catch {
+    // Some browsers expose Media Session but do not implement every action.
+  }
 }
 
 function decodeRequestUrl(url: string): string {
@@ -236,6 +251,13 @@ export function VideoPlayer({
   onPlaybackStarted,
 }: VideoPlayerProps) {
   const t = usePlayerTranslation(locale);
+  const programTimeline = useMemo(
+    () => (currentProgram ? createProgramTimeline(currentProgram, streamStartTime, currentVideoTime) : null),
+    [currentProgram, streamStartTime, currentVideoTime],
+  );
+  const canSeekProgramInMediaSession = Boolean(
+    programTimeline && channel?.sources.some((source) => source.catchup && source.catchupSource),
+  );
 
   const playerDockRef = useRef<HTMLDivElement>(null);
   const playerSurfaceRef = useRef<HTMLDivElement>(null);
@@ -319,6 +341,7 @@ export function VideoPlayer({
   const userPausedRef = useRef(false);
   /** Reset wall-clock calibration after each new segment load. */
   const wallClockCalibratedRef = useRef(false);
+  const mediaSessionPositionUpdatedAtRef = useRef(0);
 
   // Digit input state
   const [digitBuffer, setDigitBuffer] = useState("");
@@ -634,7 +657,7 @@ export function VideoPlayer({
     }
     const source = channel?.sources[activeSourceIndex];
     if (source?.catchupSource) {
-      const seekTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
+      const seekTime = mseToWallClock(currentVideoTime, streamStartTime);
       return buildCatchupSegments(source, seekTime);
     }
     return segments;
@@ -712,7 +735,7 @@ export function VideoPlayer({
         if (playMode === "live") {
           onSeek(new Date(), true);
         } else {
-          onSeek(new Date(streamStartTime.getTime() + currentVideoTime * 1000), false);
+          onSeek(mseToWallClock(currentVideoTime, streamStartTime), false);
         }
       }
       if (playMode === "catchup") {
@@ -762,7 +785,7 @@ export function VideoPlayer({
   const handleSeekNeeded = useEffectEvent((seconds: number) => {
     const video = getActiveVideo();
     shouldAutoPlayRef.current = !video?.paused;
-    const seekTime = new Date(streamStartTime.getTime() + seconds * 1000);
+    const seekTime = mseToWallClock(seconds, streamStartTime);
     onSeek?.(seekTime, isNearLiveWallClock(seekTime, liveSessionAnchor, streamStartTime));
   });
 
@@ -866,6 +889,67 @@ export function VideoPlayer({
     }
   });
 
+  const updateMediaSessionPosition = useEffectEvent((force = false) => {
+    if (!("mediaSession" in navigator) || !navigator.mediaSession.setPositionState) return;
+
+    if (!channel) {
+      navigator.mediaSession.setPositionState({});
+      return;
+    }
+
+    const now = Date.now();
+    if (!force && now - mediaSessionPositionUpdatedAtRef.current < 1000) return;
+
+    const video = getActiveVideo();
+    if (!video) return;
+    mediaSessionPositionUpdatedAtRef.current = now;
+
+    const timeline = currentProgram ? createProgramTimeline(currentProgram, streamStartTime, video.currentTime) : null;
+    const supportsCatchup = channel.sources.some((source) => source.catchup && source.catchupSource);
+
+    try {
+      if (timeline && supportsCatchup) {
+        navigator.mediaSession.setPositionState({
+          duration: timeline.durationSeconds,
+          position: timeline.positionSeconds,
+          playbackRate: video.playbackRate || 1,
+        });
+      } else {
+        navigator.mediaSession.setPositionState({
+          duration: Infinity,
+          position: Math.max(0, video.currentTime),
+          playbackRate: video.playbackRate || 1,
+        });
+      }
+    } catch {
+      // Older implementations may reject Infinity even though it represents live media.
+      navigator.mediaSession.setPositionState({});
+    }
+  });
+
+  const handleMediaSessionPlay = useEffectEvent(() => {
+    userPausedRef.current = false;
+    getActiveVideo()?.play()?.catch(ignoreInterruptedPlayError);
+  });
+
+  const handleMediaSessionPause = useEffectEvent(() => {
+    userPausedRef.current = true;
+    getActiveVideo()?.pause();
+  });
+
+  const handleMediaSessionSeekBackward = useEffectEvent((details: MediaSessionActionDetails) => {
+    handleRelativeSeek(-(details.seekOffset ?? 5));
+  });
+
+  const handleMediaSessionSeekForward = useEffectEvent((details: MediaSessionActionDetails) => {
+    handleRelativeSeek(details.seekOffset ?? 5);
+  });
+
+  const handleMediaSessionSeekTo = useEffectEvent((details: MediaSessionActionDetails) => {
+    if (!programTimeline || details.seekTime === undefined) return;
+    handleSeek(programPositionToWallClock(programTimeline, details.seekTime));
+  });
+
   // Media Session: lock screen / control center metadata (esp. useful during PiP playback)
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
@@ -883,26 +967,50 @@ export function VideoPlayer({
 
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
-    navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
-  }, [isPlaying]);
+    navigator.mediaSession.playbackState = channel ? (isPlaying ? "playing" : "paused") : "none";
+  }, [channel, isPlaying]);
 
-  // Media Session action handlers (lock screen / control center play & pause)
+  // Media Session action handlers (lock screen / control center playback and EPG timeline seeking)
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
-    const videoForActiveSlot = () => (activeSlotIdRef.current === "a" ? slotAVideoRef : slotBVideoRef).current;
-    navigator.mediaSession.setActionHandler("play", () => {
-      userPausedRef.current = false;
-      videoForActiveSlot()?.play()?.catch(ignoreInterruptedPlayError);
-    });
-    navigator.mediaSession.setActionHandler("pause", () => {
-      userPausedRef.current = true;
-      videoForActiveSlot()?.pause();
-    });
+    const mediaSession = navigator.mediaSession;
+    setMediaSessionAction(mediaSession, "play", handleMediaSessionPlay);
+    setMediaSessionAction(mediaSession, "pause", handleMediaSessionPause);
+    setMediaSessionAction(
+      mediaSession,
+      "seekbackward",
+      canSeekProgramInMediaSession ? handleMediaSessionSeekBackward : null,
+    );
+    setMediaSessionAction(
+      mediaSession,
+      "seekforward",
+      canSeekProgramInMediaSession ? handleMediaSessionSeekForward : null,
+    );
+    setMediaSessionAction(mediaSession, "seekto", canSeekProgramInMediaSession ? handleMediaSessionSeekTo : null);
     return () => {
-      navigator.mediaSession.setActionHandler("play", null);
-      navigator.mediaSession.setActionHandler("pause", null);
+      setMediaSessionAction(mediaSession, "play", null);
+      setMediaSessionAction(mediaSession, "pause", null);
+      setMediaSessionAction(mediaSession, "seekbackward", null);
+      setMediaSessionAction(mediaSession, "seekforward", null);
+      setMediaSessionAction(mediaSession, "seekto", null);
     };
-  }, []);
+  }, [canSeekProgramInMediaSession]);
+
+  // These reactive values intentionally trigger the Effect Event, which reads their latest values without capturing them.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: synchronize Media Session immediately on timeline/slot state changes
+  useEffect(() => {
+    updateMediaSessionPosition(true);
+  }, [channel, currentProgram, playMode, activeSourceIndex, visibleSlotId, isPlaying]);
+
+  useEffect(
+    () => () => {
+      if (!("mediaSession" in navigator) || !navigator.mediaSession.setPositionState) return;
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.playbackState = "none";
+      navigator.mediaSession.setPositionState({});
+    },
+    [],
+  );
 
   // Load segments whenever they change (channel/source switch, seek, retry — all go through here)
   const handleLoadSegments = useEffectEvent((newSegments: PlayerSegment[]) => {
@@ -1100,13 +1208,19 @@ export function VideoPlayer({
     const video = slotVideoRef(slotId).current;
     if (!video) return;
     onCurrentVideoTimeChange(video.currentTime);
+    updateMediaSessionPosition();
+  });
+
+  const handleVideoTimelineChange = useEffectEvent((slotId: SlotId) => {
+    if (slotId !== getActiveSlotId()) return;
+    updateMediaSessionPosition(true);
   });
 
   const handleVideoEnded = useEffectEvent((slotId: SlotId) => {
     if (slotId !== getActiveSlotId()) return;
     const video = slotVideoRef(slotId).current;
     if (onSeek && video?.duration) {
-      const seekTime = new Date(streamStartTime.getTime() + video.duration * 1000);
+      const seekTime = mseToWallClock(video.duration, streamStartTime);
       onSeek(seekTime, isNearLiveWallClock(seekTime, liveSessionAnchor, streamStartTime));
     }
   });
@@ -1137,7 +1251,7 @@ export function VideoPlayer({
     // Media element died in background (MediaSource closed / decode error).
     // Note: video.paused may still report false in this state.
     const mediaDead = video.error !== null;
-    const behindLiveMs = Date.now() - (streamStartTime.getTime() + currentVideoTime * 1000);
+    const behindLiveMs = Date.now() - mseToWallClock(currentVideoTime, streamStartTime).getTime();
     // Beyond this lag a live-edge reload beats letting live-sync chase at 2x
     // for tens of seconds; tied to the sync config rather than a magic 10s.
     const staleLiveMs = (defaultConfig.liveSyncMaxLatency + 5) * 1000;
@@ -1154,7 +1268,7 @@ export function VideoPlayer({
       // Catchup: rebuild the stream at the current position
       console.log("Reloading at current position after background suspension");
       shouldAutoPlayRef.current = true;
-      const seekTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
+      const seekTime = mseToWallClock(currentVideoTime, streamStartTime);
       onSeek?.(seekTime, isNearLiveWallClock(seekTime, liveSessionAnchor, streamStartTime));
       return;
     }
@@ -1314,6 +1428,8 @@ export function VideoPlayer({
         ["playing", (event) => handleVideoPlaying(slotId, event.timeStamp)],
         ["pause", () => handleVideoPause(slotId)],
         ["timeupdate", () => handleVideoTimeUpdate(slotId)],
+        ["seeked", () => handleVideoTimelineChange(slotId)],
+        ["ratechange", () => handleVideoTimelineChange(slotId)],
         ["ended", () => handleVideoEnded(slotId)],
         ["enterpictureinpicture", () => handleVideoEnterPiP(slotId)],
         ["leavepictureinpicture", () => handleVideoLeavePiP()],

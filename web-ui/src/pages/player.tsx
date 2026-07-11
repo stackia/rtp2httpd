@@ -33,7 +33,7 @@ import {
 } from "../lib/player-storage";
 import { buildAppPath } from "../lib/url";
 import type { PlayerSegment } from "../mpegts";
-import { NEAR_LIVE_EDGE_MS } from "../mpegts/player/wall-clock";
+import { mseToWallClock, NEAR_LIVE_EDGE_MS } from "../mpegts/player/wall-clock";
 import type { Channel, M3UMetadata } from "../types/player";
 
 function getM3UIntegrationGuideUrl(locale: Locale) {
@@ -164,7 +164,7 @@ function PlayerPage() {
         setStreamStartTime(new Date());
       } else {
         // Preserve current playback position when switching source in catchup mode
-        setStreamStartTime(new Date(streamStartTime.getTime() + currentVideoTime * 1000));
+        setStreamStartTime(mseToWallClock(currentVideoTime, streamStartTime));
       }
       setActiveSourceIndex(sourceIndex);
     },
@@ -318,7 +318,7 @@ function PlayerPage() {
     if (!epgChannelId) return null;
 
     // Calculate absolute time based on stream start + current video position
-    const absoluteTime = new Date(streamStartTime.getTime() + currentVideoTime * 1000);
+    const absoluteTime = mseToWallClock(currentVideoTime, streamStartTime);
     return getCurrentProgram(epgChannelId, epgData, absoluteTime);
   }, [currentChannel, epgData, streamStartTime, currentVideoTime]);
 

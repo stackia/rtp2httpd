@@ -147,7 +147,9 @@ export function createMpegtsPlayer(
         sourceMode = "hls";
         hlsLive = msg.live;
         updateLiveState();
-        if (!msg.live) {
+        if (msg.live) {
+          mse?.setDuration(Infinity);
+        } else {
           mse?.setDuration(msg.totalDuration);
           hlsVodThrottleEnabled = true;
           updateFetchBackpressure();
@@ -369,6 +371,9 @@ export function createMpegtsPlayer(
   /** Create (or recreate) MSE and attach to video element. */
   function initMSE(): void {
     mse = createMSE(video, config);
+    if (sourceMode === "continuous-live-ts") {
+      mse.setDuration(Infinity);
+    }
 
     mse.open(() => {
       if (pendingSegments) {
