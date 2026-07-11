@@ -739,10 +739,27 @@ export class PCMAudioPlayer {
     this.startupSyncWaitStartedAt ??= now;
 
     const videoTime = video.currentTime;
+    const audioStartsAfterVideo = audioRange.start > videoTime + GAP_SNAP;
+    const futureAudioHasLead = audioRange.end - audioRange.start >= STARTUP_MINIMUM_LEAD_SEC - GAP_SNAP;
     const targetHasLead =
       videoTime >= audioRange.start - GAP_SNAP && videoTime + STARTUP_MINIMUM_LEAD_SEC <= audioRange.end + GAP_SNAP;
+
+    if (audioStartsAfterVideo && futureAudioHasLead) {
+      this.startupSyncState = "anchoring";
+      this.restoreStartupPlaybackRate();
+      Log.i(
+        TAG,
+        `Startup PCM begins after video: audio=${audioRange.start.toFixed(3)}s, video=${videoTime.toFixed(3)}s`,
+      );
+      if (!this.resyncFromBuffer(audioRange.start)) {
+        this.startupSyncState = "waiting";
+      }
+      return;
+    }
+
     if (targetHasLead) {
       this.startupSyncState = "anchoring";
+      this.restoreStartupPlaybackRate();
       Log.i(
         TAG,
         `Startup PCM caught video: target=${videoTime.toFixed(3)}s, ` +
@@ -757,7 +774,7 @@ export class PCMAudioPlayer {
     const contiguousDuration = audioRange.end - audioRange.start;
     const lagBehindVideo = videoTime - audioRange.end;
 
-    if (!this.startupWaitLogged && lagBehindVideo > GAP_SNAP) {
+    if (!audioStartsAfterVideo && !this.startupWaitLogged && lagBehindVideo > GAP_SNAP) {
       Log.i(
         TAG,
         `Startup PCM trails video by ${(lagBehindVideo * 1000).toFixed(1)}ms; ` +
@@ -767,7 +784,12 @@ export class PCMAudioPlayer {
       this.startupWaitLogged = true;
     }
 
-    if (this.startupSyncState === "waiting") {
+    if (audioStartsAfterVideo) {
+      if (this.startupSyncState === "slowing") {
+        this.restoreStartupPlaybackRate();
+        this.startupSyncState = "waiting";
+      }
+    } else if (this.startupSyncState === "waiting") {
       this.beginStartupRateControl();
     } else if (video.playbackRate !== STARTUP_VIDEO_PLAYBACK_RATE) {
       video.playbackRate = STARTUP_VIDEO_PLAYBACK_RATE;
@@ -814,11 +836,11 @@ export class PCMAudioPlayer {
   }
 
   private resetStartupSyncWait(): void {
-    if (this.startupSyncState === "waiting" || this.startupSyncState === "slowing") {
-      this.restoreStartupPlaybackRate();
-      this.startupSyncState = "waiting";
-      this.startupSyncWaitStartedAt = null;
-    }
+    if (["complete", "disabled", "failed"].includes(this.startupSyncState)) return;
+
+    this.restoreStartupPlaybackRate();
+    this.startupSyncState = "waiting";
+    this.startupSyncWaitStartedAt = null;
   }
 
   private resetDriftState(): void {
