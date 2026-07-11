@@ -1,6 +1,16 @@
 import { clsx } from "clsx";
 import { AlertTriangle, ExternalLink, ListChecks, RefreshCw } from "lucide-react";
-import { Activity, StrictMode, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Activity,
+  StrictMode,
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createRoot } from "react-dom/client";
 import {
   ChannelList,
@@ -99,6 +109,14 @@ function PlayerPage() {
   const [pictureEnhancement, setPictureEnhancement] = useState(() => getPictureEnhancement());
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const isSimulatedFullscreenRef = useRef(false);
+  const hasPlaylistLoadError = Boolean(error && !metadata);
+
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("player-surface-active", !isLoading && !hasPlaylistLoadError);
+
+    return () => root.classList.remove("player-surface-active");
+  }, [hasPlaylistLoadError, isLoading]);
 
   // Track stream start time - the absolute time position when current stream started
   // For live mode: null (no seeking)
@@ -476,7 +494,6 @@ function PlayerPage() {
     handlePictureEnhancementChange,
   ]);
 
-  const hasPlaylistLoadError = Boolean(error && !metadata);
   if (!hasPlaylistLoadError) {
     return (
       <div
