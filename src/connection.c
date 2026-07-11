@@ -1148,7 +1148,6 @@ int connection_route_and_start(connection_t *c) {
 
     c->status_index = status_register_client(client_addr_str, display_url);
     if (c->status_index < 0) {
-      logger(LOG_ERROR, "Failed to register streaming client in status tracking");
       http_send_503(c);
       service_free(service);
       return 0;
