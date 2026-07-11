@@ -75,15 +75,30 @@ static void reset_client_payload(client_stats_t *client) {
   atomic_store_explicit(&client->data_version, 0, memory_order_relaxed);
 }
 
+static void lock_client_admission(uint32_t owner_pid) {
+  uint32_t expected_owner = 0;
+  while (!atomic_compare_exchange_weak_explicit(&status_shared->client_admission_owner_pid, &expected_owner, owner_pid,
+                                                memory_order_acquire, memory_order_relaxed)) {
+    expected_owner = 0;
+    usleep(100);
+  }
+}
+
+static void unlock_client_admission(uint32_t owner_pid) {
+  uint32_t expected_owner = owner_pid;
+  atomic_compare_exchange_strong_explicit(&status_shared->client_admission_owner_pid, &expected_owner, 0,
+                                          memory_order_release, memory_order_relaxed);
+}
+
 static int client_capacity_is_available(void) {
   uint32_t reserved_slots = 0;
 
   for (int client_index = 0; client_index < STATUS_MAX_CLIENTS; client_index++) {
-    if (atomic_load_explicit(&status_shared->clients[client_index].owner_pid, memory_order_seq_cst) != 0)
+    if (atomic_load_explicit(&status_shared->clients[client_index].owner_pid, memory_order_acquire) != 0)
       reserved_slots++;
   }
 
-  return reserved_slots <= (uint32_t)config.maxclients;
+  return reserved_slots < (uint32_t)config.maxclients;
 }
 
 static void client_write_begin(client_stats_t *client) {
@@ -202,6 +217,7 @@ int status_init(void) {
   status_shared->server_start_time = get_realtime_ms();
   status_shared->current_log_level = config.verbosity;
   status_shared->event_counter = 0;
+  atomic_init(&status_shared->client_admission_owner_pid, 0);
   atomic_init(&status_shared->log_epoch, 1);
   atomic_init(&status_shared->log_sequence, 0);
 
@@ -216,9 +232,14 @@ int status_init(void) {
   for (int i = 0; i < STATUS_MAX_LOG_ENTRIES; i++)
     atomic_init(&status_shared->log_entries[i].sequence, 0);
 
-  if (!atomic_is_lock_free(&status_shared->clients[0].owner_pid) ||
+  if (!atomic_is_lock_free(&status_shared->client_admission_owner_pid) ||
+      !atomic_is_lock_free(&status_shared->clients[0].owner_pid) ||
       !atomic_is_lock_free(&status_shared->clients[0].active) ||
       !atomic_is_lock_free(&status_shared->clients[0].generation) ||
+      !atomic_is_lock_free(&status_shared->clients[0].disconnect_requested) ||
+      !atomic_is_lock_free(&status_shared->clients[0].data_version) ||
+      !atomic_is_lock_free(&status_shared->log_epoch) ||
+      !atomic_is_lock_free(&status_shared->log_entries[0].sequence) ||
       !atomic_is_lock_free(&status_shared->log_sequence)) {
     status_shared = NULL;
     munmap(mapped, sizeof(status_shared_t));
@@ -408,58 +429,62 @@ int status_register_client(const char *client_addr_str, const char *service_url)
   if (!status_shared || !client_addr_str)
     return -1;
 
+  lock_client_admission(owner_pid);
+  if (!client_capacity_is_available()) {
+    unlock_client_admission(owner_pid);
+    logger(LOG_WARN, "Maximum client limit reached");
+    return -1;
+  }
+
   /* Reserve a slot by PID. owner_pid remains set while the slot is being
    * initialized so the supervisor can recover a worker killed mid-register. */
   for (int i = 0; i < STATUS_MAX_CLIENTS; i++) {
     client_stats_t *client = &status_shared->clients[i];
     uint32_t expected = 0;
-    if (atomic_compare_exchange_strong_explicit(&client->owner_pid, &expected, owner_pid, memory_order_seq_cst,
-                                                memory_order_seq_cst)) {
-      if (!client_capacity_is_available()) {
-        atomic_store_explicit(&client->owner_pid, 0, memory_order_seq_cst);
-        logger(LOG_WARN, "Maximum client limit reached");
-        return -1;
-      }
+    if (!atomic_compare_exchange_strong_explicit(&client->owner_pid, &expected, owner_pid, memory_order_acq_rel,
+                                                 memory_order_relaxed))
+      continue;
 
-      reset_client_payload(client);
-      uint32_t generation = atomic_fetch_add_explicit(&client->generation, 1, memory_order_acq_rel) + 1;
-      if (generation == 0)
-        atomic_fetch_add_explicit(&client->generation, 1, memory_order_acq_rel);
-      client->payload.worker_index = worker_id;
-      client->payload.connect_time = get_realtime_ms();
-      client->payload.state = CLIENT_STATE_CONNECTING;
-
-      /* Copy client address string (format: "IP:port", "[IPv6]:port", or
-       * "localhost" for Unix socket clients) */
-      strncpy(client->payload.client_addr, client_addr_str, sizeof(client->payload.client_addr) - 1);
-      client->payload.client_addr[sizeof(client->payload.client_addr) - 1] = '\0';
-
-      /* Generate unique client ID: "IP:port-workerN-seqM"
-       * Use real client IP (not X-Forwarded-For) + port + worker index +
-       * sequence counter */
-      uint64_t seq = 0;
-      if (worker_id >= 0 && worker_id < STATUS_MAX_WORKERS) {
-        seq = status_shared->worker_stats[worker_id].client_id_counter++;
-      }
-      snprintf(client->payload.client_id, sizeof(client->payload.client_id), "%s-worker%d-seq%llu", client_addr_str,
-               worker_id, (unsigned long long)seq);
-
-      /* Copy service URL */
-      if (service_url) {
-        strncpy(client->payload.service_url, service_url, sizeof(client->payload.service_url) - 1);
-        client->payload.service_url[sizeof(client->payload.service_url) - 1] = '\0';
-      }
-
-      atomic_store_explicit(&client->active, 1, memory_order_release);
-      status_index = i;
-      break;
-    }
+    status_index = i;
+    break;
   }
+  unlock_client_admission(owner_pid);
 
   if (status_index < 0) {
     logger(LOG_ERROR, "No free client slots in status tracking");
     return -1;
   }
+
+  client_stats_t *client = &status_shared->clients[status_index];
+  reset_client_payload(client);
+  uint32_t generation = atomic_fetch_add_explicit(&client->generation, 1, memory_order_acq_rel) + 1;
+  if (generation == 0)
+    atomic_fetch_add_explicit(&client->generation, 1, memory_order_acq_rel);
+  client->payload.worker_index = worker_id;
+  client->payload.connect_time = get_realtime_ms();
+  client->payload.state = CLIENT_STATE_CONNECTING;
+
+  /* Copy client address string (format: "IP:port", "[IPv6]:port", or
+   * "localhost" for Unix socket clients) */
+  strncpy(client->payload.client_addr, client_addr_str, sizeof(client->payload.client_addr) - 1);
+  client->payload.client_addr[sizeof(client->payload.client_addr) - 1] = '\0';
+
+  /* Generate unique client ID: "IP:port-workerN-seqM"
+   * Use real client IP (not X-Forwarded-For) + port + worker index +
+   * sequence counter */
+  uint64_t seq = 0;
+  if (worker_id >= 0 && worker_id < STATUS_MAX_WORKERS)
+    seq = status_shared->worker_stats[worker_id].client_id_counter++;
+  snprintf(client->payload.client_id, sizeof(client->payload.client_id), "%s-worker%d-seq%llu", client_addr_str,
+           worker_id, (unsigned long long)seq);
+
+  /* Copy service URL */
+  if (service_url) {
+    strncpy(client->payload.service_url, service_url, sizeof(client->payload.service_url) - 1);
+    client->payload.service_url[sizeof(client->payload.service_url) - 1] = '\0';
+  }
+
+  atomic_store_explicit(&client->active, 1, memory_order_release);
 
   /* Trigger event notification for new client */
   status_trigger_event(STATUS_EVENT_SSE_UPDATE);
@@ -517,6 +542,10 @@ int status_reap_worker(pid_t dead_pid, int worker_index) {
     atomic_store_explicit(&client->owner_pid, 0, memory_order_seq_cst);
     reclaimed++;
   }
+
+  uint32_t expected_admission_owner = dead_owner;
+  atomic_compare_exchange_strong_explicit(&status_shared->client_admission_owner_pid, &expected_admission_owner, 0,
+                                          memory_order_release, memory_order_relaxed);
 
   if (worker_index >= 0 && worker_index < STATUS_MAX_WORKERS &&
       status_shared->worker_stats[worker_index].worker_pid == dead_pid) {
