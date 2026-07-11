@@ -111,11 +111,11 @@ function ignoreInterruptedPlayError(err: unknown): void {
 
 function setMediaSessionAction(
   mediaSession: MediaSession,
-  action: MediaSessionAction,
+  action: MediaSessionAction | "enterpictureinpicture",
   handler: MediaSessionActionHandler | null,
 ): void {
   try {
-    mediaSession.setActionHandler(action, handler);
+    mediaSession.setActionHandler(action as MediaSessionAction, handler);
   } catch {
     // Some browsers expose Media Session but do not implement every action.
   }
@@ -258,6 +258,7 @@ export function VideoPlayer({
   const canSeekProgramInMediaSession = Boolean(
     programTimeline && channel?.sources.some((source) => source.catchup && source.catchupSource),
   );
+  const canNavigateChannelsInMediaSession = Boolean(channel && onChannelNavigate);
 
   const playerDockRef = useRef<HTMLDivElement>(null);
   const playerSurfaceRef = useRef<HTMLDivElement>(null);
@@ -950,6 +951,14 @@ export function VideoPlayer({
     handleSeek(programPositionToWallClock(programTimeline, details.seekTime));
   });
 
+  const handleMediaSessionPreviousTrack = useEffectEvent(() => {
+    onChannelNavigate?.("prev");
+  });
+
+  const handleMediaSessionNextTrack = useEffectEvent(() => {
+    onChannelNavigate?.("next");
+  });
+
   // Media Session: lock screen / control center metadata (esp. useful during PiP playback)
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
@@ -969,32 +978,6 @@ export function VideoPlayer({
     if (!("mediaSession" in navigator)) return;
     navigator.mediaSession.playbackState = channel ? (isPlaying ? "playing" : "paused") : "none";
   }, [channel, isPlaying]);
-
-  // Media Session action handlers (lock screen / control center playback and EPG timeline seeking)
-  useEffect(() => {
-    if (!("mediaSession" in navigator)) return;
-    const mediaSession = navigator.mediaSession;
-    setMediaSessionAction(mediaSession, "play", handleMediaSessionPlay);
-    setMediaSessionAction(mediaSession, "pause", handleMediaSessionPause);
-    setMediaSessionAction(
-      mediaSession,
-      "seekbackward",
-      canSeekProgramInMediaSession ? handleMediaSessionSeekBackward : null,
-    );
-    setMediaSessionAction(
-      mediaSession,
-      "seekforward",
-      canSeekProgramInMediaSession ? handleMediaSessionSeekForward : null,
-    );
-    setMediaSessionAction(mediaSession, "seekto", canSeekProgramInMediaSession ? handleMediaSessionSeekTo : null);
-    return () => {
-      setMediaSessionAction(mediaSession, "play", null);
-      setMediaSessionAction(mediaSession, "pause", null);
-      setMediaSessionAction(mediaSession, "seekbackward", null);
-      setMediaSessionAction(mediaSession, "seekforward", null);
-      setMediaSessionAction(mediaSession, "seekto", null);
-    };
-  }, [canSeekProgramInMediaSession]);
 
   // These reactive values intentionally trigger the Effect Event, which reads their latest values without capturing them.
   // biome-ignore lint/correctness/useExhaustiveDependencies: synchronize Media Session immediately on timeline/slot state changes
@@ -1541,17 +1524,15 @@ export function VideoPlayer({
     await video.requestPictureInPicture();
   });
 
-  const handlePiPToggle = useEffectEvent(async () => {
+  const enterPictureInPicture = useEffectEvent(async () => {
+    if (isAnyPictureInPictureActive()) return;
+
     const video = getActiveVideo();
     if (!video) return;
 
     let openedDocumentPiPWindow: Window | null = null;
 
     try {
-      if (await exitPictureInPicture()) {
-        return;
-      }
-
       const documentPictureInPicture = getDocumentPictureInPicture();
       if (documentPictureInPicture) {
         const playerElement = playerSurfaceRef.current;
@@ -1590,6 +1571,59 @@ export function VideoPlayer({
       console.error("Picture-in-Picture error:", err);
     }
   });
+
+  const handlePiPToggle = useEffectEvent(async () => {
+    if (await exitPictureInPicture()) return;
+    await enterPictureInPicture();
+  });
+
+  const handleMediaSessionEnterPictureInPicture = useEffectEvent(() => {
+    void enterPictureInPicture();
+  });
+
+  // Media Session action handlers (lock screen / control center playback, navigation, seeking, and PiP)
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    const mediaSession = navigator.mediaSession;
+    setMediaSessionAction(mediaSession, "play", handleMediaSessionPlay);
+    setMediaSessionAction(mediaSession, "pause", handleMediaSessionPause);
+    setMediaSessionAction(
+      mediaSession,
+      "previoustrack",
+      canNavigateChannelsInMediaSession ? handleMediaSessionPreviousTrack : null,
+    );
+    setMediaSessionAction(
+      mediaSession,
+      "nexttrack",
+      canNavigateChannelsInMediaSession ? handleMediaSessionNextTrack : null,
+    );
+    setMediaSessionAction(
+      mediaSession,
+      "seekbackward",
+      canSeekProgramInMediaSession ? handleMediaSessionSeekBackward : null,
+    );
+    setMediaSessionAction(
+      mediaSession,
+      "seekforward",
+      canSeekProgramInMediaSession ? handleMediaSessionSeekForward : null,
+    );
+    setMediaSessionAction(mediaSession, "seekto", canSeekProgramInMediaSession ? handleMediaSessionSeekTo : null);
+    setMediaSessionAction(
+      mediaSession,
+      "enterpictureinpicture",
+      isPictureInPictureSupported() ? handleMediaSessionEnterPictureInPicture : null,
+    );
+    return () => {
+      setMediaSessionAction(mediaSession, "play", null);
+      setMediaSessionAction(mediaSession, "pause", null);
+      setMediaSessionAction(mediaSession, "previoustrack", null);
+      setMediaSessionAction(mediaSession, "nexttrack", null);
+      setMediaSessionAction(mediaSession, "seekbackward", null);
+      setMediaSessionAction(mediaSession, "seekforward", null);
+      setMediaSessionAction(mediaSession, "seekto", null);
+      setMediaSessionAction(mediaSession, "enterpictureinpicture", null);
+    };
+  }, [canNavigateChannelsInMediaSession, canSeekProgramInMediaSession]);
 
   const handleUserInteraction = useEffectEvent(() => {
     const video = getActiveVideo();
