@@ -67,14 +67,12 @@ function unlockScreenOrientation(): void {
 }
 
 function shouldInsetSidebarRight(): boolean {
-  if (!("standalone" in navigator)) return true;
-
   const { angle, type } = screen.orientation;
   if (!type.startsWith("landscape")) return true;
 
-  // On naturally portrait iPhones, Safari reports 90° with the notch on the
-  // right and 270° with the notch on the left. Preserve the inset for other
-  // angles, including naturally landscape iPads.
+  // On naturally portrait screens, 90° puts the device top on the right and
+  // 270° puts it on the left. Preserve the inset for other angles, including
+  // naturally landscape devices.
   return angle !== 270;
 }
 
