@@ -893,7 +893,7 @@ export function VideoPlayer({
     if (!("mediaSession" in navigator) || !navigator.mediaSession.setPositionState) return;
 
     if (!channel) {
-      navigator.mediaSession.setPositionState({});
+      navigator.mediaSession.setPositionState();
       return;
     }
 
@@ -923,7 +923,7 @@ export function VideoPlayer({
       }
     } catch {
       // Older implementations may reject Infinity even though it represents live media.
-      navigator.mediaSession.setPositionState({});
+      navigator.mediaSession.setPositionState();
     }
   });
 
@@ -1007,7 +1007,7 @@ export function VideoPlayer({
       if (!("mediaSession" in navigator) || !navigator.mediaSession.setPositionState) return;
       navigator.mediaSession.metadata = null;
       navigator.mediaSession.playbackState = "none";
-      navigator.mediaSession.setPositionState({});
+      navigator.mediaSession.setPositionState();
     },
     [],
   );
