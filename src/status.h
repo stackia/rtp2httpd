@@ -113,10 +113,6 @@ typedef struct {
   /* Client ID generation counter */
   uint64_t client_id_counter; /* Incremented for each new client registration */
 
-  /* Client traffic statistics */
-  uint64_t client_bytes_cumulative; /* Bytes sent to clients that have
-                                       disconnected */
-
   /* Zero-copy send statistics */
   uint64_t total_sends;       /* Total number of sendmsg() calls */
   uint64_t total_completions; /* Total MSG_ZEROCOPY completions */

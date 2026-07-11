@@ -512,7 +512,6 @@ void status_unregister_client(int status_index) {
 
   if (client_worker_index >= 0 && client_worker_index < STATUS_MAX_WORKERS) {
     status_shared->client_bytes_cumulative[client_worker_index] += bytes_sent;
-    status_shared->worker_stats[client_worker_index].client_bytes_cumulative += bytes_sent;
   }
 
   reset_client_payload(client);
@@ -863,7 +862,9 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
     uint64_t w_ctrl_used = w_ctrl_total > w_ctrl_free ? w_ctrl_total - w_ctrl_free : 0;
     uint32_t w_active = worker_active_clients[i];
     uint64_t w_bandwidth = worker_bandwidth_sum[i];
-    uint64_t w_total_bytes = ws->client_bytes_cumulative + worker_active_bytes[i];
+    /* The shared shard also includes bytes from clients reclaimed after a
+     * worker crash, while worker_stats can be reset during reaping. */
+    uint64_t w_total_bytes = status_shared->client_bytes_cumulative[i] + worker_active_bytes[i];
 
     if (append_sse_data(
             buffer, buffer_capacity, &len,
