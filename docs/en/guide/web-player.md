@@ -30,18 +30,7 @@ The player page path can be customized via the `player-page-path` configuration 
 - **Zero Overhead**: Pure web frontend implementation with virtually no resource overhead on rtp2httpd (no decoding/transcoding overhead)
 
 > [!IMPORTANT]
-> The player ultimately relies on the audio and video decoding capabilities provided by the browser. Some encoding formats (such as E-AC3) may not play in certain browsers, resulting in missing audio or a black screen. We recommend using the latest versions of Chrome, Edge, or Safari.
-
-## Playback Backends
-
-The player automatically selects a media backend for the current platform while keeping the same interface and controls:
-
-- **MSE backend**: Used in regular desktop and mobile browsers. The player parses MPEG-TS in a Web Worker, plays it through Media Source Extensions (MSE), and can apply automatic WebGL deinterlacing and video enhancement.
-- **Native backend**: Used in the LG webOS browser. Channel URLs are passed directly to the browser's native media pipeline, allowing the TV to handle TS parsing, decoding, deinterlacing, and video enhancement.
-
-The Native backend retains channel lists, EPG, catch-up, timeline controls, source switching, remote-control input, full screen, and the other player features. Because deinterlacing and video enhancement are managed entirely by the TV, these two options are not shown in the settings menu when the Native backend is active.
-
-The backend is selected automatically from the browser's webOS identifier and cannot be changed manually. If Native playback fails, the player retries the current source and then tries the other sources in order, but does not switch to the MSE backend.
+> The player relies on the browser's native decoding capabilities. Some encoding formats (such as E-AC3) may not play in certain browsers (manifested as no audio or black screen). We recommend using the latest versions of Chrome, Edge, or Safari.
 
 ## PWA Support and Add to Home Screen
 
