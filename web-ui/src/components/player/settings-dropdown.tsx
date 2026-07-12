@@ -41,11 +41,11 @@ function SettingsDropdownComponent({
   const t = usePlayerTranslation(locale);
 
   return (
-    <div>
+    <div className="size-8 [anchor-name:--player-settings-trigger] md:size-9">
       <button
         type="button"
         popoverTarget={SETTINGS_POPOVER_ID}
-        className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-transparent p-0 text-slate-500 transition-[color,background-color,border-color,box-shadow,transform] [anchor-name:--player-settings-trigger] motion-reduce:transition-none hover:border-blue-400/20 hover:bg-blue-400/10 hover:text-blue-700 hover:shadow-[0_0_18px_rgba(59,130,246,0.1)] motion-safe:active:scale-95 dark:text-slate-400 dark:hover:text-blue-200 md:size-9"
+        className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-transparent p-0 text-slate-500 transition-[color,background-color,border-color,box-shadow,transform] motion-reduce:transition-none hover:border-blue-400/20 hover:bg-blue-400/10 hover:text-blue-700 hover:shadow-[0_0_18px_rgba(59,130,246,0.1)] motion-safe:active:scale-95 dark:text-slate-400 dark:hover:text-blue-200 md:size-9"
         title={t("settings")}
       >
         <Settings className="h-5 w-5" />
