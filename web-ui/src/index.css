@@ -88,9 +88,9 @@
   --input: 228 24% 24%;
   --ring: 234 89% 64%;
   --surface-panel: 231 44% 9.5%;
-  --surface-inset: 231 42% 10.75%;
-  --surface-tile: 231 40% 12%;
-  --surface-raised: 231 38% 13.5%;
+  --surface-inset: 231 42% 10.25%;
+  --surface-tile: 231 40% 11%;
+  --surface-raised: 231 38% 12%;
 }
 
 .player-theme {

@@ -9,53 +9,60 @@ export type SurfaceDensity = "regular" | "dense";
 const MATERIAL_CLASS: Record<SurfaceMaterial, Record<SurfaceDensity, string>> = {
   frost: {
     regular:
-      "border border-border/60 bg-[hsl(var(--surface-panel)/0.86)] backdrop-blur-xl backdrop-saturate-[1.35] dark:border-white/10 dark:bg-[hsl(var(--surface-panel)/0.92)]",
+      "border border-border/60 bg-[hsl(var(--surface-panel)/0.86)] dark:border-white/10 dark:bg-[hsl(var(--surface-panel)/0.88)]",
     dense:
-      "border border-blue-900/12 bg-[linear-gradient(145deg,rgba(255,255,255,0.9),rgba(238,242,255,0.82))] backdrop-blur-2xl dark:border-blue-100/15 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.94),rgba(26,24,72,0.9))]",
+      "border border-blue-900/12 bg-[linear-gradient(145deg,rgba(255,255,255,0.9),rgba(238,242,255,0.82))] dark:border-blue-100/15 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.88),rgba(26,24,72,0.82))]",
   },
   clear: {
     regular: "border border-border/50 dark:border-white/8",
-    dense: "border border-border/55 backdrop-blur-md dark:border-white/10 dark:backdrop-saturate-125",
+    dense: "border border-border/55 dark:border-white/10",
   },
   smoke: {
-    regular: "border border-blue-200/55 bg-slate-900/30 backdrop-blur-md backdrop-saturate-150",
-    dense: "border border-blue-100/20 bg-slate-950/72 backdrop-blur-md backdrop-saturate-150",
+    regular: "border border-blue-200/55 bg-slate-900/30",
+    dense: "border border-blue-100/20 bg-slate-950/68",
   },
 };
 
 const CLEAR_LEVEL_CLASS: Record<SurfaceLevel, string> = {
-  panel: "bg-[hsl(var(--surface-panel)/0.82)] dark:bg-[hsl(var(--surface-panel)/0.9)]",
-  inset: "bg-[hsl(var(--surface-inset)/0.78)] dark:bg-[hsl(var(--surface-inset)/0.88)]",
-  tile: "bg-[hsl(var(--surface-tile)/0.74)] backdrop-saturate-125 dark:bg-[hsl(var(--surface-tile)/0.82)]",
-  bar: "bg-[hsl(var(--surface-inset)/0.76)] backdrop-blur-xl dark:bg-[hsl(var(--surface-inset)/0.86)]",
-  float: "bg-[hsl(var(--surface-raised)/0.82)] dark:bg-[hsl(var(--surface-raised)/0.9)]",
-  modal: "bg-[hsl(var(--surface-raised)/0.9)] dark:bg-[hsl(var(--surface-raised)/0.94)]",
+  panel: "bg-[hsl(var(--surface-panel)/0.88)] dark:bg-[hsl(var(--surface-panel)/0.84)]",
+  inset: "bg-[hsl(var(--surface-inset)/0.86)] dark:bg-[hsl(var(--surface-inset)/0.78)]",
+  tile: "bg-[hsl(var(--surface-tile)/0.84)] dark:bg-[hsl(var(--surface-tile)/0.72)]",
+  bar: "bg-[hsl(var(--surface-inset)/0.86)] dark:bg-[hsl(var(--surface-inset)/0.74)]",
+  float: "bg-[hsl(var(--surface-raised)/0.88)] dark:bg-[hsl(var(--surface-raised)/0.78)]",
+  modal: "bg-[hsl(var(--surface-raised)/0.92)] dark:bg-[hsl(var(--surface-raised)/0.84)]",
+};
+
+const GLASS_LEVEL_CLASS: Record<SurfaceLevel, string> = {
+  panel: "backdrop-blur-[4px] backdrop-saturate-[1.08] dark:backdrop-blur-sm dark:backdrop-saturate-125",
+  inset: "backdrop-blur-sm backdrop-saturate-[1.12] dark:backdrop-blur-md dark:backdrop-saturate-[1.35]",
+  tile: "backdrop-blur-md backdrop-saturate-125 dark:backdrop-blur-lg dark:backdrop-saturate-150",
+  bar: "backdrop-blur-lg backdrop-saturate-[1.35] dark:backdrop-blur-xl dark:backdrop-saturate-[1.6]",
+  float: "backdrop-blur-xl backdrop-saturate-150 dark:backdrop-blur-2xl dark:backdrop-saturate-[1.7]",
+  modal: "backdrop-blur-2xl backdrop-saturate-[1.6] dark:backdrop-blur-[48px] dark:backdrop-saturate-[1.8]",
 };
 
 const LEVEL_CLASS: Record<SurfaceLevel, string> = {
   panel:
-    "shadow-[0_1px_0_rgba(255,255,255,0.7),0_24px_64px_-38px_rgba(15,23,42,0.45)] dark:shadow-[0_1px_0_rgba(255,255,255,0.08),0_28px_80px_-42px_rgba(0,0,0,0.9)]",
+    "shadow-[inset_0_1px_0_rgba(255,255,255,0.55),0_12px_30px_-22px_rgba(15,23,42,0.28)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_16px_38px_-28px_rgba(0,0,0,0.54)]",
   inset:
-    "shadow-[inset_0_1px_0_rgba(255,255,255,0.58),0_12px_30px_-26px_rgba(15,23,42,0.38)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_14px_32px_-22px_rgba(0,0,0,0.66)]",
-  tile: "shadow-[inset_0_1px_0_rgba(255,255,255,0.62),0_10px_24px_-20px_rgba(15,23,42,0.32)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.085),0_10px_24px_-18px_rgba(0,0,0,0.58)]",
-  bar: "shadow-[0_10px_28px_-22px_rgba(30,64,175,0.18),inset_0_-1px_0_rgba(99,102,241,0.08)] dark:shadow-[0_10px_28px_-20px_rgba(0,0,0,0.6),inset_0_-1px_0_rgba(147,197,253,0.08)]",
+    "shadow-[inset_0_1px_0_rgba(255,255,255,0.62),0_15px_34px_-22px_rgba(15,23,42,0.34)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.075),0_17px_40px_-28px_rgba(0,0,0,0.58)]",
+  tile: "shadow-[inset_0_1px_0_rgba(255,255,255,0.7),0_18px_42px_-24px_rgba(15,23,42,0.4)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.095),0_18px_42px_-28px_rgba(0,0,0,0.62)]",
+  bar: "shadow-[inset_0_1px_0_rgba(255,255,255,0.74),0_20px_48px_-26px_rgba(30,64,175,0.44)] dark:shadow-[inset_0_1px_0_rgba(147,197,253,0.11),0_20px_46px_-28px_rgba(0,0,0,0.66)]",
   float:
-    "shadow-[0_18px_36px_-18px_rgba(0,0,0,0.82),0_0_28px_-12px_rgba(59,130,246,0.62),inset_0_1px_0_rgba(255,255,255,0.17)]",
+    "shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_24px_58px_-24px_rgba(15,23,42,0.5),0_0_26px_-16px_rgba(59,130,246,0.28)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_24px_58px_-30px_rgba(0,0,0,0.72),0_0_28px_-18px_rgba(59,130,246,0.34)]",
   modal:
-    "shadow-[0_28px_80px_rgba(30,64,175,0.16),inset_0_1px_0_rgba(255,255,255,0.82)] dark:shadow-[0_30px_90px_rgba(1,7,24,0.62),inset_0_1px_0_rgba(255,255,255,0.08)]",
+    "shadow-[inset_0_1px_0_rgba(255,255,255,0.86),0_32px_84px_-28px_rgba(15,23,42,0.58)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.17),0_32px_84px_-34px_rgba(0,0,0,0.76)]",
 };
 
 const ACTIVE_CLEAR_CLASS =
-  "border border-blue-300/65 bg-white/38 backdrop-blur-md backdrop-saturate-150 shadow-[0_16px_32px_-18px_rgba(37,99,235,0.46),0_0_20px_-12px_rgba(59,130,246,0.42),inset_0_1px_0_rgba(255,255,255,0.78)] dark:border-blue-200/55 dark:bg-slate-900/30 dark:shadow-[0_18px_36px_-18px_rgba(0,0,0,0.82),0_0_28px_-12px_rgba(59,130,246,0.62),inset_0_1px_0_rgba(255,255,255,0.17)]";
+  "border border-blue-300/65 bg-white/38 shadow-[0_16px_32px_-18px_rgba(37,99,235,0.46),0_0_20px_-12px_rgba(59,130,246,0.42),inset_0_1px_0_rgba(255,255,255,0.78)] dark:border-blue-200/55 dark:bg-slate-900/30 dark:shadow-[0_18px_36px_-18px_rgba(0,0,0,0.82),0_0_28px_-12px_rgba(59,130,246,0.62),inset_0_1px_0_rgba(255,255,255,0.17)]";
 
 const TONE_SURFACE_CLASS: Record<Exclude<SurfaceTone, "neutral">, string> = {
-  primary: "border border-violet-300/25 bg-violet-950/72 text-white backdrop-blur-md backdrop-saturate-150",
-  success: "border border-emerald-300/25 bg-emerald-950/72 text-white backdrop-blur-md backdrop-saturate-150",
-  info: "border border-sky-300/25 bg-sky-950/72 text-white backdrop-blur-md backdrop-saturate-150",
-  warning:
-    "border border-amber-200/25 bg-[linear-gradient(145deg,rgba(66,43,12,0.92),rgba(27,24,35,0.92))] text-white backdrop-blur-md backdrop-saturate-150",
-  danger:
-    "border border-rose-300/25 bg-[linear-gradient(145deg,rgba(52,18,50,0.82),rgba(12,22,51,0.8))] text-white backdrop-blur-md backdrop-saturate-150",
+  primary: "border border-violet-300/25 bg-violet-950/72 text-white",
+  success: "border border-emerald-300/25 bg-emerald-950/72 text-white",
+  info: "border border-sky-300/25 bg-sky-950/72 text-white",
+  warning: "border border-amber-200/25 bg-[linear-gradient(145deg,rgba(66,43,12,0.92),rgba(27,24,35,0.92))] text-white",
+  danger: "border border-rose-300/25 bg-[linear-gradient(145deg,rgba(52,18,50,0.82),rgba(12,22,51,0.8))] text-white",
 };
 
 const TONE_ELEVATION_CLASS: Partial<Record<SurfaceTone, string>> = {
@@ -91,6 +98,7 @@ export function surfaceClass({
 
   return clsx(
     materialClass,
+    GLASS_LEVEL_CLASS[level],
     elevationClass,
     state === "interactive" &&
       "transition-[color,background-color,border-color,box-shadow,backdrop-filter] duration-300 ease-out hover:border-primary/30 hover:bg-primary/6 motion-reduce:transition-none",
