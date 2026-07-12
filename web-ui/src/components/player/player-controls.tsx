@@ -380,7 +380,7 @@ export function PlayerControls({
       {/* Control Bar */}
       <div
         className={clsx(
-          "player-performance-control-bar flex min-h-10 min-w-0 items-center justify-between gap-0.5 md:min-h-14 md:gap-1",
+          "flex min-h-10 min-w-0 items-center justify-between gap-0.5 md:min-h-14 md:gap-1",
           "[@container_video_(max-height:_320px)]:min-h-8 md:[@container_video_(max-height:_320px)]:min-h-8",
         )}
       >

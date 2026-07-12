@@ -18,7 +18,7 @@ export function SelectBox({
     <div
       className={clsx(
         "relative inline-flex items-center justify-end",
-        variant === "sm" ? "py-0.5" : "py-1",
+        variant === "sm" ? "py-0" : "py-1",
         containerClassName,
       )}
     >
