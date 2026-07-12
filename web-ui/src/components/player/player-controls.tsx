@@ -314,7 +314,9 @@ export function PlayerControls({
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(displayPosition)}
-          aria-valuetext={formatTime(getTimeAtPosition(displayPosition), true)}
+          aria-valuetext={
+            isScrubbing && previewGoesLive ? t("goLive") : formatTime(getTimeAtPosition(displayPosition), true)
+          }
           aria-label={t("seekTo")}
           className={clsx(
             "group relative h-1.5 touch-none select-none rounded-full bg-blue-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-[height,box-shadow] duration-150 before:absolute before:-inset-y-3 before:inset-x-0 before:content-[''] md:h-2",
