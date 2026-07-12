@@ -1,5 +1,6 @@
 import { markPlaybackUnlocked, PCMAudioPlayer } from "../audio/pcm-audio-player";
 import type { PlayerConfig } from "../config";
+import { PlayerErrors } from "../errors";
 import type { PlayerImpl, PlayerSegment } from "../types";
 import type { WorkerCommand, WorkerEvent } from "../worker/messages";
 import TransmuxWorker from "../worker/transmux-worker.ts?worker&inline";
@@ -64,14 +65,14 @@ export function createMpegtsPlayer(
         // (live edge for live, current position for catchup) takes over.
         impl.onError?.({
           category: "media",
-          detail: "AudioResyncFailed",
+          detail: PlayerErrors.AUDIO_RESYNC_FAILED,
           info: "Audio could not re-anchor to the video clock after an interruption",
         });
       };
       pcmPlayer.onStartupSyncFailed = () => {
         impl.onError?.({
           category: "media",
-          detail: "AudioStartupSyncFailed",
+          detail: PlayerErrors.AUDIO_STARTUP_SYNC_FAILED,
           info: "Software-decoded audio could not establish an initial shared timeline with video",
         });
       };
@@ -415,7 +416,7 @@ export function createMpegtsPlayer(
         // Unexpected closure while visible: surface as an error so the app retries
         impl.onError?.({
           category: "media",
-          detail: "MediaSourceClosed",
+          detail: PlayerErrors.MEDIA_SOURCE_CLOSED,
           info: "MediaSource was closed unexpectedly",
         });
       }
@@ -427,7 +428,7 @@ export function createMpegtsPlayer(
       if (info.name === "NotSupportedError" && info.track) {
         impl.onError?.({
           category: "media",
-          detail: "CodecUnsupported",
+          detail: PlayerErrors.CODEC_UNSUPPORTED,
           info: info.msg,
           code: info.code,
           track: info.track,
@@ -437,7 +438,7 @@ export function createMpegtsPlayer(
       }
       impl.onError?.({
         category: "media",
-        detail: "MediaMSEError",
+        detail: PlayerErrors.MEDIA_MSE_ERROR,
         info: info.msg,
       });
     };

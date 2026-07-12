@@ -7,6 +7,8 @@ import Log from "./utils/logger";
 
 export type { PlayerConfig } from "./config";
 export { defaultConfig } from "./config";
+export type { PlayerErrorDetail } from "./errors";
+export { PlayerErrors } from "./errors";
 export type {
   LiveSessionAnchor,
   Player,

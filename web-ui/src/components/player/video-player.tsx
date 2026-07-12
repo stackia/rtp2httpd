@@ -31,6 +31,7 @@ import {
   isSupported,
   type Player,
   type PlayerError,
+  PlayerErrors,
   type PlayerMediaInfo,
   type PlayerRenderState,
   type PlayerSegment,
@@ -132,7 +133,7 @@ function decodeRequestUrl(url: string): string {
 }
 
 function formatTechnicalPlayerError(playerError: PlayerError): string {
-  const details = [playerError.detail];
+  const details: string[] = [playerError.detail];
   if (playerError.codec) {
     details.push(`${playerError.track ?? "media"} codec=${playerError.codec}`);
   }
@@ -712,13 +713,14 @@ export function VideoPlayer({
     let errorMessage = technicalErrorMessage || t("playbackError");
     let errorDisplay: PlaybackErrorDisplay = { message: errorMessage };
     let decodingErrorRetry = false;
-    const isHttpStatusError = playerError.category === "io" && playerError.detail === "HttpStatusCodeInvalid";
+    const isHttpStatusError =
+      playerError.category === "io" && playerError.detail === PlayerErrors.HTTP_STATUS_CODE_INVALID;
     const isUpstreamRequestError =
-      isHttpStatusError || (playerError.category === "io" && playerError.detail === "RequestFailed");
-    const isCodecUnsupported = playerError.detail === "CodecUnsupported";
+      isHttpStatusError || (playerError.category === "io" && playerError.detail === PlayerErrors.REQUEST_FAILED);
+    const isCodecUnsupported = playerError.detail === PlayerErrors.CODEC_UNSUPPORTED;
 
     if (playerError.category === "media") {
-      if (playerError.detail === "MediaMSEError") {
+      if (playerError.detail === PlayerErrors.MEDIA_MSE_ERROR) {
         const video = slotVideoRef(slotId).current;
         if (playerError.info?.includes("HTMLMediaElement.error")) {
           if (video?.error?.message?.includes("PIPELINE_ERROR_DECODE")) {
@@ -793,7 +795,7 @@ export function VideoPlayer({
   });
 
   const handlePlayerError = useEffectEvent((playerError: PlayerError, slotId: SlotId) => {
-    if (playerError.detail === "CodecUnsupported" && playerError.track === "audio") {
+    if (playerError.detail === PlayerErrors.CODEC_UNSUPPORTED && playerError.track === "audio") {
       console.error("Player audio warning:", playerError);
       setWarning({
         message: t("audioCodecError"),

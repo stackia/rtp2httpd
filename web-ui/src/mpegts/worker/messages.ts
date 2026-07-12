@@ -1,4 +1,5 @@
 import type { PlayerConfig } from "../config";
+import type { DemuxErrorDetail, LoaderErrorDetail } from "../errors";
 import type { PlayerMediaInfo, PlayerSegment } from "../types";
 
 export type WorkerCommand =
@@ -18,7 +19,7 @@ export type WorkerEvent =
   | {
       type: "error";
       category: "io" | "demux";
-      detail: string;
+      detail: LoaderErrorDetail | DemuxErrorDetail;
       info?: string;
       code?: number;
       url?: string;

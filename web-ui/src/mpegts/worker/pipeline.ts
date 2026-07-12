@@ -1,8 +1,8 @@
 import type { PlayerConfig } from "../config";
 import { createDefaultConfig } from "../config";
 import { WorkerAudioDecoder } from "../decoder/worker-audio-decoder";
-import DemuxErrors from "../demux/demux-errors";
 import TSDemuxer from "../demux/ts-demuxer";
+import { type DemuxErrorDetail, type LoaderErrorDetail, PlayerErrors } from "../errors";
 import {
   containsMoov,
   getSegmentStartTime,
@@ -12,7 +12,7 @@ import {
   splitInitFromSegment,
 } from "../hls/fmp4";
 import { type HlsInfo, HlsRequestError, HlsSource } from "../hls/hls-source";
-import FetchLoader, { type LoaderErrorInfo, LoaderErrors } from "../io/fetch-loader";
+import FetchLoader, { type LoaderErrorInfo } from "../io/fetch-loader";
 import { identifyAudioCodec, identifyVideoCodec } from "../media-codecs";
 import MP4Remuxer from "../remux/mp4-remuxer";
 import type { PlayerDynamicRange, PlayerMediaInfo, PlayerSegment } from "../types";
@@ -45,8 +45,8 @@ export interface PipelineCallbacks {
     },
   ) => void;
   onLoadingComplete: () => void;
-  onIOError: (type: string, info: LoaderErrorInfo) => void;
-  onDemuxError: (type: string, info: string) => void;
+  onIOError: (type: LoaderErrorDetail, info: LoaderErrorInfo) => void;
+  onDemuxError: (type: DemuxErrorDetail, info: string) => void;
   onHlsInfo: (info: HlsInfo) => void;
   onMediaInfo: (info: PlayerMediaInfo) => void;
   /** `time` is normalized to the MSE timeline (seconds, same space as video.currentTime). */
@@ -55,7 +55,7 @@ export interface PipelineCallbacks {
 
 class LoadError extends Error {
   constructor(
-    public errorType: string,
+    public errorType: LoaderErrorDetail,
     public info: LoaderErrorInfo,
   ) {
     super(info.msg);
@@ -550,7 +550,7 @@ class Pipeline {
           Log.e(this.TAG, `Segment source failed: ${error.message}`);
           if (e instanceof HlsRequestError) {
             this._callbacks.onIOError(
-              e.code !== undefined ? LoaderErrors.HTTP_STATUS_CODE_INVALID : LoaderErrors.REQUEST_FAILED,
+              e.code !== undefined ? PlayerErrors.HTTP_STATUS_CODE_INVALID : PlayerErrors.REQUEST_FAILED,
               {
                 code: e.code ?? -1,
                 msg: e.statusText || e.message,
@@ -558,7 +558,7 @@ class Pipeline {
               },
             );
           } else {
-            this._callbacks.onIOError(LoaderErrors.EXCEPTION, { code: -1, msg: error.message });
+            this._callbacks.onIOError(PlayerErrors.EXCEPTION, { code: -1, msg: error.message });
           }
         }
         return;
@@ -609,7 +609,7 @@ class Pipeline {
           this._callbacks.onIOError(e.errorType, e.info);
         } else {
           Log.e(this.TAG, `Segment load failed: ${(e as Error).message}`);
-          this._callbacks.onIOError(LoaderErrors.EXCEPTION, { code: -1, msg: (e as Error).message });
+          this._callbacks.onIOError(PlayerErrors.EXCEPTION, { code: -1, msg: (e as Error).message });
         }
         return;
       }
@@ -745,7 +745,7 @@ class Pipeline {
     if (!probeData.needMoreData) {
       Log.e(this.TAG, "Unsupported media type (neither MPEG-TS nor fMP4)");
       Promise.resolve().then(() => this._abortCurrentLoad());
-      this._callbacks.onDemuxError(DemuxErrors.FORMAT_UNSUPPORTED, "Unsupported media type!");
+      this._callbacks.onDemuxError(PlayerErrors.FORMAT_UNSUPPORTED, "Unsupported media type!");
     }
     return 0;
   }
@@ -823,7 +823,7 @@ class Pipeline {
     };
   }
 
-  private _onDemuxException(type: string, info: string): void {
+  private _onDemuxException(type: DemuxErrorDetail, info: string): void {
     Log.e(this.TAG, `DemuxException: type = ${type}, info = ${info}`);
     this._callbacks.onDemuxError(type, info);
   }
@@ -839,7 +839,7 @@ class Pipeline {
         referrerPolicy: (this._config.referrerPolicy as ReferrerPolicy | undefined) ?? "no-referrer-when-downgrade",
       });
     } catch (error) {
-      throw new LoadError(LoaderErrors.REQUEST_FAILED, {
+      throw new LoadError(PlayerErrors.REQUEST_FAILED, {
         code: -1,
         msg: error instanceof Error ? error.message : String(error),
         url: initUrl,
@@ -847,13 +847,22 @@ class Pipeline {
     }
     if (this._runId !== runId) return;
     if (!response.ok) {
-      throw new LoadError(LoaderErrors.HTTP_STATUS_CODE_INVALID, {
+      throw new LoadError(PlayerErrors.HTTP_STATUS_CODE_INVALID, {
         code: response.status,
         msg: response.statusText,
         url: response.url || initUrl,
       });
     }
-    const data = new Uint8Array(await response.arrayBuffer());
+    let data: Uint8Array;
+    try {
+      data = new Uint8Array(await response.arrayBuffer());
+    } catch (error) {
+      throw new LoadError(PlayerErrors.REQUEST_FAILED, {
+        code: -1,
+        msg: error instanceof Error ? error.message : String(error),
+        url: response.url || initUrl,
+      });
+    }
     // Superseded mid-fetch (seek/reload/destroy): don't append a stale init segment
     if (this._runId !== runId) return;
     this._sendFmp4Init(data);
@@ -922,7 +931,7 @@ class Pipeline {
     let media: Uint8Array = segment;
     if (!this._fmp4InitSent) {
       if (!containsMoov(segment)) {
-        this._callbacks.onDemuxError(DemuxErrors.FORMAT_ERROR, "fMP4 stream has no initialization segment (moov)");
+        this._callbacks.onDemuxError(PlayerErrors.FORMAT_ERROR, "fMP4 stream has no initialization segment (moov)");
         return;
       }
       const parts = splitInitFromSegment(segment);

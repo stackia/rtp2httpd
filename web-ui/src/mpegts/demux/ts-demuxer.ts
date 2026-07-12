@@ -1,3 +1,4 @@
+import type { DemuxErrorDetail } from "../errors";
 import { IllegalStateException } from "../utils/exception";
 import Log from "../utils/logger";
 import { AACADTSParser, type AACFrame, AACLOASParser, AudioSpecificConfig, type LOASAACFrame } from "./aac";
@@ -110,7 +111,7 @@ type AudioData =
 const VIDEO_PID_KEYS: readonly CommonPidKey[] = ["h264", "h265"];
 const AUDIO_PID_KEYS: readonly CommonPidKey[] = ["adts_aac", "loas_aac", "ac3", "eac3", "mp3"];
 
-export type OnErrorCallback = (type: string, info: string) => void;
+export type OnErrorCallback = (type: DemuxErrorDetail, info: string) => void;
 export type OnTrackMetadataCallback = (type: string, metadata: unknown) => void;
 export type OnDataAvailableCallback = (audioTrack: unknown, videoTrack: unknown, force?: boolean) => void;
 export type OnTrackDiscontinuityCallback = (track: "audio" | "video") => void;

@@ -1,4 +1,5 @@
 import type { PlayerConfig } from "../config";
+import { type LoaderErrorDetail, PlayerErrors } from "../errors";
 import { IllegalStateException, RuntimeException } from "../utils/exception";
 import Log from "../utils/logger";
 
@@ -20,13 +21,6 @@ export interface DataSource {
   withCredentials?: boolean;
   referrerPolicy?: ReferrerPolicy;
 }
-
-export const LoaderErrors = {
-  EXCEPTION: "Exception",
-  REQUEST_FAILED: "RequestFailed",
-  HTTP_STATUS_CODE_INVALID: "HttpStatusCodeInvalid",
-  EARLY_EOF: "EarlyEof",
-} as const;
 
 export interface LoaderErrorInfo {
   code: number;
@@ -72,7 +66,7 @@ class FetchLoader {
   onDataArrival: ((data: Uint8Array, byteStart: number) => number) | null;
   onSeeked: (() => void) | null;
   onRestarted: (() => void) | null;
-  onError: ((type: string, info: LoaderErrorInfo) => void) | null;
+  onError: ((type: LoaderErrorDetail, info: LoaderErrorInfo) => void) | null;
   onComplete: ((extraData: unknown) => void) | null;
   /** Called with the playlist text and its final (post-redirect) URL when the response is an HLS playlist. */
   onHLSDetected: ((text: string, url: string) => void) | null;
@@ -326,7 +320,7 @@ class FetchLoader {
           this._status = LoaderStatus.kError;
           const errInfo: LoaderErrorInfo = { code: res.status, msg: res.statusText, url: request.url };
           if (this.onError) {
-            this._handleLoaderError(LoaderErrors.HTTP_STATUS_CODE_INVALID, errInfo);
+            this._handleLoaderError(PlayerErrors.HTTP_STATUS_CODE_INVALID, errInfo);
           } else {
             throw new RuntimeException(`FetchLoader: Http code invalid, ${res.status} ${res.statusText}`);
           }
@@ -341,7 +335,7 @@ class FetchLoader {
         const err = e as Record<string, unknown>;
         const errInfo: LoaderErrorInfo = { code: -1, msg: String(err.message ?? ""), url: request.url };
         if (this.onError) {
-          this._handleLoaderError(LoaderErrors.REQUEST_FAILED, errInfo);
+          this._handleLoaderError(PlayerErrors.REQUEST_FAILED, errInfo);
         } else {
           throw e;
         }
@@ -368,7 +362,7 @@ class FetchLoader {
           if (request.contentLength !== null && request.receivedLength < request.contentLength) {
             this._status = LoaderStatus.kError;
             const info: LoaderErrorInfo = { code: -1, msg: "Fetch stream meet Early-EOF", url: request.url };
-            this._handleLoaderError(LoaderErrors.EARLY_EOF, info);
+            this._handleLoaderError(PlayerErrors.EARLY_EOF, info);
           } else {
             this._status = LoaderStatus.kComplete;
             this._onFetchComplete(range.from, range.from + request.receivedLength - 1);
@@ -395,7 +389,7 @@ class FetchLoader {
         const errMsg = typeof err.message === "string" ? err.message : "";
 
         this._status = LoaderStatus.kError;
-        let type: string;
+        let type: LoaderErrorDetail;
         let info: LoaderErrorInfo;
 
         if (
@@ -403,10 +397,10 @@ class FetchLoader {
           (request.contentLength === null ||
             (request.contentLength !== null && request.receivedLength < request.contentLength))
         ) {
-          type = LoaderErrors.EARLY_EOF;
+          type = PlayerErrors.EARLY_EOF;
           info = { code: errCode, msg: "Fetch stream meet Early-EOF", url: request.url };
         } else {
-          type = LoaderErrors.EXCEPTION;
+          type = PlayerErrors.EXCEPTION;
           info = { code: errCode, msg: errMsg, url: request.url };
         }
 
@@ -565,7 +559,7 @@ class FetchLoader {
     }
   }
 
-  private _handleLoaderError(type: string, data: LoaderErrorInfo): void {
+  private _handleLoaderError(type: LoaderErrorDetail, data: LoaderErrorInfo): void {
     Log.e(this.TAG, `Loader error, code = ${data.code}, msg = ${data.msg}, url = ${data.url ?? "unknown"}`);
 
     this._flushStashBuffer(false);

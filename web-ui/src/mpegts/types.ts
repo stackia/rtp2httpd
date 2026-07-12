@@ -3,13 +3,14 @@ export interface PlayerSegment {
   duration?: number;
 }
 
+import type { PlayerErrorDetail } from "./errors";
 import type { LiveSessionAnchor } from "./player/wall-clock";
 
 export type { LiveSessionAnchor };
 
 export interface PlayerError {
   category: "io" | "demux" | "media";
-  detail: string;
+  detail: PlayerErrorDetail;
   info?: string;
   code?: number;
   url?: string;

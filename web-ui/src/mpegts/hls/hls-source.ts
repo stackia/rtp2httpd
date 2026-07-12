@@ -230,7 +230,14 @@ export class HlsSource implements SegmentSource {
     if (!response.ok) {
       throw new HlsRequestError(response.url || url, response.status, response.statusText);
     }
-    const text = await response.text();
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (error) {
+      if (this.abort.signal.aborted) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new HlsRequestError(response.url || url, undefined, undefined, message);
+    }
     return parseM3U8(text, response.url || url);
   }
 
