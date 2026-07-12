@@ -189,6 +189,7 @@ function PlayerPage() {
   }, [currentChannel, activeSource, activeSourceIndex, streamStartTime, seekAtLiveEdge]);
 
   const handleVideoSeek = useCallback((seekTime: Date, goingLive: boolean) => {
+    setCurrentVideoTime(0);
     setSeekAtLiveEdge(goingLive);
     if (goingLive) {
       setStreamStartTime(new Date());
