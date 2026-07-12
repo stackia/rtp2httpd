@@ -170,7 +170,7 @@ export function semanticClass(tone: SurfaceTone, element: SemanticElement): stri
 
 export const CANVAS_CLASS = {
   status:
-    "relative isolate min-h-screen overflow-x-hidden bg-background bg-[radial-gradient(circle_at_8%_-8%,hsl(252_92%_72%/0.2),transparent_34rem),radial-gradient(circle_at_96%_2%,hsl(190_96%_60%/0.14),transparent_30rem),linear-gradient(180deg,hsl(226_56%_98%/0.68),hsl(var(--background))_28rem)] bg-fixed dark:bg-[radial-gradient(circle_at_8%_-10%,hsl(252_92%_66%/0.18),transparent_36rem),radial-gradient(circle_at_94%_0%,hsl(190_96%_52%/0.11),transparent_32rem),linear-gradient(180deg,hsl(231_48%_9%/0.8),hsl(var(--background))_30rem)] max-md:bg-scroll",
+    "relative isolate min-h-screen overflow-x-hidden bg-background bg-[radial-gradient(circle_at_8%_-8%,hsl(var(--primary)/0.15),transparent_34rem),radial-gradient(circle_at_96%_2%,hsl(190_70%_55%/0.09),transparent_30rem)] bg-fixed dark:bg-[radial-gradient(circle_at_8%_-10%,hsl(var(--primary)/0.13),transparent_36rem),radial-gradient(circle_at_94%_0%,hsl(190_68%_48%/0.07),transparent_32rem)] max-md:bg-scroll",
   player:
     "bg-[radial-gradient(circle_at_92%_8%,rgba(59,130,246,0.15),transparent_28%),radial-gradient(circle_at_72%_92%,rgba(99,102,241,0.13),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_88%_10%,rgba(59,130,246,0.1),transparent_30%),radial-gradient(circle_at_70%_88%,rgba(99,102,241,0.12),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]",
   playerCentered:

@@ -41,7 +41,7 @@
 }
 
 :root {
-  --background: 226 44% 97%;
+  --background: 228 42% 95.5%;
   --foreground: 229 36% 14%;
   --card: 0 0% 100%;
   --card-foreground: 229 36% 14%;
@@ -68,7 +68,7 @@
 }
 
 .dark {
-  --background: 231 46% 7%;
+  --background: 232 48% 5.5%;
   --foreground: 220 32% 96%;
   --card: 229 37% 11%;
   --card-foreground: 220 32% 96%;
