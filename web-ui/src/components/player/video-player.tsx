@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import { CircleAlert, Play } from "lucide-react";
+import { CircleAlert, Play, X } from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -132,7 +132,11 @@ function decodeRequestUrl(url: string): string {
 }
 
 function formatTechnicalPlayerError(playerError: PlayerError): string {
-  const details = [playerError.detail, playerError.info];
+  const details = [playerError.detail];
+  if (playerError.codec) {
+    details.push(`${playerError.track ?? "media"} codec=${playerError.codec}`);
+  }
+  details.push(playerError.info ?? "");
   if (playerError.code !== undefined && playerError.code !== -1) {
     details.push(`code=${playerError.code}`);
   }
@@ -338,6 +342,7 @@ export function VideoPlayer({
   const [error, setError] = useState<PlaybackErrorDisplay | null>(() =>
     isSupported() ? null : { message: t("mseNotSupported") },
   );
+  const [warning, setWarning] = useState<PlaybackErrorDisplay | null>(null);
   const [volume, setVolume] = useState(() => getVolume());
   const [isMuted, setIsMuted] = useState(() => getMuted());
   const [isPlaying, setIsPlaying] = useState(false);
@@ -696,18 +701,21 @@ export function VideoPlayer({
 
   const runPlayerErrorRecovery = useEffectEvent((playerError: PlayerError, slotId: SlotId) => {
     console.error("Player error:", playerError);
+    setWarning(null);
 
     const isPendingTransition = pendingTransitionRef.current?.slotId === slotId;
     if (isPendingTransition) {
       completePendingSwitchIfNeeded(slotId);
     }
 
-    let errorMessage = formatTechnicalPlayerError(playerError) || t("playbackError");
+    const technicalErrorMessage = formatTechnicalPlayerError(playerError);
+    let errorMessage = technicalErrorMessage || t("playbackError");
     let errorDisplay: PlaybackErrorDisplay = { message: errorMessage };
     let decodingErrorRetry = false;
     const isHttpStatusError = playerError.category === "io" && playerError.detail === "HttpStatusCodeInvalid";
     const isUpstreamRequestError =
       isHttpStatusError || (playerError.category === "io" && playerError.detail === "RequestFailed");
+    const isCodecUnsupported = playerError.detail === "CodecUnsupported";
 
     if (playerError.category === "media") {
       if (playerError.detail === "MediaMSEError") {
@@ -720,10 +728,6 @@ export function VideoPlayer({
             errorMessage += `: ${video.error.message}`;
           }
         }
-      }
-    } else if (playerError.category === "demux") {
-      if (playerError.detail === "FormatUnsupported" || playerError.detail === "CodecUnsupported") {
-        errorMessage = t("codecError");
       }
     } else if (playerError.category === "io") {
       if (isUpstreamRequestError) {
@@ -744,7 +748,10 @@ export function VideoPlayer({
       }
     }
 
-    if (!isUpstreamRequestError) {
+    if (isCodecUnsupported) {
+      errorMessage = t("codecError");
+      errorDisplay = { message: errorMessage, description: technicalErrorMessage };
+    } else if (!isUpstreamRequestError) {
       errorDisplay = { message: errorMessage };
     }
 
@@ -786,6 +793,14 @@ export function VideoPlayer({
   });
 
   const handlePlayerError = useEffectEvent((playerError: PlayerError, slotId: SlotId) => {
+    if (playerError.detail === "CodecUnsupported" && playerError.track === "audio") {
+      console.error("Player audio warning:", playerError);
+      setWarning({
+        message: t("audioCodecError"),
+        description: formatTechnicalPlayerError(playerError),
+      });
+      return;
+    }
     runPlayerErrorRecovery(playerError, slotId);
   });
 
@@ -1039,6 +1054,7 @@ export function VideoPlayer({
     showControlsImmediately();
     setIsLoading(true);
     setError(null);
+    setWarning(null);
 
     const isStreamSwitch =
       channel != null &&
@@ -1821,6 +1837,39 @@ export function VideoPlayer({
             </div>
           </div>
         </button>
+      )}
+
+      {warning && !error && (
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-3 md:top-5 md:px-5">
+          <div
+            role="alert"
+            className={clsx(
+              PLAYER_OVERLAY_SURFACE_CLASS,
+              "pointer-events-auto w-full max-w-xl rounded-xl border-amber-200/25 bg-[linear-gradient(145deg,rgba(66,43,12,0.92),rgba(27,24,35,0.92))] p-3 text-white shadow-[0_16px_48px_rgba(24,13,2,0.48)] backdrop-blur-md md:p-4",
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-200" aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <div className="font-medium text-amber-50 text-sm md:text-base">{warning.message}</div>
+                {warning.description && (
+                  <div className="mt-1 break-words font-mono text-amber-50/65 text-xs leading-relaxed">
+                    {warning.description}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                className="-m-1 shrink-0 rounded-lg p-1.5 text-amber-100/65 transition-colors hover:bg-white/10 hover:text-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200/70"
+                aria-label={t("dismiss")}
+                title={t("dismiss")}
+                onClick={() => setWarning(null)}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {error && (

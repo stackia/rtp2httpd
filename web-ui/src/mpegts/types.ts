@@ -13,6 +13,8 @@ export interface PlayerError {
   info?: string;
   code?: number;
   url?: string;
+  track?: "video" | "audio";
+  codec?: string;
 }
 
 export type PlayerVideoScanType = "progressive" | "interlaced";

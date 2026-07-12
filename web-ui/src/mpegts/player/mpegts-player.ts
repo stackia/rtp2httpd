@@ -424,6 +424,17 @@ export function createMpegtsPlayer(
     };
 
     mse.onError = (info) => {
+      if (info.name === "NotSupportedError" && info.track) {
+        impl.onError?.({
+          category: "media",
+          detail: "CodecUnsupported",
+          info: info.msg,
+          code: info.code,
+          track: info.track,
+          codec: info.codec,
+        });
+        return;
+      }
       impl.onError?.({
         category: "media",
         detail: "MediaMSEError",

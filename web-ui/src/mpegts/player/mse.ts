@@ -50,7 +50,7 @@ export interface MSE {
   onEndStreaming: (() => void) | null;
   /** Fired when the MediaSource is closed by the UA (not by destroy), e.g. iOS reclaiming the media pipeline in background. */
   onSourceClose: (() => void) | null;
-  onError: ((info: { code: number; msg: string }) => void) | null;
+  onError: ((info: { code: number; msg: string; name?: string; track?: Track; codec?: string }) => void) | null;
 }
 
 const TAG = "MSE";
@@ -69,6 +69,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   const pendingRemoveRanges: Record<Track, RemoveRange[]> = { video: [], audio: [] };
   const mimeTypes: Record<Track, string | null> = { video: null, audio: null };
   const lastInitSegments: Record<Track, InitSegmentRecord | null> = { video: null, audio: null };
+  const disabledTracks = new Set<Track>();
 
   let isBufferFull = false;
   let hasPendingEos = false;
@@ -99,6 +100,14 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
   function hasPendingRemoveRanges(): boolean {
     return pendingRemoveRanges.video.length > 0 || pendingRemoveRanges.audio.length > 0;
+  }
+
+  function disableTrack(track: Track): void {
+    disabledTracks.add(track);
+    pendingSegments[track] = [];
+    pendingRemoveRanges[track] = [];
+    pendingSourceBufferInit = pendingSourceBufferInit.filter((pending) => pending.track !== track);
+    lastInitSegments[track] = null;
   }
 
   function doRemoveRanges(): void {
@@ -152,6 +161,9 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     pendingSourceBufferInit = [];
     for (const pending of pendings) {
       createSourceBuffer(pending.track, pending.codec, pending.container);
+      if (disabledTracks.has(pending.track)) {
+        continue;
+      }
       lastInitSegments[pending.track] = {
         data: pending.data,
         codec: pending.codec,
@@ -311,6 +323,9 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
   }
 
   function createSourceBuffer(track: Track, codec: string, container: string): void {
+    if (disabledTracks.has(track)) {
+      return;
+    }
     if (mediaSource?.readyState !== "open") {
       return;
     }
@@ -331,9 +346,15 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
           mimeTypes[track] = mimeType;
         } catch (error: unknown) {
           Log.e(TAG, `changeType failed: ${(error as Error).message}`);
+          if ((error as DOMException).name === "NotSupportedError") {
+            disableTrack(track);
+          }
           mse.onError?.({
             code: (error as DOMException).code,
             msg: (error as Error).message,
+            name: (error as DOMException).name,
+            track,
+            codec,
           });
         }
         return;
@@ -351,13 +372,17 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         sb.addEventListener("updateend", updateEndHandler);
       } catch (error: unknown) {
         Log.e(TAG, (error as Error).message);
-        if ((error as DOMException).name !== "NotSupportedError") {
-          mse.onError?.({
-            code: (error as DOMException).code,
-            msg: (error as Error).message,
-          });
-          return;
+        if ((error as DOMException).name === "NotSupportedError") {
+          disableTrack(track);
         }
+        mse.onError?.({
+          code: (error as DOMException).code,
+          msg: (error as Error).message,
+          name: (error as DOMException).name,
+          track,
+          codec,
+        });
+        return;
       }
       mimeTypes[track] = mimeType;
     }
@@ -468,6 +493,9 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
     },
 
     appendInit(track: Track, data: ArrayBuffer, codec: string, container: string): void {
+      if (disabledTracks.has(track)) {
+        return;
+      }
       if (mediaSource?.readyState !== "open" || mediaSource.streaming === false) {
         pendingSourceBufferInit.push({ track, data, codec, container });
         pendingSegments[track].push({ data });
@@ -479,11 +507,17 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
       lastInitSegments[track] = { data, codec, container };
 
       createSourceBuffer(track, codec, container);
+      if (disabledTracks.has(track)) {
+        return;
+      }
       pendingSegments[track].push({ data });
       tryAppendPending();
     },
 
     appendMedia(track: Track, data: ArrayBuffer, timestampOffset?: number): void {
+      if (disabledTracks.has(track)) {
+        return;
+      }
       pendingSegments[track].push({ data, timestampOffset });
 
       // After the MediaSource closes (e.g. iOS background reclaim), the
@@ -574,6 +608,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
         onQualityChangeHandler = null;
 
         pendingSourceBufferInit = [];
+        disabledTracks.clear();
         isBufferFull = false;
         hasPendingEos = false;
         pendingDuration = null;
