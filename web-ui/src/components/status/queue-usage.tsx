@@ -47,7 +47,7 @@ export function QueueUsage({ locale, queueBytes, queueLimit, queueHighwater, dro
       <div className="relative">
         <Progress
           value={usage}
-          className="h-1.5 bg-muted/70 shadow-inner"
+          className={clsx(METER_CLASS.compactTrack, "h-1.5")}
           indicatorClassName={semanticClass("warning", "fill")}
         />
         {typeof highwaterPercent === "number" ? (
@@ -71,7 +71,10 @@ export function QueueUsage({ locale, queueBytes, queueLimit, queueHighwater, dro
         <QueueMetric
           label={t("queueDroppedBytes")}
           value={formatBytes(droppedBytes)}
-          valueClassName={clsx(droppedBytes > 0 && "font-semibold text-rose-600 dark:text-rose-300")}
+          valueClassName={clsx(
+            droppedBytes > 0 && "font-semibold",
+            droppedBytes > 0 && semanticClass("danger", "text"),
+          )}
         />
       </div>
     </div>

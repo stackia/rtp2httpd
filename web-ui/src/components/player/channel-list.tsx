@@ -13,7 +13,7 @@ import {
   useState,
 } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { semanticClass, surfaceClass } from "../../lib/design-system";
+import { CONTROL_CLASS, semanticClass, surfaceClass } from "../../lib/design-system";
 import { type EPGData, getCurrentProgram, getEPGChannelId } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
 import type { Channel } from "../../types/player";
@@ -193,9 +193,17 @@ function ChannelListComponent({
               value={searchQuery}
               onChange={handleSearchInputChange}
               onKeyDown={handleSearchKeyDown}
-              className="h-8 w-full rounded-xl border border-blue-900/10 bg-white/78 px-3 py-0 pl-8 text-slate-800 text-xs shadow-none transition placeholder:text-slate-400 focus:border-ring/60 focus:outline-none focus:ring-2 focus:ring-ring/20 dark:border-blue-100/10 dark:bg-slate-900/85 dark:text-blue-50 dark:placeholder:text-slate-500 md:h-9 md:pl-9 md:text-sm"
+              className={clsx(
+                CONTROL_CLASS.searchField,
+                "h-8 w-full rounded-xl border px-3 py-0 pl-8 text-xs md:h-9 md:pl-9 md:text-sm",
+              )}
             />
-            <Search className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-blue-600/65 dark:text-blue-300/55 md:h-4 md:w-4" />
+            <Search
+              className={clsx(
+                CONTROL_CLASS.searchIcon,
+                "absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 md:h-4 md:w-4",
+              )}
+            />
           </div>
           {settingsSlot && <div className="shrink-0">{settingsSlot}</div>}
         </div>

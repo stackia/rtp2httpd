@@ -2,7 +2,7 @@ import { clsx } from "clsx";
 import { Circle, History } from "lucide-react";
 import { memo, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { semanticClass, surfaceClass } from "../../lib/design-system";
+import { MEDIA_CLASS, MEDIA_TEXT_CLASS, semanticClass, surfaceClass } from "../../lib/design-system";
 import type { EPGData } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
 import type { EPGProgram } from "../../types/player";
@@ -148,7 +148,12 @@ function EPGViewComponent({
 
   if (!channelId || channelPrograms.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center bg-transparent px-6 text-center text-slate-500 text-sm leading-6 dark:text-slate-400">
+      <div
+        className={clsx(
+          MEDIA_TEXT_CLASS.onSurfaceMuted,
+          "flex h-full items-center justify-center bg-transparent px-6 text-center text-sm leading-6",
+        )}
+      >
         {t("noEpgAvailable")}
       </div>
     );
@@ -168,7 +173,9 @@ function EPGViewComponent({
                   "sticky top-0 z-10 border-b px-3 py-1.5 md:px-4 md:py-2",
                 )}
               >
-                <h3 className="font-semibold text-blue-800 text-xs tracking-wide dark:text-blue-100 md:text-sm">
+                <h3
+                  className={clsx(MEDIA_TEXT_CLASS.onSurfaceHeading, "font-semibold text-xs tracking-wide md:text-sm")}
+                >
                   {formatRelativeDate(date)}
                 </h3>
               </div>
@@ -217,7 +224,7 @@ function EPGViewComponent({
                               />
                             ) : isPast && supportsCatchup ? (
                               <div
-                                className="h-8 w-1 rounded-full bg-slate-400/25 dark:bg-blue-100/18 md:h-10"
+                                className={clsx(MEDIA_CLASS.replayBar, "h-8 w-1 rounded-full md:h-10")}
                                 title={t("replay")}
                               />
                             ) : (
@@ -230,12 +237,17 @@ function EPGViewComponent({
                             <span
                               className={clsx(
                                 "whitespace-nowrap font-semibold text-xs tabular-nums leading-tight md:text-sm",
-                                playing && "text-blue-700 dark:text-blue-200",
+                                playing && semanticClass("info", "text"),
                               )}
                             >
                               {formatTime(program.start)}
                             </span>
-                            <span className="whitespace-nowrap text-[10px] text-slate-500 tabular-nums leading-4 dark:text-slate-400 md:text-xs">
+                            <span
+                              className={clsx(
+                                MEDIA_TEXT_CLASS.onSurfaceMuted,
+                                "whitespace-nowrap text-[10px] tabular-nums leading-4 md:text-xs",
+                              )}
+                            >
                               {formatDuration(program.start, program.end)}
                             </span>
                           </div>

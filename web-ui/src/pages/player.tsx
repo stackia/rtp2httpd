@@ -14,7 +14,15 @@ import { Card } from "../components/ui/card";
 import { useLocale } from "../hooks/use-locale";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
-import { CANVAS_CLASS, EFFECT_CLASS, INTERACTION_CLASS, semanticClass, surfaceClass } from "../lib/design-system";
+import {
+  ACTION_CLASS,
+  CANVAS_CLASS,
+  EFFECT_CLASS,
+  INTERACTION_CLASS,
+  MEDIA_TEXT_CLASS,
+  semanticClass,
+  surfaceClass,
+} from "../lib/design-system";
 import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG } from "../lib/epg-parser";
 import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
@@ -620,7 +628,9 @@ function PlayerPage() {
                 <AlertTriangle className="h-6 w-6" aria-hidden="true" />
               </div>
 
-              <div className="font-semibold text-blue-700 text-sm dark:text-blue-200">{t("playlistLoadEyebrow")}</div>
+              <div className={clsx(MEDIA_TEXT_CLASS.onSurfaceAccent, "font-semibold text-sm")}>
+                {t("playlistLoadEyebrow")}
+              </div>
               <h1 className="mt-2 text-balance font-semibold text-2xl text-foreground leading-tight tracking-tight sm:text-3xl">
                 {t("playlistLoadTitle")}
               </h1>
@@ -632,7 +642,7 @@ function PlayerPage() {
                 className={clsx(surfaceClass({ material: "clear", level: "inset" }), "mt-6 min-w-0 rounded-2xl p-4")}
               >
                 <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <ListChecks className="h-4 w-4 text-blue-600 dark:text-blue-300" aria-hidden="true" />
+                  <ListChecks className={clsx(semanticClass("info", "text"), "h-4 w-4")} aria-hidden="true" />
                   {t("playlistErrorChecklist")}
                 </div>
                 <ul className="mt-3 space-y-2 text-sm leading-5 text-muted-foreground">
@@ -664,8 +674,7 @@ function PlayerPage() {
                   rel="noreferrer"
                   className={buttonVariants({
                     variant: "outline",
-                    className:
-                      "w-full gap-2 rounded-xl border-blue-900/12 bg-white/55 text-blue-800 shadow-sm hover:bg-blue-50 dark:border-blue-100/15 dark:bg-slate-950/35 dark:text-blue-100 dark:hover:bg-blue-300/10 sm:w-auto",
+                    className: clsx(ACTION_CLASS.playerOutline, "w-full gap-2 rounded-xl sm:w-auto"),
                   })}
                 >
                   {t("m3uIntegrationGuide")}

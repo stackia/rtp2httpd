@@ -13,7 +13,16 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { CANVAS_CLASS, EFFECT_CLASS, SCRIM_CLASS, semanticClass, surfaceClass } from "../../lib/design-system";
+import {
+  ALERT_CLASS,
+  CANVAS_CLASS,
+  EFFECT_CLASS,
+  MEDIA_CLASS,
+  MEDIA_TEXT_CLASS,
+  SCRIM_CLASS,
+  semanticClass,
+  surfaceClass,
+} from "../../lib/design-system";
 import {
   getDocumentPictureInPicture,
   getDocumentPiPWindowOptions,
@@ -224,19 +233,27 @@ function PlayerTopLeftOverlay({
     >
       <PlayerSelectedGlassLayers />
       <div className="relative z-10 flex min-w-0 items-center gap-1.5 md:gap-2 [@container_video_(max-height:_320px)]:gap-1 md:[@container_video_(max-height:_320px)]:gap-1">
-        <span className="shrink-0 font-medium text-xs text-blue-50 tabular-nums drop-shadow-sm md:text-base md:[@container_video_(max-height:_320px)]:text-xs">
+        <span
+          className={clsx(
+            MEDIA_TEXT_CLASS.clock,
+            "shrink-0 font-medium text-xs tabular-nums md:text-base md:[@container_video_(max-height:_320px)]:text-xs",
+          )}
+        >
           {time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </span>
         {loading && (
           <>
             <span
-              className="shrink-0 text-blue-100/35 text-xs md:text-sm md:[@container_video_(max-height:_320px)]:text-xs"
+              className={clsx(
+                MEDIA_TEXT_CLASS.faint,
+                "shrink-0 text-xs md:text-sm md:[@container_video_(max-height:_320px)]:text-xs",
+              )}
               aria-hidden="true"
             >
               ·
             </span>
             <div className="relative h-3 w-3 shrink-0 md:h-3.5 md:w-3.5 md:[@container_video_(max-height:_320px)]:h-3 md:[@container_video_(max-height:_320px)]:w-3">
-              <div className="absolute inset-0 rounded-full border border-blue-100/25" />
+              <div className={clsx(MEDIA_CLASS.loadingTrack, "absolute inset-0 rounded-full border")} />
               <div
                 className={clsx(
                   EFFECT_CLASS.loadingRing,
@@ -244,7 +261,12 @@ function PlayerTopLeftOverlay({
                 )}
               />
             </div>
-            <span className="min-w-0 truncate text-blue-50/70 text-xs md:text-sm md:[@container_video_(max-height:_320px)]:text-xs">
+            <span
+              className={clsx(
+                MEDIA_TEXT_CLASS.muted,
+                "min-w-0 truncate text-xs md:text-sm md:[@container_video_(max-height:_320px)]:text-xs",
+              )}
+            >
               {loadingText}
             </span>
           </>
@@ -1809,20 +1831,36 @@ export function VideoPlayer({
                   className={clsx(
                     "shrink-0 rounded-md px-1 py-0.5 font-semibold text-[10px] transition-[color,background-color,box-shadow,scale] duration-300 md:px-1.5 md:text-xs md:[@container_video_(max-height:_320px)]:px-1 md:[@container_video_(max-height:_320px)]:text-[10px]",
                     semanticClass(digitBuffer ? "info" : "neutral", "badge"),
-                    digitBuffer && "scale-110 ring-2 ring-blue-200/40",
+                    digitBuffer && "scale-110",
+                    digitBuffer && MEDIA_CLASS.selectionRing,
                   )}
                 >
                   {digitBuffer || channel.id}
                 </span>
-                <h2 className="truncate font-bold text-white text-xs tracking-[0.01em] md:text-base md:[@container_video_(max-height:_320px)]:text-xs">
+                <h2
+                  className={clsx(
+                    MEDIA_TEXT_CLASS.strong,
+                    "truncate font-bold text-xs tracking-[0.01em] md:text-base md:[@container_video_(max-height:_320px)]:text-xs",
+                  )}
+                >
                   {channel.name}
                 </h2>
                 {channel.groups.length > 0 && (
                   <>
-                    <span className="hidden text-blue-100/35 text-xs sm:inline md:text-sm [@container_video_(max-height:_320px)]:hidden md:[@container_video_(max-height:_320px)]:hidden">
+                    <span
+                      className={clsx(
+                        MEDIA_TEXT_CLASS.faint,
+                        "hidden text-xs sm:inline md:text-sm [@container_video_(max-height:_320px)]:hidden md:[@container_video_(max-height:_320px)]:hidden",
+                      )}
+                    >
                       ·
                     </span>
-                    <div className="hidden truncate text-blue-50/65 text-xs sm:block md:text-sm [@container_video_(max-height:_320px)]:hidden md:[@container_video_(max-height:_320px)]:hidden">
+                    <div
+                      className={clsx(
+                        MEDIA_TEXT_CLASS.muted,
+                        "hidden truncate text-xs sm:block md:text-sm [@container_video_(max-height:_320px)]:hidden md:[@container_video_(max-height:_320px)]:hidden",
+                      )}
+                    >
                       {channel.groups.join(" / ")}
                     </div>
                   </>
@@ -1842,11 +1880,15 @@ export function VideoPlayer({
           )}
           onClick={handleUserInteraction}
         >
-          <div className="flex flex-col items-center gap-4 text-white">
-            <Play className={clsx(semanticClass("info", "text"), "h-20 w-20 fill-blue-100/20 opacity-95")} />
+          <div className={clsx(MEDIA_TEXT_CLASS.strong, "flex flex-col items-center gap-4")}>
+            <Play className={clsx(semanticClass("info", "text"), MEDIA_CLASS.playIcon, "h-20 w-20 opacity-95")} />
             <div className="max-w-lg px-2 text-center">
-              <div className="mb-2 font-semibold text-2xl tracking-tight text-blue-50">{t("clickToPlay")}</div>
-              <div className="text-pretty text-blue-50/65 text-sm leading-5">{t("autoplayBlocked")}</div>
+              <div className={clsx(MEDIA_TEXT_CLASS.strong, "mb-2 font-semibold text-2xl tracking-tight")}>
+                {t("clickToPlay")}
+              </div>
+              <div className={clsx(MEDIA_TEXT_CLASS.muted, "text-pretty text-sm leading-5")}>
+                {t("autoplayBlocked")}
+              </div>
             </div>
           </div>
         </button>
@@ -1862,18 +1904,23 @@ export function VideoPlayer({
             )}
           >
             <div className="flex items-start gap-3">
-              <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-200" aria-hidden="true" />
+              <CircleAlert className={clsx(ALERT_CLASS.warningIcon, "mt-0.5 h-5 w-5 shrink-0")} aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                <div className="font-medium text-amber-50 text-sm md:text-base">{warning.message}</div>
+                <div className={clsx(ALERT_CLASS.warningTitle, "font-medium text-sm md:text-base")}>
+                  {warning.message}
+                </div>
                 {warning.description && (
-                  <div className="mt-1 break-words font-mono text-amber-50/65 text-xs leading-relaxed">
+                  <div className={clsx(ALERT_CLASS.warningBody, "mt-1 break-words font-mono text-xs leading-relaxed")}>
                     {warning.description}
                   </div>
                 )}
               </div>
               <button
                 type="button"
-                className="-m-1 shrink-0 cursor-pointer rounded-lg p-1.5 text-amber-100/65 transition-colors hover:bg-white/10 hover:text-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200/70"
+                className={clsx(
+                  ALERT_CLASS.warningDismiss,
+                  "-m-1 shrink-0 cursor-pointer rounded-lg p-1.5 transition-colors focus-visible:outline-none",
+                )}
                 aria-label={t("dismiss")}
                 title={t("dismiss")}
                 onClick={() => setWarning(null)}
@@ -1893,34 +1940,56 @@ export function VideoPlayer({
               "max-h-full w-full max-w-xl overflow-y-auto rounded-2xl p-4 [@media(max-height:360px)]:p-2.5 md:p-5",
             )}
           >
-            <div className="flex items-center gap-2 font-semibold text-lg text-rose-100">
+            <div className={clsx(ALERT_CLASS.dangerHeading, "flex items-center gap-2 font-semibold text-lg")}>
               <CircleAlert className="h-5 w-5 shrink-0" aria-hidden="true" />
               {t("playbackError")}
             </div>
-            <div className="mt-2 break-words font-medium text-pretty text-rose-50 text-sm leading-relaxed">
+            <div
+              className={clsx(
+                ALERT_CLASS.dangerTitle,
+                "mt-2 break-words font-medium text-pretty text-sm leading-relaxed",
+              )}
+            >
               {error.message}
             </div>
             {error.description && (
-              <div className="mt-1 break-words text-pretty text-rose-50/70 text-xs leading-relaxed [@media(max-height:360px)]:hidden md:text-sm">
+              <div
+                className={clsx(
+                  ALERT_CLASS.dangerBody,
+                  "mt-1 break-words text-pretty text-xs leading-relaxed [@media(max-height:360px)]:hidden md:text-sm",
+                )}
+              >
                 {error.description}
               </div>
             )}
             {(error.statusCode !== undefined || error.requestUrl) && (
               <div className="mt-3 grid gap-2 text-xs [@media(max-height:360px)]:mt-2 [@media(max-height:360px)]:gap-1 md:text-sm">
                 {error.statusCode !== undefined && (
-                  <div className="grid grid-cols-[auto_1fr] items-baseline gap-3 rounded-lg bg-black/20 px-3 py-2 [@media(max-height:360px)]:py-1.5">
-                    <span className="text-rose-100/55">{t("httpStatus")}</span>
-                    <span className="min-w-0 font-mono text-rose-50">
+                  <div
+                    className={clsx(
+                      ALERT_CLASS.detail,
+                      "grid grid-cols-[auto_1fr] items-baseline gap-3 rounded-lg px-3 py-2 [@media(max-height:360px)]:py-1.5",
+                    )}
+                  >
+                    <span className={ALERT_CLASS.dangerLabel}>{t("httpStatus")}</span>
+                    <span className={clsx(ALERT_CLASS.dangerValue, "min-w-0 font-mono")}>
                       {error.statusCode}
                       {error.statusText ? ` ${error.statusText}` : ""}
                     </span>
                   </div>
                 )}
                 {error.requestUrl && (
-                  <div className="rounded-lg bg-black/20 px-3 py-2 [@media(max-height:360px)]:grid [@media(max-height:360px)]:grid-cols-[auto_1fr] [@media(max-height:360px)]:items-baseline [@media(max-height:360px)]:gap-3 [@media(max-height:360px)]:py-1.5">
-                    <div className="mb-1 text-rose-100/55 [@media(max-height:360px)]:mb-0">{t("requestUrl")}</div>
+                  <div
+                    className={clsx(
+                      ALERT_CLASS.detail,
+                      "rounded-lg px-3 py-2 [@media(max-height:360px)]:grid [@media(max-height:360px)]:grid-cols-[auto_1fr] [@media(max-height:360px)]:items-baseline [@media(max-height:360px)]:gap-3 [@media(max-height:360px)]:py-1.5",
+                    )}
+                  >
+                    <div className={clsx(ALERT_CLASS.dangerLabel, "mb-1 [@media(max-height:360px)]:mb-0")}>
+                      {t("requestUrl")}
+                    </div>
                     <div
-                      className="min-w-0 whitespace-normal break-all font-mono text-rose-50"
+                      className={clsx(ALERT_CLASS.dangerValue, "min-w-0 whitespace-normal break-all font-mono")}
                       title={error.requestUrl}
                     >
                       {error.requestUrl}
@@ -1930,9 +1999,14 @@ export function VideoPlayer({
               </div>
             )}
             {error.suggestion && (
-              <div className="mt-3 rounded-lg border border-amber-200/15 bg-amber-100/8 px-3 py-2 text-xs leading-relaxed [@media(max-height:360px)]:mt-2 [@media(max-height:360px)]:py-1 md:text-sm">
-                <div className="font-medium text-amber-100">{t("suggestedAction")}</div>
-                <div className="mt-0.5 text-amber-50/70">{error.suggestion}</div>
+              <div
+                className={clsx(
+                  ALERT_CLASS.suggestion,
+                  "mt-3 rounded-lg px-3 py-2 text-xs leading-relaxed [@media(max-height:360px)]:mt-2 [@media(max-height:360px)]:py-1 md:text-sm",
+                )}
+              >
+                <div className={clsx(ALERT_CLASS.suggestionTitle, "font-medium")}>{t("suggestedAction")}</div>
+                <div className={clsx(ALERT_CLASS.suggestionBody, "mt-0.5")}>{error.suggestion}</div>
               </div>
             )}
           </div>
@@ -1998,7 +2072,8 @@ export function VideoPlayer({
           <div
             className={clsx(
               CANVAS_CLASS.video,
-              "@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center px-4 text-center font-medium text-blue-50/65 text-sm md:aspect-auto md:h-full md:text-base",
+              MEDIA_TEXT_CLASS.muted,
+              "@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center px-4 text-center font-medium text-sm md:aspect-auto md:h-full md:text-base",
             )}
           >
             {t("playingInPictureInPicture")}

@@ -131,7 +131,7 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
         )}
       >
         {logs.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-slate-500">--</div>
+          <div className={clsx(TEXT_CLASS.subtle, "flex h-full items-center justify-center text-sm")}>--</div>
         ) : (
           <div className="space-y-1.5 font-mono text-sm">
             {logs.map((log) => (

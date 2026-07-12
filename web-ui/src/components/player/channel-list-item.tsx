@@ -2,7 +2,7 @@ import { clsx } from "clsx";
 import { History } from "lucide-react";
 import { forwardRef, memo, useCallback } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { semanticClass, surfaceClass } from "../../lib/design-system";
+import { MEDIA_TEXT_CLASS, semanticClass, surfaceClass } from "../../lib/design-system";
 import type { Locale } from "../../lib/locale";
 import type { Channel } from "../../types/player";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
@@ -60,11 +60,11 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
             </div>
             {channel.sources.some((s) => s.catchup && s.catchupSource) && (
               <span title={t("catchupSupported")}>
-                <History className="h-3 w-3 shrink-0 text-blue-600 dark:text-blue-300 md:h-3.5 md:w-3.5" />
+                <History className={clsx(semanticClass("info", "text"), "h-3 w-3 shrink-0 md:h-3.5 md:w-3.5")} />
               </span>
             )}
           </div>
-          <div className="mt-0.5 truncate text-[10px] text-slate-500 leading-4 dark:text-slate-400 md:text-xs">
+          <div className={clsx(MEDIA_TEXT_CLASS.onSurfaceMuted, "mt-0.5 truncate text-[10px] leading-4 md:text-xs")}>
             {groupLabel}
             {currentProgram && (
               <>

@@ -1,3 +1,5 @@
+import { CANVAS_STYLE } from "./design-system";
+
 type DocumentPictureInPictureOptions = {
   preferInitialWindowPlacement?: boolean;
   width?: number;
@@ -91,12 +93,12 @@ export function setupDocumentPiPWindow(targetWindow: Window): void {
   targetDocument.documentElement.style.colorScheme = document.documentElement.style.colorScheme;
   targetDocument.documentElement.style.width = "100%";
   targetDocument.documentElement.style.height = "100%";
-  targetDocument.body.className = "overflow-hidden overscroll-none bg-black text-foreground antialiased";
+  targetDocument.body.className = "overflow-hidden overscroll-none text-foreground antialiased";
   targetDocument.body.style.margin = "0";
   targetDocument.body.style.width = "100%";
   targetDocument.body.style.height = "100%";
   targetDocument.body.style.overflow = "hidden";
-  targetDocument.body.style.background = "#000";
+  targetDocument.body.style.background = CANVAS_STYLE.videoBackground;
 
   copyStyleSheetsToWindow(targetWindow);
 }

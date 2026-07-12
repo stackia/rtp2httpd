@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
-import { semanticClass, surfaceClass, TEXT_CLASS } from "../../lib/design-system";
+import { METER_CLASS, SEPARATOR_CLASS, semanticClass, surfaceClass, TEXT_CLASS } from "../../lib/design-system";
 import { formatBandwidth, formatBytes } from "../../lib/format";
 import type { Locale } from "../../lib/locale";
 import type { PoolStats, WorkerEntry } from "../../types";
@@ -87,7 +87,7 @@ export function WorkersSection({ workers, locale, bandwidthUnit }: WorkersSectio
                       </div>
                     ))}
                   </div>
-                  <Separator className="bg-border/50 dark:bg-white/8" />
+                  <Separator className={SEPARATOR_CLASS.subtle} />
                   <div className="grid gap-4 md:grid-cols-2">
                     <PoolCard title={t("bufferPool")} pool={worker.pool} locale={locale} />
                     <PoolCard title={t("controlPool")} pool={worker.controlPool} locale={locale} />
@@ -131,7 +131,7 @@ function PoolCard({ title, pool, locale }: PoolCardProps) {
       </div>
       <Progress
         value={utilization}
-        className="h-1.5 bg-muted/70 shadow-inner"
+        className={clsx(METER_CLASS.compactTrack, "h-1.5")}
         indicatorClassName={indicatorClassName}
       />
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-muted-foreground">

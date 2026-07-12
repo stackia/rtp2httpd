@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import * as React from "react";
+import { CONTROL_CLASS } from "../../lib/design-system";
 
 export interface SwitchProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "onChange"> {
   checked?: boolean;
@@ -31,15 +32,17 @@ export const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
         onClick={toggle}
         onKeyDown={handleKeyDown}
         className={clsx(
-          "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border shadow-[inset_0_1px_3px_rgba(15,23,42,0.16)] transition-[background-color,border-color,box-shadow] duration-200 motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50",
-          checked ? "border-primary/30 bg-primary" : "border-input/80 bg-muted/90",
+          CONTROL_CLASS.switchBase,
+          CONTROL_CLASS.switchTrack,
+          "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full disabled:cursor-not-allowed",
           className,
         )}
         {...props}
       >
         <span
           className={clsx(
-            "ml-0.5 inline-block h-5 w-5 rounded-full bg-white shadow-md ring-1 ring-black/5 transition-transform duration-200 motion-reduce:transition-none",
+            CONTROL_CLASS.switchThumb,
+            "ml-0.5 inline-block h-5 w-5 rounded-full",
             checked ? "translate-x-5" : "translate-x-0",
           )}
         />

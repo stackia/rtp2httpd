@@ -2,7 +2,7 @@ import { clsx } from "clsx";
 import { Settings } from "lucide-react";
 import { memo } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { INTERACTION_CLASS, surfaceClass, TEXT_CLASS } from "../../lib/design-system";
+import { BORDER_CLASS, INTERACTION_CLASS, surfaceClass, TEXT_CLASS } from "../../lib/design-system";
 import { LOCALE_OPTIONS, type Locale } from "../../lib/locale";
 import { THEME_LABEL_KEYS, THEME_MODES, type ThemeMode } from "../../types/ui";
 import { LabeledSwitch } from "../ui/labeled-switch";
@@ -116,7 +116,7 @@ function SettingsDropdownComponent({
           {/* Video processing group: deinterlace + picture enhancement.
                 Both only take effect for 1080p-and-below content, so the
                 resolution caveat is stated once as a shared group note. */}
-          <div className="space-y-3 border-blue-900/10 border-t pt-3.5 dark:border-blue-100/10">
+          <div className={clsx(BORDER_CLASS.playerSubtle, "space-y-3 border-t pt-3.5")}>
             <div className="px-0.5">
               <span className={clsx(TEXT_CLASS.label, "block text-xs leading-4")}>{t("videoProcessing")}</span>
               <span className={clsx(TEXT_CLASS.subtle, "mt-0.5 block text-[11px] leading-4")}>

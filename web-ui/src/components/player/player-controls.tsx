@@ -15,7 +15,16 @@ import {
 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { EFFECT_CLASS, INTERACTION_CLASS, METER_CLASS, semanticClass, surfaceClass } from "../../lib/design-system";
+import {
+  EFFECT_CLASS,
+  INTERACTION_CLASS,
+  MEDIA_CLASS,
+  MEDIA_TEXT_CLASS,
+  METER_CLASS,
+  mediaVolumeBackground,
+  semanticClass,
+  surfaceClass,
+} from "../../lib/design-system";
 import type { Locale } from "../../lib/locale";
 import { createProgramTimeline, programProgressToWallClock } from "../../lib/program-timeline";
 import type { PlayerMediaInfo, PlayerRenderState } from "../../mpegts";
@@ -293,14 +302,15 @@ export function PlayerControls({
       {currentProgram && (
         <div
           className={clsx(
-            "flex min-w-0 items-center justify-between gap-1 text-xs leading-tight tracking-[0.01em] text-blue-50/80 md:gap-2 md:text-sm md:leading-normal",
+            MEDIA_TEXT_CLASS.normal,
+            "flex min-w-0 items-center justify-between gap-1 text-xs leading-tight tracking-[0.01em] md:gap-2 md:text-sm md:leading-normal",
             "md:[@container_video_(max-height:_320px)]:text-xs md:[@container_video_(max-height:_320px)]:leading-tight [@container_video_(max-height:_220px)]:hidden",
           )}
         >
           <div className="min-w-0 flex-1 truncate">
-            <span className="font-medium text-blue-100">{formatTime(startTime)}</span>
-            <span className="mx-1 text-blue-100/30 md:mx-2">|</span>
-            <span className="text-white/90">{currentProgram.title || t("excellentProgram")}</span>
+            <span className={clsx(MEDIA_TEXT_CLASS.time, "font-medium")}>{formatTime(startTime)}</span>
+            <span className={clsx(MEDIA_TEXT_CLASS.divider, "mx-1 md:mx-2")}>|</span>
+            <span className={MEDIA_TEXT_CLASS.strongMuted}>{currentProgram.title || t("excellentProgram")}</span>
           </div>
           <span className="shrink-0 font-medium tabular-nums">{formatTime(endTime)}</span>
         </div>
@@ -353,7 +363,8 @@ export function PlayerControls({
                 <div
                   className={clsx(
                     surfaceClass({ material: "smoke", level: "float" }),
-                    "absolute bottom-full isolate mb-4 -translate-x-1/2 overflow-hidden whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-medium text-blue-50 md:mb-2",
+                    MEDIA_TEXT_CLASS.strong,
+                    "absolute bottom-full isolate mb-4 -translate-x-1/2 overflow-hidden whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-medium md:mb-2",
                   )}
                   style={{ left: `clamp(2.5rem, ${previewPosition}%, calc(100% - 2.5rem))` }}
                 >
@@ -435,14 +446,19 @@ export function PlayerControls({
                 onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
                 className="relative z-10 m-0 block h-16 w-1 cursor-pointer appearance-none bg-transparent [writing-mode:vertical-lr] [direction:rtl] md:h-20"
                 style={{
-                  background: `linear-gradient(to top, #3b82f6 0%, #6366f1 ${(isMuted ? 0 : volume) * 100}%, rgba(219,234,254,0.18) ${(isMuted ? 0 : volume) * 100}%, rgba(219,234,254,0.18) 100%)`,
+                  background: mediaVolumeBackground(isMuted ? 0 : volume),
                 }}
               />
             </div>
           </div>
 
           {/* Time Display */}
-          <div className="hidden whitespace-nowrap text-[11px] leading-none text-blue-50/75 tabular-nums min-[360px]:block md:text-sm md:leading-normal">
+          <div
+            className={clsx(
+              MEDIA_TEXT_CLASS.normal,
+              "hidden whitespace-nowrap text-[11px] leading-none tabular-nums min-[360px]:block md:text-sm md:leading-normal",
+            )}
+          >
             {currentProgram ? (
               <span>
                 {formatDuration(elapsedTime)} / {formatDuration(duration)}
@@ -470,7 +486,12 @@ export function PlayerControls({
         <div className="flex shrink-0 items-center gap-0 sm:gap-0.5 md:gap-2">
           {/* Live/Catchup Indicator & Go Live Button */}
           {isLive ? (
-            <span className="flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold tracking-wide text-white md:gap-1.5 md:text-sm">
+            <span
+              className={clsx(
+                MEDIA_TEXT_CLASS.strong,
+                "flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold tracking-wide md:gap-1.5 md:text-sm",
+              )}
+            >
               <span
                 className={clsx(semanticClass("danger", "dot"), "h-1.5 w-1.5 animate-pulse rounded-full md:h-2 md:w-2")}
               />
@@ -482,7 +503,8 @@ export function PlayerControls({
               onClick={() => onSeek(new Date())}
               className={clsx(
                 INTERACTION_CLASS.mediaControl,
-                "cursor-pointer whitespace-nowrap bg-blue-300/10 px-1.5 py-0.5 text-[11px] font-medium text-blue-50 md:px-2.5 md:py-1.5 md:text-sm",
+                MEDIA_CLASS.livePill,
+                "cursor-pointer whitespace-nowrap px-1.5 py-0.5 text-[11px] font-medium md:px-2.5 md:py-1.5 md:text-sm",
               )}
             >
               {t("goLive")}
@@ -522,7 +544,7 @@ export function PlayerControls({
                       className={clsx(
                         "relative z-10 block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs transition-colors md:text-sm",
                         semanticClass(index === activeSourceIndex ? "info" : "neutral", "badge"),
-                        index === activeSourceIndex ? "font-medium" : "hover:bg-blue-200/10 hover:text-blue-50",
+                        index === activeSourceIndex ? "font-medium" : MEDIA_CLASS.sourceIdle,
                       )}
                     >
                       <span className="flex items-center gap-2">

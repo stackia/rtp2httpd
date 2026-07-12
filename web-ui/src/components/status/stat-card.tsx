@@ -31,12 +31,7 @@ export function StatCard({ title, value, icon: Icon, tone = "primary" }: StatCar
         <CardDescription className="flex min-h-8 min-w-0 flex-1 items-center pr-3 text-xs font-semibold leading-4 tracking-[0.04em] text-muted-foreground/90">
           {title}
         </CardDescription>
-        <span
-          className={clsx(
-            "flex h-11 w-11 items-center justify-center rounded-2xl border border-white/30 dark:border-white/10",
-            semanticClass(tone, "icon"),
-          )}
-        >
+        <span className={clsx("flex h-11 w-11 items-center justify-center rounded-2xl", semanticClass(tone, "icon"))}>
           <Icon className="h-5 w-5" />
         </span>
       </CardHeader>

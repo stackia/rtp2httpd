@@ -180,6 +180,10 @@ export const CANVAS_CLASS = {
   video: "bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)]",
 } as const;
 
+export const CANVAS_STYLE = {
+  videoBackground: "#01030a",
+} as const;
+
 export const SCRIM_CLASS = {
   autoplay: "bg-[radial-gradient(circle_at_center,rgba(18,50,91,0.78),rgba(2,6,23,0.94)_68%)] backdrop-blur-[2px]",
   error: "bg-[radial-gradient(circle_at_center,rgba(76,20,55,0.46),rgba(2,6,23,0.96)_72%)] backdrop-blur-[3px]",
@@ -212,7 +216,100 @@ export const INTERACTION_CLASS = {
     "border-border/60 bg-muted/75 shadow-inner data-[state=checked]:border-primary/35 data-[state=checked]:bg-primary data-[state=checked]:shadow-[0_0_16px_hsl(var(--primary)/0.24)]",
 } as const;
 
+export const ACTION_CLASS = {
+  primary:
+    "border-primary/20 bg-primary text-primary-foreground shadow-[0_8px_20px_-10px_hsl(var(--primary)/0.55)] hover:bg-primary hover:shadow-[0_12px_26px_-10px_hsl(var(--primary)/0.68)] active:brightness-[0.94] motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0",
+  destructive:
+    "border-destructive/24 bg-destructive text-destructive-foreground shadow-[0_8px_20px_-10px_hsl(var(--destructive)/0.5)] hover:bg-destructive hover:brightness-[0.92] motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0",
+  outline:
+    "border-input/80 bg-secondary/90 text-foreground shadow-none hover:border-primary/30 hover:bg-accent hover:text-accent-foreground",
+  secondary: "border-border/60 bg-secondary/90 text-secondary-foreground shadow-none hover:bg-secondary",
+  ghost: "text-foreground hover:bg-accent/82 hover:text-accent-foreground active:bg-accent/82",
+  link: "text-primary underline-offset-4 hover:underline",
+  statusNeutral:
+    "border-border/50 bg-muted/65 shadow-none transition-[color,background-color,border-color] hover:border-primary/25 hover:bg-primary/8 dark:border-white/10 dark:bg-muted/50",
+  statusDanger:
+    "border-rose-500/20 bg-rose-500/8 text-rose-700 shadow-none transition-[color,background-color,border-color] hover:border-rose-500/35 hover:bg-rose-500/12 hover:text-rose-700 dark:text-rose-300 dark:hover:text-rose-200",
+  playerOutline:
+    "border-blue-900/12 bg-white/55 text-blue-800 shadow-sm hover:bg-blue-50 dark:border-blue-100/15 dark:bg-slate-950/35 dark:text-blue-100 dark:hover:bg-blue-300/10",
+} as const;
+
+export const BADGE_CLASS = {
+  primary: "border-primary/24 bg-primary/12 text-[hsl(252_72%_34%)] hover:bg-primary/18 dark:text-[hsl(250_100%_88%)]",
+  secondary: "border-border/70 bg-secondary/80 text-secondary-foreground hover:bg-secondary",
+  destructive:
+    "border-destructive/24 bg-destructive/12 text-[hsl(354_76%_34%)] hover:bg-destructive/18 dark:text-[hsl(350_100%_88%)]",
+  outline: "border-border/65 bg-background/35 text-foreground backdrop-blur-sm",
+  elevation: "shadow-[0_4px_12px_-10px_rgba(15,23,42,0.35)]",
+  compactElevation: "shadow-none",
+} as const;
+
+export const CONTROL_CLASS = {
+  select:
+    "border-border/40 bg-background/70 font-semibold text-foreground shadow-none transition-[color,background-color,border-color,box-shadow] hover:border-primary/30 hover:bg-background/75 focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 dark:bg-secondary/72",
+  searchField:
+    "border-blue-900/10 bg-white/78 text-slate-800 shadow-none transition placeholder:text-slate-400 focus:border-ring/60 focus:outline-none focus:ring-2 focus:ring-ring/20 dark:border-blue-100/10 dark:bg-slate-900/85 dark:text-blue-50 dark:placeholder:text-slate-500",
+  searchIcon: "text-blue-600/65 dark:text-blue-300/55",
+  switchBase:
+    "border shadow-[inset_0_1px_3px_rgba(15,23,42,0.16)] transition-[background-color,border-color,box-shadow] duration-200 motion-reduce:transition-none disabled:opacity-50",
+  switchTrack:
+    "border-input/80 bg-muted/90 data-[state=checked]:border-primary/30 data-[state=checked]:bg-primary data-[state=checked]:shadow-[0_0_16px_hsl(var(--primary)/0.24)]",
+  switchThumb: "bg-white shadow-md ring-1 ring-black/5 transition-transform duration-200 motion-reduce:transition-none",
+} as const;
+
+export const BORDER_CLASS = {
+  subtle: "border-border/50 dark:border-white/8",
+  playerSubtle: "border-blue-900/10 dark:border-blue-100/10",
+} as const;
+
+export const SEPARATOR_CLASS = {
+  subtle: "bg-border/50 dark:bg-white/8",
+} as const;
+
+export const MEDIA_TEXT_CLASS = {
+  strong: "text-blue-50",
+  strongMuted: "text-white/90",
+  clock: "text-blue-50 drop-shadow-sm",
+  normal: "text-blue-50/80",
+  muted: "text-blue-50/65",
+  faint: "text-blue-100/35",
+  time: "text-blue-100",
+  divider: "text-blue-100/30",
+  onSurfaceAccent: "text-blue-700 dark:text-blue-200",
+  onSurfaceHeading: "text-blue-800 dark:text-blue-100",
+  onSurfaceMuted: "text-slate-500 dark:text-slate-400",
+} as const;
+
+export const MEDIA_CLASS = {
+  selectionRing: "ring-2 ring-blue-200/40",
+  replayBar: "bg-slate-400/25 dark:bg-blue-100/18",
+  playIcon: "fill-blue-100/20",
+  livePill: "bg-blue-300/10 text-blue-50",
+  sourceIdle: "hover:bg-blue-200/10 hover:text-blue-50",
+  loadingTrack: "border-blue-100/25",
+} as const;
+
+export const ALERT_CLASS = {
+  warningIcon: "text-amber-200",
+  warningTitle: "text-amber-50",
+  warningBody: "text-amber-50/65",
+  warningDismiss:
+    "text-amber-100/65 hover:bg-white/10 hover:text-amber-50 focus-visible:ring-2 focus-visible:ring-amber-200/70",
+  dangerHeading: "text-rose-100",
+  dangerTitle: "text-rose-50",
+  dangerBody: "text-rose-50/70",
+  dangerLabel: "text-rose-100/55",
+  dangerValue: "text-rose-50",
+  detail: "bg-black/20",
+  suggestion: "border border-amber-200/15 bg-amber-100/8",
+  suggestionTitle: "text-amber-100",
+  suggestionBody: "text-amber-50/70",
+} as const;
+
 export const METER_CLASS = {
+  standardTrack: "bg-muted/90 shadow-[inset_0_1px_2px_rgba(15,23,42,0.12),inset_0_0_0_1px_hsl(var(--border)/0.3)]",
+  compactTrack: "bg-muted/70 shadow-inner",
+  standardFill: "bg-primary shadow-[0_0_12px_hsl(var(--primary)/0.35)]",
   track: "bg-blue-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10",
   interactive: "cursor-pointer hover:shadow-[0_0_20px_rgba(59,130,246,0.16),inset_0_1px_3px_rgba(0,0,0,0.45)]",
   preview: "bg-blue-50/80 shadow-[0_0_8px_rgba(147,197,253,0.7)]",
@@ -225,3 +322,8 @@ export const TEXT_CLASS = {
   label: "font-medium text-muted-foreground",
   subtle: "text-muted-foreground/70",
 } as const;
+
+export function mediaVolumeBackground(value: number): string {
+  const percentage = Math.max(0, Math.min(1, value)) * 100;
+  return `linear-gradient(to top, #3b82f6 0%, #6366f1 ${percentage}%, rgba(219,234,254,0.18) ${percentage}%, rgba(219,234,254,0.18) 100%)`;
+}
