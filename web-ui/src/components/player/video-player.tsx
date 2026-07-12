@@ -131,6 +131,17 @@ function decodeRequestUrl(url: string): string {
   }
 }
 
+function formatTechnicalPlayerError(playerError: PlayerError): string {
+  const details = [playerError.detail, playerError.info];
+  if (playerError.code !== undefined && playerError.code !== -1) {
+    details.push(`code=${playerError.code}`);
+  }
+  if (playerError.url) {
+    details.push(decodeRequestUrl(playerError.url));
+  }
+  return details.filter((value) => value !== undefined && value !== "").join(": ");
+}
+
 function getEventDocument(event: Event): Document {
   const target = event.target;
   if (target && "ownerDocument" in target) {
@@ -691,7 +702,7 @@ export function VideoPlayer({
       completePendingSwitchIfNeeded(slotId);
     }
 
-    let errorMessage = t("playbackError");
+    let errorMessage = formatTechnicalPlayerError(playerError) || t("playbackError");
     let errorDisplay: PlaybackErrorDisplay = { message: errorMessage };
     let decodingErrorRetry = false;
     const isHttpStatusError = playerError.category === "io" && playerError.detail === "HttpStatusCodeInvalid";
@@ -700,23 +711,19 @@ export function VideoPlayer({
 
     if (playerError.category === "media") {
       if (playerError.detail === "MediaMSEError") {
-        errorMessage = `${t("mediaError")}: ${playerError.info}`;
         const video = slotVideoRef(slotId).current;
         if (playerError.info?.includes("HTMLMediaElement.error")) {
           if (video?.error?.message?.includes("PIPELINE_ERROR_DECODE")) {
             decodingErrorRetry = true;
-          } else if (video?.error?.message) {
+          }
+          if (video?.error?.message && !errorMessage.includes(video.error.message)) {
             errorMessage += `: ${video.error.message}`;
           }
         }
-      } else {
-        errorMessage = `${t("mediaError")}: ${playerError.detail}`;
       }
     } else if (playerError.category === "demux") {
       if (playerError.detail === "FormatUnsupported" || playerError.detail === "CodecUnsupported") {
         errorMessage = t("codecError");
-      } else {
-        errorMessage = `${t("mediaError")}: ${playerError.detail}`;
       }
     } else if (playerError.category === "io") {
       if (isUpstreamRequestError) {
@@ -734,8 +741,6 @@ export function VideoPlayer({
           requestUrl: playerError.url ? decodeRequestUrl(playerError.url) : undefined,
           suggestion: t("upstreamRequestFailedSuggestion"),
         };
-      } else {
-        errorMessage = `${t("networkError")}: ${playerError.detail}${playerError.info ? `: ${playerError.info}` : ""}`;
       }
     }
 
