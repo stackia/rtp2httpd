@@ -2,29 +2,9 @@ import { getRuntimeLogLevel } from "../../lib/runtime-config";
 import { defaultConfig, type PlayerConfig } from "../config";
 import { createMSEPlaybackController } from "../mse/playback-controller";
 import { createVideoRenderPipeline, type VideoRenderPipeline } from "../render";
-import type {
-  LiveSessionAnchor,
-  MSEPlaybackController,
-  PlaybackBackend,
-  PlayerEventMap,
-  PlayerSegment,
-} from "../types";
+import type { LiveSessionAnchor, MSEPlaybackController, PlaybackBackend } from "../types";
 import Log from "../utils/logger";
-
-function resolveSegmentUrl(url: string): string {
-  try {
-    return new URL(url, document.baseURI).href;
-  } catch {
-    return url;
-  }
-}
-
-function resolveSegmentUrls(segments: PlayerSegment[]): PlayerSegment[] {
-  return segments.map((segment) => ({
-    ...segment,
-    url: resolveSegmentUrl(segment.url),
-  }));
-}
+import { createPlaybackEventEmitter, resolveSegmentUrls } from "./backend-utils";
 
 function resolveConfig(config?: Partial<PlayerConfig>): PlayerConfig {
   const fullConfig: PlayerConfig = { ...defaultConfig, ...config };
@@ -46,38 +26,12 @@ function resolveConfig(config?: Partial<PlayerConfig>): PlayerConfig {
 export function createMSEPlaybackBackend(video: HTMLVideoElement, config?: Partial<PlayerConfig>): PlaybackBackend {
   const fullConfig = resolveConfig(config);
   let destroyed = false;
-
-  const eventHandlers: { [EventName in keyof PlayerEventMap]: Set<PlayerEventMap[EventName]> } = {
-    error: new Set(),
-    "seek-needed": new Set(),
-    "live-state-change": new Set(),
-    "audio-suspended": new Set(),
-    "media-info": new Set(),
-    "render-state-change": new Set(),
-    "playback-state-change": new Set(),
-    "volume-change": new Set(),
-    "time-update": new Set(),
-    ended: new Set(),
-  };
-
-  function getEventHandlers<EventName extends keyof PlayerEventMap>(event: EventName): Set<PlayerEventMap[EventName]> {
-    return eventHandlers[event] as Set<PlayerEventMap[EventName]>;
-  }
-
-  function emitPlayerEvent<EventName extends keyof PlayerEventMap>(
-    event: EventName,
-    ...eventArguments: Parameters<PlayerEventMap[EventName]>
-  ): void {
-    for (const handler of getEventHandlers(event)) {
-      const invokeHandler = handler as (...handlerArguments: Parameters<PlayerEventMap[EventName]>) => void;
-      invokeHandler(...eventArguments);
-    }
-  }
+  const events = createPlaybackEventEmitter();
 
   let renderPipeline: VideoRenderPipeline | null = null;
   if (fullConfig.renderCanvas) {
     renderPipeline = createVideoRenderPipeline(video, fullConfig.renderCanvas, (state) =>
-      emitPlayerEvent("render-state-change", state),
+      events.emit("render-state-change", state),
     );
     renderPipeline.setAutoDeinterlaceEnabled(fullConfig.autoDeinterlace);
     renderPipeline.setPictureEnhancementEnabled(fullConfig.pictureEnhancement);
@@ -85,13 +39,13 @@ export function createMSEPlaybackBackend(video: HTMLVideoElement, config?: Parti
 
   let controller: MSEPlaybackController | null = null;
 
-  const onTimeUpdate = () => emitPlayerEvent("time-update", video.currentTime);
-  const onEnded = () => emitPlayerEvent("ended");
-  const onCanPlay = (event: Event) => emitPlayerEvent("playback-state-change", "canplay", event.timeStamp);
-  const onPlaying = (event: Event) => emitPlayerEvent("playback-state-change", "playing", event.timeStamp);
-  const onPause = (event: Event) => emitPlayerEvent("playback-state-change", "paused", event.timeStamp);
-  const onWaiting = (event: Event) => emitPlayerEvent("playback-state-change", "waiting", event.timeStamp);
-  const onVolumeChange = () => emitPlayerEvent("volume-change", video.volume, video.muted);
+  const onTimeUpdate = () => events.emit("time-update", video.currentTime);
+  const onEnded = () => events.emit("ended");
+  const onCanPlay = (event: Event) => events.emit("playback-state-change", "canplay", event.timeStamp);
+  const onPlaying = (event: Event) => events.emit("playback-state-change", "playing", event.timeStamp);
+  const onPause = (event: Event) => events.emit("playback-state-change", "paused", event.timeStamp);
+  const onWaiting = (event: Event) => events.emit("playback-state-change", "waiting", event.timeStamp);
+  const onVolumeChange = () => events.emit("volume-change", video.volume, video.muted);
   video.addEventListener("timeupdate", onTimeUpdate);
   video.addEventListener("ended", onEnded);
   video.addEventListener("canplay", onCanPlay);
@@ -106,12 +60,12 @@ export function createMSEPlaybackBackend(video: HTMLVideoElement, config?: Parti
       controller = createMSEPlaybackController(
         video,
         { ...fullConfig, renderCanvas: undefined },
-        getEventHandlers("seek-needed"),
+        events.getHandlers("seek-needed"),
       );
-      controller.onError = (error) => emitPlayerEvent("error", error);
-      controller.onLiveStateChange = (isLive) => emitPlayerEvent("live-state-change", isLive);
-      controller.onAudioSuspended = () => emitPlayerEvent("audio-suspended");
-      controller.onMediaInfo = (info) => emitPlayerEvent("media-info", info);
+      controller.onError = (error) => events.emit("error", error);
+      controller.onLiveStateChange = (isLive) => events.emit("live-state-change", isLive);
+      controller.onAudioSuspended = () => events.emit("audio-suspended");
+      controller.onMediaInfo = (info) => events.emit("media-info", info);
     }
     return controller;
   }
@@ -173,12 +127,12 @@ export function createMSEPlaybackBackend(video: HTMLVideoElement, config?: Parti
       controller = null;
     },
 
-    on<EventName extends keyof PlayerEventMap>(event: EventName, handler: PlayerEventMap[EventName]) {
-      getEventHandlers(event).add(handler);
+    on(event, handler) {
+      events.on(event, handler);
     },
 
-    off<EventName extends keyof PlayerEventMap>(event: EventName, handler: PlayerEventMap[EventName]) {
-      getEventHandlers(event).delete(handler);
+    off(event, handler) {
+      events.off(event, handler);
     },
   };
 }

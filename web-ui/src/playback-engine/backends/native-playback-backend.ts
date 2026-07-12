@@ -1,17 +1,10 @@
 import { isLGWebOS } from "../../lib/platform";
 import { defaultConfig, type PlayerConfig } from "../config";
 import { PlayerErrors } from "../errors";
-import type { LiveSessionAnchor, PlaybackBackend, PlayerEventMap, PlayerMediaInfo, PlayerSegment } from "../types";
+import type { LiveSessionAnchor, PlaybackBackend, PlayerMediaInfo, PlayerSegment } from "../types";
+import { createPlaybackEventEmitter, resolveMediaUrl } from "./backend-utils";
 
 type SegmentEntry = PlayerSegment & { start: number };
-
-function resolveUrl(url: string): string {
-  try {
-    return new URL(url, document.baseURI).href;
-  } catch {
-    return url;
-  }
-}
 
 function mediaErrorMessage(error: MediaError | null): string {
   if (!error) return "Native media element playback failed";
@@ -30,23 +23,7 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
   const fullConfig: PlayerConfig = { ...defaultConfig, ...config };
   // LG reports seekable/buffered ranges for live TS but ignores currentTime writes within them.
   const alwaysRebuildSeek = isLGWebOS();
-  const handlers: { [K in keyof PlayerEventMap]: Set<PlayerEventMap[K]> } = {
-    error: new Set(),
-    "seek-needed": new Set(),
-    "live-state-change": new Set(),
-    "audio-suspended": new Set(),
-    "media-info": new Set(),
-    "render-state-change": new Set(),
-    "playback-state-change": new Set(),
-    "volume-change": new Set(),
-    "time-update": new Set(),
-    ended: new Set(),
-  };
-  const emit = <K extends keyof PlayerEventMap>(event: K, ...args: Parameters<PlayerEventMap[K]>) => {
-    for (const handler of handlers[event]) {
-      (handler as (...values: Parameters<PlayerEventMap[K]>) => void)(...args);
-    }
-  };
+  const events = createPlaybackEventEmitter();
 
   let entries: SegmentEntry[] = [];
   let segmentIndex = 0;
@@ -65,7 +42,7 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
     if (video.videoWidth > 0 || video.videoHeight > 0) {
       info.video = { width: video.videoWidth || undefined, height: video.videoHeight || undefined };
     }
-    emit("media-info", info);
+    events.emit("media-info", info);
   };
 
   const updateLogicalTime = (generation: number) => {
@@ -73,7 +50,7 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
     const entry = currentEntry();
     if (!entry) return;
     logicalTime = entry.start + Math.max(0, video.currentTime - mediaOrigin);
-    emit("time-update", logicalTime);
+    events.emit("time-update", logicalTime);
   };
 
   const attachLoadListeners = (generation: number) => {
@@ -89,16 +66,16 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
     };
     const onTimeUpdate = () => updateLogicalTime(generation);
     const onCanPlay = (event: Event) => {
-      if (isCurrentLoad()) emit("playback-state-change", "canplay", event.timeStamp);
+      if (isCurrentLoad()) events.emit("playback-state-change", "canplay", event.timeStamp);
     };
     const onPlaying = (event: Event) => {
-      if (isCurrentLoad()) emit("playback-state-change", "playing", event.timeStamp);
+      if (isCurrentLoad()) events.emit("playback-state-change", "playing", event.timeStamp);
     };
     const onPause = (event: Event) => {
-      if (isCurrentLoad()) emit("playback-state-change", "paused", event.timeStamp);
+      if (isCurrentLoad()) events.emit("playback-state-change", "paused", event.timeStamp);
     };
     const onWaiting = (event: Event) => {
-      if (isCurrentLoad()) emit("playback-state-change", "waiting", event.timeStamp);
+      if (isCurrentLoad()) events.emit("playback-state-change", "waiting", event.timeStamp);
     };
     const onEnded = () => {
       if (!isCurrentLoad()) return;
@@ -107,14 +84,14 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
         loadCurrentEntry(shouldPlay);
         return;
       }
-      emit("ended");
+      events.emit("ended");
     };
     const onError = () => {
       if (!isCurrentLoad() || !video.getAttribute("src")) return;
       const mediaError = video.error;
       const isNetworkError = mediaError?.code === MediaError.MEDIA_ERR_NETWORK;
       const isUnsupported = mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED;
-      emit("error", {
+      events.emit("error", {
         category: isNetworkError ? "io" : isUnsupported ? "demux" : "media",
         detail: isNetworkError
           ? PlayerErrors.REQUEST_FAILED
@@ -152,21 +129,21 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
     detachLoadListeners?.();
     detachLoadListeners = null;
     video.pause();
-    video.src = resolveUrl(entry.url);
+    video.src = entry.url;
     video.load();
     attachLoadListeners(generation);
     mediaOrigin = 0;
     logicalTime = entry.start;
-    emit("time-update", logicalTime);
+    events.emit("time-update", logicalTime);
     if (autoplay) {
       void video.play().catch((error: Error) => {
         if (generation !== loadGeneration) return;
-        if (error.name === "NotAllowedError") emit("audio-suspended");
+        if (error.name === "NotAllowedError") events.emit("audio-suspended");
       });
     }
   };
 
-  const onVolumeChange = () => emit("volume-change", video.volume, video.muted);
+  const onVolumeChange = () => events.emit("volume-change", video.volume, video.muted);
   video.addEventListener("volumechange", onVolumeChange);
 
   return {
@@ -177,13 +154,13 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
       if (destroyed || !segments.length) return;
       let start = 0;
       entries = segments.map((segment) => {
-        const entry = { ...segment, url: resolveUrl(segment.url), start };
+        const entry = { ...segment, url: resolveMediaUrl(segment.url), start };
         start += segment.duration ?? 0;
         return entry;
       });
       segmentIndex = 0;
-      emit("render-state-change", { active: false, deinterlacing: false });
-      emit("live-state-change", isLiveSource());
+      events.emit("render-state-change", { active: false, deinterlacing: false });
+      events.emit("live-state-change", isLiveSource());
       loadCurrentEntry(shouldPlay);
     },
 
@@ -237,7 +214,7 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
           // Let the upper layer rebuild the catch-up URL when the native pipeline rejects the buffered seek.
         }
       }
-      emit("seek-needed", seconds);
+      events.emit("seek-needed", seconds);
     },
 
     goLive() {
@@ -281,15 +258,15 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
       video.pause();
       video.removeAttribute("src");
       video.load();
-      for (const set of Object.values(handlers)) set.clear();
+      events.clear();
     },
 
     on(event, handler) {
-      handlers[event].add(handler);
+      events.on(event, handler);
     },
 
     off(event, handler) {
-      handlers[event].delete(handler);
+      events.off(event, handler);
     },
   };
 }

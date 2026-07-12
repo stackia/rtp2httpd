@@ -29,7 +29,7 @@ import {
   createPlaybackBackend,
   defaultConfig,
   getPlaybackBackendKind,
-  isSupported,
+  isMSEPlaybackSupported,
   type PlaybackBackend,
   type PlayerError,
   PlayerErrors,
@@ -343,7 +343,7 @@ export function VideoPlayer({
   const [showLoading, setShowLoading] = useState(false);
   const loadingTimeoutRef = useRef<number>(0);
   const [error, setError] = useState<PlaybackErrorDisplay | null>(() =>
-    playbackBackendKind === "native" || isSupported() ? null : { message: t("mseNotSupported") },
+    playbackBackendKind === "native" || isMSEPlaybackSupported() ? null : { message: t("mseNotSupported") },
   );
   const [warning, setWarning] = useState<PlaybackErrorDisplay | null>(null);
   const [volume, setVolume] = useState(() => getVolume());
@@ -853,7 +853,7 @@ export function VideoPlayer({
 
   const createPlayerForSlot = useEffectEvent((slotId: SlotId): PlaybackBackend | null => {
     const video = slotVideoRef(slotId).current;
-    if (!video || (playbackBackendKind === "mse" && !isSupported())) return null;
+    if (!video || (playbackBackendKind === "mse" && !isMSEPlaybackSupported())) return null;
 
     const existing = slotPlayerRef(slotId).current;
     if (existing) return existing;

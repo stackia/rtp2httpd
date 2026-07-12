@@ -104,9 +104,6 @@ export interface PlaybackBackend {
   off<K extends keyof PlayerEventMap>(event: K, handler: PlayerEventMap[K]): void;
 }
 
-/** @deprecated Use PlaybackBackend. */
-export type Player = PlaybackBackend;
-
 /** Private controller used by the MSE backend. */
 export interface MSEPlaybackController {
   onError: ((error: PlayerError) => void) | null;

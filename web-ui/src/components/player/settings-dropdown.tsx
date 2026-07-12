@@ -37,6 +37,38 @@ const SETTING_SWITCH_CONTROL_CLASS =
   "border-blue-900/10 bg-slate-200/75 shadow-inner data-[state=checked]:border-blue-300/35 data-[state=checked]:bg-blue-500 data-[state=checked]:shadow-[0_0_16px_rgba(59,130,246,0.24)] dark:border-blue-100/10 dark:bg-slate-800/80";
 const SETTINGS_POPOVER_ID = "player-settings-popover";
 
+interface SettingSelectProps<Value extends string> {
+  id: string;
+  label: string;
+  value: Value;
+  options: readonly { value: Value; label: string }[];
+  onChange: (value: Value) => void;
+}
+
+function SettingSelect<Value extends string>({ id, label, value, options, onChange }: SettingSelectProps<Value>) {
+  return (
+    <div>
+      <label htmlFor={id} className={SETTING_LABEL_CLASS}>
+        {label}
+      </label>
+      <SelectBox
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value as Value)}
+        variant="sm"
+        containerClassName="w-full min-w-0"
+        aria-label={label}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </SelectBox>
+    </div>
+  );
+}
+
 function SettingsDropdownComponent({
   locale,
   onLocaleChange,
@@ -57,6 +89,11 @@ function SettingsDropdownComponent({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const themeOptions = THEME_MODES.map((value) => ({ value, label: t(THEME_LABEL_KEYS[value]) }));
+  const appearanceOptions = PLAYER_APPEARANCES.map((value) => ({
+    value,
+    label: t(PLAYER_APPEARANCE_LABEL_KEYS[value]),
+  }));
 
   useEffect(() => {
     if (!isOpen) return;
@@ -101,68 +138,27 @@ function SettingsDropdownComponent({
           className="player-performance-panel-background absolute top-full right-0 z-50 mt-1 max-h-[calc(100vh-4rem)] w-52 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-2xl border border-blue-900/12 bg-[linear-gradient(145deg,rgba(255,255,255,0.9),rgba(238,242,255,0.82))] p-0 shadow-[0_20px_55px_rgba(30,64,175,0.18),inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-2xl dark:border-blue-100/15 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.94),rgba(26,24,72,0.9))] dark:shadow-[0_22px_60px_rgba(1,7,24,0.62),inset_0_1px_0_rgba(255,255,255,0.08)]"
         >
           <div className="space-y-2.5 p-2.5">
-            {/* Language Select */}
-            <div>
-              <label htmlFor="player-settings-locale" className={SETTING_LABEL_CLASS}>
-                {t("language")}
-              </label>
-              <SelectBox
-                id="player-settings-locale"
-                value={locale}
-                onChange={(e) => onLocaleChange(e.target.value as Locale)}
-                variant="sm"
-                containerClassName="w-full min-w-0"
-                aria-label={t("language")}
-              >
-                {LOCALE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </SelectBox>
-            </div>
-
-            {/* Theme Select */}
-            <div>
-              <label htmlFor="player-settings-theme" className={SETTING_LABEL_CLASS}>
-                {t("theme")}
-              </label>
-              <SelectBox
-                id="player-settings-theme"
-                value={theme}
-                onChange={(e) => onThemeChange(e.target.value as ThemeMode)}
-                variant="sm"
-                containerClassName="w-full min-w-0"
-                aria-label={t("theme")}
-              >
-                {THEME_MODES.map((option) => (
-                  <option key={option} value={option}>
-                    {t(THEME_LABEL_KEYS[option])}
-                  </option>
-                ))}
-              </SelectBox>
-            </div>
-
-            {/* Player appearance */}
-            <div>
-              <label htmlFor="player-settings-appearance" className={SETTING_LABEL_CLASS}>
-                {t("appearance")}
-              </label>
-              <SelectBox
-                id="player-settings-appearance"
-                value={appearance}
-                onChange={(e) => onAppearanceChange(e.target.value as PlayerAppearance)}
-                variant="sm"
-                containerClassName="w-full min-w-0"
-                aria-label={t("appearance")}
-              >
-                {PLAYER_APPEARANCES.map((option) => (
-                  <option key={option} value={option}>
-                    {t(PLAYER_APPEARANCE_LABEL_KEYS[option])}
-                  </option>
-                ))}
-              </SelectBox>
-            </div>
+            <SettingSelect
+              id="player-settings-locale"
+              label={t("language")}
+              value={locale}
+              options={LOCALE_OPTIONS}
+              onChange={onLocaleChange}
+            />
+            <SettingSelect
+              id="player-settings-theme"
+              label={t("theme")}
+              value={theme}
+              options={themeOptions}
+              onChange={onThemeChange}
+            />
+            <SettingSelect
+              id="player-settings-appearance"
+              label={t("appearance")}
+              value={appearance}
+              options={appearanceOptions}
+              onChange={onAppearanceChange}
+            />
 
             {/* Seamless channel/source switch (dual-slot preload) */}
             {showSeamlessSwitch && (

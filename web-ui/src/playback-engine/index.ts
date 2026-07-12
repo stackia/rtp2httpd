@@ -1,5 +1,5 @@
 import { isLGWebOS } from "../lib/platform";
-import { createMSEPlaybackBackend, isMSEPlaybackSupported } from "./backends/mse-playback-backend";
+import { createMSEPlaybackBackend } from "./backends/mse-playback-backend";
 import { createNativePlaybackBackend } from "./backends/native-playback-backend";
 import type { PlayerConfig } from "./config";
 import type { PlaybackBackend } from "./types";
@@ -15,7 +15,6 @@ export type {
   PlaybackBackend,
   PlaybackBackendKind,
   PlaybackBackendState,
-  Player,
   PlayerDynamicRange,
   PlayerError,
   PlayerEventMap,
@@ -34,9 +33,3 @@ export function createPlaybackBackend(video: HTMLVideoElement, config?: Partial<
     ? createNativePlaybackBackend(video, config)
     : createMSEPlaybackBackend(video, config);
 }
-
-/** @deprecated Use createPlaybackBackend or createMSEPlaybackBackend. */
-export const createPlayer = createMSEPlaybackBackend;
-
-/** @deprecated Use isMSEPlaybackSupported. */
-export const isSupported = isMSEPlaybackSupported;
