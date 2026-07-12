@@ -47,9 +47,9 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
         {/* Left: Channel Number and Info */}
         <span
           className={clsx(
-            surfaceClass({ material: "smoke", level: "tile", density: "dense" }),
-            MEDIA_SURFACE_CLASS.channelIdentity,
-            isCurrentChannel && MEDIA_SURFACE_CLASS.channelIdentityActive,
+            surfaceClass({ material: "clear", level: "tile", density: "dense" }),
+            MEDIA_SURFACE_CLASS.channelIdentityCompact,
+            isCurrentChannel && MEDIA_SURFACE_CLASS.channelIdentityCompactActive,
             "relative z-10 flex h-5 min-w-7 shrink-0 items-center justify-center rounded-lg px-1.5 font-semibold text-[10px] transition-[color,background-color,box-shadow] duration-300 ease-out motion-reduce:transition-none md:h-6 md:min-w-8 md:px-2 md:text-xs",
           )}
         >

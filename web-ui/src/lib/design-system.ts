@@ -293,8 +293,12 @@ export const MEDIA_SURFACE_CLASS = {
     "border-blue-100/22 bg-[linear-gradient(145deg,rgba(10,30,68,0.94),rgba(55,41,124,0.88))] text-blue-50",
   channelIdentityActive:
     "border-blue-200/45 bg-[linear-gradient(145deg,rgba(18,54,112,0.96),rgba(76,57,168,0.92))] text-blue-50",
+  channelIdentityCompact:
+    "border-blue-200/30 bg-[linear-gradient(145deg,rgba(55,90,150,0.68),rgba(105,88,168,0.64))] text-blue-50 dark:border-blue-100/22 dark:bg-[linear-gradient(145deg,rgba(10,30,68,0.94),rgba(55,41,124,0.88))]",
+  channelIdentityCompactActive:
+    "border-blue-300/42 bg-[linear-gradient(145deg,rgba(45,95,170,0.78),rgba(110,88,190,0.72))] text-blue-50 dark:border-blue-200/45 dark:bg-[linear-gradient(145deg,rgba(18,54,112,0.96),rgba(76,57,168,0.92))]",
   controlBadge:
-    "border-blue-100/28 bg-[linear-gradient(135deg,rgba(59,130,246,0.34),rgba(99,102,241,0.3))] text-blue-50",
+    "bg-[linear-gradient(135deg,rgba(59,130,246,0.46),rgba(129,140,248,0.4))] text-blue-50 ring-1 ring-blue-100/30",
   sourceActive: "bg-blue-300/22 text-blue-50",
   sourceIdle: "bg-blue-100/7 text-blue-50/75 hover:bg-blue-200/14 hover:text-blue-50",
 } as const;
