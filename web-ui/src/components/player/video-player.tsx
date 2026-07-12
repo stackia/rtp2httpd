@@ -1885,6 +1885,7 @@ export function VideoPlayer({
             isPiP={isPiP}
             isPiPSupported={isPictureInPictureSupported()}
             onPiPToggle={handlePiPToggle}
+            showMediaBadges={!isDocumentPiP}
             activeSourceIndex={activeSourceIndex}
             onSourceChange={onSourceChange}
           />

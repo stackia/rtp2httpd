@@ -48,7 +48,7 @@ type DocumentPiPWindowSize = {
 };
 
 type DocumentPiPWindowOptions = DocumentPiPWindowSize & {
-  preferInitialWindowPlacement: true;
+  preferInitialWindowPlacement: false;
 };
 
 export function getDocumentPiPWindowOptions(playerElement: HTMLElement): DocumentPiPWindowOptions {
@@ -57,7 +57,7 @@ export function getDocumentPiPWindowOptions(playerElement: HTMLElement): Documen
   const width = Math.round(Math.min(Math.max(sourceWidth, DOCUMENT_PIP_MIN_WIDTH), DOCUMENT_PIP_MAX_WIDTH));
 
   return {
-    preferInitialWindowPlacement: true,
+    preferInitialWindowPlacement: false,
     width,
     height: Math.round(width / DOCUMENT_PIP_ASPECT_RATIO),
   };

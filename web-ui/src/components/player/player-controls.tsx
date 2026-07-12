@@ -56,6 +56,7 @@ interface PlayerControlsProps {
   isPiP?: boolean;
   isPiPSupported?: boolean;
   onPiPToggle?: () => void;
+  showMediaBadges?: boolean;
   // Sidebar controls
   showSidebar?: boolean;
   onToggleSidebar?: () => void;
@@ -63,6 +64,10 @@ interface PlayerControlsProps {
   activeSourceIndex?: number;
   onSourceChange?: (index: number) => void;
 }
+
+const COMPACT_BUTTON_CLASS = "[@container_video_(max-height:_320px)]:p-1 md:[@container_video_(max-height:_320px)]:p-1";
+const COMPACT_ICON_CLASS =
+  "[@container_video_(max-height:_320px)]:h-4 [@container_video_(max-height:_320px)]:w-4 md:[@container_video_(max-height:_320px)]:h-4 md:[@container_video_(max-height:_320px)]:w-4";
 
 export function PlayerControls({
   channel,
@@ -86,6 +91,7 @@ export function PlayerControls({
   isPiP = false,
   isPiPSupported = false,
   onPiPToggle,
+  showMediaBadges = true,
   showSidebar = true,
   onToggleSidebar,
   activeSourceIndex = 0,
@@ -231,11 +237,17 @@ export function PlayerControls({
       className={clsx(
         "flex w-full flex-col gap-1 bg-[linear-gradient(to_top,rgba(2,8,23,0.98)_0%,rgba(8,22,51,0.9)_46%,rgba(21,27,69,0.48)_72%,transparent_100%)] pt-4 pr-[max(0.375rem,env(safe-area-inset-right))] pb-1 pl-[max(0.375rem,env(safe-area-inset-left))] md:gap-2 md:pt-9 md:pb-3 md:pl-[max(0.75rem,env(safe-area-inset-left))]",
         showSidebar ? "md:pr-3" : "md:pr-[max(0.75rem,env(safe-area-inset-right))]",
+        "[@container_video_(max-height:_320px)]:gap-0.5 [@container_video_(max-height:_320px)]:pt-2 [@container_video_(max-height:_320px)]:pb-0.5 md:[@container_video_(max-height:_320px)]:gap-0.5 md:[@container_video_(max-height:_320px)]:pt-2 md:[@container_video_(max-height:_320px)]:pb-0.5 [@container_video_(max-height:_220px)]:pt-1 md:[@container_video_(max-height:_220px)]:pt-1",
       )}
     >
       {/* Program Info */}
       {currentProgram && (
-        <div className="flex min-w-0 items-center justify-between gap-1 text-xs leading-tight tracking-[0.01em] text-blue-50/80 md:gap-2 md:text-sm md:leading-normal">
+        <div
+          className={clsx(
+            "flex min-w-0 items-center justify-between gap-1 text-xs leading-tight tracking-[0.01em] text-blue-50/80 md:gap-2 md:text-sm md:leading-normal",
+            "md:[@container_video_(max-height:_320px)]:text-xs md:[@container_video_(max-height:_320px)]:leading-tight [@container_video_(max-height:_220px)]:hidden",
+          )}
+        >
           <div className="min-w-0 flex-1 truncate">
             <span className="font-medium text-blue-100">{formatTime(startTime)}</span>
             <span className="mx-1 text-blue-100/30 md:mx-2">|</span>
@@ -257,6 +269,7 @@ export function PlayerControls({
           aria-label={t("seekTo")}
           className={clsx(
             "group relative h-1.5 rounded-full bg-blue-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-[height,box-shadow] duration-150 md:h-2",
+            "[@container_video_(max-height:_320px)]:h-1 md:[@container_video_(max-height:_320px)]:h-1",
             isCatchupSupported
               ? "cursor-pointer hover:h-2 hover:shadow-[0_0_20px_rgba(59,130,246,0.16),inset_0_1px_3px_rgba(0,0,0,0.45)] md:hover:h-3"
               : "cursor-default",
@@ -302,17 +315,26 @@ export function PlayerControls({
       )}
 
       {/* Control Bar */}
-      <div className="flex min-h-10 min-w-0 items-center justify-between gap-0.5 md:min-h-14 md:gap-1">
+      <div
+        className={clsx(
+          "flex min-h-10 min-w-0 items-center justify-between gap-0.5 md:min-h-14 md:gap-1",
+          "[@container_video_(max-height:_320px)]:min-h-8 md:[@container_video_(max-height:_320px)]:min-h-8",
+        )}
+      >
         {/* Left Controls */}
         <div className="flex min-w-0 flex-1 items-center gap-0 sm:gap-1 md:gap-3">
           {/* Play/Pause */}
           <button
             type="button"
             onClick={onPlayPause}
-            className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2")}
+            className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
             title={isPlaying ? t("pause") : t("play")}
           >
-            {isPlaying ? <Pause className="h-4 w-4 md:h-7 md:w-7" /> : <Play className="h-4 w-4 md:h-7 md:w-7" />}
+            {isPlaying ? (
+              <Pause className={clsx("h-4 w-4 md:h-7 md:w-7", COMPACT_ICON_CLASS)} />
+            ) : (
+              <Play className={clsx("h-4 w-4 md:h-7 md:w-7", COMPACT_ICON_CLASS)} />
+            )}
           </button>
 
           {/* Volume */}
@@ -320,15 +342,15 @@ export function PlayerControls({
             <button
               type="button"
               onClick={onMuteToggle}
-              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2")}
+              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
               title={isMuted ? t("unmute") : t("mute")}
             >
               {isMuted || volume === 0 ? (
-                <VolumeX className="h-4 w-4 md:h-7 md:w-7" />
+                <VolumeX className={clsx("h-4 w-4 md:h-7 md:w-7", COMPACT_ICON_CLASS)} />
               ) : volume < 0.5 ? (
-                <Volume1 className="h-4 w-4 md:h-7 md:w-7" />
+                <Volume1 className={clsx("h-4 w-4 md:h-7 md:w-7", COMPACT_ICON_CLASS)} />
               ) : (
-                <Volume2 className="h-4 w-4 md:h-7 md:w-7" />
+                <Volume2 className={clsx("h-4 w-4 md:h-7 md:w-7", COMPACT_ICON_CLASS)} />
               )}
             </button>
 
@@ -368,14 +390,16 @@ export function PlayerControls({
             )}
           </div>
 
-          <div className="ml-1 mr-1 flex h-7 min-w-0 basis-0 flex-1 items-center overflow-hidden md:ml-2 md:mr-2 md:h-12">
-            <PlayerMediaBadges
-              mediaInfo={mediaInfo}
-              locale={locale}
-              renderState={renderState}
-              autoDeinterlace={autoDeinterlace}
-            />
-          </div>
+          {showMediaBadges && (
+            <div className="ml-1 mr-1 flex h-7 min-w-0 basis-0 flex-1 items-center overflow-hidden md:ml-2 md:mr-2 md:h-12">
+              <PlayerMediaBadges
+                mediaInfo={mediaInfo}
+                locale={locale}
+                renderState={renderState}
+                autoDeinterlace={autoDeinterlace}
+              />
+            </div>
+          )}
         </div>
 
         {/* Right Controls */}
@@ -450,13 +474,13 @@ export function PlayerControls({
           <button
             type="button"
             onClick={onFullscreen}
-            className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2")}
+            className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
             title={isFullscreen ? t("exitFullscreen") : t("fullscreen")}
           >
             {isFullscreen ? (
-              <Minimize className="h-4 w-4 md:h-6 md:w-6" />
+              <Minimize className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
             ) : (
-              <Maximize className="h-4 w-4 md:h-6 md:w-6" />
+              <Maximize className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
             )}
           </button>
 
@@ -465,10 +489,10 @@ export function PlayerControls({
             <button
               type="button"
               onClick={onPiPToggle}
-              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2")}
+              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
               title={t("pictureInPicture")}
             >
-              <PictureInPicture className="h-4 w-4 md:h-6 md:w-6" />
+              <PictureInPicture className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
             </button>
           )}
 
@@ -477,13 +501,17 @@ export function PlayerControls({
             <button
               type="button"
               onClick={onToggleSidebar}
-              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "hidden cursor-pointer p-1.5 md:flex md:p-2")}
+              className={clsx(
+                PLAYER_CONTROL_BUTTON_CLASS,
+                "hidden cursor-pointer p-1.5 md:flex md:p-2",
+                COMPACT_BUTTON_CLASS,
+              )}
               title={showSidebar ? t("hideSidebar") : t("showSidebar")}
             >
               {showSidebar ? (
-                <PanelRightClose className="h-5 w-5 md:h-6 md:w-6" />
+                <PanelRightClose className={clsx("h-5 w-5 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
               ) : (
-                <PanelRightOpen className="h-5 w-5 md:h-6 md:w-6" />
+                <PanelRightOpen className={clsx("h-5 w-5 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
               )}
             </button>
           )}
