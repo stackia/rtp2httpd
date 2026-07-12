@@ -322,6 +322,8 @@ export function PlayerControls({
             isCatchupSupported
               ? "cursor-pointer hover:h-2 hover:shadow-[0_0_20px_rgba(59,130,246,0.16),inset_0_1px_3px_rgba(0,0,0,0.45)] md:hover:h-3"
               : "cursor-default",
+            isScrubbing &&
+              "h-2 [@container_video_(max-height:_320px)]:h-2 md:h-3 md:[@container_video_(max-height:_320px)]:h-2",
           )}
           onPointerDown={isCatchupSupported ? handlePointerDown : undefined}
           onPointerMove={isCatchupSupported ? handlePointerMove : undefined}
