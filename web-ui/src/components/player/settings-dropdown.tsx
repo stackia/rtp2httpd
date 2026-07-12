@@ -2,7 +2,14 @@ import { Settings } from "lucide-react";
 import { memo } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import { LOCALE_OPTIONS, type Locale } from "../../lib/locale";
-import { THEME_LABEL_KEYS, THEME_MODES, type ThemeMode } from "../../types/ui";
+import {
+  PLAYER_APPEARANCE_LABEL_KEYS,
+  PLAYER_APPEARANCES,
+  type PlayerAppearance,
+  THEME_LABEL_KEYS,
+  THEME_MODES,
+  type ThemeMode,
+} from "../../types/ui";
 import { LabeledSwitch } from "../ui/labeled-switch";
 import { SelectBox } from "../ui/select-box";
 
@@ -11,6 +18,8 @@ interface SettingsDropdownProps {
   onLocaleChange: (locale: Locale) => void;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
+  appearance: PlayerAppearance;
+  onAppearanceChange: (appearance: PlayerAppearance) => void;
   seamlessSwitch: boolean;
   onSeamlessSwitchChange: (enabled: boolean) => void;
   autoDeinterlace: boolean;
@@ -32,6 +41,8 @@ function SettingsDropdownComponent({
   onLocaleChange,
   theme,
   onThemeChange,
+  appearance,
+  onAppearanceChange,
   seamlessSwitch,
   onSeamlessSwitchChange,
   autoDeinterlace,
@@ -56,7 +67,7 @@ function SettingsDropdownComponent({
       <div
         id={SETTINGS_POPOVER_ID}
         popover="auto"
-        className="player-performance-panel-background fixed inset-auto m-0 mt-1 w-52 max-w-[calc(100vw-1rem)] rounded-2xl border border-blue-900/12 bg-[linear-gradient(145deg,rgba(255,255,255,0.9),rgba(238,242,255,0.82))] p-0 shadow-[0_20px_55px_rgba(30,64,175,0.18),inset_0_1px_0_rgba(255,255,255,0.82)] [position-anchor:--player-settings-trigger] [right:anchor(right)] [top:anchor(bottom)] backdrop-blur-2xl dark:border-blue-100/15 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.94),rgba(26,24,72,0.9))] dark:shadow-[0_22px_60px_rgba(1,7,24,0.62),inset_0_1px_0_rgba(255,255,255,0.08)]"
+        className="player-performance-panel-background fixed inset-auto m-0 mt-1 max-h-[calc(100vh-1rem)] w-52 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-2xl border border-blue-900/12 bg-[linear-gradient(145deg,rgba(255,255,255,0.9),rgba(238,242,255,0.82))] p-0 shadow-[0_20px_55px_rgba(30,64,175,0.18),inset_0_1px_0_rgba(255,255,255,0.82)] [position-anchor:--player-settings-trigger] [right:anchor(right)] [top:anchor(bottom)] backdrop-blur-2xl dark:border-blue-100/15 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.94),rgba(26,24,72,0.9))] dark:shadow-[0_22px_60px_rgba(1,7,24,0.62),inset_0_1px_0_rgba(255,255,255,0.08)]"
       >
         <div className="space-y-3.5 p-3">
           {/* Language Select */}
@@ -94,6 +105,26 @@ function SettingsDropdownComponent({
               {THEME_MODES.map((option) => (
                 <option key={option} value={option}>
                   {t(THEME_LABEL_KEYS[option])}
+                </option>
+              ))}
+            </SelectBox>
+          </div>
+
+          {/* Player appearance */}
+          <div>
+            <label htmlFor="player-settings-appearance" className={SETTING_LABEL_CLASS}>
+              {t("appearance")}
+            </label>
+            <SelectBox
+              id="player-settings-appearance"
+              value={appearance}
+              onChange={(e) => onAppearanceChange(e.target.value as PlayerAppearance)}
+              containerClassName="w-full min-w-0"
+              aria-label={t("appearance")}
+            >
+              {PLAYER_APPEARANCES.map((option) => (
+                <option key={option} value={option}>
+                  {t(PLAYER_APPEARANCE_LABEL_KEYS[option])}
                 </option>
               ))}
             </SelectBox>

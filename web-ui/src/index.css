@@ -135,153 +135,164 @@
   height: 100vh;
 }
 
-/* Constrained devices use flat surfaces with minimal compositor and paint work. */
-html[data-performance-tier="constrained"] .player-performance-scope [class*="backdrop-"] {
+/* Simple theme uses flat surfaces with minimal compositor and paint work. */
+html.player-theme-simple .player-performance-scope [class*="backdrop-"] {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 
-html[data-performance-tier="constrained"] .player-performance-scope [class*="shadow-"],
-html[data-performance-tier="constrained"] .player-performance-scope [class*="drop-shadow"] {
+html.player-theme-simple .player-performance-scope [class*="shadow-"],
+html.player-theme-simple .player-performance-scope [class*="drop-shadow"] {
   box-shadow: none;
 }
 
-html[data-performance-tier="constrained"] .player-performance-scope [class*="drop-shadow"],
-html[data-performance-tier="constrained"] .player-performance-scope [class*="blur-"],
-html[data-performance-tier="constrained"] .player-performance-scope [class*="brightness-"] {
+html.player-theme-simple .player-performance-scope [class*="drop-shadow"],
+html.player-theme-simple .player-performance-scope [class*="blur-"],
+html.player-theme-simple .player-performance-scope [class*="brightness-"] {
   filter: none;
 }
 
-html[data-performance-tier="constrained"] .player-performance-scope [class*="gradient"] {
+html.player-theme-simple .player-performance-scope [class*="gradient"] {
   background-image: none;
 }
 
-html[data-performance-tier="constrained"] .player-performance-decoration {
+html.player-theme-simple .player-performance-decoration {
   display: none;
 }
 
-html[data-performance-tier="constrained"] {
+html.player-theme-simple {
   text-rendering: auto;
 }
 
-html[data-performance-tier="constrained"] body {
+html.player-theme-simple body {
   font-feature-settings: normal;
 }
 
-html[data-performance-tier="constrained"] .player-performance-scope *,
-html[data-performance-tier="constrained"] .player-performance-scope *::before,
-html[data-performance-tier="constrained"] .player-performance-scope *::after {
+html.player-theme-simple .player-performance-scope *,
+html.player-theme-simple .player-performance-scope *::before,
+html.player-theme-simple .player-performance-scope *::after {
   scroll-behavior: auto;
   animation-duration: 0.01ms;
   animation-iteration-count: 1;
   transition-duration: 0.01ms;
 }
 
-html[data-performance-tier="constrained"] .player-performance-page-background {
+html.player-theme-simple .player-performance-page-background {
   background-color: #f1f5f9;
   background-image: none;
 }
 
-html[data-performance-tier="constrained"] .player-performance-panel-background {
+html.player-theme-simple .player-performance-panel-background {
   background-color: #ffffff;
   background-image: none;
 }
 
-html.dark[data-performance-tier="constrained"] .player-performance-panel-background {
+html.dark.player-theme-simple .player-performance-panel-background {
   background-color: #0f172a;
 }
 
-html[data-performance-tier="constrained"] .player-performance-overlay-background {
+html.player-theme-simple .player-performance-overlay-background {
   background-color: #0f172a;
   background-image: none;
+  border-color: #475569;
 }
 
-html.dark[data-performance-tier="constrained"] .player-performance-page-background {
+html.dark.player-theme-simple .player-performance-page-background {
   background-color: #050b18;
 }
 
-html[data-performance-tier="constrained"] .player-performance-video-background {
+html.player-theme-simple .player-performance-video-background {
   background-color: #01030a;
   background-image: none;
 }
 
-html[data-performance-tier="constrained"] .player-performance-controls-background {
-  background-color: #020817;
+html.player-theme-simple .player-performance-controls-background {
+  width: auto;
+  margin-right: max(0.375rem, env(safe-area-inset-right));
+  margin-bottom: max(0.375rem, env(safe-area-inset-bottom));
+  margin-left: max(0.375rem, env(safe-area-inset-left));
+  padding-block: 0.375rem;
+  padding-right: max(0.5rem, env(safe-area-inset-right));
+  padding-left: max(0.5rem, env(safe-area-inset-left));
+  gap: 0.25rem;
+  border: 1px solid #475569;
+  border-radius: 0.75rem;
+  background-color: #0f172a;
   background-image: none;
 }
 
-html[data-performance-tier="constrained"] .player-performance-progress-track {
+html.player-theme-simple .player-performance-progress-track {
   background-color: #334155;
 }
 
-html[data-performance-tier="constrained"] .player-performance-progress-fill {
+html.player-theme-simple .player-performance-progress-fill {
   background-color: #3b82f6;
   background-image: none;
 }
 
-html[data-performance-tier="constrained"] .player-performance-logo-background {
+html.player-theme-simple .player-performance-logo-background {
   background-color: #0f2a48;
   background-image: none;
 }
 
-html[data-performance-tier="constrained"] .player-performance-epg-header {
+html.player-theme-simple .player-performance-epg-header {
   background-color: #ffffff;
   background-image: none;
 }
 
-html.dark[data-performance-tier="constrained"] .player-performance-epg-header {
+html.dark.player-theme-simple .player-performance-epg-header {
   background-color: #050b18;
 }
 
-html[data-performance-tier="constrained"] .player-performance-list-surface-selected {
+html.player-theme-simple .player-performance-list-surface-selected {
   background-color: #dbeafe;
 }
 
-html.dark[data-performance-tier="constrained"] .player-performance-list-surface-selected {
+html.dark.player-theme-simple .player-performance-list-surface-selected {
   background-color: #172554;
 }
 
-html[data-performance-tier="constrained"] .player-performance-list-surface-default {
+html.player-theme-simple .player-performance-list-surface-default {
   background-color: #ffffff;
 }
 
-html.dark[data-performance-tier="constrained"] .player-performance-list-surface-default {
+html.dark.player-theme-simple .player-performance-list-surface-default {
   background-color: #0f172a;
 }
 
-html[data-performance-tier="constrained"] .player-performance-input-background,
-html[data-performance-tier="constrained"] .player-performance-group-default {
+html.player-theme-simple .player-performance-input-background,
+html.player-theme-simple .player-performance-group-default {
   background-color: #ffffff;
 }
 
-html.dark[data-performance-tier="constrained"] .player-performance-input-background,
-html.dark[data-performance-tier="constrained"] .player-performance-group-default {
+html.dark.player-theme-simple .player-performance-input-background,
+html.dark.player-theme-simple .player-performance-group-default {
   background-color: #0f172a;
 }
 
-html[data-performance-tier="constrained"] .player-performance-channel-groups {
+html.player-theme-simple .player-performance-channel-groups {
   background-color: #e0f2fe;
   background-image: none;
 }
 
-html.dark[data-performance-tier="constrained"] .player-performance-channel-groups {
+html.dark.player-theme-simple .player-performance-channel-groups {
   background-color: #050b18;
 }
 
-html[data-performance-tier="constrained"] .player-performance-group-selected,
-html[data-performance-tier="constrained"] .player-performance-channel-number-selected {
+html.player-theme-simple .player-performance-group-selected,
+html.player-theme-simple .player-performance-channel-number-selected {
   background-color: #bfdbfe;
 }
 
-html.dark[data-performance-tier="constrained"] .player-performance-group-selected,
-html.dark[data-performance-tier="constrained"] .player-performance-channel-number-selected {
+html.dark.player-theme-simple .player-performance-group-selected,
+html.dark.player-theme-simple .player-performance-channel-number-selected {
   background-color: #1e3a8a;
 }
 
-html[data-performance-tier="constrained"] .player-performance-channel-number-default {
+html.player-theme-simple .player-performance-channel-number-default {
   background-color: #dbeafe;
 }
 
-html.dark[data-performance-tier="constrained"] .player-performance-channel-number-default {
+html.dark.player-theme-simple .player-performance-channel-number-default {
   background-color: #1e293b;
 }

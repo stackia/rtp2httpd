@@ -29,11 +29,11 @@ const LOG_LEVELS: Array<{ value: number; label: string }> = [
 const MAX_LOG_ENTRIES = 500;
 
 function StatusPage() {
-  const { locale, setLocale } = useLocale("status-locale");
+  const { locale, setLocale } = useLocale("rtp2httpd-status-locale");
   const t = useStatusTranslation(locale);
 
-  const { theme, setTheme } = useTheme("status-theme");
-  const { bandwidthUnit, setBandwidthUnit } = useBandwidthUnit("status-bandwidth-unit");
+  const { theme, setTheme } = useTheme("rtp2httpd-status-theme");
+  const { bandwidthUnit, setBandwidthUnit } = useBandwidthUnit("rtp2httpd-status-bandwidth-unit");
   const { disconnectClient, setLogLevel, clearLogs, reloadConfig, restartWorkers } = useStatusApi();
 
   const [connectionState, setConnectionState] = useState<ConnectionState>("reconnecting");

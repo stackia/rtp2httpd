@@ -61,8 +61,19 @@
         }
         root.dataset.performanceTier = performanceTier;
 
+        let playerAppearance = root.dataset.performanceTier === "constrained" ? "simple" : "fancy";
         try {
-          const storageKey = "player-theme";
+          const storedPlayerAppearance = localStorage.getItem("rtp2httpd-player-appearance");
+          if (storedPlayerAppearance === "fancy" || storedPlayerAppearance === "simple") {
+            playerAppearance = storedPlayerAppearance;
+          }
+        } catch (error) {
+          console.warn("Failed to apply stored player appearance early", error);
+        }
+        root.classList.toggle("player-theme-simple", playerAppearance === "simple");
+
+        try {
+          const storageKey = "rtp2httpd-player-theme";
           const stored = localStorage.getItem(storageKey);
           const theme = stored === "light" || stored === "dark" ? stored : "auto";
           const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;

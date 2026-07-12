@@ -12,6 +12,7 @@ import { VideoPlayer } from "../components/player/video-player";
 import { Button, buttonVariants } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useLocale } from "../hooks/use-locale";
+import { usePlayerAppearance } from "../hooks/use-player-appearance";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
 import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG } from "../lib/epg-parser";
@@ -79,8 +80,9 @@ function shouldInsetSidebarRight(): boolean {
 function PlayerPage() {
   const playbackBackendKind = getPlaybackBackendKind();
   const supportsMSEVideoProcessing = playbackBackendKind === "mse";
-  const { locale, setLocale } = useLocale("player-locale");
-  const { theme, setTheme } = useTheme("player-theme");
+  const { locale, setLocale } = useLocale("rtp2httpd-player-locale");
+  const { theme, setTheme } = useTheme("rtp2httpd-player-theme");
+  const { appearance, setAppearance } = usePlayerAppearance();
   const t = usePlayerTranslation(locale);
 
   const [metadata, setMetadata] = useState<M3UMetadata | null>(null);
@@ -465,6 +467,8 @@ function PlayerPage() {
           onLocaleChange={setLocale}
           theme={theme}
           onThemeChange={setTheme}
+          appearance={appearance}
+          onAppearanceChange={setAppearance}
           seamlessSwitch={seamlessSwitch}
           onSeamlessSwitchChange={handleSeamlessSwitchChange}
           autoDeinterlace={autoDeinterlace}
@@ -478,11 +482,13 @@ function PlayerPage() {
   }, [
     locale,
     theme,
+    appearance,
     seamlessSwitch,
     autoDeinterlace,
     pictureEnhancement,
     setLocale,
     setTheme,
+    setAppearance,
     handleSeamlessSwitchChange,
     handleAutoDeinterlaceChange,
     handlePictureEnhancementChange,

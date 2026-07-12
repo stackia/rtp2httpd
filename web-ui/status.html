@@ -16,7 +16,7 @@
     <script>
       (() => {
         try {
-          const storageKey = "status-theme";
+          const storageKey = "rtp2httpd-status-theme";
           const stored = localStorage.getItem(storageKey);
           const theme = stored === "light" || stored === "dark" ? stored : "auto";
           const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;

@@ -7,6 +7,14 @@ export const THEME_LABEL_KEYS = {
   dark: "themeDark",
 } as const satisfies Record<ThemeMode, string>;
 
+export const PLAYER_APPEARANCES = ["fancy", "simple"] as const;
+export type PlayerAppearance = (typeof PLAYER_APPEARANCES)[number];
+
+export const PLAYER_APPEARANCE_LABEL_KEYS = {
+  fancy: "appearanceFancy",
+  simple: "appearanceSimple",
+} as const satisfies Record<PlayerAppearance, string>;
+
 export type ConnectionState = "connected" | "disconnected" | "reconnecting";
 
 export const BANDWIDTH_UNITS = ["bits", "bytes"] as const;
