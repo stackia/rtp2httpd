@@ -1860,7 +1860,7 @@ export function VideoPlayer({
               </div>
               <button
                 type="button"
-                className="-m-1 shrink-0 rounded-lg p-1.5 text-amber-100/65 transition-colors hover:bg-white/10 hover:text-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200/70"
+                className="-m-1 shrink-0 cursor-pointer rounded-lg p-1.5 text-amber-100/65 transition-colors hover:bg-white/10 hover:text-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200/70"
                 aria-label={t("dismiss")}
                 title={t("dismiss")}
                 onClick={() => setWarning(null)}
