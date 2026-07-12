@@ -12,11 +12,11 @@ interface StatCardProps {
   tone?: StatTone;
 }
 
-export function StatCard({ title, value, icon: Icon, tone = "info" }: StatCardProps) {
+export function StatCard({ title, value, icon: Icon, tone = "primary" }: StatCardProps) {
   return (
     <Card
       className={clsx(
-        surfaceClass({ material: "frost", level: "tile", state: "interactive" }),
+        surfaceClass({ material: "clear", level: "tile", state: "interactive" }),
         "group relative overflow-hidden rounded-2xl",
       )}
     >

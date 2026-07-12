@@ -126,8 +126,8 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
       <div
         ref={viewportRef}
         className={clsx(
-          surfaceClass({ material: "smoke", level: "inset", density: "dense" }),
-          "mt-5 h-100 overflow-y-auto rounded-2xl p-3 text-slate-200 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700 sm:p-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700",
+          surfaceClass({ material: "clear", level: "inset", density: "dense" }),
+          "mt-5 h-100 overflow-y-auto rounded-2xl p-3 text-foreground scrollbar-thin scrollbar-track-transparent scrollbar-thumb-muted-foreground/40 sm:p-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40",
         )}
       >
         {logs.length === 0 ? (
@@ -139,10 +139,11 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
                 key={`${log.timestamp}-${log.message}`}
                 className={clsx(
                   LOG_ENTRY_CLASS,
-                  "rounded-lg border border-white/4 bg-white/[0.025] p-2 text-sm text-slate-200 whitespace-pre-wrap transition-colors hover:border-white/8 hover:bg-white/4",
+                  surfaceClass({ material: "clear", level: "tile", state: "interactive" }),
+                  "rounded-lg p-2 text-sm text-foreground whitespace-pre-wrap",
                 )}
               >
-                <span className="text-slate-500 tabular-nums sm:inline-block sm:min-w-[10.5rem]">
+                <span className="text-muted-foreground tabular-nums sm:inline-block sm:min-w-[10.5rem]">
                   {timestampFormatter.format(new Date(log.timestamp))}
                 </span>{" "}
                 <span

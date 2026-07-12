@@ -61,6 +61,10 @@
   --input: 226 27% 82%;
   --ring: 234 89% 64%;
   --radius: 0.875rem;
+  --surface-panel: 232 45% 99%;
+  --surface-inset: 228 52% 99.4%;
+  --surface-tile: 0 0% 100%;
+  --surface-raised: 0 0% 100%;
 }
 
 .dark {
@@ -83,6 +87,37 @@
   --border: 228 23% 22%;
   --input: 228 24% 24%;
   --ring: 234 89% 64%;
+  --surface-panel: 229 37% 11%;
+  --surface-inset: 228 31% 15%;
+  --surface-tile: 226 28% 19%;
+  --surface-raised: 224 27% 23%;
+}
+
+.player-theme {
+  --primary: 217 91% 60%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 214 100% 96%;
+  --accent-foreground: 221 68% 32%;
+  --ring: 217 91% 60%;
+  --color-primary: hsl(217 91% 60%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-accent: hsl(214 100% 96%);
+  --color-accent-foreground: hsl(221 68% 32%);
+  --color-ring: hsl(217 91% 60%);
+}
+
+.dark .player-theme,
+.player-theme.dark {
+  --primary: 213 94% 68%;
+  --primary-foreground: 222 47% 11%;
+  --accent: 217 33% 18%;
+  --accent-foreground: 213 94% 88%;
+  --ring: 213 94% 68%;
+  --color-primary: hsl(213 94% 68%);
+  --color-primary-foreground: hsl(222 47% 11%);
+  --color-accent: hsl(217 33% 18%);
+  --color-accent-foreground: hsl(213 94% 88%);
+  --color-ring: hsl(213 94% 68%);
 }
 
 @layer base {

@@ -64,7 +64,7 @@ export function WorkersSection({ workers, locale, bandwidthUnit }: WorkersSectio
                     </div>
                     <Badge
                       variant={null}
-                      className={clsx(semanticClass("info", "badge"), "shrink-0 whitespace-nowrap px-3 py-1")}
+                      className={clsx(semanticClass("primary", "badge"), "shrink-0 whitespace-nowrap px-3 py-1")}
                     >
                       {worker.activeClients} {t("clientsPerWorker")}
                     </Badge>

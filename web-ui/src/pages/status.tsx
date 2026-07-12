@@ -162,7 +162,7 @@ function StatusPage() {
         title: t("totalClients"),
         value: totalClients.toString(),
         icon: Users,
-        tone: "info" as const,
+        tone: "primary" as const,
       },
       {
         title: t("totalBandwidth"),

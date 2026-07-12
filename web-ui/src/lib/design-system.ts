@@ -3,25 +3,33 @@ import { clsx } from "clsx";
 export type SurfaceMaterial = "frost" | "clear" | "smoke";
 export type SurfaceLevel = "panel" | "inset" | "tile" | "bar" | "float" | "modal";
 export type SurfaceState = "idle" | "interactive" | "active" | "disabled";
-export type SurfaceTone = "neutral" | "success" | "info" | "warning" | "danger";
+export type SurfaceTone = "neutral" | "primary" | "success" | "info" | "warning" | "danger";
 export type SurfaceDensity = "regular" | "dense";
 
 const MATERIAL_CLASS: Record<SurfaceMaterial, Record<SurfaceDensity, string>> = {
   frost: {
     regular:
-      "border border-border/60 bg-card/80 backdrop-blur-xl backdrop-saturate-[1.35] dark:border-white/10 dark:bg-card/70",
+      "border border-border/60 bg-[hsl(var(--surface-panel)/0.86)] backdrop-blur-xl backdrop-saturate-[1.35] dark:border-white/10 dark:bg-[hsl(var(--surface-panel)/0.92)]",
     dense:
       "border border-blue-900/12 bg-[linear-gradient(145deg,rgba(255,255,255,0.9),rgba(238,242,255,0.82))] backdrop-blur-2xl dark:border-blue-100/15 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.94),rgba(26,24,72,0.9))]",
   },
   clear: {
-    regular: "border border-border/50 bg-background/60 dark:border-white/8 dark:bg-background/48",
-    dense:
-      "border border-border/55 bg-card/76 backdrop-blur-md dark:border-white/10 dark:bg-card/68 dark:backdrop-saturate-125",
+    regular: "border border-border/50 dark:border-white/8",
+    dense: "border border-border/55 backdrop-blur-md dark:border-white/10 dark:backdrop-saturate-125",
   },
   smoke: {
     regular: "border border-blue-200/55 bg-slate-900/30 backdrop-blur-md backdrop-saturate-150",
     dense: "border border-blue-100/20 bg-slate-950/72 backdrop-blur-md backdrop-saturate-150",
   },
+};
+
+const CLEAR_LEVEL_CLASS: Record<SurfaceLevel, string> = {
+  panel: "bg-[hsl(var(--surface-panel)/0.82)] dark:bg-[hsl(var(--surface-panel)/0.9)]",
+  inset: "bg-[hsl(var(--surface-inset)/0.78)] dark:bg-[hsl(var(--surface-inset)/0.88)]",
+  tile: "bg-[hsl(var(--surface-tile)/0.74)] dark:bg-[hsl(var(--surface-tile)/0.82)]",
+  bar: "bg-[hsl(var(--surface-inset)/0.76)] backdrop-blur-xl dark:bg-[hsl(var(--surface-inset)/0.86)]",
+  float: "bg-[hsl(var(--surface-raised)/0.82)] dark:bg-[hsl(var(--surface-raised)/0.9)]",
+  modal: "bg-[hsl(var(--surface-raised)/0.9)] dark:bg-[hsl(var(--surface-raised)/0.94)]",
 };
 
 const LEVEL_CLASS: Record<SurfaceLevel, string> = {
@@ -41,6 +49,7 @@ const ACTIVE_CLEAR_CLASS =
   "border border-blue-300/65 bg-white/38 backdrop-blur-md backdrop-saturate-150 shadow-[0_16px_32px_-18px_rgba(37,99,235,0.46),0_0_20px_-12px_rgba(59,130,246,0.42),inset_0_1px_0_rgba(255,255,255,0.78)] dark:border-blue-200/55 dark:bg-slate-900/30 dark:shadow-[0_18px_36px_-18px_rgba(0,0,0,0.82),0_0_28px_-12px_rgba(59,130,246,0.62),inset_0_1px_0_rgba(255,255,255,0.17)]";
 
 const TONE_SURFACE_CLASS: Record<Exclude<SurfaceTone, "neutral">, string> = {
+  primary: "border border-violet-300/25 bg-violet-950/72 text-white backdrop-blur-md backdrop-saturate-150",
   success: "border border-emerald-300/25 bg-emerald-950/72 text-white backdrop-blur-md backdrop-saturate-150",
   info: "border border-sky-300/25 bg-sky-950/72 text-white backdrop-blur-md backdrop-saturate-150",
   warning:
@@ -76,7 +85,7 @@ export function surfaceClass({
       ? TONE_SURFACE_CLASS[tone]
       : state === "active" && material === "clear"
         ? ACTIVE_CLEAR_CLASS
-        : MATERIAL_CLASS[material][density];
+        : clsx(MATERIAL_CLASS[material][density], material === "clear" && CLEAR_LEVEL_CLASS[level]);
   const elevationClass =
     state === "active" && material === "clear" ? "" : (TONE_ELEVATION_CLASS[tone] ?? LEVEL_CLASS[level]);
 
@@ -99,6 +108,15 @@ const SEMANTIC_CLASS: Record<SurfaceTone, Record<SemanticElement, string>> = {
     icon: "border border-border/40 bg-muted/45 text-muted-foreground shadow-inner",
     wash: "bg-[radial-gradient(120%_120%_at_0%_0%,hsl(var(--muted)/0.5),transparent_66%)]",
     fill: "bg-muted-foreground/60",
+  },
+  primary: {
+    badge:
+      "border-violet-500/25 bg-violet-500/10 text-violet-700 shadow-[0_0_18px_-10px_rgba(139,92,246,0.9)] dark:text-violet-300",
+    dot: "bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.9)]",
+    text: "text-violet-600 drop-shadow-[0_0_8px_rgba(139,92,246,0.25)] dark:text-violet-300",
+    icon: "border border-violet-300/25 bg-violet-500/14 text-violet-600 shadow-[0_10px_28px_-14px_rgba(139,92,246,0.55),inset_0_1px_0_rgba(255,255,255,0.35)] dark:text-violet-300",
+    wash: "bg-[radial-gradient(120%_120%_at_0%_0%,rgba(139,92,246,0.22),transparent_66%)]",
+    fill: "bg-gradient-to-r from-violet-500 to-indigo-500 shadow-[0_0_12px_rgba(139,92,246,0.45)]",
   },
   success: {
     badge:

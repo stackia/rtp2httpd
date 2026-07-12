@@ -1721,7 +1721,7 @@ export function VideoPlayer({
       role="application"
       ref={playerSurfaceRef}
       className={clsx(
-        "dark @container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center",
+        "player-theme dark @container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center",
         CANVAS_CLASS.video,
         isDocumentPiP ? "h-screen min-h-screen aspect-auto" : "md:aspect-auto md:h-full",
         !showControls && "cursor-none",
@@ -1989,7 +1989,7 @@ export function VideoPlayer({
     <div
       className={clsx(
         CANVAS_CLASS.video,
-        "relative w-full pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:h-full",
+        "player-theme relative w-full pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:h-full",
         showSidebar && "md:pr-0",
       )}
     >

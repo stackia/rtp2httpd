@@ -10,6 +10,7 @@ Keep visual decisions shared across the status page and web player.
 ## Architecture
 
 - Define theme primitives in `web-ui/src/index.css` under the light and dark theme scopes.
+- Keep the status experience purple and the player experience blue through scoped theme primitives.
 - Compose shared materials, levels, states, density, and semantic tone through `web-ui/src/lib/design-system.ts`.
 - Compose shared utilities in components; keep component files focused on layout, content, and performance behavior.
 - Treat material, spatial elevation, and semantic tone as separate decisions.
@@ -18,6 +19,7 @@ Keep visual decisions shared across the status page and web player.
 
 - Use frost for persistent page structure, clear for nested or interactive content, and smoke over video.
 - Use panel for major regions, inset for groups, tile for repeated units, bar for anchored strips, float for transient UI, and modal for blocking UI.
+- Preserve Z-axis contrast: canvas is darkest, then panel, inset, tile, and raised content becomes progressively lighter.
 - Use dense only when content must remain readable over a complex background.
 - Use active only for the current selection or playback target; use semantic tone only to communicate status.
 - Add scrims only behind blocking overlays. Source visual effects, interaction feedback, typography, and meters from the shared system.

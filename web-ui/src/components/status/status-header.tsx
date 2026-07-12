@@ -47,7 +47,7 @@ function HeaderSelect<T extends string>({
   return (
     <div
       className={clsx(
-        "group flex w-full items-center gap-1.5 px-3 py-0.5 md:w-auto md:shrink-0",
+        "group flex w-full items-center gap-1.5 rounded-xl px-3 py-0.5 md:w-auto md:shrink-0",
         surfaceClass({ material: "clear", level: "tile", state: "interactive" }),
       )}
     >

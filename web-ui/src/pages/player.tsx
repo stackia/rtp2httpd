@@ -483,7 +483,7 @@ function PlayerPage() {
     return (
       <div
         ref={pageContainerRef}
-        className={clsx("player-viewport-height relative flex flex-col", CANVAS_CLASS.player)}
+        className={clsx("player-theme player-viewport-height relative flex flex-col", CANVAS_CLASS.player)}
       >
         <title>{t("title")}</title>
 
@@ -600,7 +600,7 @@ function PlayerPage() {
   const playlistErrorHints = [t("playlistErrorHintReachable"), t("playlistErrorHintFormat")];
 
   return (
-    <div className={clsx("player-viewport-height overflow-y-auto", CANVAS_CLASS.playerCentered)}>
+    <div className={clsx("player-theme player-viewport-height overflow-y-auto", CANVAS_CLASS.playerCentered)}>
       <title>{t("title")}</title>
       <div className="mx-auto flex min-h-full w-[calc(100%-2rem)] max-w-5xl items-center py-8 sm:w-[calc(100%-3rem)]">
         <Card

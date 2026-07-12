@@ -119,8 +119,12 @@ export function ConnectionsSection({
                   <TableRow
                     key={client.clientId}
                     className={clsx(
-                      "group/row hover:bg-primary/4",
-                      client.isDisconnected && "opacity-55 grayscale-[0.2]",
+                      surfaceClass({
+                        material: "clear",
+                        level: "tile",
+                        state: client.isDisconnected ? "disabled" : "interactive",
+                      }),
+                      "group/row",
                     )}
                   >
                     <TableCell>
