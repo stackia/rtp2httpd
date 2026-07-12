@@ -2,7 +2,7 @@ import { clsx } from "clsx";
 import { Settings } from "lucide-react";
 import { memo } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { surfaceClass } from "../../lib/design-system";
+import { INTERACTION_CLASS, surfaceClass, TEXT_CLASS } from "../../lib/design-system";
 import { LOCALE_OPTIONS, type Locale } from "../../lib/locale";
 import { THEME_LABEL_KEYS, THEME_MODES, type ThemeMode } from "../../types/ui";
 import { LabeledSwitch } from "../ui/labeled-switch";
@@ -21,11 +21,9 @@ interface SettingsDropdownProps {
   onPictureEnhancementChange: (enabled: boolean) => void;
 }
 
-const SETTING_LABEL_CLASS = "mb-1.5 block px-0.5 font-medium text-slate-500 text-xs leading-4 dark:text-blue-50/55";
+const SETTING_LABEL_CLASS = clsx(TEXT_CLASS.label, "mb-1.5 block px-0.5 text-xs leading-4");
 const SETTING_SWITCH_CLASS = "min-h-6 gap-3 px-0.5";
-const SETTING_SWITCH_LABEL_CLASS = "flex-1 font-medium text-slate-600 text-xs leading-4 dark:text-blue-50/65";
-const SETTING_SWITCH_CONTROL_CLASS =
-  "border-blue-900/10 bg-slate-200/75 shadow-inner data-[state=checked]:border-blue-300/35 data-[state=checked]:bg-blue-500 data-[state=checked]:shadow-[0_0_16px_rgba(59,130,246,0.24)] dark:border-blue-100/10 dark:bg-slate-800/80";
+const SETTING_SWITCH_LABEL_CLASS = clsx(TEXT_CLASS.label, "flex-1 text-xs leading-4");
 const SETTINGS_POPOVER_ID = "player-settings-popover";
 
 function SettingsDropdownComponent({
@@ -47,7 +45,10 @@ function SettingsDropdownComponent({
       <button
         type="button"
         popoverTarget={SETTINGS_POPOVER_ID}
-        className="flex size-8 cursor-pointer items-center justify-center rounded-xl border border-transparent p-0 text-slate-500 transition-[color,background-color,border-color,box-shadow,transform] motion-reduce:transition-none hover:border-blue-400/20 hover:bg-blue-400/10 hover:text-blue-700 hover:shadow-[0_0_18px_rgba(59,130,246,0.1)] motion-safe:active:scale-95 dark:text-slate-400 dark:hover:text-blue-200 md:size-9"
+        className={clsx(
+          INTERACTION_CLASS.iconButton,
+          "flex size-8 items-center justify-center rounded-xl p-0 md:size-9",
+        )}
         title={t("settings")}
       >
         <Settings className="h-5 w-5" />
@@ -109,7 +110,7 @@ function SettingsDropdownComponent({
             onCheckedChange={onSeamlessSwitchChange}
             className={SETTING_SWITCH_CLASS}
             labelClassName={SETTING_SWITCH_LABEL_CLASS}
-            switchClassName={SETTING_SWITCH_CONTROL_CLASS}
+            switchClassName={INTERACTION_CLASS.switchTrack}
           />
 
           {/* Video processing group: deinterlace + picture enhancement.
@@ -117,10 +118,8 @@ function SettingsDropdownComponent({
                 resolution caveat is stated once as a shared group note. */}
           <div className="space-y-3 border-blue-900/10 border-t pt-3.5 dark:border-blue-100/10">
             <div className="px-0.5">
-              <span className="block font-medium text-slate-600 text-xs leading-4 dark:text-blue-50/65">
-                {t("videoProcessing")}
-              </span>
-              <span className="mt-0.5 block text-[11px] text-slate-400 leading-4 dark:text-blue-50/35">
+              <span className={clsx(TEXT_CLASS.label, "block text-xs leading-4")}>{t("videoProcessing")}</span>
+              <span className={clsx(TEXT_CLASS.subtle, "mt-0.5 block text-[11px] leading-4")}>
                 {t("resolutionLimitHint")}
               </span>
             </div>
@@ -132,7 +131,7 @@ function SettingsDropdownComponent({
               onCheckedChange={onAutoDeinterlaceChange}
               className={SETTING_SWITCH_CLASS}
               labelClassName={SETTING_SWITCH_LABEL_CLASS}
-              switchClassName={SETTING_SWITCH_CONTROL_CLASS}
+              switchClassName={INTERACTION_CLASS.switchTrack}
             />
 
             {/* Picture enhancement (WebGL post-processing inside the render gate) */}
@@ -142,7 +141,7 @@ function SettingsDropdownComponent({
               onCheckedChange={onPictureEnhancementChange}
               className={SETTING_SWITCH_CLASS}
               labelClassName={SETTING_SWITCH_LABEL_CLASS}
-              switchClassName={SETTING_SWITCH_CONTROL_CLASS}
+              switchClassName={INTERACTION_CLASS.switchTrack}
             />
           </div>
         </div>

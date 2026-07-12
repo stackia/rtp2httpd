@@ -14,7 +14,7 @@ import { Card } from "../components/ui/card";
 import { useLocale } from "../hooks/use-locale";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
-import { CANVAS_CLASS, surfaceClass } from "../lib/design-system";
+import { CANVAS_CLASS, EFFECT_CLASS, INTERACTION_CLASS, semanticClass, surfaceClass } from "../lib/design-system";
 import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG } from "../lib/epg-parser";
 import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
@@ -542,8 +542,8 @@ function PlayerPage() {
                   className={clsx(
                     "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap border-b-2 px-3 py-2 text-center font-semibold text-xs leading-5 tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] md:px-4 md:py-3 md:text-sm",
                     sidebarView === view
-                      ? "border-blue-500 bg-[linear-gradient(to_top,rgba(59,130,246,0.12),transparent)] text-blue-700 shadow-[inset_0_-1px_0_rgba(59,130,246,0.18)] dark:border-blue-300 dark:text-blue-200"
-                      : "cursor-pointer border-transparent text-slate-500 hover:bg-blue-400/5 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-100",
+                      ? INTERACTION_CLASS.tabActive
+                      : clsx(INTERACTION_CLASS.tabIdle, "cursor-pointer"),
                   )}
                 >
                   {view === "channels" ? `${t("channels")} (${metadata?.channels.length || 0})` : t("programGuide")}
@@ -589,7 +589,7 @@ function PlayerPage() {
           >
             <div className="text-center space-y-4">
               {/* Loading spinner */}
-              <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-blue-950/10 border-t-blue-500 border-r-indigo-500 shadow-[0_0_28px_rgba(59,130,246,0.22)] dark:border-blue-100/10 dark:border-t-blue-300 dark:border-r-indigo-400" />
+              <div className={clsx(EFFECT_CLASS.loadingRing, "mx-auto h-12 w-12 animate-spin rounded-full border-4")} />
             </div>
           </div>
         )}
@@ -611,7 +611,12 @@ function PlayerPage() {
         >
           <div className="grid min-w-0 md:grid-cols-[minmax(0,1fr)_18rem]">
             <div className="min-w-0 p-6 sm:p-8 md:p-10">
-              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-300/20 bg-[linear-gradient(145deg,rgba(251,113,133,0.16),rgba(99,102,241,0.12))] text-rose-500 shadow-[0_12px_28px_rgba(225,29,72,0.12)] dark:text-rose-300">
+              <div
+                className={clsx(
+                  semanticClass("danger", "icon"),
+                  "mb-5 flex h-12 w-12 items-center justify-center rounded-2xl",
+                )}
+              >
                 <AlertTriangle className="h-6 w-6" aria-hidden="true" />
               </div>
 
@@ -623,7 +628,9 @@ function PlayerPage() {
                 {t("playlistLoadDescription")}
               </p>
 
-              <div className="mt-6 min-w-0 rounded-2xl border border-blue-900/10 bg-blue-50/45 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] dark:border-blue-100/10 dark:bg-blue-300/6">
+              <div
+                className={clsx(surfaceClass({ material: "clear", level: "inset" }), "mt-6 min-w-0 rounded-2xl p-4")}
+              >
                 <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                   <ListChecks className="h-4 w-4 text-blue-600 dark:text-blue-300" aria-hidden="true" />
                   {t("playlistErrorChecklist")}
@@ -632,7 +639,7 @@ function PlayerPage() {
                   {playlistErrorHints.map((hint) => (
                     <li key={hint} className="flex min-w-0 gap-2">
                       <span
-                        className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.45)]"
+                        className={clsx(semanticClass("info", "dot"), "mt-2 h-1.5 w-1.5 shrink-0 rounded-full")}
                         aria-hidden="true"
                       />
                       <span className="min-w-0 break-words">{hint}</span>
@@ -644,9 +651,9 @@ function PlayerPage() {
               <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="default"
                   onClick={loadPlaylist}
-                  className="w-full gap-2 rounded-xl border-primary/20 bg-[linear-gradient(135deg,#0e7490,#4338ca)] text-white shadow-[0_10px_28px_rgba(37,99,235,0.24)] transition-[color,background-color,border-color] hover:border-primary/30 hover:bg-[linear-gradient(135deg,#0e7490,#4338ca)] hover:text-white sm:w-auto"
+                  className="w-full gap-2 rounded-xl sm:w-auto"
                 >
                   <RefreshCw className="h-4 w-4" aria-hidden="true" />
                   {t("retry")}
@@ -667,9 +674,19 @@ function PlayerPage() {
               </div>
             </div>
 
-            <div className="min-w-0 border-blue-900/10 border-t bg-[linear-gradient(145deg,rgba(224,242,254,0.42),rgba(238,242,255,0.58))] p-6 dark:border-blue-100/10 dark:bg-[linear-gradient(145deg,rgba(8,47,73,0.22),rgba(30,27,75,0.3))] md:border-t-0 md:border-l md:p-8">
+            <div
+              className={clsx(
+                surfaceClass({ material: "clear", level: "inset" }),
+                "min-w-0 rounded-none border-t p-6 md:border-t-0 md:border-l md:p-8",
+              )}
+            >
               <div className="text-sm font-semibold text-foreground">{t("playlistEndpoint")}</div>
-              <div className="mt-3 break-all rounded-xl border border-blue-900/10 bg-white/55 px-3 py-2 font-mono text-foreground text-sm leading-5 shadow-inner dark:border-blue-100/10 dark:bg-slate-950/42">
+              <div
+                className={clsx(
+                  surfaceClass({ material: "clear", level: "tile", density: "dense" }),
+                  "mt-3 break-all rounded-xl px-3 py-2 font-mono text-foreground text-sm leading-5",
+                )}
+              >
                 {buildAppPath("/playlist.m3u")}
               </div>
               <div className="mt-6 text-sm font-semibold text-foreground">{t("technicalDetails")}</div>

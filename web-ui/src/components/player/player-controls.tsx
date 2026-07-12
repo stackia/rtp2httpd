@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { surfaceClass } from "../../lib/design-system";
+import { EFFECT_CLASS, INTERACTION_CLASS, METER_CLASS, semanticClass, surfaceClass } from "../../lib/design-system";
 import type { Locale } from "../../lib/locale";
 import { createProgramTimeline, programProgressToWallClock } from "../../lib/program-timeline";
 import type { PlayerMediaInfo, PlayerRenderState } from "../../mpegts";
@@ -71,8 +71,6 @@ interface PlayerControlsProps {
 const COMPACT_BUTTON_CLASS = "[@container_video_(max-height:_320px)]:p-1 md:[@container_video_(max-height:_320px)]:p-1";
 const COMPACT_ICON_CLASS =
   "[@container_video_(max-height:_320px)]:h-4 [@container_video_(max-height:_320px)]:w-4 md:[@container_video_(max-height:_320px)]:h-4 md:[@container_video_(max-height:_320px)]:w-4";
-const PLAYER_CONTROL_BUTTON_CLASS =
-  "rounded-full border border-transparent text-white transition-[color,background-color,border-color,box-shadow,transform] duration-200 motion-reduce:transition-none hover:border-blue-100/20 hover:bg-blue-300/15 hover:text-blue-50 hover:shadow-[0_0_24px_rgba(59,130,246,0.16)] motion-safe:active:scale-95";
 
 export function PlayerControls({
   channel,
@@ -285,7 +283,8 @@ export function PlayerControls({
   return (
     <div
       className={clsx(
-        "flex w-full flex-col gap-1 bg-[linear-gradient(to_top,rgba(2,8,23,0.98)_0%,rgba(8,22,51,0.9)_46%,rgba(21,27,69,0.48)_72%,transparent_100%)] pt-4 pr-[max(0.375rem,env(safe-area-inset-right))] pb-1 pl-[max(0.375rem,env(safe-area-inset-left))] md:gap-2 md:pt-9 md:pb-3 md:pl-[max(0.75rem,env(safe-area-inset-left))]",
+        EFFECT_CLASS.mediaChrome,
+        "flex w-full flex-col gap-1 pt-4 pr-[max(0.375rem,env(safe-area-inset-right))] pb-1 pl-[max(0.375rem,env(safe-area-inset-left))] md:gap-2 md:pt-9 md:pb-3 md:pl-[max(0.75rem,env(safe-area-inset-left))]",
         showSidebar ? "md:pr-3" : "md:pr-[max(0.75rem,env(safe-area-inset-right))]",
         "[@container_video_(max-height:_320px)]:gap-0.5 [@container_video_(max-height:_320px)]:pt-2 [@container_video_(max-height:_320px)]:pb-0.5 md:[@container_video_(max-height:_320px)]:gap-0.5 md:[@container_video_(max-height:_320px)]:pt-2 md:[@container_video_(max-height:_320px)]:pb-0.5 [@container_video_(max-height:_220px)]:pt-1 md:[@container_video_(max-height:_220px)]:pt-1",
       )}
@@ -321,11 +320,10 @@ export function PlayerControls({
           }
           aria-label={t("seekTo")}
           className={clsx(
-            "group relative h-1.5 touch-none select-none rounded-full bg-blue-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-[height,box-shadow] duration-150 before:absolute before:-inset-y-3 before:inset-x-0 before:content-[''] md:h-2",
+            METER_CLASS.track,
+            "group relative h-1.5 touch-none select-none rounded-full transition-[height,box-shadow] duration-150 before:absolute before:-inset-y-3 before:inset-x-0 before:content-[''] md:h-2",
             "[@container_video_(max-height:_320px)]:h-1 md:[@container_video_(max-height:_320px)]:h-1",
-            isCatchupSupported
-              ? "cursor-pointer hover:h-2 hover:shadow-[0_0_20px_rgba(59,130,246,0.16),inset_0_1px_3px_rgba(0,0,0,0.45)] md:hover:h-3"
-              : "cursor-default",
+            isCatchupSupported ? clsx(METER_CLASS.interactive, "hover:h-2 md:hover:h-3") : "cursor-default",
             isScrubbing &&
               "h-2 [@container_video_(max-height:_320px)]:h-2 md:h-3 md:[@container_video_(max-height:_320px)]:h-2",
           )}
@@ -338,7 +336,8 @@ export function PlayerControls({
         >
           <div
             className={clsx(
-              "absolute top-0 left-0 h-full rounded-full bg-[linear-gradient(90deg,#3b82f6_0%,#38bdf8_52%,#6366f1_100%)] shadow-[0_0_18px_rgba(59,130,246,0.4)]",
+              semanticClass("info", "fill"),
+              "absolute top-0 left-0 h-full rounded-full",
               !isScrubbing && "transition-[width] duration-150",
             )}
             style={{ width: `${displayPosition}%` }}
@@ -347,7 +346,7 @@ export function PlayerControls({
           {isCatchupSupported && previewPosition !== null && (
             <>
               <div
-                className="absolute top-0 h-full w-0.5 bg-blue-50/80 shadow-[0_0_8px_rgba(147,197,253,0.7)]"
+                className={clsx(METER_CLASS.preview, "absolute top-0 h-full w-0.5")}
                 style={{ left: `${previewPosition}%` }}
               />
               {previewTime && (
@@ -367,7 +366,8 @@ export function PlayerControls({
 
           <div
             className={clsx(
-              "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-blue-300 shadow-[0_0_16px_rgba(147,197,253,0.75)]",
+              METER_CLASS.handle,
+              "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full",
               isScrubbing ? "h-4 w-4" : "h-2.5 w-2.5 transition-[left,width,height] duration-150 md:h-3 md:w-3",
               isCatchupSupported &&
                 !isScrubbing &&
@@ -391,7 +391,7 @@ export function PlayerControls({
           <button
             type="button"
             onClick={onPlayPause}
-            className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
+            className={clsx(INTERACTION_CLASS.mediaControl, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
             title={isPlaying ? t("pause") : t("play")}
           >
             {isPlaying ? (
@@ -406,7 +406,7 @@ export function PlayerControls({
             <button
               type="button"
               onClick={onMuteToggle}
-              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
+              className={clsx(INTERACTION_CLASS.mediaControl, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
               title={isMuted ? t("unmute") : t("mute")}
             >
               {isMuted || volume === 0 ? (
@@ -471,7 +471,9 @@ export function PlayerControls({
           {/* Live/Catchup Indicator & Go Live Button */}
           {isLive ? (
             <span className="flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold tracking-wide text-white md:gap-1.5 md:text-sm">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400 shadow-[0_0_12px_rgba(251,113,133,0.85)] md:h-2 md:w-2" />
+              <span
+                className={clsx(semanticClass("danger", "dot"), "h-1.5 w-1.5 animate-pulse rounded-full md:h-2 md:w-2")}
+              />
               {t("live")}
             </span>
           ) : (
@@ -479,7 +481,7 @@ export function PlayerControls({
               type="button"
               onClick={() => onSeek(new Date())}
               className={clsx(
-                PLAYER_CONTROL_BUTTON_CLASS,
+                INTERACTION_CLASS.mediaControl,
                 "cursor-pointer whitespace-nowrap bg-blue-300/10 px-1.5 py-0.5 text-[11px] font-medium text-blue-50 md:px-2.5 md:py-1.5 md:text-sm",
               )}
             >
@@ -493,7 +495,7 @@ export function PlayerControls({
               <button
                 type="button"
                 className={clsx(
-                  PLAYER_CONTROL_BUTTON_CLASS,
+                  INTERACTION_CLASS.mediaControl,
                   "max-w-14 cursor-pointer truncate px-1.5 py-0.5 text-[11px] font-medium min-[360px]:max-w-20 md:max-w-40 md:px-2.5 md:py-1.5 md:text-sm",
                 )}
               >
@@ -519,9 +521,8 @@ export function PlayerControls({
                       }}
                       className={clsx(
                         "relative z-10 block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs transition-colors md:text-sm",
-                        index === activeSourceIndex
-                          ? "bg-blue-300/10 font-medium text-blue-200"
-                          : "text-white/75 hover:bg-blue-200/10 hover:text-blue-50",
+                        semanticClass(index === activeSourceIndex ? "info" : "neutral", "badge"),
+                        index === activeSourceIndex ? "font-medium" : "hover:bg-blue-200/10 hover:text-blue-50",
                       )}
                     >
                       <span className="flex items-center gap-2">
@@ -538,7 +539,7 @@ export function PlayerControls({
           <button
             type="button"
             onClick={onFullscreen}
-            className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
+            className={clsx(INTERACTION_CLASS.mediaControl, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
             title={isFullscreen ? t("exitFullscreen") : t("fullscreen")}
           >
             {isFullscreen ? (
@@ -553,7 +554,7 @@ export function PlayerControls({
             <button
               type="button"
               onClick={onPiPToggle}
-              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
+              className={clsx(INTERACTION_CLASS.mediaControl, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
               title={t("pictureInPicture")}
             >
               <PictureInPicture className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
@@ -566,7 +567,7 @@ export function PlayerControls({
               type="button"
               onClick={onToggleSidebar}
               className={clsx(
-                PLAYER_CONTROL_BUTTON_CLASS,
+                INTERACTION_CLASS.mediaControl,
                 "hidden cursor-pointer p-1.5 md:flex md:p-2",
                 COMPACT_BUTTON_CLASS,
               )}

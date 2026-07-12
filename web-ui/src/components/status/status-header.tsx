@@ -2,7 +2,7 @@ import { clsx } from "clsx";
 import { Activity, Globe, Moon, Sun, Wifi } from "lucide-react";
 import type { ReactNode } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
-import { surfaceClass } from "../../lib/design-system";
+import { EFFECT_CLASS, surfaceClass } from "../../lib/design-system";
 import { LOCALE_OPTIONS, type Locale } from "../../lib/locale";
 import { type BandwidthUnit, THEME_LABEL_KEYS, THEME_MODES, type ThemeMode } from "../../types/ui";
 import { Badge } from "../ui/badge";
@@ -21,9 +21,6 @@ interface StatusHeaderProps {
   bandwidthUnit: BandwidthUnit;
   onBandwidthUnitChange: (unit: BandwidthUnit) => void;
 }
-
-const HEADER_WASH_CLASS =
-  "pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(99,102,241,0.14),transparent_36%),radial-gradient(circle_at_92%_-20%,rgba(14,165,233,0.12),transparent_34%)]";
 
 const BANDWIDTH_UNIT_OPTIONS: Array<{ value: BandwidthUnit; label: string }> = [
   { value: "bits", label: "Mbps" },
@@ -96,7 +93,7 @@ export function StatusHeader({
         "relative isolate overflow-hidden rounded-3xl p-4 sm:p-5",
       )}
     >
-      <div aria-hidden className={HEADER_WASH_CLASS} />
+      <div aria-hidden className={EFFECT_CLASS.ambientWash} />
       <div className="relative flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-3">
           <div className="flex min-h-11 flex-wrap items-center gap-2 text-sm">
@@ -110,8 +107,11 @@ export function StatusHeader({
               {statusLabel}
             </span>
             <Badge
-              variant="outline"
-              className="h-9 whitespace-nowrap border-border/50 bg-background/45 px-3 font-medium text-muted-foreground shadow-sm backdrop-blur-md dark:border-white/10"
+              variant={null}
+              className={clsx(
+                surfaceClass({ material: "clear", level: "tile" }),
+                "h-9 whitespace-nowrap px-3 font-medium text-muted-foreground",
+              )}
             >
               {t("lastUpdated")}: <span className="ml-1 font-mono tabular-nums">{lastUpdated}</span>
             </Badge>

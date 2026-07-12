@@ -2,7 +2,7 @@ import { clsx } from "clsx";
 import { History } from "lucide-react";
 import { forwardRef, memo, useCallback } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { surfaceClass } from "../../lib/design-system";
+import { semanticClass, surfaceClass } from "../../lib/design-system";
 import type { Locale } from "../../lib/locale";
 import type { Channel } from "../../types/player";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
@@ -48,9 +48,7 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
         <span
           className={clsx(
             "relative z-10 flex h-5 min-w-7 shrink-0 items-center justify-center rounded-lg px-1.5 font-semibold text-[10px] transition-[color,background-color,box-shadow] duration-300 ease-out motion-reduce:transition-none md:h-6 md:min-w-8 md:px-2 md:text-xs",
-            isCurrentChannel
-              ? "bg-blue-400/24 text-blue-700 shadow-[0_6px_16px_-10px_rgba(37,99,235,0.7),inset_0_1px_0_rgba(255,255,255,0.46),0_0_0_1px_rgba(96,165,250,0.28)] dark:text-blue-100"
-              : "bg-blue-500/13 text-blue-700 shadow-[0_0_0_1px_rgba(59,130,246,0.1)] dark:text-blue-200",
+            semanticClass(isCurrentChannel ? "info" : "neutral", "badge"),
           )}
         >
           {channel.id}
@@ -78,12 +76,17 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
         </div>
         {/* Right: Logo */}
         {channel.logo && (
-          <div className="relative z-10 flex h-8 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-blue-900/8 bg-[linear-gradient(145deg,rgba(15,42,72,0.88),rgba(49,46,129,0.76))] px-1.5 py-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] dark:border-blue-100/10 md:h-10 md:w-20 md:px-2 md:py-1">
+          <div
+            className={clsx(
+              surfaceClass({ material: "smoke", level: "tile", density: "dense" }),
+              "relative z-10 flex h-8 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl px-1.5 py-0.5 md:h-10 md:w-20 md:px-2 md:py-1",
+            )}
+          >
             <img
               src={channel.logo}
               alt={channel.name}
               referrerPolicy="no-referrer"
-              className="h-full w-full object-contain drop-shadow-[0_0_8px_rgba(219,234,254,0.16)]"
+              className="h-full w-full object-contain"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = "none";
               }}

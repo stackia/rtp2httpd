@@ -103,7 +103,7 @@ export function ConnectionsSection({
           <div className="hidden lg:block">
             <Table className="min-w-[960px] [&_td]:border-border/20 [&_th]:text-[11px] [&_th]:font-semibold [&_th]:tracking-[0.04em]">
               <TableHeader>
-                <TableRow className="border-border/50 bg-muted/35 shadow-[inset_0_-1px_0_hsl(var(--border)/0.35)] hover:bg-muted/35">
+                <TableRow className={surfaceClass({ material: "clear", level: "bar" })}>
                   <TableHead>{t("client")}</TableHead>
                   <TableHead>{t("service")}</TableHead>
                   <TableHead>{t("state")}</TableHead>
@@ -165,7 +165,7 @@ export function ConnectionsSection({
                           variant="destructive"
                           disabled={disconnectingIds.has(client.clientId)}
                           onClick={() => onDisconnect(client.clientId)}
-                          className="rounded-lg bg-rose-600 shadow-[0_8px_18px_-12px_rgba(225,29,72,0.9)] hover:bg-rose-700"
+                          className="rounded-lg"
                         >
                           {disconnectingIds.has(client.clientId) ? t("disconnecting") : t("disconnect")}
                         </Button>
@@ -233,7 +233,7 @@ export function ConnectionsSection({
                         variant="destructive"
                         disabled={disconnectingIds.has(client.clientId)}
                         onClick={() => onDisconnect(client.clientId)}
-                        className="rounded-lg bg-rose-600 shadow-[0_8px_18px_-12px_rgba(225,29,72,0.9)] hover:bg-rose-700"
+                        className="rounded-lg"
                       >
                         {disconnectingIds.has(client.clientId) ? t("disconnecting") : t("disconnect")}
                       </Button>

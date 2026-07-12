@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
-import { surfaceClass } from "../../lib/design-system";
+import { METER_CLASS, semanticClass, surfaceClass } from "../../lib/design-system";
 import { formatBytes } from "../../lib/format";
 import type { Locale } from "../../lib/locale";
 import { Progress } from "../ui/progress";
@@ -48,12 +48,15 @@ export function QueueUsage({ locale, queueBytes, queueLimit, queueHighwater, dro
         <Progress
           value={usage}
           className="h-1.5 bg-muted/70 shadow-inner"
-          indicatorClassName="bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 shadow-[0_0_12px_rgba(16,185,129,0.35)]"
+          indicatorClassName={semanticClass("warning", "fill")}
         />
         {typeof highwaterPercent === "number" ? (
           <span
             aria-hidden
-            className="absolute top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/75 shadow-[0_0_0_1px_hsl(var(--background)/0.7)]"
+            className={clsx(
+              METER_CLASS.marker,
+              "absolute top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full",
+            )}
             style={{ left: `${highwaterPercent}%` }}
           />
         ) : null}

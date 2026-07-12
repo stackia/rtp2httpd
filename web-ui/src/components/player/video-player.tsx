@@ -13,7 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { CANVAS_CLASS, SCRIM_CLASS, surfaceClass } from "../../lib/design-system";
+import { CANVAS_CLASS, EFFECT_CLASS, SCRIM_CLASS, semanticClass, surfaceClass } from "../../lib/design-system";
 import {
   getDocumentPictureInPicture,
   getDocumentPiPWindowOptions,
@@ -237,7 +237,12 @@ function PlayerTopLeftOverlay({
             </span>
             <div className="relative h-3 w-3 shrink-0 md:h-3.5 md:w-3.5 md:[@container_video_(max-height:_320px)]:h-3 md:[@container_video_(max-height:_320px)]:w-3">
               <div className="absolute inset-0 rounded-full border border-blue-100/25" />
-              <div className="absolute inset-0 animate-spin rounded-full border border-blue-200 border-t-transparent shadow-[0_0_8px_rgba(147,197,253,0.5)]" />
+              <div
+                className={clsx(
+                  EFFECT_CLASS.loadingRing,
+                  "absolute inset-0 animate-spin rounded-full border border-t-transparent",
+                )}
+              />
             </div>
             <span className="min-w-0 truncate text-blue-50/70 text-xs md:text-sm md:[@container_video_(max-height:_320px)]:text-xs">
               {loadingText}
@@ -1789,7 +1794,10 @@ export function VideoPlayer({
                 src={channel.logo}
                 alt={channel.name}
                 referrerPolicy="no-referrer"
-                className="relative z-10 h-8 w-20 object-contain drop-shadow-[0_0_14px_rgba(147,197,253,0.2)] md:h-14 md:w-36 [@container_video_(max-height:_320px)]:h-6 [@container_video_(max-height:_320px)]:w-16 md:[@container_video_(max-height:_320px)]:h-6 md:[@container_video_(max-height:_320px)]:w-16 [@container_video_(max-height:_220px)]:hidden"
+                className={clsx(
+                  EFFECT_CLASS.logoGlow,
+                  "relative z-10 h-8 w-20 object-contain md:h-14 md:w-36 [@container_video_(max-height:_320px)]:h-6 [@container_video_(max-height:_320px)]:w-16 md:[@container_video_(max-height:_320px)]:h-6 md:[@container_video_(max-height:_320px)]:w-16 [@container_video_(max-height:_220px)]:hidden",
+                )}
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}
@@ -1800,9 +1808,8 @@ export function VideoPlayer({
                 <span
                   className={clsx(
                     "shrink-0 rounded-md px-1 py-0.5 font-semibold text-[10px] transition-[color,background-color,box-shadow,scale] duration-300 md:px-1.5 md:text-xs md:[@container_video_(max-height:_320px)]:px-1 md:[@container_video_(max-height:_320px)]:text-[10px]",
-                    digitBuffer
-                      ? "scale-110 bg-[linear-gradient(135deg,#3b82f6,#6366f1)] text-white shadow-[0_0_20px_rgba(59,130,246,0.45)] ring-2 ring-blue-200/40"
-                      : "bg-blue-100/10 text-blue-50/65 ring-1 ring-blue-100/10",
+                    semanticClass(digitBuffer ? "info" : "neutral", "badge"),
+                    digitBuffer && "scale-110 ring-2 ring-blue-200/40",
                   )}
                 >
                   {digitBuffer || channel.id}
@@ -1836,7 +1843,7 @@ export function VideoPlayer({
           onClick={handleUserInteraction}
         >
           <div className="flex flex-col items-center gap-4 text-white">
-            <Play className="h-20 w-20 fill-blue-100/20 text-blue-100 opacity-95 drop-shadow-[0_0_24px_rgba(59,130,246,0.55)]" />
+            <Play className={clsx(semanticClass("info", "text"), "h-20 w-20 fill-blue-100/20 opacity-95")} />
             <div className="max-w-lg px-2 text-center">
               <div className="mb-2 font-semibold text-2xl tracking-tight text-blue-50">{t("clickToPlay")}</div>
               <div className="text-pretty text-blue-50/65 text-sm leading-5">{t("autoplayBlocked")}</div>
@@ -1988,7 +1995,12 @@ export function VideoPlayer({
     >
       <div ref={playerDockRef} className="contents">
         {isDocumentPiP && (
-          <div className="@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-[radial-gradient(circle_at_center,#102044_0%,#050b18_62%,#01030a_100%)] px-4 text-center font-medium text-blue-50/65 text-sm md:aspect-auto md:h-full md:text-base">
+          <div
+            className={clsx(
+              CANVAS_CLASS.video,
+              "@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center px-4 text-center font-medium text-blue-50/65 text-sm md:aspect-auto md:h-full md:text-base",
+            )}
+          >
             {t("playingInPictureInPicture")}
           </div>
         )}

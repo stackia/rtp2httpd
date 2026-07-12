@@ -2,7 +2,7 @@ import { clsx } from "clsx";
 import { List } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
-import { surfaceClass, TEXT_CLASS } from "../../lib/design-system";
+import { semanticClass, surfaceClass, TEXT_CLASS } from "../../lib/design-system";
 import type { Locale } from "../../lib/locale";
 import type { LogEntry } from "../../types";
 import { LabeledSwitch } from "../ui/labeled-switch";
@@ -12,19 +12,17 @@ function getLogLevelClass(levelName: string): string {
   switch (levelName.toUpperCase()) {
     case "FATAL":
     case "ERROR":
-      return "text-rose-300 drop-shadow-[0_0_8px_rgba(251,113,133,0.3)]";
+      return semanticClass("danger", "text");
     case "WARN":
     case "WARNING":
-      return "text-amber-300 drop-shadow-[0_0_8px_rgba(252,211,77,0.25)]";
+      return semanticClass("warning", "text");
     case "DEBUG":
-      return "text-violet-300";
+      return semanticClass("neutral", "text");
     default:
-      return "text-cyan-300";
+      return semanticClass("info", "text");
   }
 }
 
-const TERMINAL_CLASS =
-  "rounded-2xl border border-slate-700/70 bg-slate-950/95 text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_20px_80px_rgba(15,23,42,0.42),0_20px_54px_-36px_rgba(2,6,23,0.9)]";
 const LOG_ENTRY_CLASS =
   "[content-visibility:auto] [contain-intrinsic-block-size:auto_3.75rem] sm:[contain-intrinsic-block-size:auto_2.5rem] lg:[contain-intrinsic-block-size:auto_1.25rem]";
 
@@ -128,8 +126,8 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
       <div
         ref={viewportRef}
         className={clsx(
-          TERMINAL_CLASS,
-          "mt-5 h-100 overflow-y-auto p-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700 sm:p-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700",
+          surfaceClass({ material: "smoke", level: "inset", density: "dense" }),
+          "mt-5 h-100 overflow-y-auto rounded-2xl p-3 text-slate-200 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700 sm:p-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700",
         )}
       >
         {logs.length === 0 ? (

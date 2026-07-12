@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
-import { surfaceClass, TEXT_CLASS } from "../../lib/design-system";
+import { semanticClass, surfaceClass, TEXT_CLASS } from "../../lib/design-system";
 import { formatBandwidth, formatBytes } from "../../lib/format";
 import type { Locale } from "../../lib/locale";
 import type { PoolStats, WorkerEntry } from "../../types";
@@ -64,7 +64,7 @@ export function WorkersSection({ workers, locale, bandwidthUnit }: WorkersSectio
                     </div>
                     <Badge
                       variant={null}
-                      className="shrink-0 whitespace-nowrap border border-violet-500/20 bg-violet-500/10 px-3 py-1 text-violet-700 shadow-[0_0_18px_-10px_rgba(139,92,246,0.9)] dark:text-violet-300"
+                      className={clsx(semanticClass("info", "badge"), "shrink-0 whitespace-nowrap px-3 py-1")}
                     >
                       {worker.activeClients} {t("clientsPerWorker")}
                     </Badge>
@@ -119,12 +119,10 @@ function PoolCard({ title, pool, locale }: PoolCardProps) {
     ["expansions", t("poolExpansions"), pool.expansions],
     ["exhaustions", t("poolExhaustions"), pool.exhaustions],
   ] as const;
-  const indicatorClassName =
-    utilization >= 90
-      ? "bg-gradient-to-r from-rose-400 to-rose-500 shadow-[0_0_12px_rgba(244,63,94,0.45)]"
-      : utilization >= 70
-        ? "bg-gradient-to-r from-amber-300 to-orange-500 shadow-[0_0_12px_rgba(245,158,11,0.4)]"
-        : "bg-gradient-to-r from-emerald-400 to-cyan-400 shadow-[0_0_12px_rgba(16,185,129,0.35)]";
+  const indicatorClassName = semanticClass(
+    utilization >= 90 ? "danger" : utilization >= 70 ? "warning" : "success",
+    "fill",
+  );
   return (
     <div className={clsx(surfaceClass({ material: "clear", level: "inset" }), "space-y-3 rounded-2xl p-4")}>
       <div className="flex items-center justify-between text-sm font-medium text-muted-foreground">

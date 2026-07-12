@@ -2,7 +2,7 @@ import { clsx } from "clsx";
 import { Circle, History } from "lucide-react";
 import { memo, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { surfaceClass } from "../../lib/design-system";
+import { semanticClass, surfaceClass } from "../../lib/design-system";
 import type { EPGData } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
 import type { EPGProgram } from "../../types/player";
@@ -212,7 +212,7 @@ function EPGViewComponent({
                           <div className="flex shrink-0">
                             {playing ? (
                               <div
-                                className="h-8 w-1 rounded-full bg-[linear-gradient(to_bottom,#3b82f6,#6366f1)] shadow-[0_0_12px_rgba(59,130,246,0.48)] md:h-10"
+                                className={clsx(semanticClass("info", "fill"), "h-8 w-1 rounded-full md:h-10")}
                                 title={t("nowPlaying")}
                               />
                             ) : isPast && supportsCatchup ? (
@@ -251,12 +251,19 @@ function EPGViewComponent({
                           <div className="flex h-8 md:h-10 w-3 md:w-4 shrink-0 items-center justify-center">
                             {onAir && (
                               <span title={t("onAir")}>
-                                <Circle className="h-2.5 w-2.5 fill-current text-blue-500 drop-shadow-[0_0_5px_rgba(59,130,246,0.65)] md:h-3 md:w-3" />
+                                <Circle
+                                  className={clsx(
+                                    semanticClass("info", "text"),
+                                    "h-2.5 w-2.5 fill-current md:h-3 md:w-3",
+                                  )}
+                                />
                               </span>
                             )}
                             {isPast && supportsCatchup && (
                               <span title={t("replay")}>
-                                <History className="h-3 w-3 text-slate-400 dark:text-blue-100/45 md:h-3.5 md:w-3.5" />
+                                <History
+                                  className={clsx(semanticClass("neutral", "text"), "h-3 w-3 md:h-3.5 md:w-3.5")}
+                                />
                               </span>
                             )}
                           </div>
