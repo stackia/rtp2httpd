@@ -45,12 +45,13 @@ export function isIOS(): boolean {
   return false;
 }
 
-/** Detect LG webOS browsers using only their user-agent token. */
-export function isWebOS(): boolean {
+/** Detect LG TV browsers that should use the platform-native media pipeline. */
+export function isLGWebOS(): boolean {
   if (typeof navigator === "undefined") {
     return false;
   }
-  return /(?:Web0S|webOS)/i.test(navigator.userAgent);
+  const ua = navigator.userAgent;
+  return /(?:Web0S|webOS)/i.test(ua) || (/\bNetCast\b/i.test(ua) && /\b(?:SmartTV|Colt)\/[\d.]+/i.test(ua));
 }
 
 /**
@@ -65,9 +66,9 @@ export function isPerformanceConstrainedDevice(): boolean {
     return false;
   }
 
-  // LG webOS smart TVs (official UA token is `Web0S`, digit zero).
+  // LG TV runtimes (`Web0S`, or the NetCast compatibility UA used by some firmware).
   const ua = navigator.userAgent;
-  if (isWebOS()) {
+  if (isLGWebOS()) {
     return true;
   }
 

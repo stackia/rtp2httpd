@@ -1,4 +1,4 @@
-import { isWebOS } from "../lib/platform";
+import { isLGWebOS } from "../lib/platform";
 import { createMSEPlaybackBackend, isMSEPlaybackSupported } from "./backends/mse-playback-backend";
 import { createNativePlaybackBackend } from "./backends/native-playback-backend";
 import type { PlayerConfig } from "./config";
@@ -26,7 +26,7 @@ export type {
 } from "./types";
 
 export function getPlaybackBackendKind(): "mse" | "native" {
-  return isWebOS() ? "native" : "mse";
+  return isLGWebOS() ? "native" : "mse";
 }
 
 export function createPlaybackBackend(video: HTMLVideoElement, config?: Partial<PlayerConfig>): PlaybackBackend {
