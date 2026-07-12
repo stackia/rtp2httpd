@@ -19,6 +19,7 @@ import {
   EFFECT_CLASS,
   INTERACTION_CLASS,
   MEDIA_CLASS,
+  MEDIA_SURFACE_CLASS,
   MEDIA_TEXT_CLASS,
   METER_CLASS,
   mediaVolumeBackground,
@@ -543,8 +544,9 @@ export function PlayerControls({
                       }}
                       className={clsx(
                         "relative z-10 block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs transition-colors md:text-sm",
-                        semanticClass(index === activeSourceIndex ? "info" : "neutral", "badge"),
-                        index === activeSourceIndex ? "font-medium" : MEDIA_CLASS.sourceIdle,
+                        index === activeSourceIndex
+                          ? clsx(MEDIA_SURFACE_CLASS.sourceActive, "font-medium")
+                          : MEDIA_SURFACE_CLASS.sourceIdle,
                       )}
                     >
                       <span className="flex items-center gap-2">

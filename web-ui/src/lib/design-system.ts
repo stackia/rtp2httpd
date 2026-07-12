@@ -285,8 +285,18 @@ export const MEDIA_CLASS = {
   replayBar: "bg-slate-400/25 dark:bg-blue-100/18",
   playIcon: "fill-blue-100/20",
   livePill: "bg-blue-300/10 text-blue-50",
-  sourceIdle: "hover:bg-blue-200/10 hover:text-blue-50",
   loadingTrack: "border-blue-100/25",
+} as const;
+
+export const MEDIA_SURFACE_CLASS = {
+  channelIdentity:
+    "border-blue-100/22 bg-[linear-gradient(145deg,rgba(10,30,68,0.94),rgba(55,41,124,0.88))] text-blue-50",
+  channelIdentityActive:
+    "border-blue-200/45 bg-[linear-gradient(145deg,rgba(18,54,112,0.96),rgba(76,57,168,0.92))] text-blue-50",
+  controlBadge:
+    "border-blue-100/28 bg-[linear-gradient(135deg,rgba(59,130,246,0.34),rgba(99,102,241,0.3))] text-blue-50",
+  sourceActive: "bg-blue-300/22 text-blue-50",
+  sourceIdle: "bg-blue-100/7 text-blue-50/75 hover:bg-blue-200/14 hover:text-blue-50",
 } as const;
 
 export const ALERT_CLASS = {

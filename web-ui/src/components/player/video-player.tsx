@@ -18,6 +18,7 @@ import {
   CANVAS_CLASS,
   EFFECT_CLASS,
   MEDIA_CLASS,
+  MEDIA_SURFACE_CLASS,
   MEDIA_TEXT_CLASS,
   SCRIM_CLASS,
   semanticClass,
@@ -1829,8 +1830,10 @@ export function VideoPlayer({
               <div className="flex min-w-0 items-center gap-1.5 md:gap-2 [@container_video_(max-height:_320px)]:gap-1 md:[@container_video_(max-height:_320px)]:gap-1">
                 <span
                   className={clsx(
+                    surfaceClass({ material: "smoke", level: "tile", density: "dense" }),
+                    MEDIA_SURFACE_CLASS.channelIdentity,
+                    digitBuffer && MEDIA_SURFACE_CLASS.channelIdentityActive,
                     "shrink-0 rounded-md px-1 py-0.5 font-semibold text-[10px] transition-[color,background-color,box-shadow,scale] duration-300 md:px-1.5 md:text-xs md:[@container_video_(max-height:_320px)]:px-1 md:[@container_video_(max-height:_320px)]:text-[10px]",
-                    semanticClass(digitBuffer ? "info" : "neutral", "badge"),
                     digitBuffer && "scale-110",
                     digitBuffer && MEDIA_CLASS.selectionRing,
                   )}

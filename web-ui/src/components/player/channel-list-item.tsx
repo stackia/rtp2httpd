@@ -2,7 +2,7 @@ import { clsx } from "clsx";
 import { History } from "lucide-react";
 import { forwardRef, memo, useCallback } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { MEDIA_TEXT_CLASS, semanticClass, surfaceClass } from "../../lib/design-system";
+import { MEDIA_SURFACE_CLASS, MEDIA_TEXT_CLASS, semanticClass, surfaceClass } from "../../lib/design-system";
 import type { Locale } from "../../lib/locale";
 import type { Channel } from "../../types/player";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
@@ -47,8 +47,10 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
         {/* Left: Channel Number and Info */}
         <span
           className={clsx(
+            surfaceClass({ material: "smoke", level: "tile", density: "dense" }),
+            MEDIA_SURFACE_CLASS.channelIdentity,
+            isCurrentChannel && MEDIA_SURFACE_CLASS.channelIdentityActive,
             "relative z-10 flex h-5 min-w-7 shrink-0 items-center justify-center rounded-lg px-1.5 font-semibold text-[10px] transition-[color,background-color,box-shadow] duration-300 ease-out motion-reduce:transition-none md:h-6 md:min-w-8 md:px-2 md:text-xs",
-            semanticClass(isCurrentChannel ? "info" : "neutral", "badge"),
           )}
         >
           {channel.id}
@@ -79,6 +81,8 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
           <div
             className={clsx(
               surfaceClass({ material: "smoke", level: "tile", density: "dense" }),
+              MEDIA_SURFACE_CLASS.channelIdentity,
+              isCurrentChannel && MEDIA_SURFACE_CLASS.channelIdentityActive,
               "relative z-10 flex h-8 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl px-1.5 py-0.5 md:h-10 md:w-20 md:px-2 md:py-1",
             )}
           >

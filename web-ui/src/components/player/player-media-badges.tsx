@@ -1,6 +1,7 @@
+import { clsx } from "clsx";
 import type { ReactNode } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { surfaceClass } from "../../lib/design-system";
+import { MEDIA_SURFACE_CLASS, surfaceClass } from "../../lib/design-system";
 import type { Locale } from "../../lib/locale";
 import type { PlayerMediaInfo, PlayerRenderState, PlayerVideoScanType } from "../../mpegts";
 import { identifyAudioCodec, identifyVideoCodec } from "../../mpegts/media-codecs";
@@ -158,8 +159,12 @@ export function PlayerMediaBadges({ mediaInfo, locale, renderState, autoDeinterl
         <li key={badge.key} className="flex h-5 shrink-0 items-center leading-none">
           <Badge
             variant={null}
-            size="compact"
-            className={surfaceClass({ material: "smoke", level: "tile", density: "dense" })}
+            size={null}
+            className={clsx(
+              surfaceClass({ material: "smoke", level: "tile", density: "dense" }),
+              MEDIA_SURFACE_CLASS.controlBadge,
+              "h-5 px-1.5 text-[9px] leading-none font-medium tracking-normal md:text-[10px]",
+            )}
             title={badge.tooltip}
           >
             {badge.value}
