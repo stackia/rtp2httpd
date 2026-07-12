@@ -183,16 +183,16 @@ html[data-performance-tier="constrained"] .player-performance-page-background {
 }
 
 html[data-performance-tier="constrained"] .player-performance-panel-background {
-  background-color: rgb(255 255 255 / 92%);
+  background-color: #ffffff;
   background-image: none;
 }
 
 html.dark[data-performance-tier="constrained"] .player-performance-panel-background {
-  background-color: rgb(15 23 42 / 96%);
+  background-color: #0f172a;
 }
 
 html[data-performance-tier="constrained"] .player-performance-overlay-background {
-  background-color: rgb(15 23 42 / 94%);
+  background-color: #0f172a;
   background-image: none;
 }
 
@@ -203,4 +203,85 @@ html.dark[data-performance-tier="constrained"] .player-performance-page-backgrou
 html[data-performance-tier="constrained"] .player-performance-video-background {
   background-color: #01030a;
   background-image: none;
+}
+
+html[data-performance-tier="constrained"] .player-performance-controls-background {
+  background-color: #020817;
+  background-image: none;
+}
+
+html[data-performance-tier="constrained"] .player-performance-progress-track {
+  background-color: #334155;
+}
+
+html[data-performance-tier="constrained"] .player-performance-progress-fill {
+  background-color: #3b82f6;
+  background-image: none;
+}
+
+html[data-performance-tier="constrained"] .player-performance-logo-background {
+  background-color: #0f2a48;
+  background-image: none;
+}
+
+html[data-performance-tier="constrained"] .player-performance-epg-header {
+  background-color: #ffffff;
+  background-image: none;
+}
+
+html.dark[data-performance-tier="constrained"] .player-performance-epg-header {
+  background-color: #050b18;
+}
+
+html[data-performance-tier="constrained"] .player-performance-list-surface-selected {
+  background-color: #dbeafe;
+}
+
+html.dark[data-performance-tier="constrained"] .player-performance-list-surface-selected {
+  background-color: #172554;
+}
+
+html[data-performance-tier="constrained"] .player-performance-list-surface-default {
+  background-color: #ffffff;
+}
+
+html.dark[data-performance-tier="constrained"] .player-performance-list-surface-default {
+  background-color: #0f172a;
+}
+
+html[data-performance-tier="constrained"] .player-performance-input-background,
+html[data-performance-tier="constrained"] .player-performance-group-default {
+  background-color: #ffffff;
+}
+
+html.dark[data-performance-tier="constrained"] .player-performance-input-background,
+html.dark[data-performance-tier="constrained"] .player-performance-group-default {
+  background-color: #0f172a;
+}
+
+html[data-performance-tier="constrained"] .player-performance-channel-groups {
+  background-color: #e0f2fe;
+  background-image: none;
+}
+
+html.dark[data-performance-tier="constrained"] .player-performance-channel-groups {
+  background-color: #050b18;
+}
+
+html[data-performance-tier="constrained"] .player-performance-group-selected,
+html[data-performance-tier="constrained"] .player-performance-channel-number-selected {
+  background-color: #bfdbfe;
+}
+
+html.dark[data-performance-tier="constrained"] .player-performance-group-selected,
+html.dark[data-performance-tier="constrained"] .player-performance-channel-number-selected {
+  background-color: #1e3a8a;
+}
+
+html[data-performance-tier="constrained"] .player-performance-channel-number-default {
+  background-color: #dbeafe;
+}
+
+html.dark[data-performance-tier="constrained"] .player-performance-channel-number-default {
+  background-color: #1e293b;
 }
