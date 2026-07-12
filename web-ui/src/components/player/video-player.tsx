@@ -472,6 +472,18 @@ export function VideoPlayer({
     resetControlsTimer();
   }, [resetControlsTimer]);
 
+  const handleScrubbingChange = useCallback(
+    (isScrubbing: boolean) => {
+      if (hideControlsTimeoutRef.current) {
+        window.clearTimeout(hideControlsTimeoutRef.current);
+        hideControlsTimeoutRef.current = 0;
+      }
+      setShowControls(true);
+      if (!isScrubbing) resetControlsTimer();
+    },
+    [resetControlsTimer],
+  );
+
   const hideControlsImmediately = useCallback(() => {
     if (hideControlsTimeoutRef.current) {
       window.clearTimeout(hideControlsTimeoutRef.current);
@@ -1868,7 +1880,6 @@ export function VideoPlayer({
               ? "opacity-100"
               : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
           )}
-          onMouseEnter={showControlsImmediately}
         >
           <PlayerControls
             channel={channel}
@@ -1876,6 +1887,7 @@ export function VideoPlayer({
             currentProgram={currentProgram}
             isLive={isLive}
             onSeek={handleSeek}
+            onScrubbingChange={handleScrubbingChange}
             locale={locale}
             mediaInfo={slotMediaInfo[visibleSlotId]}
             renderState={slotRenderStates[visibleSlotId]}
