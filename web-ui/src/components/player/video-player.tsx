@@ -13,6 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
+import { CANVAS_CLASS, SCRIM_CLASS, surfaceClass } from "../../lib/design-system";
 import {
   getDocumentPictureInPicture,
   getDocumentPiPWindowOptions,
@@ -46,7 +47,6 @@ import {
 } from "../../mpegts/player/wall-clock";
 import mp2WasmUrl from "../../mpegts/wasm/minimp3/mp2_decoder.wasm?url";
 import type { Channel, EPGProgram } from "../../types/player";
-import { PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 import { PlayerControls } from "./player-controls";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
@@ -217,8 +217,8 @@ function PlayerTopLeftOverlay({
   return (
     <div
       className={clsx(
-        PLAYER_OVERLAY_SURFACE_CLASS,
-        "absolute top-4 left-4 z-10 max-w-[calc(100%-2rem)] rounded-xl px-2 py-1.5 transition-opacity duration-300 md:top-8 md:left-8 md:px-3 md:py-2 [@container_video_(max-height:_320px)]:top-2 [@container_video_(max-height:_320px)]:left-2 [@container_video_(max-height:_320px)]:rounded-lg [@container_video_(max-height:_320px)]:px-1.5 [@container_video_(max-height:_320px)]:py-1 md:[@container_video_(max-height:_320px)]:top-2 md:[@container_video_(max-height:_320px)]:left-2 md:[@container_video_(max-height:_320px)]:px-1.5 md:[@container_video_(max-height:_320px)]:py-1 [@container_video_(max-height:_220px)]:top-1 [@container_video_(max-height:_220px)]:left-1 md:[@container_video_(max-height:_220px)]:top-1 md:[@container_video_(max-height:_220px)]:left-1",
+        surfaceClass({ material: "smoke", level: "float" }),
+        "absolute top-4 left-4 z-10 isolate max-w-[calc(100%-2rem)] overflow-hidden rounded-xl px-2 py-1.5 transition-opacity duration-300 md:top-8 md:left-8 md:px-3 md:py-2 [@container_video_(max-height:_320px)]:top-2 [@container_video_(max-height:_320px)]:left-2 [@container_video_(max-height:_320px)]:rounded-lg [@container_video_(max-height:_320px)]:px-1.5 [@container_video_(max-height:_320px)]:py-1 md:[@container_video_(max-height:_320px)]:top-2 md:[@container_video_(max-height:_320px)]:left-2 md:[@container_video_(max-height:_320px)]:px-1.5 md:[@container_video_(max-height:_320px)]:py-1 [@container_video_(max-height:_220px)]:top-1 [@container_video_(max-height:_220px)]:left-1 md:[@container_video_(max-height:_220px)]:top-1 md:[@container_video_(max-height:_220px)]:left-1",
         visible ? "opacity-100" : "opacity-0 pointer-events-none",
       )}
     >
@@ -1716,7 +1716,8 @@ export function VideoPlayer({
       role="application"
       ref={playerSurfaceRef}
       className={clsx(
-        "dark @container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)]",
+        "dark @container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center",
+        CANVAS_CLASS.video,
         isDocumentPiP ? "h-screen min-h-screen aspect-auto" : "md:aspect-auto md:h-full",
         !showControls && "cursor-none",
       )}
@@ -1778,8 +1779,8 @@ export function VideoPlayer({
         >
           <div
             className={clsx(
-              PLAYER_OVERLAY_SURFACE_CLASS,
-              "relative flex max-w-[calc(100vw-2rem)] flex-col items-center justify-center gap-1.5 overflow-hidden rounded-xl px-2 py-1.5 md:max-w-none md:gap-2 md:px-3 md:py-2 [@container_video_(max-height:_320px)]:gap-1 [@container_video_(max-height:_320px)]:rounded-lg [@container_video_(max-height:_320px)]:px-1.5 [@container_video_(max-height:_320px)]:py-1 md:[@container_video_(max-height:_320px)]:gap-1 md:[@container_video_(max-height:_320px)]:px-1.5 md:[@container_video_(max-height:_320px)]:py-1",
+              surfaceClass({ material: "smoke", level: "float" }),
+              "relative isolate flex max-w-[calc(100vw-2rem)] flex-col items-center justify-center gap-1.5 overflow-hidden rounded-xl px-2 py-1.5 md:max-w-none md:gap-2 md:px-3 md:py-2 [@container_video_(max-height:_320px)]:gap-1 [@container_video_(max-height:_320px)]:rounded-lg [@container_video_(max-height:_320px)]:px-1.5 [@container_video_(max-height:_320px)]:py-1 md:[@container_video_(max-height:_320px)]:gap-1 md:[@container_video_(max-height:_320px)]:px-1.5 md:[@container_video_(max-height:_320px)]:py-1",
             )}
           >
             <PlayerSelectedGlassLayers />
@@ -1828,7 +1829,10 @@ export function VideoPlayer({
       {needsUserInteraction && (
         <button
           type="button"
-          className="absolute inset-0 z-10 flex cursor-pointer items-center justify-center border-none bg-[radial-gradient(circle_at_center,rgba(18,50,91,0.78),rgba(2,6,23,0.94)_68%)] p-4 transition-[filter,background-color] backdrop-blur-[2px] hover:brightness-110"
+          className={clsx(
+            SCRIM_CLASS.autoplay,
+            "absolute inset-0 z-10 flex cursor-pointer items-center justify-center border-none p-4 transition-[filter,background-color] hover:brightness-110",
+          )}
           onClick={handleUserInteraction}
         >
           <div className="flex flex-col items-center gap-4 text-white">
@@ -1846,8 +1850,8 @@ export function VideoPlayer({
           <div
             role="alert"
             className={clsx(
-              PLAYER_OVERLAY_SURFACE_CLASS,
-              "pointer-events-auto w-full max-w-xl rounded-xl border-amber-200/25 bg-[linear-gradient(145deg,rgba(66,43,12,0.92),rgba(27,24,35,0.92))] p-3 text-white shadow-[0_16px_48px_rgba(24,13,2,0.48)] backdrop-blur-md md:p-4",
+              surfaceClass({ material: "smoke", level: "float", tone: "warning" }),
+              "pointer-events-auto w-full max-w-xl overflow-hidden rounded-xl p-3 md:p-4",
             )}
           >
             <div className="flex items-start gap-3">
@@ -1875,11 +1879,11 @@ export function VideoPlayer({
       )}
 
       {error && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(76,20,55,0.46),rgba(2,6,23,0.96)_72%)] p-3 backdrop-blur-[3px] md:p-4">
+        <div className={clsx(SCRIM_CLASS.error, "absolute inset-0 z-10 flex items-center justify-center p-3 md:p-4")}>
           <div
             className={clsx(
-              PLAYER_OVERLAY_SURFACE_CLASS,
-              "max-h-full w-full max-w-xl overflow-y-auto rounded-2xl border-rose-300/25 bg-[linear-gradient(145deg,rgba(52,18,50,0.82),rgba(12,22,51,0.8))] p-4 text-white shadow-[0_20px_60px_rgba(43,5,32,0.58)] [@media(max-height:360px)]:p-2.5 md:p-5",
+              surfaceClass({ material: "smoke", level: "modal", tone: "danger" }),
+              "max-h-full w-full max-w-xl overflow-y-auto rounded-2xl p-4 [@media(max-height:360px)]:p-2.5 md:p-5",
             )}
           >
             <div className="flex items-center gap-2 font-semibold text-lg text-rose-100">
@@ -1977,7 +1981,8 @@ export function VideoPlayer({
   return (
     <div
       className={clsx(
-        "relative w-full bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)] pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:h-full",
+        CANVAS_CLASS.video,
+        "relative w-full pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:h-full",
         showSidebar && "md:pr-0",
       )}
     >

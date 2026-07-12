@@ -15,12 +15,12 @@ import {
 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
+import { surfaceClass } from "../../lib/design-system";
 import type { Locale } from "../../lib/locale";
 import { createProgramTimeline, programProgressToWallClock } from "../../lib/program-timeline";
 import type { PlayerMediaInfo, PlayerRenderState } from "../../mpegts";
 import { isNearLiveWallClock, type LiveSessionAnchor, mseToWallClock } from "../../mpegts/player/wall-clock";
 import type { Channel, EPGProgram } from "../../types/player";
-import { PLAYER_CONTROL_BUTTON_CLASS, PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 import { PlayerMediaBadges } from "./player-media-badges";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
@@ -71,6 +71,8 @@ interface PlayerControlsProps {
 const COMPACT_BUTTON_CLASS = "[@container_video_(max-height:_320px)]:p-1 md:[@container_video_(max-height:_320px)]:p-1";
 const COMPACT_ICON_CLASS =
   "[@container_video_(max-height:_320px)]:h-4 [@container_video_(max-height:_320px)]:w-4 md:[@container_video_(max-height:_320px)]:h-4 md:[@container_video_(max-height:_320px)]:w-4";
+const PLAYER_CONTROL_BUTTON_CLASS =
+  "rounded-full border border-transparent text-white transition-[color,background-color,border-color,box-shadow,transform] duration-200 motion-reduce:transition-none hover:border-blue-100/20 hover:bg-blue-300/15 hover:text-blue-50 hover:shadow-[0_0_24px_rgba(59,130,246,0.16)] motion-safe:active:scale-95";
 
 export function PlayerControls({
   channel,
@@ -351,8 +353,8 @@ export function PlayerControls({
               {previewTime && (
                 <div
                   className={clsx(
-                    PLAYER_OVERLAY_SURFACE_CLASS,
-                    "absolute bottom-full mb-4 -translate-x-1/2 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-medium text-blue-50 md:mb-2",
+                    surfaceClass({ material: "smoke", level: "float" }),
+                    "absolute bottom-full isolate mb-4 -translate-x-1/2 overflow-hidden whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-medium text-blue-50 md:mb-2",
                   )}
                   style={{ left: `clamp(2.5rem, ${previewPosition}%, calc(100% - 2.5rem))` }}
                 >
@@ -419,8 +421,8 @@ export function PlayerControls({
             {/* Volume Slider */}
             <div
               className={clsx(
-                PLAYER_OVERLAY_SURFACE_CLASS,
-                "invisible absolute bottom-full left-1/2 flex -translate-x-1/2 cursor-pointer items-center justify-center rounded-xl px-2 py-2 opacity-0 transition-[opacity,visibility] duration-150 group-hover/volume:visible group-hover/volume:opacity-100 group-focus-within/volume:visible group-focus-within/volume:opacity-100 md:px-3",
+                surfaceClass({ material: "smoke", level: "float" }),
+                "invisible absolute bottom-full left-1/2 isolate flex -translate-x-1/2 cursor-pointer items-center justify-center overflow-hidden rounded-xl px-2 py-2 opacity-0 transition-[opacity,visibility] duration-150 group-hover/volume:visible group-hover/volume:opacity-100 group-focus-within/volume:visible group-focus-within/volume:opacity-100 md:px-3",
               )}
             >
               <PlayerSelectedGlassLayers compact />
@@ -499,8 +501,8 @@ export function PlayerControls({
               </button>
               <div
                 className={clsx(
-                  PLAYER_OVERLAY_SURFACE_CLASS,
-                  "invisible absolute bottom-full left-1/2 -translate-x-1/2 overflow-hidden rounded-xl py-1 opacity-0 transition-[opacity,visibility] duration-150 group-hover/source:visible group-hover/source:opacity-100 group-focus-within/source:visible group-focus-within/source:opacity-100",
+                  surfaceClass({ material: "smoke", level: "float" }),
+                  "invisible absolute bottom-full left-1/2 isolate -translate-x-1/2 overflow-hidden rounded-xl py-1 opacity-0 transition-[opacity,visibility] duration-150 group-hover/source:visible group-hover/source:opacity-100 group-focus-within/source:visible group-focus-within/source:opacity-100",
                 )}
               >
                 <PlayerSelectedGlassLayers />

@@ -2,16 +2,10 @@ import { clsx } from "clsx";
 import { Circle, History } from "lucide-react";
 import { memo, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
+import { surfaceClass } from "../../lib/design-system";
 import type { EPGData } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
 import type { EPGProgram } from "../../types/player";
-import {
-  PLAYER_EPG_LIST_ITEM_CLASS,
-  PLAYER_LIST_SURFACE_BASE_CLASS,
-  PLAYER_LIST_SURFACE_DEFAULT_CLASS,
-  PLAYER_LIST_SURFACE_HOVER_CLASS,
-  PLAYER_LIST_SURFACE_SELECTED_CLASS,
-} from "./classnames";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
 interface EPGViewProps {
@@ -24,6 +18,8 @@ interface EPGViewProps {
 }
 
 export const nextScrollBehaviorRef: RefObject<"smooth" | "instant" | "skip"> = { current: "instant" };
+const EPG_ITEM_CLASS =
+  "[content-visibility:auto] [contain-intrinsic-block-size:auto_3rem] md:[contain-intrinsic-block-size:auto_3.75rem]";
 
 function EPGViewComponent({
   channelId,
@@ -166,7 +162,12 @@ function EPGViewComponent({
           return (
             <div key={dateKey} className="relative">
               {/* Date Header */}
-              <div className="sticky top-0 z-10 border-blue-950/10 border-b bg-white/66 px-3 py-1.5 shadow-[0_8px_20px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(90deg,#151c32,#25223f)] dark:shadow-[0_8px_20px_rgba(0,0,0,0.18)] md:px-4 md:py-2">
+              <div
+                className={clsx(
+                  surfaceClass({ material: "frost", level: "bar" }),
+                  "sticky top-0 z-10 border-b px-3 py-1.5 md:px-4 md:py-2",
+                )}
+              >
                 <h3 className="font-semibold text-blue-800 text-xs tracking-wide dark:text-blue-100 md:text-sm">
                   {formatRelativeDate(date)}
                 </h3>
@@ -186,12 +187,14 @@ function EPGViewComponent({
                         key={program.id}
                         ref={playing ? currentProgramRef : null}
                         className={clsx(
-                          PLAYER_LIST_SURFACE_BASE_CLASS,
-                          PLAYER_EPG_LIST_ITEM_CLASS,
-                          "w-full text-left",
-                          playing ? PLAYER_LIST_SURFACE_SELECTED_CLASS : PLAYER_LIST_SURFACE_DEFAULT_CLASS,
+                          surfaceClass({
+                            material: "clear",
+                            level: "tile",
+                            state: playing ? "active" : "interactive",
+                          }),
+                          EPG_ITEM_CLASS,
+                          "relative isolate w-full overflow-hidden rounded-2xl text-left text-card-foreground",
                           ((isPast && supportsCatchup) || onAir) && "cursor-pointer",
-                          !playing && ((isPast && supportsCatchup) || onAir) && PLAYER_LIST_SURFACE_HOVER_CLASS,
                         )}
                         onClick={() => {
                           if (isPast && supportsCatchup) {

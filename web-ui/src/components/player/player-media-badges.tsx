@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
+import { surfaceClass } from "../../lib/design-system";
 import type { Locale } from "../../lib/locale";
 import type { PlayerMediaInfo, PlayerRenderState, PlayerVideoScanType } from "../../mpegts";
 import { identifyAudioCodec, identifyVideoCodec } from "../../mpegts/media-codecs";
@@ -156,9 +157,9 @@ export function PlayerMediaBadges({ mediaInfo, locale, renderState, autoDeinterl
       {visibleBadges.map((badge) => (
         <li key={badge.key} className="flex h-5 shrink-0 items-center leading-none">
           <Badge
-            variant="outline"
+            variant={null}
             size="compact"
-            className="!border-blue-100/20 !bg-blue-950/35 !text-white backdrop-blur-sm"
+            className={surfaceClass({ material: "smoke", level: "tile", density: "dense" })}
             title={badge.tooltip}
           >
             {badge.value}

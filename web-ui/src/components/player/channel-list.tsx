@@ -13,6 +13,7 @@ import {
   useState,
 } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
+import { surfaceClass } from "../../lib/design-system";
 import { type EPGData, getCurrentProgram, getEPGChannelId } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
 import type { Channel } from "../../types/player";
@@ -202,7 +203,7 @@ function ChannelListComponent({
 
       {/* Groups */}
       {groups && groups.length > 0 && (
-        <div className="mt-2 border-blue-950/10 border-y bg-[linear-gradient(90deg,rgba(224,242,254,0.55),rgba(238,242,255,0.68))] px-2 py-2 backdrop-blur-xl dark:border-blue-100/10 dark:bg-[linear-gradient(90deg,rgba(4,19,42,0.6),rgba(20,17,58,0.58))]">
+        <div className={clsx(surfaceClass({ material: "clear", level: "bar" }), "mt-2 border-y px-2 py-2")}>
           <div className="flex flex-wrap items-center gap-1.5">
             {[null, ...groups].map((group) => (
               <button

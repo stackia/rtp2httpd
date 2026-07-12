@@ -2,16 +2,11 @@ import { clsx } from "clsx";
 import { List } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
+import { surfaceClass, TEXT_CLASS } from "../../lib/design-system";
 import type { Locale } from "../../lib/locale";
 import type { LogEntry } from "../../types";
 import { LabeledSwitch } from "../ui/labeled-switch";
 import { SelectBox } from "../ui/select-box";
-import {
-  STATUS_CONTROL_GROUP_CLASS,
-  STATUS_LOG_ENTRY_CLASS,
-  STATUS_PANEL_CLASS,
-  STATUS_SECTION_TITLE_CLASS,
-} from "./classnames";
 
 function getLogLevelClass(levelName: string): string {
   switch (levelName.toUpperCase()) {
@@ -27,6 +22,11 @@ function getLogLevelClass(levelName: string): string {
       return "text-cyan-300";
   }
 }
+
+const TERMINAL_CLASS =
+  "rounded-2xl border border-slate-700/70 bg-slate-950/95 text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_20px_80px_rgba(15,23,42,0.42),0_20px_54px_-36px_rgba(2,6,23,0.9)]";
+const LOG_ENTRY_CLASS =
+  "[content-visibility:auto] [contain-intrinsic-block-size:auto_3.75rem] sm:[contain-intrinsic-block-size:auto_2.5rem] lg:[contain-intrinsic-block-size:auto_1.25rem]";
 
 interface LogsSectionProps {
   logs: LogEntry[];
@@ -77,11 +77,21 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
   }, [locale]);
 
   return (
-    <section className={clsx(STATUS_PANEL_CLASS, "flex flex-col p-5 sm:p-6")}>
+    <section
+      className={clsx(
+        surfaceClass({ material: "frost", level: "panel" }),
+        "relative isolate flex flex-col rounded-3xl p-5 sm:p-6",
+      )}
+    >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className={STATUS_SECTION_TITLE_CLASS}>{t("logs")}</h2>
+        <h2 className={TEXT_CLASS.sectionTitle}>{t("logs")}</h2>
         <div className="flex flex-wrap items-center justify-start gap-3 text-sm text-muted-foreground sm:justify-end">
-          <div className={clsx("flex items-center gap-1.5", STATUS_CONTROL_GROUP_CLASS)}>
+          <div
+            className={clsx(
+              surfaceClass({ material: "clear", level: "tile", state: "interactive" }),
+              "flex min-h-11 items-center gap-1.5 rounded-xl px-3 py-0.5",
+            )}
+          >
             <span className="flex size-6 shrink-0 items-center justify-center text-primary/75">
               <List className="h-4 w-4" />
             </span>
@@ -107,14 +117,20 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
             checked={autoScroll}
             onCheckedChange={setAutoScroll}
             disabled={disabled}
-            className={clsx("gap-2", STATUS_CONTROL_GROUP_CLASS)}
+            className={clsx(
+              surfaceClass({ material: "clear", level: "tile", state: "interactive" }),
+              "min-h-11 gap-2 rounded-xl px-3 py-0.5",
+            )}
             labelClassName="whitespace-nowrap"
           />
         </div>
       </div>
       <div
         ref={viewportRef}
-        className="mt-5 h-100 overflow-y-auto rounded-2xl border border-slate-700/70 bg-slate-950/95 p-3 text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),inset_0_20px_80px_rgba(15,23,42,0.42),0_20px_54px_-36px_rgba(2,6,23,0.9)] scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700 sm:p-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700"
+        className={clsx(
+          TERMINAL_CLASS,
+          "mt-5 h-100 overflow-y-auto p-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-700 sm:p-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-700",
+        )}
       >
         {logs.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-slate-500">--</div>
@@ -124,7 +140,7 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
               <div
                 key={`${log.timestamp}-${log.message}`}
                 className={clsx(
-                  STATUS_LOG_ENTRY_CLASS,
+                  LOG_ENTRY_CLASS,
                   "rounded-lg border border-white/4 bg-white/[0.025] p-2 text-sm text-slate-200 whitespace-pre-wrap transition-colors hover:border-white/8 hover:bg-white/4",
                 )}
               >

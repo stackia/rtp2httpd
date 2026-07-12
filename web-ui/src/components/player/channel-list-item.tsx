@@ -2,15 +2,9 @@ import { clsx } from "clsx";
 import { History } from "lucide-react";
 import { forwardRef, memo, useCallback } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
+import { surfaceClass } from "../../lib/design-system";
 import type { Locale } from "../../lib/locale";
 import type { Channel } from "../../types/player";
-import {
-  PLAYER_CHANNEL_LIST_ITEM_CLASS,
-  PLAYER_LIST_SURFACE_BASE_CLASS,
-  PLAYER_LIST_SURFACE_DEFAULT_CLASS,
-  PLAYER_LIST_SURFACE_HOVER_CLASS,
-  PLAYER_LIST_SURFACE_SELECTED_CLASS,
-} from "./classnames";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
 interface ChannelListItemProps {
@@ -20,6 +14,9 @@ interface ChannelListItemProps {
   locale: Locale;
   currentProgram?: string;
 }
+
+const CHANNEL_ITEM_CLASS =
+  "[content-visibility:auto] [contain-intrinsic-block-size:auto_2.25rem] md:[contain-intrinsic-block-size:auto_2.5rem]";
 
 const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemProps>(
   ({ channel, isCurrentChannel, handleChannelClick, locale, currentProgram }, ref) => {
@@ -36,11 +33,13 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
         key={channel.id}
         ref={ref}
         className={clsx(
-          PLAYER_LIST_SURFACE_BASE_CLASS,
-          PLAYER_CHANNEL_LIST_ITEM_CLASS,
-          "group flex w-full cursor-pointer items-center gap-2 p-2 text-left",
-          isCurrentChannel ? PLAYER_LIST_SURFACE_SELECTED_CLASS : PLAYER_LIST_SURFACE_DEFAULT_CLASS,
-          !isCurrentChannel && PLAYER_LIST_SURFACE_HOVER_CLASS,
+          surfaceClass({
+            material: "clear",
+            level: "tile",
+            state: isCurrentChannel ? "active" : "interactive",
+          }),
+          CHANNEL_ITEM_CLASS,
+          "group relative isolate flex w-full cursor-pointer items-center gap-2 overflow-hidden rounded-2xl p-2 text-left text-card-foreground",
         )}
         onClick={handleClick}
       >

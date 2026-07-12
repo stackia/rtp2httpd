@@ -1,0 +1,31 @@
+---
+name: design-system
+description: Maintain the rtp2httpd Web UI design system. Always use when creating or editing UI components or visual UI elements in the status page or web player, and when changing themes, colors, glass materials, elevation, shadows, highlights, status semantics, or shared visual styling.
+---
+
+# Design System
+
+Keep visual decisions shared across the status page and web player.
+
+## Architecture
+
+- Define theme primitives in `web-ui/src/index.css` under the light and dark theme scopes.
+- Compose shared materials, levels, states, density, and semantic tone through `web-ui/src/lib/design-system.ts`.
+- Compose shared utilities in components; keep component files focused on layout and exceptional states.
+- Treat material, spatial elevation, and semantic tone as separate decisions.
+
+## Selection
+
+- Use frost for persistent page structure, clear for nested or interactive content, and smoke over video.
+- Use panel for major regions, inset for groups, tile for repeated units, bar for anchored strips, float for transient UI, and modal for blocking UI.
+- Use dense only when content must remain readable over a complex background.
+- Use active only for the current selection or playback target; use semantic tone only to communicate status.
+- Add scrims only behind blocking overlays. Keep decorative, performance, and component-specific effects local.
+
+## Workflow
+
+1. Compose an existing material and level before extending the shared system.
+2. Preserve both light and dark behavior and keep player overlays readable over video.
+3. Avoid duplicating arbitrary gradients, shadows, blur recipes, or semantic glows.
+4. Keep state meaning independent from elevation; color must not be the only state cue.
+5. Run the Web UI type check, formatter/linter, and production build after changes.

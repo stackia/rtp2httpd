@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
+import { surfaceClass, TEXT_CLASS } from "../../lib/design-system";
 import { formatBandwidth, formatBytes } from "../../lib/format";
 import type { Locale } from "../../lib/locale";
 import type { PoolStats, WorkerEntry } from "../../types";
@@ -8,12 +9,6 @@ import { Badge } from "../ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Progress } from "../ui/progress";
 import { Separator } from "../ui/separator";
-import {
-  STATUS_INSET_CLASS,
-  STATUS_METRIC_TILE_CLASS,
-  STATUS_PANEL_CLASS,
-  STATUS_SECTION_TITLE_CLASS,
-} from "./classnames";
 
 interface WorkersSectionProps {
   workers: WorkerEntry[];
@@ -24,14 +19,21 @@ interface WorkersSectionProps {
 export function WorkersSection({ workers, locale, bandwidthUnit }: WorkersSectionProps) {
   const t = useStatusTranslation(locale);
   return (
-    <section className={clsx(STATUS_PANEL_CLASS, "p-5 sm:p-6")}>
+    <section
+      className={clsx(surfaceClass({ material: "frost", level: "panel" }), "relative isolate rounded-3xl p-5 sm:p-6")}
+    >
       <div className="mb-5 flex items-center justify-between">
         <div>
-          <h2 className={STATUS_SECTION_TITLE_CLASS}>{t("workerStats")}</h2>
+          <h2 className={TEXT_CLASS.sectionTitle}>{t("workerStats")}</h2>
         </div>
       </div>
       {workers.length === 0 ? (
-        <div className={clsx(STATUS_INSET_CLASS, "border-dashed p-6 text-sm text-muted-foreground")}>
+        <div
+          className={clsx(
+            surfaceClass({ material: "clear", level: "inset" }),
+            "rounded-2xl border-dashed p-6 text-sm text-muted-foreground",
+          )}
+        >
           {t("noWorkerStats")}
         </div>
       ) : (
@@ -50,7 +52,7 @@ export function WorkersSection({ workers, locale, bandwidthUnit }: WorkersSectio
             return (
               <Card
                 key={worker.id}
-                className="overflow-hidden rounded-2xl border border-border/50 bg-card/72 shadow-[0_16px_42px_-34px_rgba(15,23,42,0.46)] dark:border-white/8 dark:bg-white/4 dark:shadow-[0_20px_48px_-36px_rgba(0,0,0,0.68)]"
+                className={clsx(surfaceClass({ material: "clear", level: "inset" }), "overflow-hidden rounded-2xl")}
               >
                 <CardHeader className="pb-4">
                   <div className="flex items-start justify-between gap-4">
@@ -74,8 +76,8 @@ export function WorkersSection({ workers, locale, bandwidthUnit }: WorkersSectio
                       <div
                         key={key}
                         className={clsx(
-                          STATUS_METRIC_TILE_CLASS,
-                          "flex min-h-9 items-center justify-between gap-3 px-3 py-2 transition-colors hover:border-primary/15 hover:bg-primary/3",
+                          surfaceClass({ material: "clear", level: "tile", state: "interactive" }),
+                          "flex min-h-9 items-center justify-between gap-3 rounded-xl px-3 py-2",
                         )}
                       >
                         <span className="min-w-0 font-medium leading-4 text-muted-foreground/80">{label}</span>
@@ -124,7 +126,7 @@ function PoolCard({ title, pool, locale }: PoolCardProps) {
         ? "bg-gradient-to-r from-amber-300 to-orange-500 shadow-[0_0_12px_rgba(245,158,11,0.4)]"
         : "bg-gradient-to-r from-emerald-400 to-cyan-400 shadow-[0_0_12px_rgba(16,185,129,0.35)]";
   return (
-    <div className={clsx(STATUS_INSET_CLASS, "space-y-3 p-4")}>
+    <div className={clsx(surfaceClass({ material: "clear", level: "inset" }), "space-y-3 rounded-2xl p-4")}>
       <div className="flex items-center justify-between text-sm font-medium text-muted-foreground">
         <span>{title}</span>
         <span className="font-mono text-foreground/80 tabular-nums">{utilization.toFixed(1)}%</span>

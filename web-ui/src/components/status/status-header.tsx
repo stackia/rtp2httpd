@@ -2,11 +2,11 @@ import { clsx } from "clsx";
 import { Activity, Globe, Moon, Sun, Wifi } from "lucide-react";
 import type { ReactNode } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
+import { surfaceClass } from "../../lib/design-system";
 import { LOCALE_OPTIONS, type Locale } from "../../lib/locale";
 import { type BandwidthUnit, THEME_LABEL_KEYS, THEME_MODES, type ThemeMode } from "../../types/ui";
 import { Badge } from "../ui/badge";
 import { SelectBox } from "../ui/select-box";
-import { STATUS_CONTROL_GROUP_CLASS, STATUS_PANEL_CLASS } from "./classnames";
 
 interface StatusHeaderProps {
   statusAccent: string;
@@ -21,6 +21,9 @@ interface StatusHeaderProps {
   bandwidthUnit: BandwidthUnit;
   onBandwidthUnitChange: (unit: BandwidthUnit) => void;
 }
+
+const HEADER_WASH_CLASS =
+  "pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(99,102,241,0.14),transparent_36%),radial-gradient(circle_at_92%_-20%,rgba(14,165,233,0.12),transparent_34%)]";
 
 const BANDWIDTH_UNIT_OPTIONS: Array<{ value: BandwidthUnit; label: string }> = [
   { value: "bits", label: "Mbps" },
@@ -45,7 +48,12 @@ function HeaderSelect<T extends string>({
   containerClassName = "md:min-w-[128px]",
 }: HeaderSelectProps<T>) {
   return (
-    <div className={clsx("group flex w-full items-center gap-1.5 md:w-auto md:shrink-0", STATUS_CONTROL_GROUP_CLASS)}>
+    <div
+      className={clsx(
+        "group flex w-full items-center gap-1.5 px-3 py-0.5 md:w-auto md:shrink-0",
+        surfaceClass({ material: "clear", level: "tile", state: "interactive" }),
+      )}
+    >
       <span className="flex size-6 shrink-0 items-center justify-center text-primary/75 transition-colors group-hover:text-primary">
         {icon}
       </span>
@@ -84,10 +92,11 @@ export function StatusHeader({
   return (
     <header
       className={clsx(
-        STATUS_PANEL_CLASS,
-        "overflow-hidden bg-[radial-gradient(circle_at_0%_0%,rgba(99,102,241,0.14),transparent_36%),radial-gradient(circle_at_92%_-20%,rgba(14,165,233,0.12),transparent_34%)] p-4 sm:p-5",
+        surfaceClass({ material: "frost", level: "panel" }),
+        "relative isolate overflow-hidden rounded-3xl p-4 sm:p-5",
       )}
     >
+      <div aria-hidden className={HEADER_WASH_CLASS} />
       <div className="relative flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-3">
           <div className="flex min-h-11 flex-wrap items-center gap-2 text-sm">

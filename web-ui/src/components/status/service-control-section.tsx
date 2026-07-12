@@ -2,9 +2,9 @@ import { clsx } from "clsx";
 import { RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
+import { surfaceClass, TEXT_CLASS } from "../../lib/design-system";
 import type { Locale } from "../../lib/locale";
 import { Button } from "../ui/button";
-import { STATUS_PANEL_CLASS, STATUS_SECTION_TITLE_CLASS } from "./classnames";
 
 interface ServiceControlSectionProps {
   onReloadConfig: () => Promise<void>;
@@ -54,10 +54,15 @@ export function ServiceControlSection({
   };
 
   return (
-    <section className={clsx(STATUS_PANEL_CLASS, "flex flex-col p-5 sm:p-6")}>
+    <section
+      className={clsx(
+        surfaceClass({ material: "frost", level: "panel" }),
+        "relative isolate flex flex-col rounded-3xl p-5 sm:p-6",
+      )}
+    >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <h2 className={STATUS_SECTION_TITLE_CLASS}>{t("serviceControl")}</h2>
+          <h2 className={TEXT_CLASS.sectionTitle}>{t("serviceControl")}</h2>
         </div>
         <div className="flex flex-wrap items-center justify-start gap-3 sm:justify-end">
           <Button
