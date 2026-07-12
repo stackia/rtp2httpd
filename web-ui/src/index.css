@@ -177,6 +177,13 @@ html.player-theme-simple .player-performance-scope *::after {
   transition-duration: 0.01ms;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  html.player-theme-simple .player-performance-loading-spinner {
+    animation-duration: 1s;
+    animation-iteration-count: infinite;
+  }
+}
+
 html.player-theme-simple .player-performance-page-background {
   background-color: #f1f5f9;
   background-image: none;

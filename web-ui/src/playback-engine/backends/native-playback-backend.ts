@@ -1,3 +1,4 @@
+import { isLGWebOS } from "../../lib/platform";
 import { defaultConfig, type PlayerConfig } from "../config";
 import { PlayerErrors } from "../errors";
 import type { LiveSessionAnchor, PlaybackBackend, PlayerEventMap, PlayerMediaInfo, PlayerSegment } from "../types";
@@ -27,6 +28,8 @@ function containsTime(ranges: TimeRanges, time: number): boolean {
 
 export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Partial<PlayerConfig>): PlaybackBackend {
   const fullConfig: PlayerConfig = { ...defaultConfig, ...config };
+  // LG reports seekable/buffered ranges for live TS but ignores currentTime writes within them.
+  const alwaysRebuildSeek = isLGWebOS();
   const handlers: { [K in keyof PlayerEventMap]: Set<PlayerEventMap[K]> } = {
     error: new Set(),
     "seek-needed": new Set(),
@@ -223,7 +226,10 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
       const entry = currentEntry();
       if (!entry) return;
       const localTarget = mediaOrigin + seconds - entry.start;
-      if (containsTime(video.seekable, localTarget) || containsTime(video.buffered, localTarget)) {
+      if (
+        !alwaysRebuildSeek &&
+        (containsTime(video.seekable, localTarget) || containsTime(video.buffered, localTarget))
+      ) {
         try {
           video.currentTime = localTarget;
           return;

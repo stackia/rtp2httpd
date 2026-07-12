@@ -238,7 +238,7 @@ function PlayerTopLeftOverlay({
             </span>
             <div className="relative h-3 w-3 shrink-0 md:h-3.5 md:w-3.5 md:[@container_video_(max-height:_320px)]:h-3 md:[@container_video_(max-height:_320px)]:w-3">
               <div className="absolute inset-0 rounded-full border border-blue-100/25" />
-              <div className="absolute inset-0 animate-spin rounded-full border border-blue-200 border-t-transparent shadow-[0_0_8px_rgba(147,197,253,0.5)]" />
+              <div className="player-performance-loading-spinner absolute inset-0 animate-spin rounded-full border border-blue-200 border-t-transparent shadow-[0_0_8px_rgba(147,197,253,0.5)]" />
             </div>
             <span className="min-w-0 truncate text-blue-50/70 text-xs md:text-sm md:[@container_video_(max-height:_320px)]:text-xs">
               {loadingText}

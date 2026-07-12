@@ -303,6 +303,11 @@ function PlayerPage() {
 
       setMetadata(parsed);
 
+      // Start the initial channel while the EPG loads, but keep the startup overlay visible until parsing finishes.
+      const lastChannelId = getLastChannelId();
+      const channelToSelect = parsed.channels.find((channel) => channel.id === lastChannelId) ?? parsed.channels[0];
+      selectChannel(channelToSelect);
+
       // Load EPG if available
       if (parsed.tvgUrl) {
         // Build set of valid channel IDs from M3U for filtering
@@ -317,38 +322,20 @@ function PlayerPage() {
         // Build EPG URL with token if available
         const epgUrl = parsed.tvgUrl.replace(".gz", "");
 
-        // Load EPG and filter to only channels in M3U
-        loadEPG(epgUrl, validChannelIds)
-          .then((epg) => {
-            // Fill gaps in EPG data with 2-hour fallback programs for catchup-capable channels
-            const filledEpg = fillEPGGaps(epg, parsed.channels);
-            startTransition(() => setEpgData(filledEpg));
-          })
-          .catch((err) => {
-            console.error("Failed to load EPG:", err);
-            // Even if EPG loading fails, generate fallback programs for catchup-capable channels
-            const fallbackEpg = fillEPGGaps({}, parsed.channels);
-            startTransition(() => setEpgData(fallbackEpg));
-          });
+        // Keep the startup overlay visible while the EPG is fetched and parsed on the main thread.
+        try {
+          const epg = await loadEPG(epgUrl, validChannelIds);
+          // Fill gaps in EPG data with 2-hour fallback programs for catchup-capable channels.
+          setEpgData(fillEPGGaps(epg, parsed.channels));
+        } catch (err) {
+          console.error("Failed to load EPG:", err);
+          // Even if EPG loading fails, generate fallback programs for catchup-capable channels.
+          setEpgData(fillEPGGaps({}, parsed.channels));
+        }
       } else {
         // No EPG URL provided, generate fallback programs for catchup-capable channels
         const fallbackEpg = fillEPGGaps({}, parsed.channels);
-        startTransition(() => setEpgData(fallbackEpg));
-      }
-
-      // Try to restore last played channel, otherwise select first channel
-      if (parsed.channels.length > 0) {
-        const lastChannelId = getLastChannelId();
-        let channelToSelect = parsed.channels[0];
-
-        if (lastChannelId) {
-          const lastChannel = parsed.channels.find((ch) => ch.id === lastChannelId);
-          if (lastChannel) {
-            channelToSelect = lastChannel;
-          }
-        }
-
-        selectChannel(channelToSelect);
+        setEpgData(fallbackEpg);
       }
 
       // Trigger reveal animation
@@ -602,7 +589,7 @@ function PlayerPage() {
           >
             <div className="text-center space-y-4">
               {/* Loading spinner */}
-              <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-blue-950/10 border-t-blue-500 border-r-indigo-500 shadow-[0_0_28px_rgba(59,130,246,0.22)] dark:border-blue-100/10 dark:border-t-blue-300 dark:border-r-indigo-400" />
+              <div className="player-performance-loading-spinner mx-auto h-12 w-12 animate-spin rounded-full border-4 border-blue-950/10 border-t-blue-500 border-r-indigo-500 shadow-[0_0_28px_rgba(59,130,246,0.22)] dark:border-blue-100/10 dark:border-t-blue-300 dark:border-r-indigo-400" />
             </div>
           </div>
         )}
