@@ -18,7 +18,7 @@ import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import { createProgramTimeline, programProgressToWallClock } from "../../lib/program-timeline";
 import type { PlayerMediaInfo, PlayerRenderState } from "../../mpegts";
-import { mseToWallClock } from "../../mpegts/player/wall-clock";
+import { isNearLiveWallClock, type LiveSessionAnchor, mseToWallClock } from "../../mpegts/player/wall-clock";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PLAYER_CONTROL_BUTTON_CLASS, PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 import { PlayerMediaBadges } from "./player-media-badges";
@@ -45,6 +45,7 @@ interface PlayerControlsProps {
   autoDeinterlace: boolean;
   // The absolute time of the last seek position (null for live mode)
   seekStartTime: Date;
+  liveSessionAnchor: LiveSessionAnchor | null;
   // Video element controls
   isPlaying: boolean;
   onPlayPause: () => void;
@@ -83,6 +84,7 @@ export function PlayerControls({
   renderState,
   autoDeinterlace,
   seekStartTime,
+  liveSessionAnchor,
   isPlaying,
   onPlayPause,
   volume,
@@ -275,6 +277,7 @@ export function PlayerControls({
     if (previewPosition === null) return null;
     return getTimeAtPosition(previewPosition);
   }, [previewPosition, getTimeAtPosition]);
+  const previewGoesLive = previewTime ? isNearLiveWallClock(previewTime, liveSessionAnchor, seekStartTime) : false;
   const isScrubbing = scrubPosition !== null;
 
   return (
@@ -350,7 +353,7 @@ export function PlayerControls({
                   style={{ left: `clamp(2.5rem, ${previewPosition}%, calc(100% - 2.5rem))` }}
                 >
                   <PlayerSelectedGlassLayers />
-                  <span className="relative z-10">{formatTime(previewTime, true)}</span>
+                  <span className="relative z-10">{previewGoesLive ? t("goLive") : formatTime(previewTime, true)}</span>
                 </div>
               )}
             </>

@@ -1893,6 +1893,7 @@ export function VideoPlayer({
             renderState={slotRenderStates[visibleSlotId]}
             autoDeinterlace={autoDeinterlace}
             seekStartTime={streamStartTime}
+            liveSessionAnchor={liveSessionAnchor}
             isPlaying={isPlaying}
             onPlayPause={togglePlayPause}
             volume={volume}
