@@ -93,7 +93,7 @@ export function StatusHeader({
         "relative isolate overflow-hidden rounded-3xl p-4 sm:p-5",
       )}
     >
-      <div aria-hidden className={EFFECT_CLASS.statusPanelWash} />
+      <div aria-hidden className={EFFECT_CLASS.ambientWash} />
       <div className="relative flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="space-y-3">
           <div className="flex min-h-11 flex-wrap items-center gap-2 text-sm">

@@ -14,7 +14,7 @@ import { useSse } from "../hooks/use-sse";
 import { useStatusApi } from "../hooks/use-status-api";
 import { useStatusTranslation } from "../hooks/use-status-translation";
 import { useTheme } from "../hooks/use-theme";
-import { CANVAS_CLASS, EFFECT_CLASS, semanticClass } from "../lib/design-system";
+import { CANVAS_CLASS, semanticClass } from "../lib/design-system";
 import { formatBandwidth, formatBytes, formatDuration } from "../lib/format";
 import { mergeClients } from "../lib/status";
 import type { ClientRow, LogEntry, StatusPayload } from "../types";
@@ -191,24 +191,21 @@ function StatusPage() {
       <title>{t("title")}</title>
       <div className={clsx(CANVAS_CLASS.status, "pb-12")}>
         <div className="relative z-10 mx-auto flex w-full flex-col gap-4 p-3 sm:gap-6 sm:p-6">
-          <div className="relative isolate flex flex-col gap-4 sm:gap-6">
-            <div aria-hidden className={EFFECT_CLASS.statusHeroHalo} />
-            <StatusHeader
-              statusAccent={statusAccent}
-              statusLabel={statusLabel}
-              lastUpdated={lastUpdated}
-              uptime={uptime}
-              version={payload?.version ?? "--"}
-              locale={locale}
-              onLocaleChange={setLocale}
-              theme={theme}
-              onThemeChange={setTheme}
-              bandwidthUnit={bandwidthUnit}
-              onBandwidthUnitChange={setBandwidthUnit}
-            />
+          <StatusHeader
+            statusAccent={statusAccent}
+            statusLabel={statusLabel}
+            lastUpdated={lastUpdated}
+            uptime={uptime}
+            version={payload?.version ?? "--"}
+            locale={locale}
+            onLocaleChange={setLocale}
+            theme={theme}
+            onThemeChange={setTheme}
+            bandwidthUnit={bandwidthUnit}
+            onBandwidthUnitChange={setBandwidthUnit}
+          />
 
-            <SummaryStats stats={stats} />
-          </div>
+          <SummaryStats stats={stats} />
 
           <ConnectionsSection
             clients={clients}

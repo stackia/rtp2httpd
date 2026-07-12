@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import type { ComponentType } from "react";
-import { EFFECT_CLASS, type SurfaceTone, semanticClass, surfaceClass } from "../../lib/design-system";
+import { type SurfaceTone, semanticClass, surfaceClass } from "../../lib/design-system";
 import { Card, CardContent, CardDescription, CardHeader } from "../ui/card";
 
 export type StatTone = Exclude<SurfaceTone, "neutral" | "danger">;
@@ -23,8 +23,8 @@ export function StatCard({ title, value, icon: Icon, tone = "primary" }: StatCar
       <div
         aria-hidden
         className={clsx(
-          EFFECT_CLASS.statusTileWash,
-          "opacity-85 transition-opacity duration-300 group-hover:opacity-100",
+          "pointer-events-none absolute inset-0 opacity-85 transition-opacity duration-300 group-hover:opacity-95",
+          semanticClass(tone, "wash"),
         )}
       />
       <CardHeader className="relative flex flex-row items-center justify-between gap-0 pb-2">

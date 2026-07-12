@@ -178,12 +178,8 @@ export const SCRIM_CLASS = {
 } as const;
 
 export const EFFECT_CLASS = {
-  statusHeroHalo:
-    "pointer-events-none absolute -inset-x-3 -top-3 -bottom-6 -z-10 rounded-[3.5rem] bg-[radial-gradient(ellipse_78%_94%_at_0%_0%,hsl(var(--primary)/0.22)_0%,hsl(var(--primary)/0.09)_52%,transparent_78%)] dark:bg-[radial-gradient(ellipse_78%_94%_at_0%_0%,hsl(var(--primary)/0.18)_0%,hsl(var(--primary)/0.07)_52%,transparent_78%)]",
-  statusPanelWash:
-    "pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_92%_150%_at_0%_0%,hsl(var(--primary)/0.19)_0%,hsl(var(--primary)/0.075)_48%,transparent_74%)] dark:bg-[radial-gradient(ellipse_92%_150%_at_0%_0%,hsl(var(--primary)/0.16)_0%,hsl(var(--primary)/0.06)_48%,transparent_74%)]",
-  statusTileWash:
-    "pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_120%_150%_at_0%_0%,hsl(var(--primary)/0.16)_0%,hsl(var(--primary)/0.055)_46%,transparent_72%)] dark:bg-[radial-gradient(ellipse_120%_150%_at_0%_0%,hsl(var(--primary)/0.14)_0%,hsl(var(--primary)/0.045)_46%,transparent_72%)]",
+  ambientWash:
+    "pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(99,102,241,0.14),transparent_36%),radial-gradient(circle_at_92%_-20%,rgba(14,165,233,0.12),transparent_34%)]",
   selectionTint:
     "pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(135deg,rgba(147,197,253,0.18)_0%,rgba(59,130,246,0.13)_42%,rgba(99,102,241,0.2)_100%)] opacity-0 transition-opacity duration-300 ease-out motion-reduce:transition-none",
   specular:
