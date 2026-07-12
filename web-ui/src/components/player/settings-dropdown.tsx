@@ -26,6 +26,7 @@ interface SettingsDropdownProps {
   onAutoDeinterlaceChange: (enabled: boolean) => void;
   pictureEnhancement: boolean;
   onPictureEnhancementChange: (enabled: boolean) => void;
+  showSeamlessSwitch?: boolean;
   showVideoProcessing?: boolean;
 }
 
@@ -49,6 +50,7 @@ function SettingsDropdownComponent({
   onAutoDeinterlaceChange,
   pictureEnhancement,
   onPictureEnhancementChange,
+  showSeamlessSwitch = true,
   showVideoProcessing = true,
 }: SettingsDropdownProps) {
   const t = usePlayerTranslation(locale);
@@ -163,14 +165,16 @@ function SettingsDropdownComponent({
             </div>
 
             {/* Seamless channel/source switch (dual-slot preload) */}
-            <LabeledSwitch
-              label={t("seamlessSwitch")}
-              checked={seamlessSwitch}
-              onCheckedChange={onSeamlessSwitchChange}
-              className={SETTING_SWITCH_CLASS}
-              labelClassName={SETTING_SWITCH_LABEL_CLASS}
-              switchClassName={SETTING_SWITCH_CONTROL_CLASS}
-            />
+            {showSeamlessSwitch && (
+              <LabeledSwitch
+                label={t("seamlessSwitch")}
+                checked={seamlessSwitch}
+                onCheckedChange={onSeamlessSwitchChange}
+                className={SETTING_SWITCH_CLASS}
+                labelClassName={SETTING_SWITCH_LABEL_CLASS}
+                switchClassName={SETTING_SWITCH_CONTROL_CLASS}
+              />
+            )}
 
             {/* Video processing group: deinterlace + picture enhancement.
                 Both only take effect for 1080p-and-below content, so the

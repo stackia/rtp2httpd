@@ -18,6 +18,7 @@ import { useTheme } from "../hooks/use-theme";
 import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG } from "../lib/epg-parser";
 import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
+import { isLGWebOS } from "../lib/platform";
 import {
   getAutoDeinterlace,
   getLastChannelId,
@@ -80,6 +81,7 @@ function shouldInsetSidebarRight(): boolean {
 function PlayerPage() {
   const playbackBackendKind = getPlaybackBackendKind();
   const supportsMSEVideoProcessing = playbackBackendKind === "mse";
+  const supportsSeamlessSwitch = !isLGWebOS();
   const { locale, setLocale } = useLocale("rtp2httpd-player-locale");
   const { theme, setTheme } = useTheme("rtp2httpd-player-theme");
   const { appearance, setAppearance } = usePlayerAppearance();
@@ -98,7 +100,7 @@ function PlayerPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [insetSidebarRight, setInsetSidebarRight] = useState(shouldInsetSidebarRight);
-  const [seamlessSwitch, setSeamlessSwitch] = useState(() => getSeamlessSwitch());
+  const [seamlessSwitch, setSeamlessSwitch] = useState(() => (supportsSeamlessSwitch ? getSeamlessSwitch() : false));
   const [autoDeinterlace, setAutoDeinterlace] = useState(() =>
     supportsMSEVideoProcessing ? getAutoDeinterlace() : false,
   );
@@ -423,10 +425,14 @@ function PlayerPage() {
     }
   }, [isMobile]);
 
-  const handleSeamlessSwitchChange = useCallback((enabled: boolean) => {
-    setSeamlessSwitch(enabled);
-    saveSeamlessSwitch(enabled);
-  }, []);
+  const handleSeamlessSwitchChange = useCallback(
+    (enabled: boolean) => {
+      if (!supportsSeamlessSwitch) return;
+      setSeamlessSwitch(enabled);
+      saveSeamlessSwitch(enabled);
+    },
+    [supportsSeamlessSwitch],
+  );
 
   const handleAutoDeinterlaceChange = useCallback((enabled: boolean) => {
     setAutoDeinterlace(enabled);
@@ -458,6 +464,7 @@ function PlayerPage() {
           onAppearanceChange={setAppearance}
           seamlessSwitch={seamlessSwitch}
           onSeamlessSwitchChange={handleSeamlessSwitchChange}
+          showSeamlessSwitch={supportsSeamlessSwitch}
           autoDeinterlace={autoDeinterlace}
           onAutoDeinterlaceChange={handleAutoDeinterlaceChange}
           pictureEnhancement={pictureEnhancement}
@@ -479,6 +486,7 @@ function PlayerPage() {
     handleSeamlessSwitchChange,
     handleAutoDeinterlaceChange,
     handlePictureEnhancementChange,
+    supportsSeamlessSwitch,
     supportsMSEVideoProcessing,
   ]);
 
@@ -512,7 +520,7 @@ function PlayerPage() {
               onToggleSidebar={handleToggleSidebar}
               isFullscreen={isFullscreen}
               onFullscreenToggle={handleFullscreenToggle}
-              seamlessSwitch={seamlessSwitch}
+              seamlessSwitch={supportsSeamlessSwitch && seamlessSwitch}
               autoDeinterlace={autoDeinterlace}
               pictureEnhancement={pictureEnhancement}
               activeSourceIndex={activeSourceIndex}
