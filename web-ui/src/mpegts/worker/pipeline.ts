@@ -549,11 +549,14 @@ class Pipeline {
           const error = e as Error;
           Log.e(this.TAG, `Segment source failed: ${error.message}`);
           if (e instanceof HlsRequestError) {
-            this._callbacks.onIOError(LoaderErrors.HTTP_STATUS_CODE_INVALID, {
-              code: e.code,
-              msg: e.statusText,
-              url: e.url,
-            });
+            this._callbacks.onIOError(
+              e.code !== undefined ? LoaderErrors.HTTP_STATUS_CODE_INVALID : LoaderErrors.REQUEST_FAILED,
+              {
+                code: e.code ?? -1,
+                msg: e.statusText || e.message,
+                url: e.url,
+              },
+            );
           } else {
             this._callbacks.onIOError(LoaderErrors.EXCEPTION, { code: -1, msg: error.message });
           }
@@ -829,10 +832,19 @@ class Pipeline {
 
   private async _loadFmp4Init(initUrl: string, runId: number): Promise<void> {
     this._fmp4Mode = true;
-    const response = await fetch(initUrl, {
-      headers: this._config.headers,
-      referrerPolicy: (this._config.referrerPolicy as ReferrerPolicy | undefined) ?? "no-referrer-when-downgrade",
-    });
+    let response: Response;
+    try {
+      response = await fetch(initUrl, {
+        headers: this._config.headers,
+        referrerPolicy: (this._config.referrerPolicy as ReferrerPolicy | undefined) ?? "no-referrer-when-downgrade",
+      });
+    } catch (error) {
+      throw new LoadError(LoaderErrors.REQUEST_FAILED, {
+        code: -1,
+        msg: error instanceof Error ? error.message : String(error),
+        url: initUrl,
+      });
+    }
     if (this._runId !== runId) return;
     if (!response.ok) {
       throw new LoadError(LoaderErrors.HTTP_STATUS_CODE_INVALID, {

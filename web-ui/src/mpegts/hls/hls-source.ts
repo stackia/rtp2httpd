@@ -23,11 +23,12 @@ const MAX_REFRESH_FAILURES = 5;
 
 export class HlsRequestError extends Error {
   constructor(
-    public readonly code: number,
-    public readonly statusText: string,
     public readonly url: string,
+    public readonly code?: number,
+    public readonly statusText?: string,
+    message = code !== undefined ? `HTTP ${code}${statusText ? ` ${statusText}` : ""}` : "Request failed",
   ) {
-    super(`HTTP ${code}${statusText ? ` ${statusText}` : ""}`);
+    super(message);
     this.name = "HlsRequestError";
   }
 }
@@ -214,13 +215,20 @@ export class HlsSource implements SegmentSource {
       this.preloaded = null;
       return parseM3U8(text, baseUrl);
     }
-    const response = await fetch(url, {
-      headers: this.config.headers,
-      signal: this.abort.signal,
-      referrerPolicy: (this.config.referrerPolicy as ReferrerPolicy | undefined) ?? "no-referrer-when-downgrade",
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: this.config.headers,
+        signal: this.abort.signal,
+        referrerPolicy: (this.config.referrerPolicy as ReferrerPolicy | undefined) ?? "no-referrer-when-downgrade",
+      });
+    } catch (error) {
+      if (this.abort.signal.aborted) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new HlsRequestError(url, undefined, undefined, message);
+    }
     if (!response.ok) {
-      throw new HlsRequestError(response.status, response.statusText, response.url || url);
+      throw new HlsRequestError(response.url || url, response.status, response.statusText);
     }
     const text = await response.text();
     return parseM3U8(text, response.url || url);

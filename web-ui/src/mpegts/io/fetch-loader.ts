@@ -23,6 +23,7 @@ export interface DataSource {
 
 export const LoaderErrors = {
   EXCEPTION: "Exception",
+  REQUEST_FAILED: "RequestFailed",
   HTTP_STATUS_CODE_INVALID: "HttpStatusCodeInvalid",
   EARLY_EOF: "EarlyEof",
 } as const;
@@ -340,7 +341,7 @@ class FetchLoader {
         const err = e as Record<string, unknown>;
         const errInfo: LoaderErrorInfo = { code: -1, msg: String(err.message ?? ""), url: request.url };
         if (this.onError) {
-          this._handleLoaderError(LoaderErrors.EXCEPTION, errInfo);
+          this._handleLoaderError(LoaderErrors.REQUEST_FAILED, errInfo);
         } else {
           throw e;
         }

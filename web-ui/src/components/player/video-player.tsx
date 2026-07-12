@@ -695,6 +695,8 @@ export function VideoPlayer({
     let errorDisplay: PlaybackErrorDisplay = { message: errorMessage };
     let decodingErrorRetry = false;
     const isHttpStatusError = playerError.category === "io" && playerError.detail === "HttpStatusCodeInvalid";
+    const isUpstreamRequestError =
+      isHttpStatusError || (playerError.category === "io" && playerError.detail === "RequestFailed");
 
     if (playerError.category === "media") {
       if (playerError.detail === "MediaMSEError") {
@@ -717,18 +719,18 @@ export function VideoPlayer({
         errorMessage = `${t("mediaError")}: ${playerError.detail}`;
       }
     } else if (playerError.category === "io") {
-      if (isHttpStatusError) {
+      if (isUpstreamRequestError) {
         const status = [playerError.code, playerError.info]
-          .filter((value) => value !== undefined && value !== "")
+          .filter((value) => value !== undefined && value !== "" && value !== -1)
           .join(" ");
-        errorMessage = `${t("upstreamRequestFailed")}${status ? `: HTTP ${status}` : ""}${
+        errorMessage = `${t("upstreamRequestFailed")}${isHttpStatusError && status ? `: HTTP ${status}` : ""}${
           playerError.url ? ` (${playerError.url})` : ""
         }`;
         errorDisplay = {
           message: t("upstreamRequestFailed"),
           description: t("upstreamRequestFailedDescription"),
-          statusCode: playerError.code,
-          statusText: playerError.info,
+          statusCode: isHttpStatusError ? playerError.code : undefined,
+          statusText: isHttpStatusError ? playerError.info : undefined,
           requestUrl: playerError.url ? decodeRequestUrl(playerError.url) : undefined,
           suggestion: t("upstreamRequestFailedSuggestion"),
         };
@@ -737,7 +739,7 @@ export function VideoPlayer({
       }
     }
 
-    if (!isHttpStatusError) {
+    if (!isUpstreamRequestError) {
       errorDisplay = { message: errorMessage };
     }
 
