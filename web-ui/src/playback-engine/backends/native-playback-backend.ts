@@ -17,6 +17,14 @@ function mediaErrorMessage(error: MediaError | null): string {
   return error.message || `HTMLMediaElement.error code=${error.code}`;
 }
 
+function containsTime(ranges: TimeRanges, time: number): boolean {
+  if (!Number.isFinite(time)) return false;
+  for (let i = 0; i < ranges.length; i++) {
+    if (time >= ranges.start(i) && time <= ranges.end(i)) return true;
+  }
+  return false;
+}
+
 export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Partial<PlayerConfig>): PlaybackBackend {
   const fullConfig: PlayerConfig = { ...defaultConfig, ...config };
   const handlers: { [K in keyof PlayerEventMap]: Set<PlayerEventMap[K]> } = {
@@ -215,10 +223,12 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
       const entry = currentEntry();
       if (!entry) return;
       const localTarget = mediaOrigin + seconds - entry.start;
-      for (let i = 0; i < video.seekable.length; i++) {
-        if (localTarget >= video.seekable.start(i) && localTarget <= video.seekable.end(i)) {
+      if (containsTime(video.seekable, localTarget) || containsTime(video.buffered, localTarget)) {
+        try {
           video.currentTime = localTarget;
           return;
+        } catch {
+          // Let the upper layer rebuild the catch-up URL when the native pipeline rejects the buffered seek.
         }
       }
       emit("seek-needed", seconds);

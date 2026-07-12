@@ -56,7 +56,7 @@ function SettingsDropdownComponent({
       <div
         id={SETTINGS_POPOVER_ID}
         popover="auto"
-        className="fixed inset-auto m-0 mt-1 w-52 max-w-[calc(100vw-1rem)] rounded-2xl border border-blue-900/12 bg-[linear-gradient(145deg,rgba(255,255,255,0.9),rgba(238,242,255,0.82))] p-0 shadow-[0_20px_55px_rgba(30,64,175,0.18),inset_0_1px_0_rgba(255,255,255,0.82)] [position-anchor:--player-settings-trigger] [right:anchor(right)] [top:anchor(bottom)] backdrop-blur-2xl dark:border-blue-100/15 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.94),rgba(26,24,72,0.9))] dark:shadow-[0_22px_60px_rgba(1,7,24,0.62),inset_0_1px_0_rgba(255,255,255,0.08)]"
+        className="player-performance-panel-background fixed inset-auto m-0 mt-1 w-52 max-w-[calc(100vw-1rem)] rounded-2xl border border-blue-900/12 bg-[linear-gradient(145deg,rgba(255,255,255,0.9),rgba(238,242,255,0.82))] p-0 shadow-[0_20px_55px_rgba(30,64,175,0.18),inset_0_1px_0_rgba(255,255,255,0.82)] [position-anchor:--player-settings-trigger] [right:anchor(right)] [top:anchor(bottom)] backdrop-blur-2xl dark:border-blue-100/15 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.94),rgba(26,24,72,0.9))] dark:shadow-[0_22px_60px_rgba(1,7,24,0.62),inset_0_1px_0_rgba(255,255,255,0.08)]"
       >
         <div className="space-y-3.5 p-3">
           {/* Language Select */}

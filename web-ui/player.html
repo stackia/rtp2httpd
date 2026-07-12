@@ -24,6 +24,43 @@
             : window.matchMedia("(display-mode: standalone)").matches;
         root.classList.toggle("player-standalone", isStandalone);
 
+        const ua = navigator.userAgent;
+        const deviceMemory = Number.isFinite(navigator.deviceMemory) ? navigator.deviceMemory : undefined;
+        const hardwareConcurrency = Number.isFinite(navigator.hardwareConcurrency)
+          ? navigator.hardwareConcurrency
+          : undefined;
+        const isLGWebOS =
+          /(?:Web0S|webOS)/i.test(ua) || (/\bNetCast\b/i.test(ua) && /\b(?:SmartTV|Colt)\/[\d.]+/i.test(ua));
+        const isAndroid = /Android|HarmonyOS|OpenHarmony/i.test(ua);
+        const isAndroidTV =
+          isAndroid && /\b(?:TV|SmartTV|GoogleTV|BRAVIA|SHIELD|MiTV|MIBOX)\b|\bAFT[A-Z0-9]+\b/i.test(ua);
+        const isIOS =
+          /iPhone|iPad|iPod|CPU (?:iPhone )?OS \d+[_\d]* like Mac OS X|EdgiOS|CriOS|FxiOS|OPiOS/.test(ua) ||
+          (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+        const isOtherMobile = /Mobile|Tablet|Silk|Kindle|PlayBook/i.test(ua);
+
+        root.dataset.playerPlatform = isLGWebOS
+          ? "lg-webos"
+          : isAndroidTV
+            ? "android-tv"
+            : isAndroid
+              ? "android"
+              : isIOS
+                ? "ios"
+                : isOtherMobile
+                  ? "mobile"
+                  : "desktop";
+
+        let performanceTier = "capable";
+        if (isLGWebOS || isAndroidTV) {
+          performanceTier = "constrained";
+        } else if (isAndroid) {
+          const lowMemory = deviceMemory !== undefined && deviceMemory <= 4;
+          const lowConcurrency = hardwareConcurrency !== undefined && hardwareConcurrency <= 4;
+          if (lowMemory || lowConcurrency) performanceTier = "constrained";
+        }
+        root.dataset.performanceTier = performanceTier;
+
         try {
           const storageKey = "player-theme";
           const stored = localStorage.getItem(storageKey);

@@ -134,3 +134,73 @@
 .player-standalone .player-viewport-height {
   height: 100vh;
 }
+
+/* Constrained devices use flat surfaces with minimal compositor and paint work. */
+html[data-performance-tier="constrained"] .player-performance-scope [class*="backdrop-"] {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-performance-tier="constrained"] .player-performance-scope [class*="shadow-"],
+html[data-performance-tier="constrained"] .player-performance-scope [class*="drop-shadow"] {
+  box-shadow: none;
+}
+
+html[data-performance-tier="constrained"] .player-performance-scope [class*="drop-shadow"],
+html[data-performance-tier="constrained"] .player-performance-scope [class*="blur-"],
+html[data-performance-tier="constrained"] .player-performance-scope [class*="brightness-"] {
+  filter: none;
+}
+
+html[data-performance-tier="constrained"] .player-performance-scope [class*="gradient"] {
+  background-image: none;
+}
+
+html[data-performance-tier="constrained"] .player-performance-decoration {
+  display: none;
+}
+
+html[data-performance-tier="constrained"] {
+  text-rendering: auto;
+}
+
+html[data-performance-tier="constrained"] body {
+  font-feature-settings: normal;
+}
+
+html[data-performance-tier="constrained"] .player-performance-scope *,
+html[data-performance-tier="constrained"] .player-performance-scope *::before,
+html[data-performance-tier="constrained"] .player-performance-scope *::after {
+  scroll-behavior: auto;
+  animation-duration: 0.01ms;
+  animation-iteration-count: 1;
+  transition-duration: 0.01ms;
+}
+
+html[data-performance-tier="constrained"] .player-performance-page-background {
+  background-color: #f1f5f9;
+  background-image: none;
+}
+
+html[data-performance-tier="constrained"] .player-performance-panel-background {
+  background-color: rgb(255 255 255 / 92%);
+  background-image: none;
+}
+
+html.dark[data-performance-tier="constrained"] .player-performance-panel-background {
+  background-color: rgb(15 23 42 / 96%);
+}
+
+html[data-performance-tier="constrained"] .player-performance-overlay-background {
+  background-color: rgb(15 23 42 / 94%);
+  background-image: none;
+}
+
+html.dark[data-performance-tier="constrained"] .player-performance-page-background {
+  background-color: #050b18;
+}
+
+html[data-performance-tier="constrained"] .player-performance-video-background {
+  background-color: #01030a;
+  background-image: none;
+}

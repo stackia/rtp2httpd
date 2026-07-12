@@ -6,7 +6,7 @@
  * defaultValue may be a value or a lazy getter (e.g. platform-dependent defaults).
  */
 
-import { isPerformanceConstrainedDevice } from "./platform";
+import { isDesktopDevice } from "./platform";
 
 function cloneDefaultValue<T>(value: T): T {
   if (value === null || typeof value !== "object") {
@@ -45,17 +45,14 @@ export const [getLastChannelId, saveLastChannelId] = createStore<string | null>(
   null,
 );
 export const [getSidebarVisible, saveSidebarVisible] = createStore("rtp2httpd-player-sidebar-visible", true);
-export const [getSeamlessSwitch, saveSeamlessSwitch] = createStore(
-  "rtp2httpd-player-seamless-switch",
-  () => !isPerformanceConstrainedDevice(),
+export const [getSeamlessSwitch, saveSeamlessSwitch] = createStore("rtp2httpd-player-seamless-switch", () =>
+  isDesktopDevice(),
 );
-export const [getAutoDeinterlace, saveAutoDeinterlace] = createStore(
-  "rtp2httpd-player-auto-deinterlace",
-  () => !isPerformanceConstrainedDevice(),
+export const [getAutoDeinterlace, saveAutoDeinterlace] = createStore("rtp2httpd-player-auto-deinterlace", () =>
+  isDesktopDevice(),
 );
-export const [getPictureEnhancement, savePictureEnhancement] = createStore(
-  "rtp2httpd-player-picture-enhancement",
-  () => !isPerformanceConstrainedDevice(),
+export const [getPictureEnhancement, savePictureEnhancement] = createStore("rtp2httpd-player-picture-enhancement", () =>
+  isDesktopDevice(),
 );
 export const [getVolume, saveVolume] = createStore("rtp2httpd-player-volume", 1);
 export const [getMuted, saveMuted] = createStore("rtp2httpd-player-muted", false);

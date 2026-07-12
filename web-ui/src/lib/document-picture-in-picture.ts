@@ -88,10 +88,13 @@ export function setupDocumentPiPWindow(targetWindow: Window): void {
   const targetDocument = targetWindow.document;
   targetDocument.title = document.title;
   targetDocument.documentElement.className = document.documentElement.className;
+  const performanceTier = document.documentElement.dataset.performanceTier;
+  if (performanceTier) targetDocument.documentElement.dataset.performanceTier = performanceTier;
   targetDocument.documentElement.style.colorScheme = document.documentElement.style.colorScheme;
   targetDocument.documentElement.style.width = "100%";
   targetDocument.documentElement.style.height = "100%";
-  targetDocument.body.className = "overflow-hidden overscroll-none bg-black text-foreground antialiased";
+  targetDocument.body.className =
+    "player-performance-scope overflow-hidden overscroll-none bg-black text-foreground antialiased";
   targetDocument.body.style.margin = "0";
   targetDocument.body.style.width = "100%";
   targetDocument.body.style.height = "100%";
