@@ -26,7 +26,7 @@ const MATERIAL_CLASS: Record<SurfaceMaterial, Record<SurfaceDensity, string>> = 
 const CLEAR_LEVEL_CLASS: Record<SurfaceLevel, string> = {
   panel: "bg-[hsl(var(--surface-panel)/0.82)] dark:bg-[hsl(var(--surface-panel)/0.9)]",
   inset: "bg-[hsl(var(--surface-inset)/0.78)] dark:bg-[hsl(var(--surface-inset)/0.88)]",
-  tile: "bg-[hsl(var(--surface-tile)/0.74)] dark:bg-[hsl(var(--surface-tile)/0.82)]",
+  tile: "bg-[hsl(var(--surface-tile)/0.74)] backdrop-saturate-125 dark:bg-[hsl(var(--surface-tile)/0.82)]",
   bar: "bg-[hsl(var(--surface-inset)/0.76)] backdrop-blur-xl dark:bg-[hsl(var(--surface-inset)/0.86)]",
   float: "bg-[hsl(var(--surface-raised)/0.82)] dark:bg-[hsl(var(--surface-raised)/0.9)]",
   modal: "bg-[hsl(var(--surface-raised)/0.9)] dark:bg-[hsl(var(--surface-raised)/0.94)]",
@@ -36,9 +36,9 @@ const LEVEL_CLASS: Record<SurfaceLevel, string> = {
   panel:
     "shadow-[0_1px_0_rgba(255,255,255,0.7),0_24px_64px_-38px_rgba(15,23,42,0.45)] dark:shadow-[0_1px_0_rgba(255,255,255,0.08),0_28px_80px_-42px_rgba(0,0,0,0.9)]",
   inset:
-    "shadow-[inset_0_1px_0_rgba(255,255,255,0.58),0_12px_30px_-28px_rgba(15,23,42,0.34)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.045),0_16px_36px_-30px_rgba(0,0,0,0.62)]",
-  tile: "shadow-[inset_0_1px_0_rgba(255,255,255,0.48)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.035)]",
-  bar: "shadow-[0_8px_24px_rgba(30,64,175,0.055)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.18)]",
+    "shadow-[inset_0_1px_0_rgba(255,255,255,0.58),0_12px_30px_-26px_rgba(15,23,42,0.38)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_14px_32px_-22px_rgba(0,0,0,0.66)]",
+  tile: "shadow-[inset_0_1px_0_rgba(255,255,255,0.62),0_10px_24px_-20px_rgba(15,23,42,0.32)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.085),0_10px_24px_-18px_rgba(0,0,0,0.58)]",
+  bar: "shadow-[0_10px_28px_-22px_rgba(30,64,175,0.18),inset_0_-1px_0_rgba(99,102,241,0.08)] dark:shadow-[0_10px_28px_-20px_rgba(0,0,0,0.6),inset_0_-1px_0_rgba(147,197,253,0.08)]",
   float:
     "shadow-[0_18px_36px_-18px_rgba(0,0,0,0.82),0_0_28px_-12px_rgba(59,130,246,0.62),inset_0_1px_0_rgba(255,255,255,0.17)]",
   modal:

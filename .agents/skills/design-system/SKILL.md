@@ -19,7 +19,7 @@ Keep visual decisions shared across the status page and web player.
 
 - Use frost for persistent page structure, clear for nested or interactive content, and smoke over video.
 - Use panel for major regions, inset for groups, tile for repeated units, bar for anchored strips, float for transient UI, and modal for blocking UI.
-- Preserve Z-axis contrast: canvas is darkest, then panel, inset, tile, and raised content becomes progressively lighter.
+- Keep Z-axis luminance changes subtle; express most depth through elevation, shadow, edge highlights, and material treatment.
 - Use dense only when content must remain readable over a complex background.
 - Use active only for the current selection or playback target; use semantic tone only to communicate status.
 - Add scrims only behind blocking overlays. Source visual effects, interaction feedback, typography, and meters from the shared system.

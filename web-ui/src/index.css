@@ -61,10 +61,10 @@
   --input: 226 27% 82%;
   --ring: 234 89% 64%;
   --radius: 0.875rem;
-  --surface-panel: 232 45% 99%;
-  --surface-inset: 228 52% 99.4%;
-  --surface-tile: 0 0% 100%;
-  --surface-raised: 0 0% 100%;
+  --surface-panel: 226 44% 97.8%;
+  --surface-inset: 228 43% 98.2%;
+  --surface-tile: 230 42% 98.6%;
+  --surface-raised: 232 40% 99%;
 }
 
 .dark {
@@ -87,10 +87,10 @@
   --border: 228 23% 22%;
   --input: 228 24% 24%;
   --ring: 234 89% 64%;
-  --surface-panel: 229 37% 11%;
-  --surface-inset: 228 31% 15%;
-  --surface-tile: 226 28% 19%;
-  --surface-raised: 224 27% 23%;
+  --surface-panel: 231 44% 9.5%;
+  --surface-inset: 231 42% 10.75%;
+  --surface-tile: 231 40% 12%;
+  --surface-raised: 231 38% 13.5%;
 }
 
 .player-theme {
