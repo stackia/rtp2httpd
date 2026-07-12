@@ -191,12 +191,15 @@ function PlayerTopLeftOverlay({
   visible,
   loading,
   loadingText,
+  backendKind,
 }: {
   visible: boolean;
   loading: boolean;
   loadingText: string;
+  backendKind: "mse" | "native";
 }) {
   const [time, setTime] = useState(() => new Date());
+  const userAgent = typeof navigator === "undefined" ? "Unavailable" : navigator.userAgent;
 
   useEffect(() => {
     const tick = () => setTime(new Date());
@@ -245,6 +248,12 @@ function PlayerTopLeftOverlay({
             </span>
           </>
         )}
+      </div>
+      <div className="relative z-10 mt-1.5 flex max-w-3xl select-text flex-col gap-1 border-blue-100/15 border-t pt-1.5 text-blue-50/75 [@container_video_(max-height:_320px)]:mt-1 [@container_video_(max-height:_320px)]:pt-1">
+        <span className="w-fit rounded bg-blue-400/20 px-1.5 py-0.5 font-semibold text-[10px] text-blue-100 uppercase tracking-wide md:text-xs">
+          Backend: {backendKind}
+        </span>
+        <span className="break-all font-mono text-[9px] leading-3 md:text-[11px] md:leading-4">UA: {userAgent}</span>
       </div>
     </div>
   );
@@ -683,6 +692,22 @@ export function VideoPlayer({
     return pending?.slotId === slotId ? pending : undefined;
   });
 
+  const fallbackPendingSwitchToHardSwitch = useEffectEvent(
+    (slotId: SlotId, eventTimeStamp?: number, expected?: Pick<PendingTransition, "gen" | "player">): boolean => {
+      const pending = pendingTransitionRef.current;
+      if (!pending || pending.slotId !== slotId) return false;
+      if (pending.gen !== transitionGenRef.current) return false;
+      if (slotPlayerRef(slotId).current !== pending.player) return false;
+      if (expected && (pending.gen !== expected.gen || pending.player !== expected.player)) return false;
+      if (eventTimeStamp !== undefined && eventTimeStamp < pending.startedAt) return false;
+
+      pending.player.stop();
+      cancelPendingTransition();
+      handleLoadSegments(segments, true);
+      return true;
+    },
+  );
+
   const getRetrySegments = useEffectEvent((): PlayerSegment[] => {
     if (playMode === "live") {
       return segments;
@@ -703,8 +728,8 @@ export function VideoPlayer({
 
     const isPendingTransition = pendingTransitionRef.current?.slotId === slotId;
     if (isPendingTransition) {
-      slotPlayerRef(slotId).current?.stop();
-      cancelPendingTransition();
+      fallbackPendingSwitchToHardSwitch(slotId);
+      return;
     }
 
     const technicalErrorMessage = formatTechnicalPlayerError(playerError);
@@ -925,13 +950,10 @@ export function VideoPlayer({
           .catch((err: Error) => {
             if (isInterruptedPlayError(err)) return;
             if (slotId && !isPendingTransitionExpected(slotId, expected)) return;
-            if (err.name === "NotAllowedError" || err.message.includes("user didn't interact")) {
+            if (slotId) {
+              fallbackPendingSwitchToHardSwitch(slotId, undefined, expected);
+            } else if (err.name === "NotAllowedError" || err.message.includes("user didn't interact")) {
               setNeedsUserInteraction(true);
-              if (slotId) completePendingSwitchIfNeeded(slotId, undefined, expected);
-            } else if (slotId) {
-              slotPlayerRef(slotId).current?.stop();
-              cancelPendingTransition();
-              handleLoadSegments(segments);
             }
           })
           .finally(() => {
@@ -1063,7 +1085,7 @@ export function VideoPlayer({
   );
 
   // Load segments whenever they change (channel/source switch, seek, retry — all go through here)
-  const handleLoadSegments = useEffectEvent((newSegments: PlayerSegment[]) => {
+  const handleLoadSegments = useEffectEvent((newSegments: PlayerSegment[], forceHardSwitch = false) => {
     if (!newSegments.length) return;
 
     const activeId = getActiveSlotId();
@@ -1089,6 +1111,7 @@ export function VideoPlayer({
     const activeVideo = slotVideoRef(activeId).current;
     const activeState = activePlayer.getState();
     const useSeamlessSwitch =
+      !forceHardSwitch &&
       seamlessSwitch &&
       !isAnyPictureInPictureActive() &&
       hasStartedPlaybackRef.current &&
@@ -1323,6 +1346,19 @@ export function VideoPlayer({
     return () => document.removeEventListener("visibilitychange", handler);
   }, []);
 
+  const handleMuteToggle = useEffectEvent(() => {
+    const player = getActivePlayer();
+    if (!player) return;
+
+    const state = player.getState();
+    if (state.volume <= 0) {
+      player.setVolume(1);
+      player.setMuted(false);
+      return;
+    }
+    player.setMuted(!state.muted);
+  });
+
   const handleKeyDown = useEffectEvent((e: KeyboardEvent) => {
     const eventDocument = getEventDocument(e);
     if (isEditableKeyboardTarget(e.target)) {
@@ -1423,12 +1459,7 @@ export function VideoPlayer({
       case "m":
       case "M":
         e.preventDefault();
-        {
-          const player = getActivePlayer();
-          if (player) {
-            player.setMuted(!player.getState().muted);
-          }
-        }
+        handleMuteToggle();
         break;
 
       case "f":
@@ -1447,10 +1478,7 @@ export function VideoPlayer({
   });
 
   const handleVideoElementError = useEffectEvent((slotId: SlotId, eventTimeStamp: number) => {
-    const pending = pendingTransitionRef.current;
-    if (pending?.slotId === slotId && eventTimeStamp >= pending.startedAt) {
-      cancelPendingTransition();
-    }
+    fallbackPendingSwitchToHardSwitch(slotId, eventTimeStamp);
   });
 
   useEffect(() => {
@@ -1509,13 +1537,6 @@ export function VideoPlayer({
       }
     };
   }, [isDocumentPiP]);
-
-  const handleMuteToggle = useEffectEvent(() => {
-    const player = getActivePlayer();
-    if (player) {
-      player.setMuted(!player.getState().muted);
-    }
-  });
 
   const handleVolumeChange = useEffectEvent((newVolume: number) => {
     const player = getActivePlayer();
@@ -1764,6 +1785,7 @@ export function VideoPlayer({
         <PlayerTopLeftOverlay
           visible={showControls || showLoading}
           loading={showLoading}
+          backendKind={playbackBackendKind}
           loadingText={`${
             channel && channel.sources.length > 1
               ? `[${channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}] `

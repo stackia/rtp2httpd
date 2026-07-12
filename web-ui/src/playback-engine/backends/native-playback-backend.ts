@@ -43,7 +43,8 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
   let logicalTime = 0;
   let destroyed = false;
   let shouldPlay = false;
-  let suppressElementError = false;
+  let loadGeneration = 0;
+  let detachLoadListeners: (() => void) | null = null;
 
   const currentEntry = () => entries[segmentIndex];
   const isLiveSource = () => entries.length === 1 && (entries[0]?.duration ?? 0) === 0;
@@ -56,78 +57,105 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
     emit("media-info", info);
   };
 
-  const updateLogicalTime = () => {
+  const updateLogicalTime = (generation: number) => {
+    if (generation !== loadGeneration) return;
     const entry = currentEntry();
     if (!entry) return;
     logicalTime = entry.start + Math.max(0, video.currentTime - mediaOrigin);
     emit("time-update", logicalTime);
   };
 
+  const attachLoadListeners = (generation: number) => {
+    const isCurrentLoad = () => !destroyed && generation === loadGeneration;
+    const onLoadedMetadata = () => {
+      if (!isCurrentLoad()) return;
+      mediaOrigin = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      updateMediaInfo();
+      updateLogicalTime(generation);
+    };
+    const onDurationChange = () => {
+      if (isCurrentLoad()) updateMediaInfo();
+    };
+    const onTimeUpdate = () => updateLogicalTime(generation);
+    const onCanPlay = (event: Event) => {
+      if (isCurrentLoad()) emit("playback-state-change", "canplay", event.timeStamp);
+    };
+    const onPlaying = (event: Event) => {
+      if (isCurrentLoad()) emit("playback-state-change", "playing", event.timeStamp);
+    };
+    const onPause = (event: Event) => {
+      if (isCurrentLoad()) emit("playback-state-change", "paused", event.timeStamp);
+    };
+    const onWaiting = (event: Event) => {
+      if (isCurrentLoad()) emit("playback-state-change", "waiting", event.timeStamp);
+    };
+    const onEnded = () => {
+      if (!isCurrentLoad()) return;
+      if (segmentIndex + 1 < entries.length) {
+        segmentIndex++;
+        loadCurrentEntry(shouldPlay);
+        return;
+      }
+      emit("ended");
+    };
+    const onError = () => {
+      if (!isCurrentLoad() || !video.getAttribute("src")) return;
+      const mediaError = video.error;
+      const isNetworkError = mediaError?.code === MediaError.MEDIA_ERR_NETWORK;
+      const isUnsupported = mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED;
+      emit("error", {
+        category: isNetworkError ? "io" : isUnsupported ? "demux" : "media",
+        detail: isNetworkError
+          ? PlayerErrors.REQUEST_FAILED
+          : isUnsupported
+            ? PlayerErrors.FORMAT_UNSUPPORTED
+            : PlayerErrors.MEDIA_ELEMENT_ERROR,
+        info: mediaErrorMessage(mediaError),
+        code: mediaError?.code,
+        url: video.currentSrc || currentEntry()?.url,
+      });
+    };
+
+    const listeners: Array<[string, EventListener]> = [
+      ["loadedmetadata", onLoadedMetadata],
+      ["durationchange", onDurationChange],
+      ["timeupdate", onTimeUpdate],
+      ["ended", onEnded],
+      ["error", onError],
+      ["canplay", onCanPlay],
+      ["playing", onPlaying],
+      ["pause", onPause],
+      ["waiting", onWaiting],
+    ];
+    for (const [event, listener] of listeners) video.addEventListener(event, listener);
+
+    detachLoadListeners = () => {
+      for (const [event, listener] of listeners) video.removeEventListener(event, listener);
+    };
+  };
+
   const loadCurrentEntry = (autoplay: boolean) => {
     const entry = currentEntry();
     if (!entry || destroyed) return;
-    suppressElementError = true;
+    const generation = ++loadGeneration;
+    detachLoadListeners?.();
+    detachLoadListeners = null;
     video.pause();
     video.src = resolveUrl(entry.url);
     video.load();
-    suppressElementError = false;
+    attachLoadListeners(generation);
     mediaOrigin = 0;
     logicalTime = entry.start;
     emit("time-update", logicalTime);
     if (autoplay) {
       void video.play().catch((error: Error) => {
+        if (generation !== loadGeneration) return;
         if (error.name === "NotAllowedError") emit("audio-suspended");
       });
     }
   };
 
-  const onLoadedMetadata = () => {
-    mediaOrigin = Number.isFinite(video.currentTime) ? video.currentTime : 0;
-    updateMediaInfo();
-    updateLogicalTime();
-  };
-  const onDurationChange = () => updateMediaInfo();
-  const onTimeUpdate = () => updateLogicalTime();
-  const onCanPlay = (event: Event) => emit("playback-state-change", "canplay", event.timeStamp);
-  const onPlaying = (event: Event) => emit("playback-state-change", "playing", event.timeStamp);
-  const onPause = (event: Event) => emit("playback-state-change", "paused", event.timeStamp);
-  const onWaiting = (event: Event) => emit("playback-state-change", "waiting", event.timeStamp);
   const onVolumeChange = () => emit("volume-change", video.volume, video.muted);
-  const onEnded = () => {
-    if (segmentIndex + 1 < entries.length) {
-      segmentIndex++;
-      loadCurrentEntry(shouldPlay);
-      return;
-    }
-    emit("ended");
-  };
-  const onError = () => {
-    if (destroyed || suppressElementError || !video.getAttribute("src")) return;
-    const mediaError = video.error;
-    const isNetworkError = mediaError?.code === MediaError.MEDIA_ERR_NETWORK;
-    const isUnsupported = mediaError?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED;
-    emit("error", {
-      category: isNetworkError ? "io" : isUnsupported ? "demux" : "media",
-      detail: isNetworkError
-        ? PlayerErrors.REQUEST_FAILED
-        : isUnsupported
-          ? PlayerErrors.FORMAT_UNSUPPORTED
-          : PlayerErrors.MEDIA_ELEMENT_ERROR,
-      info: mediaErrorMessage(mediaError),
-      code: mediaError?.code,
-      url: video.currentSrc || currentEntry()?.url,
-    });
-  };
-
-  video.addEventListener("loadedmetadata", onLoadedMetadata);
-  video.addEventListener("durationchange", onDurationChange);
-  video.addEventListener("timeupdate", onTimeUpdate);
-  video.addEventListener("ended", onEnded);
-  video.addEventListener("error", onError);
-  video.addEventListener("canplay", onCanPlay);
-  video.addEventListener("playing", onPlaying);
-  video.addEventListener("pause", onPause);
-  video.addEventListener("waiting", onWaiting);
   video.addEventListener("volumechange", onVolumeChange);
 
   return {
@@ -150,10 +178,11 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
 
     async play() {
       shouldPlay = true;
+      const generation = loadGeneration;
       try {
         await video.play();
       } catch (error) {
-        if (error instanceof DOMException && error.name === "NotAllowedError") emit("audio-suspended");
+        if (generation !== loadGeneration) return;
         throw error;
       }
     },
@@ -214,28 +243,23 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
 
     stop() {
       shouldPlay = false;
+      loadGeneration++;
+      detachLoadListeners?.();
+      detachLoadListeners = null;
       entries = [];
       segmentIndex = 0;
       logicalTime = 0;
-      suppressElementError = true;
       video.pause();
       video.removeAttribute("src");
       video.load();
-      suppressElementError = false;
     },
 
     destroy() {
       if (destroyed) return;
       destroyed = true;
-      video.removeEventListener("loadedmetadata", onLoadedMetadata);
-      video.removeEventListener("durationchange", onDurationChange);
-      video.removeEventListener("timeupdate", onTimeUpdate);
-      video.removeEventListener("ended", onEnded);
-      video.removeEventListener("error", onError);
-      video.removeEventListener("canplay", onCanPlay);
-      video.removeEventListener("playing", onPlaying);
-      video.removeEventListener("pause", onPause);
-      video.removeEventListener("waiting", onWaiting);
+      loadGeneration++;
+      detachLoadListeners?.();
+      detachLoadListeners = null;
       video.removeEventListener("volumechange", onVolumeChange);
       entries = [];
       video.pause();

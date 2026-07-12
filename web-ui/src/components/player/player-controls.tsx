@@ -103,6 +103,7 @@ export function PlayerControls({
   onSourceChange,
 }: PlayerControlsProps) {
   const t = usePlayerTranslation(locale);
+  const isEffectivelyMuted = isMuted || volume <= 0;
   const progressBarRef = useRef<HTMLDivElement>(null);
   const activePointerIdRef = useRef<number | null>(null);
   const [scrubPosition, setScrubPosition] = useState<number | null>(null);
@@ -405,9 +406,9 @@ export function PlayerControls({
               type="button"
               onClick={onMuteToggle}
               className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
-              title={isMuted ? t("unmute") : t("mute")}
+              title={isEffectivelyMuted ? t("unmute") : t("mute")}
             >
-              {isMuted || volume === 0 ? (
+              {isEffectivelyMuted ? (
                 <VolumeX className={clsx("h-4 w-4 md:h-7 md:w-7", COMPACT_ICON_CLASS)} />
               ) : volume < 0.5 ? (
                 <Volume1 className={clsx("h-4 w-4 md:h-7 md:w-7", COMPACT_ICON_CLASS)} />
