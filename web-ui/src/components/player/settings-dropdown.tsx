@@ -17,6 +17,7 @@ interface SettingsDropdownProps {
   onAutoDeinterlaceChange: (enabled: boolean) => void;
   pictureEnhancement: boolean;
   onPictureEnhancementChange: (enabled: boolean) => void;
+  showVideoProcessing?: boolean;
 }
 
 const SETTING_LABEL_CLASS = "mb-1.5 block px-0.5 font-medium text-slate-500 text-xs leading-4 dark:text-blue-50/55";
@@ -37,6 +38,7 @@ function SettingsDropdownComponent({
   onAutoDeinterlaceChange,
   pictureEnhancement,
   onPictureEnhancementChange,
+  showVideoProcessing = true,
 }: SettingsDropdownProps) {
   const t = usePlayerTranslation(locale);
 
@@ -110,36 +112,38 @@ function SettingsDropdownComponent({
           {/* Video processing group: deinterlace + picture enhancement.
                 Both only take effect for 1080p-and-below content, so the
                 resolution caveat is stated once as a shared group note. */}
-          <div className="space-y-3 border-blue-900/10 border-t pt-3.5 dark:border-blue-100/10">
-            <div className="px-0.5">
-              <span className="block font-medium text-slate-600 text-xs leading-4 dark:text-blue-50/65">
-                {t("videoProcessing")}
-              </span>
-              <span className="mt-0.5 block text-[11px] text-slate-400 leading-4 dark:text-blue-50/35">
-                {t("resolutionLimitHint")}
-              </span>
+          {showVideoProcessing && (
+            <div className="space-y-3 border-blue-900/10 border-t pt-3.5 dark:border-blue-100/10">
+              <div className="px-0.5">
+                <span className="block font-medium text-slate-600 text-xs leading-4 dark:text-blue-50/65">
+                  {t("videoProcessing")}
+                </span>
+                <span className="mt-0.5 block text-[11px] text-slate-400 leading-4 dark:text-blue-50/35">
+                  {t("resolutionLimitHint")}
+                </span>
+              </div>
+
+              {/* Automatic deinterlacing (heuristic detection, ≤1080 content only) */}
+              <LabeledSwitch
+                label={t("deinterlace")}
+                checked={autoDeinterlace}
+                onCheckedChange={onAutoDeinterlaceChange}
+                className={SETTING_SWITCH_CLASS}
+                labelClassName={SETTING_SWITCH_LABEL_CLASS}
+                switchClassName={SETTING_SWITCH_CONTROL_CLASS}
+              />
+
+              {/* Picture enhancement (WebGL post-processing inside the render gate) */}
+              <LabeledSwitch
+                label={t("pictureEnhancement")}
+                checked={pictureEnhancement}
+                onCheckedChange={onPictureEnhancementChange}
+                className={SETTING_SWITCH_CLASS}
+                labelClassName={SETTING_SWITCH_LABEL_CLASS}
+                switchClassName={SETTING_SWITCH_CONTROL_CLASS}
+              />
             </div>
-
-            {/* Automatic deinterlacing (heuristic detection, ≤1080 content only) */}
-            <LabeledSwitch
-              label={t("deinterlace")}
-              checked={autoDeinterlace}
-              onCheckedChange={onAutoDeinterlaceChange}
-              className={SETTING_SWITCH_CLASS}
-              labelClassName={SETTING_SWITCH_LABEL_CLASS}
-              switchClassName={SETTING_SWITCH_CONTROL_CLASS}
-            />
-
-            {/* Picture enhancement (WebGL post-processing inside the render gate) */}
-            <LabeledSwitch
-              label={t("pictureEnhancement")}
-              checked={pictureEnhancement}
-              onCheckedChange={onPictureEnhancementChange}
-              className={SETTING_SWITCH_CLASS}
-              labelClassName={SETTING_SWITCH_LABEL_CLASS}
-              switchClassName={SETTING_SWITCH_CONTROL_CLASS}
-            />
-          </div>
+          )}
         </div>
       </div>
     </div>

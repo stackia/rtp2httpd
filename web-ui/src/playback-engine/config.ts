@@ -1,4 +1,4 @@
-/** Player configuration options. All fields are optional when passed to `createPlayer()`. */
+/** Playback backend configuration options. All fields are optional when passed to a backend factory. */
 export interface PlayerConfig {
   /** Chase live stream latency by changing playbackRate. @default true */
   liveSync: boolean;

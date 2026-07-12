@@ -32,8 +32,8 @@ import {
   saveSidebarVisible,
 } from "../lib/player-storage";
 import { buildAppPath } from "../lib/url";
-import type { PlayerSegment } from "../mpegts";
-import { mseToWallClock, NEAR_LIVE_EDGE_MS } from "../mpegts/player/wall-clock";
+import { getPlaybackBackendKind, type PlayerSegment } from "../playback-engine";
+import { mseToWallClock, NEAR_LIVE_EDGE_MS } from "../playback-engine/timeline/wall-clock";
 import type { Channel, M3UMetadata } from "../types/player";
 
 function getM3UIntegrationGuideUrl(locale: Locale) {
@@ -77,6 +77,7 @@ function shouldInsetSidebarRight(): boolean {
 }
 
 function PlayerPage() {
+  const playbackBackendKind = getPlaybackBackendKind();
   const { locale, setLocale } = useLocale("player-locale");
   const { theme, setTheme } = useTheme("player-theme");
   const t = usePlayerTranslation(locale);
@@ -95,8 +96,12 @@ function PlayerPage() {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [insetSidebarRight, setInsetSidebarRight] = useState(shouldInsetSidebarRight);
   const [seamlessSwitch, setSeamlessSwitch] = useState(() => getSeamlessSwitch());
-  const [autoDeinterlace, setAutoDeinterlace] = useState(() => getAutoDeinterlace());
-  const [pictureEnhancement, setPictureEnhancement] = useState(() => getPictureEnhancement());
+  const [autoDeinterlace, setAutoDeinterlace] = useState(() =>
+    playbackBackendKind === "mse" ? getAutoDeinterlace() : true,
+  );
+  const [pictureEnhancement, setPictureEnhancement] = useState(() =>
+    playbackBackendKind === "mse" ? getPictureEnhancement() : true,
+  );
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const isSimulatedFullscreenRef = useRef(false);
 
@@ -169,7 +174,11 @@ function PlayerPage() {
 
     // Source supports catchup: use it
     if (activeSource.catchup && activeSource.catchupSource) {
-      setPlaybackSegments(buildCatchupSegments(activeSource, streamStartTime));
+      setPlaybackSegments(
+        buildCatchupSegments(activeSource, streamStartTime, {
+          overlapMs: playbackBackendKind === "native" ? 0 : undefined,
+        }),
+      );
       setPlayMode("catchup");
       return;
     }
@@ -186,7 +195,7 @@ function PlayerPage() {
     // No source supports catchup, fall back to live
     setSeekAtLiveEdge(true);
     setStreamStartTime(new Date());
-  }, [currentChannel, activeSource, activeSourceIndex, streamStartTime, seekAtLiveEdge]);
+  }, [currentChannel, activeSource, activeSourceIndex, streamStartTime, seekAtLiveEdge, playbackBackendKind]);
 
   const handleVideoSeek = useCallback((seekTime: Date, goingLive: boolean) => {
     setCurrentVideoTime(0);
@@ -461,6 +470,7 @@ function PlayerPage() {
           onAutoDeinterlaceChange={handleAutoDeinterlaceChange}
           pictureEnhancement={pictureEnhancement}
           onPictureEnhancementChange={handlePictureEnhancementChange}
+          showVideoProcessing={playbackBackendKind === "mse"}
         />
       </div>
     );
@@ -475,6 +485,7 @@ function PlayerPage() {
     handleSeamlessSwitchChange,
     handleAutoDeinterlaceChange,
     handlePictureEnhancementChange,
+    playbackBackendKind,
   ]);
 
   const hasPlaylistLoadError = Boolean(error && !metadata);

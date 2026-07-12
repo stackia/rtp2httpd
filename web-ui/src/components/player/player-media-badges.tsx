@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
-import type { PlayerMediaInfo, PlayerRenderState, PlayerVideoScanType } from "../../mpegts";
-import { identifyAudioCodec, identifyVideoCodec } from "../../mpegts/media-codecs";
+import type { PlayerMediaInfo, PlayerRenderState, PlayerVideoScanType } from "../../playback-engine";
+import { identifyAudioCodec, identifyVideoCodec } from "../../playback-engine/media-codecs";
 import { Badge } from "../ui/badge";
 
 interface PlayerMediaBadgesProps {

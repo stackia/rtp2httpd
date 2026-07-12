@@ -1,12 +1,12 @@
 import { markPlaybackUnlocked, PCMAudioPlayer } from "../audio/pcm-audio-player";
 import type { PlayerConfig } from "../config";
 import { PlayerErrors } from "../errors";
-import type { PlayerImpl, PlayerSegment } from "../types";
+import { type LiveSessionAnchor, lagBehindLiveEdge } from "../timeline/wall-clock";
+import type { MSEPlaybackController, PlayerSegment } from "../types";
 import type { WorkerCommand, WorkerEvent } from "../worker/messages";
 import TransmuxWorker from "../worker/transmux-worker.ts?worker&inline";
 import { setupLiveSync } from "./live-sync";
-import { createMSE, type MSE } from "./mse";
-import { type LiveSessionAnchor, lagBehindLiveEdge } from "./wall-clock";
+import { createMediaSourceController, type MediaSourceController } from "./media-source";
 
 /** Check if a given time position is within any buffered range of the video element. */
 export function isBuffered(video: HTMLMediaElement, seconds: number): boolean {
@@ -27,12 +27,12 @@ const HLS_URL_RE = /\.m3u8?($|\?)/i;
 
 type SourceMode = "continuous-live-ts" | "static-ts-list" | "hls";
 
-export function createMpegtsPlayer(
+export function createMSEPlaybackController(
   video: HTMLVideoElement,
   config: PlayerConfig,
   seekHandlers: Set<(s: number) => void>,
-): PlayerImpl {
-  let mse: MSE | null = null;
+): MSEPlaybackController {
+  let mse: MediaSourceController | null = null;
   let worker: Worker | null = null;
   let workerInitialized = false;
   let pendingSegments: PlayerSegment[] | null = null;
@@ -371,7 +371,7 @@ export function createMpegtsPlayer(
 
   /** Create (or recreate) MSE and attach to video element. */
   function initMSE(): void {
-    mse = createMSE(video, config);
+    mse = createMediaSourceController(video, config);
     if (sourceMode === "continuous-live-ts") {
       mse.setDuration(Infinity);
     }
@@ -461,7 +461,7 @@ export function createMpegtsPlayer(
   video.addEventListener("play", onVideoPlay);
   video.addEventListener("timeupdate", onVideoTimeUpdate);
 
-  const impl: PlayerImpl = {
+  const impl: MSEPlaybackController = {
     onError: null,
 
     loadSegments(segments: PlayerSegment[]) {

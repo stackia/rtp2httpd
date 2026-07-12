@@ -45,6 +45,14 @@ export function isIOS(): boolean {
   return false;
 }
 
+/** Detect LG webOS browsers using only their user-agent token. */
+export function isWebOS(): boolean {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+  return /(?:Web0S|webOS)/i.test(navigator.userAgent);
+}
+
 /**
  * Devices where GPU/CPU-heavy player features should default off
  * (heat, power, or weak SoC): phones, tablets, and constrained TVs.
@@ -59,7 +67,7 @@ export function isPerformanceConstrainedDevice(): boolean {
 
   // LG webOS smart TVs (official UA token is `Web0S`, digit zero).
   const ua = navigator.userAgent;
-  if (/Web0S/i.test(ua)) {
+  if (isWebOS()) {
     return true;
   }
 

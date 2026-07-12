@@ -4,7 +4,7 @@ export interface PlayerSegment {
 }
 
 import type { PlayerErrorDetail } from "./errors";
-import type { LiveSessionAnchor } from "./player/wall-clock";
+import type { LiveSessionAnchor } from "./timeline/wall-clock";
 
 export type { LiveSessionAnchor };
 
@@ -59,10 +59,34 @@ export interface PlayerEventMap {
   "media-info": (info: PlayerMediaInfo) => void;
   /** Fired when WebGL activity or its confirmed deinterlacing state changes. */
   "render-state-change": (state: PlayerRenderState) => void;
+  "playback-state-change": (state: "canplay" | "playing" | "paused" | "waiting", eventTimeStamp: number) => void;
+  "volume-change": (volume: number, muted: boolean) => void;
+  /** Fired with the backend-normalized playback position. */
+  "time-update": (seconds: number) => void;
+  /** Fired when the final configured segment has ended. */
+  ended: () => void;
 }
 
-export interface Player {
+export type PlaybackBackendKind = "mse" | "native";
+
+export interface PlaybackBackendState {
+  currentTime: number;
+  duration: number;
+  paused: boolean;
+  playbackRate: number;
+  volume: number;
+  muted: boolean;
+}
+
+export interface PlaybackBackend {
+  readonly kind: PlaybackBackendKind;
+  readonly mediaElement: HTMLVideoElement;
   loadSegments(segments: PlayerSegment[]): void;
+  play(): Promise<void>;
+  pause(): void;
+  setVolume(volume: number): void;
+  setMuted(muted: boolean): void;
+  getState(): PlaybackBackendState;
   seek(seconds: number): void;
   /** Seek to session live edge (continuous since tune-in) minus target latency, as MSE seconds. */
   goLive(targetMseSeconds: number): void;
@@ -80,8 +104,11 @@ export interface Player {
   off<K extends keyof PlayerEventMap>(event: K, handler: PlayerEventMap[K]): void;
 }
 
-/** Internal player implementation interface */
-export interface PlayerImpl {
+/** @deprecated Use PlaybackBackend. */
+export type Player = PlaybackBackend;
+
+/** Private controller used by the MSE backend. */
+export interface MSEPlaybackController {
   onError: ((error: PlayerError) => void) | null;
   onLiveStateChange?: ((isLive: boolean) => void) | null;
   onAudioSuspended?: (() => void) | null;

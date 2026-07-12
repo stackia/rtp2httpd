@@ -10,6 +10,7 @@ export const PlayerErrors = {
   AUDIO_STARTUP_SYNC_FAILED: "AudioStartupSyncFailed",
   MEDIA_SOURCE_CLOSED: "MediaSourceClosed",
   MEDIA_MSE_ERROR: "MediaMSEError",
+  MEDIA_ELEMENT_ERROR: "MediaElementError",
 } as const;
 
 type ValueOf<T> = T[keyof T];

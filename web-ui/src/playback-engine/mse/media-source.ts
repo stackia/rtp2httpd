@@ -31,7 +31,7 @@ interface MSEMediaSource {
   removeEventListener(type: string, listener: unknown): void;
 }
 
-export interface MSE {
+export interface MediaSourceController {
   open(onOpen: () => void): void;
   appendInit(track: Track, data: ArrayBuffer, codec: string, container: string): void;
   appendMedia(track: Track, data: ArrayBuffer, timestampOffset?: number): void;
@@ -55,7 +55,7 @@ export interface MSE {
 
 const TAG = "MSE";
 
-export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
+export function createMediaSourceController(video: HTMLVideoElement, config: PlayerConfig): MediaSourceController {
   // Use ManagedMediaSource only if w3c MediaSource is not available (e.g. iOS Safari)
   const selfRecord = self as unknown as Record<string, unknown>;
   const useManagedMediaSource = "ManagedMediaSource" in self && !("MediaSource" in self);
@@ -390,7 +390,7 @@ export function createMSE(video: HTMLVideoElement, config: PlayerConfig): MSE {
 
   // --- The MSE object ---
 
-  const mse: MSE = {
+  const mse: MediaSourceController = {
     onBufferFull: null,
     onBufferAvailable: null,
     onBufferUpdated: null,

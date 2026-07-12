@@ -1,4 +1,4 @@
-import { mseToWallClock } from "../mpegts/player/wall-clock";
+import { mseToWallClock } from "../playback-engine/timeline/wall-clock";
 import type { EPGProgram } from "../types/player";
 
 export interface ProgramTimeline {
