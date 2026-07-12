@@ -79,6 +79,7 @@ function SettingsDropdownComponent({
               id="player-settings-locale"
               value={locale}
               onChange={(e) => onLocaleChange(e.target.value as Locale)}
+              variant="sm"
               containerClassName="w-full min-w-0"
               aria-label={t("language")}
             >
@@ -99,6 +100,7 @@ function SettingsDropdownComponent({
               id="player-settings-theme"
               value={theme}
               onChange={(e) => onThemeChange(e.target.value as ThemeMode)}
+              variant="sm"
               containerClassName="w-full min-w-0"
               aria-label={t("theme")}
             >
@@ -119,6 +121,7 @@ function SettingsDropdownComponent({
               id="player-settings-appearance"
               value={appearance}
               onChange={(e) => onAppearanceChange(e.target.value as PlayerAppearance)}
+              variant="sm"
               containerClassName="w-full min-w-0"
               aria-label={t("appearance")}
             >
