@@ -115,7 +115,7 @@ const SEMANTIC_CLASS: Record<SurfaceTone, Record<SemanticElement, string>> = {
     dot: "bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.9)]",
     text: "text-violet-600 drop-shadow-[0_0_8px_rgba(139,92,246,0.25)] dark:text-violet-300",
     icon: "border border-violet-300/25 bg-violet-500/14 text-violet-600 shadow-[0_10px_28px_-14px_rgba(139,92,246,0.55),inset_0_1px_0_rgba(255,255,255,0.35)] dark:text-violet-300",
-    wash: "bg-[radial-gradient(120%_120%_at_0%_0%,rgba(139,92,246,0.22),transparent_66%)]",
+    wash: "bg-[radial-gradient(120%_120%_at_0%_0%,rgba(129,117,206,0.17),transparent_66%)]",
     fill: "bg-gradient-to-r from-violet-500 to-indigo-500 shadow-[0_0_12px_rgba(139,92,246,0.45)]",
   },
   success: {
