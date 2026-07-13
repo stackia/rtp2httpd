@@ -1,4 +1,5 @@
 import { clsx } from "clsx";
+import { memo } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
 import { formatBandwidth, formatBytes, formatDuration } from "../../lib/format";
 import type { Locale } from "../../lib/locale";
@@ -62,7 +63,7 @@ interface ConnectionsSectionProps {
   bandwidthUnit: BandwidthUnit;
 }
 
-export function ConnectionsSection({
+function ConnectionsSectionComponent({
   clients,
   locale,
   showDisconnected,
@@ -240,3 +241,5 @@ export function ConnectionsSection({
     </section>
   );
 }
+
+export const ConnectionsSection = memo(ConnectionsSectionComponent);

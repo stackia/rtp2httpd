@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { RefreshCw, RotateCcw, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
 import type { Locale } from "../../lib/locale";
 import { Button } from "../ui/button";
@@ -14,7 +14,7 @@ interface ServiceControlSectionProps {
   locale: Locale;
 }
 
-export function ServiceControlSection({
+function ServiceControlSectionComponent({
   onReloadConfig,
   onRestartWorkers,
   onClearLogs,
@@ -95,3 +95,5 @@ export function ServiceControlSection({
     </section>
   );
 }
+
+export const ServiceControlSection = memo(ServiceControlSectionComponent);

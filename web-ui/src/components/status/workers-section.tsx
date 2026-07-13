@@ -1,4 +1,5 @@
 import { clsx } from "clsx";
+import { memo } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
 import { formatBandwidth, formatBytes } from "../../lib/format";
 import type { Locale } from "../../lib/locale";
@@ -21,7 +22,7 @@ interface WorkersSectionProps {
   bandwidthUnit: BandwidthUnit;
 }
 
-export function WorkersSection({ workers, locale, bandwidthUnit }: WorkersSectionProps) {
+function WorkersSectionComponent({ workers, locale, bandwidthUnit }: WorkersSectionProps) {
   const t = useStatusTranslation(locale);
   return (
     <section className={clsx(STATUS_PANEL_CLASS, "p-5 sm:p-6")}>
@@ -99,6 +100,8 @@ export function WorkersSection({ workers, locale, bandwidthUnit }: WorkersSectio
     </section>
   );
 }
+
+export const WorkersSection = memo(WorkersSectionComponent);
 
 interface PoolCardProps {
   title: string;

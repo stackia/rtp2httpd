@@ -135,24 +135,35 @@
   height: 100vh;
 }
 
-/* Simple theme uses flat surfaces with minimal compositor and paint work. */
-html.player-theme-simple .player-performance-scope [class*="backdrop-"] {
+/* Simple theme uses explicit semantic hooks to avoid matching every player descendant. */
+html.player-theme-simple .player-performance-effect,
+html.player-theme-simple
+  :is(
+    .player-performance-page-background,
+    .player-performance-panel-background,
+    .player-performance-overlay-background,
+    .player-performance-warning-background,
+    .player-performance-error-background,
+    .player-performance-controls-background,
+    .player-performance-progress-track,
+    .player-performance-progress-fill,
+    .player-performance-logo-background,
+    .player-performance-epg-header,
+    .player-performance-list-surface-selected,
+    .player-performance-list-surface-default,
+    .player-performance-channel-groups,
+    .player-performance-group-selected,
+    .player-performance-group-default,
+    .player-performance-channel-number-selected,
+    .player-performance-channel-number-default
+  ) {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-}
-
-html.player-theme-simple .player-performance-scope [class*="shadow-"],
-html.player-theme-simple .player-performance-scope [class*="drop-shadow"] {
   box-shadow: none;
-}
-
-html.player-theme-simple .player-performance-scope [class*="drop-shadow"],
-html.player-theme-simple .player-performance-scope [class*="blur-"],
-html.player-theme-simple .player-performance-scope [class*="brightness-"] {
   filter: none;
 }
 
-html.player-theme-simple .player-performance-scope [class*="gradient"] {
+html.player-theme-simple .player-performance-gradient {
   background-image: none;
 }
 
@@ -168,9 +179,9 @@ html.player-theme-simple body {
   font-feature-settings: normal;
 }
 
-html.player-theme-simple .player-performance-scope *,
-html.player-theme-simple .player-performance-scope *::before,
-html.player-theme-simple .player-performance-scope *::after {
+html.player-theme-simple .player-performance-motion,
+html.player-theme-simple .player-performance-motion::before,
+html.player-theme-simple .player-performance-motion::after {
   scroll-behavior: auto;
   animation-duration: 0.01ms;
   animation-iteration-count: 1;
@@ -329,6 +340,7 @@ html.dark.player-theme-simple .player-performance-epg-header {
 
 html.player-theme-simple .player-performance-list-surface-selected {
   background-color: #dbeafe;
+  background-image: none;
 }
 
 html.dark.player-theme-simple .player-performance-list-surface-selected {
@@ -337,6 +349,7 @@ html.dark.player-theme-simple .player-performance-list-surface-selected {
 
 html.player-theme-simple .player-performance-list-surface-default {
   background-color: #ffffff;
+  background-image: none;
 }
 
 html.dark.player-theme-simple .player-performance-list-surface-default {
@@ -346,6 +359,7 @@ html.dark.player-theme-simple .player-performance-list-surface-default {
 html.player-theme-simple .player-performance-input-background,
 html.player-theme-simple .player-performance-group-default {
   background-color: #ffffff;
+  background-image: none;
 }
 
 html.dark.player-theme-simple .player-performance-input-background,
@@ -365,6 +379,7 @@ html.dark.player-theme-simple .player-performance-channel-groups {
 html.player-theme-simple .player-performance-group-selected,
 html.player-theme-simple .player-performance-channel-number-selected {
   background-color: #bfdbfe;
+  background-image: none;
 }
 
 html.dark.player-theme-simple .player-performance-group-selected,
@@ -374,6 +389,7 @@ html.dark.player-theme-simple .player-performance-channel-number-selected {
 
 html.player-theme-simple .player-performance-channel-number-default {
   background-color: #dbeafe;
+  background-image: none;
 }
 
 html.dark.player-theme-simple .player-performance-channel-number-default {

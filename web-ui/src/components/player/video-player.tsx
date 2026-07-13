@@ -1,13 +1,13 @@
 import { clsx } from "clsx";
 import { CircleAlert, Play, X } from "lucide-react";
 import {
+  memo,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useEffectEvent,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -63,7 +63,6 @@ interface VideoPlayerProps {
   /** Recalibrate MSE t=0 → wall-clock mapping (live mode). */
   onStreamStartTimeChange?: (time: Date) => void;
   streamStartTime: Date;
-  currentVideoTime: number;
   onCurrentVideoTimeChange: (time: number) => void;
   onChannelNavigate?: (target: "prev" | "next" | number) => void;
   showSidebar?: boolean;
@@ -221,7 +220,7 @@ function PlayerTopLeftOverlay({
     <div
       className={clsx(
         PLAYER_OVERLAY_SURFACE_CLASS,
-        "absolute top-4 left-4 z-10 max-w-[calc(100%-2rem)] rounded-xl px-2 py-1.5 transition-opacity duration-300 md:top-8 md:left-8 md:px-3 md:py-2 [@container_video_(max-height:_320px)]:top-2 [@container_video_(max-height:_320px)]:left-2 [@container_video_(max-height:_320px)]:rounded-lg [@container_video_(max-height:_320px)]:px-1.5 [@container_video_(max-height:_320px)]:py-1 md:[@container_video_(max-height:_320px)]:top-2 md:[@container_video_(max-height:_320px)]:left-2 md:[@container_video_(max-height:_320px)]:px-1.5 md:[@container_video_(max-height:_320px)]:py-1 [@container_video_(max-height:_220px)]:top-1 [@container_video_(max-height:_220px)]:left-1 md:[@container_video_(max-height:_220px)]:top-1 md:[@container_video_(max-height:_220px)]:left-1",
+        "player-performance-motion absolute top-4 left-4 z-10 max-w-[calc(100%-2rem)] rounded-xl px-2 py-1.5 transition-opacity duration-300 md:top-8 md:left-8 md:px-3 md:py-2 [@container_video_(max-height:_320px)]:top-2 [@container_video_(max-height:_320px)]:left-2 [@container_video_(max-height:_320px)]:rounded-lg [@container_video_(max-height:_320px)]:px-1.5 [@container_video_(max-height:_320px)]:py-1 md:[@container_video_(max-height:_320px)]:top-2 md:[@container_video_(max-height:_320px)]:left-2 md:[@container_video_(max-height:_320px)]:px-1.5 md:[@container_video_(max-height:_320px)]:py-1 [@container_video_(max-height:_220px)]:top-1 [@container_video_(max-height:_220px)]:left-1 md:[@container_video_(max-height:_220px)]:top-1 md:[@container_video_(max-height:_220px)]:left-1",
         visible ? "opacity-100" : "opacity-0 pointer-events-none",
       )}
     >
@@ -252,7 +251,7 @@ function PlayerTopLeftOverlay({
   );
 }
 
-export function VideoPlayer({
+function VideoPlayerComponent({
   channel,
   segments,
   onError,
@@ -262,7 +261,6 @@ export function VideoPlayer({
   onSeek,
   onStreamStartTimeChange,
   streamStartTime,
-  currentVideoTime,
   onCurrentVideoTimeChange,
   onChannelNavigate,
   showSidebar = true,
@@ -279,12 +277,9 @@ export function VideoPlayer({
 }: VideoPlayerProps) {
   const t = usePlayerTranslation(locale);
   const playbackBackendKind = getPlaybackBackendKind();
-  const programTimeline = useMemo(
-    () => (currentProgram ? createProgramTimeline(currentProgram, streamStartTime, currentVideoTime) : null),
-    [currentProgram, streamStartTime, currentVideoTime],
-  );
+  const currentVideoTimeRef = useRef(0);
   const canSeekProgramInMediaSession = Boolean(
-    programTimeline && channel?.sources.some((source) => source.catchup && source.catchupSource),
+    currentProgram && channel?.sources.some((source) => source.catchup && source.catchupSource),
   );
   const canNavigateChannelsInMediaSession = Boolean(channel && onChannelNavigate);
 
@@ -708,7 +703,7 @@ export function VideoPlayer({
     }
     const source = channel?.sources[activeSourceIndex];
     if (source?.catchupSource) {
-      const seekTime = mseToWallClock(currentVideoTime, streamStartTime);
+      const seekTime = mseToWallClock(currentVideoTimeRef.current, streamStartTime);
       return buildCatchupSegments(source, seekTime, {
         overlapMs: playbackBackendKind === "native" ? 0 : undefined,
       });
@@ -788,7 +783,7 @@ export function VideoPlayer({
         if (playMode === "live") {
           onSeek(new Date(), true);
         } else {
-          onSeek(mseToWallClock(currentVideoTime, streamStartTime), false);
+          onSeek(mseToWallClock(currentVideoTimeRef.current, streamStartTime), false);
         }
       }
       if (playMode === "catchup") {
@@ -826,6 +821,7 @@ export function VideoPlayer({
   const [prevSegments, setPrevSegments] = useState(segments);
   if (segments !== prevSegments) {
     setPrevSegments(segments);
+    currentVideoTimeRef.current = 0;
     wallClockCalibratedRef.current = false;
     setLiveSessionAnchor(null);
 
@@ -906,6 +902,7 @@ export function VideoPlayer({
     });
     p.on("time-update", (time) => {
       if (slotPlayerRef(slotId).current !== p || slotId !== getActiveSlotId()) return;
+      currentVideoTimeRef.current = time;
       onCurrentVideoTimeChange(time);
       updateMediaSessionPosition();
     });
@@ -1030,7 +1027,9 @@ export function VideoPlayer({
   });
 
   const handleMediaSessionSeekTo = useEffectEvent((details: MediaSessionActionDetails) => {
-    if (!programTimeline || details.seekTime === undefined) return;
+    if (!currentProgram || details.seekTime === undefined) return;
+    const programTimeline = createProgramTimeline(currentProgram, streamStartTime, currentVideoTimeRef.current);
+    if (!programTimeline) return;
     handleSeek(programPositionToWallClock(programTimeline, details.seekTime));
   });
 
@@ -1302,7 +1301,7 @@ export function VideoPlayer({
     // Media element died in background (MediaSource closed / decode error).
     // Note: video.paused may still report false in this state.
     const mediaDead = video.error !== null;
-    const behindLiveMs = Date.now() - mseToWallClock(currentVideoTime, streamStartTime).getTime();
+    const behindLiveMs = Date.now() - mseToWallClock(currentVideoTimeRef.current, streamStartTime).getTime();
     // Beyond this lag a live-edge reload beats letting live-sync chase at 2x
     // for tens of seconds; tied to the sync config rather than a magic 10s.
     const staleLiveMs = (defaultConfig.liveSyncMaxLatency + 5) * 1000;
@@ -1319,7 +1318,7 @@ export function VideoPlayer({
       // Catchup: rebuild the stream at the current position
       console.log("Reloading at current position after background suspension");
       shouldAutoPlayRef.current = true;
-      const seekTime = mseToWallClock(currentVideoTime, streamStartTime);
+      const seekTime = mseToWallClock(currentVideoTimeRef.current, streamStartTime);
       onSeek?.(seekTime, isNearLiveWallClock(seekTime, liveSessionAnchor, streamStartTime));
       return;
     }
@@ -1791,7 +1790,7 @@ export function VideoPlayer({
       {channel && (
         <div
           className={clsx(
-            "absolute top-4 right-4 z-10 flex flex-col items-end gap-2 transition-opacity duration-300 md:top-8 md:right-8 md:gap-3 [@container_video_(max-height:_320px)]:top-2 [@container_video_(max-height:_320px)]:right-2 [@container_video_(max-height:_320px)]:gap-1 md:[@container_video_(max-height:_320px)]:top-2 md:[@container_video_(max-height:_320px)]:right-2 md:[@container_video_(max-height:_320px)]:gap-1 [@container_video_(max-height:_220px)]:top-1 [@container_video_(max-height:_220px)]:right-1 md:[@container_video_(max-height:_220px)]:top-1 md:[@container_video_(max-height:_220px)]:right-1",
+            "player-performance-motion absolute top-4 right-4 z-10 flex flex-col items-end gap-2 transition-opacity duration-300 md:top-8 md:right-8 md:gap-3 [@container_video_(max-height:_320px)]:top-2 [@container_video_(max-height:_320px)]:right-2 [@container_video_(max-height:_320px)]:gap-1 md:[@container_video_(max-height:_320px)]:top-2 md:[@container_video_(max-height:_320px)]:right-2 md:[@container_video_(max-height:_320px)]:gap-1 [@container_video_(max-height:_220px)]:top-1 [@container_video_(max-height:_220px)]:right-1 md:[@container_video_(max-height:_220px)]:top-1 md:[@container_video_(max-height:_220px)]:right-1",
             showControls ? "opacity-100" : "opacity-0 pointer-events-none",
           )}
         >
@@ -1817,7 +1816,7 @@ export function VideoPlayer({
               <div className="flex min-w-0 items-center gap-1.5 md:gap-2 [@container_video_(max-height:_320px)]:gap-1 md:[@container_video_(max-height:_320px)]:gap-1">
                 <span
                   className={clsx(
-                    "shrink-0 rounded-md px-1 py-0.5 font-semibold text-[10px] transition-[color,background-color,box-shadow,scale] duration-300 md:px-1.5 md:text-xs md:[@container_video_(max-height:_320px)]:px-1 md:[@container_video_(max-height:_320px)]:text-[10px]",
+                    "player-performance-motion shrink-0 rounded-md px-1 py-0.5 font-semibold text-[10px] transition-[color,background-color,box-shadow,scale] duration-300 md:px-1.5 md:text-xs md:[@container_video_(max-height:_320px)]:px-1 md:[@container_video_(max-height:_320px)]:text-[10px]",
                     digitBuffer
                       ? "scale-110 bg-blue-600 bg-[linear-gradient(135deg,#3b82f6,#6366f1)] text-white shadow-[0_0_20px_rgba(59,130,246,0.45)] ring-2 ring-blue-200/40"
                       : "bg-blue-100/10 text-blue-50/65 ring-1 ring-blue-100/10",
@@ -1847,7 +1846,7 @@ export function VideoPlayer({
       {needsUserInteraction && (
         <button
           type="button"
-          className="player-performance-overlay-background absolute inset-0 z-10 flex cursor-pointer items-center justify-center border-none bg-[radial-gradient(circle_at_center,rgba(18,50,91,0.78),rgba(2,6,23,0.94)_68%)] p-4 transition-[filter,background-color] backdrop-blur-[2px] hover:brightness-110"
+          className="player-performance-overlay-background player-performance-motion absolute inset-0 z-10 flex cursor-pointer items-center justify-center border-none bg-[radial-gradient(circle_at_center,rgba(18,50,91,0.78),rgba(2,6,23,0.94)_68%)] p-4 transition-[filter,background-color] backdrop-blur-[2px] hover:brightness-110"
           onClick={handleUserInteraction}
         >
           <div className="flex flex-col items-center gap-4 text-white">
@@ -1881,7 +1880,7 @@ export function VideoPlayer({
               </div>
               <button
                 type="button"
-                className="-m-1 shrink-0 cursor-pointer rounded-lg p-1.5 text-amber-100/65 transition-colors hover:bg-white/10 hover:text-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200/70"
+                className="player-performance-motion -m-1 shrink-0 cursor-pointer rounded-lg p-1.5 text-amber-100/65 transition-colors hover:bg-white/10 hover:text-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200/70"
                 aria-label={t("dismiss")}
                 title={t("dismiss")}
                 onClick={() => setWarning(null)}
@@ -1951,7 +1950,7 @@ export function VideoPlayer({
         <div
           role="toolbar"
           className={clsx(
-            "player-performance-controls-position absolute bottom-0 left-[calc(0px_-_env(safe-area-inset-left))] right-[calc(0px_-_env(safe-area-inset-right))] z-10 transition-opacity duration-300",
+            "player-performance-controls-position player-performance-motion absolute bottom-0 left-[calc(0px_-_env(safe-area-inset-left))] right-[calc(0px_-_env(safe-area-inset-right))] z-10 transition-opacity duration-300",
             showSidebar && "md:right-0",
             showControls
               ? "opacity-100"
@@ -1960,7 +1959,6 @@ export function VideoPlayer({
         >
           <PlayerControls
             channel={channel}
-            currentTime={currentVideoTime}
             currentProgram={currentProgram}
             isLive={isLive}
             onSeek={handleSeek}
@@ -2011,3 +2009,5 @@ export function VideoPlayer({
     </div>
   );
 }
+
+export const VideoPlayer = memo(VideoPlayerComponent);

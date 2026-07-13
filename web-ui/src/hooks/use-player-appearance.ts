@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { PLAYER_APPEARANCES, type PlayerAppearance } from "../types/ui";
 import { usePersistedEnum } from "./use-persisted-enum";
 
@@ -16,7 +16,7 @@ export function usePlayerAppearance() {
     PLAYER_APPEARANCES,
   );
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     document.documentElement.classList.toggle("player-theme-simple", appearance === "simple");
   }, [appearance]);
 

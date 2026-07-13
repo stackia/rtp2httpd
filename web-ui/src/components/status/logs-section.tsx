@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { List } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useStatusTranslation } from "../../hooks/use-status-translation";
 import type { Locale } from "../../lib/locale";
 import type { LogEntry } from "../../types";
@@ -37,7 +37,7 @@ interface LogsSectionProps {
   locale: Locale;
 }
 
-export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, options, locale }: LogsSectionProps) {
+function LogsSectionComponent({ logs, logLevelValue, onLogLevelChange, disabled, options, locale }: LogsSectionProps) {
   const t = useStatusTranslation(locale);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
@@ -148,3 +148,5 @@ export function LogsSection({ logs, logLevelValue, onLogLevelChange, disabled, o
     </section>
   );
 }
+
+export const LogsSection = memo(LogsSectionComponent);
