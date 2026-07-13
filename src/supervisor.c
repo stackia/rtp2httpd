@@ -153,10 +153,25 @@ static void record_restart(worker_info_t *w) {
  * @return 0 on success, -1 on error
  */
 static int spawn_worker(int worker_idx) {
+  sigset_t previous_mask;
+  sigset_t sighup_mask;
   pid_t supervisor_pid = getpid();
+  int fork_errno;
+
+  /* Keep SIGHUP pending until the child has installed its worker handler. */
+  sigemptyset(&sighup_mask);
+  sigaddset(&sighup_mask, SIGHUP);
+  if (sigprocmask(SIG_BLOCK, &sighup_mask, &previous_mask) < 0) {
+    logger(LOG_ERROR, "Failed to block SIGHUP before forking worker %d: %s", worker_idx, strerror(errno));
+    return -1;
+  }
+
   pid_t pid = fork();
+  fork_errno = errno;
 
   if (pid < 0) {
+    sigprocmask(SIG_SETMASK, &previous_mask, NULL);
+    errno = fork_errno;
     logger(LOG_ERROR, "Failed to fork worker %d: %s", worker_idx, strerror(errno));
     return -1;
   }
@@ -165,6 +180,9 @@ static int spawn_worker(int worker_idx) {
     /* Child process: become a worker */
 
     worker_restore_default_signal_handlers();
+    worker_install_sighup_handler();
+    if (sigprocmask(SIG_SETMASK, &previous_mask, NULL) < 0)
+      _exit(EXIT_FAILURE);
 
     /* PID file ownership and locking belong to the supervisor only. */
     pid_file_close_in_worker();
@@ -188,6 +206,9 @@ static int spawn_worker(int worker_idx) {
     /* Clean exit */
     _exit(result);
   }
+
+  if (sigprocmask(SIG_SETMASK, &previous_mask, NULL) < 0)
+    logger(LOG_ERROR, "Failed to restore signal mask after forking worker %d: %s", worker_idx, strerror(errno));
 
   /* Parent: record worker info */
   workers[worker_idx].pid = pid;

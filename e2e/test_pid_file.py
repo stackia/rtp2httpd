@@ -145,6 +145,33 @@ class TestPIDFileFailures:
 
 
 class TestPIDFileReload:
+    @pytest.mark.parametrize("replacement", ["missing", "stale"])
+    def test_reload_reclaims_replaced_same_path(self, r2h_binary, tmp_path, replacement):
+        port = find_free_port()
+        pid_path = tmp_path / "same.pid"
+        config = build_config(port, global_lines=[f"pid-file = {pid_path}"])
+        first = R2HProcess(r2h_binary, port, config_content=config)
+        second = R2HProcess(r2h_binary, find_free_port(), extra_args=["--pid-file", str(pid_path)])
+        try:
+            first.start()
+            assert first.process is not None
+            pid = first.process.pid
+            assert _wait_for(lambda: _pid_file_contains(pid_path, pid))
+
+            pid_path.unlink()
+            if replacement == "stale":
+                pid_path.write_text("999999\n")
+
+            os.kill(pid, signal.SIGHUP)
+            assert _wait_for(lambda: _pid_file_contains(pid_path, pid))
+
+            second.start(wait=False)
+            assert _wait_for_exit(second) != 0
+            assert pid_path.read_text() == f"{pid}\n"
+        finally:
+            second.stop()
+            first.stop()
+
     def test_reload_equivalent_path_keeps_file_and_lock(self, r2h_binary, tmp_path):
         port = find_free_port()
         pid_path = tmp_path / "same.pid"

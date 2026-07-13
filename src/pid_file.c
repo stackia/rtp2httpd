@@ -167,8 +167,6 @@ int pid_file_prepare(const char *path) {
 
   if ((!path || path[0] == '\0') && !active_pid_file.path)
     return 0;
-  if (path && active_pid_file.path && strcmp(path, active_pid_file.path) == 0)
-    return 0;
   if (path && active_pid_file.path && pid_file_path_matches_state(path, &active_pid_file))
     return 0;
 

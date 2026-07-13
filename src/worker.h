@@ -37,6 +37,9 @@ void fdmap_del(int fd);
  */
 void fdmap_cleanup(void);
 
+/** Install the worker SIGHUP handler before startup signals are unblocked. */
+void worker_install_sighup_handler(void);
+
 /**
  * Run the worker event loop
  * @param listen_sockets Array of listening socket fds

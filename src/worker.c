@@ -225,6 +225,8 @@ static void sighup_handler(int signum) {
   reload_flag = 1;
 }
 
+void worker_install_sighup_handler(void) { signal(SIGHUP, &sighup_handler); }
+
 int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
   int i;
   struct sockaddr_storage client;
@@ -259,7 +261,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
   /* Register signal handlers */
   signal(SIGTERM, &term_handler);
   signal(SIGINT, &term_handler);
-  signal(SIGHUP, &sighup_handler);
+  worker_install_sighup_handler();
 
   /* Unified event loop: accept + clients + stream fds */
   int64_t last_tick = get_time_ms();
