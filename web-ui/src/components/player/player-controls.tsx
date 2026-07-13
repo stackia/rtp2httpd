@@ -13,7 +13,7 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import { createProgramTimeline, programProgressToWallClock } from "../../lib/program-timeline";
@@ -140,40 +140,6 @@ function usePlaybackTimelineState(currentProgram: EPGProgram | null, seekStartTi
   }, [currentProgram, currentTime, fallbackRange, programTimeline, seekStartTime]);
 }
 
-interface ProgressPreviewLabelProps {
-  getTimeAtPosition: (percentage: number) => Date;
-  liveSessionAnchor: LiveSessionAnchor | null;
-  locale: Locale;
-  position: number | null;
-  seekStartTime: Date;
-}
-
-const ProgressPreviewLabel = memo(function ProgressPreviewLabel({
-  getTimeAtPosition,
-  liveSessionAnchor,
-  locale,
-  position,
-  seekStartTime,
-}: ProgressPreviewLabelProps) {
-  const t = usePlayerTranslation(locale);
-  if (position === null) return null;
-
-  const previewTime = getTimeAtPosition(position);
-  const previewGoesLive = isNearLiveWallClock(previewTime, liveSessionAnchor, seekStartTime);
-  return (
-    <div
-      className={clsx(
-        PLAYER_OVERLAY_SURFACE_CLASS,
-        "absolute bottom-full mb-4 -translate-x-1/2 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-medium text-blue-50 md:mb-2",
-      )}
-      style={{ left: `clamp(2.5rem, ${position}%, calc(100% - 2.5rem))` }}
-    >
-      <PlayerSelectedGlassLayers />
-      <span className="relative z-10">{previewGoesLive ? t("goLive") : formatTime(previewTime, true)}</span>
-    </div>
-  );
-});
-
 interface PlayerTimelineProps {
   channel: Channel;
   currentProgram: EPGProgram | null;
@@ -203,8 +169,6 @@ const PlayerTimeline = memo(function PlayerTimeline({
   );
   const progressBarRef = useRef<HTMLDivElement>(null);
   const activePointerIdRef = useRef<number | null>(null);
-  const animationFrameRef = useRef(0);
-  const pendingPointerUpdateRef = useRef<{ position: number; type: "hover" | "scrub" } | null>(null);
   const [scrubPosition, setScrubPosition] = useState<number | null>(null);
   const [hoverPosition, setHoverPosition] = useState<number | null>(null);
 
@@ -224,27 +188,6 @@ const PlayerTimeline = memo(function PlayerTimeline({
     return Math.min(Math.max(((clientX - rect.left) / rect.width) * 100, 0), 100);
   }, []);
 
-  const cancelScheduledPointerUpdate = useCallback(() => {
-    if (animationFrameRef.current) window.cancelAnimationFrame(animationFrameRef.current);
-    animationFrameRef.current = 0;
-    pendingPointerUpdateRef.current = null;
-  }, []);
-
-  useEffect(() => cancelScheduledPointerUpdate, [cancelScheduledPointerUpdate]);
-
-  const schedulePointerUpdate = useCallback((position: number, type: "hover" | "scrub") => {
-    pendingPointerUpdateRef.current = { position, type };
-    if (animationFrameRef.current) return;
-    animationFrameRef.current = window.requestAnimationFrame(() => {
-      animationFrameRef.current = 0;
-      const pendingUpdate = pendingPointerUpdateRef.current;
-      pendingPointerUpdateRef.current = null;
-      if (!pendingUpdate) return;
-      if (pendingUpdate.type === "scrub") setScrubPosition(pendingUpdate.position);
-      else setHoverPosition(pendingUpdate.position);
-    });
-  }, []);
-
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (!isCatchupSupported || !event.isPrimary || activePointerIdRef.current !== null) return;
@@ -253,14 +196,13 @@ const PlayerTimeline = memo(function PlayerTimeline({
       if (position === null) return;
 
       event.preventDefault();
-      cancelScheduledPointerUpdate();
       event.currentTarget.setPointerCapture(event.pointerId);
       activePointerIdRef.current = event.pointerId;
       setHoverPosition(null);
       setScrubPosition(position);
       onScrubbingChange(true);
     },
-    [cancelScheduledPointerUpdate, getPositionFromClientX, isCatchupSupported, onScrubbingChange],
+    [getPositionFromClientX, isCatchupSupported, onScrubbingChange],
   );
 
   const handlePointerMove = useCallback(
@@ -271,24 +213,22 @@ const PlayerTimeline = memo(function PlayerTimeline({
 
       if (activePointerIdRef.current === event.pointerId) {
         event.preventDefault();
-        schedulePointerUpdate(position, "scrub");
+        setScrubPosition(position);
       } else if (activePointerIdRef.current === null && event.pointerType !== "touch") {
-        schedulePointerUpdate(position, "hover");
+        setHoverPosition(position);
       }
     },
-    [getPositionFromClientX, isCatchupSupported, schedulePointerUpdate],
+    [getPositionFromClientX, isCatchupSupported],
   );
 
-  const finishScrubbing = useCallback(
+  const cancelScrubbing = useCallback(
     (pointerId: number) => {
-      if (activePointerIdRef.current !== pointerId) return false;
-      cancelScheduledPointerUpdate();
+      if (activePointerIdRef.current !== pointerId) return;
       activePointerIdRef.current = null;
       setScrubPosition(null);
       onScrubbingChange(false);
-      return true;
     },
-    [cancelScheduledPointerUpdate, onScrubbingChange],
+    [onScrubbingChange],
   );
 
   const handlePointerUp = useCallback(
@@ -296,34 +236,36 @@ const PlayerTimeline = memo(function PlayerTimeline({
       if (activePointerIdRef.current !== event.pointerId) return;
       event.preventDefault();
       const position = getPositionFromClientX(event.clientX);
-      finishScrubbing(event.pointerId);
+      activePointerIdRef.current = null;
+      setScrubPosition(null);
+      onScrubbingChange(false);
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
       if (position !== null) onSeek(getTimeAtPosition(position));
     },
-    [finishScrubbing, getPositionFromClientX, getTimeAtPosition, onSeek],
+    [getPositionFromClientX, getTimeAtPosition, onScrubbingChange, onSeek],
   );
 
   const handlePointerCancel = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      finishScrubbing(event.pointerId);
+      cancelScrubbing(event.pointerId);
     },
-    [finishScrubbing],
+    [cancelScrubbing],
   );
 
   const handlePointerLeave = useCallback(() => {
-    if (activePointerIdRef.current !== null) return;
-    cancelScheduledPointerUpdate();
-    setHoverPosition(null);
-  }, [cancelScheduledPointerUpdate]);
+    if (activePointerIdRef.current === null) setHoverPosition(null);
+  }, []);
 
   const displayPosition = scrubPosition ?? progress;
   const previewPosition = scrubPosition ?? hoverPosition;
-  const deferredPreviewPosition = useDeferredValue(previewPosition);
+  const previewTime = useMemo(() => {
+    if (previewPosition === null) return null;
+    return getTimeAtPosition(previewPosition);
+  }, [getTimeAtPosition, previewPosition]);
+  const previewGoesLive = previewTime ? isNearLiveWallClock(previewTime, liveSessionAnchor, seekStartTime) : false;
   const isScrubbing = scrubPosition !== null;
-  const ariaTime = getTimeAtPosition(displayPosition);
-  const ariaGoesLive = isScrubbing && isNearLiveWallClock(ariaTime, liveSessionAnchor, seekStartTime);
 
   return (
     <>
@@ -350,10 +292,12 @@ const PlayerTimeline = memo(function PlayerTimeline({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(displayPosition)}
-        aria-valuetext={ariaGoesLive ? t("goLive") : formatTime(ariaTime, true)}
+        aria-valuetext={
+          isScrubbing && previewGoesLive ? t("goLive") : formatTime(getTimeAtPosition(displayPosition), true)
+        }
         aria-label={t("seekTo")}
         className={clsx(
-          "player-performance-progress-track player-performance-motion group relative h-1.5 touch-none select-none rounded-full bg-blue-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-[height,box-shadow] duration-150 before:absolute before:-inset-y-3 before:inset-x-0 before:content-[''] md:h-2",
+          "player-performance-progress-track group relative h-1.5 touch-none select-none rounded-full bg-blue-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-[height,box-shadow] duration-150 before:absolute before:-inset-y-3 before:inset-x-0 before:content-[''] md:h-2",
           "[@container_video_(max-height:_320px)]:h-1 md:[@container_video_(max-height:_320px)]:h-1",
           isCatchupSupported
             ? "cursor-pointer hover:h-2 hover:shadow-[0_0_20px_rgba(59,130,246,0.16),inset_0_1px_3px_rgba(0,0,0,0.45)] md:hover:h-3"
@@ -377,24 +321,29 @@ const PlayerTimeline = memo(function PlayerTimeline({
         />
 
         {isCatchupSupported && previewPosition !== null && (
-          <div
-            className="absolute top-0 h-full w-0.5 bg-blue-50/80 shadow-[0_0_8px_rgba(147,197,253,0.7)]"
-            style={{ left: `${previewPosition}%` }}
-          />
-        )}
-        {isCatchupSupported && (
-          <ProgressPreviewLabel
-            getTimeAtPosition={getTimeAtPosition}
-            liveSessionAnchor={liveSessionAnchor}
-            locale={locale}
-            position={deferredPreviewPosition}
-            seekStartTime={seekStartTime}
-          />
+          <>
+            <div
+              className="absolute top-0 h-full w-0.5 bg-blue-50/80 shadow-[0_0_8px_rgba(147,197,253,0.7)]"
+              style={{ left: `${previewPosition}%` }}
+            />
+            {previewTime && (
+              <div
+                className={clsx(
+                  PLAYER_OVERLAY_SURFACE_CLASS,
+                  "absolute bottom-full mb-4 -translate-x-1/2 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs font-medium text-blue-50 md:mb-2",
+                )}
+                style={{ left: `clamp(2.5rem, ${previewPosition}%, calc(100% - 2.5rem))` }}
+              >
+                <PlayerSelectedGlassLayers />
+                <span className="relative z-10">{previewGoesLive ? t("goLive") : formatTime(previewTime, true)}</span>
+              </div>
+            )}
+          </>
         )}
 
         <div
           className={clsx(
-            "player-performance-motion absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-blue-300 shadow-[0_0_16px_rgba(147,197,253,0.75)]",
+            "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-blue-300 shadow-[0_0_16px_rgba(147,197,253,0.75)]",
             isScrubbing ? "h-4 w-4" : "h-2.5 w-2.5 transition-[left,width,height] duration-150 md:h-3 md:w-3",
             isCatchupSupported &&
               !isScrubbing &&
