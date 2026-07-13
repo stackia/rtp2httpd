@@ -51,6 +51,17 @@ type LockableScreenOrientation = ScreenOrientation & {
   lock?: (orientation: "landscape") => Promise<void>;
 };
 
+type PlaylistErrorKey = "failedToLoadPlaylist" | "emptyPlaylist";
+
+type PlayerPageError = { translationKey: PlaylistErrorKey } | { message: string };
+
+class TranslatedPlaylistError extends Error {
+  constructor(readonly translationKey: PlaylistErrorKey) {
+    super(translationKey);
+    this.name = "TranslatedPlaylistError";
+  }
+}
+
 async function lockScreenToLandscape(): Promise<boolean> {
   const orientation = screen.orientation as LockableScreenOrientation | undefined;
   if (!orientation?.lock) return false;
@@ -101,7 +112,7 @@ function PlayerPage() {
   const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
   const [playMode, setPlayMode] = useState<"live" | "catchup">("live");
   const [playbackSegments, setPlaybackSegments] = useState<PlayerSegment[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<PlayerPageError | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRevealing, setIsRevealing] = useState(false);
   const [showSidebar, setShowSidebar] = useState(() => getSidebarVisible());
@@ -302,14 +313,14 @@ function PlayerPage() {
 
       const response = await fetch(buildAppPath("/playlist.m3u"));
       if (!response.ok) {
-        throw new Error(t("failedToLoadPlaylist"));
+        throw new TranslatedPlaylistError("failedToLoadPlaylist");
       }
 
       const content = await response.text();
       const parsed = parseM3U(content);
 
       if (parsed.channels.length === 0) {
-        throw new Error(t("emptyPlaylist"));
+        throw new TranslatedPlaylistError("emptyPlaylist");
       }
 
       setMetadata(parsed);
@@ -355,11 +366,16 @@ function PlayerPage() {
         setIsLoading(false);
       }, 500); // Match animate-zoom-fade-out duration
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : t("failedToLoadPlaylist");
-      setError(errorMsg);
+      setError(
+        err instanceof TranslatedPlaylistError
+          ? { translationKey: err.translationKey }
+          : err instanceof Error
+            ? { message: err.message }
+            : { translationKey: "failedToLoadPlaylist" },
+      );
       setIsLoading(false);
     }
-  }, [t, selectChannel]);
+  }, [selectChannel]);
 
   // Load playlist on mount
   useEffect(() => {
@@ -382,7 +398,7 @@ function PlayerPage() {
   }, [currentChannel, epgData, streamStartTime, currentVideoTime]);
 
   const handleVideoError = useCallback((err: string) => {
-    setError(err);
+    setError({ message: err });
   }, []);
 
   // Handle fullscreen toggle
@@ -622,6 +638,7 @@ function PlayerPage() {
   }
 
   const playlistErrorHints = [t("playlistErrorHintReachable"), t("playlistErrorHintFormat")];
+  const errorMessage = error && ("translationKey" in error ? t(error.translationKey) : error.message);
 
   return (
     <div className="player-performance-page-background player-performance-scope player-viewport-height overflow-y-auto bg-[radial-gradient(circle_at_18%_14%,rgba(59,130,246,0.16),transparent_28%),radial-gradient(circle_at_84%_82%,rgba(99,102,241,0.16),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_18%_14%,rgba(59,130,246,0.1),transparent_30%),radial-gradient(circle_at_84%_82%,rgba(99,102,241,0.13),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]">
@@ -692,7 +709,7 @@ function PlayerPage() {
                 {buildAppPath("/playlist.m3u")}
               </div>
               <div className="mt-6 text-sm font-semibold text-foreground">{t("technicalDetails")}</div>
-              <p className="mt-2 break-words text-sm leading-6 text-muted-foreground">{error}</p>
+              <p className="mt-2 break-words text-sm leading-6 text-muted-foreground">{errorMessage}</p>
             </div>
           </div>
         </Card>
