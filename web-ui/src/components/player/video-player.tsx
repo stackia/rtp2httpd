@@ -1,7 +1,6 @@
 import { clsx } from "clsx";
 import { CircleAlert, Play, X } from "lucide-react";
 import {
-  memo,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -2010,4 +2009,4 @@ function VideoPlayerComponent({
   );
 }
 
-export const VideoPlayer = memo(VideoPlayerComponent);
+export { VideoPlayerComponent as VideoPlayer };
