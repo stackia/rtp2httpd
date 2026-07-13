@@ -391,5 +391,5 @@ export const translations: Record<Locale, TranslationDict> = {
 export type TranslationKey = keyof typeof base;
 
 export function translate(locale: Locale, key: TranslationKey): string {
-  return translations[locale][key] ?? base[key];
+  return translations[locale][key] ?? base[key] ?? key;
 }
