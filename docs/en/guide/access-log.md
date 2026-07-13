@@ -76,6 +76,13 @@ If the request URL contains the `r2h-token` query parameter, `$service_url` and 
 
 rtp2httpd workers keep the access log file open. After rotating logs, send `SIGHUP` to the supervisor process so workers reopen the log file.
 
+First enable a PID file through the configuration file or CLI argument:
+
+```ini
+[global]
+pid-file = /var/run/rtp2httpd.pid
+```
+
 Example logrotate config:
 
 ```text
@@ -88,13 +95,7 @@ Example logrotate config:
     create 0644 root root
     sharedscripts
     postrotate
-        for pid in $(pidof rtp2httpd); do
-            ppid="$(awk '/^PPid:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)"
-            [ "$(cat "/proc/$ppid/comm" 2>/dev/null)" = "rtp2httpd" ] && continue
-            kill -HUP "$pid" 2>/dev/null || true
-        done
+        [ ! -s /var/run/rtp2httpd.pid ] || kill -HUP "$(cat /var/run/rtp2httpd.pid)" 2>/dev/null || true
     endscript
 }
 ```
-
-This skips worker child processes whose parent process is also `rtp2httpd`, and sends `SIGHUP` only to the supervisor.

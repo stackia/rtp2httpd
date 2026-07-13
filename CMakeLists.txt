@@ -33,6 +33,7 @@ endif()
 set(COMMON_SOURCES
   src/rtp2httpd.c
   src/supervisor.c
+  src/pid_file.c
   src/configuration.c
   src/access_log.c
   src/http.c

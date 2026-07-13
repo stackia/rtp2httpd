@@ -56,10 +56,17 @@ int cmd_rtsp_user_agent_set = 0;
 int cmd_cors_allow_origin_set = 0;
 int cmd_access_log_set = 0;
 int cmd_log_format_set = 0;
+int cmd_pid_file_set = 0;
 
 enum section_e { SEC_NONE = 0, SEC_BIND, SEC_SERVICES, SEC_GLOBAL };
 
-enum long_option_e { OPT_APP_PATH_PREFIX = 1000, OPT_USE_RELATIVE_PATH_IN_M3U, OPT_ACCESS_LOG, OPT_LOG_FORMAT };
+enum long_option_e {
+  OPT_APP_PATH_PREFIX = 1000,
+  OPT_USE_RELATIVE_PATH_IN_M3U,
+  OPT_ACCESS_LOG,
+  OPT_LOG_FORMAT,
+  OPT_PID_FILE
+};
 
 /* M3U parsing state variables */
 static char *inline_m3u_buffer = NULL;
@@ -141,6 +148,8 @@ static void free_config_strings(config_t *target, bool force_free) {
     safe_free_string(&target->access_log);
   if (!cmd_log_format_set || force_free)
     safe_free_string(&target->log_format);
+  if (!cmd_pid_file_set || force_free)
+    safe_free_string(&target->pid_file);
 }
 
 static int snapshot_string(char **dst, char *src, int keep_shallow) {
@@ -802,6 +811,15 @@ void parse_global_sec(char *line) {
     return;
   }
 
+  if (strcasecmp("pid-file", param) == 0) {
+    if (set_if_not_cmd_override(cmd_pid_file_set, "pid-file")) {
+      safe_free_string(&config.pid_file);
+      if (value[0] != '\0')
+        config.pid_file = strdup(value);
+    }
+    return;
+  }
+
   logger(LOG_ERROR, "Unknown config parameter: %s", param);
 }
 
@@ -1077,6 +1095,7 @@ int config_snapshot(config_t *snapshot) {
   snapshot->cors_allow_origin = NULL;
   snapshot->access_log = NULL;
   snapshot->log_format = NULL;
+  snapshot->pid_file = NULL;
 
 #define SNAPSHOT_STRING(field, cmd_flag)                                                                               \
   do {                                                                                                                 \
@@ -1101,6 +1120,7 @@ int config_snapshot(config_t *snapshot) {
   SNAPSHOT_STRING(cors_allow_origin, cmd_cors_allow_origin_set);
   SNAPSHOT_STRING(access_log, cmd_access_log_set);
   SNAPSHOT_STRING(log_format, cmd_log_format_set);
+  SNAPSHOT_STRING(pid_file, cmd_pid_file_set);
 
 #undef SNAPSHOT_STRING
 
@@ -1284,6 +1304,7 @@ void usage(FILE *f, char *progname) {
           "\t-c --config <file>   Read this file for configuration, instead of the "
           "default one\n"
           "\t-C --noconfig        Do not read the default config\n"
+          "\t   --pid-file <path> Write and lock the supervisor PID file\n"
           "\t-P --fcc-listen-port-range <start[-end]>  Restrict FCC UDP listen "
           "sockets to specific ports\n"
           "\t-H --hostname <hostname> Hostname to check in the Host: HTTP header "
@@ -1415,6 +1436,7 @@ void parse_cmd_line(int argc, char *argv[]) {
                                     {"cors-allow-origin", required_argument, 0, 'O'},
                                     {"access-log", required_argument, 0, OPT_ACCESS_LOG},
                                     {"log-format", required_argument, 0, OPT_LOG_FORMAT},
+                                    {"pid-file", required_argument, 0, OPT_PID_FILE},
                                     {0, 0, 0, 0}};
 
   const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:y:R:F:A:s:p:M:I:SCZg:N:u:O:";
@@ -1648,6 +1670,13 @@ void parse_cmd_line(int argc, char *argv[]) {
         config.log_format = strdup(optarg);
       }
       cmd_log_format_set = 1;
+      break;
+    case OPT_PID_FILE:
+      safe_free_string(&config.pid_file);
+      if (optarg[0] != '\0') {
+        config.pid_file = strdup(optarg);
+      }
+      cmd_pid_file_set = 1;
       break;
     default:
       logger(LOG_FATAL, "Unknown option! %d ", opt);

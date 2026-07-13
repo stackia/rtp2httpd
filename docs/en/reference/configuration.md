@@ -66,6 +66,7 @@ Unix socket listen paths must be absolute and must not contain whitespace. At st
 
 - `-c, --config <file>` - Specify configuration file path (default: `/etc/rtp2httpd.conf`)
 - `-C, --noconfig` - Do not read any configuration file (avoid reading the default `/etc/rtp2httpd.conf`)
+- `--pid-file <path>` - Write and lock the supervisor PID file (default: disabled)
 
 ### Logging Control
 
@@ -129,6 +130,9 @@ access-log = /var/log/rtp2httpd/access.log
 # Access log format (optional, nginx-style $variables)
 # Default: $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
 log-format = $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
+
+# Supervisor PID file path (empty or unset means disabled)
+pid-file = /var/run/rtp2httpd.pid
 
 # Maximum concurrent clients
 maxclients = 20
@@ -317,6 +321,7 @@ kill -USR1 12345
 - Re-reads configuration from the config file (default `/etc/rtp2httpd.conf`, or the path specified via `--config`)
 - If `[bind]` listen addresses change, the supervisor sends `SIGTERM` to all workers and respawns them to apply the new listen addresses
 - If the `workers` count changes, the supervisor automatically adds or removes worker processes
+- If `pid-file` changes in the configuration file, the supervisor creates and locks the new file before removing the old one; if the new path fails, it keeps the old configuration and PID file
 - For other configuration changes, the supervisor forwards `SIGHUP` to each worker, which applies them at runtime
 - Workers reopen the [access log](/en/guide/access-log) file during reload, which helps with logrotate
 - If the config file fails to parse, the old configuration is kept and existing connections are not interrupted

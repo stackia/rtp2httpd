@@ -4,6 +4,7 @@
 #include "epg.h"
 #include "m3u.h"
 #include "platform_compat.h"
+#include "pid_file.h"
 #include "rtp2httpd.h"
 #include "service.h"
 #include "status.h"
@@ -78,6 +79,41 @@ static void supervisor_sigusr1_handler(int signum) {
   supervisor_restart_workers_flag = 1;
 }
 
+static void supervisor_install_signal_handlers(void) {
+  struct sigaction sa;
+  struct sigaction sa_hup;
+  struct sigaction sa_usr1;
+
+  memset(&sa, 0, sizeof(sa));
+  sa.sa_handler = supervisor_signal_handler;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = 0;
+  sigaction(SIGTERM, &sa, NULL);
+  sigaction(SIGINT, &sa, NULL);
+
+  memset(&sa_hup, 0, sizeof(sa_hup));
+  sa_hup.sa_handler = supervisor_sighup_handler;
+  sigemptyset(&sa_hup.sa_mask);
+  sa_hup.sa_flags = 0;
+  sigaction(SIGHUP, &sa_hup, NULL);
+
+  memset(&sa_usr1, 0, sizeof(sa_usr1));
+  sa_usr1.sa_handler = supervisor_sigusr1_handler;
+  sigemptyset(&sa_usr1.sa_mask);
+  sa_usr1.sa_flags = 0;
+  sigaction(SIGUSR1, &sa_usr1, NULL);
+
+  /* We use waitpid() to collect children. */
+  signal(SIGCHLD, SIG_DFL);
+}
+
+static void worker_restore_default_signal_handlers(void) {
+  signal(SIGTERM, SIG_DFL);
+  signal(SIGINT, SIG_DFL);
+  signal(SIGHUP, SIG_DFL);
+  signal(SIGUSR1, SIG_DFL);
+}
+
 /**
  * Check if restart is allowed (rate limiting)
  * Returns 1 if restart is allowed, 0 if rate limited
@@ -127,6 +163,11 @@ static int spawn_worker(int worker_idx) {
 
   if (pid == 0) {
     /* Child process: become a worker */
+
+    worker_restore_default_signal_handlers();
+
+    /* PID file ownership and locking belong to the supervisor only. */
+    pid_file_close_in_worker();
 
     /* Ensure child dies when parent (supervisor) exits */
     platform_set_parent_death_signal(SIGTERM);
@@ -248,46 +289,25 @@ int supervisor_run(void) {
     bind_addresses = new_empty_bindaddr();
   }
 
+  supervisor_install_signal_handlers();
+
   if (unix_socket_listeners_replace(bind_addresses) < 0) {
     status_cleanup();
     return -1;
   }
 
+  if (pid_file_activate(config.pid_file) < 0) {
+    unix_socket_listeners_cleanup();
+    status_cleanup();
+    return -1;
+  }
+
   /* Spawn all workers */
-  for (i = 0; i < desired_workers; i++) {
+  for (i = 0; i < desired_workers && !supervisor_stop_flag; i++) {
     if (spawn_worker(i) < 0) {
       logger(LOG_ERROR, "Failed to spawn worker %d", i);
     }
   }
-
-  /* Set up signal handlers for supervisor */
-  struct sigaction sa;
-  memset(&sa, 0, sizeof(sa));
-  sa.sa_handler = supervisor_signal_handler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = 0;
-
-  sigaction(SIGTERM, &sa, NULL);
-  sigaction(SIGINT, &sa, NULL);
-
-  /* SIGHUP for config reload */
-  struct sigaction sa_hup;
-  memset(&sa_hup, 0, sizeof(sa_hup));
-  sa_hup.sa_handler = supervisor_sighup_handler;
-  sigemptyset(&sa_hup.sa_mask);
-  sa_hup.sa_flags = 0;
-  sigaction(SIGHUP, &sa_hup, NULL);
-
-  /* SIGUSR1 for restarting all workers */
-  struct sigaction sa_usr1;
-  memset(&sa_usr1, 0, sizeof(sa_usr1));
-  sa_usr1.sa_handler = supervisor_sigusr1_handler;
-  sigemptyset(&sa_usr1.sa_mask);
-  sa_usr1.sa_flags = 0;
-  sigaction(SIGUSR1, &sa_usr1, NULL);
-
-  /* Ignore SIGCHLD - we use waitpid() to collect children */
-  signal(SIGCHLD, SIG_DFL);
 
   logger(LOG_INFO, "Entering monitoring loop");
 
@@ -389,13 +409,24 @@ int supervisor_run(void) {
 
       if (config_reload(&bind_changed) == 0) {
         int reload_failed = 0;
+        if (pid_file_prepare(config.pid_file) < 0) {
+          logger(LOG_ERROR, "Failed to prepare PID file after configuration reload");
+          restore_reload_snapshot(&old_config, &old_services, &old_bind_addresses, &old_m3u_cache, &old_epg_cache);
+          free_reload_snapshot(&old_config, old_services, old_bind_addresses, &old_m3u_cache, &old_epg_cache);
+          continue;
+        }
+
         if (bind_changed) {
           if (unix_socket_listeners_replace(bind_addresses) < 0) {
             logger(LOG_ERROR, "Failed to set up Unix socket listeners after configuration reload");
+            pid_file_rollback();
             restore_reload_snapshot(&old_config, &old_services, &old_bind_addresses, &old_m3u_cache, &old_epg_cache);
             reload_failed = 1;
           }
         }
+
+        if (!reload_failed)
+          pid_file_commit();
 
         free_reload_snapshot(&old_config, old_services, old_bind_addresses, &old_m3u_cache, &old_epg_cache);
 
@@ -520,6 +551,8 @@ int supervisor_run(void) {
   /* Clean up shared memory and other resources
    * Supervisor is now the last process, so it does final cleanup */
   status_cleanup();
+
+  pid_file_cleanup();
 
   return 0;
 }

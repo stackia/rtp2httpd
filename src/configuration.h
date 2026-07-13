@@ -46,6 +46,7 @@ typedef struct {
   loglevel_t verbosity; /* Log verbosity level (LOG_FATAL to LOG_DEBUG) */
   char *access_log;     /* Access log file path (NULL=disabled) */
   char *log_format;     /* Access log format string */
+  char *pid_file;       /* Supervisor PID file path (NULL=disabled) */
 
   /* Network and service settings */
   int udpxy;       /* Enable UDPxy URL format support (0=no, 1=yes) */

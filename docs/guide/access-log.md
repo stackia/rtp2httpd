@@ -76,6 +76,13 @@ $client_addr [$time_iso8601] "$service_url" $service_type "$upstream_url"
 
 rtp2httpd worker 会保持访问日志文件打开。轮转日志后，需要向 supervisor 进程发送 `SIGHUP`，让 worker 重新打开日志文件。
 
+先通过配置文件或 CLI 参数启用 PID 文件：
+
+```ini
+[global]
+pid-file = /var/run/rtp2httpd.pid
+```
+
 logrotate 配置示例：
 
 ```text
@@ -88,13 +95,7 @@ logrotate 配置示例：
     create 0644 root root
     sharedscripts
     postrotate
-        for pid in $(pidof rtp2httpd); do
-            ppid="$(awk '/^PPid:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)"
-            [ "$(cat "/proc/$ppid/comm" 2>/dev/null)" = "rtp2httpd" ] && continue
-            kill -HUP "$pid" 2>/dev/null || true
-        done
+        [ ! -s /var/run/rtp2httpd.pid ] || kill -HUP "$(cat /var/run/rtp2httpd.pid)" 2>/dev/null || true
     endscript
 }
 ```
-
-这里会跳过父进程同样是 `rtp2httpd` 的 worker 子进程，只向 supervisor 发送 `SIGHUP`。
