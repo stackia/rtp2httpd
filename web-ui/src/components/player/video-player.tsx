@@ -47,6 +47,7 @@ import {
 } from "../../playback-engine/timeline/wall-clock";
 import mp2WasmUrl from "../../playback-engine/wasm/minimp3/mp2_decoder.wasm?url";
 import type { Channel, EPGProgram } from "../../types/player";
+import type { PictureInPictureMode } from "../../types/ui";
 import { PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 import { PlayerControls } from "./player-controls";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
@@ -72,6 +73,7 @@ interface VideoPlayerProps {
   seamlessSwitch?: boolean;
   autoDeinterlace?: boolean;
   pictureEnhancement?: boolean;
+  pictureInPictureMode?: PictureInPictureMode;
   activeSourceIndex?: number;
   onSourceChange?: (index: number) => void;
   onPlaybackStarted?: () => void;
@@ -270,6 +272,7 @@ export function VideoPlayer({
   seamlessSwitch = true,
   autoDeinterlace = true,
   pictureEnhancement = true,
+  pictureInPictureMode = "document",
   activeSourceIndex = 0,
   onSourceChange,
   onPlaybackStarted,
@@ -1598,7 +1601,7 @@ export function VideoPlayer({
     let openedDocumentPiPWindow: Window | null = null;
 
     try {
-      const documentPictureInPicture = getDocumentPictureInPicture();
+      const documentPictureInPicture = pictureInPictureMode === "document" ? getDocumentPictureInPicture() : null;
       if (documentPictureInPicture) {
         const playerElement = playerSurfaceRef.current;
         if (!playerElement) return;

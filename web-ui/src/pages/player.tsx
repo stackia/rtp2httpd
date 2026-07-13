@@ -12,9 +12,11 @@ import { VideoPlayer } from "../components/player/video-player";
 import { Button, buttonVariants } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useLocale } from "../hooks/use-locale";
+import { usePersistedEnum } from "../hooks/use-persisted-enum";
 import { usePlayerAppearance } from "../hooks/use-player-appearance";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
+import { isDocumentPictureInPictureSupported } from "../lib/document-picture-in-picture";
 import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG } from "../lib/epg-parser";
 import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
@@ -37,6 +39,7 @@ import { buildAppPath } from "../lib/url";
 import { getPlaybackBackendKind, type PlayerSegment } from "../playback-engine";
 import { mseToWallClock, NEAR_LIVE_EDGE_MS } from "../playback-engine/timeline/wall-clock";
 import type { Channel, M3UMetadata } from "../types/player";
+import { PICTURE_IN_PICTURE_MODES, type PictureInPictureMode } from "../types/ui";
 
 function getM3UIntegrationGuideUrl(locale: Locale) {
   return locale === "en"
@@ -82,9 +85,15 @@ function PlayerPage() {
   const playbackBackendKind = getPlaybackBackendKind();
   const supportsMSEVideoProcessing = playbackBackendKind === "mse";
   const supportsSeamlessSwitch = !isLGWebOS();
+  const supportsDocumentPictureInPicture = isDocumentPictureInPictureSupported();
   const { locale, setLocale } = useLocale("rtp2httpd-player-locale");
   const { theme, setTheme } = useTheme("rtp2httpd-player-theme");
   const { appearance, setAppearance } = usePlayerAppearance();
+  const [pictureInPictureMode, setPictureInPictureMode] = usePersistedEnum<PictureInPictureMode>(
+    "rtp2httpd-player-picture-in-picture-mode",
+    "document",
+    PICTURE_IN_PICTURE_MODES,
+  );
   const t = usePlayerTranslation(locale);
 
   const [metadata, setMetadata] = useState<M3UMetadata | null>(null);
@@ -462,6 +471,9 @@ function PlayerPage() {
           onThemeChange={setTheme}
           appearance={appearance}
           onAppearanceChange={setAppearance}
+          pictureInPictureMode={pictureInPictureMode}
+          onPictureInPictureModeChange={setPictureInPictureMode}
+          showPictureInPictureMode={supportsDocumentPictureInPicture}
           seamlessSwitch={seamlessSwitch}
           onSeamlessSwitchChange={handleSeamlessSwitchChange}
           showSeamlessSwitch={supportsSeamlessSwitch}
@@ -477,16 +489,19 @@ function PlayerPage() {
     locale,
     theme,
     appearance,
+    pictureInPictureMode,
     seamlessSwitch,
     autoDeinterlace,
     pictureEnhancement,
     setLocale,
     setTheme,
     setAppearance,
+    setPictureInPictureMode,
     handleSeamlessSwitchChange,
     handleAutoDeinterlaceChange,
     handlePictureEnhancementChange,
     supportsSeamlessSwitch,
+    supportsDocumentPictureInPicture,
     supportsMSEVideoProcessing,
   ]);
 
@@ -523,6 +538,7 @@ function PlayerPage() {
               seamlessSwitch={supportsSeamlessSwitch && seamlessSwitch}
               autoDeinterlace={autoDeinterlace}
               pictureEnhancement={pictureEnhancement}
+              pictureInPictureMode={pictureInPictureMode}
               activeSourceIndex={activeSourceIndex}
               onSourceChange={handleSourceChange}
               onPlaybackStarted={handlePlaybackStarted}

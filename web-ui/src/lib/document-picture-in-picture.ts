@@ -23,8 +23,12 @@ export function getDocumentPictureInPicture(): DocumentPictureInPictureControlle
   return documentPictureInPicture?.requestWindow ? documentPictureInPicture : null;
 }
 
+export function isDocumentPictureInPictureSupported(): boolean {
+  return window.self === window.top && getDocumentPictureInPicture() !== null;
+}
+
 export function isPictureInPictureSupported(): boolean {
-  return getDocumentPictureInPicture() !== null || Boolean(document.pictureInPictureEnabled);
+  return isDocumentPictureInPictureSupported() || Boolean(document.pictureInPictureEnabled);
 }
 
 /**
