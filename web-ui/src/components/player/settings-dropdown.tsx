@@ -200,10 +200,7 @@ function SettingsDropdownComponent({
             {showVideoProcessing && (
               <div className="space-y-2.5 border-blue-900/10 border-t pt-2.5 dark:border-blue-100/10">
                 <div className="px-0.5">
-                  <span className="block font-medium text-slate-600 text-xs leading-4 dark:text-blue-50/65">
-                    {t("videoProcessing")}
-                  </span>
-                  <span className="mt-0.5 block text-[11px] text-slate-400 leading-4 dark:text-blue-50/35">
+                  <span className="block whitespace-nowrap text-[11px] text-slate-400 leading-4 dark:text-blue-50/35">
                     {t("resolutionLimitHint")}
                   </span>
                 </div>
