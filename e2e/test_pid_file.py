@@ -48,7 +48,8 @@ class TestPIDFileSources:
         try:
             r2h.start()
             assert r2h.process is not None
-            assert _wait_for(lambda: _pid_file_contains(pid_path, r2h.process.pid))
+            pid = r2h.process.pid
+            assert _wait_for(lambda: _pid_file_contains(pid_path, pid))
         finally:
             r2h.stop()
 
@@ -68,7 +69,8 @@ class TestPIDFileSources:
         try:
             r2h.start()
             assert r2h.process is not None
-            assert _wait_for(lambda: _pid_file_contains(cli_path, r2h.process.pid))
+            pid = r2h.process.pid
+            assert _wait_for(lambda: _pid_file_contains(cli_path, pid))
             assert not config_path.exists()
         finally:
             r2h.stop()
@@ -81,7 +83,8 @@ class TestPIDFileSources:
         try:
             r2h.start()
             assert r2h.process is not None
-            assert _wait_for(lambda: _pid_file_contains(pid_path, r2h.process.pid))
+            pid = r2h.process.pid
+            assert _wait_for(lambda: _pid_file_contains(pid_path, pid))
         finally:
             r2h.stop()
 
@@ -113,7 +116,8 @@ class TestPIDFileLocking:
         try:
             r2h.start()
             assert r2h.process is not None
-            assert _wait_for(lambda: _pid_file_contains(pid_path, r2h.process.pid))
+            pid = r2h.process.pid
+            assert _wait_for(lambda: _pid_file_contains(pid_path, pid))
         finally:
             r2h.stop()
 
