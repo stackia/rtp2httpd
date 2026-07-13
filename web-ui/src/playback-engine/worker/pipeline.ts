@@ -66,7 +66,8 @@ const HLS_URL_RE = /\.m3u8?($|\?)/i;
 /** Sentinel rejection value for intentionally cancelled segment loads. */
 const CANCELLED = Symbol("cancelled");
 type SourceMode = "continuous-live-ts" | "static-ts-list" | "hls";
-const BITRATE_WINDOW_MS = 5000;
+const PCR_TIMESCALE = 90000;
+const BITRATE_MEDIA_WINDOW_MS = 5000;
 const BITRATE_STABLE_AFTER_MS = 2000;
 const BITRATE_UPDATE_INTERVAL_MS = 1000;
 const BITRATE_MINIMUM_SAMPLES = 3;
@@ -156,7 +157,7 @@ class Pipeline {
   private _hasActualAudioInfo = false;
   private _advertisedBitrate: number | undefined;
   private _lastHlsInfo: HlsInfo | undefined;
-  private _bitrateSamples: Array<{ timestamp: number; bytes: number }> = [];
+  private _tsBitrateSamples: Array<{ pcrBase: number; bytePosition: number }> = [];
   private _segmentBitrateSamples: number[] = [];
   private _currentSegmentBytes = 0;
   private _lastBitrateUpdateTimestamp = 0;
@@ -268,7 +269,7 @@ class Pipeline {
     this._hasActualAudioInfo = false;
     this._advertisedBitrate = undefined;
     this._lastHlsInfo = undefined;
-    this._bitrateSamples = [];
+    this._tsBitrateSamples = [];
     this._segmentBitrateSamples = [];
     this._currentSegmentBytes = 0;
     this._lastBitrateUpdateTimestamp = 0;
@@ -278,7 +279,7 @@ class Pipeline {
   }
 
   private _resetBitrateMeasurement(): void {
-    this._bitrateSamples = [];
+    this._tsBitrateSamples = [];
     this._segmentBitrateSamples = [];
     this._currentSegmentBytes = 0;
     this._lastBitrateUpdateTimestamp = 0;
@@ -300,29 +301,46 @@ class Pipeline {
   private _recordInputBytes(bytes: number): void {
     if (bytes <= 0) return;
 
+    // Segmented fMP4 has no PCR, so retain the complete-segment fallback.
     if (this._sourceMode !== "continuous-live-ts") {
       this._currentSegmentBytes += bytes;
-      return;
+    }
+  }
+
+  private _recordTsPcr(pcrBase: number, bytePosition: number, discontinuity: boolean): void {
+    if (this._sourceMode === "hls" || !Number.isFinite(pcrBase) || !Number.isFinite(bytePosition)) return;
+
+    const previousSample = this._tsBitrateSamples.at(-1);
+    if (
+      discontinuity ||
+      (previousSample !== undefined &&
+        (pcrBase <= previousSample.pcrBase || bytePosition <= previousSample.bytePosition))
+    ) {
+      this._tsBitrateSamples = [];
     }
 
-    const timestamp = performance.now();
-    this._bitrateSamples.push({ timestamp, bytes });
-    const windowStart = timestamp - BITRATE_WINDOW_MS;
-    while (this._bitrateSamples.length > 0 && this._bitrateSamples[0].timestamp < windowStart) {
-      this._bitrateSamples.shift();
+    this._tsBitrateSamples.push({ pcrBase, bytePosition });
+    const windowStart = pcrBase - (BITRATE_MEDIA_WINDOW_MS * PCR_TIMESCALE) / 1000;
+    while (this._tsBitrateSamples.length > 1 && this._tsBitrateSamples[1].pcrBase <= windowStart) {
+      this._tsBitrateSamples.shift();
     }
 
-    const firstSample = this._bitrateSamples[0];
-    if (!firstSample) return;
-    const elapsedMilliseconds = timestamp - firstSample.timestamp;
+    const firstSample = this._tsBitrateSamples[0];
+    const lastSample = this._tsBitrateSamples.at(-1);
+    if (!firstSample || !lastSample) return;
+    const elapsedPcr = lastSample.pcrBase - firstSample.pcrBase;
+    const elapsedMediaMilliseconds = (elapsedPcr * 1000) / PCR_TIMESCALE;
     const estimateStable =
-      elapsedMilliseconds >= BITRATE_STABLE_AFTER_MS && this._bitrateSamples.length >= BITRATE_MINIMUM_SAMPLES;
-    if (!estimateStable || timestamp - this._lastBitrateUpdateTimestamp < BITRATE_UPDATE_INTERVAL_MS) return;
+      elapsedMediaMilliseconds >= BITRATE_STABLE_AFTER_MS && this._tsBitrateSamples.length >= BITRATE_MINIMUM_SAMPLES;
+    const timestamp = performance.now();
+    const updateTooSoon =
+      this._lastBitrateUpdateTimestamp > 0 && timestamp - this._lastBitrateUpdateTimestamp < BITRATE_UPDATE_INTERVAL_MS;
+    if (!estimateStable || updateTooSoon) return;
 
-    // The first sample establishes the window's time baseline; only bytes that
-    // arrived after that point belong to the measured interval.
-    const totalBytes = this._bitrateSamples.slice(1).reduce((sum, sample) => sum + sample.bytes, 0);
-    const bitsPerSecond = Math.round((totalBytes * 8 * 1000) / elapsedMilliseconds / 1000) * 1000;
+    const totalBytes = lastSample.bytePosition - firstSample.bytePosition;
+    // PCR advances with the media timeline, so server-side delivery bursts do
+    // not inflate this transport-stream bitrate as wall-clock sampling would.
+    const bitsPerSecond = Math.round((totalBytes * 8 * PCR_TIMESCALE) / elapsedPcr / 1000) * 1000;
     if (!Number.isFinite(bitsPerSecond) || bitsPerSecond <= 0) return;
 
     this._lastBitrateUpdateTimestamp = timestamp;
@@ -587,7 +605,7 @@ class Pipeline {
         this._currentSegmentBytes = 0;
         await this._loadSegment(meta);
         if (this._runId !== runId) return;
-        if (this._sourceMode !== "continuous-live-ts") {
+        if (this._sourceMode === "hls" || this._fmp4Mode) {
           this._publishSegmentBitrate(meta.duration);
         }
 
@@ -791,6 +809,16 @@ class Pipeline {
       }
       this._workerAudioDecoder?.reset();
       this._resetAudioTiming();
+    };
+    demuxer.onMaximumBitrate = (bitsPerSecond) => {
+      if (this._sourceMode === "hls" && this._advertisedBitrate !== undefined) return;
+      this._advertisedBitrate = bitsPerSecond;
+      if (!this._measuredBitrateStable) {
+        this._mergeMediaInfo({ bitrate: { bitsPerSecond, source: "advertised" } });
+      }
+    };
+    demuxer.onPcr = (pcrBase, bytePosition, discontinuity) => {
+      this._recordTsPcr(pcrBase, bytePosition, discontinuity);
     };
 
     // Set up software audio decode callback when MP2 WASM URL is configured

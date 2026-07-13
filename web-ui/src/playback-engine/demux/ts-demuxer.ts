@@ -26,6 +26,7 @@ import {
   type PIDToSliceQueues,
   PMT,
   type ProgramToPMTMap,
+  parseMaximumBitrateDescriptor,
   SectionData,
   SliceQueue,
   StreamType,
@@ -115,6 +116,9 @@ export type OnErrorCallback = (type: DemuxErrorDetail, info: string) => void;
 export type OnTrackMetadataCallback = (type: string, metadata: unknown) => void;
 export type OnDataAvailableCallback = (audioTrack: unknown, videoTrack: unknown, force?: boolean) => void;
 export type OnTrackDiscontinuityCallback = (track: "audio" | "video") => void;
+export type OnMaximumBitrateCallback = (bitsPerSecond: number) => void;
+/** Reports the 90 kHz PCR base and byte position from the PMT-declared PCR PID. */
+export type OnPcrCallback = (pcrBase: number, bytePosition: number, discontinuity: boolean) => void;
 
 class TSDemuxer {
   private readonly TAG: string = "TSDemuxer";
@@ -123,6 +127,8 @@ class TSDemuxer {
   public onTrackMetadata: OnTrackMetadataCallback | null = null;
   public onDataAvailable: OnDataAvailableCallback | null = null;
   public onTrackDiscontinuity: OnTrackDiscontinuityCallback | null = null;
+  public onMaximumBitrate: OnMaximumBitrateCallback | null = null;
+  public onPcr: OnPcrCallback | null = null;
   /** Software audio decode support (MP2) */
   public onRawAudioData: ((frame: { codec: "mp2"; data: Uint8Array; pts: number }) => void) | null = null;
 
@@ -228,6 +234,8 @@ class TSDemuxer {
     this.onTrackMetadata = null;
     this.onDataAvailable = null;
     this.onTrackDiscontinuity = null;
+    this.onMaximumBitrate = null;
+    this.onPcr = null;
     this.onRawAudioData = null;
     this.soft_decode_audio_codec_ = null;
   }
@@ -485,7 +493,10 @@ class TSDemuxer {
           const PCR_flag = (data[5] & 0x10) >>> 4;
           if (PCR_flag) {
             // track PCR base for pts/dts wraparound detection
-            this.getPcrBase(data);
+            const pcrBase = this.getPcrBase(data);
+            if (is_pcr_pid) {
+              this.onPcr?.(pcrBase, file_position, adaptation_field_info.discontinuity_indicator === 1);
+            }
           }
         }
         if (adaptation_field_control === 0x02 || 5 + adaptation_field_length === 188) {
@@ -903,6 +914,7 @@ class TSDemuxer {
 
     pmt.pcr_pid = ((data[8] & 0x1f) << 8) | data[9];
     const program_info_length = ((data[10] & 0x0f) << 8) | data[11];
+    pmt.program_maximum_bitrate = parseMaximumBitrateDescriptor(data, 12, program_info_length);
 
     const info_start_index = 12 + program_info_length;
     const info_bytes = section_length - 9 - program_info_length - 4;
@@ -913,6 +925,10 @@ class TSDemuxer {
       const ES_info_length = ((data[i + 3] & 0x0f) << 8) | data[i + 4];
 
       pmt.pid_stream_type[elementary_PID] = stream_type;
+      const elementaryMaximumBitrate = parseMaximumBitrateDescriptor(data, i + 5, ES_info_length);
+      if (elementaryMaximumBitrate !== undefined) {
+        pmt.elementary_maximum_bitrates[elementary_PID] = elementaryMaximumBitrate;
+      }
 
       const already_has_video = pmt.common_pids.h264 || pmt.common_pids.h265;
       const already_has_audio =
@@ -969,6 +985,14 @@ class TSDemuxer {
         Log.v(this.TAG, `Parsed first PMT: ${JSON.stringify(pmt)}`);
       }
       this.pmt_ = pmt;
+      const elementaryMaximumBitrate = Object.values(pmt.elementary_maximum_bitrates).reduce(
+        (sum, bitsPerSecond) => sum + bitsPerSecond,
+        0,
+      );
+      const maximumBitrate = pmt.program_maximum_bitrate ?? elementaryMaximumBitrate;
+      if (maximumBitrate > 0) {
+        this.onMaximumBitrate?.(maximumBitrate);
+      }
       if (pmt.common_pids.h264 || pmt.common_pids.h265) {
         this.has_video_ = true;
       }
