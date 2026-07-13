@@ -129,11 +129,13 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
     detachLoadListeners?.();
     detachLoadListeners = null;
     video.pause();
-    video.src = entry.url;
-    video.load();
-    attachLoadListeners(generation);
     mediaOrigin = 0;
     logicalTime = entry.start;
+    // Install the new generation's listeners before changing src: cached media and
+    // immediate failures may dispatch metadata/error events as soon as loading starts.
+    attachLoadListeners(generation);
+    video.src = entry.url;
+    video.load();
     events.emit("time-update", logicalTime);
     if (autoplay) {
       void video.play().catch((error: Error) => {
