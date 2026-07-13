@@ -314,7 +314,7 @@ const PlayerTimeline = memo(function PlayerTimeline({
       >
         <div
           className={clsx(
-            "player-performance-progress-fill player-performance-motion absolute top-0 left-0 h-full rounded-full bg-[linear-gradient(90deg,#3b82f6_0%,#38bdf8_52%,#6366f1_100%)] shadow-[0_0_18px_rgba(59,130,246,0.4)]",
+            "player-performance-progress-fill absolute top-0 left-0 h-full rounded-full bg-[linear-gradient(90deg,#3b82f6_0%,#38bdf8_52%,#6366f1_100%)] shadow-[0_0_18px_rgba(59,130,246,0.4)]",
             !isScrubbing && "transition-[width] duration-150",
           )}
           style={{ width: `${displayPosition}%` }}
