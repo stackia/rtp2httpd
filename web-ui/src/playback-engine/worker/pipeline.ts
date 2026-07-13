@@ -160,7 +160,7 @@ class Pipeline {
   private _tsBitrateSamples: Array<{ pcrBase: number; bytePosition: number }> = [];
   private _segmentBitrateSamples: number[] = [];
   private _currentSegmentBytes = 0;
-  private _lastBitrateUpdateTimestamp = 0;
+  private _lastBitrateUpdatePcr = 0;
   private _measuredBitrateStable = false;
 
   private _workerAudioDecoder: WorkerAudioDecoder | null = null;
@@ -272,7 +272,7 @@ class Pipeline {
     this._tsBitrateSamples = [];
     this._segmentBitrateSamples = [];
     this._currentSegmentBytes = 0;
-    this._lastBitrateUpdateTimestamp = 0;
+    this._lastBitrateUpdatePcr = 0;
     this._measuredBitrateStable = false;
     // A new generation must clear the previous stream's badges immediately.
     this._callbacks.onMediaInfo({});
@@ -282,7 +282,7 @@ class Pipeline {
     this._tsBitrateSamples = [];
     this._segmentBitrateSamples = [];
     this._currentSegmentBytes = 0;
-    this._lastBitrateUpdateTimestamp = 0;
+    this._lastBitrateUpdatePcr = 0;
     this._measuredBitrateStable = false;
     this._replaceBitrate(
       this._advertisedBitrate ? { bitsPerSecond: this._advertisedBitrate, source: "advertised" } : undefined,
@@ -317,6 +317,7 @@ class Pipeline {
         (pcrBase <= previousSample.pcrBase || bytePosition <= previousSample.bytePosition))
     ) {
       this._tsBitrateSamples = [];
+      this._lastBitrateUpdatePcr = 0;
     }
 
     this._tsBitrateSamples.push({ pcrBase, bytePosition });
@@ -332,9 +333,9 @@ class Pipeline {
     const elapsedMediaMilliseconds = (elapsedPcr * 1000) / PCR_TIMESCALE;
     const estimateStable =
       elapsedMediaMilliseconds >= BITRATE_STABLE_AFTER_MS && this._tsBitrateSamples.length >= BITRATE_MINIMUM_SAMPLES;
-    const timestamp = performance.now();
     const updateTooSoon =
-      this._lastBitrateUpdateTimestamp > 0 && timestamp - this._lastBitrateUpdateTimestamp < BITRATE_UPDATE_INTERVAL_MS;
+      this._lastBitrateUpdatePcr > 0 &&
+      ((pcrBase - this._lastBitrateUpdatePcr) * 1000) / PCR_TIMESCALE < BITRATE_UPDATE_INTERVAL_MS;
     if (!estimateStable || updateTooSoon) return;
 
     const totalBytes = lastSample.bytePosition - firstSample.bytePosition;
@@ -343,7 +344,7 @@ class Pipeline {
     const bitsPerSecond = Math.round((totalBytes * 8 * PCR_TIMESCALE) / elapsedPcr / 1000) * 1000;
     if (!Number.isFinite(bitsPerSecond) || bitsPerSecond <= 0) return;
 
-    this._lastBitrateUpdateTimestamp = timestamp;
+    this._lastBitrateUpdatePcr = pcrBase;
     this._measuredBitrateStable = true;
     this._replaceBitrate({ bitsPerSecond, source: "measured" });
   }
