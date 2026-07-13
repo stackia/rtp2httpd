@@ -68,9 +68,9 @@ const CANCELLED = Symbol("cancelled");
 type SourceMode = "continuous-live-ts" | "static-ts-list" | "hls";
 const PCR_TIMESCALE = 90000;
 const BITRATE_MEDIA_WINDOW_MS = 5000;
-const BITRATE_STABLE_AFTER_MS = 2000;
+const BITRATE_STABLE_AFTER_MS = 500;
 const BITRATE_UPDATE_INTERVAL_MS = 1000;
-const BITRATE_MINIMUM_SAMPLES = 3;
+const BITRATE_MINIMUM_SAMPLES = 2;
 const SEGMENT_BITRATE_SAMPLE_COUNT = 5;
 
 type MediaInfoVideo = NonNullable<PlayerMediaInfo["video"]>;
@@ -809,13 +809,6 @@ class Pipeline {
       }
       this._workerAudioDecoder?.reset();
       this._resetAudioTiming();
-    };
-    demuxer.onMaximumBitrate = (bitsPerSecond) => {
-      if (this._sourceMode === "hls" && this._advertisedBitrate !== undefined) return;
-      this._advertisedBitrate = bitsPerSecond;
-      if (!this._measuredBitrateStable) {
-        this._mergeMediaInfo({ bitrate: { bitsPerSecond, source: "advertised" } });
-      }
     };
     demuxer.onPcr = (pcrBase, bytePosition, discontinuity) => {
       this._recordTsPcr(pcrBase, bytePosition, discontinuity);

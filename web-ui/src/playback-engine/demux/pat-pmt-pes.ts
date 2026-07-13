@@ -25,40 +25,10 @@ interface PIDToStreamTypeMap {
   [pid: number]: StreamType;
 }
 
-const MAXIMUM_BITRATE_DESCRIPTOR_TAG = 0x0e;
-const MAXIMUM_BITRATE_UNIT_BITS_PER_SECOND = 50 * 8;
-
-/** Read the largest ISO/IEC 13818-1 maximum_bitrate_descriptor in a descriptor loop. */
-export function parseMaximumBitrateDescriptor(data: Uint8Array, start: number, length: number): number | undefined {
-  const end = Math.min(data.byteLength, start + length);
-  let maximumBitrate: number | undefined;
-
-  for (let offset = start; offset + 2 <= end; ) {
-    const tag = data[offset];
-    const descriptorLength = data[offset + 1];
-    const descriptorEnd = offset + 2 + descriptorLength;
-    if (descriptorEnd > end) break;
-
-    if (tag === MAXIMUM_BITRATE_DESCRIPTOR_TAG && descriptorLength >= 3) {
-      const encodedValue = ((data[offset + 2] & 0x3f) << 16) | (data[offset + 3] << 8) | data[offset + 4];
-      const bitsPerSecond = encodedValue * MAXIMUM_BITRATE_UNIT_BITS_PER_SECOND;
-      if (bitsPerSecond > 0) {
-        maximumBitrate = Math.max(maximumBitrate ?? 0, bitsPerSecond);
-      }
-    }
-
-    offset = descriptorEnd;
-  }
-
-  return maximumBitrate;
-}
-
 export class PMT {
   program_number!: number;
   version_number!: number;
   pcr_pid!: number;
-  program_maximum_bitrate: number | undefined;
-  elementary_maximum_bitrates: Record<number, number> = {};
   // pid -> stream_type
   pid_stream_type: PIDToStreamTypeMap = {};
 
