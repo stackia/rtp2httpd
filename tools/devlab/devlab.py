@@ -87,6 +87,7 @@ MCAST_SCAN_CHANNELS = (
 # Tuple: (channel_label, profile, seg_type, live_key).
 HLS_CHANNELS = (
     ("HLS-TS (h264-mp2)", "h264-mp2", "mpegts", "h264-mp2-ts"),
+    ("HLS-TS live packet loss", "h264-mp2", "mpegts", "h264-mp2-ts-loss"),
     ("HLS-TS (hevc-aac)", "hevc-aac", "mpegts", "hevc-aac-ts"),
     ("HLS-fMP4 (h264-aac)", "h264-aac", "fmp4", "h264-aac-fmp4"),
     ("HLS-fMP4 (hevc-aac)", "hevc-aac", "fmp4", "hevc-aac-fmp4"),
@@ -121,9 +122,17 @@ AUDIO_RENDITIONS = (
     AudioRendition("audio-es", "Español", "es", "spa", 1320, "h264-ac3", "ac3", "192k"),
 )
 
+MPEG_TS_PACKET_SIZE = 188
+RTP_TS_PAYLOAD_SIZE = 7 * MPEG_TS_PACKET_SIZE
+
 # ---------------------------------------------------------------------------
 # ffmpeg argument helpers
 # ---------------------------------------------------------------------------
+
+
+def mpegts_timestamp_args(offset: int) -> list[str]:
+    """Return ffmpeg arguments for deterministic zero-delay MPEG-TS timestamps."""
+    return ["-output_ts_offset", str(offset), "-muxdelay", "0", "-muxpreload", "0"]
 
 
 def resolve_font(path: str | None) -> str:
@@ -319,16 +328,11 @@ def _parse_time_token(tok: str) -> int:
     return int(time.time())
 
 
-def parse_playseek_begin(playseek: str) -> int:
-    """Return the begin time of a playseek value as a UTC epoch (seconds)."""
-    return _parse_time_token(playseek.split("-")[0]) if playseek else int(time.time())
-
-
 def parse_playseek_range(playseek: str) -> tuple[int, int]:
     """Return ``(begin, end)`` UTC epochs for a ``BEGIN-END`` playseek value.
 
     rtp2httpd forwards compact ``yyyyMMddHHmmss`` times (no internal dashes) so a
-    plain ``-`` split is safe. A missing/!invalid end defaults to begin + 60s.
+    plain ``-`` split is safe. A missing or invalid end defaults to begin + 60s.
     """
     toks = [t for t in playseek.split("-") if t.strip()] if playseek else []
     begin = _parse_time_token(toks[0]) if toks else int(time.time())
@@ -588,12 +592,65 @@ class CatchupHLS:
         ]
 
 
+class ContinuityHLS:
+    """Deterministic HLS-TS VOD with overlap, gap and a large timestamp restart."""
+
+    seg_dur = 6
+    timestamp_offsets = (0, 5, 13, 0)
+
+    def __init__(self, ffmpeg: str):
+        self.ffmpeg = ffmpeg
+
+    def playlist(self, base: str) -> str:
+        lines = [
+            "#EXTM3U",
+            "#EXT-X-VERSION:3",
+            f"#EXT-X-TARGETDURATION:{self.seg_dur}",
+            "#EXT-X-MEDIA-SEQUENCE:0",
+            "#EXT-X-PLAYLIST-TYPE:VOD",
+        ]
+        for idx in range(len(self.timestamp_offsets)):
+            if idx == 2:
+                # The TS path deliberately ignores this tag and follows the
+                # actual timestamp continuity policy instead.
+                lines.append("#EXT-X-DISCONTINUITY")
+            lines += [f"#EXTINF:{self.seg_dur}.000,", f"{base}/continuity-hls/{idx}.ts"]
+        lines.append("#EXT-X-ENDLIST")
+        return "\n".join(lines) + "\n"
+
+    def segment_cmd(self, idx: int) -> list[str]:
+        offset = self.timestamp_offsets[idx]
+        return [
+            self.ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            *lavfi_inputs(),
+            "-t",
+            str(self.seg_dur),
+            "-vf",
+            f"{live_filter('HLS continuity')},{_drawtext(f'SEG {idx} PTS {offset}s', 152, expansion=False)}",
+            *video_args("h264-mp2"),
+            *audio_args("h264-mp2"),
+            *mpegts_timestamp_args(offset),
+            "-f",
+            "mpegts",
+            "-",
+        ]
+
+
 # ---------------------------------------------------------------------------
 # HTTP origin server
 # ---------------------------------------------------------------------------
 
 
-def make_http_handler(host: str, port: int, live_root: str, catchup: CatchupHLS) -> type[BaseHTTPRequestHandler]:
+def make_http_handler(
+    host: str,
+    port: int,
+    live_root: str,
+    catchup: CatchupHLS,
+    continuity: ContinuityHLS,
+) -> type[BaseHTTPRequestHandler]:
     base = f"http://{host}:{port}"
 
     class Handler(BaseHTTPRequestHandler):
@@ -621,7 +678,18 @@ def make_http_handler(host: str, port: int, live_root: str, catchup: CatchupHLS)
             else:
                 ctype = "video/mp2t"
             with open(path, "rb") as fh:
-                self._send(200, ctype, fh.read())
+                body = fh.read()
+            if "h264-mp2-ts-loss" in path and path.endswith(".ts"):
+                try:
+                    segment_index = int(os.path.basename(path).removeprefix("seg_").removesuffix(".ts"))
+                except ValueError:
+                    segment_index = 0
+                if segment_index % 3 == 1:
+                    packet_count = len(body) // MPEG_TS_PACKET_SIZE
+                    drop_start = max(1, packet_count // 2)
+                    drop_end = min(packet_count, drop_start + 40)
+                    body = body[: drop_start * MPEG_TS_PACKET_SIZE] + body[drop_end * MPEG_TS_PACKET_SIZE :]
+            self._send(200, ctype, body)
 
         def _live(self, parts: list[str]) -> None:
             # /live/<profile>/<path...>
@@ -656,6 +724,26 @@ def make_http_handler(host: str, port: int, live_root: str, catchup: CatchupHLS)
             finally:
                 if proc.poll() is None:
                     proc.terminate()
+
+        def _continuity_playlist(self) -> None:
+            text = continuity.playlist(base)
+            self._send(200, "application/vnd.apple.mpegurl", text.encode())
+
+        def _continuity_seg(self, idx: int) -> None:
+            if idx < 0 or idx >= len(continuity.timestamp_offsets):
+                self._send(404, "text/plain", b"not found")
+                return
+            proc = subprocess.run(
+                continuity.segment_cmd(idx),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30,
+                check=False,
+            )
+            if proc.returncode != 0:
+                self._send(500, "text/plain", proc.stderr[-4096:] or b"ffmpeg failed")
+                return
+            self._send(200, "video/mp2t", proc.stdout)
 
         def _multi_ts(self) -> None:
             self.send_response(200)
@@ -702,6 +790,10 @@ def make_http_handler(host: str, port: int, live_root: str, catchup: CatchupHLS)
                 elif len(parts) == 4 and parts[0] == "catchup-seg":
                     # /catchup-seg/<profile>/<begin>/<idx>.ts
                     self._catchup_seg(parts[1], int(parts[2]), int(parts[3].removesuffix(".ts")))
+                elif parts == ["continuity-hls", "index.m3u8"]:
+                    self._continuity_playlist()
+                elif len(parts) == 2 and parts[0] == "continuity-hls":
+                    self._continuity_seg(int(parts[1].removesuffix(".ts")))
                 elif parts == ["multi-audio.ts"]:
                     self._multi_ts()
                 else:
@@ -731,6 +823,8 @@ class RTSPOrigin:
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._catchup_gap_requests = 0
+        self._catchup_gap_lock = threading.Lock()
 
     def start(self) -> None:
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -765,10 +859,22 @@ class RTSPOrigin:
 
     def _ffmpeg_cmd(self, uri: str) -> list[str]:
         profile = self._profile_from_uri(uri)
-        qs = parse_qs(urlparse(uri).query)
+        parsed_uri = urlparse(uri)
+        qs = parse_qs(parsed_uri.query)
         playseek = (qs.get("playseek") or qs.get("tvdr") or [""])[0]
+        duration_args: list[str] = []
+        timestamp_args: list[str] = []
         if playseek:
-            vf = catchup_filter(profile, parse_playseek_begin(playseek))
+            begin, end = parse_playseek_range(playseek)
+            vf = catchup_filter(profile, begin)
+            duration_args = ["-t", str(end - begin)]
+            timeline_offset = begin % 86400
+            if "/catchup-gap/" in parsed_uri.path:
+                with self._catchup_gap_lock:
+                    request_index = self._catchup_gap_requests
+                    self._catchup_gap_requests += 1
+                timeline_offset += request_index * 2
+            timestamp_args = mpegts_timestamp_args(timeline_offset)
         else:
             vf = live_filter(profile)
         return [
@@ -778,10 +884,12 @@ class RTSPOrigin:
             "error",
             "-re",
             *lavfi_inputs(),
+            *duration_args,
             "-vf",
             vf,
             *video_args(profile),
             *audio_args(profile),
+            *timestamp_args,
             "-f",
             "mpegts",
             "-",
@@ -850,7 +958,8 @@ class RTSPOrigin:
         seq = 0
         ts = 0
         buf = b""
-        payload = 1316  # 7 * 188-byte TS packets per RTP datagram
+        payload = RTP_TS_PAYLOAD_SIZE
+        inject_packet_loss = "/live-loss/" in urlparse(uri).path
         try:
             while not self._stop.is_set():
                 chunk = proc.stdout.read(payload)
@@ -861,7 +970,9 @@ class RTSPOrigin:
                     pkt, buf = buf[:payload], buf[payload:]
                     header = struct.pack("!BBHII", 0x80, 33, seq & 0xFFFF, ts & 0xFFFFFFFF, 0x0DEFACED)
                     rtp = header + pkt
-                    conn.sendall(b"\x24" + struct.pack("!BH", 0, len(rtp)) + rtp)
+                    drop_for_fault = inject_packet_loss and 500 <= seq % 1000 < 506
+                    if not drop_for_fault:
+                        conn.sendall(b"\x24" + struct.pack("!BH", 0, len(rtp)) + rtp)
                     seq += 1
                     ts += 3600
         except BrokenPipeError, ConnectionError, OSError:
@@ -908,7 +1019,7 @@ class MulticastLive:
 
     def _cmd(self) -> list[str]:
         common = [self.ffmpeg, "-hide_banner", "-loglevel", "error"]
-        out = f"{self.url()}?ttl=1&pkt_size=1316"
+        out = f"{self.url()}?ttl=1&pkt_size={RTP_TS_PAYLOAD_SIZE}"
         if self.ts_file:
             # Stream-copy the original bitstream so the exact codecs are relayed.
             return [*common, "-re", "-stream_loop", "-1", "-i", self.ts_file, "-c", "copy", "-f", "rtp_mpegts", out]
@@ -976,6 +1087,10 @@ def build_services_m3u(http_hostport: str, rtsp_hostport: str, mcast_channels: l
             f'#EXTINF:-1 group-title="HLS" catchup="default" catchup-source="{src}",{label}',
             f"http://{http_hostport}/live/{key}/index.m3u8",
         ]
+    lines += [
+        '#EXTINF:-1 group-title="HLS",HLS-TS continuity overlap gap restart',
+        f"http://{http_hostport}/continuity-hls/index.m3u8",
+    ]
     for label, _seg_type, key in ALT_AUDIO_HLS_CHANNELS:
         lines += [
             f'#EXTINF:-1 group-title="HLS",{label}',
@@ -1000,6 +1115,13 @@ def build_services_m3u(http_hostport: str, rtsp_hostport: str, mcast_channels: l
             extinf,
             f"rtsp://{rtsp_hostport}/live/{prof}",
         ]
+    gap_src = f"rtsp://{rtsp_hostport}/catchup-gap/h264-mp2?{tpl}"
+    lines += [
+        f'#EXTINF:-1 group-title="mpegts (RTSP)" catchup="default" catchup-source="{gap_src}",mpegts catchup gap',
+        f"rtsp://{rtsp_hostport}/live/h264-mp2",
+        '#EXTINF:-1 group-title="mpegts (RTSP)",mpegts live packet loss',
+        f"rtsp://{rtsp_hostport}/live-loss/h264-mp2",
+    ]
     for group_title, name, rtp_url in mcast_channels:
         lines += [f'#EXTINF:-1 group-title="{group_title}",{name}', rtp_url]
     return "\n".join(lines) + "\n"
@@ -1093,7 +1215,8 @@ def main() -> int:
         return 1
 
     catchup = CatchupHLS(args.ffmpeg)
-    handler = make_http_handler(args.host, args.http_port, live_root, catchup)
+    continuity = ContinuityHLS(args.ffmpeg)
+    handler = make_http_handler(args.host, args.http_port, live_root, catchup, continuity)
     httpd = ThreadingHTTPServer((args.host, args.http_port), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 

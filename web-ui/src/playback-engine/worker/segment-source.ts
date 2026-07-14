@@ -6,8 +6,8 @@ export interface SegmentMeta {
   start: number;
   /** Segment duration in seconds (0 if unknown / live). */
   duration: number;
-  /** Destroy and recreate the remuxer before this segment, re-anchoring output at `start` (HLS discontinuity / seek). */
-  resetRemuxer: boolean;
+  /** Why the transmuxer may need resetting. MPEG-TS ignores playlist resets; fMP4 keeps its period reset. */
+  resetReason?: "initial" | "playlist-reset";
   /** fMP4 initialization segment URL (HLS EXT-X-MAP), if any. */
   initUrl?: string;
 }
@@ -30,7 +30,6 @@ export class StaticSegmentSource implements SegmentSource {
         url: seg.url,
         start,
         duration: seg.duration ?? 0,
-        resetRemuxer: false,
       };
       start += seg.duration ?? 0;
       return meta;
@@ -56,7 +55,6 @@ export class ContinuousLiveSegmentSource implements SegmentSource {
       url: segment.url,
       start: 0,
       duration: 0,
-      resetRemuxer: false,
     };
   }
 

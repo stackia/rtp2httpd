@@ -184,6 +184,12 @@ export interface TSAudioTrackInfo {
 
 export type OnAudioTracksCallback = (tracks: TSAudioTrackInfo[], selectedPid: number | undefined) => void;
 
+export interface RawMp2AudioFrame {
+  codec: "mp2";
+  data: Uint8Array;
+  pts?: number;
+}
+
 class TSDemuxer {
   private readonly TAG: string = "TSDemuxer";
 
@@ -194,7 +200,7 @@ class TSDemuxer {
   public onPcr: OnPcrCallback | null = null;
   public onAudioTracks: OnAudioTracksCallback | null = null;
   /** Software audio decode support (MP2) */
-  public onRawAudioData: ((frame: { codec: "mp2"; data: Uint8Array; pts: number }) => void) | null = null;
+  public onRawAudioData: ((frame: RawMp2AudioFrame) => void) | null = null;
 
   private ts_packet_size_: number;
   private sync_offset_: number;
@@ -1940,7 +1946,7 @@ class TSDemuxer {
 
       // Dispatch the raw payload for software decoding (the WASM decoder
       // splits it into frames and carries partial frames across payloads)
-      const pts_ms = (pts ?? 0) / this.timescale_;
+      const pts_ms = pts === undefined ? undefined : pts / this.timescale_;
       this.onRawAudioData({ codec: "mp2", data, pts: pts_ms });
 
       // Don't push samples to audio track — the remuxer generates

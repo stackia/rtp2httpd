@@ -10,9 +10,12 @@ needs to support:
 | HLS-fMP4 live            | HTTP `.m3u8` + `.m4s`             | `/http`         | `h264-aac`, `hevc-aac`              |
 | HLS alternate audio      | HTTP master + split A/V playlists | `/http`         | AAC / MP2 / AC-3 (TS), AAC (fMP4)   |
 | HLS internal multi-audio | HTTP `.m3u8` + multi-PID `.ts`    | `/http`         | H.264 + AAC / MP2 / AC-3            |
+| HLS timestamp continuity | HTTP VOD with crafted `.ts` PTS   | `/http`         | H.264 + MP2                          |
+| HLS live packet loss     | HTTP `.m3u8` + damaged `.ts`      | `/http`         | H.264 + MP2                          |
 | HTTP internal multi-audio | continuous multi-PID MPEG-TS     | `/http`         | H.264 + AAC / MP2 / AC-3            |
 | HLS catchup              | HTTP HLS VOD (`playseek`)         | `/http`         | all of the above                    |
 | mpegts (RTSP)            | RTSP TS live + catchup            | `/rtsp`         | `h264-mp2`, `hevc-aac`              |
+| mpegts continuity faults | RTSP catchup + RTP packet loss    | `/rtsp`         | H.264 + MP2                          |
 | mpegts (multicast)       | RTP multicast live                | `/rtp`          | `h264-mp2`, `hevc-ac3`, `hevc-eac3` |
 | mpegts (scan)            | RTP multicast live                | `/rtp`          | 1080i / 1080p / 2160p (see below)   |
 | external file            | RTP multicast (looped)            | `/rtp`          | whatever the `.ts` file contains    |
@@ -37,6 +40,24 @@ The **internal multi-audio** channels carry those same three languages and
 tones as separate PIDs in one MPEG-TS program. One is segmented as HLS-TS and
 the other is a continuous HTTP TS response, covering both inputs accepted by
 the custom demux/transmux pipeline.
+
+The **HLS-TS continuity overlap gap restart** VOD has four six-second TS
+segments with deterministic timestamp starts: 0s, 5s, 13s, then 0s. This
+creates a one-second overlap, a two-second gap, and finally a greater-than-ten
+second timestamp restart. An `EXT-X-DISCONTINUITY` is also placed before the
+gap segment to prove that HLS-TS follows the timestamp policy instead of
+resetting its output timeline from playlist metadata.
+
+The two live packet-loss channels are deterministic fault injectors. HLS drops
+40 complete TS packets from every third segment; RTSP skips six consecutive RTP
+packets roughly every five seconds. The player should recover at the next valid
+sample/keyframe and keep its output timeline continuous.
+
+The **mpegts catchup gap** channel terminates every requested RTSP catchup
+window and advances the source timestamp offset by an extra two seconds for
+each subsequent request. Together with the normal RTSP catchup channel's
+one-second request overlap, these cover both overlap and gap handling across
+plain MPEG-TS URL boundaries.
 
 **HLS catchup** is a real HLS VOD: each `playseek` window returns an
 `index.m3u8` (`#EXT-X-PLAYLIST-TYPE:VOD`) listing fixed-duration `.ts` slices.
@@ -104,6 +125,21 @@ uv run tools/devlab/devlab.py
 # 3. open the player and pick a channel
 #    http://127.0.0.1:5140/player
 ```
+
+## Browser autoplay and audio prompts
+
+Browsers may show a **Click to Play** prompt because unmuted audio playback
+requires a trusted user gesture. Browser automation must handle this prompt
+according to what the scenario is testing:
+
+- If the test does not depend on audible output, mute the player and then
+  reload the page. The reload is required so playback starts in the muted
+  state and the automation can continue without the prompt.
+- If the test validates audio or audible track switching, stop the automation,
+  show the player to the user, and ask the user to click **Click to Play**.
+  Resume only after the user confirms the interaction. Do not attempt to clear
+  the prompt with a programmatic click: it does not provide the trusted user
+  gesture required to enable audio playback.
 
 Requires `ffmpeg` on PATH with `drawtext`, `libx264`, `libx265`, `aac`, and
 `mp2`. On macOS with Homebrew, install a full build:
