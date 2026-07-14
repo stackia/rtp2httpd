@@ -466,7 +466,12 @@ class MP4Remuxer {
     const videoEndDts = videoSamples[videoSamples.length - 1].dts + videoSamples[videoSamples.length - 1].duration;
 
     if (this._silentAudioLastDts === undefined) {
-      this._silentAudioLastDts = videoSamples[0].dts;
+      // During an internal PID switch, resetAudioTrackForSwitch() positions
+      // _audioNextDts at the requested splice point. Start the silent MSE
+      // occupancy there instead of at the next video batch, otherwise the
+      // audio SourceBuffer gets a hole and stalls video while MP2 is decoded
+      // through Web Audio.
+      this._silentAudioLastDts = this._audioNextDts ?? videoSamples[0].dts;
     }
 
     const samples: Array<{ unit: Uint8Array; dts: number; pts: number; duration: number }> = [];

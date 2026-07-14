@@ -41,6 +41,8 @@ interface PendingInternalAudioSwitch {
   oldPid: number;
   queued: OutputEvent[];
   pcm: Array<{ pcm: Float32Array; channels: number; sampleRate: number; time: number }>;
+  audioMode: "pending" | "mse" | "pcm";
+  mediaReady: boolean;
   prepared: boolean;
   fromTime: number;
 }
@@ -232,6 +234,7 @@ function createAudioPipeline(
     onHlsInfo() {},
     onTimelineAnchor() {},
     onTsAudioTracks() {},
+    onTsAudioSourceCodec() {},
     onMediaInfo(info) {
       audioMediaInfo = info;
       emitMergedMediaInfo();
@@ -318,10 +321,23 @@ function handlePrimaryTsAudioTracks(tracks: TSAudioTrackInfo[], selectedPid: num
 
 function prepareInternalAudioSwitch(): void {
   const pending = pendingInternalAudioSwitch;
-  if (!pending || pending.prepared) return;
+  if (
+    !pending ||
+    pending.prepared ||
+    !pending.mediaReady ||
+    pending.audioMode === "pending" ||
+    (pending.audioMode === "pcm" && pending.pcm.length === 0)
+  )
+    return;
   pending.prepared = true;
   postOutputEvents(pending.queued, "init");
-  post({ type: "audio-track-switch", trackId: pending.trackId, fromTime: pending.fromTime, gen });
+  post({
+    type: "audio-track-switch",
+    trackId: pending.trackId,
+    fromTime: pending.fromTime,
+    pcmFromTime: pending.audioMode === "pcm" ? pending.pcm[0].time : pending.fromTime,
+    gen,
+  });
 }
 
 function selectInternalAudioTrack(trackId: string, pid: number, currentTime: number): void {
@@ -337,6 +353,8 @@ function selectInternalAudioTrack(trackId: string, pid: number, currentTime: num
     oldPid,
     queued: [],
     pcm: [],
+    audioMode: "pending",
+    mediaReady: false,
     prepared: false,
     fromTime: currentTime,
   };
@@ -390,6 +408,7 @@ function createPrimaryPipeline(segments: PlayerSegment[], loadOptions: PlaybackL
       const event = outputFromMedia(type, mediaSegment);
       if (type === "audio" && pendingInternalAudioSwitch) {
         pendingInternalAudioSwitch.queued.push(event);
+        pendingInternalAudioSwitch.mediaReady = true;
         prepareInternalAudioSwitch();
         return;
       }
@@ -409,6 +428,12 @@ function createPrimaryPipeline(segments: PlayerSegment[], loadOptions: PlaybackL
     onHlsInfo: handlePrimaryHlsInfo,
     onTimelineAnchor: handlePrimaryTimelineAnchor,
     onTsAudioTracks: handlePrimaryTsAudioTracks,
+    onTsAudioSourceCodec(codec) {
+      const pending = pendingInternalAudioSwitch;
+      if (!pending) return;
+      pending.audioMode = codec.toLowerCase() === "mp2" ? "pcm" : "mse";
+      prepareInternalAudioSwitch();
+    },
     onMediaInfo(info) {
       primaryMediaInfo = info;
       emitMergedMediaInfo();
@@ -416,6 +441,7 @@ function createPrimaryPipeline(segments: PlayerSegment[], loadOptions: PlaybackL
     onPCMAudioData(pcm, channels, sampleRate, time) {
       if (pendingInternalAudioSwitch) {
         pendingInternalAudioSwitch.pcm.push({ pcm, channels, sampleRate, time });
+        prepareInternalAudioSwitch();
         return;
       }
       postPCMAudio(pcm, channels, sampleRate, time);
@@ -562,6 +588,7 @@ function selectAudioTrack(trackId: string, currentTime: number): void {
     },
     onTimelineAnchor() {},
     onTsAudioTracks() {},
+    onTsAudioSourceCodec() {},
     onMediaInfo(info) {
       candidateMediaInfo = info;
       if (committed) {

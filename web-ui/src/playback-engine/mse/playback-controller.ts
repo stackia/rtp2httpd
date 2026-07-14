@@ -177,7 +177,7 @@ export function createMSEPlaybackController(
           if (switchGeneration !== mseGeneration || switchWorker !== worker) return;
           if (success) {
             mse?.replaceAudioFrom(msg.fromTime);
-            pcmPlayer?.replaceFrom(msg.fromTime);
+            pcmPlayer?.replaceFrom(msg.pcmFromTime ?? msg.fromTime);
           }
           switchWorker?.postMessage({
             type: "audio-track-switch-result",

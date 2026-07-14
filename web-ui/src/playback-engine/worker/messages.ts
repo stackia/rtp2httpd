@@ -30,7 +30,7 @@ export type WorkerEvent =
     }
   | { type: "hls-info"; live: boolean; totalDuration: number; gen: number }
   | { type: "audio-tracks"; state: PlayerAudioTrackState; gen: number }
-  | { type: "audio-track-switch"; trackId: string; fromTime: number; gen: number }
+  | { type: "audio-track-switch"; trackId: string; fromTime: number; pcmFromTime?: number; gen: number }
   | {
       type: "pcm-audio-data";
       pcm: ArrayBuffer;

@@ -56,6 +56,8 @@ export interface PipelineCallbacks {
   onHlsInfo: (info: HlsInfo) => void;
   onTimelineAnchor: (anchor: MediaTimelineAnchor) => void;
   onTsAudioTracks: (tracks: TSAudioTrackInfo[], selectedPid: number | undefined) => void;
+  /** Reports every selected TS audio PID's parsed source codec, even when unchanged from the previous PID. */
+  onTsAudioSourceCodec: (codec: string) => void;
   onMediaInfo: (info: PlayerMediaInfo) => void;
   /** `time` is normalized to the MSE timeline (seconds, same space as video.currentTime). */
   onPCMAudioData: (pcm: Float32Array, channels: number, sampleRate: number, time: number) => void;
@@ -888,6 +890,11 @@ class Pipeline {
     const remuxTrackMetadata = demuxer.onTrackMetadata;
     demuxer.onTrackMetadata = (type, metadata) => {
       if (this._forcedTrack && type !== this._forcedTrack) return;
+      if (type === "audio" && metadata && typeof metadata === "object") {
+        const audioMetadata = metadata as Record<string, unknown>;
+        const sourceCodec = audioMetadata.sourceCodec ?? audioMetadata.originalCodec ?? audioMetadata.codec;
+        if (typeof sourceCodec === "string") this._callbacks.onTsAudioSourceCodec(sourceCodec);
+      }
       this._handleTsTrackMetadata(type, metadata);
       remuxTrackMetadata?.(type, metadata);
     };
