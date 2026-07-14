@@ -1,5 +1,4 @@
 #include "http_chunked_decoder.h"
-#include <limits.h>
 #include <string.h>
 
 static int http_chunked_hex_value(uint8_t ch) {

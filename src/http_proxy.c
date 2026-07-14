@@ -141,7 +141,6 @@ void http_proxy_session_init(http_proxy_session_t *session) {
   session->bytes_received = 0;
   session->headers_received = 0;
   session->headers_forwarded = 0;
-  http_chunked_decoder_init(&session->chunked_decoder);
   session->upstream_paused = 0;
   session->cleanup_done = 0;
 }
@@ -760,12 +759,6 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
       logger(LOG_ERROR, "HTTP Proxy: M3U rewrite failed");
       return -1;
     }
-  } else {
-    rewritten = strdup("");
-    if (!rewritten) {
-      logger(LOG_ERROR, "HTTP Proxy: Failed to allocate empty rewrite body");
-      return -1;
-    }
   }
 
   /* Build and send response headers with new Content-Length
@@ -775,16 +768,9 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
   size_t hdr_remaining = sizeof(headers);
   int headers_len = 0;
 
-  if (session->saved_response_headers && session->saved_response_headers_len > 0) {
-    /* Parse and rebuild headers from saved original headers */
-    char *saved_copy = strdup(session->saved_response_headers);
-    if (!saved_copy) {
-      free(rewritten);
-      logger(LOG_ERROR, "HTTP Proxy: Failed to copy saved response headers");
-      return -1;
-    }
-
-    char *line = strtok(saved_copy, "\r\n");
+  if (session->saved_response_headers) {
+    /* Rebuild headers in place; the saved copy is not needed after finalization. */
+    char *line = strtok(session->saved_response_headers, "\r\n");
     while (line != NULL) {
       /* Skip headers that need to be modified */
       if (strncasecmp(line, "Content-Length:", 15) == 0 || strncasecmp(line, "Transfer-Encoding:", 18) == 0 ||
@@ -801,7 +787,6 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
       }
       line = strtok(NULL, "\r\n");
     }
-    free(saved_copy);
 
     /* Add correct Content-Length */
     int cl_written = snprintf(hdr_ptr, hdr_remaining, "Content-Length: %zu\r\n", rewritten_size);
@@ -889,7 +874,7 @@ static int http_proxy_consume_rewrite_body(http_proxy_session_t *session, const 
   return (int)len;
 }
 
-static int http_proxy_handle_upstream_close(http_proxy_session_t *session) {
+static int http_proxy_handle_upstream_end(http_proxy_session_t *session) {
   if (session->needs_body_rewrite) {
     if (session->response_is_chunked &&
         http_chunked_decoder_finish(&session->chunked_decoder) != HTTP_CHUNKED_DECODE_DONE) {
@@ -925,14 +910,12 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
         if (errno == EAGAIN)
           return 0;
         logger(LOG_ERROR, "HTTP Proxy: Recv failed: %s", strerror(errno));
-        if (session->response_is_chunked)
-          return -1;
-        return http_proxy_finalize_rewrite(session);
+        return http_proxy_handle_upstream_end(session);
       }
 
       if (received == 0) {
         logger(LOG_DEBUG, "HTTP Proxy: Upstream closed, processing rewrite buffer");
-        return http_proxy_handle_upstream_close(session);
+        return http_proxy_handle_upstream_end(session);
       }
 
       session->bytes_received += received;
@@ -963,14 +946,13 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
         return 0;
       }
       logger(LOG_ERROR, "HTTP Proxy: Recv failed: %s", strerror(errno));
-      http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
-      return 0;
+      return http_proxy_handle_upstream_end(session);
     }
 
     if (received == 0) {
       buffer_ref_put(buf);
       logger(LOG_DEBUG, "HTTP Proxy: Upstream closed connection");
-      return http_proxy_handle_upstream_close(session);
+      return http_proxy_handle_upstream_end(session);
     }
 
     /* Queue for zero-copy send */
@@ -1186,7 +1168,6 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
       if (session->saved_response_headers) {
         memcpy(session->saved_response_headers, session->response_buffer, header_len);
         session->saved_response_headers[header_len] = '\0';
-        session->saved_response_headers_len = header_len;
         logger(LOG_DEBUG, "HTTP Proxy: Saved %zu bytes of response headers for rewrite", header_len);
       }
     }
@@ -1443,30 +1424,24 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t event
    * bytes complete its framing, particularly the terminating chunk. */
   if ((events & POLLER_ERR) && session->state != HTTP_PROXY_STATE_COMPLETE) {
     int sock_error = 0;
+    int has_socket_error = 0;
     socklen_t error_len = sizeof(sock_error);
     if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error, &error_len) == 0 && sock_error != 0) {
       logger(LOG_ERROR, "HTTP Proxy: Socket error: %s", strerror(sock_error));
-      /* During STREAMING: drain pending client output before disconnecting */
-      if (session->state == HTTP_PROXY_STATE_STREAMING) {
-        if (session->needs_body_rewrite && session->response_is_chunked) {
-          logger(LOG_ERROR, "HTTP Proxy: Chunked M3U upstream failed before the terminating chunk");
-          http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
-          return -1;
-        }
-        http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
-      } else {
-        http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
-        return -1;
-      }
+      has_socket_error = 1;
     } else if (session->state != HTTP_PROXY_STATE_SENDING_REQUEST) {
       logger(LOG_ERROR, "HTTP Proxy: Socket error event received");
+      has_socket_error = 1;
+    }
+
+    if (has_socket_error) {
       if (session->state == HTTP_PROXY_STATE_STREAMING) {
-        if (session->needs_body_rewrite && session->response_is_chunked) {
-          logger(LOG_ERROR, "HTTP Proxy: Chunked M3U upstream failed before the terminating chunk");
+        result = http_proxy_handle_upstream_end(session);
+        if (result < 0) {
           http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
           return -1;
         }
-        http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
+        progress += result;
       } else {
         http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
         return -1;
@@ -1483,12 +1458,16 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t event
     /* Upstream closed connection */
     if (session->state == HTTP_PROXY_STATE_STREAMING || session->state == HTTP_PROXY_STATE_AWAITING_HEADERS) {
       logger(LOG_DEBUG, "HTTP Proxy: Upstream closed connection (normal)");
-      if (session->state == HTTP_PROXY_STATE_STREAMING && session->needs_body_rewrite && session->response_is_chunked) {
-        logger(LOG_ERROR, "HTTP Proxy: Chunked M3U upstream closed before the terminating chunk");
-        http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
-        return -1;
+      if (session->state == HTTP_PROXY_STATE_STREAMING) {
+        result = http_proxy_handle_upstream_end(session);
+        if (result < 0) {
+          http_proxy_set_state(session, HTTP_PROXY_STATE_ERROR);
+          return -1;
+        }
+        progress += result;
+      } else {
+        http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
       }
-      http_proxy_set_state(session, HTTP_PROXY_STATE_COMPLETE);
     } else if (session->state != HTTP_PROXY_STATE_COMPLETE) {
       /* For other states (like SENDING_REQUEST), this is unexpected */
       logger(LOG_INFO,
@@ -1550,7 +1529,6 @@ int http_proxy_session_cleanup(http_proxy_session_t *session) {
   if (session->saved_response_headers) {
     free(session->saved_response_headers);
     session->saved_response_headers = NULL;
-    session->saved_response_headers_len = 0;
   }
 
   session->cleanup_done = 1;

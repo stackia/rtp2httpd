@@ -111,7 +111,6 @@ typedef struct {
 
   /* Saved response headers for passthrough during body rewrite */
   char *saved_response_headers; /* malloc'd copy of original response headers */
-  size_t saved_response_headers_len;
 
   /* Request headers for base URL construction */
   char host_header[HTTP_PROXY_HOST_SIZE];      /* Host header from client */
