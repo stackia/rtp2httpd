@@ -1,6 +1,7 @@
 #ifndef __HTTP_PROXY_H__
 #define __HTTP_PROXY_H__
 
+#include "http_chunked_decoder.h"
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -79,6 +80,10 @@ typedef struct {
   ssize_t bytes_received;                                   /* Bytes of body received so far */
   int headers_received;                                     /* Flag: headers fully received */
   int headers_forwarded;                                    /* Flag: headers forwarded to client */
+  int transfer_encoding_seen;                               /* Upstream sent Transfer-Encoding */
+  int response_is_chunked;                                  /* Final supported transfer coding is chunked */
+  int unsupported_transfer_coding;                          /* Transfer-Encoding includes unsupported coding */
+  http_chunked_decoder_t chunked_decoder;                   /* Used only while rewriting chunked M3U bodies */
 
   /* Non-blocking I/O state */
   char pending_request[HTTP_PROXY_REQUEST_BUFFER_SIZE];     /* Request being sent */

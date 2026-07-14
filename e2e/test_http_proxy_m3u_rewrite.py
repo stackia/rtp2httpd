@@ -7,6 +7,7 @@ proxy.  These tests verify the rewriting logic end-to-end.
 """
 
 import socket
+import struct
 import threading
 
 import pytest
@@ -15,6 +16,7 @@ from helpers import (
     MockHTTPUpstream,
     R2HProcess,
     find_free_port,
+    get_header,
     http_get,
     stream_get,
 )
@@ -114,9 +116,12 @@ def _make_m3u_upstream(path, body, content_type="application/vnd.apple.mpegurl")
 class _RawHTTPResponseUpstream:
     """Serve a prebuilt raw HTTP response and keep the connection open."""
 
-    def __init__(self, response):
+    def __init__(self, response, *, part_delay=0.0, keep_open=True, reset_after_send=False):
         self.port = find_free_port()
-        self.response = response
+        self.response_parts = [response] if isinstance(response, bytes) else list(response)
+        self.part_delay = part_delay
+        self.keep_open = keep_open
+        self.reset_after_send = reset_after_send
         self._server_sock = None
         self._thread = None
         self._stop = threading.Event()
@@ -162,11 +167,20 @@ class _RawHTTPResponseUpstream:
                 if not chunk:
                     return
                 request += chunk
-            conn.sendall(self.response)
-            self._stop.wait(_TIMEOUT * 2)
+            for part in self.response_parts:
+                conn.sendall(part)
+                if self.part_delay > 0 and self._stop.wait(self.part_delay):
+                    return
+            if self.keep_open:
+                self._stop.wait(_TIMEOUT * 2)
         except OSError:
             pass
         finally:
+            if self.reset_after_send:
+                try:
+                    conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+                except OSError:
+                    pass
             conn.close()
 
 
@@ -184,6 +198,20 @@ def _make_padded_header_m3u_upstream(body, content_type="application/vnd.apple.m
     upstream = _RawHTTPResponseUpstream(response)
     upstream.start()
     return upstream
+
+
+def _raw_chunked_headers(content_type="text/plain", transfer_encoding="chunked", trailer=None, content_length=None):
+    headers = (
+        "HTTP/1.1 200 OK\r\n"
+        f"Content-Type: {content_type}\r\n"
+        f"Transfer-Encoding: {transfer_encoding}\r\n"
+        "Connection: keep-alive\r\n"
+    )
+    if trailer:
+        headers += f"Trailer: {trailer}\r\n"
+    if content_length is not None:
+        headers += f"Content-Length: {content_length}\r\n"
+    return (headers + "\r\n").encode()
 
 
 # ---------------------------------------------------------------------------
@@ -701,6 +729,168 @@ class TestM3URewriteRealistic:
             assert "IV=0x00000064" in text
         finally:
             upstream.stop()
+
+
+# ---------------------------------------------------------------------------
+# Chunked transfer decoding
+# ---------------------------------------------------------------------------
+
+
+class TestM3URewriteChunked:
+    """Chunk framing should be removed only for M3U rewrite responses."""
+
+    def test_chunked_text_plain_m3u_is_decoded_and_rewritten(self, shared_r2h):
+        """Regression: chunk sizes and the zero chunk must not become playlist URLs."""
+        first = b"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:8\n"
+        second = b"#EXTINF:8.000,\n321124334400000.jpeg\n"
+        headers = _raw_chunked_headers(trailer="X-Playlist-Checksum", content_length=1)
+        response_parts = [
+            headers,
+            f"{len(first):X};source=test\r".encode(),
+            b"\n",
+            first[:7],
+            first[7:],
+            b"\r",
+            b"\n",
+            f"{len(second):x}\r\n".encode(),
+            second[:-1],
+            second[-1:],
+            b"\r\n0\r",
+            b"\nX-Playlist-Checksum: ok\r\n",
+            b"\r",
+            b"\n",
+        ]
+        upstream = _RawHTTPResponseUpstream(response_parts, part_delay=0.005)
+        upstream.start()
+        try:
+            status, hdrs, body = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                f"/http/127.0.0.1:{upstream.port}/video/index.m3u8",
+                timeout=2.0,
+            )
+            text = body.decode()
+            assert status == 200
+            assert text.startswith("#EXTM3U\n")
+            assert f"/http/127.0.0.1:{upstream.port}/video/321124334400000.jpeg" in text
+            assert not any(line.endswith("/0") for line in text.splitlines())
+            assert get_header(hdrs, "Transfer-Encoding") == ""
+            assert get_header(hdrs, "Trailer") == ""
+            assert int(get_header(hdrs, "Content-Length")) == len(body)
+        finally:
+            upstream.stop()
+
+    def test_empty_chunked_m3u_returns_empty_content_length_body(self, shared_r2h):
+        upstream = _RawHTTPResponseUpstream(_raw_chunked_headers() + b"0\r\n\r\n")
+        upstream.start()
+        try:
+            status, hdrs, body = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                f"/http/127.0.0.1:{upstream.port}/empty.m3u8",
+                timeout=2.0,
+            )
+            assert status == 200
+            assert body == b""
+            assert get_header(hdrs, "Content-Length") == "0"
+            assert get_header(hdrs, "Transfer-Encoding") == ""
+        finally:
+            upstream.stop()
+
+    def test_complete_chunked_m3u_survives_immediate_upstream_reset(self, shared_r2h):
+        playlist = b"#EXTM3U\n#EXTINF:8.000,\nsegment.ts\n"
+        response = (
+            _raw_chunked_headers()
+            + f"{len(playlist):x}\r\n".encode()
+            + playlist
+            + b"\r\n0\r\n\r\n"
+        )
+        upstream = _RawHTTPResponseUpstream(response, keep_open=False, reset_after_send=True)
+        upstream.start()
+        try:
+            status, hdrs, body = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                f"/http/127.0.0.1:{upstream.port}/reset.m3u8",
+                timeout=2.0,
+            )
+            assert status == 200
+            assert f"/http/127.0.0.1:{upstream.port}/segment.ts".encode() in body
+            assert int(get_header(hdrs, "Content-Length")) == len(body)
+        finally:
+            upstream.stop()
+
+    def test_non_m3u_chunked_response_remains_passthrough(self, shared_r2h):
+        response = _raw_chunked_headers(content_type="application/octet-stream") + b"5\r\nhello\r\n0\r\n\r\n"
+        upstream = _RawHTTPResponseUpstream(response)
+        upstream.start()
+        try:
+            status, hdrs, body = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                f"/http/127.0.0.1:{upstream.port}/data.bin",
+                timeout=2.0,
+            )
+            assert status == 200
+            assert get_header(hdrs, "Transfer-Encoding").lower() == "chunked"
+            assert body == b"hello"
+        finally:
+            upstream.stop()
+
+    @pytest.mark.parametrize(
+        ("chunked_body", "keep_open"),
+        [
+            (b"Z\r\n", True),
+            (b"10000000000000000\r\n", True),
+            (b"1;" + b"a" * 4095 + b"\r\nx\r\n0\r\n\r\n", True),
+            (b"3\r\nabcX\n0\r\n\r\n", True),
+            (b"0\r\nX: " + b"a" * 8192 + b"\r\n\r\n", True),
+            (b"0\r\nX: invalid\n\r\n", True),
+            (b"5\r\nhello\r\n", False),
+        ],
+        ids=[
+            "invalid-size",
+            "size-overflow",
+            "oversized-size-line",
+            "invalid-data-crlf",
+            "oversized-trailer",
+            "invalid-trailer-crlf",
+            "missing-zero-chunk",
+        ],
+    )
+    def test_malformed_chunked_m3u_returns_503(self, shared_r2h, chunked_body, keep_open):
+        upstream = _RawHTTPResponseUpstream(_raw_chunked_headers() + chunked_body, keep_open=keep_open)
+        upstream.start()
+        try:
+            status, _, body = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                f"/http/127.0.0.1:{upstream.port}/invalid.m3u8",
+                timeout=2.0,
+            )
+            assert status == 503
+            assert b"Service Unavailable" in body
+        finally:
+            upstream.stop()
+
+    def test_unsupported_transfer_coding_returns_503(self, shared_r2h):
+        response = _raw_chunked_headers(transfer_encoding="gzip, chunked") + b"0\r\n\r\n"
+        upstream = _RawHTTPResponseUpstream(response)
+        upstream.start()
+        try:
+            status, _, _ = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                f"/http/127.0.0.1:{upstream.port}/encoded.m3u8",
+                timeout=2.0,
+            )
+            assert status == 503
+        finally:
+            upstream.stop()
+
+
+class TestM3URewritePlaylistVariants:
+    """Master, mixed-source, and large playlist scenarios."""
 
     def test_master_playlist_with_audio(self, shared_r2h):
         """A master playlist with #EXT-X-MEDIA and URI for audio renditions."""

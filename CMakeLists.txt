@@ -50,6 +50,7 @@ set(COMMON_SOURCES
   src/fcc_huawei.c
   src/stream.c
   src/rtsp.c
+  src/http_chunked_decoder.c
   src/http_proxy.c
   src/http_proxy_rewrite.c
   src/stun.c
