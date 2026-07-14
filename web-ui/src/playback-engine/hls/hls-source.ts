@@ -168,7 +168,6 @@ export class HlsSource implements SegmentSource {
       this.nextIndex =
         programDateTimeIndex >= 0 ? programDateTimeIndex : Math.max(0, this.segments.length - LIVE_EDGE_SEGMENTS);
       const base = this.segments[this.nextIndex]?.start ?? 0;
-      this.timelineProgramDateTime = playlist.segments[this.nextIndex]?.programDateTime;
       const selectedProgramDateTime = playlist.segments[this.nextIndex]?.programDateTime;
       const offset =
         (this.options.liveTimelineOffset ?? 0) +
@@ -183,6 +182,8 @@ export class HlsSource implements SegmentSource {
         }));
         this.timelinePos += timelineAdjustment;
       }
+      this.timelineProgramDateTime =
+        selectedProgramDateTime === undefined ? undefined : selectedProgramDateTime - offset * 1000;
       this.playbackStartTime = this.segments[this.nextIndex]?.start ?? offset;
     } else if (this.options.startTime !== undefined) {
       const startTime = this.options.startTime;
@@ -262,15 +263,21 @@ export class HlsSource implements SegmentSource {
           const renditions = best.audioGroupId
             ? playlist.audioRenditions.filter((rendition) => rendition.groupId === best.audioGroupId)
             : [];
-          this.audioTracks = renditions.map((rendition) => ({
+          const selectedAudioTrack = selectAudioRendition(renditions, this.options.preferredAudioTrackKey);
+          const externalRenditions = selectedAudioTrack?.url
+            ? renditions.filter(
+                (rendition): rendition is HlsAudioRendition & { url: string } => rendition.url !== undefined,
+              )
+            : [];
+          this.audioTracks = externalRenditions.map((rendition) => ({
             id: rendition.id,
             label: rendition.name,
             language: rendition.language,
             isDefault: rendition.isDefault,
             preferenceKey: rendition.preferenceKey,
           }));
-          this.audioRenditionUrls = new Map(renditions.map((rendition) => [rendition.id, rendition.url]));
-          this.selectedAudioTrack = selectAudioRendition(renditions, this.options.preferredAudioTrackKey);
+          this.audioRenditionUrls = new Map(externalRenditions.map((rendition) => [rendition.id, rendition.url]));
+          this.selectedAudioTrack = selectedAudioTrack?.url ? selectedAudioTrack : undefined;
           this.url = best.url;
           continue; // fetch the selected media playlist
         }

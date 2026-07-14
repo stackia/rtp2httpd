@@ -49,7 +49,7 @@ export interface HlsAudioRendition {
   language?: string;
   isDefault: boolean;
   autoselect: boolean;
-  url: string;
+  url?: string;
   preferenceKey: string;
 }
 
@@ -108,10 +108,14 @@ export function programDateTimeBoundaryIndex(
   segments: readonly { programDateTime?: number }[],
   targetMilliseconds: number,
 ): number {
-  const index = segments.findIndex(
-    (segment) => segment.programDateTime !== undefined && segment.programDateTime >= targetMilliseconds,
-  );
-  return index >= 0 ? index : segments.length - 1;
+  let lastDatedIndex = -1;
+  for (let index = 0; index < segments.length; index++) {
+    const programDateTime = segments[index].programDateTime;
+    if (programDateTime === undefined) continue;
+    lastDatedIndex = index;
+    if (programDateTime >= targetMilliseconds) return index;
+  }
+  return lastDatedIndex;
 }
 
 export function parseM3U8(text: string, baseUrl: string): HlsPlaylist {
@@ -134,7 +138,7 @@ function parseMultivariant(lines: string[], baseUrl: string): HlsMultivariantPla
   for (const line of lines) {
     if (line.startsWith("#EXT-X-MEDIA:")) {
       const attrs = parseAttributes(line.slice("#EXT-X-MEDIA:".length));
-      if (attrs.TYPE !== "AUDIO" || !attrs.URI || !attrs["GROUP-ID"]) continue;
+      if (attrs.TYPE !== "AUDIO" || !attrs["GROUP-ID"]) continue;
       const groupId = attrs["GROUP-ID"];
       const name = attrs.NAME || attrs.LANGUAGE || `Audio ${audioRenditions.length + 1}`;
       const preferenceKey = audioRenditionPreferenceKey(groupId, name, attrs.LANGUAGE);
@@ -145,7 +149,7 @@ function parseMultivariant(lines: string[], baseUrl: string): HlsMultivariantPla
         language: attrs.LANGUAGE,
         isDefault: yes(attrs.DEFAULT),
         autoselect: yes(attrs.AUTOSELECT),
-        url: new URL(attrs.URI, baseUrl).href,
+        url: attrs.URI ? new URL(attrs.URI, baseUrl).href : undefined,
         preferenceKey,
       });
     } else if (line.startsWith("#EXT-X-STREAM-INF:")) {

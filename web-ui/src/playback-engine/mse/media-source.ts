@@ -24,6 +24,7 @@ interface InitSegmentRecord {
 interface PendingSourceBufferInit extends InitSegmentRecord {
   track: Track;
   preserveExisting: boolean;
+  resolve: (success: boolean) => void;
 }
 
 interface MSEMediaSource {
@@ -40,7 +41,13 @@ interface MSEMediaSource {
 
 export interface MediaSourceController {
   open(onOpen: () => void): void;
-  appendInit(track: Track, data: ArrayBuffer, codec: string, container: string, preserveExisting?: boolean): boolean;
+  appendInit(
+    track: Track,
+    data: ArrayBuffer,
+    codec: string,
+    container: string,
+    preserveExisting?: boolean,
+  ): Promise<boolean>;
   appendMedia(track: Track, data: ArrayBuffer, timestampOffset?: number): void;
   /** Drop queued/future audio so a prepared alternate rendition can take over. */
   replaceAudioFrom(seconds: number): void;
@@ -111,11 +118,20 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
     return pendingRemoveRanges.video.length > 0 || pendingRemoveRanges.audio.length > 0;
   }
 
+  function discardPendingSourceBufferInits(track?: Track): void {
+    const retained: PendingSourceBufferInit[] = [];
+    for (const pending of pendingSourceBufferInit) {
+      if (track === undefined || pending.track === track) pending.resolve(false);
+      else retained.push(pending);
+    }
+    pendingSourceBufferInit = retained;
+  }
+
   function disableTrack(track: Track): void {
     disabledTracks.add(track);
     pendingSegments[track] = [];
     pendingRemoveRanges[track] = [];
-    pendingSourceBufferInit = pendingSourceBufferInit.filter((pending) => pending.track !== track);
+    discardPendingSourceBufferInits(track);
     lastInitSegments[track] = null;
   }
 
@@ -177,6 +193,7 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
     for (const pending of pendings) {
       if (!createSourceBuffer(pending.track, pending.codec, pending.container, pending.preserveExisting)) {
         pendingSegments[pending.track] = pendingSegments[pending.track].filter((entry) => entry.data !== pending.data);
+        pending.resolve(false);
         continue;
       }
       lastInitSegments[pending.track] = {
@@ -184,6 +201,7 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
         codec: pending.codec,
         container: pending.container,
       };
+      pending.resolve(true);
     }
   }
 
@@ -512,15 +530,21 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
       video.src = objectURL;
     },
 
-    appendInit(track: Track, data: ArrayBuffer, codec: string, container: string, preserveExisting = false): boolean {
+    appendInit(
+      track: Track,
+      data: ArrayBuffer,
+      codec: string,
+      container: string,
+      preserveExisting = false,
+    ): Promise<boolean> {
       if (disabledTracks.has(track)) {
-        return false;
+        return Promise.resolve(false);
       }
       const mimeType = mimeTypeFor(codec, container);
       if (!isMimeTypeSupported(mimeType)) {
         if (!preserveExisting) disableTrack(track);
         mse.onError?.({ code: 0, msg: `Unsupported MIME type: ${mimeType}`, name: "NotSupportedError", track, codec });
-        return false;
+        return Promise.resolve(false);
       }
       if (
         mediaSource?.readyState !== "open" ||
@@ -528,17 +552,18 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
         hasPendingRemoveRanges() ||
         sourceBuffers[track]?.updating
       ) {
-        pendingSourceBufferInit.push({ track, data, codec, container, preserveExisting });
-        pendingSegments[track].push({ data, isInit: true });
-        return true;
+        return new Promise((resolve) => {
+          pendingSourceBufferInit.push({ track, data, codec, container, preserveExisting, resolve });
+          pendingSegments[track].push({ data, isInit: true });
+        });
       }
 
       Log.v(TAG, `Received Initialization Segment, mimeType: ${mimeType}`);
-      if (!createSourceBuffer(track, codec, container, preserveExisting)) return false;
+      if (!createSourceBuffer(track, codec, container, preserveExisting)) return Promise.resolve(false);
       lastInitSegments[track] = { data, codec, container };
       pendingSegments[track].push({ data, isInit: true });
       tryAppendPending();
-      return true;
+      return Promise.resolve(true);
     },
 
     appendMedia(track: Track, data: ArrayBuffer, timestampOffset?: number): void {
@@ -598,6 +623,7 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
 
     destroy(): void {
       destroying = true;
+      discardPendingSourceBufferInits();
       if (mediaSource) {
         const ms = mediaSource;
         const tracks: Track[] = ["video", "audio"];
@@ -648,7 +674,6 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
         onEndStreamingHandler = null;
         onQualityChangeHandler = null;
 
-        pendingSourceBufferInit = [];
         disabledTracks.clear();
         isBufferFull = false;
         hasPendingEos = false;

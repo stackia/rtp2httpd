@@ -346,6 +346,10 @@ function createPrimaryPipeline(segments: PlayerSegment[], loadOptions: PlaybackL
   const callbacks: PipelineCallbacks = {
     onInitSegment(type, initSegment) {
       const event = outputFromInit(type, initSegment);
+      if (type === "audio" && pendingInternalAudioSwitch) {
+        pendingInternalAudioSwitch.queued.push(event);
+        return;
+      }
       if (initialOutputGated) {
         primaryOutputQueue.push(event);
         primaryInitSeen = true;

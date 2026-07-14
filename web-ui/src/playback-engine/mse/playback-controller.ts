@@ -103,24 +103,23 @@ export function createMSEPlaybackController(
   // segment parse can complete (the append algorithm runs as a queued task).
   let pendingInits: { track: "video" | "audio"; data: ArrayBuffer; codec: string; container: string }[] = [];
 
-  function flushPendingInits(preserveExistingAudio = false): boolean {
+  async function flushPendingInits(preserveExistingAudio = false): Promise<boolean> {
     if (pendingInits.length === 0) return true;
     const inits = pendingInits;
     pendingInits = [];
-    let accepted = true;
-    for (const init of inits) {
-      accepted =
-        (mse?.appendInit(
-          init.track,
-          init.data,
-          init.codec,
-          init.container,
-          preserveExistingAudio && init.track === "audio",
-        ) ??
-          false) &&
-        accepted;
-    }
-    return accepted;
+    const results = await Promise.all(
+      inits.map(
+        (init) =>
+          mse?.appendInit(
+            init.track,
+            init.data,
+            init.codec,
+            init.container,
+            preserveExistingAudio && init.track === "audio",
+          ) ?? Promise.resolve(false),
+      ),
+    );
+    return results.every(Boolean);
   }
 
   function handleWorkerMessage(e: MessageEvent): void {
@@ -131,7 +130,7 @@ export function createMSEPlaybackController(
     // media-info can be posted right before an init-segment; flushing on it would
     // split the batched init appends (see comment above pendingInits)
     if (msg.type !== "init-segment" && msg.type !== "media-info" && msg.type !== "audio-track-switch") {
-      flushPendingInits();
+      void flushPendingInits();
     }
     switch (msg.type) {
       case "init-segment":
@@ -172,17 +171,21 @@ export function createMSEPlaybackController(
         impl.onAudioTracksChange?.(msg.state);
         break;
       case "audio-track-switch": {
-        const success = flushPendingInits(true);
-        if (success) {
-          mse?.replaceAudioFrom(msg.fromTime);
-          pcmPlayer?.replaceFrom(msg.fromTime);
-        }
-        worker?.postMessage({
-          type: "audio-track-switch-result",
-          trackId: msg.trackId,
-          success,
-          currentTime: video.currentTime,
-        } satisfies WorkerCommand);
+        const switchGeneration = mseGeneration;
+        const switchWorker = worker;
+        void flushPendingInits(true).then((success) => {
+          if (switchGeneration !== mseGeneration || switchWorker !== worker) return;
+          if (success) {
+            mse?.replaceAudioFrom(msg.fromTime);
+            pcmPlayer?.replaceFrom(msg.fromTime);
+          }
+          switchWorker?.postMessage({
+            type: "audio-track-switch-result",
+            trackId: msg.trackId,
+            success,
+            currentTime: video.currentTime,
+          } satisfies WorkerCommand);
+        });
         break;
       }
       case "pcm-audio-data": {
