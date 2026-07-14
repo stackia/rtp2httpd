@@ -1,7 +1,7 @@
 import type { PlayerConfig } from "../config";
 import { createDefaultConfig } from "../config";
 import { WorkerAudioDecoder } from "../decoder/worker-audio-decoder";
-import TSDemuxer from "../demux/ts-demuxer";
+import TSDemuxer, { type TSAudioTrackInfo } from "../demux/ts-demuxer";
 import { type DemuxErrorDetail, type LoaderErrorDetail, PlayerErrors } from "../errors";
 import {
   containsMoov,
@@ -11,7 +11,7 @@ import {
   probeFmp4,
   splitInitFromSegment,
 } from "../hls/fmp4";
-import { type HlsInfo, HlsRequestError, HlsSource } from "../hls/hls-source";
+import { type HlsInfo, HlsRequestError, HlsSource, type HlsSourceOptions } from "../hls/hls-source";
 import FetchLoader, { type LoaderErrorInfo } from "../io/fetch-loader";
 import { identifyAudioCodec, identifyVideoCodec } from "../media-codecs";
 import MP4Remuxer from "../remux/mp4-remuxer";
@@ -48,9 +48,17 @@ export interface PipelineCallbacks {
   onIOError: (type: LoaderErrorDetail, info: LoaderErrorInfo) => void;
   onDemuxError: (type: DemuxErrorDetail, info: string) => void;
   onHlsInfo: (info: HlsInfo) => void;
+  onTsAudioTracks: (tracks: TSAudioTrackInfo[], selectedPid: number | undefined) => void;
   onMediaInfo: (info: PlayerMediaInfo) => void;
   /** `time` is normalized to the MSE timeline (seconds, same space as video.currentTime). */
   onPCMAudioData: (pcm: Float32Array, channels: number, sampleRate: number, time: number) => void;
+}
+
+export interface PipelineOptions extends HlsSourceOptions {
+  /** Restrict output to one track when consuming an alternate HLS rendition. */
+  forcedTrack?: "video" | "audio";
+  /** Select one elementary audio PID from an MPEG-TS program. */
+  selectedTsAudioPid?: number;
 }
 
 class LoadError extends Error {
@@ -122,7 +130,9 @@ class Pipeline {
   private _config: PlayerConfig;
   private _callbacks: PipelineCallbacks;
 
-  private _initialSegments: PlayerSegment[];
+  private readonly _initialSegments: PlayerSegment[];
+  private readonly _options: PipelineOptions;
+  private _forcedTrack: "video" | "audio" | undefined;
 
   /** Increments to invalidate the currently running load loop. */
   private _runId = 0;
@@ -182,18 +192,21 @@ class Pipeline {
   /** Incremented on audio timing resets to invalidate decode callbacks queued before the reset. */
   private _audioGen = 0;
 
-  constructor(segments: PlayerSegment[], config: PlayerConfig, callbacks: PipelineCallbacks) {
+  constructor(
+    segments: PlayerSegment[],
+    config: PlayerConfig,
+    callbacks: PipelineCallbacks,
+    options: PipelineOptions = {},
+  ) {
     this._callbacks = callbacks;
     this._config = { ...createDefaultConfig(), ...config };
     this._initialSegments = segments;
+    this._options = options;
+    this._forcedTrack = options.forcedTrack;
   }
 
   start(): void {
     this._load(this._initialSegments);
-  }
-
-  loadSegments(newSegments: PlayerSegment[]): void {
-    this._load(newSegments);
   }
 
   pause(): void {
@@ -211,6 +224,13 @@ class Pipeline {
     }
     this._resumeGate?.();
     this._resumeGate = null;
+  }
+
+  selectTsAudioPid(pid: number, switchTimeSeconds?: number): boolean {
+    if (!this._demuxer || !this._remuxer) return false;
+    this._remuxer.resetAudioTrackForSwitch(switchTimeSeconds === undefined ? undefined : switchTimeSeconds * 1000);
+    this._resetAudioDecodeState();
+    return this._demuxer.selectAudioPid(pid);
   }
 
   destroy(): void {
@@ -470,8 +490,7 @@ class Pipeline {
     this._resetMediaInfo();
 
     // Reset WASM audio decoder state (clear stale mdct/qmf + carry from previous stream)
-    this._workerAudioDecoder?.reset();
-    this._resetAudioTiming();
+    this._resetAudioDecodeState();
 
     const firstSegment = segments[0];
     if (!firstSegment) return;
@@ -495,8 +514,9 @@ class Pipeline {
 
   private _startHls(url: string, preloaded?: { text: string; url: string }): void {
     this._sourceMode = "hls";
-    const hls = new HlsSource(url, this._config, preloaded);
+    const hls = new HlsSource(url, this._config, preloaded, this._options);
     hls.onInfo = (info) => {
+      if (!this._forcedTrack && info.selectedAudioTrackUrl) this._forcedTrack = "video";
       this._callbacks.onHlsInfo(info);
       this._handleHlsInfo(info);
     };
@@ -651,8 +671,7 @@ class Pipeline {
     }
     this._pendingDtsOffsetMs = startSeconds * 1000;
     // The output timeline restarts: stale carry bytes and the PTS anchor are invalid
-    this._workerAudioDecoder?.reset();
-    this._resetAudioTiming();
+    this._resetAudioDecodeState();
   }
 
   private _shouldAnchorSegment(meta: SegmentMeta): boolean {
@@ -664,8 +683,7 @@ class Pipeline {
     // remux batch is not mixed with the previous segment's tail.
     this._demuxer?.flushSegmentBoundary();
     this._remuxer?.flushStashedSamples();
-    this._workerAudioDecoder?.reset();
-    this._resetAudioTiming();
+    this._resetAudioDecodeState();
   }
 
   private _prepareContinuousLiveTsRestart(meta: SegmentMeta, ioctl: FetchLoader): void {
@@ -677,6 +695,11 @@ class Pipeline {
     this._fmp4Mode = false;
     this._fmp4Chunks = [];
     ioctl.onDataArrival = (data, byteStart) => this._onInputChunk(meta, data, byteStart);
+  }
+
+  private _resetAudioDecodeState(): void {
+    this._workerAudioDecoder?.reset();
+    this._resetAudioTiming();
   }
 
   private _resetAudioTiming(): void {
@@ -789,15 +812,15 @@ class Pipeline {
     }
     const demuxer = new TSDemuxer(probeData as ConstructorParameters<typeof TSDemuxer>[0], {
       waitForInitialVideoKeyframe: shouldAnchor || !this._demuxer || !this._remuxer,
+      selectedAudioPid: this._options.selectedTsAudioPid,
     });
     this._demuxer = demuxer;
 
     if (!this._remuxer) {
       this._remuxer = new MP4Remuxer();
-      if (this._pendingDtsOffsetMs !== 0) {
-        this._remuxer.setDtsBaseOffset(this._pendingDtsOffsetMs);
-        this._pendingDtsOffsetMs = 0;
-      }
+      const timelineOffsetMs = this._pendingDtsOffsetMs || meta.start * 1000;
+      if (timelineOffsetMs !== 0) this._remuxer.setDtsBaseOffset(timelineOffsetMs);
+      this._pendingDtsOffsetMs = 0;
     }
     this._remuxer.setTsSegmentContinuityNormalization(false);
 
@@ -808,17 +831,17 @@ class Pipeline {
         this._remuxer?.flushStashedSamples();
         this._remuxer?.insertDiscontinuity();
       }
-      this._workerAudioDecoder?.reset();
-      this._resetAudioTiming();
+      this._resetAudioDecodeState();
     };
     demuxer.onPcr = (pcrBase, bytePosition, discontinuity) => {
       this._recordTsPcr(pcrBase, bytePosition, discontinuity);
     };
+    demuxer.onAudioTracks = (tracks, selectedPid) => this._callbacks.onTsAudioTracks(tracks, selectedPid);
 
     // Set up software audio decode callback when MP2 WASM URL is configured
-    if (this._config.wasmDecoders.mp2) {
+    if (this._config.wasmDecoders.mp2 && this._forcedTrack !== "video") {
       demuxer.onRawAudioData = (frame) => {
-        this._handleRawAudioFrame(frame);
+        this._handleRawAudioFrame(frame, this._forcedTrack === "audio" || !demuxer.hasVideo);
       };
     }
 
@@ -828,16 +851,29 @@ class Pipeline {
         onTrackMetadata: (...args: unknown[]) => void;
       },
     );
+    const remuxDataAvailable = demuxer.onDataAvailable;
+    if (this._forcedTrack && remuxDataAvailable) {
+      demuxer.onDataAvailable = (audioTrack, videoTrack, force) => {
+        if (this._forcedTrack === "audio") {
+          remuxDataAvailable(audioTrack, null, force);
+        } else {
+          remuxDataAvailable(null, videoTrack, force);
+        }
+      };
+    }
     const remuxTrackMetadata = demuxer.onTrackMetadata;
     demuxer.onTrackMetadata = (type, metadata) => {
+      if (this._forcedTrack && type !== this._forcedTrack) return;
       this._handleTsTrackMetadata(type, metadata);
       remuxTrackMetadata?.(type, metadata);
     };
 
     this._remuxer.onInitSegment = (type, initSegment) => {
+      if (this._forcedTrack && type !== this._forcedTrack) return;
       this._callbacks.onInitSegment(type, initSegment as unknown as Parameters<PipelineCallbacks["onInitSegment"]>[1]);
     };
     this._remuxer.onMediaSegment = (type, mediaSegment) => {
+      if (this._forcedTrack && type !== this._forcedTrack) return;
       this._callbacks.onMediaSegment(
         type,
         mediaSegment as unknown as Parameters<PipelineCallbacks["onMediaSegment"]>[1],
@@ -894,13 +930,17 @@ class Pipeline {
     const initInfo = parseInitSegment(data);
     this._fmp4Timescales = initInfo.timescales;
     this._fmp4TimestampOffsetWarningLogged = false;
-    for (const track of initInfo.tracks) {
+    const selectedTracks = this._forcedTrack
+      ? initInfo.tracks.filter((track) => track.type === this._forcedTrack)
+      : initInfo.tracks;
+    for (const track of selectedTracks) {
       this._handleFmp4TrackMetadata(track);
     }
-    const codec = initInfo.codecs.join(",") || this._hlsSource?.info.codecs || "";
-    this._callbacks.onInitSegment("video", {
-      type: "video",
-      container: "video/mp4",
+    const outputTrack = this._forcedTrack ?? "video";
+    const codec = selectedTracks.map((track) => track.codec).join(",") || this._hlsSource?.info.codecs || "";
+    this._callbacks.onInitSegment(outputTrack, {
+      type: outputTrack,
+      container: `${outputTrack}/mp4`,
       codec,
       data: toArrayBuffer(data),
     });
@@ -963,8 +1003,9 @@ class Pipeline {
 
     if (media.byteLength > 0) {
       this._pendingDtsOffsetMs = 0;
-      this._callbacks.onMediaSegment("video", {
-        type: "video",
+      const outputTrack = this._forcedTrack ?? "video";
+      this._callbacks.onMediaSegment(outputTrack, {
+        type: outputTrack,
         data: toArrayBuffer(media),
         timestampOffset: this._getFmp4TimestampOffset(meta, media),
       });
@@ -973,7 +1014,10 @@ class Pipeline {
 
   // ---- MP2 software audio decode ----
 
-  private _handleRawAudioFrame(frame: { codec: "mp2"; data: Uint8Array; pts: number }): void {
+  private _handleRawAudioFrame(
+    frame: { codec: "mp2"; data: Uint8Array; pts: number },
+    needsOwnTimelineBase: boolean,
+  ): void {
     // Lazily create WorkerAudioDecoder on first raw audio frame
     if (!this._workerAudioDecoder) {
       const mp2Url = this._config.wasmDecoders.mp2;
@@ -1015,7 +1059,7 @@ class Pipeline {
       const ptsMs = this._audioAnchorPtsMs + (this._audioSamplesSinceAnchor / sr) * 1000;
       this._audioSamplesSinceAnchor += result.samplesPerChannel;
 
-      this._emitPcm(result.pcm, result.channels, sr, ptsMs);
+      this._emitPcm(result.pcm, result.channels, sr, ptsMs, needsOwnTimelineBase);
     });
   }
 
@@ -1024,8 +1068,15 @@ class Pipeline {
    * (the exact mapping used for video), then forward to the main thread.
    * PCM decoded before the first remux (dts base unknown) is queued.
    */
-  private _emitPcm(pcm: Float32Array, channels: number, sampleRate: number, ptsMs: number): void {
+  private _emitPcm(
+    pcm: Float32Array,
+    channels: number,
+    sampleRate: number,
+    ptsMs: number,
+    needsOwnTimelineBase: boolean,
+  ): void {
     const durationMs = (Math.floor(pcm.length / channels) / sampleRate) * 1000;
+    if (needsOwnTimelineBase) this._remuxer?.ensureAudioTimestampBase(ptsMs);
     this._pendingPcm.push({ pcm, channels, sampleRate, ptsMs, durationMs });
 
     if (this._remuxer?.getTimestampBase() === undefined) {
@@ -1063,6 +1114,12 @@ class Pipeline {
         if (cutFrames > 0) {
           pcm = pcm.slice(cutFrames * item.channels);
         }
+      }
+      if (this._forcedTrack === "audio") {
+        this._remuxer?.remuxSilentAudioRange(
+          mapping.time * 1000,
+          (pcm.length / item.channels / item.sampleRate) * 1000,
+        );
       }
       this._callbacks.onPCMAudioData(pcm, item.channels, item.sampleRate, mapping.time);
     }

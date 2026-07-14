@@ -11,12 +11,19 @@ interface RemoveRange {
 interface PendingSegment {
   data: ArrayBuffer;
   timestampOffset?: number;
+  /** Keeps a prepared track-switch init while older queued media is discarded. */
+  isInit?: boolean;
 }
 
 interface InitSegmentRecord {
   data: ArrayBuffer;
   codec: string;
   container: string;
+}
+
+interface PendingSourceBufferInit extends InitSegmentRecord {
+  track: Track;
+  preserveExisting: boolean;
 }
 
 interface MSEMediaSource {
@@ -33,8 +40,10 @@ interface MSEMediaSource {
 
 export interface MediaSourceController {
   open(onOpen: () => void): void;
-  appendInit(track: Track, data: ArrayBuffer, codec: string, container: string): void;
+  appendInit(track: Track, data: ArrayBuffer, codec: string, container: string, preserveExisting?: boolean): boolean;
   appendMedia(track: Track, data: ArrayBuffer, timestampOffset?: number): void;
+  /** Drop queued/future audio so a prepared alternate rendition can take over. */
+  replaceAudioFrom(seconds: number): void;
   /** Set the MediaSource duration (e.g. from an HLS VOD playlist) so seeks beyond buffered data are not clamped. */
   setDuration(seconds: number): void;
   endOfStream(): void;
@@ -76,7 +85,7 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
   let pendingDuration: number | null = null;
 
   // Deferred init segments: queued before sourceopen fires
-  let pendingSourceBufferInit: { track: Track; data: ArrayBuffer; codec: string; container: string }[] = [];
+  let pendingSourceBufferInit: PendingSourceBufferInit[] = [];
 
   let sourceOpenCallback: (() => void) | null = null;
 
@@ -154,14 +163,20 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
   }
 
   function flushPendingSourceBufferInit(): void {
-    if (pendingSourceBufferInit.length === 0 || mediaSource?.readyState !== "open") {
+    if (
+      pendingSourceBufferInit.length === 0 ||
+      mediaSource?.readyState !== "open" ||
+      hasPendingRemoveRanges() ||
+      sourceBuffers.audio?.updating ||
+      sourceBuffers.video?.updating
+    ) {
       return;
     }
     const pendings = pendingSourceBufferInit;
     pendingSourceBufferInit = [];
     for (const pending of pendings) {
-      createSourceBuffer(pending.track, pending.codec, pending.container);
-      if (disabledTracks.has(pending.track)) {
+      if (!createSourceBuffer(pending.track, pending.codec, pending.container, pending.preserveExisting)) {
+        pendingSegments[pending.track] = pendingSegments[pending.track].filter((entry) => entry.data !== pending.data);
         continue;
       }
       lastInitSegments[pending.track] = {
@@ -307,6 +322,9 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
     tryApplyDuration();
     if (hasPendingRemoveRanges()) {
       doRemoveRanges();
+    } else if (pendingSourceBufferInit.length > 0) {
+      flushPendingSourceBufferInit();
+      tryAppendPending();
     } else if (hasPendingSegments()) {
       tryAppendPending();
     } else if (hasPendingEos) {
@@ -322,19 +340,41 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
     Log.e(TAG, `SourceBuffer Error:`, e);
   }
 
-  function createSourceBuffer(track: Track, codec: string, container: string): void {
+  function mimeTypeFor(codec: string, container: string): string {
+    return codec && codec.length > 0 ? `${container};codecs="${codec}"` : container;
+  }
+
+  function isMimeTypeSupported(mimeType: string): boolean {
+    const mediaSourceClass = (useManagedMediaSource ? selfRecord.ManagedMediaSource : selfRecord.MediaSource) as
+      | { isTypeSupported?: (type: string) => boolean }
+      | undefined;
+    return mediaSourceClass?.isTypeSupported?.(mimeType) !== false;
+  }
+
+  function reportSourceBufferSetupError(
+    action: string,
+    error: unknown,
+    track: Track,
+    codec: string,
+    preserveExisting: boolean,
+  ): false {
+    const exception = error as DOMException;
+    Log.e(TAG, `${action} failed: ${exception.message}`);
+    if (!preserveExisting && exception.name === "NotSupportedError") disableTrack(track);
+    mse.onError?.({ code: exception.code, msg: exception.message, name: exception.name, track, codec });
+    return false;
+  }
+
+  function createSourceBuffer(track: Track, codec: string, container: string, preserveExisting = false): boolean {
     if (disabledTracks.has(track)) {
-      return;
+      return false;
     }
     if (mediaSource?.readyState !== "open") {
-      return;
+      return false;
     }
 
-    let mimeType = container;
-    if (codec && codec.length > 0) {
-      // Quoting is required when the codec list contains commas (muxed fMP4 renditions)
-      mimeType += `;codecs="${codec}"`;
-    }
+    // Quoting is required when the codec list contains commas (muxed fMP4 renditions)
+    const mimeType = mimeTypeFor(codec, container);
 
     if (mimeType !== mimeTypes[track]) {
       const existing = sourceBuffers[track];
@@ -345,19 +385,9 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
           existing.changeType(mimeType);
           mimeTypes[track] = mimeType;
         } catch (error: unknown) {
-          Log.e(TAG, `changeType failed: ${(error as Error).message}`);
-          if ((error as DOMException).name === "NotSupportedError") {
-            disableTrack(track);
-          }
-          mse.onError?.({
-            code: (error as DOMException).code,
-            msg: (error as Error).message,
-            name: (error as DOMException).name,
-            track,
-            codec,
-          });
+          return reportSourceBufferSetupError("changeType", error, track, codec, preserveExisting);
         }
-        return;
+        return true;
       }
       try {
         const sb = mediaSource.addSourceBuffer(mimeType);
@@ -371,21 +401,11 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
         sb.addEventListener("error", errorHandler);
         sb.addEventListener("updateend", updateEndHandler);
       } catch (error: unknown) {
-        Log.e(TAG, (error as Error).message);
-        if ((error as DOMException).name === "NotSupportedError") {
-          disableTrack(track);
-        }
-        mse.onError?.({
-          code: (error as DOMException).code,
-          msg: (error as Error).message,
-          name: (error as DOMException).name,
-          track,
-          codec,
-        });
-        return;
+        return reportSourceBufferSetupError("addSourceBuffer", error, track, codec, preserveExisting);
       }
       mimeTypes[track] = mimeType;
     }
+    return true;
   }
 
   // --- The MSE object ---
@@ -492,26 +512,33 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
       video.src = objectURL;
     },
 
-    appendInit(track: Track, data: ArrayBuffer, codec: string, container: string): void {
+    appendInit(track: Track, data: ArrayBuffer, codec: string, container: string, preserveExisting = false): boolean {
       if (disabledTracks.has(track)) {
-        return;
+        return false;
       }
-      if (mediaSource?.readyState !== "open" || mediaSource.streaming === false) {
-        pendingSourceBufferInit.push({ track, data, codec, container });
-        pendingSegments[track].push({ data });
-        return;
+      const mimeType = mimeTypeFor(codec, container);
+      if (!isMimeTypeSupported(mimeType)) {
+        if (!preserveExisting) disableTrack(track);
+        mse.onError?.({ code: 0, msg: `Unsupported MIME type: ${mimeType}`, name: "NotSupportedError", track, codec });
+        return false;
+      }
+      if (
+        mediaSource?.readyState !== "open" ||
+        mediaSource.streaming === false ||
+        hasPendingRemoveRanges() ||
+        sourceBuffers[track]?.updating
+      ) {
+        pendingSourceBufferInit.push({ track, data, codec, container, preserveExisting });
+        pendingSegments[track].push({ data, isInit: true });
+        return true;
       }
 
-      const mimePreview = codec ? `${container};codecs="${codec}"` : container;
-      Log.v(TAG, `Received Initialization Segment, mimeType: ${mimePreview}`);
+      Log.v(TAG, `Received Initialization Segment, mimeType: ${mimeType}`);
+      if (!createSourceBuffer(track, codec, container, preserveExisting)) return false;
       lastInitSegments[track] = { data, codec, container };
-
-      createSourceBuffer(track, codec, container);
-      if (disabledTracks.has(track)) {
-        return;
-      }
-      pendingSegments[track].push({ data });
+      pendingSegments[track].push({ data, isInit: true });
       tryAppendPending();
+      return true;
     },
 
     appendMedia(track: Track, data: ArrayBuffer, timestampOffset?: number): void {
@@ -531,6 +558,20 @@ export function createMediaSourceController(video: HTMLVideoElement, config: Pla
       }
 
       tryAppendPending();
+    },
+
+    replaceAudioFrom(seconds: number): void {
+      const preparedInitIndex = pendingSegments.audio.findLastIndex((segment) => segment.isInit === true);
+      pendingSegments.audio = preparedInitIndex >= 0 ? pendingSegments.audio.slice(preparedInitIndex) : [];
+      const sb = sourceBuffers.audio;
+      if (!sb) return;
+      const start = Math.max(0, seconds);
+      for (let i = 0; i < sb.buffered.length; i++) {
+        const rangeStart = Math.max(start, sb.buffered.start(i));
+        const rangeEnd = sb.buffered.end(i);
+        if (rangeEnd > rangeStart) pendingRemoveRanges.audio.push({ start: rangeStart, end: rangeEnd });
+      }
+      if (!sb.updating) doRemoveRanges();
     },
 
     setDuration(seconds: number): void {

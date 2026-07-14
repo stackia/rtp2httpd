@@ -263,6 +263,44 @@ class MP4Remuxer {
     this._videoMediaSegmentEmitted = false;
   }
 
+  /** Reset only audio state when switching an elementary TS audio PID. */
+  resetAudioTrackForSwitch(nextDtsMs?: number): void {
+    this._audioNextDts = nextDtsMs;
+    this._audioStashedLastSample = null;
+    this._audioTiming = this._createTrackTimingState();
+    this._pcmTiming = this._createTrackTimingState();
+    this._audioMeta = null;
+    this._silentAudioMode = false;
+    this._silentAudioLastDts = undefined;
+    this._silentAudioDurationResidual = 0;
+    this._audioMediaSegmentEmitted = false;
+  }
+
+  /** Establish an audio-only MP2 PCM mapping while preserving the configured output offset. */
+  ensureAudioTimestampBase(originalPtsMs: number): void {
+    if (this._dtsBaseInited) return;
+    this._audioDtsBase = originalPtsMs;
+    this._dtsBase = originalPtsMs - this._dtsBaseOffset;
+    this._dtsBaseInited = true;
+  }
+
+  /** Emit silent AAC occupancy for software-decoded audio that has no colocated video samples. */
+  remuxSilentAudioRange(startMs: number, durationMs: number): void {
+    if (!this._silentAudioMode || durationMs <= 0) return;
+    this._generateSilentAudio([
+      {
+        dts: startMs,
+        pts: startMs,
+        cts: 0,
+        unit: new Uint8Array(),
+        size: 0,
+        duration: durationMs,
+        originalDts: startMs,
+        flags: { isLeading: 0, dependsOn: 1, isDependedOn: 0, hasRedundancy: 0 },
+      },
+    ]);
+  }
+
   setTsSegmentContinuityNormalization(enabled: boolean): void {
     this._tsSegmentContinuityNormalization = enabled;
   }

@@ -2,7 +2,7 @@ import { markPlaybackUnlocked, PCMAudioPlayer } from "../audio/pcm-audio-player"
 import type { PlayerConfig } from "../config";
 import { PlayerErrors } from "../errors";
 import { type LiveSessionAnchor, lagBehindLiveEdge } from "../timeline/wall-clock";
-import type { MSEPlaybackController, PlayerSegment } from "../types";
+import type { MSEPlaybackController, PlaybackLoadOptions, PlayerSegment } from "../types";
 import type { WorkerCommand, WorkerEvent } from "../worker/messages";
 import TransmuxWorker from "../worker/transmux-worker.ts?worker&inline";
 import { setupLiveSync } from "./live-sync";
@@ -35,7 +35,7 @@ export function createMSEPlaybackController(
   let mse: MediaSourceController | null = null;
   let worker: Worker | null = null;
   let workerInitialized = false;
-  let pendingSegments: PlayerSegment[] | null = null;
+  let pendingLoad: { segments: PlayerSegment[]; options?: PlaybackLoadOptions } | null = null;
   let destroyLiveSync: (() => void) | null = null;
   let mseGeneration = 0;
   let liveSyncEnabled = config.liveSync;
@@ -103,13 +103,24 @@ export function createMSEPlaybackController(
   // segment parse can complete (the append algorithm runs as a queued task).
   let pendingInits: { track: "video" | "audio"; data: ArrayBuffer; codec: string; container: string }[] = [];
 
-  function flushPendingInits(): void {
-    if (pendingInits.length === 0) return;
+  function flushPendingInits(preserveExistingAudio = false): boolean {
+    if (pendingInits.length === 0) return true;
     const inits = pendingInits;
     pendingInits = [];
+    let accepted = true;
     for (const init of inits) {
-      mse?.appendInit(init.track, init.data, init.codec, init.container);
+      accepted =
+        (mse?.appendInit(
+          init.track,
+          init.data,
+          init.codec,
+          init.container,
+          preserveExistingAudio && init.track === "audio",
+        ) ??
+          false) &&
+        accepted;
     }
+    return accepted;
   }
 
   function handleWorkerMessage(e: MessageEvent): void {
@@ -119,7 +130,7 @@ export function createMSEPlaybackController(
     if (msg.gen !== mseGeneration) return;
     // media-info can be posted right before an init-segment; flushing on it would
     // split the batched init appends (see comment above pendingInits)
-    if (msg.type !== "init-segment" && msg.type !== "media-info") {
+    if (msg.type !== "init-segment" && msg.type !== "media-info" && msg.type !== "audio-track-switch") {
       flushPendingInits();
     }
     switch (msg.type) {
@@ -139,6 +150,7 @@ export function createMSEPlaybackController(
           info: msg.info,
           code: msg.code,
           url: msg.url,
+          track: msg.track,
         });
         break;
       case "complete":
@@ -156,6 +168,23 @@ export function createMSEPlaybackController(
           updateFetchBackpressure();
         }
         break;
+      case "audio-tracks":
+        impl.onAudioTracksChange?.(msg.state);
+        break;
+      case "audio-track-switch": {
+        const success = flushPendingInits(true);
+        if (success) {
+          mse?.replaceAudioFrom(msg.fromTime);
+          pcmPlayer?.replaceFrom(msg.fromTime);
+        }
+        worker?.postMessage({
+          type: "audio-track-switch-result",
+          trackId: msg.trackId,
+          success,
+          currentTime: video.currentTime,
+        } satisfies WorkerCommand);
+        break;
+      }
       case "pcm-audio-data": {
         const player = ensurePCMPlayer();
         const pcm = new Float32Array(msg.pcm);
@@ -355,16 +384,16 @@ export function createMSEPlaybackController(
     bufferFullPaused = false;
   }
 
-  function loadInWorker(segments: PlayerSegment[]): void {
+  function loadInWorker(segments: PlayerSegment[], options?: PlaybackLoadOptions): void {
     const w = ensureWorker();
     if (!workerInitialized) {
-      const initCmd: WorkerCommand = { type: "init", segments, config, gen: mseGeneration };
+      const initCmd: WorkerCommand = { type: "init", segments, options, config, gen: mseGeneration };
       w.postMessage(initCmd);
       const startCmd: WorkerCommand = { type: "start" };
       w.postMessage(startCmd);
       workerInitialized = true;
     } else {
-      const cmd: WorkerCommand = { type: "load-segments", segments, gen: mseGeneration };
+      const cmd: WorkerCommand = { type: "load-segments", segments, options, gen: mseGeneration };
       w.postMessage(cmd);
     }
   }
@@ -377,9 +406,9 @@ export function createMSEPlaybackController(
     }
 
     mse.open(() => {
-      if (pendingSegments) {
-        loadInWorker(pendingSegments);
-        pendingSegments = null;
+      if (pendingLoad) {
+        loadInWorker(pendingLoad.segments, pendingLoad.options);
+        pendingLoad = null;
       }
     });
 
@@ -464,10 +493,10 @@ export function createMSEPlaybackController(
   const impl: MSEPlaybackController = {
     onError: null,
 
-    loadSegments(segments: PlayerSegment[]) {
+    loadSegments(segments: PlayerSegment[], options?: PlaybackLoadOptions) {
       mseGeneration++;
       pendingInits = [];
-      pendingSegments = segments;
+      pendingLoad = { segments, options };
       sourceMode = inferSourceMode(segments);
       hlsLive = null;
       resetFetchBackpressure();
@@ -479,6 +508,14 @@ export function createMSEPlaybackController(
       destroyPCMPlayer();
       initMSE();
       initLiveHelpers();
+    },
+
+    selectAudioTrack(trackId: string) {
+      worker?.postMessage({
+        type: "select-audio-track",
+        trackId,
+        currentTime: Math.max(0, video.currentTime),
+      } satisfies WorkerCommand);
     },
 
     setLiveSync(enabled: boolean) {
@@ -509,7 +546,7 @@ export function createMSEPlaybackController(
       mseGeneration++;
       resetFetchBackpressure();
       pendingInits = [];
-      pendingSegments = null;
+      pendingLoad = null;
       sourceMode = "static-ts-list";
       hlsLive = null;
       updateLiveState();

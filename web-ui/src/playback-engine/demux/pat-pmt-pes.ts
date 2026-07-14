@@ -25,12 +25,24 @@ interface PIDToStreamTypeMap {
   [pid: number]: StreamType;
 }
 
+export type PMTAudioCodec = "aac" | "ac3" | "eac3" | "mpeg";
+
+export interface PMTAudioStream {
+  pid: number;
+  streamType: StreamType;
+  codec: PMTAudioCodec;
+  language?: string;
+  /** common_pids slot used by the existing PES parser. */
+  pidKey: "adts_aac" | "loas_aac" | "ac3" | "eac3" | "mp3";
+}
+
 export class PMT {
   program_number!: number;
   version_number!: number;
   pcr_pid!: number;
   // pid -> stream_type
   pid_stream_type: PIDToStreamTypeMap = {};
+  audio_streams: PMTAudioStream[] = [];
 
   common_pids: {
     h264: number | undefined;

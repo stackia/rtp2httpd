@@ -76,3 +76,13 @@ export function saveLastSourceIndex(channelId: string, sourceIndex: number): voi
   }
   saveSourceIndexMap(map);
 }
+
+const [getAudioTrackMap, saveAudioTrackMap] = createStore<Record<string, string>>("rtp2httpd-player-audio-track", {});
+
+export function getLastAudioTrackKey(channelId: string): string | undefined {
+  return getAudioTrackMap()[channelId];
+}
+
+export function saveLastAudioTrackKey(channelId: string, preferenceKey: string): void {
+  saveAudioTrackMap({ ...getAudioTrackMap(), [channelId]: preferenceKey });
+}

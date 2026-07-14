@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 import {
   History,
+  Languages,
   Maximize,
   Minimize,
   PanelRightClose,
@@ -17,7 +18,7 @@ import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import { createProgramTimeline, programProgressToWallClock } from "../../lib/program-timeline";
-import type { PlayerMediaInfo, PlayerRenderState } from "../../playback-engine";
+import type { PlayerAudioTrackState, PlayerMediaInfo, PlayerRenderState } from "../../playback-engine";
 import { isNearLiveWallClock, type LiveSessionAnchor, mseToWallClock } from "../../playback-engine/timeline/wall-clock";
 import type { Channel, EPGProgram } from "../../types/player";
 import { PLAYER_CONTROL_BUTTON_CLASS, PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
@@ -40,6 +41,8 @@ interface PlayerControlsProps {
   locale: Locale;
   // Technical information for the currently visible player slot
   mediaInfo: PlayerMediaInfo | null;
+  audioTrackState: PlayerAudioTrackState;
+  onAudioTrackChange: (trackId: string) => void;
   renderState: PlayerRenderState;
   autoDeinterlace: boolean;
   // The absolute time of the last seek position (null for live mode)
@@ -383,6 +386,8 @@ function PlayerControlsComponent({
   onScrubbingChange,
   locale,
   mediaInfo,
+  audioTrackState,
+  onAudioTrackChange,
   renderState,
   autoDeinterlace,
   seekStartTime,
@@ -408,6 +413,9 @@ function PlayerControlsComponent({
   const isEffectivelyMuted = isMuted || volume <= 0;
   const isCatchupSupported = channel.sources.some((s) => s.catchup && s.catchupSource);
   const hasTimeline = isCatchupSupported || Boolean(currentProgram);
+  const selectedAudioTrack = audioTrackState.tracks.find(
+    (track) => track.id === (audioTrackState.pendingTrackId ?? audioTrackState.selectedTrackId),
+  );
 
   return (
     <div
@@ -571,6 +579,59 @@ function PlayerControlsComponent({
                       </span>
                     </button>
                   ))}
+              </div>
+            </div>
+          )}
+
+          {/* Audio Track Selector */}
+          {audioTrackState.tracks.length > 1 && (
+            <div className="group/audio relative flex items-center focus-within:z-10" tabIndex={-1}>
+              <button
+                type="button"
+                className={clsx(
+                  PLAYER_CONTROL_BUTTON_CLASS,
+                  "flex max-w-16 cursor-pointer items-center gap-1 truncate px-1.5 py-0.5 text-[11px] font-medium min-[420px]:max-w-24 md:max-w-40 md:px-2.5 md:py-1.5 md:text-sm",
+                )}
+                title={audioTrackState.pendingTrackId ? t("switchingAudioTrack") : t("audioTrack")}
+                aria-label={t("audioTrack")}
+                aria-busy={audioTrackState.pendingTrackId !== undefined}
+                onClick={(event) => event.currentTarget.focus()}
+              >
+                <Languages className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" />
+                <span className="truncate">
+                  {selectedAudioTrack?.label || t("audioTrack")}
+                  {audioTrackState.pendingTrackId ? "…" : ""}
+                </span>
+              </button>
+              <div
+                className={clsx(
+                  PLAYER_OVERLAY_SURFACE_CLASS,
+                  "player-performance-motion invisible absolute bottom-full left-1/2 -translate-x-1/2 overflow-hidden rounded-xl py-1 opacity-0 transition-[opacity,visibility] duration-150 group-hover/audio:visible group-hover/audio:opacity-100 group-focus-within/audio:visible group-focus-within/audio:opacity-100",
+                )}
+              >
+                <PlayerSelectedGlassLayers />
+                {audioTrackState.tracks.map((track) => (
+                  <button
+                    type="button"
+                    key={track.id}
+                    onClick={(event) => {
+                      onAudioTrackChange(track.id);
+                      event.currentTarget.blur();
+                    }}
+                    aria-pressed={track.id === audioTrackState.selectedTrackId}
+                    className={clsx(
+                      "player-performance-motion relative z-10 block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs transition-colors md:text-sm",
+                      track.id === (audioTrackState.pendingTrackId ?? audioTrackState.selectedTrackId)
+                        ? "bg-blue-300/10 font-medium text-blue-200"
+                        : "text-white/75 hover:bg-blue-200/10 hover:text-blue-50",
+                    )}
+                  >
+                    <span className="flex items-center justify-between gap-4">
+                      <span>{track.label}</span>
+                      {track.language && <span className="text-blue-50/45">{track.language}</span>}
+                    </span>
+                  </button>
+                ))}
               </div>
             </div>
           )}

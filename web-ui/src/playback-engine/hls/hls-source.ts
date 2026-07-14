@@ -1,7 +1,16 @@
 import type { PlayerConfig } from "../config";
+import type { PlayerAudioTrack } from "../types";
 import Log from "../utils/logger";
 import type { SegmentMeta, SegmentSource } from "../worker/segment-source";
-import { type HlsMediaPlaylist, type HlsVariant, parseM3U8 } from "./m3u8";
+import {
+  type HlsAudioRendition,
+  type HlsMediaPlaylist,
+  type HlsVariant,
+  mediaTimeBoundaryIndex,
+  parseM3U8,
+  programDateTimeBoundaryIndex,
+  selectAudioRendition,
+} from "./m3u8";
 
 export interface HlsInfo {
   live: boolean;
@@ -14,6 +23,25 @@ export interface HlsInfo {
   resolution?: { width: number; height: number };
   frameRate?: number;
   videoRange?: string;
+  audioTracks?: PlayerAudioTrack[];
+  selectedAudioTrackId?: string;
+  selectedAudioTrackUrl?: string;
+  /** Worker-internal runtime lookup; URLs are intentionally absent from public track state. */
+  audioTrackUrls?: Record<string, string>;
+  /** Wall-clock time corresponding to MSE timeline zero, when supplied by the playlist. */
+  timelineProgramDateTime?: number;
+  /** First segment boundary selected by this source on the MSE timeline. */
+  playbackStartTime?: number;
+}
+
+export interface HlsSourceOptions {
+  preferredAudioTrackKey?: string;
+  /** Position assigned to the first selected live segment (used by rendition switches). */
+  liveTimelineOffset?: number;
+  /** For VOD rendition switches, start with the segment covering this position. */
+  startTime?: number;
+  /** Prefer the segment covering this wall-clock time when aligning renditions. */
+  programDateTimeAnchor?: number;
 }
 
 const TAG = "HlsSource";
@@ -47,6 +75,11 @@ export class HlsSource implements SegmentSource {
   private targetDuration = 6;
   private totalDuration = 0;
   private selectedVariant: Omit<HlsVariant, "url"> | undefined;
+  private audioTracks: PlayerAudioTrack[] = [];
+  private audioRenditionUrls = new Map<string, string>();
+  private selectedAudioTrack: HlsAudioRendition | undefined;
+  private timelineProgramDateTime: number | undefined;
+  private playbackStartTime = 0;
 
   private segments: SegmentMeta[] = [];
   private nextIndex = 0;
@@ -61,11 +94,18 @@ export class HlsSource implements SegmentSource {
   private lastPlaylistHadNews = true;
   /** Playlist content already fetched during HLS detection, consumed on the first load. */
   private preloaded: { text: string; url: string } | null;
+  private readonly options: HlsSourceOptions;
 
-  constructor(url: string, config: PlayerConfig, preloaded?: { text: string; url: string }) {
+  constructor(
+    url: string,
+    config: PlayerConfig,
+    preloaded?: { text: string; url: string },
+    options: HlsSourceOptions = {},
+  ) {
     this.url = preloaded?.url ?? url;
     this.config = config;
     this.preloaded = preloaded ?? null;
+    this.options = options;
   }
 
   get info(): HlsInfo {
@@ -74,6 +114,12 @@ export class HlsSource implements SegmentSource {
       targetDuration: this.targetDuration,
       totalDuration: this.totalDuration,
       ...this.selectedVariant,
+      audioTracks: this.audioTracks,
+      selectedAudioTrackId: this.selectedAudioTrack?.id,
+      selectedAudioTrackUrl: this.selectedAudioTrack?.url,
+      audioTrackUrls: Object.fromEntries(this.audioRenditionUrls),
+      timelineProgramDateTime: this.timelineProgramDateTime,
+      playbackStartTime: this.playbackStartTime,
     };
   }
 
@@ -114,12 +160,34 @@ export class HlsSource implements SegmentSource {
 
     if (this.live) {
       // Start near the live edge and rebase the timeline so playback starts at 0
-      this.nextIndex = Math.max(0, this.segments.length - LIVE_EDGE_SEGMENTS);
+      const programDateTimeAnchor = this.options.programDateTimeAnchor;
+      const programDateTimeIndex =
+        programDateTimeAnchor === undefined
+          ? -1
+          : programDateTimeBoundaryIndex(playlist.segments, programDateTimeAnchor);
+      this.nextIndex =
+        programDateTimeIndex >= 0 ? programDateTimeIndex : Math.max(0, this.segments.length - LIVE_EDGE_SEGMENTS);
       const base = this.segments[this.nextIndex]?.start ?? 0;
-      if (base > 0) {
-        this.segments = this.segments.map((s) => ({ ...s, start: s.start - base }));
-        this.timelinePos -= base;
+      this.timelineProgramDateTime = playlist.segments[this.nextIndex]?.programDateTime;
+      const selectedProgramDateTime = playlist.segments[this.nextIndex]?.programDateTime;
+      const offset =
+        (this.options.liveTimelineOffset ?? 0) +
+        (programDateTimeAnchor !== undefined && selectedProgramDateTime !== undefined
+          ? Math.max(0, (selectedProgramDateTime - programDateTimeAnchor) / 1000)
+          : 0);
+      const timelineAdjustment = offset - base;
+      if (timelineAdjustment !== 0) {
+        this.segments = this.segments.map((segment) => ({
+          ...segment,
+          start: segment.start + timelineAdjustment,
+        }));
+        this.timelinePos += timelineAdjustment;
       }
+      this.playbackStartTime = this.segments[this.nextIndex]?.start ?? offset;
+    } else if (this.options.startTime !== undefined) {
+      const startTime = this.options.startTime;
+      this.nextIndex = Math.max(0, mediaTimeBoundaryIndex(this.segments, startTime));
+      this.playbackStartTime = this.segments[this.nextIndex]?.start ?? startTime;
     }
 
     this.initialized = true;
@@ -191,6 +259,18 @@ export class HlsSource implements SegmentSource {
           }
           const { url: _url, ...selectedVariant } = best;
           this.selectedVariant = selectedVariant;
+          const renditions = best.audioGroupId
+            ? playlist.audioRenditions.filter((rendition) => rendition.groupId === best.audioGroupId)
+            : [];
+          this.audioTracks = renditions.map((rendition) => ({
+            id: rendition.id,
+            label: rendition.name,
+            language: rendition.language,
+            isDefault: rendition.isDefault,
+            preferenceKey: rendition.preferenceKey,
+          }));
+          this.audioRenditionUrls = new Map(renditions.map((rendition) => [rendition.id, rendition.url]));
+          this.selectedAudioTrack = selectAudioRendition(renditions, this.options.preferredAudioTrackKey);
           this.url = best.url;
           continue; // fetch the selected media playlist
         }

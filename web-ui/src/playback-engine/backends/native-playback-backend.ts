@@ -1,10 +1,34 @@
 import { isLGWebOS } from "../../lib/platform";
 import { defaultConfig, type PlayerConfig } from "../config";
 import { PlayerErrors } from "../errors";
-import type { LiveSessionAnchor, PlaybackBackend, PlayerMediaInfo, PlayerSegment } from "../types";
+import {
+  buildAudioTrackPreferenceKey,
+  type LiveSessionAnchor,
+  type PlaybackBackend,
+  type PlayerMediaInfo,
+  type PlayerSegment,
+} from "../types";
 import { createPlaybackEventEmitter, resolveMediaUrl } from "./backend-utils";
 
 type SegmentEntry = PlayerSegment & { start: number };
+
+interface NativeAudioTrack {
+  id: string;
+  label: string;
+  language: string;
+  enabled: boolean;
+}
+
+interface NativeAudioTrackList extends EventTarget {
+  readonly length: number;
+  [index: number]: NativeAudioTrack;
+}
+
+const NATIVE_AUDIO_TRACK_EVENTS = ["addtrack", "change", "removetrack"] as const;
+
+function nativeTrackId(track: NativeAudioTrack, index: number): string {
+  return `native:${track.id || index}`;
+}
 
 function mediaErrorMessage(error: MediaError | null): string {
   if (!error) return "Native media element playback failed";
@@ -33,6 +57,36 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
   let shouldPlay = false;
   let loadGeneration = 0;
   let detachLoadListeners: (() => void) | null = null;
+  let preferredAudioTrackKey: string | undefined;
+  const nativeAudioTracks = (video as HTMLVideoElement & { audioTracks?: NativeAudioTrackList }).audioTracks;
+
+  const audioPreferenceKey = (track: NativeAudioTrack, index: number) =>
+    buildAudioTrackPreferenceKey("native", track.id || String(index), track.label, track.language);
+
+  const emitAudioTracks = () => {
+    if (!nativeAudioTracks) return;
+    const entries = Array.from({ length: nativeAudioTracks.length }, (_, index) => ({
+      index,
+      track: nativeAudioTracks[index],
+    }));
+    const preferred = entries.find(({ track, index }) => audioPreferenceKey(track, index) === preferredAudioTrackKey);
+    const selected = preferred ?? entries.find(({ track }) => track.enabled);
+    if (preferred) {
+      preferredAudioTrackKey = undefined;
+      for (const entry of entries) entry.track.enabled = entry === preferred;
+    }
+    const tracks = entries.map(({ track, index }) => ({
+      id: nativeTrackId(track, index),
+      label: track.label || track.language || `Audio ${index + 1}`,
+      language: track.language || undefined,
+      isDefault: track.enabled,
+      preferenceKey: audioPreferenceKey(track, index),
+    }));
+    events.emit("audio-tracks-change", {
+      tracks,
+      selectedTrackId: selected ? nativeTrackId(selected.track, selected.index) : undefined,
+    });
+  };
 
   const currentEntry = () => entries[segmentIndex];
   const isLiveSource = () => entries.length === 1 && (entries[0]?.duration ?? 0) === 0;
@@ -59,6 +113,7 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
       if (!isCurrentLoad()) return;
       mediaOrigin = Number.isFinite(video.currentTime) ? video.currentTime : 0;
       updateMediaInfo();
+      emitAudioTracks();
       updateLogicalTime(generation);
     };
     const onDurationChange = () => {
@@ -147,13 +202,16 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
 
   const onVolumeChange = () => events.emit("volume-change", video.volume, video.muted);
   video.addEventListener("volumechange", onVolumeChange);
+  for (const event of NATIVE_AUDIO_TRACK_EVENTS) nativeAudioTracks?.addEventListener(event, emitAudioTracks);
 
   return {
     kind: "native",
     mediaElement: video,
 
-    loadSegments(segments) {
+    loadSegments(segments, options) {
       if (destroyed || !segments.length) return;
+      preferredAudioTrackKey = options?.preferredAudioTrackKey;
+      events.emit("audio-tracks-change", { tracks: [] });
       let start = 0;
       entries = segments.map((segment) => {
         const entry = { ...segment, url: resolveMediaUrl(segment.url), start };
@@ -164,6 +222,15 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
       events.emit("render-state-change", { active: false, deinterlacing: false });
       events.emit("live-state-change", isLiveSource());
       loadCurrentEntry(shouldPlay);
+    },
+
+    selectAudioTrack(trackId) {
+      if (!nativeAudioTracks) return;
+      preferredAudioTrackKey = undefined;
+      for (let index = 0; index < nativeAudioTracks.length; index++) {
+        nativeAudioTracks[index].enabled = nativeTrackId(nativeAudioTracks[index], index) === trackId;
+      }
+      emitAudioTracks();
     },
 
     async play() {
@@ -256,6 +323,7 @@ export function createNativePlaybackBackend(video: HTMLVideoElement, config?: Pa
       detachLoadListeners?.();
       detachLoadListeners = null;
       video.removeEventListener("volumechange", onVolumeChange);
+      for (const event of NATIVE_AUDIO_TRACK_EVENTS) nativeAudioTracks?.removeEventListener(event, emitAudioTracks);
       entries = [];
       video.pause();
       video.removeAttribute("src");

@@ -46,6 +46,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import NamedTuple
 from urllib.parse import parse_qs, urlparse
 
 FONT: str | None = None
@@ -89,6 +90,35 @@ HLS_CHANNELS = (
     ("HLS-TS (hevc-aac)", "hevc-aac", "mpegts", "hevc-aac-ts"),
     ("HLS-fMP4 (h264-aac)", "h264-aac", "fmp4", "h264-aac-fmp4"),
     ("HLS-fMP4 (hevc-aac)", "hevc-aac", "fmp4", "hevc-aac-fmp4"),
+)
+
+# Alternate-audio HLS masters: video-only rendition plus three independently
+# segmented audio renditions. The tones make track switching audible.
+# Tuple: (channel_label, seg_type, live_key).
+ALT_AUDIO_HLS_CHANNELS = (
+    ("HLS-TS alternate audio", "mpegts", "h264-aac-ts-alt-audio"),
+    ("HLS-fMP4 alternate audio", "fmp4", "h264-aac-fmp4-alt-audio"),
+)
+
+# One MPEG-TS program containing AAC, MP2 and AC-3 elementary audio streams.
+INTERNAL_AUDIO_HLS_CHANNELS = (("HLS-TS internal multi audio", "h264-internal-multi-audio"),)
+
+
+class AudioRendition(NamedTuple):
+    directory: str
+    name: str
+    hls_language: str
+    ts_language: str
+    tone: int
+    ts_profile: str
+    codec: str
+    bitrate: str
+
+
+AUDIO_RENDITIONS = (
+    AudioRendition("audio-en", "English", "en", "eng", 440, "h264-aac", "aac", "128k"),
+    AudioRendition("audio-zh", "中文", "zh", "zho", 880, "h264-mp2", "mp2", "192k"),
+    AudioRendition("audio-es", "Español", "es", "spa", 1320, "h264-ac3", "ac3", "192k"),
 )
 
 # ---------------------------------------------------------------------------
@@ -243,6 +273,31 @@ def lavfi_inputs(size: str = "1280x720", rate: int = 25) -> list[str]:
     ]
 
 
+def multi_audio_media_args() -> list[str]:
+    """H.264 plus three distinctly pitched/language-tagged audio PIDs."""
+    args = [
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=1280x720:rate=25",
+    ]
+    for rendition in AUDIO_RENDITIONS:
+        args += ["-f", "lavfi", "-i", f"sine=frequency={rendition.tone}:sample_rate=48000"]
+    args += ["-map", "0:v"]
+    for index, rendition in enumerate(AUDIO_RENDITIONS):
+        args += [
+            "-map",
+            f"{index + 1}:a",
+            f"-metadata:s:a:{index}",
+            f"language={rendition.ts_language}",
+            f"-c:a:{index}",
+            rendition.codec,
+            f"-b:a:{index}",
+            rendition.bitrate,
+        ]
+    return [*args, "-vf", live_filter("h264 multi-audio"), *video_args("h264-aac"), "-ar:a", "48000", "-ac:a", "2"]
+
+
 # ---------------------------------------------------------------------------
 # Time parsing for playseek
 # ---------------------------------------------------------------------------
@@ -293,11 +348,21 @@ class LiveHLS:
     or ``fmp4`` (HLS-fMP4, an init.mp4 + .m4s fragments referenced via EXT-X-MAP).
     """
 
-    def __init__(self, ffmpeg: str, profile: str, outdir: str, seg_type: str = "mpegts"):
+    def __init__(
+        self,
+        ffmpeg: str,
+        profile: str,
+        outdir: str,
+        seg_type: str = "mpegts",
+        media: str = "muxed",
+        tone: int = 440,
+    ):
         self.ffmpeg = ffmpeg
         self.profile = profile
         self.outdir = outdir
         self.seg_type = seg_type
+        self.media = media
+        self.tone = tone
         self.log_path = os.path.join(outdir, "ffmpeg.log")
         self.proc: subprocess.Popen[bytes] | None = None
         self._stderr = None
@@ -330,20 +395,38 @@ class LiveHLS:
                 "-hls_segment_filename",
                 os.path.join(self.outdir, "seg_%05d.ts"),
             ]
-        cmd = [
-            self.ffmpeg,
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-re",
-            *lavfi_inputs(),
-            "-vf",
-            live_filter(self.profile),
-            *video_args(self.profile),
-            *audio_args(self.profile),
-            *hls_opts,
-            os.path.join(self.outdir, "index.m3u8"),
-        ]
+        common = [self.ffmpeg, "-hide_banner", "-loglevel", "error", "-re"]
+        if self.media == "video":
+            media_args = [
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=1280x720:rate=25",
+                "-vf",
+                live_filter(self.profile),
+                *video_args(self.profile),
+                "-an",
+            ]
+        elif self.media == "audio":
+            media_args = [
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=frequency={self.tone}:sample_rate=48000",
+                "-vn",
+                *audio_args(self.profile),
+            ]
+        elif self.media == "multi-audio":
+            media_args = multi_audio_media_args()
+        else:
+            media_args = [
+                *lavfi_inputs(),
+                "-vf",
+                live_filter(self.profile),
+                *video_args(self.profile),
+                *audio_args(self.profile),
+            ]
+        cmd = [*common, *media_args, *hls_opts, os.path.join(self.outdir, "index.m3u8")]
         self._stderr = open(self.log_path, "ab")
         self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=self._stderr)
 
@@ -362,7 +445,74 @@ class LiveHLS:
             self._stderr.close()
 
 
-def wait_for_live_hls(gens: list[LiveHLS], timeout: float) -> None:
+class AlternateAudioHLS:
+    """Builds a master playlist from one video-only and multiple audio-only HLS generators."""
+
+    def __init__(self, ffmpeg: str, outdir: str, seg_type: str):
+        self.profile = "h264-aac-alt-audio"
+        self.seg_type = seg_type
+        self.outdir = outdir
+        self.log_path = os.path.join(outdir, "ffmpeg.log")
+        self.proc: subprocess.Popen[bytes] | None = None
+        self.generators = [
+            LiveHLS(ffmpeg, "h264-aac", os.path.join(outdir, "video"), seg_type, media="video"),
+            *(
+                LiveHLS(
+                    ffmpeg,
+                    rendition.ts_profile if seg_type == "mpegts" else "h264-aac",
+                    os.path.join(outdir, rendition.directory),
+                    seg_type,
+                    media="audio",
+                    tone=rendition.tone,
+                )
+                for rendition in AUDIO_RENDITIONS
+            ),
+        ]
+
+    def start(self) -> None:
+        os.makedirs(self.outdir, exist_ok=True)
+        for generator in self.generators:
+            generator.start()
+
+    def ready(self) -> bool:
+        if not all(generator.ready() for generator in self.generators):
+            return False
+        master = os.path.join(self.outdir, "index.m3u8")
+        if not os.path.isfile(master):
+            audio_lines = [
+                '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",'
+                f'NAME="{rendition.name}",DEFAULT={"YES" if index == 0 else "NO"},'
+                f'AUTOSELECT=YES,LANGUAGE="{rendition.hls_language}",URI="{rendition.directory}/index.m3u8"'
+                for index, rendition in enumerate(AUDIO_RENDITIONS)
+            ]
+            content = "\n".join(
+                [
+                    "#EXTM3U",
+                    "#EXT-X-VERSION:3",
+                    *audio_lines,
+                    '#EXT-X-STREAM-INF:BANDWIDTH=2400000,CODECS="avc1.64001f,mp4a.40.2",'
+                    'RESOLUTION=1280x720,FRAME-RATE=25.000,AUDIO="audio"',
+                    "video/index.m3u8",
+                ]
+            )
+            with open(master, "w", encoding="utf-8") as fh:
+                fh.write(f"{content}\n")
+        return True
+
+    def failure_message(self) -> str:
+        failures = [
+            generator.failure_message()
+            for generator in self.generators
+            if generator.proc is not None and generator.proc.poll() is not None
+        ]
+        return "\n".join(failures) if failures else f"alternate-audio HLS generator failed; root: {self.outdir}"
+
+    def stop(self) -> None:
+        for generator in self.generators:
+            generator.stop()
+
+
+def wait_for_live_hls(gens: list[LiveHLS | AlternateAudioHLS], timeout: float) -> None:
     if timeout <= 0:
         return
 
@@ -474,9 +624,9 @@ def make_http_handler(host: str, port: int, live_root: str, catchup: CatchupHLS)
                 self._send(200, ctype, fh.read())
 
         def _live(self, parts: list[str]) -> None:
-            # /live/<profile>/<file>
-            profile, fname = parts[1], parts[2]
-            self._serve_file(os.path.join(live_root, profile, fname))
+            # /live/<profile>/<path...>
+            profile = parts[1]
+            self._serve_file(os.path.join(live_root, profile, *parts[2:]))
 
         def _catchup_playlist(self, profile: str, qs: dict[str, list[str]]) -> None:
             playseek = (qs.get("playseek") or qs.get("tvdr") or [""])[0]
@@ -507,18 +657,53 @@ def make_http_handler(host: str, port: int, live_root: str, catchup: CatchupHLS)
                 if proc.poll() is None:
                     proc.terminate()
 
+        def _multi_ts(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp2t")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            proc = subprocess.Popen(
+                [
+                    catchup.ffmpeg,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-re",
+                    *multi_audio_media_args(),
+                    "-f",
+                    "mpegts",
+                    "-",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            assert proc.stdout is not None
+            try:
+                while True:
+                    chunk = proc.stdout.read(65536)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+            except BrokenPipeError, ConnectionError:
+                pass
+            finally:
+                if proc.poll() is None:
+                    proc.terminate()
+
         def do_GET(self) -> None:  # noqa: N802 (http.server API)
             parsed = urlparse(self.path)
             qs = parse_qs(parsed.query)
             parts = [p for p in parsed.path.split("/") if p]
             try:
-                if len(parts) == 3 and parts[0] == "live":
+                if len(parts) >= 3 and parts[0] == "live":
                     self._live(parts)
                 elif len(parts) >= 2 and parts[0] == "catchup" and parts[-1] == "index.m3u8":
                     self._catchup_playlist(parts[1], qs)
                 elif len(parts) == 4 and parts[0] == "catchup-seg":
                     # /catchup-seg/<profile>/<begin>/<idx>.ts
                     self._catchup_seg(parts[1], int(parts[2]), int(parts[3].removesuffix(".ts")))
+                elif parts == ["multi-audio.ts"]:
+                    self._multi_ts()
                 else:
                     self._send(404, "text/plain", b"not found")
             except BrokenPipeError, ConnectionError:
@@ -791,6 +976,20 @@ def build_services_m3u(http_hostport: str, rtsp_hostport: str, mcast_channels: l
             f'#EXTINF:-1 group-title="HLS" catchup="default" catchup-source="{src}",{label}',
             f"http://{http_hostport}/live/{key}/index.m3u8",
         ]
+    for label, _seg_type, key in ALT_AUDIO_HLS_CHANNELS:
+        lines += [
+            f'#EXTINF:-1 group-title="HLS",{label}',
+            f"http://{http_hostport}/live/{key}/index.m3u8",
+        ]
+    for label, key in INTERNAL_AUDIO_HLS_CHANNELS:
+        lines += [
+            f'#EXTINF:-1 group-title="HLS",{label}',
+            f"http://{http_hostport}/live/{key}/index.m3u8",
+        ]
+    lines += [
+        '#EXTINF:-1 group-title="mpegts (HTTP)",HTTP TS internal multi audio',
+        f"http://{http_hostport}/multi-audio.ts",
+    ]
     for prof in RTSP_PROFILES:
         # mpegts-over-RTSP live + RTSP TS catchup window: covers mpegts 回看
         src = f"rtsp://{rtsp_hostport}/catchup/{prof}?{tpl}"
@@ -865,9 +1064,23 @@ def main() -> int:
 
     live_root = os.path.join(args.workdir, "live")
 
-    live = [
+    live: list[LiveHLS | AlternateAudioHLS] = [
         LiveHLS(args.ffmpeg, prof, os.path.join(live_root, key), seg_type)
         for _label, prof, seg_type, key in HLS_CHANNELS
+    ]
+    live += [
+        AlternateAudioHLS(args.ffmpeg, os.path.join(live_root, key), seg_type)
+        for _label, seg_type, key in ALT_AUDIO_HLS_CHANNELS
+    ]
+    live += [
+        LiveHLS(
+            args.ffmpeg,
+            "h264-multi-audio",
+            os.path.join(live_root, key),
+            "mpegts",
+            media="multi-audio",
+        )
+        for _label, key in INTERNAL_AUDIO_HLS_CHANNELS
     ]
     for gen in live:
         gen.start()

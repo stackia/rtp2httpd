@@ -429,6 +429,66 @@ export class PCMAudioPlayer {
     }
   }
 
+  /**
+   * Drop software-decoded audio at and after a track-switch boundary while
+   * allowing already scheduled audio before the boundary to finish. The new
+   * track may use either Web Audio or MSE, so this must be applied even when no
+   * new PCM chunks are expected.
+   */
+  replaceFrom(time: number): void {
+    const trimChunks = (chunks: AudioChunk[]): AudioChunk[] => {
+      const kept: AudioChunk[] = [];
+      for (const chunk of chunks) {
+        if (chunk.time >= time) break;
+        if (chunk.endTime <= time) {
+          kept.push(chunk);
+          continue;
+        }
+
+        const frames = Math.max(0, Math.floor((time - chunk.time) * chunk.sampleRate));
+        if (frames > 0) {
+          const endTime = chunk.time + frames / chunk.sampleRate;
+          kept.push({
+            ...chunk,
+            samples: chunk.samples.subarray(0, frames * chunk.channels),
+            duration: endTime - chunk.time,
+            endTime,
+          });
+        }
+        break;
+      }
+      return kept;
+    };
+
+    this.audioBuffer = trimChunks(this.audioBuffer);
+    this.pendingChunks = trimChunks(this.pendingChunks);
+
+    const ctx = this.context;
+    const now = ctx?.currentTime ?? 0;
+    const remaining: ScheduledSpan[] = [];
+    for (const span of this.scheduledSpans) {
+      if (span.streamEnd <= time) {
+        remaining.push(span);
+        continue;
+      }
+
+      const stopAt =
+        span.streamStart < time
+          ? span.ctxStart +
+            ((time - span.streamStart) / (span.streamEnd - span.streamStart)) * (span.ctxEnd - span.ctxStart)
+          : now;
+      try {
+        span.source.stop(Math.max(now, stopAt));
+      } catch (_e) {}
+    }
+
+    this.scheduledSpans = remaining;
+    this.nextStartTime = remaining.length > 0 ? remaining[remaining.length - 1].ctxEnd : 0;
+    this.inputCursor = time;
+    this.stretcher?.reset();
+    this.resetDriftState();
+  }
+
   // ==================== Stretcher ====================
 
   /** Returns the stretcher if ready for this chunk's format, else kicks off (re)creation. */

@@ -4,15 +4,18 @@
 rtp2httpd can proxy, so you can develop the web player against the scenarios it
 needs to support:
 
-| Scenario           | Delivery                  | rtp2httpd proxy | Codecs                              |
-| ------------------ | ------------------------- | --------------- | ----------------------------------- |
-| HLS-TS live        | HTTP `.m3u8` + `.ts`      | `/http`         | `h264-mp2`, `hevc-aac`              |
-| HLS-fMP4 live      | HTTP `.m3u8` + `.m4s`     | `/http`         | `h264-aac`, `hevc-aac`              |
-| HLS catchup        | HTTP HLS VOD (`playseek`) | `/http`         | all of the above                    |
-| mpegts (RTSP)      | RTSP TS live + catchup    | `/rtsp`         | `h264-mp2`, `hevc-aac`              |
-| mpegts (multicast) | RTP multicast live        | `/rtp`          | `h264-mp2`, `hevc-ac3`, `hevc-eac3` |
-| mpegts (scan)      | RTP multicast live        | `/rtp`          | 1080i / 1080p / 2160p (see below)   |
-| external file      | RTP multicast (looped)    | `/rtp`          | whatever the `.ts` file contains    |
+| Scenario                 | Delivery                          | rtp2httpd proxy | Codecs                              |
+| ------------------------ | --------------------------------- | --------------- | ----------------------------------- |
+| HLS-TS live              | HTTP `.m3u8` + `.ts`              | `/http`         | `h264-mp2`, `hevc-aac`              |
+| HLS-fMP4 live            | HTTP `.m3u8` + `.m4s`             | `/http`         | `h264-aac`, `hevc-aac`              |
+| HLS alternate audio      | HTTP master + split A/V playlists | `/http`         | AAC / MP2 / AC-3 (TS), AAC (fMP4)   |
+| HLS internal multi-audio | HTTP `.m3u8` + multi-PID `.ts`    | `/http`         | H.264 + AAC / MP2 / AC-3            |
+| HTTP internal multi-audio | continuous multi-PID MPEG-TS     | `/http`         | H.264 + AAC / MP2 / AC-3            |
+| HLS catchup              | HTTP HLS VOD (`playseek`)         | `/http`         | all of the above                    |
+| mpegts (RTSP)            | RTSP TS live + catchup            | `/rtsp`         | `h264-mp2`, `hevc-aac`              |
+| mpegts (multicast)       | RTP multicast live                | `/rtp`          | `h264-mp2`, `hevc-ac3`, `hevc-eac3` |
+| mpegts (scan)            | RTP multicast live                | `/rtp`          | 1080i / 1080p / 2160p (see below)   |
+| external file            | RTP multicast (looped)            | `/rtp`          | whatever the `.ts` file contains    |
 
 - `h264-mp2`  = H.264 video + MPEG-1/2 Layer II audio
 - `hevc-aac`  = H.265/HEVC video + AAC audio
@@ -22,6 +25,18 @@ needs to support:
 HLS live is offered in both segment specs: **HLS-TS** (MPEG-TS `.ts` segments)
 and **HLS-fMP4** (an `init.mp4` referenced via `#EXT-X-MAP` + `.m4s` fragments).
 fMP4 carries AAC audio (MP2-in-MP4 is unsupported), so fMP4 channels use AAC.
+
+The two **alternate audio** channels use a video-only playlist plus English
+(440 Hz), Chinese (880 Hz), and Spanish (1320 Hz) renditions declared with
+`EXT-X-MEDIA`. The TS channel combines AAC, MP2, and AC-3; the fMP4 channel uses
+AAC for all three renditions. They exercise default-track selection, the player
+controls selector, audible track switching, codec changes, and per-channel
+selection persistence.
+
+The **internal multi-audio** channels carry those same three languages and
+tones as separate PIDs in one MPEG-TS program. One is segmented as HLS-TS and
+the other is a continuous HTTP TS response, covering both inputs accepted by
+the custom demux/transmux pipeline.
 
 **HLS catchup** is a real HLS VOD: each `playseek` window returns an
 `index.m3u8` (`#EXT-X-PLAYLIST-TYPE:VOD`) listing fixed-duration `.ts` slices.
@@ -65,7 +80,7 @@ exact codecs/bitstream are relayed) — useful for reproducing a stream attached
 to a bug report:
 
 ```bash
-uv run python tools/devlab/devlab.py --ts-file /path/to/user-report.ts
+uv run tools/devlab/devlab.py --ts-file /path/to/user-report.ts
 # adds a "file <name>" channel proxied through rtp2httpd
 ```
 
@@ -80,7 +95,7 @@ UTC` — proving the time → picture mapping end to end.
 
 ```bash
 # 1. start the upstreams (writes /tmp/r2h-devlab.conf)
-uv run python tools/devlab/devlab.py
+uv run tools/devlab/devlab.py
 # The script prints the rtp2httpd command.
 
 # 2. in another shell, run rtp2httpd against the generated config
@@ -104,7 +119,7 @@ ffmpeg -hide_banner -filters | grep drawtext
 ```
 
 Defaults: HTTP origin `127.0.0.1:8881`, RTSP origin `127.0.0.1:8554`,
-rtp2httpd port `5140`. Run `uv run python tools/devlab/devlab.py --help` for
+rtp2httpd port `5140`. Run `uv run tools/devlab/devlab.py --help` for
 options.
 
 ## Verifying a scenario without the browser

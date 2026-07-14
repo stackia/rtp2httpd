@@ -1,11 +1,13 @@
 import type { PlayerConfig } from "../config";
 import type { DemuxErrorDetail, LoaderErrorDetail } from "../errors";
-import type { PlayerMediaInfo, PlayerSegment } from "../types";
+import type { PlaybackLoadOptions, PlayerAudioTrackState, PlayerMediaInfo, PlayerSegment } from "../types";
 
 export type WorkerCommand =
-  | { type: "init"; segments: PlayerSegment[]; config: PlayerConfig; gen: number }
+  | { type: "init"; segments: PlayerSegment[]; options?: PlaybackLoadOptions; config: PlayerConfig; gen: number }
   | { type: "start" }
-  | { type: "load-segments"; segments: PlayerSegment[]; gen: number }
+  | { type: "load-segments"; segments: PlayerSegment[]; options?: PlaybackLoadOptions; gen: number }
+  | { type: "select-audio-track"; trackId: string; currentTime: number }
+  | { type: "audio-track-switch-result"; trackId: string; success: boolean; currentTime: number }
   | { type: "pause" }
   | { type: "resume" }
   | { type: "reset" }
@@ -23,9 +25,12 @@ export type WorkerEvent =
       info?: string;
       code?: number;
       url?: string;
+      track?: "video" | "audio";
       gen: number;
     }
   | { type: "hls-info"; live: boolean; totalDuration: number; gen: number }
+  | { type: "audio-tracks"; state: PlayerAudioTrackState; gen: number }
+  | { type: "audio-track-switch"; trackId: string; fromTime: number; gen: number }
   | {
       type: "pcm-audio-data";
       pcm: ArrayBuffer;

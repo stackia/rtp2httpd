@@ -25,6 +25,7 @@ import {
   PESData,
   type PIDToSliceQueues,
   PMT,
+  type PMTAudioStream,
   type ProgramToPMTMap,
   SectionData,
   SliceQueue,
@@ -57,6 +58,7 @@ type AdaptationFieldInfo = {
 type CommonPidKey = keyof PMT["common_pids"];
 type TSDemuxerOptions = {
   waitForInitialVideoKeyframe?: boolean;
+  selectedAudioPid?: number;
 };
 type TSSegmentBoundaryOptions = {
   resetAudioParserState?: boolean;
@@ -108,8 +110,64 @@ type AudioData =
       data: MP3Data;
     };
 
+function createEmptyAudioMetadata(): AACAudioMetadata {
+  return {
+    codec: undefined as unknown as "aac",
+    audio_object_type: undefined as unknown as MPEG4AudioObjectTypes,
+    sampling_freq_index: undefined as unknown as MPEG4SamplingFrequencyIndex,
+    sampling_frequency: undefined as unknown as number,
+    channel_config: undefined as unknown as number,
+  };
+}
+
 const VIDEO_PID_KEYS: readonly CommonPidKey[] = ["h264", "h265"];
 const AUDIO_PID_KEYS: readonly CommonPidKey[] = ["adts_aac", "loas_aac", "ac3", "eac3", "mp3"];
+
+function descriptorLanguage(data: Uint8Array, start: number, length: number): string | undefined {
+  for (let offset = start; offset + 1 < start + length; ) {
+    const tag = data[offset];
+    const descriptorLength = data[offset + 1];
+    if (tag === 0x0a && descriptorLength >= 3 && offset + 5 <= data.length) {
+      return String.fromCharCode(data[offset + 2], data[offset + 3], data[offset + 4]).trim() || undefined;
+    }
+    offset += 2 + descriptorLength;
+  }
+  return undefined;
+}
+
+function classifyAudioStream(
+  streamType: StreamType,
+  pid: number,
+  data: Uint8Array,
+  descriptorStart: number,
+  descriptorLength: number,
+): PMTAudioStream | undefined {
+  const language = descriptorLanguage(data, descriptorStart, descriptorLength);
+  if (streamType === StreamType.kADTSAAC) return { pid, streamType, codec: "aac", language, pidKey: "adts_aac" };
+  if (streamType === StreamType.kLOASAAC) return { pid, streamType, codec: "aac", language, pidKey: "loas_aac" };
+  if (streamType === StreamType.kAC3) return { pid, streamType, codec: "ac3", language, pidKey: "ac3" };
+  if (streamType === StreamType.kEAC3) return { pid, streamType, codec: "eac3", language, pidKey: "eac3" };
+  if (streamType === StreamType.kMPEG1Audio || streamType === StreamType.kMPEG2Audio) {
+    return { pid, streamType, codec: "mpeg", language, pidKey: "mp3" };
+  }
+  if (streamType !== StreamType.kPESPrivateData) return undefined;
+
+  for (let offset = descriptorStart; offset + 1 < descriptorStart + descriptorLength; ) {
+    const tag = data[offset];
+    const length = data[offset + 1];
+    if (tag === 0x05 && length >= 4) {
+      const registration = String.fromCharCode(...data.subarray(offset + 2, offset + 6));
+      if (registration === "AC-3") return { pid, streamType, codec: "ac3", language, pidKey: "ac3" };
+      if (registration === "EC-3") return { pid, streamType, codec: "eac3", language, pidKey: "eac3" };
+    } else if (tag === 0x6a || tag === 0x81 || tag === 0x82) {
+      return { pid, streamType, codec: "ac3", language, pidKey: "ac3" };
+    } else if (tag === 0x7a) {
+      return { pid, streamType, codec: "eac3", language, pidKey: "eac3" };
+    }
+    offset += 2 + length;
+  }
+  return undefined;
+}
 
 export type OnErrorCallback = (type: DemuxErrorDetail, info: string) => void;
 export type OnTrackMetadataCallback = (type: string, metadata: unknown) => void;
@@ -117,6 +175,14 @@ export type OnDataAvailableCallback = (audioTrack: unknown, videoTrack: unknown,
 export type OnTrackDiscontinuityCallback = (track: "audio" | "video") => void;
 /** Reports the 90 kHz PCR base and byte position from the PMT-declared PCR PID. */
 export type OnPcrCallback = (pcrBase: number, bytePosition: number, discontinuity: boolean) => void;
+
+export interface TSAudioTrackInfo {
+  pid: number;
+  codec: "aac" | "ac3" | "eac3" | "mpeg";
+  language?: string;
+}
+
+export type OnAudioTracksCallback = (tracks: TSAudioTrackInfo[], selectedPid: number | undefined) => void;
 
 class TSDemuxer {
   private readonly TAG: string = "TSDemuxer";
@@ -126,6 +192,7 @@ class TSDemuxer {
   public onDataAvailable: OnDataAvailableCallback | null = null;
   public onTrackDiscontinuity: OnTrackDiscontinuityCallback | null = null;
   public onPcr: OnPcrCallback | null = null;
+  public onAudioTracks: OnAudioTracksCallback | null = null;
   /** Software audio decode support (MP2) */
   public onRawAudioData: ((frame: { codec: "mp2"; data: Uint8Array; pts: number }) => void) | null = null;
 
@@ -157,13 +224,8 @@ class TSDemuxer {
     details: {} as Record<string, unknown>,
   };
 
-  private audio_metadata_: AACAudioMetadata | AC3AudioMetadata | EAC3AudioMetadata | MP3AudioMetadata = {
-    codec: undefined as unknown as "aac",
-    audio_object_type: undefined as unknown as MPEG4AudioObjectTypes,
-    sampling_freq_index: undefined as unknown as MPEG4SamplingFrequencyIndex,
-    sampling_frequency: undefined as unknown as number,
-    channel_config: undefined as unknown as number,
-  };
+  private audio_metadata_: AACAudioMetadata | AC3AudioMetadata | EAC3AudioMetadata | MP3AudioMetadata =
+    createEmptyAudioMetadata();
 
   private last_pcr_base_: number = NaN;
   private timestamp_offset_: number = 0;
@@ -185,6 +247,8 @@ class TSDemuxer {
   private soft_decode_audio_codec_: "mp2" | null = null;
   private audio_drop_until_sync_ = false;
   private drop_video_until_keyframe_ = true;
+  private selected_audio_pid_: number | undefined;
+  private audio_tracks_signature_ = "";
 
   private video_track_ = {
     type: "video",
@@ -205,9 +269,14 @@ class TSDemuxer {
     this.timestamp_offset_ = value;
   }
 
+  public get hasVideo(): boolean {
+    return this.has_video_;
+  }
+
   public constructor(probe_data: TSProbeResult, options: TSDemuxerOptions = {}) {
     this.ts_packet_size_ = probe_data.ts_packet_size as number;
     this.sync_offset_ = probe_data.sync_offset as number;
+    this.selected_audio_pid_ = options.selectedAudioPid;
     if (options.waitForInitialVideoKeyframe === false) {
       this.drop_video_until_keyframe_ = false;
       this.video_output_started_ = true;
@@ -232,6 +301,7 @@ class TSDemuxer {
     this.onDataAvailable = null;
     this.onTrackDiscontinuity = null;
     this.onPcr = null;
+    this.onAudioTracks = null;
     this.onRawAudioData = null;
     this.soft_decode_audio_codec_ = null;
   }
@@ -251,12 +321,25 @@ class TSDemuxer {
   }
 
   public flushSegmentBoundary(): void {
-    if (this.shouldWaitForVideoKeyframe() || !this.isInitSegmentDispatched()) {
-      return;
+    this.flushPendingMedia();
+  }
+
+  /** Switch the selected elementary audio PID without resetting video parsing or its timestamp base. */
+  public selectAudioPid(pid: number): boolean {
+    const pmt = this.pmt_;
+    if (!pmt || pid === this.selected_audio_pid_ || !pmt.audio_streams.some((track) => track.pid === pid)) {
+      return false;
     }
-    if (this.audio_track_.length || this.video_track_.length) {
-      this.onDataAvailable?.(this.audio_track_, this.video_track_, true);
-    }
+
+    this.clearAudioTrack();
+    this.clearAudioPESQueues();
+    this.resetAudioCodecState();
+    this.selected_audio_pid_ = pid;
+    this.applySelectedAudioStream(pmt);
+    delete this.continuity_counters_[pid];
+    this.onTrackDiscontinuity?.("audio");
+    this.emitAudioTracks(pmt);
+    return true;
   }
 
   public static probe(data: Uint8Array): TSProbeResult {
@@ -332,6 +415,21 @@ class TSDemuxer {
     return this.isVideoPid(pid) || this.isAudioPid(pid);
   }
 
+  private applySelectedAudioStream(pmt: PMT): void {
+    for (const key of AUDIO_PID_KEYS) pmt.common_pids[key] = undefined;
+    const selected = pmt.audio_streams.find((track) => track.pid === this.selected_audio_pid_) ?? pmt.audio_streams[0];
+    this.selected_audio_pid_ = selected?.pid;
+    if (selected) pmt.common_pids[selected.pidKey] = selected.pid;
+  }
+
+  private emitAudioTracks(pmt: PMT): void {
+    const tracks = pmt.audio_streams.map(({ pid, codec, language }) => ({ pid, codec, language }));
+    const signature = JSON.stringify([tracks, this.selected_audio_pid_]);
+    if (signature === this.audio_tracks_signature_) return;
+    this.audio_tracks_signature_ = signature;
+    this.onAudioTracks?.(tracks, this.selected_audio_pid_);
+  }
+
   private resetAudioParserState(): void {
     this.audio_last_sample_pts_ = undefined;
     this.aac_last_incomplete_data_ = null;
@@ -339,6 +437,13 @@ class TSDemuxer {
     this.eac3_last_incomplete_data_ = null;
     this.loas_previous_frame = null;
     this.audio_drop_until_sync_ = true;
+  }
+
+  private resetAudioCodecState(): void {
+    this.resetAudioParserState();
+    this.audio_init_segment_dispatched_ = false;
+    this.soft_decode_audio_codec_ = null;
+    this.audio_metadata_ = createEmptyAudioMetadata();
   }
 
   private clearAudioTrack(): void {
@@ -352,16 +457,13 @@ class TSDemuxer {
   }
 
   private clearAudioPESQueues(): void {
-    const commonPids = this.pmt_?.common_pids;
-    if (!commonPids) {
+    const pmt = this.pmt_;
+    if (!pmt) {
       return;
     }
 
-    for (const key of AUDIO_PID_KEYS) {
-      const pid = commonPids[key];
-      if (pid !== undefined) {
-        delete this.pes_slice_queues_[pid];
-      }
+    for (const track of pmt.audio_streams) {
+      delete this.pes_slice_queues_[track.pid];
     }
   }
 
@@ -369,7 +471,7 @@ class TSDemuxer {
     return this.has_video_ && !this.video_output_started_;
   }
 
-  private flushMediaBeforeTrackDiscontinuity(): void {
+  private flushPendingMedia(): void {
     if (this.shouldWaitForVideoKeyframe() || !this.isInitSegmentDispatched()) {
       return;
     }
@@ -392,7 +494,7 @@ class TSDemuxer {
     delete this.pes_slice_queues_[pid];
 
     if (this.isVideoPid(pid)) {
-      this.flushMediaBeforeTrackDiscontinuity();
+      this.flushPendingMedia();
       this.clearVideoTrack();
       this.drop_video_until_keyframe_ = true;
       this.video_output_started_ = false;
@@ -406,7 +508,7 @@ class TSDemuxer {
     }
 
     if (this.isAudioPid(pid)) {
-      this.flushMediaBeforeTrackDiscontinuity();
+      this.flushPendingMedia();
       this.resetAudioParserState();
       Log.w(this.TAG, `Audio TS discontinuity on pid ${pid}: ${reason}; resetting audio parser state`);
       this.onTrackDiscontinuity?.("audio");
@@ -922,51 +1024,16 @@ class TSDemuxer {
       pmt.pid_stream_type[elementary_PID] = stream_type;
 
       const already_has_video = pmt.common_pids.h264 || pmt.common_pids.h265;
-      const already_has_audio =
-        pmt.common_pids.adts_aac ||
-        pmt.common_pids.loas_aac ||
-        pmt.common_pids.ac3 ||
-        pmt.common_pids.eac3 ||
-        pmt.common_pids.mp3;
-
       if (stream_type === StreamType.kH264 && !already_has_video) {
         pmt.common_pids.h264 = elementary_PID;
       } else if (stream_type === StreamType.kH265 && !already_has_video) {
         pmt.common_pids.h265 = elementary_PID;
-      } else if (stream_type === StreamType.kADTSAAC && !already_has_audio) {
-        pmt.common_pids.adts_aac = elementary_PID;
-      } else if (stream_type === StreamType.kLOASAAC && !already_has_audio) {
-        pmt.common_pids.loas_aac = elementary_PID;
-      } else if (stream_type === StreamType.kAC3 && !already_has_audio) {
-        pmt.common_pids.ac3 = elementary_PID; // ATSC AC-3
-      } else if (stream_type === StreamType.kEAC3 && !already_has_audio) {
-        pmt.common_pids.eac3 = elementary_PID; // ATSC EAC-3
-      } else if (
-        (stream_type === StreamType.kMPEG1Audio || stream_type === StreamType.kMPEG2Audio) &&
-        !already_has_audio
-      ) {
-        pmt.common_pids.mp3 = elementary_PID;
-      } else if (stream_type === StreamType.kPESPrivateData && ES_info_length > 0) {
-        // parse descriptors to detect DVB AC-3 / E-AC-3 in private PES
-        for (let offset = i + 5; offset < i + 5 + ES_info_length; ) {
-          const tag = data[offset + 0];
-          const length = data[offset + 1];
-          if (tag === 0x05) {
-            // Registration Descriptor
-            const registration = String.fromCharCode(...Array.from(data.subarray(offset + 2, offset + 2 + length)));
-            if (registration === "AC-3" && !already_has_audio) {
-              pmt.common_pids.ac3 = elementary_PID; // DVB AC-3
-            } else if (registration === "EC-3" && !already_has_audio) {
-              pmt.common_pids.eac3 = elementary_PID; // DVB EAC-3
-            }
-          } else if (tag === 0x82) {
-            pmt.common_pids.ac3 = elementary_PID;
-          } else if (tag === 0x7a) {
-            pmt.common_pids.eac3 = elementary_PID;
-          }
-          offset += 2 + length;
-        }
       }
+
+      // Collect every audio entry first; applySelectedAudioStream() maps only
+      // the selected PID into common_pids after the complete PMT is known.
+      const audioStream = classifyAudioStream(stream_type, elementary_PID, data, i + 5, ES_info_length);
+      if (audioStream) pmt.audio_streams.push(audioStream);
 
       i += 5 + ES_info_length;
     }
@@ -976,18 +1043,12 @@ class TSDemuxer {
         Log.v(this.TAG, `Parsed first PMT: ${JSON.stringify(pmt)}`);
       }
       this.pmt_ = pmt;
+      this.applySelectedAudioStream(pmt);
       if (pmt.common_pids.h264 || pmt.common_pids.h265) {
         this.has_video_ = true;
       }
-      if (
-        pmt.common_pids.adts_aac ||
-        pmt.common_pids.loas_aac ||
-        pmt.common_pids.ac3 ||
-        pmt.common_pids.eac3 ||
-        pmt.common_pids.mp3
-      ) {
-        this.has_audio_ = true;
-      }
+      this.has_audio_ = pmt.audio_streams.length > 0;
+      this.emitAudioTracks(pmt);
     }
   }
 

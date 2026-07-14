@@ -3,6 +3,31 @@ export interface PlayerSegment {
   duration?: number;
 }
 
+export interface PlayerAudioTrack {
+  /** Runtime identifier used when selecting this rendition. */
+  id: string;
+  /** Human-readable rendition name or a generated fallback. */
+  label: string;
+  language?: string;
+  isDefault: boolean;
+  /** Stable across signed/rotating rendition URLs; safe to persist per channel. */
+  preferenceKey: string;
+}
+
+export interface PlayerAudioTrackState {
+  tracks: PlayerAudioTrack[];
+  selectedTrackId?: string;
+  pendingTrackId?: string;
+}
+
+export interface PlaybackLoadOptions {
+  preferredAudioTrackKey?: string;
+}
+
+export function buildAudioTrackPreferenceKey(...parts: Array<string | undefined>): string {
+  return parts.map((part) => part?.trim().toLowerCase() ?? "").join("\u001f");
+}
+
 import type { PlayerErrorDetail } from "./errors";
 import type { LiveSessionAnchor } from "./timeline/wall-clock";
 
@@ -57,6 +82,8 @@ export interface PlayerEventMap {
   "audio-suspended": () => void;
   /** Fired when parsed or measured media metadata changes. */
   "media-info": (info: PlayerMediaInfo) => void;
+  /** Fired when HLS/native audio renditions or their selection state changes. */
+  "audio-tracks-change": (state: PlayerAudioTrackState) => void;
   /** Fired when WebGL activity or its confirmed deinterlacing state changes. */
   "render-state-change": (state: PlayerRenderState) => void;
   "playback-state-change": (state: "canplay" | "playing" | "paused" | "waiting", eventTimeStamp: number) => void;
@@ -81,7 +108,9 @@ export interface PlaybackBackendState {
 export interface PlaybackBackend {
   readonly kind: PlaybackBackendKind;
   readonly mediaElement: HTMLVideoElement;
-  loadSegments(segments: PlayerSegment[]): void;
+  loadSegments(segments: PlayerSegment[], options?: PlaybackLoadOptions): void;
+  /** Select an already-discovered audio rendition without rebuilding video playback. */
+  selectAudioTrack(trackId: string): void;
   play(): Promise<void>;
   pause(): void;
   setVolume(volume: number): void;
@@ -110,7 +139,9 @@ export interface MSEPlaybackController {
   onLiveStateChange?: ((isLive: boolean) => void) | null;
   onAudioSuspended?: (() => void) | null;
   onMediaInfo?: ((info: PlayerMediaInfo) => void) | null;
-  loadSegments(segments: PlayerSegment[]): void;
+  onAudioTracksChange?: ((state: PlayerAudioTrackState) => void) | null;
+  loadSegments(segments: PlayerSegment[], options?: PlaybackLoadOptions): void;
+  selectAudioTrack(trackId: string): void;
   seek(seconds: number): void;
   goLive(targetMseSeconds: number): void;
   setLiveSessionAnchor(anchor: LiveSessionAnchor): void;
