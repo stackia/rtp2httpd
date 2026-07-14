@@ -1,7 +1,6 @@
 import { clsx } from "clsx";
 import {
   History,
-  Languages,
   Maximize,
   Minimize,
   PanelRightClose,
@@ -597,7 +596,6 @@ function PlayerControlsComponent({
                 aria-busy={audioTrackState.pendingTrackId !== undefined}
                 onClick={(event) => event.currentTarget.focus()}
               >
-                <Languages className="h-3.5 w-3.5 shrink-0 md:h-4 md:w-4" />
                 <span className="truncate">
                   {selectedAudioTrack?.label || t("audioTrack")}
                   {audioTrackState.pendingTrackId ? "…" : ""}
