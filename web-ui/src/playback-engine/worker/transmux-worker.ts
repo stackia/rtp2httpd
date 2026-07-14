@@ -337,7 +337,13 @@ function handlePrimaryTimelineAnchor(anchor: MediaTimelineAnchor): void {
 }
 
 function handlePrimaryHlsInfo(info: HlsInfo): void {
-  post({ type: "hls-info", live: info.live, totalDuration: info.totalDuration, gen });
+  post({
+    type: "hls-info",
+    live: info.live,
+    targetDuration: info.targetDuration,
+    totalDuration: info.totalDuration,
+    gen,
+  });
   audioTracks = info.audioTracks ?? [];
   audioTrackUrls = new Map(Object.entries(info.audioTrackUrls ?? {}));
   hasHlsAudioGroup = info.hasAudioGroup ?? false;

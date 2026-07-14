@@ -42,7 +42,7 @@ export type WorkerEvent =
       track?: "video" | "audio";
       gen: number;
     }
-  | { type: "hls-info"; live: boolean; totalDuration: number; gen: number }
+  | { type: "hls-info"; live: boolean; targetDuration: number; totalDuration: number; gen: number }
   | { type: "audio-tracks"; state: PlayerAudioTrackState; gen: number }
   | { type: "audio-codec-unsupported"; codec: string; gen: number }
   | AudioTrackSwitchEvent

@@ -177,6 +177,7 @@ export class PCMAudioPlayer {
   // This state is independent from lifecycle recovery: only first startup may
   // temporarily slow video while PCM establishes a shared anchor.
   private startupSyncState: StartupSyncState = "waiting";
+  private startupMinimumLeadSec = STARTUP_MINIMUM_LEAD_SEC;
   private startupSyncWaitStartedAt: number | null = null;
   private startupWaitLogged = false;
   private startupOriginalPlaybackRate: number | null = null;
@@ -448,9 +449,10 @@ export class PCMAudioPlayer {
    * Drop software-decoded audio at and after a track-switch boundary while
    * allowing already scheduled audio before the boundary to finish. The new
    * track may use either Web Audio or MSE, so this must be applied even when no
-   * new PCM chunks are expected.
+   * new PCM chunks are expected. Bursty inputs may request a larger startup
+   * lead so their scheduling chain cannot drain between deliveries.
    */
-  replaceFrom(time: number, expectsPCM: boolean): void {
+  replaceFrom(time: number, expectsPCM: boolean, startupMinimumLeadSec = STARTUP_MINIMUM_LEAD_SEC): void {
     if (this.destroyed) return;
     this.pcmGeneration++;
     this.restoreStartupPlaybackRate();
@@ -477,6 +479,9 @@ export class PCMAudioPlayer {
     this.scheduledSpans = remaining;
     this.nextStartTime = remaining.length > 0 ? remaining[remaining.length - 1].ctxEnd : 0;
     this.resetPCMTimeline(time, expectsPCM ? "waiting" : "disabled");
+    if (expectsPCM && Number.isFinite(startupMinimumLeadSec)) {
+      this.startupMinimumLeadSec = Math.max(STARTUP_MINIMUM_LEAD_SEC, startupMinimumLeadSec);
+    }
     Log.v(TAG, `Audio track switch re-anchored timeline at ${time.toFixed(3)}s; target=${expectsPCM ? "PCM" : "MSE"}`);
   }
 
@@ -804,9 +809,9 @@ export class PCMAudioPlayer {
 
     const videoTime = video.currentTime;
     const audioStartsAfterVideo = audioRange.start > videoTime + GAP_SNAP;
-    const futureAudioHasLead = audioRange.end - audioRange.start >= STARTUP_MINIMUM_LEAD_SEC - GAP_SNAP;
+    const futureAudioHasLead = audioRange.end - audioRange.start >= this.startupMinimumLeadSec - GAP_SNAP;
     const targetHasLead =
-      videoTime >= audioRange.start - GAP_SNAP && videoTime + STARTUP_MINIMUM_LEAD_SEC <= audioRange.end + GAP_SNAP;
+      videoTime >= audioRange.start - GAP_SNAP && videoTime + this.startupMinimumLeadSec <= audioRange.end + GAP_SNAP;
 
     if (audioStartsAfterVideo && futureAudioHasLead) {
       this.startupSyncState = "anchoring";
@@ -843,7 +848,7 @@ export class PCMAudioPlayer {
         TAG,
         `Startup PCM trails video by ${(lagBehindVideo * 1000).toFixed(1)}ms; ` +
           `slowing video to ${STARTUP_VIDEO_PLAYBACK_RATE}x until PCM has ` +
-          `${Math.round(STARTUP_MINIMUM_LEAD_SEC * 1000)}ms lead`,
+          `${Math.round(this.startupMinimumLeadSec * 1000)}ms lead`,
       );
       this.startupWaitLogged = true;
     }
@@ -859,7 +864,8 @@ export class PCMAudioPlayer {
       video.playbackRate = STARTUP_VIDEO_PLAYBACK_RATE;
     }
 
-    if (now - this.startupSyncWaitStartedAt < STARTUP_SYNC_TIMEOUT_MS) return;
+    const timeoutMs = Math.max(STARTUP_SYNC_TIMEOUT_MS, (this.startupMinimumLeadSec + 2) * 1000);
+    if (now - this.startupSyncWaitStartedAt < timeoutMs) return;
 
     this.failStartupSync(
       `Startup sync failed: videoTime=${videoTime.toFixed(3)}s, ` +
@@ -1464,6 +1470,7 @@ export class PCMAudioPlayer {
     this.pendingChunks = [];
     this.audioBuffer = [];
     this.startupSyncState = startupSyncState;
+    this.startupMinimumLeadSec = STARTUP_MINIMUM_LEAD_SEC;
     this.startupSyncWaitStartedAt = null;
     this.startupWaitLogged = false;
     this.inputCursor = anchor;

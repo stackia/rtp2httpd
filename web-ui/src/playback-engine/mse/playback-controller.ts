@@ -28,6 +28,8 @@ const HLS_URL_RE = /\.m3u8?($|\?)/i;
 type SourceMode = "continuous-live-ts" | "static-ts-list" | "hls";
 
 const OPTIONAL_TS_AUDIO_CODECS = ["ac-3", "ec-3"] as const;
+/** HLS PCM arrives in segment-sized bursts; keep enough lead to bridge playlist publication jitter. */
+const HLS_PCM_SWITCH_SAFETY_SECONDS = 0.25;
 
 function unsupportedTsAudioCodecs(): string[] {
   const selfRecord = self as unknown as Record<string, unknown>;
@@ -55,6 +57,7 @@ export function createMSEPlaybackController(
   let liveSessionAnchor: LiveSessionAnchor | null = null;
   let sourceMode: SourceMode = "static-ts-list";
   let hlsLive: boolean | null = null;
+  let hlsTargetDuration = 0;
   let lastLiveState: boolean | null = null;
 
   let hlsVodThrottleEnabled = false;
@@ -183,6 +186,7 @@ export function createMSEPlaybackController(
       case "hls-info":
         sourceMode = "hls";
         hlsLive = msg.live;
+        hlsTargetDuration = msg.targetDuration;
         updateLiveState();
         if (msg.live) {
           mse?.setDuration(Infinity);
@@ -213,7 +217,12 @@ export function createMSEPlaybackController(
           if (success) {
             mse?.replaceAudioFrom(msg.fromTime);
             const expectsPCM = msg.audioMode === "pcm";
-            pcmPlayer?.replaceFrom(expectsPCM ? msg.pcmFromTime : msg.fromTime, expectsPCM);
+            const startupMinimumLead =
+              expectsPCM && hlsLive === true && Number.isFinite(hlsTargetDuration)
+                ? hlsTargetDuration + HLS_PCM_SWITCH_SAFETY_SECONDS
+                : undefined;
+            const player = expectsPCM ? ensurePCMPlayer() : pcmPlayer;
+            player?.replaceFrom(expectsPCM ? msg.pcmFromTime : msg.fromTime, expectsPCM, startupMinimumLead);
           }
           switchWorker?.postMessage({
             type: "audio-track-switch-result",
@@ -546,6 +555,7 @@ export function createMSEPlaybackController(
       pendingLoad = { segments, options };
       sourceMode = inferSourceMode(segments);
       hlsLive = null;
+      hlsTargetDuration = 0;
       resetFetchBackpressure();
       updateLiveState();
       if (mse) {
@@ -595,6 +605,7 @@ export function createMSEPlaybackController(
       pendingLoad = null;
       sourceMode = "static-ts-list";
       hlsLive = null;
+      hlsTargetDuration = 0;
       updateLiveState();
       if (worker) {
         const cmd: WorkerCommand = { type: "reset" };
