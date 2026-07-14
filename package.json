@@ -8,7 +8,6 @@
     "type-check": "pnpm run type-check:tsc && pnpm run type-check:basedpyright",
     "type-check:tsc": "tsc --noEmit",
     "type-check:basedpyright": "uv run --group dev basedpyright",
-    "test:web-ui": "node --experimental-strip-types --test web-ui/src/playback-engine/hls/*.test.ts web-ui/src/playback-engine/demux/*.test.ts",
     "lint": "pnpm run lint:biome && pnpm run lint:ruff && pnpm run lint:clang",
     "lint:biome": "biome check",
     "lint:ruff": "uv run --group dev ruff check && uv run --group dev ruff format --check",

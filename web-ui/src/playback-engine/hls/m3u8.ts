@@ -10,7 +10,7 @@
  * Explicitly unsupported: LL-HLS, encryption, byteranges.
  */
 
-import { buildAudioTrackPreferenceKey } from "../types.ts";
+import { buildAudioTrackPreferenceKey } from "../types";
 
 export interface HlsPlaylistSegment {
   url: string;
