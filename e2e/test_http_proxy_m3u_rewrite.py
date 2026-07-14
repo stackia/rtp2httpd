@@ -799,12 +799,7 @@ class TestM3URewriteChunked:
 
     def test_complete_chunked_m3u_survives_immediate_upstream_reset(self, shared_r2h):
         playlist = b"#EXTM3U\n#EXTINF:8.000,\nsegment.ts\n"
-        response = (
-            _raw_chunked_headers()
-            + f"{len(playlist):x}\r\n".encode()
-            + playlist
-            + b"\r\n0\r\n\r\n"
-        )
+        response = _raw_chunked_headers() + f"{len(playlist):x}\r\n".encode() + playlist + b"\r\n0\r\n\r\n"
         upstream = _RawHTTPResponseUpstream(response, keep_open=False, reset_after_send=True)
         upstream.start()
         try:

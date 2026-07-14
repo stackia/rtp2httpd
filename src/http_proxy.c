@@ -778,26 +778,30 @@ static int http_proxy_finalize_rewrite(http_proxy_session_t *session) {
   if (session->saved_response_headers && session->saved_response_headers_len > 0) {
     /* Parse and rebuild headers from saved original headers */
     char *saved_copy = strdup(session->saved_response_headers);
-    if (saved_copy) {
-      char *line = strtok(saved_copy, "\r\n");
-      while (line != NULL) {
-        /* Skip headers that need to be modified */
-        if (strncasecmp(line, "Content-Length:", 15) == 0 || strncasecmp(line, "Transfer-Encoding:", 18) == 0 ||
-            strncasecmp(line, "Trailer:", 8) == 0) {
-          /* Skip - will add correct Content-Length later */
-        } else {
-          /* Pass through this header */
-          int written = snprintf(hdr_ptr, hdr_remaining, "%s\r\n", line);
-          if (written > 0 && (size_t)written < hdr_remaining) {
-            hdr_ptr += written;
-            hdr_remaining -= written;
-            headers_len += written;
-          }
-        }
-        line = strtok(NULL, "\r\n");
-      }
-      free(saved_copy);
+    if (!saved_copy) {
+      free(rewritten);
+      logger(LOG_ERROR, "HTTP Proxy: Failed to copy saved response headers");
+      return -1;
     }
+
+    char *line = strtok(saved_copy, "\r\n");
+    while (line != NULL) {
+      /* Skip headers that need to be modified */
+      if (strncasecmp(line, "Content-Length:", 15) == 0 || strncasecmp(line, "Transfer-Encoding:", 18) == 0 ||
+          strncasecmp(line, "Trailer:", 8) == 0) {
+        /* Skip - will add correct Content-Length later */
+      } else {
+        /* Pass through this header */
+        int written = snprintf(hdr_ptr, hdr_remaining, "%s\r\n", line);
+        if (written > 0 && (size_t)written < hdr_remaining) {
+          hdr_ptr += written;
+          hdr_remaining -= written;
+          headers_len += written;
+        }
+      }
+      line = strtok(NULL, "\r\n");
+    }
+    free(saved_copy);
 
     /* Add correct Content-Length */
     int cl_written = snprintf(hdr_ptr, hdr_remaining, "Content-Length: %zu\r\n", rewritten_size);
