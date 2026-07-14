@@ -418,6 +418,17 @@ class MP4Remuxer {
       this._calculateDtsBase(audioTrack, videoTrack);
     }
 
+    if (this._silentAudioMode && audioTrack?.samples.length) {
+      if (videoTrack?.samples.length) {
+        this._remuxVideo(videoTrack, force);
+      } else {
+        this._remuxSilentAudioTrack(audioTrack);
+      }
+      audioTrack.samples = [];
+      audioTrack.length = 0;
+      return;
+    }
+
     const batchReady =
       force ||
       isMediaBatchReady(audioTrack, videoTrack, this._mediaSegmentBatchDurationMs, this._mediaSegmentBatchMaxBytes);
@@ -440,6 +451,30 @@ class MP4Remuxer {
     if (audioTrack?.samples.length && !this._audioMediaSegmentEmitted) {
       this._remuxAudio(audioTrack);
     }
+  }
+
+  /** Replace unsupported compressed audio samples with equivalent silent AAC occupancy. */
+  private _remuxSilentAudioTrack(track: DemuxTrack): void {
+    const samples = track.samples as Array<{ dts?: number }>;
+    const firstDts = samples[0]?.dts;
+    const lastDts = samples[samples.length - 1]?.dts;
+    if (firstDts === undefined || lastDts === undefined) return;
+
+    const frameDuration = this._audioMeta?.refSampleDuration ?? 32;
+    const start = firstDts - this._dtsBase;
+    const end = lastDts - this._dtsBase + frameDuration;
+    this._generateSilentAudio([
+      {
+        dts: start,
+        pts: start,
+        cts: 0,
+        unit: new Uint8Array(),
+        size: 0,
+        duration: Math.max(1, end - start),
+        originalDts: firstDts,
+        flags: { isLeading: 0, dependsOn: 1, isDependedOn: 0, hasRedundancy: 0 },
+      },
+    ]);
   }
 
   /**

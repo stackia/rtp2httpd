@@ -2,8 +2,22 @@ import type { PlayerConfig } from "../config";
 import type { DemuxErrorDetail, LoaderErrorDetail } from "../errors";
 import type { PlaybackLoadOptions, PlayerAudioTrackState, PlayerMediaInfo, PlayerSegment } from "../types";
 
+type AudioTrackSwitchEvent = {
+  type: "audio-track-switch";
+  trackId: string;
+  fromTime: number;
+  gen: number;
+} & ({ audioMode: "mse" } | { audioMode: "pcm"; pcmFromTime: number });
+
 export type WorkerCommand =
-  | { type: "init"; segments: PlayerSegment[]; options?: PlaybackLoadOptions; config: PlayerConfig; gen: number }
+  | {
+      type: "init";
+      segments: PlayerSegment[];
+      options?: PlaybackLoadOptions;
+      config: PlayerConfig;
+      unsupportedTsAudioCodecs: string[];
+      gen: number;
+    }
   | { type: "start" }
   | { type: "load-segments"; segments: PlayerSegment[]; options?: PlaybackLoadOptions; gen: number }
   | { type: "select-audio-track"; trackId: string; currentTime: number }
@@ -30,7 +44,8 @@ export type WorkerEvent =
     }
   | { type: "hls-info"; live: boolean; totalDuration: number; gen: number }
   | { type: "audio-tracks"; state: PlayerAudioTrackState; gen: number }
-  | { type: "audio-track-switch"; trackId: string; fromTime: number; pcmFromTime?: number; gen: number }
+  | { type: "audio-codec-unsupported"; codec: string; gen: number }
+  | AudioTrackSwitchEvent
   | {
       type: "pcm-audio-data";
       pcm: ArrayBuffer;

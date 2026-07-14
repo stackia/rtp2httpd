@@ -1012,6 +1012,7 @@ function VideoPlayerComponent({
     const track = state.tracks.find((candidate) => candidate.id === trackId);
     const activePlayer = getActivePlayer();
     if (!track || !channel || !activePlayer || trackId === state.selectedTrackId) return;
+    setWarning(null);
     pendingAudioPreferenceRef.current = { channelId: channel.id, trackId, preferenceKey: track.preferenceKey };
     activePlayer.selectAudioTrack(trackId);
   });

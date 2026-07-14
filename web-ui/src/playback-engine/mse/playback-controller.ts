@@ -27,6 +27,18 @@ const HLS_URL_RE = /\.m3u8?($|\?)/i;
 
 type SourceMode = "continuous-live-ts" | "static-ts-list" | "hls";
 
+const OPTIONAL_TS_AUDIO_CODECS = ["ac-3", "ec-3"] as const;
+
+function unsupportedTsAudioCodecs(): string[] {
+  const selfRecord = self as unknown as Record<string, unknown>;
+  const mediaSourceClass = (selfRecord.MediaSource ?? selfRecord.ManagedMediaSource) as
+    | { isTypeSupported?: (type: string) => boolean }
+    | undefined;
+  return OPTIONAL_TS_AUDIO_CODECS.filter(
+    (codec) => mediaSourceClass?.isTypeSupported?.(`audio/mp4;codecs="${codec}"`) === false,
+  );
+}
+
 export function createMSEPlaybackController(
   video: HTMLVideoElement,
   config: PlayerConfig,
@@ -53,6 +65,7 @@ export function createMSEPlaybackController(
   let pcmPlayer: PCMAudioPlayer | null = null;
   let pcmPlayerInitPromise: Promise<void> | null = null;
   let startupRateControlActive = false;
+  const unsupportedAudioCodecs = unsupportedTsAudioCodecs();
 
   function ensurePCMPlayer(): PCMAudioPlayer {
     if (!pcmPlayer) {
@@ -86,11 +99,17 @@ export function createMSEPlaybackController(
   }
 
   function destroyPCMPlayer(): void {
-    if (pcmPlayer) {
-      pcmPlayer.destroy();
-      pcmPlayer = null;
-      pcmPlayerInitPromise = null;
+    const player = pcmPlayer;
+    pcmPlayer = null;
+    pcmPlayerInitPromise = null;
+    startupRateControlActive = false;
+    if (player) {
+      void player.destroy();
     }
+  }
+
+  function resetPCMPlayerForNewStream(): void {
+    pcmPlayer?.resetForNewStream();
     startupRateControlActive = false;
   }
 
@@ -170,6 +189,16 @@ export function createMSEPlaybackController(
       case "audio-tracks":
         impl.onAudioTracksChange?.(msg.state);
         break;
+      case "audio-codec-unsupported":
+        impl.onError?.({
+          category: "media",
+          detail: PlayerErrors.CODEC_UNSUPPORTED,
+          info: `Unsupported MIME type: audio/mp4;codecs="${msg.codec}"`,
+          code: 0,
+          track: "audio",
+          codec: msg.codec,
+        });
+        break;
       case "audio-track-switch": {
         const switchGeneration = mseGeneration;
         const switchWorker = worker;
@@ -177,7 +206,8 @@ export function createMSEPlaybackController(
           if (switchGeneration !== mseGeneration || switchWorker !== worker) return;
           if (success) {
             mse?.replaceAudioFrom(msg.fromTime);
-            pcmPlayer?.replaceFrom(msg.pcmFromTime ?? msg.fromTime);
+            const expectsPCM = msg.audioMode === "pcm";
+            pcmPlayer?.replaceFrom(expectsPCM ? msg.pcmFromTime : msg.fromTime, expectsPCM);
           }
           switchWorker?.postMessage({
             type: "audio-track-switch-result",
@@ -390,7 +420,14 @@ export function createMSEPlaybackController(
   function loadInWorker(segments: PlayerSegment[], options?: PlaybackLoadOptions): void {
     const w = ensureWorker();
     if (!workerInitialized) {
-      const initCmd: WorkerCommand = { type: "init", segments, options, config, gen: mseGeneration };
+      const initCmd: WorkerCommand = {
+        type: "init",
+        segments,
+        options,
+        config,
+        unsupportedTsAudioCodecs: unsupportedAudioCodecs,
+        gen: mseGeneration,
+      };
       w.postMessage(initCmd);
       const startCmd: WorkerCommand = { type: "start" };
       w.postMessage(startCmd);
@@ -498,6 +535,7 @@ export function createMSEPlaybackController(
 
     loadSegments(segments: PlayerSegment[], options?: PlaybackLoadOptions) {
       mseGeneration++;
+      resetPCMPlayerForNewStream();
       pendingInits = [];
       pendingLoad = { segments, options };
       sourceMode = inferSourceMode(segments);
@@ -508,7 +546,6 @@ export function createMSEPlaybackController(
         mse.destroy();
         mse = null;
       }
-      destroyPCMPlayer();
       initMSE();
       initLiveHelpers();
     },

@@ -59,6 +59,8 @@ type CommonPidKey = keyof PMT["common_pids"];
 type TSDemuxerOptions = {
   waitForInitialVideoKeyframe?: boolean;
   selectedAudioPid?: number;
+  /** Source codecs that should occupy MSE with silent AAC instead of their unsupported payload. */
+  silentAudioCodecs?: readonly string[];
 };
 type TSSegmentBoundaryOptions = {
   resetAudioParserState?: boolean;
@@ -251,6 +253,7 @@ class TSDemuxer {
   private loas_previous_frame: LOASAACFrame | null = null;
 
   private soft_decode_audio_codec_: "mp2" | null = null;
+  private readonly silent_audio_codecs_: Set<string>;
   private audio_drop_until_sync_ = false;
   private drop_video_until_keyframe_ = true;
   private selected_audio_pid_: number | undefined;
@@ -283,6 +286,7 @@ class TSDemuxer {
     this.ts_packet_size_ = probe_data.ts_packet_size as number;
     this.sync_offset_ = probe_data.sync_offset as number;
     this.selected_audio_pid_ = options.selectedAudioPid;
+    this.silent_audio_codecs_ = new Set(options.silentAudioCodecs?.map((codec) => codec.toLowerCase()));
     if (options.waitForInitialVideoKeyframe === false) {
       this.drop_video_until_keyframe_ = false;
       this.video_output_started_ = true;
@@ -2187,9 +2191,14 @@ class TSDemuxer {
       Log.v(this.TAG, `Generated first AudioSpecificConfig for mimeType: ${meta.codec}`);
     }
 
-    // When software decoding, send a fake AAC-LC metadata with silentAudioMode
-    // so the remuxer creates an AAC SourceBuffer and generates silent frames
-    if (this.soft_decode_audio_codec_) {
+    const silentSourceCodec =
+      this.soft_decode_audio_codec_ ??
+      (this.silent_audio_codecs_.has(this.audio_metadata_.codec) ? this.audio_metadata_.codec : null);
+
+    // Software-decoded or browser-unsupported audio occupies MSE with silent
+    // AAC so the video clock keeps advancing while the real payload is handled
+    // elsewhere (PCM) or intentionally discarded (unsupported codec).
+    if (silentSourceCodec) {
       const sampleRate = (meta.audioSampleRate as number) || 48000;
       const channelCount = (meta.channelCount as number) || 2;
       // Find sampling frequency index for AAC config
@@ -2204,7 +2213,7 @@ class TSDemuxer {
         channelCount: channelCount,
         codec: "mp4a.40.2",
         originalCodec: "mp4a.40.2",
-        sourceCodec: this.soft_decode_audio_codec_,
+        sourceCodec: silentSourceCodec,
         config: [(2 << 3) | ((freqIdx & 0x0f) >>> 1), ((freqIdx & 0x01) << 7) | ((channelCount & 0x0f) << 3)],
         refSampleDuration: (1024 / sampleRate) * 1000,
         silentAudioMode: true,

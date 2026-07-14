@@ -68,6 +68,8 @@ export interface PipelineOptions extends HlsSourceOptions {
   forcedTrack?: "video" | "audio";
   /** Select one elementary audio PID from an MPEG-TS program. */
   selectedTsAudioPid?: number;
+  /** TS source codecs that should be remuxed as silent AAC for this browser. */
+  silentTsAudioCodecs?: readonly string[];
   /** Preserve the primary rendition's raw timestamp mapping in an alternate audio pipeline. */
   mediaTimelineAnchor?: MediaTimelineAnchor;
 }
@@ -840,6 +842,7 @@ class Pipeline {
     const demuxer = new TSDemuxer(probeData as ConstructorParameters<typeof TSDemuxer>[0], {
       waitForInitialVideoKeyframe: shouldAnchor || !this._demuxer || !this._remuxer,
       selectedAudioPid: this._options.selectedTsAudioPid,
+      silentAudioCodecs: this._options.silentTsAudioCodecs,
     });
     this._demuxer = demuxer;
 

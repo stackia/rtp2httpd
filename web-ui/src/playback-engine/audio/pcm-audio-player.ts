@@ -33,7 +33,7 @@ const TAG = "PCMAudioPlayer";
  * Page-level one-shot autoplay gate for Web Audio.
  * Set when playback has started (any codec), the click-to-resume prompt was
  * already shown, or AudioContext.resume() succeeded — suppresses re-prompting
- * on later channel switches that create a new AudioContext.
+ * when a reused AudioContext resumes after a channel switch.
  */
 let playbackUnlocked = false;
 
@@ -129,6 +129,9 @@ export class PCMAudioPlayer {
   private config: PlayerConfig;
   private context: AudioContext | null = null;
   private gainNode: GainNode | null = null;
+  /** Invalidates asynchronous work started for an earlier PCM timeline. */
+  private pcmGeneration = 0;
+  private destroyed = false;
   private volume: number = 1.0;
   private muted: boolean = false;
 
@@ -215,7 +218,7 @@ export class PCMAudioPlayer {
   }
 
   async init(): Promise<void> {
-    if (this.context) {
+    if (this.destroyed || this.context) {
       return;
     }
 
@@ -245,6 +248,7 @@ export class PCMAudioPlayer {
     this.updateGain();
 
     this.context.onstatechange = () => {
+      if (this.destroyed) return;
       const state = this.context?.state as string | undefined;
       Log.v(TAG, `AudioContext state changed to: ${state}`);
 
@@ -300,6 +304,7 @@ export class PCMAudioPlayer {
   }
 
   attachVideo(video: HTMLVideoElement): void {
+    if (this.destroyed) return;
     this.videoElement = video;
 
     // Sync initial volume state
@@ -320,6 +325,15 @@ export class PCMAudioPlayer {
       if (this.syncState === "recovering" && document.visibilityState !== "hidden") {
         this.completeRecovery("timeupdate");
         return;
+      }
+      // During a MediaSource replacement, events from the old and new
+      // pipelines can interleave. A late `waiting` after the new stream's
+      // `playing`/`canplay` leaves isBuffering stuck even though the video
+      // clock is advancing. Treat timeupdate as the authoritative recovery
+      // signal so PCM scheduling cannot remain permanently disabled.
+      if (this.isBuffering) {
+        this.maybeExitBuffering();
+        if (!this.isBuffering) return;
       }
       this.controlAndPump();
     };
@@ -405,6 +419,7 @@ export class PCMAudioPlayer {
 
   /** `time` is normalized to the MSE timeline (same space as video.currentTime). */
   feed(samples: Float32Array, channels: number, sampleRate: number, time: number): void {
+    if (this.destroyed) return;
     if (!this.context || !this.gainNode) {
       Log.w(TAG, "AudioContext not initialized, dropping audio");
       return;
@@ -435,33 +450,10 @@ export class PCMAudioPlayer {
    * track may use either Web Audio or MSE, so this must be applied even when no
    * new PCM chunks are expected.
    */
-  replaceFrom(time: number): void {
-    const trimChunks = (chunks: AudioChunk[]): AudioChunk[] => {
-      const kept: AudioChunk[] = [];
-      for (const chunk of chunks) {
-        if (chunk.time >= time) break;
-        if (chunk.endTime <= time) {
-          kept.push(chunk);
-          continue;
-        }
-
-        const frames = Math.max(0, Math.floor((time - chunk.time) * chunk.sampleRate));
-        if (frames > 0) {
-          const endTime = chunk.time + frames / chunk.sampleRate;
-          kept.push({
-            ...chunk,
-            samples: chunk.samples.subarray(0, frames * chunk.channels),
-            duration: endTime - chunk.time,
-            endTime,
-          });
-        }
-        break;
-      }
-      return kept;
-    };
-
-    this.audioBuffer = trimChunks(this.audioBuffer);
-    this.pendingChunks = trimChunks(this.pendingChunks);
+  replaceFrom(time: number, expectsPCM: boolean): void {
+    if (this.destroyed) return;
+    this.pcmGeneration++;
+    this.restoreStartupPlaybackRate();
 
     const ctx = this.context;
     const now = ctx?.currentTime ?? 0;
@@ -484,15 +476,15 @@ export class PCMAudioPlayer {
 
     this.scheduledSpans = remaining;
     this.nextStartTime = remaining.length > 0 ? remaining[remaining.length - 1].ctxEnd : 0;
-    this.inputCursor = time;
-    this.stretcher?.reset();
-    this.resetDriftState();
+    this.resetPCMTimeline(time, expectsPCM ? "waiting" : "disabled");
+    Log.v(TAG, `Audio track switch re-anchored timeline at ${time.toFixed(3)}s; target=${expectsPCM ? "PCM" : "MSE"}`);
   }
 
   // ==================== Stretcher ====================
 
   /** Returns the stretcher if ready for this chunk's format, else kicks off (re)creation. */
   private ensureStretcher(chunk: AudioChunk): Stretcher | null {
+    if (this.destroyed) return null;
     if (this.stretcher) {
       if (this.stretcher.sampleRate === chunk.sampleRate && this.stretcher.channels === chunk.channels) {
         return this.stretcher;
@@ -513,6 +505,7 @@ export class PCMAudioPlayer {
       return null;
     }
     this.stretcherLoading = true;
+    const generation = this.pcmGeneration;
 
     const wasmUrl = this.config.wasmDecoders.mp2;
     const promise = wasmUrl
@@ -522,8 +515,11 @@ export class PCMAudioPlayer {
     promise
       .then((stretcher) => {
         this.stretcherLoading = false;
-        if (!this.context) {
+        if (this.destroyed || generation !== this.pcmGeneration || !this.context) {
           stretcher.destroy();
+          if (!this.destroyed && generation !== this.pcmGeneration) {
+            this.pump();
+          }
           return;
         }
         this.stretcher = stretcher;
@@ -531,6 +527,11 @@ export class PCMAudioPlayer {
       })
       .catch((err) => {
         this.stretcherLoading = false;
+        if (this.destroyed) return;
+        if (generation !== this.pcmGeneration) {
+          this.pump();
+          return;
+        }
         this.stretcherFailed = true;
         this.pendingChunks = [];
         Log.e(TAG, `WASM stretcher unavailable; cannot play software-decoded audio: ${err}`);
@@ -549,6 +550,7 @@ export class PCMAudioPlayer {
    * back-to-back on the AudioContext clock.
    */
   private pump(): void {
+    if (this.destroyed) return;
     const ctx = this.context;
     if (!ctx || !this.gainNode || !this.canScheduleAudio()) {
       return;
@@ -570,6 +572,7 @@ export class PCMAudioPlayer {
       void ctx
         .resume()
         .then(() => {
+          if (this.destroyed) return;
           if ((ctx.state as string) === "running") {
             playbackUnlocked = true;
             this.pump();
@@ -578,6 +581,7 @@ export class PCMAudioPlayer {
           }
         })
         .catch(() => {
+          if (this.destroyed) return;
           if (!playbackUnlocked) {
             this.notifyAutoplayBlocked();
           }
@@ -1004,12 +1008,22 @@ export class PCMAudioPlayer {
       }
     }
     if (chainRestart) {
+      // A previous stream reset may have left a short fade automation queued
+      // while the AudioContext was suspended. Normalize the persistent graph
+      // before starting a new chain so stale automation cannot keep it silent.
+      this.updateGain();
       this.applyFadeIn(buffer);
     }
 
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(this.gainNode);
+    source.onended = () => {
+      try {
+        source.disconnect();
+      } catch (_e) {}
+      source.onended = null;
+    };
     source.start(this.nextStartTime);
 
     this.scheduledSpans.push({
@@ -1398,12 +1412,15 @@ export class PCMAudioPlayer {
   // ==================== Playback Control ====================
 
   async play(): Promise<void> {
+    if (this.destroyed) return;
     if (this.context && this.context.state !== "running") {
       try {
         await this.context.resume();
+        if (this.destroyed) return;
         playbackUnlocked = true;
         // onstatechange drives the rest (background free-run or recovery anchor)
       } catch (_e) {
+        if (this.destroyed) return;
         Log.w(TAG, "Failed to resume AudioContext on play()");
       }
     } else {
@@ -1421,6 +1438,7 @@ export class PCMAudioPlayer {
       try {
         await this.audioElement.play();
       } catch (_e) {
+        if (this.destroyed) return;
         Log.w(TAG, "Failed to play audio element");
       }
     }
@@ -1442,24 +1460,42 @@ export class PCMAudioPlayer {
     }
   }
 
-  stop(): void {
-    this.cancelChain();
-    this.restoreStartupPlaybackRate();
-
+  private resetPCMTimeline(anchor: number | null, startupSyncState: StartupSyncState): void {
     this.pendingChunks = [];
     this.audioBuffer = [];
-    this.startupSyncState = "waiting";
+    this.startupSyncState = startupSyncState;
     this.startupSyncWaitStartedAt = null;
     this.startupWaitLogged = false;
-
-    this.isBuffering = false;
-    this.isSeeking = false;
-    this.inputCursor = null;
+    this.inputCursor = anchor;
+    this.stretcherBase = anchor ?? 0;
+    this.outputStreamCursor = anchor ?? 0;
     this.stretcher?.reset();
     this.stretcherFailed = false;
     this.softSyncUntil = 0;
+    this.driftLogCounter = 0;
     this.resetDriftState();
+  }
+
+  private resetStreamState(smooth: boolean): void {
+    this.restoreStartupPlaybackRate();
+    this.cancelChain(smooth);
+    this.resetPCMTimeline(null, "waiting");
+
+    this.isBuffering = false;
+    this.isSeeking = false;
+    if (this.recoveryTimer) {
+      clearTimeout(this.recoveryTimer);
+      this.recoveryTimer = null;
+    }
     this.setSyncState(document.visibilityState === "hidden" ? "background" : "active");
+  }
+
+  /** Reset all stream-specific state while retaining the AudioContext and fixed output graph. */
+  resetForNewStream(): void {
+    if (this.destroyed) return;
+    this.pcmGeneration++;
+    this.resetStreamState(true);
+    Log.v(TAG, "Reset for new stream; reusing AudioContext and audio graph");
   }
 
   setVolume(volume: number): void {
@@ -1484,7 +1520,15 @@ export class PCMAudioPlayer {
   }
 
   async destroy(): Promise<void> {
-    this.stop();
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.pcmGeneration++;
+    this.onSuspended = null;
+    this.onResyncFailed = null;
+    this.onStartupSyncFailed = null;
+    this.onStartupRateControlChange = null;
+
+    this.resetStreamState(false);
     this.detachVideo();
 
     if (this.stretcher) {
@@ -1508,10 +1552,16 @@ export class PCMAudioPlayer {
       this.gainNode = null;
     }
 
-    if (this.context) {
-      this.context.onstatechange = null;
-      await this.context.close();
-      this.context = null;
+    const context = this.context;
+    this.context = null;
+    if (context) {
+      context.onstatechange = null;
+      try {
+        await context.close();
+        Log.v(TAG, "AudioContext closed");
+      } catch (error) {
+        Log.w(TAG, "Failed to close AudioContext", error);
+      }
     }
   }
 }

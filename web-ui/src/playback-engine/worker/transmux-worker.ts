@@ -17,10 +17,19 @@ type OutputEvent =
   | { kind: "init"; track: "video" | "audio"; data: ArrayBuffer; codec: string; container: string }
   | { kind: "media"; track: "video" | "audio"; data: ArrayBuffer; timestampOffset?: number };
 
+interface PendingAudioSwitchOutput {
+  queued: OutputEvent[];
+  pcm: Array<{ pcm: Float32Array; channels: number; sampleRate: number; time: number }>;
+  audioMode: "pending" | "mse" | "pcm";
+  mediaReady: boolean;
+  prepared: boolean;
+}
+
 let primaryPipeline: Pipeline | null = null;
 let audioPipeline: Pipeline | null = null;
 let pendingAudioPipeline: Pipeline | null = null;
 let config: PlayerConfig | null = null;
+let unsupportedTsAudioCodecs = new Set<string>();
 let gen = 0;
 let started = false;
 
@@ -36,15 +45,10 @@ let mediaTimelineAnchor: MediaTimelineAnchor | undefined;
 let pendingInitialAudioInfo: HlsInfo | undefined;
 let completePendingAudioSwitch: ((trackId: string, success: boolean, currentTime: number) => void) | null = null;
 
-interface PendingInternalAudioSwitch {
+interface PendingInternalAudioSwitch extends PendingAudioSwitchOutput {
   trackId: string;
   oldTrackId: string;
   oldPid: number;
-  queued: OutputEvent[];
-  pcm: Array<{ pcm: Float32Array; channels: number; sampleRate: number; time: number }>;
-  audioMode: "pending" | "mse" | "pcm";
-  mediaReady: boolean;
-  prepared: boolean;
   fromTime: number;
 }
 
@@ -114,6 +118,60 @@ function postOutputEvents(events: readonly OutputEvent[], kind: OutputEvent["kin
 function postPCMAudio(pcm: Float32Array, channels: number, sampleRate: number, time: number): void {
   const buffer = pcm.buffer as ArrayBuffer;
   post({ type: "pcm-audio-data", pcm: buffer, channels, sampleRate, time, gen }, [buffer]);
+}
+
+function createPendingAudioSwitchOutput(): PendingAudioSwitchOutput {
+  return {
+    queued: [],
+    pcm: [],
+    audioMode: "pending",
+    mediaReady: false,
+    prepared: false,
+  };
+}
+
+function audioModeForTsCodec(codec: string): "mse" | "pcm" {
+  return codec.toLowerCase() === "mp2" ? "pcm" : "mse";
+}
+
+function reportUnsupportedTsAudioCodec(codec: string): void {
+  if (unsupportedTsAudioCodecs.has(codec.toLowerCase())) {
+    post({ type: "audio-codec-unsupported", codec, gen });
+  }
+}
+
+function preparePendingAudioSwitch(pending: PendingAudioSwitchOutput, trackId: string, fromTime: number): void {
+  if (
+    pending.prepared ||
+    !pending.mediaReady ||
+    pending.audioMode === "pending" ||
+    (pending.audioMode === "pcm" && pending.pcm.length === 0)
+  )
+    return;
+
+  pending.prepared = true;
+  postOutputEvents(pending.queued, "init");
+  if (pending.audioMode === "pcm") {
+    post({
+      type: "audio-track-switch",
+      trackId,
+      fromTime,
+      audioMode: "pcm",
+      pcmFromTime: pending.pcm[0].time,
+      gen,
+    });
+  } else {
+    post({ type: "audio-track-switch", trackId, fromTime, audioMode: "mse", gen });
+  }
+}
+
+function commitPendingAudioSwitch(pending: PendingAudioSwitchOutput): void {
+  postOutputEvents(pending.queued, "media");
+  for (const item of pending.pcm) {
+    postPCMAudio(item.pcm, item.channels, item.sampleRate, item.time);
+  }
+  pending.queued.length = 0;
+  pending.pcm.length = 0;
 }
 
 function flushInitialOutput(force = false): void {
@@ -235,7 +293,9 @@ function createAudioPipeline(
     onHlsInfo() {},
     onTimelineAnchor() {},
     onTsAudioTracks() {},
-    onTsAudioSourceCodec() {},
+    onTsAudioSourceCodec(codec) {
+      reportUnsupportedTsAudioCodec(codec);
+    },
     onMediaInfo(info) {
       audioMediaInfo = info;
       emitMergedMediaInfo();
@@ -244,7 +304,11 @@ function createAudioPipeline(
       postPCMAudio(pcm, channels, sampleRate, time);
     },
   };
-  return new Pipeline([{ url, duration: 0 }], config, callbacks, { forcedTrack: "audio", ...options });
+  return new Pipeline([{ url, duration: 0 }], config, callbacks, {
+    forcedTrack: "audio",
+    silentTsAudioCodecs: [...unsupportedTsAudioCodecs],
+    ...options,
+  });
 }
 
 function startInitialAudio(info: HlsInfo, anchor: MediaTimelineAnchor): void {
@@ -323,23 +387,7 @@ function handlePrimaryTsAudioTracks(tracks: TSAudioTrackInfo[], selectedPid: num
 
 function prepareInternalAudioSwitch(): void {
   const pending = pendingInternalAudioSwitch;
-  if (
-    !pending ||
-    pending.prepared ||
-    !pending.mediaReady ||
-    pending.audioMode === "pending" ||
-    (pending.audioMode === "pcm" && pending.pcm.length === 0)
-  )
-    return;
-  pending.prepared = true;
-  postOutputEvents(pending.queued, "init");
-  post({
-    type: "audio-track-switch",
-    trackId: pending.trackId,
-    fromTime: pending.fromTime,
-    pcmFromTime: pending.audioMode === "pcm" ? pending.pcm[0].time : pending.fromTime,
-    gen,
-  });
+  if (pending) preparePendingAudioSwitch(pending, pending.trackId, pending.fromTime);
 }
 
 function selectInternalAudioTrack(trackId: string, pid: number, currentTime: number): void {
@@ -350,14 +398,10 @@ function selectInternalAudioTrack(trackId: string, pid: number, currentTime: num
 
   pendingAudioTrackId = trackId;
   pendingInternalAudioSwitch = {
+    ...createPendingAudioSwitchOutput(),
     trackId,
     oldTrackId,
     oldPid,
-    queued: [],
-    pcm: [],
-    audioMode: "pending",
-    mediaReady: false,
-    prepared: false,
     fromTime: currentTime,
   };
   emitAudioTrackState();
@@ -377,10 +421,7 @@ function selectInternalAudioTrack(trackId: string, pid: number, currentTime: num
 
     selectedAudioTrackId = pending.trackId;
     emitAudioTrackState();
-    postOutputEvents(pending.queued, "media");
-    for (const item of pending.pcm) {
-      postPCMAudio(item.pcm, item.channels, item.sampleRate, item.time);
-    }
+    commitPendingAudioSwitch(pending);
   };
 
   if (!primaryPipeline.selectTsAudioPid(pid, currentTime)) {
@@ -432,9 +473,11 @@ function createPrimaryPipeline(segments: PlayerSegment[], loadOptions: PlaybackL
     onTsAudioTracks: handlePrimaryTsAudioTracks,
     onTsAudioSourceCodec(codec) {
       const pending = pendingInternalAudioSwitch;
-      if (!pending) return;
-      pending.audioMode = codec.toLowerCase() === "mp2" ? "pcm" : "mse";
-      prepareInternalAudioSwitch();
+      reportUnsupportedTsAudioCodec(codec);
+      if (pending) {
+        pending.audioMode = audioModeForTsCodec(codec);
+        prepareInternalAudioSwitch();
+      }
     },
     onMediaInfo(info) {
       primaryMediaInfo = info;
@@ -443,6 +486,7 @@ function createPrimaryPipeline(segments: PlayerSegment[], loadOptions: PlaybackL
     onPCMAudioData(pcm, channels, sampleRate, time) {
       if (pendingInternalAudioSwitch) {
         pendingInternalAudioSwitch.pcm.push({ pcm, channels, sampleRate, time });
+        pendingInternalAudioSwitch.mediaReady = true;
         prepareInternalAudioSwitch();
         return;
       }
@@ -452,6 +496,7 @@ function createPrimaryPipeline(segments: PlayerSegment[], loadOptions: PlaybackL
   return new Pipeline(segments, config, callbacks, {
     preferredAudioTrackKey: loadOptions?.preferredAudioTrackKey,
     selectedTsAudioPid: preferredTsAudioPid(loadOptions?.preferredAudioTrackKey),
+    silentTsAudioCodecs: [...unsupportedTsAudioCodecs],
   });
 }
 
@@ -504,11 +549,9 @@ function selectAudioTrack(trackId: string, currentTime: number): void {
   pendingAudioTrackId = trackId;
   emitAudioTrackState();
 
-  const queued: OutputEvent[] = [];
+  const pendingOutput = createPendingAudioSwitchOutput();
   let candidate: Pipeline;
   let committed = false;
-  let prepared = false;
-  let hasMedia = false;
   let candidateComplete = false;
   let switchBoundary = currentTime;
   let candidateMediaInfo: PlayerMediaInfo = {};
@@ -528,10 +571,8 @@ function selectAudioTrack(trackId: string, currentTime: number): void {
   };
 
   const prepare = () => {
-    if (prepared || pendingAudioPipeline !== candidate) return;
-    prepared = true;
-    postOutputEvents(queued, "init");
-    post({ type: "audio-track-switch", trackId, fromTime: switchBoundary, gen });
+    if (pendingAudioPipeline !== candidate) return;
+    preparePendingAudioSwitch(pendingOutput, trackId, switchBoundary);
   };
 
   completePendingAudioSwitch = (resultTrackId, success) => {
@@ -554,27 +595,28 @@ function selectAudioTrack(trackId: string, currentTime: number): void {
     audioMediaInfo = candidateMediaInfo;
     emitMergedMediaInfo();
     emitAudioTrackState();
-    postOutputEvents(queued, "media");
-    queued.length = 0;
+    commitPendingAudioSwitch(pendingOutput);
     maybeComplete();
   };
 
   const callbacks: PipelineCallbacks = {
     onInitSegment(type, initSegment) {
       if (committed) postOutput(outputFromInit(type, initSegment));
-      else queued.push(outputFromInit(type, initSegment));
+      else pendingOutput.queued.push(outputFromInit(type, initSegment));
     },
     onMediaSegment(type, mediaSegment) {
       if (committed) postOutput(outputFromMedia(type, mediaSegment));
       else {
-        hasMedia = true;
-        queued.push(outputFromMedia(type, mediaSegment));
+        pendingOutput.queued.push(outputFromMedia(type, mediaSegment));
+        pendingOutput.mediaReady = true;
+        if (pendingOutput.audioMode === "pending") pendingOutput.audioMode = "mse";
         prepare();
       }
     },
     onLoadingComplete() {
       candidateComplete = true;
-      if (!hasMedia) fail("demux", "FormatError", { msg: "Selected audio rendition contains no media" });
+      if (!pendingOutput.mediaReady)
+        fail("demux", "FormatError", { msg: "Selected audio rendition contains no media" });
       else if (committed) {
         audioComplete = true;
         maybeComplete();
@@ -591,7 +633,11 @@ function selectAudioTrack(trackId: string, currentTime: number): void {
     },
     onTimelineAnchor() {},
     onTsAudioTracks() {},
-    onTsAudioSourceCodec() {},
+    onTsAudioSourceCodec(codec) {
+      reportUnsupportedTsAudioCodec(codec);
+      pendingOutput.audioMode = audioModeForTsCodec(codec);
+      prepare();
+    },
     onMediaInfo(info) {
       candidateMediaInfo = info;
       if (committed) {
@@ -600,13 +646,20 @@ function selectAudioTrack(trackId: string, currentTime: number): void {
       }
     },
     onPCMAudioData(pcm, channels, sampleRate, time) {
-      if (!committed) return;
-      postPCMAudio(pcm, channels, sampleRate, time);
+      if (committed) {
+        postPCMAudio(pcm, channels, sampleRate, time);
+        return;
+      }
+      pendingOutput.pcm.push({ pcm, channels, sampleRate, time });
+      pendingOutput.audioMode = "pcm";
+      pendingOutput.mediaReady = true;
+      prepare();
     },
   };
 
   candidate = new Pipeline([{ url, duration: 0 }], config, callbacks, {
     forcedTrack: "audio",
+    silentTsAudioCodecs: [...unsupportedTsAudioCodecs],
     liveTimelineOffset: currentTime,
     startTime: currentTime,
     programDateTimeAnchor:
@@ -624,6 +677,7 @@ self.addEventListener("message", (e: MessageEvent) => {
     case "init":
       gen = cmd.gen;
       config = cmd.config;
+      unsupportedTsAudioCodecs = new Set(cmd.unsupportedTsAudioCodecs.map((codec) => codec.toLowerCase()));
       Log.setLogLevel(cmd.config.logLevel);
       load(cmd.segments, cmd.options);
       break;
