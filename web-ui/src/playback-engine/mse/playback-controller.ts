@@ -146,9 +146,15 @@ export function createMSEPlaybackController(
     if (msg.type === "destroyed") return;
     // Discard stale messages from a previous load generation
     if (msg.gen !== mseGeneration) return;
-    // media-info can be posted right before an init-segment; flushing on it would
-    // split the batched init appends (see comment above pendingInits)
-    if (msg.type !== "init-segment" && msg.type !== "media-info" && msg.type !== "audio-track-switch") {
+    // Metadata notifications can be posted right before an init-segment; flushing
+    // on them would split the batched init appends (see comment above pendingInits).
+    // In particular, an unsupported TS codec warning precedes its silent AAC init.
+    if (
+      msg.type !== "init-segment" &&
+      msg.type !== "media-info" &&
+      msg.type !== "audio-codec-unsupported" &&
+      msg.type !== "audio-track-switch"
+    ) {
       void flushPendingInits();
     }
     switch (msg.type) {
