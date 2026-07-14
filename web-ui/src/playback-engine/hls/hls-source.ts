@@ -24,6 +24,8 @@ export interface HlsInfo {
   frameRate?: number;
   videoRange?: string;
   audioTracks?: PlayerAudioTrack[];
+  /** Whether the selected variant references an EXT-X-MEDIA audio group. */
+  hasAudioGroup?: boolean;
   selectedAudioTrackId?: string;
   selectedAudioTrackUrl?: string;
   /** Worker-internal runtime lookup; URLs are intentionally absent from public track state. */
@@ -81,6 +83,7 @@ export class HlsSource implements SegmentSource {
   private targetDuration = 6;
   private totalDuration = 0;
   private selectedVariant: Omit<HlsVariant, "url"> | undefined;
+  private hasAudioGroup = false;
   private audioTracks: PlayerAudioTrack[] = [];
   private audioRenditionUrls = new Map<string, string>();
   private selectedAudioTrack: HlsAudioRendition | undefined;
@@ -122,6 +125,7 @@ export class HlsSource implements SegmentSource {
       totalDuration: this.totalDuration,
       ...this.selectedVariant,
       audioTracks: this.audioTracks,
+      hasAudioGroup: this.hasAudioGroup,
       selectedAudioTrackId: this.selectedAudioTrack?.id,
       selectedAudioTrackUrl: this.selectedAudioTrack?.url,
       audioTrackUrls: Object.fromEntries(this.audioRenditionUrls),
@@ -290,21 +294,30 @@ export class HlsSource implements SegmentSource {
           const renditions = best.audioGroupId
             ? playlist.audioRenditions.filter((rendition) => rendition.groupId === best.audioGroupId)
             : [];
-          const selectedAudioTrack = selectAudioRendition(renditions, this.options.preferredAudioTrackKey);
-          const externalRenditions = selectedAudioTrack?.url
-            ? renditions.filter(
-                (rendition): rendition is HlsAudioRendition & { url: string } => rendition.url !== undefined,
-              )
-            : [];
-          this.audioTracks = externalRenditions.map((rendition) => ({
+          this.hasAudioGroup = renditions.length > 0;
+
+          // A URI-less rendition represents the audio carried by the variant itself. If the
+          // same group also contains external renditions, expose that in-band option through
+          // an audio-only pipeline reading the variant playlist. This keeps every switch on
+          // the existing audio-pipeline replacement path and avoids rebuilding video.
+          const hasExternalRendition = renditions.some((rendition) => rendition.url !== undefined);
+          const playableRenditions = hasExternalRendition
+            ? renditions.map((rendition) => (rendition.url ? rendition : { ...rendition, url: best.url }))
+            : renditions;
+          const selectedAudioTrack = selectAudioRendition(playableRenditions, this.options.preferredAudioTrackKey);
+          this.audioTracks = renditions.map((rendition) => ({
             id: rendition.id,
             label: rendition.name,
             language: rendition.language,
             isDefault: rendition.isDefault,
             preferenceKey: rendition.preferenceKey,
           }));
-          this.audioRenditionUrls = new Map(externalRenditions.map((rendition) => [rendition.id, rendition.url]));
-          this.selectedAudioTrack = selectedAudioTrack?.url ? selectedAudioTrack : undefined;
+          this.audioRenditionUrls = new Map(
+            playableRenditions.flatMap((rendition) =>
+              rendition.url === undefined ? [] : [[rendition.id, rendition.url] as const],
+            ),
+          );
+          this.selectedAudioTrack = selectedAudioTrack;
           this.url = best.url;
           continue; // fetch the selected media playlist
         }

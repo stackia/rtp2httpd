@@ -26,6 +26,7 @@ let started = false;
 
 let audioTracks: PlayerAudioTrack[] = [];
 let audioTrackUrls = new Map<string, string>();
+let hasHlsAudioGroup = false;
 let tsAudioTrackPids = new Map<string, number>();
 let selectedAudioTrackId: string | undefined;
 let pendingAudioTrackId: string | undefined;
@@ -275,6 +276,7 @@ function handlePrimaryHlsInfo(info: HlsInfo): void {
   post({ type: "hls-info", live: info.live, totalDuration: info.totalDuration, gen });
   audioTracks = info.audioTracks ?? [];
   audioTrackUrls = new Map(Object.entries(info.audioTrackUrls ?? {}));
+  hasHlsAudioGroup = info.hasAudioGroup ?? false;
   selectedAudioTrackId = info.selectedAudioTrackId;
   timelineProgramDateTime = info.timelineProgramDateTime;
   liveEdgeDistance = info.liveEdgeDistance;
@@ -304,7 +306,7 @@ function preferredTsAudioPid(preferenceKey: string | undefined): number | undefi
 function handlePrimaryTsAudioTracks(tracks: TSAudioTrackInfo[], selectedPid: number | undefined): void {
   // An EXT-X-MEDIA group is authoritative; audio PIDs accidentally present in
   // its video rendition must not leak into the user-facing track list.
-  if (audioTrackUrls.size > 0) return;
+  if (hasHlsAudioGroup) return;
 
   tsAudioTrackPids = new Map(tracks.map((track) => [tsAudioTrackId(track.pid), track.pid]));
   audioTracks = tracks.map((track, index) => ({
@@ -460,6 +462,7 @@ function resetPipelines(): void {
   pendingAudioPipeline = null;
   audioTracks = [];
   audioTrackUrls.clear();
+  hasHlsAudioGroup = false;
   tsAudioTrackPids.clear();
   selectedAudioTrackId = undefined;
   pendingAudioTrackId = undefined;
