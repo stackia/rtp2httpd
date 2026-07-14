@@ -24,6 +24,12 @@ import {
   StaticSegmentSource,
 } from "./segment-source";
 
+export interface MediaTimelineAnchor {
+  kind: "mpegts" | "fmp4";
+  /** Raw media timestamp which maps to MSE timeline zero, in milliseconds. */
+  timestampBaseMs: number;
+}
+
 export interface PipelineCallbacks {
   onInitSegment: (
     type: string,
@@ -48,6 +54,7 @@ export interface PipelineCallbacks {
   onIOError: (type: LoaderErrorDetail, info: LoaderErrorInfo) => void;
   onDemuxError: (type: DemuxErrorDetail, info: string) => void;
   onHlsInfo: (info: HlsInfo) => void;
+  onTimelineAnchor: (anchor: MediaTimelineAnchor) => void;
   onTsAudioTracks: (tracks: TSAudioTrackInfo[], selectedPid: number | undefined) => void;
   onMediaInfo: (info: PlayerMediaInfo) => void;
   /** `time` is normalized to the MSE timeline (seconds, same space as video.currentTime). */
@@ -59,6 +66,8 @@ export interface PipelineOptions extends HlsSourceOptions {
   forcedTrack?: "video" | "audio";
   /** Select one elementary audio PID from an MPEG-TS program. */
   selectedTsAudioPid?: number;
+  /** Preserve the primary rendition's raw timestamp mapping in an alternate audio pipeline. */
+  mediaTimelineAnchor?: MediaTimelineAnchor;
 }
 
 class LoadError extends Error {
@@ -159,6 +168,7 @@ class Pipeline {
   private _lastInitUrl: string | null = null;
   private _fmp4Timescales = new Map<number, number>();
   private _fmp4TimestampOffsetWarningLogged = false;
+  private _timelineAnchorSent = false;
 
   // --- player-facing media metadata ---
   private _mediaInfo: PlayerMediaInfo = {};
@@ -546,6 +556,7 @@ class Pipeline {
     this._lastInitUrl = null;
     this._fmp4Timescales = new Map();
     this._fmp4TimestampOffsetWarningLogged = false;
+    this._timelineAnchorSent = false;
     this._paused = false;
     this._sourceMode = "static-ts-list";
     this._resumeGate?.();
@@ -710,6 +721,13 @@ class Pipeline {
     this._pendingPcm = [];
   }
 
+  private _emitTimelineAnchor(kind: MediaTimelineAnchor["kind"], timestampBaseMs: number): void {
+    if (this._timelineAnchorSent || !Number.isFinite(timestampBaseMs)) return;
+    this._timelineAnchorSent = true;
+    Log.v(this.TAG, `Timeline anchor kind=${kind} base=${timestampBaseMs.toFixed(3)}ms`);
+    this._callbacks.onTimelineAnchor({ kind, timestampBaseMs });
+  }
+
   private _loadSegment(meta: SegmentMeta): Promise<void> {
     const ioctl = new FetchLoader(
       {
@@ -818,8 +836,14 @@ class Pipeline {
 
     if (!this._remuxer) {
       this._remuxer = new MP4Remuxer();
-      const timelineOffsetMs = this._pendingDtsOffsetMs || meta.start * 1000;
-      if (timelineOffsetMs !== 0) this._remuxer.setDtsBaseOffset(timelineOffsetMs);
+      const sharedAnchor = this._options.mediaTimelineAnchor;
+      if (this._forcedTrack === "audio" && sharedAnchor?.kind === "mpegts") {
+        Log.v(this.TAG, `Applying shared MPEG-TS timestamp base ${sharedAnchor.timestampBaseMs.toFixed(3)}ms`);
+        this._remuxer.setSharedTimestampBase(sharedAnchor.timestampBaseMs);
+      } else {
+        const timelineOffsetMs = this._pendingDtsOffsetMs || meta.start * 1000;
+        if (timelineOffsetMs !== 0) this._remuxer.setDtsBaseOffset(timelineOffsetMs);
+      }
       this._pendingDtsOffsetMs = 0;
     }
     this._remuxer.setTsSegmentContinuityNormalization(false);
@@ -874,6 +898,8 @@ class Pipeline {
     };
     this._remuxer.onMediaSegment = (type, mediaSegment) => {
       if (this._forcedTrack && type !== this._forcedTrack) return;
+      const timestampBaseMs = this._remuxer?.getTimestampBase();
+      if (timestampBaseMs !== undefined) this._emitTimelineAnchor("mpegts", timestampBaseMs);
       this._callbacks.onMediaSegment(
         type,
         mediaSegment as unknown as Parameters<PipelineCallbacks["onMediaSegment"]>[1],
@@ -967,7 +993,11 @@ class Pipeline {
       return undefined;
     }
 
-    const timestampOffset = (meta.start - segmentStart) * 1000;
+    const ownTimestampBaseMs = (segmentStart - meta.start) * 1000;
+    const sharedAnchor = this._options.mediaTimelineAnchor;
+    const timestampBaseMs = sharedAnchor?.kind === "fmp4" ? sharedAnchor.timestampBaseMs : ownTimestampBaseMs;
+    this._emitTimelineAnchor("fmp4", timestampBaseMs);
+    const timestampOffset = -timestampBaseMs;
     return Math.abs(timestampOffset) < 0.001 ? 0 : timestampOffset;
   }
 

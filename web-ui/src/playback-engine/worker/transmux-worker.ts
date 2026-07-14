@@ -11,7 +11,7 @@ import type {
 import { buildAudioTrackPreferenceKey } from "../types";
 import Log from "../utils/logger";
 import type { WorkerCommand, WorkerEvent } from "./messages";
-import Pipeline, { type PipelineCallbacks } from "./pipeline";
+import Pipeline, { type MediaTimelineAnchor, type PipelineCallbacks } from "./pipeline";
 
 type OutputEvent =
   | { kind: "init"; track: "video" | "audio"; data: ArrayBuffer; codec: string; container: string }
@@ -30,6 +30,9 @@ let tsAudioTrackPids = new Map<string, number>();
 let selectedAudioTrackId: string | undefined;
 let pendingAudioTrackId: string | undefined;
 let timelineProgramDateTime: number | undefined;
+let liveEdgeDistance: number | undefined;
+let mediaTimelineAnchor: MediaTimelineAnchor | undefined;
+let pendingInitialAudioInfo: HlsInfo | undefined;
 let completePendingAudioSwitch: ((trackId: string, success: boolean, currentTime: number) => void) | null = null;
 
 interface PendingInternalAudioSwitch {
@@ -184,7 +187,13 @@ function postPipelineError(
 
 function createAudioPipeline(
   url: string,
-  options: { liveTimelineOffset?: number; startTime?: number; programDateTimeAnchor?: number },
+  options: {
+    liveTimelineOffset?: number;
+    startTime?: number;
+    programDateTimeAnchor?: number;
+    liveEdgeDistance?: number;
+    mediaTimelineAnchor?: MediaTimelineAnchor;
+  },
 ): Pipeline {
   if (!config) throw new Error("Worker has not been initialized");
   audioComplete = false;
@@ -221,6 +230,7 @@ function createAudioPipeline(
       maybeComplete();
     },
     onHlsInfo() {},
+    onTimelineAnchor() {},
     onTsAudioTracks() {},
     onMediaInfo(info) {
       audioMediaInfo = info;
@@ -233,14 +243,29 @@ function createAudioPipeline(
   return new Pipeline([{ url, duration: 0 }], config, callbacks, { forcedTrack: "audio", ...options });
 }
 
-function startInitialAudio(info: HlsInfo): void {
+function startInitialAudio(info: HlsInfo, anchor: MediaTimelineAnchor): void {
   const url = info.selectedAudioTrackUrl;
   if (!url) return;
-  initialOutputGated = true;
   audioPipeline?.destroy();
-  audioPipeline = createAudioPipeline(url, { programDateTimeAnchor: info.timelineProgramDateTime });
+  audioPipeline = createAudioPipeline(url, {
+    programDateTimeAnchor: info.timelineProgramDateTime,
+    liveEdgeDistance: info.liveEdgeDistance,
+    mediaTimelineAnchor: anchor,
+  });
   audioPipeline.start();
   if (!started) audioPipeline.pause();
+}
+
+function maybeStartInitialAudio(): void {
+  if (!pendingInitialAudioInfo || !mediaTimelineAnchor) return;
+  const info = pendingInitialAudioInfo;
+  pendingInitialAudioInfo = undefined;
+  startInitialAudio(info, mediaTimelineAnchor);
+}
+
+function handlePrimaryTimelineAnchor(anchor: MediaTimelineAnchor): void {
+  mediaTimelineAnchor = anchor;
+  maybeStartInitialAudio();
 }
 
 function handlePrimaryHlsInfo(info: HlsInfo): void {
@@ -249,9 +274,14 @@ function handlePrimaryHlsInfo(info: HlsInfo): void {
   audioTrackUrls = new Map(Object.entries(info.audioTrackUrls ?? {}));
   selectedAudioTrackId = info.selectedAudioTrackId;
   timelineProgramDateTime = info.timelineProgramDateTime;
+  liveEdgeDistance = info.liveEdgeDistance;
   pendingAudioTrackId = undefined;
   emitAudioTrackState();
-  startInitialAudio(info);
+  if (info.selectedAudioTrackUrl) {
+    initialOutputGated = true;
+    pendingInitialAudioInfo = info;
+    maybeStartInitialAudio();
+  }
 }
 
 function tsAudioTrackId(pid: number): string {
@@ -377,6 +407,7 @@ function createPrimaryPipeline(segments: PlayerSegment[], loadOptions: PlaybackL
       postPipelineError("demux", type, { msg: info }, "video");
     },
     onHlsInfo: handlePrimaryHlsInfo,
+    onTimelineAnchor: handlePrimaryTimelineAnchor,
     onTsAudioTracks: handlePrimaryTsAudioTracks,
     onMediaInfo(info) {
       primaryMediaInfo = info;
@@ -407,6 +438,9 @@ function resetPipelines(): void {
   selectedAudioTrackId = undefined;
   pendingAudioTrackId = undefined;
   timelineProgramDateTime = undefined;
+  liveEdgeDistance = undefined;
+  mediaTimelineAnchor = undefined;
+  pendingInitialAudioInfo = undefined;
   completePendingAudioSwitch = null;
   pendingInternalAudioSwitch = null;
   primaryMediaInfo = {};
@@ -526,6 +560,7 @@ function selectAudioTrack(trackId: string, currentTime: number): void {
     onHlsInfo(info) {
       switchBoundary = info.playbackStartTime ?? currentTime;
     },
+    onTimelineAnchor() {},
     onTsAudioTracks() {},
     onMediaInfo(info) {
       candidateMediaInfo = info;
@@ -546,6 +581,8 @@ function selectAudioTrack(trackId: string, currentTime: number): void {
     startTime: currentTime,
     programDateTimeAnchor:
       timelineProgramDateTime === undefined ? undefined : timelineProgramDateTime + currentTime * 1000,
+    liveEdgeDistance,
+    mediaTimelineAnchor,
   });
   pendingAudioPipeline = candidate;
   candidate.start();

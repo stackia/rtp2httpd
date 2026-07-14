@@ -126,6 +126,7 @@ class MP4Remuxer {
   private _dtsBase: number;
   private _dtsBaseInited: boolean;
   private _dtsBaseOffset: number;
+  private _preserveInitialTimestamps: boolean;
   private _audioDtsBase: number;
   private _videoDtsBase: number;
   private _audioNextDts: number | undefined;
@@ -162,6 +163,7 @@ class MP4Remuxer {
     this._dtsBase = -1;
     this._dtsBaseInited = false;
     this._dtsBaseOffset = 0;
+    this._preserveInitialTimestamps = false;
     this._audioDtsBase = Infinity;
     this._videoDtsBase = Infinity;
     this._audioNextDts = undefined;
@@ -203,6 +205,7 @@ class MP4Remuxer {
   destroy(): void {
     this._dtsBase = -1;
     this._dtsBaseInited = false;
+    this._preserveInitialTimestamps = false;
     this._silentAudioMode = false;
     this._silentAudioLastDts = undefined;
     this._silentAudioDurationResidual = 0;
@@ -332,6 +335,7 @@ class MP4Remuxer {
     }
 
     if (timing.lastOriginalEndDts === undefined || timing.lastOutputEndDts === undefined) {
+      if (this._preserveInitialTimestamps) return 0;
       return firstSampleOriginalDts - this._dtsBaseOffset;
     }
 
@@ -395,6 +399,13 @@ class MP4Remuxer {
    */
   setDtsBaseOffset(offsetMs: number): void {
     this._dtsBaseOffset = offsetMs;
+  }
+
+  /** Reuse another rendition's raw timestamp mapping instead of independently rebasing the first audio sample. */
+  setSharedTimestampBase(timestampBaseMs: number): void {
+    this._dtsBase = timestampBaseMs;
+    this._dtsBaseInited = true;
+    this._preserveInitialTimestamps = true;
   }
 
   remux(audioTrack: DemuxTrack | null | undefined, videoTrack: DemuxTrack | null | undefined, force = false): void {
@@ -792,6 +803,9 @@ class MP4Remuxer {
 
       if (originalDts < -0.001) {
         mdatBytes -= sample.length;
+        if (this._preserveInitialTimestamps) {
+          nextOutputDts += this._nextSampleDuration(this._audioTiming, refSampleDuration, 26);
+        }
         continue; //pass the first sample with the invalid dts
       }
 
@@ -877,6 +891,10 @@ class MP4Remuxer {
       // For MPEG audio stream in MSE, if seeking occurred, before appending new buffer
       // We need explicitly set timestampOffset to the desired point in timeline for mpeg SourceBuffer.
       segment.timestampOffset = firstDts;
+    }
+
+    if (this._preserveInitialTimestamps && !this._audioMediaSegmentEmitted) {
+      Log.v(this.TAG, `Shared audio timeline begins at ${firstDts.toFixed(3)}ms`);
     }
 
     this._onMediaSegment?.("audio", segment);

@@ -103,6 +103,16 @@ export function mediaTimeBoundaryIndex(segments: readonly { start: number }[], t
   return index >= 0 ? index : segments.length - 1;
 }
 
+/** Select the segment containing a media-time target, or the nearest available segment. */
+export function mediaTimeSegmentIndex(
+  segments: readonly { start: number; duration: number }[],
+  targetSeconds: number,
+): number {
+  if (segments.length === 0) return -1;
+  const index = segments.findIndex((segment) => targetSeconds < segment.start + segment.duration);
+  return index >= 0 ? index : segments.length - 1;
+}
+
 /** Select the first absolute-time boundary at or after a target, without relying on matching media sequences. */
 export function programDateTimeBoundaryIndex(
   segments: readonly { programDateTime?: number }[],
@@ -114,6 +124,21 @@ export function programDateTimeBoundaryIndex(
     if (programDateTime === undefined) continue;
     lastDatedIndex = index;
     if (programDateTime >= targetMilliseconds) return index;
+  }
+  return lastDatedIndex;
+}
+
+/** Select the segment covering an absolute-time target, without assuming equal rendition boundaries. */
+export function programDateTimeSegmentIndex(
+  segments: readonly { programDateTime?: number; duration: number }[],
+  targetMilliseconds: number,
+): number {
+  let lastDatedIndex = -1;
+  for (let index = 0; index < segments.length; index++) {
+    const segment = segments[index];
+    if (segment.programDateTime === undefined) continue;
+    lastDatedIndex = index;
+    if (targetMilliseconds < segment.programDateTime + segment.duration * 1000) return index;
   }
   return lastDatedIndex;
 }

@@ -6,9 +6,9 @@ import {
   type HlsAudioRendition,
   type HlsMediaPlaylist,
   type HlsVariant,
-  mediaTimeBoundaryIndex,
+  mediaTimeSegmentIndex,
   parseM3U8,
-  programDateTimeBoundaryIndex,
+  programDateTimeSegmentIndex,
   selectAudioRendition,
 } from "./m3u8";
 
@@ -32,6 +32,8 @@ export interface HlsInfo {
   timelineProgramDateTime?: number;
   /** First segment boundary selected by this source on the MSE timeline. */
   playbackStartTime?: number;
+  /** Distance from the selected live position to the playlist edge, in seconds. */
+  liveEdgeDistance?: number;
 }
 
 export interface HlsSourceOptions {
@@ -42,11 +44,15 @@ export interface HlsSourceOptions {
   startTime?: number;
   /** Prefer the segment covering this wall-clock time when aligning renditions. */
   programDateTimeAnchor?: number;
+  /** Match another rendition's distance from the live edge when wall-clock time is unavailable. */
+  liveEdgeDistance?: number;
 }
 
 const TAG = "HlsSource";
 /** Start playback this many segments away from the live edge. */
 const LIVE_EDGE_SEGMENTS = 3;
+/** Fetch earlier alternate-rendition segments so raw timestamps can resolve playlist-window skew. */
+const LIVE_RENDITION_PREROLL_SEGMENTS = 2;
 const MAX_REFRESH_FAILURES = 5;
 
 export class HlsRequestError extends Error {
@@ -80,6 +86,7 @@ export class HlsSource implements SegmentSource {
   private selectedAudioTrack: HlsAudioRendition | undefined;
   private timelineProgramDateTime: number | undefined;
   private playbackStartTime = 0;
+  private liveEdgeDistance: number | undefined;
 
   private segments: SegmentMeta[] = [];
   private nextIndex = 0;
@@ -120,6 +127,7 @@ export class HlsSource implements SegmentSource {
       audioTrackUrls: Object.fromEntries(this.audioRenditionUrls),
       timelineProgramDateTime: this.timelineProgramDateTime,
       playbackStartTime: this.playbackStartTime,
+      liveEdgeDistance: this.liveEdgeDistance,
     };
   }
 
@@ -164,13 +172,27 @@ export class HlsSource implements SegmentSource {
       const programDateTimeIndex =
         programDateTimeAnchor === undefined
           ? -1
-          : programDateTimeBoundaryIndex(playlist.segments, programDateTimeAnchor);
+          : programDateTimeSegmentIndex(playlist.segments, programDateTimeAnchor);
+      const liveEdgeTarget =
+        this.options.liveEdgeDistance === undefined
+          ? undefined
+          : Math.max(0, playlist.totalDuration - this.options.liveEdgeDistance);
+      const matchedLiveEdgeIndex =
+        liveEdgeTarget === undefined ? -1 : mediaTimeSegmentIndex(this.segments, liveEdgeTarget);
+      const liveEdgeIndex =
+        matchedLiveEdgeIndex < 0 ? -1 : Math.max(0, matchedLiveEdgeIndex - LIVE_RENDITION_PREROLL_SEGMENTS);
       this.nextIndex =
-        programDateTimeIndex >= 0 ? programDateTimeIndex : Math.max(0, this.segments.length - LIVE_EDGE_SEGMENTS);
+        programDateTimeIndex >= 0
+          ? programDateTimeIndex
+          : liveEdgeIndex >= 0
+            ? liveEdgeIndex
+            : Math.max(0, this.segments.length - LIVE_EDGE_SEGMENTS);
       const base = this.segments[this.nextIndex]?.start ?? 0;
       const selectedProgramDateTime = playlist.segments[this.nextIndex]?.programDateTime;
+      const selectedLead = liveEdgeTarget === undefined || programDateTimeIndex >= 0 ? 0 : liveEdgeTarget - base;
       const offset =
-        (this.options.liveTimelineOffset ?? 0) +
+        (this.options.liveTimelineOffset ?? 0) -
+        selectedLead +
         (programDateTimeAnchor !== undefined && selectedProgramDateTime !== undefined
           ? Math.max(0, (selectedProgramDateTime - programDateTimeAnchor) / 1000)
           : 0);
@@ -185,9 +207,14 @@ export class HlsSource implements SegmentSource {
       this.timelineProgramDateTime =
         selectedProgramDateTime === undefined ? undefined : selectedProgramDateTime - offset * 1000;
       this.playbackStartTime = this.segments[this.nextIndex]?.start ?? offset;
+      this.liveEdgeDistance = Math.max(0, playlist.totalDuration - (liveEdgeTarget ?? base));
+      Log.v(
+        TAG,
+        `Live selection index=${this.nextIndex} start=${this.playbackStartTime.toFixed(3)}s edgeDistance=${this.liveEdgeDistance.toFixed(3)}s`,
+      );
     } else if (this.options.startTime !== undefined) {
       const startTime = this.options.startTime;
-      this.nextIndex = Math.max(0, mediaTimeBoundaryIndex(this.segments, startTime));
+      this.nextIndex = Math.max(0, mediaTimeSegmentIndex(this.segments, startTime));
       this.playbackStartTime = this.segments[this.nextIndex]?.start ?? startTime;
     }
 
