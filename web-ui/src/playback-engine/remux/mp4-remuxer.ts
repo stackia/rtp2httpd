@@ -138,6 +138,8 @@ class MP4Remuxer {
   private _videoTiming: TrackTimingState;
   private _pcmTiming: TrackTimingState;
   private _pcmNextDts: number | undefined;
+  private _videoPtsDtsOffset: number;
+  private _videoPtsOffsetUpdatePending: boolean;
   private _videoPresentationOffset: number | undefined;
   private _videoInitialPresentationOffset: number | undefined;
   private _videoInitialOutputTime: number | undefined;
@@ -175,6 +177,8 @@ class MP4Remuxer {
     this._videoTiming = this._createTrackTimingState();
     this._pcmTiming = this._createTrackTimingState();
     this._pcmNextDts = undefined;
+    this._videoPtsDtsOffset = 0;
+    this._videoPtsOffsetUpdatePending = false;
     this._videoPresentationOffset = undefined;
     this._videoInitialPresentationOffset = undefined;
     this._videoInitialOutputTime = undefined;
@@ -216,6 +220,8 @@ class MP4Remuxer {
     this._videoTiming = this._createTrackTimingState();
     this._pcmTiming = this._createTrackTimingState();
     this._pcmNextDts = undefined;
+    this._videoPtsDtsOffset = 0;
+    this._videoPtsOffsetUpdatePending = false;
     this._videoPresentationOffset = undefined;
     this._videoInitialPresentationOffset = undefined;
     this._videoInitialOutputTime = undefined;
@@ -259,11 +265,17 @@ class MP4Remuxer {
   insertDiscontinuity(): void {
     this._silentAudioLastDts = undefined;
     this._silentAudioDurationResidual = 0;
+    this._videoPtsOffsetUpdatePending = true;
     this._videoPresentationOffset = undefined;
     // Resume quickly after a seek or stream discontinuity instead of waiting
     // for a complete steady-state batch.
     this._audioMediaSegmentEmitted = false;
     this._videoMediaSegmentEmitted = false;
+  }
+
+  /** Re-anchor video PTS mapping on the first sample after a TS input boundary. */
+  markTsInputBoundary(): void {
+    this._videoPtsOffsetUpdatePending = true;
   }
 
   /** Reset only audio state when switching an elementary TS audio PID. */
@@ -1014,6 +1026,10 @@ class MP4Remuxer {
 
     const mp4Samples: MP4Sample[] = [];
     let nextOutputDts = firstSampleOriginalDts - dtsCorrection;
+    if (this._videoPtsOffsetUpdatePending) {
+      this._videoPtsDtsOffset = firstSampleOriginalDts - nextOutputDts;
+      this._videoPtsOffsetUpdatePending = false;
+    }
     const presentationFloor = this._videoInitialOutputTime ?? this._dtsBaseOffset;
 
     // Correct dts for each sample, and calculate sample duration. Then output to mp4Samples
@@ -1023,9 +1039,11 @@ class MP4Remuxer {
       const isKeyframe = sample.isKeyframe;
 
       const dts = nextOutputDts;
-      // Apply the exact DTS translation to PTS as well. This keeps CTS stable
-      // when a TS segment gap or overlap is collapsed onto the output timeline.
-      const correctedPtsBase = dts + sample.cts;
+      // Preserve source composition timing within a continuous TS input. Only
+      // explicit input boundaries update the cumulative PTS-to-DTS mapping;
+      // applying each fragment's small DTS correction to PTS can invalidate the
+      // first HEVC coded frame group when B-frames cross fragment boundaries.
+      const correctedPtsBase = originalDts + sample.cts - this._videoPtsDtsOffset;
       if (this._videoPresentationOffset === undefined) {
         this._videoPresentationOffset = correctedPtsBase - dts;
         if (this._videoInitialPresentationOffset === undefined) {

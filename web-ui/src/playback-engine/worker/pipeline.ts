@@ -703,6 +703,7 @@ class Pipeline {
     // remux batch is not mixed with the previous segment's tail.
     this._demuxer?.flushSegmentBoundary();
     this._remuxer?.flushStashedSamples();
+    this._remuxer?.markTsInputBoundary();
   }
 
   private _prepareContinuousLiveTsRestart(meta: SegmentMeta, ioctl: FetchLoader): void {
