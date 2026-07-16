@@ -688,6 +688,36 @@ class TestM3URewriteContentType:
         finally:
             upstream.stop()
 
+    def test_m3u_url_redirect_keeps_http_redirect_semantics(self, shared_r2h):
+        """A redirect from an M3U URL should rewrite Location, not its HTML body."""
+        redirect_body = b"<html>redirecting</html>\n"
+        upstream = MockHTTPUpstream(
+            routes={
+                "/archive/index.m3u8": {
+                    "status": 302,
+                    "body": redirect_body,
+                    "headers": {
+                        "Content-Type": "text/html",
+                        "Location": "http://10.0.0.1:8080/final/index.m3u8",
+                    },
+                },
+            }
+        )
+        upstream.start()
+        try:
+            status, hdrs, body = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                f"/http/127.0.0.1:{upstream.port}/archive/index.m3u8",
+                timeout=_TIMEOUT,
+            )
+
+            assert status == 302
+            assert get_header(hdrs, "Location") == "/http/10.0.0.1:8080/final/index.m3u8"
+            assert body == redirect_body
+        finally:
+            upstream.stop()
+
 
 # ---------------------------------------------------------------------------
 # Complex / realistic playlists

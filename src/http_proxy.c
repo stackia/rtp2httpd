@@ -1133,14 +1133,17 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
   session->headers_received = 1;
 
-  /* Check if response body needs rewriting (M3U content). URL extension takes
-   * precedence; fall back to Content-Type only when the URL is not M3U-like.
+  /* Check if a successful response body needs rewriting (M3U content). URL
+   * extension takes precedence; fall back to Content-Type only when the URL
+   * is not M3U-like. Non-2xx responses must retain normal HTTP semantics,
+   * especially redirect Location rewriting and error response passthrough.
    * Skip for HEAD requests — there is no body to rewrite. */
   int is_m3u_response = rewrite_is_m3u_url(session->target_path);
   if (!is_m3u_response)
     is_m3u_response = rewrite_is_m3u_content_type(session->response_content_type);
 
-  if (is_m3u_response && strcasecmp(session->method, "HEAD") != 0) {
+  if (session->response_status_code >= 200 && session->response_status_code < 300 && is_m3u_response &&
+      strcasecmp(session->method, "HEAD") != 0) {
     if (session->transfer_encoding_seen && (!session->response_is_chunked || session->unsupported_transfer_coding)) {
       logger(LOG_ERROR, "HTTP Proxy: Unsupported Transfer-Encoding for M3U rewrite");
       return -1;
