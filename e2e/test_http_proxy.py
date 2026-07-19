@@ -62,6 +62,7 @@ class TestBasicProxy:
             )
             assert status == 200
             assert body == b"world"
+            assert not any(name.lower().startswith("r2h-") for name in hdrs)
         finally:
             upstream.stop()
 

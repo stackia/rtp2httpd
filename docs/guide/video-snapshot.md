@@ -181,6 +181,8 @@ http://192.168.1.1:5140/CCTV-1?snapshot=1
 curl -H "Accept: image/jpeg" http://192.168.1.1:5140/rtp/239.253.64.120:5140
 ```
 
+成功生成 JPEG 时，响应会同时包含 `Content-Length` 和生成前已经确认的 `R2H-*` 上游流 Metadata。若快照转换失败并回退为媒体流，则由媒体流响应发送一次 Metadata，不会提前发送 JPEG Header。字段说明见 [URL 格式说明](./url-formats.md#上游流-metadata-响应头)。
+
 ## 故障排查
 
 ### 快照请求返回视频流而不是图片

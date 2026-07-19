@@ -9,9 +9,12 @@ import pytest
 
 from helpers import (
     MockRTSPServer,
+    MockRTSPServerSilent,
     MockRTSPServerUDP,
     R2HProcess,
     find_free_port,
+    get_header,
+    http_request,
     stream_get,
 )
 
@@ -51,6 +54,130 @@ class TestRTSPTCPStream:
             )
             assert status == 200, "Expected 200 for TCP interleaved RTSP"
             assert len(body) > 0
+        finally:
+            rtsp.stop()
+
+    def test_tcp_stream_metadata_headers(self, shared_r2h):
+        sdp = (
+            "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=T\r\n"
+            "t=0 0\r\nm=video 0 RTP/AVP 33\r\n"
+            "a=range:npt=10.25-40.5\r\na=control:*\r\n"
+        )
+        rtsp = MockRTSPServer(
+            num_packets=500,
+            custom_sdp=sdp,
+            play_response_headers=[("sCaLe", "1.500000"), ("rAnGe", "npt=10.25-40.5")],
+        )
+        rtsp.start()
+        try:
+            status, headers, body = stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+            assert status == 200
+            assert body
+            assert headers["r2h-upstream-protocol"] == "rtsp"
+            assert headers["r2h-upstream-transport"] == "tcp-interleaved"
+            assert headers["r2h-upstream-payload"] == "mp2t-rtp"
+            assert headers["r2h-playback-scale"] == "1.5"
+            assert headers["r2h-playback-range"] == "npt=10.25-40.5"
+            assert headers["r2h-media-duration"] == "30.25"
+            assert "r2h-metadata-version" not in headers
+            assert not any(name.startswith("r2h-fec-") for name in headers)
+            assert "session" not in headers
+            assert "content-base" not in headers
+        finally:
+            rtsp.stop()
+
+    def test_head_stops_after_describe(self, shared_r2h):
+        sdp = (
+            "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=T\r\n"
+            "t=0 0\r\nm=video 0 RTP/AVP 33\r\n"
+            "a=range:npt=2-12.125\r\na=control:*\r\n"
+        )
+        rtsp = MockRTSPServer(custom_sdp=sdp)
+        rtsp.start()
+        try:
+            status, headers, body = http_request(
+                "127.0.0.1",
+                shared_r2h.port,
+                "HEAD",
+                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                timeout=10.0,
+            )
+            assert status == 200
+            assert body == b""
+            assert get_header(headers, "R2H-Upstream-Protocol") == "rtsp"
+            assert get_header(headers, "R2H-Upstream-Payload") == "mp2t-rtp"
+            assert get_header(headers, "R2H-Media-Duration") == "10.125"
+            assert get_header(headers, "R2H-Upstream-Transport") == ""
+            assert get_header(headers, "R2H-Playback-Scale") == ""
+            assert get_header(headers, "R2H-Playback-Range") == ""
+            assert rtsp.requests_received == ["OPTIONS", "DESCRIBE"]
+        finally:
+            rtsp.stop()
+
+    def test_head_metadata_takes_precedence_over_duration_query(self, shared_r2h):
+        sdp = (
+            "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=T\r\n"
+            "t=0 0\r\nm=video 0 RTP/AVP 33\r\n"
+            "a=range:npt=2-12.125\r\na=control:*\r\n"
+        )
+        rtsp = MockRTSPServer(custom_sdp=sdp)
+        rtsp.start()
+        try:
+            status, headers, body = http_request(
+                "127.0.0.1",
+                shared_r2h.port,
+                "HEAD",
+                "/rtsp/127.0.0.1:%d/stream?r2h-duration=1" % rtsp.port,
+                timeout=10.0,
+            )
+            assert status == 200
+            assert body == b""
+            assert get_header(headers, "Content-Type") == "video/mp2t"
+            assert get_header(headers, "R2H-Upstream-Protocol") == "rtsp"
+            assert get_header(headers, "R2H-Upstream-Payload") == "mp2t-rtp"
+            assert get_header(headers, "R2H-Media-Duration") == "10.125"
+            assert rtsp.requests_received == ["OPTIONS", "DESCRIBE"]
+        finally:
+            rtsp.stop()
+
+    def test_head_survives_upstream_close_after_describe(self, shared_r2h):
+        rtsp = MockRTSPServer(close_after_describe=True)
+        rtsp.start()
+        try:
+            status, headers, body = http_request(
+                "127.0.0.1",
+                shared_r2h.port,
+                "HEAD",
+                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                timeout=10.0,
+            )
+            assert status == 200
+            assert body == b""
+            assert get_header(headers, "R2H-Upstream-Protocol") == "rtsp"
+            assert get_header(headers, "R2H-Upstream-Payload") == "mp2t-rtp"
+            assert rtsp.requests_received == ["OPTIONS", "DESCRIBE"]
+        finally:
+            rtsp.stop()
+
+    def test_head_probe_timeout_returns_503(self, shared_r2h):
+        rtsp = MockRTSPServerSilent()
+        rtsp.start()
+        try:
+            status, _, body = http_request(
+                "127.0.0.1",
+                shared_r2h.port,
+                "HEAD",
+                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                timeout=8.0,
+            )
+            assert status == 503
+            assert body == b""
         finally:
             rtsp.stop()
 
@@ -129,7 +256,7 @@ class TestRTSPUDPStream:
         rtsp = MockRTSPServerUDP()
         rtsp.start()
         try:
-            status, _, body = stream_get(
+            status, headers, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
@@ -138,6 +265,9 @@ class TestRTSPUDPStream:
             )
             assert status == 200, "Expected 200 for UDP RTSP"
             assert len(body) > 0
+            assert headers["r2h-upstream-protocol"] == "rtsp"
+            assert headers["r2h-upstream-transport"] == "udp"
+            assert headers["r2h-upstream-payload"] == "mp2t-rtp"
         finally:
             rtsp.stop()
 

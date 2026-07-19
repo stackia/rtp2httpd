@@ -81,6 +81,8 @@ rtp://239.253.64.120:5140/?fcc=10.255.14.152:15970
 
 两种协议区别很小，大多数情况使用 `telecom` 就可以工作。在一些特定网络环境下可能需要 `huawei` 协议。
 
+FCC 媒体响应会通过 `R2H-FCC-Type` 返回实际配置的协议，并通过 `R2H-FCC-Status` 返回起播结果：FCC 单播首先产生有效输出时为 `active`，FCC 未成功且首先从组播输出时为 `fallback`。这个状态是响应发出时的快照；后续从 FCC 单播切换到组播不会改变已经发送的 Header。`HEAD` 请求只返回 FCC Type，不发送 FCC 请求，也不返回 FCC Status。完整字段说明见 [URL 格式说明](./url-formats.md#上游流-metadata-响应头)。
+
 ### 在 M3U 中配置 FCC
 
 如果使用 M3U 播放列表，可以在每个频道的 URL 中添加 FCC 参数：

@@ -91,6 +91,31 @@ This is caused by timezone mismatch. You need to perform timezone conversion. Tr
 
 For detailed information on time-shift parameter handling (timezone, offset), see [Time Processing Guide](/en/guide/time-processing).
 
+## Upstream Stream Metadata Response Headers
+
+RTSP, standard multicast, and FCC streams return confirmed upstream metadata in `R2H-*` response headers. Fields that are unknown, invalid, or not yet confirmed when the response is sent are omitted.
+
+| Response Header | Meaning |
+| --- | --- |
+| `R2H-Upstream-Protocol` | Upstream type: `rtsp` or `multicast`. FCC streams are also reported as `multicast`. |
+| `R2H-Upstream-Transport` | Transport negotiated by RTSP: `tcp-interleaved` or `udp`. |
+| `R2H-Upstream-Payload` | Confirmed MPEG-TS encapsulation: `mp2t-rtp` or `mp2t-direct`. |
+| `R2H-Playback-Scale` | Playback scale explicitly confirmed by the RTSP `PLAY` response. |
+| `R2H-Playback-Range` | Playback range explicitly confirmed by the RTSP `PLAY` response. |
+| `R2H-Media-Duration` | Duration of a finite SDP `npt` range, in seconds. |
+| `R2H-FCC-Type` | Configured FCC protocol: `telecom` or `huawei`. |
+| `R2H-FCC-Status` | `active` when FCC unicast produced the initial output; `fallback` when multicast produced it. |
+
+These response headers are a snapshot taken when the HTTP headers are sent. Changes after stream startup do not update them. FEC status is not reported, and sensitive data such as RTSP sessions, authentication information, upstream addresses and ports, and raw SDP is never exposed.
+
+MPEG-TS responses and successfully generated JPEG snapshots include all fields confirmed at that point. `HEAD` requests behave differently:
+
+- RTSP `HEAD` connects upstream and performs only `OPTIONS` and `DESCRIBE`. It can therefore return Protocol and any Payload or Duration confirmed by SDP, but it never performs `SETUP` or `PLAY`.
+- Multicast and FCC `HEAD` requests do not join multicast groups or send FCC requests. They return Protocol and, when configured, FCC Type only.
+- HTTP reverse proxy `HEAD` requests continue to be handled by the upstream HTTP service.
+
+When `cors-allow-origin` is configured, all eight fields are listed in `Access-Control-Expose-Headers` so browser JavaScript can read them through the Fetch API.
+
 ## HTTP Reverse Proxy
 
 ```url

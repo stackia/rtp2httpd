@@ -83,7 +83,7 @@ static int deliver_raw_packet(uint8_t *data, int len, connection_t *conn, int is
   }
   /* Send headers lazily on first data packet (same as rtp_queue_buf_direct) */
   if (!conn->headers_sent) {
-    send_http_headers(conn, STATUS_200, "video/mp2t", NULL);
+    stream_send_http_headers(conn, "video/mp2t", NULL);
   }
   return connection_queue_output(conn, data, len) == 0 ? len : -1;
 }

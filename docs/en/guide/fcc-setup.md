@@ -81,6 +81,8 @@ rtp://239.253.64.120:5140/?fcc=10.255.14.152:15970
 
 The difference between the two protocols is very small. In most cases, `telecom` will work. In some specific network environments, the `huawei` protocol may be required.
 
+FCC media responses report the configured protocol in `R2H-FCC-Type` and the startup result in `R2H-FCC-Status`. The status is `active` when FCC unicast first produces valid output, or `fallback` when FCC does not succeed and multicast produces the initial output. This value is a response-time snapshot; a later transition from FCC unicast to multicast does not change the header already sent. A `HEAD` request returns FCC Type only, sends no FCC request, and omits FCC Status. See [URL Formats](/en/guide/url-formats#upstream-stream-metadata-response-headers) for the complete field reference.
+
 ### Configure FCC in M3U
 
 If you are using an M3U playlist, you can add FCC parameters to the URL of each channel:

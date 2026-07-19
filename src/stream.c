@@ -1,6 +1,8 @@
 #include "stream.h"
+#include "configuration.h"
 #include "connection.h"
 #include "fcc.h"
+#include "http.h"
 #include "http_proxy.h"
 #include "multicast.h"
 #include "rtp.h"
@@ -11,13 +13,229 @@
 #include "status.h"
 #include "utils.h"
 #include <arpa/inet.h>
+#include <math.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#define STREAM_METADATA_HEADERS_SIZE 1024
+#define TS_PACKET_SIZE 188
+#define TS_SYNC_BYTE 0x47
+
+static int stream_metadata_append_raw(char *buffer, size_t buffer_size, size_t *length, const char *value) {
+  size_t value_len;
+
+  if (!buffer || !length || !value || *length >= buffer_size)
+    return -1;
+
+  value_len = strlen(value);
+  if (value_len >= buffer_size - *length)
+    return -1;
+
+  memcpy(buffer + *length, value, value_len + 1);
+  *length += value_len;
+  return 0;
+}
+
+static int stream_metadata_append_header(char *buffer, size_t buffer_size, size_t *length, const char *name,
+                                         const char *value) {
+  char line[512];
+  int written;
+
+  written = snprintf(line, sizeof(line), "%s: %s\r\n", name, value);
+  if (written < 0 || (size_t)written >= sizeof(line))
+    return -1;
+  return stream_metadata_append_raw(buffer, buffer_size, length, line);
+}
+
+static void stream_metadata_format_number(double value, char *buffer, size_t buffer_size) {
+  char *end;
+
+  if (!buffer || buffer_size == 0)
+    return;
+
+  snprintf(buffer, buffer_size, "%.6f", value);
+  end = buffer + strlen(buffer);
+  while (end > buffer && end[-1] == '0')
+    *--end = '\0';
+  if (end > buffer && end[-1] == '.')
+    *--end = '\0';
+  if (strcmp(buffer, "-0") == 0)
+    snprintf(buffer, buffer_size, "0");
+}
+
+static int stream_payload_is_mpegts(const uint8_t *payload, int payload_len) {
+  int checked = 0;
+
+  if (!payload || payload_len < TS_PACKET_SIZE || payload[0] != TS_SYNC_BYTE)
+    return 0;
+
+  for (int offset = 0; offset + TS_PACKET_SIZE <= payload_len && checked < 3; offset += TS_PACKET_SIZE) {
+    if (payload[offset] != TS_SYNC_BYTE)
+      return 0;
+    checked++;
+  }
+
+  return checked > 0;
+}
+
+void stream_metadata_init(stream_metadata_t *metadata, const service_t *service) {
+  if (!metadata)
+    return;
+
+  memset(metadata, 0, sizeof(*metadata));
+  if (!service)
+    return;
+
+  if (service->service_type == SERVICE_RTSP) {
+    metadata->upstream_protocol = STREAM_UPSTREAM_RTSP;
+  } else if (service->service_type == SERVICE_MRTP) {
+    metadata->upstream_protocol = STREAM_UPSTREAM_MULTICAST;
+    if (service->fcc_addr) {
+      metadata->fcc_type = service->fcc_type == FCC_TYPE_HUAWEI ? STREAM_FCC_TYPE_HUAWEI : STREAM_FCC_TYPE_TELECOM;
+    }
+  }
+}
+
+void stream_metadata_reset_rtsp_negotiation(stream_metadata_t *metadata) {
+  if (!metadata || metadata->frozen)
+    return;
+
+  metadata->upstream_transport = STREAM_TRANSPORT_UNKNOWN;
+  metadata->upstream_payload = STREAM_PAYLOAD_UNKNOWN;
+  metadata->playback_scale_known = 0;
+  metadata->media_duration_known = 0;
+  metadata->playback_range[0] = '\0';
+}
+
+static void stream_metadata_note_media(stream_context_t *ctx, int packet_type, const uint8_t *payload, int payload_len,
+                                       stream_media_origin_t origin) {
+  stream_metadata_t *metadata;
+
+  if (!ctx || ctx->metadata.frozen || !stream_payload_is_mpegts(payload, payload_len))
+    return;
+
+  metadata = &ctx->metadata;
+  metadata->upstream_payload = packet_type == 1 ? STREAM_PAYLOAD_MP2T_RTP : STREAM_PAYLOAD_MP2T_DIRECT;
+
+  if (metadata->fcc_type != STREAM_FCC_TYPE_UNKNOWN && metadata->fcc_status == STREAM_FCC_STATUS_UNKNOWN) {
+    if (origin == STREAM_MEDIA_ORIGIN_FCC_UNICAST) {
+      metadata->fcc_status = STREAM_FCC_STATUS_ACTIVE;
+    } else if (origin == STREAM_MEDIA_ORIGIN_FCC_MULTICAST) {
+      metadata->fcc_status = STREAM_FCC_STATUS_FALLBACK;
+    }
+  }
+}
+
+void stream_send_http_headers(connection_t *conn, const char *content_type, const char *extra_headers) {
+  static const char exposed_headers[] =
+      "R2H-Upstream-Protocol, R2H-Upstream-Transport, R2H-Upstream-Payload, "
+      "R2H-Playback-Scale, R2H-Playback-Range, R2H-Media-Duration, R2H-FCC-Type, R2H-FCC-Status";
+  stream_metadata_t *metadata;
+  char headers[STREAM_METADATA_HEADERS_SIZE];
+  char number[64];
+  size_t length = 0;
+  int failed = 0;
+
+  if (!conn) {
+    return;
+  }
+
+  metadata = &conn->stream.metadata;
+  headers[0] = '\0';
+
+  if (extra_headers && extra_headers[0])
+    failed |= stream_metadata_append_raw(headers, sizeof(headers), &length, extra_headers) < 0;
+
+  switch (metadata->upstream_protocol) {
+  case STREAM_UPSTREAM_RTSP:
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Upstream-Protocol", "rtsp") < 0;
+    break;
+  case STREAM_UPSTREAM_MULTICAST:
+    failed |=
+        stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Upstream-Protocol", "multicast") < 0;
+    break;
+  default:
+    break;
+  }
+
+  switch (metadata->upstream_transport) {
+  case STREAM_TRANSPORT_TCP_INTERLEAVED:
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Upstream-Transport",
+                                            "tcp-interleaved") < 0;
+    break;
+  case STREAM_TRANSPORT_UDP:
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Upstream-Transport", "udp") < 0;
+    break;
+  default:
+    break;
+  }
+
+  switch (metadata->upstream_payload) {
+  case STREAM_PAYLOAD_MP2T_RTP:
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Upstream-Payload", "mp2t-rtp") < 0;
+    break;
+  case STREAM_PAYLOAD_MP2T_DIRECT:
+    failed |=
+        stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Upstream-Payload", "mp2t-direct") < 0;
+    break;
+  default:
+    break;
+  }
+
+  if (metadata->playback_scale_known && isfinite(metadata->playback_scale)) {
+    stream_metadata_format_number(metadata->playback_scale, number, sizeof(number));
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Playback-Scale", number) < 0;
+  }
+  if (metadata->playback_range[0]) {
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Playback-Range",
+                                            metadata->playback_range) < 0;
+  }
+  if (metadata->media_duration_known && isfinite(metadata->media_duration)) {
+    stream_metadata_format_number(metadata->media_duration, number, sizeof(number));
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Media-Duration", number) < 0;
+  }
+
+  switch (metadata->fcc_type) {
+  case STREAM_FCC_TYPE_TELECOM:
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-FCC-Type", "telecom") < 0;
+    break;
+  case STREAM_FCC_TYPE_HUAWEI:
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-FCC-Type", "huawei") < 0;
+    break;
+  default:
+    break;
+  }
+
+  switch (metadata->fcc_status) {
+  case STREAM_FCC_STATUS_ACTIVE:
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-FCC-Status", "active") < 0;
+    break;
+  case STREAM_FCC_STATUS_FALLBACK:
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-FCC-Status", "fallback") < 0;
+    break;
+  default:
+    break;
+  }
+
+  if (config.cors_allow_origin && config.cors_allow_origin[0]) {
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "Access-Control-Expose-Headers",
+                                            exposed_headers) < 0;
+  }
+
+  if (failed) {
+    logger(LOG_ERROR, "Failed to build stream metadata HTTP headers");
+    send_http_headers(conn, STATUS_200, content_type, extra_headers);
+  } else {
+    send_http_headers(conn, STATUS_200, content_type, headers);
+  }
+  metadata->frozen = 1;
+}
 
 void stream_on_client_drain(stream_context_t *ctx) {
   /* Hot path: every successful client write hits this.  Bail out cheaply when
@@ -33,7 +251,7 @@ void stream_on_client_drain(stream_context_t *ctx) {
     rtsp_resume_upstream(&ctx->rtsp);
 }
 
-int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref) {
+int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref, stream_media_origin_t origin) {
   uint8_t *data_ptr = (uint8_t *)buf_ref->data + buf_ref->data_offset;
   uint8_t *payload;
   int payload_len;
@@ -51,6 +269,8 @@ int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref) {
     }
     return 0;
   }
+
+  stream_metadata_note_media(ctx, pkt_type, payload, payload_len, origin);
 
   if (pkt_type == 0) {
     /* Non-RTP packet - pass through directly (no reordering needed) */
@@ -109,6 +329,9 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
         logger(LOG_DEBUG, "RTSP: found duration: %0.3f", ctx->rtsp.r2h_duration_value);
         return -2;
       }
+      if (result == -3) {
+        return -3;
+      }
       return -1;
     }
     return 0;
@@ -147,6 +370,70 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
   return 0;
 }
 
+static int stream_init_rtsp_control(stream_context_t *ctx, service_t *service, int status_index, int metadata_probe) {
+  seek_parse_result_t seek_parse_result;
+  const char *resolved_seek_param_name = service->seek_param_name;
+  char resolved_rtsp_url[2048];
+
+  rtsp_session_init(&ctx->rtsp);
+  ctx->rtsp.status_index = status_index;
+  ctx->rtsp.epoll_fd = ctx->epoll_fd;
+  ctx->rtsp.conn = ctx->conn;
+  ctx->rtsp.metadata_probe = metadata_probe;
+  ctx->rtsp.upstream_ifname = get_upstream_interface_for_rtsp(service->ifname);
+
+  if (!service->rtsp_url) {
+    logger(LOG_ERROR, "RTSP URL not found in service configuration");
+    return -1;
+  }
+
+  if (service_parse_seek_value(service->seek_param_value, service->seek_begin_offset_seconds,
+                               service->seek_end_offset_seconds, service->user_agent, service->seek_mode,
+                               service->seek_mode_tz_explicit, service->seek_mode_tz_offset_seconds,
+                               service->seek_mode_window_seconds, &seek_parse_result) != 0) {
+    logger(LOG_ERROR, "RTSP: Failed to parse seek parameters");
+    return -1;
+  }
+
+  if (service_format_recent_seek_range(&seek_parse_result, ctx->rtsp.playseek_range_start,
+                                       sizeof(ctx->rtsp.playseek_range_start)) > 0) {
+    ctx->rtsp.use_playseek_range = 1;
+    resolved_seek_param_name = NULL;
+  }
+
+  if (service_resolve_upstream_url(service->rtsp_url, resolved_seek_param_name, &seek_parse_result, resolved_rtsp_url,
+                                   sizeof(resolved_rtsp_url)) < 0) {
+    logger(LOG_ERROR, "RTSP: Failed to resolve upstream URL");
+    return -1;
+  }
+  if (rtsp_parse_server_url(&ctx->rtsp, resolved_rtsp_url, NULL, NULL) < 0) {
+    logger(LOG_ERROR, "RTSP: Failed to parse URL");
+    return -1;
+  }
+  if (rtsp_connect(&ctx->rtsp) < 0) {
+    logger(LOG_ERROR, "RTSP: Failed to initiate connection");
+    return -1;
+  }
+
+  logger(LOG_DEBUG, "RTSP: Async connection initiated, state=%d", ctx->rtsp.state);
+  return 0;
+}
+
+int stream_context_init_rtsp_metadata_probe(stream_context_t *ctx, connection_t *conn, service_t *service,
+                                            int epoll_fd) {
+  if (!ctx || !conn || !service || service->service_type != SERVICE_RTSP)
+    return -1;
+
+  memset(ctx, 0, sizeof(*ctx));
+  ctx->conn = conn;
+  ctx->service = service;
+  ctx->epoll_fd = epoll_fd;
+  ctx->status_index = -1;
+  ctx->last_status_update = get_time_ms();
+  stream_metadata_init(&ctx->metadata, service);
+  return stream_init_rtsp_control(ctx, service, -1, 1);
+}
+
 /* Initialize context for unified worker epoll (non-blocking, no own loop) */
 int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, service_t *service, int epoll_fd,
                                    int status_index, int is_snapshot) {
@@ -160,6 +447,7 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, se
   ctx->total_bytes_sent = 0;
   ctx->last_bytes_sent = 0;
   ctx->last_status_update = get_time_ms();
+  stream_metadata_init(&ctx->metadata, service);
 
   /* Initialize media path depending on service type */
   if (service->service_type == SERVICE_HTTP) {
@@ -244,58 +532,8 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, se
     fec_init(&ctx->fec, service->fec_port, &ctx->reorder);
 
     if (service->service_type == SERVICE_RTSP) {
-      /* Initialize RTSP session */
-      seek_parse_result_t seek_parse_result;
-      const char *resolved_seek_param_name = service->seek_param_name;
-
-      rtsp_session_init(&ctx->rtsp);
-      ctx->rtsp.status_index = status_index;
-      ctx->rtsp.epoll_fd = ctx->epoll_fd;
-      ctx->rtsp.conn = conn;
-      ctx->rtsp.upstream_ifname = get_upstream_interface_for_rtsp(service->ifname);
-      if (!service->rtsp_url) {
-        logger(LOG_ERROR, "RTSP URL not found in service configuration");
+      if (stream_init_rtsp_control(ctx, service, status_index, 0) < 0)
         return -1;
-      }
-
-      if (service_parse_seek_value(service->seek_param_value, service->seek_begin_offset_seconds,
-                                   service->seek_end_offset_seconds, service->user_agent, service->seek_mode,
-                                   service->seek_mode_tz_explicit, service->seek_mode_tz_offset_seconds,
-                                   service->seek_mode_window_seconds, &seek_parse_result) != 0) {
-        logger(LOG_ERROR, "RTSP: Failed to parse seek parameters");
-        return -1;
-      }
-
-      if (service_format_recent_seek_range(&seek_parse_result, ctx->rtsp.playseek_range_start,
-                                           sizeof(ctx->rtsp.playseek_range_start)) > 0) {
-        ctx->rtsp.use_playseek_range = 1;
-        resolved_seek_param_name = NULL;
-      }
-
-      /* Resolve URL templates / seek params, then parse. Always forward the
-       * parsed seek result so URL templates (${start}/${end}/...) expand even
-       * when use_playseek_range=1; suppression of the literal playseek query
-       * append on the non-template branch is already handled via the
-       * resolved_seek_param_name=NULL gating above. */
-      char resolved_rtsp_url[2048];
-      if (service_resolve_upstream_url(service->rtsp_url, resolved_seek_param_name, &seek_parse_result,
-                                       resolved_rtsp_url, sizeof(resolved_rtsp_url)) < 0) {
-        logger(LOG_ERROR, "RTSP: Failed to resolve upstream URL");
-        return -1;
-      }
-      if (rtsp_parse_server_url(&ctx->rtsp, resolved_rtsp_url, NULL, NULL) < 0) {
-        logger(LOG_ERROR, "RTSP: Failed to parse URL");
-        return -1;
-      }
-
-      if (rtsp_connect(&ctx->rtsp) < 0) {
-        logger(LOG_ERROR, "RTSP: Failed to initiate connection");
-        return -1;
-      }
-
-      /* Connection initiated - handshake will proceed asynchronously via event
-       * loop */
-      logger(LOG_DEBUG, "RTSP: Async connection initiated, state=%d", ctx->rtsp.state);
     } else {
       /* Multicast-based services (FCC or direct multicast) */
       mcast_session_init(&ctx->mcast);

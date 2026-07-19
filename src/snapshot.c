@@ -463,7 +463,7 @@ int snapshot_process_packet(snapshot_context_t *ctx, int recv_len, uint8_t *buf,
           char content_length_header[64];
           snprintf(content_length_header, sizeof(content_length_header), "Content-Length: %zu\r\n", jpeg_size);
 
-          send_http_headers(conn, STATUS_200, "image/jpeg", content_length_header);
+          stream_send_http_headers(conn, "image/jpeg", content_length_header);
 
           /* Queue JPEG file for non-blocking sendfile() */
           if (connection_queue_file(conn, jpeg_fd, 0, jpeg_size) < 0) {

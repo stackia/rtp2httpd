@@ -30,6 +30,8 @@ class _RTSPServerBase:
         content_base: str | None = "auto",
         custom_sdp: str | None = None,
         options_session_id: str | None = None,
+        play_response_headers: list[tuple[str, str]] | None = None,
+        close_after_describe: bool = False,
         host: str = "127.0.0.1",
     ):
         """
@@ -44,6 +46,8 @@ class _RTSPServerBase:
             options_session_id: If set, OPTIONS responds with this Session ID
                 and every subsequent request (DESCRIBE, SETUP, PLAY, ...)
                 must echo it (simulates HMS-style servers).
+            close_after_describe: Close the control connection immediately after
+                sending the DESCRIBE response.
             host: Address to listen on (use "::1" for IPv6 loopback).
         """
         self.host = host
@@ -52,6 +56,8 @@ class _RTSPServerBase:
         self._content_base = content_base
         self._custom_sdp = custom_sdp
         self._options_session_id = options_session_id
+        self._play_response_headers = play_response_headers or []
+        self._close_after_describe = close_after_describe
         self._server_sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -191,11 +197,17 @@ class _RTSPServerBase:
                             "Content-Length: %d\r\n\r\n%s" % (cseq, cb_header, len(sdp), sdp)
                         ).encode()
                     )
+                    if self._close_after_describe:
+                        return
                 elif method == "SETUP":
                     conn.sendall(self._setup_response(cseq, transport_hdr).encode())
                 elif method == "PLAY":
+                    extra_headers = "".join("%s: %s\r\n" % item for item in self._play_response_headers)
                     conn.sendall(
-                        ("RTSP/1.0 200 OK\r\nCSeq: %s\r\nSession: %s\r\n\r\n" % (cseq, self._session_id())).encode()
+                        (
+                            "RTSP/1.0 200 OK\r\nCSeq: %s\r\nSession: %s\r\n%s\r\n"
+                            % (cseq, self._session_id(), extra_headers)
+                        ).encode()
                     )
                     self._after_play(conn, addr)
                     return
@@ -233,6 +245,8 @@ class MockRTSPServer(_RTSPServerBase):
         content_base: str | None = "auto",
         custom_sdp: str | None = None,
         options_session_id: str | None = None,
+        play_response_headers: list[tuple[str, str]] | None = None,
+        close_after_describe: bool = False,
         host: str = "127.0.0.1",
     ):
         super().__init__(
@@ -241,6 +255,8 @@ class MockRTSPServer(_RTSPServerBase):
             content_base=content_base,
             custom_sdp=custom_sdp,
             options_session_id=options_session_id,
+            play_response_headers=play_response_headers,
+            close_after_describe=close_after_describe,
             host=host,
         )
         self._num_packets = num_packets

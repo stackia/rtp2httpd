@@ -56,6 +56,7 @@ class MulticastSender:
         reorder_distance: int = 0,
         unique_payloads: bool = False,
         send_duplicates: bool = False,
+        encapsulate_rtp: bool = True,
     ):
         self.addr = addr
         self.port = port or find_free_udp_port()
@@ -64,6 +65,7 @@ class MulticastSender:
         self.reorder_distance = reorder_distance
         self.unique_payloads = unique_payloads
         self.send_duplicates = send_duplicates
+        self.encapsulate_rtp = encapsulate_rtp
         self._payload = _TS_NULL_PACKET * ts_per_rtp
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
@@ -92,7 +94,7 @@ class MulticastSender:
                 payload = _make_ts_with_marker(seq) * self.ts_per_rtp
             else:
                 payload = self._payload
-            pkt = make_rtp_packet(seq, ts, payload=payload)
+            pkt = make_rtp_packet(seq, ts, payload=payload) if self.encapsulate_rtp else payload
 
             if self.reorder_distance > 1:
                 buf.append(pkt)

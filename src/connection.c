@@ -1073,20 +1073,35 @@ int connection_route_and_start(connection_t *c) {
     return 0;
   }
 
-  /* Handle HEAD requests for RTP/RTSP streams - return success without
-   * connecting upstream.  HTTP services forward HEAD to the upstream server
-   * so the real Content-Type (e.g. application/vnd.apple.mpegurl for HLS)
-   * is returned to the client. */
+  if (c->http_req.user_agent[0]) {
+    service->user_agent = strdup(c->http_req.user_agent);
+  }
+
+  /* HTTP services forward HEAD upstream unchanged. Multicast HEAD requests
+   * return only static metadata. RTSP HEAD performs an asynchronous
+   * OPTIONS/DESCRIBE probe without opening media resources. */
   if (strcasecmp(c->http_req.method, "HEAD") == 0 && service->service_type != SERVICE_HTTP) {
-    logger(LOG_INFO, "HEAD request detected, returning success without upstream connection");
-    send_http_headers(c, STATUS_200, "video/mp2t", NULL);
+    if (service->service_type == SERVICE_RTSP) {
+      logger(LOG_INFO, "RTSP HEAD request detected, starting metadata probe");
+      if (stream_context_init_rtsp_metadata_probe(&c->stream, c, service, c->epfd) == 0) {
+        c->streaming = 1;
+        c->service = service;
+        c->state = CONN_STREAMING;
+        return 0;
+      }
+
+      stream_context_cleanup(&c->stream);
+      http_send_503(c);
+      service_free(service);
+      return 0;
+    }
+
+    logger(LOG_INFO, "Multicast HEAD request detected, returning static metadata");
+    stream_metadata_init(&c->stream.metadata, service);
+    stream_send_http_headers(c, "video/mp2t", NULL);
     connection_queue_output_and_flush(c, NULL, 0);
     service_free(service);
     return 0;
-  }
-
-  if (c->http_req.user_agent[0]) {
-    service->user_agent = strdup(c->http_req.user_agent);
   }
 
   /* Check if this is a snapshot request (X-Request-Snapshot, Accept:

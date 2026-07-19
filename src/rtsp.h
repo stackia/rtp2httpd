@@ -142,6 +142,7 @@ typedef struct {
   int use_playseek_range;
   int r2h_duration;
   float r2h_duration_value;
+  int metadata_probe;
 
   /* Authentication state */
   char username[RTSP_CREDENTIAL_SIZE];    /* RTSP username for authentication */

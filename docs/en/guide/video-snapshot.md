@@ -181,6 +181,8 @@ http://192.168.1.1:5140/CCTV-1?snapshot=1
 curl -H "Accept: image/jpeg" http://192.168.1.1:5140/rtp/239.253.64.120:5140
 ```
 
+When JPEG generation succeeds, the response includes both `Content-Length` and all `R2H-*` upstream stream metadata confirmed before conversion. If snapshot conversion fails and falls back to a media stream, the media response sends the metadata once; no JPEG headers are sent in advance. See [URL Formats](/en/guide/url-formats#upstream-stream-metadata-response-headers) for the field reference.
+
 ## Troubleshooting
 
 ### Snapshot Request Returns Video Stream Instead of Image
