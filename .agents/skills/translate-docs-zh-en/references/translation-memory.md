@@ -52,3 +52,5 @@
 - Benchmark tables use emoji trophy (🏆) to mark best performers.
 - FCC collection: retain Chinese ISP names with English translation on first use.
 - Chinese tutorial URLs are kept unchanged when the target content is Chinese-only.
+- `AI 网络诊断助手` -> `AI Network Troubleshooting` for the self-contained consumer AI prompt
+  page and its sidebar entry.

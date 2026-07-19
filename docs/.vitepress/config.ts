@@ -36,6 +36,7 @@ export default defineConfig({
               { text: "URL 格式说明", link: "/guide/url-formats" },
               { text: "M3U 播放列表集成", link: "/guide/m3u-integration" },
               { text: "内置 Web 播放器", link: "/guide/web-player" },
+              { text: "AI 网络诊断助手", link: "/guide/ai-network-diagnosis" },
             ],
           },
           {
@@ -119,6 +120,7 @@ export default defineConfig({
               { text: "URL Formats", link: "/en/guide/url-formats" },
               { text: "M3U Playlist Integration", link: "/en/guide/m3u-integration" },
               { text: "Built-in Web Player", link: "/en/guide/web-player" },
+              { text: "AI Network Troubleshooting", link: "/en/guide/ai-network-diagnosis" },
             ],
           },
           {
