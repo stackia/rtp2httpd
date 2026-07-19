@@ -34,11 +34,12 @@ You can fetch `https://rtp2httpd.com/llms-full.txt` to obtain the complete rtp2h
 - rtp2httpd is a media forwarding application. It joins an upstream multicast group or connects to an FCC/RTSP/HTTP unicast upstream, then provides HTTP to downstream clients.
 - rtp2httpd is not an IGMP proxy, multicast router, VLAN manager, DHCP/IPoE/PPPoE client, or firewall manager. It cannot replace those network components.
 - igmpproxy forwards multicast between networks. rtp2httpd does not require igmpproxy when it runs directly on the device connected to the IPTV upstream. If it works only when igmpproxy is enabled, the firmware may also be changing firewall rules, interface state, multicast flags, or routes. Do not infer that rtp2httpd depends on igmpproxy.
-- A working `/status` page or `Listening on ... port 5140` log entry proves only that the downstream TCP listener works. It proves nothing about upstream reachability.
+- A working default `/status` page (or the configured status-page path) or a `Listening on ... port 5140` log entry proves only that the downstream TCP listener works. It proves nothing about upstream reachability.
 - Opening TCP port 5140 does not admit IGMP, multicast UDP, or FCC UDP return traffic.
 
 [Interface selection rules]
 
+- The hyphenated `upstream-interface*`, `mcast-rejoin-interval`, and `fcc-listen-port-range` names below are native INI configuration keys and also correspond to same-named `--` long command-line options. OpenWrt UCI uses underscore names such as `upstream_interface_multicast`, `mcast_rejoin_interval`, and `fcc_listen_port_range`. Do not mix the two syntaxes.
 - Multicast, RTSP, and HTTP priority: URL parameter `r2h-ifname` > matching `upstream-interface-multicast` / `upstream-interface-rtsp` / `upstream-interface-http` > `upstream-interface` > system routing table.
 - FCC priority: URL parameter `r2h-ifname-fcc` > `r2h-ifname` > `upstream-interface-fcc` > `upstream-interface` > system routing table.
 - An OpenWrt UCI logical interface may be named `wan85`, while the actual kernel device may be `wan.85`, `eth0.85`, or `br-vlan85`. rtp2httpd needs the actual device name shown by `ip link`.
@@ -50,8 +51,8 @@ You can fetch `https://rtp2httpd.com/llms-full.txt` to obtain the complete rtp2h
 
 1. Record the rtp2httpd version, operating system or firmware, installation method, and whether it runs in Docker or another container.
 2. Obtain one exact failing URL.
-3. Set logging to debug: use `verbosity = 4` in the configuration or four `-v` flags on the command line. Analyze the complete log for one request from start through failure.
-4. If the URL contains `fcc`, remove the FCC parameter and test the same direct multicast source first. Diagnose FCC only after direct multicast works.
+3. Set logging to debug (level 4): use `verbosity = 4` in the native INI configuration; use `-v 4` or `--verbose 4` on the command line because `-v` requires a value and must not be repeated four times; on OpenWrt UCI, use `option verbose '4'` or select Debug in LuCI. Analyze the complete log for one request from start through failure.
+4. If the URL contains `fcc=<server>:<port>`, remove `fcc` and any accompanying `fcc-type` parameter, then test the same direct multicast source. Diagnose FCC only after direct multicast works.
 5. Confirm the actual kernel interface name, verify that it is `UP`, and check for the `MULTICAST` flag.
 6. Prioritize logs, interface state, routes, configuration, and comparison tests. Treat packet capture as an advanced option only when those methods cannot distinguish the next cause and the user is comfortable with the tooling.
 
@@ -61,7 +62,7 @@ You can fetch `https://rtp2httpd.com/llms-full.txt` to obtain the complete rtp2h
 - `Failed to bind to upstream interface ...`: possible causes include a wrong interface name, insufficient permissions, unsupported platform behavior, or a container namespace mismatch. It does not necessarily mean the program stopped the later connection attempt.
 - `Multicast: Successfully joined group`: the kernel accepted the membership socket option. It does not prove that an IGMP report left the interface, the upstream accepted membership, media returned, or the firewall admitted it.
 - `Multicast: No data received for 1 seconds, closing connection`: no multicast media was processed during the timeout window. This message and the resulting HTTP 503 are symptoms, not root causes. Extending the timeout alone cannot repair completely absent packet delivery.
-- `Failed to create raw IGMP socket` or `Operation not permitted`: the optional periodic raw-IGMP rejoin path commonly lacks permission, such as `CAP_NET_RAW` in a container, or the interface has no usable IPv4 address. This does not prove that the normal initial kernel membership failed.
+- `Failed to create raw IGMP socket` or `Operation not permitted`: the optional periodic raw-IGMP rejoin path commonly lacks permission, such as `CAP_NET_RAW` in a container. This does not prove that the normal initial kernel membership failed.
 - `FCC: Server response timeout ... falling back to multicast`: no valid FCC signaling response arrived in time. Check the FCC address, protocol type, route, source address, ISP authentication, and bidirectional UDP rather than relying only on ping.
 - FCC returns an acceptance response, followed by a first-unicast-packet timeout: signaling works, but media did not reach the local FCC socket. Focus on dynamic return ports, NAT, forwarding, firewalls, and ICMP port unreachable.
 - `FCC: Unicast stream started successfully`: FCC media arrived. If the failure occurs near `Switching to multicast stream`, focus on multicast membership and media reception.
@@ -88,7 +89,7 @@ Firewall rules must account for IGMP and UDP whose destination is the channel mu
 - Use `ip route get <FCC-server-IP>` to confirm the egress device and source address. Do not rely only on the default route.
 - First use the logs to distinguish a signaling timeout, server acceptance followed by a media timeout, or failure during the switch to multicast after FCC starts.
 - FCC media may return from a source port different from the signaling port to a dynamically selected local UDP port. Opening TCP 5140 does not help.
-- If a firewall or NAT requires a fixed range, use the local port behavior in the logs when considering `fcc-listen-port-range`. The range must be large enough for the protocol and expected concurrency. A fixed range cannot repair incorrect routing or NAT.
+- If a firewall or NAT requires a fixed range, use the local port behavior in the logs when considering `fcc-listen-port-range`. Its format is `start-port` or `start-port-end-port`. Huawei FCC uses adjacent N/N+1 media and signaling ports, and concurrent connections require enough free ports. A fixed port range cannot repair incorrect routing or NAT.
 - Ping failure does not necessarily mean FCC failure, and successful ping does not prove FCC UDP works. If logs and route information remain inconclusive, optionally capture FCC UDP and inspect new ports returned by the server, the incoming media destination port, and ICMP port unreachable messages.
 
 [RTSP/HTTP upstream diagnosis]
@@ -132,7 +133,7 @@ For routed/NAT deployments, observe `any`, the ingress interface, and the egress
 - Prefer host networking for ordinary Linux multicast deployments to avoid an extra multicast network namespace. Bridge or macvlan can work, but both host-facing and container-facing paths must be inspected.
 - Inspect the effective settings: `docker inspect <container> --format '{{json .HostConfig.NetworkMode}} {{json .HostConfig.CapAdd}}'`
 - Inspect container networking: `docker exec <container> ip -brief link`, `docker exec <container> ip -brief address`, `docker exec <container> ip route`
-- Check `NET_RAW` when `mcast-rejoin-interval` uses raw IGMP and logs a permission error. Evaluate interface-binding permissions from the actual error as well. Do not recommend `--privileged` by default; use the smallest capability set.
+- `mcast-rejoin-interval` is measured in seconds, and `0` disables it. It periodically sends raw IGMP for IPv4 only and does not apply to IPv6/MLD. If enabling it produces a permission error, check `NET_RAW`. Evaluate interface-binding permissions from the actual error as well. Do not recommend `--privileged` by default; use the smallest capability set.
 
 [macOS and FreeBSD]
 

@@ -34,11 +34,12 @@
 - rtp2httpd 是流媒体转发应用：它加入上游组播组，或连接 FCC/RTSP/HTTP 单播上游，然后向下游客户端提供 HTTP。
 - rtp2httpd 不是 IGMP Proxy、组播路由器、VLAN 管理器、DHCP/IPoE/PPPoE 客户端或防火墙管理器，也不能替代这些网络组件。
 - igmpproxy 用于在不同网络间转发组播。rtp2httpd 直接运行在连接 IPTV 上游的设备时，并不要求搭配 igmpproxy。若只有开启 igmpproxy 才能工作，可能是固件同时改变了防火墙、接口状态、组播标志或路由，不能直接推断 rtp2httpd 依赖 igmpproxy。
-- `/status` 能访问或日志出现 `Listening on ... port 5140`，只证明下游 TCP 监听正常，不证明任何上游流量可达。
+- 默认的 `/status`（或实际配置的状态页路径）能访问，或日志出现 `Listening on ... port 5140`，只证明下游 TCP 监听正常，不证明任何上游流量可达。
 - 只开放 TCP 5140 不能放行 IGMP、组播 UDP 或 FCC UDP 回包。
 
 【接口选择规则】
 
+- 下文带连字符的 `upstream-interface*`、`mcast-rejoin-interval` 和 `fcc-listen-port-range` 是原生 INI 配置项名称，也对应同名的 `--` 长命令行参数。OpenWrt UCI 使用下划线名称，例如 `upstream_interface_multicast`、`mcast_rejoin_interval` 和 `fcc_listen_port_range`，不要混用两种语法。
 - 组播、RTSP、HTTP 的优先级：URL 参数 `r2h-ifname` > 对应的 `upstream-interface-multicast` / `upstream-interface-rtsp` / `upstream-interface-http` > `upstream-interface` > 系统路由表。
 - FCC 的优先级：URL 参数 `r2h-ifname-fcc` > `r2h-ifname` > `upstream-interface-fcc` > `upstream-interface` > 系统路由表。
 - OpenWrt 的 UCI 逻辑接口名可能是 `wan85`，实际内核设备名却可能是 `wan.85`、`eth0.85` 或 `br-vlan85`。rtp2httpd 需要的是 `ip link` 能看到的实际设备名。
@@ -50,8 +51,8 @@
 
 1. 记录 rtp2httpd 版本、系统/固件、安装方式，以及是否运行在 Docker 或其他容器中。
 2. 取得一个准确的失败 URL。
-3. 将日志级别设为 debug：配置文件使用 `verbosity = 4`，命令行可使用四个 `-v`。只分析一次请求从开始到失败的完整日志。
-4. 如果 URL 包含 `fcc`，先去掉 FCC 参数测试同一个直接组播地址。直接组播正常后再诊断 FCC。
+3. 将日志级别设为 debug（级别 4）：原生 INI 配置使用 `verbosity = 4`；命令行使用 `-v 4` 或 `--verbose 4`，`-v` 必须带数值，不能重复四次；OpenWrt UCI 使用 `option verbose '4'`，也可以在 LuCI 中选择 Debug。只分析一次请求从开始到失败的完整日志。
+4. 如果 URL 包含 `fcc=<服务器>:<端口>`，先去掉 `fcc` 以及同时存在的 `fcc-type` 参数，测试同一个直接组播地址。直接组播正常后再诊断 FCC。
 5. 确认实际内核接口名、接口是否 `UP`，以及是否具有 `MULTICAST` 标志。
 6. 优先使用日志、接口状态、路由、配置和对照测试。只有这些方法仍无法继续区分，并且用户具备操作条件时，才把抓包作为进阶选项。
 
@@ -61,7 +62,7 @@
 - `Failed to bind to upstream interface ...`：可能是接口名错误、权限不足、平台不支持或容器命名空间不匹配。它不等于程序已停止后续连接。
 - `Multicast: Successfully joined group`：只表示内核接受了加组 socket 选项，不代表 IGMP 报文已经发出、上游接受了成员关系、媒体包已经返回，或防火墙已经放行。
 - `Multicast: No data received for 1 seconds, closing connection`：表示超时窗口内没有处理到组播媒体包。它和随后出现的 HTTP 503 是症状，不是根因。单纯延长超时无法修复完全收不到包的问题。
-- `Failed to create raw IGMP socket` 或 `Operation not permitted`：通常是可选的周期性原始 IGMP 重新加入功能缺少权限，例如容器没有 `CAP_NET_RAW`，或接口没有可用 IPv4。它不证明普通的首次内核加组失败。
+- `Failed to create raw IGMP socket` 或 `Operation not permitted`：通常是可选的周期性原始 IGMP 重新加入功能缺少权限，例如容器没有 `CAP_NET_RAW`。它不证明普通的首次内核加组失败。
 - `FCC: Server response timeout ... falling back to multicast`：FCC 信令没有在期限内收到有效响应。检查 FCC 地址、协议类型、路由、源地址、运营商认证和双向 UDP，而不是只测试 ping。
 - FCC 已返回接受响应，但随后 first unicast packet timeout：信令已通，媒体流没有到达本地 FCC socket。重点检查动态回包端口、NAT、转发、防火墙和 ICMP port unreachable。
 - `FCC: Unicast stream started successfully`：FCC 媒体已经到达。如果之后在 `Switching to multicast stream` 附近失败，重点转向组播加入和媒体接收。
@@ -88,7 +89,7 @@
 - 使用 `ip route get <FCC服务器IP>` 确认出口设备和源地址，不能只看默认路由。
 - 先根据日志判断是信令超时、服务器已接受但媒体超时，还是 FCC 已启动后在切换组播时失败。
 - FCC 媒体可能从与信令不同的源端口返回到动态选择的本地 UDP 端口，因此开放 TCP 5140 没有帮助。
-- 如果防火墙或 NAT 必须使用固定范围，可结合日志中的本地端口行为考虑 `fcc-listen-port-range`；端口范围必须满足协议和并发连接需要。固定端口不能修复错误路由或错误 NAT。
+- 如果防火墙或 NAT 必须使用固定范围，可结合日志中的本地端口行为考虑 `fcc-listen-port-range`，格式为 `起始端口` 或 `起始端口-结束端口`。华为 FCC 使用相邻的 N/N+1 媒体与信令端口，并发连接也需要足够的空闲端口。固定端口范围不能修复错误路由或错误 NAT。
 - ping 不通不一定代表 FCC 不通，ping 能通也不代表 FCC UDP 正常。日志和路由信息仍无法判断时，再选择性抓取 FCC UDP，关注服务器返回的新端口、进入本机的媒体目标端口和 ICMP port unreachable。
 
 【RTSP/HTTP 上游诊断】
@@ -132,7 +133,7 @@ Linux 多网卡、非对称路由或策略路由场景才检查反向路径过�
 - 普通 Linux 组播部署优先使用 host 网络，避免额外的组播网络命名空间。bridge 或 macvlan 不是绝对不能用，但必须同时检查宿主机侧和容器侧。
 - 查看实际设置：`docker inspect <容器> --format '{{json .HostConfig.NetworkMode}} {{json .HostConfig.CapAdd}}'`
 - 查看容器内网络：`docker exec <容器> ip -brief link`、`docker exec <容器> ip -brief address`、`docker exec <容器> ip route`
-- `mcast-rejoin-interval` 使用原始 IGMP 且出现权限错误时，检查 `NET_RAW`。接口绑定权限也应结合实际错误判断。不要默认推荐 `--privileged`，优先使用最小能力集。
+- `mcast-rejoin-interval` 的值是秒数，`0` 表示禁用；它只为 IPv4 周期性发送原始 IGMP，不能用于 IPv6/MLD。启用后出现权限错误时检查 `NET_RAW`。接口绑定权限也应结合实际错误判断。不要默认推荐 `--privileged`，优先使用最小能力集。
 
 【macOS 和 FreeBSD】
 
