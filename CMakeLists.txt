@@ -151,7 +151,8 @@ endif()
 
 # ── Libraries ───────────────────────────────────────────────────────
 find_package(Threads REQUIRED)
-target_link_libraries(rtp2httpd PRIVATE Threads::Threads)
+# Math functions require libm on some Unix platforms; macOS maps it to libSystem.
+target_link_libraries(rtp2httpd PRIVATE Threads::Threads m)
 
 if(PLATFORM_LINUX)
   # rt library for clock_gettime (not needed on macOS)
