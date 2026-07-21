@@ -32,6 +32,7 @@ class _RTSPServerBase:
         options_session_id: str | None = None,
         play_response_headers: list[tuple[str, str]] | None = None,
         close_after_describe: bool = False,
+        reset_after_describe: bool = False,
         host: str = "127.0.0.1",
     ):
         """
@@ -48,6 +49,8 @@ class _RTSPServerBase:
                 must echo it (simulates HMS-style servers).
             close_after_describe: Close the control connection immediately after
                 sending the DESCRIBE response.
+            reset_after_describe: Reset the control connection immediately after
+                sending the DESCRIBE response.
             host: Address to listen on (use "::1" for IPv6 loopback).
         """
         self.host = host
@@ -58,6 +61,7 @@ class _RTSPServerBase:
         self._options_session_id = options_session_id
         self._play_response_headers = play_response_headers or []
         self._close_after_describe = close_after_describe
+        self._reset_after_describe = reset_after_describe
         self._server_sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -197,6 +201,9 @@ class _RTSPServerBase:
                             "Content-Length: %d\r\n\r\n%s" % (cseq, cb_header, len(sdp), sdp)
                         ).encode()
                     )
+                    if self._reset_after_describe:
+                        conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+                        return
                     if self._close_after_describe:
                         return
                 elif method == "SETUP":
@@ -247,6 +254,7 @@ class MockRTSPServer(_RTSPServerBase):
         options_session_id: str | None = None,
         play_response_headers: list[tuple[str, str]] | None = None,
         close_after_describe: bool = False,
+        reset_after_describe: bool = False,
         host: str = "127.0.0.1",
     ):
         super().__init__(
@@ -257,6 +265,7 @@ class MockRTSPServer(_RTSPServerBase):
             options_session_id=options_session_id,
             play_response_headers=play_response_headers,
             close_after_describe=close_after_describe,
+            reset_after_describe=reset_after_describe,
             host=host,
         )
         self._num_packets = num_packets

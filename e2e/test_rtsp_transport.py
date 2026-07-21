@@ -120,6 +120,29 @@ class TestRTSPTCPStream:
         finally:
             rtsp.stop()
 
+    def test_head_parses_clock_form_npt_duration(self, shared_r2h):
+        sdp = (
+            "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=T\r\n"
+            "t=0 0\r\nm=video 0 RTP/AVP 33\r\n"
+            "a=range:npt=00:00:10.25-01:30:40.75\r\na=control:*\r\n"
+        )
+        rtsp = MockRTSPServer(custom_sdp=sdp)
+        rtsp.start()
+        try:
+            status, headers, body = http_request(
+                "127.0.0.1",
+                shared_r2h.port,
+                "HEAD",
+                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                timeout=10.0,
+            )
+            assert status == 200
+            assert body == b""
+            assert get_header(headers, "R2H-Media-Duration") == "5430.5"
+            assert rtsp.requests_received == ["OPTIONS", "DESCRIBE"]
+        finally:
+            rtsp.stop()
+
     def test_head_metadata_takes_precedence_over_duration_query(self, shared_r2h):
         sdp = (
             "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=T\r\n"
@@ -148,6 +171,25 @@ class TestRTSPTCPStream:
 
     def test_head_survives_upstream_close_after_describe(self, shared_r2h):
         rtsp = MockRTSPServer(close_after_describe=True)
+        rtsp.start()
+        try:
+            status, headers, body = http_request(
+                "127.0.0.1",
+                shared_r2h.port,
+                "HEAD",
+                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                timeout=10.0,
+            )
+            assert status == 200
+            assert body == b""
+            assert get_header(headers, "R2H-Upstream-Protocol") == "rtsp"
+            assert get_header(headers, "R2H-Upstream-Payload") == "mp2t-rtp"
+            assert rtsp.requests_received == ["OPTIONS", "DESCRIBE"]
+        finally:
+            rtsp.stop()
+
+    def test_head_survives_upstream_reset_after_describe(self, shared_r2h):
+        rtsp = MockRTSPServer(reset_after_describe=True)
         rtsp.start()
         try:
             status, headers, body = http_request(

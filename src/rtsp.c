@@ -934,7 +934,7 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
 
   /* Check for connection errors or hangup */
   else if ((events & (POLLER_HUP | POLLER_ERR | POLLER_RDHUP)) &&
-           !(session->metadata_probe && session->awaiting_response && (events & POLLER_IN) && !(events & POLLER_ERR))) {
+           !(session->metadata_probe && session->awaiting_response && (events & POLLER_IN))) {
     if (events & POLLER_ERR) {
       int sock_error = 0;
       socklen_t error_len = sizeof(sock_error);
@@ -1012,7 +1012,8 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
          * one edge-triggered event. Keep draining while each recv makes
          * progress so a fragmented DESCRIBE body is parsed before HUP. */
       } while (response_result == RTSP_RESPONSE_OK && session->metadata_probe && session->awaiting_response &&
-               (events & (POLLER_HUP | POLLER_RDHUP)) && session->response_buffer_pos > previous_buffer_pos);
+               (events & (POLLER_HUP | POLLER_ERR | POLLER_RDHUP)) &&
+               session->response_buffer_pos > previous_buffer_pos);
       if (response_result < 0) {
         logger(LOG_ERROR, "RTSP: Failed to receive response");
         rtsp_session_set_state(session, RTSP_STATE_ERROR);
@@ -1024,6 +1025,15 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
       }
       if (response_result == RTSP_RESPONSE_METADATA_READY) {
         return -3;
+      }
+
+      /* A terminal socket event may be reported together with readable
+       * response data. The final DESCRIBE response above completes the probe;
+       * any earlier or incomplete response still requires a live connection. */
+      if (session->metadata_probe && (events & (POLLER_HUP | POLLER_ERR | POLLER_RDHUP))) {
+        logger(LOG_ERROR, "RTSP: Metadata probe connection closed before DESCRIBE completed");
+        rtsp_session_set_state(session, RTSP_STATE_ERROR);
+        return -1;
       }
 
       /* Re-enable POLLER_OUT for next request */
@@ -2821,6 +2831,51 @@ static int rtsp_sdp_describes_mp2t_rtp(const char *sdp_body) {
   return 0;
 }
 
+static int rtsp_parse_npt_time(const char *value, const char **end_out, double *seconds_out) {
+  char *component_end;
+  double first_component;
+
+  errno = 0;
+  first_component = strtod(value, &component_end);
+  if (component_end == value || errno == ERANGE || !isfinite(first_component) || first_component < 0.0)
+    return -1;
+
+  if (*component_end != ':') {
+    *end_out = component_end;
+    *seconds_out = first_component;
+    return 0;
+  }
+
+  if (floor(first_component) != first_component)
+    return -1;
+
+  const char *minutes_start = component_end + 1;
+  char *minutes_end;
+  long minutes;
+
+  errno = 0;
+  minutes = strtol(minutes_start, &minutes_end, 10);
+  if (minutes_end == minutes_start || errno == ERANGE || minutes < 0 || minutes > 59 || *minutes_end != ':')
+    return -1;
+
+  const char *seconds_start = minutes_end + 1;
+  char *seconds_end;
+  double seconds;
+
+  errno = 0;
+  seconds = strtod(seconds_start, &seconds_end);
+  if (seconds_end == seconds_start || errno == ERANGE || !isfinite(seconds) || seconds < 0.0 || seconds >= 60.0)
+    return -1;
+
+  double total = first_component * 3600.0 + (double)minutes * 60.0 + seconds;
+  if (!isfinite(total))
+    return -1;
+
+  *end_out = seconds_end;
+  *seconds_out = total;
+  return 0;
+}
+
 /**
  * Parse DESCRIBE response SDP body in a single pass.
  *
@@ -2907,19 +2962,16 @@ static void rtsp_parse_describe_sdp(rtsp_session_t *session, const char *header_
       len = (size_t)(val_end - val);
 
       if (len > 0 && len < sizeof(buf)) {
-        char *start_end;
-        char *end_end;
+        const char *start_end;
+        const char *end_end;
         double range_start;
         double range_end;
 
         memcpy(buf, val, len);
         buf[len] = '\0';
-        errno = 0;
-        range_start = strtod(buf, &start_end);
-        if (start_end != buf && *start_end == '-') {
-          range_end = strtod(start_end + 1, &end_end);
-          if (end_end != start_end + 1 && *end_end == '\0' && errno != ERANGE && isfinite(range_start) &&
-              isfinite(range_end) && range_end >= range_start) {
+        if (rtsp_parse_npt_time(buf, &start_end, &range_start) == 0 && *start_end == '-') {
+          if (rtsp_parse_npt_time(start_end + 1, &end_end, &range_end) == 0 && *end_end == '\0' &&
+              range_end >= range_start) {
             logger(LOG_DEBUG, "RTSP: Range: %.3f-%.3f", range_start, range_end);
             if (session->r2h_duration)
               session->r2h_duration_value = (float)range_end;
