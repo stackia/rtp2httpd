@@ -54,7 +54,7 @@ import type { Presenter } from "./presenters";
  * taps are accumulated through easuTap and normalized, then de-ringed by
  * clamping to the range of the four central texels (f,g,j,k).
  */
-const EASU_FRAGMENT_SHADER = `#version 300 es
+const EASU_FRAGMENT_SHADER = /*glsl*/`#version 300 es
 precision highp float;
 precision highp int;
 
@@ -248,7 +248,7 @@ void main() {
  * noise/grain), and blends the cross taps with the center by that lobe
  * before applying the CONTRAST/SATURATION lift.
  */
-const RCAS_FRAGMENT_SHADER = `#version 300 es
+const RCAS_FRAGMENT_SHADER = /*glsl*/`#version 300 es
 precision highp float;
 precision highp int;
 

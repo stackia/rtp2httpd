@@ -41,7 +41,7 @@ export function createProgram(gl: WebGL2RenderingContext, vertexSource: string, 
  * v_texCoord has (0,0) at the top-left of the video frame (texel row 0 = top video row,
  * so Y is flipped relative to clip space). Field parity math relies on this orientation.
  */
-export const FULLSCREEN_VERTEX_SHADER = `#version 300 es
+export const FULLSCREEN_VERTEX_SHADER = /*glsl*/`#version 300 es
 out vec2 v_texCoord;
 void main() {
   vec2 pos = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
@@ -57,7 +57,7 @@ void main() {
  * fed to a presenter directly (no source stage) needs the same Y-flip as
  * `FULLSCREEN_VERTEX_SHADER`. `u_flipY` selects which one applies per draw.
  */
-export const FRAMEBUFFER_VERTEX_SHADER = `#version 300 es
+export const FRAMEBUFFER_VERTEX_SHADER = /*glsl*/`#version 300 es
 uniform bool u_flipY;
 out vec2 v_texCoord;
 void main() {

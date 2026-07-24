@@ -65,7 +65,7 @@ import { type RenderParams, registerFilter, type VideoFilter } from "./types";
  * it is older in cur, newer in next.
  */
 
-const FRAGMENT_SHADER = `#version 300 es
+const FRAGMENT_SHADER =  /*glsl*/`#version 300 es
 precision highp float;
 
 uniform sampler2D u_prev;

@@ -75,7 +75,7 @@ const READBACK_POOL_SIZE = 4;
  * Prepended to every detection fragment shader so the luma weights live in one
  * place.
  */
-const GLSL_LUMA_PRELUDE = `#version 300 es
+const GLSL_LUMA_PRELUDE = /*glsl*/`#version 300 es
 precision highp float;
 
 float lumaOfRgb(vec3 rgb) {
@@ -91,7 +91,7 @@ float lumaAt(sampler2D tex, vec2 uv) {
  * Marker pass — one fullscreen pass over the video texture.
  * Output: R = combed (0.0 or 1.0), G = abs luma diff vs prev frame [0,1].
  */
-const MARKER_FRAGMENT_SHADER = `${GLSL_LUMA_PRELUDE}
+const MARKER_FRAGMENT_SHADER = /*glsl*/`${GLSL_LUMA_PRELUDE}
 uniform sampler2D u_cur;
 uniform sampler2D u_prev;
 uniform float u_height;
@@ -116,7 +116,7 @@ void main() {
  * Reduction pass — 2×2 box filter, reused for every step of the chain.
  * u_texelSize is 1/inputWidth, 1/inputHeight of the current step's input.
  */
-const REDUCTION_FRAGMENT_SHADER = `#version 300 es
+const REDUCTION_FRAGMENT_SHADER = /*glsl*/`#version 300 es
 precision highp float;
 
 uniform sampler2D u_input;
@@ -146,7 +146,7 @@ void main() {
  * main maps v_texCoord.y in [0,1] to half-height FBO rows, each corresponding to
  * an even source row (0, 2, 4, ...).
  */
-const FIELD_ORDER_FRAGMENT_SHADER = `${GLSL_LUMA_PRELUDE}
+const FIELD_ORDER_FRAGMENT_SHADER = /*glsl*/`${GLSL_LUMA_PRELUDE}
 uniform sampler2D u_prev;
 uniform sampler2D u_cur;
 uniform float u_height;
