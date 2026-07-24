@@ -32,7 +32,7 @@ export interface Presenter {
   destroy(gl: WebGL2RenderingContext): void;
 }
 
-const PASSTHROUGH_FRAGMENT_SHADER = /*glsl*/`#version 300 es
+const PASSTHROUGH_FRAGMENT_SHADER = /*glsl*/ `#version 300 es
 precision highp float;
 
 uniform sampler2D u_input;
