@@ -65,6 +65,18 @@ static int rtsp_parse_www_authenticate(rtsp_session_t *session, const char *www_
 static void rtsp_build_digest_response(rtsp_session_t *session, const char *method, const char *uri, char *response_out,
                                        size_t response_size);
 static int rtsp_build_basic_auth_header(rtsp_session_t *session, char *output, size_t output_size);
+static int rtsp_handle_terminal_socket_event(rtsp_session_t *session, uint32_t events);
+
+/**
+ * Return the metadata block this session should update, or NULL when there is
+ * nothing to update (no client connection, or the response headers have
+ * already been sent and the snapshot is therefore final).
+ */
+static stream_metadata_t *rtsp_metadata(const rtsp_session_t *session) {
+  if (!session || !session->conn || session->conn->stream.metadata.frozen)
+    return NULL;
+  return &session->conn->stream.metadata;
+}
 
 static const char *rtsp_get_user_agent(void) {
   if (config.rtsp_user_agent && config.rtsp_user_agent[0] != '\0') {
@@ -286,6 +298,8 @@ void rtsp_session_init(rtsp_session_t *session) {
   session->r2h_duration = 0;
   session->r2h_duration_value = -1;
   session->metadata_probe = 0;
+  session->peer_closed = 0;
+  session->connect_generation = 0;
 
   /* Initialize transport parameters - mode will be negotiated during SETUP */
   session->transport_mode = RTSP_TRANSPORT_TCP;    /* Default preference */
@@ -830,6 +844,11 @@ int rtsp_connect(rtsp_session_t *session) {
   char port_str[16];
   int gai_result;
 
+  /* A fresh control connection: any close seen on the previous one (redirect,
+   * TEARDOWN reconnect) no longer applies. */
+  session->peer_closed = 0;
+  session->connect_generation++;
+
   /* Resolve hostname first (dual-stack: IPv6 and IPv4 candidates), so the
    * upstream address family is known before creating UDP/STUN sockets */
   rtsp_free_connect_results(session);
@@ -865,6 +884,50 @@ int rtsp_connect(rtsp_session_t *session) {
   }
 
   return rtsp_try_next_candidate(session);
+}
+
+/**
+ * Handle a terminal condition (peer close or socket error) on the control
+ * socket.  Called either directly from the event handler, or after the read
+ * path has parsed a final response that arrived together with the close.
+ * @return the value rtsp_handle_socket_event() should propagate.
+ */
+static int rtsp_handle_terminal_socket_event(rtsp_session_t *session, uint32_t events) {
+  if (events & POLLER_ERR) {
+    int sock_error = 0;
+    socklen_t error_len = sizeof(sock_error);
+    if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error, &error_len) == 0 && sock_error != 0) {
+      logger(LOG_ERROR, "RTSP: Socket error: %s", strerror(sock_error));
+    } else {
+      logger(LOG_ERROR, "RTSP: Socket error event received");
+    }
+  } else {
+    logger(LOG_INFO, "RTSP: Server closed connection");
+  }
+
+  /* If we're in TEARDOWN states, server closing connection is acceptable
+   * (some servers don't send TEARDOWN response before closing) */
+  if (session->state == RTSP_STATE_SENDING_TEARDOWN || session->state == RTSP_STATE_AWAITING_TEARDOWN) {
+    logger(LOG_DEBUG, "RTSP: Server closed connection during TEARDOWN (acceptable)");
+    rtsp_force_cleanup(session);
+    return STREAM_EVENT_CLOSE;
+  }
+
+  /* During PLAYING: upstream is done — drain pending client output
+   * before disconnecting regardless of error/hangup distinction. */
+  if (session->state == RTSP_STATE_PLAYING) {
+    logger(LOG_INFO, "RTSP: Upstream closed during PLAYING, draining client");
+    rtsp_force_cleanup(session);
+    if (session->conn && session->conn->state != CONN_CLOSING) {
+      session->conn->state = CONN_CLOSING;
+      connection_epoll_update_events(session->conn->epfd, session->conn->fd,
+                                     POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+    }
+    return STREAM_EVENT_OK;
+  }
+
+  rtsp_session_set_state(session, RTSP_STATE_ERROR);
+  return STREAM_EVENT_CLOSE; /* Connection closed or error */
 }
 
 int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
@@ -932,44 +995,15 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
     /* Now pending_request is ready, will be sent when POLLER_OUT fires */
   }
 
-  /* Check for connection errors or hangup */
+  /* Check for connection errors or hangup.  When the socket is also readable
+   * with a response outstanding, drain it first: a peer can deliver its final
+   * response and EOF in a single edge-triggered event, and that response may be
+   * exactly what completes the exchange (RTSP HEAD probes routinely see the
+   * DESCRIBE response and FIN together).  The read path below reports the
+   * close through this same helper once the response has been parsed. */
   else if ((events & (POLLER_HUP | POLLER_ERR | POLLER_RDHUP)) &&
-           !(session->metadata_probe && session->awaiting_response && (events & POLLER_IN))) {
-    if (events & POLLER_ERR) {
-      int sock_error = 0;
-      socklen_t error_len = sizeof(sock_error);
-      if (getsockopt(session->socket, SOL_SOCKET, SO_ERROR, &sock_error, &error_len) == 0 && sock_error != 0) {
-        logger(LOG_ERROR, "RTSP: Socket error: %s", strerror(sock_error));
-      } else {
-        logger(LOG_ERROR, "RTSP: Socket error event received");
-      }
-    } else if (events & (POLLER_HUP | POLLER_RDHUP)) {
-      logger(LOG_INFO, "RTSP: Server closed connection");
-    }
-
-    /* If we're in TEARDOWN states, server closing connection is acceptable
-     * (some servers don't send TEARDOWN response before closing) */
-    if (session->state == RTSP_STATE_SENDING_TEARDOWN || session->state == RTSP_STATE_AWAITING_TEARDOWN) {
-      logger(LOG_DEBUG, "RTSP: Server closed connection during TEARDOWN (acceptable)");
-      rtsp_force_cleanup(session);
-      return -1;
-    }
-
-    /* During PLAYING: upstream is done — drain pending client output
-     * before disconnecting regardless of error/hangup distinction. */
-    if (session->state == RTSP_STATE_PLAYING) {
-      logger(LOG_INFO, "RTSP: Upstream closed during PLAYING, draining client");
-      rtsp_force_cleanup(session);
-      if (session->conn && session->conn->state != CONN_CLOSING) {
-        session->conn->state = CONN_CLOSING;
-        connection_epoll_update_events(session->conn->epfd, session->conn->fd,
-                                       POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
-      }
-      return 0;
-    }
-
-    rtsp_session_set_state(session, RTSP_STATE_ERROR);
-    return -1; /* Connection closed or error */
+           !(session->awaiting_response && (events & POLLER_IN))) {
+    return rtsp_handle_terminal_socket_event(session, events);
   }
 
   /* Handle writable socket - try to send pending data */
@@ -1005,35 +1039,39 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
     if (session->awaiting_response) {
       int response_result;
       size_t previous_buffer_pos;
+      unsigned connect_generation = session->connect_generation;
       do {
         previous_buffer_pos = session->response_buffer_pos;
         response_result = rtsp_try_receive_response(session);
-        /* A closing probe socket can deliver its final response and EOF in
-         * one edge-triggered event. Keep draining while each recv makes
-         * progress so a fragmented DESCRIBE body is parsed before HUP. */
-      } while (response_result == RTSP_RESPONSE_OK && session->metadata_probe && session->awaiting_response &&
+        /* A closing socket can deliver its final response and EOF in one
+         * edge-triggered event, and there will be no further readable event to
+         * finish the job.  Keep draining while each recv makes progress so a
+         * fragmented response is parsed before the close is acted on. */
+      } while (response_result == RTSP_RESPONSE_OK && session->awaiting_response &&
                (events & (POLLER_HUP | POLLER_ERR | POLLER_RDHUP)) &&
                session->response_buffer_pos > previous_buffer_pos);
       if (response_result < 0) {
         logger(LOG_ERROR, "RTSP: Failed to receive response");
         rtsp_session_set_state(session, RTSP_STATE_ERROR);
-        return -1;
+        return STREAM_EVENT_CLOSE;
       }
 
       if (response_result == RTSP_RESPONSE_DURATION) {
-        return -2;
+        return STREAM_EVENT_DURATION_READY;
       }
       if (response_result == RTSP_RESPONSE_METADATA_READY) {
-        return -3;
+        return STREAM_EVENT_METADATA_READY;
       }
 
-      /* A terminal socket event may be reported together with readable
-       * response data. The final DESCRIBE response above completes the probe;
-       * any earlier or incomplete response still requires a live connection. */
-      if (session->metadata_probe && (events & (POLLER_HUP | POLLER_ERR | POLLER_RDHUP))) {
-        logger(LOG_ERROR, "RTSP: Metadata probe connection closed before DESCRIBE completed");
-        rtsp_session_set_state(session, RTSP_STATE_ERROR);
-        return -1;
+      /* The response that arrived with the close (if any) has now been parsed.
+       * Terminal successes returned above; everything else still needs a live
+       * connection, so honour the close now instead of letting the session wait
+       * for a reply that can never come.  A response that replaced the control
+       * connection (redirect, TEARDOWN reconnect) is exempt: the close belonged
+       * to the connection we just walked away from. */
+      if (session->connect_generation == connect_generation &&
+          (session->peer_closed || (events & (POLLER_HUP | POLLER_ERR | POLLER_RDHUP)))) {
+        return rtsp_handle_terminal_socket_event(session, events);
       }
 
       /* Re-enable POLLER_OUT for next request */
@@ -1314,8 +1352,6 @@ static int rtsp_try_send_pending(rtsp_session_t *session) {
  *   RTSP_RESPONSE_METADATA_READY: HEAD metadata probe completed
  */
 static int rtsp_try_receive_response(rtsp_session_t *session) {
-  int peer_closed = 0;
-
   if (!session->awaiting_response) {
     return RTSP_RESPONSE_OK;
   }
@@ -1342,8 +1378,10 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
         return RTSP_RESPONSE_ERROR;
       }
       /* The peer may close immediately after its final response. Parse any
-       * bytes already buffered before treating EOF as an error. */
-      peer_closed = 1;
+       * bytes already buffered before treating EOF as an error.  The flag is
+       * sticky so the caller still ends the session once that last response
+       * has been handled. */
+      session->peer_closed = 1;
     } else {
       session->response_buffer_pos += (size_t)received;
     }
@@ -1366,7 +1404,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
       rtsp_parse_response_header(session, (const char *)session->response_buffer, &response_offset, &response_len);
 
   if (parse_result == 1) {
-    if (peer_closed) {
+    if (session->peer_closed) {
       logger(LOG_ERROR, "RTSP: Connection closed with an incomplete response");
       session->awaiting_keepalive_response = 0;
       return RTSP_RESPONSE_ERROR;
@@ -1496,9 +1534,12 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
   if (session->state == RTSP_STATE_AWAITING_DESCRIBE) {
     rtsp_parse_describe_sdp(session, (const char *)session->response_buffer + response_offset,
                             (const char *)session->response_buffer + response_offset + response_len);
-    rtsp_session_set_state(session, RTSP_STATE_DESCRIBED);
     /* HEAD metadata probes always stop after DESCRIBE, even when the URL also
-     * contains the legacy r2h-duration query parameter. */
+     * contains the legacy r2h-duration query parameter.  Neither terminal case
+     * advances past DESCRIBE, so the state is deliberately left on
+     * AWAITING_DESCRIBE: moving it to DESCRIBED would make the periodic tick
+     * eligible to start a SETUP for a request whose response has already been
+     * produced, and would drop the handshake timeout that bounds it. */
     if (session->metadata_probe) {
       session->response_buffer_pos = 0;
       return RTSP_RESPONSE_METADATA_READY;
@@ -1507,6 +1548,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
       session->response_buffer_pos = 0;
       return RTSP_RESPONSE_DURATION;
     }
+    rtsp_session_set_state(session, RTSP_STATE_DESCRIBED);
     session->response_buffer_pos = 0;
     return RTSP_RESPONSE_ADVANCE;
   }
@@ -2343,17 +2385,14 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
     /* Increment retry counter */
     session->auth_retry_count++;
 
-    if (session->conn && !session->conn->stream.metadata.frozen) {
-      stream_metadata_t *metadata = &session->conn->stream.metadata;
-      if (session->state == RTSP_STATE_AWAITING_DESCRIBE) {
-        metadata->upstream_payload = STREAM_PAYLOAD_UNKNOWN;
-        metadata->media_duration_known = 0;
-      } else if (session->state == RTSP_STATE_AWAITING_SETUP) {
-        metadata->upstream_transport = STREAM_TRANSPORT_UNKNOWN;
-      } else if (session->state == RTSP_STATE_AWAITING_PLAY) {
-        metadata->playback_scale_known = 0;
-        metadata->playback_range[0] = '\0';
-      }
+    /* The request about to be retried will answer these fields again; drop the
+     * unauthenticated attempt's answers so a failed retry cannot report them. */
+    if (session->state == RTSP_STATE_AWAITING_DESCRIBE) {
+      stream_metadata_forget(rtsp_metadata(session), STREAM_METADATA_STAGE_DESCRIBE);
+    } else if (session->state == RTSP_STATE_AWAITING_SETUP) {
+      stream_metadata_forget(rtsp_metadata(session), STREAM_METADATA_STAGE_SETUP);
+    } else if (session->state == RTSP_STATE_AWAITING_PLAY) {
+      stream_metadata_forget(rtsp_metadata(session), STREAM_METADATA_STAGE_PLAY);
     }
 
     /* Move state back to retry the same request */
@@ -2711,11 +2750,11 @@ static void rtsp_parse_play_metadata(rtsp_session_t *session, const char *respon
   char *scale_header;
   char *range_header;
 
-  if (!session || !session->conn || !response)
+  if (!response)
     return;
 
-  metadata = &session->conn->stream.metadata;
-  if (metadata->frozen)
+  metadata = rtsp_metadata(session);
+  if (!metadata)
     return;
 
   scale_header = rtsp_find_header(response, "Scale");
@@ -2894,7 +2933,7 @@ static int rtsp_parse_npt_time(const char *value, const char **end_out, double *
  * @param sdp_body     Start of the SDP body (right after \\r\\n\\r\\n)
  */
 static void rtsp_parse_describe_sdp(rtsp_session_t *session, const char *header_start, const char *sdp_body) {
-  stream_metadata_t *metadata = session->conn ? &session->conn->stream.metadata : NULL;
+  stream_metadata_t *metadata = rtsp_metadata(session);
   session->setup_url[0] = '\0';
 
   char *content_base = rtsp_find_header(header_start, "Content-Base");
@@ -2903,7 +2942,7 @@ static void rtsp_parse_describe_sdp(rtsp_session_t *session, const char *header_
   if (*sdp_body == '\0')
     goto done;
 
-  if (metadata && !metadata->frozen && rtsp_sdp_describes_mp2t_rtp(sdp_body)) {
+  if (metadata && rtsp_sdp_describes_mp2t_rtp(sdp_body)) {
     metadata->upstream_payload = STREAM_PAYLOAD_MP2T_RTP;
   }
 
@@ -2975,7 +3014,7 @@ static void rtsp_parse_describe_sdp(rtsp_session_t *session, const char *header_
             logger(LOG_DEBUG, "RTSP: Range: %.3f-%.3f", range_start, range_end);
             if (session->r2h_duration)
               session->r2h_duration_value = (float)range_end;
-            if (metadata && !metadata->frozen) {
+            if (metadata) {
               metadata->media_duration = range_end - range_start;
               metadata->media_duration_known = 1;
             }
@@ -3067,6 +3106,7 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
   char *client_port_param;
   char *source_param;
   char source_address[RTSP_SERVER_HOST_SIZE] = {0};
+  stream_metadata_t *metadata = rtsp_metadata(session);
 
   logger(LOG_DEBUG, "RTSP: Parsing server transport response: %s", transport);
 
@@ -3089,8 +3129,8 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
   if (strstr(transport, "TCP") || strstr(transport, "interleaved=")) {
     /* TCP transport mode */
     session->transport_mode = RTSP_TRANSPORT_TCP;
-    if (session->conn && !session->conn->stream.metadata.frozen)
-      session->conn->stream.metadata.upstream_transport = STREAM_TRANSPORT_TCP_INTERLEAVED;
+    if (metadata)
+      metadata->upstream_transport = STREAM_TRANSPORT_TCP_INTERLEAVED;
     session->keepalive_interval_ms = RTSP_KEEPALIVE_INTERVAL_MS;
     session->last_keepalive_ms = 0;
     session->keepalive_pending = 0;
@@ -3112,8 +3152,8 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
   } else {
     /* UDP transport mode */
     session->transport_mode = RTSP_TRANSPORT_UDP;
-    if (session->conn && !session->conn->stream.metadata.frozen)
-      session->conn->stream.metadata.upstream_transport = STREAM_TRANSPORT_UDP;
+    if (metadata)
+      metadata->upstream_transport = STREAM_TRANSPORT_UDP;
     session->keepalive_interval_ms = RTSP_KEEPALIVE_INTERVAL_MS;
     session->last_keepalive_ms = 0;
     session->keepalive_pending = 0;
@@ -3190,8 +3230,8 @@ static int rtsp_handle_redirect(rtsp_session_t *session, const char *location) {
    * session learned from the previous server so requests to the
    * redirected-to server don't carry a stale Session header. */
   session->session_id[0] = '\0';
-  if (session->conn)
-    stream_metadata_reset_rtsp_negotiation(&session->conn->stream.metadata);
+  /* Same for metadata: the new server renegotiates every stage from scratch. */
+  stream_metadata_forget(rtsp_metadata(session), STREAM_METADATA_STAGE_ALL);
 
   /* Close current connection and remove from poller properly */
   if (session->socket >= 0) {
