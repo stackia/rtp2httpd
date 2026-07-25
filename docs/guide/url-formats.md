@@ -93,7 +93,7 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-ifname=eth0
 
 ## 上游流 Metadata 响应头
 
-RTSP、普通组播和 FCC 流会在媒体响应中返回已确认的 `R2H-*` Metadata。未知、无效或在响应发出时尚未确认的字段会被省略。
+RTSP、普通组播和 FCC 流会在 HTTP Headers 带上以下 `R2H-*` Metadata：
 
 | 响应头 | 含义 |
 | --- | --- |
@@ -104,17 +104,7 @@ RTSP、普通组播和 FCC 流会在媒体响应中返回已确认的 `R2H-*` Me
 | `R2H-Playback-Range` | RTSP `PLAY` 响应明确确认的播放范围。 |
 | `R2H-Media-Duration` | SDP 有限 `npt` 范围的时长，单位为秒。 |
 | `R2H-FCC-Type` | 已配置的 FCC 协议：`telecom` 或 `huawei`。 |
-| `R2H-FCC-Status` | 起播时 FCC 单播已输出为 `active`；从组播起播为 `fallback`。 |
-
-这些响应头是发送 HTTP Header 时的状态快照，流启动后的状态变化不会更新它们。不会返回 FEC 工作状态，也不会暴露 RTSP Session、认证信息、上游地址、端口或原始 SDP 等敏感信息。
-
-MPEG-TS 响应和成功生成的 JPEG 快照都会携带当时已经确认的字段。`HEAD` 请求的行为有所不同：
-
-- RTSP `HEAD` 只连接上游并执行 `OPTIONS` 和 `DESCRIBE`，因此只可能返回 Protocol，以及 SDP 能确认的 Payload 和 Duration；不会执行 `SETUP` 或 `PLAY`。
-- 组播和 FCC `HEAD` 不加入组播、不发送 FCC 请求，只返回 Protocol，以及已配置时的 FCC Type。
-- HTTP 反向代理的 `HEAD` 仍由上游 HTTP 服务处理。
-
-配置 `cors-allow-origin` 后，以上八个字段也会列入 `Access-Control-Expose-Headers`，网页 JavaScript 可以通过 Fetch API 读取。
+| `R2H-FCC-Status` | 从 FCC 单播起播为 `active`；从组播起播为 `fallback`。 |
 
 ## HTTP 反向代理
 

@@ -38,6 +38,10 @@
 - 卡顿 -> stuttering
 - 后台 -> admin panel / admin interface
 - 画质增强 -> video enhancement
+- 存活探测 -> liveness probe
+- 行为变更 -> Behavior change
+- 响应头 -> response header
+- 上游流 Metadata -> upstream stream metadata (the `R2H-*` headers)
 
 ### China-specific Terms
 
@@ -54,3 +58,12 @@
 - Chinese tutorial URLs are kept unchanged when the target content is Chinese-only.
 - `AI 网络诊断助手` -> `AI Network Troubleshooting` for the self-contained consumer AI prompt
   page and its sidebar entry.
+
+## Admonition Style
+
+Both doc trees use GitHub alert syntax (`> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`,
+`> [!WARNING]`, `> [!CAUTION]`), **not** VitePress `::: tip` / `::: warning` containers.
+VitePress renders both, but the whole repo uses the GitHub form — keep it that way.
+
+GitHub alerts cannot carry a custom title. If a Chinese source needs one, put it as a
+bold lead-in inside the alert body (`> **行为变更**：…`) and mirror that in English.
