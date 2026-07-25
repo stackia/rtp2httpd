@@ -662,7 +662,7 @@ int fcc_handle_unicast_media(stream_context_t *ctx, buffer_ref_t *buf_ref) {
   }
 
   /* Forward RTP payload to client (with reordering) */
-  stream_process_rtp_payload(ctx, buf_ref);
+  stream_process_rtp_payload(ctx, buf_ref, STREAM_MEDIA_ORIGIN_FCC_UNICAST);
 
   /* Check if we should terminate FCC based on reorder's delivered sequence.
    * base_seq - 1 is the last sequence number successfully delivered.
@@ -765,7 +765,7 @@ int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref) {
     while (node) {
       /* Queue each buffer for zero-copy send */
       buffer_ref_t *next = node->send_next;
-      int processed_bytes = stream_process_rtp_payload(ctx, node);
+      int processed_bytes = stream_process_rtp_payload(ctx, node, STREAM_MEDIA_ORIGIN_FCC_MULTICAST);
       if (likely(processed_bytes > 0)) {
         flushed_bytes += (uint64_t)processed_bytes;
       }
@@ -782,7 +782,7 @@ int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref) {
 
   /* Forward multicast data to client (true zero-copy) or capture I-frame
    * (snapshot) */
-  stream_process_rtp_payload(ctx, buf_ref);
+  stream_process_rtp_payload(ctx, buf_ref, STREAM_MEDIA_ORIGIN_FCC_MULTICAST);
 
   return 0;
 }

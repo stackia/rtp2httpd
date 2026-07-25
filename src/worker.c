@@ -507,12 +507,24 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
           int res = stream_handle_fd_event(&c->stream, fd_ready, events[e].events, now);
           if (res < 0) {
             /* Send 200 for r2h-duration request */
-            if (res == -2) {
+            if (res == STREAM_EVENT_DURATION_READY) {
               send_http_headers(c, STATUS_200, "application/json", NULL);
               char response[64];
               snprintf(response, sizeof(response), "{\"duration\": \"%0.3f\"}", c->stream.rtsp.r2h_duration_value);
 
               connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
+            } else if (res == STREAM_EVENT_METADATA_READY) {
+              /* A metadata probe has no RTSP media session to tear down. Close
+               * and unregister its control socket before queuing the HEAD
+               * response so a later upstream HUP cannot close the client. */
+              if (stream_context_cleanup(&c->stream) != 0) {
+                logger(LOG_ERROR, "Worker: Metadata probe unexpectedly required async cleanup");
+                http_send_503(c);
+                continue;
+              }
+              c->streaming = 0;
+              stream_send_http_headers(c, "video/mp2t", NULL);
+              connection_queue_output_and_flush(c, NULL, 0);
             } else if (!c->headers_sent && c->state != CONN_CLOSING) {
               /* Send 503 if headers not sent yet (no data ever arrived) */
               http_send_503(c);

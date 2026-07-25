@@ -195,7 +195,7 @@ def _assert_rtsp_user_agent(port: int, expected_user_agent: str):
     rtsp = MockRTSPServer(custom_sdp=_RTSP_DURATION_SDP)
     rtsp.start()
     try:
-        status, _, body = http_get(
+        status, headers, body = http_get(
             "127.0.0.1",
             port,
             "/rtsp/127.0.0.1:%d/stream?r2h-duration=1" % rtsp.port,
@@ -203,6 +203,7 @@ def _assert_rtsp_user_agent(port: int, expected_user_agent: str):
         )
         assert status == 200, f"Expected 200, got {status}"
         assert b'"duration"' in body, "Expected RTSP duration response"
+        assert not any(name.lower().startswith("r2h-") for name in headers)
 
         option_reqs = [req for req in rtsp.requests_detailed if req["method"] == "OPTIONS"]
         assert option_reqs, "Expected OPTIONS request"

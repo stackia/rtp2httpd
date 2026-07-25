@@ -8,7 +8,7 @@ import threading
 import time
 
 from .ports import find_free_port, find_free_udp_port_pair
-from .rtp import make_rtp_packet
+from .rtp import TS_NULL_PACKET, make_rtp_packet
 
 
 # ---------------------------------------------------------------------------
@@ -30,6 +30,11 @@ class _RTSPServerBase:
         content_base: str | None = "auto",
         custom_sdp: str | None = None,
         options_session_id: str | None = None,
+        play_response_headers: list[tuple[str, str]] | None = None,
+        close_after_describe: bool = False,
+        reset_after_describe: bool = False,
+        redirect_describe_to: str | None = None,
+        challenge_describe_once: bool = False,
         host: str = "127.0.0.1",
     ):
         """
@@ -44,6 +49,16 @@ class _RTSPServerBase:
             options_session_id: If set, OPTIONS responds with this Session ID
                 and every subsequent request (DESCRIBE, SETUP, PLAY, ...)
                 must echo it (simulates HMS-style servers).
+            play_response_headers: Extra headers to append to the PLAY 200 OK
+                (e.g. ``[("Scale", "2.0"), ("Range", "npt=0-30")]``).
+            close_after_describe: Close the control connection immediately after
+                sending the DESCRIBE response.
+            reset_after_describe: Reset the control connection immediately after
+                sending the DESCRIBE response.
+            redirect_describe_to: If set, DESCRIBE answers ``302`` with this
+                ``Location`` instead of an SDP body.
+            challenge_describe_once: If set, the first DESCRIBE answers ``401``
+                with a Basic challenge and the retry is served normally.
             host: Address to listen on (use "::1" for IPv6 loopback).
         """
         self.host = host
@@ -52,6 +67,12 @@ class _RTSPServerBase:
         self._content_base = content_base
         self._custom_sdp = custom_sdp
         self._options_session_id = options_session_id
+        self._play_response_headers = play_response_headers or []
+        self._close_after_describe = close_after_describe
+        self._reset_after_describe = reset_after_describe
+        self._redirect_describe_to = redirect_describe_to
+        self._challenge_describe_once = challenge_describe_once
+        self._describe_challenged = False
         self._server_sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -161,6 +182,23 @@ class _RTSPServerBase:
                         ).encode()
                     )
                 elif method == "DESCRIBE":
+                    if self._redirect_describe_to:
+                        conn.sendall(
+                            (
+                                "RTSP/1.0 302 Moved Temporarily\r\nCSeq: %s\r\n"
+                                "Location: %s\r\n\r\n" % (cseq, self._redirect_describe_to)
+                            ).encode()
+                        )
+                        return
+                    if self._challenge_describe_once and not self._describe_challenged:
+                        self._describe_challenged = True
+                        conn.sendall(
+                            (
+                                "RTSP/1.0 401 Unauthorized\r\nCSeq: %s\r\n"
+                                'WWW-Authenticate: Basic realm="mock"\r\n\r\n' % cseq
+                            ).encode()
+                        )
+                        continue
                     if self._custom_sdp is not None:
                         sdp = self._custom_sdp
                     else:
@@ -191,11 +229,20 @@ class _RTSPServerBase:
                             "Content-Length: %d\r\n\r\n%s" % (cseq, cb_header, len(sdp), sdp)
                         ).encode()
                     )
+                    if self._reset_after_describe:
+                        conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+                        return
+                    if self._close_after_describe:
+                        return
                 elif method == "SETUP":
                     conn.sendall(self._setup_response(cseq, transport_hdr).encode())
                 elif method == "PLAY":
+                    extra_headers = "".join("%s: %s\r\n" % item for item in self._play_response_headers)
                     conn.sendall(
-                        ("RTSP/1.0 200 OK\r\nCSeq: %s\r\nSession: %s\r\n\r\n" % (cseq, self._session_id())).encode()
+                        (
+                            "RTSP/1.0 200 OK\r\nCSeq: %s\r\nSession: %s\r\n%s\r\n"
+                            % (cseq, self._session_id(), extra_headers)
+                        ).encode()
                     )
                     self._after_play(conn, addr)
                     return
@@ -223,6 +270,9 @@ class MockRTSPServer(_RTSPServerBase):
     that rtp2httpd's kqueue-based event loop reliably flushes data to the
     HTTP client (macOS kqueue doesn't always wake for partial writes while
     the RTSP source is still connected).
+
+    With ``encapsulate_rtp=False`` the interleaved frames carry bare MPEG-TS
+    instead, which is how ``MP2T/TCP`` upstreams behave.
     """
 
     def __init__(
@@ -233,6 +283,13 @@ class MockRTSPServer(_RTSPServerBase):
         content_base: str | None = "auto",
         custom_sdp: str | None = None,
         options_session_id: str | None = None,
+        play_response_headers: list[tuple[str, str]] | None = None,
+        close_after_describe: bool = False,
+        reset_after_describe: bool = False,
+        redirect_describe_to: str | None = None,
+        challenge_describe_once: bool = False,
+        encapsulate_rtp: bool = True,
+        setup_transport: str = "RTP/AVP/TCP;unicast;interleaved=0-1",
         host: str = "127.0.0.1",
     ):
         super().__init__(
@@ -241,15 +298,22 @@ class MockRTSPServer(_RTSPServerBase):
             content_base=content_base,
             custom_sdp=custom_sdp,
             options_session_id=options_session_id,
+            play_response_headers=play_response_headers,
+            close_after_describe=close_after_describe,
+            reset_after_describe=reset_after_describe,
+            redirect_describe_to=redirect_describe_to,
+            challenge_describe_once=challenge_describe_once,
             host=host,
         )
         self._num_packets = num_packets
+        self._encapsulate_rtp = encapsulate_rtp
+        self._setup_transport = setup_transport
 
     def _setup_response(self, cseq: str, transport_hdr: str) -> str:
-        return (
-            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
-            "Session: %s\r\n\r\n" % (cseq, self._session_id())
+        return "RTSP/1.0 200 OK\r\nCSeq: %s\r\nTransport: %s\r\nSession: %s\r\n\r\n" % (
+            cseq,
+            self._setup_transport,
+            self._session_id(),
         )
 
     def _after_play(self, conn: socket.socket, addr: tuple) -> None:
@@ -259,8 +323,12 @@ class MockRTSPServer(_RTSPServerBase):
             for _ in range(self._num_packets):
                 if self._stop.is_set():
                     break
-                rtp = make_rtp_packet(seq, ts)
-                frame = b"\x24" + struct.pack("!BH", 0, len(rtp)) + rtp
+                if self._encapsulate_rtp:
+                    payload = make_rtp_packet(seq, ts)
+                else:
+                    # Bare MPEG-TS, one 1316-byte chunk (7 x 188) per frame.
+                    payload = TS_NULL_PACKET * 7
+                frame = b"\x24" + struct.pack("!BH", 0, len(payload)) + payload
                 conn.sendall(frame)
                 seq = (seq + 1) & 0xFFFF
                 ts = (ts + 3600) & 0xFFFFFFFF

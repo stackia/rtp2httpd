@@ -142,6 +142,15 @@ typedef struct {
   int use_playseek_range;
   int r2h_duration;
   float r2h_duration_value;
+  int metadata_probe;
+  /* Set once the control socket reports EOF.  Sticky: the session can never
+   * continue after this, even if a complete response arrived alongside it. */
+  int peer_closed;
+  /* Bumped by every rtsp_connect().  Lets an event handler tell whether the
+   * response it just processed replaced the control connection (redirect or
+   * TEARDOWN reconnect), in which case events for the old one must be ignored.
+   * fd numbers cannot be used for this: close()+socket() often reuses them. */
+  unsigned connect_generation;
 
   /* Authentication state */
   char username[RTSP_CREDENTIAL_SIZE];    /* RTSP username for authentication */

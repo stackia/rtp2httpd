@@ -19,6 +19,8 @@ from helpers import (
     find_free_port,
     find_free_udp_port,
     find_free_udp_port_pair,
+    get_header,
+    http_request,
     stream_get,
 )
 
@@ -60,7 +62,7 @@ class TestTelecomFCC:
         )
         fcc.start()
         try:
-            status, _, body = stream_get(
+            status, headers, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{fcc.port}",
@@ -71,6 +73,10 @@ class TestTelecomFCC:
             assert len(body) > 0, "Expected to receive unicast stream data"
             assert body[0] == 0x47, f"Expected TS sync byte 0x47, got 0x{body[0]:02x}"
             assert fcc.requests_received >= 1
+            assert headers["r2h-upstream-protocol"] == "multicast"
+            assert headers["r2h-upstream-payload"] == "mp2t-rtp"
+            assert headers["r2h-fcc-type"] == "telecom"
+            assert headers["r2h-fcc-status"] == "active"
         finally:
             fcc.stop()
 
@@ -87,7 +93,7 @@ class TestTelecomFCC:
         )
         fcc.start()
         try:
-            status, _, body = stream_get(
+            status, headers, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{fcc.port}",
@@ -98,6 +104,8 @@ class TestTelecomFCC:
             assert len(body) > 0, "Expected to receive unicast stream data"
             assert body[0] == 0x47, f"Expected TS sync byte 0x47, got 0x{body[0]:02x}"
             assert fcc.requests_received >= 1
+            assert headers["r2h-fcc-type"] == "telecom"
+            assert headers["r2h-fcc-status"] == "active"
         finally:
             fcc.stop()
 
@@ -214,7 +222,7 @@ class TestHuaweiFCC:
         fcc.start()
         try:
             url = f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{fcc.port}&fcc-type=huawei"
-            status, _, body = stream_get(
+            status, headers, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 url,
@@ -225,6 +233,8 @@ class TestHuaweiFCC:
             assert len(body) > 0, "Expected to receive unicast stream data"
             assert body[0] == 0x47, f"Expected TS sync byte 0x47, got 0x{body[0]:02x}"
             assert fcc.requests_received >= 1
+            assert headers["r2h-fcc-type"] == "huawei"
+            assert headers["r2h-fcc-status"] == "active"
         finally:
             fcc.stop()
 
@@ -417,7 +427,7 @@ class TestFCCFallback:
         # Use a port where no FCC server is listening
         dead_fcc_port = find_free_udp_port()
         try:
-            status, _, body = stream_get(
+            status, headers, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{dead_fcc_port}",
@@ -426,5 +436,32 @@ class TestFCCFallback:
             )
             assert status == 200
             assert len(body) > 0, "Expected multicast fallback to deliver data"
+            assert headers["r2h-upstream-protocol"] == "multicast"
+            assert headers["r2h-upstream-payload"] == "mp2t-rtp"
+            assert headers["r2h-fcc-type"] == "telecom"
+            assert headers["r2h-fcc-status"] == "fallback"
         finally:
             sender.stop()
+
+    def test_fcc_head_returns_static_metadata_without_request(self, shared_r2h):
+        mcast_port = find_free_udp_port()
+        fcc = MockFCCServer(mcast_addr=MCAST_ADDR, protocol="huawei", sync_after=0)
+        fcc.start()
+        try:
+            status, headers, body = http_request(
+                "127.0.0.1",
+                shared_r2h.port,
+                "HEAD",
+                f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{fcc.port}&fcc-type=huawei",
+                timeout=3.0,
+            )
+            assert status == 200
+            assert body == b""
+            assert get_header(headers, "R2H-Upstream-Protocol") == "multicast"
+            assert get_header(headers, "R2H-FCC-Type") == "huawei"
+            assert get_header(headers, "R2H-Upstream-Payload") == ""
+            assert get_header(headers, "R2H-FCC-Status") == ""
+            time.sleep(0.1)
+            assert fcc.requests_received == 0
+        finally:
+            fcc.stop()

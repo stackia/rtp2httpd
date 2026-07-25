@@ -72,6 +72,29 @@ class TestBasicRTPStream:
             )
             assert status == 200
             assert len(body) > 0, "Expected to receive stream data"
+            assert hdrs["r2h-upstream-protocol"] == "multicast"
+            assert hdrs["r2h-upstream-payload"] == "mp2t-rtp"
+            assert "r2h-fec-status" not in hdrs
+        finally:
+            sender.stop()
+
+    def test_direct_ts_metadata(self, multicast_r2h):
+        """Raw MPEG-TS multicast should be identified without RTP."""
+        mcast_port = find_free_udp_port()
+        sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=200, encapsulate_rtp=False)
+        sender.start()
+        try:
+            status, headers, body = stream_get(
+                "127.0.0.1",
+                multicast_r2h.port,
+                f"/rtp/{MCAST_ADDR}:{mcast_port}",
+                read_bytes=4096,
+                timeout=_MCAST_STREAM_TIMEOUT,
+            )
+            assert status == 200
+            assert body
+            assert headers["r2h-upstream-protocol"] == "multicast"
+            assert headers["r2h-upstream-payload"] == "mp2t-direct"
         finally:
             sender.stop()
 
@@ -217,7 +240,7 @@ class TestHeadRequest:
         r2h = R2HProcess(
             r2h_binary,
             port,
-            extra_args=["-v", "4", "-m", "100"],
+            extra_args=["-v", "4", "-m", "100", "-O", "*"],
         )
         try:
             r2h.start()
@@ -232,7 +255,55 @@ class TestHeadRequest:
             )
             assert status == 200
             assert len(body) == 0  # HEAD should have empty body
+            assert hdrs.get("R2H-Upstream-Protocol") == "multicast"
+            assert "R2H-Upstream-Payload" not in hdrs
+            assert "R2H-FCC-Status" not in hdrs
+            exposed = {name.strip() for name in hdrs["Access-Control-Expose-Headers"].split(",")}
+            assert exposed == {
+                "R2H-Upstream-Protocol",
+                "R2H-Upstream-Transport",
+                "R2H-Upstream-Payload",
+                "R2H-Playback-Scale",
+                "R2H-Playback-Range",
+                "R2H-Media-Duration",
+                "R2H-FCC-Type",
+                "R2H-FCC-Status",
+            }
         finally:
+            r2h.stop()
+
+
+class TestSnapshotFallbackMetadata:
+    """A failed JPEG capture must fall back to one MPEG-TS response."""
+
+    def test_snapshot_fallback_uses_stream_metadata(self, r2h_binary):
+        port = find_free_port()
+        mcast_port = find_free_udp_port()
+        r2h = R2HProcess(
+            r2h_binary,
+            port,
+            extra_args=["-v", "4", "-m", "100", "-r", LOOPBACK_IF, "-S"],
+        )
+        sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=300)
+        try:
+            r2h.start()
+            sender.start()
+            status, headers, body = stream_get(
+                "127.0.0.1",
+                port,
+                f"/rtp/{MCAST_ADDR}:{mcast_port}",
+                read_bytes=4096,
+                timeout=_MCAST_STREAM_TIMEOUT,
+                headers={"Accept": "image/jpeg"},
+            )
+            assert status == 200
+            assert body
+            assert headers["content-type"] == "video/mp2t"
+            assert headers["r2h-upstream-protocol"] == "multicast"
+            assert headers["r2h-upstream-payload"] == "mp2t-rtp"
+            assert "content-length" not in headers
+        finally:
+            sender.stop()
             r2h.stop()
 
 

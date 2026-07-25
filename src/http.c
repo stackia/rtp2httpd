@@ -735,54 +735,49 @@ int http_filter_query_param(const char *query_string, const char *exclude_param,
   return (int)out_len;
 }
 
+/**
+ * Send a short error response.  A response to HEAD carries the same headers as
+ * the equivalent GET but must not include content (RFC 9110 9.3.2), so the body
+ * is dropped in that case.
+ */
+static void http_send_error(connection_t *conn, http_status_t status, const char *extra_headers, const char *body,
+                            size_t body_len) {
+  send_http_headers(conn, status, "text/html; charset=utf-8", extra_headers);
+
+  if (conn && strcasecmp(conn->http_req.method, "HEAD") == 0)
+    body_len = 0;
+
+  connection_queue_output_and_flush(conn, body_len ? (const uint8_t *)body : NULL, body_len);
+}
+
 void http_send_400(connection_t *conn) {
   static const char body[] = "<!doctype html><title>400</title>Bad Request";
 
-  /* Send headers */
-  send_http_headers(conn, STATUS_400, "text/html; charset=utf-8", NULL);
-
-  /* Send body and flush */
-  connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
+  http_send_error(conn, STATUS_400, NULL, body, sizeof(body) - 1);
 }
 
 void http_send_404(connection_t *conn) {
   static const char body[] = "<!doctype html><title>404</title>Not Found";
 
-  /* Send headers */
-  send_http_headers(conn, STATUS_404, "text/html; charset=utf-8", NULL);
-
-  /* Send body and flush */
-  connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
+  http_send_error(conn, STATUS_404, NULL, body, sizeof(body) - 1);
 }
 
 void http_send_500(connection_t *conn) {
   static const char body[] = "<!doctype html><title>500</title>Internal Server Error";
 
-  /* Send headers */
-  send_http_headers(conn, STATUS_500, "text/html; charset=utf-8", NULL);
-
-  /* Send body and flush */
-  connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
+  http_send_error(conn, STATUS_500, NULL, body, sizeof(body) - 1);
 }
 
 void http_send_503(connection_t *conn) {
   static const char body[] = "<!doctype html><title>503</title>Service Unavailable";
 
-  /* Send headers */
-  send_http_headers(conn, STATUS_503, "text/html; charset=utf-8", NULL);
-
-  /* Send body and flush */
-  connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
+  http_send_error(conn, STATUS_503, NULL, body, sizeof(body) - 1);
 }
 
 void http_send_401(connection_t *conn) {
   static const char body[] = "<!doctype html><title>401</title>Unauthorized";
 
-  /* Send headers with WWW-Authenticate */
-  send_http_headers(conn, STATUS_401, "text/html; charset=utf-8", "WWW-Authenticate: Bearer\r\n");
-
-  /* Send body and flush */
-  connection_queue_output_and_flush(conn, (const uint8_t *)body, sizeof(body) - 1);
+  http_send_error(conn, STATUS_401, "WWW-Authenticate: Bearer\r\n", body, sizeof(body) - 1);
 }
 
 int http_parse_url_components(const char *url, char *protocol, char *host, char *port, char *path) {

@@ -97,15 +97,16 @@ def shared_r2h(r2h_binary):
 
 
 class TestRTSPHeadRequest:
-    def test_head_rtsp(self, shared_r2h):
+    def test_head_rtsp_unreachable_returns_503(self, shared_r2h):
+        dead_port = find_free_port()
         status, _, body = http_request(
             "127.0.0.1",
             shared_r2h.port,
             "HEAD",
-            "/rtsp/127.0.0.1:554/test",
+            "/rtsp/127.0.0.1:%d/test" % dead_port,
             timeout=3.0,
         )
-        assert status == 200
+        assert status == 503
         assert len(body) == 0
 
 

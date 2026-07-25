@@ -91,6 +91,21 @@ http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?r2h-ifname=eth0
 
 关于时移回看的参数处理（时区、偏移），详见 [时间处理说明](./time-processing.md)。
 
+## 上游流 Metadata 响应头
+
+RTSP、普通组播和 FCC 流会在 HTTP Headers 带上以下 `R2H-*` Metadata：
+
+| 响应头 | 含义 |
+| --- | --- |
+| `R2H-Upstream-Protocol` | 上游类型：`rtsp` 或 `multicast`。FCC 流也属于 `multicast`。 |
+| `R2H-Upstream-Transport` | RTSP 实际协商的传输方式：`tcp-interleaved` 或 `udp`。 |
+| `R2H-Upstream-Payload` | 已确认的 MPEG-TS 封装：`mp2t-rtp` 或 `mp2t-direct`。 |
+| `R2H-Playback-Scale` | RTSP `PLAY` 响应明确确认的播放速率。 |
+| `R2H-Playback-Range` | RTSP `PLAY` 响应明确确认的播放范围。 |
+| `R2H-Media-Duration` | SDP 有限 `npt` 范围的时长，单位为秒。 |
+| `R2H-FCC-Type` | 已配置的 FCC 协议：`telecom` 或 `huawei`。 |
+| `R2H-FCC-Status` | 从 FCC 单播起播为 `active`；从组播起播为 `fallback`。 |
+
 ## HTTP 反向代理
 
 ```url

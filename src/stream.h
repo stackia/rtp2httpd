@@ -18,6 +18,70 @@
  * fallback to streaming */
 #define SNAPSHOT_TIMEOUT_SEC 2
 
+#define STREAM_PLAYBACK_RANGE_SIZE 256
+
+/* Return values of stream_handle_fd_event() / rtsp_handle_socket_event(). */
+#define STREAM_EVENT_OK 0
+#define STREAM_EVENT_CLOSE (-1)
+#define STREAM_EVENT_DURATION_READY (-2)
+#define STREAM_EVENT_METADATA_READY (-3)
+
+/* RTSP handshake stages a metadata field can be learned from.  Used to forget
+ * the right subset when a stage is retried (auth) or replayed against another
+ * server (redirect). */
+#define STREAM_METADATA_STAGE_DESCRIBE 0x1u
+#define STREAM_METADATA_STAGE_SETUP 0x2u
+#define STREAM_METADATA_STAGE_PLAY 0x4u
+#define STREAM_METADATA_STAGE_ALL                                                                                      \
+  (STREAM_METADATA_STAGE_DESCRIBE | STREAM_METADATA_STAGE_SETUP | STREAM_METADATA_STAGE_PLAY)
+
+typedef enum {
+  STREAM_UPSTREAM_UNKNOWN = 0,
+  STREAM_UPSTREAM_RTSP,
+  STREAM_UPSTREAM_MULTICAST
+} stream_upstream_protocol_t;
+
+typedef enum {
+  STREAM_TRANSPORT_UNKNOWN = 0,
+  STREAM_TRANSPORT_TCP_INTERLEAVED,
+  STREAM_TRANSPORT_UDP
+} stream_upstream_transport_t;
+
+typedef enum {
+  STREAM_PAYLOAD_UNKNOWN = 0,
+  STREAM_PAYLOAD_MP2T_RTP,
+  STREAM_PAYLOAD_MP2T_DIRECT
+} stream_upstream_payload_t;
+
+typedef enum { STREAM_FCC_TYPE_UNKNOWN = 0, STREAM_FCC_TYPE_TELECOM, STREAM_FCC_TYPE_HUAWEI } stream_fcc_type_t;
+
+typedef enum {
+  STREAM_FCC_STATUS_UNKNOWN = 0,
+  STREAM_FCC_STATUS_ACTIVE,
+  STREAM_FCC_STATUS_FALLBACK
+} stream_fcc_status_t;
+
+typedef enum {
+  STREAM_MEDIA_ORIGIN_RTSP = 0,
+  STREAM_MEDIA_ORIGIN_MULTICAST,
+  STREAM_MEDIA_ORIGIN_FCC_UNICAST,
+  STREAM_MEDIA_ORIGIN_FCC_MULTICAST
+} stream_media_origin_t;
+
+typedef struct stream_metadata_s {
+  stream_upstream_protocol_t upstream_protocol;
+  stream_upstream_transport_t upstream_transport;
+  stream_upstream_payload_t upstream_payload;
+  stream_fcc_type_t fcc_type;
+  stream_fcc_status_t fcc_status;
+  double playback_scale;
+  double media_duration;
+  char playback_range[STREAM_PLAYBACK_RANGE_SIZE];
+  uint8_t playback_scale_known;
+  uint8_t media_duration_known;
+  uint8_t frozen;
+} stream_metadata_t;
+
 /* Stream processing context */
 typedef struct stream_context_s {
   int epoll_fd;
@@ -30,6 +94,9 @@ typedef struct stream_context_s {
   uint64_t total_bytes_sent;
   uint64_t last_bytes_sent;   /* Bytes sent at last bandwidth calculation */
   int64_t last_status_update; /* Last status update time in milliseconds */
+
+  /* Metadata exposed as R2H-* HTTP response headers. */
+  stream_metadata_t metadata;
 
   /* FCC session for Fast Channel Change */
   fcc_session_t fcc;
@@ -70,15 +137,25 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, se
                                    int status_index, int is_snapshot);
 
 /**
+ * Initialize an RTSP control-plane-only HEAD probe.  The probe performs
+ * OPTIONS and DESCRIBE but never SETUP or PLAY and allocates no media sockets.
+ */
+int stream_context_init_rtsp_metadata_probe(stream_context_t *ctx, connection_t *conn, service_t *service,
+                                            int epoll_fd);
+
+/**
  * Handle an event-ready fd that belongs to this stream context.
  * @param ctx Stream context
  * @param fd File descriptor that has events
  * @param events Epoll event mask (EPOLLIN, EPOLLOUT, etc.)
  * @param now Current timestamp in milliseconds (from get_time_ms())
- * @return Return values:
- *   0: Success, continue processing
- *  -1: Connection should be closed (error or graceful TEARDOWN complete)
- *  -2: Duration query completed, send response to client
+ * @return One of the STREAM_EVENT_* codes:
+ *   STREAM_EVENT_OK:               continue processing
+ *   STREAM_EVENT_CLOSE:            close the connection (error or graceful
+ *                                  TEARDOWN complete)
+ *   STREAM_EVENT_DURATION_READY:   duration query completed, send response
+ *   STREAM_EVENT_METADATA_READY:   RTSP metadata probe completed, send HEAD
+ *                                  response to client
  */
 int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64_t now);
 
@@ -105,7 +182,23 @@ int stream_context_cleanup(stream_context_t *ctx);
  * @return bytes forwarded (>= 0) for streaming, 1 if I-frame captured for
  * snapshot, -1 on error
  */
-int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref);
+int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref, stream_media_origin_t origin);
+
+/** Initialize static metadata from a parsed service. */
+void stream_metadata_init(stream_metadata_t *metadata, const service_t *service);
+
+/**
+ * Forget every metadata field learned from the given RTSP handshake stages, so
+ * a retried or redirected request cannot report a previous server's answer.
+ * @param stages Bitmask of STREAM_METADATA_STAGE_* values.
+ */
+void stream_metadata_forget(stream_metadata_t *metadata, unsigned stages);
+
+/**
+ * Send a successful HTTP response with any known stream metadata appended to
+ * extra_headers.  extra_headers may be NULL.
+ */
+void stream_send_http_headers(connection_t *conn, const char *content_type, const char *extra_headers);
 
 /**
  * Notify that the client send queue has just been drained (some buffers

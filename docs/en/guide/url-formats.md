@@ -91,6 +91,21 @@ This is caused by timezone mismatch. You need to perform timezone conversion. Tr
 
 For detailed information on time-shift parameter handling (timezone, offset), see [Time Processing Guide](/en/guide/time-processing).
 
+## Upstream Stream Metadata Response Headers
+
+RTSP, standard multicast, and FCC streams carry the following `R2H-*` metadata in the HTTP response headers:
+
+| Response Header | Meaning |
+| --- | --- |
+| `R2H-Upstream-Protocol` | Upstream type: `rtsp` or `multicast`. FCC streams are also reported as `multicast`. |
+| `R2H-Upstream-Transport` | Transport negotiated by RTSP: `tcp-interleaved` or `udp`. |
+| `R2H-Upstream-Payload` | Confirmed MPEG-TS encapsulation: `mp2t-rtp` or `mp2t-direct`. |
+| `R2H-Playback-Scale` | Playback scale explicitly confirmed by the RTSP `PLAY` response. |
+| `R2H-Playback-Range` | Playback range explicitly confirmed by the RTSP `PLAY` response. |
+| `R2H-Media-Duration` | Duration of a finite SDP `npt` range, in seconds. |
+| `R2H-FCC-Type` | Configured FCC protocol: `telecom` or `huawei`. |
+| `R2H-FCC-Status` | `active` when playback starts from FCC unicast; `fallback` when it starts from multicast. |
+
 ## HTTP Reverse Proxy
 
 ```url

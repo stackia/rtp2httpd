@@ -20,6 +20,7 @@ from helpers import (
     MockRTSPServer,
     R2HProcess,
     find_free_port,
+    http_request,
     stream_get,
 )
 from helpers.mock_stun import MockSTUNServer
@@ -27,6 +28,38 @@ from helpers.mock_stun import MockSTUNServer
 pytestmark = pytest.mark.rtsp
 
 _STREAM_TIMEOUT = 20.0
+
+
+class TestHeadProbeSkipsSTUN:
+    def test_head_does_not_allocate_media_transport(self, r2h_binary):
+        stun = MockSTUNServer(mapped_port=50000)
+        rtsp = MockRTSPServer()
+        stun.start()
+        rtsp.start()
+        r2h_port = find_free_port()
+        r2h = R2HProcess(
+            r2h_binary,
+            r2h_port,
+            extra_args=["-v", "4", "-m", "100", "-N", "127.0.0.1:%d" % stun.port],
+        )
+        r2h.start()
+        try:
+            status, _, body = http_request(
+                "127.0.0.1",
+                r2h_port,
+                "HEAD",
+                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                timeout=8.0,
+            )
+            assert status == 200
+            assert body == b""
+            assert rtsp.requests_received == ["OPTIONS", "DESCRIBE"]
+            time.sleep(0.1)
+            assert stun.requests_received == 0
+        finally:
+            r2h.stop()
+            rtsp.stop()
+            stun.stop()
 
 
 class TestSTUNMappedPort:

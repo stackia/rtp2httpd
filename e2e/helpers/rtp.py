@@ -10,7 +10,7 @@ from .constants import MCAST_ADDR
 from .ports import find_free_udp_port
 
 # A minimal 188-byte MPEG-TS null packet (sync byte 0x47, PID 0x1FFF = null)
-_TS_NULL_PACKET = b"\x47\x1f\xff\x10" + b"\xff" * 184
+TS_NULL_PACKET = b"\x47\x1f\xff\x10" + b"\xff" * 184
 
 
 def _make_ts_with_marker(marker: int) -> bytes:
@@ -27,7 +27,7 @@ def make_rtp_packet(
 ) -> bytes:
     """Create a 12-byte-header RTP packet carrying one TS null packet."""
     if payload is None:
-        payload = _TS_NULL_PACKET
+        payload = TS_NULL_PACKET
     header = struct.pack(
         "!BBHII",
         0x80,  # V=2, P=0, X=0, CC=0
@@ -56,6 +56,7 @@ class MulticastSender:
         reorder_distance: int = 0,
         unique_payloads: bool = False,
         send_duplicates: bool = False,
+        encapsulate_rtp: bool = True,
     ):
         self.addr = addr
         self.port = port or find_free_udp_port()
@@ -64,7 +65,8 @@ class MulticastSender:
         self.reorder_distance = reorder_distance
         self.unique_payloads = unique_payloads
         self.send_duplicates = send_duplicates
-        self._payload = _TS_NULL_PACKET * ts_per_rtp
+        self.encapsulate_rtp = encapsulate_rtp
+        self._payload = TS_NULL_PACKET * ts_per_rtp
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -92,7 +94,7 @@ class MulticastSender:
                 payload = _make_ts_with_marker(seq) * self.ts_per_rtp
             else:
                 payload = self._payload
-            pkt = make_rtp_packet(seq, ts, payload=payload)
+            pkt = make_rtp_packet(seq, ts, payload=payload) if self.encapsulate_rtp else payload
 
             if self.reorder_distance > 1:
                 buf.append(pkt)
