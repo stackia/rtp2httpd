@@ -2,7 +2,7 @@
 
 ## Processing Checkpoint
 
-last_processed_comment_date: 2026-06-23T05:36:28Z
+last_processed_comment_date: 2026-07-23T13:15:43Z
 
 ## Document Paths
 
@@ -44,6 +44,7 @@ annotations.
 
 ## Update Log
 
+- 2026-07-25: Processed 2 new comments, both actionable. Added Sichuan Suining Telecom `182.138.3.103:15970` (comment ID 5003576424) and Hebei Langfang Unicom `10.7.70.172:8027` plus new Hebei China Mobile entry `192.168.247.9:8027` (comment ID 5058826265). Reactions added to both; English doc synced.
 - 2026-06-24: Processed 4 new comments. Added Hebei Shijiazhuang Unicom `10.7.10.172:8027` (comment ID 4747788138, reaction added). Other comments: one already documented Hubei Enshi Telecom entry, one Heilongjiang packet-capture question with FCC disabled, and one Tianjin Mobile FCC troubleshooting question.
 - 2026-06-17: Processed 1 new comment. No update: Hubei Enshi Telecom `121.60.255.120:15970` (comment ID 4694053536) was already documented at province level; Qianjiang redirect to `121.60.193.229` is normal load-balancing behavior.
 - 2026-06-12: Processed 3 new comments. Added Guangxi Hezhou/Wuzhou Telecom `124.226.158.81:8027` (comment ID 4658533810). Other comments: one Shanghai Unicom packet-capture question with empty `ChannelFCCIP`, and one Jilin Changchun Telecom address request.
