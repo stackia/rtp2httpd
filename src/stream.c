@@ -27,6 +27,34 @@
 #define TS_PACKET_SIZE 188
 #define TS_SYNC_BYTE 0x47
 
+/* Single source of truth for the R2H-* response header names.  The order here
+ * is the order they appear in the response and in
+ * Access-Control-Expose-Headers, so a new field only has to be added once. */
+enum {
+  STREAM_HDR_UPSTREAM_PROTOCOL = 0,
+  STREAM_HDR_UPSTREAM_TRANSPORT,
+  STREAM_HDR_UPSTREAM_PAYLOAD,
+  STREAM_HDR_PLAYBACK_SCALE,
+  STREAM_HDR_PLAYBACK_RANGE,
+  STREAM_HDR_MEDIA_DURATION,
+  STREAM_HDR_FCC_TYPE,
+  STREAM_HDR_FCC_STATUS,
+  STREAM_HDR_COUNT
+};
+
+static const char *const stream_metadata_header_names[STREAM_HDR_COUNT] = {
+    "R2H-Upstream-Protocol", "R2H-Upstream-Transport", "R2H-Upstream-Payload", "R2H-Playback-Scale",
+    "R2H-Playback-Range",    "R2H-Media-Duration",     "R2H-FCC-Type",         "R2H-FCC-Status",
+};
+
+/* Enum value -> header value.  A NULL entry means "not known", which omits the
+ * header entirely. */
+static const char *const stream_upstream_protocol_values[] = {NULL, "rtsp", "multicast"};
+static const char *const stream_upstream_transport_values[] = {NULL, "tcp-interleaved", "udp"};
+static const char *const stream_upstream_payload_values[] = {NULL, "mp2t-rtp", "mp2t-direct"};
+static const char *const stream_fcc_type_values[] = {NULL, "telecom", "huawei"};
+static const char *const stream_fcc_status_values[] = {NULL, "active", "fallback"};
+
 static int stream_metadata_append_raw(char *buffer, size_t buffer_size, size_t *length, const char *value) {
   size_t value_len;
 
@@ -53,13 +81,47 @@ static int stream_metadata_append_header(char *buffer, size_t buffer_size, size_
   return stream_metadata_append_raw(buffer, buffer_size, length, line);
 }
 
-static void stream_metadata_format_number(double value, char *buffer, size_t buffer_size) {
+/* Append the header for an enum-valued field, or nothing when the value is
+ * unknown or out of range. */
+static int stream_metadata_append_enum(char *buffer, size_t buffer_size, size_t *length, int field,
+                                      const char *const *values, size_t value_count, int value) {
+  if (value < 0 || (size_t)value >= value_count || !values[value])
+    return 0;
+  return stream_metadata_append_header(buffer, buffer_size, length, stream_metadata_header_names[field], values[value]);
+}
+
+static int stream_metadata_append_expose_headers(char *buffer, size_t buffer_size, size_t *length) {
+  char list[512];
+  size_t used = 0;
+
+  for (int i = 0; i < STREAM_HDR_COUNT; i++) {
+    int written = snprintf(list + used, sizeof(list) - used, "%s%s", used ? ", " : "", stream_metadata_header_names[i]);
+    if (written < 0 || (size_t)written >= sizeof(list) - used)
+      return -1;
+    used += (size_t)written;
+  }
+
+  return stream_metadata_append_header(buffer, buffer_size, length, "Access-Control-Expose-Headers", list);
+}
+
+/**
+ * Render a double as the shortest exact decimal that round-trips for our
+ * purposes, without a trailing '.' or redundant zeros.
+ * @return 0 on success, -1 if the value does not fit (the caller must then omit
+ *         the field: stripping trailing zeros off a truncated number would
+ *         silently report a wildly different value).
+ */
+static int stream_metadata_format_number(double value, char *buffer, size_t buffer_size) {
   char *end;
+  int written;
 
   if (!buffer || buffer_size == 0)
-    return;
+    return -1;
 
-  snprintf(buffer, buffer_size, "%.6f", value);
+  written = snprintf(buffer, buffer_size, "%.6f", value);
+  if (written < 0 || (size_t)written >= buffer_size)
+    return -1;
+
   end = buffer + strlen(buffer);
   while (end > buffer && end[-1] == '0')
     *--end = '\0';
@@ -67,6 +129,7 @@ static void stream_metadata_format_number(double value, char *buffer, size_t buf
     *--end = '\0';
   if (strcmp(buffer, "-0") == 0)
     snprintf(buffer, buffer_size, "0");
+  return 0;
 }
 
 static int stream_payload_is_mpegts(const uint8_t *payload, int payload_len) {
@@ -102,15 +165,20 @@ void stream_metadata_init(stream_metadata_t *metadata, const service_t *service)
   }
 }
 
-void stream_metadata_reset_rtsp_negotiation(stream_metadata_t *metadata) {
+void stream_metadata_forget(stream_metadata_t *metadata, unsigned stages) {
   if (!metadata || metadata->frozen)
     return;
 
-  metadata->upstream_transport = STREAM_TRANSPORT_UNKNOWN;
-  metadata->upstream_payload = STREAM_PAYLOAD_UNKNOWN;
-  metadata->playback_scale_known = 0;
-  metadata->media_duration_known = 0;
-  metadata->playback_range[0] = '\0';
+  if (stages & STREAM_METADATA_STAGE_DESCRIBE) {
+    metadata->upstream_payload = STREAM_PAYLOAD_UNKNOWN;
+    metadata->media_duration_known = 0;
+  }
+  if (stages & STREAM_METADATA_STAGE_SETUP)
+    metadata->upstream_transport = STREAM_TRANSPORT_UNKNOWN;
+  if (stages & STREAM_METADATA_STAGE_PLAY) {
+    metadata->playback_scale_known = 0;
+    metadata->playback_range[0] = '\0';
+  }
 }
 
 static void stream_metadata_note_media(stream_context_t *ctx, int packet_type, const uint8_t *payload, int payload_len,
@@ -133,9 +201,6 @@ static void stream_metadata_note_media(stream_context_t *ctx, int packet_type, c
 }
 
 void stream_send_http_headers(connection_t *conn, const char *content_type, const char *extra_headers) {
-  static const char exposed_headers[] =
-      "R2H-Upstream-Protocol, R2H-Upstream-Transport, R2H-Upstream-Payload, "
-      "R2H-Playback-Scale, R2H-Playback-Range, R2H-Media-Duration, R2H-FCC-Type, R2H-FCC-Status";
   stream_metadata_t *metadata;
   char headers[STREAM_METADATA_HEADERS_SIZE];
   char number[64];
@@ -152,80 +217,46 @@ void stream_send_http_headers(connection_t *conn, const char *content_type, cons
   if (extra_headers && extra_headers[0])
     failed |= stream_metadata_append_raw(headers, sizeof(headers), &length, extra_headers) < 0;
 
-  switch (metadata->upstream_protocol) {
-  case STREAM_UPSTREAM_RTSP:
-    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Upstream-Protocol", "rtsp") < 0;
-    break;
-  case STREAM_UPSTREAM_MULTICAST:
-    failed |=
-        stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Upstream-Protocol", "multicast") < 0;
-    break;
-  default:
-    break;
-  }
+  failed |= stream_metadata_append_enum(headers, sizeof(headers), &length, STREAM_HDR_UPSTREAM_PROTOCOL,
+                                        stream_upstream_protocol_values, ARRAY_SIZE(stream_upstream_protocol_values),
+                                        metadata->upstream_protocol) < 0;
+  failed |= stream_metadata_append_enum(headers, sizeof(headers), &length, STREAM_HDR_UPSTREAM_TRANSPORT,
+                                        stream_upstream_transport_values, ARRAY_SIZE(stream_upstream_transport_values),
+                                        metadata->upstream_transport) < 0;
+  failed |= stream_metadata_append_enum(headers, sizeof(headers), &length, STREAM_HDR_UPSTREAM_PAYLOAD,
+                                        stream_upstream_payload_values, ARRAY_SIZE(stream_upstream_payload_values),
+                                        metadata->upstream_payload) < 0;
 
-  switch (metadata->upstream_transport) {
-  case STREAM_TRANSPORT_TCP_INTERLEAVED:
-    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Upstream-Transport",
-                                            "tcp-interleaved") < 0;
-    break;
-  case STREAM_TRANSPORT_UDP:
-    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Upstream-Transport", "udp") < 0;
-    break;
-  default:
-    break;
-  }
-
-  switch (metadata->upstream_payload) {
-  case STREAM_PAYLOAD_MP2T_RTP:
-    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Upstream-Payload", "mp2t-rtp") < 0;
-    break;
-  case STREAM_PAYLOAD_MP2T_DIRECT:
-    failed |=
-        stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Upstream-Payload", "mp2t-direct") < 0;
-    break;
-  default:
-    break;
-  }
-
+  /* A value we cannot render exactly is dropped rather than approximated. */
   if (metadata->playback_scale_known && isfinite(metadata->playback_scale)) {
-    stream_metadata_format_number(metadata->playback_scale, number, sizeof(number));
-    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Playback-Scale", number) < 0;
+    if (stream_metadata_format_number(metadata->playback_scale, number, sizeof(number)) == 0)
+      failed |= stream_metadata_append_header(headers, sizeof(headers), &length,
+                                              stream_metadata_header_names[STREAM_HDR_PLAYBACK_SCALE], number) < 0;
+    else
+      logger(LOG_DEBUG, "Stream: upstream Scale %g is not representable, omitting header", metadata->playback_scale);
   }
   if (metadata->playback_range[0]) {
-    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Playback-Range",
+    failed |= stream_metadata_append_header(headers, sizeof(headers), &length,
+                                            stream_metadata_header_names[STREAM_HDR_PLAYBACK_RANGE],
                                             metadata->playback_range) < 0;
   }
   if (metadata->media_duration_known && isfinite(metadata->media_duration)) {
-    stream_metadata_format_number(metadata->media_duration, number, sizeof(number));
-    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-Media-Duration", number) < 0;
+    if (stream_metadata_format_number(metadata->media_duration, number, sizeof(number)) == 0)
+      failed |= stream_metadata_append_header(headers, sizeof(headers), &length,
+                                              stream_metadata_header_names[STREAM_HDR_MEDIA_DURATION], number) < 0;
+    else
+      logger(LOG_DEBUG, "Stream: media duration %g is not representable, omitting header", metadata->media_duration);
   }
 
-  switch (metadata->fcc_type) {
-  case STREAM_FCC_TYPE_TELECOM:
-    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-FCC-Type", "telecom") < 0;
-    break;
-  case STREAM_FCC_TYPE_HUAWEI:
-    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-FCC-Type", "huawei") < 0;
-    break;
-  default:
-    break;
-  }
-
-  switch (metadata->fcc_status) {
-  case STREAM_FCC_STATUS_ACTIVE:
-    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-FCC-Status", "active") < 0;
-    break;
-  case STREAM_FCC_STATUS_FALLBACK:
-    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "R2H-FCC-Status", "fallback") < 0;
-    break;
-  default:
-    break;
-  }
+  failed |= stream_metadata_append_enum(headers, sizeof(headers), &length, STREAM_HDR_FCC_TYPE,
+                                        stream_fcc_type_values, ARRAY_SIZE(stream_fcc_type_values),
+                                        metadata->fcc_type) < 0;
+  failed |= stream_metadata_append_enum(headers, sizeof(headers), &length, STREAM_HDR_FCC_STATUS,
+                                        stream_fcc_status_values, ARRAY_SIZE(stream_fcc_status_values),
+                                        metadata->fcc_status) < 0;
 
   if (config.cors_allow_origin && config.cors_allow_origin[0]) {
-    failed |= stream_metadata_append_header(headers, sizeof(headers), &length, "Access-Control-Expose-Headers",
-                                            exposed_headers) < 0;
+    failed |= stream_metadata_append_expose_headers(headers, sizeof(headers), &length) < 0;
   }
 
   if (failed) {
@@ -325,16 +356,16 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
     /* Handle RTSP socket events (handshake and RTP data in PLAYING state) */
     int result = rtsp_handle_socket_event(&ctx->rtsp, events);
     if (result < 0) {
-      if (result == -2) {
+      if (result == STREAM_EVENT_DURATION_READY) {
         logger(LOG_DEBUG, "RTSP: found duration: %0.3f", ctx->rtsp.r2h_duration_value);
-        return -2;
+        return STREAM_EVENT_DURATION_READY;
       }
-      if (result == -3) {
-        return -3;
+      if (result == STREAM_EVENT_METADATA_READY) {
+        return STREAM_EVENT_METADATA_READY;
       }
-      return -1;
+      return STREAM_EVENT_CLOSE;
     }
-    return 0;
+    return STREAM_EVENT_OK;
   }
 
   /* Process RTSP RTP socket events (UDP mode) */

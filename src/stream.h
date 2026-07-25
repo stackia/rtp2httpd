@@ -20,6 +20,21 @@
 
 #define STREAM_PLAYBACK_RANGE_SIZE 256
 
+/* Return values of stream_handle_fd_event() / rtsp_handle_socket_event(). */
+#define STREAM_EVENT_OK 0
+#define STREAM_EVENT_CLOSE (-1)
+#define STREAM_EVENT_DURATION_READY (-2)
+#define STREAM_EVENT_METADATA_READY (-3)
+
+/* RTSP handshake stages a metadata field can be learned from.  Used to forget
+ * the right subset when a stage is retried (auth) or replayed against another
+ * server (redirect). */
+#define STREAM_METADATA_STAGE_DESCRIBE 0x1u
+#define STREAM_METADATA_STAGE_SETUP 0x2u
+#define STREAM_METADATA_STAGE_PLAY 0x4u
+#define STREAM_METADATA_STAGE_ALL                                                                                      \
+  (STREAM_METADATA_STAGE_DESCRIBE | STREAM_METADATA_STAGE_SETUP | STREAM_METADATA_STAGE_PLAY)
+
 typedef enum {
   STREAM_UPSTREAM_UNKNOWN = 0,
   STREAM_UPSTREAM_RTSP,
@@ -134,11 +149,13 @@ int stream_context_init_rtsp_metadata_probe(stream_context_t *ctx, connection_t 
  * @param fd File descriptor that has events
  * @param events Epoll event mask (EPOLLIN, EPOLLOUT, etc.)
  * @param now Current timestamp in milliseconds (from get_time_ms())
- * @return Return values:
- *   0: Success, continue processing
- *  -1: Connection should be closed (error or graceful TEARDOWN complete)
- *  -2: Duration query completed, send response to client
- *  -3: RTSP metadata probe completed, send HEAD response to client
+ * @return One of the STREAM_EVENT_* codes:
+ *   STREAM_EVENT_OK:               continue processing
+ *   STREAM_EVENT_CLOSE:            close the connection (error or graceful
+ *                                  TEARDOWN complete)
+ *   STREAM_EVENT_DURATION_READY:   duration query completed, send response
+ *   STREAM_EVENT_METADATA_READY:   RTSP metadata probe completed, send HEAD
+ *                                  response to client
  */
 int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64_t now);
 
@@ -170,8 +187,12 @@ int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref, str
 /** Initialize static metadata from a parsed service. */
 void stream_metadata_init(stream_metadata_t *metadata, const service_t *service);
 
-/** Clear RTSP metadata learned from a server before following a redirect. */
-void stream_metadata_reset_rtsp_negotiation(stream_metadata_t *metadata);
+/**
+ * Forget every metadata field learned from the given RTSP handshake stages, so
+ * a retried or redirected request cannot report a previous server's answer.
+ * @param stages Bitmask of STREAM_METADATA_STAGE_* values.
+ */
+void stream_metadata_forget(stream_metadata_t *metadata, unsigned stages);
 
 /**
  * Send a successful HTTP response with any known stream metadata appended to
