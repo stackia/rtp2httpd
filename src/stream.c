@@ -84,7 +84,7 @@ static int stream_metadata_append_header(char *buffer, size_t buffer_size, size_
 /* Append the header for an enum-valued field, or nothing when the value is
  * unknown or out of range. */
 static int stream_metadata_append_enum(char *buffer, size_t buffer_size, size_t *length, int field,
-                                      const char *const *values, size_t value_count, int value) {
+                                       const char *const *values, size_t value_count, int value) {
   if (value < 0 || (size_t)value >= value_count || !values[value])
     return 0;
   return stream_metadata_append_header(buffer, buffer_size, length, stream_metadata_header_names[field], values[value]);
@@ -248,12 +248,11 @@ void stream_send_http_headers(connection_t *conn, const char *content_type, cons
       logger(LOG_DEBUG, "Stream: media duration %g is not representable, omitting header", metadata->media_duration);
   }
 
-  failed |= stream_metadata_append_enum(headers, sizeof(headers), &length, STREAM_HDR_FCC_TYPE,
-                                        stream_fcc_type_values, ARRAY_SIZE(stream_fcc_type_values),
-                                        metadata->fcc_type) < 0;
-  failed |= stream_metadata_append_enum(headers, sizeof(headers), &length, STREAM_HDR_FCC_STATUS,
-                                        stream_fcc_status_values, ARRAY_SIZE(stream_fcc_status_values),
-                                        metadata->fcc_status) < 0;
+  failed |= stream_metadata_append_enum(headers, sizeof(headers), &length, STREAM_HDR_FCC_TYPE, stream_fcc_type_values,
+                                        ARRAY_SIZE(stream_fcc_type_values), metadata->fcc_type) < 0;
+  failed |=
+      stream_metadata_append_enum(headers, sizeof(headers), &length, STREAM_HDR_FCC_STATUS, stream_fcc_status_values,
+                                  ARRAY_SIZE(stream_fcc_status_values), metadata->fcc_status) < 0;
 
   if (config.cors_allow_origin && config.cors_allow_origin[0]) {
     failed |= stream_metadata_append_expose_headers(headers, sizeof(headers), &length) < 0;
