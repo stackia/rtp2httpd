@@ -126,7 +126,7 @@ class TestTelecomFCC:
         target.start()
         redirect.start()
         try:
-            status, headers, body = stream_get(
+            status, _, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 f"/rtp/{MCAST_ADDR}:{mcast_port}?fcc=127.0.0.1:{redirect.port}",

@@ -155,6 +155,37 @@ def _parse_raw_http_response(data: bytes, lower_header_names: bool = False) -> t
     return status_code, hdrs, body
 
 
+def raw_http_request(
+    host: str,
+    port: int,
+    method: str,
+    path: str,
+    timeout: float = 5.0,
+) -> tuple[int, dict, bytes]:
+    """Send a request over a bare socket and return the response verbatim.
+
+    Unlike ``http_request``, this does not use ``http.client``, which silently
+    treats HEAD responses as bodiless.  Use it to assert that a HEAD response
+    really carries no content (RFC 9110 9.3.2).
+    """
+    sock = socket.create_connection((host, port), timeout=timeout)
+    try:
+        sock.sendall(("%s %s HTTP/1.1\r\nHost: %s\r\n\r\n" % (method, path, host)).encode())
+        data = b""
+        while True:
+            try:
+                chunk = sock.recv(4096)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            data += chunk
+    finally:
+        sock.close()
+
+    return _parse_raw_http_response(data, lower_header_names=True)
+
+
 def unix_http_request(
     socket_path: str,
     method: str,
