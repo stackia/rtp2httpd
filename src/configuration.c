@@ -99,8 +99,8 @@ static int parse_bool(const char *value) {
 }
 
 static rtsp_nat_mode_t parse_rtsp_nat_mode(const char *value) {
-  if (strcasecmp(value, "none") == 0)
-    return RTSP_NAT_MODE_NONE;
+  if (strcasecmp(value, "auto") == 0)
+    return RTSP_NAT_MODE_AUTO;
   if (strcasecmp(value, "stun") == 0)
     return RTSP_NAT_MODE_STUN;
   if (strcasecmp(value, "zte") == 0)
@@ -112,7 +112,6 @@ rtsp_nat_mode_t config_get_effective_rtsp_nat_mode(void) {
   if (config.rtsp_nat_mode == RTSP_NAT_MODE_AUTO) {
     if (config.rtsp_stun_server && config.rtsp_stun_server[0] != '\0')
       return RTSP_NAT_MODE_STUN;
-    return RTSP_NAT_MODE_NONE;
   }
   return config.rtsp_nat_mode;
 }
@@ -122,7 +121,7 @@ static int validate_rtsp_nat_config(void) {
   rtsp_nat_mode_t mode = config_get_effective_rtsp_nat_mode();
 
   if (mode == RTSP_NAT_MODE_INVALID) {
-    logger(LOG_ERROR, "Invalid rtsp-nat-mode (expected none, stun, or zte)");
+    logger(LOG_ERROR, "Invalid rtsp-nat-mode (expected auto, stun, or zte)");
     return -1;
   }
   if (mode == RTSP_NAT_MODE_STUN && (!config.rtsp_stun_server || config.rtsp_stun_server[0] == '\0')) {
@@ -1309,8 +1308,11 @@ int config_reload(int *out_bind_changed) {
     return -1;
   }
 
-  if (validate_rtsp_nat_config() < 0)
+  if (validate_rtsp_nat_config() < 0) {
+    if (old_bind_addresses)
+      free_bindaddr(old_bind_addresses);
     return -1;
+  }
 
   apply_bind_side_effects();
 
@@ -1404,8 +1406,8 @@ void usage(FILE *f, char *progname) {
           "(default: rtp2httpd/<version>)\n"
           "\t-N --rtsp-stun-server <host:port>  STUN server for RTSP NAT traversal "
           "(default: disabled)\n"
-          "\t   --rtsp-nat-mode <none|stun|zte>  RTSP NAT traversal mode "
-          "(default: infer stun when rtsp-stun-server is set)\n"
+          "\t   --rtsp-nat-mode <auto|stun|zte>  RTSP NAT traversal mode "
+          "(default: auto)\n"
           "\t-O --cors-allow-origin <origin>  Set Access-Control-Allow-Origin header "
           "(default: disabled)\n"
           "\t   --access-log <path>  Write access logs to this file (default: disabled)\n"
@@ -1706,7 +1708,7 @@ void parse_cmd_line(int argc, char *argv[]) {
     case OPT_RTSP_NAT_MODE:
       config.rtsp_nat_mode = parse_rtsp_nat_mode(optarg);
       if (config.rtsp_nat_mode == RTSP_NAT_MODE_INVALID) {
-        logger(LOG_FATAL, "Invalid --rtsp-nat-mode value: %s (expected none, stun, or zte)", optarg);
+        logger(LOG_FATAL, "Invalid --rtsp-nat-mode value: %s (expected auto, stun, or zte)", optarg);
         exit(EXIT_FAILURE);
       }
       cmd_rtsp_nat_mode_set = 1;

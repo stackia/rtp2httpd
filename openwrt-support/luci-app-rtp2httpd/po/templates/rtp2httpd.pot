@@ -415,11 +415,11 @@ msgid "RTSP NAT Traversal Mode"
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:646
-msgid "Select none to disable traversal, STUN for standard address discovery, or ZTE for the ZXV10STB UDP punch protocol. ZTE uses the actual IPv4 endpoint selected for the RTSP TCP connection and ignores the STUN server."
+msgid "Select Auto to use STUN when a server is configured and otherwise disable traversal, STUN to require standard address discovery, or ZTE for the ZXV10STB UDP punch protocol. ZTE uses the actual IPv4 endpoint selected for the RTSP TCP connection and ignores the STUN server."
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:650
-msgid "None"
+msgid "Auto"
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:651

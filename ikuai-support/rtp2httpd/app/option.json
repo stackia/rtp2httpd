@@ -299,11 +299,11 @@
     "max": 1
   },
   {
-    "default": "none",
+    "default": "auto",
     "attrname": "RTP2HTTPD_RTSP_NAT_MODE",
     "label": {
-      "en": "RTSP NAT mode: none, stun, or zte",
-      "zh": "RTSP NAT 模式：none、stun 或 zte"
+      "en": "RTSP NAT mode: auto, stun, or zte",
+      "zh": "RTSP NAT 模式：auto、stun 或 zte"
     },
     "required": true,
     "scope": "config",

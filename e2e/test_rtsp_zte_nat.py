@@ -211,8 +211,9 @@ class TestNATModeCompatibility:
             r2h.stop()
             rtsp.stop()
 
-    def test_explicit_none_disables_legacy_stun_inference(self, r2h_binary):
-        stun = MockSTUNServer()
+    def test_explicit_auto_uses_configured_stun(self, r2h_binary):
+        mapped_port = 50004
+        stun = MockSTUNServer(mapped_port=mapped_port)
         rtsp = MockRTSPServer(num_packets=500)
         stun.start()
         rtsp.start()
@@ -222,7 +223,7 @@ class TestNATModeCompatibility:
             r2h_port,
             extra_args=[
                 "--rtsp-nat-mode",
-                "none",
+                "auto",
                 "--rtsp-stun-server",
                 "127.0.0.1:%d" % stun.port,
             ],
@@ -238,9 +239,9 @@ class TestNATModeCompatibility:
             )
             assert status == 200
             assert body
-            time.sleep(0.1)
-            assert stun.requests_received == 0
-            assert "x-NAT" not in _request(rtsp, "DESCRIBE")["headers"]
+            assert stun.requests_received >= 1
+            transport = _request(rtsp, "SETUP")["headers"]["Transport"]
+            assert "client_port=%d-%d" % (mapped_port, mapped_port + 1) in transport
         finally:
             r2h.stop()
             rtsp.stop()
@@ -261,7 +262,22 @@ class TestNATModeCompatibility:
         finally:
             r2h.stop()
 
-    def test_cli_mode_override_survives_reload(self, r2h_binary):
+    def test_none_mode_is_rejected(self, r2h_binary):
+        r2h = R2HProcess(
+            r2h_binary,
+            find_free_port(),
+            extra_args=["--rtsp-nat-mode", "none"],
+            capture_log=True,
+        )
+        r2h.start(wait=False)
+        try:
+            assert r2h.process is not None
+            assert r2h.process.wait(timeout=5) != 0
+            assert "expected auto, stun, or zte" in r2h.read_log()
+        finally:
+            r2h.stop()
+
+    def test_cli_auto_override_survives_reload(self, r2h_binary):
         rtsp = MockRTSPServer(num_packets=300)
         rtsp.start()
         r2h_port = find_free_port()
@@ -269,7 +285,7 @@ class TestNATModeCompatibility:
             r2h_binary,
             r2h_port,
             config_content=build_config(r2h_port, global_lines=["rtsp-nat-mode = zte"]),
-            extra_args=["--rtsp-nat-mode", "none"],
+            extra_args=["--rtsp-nat-mode", "auto"],
             capture_log=True,
         )
         r2h.start()

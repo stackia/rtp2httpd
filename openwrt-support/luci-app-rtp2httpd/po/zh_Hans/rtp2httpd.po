@@ -462,12 +462,12 @@ msgid "RTSP NAT Traversal Mode"
 msgstr "RTSP NAT 穿透模式"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:646
-msgid "Select none to disable traversal, STUN for standard address discovery, or ZTE for the ZXV10STB UDP punch protocol. ZTE uses the actual IPv4 endpoint selected for the RTSP TCP connection and ignores the STUN server."
-msgstr "选择 none 可禁用穿透，选择 STUN 可进行标准地址探测，选择 ZTE 可使用 ZXV10STB UDP 打洞协议。ZTE 使用 RTSP TCP 连接实际选择的 IPv4 endpoint，并忽略 STUN 服务器。"
+msgid "Select Auto to use STUN when a server is configured and otherwise disable traversal, STUN to require standard address discovery, or ZTE for the ZXV10STB UDP punch protocol. ZTE uses the actual IPv4 endpoint selected for the RTSP TCP connection and ignores the STUN server."
+msgstr "选择 Auto 可在配置了服务器时使用 STUN，否则禁用穿透；选择 STUN 可强制进行标准地址探测；选择 ZTE 可使用 ZXV10STB UDP 打洞协议。ZTE 使用 RTSP TCP 连接实际选择的 IPv4 endpoint，并忽略 STUN 服务器。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:650
-msgid "None"
-msgstr "无"
+msgid "Auto"
+msgstr "自动"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:651
 msgid "STUN"

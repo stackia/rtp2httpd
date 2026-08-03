@@ -29,7 +29,6 @@ typedef enum { BIND_ADDR_TCP = 0, BIND_ADDR_UNIX } bindaddr_type_t;
 typedef enum {
   RTSP_NAT_MODE_INVALID = -1,
   RTSP_NAT_MODE_AUTO = 0,
-  RTSP_NAT_MODE_NONE,
   RTSP_NAT_MODE_STUN,
   RTSP_NAT_MODE_ZTE
 } rtsp_nat_mode_t;
@@ -127,7 +126,7 @@ typedef struct {
                            1=enabled) */
 
   /* RTSP NAT traversal settings */
-  rtsp_nat_mode_t rtsp_nat_mode; /* Explicit NAT traversal mode, or AUTO for legacy inference */
+  rtsp_nat_mode_t rtsp_nat_mode; /* RTSP NAT traversal mode (AUTO by default) */
   char *rtsp_stun_server;        /* STUN server host:port for RTSP NAT traversal
                                     (NULL=disabled) */
   char *http_proxy_user_agent;   /* Override User-Agent header for upstream HTTP
@@ -243,7 +242,7 @@ int bind_addresses_equal(bindaddr_t *a, bindaddr_t *b);
 int bind_addresses_has_unix(void);
 
 /**
- * Resolve the configured RTSP NAT mode, including legacy STUN inference.
+ * Resolve AUTO to STUN when an RTSP STUN server is configured.
  */
 rtsp_nat_mode_t config_get_effective_rtsp_nat_mode(void);
 
