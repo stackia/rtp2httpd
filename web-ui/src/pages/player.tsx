@@ -32,6 +32,7 @@ import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG 
 import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
 import { isLGWebOS } from "../lib/platform";
+import { findDeepLinkChannel, syncChannelDeepLink } from "../lib/player-deep-link";
 import {
   getAutoDeinterlace,
   getLastChannelId,
@@ -293,6 +294,13 @@ function PlayerPage() {
     }
   }, [currentChannel, playMode]);
 
+  // Keep the address bar shareable: rewrite the URL to ?channel_name=<name> on every channel switch.
+  useEffect(() => {
+    if (currentChannel) {
+      syncChannelDeepLink(currentChannel.name);
+    }
+  }, [currentChannel]);
+
   const handleCurrentVideoTimeChange = useCallback((time: number) => {
     currentVideoTimeRef.current = time;
     const currentSecond = Math.floor(time);
@@ -375,8 +383,10 @@ function PlayerPage() {
       setMetadata(parsed);
 
       // Start the initial channel while the EPG loads, but keep the startup overlay visible until parsing finishes.
+      const deepLinkChannel = findDeepLinkChannel(parsed.channels);
       const lastChannelId = getLastChannelId();
-      const channelToSelect = parsed.channels.find((channel) => channel.id === lastChannelId) ?? parsed.channels[0];
+      const channelToSelect =
+        deepLinkChannel ?? parsed.channels.find((channel) => channel.id === lastChannelId) ?? parsed.channels[0];
       selectChannel(channelToSelect);
 
       // Load EPG if available
