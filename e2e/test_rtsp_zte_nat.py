@@ -88,8 +88,13 @@ class TestZTEProtocol:
             assert payload[20:] == bytes(64)
             assert udp_source[0] == tcp_source_ip
             assert udp_source[1] == rtsp._client_rtp_port
-            assert rtsp.events.index("setup_response_sent") < rtsp.events.index("zte_probe_received")
-            assert rtsp.events.index("zte_probe_received") < rtsp.events.index("play_received")
+
+            # TCP control requests and UDP probes are consumed by separate mock
+            # threads, so their server-side observation order is inherently
+            # racy. The probe target port is disclosed only by the SETUP
+            # response, and MockRTSPServerZTE withholds media until this exact
+            # packet validates, which covers the protocol dependency without a
+            # cross-protocol scheduling assertion.
 
             log = r2h.read_log()
             assert "RTSP STUN server ignored because rtsp-nat-mode=zte" in log

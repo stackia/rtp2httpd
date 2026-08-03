@@ -79,7 +79,6 @@ class _RTSPServerBase:
         self.requests_received: list[str] = []
         self.requests_detailed: list[dict] = []
         self.control_peer: tuple | None = None
-        self.events: list[str] = []
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -239,9 +238,7 @@ class _RTSPServerBase:
                         return
                 elif method == "SETUP":
                     conn.sendall(self._setup_response(cseq, transport_hdr).encode())
-                    self.events.append("setup_response_sent")
                 elif method == "PLAY":
-                    self.events.append("play_received")
                     extra_headers = "".join("%s: %s\r\n" % item for item in self._play_response_headers)
                     conn.sendall(
                         (
@@ -484,7 +481,6 @@ class MockRTSPServerZTE(_RTSPServerBase):
                 payload, source = self._server_rtp_socket.recvfrom(2048)
                 self.udp_datagrams.append((payload, source))
                 if self._probe_is_valid(payload, source):
-                    self.events.append("zte_probe_received")
                     self._valid_probe.set()
             except socket.timeout:
                 if self._play_started.is_set():
