@@ -2,6 +2,7 @@
 #define __RTSP_H__
 
 #include <stdint.h>
+#include <sys/socket.h>
 #include <sys/types.h>
 
 #include "stun.h"
@@ -151,6 +152,16 @@ typedef struct {
    * TEARDOWN reconnect), in which case events for the old one must be ignored.
    * fd numbers cannot be used for this: close()+socket() often reuses them. */
   unsigned connect_generation;
+
+  /* Actual control connection endpoints selected by the kernel. */
+  struct sockaddr_storage control_local_addr;
+  socklen_t control_local_addr_len;
+  struct sockaddr_storage control_peer_addr;
+  socklen_t control_peer_addr_len;
+  char control_local_ip[RTSP_SERVER_HOST_SIZE];
+  uint16_t control_local_port;
+  int control_endpoints_valid;
+  int zte_active;
 
   /* Authentication state */
   char username[RTSP_CREDENTIAL_SIZE];    /* RTSP username for authentication */

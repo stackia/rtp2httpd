@@ -161,6 +161,9 @@ fi
 if [ "$RTP2HTTPD_ZEROCOPY_ON_SEND" = "1" ]; then
   set -- "$@" --zerocopy-on-send
 fi
+if [ -n "$RTP2HTTPD_RTSP_NAT_MODE" ]; then
+  set -- "$@" --rtsp-nat-mode "$RTP2HTTPD_RTSP_NAT_MODE"
+fi
 if [ -n "$RTP2HTTPD_RTSP_STUN_SERVER" ]; then
   set -- "$@" --rtsp-stun-server "$RTP2HTTPD_RTSP_STUN_SERVER"
 fi

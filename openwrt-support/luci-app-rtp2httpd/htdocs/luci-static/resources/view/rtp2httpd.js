@@ -636,6 +636,21 @@ return view.extend({
 
     o = s.taboption(
       "network",
+      form.ListValue,
+      "rtsp_nat_mode",
+      _("RTSP NAT Traversal Mode"),
+      _(
+        "Select none to disable traversal, STUN for standard address discovery, or ZTE for the ZXV10STB UDP punch protocol. ZTE uses the actual IPv4 endpoint selected for the RTSP TCP connection and ignores the STUN server."
+      )
+    );
+    o.value("none", _("None"));
+    o.value("stun", _("STUN"));
+    o.value("zte", _("ZTE"));
+    o.default = "none";
+    o.depends("use_config_file", "0");
+
+    o = s.taboption(
+      "network",
       form.Value,
       "rtsp_stun_server",
       _("RTSP STUN Server"),

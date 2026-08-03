@@ -108,6 +108,13 @@ Unix socket listen paths must be absolute and must not contain whitespace. At st
   - Format: `host:port` or `host` (default port: 3478)
   - Example: `stun.miwifi.com` or `stun.miwifi.com:3478`
 
+- `--rtsp-nat-mode <none|stun|zte>` - RTSP NAT traversal mode
+  - `none`: Disable STUN and ZTE traversal
+  - `stun`: Use `rtsp-stun-server` to discover the public UDP port; a valid STUN server is required
+  - `zte`: Use the ZTE `ZXV10STB` UDP punch protocol without contacting the configured STUN server
+  - When omitted, legacy configurations implicitly use `stun` if `rtsp-stun-server` is set, or `none` otherwise
+  - ZTE mode supports IPv4 only. Its address comes from the actual local endpoint of the connected RTSP TCP socket, so it follows the priority of `r2h-ifname`, `upstream-interface-rtsp`, `upstream-interface`, and the system routing table
+
 ### Other Options
 
 - `-S, --video-snapshot` - Enable video snapshot feature (default: disabled)
@@ -244,6 +251,10 @@ http-proxy-user-agent = rtp2httpd-http-proxy/1.0
 # User-Agent for upstream RTSP requests (default: rtp2httpd/<version>)
 # Configure this when an upstream RTSP server requires a specific User-Agent for compatibility
 rtsp-user-agent = rtp2httpd/custom
+
+# RTSP NAT traversal mode: none, stun, or zte (default: none)
+# If omitted while rtsp-stun-server is configured, stun is selected for backward compatibility
+rtsp-nat-mode = none
 
 # STUN server for RTSP NAT traversal (default: disabled)
 # When an RTSP server only supports UDP transport and the client is behind NAT, STUN can be used to attempt NAT traversal (not guaranteed to succeed)

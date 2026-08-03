@@ -53,6 +53,8 @@ static void rtsp_close_udp_sockets(rtsp_session_t *session, const char *reason);
 static char *rtsp_find_header(const char *response, const char *header_name);
 static void rtsp_parse_transport_header(rtsp_session_t *session, const char *transport);
 static void rtsp_send_udp_nat_probe(rtsp_session_t *session);
+static void rtsp_send_zte_nat_probe(rtsp_session_t *session);
+static int rtsp_capture_control_endpoints(rtsp_session_t *session);
 static int rtsp_process_interleaved_buffer(rtsp_session_t *session, connection_t *conn);
 static int rtsp_handle_redirect(rtsp_session_t *session, const char *location);
 static void rtsp_parse_describe_sdp(rtsp_session_t *session, const char *header_start, const char *sdp_body);
@@ -300,6 +302,12 @@ void rtsp_session_init(rtsp_session_t *session) {
   session->metadata_probe = 0;
   session->peer_closed = 0;
   session->connect_generation = 0;
+  session->control_local_addr_len = 0;
+  session->control_peer_addr_len = 0;
+  session->control_local_ip[0] = '\0';
+  session->control_local_port = 0;
+  session->control_endpoints_valid = 0;
+  session->zte_active = 0;
 
   /* Initialize transport parameters - mode will be negotiated during SETUP */
   session->transport_mode = RTSP_TRANSPORT_TCP;    /* Default preference */
@@ -739,6 +747,73 @@ static void rtsp_free_connect_results(rtsp_session_t *session) {
   }
 }
 
+static int rtsp_capture_control_endpoints(rtsp_session_t *session) {
+  struct sockaddr_storage local_addr;
+  struct sockaddr_storage peer_addr;
+  socklen_t local_len = sizeof(local_addr);
+  socklen_t peer_len = sizeof(peer_addr);
+  char local_host[RTSP_SERVER_HOST_SIZE];
+  char local_service[RTSP_PORT_STRING_SIZE];
+  int local_ip_changed = 0;
+  int zte_requested = config_get_effective_rtsp_nat_mode() == RTSP_NAT_MODE_ZTE;
+
+  memset(&local_addr, 0, sizeof(local_addr));
+  memset(&peer_addr, 0, sizeof(peer_addr));
+  if (getsockname(session->socket, (struct sockaddr *)&local_addr, &local_len) < 0) {
+    logger(LOG_ERROR, "RTSP: getsockname() failed: %s", strerror(errno));
+    session->control_endpoints_valid = 0;
+    session->zte_active = 0;
+    return -1;
+  }
+  if (getpeername(session->socket, (struct sockaddr *)&peer_addr, &peer_len) < 0) {
+    logger(LOG_ERROR, "RTSP: getpeername() failed: %s", strerror(errno));
+    session->control_endpoints_valid = 0;
+    session->zte_active = 0;
+    return -1;
+  }
+  if (getnameinfo((struct sockaddr *)&local_addr, local_len, local_host, sizeof(local_host), local_service,
+                  sizeof(local_service), NI_NUMERICHOST | NI_NUMERICSERV) != 0) {
+    logger(LOG_ERROR, "RTSP: Failed to format local control endpoint");
+    session->control_endpoints_valid = 0;
+    session->zte_active = 0;
+    return -1;
+  }
+
+  if (session->control_endpoints_valid && session->control_local_addr.ss_family == AF_INET &&
+      local_addr.ss_family == AF_INET) {
+    const struct sockaddr_in *old_local = (const struct sockaddr_in *)&session->control_local_addr;
+    const struct sockaddr_in *new_local = (const struct sockaddr_in *)&local_addr;
+    local_ip_changed = old_local->sin_addr.s_addr != new_local->sin_addr.s_addr;
+  }
+  if (zte_requested && local_ip_changed && session->rtp_socket >= 0)
+    rtsp_close_udp_sockets(session, "control connection local address changed");
+
+  memcpy(&session->control_local_addr, &local_addr, local_len);
+  session->control_local_addr_len = local_len;
+  memcpy(&session->control_peer_addr, &peer_addr, peer_len);
+  session->control_peer_addr_len = peer_len;
+  snprintf(session->control_local_ip, sizeof(session->control_local_ip), "%s", local_host);
+  session->control_local_port = (uint16_t)atoi(local_service);
+  session->control_endpoints_valid = 1;
+  session->zte_active = zte_requested && local_addr.ss_family == AF_INET && peer_addr.ss_family == AF_INET;
+
+  logger(LOG_INFO, "RTSP: Upstream interface %s, local endpoint %s:%u",
+         session->upstream_ifname && session->upstream_ifname[0] ? session->upstream_ifname : "route-selected",
+         session->control_local_ip, session->control_local_port);
+
+#ifdef __FreeBSD__
+  if (zte_requested && session->upstream_ifname && session->upstream_ifname[0])
+    logger(LOG_WARN,
+           "RTSP: FreeBSD cannot reliably pin unicast sockets to upstream interface %s; using the actual "
+           "route-selected local endpoint",
+           session->upstream_ifname);
+#endif
+  if (zte_requested && !session->zte_active)
+    logger(LOG_WARN, "RTSP: ZTE NAT traversal only supports IPv4 control connections; using ordinary RTSP negotiation");
+
+  return 0;
+}
+
 /**
  * Try connecting to the next candidate from the getaddrinfo result list
  * (sequential dual-stack fallback, IPv6/IPv4 in resolver order).
@@ -874,7 +949,7 @@ int rtsp_connect(rtsp_session_t *session) {
    * This allows STUN to run in parallel with TCP connection establishment
    * Only do this on initial connect (not on redirect or reconnect for TEARDOWN)
    * Check: UDP socket not yet created and STUN not already in progress/completed */
-  if (!session->metadata_probe && config.rtsp_stun_server && config.rtsp_stun_server[0] != '\0' &&
+  if (!session->metadata_probe && config_get_effective_rtsp_nat_mode() == RTSP_NAT_MODE_STUN &&
       session->rtp_socket < 0 && !session->stun.in_progress && !session->stun.completed) {
     if (rtsp_setup_udp_sockets(session) == 0) {
       if (stun_send_request(&session->stun, session->rtp_socket) == 0) {
@@ -963,6 +1038,7 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
     /* Connection succeeded - drop remaining candidates */
     rtsp_free_connect_results(session);
     logger(LOG_INFO, "RTSP: Connected to %s:%d", session->server_host, session->server_port);
+    rtsp_capture_control_endpoints(session);
 
     /* Update poller to monitor both read and write */
     if (session->epoll_fd >= 0) {
@@ -1268,7 +1344,7 @@ int rtsp_send_keepalive(rtsp_session_t *session) {
   }
 
   /* Send NAT probe packets to maintain UDP hole-punching (UDP only) */
-  if (session->transport_mode == RTSP_TRANSPORT_UDP) {
+  if (session->transport_mode == RTSP_TRANSPORT_UDP && !session->zte_active) {
     rtsp_send_udp_nat_probe(session);
   }
 
@@ -1599,7 +1675,12 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
 
   case RTSP_STATE_AWAITING_OPTIONS:
     /* OPTIONS response received, ready to send DESCRIBE */
-    snprintf(extra_headers, sizeof(extra_headers), "Accept: application/sdp\r\n");
+    if (session->zte_active) {
+      snprintf(extra_headers, sizeof(extra_headers), "Accept: application/sdp\r\nx-NAT: %s:%u\r\n",
+               session->control_local_ip, session->control_local_port);
+    } else {
+      snprintf(extra_headers, sizeof(extra_headers), "Accept: application/sdp\r\n");
+    }
     if (rtsp_prepare_request(session, RTSP_METHOD_DESCRIBE, NULL, extra_headers) < 0) {
       logger(LOG_ERROR, "RTSP: Failed to prepare DESCRIBE request");
       return -1;
@@ -1628,6 +1709,14 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
                "RTP/AVP/TCP;unicast;interleaved=%d-%d\r\n",
                session->rtp_channel, session->rtcp_channel, session->rtp_channel, session->rtcp_channel,
                session->rtp_channel, session->rtcp_channel);
+    } else if (session->zte_active) {
+      advertised_rtp_port = session->local_rtp_port;
+      advertised_rtcp_port = session->local_rtcp_port;
+      snprintf(extra_headers, sizeof(extra_headers),
+               "Transport: MP2T/RTP/UDP;unicast;client_address=%s;client_port=%d-%d;mode=PLAY\r\n"
+               "x-NAT: %s:%u\r\n",
+               session->control_local_ip, advertised_rtp_port, advertised_rtcp_port, session->control_local_ip,
+               session->control_local_port);
     } else {
       /* Check STUN status and determine which port to advertise */
       if (session->stun.in_progress) {
@@ -1650,7 +1739,7 @@ int rtsp_state_machine_advance(rtsp_session_t *session) {
       } else {
         advertised_rtp_port = session->local_rtp_port;
         advertised_rtcp_port = session->local_rtcp_port;
-        if (config.rtsp_stun_server && config.rtsp_stun_server[0] != '\0') {
+        if (config_get_effective_rtsp_nat_mode() == RTSP_NAT_MODE_STUN) {
           logger(LOG_DEBUG, "RTSP: STUN timed out, using local ports %d-%d", advertised_rtp_port, advertised_rtcp_port);
         }
       }
@@ -2542,7 +2631,12 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
   } else {
     struct sockaddr_in *sin = (struct sockaddr_in *)&local_addr;
     sin->sin_family = AF_INET;
-    sin->sin_addr.s_addr = INADDR_ANY;
+    if (session->zte_active) {
+      const struct sockaddr_in *control_local = (const struct sockaddr_in *)&session->control_local_addr;
+      sin->sin_addr = control_local->sin_addr;
+    } else {
+      sin->sin_addr.s_addr = INADDR_ANY;
+    }
     local_addr_len = sizeof(struct sockaddr_in);
   }
 
@@ -2661,8 +2755,13 @@ static int rtsp_setup_udp_sockets(rtsp_session_t *session) {
     logger(LOG_DEBUG, "RTSP: RTCP socket registered with poller");
   }
 
-  logger(LOG_DEBUG, "RTSP: UDP sockets bound to ports %d (RTP) and %d (RTCP)", session->local_rtp_port,
-         session->local_rtcp_port);
+  if (session->zte_active) {
+    logger(LOG_DEBUG, "RTSP: UDP sockets bound to %s:%d (RTP) and %s:%d (RTCP)", session->control_local_ip,
+           session->local_rtp_port, session->control_local_ip, session->local_rtcp_port);
+  } else {
+    logger(LOG_DEBUG, "RTSP: UDP sockets bound to ports %d (RTP) and %d (RTCP)", session->local_rtp_port,
+           session->local_rtcp_port);
+  }
 
   return 0;
 }
@@ -3100,6 +3199,49 @@ static void rtsp_send_udp_nat_probe(rtsp_session_t *session) {
          session->server_rtcp_port);
 }
 
+static void rtsp_send_zte_nat_probe(rtsp_session_t *session) {
+  uint8_t packet[84];
+  struct sockaddr_storage destination;
+  const struct sockaddr_in *local_addr;
+  uint16_t network_port;
+  ssize_t sent;
+
+  if (!session || !session->zte_active || !session->control_endpoints_valid || session->rtp_socket < 0 ||
+      session->control_peer_addr.ss_family != AF_INET)
+    return;
+  if (session->server_rtp_port <= 0 || session->server_rtp_port > 65535) {
+    logger(LOG_WARN, "RTSP: Cannot send ZTE NAT probe without a valid server RTP port");
+    return;
+  }
+
+  memset(packet, 0, sizeof(packet));
+  memcpy(packet, "ZXV10STB", 8);
+  packet[8] = 0x7f;
+  packet[9] = 0xff;
+  packet[10] = 0xff;
+  packet[11] = 0xff;
+
+  local_addr = (const struct sockaddr_in *)&session->control_local_addr;
+  memcpy(packet + 12, &local_addr->sin_addr.s_addr, sizeof(local_addr->sin_addr.s_addr));
+  network_port = htons((uint16_t)session->local_rtp_port);
+  memcpy(packet + 16, &network_port, sizeof(network_port));
+  network_port = htons(session->control_local_port);
+  memcpy(packet + 18, &network_port, sizeof(network_port));
+
+  memcpy(&destination, &session->control_peer_addr, session->control_peer_addr_len);
+  sockaddr_set_port((struct sockaddr *)&destination, (uint16_t)session->server_rtp_port);
+  sent = sendto(session->rtp_socket, packet, sizeof(packet), 0, (struct sockaddr *)&destination,
+                session->control_peer_addr_len);
+  if (sent != (ssize_t)sizeof(packet)) {
+    logger(LOG_WARN, "RTSP: Failed to send ZTE NAT probe to control peer port %d: %s", session->server_rtp_port,
+           sent < 0 ? strerror(errno) : "short send");
+    return;
+  }
+
+  logger(LOG_DEBUG, "RTSP: Sent 84-byte ZTE NAT probe from %s:%d to control peer port %d", session->control_local_ip,
+         session->local_rtp_port, session->server_rtp_port);
+}
+
 static void rtsp_parse_transport_header(rtsp_session_t *session, const char *transport) {
   char *server_port_param;
   char *interleaved_param;
@@ -3204,8 +3346,12 @@ static void rtsp_parse_transport_header(rtsp_session_t *session, const char *tra
       }
     }
 
-    /* Send NAT probe packets if server provided source address and ports */
-    rtsp_send_udp_nat_probe(session);
+    if (session->zte_active) {
+      rtsp_send_zte_nat_probe(session);
+    } else {
+      /* Send ordinary NAT probe packets if server provided source address and ports */
+      rtsp_send_udp_nat_probe(session);
+    }
   }
 }
 

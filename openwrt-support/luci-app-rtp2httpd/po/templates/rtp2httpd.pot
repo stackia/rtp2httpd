@@ -410,6 +410,26 @@ msgstr ""
 msgid "rtp2httpd"
 msgstr ""
 
+#: htdocs/luci-static/resources/view/rtp2httpd.js:644
+msgid "RTSP NAT Traversal Mode"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:646
+msgid "Select none to disable traversal, STUN for standard address discovery, or ZTE for the ZXV10STB UDP punch protocol. ZTE uses the actual IPv4 endpoint selected for the RTSP TCP connection and ignores the STUN server."
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:650
+msgid "None"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:651
+msgid "STUN"
+msgstr ""
+
+#: htdocs/luci-static/resources/view/rtp2httpd.js:652
+msgid "ZTE"
+msgstr ""
+
 #: htdocs/luci-static/resources/view/rtp2httpd.js:281
 msgid ""
 "rtp2httpd converts RTP/UDP/RTSP media into http stream. Here you can "
