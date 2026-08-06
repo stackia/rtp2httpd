@@ -108,12 +108,6 @@ Unix socket 监听路径必须是绝对路径，且路径中不能包含空白�
   - 格式：`host:port` 或 `host`（默认端口 3478）
   - 示例：`stun.miwifi.com` 或 `stun.miwifi.com:3478`
 
-- `--rtsp-nat-mode <auto|stun|zte>` - RTSP NAT 穿透模式
-  - `auto`：配置了 `rtsp-stun-server` 时使用 STUN，否则不启用 NAT 穿透（默认）
-  - `stun`：使用 `rtsp-stun-server` 探测公网 UDP 端口；必须配置有效的 STUN 服务器
-  - `zte`：使用中兴 `ZXV10STB` UDP 打洞协议，不访问已配置的 STUN 服务器
-  - ZTE 模式仅支持 IPv4。其地址取自 RTSP TCP 连接成功后的实际本地 endpoint，因此会遵循 `r2h-ifname`、`upstream-interface-rtsp`、`upstream-interface` 和系统路由表的优先级
-
 ### 其他
 
 - `-S, --video-snapshot` - 启用视频快照功能 (默认: 关闭)
@@ -248,10 +242,6 @@ http-proxy-user-agent = rtp2httpd-http-proxy/1.0
 # 上游 RTSP 请求的 User-Agent（默认: rtp2httpd/<version>）
 # 当上游 RTSP 服务器要求特定 User-Agent 时可配置此项
 rtsp-user-agent = rtp2httpd/custom
-
-# RTSP NAT 穿透模式：auto、stun 或 zte（默认: auto）
-# auto 在配置了 rtsp-stun-server 时使用 STUN，否则不启用 NAT 穿透
-rtsp-nat-mode = auto
 
 # STUN 服务器用于 RTSP NAT 穿透（默认: 禁用）
 # 当 RTSP 服务器仅支持 UDP 传输且客户端位于 NAT 后时，可尝试使用 STUN 进行 NAT 穿透（不保证成功）

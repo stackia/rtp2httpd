@@ -87,7 +87,6 @@ start_instance() {
         append_arg "$cfg" fcc_listen_port_range "--fcc-listen-port-range"
         append_arg "$cfg" http_proxy_user_agent "--http-proxy-user-agent"
         append_arg "$cfg" rtsp_user_agent "--rtsp-user-agent"
-        append_arg "$cfg" rtsp_nat_mode "--rtsp-nat-mode"
         append_arg "$cfg" rtsp_stun_server "--rtsp-stun-server"
         append_arg "$cfg" cors_allow_origin "--cors-allow-origin"
         append_arg "$cfg" ffmpeg_path "--ffmpeg-path"

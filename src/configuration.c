@@ -50,7 +50,6 @@ int cmd_zerocopy_on_send_set = 0;
 int cmd_workers_set = 0;
 int cmd_external_m3u_url_set = 0;
 int cmd_external_m3u_update_interval_set = 0;
-int cmd_rtsp_nat_mode_set = 0;
 int cmd_rtsp_stun_server_set = 0;
 int cmd_http_proxy_user_agent_set = 0;
 int cmd_rtsp_user_agent_set = 0;
@@ -66,8 +65,7 @@ enum long_option_e {
   OPT_USE_RELATIVE_PATH_IN_M3U,
   OPT_ACCESS_LOG,
   OPT_LOG_FORMAT,
-  OPT_PID_FILE,
-  OPT_RTSP_NAT_MODE
+  OPT_PID_FILE
 };
 
 /* M3U parsing state variables */
@@ -96,44 +94,6 @@ static char *extract_token(char *line, int *pos) {
 static int parse_bool(const char *value) {
   return (strcasecmp("on", value) == 0) || (strcasecmp("true", value) == 0) || (strcasecmp("yes", value) == 0) ||
          (strcasecmp("1", value) == 0);
-}
-
-static rtsp_nat_mode_t parse_rtsp_nat_mode(const char *value) {
-  if (strcasecmp(value, "auto") == 0)
-    return RTSP_NAT_MODE_AUTO;
-  if (strcasecmp(value, "stun") == 0)
-    return RTSP_NAT_MODE_STUN;
-  if (strcasecmp(value, "zte") == 0)
-    return RTSP_NAT_MODE_ZTE;
-  return RTSP_NAT_MODE_INVALID;
-}
-
-rtsp_nat_mode_t config_get_effective_rtsp_nat_mode(void) {
-  if (config.rtsp_nat_mode == RTSP_NAT_MODE_AUTO) {
-    if (config.rtsp_stun_server && config.rtsp_stun_server[0] != '\0')
-      return RTSP_NAT_MODE_STUN;
-  }
-  return config.rtsp_nat_mode;
-}
-
-static int validate_rtsp_nat_config(void) {
-  static int zte_stun_warning_logged = 0;
-  rtsp_nat_mode_t mode = config_get_effective_rtsp_nat_mode();
-
-  if (mode == RTSP_NAT_MODE_INVALID) {
-    logger(LOG_ERROR, "Invalid rtsp-nat-mode (expected auto, stun, or zte)");
-    return -1;
-  }
-  if (mode == RTSP_NAT_MODE_STUN && (!config.rtsp_stun_server || config.rtsp_stun_server[0] == '\0')) {
-    logger(LOG_ERROR, "rtsp-nat-mode=stun requires rtsp-stun-server");
-    return -1;
-  }
-  if (mode == RTSP_NAT_MODE_ZTE && config.rtsp_stun_server && config.rtsp_stun_server[0] != '\0' &&
-      !zte_stun_warning_logged) {
-    logger(LOG_WARN, "RTSP STUN server ignored because rtsp-nat-mode=zte");
-    zte_stun_warning_logged = 1;
-  }
-  return 0;
 }
 
 /* Set config value if not already set by command line */
@@ -791,16 +751,7 @@ void parse_global_sec(char *line) {
     return;
   }
 
-  /* RTSP NAT traversal configuration */
-  if (strcasecmp("rtsp-nat-mode", param) == 0) {
-    if (set_if_not_cmd_override(cmd_rtsp_nat_mode_set, "rtsp-nat-mode")) {
-      config.rtsp_nat_mode = parse_rtsp_nat_mode(value);
-      if (config.rtsp_nat_mode == RTSP_NAT_MODE_INVALID)
-        logger(LOG_ERROR, "Invalid rtsp-nat-mode value: %s", value);
-    }
-    return;
-  }
-
+  /* STUN NAT traversal configuration */
   if (strcasecmp("rtsp-stun-server", param) == 0) {
     if (!cmd_rtsp_stun_server_set) {
       safe_free_string(&config.rtsp_stun_server);
@@ -1225,8 +1176,6 @@ void config_init(void) {
     config.zerocopy_on_send = 0;
   if (!cmd_use_relative_path_in_m3u_set)
     config.use_relative_path_in_m3u = 0;
-  if (!cmd_rtsp_nat_mode_set)
-    config.rtsp_nat_mode = RTSP_NAT_MODE_AUTO;
   if (!cmd_fcc_listen_port_range_set) {
     config.fcc_listen_port_min = 0;
     config.fcc_listen_port_max = 0;
@@ -1298,20 +1247,7 @@ int config_reload(int *out_bind_changed) {
   /* Step 3: Parse config file */
   if (parse_config_file(config_file_path) != 0) {
     logger(LOG_ERROR, "Failed to parse config file during reload: %s", config_file_path);
-    /* Restore old bind addresses */
-    if (!cmd_bind_set) {
-      bind_addresses = old_bind_addresses;
-      old_bind_addresses = NULL; /* Don't free it */
-    }
-    if (old_bind_addresses)
-      free_bindaddr(old_bind_addresses);
-    return -1;
-  }
-
-  if (validate_rtsp_nat_config() < 0) {
-    if (old_bind_addresses)
-      free_bindaddr(old_bind_addresses);
-    return -1;
+    goto reload_failed;
   }
 
   apply_bind_side_effects();
@@ -1328,6 +1264,17 @@ int config_reload(int *out_bind_changed) {
   logger(LOG_INFO, "Configuration reloaded successfully from %s", config_file_path);
 
   return 0;
+
+reload_failed:
+  /* Restore the bind addresses captured before the failed reload */
+  if (!cmd_bind_set) {
+    free_bindaddr(bind_addresses);
+    bind_addresses = old_bind_addresses;
+    old_bind_addresses = NULL; /* Now owned by the global */
+  }
+  if (old_bind_addresses)
+    free_bindaddr(old_bind_addresses);
+  return -1;
 }
 
 void usage(FILE *f, char *progname) {
@@ -1406,8 +1353,6 @@ void usage(FILE *f, char *progname) {
           "(default: rtp2httpd/<version>)\n"
           "\t-N --rtsp-stun-server <host:port>  STUN server for RTSP NAT traversal "
           "(default: disabled)\n"
-          "\t   --rtsp-nat-mode <auto|stun|zte>  RTSP NAT traversal mode "
-          "(default: auto)\n"
           "\t-O --cors-allow-origin <origin>  Set Access-Control-Allow-Origin header "
           "(default: disabled)\n"
           "\t   --access-log <path>  Write access logs to this file (default: disabled)\n"
@@ -1491,7 +1436,6 @@ void parse_cmd_line(int argc, char *argv[]) {
                                     {"zerocopy-on-send", no_argument, 0, 'Z'},
                                     {"http-proxy-user-agent", required_argument, 0, 'g'},
                                     {"rtsp-stun-server", required_argument, 0, 'N'},
-                                    {"rtsp-nat-mode", required_argument, 0, OPT_RTSP_NAT_MODE},
                                     {"rtsp-user-agent", required_argument, 0, 'u'},
                                     {"cors-allow-origin", required_argument, 0, 'O'},
                                     {"access-log", required_argument, 0, OPT_ACCESS_LOG},
@@ -1705,14 +1649,6 @@ void parse_cmd_line(int argc, char *argv[]) {
       cmd_rtsp_stun_server_set = 1;
       logger(LOG_INFO, "RTSP STUN server: %s", config.rtsp_stun_server);
       break;
-    case OPT_RTSP_NAT_MODE:
-      config.rtsp_nat_mode = parse_rtsp_nat_mode(optarg);
-      if (config.rtsp_nat_mode == RTSP_NAT_MODE_INVALID) {
-        logger(LOG_FATAL, "Invalid --rtsp-nat-mode value: %s (expected auto, stun, or zte)", optarg);
-        exit(EXIT_FAILURE);
-      }
-      cmd_rtsp_nat_mode_set = 1;
-      break;
     case 'u':
       safe_free_string(&config.rtsp_user_agent);
       if (optarg[0] != '\0') {
@@ -1762,9 +1698,6 @@ void parse_cmd_line(int argc, char *argv[]) {
     logger(LOG_WARN, "No config file found");
     set_config_file_path(NULL);
   }
-
-  if (validate_rtsp_nat_config() < 0)
-    exit(EXIT_FAILURE);
 
   apply_bind_side_effects();
 

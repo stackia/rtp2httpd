@@ -457,26 +457,6 @@ msgstr "启用零拷贝发送"
 msgid "rtp2httpd"
 msgstr "rtp2httpd"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:644
-msgid "RTSP NAT Traversal Mode"
-msgstr "RTSP NAT 穿透模式"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:646
-msgid "Select Auto to use STUN when a server is configured and otherwise disable traversal, STUN to require standard address discovery, or ZTE for the ZXV10STB UDP punch protocol. ZTE uses the actual IPv4 endpoint selected for the RTSP TCP connection and ignores the STUN server."
-msgstr "选择 Auto 可在配置了服务器时使用 STUN，否则禁用穿透；选择 STUN 可强制进行标准地址探测；选择 ZTE 可使用 ZXV10STB UDP 打洞协议。ZTE 使用 RTSP TCP 连接实际选择的 IPv4 endpoint，并忽略 STUN 服务器。"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:650
-msgid "Auto"
-msgstr "自动"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:651
-msgid "STUN"
-msgstr "STUN"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:652
-msgid "ZTE"
-msgstr "ZTE"
-
 #: htdocs/luci-static/resources/view/rtp2httpd.js:281
 msgid ""
 "rtp2httpd converts RTP/UDP/RTSP media into http stream. Here you can "

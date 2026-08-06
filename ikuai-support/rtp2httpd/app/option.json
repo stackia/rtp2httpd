@@ -299,19 +299,6 @@
     "max": 1
   },
   {
-    "default": "auto",
-    "attrname": "RTP2HTTPD_RTSP_NAT_MODE",
-    "label": {
-      "en": "RTSP NAT mode: auto, stun, or zte",
-      "zh": "RTSP NAT 模式：auto、stun 或 zte"
-    },
-    "required": true,
-    "scope": "config",
-    "type": "text",
-    "min": 3,
-    "max": 4
-  },
-  {
     "default": "",
     "attrname": "RTP2HTTPD_RTSP_STUN_SERVER",
     "label": {

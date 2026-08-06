@@ -130,14 +130,19 @@ class _RTSPServerBase:
         self.control_peer = addr
         transport_hdr = ""
         try:
+            pending = b""
             while True:
-                data = b""
-                while b"\r\n\r\n" not in data:
+                while b"\r\n\r\n" not in pending:
                     chunk = conn.recv(4096)
                     if not chunk:
                         return
-                    data += chunk
-                req = data.decode(errors="replace")
+                    pending += chunk
+                # Split off exactly one request; anything left is a later
+                # request that arrived in the same segment.  Keeping it buffered
+                # (rather than folding it into this one) is what makes an
+                # unexpectedly pipelined request visible to tests.
+                data, pending = pending.split(b"\r\n\r\n", 1)
+                req = data.decode(errors="replace") + "\r\n\r\n"
                 first_line = req.split("\r\n")[0].split()
                 method = first_line[0]
                 uri = first_line[1] if len(first_line) > 1 else ""
@@ -409,11 +414,28 @@ class MockRTSPServerUDP(_RTSPServerBase):
 
 
 class MockRTSPServerZTE(_RTSPServerBase):
-    """RTSP server that starts UDP media only after a valid ZTE punch packet."""
+    """RTSP server that starts UDP media only after a valid ZTE punch packet.
 
-    def __init__(self, port: int = 0, num_packets: int = 200):
+    ``expected_ip`` / ``expected_control_port`` override what the punch packet is
+    validated against; leave them unset to expect the RTSP control connection's
+    own endpoint.  Set them when rtp2httpd advertises a STUN-discovered mapping
+    instead, in which case the UDP source port no longer matches the advertised
+    RTP port and ``check_source_port`` must be disabled.
+    """
+
+    def __init__(
+        self,
+        port: int = 0,
+        num_packets: int = 200,
+        expected_ip: str | None = None,
+        expected_control_port: int | None = None,
+        check_source_port: bool = True,
+    ):
         super().__init__(port)
         self._num_packets = num_packets
+        self._expected_ip = expected_ip
+        self._expected_control_port = expected_control_port
+        self._check_source_port = check_source_port
         self._server_rtp_socket: socket.socket | None = None
         self._server_rtcp_socket: socket.socket | None = None
         self._receiver_thread: threading.Thread | None = None
@@ -491,8 +513,10 @@ class MockRTSPServerZTE(_RTSPServerBase):
     def _probe_is_valid(self, payload: bytes, source: tuple) -> bool:
         if not self.control_peer or len(payload) != 84:
             return False
-        expected_ip = socket.inet_aton(self.control_peer[0])
-        expected_tcp_port = self.control_peer[1]
+        expected_ip = socket.inet_aton(self._expected_ip or self.control_peer[0])
+        expected_tcp_port = self._expected_control_port or self.control_peer[1]
+        if self._check_source_port and source[1] != self._client_rtp_port:
+            return False
         return (
             payload[:8] == b"ZXV10STB"
             and payload[8:12] == b"\x7f\xff\xff\xff"
@@ -501,7 +525,6 @@ class MockRTSPServerZTE(_RTSPServerBase):
             and struct.unpack("!H", payload[18:20])[0] == expected_tcp_port
             and payload[20:] == bytes(64)
             and source[0] == self.control_peer[0]
-            and source[1] == self._client_rtp_port
         )
 
     def _after_play(self, conn: socket.socket, addr: tuple) -> None:
@@ -512,7 +535,7 @@ class MockRTSPServerZTE(_RTSPServerBase):
             self._receiver_thread.join(timeout=0.2)
 
         assert self._server_rtp_socket is not None
-        destination = self.udp_datagrams[0][1]
+        destination = next(source for payload, source in self.udp_datagrams if self._probe_is_valid(payload, source))
         seq = 0
         ts = 0
         try:
