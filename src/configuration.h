@@ -118,7 +118,7 @@ typedef struct {
   int zerocopy_on_send; /* Enable zero-copy send with MSG_ZEROCOPY (0=disabled,
                            1=enabled) */
 
-  /* STUN NAT traversal settings */
+  /* RTSP NAT traversal settings */
   char *rtsp_stun_server;      /* STUN server host:port for RTSP NAT traversal
                                   (NULL=disabled) */
   char *http_proxy_user_agent; /* Override User-Agent header for upstream HTTP

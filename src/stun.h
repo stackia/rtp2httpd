@@ -6,6 +6,7 @@
 #ifndef __STUN_H__
 #define __STUN_H__
 
+#include <netinet/in.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -26,6 +27,7 @@ typedef struct {
   int retry_count;                                        /* Number of retries attempted */
   uint16_t mapped_rtp_port;                               /* Discovered mapped RTP port (0=none) */
   uint16_t mapped_rtcp_port;                              /* Discovered mapped RTCP port (0=none) */
+  struct in_addr mapped_ip4;                              /* Discovered mapped IPv4 address (INADDR_ANY=none) */
   unsigned char transaction_id[STUN_TRANSACTION_ID_SIZE]; /* Transaction ID */
 } stun_state_t;
 
@@ -65,6 +67,13 @@ int stun_check_timeout(stun_state_t *state, int socket_fd);
  * @return Mapped port number, or 0 if not discovered
  */
 uint16_t stun_get_mapped_port(const stun_state_t *state);
+
+/**
+ * Get the discovered mapped IPv4 address
+ * @param state STUN state structure
+ * @return Mapped IPv4 address, or INADDR_ANY if not discovered (or IPv6)
+ */
+struct in_addr stun_get_mapped_ipv4(const stun_state_t *state);
 
 /**
  * Check if a UDP packet looks like a STUN response

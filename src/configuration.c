@@ -1247,14 +1247,7 @@ int config_reload(int *out_bind_changed) {
   /* Step 3: Parse config file */
   if (parse_config_file(config_file_path) != 0) {
     logger(LOG_ERROR, "Failed to parse config file during reload: %s", config_file_path);
-    /* Restore old bind addresses */
-    if (!cmd_bind_set) {
-      bind_addresses = old_bind_addresses;
-      old_bind_addresses = NULL; /* Don't free it */
-    }
-    if (old_bind_addresses)
-      free_bindaddr(old_bind_addresses);
-    return -1;
+    goto reload_failed;
   }
 
   apply_bind_side_effects();
@@ -1271,6 +1264,17 @@ int config_reload(int *out_bind_changed) {
   logger(LOG_INFO, "Configuration reloaded successfully from %s", config_file_path);
 
   return 0;
+
+reload_failed:
+  /* Restore the bind addresses captured before the failed reload */
+  if (!cmd_bind_set) {
+    free_bindaddr(bind_addresses);
+    bind_addresses = old_bind_addresses;
+    old_bind_addresses = NULL; /* Now owned by the global */
+  }
+  if (old_bind_addresses)
+    free_bindaddr(old_bind_addresses);
+  return -1;
 }
 
 void usage(FILE *f, char *progname) {

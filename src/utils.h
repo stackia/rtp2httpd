@@ -216,6 +216,24 @@ int parse_host_port(const char *input, char *host, size_t host_size, int *port);
  */
 void sockaddr_set_port(struct sockaddr *sa, uint16_t port);
 
+/**
+ * Get the port of a sockaddr (AF_INET or AF_INET6).
+ *
+ * @param sa Socket address
+ * @return Port number in host byte order, 0 for an unsupported family
+ */
+uint16_t sockaddr_get_port(const struct sockaddr *sa);
+
+/**
+ * Format the address of a sockaddr in numeric form (AF_INET or AF_INET6).
+ *
+ * @param sa Socket address
+ * @param buf Output buffer, should be at least INET6_ADDRSTRLEN bytes
+ * @param size Output buffer size
+ * @return 0 on success, -1 on unsupported family or insufficient space
+ */
+int sockaddr_format_ip(const struct sockaddr *sa, char *buf, size_t size);
+
 /* Array size calculation macro */
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 

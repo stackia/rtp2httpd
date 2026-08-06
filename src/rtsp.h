@@ -1,6 +1,7 @@
 #ifndef __RTSP_H__
 #define __RTSP_H__
 
+#include <netinet/in.h>
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -8,6 +9,18 @@
 
 /* Forward declaration */
 struct addrinfo;
+
+/*
+ * Endpoint advertised upstream for NAT traversal: either the STUN-discovered
+ * public mapping or the RTSP control connection's own local endpoint.
+ */
+typedef struct {
+  struct in_addr ip4;
+  char ip[INET6_ADDRSTRLEN];
+  uint16_t control_port; /* port named by the x-NAT header */
+  uint16_t rtp_port;     /* port advertised as client_port / in the punch packet */
+  uint16_t rtcp_port;
+} rtsp_nat_endpoint_t;
 
 #define RTSP_DISABLE_TCP_TRANSPORT 0 /* To debug UDP transport, set to 1 */
 
@@ -151,6 +164,28 @@ typedef struct {
    * TEARDOWN reconnect), in which case events for the old one must be ignored.
    * fd numbers cannot be used for this: close()+socket() often reuses them. */
   unsigned connect_generation;
+
+  /* Control connection endpoints as actually selected by the kernel.  The ZTE
+   * x-NAT header and punch packet are IPv4-only, so only the IPv4 addresses are
+   * retained next to the printable form of the local address (which is also
+   * filled for IPv6 control connections, for logging). */
+  struct in_addr control_local_ip4;
+  struct in_addr control_peer_ip4;
+  char control_local_ip[INET6_ADDRSTRLEN];
+  uint16_t control_local_port;
+  int control_endpoints_valid;
+  /* ZTE NAT traversal is in effect for this session: send the x-NAT header and
+   * the client_address parameter, pin the media sockets to the control
+   * connection's local address, and punch with the ZXV10STB packet.  Requires
+   * IPv4 on both ends of the control connection. */
+  int zte_nat_active;
+
+  /* Set while the OPTIONS response has been processed but DESCRIBE is held
+   * back waiting for STUN.  The state stays AWAITING_OPTIONS throughout, so
+   * this flag is what distinguishes "parked, safe to resume" from "OPTIONS
+   * still in flight" - resuming in the latter would pipeline DESCRIBE behind
+   * an unanswered OPTIONS. */
+  int describe_waiting_for_stun;
 
   /* Authentication state */
   char username[RTSP_CREDENTIAL_SIZE];    /* RTSP username for authentication */

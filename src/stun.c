@@ -211,16 +211,17 @@ int stun_parse_response(stun_state_t *state, const uint8_t *data, size_t len) {
                          ((uint32_t)data[val_off + 6] << 8) | data[val_off + 7];
         uint32_t addr = xaddr ^ STUN_MAGIC_COOKIE;
 
-        state->mapped_rtp_port = port;
-        state->mapped_rtcp_port = port + 1;
-        state->in_progress = 0;
-        state->completed = 1;
-
         /* Log the mapped address */
         struct in_addr ina;
         ina.s_addr = htonl(addr);
         char ip_str[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &ina, ip_str, sizeof(ip_str));
+
+        state->mapped_rtp_port = port;
+        state->mapped_rtcp_port = port + 1;
+        state->mapped_ip4 = ina;
+        state->in_progress = 0;
+        state->completed = 1;
 
         logger(LOG_INFO, "STUN: Discovered mapped address %s:%d", ip_str, port);
         return 0;
@@ -260,6 +261,10 @@ int stun_parse_response(stun_state_t *state, const uint8_t *data, size_t len) {
 
         state->mapped_rtp_port = port;
         state->mapped_rtcp_port = port + 1;
+        if (family == STUN_ADDR_FAMILY_IPV4) {
+          /* MAPPED-ADDRESS carries the address unobfuscated */
+          memcpy(&state->mapped_ip4.s_addr, data + val_off + 4, 4);
+        }
         state->in_progress = 0;
         state->completed = 1;
 
@@ -316,6 +321,15 @@ uint16_t stun_get_mapped_port(const stun_state_t *state) {
     return 0;
   }
   return state->mapped_rtp_port;
+}
+
+struct in_addr stun_get_mapped_ipv4(const stun_state_t *state) {
+  struct in_addr none;
+
+  if (state)
+    return state->mapped_ip4;
+  none.s_addr = INADDR_ANY;
+  return none;
 }
 
 int stun_is_stun_packet(const uint8_t *data, size_t len) {

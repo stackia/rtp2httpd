@@ -515,6 +515,31 @@ void sockaddr_set_port(struct sockaddr *sa, uint16_t port) {
   }
 }
 
+uint16_t sockaddr_get_port(const struct sockaddr *sa) {
+  if (!sa)
+    return 0;
+  if (sa->sa_family == AF_INET)
+    return ntohs(((const struct sockaddr_in *)(uintptr_t)sa)->sin_port);
+  if (sa->sa_family == AF_INET6)
+    return ntohs(((const struct sockaddr_in6 *)(uintptr_t)sa)->sin6_port);
+  return 0;
+}
+
+int sockaddr_format_ip(const struct sockaddr *sa, char *buf, size_t size) {
+  const void *addr;
+
+  if (!sa || !buf || size == 0)
+    return -1;
+  if (sa->sa_family == AF_INET)
+    addr = &((const struct sockaddr_in *)(uintptr_t)sa)->sin_addr;
+  else if (sa->sa_family == AF_INET6)
+    addr = &((const struct sockaddr_in6 *)(uintptr_t)sa)->sin6_addr;
+  else
+    return -1;
+
+  return inet_ntop(sa->sa_family, addr, buf, (socklen_t)size) ? 0 : -1;
+}
+
 char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host, const char *x_forwarded_proto) {
   const char *host = NULL;
   const char *proto = "http";
