@@ -51,6 +51,8 @@ interface UsePlayerTouchGesturesOptions {
   enabled: boolean;
   /** Horizontal seek gesture; off for channels with no catchup source. */
   enableSeekGesture: boolean;
+  /** Right-half volume gesture; off where the platform makes volume read-only (iOS). */
+  enableVolumeGesture: boolean;
   volume: number;
   isMuted: boolean;
   prevChannel: Channel | null;
@@ -69,7 +71,8 @@ function clamp01(value: number): number {
 /**
  * Touch-only gesture layer for the player surface, modeled after native IPTV apps:
  * vertical drag on the left half switches channels, on the right half adjusts volume,
- * horizontal drag seeks, and a double tap toggles playback.
+ * horizontal drag seeks, and a double tap toggles playback. Where volume is read-only
+ * (iOS), zapping claims the full width instead of half.
  *
  * Channel switching and seeking only commit on release so a half-swipe can be aborted;
  * volume tracks the finger live because it is cheap and instantly reversible.
@@ -77,6 +80,7 @@ function clamp01(value: number): number {
 export function usePlayerTouchGestures({
   enabled,
   enableSeekGesture,
+  enableVolumeGesture,
   volume,
   isMuted,
   prevChannel,
@@ -172,11 +176,14 @@ export function usePlayerTouchGestures({
 
     if (gesture.mode === "pending") {
       if (Math.max(Math.abs(dx), Math.abs(dy)) < ACTIVATION_THRESHOLD_PX) return;
+      // A direction always locks in, even when the gesture it maps to is unavailable, so
+      // the finger cannot slide into a different gesture halfway through the drag.
       if (Math.abs(dy) > Math.abs(dx)) {
-        gesture.mode = gesture.startX < gesture.width / 2 ? "channel" : "volume";
+        // With no volume gesture to share the surface with, zapping takes the full width
+        // rather than leaving the right half inert.
+        const isChannelHalf = !enableVolumeGesture || gesture.startX < gesture.width / 2;
+        gesture.mode = isChannelHalf ? "channel" : "volume";
       } else {
-        // Horizontal stays locked in even when seeking is unavailable, so the finger
-        // cannot slide into a vertical gesture halfway through the drag.
         gesture.mode = enableSeekGesture ? "seek" : "none";
       }
       // A drag is never a tap; drop any pending double-tap candidate.

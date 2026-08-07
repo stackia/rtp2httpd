@@ -23,6 +23,7 @@ import {
 } from "../../lib/document-picture-in-picture";
 import type { Locale } from "../../lib/locale";
 import { buildCatchupSegments } from "../../lib/m3u-parser";
+import { isVolumeControlSupported } from "../../lib/platform";
 import { getMuted, getVolume, saveMuted, saveVolume } from "../../lib/player-storage";
 import { createProgramTimeline, programPositionToWallClock } from "../../lib/program-timeline";
 import {
@@ -290,6 +291,7 @@ function VideoPlayerComponent({
   // point — the timeline in PlayerControls gates on the same expression.
   const isCatchupSupported = Boolean(channel?.sources.some((source) => source.catchup && source.catchupSource));
   const canSeekProgramInMediaSession = Boolean(currentProgram) && isCatchupSupported;
+  const canControlVolume = isVolumeControlSupported();
   const canNavigateChannelsInMediaSession = Boolean(channel && onChannelNavigate);
 
   const playerDockRef = useRef<HTMLDivElement>(null);
@@ -1541,6 +1543,7 @@ function VideoPlayerComponent({
   } = usePlayerTouchGestures({
     enabled: Boolean(channel) && !error && !needsUserInteraction,
     enableSeekGesture: isCatchupSupported,
+    enableVolumeGesture: canControlVolume,
     volume,
     isMuted,
     prevChannel,
@@ -2024,6 +2027,7 @@ function VideoPlayerComponent({
             onPlayPause={togglePlayPause}
             volume={volume}
             onVolumeChange={handleVolumeChange}
+            canControlVolume={canControlVolume}
             isMuted={isMuted}
             onMuteToggle={handleMuteToggle}
             onFullscreen={handleFullscreen}
