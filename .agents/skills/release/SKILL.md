@@ -1,6 +1,6 @@
 ---
 name: release
-description: Execute the rtp2httpd release workflow — tag, GitHub release, CI handling, and stable branch updates.
+description: Execute the rtp2httpd release workflow — cumulative prerelease and formal release notes, tagging, GitHub releases, CI handling, and stable branch updates.
 ---
 
 # rtp2httpd Release Workflow
@@ -18,12 +18,23 @@ Follow these steps in order.
 - Ensure you are at the **rtp2httpd project root** (`cd` there first if needed).
 - Check current branch with `git branch --show-current`.
 - Check for uncommitted changes with `git status --porcelain`. If the workspace is not clean, abort with instructions.
-- Determine the **latest existing release tag** using `gh release list --limit 1 --json tagName --jq '.[0].tagName'`
-  (e.g., `v3.14.2`). Save it as the previous release tag so its donation block can be removed after publishing.
-- If the user supplied an explicit target tag, use that tag. Otherwise, extract the latest version numbers and compute
-  the next tag after asking for the release type.
+- Fetch the latest release branch and tags before inspecting history with `git fetch origin main --tags`. Use
+  `origin/main`, not a potentially stale local branch, as the endpoint for release-note diffs.
+- Determine the **latest published non-draft release tag** using
+  `gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName'` (e.g., `v3.14.2-rc.2`). Save it as
+  the immediately previous release tag so its donation block can be removed after publishing. "Immediately previous"
+  means the most recently published non-draft GitHub Release, whether formal or prerelease.
+- If the user supplied an explicit target tag, use that tag. Otherwise, inspect the latest formal and prerelease versions
+  and compute the next tag after asking for the release type.
 - Determine whether the target tag is a **prerelease** from its SemVer suffix, such as `-rc.1`, `-beta.2`, or
-  `-alpha.1`. Record this decision because prereleases skip the versioned Makefile and `stable` branch steps.
+  `-alpha.1`. Also record its base version by stripping the suffix (for example, `v3.15.0-rc.2` has base version
+  `v3.15.0`). Prereleases skip the versioned Makefile and `stable` branch steps.
+- Enumerate releases with `gh release list --exclude-drafts --limit 100 --json tagName,isPrerelease,publishedAt`; if 100
+  results are returned, increase the limit so the relevant release series cannot be truncated. Identify:
+  - the previous formal release: the highest lower non-prerelease SemVer tag that is an ancestor of `origin/main`;
+  - every published prerelease whose SemVer suffix can be stripped to exactly the target base version; and
+  - the latest such prerelease by publication time, if any.
+  These are release-note sources, not just version-number inputs. Never use prerelease notes from another base version.
 
 ---
 
@@ -44,14 +55,61 @@ Based on the answer and latest version, compute the new tag (e.g., `v3.15.0`).
 
 ### Step 2: Draft Release Notes
 
-Scrape recent git history since the last tag to inform the notes:
+Release-note history and git history serve different purposes:
+
+- Existing prerelease notes describe the complete user-facing change set expected for the upcoming formal release.
+- Git history finds newly added work and verifies coverage; it must not cause previously documented prerelease changes to
+  disappear merely because they fall outside the latest tag-to-`origin/main` diff.
+
+#### Choose the release-note sources
+
+**For a prerelease:** use rolling cumulative notes.
+
+1. Fetch the body of every existing prerelease for the same base version with `gh release view <tag> --json body`.
+2. Use the latest prerelease body as the primary draft because it should already contain the accumulated notes.
+3. Compare it with earlier prerelease bodies in the same series and carry forward any still-relevant user-facing item that
+   is missing. A new prerelease must include all applicable content from all earlier prereleases in that series.
+4. Inspect commits after the immediately previous prerelease tag to find new items. For the first prerelease in a series,
+   inspect commits after the latest formal release tag instead.
+5. Merge the new items into the accumulated draft. Do not replace the draft with only the latest git diff.
+
+**For a formal release:** prefer the prerelease notes for that version.
+
+1. If the same base version has prereleases, fetch their bodies and use the latest prerelease body as the primary draft.
+2. Compare all earlier prerelease bodies in the series and restore any still-relevant item missing from the latest one.
+3. Inspect commits after the latest prerelease tag and add any newly introduced user-facing changes.
+4. Cross-check commits from the previous formal release through `origin/main` for omissions, but preserve the prerelease
+   wording where it remains accurate. The formal notes should represent the finalized cumulative prerelease notes plus
+   later work.
+5. If no prerelease exists for the target version, draft from commits after the previous formal release as usual.
+
+Before using a source tag, verify that it belongs to the release branch with
+`git merge-base --is-ancestor "<source-tag>" origin/main`. Abort for clarification if it is not an ancestor. Use git
+history for the applicable ranges above:
 
 ```bash
-export LAST_TAG="v3.x.y"  # from step 0
-git log "$LAST_TAG..HEAD" --oneline --no-merges --format="%s (%h)"
+git log "<source-tag>..origin/main" --oneline --no-merges --format="%s (%h)"
 ```
 
-Categorize commits by type (`feat:`, `fix:`, `perf:`, `refactor:`, `chore:` etc.) to understand what went into this release.
+Categorize commits by type (`feat:`, `fix:`, `perf:`, `refactor:`, `chore:` etc.) to understand what changed. Treat commit
+subjects as evidence, not release-note copy: retain user-focused wording from existing release notes when possible.
+
+#### Merge and normalize the notes
+
+- Preserve accumulated items even if they were introduced by an older prerelease in the same series.
+- Add genuinely new user-facing changes from git history or user-provided notes.
+- Deduplicate semantically equivalent bullets across prereleases and new changes; do not repeat an item merely because its
+  wording changed.
+- Remove an accumulated item only when it was reverted, superseded, proven inaccurate, or the user explicitly asks to
+  remove it. If the evidence is ambiguous, keep it and flag it during review rather than silently dropping it.
+- User-provided corrections take precedence over inherited wording. Otherwise, avoid gratuitously rewriting established
+  prerelease notes when preparing the formal release.
+- Normalize each source body before merging: remove the complete donation table using the donation asset URL as its
+  marker, then split at the standalone `---` separator into Chinese and English sections. Do not confuse that separator
+  with the donation table's `| --- |` row.
+- Treat each retained or new change as a bilingual item pair. Merge and deduplicate the pairs, keep the two language
+  sections semantically aligned, and update the counterpart translation whenever a correction changes one language.
+- Rebuild the canonical structure below only after merging so the final file contains exactly one donation block.
 
 Draft bilingual release notes **in a file** (e.g., `/tmp/release-notes-v3.x.y.md`) following these conventions.
 
@@ -145,8 +203,9 @@ Use `AskQuestion` with header "Ready to release?":
 
 > Ready to create release v3.x.y?
 
-Show a summary: release notes file path, lint, tag creation, release creation, previous-release donation cleanup, and the
-CI/stable behavior appropriate for a formal release or prerelease.
+Show a summary: release notes file path, the release-note sources used (including inherited prereleases), lint, tag
+creation, release creation, previous-release donation cleanup, and the CI/stable behavior appropriate for a formal
+release or prerelease.
 
 Options:
 - **Yes, release it!** — proceed with the release
@@ -157,12 +216,12 @@ After user approval, continue.
 
 ---
 
-### Step 4: Ensure on `main` with Clean Workspace
+### Step 4: Ensure on `main` with a Clean Workspace
 
 ```bash
 # Switch to main if not already there, only if workspace is clean
 git checkout main
-git pull origin main
+git pull --ff-only origin main
 ```
 
 If there are uncommitted changes preventing a branch switch, advise the user to stash or commit first and abort.
@@ -349,6 +408,10 @@ For a prerelease, explicitly report that versioned Makefile polling and the `sta
   `openwrt-support/luci-app-rtp2httpd/Makefile.versioned` back to `main`.
 - For prereleases, the `versioned` job is intentionally skipped and `stable` must remain unchanged.
 - Release notes are always bilingual, even if the user provides only one language.
+- Prerelease notes are rolling and cumulative across the same base-version series; never reduce them to only the changes
+  since the immediately previous prerelease.
+- A formal release should inherit the cumulative notes from the latest prerelease for the same base version, reconcile
+  earlier prerelease omissions, and add changes made afterward.
 - The latest published release always contains the donation QR block after its Chinese content; the immediately
   previous release has that block removed after publishing.
 - Never force-push to `main` or `stable`.
