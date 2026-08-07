@@ -35,9 +35,12 @@ type GestureMode = "pending" | "none" | "channel" | "volume" | "seek";
 
 interface GestureState {
   pointerId: number;
-  mode: GestureMode;
+  /** Viewport coordinates — only ever used as deltas against later move events. */
   startX: number;
   startY: number;
+  mode: GestureMode;
+  /** Resolved at pointerdown, where the rect is in hand, so it is not mixed up with viewport x. */
+  startedOnLeftHalf: boolean;
   width: number;
   height: number;
   startVolume: number;
@@ -104,6 +107,21 @@ export function usePlayerTouchGestures({
     };
   }, []);
 
+  // The gesture layer unmounts when playback errors out or needs a user gesture. A finger
+  // still down at that moment gets no pointerup or pointercancel — React has already torn
+  // the handlers down — so an in-flight gesture would linger in the ref and reject every
+  // later touch, since the whole hook survives channel switches.
+  useEffect(() => {
+    if (enabled) return;
+    gestureRef.current = null;
+    lastTapRef.current = null;
+    if (indicatorTimeoutRef.current) {
+      window.clearTimeout(indicatorTimeoutRef.current);
+      indicatorTimeoutRef.current = 0;
+    }
+    setIndicator(null);
+  }, [enabled]);
+
   const showIndicator = useCallback((next: PlayerGestureIndicator | null) => {
     if (indicatorTimeoutRef.current) {
       window.clearTimeout(indicatorTimeoutRef.current);
@@ -159,6 +177,7 @@ export function usePlayerTouchGestures({
       mode: "pending",
       startX: event.clientX,
       startY: event.clientY,
+      startedOnLeftHalf: event.clientX - rect.left < rect.width / 2,
       width: rect.width,
       height: rect.height,
       startVolume: isMuted ? 0 : volume,
@@ -181,8 +200,7 @@ export function usePlayerTouchGestures({
       if (Math.abs(dy) > Math.abs(dx)) {
         // With no volume gesture to share the surface with, zapping takes the full width
         // rather than leaving the right half inert.
-        const isChannelHalf = !enableVolumeGesture || gesture.startX < gesture.width / 2;
-        gesture.mode = isChannelHalf ? "channel" : "volume";
+        gesture.mode = !enableVolumeGesture || gesture.startedOnLeftHalf ? "channel" : "volume";
       } else {
         gesture.mode = enableSeekGesture ? "seek" : "none";
       }
@@ -271,6 +289,10 @@ export function usePlayerTouchGestures({
       onPointerMove: handlePointerMove,
       onPointerUp: handlePointerUp,
       onPointerCancel: handlePointerCancel,
+      // Capture can be lost without a pointerup (scroll takeover, element reflow). Safe to
+      // route here: pointerup clears the ref before releasing, so its own lostpointercapture
+      // finds nothing to cancel.
+      onLostPointerCapture: handlePointerCancel,
     },
   };
 }
