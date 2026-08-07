@@ -16,3 +16,17 @@ export function isLGWebOS(): boolean {
 export function isDesktopDevice(): boolean {
   return document.documentElement.dataset.playerPlatform === "desktop";
 }
+
+/**
+ * Whether `HTMLMediaElement.volume` actually affects playback.
+ *
+ * iOS and iPadOS ignore volume writes because the level belongs to the hardware buttons;
+ * `muted` stays settable, so muting still works. Feature-detecting this does not work:
+ * assigning to a detached element's `volume` reads the value back unchanged, so a probe
+ * reports support that playback then does not honour. Hence the UA check, reusing the
+ * platform tag that `player.html` sets — it also covers iOS-wrapped browsers (CriOS,
+ * FxiOS, ...) and iPadOS reporting itself as MacIntel.
+ */
+export function isVolumeControlSupported(): boolean {
+  return !isIOS();
+}

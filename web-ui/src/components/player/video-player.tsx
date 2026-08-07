@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { usePlayerTouchGestures } from "../../hooks/use-player-touch-gestures";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import {
   getDocumentPictureInPicture,
@@ -22,6 +23,7 @@ import {
 } from "../../lib/document-picture-in-picture";
 import type { Locale } from "../../lib/locale";
 import { buildCatchupSegments } from "../../lib/m3u-parser";
+import { isVolumeControlSupported } from "../../lib/platform";
 import { getMuted, getVolume, saveMuted, saveVolume } from "../../lib/player-storage";
 import { createProgramTimeline, programPositionToWallClock } from "../../lib/program-timeline";
 import {
@@ -49,6 +51,7 @@ import type { Channel, EPGProgram } from "../../types/player";
 import type { PictureInPictureMode } from "../../types/ui";
 import { PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 import { PlayerControls } from "./player-controls";
+import { PlayerGestureIndicatorOverlay } from "./player-gesture-overlay";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
 interface VideoPlayerProps {
@@ -64,6 +67,9 @@ interface VideoPlayerProps {
   streamStartTime: Date;
   onCurrentVideoTimeChange: (time: number) => void;
   onChannelNavigate?: (target: "prev" | "next" | number) => void;
+  /** Neighbours of the current channel, used to preview the target of a swipe-to-zap gesture. */
+  prevChannel?: Channel | null;
+  nextChannel?: Channel | null;
   showSidebar?: boolean;
   onToggleSidebar?: () => void;
   isFullscreen: boolean;
@@ -262,6 +268,8 @@ function VideoPlayerComponent({
   streamStartTime,
   onCurrentVideoTimeChange,
   onChannelNavigate,
+  prevChannel = null,
+  nextChannel = null,
   showSidebar = true,
   onToggleSidebar,
   isFullscreen,
@@ -277,9 +285,13 @@ function VideoPlayerComponent({
   const t = usePlayerTranslation(locale);
   const playbackBackendKind = getPlaybackBackendKind();
   const currentVideoTimeRef = useRef(0);
-  const canSeekProgramInMediaSession = Boolean(
-    currentProgram && channel?.sources.some((source) => source.catchup && source.catchupSource),
-  );
+  // A channel with no catchup source has nothing to seek into: a target outside the MSE
+  // buffer falls back to rebuilding the stream at the live edge, which is just a dropped
+  // connection with no seek to show for it. Seeking is therefore off across every entry
+  // point — the timeline in PlayerControls gates on the same expression.
+  const isCatchupSupported = Boolean(channel?.sources.some((source) => source.catchup && source.catchupSource));
+  const canSeekProgramInMediaSession = Boolean(currentProgram) && isCatchupSupported;
+  const canControlVolume = isVolumeControlSupported();
   const canNavigateChannelsInMediaSession = Boolean(channel && onChannelNavigate);
 
   const playerDockRef = useRef<HTMLDivElement>(null);
@@ -390,6 +402,7 @@ function VideoPlayerComponent({
   }, [isLoading]);
 
   const handleRelativeSeek = useEffectEvent((deltaSeconds: number) => {
+    if (!isCatchupSupported) return;
     const activePlayer = getActivePlayer();
     if (!activePlayer) return;
     const state = activePlayer.getState();
@@ -526,24 +539,7 @@ function VideoPlayerComponent({
     [hideControlsImmediately],
   );
 
-  // Click / tap toggles controls. The handler lives on the whole player surface (not
-  // just the <video>) so taps on the letterbox bars outside the 16:9 frame — common on
-  // desktop/tablet where the surface is taller/wider than the video — toggle too. We
-  // only act when the click lands on the surface itself or the video element; overlays
-  // (toolbar buttons, channel info) sit above and own their own clicks, so a click that
-  // bubbles up from them is ignored and never dismisses the controls.
-  const handleSurfaceClick = useCallback(
-    (event: ReactMouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (target !== event.currentTarget && target.tagName !== "VIDEO") return;
-      if (showControls) {
-        hideControlsImmediately();
-      } else {
-        showControlsImmediately();
-      }
-    },
-    [showControls, hideControlsImmediately, showControlsImmediately],
-  );
+  // `handleSurfaceClick` lives further down, next to the touch-gesture wiring it depends on.
 
   // Start auto-hide timer on mount
   useEffect(() => {
@@ -1540,6 +1536,49 @@ function VideoPlayerComponent({
     }
   });
 
+  const {
+    indicator: gestureIndicator,
+    consumeSuppressedClick,
+    gestureHandlers,
+  } = usePlayerTouchGestures({
+    enabled: Boolean(channel) && !error && !needsUserInteraction,
+    enableSeekGesture: isCatchupSupported,
+    enableVolumeGesture: canControlVolume,
+    volume,
+    isMuted,
+    prevChannel,
+    nextChannel,
+    onVolumeChange: handleVolumeChange,
+    onChannelNavigate,
+    onRelativeSeek: handleRelativeSeek,
+    onTogglePlayPause: togglePlayPause,
+    onShowControls: showControlsImmediately,
+  });
+
+  // Click / tap toggles controls. The handler lives on the whole player surface (not
+  // just the <video>) so taps on the letterbox bars outside the 16:9 frame — common on
+  // desktop/tablet where the surface is taller/wider than the video — toggle too. We
+  // only act when the click lands on the surface itself, the video element, or the
+  // transparent gesture layer that covers both; overlays (toolbar buttons, channel info)
+  // sit above and own their own clicks, so a click that bubbles up from them is ignored
+  // and never dismisses the controls. A click that trails a completed touch gesture is
+  // swallowed as well.
+  const handleSurfaceClick = useCallback(
+    (event: ReactMouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (target !== event.currentTarget && target.tagName !== "VIDEO" && !("playerSurfaceHit" in target.dataset)) {
+        return;
+      }
+      if (consumeSuppressedClick()) return;
+      if (showControls) {
+        hideControlsImmediately();
+      } else {
+        showControlsImmediately();
+      }
+    },
+    [showControls, hideControlsImmediately, showControlsImmediately, consumeSuppressedClick],
+  );
+
   const exitPictureInPicture = useEffectEvent(async (): Promise<boolean> => {
     const documentPictureInPicture = getDocumentPictureInPicture();
     const pipWindow = documentPictureInPicture?.window ?? documentPiPWindowRef.current;
@@ -1773,6 +1812,22 @@ function VideoPlayerComponent({
         ))}
       </div>
 
+      {/*
+        Touch gesture layer: left half swipes zap channels, right half swipes set volume,
+        horizontal swipes seek, double tap toggles playback. It sits above the video but
+        below every overlay (z-10 / z-20), so visible controls keep priority. `touch-none`
+        stays scoped to this element on purpose — putting it on the surface would inherit
+        down into the settings popover and break its scrolling.
+      */}
+      {!needsUserInteraction && !error && (
+        <div
+          aria-hidden="true"
+          data-player-surface-hit=""
+          className="absolute inset-0 z-[1] touch-none select-none"
+          {...gestureHandlers}
+        />
+      )}
+
       {!needsUserInteraction && !error && (
         <PlayerTopLeftOverlay
           visible={showControls || showLoading}
@@ -1972,6 +2027,7 @@ function VideoPlayerComponent({
             onPlayPause={togglePlayPause}
             volume={volume}
             onVolumeChange={handleVolumeChange}
+            canControlVolume={canControlVolume}
             isMuted={isMuted}
             onMuteToggle={handleMuteToggle}
             onFullscreen={handleFullscreen}
@@ -1986,6 +2042,10 @@ function VideoPlayerComponent({
             onSourceChange={onSourceChange}
           />
         </div>
+      )}
+
+      {channel && !error && !needsUserInteraction && (
+        <PlayerGestureIndicatorOverlay indicator={gestureIndicator} locale={locale} />
       )}
     </div>
   );

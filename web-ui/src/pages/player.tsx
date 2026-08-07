@@ -363,6 +363,19 @@ function PlayerPage() {
     [metadata, currentChannel, selectChannel],
   );
 
+  // Neighbours of the current channel, so the player can preview the target of a
+  // swipe-to-zap gesture. Wraps around exactly like handleChannelNavigate.
+  const [prevChannel, nextChannel] = useMemo<[Channel | null, Channel | null]>(() => {
+    const channels = metadata?.channels;
+    if (!channels?.length || !currentChannel) return [null, null];
+    const currentIndex = channels.indexOf(currentChannel);
+    if (currentIndex < 0) return [null, null];
+    return [
+      channels[currentIndex > 0 ? currentIndex - 1 : channels.length - 1],
+      channels[currentIndex < channels.length - 1 ? currentIndex + 1 : 0],
+    ];
+  }, [metadata, currentChannel]);
+
   const loadPlaylist = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -600,6 +613,8 @@ function PlayerPage() {
                 streamStartTime={streamStartTime}
                 onCurrentVideoTimeChange={handleCurrentVideoTimeChange}
                 onChannelNavigate={handleChannelNavigate}
+                prevChannel={prevChannel}
+                nextChannel={nextChannel}
                 showSidebar={showSidebar}
                 onToggleSidebar={handleToggleSidebar}
                 isFullscreen={isFullscreen}
