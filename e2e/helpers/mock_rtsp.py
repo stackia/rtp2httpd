@@ -421,6 +421,11 @@ class MockRTSPServerZTE(_RTSPServerBase):
     own endpoint.  Set them when rtp2httpd advertises a STUN-discovered mapping
     instead, in which case the UDP source port no longer matches the advertised
     RTP port and ``check_source_port`` must be disabled.
+
+    ``echo_probe_after`` makes the server bounce the 84-byte punch packet back
+    onto the media port after that many RTP packets, the way ZTE servers
+    acknowledge a punch mid-stream.  It reproduces the stray non-RTP datagram
+    that must never reach the client's MPEG-TS output.
     """
 
     def __init__(
@@ -430,12 +435,14 @@ class MockRTSPServerZTE(_RTSPServerBase):
         expected_ip: str | None = None,
         expected_control_port: int | None = None,
         check_source_port: bool = True,
+        echo_probe_after: int | None = None,
     ):
         super().__init__(port)
         self._num_packets = num_packets
         self._expected_ip = expected_ip
         self._expected_control_port = expected_control_port
         self._check_source_port = check_source_port
+        self._echo_probe_after = echo_probe_after
         self._server_rtp_socket: socket.socket | None = None
         self._server_rtcp_socket: socket.socket | None = None
         self._receiver_thread: threading.Thread | None = None
@@ -535,13 +542,17 @@ class MockRTSPServerZTE(_RTSPServerBase):
             self._receiver_thread.join(timeout=0.2)
 
         assert self._server_rtp_socket is not None
-        destination = next(source for payload, source in self.udp_datagrams if self._probe_is_valid(payload, source))
+        probe, destination = next(
+            (payload, source) for payload, source in self.udp_datagrams if self._probe_is_valid(payload, source)
+        )
         seq = 0
         ts = 0
         try:
-            for _ in range(self._num_packets):
+            for index in range(self._num_packets):
                 if self._stop.is_set():
                     break
+                if index == self._echo_probe_after:
+                    self._server_rtp_socket.sendto(probe, destination)
                 self._server_rtp_socket.sendto(make_rtp_packet(seq, ts), destination)
                 seq = (seq + 1) & 0xFFFF
                 ts = (ts + 3600) & 0xFFFFFFFF
