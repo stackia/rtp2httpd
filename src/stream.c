@@ -303,7 +303,20 @@ int stream_process_rtp_payload(stream_context_t *ctx, buffer_ref_t *buf_ref, str
   stream_metadata_note_media(ctx, pkt_type, payload, payload_len, origin);
 
   if (pkt_type == 0) {
-    /* Non-RTP packet - pass through directly (no reordering needed) */
+    /* Non-RTP packet.  The only legitimate case is an upstream that sends bare
+     * MPEG-TS over UDP (RTSP servers negotiating plain MP2T, raw TS multicast
+     * streams), so anything that is not TS is a stray datagram: a ZTE
+     * ZXV10STB NAT punch reply landing on the media port, an RTCP report sent
+     * to the wrong port, or an unrelated sender - the media sockets are
+     * unconnected and accept from anyone.  Splicing such a datagram into the
+     * output breaks the 188-byte TS alignment for the rest of the stream,
+     * which strict demuxers (mpegts.js) never recover from. */
+    if (!stream_payload_is_mpegts(payload, payload_len)) {
+      logger(LOG_DEBUG, "Stream: Dropped %d-byte datagram that is neither RTP nor MPEG-TS", payload_len);
+      return 0;
+    }
+
+    /* Bare MPEG-TS - pass through directly (no reordering needed) */
     if (ctx->snapshot.initialized) {
       return snapshot_process_packet(&ctx->snapshot, buf_ref->data_size, data_ptr, ctx->conn);
     }

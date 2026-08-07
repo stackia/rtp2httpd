@@ -173,6 +173,43 @@ class TestZTEProtocol:
             r2h.stop()
             rtsp.stop()
 
+    def test_probe_echo_never_reaches_the_client(self, r2h_binary):
+        """A punch ack bounced onto the media port must be dropped, not relayed.
+
+        The media socket is unconnected, so any stray datagram lands in the same
+        recv() as the media.  Splicing an 84-byte packet into the body shifts
+        every following TS packet off the 188-byte grid -- ffmpeg-based players
+        resync on the next sync byte, but strict demuxers stall for good.
+        """
+        echo_after = 20
+        rtsp = MockRTSPServerZTE(num_packets=500, echo_probe_after=echo_after)
+        rtsp.start()
+        r2h_port = find_free_port()
+        r2h = R2HProcess(r2h_binary, r2h_port, extra_args=["-v", "4"], capture_log=True)
+        r2h.start()
+        try:
+            status, _, body = stream_get(
+                "127.0.0.1",
+                r2h_port,
+                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                read_bytes=188 * (echo_after * 4),
+                timeout=20.0,
+            )
+            assert status == 200
+            assert rtsp.valid_probe_received
+            # Read well past the echo so a shifted grid cannot hide in the tail.
+            assert len(body) >= 188 * (echo_after * 2)
+
+            assert b"ZXV10STB" not in body
+            aligned_len = len(body) - len(body) % 188
+            misaligned = [offset for offset in range(0, aligned_len, 188) if body[offset] != 0x47]
+            assert not misaligned, "TS alignment lost at byte offset(s) %s" % misaligned[:5]
+
+            assert "Dropped 84-byte datagram that is neither RTP nor MPEG-TS" in r2h.read_log()
+        finally:
+            r2h.stop()
+            rtsp.stop()
+
     def test_redirect_recaptures_control_endpoint(self, r2h_binary):
         target = MockRTSPServerZTE(num_packets=300)
         target.start()
