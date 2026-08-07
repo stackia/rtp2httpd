@@ -284,9 +284,12 @@ function VideoPlayerComponent({
   const t = usePlayerTranslation(locale);
   const playbackBackendKind = getPlaybackBackendKind();
   const currentVideoTimeRef = useRef(0);
-  const canSeekProgramInMediaSession = Boolean(
-    currentProgram && channel?.sources.some((source) => source.catchup && source.catchupSource),
-  );
+  // A channel with no catchup source has nothing to seek into: a target outside the MSE
+  // buffer falls back to rebuilding the stream at the live edge, which is just a dropped
+  // connection with no seek to show for it. Seeking is therefore off across every entry
+  // point — the timeline in PlayerControls gates on the same expression.
+  const isCatchupSupported = Boolean(channel?.sources.some((source) => source.catchup && source.catchupSource));
+  const canSeekProgramInMediaSession = Boolean(currentProgram) && isCatchupSupported;
   const canNavigateChannelsInMediaSession = Boolean(channel && onChannelNavigate);
 
   const playerDockRef = useRef<HTMLDivElement>(null);
@@ -397,6 +400,7 @@ function VideoPlayerComponent({
   }, [isLoading]);
 
   const handleRelativeSeek = useEffectEvent((deltaSeconds: number) => {
+    if (!isCatchupSupported) return;
     const activePlayer = getActivePlayer();
     if (!activePlayer) return;
     const state = activePlayer.getState();
@@ -1536,6 +1540,7 @@ function VideoPlayerComponent({
     gestureHandlers,
   } = usePlayerTouchGestures({
     enabled: Boolean(channel) && !error && !needsUserInteraction,
+    enableSeekGesture: isCatchupSupported,
     volume,
     isMuted,
     prevChannel,

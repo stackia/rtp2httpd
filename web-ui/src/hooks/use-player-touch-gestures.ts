@@ -30,7 +30,8 @@ export type PlayerGestureIndicator =
   | { kind: "channel"; direction: "prev" | "next"; target: Channel | null }
   | { kind: "seek"; deltaSeconds: number };
 
-type GestureMode = "pending" | "channel" | "volume" | "seek";
+/** "none" is a locked-in direction with nothing to do — it still swallows the trailing click. */
+type GestureMode = "pending" | "none" | "channel" | "volume" | "seek";
 
 interface GestureState {
   pointerId: number;
@@ -48,6 +49,8 @@ interface GestureState {
 interface UsePlayerTouchGesturesOptions {
   /** Disable everything (no channel selected, error overlay showing, ...). */
   enabled: boolean;
+  /** Horizontal seek gesture; off for channels with no catchup source. */
+  enableSeekGesture: boolean;
   volume: number;
   isMuted: boolean;
   prevChannel: Channel | null;
@@ -66,14 +69,14 @@ function clamp01(value: number): number {
 /**
  * Touch-only gesture layer for the player surface, modeled after native IPTV apps:
  * vertical drag on the left half switches channels, on the right half adjusts volume,
- * horizontal drag seeks (relative, in live and catchup alike — same as the arrow keys),
- * and a double tap toggles playback.
+ * horizontal drag seeks, and a double tap toggles playback.
  *
  * Channel switching and seeking only commit on release so a half-swipe can be aborted;
  * volume tracks the finger live because it is cheap and instantly reversible.
  */
 export function usePlayerTouchGestures({
   enabled,
+  enableSeekGesture,
   volume,
   isMuted,
   prevChannel,
@@ -169,7 +172,13 @@ export function usePlayerTouchGestures({
 
     if (gesture.mode === "pending") {
       if (Math.max(Math.abs(dx), Math.abs(dy)) < ACTIVATION_THRESHOLD_PX) return;
-      gesture.mode = Math.abs(dy) > Math.abs(dx) ? (gesture.startX < gesture.width / 2 ? "channel" : "volume") : "seek";
+      if (Math.abs(dy) > Math.abs(dx)) {
+        gesture.mode = gesture.startX < gesture.width / 2 ? "channel" : "volume";
+      } else {
+        // Horizontal stays locked in even when seeking is unavailable, so the finger
+        // cannot slide into a vertical gesture halfway through the drag.
+        gesture.mode = enableSeekGesture ? "seek" : "none";
+      }
       // A drag is never a tap; drop any pending double-tap candidate.
       lastTapRef.current = null;
     }
