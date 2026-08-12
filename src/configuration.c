@@ -934,6 +934,8 @@ int parse_config_file(const char *path) {
 bindaddr_t *new_empty_bindaddr(void) {
   bindaddr_t *ba;
   ba = malloc(sizeof(bindaddr_t));
+  if (!ba)
+      return NULL;
   memset(ba, 0, sizeof(*ba));
   ba->type = BIND_ADDR_TCP;
   ba->service = strdup("5140");
