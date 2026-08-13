@@ -9,7 +9,6 @@ interface PlayerMediaBadgesProps {
   mediaInfo: PlayerMediaInfo | null;
   locale: Locale;
   renderState: PlayerRenderState;
-  autoDeinterlace: boolean;
 }
 
 interface MediaBadgeValue {
@@ -91,14 +90,13 @@ function formatBitrate(bitsPerSecond: number | undefined): string | null {
   return `${kilobitsPerSecond} Kbps`;
 }
 
-export function PlayerMediaBadges({ mediaInfo, locale, renderState, autoDeinterlace }: PlayerMediaBadgesProps) {
+export function PlayerMediaBadges({ mediaInfo, locale, renderState }: PlayerMediaBadgesProps) {
   const t = usePlayerTranslation(locale);
 
   if (!mediaInfo) return null;
 
   const videoCodec = formatVideoCodec(mediaInfo.video?.codec);
-  const scanType = autoDeinterlace ? renderState.detectedScanType : "progressive";
-  const resolution = formatResolution(mediaInfo, scanType);
+  const resolution = formatResolution(mediaInfo, mediaInfo.video?.scanType);
   const frameRate = formatFrameRate(mediaInfo.video?.frameRate, renderState.deinterlacing);
   const dynamicRange = formatDynamicRange(mediaInfo.video?.dynamicRange);
   const audioCodec = formatAudioCodec(mediaInfo.audio?.codec);

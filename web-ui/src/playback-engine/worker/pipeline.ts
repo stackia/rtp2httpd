@@ -426,7 +426,12 @@ class Pipeline {
           codec: typeof trackMetadata.codec === "string" ? trackMetadata.codec : undefined,
           width: typeof trackMetadata.presentWidth === "number" ? trackMetadata.presentWidth : undefined,
           height: typeof trackMetadata.presentHeight === "number" ? trackMetadata.presentHeight : undefined,
-          scanType: trackMetadata.mayBeInterlaced === false ? "progressive" : undefined,
+          scanType:
+            trackMetadata.mayBeInterlaced === true
+              ? "interlaced"
+              : trackMetadata.mayBeInterlaced === false
+                ? "progressive"
+                : undefined,
           frameRate: typeof frameRate === "number" && frameRate > 0 ? frameRate : undefined,
           dynamicRange: dynamicRangeFromTransfer(trackMetadata.transferCharacteristics),
         },

@@ -1,15 +1,21 @@
 import Log from "../utils/logger";
 import { createFilter, type RenderParams, type VideoFilter } from "./filters/types";
 import { FsrPresenter } from "./fsr";
-import { isRenderResolutionEligible } from "./interlace-detector";
 import { PassthroughPresenter, type Presenter } from "./presenters";
 
 const TAG = "VideoRenderer";
 
-/** Field order of the interlaced source: top field first or bottom field first. */
-export type FieldOrder = "tff" | "bff";
+/** WebGL video rendering targets SD/HD broadcast frames; larger frames are gated out. */
+const GATE_MAX_WIDTH = 1920;
+const GATE_MAX_HEIGHT = 1088;
+
 /** `"passthrough"` means no GL source stage: the uploaded frame texture is presented directly. */
 export type RenderStageName = "passthrough" | "bwdif";
+
+/** Whether a frame size falls within the SD/HD WebGL render gate. */
+export function isRenderResolutionEligible(width: number, height: number): boolean {
+  return width > 0 && width <= GATE_MAX_WIDTH && height > 0 && height <= GATE_MAX_HEIGHT;
+}
 
 /**
  * Post-stage enhancement filters, applied in order between the source stage
@@ -45,8 +51,8 @@ interface RenderTarget {
  * when enhancement sized the canvas to the display, plain blit otherwise).
  *
  * Rendering and presentation are decoupled for bwdif: both fields of a frame
- * are rendered up front when the frame arrives, the first field is presented
- * immediately, and the second field is presented by a requestAnimationFrame
+ * are rendered up front when the frame arrives, the top field is presented
+ * immediately (TFF), and the bottom field is presented by a requestAnimationFrame
  * clock on the vsync nearest half a frame duration after the first field's
  * estimated display time (see `secondFieldPresentAt`). A setTimeout here
  * would drift against the vsync grid and make each field's on-screen
@@ -69,7 +75,6 @@ export class VideoRenderer {
   private running = false;
   private contextLost = false;
   private stageName: RenderStageName = "passthrough";
-  private fieldOrder: FieldOrder = "tff";
   private readonly onContextLost?: () => void;
   private readonly onContextRestored?: () => void;
 
@@ -121,27 +126,6 @@ export class VideoRenderer {
    */
   private usesDevicePixelBox = true;
 
-  /**
-   * Called once per new decoded frame while running, before any upload or draw.
-   * Use it to drain async detection readbacks. Return true to request a detection
-   * sample for this frame.
-   */
-  onFrame: ((gl: WebGL2RenderingContext) => boolean) | null = null;
-
-  /**
-   * Called when onFrame requested a sample and frame upload succeeded. Must not
-   * issue blocking readbacks.
-   */
-  onSample:
-    | ((
-        gl: WebGL2RenderingContext,
-        curTexture: WebGLTexture,
-        prevTexture: WebGLTexture | null,
-        videoWidth: number,
-        videoHeight: number,
-      ) => void)
-    | null = null;
-
   /** Called when a presented frame is outside the render gate before resize handling catches up. */
   onFrameOutsideRenderGate: ((videoWidth: number, videoHeight: number) => void) | null = null;
 
@@ -181,20 +165,6 @@ export class VideoRenderer {
     return typeof HTMLVideoElement !== "undefined" && "requestVideoFrameCallback" in HTMLVideoElement.prototype;
   }
 
-  get isRunning(): boolean {
-    return this.running;
-  }
-
-  /** The active WebGL2 context, or null if not yet created or context is lost. */
-  get currentGl(): WebGL2RenderingContext | null {
-    return this.contextLost ? null : this.gl;
-  }
-
-  /** Update the source field order for subsequent bwdif frames. */
-  setFieldOrder(fieldOrder: FieldOrder): void {
-    this.fieldOrder = fieldOrder;
-  }
-
   /** Toggle post-stage picture enhancement without rebuilding the media pipeline. */
   setPictureEnhancementEnabled(enabled: boolean): void {
     if (this.pictureEnhancementEnabled === enabled) return;
@@ -225,17 +195,14 @@ export class VideoRenderer {
   }
 
   /** Reset source-specific state while retaining this canvas's context and compiled programs. */
-  resetStream(fieldOrder: FieldOrder = "tff"): void {
+  resetStream(): void {
     this.stageName = "passthrough";
     this.stageFilter = null;
-    this.fieldOrder = fieldOrder;
     this.releaseStreamResources();
   }
 
   /** Start the frame loop with the given source stage. Safe to call repeatedly. */
-  start(stageName: RenderStageName = this.stageName, fieldOrder: FieldOrder = "tff"): boolean {
-    this.fieldOrder = fieldOrder;
-
+  start(stageName: RenderStageName = this.stageName): boolean {
     if (this.running) {
       if (!this.setStage(stageName)) return false;
       this.primeCanvas();
@@ -255,7 +222,7 @@ export class VideoRenderer {
     this.running = true;
     this.primeCanvas();
     this.scheduleFrame();
-    Log.i(TAG, `Frame loop started (stage '${stageName}', ${fieldOrder})`);
+    Log.i(TAG, `Frame loop started (stage '${stageName}')`);
     return true;
   }
 
@@ -584,7 +551,7 @@ export class VideoRenderer {
     const height = this.video.videoHeight;
     if (!gl || this.contextLost || !isRenderResolutionEligible(width, height)) return;
     if (!this.uploadFrame(gl, width, height)) return;
-    this.drawCurrentOutput(this.fieldOrder === "tff" ? 0 : 1);
+    this.drawCurrentOutput(0);
   }
 
   private scheduleFrame(): void {
@@ -607,26 +574,20 @@ export class VideoRenderer {
       return;
     }
 
-    const sampleDue = this.onFrame?.(gl) ?? false;
     const frameDurationMs = this.frameDurationMs(metadata);
 
     if (!this.uploadFrame(gl, width, height)) return;
 
     if (this.stageName === "bwdif") {
-      // A new frame supersedes any not-yet-presented second field.
+      // A new frame supersedes any not-yet-presented second field. Always TFF:
+      // top field first, bottom field half a frame later.
       this.clearPendingSecondField();
-      const firstField = this.fieldOrder === "tff" ? 0 : 1;
-      this.drawCurrentOutput(firstField);
+      this.drawCurrentOutput(0);
       if (!this.video.paused && frameDurationMs > 10) {
-        this.queueSecondField(firstField === 0 ? 1 : 0, this.secondFieldPresentAt(now, frameDurationMs));
+        this.queueSecondField(1, this.secondFieldPresentAt(now, frameDurationMs));
       }
     } else {
       this.drawCurrentOutput(0);
-    }
-
-    if (sampleDue && this.onSample) {
-      const prevTexture = this.textures.length >= 2 ? this.textures[1] : null;
-      this.onSample(gl, this.textures[0], prevTexture, width, height);
     }
   }
 

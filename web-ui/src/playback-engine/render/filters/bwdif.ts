@@ -12,8 +12,7 @@ import { type RenderParams, registerFilter, type VideoFilter } from "./types";
  * after it, i.e. frames N-1 and N+1 as weaved textures. The renderer therefore
  * runs one frame behind the video (u_next is the newest upload) — ~40 ms extra
  * latency, irrelevant for IPTV. Rendered at field rate (first field, then the
- * other half a frame later) for 50p motion; which spatial field comes first is
- * the detector-determined field order (TFF/BFF).
+ * other half a frame later) for 50p motion. Field order is always TFF.
  *
  * Deviations from the FFmpeg reference, all forced by the input being
  * RGB-decoded frames rather than raw YUV planes:

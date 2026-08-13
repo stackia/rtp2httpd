@@ -1277,9 +1277,9 @@ class TSDemuxer {
 
     meta.codec = details.codec_mimetype;
 
-    // Interlace hint from codec metadata: H.264 frame_mbs_only_flag == 0 or
-    // H.265 field_seq/interlaced_source. Only a hint — many progressive
-    // streams still set these — the render side verifies heuristically.
+    // Interlace from codec metadata: H.264 frame_mbs_only_flag == 0 or
+    // H.265 field_seq/interlaced_source. The render pipeline enables bwdif
+    // when this is true (TFF).
     meta.mayBeInterlaced =
       (details.frame_mbs_only_flag as unknown) === 0 || (details.interlaced_source as unknown) === true;
 

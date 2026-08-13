@@ -2,15 +2,16 @@ import "./filters/bwdif";
 import "./filters/mosquito-nr";
 import type { PlayerRenderState, PlayerVideoScanType } from "../types";
 import Log from "../utils/logger";
-import { type DetectorVerdict, InterlaceDetector, isRenderResolutionEligible } from "./interlace-detector";
-import { type FieldOrder, type RenderStageName, VideoRenderer } from "./renderer";
+import { isRenderResolutionEligible, type RenderStageName, VideoRenderer } from "./renderer";
 
 const TAG = "VideoRenderPipeline";
 
 export interface VideoRenderPipeline {
   setAutoDeinterlaceEnabled(enabled: boolean): void;
   setPictureEnhancementEnabled(enabled: boolean): void;
-  /** Forget the detection verdict; call on channel/source switch. */
+  /** Apply codec/container scan-type metadata; call when media-info updates. */
+  setScanType(scanType?: PlayerVideoScanType): void;
+  /** Forget source-specific state; call on channel/source switch. */
   reset(): void;
   /** True while the WebGL canvas is the visible video output. */
   readonly active: boolean;
@@ -21,22 +22,14 @@ export function isVideoRenderSupported(): boolean {
   return VideoRenderer.isSupported();
 }
 
-/** Frames sampled back-to-back right after start/reset, before the steady interval kicks in. */
-const FAST_SAMPLE_COUNT = 3;
-/** Steady-state gap between detection samples. Also guarantees the PBO readback never stalls. */
-const SAMPLE_INTERVAL_MS = 500;
-
 /**
- * Wires the GPU interlace detector to the WebGL renderer for one video/canvas pair.
+ * Wires the WebGL renderer to one video/canvas pair.
  *
  * The renderer runs only while the decoded frame size is inside the SD/HD render
- * gate AND at least one of auto deinterlacing / picture enhancement is enabled —
- * with both off the pipeline would only reproduce the raw video, so it is skipped
- * like an ineligible resolution. Eligible interlaced frames switch to bwdif when
- * auto deinterlacing is on; otherwise the source frame is presented directly.
- * Once bwdif is enabled and field order is decided, detection stops for that
- * source — the filter stays on until a channel/source reset, a user toggle, or
- * the render gate closing.
+ * gate AND the pipeline would do more than reproduce the raw video: either
+ * picture enhancement is on, or auto deinterlacing is on and metadata declared
+ * interlaced scan. Eligible interlaced frames then use bwdif (always TFF);
+ * otherwise the source frame is presented directly.
  * Larger frames, both features disabled, WebGL failures, or missing rVFC support
  * all fall back to the raw video element by reporting active = false.
  */
@@ -50,6 +43,7 @@ export function createVideoRenderPipeline(
     return {
       setAutoDeinterlaceEnabled() {},
       setPictureEnhancementEnabled() {},
+      setScanType() {},
       reset() {},
       get active() {
         return false;
@@ -63,27 +57,14 @@ export function createVideoRenderPipeline(
   let active = false;
   let destroyed = false;
   let renderRunning = false;
-  let detectorReady = false;
-  let detectorRunning = false;
-  let interlaced = false;
-  let detectedScanType: PlayerVideoScanType | undefined;
-  let fieldOrder: FieldOrder = "tff";
+  let scanType: PlayerVideoScanType | undefined;
   let currentStage: RenderStageName = "passthrough";
   let lastEligibility: boolean | null = null;
   let serializedState = "";
 
-  let lastSampleMs = -Infinity;
-  let fastPhaseSamples = 0;
-
-  const resetCadence = () => {
-    lastSampleMs = -Infinity;
-    fastPhaseSamples = 0;
-  };
-
   const publishState = () => {
     const state: PlayerRenderState = {
       active,
-      detectedScanType,
       deinterlacing: active && currentStage === "bwdif",
     };
     const nextSerializedState = JSON.stringify(state);
@@ -104,38 +85,19 @@ export function createVideoRenderPipeline(
     publishState();
   };
 
-  const desiredStage = (): RenderStageName => (autoDeinterlaceEnabled && interlaced ? "bwdif" : "passthrough");
+  const desiredStage = (): RenderStageName =>
+    autoDeinterlaceEnabled && scanType === "interlaced" ? "bwdif" : "passthrough";
 
   const formatVideoSize = () =>
     video.videoWidth > 0 && video.videoHeight > 0 ? `${video.videoWidth}x${video.videoHeight}` : "unknown";
-
-  const startDetector = () => {
-    detector.start();
-    if (detectorRunning) return;
-    detectorRunning = true;
-    Log.i(TAG, `Interlace detector started (${formatVideoSize()})`);
-  };
-
-  const stopDetector = (reason: string) => {
-    detector.stop();
-    const gl = renderer.currentGl;
-    if (gl && detectorReady) detector.discardPendingReadbacks(gl);
-    if (!detectorRunning) return;
-    detectorRunning = false;
-    Log.i(TAG, `Interlace detector stopped: ${reason}`);
-  };
 
   const renderer = new VideoRenderer(
     video,
     canvas,
     () => {
       if (destroyed) return;
-      detector.onGlContextLost();
-      detectorReady = false;
-      detectorRunning = false;
       renderRunning = false;
       setCurrentStage("passthrough");
-      Log.i(TAG, "Interlace detector stopped: WebGL context lost");
       setActive(false);
     },
     () => {
@@ -146,89 +108,14 @@ export function createVideoRenderPipeline(
   );
   renderer.setPictureEnhancementEnabled(pictureEnhancementEnabled);
 
-  renderer.onFrame = (gl) => {
-    if (destroyed || !autoDeinterlaceEnabled || !detectorReady || !detectorRunning) return false;
-    detector.poll(gl);
-    if (detector.interlacedSettled) {
-      stopDetector("interlaced verdict settled");
-      return false;
-    }
-
-    const now = performance.now();
-    const isFastPhase = fastPhaseSamples < FAST_SAMPLE_COUNT;
-    if (!isFastPhase && !detector.fieldOrderVotingActive && now - lastSampleMs < SAMPLE_INTERVAL_MS) return false;
-    return true;
-  };
-
-  renderer.onSample = (gl, curTexture, prevTexture, videoWidth, videoHeight) => {
-    if (destroyed || !autoDeinterlaceEnabled || !detectorReady || !detectorRunning) return;
-    detector.sample(gl, curTexture, prevTexture, videoWidth, videoHeight);
-    lastSampleMs = performance.now();
-    if (fastPhaseSamples < FAST_SAMPLE_COUNT) fastPhaseSamples++;
-  };
-
   renderer.onFrameOutsideRenderGate = () => {
     if (destroyed) return;
     lastEligibility = null;
     apply();
   };
 
-  const detector = new InterlaceDetector((verdict: DetectorVerdict) => {
-    interlaced = verdict.interlaced;
-    detectedScanType = verdict.interlaced ? "interlaced" : "progressive";
-    fieldOrder = verdict.fieldOrder;
-    if (destroyed || !renderRunning) {
-      publishState();
-      return;
-    }
-    renderer.setFieldOrder(fieldOrder);
-    applyRenderStage();
-  });
-
-  const syncDetector = () => {
-    if (!renderRunning) {
-      stopDetector("render pipeline inactive");
-      return;
-    }
-
-    if (!autoDeinterlaceEnabled) {
-      stopDetector("auto deinterlace disabled");
-      return;
-    }
-
-    if (detector.interlacedSettled) {
-      stopDetector("interlaced verdict settled");
-      return;
-    }
-
-    const gl = renderer.currentGl;
-    if (!gl) {
-      stopDetector("WebGL context unavailable");
-      detectorReady = false;
-      return;
-    }
-
-    if (!detectorReady) {
-      detectorReady = detector.initGl(gl);
-      if (!detectorReady) {
-        stopDetector("GPU detector unavailable");
-        interlaced = false;
-        detectedScanType = undefined;
-        fieldOrder = "tff";
-        renderer.setFieldOrder(fieldOrder);
-        renderer.setStage("passthrough");
-        setCurrentStage("passthrough");
-        publishState();
-        return;
-      }
-    }
-
-    startDetector();
-  };
-
   const applyRenderStage = () => {
     const stage = desiredStage();
-    renderer.setFieldOrder(fieldOrder);
     if (renderer.setStage(stage)) {
       setCurrentStage(stage);
       return;
@@ -236,8 +123,6 @@ export function createVideoRenderPipeline(
 
     if (stage === "bwdif") {
       Log.w(TAG, "Falling back to passthrough after bwdif stage setup failed");
-      fieldOrder = "tff";
-      renderer.setFieldOrder(fieldOrder);
       renderer.setStage("passthrough");
       setCurrentStage("passthrough");
     }
@@ -247,8 +132,8 @@ export function createVideoRenderPipeline(
     if (renderRunning || destroyed) return;
 
     const stage = desiredStage();
-    if (!renderer.start(stage, fieldOrder)) {
-      if (stage !== "passthrough" && renderer.start("passthrough", fieldOrder)) {
+    if (!renderer.start(stage)) {
+      if (stage !== "passthrough" && renderer.start("passthrough")) {
         setCurrentStage("passthrough");
       } else {
         setCurrentStage("passthrough");
@@ -260,8 +145,6 @@ export function createVideoRenderPipeline(
     }
 
     renderRunning = true;
-    resetCadence();
-    syncDetector();
     setActive(true);
   };
 
@@ -271,7 +154,6 @@ export function createVideoRenderPipeline(
       return;
     }
     renderRunning = false;
-    stopDetector("render pipeline stopped");
     renderer.stop();
     setCurrentStage("passthrough");
     setActive(false);
@@ -288,9 +170,9 @@ export function createVideoRenderPipeline(
       lastEligibility = eligible;
     }
 
-    // With both features off the pipeline would only reproduce the raw video, so treat
-    // that case like an ineligible resolution and fall back to the raw <video> element.
-    const pipelineUseful = autoDeinterlaceEnabled || pictureEnhancementEnabled;
+    // Passthrough with no enhancement only reproduces the raw video, so treat that
+    // case like an ineligible resolution and fall back to the raw <video> element.
+    const pipelineUseful = (autoDeinterlaceEnabled && scanType === "interlaced") || pictureEnhancementEnabled;
     if (!eligible || !pipelineUseful) {
       stopRenderChain();
       return;
@@ -302,7 +184,6 @@ export function createVideoRenderPipeline(
     }
 
     applyRenderStage();
-    syncDetector();
     setActive(true);
   };
 
@@ -318,14 +199,6 @@ export function createVideoRenderPipeline(
     setAutoDeinterlaceEnabled(next: boolean) {
       if (autoDeinterlaceEnabled === next) return;
       autoDeinterlaceEnabled = next;
-      if (!next) {
-        interlaced = false;
-        detectedScanType = undefined;
-        fieldOrder = "tff";
-        resetCadence();
-        detector.reset();
-        renderer.setFieldOrder(fieldOrder);
-      }
       apply();
       publishState();
     },
@@ -335,14 +208,17 @@ export function createVideoRenderPipeline(
       renderer.setPictureEnhancementEnabled(next);
       apply();
     },
+    setScanType(next?: PlayerVideoScanType) {
+      if (scanType === next) return;
+      scanType = next;
+      if (next === "interlaced") Log.i(TAG, "Interlaced metadata; enabling bwdif when auto deinterlace is on");
+      apply();
+      publishState();
+    },
     reset() {
-      interlaced = false;
-      detectedScanType = undefined;
-      fieldOrder = "tff";
+      scanType = undefined;
       setCurrentStage("passthrough");
-      resetCadence();
-      detector.reset();
-      renderer.resetStream(fieldOrder);
+      renderer.resetStream();
       renderer.clearCanvas();
       apply();
       publishState();
@@ -353,8 +229,6 @@ export function createVideoRenderPipeline(
     destroy() {
       destroyed = true;
       video.removeEventListener("resize", handleVideoResize);
-      const gl = renderer.currentGl;
-      if (gl) detector.destroyGl(gl);
       renderer.destroy();
     },
   };

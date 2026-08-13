@@ -29,7 +29,7 @@ export interface PlayerConfig {
    *  The player never touches the canvas' style/visibility — drive that from the
    *  `render-state-change` event. */
   renderCanvas: HTMLCanvasElement | undefined;
-  /** Automatic bwdif deinterlacing enabled for detected interlaced content. @default true */
+  /** Automatic bwdif deinterlacing enabled when video metadata declares interlaced scan. @default true */
   autoDeinterlace: boolean;
   /** Lightweight WebGL picture enhancement enabled inside the render gate. @default true */
   pictureEnhancement: boolean;

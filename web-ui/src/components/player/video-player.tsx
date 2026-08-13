@@ -334,7 +334,6 @@ function VideoPlayerComponent({
   const setSlotRenderState = (slotId: SlotId, renderState: PlayerRenderState) =>
     setSlotRenderStates((previousStates) =>
       previousStates[slotId].active === renderState.active &&
-      previousStates[slotId].detectedScanType === renderState.detectedScanType &&
       previousStates[slotId].deinterlacing === renderState.deinterlacing
         ? previousStates
         : { ...previousStates, [slotId]: renderState },
@@ -1140,9 +1139,8 @@ function VideoPlayerComponent({
 
     const pendingTransition = { gen, slotId: pendingId, player: pendingPlayer, startedAt: performance.now() };
     pendingTransitionRef.current = pendingTransition;
-    // The pending slot's player resets its interlace verdict on loadSegments and
-    // starts detecting while hidden, so an interlaced verdict can be ready the
-    // moment the switch completes (no combing flash on channel change)
+    // The pending slot resets render state on loadSegments; interlaced metadata
+    // from the new source can enable bwdif before the switch completes.
     setSlotMediaInfo((previousMediaInfo) => ({ ...previousMediaInfo, [pendingId]: null }));
     pendingPlayer.loadSegments(newSegments);
 
@@ -2020,7 +2018,6 @@ function VideoPlayerComponent({
             locale={locale}
             mediaInfo={slotMediaInfo[visibleSlotId]}
             renderState={slotRenderStates[visibleSlotId]}
-            autoDeinterlace={autoDeinterlace}
             seekStartTime={streamStartTime}
             liveSessionAnchor={liveSessionAnchor}
             isPlaying={isPlaying}

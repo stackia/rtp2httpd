@@ -24,8 +24,6 @@ export type PlayerDynamicRange = "sdr" | "hdr10" | "hlg";
 export interface PlayerRenderState {
   /** True while the WebGL canvas is the visible video output. */
   active: boolean;
-  /** Scan type confirmed by the GPU detector; absent before a reliable verdict. */
-  detectedScanType?: PlayerVideoScanType;
   /** True only while the renderer is successfully presenting the bwdif stage. */
   deinterlacing: boolean;
 }
@@ -93,7 +91,7 @@ export interface PlaybackBackend {
   /** Anchor for session live edge (continuous live playback since tune-in). */
   setLiveSessionAnchor(anchor: LiveSessionAnchor): void;
   setLiveSync(enabled: boolean): void;
-  /** Switch automatic bwdif deinterlacing at runtime. No-op when no `renderCanvas` was configured. */
+  /** Switch automatic bwdif deinterlacing for metadata-declared interlaced video. No-op without `renderCanvas`. */
   setAutoDeinterlace(enabled: boolean): void;
   /** Switch WebGL picture enhancement at runtime. No-op when no `renderCanvas` was configured. */
   setPictureEnhancement(enabled: boolean): void;

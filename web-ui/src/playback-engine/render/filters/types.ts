@@ -16,8 +16,8 @@ export interface RenderParams {
   keepField: 0 | 1;
   /**
    * Whether this render is the temporally second field of the frame. Decides
-   * which neighboring frames hold the temporally adjacent fields (independent
-   * of keepField now that field order can be TFF or BFF).
+   * which neighboring frames hold the temporally adjacent fields. Field order
+   * is always TFF, so the second field is the bottom field.
    */
   isSecondField: boolean;
   /**

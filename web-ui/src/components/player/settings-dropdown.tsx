@@ -205,7 +205,7 @@ function SettingsDropdownComponent({
                   </span>
                 </div>
 
-                {/* Automatic deinterlacing (heuristic detection, ≤1080 content only) */}
+                {/* Automatic deinterlacing (metadata-declared interlaced, ≤1080 content only) */}
                 <LabeledSwitch
                   label={t("deinterlace")}
                   checked={autoDeinterlace}

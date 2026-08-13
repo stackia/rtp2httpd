@@ -41,7 +41,6 @@ interface PlayerControlsProps {
   // Technical information for the currently visible player slot
   mediaInfo: PlayerMediaInfo | null;
   renderState: PlayerRenderState;
-  autoDeinterlace: boolean;
   // The absolute time of the last seek position (null for live mode)
   seekStartTime: Date;
   liveSessionAnchor: LiveSessionAnchor | null;
@@ -386,7 +385,6 @@ function PlayerControlsComponent({
   locale,
   mediaInfo,
   renderState,
-  autoDeinterlace,
   seekStartTime,
   liveSessionAnchor,
   isPlaying,
@@ -503,12 +501,7 @@ function PlayerControlsComponent({
 
           {showMediaBadges && (
             <div className="ml-1 mr-1 flex h-7 min-w-0 basis-0 flex-1 items-center overflow-hidden md:ml-2 md:mr-2 md:h-12">
-              <PlayerMediaBadges
-                mediaInfo={mediaInfo}
-                locale={locale}
-                renderState={renderState}
-                autoDeinterlace={autoDeinterlace}
-              />
+              <PlayerMediaBadges mediaInfo={mediaInfo} locale={locale} renderState={renderState} />
             </div>
           )}
         </div>
