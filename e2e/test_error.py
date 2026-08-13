@@ -5,11 +5,11 @@ Tests cover 404 for unknown paths, invalid URLs, unsupported methods,
 and other edge cases.
 """
 
+import contextlib
 import socket
 import time
 
 import pytest
-
 from helpers import (
     R2HProcess,
     find_free_port,
@@ -17,7 +17,6 @@ from helpers import (
     http_request,
     stream_get,
 )
-
 
 # ---------------------------------------------------------------------------
 # Module-scoped shared rtp2httpd instance (basic -v 4 -m 100)
@@ -119,7 +118,7 @@ class TestMethodHandling:
 
     def test_head_status_200(self, basic_r2h):
         """HEAD should also work on the status page."""
-        status, _, body = http_request("127.0.0.1", basic_r2h.port, "HEAD", "/status")
+        status, _, _body = http_request("127.0.0.1", basic_r2h.port, "HEAD", "/status")
         # HEAD on status might return 200 with empty body
         # or the implementation might not support HEAD explicitly
         assert status in (200, 501)
@@ -150,10 +149,8 @@ class TestMalformedHTTP:
         # Send garbage
         sock = socket.create_connection(("127.0.0.1", basic_r2h.port), timeout=3)
         sock.sendall(b"THIS IS NOT HTTP\r\n\r\n")
-        try:
+        with contextlib.suppress(OSError, TimeoutError):
             sock.recv(1024)
-        except Exception:
-            pass
         sock.close()
 
         time.sleep(0.05)

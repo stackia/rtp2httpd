@@ -8,7 +8,6 @@ status registration without depending on multicast availability.
 import re
 
 import pytest
-
 from helpers import (
     LOOPBACK_IF,
     MCAST_ADDR,

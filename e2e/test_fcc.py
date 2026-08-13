@@ -9,7 +9,6 @@ to multicast.
 import time
 
 import pytest
-
 from helpers import (
     LOOPBACK_IF,
     MCAST_ADDR,

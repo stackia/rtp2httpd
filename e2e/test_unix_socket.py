@@ -101,7 +101,7 @@ def _open_unix_http_stream(socket_path: str, path: str) -> socket.socket:
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.settimeout(5.0)
     sock.connect(socket_path)
-    request = "GET %s HTTP/1.0\r\nHost: localhost\r\n\r\n" % path
+    request = f"GET {path} HTTP/1.0\r\nHost: localhost\r\n\r\n"
     sock.sendall(request.encode())
     return sock
 

@@ -3,7 +3,6 @@
 import time
 
 import pytest
-
 from helpers import (
     MockRTSPServer,
     R2HProcess,
@@ -51,11 +50,8 @@ class TestRTSPRecentPlayseek:
     def _build_seek_query(param_name: str, start_str: str, end_str: str) -> str:
         # All recent-clock tests opt in via r2h-seek-mode=range explicitly.
         if param_name == "custom_seek":
-            return "custom_seek=%s-%s&r2h-seek-name=custom_seek&r2h-seek-mode=range" % (
-                start_str,
-                end_str,
-            )
-        return "%s=%s-%s&r2h-seek-mode=range" % (param_name, start_str, end_str)
+            return f"custom_seek={start_str}-{end_str}&r2h-seek-name=custom_seek&r2h-seek-mode=range"
+        return f"{param_name}={start_str}-{end_str}&r2h-seek-mode=range"
 
     @pytest.mark.parametrize("param_name", ["playseek", "Playseek", "tvdr", "custom_seek"])
     def test_recent_playseek_uses_clock_range(self, shared_r2h, param_name):
@@ -67,10 +63,7 @@ class TestRTSPRecentPlayseek:
             start_str = _format_basic_utc(start_ts)
             end_str = _format_basic_utc(end_ts)
             query = self._build_seek_query(param_name, start_str, end_str)
-            url = "/rtsp/127.0.0.1:%d/stream?%s" % (
-                rtsp.port,
-                query,
-            )
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?{query}"
 
             stream_get(
                 "127.0.0.1",
@@ -82,14 +75,14 @@ class TestRTSPRecentPlayseek:
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE"
-            assert "%s=" % param_name not in describe_reqs[0]["uri"]
+            assert f"{param_name}=" not in describe_reqs[0]["uri"]
             assert "r2h-seek-name=" not in describe_reqs[0]["uri"]
             assert "r2h-seek-mode=" not in describe_reqs[0]["uri"]
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert len(play_reqs) > 0, "Expected PLAY request"
             play_headers = play_reqs[0]["headers"]
-            assert play_headers.get("Range") == "clock=%s-" % start_str
+            assert play_headers.get("Range") == f"clock={start_str}-"
             assert end_str not in play_headers["Range"]
         finally:
             rtsp.stop()
@@ -100,11 +93,7 @@ class TestRTSPRecentPlayseek:
         try:
             start_ts = int(time.time()) - 1200
             start_str = _format_basic_utc(start_ts)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s-%s&r2h-start=120.5&r2h-seek-mode=range" % (
-                rtsp.port,
-                start_str,
-                _format_basic_utc(start_ts + 120),
-            )
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={start_str}-{_format_basic_utc(start_ts + 120)}&r2h-start=120.5&r2h-seek-mode=range"
 
             stream_get(
                 "127.0.0.1",
@@ -117,7 +106,7 @@ class TestRTSPRecentPlayseek:
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert len(play_reqs) > 0, "Expected PLAY request"
             play_range = play_reqs[0]["headers"].get("Range", "")
-            assert play_range == "clock=%s-" % start_str
+            assert play_range == f"clock={start_str}-"
             assert "npt=" not in play_range
             assert "120.5" not in play_range
         finally:
@@ -135,11 +124,7 @@ class TestRTSPRecentPlayseek:
             start_ts = int(time.time()) - 3600
             start_str = _format_basic_utc(start_ts)
             end_str = _format_basic_utc(start_ts + 120)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s-%s&r2h-seek-mode=range" % (
-                rtsp.port,
-                start_str,
-                end_str,
-            )
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={start_str}-{end_str}&r2h-seek-mode=range"
 
             stream_get(
                 "127.0.0.1",
@@ -151,7 +136,7 @@ class TestRTSPRecentPlayseek:
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE"
-            assert "playseek=%s-%s" % (start_str, end_str) in describe_reqs[0]["uri"]
+            assert f"playseek={start_str}-{end_str}" in describe_reqs[0]["uri"]
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert len(play_reqs) > 0, "Expected PLAY request"
@@ -167,7 +152,7 @@ class TestRTSPRecentPlayseek:
             start_ts = int(time.time()) - 1800
             start_str = _format_basic_utc(start_ts)
             end_str = _format_basic_utc(start_ts + 300)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s-%s" % (rtsp.port, start_str, end_str)
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={start_str}-{end_str}"
 
             stream_get(
                 "127.0.0.1",
@@ -179,7 +164,7 @@ class TestRTSPRecentPlayseek:
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE"
-            assert "playseek=%s-%s" % (start_str, end_str) in describe_reqs[0]["uri"]
+            assert f"playseek={start_str}-{end_str}" in describe_reqs[0]["uri"]
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert len(play_reqs) > 0, "Expected PLAY request"
@@ -204,16 +189,12 @@ class TestRTSPSeekMode:
             start_ts = int(time.time()) - 1800
             start_str = _format_basic_utc(start_ts)
             end_str = _format_basic_utc(start_ts + 300)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s-%s&r2h-seek-mode=passthrough" % (
-                rtsp.port,
-                start_str,
-                end_str,
-            )
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={start_str}-{end_str}&r2h-seek-mode=passthrough"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
-            assert "playseek=%s-%s" % (start_str, end_str) in describe_reqs[0]["uri"]
+            assert f"playseek={start_str}-{end_str}" in describe_reqs[0]["uri"]
             assert "r2h-seek-mode=" not in describe_reqs[0]["uri"]
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert "Range" not in play_reqs[0]["headers"]
@@ -228,17 +209,14 @@ class TestRTSPSeekMode:
             start_ts = int(time.time()) - 1800
             # Client sends time in CST (UTC+8): represent the same instant in CST
             cst_str = _format_yyyyMMddHHmmss(start_ts + 8 * 3600)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B8/3600)" % (
-                rtsp.port,
-                cst_str,
-            )
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={cst_str}&r2h-seek-mode=range(UTC%2B8/3600)"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert "playseek=" not in describe_reqs[0]["uri"]
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+            assert play_reqs[0]["headers"].get("Range") == f"clock={_expected_clock_str(start_ts)}-"
         finally:
             rtsp.stop()
 
@@ -248,10 +226,7 @@ class TestRTSPSeekMode:
         rtsp.start()
         try:
             # Use fixed historical CST timestamps, far outside any window.
-            url = (
-                "/rtsp/127.0.0.1:%d/stream?playseek=20240101180000-20240101230000&r2h-seek-mode=range(UTC%%2B8/3600)"
-                % (rtsp.port,)
-            )
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101180000-20240101230000&r2h-seek-mode=range(UTC%2B8/3600)"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
@@ -270,12 +245,12 @@ class TestRTSPSeekMode:
         try:
             start_ts = int(time.time()) - 1500
             utc_str = _format_yyyyMMddHHmmss(start_ts)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(3600)" % (rtsp.port, utc_str)
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={utc_str}&r2h-seek-mode=range(3600)"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+            assert play_reqs[0]["headers"].get("Range") == f"clock={_expected_clock_str(start_ts)}-"
         finally:
             rtsp.stop()
 
@@ -286,12 +261,12 @@ class TestRTSPSeekMode:
         try:
             start_ts = int(time.time()) - 1500  # within 1 hour
             cst_str = _format_yyyyMMddHHmmss(start_ts + 8 * 3600)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B8)" % (rtsp.port, cst_str)
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={cst_str}&r2h-seek-mode=range(UTC%2B8)"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+            assert play_reqs[0]["headers"].get("Range") == f"clock={_expected_clock_str(start_ts)}-"
         finally:
             rtsp.stop()
 
@@ -314,13 +289,13 @@ class TestRTSPSeekMode:
         try:
             start_ts = int(time.time()) - 1500  # within 1h, UTC interpretation
             utc_str = _format_yyyyMMddHHmmss(start_ts)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=%s" % (rtsp.port, utc_str, mode_value)
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={utc_str}&r2h-seek-mode={mode_value}"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts), (
-                "syntax variant %r should enter the clock= path" % mode_value
+            assert play_reqs[0]["headers"].get("Range") == f"clock={_expected_clock_str(start_ts)}-", (
+                f"syntax variant {mode_value!r} should enter the clock= path"
             )
         finally:
             rtsp.stop()
@@ -332,7 +307,7 @@ class TestRTSPSeekMode:
         try:
             start_ts = int(time.time()) - 1500
             cst_str = _format_yyyyMMddHHmmss(start_ts + 8 * 3600)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(3600)" % (rtsp.port, cst_str)
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={cst_str}&r2h-seek-mode=range(3600)"
 
             stream_get(
                 "127.0.0.1",
@@ -344,7 +319,7 @@ class TestRTSPSeekMode:
             )
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+            assert play_reqs[0]["headers"].get("Range") == f"clock={_expected_clock_str(start_ts)}-"
         finally:
             rtsp.stop()
 
@@ -356,16 +331,12 @@ class TestRTSPSeekMode:
             base_ts = int(time.time()) - 3000  # 50 min ago
             offset = 1800  # +30 min, still within 60min window relative to begin
             cst_str = _format_yyyyMMddHHmmss(base_ts + 8 * 3600)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-offset=%d&r2h-seek-mode=range(UTC%%2B8/3600)" % (
-                rtsp.port,
-                cst_str,
-                offset,
-            )
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={cst_str}&r2h-seek-offset={offset}&r2h-seek-mode=range(UTC%2B8/3600)"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(base_ts + offset)
+            assert play_reqs[0]["headers"].get("Range") == f"clock={_expected_clock_str(base_ts + offset)}-"
         finally:
             rtsp.stop()
 
@@ -378,17 +349,12 @@ class TestRTSPSeekMode:
             begin_offset = 1800  # +30 min, still within 60min window relative to begin
             end_offset = -1800
             cst_str = _format_yyyyMMddHHmmss(base_ts + 8 * 3600)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-offset=%d,%d&r2h-seek-mode=range(UTC%%2B8/3600)" % (
-                rtsp.port,
-                cst_str,
-                begin_offset,
-                end_offset,
-            )
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={cst_str}&r2h-seek-offset={begin_offset},{end_offset}&r2h-seek-mode=range(UTC%2B8/3600)"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(base_ts + begin_offset)
+            assert play_reqs[0]["headers"].get("Range") == f"clock={_expected_clock_str(base_ts + begin_offset)}-"
         finally:
             rtsp.stop()
 
@@ -400,11 +366,7 @@ class TestRTSPSeekMode:
             base_ts = int(time.time()) - 3000  # 50 min ago
             offset = -1800  # makes begin look like 80 min ago, > 60min window
             cst_str = _format_yyyyMMddHHmmss(base_ts + 8 * 3600)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-offset=%d&r2h-seek-mode=range(UTC%%2B8/3600)" % (
-                rtsp.port,
-                cst_str,
-                offset,
-            )
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={cst_str}&r2h-seek-offset={offset}&r2h-seek-mode=range(UTC%2B8/3600)"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
@@ -427,12 +389,12 @@ class TestRTSPSeekMode:
         try:
             start_ts = int(time.time()) - 1500
             utc_str = _format_yyyyMMddHHmmss(start_ts)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B999)" % (rtsp.port, utc_str)
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={utc_str}&r2h-seek-mode=range(UTC%2B999)"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
-            assert "playseek=%s" % utc_str in describe_reqs[0]["uri"]
+            assert f"playseek={utc_str}" in describe_reqs[0]["uri"]
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert "Range" not in play_reqs[0]["headers"]
         finally:
@@ -448,12 +410,12 @@ class TestRTSPSeekMode:
         try:
             start_ts = int(time.time()) - 1500
             utc_str = _format_yyyyMMddHHmmss(start_ts)
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=bogus" % (rtsp.port, utc_str)
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={utc_str}&r2h-seek-mode=bogus"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
-            assert "playseek=%s" % utc_str in describe_reqs[0]["uri"]
+            assert f"playseek={utc_str}" in describe_reqs[0]["uri"]
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert "Range" not in play_reqs[0]["headers"]
         finally:
@@ -482,17 +444,17 @@ class TestRTSPSeekModeQueryMerge:
             try:
                 start_ts = int(time.time()) - 1500
                 cst_str = _format_yyyyMMddHHmmss(start_ts + 8 * 3600)
-                url = "/SeekModeFallback?playseek=%s" % cst_str
+                url = f"/SeekModeFallback?playseek={cst_str}"
 
                 stream_get("127.0.0.1", r2h_port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
                 describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
                 assert describe_reqs, "expected at least one DESCRIBE"
                 assert "r2h-seek-mode" not in describe_reqs[0]["uri"], (
-                    "r2h-seek-mode leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                    "r2h-seek-mode leaked into upstream URI: {}".format(describe_reqs[0]["uri"])
                 )
                 play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-                assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+                assert play_reqs[0]["headers"].get("Range") == f"clock={_expected_clock_str(start_ts)}-"
             finally:
                 r2h.stop()
         finally:
@@ -511,15 +473,15 @@ class TestRTSPSeekModeQueryMerge:
             try:
                 start_ts = int(time.time()) - 1500
                 cst_str = _format_yyyyMMddHHmmss(start_ts + 8 * 3600)
-                url = "/SeekModeMerge?playseek=%s&r2h-seek-mode=passthrough" % cst_str
+                url = f"/SeekModeMerge?playseek={cst_str}&r2h-seek-mode=passthrough"
 
                 stream_get("127.0.0.1", r2h_port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
                 describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
                 assert describe_reqs, "expected at least one DESCRIBE"
-                assert "playseek=%s" % cst_str in describe_reqs[0]["uri"]
+                assert f"playseek={cst_str}" in describe_reqs[0]["uri"]
                 assert "r2h-seek-mode" not in describe_reqs[0]["uri"], (
-                    "r2h-seek-mode leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                    "r2h-seek-mode leaked into upstream URI: {}".format(describe_reqs[0]["uri"])
                 )
                 play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
                 assert "Range" not in play_reqs[0]["headers"]
@@ -541,17 +503,17 @@ class TestRTSPSeekModeQueryMerge:
             try:
                 start_ts = int(time.time()) - 1500
                 cst_str = _format_yyyyMMddHHmmss(start_ts + 8 * 3600)
-                url = "/SeekModeOff?playseek=%s&r2h-seek-mode=range(UTC%%2B8/3600)" % cst_str
+                url = f"/SeekModeOff?playseek={cst_str}&r2h-seek-mode=range(UTC%2B8/3600)"
 
                 stream_get("127.0.0.1", r2h_port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
                 describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
                 assert describe_reqs, "expected at least one DESCRIBE"
                 assert "r2h-seek-mode" not in describe_reqs[0]["uri"], (
-                    "r2h-seek-mode leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                    "r2h-seek-mode leaked into upstream URI: {}".format(describe_reqs[0]["uri"])
                 )
                 play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
-                assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % _expected_clock_str(start_ts)
+                assert play_reqs[0]["headers"].get("Range") == f"clock={_expected_clock_str(start_ts)}-"
             finally:
                 r2h.stop()
         finally:
@@ -573,7 +535,7 @@ class TestRTSPSeekModeQueryMerge:
                 # Use playseek with literal UTC time so we can predict the upstream value.
                 base_ts = 1717000000  # arbitrary fixed UTC seconds
                 base_str = _format_yyyyMMddHHmmss(base_ts)
-                url = "/OffsetMerge?playseek=%s&r2h-seek-offset=7200" % base_str
+                url = f"/OffsetMerge?playseek={base_str}&r2h-seek-offset=7200"
 
                 stream_get("127.0.0.1", r2h_port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
@@ -581,12 +543,12 @@ class TestRTSPSeekModeQueryMerge:
                 assert describe_reqs, "expected at least one DESCRIBE"
                 # r2h-seek-offset must not leak.
                 assert "r2h-seek-offset" not in describe_reqs[0]["uri"], (
-                    "r2h-seek-offset leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                    "r2h-seek-offset leaked into upstream URI: {}".format(describe_reqs[0]["uri"])
                 )
                 # Request offset (7200, not 3600) should have been applied to playseek.
                 expected_str = _format_yyyyMMddHHmmss(base_ts + 7200)
-                assert "playseek=%s" % expected_str in describe_reqs[0]["uri"], (
-                    "request offset (7200) should have applied; got URI %s" % describe_reqs[0]["uri"]
+                assert f"playseek={expected_str}" in describe_reqs[0]["uri"], (
+                    "request offset (7200) should have applied; got URI {}".format(describe_reqs[0]["uri"])
                 )
             finally:
                 r2h.stop()
@@ -610,10 +572,10 @@ class TestRTSPSeekModeQueryMerge:
                 describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
                 assert describe_reqs, "expected at least one DESCRIBE"
                 assert "r2h-seek-offset" not in describe_reqs[0]["uri"], (
-                    "r2h-seek-offset leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                    "r2h-seek-offset leaked into upstream URI: {}".format(describe_reqs[0]["uri"])
                 )
                 assert "playseek=20240101120030-20240101125900" in describe_reqs[0]["uri"], (
-                    "configured offset pair should have applied; got URI %s" % describe_reqs[0]["uri"]
+                    "configured offset pair should have applied; got URI {}".format(describe_reqs[0]["uri"])
                 )
             finally:
                 r2h.stop()
@@ -630,18 +592,15 @@ class TestRTSPSeekModeQueryMerge:
             start_ts = int(time.time()) - 1500
             utc_str = _format_yyyyMMddHHmmss(start_ts)
             # Two distinct r2h-seek-mode values; the first one (passthrough) wins.
-            url = (
-                "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=passthrough&r2h-seek-mode=range(UTC%%2B8/3600)"
-                % (rtsp.port, utc_str)
-            )
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={utc_str}&r2h-seek-mode=passthrough&r2h-seek-mode=range(UTC%2B8/3600)"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert describe_reqs, "expected at least one DESCRIBE"
             # No r2h-seek-mode should leak into the upstream URI.
-            assert "r2h-seek-mode" not in describe_reqs[0]["uri"], (
-                "r2h-seek-mode leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+            assert "r2h-seek-mode" not in describe_reqs[0]["uri"], "r2h-seek-mode leaked into upstream URI: {}".format(
+                describe_reqs[0]["uri"]
             )
             # First value (passthrough) wins → no clock= header.
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
@@ -665,8 +624,8 @@ class TestRTSPSeekModeQueryMerge:
 
                 describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
                 assert describe_reqs, "expected at least one DESCRIBE"
-                assert "r2h-ifname" not in describe_reqs[0]["uri"], (
-                    "r2h-ifname leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                assert "r2h-ifname" not in describe_reqs[0]["uri"], "r2h-ifname leaked into upstream URI: {}".format(
+                    describe_reqs[0]["uri"]
                 )
             finally:
                 r2h.stop()
@@ -691,7 +650,7 @@ class TestRTSPSeekModeQueryMerge:
                 stream_get(
                     "127.0.0.1",
                     r2h_port,
-                    "/SeekNameFallback?customseek=%s" % base_str,
+                    f"/SeekNameFallback?customseek={base_str}",
                     read_bytes=4096,
                     timeout=_STREAM_TIMEOUT,
                 )
@@ -699,9 +658,9 @@ class TestRTSPSeekModeQueryMerge:
                 describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
                 assert describe_reqs, "expected at least one DESCRIBE"
                 uri = describe_reqs[0]["uri"]
-                assert "r2h-seek-name" not in uri, "r2h-seek-name leaked into upstream URI: %s" % uri
-                assert "customseek=%s" % base_str in uri, (
-                    "Custom-named seek value should be forwarded under the configured name; got: %s" % uri
+                assert "r2h-seek-name" not in uri, f"r2h-seek-name leaked into upstream URI: {uri}"
+                assert f"customseek={base_str}" in uri, (
+                    f"Custom-named seek value should be forwarded under the configured name; got: {uri}"
                 )
             finally:
                 r2h.stop()
@@ -723,7 +682,7 @@ class TestRTSPSeekModeQueryMerge:
                 stream_get(
                     "127.0.0.1",
                     r2h_port,
-                    "/SeekNameNoRemap?playseek=%s" % base_str,
+                    f"/SeekNameNoRemap?playseek={base_str}",
                     read_bytes=4096,
                     timeout=_STREAM_TIMEOUT,
                 )
@@ -731,11 +690,11 @@ class TestRTSPSeekModeQueryMerge:
                 describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
                 assert describe_reqs, "expected at least one DESCRIBE"
                 uri = describe_reqs[0]["uri"]
-                assert "r2h-seek-name" not in uri, "r2h-seek-name leaked into upstream URI: %s" % uri
-                assert "playseek=%s" % base_str in uri, (
-                    "playseek should be forwarded as-is when configured seek name is tvdr; got: %s" % uri
+                assert "r2h-seek-name" not in uri, f"r2h-seek-name leaked into upstream URI: {uri}"
+                assert f"playseek={base_str}" in uri, (
+                    f"playseek should be forwarded as-is when configured seek name is tvdr; got: {uri}"
                 )
-                assert "tvdr=" not in uri, "playseek must not be remapped to tvdr: %s" % uri
+                assert "tvdr=" not in uri, f"playseek must not be remapped to tvdr: {uri}"
             finally:
                 r2h.stop()
         finally:
@@ -759,7 +718,7 @@ class TestRTSPSeekModeQueryMerge:
                 stream_get(
                     "127.0.0.1",
                     r2h_port,
-                    "/SeekNameMerge?r2h-seek-name=request_name&request_name=%s" % base_str,
+                    f"/SeekNameMerge?r2h-seek-name=request_name&request_name={base_str}",
                     read_bytes=4096,
                     timeout=_STREAM_TIMEOUT,
                 )
@@ -767,13 +726,11 @@ class TestRTSPSeekModeQueryMerge:
                 describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
                 assert describe_reqs, "expected at least one DESCRIBE"
                 uri = describe_reqs[0]["uri"]
-                assert "r2h-seek-name" not in uri, "r2h-seek-name leaked into upstream URI: %s" % uri
+                assert "r2h-seek-name" not in uri, f"r2h-seek-name leaked into upstream URI: {uri}"
                 # Request-side custom name wins.
-                assert "request_name=%s" % base_str in uri, (
-                    "request_name (request-side) should be forwarded; got: %s" % uri
-                )
+                assert f"request_name={base_str}" in uri, f"request_name (request-side) should be forwarded; got: {uri}"
                 assert "configured_name=" not in uri, (
-                    "configured_name (M3U-side) must NOT be used when request overrides; got: %s" % uri
+                    f"configured_name (M3U-side) must NOT be used when request overrides; got: {uri}"
                 )
             finally:
                 r2h.stop()
@@ -794,14 +751,14 @@ class TestRTSPSeekModeQueryMerge:
                 stream_get(
                     "127.0.0.1",
                     r2h_port,
-                    "/TokenStrip?%s=secret-token" % token_param,
+                    f"/TokenStrip?{token_param}=secret-token",
                     read_bytes=4096,
                     timeout=_STREAM_TIMEOUT,
                 )
 
                 assert rtsp.requests_detailed, "expected RTSP requests"
                 for request in rtsp.requests_detailed:
-                    assert "r2h-token" not in request["uri"].lower(), "%s leaked into upstream %s URI: %s" % (
+                    assert "r2h-token" not in request["uri"].lower(), "{} leaked into upstream {} URI: {}".format(
                         token_param,
                         request["method"],
                         request["uri"],
@@ -831,7 +788,7 @@ class TestRTSPSeekModeQueryMerge:
                 describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
                 assert describe_reqs, "expected at least one DESCRIBE"
                 assert "r2h-ifname-fcc" not in describe_reqs[0]["uri"], (
-                    "r2h-ifname-fcc leaked into upstream URI: %s" % describe_reqs[0]["uri"]
+                    "r2h-ifname-fcc leaked into upstream URI: {}".format(describe_reqs[0]["uri"])
                 )
             finally:
                 r2h.stop()

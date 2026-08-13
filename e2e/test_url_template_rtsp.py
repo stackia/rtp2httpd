@@ -6,7 +6,6 @@ import re
 import time
 
 import pytest
-
 from helpers import (
     MockRTSPServer,
     MockRTSPServerUDP,
@@ -38,8 +37,8 @@ def shared_r2h(r2h_binary):
 
 def _extract_query_param(path, param_name):
     """Extract a query parameter value from a path or URI."""
-    match = re.search(r"[?&]%s=([^&]+)" % re.escape(param_name), path)
-    assert match, "Expected %s= in path, got: %s" % (param_name, path)
+    match = re.search(rf"[?&]{re.escape(param_name)}=([^&]+)", path)
+    assert match, f"Expected {param_name}= in path, got: {path}"
     return match.group(1)
 
 
@@ -59,12 +58,8 @@ class TestRTSPPathTemplate:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d"
-                "/path/${(b)yyyyMMddHHmmss}/${(e)yyyyMMddHHmmss}/stream"
-                "?playseek=20240101120000-20240101130000"
-            ) % rtsp.port
-            status, _, body = stream_get(
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/path/${{(b)yyyyMMddHHmmss}}/${{(e)yyyyMMddHHmmss}}/stream?playseek=20240101120000-20240101130000"
+            status, _, _body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 url,
@@ -76,9 +71,9 @@ class TestRTSPPathTemplate:
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE request"
             uri = describe_reqs[0]["uri"]
-            assert "20240101120000" in uri, "Begin template should be substituted in DESCRIBE URI, got: %s" % uri
-            assert "20240101130000" in uri, "End template should be substituted in DESCRIBE URI, got: %s" % uri
-            assert "${" not in uri, "No unresolved templates should remain in URI, got: %s" % uri
+            assert "20240101120000" in uri, f"Begin template should be substituted in DESCRIBE URI, got: {uri}"
+            assert "20240101130000" in uri, f"End template should be substituted in DESCRIBE URI, got: {uri}"
+            assert "${" not in uri, f"No unresolved templates should remain in URI, got: {uri}"
         finally:
             rtsp.stop()
 
@@ -87,8 +82,8 @@ class TestRTSPPathTemplate:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream/{utc}?playseek=20240101120000-20240101130000") % rtsp.port
-            status, _, body = stream_get(
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream/{{utc}}?playseek=20240101120000-20240101130000"
+            status, _, _body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 url,
@@ -100,7 +95,7 @@ class TestRTSPPathTemplate:
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0
             uri = describe_reqs[0]["uri"]
-            assert "2024-01-01T12:00:00.000Z" in uri, "Expected ISO8601 in URI, got: %s" % uri
+            assert "2024-01-01T12:00:00.000Z" in uri, f"Expected ISO8601 in URI, got: {uri}"
         finally:
             rtsp.stop()
 
@@ -109,12 +104,8 @@ class TestRTSPPathTemplate:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d"
-                "/path/${(b)yyyyMMddHHmmss}/stream"
-                "?r2h-seek-name=myseek&myseek=20240101120000-20240101130000"
-            ) % rtsp.port
-            status, _, body = stream_get(
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/path/${{(b)yyyyMMddHHmmss}}/stream?r2h-seek-name=myseek&myseek=20240101120000-20240101130000"
+            status, _, _body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 url,
@@ -126,9 +117,9 @@ class TestRTSPPathTemplate:
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0
             uri = describe_reqs[0]["uri"]
-            assert "20240101120000" in uri, "Template should be substituted in RTSP URI, got: %s" % uri
-            assert "${" not in uri, "No unresolved templates, got: %s" % uri
-            assert "r2h-seek-name" not in uri, "r2h-seek-name should be stripped, got: %s" % uri
+            assert "20240101120000" in uri, f"Template should be substituted in RTSP URI, got: {uri}"
+            assert "${" not in uri, f"No unresolved templates, got: {uri}"
+            assert "r2h-seek-name" not in uri, f"r2h-seek-name should be stripped, got: {uri}"
         finally:
             rtsp.stop()
 
@@ -137,8 +128,8 @@ class TestRTSPPathTemplate:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream/{duration}?playseek=20240101120000-20240101130000") % rtsp.port
-            status, _, body = stream_get(
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream/{{duration}}?playseek=20240101120000-20240101130000"
+            status, _, _body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 url,
@@ -150,7 +141,7 @@ class TestRTSPPathTemplate:
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0
             uri = describe_reqs[0]["uri"]
-            assert "/stream/3600" in uri, "Duration should be 3600 in RTSP URI, got: %s" % uri
+            assert "/stream/3600" in uri, f"Duration should be 3600 in RTSP URI, got: {uri}"
         finally:
             rtsp.stop()
 
@@ -168,22 +159,19 @@ class TestRTSPPathTemplate:
             # echoes the same string back via ${(b)yyyyMMddHHmmss}, and the
             # recent-clock path also fires (verified via PLAY Range header).
             utc_str = time.strftime("%Y%m%d%H%M%S", time.gmtime(start_ts))
-            url = ("/rtsp/127.0.0.1:%d/path/${(b)yyyyMMddHHmmss}/stream?playseek=%s&r2h-seek-mode=range(3600)") % (
-                rtsp.port,
-                utc_str,
-            )
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/path/${{(b)yyyyMMddHHmmss}}/stream?playseek={utc_str}&r2h-seek-mode=range(3600)"
 
             stream_get("127.0.0.1", shared_r2h.port, url, read_bytes=4096, timeout=_STREAM_TIMEOUT)
 
             uri = _get_describe_uri(rtsp)
-            assert "${" not in uri, "Template placeholder left unresolved in DESCRIBE URI: %s" % uri
-            assert ("/path/%s/stream" % utc_str) in uri, (
-                "Begin template should be substituted in DESCRIBE URI, got: %s" % uri
+            assert "${" not in uri, f"Template placeholder left unresolved in DESCRIBE URI: {uri}"
+            assert (f"/path/{utc_str}/stream") in uri, (
+                f"Begin template should be substituted in DESCRIBE URI, got: {uri}"
             )
             # Cross-check the recent-clock path actually fired.
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             expected_clock = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(start_ts))
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % expected_clock
+            assert play_reqs[0]["headers"].get("Range") == f"clock={expected_clock}-"
         finally:
             rtsp.stop()
 
@@ -197,8 +185,8 @@ class TestRTSPQueryAppendMode:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % rtsp.port
-            status, _, body = stream_get(
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101120000-20240101130000"
+            status, _, _body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 url,
@@ -210,7 +198,7 @@ class TestRTSPQueryAppendMode:
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0
             uri = describe_reqs[0]["uri"]
-            assert "playseek=" in uri, "Query-append RTSP should have playseek in URI, got: %s" % uri
+            assert "playseek=" in uri, f"Query-append RTSP should have playseek in URI, got: {uri}"
         finally:
             rtsp.stop()
 
@@ -219,7 +207,7 @@ class TestRTSPQueryAppendMode:
         rtsp = MockRTSPServerUDP()
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101120000-20240101130000"
             status, _, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -237,7 +225,7 @@ class TestRTSPQueryAppendMode:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?tvdr=20240601080000-20240601090000") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?tvdr=20240601080000-20240601090000"
             status, _, _ = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -257,7 +245,7 @@ class TestRTSPQueryAppendMode:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/live/channel1?playseek=20240101120000-20240101130000") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/live/channel1?playseek=20240101120000-20240101130000"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -276,7 +264,7 @@ class TestRTSPQueryAppendMode:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?r2h-seek-name=myseek&myseek=20240301100000-20240301110000") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?r2h-seek-name=myseek&myseek=20240301100000-20240301110000"
             status, _, _ = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -302,7 +290,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -321,9 +309,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = (
-                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=30,-60"
-            ) % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=30,-60"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -342,7 +328,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=-30") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=-30"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -361,7 +347,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -380,7 +366,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=1704096000-1704099600&r2h-seek-offset=3600") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=1704096000-1704099600&r2h-seek-offset=3600"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -399,7 +385,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101120000-20240101130000"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -419,7 +405,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101120000-20240101130000"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -439,7 +425,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101120000-20240101130000"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -459,7 +445,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=1704096000-1704099600") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=1704096000-1704099600"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -479,7 +465,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101120000-20240101130000&r2h-seek-offset=3600"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -500,8 +486,8 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp.start()
         try:
             url = (
-                "/rtsp/127.0.0.1:%d/stream?playseek=20240101120000GMT-20240101130000GMT&r2h-seek-offset=3600"
-            ) % rtsp.port
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101120000GMT-20240101130000GMT&r2h-seek-offset=3600"
+            )
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -520,7 +506,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=1704096000-1704099600") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=1704096000-1704099600"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -540,7 +526,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = ("/rtsp/127.0.0.1:%d/stream?playseek=20240101120000GMT-20240101130000GMT") % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek=20240101120000GMT-20240101130000GMT"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -568,7 +554,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
             iso_str = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(start_ts))
             # range(UTC+9) AND a UA TZ that disagrees with both the range TZ
             # and the embedded `Z` — the `Z` wins regardless.
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B9/3600)" % (rtsp.port, iso_str)
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={iso_str}&r2h-seek-mode=range(UTC%2B9/3600)"
 
             stream_get(
                 "127.0.0.1",
@@ -581,9 +567,10 @@ class TestRTSPQueryAppendOffsetAndFormat:
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             expected_clock = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(start_ts))
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % expected_clock, (
-                "Embedded `Z` must take precedence over both range(<TZ>) and UA TZ — "
-                "got Range header %r" % play_reqs[0]["headers"].get("Range")
+            assert play_reqs[0]["headers"].get("Range") == f"clock={expected_clock}-", (
+                "Embedded `Z` must take precedence over both range(<TZ>) and UA TZ — got Range header {!r}".format(
+                    play_reqs[0]["headers"].get("Range")
+                )
             )
         finally:
             rtsp.stop()
@@ -598,7 +585,7 @@ class TestRTSPQueryAppendOffsetAndFormat:
         try:
             start_ts = int(time.time()) - 1500  # 25 min ago, within 1h window
             gmt_str = time.strftime("%Y%m%d%H%M%S", time.gmtime(start_ts)) + "GMT"
-            url = "/rtsp/127.0.0.1:%d/stream?playseek=%s&r2h-seek-mode=range(UTC%%2B9/3600)" % (rtsp.port, gmt_str)
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?playseek={gmt_str}&r2h-seek-mode=range(UTC%2B9/3600)"
 
             stream_get(
                 "127.0.0.1",
@@ -611,9 +598,10 @@ class TestRTSPQueryAppendOffsetAndFormat:
 
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             expected_clock = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(start_ts))
-            assert play_reqs[0]["headers"].get("Range") == "clock=%s-" % expected_clock, (
-                "GMT suffix must take precedence over both range(<TZ>) and UA TZ — "
-                "got Range header %r" % play_reqs[0]["headers"].get("Range")
+            assert play_reqs[0]["headers"].get("Range") == f"clock={expected_clock}-", (
+                "GMT suffix must take precedence over both range(<TZ>) and UA TZ — got Range header {!r}".format(
+                    play_reqs[0]["headers"].get("Range")
+                )
             )
         finally:
             rtsp.stop()

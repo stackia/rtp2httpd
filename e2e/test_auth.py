@@ -8,7 +8,6 @@ as well as rejection on mismatch or absence.
 from urllib.parse import quote
 
 import pytest
-
 from helpers import (
     R2HProcess,
     find_free_port,

@@ -17,9 +17,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Thread, Event, Lock
+from threading import Event, Lock, Thread
 
-from scapy.all import PcapNgReader, UDP, IP, Raw  # pyright: ignore[reportAttributeAccessIssue]
+from scapy.all import IP, UDP, PcapNgReader, Raw  # pyright: ignore[reportAttributeAccessIssue]
+from scapy.error import Scapy_Exception
 
 
 def is_rtp_packet(payload: bytes) -> bool:
@@ -148,7 +149,7 @@ def load_packets(filepath: Path) -> list[PacketInfo]:
 
     if packets:
         duration = packets[-1].timestamp - packets[0].timestamp
-        dests = set((p.dst_addr, p.dst_port) for p in packets)
+        dests = {(p.dst_addr, p.dst_port) for p in packets}
         print(
             f"Loaded {len(packets)} UDP packets (duration: {duration:.2f}s)",
             flush=True,
@@ -189,7 +190,7 @@ def check_igmp_membership(group_addr: str) -> bool:
         with open("/proc/net/igmp", "r") as f:
             content = f.read()
             return target in content
-    except IOError:
+    except OSError:
         return False
 
 
@@ -249,7 +250,7 @@ def get_igmp_joined_groups(subnets: list[str]) -> set[str]:
                                     break
                         except ValueError, IndexError:
                             continue
-    except IOError:
+    except OSError:
         pass
 
     return joined
@@ -422,10 +423,10 @@ def replay_loop(
                 stream_seq_offsets[port] = 0
 
     # Get unique ports from pcap
-    pcap_ports = set(p.dst_port for p in packets)
+    pcap_ports = {p.dst_port for p in packets}
 
-    pcap_dests = set((p.dst_addr, p.dst_port) for p in packets)
-    pcap_addrs = set(p.dst_addr for p in packets)
+    pcap_dests = {(p.dst_addr, p.dst_port) for p in packets}
+    pcap_addrs = {p.dst_addr for p in packets}
 
     if direct:
         dest_str = ", ".join(f"{addr}:{port}" for addr, port in sorted(pcap_dests))
@@ -765,7 +766,7 @@ def main() -> int:
 
     try:
         packets = load_packets(args.pcapng_file)
-    except Exception as e:
+    except (OSError, ValueError, Scapy_Exception) as e:
         print(f"Error loading pcapng file: {e}", file=sys.stderr)
         return 1
 
@@ -775,8 +776,8 @@ def main() -> int:
 
     # Calculate subnets to monitor based on destination addresses in pcap
     # Each unique destination IP gets its corresponding /24 subnet monitored
-    pcap_addrs = set(p.dst_addr for p in packets)
-    subnets = sorted(set(get_subnet_for_ip(addr) for addr in pcap_addrs))
+    pcap_addrs = {p.dst_addr for p in packets}
+    subnets = sorted({get_subnet_for_ip(addr) for addr in pcap_addrs})
 
     igmp_available = Path("/proc/net/igmp").is_file()
     direct = args.direct or not igmp_available

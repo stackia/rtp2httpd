@@ -13,7 +13,6 @@ import socket
 import time
 
 import pytest
-
 from helpers import (
     MockRTSPServer,
     MockRTSPServerNoMedia,
@@ -45,7 +44,7 @@ def _get_status_clients(port: int, timeout: float = 3.0) -> list[dict]:
     extract the active clients list."""
     try:
         sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
-    except OSError, socket.timeout:
+    except TimeoutError, OSError:
         return []
     data = b""
     try:
@@ -56,14 +55,14 @@ def _get_status_clients(port: int, timeout: float = 3.0) -> list[dict]:
             sock.settimeout(min(remaining, 1.0))
             try:
                 chunk = sock.recv(8192)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             if not chunk:
                 break
             data += chunk
             if b"\ndata: {" in data and b'"clients"' in data:
                 break
-    except socket.timeout, OSError:
+    except TimeoutError, OSError:
         pass
     finally:
         sock.close()
@@ -103,7 +102,7 @@ class TestRTSPHeadRequest:
             "127.0.0.1",
             shared_r2h.port,
             "HEAD",
-            "/rtsp/127.0.0.1:%d/test" % dead_port,
+            f"/rtsp/127.0.0.1:{dead_port}/test",
             timeout=3.0,
         )
         assert status == 503
@@ -116,7 +115,7 @@ class TestRTSPInvalidServer:
         status, _, _ = stream_get(
             "127.0.0.1",
             shared_r2h.port,
-            "/rtsp/127.0.0.1:%d/test" % dead_port,
+            f"/rtsp/127.0.0.1:{dead_port}/test",
             read_bytes=512,
             timeout=8.0,
         )
@@ -145,7 +144,7 @@ class TestRTSPHandshakeTimeout:
                 status, _, _ = stream_get(
                     "127.0.0.1",
                     r2h_port,
-                    "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                    f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                     read_bytes=256,
                     timeout=_RTSP_HANDSHAKE_TIMEOUT * _TIMEOUT_MAX_FACTOR + 5,
                 )
@@ -182,7 +181,7 @@ class TestRTSPFirstMediaTimeout:
                 status, _, _ = stream_get(
                     "127.0.0.1",
                     r2h_port,
-                    "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                    f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                     read_bytes=256,
                     timeout=_RTSP_FIRST_MEDIA_TIMEOUT * _TIMEOUT_MAX_FACTOR + 5,
                 )
@@ -219,7 +218,7 @@ class TestRTSPTeardownTimeout:
                 status, _, body = stream_get(
                     "127.0.0.1",
                     r2h_port,
-                    "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                    f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                     read_bytes=2048,
                     timeout=15.0,
                 )
@@ -266,16 +265,16 @@ class TestRTSPDurationQuery:
         rtsp = MockRTSPServer(num_packets=500, custom_sdp=sdp_with_range)
         rtsp.start()
         try:
-            status, hdrs, body = http_get(
+            status, _hdrs, body = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/stream?r2h-duration=1" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream?r2h-duration=1",
                 timeout=_STREAM_TIMEOUT,
             )
-            assert status == 200, "Expected 200 for r2h-duration, got %d" % status
+            assert status == 200, f"Expected 200 for r2h-duration, got {status}"
             body_str = body.decode(errors="replace")
-            assert '"duration"' in body_str, "Response should contain duration JSON, got: %s" % body_str
-            assert "3600.500" in body_str, "Duration should be 3600.500, got: %s" % body_str
+            assert '"duration"' in body_str, f"Response should contain duration JSON, got: {body_str}"
+            assert "3600.500" in body_str, f"Duration should be 3600.500, got: {body_str}"
         finally:
             rtsp.stop()
 
@@ -293,15 +292,15 @@ class TestRTSPDurationQuery:
             http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/stream?r2h-duration=1" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream?r2h-duration=1",
                 timeout=_STREAM_TIMEOUT,
             )
 
             methods = rtsp.requests_received
             assert "OPTIONS" in methods, "Expected OPTIONS"
             assert "DESCRIBE" in methods, "Expected DESCRIBE"
-            assert "SETUP" not in methods, "r2h-duration should NOT send SETUP, got: %s" % methods
-            assert "PLAY" not in methods, "r2h-duration should NOT send PLAY, got: %s" % methods
+            assert "SETUP" not in methods, f"r2h-duration should NOT send SETUP, got: {methods}"
+            assert "PLAY" not in methods, f"r2h-duration should NOT send PLAY, got: {methods}"
         finally:
             rtsp.stop()
 
@@ -320,14 +319,14 @@ class TestRTSPDurationQuery:
             http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/stream?r2h-duration=1" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream?r2h-duration=1",
                 timeout=_STREAM_TIMEOUT,
             )
 
             describe_reqs = [r for r in rtsp.requests_detailed if r["method"] == "DESCRIBE"]
             assert len(describe_reqs) > 0, "Expected DESCRIBE"
             uri = describe_reqs[0]["uri"]
-            assert "r2h-duration" not in uri, "r2h-duration should be stripped from RTSP URI, got: %s" % uri
+            assert "r2h-duration" not in uri, f"r2h-duration should be stripped from RTSP URI, got: {uri}"
         finally:
             rtsp.stop()
 
@@ -340,7 +339,7 @@ class TestRTSPStartSeek:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = "/rtsp/127.0.0.1:%d/stream?r2h-start=120.5" % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?r2h-start=120.5"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -362,7 +361,7 @@ class TestRTSPStartSeek:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = "/rtsp/127.0.0.1:%d/stream?r2h-start=60" % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?r2h-start=60"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -382,7 +381,7 @@ class TestRTSPStartSeek:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = "/rtsp/127.0.0.1:%d/stream?token=abc&r2h-start=30&sid=123" % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream?token=abc&r2h-start=30&sid=123"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
@@ -405,7 +404,7 @@ class TestRTSPStartSeek:
         rtsp = MockRTSPServer(num_packets=500)
         rtsp.start()
         try:
-            url = "/rtsp/127.0.0.1:%d/stream" % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/stream"
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,

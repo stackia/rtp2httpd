@@ -8,7 +8,6 @@ and precedence rules.
 import time  # needed for TestMaxClients deadline loop
 
 import pytest
-
 from helpers import (
     MockHTTPUpstream,
     MockRTSPServer,
@@ -19,7 +18,6 @@ from helpers import (
     stream_get,
     wait_for_port,
 )
-
 
 _INLINE_M3U = """\
 #EXTM3U
@@ -198,7 +196,7 @@ def _assert_rtsp_user_agent(port: int, expected_user_agent: str):
         status, headers, body = http_get(
             "127.0.0.1",
             port,
-            "/rtsp/127.0.0.1:%d/stream?r2h-duration=1" % rtsp.port,
+            f"/rtsp/127.0.0.1:{rtsp.port}/stream?r2h-duration=1",
             timeout=10.0,
         )
         assert status == 200, f"Expected 200, got {status}"
@@ -477,6 +475,7 @@ class TestMaxClients:
         """When maxclients=1 and one client is streaming an RTSP source,
         a second stream request should get 503 Service Unavailable."""
         import socket as _socket
+
         from helpers import MockRTSPServerUDP
 
         rtsp = MockRTSPServerUDP(num_packets=2000)
@@ -490,11 +489,11 @@ class TestMaxClients:
         )
         try:
             r2h.start()
-            url = "/rtsp/127.0.0.1:%d/test" % rtsp.port
+            url = f"/rtsp/127.0.0.1:{rtsp.port}/test"
 
             # First client: open streaming connection and keep it alive
             sock1 = _socket.create_connection(("127.0.0.1", port), timeout=20)
-            sock1.sendall(("GET %s HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n" % url).encode())
+            sock1.sendall((f"GET {url} HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n").encode())
             # Wait until we get the 200 OK headers
             resp1 = b""
             deadline = time.monotonic() + 20
@@ -502,9 +501,9 @@ class TestMaxClients:
             while b"\r\n\r\n" not in resp1 and time.monotonic() < deadline:
                 try:
                     resp1 += sock1.recv(4096)
-                except _socket.timeout:
+                except TimeoutError:
                     continue
-            assert b"200" in resp1, "First client did not get 200: %r" % resp1[:80]
+            assert b"200" in resp1, f"First client did not get 200: {resp1[:80]!r}"
 
             # Connection is active - the server has registered this client.
             time.sleep(0.2)

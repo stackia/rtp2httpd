@@ -8,7 +8,6 @@ These tests start a mock HTTP upstream, point rtp2httpd at it via
 import time
 
 import pytest
-
 from helpers import (
     MockHTTPUpstream,
     MockHTTPUpstreamSilent,
@@ -102,7 +101,7 @@ class TestProxyContentType:
         )
         upstream.start()
         try:
-            status, hdrs, body = http_get(
+            status, _hdrs, body = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 f"/http/127.0.0.1:{upstream.port}/api/data",
@@ -136,7 +135,7 @@ class TestProxyLargeBody:
             status, _, body = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/http/127.0.0.1:%d/big" % upstream.port,
+                f"/http/127.0.0.1:{upstream.port}/big",
                 timeout=10.0,
             )
             assert status == 200
@@ -163,7 +162,7 @@ class TestProxyQueryParams:
         )
         upstream.start()
         try:
-            status, _, body = http_get(
+            status, _, _body = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
                 f"/http/127.0.0.1:{upstream.port}/search?q=test&page=1",
@@ -186,7 +185,7 @@ class TestProxyQueryParams:
             status, _, body = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/http/127.0.0.1:%d/search?%s=secret-token&q=test" % (upstream.port, token_param),
+                f"/http/127.0.0.1:{upstream.port}/search?{token_param}=secret-token&q=test",
                 timeout=5.0,
             )
             assert status == 200
@@ -212,7 +211,7 @@ class TestProxyUnreachable:
         status, _, _ = stream_get(
             "127.0.0.1",
             shared_r2h.port,
-            "/http/127.0.0.1:%d/whatever" % dead_port,
+            f"/http/127.0.0.1:{dead_port}/whatever",
             read_bytes=512,
             timeout=6.0,
         )
@@ -247,7 +246,7 @@ class TestProxyUpstreamTimeout:
                 status, _, _ = stream_get(
                     "127.0.0.1",
                     r2h_port,
-                    "/http/127.0.0.1:%d/test" % upstream.port,
+                    f"/http/127.0.0.1:{upstream.port}/test",
                     read_bytes=256,
                     timeout=_HTTP_PROXY_TIMEOUT * _TIMEOUT_MAX_FACTOR + 5,
                 )
@@ -278,10 +277,10 @@ class TestProxyStatusCodes:
         )
         upstream.start()
         try:
-            status, _, body = http_get(
+            status, _, _body = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/http/127.0.0.1:%d/err" % upstream.port,
+                f"/http/127.0.0.1:{upstream.port}/err",
                 timeout=5.0,
             )
             assert status == 500
@@ -301,10 +300,10 @@ class TestProxyStatusCodes:
         )
         upstream.start()
         try:
-            status, hdrs, _ = http_get(
+            status, _hdrs, _ = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/http/127.0.0.1:%d/redirect" % upstream.port,
+                f"/http/127.0.0.1:{upstream.port}/redirect",
                 timeout=5.0,
             )
             assert status == 302
@@ -345,7 +344,7 @@ class TestProxyRedirectLocationRewrite:
             status, hdrs, _ = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/http/127.0.0.1:%d/old" % upstream.port,
+                f"/http/127.0.0.1:{upstream.port}/old",
                 timeout=5.0,
             )
             assert status == 302
@@ -408,7 +407,7 @@ app-path-prefix = {APP_PREFIX}
             status, hdrs, _ = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/http/127.0.0.1:%d/moved" % upstream.port,
+                f"/http/127.0.0.1:{upstream.port}/moved",
                 timeout=5.0,
             )
             assert status == 301
@@ -434,7 +433,7 @@ app-path-prefix = {APP_PREFIX}
             status, hdrs, _ = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/http/127.0.0.1:%d/temp" % upstream.port,
+                f"/http/127.0.0.1:{upstream.port}/temp",
                 timeout=5.0,
             )
             assert status == 307
@@ -460,7 +459,7 @@ app-path-prefix = {APP_PREFIX}
             status, hdrs, _ = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/http/127.0.0.1:%d/redir-qs" % upstream.port,
+                f"/http/127.0.0.1:{upstream.port}/redir-qs",
                 timeout=5.0,
             )
             assert status == 302
@@ -488,7 +487,7 @@ app-path-prefix = {APP_PREFIX}
             status, hdrs, _ = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/http/127.0.0.1:%d/secure-redir" % upstream.port,
+                f"/http/127.0.0.1:{upstream.port}/secure-redir",
                 timeout=5.0,
             )
             assert status == 302
@@ -517,7 +516,7 @@ app-path-prefix = {APP_PREFIX}
             status, hdrs, _ = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/http/127.0.0.1:%d/ok-with-loc" % upstream.port,
+                f"/http/127.0.0.1:{upstream.port}/ok-with-loc",
                 timeout=5.0,
             )
             assert status == 200
@@ -547,7 +546,7 @@ class TestProxyEmptyBody:
             status, _, body = http_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/http/127.0.0.1:%d/empty" % upstream.port,
+                f"/http/127.0.0.1:{upstream.port}/empty",
                 timeout=5.0,
             )
             assert status == 200

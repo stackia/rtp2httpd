@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import signal
 import socket
 import time
 
 import pytest
-
 from helpers import (
     MockRTSPServer,
     R2HProcess,
@@ -27,8 +26,8 @@ def _open_stream(port: int, rtsp_port: int) -> socket.socket:
     sock.settimeout(10)
     sock.bind(("127.0.0.1", 0))
     sock.connect(("127.0.0.1", port))
-    path = "/rtsp/127.0.0.1:%d/stream" % rtsp_port
-    sock.sendall(("GET %s HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n" % path).encode())
+    path = f"/rtsp/127.0.0.1:{rtsp_port}/stream"
+    sock.sendall((f"GET {path} HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n").encode())
     response = b""
     deadline = time.monotonic() + 10
     sock.settimeout(1.0)
@@ -53,7 +52,7 @@ def _wait_log_contains(r2h: R2HProcess, text: str, timeout: float = 6.0) -> str:
         if text in log:
             return log
         time.sleep(0.05)
-    raise AssertionError("Expected log text %r; log: %s" % (text, log))
+    raise AssertionError(f"Expected log text {text!r}; log: {log}")
 
 
 def _read_sse_payload(sock: socket.socket, buffered: bytes, predicate, timeout: float = 6.0) -> tuple[dict, bytes]:
@@ -181,7 +180,7 @@ def test_worker_reduction_reaps_retiring_worker(r2h_binary):
     config = build_single_service_config(
         port,
         "Recovery",
-        "rtsp://127.0.0.1:%d/stream" % upstream.port,
+        f"rtsp://127.0.0.1:{upstream.port}/stream",
         global_lines=["maxclients = 10", "workers = 2"],
     )
     r2h = R2HProcess(r2h_binary, port, config_content=config, capture_log=True)
@@ -215,9 +214,9 @@ def test_worker_reduction_reaps_retiring_worker(r2h_binary):
             timeout=8,
         )
         assert len(reduced["workers"]) == 1
-        log = _wait_log_contains(r2h, "Worker 1 (pid %d)" % retiring_pid)
+        log = _wait_log_contains(r2h, f"Worker 1 (pid {retiring_pid})")
         assert "Reducing worker count from 2 to 1" in log
-        assert "Worker 1 (pid %d)" % retiring_pid in log
+        assert f"Worker 1 (pid {retiring_pid})" in log
         if had_retiring_client:
             assert all(client["workerPid"] != retiring_pid for client in reduced["clients"])
     finally:

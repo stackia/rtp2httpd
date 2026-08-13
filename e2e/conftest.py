@@ -25,7 +25,7 @@ import pytest
 # Make helpers importable from test modules
 sys.path.insert(0, str(Path(__file__).parent))
 
-from helpers import (  # noqa: E402
+from helpers import (
     BINARY_PATH,
     MockFCCServer,
     MockHTTPUpstream,

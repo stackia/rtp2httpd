@@ -5,15 +5,16 @@ E2E tests for M3U catchup-source template rewrite and consumption.
 import re
 
 import pytest
-
 from helpers import (
     MockHTTPUpstream,
     R2HProcess,
     build_config,
     extract_catchup_source,
     find_free_port,
-    get_upstream_path as _get_upstream_path,
     http_get,
+)
+from helpers import (
+    get_upstream_path as _get_upstream_path,
 )
 
 _TIMEOUT = 10.0
@@ -42,7 +43,7 @@ def _make_upstream(*paths):
 def _absolute_url_to_path(url):
     """Convert an absolute proxy URL back into an HTTP path for local requests."""
     match = re.match(r"https?://[^/]+(/.*)$", url)
-    assert match, "Expected absolute HTTP URL, got: %s" % url
+    assert match, f"Expected absolute HTTP URL, got: {url}"
     return match.group(1)
 
 
@@ -96,21 +97,21 @@ class TestM3UCatchupRewrite:
         text = catchup_rewrite_playlist
         assert "Template Channel" in text
         assert "playseek=${(b)yyyyMMddHHmmss}-${(e)yyyyMMddHHmmss}" in text, (
-            "Path template catchup-source should keep original placeholder format, got:\n%s" % text
+            f"Path template catchup-source should keep original placeholder format, got:\n{text}"
         )
 
     def test_query_only_templates_become_playseek_carrier(self, catchup_rewrite_playlist):
         """Query-only catchup templates should be folded into a playseek carrier."""
         _, catchup_source = extract_catchup_source(catchup_rewrite_playlist, "Query Template Ch")
         assert "playseek={utc:YmdHMS}-{utcend:YmdHMS}" in catchup_source, (
-            "Expected query templates to become playseek carrier, got: %s" % catchup_source
+            f"Expected query templates to become playseek carrier, got: {catchup_source}"
         )
 
     def test_query_only_tvdr_range_preserves_seek_param_name(self, catchup_rewrite_playlist):
         """A tvdr range template should keep tvdr as the playlist seek carrier."""
         _, catchup_source = extract_catchup_source(catchup_rewrite_playlist, "TVDR Template Ch")
         assert "tvdr=${(b)yyyyMMddHHmmss}GMT-${(e)yyyyMMddHHmmss}GMT" in catchup_source, (
-            "Expected tvdr range to stay under tvdr, got: %s" % catchup_source
+            f"Expected tvdr range to stay under tvdr, got: {catchup_source}"
         )
         assert "playseek=" not in catchup_source
 
@@ -118,7 +119,7 @@ class TestM3UCatchupRewrite:
         """A configured custom seek name should be preserved as the playlist seek carrier."""
         _, catchup_source = extract_catchup_source(catchup_rewrite_playlist, "Custom Seek Template Ch")
         assert "customseek={utc:YmdHMS}-{utcend:YmdHMS}" in catchup_source, (
-            "Expected explicit seek name to stay under customseek, got: %s" % catchup_source
+            f"Expected explicit seek name to stay under customseek, got: {catchup_source}"
         )
         assert "playseek=" not in catchup_source
 
@@ -136,17 +137,17 @@ class TestM3UCatchupRewrite:
     def test_path_template_uses_original_playseek_format(self, catchup_rewrite_playlist):
         """Multi-part path templates should keep the original placeholder fragments in playseek."""
         assert "playseek=${(b)yyyyMMdd}${(b)HHmmss}-${(e)yyyyMMdd}${(e)HHmmss}" in catchup_rewrite_playlist, (
-            "Expected original placeholder fragments in playseek, got:\n%s" % catchup_rewrite_playlist
+            f"Expected original placeholder fragments in playseek, got:\n{catchup_rewrite_playlist}"
         )
 
     def test_query_templates_prefer_playseek_carrier(self, catchup_rewrite_playlist):
         """Query templates should become the proxied playseek carrier when present."""
         _, catchup_source = extract_catchup_source(catchup_rewrite_playlist, "Mixed Channel")
         assert "playseek={utc}" in catchup_source, (
-            "Expected query begin template to become playseek carrier, got: %s" % catchup_source
+            f"Expected query begin template to become playseek carrier, got: {catchup_source}"
         )
         assert "begin={utc}" not in catchup_source, (
-            "Expected original query template to be folded into playseek, got: %s" % catchup_source
+            f"Expected original query template to be folded into playseek, got: {catchup_source}"
         )
 
     def test_main_service_query_templates_are_preserved_in_playlist(self, catchup_rewrite_playlist):
@@ -159,31 +160,31 @@ class TestM3UCatchupRewrite:
         service_url = lines[channel_index + 1]
 
         assert "/Main%20Query%20Template%20Ch?begin={utc}" in service_url, (
-            "Expected transformed main service URL to preserve template query, got: %s" % service_url
+            f"Expected transformed main service URL to preserve template query, got: {service_url}"
         )
         assert "token=1" not in service_url, (
-            "Expected static query params to stay stripped from transformed main service URL, got: %s" % service_url
+            f"Expected static query params to stay stripped from transformed main service URL, got: {service_url}"
         )
 
     def test_append_catchup_exposes_playseek_carrier(self, catchup_rewrite_playlist):
         """Append-mode query templates should also expose a fixed playseek carrier."""
         _, catchup_source = extract_catchup_source(catchup_rewrite_playlist, "Placeholder Ch")
         assert "playseek={utc}-{utcend}" in catchup_source, (
-            "Expected append-mode placeholders to expose playseek carrier, got: %s" % catchup_source
+            f"Expected append-mode placeholders to expose playseek carrier, got: {catchup_source}"
         )
 
     def test_append_query_templates_become_playseek_carrier(self, catchup_rewrite_playlist):
         """Append-mode start/end query templates should be folded into playseek."""
         _, catchup_source = extract_catchup_source(catchup_rewrite_playlist, "Append Offset Ch")
         assert "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}" in catchup_source, (
-            "Expected append-mode query templates to become playseek carrier, got: %s" % catchup_source
+            f"Expected append-mode query templates to become playseek carrier, got: {catchup_source}"
         )
 
     def test_append_query_templates_without_prefix_become_playseek_carrier(self, catchup_rewrite_playlist):
         """Append-mode query templates without a leading separator should also be folded into playseek."""
         _, catchup_source = extract_catchup_source(catchup_rewrite_playlist, "Append No Prefix Ch")
         assert "playseek=${(b)yyyyMMdd|UTC}T${(b)HHmmss|UTC}-${(e)yyyyMMdd|UTC}T${(e)HHmmss|UTC}" in catchup_source, (
-            "Expected append-mode query templates without prefix to become playseek carrier, got: %s" % catchup_source
+            f"Expected append-mode query templates without prefix to become playseek carrier, got: {catchup_source}"
         )
 
 
@@ -358,10 +359,10 @@ rtp://239.0.0.1:1234
             assert full_path.startswith(expected_path)
             assert "begin=2024-01-01T12:00:00.000Z" in full_path
             assert re.search(r"[?&]now=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z", full_path), (
-                "Expected {lutc} to resolve as ISO8601 UTC, got: %s" % full_path
+                f"Expected {{lutc}} to resolve as ISO8601 UTC, got: {full_path}"
             )
             assert re.search(r"[?&]ts=\d+", full_path), (
-                "Expected {timestamp} to resolve as Unix timestamp, got: %s" % full_path
+                f"Expected {{timestamp}} to resolve as Unix timestamp, got: {full_path}"
             )
         finally:
             r2h.stop()
@@ -410,10 +411,10 @@ rtp://239.0.0.1:1234
 
             full_path = _get_upstream_path(upstream)
             assert "starttime=20240101T130000" in full_path, (
-                "Expected r2h-seek-offset to shift starttime by +1h, got: %s" % full_path
+                f"Expected r2h-seek-offset to shift starttime by +1h, got: {full_path}"
             )
             assert "endtime=20240101T140000" in full_path, (
-                "Expected r2h-seek-offset to shift endtime by +1h, got: %s" % full_path
+                f"Expected r2h-seek-offset to shift endtime by +1h, got: {full_path}"
             )
         finally:
             r2h.stop()
@@ -462,10 +463,10 @@ http://127.0.0.1:{upstream.port}/VINN.mp4/master.m3u8
 
             full_path = _get_upstream_path(upstream)
             assert "starttime=20240101T130000" in full_path, (
-                "Expected append-mode r2h-seek-offset to shift starttime by +1h, got: %s" % full_path
+                f"Expected append-mode r2h-seek-offset to shift starttime by +1h, got: {full_path}"
             )
             assert "endtime=20240101T140000" in full_path, (
-                "Expected append-mode r2h-seek-offset to shift endtime by +1h, got: %s" % full_path
+                f"Expected append-mode r2h-seek-offset to shift endtime by +1h, got: {full_path}"
             )
         finally:
             r2h.stop()
@@ -514,10 +515,10 @@ http://127.0.0.1:{upstream.port}/VINN.mp4/master.m3u8
 
             full_path = _get_upstream_path(upstream)
             assert "starttime=20240101T130000" in full_path, (
-                "Expected append-mode no-prefix r2h-seek-offset to shift starttime by +1h, got: %s" % full_path
+                f"Expected append-mode no-prefix r2h-seek-offset to shift starttime by +1h, got: {full_path}"
             )
             assert "endtime=20240101T140000" in full_path, (
-                "Expected append-mode no-prefix r2h-seek-offset to shift endtime by +1h, got: %s" % full_path
+                f"Expected append-mode no-prefix r2h-seek-offset to shift endtime by +1h, got: {full_path}"
             )
         finally:
             r2h.stop()

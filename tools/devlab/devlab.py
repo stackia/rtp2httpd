@@ -44,7 +44,7 @@ import sys
 import tempfile
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -223,7 +223,7 @@ def catchup_filter(profile: str, begin_epoch: int) -> str:
     # Burn the *requested* time into the picture so seek correctness is visible:
     # SEEK shows the playseek begin time; the elapsed counter shows it advancing.
     # (Colon-free time format avoids ffmpeg drawtext expansion/escaping pitfalls.)
-    iso = datetime.fromtimestamp(begin_epoch, timezone.utc).strftime("%Y-%m-%d %H-%M-%S")
+    iso = datetime.fromtimestamp(begin_epoch, UTC).strftime("%Y-%m-%d %H-%M-%S")
     label = _drawtext(f"CATCHUP {profile}", 24, expansion=False)
     seek = _drawtext(f"SEEK {iso} UTC", 88, expansion=False)
     elapsed = _drawtext(r"+%{pts}s", 152, expansion=True)
@@ -259,7 +259,7 @@ def _parse_time_token(tok: str) -> int:
     if tok.isdigit() and len(tok) <= 10:
         return int(tok)
     if len(tok) >= 14 and tok[:14].isdigit():
-        dt = datetime.strptime(tok[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+        dt = datetime.strptime(tok[:14], "%Y%m%d%H%M%S").replace(tzinfo=UTC)
         return int(dt.timestamp())
     return int(time.time())
 
@@ -300,7 +300,7 @@ class LiveHLS:
         self.seg_type = seg_type
         self.log_path = os.path.join(outdir, "ffmpeg.log")
         self.proc: subprocess.Popen[bytes] | None = None
-        self._stderr = None
+        self._stderr_fd: int | None = None
 
     def start(self) -> None:
         os.makedirs(self.outdir, exist_ok=True)
@@ -344,8 +344,8 @@ class LiveHLS:
             *hls_opts,
             os.path.join(self.outdir, "index.m3u8"),
         ]
-        self._stderr = open(self.log_path, "ab")
-        self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=self._stderr)
+        self._stderr_fd = os.open(self.log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=self._stderr_fd)
 
     def ready(self) -> bool:
         return os.path.isfile(os.path.join(self.outdir, "index.m3u8"))
@@ -358,8 +358,9 @@ class LiveHLS:
     def stop(self) -> None:
         if self.proc and self.proc.poll() is None:
             self.proc.terminate()
-        if self._stderr:
-            self._stderr.close()
+        if self._stderr_fd is not None:
+            os.close(self._stderr_fd)
+            self._stderr_fd = None
 
 
 def wait_for_live_hls(gens: list[LiveHLS], timeout: float) -> None:
@@ -449,7 +450,7 @@ def make_http_handler(host: str, port: int, live_root: str, catchup: CatchupHLS)
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
-        def log_message(self, format: str, *args: object) -> None:  # noqa: A002 (http.server API)
+        def log_message(self, format: str, *args: object) -> None:
             pass
 
         def _send(self, code: int, ctype: str, body: bytes) -> None:
@@ -507,7 +508,7 @@ def make_http_handler(host: str, port: int, live_root: str, catchup: CatchupHLS)
                 if proc.poll() is None:
                     proc.terminate()
 
-        def do_GET(self) -> None:  # noqa: N802 (http.server API)
+        def do_GET(self) -> None:
             parsed = urlparse(self.path)
             qs = parse_qs(parsed.query)
             parts = [p for p in parsed.path.split("/") if p]

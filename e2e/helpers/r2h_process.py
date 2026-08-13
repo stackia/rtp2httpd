@@ -15,9 +15,7 @@ def make_m3u_rtsp_config(r2h_port: int, rtsp_port: int, channel_name: str, confi
 
     `configured_url_query` is appended verbatim after `/stream` (so callers
     pass e.g. `"?r2h-seek-mode=range"` or `""` for none)."""
-    return (
-        "[global]\nverbosity = 4\n\n[bind]\n* %d\n\n[services]\n#EXTM3U\n#EXTINF:-1,%s\nrtsp://127.0.0.1:%d/stream%s\n"
-    ) % (r2h_port, channel_name, rtsp_port, configured_url_query)
+    return f"[global]\nverbosity = 4\n\n[bind]\n* {r2h_port}\n\n[services]\n#EXTM3U\n#EXTINF:-1,{channel_name}\nrtsp://127.0.0.1:{rtsp_port}/stream{configured_url_query}\n"
 
 
 class R2HProcess:
@@ -60,18 +58,19 @@ class R2HProcess:
                 if not wait_for_unix_socket(self.wait_socket_path, timeout=6.0):
                     self.stop()
                     raise RuntimeError(
-                        "rtp2httpd did not start on Unix socket %s.\nCommand: %s"
-                        % (self.wait_socket_path, " ".join(args))
+                        "rtp2httpd did not start on Unix socket {}.\nCommand: {}".format(
+                            self.wait_socket_path, " ".join(args)
+                        )
                     )
             elif self.listen and self.listen.startswith("/"):
                 if not wait_for_unix_socket(self.listen, timeout=6.0):
                     self.stop()
                     raise RuntimeError(
-                        "rtp2httpd did not start on Unix socket %s.\nCommand: %s" % (self.listen, " ".join(args))
+                        "rtp2httpd did not start on Unix socket {}.\nCommand: {}".format(self.listen, " ".join(args))
                     )
             elif self.port is not None and not wait_for_port(self.port, timeout=6.0):
                 self.stop()
-                raise RuntimeError("rtp2httpd did not start on port %d.\nCommand: %s" % (self.port, " ".join(args)))
+                raise RuntimeError(f"rtp2httpd did not start on port {self.port}.\nCommand: {' '.join(args)}")
 
     def stop(self) -> None:
         if self.process and self.process.poll() is None:

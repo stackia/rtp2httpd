@@ -10,7 +10,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "ruff>=0.15.12",
+    "ruff>=0.16.3",
     "basedpyright>=1.39.3",
     "clang-format>=22.1.4",
 ]
