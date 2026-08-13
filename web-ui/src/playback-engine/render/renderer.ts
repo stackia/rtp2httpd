@@ -15,12 +15,11 @@ export type RenderStageName = "passthrough" | "bwdif";
  * Post-stage enhancement filters, applied in order between the source stage
  * and presentation. All are registered in the filter registry and must be
  * stateless (historyFrames = 0): the renderer re-runs the whole list per
- * frame and assumes channel/stage switches need no per-filter reset. Empty
- * for now — RCAS (inside the FSR upscale presenter) has taken over the
- * sharpening role the old standalone "sharpen" filter used to play; the
- * mechanism is kept for any future stateless filter.
+ * frame and assumes channel/stage switches need no per-filter reset.
+ * mosquito-nr runs at source resolution so FSR EASU does not reconstruct
+ * compression speckle around high-contrast edges.
  */
-const ENHANCEMENT_FILTER_NAMES: readonly string[] = [];
+const ENHANCEMENT_FILTER_NAMES: readonly string[] = ["mosquito-nr"];
 
 /**
  * Safety ceiling for the enhanced canvas backing store, so a very large
@@ -724,7 +723,8 @@ export class VideoRenderer {
 
     const enhancementReady = this.pictureEnhancementEnabled && this.ensureEnhancementResources();
     const spatialOnly = this.textures.length <= stageFilter.historyFrames;
-    const params: RenderParams = { width, height, keepField: field, isSecondField: true, spatialOnly };
+    // Second-field input is always bwdif's framebuffer, already native orientation.
+    const params: RenderParams = { width, height, keepField: field, isSecondField: true, spatialOnly, flipY: false };
 
     const filters = enhancementReady ? this.enhancementFilters : [];
     const stageDest = filters.length > 0 ? this.ensureStageTarget(gl, width, height) : dest;
@@ -737,16 +737,7 @@ export class VideoRenderer {
     let enhanced = enhancementReady;
     if (filters.length > 0) {
       try {
-        let current = stageDest.texture;
-        for (let i = 0; i < filters.length; i++) {
-          const target =
-            i === filters.length - 1 ? dest : this.ensureEnhancementTarget(gl, i % 2 === 0 ? 0 : 1, width, height);
-          if (!target) throw new Error("Failed to create enhancement render target");
-          gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
-          gl.viewport(0, 0, width, height);
-          filters[i].render(gl, [current], params);
-          current = target.texture;
-        }
+        this.runEnhancementFilters(gl, stageDest.texture, params, dest);
       } catch (err) {
         Log.w(TAG, "Second field enhancement failed; presenting unenhanced field:", err);
         gl.bindFramebuffer(gl.FRAMEBUFFER, dest.fbo);
@@ -775,8 +766,8 @@ export class VideoRenderer {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvasWidth, canvasHeight);
     try {
-      // `dest` is always rendered by queueSecondField's stage filter (bwdif), so it's
-      // already in native (framebuffer) orientation and never needs a Y-flip.
+      // `dest` is framebuffer-backed (bwdif plus any enhancement), already in
+      // native orientation, and never needs a Y-flip.
       presenter.present(gl, dest.texture, dest.width, dest.height, canvasWidth, canvasHeight, false);
     } catch (err) {
       // Never let a failed present escape into the rAF present clock. Fall back
@@ -804,7 +795,17 @@ export class VideoRenderer {
     this.resizeCanvas(desiredSize.width, desiredSize.height);
 
     const spatialOnly = this.textures.length <= (stageFilter?.historyFrames ?? 0);
-    const params: RenderParams = { width, height, keepField: field, isSecondField: false, spatialOnly };
+    // A framebuffer-rendered stage output is already in native orientation; the raw
+    // video upload sampled directly (no stage filter) needs a Y-flip.
+    const sourceFlipY = !stageFilter;
+    const params: RenderParams = {
+      width,
+      height,
+      keepField: field,
+      isSecondField: false,
+      spatialOnly,
+      flipY: sourceFlipY,
+    };
 
     // No stage filter (plain passthrough) means the uploaded frame texture is already the
     // source: sampling it directly skips a redundant copy into an intermediate target.
@@ -820,16 +821,15 @@ export class VideoRenderer {
       sourceTexture = this.textures[0];
     }
 
-    // A framebuffer-rendered stage output is already in native orientation; the raw
-    // video upload sampled directly (no stage filter) needs the presenter to flip Y.
-    const flipY = !stageFilter;
-
     if (enhancementReady && this.upscalePresenter) {
       try {
         const enhanced = this.runEnhancementFilters(gl, sourceTexture, params);
+        // Enhancement writes an FBO, so present without the source Y-flip. An empty
+        // filter list returns `sourceTexture` unchanged and keeps sourceFlipY.
+        const presentFlipY = this.enhancementFilters.length > 0 ? false : sourceFlipY;
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, desiredSize.width, desiredSize.height);
-        this.upscalePresenter.present(gl, enhanced, width, height, desiredSize.width, desiredSize.height, flipY);
+        this.upscalePresenter.present(gl, enhanced, width, height, desiredSize.width, desiredSize.height, presentFlipY);
         return;
       } catch (err) {
         Log.w(TAG, "Picture enhancement render failed; falling back to canvas presenter:", err);
@@ -839,22 +839,34 @@ export class VideoRenderer {
     this.resizeCanvas(width, height);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, width, height);
-    passthroughPresenter.present(gl, sourceTexture, width, height, width, height, flipY);
+    passthroughPresenter.present(gl, sourceTexture, width, height, width, height, sourceFlipY);
   }
 
   /**
    * Run the enhancement filter list over ping-pong targets at source
    * resolution. Returns the texture holding the final result (the stage
-   * output itself when the list is empty).
+   * output itself when the list is empty). When `lastTarget` is set, the
+   * last pass writes there instead of a ping-pong slot (second-field path).
    */
-  private runEnhancementFilters(gl: WebGL2RenderingContext, input: WebGLTexture, params: RenderParams): WebGLTexture {
+  private runEnhancementFilters(
+    gl: WebGL2RenderingContext,
+    input: WebGLTexture,
+    params: RenderParams,
+    lastTarget?: RenderTarget,
+  ): WebGLTexture {
     let current = input;
     for (let i = 0; i < this.enhancementFilters.length; i++) {
-      const target = this.ensureEnhancementTarget(gl, i % 2 === 0 ? 0 : 1, params.width, params.height);
+      const isLast = i === this.enhancementFilters.length - 1;
+      const target =
+        isLast && lastTarget
+          ? lastTarget
+          : this.ensureEnhancementTarget(gl, i % 2 === 0 ? 0 : 1, params.width, params.height);
       if (!target) throw new Error("Failed to create enhancement render target");
       gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
       gl.viewport(0, 0, params.width, params.height);
-      this.enhancementFilters[i].render(gl, [current], params);
+      // Only the first pass may sample a raw video upload; later FBOs are native.
+      const passParams = i === 0 ? params : { ...params, flipY: false };
+      this.enhancementFilters[i].render(gl, [current], passParams);
       current = target.texture;
     }
     return current;

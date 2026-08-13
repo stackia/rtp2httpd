@@ -1,4 +1,5 @@
 import "./filters/bwdif";
+import "./filters/mosquito-nr";
 import type { PlayerRenderState, PlayerVideoScanType } from "../types";
 import Log from "../utils/logger";
 import { type DetectorVerdict, InterlaceDetector, isRenderResolutionEligible } from "./interlace-detector";

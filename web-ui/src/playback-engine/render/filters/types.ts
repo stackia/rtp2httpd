@@ -27,6 +27,12 @@ export interface RenderParams {
    * interpolation of the current frame.
    */
   spatialOnly: boolean;
+  /**
+   * Whether `textures[0]` is a raw DOM video upload (needs a Y-flip to match
+   * WebGL's bottom-left origin). Framebuffer-backed inputs (bwdif output,
+   * earlier enhancement passes) are already in native orientation.
+   */
+  flipY: boolean;
 }
 
 export interface VideoFilter {

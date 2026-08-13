@@ -245,8 +245,9 @@ void main() {
  * derives a sharpening lobe from the local min/max contrast range (clamped
  * by RCAS_LIMIT/SHARPNESS), de-weights it in flat/noisy regions (comparing
  * the 4-neighbor average against the center to avoid amplifying compression
- * noise/grain), and blends the cross taps with the center by that lobe
- * before applying the CONTRAST/SATURATION lift.
+ * noise/grain; 0.9 is stronger than AMD's 0.5 so leftover mosquito around
+ * edges is less likely to be re-sharpened), and blends the cross taps with
+ * the center by that lobe before applying the CONTRAST/SATURATION lift.
  */
 const RCAS_FRAGMENT_SHADER = /*glsl*/ `#version 300 es
 precision highp float;
@@ -299,7 +300,7 @@ void main() {
   float mx5 = max(mx, eL);
   float noise = 0.25 * (bL + dL + fL + hL) - eL;
   noise = clamp(abs(noise) * rcasRcp(mx5 - mn5), 0.0, 1.0);
-  lobe *= 1.0 - 0.5 * noise;
+  lobe *= 1.0 - 0.9 * noise;
 
   float rcp = rcasRcp(4.0 * lobe + 1.0);
   vec3 rgb = (lobe * (b + d + f + h) + e) * rcp;
