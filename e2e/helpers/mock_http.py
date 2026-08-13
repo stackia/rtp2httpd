@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import socket
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from .ports import find_free_port
 
@@ -59,7 +59,7 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
         if not head:
             self.wfile.write(body)
 
-    def log_message(self, format, *args) -> None:  # noqa: ARG002, A002
+    def log_message(self, format, *args) -> None:
         pass  # silence
 
 
@@ -134,17 +134,15 @@ class MockHTTPUpstreamSilent:
         assert self._server_sock is not None
         while not self._stop.is_set():
             try:
-                conn, addr = self._server_sock.accept()
+                conn, _addr = self._server_sock.accept()
                 t = threading.Thread(target=self._handle, args=(conn,), daemon=True)
                 t.start()
-            except socket.timeout, OSError:
+            except TimeoutError, OSError:
                 continue
 
     def _handle(self, conn: socket.socket) -> None:
         try:
             while not self._stop.is_set():
                 time.sleep(0.1)
-        except Exception:
-            pass
         finally:
             conn.close()

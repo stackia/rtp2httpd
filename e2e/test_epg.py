@@ -23,7 +23,6 @@ import os
 import time
 
 import pytest
-
 from helpers import (
     MockHTTPUpstream,
     R2HProcess,
@@ -91,8 +90,8 @@ def plain_epg_r2h(r2h_binary):
 
     port = find_free_port()
     m3u_content = (
-        '#EXTM3U x-tvg-url="http://127.0.0.1:%d/epg.xml"\n#EXTINF:-1,Channel\nrtp://239.0.0.1:1234\n'
-    ) % upstream.port
+        f'#EXTM3U x-tvg-url="http://127.0.0.1:{upstream.port}/epg.xml"\n#EXTINF:-1,Channel\nrtp://239.0.0.1:1234\n'
+    )
     upstream.routes["/m3u"] = {
         "status": 200,
         "body": m3u_content,
@@ -107,7 +106,7 @@ def plain_epg_r2h(r2h_binary):
             "-m",
             "100",
             "-M",
-            "http://127.0.0.1:%d/m3u" % upstream.port,
+            f"http://127.0.0.1:{upstream.port}/m3u",
         ],
     )
     r2h.start()
@@ -134,8 +133,8 @@ def gz_epg_r2h(r2h_binary):
 
     port = find_free_port()
     m3u_content = (
-        '#EXTM3U x-tvg-url="http://127.0.0.1:%d/epg.xml.gz"\n#EXTINF:-1,Channel\nrtp://239.0.0.1:1234\n'
-    ) % upstream.port
+        f'#EXTM3U x-tvg-url="http://127.0.0.1:{upstream.port}/epg.xml.gz"\n#EXTINF:-1,Channel\nrtp://239.0.0.1:1234\n'
+    )
     upstream.routes["/m3u"] = {
         "status": 200,
         "body": m3u_content,
@@ -150,7 +149,7 @@ def gz_epg_r2h(r2h_binary):
             "-m",
             "100",
             "-M",
-            "http://127.0.0.1:%d/m3u" % upstream.port,
+            f"http://127.0.0.1:{upstream.port}/m3u",
         ],
     )
     r2h.start()

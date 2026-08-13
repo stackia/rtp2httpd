@@ -4,7 +4,6 @@ import socket
 import struct
 
 import pytest
-
 from helpers import (
     LOOPBACK_IF,
     MockRTSPServer,
@@ -34,7 +33,7 @@ class TestZTEProtocol:
             status, _, body = stream_get(
                 "127.0.0.1",
                 r2h_port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=4096,
                 timeout=20.0,
             )
@@ -44,7 +43,7 @@ class TestZTEProtocol:
 
             assert rtsp.control_peer is not None
             tcp_source_ip, tcp_source_port = rtsp.control_peer[:2]
-            expected_x_nat = "%s:%d" % (tcp_source_ip, tcp_source_port)
+            expected_x_nat = f"{tcp_source_ip}:{tcp_source_port}"
             describe = _request(rtsp, "DESCRIBE")
             setup = _request(rtsp, "SETUP")
             assert describe["headers"]["x-NAT"] == expected_x_nat
@@ -61,8 +60,7 @@ class TestZTEProtocol:
                     "RTP/AVP/TCP;unicast;interleaved=0-1",
                 ]
                 + [
-                    "%s;unicast;client_address=%s;client_port=%d-%d;mode=PLAY"
-                    % (profile, tcp_source_ip, rtsp._client_rtp_port, rtsp._client_rtp_port + 1)
+                    f"{profile};unicast;client_address={tcp_source_ip};client_port={rtsp._client_rtp_port}-{(rtsp._client_rtp_port + 1)};mode=PLAY"
                     for profile in ("MP2T/RTP/UDP", "MP2T/UDP", "RTP/AVP")
                 ]
             )
@@ -87,7 +85,7 @@ class TestZTEProtocol:
             # response, and MockRTSPServerZTE withholds media until this exact
             # packet validates, which covers the protocol dependency without a
             # cross-protocol scheduling assertion.
-            assert "RTSP: Upstream interface route-selected, local endpoint %s:" % tcp_source_ip in r2h.read_log()
+            assert f"RTSP: Upstream interface route-selected, local endpoint {tcp_source_ip}:" in r2h.read_log()
         finally:
             r2h.stop()
             rtsp.stop()
@@ -98,11 +96,11 @@ class TestZTEProtocol:
         rtsp.start()
         r2h_port = find_free_port()
         extra_args = []
-        path = "/rtsp/127.0.0.1:%d/stream" % rtsp.port
+        path = f"/rtsp/127.0.0.1:{rtsp.port}/stream"
         if interface_source == "global":
             extra_args.extend(["--upstream-interface-rtsp", LOOPBACK_IF])
         else:
-            path += "?r2h-ifname=%s" % LOOPBACK_IF
+            path += f"?r2h-ifname={LOOPBACK_IF}"
         r2h = R2HProcess(r2h_binary, r2h_port, extra_args=extra_args)
         r2h.start()
         try:
@@ -127,7 +125,7 @@ class TestZTEProtocol:
             status, _, body = stream_get(
                 "127.0.0.1",
                 r2h_port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=188,
                 timeout=20.0,
             )
@@ -160,7 +158,7 @@ class TestZTEProtocol:
             status, _, body = stream_get(
                 "127.0.0.1",
                 r2h_port,
-                "/rtsp/[::1]:%d/stream" % rtsp.port,
+                f"/rtsp/[::1]:{rtsp.port}/stream",
                 read_bytes=188,
                 timeout=20.0,
             )
@@ -191,7 +189,7 @@ class TestZTEProtocol:
             status, _, body = stream_get(
                 "127.0.0.1",
                 r2h_port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=188 * (echo_after * 4),
                 timeout=20.0,
             )
@@ -203,7 +201,7 @@ class TestZTEProtocol:
             assert b"ZXV10STB" not in body
             aligned_len = len(body) - len(body) % 188
             misaligned = [offset for offset in range(0, aligned_len, 188) if body[offset] != 0x47]
-            assert not misaligned, "TS alignment lost at byte offset(s) %s" % misaligned[:5]
+            assert not misaligned, f"TS alignment lost at byte offset(s) {misaligned[:5]}"
 
             assert "Dropped 84-byte datagram that is neither RTP nor MPEG-TS" in r2h.read_log()
         finally:
@@ -213,7 +211,7 @@ class TestZTEProtocol:
     def test_redirect_recaptures_control_endpoint(self, r2h_binary):
         target = MockRTSPServerZTE(num_packets=300)
         target.start()
-        redirect = MockRTSPServer(redirect_describe_to="rtsp://127.0.0.1:%d/stream" % target.port)
+        redirect = MockRTSPServer(redirect_describe_to=f"rtsp://127.0.0.1:{target.port}/stream")
         redirect.start()
         r2h_port = find_free_port()
         r2h = R2HProcess(r2h_binary, r2h_port)
@@ -222,7 +220,7 @@ class TestZTEProtocol:
             status, _, body = stream_get(
                 "127.0.0.1",
                 r2h_port,
-                "/rtsp/127.0.0.1:%d/stream" % redirect.port,
+                f"/rtsp/127.0.0.1:{redirect.port}/stream",
                 read_bytes=188,
                 timeout=20.0,
             )
@@ -230,7 +228,7 @@ class TestZTEProtocol:
             assert body
             assert target.valid_probe_received
             assert target.control_peer is not None
-            expected_x_nat = "%s:%d" % target.control_peer[:2]
+            expected_x_nat = f"{target.control_peer[0]}:{target.control_peer[1]}"
             assert _request(target, "DESCRIBE")["headers"]["x-NAT"] == expected_x_nat
         finally:
             r2h.stop()
@@ -258,7 +256,7 @@ class TestSTUNInteraction:
         r2h = R2HProcess(
             r2h_binary,
             r2h_port,
-            extra_args=["-v", "4", "--rtsp-stun-server", "127.0.0.1:%d" % stun.port],
+            extra_args=["-v", "4", "--rtsp-stun-server", f"127.0.0.1:{stun.port}"],
             capture_log=True,
         )
         r2h.start()
@@ -266,7 +264,7 @@ class TestSTUNInteraction:
             status, _, body = stream_get(
                 "127.0.0.1",
                 r2h_port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=188,
                 timeout=20.0,
             )
@@ -275,14 +273,14 @@ class TestSTUNInteraction:
             assert stun.requests_received >= 1
             assert rtsp.valid_probe_received
 
-            expected_x_nat = "%s:%d" % (mapped_ip, mapped_port)
+            expected_x_nat = f"{mapped_ip}:{mapped_port}"
             # DESCRIBE is held back until STUN settles, so it already carries
             # the public mapping rather than the private endpoint.
             assert _request(rtsp, "DESCRIBE")["headers"]["x-NAT"] == expected_x_nat
             setup = _request(rtsp, "SETUP")
             assert setup["headers"]["x-NAT"] == expected_x_nat
             transport = setup["headers"]["Transport"]
-            assert "client_address=%s;client_port=%d-%d" % (mapped_ip, mapped_port, mapped_port + 1) in transport
+            assert f"client_address={mapped_ip};client_port={mapped_port}-{(mapped_port + 1)}" in transport
         finally:
             r2h.stop()
             rtsp.stop()
@@ -298,7 +296,7 @@ class TestSTUNInteraction:
         r2h = R2HProcess(
             r2h_binary,
             r2h_port,
-            extra_args=["-v", "4", "--rtsp-stun-server", "127.0.0.1:%d" % stun.port],
+            extra_args=["-v", "4", "--rtsp-stun-server", f"127.0.0.1:{stun.port}"],
             capture_log=True,
         )
         r2h.start()
@@ -306,7 +304,7 @@ class TestSTUNInteraction:
             status, _, body = stream_get(
                 "127.0.0.1",
                 r2h_port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=188,
                 timeout=30.0,
             )
@@ -314,7 +312,7 @@ class TestSTUNInteraction:
             assert body
             assert rtsp.valid_probe_received
             assert rtsp.control_peer is not None
-            assert _request(rtsp, "DESCRIBE")["headers"]["x-NAT"] == "%s:%d" % rtsp.control_peer[:2]
+            assert _request(rtsp, "DESCRIBE")["headers"]["x-NAT"] == f"{rtsp.control_peer[0]}:{rtsp.control_peer[1]}"
 
             log = r2h.read_log()
             # DESCRIBE really was parked, and STUN's ~3s retry budget did not

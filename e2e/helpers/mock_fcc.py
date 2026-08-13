@@ -253,7 +253,7 @@ class MockFCCServer:
         while not self._stop.is_set():
             try:
                 data, addr = self._sock.recvfrom(4096)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break

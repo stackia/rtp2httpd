@@ -11,7 +11,6 @@ import struct
 import threading
 
 import pytest
-
 from helpers import (
     MockHTTPUpstream,
     R2HProcess,
@@ -150,7 +149,7 @@ class _RawHTTPResponseUpstream:
         while not self._stop.is_set():
             try:
                 conn, _ = self._server_sock.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break
@@ -967,7 +966,7 @@ class TestM3URewritePlaylistVariants:
     def test_large_playlist_body_is_fully_buffered(self, shared_r2h, upstream_mode):
         """A large M3U body should be fully read after header parsing."""
         segment_count = 4096
-        segments = "".join("#EXTINF:10,\nsegment-%04d.ts?token=abcdef0123456789\n" % i for i in range(segment_count))
+        segments = "".join(f"#EXTINF:10,\nsegment-{i:04d}.ts?token=abcdef0123456789\n" for i in range(segment_count))
         m3u = "#EXTM3U\n#EXT-X-TARGETDURATION:10\n" + segments + "#EXT-X-ENDLIST\n"
         if upstream_mode == "normal_headers":
             upstream = _make_m3u_upstream("/lookback/long.m3u8", m3u)

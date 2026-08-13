@@ -11,11 +11,10 @@ On kernels < 4.14 or non-Linux platforms, rtp2httpd silently falls back to
 regular send(), so these tests validate the fallback path too.
 """
 
-import sys
 import concurrent.futures
+import sys
 
 import pytest
-
 from helpers import (
     LOOPBACK_IF,
     MCAST_ADDR,

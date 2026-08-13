@@ -16,6 +16,7 @@ Sub-modules:
 
 # Re-export everything so ``from helpers import X`` keeps working.
 
+from .config import build_config, build_single_service_config, write_temp_file
 from .constants import (
     BINARY_PATH,
     FIXTURES_DIR,
@@ -23,7 +24,6 @@ from .constants import (
     MCAST_ADDR,
     PROJECT_ROOT,
 )
-from .config import build_config, build_single_service_config, write_temp_file
 from .http import (
     assert_etag_cache_behavior,
     extract_catchup_source,

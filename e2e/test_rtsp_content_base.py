@@ -6,7 +6,6 @@ Content-Base header and SDP a=control attributes per RFC 3986.
 """
 
 import pytest
-
 from helpers import (
     MockRTSPServer,
     R2HProcess,
@@ -43,7 +42,7 @@ class TestRTSPContentBase:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/live/stream.sdp" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/live/stream.sdp",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -52,7 +51,7 @@ class TestRTSPContentBase:
             assert len(setup_reqs) > 0, "Expected SETUP request"
             setup_uri = setup_reqs[0]["uri"]
             assert setup_uri.endswith("/live/stream.sdp/trackID=2"), (
-                "SETUP URI should resolve to Content-Base/trackID=2, got: %s" % setup_uri
+                f"SETUP URI should resolve to Content-Base/trackID=2, got: {setup_uri}"
             )
         finally:
             rtsp.stop()
@@ -65,7 +64,7 @@ class TestRTSPContentBase:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/live/stream.sdp" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/live/stream.sdp",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -73,7 +72,7 @@ class TestRTSPContentBase:
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert len(play_reqs) > 0, "Expected PLAY request"
             play_uri = play_reqs[0]["uri"]
-            assert "trackID" not in play_uri, "PLAY URI should use original URL, not track URL, got: %s" % play_uri
+            assert "trackID" not in play_uri, f"PLAY URI should use original URL, not track URL, got: {play_uri}"
             assert "/live/stream.sdp" in play_uri
         finally:
             rtsp.stop()
@@ -86,7 +85,7 @@ class TestRTSPContentBase:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/live/stream.sdp" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/live/stream.sdp",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -95,7 +94,7 @@ class TestRTSPContentBase:
             assert len(setup_reqs) > 0, "Expected SETUP request"
             setup_uri = setup_reqs[0]["uri"]
             assert setup_uri.endswith("/live/stream.sdp"), (
-                "SETUP URI for a=control:* should use original URL, got: %s" % setup_uri
+                f"SETUP URI for a=control:* should use original URL, got: {setup_uri}"
             )
             assert "trackID" not in setup_uri
         finally:
@@ -116,7 +115,7 @@ class TestRTSPContentBase:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/live/stream.sdp" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/live/stream.sdp",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -124,7 +123,7 @@ class TestRTSPContentBase:
             setup_reqs = [r for r in rtsp.requests_detailed if r["method"] == "SETUP"]
             assert len(setup_reqs) > 0, "Expected SETUP request"
             setup_uri = setup_reqs[0]["uri"]
-            assert setup_uri == abs_url, "SETUP URI for absolute a=control should be used as-is, got: %s" % setup_uri
+            assert setup_uri == abs_url, f"SETUP URI for absolute a=control should be used as-is, got: {setup_uri}"
         finally:
             rtsp.stop()
 
@@ -139,7 +138,7 @@ class TestRTSPContentBase:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/live/stream.sdp" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/live/stream.sdp",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -150,7 +149,7 @@ class TestRTSPContentBase:
             # RFC 3986: resolve "trackID=2" against ".../live/stream.sdp"
             # → last segment "stream.sdp" replaced → ".../live/trackID=2"
             assert setup_uri.endswith("/live/trackID=2"), (
-                "Without Content-Base, relative control should replace last path segment, got: %s" % setup_uri
+                f"Without Content-Base, relative control should replace last path segment, got: {setup_uri}"
             )
         finally:
             rtsp.stop()
@@ -171,7 +170,7 @@ class TestRTSPContentBase:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/live/stream.sdp" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/live/stream.sdp",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -180,7 +179,7 @@ class TestRTSPContentBase:
             assert len(setup_reqs) > 0, "Expected SETUP request"
             setup_uri = setup_reqs[0]["uri"]
             assert setup_uri.endswith("/live/stream.sdp"), (
-                "No a=control in SDP → SETUP should use original URL, got: %s" % setup_uri
+                f"No a=control in SDP → SETUP should use original URL, got: {setup_uri}"
             )
         finally:
             rtsp.stop()
@@ -207,7 +206,7 @@ class TestRTSPContentBase:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/live/stream.sdp" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/live/stream.sdp",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -217,7 +216,7 @@ class TestRTSPContentBase:
             setup_uri = setup_reqs[0]["uri"]
             # First media-level control is trackID=1
             assert setup_uri.endswith("/live/stream.sdp/trackID=1"), (
-                "Multi-track: SETUP should use first media control (trackID=1), got: %s" % setup_uri
+                f"Multi-track: SETUP should use first media control (trackID=1), got: {setup_uri}"
             )
         finally:
             rtsp.stop()
@@ -240,7 +239,7 @@ class TestRTSPContentBase:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/live/stream.sdp" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/live/stream.sdp",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -249,7 +248,7 @@ class TestRTSPContentBase:
             assert len(setup_reqs) > 0, "Expected SETUP request"
             setup_uri = setup_reqs[0]["uri"]
             assert setup_uri.endswith("/live/stream.sdp/trackID=3"), (
-                "Session a=control:* + media a=control:trackID=3 → SETUP should use media control, got: %s" % setup_uri
+                f"Session a=control:* + media a=control:trackID=3 → SETUP should use media control, got: {setup_uri}"
             )
         finally:
             rtsp.stop()
@@ -262,14 +261,14 @@ class TestRTSPContentBase:
         # Manually set Content-Base without trailing slash
         rtsp = MockRTSPServer(num_packets=500, sdp_control="trackID=2")
         # Override content_base to explicit value without trailing slash
-        cb = "rtsp://127.0.0.1:%d/live/stream.sdp" % rtsp.port
+        cb = f"rtsp://127.0.0.1:{rtsp.port}/live/stream.sdp"
         rtsp._content_base = cb
         rtsp.start()
         try:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/live/stream.sdp" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/live/stream.sdp",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -279,7 +278,7 @@ class TestRTSPContentBase:
             setup_uri = setup_reqs[0]["uri"]
             # Content-Base doesn't end with '/' → RFC 3986 replaces last segment
             assert setup_uri.endswith("/live/trackID=2"), (
-                "Content-Base without '/' should replace last segment, got: %s" % setup_uri
+                f"Content-Base without '/' should replace last segment, got: {setup_uri}"
             )
         finally:
             rtsp.stop()
@@ -295,7 +294,7 @@ class TestRTSPContentBase:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/live/stream.sdp?token=abc123&sid=456" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/live/stream.sdp?token=abc123&sid=456",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -306,13 +305,13 @@ class TestRTSPContentBase:
             # Content-Base (auto-derived from URI with query) + trackID=2
             # The Content-Base includes the query params from the original URI
             # but the key point is trackID=2 is appended
-            assert "trackID=2" in setup_uri, "SETUP URI should contain trackID=2, got: %s" % setup_uri
+            assert "trackID=2" in setup_uri, f"SETUP URI should contain trackID=2, got: {setup_uri}"
 
             # PLAY should use the original URL with query params
             play_reqs = [r for r in rtsp.requests_detailed if r["method"] == "PLAY"]
             assert len(play_reqs) > 0, "Expected PLAY request"
             play_uri = play_reqs[0]["uri"]
-            assert "trackID" not in play_uri, "PLAY should not contain trackID, got: %s" % play_uri
+            assert "trackID" not in play_uri, f"PLAY should not contain trackID, got: {play_uri}"
         finally:
             rtsp.stop()
 
@@ -327,7 +326,7 @@ class TestRTSPContentBase:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/iptv/channels/001/live.sdp" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/iptv/channels/001/live.sdp",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -337,7 +336,7 @@ class TestRTSPContentBase:
             setup_uri = setup_reqs[0]["uri"]
             # Content-Base (auto) = .../live.sdp/ + control "stream1"
             assert setup_uri.endswith("/iptv/channels/001/live.sdp/stream1"), (
-                "Deep path SETUP should resolve correctly, got: %s" % setup_uri
+                f"Deep path SETUP should resolve correctly, got: {setup_uri}"
             )
         finally:
             rtsp.stop()

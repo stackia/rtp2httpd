@@ -6,7 +6,6 @@ handshake sequence for both transport modes.
 """
 
 import pytest
-
 from helpers import (
     MockRTSPServer,
     MockRTSPServerSilent,
@@ -49,7 +48,7 @@ class TestRTSPTCPStream:
             status, _, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -74,7 +73,7 @@ class TestRTSPTCPStream:
             status, headers, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -106,7 +105,7 @@ class TestRTSPTCPStream:
                 "127.0.0.1",
                 shared_r2h.port,
                 "HEAD",
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 timeout=10.0,
             )
             assert status == 200
@@ -134,7 +133,7 @@ class TestRTSPTCPStream:
                 "127.0.0.1",
                 shared_r2h.port,
                 "HEAD",
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 timeout=10.0,
             )
             assert status == 200
@@ -157,7 +156,7 @@ class TestRTSPTCPStream:
                 "127.0.0.1",
                 shared_r2h.port,
                 "HEAD",
-                "/rtsp/127.0.0.1:%d/stream?r2h-duration=1" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream?r2h-duration=1",
                 timeout=10.0,
             )
             assert status == 200
@@ -178,7 +177,7 @@ class TestRTSPTCPStream:
                 "127.0.0.1",
                 shared_r2h.port,
                 "HEAD",
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 timeout=10.0,
             )
             assert status == 200
@@ -197,7 +196,7 @@ class TestRTSPTCPStream:
                 "127.0.0.1",
                 shared_r2h.port,
                 "HEAD",
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 timeout=10.0,
             )
             assert status == 200
@@ -218,7 +217,7 @@ class TestRTSPTCPStream:
                 "127.0.0.1",
                 shared_r2h.port,
                 "HEAD",
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 timeout=8.0,
             )
             assert status == 503
@@ -232,7 +231,7 @@ class TestRTSPTCPStream:
             "127.0.0.1",
             shared_r2h.port,
             "HEAD",
-            "/rtsp/127.0.0.1:%d/stream" % dead_port,
+            f"/rtsp/127.0.0.1:{dead_port}/stream",
             timeout=8.0,
         )
         assert status == 503
@@ -245,7 +244,7 @@ class TestRTSPTCPStream:
             "127.0.0.1",
             shared_r2h.port,
             "GET",
-            "/rtsp/127.0.0.1:%d/stream" % dead_port,
+            f"/rtsp/127.0.0.1:{dead_port}/stream",
             timeout=8.0,
         )
         assert status == 503
@@ -265,7 +264,7 @@ class TestRTSPTCPStream:
                 "127.0.0.1",
                 shared_r2h.port,
                 "HEAD",
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 timeout=10.0,
             )
             assert status == 200
@@ -288,7 +287,7 @@ class TestRTSPTCPStream:
                 "127.0.0.1",
                 shared_r2h.port,
                 "HEAD",
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 timeout=10.0,
             )
             assert status == 200
@@ -310,7 +309,7 @@ class TestRTSPTCPStream:
                 "127.0.0.1",
                 shared_r2h.port,
                 "HEAD",
-                "/rtsp/user:pass@127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/user:pass@127.0.0.1:{rtsp.port}/stream",
                 timeout=10.0,
             )
             assert status == 200
@@ -339,7 +338,7 @@ class TestRTSPTCPStream:
         )
         redirect = MockRTSPServer(
             custom_sdp=source_sdp,
-            redirect_describe_to="rtsp://127.0.0.1:%d/stream" % target.port,
+            redirect_describe_to=f"rtsp://127.0.0.1:{target.port}/stream",
         )
         redirect.start()
         try:
@@ -347,7 +346,7 @@ class TestRTSPTCPStream:
                 "127.0.0.1",
                 shared_r2h.port,
                 "HEAD",
-                "/rtsp/127.0.0.1:%d/stream" % redirect.port,
+                f"/rtsp/127.0.0.1:{redirect.port}/stream",
                 timeout=10.0,
             )
             assert status == 200
@@ -373,7 +372,7 @@ class TestRTSPTCPStream:
             status, headers, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -399,7 +398,7 @@ class TestRTSPTCPStream:
             status, headers, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -422,7 +421,7 @@ class TestRTSPTCPStream:
             status, headers, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -440,13 +439,13 @@ class TestRTSPTCPStream:
             status, _, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
             assert status == 200
             assert len(body) >= 188
-            assert body[0] == 0x47, "Expected TS sync byte 0x47, got 0x%02x" % body[0]
+            assert body[0] == 0x47, f"Expected TS sync byte 0x47, got 0x{body[0]:02x}"
         finally:
             rtsp.stop()
 
@@ -458,7 +457,7 @@ class TestRTSPTCPStream:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/test" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/test",
                 read_bytes=2048,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -480,7 +479,7 @@ class TestRTSPTCPStream:
             status, _, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -490,7 +489,7 @@ class TestRTSPTCPStream:
             assert rtsp.requests_received.index("OPTIONS") < rtsp.requests_received.index("DESCRIBE")
             for method in ("DESCRIBE", "SETUP", "PLAY"):
                 req = next(r for r in rtsp.requests_detailed if r["method"] == method)
-                assert req["headers"].get("Session") == session_id, "%s must echo the OPTIONS Session" % method
+                assert req["headers"].get("Session") == session_id, f"{method} must echo the OPTIONS Session"
         finally:
             rtsp.stop()
 
@@ -510,7 +509,7 @@ class TestRTSPUDPStream:
             status, headers, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -529,7 +528,7 @@ class TestRTSPUDPStream:
             status, _, body = stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/stream" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
                 read_bytes=4096,
                 timeout=_STREAM_TIMEOUT,
             )
@@ -546,7 +545,7 @@ class TestRTSPUDPStream:
             stream_get(
                 "127.0.0.1",
                 shared_r2h.port,
-                "/rtsp/127.0.0.1:%d/test" % rtsp.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/test",
                 read_bytes=2048,
                 timeout=_STREAM_TIMEOUT,
             )

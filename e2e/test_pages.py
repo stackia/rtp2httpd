@@ -12,7 +12,6 @@ import time
 from urllib.parse import quote
 
 import pytest
-
 from helpers import (
     R2HProcess,
     find_free_port,
@@ -21,7 +20,6 @@ from helpers import (
     stream_get,
     write_temp_file,
 )
-
 
 APP_PREFIX = "/app/rtp2httpd"
 SAMPLE_EPG_XML = """\
@@ -121,7 +119,7 @@ class TestStatusPage:
     def test_status_contains_info(self, basic_r2h):
         """Status page should contain recognizable content.
         The embedded HTML may be gzip-compressed; request uncompressed."""
-        _, hdrs, body = http_get(
+        _, _hdrs, body = http_get(
             "127.0.0.1",
             basic_r2h.port,
             "/status",

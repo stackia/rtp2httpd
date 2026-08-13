@@ -11,7 +11,6 @@ producing roughly 2 Mbps of payload (similar to real IPTV streams).
 import struct
 
 import pytest
-
 from helpers import (
     LOOPBACK_IF,
     MCAST_ADDR,

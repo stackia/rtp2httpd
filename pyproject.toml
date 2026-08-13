@@ -18,11 +18,6 @@ dev = [
 [tool.ruff]
 line-length = 120
 
-[tool.ruff.lint]
-# Ruff 0.16 expands the default rule set from 59 to 413 rules. Keep the
-# previous defaults so this remains a dependency bump, not a lint migration.
-select = ["E4", "E7", "E9", "F"]
-
 [tool.basedpyright]
 pythonVersion = "3.14"
 typeCheckingMode = "standard"

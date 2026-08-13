@@ -14,7 +14,7 @@ def get_status_payload(host: str, port: int, timeout: float = 3.0, status_path: 
     sock = socket.create_connection((host, port), timeout=timeout)
     data = b""
     try:
-        request = "GET %s/sse HTTP/1.0\r\nHost: %s\r\n\r\n" % (status_path.rstrip("/"), host)
+        request = "GET {}/sse HTTP/1.0\r\nHost: {}\r\n\r\n".format(status_path.rstrip("/"), host)
         sock.sendall(request.encode())
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -50,7 +50,7 @@ def wait_for_status_payload(
         if last_payload is not None and predicate(last_payload):
             return last_payload
         time.sleep(0.05)
-    raise AssertionError("Status predicate not satisfied; last payload: %r" % last_payload)
+    raise AssertionError(f"Status predicate not satisfied; last payload: {last_payload!r}")
 
 
 def http_get(
@@ -170,12 +170,12 @@ def raw_http_request(
     """
     sock = socket.create_connection((host, port), timeout=timeout)
     try:
-        sock.sendall(("%s %s HTTP/1.1\r\nHost: %s\r\n\r\n" % (method, path, host)).encode())
+        sock.sendall((f"{method} {path} HTTP/1.1\r\nHost: {host}\r\n\r\n").encode())
         data = b""
         while True:
             try:
                 chunk = sock.recv(4096)
-            except socket.timeout:
+            except TimeoutError:
                 break
             if not chunk:
                 break
@@ -199,12 +199,12 @@ def unix_http_request(
     sock.settimeout(timeout)
     try:
         sock.connect(socket_path)
-        req_lines = ["%s %s HTTP/1.0" % (method, path), "Host: localhost"]
+        req_lines = [f"{method} {path} HTTP/1.0", "Host: localhost"]
         payload = body or b""
         for k, v in (headers or {}).items():
-            req_lines.append("%s: %s" % (k, v))
+            req_lines.append(f"{k}: {v}")
         if payload:
-            req_lines.append("Content-Length: %d" % len(payload))
+            req_lines.append(f"Content-Length: {len(payload)}")
         req_lines.append("")
         req_lines.append("")
         sock.sendall("\r\n".join(req_lines).encode() + payload)
@@ -213,7 +213,7 @@ def unix_http_request(
         while True:
             try:
                 chunk = sock.recv(4096)
-            except socket.timeout:
+            except TimeoutError:
                 break
             if not chunk:
                 break
@@ -241,9 +241,9 @@ def extract_catchup_source(playlist_text, channel_name):
     for line in playlist_text.splitlines():
         if channel_name in line and "catchup-source=" in line:
             match = re.search(r'catchup-source="([^"]+)"', line)
-            assert match, "Expected catchup-source in line: %s" % line
+            assert match, f"Expected catchup-source in line: {line}"
             return line, match.group(1)
-    raise AssertionError("Expected catchup-source line for channel: %s" % channel_name)
+    raise AssertionError(f"Expected catchup-source line for channel: {channel_name}")
 
 
 def stream_get(
@@ -267,13 +267,13 @@ def stream_get(
     """
     try:
         sock = socket.create_connection((host, port), timeout=timeout)
-    except OSError, socket.timeout:
+    except TimeoutError, OSError:
         return 0, {}, b""
     try:
-        host_hdr = "[%s]" % host if ":" in host and not host.startswith("[") else host
-        req_lines = ["GET %s HTTP/1.0" % path, "Host: %s" % host_hdr]
+        host_hdr = f"[{host}]" if ":" in host and not host.startswith("[") else host
+        req_lines = [f"GET {path} HTTP/1.0", f"Host: {host_hdr}"]
         for k, v in (headers or {}).items():
-            req_lines.append("%s: %s" % (k, v))
+            req_lines.append(f"{k}: {v}")
         req_lines.append("")
         req_lines.append("")
         sock.sendall("\r\n".join(req_lines).encode())
@@ -289,14 +289,14 @@ def stream_get(
             sock.settimeout(min(remaining, 1.0))
             try:
                 chunk = sock.recv(4096)
-            except socket.timeout:
+            except TimeoutError:
                 continue  # keep trying until deadline
             if not chunk:
                 break
             data += chunk
 
         return _parse_raw_http_response(data, lower_header_names=True)
-    except socket.timeout, OSError:
+    except TimeoutError, OSError:
         return 0, {}, b""
     finally:
         sock.close()

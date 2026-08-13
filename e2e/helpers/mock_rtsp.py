@@ -10,7 +10,6 @@ import time
 from .ports import find_free_port, find_free_udp_port_pair
 from .rtp import TS_NULL_PACKET, make_rtp_packet
 
-
 # ---------------------------------------------------------------------------
 # _RTSPServerBase  --  shared RTSP protocol scaffolding
 # ---------------------------------------------------------------------------
@@ -122,7 +121,7 @@ class _RTSPServerBase:
                 conn, addr = self._server_sock.accept()
                 t = threading.Thread(target=self._handle, args=(conn, addr), daemon=True)
                 t.start()
-            except socket.timeout, OSError:
+            except TimeoutError, OSError:
                 continue
 
     def _handle(self, conn: socket.socket, addr: tuple) -> None:
@@ -180,20 +179,20 @@ class _RTSPServerBase:
                 if method == "OPTIONS":
                     session_line = ""
                     if self._options_session_id:
-                        session_line = "Session: %s\r\n" % self._options_session_id
+                        session_line = f"Session: {self._options_session_id}\r\n"
                     conn.sendall(
                         (
-                            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-                            "%s"
-                            "Public: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN\r\n\r\n" % (cseq, session_line)
+                            f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\n"
+                            f"{session_line}"
+                            "Public: OPTIONS, DESCRIBE, SETUP, PLAY, TEARDOWN\r\n\r\n"
                         ).encode()
                     )
                 elif method == "DESCRIBE":
                     if self._redirect_describe_to:
                         conn.sendall(
                             (
-                                "RTSP/1.0 302 Moved Temporarily\r\nCSeq: %s\r\n"
-                                "Location: %s\r\n\r\n" % (cseq, self._redirect_describe_to)
+                                f"RTSP/1.0 302 Moved Temporarily\r\nCSeq: {cseq}\r\n"
+                                f"Location: {self._redirect_describe_to}\r\n\r\n"
                             ).encode()
                         )
                         return
@@ -201,8 +200,8 @@ class _RTSPServerBase:
                         self._describe_challenged = True
                         conn.sendall(
                             (
-                                "RTSP/1.0 401 Unauthorized\r\nCSeq: %s\r\n"
-                                'WWW-Authenticate: Basic realm="mock"\r\n\r\n' % cseq
+                                f"RTSP/1.0 401 Unauthorized\r\nCSeq: {cseq}\r\n"
+                                'WWW-Authenticate: Basic realm="mock"\r\n\r\n'
                             ).encode()
                         )
                         continue
@@ -212,7 +211,7 @@ class _RTSPServerBase:
                         sdp = (
                             "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=T\r\n"
                             "c=IN IP4 0.0.0.0\r\nt=0 0\r\n"
-                            "m=video 0 RTP/AVP 33\r\na=control:%s\r\n" % self._sdp_control
+                            f"m=video 0 RTP/AVP 33\r\na=control:{self._sdp_control}\r\n"
                         )
                     # Build Content-Base header (or omit it)
                     cb_header = ""
@@ -222,18 +221,18 @@ class _RTSPServerBase:
                         # When control is a relative URL, Content-Base must
                         # end with '/' for correct RFC 3986 resolution.
                         cb_val = uri
-                        if self._sdp_control != "*" and not self._sdp_control.startswith("rtsp://"):
-                            if not cb_val.endswith("/"):
-                                cb_val += "/"
-                        cb_header = "Content-Base: %s\r\n" % cb_val
+                        if (
+                            self._sdp_control != "*"
+                            and not self._sdp_control.startswith("rtsp://")
+                            and not cb_val.endswith("/")
+                        ):
+                            cb_val += "/"
+                        cb_header = f"Content-Base: {cb_val}\r\n"
                     else:
-                        cb_header = "Content-Base: %s\r\n" % self._content_base
+                        cb_header = f"Content-Base: {self._content_base}\r\n"
                     conn.sendall(
                         (
-                            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-                            "Content-Type: application/sdp\r\n"
-                            "%s"
-                            "Content-Length: %d\r\n\r\n%s" % (cseq, cb_header, len(sdp), sdp)
+                            f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nContent-Type: application/sdp\r\n{cb_header}Content-Length: {len(sdp)}\r\n\r\n{sdp}"
                         ).encode()
                     )
                     if self._reset_after_describe:
@@ -244,21 +243,18 @@ class _RTSPServerBase:
                 elif method == "SETUP":
                     conn.sendall(self._setup_response(cseq, transport_hdr).encode())
                 elif method == "PLAY":
-                    extra_headers = "".join("%s: %s\r\n" % item for item in self._play_response_headers)
+                    extra_headers = "".join("{}: {}\r\n".format(*item) for item in self._play_response_headers)
                     conn.sendall(
                         (
-                            "RTSP/1.0 200 OK\r\nCSeq: %s\r\nSession: %s\r\n%s\r\n"
-                            % (cseq, self._session_id(), extra_headers)
+                            f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nSession: {self._session_id()}\r\n{extra_headers}\r\n"
                         ).encode()
                     )
                     self._after_play(conn, addr)
                     return
                 elif method == "TEARDOWN":
-                    conn.sendall(
-                        ("RTSP/1.0 200 OK\r\nCSeq: %s\r\nSession: %s\r\n\r\n" % (cseq, self._session_id())).encode()
-                    )
+                    conn.sendall((f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nSession: {self._session_id()}\r\n\r\n").encode())
                     return
-        except socket.timeout, ConnectionError, OSError:
+        except TimeoutError, ConnectionError, OSError:
             pass
         finally:
             conn.close()
@@ -317,11 +313,7 @@ class MockRTSPServer(_RTSPServerBase):
         self._setup_transport = setup_transport
 
     def _setup_response(self, cseq: str, transport_hdr: str) -> str:
-        return "RTSP/1.0 200 OK\r\nCSeq: %s\r\nTransport: %s\r\nSession: %s\r\n\r\n" % (
-            cseq,
-            self._setup_transport,
-            self._session_id(),
-        )
+        return f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nTransport: {self._setup_transport}\r\nSession: {self._session_id()}\r\n\r\n"
 
     def _after_play(self, conn: socket.socket, addr: tuple) -> None:
         seq = 0
@@ -373,14 +365,7 @@ class MockRTSPServerUDP(_RTSPServerBase):
                 break
 
         self._server_rtp_port, self._server_rtcp_port = find_free_udp_port_pair()
-        return (
-            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-            "Transport: RTP/AVP;unicast;"
-            "client_port=%d-%d;"
-            "server_port=%d-%d\r\n"
-            "Session: t1\r\n\r\n"
-            % (cseq, self._client_rtp_port, self._client_rtp_port + 1, self._server_rtp_port, self._server_rtcp_port)
-        )
+        return f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nTransport: RTP/AVP;unicast;client_port={self._client_rtp_port}-{(self._client_rtp_port + 1)};server_port={self._server_rtp_port}-{self._server_rtcp_port}\r\nSession: t1\r\n\r\n"
 
     def _after_play(self, conn: socket.socket, addr: tuple) -> None:
         """Send RTP packets over UDP to the client's advertised port."""
@@ -495,12 +480,7 @@ class MockRTSPServerZTE(_RTSPServerBase):
         self._receiver_thread = threading.Thread(target=self._receive_probes, daemon=True)
         self._receiver_thread.start()
 
-        return (
-            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-            "Transport: MP2T/RTP/UDP;unicast;client_port=%d-%d;server_port=%d-%d\r\n"
-            "Session: t1\r\n\r\n"
-            % (cseq, self._client_rtp_port, self._client_rtp_port + 1, self._server_rtp_port, self._server_rtcp_port)
-        )
+        return f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nTransport: MP2T/RTP/UDP;unicast;client_port={self._client_rtp_port}-{(self._client_rtp_port + 1)};server_port={self._server_rtp_port}-{self._server_rtcp_port}\r\nSession: t1\r\n\r\n"
 
     def _receive_probes(self) -> None:
         assert self._server_rtp_socket is not None
@@ -511,7 +491,7 @@ class MockRTSPServerZTE(_RTSPServerBase):
                 self.udp_datagrams.append((payload, source))
                 if self._probe_is_valid(payload, source):
                     self._valid_probe.set()
-            except socket.timeout:
+            except TimeoutError:
                 if self._play_started.is_set():
                     return
             except OSError:
@@ -580,8 +560,6 @@ class MockRTSPServerSilent(_RTSPServerBase):
         try:
             while not self._stop.is_set():
                 time.sleep(0.1)
-        except Exception:
-            pass
         finally:
             conn.close()
 
@@ -596,9 +574,7 @@ class MockRTSPServerNoMedia(_RTSPServerBase):
 
     def _setup_response(self, cseq: str, transport_hdr: str) -> str:
         return (
-            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
-            "Session: t1\r\n\r\n" % cseq
+            f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nTransport: RTP/AVP/TCP;unicast;interleaved=0-1\r\nSession: t1\r\n\r\n"
         )
 
     def _after_play(self, conn: socket.socket, addr: tuple) -> None:
@@ -610,7 +586,7 @@ class MockRTSPServerNoMedia(_RTSPServerBase):
                     data = conn.recv(4096)
                     if not data:
                         break
-                except socket.timeout:
+                except TimeoutError:
                     continue
         except ConnectionError, OSError:
             pass
@@ -627,9 +603,7 @@ class MockRTSPServerNoTeardownResponse(_RTSPServerBase):
 
     def _setup_response(self, cseq: str, transport_hdr: str) -> str:
         return (
-            "RTSP/1.0 200 OK\r\nCSeq: %s\r\n"
-            "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
-            "Session: t1\r\n\r\n" % cseq
+            f"RTSP/1.0 200 OK\r\nCSeq: {cseq}\r\nTransport: RTP/AVP/TCP;unicast;interleaved=0-1\r\nSession: t1\r\n\r\n"
         )
 
     def _after_play(self, conn: socket.socket, addr: tuple) -> None:
@@ -658,7 +632,7 @@ class MockRTSPServerNoTeardownResponse(_RTSPServerBase):
                     if not data:
                         break
                     # Got TEARDOWN (or anything) — just ignore and hold connection
-                except socket.timeout:
+                except TimeoutError:
                     continue
         except ConnectionError, OSError:
             pass

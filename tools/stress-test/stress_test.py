@@ -12,10 +12,9 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
-
 
 # =============================================================================
 # Program Configurations
@@ -255,6 +254,7 @@ class ResourceMonitor(threading.Thread):
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=False,
             )
             if proc.returncode != 0:
                 return result
@@ -628,7 +628,7 @@ def main() -> int:
         replay_stats = None
         curl_stats: list[ProcessStats] = []
 
-        for pid, stats in monitor.stats.items():
+        for stats in monitor.stats.values():
             if stats.name == args.program:
                 server_stats = stats
             elif stats.name == "replay":

@@ -10,7 +10,6 @@ import tempfile
 import time
 
 import pytest
-
 from helpers import (
     MockRTSPServer,
     R2HProcess,
@@ -22,7 +21,6 @@ from helpers import (
     make_m3u_rtsp_config,
     stream_get,
 )
-
 
 # ---------------------------------------------------------------------------
 # Inline M3U (from [services] config section)
@@ -53,7 +51,7 @@ rtp://239.0.0.2:1234
         r2h = R2HProcess(r2h_binary, port, config_content=config)
         try:
             r2h.start()
-            status, hdrs, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            status, _hdrs, body = http_get("127.0.0.1", port, "/playlist.m3u")
             text = body.decode()
 
             assert status == 200
@@ -403,9 +401,9 @@ rtp://239.0.0.1:1234
             assert status == 200
             assert "QMark NoDyn Ch" in text
             line, catchup_source = extract_catchup_source(text, "QMark NoDyn Ch")
-            assert 'catchup="default"' in line, "Expected transformed append catchup to become default, got:\n%s" % line
+            assert 'catchup="default"' in line, f"Expected transformed append catchup to become default, got:\n{line}"
             assert "/QMark%20NoDyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source, (
-                "Expected direct catchup proxy URL, got:\n%s" % catchup_source
+                f"Expected direct catchup proxy URL, got:\n{catchup_source}"
             )
         finally:
             r2h.stop()
@@ -433,9 +431,9 @@ rtp://239.0.0.1:1234
             assert status == 200
             assert "Amp NoDyn Ch" in text
             line, catchup_source = extract_catchup_source(text, "Amp NoDyn Ch")
-            assert 'catchup="default"' in line, "Expected transformed append catchup to become default, got:\n%s" % line
+            assert 'catchup="default"' in line, f"Expected transformed append catchup to become default, got:\n{line}"
             assert "/Amp%20NoDyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source, (
-                "Expected direct catchup proxy URL, got:\n%s" % catchup_source
+                f"Expected direct catchup proxy URL, got:\n{catchup_source}"
             )
         finally:
             r2h.stop()
@@ -463,9 +461,9 @@ http://10.10.10.1:8888/live/stream.m3u8?begin={{utc}}
             assert status == 200
             assert "Amp Dyn Ch" in text
             line, catchup_source = extract_catchup_source(text, "Amp Dyn Ch")
-            assert 'catchup="default"' in line, "Expected transformed append catchup to become default, got:\n%s" % line
+            assert 'catchup="default"' in line, f"Expected transformed append catchup to become default, got:\n{line}"
             assert "/Amp%20Dyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source, (
-                "Expected direct catchup proxy URL, got:\n%s" % catchup_source
+                f"Expected direct catchup proxy URL, got:\n{catchup_source}"
             )
             assert "http://127.0.0.1:" in line
         finally:
@@ -494,9 +492,9 @@ http://10.10.10.1:8888/live/stream.m3u8?begin={{utc}}
             assert status == 200
             assert "QMark Dyn Ch" in text
             line, catchup_source = extract_catchup_source(text, "QMark Dyn Ch")
-            assert 'catchup="default"' in line, "Expected transformed append catchup to become default, got:\n%s" % line
+            assert 'catchup="default"' in line, f"Expected transformed append catchup to become default, got:\n{line}"
             assert "/QMark%20Dyn%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source, (
-                "Expected direct catchup proxy URL, got:\n%s" % catchup_source
+                f"Expected direct catchup proxy URL, got:\n{catchup_source}"
             )
         finally:
             r2h.stop()
@@ -524,9 +522,9 @@ http://10.10.10.1:8888/live/stream.m3u8?token=abc
             assert status == 200
             assert "Static Query Ch" in text
             line, catchup_source = extract_catchup_source(text, "Static Query Ch")
-            assert 'catchup="default"' in line, "Expected transformed append catchup to become default, got:\n%s" % line
+            assert 'catchup="default"' in line, f"Expected transformed append catchup to become default, got:\n{line}"
             assert "/Static%20Query%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source, (
-                "Expected direct catchup proxy URL, got:\n%s" % catchup_source
+                f"Expected direct catchup proxy URL, got:\n{catchup_source}"
             )
         finally:
             r2h.stop()
@@ -554,9 +552,9 @@ rtp://239.0.0.1:1234
             assert status == 200
             assert "No Prefix Ch" in text
             line, catchup_source = extract_catchup_source(text, "No Prefix Ch")
-            assert 'catchup="default"' in line, "Expected transformed append catchup to become default, got:\n%s" % line
+            assert 'catchup="default"' in line, f"Expected transformed append catchup to become default, got:\n{line}"
             assert "/No%20Prefix%20Ch/catchup?playseek={utc}-{utcend}" in catchup_source, (
-                "Expected direct catchup proxy URL, got:\n%s" % catchup_source
+                f"Expected direct catchup proxy URL, got:\n{catchup_source}"
             )
         finally:
             r2h.stop()
@@ -843,7 +841,7 @@ class TestM3UHTTPExternal:
                 "-m",
                 "100",
                 "-M",
-                "http://127.0.0.1:%d/channels.m3u" % upstream.port,
+                f"http://127.0.0.1:{upstream.port}/channels.m3u",
             ],
         )
         try:
@@ -889,7 +887,7 @@ class TestM3UHTTPExternal:
                 "-m",
                 "100",
                 "-M",
-                "http://127.0.0.1:%d/list.m3u" % upstream.port,
+                f"http://127.0.0.1:{upstream.port}/list.m3u",
             ],
         )
         try:
@@ -942,7 +940,7 @@ rtp://239.0.0.2:1234$SD
             assert "CCTV-1" in text
             # Should have URLs for both sources
             url_lines = [line for line in text.splitlines() if line.startswith("http")]
-            assert len(url_lines) >= 2, "Expected at least 2 URLs for multi-label, got %d" % len(url_lines)
+            assert len(url_lines) >= 2, f"Expected at least 2 URLs for multi-label, got {len(url_lines)}"
             assert len(set(url_lines)) == len(url_lines), "URLs should be unique"
         finally:
             r2h.stop()
@@ -1005,7 +1003,7 @@ class TestM3UQueryMerge:
         rtsp.start()
         try:
             config = make_m3u_rtsp_config(
-                r2h_port, rtsp.port, "MergeWinsLog_%s" % param_name, "?%s=%s" % (param_name, configured_value)
+                r2h_port, rtsp.port, f"MergeWinsLog_{param_name}", f"?{param_name}={configured_value}"
             )
             r2h = R2HProcess(r2h_binary, r2h_port, config_content=config, capture_log=True)
             r2h.start()
@@ -1015,17 +1013,17 @@ class TestM3UQueryMerge:
                 stream_get(
                     "127.0.0.1",
                     r2h_port,
-                    "/MergeWinsLog_%s?%s=%s" % (param_name, param_name, request_value),
+                    f"/MergeWinsLog_{param_name}?{param_name}={request_value}",
                     read_bytes=4096,
                     timeout=_STREAM_TIMEOUT,
                 )
 
                 log = r2h.read_log()
                 merged_lines = [line for line in log.splitlines() if "merged URL:" in line]
-                assert merged_lines, "expected a 'merged URL:' debug log line; got log:\n%s" % log
+                assert merged_lines, f"expected a 'merged URL:' debug log line; got log:\n{log}"
                 merged_line = merged_lines[-1]
-                assert "%s=%s" % (param_name, request_value) in merged_line, merged_line
-                assert "%s=%s" % (param_name, configured_value) not in merged_line, merged_line
+                assert f"{param_name}={request_value}" in merged_line, merged_line
+                assert f"{param_name}={configured_value}" not in merged_line, merged_line
             finally:
                 r2h.stop()
         finally:

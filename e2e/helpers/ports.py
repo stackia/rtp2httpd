@@ -56,7 +56,7 @@ def wait_for_port(port: int, host: str = "127.0.0.1", timeout: float = 5.0) -> b
         try:
             with socket.create_connection((host, port), timeout=0.5):
                 return True
-        except ConnectionRefusedError, OSError, socket.timeout:
+        except TimeoutError, ConnectionRefusedError, OSError:
             time.sleep(0.05)
     return False
 
