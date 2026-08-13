@@ -8,11 +8,15 @@ const TAG = "InterlaceDetector";
  * Heuristic interlace detection running entirely on the GPU.
  *
  * Frames already resident in the renderer's texture ring are processed by
- * fragment shaders that compute a comb score and an abs-diff motion measure,
- * then reduced to an 8×8 summary via a multi-pass box filter. Each sample's
- * result travels back through a PBO guarded by a GL fence: poll() drains
- * completed readbacks on later frames, so only a few hundred bytes cross the
- * GPU→CPU boundary per sample and nothing ever blocks on the GPU.
+ * fragment shaders that compute a comb score, then reduced to an 8×8 summary
+ * via a multi-pass box filter. Each sample's result travels back through a
+ * PBO guarded by a GL fence: poll() drains completed readbacks on later
+ * frames, so only a few hundred bytes cross the GPU→CPU boundary per sample
+ * and nothing ever blocks on the GPU.
+ *
+ * An interlaced verdict is sticky until reset(): sampling continues only for
+ * field-order voting, then stops, so a later progressive-looking stretch
+ * cannot turn bwdif off.
  *
  * The detector borrows the WebGL2 context and texture ring owned by the
  * renderer; it never uploads frames itself. It requires EXT_color_buffer_float
@@ -37,10 +41,6 @@ const COMBED_FRAME_RATIO = 0.01;
 const WINDOW_SIZE = 12;
 /** Combed frames required within the window to declare the source interlaced. */
 const COMBED_FRAMES_REQUIRED = 3;
-/** Minimum motion (mean abs luma diff, [0,255]) for a sample to count toward reversion. */
-const MOTION_FLOOR = 1.5;
-/** Consecutive clean+moving frames required to revert an interlaced verdict. */
-const REVERSION_FRAMES_REQUIRED = 4;
 
 // ---- Field-order voting ----
 const FIELD_ORDER_MIN_VOTES = 4;
@@ -55,8 +55,6 @@ const FIELD_ORDER_MAX_VOTES = 10;
 const REDUCTION_TARGET = 8;
 /** COMB_PIXEL_THRESHOLD normalised to the [0,1]² luma space the shaders use. */
 const COMB_THRESHOLD_NORMALISED = COMB_PIXEL_THRESHOLD / (255 * 255);
-/** MOTION_FLOOR normalised to the [0,1] range the abs-diff shader returns. */
-const MOTION_FLOOR_NORMALISED = MOTION_FLOOR / 255;
 
 // ---- Async readback ----
 /**
@@ -89,11 +87,10 @@ float lumaAt(sampler2D tex, vec2 uv) {
 
 /**
  * Marker pass — one fullscreen pass over the video texture.
- * Output: R = combed (0.0 or 1.0), G = abs luma diff vs prev frame [0,1].
+ * Output: R = combed (0.0 or 1.0).
  */
 const MARKER_FRAGMENT_SHADER = /*glsl*/ `${GLSL_LUMA_PRELUDE}
 uniform sampler2D u_cur;
-uniform sampler2D u_prev;
 uniform float u_height;
 
 in vec2 v_texCoord;
@@ -106,9 +103,8 @@ void main() {
   float below = lumaAt(u_cur, vec2(v_texCoord.x, v_texCoord.y + texelH));
   float dA = above - cur;
   float dB = below - cur;
-  float combed  = (dA * dB > ${COMB_THRESHOLD_NORMALISED.toFixed(8)}) ? 1.0 : 0.0;
-  float absDiff = abs(cur - lumaAt(u_prev, v_texCoord));
-  outColor = vec4(combed, absDiff, 0.0, 1.0);
+  float combed = (dA * dB > ${COMB_THRESHOLD_NORMALISED.toFixed(8)}) ? 1.0 : 0.0;
+  outColor = vec4(combed, 0.0, 0.0, 1.0);
 }
 `;
 
@@ -191,8 +187,6 @@ export interface DetectorVerdict {
 interface DetectionMetrics {
   /** Fraction of pixels flagged as combed, [0,1]. */
   combRatio: number;
-  /** Mean per-pixel abs luma diff vs previous frame, [0,1]. */
-  motionScore: number;
   /** Mean per-row TFF hypothesis error (from field-order pass), [0,1]. */
   errTff: number;
   /** Mean per-row BFF hypothesis error (from field-order pass), [0,1]. */
@@ -234,7 +228,6 @@ export class InterlaceDetector {
   private running = false;
   private window: boolean[] = [];
   private interlaced = false;
-  private reversionConsecutiveCount = 0;
   private fieldOrder: FieldOrder = "tff";
   private fieldOrderDecided = false;
   private votesTff = 0;
@@ -252,7 +245,6 @@ export class InterlaceDetector {
   // and the reduction pass runs ~9 times per sample).
   private markerUniforms: {
     cur: WebGLUniformLocation | null;
-    prev: WebGLUniformLocation | null;
     height: WebGLUniformLocation | null;
   } | null = null;
   private reductionUniforms: { input: WebGLUniformLocation | null; texelSize: WebGLUniformLocation | null } | null =
@@ -321,6 +313,14 @@ export class InterlaceDetector {
     return this.running && this.interlaced && !this.fieldOrderDecided && this.votingRounds < FIELD_ORDER_MAX_VOTES;
   }
 
+  /**
+   * True once interlacing is confirmed and field-order voting has finished.
+   * The pipeline stops sampling after this; bwdif stays on until reset().
+   */
+  get interlacedSettled(): boolean {
+    return this.interlaced && this.fieldOrderDecided;
+  }
+
   /** Stop accepting samples. GPU resources are retained for a later start(). */
   stop(): void {
     this.running = false;
@@ -372,7 +372,6 @@ export class InterlaceDetector {
       this.fieldOrderProgram = createProgram(gl, FULLSCREEN_VERTEX_SHADER, FIELD_ORDER_FRAGMENT_SHADER);
       this.markerUniforms = {
         cur: gl.getUniformLocation(this.markerProgram, "u_cur"),
-        prev: gl.getUniformLocation(this.markerProgram, "u_prev"),
         height: gl.getUniformLocation(this.markerProgram, "u_height"),
       };
       this.reductionUniforms = {
@@ -484,7 +483,7 @@ export class InterlaceDetector {
     videoWidth: number,
     videoHeight: number,
   ): void {
-    if (!this.ready || !this.markerProgram || !this.reductionProgram) return;
+    if (!this.ready || !this.running || !this.markerProgram || !this.reductionProgram) return;
 
     const slot = this.freeSlots[0];
     if (!slot) return;
@@ -498,7 +497,7 @@ export class InterlaceDetector {
 
     const effectivePrev = prevTexture ?? curTexture;
 
-    this.runMarkerPass(gl, curTexture, effectivePrev, videoHeight);
+    this.runMarkerPass(gl, curTexture, videoHeight);
     this.runReductionChain(gl, this.markerFbo, this.reductionFbos);
 
     const finalFbo = this.reductionFbos[this.reductionFbos.length - 1];
@@ -580,39 +579,18 @@ export class InterlaceDetector {
   /**
    * Fold one detection sample into the rolling window and emit a verdict when
    * warranted. Also feeds the field-order voting once interlacing is confirmed.
+   * An interlaced verdict is sticky: it never reverts to progressive here
+   * (channel/source switches call reset() instead).
    */
   private applyMetrics(metrics: DetectionMetrics): void {
     if (!this.running) return;
 
-    const isCombed = metrics.combRatio >= COMBED_FRAME_RATIO;
-
-    if (this.interlaced) {
-      this.updateReversion(isCombed, metrics.motionScore);
-    } else {
-      this.updateInterlacedVerdict(isCombed);
+    if (!this.interlaced) {
+      this.updateInterlacedVerdict(metrics.combRatio >= COMBED_FRAME_RATIO);
     }
 
     if (metrics.hasFieldOrder) {
       this.applyFieldOrderMetrics(metrics.errTff, metrics.errBff);
-    }
-  }
-
-  /** While interlaced: count clean+moving frames toward reverting to progressive. */
-  private updateReversion(isCombed: boolean, motionScore: number): void {
-    const hasMotion = motionScore >= MOTION_FLOOR_NORMALISED;
-    if (!hasMotion || isCombed) {
-      this.reversionConsecutiveCount = 0;
-      return;
-    }
-    this.reversionConsecutiveCount++;
-    Log.d(
-      TAG,
-      `Reversion candidate ${this.reversionConsecutiveCount}/${REVERSION_FRAMES_REQUIRED} ` +
-        `(motion=${motionScore.toFixed(4)})`,
-    );
-    if (this.reversionConsecutiveCount >= REVERSION_FRAMES_REQUIRED) {
-      Log.i(TAG, "Progressive content detected; reverting interlaced verdict");
-      this.resetVerdictState(true);
     }
   }
 
@@ -625,7 +603,6 @@ export class InterlaceDetector {
     if (combedFrames < COMBED_FRAMES_REQUIRED) return;
 
     this.interlaced = true;
-    this.reversionConsecutiveCount = 0;
     Log.i(TAG, `Interlaced content detected via comb heuristic (${combedFrames}/${this.window.length} combed frames)`);
     this.onVerdict({ interlaced: true, fieldOrder: this.fieldOrder });
   }
@@ -679,7 +656,6 @@ export class InterlaceDetector {
     const wasInterlaced = this.interlaced;
     this.window = [];
     this.interlaced = false;
-    this.reversionConsecutiveCount = 0;
     this.fieldOrder = "tff";
     this.fieldOrderDecided = false;
     this.votesTff = 0;
@@ -694,12 +670,7 @@ export class InterlaceDetector {
   // GPU pass helpers
   // -------------------------------------------------------------------------
 
-  private runMarkerPass(
-    gl: WebGL2RenderingContext,
-    curTexture: WebGLTexture,
-    prevTexture: WebGLTexture,
-    videoHeight: number,
-  ): void {
+  private runMarkerPass(gl: WebGL2RenderingContext, curTexture: WebGLTexture, videoHeight: number): void {
     const program = this.markerProgram;
     const uniforms = this.markerUniforms;
     const fbo = this.markerFbo;
@@ -711,9 +682,6 @@ export class InterlaceDetector {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, curTexture);
     gl.uniform1i(uniforms.cur, 0);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, prevTexture);
-    gl.uniform1i(uniforms.prev, 1);
     gl.uniform1f(uniforms.height, videoHeight);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -781,9 +749,8 @@ export class InterlaceDetector {
     hasFieldOrder: boolean,
     foBuffer: Float32Array | null,
   ): DetectionMetrics {
-    const { errTff: combSum, errBff: diffSum } = meanChannels(buffer, texelCount);
+    const { errTff: combSum } = meanChannels(buffer, texelCount);
     const combRatio = combSum;
-    const motionScore = diffSum;
 
     let errTff = 0;
     let errBff = 0;
@@ -793,7 +760,7 @@ export class InterlaceDetector {
       errBff = means.errBff;
     }
 
-    return { combRatio, motionScore, errTff, errBff, hasFieldOrder };
+    return { combRatio, errTff, errBff, hasFieldOrder };
   }
 
   private readFboIntoPbo(gl: WebGL2RenderingContext, fbo: DetectionFbo, pbo: WebGLBuffer | null): void {
@@ -935,7 +902,7 @@ export function isRenderResolutionEligible(width: number, height: number): boole
 
 /**
  * Mean of the R and G channels of an RGBA float buffer over the given texel
- * count. R is returned as errTff, G as errBff (also used for combRatio/motion).
+ * count. R is returned as errTff, G as errBff (also used for combRatio).
  */
 function meanChannels(buffer: Float32Array, texelCount: number): { errTff: number; errBff: number } {
   if (texelCount <= 0) return { errTff: 0, errBff: 0 };

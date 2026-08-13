@@ -33,6 +33,9 @@ const SAMPLE_INTERVAL_MS = 500;
  * with both off the pipeline would only reproduce the raw video, so it is skipped
  * like an ineligible resolution. Eligible interlaced frames switch to bwdif when
  * auto deinterlacing is on; otherwise the source frame is presented directly.
+ * Once bwdif is enabled and field order is decided, detection stops for that
+ * source — the filter stays on until a channel/source reset, a user toggle, or
+ * the render gate closing.
  * Larger frames, both features disabled, WebGL failures, or missing rVFC support
  * all fall back to the raw video element by reporting active = false.
  */
@@ -143,8 +146,12 @@ export function createVideoRenderPipeline(
   renderer.setPictureEnhancementEnabled(pictureEnhancementEnabled);
 
   renderer.onFrame = (gl) => {
-    if (destroyed || !autoDeinterlaceEnabled || !detectorReady) return false;
+    if (destroyed || !autoDeinterlaceEnabled || !detectorReady || !detectorRunning) return false;
     detector.poll(gl);
+    if (detector.interlacedSettled) {
+      stopDetector("interlaced verdict settled");
+      return false;
+    }
 
     const now = performance.now();
     const isFastPhase = fastPhaseSamples < FAST_SAMPLE_COUNT;
@@ -153,7 +160,7 @@ export function createVideoRenderPipeline(
   };
 
   renderer.onSample = (gl, curTexture, prevTexture, videoWidth, videoHeight) => {
-    if (destroyed || !autoDeinterlaceEnabled || !detectorReady) return;
+    if (destroyed || !autoDeinterlaceEnabled || !detectorReady || !detectorRunning) return;
     detector.sample(gl, curTexture, prevTexture, videoWidth, videoHeight);
     lastSampleMs = performance.now();
     if (fastPhaseSamples < FAST_SAMPLE_COUNT) fastPhaseSamples++;
@@ -185,6 +192,11 @@ export function createVideoRenderPipeline(
 
     if (!autoDeinterlaceEnabled) {
       stopDetector("auto deinterlace disabled");
+      return;
+    }
+
+    if (detector.interlacedSettled) {
+      stopDetector("interlaced verdict settled");
       return;
     }
 
