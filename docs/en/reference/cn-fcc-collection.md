@@ -90,6 +90,7 @@ The following FCC (Fast Channel Change) server addresses were collected from the
   - `10.7.35.172:8027` (Qinhuangdao)
   - `10.7.10.172:8027` (Shijiazhuang)
   - `10.7.70.172:8027` (Langfang)
+  - `10.7.60.172:8027` (Cangzhou)
 - China Mobile: `192.168.247.9:8027` (Langfang)
 
 ## Shandong
@@ -142,7 +143,7 @@ The following FCC (Fast Channel Change) server addresses were collected from the
   - `118.119.178.42:8027` (Leshan)
   - `182.128.24.170:8027` (Guangyuan)
   - `182.134.43.42:8027` (Yibin)
-  - `182.138.3.103:15970` (Suining)
+  - `182.138.3.103:15970` (Suining, Nanchong)
 - China Mobile: `183.223.164.65:8027`
 
 ## Chongqing
