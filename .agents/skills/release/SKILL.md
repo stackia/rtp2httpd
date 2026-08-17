@@ -1,6 +1,6 @@
 ---
 name: release
-description: Execute the rtp2httpd release workflow — cumulative prerelease and formal release notes, tagging, GitHub releases, CI handling, and stable branch updates.
+description: Execute the rtp2httpd release workflow — cumulative prerelease and formal release notes, tagging, GitHub releases, collapsing superseded prerelease notes after GA, CI handling, and stable branch updates.
 ---
 
 # rtp2httpd Release Workflow
@@ -35,6 +35,8 @@ Follow these steps in order.
   - every published prerelease whose SemVer suffix can be stripped to exactly the target base version; and
   - the latest such prerelease by publication time, if any.
   These are release-note sources, not just version-number inputs. Never use prerelease notes from another base version.
+  After a formal release is published, the same-series prerelease list is reused to collapse those GitHub Release
+  notes into a default-hidden accordion.
 
 ---
 
@@ -104,9 +106,11 @@ subjects as evidence, not release-note copy: retain user-focused wording from ex
   remove it. If the evidence is ambiguous, keep it and flag it during review rather than silently dropping it.
 - User-provided corrections take precedence over inherited wording. Otherwise, avoid gratuitously rewriting established
   prerelease notes when preparing the formal release.
-- Normalize each source body before merging: remove the complete donation table using the donation asset URL as its
-  marker, then split at the standalone `---` separator into Chinese and English sections. Do not confuse that separator
-  with the donation table's `| --- |` row.
+- Normalize each source body before merging: unwrap a GitHub `<details>` accordion if present (drop the outer
+  `<details>` / `<summary>` / `</details>` tags and keep only the inner markdown; do not treat the summary line as a
+  release-note item), remove the complete donation table using the donation asset URL as its marker, then split at the
+  standalone `---` separator into Chinese and English sections. Do not confuse that separator with the donation
+  table's `| --- |` row.
 - Treat each retained or new change as a bilingual item pair. Merge and deduplicate the pairs, keep the two language
   sections semantically aligned, and update the counterpart translation whenever a correction changes one language.
 - Rebuild the canonical structure below only after merging so the final file contains exactly one donation block.
@@ -204,8 +208,8 @@ Use `AskQuestion` with header "Ready to release?":
 > Ready to create release v3.x.y?
 
 Show a summary: release notes file path, the release-note sources used (including inherited prereleases), lint, tag
-creation, release creation, previous-release donation cleanup, and the CI/stable behavior appropriate for a formal
-release or prerelease.
+creation, release creation, previous-release donation cleanup, collapsing same-series prerelease notes after a formal
+release, and the CI/stable behavior appropriate for a formal release or prerelease.
 
 Options:
 - **Yes, release it!** — proceed with the release
@@ -315,7 +319,50 @@ latest published release (formal or prerelease): exactly one donation block
 immediately previous release: no donation block
 ```
 
-### Step 10: Handle the CI `versioned` Job
+### Step 10: Collapse Same-Series Prerelease Notes After a Formal Release
+
+If the GitHub Release is a prerelease, **skip this step entirely**. Earlier prereleases in an in-progress series must
+remain fully visible.
+
+After a formal release is published, the same-base-version prereleases are superseded by the GA notes. Collapse each of
+those prerelease GitHub Release bodies into a default-hidden accordion so they no longer occupy the releases page.
+
+Use the same-series prerelease tags identified in Step 0 — every published prerelease whose SemVer suffix strips to
+exactly the new formal tag's base version (for example `v3.16.0-beta.0`, `v3.16.0-beta.1`, `v3.16.0-beta.2` after
+publishing `v3.16.0`). Do not include prereleases from a different base version.
+
+For each such tag:
+
+1. Fetch the current body with `gh release view <tag> --json body`.
+2. If the body is already wrapped in a top-level `<details>` accordion, skip that tag. Do not nest another wrapper.
+3. Preserve the inner notes exactly. Do not add or remove the donation block in this step; donation cleanup is Step 9
+   only.
+4. Wrap the body with this canonical GitHub Flavored Markdown accordion. Do **not** add the `open` attribute — the
+   section must be collapsed by default. Leave a blank line after `</summary>` so GitHub renders the inner markdown:
+
+```markdown
+<details>
+<summary>预发布说明（已并入 v3.x.y） / Prerelease notes (included in v3.x.y)</summary>
+
+{original body}
+
+</details>
+```
+
+Replace `v3.x.y` with the formal tag just published. Keep the summary wording exactly in this bilingual form.
+
+5. Write the wrapped notes to a temporary file and apply them with `gh release edit <tag> --notes-file ...`. Do not
+   pass multiline notes as command arguments.
+6. Run any wrapping helper through `uv run`, never directly through `python`.
+7. Retry transient GitHub API 503s; if an edit still fails, report the remaining tags and a safe retry command. Do not
+   delete or recreate the new formal release.
+
+Do not wrap the newly published formal release, prereleases from another base version, or older formal releases.
+
+Verify afterward that each updated prerelease body contains `<details>` and `</details>`, does not contain
+`<details open`, and still includes its original Chinese/English notes.
+
+### Step 11: Handle the CI `versioned` Job
 
 #### Prerelease
 
@@ -350,7 +397,7 @@ If the CI run fails or the commit doesn't appear within 10 minutes, alert the us
 gh run list --workflow=release.yaml --branch "v3.x.y" --limit 1 --json databaseId,status,conclusion --jq '.[0]'
 ```
 
-### Step 11: Update `stable` Branch for Formal Releases Only
+### Step 12: Update `stable` Branch for Formal Releases Only
 
 If the release is a prerelease, skip this step and leave `stable` unchanged.
 
@@ -367,7 +414,7 @@ If `git merge --ff-only origin/main` fails (non-fast-forward), it means the `sta
 
 ---
 
-### Step 12: Return to `main`
+### Step 13: Return to `main`
 
 ```bash
 git checkout main
@@ -375,7 +422,7 @@ git checkout main
 
 ---
 
-### Step 13: Summary
+### Step 14: Summary
 
 For a formal release, print a completion summary:
 
@@ -384,6 +431,7 @@ For a formal release, print a completion summary:
 
 - Tag: v3.x.y (pushed)
 - GitHub Release: https://github.com/stackia/rtp2httpd/releases/tag/v3.x.y
+- Same-series prereleases: notes collapsed into a default-hidden accordion
 - stable branch: updated (fast-forward merge)
 - CI: running (Docker, OpenWRT, static binaries, macOS)
 ```
@@ -412,6 +460,8 @@ For a prerelease, explicitly report that versioned Makefile polling and the `sta
   since the immediately previous prerelease.
 - A formal release should inherit the cumulative notes from the latest prerelease for the same base version, reconcile
   earlier prerelease omissions, and add changes made afterward.
+- After a formal release, collapse every same-base-version prerelease's GitHub notes into a default-hidden `<details>`
+  accordion. Leave in-progress prerelease series fully visible. Do not wrap the new formal release.
 - The latest published release always contains the donation QR block after its Chinese content; the immediately
   previous release has that block removed after publishing.
 - Never force-push to `main` or `stable`.
