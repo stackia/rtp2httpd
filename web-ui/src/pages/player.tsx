@@ -294,12 +294,26 @@ function PlayerPage() {
     }
   }, [currentChannel, playMode]);
 
-  // Keep the address bar shareable: rewrite the URL to ?channel_name=<name> on every channel switch.
+  // Keep the address bar shareable: rewrite the URL to #<name> (or #<id> if the name is ambiguous).
   useEffect(() => {
-    if (currentChannel) {
-      syncChannelDeepLink(currentChannel.name);
+    if (currentChannel && metadata) {
+      syncChannelDeepLink(currentChannel, metadata.channels);
     }
-  }, [currentChannel]);
+  }, [currentChannel, metadata]);
+
+  useEffect(() => {
+    if (!metadata) return;
+
+    const onHashChange = () => {
+      const channel = findDeepLinkChannel(metadata.channels);
+      if (channel && channel.id !== currentChannel?.id) {
+        selectChannel(channel);
+      }
+    };
+
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [metadata, currentChannel, selectChannel]);
 
   const handleCurrentVideoTimeChange = useCallback((time: number) => {
     currentVideoTimeRef.current = time;

@@ -155,17 +155,6 @@ class TestPlayerPage:
         assert "html" in ct.lower()
         assert len(body) > 100
 
-    @pytest.mark.parametrize(
-        "deep_link",
-        ["/player?channel_id=1", "/player?channel_name=CCTV1", "/player?channel_id=1&channel_name=CCTV1"],
-    )
-    def test_player_serves_html_with_channel_deep_link_params(self, basic_r2h, deep_link):
-        status, hdrs, body = http_get("127.0.0.1", basic_r2h.port, deep_link)
-        assert status == 200
-        ct = get_header(hdrs, "Content-Type")
-        assert "html" in ct.lower()
-        assert len(body) > 100
-
     def test_player_contains_install_metadata(self, basic_r2h):
         _, _, body = http_get("127.0.0.1", basic_r2h.port, "/player", headers={"Accept-Encoding": "identity"})
         text = body.decode("utf-8")
