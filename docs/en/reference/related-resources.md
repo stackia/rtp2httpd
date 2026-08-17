@@ -40,9 +40,13 @@ If you are new to setting up IPTV multicast forwarding services and unfamiliar w
 
 - Project: <https://github.com/mytv-android/mytv-android>
 
-Android IPTV player with support for M3U playlists, FCC fast channel switching, EPG electronic program guide, time-shift playback, and more.
+Android IPTV player with support for M3U playlists, FCC fast channel switching, EPG electronic program guide, time-shift playback, rtp2httpd [video snapshots](../guide/video-snapshot.md), and more.
 
-Currently the only player supporting rtp2httpd [video snapshots](../guide/video-snapshot.md).
+#### LiteTV
+
+- Project: <https://github.com/vibe4free/LiteTV>
+
+Minimal IPTV live player for Android TV / Google TV, deeply optimized for remote control and close to native set-top box operation. Supports M3U / TXT playlists, EPG, channel groups and favorites, plus a built-in web UI for configuring live sources and EPG. Channel switching reuses the player instance, with start and switch speed close to rtp2httpd's built-in web player.
 
 #### APTV
 
@@ -54,18 +58,7 @@ IPTV M3U player with a polished Apple ecosystem experience, covering iPhone, iPa
 
 - Project: <https://github.com/CGG888/SrcBox>
 
-Windows IPTV player based on libmpv playback engine and WPF native interface. Supports M3U playlists, FCC fast channel switching, EPG electronic program guide, time-shift playback, UDP multicast optimization, and more.
-
-#### IPTVnator (CGG888 fork)
-
-- Project: <https://github.com/CGG888/iptvnator>
-
-Cross-platform (Windows / macOS / Linux) IPTV player. This fork is enhanced for mainland China IPTV scenarios. Main features:
-
-- Automatically identifies multicast/unicast sources and selects the best playback engine (mpegts.js for multicast, hls.js for unicast)
-- Supports time-shift playback
-- 4K/HD/SD quality strategy, channels with the same name prioritized by quality
-- Smart EPG channel name matching and Chinese localization
+Windows IPTV player based on libmpv playback engine and WPF native interface. Supports M3U playlists, FCC fast channel switching, EPG electronic program guide, time-shift playback, UDP multicast optimization, rtp2httpd [video snapshots](../guide/video-snapshot.md), and more.
 
 #### iptvys
 

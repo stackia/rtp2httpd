@@ -4,7 +4,7 @@
 
 ### Preserved Product/Technical Names
 
-- rtp2httpd, udpxy, msd_lite, FFmpeg, APTV, TiviMate, Wireshark
+- rtp2httpd, udpxy, msd_lite, FFmpeg, APTV, TiviMate, LiteTV, Wireshark
 - FCC (Fast Channel Change) - expand on first use
 - FEC (Forward Error Correction) - expand on first use
 - VA-API, V4L2, QSV - hardware acceleration names

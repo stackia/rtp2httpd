@@ -3,7 +3,7 @@
 rtp2httpd supports generating video stream snapshots using FFmpeg. Players that integrate this feature achieve extremely fast channel preview loading.
 
 > [!IMPORTANT]
-> This feature requires player support. Currently, the only known player that supports rtp2httpd video snapshots is [mytv-android](https://github.com/mytv-android/mytv-android).
+> This feature requires player support. Currently known players that support rtp2httpd video snapshots are [mytv-android](https://github.com/mytv-android/mytv-android) and [SrcBox](https://github.com/CGG888/SrcBox).
 
 ## Features
 

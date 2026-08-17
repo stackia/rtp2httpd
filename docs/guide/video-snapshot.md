@@ -3,7 +3,7 @@
 rtp2httpd 支持使用 FFmpeg 来生成视频流的快照（snapshot）功能。如果播放器集成了此功能，将会获得极快的频道预览图加载速度。
 
 > [!IMPORTANT]
-> 此功能需要播放器支持，目前已知支持 rtp2httpd 视频快照的播放器只有 [mytv-android](https://github.com/mytv-android/mytv-android)。
+> 此功能需要播放器支持，目前已知支持 rtp2httpd 视频快照的播放器有 [mytv-android](https://github.com/mytv-android/mytv-android) 和 [SrcBox](https://github.com/CGG888/SrcBox)。
 
 ## 功能特点
 

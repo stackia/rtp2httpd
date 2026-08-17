@@ -40,9 +40,13 @@
 
 - 项目地址：<https://github.com/mytv-android/mytv-android>
 
-Android 平台 IPTV 播放器，支持 M3U 播放列表、FCC 快速换台、EPG 电子节目单、时移回看等功能。
+Android 平台 IPTV 播放器，支持 M3U 播放列表、FCC 快速换台、EPG 电子节目单、时移回看、rtp2httpd [视频快照](../guide/video-snapshot.md) 等功能。
 
-目前唯一支持 rtp2httpd [视频快照](../guide/video-snapshot.md) 的播放器。
+#### LiteTV
+
+- 项目地址：<https://github.com/vibe4free/LiteTV>
+
+面向 Android TV / Google TV 的极简 IPTV 直播播放器，针对遥控器操作深度优化，交互接近机顶盒原版习惯。支持 M3U / TXT 播放列表、EPG 电子节目单、频道分组与收藏，可通过网页远程配置直播源和 EPG。换台复用播放器实例，起播与切换速度接近 rtp2httpd 内置 Web 播放器。
 
 #### APTV
 
@@ -54,18 +58,7 @@ Android 平台 IPTV 播放器，支持 M3U 播放列表、FCC 快速换台、EPG
 
 - 项目地址：<https://github.com/CGG888/SrcBox>
 
-Windows 平台 IPTV 播放器，基于 libmpv 播放内核和 WPF 原生界面。支持 M3U 播放列表、FCC 快速切台、EPG 电子节目单、时移回看、UDP 组播优化等功能。
-
-#### IPTVnator (CGG888 fork)
-
-- 项目地址：<https://github.com/CGG888/iptvnator>
-
-Windows / macOS / Linux 跨平台 IPTV 播放器，此 fork 针对中国大陆 IPTV 场景增强，主要特性：
-
-- 自动识别组播/单播来源，选择最佳播放内核（组播用 mpegts.js，单播用 hls.js）
-- 支持时移回看
-- 4K/高清/标清画质策略，同名频道按质量优先排序
-- EPG 频道名称智能匹配与中文化
+Windows 平台 IPTV 播放器，基于 libmpv 播放内核和 WPF 原生界面。支持 M3U 播放列表、FCC 快速切台、EPG 电子节目单、时移回看、UDP 组播优化、rtp2httpd [视频快照](../guide/video-snapshot.md) 等功能。
 
 #### IPTV 影视 iptvys
 
