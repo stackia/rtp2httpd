@@ -20,19 +20,14 @@ The player page path can be customized via the `player-page-path` configuration 
 
 ## Deep Links to Channels
 
-You can open a specific channel directly by appending query parameters to the player URL, which is useful for bookmarks or sharing with others:
+You can append `#<channel number>` or `#<channel name>` to the player URL to open a specific channel, which is useful for bookmarks or sharing with others:
 
 ```url
-http://server:port/player?channel_id=1
-http://server:port/player?channel_name=cctv1
+http://server:port/player#5
+http://server:port/player#CCTV-1
 ```
 
-- `channel_id`: matches the channel by its position number in the list (the channel number shown in the channel list). **Note**: the position number is the channel's place in the playlist and may change when channels are added, removed, or reordered.
-- `channel_name`: matches the channel name exactly, case-insensitively and ignoring leading/trailing whitespace. Channel names are usually more stable and are the recommended parameter.
-- When both parameters are present, `channel_id` takes precedence.
-- If neither parameter matches a channel, the player falls back to the default behavior (the last played channel, or the first channel in the list).
-
-The player automatically updates the address bar to `?channel_name=<channel name>` when you switch channels, so you can copy the address bar link at any time to share the channel currently playing. Other query parameters such as `r2h-token` are preserved.
+The player automatically updates the address bar when you switch channels, so you can copy the link at any time to share the channel currently playing.
 
 ## Features
 
@@ -89,7 +84,7 @@ LG webOS smart TVs can also use the built-in browser to open the player and pin 
 
 > [!NOTE]
 > If you customized the player path via `player-page-path`, use the actual path when adding to the home screen. The shortcut is pinned to the URL used at the time of adding, including query parameters such as `r2h-token` (if present).
-> You can also append the `?channel_name=<channel name>` parameter to the URL to pin the shortcut to a specific channel.
+> You can also append `#<channel name>` or `#<channel number>` to the URL to pin the shortcut to a specific channel.
 
 ## Channel Aggregation
 
