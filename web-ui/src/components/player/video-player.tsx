@@ -326,8 +326,9 @@ function VideoPlayerComponent({
   // connection with no seek to show for it. Seeking is therefore off across every entry
   // point — the timeline in PlayerControls gates on the same expression.
   const isCatchupSupported = Boolean(channel?.sources.some((source) => source.catchup && source.catchupSource));
-  const canSeekProgramInMediaSession = isCatchupSupported;
   const currentProgramRef = useRef<EPGProgram | null>(null);
+  const [currentProgram, setCurrentProgram] = useState<EPGProgram | null>(null);
+  const canSeekProgramInMediaSession = Boolean(currentProgram) && isCatchupSupported;
   const canControlVolume = isVolumeControlSupported();
   const canNavigateChannelsInMediaSession = Boolean(channel && onChannelNavigate);
 
@@ -414,21 +415,6 @@ function VideoPlayerComponent({
   /** Reset wall-clock calibration after each new segment load. */
   const wallClockCalibratedRef = useRef(false);
   const mediaSessionPositionUpdatedAtRef = useRef(0);
-  /** Bumped whenever `segments` change so leftover events from the previous media are ignored. */
-  const mediaLoadSeqRef = useRef(0);
-  /** Set when `loadSegments` has been called for `mediaLoadSeqRef`. */
-  const loadedMediaSeqRef = useRef(0);
-  /** Set when the newly loaded media has started (playing / near-zero time-update). */
-  const acceptedMediaSeqRef = useRef(0);
-  const acceptedMediaAtRef = useRef(0);
-  const mediaSessionSeekIgnoreUntilRef = useRef(0);
-
-  const isCurrentMediaAccepted = () => acceptedMediaSeqRef.current === mediaLoadSeqRef.current;
-  const isCurrentMediaLoaded = () => loadedMediaSeqRef.current === mediaLoadSeqRef.current;
-  const acceptCurrentMedia = () => {
-    acceptedMediaSeqRef.current = mediaLoadSeqRef.current;
-    acceptedMediaAtRef.current = Date.now();
-  };
 
   // Digit input state
   const [digitBuffer, setDigitBuffer] = useState("");
@@ -465,7 +451,6 @@ function VideoPlayerComponent({
   });
 
   const calibrateLiveSession = useEffectEvent((player: PlaybackBackend) => {
-    if (playMode !== "live") return;
     const currentTime = player.getState().currentTime;
     const origin = new Date(Date.now() - currentTime * 1000);
     const anchor = createLiveSessionAnchor(currentTime);
@@ -870,8 +855,6 @@ function VideoPlayerComponent({
     setPrevSegments(segments);
     currentVideoTimeRef.current = 0;
     wallClockCalibratedRef.current = false;
-    mediaLoadSeqRef.current += 1;
-    acceptedMediaSeqRef.current = 0;
     setLiveSessionAnchor(null);
 
     const isStreamChange =
@@ -889,7 +872,6 @@ function VideoPlayerComponent({
   }
 
   const handleSeekNeeded = useEffectEvent((seconds: number) => {
-    if (!isCurrentMediaAccepted()) return;
     const player = getActivePlayer();
     shouldAutoPlayRef.current = !player?.getState().paused;
     const seekTime = mseToWallClock(seconds, streamStartTime);
@@ -952,19 +934,14 @@ function VideoPlayerComponent({
     });
     p.on("time-update", (time) => {
       if (slotPlayerRef(slotId).current !== p || slotId !== getActiveSlotId()) return;
-      if (!isCurrentMediaAccepted()) {
-        // Fresh loads start near t=0. A large jump is leftover live time from the previous source.
-        if (!isCurrentMediaLoaded() || time > 2) return;
-        acceptCurrentMedia();
-      }
       currentVideoTimeRef.current = time;
       onCurrentVideoTimeChange(time);
       updateMediaSessionPosition();
     });
     p.on("ended", () => {
-      if (slotPlayerRef(slotId).current !== p || slotId !== getActiveSlotId()) return;
-      if (!isCurrentMediaAccepted()) return;
-      handlePlaybackEnded();
+      if (slotPlayerRef(slotId).current === p && slotId === getActiveSlotId()) {
+        handlePlaybackEnded();
+      }
     });
     p.on("playback-state-change", (state, eventTimeStamp) => {
       if (slotPlayerRef(slotId).current !== p) return;
@@ -1039,13 +1016,8 @@ function VideoPlayerComponent({
     if (!player) return;
     const state = player.getState();
     mediaSessionPositionUpdatedAtRef.current = now;
-    // Some engines echo setPositionState back as seekto. Ignore that echo so a
-    // catchup jump cannot be rewritten as "go live" one second later.
-    mediaSessionSeekIgnoreUntilRef.current = now + 250;
 
-    const timeline = currentProgramRef.current
-      ? createProgramTimeline(currentProgramRef.current, streamStartTime, state.currentTime)
-      : null;
+    const timeline = currentProgram ? createProgramTimeline(currentProgram, streamStartTime, state.currentTime) : null;
     const supportsCatchup = channel.sources.some((source) => source.catchup && source.catchupSource);
 
     try {
@@ -1087,9 +1059,6 @@ function VideoPlayerComponent({
   });
 
   const handleMediaSessionSeekTo = useEffectEvent((details: MediaSessionActionDetails) => {
-    if (Date.now() < mediaSessionSeekIgnoreUntilRef.current) return;
-    if (!isCurrentMediaAccepted()) return;
-    const currentProgram = currentProgramRef.current;
     if (!currentProgram || details.seekTime === undefined) return;
     const programTimeline = createProgramTimeline(currentProgram, streamStartTime, currentVideoTimeRef.current);
     if (!programTimeline) return;
@@ -1106,7 +1075,7 @@ function VideoPlayerComponent({
 
   const handleCurrentProgramChange = useEffectEvent((program: EPGProgram | null) => {
     currentProgramRef.current = program;
-    updateMediaSessionPosition(true);
+    setCurrentProgram((previous) => (previous === program ? previous : program));
   });
 
   useEffect(() => {
@@ -1118,7 +1087,7 @@ function VideoPlayerComponent({
   // biome-ignore lint/correctness/useExhaustiveDependencies: synchronize Media Session immediately on timeline/slot state changes
   useEffect(() => {
     updateMediaSessionPosition(true);
-  }, [channel, playMode, activeSourceIndex, visibleSlotId, isPlaying]);
+  }, [channel, currentProgram, playMode, activeSourceIndex, visibleSlotId, isPlaying]);
 
   useEffect(
     () => () => {
@@ -1138,7 +1107,6 @@ function VideoPlayerComponent({
     const activePlayer = slotPlayerRef(activeId).current ?? createPlayerForSlot(activeId);
     if (!activePlayer) return;
 
-    loadedMediaSeqRef.current = mediaLoadSeqRef.current;
     console.log("Loading segments...");
 
     if (stablePlaybackTimeoutRef.current) {
@@ -1262,9 +1230,6 @@ function VideoPlayerComponent({
 
   const handleVideoCanPlay = useEffectEvent((slotId: SlotId) => {
     if (slotId !== getActiveSlotId() && pendingTransitionRef.current?.slotId !== slotId) return;
-    if (slotId === getActiveSlotId() && isCurrentMediaLoaded()) {
-      acceptCurrentMedia();
-    }
     setIsLoading(false);
   });
 
@@ -1284,9 +1249,7 @@ function VideoPlayerComponent({
     }
 
     if (slotId !== getActiveSlotId()) return;
-    if (!isCurrentMediaLoaded()) return;
 
-    acceptCurrentMedia();
     hasStartedPlaybackRef.current = true;
     setIsLoading(false);
     setIsPlaying(true);
@@ -1325,9 +1288,6 @@ function VideoPlayerComponent({
   });
 
   const handlePlaybackEnded = useEffectEvent(() => {
-    // A source change can emit `ended` as the previous element is torn down.
-    // Treat that as live-edge and the player snaps back one second after catchup.
-    if (Date.now() - acceptedMediaAtRef.current < 2000) return;
     const player = getActivePlayer();
     const duration = player?.getState().duration;
     if (onSeek && duration && Number.isFinite(duration)) {

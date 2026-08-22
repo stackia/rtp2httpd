@@ -10,15 +10,13 @@ export function useCurrentProgram(
   streamStartTime: Date,
 ): EPGProgram | null {
   const epgData = useEpgData();
-  // Playback time is already quantized to whole seconds. Deferring it here
-  // kept the pre-seek media time after a catchup jump and made the guide /
-  // Media Session think we were still on the live programme.
   const mediaTime = usePlaybackTime();
+  const streamStartMs = streamStartTime.getTime();
 
   return useMemo(() => {
     if (!channel) return null;
     const epgChannelId = getEPGChannelId(channel, epgData);
     if (!epgChannelId) return null;
-    return getCurrentProgram(epgChannelId, epgData, mseToWallClock(mediaTime, streamStartTime));
-  }, [channel, epgData, mediaTime, streamStartTime]);
+    return getCurrentProgram(epgChannelId, epgData, mseToWallClock(mediaTime, new Date(streamStartMs)));
+  }, [channel, epgData, mediaTime, streamStartMs]);
 }

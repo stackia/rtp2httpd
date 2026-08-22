@@ -179,9 +179,8 @@ function PlayerPage() {
     };
   }, []);
 
-  // Live calibration rewrites `streamStartTime` with a new Date each time the
-  // origin is refined. Catchup URLs embed `now`, so this effect must not rerun
-  // unless the user actually changed the catchup start (or left live).
+  // Same idea as the live URL identity below: a new Date with the same catchup
+  // start must not rebuild segments (catchup URLs embed `now`).
   const catchupStartMs = seekAtLiveEdge ? 0 : streamStartTime.getTime();
 
   useEffect(() => {
@@ -224,12 +223,9 @@ function PlayerPage() {
     setStreamStartTime(new Date());
   }, [currentChannel, activeSource, activeSourceIndex, catchupStartMs, seekAtLiveEdge, playbackBackendKind]);
 
-  const ignoreStaleVideoTimeUntilRef = useRef(0);
-
   const resetCurrentVideoTime = useCallback(() => {
     currentVideoTimeRef.current = 0;
     currentVideoSecondRef.current = 0;
-    ignoreStaleVideoTimeUntilRef.current = Date.now() + 2000;
     setCurrentVideoTime(0);
   }, []);
 
@@ -316,11 +312,6 @@ function PlayerPage() {
   }, [metadata, currentChannel, selectChannel]);
 
   const handleCurrentVideoTimeChange = useCallback((time: number) => {
-    // After a catchup seek the previous live element can still emit a large
-    // currentTime. Ignore that so the guide / Media Session stay on the chosen programme.
-    if (Date.now() < ignoreStaleVideoTimeUntilRef.current && time > 2 && currentVideoSecondRef.current === 0) {
-      return;
-    }
     currentVideoTimeRef.current = time;
     const currentSecond = Math.floor(time);
     if (currentSecond === currentVideoSecondRef.current) return;
