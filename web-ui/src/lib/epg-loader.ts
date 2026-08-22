@@ -42,7 +42,8 @@ export function loadEPG(url: string, validChannelIds?: Set<string>): Promise<EPG
     };
 
     const request: EPGWorkerRequest = {
-      url,
+      // Inline blob workers resolve relative URLs against `blob:`, so make this absolute first.
+      url: new URL(url, document.baseURI).href,
       validChannelIds: validChannelIds ? Array.from(validChannelIds) : undefined,
     };
     worker.postMessage(request);
