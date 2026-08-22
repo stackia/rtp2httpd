@@ -2518,7 +2518,7 @@ static int rtsp_parse_status_and_headers(const char *buf, size_t len, int *statu
     return -1;
 
   status_line_len = (size_t)(newline - buf) + 1;
-  pret = phr_parse_headers(buf + status_line_len, len - status_line_len, headers, num_headers, 0);
+  pret = phr_parse_headers(buf + status_line_len, len - status_line_len, headers, num_headers);
   if (pret == -2)
     return 0;
   if (pret < 0)

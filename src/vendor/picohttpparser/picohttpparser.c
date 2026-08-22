@@ -24,18 +24,14 @@
  * IN THE SOFTWARE.
  *
  * Modified copy of https://github.com/h2o/picohttpparser for rtp2httpd.
- * This is not the original upstream source.
+ * This is not the original upstream source. Only request/response/header
+ * parsers are kept; chunked decoding and unused compatibility APIs are omitted.
  */
 
-#include <assert.h>
 #include <stddef.h>
 #include <string.h>
 #ifdef __SSE4_2__
-#ifdef _MSC_VER
-#include <nmmintrin.h>
-#else
 #include <x86intrin.h>
-#endif
 #endif
 #include "picohttpparser.h"
 
@@ -47,11 +43,7 @@
 #define unlikely(x) (x)
 #endif
 
-#ifdef _MSC_VER
-#define ALIGNED(n) _declspec(align(n))
-#else
 #define ALIGNED(n) __attribute__((aligned(n)))
-#endif
 
 #define IS_PRINTABLE_ASCII(c) ((unsigned char)(c) - 040u < 0137u)
 
@@ -196,33 +188,6 @@ FOUND_CTL:
   *token = token_start;
 
   return buf;
-}
-
-static const char *is_complete(const char *buf, const char *buf_end, size_t last_len, int *ret) {
-  int ret_cnt = 0;
-  buf = last_len < 3 ? buf : buf + last_len - 3;
-
-  while (1) {
-    CHECK_EOF();
-    if (*buf == '\015') {
-      ++buf;
-      CHECK_EOF();
-      EXPECT_CHAR('\012');
-      ++ret_cnt;
-    } else if (*buf == '\012') {
-      ++buf;
-      ++ret_cnt;
-    } else {
-      ++buf;
-      ret_cnt = 0;
-    }
-    if (ret_cnt == 2) {
-      return buf;
-    }
-  }
-
-  *ret = -2;
-  return NULL;
 }
 
 #define PARSE_INT(valp_, mul_)                                                                                         \
@@ -400,8 +365,7 @@ static const char *parse_request(const char *buf, const char *buf_end, const cha
 }
 
 int phr_parse_request(const char *buf_start, size_t len, const char **method, size_t *method_len, const char **path,
-                      size_t *path_len, int *minor_version, struct phr_header *headers, size_t *num_headers,
-                      size_t last_len) {
+                      size_t *path_len, int *minor_version, struct phr_header *headers, size_t *num_headers) {
   const char *buf = buf_start, *buf_end = buf_start + len;
   size_t max_headers = *num_headers;
   int r;
@@ -412,12 +376,6 @@ int phr_parse_request(const char *buf_start, size_t len, const char **method, si
   *path_len = 0;
   *minor_version = -1;
   *num_headers = 0;
-
-  /* if last_len != 0, check if the request is complete (a fast countermeasure
-     againt slowloris */
-  if (last_len != 0 && is_complete(buf, buf_end, last_len, &r) == NULL) {
-    return r;
-  }
 
   if ((buf = parse_request(buf, buf_end, method, method_len, path, path_len, minor_version, headers, num_headers,
                            max_headers, &r)) == NULL) {
@@ -473,7 +431,7 @@ static const char *parse_response(const char *buf, const char *buf_end, int *min
 }
 
 int phr_parse_response(const char *buf_start, size_t len, int *minor_version, int *status, const char **msg,
-                       size_t *msg_len, struct phr_header *headers, size_t *num_headers, size_t last_len) {
+                       size_t *msg_len, struct phr_header *headers, size_t *num_headers) {
   const char *buf = buf_start, *buf_end = buf + len;
   size_t max_headers = *num_headers;
   int r;
@@ -484,12 +442,6 @@ int phr_parse_response(const char *buf_start, size_t len, int *minor_version, in
   *msg_len = 0;
   *num_headers = 0;
 
-  /* if last_len != 0, check if the response is complete (a fast countermeasure
-     against slowloris */
-  if (last_len != 0 && is_complete(buf, buf_end, last_len, &r) == NULL) {
-    return r;
-  }
-
   if ((buf = parse_response(buf, buf_end, minor_version, status, msg, msg_len, headers, num_headers, max_headers,
                             &r)) == NULL) {
     return r;
@@ -498,207 +450,18 @@ int phr_parse_response(const char *buf_start, size_t len, int *minor_version, in
   return (int)(buf - buf_start);
 }
 
-int phr_parse_headers(const char *buf_start, size_t len, struct phr_header *headers, size_t *num_headers,
-                      size_t last_len) {
+int phr_parse_headers(const char *buf_start, size_t len, struct phr_header *headers, size_t *num_headers) {
   const char *buf = buf_start, *buf_end = buf + len;
   size_t max_headers = *num_headers;
   int r;
 
   *num_headers = 0;
 
-  /* if last_len != 0, check if the response is complete (a fast countermeasure
-     against slowloris */
-  if (last_len != 0 && is_complete(buf, buf_end, last_len, &r) == NULL) {
-    return r;
-  }
-
   if ((buf = parse_headers(buf, buf_end, headers, num_headers, max_headers, &r)) == NULL) {
     return r;
   }
 
   return (int)(buf - buf_start);
-}
-
-enum {
-  CHUNKED_IN_CHUNK_SIZE,
-  CHUNKED_IN_CHUNK_EXT,
-  CHUNKED_IN_CHUNK_HEADER_EXPECT_LF,
-  CHUNKED_IN_CHUNK_DATA,
-  CHUNKED_IN_CHUNK_DATA_EXPECT_CR,
-  CHUNKED_IN_CHUNK_DATA_EXPECT_LF,
-  CHUNKED_IN_TRAILERS_LINE_HEAD,
-  CHUNKED_IN_TRAILERS_LINE_MIDDLE
-};
-
-static int decode_hex(int ch) {
-  if ('0' <= ch && ch <= '9') {
-    return ch - '0';
-  } else if ('A' <= ch && ch <= 'F') {
-    return ch - 'A' + 0xa;
-  } else if ('a' <= ch && ch <= 'f') {
-    return ch - 'a' + 0xa;
-  } else {
-    return -1;
-  }
-}
-
-ssize_t phr_decode_chunked(struct phr_chunked_decoder *decoder, char *buf, size_t *_bufsz) {
-  size_t dst = 0, src = 0, bufsz = *_bufsz;
-  ssize_t ret = -2; /* incomplete */
-
-  decoder->_total_read += bufsz;
-
-  while (1) {
-    switch (decoder->_state) {
-    case CHUNKED_IN_CHUNK_SIZE:
-      for (;; ++src) {
-        int v;
-        if (src == bufsz)
-          goto Exit;
-        if ((v = decode_hex(buf[src])) == -1) {
-          if (decoder->_hex_count == 0) {
-            ret = -1;
-            goto Exit;
-          }
-          /* the only characters that may appear after the chunk size are BWS, semicolon, or CRLF */
-          switch (buf[src]) {
-          case ' ':
-          case '\011':
-          case ';':
-          case '\012':
-          case '\015':
-            break;
-          default:
-            ret = -1;
-            goto Exit;
-          }
-          break;
-        }
-        if (decoder->_hex_count == sizeof(size_t) * 2) {
-          ret = -1;
-          goto Exit;
-        }
-        decoder->bytes_left_in_chunk = decoder->bytes_left_in_chunk * 16 + v;
-        ++decoder->_hex_count;
-      }
-      decoder->_hex_count = 0;
-      decoder->_state = CHUNKED_IN_CHUNK_EXT;
-    /* fallthru */
-    case CHUNKED_IN_CHUNK_EXT:
-      /* RFC 7230 A.2 "Line folding in chunk extensions is disallowed" */
-      for (;; ++src) {
-        if (src == bufsz)
-          goto Exit;
-        if (buf[src] == '\015') {
-          break;
-        } else if (buf[src] == '\012') {
-          ret = -1;
-          goto Exit;
-        }
-      }
-      ++src;
-      decoder->_state = CHUNKED_IN_CHUNK_HEADER_EXPECT_LF;
-    /* fallthru */
-    case CHUNKED_IN_CHUNK_HEADER_EXPECT_LF:
-      if (src == bufsz)
-        goto Exit;
-      if (buf[src] != '\012') {
-        ret = -1;
-        goto Exit;
-      }
-      ++src;
-      if (decoder->bytes_left_in_chunk == 0) {
-        if (decoder->consume_trailer) {
-          decoder->_state = CHUNKED_IN_TRAILERS_LINE_HEAD;
-          break;
-        } else {
-          goto Complete;
-        }
-      }
-      decoder->_state = CHUNKED_IN_CHUNK_DATA;
-    /* fallthru */
-    case CHUNKED_IN_CHUNK_DATA: {
-      size_t avail = bufsz - src;
-      if (avail < decoder->bytes_left_in_chunk) {
-        if (dst != src)
-          memmove(buf + dst, buf + src, avail);
-        src += avail;
-        dst += avail;
-        decoder->bytes_left_in_chunk -= avail;
-        goto Exit;
-      }
-      if (dst != src)
-        memmove(buf + dst, buf + src, decoder->bytes_left_in_chunk);
-      src += decoder->bytes_left_in_chunk;
-      dst += decoder->bytes_left_in_chunk;
-      decoder->bytes_left_in_chunk = 0;
-      decoder->_state = CHUNKED_IN_CHUNK_DATA_EXPECT_CR;
-    }
-    /* fallthru */
-    case CHUNKED_IN_CHUNK_DATA_EXPECT_CR:
-      if (src == bufsz)
-        goto Exit;
-      if (buf[src] != '\015') {
-        ret = -1;
-        goto Exit;
-      }
-      ++src;
-      decoder->_state = CHUNKED_IN_CHUNK_DATA_EXPECT_LF;
-    /* fallthru */
-    case CHUNKED_IN_CHUNK_DATA_EXPECT_LF:
-      if (src == bufsz)
-        goto Exit;
-      if (buf[src] != '\012') {
-        ret = -1;
-        goto Exit;
-      }
-      ++src;
-      decoder->_state = CHUNKED_IN_CHUNK_SIZE;
-      break;
-    case CHUNKED_IN_TRAILERS_LINE_HEAD:
-      for (;; ++src) {
-        if (src == bufsz)
-          goto Exit;
-        if (buf[src] != '\015')
-          break;
-      }
-      if (buf[src++] == '\012')
-        goto Complete;
-      decoder->_state = CHUNKED_IN_TRAILERS_LINE_MIDDLE;
-    /* fallthru */
-    case CHUNKED_IN_TRAILERS_LINE_MIDDLE:
-      for (;; ++src) {
-        if (src == bufsz)
-          goto Exit;
-        if (buf[src] == '\012')
-          break;
-      }
-      ++src;
-      decoder->_state = CHUNKED_IN_TRAILERS_LINE_HEAD;
-      break;
-    default:
-      assert(!"decoder is corrupt");
-    }
-  }
-
-Complete:
-  ret = bufsz - src;
-Exit:
-  if (dst != src)
-    memmove(buf + dst, buf + src, bufsz - src);
-  *_bufsz = dst;
-  /* if incomplete but the overhead of the chunked encoding is >=100KB and >80%, signal an error */
-  if (ret == -2) {
-    decoder->_total_overhead += bufsz - dst;
-    if (decoder->_total_overhead >= 100 * 1024 &&
-        decoder->_total_read - decoder->_total_overhead < decoder->_total_read / 4)
-      ret = -1;
-  }
-  return ret;
-}
-
-int phr_decode_chunked_is_in_data(struct phr_chunked_decoder *decoder) {
-  return decoder->_state == CHUNKED_IN_CHUNK_DATA;
 }
 
 #undef CHECK_EOF

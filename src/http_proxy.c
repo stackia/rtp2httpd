@@ -1096,7 +1096,7 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
   location_header[0] = '\0';
 
   pret = phr_parse_response((const char *)session->response_buffer, session->response_buffer_pos, &minor_version,
-                            &status, &msg, &msg_len, headers, &num_headers, 0);
+                            &status, &msg, &msg_len, headers, &num_headers);
   if (pret == -2)
     return 0; /* Need more data */
   if (pret < 0) {

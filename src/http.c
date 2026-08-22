@@ -315,7 +315,7 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
     size_t leftover;
 
     pret = phr_parse_request(inbuf, (size_t)*in_len, &method, &method_len, &path, &path_len, &minor_version, headers,
-                             &num_headers, 0);
+                             &num_headers);
     if (pret == -2) {
       if (*in_len >= INBUF_SIZE)
         return -1; /* Headers do not fit in the input buffer */
