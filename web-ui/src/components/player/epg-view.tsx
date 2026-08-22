@@ -225,12 +225,17 @@ function EPGViewComponent({
   const channelId = channel ? getEPGChannelId(channel, epgData) : null;
   const currentProgramRef = useRef<HTMLButtonElement>(null);
   const [hasBeenVisible, setHasBeenVisible] = useState(visible);
+  const isFirstProgramListLayoutRef = useRef(true);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const deferredCurrentTime = useDeferredValue(currentTime);
 
-  useEffect(() => {
-    if (visible) setHasBeenVisible(true);
-  }, [visible]);
+  // Reveal the list in the same commit as the first tab visit so useLayoutEffect
+  // can snap to the playing programme before paint. An effect here would paint
+  // the list at the top first, then smooth-scroll it into place.
+  if (visible && !hasBeenVisible) {
+    nextScrollBehaviorRef.current = "instant";
+    setHasBeenVisible(true);
+  }
 
   useEffect(() => {
     if (!hasBeenVisible) return;
@@ -274,12 +279,15 @@ function EPGViewComponent({
 
   // Auto-scroll to center current/playing program when it changes or channel changes
   useLayoutEffect(() => {
+    if (!currentPlayingProgram || !channelId || !channelPrograms.length) return;
+
+    const requestedBehavior = isFirstProgramListLayoutRef.current ? "instant" : nextScrollBehaviorRef.current;
+    isFirstProgramListLayoutRef.current = false;
+
     window.setTimeout(() => {
       nextScrollBehaviorRef.current = "smooth";
     }, 0);
 
-    if (!currentPlayingProgram || !channelId || !channelPrograms.length) return;
-    const requestedBehavior = nextScrollBehaviorRef.current;
     if (requestedBehavior === "skip") return;
     const behavior =
       requestedBehavior === "smooth" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
