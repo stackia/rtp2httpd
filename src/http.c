@@ -223,16 +223,8 @@ static int http_request_append_raw_header(http_request_t *req, const struct phr_
 }
 
 static void http_request_consume_header(http_request_t *req, const struct phr_header *header) {
-  char value_buf[HTTP_COOKIE_BUFFER_SIZE];
-  const char *raw_value;
-  size_t raw_value_len;
-
   if (!header->name)
     return;
-
-  http_headers_copy_token(value_buf, sizeof(value_buf), header->value, header->value_len);
-  raw_value = value_buf;
-  raw_value_len = strlen(value_buf);
 
   /* Save raw headers for proxy forwarding (exclude Host, Connection,
    * Content-Length, Transfer-Encoding which are handled specially,
@@ -243,33 +235,31 @@ static void http_request_consume_header(http_request_t *req, const struct phr_he
       !http_header_name_is(header, "Content-Length") && !http_header_name_is(header, "Transfer-Encoding") &&
       !http_header_name_is(header, "Accept-Encoding") && !http_header_name_is(header, "X-Forwarded-For") &&
       !http_header_name_is(header, "X-Forwarded-Host") && !http_header_name_is(header, "X-Forwarded-Proto")) {
-    const char *filtered_value = raw_value;
-    char filter_buf[HTTP_COOKIE_BUFFER_SIZE];
-    size_t filtered_len = raw_value_len;
-
     if (http_header_name_is(header, "Cookie") && config.r2h_token && config.r2h_token[0] != '\0') {
-      int flen = http_filter_cookie(raw_value, "r2h-token", filter_buf, sizeof(filter_buf));
-      if (flen > 0) {
-        filtered_value = filter_buf;
-        filtered_len = (size_t)flen;
-      } else if (flen == 0) {
-        filtered_value = NULL;
-        filtered_len = 0;
-      } else {
-        logger(LOG_WARN, "Dropping Cookie header after r2h-token filtering failed");
-        filtered_value = NULL;
-        filtered_len = 0;
-      }
-    } else if (http_header_name_is(header, "User-Agent") && config.r2h_token && config.r2h_token[0] != '\0') {
-      int flen = http_filter_user_agent_token(raw_value, filter_buf, sizeof(filter_buf));
-      if (flen > 0) {
-        filtered_value = filter_buf;
-        filtered_len = (size_t)flen;
-      }
-    }
+      char value_buf[HTTP_COOKIE_BUFFER_SIZE];
+      char filter_buf[HTTP_COOKIE_BUFFER_SIZE];
+      int flen;
 
-    if (filtered_value && filtered_value[0])
-      http_request_append_raw_header(req, header, filtered_value, filtered_len);
+      http_headers_copy_token(value_buf, sizeof(value_buf), header->value, header->value_len);
+      flen = http_filter_cookie(value_buf, "r2h-token", filter_buf, sizeof(filter_buf));
+      if (flen > 0)
+        http_request_append_raw_header(req, header, filter_buf, (size_t)flen);
+      else if (flen < 0)
+        logger(LOG_WARN, "Dropping Cookie header after r2h-token filtering failed");
+    } else if (http_header_name_is(header, "User-Agent") && config.r2h_token && config.r2h_token[0] != '\0') {
+      char value_buf[HTTP_COOKIE_BUFFER_SIZE];
+      char filter_buf[HTTP_COOKIE_BUFFER_SIZE];
+      int flen;
+
+      http_headers_copy_token(value_buf, sizeof(value_buf), header->value, header->value_len);
+      flen = http_filter_user_agent_token(value_buf, filter_buf, sizeof(filter_buf));
+      if (flen > 0)
+        http_request_append_raw_header(req, header, filter_buf, (size_t)flen);
+      else if (header->value_len > 0)
+        http_request_append_raw_header(req, header, header->value, header->value_len);
+    } else if (header->value_len > 0) {
+      http_request_append_raw_header(req, header, header->value, header->value_len);
+    }
   }
 
   if (http_header_name_is(header, "Host")) {
@@ -293,9 +283,8 @@ static void http_request_consume_header(http_request_t *req, const struct phr_he
   } else if (http_header_name_is(header, "X-Forwarded-Proto")) {
     http_headers_copy_token(req->x_forwarded_proto, sizeof(req->x_forwarded_proto), header->value, header->value_len);
   } else if (http_header_name_is(header, "Content-Length")) {
-    char *endptr;
-    long cl = strtol(value_buf, &endptr, 10);
-    if (*endptr != '\0' || cl < 0 || cl > INT_MAX)
+    long cl;
+    if (http_header_value_long(header, &cl) != 0 || cl < 0 || cl > INT_MAX)
       req->content_length = 0;
     else
       req->content_length = (int)cl;

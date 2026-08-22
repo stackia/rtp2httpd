@@ -1055,6 +1055,31 @@ static int http_proxy_is_redirect_status(int status_code) {
   return (status_code == 301 || status_code == 302 || status_code == 303 || status_code == 307 || status_code == 308);
 }
 
+/* Queue optional r2h-token Set-Cookie, then the header-block terminator. */
+static int http_proxy_queue_cookie_and_end_headers(http_proxy_session_t *session) {
+  if (session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
+    char set_cookie_header[HTTP_COOKIE_BUFFER_SIZE];
+    int cookie_len =
+        http_build_r2h_token_cookie_header(set_cookie_header, sizeof(set_cookie_header), http_proxy_get_cookie_path());
+    if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
+      if (connection_queue_output(session->conn, (const uint8_t *)set_cookie_header, cookie_len) < 0) {
+        logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
+        return -1;
+      }
+      logger(LOG_DEBUG, "HTTP Proxy: Injected Set-Cookie header for r2h-token");
+    } else if (cookie_len < 0) {
+      logger(LOG_ERROR, "HTTP Proxy: Failed to build Set-Cookie header for r2h-token");
+    }
+    session->conn->should_set_r2h_cookie = 0;
+  }
+
+  if (connection_queue_output(session->conn, (const uint8_t *)"\r\n", 2) < 0) {
+    logger(LOG_ERROR, "HTTP Proxy: Failed to send header terminator");
+    return -1;
+  }
+  return 0;
+}
+
 static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
   struct phr_header headers[HTTP_HEADERS_MAX];
   size_t num_headers = HTTP_HEADERS_MAX;
@@ -1225,28 +1250,8 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
         return -1;
       }
 
-      /* Inject Set-Cookie header if needed */
-      if (session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
-        char set_cookie_header[HTTP_COOKIE_BUFFER_SIZE];
-        int cookie_len = http_build_r2h_token_cookie_header(set_cookie_header, sizeof(set_cookie_header),
-                                                            http_proxy_get_cookie_path());
-        if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
-          if (connection_queue_output(session->conn, (const uint8_t *)set_cookie_header, cookie_len) < 0) {
-            logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
-            return -1;
-          }
-          logger(LOG_DEBUG, "HTTP Proxy: Injected Set-Cookie header for r2h-token");
-        } else if (cookie_len < 0) {
-          logger(LOG_ERROR, "HTTP Proxy: Failed to build Set-Cookie header for r2h-token");
-        }
-        session->conn->should_set_r2h_cookie = 0;
-      }
-
-      /* Send final CRLF to end headers */
-      if (connection_queue_output(session->conn, (const uint8_t *)"\r\n", 2) < 0) {
-        logger(LOG_ERROR, "HTTP Proxy: Failed to send header terminator");
+      if (http_proxy_queue_cookie_and_end_headers(session) < 0)
         return -1;
-      }
     } else {
       /* No Location rewriting needed - use original logic */
       size_t headers_without_crlf =
@@ -1258,28 +1263,8 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
         return -1;
       }
 
-      /* Inject Set-Cookie header if needed */
-      if (session->conn->should_set_r2h_cookie && config.r2h_token && config.r2h_token[0] != '\0') {
-        char set_cookie_header[HTTP_COOKIE_BUFFER_SIZE];
-        int cookie_len = http_build_r2h_token_cookie_header(set_cookie_header, sizeof(set_cookie_header),
-                                                            http_proxy_get_cookie_path());
-        if (cookie_len > 0 && cookie_len < (int)sizeof(set_cookie_header)) {
-          if (connection_queue_output(session->conn, (const uint8_t *)set_cookie_header, cookie_len) < 0) {
-            logger(LOG_ERROR, "HTTP Proxy: Failed to send Set-Cookie header");
-            return -1;
-          }
-          logger(LOG_DEBUG, "HTTP Proxy: Injected Set-Cookie header for r2h-token");
-        } else if (cookie_len < 0) {
-          logger(LOG_ERROR, "HTTP Proxy: Failed to build Set-Cookie header for r2h-token");
-        }
-        session->conn->should_set_r2h_cookie = 0; /* Only set once */
-      }
-
-      /* Send final \r\n to end headers */
-      if (connection_queue_output(session->conn, (const uint8_t *)"\r\n", 2) < 0) {
-        logger(LOG_ERROR, "HTTP Proxy: Failed to send header terminator");
+      if (http_proxy_queue_cookie_and_end_headers(session) < 0)
         return -1;
-      }
     }
 
     session->headers_forwarded = 1;

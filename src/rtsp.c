@@ -2478,10 +2478,11 @@ static const char *rtsp_find_mem(const char *hay, size_t hay_len, const char *ne
 static int rtsp_parse_status_and_headers(const char *buf, size_t len, int *status_out, struct phr_header *headers,
                                          size_t *num_headers, size_t *consumed) {
   const char *newline;
-  char status_line[128];
+  const char *line_end;
+  const char *p;
   size_t status_line_len;
-  size_t copy_len;
-  int status = 0;
+  unsigned status = 0;
+  int digits = 0;
   int pret;
 
   if (!buf || !status_out || !headers || !num_headers || !consumed)
@@ -2496,20 +2497,34 @@ static int rtsp_parse_status_and_headers(const char *buf, size_t len, int *statu
   if (!newline)
     return 0;
 
-  status_line_len = (size_t)(newline - buf) + 1;
-  copy_len = status_line_len < sizeof(status_line) ? status_line_len : sizeof(status_line) - 1;
-  memcpy(status_line, buf, copy_len);
-  status_line[copy_len] = '\0';
-  if (sscanf(status_line, "RTSP/1.0 %d", &status) != 1 || status < 100 || status > 999)
+  line_end = newline;
+  if (line_end > buf && *(line_end - 1) == '\r')
+    line_end--;
+
+  p = buf + 8;
+  if (p >= line_end || (*p != ' ' && *p != '\t'))
+    return -1;
+  while (p < line_end && (*p == ' ' || *p == '\t'))
+    p++;
+
+  while (p < line_end && *p >= '0' && *p <= '9') {
+    if (digits >= 3)
+      return -1;
+    status = status * 10u + (unsigned)(*p - '0');
+    digits++;
+    p++;
+  }
+  if (digits != 3 || status < 100 || status > 999)
     return -1;
 
+  status_line_len = (size_t)(newline - buf) + 1;
   pret = phr_parse_headers(buf + status_line_len, len - status_line_len, headers, num_headers, 0);
   if (pret == -2)
     return 0;
   if (pret < 0)
     return -1;
 
-  *status_out = status;
+  *status_out = (int)status;
   *consumed = status_line_len + (size_t)pret;
   return 1;
 }
@@ -2517,12 +2532,8 @@ static int rtsp_parse_status_and_headers(const char *buf, size_t len, int *statu
 static int rtsp_parse_response_header(rtsp_session_t *session, const char *response, size_t response_buflen,
                                       size_t *response_offset, size_t *response_len, struct phr_header *headers,
                                       size_t *num_headers) {
-  char *session_header = NULL;
   char *transport_header = NULL;
   char *location_header = NULL;
-  char *public_header = NULL;
-  struct phr_header parsed[HTTP_HEADERS_MAX];
-  size_t parsed_num = HTTP_HEADERS_MAX;
   const char *rtsp_start;
   size_t remain;
   size_t consumed = 0;
@@ -2530,8 +2541,10 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
   int parse_result;
   int result = 0;
 
-  if (num_headers)
-    *num_headers = 0;
+  if (!headers || !num_headers)
+    return -1;
+
+  *num_headers = 0;
 
   /* Locate RTSP response start (skip any TCP interleaved data before it)
    * TCP interleaved data packets start with '$', RTSP responses start with
@@ -2545,28 +2558,27 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
 
   *response_offset = (size_t)(rtsp_start - response);
   remain = response_buflen - *response_offset;
-  parse_result = rtsp_parse_status_and_headers(rtsp_start, remain, &status_code, parsed, &parsed_num, &consumed);
+  *num_headers = HTTP_HEADERS_MAX;
+  parse_result = rtsp_parse_status_and_headers(rtsp_start, remain, &status_code, headers, num_headers, &consumed);
   if (parse_result == 0) {
+    *num_headers = 0;
     *response_len = 0;
     return 1; /* Need more data */
   }
   if (parse_result < 0) {
+    *num_headers = 0;
     logger(LOG_ERROR, "RTSP: Invalid response format");
     return -1;
   }
 
   *response_len = consumed;
-  if (headers && num_headers) {
-    memcpy(headers, parsed, parsed_num * sizeof(parsed[0]));
-    *num_headers = parsed_num;
-  }
 
   /* If Content-Length is present, ensure the full body has arrived before
    * declaring the response complete.  This is critical for DESCRIBE responses
    * whose SDP body must be available when rtsp_parse_describe_sdp() runs. */
   if (status_code == 200) {
     long cl = 0;
-    if (http_headers_get_long(parsed, parsed_num, "Content-Length", &cl) == 0 && cl > 0) {
+    if (http_headers_get_long(headers, *num_headers, "Content-Length", &cl) == 0 && cl > 0) {
       size_t total_needed = *response_offset + *response_len + (size_t)cl;
       if (response_buflen < total_needed) {
         *response_len = 0;
@@ -2579,7 +2591,7 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
   if (status_code >= 300 && status_code < 400) {
     logger(LOG_DEBUG, "RTSP: Received redirect response %d", status_code);
 
-    location_header = http_headers_dup(parsed, parsed_num, "Location");
+    location_header = http_headers_dup(headers, *num_headers, "Location");
     if (!location_header) {
       logger(LOG_ERROR, "RTSP: Redirect response missing Location header");
       result = -1;
@@ -2599,7 +2611,7 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
       goto cleanup;
     }
 
-    www_auth_header = http_headers_dup(parsed, parsed_num, "WWW-Authenticate");
+    www_auth_header = http_headers_dup(headers, *num_headers, "WWW-Authenticate");
     if (!www_auth_header) {
       logger(LOG_ERROR, "RTSP: 401 response missing WWW-Authenticate header");
       result = -1;
@@ -2664,13 +2676,13 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
   }
 
   if (session->state == RTSP_STATE_AWAITING_PLAY) {
-    rtsp_parse_play_metadata(session, parsed, parsed_num);
+    rtsp_parse_play_metadata(session, headers, *num_headers);
   }
 
   if (session->state == RTSP_STATE_AWAITING_OPTIONS) {
-    public_header = http_headers_dup(parsed, parsed_num, "Public");
+    const struct phr_header *public_header = http_headers_find(headers, *num_headers, "Public");
     if (public_header) {
-      if (strstr(public_header, "GET_PARAMETER")) {
+      if (rtsp_find_mem(public_header->value, public_header->value_len, "GET_PARAMETER", sizeof("GET_PARAMETER") - 1)) {
         session->use_get_parameter = 1;
         logger(LOG_DEBUG, "RTSP: Server supports GET_PARAMETER for keepalive");
       } else {
@@ -2678,23 +2690,20 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
         logger(LOG_DEBUG, "RTSP: Server does not advertise GET_PARAMETER, will "
                           "use OPTIONS for keepalive");
       }
-      logger(LOG_DEBUG, "RTSP: Server advertised methods: %s", public_header);
+      logger(LOG_DEBUG, "RTSP: Server advertised methods: %.*s", (int)public_header->value_len, public_header->value);
     } else {
       logger(LOG_DEBUG, "RTSP: No Public header in OPTIONS response, will try "
                         "GET_PARAMETER with fallback");
     }
   }
 
-  session_header = http_headers_dup(parsed, parsed_num, "Session");
-  if (session_header) {
-    char *semicolon = strchr(session_header, ';');
+  if (http_headers_copy(headers, *num_headers, "Session", session->session_id, sizeof(session->session_id)) == 0) {
+    char *semicolon = strchr(session->session_id, ';');
     if (semicolon)
       *semicolon = '\0';
-    strncpy(session->session_id, session_header, sizeof(session->session_id) - 1);
-    session->session_id[sizeof(session->session_id) - 1] = '\0';
   }
 
-  transport_header = http_headers_dup(parsed, parsed_num, "Transport");
+  transport_header = http_headers_dup(headers, *num_headers, "Transport");
   if (transport_header) {
     rtsp_parse_transport_header(session, transport_header);
   }
@@ -2702,14 +2711,10 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
   result = 0;
 
 cleanup:
-  if (session_header)
-    free(session_header);
   if (transport_header)
     free(transport_header);
   if (location_header)
     free(location_header);
-  if (public_header)
-    free(public_header);
 
   return result;
 }
@@ -2927,8 +2932,8 @@ static void rtsp_close_udp_sockets(rtsp_session_t *session, const char *reason) 
 
 static void rtsp_parse_play_metadata(rtsp_session_t *session, const struct phr_header *headers, size_t num_headers) {
   stream_metadata_t *metadata;
-  char *scale_header;
-  char *range_header;
+  const struct phr_header *scale_header;
+  const struct phr_header *range_header;
 
   if (!headers)
     return;
@@ -2937,36 +2942,35 @@ static void rtsp_parse_play_metadata(rtsp_session_t *session, const struct phr_h
   if (!metadata)
     return;
 
-  scale_header = http_headers_dup(headers, num_headers, "Scale");
-  if (scale_header) {
+  scale_header = http_headers_find(headers, num_headers, "Scale");
+  if (scale_header && scale_header->value_len > 0 && scale_header->value_len < 64) {
+    char scale_buf[64];
     char *end = NULL;
     double scale;
 
+    http_headers_copy_token(scale_buf, sizeof(scale_buf), scale_header->value, scale_header->value_len);
     errno = 0;
-    scale = strtod(scale_header, &end);
+    scale = strtod(scale_buf, &end);
     while (end && (*end == ' ' || *end == '\t'))
       end++;
-    if (end != scale_header && end && *end == '\0' && errno != ERANGE && isfinite(scale)) {
+    if (end != scale_buf && end && *end == '\0' && errno != ERANGE && isfinite(scale)) {
       metadata->playback_scale = scale;
       metadata->playback_scale_known = 1;
     }
-    free(scale_header);
   }
 
-  range_header = http_headers_dup(headers, num_headers, "Range");
-  if (range_header) {
-    size_t len = strlen(range_header);
-    int valid = len > 0 && len < sizeof(metadata->playback_range);
+  range_header = http_headers_find(headers, num_headers, "Range");
+  if (range_header && range_header->value_len > 0 && range_header->value_len < sizeof(metadata->playback_range)) {
+    int valid = 1;
 
-    for (size_t i = 0; valid && i < len; i++) {
-      unsigned char ch = (unsigned char)range_header[i];
+    for (size_t i = 0; valid && i < range_header->value_len; i++) {
+      unsigned char ch = (unsigned char)range_header->value[i];
       if (ch < 0x20 || ch > 0x7e)
         valid = 0;
     }
-    if (valid) {
-      memcpy(metadata->playback_range, range_header, len + 1);
-    }
-    free(range_header);
+    if (valid)
+      http_headers_copy_token(metadata->playback_range, sizeof(metadata->playback_range), range_header->value,
+                              range_header->value_len);
   }
 }
 
@@ -3116,10 +3120,16 @@ static int rtsp_parse_npt_time(const char *value, const char **end_out, double *
 static void rtsp_parse_describe_sdp(rtsp_session_t *session, const struct phr_header *headers, size_t num_headers,
                                     const char *sdp_body) {
   stream_metadata_t *metadata = rtsp_metadata(session);
+  char content_base[RTSP_SERVER_URL_SIZE];
+  const char *base_url = session->server_url;
+  int has_content_base = 0;
+
   session->setup_url[0] = '\0';
 
-  char *content_base = http_headers_dup(headers, num_headers, "Content-Base");
-  const char *base_url = content_base ? content_base : session->server_url;
+  if (http_headers_copy(headers, num_headers, "Content-Base", content_base, sizeof(content_base)) == 0) {
+    base_url = content_base;
+    has_content_base = 1;
+  }
 
   if (*sdp_body == '\0')
     goto done;
@@ -3211,10 +3221,8 @@ static void rtsp_parse_describe_sdp(rtsp_session_t *session, const struct phr_he
   }
 
 done:
-  if (content_base) {
+  if (has_content_base)
     logger(LOG_DEBUG, "RTSP: Content-Base: %s", content_base);
-    free(content_base);
-  }
 }
 
 /*

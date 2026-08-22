@@ -27,8 +27,7 @@ void http_headers_copy_token(char *dest, size_t dest_size, const char *src, size
   dest[src_len] = '\0';
 }
 
-static const struct phr_header *http_headers_find(const struct phr_header *headers, size_t num_headers,
-                                                  const char *name) {
+const struct phr_header *http_headers_find(const struct phr_header *headers, size_t num_headers, const char *name) {
   const struct phr_header *found = NULL;
 
   if (!headers || !name)
@@ -63,23 +62,19 @@ char *http_headers_dup(const struct phr_header *headers, size_t num_headers, con
   if (!copy)
     return NULL;
 
-  memcpy(copy, header->value, header->value_len);
-  copy[header->value_len] = '\0';
+  http_headers_copy_token(copy, header->value_len + 1, header->value, header->value_len);
   return copy;
 }
 
-int http_headers_get_long(const struct phr_header *headers, size_t num_headers, const char *name, long *out) {
-  const struct phr_header *header = http_headers_find(headers, num_headers, name);
+int http_header_value_long(const struct phr_header *header, long *out) {
   char tmp[32];
   char *endptr = NULL;
   long value;
 
-  if (!header || !out)
+  if (!header || !header->value || !out || header->value_len == 0 || header->value_len >= sizeof(tmp))
     return -1;
 
   http_headers_copy_token(tmp, sizeof(tmp), header->value, header->value_len);
-  if (tmp[0] == '\0')
-    return -1;
 
   errno = 0;
   value = strtol(tmp, &endptr, 10);
@@ -88,6 +83,10 @@ int http_headers_get_long(const struct phr_header *headers, size_t num_headers, 
 
   *out = value;
   return 0;
+}
+
+int http_headers_get_long(const struct phr_header *headers, size_t num_headers, const char *name, long *out) {
+  return http_header_value_long(http_headers_find(headers, num_headers, name), out);
 }
 
 size_t http_headers_without_final_blank_line(const char *buf, size_t consumed) {
