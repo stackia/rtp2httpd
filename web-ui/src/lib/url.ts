@@ -37,7 +37,7 @@ export function toPlaylistRelativePath(url: string): string {
     return url;
   }
 
-  if (!/^https?:\/\//i.test(url)) {
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
     return url;
   }
 

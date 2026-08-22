@@ -2,11 +2,7 @@ import type { PlayerEventMap, PlayerSegment } from "../types";
 
 export function resolveMediaUrl(url: string): string {
   try {
-    const resolved = new URL(url, document.baseURI);
-    if (typeof window !== "undefined" && window.location.protocol === "https:" && resolved.protocol === "http:") {
-      resolved.protocol = "https:";
-    }
-    return resolved.href;
+    return new URL(url, document.baseURI).href;
   } catch {
     return url;
   }
