@@ -102,8 +102,8 @@ static void lock_blocked_ips(uint32_t owner_pid) {
 
 static void unlock_blocked_ips(uint32_t owner_pid) {
   uint32_t expected_owner = owner_pid;
-  atomic_compare_exchange_strong_explicit(&status_shared->blocked_ip_owner_pid, &expected_owner, 0, memory_order_release,
-                                          memory_order_relaxed);
+  atomic_compare_exchange_strong_explicit(&status_shared->blocked_ip_owner_pid, &expected_owner, 0,
+                                          memory_order_release, memory_order_relaxed);
 }
 
 /* Extract the IP (or "localhost") from a status client address string. */
