@@ -208,9 +208,8 @@ export function getEPGChannelId(
 }
 
 /**
- * Get current program for a channel.
- * Programs are sorted by start time, so we binary-search the last programme
- * that has started and then walk back only if entries overlap.
+ * Get current program for a channel
+ * Uses findLast for efficient reverse search (programs are sorted by start time)
  */
 export function getCurrentProgram(channelId: string, epgData: EPGData, time: Date = new Date()): EPGProgram | null {
   const programs = epgData[channelId];
@@ -218,29 +217,8 @@ export function getCurrentProgram(channelId: string, epgData: EPGData, time: Dat
     return null;
   }
 
-  const timeMs = time.getTime();
-  let lo = 0;
-  let hi = programs.length - 1;
-  let lastStarted = -1;
-
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if (programs[mid].start.getTime() <= timeMs) {
-      lastStarted = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-
-  for (let i = lastStarted; i >= 0; i--) {
-    const program = programs[i];
-    if (program.end.getTime() > timeMs) {
-      return program;
-    }
-  }
-
-  return null;
+  // Use findLast to search backwards - more likely to hit recent/current programs
+  return programs.findLast((p) => p.start <= time && p.end > time) || null;
 }
 
 /**
