@@ -123,13 +123,6 @@ endif()
 
 target_compile_options(rtp2httpd PRIVATE ${WARN_FLAGS})
 
-# Keep upstream vendor sources untouched: do not enforce first-party warning flags.
-set_source_files_properties(
-  src/vendor/picohttpparser/picohttpparser.c
-  PROPERTIES
-    COMPILE_OPTIONS "-w"
-)
-
 # ── Build type default ──────────────────────────────────────────────
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)

@@ -1,5 +1,6 @@
 /*
- * Tiny md5 implementation taken from https://github.com/Zunawe/md5-c
+ * Modified copy of https://github.com/Zunawe/md5-c for rtp2httpd.
+ * This is not the original upstream source.
  */
 
 #include "md5.h"

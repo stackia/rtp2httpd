@@ -1,3 +1,8 @@
+/*
+ * Modified copy of https://github.com/Zunawe/md5-c for rtp2httpd.
+ * This is not the original upstream source.
+ */
+
 #ifndef MD5_H
 #define MD5_H
 

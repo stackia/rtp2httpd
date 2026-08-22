@@ -2,7 +2,8 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file.
 
-// Hashmap implementation from https://github.com/tidwall/hashmap.c
+// Modified copy of https://github.com/tidwall/hashmap.c for rtp2httpd.
+// This is not the original upstream source.
 
 #ifndef HASHMAP_H
 #define HASHMAP_H
