@@ -180,6 +180,40 @@ int http_build_r2h_token_cookie_header(char *buffer, size_t buffer_size, const c
   return written;
 }
 
+static void http_set_forwarded_proto_if_empty(http_request_t *req, const char *proto) {
+  size_t i;
+
+  if (!req || !proto || proto[0] == '\0' || req->x_forwarded_proto[0] != '\0')
+    return;
+
+  for (i = 0; proto[i] != '\0' && proto[i] != ';' && proto[i] != ',' && proto[i] != '"' &&
+              i < sizeof(req->x_forwarded_proto) - 1;
+       i++) {
+    char c = proto[i];
+    if (c >= 'A' && c <= 'Z')
+      c = (char)(c - 'A' + 'a');
+    req->x_forwarded_proto[i] = c;
+  }
+  req->x_forwarded_proto[i] = '\0';
+}
+
+static void http_apply_forwarded_header_proto(http_request_t *req, const char *value) {
+  const char *proto;
+
+  if (!req || !value || value[0] == '\0')
+    return;
+
+  proto = strstr(value, "proto=");
+  if (!proto)
+    return;
+
+  proto += 6;
+  if (*proto == '"')
+    proto++;
+
+  http_set_forwarded_proto_if_empty(req, proto);
+}
+
 void http_request_init(http_request_t *req) {
   if (!req)
     return;
@@ -286,7 +320,9 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
         if (strcasecmp(inbuf, "Host") != 0 && strcasecmp(inbuf, "Connection") != 0 &&
             strcasecmp(inbuf, "Content-Length") != 0 && strcasecmp(inbuf, "Transfer-Encoding") != 0 &&
             strcasecmp(inbuf, "Accept-Encoding") != 0 && strcasecmp(inbuf, "X-Forwarded-For") != 0 &&
-            strcasecmp(inbuf, "X-Forwarded-Host") != 0 && strcasecmp(inbuf, "X-Forwarded-Proto") != 0) {
+            strcasecmp(inbuf, "X-Forwarded-Host") != 0 && strcasecmp(inbuf, "X-Forwarded-Proto") != 0 &&
+            strcasecmp(inbuf, "X-Forwarded-Ssl") != 0 && strcasecmp(inbuf, "Front-End-Https") != 0 &&
+            strcasecmp(inbuf, "Forwarded") != 0) {
           const char *filtered_value = value;
           char filter_buf[HTTP_COOKIE_BUFFER_SIZE];
 
@@ -366,8 +402,15 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
           strncpy(req->x_forwarded_host, value, sizeof(req->x_forwarded_host) - 1);
           req->x_forwarded_host[sizeof(req->x_forwarded_host) - 1] = '\0';
         } else if (strcasecmp(inbuf, "X-Forwarded-Proto") == 0) {
-          strncpy(req->x_forwarded_proto, value, sizeof(req->x_forwarded_proto) - 1);
-          req->x_forwarded_proto[sizeof(req->x_forwarded_proto) - 1] = '\0';
+          http_set_forwarded_proto_if_empty(req, value);
+        } else if (strcasecmp(inbuf, "X-Forwarded-Ssl") == 0) {
+          if (strcasecmp(value, "on") == 0)
+            http_set_forwarded_proto_if_empty(req, "https");
+        } else if (strcasecmp(inbuf, "Front-End-Https") == 0) {
+          if (strcasecmp(value, "on") == 0)
+            http_set_forwarded_proto_if_empty(req, "https");
+        } else if (strcasecmp(inbuf, "Forwarded") == 0) {
+          http_apply_forwarded_header_proto(req, value);
         } else if (strcasecmp(inbuf, "Content-Length") == 0) {
           char *endptr;
           long cl = strtol(value, &endptr, 10);

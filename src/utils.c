@@ -540,9 +540,29 @@ int sockaddr_format_ip(const struct sockaddr *sa, char *buf, size_t size) {
   return inet_ntop(sa->sa_family, addr, buf, (socklen_t)size) ? 0 : -1;
 }
 
+static void normalize_url_proto(char *proto_buf, size_t proto_buf_size, const char *proto) {
+  size_t i;
+
+  if (!proto_buf || proto_buf_size == 0)
+    return;
+
+  proto_buf[0] = '\0';
+  if (!proto || proto[0] == '\0')
+    return;
+
+  for (i = 0; proto[i] != '\0' && i < proto_buf_size - 1; i++) {
+    char c = proto[i];
+    if (c >= 'A' && c <= 'Z')
+      c = (char)(c - 'A' + 'a');
+    proto_buf[i] = c;
+  }
+  proto_buf[i] = '\0';
+}
+
 char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host, const char *x_forwarded_proto) {
   const char *host = NULL;
   const char *proto = "http";
+  char normalized_proto[16];
   char *base_url = NULL;
 
   if (config.use_relative_path_in_m3u) {
@@ -601,14 +621,16 @@ char *build_proxy_base_url(const char *host_header, const char *x_forwarded_host
 
     const char *prefix = (config.app_path_prefix && config.app_path_prefix[0] != '\0') ? config.app_path_prefix : "";
 
+    normalize_url_proto(normalized_proto, sizeof(normalized_proto), proto);
+
     /* Build base URL from host, proto, and public app path prefix */
-    size_t url_len = strlen(proto) + 3 + strlen(host) + strlen(prefix) + 2; /* proto://host[/prefix]/ */
+    size_t url_len = strlen(normalized_proto) + 3 + strlen(host) + strlen(prefix) + 2; /* proto://host[/prefix]/ */
     base_url = malloc(url_len);
     if (!base_url) {
       logger(LOG_ERROR, "Failed to allocate base URL");
       return NULL;
     }
-    snprintf(base_url, url_len, "%s://%s%s/", proto, host, prefix);
+    snprintf(base_url, url_len, "%s://%s%s/", normalized_proto, host, prefix);
   } else {
     /* Fallback to get_server_address */
     base_url = get_server_address();
