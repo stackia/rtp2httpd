@@ -31,7 +31,8 @@ typedef enum {
   STATUS_500 = 5,
   STATUS_401 = 6,
   STATUS_304 = 7,
-  STATUS_204 = 8
+  STATUS_204 = 8,
+  STATUS_429 = 9
 } http_status_t;
 
 /* HTTP request parsing state */
@@ -220,6 +221,13 @@ void http_send_503(connection_t *conn);
  * @param conn Connection object
  */
 void http_send_401(connection_t *conn);
+
+/**
+ * Send HTTP 429 Too Many Requests response
+ * @param conn Connection object
+ * @param retry_after_sec Retry-After value in seconds (minimum 1)
+ */
+void http_send_429(connection_t *conn, int retry_after_sec);
 
 /**
  * Parse URL and extract components (protocol, host, port, path)

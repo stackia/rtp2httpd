@@ -25,6 +25,17 @@ typedef enum {
 
 #define SSE_BUFFER_SIZE 262144 /* 256k */
 
+/* Temporary IP block after a status-page disconnect, so players cannot immediately reconnect */
+#define STATUS_MAX_BLOCKED_IPS 64
+#define STATUS_BLOCKED_IP_LEN 64
+#define STATUS_DISCONNECT_IP_BLOCK_MS 5000
+
+/* One blocked client IP stored in shared memory */
+typedef struct {
+  char ip[STATUS_BLOCKED_IP_LEN]; /* Numeric IP, "localhost", or X-Forwarded-For value */
+  int64_t expires_at_ms;          /* Monotonic expiry from get_time_ms(); 0 if unused */
+} blocked_ip_entry_t;
+
 /* Client state types for status display */
 typedef enum {
   CLIENT_STATE_CONNECTING = 0,
@@ -171,6 +182,10 @@ typedef struct {
 
   /* Per-client statistics array */
   client_stats_t clients[STATUS_MAX_CLIENTS];
+
+  /* Temporary client-IP block list used after a status-page disconnect */
+  _Atomic uint32_t blocked_ip_owner_pid; /* Worker PID holding the short block-list guard */
+  blocked_ip_entry_t blocked_ips[STATUS_MAX_BLOCKED_IPS];
 } status_shared_t;
 
 /* Global pointer to shared memory segment */
@@ -249,11 +264,27 @@ void status_add_log_entry(loglevel_t level, const char *message);
 /**
  * Handle API request to disconnect a client
  * RESTful: POST/DELETE <status-path>/api/disconnect with form data body
- * "client_id=IP:port-workerN-seqM" Sets disconnect flag in shared memory and
- * notifies worker to close connection
+ * "client_id=IP:port-workerN-seqM" Sets disconnect flag in shared memory,
+ * temporarily blocks the client IP, and notifies worker to close connection
  * @param c Connection object
  */
 void handle_disconnect_client(connection_t *c);
+
+/**
+ * Block new connections from the IP in a status client address string
+ * (formats: "IP:port", "[IPv6]:port", "localhost", or a bare X-Forwarded-For IP)
+ * for STATUS_DISCONNECT_IP_BLOCK_MS. Re-blocking the same IP refreshes expiry.
+ * @param client_addr Client address string from status tracking
+ */
+void status_block_client_addr(const char *client_addr);
+
+/**
+ * Check whether the IP in a client address string is currently blocked
+ * @param client_addr Client address string (same formats as status_block_client_addr)
+ * @param retry_after_sec Optional out-parameter for remaining block seconds
+ * @return 1 if blocked, 0 otherwise
+ */
+int status_client_addr_is_blocked(const char *client_addr, int *retry_after_sec);
 
 /**
  * Handle API request to clear logs
