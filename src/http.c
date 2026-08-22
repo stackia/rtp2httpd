@@ -25,6 +25,7 @@ static const char *response_codes[] = {
     "HTTP/1.1 401 Unauthorized\r\n",          /* 6 */
     "HTTP/1.1 304 Not Modified\r\n",          /* 7 */
     "HTTP/1.1 204 No Content\r\n",            /* 8 */
+    "HTTP/1.1 429 Too Many Requests\r\n",     /* 9 */
 };
 
 void send_http_headers(connection_t *c, http_status_t status, const char *content_type, const char *extra_headers) {
@@ -728,6 +729,16 @@ void http_send_401(connection_t *conn) {
   static const char body[] = "<!doctype html><title>401</title>Unauthorized";
 
   http_send_error(conn, STATUS_401, "WWW-Authenticate: Bearer\r\n", body, sizeof(body) - 1);
+}
+
+void http_send_429(connection_t *conn, int retry_after_sec) {
+  static const char body[] = "<!doctype html><title>429</title>Too Many Requests";
+  char extra_headers[64];
+
+  if (retry_after_sec < 1)
+    retry_after_sec = 1;
+  snprintf(extra_headers, sizeof(extra_headers), "Retry-After: %d\r\n", retry_after_sec);
+  http_send_error(conn, STATUS_429, extra_headers, body, sizeof(body) - 1);
 }
 
 int http_parse_url_components(const char *url, char *protocol, char *host, char *port, char *path) {

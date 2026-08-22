@@ -863,6 +863,22 @@ int connection_route_and_start(connection_t *c) {
     logger(LOG_DEBUG, "Host header validated: %s", c->http_req.hostname);
   }
 
+  /* Override client address with X-Forwarded-For if present and enabled */
+  if ((protocol[0] != '\0' || config.xff) && c->http_req.x_forwarded_for[0] != '\0') {
+    logger(LOG_INFO, "X-Forwarded-For accepted: %s", c->http_req.x_forwarded_for);
+    snprintf(client_addr_str, sizeof(client_addr_str), "%s", c->http_req.x_forwarded_for);
+  }
+
+  /* Reject reconnects from an IP that was just force-disconnected */
+  {
+    int retry_after_sec = 0;
+    if (status_client_addr_is_blocked(client_addr_str, &retry_after_sec)) {
+      logger(LOG_INFO, "Rejecting client %s: IP temporarily blocked after disconnect", client_addr_str);
+      http_send_429(c, retry_after_sec);
+      return 0;
+    }
+  }
+
   if (strip_app_path_prefix(url, internal_url_buf, sizeof(internal_url_buf)) != 0) {
     http_send_404(c);
     return 0;
@@ -1166,14 +1182,6 @@ int connection_route_and_start(connection_t *c) {
     }
 
     display_url[url_len] = '\0';
-
-    /* Override client address with X-Forwarded-For if present and enabled */
-    if ((protocol[0] != '\0' || config.xff) && c->http_req.x_forwarded_for[0] != '\0') {
-      /* Behind proxy with X-Forwarded-For - use it directly (already formatted)
-       */
-      logger(LOG_INFO, "X-Forwarded-For accepted: %s", c->http_req.x_forwarded_for);
-      snprintf(client_addr_str, sizeof(client_addr_str), "%s", c->http_req.x_forwarded_for);
-    }
 
     c->status_index = status_register_client(client_addr_str, display_url);
     if (c->status_index < 0) {

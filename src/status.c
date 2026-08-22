@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -88,6 +89,151 @@ static void unlock_client_admission(uint32_t owner_pid) {
   uint32_t expected_owner = owner_pid;
   atomic_compare_exchange_strong_explicit(&status_shared->client_admission_owner_pid, &expected_owner, 0,
                                           memory_order_release, memory_order_relaxed);
+}
+
+static void lock_blocked_ips(uint32_t owner_pid) {
+  uint32_t expected_owner = 0;
+  while (!atomic_compare_exchange_weak_explicit(&status_shared->blocked_ip_owner_pid, &expected_owner, owner_pid,
+                                                memory_order_acquire, memory_order_relaxed)) {
+    expected_owner = 0;
+    usleep(100);
+  }
+}
+
+static void unlock_blocked_ips(uint32_t owner_pid) {
+  uint32_t expected_owner = owner_pid;
+  atomic_compare_exchange_strong_explicit(&status_shared->blocked_ip_owner_pid, &expected_owner, 0,
+                                          memory_order_release, memory_order_relaxed);
+}
+
+/* Extract the IP (or "localhost") from a status client address string. */
+static int extract_client_ip(const char *client_addr, char *ip, size_t ip_size) {
+  size_t addr_len;
+
+  if (!client_addr || !ip || ip_size == 0)
+    return -1;
+
+  ip[0] = '\0';
+  if (client_addr[0] == '\0' || strcmp(client_addr, "unknown") == 0)
+    return -1;
+
+  if (client_addr[0] == '[') {
+    const char *end = strchr(client_addr, ']');
+    if (!end)
+      return -1;
+    addr_len = (size_t)(end - client_addr - 1);
+    if (addr_len == 0 || addr_len >= ip_size)
+      return -1;
+    memcpy(ip, client_addr + 1, addr_len);
+    ip[addr_len] = '\0';
+  } else {
+    const char *first_colon = strchr(client_addr, ':');
+    const char *last_colon = strrchr(client_addr, ':');
+    if (first_colon && first_colon == last_colon) {
+      addr_len = (size_t)(last_colon - client_addr);
+      if (addr_len == 0 || addr_len >= ip_size)
+        return -1;
+      memcpy(ip, client_addr, addr_len);
+      ip[addr_len] = '\0';
+    } else {
+      strncpy(ip, client_addr, ip_size - 1);
+      ip[ip_size - 1] = '\0';
+    }
+  }
+
+  /* Normalize IPv4-mapped IPv6 so ::ffff:1.2.3.4 matches 1.2.3.4 */
+  if (strncasecmp(ip, "::ffff:", 7) == 0 && strchr(ip + 7, ':') == NULL) {
+    size_t mapped_len = strlen(ip + 7);
+    if (mapped_len == 0)
+      return -1;
+    memmove(ip, ip + 7, mapped_len + 1);
+  }
+
+  return ip[0] != '\0' ? 0 : -1;
+}
+
+void status_block_client_addr(const char *client_addr) {
+  char ip[STATUS_BLOCKED_IP_LEN];
+  uint32_t owner_pid;
+  int64_t now_ms;
+  int64_t expires_at_ms;
+  int match_index = -1;
+  int free_index = -1;
+  int oldest_index = 0;
+
+  if (!status_shared || extract_client_ip(client_addr, ip, sizeof(ip)) != 0)
+    return;
+
+  owner_pid = (uint32_t)getpid();
+  now_ms = get_time_ms();
+  expires_at_ms = now_ms + STATUS_DISCONNECT_IP_BLOCK_MS;
+
+  lock_blocked_ips(owner_pid);
+  for (int i = 0; i < STATUS_MAX_BLOCKED_IPS; i++) {
+    blocked_ip_entry_t *entry = &status_shared->blocked_ips[i];
+    int expired = entry->expires_at_ms <= now_ms;
+
+    if (entry->ip[0] != '\0' && !expired && strcasecmp(entry->ip, ip) == 0) {
+      match_index = i;
+      break;
+    }
+    if (free_index < 0 && (entry->ip[0] == '\0' || expired))
+      free_index = i;
+    if (entry->expires_at_ms < status_shared->blocked_ips[oldest_index].expires_at_ms)
+      oldest_index = i;
+  }
+
+  if (match_index < 0)
+    match_index = free_index >= 0 ? free_index : oldest_index;
+
+  strncpy(status_shared->blocked_ips[match_index].ip, ip, sizeof(status_shared->blocked_ips[match_index].ip) - 1);
+  status_shared->blocked_ips[match_index].ip[sizeof(status_shared->blocked_ips[match_index].ip) - 1] = '\0';
+  status_shared->blocked_ips[match_index].expires_at_ms = expires_at_ms;
+  unlock_blocked_ips(owner_pid);
+
+  logger(LOG_INFO, "Temporarily blocking client IP %s for %d ms after disconnect", ip, STATUS_DISCONNECT_IP_BLOCK_MS);
+}
+
+int status_client_addr_is_blocked(const char *client_addr, int *retry_after_sec) {
+  char ip[STATUS_BLOCKED_IP_LEN];
+  uint32_t owner_pid;
+  int64_t now_ms;
+  int blocked = 0;
+  int remaining_sec = 0;
+
+  if (retry_after_sec)
+    *retry_after_sec = 0;
+
+  if (!status_shared || extract_client_ip(client_addr, ip, sizeof(ip)) != 0)
+    return 0;
+
+  owner_pid = (uint32_t)getpid();
+  now_ms = get_time_ms();
+
+  lock_blocked_ips(owner_pid);
+  for (int i = 0; i < STATUS_MAX_BLOCKED_IPS; i++) {
+    blocked_ip_entry_t *entry = &status_shared->blocked_ips[i];
+    int64_t remaining_ms;
+
+    if (entry->ip[0] == '\0' || strcasecmp(entry->ip, ip) != 0)
+      continue;
+
+    remaining_ms = entry->expires_at_ms - now_ms;
+    if (remaining_ms <= 0) {
+      entry->ip[0] = '\0';
+      entry->expires_at_ms = 0;
+      break;
+    }
+
+    blocked = 1;
+    remaining_sec = (int)((remaining_ms + 999) / 1000);
+    break;
+  }
+  unlock_blocked_ips(owner_pid);
+
+  if (blocked && retry_after_sec)
+    *retry_after_sec = remaining_sec > 0 ? remaining_sec : 1;
+  return blocked;
 }
 
 static int client_capacity_is_available(void) {
@@ -218,6 +364,7 @@ int status_init(void) {
   status_shared->current_log_level = config.verbosity;
   status_shared->event_counter = 0;
   atomic_init(&status_shared->client_admission_owner_pid, 0);
+  atomic_init(&status_shared->blocked_ip_owner_pid, 0);
   atomic_init(&status_shared->log_epoch, 1);
   atomic_init(&status_shared->log_sequence, 0);
 
@@ -233,6 +380,7 @@ int status_init(void) {
     atomic_init(&status_shared->log_entries[i].sequence, 0);
 
   if (!atomic_is_lock_free(&status_shared->client_admission_owner_pid) ||
+      !atomic_is_lock_free(&status_shared->blocked_ip_owner_pid) ||
       !atomic_is_lock_free(&status_shared->clients[0].owner_pid) ||
       !atomic_is_lock_free(&status_shared->clients[0].active) ||
       !atomic_is_lock_free(&status_shared->clients[0].generation) ||
@@ -1029,6 +1177,8 @@ void handle_disconnect_client(connection_t *c) {
               atomic_load_explicit(&shared_client->generation, memory_order_acquire) == generation;
       if (!found)
         continue;
+
+      status_block_client_addr(client.client_addr);
 
       /* Trigger disconnect request event to wake up workers */
       status_trigger_event(STATUS_EVENT_DISCONNECT_REQUEST);

@@ -242,6 +242,8 @@ Access the web status page to view:
 - Remote management functions (force disconnect, adjust log level, etc.)
 - Service control: reload configuration, restart worker processes
 
+When you force-disconnect a client, rtp2httpd closes that connection immediately and then rejects all new connections from that client IP for 5 seconds (returning `HTTP 429 Too Many Requests` with `Retry-After`) so the player cannot reconnect right away.
+
 **Service control** (equivalent to sending Unix signals to the supervisor):
 
 | Action | Equivalent Signal | API |
