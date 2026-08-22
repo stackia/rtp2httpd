@@ -487,17 +487,31 @@ r2h-token = new-token
             assert r2h.process is not None
             os.kill(r2h.process.pid, signal.SIGHUP)
 
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + 8
+            last_status = None
+            last_error = None
+            body = b""
             while True:
-                status, _, body = http_get(
-                    "127.0.0.1",
-                    port,
-                    "/new/status.webmanifest?r2h-token=new-token",
-                )
+                try:
+                    status, _, body = http_get(
+                        "127.0.0.1",
+                        port,
+                        "/new/status.webmanifest?r2h-token=new-token",
+                    )
+                    last_status = status
+                    last_error = None
+                except (OSError, TimeoutError) as exc:
+                    # Workers briefly drop the listen socket during SIGHUP reload.
+                    last_status = None
+                    last_error = exc
+                    status = 0
                 if status == 200:
                     break
                 if time.monotonic() >= deadline:
-                    raise AssertionError(f"reloaded manifest did not become available; last status was {status}")
+                    raise AssertionError(
+                        f"reloaded manifest did not become available; last status was {last_status}; "
+                        f"last error: {last_error}"
+                    )
                 time.sleep(0.05)
 
             manifest = _parse_manifest(body)

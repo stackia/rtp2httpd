@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
-from .ports import wait_for_port, wait_for_unix_socket
+from .ports import port_connectable, unix_socket_connectable
 
 
 def make_m3u_rtsp_config(r2h_port: int, rtsp_port: int, channel_name: str, configured_url_query: str = "") -> str:
@@ -47,30 +48,18 @@ class R2HProcess:
 
     def start(self, wait: bool = True) -> None:
         args = self._build_args()
-        if self.capture_log:
-            log_fd, self._log_path = tempfile.mkstemp(suffix=".log", prefix="r2h_log_")
-            self._log_handle = os.fdopen(log_fd, "w")
+        log_fd, self._log_path = tempfile.mkstemp(suffix=".log", prefix="r2h_log_")
+        self._log_handle = os.fdopen(log_fd, "w")
+        try:
             self.process = subprocess.Popen(args, stdout=self._log_handle, stderr=self._log_handle)
-        else:
-            self.process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError as exc:
+            raise RuntimeError(f"failed to spawn rtp2httpd: {exc}.\nCommand: {' '.join(args)}") from exc
         if wait:
-            if self.wait_socket_path:
-                if not wait_for_unix_socket(self.wait_socket_path, timeout=6.0):
-                    self.stop()
-                    raise RuntimeError(
-                        "rtp2httpd did not start on Unix socket {}.\nCommand: {}".format(
-                            self.wait_socket_path, " ".join(args)
-                        )
-                    )
-            elif self.listen and self.listen.startswith("/"):
-                if not wait_for_unix_socket(self.listen, timeout=6.0):
-                    self.stop()
-                    raise RuntimeError(
-                        "rtp2httpd did not start on Unix socket {}.\nCommand: {}".format(self.listen, " ".join(args))
-                    )
-            elif self.port is not None and not wait_for_port(self.port, timeout=6.0):
+            error = self._wait_until_ready()
+            if error:
+                detail = self._startup_failure_detail(args, error)
                 self.stop()
-                raise RuntimeError(f"rtp2httpd did not start on port {self.port}.\nCommand: {' '.join(args)}")
+                raise RuntimeError(detail)
 
     def stop(self) -> None:
         if self.process and self.process.poll() is None:
@@ -98,11 +87,59 @@ class R2HProcess:
 
     def read_log(self) -> str:
         """Return the captured rtp2httpd stdout/stderr."""
-        assert self._log_path is not None, "read_log requires capture_log=True at construction time"
+        assert self._log_path is not None, "read_log requires the process to have been started"
+        if self._log_handle is not None:
+            self._log_handle.flush()
         with open(self._log_path) as f:
             return f.read()
 
     # -- internals -----------------------------------------------------------
+
+    def _ready_timeout(self) -> float:
+        return 10.0 if os.environ.get("CI") else 6.0
+
+    def _is_listening(self) -> bool:
+        if self.wait_socket_path:
+            return unix_socket_connectable(self.wait_socket_path)
+        if self.listen and self.listen.startswith("/"):
+            return unix_socket_connectable(self.listen)
+        if self.port is not None:
+            return port_connectable(self.port)
+        return True
+
+    def _wait_until_ready(self) -> str | None:
+        """Return None when ready, or a short reason if startup failed."""
+        assert self.process is not None
+        timeout = self._ready_timeout()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if self.process.poll() is not None:
+                return f"process exited with code {self.process.returncode}"
+            if self._is_listening():
+                return None
+            time.sleep(0.05)
+        return f"timed out after {timeout:.1f}s waiting for listen"
+
+    def _startup_failure_detail(self, args: list[str], error: str) -> str:
+        if self.wait_socket_path:
+            target = f"Unix socket {self.wait_socket_path}"
+        elif self.listen and self.listen.startswith("/"):
+            target = f"Unix socket {self.listen}"
+        elif self.port is not None:
+            target = f"port {self.port}"
+        else:
+            target = "the configured listener"
+        log = ""
+        try:
+            log = self.read_log().strip()
+        except OSError:
+            pass
+        if len(log) > 4000:
+            log = log[-4000:]
+        detail = f"rtp2httpd did not start on {target}: {error}.\nCommand: {' '.join(args)}"
+        if log:
+            detail += f"\n--- rtp2httpd log ---\n{log}\n--- end log ---"
+        return detail
 
     def _build_args(self) -> list[str]:
         if self.config_content is not None:

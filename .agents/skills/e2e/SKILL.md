@@ -84,7 +84,9 @@ Keep URL template coverage split by resolver responsibility. Do not recreate a m
 - Import helpers only from `helpers`; update both imports and `__all__` in `helpers/__init__.py`
   when adding a helper.
 - Never hardcode ports. Use `find_free_port()`, `find_free_udp_port()`, or
-  `find_free_udp_port_pair()`.
+  `find_free_udp_port_pair()`. These allocate from a per-xdist-worker range
+  below typical ephemeral ports (14000-32399) so parallel client connections
+  cannot steal a listen port before rtp2httpd binds it.
 - Prefer module-scoped or class-scoped `R2HProcess` fixtures when tests share config and args.
 - Use per-test `R2HProcess` only for mutually exclusive configs, port-range behavior, timeout or
   log-capture cases, Unix socket cases, or tests whose process state must be isolated.
@@ -121,9 +123,11 @@ Port and process helpers:
 - `find_free_port()`
 - `find_free_udp_port()`
 - `find_free_udp_port_pair()`
+- `worker_port_range()`
 - `wait_for_port(port, host="127.0.0.1", timeout=5.0)`
 - `wait_for_unix_socket(path, timeout=5.0)`
 - `R2HProcess(binary, port, extra_args=None, config_content=None, capture_log=False, listen=None)`
+  (`start()` fail-fasts if the process exits and includes rtp2httpd logs)
 - `make_m3u_rtsp_config(port, rtsp_port, service_name="Test RTSP")`
 
 Config and file helpers:
@@ -242,7 +246,8 @@ assert_etag_cache_behavior("127.0.0.1", shared_r2h.port, "/playlist.m3u")
 
    - Missing marker or marker missing from `pyproject.toml`.
    - Helper added but not re-exported in `helpers/__init__.py`.
-   - Hardcoded port or port pair collision.
+   - Hardcoded port or port pair collision, or a listen port from `bind(0)`
+    in the ephemeral range (use `find_free_port()`).
    - Mock server started after rtp2httpd needs it.
    - `stream_get()` timeout too short for streaming or multicast.
    - External M3U fetch via `-M http://...` or `-M file://...` needs a short async wait.
