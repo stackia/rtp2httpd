@@ -4,6 +4,7 @@ These tests do not start rtp2httpd.  They guard the ephemeral-port race that
 caused CI failures such as ``rtp2httpd did not start on port 49234``.
 """
 
+import os
 import socket
 
 import pytest
@@ -57,10 +58,14 @@ def test_find_free_udp_port_pair_is_adjacent_and_bindable():
         s2.bind(("", odd))
 
 
-def test_r2h_start_fail_fast_includes_exit_code():
-    r2h = R2HProcess("/bin/false", find_free_port())
+def test_r2h_start_fail_fast_includes_exit_code(tmp_path):
+    # FreeBSD has no /bin/false; use a portable immediate-exit script.
+    script = tmp_path / "immediate_exit"
+    script.write_text("#!/bin/sh\nexit 7\n")
+    os.chmod(script, 0o755)
+    r2h = R2HProcess(script, find_free_port())
     try:
-        with pytest.raises(RuntimeError, match="exited with code"):
+        with pytest.raises(RuntimeError, match="exited with code 7"):
             r2h.start()
     finally:
         r2h.stop()

@@ -50,7 +50,10 @@ class R2HProcess:
         args = self._build_args()
         log_fd, self._log_path = tempfile.mkstemp(suffix=".log", prefix="r2h_log_")
         self._log_handle = os.fdopen(log_fd, "w")
-        self.process = subprocess.Popen(args, stdout=self._log_handle, stderr=self._log_handle)
+        try:
+            self.process = subprocess.Popen(args, stdout=self._log_handle, stderr=self._log_handle)
+        except OSError as exc:
+            raise RuntimeError(f"failed to spawn rtp2httpd: {exc}.\nCommand: {' '.join(args)}") from exc
         if wait:
             error = self._wait_until_ready()
             if error:
