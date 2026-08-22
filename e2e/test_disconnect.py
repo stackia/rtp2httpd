@@ -12,6 +12,7 @@ from helpers import (
     R2HProcess,
     find_free_port,
     get_header,
+    http_get,
     http_request,
     stream_get,
     wait_for_status_payload,
@@ -58,11 +59,14 @@ def _disconnect_client(port: int, client_id: str) -> None:
     assert b'"success":true' in response
 
 
-def _wait_for_status(port: int, path: str, expected: int, timeout: float, headers: dict[str, str] | None = None) -> int:
+def _wait_for_http_status(
+    port: int, path: str, expected: int, timeout: float, headers: dict[str, str] | None = None
+) -> int:
+    """Poll a non-streaming endpoint until it returns *expected*."""
     deadline = time.monotonic() + timeout
     last_status = 0
     while time.monotonic() < deadline:
-        last_status, _, _ = stream_get("127.0.0.1", port, path, read_bytes=64, timeout=2.0, headers=headers)
+        last_status, _, _ = http_get("127.0.0.1", port, path, timeout=2.0, headers=headers)
         if last_status == expected:
             return last_status
         time.sleep(0.1)
@@ -88,7 +92,11 @@ def test_disconnect_blocks_client_ip_then_recovers(r2h_binary):
         retry_after = int(get_header(headers, "Retry-After"))
         assert 1 <= retry_after <= 5
 
-        assert _wait_for_status(port, path, 200, timeout=8.0) == 200
+        # Probe /status instead of the RTSP path: after the block expires we
+        # only need to see that the IP is accepted again. Re-opening an RTSP
+        # stream on macOS can take ~7s, which made a short stream_get poll
+        # return 0 even though the block had already lifted.
+        assert _wait_for_http_status(port, "/status", 200, timeout=8.0) == 200
     finally:
         if stream_sock is not None:
             stream_sock.close()
@@ -120,11 +128,11 @@ def test_disconnect_blocks_xff_ip_only(r2h_binary):
         assert 1 <= int(get_header(headers, "Retry-After")) <= 5
 
         other_status, _, _ = stream_get(
-            "127.0.0.1", port, path, read_bytes=64, timeout=5.0, headers={"X-Forwarded-For": other_ip}
+            "127.0.0.1", port, path, read_bytes=64, timeout=20.0, headers={"X-Forwarded-For": other_ip}
         )
         assert other_status == 200
 
-        peer_status, _, _ = stream_get("127.0.0.1", port, path, read_bytes=64, timeout=5.0)
+        peer_status, _, _ = stream_get("127.0.0.1", port, path, read_bytes=64, timeout=20.0)
         assert peer_status == 200
     finally:
         if stream_sock is not None:
