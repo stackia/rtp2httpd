@@ -1,3 +1,4 @@
+import { XMLParser } from "fast-xml-parser";
 import type { EPGProgram } from "../types/player";
 
 /**
@@ -5,19 +6,66 @@ import type { EPGProgram } from "../types/player";
  */
 export type EPGData = Record<string, EPGProgram[]>;
 
+const EPG_ARRAY_TAGS = new Set(["channel", "programme", "display-name", "title"]);
+const EPG_KEEP_TAGS = new Set(["tv", "channel", "programme", "display-name", "title"]);
+
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  parseTagValue: false,
+  parseAttributeValue: false,
+  trimValues: true,
+  ignoreDeclaration: true,
+  ignorePiTags: true,
+  isArray: (tagName) => EPG_ARRAY_TAGS.has(tagName),
+  updateTag: (tagName) => (EPG_KEEP_TAGS.has(tagName) ? tagName : false),
+});
+
+type XmlTextNode = string | { "#text"?: string };
+
+type XmlChannel = {
+  "@_id"?: string;
+  "display-name"?: XmlTextNode[];
+};
+
+type XmlProgramme = {
+  "@_channel"?: string;
+  "@_start"?: string;
+  "@_stop"?: string;
+  title?: XmlTextNode[];
+};
+
+type XmlTv = {
+  channel?: XmlChannel[];
+  programme?: XmlProgramme[];
+};
+
+function xmlTextContent(node: XmlTextNode | undefined): string | undefined {
+  if (node === undefined) {
+    return undefined;
+  }
+  if (typeof node === "string") {
+    return node || undefined;
+  }
+  const text = node["#text"];
+  return typeof text === "string" && text ? text : undefined;
+}
+
 /**
- * Parse EPG XML data and organize by channel ID and display names
- * Supports XMLTV format
+ * Parse EPG XML data and organize by channel ID and display names.
+ * Supports XMLTV format. Safe to call from a Web Worker — no DOM APIs.
  * @param xmlText - XMLTV format XML string
  * @param validChannelIds - Optional set of valid channel IDs from M3U to filter programs
  */
-export async function parseEPG(xmlText: string, validChannelIds?: Set<string>): Promise<EPGData> {
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+export function parseEPG(xmlText: string, validChannelIds?: Set<string>): EPGData {
+  const parsed = xmlParser.parse(xmlText) as { tv?: XmlTv };
+  const tv = parsed.tv;
+  if (!tv) {
+    return {};
+  }
 
   const epgData: EPGData = {};
-  const channelLookupKeys = extractChannelLookupKeys(xmlDoc);
-  const programElements = xmlDoc.getElementsByTagName("programme");
+  const channelLookupKeys = extractChannelLookupKeys(tv.channel ?? []);
+  const programElements = tv.programme ?? [];
 
   const getOrCreateProgramBucket = (lookupKeys: string[]): EPGProgram[] => {
     for (const key of lookupKeys) {
@@ -37,10 +85,8 @@ export async function parseEPG(xmlText: string, validChannelIds?: Set<string>): 
     return programs;
   };
 
-  for (let i = 0; i < programElements.length; i++) {
-    const prog = programElements[i];
-
-    const channelId = prog.getAttribute("channel") || "";
+  for (const prog of programElements) {
+    const channelId = prog["@_channel"] || "";
     if (!channelId) {
       continue;
     }
@@ -51,25 +97,19 @@ export async function parseEPG(xmlText: string, validChannelIds?: Set<string>): 
       continue;
     }
 
-    const start = parseXMLTVTime(prog.getAttribute("start") || "");
-    const stop = parseXMLTVTime(prog.getAttribute("stop") || "");
+    const start = parseXMLTVTime(prog["@_start"] || "");
+    const stop = parseXMLTVTime(prog["@_stop"] || "");
 
     if (!start || !stop) continue;
 
-    const titleElement = prog.getElementsByTagName("title")[0];
-
-    const title = titleElement?.textContent;
-
     const program: EPGProgram = {
       id: `${channelId}-${start.getTime()}`,
-      title,
+      title: xmlTextContent(prog.title?.[0]),
       start,
       end: stop,
     };
 
-    // Initialize array for this channel if it doesn't exist
-    const bucket = getOrCreateProgramBucket(lookupKeys);
-    bucket.push(program);
+    getOrCreateProgramBucket(lookupKeys).push(program);
   }
 
   // Sort programs by start time for each channel
@@ -80,22 +120,19 @@ export async function parseEPG(xmlText: string, validChannelIds?: Set<string>): 
   return epgData;
 }
 
-function extractChannelLookupKeys(xmlDoc: Document): Record<string, string[]> {
+function extractChannelLookupKeys(channelElements: XmlChannel[]): Record<string, string[]> {
   const map: Record<string, string[]> = {};
-  const channelElements = xmlDoc.getElementsByTagName("channel");
 
-  for (let i = 0; i < channelElements.length; i++) {
-    const channel = channelElements[i];
-    const id = channel.getAttribute("id");
+  for (const channel of channelElements) {
+    const id = channel["@_id"];
     if (!id) {
       continue;
     }
 
-    const displayNameElements = channel.getElementsByTagName("display-name");
     const keys = [id];
     const seen = new Set(keys);
-    for (let j = 0; j < displayNameElements.length; j++) {
-      const displayName = displayNameElements[j].textContent?.trim();
+    for (const displayNameNode of channel["display-name"] ?? []) {
+      const displayName = xmlTextContent(displayNameNode)?.trim();
       if (displayName && !seen.has(displayName)) {
         keys.push(displayName);
         seen.add(displayName);
@@ -338,23 +375,4 @@ export function fillEPGGaps(
   }
 
   return filledData;
-}
-
-/**
- * Load EPG from URL with gzip support
- * @param url - URL to fetch EPG from
- * @param validChannelIds - Optional set of valid channel IDs from M3U to filter programs
- */
-export async function loadEPG(url: string, validChannelIds?: Set<string>): Promise<EPGData> {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch EPG: ${response.statusText}`);
-    }
-    const xmlText = await response.text();
-    return parseEPG(xmlText, validChannelIds);
-  } catch (error) {
-    console.error("Failed to load EPG:", error);
-    return {};
-  }
 }
