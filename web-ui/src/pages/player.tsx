@@ -428,12 +428,16 @@ function PlayerPage() {
           validChannelIds.add(channel.name);
         }
 
+        // The worker gap-fills catchup channels before streaming the result back.
+        const catchupChannels = parsed.channels
+          .filter((channel) => channel.sources.some((s) => s.catchup && s.catchupSource))
+          .map((channel) => ({ tvgId: channel.tvgId, tvgName: channel.tvgName, name: channel.name }));
+
         const epgUrl = parsed.tvgUrl.replace(".gz", "");
-        const channels = parsed.channels;
-        void loadEPG(epgUrl, validChannelIds)
+        void loadEPG(epgUrl, validChannelIds, catchupChannels)
           .then((epg) => {
             startTransition(() => {
-              setEpgData(fillEPGGaps(epg, channels));
+              setEpgData(epg);
             });
           })
           .catch((err) => {

@@ -334,45 +334,60 @@ export function fillEPGGaps(
       continue;
     }
 
-    // Get the EPG channel ID using fallback logic
-    const epgChannelId =
-      channel.tvgId && filledData[channel.tvgId]
-        ? channel.tvgId
-        : channel.tvgName && filledData[channel.tvgName]
-          ? channel.tvgName
-          : channel.name && filledData[channel.name]
-            ? channel.name
-            : null;
-
-    let existingPrograms: EPGProgram[] = [];
-    const targetChannelId = epgChannelId || channel.tvgId || channel.tvgName || channel.name;
-
-    if (epgChannelId) {
-      existingPrograms = filledData[epgChannelId] || [];
-    }
-
-    // Generate fallback programs for gaps
-    const fallbackPrograms = generateFallbackPrograms(existingPrograms, targetChannelId, lookbackHours);
-
-    if (fallbackPrograms.length > 0) {
-      // Merge existing and fallback programs, then sort by start time
-      const mergedPrograms = [...existingPrograms, ...fallbackPrograms].sort(
-        (a, b) => a.start.getTime() - b.start.getTime(),
-      );
-
-      // Ensure all possible channel ID keys point to the same array
-      filledData[targetChannelId] = mergedPrograms;
-      if (channel.tvgId && channel.tvgId !== targetChannelId) {
-        filledData[channel.tvgId] = mergedPrograms;
-      }
-      if (channel.tvgName && channel.tvgName !== targetChannelId) {
-        filledData[channel.tvgName] = mergedPrograms;
-      }
-      if (channel.name !== targetChannelId) {
-        filledData[channel.name] = mergedPrograms;
-      }
-    }
+    fillChannelEPGGaps(filledData, channel, lookbackHours);
   }
 
   return filledData;
+}
+
+/**
+ * Fill gaps for a single catchup-capable channel, mutating filledData in place
+ */
+export function fillChannelEPGGaps(
+  filledData: EPGData,
+  channel: {
+    tvgId?: string;
+    tvgName?: string;
+    name: string;
+  },
+  lookbackHours: number = 72,
+): void {
+  // Get the EPG channel ID using fallback logic
+  const epgChannelId =
+    channel.tvgId && filledData[channel.tvgId]
+      ? channel.tvgId
+      : channel.tvgName && filledData[channel.tvgName]
+        ? channel.tvgName
+        : channel.name && filledData[channel.name]
+          ? channel.name
+          : null;
+
+  let existingPrograms: EPGProgram[] = [];
+  const targetChannelId = epgChannelId || channel.tvgId || channel.tvgName || channel.name;
+
+  if (epgChannelId) {
+    existingPrograms = filledData[epgChannelId] || [];
+  }
+
+  // Generate fallback programs for gaps
+  const fallbackPrograms = generateFallbackPrograms(existingPrograms, targetChannelId, lookbackHours);
+
+  if (fallbackPrograms.length > 0) {
+    // Merge existing and fallback programs, then sort by start time
+    const mergedPrograms = [...existingPrograms, ...fallbackPrograms].sort(
+      (a, b) => a.start.getTime() - b.start.getTime(),
+    );
+
+    // Ensure all possible channel ID keys point to the same array
+    filledData[targetChannelId] = mergedPrograms;
+    if (channel.tvgId && channel.tvgId !== targetChannelId) {
+      filledData[channel.tvgId] = mergedPrograms;
+    }
+    if (channel.tvgName && channel.tvgName !== targetChannelId) {
+      filledData[channel.tvgName] = mergedPrograms;
+    }
+    if (channel.name !== targetChannelId) {
+      filledData[channel.name] = mergedPrograms;
+    }
+  }
 }
