@@ -28,7 +28,8 @@ import { usePlayerAppearance } from "../hooks/use-player-appearance";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
 import { isDocumentPictureInPictureSupported } from "../lib/document-picture-in-picture";
-import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId, loadEPG } from "../lib/epg-parser";
+import { loadEPG } from "../lib/epg-loader";
+import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId } from "../lib/epg-parser";
 import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
 import { isLGWebOS } from "../lib/platform";
@@ -409,41 +410,35 @@ function PlayerPage() {
 
       setMetadata(parsed);
 
-      // Start the initial channel while the EPG loads, but keep the startup overlay visible until parsing finishes.
       const deepLinkChannel = findDeepLinkChannel(parsed.channels);
       const lastChannelId = getLastChannelId();
       const channelToSelect =
         deepLinkChannel ?? parsed.channels.find((channel) => channel.id === lastChannelId) ?? parsed.channels[0];
       selectChannel(channelToSelect);
 
-      // Load EPG if available
+      // Show empty-EPG fallback immediately so startup is not blocked by XMLTV parsing.
+      // Catchup-capable channels get 2-hour "精彩节目" gap-fill programs until real data arrives.
+      setEpgData(fillEPGGaps({}, parsed.channels));
+
       if (parsed.tvgUrl) {
-        // Build set of valid channel IDs from M3U for filtering
-        // Use tvgId, tvgName, and name for EPG matching (with fallback logic)
         const validChannelIds = new Set<string>();
-        parsed.channels.forEach((channel) => {
+        for (const channel of parsed.channels) {
           if (channel.tvgId) validChannelIds.add(channel.tvgId);
           if (channel.tvgName) validChannelIds.add(channel.tvgName);
           validChannelIds.add(channel.name);
-        });
-
-        // Build EPG URL with token if available
-        const epgUrl = parsed.tvgUrl.replace(".gz", "");
-
-        // Keep the startup overlay visible while the EPG is fetched and parsed on the main thread.
-        try {
-          const epg = await loadEPG(epgUrl, validChannelIds);
-          // Fill gaps in EPG data with 2-hour fallback programs for catchup-capable channels.
-          setEpgData(fillEPGGaps(epg, parsed.channels));
-        } catch (err) {
-          console.error("Failed to load EPG:", err);
-          // Even if EPG loading fails, generate fallback programs for catchup-capable channels.
-          setEpgData(fillEPGGaps({}, parsed.channels));
         }
-      } else {
-        // No EPG URL provided, generate fallback programs for catchup-capable channels
-        const fallbackEpg = fillEPGGaps({}, parsed.channels);
-        setEpgData(fallbackEpg);
+
+        const epgUrl = parsed.tvgUrl.replace(".gz", "");
+        const channels = parsed.channels;
+        void loadEPG(epgUrl, validChannelIds)
+          .then((epg) => {
+            startTransition(() => {
+              setEpgData(fillEPGGaps(epg, channels));
+            });
+          })
+          .catch((err) => {
+            console.error("Failed to load EPG:", err);
+          });
       }
 
       // Trigger reveal animation
