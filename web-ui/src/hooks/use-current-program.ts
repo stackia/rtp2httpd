@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo } from "react";
+import { useMemo } from "react";
 import { usePlaybackTime } from "../components/player/playback-time-context";
 import { useEpgData } from "../lib/epg-context";
 import { getCurrentProgram, getEPGChannelId } from "../lib/epg-parser";
@@ -10,13 +10,15 @@ export function useCurrentProgram(
   streamStartTime: Date,
 ): EPGProgram | null {
   const epgData = useEpgData();
+  // Playback time is already quantized to whole seconds. Deferring it here
+  // kept the pre-seek media time after a catchup jump and made the guide /
+  // Media Session think we were still on the live programme.
   const mediaTime = usePlaybackTime();
-  const deferredMediaTime = useDeferredValue(mediaTime);
 
   return useMemo(() => {
     if (!channel) return null;
     const epgChannelId = getEPGChannelId(channel, epgData);
     if (!epgChannelId) return null;
-    return getCurrentProgram(epgChannelId, epgData, mseToWallClock(deferredMediaTime, streamStartTime));
-  }, [channel, deferredMediaTime, epgData, streamStartTime]);
+    return getCurrentProgram(epgChannelId, epgData, mseToWallClock(mediaTime, streamStartTime));
+  }, [channel, epgData, mediaTime, streamStartTime]);
 }

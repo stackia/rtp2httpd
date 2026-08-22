@@ -179,6 +179,11 @@ function PlayerPage() {
     };
   }, []);
 
+  // Live calibration rewrites `streamStartTime` with a new Date each time the
+  // origin is refined. Catchup URLs embed `now`, so this effect must not rerun
+  // unless the user actually changed the catchup start (or left live).
+  const catchupStartMs = seekAtLiveEdge ? 0 : streamStartTime.getTime();
+
   useEffect(() => {
     if (!activeSource) return;
 
@@ -197,7 +202,7 @@ function PlayerPage() {
     // Source supports catchup: use it
     if (activeSource.catchup && activeSource.catchupSource) {
       setPlaybackSegments(
-        buildCatchupSegments(activeSource, streamStartTime, {
+        buildCatchupSegments(activeSource, new Date(catchupStartMs), {
           overlapMs: playbackBackendKind === "native" ? 0 : undefined,
         }),
       );
@@ -217,11 +222,14 @@ function PlayerPage() {
     // No source supports catchup, fall back to live
     setSeekAtLiveEdge(true);
     setStreamStartTime(new Date());
-  }, [currentChannel, activeSource, activeSourceIndex, streamStartTime, seekAtLiveEdge, playbackBackendKind]);
+  }, [currentChannel, activeSource, activeSourceIndex, catchupStartMs, seekAtLiveEdge, playbackBackendKind]);
+
+  const ignoreStaleVideoTimeUntilRef = useRef(0);
 
   const resetCurrentVideoTime = useCallback(() => {
     currentVideoTimeRef.current = 0;
     currentVideoSecondRef.current = 0;
+    ignoreStaleVideoTimeUntilRef.current = Date.now() + 2000;
     setCurrentVideoTime(0);
   }, []);
 
@@ -308,6 +316,11 @@ function PlayerPage() {
   }, [metadata, currentChannel, selectChannel]);
 
   const handleCurrentVideoTimeChange = useCallback((time: number) => {
+    // After a catchup seek the previous live element can still emit a large
+    // currentTime. Ignore that so the guide / Media Session stay on the chosen programme.
+    if (Date.now() < ignoreStaleVideoTimeUntilRef.current && time > 2 && currentVideoSecondRef.current === 0) {
+      return;
+    }
     currentVideoTimeRef.current = time;
     const currentSecond = Math.floor(time);
     if (currentSecond === currentVideoSecondRef.current) return;
