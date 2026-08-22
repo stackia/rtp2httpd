@@ -1,9 +1,11 @@
 #include "http.h"
 #include "configuration.h"
 #include "connection.h"
+#include "http_headers.h"
 #include "utils.h"
 #include <ctype.h>
 #include <limits.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -202,195 +204,143 @@ void http_request_cleanup(http_request_t *req) {
   req->body_alloc = 0;
 }
 
+static int http_request_append_raw_header(http_request_t *req, const struct phr_header *header, const char *value,
+                                          size_t value_len) {
+  size_t name_len = header->name_len;
+  size_t header_line_len = name_len + 2 + value_len + 2; /* "Name: Value\r\n" */
+  int added;
+
+  if (!value || value_len == 0)
+    return 0;
+  if (req->raw_headers_len + header_line_len >= sizeof(req->raw_headers) - 1)
+    return 0;
+
+  added = snprintf(req->raw_headers + req->raw_headers_len, sizeof(req->raw_headers) - req->raw_headers_len,
+                   "%.*s: %.*s\r\n", (int)name_len, header->name, (int)value_len, value);
+  if (added > 0)
+    req->raw_headers_len += (size_t)added;
+  return 0;
+}
+
+static void http_request_consume_header(http_request_t *req, const struct phr_header *header) {
+  if (!header->name)
+    return;
+
+  /* Save raw headers for proxy forwarding (exclude Host, Connection,
+   * Content-Length, Transfer-Encoding which are handled specially,
+   * Accept-Encoding to prevent compressed responses that break rewriting,
+   * and X-Forwarded-* headers which should not be forwarded to upstream).
+   * Cookie and User-Agent are filtered to remove r2h-token before forwarding. */
+  if (!http_header_name_is(header, "Host") && !http_header_name_is(header, "Connection") &&
+      !http_header_name_is(header, "Content-Length") && !http_header_name_is(header, "Transfer-Encoding") &&
+      !http_header_name_is(header, "Accept-Encoding") && !http_header_name_is(header, "X-Forwarded-For") &&
+      !http_header_name_is(header, "X-Forwarded-Host") && !http_header_name_is(header, "X-Forwarded-Proto")) {
+    if (http_header_name_is(header, "Cookie") && config.r2h_token && config.r2h_token[0] != '\0') {
+      char value_buf[HTTP_COOKIE_BUFFER_SIZE];
+      char filter_buf[HTTP_COOKIE_BUFFER_SIZE];
+      int flen;
+
+      http_headers_copy_token(value_buf, sizeof(value_buf), header->value, header->value_len);
+      flen = http_filter_cookie(value_buf, "r2h-token", filter_buf, sizeof(filter_buf));
+      if (flen > 0)
+        http_request_append_raw_header(req, header, filter_buf, (size_t)flen);
+      else if (flen < 0)
+        logger(LOG_WARN, "Dropping Cookie header after r2h-token filtering failed");
+    } else if (http_header_name_is(header, "User-Agent") && config.r2h_token && config.r2h_token[0] != '\0') {
+      char value_buf[HTTP_COOKIE_BUFFER_SIZE];
+      char filter_buf[HTTP_COOKIE_BUFFER_SIZE];
+      int flen;
+
+      http_headers_copy_token(value_buf, sizeof(value_buf), header->value, header->value_len);
+      flen = http_filter_user_agent_token(value_buf, filter_buf, sizeof(filter_buf));
+      if (flen > 0)
+        http_request_append_raw_header(req, header, filter_buf, (size_t)flen);
+      else if (header->value_len > 0)
+        http_request_append_raw_header(req, header, header->value, header->value_len);
+    } else if (header->value_len > 0) {
+      http_request_append_raw_header(req, header, header->value, header->value_len);
+    }
+  }
+
+  if (http_header_name_is(header, "Host")) {
+    http_headers_copy_token(req->hostname, sizeof(req->hostname), header->value, header->value_len);
+  } else if (http_header_name_is(header, "User-Agent")) {
+    http_headers_copy_token(req->user_agent, sizeof(req->user_agent), header->value, header->value_len);
+  } else if (http_header_name_is(header, "Accept")) {
+    http_headers_copy_token(req->accept, sizeof(req->accept), header->value, header->value_len);
+  } else if (http_header_name_is(header, "If-None-Match")) {
+    http_headers_copy_token(req->if_none_match, sizeof(req->if_none_match), header->value, header->value_len);
+  } else if (http_header_name_is(header, "X-Request-Snapshot")) {
+    req->x_request_snapshot = (header->value_len > 0 && header->value[0] == '1');
+  } else if (http_header_name_is(header, "X-Forwarded-For")) {
+    const char *comma = memchr(header->value, ',', header->value_len);
+    size_t ip_len = comma ? (size_t)(comma - header->value) : header->value_len;
+    while (ip_len > 0 && (header->value[ip_len - 1] == ' ' || header->value[ip_len - 1] == '\t'))
+      ip_len--;
+    http_headers_copy_token(req->x_forwarded_for, sizeof(req->x_forwarded_for), header->value, ip_len);
+  } else if (http_header_name_is(header, "X-Forwarded-Host")) {
+    http_headers_copy_token(req->x_forwarded_host, sizeof(req->x_forwarded_host), header->value, header->value_len);
+  } else if (http_header_name_is(header, "X-Forwarded-Proto")) {
+    http_headers_copy_token(req->x_forwarded_proto, sizeof(req->x_forwarded_proto), header->value, header->value_len);
+  } else if (http_header_name_is(header, "Content-Length")) {
+    long cl;
+    if (http_header_value_long(header, &cl) != 0 || cl < 0 || cl > INT_MAX)
+      req->content_length = 0;
+    else
+      req->content_length = (int)cl;
+  } else if (http_header_name_is(header, "Cookie")) {
+    http_headers_copy_token(req->cookie, sizeof(req->cookie), header->value, header->value_len);
+  } else if (http_header_name_is(header, "Access-Control-Request-Method")) {
+    http_headers_copy_token(req->access_control_request_method, sizeof(req->access_control_request_method),
+                            header->value, header->value_len);
+  } else if (http_header_name_is(header, "Access-Control-Request-Headers")) {
+    http_headers_copy_token(req->access_control_request_headers, sizeof(req->access_control_request_headers),
+                            header->value, header->value_len);
+  }
+}
+
 int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
   if (!inbuf || !in_len || !req)
     return -1;
 
-  /* Parse HTTP request line */
-  if (req->parse_state == HTTP_PARSE_REQ_LINE) {
-    char *line_end = strstr(inbuf, "\r\n");
-    if (!line_end)
-      return 0; /* Need more data */
+  if (req->parse_state == HTTP_PARSE_REQ_LINE || req->parse_state == HTTP_PARSE_HEADERS) {
+    struct phr_header headers[HTTP_HEADERS_MAX];
+    size_t num_headers = HTTP_HEADERS_MAX;
+    const char *method = NULL;
+    const char *path = NULL;
+    size_t method_len = 0;
+    size_t path_len = 0;
+    int minor_version = -1;
+    int pret;
+    size_t leftover;
 
-    size_t line_len = (size_t)(line_end - inbuf) + 2;
-    *line_end = '\0';
-
-    /* Parse: METHOD URL HTTP/1.x */
-    char *sp1 = strchr(inbuf, ' ');
-    if (sp1) {
-      *sp1 = '\0';
-      strncpy(req->method, inbuf, sizeof(req->method) - 1);
-      req->method[sizeof(req->method) - 1] = '\0';
-
-      char *sp2 = strchr(sp1 + 1, ' ');
-      if (sp2) {
-        *sp2 = '\0';
-        strncpy(req->url, sp1 + 1, sizeof(req->url) - 1);
-        req->url[sizeof(req->url) - 1] = '\0';
-      }
+    pret = phr_parse_request(inbuf, (size_t)*in_len, &method, &method_len, &path, &path_len, &minor_version, headers,
+                             &num_headers);
+    if (pret == -2) {
+      if (*in_len >= INBUF_SIZE)
+        return -1; /* Headers do not fit in the input buffer */
+      return 0;
     }
+    if (pret < 0)
+      return -1;
+    if ((size_t)pret > (size_t)*in_len)
+      return -1;
 
-    /* Shift buffer */
-    memmove(inbuf, inbuf + line_len, *in_len - (int)line_len);
-    *in_len -= (int)line_len;
-    req->parse_state = HTTP_PARSE_HEADERS;
-  }
+    http_headers_copy_token(req->method, sizeof(req->method), method, method_len);
+    http_headers_copy_token(req->url, sizeof(req->url), path, path_len);
 
-  /* Parse headers */
-  if (req->parse_state == HTTP_PARSE_HEADERS) {
-    for (;;) {
-      char *line_end = strstr(inbuf, "\r\n");
-      if (!line_end)
-        return 0; /* Need more data */
+    for (size_t i = 0; i < num_headers; i++)
+      http_request_consume_header(req, &headers[i]);
 
-      size_t line_len = (size_t)(line_end - inbuf) + 2;
+    leftover = (size_t)*in_len - (size_t)pret;
+    memmove(inbuf, inbuf + pret, leftover);
+    *in_len = (int)leftover;
 
-      /* Empty line = end of headers */
-      if (line_len == 2) {
-        memmove(inbuf, inbuf + 2, *in_len - 2);
-        *in_len -= 2;
-
-        /* Check if we need to read body */
-        if (req->content_length > 0) {
-          req->parse_state = HTTP_PARSE_BODY;
-          break; /* Exit header parsing loop to read body */
-        } else {
-          req->parse_state = HTTP_PARSE_COMPLETE;
-          return 1; /* Request complete */
-        }
-      }
-
-      *line_end = '\0';
-
-      /* Parse header: Name: Value */
-      char *colon = strchr(inbuf, ':');
-      if (colon) {
-        *colon = '\0';
-        char *value = colon + 1;
-        /* Skip leading whitespace */
-        while (*value == ' ' || *value == '\t')
-          value++;
-
-        /* Trim trailing whitespace */
-        char *value_end = value + strlen(value);
-        while (value_end > value && (value_end[-1] == ' ' || value_end[-1] == '\t')) {
-          value_end--;
-          *value_end = '\0';
-        }
-
-        /* Save raw headers for proxy forwarding (exclude Host, Connection,
-         * Content-Length, Transfer-Encoding which are handled specially,
-         * Accept-Encoding to prevent compressed responses that break rewriting,
-         * and X-Forwarded-* headers which should not be forwarded to upstream).
-         * Cookie and User-Agent are filtered to remove r2h-token before forwarding. */
-        if (strcasecmp(inbuf, "Host") != 0 && strcasecmp(inbuf, "Connection") != 0 &&
-            strcasecmp(inbuf, "Content-Length") != 0 && strcasecmp(inbuf, "Transfer-Encoding") != 0 &&
-            strcasecmp(inbuf, "Accept-Encoding") != 0 && strcasecmp(inbuf, "X-Forwarded-For") != 0 &&
-            strcasecmp(inbuf, "X-Forwarded-Host") != 0 && strcasecmp(inbuf, "X-Forwarded-Proto") != 0) {
-          const char *filtered_value = value;
-          char filter_buf[HTTP_COOKIE_BUFFER_SIZE];
-
-          /* Filter r2h-token from Cookie header */
-          if (strcasecmp(inbuf, "Cookie") == 0 && config.r2h_token && config.r2h_token[0] != '\0') {
-            int flen = http_filter_cookie(value, "r2h-token", filter_buf, sizeof(filter_buf));
-            if (flen > 0) {
-              filtered_value = filter_buf;
-            } else if (flen == 0) {
-              /* Cookie is empty after filtering, skip this header */
-              filtered_value = NULL;
-            } else {
-              logger(LOG_WARN, "Dropping Cookie header after r2h-token filtering failed");
-              filtered_value = NULL;
-            }
-          }
-          /* Filter R2HTOKEN/xxx from User-Agent header */
-          else if (strcasecmp(inbuf, "User-Agent") == 0 && config.r2h_token && config.r2h_token[0] != '\0') {
-            int flen = http_filter_user_agent_token(value, filter_buf, sizeof(filter_buf));
-            if (flen > 0) {
-              filtered_value = filter_buf;
-            }
-          }
-
-          if (filtered_value && filtered_value[0]) {
-            size_t header_line_len = strlen(inbuf) + 2 + strlen(filtered_value) + 2; /* "Name: Value\r\n" */
-            if (req->raw_headers_len + header_line_len < sizeof(req->raw_headers) - 1) {
-              int added =
-                  snprintf(req->raw_headers + req->raw_headers_len, sizeof(req->raw_headers) - req->raw_headers_len,
-                           "%s: %s\r\n", inbuf, filtered_value);
-              if (added > 0) {
-                req->raw_headers_len += (size_t)added;
-              }
-            }
-          }
-        }
-
-        /* Extract interesting headers */
-        if (strcasecmp(inbuf, "Host") == 0) {
-          strncpy(req->hostname, value, sizeof(req->hostname) - 1);
-          req->hostname[sizeof(req->hostname) - 1] = '\0';
-        } else if (strcasecmp(inbuf, "User-Agent") == 0) {
-          strncpy(req->user_agent, value, sizeof(req->user_agent) - 1);
-          req->user_agent[sizeof(req->user_agent) - 1] = '\0';
-        } else if (strcasecmp(inbuf, "Accept") == 0) {
-          strncpy(req->accept, value, sizeof(req->accept) - 1);
-          req->accept[sizeof(req->accept) - 1] = '\0';
-        } else if (strcasecmp(inbuf, "If-None-Match") == 0) {
-          strncpy(req->if_none_match, value, sizeof(req->if_none_match) - 1);
-          req->if_none_match[sizeof(req->if_none_match) - 1] = '\0';
-        } else if (strcasecmp(inbuf, "X-Request-Snapshot") == 0) {
-          req->x_request_snapshot = (value[0] == '1');
-        } else if (strcasecmp(inbuf, "X-Forwarded-For") == 0) {
-          /* Extract first IP from X-Forwarded-For (format: "ip1, ip2, ip3") */
-          const char *comma = strchr(value, ',');
-          size_t ip_len;
-          if (comma) {
-            ip_len = (size_t)(comma - value);
-          } else {
-            ip_len = strlen(value);
-          }
-
-          /* Copy first IP, limiting to buffer size */
-          if (ip_len >= sizeof(req->x_forwarded_for)) {
-            ip_len = sizeof(req->x_forwarded_for) - 1;
-          }
-          strncpy(req->x_forwarded_for, value, ip_len);
-          req->x_forwarded_for[ip_len] = '\0';
-
-          /* Trim trailing whitespace */
-          char *end = req->x_forwarded_for + ip_len;
-          while (end > req->x_forwarded_for && (end[-1] == ' ' || end[-1] == '\t')) {
-            end--;
-            *end = '\0';
-          }
-        } else if (strcasecmp(inbuf, "X-Forwarded-Host") == 0) {
-          strncpy(req->x_forwarded_host, value, sizeof(req->x_forwarded_host) - 1);
-          req->x_forwarded_host[sizeof(req->x_forwarded_host) - 1] = '\0';
-        } else if (strcasecmp(inbuf, "X-Forwarded-Proto") == 0) {
-          strncpy(req->x_forwarded_proto, value, sizeof(req->x_forwarded_proto) - 1);
-          req->x_forwarded_proto[sizeof(req->x_forwarded_proto) - 1] = '\0';
-        } else if (strcasecmp(inbuf, "Content-Length") == 0) {
-          char *endptr;
-          long cl = strtol(value, &endptr, 10);
-          if (*endptr != '\0' || cl < 0 || cl > INT_MAX) {
-            req->content_length = 0;
-          } else {
-            req->content_length = (int)cl;
-          }
-        } else if (strcasecmp(inbuf, "Cookie") == 0) {
-          strncpy(req->cookie, value, sizeof(req->cookie) - 1);
-          req->cookie[sizeof(req->cookie) - 1] = '\0';
-        } else if (strcasecmp(inbuf, "Access-Control-Request-Method") == 0) {
-          strncpy(req->access_control_request_method, value, sizeof(req->access_control_request_method) - 1);
-          req->access_control_request_method[sizeof(req->access_control_request_method) - 1] = '\0';
-        } else if (strcasecmp(inbuf, "Access-Control-Request-Headers") == 0) {
-          strncpy(req->access_control_request_headers, value, sizeof(req->access_control_request_headers) - 1);
-          req->access_control_request_headers[sizeof(req->access_control_request_headers) - 1] = '\0';
-        }
-      }
-
-      /* Shift buffer */
-      memmove(inbuf, inbuf + line_len, *in_len - (int)line_len);
-      *in_len -= (int)line_len;
+    if (req->content_length > 0) {
+      req->parse_state = HTTP_PARSE_BODY;
+    } else {
+      req->parse_state = HTTP_PARSE_COMPLETE;
+      return 1;
     }
   }
 

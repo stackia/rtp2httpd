@@ -362,10 +362,10 @@ class TestRTSPTCPStream:
             target.stop()
 
     def test_stream_ignores_invalid_play_metadata(self, shared_r2h):
-        """Unparsable Scale / control-character Range are dropped, not echoed."""
+        """Unparsable Scale and empty Range are dropped, not echoed."""
         rtsp = MockRTSPServer(
             num_packets=500,
-            play_response_headers=[("Scale", "fast"), ("Range", "npt=0-\x0130")],
+            play_response_headers=[("Scale", "fast"), ("Range", "")],
         )
         rtsp.start()
         try:
@@ -380,6 +380,26 @@ class TestRTSPTCPStream:
             assert body
             assert headers["r2h-upstream-transport"] == "tcp-interleaved"
             assert "r2h-playback-scale" not in headers
+            assert "r2h-playback-range" not in headers
+        finally:
+            rtsp.stop()
+
+    def test_stream_rejects_play_header_with_control_chars(self, shared_r2h):
+        """CTL bytes in PLAY header values fail the RTSP response parse."""
+        rtsp = MockRTSPServer(
+            num_packets=500,
+            play_response_headers=[("Range", "npt=0-\x0130")],
+        )
+        rtsp.start()
+        try:
+            status, headers, _body = stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream",
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+            assert status == 503
             assert "r2h-playback-range" not in headers
         finally:
             rtsp.stop()

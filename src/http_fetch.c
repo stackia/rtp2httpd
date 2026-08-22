@@ -1,7 +1,7 @@
 #include "http_fetch.h"
-#include "hashmap.h"
 #include "poller.h"
 #include "utils.h"
+#include "vendor/hashmap/hashmap.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>

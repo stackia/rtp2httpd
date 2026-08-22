@@ -3,10 +3,10 @@
 #include "epg.h"
 #include "http.h"
 #include "http_fetch.h"
-#include "md5.h"
 #include "service.h"
 #include "url_template.h"
 #include "utils.h"
+#include "vendor/md5/md5.h"
 #include <arpa/inet.h>
 #include <ctype.h>
 #include <ifaddrs.h>

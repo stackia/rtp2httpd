@@ -1,9 +1,9 @@
 #include "configuration.h"
 #include "connection.h"
 #include "embedded_web_data.h"
-#include "hashmap.h"
 #include "http.h"
 #include "utils.h"
+#include "vendor/hashmap/hashmap.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,10 +1,10 @@
 #include "service.h"
 #include "fcc.h"
-#include "hashmap.h"
 #include "http.h"
 #include "timezone.h"
 #include "url_template.h"
 #include "utils.h"
+#include "vendor/hashmap/hashmap.h"
 #include <errno.h>
 #include <limits.h>
 #include <net/if.h>
