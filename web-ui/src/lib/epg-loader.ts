@@ -8,22 +8,21 @@ interface EPGWorkerRequest {
 
 type EPGWorkerResponse = { type: "success"; epg: EPGData } | { type: "error"; message: string };
 
-let activeEPGWorker: Worker | null = null;
+let inFlight: Promise<EPGData> | null = null;
 
 /**
  * Fetch and parse an XMLTV EPG in a Web Worker so the main thread stays responsive.
- * A newer call terminates any in-flight worker.
+ * The player loads EPG once; overlapping calls share the same in-flight job
+ * (React StrictMode remount) instead of starting a second parse.
  */
 export function loadEPG(url: string, validChannelIds?: Set<string>): Promise<EPGData> {
-  activeEPGWorker?.terminate();
-  const worker = new EPGWorker();
-  activeEPGWorker = worker;
+  if (inFlight) {
+    return inFlight;
+  }
 
-  return new Promise((resolve, reject) => {
+  const worker = new EPGWorker();
+  inFlight = new Promise((resolve, reject) => {
     const finish = () => {
-      if (activeEPGWorker === worker) {
-        activeEPGWorker = null;
-      }
       worker.terminate();
     };
 
@@ -48,4 +47,10 @@ export function loadEPG(url: string, validChannelIds?: Set<string>): Promise<EPG
     };
     worker.postMessage(request);
   });
+
+  void inFlight.finally(() => {
+    inFlight = null;
+  });
+
+  return inFlight;
 }

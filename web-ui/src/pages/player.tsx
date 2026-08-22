@@ -132,7 +132,6 @@ function PlayerPage() {
   );
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const isSimulatedFullscreenRef = useRef(false);
-  const epgLoadGenerationRef = useRef(0);
 
   // Track stream start time - the absolute time position when current stream started
   // For live mode: null (no seeking)
@@ -393,7 +392,6 @@ function PlayerPage() {
   }, [metadata, currentChannel]);
 
   const loadPlaylist = useCallback(async () => {
-    const epgLoadGeneration = ++epgLoadGenerationRef.current;
     try {
       setIsLoading(true);
       setError(null);
@@ -434,13 +432,11 @@ function PlayerPage() {
         const channels = parsed.channels;
         void loadEPG(epgUrl, validChannelIds)
           .then((epg) => {
-            if (epgLoadGeneration !== epgLoadGenerationRef.current) return;
             startTransition(() => {
               setEpgData(fillEPGGaps(epg, channels));
             });
           })
           .catch((err) => {
-            if (epgLoadGeneration !== epgLoadGenerationRef.current) return;
             console.error("Failed to load EPG:", err);
           });
       }
