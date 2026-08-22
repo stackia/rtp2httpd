@@ -1056,50 +1056,56 @@ static int http_proxy_is_redirect_status(int status_code) {
 }
 
 static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
-  http_resp_headers_t parsed;
+  struct phr_header headers[HTTP_HEADERS_MAX];
+  size_t num_headers = HTTP_HEADERS_MAX;
+  const char *msg = NULL;
+  size_t msg_len = 0;
+  int minor_version = -1;
+  int status = 0;
   const uint8_t *body_start;
   size_t header_len;
   char location_header[HTTP_PROXY_PATH_SIZE];
   int has_location = 0;
-  int parse_result;
+  int pret;
 
   location_header[0] = '\0';
 
-  parse_result =
-      http_headers_parse_response((const char *)session->response_buffer, session->response_buffer_pos, 0, &parsed);
-  if (parse_result == 0)
+  pret = phr_parse_response((const char *)session->response_buffer, session->response_buffer_pos, &minor_version,
+                            &status, &msg, &msg_len, headers, &num_headers, 0);
+  if (pret == -2)
     return 0; /* Need more data */
-  if (parse_result < 0) {
+  if (pret < 0) {
     logger(LOG_ERROR, "HTTP Proxy: Invalid HTTP response");
     return -1;
   }
 
-  header_len = parsed.headers.consumed;
+  header_len = (size_t)pret;
   if (header_len > session->response_buffer_pos) {
     logger(LOG_ERROR, "HTTP Proxy: Invalid HTTP response");
     return -1;
   }
   body_start = session->response_buffer + header_len;
-  session->response_status_code = parsed.status;
+  session->response_status_code = status;
   logger(LOG_DEBUG, "HTTP Proxy: Response status: %d", session->response_status_code);
 
   {
     long content_length = 0;
     char transfer_encoding[256];
 
-    if (http_headers_get_long(&parsed.headers, "Content-Length", &content_length) == 0) {
+    if (http_headers_get_long(headers, num_headers, "Content-Length", &content_length) == 0) {
       session->content_length = (ssize_t)content_length;
       logger(LOG_DEBUG, "HTTP Proxy: Content-Length: %zd", session->content_length);
     }
-    if (http_headers_copy(&parsed.headers, "Content-Type", session->response_content_type,
+    if (http_headers_copy(headers, num_headers, "Content-Type", session->response_content_type,
                           sizeof(session->response_content_type)) == 0) {
       logger(LOG_DEBUG, "HTTP Proxy: Content-Type: %s", session->response_content_type);
     }
-    if (http_headers_copy(&parsed.headers, "Transfer-Encoding", transfer_encoding, sizeof(transfer_encoding)) == 0) {
+    if (http_headers_copy(headers, num_headers, "Transfer-Encoding", transfer_encoding, sizeof(transfer_encoding)) ==
+        0) {
       http_proxy_parse_transfer_encoding(session, transfer_encoding);
       logger(LOG_DEBUG, "HTTP Proxy: Transfer-Encoding: %s", transfer_encoding);
     }
-    if (http_headers_copy(&parsed.headers, "Location", location_header, sizeof(location_header)) == 0) {
+    if (http_headers_copy(headers, num_headers, "Location", location_header, sizeof(location_header)) == 0) {
       has_location = 1;
       logger(LOG_DEBUG, "HTTP Proxy: Location: %s", location_header);
     }
@@ -1183,11 +1189,11 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
       size_t rebuild_remaining = sizeof(rebuilt_headers);
       int written;
 
-      if (parsed.msg_len > 0)
-        written = snprintf(rebuild_ptr, rebuild_remaining, "HTTP/1.%d %d %.*s\r\n", parsed.minor_version, parsed.status,
-                           (int)parsed.msg_len, parsed.msg);
+      if (msg_len > 0)
+        written =
+            snprintf(rebuild_ptr, rebuild_remaining, "HTTP/1.%d %d %.*s\r\n", minor_version, status, (int)msg_len, msg);
       else
-        written = snprintf(rebuild_ptr, rebuild_remaining, "HTTP/1.%d %d\r\n", parsed.minor_version, parsed.status);
+        written = snprintf(rebuild_ptr, rebuild_remaining, "HTTP/1.%d %d\r\n", minor_version, status);
       if (written < 0 || (size_t)written >= rebuild_remaining) {
         logger(LOG_ERROR, "HTTP Proxy: Rebuilt headers too large");
         return -1;
@@ -1195,8 +1201,8 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
       rebuild_ptr += written;
       rebuild_remaining -= (size_t)written;
 
-      for (size_t i = 0; i < parsed.headers.num_headers; i++) {
-        const http_header_t *header = &parsed.headers.headers[i];
+      for (size_t i = 0; i < num_headers; i++) {
+        const struct phr_header *header = &headers[i];
         if (!header->name)
           continue;
         if (http_header_name_is(header, "Location"))

@@ -204,7 +204,7 @@ void http_request_cleanup(http_request_t *req) {
   req->body_alloc = 0;
 }
 
-static int http_request_append_raw_header(http_request_t *req, const http_header_t *header, const char *value,
+static int http_request_append_raw_header(http_request_t *req, const struct phr_header *header, const char *value,
                                           size_t value_len) {
   size_t name_len = header->name_len;
   size_t header_line_len = name_len + 2 + value_len + 2; /* "Name: Value\r\n" */
@@ -222,7 +222,7 @@ static int http_request_append_raw_header(http_request_t *req, const http_header
   return 0;
 }
 
-static void http_request_consume_header(http_request_t *req, const http_header_t *header) {
+static void http_request_consume_header(http_request_t *req, const struct phr_header *header) {
   char value_buf[HTTP_COOKIE_BUFFER_SIZE];
   const char *raw_value;
   size_t raw_value_len;
@@ -315,28 +315,36 @@ int http_parse_request(char *inbuf, int *in_len, http_request_t *req) {
     return -1;
 
   if (req->parse_state == HTTP_PARSE_REQ_LINE || req->parse_state == HTTP_PARSE_HEADERS) {
-    http_req_headers_t parsed;
-    int parse_result = http_headers_parse_request(inbuf, (size_t)*in_len, 0, &parsed);
+    struct phr_header headers[HTTP_HEADERS_MAX];
+    size_t num_headers = HTTP_HEADERS_MAX;
+    const char *method = NULL;
+    const char *path = NULL;
+    size_t method_len = 0;
+    size_t path_len = 0;
+    int minor_version = -1;
+    int pret;
     size_t leftover;
 
-    if (parse_result == 0) {
+    pret = phr_parse_request(inbuf, (size_t)*in_len, &method, &method_len, &path, &path_len, &minor_version, headers,
+                             &num_headers, 0);
+    if (pret == -2) {
       if (*in_len >= INBUF_SIZE)
         return -1; /* Headers do not fit in the input buffer */
       return 0;
     }
-    if (parse_result < 0)
+    if (pret < 0)
       return -1;
-    if (parsed.headers.consumed > (size_t)*in_len)
+    if ((size_t)pret > (size_t)*in_len)
       return -1;
 
-    http_headers_copy_token(req->method, sizeof(req->method), parsed.method, parsed.method_len);
-    http_headers_copy_token(req->url, sizeof(req->url), parsed.path, parsed.path_len);
+    http_headers_copy_token(req->method, sizeof(req->method), method, method_len);
+    http_headers_copy_token(req->url, sizeof(req->url), path, path_len);
 
-    for (size_t i = 0; i < parsed.headers.num_headers; i++)
-      http_request_consume_header(req, &parsed.headers.headers[i]);
+    for (size_t i = 0; i < num_headers; i++)
+      http_request_consume_header(req, &headers[i]);
 
-    leftover = (size_t)*in_len - parsed.headers.consumed;
-    memmove(inbuf, inbuf + parsed.headers.consumed, leftover);
+    leftover = (size_t)*in_len - (size_t)pret;
+    memmove(inbuf, inbuf + pret, leftover);
     *in_len = (int)leftover;
 
     if (req->content_length > 0) {
