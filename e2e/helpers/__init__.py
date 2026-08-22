@@ -6,7 +6,7 @@ RTP packet crafting, and the R2HProcess wrapper.
 
 Sub-modules:
     constants   - project paths and platform constants
-    ports       - free port allocation and wait_for_port
+    ports       - per-worker listen-port allocation and wait_for_port
     http        - HTTP client helpers (http_get, http_request, stream_get)
     rtp         - RTP packet crafting and MulticastSender
     r2h_process - R2HProcess server wrapper
@@ -56,6 +56,7 @@ from .ports import (
     ipv6_loopback_available,
     wait_for_port,
     wait_for_unix_socket,
+    worker_port_range,
 )
 from .r2h_process import R2HProcess, make_m3u_rtsp_config
 from .rtp import MulticastSender, make_rtp_packet
@@ -100,5 +101,6 @@ __all__ = [
     "wait_for_port",
     "wait_for_status_payload",
     "wait_for_unix_socket",
+    "worker_port_range",
     "write_temp_file",
 ]
