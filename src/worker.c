@@ -3,7 +3,6 @@
 #include "configuration.h"
 #include "connection.h"
 #include "epg.h"
-#include "hashmap.h"
 #include "http_fetch.h"
 #include "m3u.h"
 #include "poller.h"
@@ -11,6 +10,7 @@
 #include "status.h"
 #include "stream.h"
 #include "utils.h"
+#include "vendor/hashmap/hashmap.h"
 #include "zerocopy.h"
 #include <errno.h>
 #include <signal.h>

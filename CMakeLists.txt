@@ -37,6 +37,7 @@ set(COMMON_SOURCES
   src/configuration.c
   src/access_log.c
   src/http.c
+  src/http_headers.c
   src/http_fetch.c
   src/service.c
   src/url_template.c
@@ -64,10 +65,11 @@ set(COMMON_SOURCES
   src/zerocopy.c
   src/m3u.c
   src/epg.c
-  src/md5.c
-  src/hashmap.c
   src/embedded_web.c
   src/utils.c
+  src/vendor/hashmap/hashmap.c
+  src/vendor/md5/md5.c
+  src/vendor/picohttpparser/picohttpparser.c
 )
 
 # Platform-specific poller backend
@@ -120,6 +122,13 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
 endif()
 
 target_compile_options(rtp2httpd PRIVATE ${WARN_FLAGS})
+
+# Keep upstream vendor sources untouched: do not enforce first-party warning flags.
+set_source_files_properties(
+  src/vendor/picohttpparser/picohttpparser.c
+  PROPERTIES
+    COMPILE_OPTIONS "-w"
+)
 
 # ── Build type default ──────────────────────────────────────────────
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)

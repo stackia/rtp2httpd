@@ -1,7 +1,7 @@
 #include "epg.h"
 #include "http_fetch.h"
-#include "md5.h"
 #include "utils.h"
+#include "vendor/md5/md5.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>

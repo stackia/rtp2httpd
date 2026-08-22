@@ -3,7 +3,7 @@
 #include "configuration.h"
 #include "connection.h"
 #include "http.h"
-#include "md5.h"
+#include "http_headers.h"
 #include "multicast.h"
 #include "platform_compat.h"
 #include "poller.h"
@@ -11,6 +11,7 @@
 #include "status.h"
 #include "stream.h"
 #include "utils.h"
+#include "vendor/md5/md5.h"
 #include "worker.h"
 #include <arpa/inet.h>
 #include <ctype.h>
@@ -48,18 +49,17 @@ static int rtsp_prepare_request(rtsp_session_t *session, const char *method, con
                                 const char *extra_headers);
 static int rtsp_try_send_pending(rtsp_session_t *session);
 static int rtsp_try_receive_response(rtsp_session_t *session);
-static int rtsp_parse_response_header(rtsp_session_t *session, const char *response, size_t *response_offset,
-                                      size_t *response_len);
+static int rtsp_parse_response_header(rtsp_session_t *session, const char *response, size_t response_buflen,
+                                      size_t *response_offset, size_t *response_len, http_headers_t *hdrs_out);
 static int rtsp_setup_udp_sockets(rtsp_session_t *session);
 static void rtsp_close_udp_sockets(rtsp_session_t *session, const char *reason);
-static char *rtsp_find_header(const char *response, const char *header_name);
 static void rtsp_parse_transport_header(rtsp_session_t *session, const char *transport);
 static void rtsp_send_udp_nat_probe(rtsp_session_t *session);
 static int rtsp_capture_control_endpoints(rtsp_session_t *session);
 static int rtsp_process_interleaved_buffer(rtsp_session_t *session, connection_t *conn);
 static int rtsp_handle_redirect(rtsp_session_t *session, const char *location);
-static void rtsp_parse_describe_sdp(rtsp_session_t *session, const char *header_start, const char *sdp_body);
-static void rtsp_parse_play_metadata(rtsp_session_t *session, const char *response);
+static void rtsp_parse_describe_sdp(rtsp_session_t *session, const http_headers_t *hdrs, const char *sdp_body);
+static void rtsp_parse_play_metadata(rtsp_session_t *session, const http_headers_t *hdrs);
 static int rtsp_initiate_teardown(rtsp_session_t *session);
 static int rtsp_reconnect_for_teardown(rtsp_session_t *session);
 static void rtsp_force_cleanup(rtsp_session_t *session);
@@ -1469,9 +1469,9 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
     }
   }
 
-  /* NUL-terminate for strstr-based parsing. Clamp to buffer bounds since
-   * rtsp_handle_tcp_interleaved_data() can fill buffer to full capacity
-   * (response_buffer_pos == RTSP_RESPONSE_BUFFER_SIZE) before keepalive. */
+  /* NUL-terminate so SDP/text helpers can still use C-string scans. Clamp to
+   * buffer bounds since rtsp_handle_tcp_interleaved_data() can fill the buffer
+   * to full capacity before keepalive. */
   size_t nul_pos = session->response_buffer_pos;
   if (nul_pos >= sizeof(session->response_buffer))
     nul_pos = sizeof(session->response_buffer) - 1;
@@ -1481,9 +1481,10 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
    * completeness) */
   size_t response_offset = 0;
   size_t response_len = 0;
+  http_headers_t resp_hdrs;
   int was_keepalive = session->awaiting_keepalive_response;
-  int parse_result =
-      rtsp_parse_response_header(session, (const char *)session->response_buffer, &response_offset, &response_len);
+  int parse_result = rtsp_parse_response_header(session, (const char *)session->response_buffer, nul_pos,
+                                                &response_offset, &response_len, &resp_hdrs);
 
   if (parse_result == 1) {
     if (session->peer_closed) {
@@ -1570,13 +1571,9 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
      * would remain in the buffer and block interleaved data processing. */
     size_t body_skip = 0;
     if (remaining_data_len > 0) {
-      char *cl_header = rtsp_find_header((const char *)session->response_buffer + response_offset, "Content-Length");
-      if (cl_header) {
-        size_t content_length = (size_t)atoi(cl_header);
-        free(cl_header);
-        if (content_length > 0 && content_length <= remaining_data_len) {
-          body_skip = content_length;
-        }
+      long cl = 0;
+      if (http_headers_get_long(&resp_hdrs, "Content-Length", &cl) == 0 && cl > 0 && (size_t)cl <= remaining_data_len) {
+        body_skip = (size_t)cl;
       }
     }
 
@@ -1614,7 +1611,7 @@ static int rtsp_try_receive_response(rtsp_session_t *session) {
     return RTSP_RESPONSE_ADVANCE;
   }
   if (session->state == RTSP_STATE_AWAITING_DESCRIBE) {
-    rtsp_parse_describe_sdp(session, (const char *)session->response_buffer + response_offset,
+    rtsp_parse_describe_sdp(session, &resp_hdrs,
                             (const char *)session->response_buffer + response_offset + response_len);
     /* HEAD metadata probes always stop after DESCRIBE, even when the URL also
      * contains the legacy r2h-duration query parameter.  Neither terminal case
@@ -2462,59 +2459,67 @@ int rtsp_session_cleanup(rtsp_session_t *session) {
 }
 
 /* Helper functions */
-static int rtsp_parse_response_header(rtsp_session_t *session, const char *response, size_t *response_offset,
-                                      size_t *response_len) {
+static const char *rtsp_find_mem(const char *hay, size_t hay_len, const char *needle, size_t needle_len) {
+  if (!hay || !needle || hay_len < needle_len)
+    return NULL;
+  for (size_t i = 0; i + needle_len <= hay_len; i++) {
+    if (memcmp(hay + i, needle, needle_len) == 0)
+      return hay + i;
+  }
+  return NULL;
+}
+
+static int rtsp_parse_response_header(rtsp_session_t *session, const char *response, size_t response_buflen,
+                                      size_t *response_offset, size_t *response_len, http_headers_t *hdrs_out) {
   char *session_header = NULL;
   char *transport_header = NULL;
   char *location_header = NULL;
   char *public_header = NULL;
+  rtsp_resp_headers_t parsed;
+  const char *rtsp_start;
+  size_t remain;
   int status_code;
+  int parse_result;
   int result = 0;
+
+  if (hdrs_out)
+    memset(hdrs_out, 0, sizeof(*hdrs_out));
 
   /* Locate RTSP response start (skip any TCP interleaved data before it)
    * TCP interleaved data packets start with '$', RTSP responses start with
    * "RTSP/1.0" */
-  const char *rtsp_start = strstr(response, "RTSP/1.0");
+  rtsp_start = rtsp_find_mem(response, response_buflen, "RTSP/1.0", 8);
   if (!rtsp_start) {
-    /* No RTSP response found yet - might be only interleaved data or incomplete
-     */
     *response_offset = 0;
     *response_len = 0;
     return 1; /* Need more data */
   }
 
-  /* Check if we have a complete RTSP response (ends with \r\n\r\n) */
-  const char *response_end = strstr(rtsp_start, "\r\n\r\n");
-  if (!response_end) {
-    /* Incomplete RTSP response - need more data */
-    *response_offset = rtsp_start - response;
+  *response_offset = (size_t)(rtsp_start - response);
+  remain = response_buflen - *response_offset;
+  parse_result = http_headers_parse_rtsp_response(rtsp_start, remain, 0, &parsed);
+  if (parse_result == 0) {
     *response_len = 0;
     return 1; /* Need more data */
   }
-
-  /* Calculate response offset and length (including \r\n\r\n) */
-  *response_offset = rtsp_start - response;
-  *response_len = (response_end - rtsp_start) + 4;
-
-  /* Parse status line */
-  if (sscanf(rtsp_start, "RTSP/1.0 %d", &status_code) != 1) {
+  if (parse_result < 0) {
     logger(LOG_ERROR, "RTSP: Invalid response format");
-    result = -1;
-    goto cleanup;
+    return -1;
   }
+
+  *response_len = parsed.headers.consumed;
+  status_code = parsed.status;
+  if (hdrs_out)
+    *hdrs_out = parsed.headers;
 
   /* If Content-Length is present, ensure the full body has arrived before
    * declaring the response complete.  This is critical for DESCRIBE responses
    * whose SDP body must be available when rtsp_parse_describe_sdp() runs. */
   if (status_code == 200) {
-    char *cl = rtsp_find_header(rtsp_start, "Content-Length");
-    if (cl) {
-      size_t content_length = (size_t)atoi(cl);
-      free(cl);
-      size_t total_needed = *response_offset + *response_len + content_length;
-      size_t buffered = strlen(response);
-      if (buffered < total_needed) {
-        /* Body not fully received yet */
+    long cl = 0;
+    if (http_headers_get_long(&parsed.headers, "Content-Length", &cl) == 0 && cl > 0) {
+      size_t total_needed = *response_offset + *response_len + (size_t)cl;
+      if (response_buflen < total_needed) {
         *response_len = 0;
         return 1; /* Need more data */
       }
@@ -2523,10 +2528,9 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
 
   /* Handle different status code ranges */
   if (status_code >= 300 && status_code < 400) {
-    /* Redirection response */
     logger(LOG_DEBUG, "RTSP: Received redirect response %d", status_code);
 
-    location_header = rtsp_find_header(rtsp_start, "Location");
+    location_header = http_headers_dup(&parsed.headers, "Location");
     if (!location_header) {
       logger(LOG_ERROR, "RTSP: Redirect response missing Location header");
       result = -1;
@@ -2534,28 +2538,25 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
     }
 
     result = rtsp_handle_redirect(session, location_header);
-    /* Note: result can be 1 (success), 2 (async), or -1 (failure) */
     goto cleanup;
   } else if (status_code == 401) {
-    /* Authentication required */
+    char *www_auth_header;
+
     logger(LOG_DEBUG, "RTSP: Server requires authentication (401)");
 
-    /* Prevent infinite auth retry loops */
     if (session->auth_retry_count >= 2) {
       logger(LOG_ERROR, "RTSP: Authentication failed after %d retries", session->auth_retry_count);
       result = -1;
       goto cleanup;
     }
 
-    /* Extract WWW-Authenticate header */
-    char *www_auth_header = rtsp_find_header(rtsp_start, "WWW-Authenticate");
+    www_auth_header = http_headers_dup(&parsed.headers, "WWW-Authenticate");
     if (!www_auth_header) {
       logger(LOG_ERROR, "RTSP: 401 response missing WWW-Authenticate header");
       result = -1;
       goto cleanup;
     }
 
-    /* Parse authentication challenge */
     if (rtsp_parse_www_authenticate(session, www_auth_header) != 0) {
       logger(LOG_ERROR, "RTSP: Failed to parse WWW-Authenticate header");
       free(www_auth_header);
@@ -2564,18 +2565,14 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
     }
     free(www_auth_header);
 
-    /* Check if we have credentials */
     if (session->username[0] == '\0') {
       logger(LOG_ERROR, "RTSP: Authentication required but no credentials provided");
       result = -1;
       goto cleanup;
     }
 
-    /* Increment retry counter */
     session->auth_retry_count++;
 
-    /* The request about to be retried will answer these fields again; drop the
-     * unauthenticated attempt's answers so a failed retry cannot report them. */
     if (session->state == RTSP_STATE_AWAITING_DESCRIBE) {
       stream_metadata_forget(rtsp_metadata(session), STREAM_METADATA_STAGE_DESCRIBE);
     } else if (session->state == RTSP_STATE_AWAITING_SETUP) {
@@ -2584,11 +2581,10 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
       stream_metadata_forget(rtsp_metadata(session), STREAM_METADATA_STAGE_PLAY);
     }
 
-    /* Move state back to retry the same request */
     if (session->state == RTSP_STATE_AWAITING_OPTIONS) {
       rtsp_session_set_state(session, RTSP_STATE_CONNECTED);
     } else if (session->state == RTSP_STATE_AWAITING_DESCRIBE) {
-      rtsp_session_set_state(session, RTSP_STATE_AWAITING_OPTIONS); /* Will advance to DESCRIBED */
+      rtsp_session_set_state(session, RTSP_STATE_AWAITING_OPTIONS);
     } else if (session->state == RTSP_STATE_AWAITING_SETUP) {
       rtsp_session_set_state(session, RTSP_STATE_DESCRIBED);
     } else if (session->state == RTSP_STATE_AWAITING_PLAY) {
@@ -2598,10 +2594,9 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
     logger(LOG_DEBUG, "RTSP: Retrying request with %s authentication",
            session->auth_type == RTSP_AUTH_DIGEST ? "Digest" : "Basic");
 
-    result = 0; /* Return success to allow state machine to retry */
+    result = 0;
     goto cleanup;
   } else if (status_code != 200) {
-    /* Check if this is a GET_PARAMETER not supported error during keepalive */
     if ((status_code == 454 || status_code == 501) && session->awaiting_keepalive_response &&
         session->use_get_parameter) {
       logger(LOG_DEBUG,
@@ -2610,7 +2605,7 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
              status_code);
       session->use_get_parameter = 0;
       session->awaiting_keepalive_response = 0;
-      result = 0; /* Treat as success, will use OPTIONS next time */
+      result = 0;
       goto cleanup;
     }
 
@@ -2620,14 +2615,12 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
   }
 
   if (session->state == RTSP_STATE_AWAITING_PLAY) {
-    rtsp_parse_play_metadata(session, rtsp_start);
+    rtsp_parse_play_metadata(session, &parsed.headers);
   }
 
-  /* Parse Public header from OPTIONS response to determine supported methods */
   if (session->state == RTSP_STATE_AWAITING_OPTIONS) {
-    public_header = rtsp_find_header(rtsp_start, "Public");
+    public_header = http_headers_dup(&parsed.headers, "Public");
     if (public_header) {
-      /* Check if GET_PARAMETER is supported */
       if (strstr(public_header, "GET_PARAMETER")) {
         session->use_get_parameter = 1;
         logger(LOG_DEBUG, "RTSP: Server supports GET_PARAMETER for keepalive");
@@ -2638,24 +2631,21 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
       }
       logger(LOG_DEBUG, "RTSP: Server advertised methods: %s", public_header);
     } else {
-      /* No Public header - try GET_PARAMETER anyway, fallback on error */
       logger(LOG_DEBUG, "RTSP: No Public header in OPTIONS response, will try "
                         "GET_PARAMETER with fallback");
     }
   }
 
-  /* Extract Session header if present */
-  session_header = rtsp_find_header(rtsp_start, "Session");
+  session_header = http_headers_dup(&parsed.headers, "Session");
   if (session_header) {
     char *semicolon = strchr(session_header, ';');
     if (semicolon)
-      *semicolon = '\0'; /* Remove timeout info */
+      *semicolon = '\0';
     strncpy(session->session_id, session_header, sizeof(session->session_id) - 1);
     session->session_id[sizeof(session->session_id) - 1] = '\0';
   }
 
-  /* Extract Transport header if present */
-  transport_header = rtsp_find_header(rtsp_start, "Transport");
+  transport_header = http_headers_dup(&parsed.headers, "Transport");
   if (transport_header) {
     rtsp_parse_transport_header(session, transport_header);
   }
@@ -2663,7 +2653,6 @@ static int rtsp_parse_response_header(rtsp_session_t *session, const char *respo
   result = 0;
 
 cleanup:
-  /* Free all allocated headers */
   if (session_header)
     free(session_header);
   if (transport_header)
@@ -2887,70 +2876,19 @@ static void rtsp_close_udp_sockets(rtsp_session_t *session, const char *reason) 
   session->server_source_addr[0] = '\0';
 }
 
-static char *rtsp_find_header(const char *response, const char *header_name) {
-  const char *line;
-  size_t header_name_len;
-
-  if (!response || !header_name)
-    return NULL;
-
-  line = strstr(response, "\r\n");
-  if (!line)
-    return NULL;
-  line += 2;
-  header_name_len = strlen(header_name);
-
-  while (*line != '\0') {
-    const char *line_end = strstr(line, "\r\n");
-    const char *colon;
-    const char *value_start;
-    const char *value_end;
-    size_t value_len;
-    char *result;
-
-    if (!line_end || line_end == line)
-      return NULL;
-
-    colon = memchr(line, ':', (size_t)(line_end - line));
-    if (!colon || (size_t)(colon - line) != header_name_len || strncasecmp(line, header_name, header_name_len) != 0) {
-      line = line_end + 2;
-      continue;
-    }
-
-    value_start = colon + 1;
-    while (value_start < line_end && (*value_start == ' ' || *value_start == '\t'))
-      value_start++;
-    value_end = line_end;
-    while (value_end > value_start && (value_end[-1] == ' ' || value_end[-1] == '\t'))
-      value_end--;
-
-    value_len = (size_t)(value_end - value_start);
-    result = malloc(value_len + 1);
-    if (!result) {
-      logger(LOG_ERROR, "RTSP: Failed to allocate memory for header");
-      return NULL;
-    }
-    memcpy(result, value_start, value_len);
-    result[value_len] = '\0';
-    return result;
-  }
-
-  return NULL;
-}
-
-static void rtsp_parse_play_metadata(rtsp_session_t *session, const char *response) {
+static void rtsp_parse_play_metadata(rtsp_session_t *session, const http_headers_t *hdrs) {
   stream_metadata_t *metadata;
   char *scale_header;
   char *range_header;
 
-  if (!response)
+  if (!hdrs)
     return;
 
   metadata = rtsp_metadata(session);
   if (!metadata)
     return;
 
-  scale_header = rtsp_find_header(response, "Scale");
+  scale_header = http_headers_dup(hdrs, "Scale");
   if (scale_header) {
     char *end = NULL;
     double scale;
@@ -2966,7 +2904,7 @@ static void rtsp_parse_play_metadata(rtsp_session_t *session, const char *respon
     free(scale_header);
   }
 
-  range_header = rtsp_find_header(response, "Range");
+  range_header = http_headers_dup(hdrs, "Range");
   if (range_header) {
     size_t len = strlen(range_header);
     int valid = len > 0 && len < sizeof(metadata->playback_range);
@@ -3122,14 +3060,14 @@ static int rtsp_parse_npt_time(const char *value, const char **end_out, double *
  *    ``session->r2h_duration_value``.
  *
  * @param session      RTSP session
- * @param header_start Start of the RTSP response header in the buffer
+ * @param hdrs         Parsed RTSP response headers
  * @param sdp_body     Start of the SDP body (right after \\r\\n\\r\\n)
  */
-static void rtsp_parse_describe_sdp(rtsp_session_t *session, const char *header_start, const char *sdp_body) {
+static void rtsp_parse_describe_sdp(rtsp_session_t *session, const http_headers_t *hdrs, const char *sdp_body) {
   stream_metadata_t *metadata = rtsp_metadata(session);
   session->setup_url[0] = '\0';
 
-  char *content_base = rtsp_find_header(header_start, "Content-Base");
+  char *content_base = http_headers_dup(hdrs, "Content-Base");
   const char *base_url = content_base ? content_base : session->server_url;
 
   if (*sdp_body == '\0')
