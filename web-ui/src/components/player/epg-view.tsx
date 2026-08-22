@@ -11,10 +11,12 @@ import {
   useRef,
   useState,
 } from "react";
+import { useCurrentProgram } from "../../hooks/use-current-program";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import type { EPGData } from "../../lib/epg-parser";
+import { useEpgData } from "../../lib/epg-context";
+import { getEPGChannelId } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
-import type { EPGProgram } from "../../types/player";
+import type { Channel, EPGProgram } from "../../types/player";
 import {
   PLAYER_EPG_LIST_ITEM_CLASS,
   PLAYER_LIST_SURFACE_BASE_CLASS,
@@ -25,13 +27,15 @@ import {
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
 interface EPGViewProps {
-  channelId: string | null;
-  epgData: EPGData;
+  channel: Channel | null;
   onProgramSelect: (programStart: Date, programEnd: Date) => void;
   locale: Locale;
   supportsCatchup: boolean;
-  currentPlayingProgram: EPGProgram | null;
+  streamStartTime: Date;
+  visible: boolean;
 }
+
+const EMPTY_PROGRAMS_BY_DATE = new Map<string, EPGProgram[]>();
 
 export const nextScrollBehaviorRef: RefObject<"smooth" | "instant" | "skip"> = { current: "instant" };
 
@@ -208,31 +212,42 @@ const EPGProgramList = memo(function EPGProgramList({
 });
 
 function EPGViewComponent({
-  channelId,
-  epgData,
+  channel,
   onProgramSelect,
   locale,
   supportsCatchup,
-  currentPlayingProgram,
+  streamStartTime,
+  visible,
 }: EPGViewProps) {
   const t = usePlayerTranslation(locale);
+  const epgData = useEpgData();
+  const currentPlayingProgram = useCurrentProgram(channel, streamStartTime);
+  const channelId = channel ? getEPGChannelId(channel, epgData) : null;
   const currentProgramRef = useRef<HTMLButtonElement>(null);
+  const [hasBeenVisible, setHasBeenVisible] = useState(visible);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const deferredCurrentTime = useDeferredValue(currentTime);
 
   useEffect(() => {
+    if (visible) setHasBeenVisible(true);
+  }, [visible]);
+
+  useEffect(() => {
+    if (!hasBeenVisible) return;
     const interval = window.setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [hasBeenVisible]);
 
-  // Group programs by date
+  // Group programs by date. Skip the walk until the tab has actually been opened
+  // so a hidden Activity subtree does not materialize hundreds of programme rows
+  // the instant the worker result lands.
   const programsByDate = useMemo(() => {
-    if (!channelId) return new Map<string, EPGProgram[]>();
+    if (!hasBeenVisible || !channelId) return EMPTY_PROGRAMS_BY_DATE;
 
     const programs = epgData[channelId];
-    if (!programs || programs.length === 0) return new Map<string, EPGProgram[]>();
+    if (!programs || programs.length === 0) return EMPTY_PROGRAMS_BY_DATE;
 
     // Group all available programs by date (no date range filtering)
     const grouped = new Map<string, EPGProgram[]>();
@@ -248,15 +263,14 @@ function EPGViewComponent({
     });
 
     return grouped;
-  }, [channelId, epgData]);
+  }, [channelId, epgData, hasBeenVisible]);
 
   const channelPrograms = useMemo(() => {
-    if (!channelId) return [];
+    if (!hasBeenVisible || !channelId) return [];
     const programs = epgData[channelId];
     if (!programs || programs.length === 0) return [];
-    // Return all available programs (no date range filtering)
     return programs;
-  }, [channelId, epgData]);
+  }, [channelId, epgData, hasBeenVisible]);
 
   // Auto-scroll to center current/playing program when it changes or channel changes
   useLayoutEffect(() => {
@@ -285,6 +299,10 @@ function EPGViewComponent({
     },
     [onProgramSelect],
   );
+
+  if (!hasBeenVisible) {
+    return null;
+  }
 
   if (!channelId || channelPrograms.length === 0) {
     return (

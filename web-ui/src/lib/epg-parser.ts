@@ -208,8 +208,9 @@ export function getEPGChannelId(
 }
 
 /**
- * Get current program for a channel
- * Uses findLast for efficient reverse search (programs are sorted by start time)
+ * Get current program for a channel.
+ * Programs are sorted by start time, so we binary-search the last programme
+ * that has started and then walk back only if entries overlap.
  */
 export function getCurrentProgram(channelId: string, epgData: EPGData, time: Date = new Date()): EPGProgram | null {
   const programs = epgData[channelId];
@@ -217,8 +218,29 @@ export function getCurrentProgram(channelId: string, epgData: EPGData, time: Dat
     return null;
   }
 
-  // Use findLast to search backwards - more likely to hit recent/current programs
-  return programs.findLast((p) => p.start <= time && p.end > time) || null;
+  const timeMs = time.getTime();
+  let lo = 0;
+  let hi = programs.length - 1;
+  let lastStarted = -1;
+
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (programs[mid].start.getTime() <= timeMs) {
+      lastStarted = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  for (let i = lastStarted; i >= 0; i--) {
+    const program = programs[i];
+    if (program.end.getTime() > timeMs) {
+      return program;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -283,16 +305,21 @@ export function generateFallbackPrograms(
   const roundedHours = Math.floor(hoursSinceEpoch / 2) * 2;
   currentStart = new Date(roundedHours * 60 * 60 * 1000);
 
+  let programIndex = 0;
+  const programCount = existingPrograms.length;
+
   while (currentStart < now) {
     const currentEnd = new Date(currentStart.getTime() + TWO_HOURS_MS);
+    const slotStartMs = currentStart.getTime();
+    const slotEndMs = currentEnd.getTime();
 
-    // Check if this time slot overlaps with any existing program
-    const hasOverlap = existingPrograms.some(
-      (p) =>
-        (p.start <= currentStart && p.end > currentStart) ||
-        (p.start < currentEnd && p.end >= currentEnd) ||
-        (p.start >= currentStart && p.end <= currentEnd),
-    );
+    // Programs are sorted: skip anything that ended before this slot, then the
+    // next programme is the only candidate that can overlap it.
+    while (programIndex < programCount && existingPrograms[programIndex].end.getTime() <= slotStartMs) {
+      programIndex++;
+    }
+
+    const hasOverlap = programIndex < programCount && existingPrograms[programIndex].start.getTime() < slotEndMs;
 
     if (!hasOverlap) {
       fallbackPrograms.push({
@@ -308,6 +335,21 @@ export function generateFallbackPrograms(
   return fallbackPrograms;
 }
 
+export type EpgFillChannel = {
+  tvgId?: string;
+  tvgName?: string;
+  name: string;
+  hasCatchup?: boolean;
+  sources?: { catchup?: string; catchupSource?: string }[];
+};
+
+export function channelHasCatchup(channel: EpgFillChannel): boolean {
+  if (typeof channel.hasCatchup === "boolean") {
+    return channel.hasCatchup;
+  }
+  return Boolean(channel.sources?.some((source) => source.catchup && source.catchupSource));
+}
+
 /**
  * Fill gaps in EPG data with fallback programs
  * Only processes channels that have catchup support
@@ -316,21 +358,11 @@ export function generateFallbackPrograms(
  * @param lookbackHours - How many hours back from now to generate fallback programs (default: 48)
  * @returns EPG data with gaps filled
  */
-export function fillEPGGaps(
-  epgData: EPGData,
-  channels: {
-    tvgId?: string;
-    tvgName?: string;
-    name: string;
-    sources?: { catchup?: string; catchupSource?: string }[];
-  }[],
-  lookbackHours: number = 72,
-): EPGData {
+export function fillEPGGaps(epgData: EPGData, channels: EpgFillChannel[], lookbackHours: number = 72): EPGData {
   const filledData = { ...epgData };
 
   for (const channel of channels) {
-    // Only process channels with catchup support
-    if (!channel.sources?.some((s) => s.catchup && s.catchupSource)) {
+    if (!channelHasCatchup(channel)) {
       continue;
     }
 

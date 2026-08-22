@@ -13,7 +13,8 @@ import {
   useState,
 } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
-import { type EPGData, getCurrentProgram, getEPGChannelId } from "../../lib/epg-parser";
+import { useEpgData } from "../../lib/epg-context";
+import { getCurrentProgram, getEPGChannelId } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
 import type { Channel } from "../../types/player";
 import { ChannelListItem } from "./channel-list-item";
@@ -25,7 +26,6 @@ interface ChannelListProps {
   onChannelSelect: (channel: Channel) => void;
   locale: Locale;
   settingsSlot?: React.ReactNode;
-  epgData?: EPGData;
 }
 
 export const nextScrollBehaviorRef: RefObject<"smooth" | "instant" | "skip"> = { current: "instant" };
@@ -104,9 +104,9 @@ function ChannelListComponent({
   onChannelSelect,
   locale,
   settingsSlot,
-  epgData,
 }: ChannelListProps) {
   const t = usePlayerTranslation(locale);
+  const epgData = useEpgData();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
@@ -130,12 +130,19 @@ function ChannelListComponent({
   const currentProgramMap = useMemo(() => {
     const map: Record<string, string> = {};
     if (!channels || !deferredEpgData) return map;
+    const titleByEpgId = new Map<string, string | undefined>();
     for (const ch of channels) {
       const epgId = getEPGChannelId(ch, deferredEpgData);
       if (!epgId) continue;
-      const program = getCurrentProgram(epgId, deferredEpgData, now);
-      if (program?.title) {
-        map[ch.id] = program.title;
+      let title: string | undefined;
+      if (titleByEpgId.has(epgId)) {
+        title = titleByEpgId.get(epgId);
+      } else {
+        title = getCurrentProgram(epgId, deferredEpgData, now)?.title;
+        titleByEpgId.set(epgId, title);
+      }
+      if (title) {
+        map[ch.id] = title;
       }
     }
     return map;

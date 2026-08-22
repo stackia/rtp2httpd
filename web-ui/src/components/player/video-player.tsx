@@ -1,8 +1,10 @@
 import { clsx } from "clsx";
 import { CircleAlert, Play, X } from "lucide-react";
 import {
+  memo,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -11,6 +13,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useCurrentProgram } from "../../hooks/use-current-program";
 import { usePlayerTouchGestures } from "../../hooks/use-player-touch-gestures";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import {
@@ -60,7 +63,6 @@ interface VideoPlayerProps {
   playMode: "live" | "catchup";
   onError?: (error: string) => void;
   locale: Locale;
-  currentProgram?: EPGProgram | null;
   onSeek?: (seekTime: Date, goingLive: boolean) => void;
   /** Recalibrate MSE t=0 → wall-clock mapping (live mode). */
   onStreamStartTimeChange?: (time: Date) => void;
@@ -256,13 +258,47 @@ function PlayerTopLeftOverlay({
   );
 }
 
+function MediaSessionEpgSync({
+  channel,
+  streamStartTime,
+  programRef,
+  onProgramChange,
+}: {
+  channel: Channel | null;
+  streamStartTime: Date;
+  programRef: RefObject<EPGProgram | null>;
+  onProgramChange: (program: EPGProgram | null) => void;
+}) {
+  const program = useCurrentProgram(channel, streamStartTime);
+  programRef.current = program;
+
+  useEffect(() => {
+    onProgramChange(program);
+  }, [onProgramChange, program]);
+
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    if (!channel) {
+      navigator.mediaSession.metadata = null;
+      return;
+    }
+    const groupLabel = channel.groups.join(" / ");
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: program?.title || channel.name,
+      artist: program?.title ? channel.name : groupLabel,
+      artwork: channel.logo ? [{ src: channel.logo }] : [],
+    });
+  }, [channel, program]);
+
+  return null;
+}
+
 function VideoPlayerComponent({
   channel,
   segments,
   onError,
   locale,
   playMode,
-  currentProgram = null,
   onSeek,
   onStreamStartTimeChange,
   streamStartTime,
@@ -290,7 +326,8 @@ function VideoPlayerComponent({
   // connection with no seek to show for it. Seeking is therefore off across every entry
   // point — the timeline in PlayerControls gates on the same expression.
   const isCatchupSupported = Boolean(channel?.sources.some((source) => source.catchup && source.catchupSource));
-  const canSeekProgramInMediaSession = Boolean(currentProgram) && isCatchupSupported;
+  const canSeekProgramInMediaSession = isCatchupSupported;
+  const currentProgramRef = useRef<EPGProgram | null>(null);
   const canControlVolume = isVolumeControlSupported();
   const canNavigateChannelsInMediaSession = Boolean(channel && onChannelNavigate);
 
@@ -979,7 +1016,9 @@ function VideoPlayerComponent({
     const state = player.getState();
     mediaSessionPositionUpdatedAtRef.current = now;
 
-    const timeline = currentProgram ? createProgramTimeline(currentProgram, streamStartTime, state.currentTime) : null;
+    const timeline = currentProgramRef.current
+      ? createProgramTimeline(currentProgramRef.current, streamStartTime, state.currentTime)
+      : null;
     const supportsCatchup = channel.sources.some((source) => source.catchup && source.catchupSource);
 
     try {
@@ -1021,6 +1060,7 @@ function VideoPlayerComponent({
   });
 
   const handleMediaSessionSeekTo = useEffectEvent((details: MediaSessionActionDetails) => {
+    const currentProgram = currentProgramRef.current;
     if (!currentProgram || details.seekTime === undefined) return;
     const programTimeline = createProgramTimeline(currentProgram, streamStartTime, currentVideoTimeRef.current);
     if (!programTimeline) return;
@@ -1035,20 +1075,10 @@ function VideoPlayerComponent({
     onChannelNavigate?.("next");
   });
 
-  // Media Session: lock screen / control center metadata (esp. useful during PiP playback)
-  useEffect(() => {
-    if (!("mediaSession" in navigator)) return;
-    if (!channel) {
-      navigator.mediaSession.metadata = null;
-      return;
-    }
-    const groupLabel = channel.groups.join(" / ");
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: currentProgram?.title || channel.name,
-      artist: currentProgram?.title ? channel.name : groupLabel,
-      artwork: channel.logo ? [{ src: channel.logo }] : [],
-    });
-  }, [channel, currentProgram]);
+  const handleCurrentProgramChange = useEffectEvent((program: EPGProgram | null) => {
+    currentProgramRef.current = program;
+    updateMediaSessionPosition(true);
+  });
 
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
@@ -1059,7 +1089,7 @@ function VideoPlayerComponent({
   // biome-ignore lint/correctness/useExhaustiveDependencies: synchronize Media Session immediately on timeline/slot state changes
   useEffect(() => {
     updateMediaSessionPosition(true);
-  }, [channel, currentProgram, playMode, activeSourceIndex, visibleSlotId, isPlaying]);
+  }, [channel, playMode, activeSourceIndex, visibleSlotId, isPlaying]);
 
   useEffect(
     () => () => {
@@ -2011,7 +2041,6 @@ function VideoPlayerComponent({
         >
           <PlayerControls
             channel={channel}
-            currentProgram={currentProgram}
             isLive={isLive}
             onSeek={handleSeek}
             onScrubbingChange={handleScrubbingChange}
@@ -2054,6 +2083,12 @@ function VideoPlayerComponent({
         showSidebar && "md:pr-0",
       )}
     >
+      <MediaSessionEpgSync
+        channel={channel}
+        streamStartTime={streamStartTime}
+        programRef={currentProgramRef}
+        onProgramChange={handleCurrentProgramChange}
+      />
       <div ref={playerDockRef} className="contents">
         {isDocumentPiP && (
           <div className="@container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-[radial-gradient(circle_at_center,#102044_0%,#050b18_62%,#01030a_100%)] px-4 text-center font-medium text-blue-50/65 text-sm md:aspect-auto md:h-full md:text-base">
@@ -2066,4 +2101,4 @@ function VideoPlayerComponent({
   );
 }
 
-export { VideoPlayerComponent as VideoPlayer };
+export const VideoPlayer = memo(VideoPlayerComponent);

@@ -1,18 +1,12 @@
-import { parseEPG } from "./epg-parser";
-
-interface EPGWorkerRequest {
-  url: string;
-  validChannelIds?: string[];
-}
-
-type EPGWorkerResponse = { type: "success"; epg: ReturnType<typeof parseEPG> } | { type: "error"; message: string };
+import { fillEPGGaps, parseEPG } from "./epg-parser";
+import type { EPGWorkerRequest, EPGWorkerResponse } from "./epg-worker-protocol";
 
 function post(message: EPGWorkerResponse): void {
   (self as unknown as { postMessage(msg: unknown): void }).postMessage(message);
 }
 
 self.addEventListener("message", async (event: MessageEvent<EPGWorkerRequest>) => {
-  const { url, validChannelIds } = event.data;
+  const { url, validChannelIds, channels, lookbackHours } = event.data;
   try {
     const response = await fetch(url);
     if (!response.ok) {
@@ -20,7 +14,7 @@ self.addEventListener("message", async (event: MessageEvent<EPGWorkerRequest>) =
     }
     const xmlText = await response.text();
     const epg = parseEPG(xmlText, validChannelIds ? new Set(validChannelIds) : undefined);
-    post({ type: "success", epg });
+    post({ type: "success", epg: channels ? fillEPGGaps(epg, channels, lookbackHours) : epg });
   } catch (error) {
     post({
       type: "error",

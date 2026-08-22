@@ -1,27 +1,32 @@
-import type { EPGData } from "./epg-parser";
+import type { EPGData, EpgFillChannel } from "./epg-parser";
 import EPGWorker from "./epg-worker.ts?worker&inline";
+import type { EPGWorkerRequest, EPGWorkerResponse } from "./epg-worker-protocol";
 
-interface EPGWorkerRequest {
-  url: string;
-  validChannelIds?: string[];
+interface LoadEPGOptions {
+  validChannelIds?: Set<string>;
+  channels?: EpgFillChannel[];
+  lookbackHours?: number;
 }
 
-type EPGWorkerResponse = { type: "success"; epg: EPGData } | { type: "error"; message: string };
+let inFlight: { key: string; promise: Promise<EPGData> } | null = null;
 
-let inFlight: Promise<EPGData> | null = null;
+function requestKey(url: string, options: LoadEPGOptions | undefined): string {
+  return `${url}\0${options?.lookbackHours ?? ""}\0${options?.validChannelIds?.size ?? 0}\0${options?.channels?.length ?? 0}`;
+}
 
 /**
- * Fetch and parse an XMLTV EPG in a Web Worker so the main thread stays responsive.
- * The player loads EPG once; overlapping calls share the same in-flight job
- * (React StrictMode remount) instead of starting a second parse.
+ * Fetch, parse, and gap-fill an XMLTV EPG in a Web Worker so the main thread
+ * only applies the finished object. Overlapping calls with the same arguments
+ * share the in-flight job (React StrictMode remount).
  */
-export function loadEPG(url: string, validChannelIds?: Set<string>): Promise<EPGData> {
-  if (inFlight) {
-    return inFlight;
+export function loadEPG(url: string, options?: LoadEPGOptions): Promise<EPGData> {
+  const key = requestKey(url, options);
+  if (inFlight?.key === key) {
+    return inFlight.promise;
   }
 
   const worker = new EPGWorker();
-  inFlight = new Promise((resolve, reject) => {
+  const promise = new Promise<EPGData>((resolve, reject) => {
     const finish = () => {
       worker.terminate();
     };
@@ -43,14 +48,19 @@ export function loadEPG(url: string, validChannelIds?: Set<string>): Promise<EPG
     const request: EPGWorkerRequest = {
       // Inline blob workers resolve relative URLs against `blob:`, so make this absolute first.
       url: new URL(url, document.baseURI).href,
-      validChannelIds: validChannelIds ? Array.from(validChannelIds) : undefined,
+      validChannelIds: options?.validChannelIds ? Array.from(options.validChannelIds) : undefined,
+      channels: options?.channels,
+      lookbackHours: options?.lookbackHours,
     };
     worker.postMessage(request);
   });
 
-  void inFlight.finally(() => {
-    inFlight = null;
+  inFlight = { key, promise };
+  void promise.finally(() => {
+    if (inFlight?.promise === promise) {
+      inFlight = null;
+    }
   });
 
-  return inFlight;
+  return promise;
 }

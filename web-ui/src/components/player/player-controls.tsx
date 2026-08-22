@@ -14,6 +14,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { useCurrentProgram } from "../../hooks/use-current-program";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import { createProgramTimeline, programProgressToWallClock } from "../../lib/program-timeline";
@@ -28,8 +29,6 @@ import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 interface PlayerControlsProps {
   // Channel information
   channel: Channel;
-  // EPG program information
-  currentProgram: EPGProgram | null;
   // Whether we're in live mode or catchup mode
   isLive: boolean;
   // Callback when user seeks to a new position
@@ -360,7 +359,10 @@ const PlayerTimeline = memo(function PlayerTimeline({
 const PlayerTimeDisplay = memo(function PlayerTimeDisplay({
   currentProgram,
   seekStartTime,
-}: Pick<PlayerControlsProps, "currentProgram" | "seekStartTime">) {
+}: {
+  currentProgram: EPGProgram | null;
+  seekStartTime: Date;
+}) {
   const currentTime = usePlaybackTime();
   const { duration, elapsedTime, startTime } = usePlaybackTimelineState(currentProgram, seekStartTime, currentTime);
   return (
@@ -378,7 +380,6 @@ const PlayerTimeDisplay = memo(function PlayerTimeDisplay({
 
 function PlayerControlsComponent({
   channel,
-  currentProgram,
   isLive,
   onSeek,
   onScrubbingChange,
@@ -406,6 +407,7 @@ function PlayerControlsComponent({
   onSourceChange,
 }: PlayerControlsProps) {
   const t = usePlayerTranslation(locale);
+  const currentProgram = useCurrentProgram(channel, seekStartTime);
   const isEffectivelyMuted = isMuted || volume <= 0;
   const isCatchupSupported = channel.sources.some((s) => s.catchup && s.catchupSource);
   const hasTimeline = isCatchupSupported || Boolean(currentProgram);

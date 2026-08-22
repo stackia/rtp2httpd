@@ -1,16 +1,6 @@
 import { clsx } from "clsx";
 import { AlertTriangle, ExternalLink, ListChecks, RefreshCw } from "lucide-react";
-import {
-  Activity,
-  StrictMode,
-  startTransition,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Activity, StrictMode, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ChannelList,
@@ -28,8 +18,9 @@ import { usePlayerAppearance } from "../hooks/use-player-appearance";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
 import { isDocumentPictureInPictureSupported } from "../lib/document-picture-in-picture";
+import { EpgProvider, useSetEpgData } from "../lib/epg-context";
 import { loadEPG } from "../lib/epg-loader";
-import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId } from "../lib/epg-parser";
+import { fillEPGGaps } from "../lib/epg-parser";
 import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
 import { isLGWebOS } from "../lib/platform";
@@ -108,9 +99,10 @@ function PlayerPage() {
     PICTURE_IN_PICTURE_MODES,
   );
   const t = usePlayerTranslation(locale);
+  const setEpgData = useSetEpgData();
+  const epgRequestIdRef = useRef(0);
 
   const [metadata, setMetadata] = useState<M3UMetadata | null>(null);
-  const [epgData, setEpgData] = useState<EPGData>({});
   const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
   const [playMode, setPlayMode] = useState<"live" | "catchup">("live");
   const [playbackSegments, setPlaybackSegments] = useState<PlayerSegment[]>([]);
@@ -142,7 +134,6 @@ function PlayerPage() {
 
   // Track current video playback time in seconds (relative to stream start)
   const [currentVideoTime, setCurrentVideoTime] = useState(0);
-  const deferredCurrentVideoTime = useDeferredValue(currentVideoTime);
   const currentVideoTimeRef = useRef(0);
   const currentVideoSecondRef = useRef(0);
 
@@ -418,10 +409,17 @@ function PlayerPage() {
 
       // Show empty-EPG fallback immediately so startup is not blocked by XMLTV parsing.
       // Catchup-capable channels get 2-hour "精彩节目" gap-fill programs until real data arrives.
+      const requestId = ++epgRequestIdRef.current;
       setEpgData(fillEPGGaps({}, parsed.channels));
 
       if (parsed.tvgUrl) {
         const validChannelIds = new Set<string>();
+        const fillChannels = parsed.channels.map((channel) => ({
+          tvgId: channel.tvgId,
+          tvgName: channel.tvgName,
+          name: channel.name,
+          hasCatchup: channel.sources.some((source) => source.catchup && source.catchupSource),
+        }));
         for (const channel of parsed.channels) {
           if (channel.tvgId) validChannelIds.add(channel.tvgId);
           if (channel.tvgName) validChannelIds.add(channel.tvgName);
@@ -429,12 +427,10 @@ function PlayerPage() {
         }
 
         const epgUrl = parsed.tvgUrl.replace(".gz", "");
-        const channels = parsed.channels;
-        void loadEPG(epgUrl, validChannelIds)
+        void loadEPG(epgUrl, { validChannelIds, channels: fillChannels })
           .then((epg) => {
-            startTransition(() => {
-              setEpgData(fillEPGGaps(epg, channels));
-            });
+            if (requestId !== epgRequestIdRef.current) return;
+            setEpgData(epg);
           })
           .catch((err) => {
             console.error("Failed to load EPG:", err);
@@ -450,27 +446,12 @@ function PlayerPage() {
       setError(err instanceof Error ? err.message : "failedToLoadPlaylist");
       setIsLoading(false);
     }
-  }, [selectChannel]);
+  }, [selectChannel, setEpgData]);
 
   // Load playlist on mount
   useEffect(() => {
     loadPlaylist();
   }, [loadPlaylist]);
-
-  // Get current program for the video player
-  // Use tvgId / tvgName / name with fallback logic for EPG matching
-  // Use streamStartTime + currentVideoTime to determine the actual time position
-  const currentVideoProgram = useMemo(() => {
-    if (!currentChannel) return null;
-
-    // Get EPG channel ID using fallback logic (tvgId -> tvgName -> name)
-    const epgChannelId = getEPGChannelId(currentChannel, epgData);
-    if (!epgChannelId) return null;
-
-    // Calculate absolute time based on stream start + current video position
-    const absoluteTime = mseToWallClock(deferredCurrentVideoTime, streamStartTime);
-    return getCurrentProgram(epgChannelId, epgData, absoluteTime);
-  }, [currentChannel, epgData, streamStartTime, deferredCurrentVideoTime]);
 
   const handleVideoError = useCallback((err: string) => {
     setError(err);
@@ -606,17 +587,16 @@ function PlayerPage() {
         <title>{t("title")}</title>
 
         {/* Main Content */}
-        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-          {/* Video Player - Mobile: fixed aspect ratio at top, Desktop: fills left side */}
-          <div className="w-full sticky md:static md:flex-1 shrink-0">
-            <PlaybackTimeProvider value={currentVideoTime}>
+        <PlaybackTimeProvider value={currentVideoTime}>
+          <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+            {/* Video Player - Mobile: fixed aspect ratio at top, Desktop: fills left side */}
+            <div className="w-full sticky md:static md:flex-1 shrink-0">
               <VideoPlayer
                 channel={currentChannel}
                 segments={playbackSegments}
                 playMode={playMode}
                 onError={handleVideoError}
                 locale={locale}
-                currentProgram={currentVideoProgram}
                 onSeek={handleVideoSeek}
                 onStreamStartTimeChange={setStreamStartTime}
                 streamStartTime={streamStartTime}
@@ -636,62 +616,61 @@ function PlayerPage() {
                 onSourceChange={handleSourceChange}
                 onPlaybackStarted={handlePlaybackStarted}
               />
-            </PlaybackTimeProvider>
-          </div>
-
-          {/* Sidebar - Mobile: always visible (below video, hidden in fullscreen), Desktop: toggle-able side panel (visible in fullscreen) */}
-          <div
-            className={clsx(
-              "player-performance-panel-background flex w-full flex-1 flex-col overflow-hidden border-blue-950/10 border-t bg-white/68 pl-[env(safe-area-inset-left)] shadow-[-14px_0_40px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(160deg,rgba(5,13,32,0.96),rgba(17,16,49,0.92))] dark:shadow-[-18px_0_48px_rgba(1,7,24,0.28)] md:w-80 md:flex-initial md:border-t-0 md:border-l md:pt-[env(safe-area-inset-top)] md:pl-0",
-              insetSidebarRight && "pr-[env(safe-area-inset-right)]",
-              (showSidebar || isMobile) && !(isFullscreen && isMobile) ? "" : "hidden",
-            )}
-          >
-            {/* Sidebar Tabs */}
-            <div className="player-performance-panel-background flex shrink-0 items-center border-blue-950/10 border-b bg-white/44 shadow-[0_8px_24px_rgba(30,64,175,0.045)] backdrop-blur-xl dark:border-blue-100/10 dark:bg-[linear-gradient(90deg,#1a2035,#292643)]">
-              {(["channels", "epg"] as const).map((view) => (
-                <button
-                  type="button"
-                  key={view}
-                  onClick={() => handleSidebarViewChange(view)}
-                  className={clsx(
-                    "player-performance-motion min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap border-b-2 px-3 py-2 text-center font-semibold text-xs leading-5 tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] md:px-4 md:py-3 md:text-sm",
-                    selectedSidebarView === view
-                      ? "border-blue-500 bg-[linear-gradient(to_top,rgba(59,130,246,0.12),transparent)] text-blue-700 shadow-[inset_0_-1px_0_rgba(59,130,246,0.18)] dark:border-blue-300 dark:text-blue-200"
-                      : "cursor-pointer border-transparent text-slate-500 hover:bg-blue-400/5 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-100",
-                  )}
-                >
-                  {view === "channels" ? `${t("channels")} (${metadata?.channels.length || 0})` : t("programGuide")}
-                </button>
-              ))}
             </div>
 
-            {/* Sidebar Content */}
-            <div className="flex-1 overflow-hidden">
-              <Activity mode={renderedSidebarView === "channels" ? "visible" : "hidden"}>
-                <ChannelList
-                  channels={metadata?.channels}
-                  groups={metadata?.groups}
-                  currentChannel={currentChannel}
-                  onChannelSelect={selectChannel}
-                  locale={locale}
-                  settingsSlot={settingsSlot}
-                  epgData={epgData}
-                />
-              </Activity>
-              <Activity mode={renderedSidebarView === "epg" ? "visible" : "hidden"}>
-                <EPGView
-                  channelId={currentChannel ? getEPGChannelId(currentChannel, epgData) : null}
-                  epgData={epgData}
-                  onProgramSelect={handleProgramSelect}
-                  locale={locale}
-                  supportsCatchup={!!currentChannel?.sources.some((s) => s.catchup && s.catchupSource)}
-                  currentPlayingProgram={currentVideoProgram}
-                />
-              </Activity>
+            {/* Sidebar - Mobile: always visible (below video, hidden in fullscreen), Desktop: toggle-able side panel (visible in fullscreen) */}
+            <div
+              className={clsx(
+                "player-performance-panel-background flex w-full flex-1 flex-col overflow-hidden border-blue-950/10 border-t bg-white/68 pl-[env(safe-area-inset-left)] shadow-[-14px_0_40px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(160deg,rgba(5,13,32,0.96),rgba(17,16,49,0.92))] dark:shadow-[-18px_0_48px_rgba(1,7,24,0.28)] md:w-80 md:flex-initial md:border-t-0 md:border-l md:pt-[env(safe-area-inset-top)] md:pl-0",
+                insetSidebarRight && "pr-[env(safe-area-inset-right)]",
+                (showSidebar || isMobile) && !(isFullscreen && isMobile) ? "" : "hidden",
+              )}
+            >
+              {/* Sidebar Tabs */}
+              <div className="player-performance-panel-background flex shrink-0 items-center border-blue-950/10 border-b bg-white/44 shadow-[0_8px_24px_rgba(30,64,175,0.045)] backdrop-blur-xl dark:border-blue-100/10 dark:bg-[linear-gradient(90deg,#1a2035,#292643)]">
+                {(["channels", "epg"] as const).map((view) => (
+                  <button
+                    type="button"
+                    key={view}
+                    onClick={() => handleSidebarViewChange(view)}
+                    className={clsx(
+                      "player-performance-motion min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap border-b-2 px-3 py-2 text-center font-semibold text-xs leading-5 tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] md:px-4 md:py-3 md:text-sm",
+                      selectedSidebarView === view
+                        ? "border-blue-500 bg-[linear-gradient(to_top,rgba(59,130,246,0.12),transparent)] text-blue-700 shadow-[inset_0_-1px_0_rgba(59,130,246,0.18)] dark:border-blue-300 dark:text-blue-200"
+                        : "cursor-pointer border-transparent text-slate-500 hover:bg-blue-400/5 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-100",
+                    )}
+                  >
+                    {view === "channels" ? `${t("channels")} (${metadata?.channels.length || 0})` : t("programGuide")}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sidebar Content */}
+              <div className="flex-1 overflow-hidden">
+                <Activity mode={renderedSidebarView === "channels" ? "visible" : "hidden"}>
+                  <ChannelList
+                    channels={metadata?.channels}
+                    groups={metadata?.groups}
+                    currentChannel={currentChannel}
+                    onChannelSelect={selectChannel}
+                    locale={locale}
+                    settingsSlot={settingsSlot}
+                  />
+                </Activity>
+                <Activity mode={renderedSidebarView === "epg" ? "visible" : "hidden"}>
+                  <EPGView
+                    channel={currentChannel}
+                    onProgramSelect={handleProgramSelect}
+                    locale={locale}
+                    supportsCatchup={!!currentChannel?.sources.some((s) => s.catchup && s.catchupSource)}
+                    streamStartTime={streamStartTime}
+                    visible={renderedSidebarView === "epg"}
+                  />
+                </Activity>
+              </div>
             </div>
           </div>
-        </div>
+        </PlaybackTimeProvider>
 
         {/* Loading overlay shares the player viewport to avoid iOS standalone fixed-position gaps. */}
         {isLoading && (
@@ -795,6 +774,8 @@ function PlayerPage() {
 // Mount the app
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
-    <PlayerPage />
+    <EpgProvider>
+      <PlayerPage />
+    </EpgProvider>
   </StrictMode>,
 );
