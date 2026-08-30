@@ -50,6 +50,45 @@ chmod +x rtp2httpd-X.Y.Z-x86_64
 > [!TIP]
 > 你可以使用这个示例文件 [rtp2httpd.conf](https://github.com/stackia/rtp2httpd/blob/main/rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](../reference/configuration.md)。
 
+另外 rtp2httpd 目前已不支持自身以守护进程方式运行。对于 Debian/Ubuntu 系统，您可以在 `/etc/systemd/system/rtp2httpd.service` 内添加以下内容以创建 systemd 服务单元。其他使用 systemd 作为服务管理器的操作系统也可以参考以下配置进行配置。
+
+```text
+[Unit]
+Description=rtp2httpd - Multicast RTP/RTSP to Unicast HTTP stream converter
+Documentation=https://github.com/stackia/rtp2httpd
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+# ExecStart 中的路径需与实际安装位置一致，可用 `command -v rtp2httpd` 或 `which rtp2httpd` 确认。
+# ExecStart=/usr/local/bin/rtp2httpd --config /etc/rtp2httpd.conf
+ExecStart=/opt/rtp2httpd/rtp2httpd --config /opt/rtp2httpd/rtp2httpd.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=3s
+# 建议以非 root 专用用户运行，可通过 `useradd --system --no-create-home --shell /usr/sbin/nologin rtp2httpd` 创建用户
+User=rtp2httpd
+Group=rtp2httpd
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target
+```
+
+文件创建完成后使用以下指令启动 rtp2httpd 服务。
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now rtp2httpd
+sudo systemctl status rtp2httpd
+```
+
 ## Docker 容器部署
 
 适用于支持 Docker 的设备。**需要使用 host 网络模式**以正确接收组播流。
