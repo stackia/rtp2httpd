@@ -50,6 +50,45 @@ chmod +x rtp2httpd-X.Y.Z-x86_64
 > [!TIP]
 > You can use this example file [rtp2httpd.conf](https://github.com/stackia/rtp2httpd/blob/main/rtp2httpd.conf) as a base to modify your configuration. See [Configuration Reference](/en/reference/configuration) for details.
 
+Also note that rtp2httpd no longer supports running as a daemon on its own. On Debian/Ubuntu systems, you can create a systemd service unit by adding the following content to `/etc/systemd/system/rtp2httpd.service`. Other operating systems using systemd as the service manager can also refer to the configuration below.
+
+```text
+[Unit]
+Description=rtp2httpd - Multicast RTP/RTSP to Unicast HTTP stream converter
+Documentation=https://github.com/stackia/rtp2httpd
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+# The path in ExecStart must match the actual installation location; you can verify it with `command -v rtp2httpd` or `which rtp2httpd`.
+# ExecStart=/usr/local/bin/rtp2httpd --config /etc/rtp2httpd.conf
+ExecStart=/opt/rtp2httpd/rtp2httpd --config /opt/rtp2httpd/rtp2httpd.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=3s
+# It is recommended to run as a dedicated non-root user, which can be created via `useradd --system --no-create-home --shell /usr/sbin/nologin rtp2httpd`
+User=rtp2httpd
+Group=rtp2httpd
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Once the file has been created, use the following commands to start the rtp2httpd service.
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now rtp2httpd
+sudo systemctl status rtp2httpd
+```
+
 ## Docker Container Deployment
 
 Suitable for Docker-capable devices. **Requires host network mode** to properly receive multicast streams.
