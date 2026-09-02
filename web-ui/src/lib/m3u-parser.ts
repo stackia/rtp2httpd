@@ -1,6 +1,9 @@
 import type { PlayerSegment } from "../playback-engine";
 import type { Channel, M3UMetadata, Source } from "../types/player";
+import { type CatchupProgramBound, clampCatchupStartTime, planCatchupSegmentWindows } from "./catchup-windows";
 import { toPlaylistRelativePath } from "./url";
+
+export { CATCHUP_MIN_DURATION_MS, clampCatchupStartTime } from "./catchup-windows";
 
 /**
  * Parse M3U playlist content
@@ -177,18 +180,14 @@ function mergeChannelSources(channels: Channel[]): Channel[] {
   return merged;
 }
 
-/** Minimum catchup window (ms). Shorter playseek ranges can fail on some servers. */
-export const CATCHUP_MIN_DURATION_MS = 30_000;
 const CATCHUP_SEGMENT_OVERLAP_MS = 1_000;
 
 export interface CatchupSegmentOptions {
   overlapMs?: number;
-}
-
-/** Clamp catchup start so the window back to `now` is at least {@link CATCHUP_MIN_DURATION_MS}. */
-export function clampCatchupStartTime(seekTime: Date, now = new Date()): Date {
-  const minStartMs = now.getTime() - CATCHUP_MIN_DURATION_MS;
-  return new Date(Math.min(seekTime.getTime(), minStartMs));
+  /** EPG programmes for the channel; windows split on their start/end times when present. */
+  programs?: readonly CatchupProgramBound[];
+  /** Override wall clock (tests). */
+  now?: Date;
 }
 
 /**
@@ -207,9 +206,8 @@ export function buildCatchupSegments(
   }
 
   const catchupMode = source.catchup || "default";
-  const now = new Date();
+  const now = options.now ?? new Date();
   const startTime = clampCatchupStartTime(startTimeArg, now);
-  const endingFuture = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   const segments: PlayerSegment[] = [];
   const overlapMs = Math.max(0, options.overlapMs ?? CATCHUP_SEGMENT_OVERLAP_MS);
 
@@ -491,11 +489,6 @@ export function buildCatchupSegments(
     }
   };
 
-  // Segment duration: (now - startTime) in both seconds and milliseconds
-  const segmentDurationMs = Math.min(
-    Math.max(now.getTime() - startTime.getTime(), CATCHUP_MIN_DURATION_MS),
-    5 * 60 * 60 * 1000, // max 5 hours
-  );
   const buildOverlappedSegmentUrl = (segmentStartTime: Date, segmentEndTime: Date): string => {
     const requestStartTime =
       segments.length === 0
@@ -504,33 +497,11 @@ export function buildCatchupSegments(
     return buildCatchupUrl(requestStartTime, segmentEndTime);
   };
 
-  // Build segments from startTime to now (catchup/replay segments)
-  let currentTime = new Date(startTime.getTime());
-  // End replay chunks at (now - 10s): avoid passing local `now` to servers that may
-  // be clock-skewed and reject requests whose end time looks like the future.
-  const splitPoint = new Date(now.getTime() - 10000);
-
-  while (currentTime < splitPoint) {
-    const segmentEndTime = new Date(Math.min(currentTime.getTime() + segmentDurationMs, splitPoint.getTime()));
-
+  for (const timeWindow of planCatchupSegmentWindows(startTimeArg, now, options.programs)) {
     segments.push({
-      duration: (segmentEndTime.getTime() - currentTime.getTime()) / 1000,
-      url: buildOverlappedSegmentUrl(currentTime, segmentEndTime),
+      duration: (timeWindow.end.getTime() - timeWindow.start.getTime()) / 1000,
+      url: buildOverlappedSegmentUrl(timeWindow.start, timeWindow.end),
     });
-
-    currentTime = segmentEndTime;
-  }
-
-  // Build segments from splitPoint to future (half-duration live segments)
-  while (currentTime < endingFuture) {
-    const segmentEndTime = new Date(Math.min(currentTime.getTime() + segmentDurationMs / 2, endingFuture.getTime()));
-
-    segments.push({
-      duration: (segmentEndTime.getTime() - currentTime.getTime()) / 1000,
-      url: buildOverlappedSegmentUrl(currentTime, segmentEndTime),
-    });
-
-    currentTime = segmentEndTime;
   }
 
   return segments;
