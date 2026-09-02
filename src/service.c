@@ -1235,6 +1235,7 @@ service_t *service_create_from_http_url(const char *http_url) {
                                 &result->seek_mode_tz_offset_seconds, &result->seek_mode_window_seconds);
     service_extract_ifname_params(query_start, &result->ifname, &result->ifname_fcc);
     service_strip_query_param(query_start, "r2h-token");
+    service_strip_query_param(query_start, "r2h-filename");
   }
 
   logger(LOG_DEBUG, "Created HTTP proxy service: %s -> %s", http_url, result->http_url);
@@ -1325,6 +1326,7 @@ service_t *service_create_from_rtsp_url(const char *http_url) {
     }
     service_extract_ifname_params(query_start, &ifname, &ifname_fcc);
     service_strip_query_param(query_start, "r2h-token");
+    service_strip_query_param(query_start, "r2h-filename");
   }
 
   /* Allocate service structure */
@@ -1643,6 +1645,7 @@ service_t *service_create_from_rtp_url(const char *http_url) {
     char *qstart = strchr(url_part, '?');
     service_extract_ifname_params(qstart, &result->ifname, &result->ifname_fcc);
     service_strip_query_param(qstart, "r2h-token");
+    service_strip_query_param(qstart, "r2h-filename");
   }
 
   /* Build and store full RTP URL (rtp://) - r2h-* auth/control params stripped */

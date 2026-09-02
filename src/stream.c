@@ -23,7 +23,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define STREAM_METADATA_HEADERS_SIZE 1024
+#define STREAM_METADATA_HEADERS_SIZE 1536
 #define TS_PACKET_SIZE 188
 #define TS_SYNC_BYTE 0x47
 
@@ -200,6 +200,35 @@ static void stream_metadata_note_media(stream_context_t *ctx, int packet_type, c
   }
 }
 
+static int stream_append_download_filename_header(connection_t *conn, char *headers, size_t headers_size,
+                                                  size_t *length) {
+  const char *query;
+  char raw[768];
+  char sanitized[HTTP_DOWNLOAD_FILENAME_MAX + 8];
+  char line[768];
+
+  if (!conn)
+    return 0;
+
+  query = strchr(conn->http_req.url, '?');
+  if (!query)
+    return 0;
+  if (http_parse_query_param(query + 1, "r2h-filename", raw, sizeof(raw)) != 0)
+    return 0;
+  if (raw[0] == '\0')
+    return 0;
+  if (http_sanitize_download_filename(raw, sanitized, sizeof(sanitized)) != 0)
+    return 0;
+  if (http_build_content_disposition_header(sanitized, line, sizeof(line)) < 0)
+    return 0;
+  /* Omit the download name rather than dropping the rest of the metadata. */
+  if (stream_metadata_append_raw(headers, headers_size, length, line) < 0) {
+    logger(LOG_DEBUG, "Stream: Content-Disposition header omitted (buffer full)");
+    return 0;
+  }
+  return 0;
+}
+
 void stream_send_http_headers(connection_t *conn, const char *content_type, const char *extra_headers) {
   stream_metadata_t *metadata;
   char headers[STREAM_METADATA_HEADERS_SIZE];
@@ -216,6 +245,9 @@ void stream_send_http_headers(connection_t *conn, const char *content_type, cons
 
   if (extra_headers && extra_headers[0])
     failed |= stream_metadata_append_raw(headers, sizeof(headers), &length, extra_headers) < 0;
+
+  if (content_type && strcmp(content_type, "video/mp2t") == 0)
+    stream_append_download_filename_header(conn, headers, sizeof(headers), &length);
 
   failed |= stream_metadata_append_enum(headers, sizeof(headers), &length, STREAM_HDR_UPSTREAM_PROTOCOL,
                                         stream_upstream_protocol_values, ARRAY_SIZE(stream_upstream_protocol_values),

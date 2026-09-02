@@ -3,13 +3,37 @@ import type { Channel } from "../types/player";
 import { buildCatchupUrl } from "./catchup-url";
 import { CATCHUP_MIN_DURATION_MS } from "./catchup-windows";
 import {
+  buildMediaDownloadFilename,
+  formatMediaDownloadTimestamp,
   getChannelLiveMediaUrl,
   getProgramMediaUrl,
+  sanitizeMediaDownloadFilename,
   stripPlaylistUrlLabel,
   toAbsoluteMediaUrl,
 } from "./media-direct-link";
 
 const NOW = new Date("2026-09-02T12:00:00.000Z");
+
+function stripFilenameParam(url: string | null): string | null {
+  if (!url) return url;
+  const hashIndex = url.indexOf("#");
+  const hash = hashIndex === -1 ? "" : url.slice(hashIndex);
+  const withoutHash = hashIndex === -1 ? url : url.slice(0, hashIndex);
+  const qIndex = withoutHash.indexOf("?");
+  if (qIndex === -1) return url;
+  const path = withoutHash.slice(0, qIndex);
+  const params = withoutHash
+    .slice(qIndex + 1)
+    .split("&")
+    .filter((part) => !part.toLowerCase().startsWith("r2h-filename="));
+  return (params.length > 0 ? `${path}?${params.join("&")}` : path) + hash;
+}
+
+function copiedFilename(url: string | null): string | null {
+  if (!url) return null;
+  const match = url.match(/[?&]r2h-filename=([^&#]*)/i);
+  return match ? decodeURIComponent(match[1].replace(/\+/g, " ")) : null;
+}
 
 function channel(overrides: Partial<Channel> = {}): Channel {
   return {
@@ -55,9 +79,38 @@ describe("toAbsoluteMediaUrl", () => {
   });
 });
 
+describe("sanitizeMediaDownloadFilename", () => {
+  it("replaces forbidden characters, collapses separators, and forces a .ts suffix", () => {
+    expect(sanitizeMediaDownloadFilename("CCTV-1 / 高清")).toBe("CCTV-1 _ 高清.ts");
+    expect(sanitizeMediaDownloadFilename("news:live*.ts")).toBe("news_live_.ts");
+    expect(sanitizeMediaDownloadFilename("foo/bar\\baz:qux")).toBe("foo_bar_baz_qux.ts");
+    expect(sanitizeMediaDownloadFilename("   ")).toBe("download.ts");
+  });
+});
+
+describe("buildMediaDownloadFilename", () => {
+  it("joins channel, optional label, title, and local time range", () => {
+    const start = new Date("2026-09-02T10:00:00.000Z");
+    const end = new Date("2026-09-02T12:00:00.000Z");
+    expect(
+      buildMediaDownloadFilename({
+        channelName: "Catchup Channel",
+        sourceLabel: "HD",
+        programTitle: "Morning News",
+        start,
+        end,
+      }),
+    ).toBe(
+      `Catchup Channel_HD_Morning News_${formatMediaDownloadTimestamp(start)}_${formatMediaDownloadTimestamp(end)}.ts`,
+    );
+  });
+});
+
 describe("getChannelLiveMediaUrl", () => {
-  it("returns the live source URL", () => {
-    expect(getChannelLiveMediaUrl(channel(), 0)).toBe("/Test/Catchup Channel");
+  it("returns the live source URL with a download filename", () => {
+    const url = getChannelLiveMediaUrl(channel(), 0);
+    expect(stripFilenameParam(url)).toBe("/Test/Catchup Channel");
+    expect(copiedFilename(url)).toBe("Catchup Channel.ts");
   });
 });
 
@@ -66,10 +119,18 @@ describe("getProgramMediaUrl", () => {
     const start = new Date("2026-09-02T10:00:00.000Z");
     const end = new Date("2026-09-02T12:00:00.000Z");
     const ch = channel();
-    const url = getProgramMediaUrl(ch, { start, end }, 0, NOW);
+    const url = getProgramMediaUrl(ch, { start, end, title: "Morning News" }, 0, NOW);
 
-    expect(url).toBe(buildCatchupUrl(ch.sources[0], start, end, NOW));
-    expect(url).toBe("/Test/Catchup Channel/catchup?playseek=20260902100000-20260902120000");
+    expect(stripFilenameParam(url)).toBe(buildCatchupUrl(ch.sources[0], start, end, NOW));
+    expect(stripFilenameParam(url)).toBe("/Test/Catchup Channel/catchup?playseek=20260902100000-20260902120000");
+    expect(copiedFilename(url)).toBe(
+      buildMediaDownloadFilename({
+        channelName: "Catchup Channel",
+        programTitle: "Morning News",
+        start,
+        end,
+      }),
+    );
   });
 
   it("keeps playseek when append-mode catchup is concatenated onto a $label live URL", () => {
@@ -85,9 +146,16 @@ describe("getProgramMediaUrl", () => {
         },
       ],
     });
+    const url = getProgramMediaUrl(ch, { start, end }, 0, NOW);
 
-    expect(getProgramMediaUrl(ch, { start, end }, 0, NOW)).toBe(
-      "/Test/Catchup Channel?playseek=20260902100000-20260902120000",
+    expect(stripFilenameParam(url)).toBe("/Test/Catchup Channel?playseek=20260902100000-20260902120000");
+    expect(copiedFilename(url)).toBe(
+      buildMediaDownloadFilename({
+        channelName: "Catchup Channel",
+        sourceLabel: "HD",
+        start,
+        end,
+      }),
     );
   });
 
@@ -96,21 +164,34 @@ describe("getProgramMediaUrl", () => {
     const end = new Date(start.getTime() + 5_000);
     const ch = channel();
     const paddedEnd = new Date(start.getTime() + CATCHUP_MIN_DURATION_MS);
+    const url = getProgramMediaUrl(ch, { start, end }, 0, NOW);
 
-    expect(getProgramMediaUrl(ch, { start, end }, 0, NOW)).toBe(buildCatchupUrl(ch.sources[0], start, paddedEnd, NOW));
+    expect(stripFilenameParam(url)).toBe(buildCatchupUrl(ch.sources[0], start, paddedEnd, NOW));
+    expect(copiedFilename(url)).toBe(
+      buildMediaDownloadFilename({
+        channelName: "Catchup Channel",
+        start,
+        end: paddedEnd,
+      }),
+    );
   });
 
   it("falls back to the live URL for an on-air programme without catchup", () => {
     const liveOnly = channel({
       sources: [{ url: "/Test/Live Only" }],
     });
-    const url = getProgramMediaUrl(
-      liveOnly,
-      { start: new Date("2026-09-02T11:00:00.000Z"), end: new Date("2026-09-02T13:00:00.000Z") },
-      0,
-      NOW,
+    const start = new Date("2026-09-02T11:00:00.000Z");
+    const end = new Date("2026-09-02T13:00:00.000Z");
+    const url = getProgramMediaUrl(liveOnly, { start, end, title: "Live Show" }, 0, NOW);
+    expect(stripFilenameParam(url)).toBe("/Test/Live Only");
+    expect(copiedFilename(url)).toBe(
+      buildMediaDownloadFilename({
+        channelName: "Catchup Channel",
+        programTitle: "Live Show",
+        start,
+        end,
+      }),
     );
-    expect(url).toBe("/Test/Live Only");
   });
 
   it("returns null for a past programme without catchup", () => {

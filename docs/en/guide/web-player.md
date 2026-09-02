@@ -49,6 +49,8 @@ Middle-click a channel in the channel list to copy that channel's live URL for t
 
 The copied value is a directly requestable HTTP media URL, which you can download with FFmpeg, N_m3u8DL-RE, IDM, or open in a third-party player. For multi-source channels, the most recently used source is copied. If the current page includes `r2h-token`, the copied link includes that parameter as well.
 
+Multicast and RTSP links also include an `r2h-filename` query parameter. Its value is a `.ts` filename built from the channel name, source label, program title, and time range, so a browser download uses that name. See [URL Formats](/en/guide/url-formats#download-filename).
+
 > [!NOTE]
 > An on-air program with no catch-up source copies the live URL. A program that has not started and has no catch-up source cannot be copied.
 

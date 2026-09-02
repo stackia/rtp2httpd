@@ -197,6 +197,31 @@ class TestProxyQueryParams:
         finally:
             upstream.stop()
 
+    def test_r2h_filename_not_forwarded(self, shared_r2h):
+        """r2h-filename is local download metadata and should be stripped before upstream HTTP."""
+        upstream = MockHTTPUpstream(
+            routes={
+                "/search": {"status": 200, "body": b"found"},
+            }
+        )
+        upstream.start()
+        try:
+            status, headers, body = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                f"/http/127.0.0.1:{upstream.port}/search?r2h-filename=clip.ts&q=test",
+                timeout=5.0,
+            )
+            assert status == 200
+            assert body == b"found"
+            assert "Content-Disposition" not in {key.lower() for key in headers}
+            assert upstream.requests_log, "expected upstream HTTP request"
+            upstream_path = upstream.requests_log[0]["path"]
+            assert "r2h-filename" not in upstream_path.lower()
+            assert "q=test" in upstream_path
+        finally:
+            upstream.stop()
+
 
 # ---------------------------------------------------------------------------
 # Upstream unreachable

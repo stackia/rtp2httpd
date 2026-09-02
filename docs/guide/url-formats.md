@@ -38,6 +38,7 @@ http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970&r2h-ifna
 - **fec**（可选）：FEC 前向纠错端口号，用于接收 FEC 冗余数据包来恢复丢包
 - **r2h-ifname**（可选）：指定使用的上游网络接口（覆盖全局配置）
 - **r2h-ifname-fcc**（可选）：指定 FCC 使用的上游网络接口（覆盖全局配置）
+- **r2h-filename**（可选）：下载文件名，详见 [下载文件名](#下载文件名)
 
 ### 使用场景
 
@@ -105,6 +106,19 @@ RTSP、普通组播和 FCC 流会在 HTTP Headers 带上以下 `R2H-*` Metadata�
 | `R2H-Media-Duration` | SDP 有限 `npt` 范围的时长，单位为秒。 |
 | `R2H-FCC-Type` | 已配置的 FCC 协议：`telecom` 或 `huawei`。 |
 | `R2H-FCC-Status` | 从 FCC 单播起播为 `active`；从组播起播为 `fallback`。 |
+
+## 下载文件名
+
+组播 RTP 和 RTSP 的 MPEG-TS 响应支持 `r2h-filename` 查询参数。参数非空时，rtp2httpd 会输出 `Content-Disposition: attachment`，让浏览器按指定文件名保存下载。服务端会去掉路径分隔符和控制字符，并在缺少后缀时补上 `.ts`。
+
+该参数只作用于 rtp2httpd 自身，不会转发给上游。HTTP/HLS 反向代理会在转发前剥离该参数，也不会设置 `Content-Disposition`。
+
+```url
+http://192.168.1.1:5140/rtp/239.253.64.120:5140?r2h-filename=CCTV-1.ts
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000&r2h-filename=CCTV-1_新闻联播_20240101-120000_20240101-130000.ts
+```
+
+内置 Web 播放器复制媒体直链时会自动带上该参数。
 
 ## HTTP 反向代理
 
