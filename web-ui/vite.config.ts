@@ -18,8 +18,8 @@ export default defineConfig(({ mode }) => {
       minify: !isDev,
       rolldownOptions: {
         input: {
-          status: resolve(__dirname, "status.html"),
-          player: resolve(__dirname, "player.html"),
+          status: resolve(import.meta.dirname, "status.html"),
+          player: resolve(import.meta.dirname, "player.html"),
         },
       },
     },
