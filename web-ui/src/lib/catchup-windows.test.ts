@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, expect, it } from "vitest";
 import {
   CATCHUP_FUTURE_HORIZON_MS,
   CATCHUP_LIVE_SPLIT_OFFSET_MS,
@@ -7,7 +6,7 @@ import {
   CATCHUP_MIN_DURATION_MS,
   clampCatchupStartTime,
   planCatchupSegmentWindows,
-} from "./catchup-windows.ts";
+} from "./catchup-windows";
 
 const NOW = new Date("2026-09-02T12:00:00.000Z");
 const MINUTES = 60 * 1000;
@@ -28,12 +27,12 @@ function windowTimes(startTime: Date, programs?: Parameters<typeof planCatchupSe
 describe("clampCatchupStartTime", () => {
   it("pulls a near-live seek back to the minimum catchup window", () => {
     const clamped = clampCatchupStartTime(at(-5_000), NOW);
-    assert.equal(clamped.getTime(), NOW.getTime() - CATCHUP_MIN_DURATION_MS);
+    expect(clamped.getTime()).toBe(NOW.getTime() - CATCHUP_MIN_DURATION_MS);
   });
 
   it("leaves an older seek unchanged", () => {
     const seek = at(-2 * HOURS);
-    assert.equal(clampCatchupStartTime(seek, NOW).getTime(), seek.getTime());
+    expect(clampCatchupStartTime(seek, NOW).getTime()).toBe(seek.getTime());
   });
 });
 
@@ -46,15 +45,15 @@ describe("planCatchupSegmentWindows without EPG", () => {
     const pastDurationMs = splitPoint.getTime() - start.getTime();
     const futureChunkMs = (NOW.getTime() - start.getTime()) / 2;
 
-    assert.equal(windows[0].start.getTime(), start.getTime());
-    assert.equal(windows[0].end.getTime(), splitPoint.getTime());
-    assert.equal(windows[0].end.getTime() - windows[0].start.getTime(), pastDurationMs);
+    expect(windows[0].start.getTime()).toBe(start.getTime());
+    expect(windows[0].end.getTime()).toBe(splitPoint.getTime());
+    expect(windows[0].end.getTime() - windows[0].start.getTime()).toBe(pastDurationMs);
 
     for (let i = 1; i < windows.length - 1; i++) {
-      assert.equal(windows[i].end.getTime() - windows[i].start.getTime(), futureChunkMs);
-      assert.equal(windows[i].start.getTime(), windows[i - 1].end.getTime());
+      expect(windows[i].end.getTime() - windows[i].start.getTime()).toBe(futureChunkMs);
+      expect(windows[i].start.getTime()).toBe(windows[i - 1].end.getTime());
     }
-    assert.equal(windows[windows.length - 1].end.getTime(), endingFuture.getTime());
+    expect(windows[windows.length - 1].end.getTime()).toBe(endingFuture.getTime());
   });
 
   it("caps long catchup at 5 hours before the live edge", () => {
@@ -63,8 +62,10 @@ describe("planCatchupSegmentWindows without EPG", () => {
     const splitPointMs = NOW.getTime() - CATCHUP_LIVE_SPLIT_OFFSET_MS;
     const pastWindows = windows.filter((window) => window.start.getTime() < splitPointMs);
 
-    assert.equal(pastWindows[0].end.getTime() - pastWindows[0].start.getTime(), CATCHUP_MAX_SEGMENT_MS);
-    assert.ok(pastWindows.every((window) => window.end.getTime() - window.start.getTime() <= CATCHUP_MAX_SEGMENT_MS));
+    expect(pastWindows[0].end.getTime() - pastWindows[0].start.getTime()).toBe(CATCHUP_MAX_SEGMENT_MS);
+    for (const window of pastWindows) {
+      expect(window.end.getTime() - window.start.getTime()).toBeLessThanOrEqual(CATCHUP_MAX_SEGMENT_MS);
+    }
   });
 });
 
@@ -81,47 +82,47 @@ describe("planCatchupSegmentWindows with EPG", () => {
     const windows = windowTimes(start, programs);
     const splitPoint = at(-CATCHUP_LIVE_SPLIT_OFFSET_MS).toISOString();
 
-    assert.deepEqual(
-      windows.slice(0, 5).map((window) => [window.start, window.end]),
-      [
-        [start.toISOString(), at(-90 * MINUTES).toISOString()], // remainder of 09:00-10:30
-        [at(-90 * MINUTES).toISOString(), at(-30 * MINUTES).toISOString()], // 10:30-11:30
-        [at(-30 * MINUTES).toISOString(), splitPoint], // current programme up to live edge
-        [splitPoint, at(30 * MINUTES).toISOString()], // rest of current programme
-        [at(30 * MINUTES).toISOString(), at(90 * MINUTES).toISOString()], // next programme
-      ],
-    );
+    expect(windows.slice(0, 5).map((window) => [window.start, window.end])).toEqual([
+      [start.toISOString(), at(-90 * MINUTES).toISOString()], // remainder of 09:00-10:30
+      [at(-90 * MINUTES).toISOString(), at(-30 * MINUTES).toISOString()], // 10:30-11:30
+      [at(-30 * MINUTES).toISOString(), splitPoint], // current programme up to live edge
+      [splitPoint, at(30 * MINUTES).toISOString()], // rest of current programme
+      [at(30 * MINUTES).toISOString(), at(90 * MINUTES).toISOString()], // next programme
+    ]);
   });
 
   it("does not slice the near-live past window on EPG edges", () => {
     const windows = planCatchupSegmentWindows(at(-5_000), NOW, programs);
     const splitPointMs = NOW.getTime() - CATCHUP_LIVE_SPLIT_OFFSET_MS;
 
-    assert.equal(windows[0].start.getTime(), NOW.getTime() - CATCHUP_MIN_DURATION_MS);
-    assert.equal(windows[0].end.getTime(), splitPointMs);
-    assert.equal(
-      windows[0].end.getTime() - windows[0].start.getTime(),
+    expect(windows[0].start.getTime()).toBe(NOW.getTime() - CATCHUP_MIN_DURATION_MS);
+    expect(windows[0].end.getTime()).toBe(splitPointMs);
+    expect(windows[0].end.getTime() - windows[0].start.getTime()).toBe(
       CATCHUP_MIN_DURATION_MS - CATCHUP_LIVE_SPLIT_OFFSET_MS,
     );
     // The current programme continues after the live edge instead of using half-hour chunks.
-    assert.equal(windows[1].start.getTime(), splitPointMs);
-    assert.equal(windows[1].end.getTime(), at(30 * MINUTES).getTime());
+    expect(windows[1].start.getTime()).toBe(splitPointMs);
+    expect(windows[1].end.getTime()).toBe(at(30 * MINUTES).getTime());
   });
 
   it("still enforces the minimum catchup start when seeking into a programme that just started", () => {
     const justStarted = [{ start: at(-8_000), end: at(30 * MINUTES) }];
     const windows = planCatchupSegmentWindows(at(-8_000), NOW, justStarted);
-    assert.equal(windows[0].start.getTime(), NOW.getTime() - CATCHUP_MIN_DURATION_MS);
-    assert.equal(windows[0].end.getTime(), NOW.getTime() - CATCHUP_LIVE_SPLIT_OFFSET_MS);
-    assert.equal(windows[1].start.getTime(), NOW.getTime() - CATCHUP_LIVE_SPLIT_OFFSET_MS);
-    assert.equal(windows[1].end.getTime(), at(30 * MINUTES).getTime());
+    expect(windows[0].start.getTime()).toBe(NOW.getTime() - CATCHUP_MIN_DURATION_MS);
+    expect(windows[0].end.getTime()).toBe(NOW.getTime() - CATCHUP_LIVE_SPLIT_OFFSET_MS);
+    expect(windows[1].start.getTime()).toBe(NOW.getTime() - CATCHUP_LIVE_SPLIT_OFFSET_MS);
+    expect(windows[1].end.getTime()).toBe(at(30 * MINUTES).getTime());
   });
 
   it("caps a single oversized EPG slot at 5 hours", () => {
     const longProgram = [{ start: at(-2 * HOURS), end: at(8 * HOURS) }];
     const windows = planCatchupSegmentWindows(at(-2 * HOURS), NOW, longProgram);
-    assert.ok(windows.some((window) => window.end.getTime() - window.start.getTime() === CATCHUP_MAX_SEGMENT_MS));
-    assert.ok(windows.every((window) => window.end.getTime() - window.start.getTime() <= CATCHUP_MAX_SEGMENT_MS));
+    expect(windows.some((window) => window.end.getTime() - window.start.getTime() === CATCHUP_MAX_SEGMENT_MS)).toBe(
+      true,
+    );
+    for (const window of windows) {
+      expect(window.end.getTime() - window.start.getTime()).toBeLessThanOrEqual(CATCHUP_MAX_SEGMENT_MS);
+    }
   });
 
   it("ignores malformed programmes whose end precedes their start", () => {
@@ -130,8 +131,7 @@ describe("planCatchupSegmentWindows with EPG", () => {
       ...programs,
     ]);
     const withoutMalformed = planCatchupSegmentWindows(at(-2 * HOURS), NOW, programs);
-    assert.deepEqual(
-      windows.map((window) => [window.start.getTime(), window.end.getTime()]),
+    expect(windows.map((window) => [window.start.getTime(), window.end.getTime()])).toEqual(
       withoutMalformed.map((window) => [window.start.getTime(), window.end.getTime()]),
     );
   });

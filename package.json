@@ -20,6 +20,7 @@
     "web-ui:build": "vite build web-ui && node scripts/embed-dist.js web-ui/dist src/embedded_web_data.h",
     "web-ui:build:debug": "vite build web-ui --mode=development && node scripts/embed-dist.js web-ui/dist src/embedded_web_data.h",
     "web-ui:preview": "vite preview web-ui",
+    "web-ui:test": "vitest run --root web-ui",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
@@ -45,6 +46,7 @@
     "vite": "^8.2.1",
     "vite-bundle-analyzer": "^1.3.9",
     "vitepress": "2.0.0-alpha.19",
-    "vitepress-plugin-llms": "^1.13.4"
+    "vitepress-plugin-llms": "^1.13.4",
+    "vitest": "^4.1.11"
   }
 }
