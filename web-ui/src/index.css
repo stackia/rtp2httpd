@@ -131,7 +131,7 @@
   height: 100dvh;
 }
 
-.player-standalone .player-viewport-height {
+html[data-player-standalone="true"] .player-viewport-height {
   height: 100vh;
 }
 

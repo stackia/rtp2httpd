@@ -22,7 +22,7 @@
           typeof navigatorStandalone === "boolean"
             ? navigatorStandalone
             : window.matchMedia("(display-mode: standalone)").matches;
-        root.classList.toggle("player-standalone", isStandalone);
+        root.dataset.playerStandalone = isStandalone ? "true" : "false";
 
         const ua = navigator.userAgent;
         const deviceMemory = Number.isFinite(navigator.deviceMemory) ? navigator.deviceMemory : undefined;

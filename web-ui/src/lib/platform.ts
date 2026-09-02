@@ -7,9 +7,13 @@ export function isIOS(): boolean {
   return document.documentElement.dataset.playerPlatform === "ios";
 }
 
-/** Whether the player is running as an installed PWA / home-screen app. */
+/** Whether the player is running as an installed PWA / home-screen app.
+ *
+ * Reads the tag that `player.html` sets from `navigator.standalone` /
+ * `(display-mode: standalone)` before React boots.
+ */
 export function isStandalonePlayer(): boolean {
-  return document.documentElement.classList.contains("player-standalone");
+  return document.documentElement.dataset.playerStandalone === "true";
 }
 
 /** Detect LG TV browsers that should use the platform-native media pipeline. */
