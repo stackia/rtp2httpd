@@ -223,6 +223,8 @@ const EPGDateSection = memo(function EPGDateSection({
 }: EPGDateSectionProps) {
   const t = usePlayerTranslation(locale);
   const [hydrated, setHydrated] = useState(forceRender);
+  // Latch: a section that was rendered eagerly stays rendered when the eager set moves on.
+  if (forceRender && !hydrated) setHydrated(true);
   const rendered = hydrated || forceRender;
 
   const placeholderRef = useCallback(
@@ -286,7 +288,6 @@ function EPGViewComponent({
 }: EPGViewProps) {
   const t = usePlayerTranslation(locale);
   const currentProgramRef = useRef<HTMLButtonElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
 
   // Program boundaries fall on whole minutes, so ticking at minute boundaries gives the
@@ -338,15 +339,22 @@ function EPGViewComponent({
   }, [channelPrograms]);
 
   const currentPlayingProgramId = currentPlayingProgram?.id;
-  const playingSectionKey = useMemo(() => {
-    if (!currentPlayingProgramId) return null;
-    return (
-      sections.find((section) => section.rows.some((row) => row.program.id === currentPlayingProgramId))?.dateKey ??
-      null
+  // The section holding the playing programme plus its neighbours render eagerly: the list
+  // auto-scrolls to that row, so this is exactly what fills the viewport on reveal.
+  const eagerSectionKeys = useMemo(() => {
+    const keys = new Set<string>();
+    if (!currentPlayingProgramId) return keys;
+    const index = sections.findIndex((section) =>
+      section.rows.some((row) => row.program.id === currentPlayingProgramId),
     );
+    if (index < 0) return keys;
+    for (const section of sections.slice(Math.max(index - 1, 0), index + 2)) keys.add(section.dateKey);
+    return keys;
   }, [sections, currentPlayingProgramId]);
 
-  // Shared IntersectionObserver that hydrates sections as they approach the viewport.
+  // Shared IntersectionObserver that hydrates sections as they approach the viewport. It observes
+  // against the viewport rather than the scroll container: the list fills the sidebar height, so
+  // the result is the same, and it avoids depending on when the container ref is attached.
   const sectionHandlersRef = useRef(new Map<HTMLElement, SectionVisibilityHandler>());
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -360,9 +368,7 @@ function EPGViewComponent({
     observerRef.current?.unobserve(element);
   }, []);
 
-  const hasPrograms = channelPrograms.length > 0;
   useEffect(() => {
-    if (!hasPrograms) return;
     const handlers = sectionHandlersRef.current;
     const observer = new IntersectionObserver(
       (entries) => {
@@ -376,7 +382,7 @@ function EPGViewComponent({
           onVisible();
         }
       },
-      { root: scrollContainerRef.current, rootMargin: SECTION_HYDRATION_MARGIN },
+      { rootMargin: SECTION_HYDRATION_MARGIN },
     );
     for (const element of handlers.keys()) observer.observe(element);
     observerRef.current = observer;
@@ -384,7 +390,9 @@ function EPGViewComponent({
       observer.disconnect();
       observerRef.current = null;
     };
-  }, [hasPrograms]);
+  }, []);
+
+  const hasPrograms = channelPrograms.length > 0;
 
   // Auto-scroll to center current/playing program when it changes or channel changes
   useLayoutEffect(() => {
@@ -423,7 +431,7 @@ function EPGViewComponent({
   }
 
   return (
-    <div ref={scrollContainerRef} className="h-full overflow-y-auto pb-[env(safe-area-inset-bottom)]">
+    <div className="h-full overflow-y-auto pb-[env(safe-area-inset-bottom)]">
       {/* --epg-item-h mirrors the intrinsic block size in PLAYER_EPG_LIST_ITEM_CLASS for placeholder sizing. */}
       <div key={channelId} className="relative [--epg-item-h:3rem] md:[--epg-item-h:3.75rem]">
         {sections.map((section) => (
@@ -432,7 +440,7 @@ function EPGViewComponent({
             currentPlayingProgramId={currentPlayingProgramId}
             currentProgramRef={currentProgramRef}
             currentTimeMs={currentTimeMs}
-            forceRender={section.dateKey === playingSectionKey}
+            forceRender={eagerSectionKeys.has(section.dateKey)}
             handleProgramClick={handleProgramClick}
             locale={locale}
             registerSection={registerSection}
