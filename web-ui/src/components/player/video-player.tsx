@@ -85,8 +85,8 @@ interface VideoPlayerProps {
   nextChannel?: Channel | null;
   isFullscreen: boolean;
   onFullscreenToggle?: () => Promise<boolean> | boolean;
-  isWebFullscreen?: boolean;
-  onWebFullscreenToggle?: () => void;
+  isTheaterMode?: boolean;
+  onTheaterModeToggle?: () => void;
   immersiveSidebarHostRef?: Ref<HTMLDivElement>;
   seamlessSwitch?: boolean;
   autoDeinterlace?: boolean;
@@ -269,8 +269,8 @@ function VideoPlayerComponent({
   nextChannel = null,
   isFullscreen,
   onFullscreenToggle,
-  isWebFullscreen = false,
-  onWebFullscreenToggle,
+  isTheaterMode = false,
+  onTheaterModeToggle,
   immersiveSidebarHostRef,
   seamlessSwitch = true,
   autoDeinterlace = true,
@@ -1520,8 +1520,8 @@ function VideoPlayerComponent({
 
       case "Escape":
         e.preventDefault();
-        if (isWebFullscreen) {
-          onWebFullscreenToggle?.();
+        if (isTheaterMode) {
+          onTheaterModeToggle?.();
         } else if (!isDocumentBodyActive(eventDocument)) {
           blurActiveElement(eventDocument);
         } else if (digitBuffer) {
@@ -1899,7 +1899,7 @@ function VideoPlayerComponent({
         "player-performance-video-background dark @container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)]",
         isDocumentPiP
           ? "h-screen min-h-screen aspect-auto"
-          : isFullscreen || isWebFullscreen
+          : isFullscreen || isTheaterMode
             ? "player-immersive-chrome aspect-auto h-full"
             : "md:aspect-auto md:h-full",
         !showControls && "cursor-none",
@@ -1973,7 +1973,7 @@ function VideoPlayerComponent({
         <div
           className={clsx(
             "player-performance-motion absolute top-4 z-10 flex flex-col items-end gap-2 transition-opacity duration-300 md:top-8 md:gap-3 [@container_video_(max-height:_320px)]:top-2 [@container_video_(max-height:_320px)]:gap-1 md:[@container_video_(max-height:_320px)]:top-2 md:[@container_video_(max-height:_320px)]:gap-1 [@container_video_(max-height:_220px)]:top-1 md:[@container_video_(max-height:_220px)]:top-1",
-            isFullscreen || isWebFullscreen
+            isFullscreen || isTheaterMode
               ? "right-[calc(var(--player-immersive-sidebar-width)+0.75rem)] md:right-[calc(var(--player-immersive-sidebar-width)+2rem)]"
               : "right-4 md:right-8 [@container_video_(max-height:_320px)]:right-2 md:[@container_video_(max-height:_320px)]:right-2 [@container_video_(max-height:_220px)]:right-1 md:[@container_video_(max-height:_220px)]:right-1",
             showControls ? "opacity-100" : "opacity-0 pointer-events-none",
@@ -2137,12 +2137,12 @@ function VideoPlayerComponent({
           data-player-chrome=""
           className={clsx(
             "player-performance-controls-position player-performance-motion absolute bottom-0 left-[calc(0px_-_env(safe-area-inset-left))] z-10 transition-opacity duration-300",
-            isFullscreen || isWebFullscreen
+            isFullscreen || isTheaterMode
               ? "player-immersive-controls"
               : "right-[calc(0px_-_env(safe-area-inset-right))] md:right-0",
             showControls
               ? "opacity-100"
-              : isFullscreen || isWebFullscreen
+              : isFullscreen || isTheaterMode
                 ? "opacity-0 pointer-events-none"
                 : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
           )}
@@ -2169,8 +2169,8 @@ function VideoPlayerComponent({
             onMuteToggle={handleMuteToggle}
             onFullscreen={handleFullscreen}
             isFullscreen={isFullscreen}
-            isWebFullscreen={isWebFullscreen}
-            onWebFullscreenToggle={!isDocumentPiP ? onWebFullscreenToggle : undefined}
+            isTheaterMode={isTheaterMode}
+            onTheaterModeToggle={!isDocumentPiP ? onTheaterModeToggle : undefined}
             isPiP={isPiP}
             isPiPSupported={isPictureInPictureSupported()}
             onPiPToggle={handlePiPToggle}
@@ -2181,7 +2181,7 @@ function VideoPlayerComponent({
         </div>
       )}
 
-      {(isFullscreen || isWebFullscreen) && !isDocumentPiP && (
+      {(isFullscreen || isTheaterMode) && !isDocumentPiP && (
         <div
           ref={immersiveSidebarHostRef}
           data-player-chrome=""
@@ -2204,8 +2204,8 @@ function VideoPlayerComponent({
     <div
       className={clsx(
         "player-performance-video-background relative w-full bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)] pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:h-full",
-        !(isFullscreen || isWebFullscreen) && "md:pr-0",
-        (isFullscreen || isWebFullscreen) && "h-full",
+        !(isFullscreen || isTheaterMode) && "md:pr-0",
+        (isFullscreen || isTheaterMode) && "h-full",
       )}
     >
       <div ref={playerDockRef} className="contents">

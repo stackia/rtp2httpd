@@ -136,16 +136,16 @@
 }
 
 /*
- * Web fullscreen fills the page viewport without the browser Fullscreen API.
+ * Theater mode fills the page viewport without the browser Fullscreen API.
  * On a portrait mobile viewport the player is laid out as a landscape rectangle
  * and rotated so playback is horizontal.
  */
-html.player-web-fullscreen-active,
-html.player-web-fullscreen-active body {
+html.player-theater-mode-active,
+html.player-theater-mode-active body {
   overflow: hidden;
 }
 
-.player-web-fullscreen {
+.player-theater-mode {
   position: fixed;
   z-index: 50;
   inset: 0;
@@ -154,7 +154,7 @@ html.player-web-fullscreen-active body {
   overflow: hidden;
 }
 
-.player-web-fullscreen-portrait {
+.player-theater-mode-portrait {
   top: 50%;
   left: 50%;
   right: auto;

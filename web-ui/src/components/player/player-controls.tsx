@@ -54,8 +54,8 @@ interface PlayerControlsProps {
   onMuteToggle: () => void;
   onFullscreen: () => void;
   isFullscreen: boolean;
-  isWebFullscreen?: boolean;
-  onWebFullscreenToggle?: () => void;
+  isTheaterMode?: boolean;
+  onTheaterModeToggle?: () => void;
   // Picture-in-Picture controls
   isPiP?: boolean;
   isPiPSupported?: boolean;
@@ -394,8 +394,8 @@ function PlayerControlsComponent({
   onMuteToggle,
   onFullscreen,
   isFullscreen,
-  isWebFullscreen = false,
-  onWebFullscreenToggle,
+  isTheaterMode = false,
+  onTheaterModeToggle,
   isPiP = false,
   isPiPSupported = false,
   onPiPToggle,
@@ -407,7 +407,7 @@ function PlayerControlsComponent({
   const isEffectivelyMuted = isMuted || volume <= 0;
   const isCatchupSupported = channel.sources.some((s) => s.catchup && s.catchupSource);
   const hasTimeline = isCatchupSupported || Boolean(currentProgram);
-  const isImmersive = isFullscreen || isWebFullscreen;
+  const isImmersive = isFullscreen || isTheaterMode;
 
   return (
     <div
@@ -573,13 +573,13 @@ function PlayerControlsComponent({
             </div>
           )}
 
-          {/* Web fullscreen — fills the page viewport without the browser Fullscreen API */}
-          {!isImmersive && onWebFullscreenToggle && (
+          {/* Theater mode — fills the page viewport without the browser Fullscreen API */}
+          {!isImmersive && onTheaterModeToggle && (
             <button
               type="button"
-              onClick={onWebFullscreenToggle}
+              onClick={onTheaterModeToggle}
               className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
-              title={t("webFullscreen")}
+              title={t("theaterMode")}
             >
               <GalleryThumbnails className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
             </button>
@@ -591,7 +591,7 @@ function PlayerControlsComponent({
               type="button"
               onClick={() => {
                 if (isFullscreen) onFullscreen();
-                else onWebFullscreenToggle?.();
+                else onTheaterModeToggle?.();
               }}
               className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
               title={t("exitFullscreen")}

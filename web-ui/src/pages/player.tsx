@@ -18,8 +18,8 @@ import { useLocale } from "../hooks/use-locale";
 import { usePersistedEnum } from "../hooks/use-persisted-enum";
 import { usePlayerAppearance } from "../hooks/use-player-appearance";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
+import { useTheaterMode } from "../hooks/use-theater-mode";
 import { useTheme } from "../hooks/use-theme";
-import { useWebFullscreen } from "../hooks/use-web-fullscreen";
 import { isDocumentPictureInPictureSupported } from "../lib/document-picture-in-picture";
 import { loadEPG } from "../lib/epg-loader";
 import { type EPGChannelDescriptor, type EPGData, getEPGChannelId } from "../lib/epg-parser";
@@ -65,9 +65,9 @@ function PlayerPage() {
     PICTURE_IN_PICTURE_MODES,
   );
   const t = usePlayerTranslation(locale);
-  const { isWebFullscreen, isWebFullscreenPortrait, toggleWebFullscreen } = useWebFullscreen();
+  const { isTheaterMode, isTheaterModePortrait, toggleTheaterMode } = useTheaterMode();
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const isImmersive = isFullscreen || isWebFullscreen;
+  const isImmersive = isFullscreen || isTheaterMode;
   const { theme, setTheme } = useTheme("rtp2httpd-player-theme", isImmersive);
 
   const [metadata, setMetadata] = useState<M3UMetadata | null>(null);
@@ -433,8 +433,8 @@ function PlayerPage() {
       return true;
     }
 
-    if (isWebFullscreen) {
-      toggleWebFullscreen();
+    if (isTheaterMode) {
+      toggleTheaterMode();
     }
 
     try {
@@ -457,15 +457,15 @@ function PlayerPage() {
 
       return false;
     }
-  }, [isMobile, isWebFullscreen, toggleWebFullscreen]);
+  }, [isMobile, isTheaterMode, toggleTheaterMode]);
 
-  const handleWebFullscreenToggle = useCallback(async () => {
-    if (!isWebFullscreen) {
+  const handleTheaterModeToggle = useCallback(async () => {
+    if (!isTheaterMode) {
       if (document.fullscreenElement) {
         try {
           await document.exitFullscreen();
         } catch {
-          // Still enter web fullscreen if native fullscreen cannot exit.
+          // Still enter theater mode if native fullscreen cannot exit.
         }
       }
       if (isSimulatedFullscreenRef.current) {
@@ -474,8 +474,8 @@ function PlayerPage() {
         setIsFullscreen(false);
       }
     }
-    toggleWebFullscreen();
-  }, [isWebFullscreen, toggleWebFullscreen]);
+    toggleTheaterMode();
+  }, [isTheaterMode, toggleTheaterMode]);
 
   const handleSeamlessSwitchChange = useCallback(
     (enabled: boolean) => {
@@ -557,8 +557,8 @@ function PlayerPage() {
           <div
             className={clsx(
               "w-full sticky md:static md:flex-1 shrink-0",
-              isWebFullscreen && "player-web-fullscreen",
-              isWebFullscreenPortrait && "player-web-fullscreen-portrait",
+              isTheaterMode && "player-theater-mode",
+              isTheaterModePortrait && "player-theater-mode-portrait",
               isImmersive && "min-h-0 flex-1",
             )}
           >
@@ -578,8 +578,8 @@ function PlayerPage() {
               nextChannel={nextChannel}
               isFullscreen={isFullscreen}
               onFullscreenToggle={handleFullscreenToggle}
-              isWebFullscreen={isWebFullscreen}
-              onWebFullscreenToggle={handleWebFullscreenToggle}
+              isTheaterMode={isTheaterMode}
+              onTheaterModeToggle={handleTheaterModeToggle}
               immersiveSidebarHostRef={setImmersiveSidebarHost}
               seamlessSwitch={supportsSeamlessSwitch && seamlessSwitch}
               autoDeinterlace={autoDeinterlace}
@@ -591,7 +591,7 @@ function PlayerPage() {
             />
           </div>
 
-          {/* In-flow sidebar; portaled onto the player when web/native fullscreen overlays it. */}
+          {/* In-flow sidebar; portaled onto the player when theater mode or native fullscreen overlays it. */}
           <div
             ref={setFlowSidebarHost}
             className={clsx(

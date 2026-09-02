@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { isRotatableMobileDevice, isVisualPortrait } from "../lib/screen-orientation";
 
-const ACTIVE_CLASS = "player-web-fullscreen-active";
+const ACTIVE_CLASS = "player-theater-mode-active";
 
 function setActiveClass(active: boolean): void {
   document.documentElement.classList.toggle(ACTIVE_CLASS, active);
 }
 
-export function useWebFullscreen() {
+export function useTheaterMode() {
   const [enabled, setEnabled] = useState(false);
   const [portraitRotate, setPortraitRotate] = useState(false);
 
@@ -15,7 +15,7 @@ export function useWebFullscreen() {
     setPortraitRotate(isRotatableMobileDevice() && isVisualPortrait());
   }, []);
 
-  const toggleWebFullscreen = useCallback(() => {
+  const toggleTheaterMode = useCallback(() => {
     setEnabled((prev) => !prev);
   }, []);
 
@@ -39,8 +39,8 @@ export function useWebFullscreen() {
   }, [enabled, updatePortraitRotate]);
 
   return {
-    isWebFullscreen: enabled,
-    isWebFullscreenPortrait: enabled && portraitRotate,
-    toggleWebFullscreen,
+    isTheaterMode: enabled,
+    isTheaterModePortrait: enabled && portraitRotate,
+    toggleTheaterMode,
   };
 }
