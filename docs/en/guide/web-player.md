@@ -37,6 +37,7 @@ The player automatically updates the address bar when you switch channels, so yo
 - **Fast Startup**: Achieves millisecond-level channel switching with FCC
 - **Seamless Channel Switching**: Preloads the new stream when switching channels to reduce black screens
 - **Responsive Design**: UI adapts to both desktop and mobile devices
+- **Force Landscape**: On rotatable devices such as phones, tablets, or 2-in-1 laptops, lock landscape viewing from the control to the left of the fullscreen button and ignore the device gyroscope
 - **PWA Support**: Can be added to the home screen on phones, tablets, desktops, or LG webOS TVs for app-like quick access
 - **Zero Overhead**: Pure web frontend implementation with virtually no resource overhead on rtp2httpd (no decoding/transcoding overhead)
 

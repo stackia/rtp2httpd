@@ -135,6 +135,29 @@
   height: 100vh;
 }
 
+/*
+ * CSS fallback for force-landscape when Screen Orientation lock is unavailable
+ * (for example iOS Safari). The page is laid out as a landscape rectangle and
+ * rotated so portrait viewports still present a landscape player.
+ */
+html.player-force-landscape-fallback-active,
+html.player-force-landscape-fallback-active body {
+  overflow: hidden;
+}
+
+.player-force-landscape-fallback.player-viewport-height,
+.player-force-landscape-fallback {
+  position: fixed;
+  z-index: 40;
+  top: 50%;
+  left: 50%;
+  width: 100dvh;
+  height: 100dvw;
+  overflow: hidden;
+  transform: translate(-50%, -50%) rotate(90deg);
+  transform-origin: center center;
+}
+
 /* Simple theme uses explicit semantic hooks to avoid matching every player descendant. */
 html.player-theme-simple .player-performance-effect,
 html.player-theme-simple

@@ -13,6 +13,7 @@ import { VideoPlayer } from "../components/player/video-player";
 import { Button, buttonVariants } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useCurrentVideoProgram } from "../hooks/use-current-video-program";
+import { useForceLandscape } from "../hooks/use-force-landscape";
 import { useLocale } from "../hooks/use-locale";
 import { usePersistedEnum } from "../hooks/use-persisted-enum";
 import { usePlayerAppearance } from "../hooks/use-player-appearance";
@@ -39,6 +40,12 @@ import {
   saveSeamlessSwitch,
   saveSidebarVisible,
 } from "../lib/player-storage";
+import {
+  getVisualViewportWidth,
+  lockScreenToLandscape,
+  shouldInsetSidebarRight,
+  unlockScreenOrientation,
+} from "../lib/screen-orientation";
 import { buildAppPath } from "../lib/url";
 import { getPlaybackBackendKind, type PlayerSegment } from "../playback-engine";
 import { mseToWallClock, NEAR_LIVE_EDGE_MS } from "../playback-engine/timeline/wall-clock";
@@ -49,40 +56,6 @@ function getM3UIntegrationGuideUrl(locale: Locale) {
   return locale === "en"
     ? "https://rtp2httpd.com/en/guide/m3u-integration"
     : "https://rtp2httpd.com/guide/m3u-integration";
-}
-
-type LockableScreenOrientation = ScreenOrientation & {
-  lock?: (orientation: "landscape") => Promise<void>;
-};
-
-async function lockScreenToLandscape(): Promise<boolean> {
-  const orientation = screen.orientation as LockableScreenOrientation | undefined;
-  if (!orientation?.lock) return false;
-
-  try {
-    await orientation.lock("landscape");
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function unlockScreenOrientation(): void {
-  try {
-    screen.orientation?.unlock();
-  } catch {
-    // The orientation may already have been unlocked when fullscreen ended.
-  }
-}
-
-function shouldInsetSidebarRight(): boolean {
-  const { angle, type } = screen.orientation;
-  if (!type.startsWith("landscape")) return true;
-
-  // At 90°, the sidebar's right edge is on the device-bottom side and may
-  // overlap the smaller system area. Preserve the inset at 270° and for other
-  // angles, including naturally landscape devices.
-  return angle !== 90;
 }
 
 function PlayerPage() {
@@ -99,6 +72,13 @@ function PlayerPage() {
     PICTURE_IN_PICTURE_MODES,
   );
   const t = usePlayerTranslation(locale);
+  const {
+    canForceLandscape,
+    isForceLandscape,
+    isForceLandscapeFallback,
+    toggleForceLandscape,
+    applyForceLandscapeLock,
+  } = useForceLandscape();
 
   const [metadata, setMetadata] = useState<M3UMetadata | null>(null);
   const [epgData, setEpgData] = useState<EPGData>({});
@@ -123,6 +103,8 @@ function PlayerPage() {
   );
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const isSimulatedFullscreenRef = useRef(false);
+  const isForceLandscapeRef = useRef(false);
+  isForceLandscapeRef.current = isForceLandscape;
 
   // Track stream start time - the absolute time position when current stream started
   // For live mode: null (no seeking)
@@ -148,7 +130,11 @@ function PlayerPage() {
 
       setIsFullscreen(isDocumentFullscreen);
       if (!isDocumentFullscreen) {
-        unlockScreenOrientation();
+        if (isForceLandscapeRef.current) {
+          void applyForceLandscapeLock();
+        } else {
+          unlockScreenOrientation();
+        }
         setShowSidebar(true);
       }
     };
@@ -157,24 +143,25 @@ function PlayerPage() {
     return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
-  }, []);
+  }, [applyForceLandscapeLock]);
 
   // Track responsive layout and which physical edge is on the sidebar's right.
   useEffect(() => {
     const handleViewportChange = () => {
       startTransition(() => {
-        setIsMobile(window.innerWidth < 768);
-        setInsetSidebarRight(shouldInsetSidebarRight());
+        setIsMobile(getVisualViewportWidth(isForceLandscapeFallback) < 768);
+        setInsetSidebarRight(shouldInsetSidebarRight(isForceLandscapeFallback));
       });
     };
 
+    handleViewportChange();
     window.addEventListener("resize", handleViewportChange);
     screen.orientation.addEventListener("change", handleViewportChange);
     return () => {
       window.removeEventListener("resize", handleViewportChange);
       screen.orientation.removeEventListener("change", handleViewportChange);
     };
-  }, []);
+  }, [isForceLandscapeFallback]);
 
   useEffect(() => {
     if (!activeSource) return;
@@ -449,7 +436,11 @@ function PlayerPage() {
     if (document.fullscreenElement) {
       try {
         await document.exitFullscreen();
-        unlockScreenOrientation();
+        if (isForceLandscapeRef.current) {
+          void applyForceLandscapeLock();
+        } else {
+          unlockScreenOrientation();
+        }
         setShowSidebar(true);
         return true;
       } catch {
@@ -459,7 +450,11 @@ function PlayerPage() {
 
     if (isSimulatedFullscreenRef.current) {
       isSimulatedFullscreenRef.current = false;
-      unlockScreenOrientation();
+      if (isForceLandscapeRef.current) {
+        void applyForceLandscapeLock();
+      } else {
+        unlockScreenOrientation();
+      }
       setIsFullscreen(false);
       setShowSidebar(true);
       return true;
@@ -488,7 +483,7 @@ function PlayerPage() {
 
       return false;
     }
-  }, [isMobile]);
+  }, [applyForceLandscapeLock, isMobile]);
 
   const handleSeamlessSwitchChange = useCallback(
     (enabled: boolean) => {
@@ -566,7 +561,10 @@ function PlayerPage() {
     return (
       <div
         ref={pageContainerRef}
-        className="player-performance-page-background player-performance-scope player-viewport-height relative flex flex-col bg-[radial-gradient(circle_at_92%_8%,rgba(59,130,246,0.15),transparent_28%),radial-gradient(circle_at_72%_92%,rgba(99,102,241,0.13),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_88%_10%,rgba(59,130,246,0.1),transparent_30%),radial-gradient(circle_at_70%_88%,rgba(99,102,241,0.12),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]"
+        className={clsx(
+          "player-performance-page-background player-performance-scope player-viewport-height relative flex flex-col bg-[radial-gradient(circle_at_92%_8%,rgba(59,130,246,0.15),transparent_28%),radial-gradient(circle_at_72%_92%,rgba(99,102,241,0.13),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_88%_10%,rgba(59,130,246,0.1),transparent_30%),radial-gradient(circle_at_70%_88%,rgba(99,102,241,0.12),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]",
+          isForceLandscapeFallback && "player-force-landscape-fallback",
+        )}
       >
         <title>{t("title")}</title>
 
@@ -592,6 +590,9 @@ function PlayerPage() {
               onToggleSidebar={handleToggleSidebar}
               isFullscreen={isFullscreen}
               onFullscreenToggle={handleFullscreenToggle}
+              canForceLandscape={canForceLandscape || isForceLandscape}
+              isForceLandscape={isForceLandscape}
+              onForceLandscapeToggle={toggleForceLandscape}
               seamlessSwitch={supportsSeamlessSwitch && seamlessSwitch}
               autoDeinterlace={autoDeinterlace}
               pictureEnhancement={pictureEnhancement}

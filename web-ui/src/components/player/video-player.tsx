@@ -78,6 +78,9 @@ interface VideoPlayerProps {
   onToggleSidebar?: () => void;
   isFullscreen: boolean;
   onFullscreenToggle?: () => Promise<boolean> | boolean;
+  canForceLandscape?: boolean;
+  isForceLandscape?: boolean;
+  onForceLandscapeToggle?: () => void;
   seamlessSwitch?: boolean;
   autoDeinterlace?: boolean;
   pictureEnhancement?: boolean;
@@ -261,6 +264,9 @@ function VideoPlayerComponent({
   onToggleSidebar,
   isFullscreen,
   onFullscreenToggle,
+  canForceLandscape = false,
+  isForceLandscape = false,
+  onForceLandscapeToggle,
   seamlessSwitch = true,
   autoDeinterlace = true,
   pictureEnhancement = true,
@@ -2016,6 +2022,9 @@ function VideoPlayerComponent({
             onMuteToggle={handleMuteToggle}
             onFullscreen={handleFullscreen}
             isFullscreen={isFullscreen}
+            canForceLandscape={canForceLandscape && !isDocumentPiP}
+            isForceLandscape={isForceLandscape}
+            onForceLandscapeToggle={onForceLandscapeToggle}
             showSidebar={showSidebar}
             onToggleSidebar={onToggleSidebar}
             isPiP={isPiP}

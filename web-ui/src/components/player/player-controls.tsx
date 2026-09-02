@@ -8,6 +8,7 @@ import {
   Pause,
   PictureInPicture,
   Play,
+  RectangleHorizontal,
   Tv,
   Volume1,
   Volume2,
@@ -55,6 +56,9 @@ interface PlayerControlsProps {
   onMuteToggle: () => void;
   onFullscreen: () => void;
   isFullscreen: boolean;
+  canForceLandscape?: boolean;
+  isForceLandscape?: boolean;
+  onForceLandscapeToggle?: () => void;
   // Picture-in-Picture controls
   isPiP?: boolean;
   isPiPSupported?: boolean;
@@ -396,6 +400,9 @@ function PlayerControlsComponent({
   onMuteToggle,
   onFullscreen,
   isFullscreen,
+  canForceLandscape = false,
+  isForceLandscape = false,
+  onForceLandscapeToggle,
   isPiP = false,
   isPiPSupported = false,
   onPiPToggle,
@@ -572,6 +579,24 @@ function PlayerControlsComponent({
                   ))}
               </div>
             </div>
+          )}
+
+          {/* Force landscape — rotatable devices only (phones, tablets, convertibles) */}
+          {canForceLandscape && onForceLandscapeToggle && (
+            <button
+              type="button"
+              onClick={onForceLandscapeToggle}
+              aria-pressed={isForceLandscape}
+              className={clsx(
+                PLAYER_CONTROL_BUTTON_CLASS,
+                "cursor-pointer p-1 md:p-2",
+                COMPACT_BUTTON_CLASS,
+                isForceLandscape && "border-blue-100/20 bg-blue-300/15 text-blue-50",
+              )}
+              title={isForceLandscape ? t("exitForceLandscape") : t("forceLandscape")}
+            >
+              <RectangleHorizontal className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
+            </button>
           )}
 
           {/* Fullscreen */}
