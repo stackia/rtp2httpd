@@ -2,6 +2,20 @@
 
 rtp2httpd includes a modern web-based player that allows you to watch configured M3U channel lists directly in your browser without installing any client software.
 
+## Features
+
+- **Channel List**: Automatically loads configured M3U channel lists
+- **Live Streaming**: Watch live broadcasts directly in the browser
+- **Time-Shifted Playback**: Supports EPG (Electronic Program Guide) and time-shifted playback (requires catchup source)
+- **Fast Startup**: Achieves millisecond-level channel switching with FCC
+- **Seamless Channel Switching**: Preloads the new stream when switching channels to reduce black screens
+- **Responsive Design**: UI adapts to both desktop and mobile devices
+- **PWA Support**: Can be added to the home screen on phones, tablets, desktops, or LG webOS TVs for app-like quick access
+- **Zero Overhead**: Pure web frontend implementation with virtually no resource overhead on rtp2httpd (no decoding/transcoding overhead)
+
+> [!IMPORTANT]
+> The player relies on the browser's native decoding capabilities. Some encoding formats (such as E-AC3) may not play in certain browsers (manifested as no audio or black screen). We recommend using the latest versions of Chrome, Edge, or Safari.
+
 ## Access
 
 After configuring M3U playlists, access the player via your browser:
@@ -37,21 +51,6 @@ The copied value is a directly requestable HTTP media URL, which you can downloa
 
 > [!NOTE]
 > An on-air program with no catch-up source copies the live URL. A program that has not started and has no catch-up source cannot be copied.
-
-## Features
-
-- **Channel List**: Automatically loads configured M3U channel lists
-- **Copy Media Links**: Middle-click a channel or program to copy its live or catch-up URL
-- **Live Streaming**: Watch live broadcasts directly in the browser
-- **Time-Shifted Playback**: Supports EPG (Electronic Program Guide) and time-shifted playback (requires catchup source)
-- **Fast Startup**: Achieves millisecond-level channel switching with FCC
-- **Seamless Channel Switching**: Preloads the new stream when switching channels to reduce black screens
-- **Responsive Design**: UI adapts to both desktop and mobile devices
-- **PWA Support**: Can be added to the home screen on phones, tablets, desktops, or LG webOS TVs for app-like quick access
-- **Zero Overhead**: Pure web frontend implementation with virtually no resource overhead on rtp2httpd (no decoding/transcoding overhead)
-
-> [!IMPORTANT]
-> The player relies on the browser's native decoding capabilities. Some encoding formats (such as E-AC3) may not play in certain browsers (manifested as no audio or black screen). We recommend using the latest versions of Chrome, Edge, or Safari.
 
 ## PWA Support and Add to Home Screen
 
