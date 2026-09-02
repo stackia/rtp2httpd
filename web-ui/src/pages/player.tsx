@@ -20,7 +20,7 @@ import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
 import { isDocumentPictureInPictureSupported } from "../lib/document-picture-in-picture";
 import { loadEPG } from "../lib/epg-loader";
-import { type EPGChannelDescriptor, type EPGData, getEPGChannelId } from "../lib/epg-parser";
+import { type EPGChannelDescriptor, type EPGData, getAllChannelPrograms, getEPGChannelId } from "../lib/epg-parser";
 import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
 import { isLGWebOS } from "../lib/platform";
@@ -140,6 +140,19 @@ function PlayerPage() {
   // Get the active source's URL and catchupSource
   const activeSource = currentChannel?.sources[activeSourceIndex] ?? currentChannel?.sources[0];
 
+  // EPG channel ID for the current channel using fallback logic (tvgId -> tvgName -> name)
+  const currentEpgChannelId = useMemo(
+    () => (currentChannel ? getEPGChannelId(currentChannel, epgData) : null),
+    [currentChannel, epgData],
+  );
+  const catchupPrograms = useMemo(
+    () => (currentEpgChannelId ? getAllChannelPrograms(currentEpgChannelId, epgData) : []),
+    [currentEpgChannelId, epgData],
+  );
+  // Seek/retry reads the latest EPG without rebuilding the catchup playlist when it first arrives.
+  const catchupProgramsRef = useRef(catchupPrograms);
+  catchupProgramsRef.current = catchupPrograms;
+
   // Track fullscreen state
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -196,6 +209,7 @@ function PlayerPage() {
       setPlaybackSegments(
         buildCatchupSegments(activeSource, streamStartTime, {
           overlapMs: playbackBackendKind === "native" ? 0 : undefined,
+          programs: catchupProgramsRef.current,
         }),
       );
       setPlayMode("catchup");
@@ -301,12 +315,6 @@ function PlayerPage() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, [metadata, currentChannel, selectChannel]);
-
-  // EPG channel ID for the current channel using fallback logic (tvgId -> tvgName -> name)
-  const currentEpgChannelId = useMemo(
-    () => (currentChannel ? getEPGChannelId(currentChannel, epgData) : null),
-    [currentChannel, epgData],
-  );
 
   // Programme at the current playback position (stream start + media clock)
   const currentVideoProgram = useCurrentVideoProgram(playbackClock, currentEpgChannelId, epgData, streamStartTime);
@@ -581,6 +589,7 @@ function PlayerPage() {
               onError={handleVideoError}
               locale={locale}
               currentProgram={currentVideoProgram}
+              catchupPrograms={catchupPrograms}
               onSeek={handleVideoSeek}
               onStreamStartTimeChange={setStreamStartTime}
               streamStartTime={streamStartTime}

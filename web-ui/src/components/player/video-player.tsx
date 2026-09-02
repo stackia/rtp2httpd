@@ -65,6 +65,8 @@ interface VideoPlayerProps {
   locale: Locale;
   currentProgram?: EPGProgram | null;
   onSeek?: (seekTime: Date, goingLive: boolean) => void;
+  /** Channel EPG programmes used to split catchup playseek windows and to rebuild URLs on retry. */
+  catchupPrograms?: readonly Pick<EPGProgram, "start" | "end">[];
   /** Recalibrate MSE t=0 → wall-clock mapping (live mode). */
   onStreamStartTimeChange?: (time: Date) => void;
   streamStartTime: Date;
@@ -250,6 +252,7 @@ function VideoPlayerComponent({
   locale,
   playMode,
   currentProgram = null,
+  catchupPrograms = [],
   onSeek,
   onStreamStartTimeChange,
   streamStartTime,
@@ -687,6 +690,7 @@ function VideoPlayerComponent({
       const seekTime = mseToWallClock(currentVideoTimeRef.current, streamStartTime);
       return buildCatchupSegments(source, seekTime, {
         overlapMs: playbackBackendKind === "native" ? 0 : undefined,
+        programs: catchupPrograms,
       });
     }
     return segments;
