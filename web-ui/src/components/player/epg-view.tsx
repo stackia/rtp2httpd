@@ -3,8 +3,8 @@ import { Circle, History } from "lucide-react";
 import {
   memo,
   type RefObject,
+  startTransition,
   useCallback,
-  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -35,30 +35,58 @@ interface EPGViewProps {
 
 export const nextScrollBehaviorRef: RefObject<"smooth" | "instant" | "skip"> = { current: "instant" };
 
+/**
+ * Sections this far outside the scroll viewport are hydrated ahead of time so
+ * scrolling into them never shows an empty placeholder.
+ */
+const SECTION_HYDRATION_MARGIN = "800px 0px";
+
+let timeFormatter: Intl.DateTimeFormat | null = null;
+function formatProgramTime(date: Date): string {
+  timeFormatter ??= new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
+  return timeFormatter.format(date);
+}
+
+interface EPGProgramRow {
+  program: EPGProgram;
+  startLabel: string;
+  durationMinutes: number;
+}
+
+interface EPGDateSectionData {
+  dateKey: string;
+  date: Date;
+  rows: EPGProgramRow[];
+}
+
+type SectionVisibilityHandler = () => void;
+
 interface EPGProgramItemProps {
   currentProgramRef: RefObject<HTMLButtonElement | null>;
+  durationMinutes: number;
   handleProgramClick: (programStart: Date, programEnd: Date) => void;
   isPast: boolean;
   locale: Locale;
   onAir: boolean;
   playing: boolean;
   program: EPGProgram;
+  startLabel: string;
   supportsCatchup: boolean;
 }
 
 const EPGProgramItem = memo(function EPGProgramItem({
   currentProgramRef,
+  durationMinutes,
   handleProgramClick,
   isPast,
   locale,
   onAir,
   playing,
   program,
+  startLabel,
   supportsCatchup,
 }: EPGProgramItemProps) {
   const t = usePlayerTranslation(locale);
-  const formatTime = (date: Date) => date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const durationMinutes = Math.round((program.end.getTime() - program.start.getTime()) / 60000);
 
   return (
     <button
@@ -103,7 +131,7 @@ const EPGProgramItem = memo(function EPGProgramItem({
               playing && "text-blue-700 dark:text-blue-200",
             )}
           >
-            {formatTime(program.start)}
+            {startLabel}
           </span>
           <span className="whitespace-nowrap text-[10px] text-slate-500 tabular-nums leading-4 dark:text-slate-400 md:text-xs">
             {durationMinutes}
@@ -134,77 +162,118 @@ const EPGProgramItem = memo(function EPGProgramItem({
   );
 });
 
-interface EPGProgramListProps {
-  currentPlayingProgram: EPGProgram | null;
-  currentProgramRef: RefObject<HTMLButtonElement | null>;
-  currentTime: Date;
-  handleProgramClick: (programStart: Date, programEnd: Date) => void;
-  locale: Locale;
-  programsByDate: Map<string, EPGProgram[]>;
-  supportsCatchup: boolean;
+function formatRelativeDate(
+  date: Date,
+  currentTimeMs: number,
+  locale: Locale,
+  t: (key: "today" | "yesterday" | "dayBeforeYesterday" | "tomorrow") => string,
+) {
+  const now = new Date(currentTimeMs);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const daysDiff = Math.floor((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  switch (daysDiff) {
+    case 0:
+      return t("today");
+    case -1:
+      return t("yesterday");
+    case -2:
+      return t("dayBeforeYesterday");
+    case 1:
+      return t("tomorrow");
+    default:
+      return date.toLocaleDateString(locale === "zh-Hans" || locale === "zh-Hant" ? "zh-CN" : "en-US", {
+        month: "short",
+        day: "numeric",
+      });
+  }
 }
 
-const EPGProgramList = memo(function EPGProgramList({
-  currentPlayingProgram,
+interface EPGDateSectionProps {
+  currentPlayingProgramId: string | undefined;
+  currentProgramRef: RefObject<HTMLButtonElement | null>;
+  currentTimeMs: number;
+  /** Section contains the playing program; it must render synchronously so the scroll target exists. */
+  forceRender: boolean;
+  handleProgramClick: (programStart: Date, programEnd: Date) => void;
+  locale: Locale;
+  registerSection: (element: HTMLElement, onVisible: SectionVisibilityHandler) => void;
+  section: EPGDateSectionData;
+  supportsCatchup: boolean;
+  unregisterSection: (element: HTMLElement) => void;
+}
+
+/**
+ * One day of programs. Rows are only materialized once the section approaches the
+ * scroll viewport (or when it holds the playing program); until then a fixed-height
+ * placeholder keeps the scroll geometry stable. Once hydrated a section stays hydrated.
+ */
+const EPGDateSection = memo(function EPGDateSection({
+  currentPlayingProgramId,
   currentProgramRef,
-  currentTime,
+  currentTimeMs,
+  forceRender,
   handleProgramClick,
   locale,
-  programsByDate,
+  registerSection,
+  section,
   supportsCatchup,
-}: EPGProgramListProps) {
+  unregisterSection,
+}: EPGDateSectionProps) {
   const t = usePlayerTranslation(locale);
-  const formatRelativeDate = (date: Date) => {
-    const today = new Date(currentTime.getFullYear(), currentTime.getMonth(), currentTime.getDate());
-    const targetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const daysDiff = Math.floor((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const [hydrated, setHydrated] = useState(forceRender);
+  const rendered = hydrated || forceRender;
 
-    switch (daysDiff) {
-      case 0:
-        return t("today");
-      case -1:
-        return t("yesterday");
-      case -2:
-        return t("dayBeforeYesterday");
-      case 1:
-        return t("tomorrow");
-      default:
-        return date.toLocaleDateString(locale === "zh-Hans" || locale === "zh-Hant" ? "zh-CN" : "en-US", {
-          month: "short",
-          day: "numeric",
-        });
-    }
-  };
+  const placeholderRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      if (!element) return;
+      registerSection(element, () => {
+        startTransition(() => setHydrated(true));
+      });
+      return () => unregisterSection(element);
+    },
+    [registerSection, unregisterSection],
+  );
 
-  return Array.from(programsByDate.entries()).map(([dateKey, programs]) => {
-    const date = new Date(dateKey);
-    return (
-      <div key={dateKey} className="relative">
-        <div className="player-performance-epg-header sticky top-0 z-10 border-blue-950/10 border-b bg-white/66 px-3 py-1.5 shadow-[0_8px_20px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(90deg,#151c32,#25223f)] dark:shadow-[0_8px_20px_rgba(0,0,0,0.18)] md:px-4 md:py-2">
-          <h3 className="font-semibold text-blue-800 text-xs tracking-wide dark:text-blue-100 md:text-sm">
-            {formatRelativeDate(date)}
-          </h3>
-        </div>
-        <div className="px-2 py-2">
+  const rowCount = section.rows.length;
+
+  return (
+    <div className="relative">
+      <div className="player-performance-epg-header sticky top-0 z-10 border-blue-950/10 border-b bg-white/66 px-3 py-1.5 shadow-[0_8px_20px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(90deg,#151c32,#25223f)] dark:shadow-[0_8px_20px_rgba(0,0,0,0.18)] md:px-4 md:py-2">
+        <h3 className="font-semibold text-blue-800 text-xs tracking-wide dark:text-blue-100 md:text-sm">
+          {formatRelativeDate(section.date, currentTimeMs, locale, t)}
+        </h3>
+      </div>
+      <div className="px-2 py-2">
+        {rendered ? (
           <div className="space-y-2">
-            {programs.map((program) => (
+            {section.rows.map(({ program, startLabel, durationMinutes }) => (
               <EPGProgramItem
                 key={program.id}
                 currentProgramRef={currentProgramRef}
+                durationMinutes={durationMinutes}
                 handleProgramClick={handleProgramClick}
-                isPast={program.end <= currentTime}
+                isPast={program.end.getTime() <= currentTimeMs}
                 locale={locale}
-                onAir={program.start <= currentTime && program.end > currentTime}
-                playing={currentPlayingProgram?.id === program.id}
+                onAir={program.start.getTime() <= currentTimeMs && program.end.getTime() > currentTimeMs}
+                playing={currentPlayingProgramId === program.id}
                 program={program}
+                startLabel={startLabel}
                 supportsCatchup={supportsCatchup}
               />
             ))}
           </div>
-        </div>
+        ) : (
+          <div
+            ref={placeholderRef}
+            aria-hidden="true"
+            style={{ height: `calc(${rowCount} * var(--epg-item-h) + ${Math.max(rowCount - 1, 0)} * 0.5rem)` }}
+          />
+        )}
       </div>
-    );
-  });
+    </div>
+  );
 });
 
 function EPGViewComponent({
@@ -217,46 +286,105 @@ function EPGViewComponent({
 }: EPGViewProps) {
   const t = usePlayerTranslation(locale);
   const currentProgramRef = useRef<HTMLButtonElement>(null);
-  const [currentTime, setCurrentTime] = useState(() => new Date());
-  const deferredCurrentTime = useDeferredValue(currentTime);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
 
+  // Program boundaries fall on whole minutes, so ticking at minute boundaries gives the
+  // same on-air / past flags as a 1 s interval at a sixtieth of the re-renders.
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-    return () => window.clearInterval(interval);
+    const tick = () => startTransition(() => setCurrentTimeMs(Date.now()));
+    tick();
+
+    let intervalId = 0;
+    const timeoutId = window.setTimeout(
+      () => {
+        tick();
+        intervalId = window.setInterval(tick, 60_000);
+      },
+      60_000 - (Date.now() % 60_000),
+    );
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (intervalId) window.clearInterval(intervalId);
+    };
   }, []);
-
-  // Group programs by date
-  const programsByDate = useMemo(() => {
-    if (!channelId) return new Map<string, EPGProgram[]>();
-
-    const programs = epgData[channelId];
-    if (!programs || programs.length === 0) return new Map<string, EPGProgram[]>();
-
-    // Group all available programs by date (no date range filtering)
-    const grouped = new Map<string, EPGProgram[]>();
-    programs.forEach((program) => {
-      const dateKey = new Date(
-        program.start.getFullYear(),
-        program.start.getMonth(),
-        program.start.getDate(),
-      ).toISOString();
-      const existing = grouped.get(dateKey) || [];
-      existing.push(program);
-      grouped.set(dateKey, existing);
-    });
-
-    return grouped;
-  }, [channelId, epgData]);
 
   const channelPrograms = useMemo(() => {
     if (!channelId) return [];
-    const programs = epgData[channelId];
-    if (!programs || programs.length === 0) return [];
-    // Return all available programs (no date range filtering)
-    return programs;
+    return epgData[channelId] ?? [];
   }, [channelId, epgData]);
+
+  // Group programs by day and precompute the per-row display strings once, so rows are
+  // cheap to render and their memo props stay primitive.
+  const sections = useMemo<EPGDateSectionData[]>(() => {
+    const result: EPGDateSectionData[] = [];
+    let current: EPGDateSectionData | null = null;
+    for (const program of channelPrograms) {
+      const start = program.start;
+      const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      const dateKey = String(dayStart.getTime());
+      if (!current || current.dateKey !== dateKey) {
+        current = { dateKey, date: dayStart, rows: [] };
+        result.push(current);
+      }
+      current.rows.push({
+        program,
+        startLabel: formatProgramTime(start),
+        durationMinutes: Math.round((program.end.getTime() - start.getTime()) / 60000),
+      });
+    }
+    return result;
+  }, [channelPrograms]);
+
+  const currentPlayingProgramId = currentPlayingProgram?.id;
+  const playingSectionKey = useMemo(() => {
+    if (!currentPlayingProgramId) return null;
+    return (
+      sections.find((section) => section.rows.some((row) => row.program.id === currentPlayingProgramId))?.dateKey ??
+      null
+    );
+  }, [sections, currentPlayingProgramId]);
+
+  // Shared IntersectionObserver that hydrates sections as they approach the viewport.
+  const sectionHandlersRef = useRef(new Map<HTMLElement, SectionVisibilityHandler>());
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  const registerSection = useCallback((element: HTMLElement, onVisible: SectionVisibilityHandler) => {
+    sectionHandlersRef.current.set(element, onVisible);
+    observerRef.current?.observe(element);
+  }, []);
+
+  const unregisterSection = useCallback((element: HTMLElement) => {
+    sectionHandlersRef.current.delete(element);
+    observerRef.current?.unobserve(element);
+  }, []);
+
+  const hasPrograms = channelPrograms.length > 0;
+  useEffect(() => {
+    if (!hasPrograms) return;
+    const handlers = sectionHandlersRef.current;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const element = entry.target as HTMLElement;
+          const onVisible = handlers.get(element);
+          if (!onVisible) continue;
+          handlers.delete(element);
+          observer.unobserve(element);
+          onVisible();
+        }
+      },
+      { root: scrollContainerRef.current, rootMargin: SECTION_HYDRATION_MARGIN },
+    );
+    for (const element of handlers.keys()) observer.observe(element);
+    observerRef.current = observer;
+    return () => {
+      observer.disconnect();
+      observerRef.current = null;
+    };
+  }, [hasPrograms]);
 
   // Auto-scroll to center current/playing program when it changes or channel changes
   useLayoutEffect(() => {
@@ -286,7 +414,7 @@ function EPGViewComponent({
     [onProgramSelect],
   );
 
-  if (!channelId || channelPrograms.length === 0) {
+  if (!channelId || !hasPrograms) {
     return (
       <div className="flex h-full items-center justify-center bg-transparent px-6 text-center text-slate-500 text-sm leading-6 dark:text-slate-400">
         {t("noEpgAvailable")}
@@ -295,17 +423,24 @@ function EPGViewComponent({
   }
 
   return (
-    <div className="h-full overflow-y-auto pb-[env(safe-area-inset-bottom)]">
-      <div className="relative">
-        <EPGProgramList
-          currentPlayingProgram={currentPlayingProgram}
-          currentProgramRef={currentProgramRef}
-          currentTime={deferredCurrentTime}
-          handleProgramClick={handleProgramClick}
-          locale={locale}
-          programsByDate={programsByDate}
-          supportsCatchup={supportsCatchup}
-        />
+    <div ref={scrollContainerRef} className="h-full overflow-y-auto pb-[env(safe-area-inset-bottom)]">
+      {/* --epg-item-h mirrors the intrinsic block size in PLAYER_EPG_LIST_ITEM_CLASS for placeholder sizing. */}
+      <div key={channelId} className="relative [--epg-item-h:3rem] md:[--epg-item-h:3.75rem]">
+        {sections.map((section) => (
+          <EPGDateSection
+            key={section.dateKey}
+            currentPlayingProgramId={currentPlayingProgramId}
+            currentProgramRef={currentProgramRef}
+            currentTimeMs={currentTimeMs}
+            forceRender={section.dateKey === playingSectionKey}
+            handleProgramClick={handleProgramClick}
+            locale={locale}
+            registerSection={registerSection}
+            section={section}
+            supportsCatchup={supportsCatchup}
+            unregisterSection={unregisterSection}
+          />
+        ))}
       </div>
     </div>
   );
