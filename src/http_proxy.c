@@ -1197,11 +1197,20 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
     /* Rewrite Location header for redirects */
     if (is_redirect && has_location) {
-      char app_base_path[HTTP_URL_BUFFER_SIZE];
-      if (http_proxy_get_app_base_path(app_base_path, sizeof(app_base_path)) == 0 &&
-          http_proxy_build_url(location_header, app_base_path, rewritten_location, sizeof(rewritten_location)) == 0) {
-        location_rewritten = 1;
-        logger(LOG_DEBUG, "HTTP Proxy: Rewritten Location: %s -> %s", location_header, rewritten_location);
+      /*
+       * Root-relative Locations (e.g. /rtsp/host:port/path) already target this
+       * rtp2httpd instance and must be forwarded unchanged. Absolute http://
+       * and rtsp:// URLs are rewritten onto the matching proxy prefix.
+       */
+      if (location_header[0] == '/') {
+        logger(LOG_DEBUG, "HTTP Proxy: Keeping relative Location unchanged: %s", location_header);
+      } else {
+        char app_base_path[HTTP_URL_BUFFER_SIZE];
+        if (http_proxy_get_app_base_path(app_base_path, sizeof(app_base_path)) == 0 &&
+            http_proxy_build_url(location_header, app_base_path, rewritten_location, sizeof(rewritten_location)) == 0) {
+          location_rewritten = 1;
+          logger(LOG_DEBUG, "HTTP Proxy: Rewritten Location: %s -> %s", location_header, rewritten_location);
+        }
       }
     }
 
@@ -1533,16 +1542,25 @@ int http_proxy_session_tick(http_proxy_session_t *session, int64_t now) {
 
 int http_proxy_build_url(const char *http_url, const char *base_url_placeholder, char *output, size_t output_size) {
   const char *host_start;
+  const char *scheme_prefix;
   char *encoded_token = NULL;
   int result;
   int has_r2h_token = (config.r2h_token && config.r2h_token[0] != '\0');
 
-  /* Skip http:// prefix */
-  if (strncasecmp(http_url, "http://", 7) != 0) {
-    logger(LOG_ERROR, "http_proxy_build_url: URL must start with http://");
+  if (!http_url || !base_url_placeholder || !output || output_size == 0)
+    return -1;
+
+  /* Convert http://host/... -> {BASE_URL}http/host/...
+   * and rtsp://host/... -> {BASE_URL}rtsp/host/... */
+  if (strncasecmp(http_url, "http://", 7) == 0) {
+    host_start = http_url + 7;
+    scheme_prefix = "http/";
+  } else if (strncasecmp(http_url, "rtsp://", 7) == 0) {
+    host_start = http_url + 7;
+    scheme_prefix = "rtsp/";
+  } else {
     return -1;
   }
-  host_start = http_url + 7; /* Points to host:port/path */
 
   /* URL encode r2h-token if configured */
   if (has_r2h_token) {
@@ -1553,21 +1571,21 @@ int http_proxy_build_url(const char *http_url, const char *base_url_placeholder,
     }
   }
 
-  /* Build proxy URL: {BASE_URL}http/host:port/path[?r2h-token=xxx] */
   /* Check if original URL has query parameters */
   const char *query_start = strchr(host_start, '?');
 
   if (has_r2h_token && encoded_token) {
     if (query_start) {
       /* Original URL has query params, append r2h-token with & */
-      result = snprintf(output, output_size, "%shttp/%s&r2h-token=%s", base_url_placeholder, host_start, encoded_token);
+      result = snprintf(output, output_size, "%s%s%s&r2h-token=%s", base_url_placeholder, scheme_prefix, host_start,
+                        encoded_token);
     } else {
       /* No query params, add r2h-token with ? */
-      result = snprintf(output, output_size, "%shttp/%s?r2h-token=%s", base_url_placeholder, host_start, encoded_token);
+      result = snprintf(output, output_size, "%s%s%s?r2h-token=%s", base_url_placeholder, scheme_prefix, host_start,
+                        encoded_token);
     }
   } else {
-    /* No r2h-token, just transform the URL */
-    result = snprintf(output, output_size, "%shttp/%s", base_url_placeholder, host_start);
+    result = snprintf(output, output_size, "%s%s%s", base_url_placeholder, scheme_prefix, host_start);
   }
 
   if (encoded_token)

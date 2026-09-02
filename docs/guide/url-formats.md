@@ -164,6 +164,19 @@ http://192.168.1.1:5140/http/iptv.example.com/channel1?r2h-ifname=eth0
 
 详见 [时间处理说明](./time-processing.md)。
 
+### 上游 30x 重定向
+
+当上游返回 `301` / `302` / `303` / `307` / `308` 时，rtp2httpd 会按协议改写 `Location`，让播放器继续走本实例：
+
+| 上游 `Location` | 转发给客户端 |
+| --- | --- |
+| `http://iptv.example.com:8080/path` | `/http/iptv.example.com:8080/path` |
+| `rtsp://iptv.example.com:554/path?auth=...` | `/rtsp/iptv.example.com:554/path?auth=...` |
+| `/rtsp/iptv.example.com:554/path`（根路径相对地址） | 原样转发 |
+| `https://...` 或其他未支持的协议 | 原样转发 |
+
+这适用于 `catchup-source` 先指向一个 HTTP 鉴权/换链服务，再由该服务 302 到真实 RTSP 播放地址的场景。如果配置了 `app-path-prefix`，改写后的地址会带上此前缀。
+
 ### 注意事项
 
 - 仅支持 HTTP 上游（不支持 HTTPS）
