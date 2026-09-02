@@ -151,6 +151,7 @@ html.player-web-fullscreen-active body {
   inset: 0;
   width: 100%;
   height: 100%;
+  overflow: hidden;
 }
 
 .player-web-fullscreen-portrait {

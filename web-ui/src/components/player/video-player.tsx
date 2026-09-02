@@ -2029,7 +2029,7 @@ function VideoPlayerComponent({
             isWebFullscreen={isWebFullscreen}
             onWebFullscreenToggle={!isDocumentPiP ? onWebFullscreenToggle : undefined}
             showSidebar={showSidebar}
-            onToggleSidebar={onToggleSidebar}
+            onToggleSidebar={!isWebFullscreen ? onToggleSidebar : undefined}
             isPiP={isPiP}
             isPiPSupported={isPictureInPictureSupported()}
             onPiPToggle={handlePiPToggle}
