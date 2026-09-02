@@ -457,20 +457,21 @@ function PlayerPage() {
     loadPlaylist();
   }, [loadPlaylist]);
 
+  // EPG channel ID for the current channel using fallback logic (tvgId -> tvgName -> name)
+  const currentEpgChannelId = useMemo(
+    () => (currentChannel ? getEPGChannelId(currentChannel, epgData) : null),
+    [currentChannel, epgData],
+  );
+
   // Get current program for the video player
-  // Use tvgId / tvgName / name with fallback logic for EPG matching
   // Use streamStartTime + currentVideoTime to determine the actual time position
   const currentVideoProgram = useMemo(() => {
-    if (!currentChannel) return null;
-
-    // Get EPG channel ID using fallback logic (tvgId -> tvgName -> name)
-    const epgChannelId = getEPGChannelId(currentChannel, epgData);
-    if (!epgChannelId) return null;
+    if (!currentEpgChannelId) return null;
 
     // Calculate absolute time based on stream start + current video position
     const absoluteTime = mseToWallClock(deferredCurrentVideoTime, streamStartTime);
-    return getCurrentProgram(epgChannelId, epgData, absoluteTime);
-  }, [currentChannel, epgData, streamStartTime, deferredCurrentVideoTime]);
+    return getCurrentProgram(currentEpgChannelId, epgData, absoluteTime);
+  }, [currentEpgChannelId, epgData, streamStartTime, deferredCurrentVideoTime]);
 
   const handleVideoError = useCallback((err: string) => {
     setError(err);
@@ -681,7 +682,7 @@ function PlayerPage() {
               </Activity>
               <Activity mode={renderedSidebarView === "epg" ? "visible" : "hidden"}>
                 <EPGView
-                  channelId={currentChannel ? getEPGChannelId(currentChannel, epgData) : null}
+                  channelId={currentEpgChannelId}
                   epgData={epgData}
                   onProgramSelect={handleProgramSelect}
                   locale={locale}

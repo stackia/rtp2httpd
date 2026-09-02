@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 import { CircleAlert, Play, X } from "lucide-react";
 import {
+  memo,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -2066,4 +2067,6 @@ function VideoPlayerComponent({
   );
 }
 
-export { VideoPlayerComponent as VideoPlayer };
+// Every prop is a primitive or a stable callback and the 1 Hz playback clock arrives through
+// PlaybackTimeContext, so memoizing skips the (large) re-render on unrelated PlayerPage updates.
+export const VideoPlayer = memo(VideoPlayerComponent);
