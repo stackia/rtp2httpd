@@ -56,6 +56,9 @@ After adding to the home screen, the desktop icon is named **R2H Player** by def
 3. Scroll down in the share menu and select **Add to Home Screen**
 4. Confirm the name and tap **Add**
 
+> [!NOTE]
+> When launched from the home screen as a PWA, Picture-in-Picture is unavailable due to an iOS limitation, so the player hides the Picture-in-Picture button. Opening the same page in Safari still allows Picture-in-Picture.
+
 ### Android (Chrome, Edge, etc.)
 
 1. Open the player page in your browser

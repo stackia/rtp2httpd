@@ -1,3 +1,5 @@
+import { isIOS, isStandalonePlayer } from "./platform";
+
 type DocumentPictureInPictureOptions = {
   preferInitialWindowPlacement?: boolean;
   width?: number;
@@ -28,6 +30,9 @@ export function isDocumentPictureInPictureSupported(): boolean {
 }
 
 export function isPictureInPictureSupported(): boolean {
+  // iOS/iPadOS home-screen PWAs report pictureInPictureEnabled, but
+  // requestPictureInPicture() is a no-op (WebKit bug). Hide the control.
+  if (isIOS() && isStandalonePlayer()) return false;
   return isDocumentPictureInPictureSupported() || Boolean(document.pictureInPictureEnabled);
 }
 
