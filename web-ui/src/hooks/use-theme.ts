@@ -4,7 +4,7 @@ import { usePersistedEnum } from "./use-persisted-enum";
 
 const DEFAULT_THEME: ThemeMode = "auto";
 
-export function useTheme(storageKey: string) {
+export function useTheme(storageKey: string, forceDark = false) {
   const [theme, setTheme] = usePersistedEnum<ThemeMode>(storageKey, DEFAULT_THEME, THEME_MODES);
 
   const applyTheme = useCallback((mode: ThemeMode, systemDarkOverride?: boolean) => {
@@ -30,8 +30,14 @@ export function useTheme(storageKey: string) {
   }, []);
 
   useEffect(() => {
+    if (forceDark) {
+      const root = document.documentElement;
+      root.classList.add("dark");
+      root.style.colorScheme = "dark";
+      return;
+    }
     applyTheme(theme);
-  }, [theme, applyTheme]);
+  }, [theme, applyTheme, forceDark]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -40,6 +46,7 @@ export function useTheme(storageKey: string) {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
 
     const handleChange = (event: MediaQueryListEvent) => {
+      if (forceDark) return;
       if (theme === "auto") {
         applyTheme("auto", event.matches);
       }
@@ -47,7 +54,7 @@ export function useTheme(storageKey: string) {
 
     media.addEventListener("change", handleChange);
     return () => media.removeEventListener("change", handleChange);
-  }, [theme, applyTheme]);
+  }, [theme, applyTheme, forceDark]);
 
   return useMemo(() => ({ theme, setTheme }), [theme, setTheme]);
 }

@@ -58,7 +58,6 @@ function PlayerPage() {
   const supportsSeamlessSwitch = !isLGWebOS();
   const supportsDocumentPictureInPicture = isDocumentPictureInPictureSupported();
   const { locale, setLocale } = useLocale("rtp2httpd-player-locale");
-  const { theme, setTheme } = useTheme("rtp2httpd-player-theme");
   const { appearance, setAppearance } = usePlayerAppearance();
   const [pictureInPictureMode, setPictureInPictureMode] = usePersistedEnum<PictureInPictureMode>(
     "rtp2httpd-player-picture-in-picture-mode",
@@ -67,6 +66,9 @@ function PlayerPage() {
   );
   const t = usePlayerTranslation(locale);
   const { isWebFullscreen, isWebFullscreenPortrait, toggleWebFullscreen } = useWebFullscreen();
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const isImmersive = isFullscreen || isWebFullscreen;
+  const { theme, setTheme } = useTheme("rtp2httpd-player-theme", isImmersive);
 
   const [metadata, setMetadata] = useState<M3UMetadata | null>(null);
   const [epgData, setEpgData] = useState<EPGData>({});
@@ -80,7 +82,6 @@ function PlayerPage() {
   const [flowSidebarHost, setFlowSidebarHost] = useState<HTMLDivElement | null>(null);
   const [selectedSidebarView, setSelectedSidebarView] = useState<"channels" | "epg">("channels");
   const [renderedSidebarView, setRenderedSidebarView] = useState<"channels" | "epg">("channels");
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [insetSidebarRight, setInsetSidebarRight] = useState(shouldInsetSidebarRight);
   const [seamlessSwitch, setSeamlessSwitch] = useState(() => (supportsSeamlessSwitch ? getSeamlessSwitch() : false));
@@ -539,7 +540,6 @@ function PlayerPage() {
     supportsMSEVideoProcessing,
   ]);
 
-  const isImmersive = isFullscreen || isWebFullscreen;
   const sidebarHost = isImmersive ? immersiveSidebarHost : flowSidebarHost;
 
   const hasPlaylistLoadError = Boolean(error && !metadata);
