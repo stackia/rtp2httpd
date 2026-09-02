@@ -499,7 +499,7 @@ function PlayerControlsComponent({
           <PlayerTimeDisplay currentProgram={currentProgram} seekStartTime={seekStartTime} />
 
           {showMediaBadges && (
-            <div className="ml-1 mr-1 flex h-7 min-w-0 basis-0 flex-1 items-center overflow-hidden md:ml-2 md:mr-2 md:h-12">
+            <div className="ml-1 mr-1 flex h-7 min-w-0 basis-0 flex-1 touch-pan-x items-center overflow-hidden md:ml-2 md:mr-2 md:h-12">
               <PlayerMediaBadges mediaInfo={mediaInfo} locale={locale} renderState={renderState} />
             </div>
           )}
