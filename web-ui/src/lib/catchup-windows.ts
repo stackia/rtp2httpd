@@ -35,10 +35,11 @@ function addBoundary(boundaries: Set<number>, timeMs: number, rangeStartMs: numb
 /**
  * Plan consecutive catchup playseek windows from `startTimeArg` through an 8-hour future horizon.
  *
- * When `programs` are provided, windows split on EPG start/end times (and still at the live
- * edge). Near-live requests keep a single past window of at least {@link CATCHUP_MIN_DURATION_MS}
- * so short playseek ranges do not fail. Without EPG data the previous duration-based chunking
- * is used: up to 5 hours before the live edge, half that after it.
+ * Recorded time (before the live edge) splits on EPG start/end when programmes are available.
+ * After the live edge, windows always use the original half-duration chunks — never a future
+ * programme end — because upstream catchup servers often reject playseek ranges that end in
+ * the future. Near-live requests skip EPG splits entirely and match the no-EPG plan: a single
+ * past window of at least {@link CATCHUP_MIN_DURATION_MS}, then half-duration chunks.
  */
 export function planCatchupSegmentWindows(
   startTimeArg: Date,
@@ -58,31 +59,29 @@ export function planCatchupSegmentWindows(
   const boundaries = new Set<number>([startMs, endingFutureMs]);
   addBoundary(boundaries, splitPointMs, startMs, endingFutureMs);
 
-  const hasEpgSplits = Boolean(programs && programs.length > 0);
   const pastWindowMs = Math.max(0, splitPointMs - startMs);
   const nearLiveCatchup = pastWindowMs <= CATCHUP_MIN_DURATION_MS;
-  // Near-live: keep one min-duration past window and only split on EPG after `now`.
-  const epgSplitAfterMs = nearLiveCatchup ? nowMs : startMs;
+  const useEpgPastSplits = Boolean(programs && programs.length > 0) && !nearLiveCatchup;
 
-  if (programs && programs.length > 0) {
+  if (useEpgPastSplits && programs) {
     for (const program of programs) {
       const programStartMs = program.start.getTime();
       const programEndMs = program.end.getTime();
       if (!Number.isFinite(programStartMs) || !Number.isFinite(programEndMs) || programEndMs <= programStartMs) {
         continue;
       }
-      if (programEndMs <= startMs || programStartMs >= endingFutureMs) {
+      if (programEndMs <= startMs || programStartMs >= splitPointMs) {
         continue;
       }
-      addBoundary(boundaries, programStartMs, epgSplitAfterMs, endingFutureMs);
-      addBoundary(boundaries, programEndMs, epgSplitAfterMs, endingFutureMs);
+      addBoundary(boundaries, programStartMs, startMs, splitPointMs);
+      addBoundary(boundaries, programEndMs, startMs, splitPointMs);
     }
   }
 
   const times = [...boundaries].sort((a, b) => a - b);
   const fallbackDurationMs = Math.min(Math.max(nowMs - startMs, CATCHUP_MIN_DURATION_MS), CATCHUP_MAX_SEGMENT_MS);
-  const pastCapMs = hasEpgSplits ? CATCHUP_MAX_SEGMENT_MS : fallbackDurationMs;
-  const futureCapMs = hasEpgSplits ? CATCHUP_MAX_SEGMENT_MS : fallbackDurationMs / 2;
+  const pastCapMs = useEpgPastSplits ? CATCHUP_MAX_SEGMENT_MS : fallbackDurationMs;
+  const futureCapMs = fallbackDurationMs / 2;
 
   const windows: CatchupTimeWindow[] = [];
   for (let i = 0; i < times.length - 1; i++) {

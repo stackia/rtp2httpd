@@ -77,50 +77,60 @@ describe("planCatchupSegmentWindows with EPG", () => {
     { start: at(30 * MINUTES), end: at(90 * MINUTES) }, // 12:30-13:30
   ];
 
-  it("splits past and future windows on programme boundaries and the live edge", () => {
+  it("splits recorded windows on programme boundaries, then uses half-duration chunks after the live edge", () => {
     const start = at(-2 * HOURS); // 10:00, mid first overlapping programme
     const windows = windowTimes(start, programs);
     const splitPoint = at(-CATCHUP_LIVE_SPLIT_OFFSET_MS).toISOString();
+    const futureChunkMs = (NOW.getTime() - start.getTime()) / 2;
 
-    expect(windows.slice(0, 5).map((window) => [window.start, window.end])).toEqual([
+    expect(windows.slice(0, 3).map((window) => [window.start, window.end])).toEqual([
       [start.toISOString(), at(-90 * MINUTES).toISOString()], // remainder of 09:00-10:30
       [at(-90 * MINUTES).toISOString(), at(-30 * MINUTES).toISOString()], // 10:30-11:30
       [at(-30 * MINUTES).toISOString(), splitPoint], // current programme up to live edge
-      [splitPoint, at(30 * MINUTES).toISOString()], // rest of current programme
-      [at(30 * MINUTES).toISOString(), at(90 * MINUTES).toISOString()], // next programme
     ]);
+    expect(windows[3].start).toBe(splitPoint);
+    expect(windows[3].durationMs).toBe(futureChunkMs);
+    expect(windows[3].end).not.toBe(at(30 * MINUTES).toISOString());
   });
 
-  it("does not slice the near-live past window on EPG edges", () => {
-    const windows = planCatchupSegmentWindows(at(-5_000), NOW, programs);
+  it("matches the original near-live plan instead of extending playseek to the current programme end", () => {
+    const withEpg = planCatchupSegmentWindows(at(-5_000), NOW, programs);
+    const withoutEpg = planCatchupSegmentWindows(at(-5_000), NOW);
     const splitPointMs = NOW.getTime() - CATCHUP_LIVE_SPLIT_OFFSET_MS;
+    const futureChunkMs = CATCHUP_MIN_DURATION_MS / 2;
 
-    expect(windows[0].start.getTime()).toBe(NOW.getTime() - CATCHUP_MIN_DURATION_MS);
-    expect(windows[0].end.getTime()).toBe(splitPointMs);
-    expect(windows[0].end.getTime() - windows[0].start.getTime()).toBe(
-      CATCHUP_MIN_DURATION_MS - CATCHUP_LIVE_SPLIT_OFFSET_MS,
+    expect(withEpg.map((window) => [window.start.getTime(), window.end.getTime()])).toEqual(
+      withoutEpg.map((window) => [window.start.getTime(), window.end.getTime()]),
     );
-    // The current programme continues after the live edge instead of using half-hour chunks.
-    expect(windows[1].start.getTime()).toBe(splitPointMs);
-    expect(windows[1].end.getTime()).toBe(at(30 * MINUTES).getTime());
+    expect(withEpg[0].start.getTime()).toBe(NOW.getTime() - CATCHUP_MIN_DURATION_MS);
+    expect(withEpg[0].end.getTime()).toBe(splitPointMs);
+    expect(withEpg[1].start.getTime()).toBe(splitPointMs);
+    expect(withEpg[1].end.getTime() - withEpg[1].start.getTime()).toBe(futureChunkMs);
+    expect(withEpg[1].end.getTime()).toBeLessThan(at(30 * MINUTES).getTime());
   });
 
   it("still enforces the minimum catchup start when seeking into a programme that just started", () => {
     const justStarted = [{ start: at(-8_000), end: at(30 * MINUTES) }];
     const windows = planCatchupSegmentWindows(at(-8_000), NOW, justStarted);
+    const withoutEpg = planCatchupSegmentWindows(at(-8_000), NOW);
+    expect(windows.map((window) => [window.start.getTime(), window.end.getTime()])).toEqual(
+      withoutEpg.map((window) => [window.start.getTime(), window.end.getTime()]),
+    );
     expect(windows[0].start.getTime()).toBe(NOW.getTime() - CATCHUP_MIN_DURATION_MS);
     expect(windows[0].end.getTime()).toBe(NOW.getTime() - CATCHUP_LIVE_SPLIT_OFFSET_MS);
-    expect(windows[1].start.getTime()).toBe(NOW.getTime() - CATCHUP_LIVE_SPLIT_OFFSET_MS);
-    expect(windows[1].end.getTime()).toBe(at(30 * MINUTES).getTime());
+    expect(windows[1].end.getTime()).toBeLessThan(at(30 * MINUTES).getTime());
   });
 
-  it("caps a single oversized EPG slot at 5 hours", () => {
-    const longProgram = [{ start: at(-2 * HOURS), end: at(8 * HOURS) }];
-    const windows = planCatchupSegmentWindows(at(-2 * HOURS), NOW, longProgram);
-    expect(windows.some((window) => window.end.getTime() - window.start.getTime() === CATCHUP_MAX_SEGMENT_MS)).toBe(
+  it("caps a single oversized recorded EPG slot at 5 hours", () => {
+    const longProgram = [{ start: at(-8 * HOURS), end: at(-1 * HOURS) }];
+    const windows = planCatchupSegmentWindows(at(-8 * HOURS), NOW, longProgram);
+    const splitPointMs = NOW.getTime() - CATCHUP_LIVE_SPLIT_OFFSET_MS;
+    const pastWindows = windows.filter((window) => window.start.getTime() < splitPointMs);
+
+    expect(pastWindows.some((window) => window.end.getTime() - window.start.getTime() === CATCHUP_MAX_SEGMENT_MS)).toBe(
       true,
     );
-    for (const window of windows) {
+    for (const window of pastWindows) {
       expect(window.end.getTime() - window.start.getTime()).toBeLessThanOrEqual(CATCHUP_MAX_SEGMENT_MS);
     }
   });
