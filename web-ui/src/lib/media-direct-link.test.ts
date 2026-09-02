@@ -33,12 +33,24 @@ describe("stripPlaylistUrlLabel", () => {
     expect(stripPlaylistUrlLabel("http://example/ch$HD")).toBe("http://example/ch");
     expect(stripPlaylistUrlLabel(placeholderUrl)).toBe("http://example/ch?t=$" + "{utc}");
   });
+
+  it("keeps an appended catchup query after a path $label", () => {
+    expect(stripPlaylistUrlLabel("/Channel$HD?playseek=20260902100000-20260902120000")).toBe(
+      "/Channel?playseek=20260902100000-20260902120000",
+    );
+    expect(stripPlaylistUrlLabel("/Channel$HD&playseek=20260902100000-20260902120000")).toBe(
+      "/Channel&playseek=20260902100000-20260902120000",
+    );
+  });
 });
 
 describe("toAbsoluteMediaUrl", () => {
   it("resolves relative URLs against the given base and strips labels", () => {
     expect(toAbsoluteMediaUrl("/Test/Live Only$HD", "http://127.0.0.1:8080/")).toBe(
       "http://127.0.0.1:8080/Test/Live%20Only",
+    );
+    expect(toAbsoluteMediaUrl("/Test/Live$HD?playseek=20260902100000-20260902120000", "http://127.0.0.1:8080/")).toBe(
+      "http://127.0.0.1:8080/Test/Live?playseek=20260902100000-20260902120000",
     );
   });
 });
@@ -58,6 +70,25 @@ describe("getProgramMediaUrl", () => {
 
     expect(url).toBe(buildCatchupUrl(ch.sources[0], start, end, NOW));
     expect(url).toBe("/Test/Catchup Channel/catchup?playseek=20260902100000-20260902120000");
+  });
+
+  it("keeps playseek when append-mode catchup is concatenated onto a $label live URL", () => {
+    const start = new Date("2026-09-02T10:00:00.000Z");
+    const end = new Date("2026-09-02T12:00:00.000Z");
+    const ch = channel({
+      sources: [
+        {
+          url: "/Test/Catchup Channel$HD",
+          catchup: "append",
+          catchupSource: "?playseek={(b)YmdHMS|UTC}-{(e)YmdHMS|UTC}",
+          label: "HD",
+        },
+      ],
+    });
+
+    expect(getProgramMediaUrl(ch, { start, end }, 0, NOW)).toBe(
+      "/Test/Catchup Channel?playseek=20260902100000-20260902120000",
+    );
   });
 
   it("pads programmes shorter than CATCHUP_MIN_DURATION_MS", () => {
