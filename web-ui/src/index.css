@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+/* Compact Player Controls on mobile landscape / portrait theater-rotate. */
+@custom-variant player-compact {
+  &:is(.player-compact-controls, .player-compact-controls *) {
+    @slot;
+  }
+}
 
 @theme {
   --font-sans:

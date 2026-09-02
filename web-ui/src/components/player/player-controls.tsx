@@ -13,6 +13,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { useMobileLandscapeChrome } from "../../hooks/use-mobile-landscape-chrome";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import { createProgramTimeline, programProgressToWallClock } from "../../lib/program-timeline";
@@ -66,9 +67,10 @@ interface PlayerControlsProps {
   onSourceChange?: (index: number) => void;
 }
 
-const COMPACT_BUTTON_CLASS = "[@container_video_(max-height:_320px)]:p-1 md:[@container_video_(max-height:_320px)]:p-1";
+const COMPACT_BUTTON_CLASS =
+  "player-compact:p-1 [@container_video_(max-height:_320px)]:p-1 md:[@container_video_(max-height:_320px)]:p-1";
 const COMPACT_ICON_CLASS =
-  "[@container_video_(max-height:_320px)]:h-4 [@container_video_(max-height:_320px)]:w-4 md:[@container_video_(max-height:_320px)]:h-4 md:[@container_video_(max-height:_320px)]:w-4";
+  "player-compact:h-4 player-compact:w-4 [@container_video_(max-height:_320px)]:h-4 [@container_video_(max-height:_320px)]:w-4 md:[@container_video_(max-height:_320px)]:h-4 md:[@container_video_(max-height:_320px)]:w-4";
 
 function formatTime(date: Date, withSeconds = false) {
   return date.toLocaleTimeString([], {
@@ -272,12 +274,12 @@ const PlayerTimeline = memo(function PlayerTimeline({
         <div
           className={clsx(
             "flex min-w-0 items-center justify-between gap-1 text-xs leading-tight tracking-[0.01em] text-blue-50/80 md:gap-2 md:text-sm md:leading-normal",
-            "md:[@container_video_(max-height:_320px)]:text-xs md:[@container_video_(max-height:_320px)]:leading-tight [@container_video_(max-height:_220px)]:hidden",
+            "player-compact:gap-1 player-compact:text-xs player-compact:leading-tight md:[@container_video_(max-height:_320px)]:text-xs md:[@container_video_(max-height:_320px)]:leading-tight [@container_video_(max-height:_220px)]:hidden",
           )}
         >
           <div className="min-w-0 flex-1 truncate">
             <span className="font-medium text-blue-100">{formatTime(startTime)}</span>
-            <span className="mx-1 text-blue-100/30 md:mx-2">|</span>
+            <span className="mx-1 text-blue-100/30 md:mx-2 player-compact:mx-1">|</span>
             <span className="text-white/90">{currentProgram.title || t("excellentProgram")}</span>
           </div>
           <span className="shrink-0 font-medium tabular-nums">{formatTime(endTime)}</span>
@@ -296,13 +298,13 @@ const PlayerTimeline = memo(function PlayerTimeline({
         }
         aria-label={t("seekTo")}
         className={clsx(
-          "player-performance-progress-track group relative h-1.5 touch-none select-none rounded-full bg-blue-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-[height,box-shadow] duration-150 before:absolute before:-inset-y-3 before:inset-x-0 before:content-[''] md:h-2",
+          "player-performance-progress-track group relative h-1.5 touch-none select-none rounded-full bg-blue-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-[height,box-shadow] duration-150 before:absolute before:-inset-y-3 before:inset-x-0 before:content-[''] md:h-2 player-compact:h-1.5",
           "[@container_video_(max-height:_320px)]:h-1 md:[@container_video_(max-height:_320px)]:h-1",
           isCatchupSupported
-            ? "cursor-pointer hover:h-2 hover:shadow-[0_0_20px_rgba(59,130,246,0.16),inset_0_1px_3px_rgba(0,0,0,0.45)] md:hover:h-3"
+            ? "cursor-pointer hover:h-2 hover:shadow-[0_0_20px_rgba(59,130,246,0.16),inset_0_1px_3px_rgba(0,0,0,0.45)] md:hover:h-3 player-compact:hover:h-2"
             : "cursor-default",
           isScrubbing &&
-            "h-2 [@container_video_(max-height:_320px)]:h-2 md:h-3 md:[@container_video_(max-height:_320px)]:h-2",
+            "h-2 [@container_video_(max-height:_320px)]:h-2 md:h-3 md:[@container_video_(max-height:_320px)]:h-2 player-compact:h-2",
         )}
         onPointerDown={isCatchupSupported ? handlePointerDown : undefined}
         onPointerMove={isCatchupSupported ? handlePointerMove : undefined}
@@ -343,10 +345,12 @@ const PlayerTimeline = memo(function PlayerTimeline({
         <div
           className={clsx(
             "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-blue-300 shadow-[0_0_16px_rgba(147,197,253,0.75)]",
-            isScrubbing ? "h-4 w-4" : "h-2.5 w-2.5 transition-[left,width,height] duration-150 md:h-3 md:w-3",
+            isScrubbing
+              ? "h-4 w-4"
+              : "h-2.5 w-2.5 transition-[left,width,height] duration-150 md:h-3 md:w-3 player-compact:h-2.5 player-compact:w-2.5",
             isCatchupSupported &&
               !isScrubbing &&
-              "group-hover:h-3 group-hover:w-3 md:group-hover:h-4 md:group-hover:w-4",
+              "group-hover:h-3 group-hover:w-3 md:group-hover:h-4 md:group-hover:w-4 player-compact:group-hover:h-3 player-compact:group-hover:w-3",
           )}
           style={{ left: `${displayPosition}%` }}
         />
@@ -362,7 +366,7 @@ const PlayerTimeDisplay = memo(function PlayerTimeDisplay({
   const currentTime = usePlaybackTime();
   const { duration, elapsedTime, startTime } = usePlaybackTimelineState(currentProgram, seekStartTime, currentTime);
   return (
-    <div className="hidden whitespace-nowrap text-[11px] leading-none text-blue-50/75 tabular-nums min-[360px]:block md:text-sm md:leading-normal">
+    <div className="hidden whitespace-nowrap text-[11px] leading-none text-blue-50/75 tabular-nums min-[360px]:block md:text-sm md:leading-normal player-compact:text-[11px] player-compact:leading-none">
       {currentProgram ? (
         <span>
           {formatDuration(elapsedTime)} / {formatDuration(duration)}
@@ -404,6 +408,7 @@ function PlayerControlsComponent({
   onSourceChange,
 }: PlayerControlsProps) {
   const t = usePlayerTranslation(locale);
+  const compactChrome = useMobileLandscapeChrome(isTheaterMode);
   const isEffectivelyMuted = isMuted || volume <= 0;
   const isCatchupSupported = channel.sources.some((s) => s.catchup && s.catchupSource);
   const hasTimeline = isCatchupSupported || Boolean(currentProgram);
@@ -414,7 +419,9 @@ function PlayerControlsComponent({
       className={clsx(
         "player-performance-controls-background player-performance-effect player-performance-gradient flex w-full flex-col gap-1 bg-[linear-gradient(to_top,rgba(2,8,23,0.98)_0%,rgba(8,22,51,0.9)_46%,rgba(21,27,69,0.48)_72%,transparent_100%)] pt-4 pr-[max(0.375rem,env(safe-area-inset-right))] pb-1 pl-[max(0.375rem,env(safe-area-inset-left))] md:gap-2 md:pt-9 md:pb-3 md:pl-[max(0.75rem,env(safe-area-inset-left))]",
         hasTimeline && "player-performance-controls-with-timeline",
+        compactChrome && "player-compact-controls",
         "md:pr-[max(0.75rem,env(safe-area-inset-right))]",
+        "player-compact:gap-0.5 player-compact:pt-2 player-compact:pb-0.5 player-compact:pl-[max(0.375rem,env(safe-area-inset-left))] player-compact:pr-[max(0.375rem,env(safe-area-inset-right))]",
         "[@container_video_(max-height:_320px)]:gap-0.5 [@container_video_(max-height:_320px)]:pt-2 [@container_video_(max-height:_320px)]:pb-0.5 md:[@container_video_(max-height:_320px)]:gap-0.5 md:[@container_video_(max-height:_320px)]:pt-2 md:[@container_video_(max-height:_320px)]:pb-0.5 [@container_video_(max-height:_220px)]:pt-1 md:[@container_video_(max-height:_220px)]:pt-1",
       )}
     >
@@ -433,12 +440,12 @@ function PlayerControlsComponent({
       {/* Control Bar */}
       <div
         className={clsx(
-          "flex min-h-10 min-w-0 items-center justify-between gap-0.5 md:min-h-14 md:gap-1",
+          "flex min-h-10 min-w-0 items-center justify-between gap-0.5 md:min-h-14 md:gap-1 player-compact:min-h-8 player-compact:gap-0.5",
           "[@container_video_(max-height:_320px)]:min-h-8 md:[@container_video_(max-height:_320px)]:min-h-8",
         )}
       >
         {/* Left Controls */}
-        <div className="flex min-w-0 flex-1 items-center gap-0 sm:gap-1 md:gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-0 sm:gap-1 md:gap-3 player-compact:gap-0">
           {/* Play/Pause */}
           <button
             type="button"
@@ -476,7 +483,7 @@ function PlayerControlsComponent({
               <div
                 className={clsx(
                   PLAYER_OVERLAY_SURFACE_CLASS,
-                  "player-performance-motion invisible absolute bottom-full left-1/2 flex -translate-x-1/2 cursor-pointer items-center justify-center rounded-xl px-2 py-2 opacity-0 transition-[opacity,visibility] duration-150 group-hover/volume:visible group-hover/volume:opacity-100 group-focus-within/volume:visible group-focus-within/volume:opacity-100 md:px-3",
+                  "player-performance-motion invisible absolute bottom-full left-1/2 flex -translate-x-1/2 cursor-pointer items-center justify-center rounded-xl px-2 py-2 opacity-0 transition-[opacity,visibility] duration-150 group-hover/volume:visible group-hover/volume:opacity-100 group-focus-within/volume:visible group-focus-within/volume:opacity-100 md:px-3 player-compact:px-2",
                 )}
               >
                 <PlayerSelectedGlassLayers compact />
@@ -487,7 +494,7 @@ function PlayerControlsComponent({
                   step="0.01"
                   value={isMuted ? 0 : volume}
                   onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-                  className="relative z-10 m-0 block h-16 w-1 cursor-pointer appearance-none bg-transparent [writing-mode:vertical-lr] [direction:rtl] md:h-20"
+                  className="relative z-10 m-0 block h-16 w-1 cursor-pointer appearance-none bg-transparent [writing-mode:vertical-lr] [direction:rtl] md:h-20 player-compact:h-16"
                   style={{
                     background: `linear-gradient(to top, #3b82f6 0%, #6366f1 ${(isMuted ? 0 : volume) * 100}%, rgba(219,234,254,0.18) ${(isMuted ? 0 : volume) * 100}%, rgba(219,234,254,0.18) 100%)`,
                   }}
@@ -499,18 +506,18 @@ function PlayerControlsComponent({
           <PlayerTimeDisplay currentProgram={currentProgram} seekStartTime={seekStartTime} />
 
           {showMediaBadges && (
-            <div className="ml-1 mr-1 flex h-7 min-w-0 basis-0 flex-1 touch-pan-x items-center overflow-hidden md:ml-2 md:mr-2 md:h-12">
+            <div className="ml-1 mr-1 flex h-7 min-w-0 basis-0 flex-1 touch-pan-x items-center overflow-hidden md:ml-2 md:mr-2 md:h-12 player-compact:mx-1 player-compact:h-7">
               <PlayerMediaBadges mediaInfo={mediaInfo} locale={locale} renderState={renderState} />
             </div>
           )}
         </div>
 
         {/* Right Controls */}
-        <div className="flex shrink-0 items-center gap-0 sm:gap-0.5 md:gap-2">
+        <div className="flex shrink-0 items-center gap-0 sm:gap-0.5 md:gap-2 player-compact:gap-0">
           {/* Live/Catchup Indicator & Go Live Button */}
           {isLive ? (
-            <span className="flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold tracking-wide text-white md:gap-1.5 md:text-sm">
-              <span className="player-performance-motion h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400 shadow-[0_0_12px_rgba(251,113,133,0.85)] md:h-2 md:w-2" />
+            <span className="flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold tracking-wide text-white md:gap-1.5 md:text-sm player-compact:gap-1 player-compact:text-[11px]">
+              <span className="player-performance-motion h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400 shadow-[0_0_12px_rgba(251,113,133,0.85)] md:h-2 md:w-2 player-compact:h-1.5 player-compact:w-1.5" />
               {t("live")}
             </span>
           ) : (
@@ -519,7 +526,7 @@ function PlayerControlsComponent({
               onClick={() => onSeek(new Date())}
               className={clsx(
                 PLAYER_CONTROL_BUTTON_CLASS,
-                "cursor-pointer whitespace-nowrap bg-blue-300/10 px-1.5 py-0.5 text-[11px] font-medium text-blue-50 md:px-2.5 md:py-1.5 md:text-sm",
+                "cursor-pointer whitespace-nowrap bg-blue-300/10 px-1.5 py-0.5 text-[11px] font-medium text-blue-50 md:px-2.5 md:py-1.5 md:text-sm player-compact:px-1.5 player-compact:py-0.5 player-compact:text-[11px]",
               )}
             >
               {t("goLive")}
@@ -533,7 +540,7 @@ function PlayerControlsComponent({
                 type="button"
                 className={clsx(
                   PLAYER_CONTROL_BUTTON_CLASS,
-                  "max-w-14 cursor-pointer truncate px-1.5 py-0.5 text-[11px] font-medium min-[360px]:max-w-20 md:max-w-40 md:px-2.5 md:py-1.5 md:text-sm",
+                  "max-w-14 cursor-pointer truncate px-1.5 py-0.5 text-[11px] font-medium min-[360px]:max-w-20 md:max-w-40 md:px-2.5 md:py-1.5 md:text-sm player-compact:max-w-20 player-compact:px-1.5 player-compact:py-0.5 player-compact:text-[11px]",
                 )}
               >
                 {channel.sources[activeSourceIndex]?.label || `${t("source")} ${activeSourceIndex + 1}`}
@@ -557,7 +564,7 @@ function PlayerControlsComponent({
                         e.currentTarget.blur();
                       }}
                       className={clsx(
-                        "player-performance-motion relative z-10 block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs transition-colors md:text-sm",
+                        "player-performance-motion relative z-10 block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left text-xs transition-colors md:text-sm player-compact:text-xs",
                         index === activeSourceIndex
                           ? "bg-blue-300/10 font-medium text-blue-200"
                           : "text-white/75 hover:bg-blue-200/10 hover:text-blue-50",
