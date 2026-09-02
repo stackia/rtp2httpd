@@ -42,10 +42,10 @@ export function PlayerToast({ toast }: { toast: PlayerToastState | null }) {
     >
       <div
         className={clsx(
-          "player-performance-overlay-background player-performance-effect flex max-w-[min(24rem,calc(100vw-2rem))] items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-sm font-medium shadow-[0_16px_40px_-18px_rgba(15,23,42,0.55)] backdrop-blur-xl",
+          "player-performance-toast-background player-performance-effect flex max-w-[min(24rem,calc(100vw-2rem))] items-center gap-2 rounded-2xl border px-3.5 py-2.5 text-sm font-medium shadow-[0_16px_40px_-18px_rgba(15,23,42,0.55)] backdrop-blur-xl",
           isSuccess
             ? "border-blue-300/40 bg-[linear-gradient(145deg,rgba(239,246,255,0.94),rgba(238,242,255,0.9))] text-blue-800 dark:border-blue-300/20 dark:bg-[linear-gradient(145deg,rgba(15,32,64,0.94),rgba(30,27,75,0.9))] dark:text-blue-100"
-            : "border-rose-300/40 bg-[linear-gradient(145deg,rgba(255,241,242,0.94),rgba(255,228,230,0.9))] text-rose-800 dark:border-rose-300/20 dark:bg-[linear-gradient(145deg,rgba(64,15,32,0.94),rgba(75,27,45,0.9))] dark:text-rose-100",
+            : "player-performance-toast-error border-rose-300/40 bg-[linear-gradient(145deg,rgba(255,241,242,0.94),rgba(255,228,230,0.9))] text-rose-800 dark:border-rose-300/20 dark:bg-[linear-gradient(145deg,rgba(64,15,32,0.94),rgba(75,27,45,0.9))] dark:text-rose-100",
         )}
       >
         <Icon className="h-4 w-4 shrink-0" />

@@ -142,6 +142,7 @@ html.player-theme-simple
     .player-performance-page-background,
     .player-performance-panel-background,
     .player-performance-overlay-background,
+    .player-performance-toast-background,
     .player-performance-warning-background,
     .player-performance-error-background,
     .player-performance-controls-background,
@@ -213,6 +214,27 @@ html.player-theme-simple .player-performance-overlay-background {
   background-color: #0f172a;
   background-image: none;
   border-color: #475569;
+}
+
+html.player-theme-simple .player-performance-toast-background {
+  background-color: #eff6ff;
+  background-image: none;
+  border-color: #93c5fd;
+}
+
+html.player-theme-simple .player-performance-toast-background.player-performance-toast-error {
+  background-color: #fff1f2;
+  border-color: #fda4af;
+}
+
+html.dark.player-theme-simple .player-performance-toast-background {
+  background-color: #0f2040;
+  border-color: #1e3a8a;
+}
+
+html.dark.player-theme-simple .player-performance-toast-background.player-performance-toast-error {
+  background-color: #401020;
+  border-color: #9f1239;
 }
 
 html.player-theme-simple .player-performance-warning-background {
