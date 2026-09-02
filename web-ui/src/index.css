@@ -161,8 +161,8 @@ html.player-theater-mode-active body {
 }
 
 /*
- * Logical safe-area insets for player chrome. Video and sidebar backgrounds
- * bleed to the physical edges; only content uses these variables.
+ * Logical safe-area insets for player chrome. The landscape sidebar stays
+ * flush to the physical right edge — do not apply --player-safe-right there.
  *
  * Portrait theater rotates the player 90deg clockwise, so physical edges no
  * longer match CSS sides: CSS right is the device bottom (home indicator).

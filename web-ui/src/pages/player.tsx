@@ -607,7 +607,9 @@ function PlayerPage() {
                 isImmersive
                   ? "border-l pl-0"
                   : "border-t pl-[var(--player-safe-left)] md:border-t-0 md:border-l md:pt-[var(--player-safe-top)] md:pl-0",
-                "pr-[var(--player-safe-right)]",
+                // Landscape keeps the sidebar flush to the physical right edge.
+                // Portrait theater is rotated 90deg, so CSS right is the home indicator.
+                isTheaterModePortrait && "pr-[var(--player-safe-right)]",
               )}
             >
               <div className="player-performance-panel-background flex shrink-0 items-center border-blue-950/10 border-b bg-white/44 shadow-[0_8px_24px_rgba(30,64,175,0.045)] backdrop-blur-xl dark:border-blue-100/10 dark:bg-[linear-gradient(90deg,#1a2035,#292643)]">
