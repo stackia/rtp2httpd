@@ -417,11 +417,11 @@ function PlayerControlsComponent({
   return (
     <div
       className={clsx(
-        "player-performance-controls-background player-performance-effect player-performance-gradient flex w-full flex-col gap-1 bg-[linear-gradient(to_top,rgba(2,8,23,0.98)_0%,rgba(8,22,51,0.9)_46%,rgba(21,27,69,0.48)_72%,transparent_100%)] pt-4 pr-[max(0.375rem,env(safe-area-inset-right))] pb-1 pl-[max(0.375rem,env(safe-area-inset-left))] md:gap-2 md:pt-9 md:pb-3 md:pl-[max(0.75rem,env(safe-area-inset-left))]",
+        "player-performance-controls-background player-performance-effect player-performance-gradient flex w-full flex-col gap-1 bg-[linear-gradient(to_top,rgba(2,8,23,0.98)_0%,rgba(8,22,51,0.9)_46%,rgba(21,27,69,0.48)_72%,transparent_100%)] pt-4 pb-1 pl-[max(0.375rem,var(--player-safe-left))] md:gap-2 md:pt-9 md:pb-3 md:pl-[max(0.75rem,var(--player-safe-left))]",
         hasTimeline && "player-performance-controls-with-timeline",
         compactChrome && "player-compact-controls",
-        "md:pr-[max(0.75rem,env(safe-area-inset-right))]",
-        "player-compact:gap-0.5 player-compact:pt-2 player-compact:pb-0.5 player-compact:pl-[max(0.375rem,env(safe-area-inset-left))] player-compact:pr-[max(0.375rem,env(safe-area-inset-right))]",
+        isImmersive ? "pr-1.5 md:pr-3 player-compact:pr-1.5" : "pr-[max(0.375rem,var(--player-safe-right))] md:pr-3",
+        "player-compact:gap-0.5 player-compact:pt-2 player-compact:pb-0.5 player-compact:pl-[max(0.375rem,var(--player-safe-left))]",
         "[@container_video_(max-height:_320px)]:gap-0.5 [@container_video_(max-height:_320px)]:pt-2 [@container_video_(max-height:_320px)]:pb-0.5 md:[@container_video_(max-height:_320px)]:gap-0.5 md:[@container_video_(max-height:_320px)]:pt-2 md:[@container_video_(max-height:_320px)]:pb-0.5 [@container_video_(max-height:_220px)]:pt-1 md:[@container_video_(max-height:_220px)]:pt-1",
       )}
     >

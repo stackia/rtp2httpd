@@ -60,13 +60,3 @@ export function unlockScreenOrientation(): void {
     // The orientation may already have been unlocked when fullscreen ended.
   }
 }
-
-export function shouldInsetSidebarRight(): boolean {
-  const { angle, type } = screen.orientation;
-  if (!type.startsWith("landscape")) return true;
-
-  // At 90°, the sidebar's right edge is on the device-bottom side and may
-  // overlap the smaller system area. Preserve the inset at 270° and for other
-  // angles, including naturally landscape devices.
-  return angle !== 90;
-}

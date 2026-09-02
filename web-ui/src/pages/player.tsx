@@ -39,7 +39,7 @@ import {
   savePictureEnhancement,
   saveSeamlessSwitch,
 } from "../lib/player-storage";
-import { lockScreenToLandscape, shouldInsetSidebarRight, unlockScreenOrientation } from "../lib/screen-orientation";
+import { lockScreenToLandscape, unlockScreenOrientation } from "../lib/screen-orientation";
 import { buildAppPath } from "../lib/url";
 import { getPlaybackBackendKind, type PlayerSegment } from "../playback-engine";
 import { mseToWallClock, NEAR_LIVE_EDGE_MS } from "../playback-engine/timeline/wall-clock";
@@ -83,7 +83,6 @@ function PlayerPage() {
   const [selectedSidebarView, setSelectedSidebarView] = useState<"channels" | "epg">("channels");
   const [renderedSidebarView, setRenderedSidebarView] = useState<"channels" | "epg">("channels");
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
-  const [insetSidebarRight, setInsetSidebarRight] = useState(shouldInsetSidebarRight);
   const [seamlessSwitch, setSeamlessSwitch] = useState(() => (supportsSeamlessSwitch ? getSeamlessSwitch() : false));
   const [autoDeinterlace, setAutoDeinterlace] = useState(() =>
     supportsMSEVideoProcessing ? getAutoDeinterlace() : false,
@@ -128,12 +127,11 @@ function PlayerPage() {
     };
   }, []);
 
-  // Track responsive layout and which physical edge is on the sidebar's right.
+  // Track whether the in-flow sidebar stacks below the video.
   useEffect(() => {
     const handleViewportChange = () => {
       startTransition(() => {
         setIsMobile(window.innerWidth < 768);
-        setInsetSidebarRight(shouldInsetSidebarRight());
       });
     };
 
@@ -608,8 +606,8 @@ function PlayerPage() {
                 "player-performance-panel-background flex h-full min-h-0 w-full flex-col overflow-hidden border-blue-950/10 bg-white/68 shadow-[-14px_0_40px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(160deg,rgba(5,13,32,0.96),rgba(17,16,49,0.92))] dark:shadow-[-18px_0_48px_rgba(1,7,24,0.28)]",
                 isImmersive
                   ? "border-l pl-0"
-                  : "border-t pl-[env(safe-area-inset-left)] md:border-t-0 md:border-l md:pt-[env(safe-area-inset-top)] md:pl-0",
-                insetSidebarRight && "pr-[env(safe-area-inset-right)]",
+                  : "border-t pl-[var(--player-safe-left)] md:border-t-0 md:border-l md:pt-[var(--player-safe-top)] md:pl-0",
+                "pr-[var(--player-safe-right)]",
               )}
             >
               <div className="player-performance-panel-background flex shrink-0 items-center border-blue-950/10 border-b bg-white/44 shadow-[0_8px_24px_rgba(30,64,175,0.045)] backdrop-blur-xl dark:border-blue-100/10 dark:bg-[linear-gradient(90deg,#1a2035,#292643)]">

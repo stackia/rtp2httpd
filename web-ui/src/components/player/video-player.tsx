@@ -222,7 +222,7 @@ function PlayerTopLeftOverlay({
     <div
       className={clsx(
         PLAYER_OVERLAY_SURFACE_CLASS,
-        "player-performance-motion absolute top-4 left-4 z-10 max-w-[calc(100%-2rem)] rounded-xl px-2 py-1.5 transition-opacity duration-300 md:top-8 md:left-8 md:px-3 md:py-2 [@container_video_(max-height:_320px)]:top-2 [@container_video_(max-height:_320px)]:left-2 [@container_video_(max-height:_320px)]:rounded-lg [@container_video_(max-height:_320px)]:px-1.5 [@container_video_(max-height:_320px)]:py-1 md:[@container_video_(max-height:_320px)]:top-2 md:[@container_video_(max-height:_320px)]:left-2 md:[@container_video_(max-height:_320px)]:px-1.5 md:[@container_video_(max-height:_320px)]:py-1 [@container_video_(max-height:_220px)]:top-1 [@container_video_(max-height:_220px)]:left-1 md:[@container_video_(max-height:_220px)]:top-1 md:[@container_video_(max-height:_220px)]:left-1",
+        "player-performance-motion absolute top-[max(1rem,var(--player-safe-top))] left-[max(1rem,var(--player-safe-left))] z-10 max-w-[calc(100%-2rem)] rounded-xl px-2 py-1.5 transition-opacity duration-300 md:top-[max(2rem,var(--player-safe-top))] md:left-[max(2rem,var(--player-safe-left))] md:px-3 md:py-2 [@container_video_(max-height:_320px)]:top-[max(0.5rem,var(--player-safe-top))] [@container_video_(max-height:_320px)]:left-[max(0.5rem,var(--player-safe-left))] [@container_video_(max-height:_320px)]:rounded-lg [@container_video_(max-height:_320px)]:px-1.5 [@container_video_(max-height:_320px)]:py-1 md:[@container_video_(max-height:_320px)]:top-[max(0.5rem,var(--player-safe-top))] md:[@container_video_(max-height:_320px)]:left-[max(0.5rem,var(--player-safe-left))] md:[@container_video_(max-height:_320px)]:px-1.5 md:[@container_video_(max-height:_320px)]:py-1 [@container_video_(max-height:_220px)]:top-[max(0.25rem,var(--player-safe-top))] [@container_video_(max-height:_220px)]:left-[max(0.25rem,var(--player-safe-left))] md:[@container_video_(max-height:_220px)]:top-[max(0.25rem,var(--player-safe-top))] md:[@container_video_(max-height:_220px)]:left-[max(0.25rem,var(--player-safe-left))]",
         visible ? "opacity-100" : "opacity-0 pointer-events-none",
       )}
     >
@@ -2136,10 +2136,8 @@ function VideoPlayerComponent({
           role="toolbar"
           data-player-chrome=""
           className={clsx(
-            "player-performance-controls-position player-performance-motion absolute bottom-0 left-[calc(0px_-_env(safe-area-inset-left))] z-10 transition-opacity duration-300",
-            isFullscreen || isTheaterMode
-              ? "player-immersive-controls"
-              : "right-[calc(0px_-_env(safe-area-inset-right))] md:right-0",
+            "player-performance-controls-position player-performance-motion absolute right-0 bottom-0 left-0 z-10 transition-opacity duration-300",
+            (isFullscreen || isTheaterMode) && "player-immersive-controls",
             showControls
               ? "opacity-100"
               : isFullscreen || isTheaterMode
@@ -2203,8 +2201,7 @@ function VideoPlayerComponent({
   return (
     <div
       className={clsx(
-        "player-performance-video-background relative w-full bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)] pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:h-full",
-        !(isFullscreen || isTheaterMode) && "md:pr-0",
+        "player-performance-video-background relative w-full bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)] md:h-full",
         (isFullscreen || isTheaterMode) && "h-full",
       )}
     >

@@ -160,6 +160,20 @@ html.player-theater-mode-active body {
   overflow: hidden;
 }
 
+/*
+ * Logical safe-area insets for player chrome. Video and sidebar backgrounds
+ * bleed to the physical edges; only content uses these variables.
+ *
+ * Portrait theater rotates the player 90deg clockwise, so physical edges no
+ * longer match CSS sides: CSS right is the device bottom (home indicator).
+ */
+:root {
+  --player-safe-top: env(safe-area-inset-top, 0px);
+  --player-safe-right: env(safe-area-inset-right, 0px);
+  --player-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --player-safe-left: env(safe-area-inset-left, 0px);
+}
+
 .player-theater-mode-portrait {
   top: 50%;
   left: 50%;
@@ -169,6 +183,10 @@ html.player-theater-mode-active body {
   height: 100dvw;
   transform: translate(-50%, -50%) rotate(90deg);
   transform-origin: center center;
+  --player-safe-top: env(safe-area-inset-right, 0px);
+  --player-safe-right: env(safe-area-inset-bottom, 0px);
+  --player-safe-bottom: env(safe-area-inset-left, 0px);
+  --player-safe-left: env(safe-area-inset-top, 0px);
 }
 
 /*
