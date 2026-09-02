@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   canForceLandscape,
-  isPortraitOrientation,
+  isVisualPortrait,
   lockScreenToLandscape,
   unlockScreenOrientation,
 } from "../lib/screen-orientation";
@@ -12,17 +12,25 @@ function setFallbackClass(active: boolean): void {
   document.documentElement.classList.toggle(FALLBACK_CLASS, active);
 }
 
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
 export function useForceLandscape() {
   const [supported, setSupported] = useState(() => canForceLandscape());
   const [enabled, setEnabled] = useState(false);
   const [fallbackActive, setFallbackActive] = useState(false);
 
   const applyLock = useCallback(async () => {
-    const locked = await lockScreenToLandscape();
-    const needsFallback = !locked && isPortraitOrientation();
+    await lockScreenToLandscape();
+    // lock() can resolve without rotating the viewport (OS rotation lock,
+    // missing fullscreen, or a landscape sensor type with a portrait window).
+    await nextFrame();
+    const needsFallback = isVisualPortrait();
     setFallbackActive(needsFallback);
     setFallbackClass(needsFallback);
-    return locked;
   }, []);
 
   const releaseLock = useCallback((keepFullscreenLock: boolean) => {

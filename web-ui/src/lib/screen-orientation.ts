@@ -3,11 +3,13 @@
  *
  * Force-landscape is only offered on devices where rotation is meaningful
  * (phones, tablets, convertibles). Native Screen Orientation lock is preferred;
- * a CSS fallback keeps the page visually landscape when lock is unavailable.
+ * a CSS fallback keeps the page visually landscape when lock is unavailable
+ * or does not actually change the viewport.
  */
 
 const ROTATABLE_PLATFORMS = new Set(["android", "ios", "mobile"]);
 const NON_ROTATABLE_PLATFORMS = new Set(["lg-webos", "android-tv"]);
+const ORIENTATION_LOCK_TIMEOUT_MS = 400;
 
 type LockableScreenOrientation = ScreenOrientation & {
   lock?: (orientation: "landscape") => Promise<void>;
@@ -17,12 +19,24 @@ function getLockableOrientation(): LockableScreenOrientation | undefined {
   return screen.orientation as LockableScreenOrientation | undefined;
 }
 
+function viewportSize(): { width: number; height: number } {
+  const viewport = window.visualViewport;
+  return {
+    width: viewport?.width ?? window.innerWidth,
+    height: viewport?.height ?? window.innerHeight,
+  };
+}
+
+/** Whether the visible viewport is currently taller than it is wide. */
+export function isVisualPortrait(): boolean {
+  const { width, height } = viewportSize();
+  return height >= width;
+}
+
 export function isPortraitOrientation(): boolean {
+  if (isVisualPortrait()) return true;
   const type = screen.orientation?.type;
-  if (typeof type === "string") {
-    return type.startsWith("portrait");
-  }
-  return window.innerHeight > window.innerWidth;
+  return typeof type === "string" && type.startsWith("portrait");
 }
 
 /**
@@ -48,7 +62,12 @@ export async function lockScreenToLandscape(): Promise<boolean> {
   if (!orientation?.lock) return false;
 
   try {
-    await orientation.lock("landscape");
+    await Promise.race([
+      orientation.lock("landscape"),
+      new Promise<never>((_, reject) => {
+        window.setTimeout(() => reject(new Error("orientation-lock-timeout")), ORIENTATION_LOCK_TIMEOUT_MS);
+      }),
+    ]);
     return true;
   } catch {
     return false;
@@ -77,5 +96,6 @@ export function shouldInsetSidebarRight(forceLandscapeFallback = false): boolean
 
 /** Visual CSS width while the force-landscape fallback is rotating the page. */
 export function getVisualViewportWidth(forceLandscapeFallback: boolean): number {
-  return forceLandscapeFallback ? window.innerHeight : window.innerWidth;
+  const { width, height } = viewportSize();
+  return forceLandscapeFallback ? height : width;
 }
