@@ -29,7 +29,7 @@ import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
 import { isDocumentPictureInPictureSupported } from "../lib/document-picture-in-picture";
 import { loadEPG } from "../lib/epg-loader";
-import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId } from "../lib/epg-parser";
+import { type EPGChannelDescriptor, type EPGData, getCurrentProgram, getEPGChannelId } from "../lib/epg-parser";
 import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
 import { isLGWebOS } from "../lib/platform";
@@ -416,30 +416,23 @@ function PlayerPage() {
         deepLinkChannel ?? parsed.channels.find((channel) => channel.id === lastChannelId) ?? parsed.channels[0];
       selectChannel(channelToSelect);
 
-      // Show empty-EPG fallback immediately so startup is not blocked by XMLTV parsing.
-      // Catchup-capable channels get 2-hour "精彩节目" gap-fill programs until real data arrives.
-      setEpgData(fillEPGGaps({}, parsed.channels));
-
-      if (parsed.tvgUrl) {
-        const validChannelIds = new Set<string>();
-        for (const channel of parsed.channels) {
-          if (channel.tvgId) validChannelIds.add(channel.tvgId);
-          if (channel.tvgName) validChannelIds.add(channel.tvgName);
-          validChannelIds.add(channel.name);
-        }
-
-        const epgUrl = parsed.tvgUrl.replace(".gz", "");
-        const channels = parsed.channels;
-        void loadEPG(epgUrl, validChannelIds)
-          .then((epg) => {
-            startTransition(() => {
-              setEpgData(fillEPGGaps(epg, channels));
-            });
-          })
-          .catch((err) => {
-            console.error("Failed to load EPG:", err);
+      // The EPG (including gap-fill fallback programs) is produced entirely in the worker;
+      // until it arrives the UI simply shows no EPG.
+      const epgChannels: EPGChannelDescriptor[] = parsed.channels.map((channel) => ({
+        tvgId: channel.tvgId,
+        tvgName: channel.tvgName,
+        name: channel.name,
+        hasCatchup: channel.sources.some((s) => s.catchup && s.catchupSource),
+      }));
+      void loadEPG(parsed.tvgUrl?.replace(".gz", ""), epgChannels)
+        .then((epg) => {
+          startTransition(() => {
+            setEpgData(epg);
           });
-      }
+        })
+        .catch((err) => {
+          console.error("Failed to load EPG:", err);
+        });
 
       // Trigger reveal animation
       setIsRevealing(true);
