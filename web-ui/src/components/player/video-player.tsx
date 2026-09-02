@@ -513,10 +513,16 @@ function VideoPlayerComponent({
       if (event.relatedTarget instanceof Element && event.relatedTarget.closest("[data-player-chrome]")) {
         return;
       }
+      // Channel/EPG rows recycle under the cursor while scrolling; the pointer is still on chrome.
+      if (document.elementsFromPoint(event.clientX, event.clientY).some((el) => el.closest("[data-player-chrome]"))) {
+        chromeHoverRef.current = true;
+        pauseControlsTimer();
+        return;
+      }
       chromeHoverRef.current = false;
       resetControlsTimer();
     },
-    [resetControlsTimer],
+    [pauseControlsTimer, resetControlsTimer],
   );
 
   const handleScrubbingChange = useCallback(
@@ -577,6 +583,26 @@ function VideoPlayerComponent({
       }
     };
   }, [resetControlsTimer]);
+
+  // Wheel/scroll do not move the pointer, so treat chrome scrolling as an active hover.
+  useEffect(() => {
+    const surface = playerSurfaceRef.current;
+    if (!surface) return;
+
+    const handleChromeScrollActivity = (event: Event) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest("[data-player-chrome]")) return;
+      chromeHoverRef.current = true;
+      pauseControlsTimer();
+    };
+
+    surface.addEventListener("wheel", handleChromeScrollActivity, { passive: true, capture: true });
+    surface.addEventListener("scroll", handleChromeScrollActivity, { passive: true, capture: true });
+    return () => {
+      surface.removeEventListener("wheel", handleChromeScrollActivity, true);
+      surface.removeEventListener("scroll", handleChromeScrollActivity, true);
+    };
+  }, [pauseControlsTimer]);
 
   useLayoutEffect(() => {
     if (isDocumentPiP) return;
@@ -2078,7 +2104,7 @@ function VideoPlayerComponent({
           ref={immersiveSidebarHostRef}
           data-player-chrome=""
           className={clsx(
-            "player-immersive-sidebar player-performance-motion absolute inset-y-0 right-0 z-20 flex flex-col overflow-hidden transition-opacity duration-300",
+            "player-immersive-sidebar dark player-performance-motion absolute inset-y-0 right-0 z-20 flex flex-col overflow-hidden transition-opacity duration-300",
             showControls
               ? "opacity-100"
               : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
