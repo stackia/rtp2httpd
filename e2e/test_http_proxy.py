@@ -346,11 +346,11 @@ class TestProxyStatusCodes:
 # ---------------------------------------------------------------------------
 
 
-def _get_location(hdrs):
+def _get_location(hdrs: dict) -> str | None:
     """Extract Location header value (case-insensitive lookup)."""
     for k, v in hdrs.items():
         if k.lower() == "location":
-            return v
+            return str(v)
     return None
 
 
@@ -703,6 +703,7 @@ app-path-prefix = {APP_PREFIX}
                 )
                 assert status == 302
                 location = _get_location(hdrs)
+                assert location is not None, "Location header missing"
                 assert location == expected
 
                 stream_status, _, body = stream_get(
@@ -745,6 +746,7 @@ app-path-prefix = {APP_PREFIX}
                 )
                 assert status == 302
                 location = _get_location(hdrs)
+                assert location is not None, "Location header missing"
                 assert location == expected
 
                 stream_status, _, body = stream_get(
@@ -791,6 +793,7 @@ app-path-prefix = {APP_PREFIX}
             )
             assert status == 302
             location = _get_location(hdrs)
+            assert location is not None, "Location header missing"
             assert location == expected
 
             stream_status, _, body = stream_get(
