@@ -58,6 +58,14 @@ import { PlayerControls } from "./player-controls";
 import { PlayerGestureIndicatorOverlay } from "./player-gesture-overlay";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
+const PLAYER_CHROME_SELECTOR = "[data-player-chrome]";
+
+const isPlayerChromeElement = (target: EventTarget | null) =>
+  target instanceof Element && Boolean(target.closest(PLAYER_CHROME_SELECTOR));
+
+const isPlayerChromeAtPoint = (clientX: number, clientY: number) =>
+  document.elementsFromPoint(clientX, clientY).some((element) => element.closest(PLAYER_CHROME_SELECTOR));
+
 interface VideoPlayerProps {
   channel: Channel | null;
   segments: PlayerSegment[];
@@ -355,6 +363,10 @@ function VideoPlayerComponent({
   const [isDocumentPiP, setIsDocumentPiP] = useState(false);
   const hideControlsTimeoutRef = useRef<number>(0);
   const chromeHoverRef = useRef(false);
+  const chromeFocusRef = useRef(false);
+  const chromeScrollHoldRef = useRef(false);
+  const chromeScrollHoldTimeoutRef = useRef<number>(0);
+  const lastPointerRef = useRef({ x: 0, y: 0, hasPoint: false });
   const [retryCount, setRetryCount] = useState(0);
   const [retryBaseline, setRetryBaseline] = useState(0);
   /** Synchronous flag: segments reload is error recovery, not a user/channel switch. */
@@ -479,8 +491,9 @@ function VideoPlayerComponent({
       window.clearTimeout(hideControlsTimeoutRef.current);
       hideControlsTimeoutRef.current = 0;
     }
-    if (chromeHoverRef.current) return;
+    if (chromeHoverRef.current || chromeFocusRef.current || chromeScrollHoldRef.current) return;
     hideControlsTimeoutRef.current = window.setTimeout(() => {
+      if (chromeHoverRef.current || chromeFocusRef.current || chromeScrollHoldRef.current) return;
       setShowControls(false);
     }, 3000);
   }, []);
@@ -501,6 +514,7 @@ function VideoPlayerComponent({
   const handleChromePointerEnter = useCallback(
     (event: ReactPointerEvent) => {
       if (event.pointerType === "touch") return;
+      lastPointerRef.current = { x: event.clientX, y: event.clientY, hasPoint: true };
       chromeHoverRef.current = true;
       pauseControlsTimer();
     },
@@ -510,12 +524,17 @@ function VideoPlayerComponent({
   const handleChromePointerLeave = useCallback(
     (event: ReactPointerEvent) => {
       if (event.pointerType === "touch") return;
-      if (event.relatedTarget instanceof Element && event.relatedTarget.closest("[data-player-chrome]")) {
+      lastPointerRef.current = { x: event.clientX, y: event.clientY, hasPoint: true };
+      if (isPlayerChromeElement(event.relatedTarget)) {
         return;
       }
-      // Channel/EPG rows recycle under the cursor while scrolling; the pointer is still on chrome.
-      if (document.elementsFromPoint(event.clientX, event.clientY).some((el) => el.closest("[data-player-chrome]"))) {
-        chromeHoverRef.current = true;
+      // Channel/EPG rows move under a stationary cursor while scrolling.
+      if (
+        isPlayerChromeAtPoint(event.clientX, event.clientY) ||
+        chromeScrollHoldRef.current ||
+        chromeFocusRef.current
+      ) {
+        chromeHoverRef.current = isPlayerChromeAtPoint(event.clientX, event.clientY) || chromeScrollHoldRef.current;
         pauseControlsTimer();
         return;
       }
@@ -553,9 +572,12 @@ function VideoPlayerComponent({
   const handlePointerHover = useCallback(
     (event: ReactPointerEvent) => {
       if (event.pointerType === "touch") return;
-      const onChrome = event.target instanceof Element && Boolean(event.target.closest("[data-player-chrome]"));
+      lastPointerRef.current = { x: event.clientX, y: event.clientY, hasPoint: true };
+      // Hit-test the cursor, not event.target: wheel-scroll can retarget pointermove
+      // onto the video hit layer while the pointer is still over the sidebar.
+      const onChrome = isPlayerChromeAtPoint(event.clientX, event.clientY) || isPlayerChromeElement(event.target);
       chromeHoverRef.current = onChrome;
-      if (onChrome) {
+      if (onChrome || chromeFocusRef.current || chromeScrollHoldRef.current) {
         pauseControlsTimer();
         return;
       }
@@ -567,9 +589,14 @@ function VideoPlayerComponent({
   const handlePointerLeave = useCallback(
     (event: ReactPointerEvent) => {
       if (event.pointerType === "touch") return;
+      chromeHoverRef.current = false;
+      if (chromeFocusRef.current) {
+        pauseControlsTimer();
+        return;
+      }
       hideControlsImmediately();
     },
-    [hideControlsImmediately],
+    [hideControlsImmediately, pauseControlsTimer],
   );
 
   // `handleSurfaceClick` lives further down, next to the touch-gesture wiring it depends on.
@@ -584,25 +611,78 @@ function VideoPlayerComponent({
     };
   }, [resetControlsTimer]);
 
-  // Wheel/scroll do not move the pointer, so treat chrome scrolling as an active hover.
+  // Wheel/scroll do not move the pointer. Keep both chrome surfaces up while the
+  // list is scrolling, then re-check the last cursor position before hiding.
   useEffect(() => {
     const surface = playerSurfaceRef.current;
     if (!surface) return;
 
+    const releaseScrollHold = () => {
+      chromeScrollHoldRef.current = false;
+      const pointer = lastPointerRef.current;
+      if (pointer.hasPoint && isPlayerChromeAtPoint(pointer.x, pointer.y)) {
+        chromeHoverRef.current = true;
+        pauseControlsTimer();
+        return;
+      }
+      resetControlsTimer();
+    };
+
     const handleChromeScrollActivity = (event: Event) => {
-      const target = event.target;
-      if (!(target instanceof Element) || !target.closest("[data-player-chrome]")) return;
-      chromeHoverRef.current = true;
+      const fromTarget = isPlayerChromeElement(event.target);
+      const fromPoint =
+        event instanceof WheelEvent
+          ? isPlayerChromeAtPoint(event.clientX, event.clientY)
+          : lastPointerRef.current.hasPoint &&
+            isPlayerChromeAtPoint(lastPointerRef.current.x, lastPointerRef.current.y);
+      if (!fromTarget && !fromPoint) return;
+
+      if (event instanceof WheelEvent) {
+        lastPointerRef.current = { x: event.clientX, y: event.clientY, hasPoint: true };
+      }
+      chromeScrollHoldRef.current = true;
+      if (fromPoint || fromTarget) chromeHoverRef.current = true;
       pauseControlsTimer();
+      if (chromeScrollHoldTimeoutRef.current) {
+        window.clearTimeout(chromeScrollHoldTimeoutRef.current);
+      }
+      chromeScrollHoldTimeoutRef.current = window.setTimeout(releaseScrollHold, 800);
+    };
+
+    const handleChromeFocusIn = (event: FocusEvent) => {
+      if (!isPlayerChromeElement(event.target)) return;
+      chromeFocusRef.current = true;
+      pauseControlsTimer();
+    };
+
+    const handleChromeFocusOut = (event: FocusEvent) => {
+      if (isPlayerChromeElement(event.relatedTarget)) return;
+      window.queueMicrotask(() => {
+        if (isPlayerChromeElement(document.activeElement)) {
+          chromeFocusRef.current = true;
+          pauseControlsTimer();
+          return;
+        }
+        chromeFocusRef.current = false;
+        resetControlsTimer();
+      });
     };
 
     surface.addEventListener("wheel", handleChromeScrollActivity, { passive: true, capture: true });
     surface.addEventListener("scroll", handleChromeScrollActivity, { passive: true, capture: true });
+    surface.addEventListener("focusin", handleChromeFocusIn);
+    surface.addEventListener("focusout", handleChromeFocusOut);
     return () => {
       surface.removeEventListener("wheel", handleChromeScrollActivity, true);
       surface.removeEventListener("scroll", handleChromeScrollActivity, true);
+      surface.removeEventListener("focusin", handleChromeFocusIn);
+      surface.removeEventListener("focusout", handleChromeFocusOut);
+      if (chromeScrollHoldTimeoutRef.current) {
+        window.clearTimeout(chromeScrollHoldTimeoutRef.current);
+        chromeScrollHoldTimeoutRef.current = 0;
+      }
     };
-  }, [pauseControlsTimer]);
+  }, [pauseControlsTimer, resetControlsTimer]);
 
   useLayoutEffect(() => {
     if (isDocumentPiP) return;
@@ -2062,7 +2142,9 @@ function VideoPlayerComponent({
               : "right-[calc(0px_-_env(safe-area-inset-right))] md:right-0",
             showControls
               ? "opacity-100"
-              : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
+              : isFullscreen || isWebFullscreen
+                ? "opacity-0 pointer-events-none"
+                : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
           )}
           onPointerEnter={handleChromePointerEnter}
           onPointerLeave={handleChromePointerLeave}
@@ -2105,9 +2187,7 @@ function VideoPlayerComponent({
           data-player-chrome=""
           className={clsx(
             "player-immersive-sidebar dark player-performance-motion absolute inset-y-0 right-0 z-20 flex flex-col overflow-hidden transition-opacity duration-300",
-            showControls
-              ? "opacity-100"
-              : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
+            showControls ? "opacity-100" : "opacity-0 pointer-events-none",
           )}
           onPointerEnter={handleChromePointerEnter}
           onPointerLeave={handleChromePointerLeave}
