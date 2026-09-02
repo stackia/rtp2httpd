@@ -1,27 +1,18 @@
 import { clsx } from "clsx";
 import { AlertTriangle, ExternalLink, ListChecks, RefreshCw } from "lucide-react";
-import {
-  Activity,
-  StrictMode,
-  startTransition,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Activity, StrictMode, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ChannelList,
   nextScrollBehaviorRef as channelListNextScrollBehaviorRef,
 } from "../components/player/channel-list";
 import { EPGView, nextScrollBehaviorRef as epgViewNextScrollBehaviorRef } from "../components/player/epg-view";
-import { PlaybackTimeProvider } from "../components/player/playback-time-context";
+import { createPlaybackClock } from "../components/player/playback-clock";
 import { SettingsDropdown } from "../components/player/settings-dropdown";
 import { VideoPlayer } from "../components/player/video-player";
 import { Button, buttonVariants } from "../components/ui/button";
 import { Card } from "../components/ui/card";
+import { useCurrentVideoProgram } from "../hooks/use-current-video-program";
 import { useLocale } from "../hooks/use-locale";
 import { usePersistedEnum } from "../hooks/use-persisted-enum";
 import { usePlayerAppearance } from "../hooks/use-player-appearance";
@@ -29,7 +20,7 @@ import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
 import { isDocumentPictureInPictureSupported } from "../lib/document-picture-in-picture";
 import { loadEPG } from "../lib/epg-loader";
-import { type EPGData, fillEPGGaps, getCurrentProgram, getEPGChannelId } from "../lib/epg-parser";
+import { type EPGChannelDescriptor, type EPGData, getEPGChannelId } from "../lib/epg-parser";
 import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
 import { isLGWebOS } from "../lib/platform";
@@ -140,11 +131,8 @@ function PlayerPage() {
   /** Whether the latest seek targets the session live edge (vs catchup). */
   const [seekAtLiveEdge, setSeekAtLiveEdge] = useState(true);
 
-  // Track current video playback time in seconds (relative to stream start)
-  const [currentVideoTime, setCurrentVideoTime] = useState(0);
-  const deferredCurrentVideoTime = useDeferredValue(currentVideoTime);
-  const currentVideoTimeRef = useRef(0);
-  const currentVideoSecondRef = useRef(0);
+  // Media clock: fed by the VideoPlayer, consumed by its controls and by the programme lookup.
+  const [playbackClock] = useState(createPlaybackClock);
 
   // Track active source index for multi-source channels
   const [activeSourceIndex, setActiveSourceIndex] = useState(0);
@@ -229,10 +217,8 @@ function PlayerPage() {
   }, [currentChannel, activeSource, activeSourceIndex, streamStartTime, seekAtLiveEdge, playbackBackendKind]);
 
   const resetCurrentVideoTime = useCallback(() => {
-    currentVideoTimeRef.current = 0;
-    currentVideoSecondRef.current = 0;
-    setCurrentVideoTime(0);
-  }, []);
+    playbackClock.reset();
+  }, [playbackClock]);
 
   const handleVideoSeek = useCallback(
     (seekTime: Date, goingLive: boolean) => {
@@ -262,12 +248,12 @@ function PlayerPage() {
         setStreamStartTime(new Date());
       } else {
         // Preserve current playback position when switching source in catchup mode
-        setStreamStartTime(mseToWallClock(currentVideoTimeRef.current, streamStartTime));
+        setStreamStartTime(mseToWallClock(playbackClock.get(), streamStartTime));
       }
       resetCurrentVideoTime();
       setActiveSourceIndex(sourceIndex);
     },
-    [playMode, resetCurrentVideoTime, streamStartTime],
+    [playMode, playbackClock, resetCurrentVideoTime, streamStartTime],
   );
 
   const handlePlaybackStarted = useCallback(() => {
@@ -316,13 +302,14 @@ function PlayerPage() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, [metadata, currentChannel, selectChannel]);
 
-  const handleCurrentVideoTimeChange = useCallback((time: number) => {
-    currentVideoTimeRef.current = time;
-    const currentSecond = Math.floor(time);
-    if (currentSecond === currentVideoSecondRef.current) return;
-    currentVideoSecondRef.current = currentSecond;
-    setCurrentVideoTime(time);
-  }, []);
+  // EPG channel ID for the current channel using fallback logic (tvgId -> tvgName -> name)
+  const currentEpgChannelId = useMemo(
+    () => (currentChannel ? getEPGChannelId(currentChannel, epgData) : null),
+    [currentChannel, epgData],
+  );
+
+  // Programme at the current playback position (stream start + media clock)
+  const currentVideoProgram = useCurrentVideoProgram(playbackClock, currentEpgChannelId, epgData, streamStartTime);
 
   const handleLocaleChange = useCallback(
     (nextLocale: Locale) => {
@@ -416,30 +403,23 @@ function PlayerPage() {
         deepLinkChannel ?? parsed.channels.find((channel) => channel.id === lastChannelId) ?? parsed.channels[0];
       selectChannel(channelToSelect);
 
-      // Show empty-EPG fallback immediately so startup is not blocked by XMLTV parsing.
-      // Catchup-capable channels get 2-hour "精彩节目" gap-fill programs until real data arrives.
-      setEpgData(fillEPGGaps({}, parsed.channels));
-
-      if (parsed.tvgUrl) {
-        const validChannelIds = new Set<string>();
-        for (const channel of parsed.channels) {
-          if (channel.tvgId) validChannelIds.add(channel.tvgId);
-          if (channel.tvgName) validChannelIds.add(channel.tvgName);
-          validChannelIds.add(channel.name);
-        }
-
-        const epgUrl = parsed.tvgUrl.replace(".gz", "");
-        const channels = parsed.channels;
-        void loadEPG(epgUrl, validChannelIds)
-          .then((epg) => {
-            startTransition(() => {
-              setEpgData(fillEPGGaps(epg, channels));
-            });
-          })
-          .catch((err) => {
-            console.error("Failed to load EPG:", err);
+      // The EPG (including gap-fill fallback programs) is produced entirely in the worker;
+      // until it arrives the UI simply shows no EPG.
+      const epgChannels: EPGChannelDescriptor[] = parsed.channels.map((channel) => ({
+        tvgId: channel.tvgId,
+        tvgName: channel.tvgName,
+        name: channel.name,
+        hasCatchup: channel.sources.some((s) => s.catchup && s.catchupSource),
+      }));
+      void loadEPG(parsed.tvgUrl?.replace(".gz", ""), epgChannels)
+        .then((epg) => {
+          startTransition(() => {
+            setEpgData(epg);
           });
-      }
+        })
+        .catch((err) => {
+          console.error("Failed to load EPG:", err);
+        });
 
       // Trigger reveal animation
       setIsRevealing(true);
@@ -456,21 +436,6 @@ function PlayerPage() {
   useEffect(() => {
     loadPlaylist();
   }, [loadPlaylist]);
-
-  // Get current program for the video player
-  // Use tvgId / tvgName / name with fallback logic for EPG matching
-  // Use streamStartTime + currentVideoTime to determine the actual time position
-  const currentVideoProgram = useMemo(() => {
-    if (!currentChannel) return null;
-
-    // Get EPG channel ID using fallback logic (tvgId -> tvgName -> name)
-    const epgChannelId = getEPGChannelId(currentChannel, epgData);
-    if (!epgChannelId) return null;
-
-    // Calculate absolute time based on stream start + current video position
-    const absoluteTime = mseToWallClock(deferredCurrentVideoTime, streamStartTime);
-    return getCurrentProgram(epgChannelId, epgData, absoluteTime);
-  }, [currentChannel, epgData, streamStartTime, deferredCurrentVideoTime]);
 
   const handleVideoError = useCallback((err: string) => {
     setError(err);
@@ -609,34 +574,32 @@ function PlayerPage() {
         <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
           {/* Video Player - Mobile: fixed aspect ratio at top, Desktop: fills left side */}
           <div className="w-full sticky md:static md:flex-1 shrink-0">
-            <PlaybackTimeProvider value={currentVideoTime}>
-              <VideoPlayer
-                channel={currentChannel}
-                segments={playbackSegments}
-                playMode={playMode}
-                onError={handleVideoError}
-                locale={locale}
-                currentProgram={currentVideoProgram}
-                onSeek={handleVideoSeek}
-                onStreamStartTimeChange={setStreamStartTime}
-                streamStartTime={streamStartTime}
-                onCurrentVideoTimeChange={handleCurrentVideoTimeChange}
-                onChannelNavigate={handleChannelNavigate}
-                prevChannel={prevChannel}
-                nextChannel={nextChannel}
-                showSidebar={showSidebar}
-                onToggleSidebar={handleToggleSidebar}
-                isFullscreen={isFullscreen}
-                onFullscreenToggle={handleFullscreenToggle}
-                seamlessSwitch={supportsSeamlessSwitch && seamlessSwitch}
-                autoDeinterlace={autoDeinterlace}
-                pictureEnhancement={pictureEnhancement}
-                pictureInPictureMode={pictureInPictureMode}
-                activeSourceIndex={activeSourceIndex}
-                onSourceChange={handleSourceChange}
-                onPlaybackStarted={handlePlaybackStarted}
-              />
-            </PlaybackTimeProvider>
+            <VideoPlayer
+              channel={currentChannel}
+              segments={playbackSegments}
+              playMode={playMode}
+              onError={handleVideoError}
+              locale={locale}
+              currentProgram={currentVideoProgram}
+              onSeek={handleVideoSeek}
+              onStreamStartTimeChange={setStreamStartTime}
+              streamStartTime={streamStartTime}
+              clock={playbackClock}
+              onChannelNavigate={handleChannelNavigate}
+              prevChannel={prevChannel}
+              nextChannel={nextChannel}
+              showSidebar={showSidebar}
+              onToggleSidebar={handleToggleSidebar}
+              isFullscreen={isFullscreen}
+              onFullscreenToggle={handleFullscreenToggle}
+              seamlessSwitch={supportsSeamlessSwitch && seamlessSwitch}
+              autoDeinterlace={autoDeinterlace}
+              pictureEnhancement={pictureEnhancement}
+              pictureInPictureMode={pictureInPictureMode}
+              activeSourceIndex={activeSourceIndex}
+              onSourceChange={handleSourceChange}
+              onPlaybackStarted={handlePlaybackStarted}
+            />
           </div>
 
           {/* Sidebar - Mobile: always visible (below video, hidden in fullscreen), Desktop: toggle-able side panel (visible in fullscreen) */}
@@ -681,7 +644,7 @@ function PlayerPage() {
               </Activity>
               <Activity mode={renderedSidebarView === "epg" ? "visible" : "hidden"}>
                 <EPGView
-                  channelId={currentChannel ? getEPGChannelId(currentChannel, epgData) : null}
+                  channelId={currentEpgChannelId}
                   epgData={epgData}
                   onProgramSelect={handleProgramSelect}
                   locale={locale}

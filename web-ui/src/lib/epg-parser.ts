@@ -283,16 +283,37 @@ export function generateFallbackPrograms(
   const roundedHours = Math.floor(hoursSinceEpoch / 2) * 2;
   currentStart = new Date(roundedHours * 60 * 60 * 1000);
 
+  // Programs are sorted by start, and slots advance monotonically, so two cursors bound the
+  // candidates: `hi` grows past programs that start no later than the slot end, `lo` skips
+  // programs that lie entirely before the slot start (they cannot touch any later slot either).
+  // Each slot then only inspects the handful of programs in [lo, hi). Programs whose end
+  // precedes their start are malformed and never counted as overlapping.
+  let lo = 0;
+  let hi = 0;
+
   while (currentStart < now) {
     const currentEnd = new Date(currentStart.getTime() + TWO_HOURS_MS);
 
+    while (hi < existingPrograms.length && existingPrograms[hi].start <= currentEnd) {
+      hi++;
+    }
+    while (lo < hi && existingPrograms[lo].end < currentStart && existingPrograms[lo].start < currentStart) {
+      lo++;
+    }
+
     // Check if this time slot overlaps with any existing program
-    const hasOverlap = existingPrograms.some(
-      (p) =>
+    let hasOverlap = false;
+    for (let i = lo; i < hi; i++) {
+      const p = existingPrograms[i];
+      if (
         (p.start <= currentStart && p.end > currentStart) ||
         (p.start < currentEnd && p.end >= currentEnd) ||
-        (p.start >= currentStart && p.end <= currentEnd),
-    );
+        (p.start >= currentStart && p.end <= currentEnd)
+      ) {
+        hasOverlap = true;
+        break;
+      }
+    }
 
     if (!hasOverlap) {
       fallbackPrograms.push({
@@ -308,29 +329,42 @@ export function generateFallbackPrograms(
   return fallbackPrograms;
 }
 
+/** Merge two start-sorted program lists; on equal starts, entries from `a` come first. */
+function mergeSortedPrograms(a: EPGProgram[], b: EPGProgram[]): EPGProgram[] {
+  const merged: EPGProgram[] = new Array(a.length + b.length);
+  let i = 0;
+  let j = 0;
+  let k = 0;
+  while (i < a.length && j < b.length) {
+    merged[k++] = a[i].start.getTime() <= b[j].start.getTime() ? a[i++] : b[j++];
+  }
+  while (i < a.length) merged[k++] = a[i++];
+  while (j < b.length) merged[k++] = b[j++];
+  return merged;
+}
+
+/** Minimal channel shape needed to fill EPG gaps; safe to post to a Web Worker. */
+export interface EPGChannelDescriptor {
+  tvgId?: string;
+  tvgName?: string;
+  name: string;
+  hasCatchup: boolean;
+}
+
 /**
  * Fill gaps in EPG data with fallback programs
  * Only processes channels that have catchup support
  * @param epgData - Existing EPG data
- * @param channels - List of channels from M3U playlist
+ * @param channels - Channel descriptors derived from the M3U playlist
  * @param lookbackHours - How many hours back from now to generate fallback programs (default: 48)
  * @returns EPG data with gaps filled
  */
-export function fillEPGGaps(
-  epgData: EPGData,
-  channels: {
-    tvgId?: string;
-    tvgName?: string;
-    name: string;
-    sources?: { catchup?: string; catchupSource?: string }[];
-  }[],
-  lookbackHours: number = 72,
-): EPGData {
+export function fillEPGGaps(epgData: EPGData, channels: EPGChannelDescriptor[], lookbackHours: number = 72): EPGData {
   const filledData = { ...epgData };
 
   for (const channel of channels) {
     // Only process channels with catchup support
-    if (!channel.sources?.some((s) => s.catchup && s.catchupSource)) {
+    if (!channel.hasCatchup) {
       continue;
     }
 
@@ -355,10 +389,8 @@ export function fillEPGGaps(
     const fallbackPrograms = generateFallbackPrograms(existingPrograms, targetChannelId, lookbackHours);
 
     if (fallbackPrograms.length > 0) {
-      // Merge existing and fallback programs, then sort by start time
-      const mergedPrograms = [...existingPrograms, ...fallbackPrograms].sort(
-        (a, b) => a.start.getTime() - b.start.getTime(),
-      );
+      // Both lists are sorted by start time, so a linear merge keeps the result sorted
+      const mergedPrograms = mergeSortedPrograms(existingPrograms, fallbackPrograms);
 
       // Ensure all possible channel ID keys point to the same array
       filledData[targetChannelId] = mergedPrograms;
