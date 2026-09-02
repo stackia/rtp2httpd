@@ -1199,8 +1199,9 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
     if (is_redirect && has_location) {
       /*
        * Root-relative Locations (e.g. /rtsp/host:port/path) already target this
-       * rtp2httpd instance and must be forwarded unchanged. Absolute http://
-       * and rtsp:// URLs are rewritten onto the matching proxy prefix.
+       * rtp2httpd instance and must be forwarded unchanged. Absolute URLs in the
+       * same schemes M3U transform accepts (http/rtsp/rtp/udp) are rewritten
+       * onto the matching proxy prefix.
        */
       if (location_header[0] == '/') {
         logger(LOG_DEBUG, "HTTP Proxy: Keeping relative Location unchanged: %s", location_header);
@@ -1540,6 +1541,36 @@ int http_proxy_session_tick(http_proxy_session_t *session, int64_t now) {
   return 0;
 }
 
+/*
+ * Match an absolute URL against the schemes M3U transform accepts
+ * (http, rtsp, rtp, udp). See is_url_recognizable() in m3u.c.
+ */
+static int http_proxy_match_m3u_scheme(const char *url, const char **host_start, const char **scheme_prefix) {
+  static const struct {
+    const char *scheme;
+    size_t len;
+    const char *prefix;
+  } table[] = {
+      {"http://", 7, "http/"},
+      {"rtsp://", 7, "rtsp/"},
+      {"rtp://", 6, "rtp/"},
+      {"udp://", 6, "udp/"},
+  };
+  size_t i;
+
+  if (!url || !host_start || !scheme_prefix)
+    return -1;
+
+  for (i = 0; i < ARRAY_SIZE(table); i++) {
+    if (strncasecmp(url, table[i].scheme, table[i].len) == 0) {
+      *host_start = url + table[i].len;
+      *scheme_prefix = table[i].prefix;
+      return 0;
+    }
+  }
+  return -1;
+}
+
 int http_proxy_build_url(const char *http_url, const char *base_url_placeholder, char *output, size_t output_size) {
   const char *host_start;
   const char *scheme_prefix;
@@ -1550,17 +1581,9 @@ int http_proxy_build_url(const char *http_url, const char *base_url_placeholder,
   if (!http_url || !base_url_placeholder || !output || output_size == 0)
     return -1;
 
-  /* Convert http://host/... -> {BASE_URL}http/host/...
-   * and rtsp://host/... -> {BASE_URL}rtsp/host/... */
-  if (strncasecmp(http_url, "http://", 7) == 0) {
-    host_start = http_url + 7;
-    scheme_prefix = "http/";
-  } else if (strncasecmp(http_url, "rtsp://", 7) == 0) {
-    host_start = http_url + 7;
-    scheme_prefix = "rtsp/";
-  } else {
+  /* Convert scheme://host/... -> {BASE_URL}scheme/host/... */
+  if (http_proxy_match_m3u_scheme(http_url, &host_start, &scheme_prefix) != 0)
     return -1;
-  }
 
   /* URL encode r2h-token if configured */
   if (has_r2h_token) {

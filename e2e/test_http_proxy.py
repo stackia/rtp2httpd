@@ -9,11 +9,15 @@ import time
 
 import pytest
 from helpers import (
+    LOOPBACK_IF,
+    MCAST_ADDR,
     MockHTTPUpstream,
     MockHTTPUpstreamSilent,
     MockRTSPServer,
+    MulticastSender,
     R2HProcess,
     find_free_port,
+    find_free_udp_port,
     http_get,
     stream_get,
 )
@@ -498,7 +502,7 @@ app-path-prefix = {APP_PREFIX}
             upstream.stop()
 
     def test_redirect_https_location_not_rewritten(self, shared_r2h):
-        """https:// Location should NOT be rewritten (only http:// and rtsp://)."""
+        """https:// Location should NOT be rewritten (not an M3U-recognized scheme)."""
         upstream = MockHTTPUpstream(
             routes={
                 "/secure-redir": {
@@ -614,6 +618,39 @@ app-path-prefix = {APP_PREFIX}
             r2h.stop()
             upstream.stop()
 
+    @pytest.mark.parametrize(
+        "upstream_location, expected",
+        [
+            ("rtp://239.0.0.1:1234", "/rtp/239.0.0.1:1234"),
+            ("rtp://239.0.0.1:1234?fcc=10.0.0.2:8027", "/rtp/239.0.0.1:1234?fcc=10.0.0.2:8027"),
+            ("udp://239.0.0.1:1234", "/udp/239.0.0.1:1234"),
+            ("udp://239.0.0.1:1234?fec=1235", "/udp/239.0.0.1:1234?fec=1235"),
+        ],
+    )
+    def test_302_m3u_scheme_location_rewritten(self, shared_r2h, upstream_location, expected):
+        """M3U-recognized rtp:// and udp:// Locations rewrite onto /rtp/ and /udp/."""
+        upstream = MockHTTPUpstream(
+            routes={
+                "/catchup": {
+                    "status": 302,
+                    "body": b"",
+                    "headers": {"Location": upstream_location},
+                },
+            }
+        )
+        upstream.start()
+        try:
+            status, hdrs, _ = http_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                f"/http/127.0.0.1:{upstream.port}/catchup",
+                timeout=5.0,
+            )
+            assert status == 302
+            assert _get_location(hdrs) == expected
+        finally:
+            upstream.stop()
+
     def test_302_relative_location_kept_unchanged(self, shared_r2h):
         """Root-relative Location such as /rtsp/... must be forwarded as-is."""
         upstream = MockHTTPUpstream(
@@ -723,6 +760,52 @@ app-path-prefix = {APP_PREFIX}
                 upstream.stop()
         finally:
             rtsp.stop()
+
+    @pytest.mark.multicast
+    def test_302_rtp_location_rewritten_and_playable(self, r2h_binary):
+        """HTTP 302 to rtp:// should rewrite to /rtp/... and the client can play it."""
+        port = find_free_port()
+        r2h = R2HProcess(r2h_binary, port, extra_args=["-v", "4", "-m", "100", "-r", LOOPBACK_IF])
+        mcast_port = find_free_udp_port()
+        sender = MulticastSender(addr=MCAST_ADDR, port=mcast_port, pps=200)
+        rtp_url = f"rtp://{MCAST_ADDR}:{mcast_port}"
+        expected = f"/rtp/{MCAST_ADDR}:{mcast_port}"
+        upstream = MockHTTPUpstream(
+            routes={
+                "/live": {
+                    "status": 302,
+                    "body": b"",
+                    "headers": {"Location": rtp_url},
+                },
+            }
+        )
+        sender.start()
+        upstream.start()
+        try:
+            r2h.start()
+            status, hdrs, _ = http_get(
+                "127.0.0.1",
+                port,
+                f"/http/127.0.0.1:{upstream.port}/live",
+                timeout=5.0,
+            )
+            assert status == 302
+            location = _get_location(hdrs)
+            assert location == expected
+
+            stream_status, _, body = stream_get(
+                "127.0.0.1",
+                port,
+                location,
+                read_bytes=4096,
+                timeout=10.0,
+            )
+            assert stream_status == 200
+            assert len(body) > 0, "Expected multicast stream after following rewritten Location"
+        finally:
+            r2h.stop()
+            upstream.stop()
+            sender.stop()
 
     def test_relative_location_does_not_log_http_scheme_error(self, r2h_binary):
         """Relative Location must not be logged as 'URL must start with http://'."""

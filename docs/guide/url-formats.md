@@ -172,10 +172,12 @@ http://192.168.1.1:5140/http/iptv.example.com/channel1?r2h-ifname=eth0
 | --- | --- |
 | `http://iptv.example.com:8080/path` | `/http/iptv.example.com:8080/path` |
 | `rtsp://iptv.example.com:554/path?auth=...` | `/rtsp/iptv.example.com:554/path?auth=...` |
+| `rtp://239.0.0.1:1234` | `/rtp/239.0.0.1:1234` |
+| `udp://239.0.0.1:1234` | `/udp/239.0.0.1:1234` |
 | `/rtsp/iptv.example.com:554/path`（根路径相对地址） | 原样转发 |
 | `https://...` 或其他未支持的协议 | 原样转发 |
 
-这适用于 `catchup-source` 先指向一个 HTTP 鉴权/换链服务，再由该服务 302 到真实 RTSP 播放地址的场景。如果配置了 `app-path-prefix`，改写后的地址会带上此前缀。
+改写范围与 M3U 可识别的 URL 格式一致：`http://`、`rtsp://`、`rtp://`、`udp://`。这适用于 `catchup-source` 先指向一个 HTTP 鉴权/换链服务，再由该服务 302 到真实播放地址的场景。如果配置了 `app-path-prefix`，改写后的地址会带上此前缀。
 
 ### 注意事项
 

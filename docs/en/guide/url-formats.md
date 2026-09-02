@@ -172,10 +172,12 @@ When the upstream returns `301` / `302` / `303` / `307` / `308`, rtp2httpd rewri
 | --- | --- |
 | `http://iptv.example.com:8080/path` | `/http/iptv.example.com:8080/path` |
 | `rtsp://iptv.example.com:554/path?auth=...` | `/rtsp/iptv.example.com:554/path?auth=...` |
+| `rtp://239.0.0.1:1234` | `/rtp/239.0.0.1:1234` |
+| `udp://239.0.0.1:1234` | `/udp/239.0.0.1:1234` |
 | `/rtsp/iptv.example.com:554/path` (root-relative) | forwarded unchanged |
 | `https://...` or other unsupported schemes | forwarded unchanged |
 
-This covers the case where `catchup-source` first points to an HTTP auth/token service, which then 302-redirects to the real RTSP playback URL. If `app-path-prefix` is configured, rewritten locations include that prefix.
+The rewrite covers the same URL formats M3U transform recognizes: `http://`, `rtsp://`, `rtp://`, and `udp://`. This covers the case where `catchup-source` first points to an HTTP auth/token service, which then 302-redirects to the real playback URL. If `app-path-prefix` is configured, rewritten locations include that prefix.
 
 ### Notes
 
