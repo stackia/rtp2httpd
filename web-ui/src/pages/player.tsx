@@ -1,23 +1,13 @@
 import { clsx } from "clsx";
 import { AlertTriangle, ExternalLink, ListChecks, RefreshCw } from "lucide-react";
-import {
-  Activity,
-  StrictMode,
-  startTransition,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Activity, StrictMode, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ChannelList,
   nextScrollBehaviorRef as channelListNextScrollBehaviorRef,
 } from "../components/player/channel-list";
 import { EPGView, nextScrollBehaviorRef as epgViewNextScrollBehaviorRef } from "../components/player/epg-view";
-import { PlaybackTimeProvider } from "../components/player/playback-time-context";
+import { createPlaybackTimeStore, PlaybackTimeProvider } from "../components/player/playback-time-context";
 import { SettingsDropdown } from "../components/player/settings-dropdown";
 import { VideoPlayer } from "../components/player/video-player";
 import { Button, buttonVariants } from "../components/ui/button";
@@ -140,11 +130,15 @@ function PlayerPage() {
   /** Whether the latest seek targets the session live edge (vs catchup). */
   const [seekAtLiveEdge, setSeekAtLiveEdge] = useState(true);
 
-  // Track current video playback time in seconds (relative to stream start)
-  const [currentVideoTime, setCurrentVideoTime] = useState(0);
-  const deferredCurrentVideoTime = useDeferredValue(currentVideoTime);
+  // Current video playback time in seconds (relative to stream start). The 1 Hz clock lives in
+  // an external store consumed only by the timeline widgets, so it never re-renders the page.
+  const [playbackTimeStore] = useState(createPlaybackTimeStore);
   const currentVideoTimeRef = useRef(0);
   const currentVideoSecondRef = useRef(0);
+  // Playback time at which the programme lookup below was last (re)evaluated. It is only
+  // bumped when the clock crosses into a different programme, so the page re-renders on
+  // programme boundaries rather than every second.
+  const [programLookupTime, setProgramLookupTime] = useState(0);
 
   // Track active source index for multi-source channels
   const [activeSourceIndex, setActiveSourceIndex] = useState(0);
@@ -231,8 +225,9 @@ function PlayerPage() {
   const resetCurrentVideoTime = useCallback(() => {
     currentVideoTimeRef.current = 0;
     currentVideoSecondRef.current = 0;
-    setCurrentVideoTime(0);
-  }, []);
+    playbackTimeStore.set(0);
+    setProgramLookupTime(0);
+  }, [playbackTimeStore]);
 
   const handleVideoSeek = useCallback(
     (seekTime: Date, goingLive: boolean) => {
@@ -316,13 +311,67 @@ function PlayerPage() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, [metadata, currentChannel, selectChannel]);
 
-  const handleCurrentVideoTimeChange = useCallback((time: number) => {
-    currentVideoTimeRef.current = time;
-    const currentSecond = Math.floor(time);
-    if (currentSecond === currentVideoSecondRef.current) return;
-    currentVideoSecondRef.current = currentSecond;
-    setCurrentVideoTime(time);
-  }, []);
+  // EPG channel ID for the current channel using fallback logic (tvgId -> tvgName -> name)
+  const currentEpgChannelId = useMemo(
+    () => (currentChannel ? getEPGChannelId(currentChannel, epgData) : null),
+    [currentChannel, epgData],
+  );
+
+  // Get current program for the video player
+  // Use streamStartTime + playback time to determine the actual time position
+  const currentVideoProgram = useMemo(() => {
+    if (!currentEpgChannelId) return null;
+
+    // Calculate absolute time based on stream start + current video position
+    const absoluteTime = mseToWallClock(programLookupTime, streamStartTime);
+    return getCurrentProgram(currentEpgChannelId, epgData, absoluteTime);
+  }, [currentEpgChannelId, epgData, streamStartTime, programLookupTime]);
+
+  // Latest committed inputs of the programme lookup, for the clock callback below.
+  const programLookupRef = useRef({
+    epgChannelId: currentEpgChannelId,
+    epgData,
+    streamStartTime,
+    program: currentVideoProgram,
+  });
+  useEffect(() => {
+    programLookupRef.current = {
+      epgChannelId: currentEpgChannelId,
+      epgData,
+      streamStartTime,
+      program: currentVideoProgram,
+    };
+    // programLookupTime may be stale relative to the live clock (e.g. after a live-edge
+    // recalibration moved streamStartTime); re-evaluate against the actual position now
+    // instead of waiting for the next programme boundary.
+    const time = currentVideoTimeRef.current;
+    const actualProgram = currentEpgChannelId
+      ? getCurrentProgram(currentEpgChannelId, epgData, mseToWallClock(time, streamStartTime))
+      : null;
+    if (actualProgram !== currentVideoProgram) {
+      setProgramLookupTime(time);
+    }
+  }, [currentEpgChannelId, epgData, streamStartTime, currentVideoProgram]);
+
+  const handleCurrentVideoTimeChange = useCallback(
+    (time: number) => {
+      currentVideoTimeRef.current = time;
+      const currentSecond = Math.floor(time);
+      if (currentSecond === currentVideoSecondRef.current) return;
+      currentVideoSecondRef.current = currentSecond;
+      playbackTimeStore.set(time);
+
+      // Only re-render the page when the clock has moved into a different programme.
+      const lookup = programLookupRef.current;
+      const nextProgram = lookup.epgChannelId
+        ? getCurrentProgram(lookup.epgChannelId, lookup.epgData, mseToWallClock(time, lookup.streamStartTime))
+        : null;
+      if (nextProgram !== lookup.program) {
+        setProgramLookupTime(time);
+      }
+    },
+    [playbackTimeStore],
+  );
 
   const handleLocaleChange = useCallback(
     (nextLocale: Locale) => {
@@ -449,22 +498,6 @@ function PlayerPage() {
   useEffect(() => {
     loadPlaylist();
   }, [loadPlaylist]);
-
-  // EPG channel ID for the current channel using fallback logic (tvgId -> tvgName -> name)
-  const currentEpgChannelId = useMemo(
-    () => (currentChannel ? getEPGChannelId(currentChannel, epgData) : null),
-    [currentChannel, epgData],
-  );
-
-  // Get current program for the video player
-  // Use streamStartTime + currentVideoTime to determine the actual time position
-  const currentVideoProgram = useMemo(() => {
-    if (!currentEpgChannelId) return null;
-
-    // Calculate absolute time based on stream start + current video position
-    const absoluteTime = mseToWallClock(deferredCurrentVideoTime, streamStartTime);
-    return getCurrentProgram(currentEpgChannelId, epgData, absoluteTime);
-  }, [currentEpgChannelId, epgData, streamStartTime, deferredCurrentVideoTime]);
 
   const handleVideoError = useCallback((err: string) => {
     setError(err);
@@ -603,7 +636,7 @@ function PlayerPage() {
         <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
           {/* Video Player - Mobile: fixed aspect ratio at top, Desktop: fills left side */}
           <div className="w-full sticky md:static md:flex-1 shrink-0">
-            <PlaybackTimeProvider value={currentVideoTime}>
+            <PlaybackTimeProvider store={playbackTimeStore}>
               <VideoPlayer
                 channel={currentChannel}
                 segments={playbackSegments}
