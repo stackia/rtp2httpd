@@ -165,6 +165,28 @@ html.player-web-fullscreen-active body {
   transform-origin: center center;
 }
 
+/*
+ * Immersive sidebar overlays the video and reserves the same width so the
+ * control bar is pushed left instead of sitting on top of the channel list.
+ */
+.player-immersive-chrome {
+  --player-immersive-sidebar-width: min(20rem, 85%);
+}
+
+@media (min-width: 768px) {
+  .player-immersive-chrome {
+    --player-immersive-sidebar-width: 20rem;
+  }
+}
+
+.player-immersive-sidebar {
+  width: var(--player-immersive-sidebar-width);
+}
+
+.player-immersive-controls {
+  right: var(--player-immersive-sidebar-width);
+}
+
 /* Simple theme uses explicit semantic hooks to avoid matching every player descendant. */
 html.player-theme-simple .player-performance-effect,
 html.player-theme-simple

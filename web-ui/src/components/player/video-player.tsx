@@ -354,6 +354,7 @@ function VideoPlayerComponent({
   const [isPiP, setIsPiP] = useState(false);
   const [isDocumentPiP, setIsDocumentPiP] = useState(false);
   const hideControlsTimeoutRef = useRef<number>(0);
+  const chromeHoverRef = useRef(false);
   const [retryCount, setRetryCount] = useState(0);
   const [retryBaseline, setRetryBaseline] = useState(0);
   /** Synchronous flag: segments reload is error recovery, not a user/channel switch. */
@@ -476,7 +477,9 @@ function VideoPlayerComponent({
   const resetControlsTimer = useCallback(() => {
     if (hideControlsTimeoutRef.current) {
       window.clearTimeout(hideControlsTimeoutRef.current);
+      hideControlsTimeoutRef.current = 0;
     }
+    if (chromeHoverRef.current) return;
     hideControlsTimeoutRef.current = window.setTimeout(() => {
       setShowControls(false);
     }, 3000);
@@ -486,6 +489,35 @@ function VideoPlayerComponent({
     setShowControls(true);
     resetControlsTimer();
   }, [resetControlsTimer]);
+
+  const pauseControlsTimer = useCallback(() => {
+    if (hideControlsTimeoutRef.current) {
+      window.clearTimeout(hideControlsTimeoutRef.current);
+      hideControlsTimeoutRef.current = 0;
+    }
+    setShowControls(true);
+  }, []);
+
+  const handleChromePointerEnter = useCallback(
+    (event: ReactPointerEvent) => {
+      if (event.pointerType === "touch") return;
+      chromeHoverRef.current = true;
+      pauseControlsTimer();
+    },
+    [pauseControlsTimer],
+  );
+
+  const handleChromePointerLeave = useCallback(
+    (event: ReactPointerEvent) => {
+      if (event.pointerType === "touch") return;
+      if (event.relatedTarget instanceof Element && event.relatedTarget.closest("[data-player-chrome]")) {
+        return;
+      }
+      chromeHoverRef.current = false;
+      resetControlsTimer();
+    },
+    [resetControlsTimer],
+  );
 
   const handleScrubbingChange = useCallback(
     (isScrubbing: boolean) => {
@@ -1756,7 +1788,7 @@ function VideoPlayerComponent({
         isDocumentPiP
           ? "h-screen min-h-screen aspect-auto"
           : isFullscreen || isWebFullscreen
-            ? "aspect-auto h-full"
+            ? "player-immersive-chrome aspect-auto h-full"
             : "md:aspect-auto md:h-full",
         !showControls && "cursor-none",
       )}
@@ -1830,7 +1862,7 @@ function VideoPlayerComponent({
           className={clsx(
             "player-performance-motion absolute top-4 z-10 flex flex-col items-end gap-2 transition-opacity duration-300 md:top-8 md:gap-3 [@container_video_(max-height:_320px)]:top-2 [@container_video_(max-height:_320px)]:gap-1 md:[@container_video_(max-height:_320px)]:top-2 md:[@container_video_(max-height:_320px)]:gap-1 [@container_video_(max-height:_220px)]:top-1 md:[@container_video_(max-height:_220px)]:top-1",
             isFullscreen || isWebFullscreen
-              ? "right-[min(21.25rem,calc(85%+0.75rem))] md:right-[22rem]"
+              ? "right-[calc(var(--player-immersive-sidebar-width)+0.75rem)] md:right-[calc(var(--player-immersive-sidebar-width)+2rem)]"
               : "right-4 md:right-8 [@container_video_(max-height:_320px)]:right-2 md:[@container_video_(max-height:_320px)]:right-2 [@container_video_(max-height:_220px)]:right-1 md:[@container_video_(max-height:_220px)]:right-1",
             showControls ? "opacity-100" : "opacity-0 pointer-events-none",
           )}
@@ -1990,13 +2022,18 @@ function VideoPlayerComponent({
       {channel && !error && !needsUserInteraction && (
         <div
           role="toolbar"
+          data-player-chrome=""
           className={clsx(
-            "player-performance-controls-position player-performance-motion absolute bottom-0 left-[calc(0px_-_env(safe-area-inset-left))] right-[calc(0px_-_env(safe-area-inset-right))] z-20 transition-opacity duration-300",
-            !(isFullscreen || isWebFullscreen) && "md:right-0",
+            "player-performance-controls-position player-performance-motion absolute bottom-0 left-[calc(0px_-_env(safe-area-inset-left))] z-10 transition-opacity duration-300",
+            isFullscreen || isWebFullscreen
+              ? "player-immersive-controls"
+              : "right-[calc(0px_-_env(safe-area-inset-right))] md:right-0",
             showControls
               ? "opacity-100"
               : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
           )}
+          onPointerEnter={handleChromePointerEnter}
+          onPointerLeave={handleChromePointerLeave}
         >
           <PlayerControls
             channel={channel}
@@ -2033,12 +2070,15 @@ function VideoPlayerComponent({
       {(isFullscreen || isWebFullscreen) && !isDocumentPiP && (
         <div
           ref={immersiveSidebarHostRef}
+          data-player-chrome=""
           className={clsx(
-            "player-performance-motion absolute inset-y-0 right-0 z-[11] flex w-[min(20rem,85%)] flex-col overflow-hidden transition-opacity duration-300 md:w-80",
+            "player-immersive-sidebar player-performance-motion absolute inset-y-0 right-0 z-20 flex flex-col overflow-hidden transition-opacity duration-300",
             showControls
               ? "opacity-100"
               : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
           )}
+          onPointerEnter={handleChromePointerEnter}
+          onPointerLeave={handleChromePointerLeave}
         />
       )}
 
