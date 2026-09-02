@@ -120,6 +120,51 @@ class TestRTSPTCPStream:
         finally:
             rtsp.stop()
 
+    def test_head_sets_content_disposition_from_filename(self, shared_r2h):
+        rtsp = MockRTSPServer()
+        rtsp.start()
+        try:
+            status, headers, body = http_request(
+                "127.0.0.1",
+                shared_r2h.port,
+                "HEAD",
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream?r2h-filename=News_1200.ts",
+                timeout=10.0,
+            )
+            assert status == 200
+            assert body == b""
+            disposition = get_header(headers, "Content-Disposition")
+            assert disposition.startswith("attachment;")
+            assert 'filename="News_1200.ts"' in disposition
+            for request in rtsp.requests_detailed:
+                assert "r2h-filename" not in request["uri"].lower(), (
+                    f"r2h-filename leaked into upstream {request['method']} URI: {request['uri']}"
+                )
+        finally:
+            rtsp.stop()
+
+    def test_r2h_filename_does_not_leak_to_rtsp_upstream(self, shared_r2h):
+        rtsp = MockRTSPServer(num_packets=500)
+        rtsp.start()
+        try:
+            status, headers, body = stream_get(
+                "127.0.0.1",
+                shared_r2h.port,
+                f"/rtsp/127.0.0.1:{rtsp.port}/stream?r2h-filename=Catchup.ts",
+                read_bytes=4096,
+                timeout=_STREAM_TIMEOUT,
+            )
+            assert status == 200
+            assert body
+            assert 'filename="Catchup.ts"' in headers["content-disposition"]
+            assert rtsp.requests_detailed, "expected RTSP requests"
+            for request in rtsp.requests_detailed:
+                assert "r2h-filename" not in request["uri"].lower(), (
+                    f"r2h-filename leaked into upstream {request['method']} URI: {request['uri']}"
+                )
+        finally:
+            rtsp.stop()
+
     def test_head_parses_clock_form_npt_duration(self, shared_r2h):
         sdp = (
             "v=0\r\no=- 0 0 IN IP4 127.0.0.1\r\ns=T\r\n"

@@ -22,6 +22,9 @@ const base: TranslationDict = {
   allChannels: "All",
   catchup: "Catchup",
   catchupSupported: "Catchup supported",
+  mediaLinkCopied: "Media link copied",
+  copyMediaLinkFailed: "Could not copy the media link",
+  copyMediaLinkUnavailable: "No media link available for this item",
 
   // EPG view
   noEpgAvailable: "No program guide available for this channel",
@@ -151,6 +154,9 @@ const zhHans: TranslationDict = {
   allChannels: "全部",
   catchup: "回看",
   catchupSupported: "支持回看",
+  mediaLinkCopied: "已复制媒体直链",
+  copyMediaLinkFailed: "复制媒体直链失败",
+  copyMediaLinkUnavailable: "该项没有可复制的媒体直链",
 
   // EPG 视图
   noEpgAvailable: "此频道暂无节目单",
@@ -280,6 +286,9 @@ const zhHant: TranslationDict = {
   allChannels: "全部",
   catchup: "回看",
   catchupSupported: "支援回看",
+  mediaLinkCopied: "已複製媒體直鏈",
+  copyMediaLinkFailed: "複製媒體直鏈失敗",
+  copyMediaLinkUnavailable: "該項沒有可複製的媒體直鏈",
 
   // EPG 視圖
   noEpgAvailable: "此頻道暫無節目表",

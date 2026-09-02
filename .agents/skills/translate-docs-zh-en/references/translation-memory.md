@@ -17,6 +17,7 @@
 - 快速换台 -> fast channel change / channel switching
 - 无缝换台 -> seamless channel switching / Seamless switch (player setting label)
 - 时移回看 -> time-shifted playback / time-shift / catch-up
+- 媒体直链 -> media link / direct media URL
 - 电子节目单 -> EPG (Electronic Program Guide)
 - 频道 -> channel
 - 线路/源 -> source

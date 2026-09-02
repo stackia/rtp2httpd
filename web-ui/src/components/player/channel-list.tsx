@@ -13,6 +13,7 @@ interface ChannelListProps {
   groups?: string[];
   currentChannel: Channel | null;
   onChannelSelect: (channel: Channel) => void;
+  onCopyMediaLink: (channel: Channel) => void;
   locale: Locale;
   settingsSlot?: React.ReactNode;
   epgData?: EPGData;
@@ -54,6 +55,7 @@ interface ChannelListResultsProps {
   filteredChannels: Channel[];
   filteredChannelsHasCurrentChannel: boolean;
   handleChannelClick: (channel: Channel) => void;
+  onCopyMediaLink: (channel: Channel) => void;
   locale: Locale;
 }
 
@@ -64,6 +66,7 @@ const ChannelListResults = memo(function ChannelListResults({
   filteredChannels,
   filteredChannelsHasCurrentChannel,
   handleChannelClick,
+  onCopyMediaLink,
   locale,
 }: ChannelListResultsProps) {
   return (
@@ -79,6 +82,7 @@ const ChannelListResults = memo(function ChannelListResults({
           channel={channel}
           isCurrentChannel={channel.id === currentChannel?.id}
           handleChannelClick={handleChannelClick}
+          onCopyMediaLink={onCopyMediaLink}
           locale={locale}
           currentProgram={currentProgramMap[channel.id]}
         />
@@ -92,6 +96,7 @@ function ChannelListComponent({
   groups,
   currentChannel,
   onChannelSelect,
+  onCopyMediaLink,
   locale,
   settingsSlot,
   epgData,
@@ -249,6 +254,7 @@ function ChannelListComponent({
           filteredChannels={filteredChannels}
           filteredChannelsHasCurrentChannel={Boolean(filteredChannelsHasCurrentChannel)}
           handleChannelClick={handleChannelClick}
+          onCopyMediaLink={onCopyMediaLink}
           locale={locale}
         />
       </div>

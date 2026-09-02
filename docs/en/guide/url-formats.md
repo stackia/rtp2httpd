@@ -38,6 +38,7 @@ http://192.168.1.1:5140/rtp/239.253.64.120:5140?fcc=10.255.14.152:15970&r2h-ifna
 - **fec** (optional): FEC (Forward Error Correction) port number, used to receive FEC redundant packets for packet loss recovery
 - **r2h-ifname** (optional): Specify the upstream network interface to use (overrides global configuration)
 - **r2h-ifname-fcc** (optional): Specify the upstream network interface for FCC (overrides global configuration)
+- **r2h-filename** (optional): Download filename. See [Download Filename](#download-filename)
 
 ### Use Cases
 
@@ -105,6 +106,19 @@ RTSP, standard multicast, and FCC streams carry the following `R2H-*` metadata i
 | `R2H-Media-Duration` | Duration of a finite SDP `npt` range, in seconds. |
 | `R2H-FCC-Type` | Configured FCC protocol: `telecom` or `huawei`. |
 | `R2H-FCC-Status` | `active` when playback starts from FCC unicast; `fallback` when it starts from multicast. |
+
+## Download Filename
+
+Multicast RTP and RTSP MPEG-TS responses honor the `r2h-filename` query parameter. When it is non-empty, rtp2httpd sends `Content-Disposition: attachment` so browsers save the download under that name. The server strips path separators and control characters, and appends `.ts` when the suffix is missing.
+
+This parameter is local to rtp2httpd and is not forwarded upstream. HTTP/HLS reverse proxy requests strip it before the upstream fetch and do not set `Content-Disposition`.
+
+```url
+http://192.168.1.1:5140/rtp/239.253.64.120:5140?r2h-filename=CCTV-1.ts
+http://192.168.1.1:5140/rtsp/iptv.example.com:554/channel1?playseek=20240101120000-20240101130000&r2h-filename=CCTV-1_News_20240101-120000_20240101-130000.ts
+```
+
+The built-in web player adds this parameter automatically when you copy a media link.
 
 ## HTTP Reverse Proxy
 

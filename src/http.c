@@ -157,6 +157,159 @@ char *http_url_encode(const char *str) {
   return encoded;
 }
 
+static int http_filename_forbidden_char(unsigned char c) {
+  return c < 0x20 || c == 0x7f || c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' ||
+         c == '>' || c == '|';
+}
+
+static size_t http_utf8_char_len(unsigned char c) {
+  if ((c & 0x80) == 0)
+    return 1;
+  if ((c & 0xE0) == 0xC0)
+    return 2;
+  if ((c & 0xF0) == 0xE0)
+    return 3;
+  if ((c & 0xF8) == 0xF0)
+    return 4;
+  return 0;
+}
+
+static int http_filename_has_ts_suffix(const char *name, size_t len) {
+  return len >= 3 && strcasecmp(name + len - 3, ".ts") == 0;
+}
+
+int http_sanitize_download_filename(const char *input, char *output, size_t output_size) {
+  char tmp[HTTP_DOWNLOAD_FILENAME_MAX + 8];
+  size_t out_len = 0;
+  size_t i = 0;
+  int pending_sep = 1;
+  size_t name_len;
+
+  if (!input || !output || output_size < 5)
+    return -1;
+
+  while (input[i] && out_len < HTTP_DOWNLOAD_FILENAME_MAX) {
+    unsigned char c = (unsigned char)input[i];
+    size_t char_len;
+
+    if (http_filename_forbidden_char(c)) {
+      if (!pending_sep && out_len + 1 <= HTTP_DOWNLOAD_FILENAME_MAX) {
+        tmp[out_len++] = '_';
+        pending_sep = 1;
+      }
+      i++;
+      continue;
+    }
+
+    char_len = http_utf8_char_len(c);
+    if (char_len == 0) {
+      i++;
+      continue;
+    }
+    if (out_len + char_len > HTTP_DOWNLOAD_FILENAME_MAX)
+      break;
+
+    memcpy(tmp + out_len, input + i, char_len);
+    out_len += char_len;
+    i += char_len;
+    pending_sep = (c == '_' || c == ' ' || c == '.');
+  }
+
+  while (out_len > 0) {
+    char tail = tmp[out_len - 1];
+    if (tail == '_' || tail == '.' || tail == ' ')
+      out_len--;
+    else
+      break;
+  }
+
+  if (out_len == 0)
+    return -1;
+
+  tmp[out_len] = '\0';
+
+  if (!http_filename_has_ts_suffix(tmp, out_len)) {
+    if (out_len + 3 >= sizeof(tmp))
+      out_len = HTTP_DOWNLOAD_FILENAME_MAX - 3;
+    tmp[out_len++] = '.';
+    tmp[out_len++] = 't';
+    tmp[out_len++] = 's';
+    tmp[out_len] = '\0';
+  }
+
+  name_len = strlen(tmp);
+  if (name_len + 1 > output_size)
+    return -1;
+  memcpy(output, tmp, name_len + 1);
+  return 0;
+}
+
+static int http_is_rfc5987_attr_char(unsigned char c) {
+  return isalnum((int)c) || c == '!' || c == '#' || c == '$' || c == '&' || c == '+' || c == '-' || c == '.' ||
+         c == '^' || c == '_' || c == '`' || c == '|' || c == '~';
+}
+
+int http_build_content_disposition_header(const char *filename, char *output, size_t output_size) {
+  char ascii[HTTP_DOWNLOAD_FILENAME_MAX + 8];
+  char encoded[(HTTP_DOWNLOAD_FILENAME_MAX + 8) * 3];
+  static const char hex_chars[] = "0123456789ABCDEF";
+  size_t i;
+  size_t ascii_len = 0;
+  size_t encoded_len = 0;
+  int has_non_ascii = 0;
+  int ascii_has_alnum = 0;
+  int written;
+
+  if (!filename || !filename[0] || !output || output_size == 0)
+    return -1;
+
+  for (i = 0; filename[i]; i++) {
+    unsigned char c = (unsigned char)filename[i];
+    if (c >= 0x80) {
+      has_non_ascii = 1;
+      if (ascii_len + 1 < sizeof(ascii))
+        ascii[ascii_len++] = '_';
+    } else if (c != '"') {
+      if (ascii_len + 1 < sizeof(ascii))
+        ascii[ascii_len++] = (char)c;
+      if (isalnum((int)c))
+        ascii_has_alnum = 1;
+    }
+  }
+  ascii[ascii_len] = '\0';
+  if (!ascii_has_alnum)
+    snprintf(ascii, sizeof(ascii), "download.ts");
+
+  if (!has_non_ascii) {
+    written = snprintf(output, output_size, "Content-Disposition: attachment; filename=\"%s\"\r\n", filename);
+    if (written < 0 || (size_t)written >= output_size)
+      return -1;
+    return written;
+  }
+
+  for (i = 0; filename[i]; i++) {
+    unsigned char c = (unsigned char)filename[i];
+    if (http_is_rfc5987_attr_char(c)) {
+      if (encoded_len + 1 >= sizeof(encoded))
+        return -1;
+      encoded[encoded_len++] = (char)c;
+    } else {
+      if (encoded_len + 3 >= sizeof(encoded))
+        return -1;
+      encoded[encoded_len++] = '%';
+      encoded[encoded_len++] = hex_chars[c >> 4];
+      encoded[encoded_len++] = hex_chars[c & 0x0F];
+    }
+  }
+  encoded[encoded_len] = '\0';
+
+  written = snprintf(output, output_size, "Content-Disposition: attachment; filename=\"%s\"; filename*=UTF-8''%s\r\n",
+                     ascii, encoded);
+  if (written < 0 || (size_t)written >= output_size)
+    return -1;
+  return written;
+}
+
 int http_build_r2h_token_cookie_header(char *buffer, size_t buffer_size, const char *path) {
   char *encoded_token;
   int written;

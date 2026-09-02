@@ -1,8 +1,9 @@
 import { clsx } from "clsx";
 import { History } from "lucide-react";
-import { forwardRef, memo, useCallback } from "react";
+import { forwardRef, memo, type MouseEvent as ReactMouseEvent, useCallback } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
+import { isMiddleMouseButton } from "../../lib/media-direct-link";
 import type { Channel } from "../../types/player";
 import {
   PLAYER_CHANNEL_LIST_ITEM_CLASS,
@@ -17,18 +18,33 @@ interface ChannelListItemProps {
   channel: Channel;
   isCurrentChannel: boolean;
   handleChannelClick: (channel: Channel) => void;
+  onCopyMediaLink: (channel: Channel) => void;
   locale: Locale;
   currentProgram?: string;
 }
 
 const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemProps>(
-  ({ channel, isCurrentChannel, handleChannelClick, locale, currentProgram }, ref) => {
+  ({ channel, isCurrentChannel, handleChannelClick, onCopyMediaLink, locale, currentProgram }, ref) => {
     const t = usePlayerTranslation(locale);
     const groupLabel = channel.groups.join(" / ");
 
     const handleClick = useCallback(() => {
       handleChannelClick(channel);
     }, [handleChannelClick, channel]);
+
+    const handleMouseDown = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
+      if (isMiddleMouseButton(event)) event.preventDefault();
+    }, []);
+
+    const handleAuxClick = useCallback(
+      (event: ReactMouseEvent<HTMLButtonElement>) => {
+        if (!isMiddleMouseButton(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onCopyMediaLink(channel);
+      },
+      [channel, onCopyMediaLink],
+    );
 
     return (
       <button
@@ -43,6 +59,8 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
           !isCurrentChannel && PLAYER_LIST_SURFACE_HOVER_CLASS,
         )}
         onClick={handleClick}
+        onMouseDown={handleMouseDown}
+        onAuxClick={handleAuxClick}
       >
         <PlayerSelectedGlassLayers visible={isCurrentChannel} />
         {/* Left: Channel Number and Info */}

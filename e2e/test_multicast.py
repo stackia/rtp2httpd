@@ -243,7 +243,7 @@ class TestHeadRequest:
         )
         try:
             r2h.start()
-            from helpers import http_request
+            from helpers import get_header, http_request
 
             status, hdrs, body = http_request(
                 "127.0.0.1",
@@ -257,6 +257,7 @@ class TestHeadRequest:
             assert hdrs.get("R2H-Upstream-Protocol") == "multicast"
             assert "R2H-Upstream-Payload" not in hdrs
             assert "R2H-FCC-Status" not in hdrs
+            assert get_header(hdrs, "Content-Disposition") == ""
             exposed = {name.strip() for name in hdrs["Access-Control-Expose-Headers"].split(",")}
             assert exposed == {
                 "R2H-Upstream-Protocol",
@@ -268,6 +269,116 @@ class TestHeadRequest:
                 "R2H-FCC-Type",
                 "R2H-FCC-Status",
             }
+        finally:
+            r2h.stop()
+
+    def test_head_rtp_sets_content_disposition_from_filename(self, r2h_binary):
+        port = find_free_port()
+        mcast_port = find_free_udp_port()
+        r2h = R2HProcess(
+            r2h_binary,
+            port,
+            extra_args=["-v", "4", "-m", "100"],
+        )
+        try:
+            r2h.start()
+            from helpers import get_header, http_request
+
+            status, hdrs, body = http_request(
+                "127.0.0.1",
+                port,
+                "HEAD",
+                f"/rtp/{MCAST_ADDR}:{mcast_port}?r2h-filename=CCTV-1.ts",
+                timeout=3.0,
+            )
+            assert status == 200
+            assert body == b""
+            disposition = get_header(hdrs, "Content-Disposition")
+            assert disposition.startswith("attachment;")
+            assert 'filename="CCTV-1.ts"' in disposition
+        finally:
+            r2h.stop()
+
+    def test_head_rtp_sanitizes_filename_header_injection(self, r2h_binary):
+        port = find_free_port()
+        mcast_port = find_free_udp_port()
+        r2h = R2HProcess(
+            r2h_binary,
+            port,
+            extra_args=["-v", "4", "-m", "100"],
+        )
+        try:
+            r2h.start()
+            from helpers import get_header, http_request
+
+            status, hdrs, body = http_request(
+                "127.0.0.1",
+                port,
+                "HEAD",
+                f"/rtp/{MCAST_ADDR}:{mcast_port}?r2h-filename=foo%0d%0aSet-Cookie:%20evil",
+                timeout=3.0,
+            )
+            assert status == 200
+            assert body == b""
+            disposition = get_header(hdrs, "Content-Disposition")
+            assert get_header(hdrs, "Set-Cookie") == ""
+            assert "\r" not in disposition
+            assert "\n" not in disposition
+            assert disposition.startswith("attachment;")
+            assert 'filename="foo_Set-Cookie_ evil.ts"' in disposition
+        finally:
+            r2h.stop()
+
+    def test_head_rtp_empty_filename_omits_content_disposition(self, r2h_binary):
+        port = find_free_port()
+        mcast_port = find_free_udp_port()
+        r2h = R2HProcess(
+            r2h_binary,
+            port,
+            extra_args=["-v", "4", "-m", "100"],
+        )
+        try:
+            r2h.start()
+            from helpers import get_header, http_request
+
+            status, hdrs, body = http_request(
+                "127.0.0.1",
+                port,
+                "HEAD",
+                f"/rtp/{MCAST_ADDR}:{mcast_port}?r2h-filename=",
+                timeout=3.0,
+            )
+            assert status == 200
+            assert body == b""
+            assert get_header(hdrs, "Content-Disposition") == ""
+        finally:
+            r2h.stop()
+
+    def test_head_rtp_utf8_filename_uses_rfc5987(self, r2h_binary):
+        port = find_free_port()
+        mcast_port = find_free_udp_port()
+        r2h = R2HProcess(
+            r2h_binary,
+            port,
+            extra_args=["-v", "4", "-m", "100"],
+        )
+        try:
+            r2h.start()
+            from helpers import get_header, http_request
+
+            status, hdrs, body = http_request(
+                "127.0.0.1",
+                port,
+                "HEAD",
+                f"/rtp/{MCAST_ADDR}:{mcast_port}?r2h-filename=%E6%B5%8B%E8%AF%95.ts",
+                timeout=3.0,
+            )
+            assert status == 200
+            assert body == b""
+            disposition = get_header(hdrs, "Content-Disposition")
+            assert disposition.startswith("attachment;")
+            assert "filename*=UTF-8''" in disposition
+            assert "%E6%B5%8B%E8%AF%95.ts" in disposition
         finally:
             r2h.stop()
 

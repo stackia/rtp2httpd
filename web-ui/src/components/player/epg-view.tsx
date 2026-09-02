@@ -1,10 +1,20 @@
 import { clsx } from "clsx";
 import { Circle, History } from "lucide-react";
-import { memo, type RefObject, useCallback, useDeferredValue, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  memo,
+  type MouseEvent as ReactMouseEvent,
+  type RefObject,
+  useCallback,
+  useDeferredValue,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import { useWallClockMinute } from "../../hooks/use-wall-clock-minute";
 import type { EPGData } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
+import { isMiddleMouseButton } from "../../lib/media-direct-link";
 import type { EPGProgram } from "../../types/player";
 import {
   PLAYER_EPG_LIST_ITEM_CLASS,
@@ -19,6 +29,7 @@ interface EPGViewProps {
   channelId: string | null;
   epgData: EPGData;
   onProgramSelect: (programStart: Date, programEnd: Date) => void;
+  onCopyMediaLink: (program: EPGProgram) => void;
   locale: Locale;
   supportsCatchup: boolean;
   currentPlayingProgram: EPGProgram | null;
@@ -48,6 +59,7 @@ interface EPGProgramItemProps {
   currentProgramRef: RefObject<HTMLButtonElement | null>;
   durationMinutes: number;
   handleProgramClick: (programStart: Date, programEnd: Date) => void;
+  onCopyMediaLink: (program: EPGProgram) => void;
   isPast: boolean;
   locale: Locale;
   onAir: boolean;
@@ -61,6 +73,7 @@ const EPGProgramItem = memo(function EPGProgramItem({
   currentProgramRef,
   durationMinutes,
   handleProgramClick,
+  onCopyMediaLink,
   isPast,
   locale,
   onAir,
@@ -70,6 +83,20 @@ const EPGProgramItem = memo(function EPGProgramItem({
   supportsCatchup,
 }: EPGProgramItemProps) {
   const t = usePlayerTranslation(locale);
+
+  const handleMouseDown = useCallback((event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (isMiddleMouseButton(event)) event.preventDefault();
+  }, []);
+
+  const handleAuxClick = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      if (!isMiddleMouseButton(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onCopyMediaLink(program);
+    },
+    [onCopyMediaLink, program],
+  );
 
   return (
     <button
@@ -83,6 +110,8 @@ const EPGProgramItem = memo(function EPGProgramItem({
         ((isPast && supportsCatchup) || onAir) && "cursor-pointer",
         !playing && ((isPast && supportsCatchup) || onAir) && PLAYER_LIST_SURFACE_HOVER_CLASS,
       )}
+      onMouseDown={handleMouseDown}
+      onAuxClick={handleAuxClick}
       onClick={() => {
         if (isPast && supportsCatchup) {
           handleProgramClick(program.start, program.end);
@@ -178,6 +207,7 @@ interface EPGDateSectionProps {
   currentProgramRef: RefObject<HTMLButtonElement | null>;
   currentTimeMs: number;
   handleProgramClick: (programStart: Date, programEnd: Date) => void;
+  onCopyMediaLink: (program: EPGProgram) => void;
   locale: Locale;
   section: EPGDateSectionData;
   supportsCatchup: boolean;
@@ -189,6 +219,7 @@ const EPGDateSection = memo(function EPGDateSection({
   currentProgramRef,
   currentTimeMs,
   handleProgramClick,
+  onCopyMediaLink,
   locale,
   section,
   supportsCatchup,
@@ -210,6 +241,7 @@ const EPGDateSection = memo(function EPGDateSection({
               currentProgramRef={currentProgramRef}
               durationMinutes={durationMinutes}
               handleProgramClick={handleProgramClick}
+              onCopyMediaLink={onCopyMediaLink}
               isPast={program.end.getTime() <= currentTimeMs}
               locale={locale}
               onAir={program.start.getTime() <= currentTimeMs && program.end.getTime() > currentTimeMs}
@@ -229,6 +261,7 @@ function EPGViewComponent({
   channelId,
   epgData,
   onProgramSelect,
+  onCopyMediaLink,
   locale,
   supportsCatchup,
   currentPlayingProgram,
@@ -324,6 +357,7 @@ function EPGViewComponent({
             currentProgramRef={currentProgramRef}
             currentTimeMs={currentTimeMs}
             handleProgramClick={handleProgramClick}
+            onCopyMediaLink={onCopyMediaLink}
             locale={locale}
             section={section}
             supportsCatchup={supportsCatchup}

@@ -117,6 +117,28 @@ int http_url_decode(char *str);
  */
 char *http_url_encode(const char *str);
 
+/* Max sanitized download filename (excluding NUL), including the .ts suffix. */
+#ifndef HTTP_DOWNLOAD_FILENAME_MAX
+#define HTTP_DOWNLOAD_FILENAME_MAX 180
+#endif
+
+/**
+ * Sanitize a client-supplied download filename for Content-Disposition.
+ * Replaces path separators / control characters, truncates on a UTF-8
+ * character boundary, and ensures a .ts suffix.
+ *
+ * @return 0 on success, -1 if input is empty after sanitizing or buffers are invalid
+ */
+int http_sanitize_download_filename(const char *input, char *output, size_t output_size);
+
+/**
+ * Build a Content-Disposition header line including the trailing CRLF.
+ * Uses RFC 6266 `filename` plus RFC 5987 `filename*` when the name is not ASCII.
+ *
+ * @return Bytes written, or -1 on error / truncation
+ */
+int http_build_content_disposition_header(const char *filename, char *output, size_t output_size);
+
 /**
  * Build a Set-Cookie header for the configured r2h-token.
  * The cookie value is URL-encoded so token characters such as ';' remain safe

@@ -2,6 +2,20 @@
 
 rtp2httpd includes a modern web-based player that allows you to watch configured M3U channel lists directly in your browser without installing any client software.
 
+## Features
+
+- **Channel List**: Automatically loads configured M3U channel lists
+- **Live Streaming**: Watch live broadcasts directly in the browser
+- **Time-Shifted Playback**: Supports EPG (Electronic Program Guide) and time-shifted playback (requires catchup source)
+- **Fast Startup**: Achieves millisecond-level channel switching with FCC
+- **Seamless Channel Switching**: Preloads the new stream when switching channels to reduce black screens
+- **Responsive Design**: UI adapts to both desktop and mobile devices
+- **PWA Support**: Can be added to the home screen on phones, tablets, desktops, or LG webOS TVs for app-like quick access
+- **Zero Overhead**: Pure web frontend implementation with virtually no resource overhead on rtp2httpd (no decoding/transcoding overhead)
+
+> [!IMPORTANT]
+> The player relies on the browser's native decoding capabilities. Some encoding formats (such as E-AC3) may not play in certain browsers (manifested as no audio or black screen). We recommend using the latest versions of Chrome, Edge, or Safari.
+
 ## Access
 
 After configuring M3U playlists, access the player via your browser:
@@ -29,19 +43,16 @@ http://server:port/player#CCTV-1
 
 The player automatically updates the address bar when you switch channels, so you can copy the link at any time to share the channel currently playing.
 
-## Features
+## Copy Media Links
 
-- **Channel List**: Automatically loads configured M3U channel lists
-- **Live Streaming**: Watch live broadcasts directly in the browser
-- **Time-Shifted Playback**: Supports EPG (Electronic Program Guide) and time-shifted playback (requires catchup source)
-- **Fast Startup**: Achieves millisecond-level channel switching with FCC
-- **Seamless Channel Switching**: Preloads the new stream when switching channels to reduce black screens
-- **Responsive Design**: UI adapts to both desktop and mobile devices
-- **PWA Support**: Can be added to the home screen on phones, tablets, desktops, or LG webOS TVs for app-like quick access
-- **Zero Overhead**: Pure web frontend implementation with virtually no resource overhead on rtp2httpd (no decoding/transcoding overhead)
+Middle-click a channel in the channel list to copy that channel's live URL for the current source. Middle-click a program in the program guide to copy that program's catch-up URL (the channel must have `catchup-source` configured). A toast appears after a successful copy.
 
-> [!IMPORTANT]
-> The player relies on the browser's native decoding capabilities. Some encoding formats (such as E-AC3) may not play in certain browsers (manifested as no audio or black screen). We recommend using the latest versions of Chrome, Edge, or Safari.
+The copied value is a directly requestable HTTP media URL, which you can download with FFmpeg, N_m3u8DL-RE, IDM, or open in a third-party player. For multi-source channels, the most recently used source is copied. If the current page includes `r2h-token`, the copied link includes that parameter as well.
+
+Multicast and RTSP links also include an `r2h-filename` query parameter. Its value is a `.ts` filename built from the channel name, source label, program title, and time range, so a browser download uses that name. See [URL Formats](/en/guide/url-formats#download-filename).
+
+> [!NOTE]
+> An on-air program with no catch-up source copies the live URL. A program that has not started and has no catch-up source cannot be copied.
 
 ## PWA Support and Add to Home Screen
 
