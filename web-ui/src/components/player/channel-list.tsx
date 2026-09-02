@@ -1,18 +1,8 @@
 import { clsx } from "clsx";
 import { Search } from "lucide-react";
-import {
-  memo,
-  type RefObject,
-  startTransition,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { memo, type RefObject, useCallback, useDeferredValue, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
+import { useWallClockMinute } from "../../hooks/use-wall-clock-minute";
 import { type EPGData, getCurrentProgram, getEPGChannelId } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
 import type { Channel } from "../../types/player";
@@ -114,14 +104,9 @@ function ChannelListComponent({
   const deferredSelectedGroup = useDeferredValue(selectedGroup);
   const currentChannelRef = useRef<HTMLButtonElement>(null);
 
-  // Re-compute current programs every minute (low-priority update)
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const timer = setInterval(() => {
-      startTransition(() => setNow(new Date()));
-    }, 60_000);
-    return () => clearInterval(timer);
-  }, []);
+  // "Now playing" titles follow the page-wide minute clock; deferring it (like epgData) keeps
+  // the recompute and the row updates in a non-urgent, interruptible render.
+  const nowMs = useDeferredValue(useWallClockMinute());
 
   // Defer epgData so initial load / large EPG updates don't block interactions
   const deferredEpgData = useDeferredValue(epgData);
@@ -130,6 +115,7 @@ function ChannelListComponent({
   const currentProgramMap = useMemo(() => {
     const map: Record<string, string> = {};
     if (!channels || !deferredEpgData) return map;
+    const now = new Date(nowMs);
     for (const ch of channels) {
       const epgId = getEPGChannelId(ch, deferredEpgData);
       if (!epgId) continue;
@@ -139,7 +125,7 @@ function ChannelListComponent({
       }
     }
     return map;
-  }, [channels, deferredEpgData, now]);
+  }, [channels, deferredEpgData, nowMs]);
 
   const filteredChannels = useMemo(
     () => filterChannels(channels, deferredSearchQuery, deferredSelectedGroup),

@@ -1,18 +1,8 @@
 import { clsx } from "clsx";
 import { Circle, History } from "lucide-react";
-import {
-  memo,
-  type RefObject,
-  startTransition,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { memo, type RefObject, useCallback, useDeferredValue, useLayoutEffect, useMemo, useRef } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
+import { useWallClockMinute } from "../../hooks/use-wall-clock-minute";
 import type { EPGData } from "../../lib/epg-parser";
 import type { Locale } from "../../lib/locale";
 import type { EPGProgram } from "../../types/player";
@@ -245,36 +235,18 @@ function EPGViewComponent({
 }: EPGViewProps) {
   const t = usePlayerTranslation(locale);
   const currentProgramRef = useRef<HTMLButtonElement>(null);
-  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
 
   // The programme list can be hundreds of rows. Rendering it from deferred values keeps that
-  // work in a non-urgent, interruptible lane: an urgent update (channel zap, programme boundary)
-  // commits the cheap parts first, then React renders the list in the background and yields to
-  // user input between rows. EPG arrival is already a transition, so these pass straight through.
+  // work in a non-urgent, interruptible lane: an urgent update (channel zap, programme boundary,
+  // the shared wall clock crossing a minute) commits the cheap parts first, then React renders
+  // the list in the background and yields to user input between rows. EPG arrival is already a
+  // transition, so these pass straight through.
   const deferredChannelId = useDeferredValue(channelId);
   const deferredEpgData = useDeferredValue(epgData);
   const deferredPlayingProgram = useDeferredValue(currentPlayingProgram);
-
-  // Program boundaries fall on whole minutes, so ticking at minute boundaries gives the
-  // same on-air / past flags as a 1 s interval at a sixtieth of the re-renders.
-  useEffect(() => {
-    const tick = () => startTransition(() => setCurrentTimeMs(Date.now()));
-    tick();
-
-    let intervalId = 0;
-    const timeoutId = window.setTimeout(
-      () => {
-        tick();
-        intervalId = window.setInterval(tick, 60_000);
-      },
-      60_000 - (Date.now() % 60_000),
-    );
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      if (intervalId) window.clearInterval(intervalId);
-    };
-  }, []);
+  // Programme boundaries fall on whole minutes, so the page-wide minute clock is all the
+  // on-air / past flags need.
+  const currentTimeMs = useDeferredValue(useWallClockMinute());
 
   const channelPrograms = useMemo(() => {
     if (!deferredChannelId) return [];

@@ -13,6 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import { usePlayerTouchGestures } from "../../hooks/use-player-touch-gestures";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
+import { useWallClockMinute } from "../../hooks/use-wall-clock-minute";
 import {
   getDocumentPictureInPicture,
   getDocumentPiPWindowOptions,
@@ -202,24 +203,7 @@ function PlayerTopLeftOverlay({
   loading: boolean;
   loadingText: string;
 }) {
-  const [time, setTime] = useState(() => new Date());
-
-  useEffect(() => {
-    const tick = () => setTime(new Date());
-    tick();
-
-    const msUntilNextMinute = 60_000 - (Date.now() % 60_000);
-    let intervalId = 0;
-    const timeoutId = window.setTimeout(() => {
-      tick();
-      intervalId = window.setInterval(tick, 60_000);
-    }, msUntilNextMinute);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      if (intervalId) window.clearInterval(intervalId);
-    };
-  }, []);
+  const time = new Date(useWallClockMinute());
 
   return (
     <div
