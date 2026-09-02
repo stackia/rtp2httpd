@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import {
+  GalleryThumbnails,
   History,
   Maximize,
   Minimize,
@@ -8,7 +9,6 @@ import {
   Pause,
   PictureInPicture,
   Play,
-  RectangleHorizontal,
   Tv,
   Volume1,
   Volume2,
@@ -595,7 +595,7 @@ function PlayerControlsComponent({
               )}
               title={isForceLandscape ? t("exitForceLandscape") : t("forceLandscape")}
             >
-              <RectangleHorizontal className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
+              <GalleryThumbnails className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
             </button>
           )}
 
