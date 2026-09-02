@@ -102,7 +102,6 @@ const EPGProgramItem = memo(function EPGProgramItem({
     <button
       type="button"
       ref={playing ? currentProgramRef : null}
-      title={t("copyMediaLinkHint")}
       className={clsx(
         PLAYER_LIST_SURFACE_BASE_CLASS,
         PLAYER_EPG_LIST_ITEM_CLASS,

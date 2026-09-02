@@ -51,7 +51,6 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
         type="button"
         key={channel.id}
         ref={ref}
-        title={t("copyMediaLinkHint")}
         className={clsx(
           PLAYER_LIST_SURFACE_BASE_CLASS,
           PLAYER_CHANNEL_LIST_ITEM_CLASS,
