@@ -38,7 +38,6 @@
 - 卡顿 -> stuttering
 - 后台 -> admin panel / admin interface
 - 画质增强 -> video enhancement
-- 强制横屏 -> Force Landscape (player control)
 - 存活探测 -> liveness probe
 - 行为变更 -> Behavior change
 - 响应头 -> response header
