@@ -547,9 +547,15 @@ function VideoPlayerComponent({
   const handlePointerHover = useCallback(
     (event: ReactPointerEvent) => {
       if (event.pointerType === "touch") return;
+      const onChrome = event.target instanceof Element && Boolean(event.target.closest("[data-player-chrome]"));
+      chromeHoverRef.current = onChrome;
+      if (onChrome) {
+        pauseControlsTimer();
+        return;
+      }
       showControlsImmediately();
     },
-    [showControlsImmediately],
+    [pauseControlsTimer, showControlsImmediately],
   );
 
   const handlePointerLeave = useCallback(
