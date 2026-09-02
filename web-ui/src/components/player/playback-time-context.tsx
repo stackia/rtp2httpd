@@ -1,50 +1,27 @@
 import { createContext, type ReactNode, useContext, useSyncExternalStore } from "react";
-
-/**
- * Tiny external store for the playback clock (seconds relative to stream start).
- * Keeping the 1 Hz clock out of React state means only the components that
- * actually display it (timeline, time readout) re-render on each tick.
- */
-export interface PlaybackTimeStore {
-  get: () => number;
-  set: (time: number) => void;
-  subscribe: (listener: () => void) => () => void;
-}
-
-export function createPlaybackTimeStore(): PlaybackTimeStore {
-  let time = 0;
-  const listeners = new Set<() => void>();
-  return {
-    get: () => time,
-    set: (next) => {
-      if (next === time) return;
-      time = next;
-      for (const listener of listeners) listener();
-    },
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-  };
-}
+import type { PlaybackClock } from "./playback-clock";
 
 const noopSubscribe = () => () => {};
 const zero = () => 0;
 
-const PlaybackTimeContext = createContext<PlaybackTimeStore | null>(null);
+const PlaybackClockContext = createContext<PlaybackClock | null>(null);
 
 interface PlaybackTimeProviderProps {
   children: ReactNode;
-  store: PlaybackTimeStore;
+  clock: PlaybackClock;
 }
 
-export function PlaybackTimeProvider({ children, store }: PlaybackTimeProviderProps) {
-  return <PlaybackTimeContext value={store}>{children}</PlaybackTimeContext>;
+/** Publishes the player's media clock to the controls rendered beneath it. */
+export function PlaybackTimeProvider({ children, clock }: PlaybackTimeProviderProps) {
+  return <PlaybackClockContext value={clock}>{children}</PlaybackClockContext>;
 }
 
+/** Playback position in seconds; re-renders the caller on whole-second changes only. */
 export function usePlaybackTime(): number {
-  const store = useContext(PlaybackTimeContext);
-  return useSyncExternalStore(store?.subscribe ?? noopSubscribe, store?.get ?? zero, store?.get ?? zero);
+  const clock = useContext(PlaybackClockContext);
+  return useSyncExternalStore(
+    clock?.subscribe ?? noopSubscribe,
+    clock?.getSnapshot ?? zero,
+    clock?.getSnapshot ?? zero,
+  );
 }

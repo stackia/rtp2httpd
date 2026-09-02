@@ -51,6 +51,8 @@ import mp2WasmUrl from "../../playback-engine/wasm/minimp3/mp2_decoder.wasm?url"
 import type { Channel, EPGProgram } from "../../types/player";
 import type { PictureInPictureMode } from "../../types/ui";
 import { PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
+import type { PlaybackClock } from "./playback-clock";
+import { PlaybackTimeProvider } from "./playback-time-context";
 import { PlayerControls } from "./player-controls";
 import { PlayerGestureIndicatorOverlay } from "./player-gesture-overlay";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
@@ -66,7 +68,8 @@ interface VideoPlayerProps {
   /** Recalibrate MSE t=0 → wall-clock mapping (live mode). */
   onStreamStartTimeChange?: (time: Date) => void;
   streamStartTime: Date;
-  onCurrentVideoTimeChange: (time: number) => void;
+  /** Media clock fed from the active backend's position and published to the controls. */
+  clock: PlaybackClock;
   onChannelNavigate?: (target: "prev" | "next" | number) => void;
   /** Neighbours of the current channel, used to preview the target of a swipe-to-zap gesture. */
   prevChannel?: Channel | null;
@@ -250,7 +253,7 @@ function VideoPlayerComponent({
   onSeek,
   onStreamStartTimeChange,
   streamStartTime,
-  onCurrentVideoTimeChange,
+  clock,
   onChannelNavigate,
   prevChannel = null,
   nextChannel = null,
@@ -881,7 +884,7 @@ function VideoPlayerComponent({
     p.on("time-update", (time) => {
       if (slotPlayerRef(slotId).current !== p || slotId !== getActiveSlotId()) return;
       currentVideoTimeRef.current = time;
-      onCurrentVideoTimeChange(time);
+      clock.update(time);
       updateMediaSessionPosition();
     });
     p.on("ended", () => {
@@ -2045,7 +2048,7 @@ function VideoPlayerComponent({
           </div>
         )}
       </div>
-      {createPortal(playerSurface, playerPortalHost)}
+      <PlaybackTimeProvider clock={clock}>{createPortal(playerSurface, playerPortalHost)}</PlaybackTimeProvider>
     </div>
   );
 }
