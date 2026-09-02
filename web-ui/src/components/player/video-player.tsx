@@ -1,7 +1,6 @@
 import { clsx } from "clsx";
 import { CircleAlert, Play, X } from "lucide-react";
 import {
-  memo,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -2067,6 +2066,9 @@ function VideoPlayerComponent({
   );
 }
 
-// Every prop is a primitive or a stable callback and the 1 Hz playback clock arrives through
-// PlaybackTimeContext, so memoizing skips the (large) re-render on unrelated PlayerPage updates.
-export const VideoPlayer = memo(VideoPlayerComponent);
+// Deliberately NOT wrapped in memo(): this component relies on useEffectEvent, and react-dom
+// 19.2 only refreshes Effect Event implementations for plain function-component fibers, not
+// for the SimpleMemoComponent fiber memo() produces. Under memo() every Effect Event kept its
+// mount-time props (playMode stayed "live", streamStartTime stayed at page load), which broke
+// catchup seeking. PlayerPage instead avoids re-rendering on the 1 Hz playback clock.
+export { VideoPlayerComponent as VideoPlayer };
