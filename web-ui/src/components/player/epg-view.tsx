@@ -5,6 +5,7 @@ import {
   type RefObject,
   startTransition,
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -35,12 +36,6 @@ interface EPGViewProps {
 
 export const nextScrollBehaviorRef: RefObject<"smooth" | "instant" | "skip"> = { current: "instant" };
 
-/**
- * Sections this far outside the scroll viewport are hydrated ahead of time so
- * scrolling into them never shows an empty placeholder.
- */
-const SECTION_HYDRATION_MARGIN = "800px 0px";
-
 let timeFormatter: Intl.DateTimeFormat | null = null;
 function formatProgramTime(date: Date): string {
   timeFormatter ??= new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -58,8 +53,6 @@ interface EPGDateSectionData {
   date: Date;
   rows: EPGProgramRow[];
 }
-
-type SectionVisibilityHandler = () => void;
 
 interface EPGProgramItemProps {
   currentProgramRef: RefObject<HTMLButtonElement | null>;
@@ -194,51 +187,23 @@ interface EPGDateSectionProps {
   currentPlayingProgramId: string | undefined;
   currentProgramRef: RefObject<HTMLButtonElement | null>;
   currentTimeMs: number;
-  /** Section contains the playing program; it must render synchronously so the scroll target exists. */
-  forceRender: boolean;
   handleProgramClick: (programStart: Date, programEnd: Date) => void;
   locale: Locale;
-  registerSection: (element: HTMLElement, onVisible: SectionVisibilityHandler) => void;
   section: EPGDateSectionData;
   supportsCatchup: boolean;
-  unregisterSection: (element: HTMLElement) => void;
 }
 
-/**
- * One day of programs. Rows are only materialized once the section approaches the
- * scroll viewport (or when it holds the playing program); until then a fixed-height
- * placeholder keeps the scroll geometry stable. Once hydrated a section stays hydrated.
- */
+/** One day of programmes under a sticky date header. */
 const EPGDateSection = memo(function EPGDateSection({
   currentPlayingProgramId,
   currentProgramRef,
   currentTimeMs,
-  forceRender,
   handleProgramClick,
   locale,
-  registerSection,
   section,
   supportsCatchup,
-  unregisterSection,
 }: EPGDateSectionProps) {
   const t = usePlayerTranslation(locale);
-  const [hydrated, setHydrated] = useState(forceRender);
-  // Latch: a section that was rendered eagerly stays rendered when the eager set moves on.
-  if (forceRender && !hydrated) setHydrated(true);
-  const rendered = hydrated || forceRender;
-
-  const placeholderRef = useCallback(
-    (element: HTMLDivElement | null) => {
-      if (!element) return;
-      registerSection(element, () => {
-        startTransition(() => setHydrated(true));
-      });
-      return () => unregisterSection(element);
-    },
-    [registerSection, unregisterSection],
-  );
-
-  const rowCount = section.rows.length;
 
   return (
     <div className="relative">
@@ -248,31 +213,23 @@ const EPGDateSection = memo(function EPGDateSection({
         </h3>
       </div>
       <div className="px-2 py-2">
-        {rendered ? (
-          <div className="space-y-2">
-            {section.rows.map(({ program, startLabel, durationMinutes }) => (
-              <EPGProgramItem
-                key={program.id}
-                currentProgramRef={currentProgramRef}
-                durationMinutes={durationMinutes}
-                handleProgramClick={handleProgramClick}
-                isPast={program.end.getTime() <= currentTimeMs}
-                locale={locale}
-                onAir={program.start.getTime() <= currentTimeMs && program.end.getTime() > currentTimeMs}
-                playing={currentPlayingProgramId === program.id}
-                program={program}
-                startLabel={startLabel}
-                supportsCatchup={supportsCatchup}
-              />
-            ))}
-          </div>
-        ) : (
-          <div
-            ref={placeholderRef}
-            aria-hidden="true"
-            style={{ height: `calc(${rowCount} * var(--epg-item-h) + ${Math.max(rowCount - 1, 0)} * 0.5rem)` }}
-          />
-        )}
+        <div className="space-y-2">
+          {section.rows.map(({ program, startLabel, durationMinutes }) => (
+            <EPGProgramItem
+              key={program.id}
+              currentProgramRef={currentProgramRef}
+              durationMinutes={durationMinutes}
+              handleProgramClick={handleProgramClick}
+              isPast={program.end.getTime() <= currentTimeMs}
+              locale={locale}
+              onAir={program.start.getTime() <= currentTimeMs && program.end.getTime() > currentTimeMs}
+              playing={currentPlayingProgramId === program.id}
+              program={program}
+              startLabel={startLabel}
+              supportsCatchup={supportsCatchup}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -289,6 +246,14 @@ function EPGViewComponent({
   const t = usePlayerTranslation(locale);
   const currentProgramRef = useRef<HTMLButtonElement>(null);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
+
+  // The programme list can be hundreds of rows. Rendering it from deferred values keeps that
+  // work in a non-urgent, interruptible lane: an urgent update (channel zap, programme boundary)
+  // commits the cheap parts first, then React renders the list in the background and yields to
+  // user input between rows. EPG arrival is already a transition, so these pass straight through.
+  const deferredChannelId = useDeferredValue(channelId);
+  const deferredEpgData = useDeferredValue(epgData);
+  const deferredPlayingProgram = useDeferredValue(currentPlayingProgram);
 
   // Program boundaries fall on whole minutes, so ticking at minute boundaries gives the
   // same on-air / past flags as a 1 s interval at a sixtieth of the re-renders.
@@ -312,9 +277,9 @@ function EPGViewComponent({
   }, []);
 
   const channelPrograms = useMemo(() => {
-    if (!channelId) return [];
-    return epgData[channelId] ?? [];
-  }, [channelId, epgData]);
+    if (!deferredChannelId) return [];
+    return deferredEpgData[deferredChannelId] ?? [];
+  }, [deferredChannelId, deferredEpgData]);
 
   // Group programs by day and precompute the per-row display strings once, so rows are
   // cheap to render and their memo props stay primitive.
@@ -338,67 +303,11 @@ function EPGViewComponent({
     return result;
   }, [channelPrograms]);
 
-  const currentPlayingProgramId = currentPlayingProgram?.id;
-  // The section holding the playing programme plus its neighbours render eagerly: the list
-  // auto-scrolls to that row, so this is exactly what fills the viewport on reveal.
-  const eagerSectionKeys = useMemo(() => {
-    const keys = new Set<string>();
-    if (!currentPlayingProgramId) return keys;
-    const index = sections.findIndex((section) =>
-      section.rows.some((row) => row.program.id === currentPlayingProgramId),
-    );
-    if (index < 0) return keys;
-    for (const section of sections.slice(Math.max(index - 1, 0), index + 2)) keys.add(section.dateKey);
-    return keys;
-  }, [sections, currentPlayingProgramId]);
-
-  // Shared IntersectionObserver that hydrates sections as they approach the viewport. It observes
-  // against the viewport rather than the scroll container: the list fills the sidebar height, so
-  // the result is the same, and it avoids depending on when the container ref is attached.
-  const sectionHandlersRef = useRef(new Map<HTMLElement, SectionVisibilityHandler>());
-  const observerRef = useRef<IntersectionObserver | null>(null);
-
-  const registerSection = useCallback((element: HTMLElement, onVisible: SectionVisibilityHandler) => {
-    sectionHandlersRef.current.set(element, onVisible);
-    observerRef.current?.observe(element);
-  }, []);
-
-  const unregisterSection = useCallback((element: HTMLElement) => {
-    sectionHandlersRef.current.delete(element);
-    observerRef.current?.unobserve(element);
-  }, []);
-
-  useEffect(() => {
-    const handlers = sectionHandlersRef.current;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          const element = entry.target as HTMLElement;
-          const onVisible = handlers.get(element);
-          if (!onVisible) continue;
-          handlers.delete(element);
-          observer.unobserve(element);
-          onVisible();
-        }
-      },
-      { rootMargin: SECTION_HYDRATION_MARGIN },
-    );
-    for (const element of handlers.keys()) observer.observe(element);
-    observerRef.current = observer;
-    return () => {
-      observer.disconnect();
-      observerRef.current = null;
-    };
-  }, []);
-
-  const hasPrograms = channelPrograms.length > 0;
-
   // Auto-scroll to center current/playing program when it changes or channel changes.
   // Smooth scrolling is only armed once a scroll target has actually existed while the guide
   // is open: the very first positioning (EPG arrival, or revealing the tab) must be instant.
   useLayoutEffect(() => {
-    if (!currentPlayingProgram || !channelId || !channelPrograms.length) return;
+    if (!deferredPlayingProgram || !deferredChannelId || !channelPrograms.length) return;
 
     window.setTimeout(() => {
       nextScrollBehaviorRef.current = "smooth";
@@ -415,7 +324,7 @@ function EPGViewComponent({
       behavior,
       block: "center",
     });
-  }, [currentPlayingProgram, channelId, channelPrograms]);
+  }, [deferredPlayingProgram, deferredChannelId, channelPrograms]);
 
   const handleProgramClick = useCallback(
     (programStart: Date, programEnd: Date) => {
@@ -425,7 +334,7 @@ function EPGViewComponent({
     [onProgramSelect],
   );
 
-  if (!channelId || !hasPrograms) {
+  if (!deferredChannelId || channelPrograms.length === 0) {
     return (
       <div className="flex h-full items-center justify-center bg-transparent px-6 text-center text-slate-500 text-sm leading-6 dark:text-slate-400">
         {t("noEpgAvailable")}
@@ -435,21 +344,17 @@ function EPGViewComponent({
 
   return (
     <div className="h-full overflow-y-auto pb-[env(safe-area-inset-bottom)]">
-      {/* --epg-item-h mirrors the intrinsic block size in PLAYER_EPG_LIST_ITEM_CLASS for placeholder sizing. */}
-      <div key={channelId} className="relative [--epg-item-h:3rem] md:[--epg-item-h:3.75rem]">
+      <div className="relative">
         {sections.map((section) => (
           <EPGDateSection
             key={section.dateKey}
-            currentPlayingProgramId={currentPlayingProgramId}
+            currentPlayingProgramId={deferredPlayingProgram?.id}
             currentProgramRef={currentProgramRef}
             currentTimeMs={currentTimeMs}
-            forceRender={eagerSectionKeys.has(section.dateKey)}
             handleProgramClick={handleProgramClick}
             locale={locale}
-            registerSection={registerSection}
             section={section}
             supportsCatchup={supportsCatchup}
-            unregisterSection={unregisterSection}
           />
         ))}
       </div>
