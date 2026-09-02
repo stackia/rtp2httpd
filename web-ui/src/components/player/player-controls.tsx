@@ -56,9 +56,8 @@ interface PlayerControlsProps {
   onMuteToggle: () => void;
   onFullscreen: () => void;
   isFullscreen: boolean;
-  canForceLandscape?: boolean;
-  isForceLandscape?: boolean;
-  onForceLandscapeToggle?: () => void;
+  isWebFullscreen?: boolean;
+  onWebFullscreenToggle?: () => void;
   // Picture-in-Picture controls
   isPiP?: boolean;
   isPiPSupported?: boolean;
@@ -400,9 +399,8 @@ function PlayerControlsComponent({
   onMuteToggle,
   onFullscreen,
   isFullscreen,
-  canForceLandscape = false,
-  isForceLandscape = false,
-  onForceLandscapeToggle,
+  isWebFullscreen = false,
+  onWebFullscreenToggle,
   isPiP = false,
   isPiPSupported = false,
   onPiPToggle,
@@ -581,19 +579,19 @@ function PlayerControlsComponent({
             </div>
           )}
 
-          {/* Force landscape — rotatable devices only (phones, tablets, convertibles) */}
-          {canForceLandscape && onForceLandscapeToggle && (
+          {/* Web fullscreen — fills the page viewport without the browser Fullscreen API */}
+          {onWebFullscreenToggle && (
             <button
               type="button"
-              onClick={onForceLandscapeToggle}
-              aria-pressed={isForceLandscape}
+              onClick={onWebFullscreenToggle}
+              aria-pressed={isWebFullscreen}
               className={clsx(
                 PLAYER_CONTROL_BUTTON_CLASS,
                 "cursor-pointer p-1 md:p-2",
                 COMPACT_BUTTON_CLASS,
-                isForceLandscape && "border-blue-100/20 bg-blue-300/15 text-blue-50",
+                isWebFullscreen && "border-blue-100/20 bg-blue-300/15 text-blue-50",
               )}
-              title={isForceLandscape ? t("exitForceLandscape") : t("forceLandscape")}
+              title={isWebFullscreen ? t("exitWebFullscreen") : t("webFullscreen")}
             >
               <GalleryThumbnails className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
             </button>

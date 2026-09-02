@@ -13,12 +13,12 @@ import { VideoPlayer } from "../components/player/video-player";
 import { Button, buttonVariants } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { useCurrentVideoProgram } from "../hooks/use-current-video-program";
-import { useForceLandscape } from "../hooks/use-force-landscape";
 import { useLocale } from "../hooks/use-locale";
 import { usePersistedEnum } from "../hooks/use-persisted-enum";
 import { usePlayerAppearance } from "../hooks/use-player-appearance";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
+import { useWebFullscreen } from "../hooks/use-web-fullscreen";
 import { isDocumentPictureInPictureSupported } from "../lib/document-picture-in-picture";
 import { loadEPG } from "../lib/epg-loader";
 import { type EPGChannelDescriptor, type EPGData, getEPGChannelId } from "../lib/epg-parser";
@@ -40,12 +40,7 @@ import {
   saveSeamlessSwitch,
   saveSidebarVisible,
 } from "../lib/player-storage";
-import {
-  getVisualViewportWidth,
-  lockScreenToLandscape,
-  shouldInsetSidebarRight,
-  unlockScreenOrientation,
-} from "../lib/screen-orientation";
+import { lockScreenToLandscape, shouldInsetSidebarRight, unlockScreenOrientation } from "../lib/screen-orientation";
 import { buildAppPath } from "../lib/url";
 import { getPlaybackBackendKind, type PlayerSegment } from "../playback-engine";
 import { mseToWallClock, NEAR_LIVE_EDGE_MS } from "../playback-engine/timeline/wall-clock";
@@ -72,13 +67,7 @@ function PlayerPage() {
     PICTURE_IN_PICTURE_MODES,
   );
   const t = usePlayerTranslation(locale);
-  const {
-    canForceLandscape,
-    isForceLandscape,
-    isForceLandscapeFallback,
-    toggleForceLandscape,
-    applyForceLandscapeLock,
-  } = useForceLandscape();
+  const { isWebFullscreen, isWebFullscreenPortrait, toggleWebFullscreen } = useWebFullscreen();
 
   const [metadata, setMetadata] = useState<M3UMetadata | null>(null);
   const [epgData, setEpgData] = useState<EPGData>({});
@@ -103,8 +92,6 @@ function PlayerPage() {
   );
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const isSimulatedFullscreenRef = useRef(false);
-  const isForceLandscapeRef = useRef(false);
-  isForceLandscapeRef.current = isForceLandscape;
 
   // Track stream start time - the absolute time position when current stream started
   // For live mode: null (no seeking)
@@ -130,11 +117,7 @@ function PlayerPage() {
 
       setIsFullscreen(isDocumentFullscreen);
       if (!isDocumentFullscreen) {
-        if (isForceLandscapeRef.current) {
-          void applyForceLandscapeLock();
-        } else {
-          unlockScreenOrientation();
-        }
+        unlockScreenOrientation();
         setShowSidebar(true);
       }
     };
@@ -143,14 +126,14 @@ function PlayerPage() {
     return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
-  }, [applyForceLandscapeLock]);
+  }, []);
 
   // Track responsive layout and which physical edge is on the sidebar's right.
   useEffect(() => {
     const handleViewportChange = () => {
       startTransition(() => {
-        setIsMobile(getVisualViewportWidth(isForceLandscapeFallback) < 768);
-        setInsetSidebarRight(shouldInsetSidebarRight(isForceLandscapeFallback));
+        setIsMobile(window.innerWidth < 768);
+        setInsetSidebarRight(shouldInsetSidebarRight());
       });
     };
 
@@ -161,7 +144,7 @@ function PlayerPage() {
       window.removeEventListener("resize", handleViewportChange);
       screen.orientation.removeEventListener("change", handleViewportChange);
     };
-  }, [isForceLandscapeFallback]);
+  }, []);
 
   useEffect(() => {
     if (!activeSource) return;
@@ -436,11 +419,7 @@ function PlayerPage() {
     if (document.fullscreenElement) {
       try {
         await document.exitFullscreen();
-        if (isForceLandscapeRef.current) {
-          void applyForceLandscapeLock();
-        } else {
-          unlockScreenOrientation();
-        }
+        unlockScreenOrientation();
         setShowSidebar(true);
         return true;
       } catch {
@@ -450,11 +429,7 @@ function PlayerPage() {
 
     if (isSimulatedFullscreenRef.current) {
       isSimulatedFullscreenRef.current = false;
-      if (isForceLandscapeRef.current) {
-        void applyForceLandscapeLock();
-      } else {
-        unlockScreenOrientation();
-      }
+      unlockScreenOrientation();
       setIsFullscreen(false);
       setShowSidebar(true);
       return true;
@@ -483,7 +458,7 @@ function PlayerPage() {
 
       return false;
     }
-  }, [applyForceLandscapeLock, isMobile]);
+  }, [isMobile]);
 
   const handleSeamlessSwitchChange = useCallback(
     (enabled: boolean) => {
@@ -561,17 +536,20 @@ function PlayerPage() {
     return (
       <div
         ref={pageContainerRef}
-        className={clsx(
-          "player-performance-page-background player-performance-scope player-viewport-height relative flex flex-col bg-[radial-gradient(circle_at_92%_8%,rgba(59,130,246,0.15),transparent_28%),radial-gradient(circle_at_72%_92%,rgba(99,102,241,0.13),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_88%_10%,rgba(59,130,246,0.1),transparent_30%),radial-gradient(circle_at_70%_88%,rgba(99,102,241,0.12),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]",
-          isForceLandscapeFallback && "player-force-landscape-fallback",
-        )}
+        className="player-performance-page-background player-performance-scope player-viewport-height relative flex flex-col bg-[radial-gradient(circle_at_92%_8%,rgba(59,130,246,0.15),transparent_28%),radial-gradient(circle_at_72%_92%,rgba(99,102,241,0.13),transparent_32%),linear-gradient(145deg,#f8fbff,#edf2ff)] dark:bg-[radial-gradient(circle_at_88%_10%,rgba(59,130,246,0.1),transparent_30%),radial-gradient(circle_at_70%_88%,rgba(99,102,241,0.12),transparent_34%),linear-gradient(145deg,#050b18,#090d24)]"
       >
         <title>{t("title")}</title>
 
         {/* Main Content */}
         <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
           {/* Video Player - Mobile: fixed aspect ratio at top, Desktop: fills left side */}
-          <div className="w-full sticky md:static md:flex-1 shrink-0">
+          <div
+            className={clsx(
+              "w-full sticky md:static md:flex-1 shrink-0",
+              isWebFullscreen && "player-web-fullscreen",
+              isWebFullscreenPortrait && "player-web-fullscreen-portrait",
+            )}
+          >
             <VideoPlayer
               channel={currentChannel}
               segments={playbackSegments}
@@ -590,9 +568,8 @@ function PlayerPage() {
               onToggleSidebar={handleToggleSidebar}
               isFullscreen={isFullscreen}
               onFullscreenToggle={handleFullscreenToggle}
-              canForceLandscape={canForceLandscape || isForceLandscape}
-              isForceLandscape={isForceLandscape}
-              onForceLandscapeToggle={toggleForceLandscape}
+              isWebFullscreen={isWebFullscreen}
+              onWebFullscreenToggle={toggleWebFullscreen}
               seamlessSwitch={supportsSeamlessSwitch && seamlessSwitch}
               autoDeinterlace={autoDeinterlace}
               pictureEnhancement={pictureEnhancement}
@@ -608,7 +585,7 @@ function PlayerPage() {
             className={clsx(
               "player-performance-panel-background flex w-full flex-1 flex-col overflow-hidden border-blue-950/10 border-t bg-white/68 pl-[env(safe-area-inset-left)] shadow-[-14px_0_40px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(160deg,rgba(5,13,32,0.96),rgba(17,16,49,0.92))] dark:shadow-[-18px_0_48px_rgba(1,7,24,0.28)] md:w-80 md:flex-initial md:border-t-0 md:border-l md:pt-[env(safe-area-inset-top)] md:pl-0",
               insetSidebarRight && "pr-[env(safe-area-inset-right)]",
-              (showSidebar || isMobile) && !(isFullscreen && isMobile) ? "" : "hidden",
+              (showSidebar || isMobile) && !(isFullscreen && isMobile) && !isWebFullscreen ? "" : "hidden",
             )}
           >
             {/* Sidebar Tabs */}

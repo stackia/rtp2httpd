@@ -78,9 +78,8 @@ interface VideoPlayerProps {
   onToggleSidebar?: () => void;
   isFullscreen: boolean;
   onFullscreenToggle?: () => Promise<boolean> | boolean;
-  canForceLandscape?: boolean;
-  isForceLandscape?: boolean;
-  onForceLandscapeToggle?: () => void;
+  isWebFullscreen?: boolean;
+  onWebFullscreenToggle?: () => void;
   seamlessSwitch?: boolean;
   autoDeinterlace?: boolean;
   pictureEnhancement?: boolean;
@@ -264,9 +263,8 @@ function VideoPlayerComponent({
   onToggleSidebar,
   isFullscreen,
   onFullscreenToggle,
-  canForceLandscape = false,
-  isForceLandscape = false,
-  onForceLandscapeToggle,
+  isWebFullscreen = false,
+  onWebFullscreenToggle,
   seamlessSwitch = true,
   autoDeinterlace = true,
   pictureEnhancement = true,
@@ -1382,7 +1380,9 @@ function VideoPlayerComponent({
 
       case "Escape":
         e.preventDefault();
-        if (!isDocumentBodyActive(eventDocument)) {
+        if (isWebFullscreen) {
+          onWebFullscreenToggle?.();
+        } else if (!isDocumentBodyActive(eventDocument)) {
           blurActiveElement(eventDocument);
         } else if (digitBuffer) {
           setDigitBuffer("");
@@ -1764,7 +1764,11 @@ function VideoPlayerComponent({
       ref={playerSurfaceRef}
       className={clsx(
         "player-performance-video-background dark @container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)]",
-        isDocumentPiP ? "h-screen min-h-screen aspect-auto" : "md:aspect-auto md:h-full",
+        isDocumentPiP
+          ? "h-screen min-h-screen aspect-auto"
+          : isWebFullscreen
+            ? "aspect-auto h-full"
+            : "md:aspect-auto md:h-full",
         !showControls && "cursor-none",
       )}
       onPointerEnter={handlePointerHover}
@@ -2022,9 +2026,8 @@ function VideoPlayerComponent({
             onMuteToggle={handleMuteToggle}
             onFullscreen={handleFullscreen}
             isFullscreen={isFullscreen}
-            canForceLandscape={canForceLandscape && !isDocumentPiP}
-            isForceLandscape={isForceLandscape}
-            onForceLandscapeToggle={onForceLandscapeToggle}
+            isWebFullscreen={isWebFullscreen}
+            onWebFullscreenToggle={!isDocumentPiP ? onWebFullscreenToggle : undefined}
             showSidebar={showSidebar}
             onToggleSidebar={onToggleSidebar}
             isPiP={isPiP}
@@ -2048,6 +2051,7 @@ function VideoPlayerComponent({
       className={clsx(
         "player-performance-video-background relative w-full bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)] pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:h-full",
         showSidebar && "md:pr-0",
+        isWebFullscreen && "h-full",
       )}
     >
       <div ref={playerDockRef} className="contents">
