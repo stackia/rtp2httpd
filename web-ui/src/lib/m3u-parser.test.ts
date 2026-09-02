@@ -10,7 +10,7 @@ const HOURS = 60 * 60 * 1000;
 const source: Source = {
   url: "http://live.example/ch",
   catchup: "default",
-  catchupSource: "http://catchup.example/ch?playseek=${utc:yyyyMMddHHmmss}-${utcend:yyyyMMddHHmmss}",
+  catchupSource: "http://catchup.example/ch?playseek={utc:YmdHMS}-{utcend:YmdHMS}",
 };
 
 describe("buildCatchupSegments", () => {

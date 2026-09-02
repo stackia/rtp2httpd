@@ -9,7 +9,7 @@ const END = new Date("2026-09-02T11:30:00.000Z");
 const defaultSource: Source = {
   url: "http://live.example/ch",
   catchup: "default",
-  catchupSource: "http://catchup.example/ch?playseek=${utc:yyyyMMddHHmmss}-${utcend:yyyyMMddHHmmss}",
+  catchupSource: "http://catchup.example/ch?playseek={utc:YmdHMS}-{utcend:YmdHMS}",
 };
 
 describe("buildCatchupUrl", () => {
@@ -23,7 +23,7 @@ describe("buildCatchupUrl", () => {
     const source: Source = {
       url: "http://live.example/ch",
       catchup: "append",
-      catchupSource: "/catchup?playseek=${(b)yyyyMMddHHmmss|UTC}-${(e)yyyyMMddHHmmss|UTC}",
+      catchupSource: "/catchup?playseek={(b)YmdHMS|UTC}-{(e)YmdHMS|UTC}",
     };
     expect(buildCatchupUrl(source, START, END, NOW)).toBe(
       "http://live.example/ch/catchup?playseek=20260902100000-20260902113000",

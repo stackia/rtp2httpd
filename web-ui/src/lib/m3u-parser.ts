@@ -4,8 +4,8 @@ import { buildCatchupUrl } from "./catchup-url";
 import { type CatchupProgramBound, clampCatchupStartTime, planCatchupSegmentWindows } from "./catchup-windows";
 import { toPlaylistRelativePath } from "./url";
 
-export { CATCHUP_MIN_DURATION_MS, clampCatchupStartTime } from "./catchup-windows";
 export { buildCatchupUrl } from "./catchup-url";
+export { CATCHUP_MIN_DURATION_MS, clampCatchupStartTime } from "./catchup-windows";
 
 /**
  * Parse M3U playlist content

@@ -20,7 +20,7 @@ function channel(overrides: Partial<Channel> = {}): Channel {
       {
         url: "/Test/Catchup Channel",
         catchup: "default",
-        catchupSource: "/Test/Catchup Channel/catchup?playseek=${(b)yyyyMMddHHmmss|UTC}-${(e)yyyyMMddHHmmss|UTC}",
+        catchupSource: "/Test/Catchup Channel/catchup?playseek={(b)YmdHMS|UTC}-{(e)YmdHMS|UTC}",
       },
     ],
     ...overrides,
@@ -28,9 +28,10 @@ function channel(overrides: Partial<Channel> = {}): Channel {
 }
 
 describe("stripPlaylistUrlLabel", () => {
-  it("strips a trailing $label and leaves ${placeholders} intact", () => {
+  it("strips a trailing $label and leaves catchup placeholders intact", () => {
+    const placeholderUrl = "http://example/ch?t=$" + "{utc}$HD";
     expect(stripPlaylistUrlLabel("http://example/ch$HD")).toBe("http://example/ch");
-    expect(stripPlaylistUrlLabel("http://example/ch?t=${utc}$HD")).toBe("http://example/ch?t=${utc}");
+    expect(stripPlaylistUrlLabel(placeholderUrl)).toBe("http://example/ch?t=$" + "{utc}");
   });
 });
 
