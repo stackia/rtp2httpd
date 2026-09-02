@@ -394,13 +394,16 @@ function EPGViewComponent({
 
   const hasPrograms = channelPrograms.length > 0;
 
-  // Auto-scroll to center current/playing program when it changes or channel changes
+  // Auto-scroll to center current/playing program when it changes or channel changes.
+  // Smooth scrolling is only armed once a scroll target has actually existed while the guide
+  // is open: the very first positioning (EPG arrival, or revealing the tab) must be instant.
   useLayoutEffect(() => {
+    if (!currentPlayingProgram || !channelId || !channelPrograms.length) return;
+
     window.setTimeout(() => {
       nextScrollBehaviorRef.current = "smooth";
     }, 0);
 
-    if (!currentPlayingProgram || !channelId || !channelPrograms.length) return;
     const requestedBehavior = nextScrollBehaviorRef.current;
     if (requestedBehavior === "skip") return;
     const behavior =
