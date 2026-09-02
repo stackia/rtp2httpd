@@ -321,9 +321,10 @@ class TestHeadRequest:
             assert status == 200
             assert body == b""
             disposition = get_header(hdrs, "Content-Disposition")
-            assert "Set-Cookie" not in disposition
+            assert get_header(hdrs, "Set-Cookie") == ""
             assert "\r" not in disposition
             assert "\n" not in disposition
+            assert disposition.startswith("attachment;")
             assert 'filename="foo_Set-Cookie_ evil.ts"' in disposition
         finally:
             r2h.stop()

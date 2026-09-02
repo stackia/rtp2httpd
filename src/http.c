@@ -226,14 +226,16 @@ int http_sanitize_download_filename(const char *input, char *output, size_t outp
   if (out_len == 0)
     return -1;
 
+  tmp[out_len] = '\0';
+
   if (!http_filename_has_ts_suffix(tmp, out_len)) {
     if (out_len + 3 >= sizeof(tmp))
       out_len = HTTP_DOWNLOAD_FILENAME_MAX - 3;
     tmp[out_len++] = '.';
     tmp[out_len++] = 't';
     tmp[out_len++] = 's';
+    tmp[out_len] = '\0';
   }
-  tmp[out_len] = '\0';
 
   name_len = strlen(tmp);
   if (name_len + 1 > output_size)
