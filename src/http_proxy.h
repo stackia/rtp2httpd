@@ -220,10 +220,14 @@ int http_proxy_session_tick(http_proxy_session_t *session, int64_t now);
 void http_proxy_resume_upstream(http_proxy_session_t *session);
 
 /**
- * Build HTTP proxy URL for transformed M3U
- * Converts http://host:port/path to {BASE_URL}http/host:port/path
+ * Build a proxy URL from an absolute upstream URL.
+ * Converts M3U-recognized schemes onto the matching proxy prefix:
+ * http://host:port/path -> {BASE_URL}http/host:port/path,
+ * rtsp://host:port/path -> {BASE_URL}rtsp/host:port/path,
+ * rtp://addr:port -> {BASE_URL}rtp/addr:port,
+ * udp://addr:port -> {BASE_URL}udp/addr:port.
  *
- * @param http_url Original HTTP URL (must start with http://)
+ * @param http_url Original URL (must start with http://, rtsp://, rtp://, or udp://)
  * @param base_url_placeholder Placeholder string for base URL (e.g.,
  * "{BASE_URL}")
  * @param output Buffer to store transformed URL

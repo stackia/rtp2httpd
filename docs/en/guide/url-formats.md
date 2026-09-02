@@ -164,6 +164,21 @@ http://192.168.1.1:5140/http/iptv.example.com/channel1?r2h-ifname=eth0
 
 See [Time Processing Guide](/en/guide/time-processing) for details.
 
+### Upstream 30x Redirects
+
+When the upstream returns `301` / `302` / `303` / `307` / `308`, rtp2httpd rewrites the `Location` header by scheme so the player stays on this instance:
+
+| Upstream `Location` | Forwarded to the client |
+| --- | --- |
+| `http://iptv.example.com:8080/path` | `/http/iptv.example.com:8080/path` |
+| `rtsp://iptv.example.com:554/path?auth=...` | `/rtsp/iptv.example.com:554/path?auth=...` |
+| `rtp://239.0.0.1:1234` | `/rtp/239.0.0.1:1234` |
+| `udp://239.0.0.1:1234` | `/udp/239.0.0.1:1234` |
+| `/rtsp/iptv.example.com:554/path` (root-relative) | forwarded unchanged |
+| `https://...` or other unsupported schemes | forwarded unchanged |
+
+The rewrite covers the same URL formats M3U transform recognizes: `http://`, `rtsp://`, `rtp://`, and `udp://`. This covers the case where `catchup-source` first points to an HTTP auth/token service, which then 302-redirects to the real playback URL. If `app-path-prefix` is configured, rewritten locations include that prefix.
+
 ### Notes
 
 - Only supports HTTP upstream (HTTPS is not supported)
