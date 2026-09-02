@@ -8,6 +8,7 @@ import {
 } from "../components/player/channel-list";
 import { EPGView, nextScrollBehaviorRef as epgViewNextScrollBehaviorRef } from "../components/player/epg-view";
 import { createPlaybackClock } from "../components/player/playback-clock";
+import { PlayerToast, usePlayerToast } from "../components/player/player-toast";
 import { SettingsDropdown } from "../components/player/settings-dropdown";
 import { VideoPlayer } from "../components/player/video-player";
 import { Button, buttonVariants } from "../components/ui/button";
@@ -18,11 +19,13 @@ import { usePersistedEnum } from "../hooks/use-persisted-enum";
 import { usePlayerAppearance } from "../hooks/use-player-appearance";
 import { usePlayerTranslation } from "../hooks/use-player-translation";
 import { useTheme } from "../hooks/use-theme";
+import { copyTextToClipboard } from "../lib/clipboard";
 import { isDocumentPictureInPictureSupported } from "../lib/document-picture-in-picture";
 import { loadEPG } from "../lib/epg-loader";
 import { type EPGChannelDescriptor, type EPGData, getAllChannelPrograms, getEPGChannelId } from "../lib/epg-parser";
 import type { Locale } from "../lib/locale";
 import { buildCatchupSegments, clampCatchupStartTime, parseM3U } from "../lib/m3u-parser";
+import { getChannelLiveMediaUrl, getProgramMediaUrl } from "../lib/media-direct-link";
 import { isLGWebOS } from "../lib/platform";
 import { findDeepLinkChannel, syncChannelDeepLink } from "../lib/player-deep-link";
 import {
@@ -42,7 +45,7 @@ import {
 import { buildAppPath } from "../lib/url";
 import { getPlaybackBackendKind, type PlayerSegment } from "../playback-engine";
 import { mseToWallClock, NEAR_LIVE_EDGE_MS } from "../playback-engine/timeline/wall-clock";
-import type { Channel, M3UMetadata } from "../types/player";
+import type { Channel, EPGProgram, M3UMetadata } from "../types/player";
 import { PICTURE_IN_PICTURE_MODES, type PictureInPictureMode } from "../types/ui";
 
 function getM3UIntegrationGuideUrl(locale: Locale) {
@@ -99,6 +102,7 @@ function PlayerPage() {
     PICTURE_IN_PICTURE_MODES,
   );
   const t = usePlayerTranslation(locale);
+  const { toast, showToast } = usePlayerToast();
 
   const [metadata, setMetadata] = useState<M3UMetadata | null>(null);
   const [epgData, setEpgData] = useState<EPGData>({});
@@ -253,6 +257,41 @@ function PlayerPage() {
       handleVideoSeek(programStart, goingLive);
     },
     [handleVideoSeek],
+  );
+
+  const copyMediaLink = useCallback(
+    async (url: string | null) => {
+      if (!url) {
+        showToast(t("copyMediaLinkUnavailable"), "error");
+        return;
+      }
+      try {
+        await copyTextToClipboard(url);
+        showToast(t("mediaLinkCopied"));
+      } catch {
+        showToast(t("copyMediaLinkFailed"), "error");
+      }
+    },
+    [showToast, t],
+  );
+
+  const handleChannelCopyLink = useCallback(
+    (channel: Channel) => {
+      const preferredIndex = channel.id === currentChannel?.id ? activeSourceIndex : getLastSourceIndex(channel.id);
+      void copyMediaLink(getChannelLiveMediaUrl(channel, preferredIndex));
+    },
+    [activeSourceIndex, copyMediaLink, currentChannel],
+  );
+
+  const handleProgramCopyLink = useCallback(
+    (program: EPGProgram) => {
+      if (!currentChannel) {
+        void copyMediaLink(null);
+        return;
+      }
+      void copyMediaLink(getProgramMediaUrl(currentChannel, program, activeSourceIndex));
+    },
+    [activeSourceIndex, copyMediaLink, currentChannel],
   );
 
   const handleSourceChange = useCallback(
@@ -646,6 +685,7 @@ function PlayerPage() {
                   groups={metadata?.groups}
                   currentChannel={currentChannel}
                   onChannelSelect={selectChannel}
+                  onCopyMediaLink={handleChannelCopyLink}
                   locale={locale}
                   settingsSlot={settingsSlot}
                   epgData={epgData}
@@ -656,6 +696,7 @@ function PlayerPage() {
                   channelId={currentEpgChannelId}
                   epgData={epgData}
                   onProgramSelect={handleProgramSelect}
+                  onCopyMediaLink={handleProgramCopyLink}
                   locale={locale}
                   supportsCatchup={!!currentChannel?.sources.some((s) => s.catchup && s.catchupSource)}
                   currentPlayingProgram={currentVideoProgram}
@@ -664,6 +705,8 @@ function PlayerPage() {
             </div>
           </div>
         </div>
+
+        <PlayerToast toast={toast} />
 
         {/* Loading overlay shares the player viewport to avoid iOS standalone fixed-position gaps. */}
         {isLoading && (

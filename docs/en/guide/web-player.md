@@ -29,9 +29,19 @@ http://server:port/player#CCTV-1
 
 The player automatically updates the address bar when you switch channels, so you can copy the link at any time to share the channel currently playing.
 
+## Copy Media Links
+
+Middle-click a channel in the channel list to copy that channel's live URL for the current source. Middle-click a program in the program guide to copy that program's catch-up URL (the channel must have `catchup-source` configured). A toast appears after a successful copy.
+
+The copied value is a directly requestable HTTP media URL, which you can download with FFmpeg, N_m3u8DL-RE, IDM, or open in a third-party player. For multi-source channels, the most recently used source is copied. If the current page includes `r2h-token`, the copied link includes that parameter as well.
+
+> [!NOTE]
+> An on-air program with no catch-up source copies the live URL. A program that has not started and has no catch-up source cannot be copied.
+
 ## Features
 
 - **Channel List**: Automatically loads configured M3U channel lists
+- **Copy Media Links**: Middle-click a channel or program to copy its live or catch-up URL
 - **Live Streaming**: Watch live broadcasts directly in the browser
 - **Time-Shifted Playback**: Supports EPG (Electronic Program Guide) and time-shifted playback (requires catchup source)
 - **Fast Startup**: Achieves millisecond-level channel switching with FCC
