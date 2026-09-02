@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 import { AlertTriangle, ExternalLink, ListChecks, RefreshCw } from "lucide-react";
 import { Activity, StrictMode, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import {
   ChannelList,
@@ -32,13 +33,11 @@ import {
   getLastSourceIndex,
   getPictureEnhancement,
   getSeamlessSwitch,
-  getSidebarVisible,
   saveAutoDeinterlace,
   saveLastChannelId,
   saveLastSourceIndex,
   savePictureEnhancement,
   saveSeamlessSwitch,
-  saveSidebarVisible,
 } from "../lib/player-storage";
 import { lockScreenToLandscape, shouldInsetSidebarRight, unlockScreenOrientation } from "../lib/screen-orientation";
 import { buildAppPath } from "../lib/url";
@@ -77,7 +76,8 @@ function PlayerPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRevealing, setIsRevealing] = useState(false);
-  const [showSidebar, setShowSidebar] = useState(() => getSidebarVisible());
+  const [immersiveSidebarHost, setImmersiveSidebarHost] = useState<HTMLDivElement | null>(null);
+  const [flowSidebarHost, setFlowSidebarHost] = useState<HTMLDivElement | null>(null);
   const [selectedSidebarView, setSelectedSidebarView] = useState<"channels" | "epg">("channels");
   const [renderedSidebarView, setRenderedSidebarView] = useState<"channels" | "epg">("channels");
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -118,7 +118,6 @@ function PlayerPage() {
       setIsFullscreen(isDocumentFullscreen);
       if (!isDocumentFullscreen) {
         unlockScreenOrientation();
-        setShowSidebar(true);
       }
     };
 
@@ -420,7 +419,6 @@ function PlayerPage() {
       try {
         await document.exitFullscreen();
         unlockScreenOrientation();
-        setShowSidebar(true);
         return true;
       } catch {
         return false;
@@ -431,34 +429,52 @@ function PlayerPage() {
       isSimulatedFullscreenRef.current = false;
       unlockScreenOrientation();
       setIsFullscreen(false);
-      setShowSidebar(true);
       return true;
+    }
+
+    if (isWebFullscreen) {
+      toggleWebFullscreen();
     }
 
     try {
       await pageContainer.requestFullscreen();
       await lockScreenToLandscape();
       setIsFullscreen(true);
-      setShowSidebar(false);
       return true;
     } catch {
       if (await lockScreenToLandscape()) {
         isSimulatedFullscreenRef.current = true;
         setIsFullscreen(true);
-        setShowSidebar(false);
         return true;
       }
 
       if (!isMobile) {
         isSimulatedFullscreenRef.current = true;
         setIsFullscreen(true);
-        setShowSidebar(false);
         return true;
       }
 
       return false;
     }
-  }, [isMobile]);
+  }, [isMobile, isWebFullscreen, toggleWebFullscreen]);
+
+  const handleWebFullscreenToggle = useCallback(async () => {
+    if (!isWebFullscreen) {
+      if (document.fullscreenElement) {
+        try {
+          await document.exitFullscreen();
+        } catch {
+          // Still enter web fullscreen if native fullscreen cannot exit.
+        }
+      }
+      if (isSimulatedFullscreenRef.current) {
+        isSimulatedFullscreenRef.current = false;
+        unlockScreenOrientation();
+        setIsFullscreen(false);
+      }
+    }
+    toggleWebFullscreen();
+  }, [isWebFullscreen, toggleWebFullscreen]);
 
   const handleSeamlessSwitchChange = useCallback(
     (enabled: boolean) => {
@@ -477,14 +493,6 @@ function PlayerPage() {
   const handlePictureEnhancementChange = useCallback((enabled: boolean) => {
     setPictureEnhancement(enabled);
     savePictureEnhancement(enabled);
-  }, []);
-
-  const handleToggleSidebar = useCallback(() => {
-    setShowSidebar((prev) => {
-      const newState = !prev;
-      saveSidebarVisible(newState);
-      return newState;
-    });
   }, []);
 
   const settingsSlot = useMemo(() => {
@@ -531,6 +539,9 @@ function PlayerPage() {
     supportsMSEVideoProcessing,
   ]);
 
+  const isImmersive = isFullscreen || isWebFullscreen;
+  const sidebarHost = isImmersive ? immersiveSidebarHost : flowSidebarHost;
+
   const hasPlaylistLoadError = Boolean(error && !metadata);
   if (!hasPlaylistLoadError) {
     return (
@@ -548,6 +559,7 @@ function PlayerPage() {
               "w-full sticky md:static md:flex-1 shrink-0",
               isWebFullscreen && "player-web-fullscreen",
               isWebFullscreenPortrait && "player-web-fullscreen-portrait",
+              isImmersive && "min-h-0 flex-1",
             )}
           >
             <VideoPlayer
@@ -564,12 +576,11 @@ function PlayerPage() {
               onChannelNavigate={handleChannelNavigate}
               prevChannel={prevChannel}
               nextChannel={nextChannel}
-              showSidebar={showSidebar}
-              onToggleSidebar={handleToggleSidebar}
               isFullscreen={isFullscreen}
               onFullscreenToggle={handleFullscreenToggle}
               isWebFullscreen={isWebFullscreen}
-              onWebFullscreenToggle={toggleWebFullscreen}
+              onWebFullscreenToggle={handleWebFullscreenToggle}
+              immersiveSidebarHostRef={setImmersiveSidebarHost}
               seamlessSwitch={supportsSeamlessSwitch && seamlessSwitch}
               autoDeinterlace={autoDeinterlace}
               pictureEnhancement={pictureEnhancement}
@@ -580,59 +591,71 @@ function PlayerPage() {
             />
           </div>
 
-          {/* Sidebar - Mobile: always visible (below video, hidden in fullscreen), Desktop: toggle-able side panel (visible in fullscreen) */}
+          {/* In-flow sidebar; portaled onto the player when web/native fullscreen overlays it. */}
           <div
+            ref={setFlowSidebarHost}
             className={clsx(
-              "player-performance-panel-background flex w-full flex-1 flex-col overflow-hidden border-blue-950/10 border-t bg-white/68 pl-[env(safe-area-inset-left)] shadow-[-14px_0_40px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(160deg,rgba(5,13,32,0.96),rgba(17,16,49,0.92))] dark:shadow-[-18px_0_48px_rgba(1,7,24,0.28)] md:w-80 md:flex-initial md:border-t-0 md:border-l md:pt-[env(safe-area-inset-top)] md:pl-0",
-              insetSidebarRight && "pr-[env(safe-area-inset-right)]",
-              (showSidebar || isMobile) && !(isFullscreen && isMobile) && !isWebFullscreen ? "" : "hidden",
+              "flex w-full flex-1 flex-col overflow-hidden md:w-80 md:flex-initial",
+              isImmersive && "hidden",
             )}
-          >
-            {/* Sidebar Tabs */}
-            <div className="player-performance-panel-background flex shrink-0 items-center border-blue-950/10 border-b bg-white/44 shadow-[0_8px_24px_rgba(30,64,175,0.045)] backdrop-blur-xl dark:border-blue-100/10 dark:bg-[linear-gradient(90deg,#1a2035,#292643)]">
-              {(["channels", "epg"] as const).map((view) => (
-                <button
-                  type="button"
-                  key={view}
-                  onClick={() => handleSidebarViewChange(view)}
-                  className={clsx(
-                    "player-performance-motion min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap border-b-2 px-3 py-2 text-center font-semibold text-xs leading-5 tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] md:px-4 md:py-3 md:text-sm",
-                    selectedSidebarView === view
-                      ? "border-blue-500 bg-[linear-gradient(to_top,rgba(59,130,246,0.12),transparent)] text-blue-700 shadow-[inset_0_-1px_0_rgba(59,130,246,0.18)] dark:border-blue-300 dark:text-blue-200"
-                      : "cursor-pointer border-transparent text-slate-500 hover:bg-blue-400/5 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-100",
-                  )}
-                >
-                  {view === "channels" ? `${t("channels")} (${metadata?.channels.length || 0})` : t("programGuide")}
-                </button>
-              ))}
-            </div>
-
-            {/* Sidebar Content */}
-            <div className="flex-1 overflow-hidden">
-              <Activity mode={renderedSidebarView === "channels" ? "visible" : "hidden"}>
-                <ChannelList
-                  channels={metadata?.channels}
-                  groups={metadata?.groups}
-                  currentChannel={currentChannel}
-                  onChannelSelect={selectChannel}
-                  locale={locale}
-                  settingsSlot={settingsSlot}
-                  epgData={epgData}
-                />
-              </Activity>
-              <Activity mode={renderedSidebarView === "epg" ? "visible" : "hidden"}>
-                <EPGView
-                  channelId={currentEpgChannelId}
-                  epgData={epgData}
-                  onProgramSelect={handleProgramSelect}
-                  locale={locale}
-                  supportsCatchup={!!currentChannel?.sources.some((s) => s.catchup && s.catchupSource)}
-                  currentPlayingProgram={currentVideoProgram}
-                />
-              </Activity>
-            </div>
-          </div>
+          />
         </div>
+
+        {sidebarHost &&
+          createPortal(
+            <div
+              className={clsx(
+                "player-performance-panel-background flex h-full min-h-0 w-full flex-col overflow-hidden border-blue-950/10 bg-white/68 shadow-[-14px_0_40px_rgba(30,64,175,0.06)] backdrop-blur-2xl dark:border-blue-100/10 dark:bg-[linear-gradient(160deg,rgba(5,13,32,0.96),rgba(17,16,49,0.92))] dark:shadow-[-18px_0_48px_rgba(1,7,24,0.28)]",
+                isImmersive
+                  ? "border-l pl-0"
+                  : "border-t pl-[env(safe-area-inset-left)] md:border-t-0 md:border-l md:pt-[env(safe-area-inset-top)] md:pl-0",
+                insetSidebarRight && "pr-[env(safe-area-inset-right)]",
+              )}
+            >
+              <div className="player-performance-panel-background flex shrink-0 items-center border-blue-950/10 border-b bg-white/44 shadow-[0_8px_24px_rgba(30,64,175,0.045)] backdrop-blur-xl dark:border-blue-100/10 dark:bg-[linear-gradient(90deg,#1a2035,#292643)]">
+                {(["channels", "epg"] as const).map((view) => (
+                  <button
+                    type="button"
+                    key={view}
+                    onClick={() => handleSidebarViewChange(view)}
+                    className={clsx(
+                      "player-performance-motion min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap border-b-2 px-3 py-2 text-center font-semibold text-xs leading-5 tracking-[0.01em] transition-[color,background-color,border-color,box-shadow] md:px-4 md:py-3 md:text-sm",
+                      selectedSidebarView === view
+                        ? "border-blue-500 bg-[linear-gradient(to_top,rgba(59,130,246,0.12),transparent)] text-blue-700 shadow-[inset_0_-1px_0_rgba(59,130,246,0.18)] dark:border-blue-300 dark:text-blue-200"
+                        : "cursor-pointer border-transparent text-slate-500 hover:bg-blue-400/5 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-100",
+                    )}
+                  >
+                    {view === "channels" ? `${t("channels")} (${metadata?.channels.length || 0})` : t("programGuide")}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex-1 overflow-hidden">
+                <Activity mode={renderedSidebarView === "channels" ? "visible" : "hidden"}>
+                  <ChannelList
+                    channels={metadata?.channels}
+                    groups={metadata?.groups}
+                    currentChannel={currentChannel}
+                    onChannelSelect={selectChannel}
+                    locale={locale}
+                    settingsSlot={settingsSlot}
+                    epgData={epgData}
+                  />
+                </Activity>
+                <Activity mode={renderedSidebarView === "epg" ? "visible" : "hidden"}>
+                  <EPGView
+                    channelId={currentEpgChannelId}
+                    epgData={epgData}
+                    onProgramSelect={handleProgramSelect}
+                    locale={locale}
+                    supportsCatchup={!!currentChannel?.sources.some((s) => s.catchup && s.catchupSource)}
+                    currentPlayingProgram={currentVideoProgram}
+                  />
+                </Activity>
+              </div>
+            </div>,
+            sidebarHost,
+          )}
 
         {/* Loading overlay shares the player viewport to avoid iOS standalone fixed-position gaps. */}
         {isLoading && (

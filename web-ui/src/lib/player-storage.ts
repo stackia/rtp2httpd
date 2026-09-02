@@ -44,7 +44,6 @@ export const [getLastChannelId, saveLastChannelId] = createStore<string | null>(
   "rtp2httpd-player-last-channel-id",
   null,
 );
-export const [getSidebarVisible, saveSidebarVisible] = createStore("rtp2httpd-player-sidebar-visible", true);
 export const [getSeamlessSwitch, saveSeamlessSwitch] = createStore("rtp2httpd-player-seamless-switch", () =>
   isDesktopDevice(),
 );

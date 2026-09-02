@@ -4,8 +4,6 @@ import {
   History,
   Maximize,
   Minimize,
-  PanelRightClose,
-  PanelRightOpen,
   Pause,
   PictureInPicture,
   Play,
@@ -63,9 +61,6 @@ interface PlayerControlsProps {
   isPiPSupported?: boolean;
   onPiPToggle?: () => void;
   showMediaBadges?: boolean;
-  // Sidebar controls
-  showSidebar?: boolean;
-  onToggleSidebar?: () => void;
   // Source selector
   activeSourceIndex?: number;
   onSourceChange?: (index: number) => void;
@@ -405,8 +400,6 @@ function PlayerControlsComponent({
   isPiPSupported = false,
   onPiPToggle,
   showMediaBadges = true,
-  showSidebar = true,
-  onToggleSidebar,
   activeSourceIndex = 0,
   onSourceChange,
 }: PlayerControlsProps) {
@@ -414,13 +407,14 @@ function PlayerControlsComponent({
   const isEffectivelyMuted = isMuted || volume <= 0;
   const isCatchupSupported = channel.sources.some((s) => s.catchup && s.catchupSource);
   const hasTimeline = isCatchupSupported || Boolean(currentProgram);
+  const isImmersive = isFullscreen || isWebFullscreen;
 
   return (
     <div
       className={clsx(
         "player-performance-controls-background player-performance-effect player-performance-gradient flex w-full flex-col gap-1 bg-[linear-gradient(to_top,rgba(2,8,23,0.98)_0%,rgba(8,22,51,0.9)_46%,rgba(21,27,69,0.48)_72%,transparent_100%)] pt-4 pr-[max(0.375rem,env(safe-area-inset-right))] pb-1 pl-[max(0.375rem,env(safe-area-inset-left))] md:gap-2 md:pt-9 md:pb-3 md:pl-[max(0.75rem,env(safe-area-inset-left))]",
         hasTimeline && "player-performance-controls-with-timeline",
-        showSidebar ? "md:pr-3" : "md:pr-[max(0.75rem,env(safe-area-inset-right))]",
+        "md:pr-[max(0.75rem,env(safe-area-inset-right))]",
         "[@container_video_(max-height:_320px)]:gap-0.5 [@container_video_(max-height:_320px)]:pt-2 [@container_video_(max-height:_320px)]:pb-0.5 md:[@container_video_(max-height:_320px)]:gap-0.5 md:[@container_video_(max-height:_320px)]:pt-2 md:[@container_video_(max-height:_320px)]:pb-0.5 [@container_video_(max-height:_220px)]:pt-1 md:[@container_video_(max-height:_220px)]:pt-1",
       )}
     >
@@ -580,36 +574,40 @@ function PlayerControlsComponent({
           )}
 
           {/* Web fullscreen — fills the page viewport without the browser Fullscreen API */}
-          {onWebFullscreenToggle && (
+          {!isImmersive && onWebFullscreenToggle && (
             <button
               type="button"
               onClick={onWebFullscreenToggle}
-              aria-pressed={isWebFullscreen}
-              className={clsx(
-                PLAYER_CONTROL_BUTTON_CLASS,
-                "cursor-pointer p-1 md:p-2",
-                COMPACT_BUTTON_CLASS,
-                isWebFullscreen && "border-blue-100/20 bg-blue-300/15 text-blue-50",
-              )}
-              title={isWebFullscreen ? t("exitWebFullscreen") : t("webFullscreen")}
+              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
+              title={t("webFullscreen")}
             >
               <GalleryThumbnails className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
             </button>
           )}
 
-          {/* Fullscreen */}
-          <button
-            type="button"
-            onClick={onFullscreen}
-            className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
-            title={isFullscreen ? t("exitFullscreen") : t("fullscreen")}
-          >
-            {isFullscreen ? (
+          {/* Fullscreen — a single exit control once either immersive mode is active */}
+          {isImmersive ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (isFullscreen) onFullscreen();
+                else onWebFullscreenToggle?.();
+              }}
+              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
+              title={t("exitFullscreen")}
+            >
               <Minimize className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
-            ) : (
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onFullscreen}
+              className={clsx(PLAYER_CONTROL_BUTTON_CLASS, "cursor-pointer p-1 md:p-2", COMPACT_BUTTON_CLASS)}
+              title={t("fullscreen")}
+            >
               <Maximize className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
-            )}
-          </button>
+            </button>
+          )}
 
           {/* Picture-in-Picture - Only show before entering PiP. Exiting uses the browser PiP window controls. */}
           {onPiPToggle && isPiPSupported && !isPiP && (
@@ -620,26 +618,6 @@ function PlayerControlsComponent({
               title={t("pictureInPicture")}
             >
               <PictureInPicture className={clsx("h-4 w-4 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
-            </button>
-          )}
-
-          {/* Toggle Sidebar - Hidden on mobile */}
-          {onToggleSidebar && (
-            <button
-              type="button"
-              onClick={onToggleSidebar}
-              className={clsx(
-                PLAYER_CONTROL_BUTTON_CLASS,
-                "hidden cursor-pointer p-1.5 md:flex md:p-2",
-                COMPACT_BUTTON_CLASS,
-              )}
-              title={showSidebar ? t("hideSidebar") : t("showSidebar")}
-            >
-              {showSidebar ? (
-                <PanelRightClose className={clsx("h-5 w-5 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
-              ) : (
-                <PanelRightOpen className={clsx("h-5 w-5 md:h-6 md:w-6", COMPACT_ICON_CLASS)} />
-              )}
             </button>
           )}
         </div>

@@ -3,6 +3,7 @@ import { CircleAlert, Play, X } from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type Ref,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -74,12 +75,11 @@ interface VideoPlayerProps {
   /** Neighbours of the current channel, used to preview the target of a swipe-to-zap gesture. */
   prevChannel?: Channel | null;
   nextChannel?: Channel | null;
-  showSidebar?: boolean;
-  onToggleSidebar?: () => void;
   isFullscreen: boolean;
   onFullscreenToggle?: () => Promise<boolean> | boolean;
   isWebFullscreen?: boolean;
   onWebFullscreenToggle?: () => void;
+  immersiveSidebarHostRef?: Ref<HTMLDivElement>;
   seamlessSwitch?: boolean;
   autoDeinterlace?: boolean;
   pictureEnhancement?: boolean;
@@ -259,12 +259,11 @@ function VideoPlayerComponent({
   onChannelNavigate,
   prevChannel = null,
   nextChannel = null,
-  showSidebar = true,
-  onToggleSidebar,
   isFullscreen,
   onFullscreenToggle,
   isWebFullscreen = false,
   onWebFullscreenToggle,
+  immersiveSidebarHostRef,
   seamlessSwitch = true,
   autoDeinterlace = true,
   pictureEnhancement = true,
@@ -1372,9 +1371,6 @@ function VideoPlayerComponent({
           }
           onChannelNavigate?.(parseInt(digitBuffer, 10));
           setDigitBuffer("");
-        } else if (isDocumentBodyActive(eventDocument)) {
-          e.preventDefault();
-          onToggleSidebar?.();
         }
         break;
 
@@ -1445,13 +1441,6 @@ function VideoPlayerComponent({
       case "F":
         e.preventDefault();
         onFullscreenToggle?.();
-        break;
-
-      case "s":
-      case "S":
-      case "BrowserFavorites":
-        e.preventDefault();
-        onToggleSidebar?.();
         break;
     }
   });
@@ -1766,7 +1755,7 @@ function VideoPlayerComponent({
         "player-performance-video-background dark @container-size/video relative flex aspect-video w-full min-h-0 items-center justify-center bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)]",
         isDocumentPiP
           ? "h-screen min-h-screen aspect-auto"
-          : isWebFullscreen
+          : isFullscreen || isWebFullscreen
             ? "aspect-auto h-full"
             : "md:aspect-auto md:h-full",
         !showControls && "cursor-none",
@@ -1839,7 +1828,10 @@ function VideoPlayerComponent({
       {channel && (
         <div
           className={clsx(
-            "player-performance-motion absolute top-4 right-4 z-10 flex flex-col items-end gap-2 transition-opacity duration-300 md:top-8 md:right-8 md:gap-3 [@container_video_(max-height:_320px)]:top-2 [@container_video_(max-height:_320px)]:right-2 [@container_video_(max-height:_320px)]:gap-1 md:[@container_video_(max-height:_320px)]:top-2 md:[@container_video_(max-height:_320px)]:right-2 md:[@container_video_(max-height:_320px)]:gap-1 [@container_video_(max-height:_220px)]:top-1 [@container_video_(max-height:_220px)]:right-1 md:[@container_video_(max-height:_220px)]:top-1 md:[@container_video_(max-height:_220px)]:right-1",
+            "player-performance-motion absolute top-4 z-10 flex flex-col items-end gap-2 transition-opacity duration-300 md:top-8 md:gap-3 [@container_video_(max-height:_320px)]:top-2 [@container_video_(max-height:_320px)]:gap-1 md:[@container_video_(max-height:_320px)]:top-2 md:[@container_video_(max-height:_320px)]:gap-1 [@container_video_(max-height:_220px)]:top-1 md:[@container_video_(max-height:_220px)]:top-1",
+            isFullscreen || isWebFullscreen
+              ? "right-[min(21.25rem,calc(85%+0.75rem))] md:right-[22rem]"
+              : "right-4 md:right-8 [@container_video_(max-height:_320px)]:right-2 md:[@container_video_(max-height:_320px)]:right-2 [@container_video_(max-height:_220px)]:right-1 md:[@container_video_(max-height:_220px)]:right-1",
             showControls ? "opacity-100" : "opacity-0 pointer-events-none",
           )}
         >
@@ -1999,8 +1991,8 @@ function VideoPlayerComponent({
         <div
           role="toolbar"
           className={clsx(
-            "player-performance-controls-position player-performance-motion absolute bottom-0 left-[calc(0px_-_env(safe-area-inset-left))] right-[calc(0px_-_env(safe-area-inset-right))] z-10 transition-opacity duration-300",
-            showSidebar && "md:right-0",
+            "player-performance-controls-position player-performance-motion absolute bottom-0 left-[calc(0px_-_env(safe-area-inset-left))] right-[calc(0px_-_env(safe-area-inset-right))] z-20 transition-opacity duration-300",
+            !(isFullscreen || isWebFullscreen) && "md:right-0",
             showControls
               ? "opacity-100"
               : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
@@ -2028,8 +2020,6 @@ function VideoPlayerComponent({
             isFullscreen={isFullscreen}
             isWebFullscreen={isWebFullscreen}
             onWebFullscreenToggle={!isDocumentPiP ? onWebFullscreenToggle : undefined}
-            showSidebar={showSidebar}
-            onToggleSidebar={!isWebFullscreen ? onToggleSidebar : undefined}
             isPiP={isPiP}
             isPiPSupported={isPictureInPictureSupported()}
             onPiPToggle={handlePiPToggle}
@@ -2038,6 +2028,18 @@ function VideoPlayerComponent({
             onSourceChange={onSourceChange}
           />
         </div>
+      )}
+
+      {(isFullscreen || isWebFullscreen) && !isDocumentPiP && (
+        <div
+          ref={immersiveSidebarHostRef}
+          className={clsx(
+            "player-performance-motion absolute inset-y-0 right-0 z-[11] flex w-[min(20rem,85%)] flex-col overflow-hidden transition-opacity duration-300 md:w-80",
+            showControls
+              ? "opacity-100"
+              : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
+          )}
+        />
       )}
 
       {channel && !error && !needsUserInteraction && (
@@ -2050,8 +2052,8 @@ function VideoPlayerComponent({
     <div
       className={clsx(
         "player-performance-video-background relative w-full bg-[radial-gradient(circle_at_50%_35%,#102044_0%,#050b18_58%,#01030a_100%)] pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] md:h-full",
-        showSidebar && "md:pr-0",
-        isWebFullscreen && "h-full",
+        !(isFullscreen || isWebFullscreen) && "md:pr-0",
+        (isFullscreen || isWebFullscreen) && "h-full",
       )}
     >
       <div ref={playerDockRef} className="contents">

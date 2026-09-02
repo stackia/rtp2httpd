@@ -9,8 +9,6 @@ const base: TranslationDict = {
   retry: "Retry",
 
   // Header controls
-  hideSidebar: "Hide Sidebar",
-  showSidebar: "Show Sidebar",
   goLive: "Go Live",
 
   // Sidebar tabs
@@ -89,7 +87,6 @@ const base: TranslationDict = {
   fullscreen: "Fullscreen",
   exitFullscreen: "Exit Fullscreen",
   webFullscreen: "Web Fullscreen",
-  exitWebFullscreen: "Exit Web Fullscreen",
   pictureInPicture: "Picture in Picture",
   mediaInfoLabel: "Media information",
   mediaInfoVideoCodec: "Video codec",
@@ -140,8 +137,6 @@ const zhHans: TranslationDict = {
   retry: "重试",
 
   // 头部控制
-  hideSidebar: "隐藏侧边栏",
-  showSidebar: "显示侧边栏",
   goLive: "返回直播",
 
   // 侧边栏标签
@@ -219,7 +214,6 @@ const zhHans: TranslationDict = {
   fullscreen: "全屏",
   exitFullscreen: "退出全屏",
   webFullscreen: "网页全屏",
-  exitWebFullscreen: "退出网页全屏",
   pictureInPicture: "画中画",
   mediaInfoLabel: "媒体信息",
   mediaInfoVideoCodec: "视频编码",
@@ -271,8 +265,6 @@ const zhHant: TranslationDict = {
   retry: "重試",
 
   // 頭部控制
-  hideSidebar: "隱藏側邊欄",
-  showSidebar: "顯示側邊欄",
   goLive: "返回直播",
 
   // 側邊欄標籤
@@ -350,7 +342,6 @@ const zhHant: TranslationDict = {
   fullscreen: "全屏",
   exitFullscreen: "退出全屏",
   webFullscreen: "網頁全屏",
-  exitWebFullscreen: "退出網頁全屏",
   pictureInPicture: "畫中畫",
   mediaInfoLabel: "媒體資訊",
   mediaInfoVideoCodec: "視訊編碼",
