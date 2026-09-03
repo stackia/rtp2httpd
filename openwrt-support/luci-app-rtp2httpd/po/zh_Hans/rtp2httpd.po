@@ -68,8 +68,11 @@ msgstr "分别配置组播、FCC 和 RTSP 的接口"
 #: htdocs/luci-static/resources/view/rtp2httpd.js:436
 msgid ""
 "Default interface for all upstream traffic (multicast, FCC and RTSP). Leave "
-"empty to use routing table."
-msgstr "所有上游流量（组播、FCC 和 RTSP）使用的默认接口。留空则使用路由表。"
+"empty to use routing table. For 802.1Q tagged IPTV multicast, select the "
+"existing VLAN subinterface (e.g. eth0.12), not the physical parent."
+msgstr ""
+"所有上游流量（组播、FCC 和 RTSP）使用的默认接口。留空则使用路由表。"
+"组播带 802.1Q VLAN tag 时，请选择已经存在的 VLAN 子接口（如 eth0.12），不要选物理口。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:327
 msgid "Edit the content of /etc/rtp2httpd.conf"
@@ -183,8 +186,10 @@ msgstr "用于 RTSP 单播上游媒体流的接口（默认：使用路由表）
 #: htdocs/luci-static/resources/view/rtp2httpd.js:450
 msgid ""
 "Interface to use for multicast (RTP/UDP) upstream media stream (default: use "
-"routing table)"
-msgstr "用于组播（RTP/UDP）上游媒体流的接口（默认：使用路由表）"
+"routing table). For tagged multicast, use the VLAN subinterface (e.g. eth0.12)."
+msgstr ""
+"用于组播（RTP/UDP）上游媒体流的接口（默认：使用路由表）。"
+"带 VLAN tag 的组播请使用 VLAN 子接口（如 eth0.12）。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:359
 msgid "Listen Addresses"

@@ -42,6 +42,21 @@ Unix socket listen paths must be absolute and must not contain whitespace. At st
 > In addition to global configuration, you can specify upstream interfaces per request using the `r2h-ifname` and `r2h-ifname-fcc` URL parameters. See [URL Formats](/en/guide/url-formats) for details.
 > [!TIP]
 > On FreeBSD, specifying upstream interfaces is not supported except for multicast.
+> [!NOTE]
+> The upstream interface name must be a kernel device shown by `ip link`. If multicast frames carry an 802.1Q VLAN tag (for example an EPON stick or SFU in full pass-through), do not point rtp2httpd at the physical parent (such as `eth0`), and do not expect the daemon to strip tags. The kernel does not deliver tagged frames to UDP sockets on the parent interface.
+>
+> Create the VLAN subinterface on the system first, then point the upstream interface at that **existing** device:
+>
+> ```bash
+> ip link add link eth0 name eth0.12 type vlan id 12
+> ip link set eth0.12 up
+> ```
+>
+> ```ini
+> upstream-interface-multicast = eth0.12
+> ```
+>
+> The kernel device name is not always `eth0.12`: OpenWrt DSA may use `wan.85`, `eth0.85`, or `br-vlan85`; iKuai VLAN mixed mode may use a virtual line name such as `vwan*`. Writing `eth0.12` in the config does not create the interface. If it is missing, the log reports `Multicast: interface eth0.12 does not exist`.
 
 ### Performance Optimization
 
@@ -187,6 +202,9 @@ upstream-interface = eth0
 # upstream-interface-fcc = eth1        # FCC
 # upstream-interface-rtsp = eth2       # RTSP
 # upstream-interface-http = eth3       # HTTP proxy
+#
+# For 802.1Q tagged multicast, use an existing VLAN subinterface, not the physical parent:
+# upstream-interface-multicast = eth0.12
 #
 # Hybrid configuration example: Use eth0 by default, but use faster eth1 for FCC
 # upstream-interface = eth0

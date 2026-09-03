@@ -43,6 +43,7 @@ You can fetch `https://rtp2httpd.com/llms-full.txt` to obtain the complete rtp2h
 - Multicast, RTSP, and HTTP priority: URL parameter `r2h-ifname` > matching `upstream-interface-multicast` / `upstream-interface-rtsp` / `upstream-interface-http` > `upstream-interface` > system routing table.
 - FCC priority: URL parameter `r2h-ifname-fcc` > `r2h-ifname` > `upstream-interface-fcc` > `upstream-interface` > system routing table.
 - An OpenWrt UCI logical interface may be named `wan85`, while the actual kernel device may be `wan.85`, `eth0.85`, or `br-vlan85`. rtp2httpd needs the actual device name shown by `ip link`.
+- Multicast with an 802.1Q VLAN tag does not appear on UDP sockets of the physical parent. Point the upstream interface at an existing VLAN subinterface (such as `eth0.12`); rtp2httpd does not create VLANs and does not strip tags in-process.
 - FreeBSD supports explicit interface selection only for multicast. FCC, RTSP, and HTTP unicast traffic must use the system routing table.
 - Do not ignore `Failed to bind to upstream interface`. After a binding failure, later traffic may continue according to the system routing table and use the wrong path.
 - A playback URL or service definition may contain its own interface parameters even when the global configuration looks correct. Inspect the effective request URL.
@@ -58,7 +59,7 @@ You can fetch `https://rtp2httpd.com/llms-full.txt` to obtain the complete rtp2h
 
 [Meaning of key log messages]
 
-- `Multicast: interface ... does not exist`: the device is absent from the process network namespace. First check for confusion between an OpenWrt logical interface and a kernel device, or different interfaces inside and outside Docker.
+- `Multicast: interface ... does not exist`: the device is absent from the process network namespace. First check for confusion between an OpenWrt logical interface and a kernel device, different interfaces inside and outside Docker, or a configured VLAN subinterface such as `eth0.12` that the system has not created yet.
 - `Failed to bind to upstream interface ...`: possible causes include a wrong interface name, insufficient permissions, unsupported platform behavior, or a container namespace mismatch. It does not necessarily mean the program stopped the later connection attempt.
 - `Multicast: Successfully joined group`: the kernel accepted the membership socket option. It does not prove that an IGMP report left the interface, the upstream accepted membership, media returned, or the firewall admitted it.
 - `Multicast: No data received for 1 seconds, closing connection`: no multicast media was processed during the timeout window. This message and the resulting HTTP 503 are symptoms, not root causes. Extending the timeout alone cannot repair completely absent packet delivery.

@@ -42,6 +42,21 @@ Unix socket 监听路径必须是绝对路径，且路径中不能包含空白�
 > 除了全局配置外，还可以在每个请求的 URL 中通过 `r2h-ifname` 和 `r2h-ifname-fcc` 参数指定上游接口，详见 [URL 格式说明](../guide/url-formats.md)。
 > [!TIP]
 > FreeBSD 系统下不支持指定除组播外的接口。
+> [!NOTE]
+> 上游接口名必须是 `ip link` 能看到的内核设备名。如果组播帧带 802.1Q VLAN tag（例如 EPON 猫棒 / SFU 全透传），不要把物理口（如 `eth0`）配给 rtp2httpd，也不要指望程序自己剥 tag。内核不会把带 tag 的帧交给物理口上的 UDP socket。
+>
+> 正确做法是先在系统里创建对应的 VLAN 子接口，再把上游接口指到这个**已经存在**的设备：
+>
+> ```bash
+> ip link add link eth0 name eth0.12 type vlan id 12
+> ip link set eth0.12 up
+> ```
+>
+> ```ini
+> upstream-interface-multicast = eth0.12
+> ```
+>
+> 常见内核设备名不一定是 `eth0.12`：OpenWrt DSA 可能是 `wan.85`、`eth0.85` 或 `br-vlan85`；爱快「基于 VLAN 的混合模式」可能是 `vwan*` 一类虚拟线路名。只在配置里写 `eth0.12` 并不会创建该接口；接口不存在时日志会报 `Multicast: interface eth0.12 does not exist`。
 
 ### 性能优化
 
@@ -185,6 +200,9 @@ upstream-interface = eth0
 # upstream-interface-fcc = eth1        # FCC
 # upstream-interface-rtsp = eth2       # RTSP
 # upstream-interface-http = eth3       # HTTP 代理
+#
+# 若组播带 802.1Q VLAN tag，填已经存在的 VLAN 子接口，而不是物理口：
+# upstream-interface-multicast = eth0.12
 #
 # 混合配置示例：默认使用 eth0，但 FCC 使用更快的 eth1
 # upstream-interface = eth0

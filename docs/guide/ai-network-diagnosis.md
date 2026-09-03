@@ -43,6 +43,7 @@
 - 组播、RTSP、HTTP 的优先级：URL 参数 `r2h-ifname` > 对应的 `upstream-interface-multicast` / `upstream-interface-rtsp` / `upstream-interface-http` > `upstream-interface` > 系统路由表。
 - FCC 的优先级：URL 参数 `r2h-ifname-fcc` > `r2h-ifname` > `upstream-interface-fcc` > `upstream-interface` > 系统路由表。
 - OpenWrt 的 UCI 逻辑接口名可能是 `wan85`，实际内核设备名却可能是 `wan.85`、`eth0.85` 或 `br-vlan85`。rtp2httpd 需要的是 `ip link` 能看到的实际设备名。
+- 带 802.1Q VLAN tag 的组播不会出现在物理口的 UDP socket 上。必须把上游接口指到已经存在的 VLAN 子接口（如 `eth0.12`）；rtp2httpd 不会创建 VLAN，也不会在进程内剥 tag。
 - FreeBSD 只支持为组播显式指定接口；FCC、RTSP 和 HTTP 单播必须依赖系统路由表。
 - 如果日志出现 `Failed to bind to upstream interface`，不要忽略它。绑定失败后，后续流量可能继续按照系统路由发送，最终走向错误出口。
 - 每个播放 URL 或服务定义里也可能包含接口参数，即使全局设置看起来正确，也要检查实际请求 URL。
@@ -58,7 +59,7 @@
 
 【关键日志含义】
 
-- `Multicast: interface ... does not exist`：进程所在网络命名空间内不存在该设备。优先检查 OpenWrt 逻辑接口与内核设备名是否混淆，以及 Docker 内外看到的接口是否一致。
+- `Multicast: interface ... does not exist`：进程所在网络命名空间内不存在该设备。优先检查 OpenWrt 逻辑接口与内核设备名是否混淆、Docker 内外看到的接口是否一致，以及配置的 `eth0.12` 这类 VLAN 子接口是否已经由系统创建。
 - `Failed to bind to upstream interface ...`：可能是接口名错误、权限不足、平台不支持或容器命名空间不匹配。它不等于程序已停止后续连接。
 - `Multicast: Successfully joined group`：只表示内核接受了加组 socket 选项，不代表 IGMP 报文已经发出、上游接受了成员关系、媒体包已经返回，或防火墙已经放行。
 - `Multicast: No data received for 1 seconds, closing connection`：表示超时窗口内没有处理到组播媒体包。它和随后出现的 HTTP 503 是症状，不是根因。单纯延长超时无法修复完全收不到包的问题。

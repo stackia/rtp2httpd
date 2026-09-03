@@ -55,8 +55,8 @@
     "default": "",
     "attrname": "RTP2HTTPD_UPSTREAM_INTERFACE",
     "label": {
-      "en": "Default upstream interface (empty = routing table)",
-      "zh": "默认上游接口（留空按照路由表）"
+      "en": "Default upstream interface (empty = routing table). For tagged multicast use eth0.12, not eth0",
+      "zh": "默认上游接口（留空按照路由表；带 VLAN tag 时填 eth0.12 等已存在的子接口）"
     },
     "required": false,
     "scope": "config",
@@ -68,8 +68,8 @@
     "default": "",
     "attrname": "RTP2HTTPD_UPSTREAM_INTERFACE_MULTICAST",
     "label": {
-      "en": "Multicast upstream interface (overrides default)",
-      "zh": "组播上游接口（覆盖默认）"
+      "en": "Multicast upstream interface (overrides default; use eth0.12 for tagged multicast)",
+      "zh": "组播上游接口（覆盖默认；带 VLAN tag 时填 eth0.12 等已存在的内核设备名）"
     },
     "required": false,
     "scope": "config",

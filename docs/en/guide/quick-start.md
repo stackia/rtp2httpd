@@ -51,7 +51,7 @@ After installation, find "rtp2httpd" in the "Services" menu of the LuCI manageme
 
 1. **Basic Settings - Enable**: Check to enable rtp2httpd
 2. **Basic Settings - Port**: Default 5140, or customize
-3. **Network & Performance - Upstream Interface**: Set to IPTV network interface
+3. **Network & Performance - Upstream Interface**: Set to IPTV network interface. For 802.1Q tagged multicast, select an existing kernel VLAN subinterface (such as `eth0.12` / `wan.85`), not the physical parent; see [Configuration Reference](/en/reference/configuration).
 
 ### Optional Configuration Items
 

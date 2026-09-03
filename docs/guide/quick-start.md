@@ -52,7 +52,7 @@ uclient-fetch -q -O - https://raw.githubusercontent.com/stackia/rtp2httpd/main/s
 
 1. **基本设置 - 启用**：勾选启用 rtp2httpd
 2. **基本设置 - 端口**：默认 5140，也可以自定义
-3. **网络与性能 - 上游接口**：设置为 IPTV 网络接口
+3. **网络与性能 - 上游接口**：设置为 IPTV 网络接口。若组播带 802.1Q VLAN tag，应选择已经存在的内核 VLAN 子接口（如 `eth0.12` / `wan.85`），而不是物理口；详见 [配置参数详解](../reference/configuration.md)
 
 ### 可选配置项
 

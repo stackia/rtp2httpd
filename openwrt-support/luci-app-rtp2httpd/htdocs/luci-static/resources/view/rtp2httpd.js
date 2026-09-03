@@ -488,7 +488,7 @@ return view.extend({
       "upstream_interface",
       _("Upstream Interface"),
       _(
-        "Default interface for all upstream traffic (multicast, FCC and RTSP). Leave empty to use routing table."
+        "Default interface for all upstream traffic (multicast, FCC and RTSP). Leave empty to use routing table. For 802.1Q tagged IPTV multicast, select the existing VLAN subinterface (e.g. eth0.12), not the physical parent."
       )
     );
     o.noaliases = true;
@@ -502,7 +502,7 @@ return view.extend({
       "upstream_interface_multicast",
       _("Upstream Multicast Interface"),
       _(
-        "Interface to use for multicast (RTP/UDP) upstream media stream (default: use routing table)"
+        "Interface to use for multicast (RTP/UDP) upstream media stream (default: use routing table). For tagged multicast, use the VLAN subinterface (e.g. eth0.12)."
       )
     );
     o.noaliases = true;
