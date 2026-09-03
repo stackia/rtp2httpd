@@ -8,10 +8,9 @@
 .cache/
 compile_commands.json
 
-# Build directories
-build/
-build-*/
-!.claude/skills/build-run/
+# Build directories (repo root only)
+/build/
+/build-*/
 
 # Toolchain directory (auto-downloaded)
 toolchain/
