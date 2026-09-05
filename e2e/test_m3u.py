@@ -974,6 +974,189 @@ rtp://239.0.0.2:1234$SD
             r2h.stop()
 
 
+class TestM3UMultiURLPerEXTINF:
+    """A single #EXTINF followed by several URL lines describes one channel
+    with multiple sources. Every URL must get its own service, and the
+    transformed playlist must keep the same shape: one EXTINF line followed
+    by the rewritten URLs."""
+
+    def test_shape_preserved_and_every_url_rewritten(self, r2h_binary):
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 group-title="Group 1",Channel 3
+rtp://239.0.0.3:1234$Line 1
+rtp://239.0.0.4:1234$Line 2
+#EXTINF:-1 group-title="Group 1",Channel 4
+rtp://239.0.0.5:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            assert status == 200
+            lines = [line for line in body.decode().splitlines() if line]
+
+            extinf_lines = [line for line in lines if line.startswith("#EXTINF")]
+            url_lines = [line for line in lines if line.startswith("http")]
+            assert extinf_lines == [
+                '#EXTINF:-1 group-title="Group 1",Channel 3',
+                '#EXTINF:-1 group-title="Group 1",Channel 4',
+            ]
+            assert len(url_lines) == 3
+            assert url_lines[0].endswith("/Channel%203/Line%201$Line 1")
+            assert url_lines[1].endswith("/Channel%203/Line%202$Line 2")
+            assert url_lines[2].endswith("/Channel%204")
+            # Input shape is kept: one EXTINF, then its URLs, then the next entry
+            assert lines[1:] == [
+                extinf_lines[0],
+                url_lines[0],
+                url_lines[1],
+                extinf_lines[1],
+                url_lines[2],
+            ]
+            # The two entries are still separated by exactly one blank line
+            raw = body.decode()
+            assert f"{url_lines[0]}\n{url_lines[1]}\n\n{extinf_lines[1]}\n" in raw
+
+            for path in ("/Group%201/Channel%203/Line%201", "/Group%201/Channel%203/Line%202"):
+                head_status, _, _ = http_request("127.0.0.1", port, "HEAD", path)
+                assert head_status == 200, f"{path} should resolve to a service"
+        finally:
+            r2h.stop()
+
+    def test_unlabeled_urls_get_unique_service_paths(self, r2h_binary):
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1,News
+rtp://239.0.0.1:1234
+rtp://239.0.0.2:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            assert status == 200
+            text = body.decode()
+            url_lines = [line for line in text.splitlines() if line.startswith("http")]
+            assert len(url_lines) == 2
+            assert len(set(url_lines)) == 2, "each source needs its own service path"
+            assert text.count("#EXTINF:-1,News") == 1
+        finally:
+            r2h.stop()
+
+    def test_repeated_extinf_input_keeps_repeated_extinf_output(self, r2h_binary):
+        """The converter mirrors the input: repeated EXTINF stays repeated."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1,News
+rtp://239.0.0.1:1234$HD
+#EXTINF:-1,News
+rtp://239.0.0.2:1234$SD
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            assert status == 200
+            lines = [line for line in body.decode().splitlines() if line]
+            assert lines[1:] == [
+                "#EXTINF:-1,News",
+                lines[2],
+                "#EXTINF:-1,News",
+                lines[4],
+            ]
+            assert lines[2].endswith("/News/HD$HD")
+            assert lines[4].endswith("/News/SD$SD")
+        finally:
+            r2h.stop()
+
+    def test_catchup_rewritten_once_for_multi_url_entry(self, r2h_binary):
+        """catchup-source lives on the single EXTINF line, so it is rewritten
+        once (against the first source) and both URLs follow it."""
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1 catchup="default" catchup-source="rtsp://10.0.0.50:554/playback?seek={{utc:YmdHMS}}-{{utcend:YmdHMS}}",Catchup Ch
+rtp://239.0.0.1:1234$HD
+rtp://239.0.0.2:1234$SD
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            text = body.decode()
+            assert status == 200
+            assert text.count("#EXTINF") == 1
+            _, catchup_url = extract_catchup_source(text, "Catchup Ch")
+            assert "/Catchup%20Ch/HD/catchup" in catchup_url
+            url_lines = [line for line in text.splitlines() if line.startswith("http")]
+            assert [line.rsplit("/", 1)[-1] for line in url_lines] == ["HD$HD", "SD$SD"]
+            for path in ("/Catchup%20Ch/HD", "/Catchup%20Ch/SD"):
+                head_status, _, _ = http_request("127.0.0.1", port, "HEAD", path)
+                assert head_status == 200, f"{path} should resolve to a service"
+        finally:
+            r2h.stop()
+
+    def test_stray_text_after_url_is_not_treated_as_source(self, r2h_binary):
+        port = find_free_port()
+        config = f"""\
+[global]
+verbosity = 4
+
+[bind]
+* {port}
+
+[services]
+#EXTM3U
+#EXTINF:-1,Solo
+rtp://239.0.0.1:1234
+this is not a url
+#EXTINF:-1,Next
+rtp://239.0.0.2:1234
+"""
+        r2h = R2HProcess(r2h_binary, port, config_content=config)
+        try:
+            r2h.start()
+            status, _, body = http_get("127.0.0.1", port, "/playlist.m3u")
+            assert status == 200
+            text = body.decode()
+            assert "this is not a url" not in text
+            assert text.count("#EXTINF") == 2
+        finally:
+            r2h.stop()
+
+
 # ---------------------------------------------------------------------------
 # M3U-configured service + request query merge mechanism
 # ---------------------------------------------------------------------------

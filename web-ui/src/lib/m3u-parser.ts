@@ -29,6 +29,9 @@ export function parseM3U(content: string): M3UMetadata {
     catchup?: string;
     catchupSource?: string;
   } | null = null;
+  // Channel created from the current #EXTINF; consecutive URL lines under the
+  // same #EXTINF are appended to it as additional sources.
+  let currentChannel: Channel | null = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -85,6 +88,7 @@ export function parseM3U(content: string): M3UMetadata {
         catchup: catchupMatch?.[1] || defaultCatchup,
         catchupSource: resolveCatchupSource(catchupSourceMatch?.[1] || defaultCatchupSource),
       };
+      currentChannel = null;
       continue;
     }
 
@@ -96,24 +100,28 @@ export function parseM3U(content: string): M3UMetadata {
       const urlWithoutLabel = labelMatch ? line.slice(0, line.lastIndexOf("$")) : line;
       const resolvedUrl =
         toPlaylistRelativePath(urlWithoutLabel) + (labelMatch ? line.slice(line.lastIndexOf("$")) : "");
+      const source: Source = {
+        url: resolvedUrl,
+        catchup: currentExtinf.catchup,
+        catchupSource: currentExtinf.catchupSource,
+        label: sourceLabel,
+      };
 
-      channels.push({
+      if (currentChannel) {
+        currentChannel.sources.push(source);
+        continue;
+      }
+
+      currentChannel = {
         id: `${channels.length + 1}`,
         name: currentExtinf.name,
         logo: currentExtinf.logo,
         groups: currentExtinf.groups,
         tvgId: currentExtinf.tvgId,
         tvgName: currentExtinf.tvgName,
-        sources: [
-          {
-            url: resolvedUrl,
-            catchup: currentExtinf.catchup,
-            catchupSource: currentExtinf.catchupSource,
-            label: sourceLabel,
-          },
-        ],
-      });
-      currentExtinf = null;
+        sources: [source],
+      };
+      channels.push(currentChannel);
     }
   }
 

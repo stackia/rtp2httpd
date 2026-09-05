@@ -188,7 +188,7 @@ http://iptv.example.com/live/channel1.m3u8
 
 ## 线路标签
 
-通过在 URL 末尾添加 `$标签` 后缀，可以为频道源指定显示标签（如清晰度）。`$标签` 必须位于整个 URL 的最末尾。
+一行 `#EXTINF` 后面紧跟多行 URL，每行代表该频道的一条线路。通过在 URL 末尾添加 `$标签` 后缀，可以为每条线路指定显示标签（如清晰度）。`$标签` 必须位于整个 URL 的最末尾。
 
 只有在支持标签和频道聚合的播放器中（例如 [内置 Web 播放器](./web-player.md)）才有效果。
 
@@ -197,24 +197,18 @@ http://iptv.example.com/live/channel1.m3u8
 ```m3u
 #EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
 rtp://239.253.64.96:5140/?fcc=10.255.75.73:15970$超高清
-#EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
 rtp://239.253.64.200:5140/?fcc=10.255.75.73:15970$高清
-#EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
 rtp://239.253.64.44:5140/?fcc=10.255.75.73:15970$标清
 ```
 
 ### 示例输出
 
-每个带 `$label` 的频道会生成独立的服务路径，`$label` 转换为 `/label` 子路径，同时 `$label` 保留在转换后 URL 的末尾：
+每条线路会生成独立的服务路径，`$label` 转换为 `/label` 子路径，同时 `$label` 保留在转换后 URL 的末尾。转换后的 M3U 保持与输入相同的结构：
 
 ```m3u
 #EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
 http://192.168.1.1:5140/卫视/广东卫视/超高清$超高清
-
-#EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
 http://192.168.1.1:5140/卫视/广东卫视/高清$高清
-
-#EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
 http://192.168.1.1:5140/卫视/广东卫视/标清$标清
 ```
 
