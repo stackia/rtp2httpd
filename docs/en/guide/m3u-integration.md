@@ -188,22 +188,11 @@ Unrecognizable URLs are preserved as-is without conversion. For example, if `cat
 
 ## Source Labels
 
-By adding a `$label` suffix at the very end of a URL, you can specify a display label for the channel source (such as quality level). The `$label` must be at the absolute end of the entire URL.
+A single `#EXTINF` line followed by multiple URL lines declares one source per line for that channel. By adding a `$label` suffix at the very end of a URL, you can specify a display label for each source (such as quality level). The `$label` must be at the absolute end of the entire URL.
 
 This feature is only effective in players that support labels and channel aggregation (such as the [built-in web player](/en/guide/web-player)).
 
 ### Example Input
-
-```m3u
-#EXTINF:-1 tvg-id="Guangdong TV" tvg-name="Guangdong TV" tvg-logo="https://example.com/logo/GuangdongTV.png" group-title="Satellite",Guangdong TV
-rtp://239.253.64.96:5140/?fcc=10.255.75.73:15970$UHD
-#EXTINF:-1 tvg-id="Guangdong TV" tvg-name="Guangdong TV" tvg-logo="https://example.com/logo/GuangdongTV.png" group-title="Satellite",Guangdong TV
-rtp://239.253.64.200:5140/?fcc=10.255.75.73:15970$HD
-#EXTINF:-1 tvg-id="Guangdong TV" tvg-name="Guangdong TV" tvg-logo="https://example.com/logo/GuangdongTV.png" group-title="Satellite",Guangdong TV
-rtp://239.253.64.44:5140/?fcc=10.255.75.73:15970$SD
-```
-
-You can also write a single `#EXTINF` line followed by multiple URL lines, where each line is one source of that channel. This is equivalent to repeating `#EXTINF` as shown above:
 
 ```m3u
 #EXTINF:-1 tvg-id="Guangdong TV" tvg-name="Guangdong TV" tvg-logo="https://example.com/logo/GuangdongTV.png" group-title="Satellite",Guangdong TV
@@ -214,7 +203,7 @@ rtp://239.253.64.44:5140/?fcc=10.255.75.73:15970$SD
 
 ### Example Output
 
-Each channel with a `$label` generates an independent service path, with `$label` converted to a `/label` subpath, and `$label` also preserved at the end of the converted URL. Regardless of which input form is used, the converted M3U emits a separate `#EXTINF` + URL pair for every source:
+Each source generates an independent service path, with `$label` converted to a `/label` subpath, and `$label` also preserved at the end of the converted URL. For compatibility with third-party players, the converted M3U emits a separate `#EXTINF` + URL entry for every source:
 
 ```m3u
 #EXTINF:-1 tvg-id="Guangdong TV" tvg-name="Guangdong TV" tvg-logo="https://example.com/logo/GuangdongTV.png" group-title="Satellite",Guangdong TV

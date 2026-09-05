@@ -99,20 +99,11 @@ LG webOS smart TVs can also use the built-in browser to open the player and pin 
 
 ## Channel Aggregation
 
-When multiple channels with the **same group and same name** exist in the M3U, the player automatically aggregates them into multiple sources of one channel, displaying them only once in the channel list. Users can switch between different sources (such as different quality levels) using the source selector:
+In the M3U, a single `#EXTINF` line followed by multiple URL lines declares a channel with multiple sources. The player aggregates them into one channel, displaying it only once in the channel list, and users can switch between sources (such as different quality levels) using the source selector:
 
 ![Channel Source Selector](../../images/channel-source-selector.png)
 
-Both of the following M3U forms are aggregated into one channel with multiple sources:
-
 ```m3u
-# Form 1: repeat #EXTINF, one source per entry
-#EXTINF:-1 group-title="Satellite",Guangdong TV
-http://192.168.1.1:5140/rtp/239.253.64.96:5140$UHD
-#EXTINF:-1 group-title="Satellite",Guangdong TV
-http://192.168.1.1:5140/rtp/239.253.64.200:5140$HD
-
-# Form 2: one #EXTINF followed by multiple URL lines
 #EXTINF:-1 group-title="Satellite",Guangdong TV
 http://192.168.1.1:5140/rtp/239.253.64.96:5140$UHD
 http://192.168.1.1:5140/rtp/239.253.64.200:5140$HD
