@@ -203,16 +203,12 @@ rtp://239.253.64.44:5140/?fcc=10.255.75.73:15970$SD
 
 ### Example Output
 
-Each source generates an independent service path, with `$label` converted to a `/label` subpath, and `$label` also preserved at the end of the converted URL. For compatibility with third-party players, the converted M3U emits a separate `#EXTINF` + URL entry for every source:
+Each source generates an independent service path, with `$label` converted to a `/label` subpath, and `$label` also preserved at the end of the converted URL. The converted M3U keeps the same structure as the input:
 
 ```m3u
 #EXTINF:-1 tvg-id="Guangdong TV" tvg-name="Guangdong TV" tvg-logo="https://example.com/logo/GuangdongTV.png" group-title="Satellite",Guangdong TV
 http://192.168.1.1:5140/Satellite/Guangdong TV/UHD$UHD
-
-#EXTINF:-1 tvg-id="Guangdong TV" tvg-name="Guangdong TV" tvg-logo="https://example.com/logo/GuangdongTV.png" group-title="Satellite",Guangdong TV
 http://192.168.1.1:5140/Satellite/Guangdong TV/HD$HD
-
-#EXTINF:-1 tvg-id="Guangdong TV" tvg-name="Guangdong TV" tvg-logo="https://example.com/logo/GuangdongTV.png" group-title="Satellite",Guangdong TV
 http://192.168.1.1:5140/Satellite/Guangdong TV/SD$SD
 ```
 

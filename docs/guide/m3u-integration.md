@@ -203,16 +203,12 @@ rtp://239.253.64.44:5140/?fcc=10.255.75.73:15970$标清
 
 ### 示例输出
 
-每条线路会生成独立的服务路径，`$label` 转换为 `/label` 子路径，同时 `$label` 保留在转换后 URL 的末尾。为兼容第三方播放器，转换后的 M3U 中每条线路都会输出为独立的 `#EXTINF` + URL 条目：
+每条线路会生成独立的服务路径，`$label` 转换为 `/label` 子路径，同时 `$label` 保留在转换后 URL 的末尾。转换后的 M3U 保持与输入相同的结构：
 
 ```m3u
 #EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
 http://192.168.1.1:5140/卫视/广东卫视/超高清$超高清
-
-#EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
 http://192.168.1.1:5140/卫视/广东卫视/高清$高清
-
-#EXTINF:-1 tvg-id="广东卫视" tvg-name="广东卫视" tvg-logo="https://example.com/logo/广东卫视.png" group-title="卫视",广东卫视
 http://192.168.1.1:5140/卫视/广东卫视/标清$标清
 ```
 
