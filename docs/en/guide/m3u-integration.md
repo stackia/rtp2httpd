@@ -203,9 +203,18 @@ rtp://239.253.64.200:5140/?fcc=10.255.75.73:15970$HD
 rtp://239.253.64.44:5140/?fcc=10.255.75.73:15970$SD
 ```
 
+You can also write a single `#EXTINF` line followed by multiple URL lines, where each line is one source of that channel. This is equivalent to repeating `#EXTINF` as shown above:
+
+```m3u
+#EXTINF:-1 tvg-id="Guangdong TV" tvg-name="Guangdong TV" tvg-logo="https://example.com/logo/GuangdongTV.png" group-title="Satellite",Guangdong TV
+rtp://239.253.64.96:5140/?fcc=10.255.75.73:15970$UHD
+rtp://239.253.64.200:5140/?fcc=10.255.75.73:15970$HD
+rtp://239.253.64.44:5140/?fcc=10.255.75.73:15970$SD
+```
+
 ### Example Output
 
-Each channel with a `$label` generates an independent service path, with `$label` converted to a `/label` subpath, and `$label` also preserved at the end of the converted URL:
+Each channel with a `$label` generates an independent service path, with `$label` converted to a `/label` subpath, and `$label` also preserved at the end of the converted URL. Regardless of which input form is used, the converted M3U emits a separate `#EXTINF` + URL pair for every source:
 
 ```m3u
 #EXTINF:-1 tvg-id="Guangdong TV" tvg-name="Guangdong TV" tvg-logo="https://example.com/logo/GuangdongTV.png" group-title="Satellite",Guangdong TV

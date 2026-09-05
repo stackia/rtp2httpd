@@ -103,6 +103,21 @@ When multiple channels with the **same group and same name** exist in the M3U, t
 
 ![Channel Source Selector](../../images/channel-source-selector.png)
 
+Both of the following M3U forms are aggregated into one channel with multiple sources:
+
+```m3u
+# Form 1: repeat #EXTINF, one source per entry
+#EXTINF:-1 group-title="Satellite",Guangdong TV
+http://192.168.1.1:5140/rtp/239.253.64.96:5140$UHD
+#EXTINF:-1 group-title="Satellite",Guangdong TV
+http://192.168.1.1:5140/rtp/239.253.64.200:5140$HD
+
+# Form 2: one #EXTINF followed by multiple URL lines
+#EXTINF:-1 group-title="Satellite",Guangdong TV
+http://192.168.1.1:5140/rtp/239.253.64.96:5140$UHD
+http://192.168.1.1:5140/rtp/239.253.64.200:5140$HD
+```
+
 If a source URL has a `$label` suffix, the player extracts it as the source's display label (such as "UHD", "HD", "SD"). Sources without `$label` are displayed with sequential numbers (such as "Source 1", "Source 2").
 
 > [!NOTE]
