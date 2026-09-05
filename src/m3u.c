@@ -834,6 +834,16 @@ static int is_url_recognizable(const char *url) {
   return 0;
 }
 
+/* Check whether a line looks like a stream URL (scheme://... or an absolute
+ * path). Used to accept additional URL lines that follow an #EXTINF entry
+ * whose first URL was already consumed, without picking up stray text. */
+static int m3u_line_looks_like_url(const char *line) {
+  if (line[0] == '/') {
+    return 1;
+  }
+  return strstr(line, "://") != NULL;
+}
+
 /* Update ETag for transformed M3U playlist */
 static void update_m3u_etag(void) {
   MD5Context ctx;
@@ -1085,6 +1095,11 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
   const char *content_ptr = content;
   struct m3u_extinf current_extinf;
   int in_entry = 0;
+  /* Set once the current #EXTINF has consumed a URL line. Further URL lines
+   * under the same #EXTINF are treated as additional sources of that channel
+   * and each re-emits the EXTINF line, so downstream players that aggregate
+   * same-group same-name entries see them as one channel with multiple sources. */
+  int entry_has_url = 0;
   int entry_count = 0;
   size_t line_len;
   char proxy_url[MAX_URL_LENGTH];
@@ -1176,6 +1191,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
       if (extract_service_name(line, base_name, sizeof(base_name)) != 0) {
         logger(LOG_WARN, "Failed to extract service name from EXTINF line");
         in_entry = 0;
+        entry_has_url = 0;
         continue;
       }
 
@@ -1221,11 +1237,13 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
       transformed_line[sizeof(transformed_line) - 1] = '\0';
 
       in_entry = 1;
+      entry_has_url = 0;
       continue;
     }
 
-    /* Process URL line (follows EXTINF) */
-    if (in_entry && line[0] != '#') {
+    /* Process URL line (follows EXTINF). After the first URL, only lines that
+     * look like URLs are accepted as additional sources of the same entry. */
+    if (in_entry && line[0] != '#' && (!entry_has_url || m3u_line_looks_like_url(line))) {
       /* Extract $label suffix from URL end before any processing */
       const char *url_label = http_find_url_label(line);
       char url_label_copy[MAX_SERVICE_NAME];
@@ -1379,7 +1397,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
       append_to_transformed_m3u("\n", service_source);
 
       entry_count++;
-      in_entry = 0;
+      entry_has_url = 1;
     }
   }
 
