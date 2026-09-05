@@ -1096,10 +1096,14 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
   struct m3u_extinf current_extinf;
   int in_entry = 0;
   /* Set once the current #EXTINF has consumed a URL line. Further URL lines
-   * under the same #EXTINF are treated as additional sources of that channel
-   * and each re-emits the EXTINF line, so downstream players that aggregate
-   * same-group same-name entries see them as one channel with multiple sources. */
+   * under the same #EXTINF are additional sources of that channel: they get
+   * their own service but are written directly below the first URL, so the
+   * transformed playlist keeps the same shape as the input. */
   int entry_has_url = 0;
+  /* Blank separator owed after the entry currently being written. It is
+   * flushed lazily (before the next tag or at end of input) so that extra URL
+   * lines of the same entry stay contiguous. */
+  int pending_entry_gap = 0;
   int entry_count = 0;
   size_t line_len;
   char proxy_url[MAX_URL_LENGTH];
@@ -1155,6 +1159,12 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
     /* Skip empty lines */
     if (line_len == 0) {
       continue;
+    }
+
+    /* Any tag line ends the entry being written; emit the deferred gap */
+    if (line[0] == '#' && pending_entry_gap) {
+      append_to_transformed_m3u("\n", service_source);
+      pending_entry_gap = 0;
     }
 
     /* Handle M3U header */
@@ -1244,6 +1254,11 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
     /* Process URL line (follows EXTINF). After the first URL, only lines that
      * look like URLs are accepted as additional sources of the same entry. */
     if (in_entry && line[0] != '#' && (!entry_has_url || m3u_line_looks_like_url(line))) {
+      /* The EXTINF line is written once, together with the first URL. It can
+       * carry only one catchup-source, so catchup services are created for the
+       * first URL only; additional URLs just contribute their own live service. */
+      int first_url = !entry_has_url;
+
       /* Extract $label suffix from URL end before any processing */
       const char *url_label = http_find_url_label(line);
       char url_label_copy[MAX_SERVICE_NAME];
@@ -1284,7 +1299,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
           http_strip_url_label(line_without_label);
 
           /* Create catchup service if present and URL is recognizable */
-          if (current_extinf.has_catchup && strlen(current_extinf.catchup_source) > 0) {
+          if (first_url && current_extinf.has_catchup && strlen(current_extinf.catchup_source) > 0) {
             catchup_is_recognizable = is_url_recognizable(current_extinf.catchup_source);
 
             if (!catchup_is_recognizable && is_url_recognizable(line_without_label) &&
@@ -1320,7 +1335,9 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
           }
 
           /* Now generate the transformed EXTINF line with unique names */
-          if (unique_catchup_name && catchup_is_recognizable) {
+          if (!first_url) {
+            /* EXTINF already written with the first URL of this entry */
+          } else if (unique_catchup_name && catchup_is_recognizable) {
             /* Replace catchup-source URL in EXTINF line */
             char *catchup_query = extract_catchup_template_query(catchup_service_url);
             char catchup_proxy_url[MAX_URL_LENGTH];
@@ -1379,26 +1396,34 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
           free(unique_service_name);
         } else {
           /* Failed to create service, preserve original EXTINF and URL */
-          append_to_transformed_m3u(transformed_line, service_source);
-          append_to_transformed_m3u("\n", service_source);
+          if (first_url) {
+            append_to_transformed_m3u(transformed_line, service_source);
+            append_to_transformed_m3u("\n", service_source);
+          }
           append_to_transformed_m3u(line, service_source);
           append_to_transformed_m3u("\n", service_source);
         }
       } else {
         /* Unrecognizable URL: preserve original EXTINF and URL completely */
-        append_to_transformed_m3u(transformed_line, service_source);
-        append_to_transformed_m3u("\n", service_source);
+        if (first_url) {
+          append_to_transformed_m3u(transformed_line, service_source);
+          append_to_transformed_m3u("\n", service_source);
+        }
         append_to_transformed_m3u(line, service_source);
         append_to_transformed_m3u("\n", service_source);
         logger(LOG_DEBUG, "Preserving unrecognizable URL: %s", line);
       }
 
-      /* Add blank line after each entry */
-      append_to_transformed_m3u("\n", service_source);
+      /* Blank line after the entry is deferred: more URLs may follow */
+      pending_entry_gap = 1;
 
       entry_count++;
       entry_has_url = 1;
     }
+  }
+
+  if (pending_entry_gap) {
+    append_to_transformed_m3u("\n", service_source);
   }
 
   /* Mark the end of inline content if this was inline parsing */
