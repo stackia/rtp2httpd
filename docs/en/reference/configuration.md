@@ -22,7 +22,11 @@ rtp2httpd [options]
 
 Within a worker process, requests with the same resolved multicast address, port, source filter address (SSM), effective upstream interface, and FEC port automatically share a multicast subscription without additional configuration. The main RTP/UDP socket and configured FEC socket are created once and released when the last subscribed client disconnects. Different worker processes still subscribe independently. Channel names, the `/rtp/` and `/udp/` path forms, and FCC server parameters do not affect this matching.
 
-Received data memory is shared through reference counting, while each client keeps its own send queue, RTP reorder state, and FEC recovery state. Slow clients still drop packets according to their own queue limits without pausing multicast reception for other clients. FCC unicast requests and transition state remain independent for each client; the transition to multicast reuses a matching subscription.
+Regular multicast parses and reorders RTP once per shared source, combines payloads into batches of approximately 64 KiB, and distributes them through reference counting. Each client keeps its own send queue and send offset while sharing the underlying batch data. Slow clients still drop packets according to their own queue limits without pausing multicast reception for other clients. Partial batches are sent at the next worker timer check after 100 ms, avoiding long waits for low-bitrate streams.
+
+On Linux, when multiple clients share a full batch, rtp2httpd first attempts to store it in an immutable anonymous memory file and use `sendfile` to share its kernel data pages. The file is never rewritten when pool buffers are reused, preserving data still in transit. Unsupported systems or insufficient resources automatically fall back to regular memory sends. This optimization requires no extra configuration and does not depend on `zerocopy-on-send`.
+
+FCC unicast requests and transition state remain independent for each client, and the transition to multicast reuses a matching subscription. A client joins shared batch delivery after its unicast and transition data have been processed and its sequence position matches the shared stream. Snapshot processing and FEC recovery retain their own processing state. If a FEC port is configured or FEC packets appear in the main multicast stream, that source keeps its shared sockets but uses independent reorder and FEC recovery paths for each client.
 
 `--listen` can be specified multiple times to listen on multiple TCP addresses/ports or Unix sockets:
 

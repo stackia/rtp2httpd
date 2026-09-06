@@ -16,6 +16,7 @@ from helpers import (
     R2HProcess,
     find_free_port,
     find_free_udp_port,
+    make_rtp_packet,
 )
 
 pytestmark = pytest.mark.multicast
@@ -67,6 +68,122 @@ def _read_markers(response, packets=128):
     assert len(body) == 188 * packets, "Stream ended before the requested data arrived"
     assert all(body[i] == 0x47 for i in range(0, len(body), 188))
     return [struct.unpack_from("!H", body, i + 4)[0] for i in range(0, len(body), 188)]
+
+
+def _read_contiguous_rtp(response, previous=None, packets=128):
+    """Check every TS packet, including continuity across HTTP reads/batches."""
+    markers = _read_markers(response, packets=packets * 7)
+    for offset in range(0, len(markers), 7):
+        marker = markers[offset]
+        assert markers[offset : offset + 7] == [marker] * 7
+        if previous is not None:
+            assert marker == (previous + 1) & 0xFFFF
+        previous = marker
+    return previous
+
+
+@pytest.mark.parametrize("reorder,duplicates", [(4, False), (0, True)])
+def test_shared_batches_keep_exact_continuity(shared_source_r2h, reorder, duplicates):
+    """Late joins and departures must not replay, skip or overwrite payloads."""
+    r2h = shared_source_r2h
+    sender = MulticastSender(pps=700, unique_payloads=True, reorder_distance=reorder, send_duplicates=duplicates)
+    sender.start()
+    path = f"/rtp/{MCAST_ADDR}:{sender.port}"
+    try:
+        with _stream(r2h, path) as first:
+            first_seq = _read_contiguous_rtp(first)
+            with _stream(r2h, path) as second:
+                second_seq = None
+                for _ in range(6):
+                    first_seq = _read_contiguous_rtp(first, first_seq)
+                    second_seq = _read_contiguous_rtp(second, second_seq)
+            first_seq = _read_contiguous_rtp(first, first_seq)
+            with _stream(r2h, path) as rejoined:
+                _read_contiguous_rtp(rejoined)
+                _read_contiguous_rtp(first, first_seq)
+            assert r2h.read_log().count("Multicast: Successfully joined group") == 1
+    finally:
+        sender.stop()
+
+
+def test_inband_fec_preserves_shared_reorder_window(shared_source_r2h):
+    """FEC discovered in the media socket can safely switch to private reorder."""
+    r2h = shared_source_r2h
+    sender = MulticastSender(pps=700, unique_payloads=True, reorder_distance=4)
+    sender.start()
+    path = f"/rtp/{MCAST_ADDR}:{sender.port}"
+    try:
+        with _stream(r2h, path) as first, _stream(r2h, path) as second:
+            seqs = [_read_contiguous_rtp(first), _read_contiguous_rtp(second)]
+            # Valid but already expired parity activates FEC without recovery.
+            parity = struct.pack("!HHBBHHH", 0, 0, 1, 0, 1, 1328, 0) + b"\0"
+            with closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)) as fec_socket:
+                fec_socket.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton("127.0.0.1"))
+                fec_socket.sendto(make_rtp_packet(0, 0, payload_type=127, payload=parity), (MCAST_ADDR, sender.port))
+            _wait_log(r2h, "FEC: Activated", count=2)
+            for _ in range(4):
+                seqs = [_read_contiguous_rtp(client, seq) for client, seq in zip((first, second), seqs, strict=True)]
+    finally:
+        sender.stop()
+
+
+def test_shared_payload_survives_delayed_reader_and_source_release(shared_source_r2h):
+    """Old TCP data stays immutable while newer batches recycle pool storage."""
+    r2h = shared_source_r2h
+    sender = MulticastSender(pps=600, unique_payloads=True)
+    sender.start()
+    path = f"/rtp/{MCAST_ADDR}:{sender.port}"
+    try:
+        with _stream(r2h, path) as delayed:
+            delayed_seq = _read_contiguous_rtp(delayed)
+            with _stream(r2h, path) as fast:
+                fast_seq = None
+                for _ in range(5):
+                    fast_seq = _read_contiguous_rtp(fast, fast_seq)
+                for _ in range(5):
+                    delayed_seq = _read_contiguous_rtp(delayed, delayed_seq)
+            _read_contiguous_rtp(delayed, delayed_seq)
+        _wait_log(r2h, "Last subscriber left")
+        with _stream(r2h, path) as rejoined:
+            _read_contiguous_rtp(rejoined)
+    finally:
+        sender.stop()
+
+
+def test_low_bitrate_shared_batch_flushes_promptly(shared_source_r2h):
+    """A short raw TS batch must not wait many seconds to reach 64 KiB."""
+    sender = MulticastSender(pps=4, encapsulate_rtp=False, unique_payloads=True)
+    sender.start()
+    path = f"/rtp/{MCAST_ADDR}:{sender.port}"
+    try:
+        with ExitStack() as stack:
+            for _ in range(2):
+                start = time.monotonic()
+                client = stack.enter_context(_stream(shared_source_r2h, path))
+                _read_markers(client, packets=7)
+                assert time.monotonic() - start < 1.5
+    finally:
+        sender.stop()
+
+
+def test_aborted_batch_subscribers_keep_survivor_alive(shared_source_r2h):
+    r2h = shared_source_r2h
+    sender = MulticastSender(pps=1000, unique_payloads=True)
+    sender.start()
+    path = f"/rtp/{MCAST_ADDR}:{sender.port}"
+    try:
+        with _stream(r2h, path) as survivor:
+            previous = _read_contiguous_rtp(survivor)
+            for _ in range(12):
+                with closing(socket.create_connection(("127.0.0.1", r2h.port), timeout=5)) as aborted:
+                    aborted.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+                    aborted.sendall(f"GET {path} HTTP/1.1\r\nHost: localhost\r\n\r\n".encode())
+                    assert aborted.recv(4096)
+                previous = _read_contiguous_rtp(survivor, previous)
+            assert "killed by signal" not in r2h.read_log()
+            assert r2h.read_log().count("Multicast: Successfully joined group") == 1
+    finally:
+        sender.stop()
 
 
 @pytest.mark.parametrize(
@@ -225,6 +342,7 @@ def test_fcc_clients_share_existing_multicast(shared_source_r2h, protocol):
         with _stream(r2h, path) as direct, _stream(r2h, fcc_path) as first, _stream(r2h, fcc_path) as second:
             _wait_log(r2h, "refs=3")
             _wait_log(r2h, "Reached termination sequence", count=2)
+            _wait_log(r2h, "Subscriber joined shared payload batches", count=2)
             assert fcc.requests_received >= 2  # Protocol requests may be retransmitted.
             assert len(set(fcc.request_client_addrs)) == 2
             assert r2h.read_log().count("Multicast: Successfully joined group") == 1

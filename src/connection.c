@@ -351,7 +351,7 @@ static size_t connection_update_queue_limit(connection_t *c, int64_t now_ms) {
   queue_limit_inputs_t in;
   connection_prepare_queue_limit_inputs(&in);
 
-  double queue_mem_bytes = (double)c->zc_queue.num_queued * (double)BUFFER_POOL_BUFFER_SIZE;
+  double queue_mem_bytes = (double)connection_queue_bytes(c);
   if (c->queue_avg_bytes <= 0.0)
     c->queue_avg_bytes = queue_mem_bytes;
   else
@@ -1229,7 +1229,7 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref) {
   int64_t now_ms = get_time_ms();
   size_t limit_bytes = connection_update_queue_limit(c, now_ms);
   size_t queued_bytes = connection_queue_bytes(c);
-  size_t projected_bytes = queued_bytes + buf_ref->data_size;
+  size_t projected_bytes = queued_bytes + buffer_ref_capacity(buf_ref);
 
   c->queue_limit_bytes = limit_bytes;
 

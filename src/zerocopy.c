@@ -121,6 +121,7 @@ void zerocopy_cleanup(void) {
 
   buffer_pool_cleanup(&zerocopy_state.pool);
   buffer_pool_cleanup(&zerocopy_state.control_pool);
+  buffer_pool_cleanup(&zerocopy_state.batch_pool);
   buffer_pool_update_stats(&zerocopy_state.pool);
   buffer_pool_update_stats(&zerocopy_state.control_pool);
   zerocopy_state.initialized = 0;
@@ -155,12 +156,12 @@ int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref) {
 
   uint8_t *base = (uint8_t *)buf_ref->data;
 
-  if (!base || buf_ref->data_offset > BUFFER_POOL_BUFFER_SIZE ||
-      buf_ref->data_size > BUFFER_POOL_BUFFER_SIZE - buf_ref->data_offset) {
+  size_t capacity = buffer_ref_capacity(buf_ref);
+  if (!base || buf_ref->data_offset > capacity || buf_ref->data_size > capacity - buf_ref->data_offset) {
     logger(LOG_ERROR,
            "zerocopy_queue_add: Invalid buffer parameters (offset=%zu len=%zu "
-           "size=%d)",
-           buf_ref->data_offset, buf_ref->data_size, BUFFER_POOL_BUFFER_SIZE);
+           "size=%zu)",
+           buf_ref->data_offset, buf_ref->data_size, capacity);
     return -1;
   }
 
@@ -186,6 +187,7 @@ int zerocopy_queue_add(zerocopy_queue_t *queue, buffer_ref_t *buf_ref) {
   }
 
   queue->total_bytes += buf_ref->data_size;
+  queue->memory_bytes += capacity;
   queue->num_queued++;
 
   return 0;
@@ -227,6 +229,7 @@ int zerocopy_queue_add_file(zerocopy_queue_t *queue, int file_fd, off_t file_off
    * the batching optimization designed for small RTP packets.
    */
   queue->num_queued++;
+  queue->memory_bytes += BUFFER_POOL_BUFFER_SIZE;
 
   logger(LOG_DEBUG, "zerocopy_queue_add_file: Queued file fd=%d offset=%ld size=%zu", file_fd, (long)file_offset,
          file_size);
@@ -251,6 +254,41 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
   if (!queue->head) {
     *bytes_sent = 0;
     return 0;
+  }
+
+  buffer_ref_t *shared = queue->head;
+  int shared_fd = buffer_ref_sendfile_fd(shared);
+  if (shared_fd >= 0) {
+    off_t offset = (uint8_t *)shared->iov.iov_base - ((uint8_t *)shared->data + shared->data_offset);
+    ssize_t sent = platform_sendfile(fd, shared_fd, &offset, shared->iov.iov_len);
+    if (sent < 0 && (errno == EINVAL || errno == ENOSYS || errno == EOPNOTSUPP)) {
+      /* Keep this subscriber's fallback private; others can still sendfile. */
+      shared->shared_fd = -2;
+    } else {
+      *bytes_sent = sent > 0 ? (size_t)sent : 0;
+      if (sent < 0) {
+        if (errno == EAGAIN || errno == EINTR || errno == ENOBUFS) {
+          WORKER_STATS_INC(eagain_count);
+          return -2;
+        }
+        return -1;
+      }
+      if (sent == 0)
+        return -1; /* The immutable snapshot must contain the complete batch. */
+      WORKER_STATS_INC(total_sends);
+      queue->total_bytes -= (size_t)sent;
+      shared->iov.iov_base = (uint8_t *)shared->iov.iov_base + sent;
+      shared->iov.iov_len -= (size_t)sent;
+      if (!shared->iov.iov_len) {
+        queue->head = shared->send_next;
+        if (!queue->head)
+          queue->tail = NULL;
+        queue->num_queued--;
+        queue->memory_bytes -= buffer_ref_capacity(shared);
+        buffer_ref_put(shared);
+      }
+      return 0;
+    }
   }
 
   /* Check if head is a file - sendfile() must be done separately */
@@ -289,6 +327,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
       /* Note: File buffers don't count towards total_bytes, so no need to
        * update it */
       queue->num_queued--;
+      queue->memory_bytes -= BUFFER_POOL_BUFFER_SIZE;
 
       /* Release reference - this will close fd and free buffer_ref */
       buffer_ref_put(file_buf);
@@ -308,11 +347,16 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
   struct iovec iovecs[ZEROCOPY_MAX_IOVECS];
   buffer_ref_t *buffers[ZEROCOPY_MAX_IOVECS];
   int iov_count = 0;
+  int use_zerocopy = config.zerocopy_on_send;
 
   buffer_ref_t *buf = queue->head;
-  while (buf && iov_count < ZEROCOPY_MAX_IOVECS && buf->type == BUFFER_TYPE_MEMORY) {
+  while (buf && iov_count < ZEROCOPY_MAX_IOVECS && buf->type == BUFFER_TYPE_MEMORY && buffer_ref_sendfile_fd(buf) < 0) {
     iovecs[iov_count] = buf->iov;
     buffers[iov_count] = buf;
+    /* Published multicast batches use sendfile. Its fallback copies data,
+     * without adding asynchronous page ownership to the reusable batch pool. */
+    if (buffer_ref_capacity(buf) > BUFFER_POOL_BUFFER_SIZE)
+      use_zerocopy = 0;
     iov_count++;
     buf = buf->send_next;
   }
@@ -330,7 +374,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
 
   /* Determine flags based on zerocopy configuration */
   int flags = MSG_DONTWAIT | MSG_NOSIGNAL;
-  if (config.zerocopy_on_send) {
+  if (use_zerocopy) {
     flags |= MSG_ZEROCOPY;
   }
 
@@ -369,7 +413,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
   *bytes_sent = (size_t)sent;
 
   /* Handle buffer management based on whether MSG_ZEROCOPY is used */
-  if (config.zerocopy_on_send) {
+  if (use_zerocopy) {
     /* Assign zerocopy ID for this sendmsg call AFTER successful send
      * All iovecs in this call share the same ID for completion tracking
      * IMPORTANT: Only increment the ID counter after sendmsg() succeeds,
@@ -399,6 +443,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
         remaining -= current->iov.iov_len;
         queue->total_bytes -= current->iov.iov_len;
         queue->num_queued--;
+        queue->memory_bytes -= buffer_ref_capacity(current);
         queue->head = current->send_next;
 
         if (!queue->head)
@@ -443,6 +488,7 @@ int zerocopy_send(int fd, zerocopy_queue_t *queue, size_t *bytes_sent) {
         remaining -= current->iov.iov_len;
         queue->total_bytes -= current->iov.iov_len;
         queue->num_queued--;
+        queue->memory_bytes -= buffer_ref_capacity(current);
         queue->head = current->send_next;
 
         if (!queue->head)

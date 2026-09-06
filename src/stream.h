@@ -120,6 +120,11 @@ typedef struct stream_context_s {
   snapshot_context_t snapshot;
 } stream_context_t;
 
+/* Shared multicast parsing uses the same validation and metadata rules. */
+int stream_payload_is_mpegts(const uint8_t *payload, int payload_len);
+void stream_metadata_note_media(stream_context_t *ctx, int packet_type, const uint8_t *payload, int payload_len,
+                                stream_media_origin_t origin);
+
 /**
  * Initialize a stream context for integration into a worker's unified epoll
  * loop. Does not block; registers any required media sockets with the provided

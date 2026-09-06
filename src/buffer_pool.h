@@ -13,6 +13,8 @@
 #define BUFFER_POOL_BUFFER_SIZE 1536
 #define BUFFER_POOL_LOW_WATERMARK 256
 #define BUFFER_POOL_HIGH_WATERMARK (BUFFER_POOL_INITIAL_SIZE * 3)
+/* One shared output batch, with room for the packet crossing 64 KiB. */
+#define BUFFER_POOL_BATCH_SIZE (65536 + BUFFER_POOL_BUFFER_SIZE)
 
 /* Control/API buffer pool configuration */
 #define CONTROL_POOL_INITIAL_SIZE 256
@@ -51,6 +53,7 @@ typedef struct buffer_ref_s {
   int refcount;                          /* Reference count */
   struct buffer_pool_segment_s *segment; /* Segment this buffer belongs to (BUFFER_TYPE_MEMORY) */
   struct buffer_ref_s *owner;            /* Non-NULL for a view sharing another buffer's immutable data */
+  int shared_fd;                         /* Immutable batch snapshot, -1 if absent; views use their owner */
 
   /* Union: buffer is either in free list OR in send queue, never both */
   union {
@@ -107,6 +110,11 @@ void buffer_ref_put(buffer_ref_t *ref);
 /* Share data while keeping offsets, send links and completion IDs independent.
  * The returned view owns a reference to the backing buffer; release with put. */
 buffer_ref_t *buffer_ref_view(buffer_ref_t *ref);
+size_t buffer_ref_capacity(const buffer_ref_t *ref);
+void buffer_ref_snapshot(buffer_ref_t *ref);
+int buffer_ref_sendfile_fd(const buffer_ref_t *ref);
+/* Worker-owned pool: queued batches can outlive their multicast source. */
+buffer_ref_t *buffer_pool_alloc_batch(void);
 buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool);
 buffer_ref_t *buffer_pool_alloc(void);
 buffer_ref_t *buffer_pool_alloc_control(void);

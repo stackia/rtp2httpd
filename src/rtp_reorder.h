@@ -36,6 +36,9 @@ typedef struct rtp_reorder_s {
   uint16_t count;       /* Number of buffered packets */
   uint8_t initialized;  /* Flag: context has been initialized */
   uint8_t phase;        /* 0=not started, 1=collecting, 2=active */
+  /* Optional shared-source output. NULL preserves per-client delivery. */
+  int (*deliver)(void *arg, buffer_ref_t *buf);
+  void *deliver_arg;
 } rtp_reorder_t;
 
 /**

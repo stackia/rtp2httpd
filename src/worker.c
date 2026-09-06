@@ -261,6 +261,9 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
   /* Register signal handlers */
   signal(SIGTERM, &term_handler);
   signal(SIGINT, &term_handler);
+  /* sendfile has no MSG_NOSIGNAL flag. A disconnected viewer must only
+   * produce EPIPE, never terminate a worker serving other viewers. */
+  signal(SIGPIPE, SIG_IGN);
   worker_install_sighup_handler();
 
   /* Unified event loop: accept + clients + stream fds */

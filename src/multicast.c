@@ -4,6 +4,7 @@
 #include "fcc.h"
 #include "platform_compat.h"
 #include "poller.h"
+#include "rtp.h"
 #include "rtp_fec.h"
 #include "service.h"
 #include "stream.h"
@@ -387,10 +388,21 @@ struct mcast_source_s {
   int rejoin_unsupported_warned;
   service_t *service; /* Deep copy with the effective multicast interface frozen */
   mcast_session_t *subscribers;
+  mcast_session_t *packet_subscribers;
+  unsigned int batch_clients;
+  int shared_output;
+  rtp_reorder_t reorder;
+  buffer_ref_t *batch;
+  int packet_type;
+  int batch_packet_type;
+  int64_t batch_since;
   mcast_source_t *next;
 };
 
 static mcast_source_t *mcast_sources;
+
+static void mcast_source_flush(mcast_source_t *source);
+static int mcast_source_append(void *arg, buffer_ref_t *packet);
 
 /* Compare resolved endpoints, never channel names, URL spelling or sockaddr
  * padding. The source port does not participate in an IGMP source filter. */
@@ -418,6 +430,8 @@ static void mcast_source_free(mcast_source_t *source) {
     worker_cleanup_socket_from_epoll(source->epoll_fd, source->sock);
   if (source->fec_sock >= 0)
     worker_cleanup_socket_from_epoll(source->epoll_fd, source->fec_sock);
+  rtp_reorder_cleanup(&source->reorder);
+  buffer_ref_put(source->batch);
   service_free(source->service);
   free(source);
 }
@@ -440,6 +454,15 @@ void mcast_session_cleanup(mcast_session_t *session) {
       subscriber = &(*subscriber)->next;
     if (*subscriber)
       *subscriber = session->next;
+    if (session->batched) {
+      source->batch_clients--;
+    } else {
+      mcast_session_t **packet_subscriber = &source->packet_subscribers;
+      while (*packet_subscriber && *packet_subscriber != session)
+        packet_subscriber = &(*packet_subscriber)->packet_next;
+      if (*packet_subscriber)
+        *packet_subscriber = session->packet_next;
+    }
     source->refs--;
     logger(LOG_DEBUG, "Multicast: Subscriber detached (fd=%d, refs=%u)", source->sock, source->refs);
     if (source->refs == 0) {
@@ -460,6 +483,8 @@ void mcast_session_cleanup(mcast_session_t *session) {
   session->source = NULL;
   session->ctx = NULL;
   session->next = NULL;
+  session->packet_next = NULL;
+  session->batched = 0;
   session->sock = -1;
   session->fec_sock = -1;
   session->initialized = 0;
@@ -512,6 +537,15 @@ int mcast_session_join(mcast_session_t *session, stream_context_t *ctx) {
       mcast_source_free(source);
       return -1;
     }
+    if (service->fec_port == 0) {
+      if (rtp_reorder_init(&source->reorder, 0) < 0) {
+        mcast_source_free(source);
+        return -1;
+      }
+      source->shared_output = 1;
+      source->reorder.deliver = mcast_source_append;
+      source->reorder.deliver_arg = source;
+    }
     source->sock = join_mcast_group(source->service, 0);
     if (source->sock < 0 || poller_add(ctx->epoll_fd, source->sock, POLLER_IN) < 0) {
       mcast_source_free(source);
@@ -532,6 +566,10 @@ int mcast_session_join(mcast_session_t *session, stream_context_t *ctx) {
     logger(LOG_DEBUG, "Multicast: Reusing shared source (fd=%d)", source->sock);
   }
 
+  /* A newly attached viewer starts after the current batch, not with bytes
+   * already delivered during its private FCC/snapshot processing. */
+  mcast_source_flush(source);
+
   session->source = source;
   session->ctx = ctx;
   session->sock = source->sock;
@@ -539,11 +577,131 @@ int mcast_session_join(mcast_session_t *session, stream_context_t *ctx) {
   session->next = source->subscribers;
   source->subscribers = session;
   source->refs++;
+  session->batched = source->shared_output && !ctx->snapshot.initialized && !ctx->fcc.initialized;
+  if (session->batched) {
+    source->batch_clients++;
+  } else {
+    session->packet_next = source->packet_subscribers;
+    source->packet_subscribers = session;
+  }
   fdmap_set(source->sock, ctx->conn);
   if (source->fec_sock >= 0)
     fdmap_set(source->fec_sock, ctx->conn);
   logger(LOG_DEBUG, "Multicast: Subscriber attached (fd=%d, refs=%u)", source->sock, source->refs);
   return 0;
+}
+
+/* Only queue metadata is private. The immutable payload stays alive until
+ * every queue and MSG_ZEROCOPY completion releases its reference. */
+static void mcast_source_fanout(mcast_source_t *source, buffer_ref_t *batch, int packet_type, int flush) {
+  for (mcast_session_t *session = source->subscribers; session; session = session->next) {
+    stream_context_t *ctx = session->ctx;
+    if (!session->batched || session->failed || ctx->conn->state == CONN_CLOSING)
+      continue;
+    buffer_ref_t *view = buffer_ref_view(batch);
+    if (!view) {
+      session->failed = 1;
+      continue;
+    }
+    stream_metadata_note_media(ctx, packet_type, (uint8_t *)view->data + view->data_offset, (int)view->data_size,
+                               ctx->fcc.initialized ? STREAM_MEDIA_ORIGIN_FCC_MULTICAST
+                                                    : STREAM_MEDIA_ORIGIN_MULTICAST);
+    if (rtp_queue_buf_direct(ctx->conn, view) >= 0 && flush && view->data_size < ZEROCOPY_BATCH_BYTES) {
+      connection_epoll_update_events(ctx->epoll_fd, ctx->conn->fd,
+                                     POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+    }
+    buffer_ref_put(view);
+  }
+}
+
+static void mcast_source_flush(mcast_source_t *source) {
+  buffer_ref_t *batch = source->batch;
+  if (!batch)
+    return;
+  source->batch = NULL;
+  if (source->batch_clients > 1 && batch->data_size >= ZEROCOPY_BATCH_BYTES)
+    buffer_ref_snapshot(batch);
+  mcast_source_fanout(source, batch, source->batch_packet_type, 1);
+  buffer_ref_put(batch);
+}
+
+static int mcast_source_append(void *arg, buffer_ref_t *packet) {
+  mcast_source_t *source = arg;
+  if (!source->batch_clients)
+    return (int)packet->data_size;
+  if (!source->batch) {
+    source->batch = buffer_pool_alloc_batch();
+    source->batch_since = get_time_ms();
+    source->batch_packet_type = source->packet_type;
+  }
+  if (!source->batch) {
+    /* Keep forwarding when slow viewers pin the bounded batch pool. */
+    mcast_source_fanout(source, packet, source->packet_type, 0);
+    return (int)packet->data_size;
+  }
+  buffer_ref_t *batch = source->batch;
+  memcpy((uint8_t *)batch->data + batch->data_size, (uint8_t *)packet->data + packet->data_offset, packet->data_size);
+  batch->data_size += packet->data_size;
+  if (batch->data_size >= ZEROCOPY_BATCH_BYTES)
+    mcast_source_flush(source);
+  return (int)packet->data_size;
+}
+
+/* In-band FEC can appear even without a configured FEC port. Transfer the
+ * current reorder window to each viewer before resuming its private FEC path. */
+static void mcast_source_enable_private_fec(mcast_source_t *source) {
+  mcast_source_flush(source);
+  source->shared_output = 0;
+  for (mcast_session_t *session = source->subscribers; session; session = session->next) {
+    if (!session->batched)
+      continue;
+    rtp_reorder_t *r = &session->ctx->reorder;
+    rtp_reorder_cleanup(r);
+    if (rtp_reorder_init(r, 0) < 0) {
+      session->failed = 1;
+    } else {
+      r->base_seq = source->reorder.base_seq;
+      r->phase = source->reorder.phase;
+      r->count = source->reorder.count;
+      for (int i = 0; i < r->window_size; i++) {
+        r->seq[i] = source->reorder.seq[i];
+        if (source->reorder.slots[i]) {
+          r->slots[i] = buffer_ref_view(source->reorder.slots[i]);
+          if (!r->slots[i])
+            session->failed = 1;
+        }
+      }
+    }
+    session->batched = 0;
+    session->packet_next = source->packet_subscribers;
+    source->packet_subscribers = session;
+  }
+  source->batch_clients = 0;
+  rtp_reorder_cleanup(&source->reorder);
+}
+
+/* FCC unicast/pending data must finish first. Switch only at an identical
+ * delivered sequence boundary, so there is no replay or skipped handoff data. */
+static void mcast_source_promote_ready(mcast_source_t *source) {
+  mcast_session_t **entry = &source->packet_subscribers;
+  while (*entry) {
+    mcast_session_t *session = *entry;
+    stream_context_t *ctx = session->ctx;
+    if (!session->failed && ctx->conn->state != CONN_CLOSING && !ctx->snapshot.initialized &&
+        !fec_is_enabled(&ctx->fec) &&
+        (!ctx->fcc.initialized || (ctx->fcc.state == FCC_STATE_MCAST_ACTIVE && !ctx->fcc.pending_list_head)) &&
+        (source->packet_type == 0 || (source->reorder.phase == 2 && ctx->reorder.phase == 2 &&
+                                      ctx->reorder.count == 0 && ctx->reorder.base_seq == source->reorder.base_seq))) {
+      mcast_source_flush(source);
+      *entry = session->packet_next;
+      session->packet_next = NULL;
+      session->batched = 1;
+      source->batch_clients++;
+      logger(LOG_DEBUG, "Multicast: Subscriber joined shared payload batches (fd=%d)", ctx->conn->fd);
+    } else {
+      entry = &session->packet_next;
+    }
+  }
 }
 
 static void mcast_deliver_packet(mcast_session_t *session, buffer_ref_t *packet) {
@@ -554,7 +712,7 @@ static void mcast_deliver_packet(mcast_session_t *session, buffer_ref_t *packet)
   /* Queue linkage, RTP offsets and zerocopy completion IDs are mutable and
    * must never be shared between clients. Only the backing data is shared. */
   buffer_ref_t *view;
-  if (session->source->refs == 1) {
+  if (session->source->refs == 1 && !session->source->shared_output) {
     /* Preserve the allocation-free descriptor path for a lone subscriber. */
     view = packet;
     buffer_ref_get(view);
@@ -603,8 +761,26 @@ int mcast_session_handle_event(mcast_session_t *session, int fd, int64_t now) {
       source->last_data_time = now;
       if (packet) {
         packet->data_size = (size_t)len;
-        for (mcast_session_t *subscriber = source->subscribers; subscriber; subscriber = subscriber->next)
+        uint8_t *payload = NULL;
+        int payload_len = 0;
+        uint16_t seq = 0;
+        int packet_type = source->shared_output ? rtp_get_payload(data, (int)len, &payload, &payload_len, &seq) : -1;
+        if (packet_type == 2)
+          mcast_source_enable_private_fec(source);
+        for (mcast_session_t *subscriber = source->packet_subscribers; subscriber; subscriber = subscriber->packet_next)
           mcast_deliver_packet(subscriber, packet);
+        if (source->shared_output &&
+            (packet_type == 1 || (packet_type == 0 && stream_payload_is_mpegts(payload, payload_len)))) {
+          source->packet_type = packet_type;
+          packet->data_offset = (size_t)(payload - (uint8_t *)packet->data);
+          packet->data_size = (size_t)payload_len;
+          if (packet_type == 1)
+            rtp_reorder_insert(&source->reorder, packet, seq, NULL, 0, NULL);
+          else
+            mcast_source_append(source, packet);
+          if (source->packet_subscribers)
+            mcast_source_promote_ready(source);
+        }
       }
     } else {
       for (mcast_session_t *subscriber = source->subscribers; subscriber; subscriber = subscriber->next) {
@@ -624,6 +800,9 @@ int mcast_session_tick(mcast_session_t *session, int64_t now) {
   service_t *service = source->service;
   if (session->failed || source->failed)
     return -1;
+  /* Bound low-bitrate batching delay; the worker ticks every 100 ms. */
+  if (source->batch && now - source->batch_since >= 100)
+    mcast_source_flush(source);
 
   /* Periodic rejoin and timeout belong to the source, not each subscriber. */
   if (config.mcast_rejoin_interval > 0) {

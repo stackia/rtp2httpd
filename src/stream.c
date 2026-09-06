@@ -132,7 +132,7 @@ static int stream_metadata_format_number(double value, char *buffer, size_t buff
   return 0;
 }
 
-static int stream_payload_is_mpegts(const uint8_t *payload, int payload_len) {
+int stream_payload_is_mpegts(const uint8_t *payload, int payload_len) {
   int checked = 0;
 
   if (!payload || payload_len < TS_PACKET_SIZE || payload[0] != TS_SYNC_BYTE)
@@ -181,8 +181,8 @@ void stream_metadata_forget(stream_metadata_t *metadata, unsigned stages) {
   }
 }
 
-static void stream_metadata_note_media(stream_context_t *ctx, int packet_type, const uint8_t *payload, int payload_len,
-                                       stream_media_origin_t origin) {
+void stream_metadata_note_media(stream_context_t *ctx, int packet_type, const uint8_t *payload, int payload_len,
+                                stream_media_origin_t origin) {
   stream_metadata_t *metadata;
 
   if (!ctx || ctx->metadata.frozen || !stream_payload_is_mpegts(payload, payload_len))

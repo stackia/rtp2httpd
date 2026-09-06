@@ -185,11 +185,9 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref);
  */
 int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_t file_size);
 
-/* Slot-equivalent bytes currently queued (each pending buffer counts as a full
- * BUFFER_POOL_BUFFER_SIZE slot, matching the unit used by queue_limit_bytes). */
-static inline size_t connection_queue_bytes(const connection_t *c) {
-  return c->zc_queue.num_queued * BUFFER_POOL_BUFFER_SIZE;
-}
+/* Backing capacity currently queued, including shared multicast batches.
+ * Partial sends retain the entire backing buffer until the entry is removed. */
+static inline size_t connection_queue_bytes(const connection_t *c) { return c->zc_queue.memory_bytes; }
 
 /* Record one upstream-pause edge.  Called by per-transport pause helpers
  * (http_proxy_pause_upstream, rtsp_pause_upstream) on the 0->1 transition. */

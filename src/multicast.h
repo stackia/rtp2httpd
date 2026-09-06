@@ -18,9 +18,11 @@ typedef struct mcast_session_s {
   int sock;     /* Borrowed main socket (-1 if not subscribed) */
   int fec_sock; /* Borrowed FEC socket; owned by the shared source */
   int failed;   /* Subscriber-local FCC failure */
+  int batched;  /* Receives shared, already ordered payload batches */
   mcast_source_t *source;
   stream_context_t *ctx;
   struct mcast_session_s *next;
+  struct mcast_session_s *packet_next; /* FCC/FEC/snapshot subscribers only */
 } mcast_session_t;
 
 /**

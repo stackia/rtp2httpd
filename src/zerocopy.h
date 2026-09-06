@@ -30,6 +30,7 @@ typedef struct zerocopy_queue_s {
   buffer_ref_t *pending_head; /* First buffer pending completion */
   buffer_ref_t *pending_tail; /* Last buffer pending completion */
   size_t total_bytes;         /* Total bytes queued */
+  size_t memory_bytes;        /* Backing capacity retained by the send queue */
   size_t num_queued;          /* Number of buffers in send queue */
   size_t num_pending;         /* Number of buffers pending completion */
   uint32_t next_zerocopy_id;  /* Next ID for MSG_ZEROCOPY tracking */
@@ -42,6 +43,7 @@ typedef struct zerocopy_queue_s {
 typedef struct zerocopy_state_s {
   buffer_pool_t pool;         /* Global buffer pool */
   buffer_pool_t control_pool; /* Dedicated pool for status/API control plane */
+  buffer_pool_t batch_pool;   /* Lazily allocated immutable multicast batches */
   size_t active_streams;      /* Number of active media streaming clients */
   int initialized;            /* Whether initialized */
 } zerocopy_state_t;
