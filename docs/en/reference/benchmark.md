@@ -71,7 +71,7 @@ Values are the means of per-trial average CPU utilization, with the minimum and 
 | 64 clients, one 20 Mbps channel | 3.99 | 1.36 | 3.92 | 45.65 |
 | 1 client, 400 Mbps | 0.82 | 1.33 | 0.11 | 19.12 |
 
-## Performance Optimizations in rtp2httpd
+## Appendix: Performance Optimization Strategies in rtp2httpd
 
 ### Shared Multicast Subscriptions Within Each Worker
 
