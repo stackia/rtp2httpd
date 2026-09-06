@@ -34,22 +34,32 @@ function CurrentProgramTitle({ title }: { title: string }) {
 
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let animation: Animation | undefined;
+    let previousDistance = 0;
     const updateAnimation = () => {
-      animation?.cancel();
-      const overflow = text.scrollWidth - container.clientWidth;
-      if (overflow <= 0 || container.clientWidth === 0 || reducedMotion.matches) return;
+      const distance =
+        container.clientWidth === 0 || reducedMotion.matches
+          ? 0
+          : Math.max(0, text.scrollWidth - container.clientWidth);
+      if (distance === previousDistance) return;
+      previousDistance = distance;
 
-      // Move at 30px/s with a pause at each end before reversing.
-      const travelTime = (overflow / 30) * 1000;
-      const duration = travelTime + 3000;
+      animation?.cancel();
+      animation = undefined;
+      if (distance === 0) return;
+
+      // One complete round trip at 30px/s, with a 1.5s pause at each end.
+      const pauseTime = 1500;
+      const travelTime = (distance / 30) * 1000;
+      const duration = 2 * (travelTime + pauseTime);
       animation = text.animate(
         [
           { transform: "translateX(0)", offset: 0 },
-          { transform: "translateX(0)", offset: 1500 / duration },
-          { transform: `translateX(-${overflow}px)`, offset: 1 - 1500 / duration },
-          { transform: `translateX(-${overflow}px)`, offset: 1 },
+          { transform: "translateX(0)", offset: pauseTime / duration },
+          { transform: `translateX(-${distance}px)`, offset: (pauseTime + travelTime) / duration },
+          { transform: `translateX(-${distance}px)`, offset: (2 * pauseTime + travelTime) / duration },
+          { transform: "translateX(0)", offset: 1 },
         ],
-        { duration, iterations: Infinity, direction: "alternate", easing: "linear" },
+        { duration, iterations: Infinity, easing: "linear" },
       );
     };
 
@@ -67,7 +77,7 @@ function CurrentProgramTitle({ title }: { title: string }) {
 
   return (
     <span ref={containerRef} className="min-w-0 flex-1 overflow-hidden" title={title}>
-      <span ref={textRef} className="block w-max whitespace-nowrap">
+      <span ref={textRef} className="block w-max whitespace-nowrap motion-reduce:w-auto motion-reduce:truncate">
         {title}
       </span>
     </span>
