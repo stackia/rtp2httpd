@@ -1005,15 +1005,6 @@ int bind_addresses_equal(bindaddr_t *a, bindaddr_t *b) {
   return (a == NULL && b == NULL);
 }
 
-int bind_addresses_has_unix(void) {
-  bindaddr_t *ba;
-  for (ba = bind_addresses; ba; ba = ba->next) {
-    if (ba->type == BIND_ADDR_UNIX)
-      return 1;
-  }
-  return 0;
-}
-
 /**
  * Get the config file path
  */

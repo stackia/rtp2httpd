@@ -223,10 +223,4 @@ void set_config_file_path(const char *path);
  */
 int bind_addresses_equal(bindaddr_t *a, bindaddr_t *b);
 
-/**
- * Check whether any configured bind address is a Unix domain socket path.
- * @return 1 if at least one Unix socket listener is configured, 0 otherwise
- */
-int bind_addresses_has_unix(void);
-
 #endif /* __CONFIGURATION_H__ */
