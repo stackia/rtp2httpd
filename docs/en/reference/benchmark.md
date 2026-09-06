@@ -12,7 +12,7 @@ Compare **rtp2httpd**, **[msd_lite](https://github.com/rozhuk-im/msd_lite)**, **
 
 | Program | Tested version |
 | --- | --- |
-| rtp2httpd | [`530dc980`](https://github.com/stackia/rtp2httpd/commit/530dc980e92db6b6ea98b6ca223dffe1a0345b5c) |
+| rtp2httpd | [`b4fd92a6`](https://github.com/stackia/rtp2httpd/commit/b4fd92a6c49bd720e730aedd62cd10faeeca791f) |
 | msd_lite | [`fa68e131`](https://github.com/rozhuk-im/msd_lite/commit/fa68e131343fb58c67ad77b2d26f2cb7c49a2c95), 2026-07-20; liblcb `e2f420a2` |
 | udpxy | [`31d4bcfa`](https://github.com/pcherenkov/udpxy/commit/31d4bcfabaade59d3efdee015df7979febf76bae), 2026-04-13 |
 | TVGate | [v3.2.0](https://github.com/qist/tvgate/releases/tag/v3.2.0), 2026-09-06 |
@@ -25,7 +25,7 @@ CPU utilization is the change in user and system CPU time from `/proc/PID/stat` 
 
 PSS and USS are sampled every second from `smaps_rollup` and summed over the process tree. PSS proportionally includes shared pages, while USS includes only private pages. Neither includes all kernel socket memory or unmapped anonymous-file cache pages, so these metrics do not represent total server memory cost.
 
-Each RTP datagram carries seven 188-byte MPEG-TS null packets, totaling 1316 payload bytes. Readers decode HTTP chunk framing and continuously consume the stream. Each trial restarts the server and load processes, then warms up after every client starts receiving data. Tests run sequentially.
+Each RTP datagram carries seven 188-byte MPEG-TS null packets, totaling 1316 payload bytes. Readers decode HTTP chunk framing and continuously consume the stream. Each trial restarts the server and load processes, then warms up after every client starts receiving data. Tests run sequentially. The program order rotates each round, so every program occupies each execution position once over four rounds.
 
 msd_lite retains the upstream example's 48 KiB receive watermark, 64 KiB send watermark, and 1 MiB ring buffer; only the listener, interface, thread count, logging, and congestion control are adapted. udpxy retains its default buffer settings. TVGate configures only its listening port and loopback multicast interfaces; concurrency, buffering, connection limits, and logging use application defaults.
 
@@ -33,10 +33,10 @@ msd_lite retains the upstream example's 48 KiB receive watermark, 64 KiB send wa
 
 | Scenario | Clients | Multicast sources | Payload rate per source | Repetitions | Warmup / sampling per trial |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Multiple channels | 8 | 8 | 40 Mbps | 3 | 5 s / 10 s |
-| 8 clients sharing one channel | 8 | 1 | 40 Mbps | 3 | 5 s / 10 s |
-| 64 clients sharing one channel | 64 | 1 | 20 Mbps | 5 | 5 s / 20 s |
-| High bitrate | 1 | 1 | 400 Mbps | 3 | 5 s / 10 s |
+| Multiple channels | 8 | 8 | 40 Mbps | 4 | 5 s / 15 s |
+| 8 clients sharing one channel | 8 | 1 | 40 Mbps | 4 | 5 s / 15 s |
+| 64 clients sharing one channel | 64 | 1 | 20 Mbps | 4 | 5 s / 15 s |
+| High bitrate | 1 | 1 | 400 Mbps | 4 | 5 s / 15 s |
 
 ## Results
 
@@ -48,28 +48,28 @@ Values are the means of per-trial average CPU utilization, with the minimum and 
 
 | Scenario | rtp2httpd | msd_lite | udpxy | TVGate |
 | --- | ---: | ---: | ---: | ---: |
-| 8 channels, 40 Mbps each | 9.78% (9.08–10.29) | 9.49% (9.19–9.78) | 20.81% (20.27–21.28) | 63.32% (62.56–63.96) |
-| 8 clients, one 40 Mbps channel | 7.21% (6.97–7.47) | 6.07% (5.78–6.27) | 26.93% (26.21–27.78) | 43.20% (40.96–45.27) |
-| 64 clients, one 20 Mbps channel | 6.97% (6.33–7.68) | 5.91% (5.59–6.48) | 58.17% (54.80–60.73) | 149.79% (136.85–156.83) |
-| 1 client, 400 Mbps | 15.24% (13.84–16.14) | 14.78% (13.76–16.43) | 23.31% (22.84–23.55) | 47.99% (47.33–48.41) |
+| 8 channels, 40 Mbps each | 3.69% (2.60–4.52) | 12.28% (10.98–12.92) | 23.02% (22.31–23.91) | 56.65% (56.16–57.17) |
+| 8 clients, one 40 Mbps channel | 4.87% (4.64–4.98) | 5.58% (5.29–5.90) | 30.92% (29.19–32.29) | 45.09% (41.79–48.09) |
+| 64 clients, one 20 Mbps channel | 4.78% (4.77–4.78) | 5.50% (5.31–5.76) | 59.93% (58.77–60.62) | 115.08% (112.50–117.97) |
+| 1 client, 400 Mbps | 12.88% (9.70–14.27) | 15.46% (14.85–15.77) | 26.45% (24.58–27.68) | 57.86% (56.08–59.28) |
 
 ### PSS Memory (MiB)
 
 | Scenario | rtp2httpd | msd_lite | udpxy | TVGate |
 | --- | ---: | ---: | ---: | ---: |
-| 8 channels, 40 Mbps each | 2.28 | 8.95 | 0.80 | 25.72 |
-| 8 clients, one 40 Mbps channel | 1.60 | 1.35 | 0.79 | 22.68 |
-| 64 clients, one 20 Mbps channel | 4.61 | 1.37 | 4.51 | 45.65 |
-| 1 client, 400 Mbps | 1.42 | 1.34 | 0.32 | 19.12 |
+| 8 channels, 40 Mbps each | 1.86 | 8.95 | 0.79 | 25.82 |
+| 8 clients, one 40 Mbps channel | 1.13 | 1.35 | 0.79 | 22.76 |
+| 64 clients, one 20 Mbps channel | 1.30 | 1.37 | 4.55 | 46.26 |
+| 1 client, 400 Mbps | 1.26 | 1.34 | 0.32 | 19.16 |
 
 ### USS Memory (MiB)
 
 | Scenario | rtp2httpd | msd_lite | udpxy | TVGate |
 | --- | ---: | ---: | ---: | ---: |
-| 8 channels, 40 Mbps each | 1.66 | 8.94 | 0.53 | 25.72 |
-| 8 clients, one 40 Mbps channel | 0.98 | 1.34 | 0.52 | 22.68 |
-| 64 clients, one 20 Mbps channel | 3.99 | 1.36 | 3.92 | 45.65 |
-| 1 client, 400 Mbps | 0.82 | 1.33 | 0.11 | 19.12 |
+| 8 channels, 40 Mbps each | 1.24 | 8.94 | 0.52 | 25.82 |
+| 8 clients, one 40 Mbps channel | 0.51 | 1.34 | 0.52 | 22.76 |
+| 64 clients, one 20 Mbps channel | 0.68 | 1.35 | 3.96 | 46.26 |
+| 1 client, 400 Mbps | 0.63 | 1.33 | 0.12 | 19.16 |
 
 ## Appendix: Performance Optimization Strategies in rtp2httpd
 
@@ -136,7 +136,7 @@ See [tools/stress-test/README.md](https://github.com/stackia/rtp2httpd/blob/main
 ```bash
 scripts/benchmark.sh rtp2httpd msd_lite udpxy tvgate \
   --cases distinct8 shared8 shared64 high400 \
-  --repetitions 5 --warmup 5 --duration 20
+  --repetitions 4 --warmup 5 --duration 15
 ```
 
 Use `--binary NAME=PATH` and `--revision NAME=VERSION` to identify the actual executables and versions. Set repetitions and sampling duration for each scenario according to the table above. CPU, PSS, and USS summaries are written to `resources.json` in the output directory, which defaults to `build/benchmark/`. Test records remain local.
