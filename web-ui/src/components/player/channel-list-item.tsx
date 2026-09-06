@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import { History } from "lucide-react";
-import { forwardRef, memo, type MouseEvent as ReactMouseEvent, useCallback } from "react";
+import { forwardRef, memo, type MouseEvent as ReactMouseEvent, useCallback, useEffect, useRef } from "react";
 import { usePlayerTranslation } from "../../hooks/use-player-translation";
 import type { Locale } from "../../lib/locale";
 import { isMiddleMouseButton } from "../../lib/media-direct-link";
@@ -21,6 +21,57 @@ interface ChannelListItemProps {
   onCopyMediaLink: (channel: Channel) => void;
   locale: Locale;
   currentProgram?: string;
+}
+
+function CurrentProgramTitle({ title }: { title: string }) {
+  const containerRef = useRef<HTMLSpanElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const text = textRef.current;
+    if (!container || !text) return;
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let animation: Animation | undefined;
+    const updateAnimation = () => {
+      animation?.cancel();
+      const overflow = text.scrollWidth - container.clientWidth;
+      if (overflow <= 0 || container.clientWidth === 0 || reducedMotion.matches) return;
+
+      // Move at 30px/s with a pause at each end before reversing.
+      const travelTime = (overflow / 30) * 1000;
+      const duration = travelTime + 3000;
+      animation = text.animate(
+        [
+          { transform: "translateX(0)", offset: 0 },
+          { transform: "translateX(0)", offset: 1500 / duration },
+          { transform: `translateX(-${overflow}px)`, offset: 1 - 1500 / duration },
+          { transform: `translateX(-${overflow}px)`, offset: 1 },
+        ],
+        { duration, iterations: Infinity, direction: "alternate", easing: "linear" },
+      );
+    };
+
+    const observer = new ResizeObserver(updateAnimation);
+    observer.observe(container);
+    observer.observe(text);
+    reducedMotion.addEventListener("change", updateAnimation);
+    updateAnimation();
+    return () => {
+      animation?.cancel();
+      observer.disconnect();
+      reducedMotion.removeEventListener("change", updateAnimation);
+    };
+  }, []);
+
+  return (
+    <span ref={containerRef} className="min-w-0 flex-1 overflow-hidden" title={title}>
+      <span ref={textRef} className="block w-max whitespace-nowrap">
+        {title}
+      </span>
+    </span>
+  );
 }
 
 const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemProps>(
@@ -85,12 +136,31 @@ const ChannelListItemComponent = forwardRef<HTMLButtonElement, ChannelListItemPr
               </span>
             )}
           </div>
-          <div className="mt-0.5 truncate text-[10px] text-slate-500 leading-4 dark:text-slate-400 md:text-xs">
-            {groupLabel}
-            {currentProgram && (
+          <div
+            className={clsx(
+              "mt-0.5 text-[10px] text-slate-500 leading-4 dark:text-slate-400 md:text-xs",
+              isCurrentChannel && currentProgram ? "flex items-center" : "truncate",
+            )}
+          >
+            {isCurrentChannel && currentProgram ? (
               <>
-                {groupLabel && <span className="mx-1">·</span>}
-                <span>{currentProgram}</span>
+                {groupLabel && (
+                  <>
+                    <span className="max-w-1/2 truncate">{groupLabel}</span>
+                    <span className="mx-1 shrink-0">·</span>
+                  </>
+                )}
+                <CurrentProgramTitle key={currentProgram} title={currentProgram} />
+              </>
+            ) : (
+              <>
+                {groupLabel}
+                {currentProgram && (
+                  <>
+                    {groupLabel && <span className="mx-1">·</span>}
+                    <span>{currentProgram}</span>
+                  </>
+                )}
               </>
             )}
           </div>
