@@ -598,7 +598,14 @@ static void mcast_source_fanout(mcast_source_t *source, buffer_ref_t *batch, int
     stream_context_t *ctx = session->ctx;
     if (!session->batched || session->failed || ctx->conn->state == CONN_CLOSING)
       continue;
-    buffer_ref_t *view = buffer_ref_view(batch);
+    buffer_ref_t *view;
+    if (source->refs == 1) {
+      /* One subscriber needs no separate mutable send view. */
+      view = batch;
+      buffer_ref_get(view);
+    } else {
+      view = buffer_ref_view(batch);
+    }
     if (!view) {
       session->failed = 1;
       continue;
@@ -607,8 +614,7 @@ static void mcast_source_fanout(mcast_source_t *source, buffer_ref_t *batch, int
                                ctx->fcc.initialized ? STREAM_MEDIA_ORIGIN_FCC_MULTICAST
                                                     : STREAM_MEDIA_ORIGIN_MULTICAST);
     if (rtp_queue_buf_direct(ctx->conn, view) >= 0 && flush && view->data_size < SEND_QUEUE_BATCH_BYTES) {
-      connection_epoll_update_events(ctx->epoll_fd, ctx->conn->fd,
-                                     POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+      connection_schedule_write(ctx->conn);
     }
     buffer_ref_put(view);
   }
@@ -738,10 +744,113 @@ static void mcast_deliver_packet(mcast_session_t *session, buffer_ref_t *packet)
     session->failed = 1;
 }
 
+static void mcast_source_process_packet(mcast_source_t *source, buffer_ref_t *packet, size_t len, int64_t now) {
+  void *data = packet ? packet->data : NULL;
+  source->last_data_time = now;
+  if (packet) {
+    packet->data_size = (size_t)len;
+    uint8_t *payload = NULL;
+    int payload_len = 0;
+    uint16_t seq = 0;
+    int packet_type = source->shared_output ? rtp_get_payload(data, (int)len, &payload, &payload_len, &seq) : -1;
+    if (packet_type == 2)
+      mcast_source_enable_private_fec(source);
+    for (mcast_session_t *subscriber = source->packet_subscribers; subscriber; subscriber = subscriber->packet_next)
+      mcast_deliver_packet(subscriber, packet);
+    if (source->shared_output &&
+        (packet_type == 1 || (packet_type == 0 && stream_payload_is_mpegts(payload, payload_len)))) {
+      source->packet_type = packet_type;
+      packet->data_offset = (size_t)(payload - (uint8_t *)packet->data);
+      packet->data_size = (size_t)payload_len;
+      if (packet_type == 1)
+        rtp_reorder_insert(&source->reorder, packet, seq, NULL, 0, NULL);
+      else
+        mcast_source_append(source, packet);
+      if (source->packet_subscribers)
+        mcast_source_promote_ready(source);
+    }
+  }
+}
+
+#if defined(__linux__) || defined(__FreeBSD__)
+/* The worker dispatches receive callbacks serially. Keep scratch descriptors
+ * and unused pool buffers across callbacks, rather than allocating a full batch
+ * on every readiness notification (which often carries only one datagram). */
+enum { RECEIVE_BATCH = 16 };
+static struct mmsghdr receive_messages[RECEIVE_BATCH];
+static struct iovec receive_iov[RECEIVE_BATCH];
+static buffer_ref_t *receive_packets[RECEIVE_BATCH];
+static uint8_t receive_discard[BUFFER_POOL_BUFFER_SIZE];
+static int receive_initialized;
+
+static int mcast_source_receive_batch(mcast_source_t *source, int fd, int64_t now) {
+  static int unavailable;
+  if (unavailable)
+    return -1;
+  struct mmsghdr *messages = receive_messages;
+  struct iovec *iov = receive_iov;
+  buffer_ref_t **packets = receive_packets;
+  int fallback = 0;
+  if (!receive_initialized) {
+    for (int i = 0; i < RECEIVE_BATCH; i++) {
+      messages[i].msg_hdr.msg_iov = &iov[i];
+      messages[i].msg_hdr.msg_iovlen = 1;
+      iov[i].iov_len = BUFFER_POOL_BUFFER_SIZE;
+    }
+    receive_initialized = 1;
+  }
+  for (;;) {
+    for (int i = 0; i < RECEIVE_BATCH; i++) {
+      if (!packets[i])
+        packets[i] = buffer_pool_alloc();
+      iov[i].iov_base = packets[i] ? packets[i]->data : receive_discard;
+    }
+    int count = recvmmsg(fd, messages, RECEIVE_BATCH, MSG_DONTWAIT, NULL);
+    if (count < 0) {
+      if (errno == EINTR)
+        continue;
+      if (errno == ENOSYS || errno == EOPNOTSUPP) {
+        unavailable = 1;
+        fallback = -1;
+      } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
+        logger(LOG_ERROR, "Multicast: Batch receive failed: %s", strerror(errno));
+        source->failed = 1;
+      }
+      break;
+    }
+    for (int i = 0; i < count; i++) {
+      mcast_source_process_packet(source, packets[i], messages[i].msg_len, now);
+      buffer_ref_put(packets[i]);
+      packets[i] = NULL;
+    }
+    /* Drain through EAGAIN even after a short result: a signal may interrupt
+     * recvmmsg after partial progress with more datagrams still queued. */
+  }
+  if (fallback)
+    mcast_worker_cleanup();
+  return fallback;
+}
+#endif
+
+void mcast_worker_cleanup(void) {
+#if defined(__linux__) || defined(__FreeBSD__)
+  for (int i = 0; i < RECEIVE_BATCH; i++) {
+    buffer_ref_put(receive_packets[i]);
+    receive_packets[i] = NULL;
+  }
+  receive_initialized = 0;
+#endif
+}
+
 int mcast_session_handle_event(mcast_session_t *session, int fd, int64_t now) {
   mcast_source_t *source = session->source;
   if (!source)
     return -1;
+
+#if defined(__linux__) || defined(__FreeBSD__)
+  if (fd == source->sock && mcast_source_receive_batch(source, fd, now) == 0)
+    return 0;
+#endif
 
   /* Drain to EAGAIN for edge-triggered pollers, including on pool exhaustion.
    * All subscribers are detached by the worker outside this delivery loop. */
@@ -762,30 +871,7 @@ int mcast_session_handle_event(mcast_session_t *session, int fd, int64_t now) {
       break;
     }
     if (fd == source->sock) {
-      source->last_data_time = now;
-      if (packet) {
-        packet->data_size = (size_t)len;
-        uint8_t *payload = NULL;
-        int payload_len = 0;
-        uint16_t seq = 0;
-        int packet_type = source->shared_output ? rtp_get_payload(data, (int)len, &payload, &payload_len, &seq) : -1;
-        if (packet_type == 2)
-          mcast_source_enable_private_fec(source);
-        for (mcast_session_t *subscriber = source->packet_subscribers; subscriber; subscriber = subscriber->packet_next)
-          mcast_deliver_packet(subscriber, packet);
-        if (source->shared_output &&
-            (packet_type == 1 || (packet_type == 0 && stream_payload_is_mpegts(payload, payload_len)))) {
-          source->packet_type = packet_type;
-          packet->data_offset = (size_t)(payload - (uint8_t *)packet->data);
-          packet->data_size = (size_t)payload_len;
-          if (packet_type == 1)
-            rtp_reorder_insert(&source->reorder, packet, seq, NULL, 0, NULL);
-          else
-            mcast_source_append(source, packet);
-          if (source->packet_subscribers)
-            mcast_source_promote_ready(source);
-        }
-      }
+      mcast_source_process_packet(source, packet, (size_t)len, now);
     } else {
       for (mcast_session_t *subscriber = source->subscribers; subscriber; subscriber = subscriber->next) {
         if (!subscriber->failed && subscriber->ctx->conn->state != CONN_CLOSING)

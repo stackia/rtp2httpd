@@ -56,6 +56,12 @@ static fec_group_t *fec_find_or_create_group(fec_context_t *ctx, uint16_t begin_
     return NULL;
   }
 
+  if (!ctx->groups) {
+    ctx->groups = calloc(FEC_MAX_GROUPS, sizeof(*ctx->groups));
+    if (!ctx->groups)
+      return NULL;
+  }
+
   /* Look for existing group */
   for (int i = 0; i < FEC_MAX_GROUPS; i++) {
     fec_group_t *grp = &ctx->groups[i];
@@ -172,9 +178,11 @@ void fec_cleanup(fec_context_t *ctx, int epoll_fd) {
     logger(LOG_DEBUG, "FEC: Closed socket");
   }
 
-  /* Free all groups */
-  for (int i = 0; i < FEC_MAX_GROUPS; i++) {
-    fec_free_group(&ctx->groups[i]);
+  if (ctx->groups) {
+    for (int i = 0; i < FEC_MAX_GROUPS; i++)
+      fec_free_group(&ctx->groups[i]);
+    free(ctx->groups);
+    ctx->groups = NULL;
   }
   ctx->group_count = 0;
 
@@ -298,7 +306,7 @@ int fec_process_packet(fec_context_t *ctx, const uint8_t *data, int len) {
 }
 
 int fec_attempt_recovery(fec_context_t *ctx, uint16_t seq, uint8_t **recovered_data, int *recovered_len) {
-  if (!fec_is_enabled(ctx) || !ctx->reorder) {
+  if (!fec_is_enabled(ctx) || !ctx->reorder || !ctx->groups) {
     return -1;
   }
 
@@ -529,6 +537,8 @@ decode_error:
 }
 
 void fec_release_expired_groups(fec_context_t *ctx, uint16_t base_seq) {
+  if (!ctx->groups)
+    return;
   /* Release all expired groups */
   for (int i = 0; i < FEC_MAX_GROUPS; i++) {
     fec_group_t *grp = &ctx->groups[i];

@@ -1,7 +1,7 @@
-"""Check HTTP framing used by the benchmark's payload validator."""
+"""Check benchmark framing, launch settings, and experimental ordering."""
 
 import pytest
-from benchmark import HTTPBody, command_for
+from benchmark import HTTPBody, command_for, program_order
 
 
 @pytest.mark.parametrize("chunked", [False, True])
@@ -41,3 +41,15 @@ def test_tvgate_uses_default_runtime_settings(tmp_path, monkeypatch):
     assert (tmp_path / "trial.yaml").read_text() == (
         "server:\n  port: 12345\nmulticast:\n  multicast_ifaces: [lo]\n  upstream_interface: lo\n"
     )
+
+
+@pytest.mark.parametrize("count", [2, 3, 4])
+def test_every_program_visits_every_position_per_rotation(count):
+    programs = [str(i) for i in range(count)]
+    for cycle in range(3):
+        orders = [program_order(programs, cycle * count + i) for i in range(count)]
+        for order in orders:
+            assert sorted(order) == programs
+        for position in range(count):
+            assert sorted(order[position] for order in orders) == programs
+    assert programs == [str(i) for i in range(count)]

@@ -40,8 +40,8 @@ void send_queue_cleanup(send_queue_t *queue);
 int send_queue_add(send_queue_t *queue, buffer_ref_t *buf_ref);
 /* Transfers ownership of file_fd only on success. */
 int send_queue_add_file(send_queue_t *queue, int file_fd, off_t file_offset, size_t file_size);
-/* Returns 0 on success, -1 on fatal error, or -2 when the socket would block. */
-int send_queue_send(int fd, send_queue_t *queue, size_t *bytes_sent);
+/* Send at most max_bytes. Return 0 on success, -1 on fatal error, or -2 when blocked. */
+int send_queue_send(int fd, send_queue_t *queue, size_t max_bytes, size_t *bytes_sent);
 int send_queue_should_flush(send_queue_t *queue);
 
 #endif /* __SEND_QUEUE_H__ */

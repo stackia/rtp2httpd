@@ -59,12 +59,12 @@ typedef struct rtp_reorder_s rtp_reorder_t;
  * FEC context - per-stream FEC state
  */
 typedef struct fec_context_s {
-  int initialized;                    /* Flag: context has been initialized */
-  int sock;                           /* FEC multicast socket (-1 if disabled) */
-  uint16_t fec_port;                  /* FEC multicast port */
-  uint8_t fec_active;                 /* 1 if FEC packets have been received */
-  fec_group_t groups[FEC_MAX_GROUPS]; /* Active FEC groups */
-  int group_count;                    /* Number of active groups */
+  int initialized;     /* Flag: context has been initialized */
+  int sock;            /* FEC multicast socket (-1 if disabled) */
+  uint16_t fec_port;   /* FEC multicast port */
+  uint8_t fec_active;  /* 1 if FEC packets have been received */
+  fec_group_t *groups; /* Allocated when the first non-expired FEC group arrives */
+  int group_count;     /* Number of active groups */
 
   /* min_end_seq caching for efficient expired group detection */
   uint16_t min_end_seq;      /* Minimum end_seq among active groups */

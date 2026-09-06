@@ -1003,8 +1003,7 @@ static int rtsp_handle_terminal_socket_event(rtsp_session_t *session, uint32_t e
     rtsp_force_cleanup(session);
     if (session->conn && session->conn->state != CONN_CLOSING) {
       session->conn->state = CONN_CLOSING;
-      connection_epoll_update_events(session->conn->epfd, session->conn->fd,
-                                     POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+      connection_schedule_write(session->conn);
     }
     return STREAM_EVENT_OK;
   }
@@ -1218,8 +1217,7 @@ int rtsp_handle_socket_event(rtsp_session_t *session, uint32_t events) {
         rtsp_force_cleanup(session);
         if (session->conn && session->conn->state != CONN_CLOSING) {
           session->conn->state = CONN_CLOSING;
-          connection_epoll_update_events(session->conn->epfd, session->conn->fd,
-                                         POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+          connection_schedule_write(session->conn);
         }
         return 0;
       }

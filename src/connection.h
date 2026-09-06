@@ -55,6 +55,7 @@ typedef struct connection_s {
   struct connection_s *next;
   struct connection_s *write_queue_next;
   int write_queue_pending;
+  int write_poll_armed; /* Waiting for a kernel writable notification */
 
   /* Backpressure and monitoring */
   size_t queue_limit_bytes;
@@ -140,12 +141,10 @@ int connection_set_nonblocking(int fd);
 int connection_set_tcp_nodelay(int fd);
 
 /**
- * Update epoll events for a file descriptor
- * @param epfd epoll file descriptor
- * @param fd File descriptor to update
- * @param events New event mask
+ * Schedule buffered output unless waiting for socket writability.
+ * @param c Client connection
  */
-void connection_epoll_update_events(int epfd, int fd, uint32_t events);
+void connection_schedule_write(connection_t *c);
 
 /**
  * Queue data to connection output buffer for reliable delivery
@@ -225,7 +224,7 @@ void connection_recompute_any_upstream_paused(connection_t *c);
 
 /**
  * Mark the connection for orderly shutdown after upstream EOF/error: switch
- * to CONN_CLOSING and re-arm the full event mask so the worker keeps draining
+ * to CONN_CLOSING and schedule a write so the worker keeps draining
  * any queued bytes to the client before tearing down.  No-op if the
  * connection is already CONN_CLOSING.
  */

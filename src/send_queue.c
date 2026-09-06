@@ -198,8 +198,8 @@ int send_queue_should_flush(send_queue_t *queue) {
   return 0; /* Not ready to flush yet */
 }
 
-int send_queue_send(int fd, send_queue_t *queue, size_t *bytes_sent) {
-  if (!queue->head) {
+int send_queue_send(int fd, send_queue_t *queue, size_t max_bytes, size_t *bytes_sent) {
+  if (!queue->head || !max_bytes) {
     *bytes_sent = 0;
     return 0;
   }
@@ -208,7 +208,8 @@ int send_queue_send(int fd, send_queue_t *queue, size_t *bytes_sent) {
   int shared_fd = buffer_ref_sendfile_fd(shared);
   if (shared_fd >= 0) {
     off_t offset = (uint8_t *)shared->iov.iov_base - ((uint8_t *)shared->data + shared->data_offset);
-    ssize_t sent = platform_sendfile(fd, shared_fd, &offset, shared->iov.iov_len);
+    size_t count = shared->iov.iov_len < max_bytes ? shared->iov.iov_len : max_bytes;
+    ssize_t sent = platform_sendfile(fd, shared_fd, &offset, count);
     if (sent < 0 && (errno == EINVAL || errno == ENOSYS || errno == EOPNOTSUPP)) {
       /* Keep this subscriber's fallback private; others can still sendfile. */
       shared->shared_fd = -2;
@@ -243,6 +244,8 @@ int send_queue_send(int fd, send_queue_t *queue, size_t *bytes_sent) {
   if (queue->head->type == BUFFER_TYPE_FILE) {
     buffer_ref_t *file_buf = queue->head;
     size_t remaining = file_buf->file_size - file_buf->file_sent;
+    if (remaining > max_bytes)
+      remaining = max_bytes;
     off_t offset = file_buf->file_offset + file_buf->file_sent;
 
     /* Use platform_sendfile() for non-blocking file send */
@@ -294,11 +297,15 @@ int send_queue_send(int fd, send_queue_t *queue, size_t *bytes_sent) {
   /* Build iovec array from queue buffers (memory buffers only) */
   struct iovec iovecs[SEND_QUEUE_MAX_IOVECS];
   int iov_count = 0;
+  size_t remaining_budget = max_bytes;
 
   buffer_ref_t *buf = queue->head;
-  while (buf && iov_count < SEND_QUEUE_MAX_IOVECS && buf->type == BUFFER_TYPE_MEMORY &&
+  while (buf && remaining_budget && iov_count < SEND_QUEUE_MAX_IOVECS && buf->type == BUFFER_TYPE_MEMORY &&
          buffer_ref_sendfile_fd(buf) < 0) {
     iovecs[iov_count] = buf->iov;
+    if (iovecs[iov_count].iov_len > remaining_budget)
+      iovecs[iov_count].iov_len = remaining_budget;
+    remaining_budget -= iovecs[iov_count].iov_len;
     iov_count++;
     buf = buf->send_next;
   }

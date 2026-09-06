@@ -62,4 +62,7 @@ int mcast_session_handle_event(mcast_session_t *session, int fd, int64_t now);
  */
 int mcast_session_tick(mcast_session_t *session, int64_t now);
 
+/* Release worker receive scratch buffers before destroying the buffer pools. */
+void mcast_worker_cleanup(void);
+
 #endif /* __MULTICAST_H__ */

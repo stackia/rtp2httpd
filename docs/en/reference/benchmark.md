@@ -73,6 +73,12 @@ Values are the means of per-trial average CPU utilization, with the minimum and 
 
 ## Appendix: Performance Optimization Strategies in rtp2httpd
 
+### Allocate Memory by Lifetime
+
+Connections allocate RTSP or HTTP proxy state only for the protocol they use. FEC group tables are allocated when recovery groups need to be stored. HTTP input buffers and parsed requests use separate anonymous memory mappings: input storage is released after parsing and routing, while ordinary media streams release parsed request data after generating response headers. HTTP proxies retain the request headers and body they still use. Temporary request pages can return directly to the operating system instead of remaining in the heap alongside long-lived connections.
+
+The packet pool starts with 128 buffers and grows in increments of 128. The control pool starts with 16 and grows in increments of 16. The worker periodically reclaims completely idle segments while retaining a base capacity. Client queue budgets are calculated separately from the initial allocation, so reducing initial memory does not reduce the existing buffering allowance.
+
 ### Shared Multicast Subscriptions Within Each Worker
 
 Each worker maintains a shared-source registry keyed by the resolved multicast address, port, SSM source address, effective upstream interface, and FEC port. Channel names, `/rtp/` versus `/udp/` spelling, and FCC server parameters do not participate in matching. Requests for the same resource create one main multicast socket and, when configured, one FEC socket.
@@ -87,9 +93,15 @@ For ordinary multicast, the shared source parses and reorders RTP once, then com
 
 The Buffer layer adds an on-demand 64 KiB batch pool alongside the existing 1536-byte packet pool and control pool. The worker owns the batch pool, so queued data can outlive its multicast source. It initially allocates four batches and grows in increments of four. Its maximum capacity is derived from a `buffer-pool-max-size × 1536` byte budget, with room for at least four batches. This limit applies to the batch pool separately from the original packet pool. If the batch pool is exhausted, forwarding can continue through small-packet references.
 
-Clients share the underlying payload while each owns a separate `buffer_ref_t` view. Its `owner` points to the same immutable data; list links, send offsets, and remaining lengths stay independent. A partial send updates only that client's view. The backing memory returns to the pool only after the last view is released. Each client retains its own send queue and capacity limit, so a slow client does not pause reception for other subscribers.
+Multiple clients share the underlying payload while each owns a separate `buffer_ref_t` view. Its `owner` points to the same immutable data; list links, send offsets, and remaining lengths stay independent. A partial send updates only that client's view. The backing memory returns to the pool only after the last view is released. Each client retains its own send queue and capacity limit, so a slow client does not pause reception for other subscribers. A source with only one subscriber uses the batch descriptor directly, avoiding an extra view allocation.
 
 Queue limits now charge the backing buffer capacity instead of assuming “buffer count × 1536.” A batch with only a few unsent bytes still consumes the full 64 KiB allowance until that client releases its reference. This prevents shared large buffers from bypassing the existing slow-client memory limits.
+
+### Reduce Fixed Receive and Send Costs
+
+Platforms supporting `recvmmsg` receive up to 16 datagrams per call. The worker reuses receive descriptors and unconsumed packet buffers. Data arrives directly in pool buffers, avoiding an additional copy after reception; platforms without batch reception receive one packet at a time. Once initial RTP reordering is complete, an expected packet can be delivered directly when the window is empty and FEC is disabled, avoiding insertion into and removal from reorder slots.
+
+Writes enter a local worker queue first. The worker subscribes to kernel writable events only when a socket cannot make further progress, reducing per-batch event registration changes. Each connection sends at most 256 KiB per turn, and each event-loop iteration processes at most 128 write tasks. Remaining tasks stay queued so reception, timers, and other clients can also run.
 
 ### Immutable Batch Snapshots
 

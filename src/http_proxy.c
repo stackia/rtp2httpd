@@ -1283,8 +1283,7 @@ static int http_proxy_parse_response_headers(http_proxy_session_t *session) {
 
     /* Flush headers immediately - don't use queue_output_and_flush which sets
      * CONN_CLOSING */
-    connection_epoll_update_events(session->conn->epfd, session->conn->fd,
-                                   POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+    connection_schedule_write(session->conn);
   }
 
   /* HEAD responses have no body — go straight to COMPLETE */
@@ -1464,8 +1463,7 @@ int http_proxy_handle_socket_event(http_proxy_session_t *session, uint32_t event
     if (session->conn && session->conn->state != CONN_CLOSING) {
       logger(LOG_DEBUG, "HTTP Proxy: Transfer complete");
       session->conn->state = CONN_CLOSING;
-      connection_epoll_update_events(session->conn->epfd, session->conn->fd,
-                                     POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+      connection_schedule_write(session->conn);
     }
   }
 

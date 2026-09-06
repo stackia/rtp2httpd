@@ -449,6 +449,15 @@ def trial(program, case, repetition, order, args, binaries):
     return result
 
 
+def program_order(programs, repetition):
+    """Balance every position before reversing the next complete rotation."""
+    offset = repetition % len(programs)
+    order = programs[offset:] + programs[:offset]
+    if (repetition // len(programs)) % 2:
+        order.reverse()
+    return order
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("programs", nargs="*", choices=["rtp2httpd", "msd_lite", "udpxy", "tvgate", "baseline"])
@@ -526,10 +535,7 @@ def main():
     with (args.output / "trials.jsonl").open("w") as output:
         for case in args.cases:
             for repetition in range(args.repetitions):
-                # Rotate first position; alternate direction to reduce ordering bias.
-                order = programs[repetition % len(programs) :] + programs[: repetition % len(programs)]
-                if repetition % 2:
-                    order = order[::-1]
+                order = program_order(programs, repetition)
                 for position, program in enumerate(order):
                     row = trial(program, case, repetition, position, args, binaries)
                     rows.append(row)

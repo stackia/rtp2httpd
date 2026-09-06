@@ -30,6 +30,8 @@ static struct hashmap *fd_map = NULL;
 
 /* Connection list head */
 static connection_t *conn_head = NULL;
+static connection_t *write_head = NULL;
+static connection_t *write_tail = NULL;
 
 /* Stop flag for graceful shutdown */
 static volatile sig_atomic_t stop_flag = 0;
@@ -158,9 +160,59 @@ static void remove_connection_from_list(connection_t *c) {
   }
 }
 
+void worker_queue_write(connection_t *c) {
+  if (!c || c->write_queue_pending)
+    return;
+  c->write_queue_pending = 1;
+  c->write_queue_next = NULL;
+  if (write_tail)
+    write_tail->write_queue_next = c;
+  else
+    write_head = c;
+  write_tail = c;
+}
+
+static void worker_cancel_write(connection_t *c) {
+  if (!c->write_queue_pending)
+    return;
+  connection_t *previous = NULL;
+  for (connection_t *entry = write_head; entry; entry = entry->write_queue_next) {
+    if (entry == c) {
+      if (previous)
+        previous->write_queue_next = c->write_queue_next;
+      else
+        write_head = c->write_queue_next;
+      if (write_tail == c)
+        write_tail = previous;
+      break;
+    }
+    previous = entry;
+  }
+  c->write_queue_pending = 0;
+  c->write_queue_next = NULL;
+}
+
+static void worker_drain_writes(void) {
+  for (int i = 0; write_head && i < WORKER_MAX_WRITE_BATCH; i++) {
+    connection_t *c = write_head;
+    write_head = c->write_queue_next;
+    if (!write_head)
+      write_tail = NULL;
+    c->write_queue_pending = 0;
+    c->write_queue_next = NULL;
+    connection_write_status_t status = connection_handle_write(c);
+    if (status == CONNECTION_WRITE_CLOSED)
+      worker_close_and_free_connection(c);
+    else if (status == CONNECTION_WRITE_PENDING)
+      worker_queue_write(c);
+  }
+}
+
 void worker_close_and_free_connection(connection_t *c) {
   if (!c)
     return;
+
+  worker_cancel_write(c);
 
   /* CRITICAL: For streaming connections, initiate cleanup first to check if
    * async TEARDOWN will be started This prevents use-after-free when TEARDOWN
@@ -270,7 +322,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
   int64_t last_tick = get_time_ms();
 
   while (!stop_flag) {
-    int timeout_ms = 100;
+    int timeout_ms = write_head ? 0 : 100;
     int n = poller_wait(epfd, events, (int)(sizeof(events) / sizeof(events[0])), timeout_ms);
     if (n < 0) {
       if (errno == EINTR)
@@ -430,9 +482,9 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
           /* Handle POLLER_IN and POLLER_OUT independently (not mutually
            * exclusive) */
           if (events[e].events & POLLER_IN) {
-            /* For streaming connections, client socket is monitored for
-             * disconnect detection */
-            if (c->streaming) {
+            /* After routing, only monitor for disconnects and drain stray input.
+             * The request parser and input mapping may already be released. */
+            if (c->state != CONN_READ_REQ_LINE && c->state != CONN_READ_HEADERS) {
               /* Client sent data or disconnected during streaming.
                * Drain all available data for edge-triggered pollers. */
               char discard_buffer[1024];
@@ -467,11 +519,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
           }
 
           if (events[e].events & POLLER_OUT) {
-            connection_write_status_t status = connection_handle_write(c);
-            if (status == CONNECTION_WRITE_CLOSED) {
-              worker_close_and_free_connection(c);
-              continue;
-            }
+            worker_queue_write(c);
           }
         } else {
           int res = stream_handle_fd_event(&c->stream, fd_ready, events[e].events, now);
@@ -508,8 +556,11 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
     }
 
     /* 2) Periodic tick: update streams and SSE heartbeats */
-    if (now - last_tick >= timeout_ms) {
+    if (now - last_tick >= 100) {
       last_tick = now;
+      /* Reclaim idle segments after transient startup/buffering bursts, even
+       * when long-lived streaming clients remain connected. */
+      buffer_pool_try_shrink();
       connection_t *c = conn_head;
       while (c) {
         connection_t *next = c->next; /* Save next pointer before potential cleanup */
@@ -629,11 +680,14 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
         }
       }
     }
+    worker_drain_writes();
   }
 
   /* Cleanup: close all active connections */
   while (conn_head)
     worker_close_and_free_connection(conn_head);
+
+  mcast_worker_cleanup();
 
   /* Cleanup fd map */
   fdmap_cleanup();

@@ -228,6 +228,12 @@ int rtp_reorder_insert(rtp_reorder_t *r, buffer_ref_t *buf_ref, uint16_t seqn, c
   /* Case 1: Expected sequence -> store and flush */
   if (likely(seq_diff == 0)) {
     int slot = seqn & r->window_mask;
+    /* In-order traffic without FEC has nothing to retain in the window. */
+    if (likely(r->count == 0) && !(fec && fec_is_enabled(fec)) && !r->slots[slot]) {
+      int bytes = deliver_packet(r, buf_ref, conn, is_snapshot);
+      r->base_seq++;
+      return bytes;
+    }
     if (r->slots[slot]) {
       /* Old packet from ring wrap-around, release it */
       buffer_ref_put(r->slots[slot]);

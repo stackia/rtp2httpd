@@ -55,6 +55,9 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd);
  */
 void worker_close_and_free_connection(connection_t *c);
 
+/* Enqueue one write attempt without changing the socket poller registration. */
+void worker_queue_write(connection_t *c);
+
 /**
  * Safely cleanup a socket from epoll and fdmap
  * Order: fdmap_del -> epoll_ctl -> close

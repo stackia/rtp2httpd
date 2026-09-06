@@ -10,6 +10,7 @@
 #include "service.h"
 #include "status.h"
 #include "utils.h"
+#include "worker.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -19,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -27,6 +29,8 @@
 #define CONNECTION_TCP_KEEPALIVE_INTVL_SEC 5
 #define CONNECTION_TCP_KEEPALIVE_CNT 3
 #define CONN_QUEUE_MIN_BUFFERS 64
+/* Logical queue budget is independent of eagerly allocated packet buffers. */
+#define CONN_QUEUE_BASE_BUFFERS 1024
 #define CONN_QUEUE_BURST_FACTOR 3.0
 #define CONN_QUEUE_BURST_FACTOR_CONGESTED 1.5
 #define CONN_QUEUE_BURST_FACTOR_DRAIN 1.0
@@ -313,7 +317,12 @@ static void connection_prepare_queue_limit_inputs(queue_limit_inputs_t *out) {
   if (active == 0)
     active = 1;
 
-  size_t total_buffers = pool->num_buffers ? pool->num_buffers : BUFFER_POOL_INITIAL_SIZE;
+  size_t total_buffers = pool->num_buffers;
+  size_t base_buffers = CONN_QUEUE_BASE_BUFFERS;
+  if (pool->max_buffers && base_buffers > pool->max_buffers)
+    base_buffers = pool->max_buffers;
+  if (total_buffers < base_buffers)
+    total_buffers = base_buffers;
   size_t share_buffers = total_buffers / active;
   if (share_buffers < CONN_QUEUE_MIN_BUFFERS)
     share_buffers = CONN_QUEUE_MIN_BUFFERS;
@@ -470,7 +479,7 @@ void connection_begin_drain_close(connection_t *c) {
   if (!c || c->state == CONN_CLOSING)
     return;
   c->state = CONN_CLOSING;
-  connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+  connection_schedule_write(c);
 }
 
 int connection_set_nonblocking(int fd) {
@@ -485,7 +494,20 @@ int connection_set_tcp_nodelay(int fd) {
   return setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
 }
 
-void connection_epoll_update_events(int epfd, int fd, uint32_t events) { poller_mod(epfd, fd, events); }
+static void connection_watch_writable(connection_t *c, int enabled) {
+  if (c->write_poll_armed == enabled)
+    return;
+  uint32_t mask = POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR;
+  if (enabled)
+    mask |= POLLER_OUT;
+  if (poller_mod(c->epfd, c->fd, mask) == 0)
+    c->write_poll_armed = enabled;
+}
+
+void connection_schedule_write(connection_t *c) {
+  if (c && !c->write_poll_armed)
+    worker_queue_write(c);
+}
 
 connection_t *connection_create(int fd, int epfd, struct sockaddr_storage *client_addr, socklen_t addr_len) {
   connection_t *c = calloc(1, sizeof(*c));
@@ -546,14 +568,36 @@ connection_t *connection_create(int fd, int epfd, struct sockaddr_storage *clien
                                CONNECTION_TCP_KEEPALIVE_CNT);
   }
 
-  /* Request storage is only needed while parsing and starting the response. */
-  c->http_req = malloc(sizeof(*c->http_req));
-  if (!c->http_req) {
-    free(c);
-    return NULL;
-  }
-  http_request_init(c->http_req);
   return c;
+}
+
+/* Temporary request parsing buffers have a different lifetime from the small
+ * connection record. Separate mappings let the OS reclaim these pages even
+ * while adjacent, long-lived stream allocations remain in the heap. */
+static size_t request_mapping_size;
+
+static int connection_allocate_request(connection_t *c) {
+  if (!request_mapping_size) {
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size <= 0)
+      return -1;
+    request_mapping_size = (sizeof(*c->http_req) + (size_t)page_size - 1) / (size_t)page_size * (size_t)page_size;
+  }
+  void *storage =
+      mmap(NULL, request_mapping_size + INBUF_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (storage == MAP_FAILED)
+    return -1;
+  c->http_req = storage;
+  c->inbuf = (char *)storage + request_mapping_size;
+  http_request_init(c->http_req);
+  return 0;
+}
+
+static void connection_release_input(connection_t *c) {
+  if (c->inbuf) {
+    munmap(c->inbuf, INBUF_SIZE);
+    c->inbuf = NULL;
+  }
 }
 
 void connection_release_request(connection_t *c) {
@@ -561,7 +605,7 @@ void connection_release_request(connection_t *c) {
     return;
   c->request_is_head = strcasecmp(c->http_req->method, "HEAD") == 0;
   http_request_cleanup(c->http_req);
-  free(c->http_req);
+  munmap(c->http_req, request_mapping_size);
   c->http_req = NULL;
 }
 
@@ -610,7 +654,7 @@ void connection_cleanup(connection_t *c) {
   }
 
   connection_release_request(c);
-  free(c->inbuf);
+  connection_release_input(c);
 
   free(c);
 }
@@ -670,7 +714,7 @@ int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size
   int result = connection_queue_output(c, data, len);
   if (result < 0)
     return result;
-  connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+  connection_schedule_write(c);
 
   if (c) {
     c->state = CONN_CLOSING;
@@ -684,7 +728,7 @@ connection_write_status_t connection_handle_write(connection_t *c) {
     return CONNECTION_WRITE_IDLE;
 
   if (!c->send_queue.head) {
-    connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+    connection_watch_writable(c, 0);
     connection_report_queue(c);
     if (c->state == CONN_CLOSING)
       return CONNECTION_WRITE_CLOSED;
@@ -697,20 +741,21 @@ connection_write_status_t connection_handle_write(connection_t *c) {
    * EPOLLOUT / EV_CLEAR fires only once when the socket becomes writable. */
   for (;;) {
     size_t bytes_sent = 0;
-    int ret = send_queue_send(c->fd, &c->send_queue, &bytes_sent);
+    int ret = send_queue_send(c->fd, &c->send_queue, 256 * 1024 - total_sent, &bytes_sent);
     total_sent += bytes_sent;
     /* Count post-send so per-client bandwidth reflects actual receive rate, not enqueue rate. */
     c->stream.total_bytes_sent += (uint64_t)bytes_sent;
 
     if (ret < 0 && ret != -2) {
       c->state = CONN_CLOSING;
-      connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+      connection_watch_writable(c, 0);
       connection_report_queue(c);
       return CONNECTION_WRITE_CLOSED;
     }
 
     if (ret == -2) {
-      /* EAGAIN - socket send buffer full, wait for next writable event */
+      /* Subscribe only when a real send needs to wait for the socket. */
+      connection_watch_writable(c, 1);
       connection_report_queue(c);
       if (total_sent > 0)
         stream_on_client_drain(&c->stream);
@@ -719,21 +764,26 @@ connection_write_status_t connection_handle_write(connection_t *c) {
 
     if (!c->send_queue.head) {
       if (c->state == CONN_CLOSING) {
-        connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+        connection_watch_writable(c, 0);
         connection_report_queue(c);
         return CONNECTION_WRITE_CLOSED;
       }
-      /* Notify upstream BEFORE arming the poller mask: resume() may queue
-       * new buffers in this same call frame, in which case POLLER_OUT must
-       * stay armed so the worker re-enters this function to drain them. */
+      /* resume() may synchronously queue more output. Schedule it locally. */
+      connection_watch_writable(c, 0);
       if (total_sent > 0)
         stream_on_client_drain(&c->stream);
-      uint32_t mask = POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR;
       if (c->send_queue.head)
-        mask |= POLLER_OUT;
-      connection_epoll_update_events(c->epfd, c->fd, mask);
+        connection_schedule_write(c);
       connection_report_queue(c);
       return CONNECTION_WRITE_IDLE;
+    }
+
+    /* Keep one writable client from starving input, timers and other clients. */
+    if (total_sent >= 256 * 1024) {
+      connection_watch_writable(c, 0);
+      stream_on_client_drain(&c->stream);
+      connection_report_queue(c);
+      return CONNECTION_WRITE_PENDING;
     }
 
     /* Guard against spinning if send_queue_send sent 0 bytes without EAGAIN */
@@ -741,11 +791,12 @@ connection_write_status_t connection_handle_write(connection_t *c) {
       break;
   }
 
-  /* Queue still has data but we couldn't make progress */
+  /* Queue still has data but we could not make progress. Wait for readiness. */
+  connection_watch_writable(c, 1);
   connection_report_queue(c);
   if (total_sent > 0)
     stream_on_client_drain(&c->stream);
-  return CONNECTION_WRITE_PENDING;
+  return CONNECTION_WRITE_BLOCKED;
 }
 
 void connection_handle_read(connection_t *c) {
@@ -758,12 +809,9 @@ void connection_handle_read(connection_t *c) {
    * with bodies larger than INBUF_SIZE. */
   for (;;) {
     if (c->in_len < INBUF_SIZE) {
-      if (!c->inbuf) {
-        c->inbuf = malloc(INBUF_SIZE);
-        if (!c->inbuf) {
-          c->state = CONN_CLOSING;
-          return;
-        }
+      if (!c->http_req && connection_allocate_request(c) < 0) {
+        c->state = CONN_CLOSING;
+        return;
       }
       int r = read(c->fd, c->inbuf + c->in_len, INBUF_SIZE - c->in_len);
       if (r > 0) {
@@ -786,8 +834,7 @@ void connection_handle_read(connection_t *c) {
         /* Request complete, route it */
         c->state = CONN_ROUTE;
         connection_route_and_start(c);
-        free(c->inbuf);
-        c->inbuf = NULL;
+        connection_release_input(c);
         if (c->headers_sent && !c->stream.http_proxy)
           connection_release_request(c);
         return;
@@ -1286,7 +1333,7 @@ int connection_queue_buffer(connection_t *c, buffer_ref_t *buf_ref) {
    * - Lower latency impact (100ms is acceptable for streaming)
    */
   if (send_queue_should_flush(&c->send_queue)) {
-    connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+    connection_schedule_write(c);
   }
 
   return 0;
@@ -1302,7 +1349,7 @@ int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_
     return -1;
 
   /* Always flush immediately for file sends (no batching) */
-  connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
+  connection_schedule_write(c);
 
   /* Set connection to closing state after file transfer */
   c->state = CONN_CLOSING;

@@ -7,6 +7,7 @@ import gzip
 import json
 import os
 import signal
+import socket
 import struct
 import time
 from urllib.parse import quote
@@ -316,6 +317,22 @@ class TestStatusSSE:
         if status == 200:
             ct = hdrs.get("content-type", "")
             assert "event-stream" in ct or "text/" in ct
+
+    def test_sse_ignores_input_after_request_storage_is_released(self, basic_r2h):
+        """A second request cannot re-enter a finished parser on an SSE connection."""
+        with socket.create_connection(("127.0.0.1", basic_r2h.port), timeout=4) as sock:
+            sock.sendall(b"GET /status/sse HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            with sock.makefile("rb") as response:
+                assert response.readline().startswith(b"HTTP/1.1 200")
+                while response.readline().strip():
+                    pass
+                sock.sendall(b"GET /status HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                updates = 0
+                while updates < 3:
+                    line = response.readline()
+                    assert line, "SSE connection closed after late client input"
+                    assert not line.startswith(b"HTTP/"), "Late input was routed as another request"
+                    updates += line.startswith(b"data:")
 
 
 # ---------------------------------------------------------------------------
