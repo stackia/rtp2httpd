@@ -950,7 +950,10 @@ static int mcast_source_receive(mcast_source_t *source, int fd, int64_t now) {
 }
 
 static int mcast_source_rearm(mcast_source_t *source, int coalesced) {
-  if (poller_mod(source->epoll_fd, source->sock, POLLER_IN | (coalesced ? POLLER_ONESHOT : POLLER_LEVEL)) < 0) {
+  uint32_t events = POLLER_IN | (coalesced ? POLLER_ONESHOT : POLLER_LEVEL);
+  int result = source->receive_coalesced == coalesced ? poller_mod(source->epoll_fd, source->sock, events)
+                                                      : poller_reset(source->epoll_fd, source->sock, events);
+  if (result < 0) {
     logger(LOG_ERROR, "Multicast: Cannot rearm receive socket: %s", strerror(errno));
     source->failed = 1;
     return -1;

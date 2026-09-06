@@ -47,6 +47,8 @@ int poller_mod(int pfd, int fd, uint32_t events) {
   return epoll_ctl(pfd, EPOLL_CTL_MOD, fd, &ev);
 }
 
+int poller_reset(int pfd, int fd, uint32_t events) { return poller_mod(pfd, fd, events); }
+
 int poller_del(int pfd, int fd) { return epoll_ctl(pfd, EPOLL_CTL_DEL, fd, NULL); }
 
 int poller_wait(int pfd, poller_event_t *events, int max_events, int timeout_ms) {

@@ -97,6 +97,15 @@ int poller_del(int pfd, int fd) {
   return 0;
 }
 
+int poller_reset(int pfd, int fd, uint32_t events) {
+  /* EV_ADD on an existing filter preserves EV_CLEAR/EV_DISPATCH. Recreate
+   * filters only when the trigger mode changes; ordinary rearming stays cheap.
+   * Adding the new filters also reports data queued during this transition. */
+  if (poller_del(pfd, fd) < 0)
+    return -1;
+  return poller_add(pfd, fd, events);
+}
+
 int poller_wait(int pfd, poller_event_t *events, int max_events, int timeout_ms) {
   struct kevent kev_buf[1024];
   struct kevent *kev_events = max_events <= 1024 ? kev_buf : malloc(max_events * sizeof(struct kevent));

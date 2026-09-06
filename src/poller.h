@@ -55,13 +55,21 @@ void poller_close(int pfd);
 int poller_add(int pfd, int fd, uint32_t events);
 
 /**
- * Modify the events monitored for a file descriptor.
+ * Modify interest or rearm a file descriptor without changing its trigger mode.
+ * Use poller_reset() when changing POLLER_LEVEL or POLLER_ONESHOT.
  * @param pfd Poller file descriptor
  * @param fd File descriptor to modify
  * @param events New bitmask of POLLER_* events to monitor
  * @return 0 on success, -1 on error
  */
 int poller_mod(int pfd, int fd, uint32_t events);
+
+/**
+ * Replace interest and trigger mode, including for an already-ready descriptor.
+ * kqueue requires fresh filters to replace EV_CLEAR/EV_DISPATCH behavior.
+ * @return 0 on success, -1 on error; monitoring may be removed on failure
+ */
+int poller_reset(int pfd, int fd, uint32_t events);
 
 /**
  * Remove a file descriptor from the poller.
