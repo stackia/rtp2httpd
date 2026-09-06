@@ -9,7 +9,7 @@ int poller_create(void) { return epoll_create1(EPOLL_CLOEXEC); }
 
 void poller_close(int pfd) { close(pfd); }
 
-int poller_add(int pfd, int fd, uint32_t events) {
+static int poller_update(int pfd, int operation, int fd, uint32_t events) {
   struct epoll_event ev;
   ev.events = events & POLLER_LEVEL ? 0 : EPOLLET;
   if (events & POLLER_ONESHOT)
@@ -25,27 +25,12 @@ int poller_add(int pfd, int fd, uint32_t events) {
     ev.events |= EPOLLHUP;
   if (events & POLLER_RDHUP)
     ev.events |= EPOLLRDHUP;
-  return epoll_ctl(pfd, EPOLL_CTL_ADD, fd, &ev);
+  return epoll_ctl(pfd, operation, fd, &ev);
 }
 
-int poller_mod(int pfd, int fd, uint32_t events) {
-  struct epoll_event ev;
-  ev.events = events & POLLER_LEVEL ? 0 : EPOLLET;
-  if (events & POLLER_ONESHOT)
-    ev.events |= EPOLLONESHOT;
-  ev.data.fd = fd;
-  if (events & POLLER_IN)
-    ev.events |= EPOLLIN;
-  if (events & POLLER_OUT)
-    ev.events |= EPOLLOUT;
-  if (events & POLLER_ERR)
-    ev.events |= EPOLLERR;
-  if (events & POLLER_HUP)
-    ev.events |= EPOLLHUP;
-  if (events & POLLER_RDHUP)
-    ev.events |= EPOLLRDHUP;
-  return epoll_ctl(pfd, EPOLL_CTL_MOD, fd, &ev);
-}
+int poller_add(int pfd, int fd, uint32_t events) { return poller_update(pfd, EPOLL_CTL_ADD, fd, events); }
+
+int poller_mod(int pfd, int fd, uint32_t events) { return poller_update(pfd, EPOLL_CTL_MOD, fd, events); }
 
 int poller_reset(int pfd, int fd, uint32_t events) { return poller_mod(pfd, fd, events); }
 

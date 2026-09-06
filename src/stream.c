@@ -708,6 +708,15 @@ int stream_tick(stream_context_t *ctx, int64_t now) {
   return 0; /* Success */
 }
 
+void stream_context_destroy(stream_context_t *ctx) {
+  if (!ctx)
+    return;
+
+  /* Final destruction cannot leave async work referencing the connection. */
+  rtsp_force_cleanup(ctx->rtsp);
+  stream_context_cleanup(ctx);
+}
+
 int stream_context_cleanup(stream_context_t *ctx) {
   if (!ctx)
     return 0;

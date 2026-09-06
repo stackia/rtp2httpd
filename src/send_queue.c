@@ -198,6 +198,32 @@ int send_queue_should_flush(send_queue_t *queue) {
   return 0; /* Not ready to flush yet */
 }
 
+/* Payload progress and retained capacity have different lifetimes: a partial
+ * send reduces total_bytes, but capacity is released only with the last byte. */
+static void send_queue_pop_head(send_queue_t *queue) {
+  buffer_ref_t *head = queue->head;
+  queue->head = head->send_next;
+  if (!queue->head)
+    queue->tail = NULL;
+  queue->num_queued--;
+  queue->memory_bytes -= head->type == BUFFER_TYPE_FILE ? BUFFER_POOL_BUFFER_SIZE : buffer_ref_capacity(head);
+  buffer_ref_put(head);
+}
+
+static void send_queue_consume_memory(send_queue_t *queue, size_t sent) {
+  queue->total_bytes -= sent;
+  while (sent) {
+    buffer_ref_t *head = queue->head;
+    if (sent < head->iov.iov_len) {
+      head->iov.iov_base = (uint8_t *)head->iov.iov_base + sent;
+      head->iov.iov_len -= sent;
+      return;
+    }
+    sent -= head->iov.iov_len;
+    send_queue_pop_head(queue);
+  }
+}
+
 int send_queue_send(int fd, send_queue_t *queue, size_t max_bytes, size_t *bytes_sent) {
   if (!queue->head || !max_bytes) {
     *bytes_sent = 0;
@@ -225,17 +251,7 @@ int send_queue_send(int fd, send_queue_t *queue, size_t max_bytes, size_t *bytes
       if (sent == 0)
         return -1; /* The immutable snapshot must contain the complete batch. */
       WORKER_STATS_INC(total_sends);
-      queue->total_bytes -= (size_t)sent;
-      shared->iov.iov_base = (uint8_t *)shared->iov.iov_base + sent;
-      shared->iov.iov_len -= (size_t)sent;
-      if (!shared->iov.iov_len) {
-        queue->head = shared->send_next;
-        if (!queue->head)
-          queue->tail = NULL;
-        queue->num_queued--;
-        queue->memory_bytes -= buffer_ref_capacity(shared);
-        buffer_ref_put(shared);
-      }
+      send_queue_consume_memory(queue, (size_t)sent);
       return 0;
     }
   }
@@ -271,17 +287,8 @@ int send_queue_send(int fd, send_queue_t *queue, size_t max_bytes, size_t *bytes
       /* File completely sent - remove from queue and cleanup */
       size_t total_file_size = file_buf->file_size; /* Save before put */
 
-      queue->head = file_buf->send_next;
-      if (!queue->head)
-        queue->tail = NULL;
-
-      /* Note: File buffers don't count towards total_bytes, so no need to
-       * update it */
-      queue->num_queued--;
-      queue->memory_bytes -= BUFFER_POOL_BUFFER_SIZE;
-
-      /* Release reference - this will close fd and free buffer_ref */
-      buffer_ref_put(file_buf);
+      /* File buffers don't count towards total_bytes. */
+      send_queue_pop_head(queue);
 
       logger(LOG_DEBUG, "Send queue: sendfile complete (%zu bytes)", total_file_size);
     }
@@ -354,37 +361,7 @@ int send_queue_send(int fd, send_queue_t *queue, size_t max_bytes, size_t *bytes
 
   *bytes_sent = (size_t)sent;
 
-  /* The kernel copied memory buffers, so completed entries can be released. */
-  size_t remaining = (size_t)sent;
-  while (remaining > 0 && queue->head) {
-    buffer_ref_t *current = queue->head;
-
-    /* Stop if we hit a file buffer - we only sent memory buffers */
-    if (current->type != BUFFER_TYPE_MEMORY)
-      break;
-
-    if (current->iov.iov_len <= remaining) {
-      /* Entire buffer sent - remove from queue and free immediately */
-      remaining -= current->iov.iov_len;
-      queue->total_bytes -= current->iov.iov_len;
-      queue->num_queued--;
-      queue->memory_bytes -= buffer_ref_capacity(current);
-      queue->head = current->send_next;
-
-      if (!queue->head)
-        queue->tail = NULL;
-
-      /* Free buffer immediately since kernel has copied the data */
-      buffer_ref_put(current);
-    } else {
-      /* Partial send within a buffer - update the iovec to point to remaining
-       * data */
-      current->iov.iov_base = (uint8_t *)current->iov.iov_base + remaining;
-      current->iov.iov_len -= remaining;
-      queue->total_bytes -= remaining;
-      remaining = 0;
-    }
-  }
+  send_queue_consume_memory(queue, (size_t)sent);
 
   return 0;
 }

@@ -49,6 +49,7 @@ from .mock_rtsp import (
     MockRTSPServerZTE,
 )
 from .mock_stun import MockSTUNServer
+from .native import run_native_test
 from .ports import (
     find_free_port,
     find_free_udp_port,
@@ -95,6 +96,7 @@ __all__ = [
     "make_m3u_rtsp_config",
     "make_rtp_packet",
     "raw_http_request",
+    "run_native_test",
     "stream_get",
     "unix_http_get",
     "unix_http_request",

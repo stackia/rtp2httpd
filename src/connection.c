@@ -618,14 +618,10 @@ void connection_cleanup(connection_t *c) {
     c->stream_registered = 0;
   }
 
-  /* Clean up stream context if still marked as streaming
-   * Note: worker_close_and_free_connection should have already called
-   * stream_context_cleanup for streaming connections, so this is a safety
-   * fallback */
-  if (c->streaming) {
-    logger(LOG_WARN, "connection_cleanup: streaming flag still set, cleaning up stream");
-    stream_context_cleanup(&c->stream);
-  }
+  /* The streaming flag is cleared when async TEARDOWN starts. Always destroy
+   * the context here, whether teardown completed, timed out, or was cancelled
+   * by worker shutdown. This also handles partially initialized streams. */
+  stream_context_destroy(&c->stream);
 
   /* Cleanup buffered output queue - this releases all buffer references */
   send_queue_cleanup(&c->send_queue);

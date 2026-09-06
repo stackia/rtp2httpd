@@ -64,7 +64,6 @@ static void rtsp_parse_describe_sdp(rtsp_session_t *session, const struct phr_he
 static void rtsp_parse_play_metadata(rtsp_session_t *session, const struct phr_header *headers, size_t num_headers);
 static int rtsp_initiate_teardown(rtsp_session_t *session);
 static int rtsp_reconnect_for_teardown(rtsp_session_t *session);
-static void rtsp_force_cleanup(rtsp_session_t *session);
 static int rtsp_base64_encode(const uint8_t *input, size_t input_len, char *output, size_t output_size);
 static int rtsp_parse_www_authenticate(rtsp_session_t *session, const char *www_auth_header);
 static void rtsp_build_digest_response(rtsp_session_t *session, const char *method, const char *uri, char *response_out,
@@ -2264,7 +2263,10 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
  * Force cleanup - immediately close all sockets and reset session
  * Used when TEARDOWN cannot be sent or after TEARDOWN completes
  */
-static void rtsp_force_cleanup(rtsp_session_t *session) {
+void rtsp_force_cleanup(rtsp_session_t *session) {
+  if (!session || !session->initialized)
+    return;
+
   /* Close and remove RTSP control socket from poller */
   if (session->socket >= 0) {
     worker_cleanup_socket_from_epoll(session->epoll_fd, session->socket);

@@ -179,6 +179,10 @@ int stream_tick(stream_context_t *ctx, int64_t now);
  */
 int stream_context_cleanup(stream_context_t *ctx);
 
+/** Final, synchronous destruction before freeing the parent connection.
+ * Cancels pending RTSP TEARDOWN and releases all owned resources. */
+void stream_context_destroy(stream_context_t *ctx);
+
 /**
  * Process RTP payload with reordering - either forward to client (streaming)
  * or capture I-frame (snapshot)

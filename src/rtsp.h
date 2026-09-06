@@ -328,6 +328,10 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, struct connection_s *conn)
  */
 int rtsp_session_cleanup(rtsp_session_t *session);
 
+/** Immediately release session resources, including a pending TEARDOWN.
+ * The owner must still free the session object. Safe to call repeatedly. */
+void rtsp_force_cleanup(rtsp_session_t *session);
+
 /**
  * Schedule an RTSP OPTIONS keepalive request if the session is idle.
  * @param session RTSP session
