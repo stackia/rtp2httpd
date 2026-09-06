@@ -610,8 +610,10 @@ int stream_context_init_for_worker(stream_context_t *ctx, connection_t *conn, se
       }
     }
 
-    /* Initialize RTP reorder and FEC (common to all RTP-based services) */
-    if (rtp_reorder_init(&ctx->reorder, service->fec_port > 0) < 0) {
+    /* RTSP and FCC can receive private media before joining multicast.
+     * Multicast decides at attachment whether a private window is needed. */
+    if ((service->service_type == SERVICE_RTSP || service->fcc_addr) &&
+        rtp_reorder_init(&ctx->reorder, service->fec_port > 0) < 0) {
       logger(LOG_ERROR, "Failed to initialize RTP reorder buffer");
       return -1;
     }

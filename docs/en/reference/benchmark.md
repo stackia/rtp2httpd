@@ -77,6 +77,8 @@ Values are the means of per-trial average CPU utilization, with the minimum and 
 
 Connections allocate RTSP or HTTP proxy state only for the protocol they use. FEC group tables are allocated when recovery groups need to be stored. HTTP input buffers and parsed requests use separate anonymous memory mappings: input storage is released after parsing and routing, while ordinary media streams release parsed request data after generating response headers. HTTP proxies retain the request headers and body they still use. Temporary request pages can return directly to the operating system instead of remaining in the heap alongside long-lived connections.
 
+Ordinary shared multicast clients use the source's reorder window instead of allocating unused private arrays. Private windows are allocated for RTSP, FCC, snapshots, or FEC processing. When FEC appears during a stream, both existing clients and later subscribers receive their own windows.
+
 The packet pool starts with 128 buffers and grows in increments of 128. The control pool starts with 16 and grows in increments of 16. The worker periodically reclaims completely idle segments while retaining a base capacity. Client queue budgets are calculated separately from the initial allocation, so reducing initial memory does not reduce the existing buffering allowance.
 
 ### Shared Multicast Subscriptions Within Each Worker
@@ -106,6 +108,8 @@ Sockets using batch reception use level-triggered notifications. A short batch c
 Writes enter a local worker queue first. The worker subscribes to kernel writable events only when a socket cannot make further progress, reducing per-batch event registration changes. Each connection sends at most 256 KiB per turn, and each event-loop iteration processes at most 128 write tasks. Remaining tasks stay queued so reception, timers, and other clients can also run.
 
 Client ownership checks in status tracking use a process-local cached PID, refreshed after every fork. This removes repeated `getpid()` calls from queue and send-statistics updates.
+
+Queue limits, counters, and high-water marks still update on every queue operation, while publication to shared status memory runs on the worker's 100 ms timer. This reduces repeated shared-memory writes and synchronization during batch enqueueing and sending. The status page displays the most recently published queue snapshot.
 
 ### Immutable Batch Snapshots
 

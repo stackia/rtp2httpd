@@ -123,6 +123,15 @@ def test_inband_fec_preserves_shared_reorder_window(shared_source_r2h):
             _wait_log(r2h, "FEC: Activated", count=2)
             for _ in range(4):
                 seqs = [_read_contiguous_rtp(client, seq) for client, seq in zip((first, second), seqs, strict=True)]
+            # The source now delivers private packets. A new subscriber must
+            # initialize its own reorder window even without a configured FEC port.
+            with _stream(r2h, path) as late:
+                late_seq = None
+                for _ in range(4):
+                    seqs = [
+                        _read_contiguous_rtp(client, seq) for client, seq in zip((first, second), seqs, strict=True)
+                    ]
+                    late_seq = _read_contiguous_rtp(late, late_seq)
     finally:
         sender.stop()
 

@@ -107,6 +107,10 @@ void connection_cleanup(connection_t *c);
 /* Release parsed request storage once no asynchronous handler borrows it. */
 void connection_release_request(connection_t *c);
 
+/* Publish queue statistics on the worker's periodic tick. Queue limits,
+ * counters and high-water marks are maintained locally on every operation. */
+void connection_report_queue(connection_t *c);
+
 /**
  * Handle read event on client connection
  * @param c Connection

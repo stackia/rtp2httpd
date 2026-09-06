@@ -518,6 +518,15 @@ int mcast_session_join(mcast_session_t *session, stream_context_t *ctx) {
       break;
   }
 
+  /* Ordinary subscribers use the source's reorder window. Allocate a private
+   * window only for packet delivery, including late joins after in-band FEC. */
+  int private_output =
+      (source ? !source->shared_output : service->fec_port > 0) || ctx->snapshot.initialized || ctx->fcc.initialized;
+  if (private_output && !ctx->reorder.initialized && rtp_reorder_init(&ctx->reorder, service->fec_port > 0) < 0) {
+    logger(LOG_ERROR, "Multicast: Failed to initialize private RTP reorder buffer");
+    return -1;
+  }
+
   if (!source) {
     source = calloc(1, sizeof(*source));
     if (!source)

@@ -564,6 +564,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
       connection_t *c = conn_head;
       while (c) {
         connection_t *next = c->next; /* Save next pointer before potential cleanup */
+        connection_report_queue(c);
         if (c->streaming) {
           if (stream_tick(&c->stream, now) < 0) {
             /* Send 503 if headers not sent yet (no data ever arrived) */

@@ -407,7 +407,7 @@ static inline void connection_record_drop(connection_t *c, size_t len) {
   c->dropped_bytes += len;
 }
 
-static void connection_report_queue(connection_t *c) {
+void connection_report_queue(connection_t *c) {
   if (c->status_index < 0)
     return;
 
@@ -729,7 +729,6 @@ connection_write_status_t connection_handle_write(connection_t *c) {
 
   if (!c->send_queue.head) {
     connection_watch_writable(c, 0);
-    connection_report_queue(c);
     if (c->state == CONN_CLOSING)
       return CONNECTION_WRITE_CLOSED;
     return CONNECTION_WRITE_IDLE;
@@ -749,14 +748,12 @@ connection_write_status_t connection_handle_write(connection_t *c) {
     if (ret < 0 && ret != -2) {
       c->state = CONN_CLOSING;
       connection_watch_writable(c, 0);
-      connection_report_queue(c);
       return CONNECTION_WRITE_CLOSED;
     }
 
     if (ret == -2) {
       /* Subscribe only when a real send needs to wait for the socket. */
       connection_watch_writable(c, 1);
-      connection_report_queue(c);
       if (total_sent > 0)
         stream_on_client_drain(&c->stream);
       return CONNECTION_WRITE_BLOCKED;
@@ -765,7 +762,6 @@ connection_write_status_t connection_handle_write(connection_t *c) {
     if (!c->send_queue.head) {
       if (c->state == CONN_CLOSING) {
         connection_watch_writable(c, 0);
-        connection_report_queue(c);
         return CONNECTION_WRITE_CLOSED;
       }
       /* resume() may synchronously queue more output. Schedule it locally. */
@@ -774,7 +770,6 @@ connection_write_status_t connection_handle_write(connection_t *c) {
         stream_on_client_drain(&c->stream);
       if (c->send_queue.head)
         connection_schedule_write(c);
-      connection_report_queue(c);
       return CONNECTION_WRITE_IDLE;
     }
 
@@ -782,7 +777,6 @@ connection_write_status_t connection_handle_write(connection_t *c) {
     if (total_sent >= 256 * 1024) {
       connection_watch_writable(c, 0);
       stream_on_client_drain(&c->stream);
-      connection_report_queue(c);
       return CONNECTION_WRITE_PENDING;
     }
 
@@ -793,7 +787,6 @@ connection_write_status_t connection_handle_write(connection_t *c) {
 
   /* Queue still has data but we could not make progress. Wait for readiness. */
   connection_watch_writable(c, 1);
-  connection_report_queue(c);
   if (total_sent > 0)
     stream_on_client_drain(&c->stream);
   return CONNECTION_WRITE_BLOCKED;
@@ -1309,7 +1302,6 @@ int connection_queue_buffer(connection_t *c, buffer_ref_t *buf_ref) {
              buf_ref->data_size, c->fd, queued_bytes, limit_bytes, (unsigned long long)c->dropped_packets);
     }
 
-    connection_report_queue(c);
     return -1;
   }
 
@@ -1323,8 +1315,6 @@ int connection_queue_buffer(connection_t *c, buffer_ref_t *buf_ref) {
 
   if (c->send_queue.num_queued > c->queue_buffers_highwater)
     c->queue_buffers_highwater = c->send_queue.num_queued;
-
-  connection_report_queue(c);
 
   /* Batching optimization: Only enable EPOLLOUT when flush threshold is reached
    * Benefits:
