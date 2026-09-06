@@ -322,7 +322,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
   int64_t last_tick = get_time_ms();
 
   while (!stop_flag) {
-    int timeout_ms = write_head ? 0 : 100;
+    int timeout_ms = write_head ? 0 : mcast_worker_timeout(get_time_ms(), 100);
     int n = poller_wait(epfd, events, (int)(sizeof(events) / sizeof(events[0])), timeout_ms);
     if (n < 0) {
       if (errno == EINTR)
@@ -554,6 +554,8 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
         }
       }
     }
+
+    mcast_worker_receive(now);
 
     /* 2) Periodic tick: update streams and SSE heartbeats */
     if (now - last_tick >= 100) {

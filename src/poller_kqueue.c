@@ -15,7 +15,9 @@ void poller_close(int pfd) { close(pfd); }
 int poller_add(int pfd, int fd, uint32_t events) {
   struct kevent changes[2];
   int nchanges = 0;
-  unsigned short flags = EV_ADD | (events & POLLER_LEVEL ? 0 : EV_CLEAR);
+  unsigned short flags = EV_ADD | EV_ENABLE | (events & POLLER_LEVEL ? 0 : EV_CLEAR);
+  if (events & POLLER_ONESHOT)
+    flags |= EV_DISPATCH;
 
   if (events & POLLER_IN) {
     EV_SET(&changes[nchanges], fd, EVFILT_READ, flags, 0, 0, NULL);
@@ -38,7 +40,9 @@ int poller_add(int pfd, int fd, uint32_t events) {
 int poller_mod(int pfd, int fd, uint32_t events) {
   struct kevent changes[4];
   int nchanges = 0;
-  unsigned short flags = EV_ADD | (events & POLLER_LEVEL ? 0 : EV_CLEAR);
+  unsigned short flags = EV_ADD | EV_ENABLE | (events & POLLER_LEVEL ? 0 : EV_CLEAR);
+  if (events & POLLER_ONESHOT)
+    flags |= EV_DISPATCH;
 
   /*
    * kqueue doesn't have a modify operation - we add/delete filters.

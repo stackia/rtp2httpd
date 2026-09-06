@@ -24,6 +24,8 @@
 #define POLLER_RDHUP 0x010 /* Read half of connection closed */
 /* Registration option: keep reporting readiness while data remains. */
 #define POLLER_LEVEL 0x020
+/* Disable notifications after delivery; poller_mod() rearms the filter. */
+#define POLLER_ONESHOT 0x040
 
 /* Event structure returned by poller_wait() */
 typedef struct {

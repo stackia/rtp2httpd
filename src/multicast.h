@@ -64,5 +64,9 @@ int mcast_session_tick(mcast_session_t *session, int64_t now);
 
 /* Release worker receive scratch buffers before destroying the buffer pools. */
 void mcast_worker_cleanup(void);
+/* Bound a poller timeout by pending receives (-1 means no existing deadline). */
+int mcast_worker_timeout(int64_t now, int timeout);
+/* Service each due source once; subscriber teardown stays in the worker. */
+void mcast_worker_receive(int64_t now);
 
 #endif /* __MULTICAST_H__ */

@@ -396,10 +396,30 @@ struct mcast_source_s {
   int packet_type;
   int batch_packet_type;
   int64_t batch_since;
+  int64_t next_receive;
+  int64_t last_receive;
+  int receive_delay_max;
+  int receive_coalesced;
+  unsigned int receive_packet_limit;
+  mcast_source_t *receive_next;
+  mcast_source_t **receive_link;
   mcast_source_t *next;
 };
 
 static mcast_source_t *mcast_sources;
+static mcast_source_t *receive_head;
+
+/* Only active coalesced sources enter this list. Idle channels add no work to
+ * the worker's timeout calculation, and destruction unlinks in constant time. */
+static void mcast_receive_unlink(mcast_source_t *source) {
+  if (!source->receive_link)
+    return;
+  *source->receive_link = source->receive_next;
+  if (source->receive_next)
+    source->receive_next->receive_link = source->receive_link;
+  source->receive_link = NULL;
+  source->receive_next = NULL;
+}
 
 static void mcast_source_flush(mcast_source_t *source);
 static int mcast_source_append(void *arg, buffer_ref_t *packet);
@@ -426,6 +446,7 @@ static int mcast_address_equal(const struct addrinfo *a, const struct addrinfo *
 }
 
 static void mcast_source_free(mcast_source_t *source) {
+  mcast_receive_unlink(source);
   if (source->sock >= 0)
     worker_cleanup_socket_from_epoll(source->epoll_fd, source->sock);
   if (source->fec_sock >= 0)
@@ -556,11 +577,18 @@ int mcast_session_join(mcast_session_t *session, stream_context_t *ctx) {
       source->reorder.deliver_arg = source;
     }
     source->sock = join_mcast_group(source->service, 0);
-    uint32_t read_events = POLLER_IN;
-#if defined(__linux__) || defined(__FreeBSD__)
-    /* Batched reads can yield without a final empty receive. */
-    read_events |= POLLER_LEVEL;
-#endif
+    int receive_bytes = 0;
+    socklen_t receive_length = sizeof(receive_bytes);
+    if (source->sock >= 0 && getsockopt(source->sock, SOL_SOCKET, SO_RCVBUF, &receive_bytes, &receive_length) == 0) {
+      source->receive_delay_max = receive_bytes >= 256 * 1024 ? 2 : receive_bytes >= 128 * 1024 ? 1 : 0;
+      /* Reserve ample headroom for kernel packet overhead and scheduling
+       * jitter. A busy source switches back to readiness-driven reads. */
+      source->receive_packet_limit = (unsigned int)receive_bytes / (BUFFER_POOL_BUFFER_SIZE * 8);
+      if (source->receive_packet_limit > 32)
+        source->receive_packet_limit = 32;
+    }
+    source->receive_coalesced = source->receive_delay_max != 0;
+    uint32_t read_events = POLLER_IN | (source->receive_coalesced ? POLLER_ONESHOT : POLLER_LEVEL);
     if (source->sock < 0 || poller_add(ctx->epoll_fd, source->sock, read_events) < 0) {
       mcast_source_free(source);
       return -1;
@@ -852,15 +880,15 @@ static int mcast_source_receive_batch(mcast_source_t *source, int fd, int64_t no
       mcast_receive_recycle(&packets[i]);
     }
     received += (unsigned int)count;
-    /* Usually a short read already exhausted the socket. Level triggering
-     * also covers interruption after partial progress: unread datagrams stay
-     * ready. Yield on sustained traffic so output and timers get a turn. */
-    if (count < RECEIVE_BATCH || received >= 256)
+    /* A short receive may have been interrupted with data still queued.
+     * Coalesced sources drain to EAGAIN before sleeping; level-triggered
+     * sources can yield because remaining data stays ready. */
+    if ((!source->receive_coalesced && count < RECEIVE_BATCH) || received >= 256)
       break;
   }
   if (fallback)
     mcast_worker_cleanup();
-  return fallback;
+  return fallback ? fallback : (int)received;
 }
 #endif
 
@@ -876,15 +904,15 @@ void mcast_worker_cleanup(void) {
 #endif
 }
 
-int mcast_session_handle_event(mcast_session_t *session, int fd, int64_t now) {
-  mcast_source_t *source = session->source;
-  if (!source)
-    return -1;
-
+static int mcast_source_receive(mcast_source_t *source, int fd, int64_t now) {
 #if defined(__linux__) || defined(__FreeBSD__)
-  if (fd == source->sock && mcast_source_receive_batch(source, fd, now) == 0)
-    return 0;
+  if (fd == source->sock) {
+    int count = mcast_source_receive_batch(source, fd, now);
+    if (count >= 0)
+      return count;
+  }
 #endif
+  int received = 0;
 
   /* Drain to EAGAIN for edge-triggered pollers, including on pool exhaustion.
    * All subscribers are detached by the worker outside this delivery loop. */
@@ -908,6 +936,8 @@ int mcast_session_handle_event(mcast_session_t *session, int fd, int64_t now) {
     if (fd == source->sock) {
       mcast_source_process_packet(source, packet, (size_t)len, now);
       mcast_receive_recycle(&receive_single_packet);
+      if (++received >= 256)
+        break;
     } else {
       for (mcast_session_t *subscriber = source->subscribers; subscriber; subscriber = subscriber->next) {
         if (!subscriber->failed && subscriber->ctx->conn->state != CONN_CLOSING)
@@ -915,7 +945,83 @@ int mcast_session_handle_event(mcast_session_t *session, int fd, int64_t now) {
       }
     }
   }
+  return received;
+}
+
+static int mcast_source_rearm(mcast_source_t *source, int coalesced) {
+  if (poller_mod(source->epoll_fd, source->sock, POLLER_IN | (coalesced ? POLLER_ONESHOT : POLLER_LEVEL)) < 0) {
+    logger(LOG_ERROR, "Multicast: Cannot rearm receive socket: %s", strerror(errno));
+    source->failed = 1;
+    return -1;
+  }
+  source->receive_coalesced = coalesced;
   return 0;
+}
+
+static void mcast_source_schedule_receive(mcast_source_t *source, int count, int64_t now) {
+  source->last_receive = now;
+  if (source->failed || !source->receive_coalesced) {
+    source->next_receive = 0;
+  } else if ((unsigned int)count >= source->receive_packet_limit) {
+    /* At high packet rates even a millisecond can be too long. Keep readiness
+     * enabled until an idle gap, rather than repeatedly probing with a delay. */
+    source->next_receive = 0;
+    mcast_source_rearm(source, 0);
+  } else if (count > 0) {
+    /* The first notification reads immediately. Subsequent reads can collect
+     * a short burst; only low packet rates and enough storage permit 2 ms. */
+    int delay = source->next_receive && count < 16 ? source->receive_delay_max : 1;
+    source->next_receive = now + delay;
+  } else {
+    source->next_receive = 0;
+    mcast_source_rearm(source, 1);
+  }
+  if (!source->next_receive) {
+    mcast_receive_unlink(source);
+  } else if (!source->receive_link) {
+    source->receive_next = receive_head;
+    source->receive_link = &receive_head;
+    if (receive_head)
+      receive_head->receive_link = &source->receive_next;
+    receive_head = source;
+  }
+}
+
+int mcast_session_handle_event(mcast_session_t *session, int fd, int64_t now) {
+  mcast_source_t *source = session->source;
+  if (!source)
+    return -1;
+  if (fd == source->sock && !source->failed && !source->receive_coalesced && source->receive_delay_max &&
+      now - source->last_receive >= 100) {
+    /* Re-enable after an idle gap. Leave this ready socket to the new one-shot
+     * notification so there is no enabled filter during deferred reads. */
+    source->last_receive = now;
+    return mcast_source_rearm(source, 1);
+  }
+  int count = mcast_source_receive(source, fd, now);
+  if (fd == source->sock)
+    mcast_source_schedule_receive(source, count, now);
+  return 0;
+}
+
+int mcast_worker_timeout(int64_t now, int timeout) {
+  for (mcast_source_t *source = receive_head; source; source = source->receive_next) {
+    int delay = source->next_receive > now ? (int)(source->next_receive - now) : 0;
+    if (timeout < 0 || delay < timeout)
+      timeout = delay;
+  }
+  return timeout;
+}
+
+void mcast_worker_receive(int64_t now) {
+  for (mcast_source_t *source = receive_head, *next; source; source = next) {
+    next = source->receive_next;
+    if (source->next_receive <= now) {
+      mcast_receive_unlink(source);
+      int count = mcast_source_receive(source, source->sock, now);
+      mcast_source_schedule_receive(source, count, now);
+    }
+  }
 }
 
 int mcast_session_tick(mcast_session_t *session, int64_t now) {

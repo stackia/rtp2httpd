@@ -12,6 +12,8 @@ void poller_close(int pfd) { close(pfd); }
 int poller_add(int pfd, int fd, uint32_t events) {
   struct epoll_event ev;
   ev.events = events & POLLER_LEVEL ? 0 : EPOLLET;
+  if (events & POLLER_ONESHOT)
+    ev.events |= EPOLLONESHOT;
   ev.data.fd = fd;
   if (events & POLLER_IN)
     ev.events |= EPOLLIN;
@@ -29,6 +31,8 @@ int poller_add(int pfd, int fd, uint32_t events) {
 int poller_mod(int pfd, int fd, uint32_t events) {
   struct epoll_event ev;
   ev.events = events & POLLER_LEVEL ? 0 : EPOLLET;
+  if (events & POLLER_ONESHOT)
+    ev.events |= EPOLLONESHOT;
   ev.data.fd = fd;
   if (events & POLLER_IN)
     ev.events |= EPOLLIN;

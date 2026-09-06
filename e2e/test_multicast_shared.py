@@ -368,3 +368,50 @@ def test_fcc_clients_share_existing_multicast(shared_source_r2h, protocol):
     finally:
         fcc.stop()
         sender.stop()
+
+
+@pytest.mark.parametrize("receive_buffer,first_burst", [(65536, 12), (524288, 12), (524288, 96)])
+def test_shared_source_resumes_after_idle_bursts(r2h_binary, receive_buffer, first_burst):
+    """Idle gaps and a busy initial burst must not strand either subscriber."""
+    r2h = R2HProcess(
+        r2h_binary,
+        find_free_port(),
+        extra_args=["-v", "4", "-w", "1", "-m", "10", "-r", LOOPBACK_IF, "-B", str(receive_buffer)],
+    )
+    r2h.start()
+    port = find_free_udp_port()
+    try:
+        with ExitStack() as stack:
+            clients = [
+                stack.enter_context(closing(http.client.HTTPConnection("127.0.0.1", r2h.port, timeout=3)))
+                for _ in range(2)
+            ]
+            for client in clients:
+                client.request("GET", f"/rtp/{MCAST_ADDR}:{port}")
+            _wait_log(r2h, "Subscriber attached", count=2)
+            upstream = stack.enter_context(closing(socket.socket(socket.AF_INET, socket.SOCK_DGRAM)))
+            upstream.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton("127.0.0.1"))
+            upstream.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, 1)
+            responses = []
+            seq = 0
+            for cycle in range(4):
+                expected = bytearray()
+                begin = time.monotonic()
+                burst = first_burst if cycle == 0 else 12
+                for _ in range(burst):
+                    ts = b"\x47\x1f\xff\x10" + struct.pack("!H", seq) + b"\xff" * 182
+                    payload = ts * 7
+                    expected.extend(payload)
+                    upstream.sendto(make_rtp_packet(seq, seq * 3600, payload=payload), (MCAST_ADDR, port))
+                    seq += 1
+                    if burst == 12:
+                        time.sleep(0.001)
+                if not responses:
+                    responses = [stack.enter_context(closing(client.getresponse())) for client in clients]
+                    assert all(response.status == 200 for response in responses)
+                for response in responses:
+                    assert response.read(len(expected)) == expected
+                assert time.monotonic() - begin < 1.5
+            assert r2h.read_log().count("Multicast: Successfully joined group") == 1
+    finally:
+        r2h.stop()
