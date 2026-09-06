@@ -2389,7 +2389,7 @@ static int rtsp_initiate_teardown(rtsp_session_t *session) {
 
 int rtsp_session_cleanup(rtsp_session_t *session) {
   /* Skip cleanup if session was never initialized */
-  if (!session->initialized) {
+  if (!session || !session->initialized) {
     return 0; /* Nothing to clean up */
   }
 

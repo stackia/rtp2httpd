@@ -230,8 +230,8 @@ static token_source_t validate_r2h_token(connection_t *c, const char *query_star
   }
 
   /* Source 2: Cookie header */
-  if (c->http_req.cookie[0] != '\0') {
-    if (parse_cookie_value(c->http_req.cookie, "r2h-token", token_value, sizeof(token_value)) == 0) {
+  if (c->http_req->cookie[0] != '\0') {
+    if (parse_cookie_value(c->http_req->cookie, "r2h-token", token_value, sizeof(token_value)) == 0) {
       if (http_url_decode(token_value) != 0) {
         logger(LOG_WARN, "r2h-token invalid URL encoding (source: cookie)");
         return TOKEN_SOURCE_NONE;
@@ -246,8 +246,8 @@ static token_source_t validate_r2h_token(connection_t *c, const char *query_star
   }
 
   /* Source 3: User-Agent with R2HTOKEN/xxx format */
-  if (c->http_req.user_agent[0] != '\0') {
-    if (extract_r2h_token_from_ua(c->http_req.user_agent, token_value, sizeof(token_value)) == 0) {
+  if (c->http_req->user_agent[0] != '\0') {
+    if (extract_r2h_token_from_ua(c->http_req->user_agent, token_value, sizeof(token_value)) == 0) {
       if (strcmp(token_value, config.r2h_token) == 0) {
         logger(LOG_DEBUG, "r2h-token validated (source: user-agent)");
         return TOKEN_SOURCE_UA;
@@ -461,8 +461,9 @@ int connection_can_resume_upstream(connection_t *c) {
 void connection_recompute_any_upstream_paused(connection_t *c) {
   if (!c)
     return;
-  c->any_upstream_paused = (c->stream.http_proxy.initialized && c->stream.http_proxy.upstream_paused) ||
-                           (c->stream.rtsp.initialized && c->stream.rtsp.upstream_paused);
+  c->any_upstream_paused =
+      ((c->stream.http_proxy && c->stream.http_proxy->initialized) && c->stream.http_proxy->upstream_paused) ||
+      ((c->stream.rtsp && c->stream.rtsp->initialized) && c->stream.rtsp->upstream_paused);
 }
 
 void connection_begin_drain_close(connection_t *c) {
@@ -545,9 +546,23 @@ connection_t *connection_create(int fd, int epfd, struct sockaddr_storage *clien
                                CONNECTION_TCP_KEEPALIVE_CNT);
   }
 
-  /* Initialize HTTP request parser */
-  http_request_init(&c->http_req);
+  /* Request storage is only needed while parsing and starting the response. */
+  c->http_req = malloc(sizeof(*c->http_req));
+  if (!c->http_req) {
+    free(c);
+    return NULL;
+  }
+  http_request_init(c->http_req);
   return c;
+}
+
+void connection_release_request(connection_t *c) {
+  if (!c || !c->http_req)
+    return;
+  c->request_is_head = strcasecmp(c->http_req->method, "HEAD") == 0;
+  http_request_cleanup(c->http_req);
+  free(c->http_req);
+  c->http_req = NULL;
 }
 
 void connection_cleanup(connection_t *c) {
@@ -594,8 +609,8 @@ void connection_cleanup(connection_t *c) {
     c->fd = -1;
   }
 
-  /* Cleanup HTTP request (free dynamically allocated body) */
-  http_request_cleanup(&c->http_req);
+  connection_release_request(c);
+  free(c->inbuf);
 
   free(c);
 }
@@ -743,6 +758,13 @@ void connection_handle_read(connection_t *c) {
    * with bodies larger than INBUF_SIZE. */
   for (;;) {
     if (c->in_len < INBUF_SIZE) {
+      if (!c->inbuf) {
+        c->inbuf = malloc(INBUF_SIZE);
+        if (!c->inbuf) {
+          c->state = CONN_CLOSING;
+          return;
+        }
+      }
       int r = read(c->fd, c->inbuf + c->in_len, INBUF_SIZE - c->in_len);
       if (r > 0) {
         c->in_len += r;
@@ -759,11 +781,15 @@ void connection_handle_read(connection_t *c) {
 
     /* Parse HTTP request using http.c parser */
     if (c->state == CONN_READ_REQ_LINE || c->state == CONN_READ_HEADERS) {
-      int parse_result = http_parse_request(c->inbuf, &c->in_len, &c->http_req);
+      int parse_result = http_parse_request(c->inbuf, &c->in_len, c->http_req);
       if (parse_result == 1) {
         /* Request complete, route it */
         c->state = CONN_ROUTE;
         connection_route_and_start(c);
+        free(c->inbuf);
+        c->inbuf = NULL;
+        if (c->headers_sent && !c->stream.http_proxy)
+          connection_release_request(c);
         return;
       } else if (parse_result < 0) {
         /* Parse error */
@@ -781,7 +807,7 @@ int connection_route_and_start(connection_t *c) {
   /* Copy URL and strip $label suffix (UI display tag at URL end) */
   char url_buf[HTTP_URL_BUFFER_SIZE];
   char internal_url_buf[HTTP_URL_BUFFER_SIZE];
-  strncpy(url_buf, c->http_req.url, sizeof(url_buf) - 1);
+  strncpy(url_buf, c->http_req->url, sizeof(url_buf) - 1);
   url_buf[sizeof(url_buf) - 1] = '\0';
   http_strip_url_label(url_buf);
   const char *url = url_buf;
@@ -807,7 +833,7 @@ int connection_route_and_start(connection_t *c) {
     }
   }
 
-  logger(LOG_INFO, "New client %s requested URL: %s (method: %s)", client_addr_str, url, c->http_req.method);
+  logger(LOG_INFO, "New client %s requested URL: %s (method: %s)", client_addr_str, url, c->http_req->method);
 
   if (url[0] != '/') {
     http_send_400(c);
@@ -827,14 +853,14 @@ int connection_route_and_start(connection_t *c) {
     }
 
     /* If Host header is missing, reject the request */
-    if (c->http_req.hostname[0] == '\0') {
+    if (c->http_req->hostname[0] == '\0') {
       logger(LOG_WARN, "Client request rejected: missing Host header (expected: %s)", expected_host);
       http_send_400(c);
       return 0;
     }
 
     /* Match Host header against expected hostname */
-    int match_result = http_match_host_header(c->http_req.hostname, expected_host);
+    int match_result = http_match_host_header(c->http_req->hostname, expected_host);
 
     if (match_result < 0) {
       logger(LOG_ERROR, "Failed to match Host header");
@@ -846,18 +872,18 @@ int connection_route_and_start(connection_t *c) {
       logger(LOG_WARN,
              "Client request rejected: Host header mismatch (got: %s, "
              "expected: %s)",
-             c->http_req.hostname, expected_host);
+             c->http_req->hostname, expected_host);
       http_send_400(c);
       return 0;
     }
 
-    logger(LOG_DEBUG, "Host header validated: %s", c->http_req.hostname);
+    logger(LOG_DEBUG, "Host header validated: %s", c->http_req->hostname);
   }
 
   /* Override client address with X-Forwarded-For if present and enabled */
-  if ((protocol[0] != '\0' || config.xff) && c->http_req.x_forwarded_for[0] != '\0') {
-    logger(LOG_INFO, "X-Forwarded-For accepted: %s", c->http_req.x_forwarded_for);
-    snprintf(client_addr_str, sizeof(client_addr_str), "%s", c->http_req.x_forwarded_for);
+  if ((protocol[0] != '\0' || config.xff) && c->http_req->x_forwarded_for[0] != '\0') {
+    logger(LOG_INFO, "X-Forwarded-For accepted: %s", c->http_req->x_forwarded_for);
+    snprintf(client_addr_str, sizeof(client_addr_str), "%s", c->http_req->x_forwarded_for);
   }
 
   /* Reject reconnects from an IP that was just force-disconnected */
@@ -877,16 +903,16 @@ int connection_route_and_start(connection_t *c) {
   url = internal_url_buf;
 
   /* Handle CORS preflight (OPTIONS) before r2h-token check */
-  if (config.cors_allow_origin && config.cors_allow_origin[0] && strcasecmp(c->http_req.method, "OPTIONS") == 0) {
+  if (config.cors_allow_origin && config.cors_allow_origin[0] && strcasecmp(c->http_req->method, "OPTIONS") == 0) {
     char cors_headers[1024];
     int clen = 0;
 
     clen += snprintf(cors_headers + clen, sizeof(cors_headers) - clen, "Access-Control-Allow-Methods: %s\r\n",
-                     c->http_req.access_control_request_method[0] ? c->http_req.access_control_request_method
-                                                                  : "GET, HEAD, OPTIONS");
-    if (c->http_req.access_control_request_headers[0]) {
+                     c->http_req->access_control_request_method[0] ? c->http_req->access_control_request_method
+                                                                   : "GET, HEAD, OPTIONS");
+    if (c->http_req->access_control_request_headers[0]) {
       clen += snprintf(cors_headers + clen, sizeof(cors_headers) - clen, "Access-Control-Allow-Headers: %s\r\n",
-                       c->http_req.access_control_request_headers);
+                       c->http_req->access_control_request_headers);
     }
     clen += snprintf(cors_headers + clen, sizeof(cors_headers) - clen,
                      "Access-Control-Max-Age: 86400\r\n"
@@ -919,7 +945,7 @@ int connection_route_and_start(connection_t *c) {
 
   /* Check r2h-token if configured (supports URL query, Cookie, User-Agent) */
   if (config.r2h_token != NULL && config.r2h_token[0] != '\0') {
-    const char *raw_query_start = strchr(c->http_req.url, '?');
+    const char *raw_query_start = strchr(c->http_req->url, '?');
     token_source_t source = validate_r2h_token(c, query_start, raw_query_start);
     if (source == TOKEN_SOURCE_NONE) {
       http_send_401(c);
@@ -1080,14 +1106,14 @@ int connection_route_and_start(connection_t *c) {
     return 0;
   }
 
-  if (c->http_req.user_agent[0]) {
-    service->user_agent = strdup(c->http_req.user_agent);
+  if (c->http_req->user_agent[0]) {
+    service->user_agent = strdup(c->http_req->user_agent);
   }
 
   /* HTTP services forward HEAD upstream unchanged. Multicast HEAD requests
    * return only static metadata. RTSP HEAD performs an asynchronous
    * OPTIONS/DESCRIBE probe without opening media resources. */
-  if (strcasecmp(c->http_req.method, "HEAD") == 0 && service->service_type != SERVICE_HTTP) {
+  if (strcasecmp(c->http_req->method, "HEAD") == 0 && service->service_type != SERVICE_HTTP) {
     if (service->service_type == SERVICE_RTSP) {
       logger(LOG_INFO, "RTSP HEAD request detected, starting metadata probe");
       if (stream_context_init_rtsp_metadata_probe(&c->stream, c, service, c->epfd) == 0) {
@@ -1117,16 +1143,16 @@ int connection_route_and_start(connection_t *c) {
   int is_snapshot_request = 0;
 
   if (config.video_snapshot) {
-    if (c->http_req.x_request_snapshot) {
+    if (c->http_req->x_request_snapshot) {
       is_snapshot_request = 2;
-      logger(LOG_INFO, "Snapshot request detected via X-Request-Snapshot header for URL: %s", c->http_req.url);
+      logger(LOG_INFO, "Snapshot request detected via X-Request-Snapshot header for URL: %s", c->http_req->url);
     }
 
-    if (!is_snapshot_request && c->http_req.accept[0] != '\0') {
+    if (!is_snapshot_request && c->http_req->accept[0] != '\0') {
       /* Check if Accept header contains "image/jpeg" */
-      if (strstr(c->http_req.accept, "image/jpeg") != NULL) {
+      if (strstr(c->http_req->accept, "image/jpeg") != NULL) {
         is_snapshot_request = 2;
-        logger(LOG_INFO, "Snapshot request detected via Accept header for URL: %s", c->http_req.url);
+        logger(LOG_INFO, "Snapshot request detected via Accept header for URL: %s", c->http_req->url);
       }
     }
 
@@ -1136,7 +1162,7 @@ int connection_route_and_start(connection_t *c) {
       if (http_parse_query_param(query_start + 1, "snapshot", snapshot_value, sizeof(snapshot_value)) == 0) {
         if (strcmp(snapshot_value, "1") == 0) {
           is_snapshot_request = 1;
-          logger(LOG_INFO, "Snapshot request detected via query parameter for URL: %s", c->http_req.url);
+          logger(LOG_INFO, "Snapshot request detected via query parameter for URL: %s", c->http_req->url);
         }
       }
     }
@@ -1203,6 +1229,8 @@ int connection_route_and_start(connection_t *c) {
     c->buffer_class = CONNECTION_BUFFER_MEDIA;
     return 0;
   } else {
+    /* Initialization can allocate protocol state before failing. */
+    stream_context_cleanup(&c->stream);
     /* Stream initialization failed - send 503 if headers not sent yet */
     if (!c->headers_sent) {
       http_send_503(c);
@@ -1301,7 +1329,8 @@ static void handle_playlist_request(connection_t *c) {
   }
 
   /* Generate complete playlist dynamically */
-  playlist = m3u_generate_playlist(c->http_req.hostname, c->http_req.x_forwarded_host, c->http_req.x_forwarded_proto);
+  playlist =
+      m3u_generate_playlist(c->http_req->hostname, c->http_req->x_forwarded_host, c->http_req->x_forwarded_proto);
 
   if (!playlist) {
     /* No playlist available or generation failed */

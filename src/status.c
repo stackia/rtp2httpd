@@ -1125,7 +1125,7 @@ void handle_disconnect_client(connection_t *c) {
   }
 
   /* Check HTTP method */
-  if (strcasecmp(c->http_req.method, "POST") != 0 && strcasecmp(c->http_req.method, "DELETE") != 0) {
+  if (strcasecmp(c->http_req->method, "POST") != 0 && strcasecmp(c->http_req->method, "DELETE") != 0) {
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Method not allowed. Use POST or "
@@ -1135,8 +1135,8 @@ void handle_disconnect_client(connection_t *c) {
   }
 
   /* Parse form data body to get client_id */
-  if (c->http_req.body_len > 0) {
-    if (http_parse_query_param(c->http_req.body, "client_id", client_id_str, sizeof(client_id_str)) != 0) {
+  if (c->http_req->body_len > 0) {
+    if (http_parse_query_param(c->http_req->body, "client_id", client_id_str, sizeof(client_id_str)) != 0) {
       send_http_headers(c, STATUS_400, "application/json", NULL);
       snprintf(response, sizeof(response),
                "{\"success\":false,\"error\":\"Missing 'client_id' parameter "
@@ -1202,7 +1202,7 @@ void handle_clear_logs(connection_t *c) {
   char response[256];
 
   /* Check HTTP method */
-  if (strcasecmp(c->http_req.method, "POST") != 0) {
+  if (strcasecmp(c->http_req->method, "POST") != 0) {
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response), "{\"success\":false,\"error\":\"Method not allowed. Use POST\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -1244,7 +1244,7 @@ void handle_set_log_level(connection_t *c) {
   char level_str[32] = {0};
 
   /* Check HTTP method */
-  if (strcasecmp(c->http_req.method, "PUT") != 0 && strcasecmp(c->http_req.method, "PATCH") != 0) {
+  if (strcasecmp(c->http_req->method, "PUT") != 0 && strcasecmp(c->http_req->method, "PATCH") != 0) {
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response),
              "{\"success\":false,\"error\":\"Method not allowed. Use PUT or "
@@ -1254,8 +1254,8 @@ void handle_set_log_level(connection_t *c) {
   }
 
   /* Parse form data body to get level */
-  if (c->http_req.body_len > 0) {
-    if (http_parse_query_param(c->http_req.body, "level", level_str, sizeof(level_str)) != 0) {
+  if (c->http_req->body_len > 0) {
+    if (http_parse_query_param(c->http_req->body, "level", level_str, sizeof(level_str)) != 0) {
       send_http_headers(c, STATUS_400, "application/json", NULL);
       snprintf(response, sizeof(response),
                "{\"success\":false,\"error\":\"Missing 'level' parameter in "
@@ -1294,7 +1294,7 @@ void handle_reload_config(connection_t *c) {
   char response[256];
 
   /* Check HTTP method */
-  if (strcasecmp(c->http_req.method, "POST") != 0) {
+  if (strcasecmp(c->http_req->method, "POST") != 0) {
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response), "{\"success\":false,\"error\":\"Method not allowed. Use POST\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
@@ -1322,7 +1322,7 @@ void handle_restart_workers(connection_t *c) {
   char response[256];
 
   /* Check HTTP method */
-  if (strcasecmp(c->http_req.method, "POST") != 0) {
+  if (strcasecmp(c->http_req->method, "POST") != 0) {
     send_http_headers(c, STATUS_400, "application/json", NULL);
     snprintf(response, sizeof(response), "{\"success\":false,\"error\":\"Method not allowed. Use POST\"}");
     connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));

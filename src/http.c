@@ -848,7 +848,7 @@ static void http_send_error(connection_t *conn, http_status_t status, const char
                             size_t body_len) {
   send_http_headers(conn, status, "text/html; charset=utf-8", extra_headers);
 
-  if (conn && strcasecmp(conn->http_req.method, "HEAD") == 0)
+  if (conn && (conn->request_is_head || (conn->http_req && strcasecmp(conn->http_req->method, "HEAD") == 0)))
     body_len = 0;
 
   connection_queue_output_and_flush(conn, body_len ? (const uint8_t *)body : NULL, body_len);
@@ -1106,12 +1106,12 @@ int http_check_etag_and_send_304(connection_t *c, const char *etag, const char *
   char extra_headers[256];
 
   /* If no ETag provided or no If-None-Match header, cannot use caching */
-  if (!c || !etag || c->http_req.if_none_match[0] == '\0') {
+  if (!c || !etag || !c->http_req || c->http_req->if_none_match[0] == '\0') {
     return 0;
   }
 
   /* Check if client's ETag matches server's current ETag */
-  if (!etag_matches(c->http_req.if_none_match, etag)) {
+  if (!etag_matches(c->http_req->if_none_match, etag)) {
     return 0; /* No match, content should be sent */
   }
 

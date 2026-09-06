@@ -105,10 +105,10 @@ typedef struct stream_context_s {
   mcast_session_t mcast;
 
   /* RTSP session for SERVICE_RTSP */
-  rtsp_session_t rtsp;
+  rtsp_session_t *rtsp;
 
   /* HTTP proxy session for SERVICE_HTTP */
-  http_proxy_session_t http_proxy;
+  http_proxy_session_t *http_proxy;
 
   /* RTP reorder context */
   rtp_reorder_t reorder;

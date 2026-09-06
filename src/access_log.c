@@ -349,7 +349,7 @@ static int access_log_append_placeholder(access_log_buffer_t *buf, const char *n
                                          const char *time_iso8601, const char *time_local, const char *msec,
                                          const char *remote_addr, const char *remote_port, const char *request) {
   char numeric[64];
-  char filtered_user_agent[sizeof(c->http_req.user_agent)];
+  char filtered_user_agent[sizeof(c->http_req->user_agent)];
 
 #define MATCH(name_literal) (name_len == strlen(name_literal) && strncmp(name, name_literal, name_len) == 0)
 
@@ -372,18 +372,18 @@ static int access_log_append_placeholder(access_log_buffer_t *buf, const char *n
   if (MATCH("request"))
     return access_log_append_escaped(buf, request);
   if (MATCH("request_method"))
-    return access_log_append_escaped(buf, c->http_req.method);
+    return access_log_append_escaped(buf, c->http_req->method);
   if (MATCH("service_url"))
     return access_log_append_escaped(buf, client->service_url);
   if (MATCH("host"))
-    return access_log_append_escaped(buf, c->http_req.hostname);
+    return access_log_append_escaped(buf, c->http_req->hostname);
   if (MATCH("http_user_agent")) {
-    if (http_filter_user_agent_token(c->http_req.user_agent, filtered_user_agent, sizeof(filtered_user_agent)) < 0)
+    if (http_filter_user_agent_token(c->http_req->user_agent, filtered_user_agent, sizeof(filtered_user_agent)) < 0)
       filtered_user_agent[0] = '\0';
     return access_log_append_escaped(buf, filtered_user_agent);
   }
   if (MATCH("http_x_forwarded_for"))
-    return access_log_append_escaped(buf, c->http_req.x_forwarded_for);
+    return access_log_append_escaped(buf, c->http_req->x_forwarded_for);
   if (MATCH("service_type"))
     return access_log_append_escaped(buf, access_log_service_type_name(service));
   if (MATCH("upstream_url"))
@@ -409,7 +409,7 @@ static int access_log_render(access_log_buffer_t *buf, connection_t *c, service_
   access_log_format_times(now_ms, time_iso8601, sizeof(time_iso8601), time_local, sizeof(time_local), msec,
                           sizeof(msec));
   access_log_parse_remote_addr(client->client_addr, remote_addr, sizeof(remote_addr), remote_port, sizeof(remote_port));
-  snprintf(request, sizeof(request), "%s %s", c->http_req.method[0] ? c->http_req.method : "-", client->service_url);
+  snprintf(request, sizeof(request), "%s %s", c->http_req->method[0] ? c->http_req->method : "-", client->service_url);
 
   for (const char *p = format; *p; p++) {
     if (*p != '$') {

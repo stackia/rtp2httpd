@@ -480,7 +480,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
             if (res == STREAM_EVENT_DURATION_READY) {
               send_http_headers(c, STATUS_200, "application/json", NULL);
               char response[64];
-              snprintf(response, sizeof(response), "{\"duration\": \"%0.3f\"}", c->stream.rtsp.r2h_duration_value);
+              snprintf(response, sizeof(response), "{\"duration\": \"%0.3f\"}", c->stream.rtsp->r2h_duration_value);
 
               connection_queue_output_and_flush(c, (const uint8_t *)response, strlen(response));
             } else if (res == STREAM_EVENT_METADATA_READY) {
@@ -526,8 +526,9 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
               continue;
             }
           }
-        } else if (c->state == CONN_CLOSING && c->stream.rtsp.initialized && !c->stream.rtsp.cleanup_done) {
-          if (rtsp_session_tick(&c->stream.rtsp, now) < 0) {
+        } else if (c->state == CONN_CLOSING && (c->stream.rtsp && c->stream.rtsp->initialized) &&
+                   !c->stream.rtsp->cleanup_done) {
+          if (rtsp_session_tick(c->stream.rtsp, now) < 0) {
             worker_close_and_free_connection(c);
             c = next;
             continue;

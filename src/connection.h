@@ -27,14 +27,15 @@ typedef struct connection_s {
   int epfd;
   conn_state_t state;
   /* input parsing */
-  char inbuf[INBUF_SIZE];
+  char *inbuf;
   int in_len;
   /* Output send queue - all output goes through this */
   send_queue_t send_queue;
   connection_buffer_class_t buffer_class;
   /* HTTP request parser */
-  http_request_t http_req;
-  int headers_sent; /* Track whether HTTP response headers have been sent */
+  http_request_t *http_req;
+  int request_is_head; /* Retained after the request parser is released */
+  int headers_sent;    /* Track whether HTTP response headers have been sent */
   /* service/stream */
   service_t *service;
   stream_context_t stream;
@@ -101,6 +102,9 @@ connection_t *connection_create(int fd, int epfd, struct sockaddr_storage *clien
  * @param c Connection to cleanup
  */
 void connection_cleanup(connection_t *c);
+
+/* Release parsed request storage once no asynchronous handler borrows it. */
+void connection_release_request(connection_t *c);
 
 /**
  * Handle read event on client connection
