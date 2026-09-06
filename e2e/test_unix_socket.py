@@ -3,7 +3,7 @@ E2E tests for Unix domain socket listeners.
 
 Tests cover CLI and config-file Unix socket binds, mixed TCP/Unix listeners,
 multi-worker accept behavior, stale socket cleanup, regular-file rejection,
-zero-copy disablement, and file responses over Unix sockets.
+and file responses over Unix sockets.
 """
 
 from __future__ import annotations
@@ -343,25 +343,6 @@ rtp://239.0.0.2:1234
                 assert b"New Programme" not in body
                 status, _, _ = unix_http_get(old_sock_path, "/newstatus")
                 assert status != 200
-            finally:
-                r2h.stop()
-
-    def test_unix_socket_disables_zerocopy(self, r2h_binary):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            sock_path = _socket_path(tmpdir)
-            r2h = R2HProcess(
-                r2h_binary,
-                None,
-                extra_args=["-v", "4", "--zerocopy-on-send"],
-                capture_log=True,
-                listen=sock_path,
-            )
-            try:
-                r2h.start()
-                status, _, _ = unix_http_get(sock_path, "/status")
-                assert status == 200
-                log = r2h.read_log()
-                assert "Zero-copy send disabled because Unix socket listener is configured" in log
             finally:
                 r2h.stop()
 

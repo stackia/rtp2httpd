@@ -7,7 +7,7 @@
 /* EPG cache structure */
 typedef struct {
   char *url;               /* EPG source URL */
-  int data_fd;             /* tmpfs file descriptor for EPG data (zero-copy), or -1 if not
+  int data_fd;             /* tmpfs file descriptor for EPG data (file-backed), or -1 if not
                               available */
   size_t data_size;        /* Size of EPG data */
   int is_gzipped;          /* 1 if data is gzip compressed (based on URL), 0 otherwise */

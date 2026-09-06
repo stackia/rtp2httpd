@@ -96,9 +96,6 @@ start_instance() {
         config_get_bool aux "$cfg" 'video_snapshot' '0'
         [ "$aux" = 1 ] && procd_append_param command "--video-snapshot"
 
-        # Handle zerocopy_on_send flag
-        config_get_bool aux "$cfg" 'zerocopy_on_send' '0'
-        [ "$aux" = 1 ] && procd_append_param command "--zerocopy-on-send"
 
         # Handle use_relative_path_in_m3u flag
         config_get_bool aux "$cfg" 'use_relative_path_in_m3u' '0'

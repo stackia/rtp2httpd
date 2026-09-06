@@ -75,7 +75,6 @@ Group=rtp2httpd
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
-LimitMEMLOCK=infinity
 
 [Install]
 WantedBy=multi-user.target
@@ -96,7 +95,7 @@ sudo systemctl status rtp2httpd
 ### 基本启动方式
 
 ```bash
-docker run --network=host --cap-add=NET_ADMIN --ulimit memlock=-1:-1 --rm \
+docker run --network=host --cap-add=NET_ADMIN --rm \
   ghcr.io/stackia/rtp2httpd:latest \
   --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
@@ -111,10 +110,6 @@ services:
     restart: always
     cap_add:
       - NET_ADMIN
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
     command: --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
 
@@ -122,14 +117,13 @@ services:
 > **关于推荐参数**：
 >
 > - `cap_add: NET_ADMIN`：允许通过 `SO_RCVBUFFORCE` 绕过内核参数 `net.core.rmem_max` 限制，设置更大的 UDP 接收缓冲区
-> - `ulimits: memlock: -1`：启用零拷贝（`--zerocopy-on-send`）时必需，MSG_ZEROCOPY 需要锁定内存页
 
 ### 挂载配置文件
 
 如果需要使用配置文件（假设配置文件位于 `/path/to/rtp2httpd.conf`）：
 
 ```bash
-docker run --network=host --cap-add=NET_ADMIN --ulimit memlock=-1:-1 --rm \
+docker run --network=host --cap-add=NET_ADMIN --rm \
   -v /path/to/rtp2httpd.conf:/usr/local/etc/rtp2httpd.conf:ro \
   ghcr.io/stackia/rtp2httpd:latest
 ```

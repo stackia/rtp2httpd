@@ -90,8 +90,8 @@ int rtp_queue_buf_direct(connection_t *conn, buffer_ref_t *buf_ref) {
     stream_send_http_headers(conn, "video/mp2t", NULL);
   }
 
-  /* Queue for zero-copy send */
-  if (connection_queue_zerocopy(conn, buf_ref) == 0) {
+  /* Queue for sending */
+  if (connection_queue_buffer(conn, buf_ref) == 0) {
     return (int)buf_ref->data_size;
   }
   return -1;

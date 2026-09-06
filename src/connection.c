@@ -6,10 +6,10 @@
 #include "m3u.h"
 #include "platform_compat.h"
 #include "poller.h"
+#include "send_queue.h"
 #include "service.h"
 #include "status.h"
 #include "utils.h"
-#include "zerocopy.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
@@ -306,10 +306,10 @@ typedef struct {
 } queue_limit_inputs_t;
 
 static void connection_prepare_queue_limit_inputs(queue_limit_inputs_t *out) {
-  buffer_pool_t *pool = &zerocopy_state.pool;
+  buffer_pool_t *pool = &send_buffer_state.pool;
   out->pool = pool;
 
-  size_t active = zerocopy_active_streams();
+  size_t active = send_buffer_active_streams();
   if (active == 0)
     active = 1;
 
@@ -402,7 +402,7 @@ static void connection_report_queue(connection_t *c) {
   if (c->status_index < 0)
     return;
 
-  size_t queue_buffers = c->zc_queue.num_queued;
+  size_t queue_buffers = c->send_queue.num_queued;
   size_t queue_bytes = connection_queue_bytes(c);
 
   status_update_client_queue(c->status_index, queue_bytes, queue_buffers, c->queue_limit_bytes,
@@ -506,9 +506,8 @@ connection_t *connection_create(int fd, int epfd, struct sockaddr_storage *clien
     c->client_addr_len = 0;
   }
 
-  /* Initialize zero-copy queue */
-  zerocopy_queue_init(&c->zc_queue);
-  c->zerocopy_enabled = 0;
+  /* Initialize buffered output queue */
+  send_queue_init(&c->send_queue);
   c->buffer_class = CONNECTION_BUFFER_CONTROL;
   c->write_queue_next = NULL;
   c->write_queue_pending = 0;
@@ -546,14 +545,6 @@ connection_t *connection_create(int fd, int epfd, struct sockaddr_storage *clien
                                CONNECTION_TCP_KEEPALIVE_CNT);
   }
 
-  /* Enable SO_ZEROCOPY on socket if supported */
-  if (config.zerocopy_on_send && connection_client_is_tcp(c)) {
-    int one = 1;
-    if (setsockopt(fd, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one)) == 0) {
-      c->zerocopy_enabled = 1;
-    }
-  }
-
   /* Initialize HTTP request parser */
   http_request_init(&c->http_req);
   return c;
@@ -564,7 +555,7 @@ void connection_cleanup(connection_t *c) {
     return;
 
   if (c->stream_registered) {
-    zerocopy_unregister_stream_client();
+    send_buffer_unregister_stream_client();
     c->stream_registered = 0;
   }
 
@@ -577,8 +568,8 @@ void connection_cleanup(connection_t *c) {
     stream_context_cleanup(&c->stream);
   }
 
-  /* Cleanup zero-copy queue - this releases all buffer references */
-  zerocopy_queue_cleanup(&c->zc_queue);
+  /* Cleanup buffered output queue - this releases all buffer references */
+  send_queue_cleanup(&c->send_queue);
 
   /* Try to shrink buffer pool after connection cleanup
    * This is an ideal time to reclaim memory as buffers are likely freed
@@ -638,12 +629,12 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len) {
     memcpy(buf_ref->data, src, chunk_size);
     buf_ref->data_size = chunk_size;
 
-    /* Queue this buffer for zero-copy send */
-    if (connection_queue_zerocopy(c, buf_ref) < 0) {
+    /* Queue this buffer for sending */
+    if (connection_queue_buffer(c, buf_ref) < 0) {
       /* Queue full - release the buffer and fail */
       buffer_ref_put(buf_ref);
       logger(LOG_WARN,
-             "connection_queue_output: Zero-copy queue full, cannot queue %zu "
+             "connection_queue_output: Send queue full, cannot queue %zu "
              "bytes",
              remaining);
       return -1;
@@ -677,10 +668,10 @@ connection_write_status_t connection_handle_write(connection_t *c) {
   if (!c)
     return CONNECTION_WRITE_IDLE;
 
-  if (!c->zc_queue.head) {
+  if (!c->send_queue.head) {
     connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
     connection_report_queue(c);
-    if (c->state == CONN_CLOSING && !c->zc_queue.pending_head)
+    if (c->state == CONN_CLOSING)
       return CONNECTION_WRITE_CLOSED;
     return CONNECTION_WRITE_IDLE;
   }
@@ -691,7 +682,7 @@ connection_write_status_t connection_handle_write(connection_t *c) {
    * EPOLLOUT / EV_CLEAR fires only once when the socket becomes writable. */
   for (;;) {
     size_t bytes_sent = 0;
-    int ret = zerocopy_send(c->fd, &c->zc_queue, &bytes_sent);
+    int ret = send_queue_send(c->fd, &c->send_queue, &bytes_sent);
     total_sent += bytes_sent;
     /* Count post-send so per-client bandwidth reflects actual receive rate, not enqueue rate. */
     c->stream.total_bytes_sent += (uint64_t)bytes_sent;
@@ -711,8 +702,8 @@ connection_write_status_t connection_handle_write(connection_t *c) {
       return CONNECTION_WRITE_BLOCKED;
     }
 
-    if (!c->zc_queue.head) {
-      if (c->state == CONN_CLOSING && !c->zc_queue.pending_head) {
+    if (!c->send_queue.head) {
+      if (c->state == CONN_CLOSING) {
         connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
         connection_report_queue(c);
         return CONNECTION_WRITE_CLOSED;
@@ -723,14 +714,14 @@ connection_write_status_t connection_handle_write(connection_t *c) {
       if (total_sent > 0)
         stream_on_client_drain(&c->stream);
       uint32_t mask = POLLER_IN | POLLER_RDHUP | POLLER_HUP | POLLER_ERR;
-      if (c->zc_queue.head)
+      if (c->send_queue.head)
         mask |= POLLER_OUT;
       connection_epoll_update_events(c->epfd, c->fd, mask);
       connection_report_queue(c);
       return CONNECTION_WRITE_IDLE;
     }
 
-    /* Guard against spinning if zerocopy_send sent 0 bytes without EAGAIN */
+    /* Guard against spinning if send_queue_send sent 0 bytes without EAGAIN */
     if (bytes_sent == 0)
       break;
   }
@@ -1202,7 +1193,7 @@ int connection_route_and_start(connection_t *c) {
    */
   if (stream_context_init_for_worker(&c->stream, c, service, c->epfd, c->status_index, is_snapshot_request) == 0) {
     if (!is_snapshot_request && !c->stream_registered) {
-      zerocopy_register_stream_client();
+      send_buffer_register_stream_client();
       c->stream_registered = 1;
     }
 
@@ -1222,7 +1213,7 @@ int connection_route_and_start(connection_t *c) {
   }
 }
 
-int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref) {
+int connection_queue_buffer(connection_t *c, buffer_ref_t *buf_ref) {
   if (!c || !buf_ref || buf_ref->data_size == 0)
     return 0;
 
@@ -1247,27 +1238,26 @@ int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref) {
     return -1;
   }
 
-  /* Add to zero-copy queue with offset information */
-  int ret = zerocopy_queue_add(&c->zc_queue, buf_ref);
+  /* Add to buffered output queue with offset information */
+  int ret = send_queue_add(&c->send_queue, buf_ref);
   if (ret < 0)
     return -1; /* Queue full */
 
   if (queued_bytes > c->queue_bytes_highwater)
     c->queue_bytes_highwater = queued_bytes;
 
-  if (c->zc_queue.num_queued > c->queue_buffers_highwater)
-    c->queue_buffers_highwater = c->zc_queue.num_queued;
+  if (c->send_queue.num_queued > c->queue_buffers_highwater)
+    c->queue_buffers_highwater = c->send_queue.num_queued;
 
   connection_report_queue(c);
 
   /* Batching optimization: Only enable EPOLLOUT when flush threshold is reached
    * Benefits:
    * - Reduces sendmsg() syscall overhead (fewer calls)
-   * - Reduces MSG_ZEROCOPY optmem consumption (fewer operations)
    * - Better batching with iovec (up to 64 packets per sendmsg)
    * - Lower latency impact (100ms is acceptable for streaming)
    */
-  if (zerocopy_should_flush(&c->zc_queue)) {
+  if (send_queue_should_flush(&c->send_queue)) {
     connection_epoll_update_events(c->epfd, c->fd, POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
   }
 
@@ -1278,8 +1268,8 @@ int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_
   if (!c || file_fd < 0 || file_size == 0)
     return -1;
 
-  /* Add file to zero-copy queue */
-  int ret = zerocopy_queue_add_file(&c->zc_queue, file_fd, file_offset, file_size);
+  /* Add file to buffered output queue */
+  int ret = send_queue_add_file(&c->send_queue, file_fd, file_offset, file_size);
   if (ret < 0)
     return -1;
 
@@ -1399,19 +1389,19 @@ static void handle_epg_request(connection_t *c, int requested_gz) {
 
   send_http_headers(c, STATUS_200, content_type, extra_headers);
 
-  /* Use zero-copy transmission via sendfile
+  /* Use sendfile to transmit cached data
    * Note: epg_fd is owned by EPG cache, so we need to dup it
-   * zerocopy_queue_add_file will close the fd when done */
+   * send_queue_add_file will close the fd when done */
   int dup_fd = dup(epg_fd);
   if (dup_fd < 0) {
-    logger(LOG_ERROR, "Failed to dup EPG fd for zero-copy transmission: %s", strerror(errno));
+    logger(LOG_ERROR, "Failed to dup EPG fd for file transmission: %s", strerror(errno));
     c->state = CONN_CLOSING;
     return;
   }
 
-  /* Queue the file for zero-copy transmission */
+  /* Queue the file for file transmission */
   if (connection_queue_file(c, dup_fd, 0, epg_size) < 0) {
-    logger(LOG_ERROR, "Failed to queue EPG file for zero-copy transmission");
+    logger(LOG_ERROR, "Failed to queue EPG file for file transmission");
     close(dup_fd);
     c->state = CONN_CLOSING;
     return;

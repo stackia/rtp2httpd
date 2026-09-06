@@ -92,24 +92,6 @@ static inline ssize_t platform_sendfile(int out_fd, int in_fd, off_t *offset, si
 #define SO_RCVBUFFORCE SO_RCVBUF
 #endif
 
-/* ── SO_ZEROCOPY / MSG_ZEROCOPY ──────────────────────────────────────
- * Linux 4.14+ only. Define to invalid values on other platforms so
- * the detection code gracefully falls through to regular send.
- */
-#ifndef SO_ZEROCOPY
-#define SO_ZEROCOPY 60
-#endif
-#ifndef MSG_ZEROCOPY
-#define MSG_ZEROCOPY 0x4000000
-#endif
-
-/* ── MSG_ERRQUEUE ────────────────────────────────────────────────────
- * Linux-only. Used for MSG_ZEROCOPY completion notifications.
- */
-#ifndef MSG_ERRQUEUE
-#define MSG_ERRQUEUE 0x2000
-#endif
-
 /* ── SO_BINDTODEVICE ─────────────────────────────────────────────────
  * Linux-only. On macOS, IP_BOUND_IF is a rough equivalent.
  */
@@ -396,18 +378,6 @@ static inline int platform_mcast_group_op(int sock, int family, const struct soc
   return platform_mcast_modern_group_op(sock, family, group, group_len, source, source_len, ifindex, is_join);
 #endif
 }
-
-/* ── IP_RECVERR / IPV6_RECVERR ──────────────────────────────────────
- * Linux-only. Used for MSG_ZEROCOPY completion notifications.
- * Define to harmless values on other platforms; the zerocopy
- * completion code is already guarded by #ifdef __linux__.
- */
-#ifndef IP_RECVERR
-#define IP_RECVERR 11
-#endif
-#ifndef IPV6_RECVERR
-#define IPV6_RECVERR 25
-#endif
 
 /* ── TCP keepalive ──────────────────────────────────────────────────
  * Configure TCP keepalive for early dead-peer detection on TCP

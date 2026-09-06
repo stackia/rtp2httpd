@@ -577,7 +577,7 @@ return view.extend({
       "buffer_pool_max_size",
       _("Buffer Pool Max Size"),
       _(
-        "Maximum number of buffers in zero-copy pool. Each buffer is 1536 bytes. Default is 16384 (~24MB). Increase to improve throughput for multi-client concurrency."
+        "Maximum number of buffers in buffer pool. Each buffer is 1536 bytes. Default is 16384 (~24MB). Increase to improve throughput for multi-client concurrency."
       )
     );
     o.datatype = "range(1024, 1048576)";
@@ -620,18 +620,6 @@ return view.extend({
       )
     );
     o.placeholder = "begin-end";
-    o.depends("use_config_file", "0");
-
-    o = s.taboption(
-      "network",
-      form.Flag,
-      "zerocopy_on_send",
-      _("Zero-Copy on Send"),
-      _(
-        "Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires kernel 4.14+ (MSG_ZEROCOPY support). On supported devices, this can improve throughput and reduce CPU usage, especially under high concurrent load. Recommended only when experiencing performance bottlenecks."
-      )
-    );
-    o.default = "0";
     o.depends("use_config_file", "0");
 
     o = s.taboption(

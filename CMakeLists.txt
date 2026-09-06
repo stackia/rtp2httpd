@@ -62,7 +62,7 @@ set(COMMON_SOURCES
   src/worker.c
   src/unix_socket.c
   src/buffer_pool.c
-  src/zerocopy.c
+  src/send_queue.c
   src/m3u.c
   src/epg.c
   src/embedded_web.c

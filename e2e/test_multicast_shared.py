@@ -28,7 +28,7 @@ def shared_source_r2h(r2h_binary):
     r2h = R2HProcess(
         r2h_binary,
         find_free_port(),
-        extra_args=["-v", "4", "-w", "1", "-m", "100", "-r", LOOPBACK_IF, "-S", "-Z"],
+        extra_args=["-v", "4", "-w", "1", "-m", "100", "-r", LOOPBACK_IF, "-S"],
     )
     r2h.start()
     yield r2h

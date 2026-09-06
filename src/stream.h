@@ -211,7 +211,7 @@ void stream_send_http_headers(connection_t *conn, const char *content_type, cons
  * connection is currently paused due to backpressure, this resumes it when
  * the queue has fallen below the low watermark.
  *
- * Called from connection_handle_write after a successful zerocopy_send.
+ * Called from connection_handle_write after a successful send_queue_send.
  * The struct must be at least zero-initialized (the embedded stream context
  * in connection_t is via calloc); passing uninitialized stack memory is
  * unsafe — `conn` and the `*.initialized` flags are dereferenced.

@@ -34,7 +34,7 @@ struct http_fetch_ctx_s {
   http_fetch_callback_t callback;       /* completion callback */
   http_fetch_fd_callback_t fd_callback; /* fd-based completion callback */
   void *user_data;                      /* user-provided data */
-  int use_fd;                           /* 1 to use fd callback (zero-copy), 0 to use memory callback */
+  int use_fd;                           /* 1 to use fd callback (file-backed), 0 to use memory callback */
 };
 
 /* Global hashmap for fast fd-based lookup */
@@ -521,7 +521,7 @@ int http_fetch_handle_event(http_fetch_ctx_t *ctx) {
       return -1;
     }
 
-    /* Handle fd-based callback (zero-copy) */
+    /* Handle fd-based callback (file-backed) */
     if (ctx->use_fd) {
       int content_fd;
 
@@ -635,7 +635,7 @@ http_fetch_ctx_t *http_fetch_start_async(const char *url, http_fetch_callback_t 
   return http_fetch_start_async_internal(url, callback, NULL, user_data, epfd);
 }
 
-/* Start async HTTP fetch using popen (fd-based, zero-copy) */
+/* Start async HTTP fetch using popen (fd-based) */
 http_fetch_ctx_t *http_fetch_start_async_fd(const char *url, http_fetch_fd_callback_t callback, void *user_data,
                                             int epfd) {
   return http_fetch_start_async_internal(url, NULL, callback, user_data, epfd);

@@ -1022,7 +1022,7 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
             buffer, buffer_capacity, &len,
             "{\"id\":%d,\"pid\":%d,\"activeClients\":%u,\"totalBandwidth\":%llu,"
             "\"totalBytes\":%llu,"
-            "\"send\":{\"total\":%llu,\"completions\":%llu,\"copied\":%llu,"
+            "\"send\":{\"total\":%llu,"
             "\"eagain\":%llu,\"enobufs\":%llu,\"batch\":%llu},"
             "\"pool\":{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"max\":%llu,"
             "\"expansions\":%llu,\"exhaustions\":%llu,\"shrinks\":%llu,"
@@ -1032,7 +1032,6 @@ int status_build_sse_json(char *buffer, size_t buffer_capacity, int *p_sent_init
             "\"utilization\":%.1f}}",
             i, (int)ws->worker_pid, (unsigned int)w_active, (unsigned long long)w_bandwidth,
             (unsigned long long)w_total_bytes, (unsigned long long)ws->total_sends,
-            (unsigned long long)ws->total_completions, (unsigned long long)ws->total_copied,
             (unsigned long long)ws->eagain_count, (unsigned long long)ws->enobufs_count,
             (unsigned long long)ws->batch_sends, (unsigned long long)w_pool_total, (unsigned long long)w_pool_free,
             (unsigned long long)w_pool_used, (unsigned long long)ws->pool_max_buffers,

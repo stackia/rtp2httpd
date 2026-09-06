@@ -23,7 +23,7 @@ from helpers import (
 
 pytestmark = pytest.mark.multicast
 
-# Timeout for multicast streaming tests.  At ~2 Mbps the 64 KB zerocopy
+# Timeout for multicast streaming tests.  At ~2 Mbps the 64 KB send
 # batch threshold fills in < 1 s, but multicast group join on macOS may
 # add a few seconds of latency.
 _MCAST_STREAM_TIMEOUT = 10.0

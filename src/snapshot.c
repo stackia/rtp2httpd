@@ -520,6 +520,6 @@ void snapshot_fallback_to_streaming(snapshot_context_t *ctx, connection_t *conn)
   /* Free snapshot context */
   snapshot_cleanup(ctx);
 
-  zerocopy_register_stream_client();
+  send_buffer_register_stream_client();
   conn->stream_registered = 1;
 }

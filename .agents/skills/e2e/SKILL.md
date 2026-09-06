@@ -7,7 +7,7 @@ description: >
   flaky, slow, or hanging e2e tests, (4) mentions any file under e2e/ or scripts/run-e2e.sh,
   (5) mentions MockRTSP*, MockHTTP*, MockFCC*, MockSTUN*, R2HProcess, MulticastSender, helper APIs,
   or test fixtures, (6) asks about multicast, RTSP, HTTP proxy, FCC, STUN, M3U, EPG, URL template,
-  or zerocopy test coverage in rtp2httpd, or (7) uses Chinese phrases such as "端到端测试",
+  or shared multicast test coverage in rtp2httpd, or (7) uses Chinese phrases such as "端到端测试",
   "跑测试", or "e2e 测试" in this repo.
 ---
 
@@ -59,7 +59,7 @@ e2e/
 ├── conftest.py
 ├── test_m3u.py
 ├── test_epg.py / test_pages.py / test_auth.py / test_config.py / test_error.py
-├── test_multicast.py / test_fcc.py / test_zerocopy.py
+├── test_multicast.py / test_fcc.py / test_multicast_shared.py
 ├── test_http_proxy*.py
 ├── test_rtsp_*.py
 ├── test_url_template_http.py

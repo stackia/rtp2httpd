@@ -124,13 +124,11 @@ typedef struct {
   /* Client ID generation counter */
   uint64_t client_id_counter; /* Incremented for each new client registration */
 
-  /* Zero-copy send statistics */
-  uint64_t total_sends;       /* Total number of sendmsg() calls */
-  uint64_t total_completions; /* Total MSG_ZEROCOPY completions */
-  uint64_t total_copied;      /* Times kernel copied instead of zero-copy */
-  uint64_t eagain_count;      /* Number of EAGAIN/EWOULDBLOCK errors */
-  uint64_t enobufs_count;     /* Number of ENOBUFS errors */
-  uint64_t batch_sends;       /* Number of batched sends (size threshold) */
+  /* Send statistics */
+  uint64_t total_sends;   /* Total number of sendmsg()/sendfile() calls */
+  uint64_t eagain_count;  /* Number of EAGAIN/EWOULDBLOCK errors */
+  uint64_t enobufs_count; /* Number of ENOBUFS errors */
+  uint64_t batch_sends;   /* Number of batched sends (size threshold) */
 
   /* Buffer pool statistics */
   uint64_t pool_total_buffers; /* Total number of buffers in pool */

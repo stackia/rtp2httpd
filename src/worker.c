@@ -7,11 +7,11 @@
 #include "m3u.h"
 #include "poller.h"
 #include "rtp2httpd.h"
+#include "send_queue.h"
 #include "status.h"
 #include "stream.h"
 #include "utils.h"
 #include "vendor/hashmap/hashmap.h"
-#include "zerocopy.h"
 #include <errno.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -410,46 +410,13 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
         if (fd_ready == c->fd) {
           /* Client socket events */
 
-          /* First, handle POLLER_ERR for MSG_ZEROCOPY completions before
-           * checking for real errors */
           if (events[e].events & POLLER_ERR) {
-            /* POLLER_ERR can indicate either:
-             * 1. MSG_ZEROCOPY completion notification (normal operation)
-             * 2. Actual socket error
-             * We need to check MSG_ERRQUEUE first to distinguish between them.
-             */
-            int had_zerocopy_completions = 0;
-            if (c->zerocopy_enabled) {
-              int completions = zerocopy_handle_completions(c->fd, &c->zc_queue);
-              if (completions > 0) {
-                had_zerocopy_completions = 1;
-                if (c->state == CONN_CLOSING && !c->zc_queue.head && !c->zc_queue.pending_head) {
-                  worker_close_and_free_connection(c);
-                  continue; /* Skip further processing for this connection */
-                }
-              } else if (completions < 0) {
-                /* Error reading MSG_ERRQUEUE - treat as real socket error */
-                logger(LOG_DEBUG, "Failed to read MSG_ERRQUEUE: %s", strerror(errno));
-                worker_close_and_free_connection(c);
-                continue;
-              }
-              /* completions == 0: no zerocopy completions, check for real error
-               * below */
-            }
-
-            /* If POLLER_ERR is set but we didn't get zerocopy completions,
-             * check if it's a real socket error by trying to get SO_ERROR */
-            if (!had_zerocopy_completions) {
-              int socket_error = 0;
-              socklen_t errlen = sizeof(socket_error);
-              if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &socket_error, &errlen) == 0 && socket_error != 0) {
-                /* Real socket error */
-                logger(LOG_DEBUG, "Client connection error: %s", strerror(socket_error));
-                worker_close_and_free_connection(c);
-                continue; /* Skip further processing for this connection */
-              }
-              /* Otherwise, POLLER_ERR might be spurious or already handled by
-               * zerocopy */
+            int socket_error = 0;
+            socklen_t errlen = sizeof(socket_error);
+            if (getsockopt(c->fd, SOL_SOCKET, SO_ERROR, &socket_error, &errlen) < 0 || socket_error != 0) {
+              logger(LOG_DEBUG, "Client connection error: %s", strerror(socket_error ? socket_error : errno));
+              worker_close_and_free_connection(c);
+              continue;
             }
           }
 
@@ -492,7 +459,7 @@ int worker_run_event_loop(int *listen_sockets, int num_sockets, int notif_fd) {
             } else {
               /* Normal HTTP request handling */
               connection_handle_read(c);
-              if (c->state == CONN_CLOSING && !c->zc_queue.head) {
+              if (c->state == CONN_CLOSING && !c->send_queue.head) {
                 worker_close_and_free_connection(c);
                 continue; /* Skip further processing for this connection */
               }

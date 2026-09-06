@@ -1,8 +1,8 @@
 #include "buffer_pool.h"
 #include "rtp2httpd.h"
+#include "send_queue.h"
 #include "status.h"
 #include "utils.h"
-#include "zerocopy.h"
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
@@ -32,11 +32,11 @@ void buffer_pool_update_stats(buffer_pool_t *pool) {
 
   worker_stats_t *stats = &status_shared->worker_stats[worker_id];
 
-  if (pool == &zerocopy_state.pool) {
+  if (pool == &send_buffer_state.pool) {
     stats->pool_total_buffers = pool->num_buffers;
     stats->pool_free_buffers = pool->num_free;
     stats->pool_max_buffers = pool->max_buffers;
-  } else if (pool == &zerocopy_state.control_pool) {
+  } else if (pool == &send_buffer_state.control_pool) {
     stats->control_pool_total_buffers = pool->num_buffers;
     stats->control_pool_free_buffers = pool->num_free;
     stats->control_pool_max_buffers = pool->max_buffers;
@@ -107,9 +107,9 @@ int buffer_pool_init(buffer_pool_t *pool, size_t buffer_size, size_t initial_buf
 }
 
 static inline const char *buffer_pool_name(buffer_pool_t *pool) {
-  if (pool == &zerocopy_state.batch_pool)
+  if (pool == &send_buffer_state.batch_pool)
     return "Multicast batch pool";
-  return (pool == &zerocopy_state.pool) ? "Buffer pool" : "Control pool";
+  return (pool == &send_buffer_state.pool) ? "Buffer pool" : "Control pool";
 }
 
 static int buffer_pool_expand(buffer_pool_t *pool) {
@@ -137,9 +137,9 @@ static int buffer_pool_expand(buffer_pool_t *pool) {
   pool->num_buffers += buffers_to_add;
   pool->num_free += buffers_to_add;
 
-  if (pool == &zerocopy_state.pool) {
+  if (pool == &send_buffer_state.pool) {
     WORKER_STATS_INC(pool_expansions);
-  } else if (pool == &zerocopy_state.control_pool) {
+  } else if (pool == &send_buffer_state.control_pool) {
     WORKER_STATS_INC(control_pool_expansions);
   }
 
@@ -201,7 +201,7 @@ void buffer_ref_put(buffer_ref_t *ref) {
       ref->shared_fd = -1;
     }
 
-    buffer_pool_t *pool = ref->segment ? ref->segment->parent : &zerocopy_state.pool;
+    buffer_pool_t *pool = ref->segment ? ref->segment->parent : &send_buffer_state.pool;
 
     if (ref->segment) {
       ref->segment->num_free++;
@@ -280,7 +280,7 @@ void buffer_ref_snapshot(buffer_ref_t *ref) {
 }
 
 buffer_ref_t *buffer_pool_alloc_batch(void) {
-  buffer_pool_t *pool = &zerocopy_state.batch_pool;
+  buffer_pool_t *pool = &send_buffer_state.batch_pool;
   if (!pool->segments) {
     size_t max_buffers = (size_t)config.buffer_pool_max_size * BUFFER_POOL_BUFFER_SIZE / BUFFER_POOL_BATCH_SIZE;
     if (max_buffers < 4)
@@ -296,9 +296,9 @@ buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool) {
     return NULL;
 
   if (!pool->free_list) {
-    if (pool == &zerocopy_state.pool) {
+    if (pool == &send_buffer_state.pool) {
       WORKER_STATS_INC(pool_exhaustions);
-    } else if (pool == &zerocopy_state.control_pool) {
+    } else if (pool == &send_buffer_state.control_pool) {
       WORKER_STATS_INC(control_pool_exhaustions);
     }
 
@@ -341,9 +341,9 @@ buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool) {
   return ref;
 }
 
-buffer_ref_t *buffer_pool_alloc(void) { return buffer_pool_alloc_from(&zerocopy_state.pool); }
+buffer_ref_t *buffer_pool_alloc(void) { return buffer_pool_alloc_from(&send_buffer_state.pool); }
 
-buffer_ref_t *buffer_pool_alloc_control(void) { return buffer_pool_alloc_from(&zerocopy_state.control_pool); }
+buffer_ref_t *buffer_pool_alloc_control(void) { return buffer_pool_alloc_from(&send_buffer_state.control_pool); }
 
 static void buffer_pool_try_shrink_pool(buffer_pool_t *pool, size_t min_buffers) {
   if (pool->num_free <= pool->high_watermark || pool->num_buffers <= min_buffers) {
@@ -406,9 +406,9 @@ static void buffer_pool_try_shrink_pool(buffer_pool_t *pool, size_t min_buffers)
 
       segments_freed++;
 
-      if (pool == &zerocopy_state.pool) {
+      if (pool == &send_buffer_state.pool) {
         WORKER_STATS_INC(pool_shrinks);
-      } else if (pool == &zerocopy_state.control_pool) {
+      } else if (pool == &send_buffer_state.control_pool) {
         WORKER_STATS_INC(control_pool_shrinks);
       }
 
@@ -434,7 +434,7 @@ static void buffer_pool_try_shrink_pool(buffer_pool_t *pool, size_t min_buffers)
 }
 
 void buffer_pool_try_shrink(void) {
-  buffer_pool_try_shrink_pool(&zerocopy_state.pool, BUFFER_POOL_INITIAL_SIZE);
-  buffer_pool_try_shrink_pool(&zerocopy_state.control_pool, CONTROL_POOL_INITIAL_SIZE);
-  buffer_pool_try_shrink_pool(&zerocopy_state.batch_pool, 4);
+  buffer_pool_try_shrink_pool(&send_buffer_state.pool, BUFFER_POOL_INITIAL_SIZE);
+  buffer_pool_try_shrink_pool(&send_buffer_state.control_pool, CONTROL_POOL_INITIAL_SIZE);
+  buffer_pool_try_shrink_pool(&send_buffer_state.batch_pool, 4);
 }

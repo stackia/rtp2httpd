@@ -427,7 +427,7 @@ int fcc_handle_socket_event(stream_context_t *ctx, int fd, int64_t now) {
       return 0;
     }
 
-    /* Receive directly into zero-copy buffer (true zero-copy receive) */
+    /* Receive directly into buffered output buffer (true buffered output receive) */
     int actualr = recvfrom(recv_sock, recv_buf->data, BUFFER_POOL_BUFFER_SIZE, 0, (struct sockaddr *)&peer_addr, &slen);
     if (actualr < 0) {
       buffer_ref_put(recv_buf);
@@ -735,7 +735,7 @@ int fcc_handle_mcast_transition(stream_context_t *ctx, buffer_ref_t *buf_ref) {
     return -1;
   }
 
-  /* Keep original receive buffer alive for deferred zero-copy send */
+  /* Keep original receive buffer alive for deferred sending */
   buffer_ref_get(buf_ref);
 
   buf_ref->send_next = NULL;
@@ -763,7 +763,7 @@ int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref) {
     uint64_t flushed_bytes = 0;
 
     while (node) {
-      /* Queue each buffer for zero-copy send */
+      /* Queue each buffer for sending */
       buffer_ref_t *next = node->send_next;
       int processed_bytes = stream_process_rtp_payload(ctx, node, STREAM_MEDIA_ORIGIN_FCC_MULTICAST);
       if (likely(processed_bytes > 0)) {
@@ -780,7 +780,7 @@ int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref) {
     logger(LOG_DEBUG, "FCC: Flushed pending buffer chain, total_flushed_bytes=%" PRIu64, flushed_bytes);
   }
 
-  /* Forward multicast data to client (true zero-copy) or capture I-frame
+  /* Forward multicast data to client (true buffered output) or capture I-frame
    * (snapshot) */
   stream_process_rtp_payload(ctx, buf_ref, STREAM_MEDIA_ORIGIN_FCC_MULTICAST);
 

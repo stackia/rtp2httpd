@@ -29,7 +29,7 @@ typedef enum {
 } buffer_type_t;
 
 /**
- * Buffer reference counting for zero-copy lifecycle management
+ * Buffer reference counting for buffered output lifecycle management
  * Supports both memory buffers (pool-managed) and file descriptors (for
  * sendfile)
  *
@@ -37,8 +37,8 @@ typedef enum {
  * 1. When buffer is free: linked via free_next in pool's free list
  * 2. When buffer is in use: can be queued for sending via send_next
  *
- * The send queue fields (iov, zerocopy_id) are only valid
- * when the buffer is in a send queue or pending completion queue.
+ * The send queue field (iov) are only valid
+ * when the buffer is in a send queue.
  */
 typedef struct buffer_ref_s {
   buffer_type_t type; /* Buffer type: memory or file */
@@ -70,7 +70,6 @@ typedef struct buffer_ref_s {
                            sends, BUFFER_TYPE_MEMORY only) */
     off_t file_offset;  /* Current offset in file */
   };
-  uint32_t zerocopy_id; /* ID for tracking MSG_ZEROCOPY completions */
 } buffer_ref_t;
 
 /**
@@ -107,7 +106,7 @@ void buffer_pool_cleanup(buffer_pool_t *pool);
 void buffer_pool_update_stats(buffer_pool_t *pool);
 void buffer_ref_get(buffer_ref_t *ref);
 void buffer_ref_put(buffer_ref_t *ref);
-/* Share data while keeping offsets, send links and completion IDs independent.
+/* Share data while keeping offsets and send links independent.
  * The returned view owns a reference to the backing buffer; release with put. */
 buffer_ref_t *buffer_ref_view(buffer_ref_t *ref);
 size_t buffer_ref_capacity(const buffer_ref_t *ref);

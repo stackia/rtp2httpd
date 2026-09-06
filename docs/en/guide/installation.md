@@ -75,7 +75,6 @@ Group=rtp2httpd
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
-LimitMEMLOCK=infinity
 
 [Install]
 WantedBy=multi-user.target
@@ -96,7 +95,7 @@ Suitable for Docker-capable devices. **Requires host network mode** to properly 
 ### Basic Startup
 
 ```bash
-docker run --network=host --cap-add=NET_ADMIN --ulimit memlock=-1:-1 --rm \
+docker run --network=host --cap-add=NET_ADMIN --rm \
   ghcr.io/stackia/rtp2httpd:latest \
   --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
@@ -111,10 +110,6 @@ services:
     restart: always
     cap_add:
       - NET_ADMIN
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
     command: --noconfig --verbose 2 --listen 5140 --maxclients 20
 ```
 
@@ -122,14 +117,13 @@ services:
 > **About recommended parameters**:
 >
 > - `cap_add: NET_ADMIN`: Allows bypassing the kernel parameter `net.core.rmem_max` limit via `SO_RCVBUFFORCE`, setting a larger UDP receive buffer
-> - `ulimits: memlock: -1`: Required when zero-copy is enabled (`--zerocopy-on-send`), MSG_ZEROCOPY needs to lock memory pages
 
 ### Mount Configuration File
 
 If you need to use a configuration file (assuming config file is at `/path/to/rtp2httpd.conf`):
 
 ```bash
-docker run --network=host --cap-add=NET_ADMIN --ulimit memlock=-1:-1 --rm \
+docker run --network=host --cap-add=NET_ADMIN --rm \
   -v /path/to/rtp2httpd.conf:/usr/local/etc/rtp2httpd.conf:ro \
   ghcr.io/stackia/rtp2httpd:latest
 ```

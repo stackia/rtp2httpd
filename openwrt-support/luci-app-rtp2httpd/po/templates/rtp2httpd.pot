@@ -70,14 +70,6 @@ msgid ""
 "with snapshot=1 query parameter"
 msgstr ""
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:576
-msgid ""
-"Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires "
-"kernel 4.14+ (MSG_ZEROCOPY support). On supported devices, this can improve "
-"throughput and reduce CPU usage, especially under high concurrent load. "
-"Recommended only when experiencing performance bottlenecks."
-msgstr ""
-
 #: htdocs/luci-static/resources/view/rtp2httpd.js:296
 msgid "Enabled"
 msgstr ""
@@ -184,7 +176,7 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:525
 msgid ""
-"Maximum number of buffers in zero-copy pool. Each buffer is 1536 bytes. "
+"Maximum number of buffers in buffer pool. Each buffer is 1536 bytes. "
 "Default is 16384 (~24MB). Increase to improve throughput for multi-client "
 "concurrency."
 msgstr ""
@@ -399,10 +391,6 @@ msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:728
 msgid "X-Forwarded-For"
-msgstr ""
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:574
-msgid "Zero-Copy on Send"
 msgstr ""
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:279

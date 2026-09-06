@@ -2,8 +2,8 @@
 E2E coverage for the upstream flow-control fix.
 
 A slow downstream client used to be aborted partway through a large HTTP
-proxy response because the per-connection zerocopy queue would saturate and
-``connection_queue_zerocopy()`` would return -1 (packet-drop semantics
+proxy response because the per-connection send queue would saturate and
+``connection_queue_buffer()`` would return -1 (packet-drop semantics
 inherited from RTP/UDP).  The fix pauses upstream reads when the client send
 queue exceeds the high watermark and resumes them once it drops back below
 the low watermark.
@@ -36,7 +36,7 @@ pytestmark = pytest.mark.slow
 @pytest.fixture(scope="module")
 def shared_r2h(r2h_binary):
     # ``-b 128`` shrinks the global buffer pool cap to 128 buffers
-    # (~192 KiB), which forces the per-connection zerocopy queue limit
+    # (~192 KiB), which forces the per-connection send queue limit
     # down to ~96 KiB.  With the default cap (16384 buffers / ~24 MiB) a
     # short test body would be absorbed entirely without ever crossing
     # the HWM, defeating the whole purpose of these tests.
@@ -119,7 +119,7 @@ class TestHTTPProxyBackpressure:
     """A slow HTTP client must receive the full proxied body."""
 
     def test_slow_client_receives_full_body(self, shared_r2h):
-        # 1 MiB body comfortably exceeds the ~96 KiB zerocopy queue limit
+        # 1 MiB body comfortably exceeds the ~96 KiB send queue limit
         # imposed by the ``-b 128`` shared_r2h fixture, so the slow client
         # forces multiple pause/resume cycles before EOF.
         body_size = 1024 * 1024

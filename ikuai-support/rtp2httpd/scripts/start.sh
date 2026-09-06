@@ -94,7 +94,6 @@ load_env_file "$RUNTIME_ENV"
 : "${RTP2HTTPD_UDP_RCVBUF_SIZE:=524288}"
 : "${RTP2HTTPD_MCAST_REJOIN_INTERVAL:=0}"
 : "${RTP2HTTPD_FCC_LISTEN_PORT_RANGE:=}"
-: "${RTP2HTTPD_ZEROCOPY_ON_SEND:=0}"
 : "${RTP2HTTPD_RTSP_STUN_SERVER:=}"
 : "${RTP2HTTPD_EXTERNAL_M3U:=}"
 : "${RTP2HTTPD_EXTERNAL_M3U_UPDATE_INTERVAL:=7200}"
@@ -157,9 +156,6 @@ if [ -n "$RTP2HTTPD_UPSTREAM_INTERFACE_HTTP" ]; then
 fi
 if [ -n "$RTP2HTTPD_FCC_LISTEN_PORT_RANGE" ]; then
   set -- "$@" --fcc-listen-port-range "$RTP2HTTPD_FCC_LISTEN_PORT_RANGE"
-fi
-if [ "$RTP2HTTPD_ZEROCOPY_ON_SEND" = "1" ]; then
-  set -- "$@" --zerocopy-on-send
 fi
 if [ -n "$RTP2HTTPD_RTSP_STUN_SERVER" ]; then
   set -- "$@" --rtsp-stun-server "$RTP2HTTPD_RTSP_STUN_SERVER"

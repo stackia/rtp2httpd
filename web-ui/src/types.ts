@@ -1,7 +1,5 @@
 export interface SendStats {
   total: number;
-  completions: number;
-  copied: number;
   eagain: number;
   enobufs: number;
   batch: number;

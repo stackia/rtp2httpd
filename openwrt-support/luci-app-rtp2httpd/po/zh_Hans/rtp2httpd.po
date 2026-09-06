@@ -82,17 +82,6 @@ msgid ""
 msgstr ""
 "启用视频快照功能。启用后，客户端可以通过 snapshot=1 查询参数请求视频快照"
 
-#: htdocs/luci-static/resources/view/rtp2httpd.js:576
-msgid ""
-"Enable zero-copy send with MSG_ZEROCOPY for better performance. Requires "
-"kernel 4.14+ (MSG_ZEROCOPY support). On supported devices, this can improve "
-"throughput and reduce CPU usage, especially under high concurrent load. "
-"Recommended only when experiencing performance bottlenecks."
-msgstr ""
-"启用 MSG_ZEROCOPY 零拷贝发送以提升性能。需要内核 4.14+（支持 MSG_ZEROCOPY）。"
-"在支持的设备上，可提升吞吐量并降低 CPU 占用，特别是在高并发负载下。建议仅在遇"
-"到性能瓶颈时开启。"
-
 #: htdocs/luci-static/resources/view/rtp2httpd.js:296
 msgid "Enabled"
 msgstr "启用"
@@ -208,11 +197,11 @@ msgstr "最大客户端数"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:525
 msgid ""
-"Maximum number of buffers in zero-copy pool. Each buffer is 1536 bytes. "
+"Maximum number of buffers in buffer pool. Each buffer is 1536 bytes. "
 "Default is 16384 (~24MB). Increase to improve throughput for multi-client "
 "concurrency."
 msgstr ""
-"零拷贝缓冲池的最大缓冲区数量。每个缓冲区 1536 字节，默认 16384 个（约 "
+"缓冲池的最大缓冲区数量。每个缓冲区 1536 字节，默认 16384 个（约 "
 "24MB）。增大此值以提高多客户端并发时的吞吐量。"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:293
@@ -447,10 +436,6 @@ msgstr "工作进程数"
 #: htdocs/luci-static/resources/view/rtp2httpd.js:728
 msgid "X-Forwarded-For"
 msgstr "X-Forwarded-For"
-
-#: htdocs/luci-static/resources/view/rtp2httpd.js:574
-msgid "Zero-Copy on Send"
-msgstr "启用零拷贝发送"
 
 #: htdocs/luci-static/resources/view/rtp2httpd.js:279
 #: root/usr/share/luci/menu.d/luci-app-rtp2httpd.json:3

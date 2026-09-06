@@ -39,10 +39,9 @@ EXPOSE 5140
 
 # Recommended options:
 #   --cap-add=NET_ADMIN: Allow setting larger UDP receive buffers (bypassing rmem_max via SO_RCVBUFFORCE)
-#   --ulimit memlock=-1:-1: Required for zero-copy (MSG_ZEROCOPY needs locked memory pages)
 #
 # Usage:
-#   docker run --network=host --cap-add=NET_ADMIN --ulimit memlock=-1:-1 --rm \
+#   docker run --network=host --cap-add=NET_ADMIN --rm \
 #     ghcr.io/stackia/rtp2httpd:latest
 
 # Run the application

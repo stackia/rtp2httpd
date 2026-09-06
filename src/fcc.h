@@ -68,7 +68,7 @@ typedef struct {
   uint32_t session_id;        /* Session ID for NAT traversal correlation */
   uint8_t need_nat_traversal; /* NAT traversal support flag from server */
 
-  /* Multicast pending buffer for smooth transition - zero-copy chain */
+  /* Multicast pending buffer for smooth transition - buffered output chain */
   buffer_ref_t *pending_list_head;
   buffer_ref_t *pending_list_tail;
   uint16_t mcast_pbuf_last_seqn;
@@ -170,7 +170,7 @@ int fcc_handle_sync_notification(stream_context_t *ctx, int timeout_ms);
  * Stage 4: Handle RTP media packets from unicast stream
  *
  * @param ctx Stream context
- * @param buf_ref Buffer reference for zero-copy
+ * @param buf_ref Buffer reference for buffered output
  * @return 0 on success (packet processed and forwarded)
  */
 int fcc_handle_unicast_media(stream_context_t *ctx, buffer_ref_t *buf_ref);
@@ -180,7 +180,7 @@ int fcc_handle_unicast_media(stream_context_t *ctx, buffer_ref_t *buf_ref);
  * Buffers packets until sync point is reached
  *
  * @param ctx Stream context
- * @param buf_ref Buffer reference for zero-copy
+ * @param buf_ref Buffer reference for buffered output
  * @return 0 on success (packet buffered or forwarded)
  */
 int fcc_handle_mcast_transition(stream_context_t *ctx, buffer_ref_t *buf_ref);
@@ -190,7 +190,7 @@ int fcc_handle_mcast_transition(stream_context_t *ctx, buffer_ref_t *buf_ref);
  * Forwards packets directly to client
  *
  * @param ctx Stream context
- * @param buf_ref Buffer reference for zero-copy
+ * @param buf_ref Buffer reference for buffered output
  * @return 0 on success (packet forwarded)
  */
 int fcc_handle_mcast_active(stream_context_t *ctx, buffer_ref_t *buf_ref);

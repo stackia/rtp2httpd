@@ -82,7 +82,7 @@ static void calculate_epg_etag(int fd, size_t size) {
   logger(LOG_DEBUG, "EPG ETag calculated: %s", epg_cache.etag);
 }
 
-/* Async fetch completion callback (fd-based, zero-copy) */
+/* Async fetch completion callback (fd-based) */
 static void epg_fetch_fd_callback(http_fetch_ctx_t *ctx, int fd, size_t content_size, void *user_data) {
   (void)ctx;       /* Unused */
   (void)user_data; /* Unused */
@@ -258,7 +258,7 @@ int epg_fetch_async(int epfd) {
 
   logger(LOG_INFO, "Starting async EPG fetch from: %s", epg_cache.url);
 
-  /* Start async fetch with fd-based callback (zero-copy)
+  /* Start async fetch with fd-based callback (file-backed)
    * Note: file:// URLs complete synchronously and return NULL (callback already
    * invoked) */
   fetch_ctx = http_fetch_start_async_fd(epg_cache.url, epg_fetch_fd_callback, NULL, epfd);

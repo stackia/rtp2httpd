@@ -6,12 +6,12 @@
 #include "pid_file.h"
 #include "platform_compat.h"
 #include "rtp2httpd.h"
+#include "send_queue.h"
 #include "service.h"
 #include "status.h"
 #include "unix_socket.h"
 #include "utils.h"
 #include "worker.h"
-#include "zerocopy.h"
 #include <errno.h>
 #include <netdb.h>
 #include <signal.h>
@@ -690,10 +690,9 @@ int run_worker(void) {
     return EXIT_FAILURE;
   }
 
-  /* Initialize zero-copy infrastructure for this worker (mandatory) */
-  if (zerocopy_init() != 0) {
-    logger(LOG_FATAL, "Failed to initialize zero-copy infrastructure");
-    logger(LOG_FATAL, "MSG_ZEROCOPY support is required (kernel 4.14+)");
+  /* Initialize buffered output infrastructure for this worker (mandatory) */
+  if (send_buffer_init() != 0) {
+    logger(LOG_FATAL, "Failed to initialize buffered output infrastructure");
     return EXIT_FAILURE;
   }
 
@@ -703,7 +702,7 @@ int run_worker(void) {
   int result = worker_run_event_loop(s, maxs, notif_fd);
 
   access_log_cleanup();
-  zerocopy_cleanup();
+  send_buffer_cleanup();
   status_cleanup();
   config_cleanup(true);
 

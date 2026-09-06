@@ -20,21 +20,13 @@ rtp2httpd [options]
 - `-m, --maxclients <number>` - Maximum concurrent clients (default: 5)
 - `-w, --workers <number>` - Number of worker processes (default: 1)
 
-Within a worker process, requests with the same resolved multicast address, port, source filter address (SSM), effective upstream interface, and FEC port automatically share a multicast subscription without additional configuration. The main RTP/UDP socket and configured FEC socket are created once and released when the last subscribed client disconnects. Different worker processes still subscribe independently. Channel names, the `/rtp/` and `/udp/` path forms, and FCC server parameters do not affect this matching.
-
-Regular multicast parses and reorders RTP once per shared source, combines payloads into batches of approximately 64 KiB, and distributes them through reference counting. Each client keeps its own send queue and send offset while sharing the underlying batch data. Slow clients still drop packets according to their own queue limits without pausing multicast reception for other clients. Partial batches are sent at the next worker timer check after 100 ms, avoiding long waits for low-bitrate streams.
-
-On Linux, when multiple clients share a full batch, rtp2httpd first attempts to store it in an immutable anonymous memory file and use `sendfile` to share its kernel data pages. The file is never rewritten when pool buffers are reused, preserving data still in transit. Unsupported systems or insufficient resources automatically fall back to regular memory sends. This optimization requires no extra configuration and does not depend on `zerocopy-on-send`.
-
-FCC unicast requests and transition state remain independent for each client, and the transition to multicast reuses a matching subscription. A client joins shared batch delivery after its unicast and transition data have been processed and its sequence position matches the shared stream. Snapshot processing and FEC recovery retain their own processing state. If a FEC port is configured or FEC packets appear in the main multicast stream, that source keeps its shared sockets but uses independent reorder and FEC recovery paths for each client.
-
 `--listen` can be specified multiple times to listen on multiple TCP addresses/ports or Unix sockets:
 
 ```bash
 rtp2httpd --listen 5140 --listen 192.168.1.1:8081 --listen '[::1]:5140' --listen /var/run/rtp2httpd.sock
 ```
 
-Unix socket listen paths must be absolute and must not contain whitespace. At startup, if the same path already contains a socket file, rtp2httpd first probes whether the socket is still in use: if another process is listening on that path, startup is rejected; only confirmed stale socket files are removed automatically. If the path is a regular file, directory, or symbolic link, startup is rejected to avoid deleting user data. When any Unix socket listener is enabled, `zerocopy-on-send` is disabled globally.
+Unix socket listen paths must be absolute and must not contain whitespace. At startup, if the same path already contains a socket file, rtp2httpd first probes whether the socket is still in use: if another process is listening on that path, startup is rejected; only confirmed stale socket files are removed automatically. If the path is a regular file, directory, or symbolic link, startup is rejected to avoid deleting user data.
 
 #### Upstream Network Interface Configuration
 
@@ -61,10 +53,6 @@ Unix socket listen paths must be absolute and must not contain whitespace. At st
   - For 30 Mbps 4K IPTV streams, 512KB provides approximately 140ms of buffering
   - Increase this value to reduce packet loss for high-bandwidth streams
   - Actual buffer size may be limited by kernel parameter `net.core.rmem_max`
-- `-Z, --zerocopy-on-send` - Enable zero-copy send to improve performance (default: disabled)
-  - Requires kernel support for MSG_ZEROCOPY (Linux 4.14+)
-  - Improves throughput and reduces CPU usage on supported devices
-  - Not recommended if rtp2httpd is behind a reverse proxy (nginx/caddy/lucky, etc.)
 
 ### FCC (Fast Channel Change)
 
@@ -237,13 +225,6 @@ buffer-pool-max-size = 16384
 # Increase this value to reduce packet loss for high-bandwidth streams
 # Actual buffer size may be limited by kernel parameter net.core.rmem_max
 udp-rcvbuf-size = 524288
-
-# Enable zero-copy send to improve performance (default: no)
-# Set to yes/true/on/1 to enable zero-copy
-# Requires kernel support for MSG_ZEROCOPY (Linux 4.14+)
-# Can improve throughput and reduce CPU usage on supported devices, especially under high concurrent loads
-# Not recommended if rtp2httpd is behind a reverse proxy (nginx/caddy/lucky, etc.)
-zerocopy-on-send = no
 
 # Override the User-Agent for upstream HTTP proxy requests (default: no override)
 # When set, this replaces the client User-Agent sent to upstream servers for /http/ requests

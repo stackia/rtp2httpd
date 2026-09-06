@@ -46,7 +46,6 @@ int cmd_status_page_path_set = 0;
 int cmd_player_page_path_set = 0;
 int cmd_app_path_prefix_set = 0;
 int cmd_use_relative_path_in_m3u_set = 0;
-int cmd_zerocopy_on_send_set = 0;
 int cmd_workers_set = 0;
 int cmd_external_m3u_url_set = 0;
 int cmd_external_m3u_update_interval_set = 0;
@@ -201,17 +200,6 @@ static void add_bindaddr_unix(char *path) {
   ba->path = path;
   ba->next = bind_addresses;
   bind_addresses = ba;
-}
-
-static void apply_bind_side_effects(void) {
-  int has_unix = bind_addresses_has_unix();
-  if (has_unix) {
-    if (config.zerocopy_on_send)
-      config.zerocopy_on_send = 0;
-    logger(LOG_WARN, "Zero-copy send disabled because Unix socket listener is configured");
-  } else if (!has_unix && cmd_zerocopy_on_send_set) {
-    config.zerocopy_on_send = 1;
-  }
 }
 
 static int parse_port_range_value(const char *value, int *min_port, int *max_port) {
@@ -613,12 +601,6 @@ void parse_global_sec(char *line) {
   if (strcasecmp("video-snapshot", param) == 0) {
     if (set_if_not_cmd_override(cmd_video_snapshot_set, "video-snapshot"))
       config.video_snapshot = parse_bool(value);
-    return;
-  }
-
-  if (strcasecmp("zerocopy-on-send", param) == 0) {
-    if (set_if_not_cmd_override(cmd_zerocopy_on_send_set, "zerocopy-on-send"))
-      config.zerocopy_on_send = parse_bool(value);
     return;
   }
 
@@ -1172,8 +1154,6 @@ void config_init(void) {
     config.video_snapshot = 0;
   if (!cmd_mcast_rejoin_interval_set)
     config.mcast_rejoin_interval = 0;
-  if (!cmd_zerocopy_on_send_set)
-    config.zerocopy_on_send = 0;
   if (!cmd_use_relative_path_in_m3u_set)
     config.use_relative_path_in_m3u = 0;
   if (!cmd_fcc_listen_port_range_set) {
@@ -1250,8 +1230,6 @@ int config_reload(int *out_bind_changed) {
     goto reload_failed;
   }
 
-  apply_bind_side_effects();
-
   /* Check if bind addresses changed */
   if (out_bind_changed) {
     *out_bind_changed = !bind_addresses_equal(bind_addresses, old_bind_addresses);
@@ -1299,7 +1277,7 @@ void usage(FILE *f, char *progname) {
           "\t-m --maxclients <n>  Serve max n requests simultaneously (default 5)\n"
           "\t-w --workers <n>     Number of worker processes with SO_REUSEPORT "
           "(default 1)\n"
-          "\t-b --buffer-pool-max-size <n> Maximum number of buffers in zero-copy "
+          "\t-b --buffer-pool-max-size <n> Maximum number of buffers in "
           "pool (default 16384)\n"
           "\t-B --udp-rcvbuf-size <bytes> UDP socket receive buffer size for "
           "multicast/FCC/RTSP (default 524288 = 512KB)\n"
@@ -1346,8 +1324,6 @@ void usage(FILE *f, char *progname) {
           "https://)\n"
           "\t-I --external-m3u-update-interval <seconds>  Auto-update interval "
           "(default: 7200 = 2h, 0=disabled)\n"
-          "\t-Z --zerocopy-on-send    Enable zero-copy send with MSG_ZEROCOPY for "
-          "better performance (default: off)\n"
           "\t-g --http-proxy-user-agent <value>  Override User-Agent for upstream HTTP proxy requests\n"
           "\t-u --rtsp-user-agent <value>  User-Agent header for upstream RTSP requests "
           "(default: rtp2httpd/<version>)\n"
@@ -1433,7 +1409,6 @@ void parse_cmd_line(int argc, char *argv[]) {
                                     {"use-relative-path-in-m3u", no_argument, 0, OPT_USE_RELATIVE_PATH_IN_M3U},
                                     {"external-m3u", required_argument, 0, 'M'},
                                     {"external-m3u-update-interval", required_argument, 0, 'I'},
-                                    {"zerocopy-on-send", no_argument, 0, 'Z'},
                                     {"http-proxy-user-agent", required_argument, 0, 'g'},
                                     {"rtsp-stun-server", required_argument, 0, 'N'},
                                     {"rtsp-user-agent", required_argument, 0, 'u'},
@@ -1443,7 +1418,7 @@ void parse_cmd_line(int argc, char *argv[]) {
                                     {"pid-file", required_argument, 0, OPT_PID_FILE},
                                     {0, 0, 0, 0}};
 
-  const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:y:R:F:A:s:p:M:I:SCZg:N:u:O:";
+  const char short_opts[] = "v:qhUm:w:b:B:c:l:P:H:XT:i:f:t:r:y:R:F:A:s:p:M:I:SCg:N:u:O:";
   int option_index, opt;
   int configfile_failed = 1;
 
@@ -1631,11 +1606,6 @@ void parse_cmd_line(int argc, char *argv[]) {
         logger(LOG_INFO, "External M3U update interval set to %d seconds", config.external_m3u_update_interval);
       }
       break;
-    case 'Z':
-      config.zerocopy_on_send = 1;
-      cmd_zerocopy_on_send_set = 1;
-      logger(LOG_INFO, "Zero-copy send enabled (MSG_ZEROCOPY)");
-      break;
     case 'g':
       safe_free_string(&config.http_proxy_user_agent);
       if (optarg[0] != '\0') {
@@ -1698,8 +1668,6 @@ void parse_cmd_line(int argc, char *argv[]) {
     logger(LOG_WARN, "No config file found");
     set_config_file_path(NULL);
   }
-
-  apply_bind_side_effects();
 
   /* External M3U will be loaded asynchronously by workers after startup
    * This avoids blocking the startup process waiting for network resources */

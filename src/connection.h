@@ -2,9 +2,9 @@
 #define CONNECTION_H
 
 #include "http.h"
+#include "send_queue.h"
 #include "service.h"
 #include "stream.h"
-#include "zerocopy.h"
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -29,9 +29,8 @@ typedef struct connection_s {
   /* input parsing */
   char inbuf[INBUF_SIZE];
   int in_len;
-  /* zero-copy send queue - all output goes through this */
-  zerocopy_queue_t zc_queue;
-  int zerocopy_enabled; /* Whether SO_ZEROCOPY is enabled on this socket */
+  /* Output send queue - all output goes through this */
+  send_queue_t send_queue;
   connection_buffer_class_t buffer_class;
   /* HTTP request parser */
   http_request_t http_req;
@@ -166,16 +165,16 @@ int connection_queue_output(connection_t *c, const uint8_t *data, size_t len);
 int connection_queue_output_and_flush(connection_t *c, const uint8_t *data, size_t len);
 
 /**
- * Queue data for zero-copy send (no memcpy)
+ * Queue data for sending (no memcpy)
  * Takes ownership of the buffer via reference counting
  * @param c Connection
  * @param buf_ref Buffer reference (must not be NULL)
  * @return 0 on success, -1 if queue full or invalid parameters
  */
-int connection_queue_zerocopy(connection_t *c, buffer_ref_t *buf_ref);
+int connection_queue_buffer(connection_t *c, buffer_ref_t *buf_ref);
 
 /**
- * Queue a file descriptor for zero-copy send using sendfile()
+ * Queue a file descriptor for sending using sendfile()
  * Takes ownership of the file descriptor (will close it when done)
  * @param c Connection
  * @param file_fd File descriptor to send (must be seekable)
@@ -187,7 +186,7 @@ int connection_queue_file(connection_t *c, int file_fd, off_t file_offset, size_
 
 /* Backing capacity currently queued, including shared multicast batches.
  * Partial sends retain the entire backing buffer until the entry is removed. */
-static inline size_t connection_queue_bytes(const connection_t *c) { return c->zc_queue.memory_bytes; }
+static inline size_t connection_queue_bytes(const connection_t *c) { return c->send_queue.memory_bytes; }
 
 /* Record one upstream-pause edge.  Called by per-transport pause helpers
  * (http_proxy_pause_upstream, rtsp_pause_upstream) on the 0->1 transition. */

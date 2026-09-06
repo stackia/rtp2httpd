@@ -592,7 +592,7 @@ int mcast_session_join(mcast_session_t *session, stream_context_t *ctx) {
 }
 
 /* Only queue metadata is private. The immutable payload stays alive until
- * every queue and MSG_ZEROCOPY completion releases its reference. */
+ * every send queue releases its reference. */
 static void mcast_source_fanout(mcast_source_t *source, buffer_ref_t *batch, int packet_type, int flush) {
   for (mcast_session_t *session = source->subscribers; session; session = session->next) {
     stream_context_t *ctx = session->ctx;
@@ -606,7 +606,7 @@ static void mcast_source_fanout(mcast_source_t *source, buffer_ref_t *batch, int
     stream_metadata_note_media(ctx, packet_type, (uint8_t *)view->data + view->data_offset, (int)view->data_size,
                                ctx->fcc.initialized ? STREAM_MEDIA_ORIGIN_FCC_MULTICAST
                                                     : STREAM_MEDIA_ORIGIN_MULTICAST);
-    if (rtp_queue_buf_direct(ctx->conn, view) >= 0 && flush && view->data_size < ZEROCOPY_BATCH_BYTES) {
+    if (rtp_queue_buf_direct(ctx->conn, view) >= 0 && flush && view->data_size < SEND_QUEUE_BATCH_BYTES) {
       connection_epoll_update_events(ctx->epoll_fd, ctx->conn->fd,
                                      POLLER_IN | POLLER_OUT | POLLER_RDHUP | POLLER_HUP | POLLER_ERR);
     }
@@ -713,7 +713,7 @@ static void mcast_deliver_packet(mcast_session_t *session, buffer_ref_t *packet)
   if (session->failed || ctx->conn->state == CONN_CLOSING)
     return;
 
-  /* Queue linkage, RTP offsets and zerocopy completion IDs are mutable and
+  /* Queue linkage and RTP offsets are mutable and
    * must never be shared between clients. Only the backing data is shared. */
   buffer_ref_t *view;
   if (session->source->refs == 1 && !session->source->shared_output) {

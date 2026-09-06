@@ -57,7 +57,7 @@ typedef struct {
 
   /* Worker and performance settings */
   int workers;              /* Number of worker threads (SO_REUSEPORT sharded), default 1 */
-  int buffer_pool_max_size; /* Maximum number of buffers in zero-copy buffer
+  int buffer_pool_max_size; /* Maximum number of buffers in buffer
                                pool, default 16384 */
   int udp_rcvbuf_size;      /* UDP socket receive buffer size in bytes for
                                multicast, FCC, and RTSP sockets. Default 512KB */
@@ -113,10 +113,6 @@ typedef struct {
   int external_m3u_update_interval;      /* Update interval in seconds (0=disabled)
                                           */
   int64_t last_external_m3u_update_time; /* Last update time in milliseconds */
-
-  /* Zero-copy settings */
-  int zerocopy_on_send; /* Enable zero-copy send with MSG_ZEROCOPY (0=disabled,
-                           1=enabled) */
 
   /* RTSP NAT traversal settings */
   char *rtsp_stun_server;      /* STUN server host:port for RTSP NAT traversal

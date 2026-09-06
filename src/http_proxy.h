@@ -214,7 +214,7 @@ int http_proxy_session_tick(http_proxy_session_t *session, int64_t now);
 
 /**
  * Resume reading from upstream after client send queue has drained.
- * Called from stream_on_client_drain when zc_queue falls below LWM.
+ * Called from stream_on_client_drain when send_queue falls below LWM.
  * @param session HTTP proxy session
  */
 void http_proxy_resume_upstream(http_proxy_session_t *session);

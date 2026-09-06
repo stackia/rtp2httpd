@@ -42,8 +42,6 @@ function WorkersSectionComponent({ workers, locale, bandwidthUnit }: WorkersSect
               ["bandwidth", t("bandwidth"), formatBandwidth(worker.totalBandwidth, bandwidthUnit)],
               ["dataSent", t("dataSent"), formatBytes(worker.totalBytes)],
               ["sendTotal", t("sendTotal"), worker.send.total.toLocaleString()],
-              ["sendCompletions", t("sendCompletions"), worker.send.completions.toLocaleString()],
-              ["sendCopied", t("sendCopied"), worker.send.copied.toLocaleString()],
               ["sendBatch", t("sendBatch"), worker.send.batch.toLocaleString()],
               ["sendEagain", t("sendEagain"), worker.send.eagain.toLocaleString()],
               ["sendEnobufs", t("sendEnobufs"), worker.send.enobufs.toLocaleString()],
