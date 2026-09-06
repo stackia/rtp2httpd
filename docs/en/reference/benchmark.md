@@ -99,9 +99,13 @@ Queue limits now charge the backing buffer capacity instead of assuming “buffe
 
 ### Reduce Fixed Receive and Send Costs
 
-Platforms supporting `recvmmsg` receive up to 16 datagrams per call. The worker reuses receive descriptors and unconsumed packet buffers. Data arrives directly in pool buffers, avoiding an additional copy after reception; platforms without batch reception receive one packet at a time. Once initial RTP reordering is complete, an expected packet can be delivered directly when the window is empty and FEC is disabled, avoiding insertion into and removal from reorder slots.
+Platforms supporting `recvmmsg` receive up to 16 datagrams per call. The worker reuses receive descriptors and unconsumed packet buffers. After processing, a packet buffer with no other references is reused for the next receive. If a reorder window, FEC state, or send queue still holds a reference, reception uses another buffer to avoid overwriting pending data. Data arrives directly in pool buffers, avoiding an additional copy after reception; platforms without batch reception receive one packet at a time. Once initial RTP reordering is complete, an expected packet can be delivered directly when the window is empty and FEC is disabled, avoiding insertion into and removal from reorder slots.
+
+Sockets using batch reception use level-triggered notifications. A short batch can return to the event loop without an extra receive call to confirm that the socket is empty. Even if an interruption caused the short read, remaining data triggers another notification. Each callback receives at most 256 datagrams so continuous multicast traffic cannot occupy the event loop indefinitely.
 
 Writes enter a local worker queue first. The worker subscribes to kernel writable events only when a socket cannot make further progress, reducing per-batch event registration changes. Each connection sends at most 256 KiB per turn, and each event-loop iteration processes at most 128 write tasks. Remaining tasks stay queued so reception, timers, and other clients can also run.
+
+Client ownership checks in status tracking use a process-local cached PID, refreshed after every fork. This removes repeated `getpid()` calls from queue and send-statistics updates.
 
 ### Immutable Batch Snapshots
 

@@ -92,7 +92,15 @@ def test_crashed_worker_releases_maxclient_slot_and_logs_recovery(r2h_binary):
     try:
         r2h.start()
         sockets.append(_open_stream(port, upstream.port))
-        payload = wait_for_status_payload("127.0.0.1", port, lambda value: len(value["clients"]) == 1)
+        payload = wait_for_status_payload(
+            "127.0.0.1",
+            port,
+            lambda value: (
+                len(value["clients"]) == 1
+                and value["clients"][0]["bytesSent"] > 0
+                and value["clients"][0]["queueLimitBytes"] > 0
+            ),
+        )
         dead_pid = payload["clients"][0]["workerPid"]
 
         os.kill(dead_pid, signal.SIGKILL)
@@ -107,7 +115,15 @@ def test_crashed_worker_releases_maxclient_slot_and_logs_recovery(r2h_binary):
         assert _worker_pids(recovered)[0] > 0
 
         sockets.append(_open_stream(port, upstream.port))
-        active_again = wait_for_status_payload("127.0.0.1", port, lambda value: len(value["clients"]) == 1)
+        active_again = wait_for_status_payload(
+            "127.0.0.1",
+            port,
+            lambda value: (
+                len(value["clients"]) == 1
+                and value["clients"][0]["bytesSent"] > 0
+                and value["clients"][0]["queueLimitBytes"] > 0
+            ),
+        )
         assert "Reclaimed 1 status client slot" in r2h.read_log()
 
         restarted_pid = active_again["clients"][0]["workerPid"]

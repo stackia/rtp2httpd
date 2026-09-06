@@ -18,6 +18,8 @@
 
 /* Global pointer to shared memory */
 status_shared_t *status_shared = NULL;
+/* Private to each process; refreshed in the child's post-fork initialization. */
+static uint32_t status_process_pid;
 
 /* Path for shared memory file in /tmp */
 static char shm_path[256] = {0};
@@ -311,6 +313,7 @@ static void append_log_entry(int64_t timestamp, loglevel_t level, const char *me
 
 int status_init(void) {
   int fd;
+  status_process_pid = (uint32_t)getpid();
 
   /* PID-keyed path: EEXIST can only be a stale leftover from a prior instance
    * with the same PID (no live process can hold our PID in this namespace),
@@ -560,6 +563,7 @@ void status_cleanup(void) {
 }
 
 void status_worker_init(void) {
+  status_process_pid = (uint32_t)getpid();
   if (log_event_recv_fd >= 0) {
     close(log_event_recv_fd);
     log_event_recv_fd = -1;
@@ -648,7 +652,7 @@ void status_unregister_client(int status_index) {
     return;
 
   client_stats_t *client = &status_shared->clients[status_index];
-  if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != (uint32_t)getpid())
+  if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != status_process_pid)
     return;
 
   if (!atomic_exchange_explicit(&client->active, 0, memory_order_acq_rel))
@@ -761,7 +765,7 @@ void status_update_client_bytes(int status_index, uint64_t bytes_sent, uint32_t 
     return;
 
   client_stats_t *client = &status_shared->clients[status_index];
-  if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != (uint32_t)getpid() ||
+  if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != status_process_pid ||
       !atomic_load_explicit(&client->active, memory_order_acquire))
     return;
 
@@ -779,7 +783,7 @@ void status_update_client_state(int status_index, client_state_type_t state) {
     return;
 
   client_stats_t *client = &status_shared->clients[status_index];
-  if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != (uint32_t)getpid() ||
+  if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != status_process_pid ||
       !atomic_load_explicit(&client->active, memory_order_acquire))
     return;
 
@@ -801,7 +805,7 @@ void status_update_client_queue(int status_index, size_t queue_bytes, size_t que
     return;
 
   client_stats_t *client = &status_shared->clients[status_index];
-  if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != (uint32_t)getpid() ||
+  if (atomic_load_explicit(&client->owner_pid, memory_order_acquire) != status_process_pid ||
       !atomic_load_explicit(&client->active, memory_order_acquire))
     return;
 

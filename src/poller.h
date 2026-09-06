@@ -2,14 +2,14 @@
 #define POLLER_H
 
 /**
- * Platform-agnostic event polling abstraction (edge-triggered).
+ * Platform-agnostic event polling abstraction (edge-triggered by default).
  *
  * Provides a unified API over platform-specific event notification mechanisms:
  *   - Linux:   epoll with EPOLLET (edge-triggered)
  *   - macOS:   kqueue with EV_CLEAR (edge-triggered)
  *   - Windows: (future) IOCP
  *
- * All handlers must drain socket data (read/write until EAGAIN) because
+ * Edge-triggered handlers must drain socket data (read/write until EAGAIN) because
  * edge-triggered pollers only notify on state transitions, not while
  * data remains available.
  */
@@ -22,6 +22,8 @@
 #define POLLER_ERR 0x004   /* Error condition */
 #define POLLER_HUP 0x008   /* Hangup (peer closed) */
 #define POLLER_RDHUP 0x010 /* Read half of connection closed */
+/* Registration option: keep reporting readiness while data remains. */
+#define POLLER_LEVEL 0x020
 
 /* Event structure returned by poller_wait() */
 typedef struct {

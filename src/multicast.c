@@ -547,7 +547,12 @@ int mcast_session_join(mcast_session_t *session, stream_context_t *ctx) {
       source->reorder.deliver_arg = source;
     }
     source->sock = join_mcast_group(source->service, 0);
-    if (source->sock < 0 || poller_add(ctx->epoll_fd, source->sock, POLLER_IN) < 0) {
+    uint32_t read_events = POLLER_IN;
+#if defined(__linux__) || defined(__FreeBSD__)
+    /* Batched reads can yield without a final empty receive. */
+    read_events |= POLLER_LEVEL;
+#endif
+    if (source->sock < 0 || poller_add(ctx->epoll_fd, source->sock, read_events) < 0) {
       mcast_source_free(source);
       return -1;
     }
@@ -748,6 +753,7 @@ static void mcast_source_process_packet(mcast_source_t *source, buffer_ref_t *pa
   void *data = packet ? packet->data : NULL;
   source->last_data_time = now;
   if (packet) {
+    packet->data_offset = 0;
     packet->data_size = (size_t)len;
     uint8_t *payload = NULL;
     int payload_len = 0;
@@ -772,6 +778,18 @@ static void mcast_source_process_packet(mcast_source_t *source, buffer_ref_t *pa
   }
 }
 
+/* A receive buffer can be reused in place once parsing copied its payload into
+ * a batch. Reorder/FEC windows and client queues retain references when they
+ * still need the packet, so those buffers must be returned through the pool. */
+static void mcast_receive_recycle(buffer_ref_t **packet) {
+  if (*packet && (*packet)->refcount == 1)
+    return;
+  buffer_ref_put(*packet);
+  *packet = NULL;
+}
+
+static buffer_ref_t *receive_single_packet;
+
 #if defined(__linux__) || defined(__FreeBSD__)
 /* The worker dispatches receive callbacks serially. Keep scratch descriptors
  * and unused pool buffers across callbacks, rather than allocating a full batch
@@ -791,6 +809,7 @@ static int mcast_source_receive_batch(mcast_source_t *source, int fd, int64_t no
   struct iovec *iov = receive_iov;
   buffer_ref_t **packets = receive_packets;
   int fallback = 0;
+  unsigned int received = 0;
   if (!receive_initialized) {
     for (int i = 0; i < RECEIVE_BATCH; i++) {
       messages[i].msg_hdr.msg_iov = &iov[i];
@@ -801,9 +820,10 @@ static int mcast_source_receive_batch(mcast_source_t *source, int fd, int64_t no
   }
   for (;;) {
     for (int i = 0; i < RECEIVE_BATCH; i++) {
-      if (!packets[i])
+      if (!packets[i]) {
         packets[i] = buffer_pool_alloc();
-      iov[i].iov_base = packets[i] ? packets[i]->data : receive_discard;
+        iov[i].iov_base = packets[i] ? packets[i]->data : receive_discard;
+      }
     }
     int count = recvmmsg(fd, messages, RECEIVE_BATCH, MSG_DONTWAIT, NULL);
     if (count < 0) {
@@ -820,11 +840,14 @@ static int mcast_source_receive_batch(mcast_source_t *source, int fd, int64_t no
     }
     for (int i = 0; i < count; i++) {
       mcast_source_process_packet(source, packets[i], messages[i].msg_len, now);
-      buffer_ref_put(packets[i]);
-      packets[i] = NULL;
+      mcast_receive_recycle(&packets[i]);
     }
-    /* Drain through EAGAIN even after a short result: a signal may interrupt
-     * recvmmsg after partial progress with more datagrams still queued. */
+    received += (unsigned int)count;
+    /* Usually a short read already exhausted the socket. Level triggering
+     * also covers interruption after partial progress: unread datagrams stay
+     * ready. Yield on sustained traffic so output and timers get a turn. */
+    if (count < RECEIVE_BATCH || received >= 256)
+      break;
   }
   if (fallback)
     mcast_worker_cleanup();
@@ -833,6 +856,8 @@ static int mcast_source_receive_batch(mcast_source_t *source, int fd, int64_t no
 #endif
 
 void mcast_worker_cleanup(void) {
+  buffer_ref_put(receive_single_packet);
+  receive_single_packet = NULL;
 #if defined(__linux__) || defined(__FreeBSD__)
   for (int i = 0; i < RECEIVE_BATCH; i++) {
     buffer_ref_put(receive_packets[i]);
@@ -855,13 +880,14 @@ int mcast_session_handle_event(mcast_session_t *session, int fd, int64_t now) {
   /* Drain to EAGAIN for edge-triggered pollers, including on pool exhaustion.
    * All subscribers are detached by the worker outside this delivery loop. */
   for (;;) {
-    buffer_ref_t *packet = fd == source->sock ? buffer_pool_alloc() : NULL;
+    if (fd == source->sock && !receive_single_packet)
+      receive_single_packet = buffer_pool_alloc();
+    buffer_ref_t *packet = fd == source->sock ? receive_single_packet : NULL;
     uint8_t discard[BUFFER_POOL_BUFFER_SIZE];
     void *data = packet ? packet->data : discard;
     ssize_t len = recv(fd, data, BUFFER_POOL_BUFFER_SIZE, 0);
     if (len < 0) {
       int recv_errno = errno;
-      buffer_ref_put(packet);
       if (recv_errno == EINTR)
         continue;
       if (recv_errno != EAGAIN && recv_errno != EWOULDBLOCK) {
@@ -872,13 +898,13 @@ int mcast_session_handle_event(mcast_session_t *session, int fd, int64_t now) {
     }
     if (fd == source->sock) {
       mcast_source_process_packet(source, packet, (size_t)len, now);
+      mcast_receive_recycle(&receive_single_packet);
     } else {
       for (mcast_session_t *subscriber = source->subscribers; subscriber; subscriber = subscriber->next) {
         if (!subscriber->failed && subscriber->ctx->conn->state != CONN_CLOSING)
           fec_process_packet(&subscriber->ctx->fec, data, (int)len);
       }
     }
-    buffer_ref_put(packet);
   }
   return 0;
 }
