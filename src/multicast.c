@@ -619,7 +619,7 @@ static void mcast_source_flush(mcast_source_t *source) {
   if (!batch)
     return;
   source->batch = NULL;
-  if (source->batch_clients > 1 && batch->data_size >= ZEROCOPY_BATCH_BYTES)
+  if (source->batch_clients > 1 && batch->data_size >= BUFFER_POOL_BATCH_SIZE - BUFFER_POOL_BUFFER_SIZE)
     buffer_ref_snapshot(batch);
   mcast_source_fanout(source, batch, source->batch_packet_type, 1);
   buffer_ref_put(batch);
@@ -629,6 +629,10 @@ static int mcast_source_append(void *arg, buffer_ref_t *packet) {
   mcast_source_t *source = arg;
   if (!source->batch_clients)
     return (int)packet->data_size;
+  /* Flush before crossing the cap. Besides bounding storage, this avoids
+   * creating a second TCP/GSO block for a small tail above 64 KiB. */
+  if (source->batch && packet->data_size > BUFFER_POOL_BATCH_SIZE - source->batch->data_size)
+    mcast_source_flush(source);
   if (!source->batch) {
     source->batch = buffer_pool_alloc_batch();
     source->batch_since = get_time_ms();
@@ -642,7 +646,7 @@ static int mcast_source_append(void *arg, buffer_ref_t *packet) {
   buffer_ref_t *batch = source->batch;
   memcpy((uint8_t *)batch->data + batch->data_size, (uint8_t *)packet->data + packet->data_offset, packet->data_size);
   batch->data_size += packet->data_size;
-  if (batch->data_size >= ZEROCOPY_BATCH_BYTES)
+  if (batch->data_size == BUFFER_POOL_BATCH_SIZE)
     mcast_source_flush(source);
   return (int)packet->data_size;
 }

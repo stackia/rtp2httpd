@@ -13,8 +13,8 @@
 #define BUFFER_POOL_BUFFER_SIZE 1536
 #define BUFFER_POOL_LOW_WATERMARK 256
 #define BUFFER_POOL_HIGH_WATERMARK (BUFFER_POOL_INITIAL_SIZE * 3)
-/* One shared output batch, with room for the packet crossing 64 KiB. */
-#define BUFFER_POOL_BATCH_SIZE (65536 + BUFFER_POOL_BUFFER_SIZE)
+/* Keep shared output below 64 KiB, including the last complete RTP payload. */
+#define BUFFER_POOL_BATCH_SIZE 65536
 
 /* Control/API buffer pool configuration */
 #define CONTROL_POOL_INITIAL_SIZE 256
