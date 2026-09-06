@@ -7,7 +7,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
-#ifdef __linux__
+#if defined(__linux__) || defined(__FreeBSD__)
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -252,12 +252,19 @@ int buffer_ref_sendfile_fd(const buffer_ref_t *ref) {
  * closed. A fresh snapshot keeps slow sockets safe when pool memory is reused.
  * Unsupported kernels or allocation failures retain the normal sendmsg path. */
 void buffer_ref_snapshot(buffer_ref_t *ref) {
-#ifdef __linux__
+#if (defined(__linux__) || defined(__FreeBSD__)) && defined(MFD_ALLOW_SEALING) && defined(F_ADD_SEALS)
   if (!ref || ref->owner || ref->shared_fd >= 0 || !ref->data_size)
     return;
   int fd = memfd_create("rtp2httpd-batch", MFD_CLOEXEC | MFD_ALLOW_SEALING);
   if (fd < 0)
     return;
+#ifdef __FreeBSD__
+  /* FreeBSD shared-memory writes cannot grow the object, unlike Linux memfd. */
+  if (ftruncate(fd, (off_t)ref->data_size) < 0) {
+    close(fd);
+    return;
+  }
+#endif
   size_t written = 0;
   while (written < ref->data_size) {
     ssize_t n = write(fd, (uint8_t *)ref->data + ref->data_offset + written, ref->data_size - written);
@@ -275,6 +282,7 @@ void buffer_ref_snapshot(buffer_ref_t *ref) {
   }
   ref->shared_fd = fd;
 #else
+  /* macOS sendfile only accepts regular files, not POSIX shared memory. */
   (void)ref;
 #endif
 }
