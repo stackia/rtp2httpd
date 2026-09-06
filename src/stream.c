@@ -378,8 +378,8 @@ int stream_handle_fd_event(stream_context_t *ctx, int fd, uint32_t events, int64
   }
 
   /* Process multicast socket events */
-  if (ctx->mcast.initialized && ctx->mcast.sock >= 0 && fd == ctx->mcast.sock) {
-    return mcast_session_handle_event(&ctx->mcast, ctx, now);
+  if (ctx->mcast.initialized && fd >= 0 && (fd == ctx->mcast.sock || fd == ctx->mcast.fec_sock)) {
+    return mcast_session_handle_event(&ctx->mcast, fd, now);
   }
 
   /* Process FEC socket events - drain all available packets for
@@ -647,7 +647,7 @@ int stream_tick(stream_context_t *ctx, int64_t now) {
     return 0;
 
   /* Multicast session tick (rejoin and timeout checks) */
-  if (mcast_session_tick(&ctx->mcast, ctx->service, now) < 0) {
+  if (mcast_session_tick(&ctx->mcast, now) < 0) {
     return -1; /* Multicast timeout */
   }
 
@@ -706,7 +706,7 @@ int stream_context_cleanup(stream_context_t *ctx) {
   fcc_session_cleanup(&ctx->fcc, ctx->service, ctx->epoll_fd);
 
   /* Clean up multicast session */
-  mcast_session_cleanup(&ctx->mcast, ctx->epoll_fd);
+  mcast_session_cleanup(&ctx->mcast);
 
   /* Clean up HTTP proxy session (always synchronous) */
   http_proxy_session_cleanup(&ctx->http_proxy);

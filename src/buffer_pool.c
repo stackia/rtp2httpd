@@ -174,6 +174,12 @@ void buffer_ref_put(buffer_ref_t *ref) {
 
   ref->refcount--;
   if (ref->refcount <= 0) {
+    if (ref->owner) {
+      buffer_ref_t *owner = ref->owner;
+      free(ref);
+      buffer_ref_put(owner);
+      return;
+    }
     if (ref->type == BUFFER_TYPE_FILE) {
       if (ref->file_fd >= 0) {
         close(ref->file_fd);
@@ -194,6 +200,22 @@ void buffer_ref_put(buffer_ref_t *ref) {
 
     buffer_pool_update_stats(pool);
   }
+}
+
+buffer_ref_t *buffer_ref_view(buffer_ref_t *ref) {
+  if (!ref || ref->type != BUFFER_TYPE_MEMORY)
+    return NULL;
+  buffer_ref_t *view = calloc(1, sizeof(*view));
+  if (!view)
+    return NULL;
+  view->type = BUFFER_TYPE_MEMORY;
+  view->data = ref->data;
+  view->data_size = ref->data_size;
+  view->data_offset = ref->data_offset;
+  view->refcount = 1;
+  view->owner = ref->owner ? ref->owner : ref;
+  buffer_ref_get(view->owner);
+  return view;
 }
 
 buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool) {

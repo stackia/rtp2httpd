@@ -50,6 +50,7 @@ typedef struct buffer_ref_s {
   };
   int refcount;                          /* Reference count */
   struct buffer_pool_segment_s *segment; /* Segment this buffer belongs to (BUFFER_TYPE_MEMORY) */
+  struct buffer_ref_s *owner;            /* Non-NULL for a view sharing another buffer's immutable data */
 
   /* Union: buffer is either in free list OR in send queue, never both */
   union {
@@ -103,6 +104,9 @@ void buffer_pool_cleanup(buffer_pool_t *pool);
 void buffer_pool_update_stats(buffer_pool_t *pool);
 void buffer_ref_get(buffer_ref_t *ref);
 void buffer_ref_put(buffer_ref_t *ref);
+/* Share data while keeping offsets, send links and completion IDs independent.
+ * The returned view owns a reference to the backing buffer; release with put. */
+buffer_ref_t *buffer_ref_view(buffer_ref_t *ref);
 buffer_ref_t *buffer_pool_alloc_from(buffer_pool_t *pool);
 buffer_ref_t *buffer_pool_alloc(void);
 buffer_ref_t *buffer_pool_alloc_control(void);

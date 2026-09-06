@@ -20,6 +20,10 @@ rtp2httpd [options]
 - `-m, --maxclients <number>` - Maximum concurrent clients (default: 5)
 - `-w, --workers <number>` - Number of worker processes (default: 1)
 
+Within a worker process, requests with the same resolved multicast address, port, source filter address (SSM), effective upstream interface, and FEC port automatically share a multicast subscription without additional configuration. The main RTP/UDP socket and configured FEC socket are created once and released when the last subscribed client disconnects. Different worker processes still subscribe independently. Channel names, the `/rtp/` and `/udp/` path forms, and FCC server parameters do not affect this matching.
+
+Received data memory is shared through reference counting, while each client keeps its own send queue, RTP reorder state, and FEC recovery state. Slow clients still drop packets according to their own queue limits without pausing multicast reception for other clients. FCC unicast requests and transition state remain independent for each client; the transition to multicast reuses a matching subscription.
+
 `--listen` can be specified multiple times to listen on multiple TCP addresses/ports or Unix sockets:
 
 ```bash
