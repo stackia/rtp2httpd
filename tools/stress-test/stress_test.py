@@ -223,7 +223,7 @@ def get_process_rss(pid: int) -> float | None:
 class ResourceMonitor(threading.Thread):
     """Thread that monitors CPU and memory usage of processes.
 
-    Uses top for CPU measurement (more accurate, especially for io_uring programs)
+    Uses top for interactive CPU sampling; benchmark.py measures complete trial windows.
     and /proc for memory measurement.
     """
 

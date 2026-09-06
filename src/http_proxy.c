@@ -894,9 +894,9 @@ static int http_proxy_try_receive_response(http_proxy_session_t *session) {
   int bytes_forwarded = 0;
 
   /*
-   * Two-phase receive strategy for buffered output optimization:
+   * Two-phase receive strategy to avoid an extra payload copy:
    * Phase 1 (AWAITING_HEADERS): Use fixed buffer for header parsing
-   * Phase 2 (STREAMING): Recv directly to buffer pool for sending
+   * Phase 2 (STREAMING): Receive directly into the send buffer pool
    *                      OR buffer for rewriting if needs_body_rewrite
    */
 

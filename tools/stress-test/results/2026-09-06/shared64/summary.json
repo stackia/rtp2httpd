@@ -1,0 +1,95 @@
+[
+  {
+    "case": "shared64",
+    "program": "rtp2httpd",
+    "valid_trials": 5,
+    "total_trials": 5,
+    "cpu_pct": {
+      "mean": 6.970806833409041,
+      "min": 6.327807413776387,
+      "max": 7.676655957103553
+    },
+    "pss_mib": {
+      "mean": 4.60861328125,
+      "min": 4.5712890625,
+      "max": 4.6337890625
+    },
+    "uss_mib": {
+      "mean": 3.9875,
+      "min": 3.94921875,
+      "max": 4.01171875
+    }
+  },
+  {
+    "case": "shared64",
+    "program": "msd_lite",
+    "valid_trials": 5,
+    "total_trials": 5,
+    "cpu_pct": {
+      "mean": 5.911672985938835,
+      "min": 5.586135256424014,
+      "max": 6.476307948977287
+    },
+    "pss_mib": {
+      "mean": 1.36888671875,
+      "min": 1.3681640625,
+      "max": 1.369140625
+    },
+    "uss_mib": {
+      "mean": 1.35546875,
+      "min": 1.35546875,
+      "max": 1.35546875
+    }
+  },
+  {
+    "case": "shared64",
+    "program": "udpxy",
+    "valid_trials": 2,
+    "total_trials": 5,
+    "cpu_pct": {
+      "mean": 56.749177430157616,
+      "min": 54.79720868821048,
+      "max": 58.70114617210474
+    },
+    "pss_mib": {
+      "mean": 4.606201171875,
+      "min": 4.60302734375,
+      "max": 4.609375
+    },
+    "uss_mib": {
+      "mean": 4.015625,
+      "min": 4.01171875,
+      "max": 4.01953125
+    }
+  },
+  {
+    "case": "shared64",
+    "program": "tvgate",
+    "valid_trials": 0,
+    "total_trials": 5,
+    "cpu_pct": null,
+    "pss_mib": null,
+    "uss_mib": null
+  },
+  {
+    "case": "shared64",
+    "program": "baseline",
+    "valid_trials": 5,
+    "total_trials": 5,
+    "cpu_pct": {
+      "mean": 30.100316076468307,
+      "min": 29.065688183265927,
+      "max": 31.37242538962098
+    },
+    "pss_mib": {
+      "mean": 10.278642578125,
+      "min": 8.98515625,
+      "max": 11.922607421875
+    },
+    "uss_mib": {
+      "mean": 9.6028125,
+      "min": 8.34375,
+      "max": 11.23828125
+    }
+  }
+]

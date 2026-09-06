@@ -68,7 +68,7 @@ typedef struct {
   uint32_t session_id;        /* Session ID for NAT traversal correlation */
   uint8_t need_nat_traversal; /* NAT traversal support flag from server */
 
-  /* Multicast pending buffer for smooth transition - buffered output chain */
+  /* Multicast pending buffer chain for a smooth transition */
   buffer_ref_t *pending_list_head;
   buffer_ref_t *pending_list_tail;
   uint16_t mcast_pbuf_last_seqn;

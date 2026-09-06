@@ -16,6 +16,8 @@ From the repository root:
 ```bash
 # Refresh the project's existing dependencies and build rtp2httpd.
 uv sync --group dev
+pnpm install --frozen-lockfile
+pnpm run web-ui:build
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON
 cmake --build build -j$(getconf _NPROCESSORS_ONLN)
 
@@ -59,9 +61,9 @@ Use a clean checkout or separate build directory when refreshing competitors; pr
 - CPU is the change in user + system CPU ticks from `/proc/PID/stat`, divided by measured wall time. **100% means one logical CPU**, not the whole machine. Include the supervisor and every child process; process CPU already includes its threads and must not be summed again by thread.
 - All server processes/threads inherit the same single-CPU affinity. rtp2httpd uses `-C -w 1`; msd_lite uses one event-loop thread; TVGate uses `GOMAXPROCS=1`; udpxy retains its native process-per-client model. These are single-CPU comparisons, not claims that all programs have one process or thread.
 - Each generator and reader process has a separate CPU from the server. Their combined CPU is recorded separately. Loopback kernel work charged to the load processes is outside the server metric; this is not total system CPU or a physical-NIC throughput test.
-- PSS and USS come from `smaps_rollup`, summed over the process family and sampled once per second. PSS includes proportional shared pages; USS includes private clean/dirty/huge pages. Neither is a count of kernel socket memory.
+- PSS and USS come from `smaps_rollup`, summed over the process family and sampled once per second. PSS includes proportional shared pages; USS includes private clean/dirty/huge pages. Neither includes all kernel socket memory or unmapped anonymous-file cache pages.
 - The sender emits RTP payload type 33 with seven 188-byte TS null packets per datagram. Every TS packet contains a monotonically increasing marker, its complement, a source identifier, and a checked payload pattern. This tests forwarding and integrity, not video decoding.
-- Readers decode HTTP chunk framing before checking payloads. Each client must receive within 2% of the target rate; each generator must also maintain that rate. The measured window must contain no gaps, duplicates, corrupt packets, EOFs, or kernel UDP drops. The process family must remain stable and the load processes alive.
+- Readers decode HTTP chunk framing before checking payloads. Each client must receive within 2% of the target rate; each generator must also maintain that rate. The measured window must contain no gaps, duplicates, backward markers, corrupt packets, EOFs, or kernel UDP drops. The process family must remain stable and the load processes alive.
 - Failures remain in the raw output as `valid: false`; the summary averages valid trials only and always reports valid/total counts. A failed or incomplete run exits nonzero. Do not describe its low CPU as a performance win.
 - msd_lite keeps the upstream example's 48 KiB receive watermark, 64 KiB send watermark, and 1 MiB ring. Only the listener, interface, thread count/affinity, verbosity, and congestion-control name are adapted. udpxy keeps upstream buffer defaults. TVGate uses loopback multicast settings and connection limits of 256. Generated configs and complete commands are saved for review.
 

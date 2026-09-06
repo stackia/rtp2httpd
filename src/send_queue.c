@@ -131,7 +131,7 @@ int send_queue_add(send_queue_t *queue, buffer_ref_t *buf_ref) {
     queue->tail->send_next = buf_ref;
     queue->tail = buf_ref;
   } else {
-    /* First entry - record timestamp for batching timeout */
+    /* First queued entry. */
     queue->head = queue->tail = buf_ref;
   }
 
@@ -168,7 +168,7 @@ int send_queue_add_file(send_queue_t *queue, int file_fd, off_t file_offset, siz
     queue->tail->send_next = buf_ref;
     queue->tail = buf_ref;
   } else {
-    /* First entry - record timestamp for batching timeout */
+    /* First queued entry. */
     queue->head = queue->tail = buf_ref;
   }
 

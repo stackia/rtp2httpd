@@ -20,6 +20,8 @@ rtp2httpd [options]
 - `-m, --maxclients <number>` - Maximum concurrent clients (default: 5)
 - `-w, --workers <number>` - Number of worker processes (default: 1)
 
+Requests for the same multicast source automatically share a subscription within each worker, without additional configuration. See the [Performance Benchmark](/en/reference/benchmark#performance-optimizations-in-rtp2httpd) for implementation details and test results.
+
 `--listen` can be specified multiple times to listen on multiple TCP addresses/ports or Unix sockets:
 
 ```bash

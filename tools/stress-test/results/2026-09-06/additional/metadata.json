@@ -1,0 +1,41 @@
+{
+  "timestamp_utc": "2026-09-06T10:31:53Z",
+  "platform": "Linux-6.8.0-138-generic-aarch64-with-glibc2.39",
+  "machine": "aarch64",
+  "cpu_count": 16,
+  "server_cpu": 0,
+  "load_cpus": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+  "controller_cpu": 13,
+  "warmup_s": 5.0,
+  "duration_s": 10,
+  "repetitions": 3,
+  "cases": {
+    "distinct8": [8, 8, 40],
+    "shared8": [8, 1, 40],
+    "high400": [1, 1, 400]
+  },
+  "script_sha256": "f449923fc4aa4b32fe382ef8aa2bce7c446fe108ceab0a55fc1990d55e31b6bf",
+  "binaries": {
+    "rtp2httpd": {
+      "path": "/home/parallels/Repos/openwrt-dev/rtp2httpd/build-benchmark-shared/final/build/rtp2httpd",
+      "revision": "530dc980e92db6b6ea98b6ca223dffe1a0345b5c",
+      "sha256": "74f861fcae8b894774928ec89b24436cbf487692b98df84921bd1991301a23ca"
+    },
+    "msd_lite": {
+      "path": "/home/parallels/Repos/openwrt-dev/rtp2httpd/build-benchmark-shared/msd/build/src/msd_lite",
+      "revision": "fa68e131343fb58c67ad77b2d26f2cb7c49a2c95",
+      "sha256": "45459818ceae0a7595406b0aec5cf999cd27bb4efa822494414a6ca397bc88a7"
+    },
+    "udpxy": {
+      "path": "/home/parallels/Repos/openwrt-dev/rtp2httpd/build-benchmark-shared/vendors/udpxy/chipmunk/udpxy",
+      "revision": "31d4bcfabaade59d3efdee015df7979febf76bae",
+      "sha256": "71037623a56bed03b8797c4b849a90f7a0924ac2e6998c178ff0498c734c06ae"
+    },
+    "tvgate": {
+      "path": "/home/parallels/Repos/openwrt-dev/rtp2httpd/build-benchmark-shared/vendors/tvgate/TVGate-linux-arm64",
+      "revision": "v3.2.0",
+      "sha256": "eca4c04f3973316e716be3264c690e3215fd68624c15df8a709f0e627df5307e"
+    }
+  },
+  "sysctl": "net.core.rmem_max = 212992\nnet.core.wmem_max = 212992\nnet.ipv4.tcp_congestion_control = cubic"
+}

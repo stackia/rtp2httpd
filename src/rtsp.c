@@ -2077,7 +2077,7 @@ static int rtsp_process_interleaved_buffer(rtsp_session_t *session, connection_t
       break; /* Wait for more data */
     }
 
-    /* Sanity check: bound against the buffered output destination buffer. */
+    /* Sanity check: bound against the destination pool buffer. */
     if (packet_length > BUFFER_POOL_BUFFER_SIZE) {
       logger(LOG_ERROR,
              "RTSP: Received packet too large (%d bytes, max %d), attempting "
@@ -2233,7 +2233,7 @@ int rtsp_handle_udp_rtp_data(rtsp_session_t *session, connection_t *conn) {
       return total_bytes_written;
     }
 
-    /* Receive directly into buffered output buffer (true buffered output receive) */
+    /* Receive directly into a pool buffer for the send queue */
     int bytes_received = recv(session->rtp_socket, rtp_buf->data, BUFFER_POOL_BUFFER_SIZE, 0);
     if (bytes_received < 0) {
       buffer_ref_put(rtp_buf);

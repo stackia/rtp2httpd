@@ -29,7 +29,7 @@ typedef enum {
 } buffer_type_t;
 
 /**
- * Buffer reference counting for buffered output lifecycle management
+ * Reference-counted storage for queued output
  * Supports both memory buffers (pool-managed) and file descriptors (for
  * sendfile)
  *
@@ -37,7 +37,7 @@ typedef enum {
  * 1. When buffer is free: linked via free_next in pool's free list
  * 2. When buffer is in use: can be queued for sending via send_next
  *
- * The send queue field (iov) are only valid
+ * The send queue field (iov) is only valid
  * when the buffer is in a send queue.
  */
 typedef struct buffer_ref_s {
@@ -58,7 +58,7 @@ typedef struct buffer_ref_s {
   /* Union: buffer is either in free list OR in send queue, never both */
   union {
     struct buffer_ref_s *free_next; /* For free list linkage */
-    struct buffer_ref_s *send_next; /* For send/pending queue linkage */
+    struct buffer_ref_s *send_next; /* For send queue linkage */
   };
 
   union {
