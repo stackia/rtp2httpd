@@ -1,7 +1,7 @@
 """Validated Linux multicast benchmark. Run through scripts/benchmark.sh.
 
 No video fixture or extra packages: RTP carries seven numbered MPEG-TS null packets.
-The workload processes and the server process family use disjoint CPU affinities.
+Load processes use fixed CPUs. TVGate retains the caller's default CPU affinity.
 """
 
 import argparse
@@ -254,7 +254,7 @@ def consumers(port, sources, ids, cpu, stop, counters, errors, path_prefix):
         errors.put(f"consumer: {exc!r}")
 
 
-def command_for(program, binary, port, stem, server_cpu):
+def command_for(program, binary, port, stem, server_cpus):
     env = os.environ.copy()
     if program in ("rtp2httpd", "baseline"):
         command = [str(binary), "-C", "-w", "1", "-m", "256", "-r", "lo", "-v", "1", "-l", f"127.0.0.1:{port}"]
@@ -287,14 +287,11 @@ def command_for(program, binary, port, stem, server_cpu):
         command = [str(binary), "-T", "-a", "127.0.0.1", "-m", "lo", "-p", str(port), "-c", "256"]
     else:
         config = stem.with_suffix(".yaml")
-        config.write_text(
-            f"server:\n  port: {port}\nlog:\n  enabled: false\n"
-            "http:\n  max_idle_conns: 256\n  max_idle_conns_per_host: 256\n  max_conns_per_host: 256\n"
-            "multicast:\n  multicast_ifaces: [lo]\n  upstream_interface: lo\n"
-        )
-        env["GOMAXPROCS"] = "1"
+        config.write_text(f"server:\n  port: {port}\nmulticast:\n  multicast_ifaces: [lo]\n  upstream_interface: lo\n")
+        env.pop("GOMAXPROCS", None)
         command = [str(binary), "-config", str(config)]
-    return ["taskset", "-c", str(server_cpu), *command], env
+    # Restore the caller's affinity for TVGate: the controller pins itself before spawning.
+    return ["taskset", "-c", ",".join(map(str, server_cpus)), *command], env
 
 
 def trial(program, case, repetition, order, args, binaries):
@@ -307,7 +304,8 @@ def trial(program, case, repetition, order, args, binaries):
     sources = [streams[i % count] for i in range(clients)]
     port = free_port()
     stem = args.output / f"{case}-{repetition:02d}-{program}"
-    command, env = command_for(program, binaries[program], port, stem, args.server_cpu)
+    server_cpus = args.available_cpus if program == "tvgate" and not args.tvgate_single_cpu else [args.server_cpu]
+    command, env = command_for(program, binaries[program], port, stem, server_cpus)
     path_prefix = "udp" if program == "tvgate" else "rtp"
     result = {
         "program": program,
@@ -319,6 +317,7 @@ def trial(program, case, repetition, order, args, binaries):
         "sources": count,
         "target_mbps": mbps,
         "valid": False,
+        "server_cpus": server_cpus,
         "request_prefix": path_prefix,
     }
     children = []
@@ -369,7 +368,7 @@ def trial(program, case, repetition, order, args, binaries):
             time.sleep(args.warmup)
             pids = process_family(daemon.pid)
             tids = [int(t.name) for pid in pids for t in Path(f"/proc/{pid}/task").iterdir()]
-            if any(os.sched_getaffinity(tid) != {args.server_cpu} for tid in tids):
+            if any(os.sched_getaffinity(tid) != set(server_cpus) for tid in tids):
                 raise RuntimeError("server affinity changed")
             before_udp = udp_stats(pids)
             before_clients, before_sent = list(counters), list(sent)
@@ -460,6 +459,7 @@ def main():
     parser.add_argument("--duration", type=int, default=20)
     parser.add_argument("--warmup", type=float, default=5)
     parser.add_argument("--server-cpu", type=int, default=0)
+    parser.add_argument("--tvgate-single-cpu", action="store_true", help="also restrict TVGate to --server-cpu")
     parser.add_argument("--controller-cpu", type=int, default=13)
     parser.add_argument("--load-cpus", default="1,2,3,4,5,6,7,8,9,10,11,12")
     parser.add_argument("--output", type=Path, default=ROOT / "build/benchmark" / time.strftime("%Y%m%d-%H%M%S"))
@@ -476,6 +476,7 @@ def main():
         parser.error("requested CPUs are outside the current process affinity")
     if args.controller_cpu in {args.server_cpu, *args.load_cpus} or args.controller_cpu not in os.sched_getaffinity(0):
         parser.error("choose a separate available --controller-cpu")
+    args.available_cpus = sorted(os.sched_getaffinity(0))
     os.sched_setaffinity(0, {args.controller_cpu})
     programs = args.programs or ["rtp2httpd", "msd_lite", "udpxy", "tvgate"]
     binaries = {
@@ -499,6 +500,8 @@ def main():
         "machine": platform.machine(),
         "cpu_count": os.cpu_count(),
         "server_cpu": args.server_cpu,
+        "tvgate_cpus": [args.server_cpu] if args.tvgate_single_cpu else args.available_cpus,
+        "tvgate_gomaxprocs": "unset",
         "load_cpus": args.load_cpus,
         "controller_cpu": args.controller_cpu,
         "warmup_s": args.warmup,
@@ -547,6 +550,21 @@ def main():
                 )
             summary.append(item)
     (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    # Resource observations include every completed measurement, independently of integrity.
+    resources = []
+    for case in args.cases:
+        for program in programs:
+            completed = [
+                r for r in rows if r["case"] == case and r["program"] == program and "cpu_pct" in r and "error" not in r
+            ]
+            item = {"case": case, "program": program, "measured_trials": len(completed)}
+            for field in ("cpu_pct", "pss_mib", "uss_mib"):
+                values = [r[field] for r in completed]
+                item[field] = (
+                    {"mean": statistics.mean(values), "min": min(values), "max": max(values)} if values else None
+                )
+            resources.append(item)
+    (args.output / "resources.json").write_text(json.dumps(resources, indent=2) + "\n")
     return 0 if all(row["valid"] for row in rows) else 1
 
 

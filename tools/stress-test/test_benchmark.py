@@ -1,7 +1,7 @@
 """Check HTTP framing used by the benchmark's payload validator."""
 
 import pytest
-from benchmark import HTTPBody
+from benchmark import HTTPBody, command_for
 
 
 @pytest.mark.parametrize("chunked", [False, True])
@@ -31,3 +31,13 @@ def test_rejects_error_response():
 def test_rejects_invalid_chunk_terminator():
     with pytest.raises(ValueError, match="chunk terminator"):
         HTTPBody().feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1\r\nx!!")
+
+
+def test_tvgate_uses_default_runtime_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv("GOMAXPROCS", "1")
+    command, env = command_for("tvgate", tmp_path / "TVGate", 12345, tmp_path / "trial", [0, 1, 2, 3])
+    assert command[:3] == ["taskset", "-c", "0,1,2,3"]
+    assert "GOMAXPROCS" not in env
+    assert (tmp_path / "trial.yaml").read_text() == (
+        "server:\n  port: 12345\nmulticast:\n  multicast_ifaces: [lo]\n  upstream_interface: lo\n"
+    )

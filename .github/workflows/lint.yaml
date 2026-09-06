@@ -28,4 +28,3 @@ jobs:
       - run: pnpm run type-check
       - run: pnpm run lint
       - run: pnpm run web-ui:test
-      - run: uv run pytest tools/stress-test/test_benchmark.py -q

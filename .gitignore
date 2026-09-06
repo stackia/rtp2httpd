@@ -30,6 +30,7 @@ __pycache__/
 
 # Benchmark results
 tools/benchmark_results_*.txt
+tools/stress-test/results/
 
 # iKuai package outputs
 ikuai-support/.staging/

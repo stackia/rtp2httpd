@@ -20,8 +20,6 @@ rtp2httpd [选项]
 - `-m, --maxclients <数量>` - 最大并发客户端数 (默认: 5)
 - `-w, --workers <数量>` - 工作进程数 (默认: 1)
 
-同一工作进程内，同源组播请求会自动共享订阅，无需额外配置。实现细节与测试结果见[性能测试报告](/reference/benchmark#rtp2httpd-的性能优化)。
-
 `--listen` 可以重复指定，用于同时监听多个 TCP 地址/端口或 Unix socket：
 
 ```bash
