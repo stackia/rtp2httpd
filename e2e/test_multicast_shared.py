@@ -370,7 +370,7 @@ def test_fcc_clients_share_existing_multicast(shared_source_r2h, protocol):
         sender.stop()
 
 
-@pytest.mark.parametrize("receive_buffer,first_burst", [(65536, 12), (524288, 12), (524288, 96)])
+@pytest.mark.parametrize("receive_buffer,first_burst", [(65536, 12), (524288, 12), (524288, 40)])
 def test_shared_source_resumes_after_idle_bursts(r2h_binary, receive_buffer, first_burst):
     """Idle gaps and a busy initial burst must not strand either subscriber."""
     r2h = R2HProcess(
@@ -397,6 +397,8 @@ def test_shared_source_resumes_after_idle_bursts(r2h_binary, receive_buffer, fir
             for cycle in range(4):
                 expected = bytearray()
                 begin = time.monotonic()
+                # Forty packets cross the coalescing burst threshold without
+                # assuming the OS granted the requested 512 KiB socket buffer.
                 burst = first_burst if cycle == 0 else 12
                 for _ in range(burst):
                     ts = b"\x47\x1f\xff\x10" + struct.pack("!H", seq) + b"\xff" * 182
@@ -410,7 +412,12 @@ def test_shared_source_resumes_after_idle_bursts(r2h_binary, receive_buffer, fir
                     responses = [stack.enter_context(closing(client.getresponse())) for client in clients]
                     assert all(response.status == 200 for response in responses)
                 for response in responses:
-                    assert response.read(len(expected)) == expected
+                    actual = response.read(len(expected))
+                    if actual != expected:
+                        pytest.fail(
+                            f"Burst {cycle}: received {len(actual)}/{len(expected)} bytes with unexpected content\n"
+                            + r2h.read_log()
+                        )
                 assert time.monotonic() - begin < 1.5
             assert r2h.read_log().count("Multicast: Successfully joined group") == 1
     finally:

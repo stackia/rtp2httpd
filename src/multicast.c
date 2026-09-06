@@ -397,10 +397,11 @@ struct mcast_source_s {
   int batch_packet_type;
   int64_t batch_since;
   int64_t next_receive;
-  int64_t last_receive;
+  int64_t receive_check_since;
   int receive_delay_max;
   int receive_coalesced;
   unsigned int receive_packet_limit;
+  unsigned int receive_check_packets;
   mcast_source_t *receive_next;
   mcast_source_t **receive_link;
   mcast_source_t *next;
@@ -959,14 +960,30 @@ static int mcast_source_rearm(mcast_source_t *source, int coalesced) {
 }
 
 static void mcast_source_schedule_receive(mcast_source_t *source, int count, int64_t now) {
-  source->last_receive = now;
-  if (source->failed || !source->receive_coalesced) {
+  if (source->failed) {
     source->next_receive = 0;
+  } else if (!source->receive_coalesced) {
+    source->next_receive = 0;
+    if (source->receive_delay_max) {
+      source->receive_check_packets += (unsigned int)count;
+      int64_t elapsed = now - source->receive_check_since;
+      if (elapsed >= 100) {
+        /* A transient burst must not disable coalescing for the rest of a
+         * continuous stream. Reassess its rate with 2x scheduling headroom. */
+        if ((int64_t)source->receive_check_packets * source->receive_delay_max * 2 <
+            elapsed * source->receive_packet_limit)
+          mcast_source_rearm(source, 1);
+        source->receive_check_since = now;
+        source->receive_check_packets = 0;
+      }
+    }
   } else if ((unsigned int)count >= source->receive_packet_limit) {
     /* At high packet rates even a millisecond can be too long. Keep readiness
-     * enabled until an idle gap, rather than repeatedly probing with a delay. */
+     * enabled until the observed rate permits a short delay again. */
     source->next_receive = 0;
     mcast_source_rearm(source, 0);
+    source->receive_check_since = now;
+    source->receive_check_packets = 0;
   } else if (count > 0) {
     /* The first notification reads immediately. Subsequent reads can collect
      * a short burst; only low packet rates and enough storage permit 2 ms. */
@@ -991,13 +1008,6 @@ int mcast_session_handle_event(mcast_session_t *session, int fd, int64_t now) {
   mcast_source_t *source = session->source;
   if (!source)
     return -1;
-  if (fd == source->sock && !source->failed && !source->receive_coalesced && source->receive_delay_max &&
-      now - source->last_receive >= 100) {
-    /* Re-enable after an idle gap. Leave this ready socket to the new one-shot
-     * notification so there is no enabled filter during deferred reads. */
-    source->last_receive = now;
-    return mcast_source_rearm(source, 1);
-  }
   int count = mcast_source_receive(source, fd, now);
   if (fd == source->sock)
     mcast_source_schedule_receive(source, count, now);
