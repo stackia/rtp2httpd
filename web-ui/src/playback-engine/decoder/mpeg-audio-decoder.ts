@@ -8,8 +8,7 @@
  * and keeps trailing partial frames in an internal carry buffer, so frames
  * split across PES packets are handled transparently.
  *
- * The WASM is built as standalone (`-o .wasm`) with -O2 to preserve
- * readable export/import names.
+ * The WASM is built as standalone (`-o .wasm`), retaining its public exports.
  */
 
 // Maximum samples per frame for MPEG audio (all channels interleaved)

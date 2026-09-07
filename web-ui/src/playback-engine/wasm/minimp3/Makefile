@@ -3,9 +3,8 @@
 EMCC = emcc
 OUTPUT = mp2_decoder
 
-# -O2 preserves readable export names (-O3 would minify them).
-# -o .wasm produces standalone WASM with no JS glue.
-EMFLAGS = -O2 \
+# Standalone WASM has no JS glue and retains the public KEEPALIVE exports.
+EMFLAGS = -O3 \
 	-s EXPORTED_FUNCTIONS='["_malloc", "_free"]' \
 	-s EXPORTED_RUNTIME_METHODS='[]' \
 	-s ALLOW_MEMORY_GROWTH=1 \

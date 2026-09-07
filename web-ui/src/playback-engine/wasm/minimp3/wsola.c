@@ -310,7 +310,35 @@ int wsola_process(Wsola* w, const float* input, int in_frames, float* output, in
 
         int best_q = p;
         float best_score = -1e30f;
-        for (int q = lo; q <= hi; q++) {
+        /* Score eight adjacent candidates together. Each dot product retains
+         * its original summation order, while independent accumulators let
+         * scalar WASM overlap arithmetic and reuse the reference loads.
+         * Keep the exhaustive search and tie ordering (audio is unchanged). */
+        int q = lo;
+        for (; q + 7 <= hi; q += 8) {
+            const float* cand = w->mix + (q - lo);
+            float dot[8] = {0};
+            for (int i = 0; i < w->overlap; i++) {
+                float ref = w->tail_mono[i];
+                dot[0] += ref * cand[i];
+                dot[1] += ref * cand[i + 1];
+                dot[2] += ref * cand[i + 2];
+                dot[3] += ref * cand[i + 3];
+                dot[4] += ref * cand[i + 4];
+                dot[5] += ref * cand[i + 5];
+                dot[6] += ref * cand[i + 6];
+                dot[7] += ref * cand[i + 7];
+            }
+            for (int j = 0; j < 8; j++) {
+                float cand_energy = w->energy[q + j - lo + w->overlap] - w->energy[q + j - lo];
+                float score = dot[j] / sqrtf(cand_energy + 1e-9f);
+                if (score > best_score) {
+                    best_score = score;
+                    best_q = q + j;
+                }
+            }
+        }
+        for (; q <= hi; q++) {
             const float* cand = w->mix + (q - lo);
             float dot = 0.0f;
             for (int i = 0; i < w->overlap; i++) {

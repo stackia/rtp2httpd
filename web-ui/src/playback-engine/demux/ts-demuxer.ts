@@ -49,11 +49,6 @@ interface TSSliceMisc {
   stream_type?: StreamType;
 }
 
-type AdaptationFieldInfo = {
-  discontinuity_indicator?: number;
-  random_access_indicator?: number;
-  elementary_stream_priority_indicator?: number;
-};
 type CommonPidKey = keyof PMT["common_pids"];
 type TSDemuxerOptions = {
   waitForInitialVideoKeyframe?: boolean;
@@ -317,7 +312,11 @@ class TSDemuxer {
 
   private isCommonPid(pid: number, keys: readonly CommonPidKey[]): boolean {
     const commonPids = this.pmt_?.common_pids;
-    return !!commonPids && keys.some((key) => commonPids[key] === pid);
+    if (!commonPids) return false;
+    for (const key of keys) {
+      if (commonPids[key] === pid) return true;
+    }
+    return false;
   }
 
   private isVideoPid(pid: number): boolean {
@@ -460,38 +459,36 @@ class TSDemuxer {
         offset += 4;
       }
 
-      const data = chunk.subarray(offset, offset + 188);
-
-      const sync_byte = data[0];
+      const sync_byte = chunk[offset];
       if (sync_byte !== 0x47) {
         Log.e(this.TAG, `sync_byte = ${sync_byte}, not 0x47`);
         break;
       }
 
-      const payload_unit_start_indicator = (data[1] & 0x40) >>> 6;
-      const pid = ((data[1] & 0x1f) << 8) | data[2];
-      const adaptation_field_control = (data[3] & 0x30) >>> 4;
-      const continuity_conunter = data[3] & 0x0f;
+      const payload_unit_start_indicator = (chunk[offset + 1] & 0x40) >>> 6;
+      const pid = ((chunk[offset + 1] & 0x1f) << 8) | chunk[offset + 2];
+      const adaptation_field_control = (chunk[offset + 3] & 0x30) >>> 4;
+      const continuity_conunter = chunk[offset + 3] & 0x0f;
 
       const is_pcr_pid: boolean = !!(this.pmt_ && this.pmt_.pcr_pid === pid);
-      const adaptation_field_info: AdaptationFieldInfo = {};
+      let discontinuityIndicator: number | undefined;
+      let randomAccessIndicator: number | undefined;
       let ts_payload_start_index = 4;
 
       if (adaptation_field_control === 0x02 || adaptation_field_control === 0x03) {
         // Adaptation field exists along with / without payload
-        const adaptation_field_length = data[4];
+        const adaptation_field_length = chunk[offset + 4];
         if (adaptation_field_length > 0 && (is_pcr_pid || adaptation_field_control === 0x03)) {
           // Parse adaptation field
-          adaptation_field_info.discontinuity_indicator = (data[5] & 0x80) >>> 7;
-          adaptation_field_info.random_access_indicator = (data[5] & 0x40) >>> 6;
-          adaptation_field_info.elementary_stream_priority_indicator = (data[5] & 0x20) >>> 5;
+          discontinuityIndicator = (chunk[offset + 5] & 0x80) >>> 7;
+          randomAccessIndicator = (chunk[offset + 5] & 0x40) >>> 6;
 
-          const PCR_flag = (data[5] & 0x10) >>> 4;
+          const PCR_flag = (chunk[offset + 5] & 0x10) >>> 4;
           if (PCR_flag) {
             // track PCR base for pts/dts wraparound detection
-            const pcrBase = this.getPcrBase(data);
+            const pcrBase = this.getPcrBase(chunk, offset);
             if (is_pcr_pid) {
-              this.onPcr?.(pcrBase, file_position, adaptation_field_info.discontinuity_indicator === 1);
+              this.onPcr?.(pcrBase, file_position, discontinuityIndicator === 1);
             }
           }
         }
@@ -521,7 +518,7 @@ class TSDemuxer {
             file_position,
             payload_unit_start_indicator,
             continuity_conunter,
-            random_access_indicator: adaptation_field_info.random_access_indicator,
+            random_access_indicator: randomAccessIndicator,
           });
         } else if (this.pmt_ !== undefined && this.pmt_.pid_stream_type[pid] !== undefined) {
           // PES
@@ -530,7 +527,7 @@ class TSDemuxer {
 
           // process PES only for known common_pids
           if (this.isMediaPid(pid)) {
-            if (!this.shouldProcessPayload(pid, continuity_conunter, adaptation_field_info.discontinuity_indicator)) {
+            if (!this.shouldProcessPayload(pid, continuity_conunter, discontinuityIndicator)) {
               offset += 188;
               if (this.ts_packet_size_ === 204) {
                 offset += 16;
@@ -543,7 +540,7 @@ class TSDemuxer {
               file_position,
               payload_unit_start_indicator,
               continuity_conunter,
-              random_access_indicator: adaptation_field_info.random_access_indicator,
+              random_access_indicator: randomAccessIndicator,
             });
           }
         }
@@ -2150,13 +2147,13 @@ class TSDemuxer {
     this.video_metadata_changed_ = false;
   }
 
-  private getPcrBase(data: Uint8Array): number {
+  private getPcrBase(data: Uint8Array, offset: number): number {
     let pcr_base =
-      data[6] * 33554432 + // 1 << 25
-      data[7] * 131072 + // 1 << 17
-      data[8] * 512 + // 1 << 9
-      data[9] * 2 + // 1 << 1
-      (data[10] & 0x80) / 128 + // 1 >> 7
+      data[offset + 6] * 33554432 + // 1 << 25
+      data[offset + 7] * 131072 + // 1 << 17
+      data[offset + 8] * 512 + // 1 << 9
+      data[offset + 9] * 2 + // 1 << 1
+      (data[offset + 10] & 0x80) / 128 + // 1 >> 7
       this.timestamp_offset_;
     if (pcr_base + 0x100000000 < this.last_pcr_base_) {
       pcr_base += 0x200000000; // pcr_base wraparound

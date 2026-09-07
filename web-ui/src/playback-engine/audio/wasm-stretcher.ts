@@ -19,7 +19,8 @@ export interface Stretcher {
   /** Input frames consumed for emitted output since reset (fractional). */
   readonly position: number;
   setRatio(ratio: number): void;
-  /** Feed interleaved PCM, get stretched interleaved PCM (may be empty). */
+  /** Feed interleaved PCM, get stretched interleaved PCM (may be empty).
+   *  The returned view is borrowed; consume it before the next process call. */
   process(input: Float32Array): Float32Array;
   reset(): void;
   destroy(): void;
@@ -128,10 +129,9 @@ export class WasmStretcher implements Stretcher {
       return new Float32Array(0);
     }
 
-    const view = new Float32Array(this.exports.memory.buffer, this.outPtr, outFrames * ch);
-    const out = new Float32Array(outFrames * ch);
-    out.set(view);
-    return out;
+    // scheduleOutput consumes this synchronously into an AudioBuffer. Keeping
+    // a borrowed view avoids copying every PCM chunk into a temporary JS array.
+    return new Float32Array(this.exports.memory.buffer, this.outPtr, outFrames * ch);
   }
 
   reset(): void {
