@@ -1995,9 +1995,11 @@ function VideoPlayerComponent({
           className={clsx(
             "player-performance-controls-position player-performance-motion absolute bottom-0 left-[calc(0px_-_env(safe-area-inset-left))] right-[calc(0px_-_env(safe-area-inset-right))] z-10 transition-opacity duration-300",
             showSidebar && "md:right-0",
+            // Invisible pulse animations still wake the compositor. Restore the
+            // live indicator animation when pointer or keyboard controls appear.
             showControls
               ? "opacity-100"
-              : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto",
+              : "opacity-0 pointer-events-none has-focus-visible:opacity-100 has-focus-visible:pointer-events-auto [&_.animate-pulse]:animate-none has-focus-visible:[&_.animate-pulse]:animate-pulse",
           )}
         >
           <PlayerControls
