@@ -1,5 +1,5 @@
 # Build stage
-FROM alpine:3.22 AS builder
+FROM alpine:3.24 AS builder
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
@@ -28,7 +28,7 @@ RUN echo "Building for $TARGETPLATFORM" && \
   cmake --build build -j$(getconf _NPROCESSORS_ONLN)
 
 # Runtime stage
-FROM alpine:3.22
+FROM alpine:3.24
 
 # Copy the built binary and config
 COPY --from=builder /workdir/build/rtp2httpd /usr/local/bin/

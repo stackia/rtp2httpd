@@ -19,14 +19,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
 
       - name: Build rtp2httpd
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON
           cmake --build build -j$(getconf _NPROCESSORS_ONLN)
 
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v10.0.1
 
       - name: Run E2E tests
         run: ./scripts/run-e2e.sh
@@ -35,10 +35,10 @@ jobs:
     runs-on: ubuntu-latest
     name: Run (freebsd)
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7.0.1
 
       - name: Run E2E tests in FreeBSD
-        uses: vmactions/freebsd-vm@v1
+        uses: vmactions/freebsd-vm@v1.5.5
         with:
           usesh: true
           copyback: false

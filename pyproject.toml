@@ -4,14 +4,14 @@ version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
     "scapy>=2.7.0",
-    "pytest>=9.0.3",
+    "pytest>=9.1.1",
     "pytest-xdist>=3.8.0",
 ]
 
 [dependency-groups]
 dev = [
-    "ruff>=0.16.5",
-    "basedpyright>=1.39.10",
+    "ruff>=0.16.6",
+    "basedpyright>=1.40.0",
     "clang-format>=23.1.0",
 ]
 

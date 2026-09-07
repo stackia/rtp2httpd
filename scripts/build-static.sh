@@ -28,7 +28,7 @@ echo_step() {
 }
 
 # Toolchain configuration (can be overridden by environment variables)
-TOOLCHAIN_RELEASE="20250929"
+TOOLCHAIN_RELEASE="20260823"
 TOOLCHAIN_PREFIX="${TOOLCHAIN_PREFIX:-x86_64-unknown-linux-musl}"
 TOOLCHAIN_BASE_URL="https://github.com/cross-tools/musl-cross/releases/download"
 
