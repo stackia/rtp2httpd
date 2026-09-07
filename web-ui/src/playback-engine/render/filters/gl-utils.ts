@@ -20,20 +20,26 @@ export function createProgram(gl: WebGL2RenderingContext, vertexSource: string, 
   if (!program) {
     throw new Error("Failed to create program");
   }
-  const vs = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
-  const fs = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
-  gl.attachShader(program, vs);
-  gl.attachShader(program, fs);
-  gl.linkProgram(program);
-  // Shaders are owned by the program after linking
-  gl.deleteShader(vs);
-  gl.deleteShader(fs);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS) && !gl.isContextLost()) {
-    const info = gl.getProgramInfoLog(program);
+  let vs: WebGLShader | null = null;
+  let fs: WebGLShader | null = null;
+  try {
+    vs = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
+    fs = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS) && !gl.isContextLost()) {
+      throw new Error(`Program link failed: ${gl.getProgramInfoLog(program)}`);
+    }
+    return program;
+  } catch (error) {
     gl.deleteProgram(program);
-    throw new Error(`Program link failed: ${info}`);
+    throw error;
+  } finally {
+    // Also release a successfully compiled vertex shader if fragment compilation fails.
+    if (vs) gl.deleteShader(vs);
+    if (fs) gl.deleteShader(fs);
   }
-  return program;
 }
 
 /**

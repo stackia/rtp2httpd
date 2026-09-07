@@ -1,0 +1,653 @@
+{
+  "date": "2026-09-08",
+  "hardware": "Apple M3 Max, 40 GPU cores, 128 GB unified memory",
+  "baseline": "3bf4ca8c5521eebcd8be76c387c3ecbe904d55ac",
+  "candidateSource": {
+    "web-ui/src/playback-engine/render/denoise.ts": "ba4f30b8c606be5546b9866b5fcf94bfdedae8b3166fc6afd4b60391ae4553d9",
+    "web-ui/src/playback-engine/render/fsr.ts": "94d1aae020b798e3721a6e65bb5d4f8b8a3412c0b2d150ab660faf4e57117c59",
+    "web-ui/src/playback-engine/render/renderer.ts": "bcbb4ae3dcdba34489b7e6b99ba4b5e98674535f16fc81ed0c5b3163ebd47127",
+    "web-ui/src/playback-engine/render/filters/gl-utils.ts": "7a18e9f87acbcec95274990a7da5459c93ef06f35680e0fde43959016a6b12d0",
+    "web-ui/src/playback-engine/render/index.ts": "0b2546efeecf632e7954ba74319ecf3b6cffbcf6733a7f586210b2d61d967ab6"
+  },
+  "fixtureSha256": {
+    "sport.mp4": "4857d456739e47d27a23817e45a56770386475a67da2ed261788ebf077e59085",
+    "film.mp4": "79670586664326d3b437a7eb2564640c68ce22f93e4fb33d4e4047b8388122e3",
+    "sport-interlaced.mp4": "817f3eba07c88c7d2b7a7d1be418d2c3519bed5256abb50af817dd1846257d94",
+    "sd.mp4": "a5e11114710250aa3a807ca20afe5178f7c94b6b8e556071a908c1cd9e60989f",
+    "sport-reference.png": "fbe10419dc048cffb65a75def2623a443272d400763ff4a089c1832115767c22",
+    "film-reference.png": "9cd86d702de1553ab4319b0e9e426ebf3a8c2696fa2505cdd194870fe39a72d1"
+  },
+  "synthetic": {
+    "gpu": {
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+      "vendor": "Google Inc. (Apple)",
+      "timer": true,
+      "floatHistory": true,
+      "maxTextureSize": 16384,
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
+    },
+    "checks": {
+      "raw": {
+        "clean": {
+          "psnr": 100,
+          "mae": 0,
+          "maximum": 0
+        },
+        "noise": {
+          "psnr": 32.203139923584125,
+          "mae": 5.038487815072016,
+          "maximum": 22
+        },
+        "motion": {
+          "psnr": 100,
+          "mae": 0,
+          "maximum": 0
+        },
+        "noisy-motion": {
+          "psnr": 32.203139923584125,
+          "mae": 5.038487815072016,
+          "maximum": 22
+        },
+        "flatColorMaximumError": 0
+      },
+      "baseline": {
+        "clean": {
+          "psnr": 38.06231511646425,
+          "mae": 2.5045814043209877,
+          "maximum": 49
+        },
+        "noise": {
+          "psnr": 28.480429866217975,
+          "mae": 8.02073286394033,
+          "maximum": 54
+        },
+        "motion": {
+          "psnr": 37.34026542757714,
+          "mae": 2.650688014403292,
+          "maximum": 49
+        },
+        "noisy-motion": {
+          "psnr": 28.397426539390963,
+          "mae": 8.06494743441358,
+          "maximum": 54
+        },
+        "flatColorMaximumError": 6
+      },
+      "candidate": {
+        "clean": {
+          "psnr": 46.938336386590684,
+          "mae": 0.4383278677983539,
+          "maximum": 8
+        },
+        "noise": {
+          "psnr": 34.52463292381823,
+          "mae": 3.6404602301954734,
+          "maximum": 24
+        },
+        "motion": {
+          "psnr": 48.05744209920781,
+          "mae": 0.3478531700102881,
+          "maximum": 8
+        },
+        "noisy-motion": {
+          "psnr": 34.35470092112995,
+          "mae": 3.7281418788580245,
+          "maximum": 23
+        },
+        "flatColorMaximumError": 0
+      },
+      "denoise": {
+        "clean": {
+          "psnr": 82.45198763760479,
+          "mae": 0.00036972736625514403,
+          "maximum": 1
+        },
+        "noise": {
+          "psnr": 35.2309005634998,
+          "mae": 3.3373480902777777,
+          "maximum": 21
+        },
+        "motion": {
+          "psnr": 72.84707305044152,
+          "mae": 0.0033757716049382714,
+          "maximum": 1
+        },
+        "noisy-motion": {
+          "psnr": 35.0518931818319,
+          "mae": 3.421609760802469,
+          "maximum": 21
+        },
+        "flatColorMaximumError": 0
+      },
+      "glError": 0
+    }
+  },
+  "invariants": {
+    "preferred": {
+      "flatColorMaximum": 0,
+      "flippedHistory": {
+        "maximum": 0,
+        "mae": 0
+      },
+      "sceneCut": {
+        "maximum": 2,
+        "mae": 0.014323968880226901
+      },
+      "low-contrast-1px": {
+        "maximum": 0,
+        "mae": 0
+      },
+      "low-contrast-7px": {
+        "maximum": 0,
+        "mae": 0
+      },
+      "isoluminant-1px": {
+        "maximum": 0,
+        "mae": 0
+      },
+      "isoluminant-7px": {
+        "maximum": 0,
+        "mae": 0
+      },
+      "historyFormat": "RGBA16F",
+      "source": [193, 109]
+    },
+    "fallback": {
+      "flatColorMaximum": 0,
+      "flippedHistory": {
+        "maximum": 0,
+        "mae": 0
+      },
+      "sceneCut": {
+        "maximum": 2,
+        "mae": 0.014450729666777582
+      },
+      "low-contrast-1px": {
+        "maximum": 0,
+        "mae": 0
+      },
+      "low-contrast-7px": {
+        "maximum": 0,
+        "mae": 0
+      },
+      "isoluminant-1px": {
+        "maximum": 0,
+        "mae": 0
+      },
+      "isoluminant-7px": {
+        "maximum": 0,
+        "mae": 0
+      },
+      "historyFormat": "RGBA8",
+      "source": [193, 109]
+    }
+  },
+  "restoration": {
+    "sportClean": {
+      "clip": "sport",
+      "amplitude": 0,
+      "source": [960, 540],
+      "output": [1920, 1080],
+      "checks": {
+        "raw": {
+          "psnr": 34.805624607002024,
+          "mae": 1.2843205054012345,
+          "maximum": 100
+        },
+        "baseline": {
+          "psnr": 34.33075123014509,
+          "mae": 3.491092785493827,
+          "maximum": 110
+        },
+        "candidate": {
+          "psnr": 36.84825968489091,
+          "mae": 1.0314226466049383,
+          "maximum": 110
+        }
+      },
+      "glError": 0
+    },
+    "sportNoisy": {
+      "clip": "sport",
+      "amplitude": 6,
+      "source": [960, 540],
+      "output": [1920, 1080],
+      "checks": {
+        "raw": {
+          "psnr": 32.48447106294431,
+          "mae": 3.854054944701646,
+          "maximum": 101
+        },
+        "baseline": {
+          "psnr": 30.36909461543647,
+          "mae": 5.948925057870371,
+          "maximum": 106
+        },
+        "candidate": {
+          "psnr": 33.65924349128982,
+          "mae": 3.3803742283950617,
+          "maximum": 109
+        }
+      },
+      "glError": 0
+    },
+    "filmClean": {
+      "clip": "film",
+      "amplitude": 0,
+      "source": [960, 540],
+      "output": [1920, 1080],
+      "checks": {
+        "raw": {
+          "psnr": 33.51179913453376,
+          "mae": 2.265140335648148,
+          "maximum": 135
+        },
+        "baseline": {
+          "psnr": 33.5124439361545,
+          "mae": 3.5712315136316874,
+          "maximum": 141
+        },
+        "candidate": {
+          "psnr": 35.190036193647536,
+          "mae": 1.8991718106995885,
+          "maximum": 134
+        }
+      },
+      "glError": 0
+    },
+    "filmNoisy": {
+      "clip": "film",
+      "amplitude": 6,
+      "source": [960, 540],
+      "output": [1920, 1080],
+      "checks": {
+        "raw": {
+          "psnr": 31.777167095062715,
+          "mae": 4.195530156893004,
+          "maximum": 139
+        },
+        "baseline": {
+          "psnr": 30.739252806047283,
+          "mae": 5.199043852880658,
+          "maximum": 140
+        },
+        "candidate": {
+          "psnr": 32.85489923904128,
+          "mae": 3.7249528999485597,
+          "maximum": 145
+        }
+      },
+      "glError": 0
+    }
+  },
+  "timing": {
+    "native": {
+      "gpu": {
+        "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+        "vendor": "Google Inc. (Apple)",
+        "timer": true,
+        "floatHistory": true,
+        "maxTextureSize": 16384,
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
+      },
+      "source": [1920, 1080],
+      "output": [1920, 1080],
+      "drawsPerSample": 8,
+      "modes": {
+        "raw": {
+          "measurement": "GPU timer ms",
+          "render": {
+            "samples": 45,
+            "mean": 0.07545317500000001,
+            "median": 0.063125,
+            "p95": 0.12784375
+          },
+          "submission": {
+            "samples": 45,
+            "mean": 0.0025000002649095323,
+            "median": 0,
+            "p95": 0.012500002980232239
+          },
+          "samples": [
+            0.1222655, 0.09779675, 0.059625, 0.059203, 0.058812375, 0.059177, 0.09249475, 0.05902075, 0.0595, 0.0589635,
+            0.05920825, 0.113880125, 0.12784375, 0.058572875, 0.058906125, 0.107171875, 0.03598425, 0.036124875,
+            0.11496875, 0.066901, 0.13952075, 0.036354125, 0.036442625, 0.070359375, 0.121328125, 0.058385375,
+            0.03603125, 0.063125, 0.0663125, 0.122156125, 0.063828, 0.0403385, 0.14136975, 0.11223425, 0.042156125,
+            0.040031125, 0.105140625, 0.094802, 0.06961975, 0.05211975, 0.039828, 0.064499875, 0.11867175, 0.11264575,
+            0.041671875
+          ]
+        },
+        "baseline": {
+          "measurement": "GPU timer ms",
+          "render": {
+            "samples": 45,
+            "mean": 0.5519924333333334,
+            "median": 0.515776,
+            "p95": 1.086135375
+          },
+          "submission": {
+            "samples": 45,
+            "mean": 0.007500000463591681,
+            "median": 0.012499988079071045,
+            "p95": 0.024999991059303284
+          },
+          "samples": [
+            1.175166625, 0.760046875, 0.756510375, 0.809609375, 0.494192625, 0.533854125, 0.374640625, 0.371078125,
+            0.515776, 0.518578125, 0.436161375, 0.447135375, 0.5246405, 0.31075, 0.4398125, 1.086135375, 0.646328125,
+            0.584078, 0.459802, 0.62403125, 0.569776, 0.578640625, 0.651104125, 0.478776, 0.61348425, 0.437828125,
+            0.474052, 0.667453125, 0.662348875, 0.66995825, 1.10773425, 0.341171875, 0.445203125, 0.3675885, 0.3823905,
+            0.411052, 0.341046875, 0.321541625, 0.4995, 0.338536375, 0.520479125, 0.5297395, 0.505541625, 0.379760375,
+            0.676625
+          ]
+        },
+        "candidate": {
+          "measurement": "GPU timer ms",
+          "render": {
+            "samples": 45,
+            "mean": 0.7438852416666667,
+            "median": 0.720124875,
+            "p95": 0.9624895
+          },
+          "submission": {
+            "samples": 45,
+            "mean": 0.0058333333995607166,
+            "median": 0,
+            "p95": 0.012500002980232239
+          },
+          "samples": [
+            0.845437375, 0.493942625, 0.53952075, 0.4960885, 0.372979125, 0.418447875, 0.498536375, 0.473874875,
+            0.84460925, 0.85990625, 0.650677, 0.676901, 0.838781125, 0.8735, 0.9624895, 1.778, 0.9285885, 0.877156125,
+            0.773031125, 0.8802395, 0.732947875, 0.676911375, 0.7093905, 0.833552, 0.720947875, 0.788187375,
+            0.673609375, 0.712130125, 0.737567625, 0.82939575, 2.032609375, 0.88336975, 0.738296875, 0.57825,
+            0.720124875, 0.63284375, 0.584531125, 0.78659375, 0.748651, 0.527010375, 0.4807395, 0.552328125, 0.63290625,
+            0.48090625, 0.598328125
+          ]
+        }
+      },
+      "glError": 0
+    },
+    "uhd": {
+      "gpu": {
+        "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+        "vendor": "Google Inc. (Apple)",
+        "timer": true,
+        "floatHistory": true,
+        "maxTextureSize": 16384,
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
+      },
+      "source": [1920, 1080],
+      "output": [3840, 2160],
+      "drawsPerSample": 8,
+      "modes": {
+        "raw": {
+          "measurement": "GPU timer ms",
+          "render": {
+            "samples": 45,
+            "mean": 0.1718023527777778,
+            "median": 0.14425,
+            "p95": 0.312609375
+          },
+          "submission": {
+            "samples": 45,
+            "mean": 0.0016666667328940497,
+            "median": 0,
+            "p95": 0.012500002980232239
+          },
+          "samples": [
+            0.3828905, 0.2223905, 0.345078, 0.288473875, 0.216328, 0.1631405, 0.210656125, 0.25489575, 0.292781125,
+            0.242671875, 0.183942625, 0.218302, 0.25484375, 0.27186975, 0.312609375, 0.15024475, 0.096156125,
+            0.081624875, 0.079749875, 0.0798385, 0.085041625, 0.108052, 0.085312375, 0.09602075, 0.106343625,
+            0.137161375, 0.110312375, 0.108151, 0.111765625, 0.130104125, 0.254703125, 0.14425, 0.1467395, 0.132421875,
+            0.1324375, 0.13223425, 0.1297655, 0.161468625, 0.140687375, 0.169578, 0.1325, 0.131968625, 0.157104125,
+            0.13417175, 0.204322875
+          ]
+        },
+        "baseline": {
+          "measurement": "GPU timer ms",
+          "render": {
+            "samples": 45,
+            "mean": 2.350057577777778,
+            "median": 1.924604125,
+            "p95": 3.454473875
+          },
+          "submission": {
+            "samples": 45,
+            "mean": 0.003333333796925015,
+            "median": 0,
+            "p95": 0.012500002980232239
+          },
+          "samples": [
+            3.693651, 1.77683325, 1.790697875, 1.758156125, 1.796161375, 1.820135375, 1.878276, 1.8271875, 1.90253125,
+            1.919161375, 1.8978645, 1.76898425, 2.018718625, 1.942510375, 1.61574475, 3.454473875, 1.661, 1.789437375,
+            1.67289575, 1.69730725, 1.693536375, 1.799125, 1.7893125, 1.862052, 1.979541625, 1.46833325, 1.924604125,
+            2.004848875, 1.62883325, 2.03534375, 6.12679675, 2.268374875, 3.25427075, 3.2524635, 3.10892175,
+            3.247354125, 3.04949475, 3.051697875, 3.24898425, 2.848046875, 3.066859375, 2.99389575, 2.537416625,
+            2.845692625, 2.9850625
+          ]
+        },
+        "candidate": {
+          "measurement": "GPU timer ms",
+          "render": {
+            "samples": 45,
+            "mean": 2.608560241666667,
+            "median": 2.0657395,
+            "p95": 4.104484375
+          },
+          "submission": {
+            "samples": 45,
+            "mean": 0.006111110581292046,
+            "median": 0,
+            "p95": 0.024999991059303284
+          },
+          "samples": [
+            4.43070825, 1.678625, 1.96009375, 2.01899475, 1.612197875, 2.036005125, 2.132953, 1.66525, 2.2785625,
+            1.897276, 1.911453, 1.85521875, 1.93510925, 1.956661375, 1.96246875, 3.38727075, 1.966078125, 1.96123425,
+            1.723104125, 2.08346875, 1.99727075, 1.9066875, 2.021249875, 2.31770825, 2.0657395, 1.990609375,
+            1.951010375, 2.24617175, 1.85092175, 1.944135375, 4.62777075, 4.093526, 4.104484375, 3.65836975,
+            2.852661375, 3.369124875, 3.90278125, 2.75818225, 3.5477395, 3.44790625, 3.538999875, 3.705760375,
+            3.69629675, 3.5682135, 3.769156125
+          ]
+        }
+      },
+      "glError": 0
+    },
+    "sd": {
+      "gpu": {
+        "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)",
+        "vendor": "Google Inc. (Apple)",
+        "timer": true,
+        "floatHistory": true,
+        "maxTextureSize": 16384,
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
+      },
+      "source": [720, 576],
+      "output": [1920, 1080],
+      "drawsPerSample": 8,
+      "modes": {
+        "raw": {
+          "measurement": "GPU timer ms",
+          "render": {
+            "samples": 45,
+            "mean": 0.057101088888888894,
+            "median": 0.048317625,
+            "p95": 0.104109375
+          },
+          "submission": {
+            "samples": 45,
+            "mean": 0.001388888888888889,
+            "median": 0,
+            "p95": 0.012500002980232239
+          },
+          "samples": [
+            0.054625, 0.027921875, 0.052953, 0.03530725, 0.029359375, 0.034453125, 0.060755125, 0.0430155, 0.035927,
+            0.035526, 0.035609375, 0.0455885, 0.05211975, 0.035505125, 0.035723875, 0.079578, 0.07604675, 0.045927,
+            0.048317625, 0.046625, 0.04343225, 0.073874875, 0.096802, 0.06204675, 0.04652075, 0.036005125, 0.061692625,
+            0.093229125, 0.046656125, 0.0659635, 0.08477075, 0.052781125, 0.0865, 0.048666625, 0.11602075, 0.066234375,
+            0.035776, 0.039374875, 0.0950155, 0.064078, 0.104109375, 0.037625, 0.037036375, 0.0412655, 0.123187375
+          ]
+        },
+        "baseline": {
+          "measurement": "GPU timer ms",
+          "render": {
+            "samples": 45,
+            "mean": 1.112544961111111,
+            "median": 1.06196875,
+            "p95": 1.360026
+          },
+          "submission": {
+            "samples": 45,
+            "mean": 0.005555555886692471,
+            "median": 0,
+            "p95": 0.012500002980232239
+          },
+          "samples": [
+            1.4054375, 0.919151, 0.976052, 0.801947875, 0.78511975, 0.8527395, 0.894921875, 1.038562375, 0.756828,
+            1.122796875, 0.941348875, 0.967203, 1.166203125, 0.85998425, 1.01484375, 1.28564575, 0.88679675,
+            1.103687375, 1.249218625, 1.06196875, 1.159859375, 1.0757395, 0.885385375, 1.20924475, 1.096390625,
+            1.01746875, 0.9155, 0.955177, 1.212479125, 1.013281125, 2.97745825, 1.287526, 1.093130125, 1.0389635,
+            1.2565155, 1.1247135, 1.1692395, 1.3071145, 1.047906125, 1.360026, 1.284729125, 0.9956405, 1.161302,
+            1.3351875, 0.9940885
+          ]
+        },
+        "candidate": {
+          "measurement": "GPU timer ms",
+          "render": {
+            "samples": 45,
+            "mean": 1.2410100055555553,
+            "median": 1.16075,
+            "p95": 2.07361975
+          },
+          "submission": {
+            "samples": 45,
+            "mean": 0.0063888887564341225,
+            "median": 0,
+            "p95": 0.012500002980232239
+          },
+          "samples": [
+            2.07361975, 1.14489575, 1.191416625, 1.006578, 0.921104125, 1.158192625, 0.876156125, 1.350999875,
+            1.08386975, 1.112260375, 0.9554375, 1.115796875, 1.193749875, 1.252401, 0.869677, 2.531260375, 1.0895,
+            0.98220825, 1.293776, 1.0742655, 1.28795825, 1.129812375, 0.856921875, 1.194854125, 1.191598875, 1.02753125,
+            1.232942625, 1.231749875, 1.173067625, 1.3535, 3.23375, 1.132578, 1.493322875, 1.38318225, 1.09402075,
+            1.1995155, 0.933421875, 1.069723875, 1.305541625, 1.16075, 1.125374875, 1.18368225, 1.27389575, 1.000041625,
+            1.29954675
+          ]
+        }
+      },
+      "glError": 0
+    }
+  },
+  "lifecycle": {
+    "interlaced": {
+      "callbacks": 25,
+      "presentations": 50,
+      "mediaTime": 1.2,
+      "qualityBefore": {
+        "total": 9,
+        "dropped": 0,
+        "corrupted": 0
+      },
+      "qualityAfter": {
+        "total": 34,
+        "dropped": 0,
+        "corrupted": 0
+      }
+    },
+    "pausedToggles": {
+      "repeats": 8,
+      "resources": {
+        "Texture": 8,
+        "Framebuffer": 5,
+        "Program": 5,
+        "Shader": 0
+      }
+    },
+    "seek": 4,
+    "contextRestored": true,
+    "resized": {
+      "source": [1024, 576],
+      "output": [2560, 1440]
+    },
+    "resourcesAfterDestroy": {
+      "Texture": 0,
+      "Framebuffer": 0,
+      "Program": 0,
+      "Shader": 0
+    },
+    "states": [
+      {
+        "active": false,
+        "deinterlacing": false
+      },
+      {
+        "active": true,
+        "deinterlacing": true
+      },
+      {
+        "active": true,
+        "deinterlacing": false
+      },
+      {
+        "active": false,
+        "deinterlacing": false
+      },
+      {
+        "active": true,
+        "deinterlacing": false
+      },
+      {
+        "active": false,
+        "deinterlacing": false
+      },
+      {
+        "active": true,
+        "deinterlacing": false
+      },
+      {
+        "active": false,
+        "deinterlacing": false
+      },
+      {
+        "active": true,
+        "deinterlacing": false
+      }
+    ],
+    "draws": 337,
+    "glErrors": []
+  },
+  "liveMse": {
+    "source": [1920, 1080],
+    "native": {
+      "output": [1920, 1080],
+      "before": {
+        "mediaTime": 123.583979,
+        "totalFrames": 3093,
+        "dropped": 0,
+        "corrupted": 0
+      },
+      "after": {
+        "mediaTime": 138.585005,
+        "totalFrames": 3468,
+        "dropped": 0,
+        "corrupted": 0
+      },
+      "glError": 0
+    },
+    "uhd": {
+      "output": [3840, 2160],
+      "before": {
+        "mediaTime": 190.755053,
+        "totalFrames": 4785,
+        "dropped": 0,
+        "corrupted": 0
+      },
+      "after": {
+        "mediaTime": 205.755737,
+        "totalFrames": 5160,
+        "dropped": 0,
+        "corrupted": 0
+      },
+      "glError": 0
+    }
+  },
+  "unverified": ["Safari/WebKit", "Physical iPad", "Motion-compensated frame interpolation"]
+}
