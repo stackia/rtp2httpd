@@ -9,7 +9,6 @@ rtp2httpd includes a modern web-based player that allows you to watch configured
 - **Time-Shifted Playback**: Supports EPG (Electronic Program Guide) and time-shifted playback (requires catchup source)
 - **Fast Startup**: Achieves millisecond-level channel switching with FCC
 - **Seamless Channel Switching**: Preloads the new stream when switching channels to reduce black screens
-- **Video Enhancement**: Motion-adaptive denoising, edge-adaptive upscaling, and luminance sharpening
 - **Responsive Design**: UI adapts to both desktop and mobile devices
 - **PWA Support**: Can be added to the home screen on phones, tablets, desktops, or LG webOS TVs for app-like quick access
 - **Zero Overhead**: Pure web frontend implementation with virtually no resource overhead on rtp2httpd (no decoding/transcoding overhead)
@@ -122,14 +121,6 @@ For M3U configuration of source labels, see [M3U Playlist Integration](/en/guide
 The built-in web player enables **seamless channel switching** by default. When you change channels or switch sources, the player preloads the new stream in the background and switches the video once the new stream is ready, reducing black screens and wait time. Combined with [FCC Fast Channel Change](/en/guide/fcc-setup), this delivers a smoother channel switching experience.
 
 This feature uses dual-slot preloading. Because two video streams are pulled simultaneously for a brief period during channel switching, you may experience stuttering when switching channels if your bandwidth is limited (for example, when accessing rtp2httpd over the public internet), or if the upstream only supports a single multicast stream. In that case, you can manually disable this option in the **Settings** menu (gear icon) at the top-right of the player page by turning off **Seamless switch**. When disabled, the player stops the current stream before loading the new one, using less bandwidth but may show a brief black screen during switching.
-
-## Video Enhancement
-
-The player enables **Video enhancement** by default. You can toggle it in **Settings** (the gear icon) at the top-right. It is intended for devices with a capable GPU, such as PCs and iPads, and requires browser support for WebGL2 and video frame callbacks. Processing runs on the viewing device, adding no decoding or transcoding overhead to the server.
-
-The enhancement pipeline combines the current image with previous images to reduce noise, upscales it to the display area, and applies moderate edge sharpening. Motion, scene cuts, and channel changes suppress or clear the influence of previous images. Sharpening preserves the original colors and tonal relationships, limits edge overshoot, and avoids amplifying noise again.
-
-This feature processes **1080p/i and lower-resolution sources** through the full denoising, edge-adaptive scaling, and sharpening pipeline, including 1080p/i content displayed at its native size. On 2K/4K displays, it upscales to the physical pixel dimensions determined by the display area and device pixel ratio, such as **2560 × 1440** or up to **3840 × 2160**. Native 4K video plays directly through the browser. Video enhancement does not generate intermediate frames. For interlaced video with **Auto deinterlace** enabled, the player reconstructs each field first (for example, 50i → 50p), then enhances each reconstructed image.
 
 ## Time Placeholders
 
