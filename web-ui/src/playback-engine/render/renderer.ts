@@ -1,4 +1,5 @@
 import Log from "../utils/logger";
+import { TemporalDenoiser } from "./denoise";
 import { createFilter, type RenderParams, type VideoFilter } from "./filters/types";
 import { FsrPresenter } from "./fsr";
 import { PassthroughPresenter, type Presenter } from "./presenters";
@@ -18,16 +19,6 @@ export function isRenderResolutionEligible(width: number, height: number): boole
 }
 
 /**
- * Post-stage enhancement filters, applied in order between the source stage
- * and presentation. All are registered in the filter registry and must be
- * stateless (historyFrames = 0): the renderer re-runs the whole list per
- * frame and assumes channel/stage switches need no per-filter reset.
- * mosquito-nr runs at source resolution so FSR EASU does not reconstruct
- * compression speckle around high-contrast edges.
- */
-const ENHANCEMENT_FILTER_NAMES: readonly string[] = ["mosquito-nr"];
-
-/**
  * Safety ceiling for the enhanced canvas backing store, so a very large
  * display rect (or a stray devicePixelRatio) cannot push the per-frame
  * EASU+RCAS cost past what a 4K display already asks for.
@@ -42,11 +33,19 @@ interface RenderTarget {
   height: number;
 }
 
+interface PendingField {
+  presentAt: number;
+  enhanced: boolean;
+  texture: WebGLTexture;
+  width: number;
+  height: number;
+}
+
 /**
  * WebGL2 render loop. It pulls decoded frames from the <video> element via
  * requestVideoFrameCallback, uploads them into a history ring, runs the active
  * source stage (`bwdif`, or nothing when `passthrough` — the uploaded frame
- * texture is used as-is) plus the enhancement filter list into per-field
+ * texture is used as-is) and temporal denoising into per-field
  * presentation targets, then presents to the canvas (FSR 1 EASU+RCAS upscale
  * when enhancement sized the canvas to the display, plain blit otherwise).
  *
@@ -62,6 +61,7 @@ export class VideoRenderer {
   private readonly video: HTMLVideoElement;
   private readonly canvas: HTMLCanvasElement;
   private gl: WebGL2RenderingContext | null = null;
+  private maxTextureSize = MAX_UPSCALE_WIDTH;
   /** Active source-stage filter; compiled filters remain cached while inactive. */
   private stageFilter: VideoFilter | null = null;
   /** Context-bound source-stage programs, compiled at most once per context. */
@@ -73,6 +73,10 @@ export class VideoRenderer {
   private textures: WebGLTexture[] = [];
   private rvfcHandle = 0;
   private running = false;
+  private destroyed = false;
+  /** Decoded media pixels, before the sample aspect ratio is applied for display. */
+  private frameWidth = 0;
+  private frameHeight = 0;
   private contextLost = false;
   private stageName: RenderStageName = "passthrough";
   private readonly onContextLost?: () => void;
@@ -80,11 +84,9 @@ export class VideoRenderer {
 
   private passthroughPresenter: PassthroughPresenter | null = null;
   private passthroughInitFailed = false;
-  private enhancementFilters: VideoFilter[] = [];
+  private denoiser: TemporalDenoiser | null = null;
   /** FSR (EASU+RCAS) upscale presenter for the enhancement path. */
   private upscalePresenter: Presenter | null = null;
-  /** Ping-pong targets for the enhancement filter list (allocated lazily). */
-  private enhancementTargets: [RenderTarget | null, RenderTarget | null] = [null, null];
   private pictureEnhancementEnabled = true;
   private enhancementInitFailed = false;
   /** Last uploaded frame size; enables texSubImage2D on subsequent uploads. */
@@ -97,7 +99,7 @@ export class VideoRenderer {
    */
   private secondFieldTarget: RenderTarget | null = null;
   /** Second field awaiting presentation, with its target display time. */
-  private pendingSecondField: { presentAt: number; enhanced: boolean } | null = null;
+  private pendingSecondField: PendingField | null = null;
   private presentClockHandle = 0;
   private lastPresentClockTs = -1;
   /** Recent deltas between presentation clock ticks, for refresh estimation. */
@@ -126,8 +128,8 @@ export class VideoRenderer {
    */
   private usesDevicePixelBox = true;
 
-  /** Called when a presented frame is outside the render gate before resize handling catches up. */
-  onFrameOutsideRenderGate: ((videoWidth: number, videoHeight: number) => void) | null = null;
+  /** Re-evaluate the render gate when decoded dimensions become known or change. */
+  onFrameSizeChange: (() => void) | null = null;
 
   private readonly handleContextLost = (event: Event) => {
     event.preventDefault();
@@ -144,6 +146,23 @@ export class VideoRenderer {
     this.contextLost = false;
     this.forgetGlResources();
     this.onContextRestored?.();
+    this.scheduleFrame();
+  };
+
+  private readonly handleDiscontinuity = () => {
+    this.clearPendingSecondField();
+    this.clearTextureRing();
+    this.denoiser?.reset();
+    this.lastMediaTime = -1;
+  };
+
+  private readonly handleSeeked = () => this.primeCanvas();
+
+  private readonly handleVideoResize = () => {
+    this.frameWidth = this.frameHeight = 0;
+    this.handleDiscontinuity();
+    this.onFrameSizeChange?.();
+    this.scheduleFrame();
   };
 
   constructor(
@@ -158,6 +177,18 @@ export class VideoRenderer {
     this.onContextRestored = onContextRestored;
     canvas.addEventListener("webglcontextlost", this.handleContextLost);
     canvas.addEventListener("webglcontextrestored", this.handleContextRestored);
+    video.addEventListener("seeking", this.handleDiscontinuity);
+    video.addEventListener("emptied", this.handleVideoResize);
+    video.addEventListener("resize", this.handleVideoResize);
+    video.addEventListener("seeked", this.handleSeeked);
+    // Learn the raster even when processing starts disabled. A later paused
+    // toggle can then upload it without guessing from videoWidth/videoHeight,
+    // which include sample-aspect-ratio scaling on anamorphic broadcasts.
+    this.scheduleFrame();
+  }
+
+  get frameSize(): { width: number; height: number } {
+    return { width: this.frameWidth, height: this.frameHeight };
   }
 
   /** Whether this environment can run the renderer at all. */
@@ -169,6 +200,8 @@ export class VideoRenderer {
   setPictureEnhancementEnabled(enabled: boolean): void {
     if (this.pictureEnhancementEnabled === enabled) return;
     this.pictureEnhancementEnabled = enabled;
+    this.clearPendingSecondField();
+    this.denoiser?.reset();
     if (!enabled) this.releaseEnhancementTargets();
     this.primeCanvas();
   }
@@ -189,6 +222,7 @@ export class VideoRenderer {
     }
     this.clearPendingSecondField();
     this.clearTextureRing();
+    this.denoiser?.reset();
     this.primeCanvas();
     Log.i(TAG, `Render stage switched to '${stageName}'`);
     return true;
@@ -198,7 +232,9 @@ export class VideoRenderer {
   resetStream(): void {
     this.stageName = "passthrough";
     this.stageFilter = null;
+    this.frameWidth = this.frameHeight = 0;
     this.releaseStreamResources();
+    this.scheduleFrame();
   }
 
   /** Start the frame loop with the given source stage. Safe to call repeatedly. */
@@ -232,6 +268,9 @@ export class VideoRenderer {
     this.running = false;
     this.cancelFrameCallbacks();
     this.releaseStreamResources();
+    // Retain one metadata callback for raw playback; only an active renderer
+    // keeps a continuous frame loop. Source resize/emptied events re-arm it.
+    this.scheduleFrame();
     Log.i(TAG, "Stopped");
   }
 
@@ -245,6 +284,7 @@ export class VideoRenderer {
   }
 
   destroy(): void {
+    this.destroyed = true;
     if (this.running) {
       this.stop();
     } else {
@@ -254,6 +294,10 @@ export class VideoRenderer {
     this.destroyContextResources();
     this.canvas.removeEventListener("webglcontextlost", this.handleContextLost);
     this.canvas.removeEventListener("webglcontextrestored", this.handleContextRestored);
+    this.video.removeEventListener("seeking", this.handleDiscontinuity);
+    this.video.removeEventListener("emptied", this.handleVideoResize);
+    this.video.removeEventListener("resize", this.handleVideoResize);
+    this.video.removeEventListener("seeked", this.handleSeeked);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.observedSizeEl = null;
@@ -278,6 +322,7 @@ export class VideoRenderer {
       return null;
     }
     this.gl = gl;
+    this.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
     return gl;
   }
 
@@ -336,7 +381,7 @@ export class VideoRenderer {
   }
 
   /**
-   * Lazily build the enhancement filter list and the upscale presenter. All
+   * Lazily build the temporal denoiser and the upscale presenter. All
    * succeed or none are kept: a partial chain would silently change the look.
    *
    * The upscale presenter is FSR 1 (EASU+RCAS); if it fails to compile
@@ -344,36 +389,25 @@ export class VideoRenderer {
    * passthrough presenter is used instead.
    */
   private ensureEnhancementResources(): boolean {
-    if (this.upscalePresenter) return true;
     if (this.enhancementInitFailed) return false;
+    if (this.upscalePresenter) return true;
     const gl = this.ensureContext();
     if (!gl) return false;
 
-    const filters: VideoFilter[] = [];
+    const denoiser = new TemporalDenoiser();
+    const presenter: Presenter = new FsrPresenter();
     try {
-      for (const name of ENHANCEMENT_FILTER_NAMES) {
-        const filter = createFilter(name);
-        if (!filter) throw new Error(`Unknown enhancement filter '${name}'`);
-        // The list is re-run per frame with a single input texture; a temporal
-        // filter would silently never see its history. Enforce the documented
-        // stateless invariant here rather than degrade quietly.
-        if (filter.historyFrames !== 0) {
-          throw new Error(`Enhancement filter '${name}' must be stateless (historyFrames = 0)`);
-        }
-        filter.init(gl);
-        filters.push(filter);
-      }
-
-      const presenter: Presenter = new FsrPresenter();
+      denoiser.init(gl);
       presenter.init(gl);
 
-      this.enhancementFilters = filters;
+      this.denoiser = denoiser;
       this.upscalePresenter = presenter;
       Log.i(TAG, `Picture enhancement enabled (${presenter.name} upscale presenter active)`);
       return true;
     } catch (err) {
       Log.w(TAG, "Failed to init picture enhancement; using passthrough presenter:", err);
-      for (const filter of filters) filter.destroy(gl);
+      denoiser.destroy(gl);
+      presenter.destroy(gl);
       this.enhancementInitFailed = true;
       return false;
     }
@@ -383,10 +417,9 @@ export class VideoRenderer {
   private releaseEnhancementTargets(): void {
     const gl = this.gl;
     if (gl && !this.contextLost) {
-      for (const target of this.enhancementTargets) this.deleteRenderTarget(target);
+      this.denoiser?.releaseTransientResources(gl);
       this.upscalePresenter?.releaseTransientResources(gl);
     }
-    this.enhancementTargets = [null, null];
   }
 
   /** Release all source-specific textures/FBOs while keeping context-bound programs alive. */
@@ -416,7 +449,7 @@ export class VideoRenderer {
     if (gl && !this.contextLost) {
       for (const filter of this.stageFilterCache.values()) filter.destroy(gl);
       this.passthroughPresenter?.destroy(gl);
-      for (const filter of this.enhancementFilters) filter.destroy(gl);
+      this.denoiser?.destroy(gl);
       this.upscalePresenter?.destroy(gl);
     }
     this.stageFilterCache.clear();
@@ -424,9 +457,8 @@ export class VideoRenderer {
     this.stageFilter = null;
     this.passthroughPresenter = null;
     this.passthroughInitFailed = false;
-    this.enhancementFilters = [];
+    this.denoiser = null;
     this.upscalePresenter = null;
-    this.enhancementTargets = [null, null];
     this.enhancementInitFailed = false;
   }
 
@@ -443,9 +475,8 @@ export class VideoRenderer {
     this.stageFilterInitFailures.clear();
     this.passthroughPresenter = null;
     this.passthroughInitFailed = false;
-    this.enhancementFilters = [];
+    this.denoiser = null;
     this.upscalePresenter = null;
-    this.enhancementTargets = [null, null];
     this.enhancementInitFailed = false;
     this.lastMediaTime = -1;
     this.frameDurationEstimateMs = 40;
@@ -514,7 +545,7 @@ export class VideoRenderer {
       const displayTime = now + this.refreshIntervalMs;
       if (pending.presentAt <= displayTime + this.refreshIntervalMs / 2) {
         this.pendingSecondField = null;
-        this.presentSecondField(pending.enhanced);
+        this.presentSecondField(pending);
       }
     }
 
@@ -547,18 +578,33 @@ export class VideoRenderer {
     if (!this.running) return;
     if (this.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
     const gl = this.gl;
-    const width = this.video.videoWidth;
-    const height = this.video.videoHeight;
+    const width = this.frameWidth;
+    const height = this.frameHeight;
     if (!gl || this.contextLost || !isRenderResolutionEligible(width, height)) return;
-    if (!this.uploadFrame(gl, width, height)) return;
+    this.clearPendingSecondField();
+    // Toggling a setting while paused must not push the same decoded frame
+    // into bwdif's ring again or recursively denoise it as fresh evidence.
+    this.denoiser?.reset();
+    if (
+      (this.textures.length === 0 || this.uploadedWidth !== width || this.uploadedHeight !== height) &&
+      !this.uploadFrame(gl, width, height)
+    )
+      return;
     this.drawCurrentOutput(0);
   }
 
   private scheduleFrame(): void {
+    if (this.destroyed || this.rvfcHandle) return;
     this.rvfcHandle = this.video.requestVideoFrameCallback((now, metadata) => {
       this.rvfcHandle = 0;
+      const wasRunning = this.running;
+      const sizeChanged = this.frameWidth !== metadata.width || this.frameHeight !== metadata.height;
+      this.frameWidth = metadata.width;
+      this.frameHeight = metadata.height;
+      if (sizeChanged) this.onFrameSizeChange?.();
       if (!this.running) return;
-      this.processFrame(now, metadata);
+      // Starting from the size notification already primes this same frame.
+      if (wasRunning) this.processFrame(now, metadata);
       if (this.running) this.scheduleFrame();
     });
   }
@@ -567,13 +613,16 @@ export class VideoRenderer {
     const gl = this.gl;
     if (!gl || this.contextLost) return;
 
-    const width = this.video.videoWidth;
-    const height = this.video.videoHeight;
-    if (!isRenderResolutionEligible(width, height)) {
-      this.onFrameOutsideRenderGate?.(width, height);
-      return;
-    }
+    const width = metadata.width;
+    const height = metadata.height;
+    if (!isRenderResolutionEligible(width, height)) return;
 
+    if (this.lastMediaTime >= 0) {
+      const deltaMs = (metadata.mediaTime - this.lastMediaTime) * 1000;
+      if (deltaMs <= 0 || deltaMs > Math.max(100, this.frameDurationEstimateMs * 3)) {
+        this.handleDiscontinuity();
+      }
+    }
     const frameDurationMs = this.frameDurationMs(metadata);
 
     if (!this.uploadFrame(gl, width, height)) return;
@@ -622,10 +671,14 @@ export class VideoRenderer {
     return this.frameDurationEstimateMs;
   }
 
-  private createFrameTexture(gl: WebGL2RenderingContext): WebGLTexture | null {
+  private createFrameTexture(gl: WebGL2RenderingContext, width: number, height: number): WebGLTexture | null {
     const texture = gl.createTexture();
     if (!texture) return null;
     gl.bindTexture(gl.TEXTURE_2D, texture);
+    // Own the storage before importing video pixels. A texImage2D(video)
+    // texture can alias a decoder surface that rejects texSubImage2D when
+    // the next decoded frame arrives (Chromium/ANGLE Metal).
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGB8, width, height);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -637,23 +690,23 @@ export class VideoRenderer {
   private uploadFrame(gl: WebGL2RenderingContext, width: number, height: number): boolean {
     if (!width || !height) return false;
 
+    if (this.uploadedWidth && (this.uploadedWidth !== width || this.uploadedHeight !== height)) {
+      this.clearTextureRing();
+      this.clearPendingSecondField();
+      this.denoiser?.reset();
+    }
+
     const ringSize = (this.stageFilter?.historyFrames ?? 0) + 1;
     const isNew = this.textures.length < ringSize;
-    const target = isNew ? this.createFrameTexture(gl) : this.textures[this.textures.length - 1];
+    const target = isNew ? this.createFrameTexture(gl, width, height) : this.textures[this.textures.length - 1];
     if (!target) return false;
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, target);
     try {
-      // texSubImage2D avoids reallocating GPU storage when the frame size is unchanged
-      // (steady-state IPTV). Fall back to texImage2D on first upload or size change.
-      if (!isNew && this.uploadedWidth === width && this.uploadedHeight === height) {
-        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGB, gl.UNSIGNED_BYTE, this.video);
-      } else {
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, this.video);
-        this.uploadedWidth = width;
-        this.uploadedHeight = height;
-      }
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGB, gl.UNSIGNED_BYTE, this.video);
+      this.uploadedWidth = width;
+      this.uploadedHeight = height;
     } catch (err) {
       Log.w(TAG, "Frame texture upload failed:", err);
       if (isNew) gl.deleteTexture(target);
@@ -666,17 +719,17 @@ export class VideoRenderer {
 
   /**
    * Render the second field through the full filter chain into its dedicated
-   * target now, and let the presentation clock blit it at the vsync closest to
-   * `presentAt`. Rendering up front keeps the per-frame GPU work in one burst
-   * and makes the later present a cheap single draw.
+   * target now, and let the presentation clock present it at the vsync closest
+   * to `presentAt`. Deinterlacing and denoising run at source size; final
+   * upscaling and sharpening run when the field is presented.
    */
   private queueSecondField(field: 0 | 1, presentAt: number): void {
     const gl = this.gl;
     const stageFilter = this.stageFilter;
     if (!gl || !stageFilter || this.contextLost || this.textures.length === 0) return;
 
-    const width = this.video.videoWidth;
-    const height = this.video.videoHeight;
+    const width = this.uploadedWidth;
+    const height = this.uploadedHeight;
     if (!width || !height) return;
 
     const dest = this.ensureSecondFieldTarget(gl, width, height);
@@ -687,42 +740,39 @@ export class VideoRenderer {
     // Second-field input is always bwdif's framebuffer, already native orientation.
     const params: RenderParams = { width, height, keepField: field, isSecondField: true, spatialOnly, flipY: false };
 
-    const filters = enhancementReady ? this.enhancementFilters : [];
-    const stageDest = filters.length > 0 ? this.ensureStageTarget(gl, width, height) : dest;
-    if (!stageDest) return;
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, stageDest.fbo);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dest.fbo);
     gl.viewport(0, 0, width, height);
     stageFilter.render(gl, this.textures, params);
 
     let enhanced = enhancementReady;
-    if (filters.length > 0) {
+    let texture = dest.texture;
+    if (enhancementReady && this.denoiser) {
       try {
-        this.runEnhancementFilters(gl, stageDest.texture, params, dest);
+        texture = this.denoiser.render(gl, texture, width, height, false);
       } catch (err) {
         Log.w(TAG, "Second field enhancement failed; presenting unenhanced field:", err);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, dest.fbo);
-        gl.viewport(0, 0, width, height);
-        stageFilter.render(gl, this.textures, params);
+        this.enhancementInitFailed = true;
+        this.denoiser.reset();
         enhanced = false;
       }
     }
 
-    this.pendingSecondField = { presentAt, enhanced };
+    // The denoiser's ping-pong output remains alive until the next frame,
+    // which clears this pending field before either history target is reused.
+    this.pendingSecondField = { presentAt, enhanced, texture, width, height };
     this.startPresentClock();
   }
 
   /** Blit the pre-rendered second field to the canvas. Called by the presentation clock. */
-  private presentSecondField(enhanced: boolean): void {
+  private presentSecondField(dest: PendingField): void {
     const gl = this.gl;
-    const dest = this.secondFieldTarget;
-    if (!gl || this.contextLost || !dest) return;
+    if (!gl || this.contextLost) return;
 
     const canvasWidth = this.canvas.width;
     const canvasHeight = this.canvas.height;
     if (!canvasWidth || !canvasHeight) return;
 
-    const presenter = enhanced && this.upscalePresenter ? this.upscalePresenter : this.passthroughPresenter;
+    const presenter = dest.enhanced && this.upscalePresenter ? this.upscalePresenter : this.passthroughPresenter;
     if (!presenter) return;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvasWidth, canvasHeight);
@@ -734,6 +784,7 @@ export class VideoRenderer {
       // Never let a failed present escape into the rAF present clock. Fall back
       // to a plain passthrough blit so the field still reaches the canvas.
       Log.w(TAG, "Second field enhancement present failed; falling back to passthrough:", err);
+      this.enhancementInitFailed = true;
       if (presenter !== this.passthroughPresenter) {
         this.passthroughPresenter?.present(gl, dest.texture, dest.width, dest.height, canvasWidth, canvasHeight, false);
       }
@@ -747,12 +798,16 @@ export class VideoRenderer {
     const passthroughPresenter = this.passthroughPresenter;
     if (!gl || !passthroughPresenter || this.contextLost || this.textures.length === 0) return;
 
-    const width = this.video.videoWidth;
-    const height = this.video.videoHeight;
+    const width = this.uploadedWidth;
+    const height = this.uploadedHeight;
     if (!width || !height) return;
 
+    const displayWidth = this.video.videoWidth;
+    const displayHeight = this.video.videoHeight;
     const enhancementReady = this.pictureEnhancementEnabled && this.ensureEnhancementResources();
-    const desiredSize = enhancementReady ? this.desiredEnhancedCanvasSize(width, height) : { width, height };
+    const desiredSize = enhancementReady
+      ? this.desiredEnhancedCanvasSize(Math.max(width, displayWidth), Math.max(height, displayHeight))
+      : { width: displayWidth, height: displayHeight };
     this.resizeCanvas(desiredSize.width, desiredSize.height);
 
     const spatialOnly = this.textures.length <= (stageFilter?.historyFrames ?? 0);
@@ -782,55 +837,24 @@ export class VideoRenderer {
       sourceTexture = this.textures[0];
     }
 
-    if (enhancementReady && this.upscalePresenter) {
+    if (enhancementReady && this.upscalePresenter && this.denoiser) {
       try {
-        const enhanced = this.runEnhancementFilters(gl, sourceTexture, params);
-        // Enhancement writes an FBO, so present without the source Y-flip. An empty
-        // filter list returns `sourceTexture` unchanged and keeps sourceFlipY.
-        const presentFlipY = this.enhancementFilters.length > 0 ? false : sourceFlipY;
+        const enhanced = this.denoiser.render(gl, sourceTexture, width, height, sourceFlipY);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, desiredSize.width, desiredSize.height);
-        this.upscalePresenter.present(gl, enhanced, width, height, desiredSize.width, desiredSize.height, presentFlipY);
+        this.upscalePresenter.present(gl, enhanced, width, height, desiredSize.width, desiredSize.height, false);
         return;
       } catch (err) {
         Log.w(TAG, "Picture enhancement render failed; falling back to canvas presenter:", err);
+        this.enhancementInitFailed = true;
+        this.denoiser.reset();
       }
     }
 
-    this.resizeCanvas(width, height);
+    this.resizeCanvas(displayWidth, displayHeight);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, width, height);
-    passthroughPresenter.present(gl, sourceTexture, width, height, width, height, sourceFlipY);
-  }
-
-  /**
-   * Run the enhancement filter list over ping-pong targets at source
-   * resolution. Returns the texture holding the final result (the stage
-   * output itself when the list is empty). When `lastTarget` is set, the
-   * last pass writes there instead of a ping-pong slot (second-field path).
-   */
-  private runEnhancementFilters(
-    gl: WebGL2RenderingContext,
-    input: WebGLTexture,
-    params: RenderParams,
-    lastTarget?: RenderTarget,
-  ): WebGLTexture {
-    let current = input;
-    for (let i = 0; i < this.enhancementFilters.length; i++) {
-      const isLast = i === this.enhancementFilters.length - 1;
-      const target =
-        isLast && lastTarget
-          ? lastTarget
-          : this.ensureEnhancementTarget(gl, i % 2 === 0 ? 0 : 1, params.width, params.height);
-      if (!target) throw new Error("Failed to create enhancement render target");
-      gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
-      gl.viewport(0, 0, params.width, params.height);
-      // Only the first pass may sample a raw video upload; later FBOs are native.
-      const passParams = i === 0 ? params : { ...params, flipY: false };
-      this.enhancementFilters[i].render(gl, [current], passParams);
-      current = target.texture;
-    }
-    return current;
+    gl.viewport(0, 0, displayWidth, displayHeight);
+    passthroughPresenter.present(gl, sourceTexture, width, height, displayWidth, displayHeight, sourceFlipY);
   }
 
   private resizeCanvas(width: number, height: number): void {
@@ -855,8 +879,8 @@ export class VideoRenderer {
     const size = this.cachedDisplaySize; // already in device pixels
     if (!size) return { width: sourceWidth, height: sourceHeight };
 
-    const width = Math.max(sourceWidth, Math.min(Math.round(size.width), MAX_UPSCALE_WIDTH));
-    const height = Math.max(sourceHeight, Math.min(Math.round(size.height), MAX_UPSCALE_HEIGHT));
+    const width = Math.max(sourceWidth, Math.min(Math.round(size.width), MAX_UPSCALE_WIDTH, this.maxTextureSize));
+    const height = Math.max(sourceHeight, Math.min(Math.round(size.height), MAX_UPSCALE_HEIGHT, this.maxTextureSize));
     return { width, height };
   }
 
@@ -890,6 +914,9 @@ export class VideoRenderer {
         Log.i(TAG, `Display size changed to ${inlineSize}x${blockSize} (device px)`);
       }
       this.cachedDisplaySize = { width: inlineSize, height: blockSize };
+      if (this.video.paused && (!prev || prev.width !== inlineSize || prev.height !== blockSize)) {
+        this.primeCanvas();
+      }
     }
   };
 
@@ -971,20 +998,6 @@ export class VideoRenderer {
     this.deleteRenderTarget(this.secondFieldTarget);
     this.secondFieldTarget = this.createRenderTarget(gl, width, height);
     return this.secondFieldTarget;
-  }
-
-  private ensureEnhancementTarget(
-    gl: WebGL2RenderingContext,
-    slot: 0 | 1,
-    width: number,
-    height: number,
-  ): RenderTarget | null {
-    const existing = this.enhancementTargets[slot];
-    if (existing?.width === width && existing.height === height) return existing;
-    this.deleteRenderTarget(existing);
-    const next = this.createRenderTarget(gl, width, height);
-    this.enhancementTargets[slot] = next;
-    return next;
   }
 
   private createRenderTarget(gl: WebGL2RenderingContext, width: number, height: number): RenderTarget | null {
