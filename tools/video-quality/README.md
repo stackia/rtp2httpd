@@ -13,6 +13,7 @@ From the repository root:
 source ~/.nvm/nvm.sh
 nvm use
 node tools/video-quality/prepare-baseline.mjs
+node tools/video-quality/prepare-anamorphic.mjs
 pnpm exec vite tools/video-quality --config tools/video-quality/vite.config.ts
 ```
 
@@ -37,6 +38,7 @@ await qualityLab.restoration("sport", 6);
 await qualityLab.restoration("film", 0);
 await qualityLab.restoration("film", 6);
 await qualityLab.lifecycle();
+await qualityLab.anamorphic();
 ```
 
 Run these sequentially, with other video playback paused. Keep the page visible.
@@ -75,6 +77,13 @@ The SD fixture is derived from HD. Its 16:9 sample aspect ratio means the browse
 reports a display width of 1024, although the encoded raster is 720 × 576.
 Do not commit recordings, private playlists, or programme images.
 
+`prepare-anamorphic.mjs` uses FFmpeg to generate small, static color-pattern
+fixtures without broadcast recordings: PAL 4:3 (720 × 576, SAR 16:15), PAL 16:9
+(720 × 576, SAR 64:45), and NTSC 4:3 (720 × 480, SAR 8:9). Asymmetric colored
+borders expose padding, cropping, and orientation errors across the whole frame.
+Browsers may apply SAR by expanding width or height; neither display dimension
+can be assumed to match the decoded raster.
+
 ## What the checks measure
 
 - **Synthetic:** clean gradients, thin detail, static grain, moving edges, and
@@ -105,6 +114,14 @@ Do not commit recordings, private playlists, or programme images.
   recording, checks two presentations per source frame, repeated paused toggles,
   seeking, source/resolution changes, raw-video fallback, context restoration,
   GL errors, and resource release. It uses the production context attributes.
+- **Anamorphic:** compares the complete rendered frame with a native
+  `drawImage(video)` reference at the same output size. Covers enabling processing
+  after raw playback is paused, repeated paused toggles, source/resolution
+  changes, deinterlacing with and without enhancement, and continuous field
+  playback. Requires mean RGB error below two code values and fewer than 0.5%
+  of samples differing by more than twenty; shader edge filtering is tolerated,
+  but a padded or cropped frame fails. Drawing-buffer capture happens inside
+  presentation, before the browser discards it.
 
 ## Reference measurements
 
@@ -163,6 +180,10 @@ interlaced playback retains the existing two-field presentation.
 The RGB video upload ring uses immutable storage before its first
 `texSubImage2D(video)` call. This avoids reusing decoder-backed storage imported
 by `texImage2D(video)`, which can reject subsequent frame updates on ANGLE Metal.
+Texture and filter dimensions come from `requestVideoFrameCallback` media pixels;
+`videoWidth`/`videoHeight` describe presentation and may include SAR scaling.
+The renderer learns one frame's metadata even with processing disabled, so a
+paused toggle can use the correct raster without adding an idle render loop.
 
 For a static preview alongside a running daemon, proxy its application-prefix
 routes to that daemon as well as serving the new `web-ui/dist` assets. The M3U

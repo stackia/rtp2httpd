@@ -2,6 +2,7 @@ import { TemporalDenoiser } from "../../web-ui/src/playback-engine/render/denois
 import type { VideoFilter } from "../../web-ui/src/playback-engine/render/filters/types";
 import { FsrPresenter } from "../../web-ui/src/playback-engine/render/fsr";
 import { PassthroughPresenter, type Presenter } from "../../web-ui/src/playback-engine/render/presenters";
+import { anamorphic } from "./anamorphic";
 import { invariants } from "./invariants";
 import { lifecycle } from "./lifecycle";
 
@@ -468,6 +469,11 @@ const lab = {
     await save("lifecycle", result);
     return result;
   },
+  anamorphic: async () => {
+    const result = await anamorphic();
+    await save("anamorphic", result);
+    return result;
+  },
 };
 Object.assign(window, { qualityLab: lab });
 function run(task: () => Promise<unknown>) {
@@ -489,5 +495,8 @@ required(document.querySelector("#invariants"), "Invariant button missing").addE
 );
 required(document.querySelector("#lifecycle"), "Lifecycle button missing").addEventListener("click", () =>
   run(lab.lifecycle),
+);
+required(document.querySelector("#anamorphic"), "Anamorphic button missing").addEventListener("click", () =>
+  run(lab.anamorphic),
 );
 status.textContent = JSON.stringify(gpuInfo(), null, 2);

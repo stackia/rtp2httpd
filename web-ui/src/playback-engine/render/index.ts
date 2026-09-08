@@ -87,9 +87,6 @@ export function createVideoRenderPipeline(
   const desiredStage = (): RenderStageName =>
     autoDeinterlaceEnabled && scanType === "interlaced" ? "bwdif" : "passthrough";
 
-  const formatVideoSize = () =>
-    video.videoWidth > 0 && video.videoHeight > 0 ? `${video.videoWidth}x${video.videoHeight}` : "unknown";
-
   const renderer = new VideoRenderer(
     video,
     canvas,
@@ -107,9 +104,8 @@ export function createVideoRenderPipeline(
   );
   renderer.setPictureEnhancementEnabled(pictureEnhancementEnabled);
 
-  renderer.onFrameOutsideRenderGate = () => {
+  renderer.onFrameSizeChange = () => {
     if (destroyed) return;
-    lastEligibility = null;
     apply();
   };
 
@@ -159,12 +155,16 @@ export function createVideoRenderPipeline(
   };
 
   const apply = () => {
+    const { width, height } = renderer.frameSize;
     const eligible =
-      video.videoWidth > 0 && video.videoHeight > 0 && isRenderResolutionEligible(video.videoWidth, video.videoHeight);
+      isRenderResolutionEligible(width, height) && isRenderResolutionEligible(video.videoWidth, video.videoHeight);
     if (eligible !== lastEligibility) {
-      if (eligible) Log.i(TAG, `Render gate enabled for ${formatVideoSize()}`);
-      else if (video.videoWidth > 0 && video.videoHeight > 0) {
-        Log.i(TAG, `Render gate disabled for ${formatVideoSize()}; falling back to raw video`);
+      if (eligible) Log.i(TAG, `Render gate enabled for ${width}x${height}`);
+      else if (width > 0 && height > 0) {
+        Log.i(
+          TAG,
+          `Render gate disabled for ${width}x${height} (${video.videoWidth}x${video.videoHeight} display); falling back to raw video`,
+        );
       }
       lastEligibility = eligible;
     }
@@ -185,12 +185,6 @@ export function createVideoRenderPipeline(
     applyRenderStage();
     setActive(true);
   };
-
-  const handleVideoResize = () => {
-    if (destroyed) return;
-    apply();
-  };
-  video.addEventListener("resize", handleVideoResize);
 
   apply();
 
@@ -227,7 +221,6 @@ export function createVideoRenderPipeline(
     },
     destroy() {
       destroyed = true;
-      video.removeEventListener("resize", handleVideoResize);
       renderer.destroy();
     },
   };

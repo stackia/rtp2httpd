@@ -73,6 +73,10 @@ export class VideoRenderer {
   private textures: WebGLTexture[] = [];
   private rvfcHandle = 0;
   private running = false;
+  private destroyed = false;
+  /** Decoded media pixels, before the sample aspect ratio is applied for display. */
+  private frameWidth = 0;
+  private frameHeight = 0;
   private contextLost = false;
   private stageName: RenderStageName = "passthrough";
   private readonly onContextLost?: () => void;
@@ -124,8 +128,8 @@ export class VideoRenderer {
    */
   private usesDevicePixelBox = true;
 
-  /** Called when a presented frame is outside the render gate before resize handling catches up. */
-  onFrameOutsideRenderGate: ((videoWidth: number, videoHeight: number) => void) | null = null;
+  /** Re-evaluate the render gate when decoded dimensions become known or change. */
+  onFrameSizeChange: (() => void) | null = null;
 
   private readonly handleContextLost = (event: Event) => {
     event.preventDefault();
@@ -142,6 +146,7 @@ export class VideoRenderer {
     this.contextLost = false;
     this.forgetGlResources();
     this.onContextRestored?.();
+    this.scheduleFrame();
   };
 
   private readonly handleDiscontinuity = () => {
@@ -152,6 +157,13 @@ export class VideoRenderer {
   };
 
   private readonly handleSeeked = () => this.primeCanvas();
+
+  private readonly handleVideoResize = () => {
+    this.frameWidth = this.frameHeight = 0;
+    this.handleDiscontinuity();
+    this.onFrameSizeChange?.();
+    this.scheduleFrame();
+  };
 
   constructor(
     video: HTMLVideoElement,
@@ -166,8 +178,17 @@ export class VideoRenderer {
     canvas.addEventListener("webglcontextlost", this.handleContextLost);
     canvas.addEventListener("webglcontextrestored", this.handleContextRestored);
     video.addEventListener("seeking", this.handleDiscontinuity);
-    video.addEventListener("emptied", this.handleDiscontinuity);
+    video.addEventListener("emptied", this.handleVideoResize);
+    video.addEventListener("resize", this.handleVideoResize);
     video.addEventListener("seeked", this.handleSeeked);
+    // Learn the raster even when processing starts disabled. A later paused
+    // toggle can then upload it without guessing from videoWidth/videoHeight,
+    // which include sample-aspect-ratio scaling on anamorphic broadcasts.
+    this.scheduleFrame();
+  }
+
+  get frameSize(): { width: number; height: number } {
+    return { width: this.frameWidth, height: this.frameHeight };
   }
 
   /** Whether this environment can run the renderer at all. */
@@ -211,7 +232,9 @@ export class VideoRenderer {
   resetStream(): void {
     this.stageName = "passthrough";
     this.stageFilter = null;
+    this.frameWidth = this.frameHeight = 0;
     this.releaseStreamResources();
+    this.scheduleFrame();
   }
 
   /** Start the frame loop with the given source stage. Safe to call repeatedly. */
@@ -245,6 +268,9 @@ export class VideoRenderer {
     this.running = false;
     this.cancelFrameCallbacks();
     this.releaseStreamResources();
+    // Retain one metadata callback for raw playback; only an active renderer
+    // keeps a continuous frame loop. Source resize/emptied events re-arm it.
+    this.scheduleFrame();
     Log.i(TAG, "Stopped");
   }
 
@@ -258,6 +284,7 @@ export class VideoRenderer {
   }
 
   destroy(): void {
+    this.destroyed = true;
     if (this.running) {
       this.stop();
     } else {
@@ -268,7 +295,8 @@ export class VideoRenderer {
     this.canvas.removeEventListener("webglcontextlost", this.handleContextLost);
     this.canvas.removeEventListener("webglcontextrestored", this.handleContextRestored);
     this.video.removeEventListener("seeking", this.handleDiscontinuity);
-    this.video.removeEventListener("emptied", this.handleDiscontinuity);
+    this.video.removeEventListener("emptied", this.handleVideoResize);
+    this.video.removeEventListener("resize", this.handleVideoResize);
     this.video.removeEventListener("seeked", this.handleSeeked);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
@@ -550,8 +578,8 @@ export class VideoRenderer {
     if (!this.running) return;
     if (this.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
     const gl = this.gl;
-    const width = this.video.videoWidth;
-    const height = this.video.videoHeight;
+    const width = this.frameWidth;
+    const height = this.frameHeight;
     if (!gl || this.contextLost || !isRenderResolutionEligible(width, height)) return;
     this.clearPendingSecondField();
     // Toggling a setting while paused must not push the same decoded frame
@@ -566,10 +594,17 @@ export class VideoRenderer {
   }
 
   private scheduleFrame(): void {
+    if (this.destroyed || this.rvfcHandle) return;
     this.rvfcHandle = this.video.requestVideoFrameCallback((now, metadata) => {
       this.rvfcHandle = 0;
+      const wasRunning = this.running;
+      const sizeChanged = this.frameWidth !== metadata.width || this.frameHeight !== metadata.height;
+      this.frameWidth = metadata.width;
+      this.frameHeight = metadata.height;
+      if (sizeChanged) this.onFrameSizeChange?.();
       if (!this.running) return;
-      this.processFrame(now, metadata);
+      // Starting from the size notification already primes this same frame.
+      if (wasRunning) this.processFrame(now, metadata);
       if (this.running) this.scheduleFrame();
     });
   }
@@ -578,12 +613,9 @@ export class VideoRenderer {
     const gl = this.gl;
     if (!gl || this.contextLost) return;
 
-    const width = this.video.videoWidth;
-    const height = this.video.videoHeight;
-    if (!isRenderResolutionEligible(width, height)) {
-      this.onFrameOutsideRenderGate?.(width, height);
-      return;
-    }
+    const width = metadata.width;
+    const height = metadata.height;
+    if (!isRenderResolutionEligible(width, height)) return;
 
     if (this.lastMediaTime >= 0) {
       const deltaMs = (metadata.mediaTime - this.lastMediaTime) * 1000;
@@ -696,8 +728,8 @@ export class VideoRenderer {
     const stageFilter = this.stageFilter;
     if (!gl || !stageFilter || this.contextLost || this.textures.length === 0) return;
 
-    const width = this.video.videoWidth;
-    const height = this.video.videoHeight;
+    const width = this.uploadedWidth;
+    const height = this.uploadedHeight;
     if (!width || !height) return;
 
     const dest = this.ensureSecondFieldTarget(gl, width, height);
@@ -766,12 +798,16 @@ export class VideoRenderer {
     const passthroughPresenter = this.passthroughPresenter;
     if (!gl || !passthroughPresenter || this.contextLost || this.textures.length === 0) return;
 
-    const width = this.video.videoWidth;
-    const height = this.video.videoHeight;
+    const width = this.uploadedWidth;
+    const height = this.uploadedHeight;
     if (!width || !height) return;
 
+    const displayWidth = this.video.videoWidth;
+    const displayHeight = this.video.videoHeight;
     const enhancementReady = this.pictureEnhancementEnabled && this.ensureEnhancementResources();
-    const desiredSize = enhancementReady ? this.desiredEnhancedCanvasSize(width, height) : { width, height };
+    const desiredSize = enhancementReady
+      ? this.desiredEnhancedCanvasSize(Math.max(width, displayWidth), Math.max(height, displayHeight))
+      : { width: displayWidth, height: displayHeight };
     this.resizeCanvas(desiredSize.width, desiredSize.height);
 
     const spatialOnly = this.textures.length <= (stageFilter?.historyFrames ?? 0);
@@ -815,10 +851,10 @@ export class VideoRenderer {
       }
     }
 
-    this.resizeCanvas(width, height);
+    this.resizeCanvas(displayWidth, displayHeight);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, width, height);
-    passthroughPresenter.present(gl, sourceTexture, width, height, width, height, sourceFlipY);
+    gl.viewport(0, 0, displayWidth, displayHeight);
+    passthroughPresenter.present(gl, sourceTexture, width, height, displayWidth, displayHeight, sourceFlipY);
   }
 
   private resizeCanvas(width: number, height: number): void {
