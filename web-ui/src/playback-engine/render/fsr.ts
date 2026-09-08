@@ -17,7 +17,7 @@ import type { Presenter } from "./presenters";
  * across all three channels, since the weights never depend on tap color.
  *
  * RCAS sharpens luminance with noise rejection and local extrema bounds,
- * then adds a mild saturation lift without changing the source transfer curve.
+ * then applies a mild contrast and saturation lift.
  */
 
 /**
@@ -225,7 +225,7 @@ void main() {
 /**
  * Contrast-adaptive luma sharpening, with or without EASU. A symmetric cross
  * detects isolated noise; sharpened luma stays inside the local range and RGB
- * gamut before a mild saturation lift. The source transfer curve is unchanged.
+ * gamut before a mild contrast and saturation lift.
  */
 const RCAS_FRAGMENT_SHADER = /*glsl*/ `#version 300 es
 precision highp float;
@@ -234,6 +234,7 @@ precision highp sampler2D;
 
 uniform sampler2D u_input;
 uniform vec2 u_texelSize;
+uniform vec2 u_scale;
 uniform bool u_flipY;
 uniform bool u_upscaled;
 
@@ -241,6 +242,7 @@ out vec4 outColor;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 const float SHARPNESS = 0.45;
+const float CONTRAST = 1.04;
 const float SATURATION = 1.03;
 const float RCAS_LIMIT = 0.25 - 1.0 / 16.0;
 
@@ -279,13 +281,17 @@ void main() {
   float removedNoise = u_upscaled ? center.a : clamp(abs(center.a - eL) * 32.0, 0.0, 1.0);
   lobe *= 1.0 - 0.85 * removedNoise;
 
-  float edge = max(abs(fL - dL), abs(hL - bL));
+  // Express output-pixel differences in source-pixel units so upscaling
+  // does not suppress sharpening just because adjacent samples get closer.
+  vec2 gradient = abs(vec2(fL - dL, hL - bL)) * u_scale;
+  float edge = max(gradient.x, gradient.y);
   lobe *= smoothstep(2.0 / 255.0, 12.0 / 255.0, edge);
   float y = (lobe * (bL + dL + fL + hL) + eL) / (4.0 * lobe + 1.0);
   float lo = max(mn5 - eL, -min3(e.r, e.g, e.b));
   float hi = min(mx5 - eL, 1.0 - max3(e.r, e.g, e.b));
   vec3 rgb = e + clamp(y - eL, lo, hi);
 
+  rgb = (rgb - 0.5) * CONTRAST + 0.5;
   rgb = mix(vec3(dot(rgb, LUMA)), rgb, SATURATION);
   outColor = vec4(clamp(rgb, 0.0, 1.0), 1.0);
 }
@@ -302,7 +308,7 @@ interface IntermediateTarget {
  * FSR1 upscale presenter: EASU (source -> intermediate, at output size) then
  * RCAS (intermediate -> bound framebuffer). When the output is no larger
  * than the source, skip EASU and run RCAS directly so enhancement still
- * sharpens and adjusts saturation at native size.
+ * sharpens and adjusts contrast and saturation at native size.
  * Input RGB must be denoised, with original luma in alpha (TemporalDenoiser's
  * output). Alpha informs noise-aware sharpening; it is not image opacity.
  */
@@ -318,6 +324,7 @@ export class FsrPresenter implements Presenter {
   private rcasProgram: WebGLProgram | null = null;
   private rcasInputLocation: WebGLUniformLocation | null = null;
   private rcasTexelSizeLocation: WebGLUniformLocation | null = null;
+  private rcasScaleLocation: WebGLUniformLocation | null = null;
   private rcasFlipYLocation: WebGLUniformLocation | null = null;
   private rcasUpscaledLocation: WebGLUniformLocation | null = null;
 
@@ -339,6 +346,7 @@ export class FsrPresenter implements Presenter {
     }
     this.rcasInputLocation = gl.getUniformLocation(this.rcasProgram, "u_input");
     this.rcasTexelSizeLocation = gl.getUniformLocation(this.rcasProgram, "u_texelSize");
+    this.rcasScaleLocation = gl.getUniformLocation(this.rcasProgram, "u_scale");
     this.rcasFlipYLocation = gl.getUniformLocation(this.rcasProgram, "u_flipY");
     this.rcasUpscaledLocation = gl.getUniformLocation(this.rcasProgram, "u_upscaled");
   }
@@ -390,7 +398,17 @@ export class FsrPresenter implements Presenter {
 
     // The intermediate is a framebuffer-rendered texture (native orientation),
     // regardless of whether the EASU input needed a flip.
-    this.runRcas(gl, target.texture, dstWidth, dstHeight, outputFbo, false, true);
+    this.runRcas(
+      gl,
+      target.texture,
+      dstWidth,
+      dstHeight,
+      outputFbo,
+      false,
+      true,
+      Math.max(1, dstWidth / srcWidth),
+      Math.max(1, dstHeight / srcHeight),
+    );
   }
 
   private runRcas(
@@ -401,6 +419,8 @@ export class FsrPresenter implements Presenter {
     targetFbo: WebGLFramebuffer | null,
     flipY: boolean,
     upscaled: boolean,
+    scaleX = 1,
+    scaleY = 1,
   ): void {
     gl.bindFramebuffer(gl.FRAMEBUFFER, targetFbo);
     gl.viewport(0, 0, width, height);
@@ -410,6 +430,7 @@ export class FsrPresenter implements Presenter {
     gl.bindTexture(gl.TEXTURE_2D, inputTexture);
     gl.uniform1i(this.rcasInputLocation, 0);
     gl.uniform2f(this.rcasTexelSizeLocation, 1 / width, 1 / height);
+    gl.uniform2f(this.rcasScaleLocation, scaleX, scaleY);
     gl.uniform1i(this.rcasFlipYLocation, flipY ? 1 : 0);
     gl.uniform1i(this.rcasUpscaledLocation, upscaled ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -478,6 +499,7 @@ export class FsrPresenter implements Presenter {
     this.easuFlipYLocation = null;
     this.rcasInputLocation = null;
     this.rcasTexelSizeLocation = null;
+    this.rcasScaleLocation = null;
     this.rcasFlipYLocation = null;
     this.rcasUpscaledLocation = null;
   }
