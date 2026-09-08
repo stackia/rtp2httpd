@@ -5,6 +5,7 @@ import { PassthroughPresenter, type Presenter } from "../../web-ui/src/playback-
 import { anamorphic } from "./anamorphic";
 import { invariants } from "./invariants";
 import { lifecycle } from "./lifecycle";
+import { presentation } from "./presentation";
 
 declare const __QUALITY_BASELINE__: string;
 
@@ -474,6 +475,11 @@ const lab = {
     await save("anamorphic", result);
     return result;
   },
+  presentation: async () => {
+    const result = await presentation();
+    await save("presentation", result);
+    return result;
+  },
 };
 Object.assign(window, { qualityLab: lab });
 function run(task: () => Promise<unknown>) {
@@ -498,5 +504,8 @@ required(document.querySelector("#lifecycle"), "Lifecycle button missing").addEv
 );
 required(document.querySelector("#anamorphic"), "Anamorphic button missing").addEventListener("click", () =>
   run(lab.anamorphic),
+);
+required(document.querySelector("#presentation"), "Presentation button missing").addEventListener("click", () =>
+  run(lab.presentation),
 );
 status.textContent = JSON.stringify(gpuInfo(), null, 2);

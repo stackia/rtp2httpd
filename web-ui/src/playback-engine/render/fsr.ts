@@ -235,8 +235,6 @@ precision highp sampler2D;
 
 uniform sampler2D u_input;
 uniform vec2 u_texelSize;
-uniform bool u_flipY;
-uniform bool u_upscaled;
 
 out vec4 outColor;
 
@@ -249,7 +247,6 @@ float max3(float a, float b, float c) { return max(a, max(b, c)); }
 
 void main() {
   vec2 uv = gl_FragCoord.xy * u_texelSize;
-  if (u_flipY) uv.y = 1.0 - uv.y;
   vec3 b = texture(u_input, uv + vec2(0.0, -1.0) * u_texelSize).rgb;
   vec3 d = texture(u_input, uv + vec2(-1.0, 0.0) * u_texelSize).rgb;
   vec4 center = texture(u_input, uv);
@@ -276,8 +273,7 @@ void main() {
   float noise = 0.25 * (bL + dL + fL + hL) - eL;
   noise = clamp(abs(noise) / max(mx5 - mn5, 1e-6), 0.0, 1.0);
   lobe *= 1.0 - 0.9 * noise;
-  float removedNoise = u_upscaled ? center.a : clamp(abs(center.a - eL) * 32.0, 0.0, 1.0);
-  lobe *= 1.0 - 0.85 * removedNoise;
+  lobe *= 1.0 - 0.85 * center.a;
 
   float edge = max(abs(fL - dL), abs(hL - bL));
   lobe *= smoothstep(2.0 / 255.0, 12.0 / 255.0, edge);
@@ -299,9 +295,8 @@ interface IntermediateTarget {
 
 /**
  * FSR1 upscale presenter: EASU (source -> intermediate, at output size) then
- * RCAS (intermediate -> bound framebuffer). RCAS also runs standalone
- * (skipping EASU) when the output is not larger than the source, so picture
- * enhancement still sharpens at native size instead of doing nothing.
+ * RCAS (intermediate -> bound framebuffer). Every enhanced frame follows
+ * this same chain, including native-size presentation and 1080p/i sources.
  * Input RGB must be denoised, with original luma in alpha (TemporalDenoiser's
  * output). Alpha informs noise-aware sharpening; it is not image opacity.
  */
@@ -317,8 +312,6 @@ export class FsrPresenter implements Presenter {
   private rcasProgram: WebGLProgram | null = null;
   private rcasInputLocation: WebGLUniformLocation | null = null;
   private rcasTexelSizeLocation: WebGLUniformLocation | null = null;
-  private rcasFlipYLocation: WebGLUniformLocation | null = null;
-  private rcasUpscaledLocation: WebGLUniformLocation | null = null;
 
   private intermediate: IntermediateTarget | null = null;
 
@@ -338,8 +331,6 @@ export class FsrPresenter implements Presenter {
     }
     this.rcasInputLocation = gl.getUniformLocation(this.rcasProgram, "u_input");
     this.rcasTexelSizeLocation = gl.getUniformLocation(this.rcasProgram, "u_texelSize");
-    this.rcasFlipYLocation = gl.getUniformLocation(this.rcasProgram, "u_flipY");
-    this.rcasUpscaledLocation = gl.getUniformLocation(this.rcasProgram, "u_upscaled");
   }
 
   present(
@@ -355,16 +346,9 @@ export class FsrPresenter implements Presenter {
       throw new Error("FsrPresenter.present() called before init()");
     }
 
-    // Respect the framebuffer the caller bound (Presenter contract), for both
-    // the upscaling and native-size paths: RCAS renders into it last, with
-    // EASU rendering into the intermediate target in between.
+    // Respect the framebuffer the caller bound (Presenter contract): RCAS
+    // renders into it last, with EASU rendering into the intermediate first.
     const outputFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
-
-    const upscaling = dstWidth > srcWidth + 0.5 || dstHeight > srcHeight + 0.5;
-    if (!upscaling) {
-      this.runRcas(gl, texture, dstWidth, dstHeight, outputFbo, flipY, false);
-      return;
-    }
 
     // A failed intermediate allocation (e.g. a 4K target on a device with a
     // smaller max texture/FBO size, or under GPU memory pressure) must surface
@@ -389,7 +373,7 @@ export class FsrPresenter implements Presenter {
 
     // The intermediate is a framebuffer-rendered texture (native orientation),
     // regardless of whether the EASU input needed a flip.
-    this.runRcas(gl, target.texture, dstWidth, dstHeight, outputFbo, false, true);
+    this.runRcas(gl, target.texture, dstWidth, dstHeight, outputFbo);
   }
 
   private runRcas(
@@ -398,8 +382,6 @@ export class FsrPresenter implements Presenter {
     width: number,
     height: number,
     targetFbo: WebGLFramebuffer | null,
-    flipY: boolean,
-    upscaled: boolean,
   ): void {
     gl.bindFramebuffer(gl.FRAMEBUFFER, targetFbo);
     gl.viewport(0, 0, width, height);
@@ -409,8 +391,6 @@ export class FsrPresenter implements Presenter {
     gl.bindTexture(gl.TEXTURE_2D, inputTexture);
     gl.uniform1i(this.rcasInputLocation, 0);
     gl.uniform2f(this.rcasTexelSizeLocation, 1 / width, 1 / height);
-    gl.uniform1i(this.rcasFlipYLocation, flipY ? 1 : 0);
-    gl.uniform1i(this.rcasUpscaledLocation, upscaled ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -477,7 +457,5 @@ export class FsrPresenter implements Presenter {
     this.easuFlipYLocation = null;
     this.rcasInputLocation = null;
     this.rcasTexelSizeLocation = null;
-    this.rcasFlipYLocation = null;
-    this.rcasUpscaledLocation = null;
   }
 }

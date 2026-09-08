@@ -29,6 +29,7 @@ Use the buttons or the developer console:
 await qualityLab.synthetic();
 await qualityLab.invariants();
 await qualityLab.timing(1920, 1080, 1920, 1080);
+await qualityLab.timing(1920, 1080, 2560, 1440);
 await qualityLab.timing(1920, 1080, 3840, 2160);
 await qualityLab.timing(720, 576, 1920, 1080);
 await qualityLab.compare("sport", 3);
@@ -39,6 +40,7 @@ await qualityLab.restoration("film", 0);
 await qualityLab.restoration("film", 6);
 await qualityLab.lifecycle();
 await qualityLab.anamorphic();
+await qualityLab.presentation();
 ```
 
 Run these sequentially, with other video playback paused. Keep the page visible.
@@ -122,6 +124,12 @@ can be assumed to match the decoded raster.
   of samples differing by more than twenty; shader edge filtering is tolerated,
   but a padded or cropped frame fails. Drawing-buffer capture happens inside
   presentation, before the browser discards it.
+- **Presentation:** plays 1080p and 1080i recordings through the production
+  renderer at 1920 × 1080, 2560 × 1440, and 3840 × 2160 physical output pixels.
+  Checks the canvas backing dimensions, EASU source/output uniforms, and actual
+  denoise → EASU → RCAS draw calls, both when enabling enhancement while paused
+  and during continuous playback. Interlaced input must retain two field
+  presentations per decoded frame, each with deinterlacing before enhancement.
 
 ## Reference measurements
 
@@ -134,9 +142,9 @@ PSNR in dB (higher is better):
 
 | Case | Bilinear/raw | Previous enhancement | Current enhancement |
 | --- | ---: | ---: | ---: |
-| Clean synthetic detail | Exact | 38.06 | 46.94 |
-| Static synthetic grain | 32.20 | 28.48 | 34.52 |
-| Moving detail with grain | 32.20 | 28.40 | 34.35 |
+| Clean synthetic detail | Exact | 38.06 | 46.18 |
+| Static synthetic grain | 32.20 | 28.48 | 34.74 |
+| Moving detail with grain | 32.20 | 28.40 | 34.56 |
 | Sport reference, 540p → 1080p | 34.81 | 34.33 | 36.85 |
 | Film reference, 540p → 1080p | 33.51 | 33.51 | 35.19 |
 | Noisy sport reference, 540p → 1080p | 32.48 | 30.37 | 33.66 |
@@ -151,15 +159,19 @@ Enhancement GPU milliseconds per draw, measured as described above:
 
 | Source → output | Previous median | Current median | Previous p95 | Current p95 |
 | --- | ---: | ---: | ---: | ---: |
-| 1920 × 1080 → 1920 × 1080 | 0.516 | 0.720 | 1.086 | 0.962 |
-| 1920 × 1080 → 3840 × 2160 | 1.925 | 2.066 | 3.454 | 4.104 |
-| 720 × 576 → 1920 × 1080 | 1.062 | 1.161 | 1.360 | 2.074 |
+| 1920 × 1080 → 1920 × 1080 | 0.250 | 0.548 | 0.420 | 0.812 |
+| 1920 × 1080 → 2560 × 1440 | 0.661 | 0.808 | 0.938 | 1.252 |
+| 1920 × 1080 → 3840 × 2160 | 1.417 | 1.555 | 1.855 | 2.396 |
+| 720 × 576 → 1920 × 1080 | 0.289 | 0.327 | 0.333 | 0.520 |
 
-Full MSE playback through a separate NAS preview was also checked: a 15-second
-1080i broadcast interval decoded 375 frames with zero dropped/corrupted frames
-and zero GL errors, both at native output and at 3840 × 2160. The renderer
-lifecycle test presented 50 fields for 25 source callbacks and retained no
-textures, framebuffers, programs, or shaders after destruction.
+Full MSE playback through a separate NAS preview was also checked at 1920 × 1080,
+2560 × 1440, and 3840 × 2160. Each 15-second 1080i broadcast interval decoded
+375 frames and presented 750 fields, with zero dropped/corrupted frames and
+zero GL errors. Every field ran deinterlacing → denoising → EASU → RCAS, with
+the expected EASU source/output dimensions. These runs used a device pixel
+ratio of two and resized the player surface to each physical output size.
+The renderer lifecycle test presented 50 fields for 25 source callbacks and
+retained no textures, framebuffers, programs, or shaders after destruction.
 
 ## Implementation boundaries
 
@@ -170,12 +182,14 @@ RGBA8 fallback halves that. EASU's RGB10_A2 intermediate costs 31.6 MiB at 4K,
 the same storage as RGBA8. These figures exclude upload/deinterlacing targets and
 the browser's canvas buffers.
 
-FSR presentation expects the denoiser's original-luma alpha. Its intermediate
-alpha carries quantized noise information for luma-only sharpening. The source
-gate remains 1920 × 1088, with output capped at 3840 × 2160 and the device's
-texture limit. History resets on seeks, source/stage changes, and discontinuous
-timestamps. No future frames or motion-compensated frame interpolation are added;
-interlaced playback retains the existing two-field presentation.
+All enhanced sources, including 1080p/i, use denoising → EASU → RCAS at native
+size as well as when upscaling. FSR presentation expects the denoiser's
+original-luma alpha. Its intermediate alpha carries quantized noise information
+for luma-only sharpening. The source gate remains 1920 × 1088, with output
+capped at 3840 × 2160 and the device's texture limit. History resets on seeks,
+source/stage changes, and discontinuous timestamps. No future frames or
+motion-compensated frame interpolation are added; interlaced playback retains
+the existing two-field presentation.
 
 The RGB video upload ring uses immutable storage before its first
 `texSubImage2D(video)` call. This avoids reusing decoder-backed storage imported

@@ -129,7 +129,7 @@ The player enables **Video enhancement** by default. You can toggle it in **Sett
 
 The enhancement pipeline combines the current image with previous images to reduce noise, upscales it to the display area, and applies moderate edge sharpening. Motion, scene cuts, and channel changes suppress or clear the influence of previous images. Sharpening preserves the original colors and tonal relationships, limits edge overshoot, and avoids amplifying noise again.
 
-This feature processes **1080p and lower-resolution sources**, with an output limit of **3840 × 2160**. The actual size depends on the display area and device pixel ratio. Native 4K video plays directly through the browser. Video enhancement does not generate intermediate frames. For interlaced video with **Auto deinterlace** enabled, the player reconstructs each field first (for example, 50i → 50p), then enhances each reconstructed image.
+This feature processes **1080p/i and lower-resolution sources** through the full denoising, edge-adaptive scaling, and sharpening pipeline, including 1080p/i content displayed at its native size. On 2K/4K displays, it upscales to the physical pixel dimensions determined by the display area and device pixel ratio, such as **2560 × 1440** or up to **3840 × 2160**. Native 4K video plays directly through the browser. Video enhancement does not generate intermediate frames. For interlaced video with **Auto deinterlace** enabled, the player reconstructs each field first (for example, 50i → 50p), then enhances each reconstructed image.
 
 ## Time Placeholders
 
