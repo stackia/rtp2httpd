@@ -13,7 +13,6 @@
 #include "status.h"
 #include "utils.h"
 #include <arpa/inet.h>
-#include <math.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdbool.h>
@@ -260,7 +259,7 @@ void stream_send_http_headers(connection_t *conn, const char *content_type, cons
                                         metadata->upstream_payload) < 0;
 
   /* A value we cannot render exactly is dropped rather than approximated. */
-  if (metadata->playback_scale_known && isfinite(metadata->playback_scale)) {
+  if (metadata->playback_scale_known && double_is_finite(metadata->playback_scale)) {
     if (stream_metadata_format_number(metadata->playback_scale, number, sizeof(number)) == 0)
       failed |= stream_metadata_append_header(headers, sizeof(headers), &length,
                                               stream_metadata_header_names[STREAM_HDR_PLAYBACK_SCALE], number) < 0;
@@ -272,7 +271,7 @@ void stream_send_http_headers(connection_t *conn, const char *content_type, cons
                                             stream_metadata_header_names[STREAM_HDR_PLAYBACK_RANGE],
                                             metadata->playback_range) < 0;
   }
-  if (metadata->media_duration_known && isfinite(metadata->media_duration)) {
+  if (metadata->media_duration_known && double_is_finite(metadata->media_duration)) {
     if (stream_metadata_format_number(metadata->media_duration, number, sizeof(number)) == 0)
       failed |= stream_metadata_append_header(headers, sizeof(headers), &length,
                                               stream_metadata_header_names[STREAM_HDR_MEDIA_DURATION], number) < 0;

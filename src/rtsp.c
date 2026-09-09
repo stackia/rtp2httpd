@@ -2965,7 +2965,7 @@ static void rtsp_parse_play_metadata(rtsp_session_t *session, const struct phr_h
     scale = strtod(scale_buf, &end);
     while (end && (*end == ' ' || *end == '\t'))
       end++;
-    if (end != scale_buf && end && *end == '\0' && errno != ERANGE && isfinite(scale)) {
+    if (end != scale_buf && end && *end == '\0' && errno != ERANGE && double_is_finite(scale)) {
       metadata->playback_scale = scale;
       metadata->playback_scale_known = 1;
     }
@@ -3072,7 +3072,7 @@ static int rtsp_parse_npt_time(const char *value, const char **end_out, double *
 
   errno = 0;
   first_component = strtod(value, &component_end);
-  if (component_end == value || errno == ERANGE || !isfinite(first_component) || first_component < 0.0)
+  if (component_end == value || errno == ERANGE || !double_is_finite(first_component) || first_component < 0.0)
     return -1;
 
   if (*component_end != ':') {
@@ -3099,11 +3099,11 @@ static int rtsp_parse_npt_time(const char *value, const char **end_out, double *
 
   errno = 0;
   seconds = strtod(seconds_start, &seconds_end);
-  if (seconds_end == seconds_start || errno == ERANGE || !isfinite(seconds) || seconds < 0.0 || seconds >= 60.0)
+  if (seconds_end == seconds_start || errno == ERANGE || !double_is_finite(seconds) || seconds < 0.0 || seconds >= 60.0)
     return -1;
 
   double total = first_component * 3600.0 + (double)minutes * 60.0 + seconds;
-  if (!isfinite(total))
+  if (!double_is_finite(total))
     return -1;
 
   *end_out = seconds_end;

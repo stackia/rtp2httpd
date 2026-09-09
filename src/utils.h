@@ -50,6 +50,22 @@ int64_t get_realtime_ms(void);
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
 /**
+ * Return 1 if `value` is a finite IEEE-754 double (not NaN or Inf).
+ *
+ * Inspects exponent bits instead of calling isfinite(). With -ffast-math /
+ * -ffinite-math-only, isfinite() is treated as always-true and Clang emits
+ * -Wnan-infinity-disabled.
+ */
+static inline int double_is_finite(double value) {
+  union {
+    double d;
+    uint64_t u;
+  } conv;
+  conv.d = value;
+  return ((conv.u >> 52) & 0x7ffULL) != 0x7ffULL;
+}
+
+/**
  * Set socket receive buffer size, trying SO_RCVBUFFORCE first.
  * SO_RCVBUFFORCE can exceed system limits but requires CAP_NET_ADMIN.
  * Falls back to SO_RCVBUF if SO_RCVBUFFORCE fails.
