@@ -147,8 +147,37 @@ if(PLATFORM_LINUX OR PLATFORM_FREEBSD)
   target_compile_options(rtp2httpd PRIVATE -fstack-protector-strong)
   # _FORTIFY_SOURCE requires optimization >= -O1
   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_definitions(rtp2httpd PRIVATE _FORTIFY_SOURCE=2)
+    # Toolchains often already define this macro:
+    #   OpenWrt CFLAGS:        -D_FORTIFY_SOURCE=1
+    #   Debian/Ubuntu gcc spec: -D_FORTIFY_SOURCE=3 (when optimizing)
+    # Forcing -D_FORTIFY_SOURCE=2 on top of that produces
+    #   <command-line>: warning: "_FORTIFY_SOURCE" redefined
+    # and can silently weaken a higher distro default. Only add level 2
+    # when the compiler/flags do not already provide one.
+    include(CheckCSourceCompiles)
+    set(_rtp2httpd_saved_required_flags "${CMAKE_REQUIRED_FLAGS}")
+    set(_rtp2httpd_saved_required_quiet "${CMAKE_REQUIRED_QUIET}")
+    set(CMAKE_REQUIRED_QUIET TRUE)
+    # -O2 lets gcc spec files inject their default _FORTIFY_SOURCE.
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -O2")
+    check_c_source_compiles(
+      "#ifndef _FORTIFY_SOURCE\n#error \"_FORTIFY_SOURCE not predefined\"\n#endif\nint main(void) { return 0; }\n"
+      RTP2HTTPD_HAS_PREDEFINED_FORTIFY_SOURCE)
+    set(CMAKE_REQUIRED_FLAGS "${_rtp2httpd_saved_required_flags}")
+    set(CMAKE_REQUIRED_QUIET "${_rtp2httpd_saved_required_quiet}")
+    unset(_rtp2httpd_saved_required_flags)
+    unset(_rtp2httpd_saved_required_quiet)
+    if(NOT RTP2HTTPD_HAS_PREDEFINED_FORTIFY_SOURCE)
+      target_compile_definitions(rtp2httpd PRIVATE _FORTIFY_SOURCE=2)
+      set(RTP2HTTPD_FORTIFY_SOURCE "2 (project)")
+    else()
+      set(RTP2HTTPD_FORTIFY_SOURCE "toolchain default")
+    endif()
+  else()
+    set(RTP2HTTPD_FORTIFY_SOURCE "disabled (Debug)")
   endif()
+else()
+  set(RTP2HTTPD_FORTIFY_SOURCE "not applied")
 endif()
 
 # ── Libraries ───────────────────────────────────────────────────────
@@ -177,5 +206,6 @@ message(STATUS "  Platform:       ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Compiler:       ${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}")
 message(STATUS "  Build type:     ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Aggressive opt: ${ENABLE_AGGRESSIVE_OPT}")
+message(STATUS "  Fortify:        ${RTP2HTTPD_FORTIFY_SOURCE}")
 message(STATUS "  Install prefix: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "")
