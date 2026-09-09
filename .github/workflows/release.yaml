@@ -165,6 +165,7 @@ jobs:
           - mipsel_24kc_24kf
           - mipsel_74kc
           - mipsel_mips32
+          - powerpc_464fp
 
         sdk:
           - "24.10.8" # For IPK
