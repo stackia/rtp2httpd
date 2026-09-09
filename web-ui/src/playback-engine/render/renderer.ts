@@ -603,8 +603,11 @@ export class VideoRenderer {
       this.frameHeight = metadata.height;
       if (sizeChanged) this.onFrameSizeChange?.();
       if (!this.running) return;
-      // Starting from the size notification already primes this same frame.
-      if (wasRunning) this.processFrame(now, metadata);
+      // Starting from the size notification may have primed this frame, but
+      // rVFC can arrive before HAVE_CURRENT_DATA and make primeCanvas skip it.
+      // Render that decoded frame now instead of showing an empty canvas until
+      // the next callback; do not upload/filter a successfully primed frame twice.
+      if (wasRunning || this.textures.length === 0) this.processFrame(now, metadata);
       if (this.running) this.scheduleFrame();
     });
   }
