@@ -26,6 +26,9 @@ TMP_DIR="/tmp/rtp2httpd_install"
 # Whether to use prerelease version
 USE_PRERELEASE=false
 
+# Preserve the service's runtime state across package installation.
+SERVICE_WAS_RUNNING=false
+
 # Language: zh (default) or en
 LANG_CODE="zh"
 
@@ -384,6 +387,34 @@ install_package() {
     return 0
 }
 
+# Restart a previously running service after a successful installation.
+restart_service() {
+    if [ "$SERVICE_WAS_RUNNING" != true ]; then
+        return 0
+    fi
+
+    print_info "$(msg '重启 rtp2httpd 服务以应用更新（当前播放会短暂中断）...' 'Restarting rtp2httpd to apply the update (active playback will briefly disconnect)...')"
+
+    if ! /etc/init.d/rtp2httpd restart; then
+        print_error "$(msg '软件包已安装，但服务重启失败。请检查日志并手动执行 /etc/init.d/rtp2httpd restart' 'Packages installed, but service restart failed. Check the logs and run /etc/init.d/rtp2httpd restart manually.')"
+        return 1
+    fi
+
+    # procd starts services asynchronously; allow time for the instance to appear.
+    local attempts=0
+    while [ "$attempts" -lt 10 ]; do
+        sleep 1
+        if /etc/init.d/rtp2httpd running >/dev/null 2>&1; then
+            print_info "$(msg 'rtp2httpd 服务已重启' 'rtp2httpd service restarted')"
+            return 0
+        fi
+        attempts=$((attempts + 1))
+    done
+
+    print_error "$(msg '软件包已安装，但未检测到服务运行。请使用 logread -e rtp2httpd 检查日志，并手动执行 /etc/init.d/rtp2httpd restart' 'Packages installed, but the service is not running. Check logs with logread -e rtp2httpd and run /etc/init.d/rtp2httpd restart manually.')"
+    return 1
+}
+
 # Clean up temporary files
 cleanup() {
     if [ -d "$TMP_DIR" ]; then
@@ -535,6 +566,12 @@ main() {
 
     INSTALL_SUCCESS=true
 
+    # Capture this before package hooks can stop or restart the old process.
+    if [ -x /etc/init.d/rtp2httpd ] && /etc/init.d/rtp2httpd running >/dev/null 2>&1; then
+        SERVICE_WAS_RUNNING=true
+        print_info "$(msg '服务正在运行，安装成功后将自动重启（当前播放会短暂中断）' 'The service is running and will restart after installation (active playback will briefly disconnect)')"
+    fi
+
     for package in $PACKAGES; do
         package_file="${TMP_DIR}/${package}"
 
@@ -553,6 +590,8 @@ main() {
         exit 1
     fi
 
+    restart_service
+
     # Installation successful
     print_info ""
     print_info "=========================================="
@@ -565,7 +604,11 @@ main() {
     print_info "$(msg '1. 访问 LuCI 管理界面' '1. Access the LuCI admin interface')"
     print_info "$(msg "2. 在 '服务' 菜单中找到 'rtp2httpd'" "2. Find 'rtp2httpd' in the 'Services' menu")"
     print_info "$(msg '3. 根据需要配置服务参数' '3. Configure the service parameters as needed')"
-    print_info "$(msg '4. 启动服务' '4. Start the service')"
+    if [ "$SERVICE_WAS_RUNNING" = true ]; then
+        print_info "$(msg '4. 服务已自动重启，刷新状态面板查看版本' '4. The service has restarted; refresh the status page to check the version')"
+    else
+        print_info "$(msg '4. 启动服务' '4. Start the service')"
+    fi
     print_info ""
     print_info "$(msg '更多信息请访问' 'For more info visit'): https://github.com/${REPO_OWNER}/${REPO_NAME}"
     print_info ""
