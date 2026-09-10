@@ -24,6 +24,20 @@ OpenWrt 是 rtp2httpd 的最佳运行环境。在中国大陆，通常需要先�
 - [AutoBuildImmortalWrt](https://github.com/wukongdaily/AutoBuildImmortalWrt)：[store](https://github.com/wukongdaily/store) 已内置 rtp2httpd，轻松构建
 - [潘多拉 QWRT for K2P](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8346913&fromuid=402348)：已内置 rtp2httpd
 
+## Homebrew 部署
+
+在 macOS 和 Linux 上，可以通过 [Homebrew](https://brew.sh) 安装 rtp2httpd：
+
+```bash
+brew install rtp2httpd
+```
+
+安装后，编辑 `$(brew --prefix)/etc/rtp2httpd.conf` 配置文件，然后启动服务：
+
+```bash
+brew services start rtp2httpd
+```
+
 ## 静态二进制文件部署
 
 从 [Releases](https://github.com/stackia/rtp2httpd/releases) 页面下载对应架构的静态二进制文件 `rtp2httpd-<版本号>-<架构>`，上传到设备并 `chmod +x` 后即可运行。

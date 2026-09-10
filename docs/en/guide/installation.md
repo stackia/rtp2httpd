@@ -24,6 +24,20 @@ The following firmware distributions and platforms include rtp2httpd, or offer i
 - [AutoBuildImmortalWrt](https://github.com/wukongdaily/AutoBuildImmortalWrt): rtp2httpd is built into [store](https://github.com/wukongdaily/store) for easy builds
 - [Pandora QWRT for K2P](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8346913&fromuid=402348): rtp2httpd is built in
 
+## Homebrew Deployment
+
+On macOS and Linux, you can install rtp2httpd using [Homebrew](https://brew.sh):
+
+```bash
+brew install rtp2httpd
+```
+
+After installation, edit the configuration file at `$(brew --prefix)/etc/rtp2httpd.conf`, then start the service:
+
+```bash
+brew services start rtp2httpd
+```
+
 ## Static Binary Deployment
 
 Download the static binary file `rtp2httpd-<version>-<arch>` for your architecture from the [Releases](https://github.com/stackia/rtp2httpd/releases) page, upload to your device, `chmod +x` and run.
