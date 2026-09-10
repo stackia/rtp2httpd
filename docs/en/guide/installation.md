@@ -32,21 +32,19 @@ On macOS and Linux, you can install rtp2httpd using [Homebrew](https://brew.sh):
 brew install rtp2httpd
 ```
 
-The Homebrew package includes a service definition, so you do not need to create a service file manually. After installation, edit the configuration file at `$(brew --prefix)/etc/rtp2httpd.conf`, then start the service and enable it to launch when the current user logs in:
+After installation, edit the configuration file at `$(brew --prefix)/etc/rtp2httpd.conf`, then start the service (and register it to start automatically when the user logs in after boot):
 
 ```bash
 brew services start rtp2httpd
 ```
 
-To start automatically at system boot without requiring a user to log in, use a system service:
+To start automatically at system boot without requiring a user to log in, use sudo:
 
 ```bash
 # Stop the user service first if it was previously started to avoid duplicate instances
 brew services stop rtp2httpd
 sudo brew services start rtp2httpd
 ```
-
-`brew services start` both starts the service and registers it to launch automatically; no separate `enable` command is needed. Without `sudo`, it starts at login; with `sudo`, it starts at boot. Linux requires systemd. See the [Homebrew service management documentation](https://docs.brew.sh/Manpage#services-subcommand) for details.
 
 ## Static Binary Deployment
 
@@ -74,7 +72,7 @@ chmod +x rtp2httpd-X.Y.Z-x86_64
 > [!TIP]
 > You can use this example file [rtp2httpd.conf](https://github.com/stackia/rtp2httpd/blob/main/rtp2httpd.conf) as a base to modify your configuration. See [Configuration Reference](/en/reference/configuration) for details.
 
-Also note that rtp2httpd no longer supports running as a daemon on its own. On Debian/Ubuntu systems, you can create a systemd service unit by adding the following content to `/etc/systemd/system/rtp2httpd.service`. Other operating systems using systemd as the service manager can also refer to the configuration below.
+On systems using systemd, such as Debian/Ubuntu, you can create a systemd service unit by adding the following content to `/etc/systemd/system/rtp2httpd.service`.
 
 ```text
 [Unit]

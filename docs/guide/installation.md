@@ -32,21 +32,19 @@ OpenWrt 是 rtp2httpd 的最佳运行环境。在中国大陆，通常需要先�
 brew install rtp2httpd
 ```
 
-Homebrew 包已包含服务定义，无需手动创建服务文件。安装后，编辑 `$(brew --prefix)/etc/rtp2httpd.conf` 配置文件，然后启动服务并启用当前用户登录后自启：
+安装后，编辑 `$(brew --prefix)/etc/rtp2httpd.conf` 配置文件，然后启动服务（并注册开机用户登录后自启）：
 
 ```bash
 brew services start rtp2httpd
 ```
 
-如果需要在系统开机时自启（无需用户登录），使用系统级服务：
+如果需要在系统开机时自启（无需用户登录），需要使用 sudo：
 
 ```bash
 # 如果之前已启动用户级服务，先停止，避免重复运行
 brew services stop rtp2httpd
 sudo brew services start rtp2httpd
 ```
-
-`brew services start` 会同时启动服务并注册自启，无需额外执行 `enable`。不带 `sudo` 时为登录后自启，带 `sudo` 时为开机自启。Linux 上需要 systemd。详见 [Homebrew 服务管理文档](https://docs.brew.sh/Manpage#services-subcommand)。
 
 ## 静态二进制文件部署
 
@@ -74,7 +72,7 @@ chmod +x rtp2httpd-X.Y.Z-x86_64
 > [!TIP]
 > 你可以使用这个示例文件 [rtp2httpd.conf](https://github.com/stackia/rtp2httpd/blob/main/rtp2httpd.conf) 作为基础来修改配置。具体说明见 [配置参数详解](../reference/configuration.md)。
 
-另外 rtp2httpd 目前已不支持自身以守护进程方式运行。对于 Debian/Ubuntu 系统，您可以在 `/etc/systemd/system/rtp2httpd.service` 内添加以下内容以创建 systemd 服务单元。其他使用 systemd 作为服务管理器的操作系统也可以参考以下配置进行配置。
+对于 Debian/Ubuntu 等使用 systemd 的系统，您可以在 `/etc/systemd/system/rtp2httpd.service` 内添加以下内容以创建 systemd 服务单元。
 
 ```text
 [Unit]
