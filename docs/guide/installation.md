@@ -32,11 +32,21 @@ OpenWrt 是 rtp2httpd 的最佳运行环境。在中国大陆，通常需要先�
 brew install rtp2httpd
 ```
 
-安装后，编辑 `$(brew --prefix)/etc/rtp2httpd.conf` 配置文件，然后启动服务：
+Homebrew 包已包含服务定义，无需手动创建服务文件。安装后，编辑 `$(brew --prefix)/etc/rtp2httpd.conf` 配置文件，然后启动服务并启用当前用户登录后自启：
 
 ```bash
 brew services start rtp2httpd
 ```
+
+如果需要在系统开机时自启（无需用户登录），使用系统级服务：
+
+```bash
+# 如果之前已启动用户级服务，先停止，避免重复运行
+brew services stop rtp2httpd
+sudo brew services start rtp2httpd
+```
+
+`brew services start` 会同时启动服务并注册自启，无需额外执行 `enable`。不带 `sudo` 时为登录后自启，带 `sudo` 时为开机自启。Linux 上需要 systemd。详见 [Homebrew 服务管理文档](https://docs.brew.sh/Manpage#services-subcommand)。
 
 ## 静态二进制文件部署
 

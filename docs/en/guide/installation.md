@@ -32,11 +32,21 @@ On macOS and Linux, you can install rtp2httpd using [Homebrew](https://brew.sh):
 brew install rtp2httpd
 ```
 
-After installation, edit the configuration file at `$(brew --prefix)/etc/rtp2httpd.conf`, then start the service:
+The Homebrew package includes a service definition, so you do not need to create a service file manually. After installation, edit the configuration file at `$(brew --prefix)/etc/rtp2httpd.conf`, then start the service and enable it to launch when the current user logs in:
 
 ```bash
 brew services start rtp2httpd
 ```
+
+To start automatically at system boot without requiring a user to log in, use a system service:
+
+```bash
+# Stop the user service first if it was previously started to avoid duplicate instances
+brew services stop rtp2httpd
+sudo brew services start rtp2httpd
+```
+
+`brew services start` both starts the service and registers it to launch automatically; no separate `enable` command is needed. Without `sudo`, it starts at login; with `sudo`, it starts at boot. Linux requires systemd. See the [Homebrew service management documentation](https://docs.brew.sh/Manpage#services-subcommand) for details.
 
 ## Static Binary Deployment
 
