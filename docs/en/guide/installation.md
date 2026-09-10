@@ -24,6 +24,28 @@ The following firmware distributions and platforms include rtp2httpd, or offer i
 - [AutoBuildImmortalWrt](https://github.com/wukongdaily/AutoBuildImmortalWrt): rtp2httpd is built into [store](https://github.com/wukongdaily/store) for easy builds
 - [Pandora QWRT for K2P](https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8346913&fromuid=402348): rtp2httpd is built in
 
+## Homebrew Deployment
+
+On macOS and Linux, you can install rtp2httpd using [Homebrew](https://brew.sh):
+
+```bash
+brew install rtp2httpd
+```
+
+After installation, edit the configuration file at `$(brew --prefix)/etc/rtp2httpd.conf`, then start the service (and register it to start automatically when the user logs in after boot):
+
+```bash
+brew services start rtp2httpd
+```
+
+To start automatically at system boot without requiring a user to log in, use sudo:
+
+```bash
+# Stop the user service first if it was previously started to avoid duplicate instances
+brew services stop rtp2httpd
+sudo brew services start rtp2httpd
+```
+
 ## Static Binary Deployment
 
 Download the static binary file `rtp2httpd-<version>-<arch>` for your architecture from the [Releases](https://github.com/stackia/rtp2httpd/releases) page, upload to your device, `chmod +x` and run.
@@ -50,7 +72,7 @@ chmod +x rtp2httpd-X.Y.Z-x86_64
 > [!TIP]
 > You can use this example file [rtp2httpd.conf](https://github.com/stackia/rtp2httpd/blob/main/rtp2httpd.conf) as a base to modify your configuration. See [Configuration Reference](/en/reference/configuration) for details.
 
-Also note that rtp2httpd no longer supports running as a daemon on its own. On Debian/Ubuntu systems, you can create a systemd service unit by adding the following content to `/etc/systemd/system/rtp2httpd.service`. Other operating systems using systemd as the service manager can also refer to the configuration below.
+On systems using systemd, such as Debian/Ubuntu, you can create a systemd service unit by adding the following content to `/etc/systemd/system/rtp2httpd.service`.
 
 ```text
 [Unit]
