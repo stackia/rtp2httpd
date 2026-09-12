@@ -43,6 +43,16 @@
 - 行为变更 -> Behavior change
 - 响应头 -> response header
 - 上游流 Metadata -> upstream stream metadata (the `R2H-*` headers)
+- Prefer "build" over "compile" except in literal commands.
+- For packet-capture setups, use "traffic interception" or "packet capture via gateway", not "man-in-the-middle".
+
+### Page Titles
+
+- 详解 / 参数详解 -> Reference, for example Configuration Reference.
+- 说明 -> a noun title or Guide, for example URL Formats.
+- 报告 -> omit when redundant, for example Performance Benchmark.
+- 建议 -> Guide, for example Public Access Guide.
+- Use plural titles for multiple items; reserve Specification for an actual standard.
 
 ### China-specific Terms
 
@@ -62,9 +72,9 @@
 
 ## Admonition Style
 
-Both doc trees use GitHub alert syntax (`> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`,
-`> [!WARNING]`, `> [!CAUTION]`), **not** VitePress `::: tip` / `::: warning` containers.
-VitePress renders both, but the whole repo uses the GitHub form — keep it that way.
+The project convention is GitHub alert syntax (`> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`,
+`> [!WARNING]`, `> [!CAUTION]`). Preserve any existing VitePress containers when translating;
+changing alert formats is a separate source edit.
 
 GitHub alerts cannot carry a custom title. If a Chinese source needs one, put it as a
 bold lead-in inside the alert body (`> **行为变更**：…`) and mirror that in English.

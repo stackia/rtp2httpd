@@ -1,123 +1,45 @@
 ---
 name: build-run
-description: >
-  Build, run, and configure rtp2httpd locally. Use this skill whenever the user wants to compile
-  the project, start the daemon, pass command-line arguments, edit configuration, or troubleshoot
-  build/runtime issues. Also activate when the user mentions cmake, build directory, rtp2httpd.conf,
-  web-ui build, pnpm run, vite build, embedded_web_data.h, or asks how to test the service locally.
+description: Build, configure, and run rtp2httpd locally, including embedded Web UI builds and build/runtime troubleshooting. Excludes cross-compilation and deployment.
 ---
 
-# Building and Running rtp2httpd
+# Local Build and Run
 
-rtp2httpd is a C daemon (CMake build system) that converts RTP multicast / RTSP / HTTP streams
-to HTTP unicast. This skill covers local development builds — not OpenWrt cross-compilation.
+Run commands from the repository root. Use the toolchain conventions in [AGENTS.md](../../../AGENTS.md).
 
-## Build
+Cursor Cloud's startup setup installs locked pnpm dependencies and runs `uv sync --group dev`. Reuse that environment; repeat setup only when dependencies are missing or changed.
 
-Always prefer production builds unless the user explicitly asks for debug.
+## Build the needed components
+
+For embedded UI changes, rebuild the frontend before the C binary. C-only changes can use the committed header without Node.js. Follow `package.json` for build scripts and `CMakeLists.txt` for current options.
 
 ```bash
-# 1. If web-ui/src/ has changed, rebuild the frontend first (generates src/embedded_web_data.h)
-pnpm run web-ui:build            # production (preferred)
-pnpm run web-ui:build:debug      # debug: unminified, with source maps
+# When Web UI sources or build inputs changed:
+pnpm run web-ui:build
 
-# 2. Configure & compile the C binary
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_AGGRESSIVE_OPT=ON
 cmake --build build -j$(getconf _NPROCESSORS_ONLN)
 ```
 
-The binary lands at `build/rtp2httpd`. Skip step 1 when only C code changed — the generated
-`embedded_web_data.h` is committed so Node.js is not required for C-only builds.
+Release is the default for normal builds. Use Debug/RelWithDebInfo or `pnpm run web-ui:build:debug` when diagnosis needs symbols or source maps. `ENABLE_AGGRESSIVE_OPT` enables LTO and fast-math and defaults to OFF in CMake; disable it when investigating optimization-sensitive behavior.
 
-### CMake options
+The binary is `build/rtp2httpd`. The generated header follows the commit boundary in AGENTS.md.
 
-| Option                    | Default | Purpose                              |
-|---------------------------|---------|--------------------------------------|
-| `CMAKE_BUILD_TYPE`        | Release | Debug / Release / RelWithDebInfo     |
-| `ENABLE_AGGRESSIVE_OPT`   | OFF     | LTO, fast-math, loop unrolling       |
+## Run and configure
 
-## Run
+Use an unused port, bind a local preview to loopback, and avoid loading a deployed configuration accidentally:
 
 ```bash
-# Minimal: no config file, verbose, listen on port 8080
-./build/rtp2httpd -C -v -v -v -v -l 8080
-
-# With a config file
-./build/rtp2httpd -c rtp2httpd.conf
-
-# Override specific settings via CLI
-./build/rtp2httpd -c rtp2httpd.conf -l 5140 -m 20 -v -v
+./build/rtp2httpd -C -v -v -v -v -l 127.0.0.1:8080
 ```
 
-### Commonly used CLI flags
+`-C` skips the default config; `-c <file>` selects a config; `-l [addr:]port` sets the listener. For a config-based reproduction, inspect that file's listeners and upstreams first. Use `./build/rtp2httpd --help` for current flags.
 
-| Flag               | Short | Purpose                                    |
-|--------------------|-------|--------------------------------------------|
-| `--noconfig`       | `-C`  | Skip default config file                   |
-| `--config <file>`  | `-c`  | Use specific config file                   |
-| `--listen [addr:]port` | `-l` | Bind address/port (default ANY:5140)   |
-| `--verbose`        | `-v`  | Increase verbosity (stack up to 4 times)   |
-| `--maxclients <n>` | `-m`  | Max simultaneous clients (default 5)       |
-| `--help`           | `-h`  | Show all available options                 |
+- For INI settings and `[global]`, `[bind]`, `[services]` examples, read [rtp2httpd.conf](../../../rtp2httpd.conf) and the relevant section of [Configuration Reference](../../../docs/reference/configuration.md). CLI settings take precedence.
+- For stream paths and query parameters, read [URL Formats](../../../docs/guide/url-formats.md). The `/rtp/`, `/rtsp/`, and `/http/` prefixes choose different protocol handlers.
+- For player scenarios using mock upstreams, use [devlab](../../../tools/devlab/README.md).
+- For automated daemon behavior checks, use [e2e](../e2e/SKILL.md).
 
-Run `./build/rtp2httpd --help` for the complete flag list.
+## Verify the requested behavior
 
-## Configuration
-
-The config file is INI-style with three sections: `[global]`, `[bind]`, `[services]`.
-
-- **Reference config**: `rtp2httpd.conf` in the project root — all options are documented with comments
-- **Full docs**: `docs/reference/configuration.md`
-
-When both CLI flags and config file settings are present, CLI flags take precedence.
-
-### Quick config example
-
-```ini
-[global]
-verbosity = 3
-
-[bind]
-* 5140
-
-[services]
-#EXTM3U
-#EXTINF:-1,Channel One
-rtp://239.253.64.120:5140
-#EXTINF:-1,RTSP Channel
-rtsp://10.0.0.50:554/live
-#EXTINF:-1,HTTP Channel
-http://upstream.example.com/stream
-```
-
-## URL formats
-
-Constructing correct URLs is critical when testing rtp2httpd. The path prefix determines the
-protocol handler — getting it wrong gives a 404 or unexpected behavior.
-
-| Type          | URL pattern                                          | Example                                                       |
-|---------------|------------------------------------------------------|---------------------------------------------------------------|
-| RTP multicast | `/rtp/<mcast_ip>:<port>[?fcc=...&fec=...]`           | `/rtp/239.253.64.120:5140`                                    |
-| RTSP proxy    | `/rtsp/<rtsp_host>:<port>/<path>[?playseek=...]`     | `/rtsp/iptv.example.com:554/channel1`                         |
-| HTTP proxy    | `/http/<upstream_host>[:<port>]/<path>[?params]`     | `/http/upstream.example.com:8080/live/stream.m3u8`            |
-| Playlist      | `/playlist.m3u`                                      | `/playlist.m3u`                                               |
-
-For the full URL reference with all query parameters (fcc, fec, playseek, tvdr, r2h-ifname,
-r2h-token, r2h-seek-name, r2h-seek-offset, etc.), read `docs/guide/url-formats.md`.
-
-## Verify it works
-
-```bash
-# Status page
-curl http://127.0.0.1:5140/status
-
-# M3U playlist (if services configured)
-curl http://127.0.0.1:5140/playlist.m3u
-
-# Stream a channel (replace with actual multicast addr)
-curl http://127.0.0.1:5140/rtp/239.253.64.120:5140 --max-time 3 -o /dev/null -w "%{http_code}"
-```
-
-## Troubleshooting
-
-- **Port in use**: change `-l` port or kill the old process
+`curl --fail http://127.0.0.1:8080/status` checks basic readiness. Playback, seek, or rendering work also needs the affected stream/player scenario; a status response alone does not verify it. Reuse the chosen listener port in checks, and stop the task's daemon when finished. If a port is occupied, choose another port rather than terminating an unrelated process.
