@@ -1,129 +1,47 @@
 ---
 name: sync-fcc-ip-docs
-description: >
-  Synchronize rtp2httpd FCC IP documentation from GitHub issue feedback. ALWAYS use this skill
-  when the user asks to update FCC address docs, check new FCC IP reports, validate existing FCC
-  entries, or process comments from https://github.com/stackia/rtp2httpd/issues/5.
-argument-hint: "[check|sync|update] [optional issue/comment context]"
+description: Check or update the rtp2httpd FCC address collection using community reports in GitHub issue 5.
 ---
 
-# Sync FCC IP Documentation
+# FCC Address Collection
 
-Use this skill to curate community-sourced FCC (Fast Channel Change) IP address reports for
-rtp2httpd and keep the Chinese and English FCC documentation synchronized.
+Curate reports from <https://github.com/stackia/rtp2httpd/issues/5>. Use [update-memory.md](references/update-memory.md) for the checkpoint, document paths, locality caveats, and grouping conventions. These are community reports, not proof of reachability from the current machine.
 
-Before processing comments, read `references/update-memory.md` for the last processed checkpoint,
-known document paths, formatting rules, and prior update history. Update that reference after each
-run with the newest processed comment timestamp and a concise update record.
+A check/review request returns findings without editing docs, advancing the checkpoint, or reacting on GitHub. A sync/update request covers the Chinese collection, its English counterpart, and the processing record. Carry those edits through without asking again; contributor reactions require authorization for that external action.
 
-## Core Mission
+## Retrieve and assess evidence
 
-1. Read comments from <https://github.com/stackia/rtp2httpd/issues/5>.
-2. Identify actionable information: new working FCC IPs and credible non-working reports.
-3. Update the Chinese FCC address summary document.
-4. Use the `translate-docs-zh-en` skill to synchronize the English translation after Chinese doc changes.
-
-## Step 1: Fetch and Read Issue Comments
-
-Check `references/update-memory.md` for `last_processed_comment_date`.
+Fetch all pages of comments. Use the recorded timestamp for incremental review, or fetch the full history when no checkpoint exists or a historical recheck is requested:
 
 ```bash
-# Incremental: only comments after the last processed date
-gh api "repos/stackia/rtp2httpd/issues/5/comments?since=YYYY-MM-DDTHH:MM:SSZ" --paginate
-
-# Full: when no checkpoint exists
+gh api 'repos/stackia/rtp2httpd/issues/5/comments?since=YYYY-MM-DDTHH:MM:SSZ' --paginate
 gh api repos/stackia/rtp2httpd/issues/5/comments --paginate
 ```
 
-- If a checkpoint exists, process only comments created after that timestamp.
-- If no checkpoint exists, process all comments.
-- Read comments chronologically because later comments may correct earlier ones.
+Review reports and later corrections in context. Include returned edits to older comments rather than filtering solely by `created_at`. Classify by evidence rather than punctuation or keywords:
 
-## Step 2: Classify Each Comment
+- A working-address report identifies an address/port with explicit successful use or relevant packet-capture fields and regional/ISP context. Confirm attribution before adding it.
+- A failure report needs locality and channel context: one location's failure does not establish decommissioning. Preserve existing entries and flag uncertainty unless removal or inactive marking is authorized by the user.
+- Questions, requests for addresses, configuration help, and discussion supply no new working address on their own. A mixed question/report can still contain usable evidence.
 
-### Actionable: New FCC IP Report
+Validate address/port syntax and check the current collection for duplicates. Do not invent missing ports, cities, or ISP assignments, and do not probe private/operator networks to classify a report.
 
-- The user explicitly shares a new FCC IP address they discovered or successfully use.
-- The user confirms an IP works for a specific region, ISP, or location.
-- Look for IP addresses such as `10.x.x.x`, `172.x.x.x`, `192.168.x.x`, or public IPs with location context.
-- Example: "我在北京联通发现了一个新的 FCC 地址：10.205.x.x".
+## Apply the requested update
 
-### Potentially Actionable: FCC Failure Report
+Update `docs/reference/cn-fcc-collection.md` using the province → ISP grouping in the reference. Within each group, list addresses without city annotations before city-specific entries. Extend an existing entry's supported locality when appropriate rather than duplicating it. Keep source comment IDs, authors, and dates in the processing record for traceability.
 
-- The user definitively reports that a known FCC IP no longer works, has been decommissioned, or is unreachable.
-- A single report is not enough to remove an entry. Flag it for review and ask before deleting.
-- Multiple independent reports for the same IP provide stronger evidence, but still confirm before removal.
+After Chinese changes, use [translate-docs-zh-en](../translate-docs-zh-en/SKILL.md) for `docs/en/reference/cn-fcc-collection.md`. Check that address/port pairs and locality annotations agree across languages.
 
-### Not Actionable: Questions or General Discussion
-
-- Questions about whether an IP works, how to find IPs, configuration help, troubleshooting, thanks, or project discussion.
-- Phrases such as "请问", "有没有", "能不能", "是否", and "怎么" usually indicate questions.
-- A question mark (`?` or `？`) often means inquiry rather than report.
-
-### Classification Rules
-
-- Treat phrases such as "分享一下", "发现了", "可以用", "亲测可用", and "已确认" as report signals.
-- If ambiguous, do not update the document.
-- If a later comment contradicts an earlier one, note both and prioritize the most recent reliable information.
-
-## Step 3: Read Existing Documentation
-
-- Use the Chinese FCC summary document recorded in `references/update-memory.md`.
-- Read the current document to understand existing regions, ISPs, IPs, and formatting.
-- Check whether reported IPs are already documented before adding anything.
-
-## Step 4: Update the Chinese Document
-
-- Add newly reported working FCC IPs with region, ISP, and city/location information when available.
-- Do not duplicate existing IPs.
-- Maintain existing Markdown style and grouping.
-- Organize entries by province, then ISP.
-- Within the same province and ISP, list addresses without city annotations first, then addresses with city annotations.
-- For non-working reports, ask before removing or marking inactive unless the user already gave explicit removal instructions.
-- Add notes only when the document convention supports them and the uncertainty is important.
-
-## Step 5: Acknowledge Contributors
-
-For each comment whose IP was added to the document, add a rocket reaction:
+When contributor acknowledgment is authorized, add a rocket only to a comment actually used for an update and only if the current account has not already reacted:
 
 ```bash
-gh api repos/stackia/rtp2httpd/issues/comments/{comment_id}/reactions -f content=rocket
+gh api repos/stackia/rtp2httpd/issues/comments/<comment-id>/reactions -f content=rocket
 ```
 
-- React only to comments actually used for document updates.
-- Do not react to questions, discussions, or duplicate reports.
-- If the reaction already exists from a previous run, skip it.
+Do not react to duplicate-only reports or general questions. If a mutation returns an uncertain result, inspect existing reactions before retrying.
 
-## Step 6: Summarize Changes
+## Completion and checkpoint
 
-Prepare a concise summary listing:
+Report comments reviewed, addresses added/changed, and unresolved reports with source links. If nothing actionable was found, leave the collection unchanged.
 
-1. Number of comments reviewed.
-2. Number classified as actionable vs. non-actionable.
-3. IPs added, removed, or flagged for review.
-4. Source comment authors and dates for traceability.
-
-## Step 7: Sync English Translation
-
-After Chinese document changes are complete, use the `translate-docs-zh-en` skill to update the
-corresponding English document. Provide the updated Chinese document path and the change summary so
-the translation update can focus on modified sections.
-
-## Quality Assurance
-
-- Validate every IP address and port before adding it.
-- Confirm regional and ISP attribution from source comments.
-- Verify no still-working IPs were removed accidentally.
-- Preserve document formatting and ordering.
-- If no actionable updates exist, report that clearly and make no doc changes.
-
-## Updating Sync Memory
-
-After each run, update `references/update-memory.md` with:
-
-- `last_processed_comment_date`: set to the `created_at` timestamp of the last processed comment.
-- An update record noting what changed.
-
-You may also record reusable classification lessons, known platform/port patterns, or stable
-document conventions. Do not record temporary task state, speculation, or duplicate repo-level
-instructions.
+For a completed sync, update `references/update-memory.md` with a concise result and the latest fully processed comment's `created_at` as `last_processed_comment_date`, without moving the checkpoint backward. Record any reviewed edits by comment ID and keep unresolved items explicitly pending; do not advance past work lost to a fetch or translation failure. A check-only run leaves this record unchanged.
