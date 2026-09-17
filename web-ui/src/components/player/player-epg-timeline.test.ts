@@ -55,13 +55,9 @@ function render(programs: readonly EPGProgram[], supportsCatchup = true): string
   }
 }
 
-/** The class list of every rendered programme block, keyed by its `data-epg-block-id`. */
-function blockClasses(html: string): Map<string, string[]> {
-  const blocks = new Map<string, string[]>();
-  for (const match of html.matchAll(/<button[^>]*data-epg-block-id="([^"]+)"[^>]*class="([^"]*)"/g)) {
-    blocks.set(match[1], match[2].split(/\s+/).filter(Boolean));
-  }
-  return blocks;
+/** The whole `<button>` element rendered for the programme block with this `data-epg-block-id`. */
+function block(html: string, id: string): string {
+  return html.match(new RegExp(`<button[^>]*data-epg-block-id="${id}"[^>]*>.*?</button>`))?.[0] ?? "";
 }
 
 const past = program(-80 * MINUTE, -50 * MINUTE, "past-show");
@@ -79,39 +75,41 @@ describe("PlayerEpgTimeline", () => {
     expect(html).not.toContain("far-away-show");
   });
 
-  it("classifies past, live and future blocks, whatever order the classes come in", () => {
-    const blocks = blockClasses(render(programmes));
-    expect(blocks.get("past-show")).toEqual(expect.arrayContaining(["is-past", "is-catchup", "is-playable"]));
-    expect(blocks.get("live-show")).toEqual(expect.arrayContaining(["is-live", "is-playable"]));
-    expect(blocks.get("future-show")).toEqual(expect.arrayContaining(["is-future"]));
-    expect(blocks.get("future-show")).not.toContain("is-playable");
+  it("classifies past, live and future blocks", () => {
+    const html = render(programmes);
+    expect(block(html, "past-show")).toContain('data-state="past"');
+    expect(block(html, "live-show")).toContain('data-state="live"');
+    expect(block(html, "future-show")).toContain('data-state="future"');
     // Only the programme that is on air gets the highlighted live treatment.
-    expect(render(programmes).match(/is-live/g)).toHaveLength(1);
+    expect(html.match(/data-state="live"/g)).toHaveLength(1);
   });
 
-  it("drops catch-up affordances when the source cannot replay", () => {
-    const blocks = blockClasses(render(programmes, false));
-    expect(blocks.get("past-show")).not.toContain("is-catchup");
-    expect(blocks.get("past-show")).not.toContain("is-playable");
+  it("marks a finished programme as replayable only when the source can replay", () => {
+    // The catch-up marker is the only icon a block carries.
+    const withCatchup = block(render(programmes), "past-show");
+    expect(withCatchup).toContain("<svg");
+    expect(withCatchup).not.toContain("disabled");
+
+    const withoutCatchup = block(render(programmes, false), "past-show");
+    expect(withoutCatchup).not.toContain("<svg");
+    expect(withoutCatchup).toContain("disabled");
     // The live block stays playable: returning to the live edge never needs catch-up.
-    expect(blocks.get("live-show")).toEqual(expect.arrayContaining(["is-live", "is-playable"]));
+    expect(block(render(programmes, false), "live-show")).not.toContain("disabled");
   });
 
   it("marks a programme that cannot be played as a disabled button", () => {
     const html = render(programmes);
-    const futureBlock = html.match(/<button[^>]*data-epg-block-id="future-show"[^>]*>/)?.[0] ?? "";
-    expect(futureBlock).toContain("disabled");
-    expect(futureBlock).toContain('tabindex="-1"');
-    const pastBlock = html.match(/<button[^>]*data-epg-block-id="past-show"[^>]*>/)?.[0] ?? "";
-    expect(pastBlock).not.toContain("disabled");
+    expect(block(html, "future-show")).toContain("disabled");
+    expect(block(html, "future-show")).toContain('tabindex="-1"');
+    expect(block(html, "past-show")).not.toContain("disabled");
   });
 
   it("draws a tick per quarter hour and exposes the band as a slider", () => {
     const html = render(programmes);
-    expect(html.match(/player-epg-timeline__tick /g)?.length ?? 0).toBeGreaterThanOrEqual(12);
-    expect(html).toContain("is-hour");
-    expect(html).toContain("is-half");
-    expect(html).toContain("is-minor");
+    expect(html.match(/data-tier="/g)?.length ?? 0).toBeGreaterThanOrEqual(12);
+    expect(html).toContain('data-tier="hour"');
+    expect(html).toContain('data-tier="half"');
+    expect(html).toContain('data-tier="minor"');
     expect(html).toContain('role="slider"');
     expect(html).toContain('aria-label="Program timeline"');
     // The ruler reports a position even before the 1 Hz playhead takes over the attribute.
@@ -121,16 +119,16 @@ describe("PlayerEpgTimeline", () => {
 
   it("renders the hour grid, pan controls and current-time clock", () => {
     const html = render(programmes);
-    expect(html).toContain("player-epg-timeline__grid");
     expect(html).toContain("--epg-hour-width");
     expect(html).toContain('title="Earlier 30 minutes"');
     expect(html).toContain('title="Later 30 minutes"');
-    expect(html).toContain("player-epg-timeline__clock");
+    // The toolbar clock carries seconds; the ruler and blocks only name minutes.
+    expect(html).toMatch(/title="\d{1,2}:\d{2}:\d{2}[^"]*"/);
   });
 
   it("renders nothing but the empty band without guide data", () => {
     const html = render([]);
-    expect(html).toContain("player-epg-timeline__track");
+    expect(html).toContain('role="slider"');
     expect(html).not.toContain("data-epg-block-id");
   });
 });
