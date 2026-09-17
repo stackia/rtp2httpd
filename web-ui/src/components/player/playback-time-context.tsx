@@ -25,3 +25,12 @@ export function usePlaybackTime(): number {
     clock?.getSnapshot ?? zero,
   );
 }
+
+/**
+ * The clock itself, for consumers that must not re-render at 1 Hz: the EPG timeline reads it
+ * imperatively and only commits state when the value it derives (the snapped window anchor)
+ * actually changes.
+ */
+export function usePlaybackClock(): PlaybackClock | null {
+  return useContext(PlaybackClockContext);
+}
