@@ -34,11 +34,11 @@ const base: TranslationDict = {
   excellentProgram: "Excellent Program",
 
   // EPG timeline band
-  epgTimelineLabel: "Programme timeline",
+  epgTimelineLabel: "Program timeline",
   epgPanEarlier: "Earlier 30 minutes",
   epgPanLater: "Later 30 minutes",
   epgFollowPlayback: "Follow playback",
-  epgNotAiredYet: "This programme has not started yet",
+  epgNotAiredYet: "This program has not started yet",
   epgCatchupUnsupported: "This channel has no catch-up source",
   epgCatchupConfirmTitle: "Replay from catch-up?",
   epgCatchupConfirmBody: "The upstream catch-up source may not cover this period, so playback can fail.",

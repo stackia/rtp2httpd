@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, History } from "lucide-react";
 import {
   memo,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -16,13 +17,14 @@ import { useWallClockSecond } from "../../hooks/use-wall-clock-second";
 import type { TranslationKey } from "../../i18n/player";
 import {
   chooseEpgTickMinutes,
+  clampEpgPan,
   clampPercent,
-  clampToRange,
   createEpgAxisLabels,
   createEpgTicks,
   createEpgTimelineBlocks,
   createEpgTimelineWindow,
   EPG_PAN_MINUTES,
+  EPG_WHEEL_STEP_PX,
   EPG_WINDOW_MINUTES_AFTER,
   EPG_WINDOW_MINUTES_BEFORE,
   type EpgAxisLabel,
@@ -32,6 +34,7 @@ import {
   getLocalDayOffset,
   getLocalDayStart,
   isTimeInWindow,
+  normalizeWheelDelta,
   percentToTime,
   resolveEpgTapAction,
   snapToTick,
@@ -50,8 +53,9 @@ import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
  * A bounded, pannable window (±90 minutes around playback) rather than a scroll container: the
  * guide can be panned across days without the DOM ever holding more than the programmes that
  * intersect the window, and the fine grid is a CSS gradient instead of one node per tick. The
- * band owns three interactions — scrub the playhead, click a programme to replay it, and hover
- * for details — plus panning by buttons, wheel or touch drag.
+ * band owns three pointer interactions — scrub the playhead, click a programme to replay it, and
+ * hover for details — and pans through the ◀ ▶ buttons, the mouse wheel, or ← / → while the ruler
+ * has focus. Dragging inside the band always scrubs; it never pans.
  */
 
 interface PlayerEpgTimelineProps {
@@ -90,6 +94,10 @@ const NOTICE_DURATION_MS = 2600;
 const TOOLTIP_EDGE_PADDING_PX = 12;
 /** Breathing room kept between two ruler labels before one of them is dropped. */
 const AXIS_LABEL_GAP_PX = 6;
+/** A playhead further ahead of the wall clock than this is a stale clock, not a seek target. */
+const MAX_PLAUSIBLE_LEAD_MS = 60_000;
+/** A wheel pause longer than this starts a fresh gesture instead of continuing the last one. */
+const WHEEL_GESTURE_GAP_MS = 250;
 
 let clockFormatter: Intl.DateTimeFormat | null = null;
 let preciseClockFormatter: Intl.DateTimeFormat | null = null;
@@ -195,13 +203,28 @@ const EpgNowClock = memo(function EpgNowClock() {
 const EpgPlayhead = memo(function EpgPlayhead({
   timelineWindow,
   seekStartTime,
+  ariaTargetRef,
 }: {
   timelineWindow: EpgTimelineWindow;
   seekStartTime: Date;
+  /** The ruler element whose aria-valuenow / aria-valuetext report this position. */
+  ariaTargetRef?: RefObject<HTMLElement | null>;
 }) {
   const mediaTime = usePlaybackTime();
   const playbackMs = mseToWallClock(mediaTime, seekStartTime).getTime();
-  if (!Number.isFinite(playbackMs) || !isTimeInWindow(timelineWindow, playbackMs)) return null;
+  const inWindow = Number.isFinite(playbackMs) && isTimeInWindow(timelineWindow, playbackMs);
+
+  // Written imperatively rather than through props: the ruler must report the playhead, not the
+  // wall clock, and re-rendering the whole band once a second to say so is exactly what the
+  // 1 Hz isolation avoids.
+  useEffect(() => {
+    const target = ariaTargetRef?.current;
+    if (!target || !Number.isFinite(playbackMs)) return;
+    target.setAttribute("aria-valuenow", String(Math.round(clampPercent(timeToPercent(timelineWindow, playbackMs)))));
+    target.setAttribute("aria-valuetext", formatClockSeconds(playbackMs));
+  }, [ariaTargetRef, playbackMs, timelineWindow]);
+
+  if (!inWindow) return null;
   return (
     <div
       aria-hidden="true"
@@ -236,6 +259,7 @@ function PlayerEpgTimelineComponent({
   const previewTitleRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
   const frameRef = useRef(0);
   const pointerXRef = useRef<number | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -281,7 +305,12 @@ function PlayerEpgTimelineComponent({
     if (manualAnchorMs !== null) return;
     const sync = () => {
       const playbackMs = mseToWallClock(clock?.get() ?? 0, seekStartTime).getTime();
-      const next = snapToTick(Number.isFinite(playbackMs) ? playbackMs : Date.now(), TICK_MINUTES);
+      if (!Number.isFinite(playbackMs)) return;
+      // Right after a seek or a channel change the media clock can still hold the previous
+      // stream's position, which would place the playhead hours into the future for a frame.
+      // A playhead ahead of the wall clock is never real, so that sample is ignored.
+      if (playbackMs > Date.now() + MAX_PLAUSIBLE_LEAD_MS) return;
+      const next = snapToTick(playbackMs, TICK_MINUTES);
       setAnchorMs((previous) => (previous === next ? previous : next));
     };
     sync();
@@ -303,29 +332,84 @@ function PlayerEpgTimelineComponent({
 
   const pan = useCallback(
     (deltaMinutes: number) => {
-      // Pans from where the window is now, which is the followed anchor until the first pan.
-      setManualAnchorMs(clampToRange(windowAnchorMs + deltaMinutes * 60_000, anchorBounds));
+      // Functional update: one wheel event may spend several steps at once, and each has to build
+      // on the previous one instead of on the anchor this render captured. Pans from where the
+      // window is now, which is the followed anchor until the first pan.
+      setManualAnchorMs((previous) => clampEpgPan(previous ?? anchorMs, deltaMinutes * 60_000, anchorBounds));
     },
-    [windowAnchorMs, anchorBounds],
+    [anchorMs, anchorBounds],
   );
 
   const followPlayback = useCallback(() => {
     setManualAnchorMs(null);
   }, []);
 
-  // The wheel pans the ruler and must not reach the page or the player's own gestures.
+  // The wheel pans the ruler and must not reach the page or the player's own gestures. A trackpad
+  // reports a flick as dozens of small deltas, so travel is accumulated and spent in whole steps;
+  // the accumulator is dropped when the direction turns or the gesture pauses.
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
+    let travelPx = 0;
+    let lastEventAt = 0;
+
     const handleWheel = (event: WheelEvent) => {
-      if (event.deltaY === 0) return;
+      const now = Date.now();
+      if (now - lastEventAt > WHEEL_GESTURE_GAP_MS) travelPx = 0;
+      lastEventAt = now;
+
+      const delta = normalizeWheelDelta(event.deltaX, event.deltaY, event.deltaMode);
+      if (delta === 0) return;
       event.preventDefault();
       event.stopPropagation();
-      pan(event.deltaY > 0 ? EPG_PAN_MINUTES : -EPG_PAN_MINUTES);
+
+      if (travelPx !== 0 && Math.sign(delta) !== Math.sign(travelPx)) travelPx = 0;
+      travelPx += delta;
+      while (Math.abs(travelPx) >= EPG_WHEEL_STEP_PX) {
+        const step = Math.sign(travelPx);
+        travelPx -= step * EPG_WHEEL_STEP_PX;
+        pan(step * EPG_PAN_MINUTES);
+      }
     };
+
     root.addEventListener("wheel", handleWheel, { passive: false });
     return () => root.removeEventListener("wheel", handleWheel);
   }, [pan]);
+
+  // Keyboard panning for the focusable ruler. Registered natively so the player's global arrow
+  // shortcuts (±5 s seek, channel zap) do not also fire while the ruler has focus.
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      switch (event.key) {
+        case "ArrowLeft":
+          pan(-EPG_PAN_MINUTES);
+          break;
+        case "ArrowRight":
+          pan(EPG_PAN_MINUTES);
+          break;
+        case "Home":
+          followPlayback();
+          break;
+        default:
+          return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    track.addEventListener("keydown", handleKeyDown);
+    return () => track.removeEventListener("keydown", handleKeyDown);
+  }, [pan, followPlayback]);
+
+  // A confirmation is a dialog: focus moves to its primary action, and back to the ruler when it
+  // closes, so keyboard users are never left without a focus target.
+  const confirmingCatchup = action?.kind === "confirm-catchup";
+  useEffect(() => {
+    if (!confirmingCatchup) return;
+    confirmButtonRef.current?.focus();
+    return () => trackRef.current?.focus();
+  }, [confirmingCatchup]);
 
   // Prompts and notices close on an outside press or Escape.
   useEffect(() => {
@@ -630,6 +714,33 @@ function PlayerEpgTimelineComponent({
     return drag;
   }, []);
 
+  /**
+   * The decision table, applied. Shared by the pointer tap and by an assistive-technology
+   * activation of a programme block, so both take the same path.
+   */
+  const runTapAction = useCallback(
+    (timeMs: number, anchorPercent: number) => {
+      const tapAction = resolveEpgTapAction(programs, timeMs, Date.now(), supportsCatchup);
+      switch (tapAction.kind) {
+        case "seek":
+          seekTo(tapAction.timeMs);
+          return;
+        case "go-live":
+          onSeek(new Date());
+          return;
+        case "notice":
+          showNotice(
+            tapAction.reason === "not-aired" ? t("epgNotAiredYet") : t("epgCatchupUnsupported"),
+            anchorPercent,
+          );
+          return;
+        case "confirm-catchup":
+          setAction({ kind: "confirm-catchup", program: tapAction.program, anchorPercent });
+      }
+    },
+    [onSeek, programs, seekTo, showNotice, supportsCatchup, t],
+  );
+
   const handleTrackPointerUp = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       const drag = endDrag(event.pointerId);
@@ -649,26 +760,9 @@ function PlayerEpgTimelineComponent({
 
       // A press without travel is a click: the pure decision table turns the moment under the
       // pointer into one of seek / go live / ask about catch-up / explain why nothing happens.
-      const anchorPercent = clampPercent(timeToPercent(timelineWindow, timeMs));
-      const tapAction = resolveEpgTapAction(programs, timeMs, Date.now(), supportsCatchup);
-      switch (tapAction.kind) {
-        case "seek":
-          seekTo(tapAction.timeMs);
-          return;
-        case "go-live":
-          onSeek(new Date());
-          return;
-        case "notice":
-          showNotice(
-            tapAction.reason === "not-aired" ? t("epgNotAiredYet") : t("epgCatchupUnsupported"),
-            anchorPercent,
-          );
-          return;
-        case "confirm-catchup":
-          setAction({ kind: "confirm-catchup", program: tapAction.program, anchorPercent });
-      }
+      runTapAction(timeMs, clampPercent(timeToPercent(timelineWindow, timeMs)));
     },
-    [endDrag, onSeek, programs, resolvePointerTime, seekTo, showNotice, supportsCatchup, t, timelineWindow],
+    [endDrag, resolvePointerTime, runTapAction, seekTo, supportsCatchup, timelineWindow],
   );
 
   const handleTrackPointerCancel = useCallback(
@@ -766,8 +860,10 @@ function PlayerEpgTimelineComponent({
         aria-label={t("epgTimelineLabel")}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={Math.round(clampPercent(timeToPercent(timelineWindow, nowMinuteMs)))}
-        aria-valuetext={formatClockSeconds(nowMinuteMs)}
+        // Seeded from the followed anchor (the snapped playhead) and kept exact by EpgPlayhead,
+        // which owns the 1 Hz clock: the ruler reports where playback is, not the wall clock.
+        aria-valuenow={Math.round(clampPercent(timeToPercent(timelineWindow, windowAnchorMs)))}
+        aria-valuetext={formatClockSeconds(windowAnchorMs)}
         className={clsx("player-epg-timeline__track touch-none select-none", supportsCatchup && "is-seekable")}
         onPointerDown={handleTrackPointerDown}
         onPointerMove={handleTrackPointerMove}
@@ -782,34 +878,51 @@ function PlayerEpgTimelineComponent({
           style={{ ["--epg-hour-width" as string]: `${(60 / WINDOW_SPAN_MINUTES) * 100}%` }}
         />
 
-        {blocks.map((block) => (
-          <div
-            key={block.program.id}
-            data-epg-block-id={block.program.id}
-            className={clsx(
-              "player-epg-timeline__block",
-              block.state === "past" && "is-past",
-              block.state === "live" && "is-live",
-              block.state === "future" && "is-future",
-              block.catchup && "is-catchup",
-              block.playable && "is-playable",
-            )}
-            style={{ left: `${block.leftPercent}%`, width: `calc(${block.widthPercent}% - 2px)` }}
-          >
-            <span className="player-epg-timeline__block-time tabular-nums">
-              {formatRulerClock(block.program.start.getTime())}
-            </span>
-            <span className="player-epg-timeline__block-clip">
-              <span className="player-performance-motion player-epg-timeline__block-title" data-epg-marquee>
-                {block.program.title || t("excellentProgram")}
+        {blocks.map((block) => {
+          const title = block.program.title || t("excellentProgram");
+          return (
+            <button
+              key={block.program.id}
+              type="button"
+              data-epg-block-id={block.program.id}
+              // A real button so assistive tech can activate a programme, but out of the tab order:
+              // the ruler itself is the keyboard control. Pointer taps are handled by the track, so
+              // only a synthesised activation (detail === 0) is taken here, which avoids acting twice.
+              tabIndex={-1}
+              disabled={!block.playable}
+              aria-label={`${title}, ${formatRange(block.program.start.getTime(), block.program.end.getTime())}`}
+              onClick={(event) => {
+                if (event.detail !== 0) return;
+                runTapAction(
+                  block.program.start.getTime(),
+                  clampPercent(timeToPercent(timelineWindow, block.program.start.getTime())),
+                );
+              }}
+              className={clsx(
+                "player-epg-timeline__block",
+                block.state === "past" && "is-past",
+                block.state === "live" && "is-live",
+                block.state === "future" && "is-future",
+                block.catchup && "is-catchup",
+                block.playable && "is-playable",
+              )}
+              style={{ left: `${block.leftPercent}%`, width: `calc(${block.widthPercent}% - 2px)` }}
+            >
+              <span className="player-epg-timeline__block-time tabular-nums">
+                {formatRulerClock(block.program.start.getTime())}
               </span>
-            </span>
-            {block.catchup && <History className="player-epg-timeline__block-icon" aria-hidden="true" />}
-          </div>
-        ))}
+              <span className="player-epg-timeline__block-clip">
+                <span className="player-epg-timeline__block-title" data-epg-marquee>
+                  {title}
+                </span>
+              </span>
+              {block.catchup && <History className="player-epg-timeline__block-icon" aria-hidden="true" />}
+            </button>
+          );
+        })}
 
         <EpgNowMarker timelineWindow={timelineWindow} />
-        <EpgPlayhead timelineWindow={timelineWindow} seekStartTime={seekStartTime} />
+        <EpgPlayhead timelineWindow={timelineWindow} seekStartTime={seekStartTime} ariaTargetRef={trackRef} />
       </div>
 
       {/* The scrub preview and the prompts sit outside the track: the track clips its blocks,
@@ -827,14 +940,12 @@ function PlayerEpgTimelineComponent({
         </span>
       </span>
 
-      {action && (
+      {action?.kind === "confirm-catchup" && (
         <div
           ref={popoverRef}
-          className={clsx(
-            PLAYER_OVERLAY_SURFACE_CLASS,
-            "player-epg-timeline__popover",
-            action.kind === "confirm-catchup" ? "is-confirm" : "is-notice",
-          )}
+          role="dialog"
+          aria-label={t("epgCatchupConfirmTitle")}
+          className={clsx(PLAYER_OVERLAY_SURFACE_CLASS, "player-epg-timeline__popover", "is-confirm")}
           style={{
             // 7.5rem is half the prompt's width, so it can never be pushed past either edge.
             left: `clamp(7.5rem, ${action.anchorPercent}%, calc(100% - 7.5rem))`,
@@ -842,31 +953,42 @@ function PlayerEpgTimelineComponent({
         >
           <PlayerSelectedGlassLayers compact />
           <div className="relative z-10">
-            {action.kind === "confirm-catchup" ? (
-              <>
-                <p className="text-xs font-semibold text-blue-50">{t("epgCatchupConfirmTitle")}</p>
-                <p className="mt-0.5 text-[11px] text-blue-50/80">
-                  {action.program.title || t("excellentProgram")} ·{" "}
-                  {formatRange(action.program.start.getTime(), action.program.end.getTime())}
-                </p>
-                <p className="mt-1 text-[11px] leading-4 text-blue-50/60">{t("epgCatchupConfirmBody")}</p>
-                <div className="mt-2 flex items-center justify-end gap-1.5">
-                  <button type="button" className="player-epg-timeline__popover-button" onClick={dismissAction}>
-                    {t("epgCancel")}
-                  </button>
-                  <button
-                    type="button"
-                    className={clsx("player-epg-timeline__popover-button", "is-primary")}
-                    onClick={confirmCatchup}
-                  >
-                    {t("epgConfirm")}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="text-xs font-medium text-blue-50">{action.message}</p>
-            )}
+            <p className="text-xs font-semibold text-blue-50">{t("epgCatchupConfirmTitle")}</p>
+            <p className="mt-0.5 text-[11px] text-blue-50/80">
+              {action.program.title || t("excellentProgram")} ·{" "}
+              {formatRange(action.program.start.getTime(), action.program.end.getTime())}
+            </p>
+            <p className="mt-1 text-[11px] leading-4 text-blue-50/60">{t("epgCatchupConfirmBody")}</p>
+            <div className="mt-2 flex items-center justify-end gap-1.5">
+              <button type="button" className="player-epg-timeline__popover-button" onClick={dismissAction}>
+                {t("epgCancel")}
+              </button>
+              <button
+                ref={confirmButtonRef}
+                type="button"
+                className={clsx("player-epg-timeline__popover-button", "is-primary")}
+                onClick={confirmCatchup}
+              >
+                {t("epgConfirm")}
+              </button>
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* role="status" is already a polite live region, and the notice retires on its own. */}
+      {action?.kind === "notice" && (
+        <div
+          ref={popoverRef}
+          role="status"
+          className={clsx(PLAYER_OVERLAY_SURFACE_CLASS, "player-epg-timeline__popover", "is-notice")}
+          style={{
+            // 7.5rem is half the prompt's width, so it can never be pushed past either edge.
+            left: `clamp(7.5rem, ${action.anchorPercent}%, calc(100% - 7.5rem))`,
+          }}
+        >
+          <PlayerSelectedGlassLayers compact />
+          <p className="relative z-10 text-xs font-medium text-blue-50">{action.message}</p>
         </div>
       )}
 

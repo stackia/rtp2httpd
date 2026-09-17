@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EPGProgram } from "../types/player";
 import {
   chooseEpgTickMinutes,
+  clampEpgPan,
   clampPercent,
   clampToRange,
   createEpgAxisLabels,
@@ -15,6 +16,7 @@ import {
   getLocalDayStart,
   isTimeInWindow,
   MINUTE_MS,
+  normalizeWheelDelta,
   percentToTime,
   resolveEpgTapAction,
   snapToTick,
@@ -308,6 +310,56 @@ describe("getEpgAnchorBounds", () => {
   });
 });
 
+describe("clampEpgPan", () => {
+  const bounds = { minMs: 1000, maxMs: 2000 };
+
+  it("moves freely inside the bounds", () => {
+    expect(clampEpgPan(1500, 100, bounds)).toBe(1600);
+    expect(clampEpgPan(1500, -100, bounds)).toBe(1400);
+  });
+
+  it("stops at a bound instead of jumping across it", () => {
+    // Regression: clamping the target alone dragged the window backwards when the followed
+    // anchor already sat past the bound (playback near the end of the guide).
+    expect(clampEpgPan(2500, 100, bounds)).toBe(2500);
+    expect(clampEpgPan(500, -100, bounds)).toBe(500);
+  });
+
+  it("still clamps a move that starts inside and overshoots", () => {
+    expect(clampEpgPan(1950, 100, bounds)).toBe(2000);
+    expect(clampEpgPan(1050, -100, bounds)).toBe(1000);
+  });
+
+  it("pans without bounds when the guide is too short to bound it", () => {
+    expect(clampEpgPan(1500, 100, null)).toBe(1600);
+  });
+});
+
+describe("normalizeWheelDelta", () => {
+  it("passes pixels through", () => {
+    expect(normalizeWheelDelta(0, 40, 0)).toBe(40);
+    expect(normalizeWheelDelta(0, -40, 0)).toBe(-40);
+  });
+
+  it("scales lines and pages into pixels", () => {
+    expect(normalizeWheelDelta(0, 3, 1)).toBe(48);
+    expect(normalizeWheelDelta(0, 1, 2)).toBe(100);
+  });
+
+  it("accepts a horizontal swipe on a horizontal ruler", () => {
+    expect(normalizeWheelDelta(-30, 0, 0)).toBe(-30);
+  });
+
+  it("follows the axis the gesture pushed harder", () => {
+    expect(normalizeWheelDelta(5, -40, 0)).toBe(-40);
+    expect(normalizeWheelDelta(-40, 5, 0)).toBe(-40);
+  });
+
+  it("reports no travel for a pure tap or a zero delta", () => {
+    expect(normalizeWheelDelta(0, 0, 0)).toBe(0);
+  });
+});
+
 describe("resolveEpgTapAction", () => {
   const now = local(12).getTime();
   const past = program(11, 0, 12, 0);
@@ -344,5 +396,20 @@ describe("resolveEpgTapAction", () => {
       kind: "notice",
       reason: "catchup-unsupported",
     });
+  });
+
+  it("refuses a gap in the past when the source cannot replay", () => {
+    // Regression: a gap tap returned a seek even without catch-up, which the player then tried
+    // to serve as a catch-up URL.
+    const pastGapMs = local(11, 30).getTime();
+    expect(resolveEpgTapAction([live, future], pastGapMs, now, false)).toEqual({
+      kind: "notice",
+      reason: "catchup-unsupported",
+    });
+  });
+
+  it("still treats a gap at or after now as going live without catch-up", () => {
+    const futureGapMs = local(13, 30).getTime();
+    expect(resolveEpgTapAction([past], futureGapMs, now, false)).toEqual({ kind: "go-live" });
   });
 });

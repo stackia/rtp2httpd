@@ -243,6 +243,10 @@ export function createEpgTimelineBlocks(
  * The programme covering `timeMs`, matching `getCurrentProgram`'s "last started, not yet ended"
  * rule but via binary search: the drag preview resolves this on every animation frame.
  * `programs` must be sorted by start time.
+ *
+ * XMLTV allows rows to overlap, so the last row that *started* is not necessarily the one on air:
+ * the walk continues backwards to the last row that is still running, exactly like
+ * `getCurrentProgram`'s `findLast(start <= t && end > t)`.
  */
 export function findEpgProgramAt(programs: readonly EPGProgram[], timeMs: number): EPGProgram | null {
   let low = 0;
@@ -259,9 +263,12 @@ export function findEpgProgramAt(programs: readonly EPGProgram[], timeMs: number
     }
   }
 
-  if (index < 0) return null;
-  const program = programs[index];
-  return program.end.getTime() > timeMs ? program : null;
+  for (let candidate = index; candidate >= 0; candidate--) {
+    const program = programs[candidate];
+    if (program.start.getTime() > timeMs) break;
+    if (program.end.getTime() > timeMs) return program;
+  }
+  return null;
 }
 
 /**
@@ -295,6 +302,44 @@ export function clampToRange(value: number, range: { minMs: number; maxMs: numbe
   return Math.min(range.maxMs, Math.max(range.minMs, value));
 }
 
+/**
+ * Where a pan should leave the anchor.
+ *
+ * The followed anchor is not clamped to the guide (playback can sit past the last programme), so
+ * clamping the *target* on its own would drag the window backwards when the user asks to move
+ * forwards near either end of the guide. Panning therefore only ever moves the window in the
+ * direction that was asked for, and simply stops at the boundary.
+ */
+export function clampEpgPan(
+  anchorMs: number,
+  deltaMs: number,
+  bounds: { minMs: number; maxMs: number } | null,
+): number {
+  const target = anchorMs + deltaMs;
+  if (!bounds) return target;
+  const bounded = clampToRange(target, bounds);
+  return deltaMs < 0 ? Math.min(anchorMs, bounded) : Math.max(anchorMs, bounded);
+}
+
+/**
+ * Mouse-wheel travel in pixels, with the two other delta modes normalised and both axes
+ * considered: a horizontal ruler responds to a horizontal swipe, and a trackpad's stream of
+ * small deltas is accumulated by the caller rather than applied event by event.
+ */
+export function normalizeWheelDelta(deltaX: number, deltaY: number, deltaMode: number): number {
+  // 0 = pixels, 1 = lines (~16 px), 2 = pages (~100 px)
+  const scale = deltaMode === 1 ? 16 : deltaMode === 2 ? 100 : 1;
+  const horizontal = deltaX * scale;
+  const vertical = deltaY * scale;
+  if (vertical === 0) return horizontal;
+  if (horizontal === 0) return vertical;
+  // A diagonal gesture belongs to the axis the user pushed harder.
+  return Math.abs(horizontal) > Math.abs(vertical) ? horizontal : vertical;
+}
+
+/** Wheel travel (px) that pans the window by one step. */
+export const EPG_WHEEL_STEP_PX = 48;
+
 export type EpgTapAction =
   /** Landed in a gap, or after a scrub: play from that moment. */
   | { kind: "seek"; timeMs: number }
@@ -308,6 +353,10 @@ export type EpgTapAction =
 /**
  * What a click on the band should do, kept pure so the whole decision table is testable without
  * a DOM. `timeMs` is the moment under the pointer, `nowMs` the current wall clock.
+ *
+ * A source without catch-up can only ever play the live edge, so every tap that would land in
+ * the past is answered with the reason instead of a seek the player cannot serve — including a
+ * tap in a gap between programmes, which has no row to classify.
  */
 export function resolveEpgTapAction(
   programs: readonly EPGProgram[],
@@ -316,7 +365,10 @@ export function resolveEpgTapAction(
   supportsCatchup: boolean,
 ): EpgTapAction {
   const program = findEpgProgramAt(programs, timeMs);
-  if (!program) return { kind: "seek", timeMs };
+  if (!program) {
+    if (supportsCatchup) return { kind: "seek", timeMs };
+    return timeMs < nowMs ? { kind: "notice", reason: "catchup-unsupported" } : { kind: "go-live" };
+  }
 
   const state = getEpgProgramState(program, nowMs);
   if (state === "future") return { kind: "notice", reason: "not-aired" };
