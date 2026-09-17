@@ -628,6 +628,7 @@ function PlayerPage() {
               onError={handleVideoError}
               locale={locale}
               currentProgram={currentVideoProgram}
+              epgPrograms={catchupPrograms}
               catchupPrograms={catchupPrograms}
               onSeek={handleVideoSeek}
               onStreamStartTimeChange={setStreamStartTime}

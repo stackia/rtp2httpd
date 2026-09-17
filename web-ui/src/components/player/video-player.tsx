@@ -64,6 +64,8 @@ interface VideoPlayerProps {
   onError?: (error: string) => void;
   locale: Locale;
   currentProgram?: EPGProgram | null;
+  /** Every programme known for the current channel, for the EPG timeline band. */
+  epgPrograms?: readonly EPGProgram[];
   onSeek?: (seekTime: Date, goingLive: boolean) => void;
   /** Channel EPG programmes used to split catchup playseek windows and to rebuild URLs on retry. */
   catchupPrograms?: readonly Pick<EPGProgram, "start" | "end">[];
@@ -252,6 +254,7 @@ function VideoPlayerComponent({
   locale,
   playMode,
   currentProgram = null,
+  epgPrograms,
   catchupPrograms = [],
   onSeek,
   onStreamStartTimeChange,
@@ -2005,6 +2008,7 @@ function VideoPlayerComponent({
           <PlayerControls
             channel={channel}
             currentProgram={currentProgram}
+            epgPrograms={epgPrograms}
             isLive={isLive}
             onSeek={handleSeek}
             onScrubbingChange={handleScrubbingChange}

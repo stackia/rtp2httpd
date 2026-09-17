@@ -22,6 +22,7 @@ import { isNearLiveWallClock, type LiveSessionAnchor, mseToWallClock } from "../
 import type { Channel, EPGProgram } from "../../types/player";
 import { PLAYER_CONTROL_BUTTON_CLASS, PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 import { usePlaybackTime } from "./playback-time-context";
+import { PlayerEpgTimeline } from "./player-epg-timeline";
 import { PlayerMediaBadges } from "./player-media-badges";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
@@ -30,6 +31,8 @@ interface PlayerControlsProps {
   channel: Channel;
   // EPG program information
   currentProgram: EPGProgram | null;
+  // Every programme known for the current channel, for the EPG timeline band
+  epgPrograms?: readonly EPGProgram[];
   // Whether we're in live mode or catchup mode
   isLive: boolean;
   // Callback when user seeks to a new position
@@ -71,6 +74,9 @@ interface PlayerControlsProps {
 const COMPACT_BUTTON_CLASS = "[@container_video_(max-height:_320px)]:p-1 md:[@container_video_(max-height:_320px)]:p-1";
 const COMPACT_ICON_CLASS =
   "[@container_video_(max-height:_320px)]:h-4 [@container_video_(max-height:_320px)]:w-4 md:[@container_video_(max-height:_320px)]:h-4 md:[@container_video_(max-height:_320px)]:w-4";
+
+/** Shared identity, so a channel without guide data does not re-render the timeline band. */
+const NO_EPG_PROGRAMS: readonly EPGProgram[] = [];
 
 function formatTime(date: Date, withSeconds = false) {
   return date.toLocaleTimeString([], {
@@ -379,6 +385,7 @@ const PlayerTimeDisplay = memo(function PlayerTimeDisplay({
 function PlayerControlsComponent({
   channel,
   currentProgram,
+  epgPrograms = NO_EPG_PROGRAMS,
   isLive,
   onSeek,
   onScrubbingChange,
@@ -419,6 +426,18 @@ function PlayerControlsComponent({
         "[@container_video_(max-height:_320px)]:gap-0.5 [@container_video_(max-height:_320px)]:pt-2 [@container_video_(max-height:_320px)]:pb-0.5 md:[@container_video_(max-height:_320px)]:gap-0.5 md:[@container_video_(max-height:_320px)]:pt-2 md:[@container_video_(max-height:_320px)]:pb-0.5 [@container_video_(max-height:_220px)]:pt-1 md:[@container_video_(max-height:_220px)]:pt-1",
       )}
     >
+      {epgPrograms.length > 0 && (
+        <PlayerEpgTimeline
+          programs={epgPrograms}
+          locale={locale}
+          liveSessionAnchor={liveSessionAnchor}
+          onScrubbingChange={onScrubbingChange}
+          onSeek={onSeek}
+          seekStartTime={seekStartTime}
+          supportsCatchup={isCatchupSupported}
+        />
+      )}
+
       {hasTimeline && (
         <PlayerTimeline
           channel={channel}

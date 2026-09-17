@@ -38,3 +38,14 @@ tools/stress-test/results/
 # iKuai package outputs
 ikuai-support/.staging/
 ikuai-support/dist/
+
+# Local build artifacts: cross-compiled test binaries and review screenshots
+/dist-openwrt/
+/.epg-preview/
+
+# Local analysis notes, not part of the repository
+/OPTIMIZATION_REPORT.md
+/PROJECT_ANALYSIS.md
+
+# Package store pnpm creates in the repo when no global store is configured
+/.pnpm-store/
