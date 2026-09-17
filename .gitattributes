@@ -1,0 +1,8 @@
+# Normalize line endings to LF.
+#
+# Upstream and CI always check out LF, but a Windows contributor with the default
+# core.autocrlf=true gets CRLF in the working tree. That makes local Biome/lint
+# results disagree with CI, and shell scripts fail in WSL/Git Bash with $'\r'.
+# The eol attribute takes precedence over core.autocrlf, so this keeps every
+# working copy on LF. The index already stores LF, so this adds no content diff.
+* text=auto eol=lf
