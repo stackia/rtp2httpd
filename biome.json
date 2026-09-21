@@ -30,5 +30,22 @@
     "rules": {
       "preset": "recommended"
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["docs/.vitepress/**/*.vue"],
+      "linter": {
+        "domains": {
+          "react": "none",
+          "vue": "recommended"
+        },
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          }
+        }
+      }
+    }
+  ]
 }

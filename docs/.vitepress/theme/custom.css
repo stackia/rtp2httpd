@@ -120,6 +120,10 @@
   padding-bottom: 54px;
 }
 
+.VPHomeFeatures .container {
+  max-width: 1180px;
+}
+
 .VPHomeHero .container {
   position: relative;
   max-width: 1180px;
@@ -402,10 +406,6 @@
 
 .VPHomeFeatures {
   padding: 0 24px 90px;
-}
-
-.VPHomeFeatures .container {
-  max-width: 1180px;
 }
 
 .VPHomeFeatures .items {
