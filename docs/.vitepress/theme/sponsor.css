@@ -1,0 +1,282 @@
+.home-sponsor {
+  position: relative;
+  z-index: 1;
+  padding: 24px 64px 0;
+}
+
+.home-sponsor__card {
+  --sponsor-highlight: 0;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr) 124px 36px;
+  gap: 28px;
+  align-items: center;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 18px 28px;
+  overflow: hidden;
+  border: 1px solid var(--rtp-glass-border);
+  border-radius: 24px;
+  color: hsl(var(--rtp-home-foreground));
+  background:
+    radial-gradient(ellipse at 98% 20%, hsl(190 85% 66% / 0.16), transparent 45%),
+    linear-gradient(115deg, hsl(0 0% 100% / 0.42), transparent 56%), var(--rtp-glass-background);
+  box-shadow: var(--rtp-glass-shadow);
+  cursor: pointer;
+  transition:
+    transform 240ms ease,
+    border-color 240ms ease,
+    box-shadow 240ms ease;
+  -webkit-backdrop-filter: blur(26px) saturate(145%);
+  backdrop-filter: blur(26px) saturate(145%);
+}
+
+.home-sponsor__card::after {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(110deg, hsl(var(--rtp-home-primary) / 0.07), hsl(var(--rtp-home-cyan) / 0.06));
+  opacity: var(--sponsor-highlight);
+  transition: opacity 240ms ease;
+}
+
+.home-sponsor__card::before {
+  position: absolute;
+  top: 0;
+  right: 8%;
+  left: 8%;
+  height: 1px;
+  content: "";
+  background: linear-gradient(90deg, transparent, hsl(252 100% 85% / 0.7), white, hsl(190 96% 70% / 0.6), transparent);
+}
+
+.home-sponsor__brand {
+  border-right: 1px solid hsl(var(--rtp-home-border) / 0.65);
+}
+
+.home-sponsor__label {
+  color: var(--vp-c-text-2);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+}
+
+.home-sponsor__identity {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.home-sponsor__identity img {
+  flex: 0 0 36px;
+}
+
+.home-sponsor__wordmark {
+  font-family: "Avenir Next", var(--vp-font-family-base);
+  font-size: 21px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -0.045em;
+  white-space: nowrap;
+}
+
+.home-sponsor__copy h2 {
+  margin: 0 0 5px;
+  font-size: 23px;
+  font-weight: 720;
+  line-height: 1.35;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.home-sponsor__source {
+  margin: 0;
+  color: var(--vp-c-text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.home-sponsor__link {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid hsl(var(--rtp-home-primary) / 0.18);
+  border-radius: 50%;
+  color: hsl(var(--rtp-home-primary));
+  background: hsl(var(--rtp-home-primary) / 0.065);
+  transition:
+    background-color 240ms ease,
+    border-color 240ms ease,
+    box-shadow 240ms ease;
+}
+
+.home-sponsor__link svg {
+  width: 17px;
+  height: 17px;
+}
+
+.home-sponsor__card:focus-visible {
+  --sponsor-highlight: 1;
+  border-color: hsl(var(--rtp-home-primary) / 0.35);
+}
+
+.home-sponsor__card:focus-visible .home-sponsor__link {
+  border-color: hsl(var(--rtp-home-primary) / 0.45);
+  background-color: hsl(var(--rtp-home-primary) / 0.18);
+  box-shadow: 0 0 18px hsl(var(--rtp-home-primary) / 0.16);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .home-sponsor__card:hover {
+    --sponsor-highlight: 1;
+    border-color: hsl(var(--rtp-home-primary) / 0.35);
+    box-shadow:
+      var(--rtp-glass-shadow),
+      0 12px 32px -18px hsl(var(--rtp-home-primary) / 0.4);
+    transform: translateY(-2px);
+  }
+
+  .home-sponsor__card:hover .home-sponsor__link {
+    border-color: hsl(var(--rtp-home-primary) / 0.45);
+    background-color: hsl(var(--rtp-home-primary) / 0.18);
+    box-shadow: 0 0 18px hsl(var(--rtp-home-primary) / 0.16);
+  }
+
+  .home-sponsor__card:active {
+    transform: translateY(0);
+  }
+}
+
+.home-sponsor__card:active .home-sponsor__link {
+  background: hsl(var(--rtp-home-primary) / 0.2);
+}
+
+.home-sponsor__card:focus-visible {
+  outline: 3px solid hsl(var(--rtp-home-primary));
+  outline-offset: 4px;
+}
+
+.home-sponsor__infinity {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  filter: drop-shadow(0 8px 10px hsl(220 80% 54% / 0.2));
+  transform: rotate(-8deg);
+}
+
+.dark .home-sponsor__card {
+  background:
+    radial-gradient(ellipse at 98% 20%, hsl(190 85% 56% / 0.1), transparent 45%),
+    linear-gradient(115deg, hsl(0 0% 100% / 0.055), transparent 56%), var(--rtp-glass-background);
+}
+
+.VPHome .home-sponsor + .VPHomeHero {
+  margin-top: 0;
+  padding-top: 24px;
+  padding-inline: 64px;
+}
+
+@media (max-width: 1100px) {
+  .home-sponsor__card {
+    grid-template-columns: 225px minmax(0, 1fr) 36px;
+    gap: 24px;
+  }
+
+  .home-sponsor__art {
+    display: none;
+  }
+}
+
+@media (max-width: 959px) {
+  .home-sponsor {
+    padding-inline: 32px;
+  }
+
+  .VPHome .home-sponsor + .VPHomeHero {
+    padding-inline: 32px;
+  }
+
+  .home-sponsor__card {
+    grid-template-columns: 205px minmax(0, 1fr) 36px;
+    gap: 18px;
+    padding-inline: 22px;
+  }
+
+  .home-sponsor__wordmark {
+    font-size: 19px;
+  }
+}
+
+@media (max-width: 767px) {
+  .home-sponsor__card {
+    grid-template-columns: minmax(0, 1fr) 36px;
+    gap: 12px;
+  }
+
+  .home-sponsor__brand {
+    display: flex;
+    grid-column: 1 / -1;
+    flex-direction: row-reverse;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-right: 0;
+  }
+
+  .home-sponsor__identity {
+    margin: 0;
+  }
+
+  .home-sponsor__identity img {
+    flex-basis: 28px;
+    width: 28px;
+    height: 28px;
+  }
+
+  .home-sponsor__copy h2 {
+    font-size: 21px;
+  }
+}
+
+@media (max-width: 639px) {
+  .home-sponsor {
+    padding: 16px 18px 0;
+  }
+
+  .home-sponsor__card {
+    padding: 16px 18px;
+    border-radius: 22px;
+  }
+
+  .home-sponsor__wordmark {
+    font-size: 18px;
+  }
+
+  .home-sponsor__source {
+    font-size: 12px;
+  }
+
+  .VPHome .home-sponsor + .VPHomeHero {
+    padding-top: 20px;
+    padding-inline: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-sponsor__card,
+  .home-sponsor__card::after,
+  .home-sponsor__link {
+    transition: none;
+  }
+
+  .home-sponsor__card:hover {
+    transform: none;
+  }
+}
