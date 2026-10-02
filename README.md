@@ -1,3 +1,5 @@
+[<img width="2171" height="238" alt="token-unlimited-sponsorship" src="https://github.com/user-attachments/assets/97fce998-e0ed-4335-ad9c-a880b4fafc12" />](https://token-unlimited.com/?utm_source=rtp2httpd&utm_medium=display&utm_campaign=2026_sept_promo&utm_content=github_banner)
+
 # <img src="./web-ui/public/assets/icon-192.png" width="24" height="24"> rtp2httpd - IPTV 流媒体转发服务器
 
 [>> 访问官方文档网站 <<](https://rtp2httpd.com)

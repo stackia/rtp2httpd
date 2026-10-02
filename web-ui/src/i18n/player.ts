@@ -33,6 +33,16 @@ const base: TranslationDict = {
   nowPlaying: "Now Playing",
   excellentProgram: "Excellent Program",
 
+  // EPG timeline band
+  epgTimelineLabel: "Program timeline",
+  epgPanEarlier: "Earlier",
+  epgPanLater: "Later",
+  epgBackToPlayback: "Back to playback",
+  epgNotAiredYet: "This program has not started yet",
+  epgCatchupUnsupported: "This channel has no catch-up source",
+  epgNoCatchup: "No catch-up",
+  epgPlayFromStart: "Play from start",
+
   // Video player
   selectChannelToWatch: "Select a channel to start watching",
   loadingVideo: "Loading...",
@@ -165,6 +175,16 @@ const zhHans: TranslationDict = {
   nowPlaying: "正在播放",
   excellentProgram: "精彩节目",
 
+  // EPG timeline band
+  epgTimelineLabel: "节目时间轴",
+  epgPanEarlier: "向前",
+  epgPanLater: "向后",
+  epgBackToPlayback: "回到播放位置",
+  epgNotAiredYet: "该节目尚未播出",
+  epgCatchupUnsupported: "该频道没有回看源",
+  epgNoCatchup: "无回看",
+  epgPlayFromStart: "从头播放",
+
   // 视频播放器
   selectChannelToWatch: "选择一个频道开始观看",
   loadingVideo: "加载中...",
@@ -296,6 +316,16 @@ const zhHant: TranslationDict = {
   replay: "重播",
   nowPlaying: "正在播放",
   excellentProgram: "精彩節目",
+
+  // EPG timeline band
+  epgTimelineLabel: "節目時間軸",
+  epgPanEarlier: "向前",
+  epgPanLater: "向後",
+  epgBackToPlayback: "回到播放位置",
+  epgNotAiredYet: "該節目尚未播出",
+  epgCatchupUnsupported: "此頻道沒有回看來源",
+  epgNoCatchup: "無回看",
+  epgPlayFromStart: "從頭播放",
 
   // 視訊播放器
   selectChannelToWatch: "選擇一個頻道開始觀看",

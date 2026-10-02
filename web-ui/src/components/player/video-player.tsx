@@ -22,6 +22,7 @@ import {
   isPictureInPictureSupported,
   setupDocumentPiPWindow,
 } from "../../lib/document-picture-in-picture";
+import { isEditableKeyboardTarget } from "../../lib/keyboard";
 import type { Locale } from "../../lib/locale";
 import { buildCatchupSegments } from "../../lib/m3u-parser";
 import { isVolumeControlSupported } from "../../lib/platform";
@@ -64,6 +65,8 @@ interface VideoPlayerProps {
   onError?: (error: string) => void;
   locale: Locale;
   currentProgram?: EPGProgram | null;
+  /** Every programme known for the current channel, for the EPG timeline band. */
+  epgPrograms?: readonly EPGProgram[];
   onSeek?: (seekTime: Date, goingLive: boolean) => void;
   /** Channel EPG programmes used to split catchup playseek windows and to rebuild URLs on retry. */
   catchupPrograms?: readonly Pick<EPGProgram, "start" | "end">[];
@@ -176,17 +179,6 @@ function getEventDocument(event: Event): Document {
   return document;
 }
 
-function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-  if (!target || !("tagName" in target)) return false;
-  const tagName = String((target as { tagName?: unknown }).tagName).toUpperCase();
-  return (
-    tagName === "INPUT" ||
-    tagName === "TEXTAREA" ||
-    tagName === "SELECT" ||
-    !!(target as { isContentEditable?: boolean }).isContentEditable
-  );
-}
-
 function isDocumentBodyActive(targetDocument: Document): boolean {
   const activeElement = targetDocument.activeElement;
   return !activeElement || activeElement === targetDocument.body;
@@ -252,6 +244,7 @@ function VideoPlayerComponent({
   locale,
   playMode,
   currentProgram = null,
+  epgPrograms,
   catchupPrograms = [],
   onSeek,
   onStreamStartTimeChange,
@@ -1889,7 +1882,7 @@ function VideoPlayerComponent({
       {needsUserInteraction && (
         <button
           type="button"
-          className="player-performance-overlay-background player-performance-motion absolute inset-0 z-10 flex cursor-pointer items-center justify-center border-none bg-[radial-gradient(circle_at_center,rgba(18,50,91,0.78),rgba(2,6,23,0.94)_68%)] p-4 transition-[filter,background-color] backdrop-blur-[2px] hover:brightness-110"
+          className="player-performance-overlay-background player-performance-motion absolute inset-0 z-10 flex cursor-pointer items-center justify-center border-none bg-[radial-gradient(circle_at_center,rgba(18,50,91,0.84),rgba(2,6,23,0.94)_68%)] p-4 transition-[filter,background-color] hover:brightness-110"
           onClick={handleUserInteraction}
         >
           <div className="flex flex-col items-center gap-4 text-white">
@@ -1908,7 +1901,7 @@ function VideoPlayerComponent({
             role="alert"
             className={clsx(
               PLAYER_OVERLAY_SURFACE_CLASS,
-              "player-performance-warning-background pointer-events-auto w-full max-w-xl rounded-xl border-amber-200/25 bg-[linear-gradient(145deg,rgba(66,43,12,0.92),rgba(27,24,35,0.92))] p-3 text-white shadow-[0_16px_48px_rgba(24,13,2,0.48)] backdrop-blur-md md:p-4",
+              "player-performance-warning-background pointer-events-auto w-full max-w-xl rounded-xl border-amber-200/25 bg-[linear-gradient(145deg,rgba(66,43,12,0.92),rgba(27,24,35,0.92))] p-3 text-white shadow-[0_16px_48px_rgba(24,13,2,0.48)] md:p-4",
             )}
           >
             <div className="flex items-start gap-3">
@@ -1936,7 +1929,7 @@ function VideoPlayerComponent({
       )}
 
       {error && (
-        <div className="player-performance-error-backdrop player-performance-overlay-background absolute inset-0 z-10 flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(76,20,55,0.46),rgba(2,6,23,0.96)_72%)] p-3 backdrop-blur-[3px] md:p-4">
+        <div className="player-performance-error-backdrop player-performance-overlay-background absolute inset-0 z-10 flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(76,20,55,0.62),rgba(2,6,23,0.96)_72%)] p-3 md:p-4">
           <div
             className={clsx(
               PLAYER_OVERLAY_SURFACE_CLASS,
@@ -1992,6 +1985,10 @@ function VideoPlayerComponent({
       {channel && !error && !needsUserInteraction && (
         <div
           role="toolbar"
+          // Any press on the controls counts as activity. Touch has no hover to restart the hide
+          // timer, so without this the controls can vanish mid-way through a series of taps.
+          // Captured, because some controls stop the press from bubbling.
+          onPointerDownCapture={showControlsImmediately}
           className={clsx(
             "player-performance-controls-position player-performance-motion absolute bottom-0 left-[calc(0px_-_env(safe-area-inset-left))] right-[calc(0px_-_env(safe-area-inset-right))] z-10 transition-opacity duration-300",
             showSidebar && "md:right-0",
@@ -2005,6 +2002,7 @@ function VideoPlayerComponent({
           <PlayerControls
             channel={channel}
             currentProgram={currentProgram}
+            epgPrograms={epgPrograms}
             isLive={isLive}
             onSeek={handleSeek}
             onScrubbingChange={handleScrubbingChange}

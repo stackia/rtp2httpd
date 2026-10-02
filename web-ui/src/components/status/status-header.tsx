@@ -102,7 +102,7 @@ export function StatusHeader({
             </span>
             <Badge
               variant="outline"
-              className="h-9 whitespace-nowrap border-border/50 bg-background/45 px-3 font-medium text-muted-foreground shadow-sm backdrop-blur-md dark:border-white/10"
+              className="h-9 whitespace-nowrap border-border/50 bg-background/45 px-3 font-medium text-muted-foreground shadow-sm dark:border-white/10"
             >
               {t("lastUpdated")}: <span className="ml-1 font-mono tabular-nums">{lastUpdated}</span>
             </Badge>

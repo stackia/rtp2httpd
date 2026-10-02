@@ -358,11 +358,6 @@ static void buffer_pool_try_shrink_pool(buffer_pool_t *pool, size_t min_buffers)
     return;
   }
 
-  logger(LOG_DEBUG,
-         "%s: Checking for shrink opportunity (free: %zu, high_watermark: %zu, "
-         "total: %zu)",
-         buffer_pool_name(pool), pool->num_free, pool->high_watermark, pool->num_buffers);
-
   buffer_pool_segment_t *prev = NULL;
   buffer_pool_segment_t *seg = pool->segments;
   size_t segments_freed = 0;

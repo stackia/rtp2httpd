@@ -1,148 +1,33 @@
 ---
 name: translate-docs-zh-en
-description: >
-  Translate and synchronize rtp2httpd Chinese documentation into English. ALWAYS use this skill
-  whenever Chinese docs under docs/ need English translations under docs/en/, when Chinese doc diffs
-  need to be reflected in existing English files, when VitePress English sidebar entries need to
-  mirror Chinese docs, or when translation terminology needs to stay consistent across docs.
-argument-hint: "[new|update|batch] [docs path or diff context]"
+description: Translate Chinese rtp2httpd docs into docs/en/ and synchronize English navigation, links, and terminology after source changes.
 ---
 
-# Translate rtp2httpd Docs from Chinese to English
+# Chinese to English Documentation
 
-Use this skill to keep English documentation faithful to the Chinese source of truth.
-Chinese docs under `docs/` are authoritative; English docs under `docs/en/` are translations.
+Chinese files in `docs/` are authoritative; map each to the same relative path under `docs/en/`. Use [translation-memory.md](references/translation-memory.md) for established terminology and alert conventions when translating affected content.
 
-Before translating, read `references/translation-memory.md` for established terminology and
-project-specific conventions. Update that reference when you confirm stable terminology,
-documentation structure, sidebar patterns, or other reusable translation decisions.
+For a new page, translate the full source. For an update, use the Chinese diff and surrounding context to update the corresponding English sections. For a batch, apply the same rules to the requested files and their navigation. Do not rewrite unrelated translations or change the Chinese source to resolve a translation ambiguity; flag a source inconsistency while completing unaffected work.
 
-## Core Responsibilities
+## Preserve meaning and structure
 
-1. Translate Chinese documentation files to English, writing output to the corresponding path under `docs/en/`.
-2. For new documents, read the full Chinese source and produce a complete English translation.
-3. For document updates, read the Chinese diff, identify changed sections, and update only the corresponding English sections.
+- Preserve heading hierarchy, lists, tables, qualifiers, and numeric values. Translate user-facing frontmatter values, keeping keys intact.
+- Preserve source markup: GitHub alert markers such as `> [!NOTE]` and any existing VitePress container delimiters. Translate their prose, including bold alert lead-ins.
+- Keep executable syntax, shell commands, config keys, identifiers, URLs, addresses, ports, paths, product names, and acronyms unchanged. In examples, translate human-readable comments and illustrative display values such as `group-title="央视"` to `group-title="CCTV"` only when doing so preserves behavior. Keep semantically required literals unchanged.
+- Retain Chinese terms only where the established convention requires them, with an English explanation. Keep English concise and faithful to the source.
 
-## Translation Rules
+## Resolve links by their role
 
-### Structure Preservation
+- Site-page links should target the English counterpart, e.g. `/guide/quick-start` → `/en/guide/quick-start`. Relative page links can stay relative when they resolve within the mirrored English tree. Avoid adding a second `/en/` prefix.
+- Shared assets stay shared: adjust a relative path to resolve from the English file's location (usually one extra `../`); root-relative asset URLs remain unchanged. For example, `docs/guide/a.md` linking `../images/foo.png` needs `../../images/foo.png` in `docs/en/guide/a.md`.
+- External URLs remain unchanged, including Chinese-only tutorials.
+- For translated headings, update generated anchor targets and incoming links. Preserve explicit anchor IDs when the source defines them.
+- When link text names a page, use that page's English H1. Descriptive inline link text should retain its intended meaning.
 
-- Mirror the Chinese Markdown structure, heading hierarchy, link anchors, code blocks, and document layout.
-- Translate frontmatter fields containing user-facing text. Keep frontmatter keys unchanged.
-- Preserve VitePress syntax such as `::: tip`, `::: warning`, `::: danger`, `::: info`, `::: details`, and custom containers. Translate the content inside containers.
+## Navigation and completion
 
-### Link Handling
+For new, moved, or retitled pages, mirror the relevant Chinese navigation in the English locale of `docs/.vitepress/config.ts`. Keep the Chinese locale unchanged unless the task includes changing it. After title/anchor changes, find and update affected English references.
 
-- Internal/site links: add the `/en/` prefix. Example: `/guide/quick-start` becomes `/en/guide/quick-start`.
-- External links: keep unchanged.
-- Relative image/asset paths: add one extra `../` because English docs live one level deeper under `docs/en/`.
-  - `docs/index.md` using `./images/foo.png` becomes `docs/en/index.md` using `../images/foo.png`.
-  - `docs/guide/bar.md` using `../images/foo.png` becomes `docs/en/guide/bar.md` using `../../images/foo.png`.
-- Absolute paths starting with `/`: keep unchanged.
-- Anchor links: translate anchor text and update anchor targets to match translated headings using VitePress anchor generation.
+Check the diff for complete translation, valid links/assets, and preserved example behavior. Run `pnpm run docs:build` when page paths, navigation, anchors, or Markdown/VitePress structure changed; a wording-only edit can use focused review. Correct failures caused by the translation before finishing.
 
-### Do Not Translate
-
-- Code inside inline or fenced code blocks, shell commands, configuration parameter names, and variable names.
-- URLs, IP addresses, and port numbers.
-- Product and project names such as rtp2httpd, udpxy, VLC, and FFmpeg.
-- File paths and filenames.
-
-### Special Handling
-
-- For China-specific concepts, retain the original term only when needed and add an English explanation.
-- Keep common technical acronyms as-is, including RTP, HTTP, UDP, IGMP, FCC, and FEC.
-- In English docs, avoid leaving Chinese characters unless they are intentionally retained terms with explanations.
-- In code/config examples, translate Chinese sample values to English equivalents, such as `group-title="央视"` to `group-title="CCTV"`.
-
-## English Documentation Style
-
-- Use clear, concise technical English that reads naturally to a native English-speaking developer.
-- Match the original tone without becoming overly formal or casual.
-- Prefer active voice where natural.
-- Preserve precise meaning. Do not generalize, soften, omit qualifiers, or change numeric values.
-- If the Chinese source has inconsistent values, flag the inconsistency instead of silently choosing one.
-
-### Page Titles
-
-- "详解" / "参数详解" -> "Reference", for example "配置参数详解" -> "Configuration Reference".
-- "说明" -> a simple noun form or "Guide", for example "URL 格式说明" -> "URL Formats".
-- "报告" -> drop it when redundant, for example "性能测试报告" -> "Performance Benchmark".
-- "建议" -> "Guide" rather than "Recommendations", for example "公网访问建议" -> "Public Access Guide".
-- Use plural forms when a page covers multiple items, such as "URL Formats".
-- Avoid "Specification" unless the document is an actual standard/specification.
-
-### Terminology
-
-- Prefer "build" over "compile" for software construction, except when referring to literal commands such as `make ... compile`.
-- Translate "后台" as "admin panel" or "admin interface", not "backend".
-- Translate "花屏" as "artifacts" and "卡顿" as "stuttering".
-- Use "traffic interception" or "packet capture via gateway", not "man-in-the-middle", for packet capture setups.
-
-## Workflow
-
-### New File Translation
-
-1. Read the Chinese source file completely.
-2. Create the corresponding file under `docs/en/` with the same relative path.
-3. Translate the entire document using the rules above.
-4. Check whether `docs/.vitepress/config.ts` needs a matching English sidebar entry.
-5. Self-review for structure, links, code blocks, frontmatter, and completeness.
-
-### Existing File Updates
-
-1. Read the diff of the Chinese document to identify changed sections.
-2. Open the existing English translation.
-3. Locate corresponding sections in the English file.
-4. Update only the changed sections.
-5. Verify the updated surrounding context still reads naturally.
-
-### Batch Translation
-
-1. List all files that need translation.
-2. Translate in logical order, usually overview/index files first.
-3. Verify the English sidebar in `docs/.vitepress/config.ts` is complete.
-
-## VitePress Config Updates
-
-- Locate the English locale sidebar configuration, usually under `en` or `/en/`.
-- Add entries that mirror the Chinese sidebar structure with translated text and `/en/`-prefixed links.
-- Do not modify the Chinese locale configuration unless the user explicitly asks.
-
-## Quality Checklist
-
-Before finishing each file, verify:
-
-- All headings are translated and hierarchy matches the Chinese source.
-- Internal links have `/en/` prefixes.
-- External links are unchanged.
-- Relative image/asset paths have one additional `../`.
-- Code blocks are untouched.
-- Product and project names are not translated.
-- VitePress container syntax is preserved.
-- Frontmatter text fields are translated.
-- No unintended Chinese characters remain in English docs.
-- Cross-reference link text matches the target page H1.
-
-## Cross-Reference Consistency
-
-When a document links to another page, the link text must match the H1 title of the target page.
-After translating or updating a page title, search English docs for references to that page and
-update stale link text in related documentation, next steps sections, and inline references.
-
-## Updating Translation Memory
-
-Use `references/translation-memory.md` as the persistent project memory for this skill.
-
-Record:
-
-- Stable terminology choices.
-- Document structure and sidebar conventions.
-- China-specific concepts and their established English rendering.
-- File organization patterns between Chinese and English docs.
-
-Do not record:
-
-- Session-specific task state.
-- Speculative or unverified conclusions.
-- Anything that duplicates or contradicts repo instructions in `AGENTS.md` or `CLAUDE.md`.
+Keep the terminology reference limited to confirmed, reusable translation choices; update it only when this work establishes one. Do not add session logs or duplicate repository rules.

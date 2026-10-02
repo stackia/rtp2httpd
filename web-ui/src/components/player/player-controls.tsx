@@ -22,6 +22,7 @@ import { isNearLiveWallClock, type LiveSessionAnchor, mseToWallClock } from "../
 import type { Channel, EPGProgram } from "../../types/player";
 import { PLAYER_CONTROL_BUTTON_CLASS, PLAYER_OVERLAY_SURFACE_CLASS } from "./classnames";
 import { usePlaybackTime } from "./playback-time-context";
+import { PlayerEpgTimeline } from "./player-epg-timeline";
 import { PlayerMediaBadges } from "./player-media-badges";
 import { PlayerSelectedGlassLayers } from "./player-selected-glass-layers";
 
@@ -30,6 +31,8 @@ interface PlayerControlsProps {
   channel: Channel;
   // EPG program information
   currentProgram: EPGProgram | null;
+  // Every programme known for the current channel, for the EPG timeline band
+  epgPrograms?: readonly EPGProgram[];
   // Whether we're in live mode or catchup mode
   isLive: boolean;
   // Callback when user seeks to a new position
@@ -71,6 +74,9 @@ interface PlayerControlsProps {
 const COMPACT_BUTTON_CLASS = "[@container_video_(max-height:_320px)]:p-1 md:[@container_video_(max-height:_320px)]:p-1";
 const COMPACT_ICON_CLASS =
   "[@container_video_(max-height:_320px)]:h-4 [@container_video_(max-height:_320px)]:w-4 md:[@container_video_(max-height:_320px)]:h-4 md:[@container_video_(max-height:_320px)]:w-4";
+
+/** Shared identity, so a channel without guide data does not re-render the timeline band. */
+const NO_EPG_PROGRAMS: readonly EPGProgram[] = [];
 
 function formatTime(date: Date, withSeconds = false) {
   return date.toLocaleTimeString([], {
@@ -144,6 +150,11 @@ function usePlaybackTimelineState(currentProgram: EPGProgram | null, seekStartTi
 interface PlayerTimelineProps {
   channel: Channel;
   currentProgram: EPGProgram | null;
+  /**
+   * The EPG timeline band is the seek bar: this bar only stands in for it in video boxes too short
+   * to fit the band, and the programme row above it is dropped (the band already names it).
+   */
+  fallbackOnly: boolean;
   liveSessionAnchor: LiveSessionAnchor | null;
   locale: Locale;
   onScrubbingChange: (isScrubbing: boolean) => void;
@@ -154,6 +165,7 @@ interface PlayerTimelineProps {
 const PlayerTimeline = memo(function PlayerTimeline({
   channel,
   currentProgram,
+  fallbackOnly,
   liveSessionAnchor,
   locale,
   onScrubbingChange,
@@ -270,7 +282,7 @@ const PlayerTimeline = memo(function PlayerTimeline({
 
   return (
     <>
-      {currentProgram && (
+      {currentProgram && !fallbackOnly && (
         <div
           className={clsx(
             "flex min-w-0 items-center justify-between gap-1 text-xs leading-tight tracking-[0.01em] text-blue-50/80 md:gap-2 md:text-sm md:leading-normal",
@@ -300,6 +312,8 @@ const PlayerTimeline = memo(function PlayerTimeline({
         className={clsx(
           "player-performance-progress-track group relative h-1.5 touch-none select-none rounded-full bg-blue-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10 transition-[height,box-shadow] duration-150 before:absolute before:-inset-y-3 before:inset-x-0 before:content-[''] md:h-2",
           "[@container_video_(max-height:_320px)]:h-1 md:[@container_video_(max-height:_320px)]:h-1",
+          // Mirrors the band's own breakpoint: exactly one of the two seek bars is ever on screen.
+          fallbackOnly && "hidden [@container_video_(max-height:_220px)]:block",
           isCatchupSupported
             ? "cursor-pointer hover:h-2 hover:shadow-[0_0_20px_rgba(59,130,246,0.16),inset_0_1px_3px_rgba(0,0,0,0.45)] md:hover:h-3"
             : "cursor-default",
@@ -379,6 +393,7 @@ const PlayerTimeDisplay = memo(function PlayerTimeDisplay({
 function PlayerControlsComponent({
   channel,
   currentProgram,
+  epgPrograms = NO_EPG_PROGRAMS,
   isLive,
   onSeek,
   onScrubbingChange,
@@ -408,7 +423,8 @@ function PlayerControlsComponent({
   const t = usePlayerTranslation(locale);
   const isEffectivelyMuted = isMuted || volume <= 0;
   const isCatchupSupported = channel.sources.some((s) => s.catchup && s.catchupSource);
-  const hasTimeline = isCatchupSupported || Boolean(currentProgram);
+  const hasEpgTimeline = epgPrograms.length > 0;
+  const hasTimeline = isCatchupSupported || Boolean(currentProgram) || hasEpgTimeline;
 
   return (
     <div
@@ -419,10 +435,24 @@ function PlayerControlsComponent({
         "[@container_video_(max-height:_320px)]:gap-0.5 [@container_video_(max-height:_320px)]:pt-2 [@container_video_(max-height:_320px)]:pb-0.5 md:[@container_video_(max-height:_320px)]:gap-0.5 md:[@container_video_(max-height:_320px)]:pt-2 md:[@container_video_(max-height:_320px)]:pb-0.5 [@container_video_(max-height:_220px)]:pt-1 md:[@container_video_(max-height:_220px)]:pt-1",
       )}
     >
-      {hasTimeline && (
+      {hasEpgTimeline && (
+        <PlayerEpgTimeline
+          programs={epgPrograms}
+          locale={locale}
+          isLive={isLive}
+          liveSessionAnchor={liveSessionAnchor}
+          onScrubbingChange={onScrubbingChange}
+          onSeek={onSeek}
+          seekStartTime={seekStartTime}
+          supportsCatchup={isCatchupSupported}
+        />
+      )}
+
+      {(isCatchupSupported || currentProgram) && (
         <PlayerTimeline
           channel={channel}
           currentProgram={currentProgram}
+          fallbackOnly={hasEpgTimeline}
           liveSessionAnchor={liveSessionAnchor}
           locale={locale}
           onScrubbingChange={onScrubbingChange}

@@ -1,11 +1,16 @@
+// The web UI uses no backdrop-filter at all: while the player's video plays, the compositor redraws
+// every backdrop-filtered surface each frame, even ones beside the video (measured: the sidebar's
+// blurs alone doubled the GPU process's load). Surfaces use a denser fill instead of frosted glass.
+
+/** Floating surfaces over the video: an inner top sheen stands in for the frosted look. */
 export const PLAYER_OVERLAY_SURFACE_CLASS =
-  "player-performance-overlay-background player-performance-effect player-performance-gradient isolate overflow-hidden border border-blue-200/55 bg-slate-900/30 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.82),0_0_28px_-12px_rgba(59,130,246,0.62),inset_0_1px_0_rgba(255,255,255,0.17),inset_0_-1px_0_rgba(59,130,246,0.14)] backdrop-blur-md backdrop-saturate-150";
+  "player-performance-overlay-background player-performance-effect player-performance-gradient isolate overflow-hidden border border-blue-200/55 bg-slate-800/70 shadow-[0_18px_36px_-18px_rgba(0,0,0,0.82),0_0_28px_-12px_rgba(59,130,246,0.62),inset_0_1px_0_rgba(255,255,255,0.17),inset_0_14px_20px_-12px_rgba(148,163,184,0.22),inset_0_-1px_0_rgba(59,130,246,0.14)]";
 
 export const PLAYER_CONTROL_BUTTON_CLASS =
   "player-performance-effect player-performance-motion rounded-full border border-transparent text-white transition-[color,background-color,border-color,box-shadow,transform] duration-200 motion-reduce:transition-none hover:border-blue-100/20 hover:bg-blue-300/15 hover:text-blue-50 hover:shadow-[0_0_24px_rgba(59,130,246,0.16)] motion-safe:active:scale-95";
 
 export const PLAYER_LIST_SURFACE_BASE_CLASS =
-  "player-performance-effect player-performance-motion relative isolate overflow-hidden rounded-2xl border text-card-foreground transition-[color,background-color,border-color,box-shadow,backdrop-filter] duration-300 ease-out motion-reduce:transition-none";
+  "player-performance-effect player-performance-motion relative isolate overflow-hidden rounded-2xl border text-card-foreground transition-[color,background-color,border-color,box-shadow] duration-300 ease-out motion-reduce:transition-none";
 
 export const PLAYER_CHANNEL_LIST_ITEM_CLASS =
   "[content-visibility:auto] [contain-intrinsic-block-size:auto_2.25rem] md:[contain-intrinsic-block-size:auto_2.5rem]";
@@ -14,10 +19,10 @@ export const PLAYER_EPG_LIST_ITEM_CLASS =
   "[content-visibility:auto] [contain-intrinsic-block-size:auto_3rem] md:[contain-intrinsic-block-size:auto_3.75rem]";
 
 export const PLAYER_LIST_SURFACE_SELECTED_CLASS =
-  "player-performance-list-surface-selected border-blue-300/65 bg-white/38 shadow-[0_16px_32px_-18px_rgba(37,99,235,0.46),0_0_20px_-12px_rgba(59,130,246,0.42),inset_0_1px_0_rgba(255,255,255,0.78),inset_0_-1px_0_rgba(37,99,235,0.12)] backdrop-blur-md backdrop-saturate-150 dark:border-blue-200/55 dark:bg-slate-900/30 dark:shadow-[0_18px_36px_-18px_rgba(0,0,0,0.82),0_0_28px_-12px_rgba(59,130,246,0.62),inset_0_1px_0_rgba(255,255,255,0.17),inset_0_-1px_0_rgba(59,130,246,0.14)]";
+  "player-performance-list-surface-selected border-blue-300/65 bg-white/38 shadow-[0_16px_32px_-18px_rgba(37,99,235,0.46),0_0_20px_-12px_rgba(59,130,246,0.42),inset_0_1px_0_rgba(255,255,255,0.78),inset_0_-1px_0_rgba(37,99,235,0.12)] dark:border-blue-200/55 dark:bg-slate-900/30 dark:shadow-[0_18px_36px_-18px_rgba(0,0,0,0.82),0_0_28px_-12px_rgba(59,130,246,0.62),inset_0_1px_0_rgba(255,255,255,0.17),inset_0_-1px_0_rgba(59,130,246,0.14)]";
 
 export const PLAYER_LIST_SURFACE_DEFAULT_CLASS =
-  "player-performance-list-surface-default border-slate-200/70 bg-white/48 shadow-[inset_0_1px_0_rgba(255,255,255,0.44)] backdrop-blur-none backdrop-saturate-100 dark:border-white/8 dark:bg-slate-950/34 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]";
+  "player-performance-list-surface-default border-slate-200/70 bg-white/48 shadow-[inset_0_1px_0_rgba(255,255,255,0.44)] dark:border-white/8 dark:bg-slate-950/34 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.045)]";
 
 export const PLAYER_LIST_SURFACE_HOVER_CLASS =
   "hover:border-blue-400/35 hover:bg-blue-50/52 dark:hover:border-blue-300/25 dark:hover:bg-blue-300/7";

@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+/* The player's simple (flat) style, toggled on <html>: lets components flatten their own effects
+   with `player-simple:` utilities instead of a bespoke native rule per element. */
+@custom-variant player-simple (&:where(.player-theme-simple, .player-theme-simple *));
 
 @theme {
   --font-sans:
@@ -158,8 +161,6 @@ html.player-theme-simple
     .player-performance-channel-number-selected,
     .player-performance-channel-number-default
   ) {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
   box-shadow: none;
   filter: none;
 }
@@ -416,4 +417,30 @@ html.player-theme-simple .player-performance-channel-number-default {
 
 html.dark.player-theme-simple .player-performance-channel-number-default {
   background-color: #1e293b;
+}
+
+/* EPG timeline marquee: a programme name wider than its block scrolls continuously by the overflow
+   the band measured into --epg-marquee-shift — a programme strip is often read at a distance, where
+   waiting for a pointer to reveal the rest is not an option. Native because a keyframe driven by a
+   measured custom property has no utility form. The simple theme keeps the ellipsis instead: its
+   flattening would stop the animation but leave the name hard-clipped without a visual hint. */
+@media (prefers-reduced-motion: no-preference) {
+  html:not(.player-theme-simple) [data-epg-marquee-clip][data-overflow] {
+    /* the ellipsis would otherwise be painted over the scrolling text */
+    text-overflow: clip;
+  }
+
+  html:not(.player-theme-simple) [data-epg-marquee][data-overflow] {
+    animation: player-epg-marquee 9s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes player-epg-marquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(var(--epg-marquee-shift, 0));
+  }
 }

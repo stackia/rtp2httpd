@@ -148,7 +148,7 @@ function SettingsDropdownComponent({
           id={SETTINGS_POPOVER_ID}
           role="dialog"
           aria-label={t("settings")}
-          className="player-performance-panel-background player-performance-effect player-performance-gradient absolute top-full right-0 z-50 mt-1 max-h-[calc(100vh-4rem)] w-60 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-2xl border border-blue-900/12 bg-[linear-gradient(145deg,rgba(255,255,255,0.9),rgba(238,242,255,0.82))] p-0 shadow-[0_20px_55px_rgba(30,64,175,0.18),inset_0_1px_0_rgba(255,255,255,0.82)] backdrop-blur-2xl dark:border-blue-100/15 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.94),rgba(26,24,72,0.9))] dark:shadow-[0_22px_60px_rgba(1,7,24,0.62),inset_0_1px_0_rgba(255,255,255,0.08)]"
+          className="player-performance-panel-background player-performance-effect player-performance-gradient absolute top-full right-0 z-50 mt-1 max-h-[calc(100vh-4rem)] w-60 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-2xl border border-blue-900/12 bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(238,242,255,0.92))] p-0 shadow-[0_20px_55px_rgba(30,64,175,0.18),inset_0_1px_0_rgba(255,255,255,0.82)] dark:border-blue-100/15 dark:bg-[linear-gradient(145deg,rgba(7,20,43,0.94),rgba(26,24,72,0.9))] dark:shadow-[0_22px_60px_rgba(1,7,24,0.62),inset_0_1px_0_rgba(255,255,255,0.08)]"
         >
           <div className="space-y-2.5 p-2.5">
             <SettingSelect

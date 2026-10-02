@@ -1,59 +1,38 @@
 # rtp2httpd
 
-RTP/IPTV multicast-to-HTTP streaming daemon written in C, with a React/TypeScript web UI embedded into the binary.
+RTP/IPTV multicast-to-HTTP daemon in C11, with an embedded React/TypeScript web UI.
 
-## Architecture
+## Project constraints
 
-- Pure C (C11) — do NOT introduce C++ code or features
-- Multi-worker model via `fork()` — workers are independent, only sharing stats via shared memory
-- Cross-platform: Linux, macOS, FreeBSD — use `#ifdef` for platform-specific APIs
-- Web UI (React/Vite) is compiled and embedded as `src/embedded_web_data.h` — never edit this file directly
-- If `src/embedded_web_data.h` changes from a Web UI rebuild, do not commit it unless explicitly requested.
-- Config file format is INI (`rtp2httpd.conf`), not YAML/JSON
+- Keep runtime code in C, with platform guards for Linux, macOS, and FreeBSD APIs.
+- Workers use `fork()`: globals are worker-local; cross-worker state needs shared memory or IPC.
+- Build with CMake. Configuration is INI (`rtp2httpd.conf`).
+- Never hand-edit `src/embedded_web_data.h`. Commit it only for an authorized release or when explicitly asked to commit the generated header.
+- Discuss new dependencies first; installing locked dependencies is routine setup.
 
-## Code Style — C
+## Conventions
 
-- Indentation: 2 spaces, no tabs
-- Structs: `_s` suffix for struct tag, `_t` for typedef (`struct connection_s` → `connection_t`)
-- Header guards: `#ifndef __MODULE_H__` / `#define __MODULE_H__`
-- Logging: always use `logger()` from `utils.h` — never `printf` / `fprintf`
-- Strings: use `snprintf` / `strncpy` — never `sprintf` / `strcpy`
+- C: 2-space indentation, `_s` struct tags, `_t` typedefs, `__MODULE_H__` guards. Log with `logger()` from `utils.h`; use `snprintf`/`strncpy`, not `sprintf`/`strcpy`.
+- TypeScript/JavaScript: follow `biome.json`; prefer Tailwind utilities when they express the styling clearly.
+- Use Corepack/pnpm and `.nvmrc` through nvm when available, otherwise system Node. Use uv for Python dependencies and `uv run` for scripts.
+- Chinese documentation in `docs/` is authoritative. Use the translation skill below when synchronizing `docs/en/`.
+- Commit messages and PR titles use `type(scope): subject`. Do not add `Co-Authored-By` trailers.
 
-## Code Style — TypeScript / JavaScript
+## Task-specific guidance
 
-- Formatter/linter: Biome (`biome.json`), line width 120, indent with tabs
-- Follow `.nvmrc` via `nvm` + Corepack (`pnpm`) for JS tooling when available; if `nvm` is unavailable, fall back to the system `node`.
-- Prefer Tailwind CSS utilities for styling; add custom CSS classes only when Tailwind cannot express the behavior clearly.
+Read only the relevant guide; current commands live in `package.json` and `pyproject.toml`.
 
-## Code Style — Python
+- Local build/configuration: [build-run](.agents/skills/build-run/SKILL.md).
+- E2E tests/harness: [e2e](.agents/skills/e2e/SKILL.md).
+- Release notes/publication: [release](.agents/skills/release/SKILL.md).
+- English docs/navigation: [translate-docs-zh-en](.agents/skills/translate-docs-zh-en/SKILL.md).
+- Community FCC reports: [sync-fcc-ip-docs](.agents/skills/sync-fcc-ip-docs/SKILL.md).
+- Player mock upstreams: [devlab](tools/devlab/README.md).
 
-- Package manager: uv — do not use pip/pipenv/poetry
-- Always run Python scripts via `uv run` — do not use `python` directly
+## Completion and boundaries
 
-## Documentation
+Complete the requested change and affected checks, fixing regressions it causes. Local E2E tests use mock upstreams and temporary files; builds and affected tests can run and retry without per-step approval. Docs/instruction edits do not require daemon builds or the full E2E suite.
 
-- Chinese docs (`docs/`) are the **single source of truth**
-- English docs (`docs/en/`) are translations — always use the `translate-docs-zh-en` skill, do not translate directly
-- Built with VitePress: `pnpm run docs:build`
+Use unused local ports and clean up task-owned processes/artifacts. Deployments and release publication need authorization; an existing request suffices. Respect draft-, review-, or upload-only scope.
 
-## Git
-
-- Commit messages and PR titles use Conventional Commits: `type(scope): subject`
-
-## Do NOT
-
-- Use Linux-only APIs without `#ifdef` platform guards
-- Use npm/yarn — this project uses pnpm
-- Use autotools — this project uses CMake
-- Add dependencies without discussing first
-
-## Cursor Cloud specific instructions
-
-Toolchain is pre-installed and refreshed by the startup update script (`pnpm install --frozen-lockfile`
-then `uv sync --group dev`). Standard commands live in `package.json` scripts and the `build-run` /
-`e2e` skills — use those rather than reinventing them.
-
-Non-obvious notes:
-
-- **Dev lab**: `tools/devlab/devlab.py` starts local mock upstreams for Web UI/player debugging,
-  including live, catchup, RTP multicast, HLS, and RTSP scenarios. See `tools/devlab/README.md`.
+Report results, validation, and blockers. Keep conversation/audit history out of deliverables.
