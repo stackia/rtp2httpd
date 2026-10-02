@@ -1985,6 +1985,10 @@ function VideoPlayerComponent({
       {channel && !error && !needsUserInteraction && (
         <div
           role="toolbar"
+          // Any press on the controls counts as activity. Touch has no hover to restart the hide
+          // timer, so without this the controls can vanish mid-way through a series of taps.
+          // Captured, because some controls stop the press from bubbling.
+          onPointerDownCapture={showControlsImmediately}
           className={clsx(
             "player-performance-controls-position player-performance-motion absolute bottom-0 left-[calc(0px_-_env(safe-area-inset-left))] right-[calc(0px_-_env(safe-area-inset-right))] z-10 transition-opacity duration-300",
             showSidebar && "md:right-0",
