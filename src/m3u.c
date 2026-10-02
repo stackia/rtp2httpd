@@ -1316,7 +1316,8 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
 
             rewrite_catchup_mode_for_proxy(transformed_line, rewritten_extinf, sizeof(rewritten_extinf));
 
-            if (build_service_url(unique_catchup_name, catchup_query, catchup_proxy_url, sizeof(catchup_proxy_url)) == 0) {
+            if (build_service_url(unique_catchup_name, catchup_query, catchup_proxy_url, sizeof(catchup_proxy_url)) == 
+                0) {
               char *catchup_start = strstr(rewritten_extinf, "catchup-source=\"");
               if (catchup_start) {
                 catchup_start += 16;
