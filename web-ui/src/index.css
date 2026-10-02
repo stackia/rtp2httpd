@@ -161,8 +161,6 @@ html.player-theme-simple
     .player-performance-channel-number-selected,
     .player-performance-channel-number-default
   ) {
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
   box-shadow: none;
   filter: none;
 }

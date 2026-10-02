@@ -35,7 +35,7 @@ export function StatCard({ title, value, icon: Icon, tone = "violet" }: StatCard
   return (
     <Card
       className={clsx(
-        "group relative overflow-hidden rounded-2xl border border-border/45 bg-card/78 shadow-[0_18px_50px_-36px_rgba(15,23,42,0.44),inset_0_1px_0_rgba(255,255,255,0.56)] backdrop-blur-lg backdrop-saturate-125 transition-[box-shadow,border-color] duration-300 motion-reduce:transition-none hover:border-white/60 hover:shadow-[0_22px_56px_-36px_rgba(15,23,42,0.56),inset_0_1px_0_rgba(255,255,255,0.62)] dark:border-white/10 dark:bg-card/68 dark:shadow-[0_22px_56px_-38px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.07)] dark:hover:border-white/20 dark:hover:shadow-[0_24px_60px_-38px_rgba(0,0,0,0.86),inset_0_1px_0_rgba(255,255,255,0.09)]",
+        "group relative overflow-hidden rounded-2xl border border-border/45 bg-card/86 shadow-[0_18px_50px_-36px_rgba(15,23,42,0.44),inset_0_1px_0_rgba(255,255,255,0.56)] transition-[box-shadow,border-color] duration-300 motion-reduce:transition-none hover:border-white/60 hover:shadow-[0_22px_56px_-36px_rgba(15,23,42,0.56),inset_0_1px_0_rgba(255,255,255,0.62)] dark:border-white/10 dark:bg-card/78 dark:shadow-[0_22px_56px_-38px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.07)] dark:hover:border-white/20 dark:hover:shadow-[0_24px_60px_-38px_rgba(0,0,0,0.86),inset_0_1px_0_rgba(255,255,255,0.09)]",
       )}
     >
       <div
