@@ -1096,14 +1096,7 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
   const char *content_ptr = content;
   struct m3u_extinf current_extinf;
   int in_entry = 0;
-  /* Set once the current #EXTINF has consumed a URL line. Further URL lines
-   * under the same #EXTINF are additional sources of that channel: they get
-   * their own service but are written directly below the first URL, so the
-   * transformed playlist keeps the same shape as the input. */
   int entry_has_url = 0;
-  /* Blank separator owed after the entry currently being written. It is
-   * flushed lazily (before the next tag or at end of input) so that extra URL
-   * lines of the same entry stay contiguous. */
   int pending_entry_gap = 0;
   int entry_count = 0;
   size_t line_len;
@@ -1128,12 +1121,8 @@ int m3u_parse_and_create_services(const char *content, const char *source_url) {
     service_source = SERVICE_SOURCE_EXTERNAL;
   }
 
-  /* Don't reset transformed M3U buffer - accumulate content from multiple
-   * sources */
-  /* Buffer will be cleared when configuration is reloaded */
-
-while (*content_ptr) {
-    int line_has_bypass = 0; /* 仅作用于当前行 */
+  while (*content_ptr) {
+    int line_has_bypass = 0; /* 当前行自身的 ! 标记 */
 
     /* Extract one line */
     const char *line_end = strchr(content_ptr, '\n');
@@ -1146,6 +1135,7 @@ while (*content_ptr) {
       line[line_len] = '\0';
       content_ptr = line_end + 1;
     } else {
+      /* Last line without newline */
       strncpy(line, content_ptr, sizeof(line) - 1);
       line[sizeof(line) - 1] = '\0';
       content_ptr += strlen(content_ptr);
@@ -1158,22 +1148,25 @@ while (*content_ptr) {
       line_len--;
     }
 
+    /* Skip empty lines */
     if (line_len == 0) {
       continue;
     }
 
-    /* 识别并吃掉当前行首的 ! 标记 */
+    /* 剥离行首感叹号并记录 bypass 标记 */
     if (line[0] == '!') {
       line_has_bypass = 1;
       memmove(line, line + 1, line_len);
       line_len--;
     }
 
+    /* Any tag line ends the entry being written; emit the deferred gap */
     if (line[0] == '#' && pending_entry_gap) {
       append_to_transformed_m3u("\n", service_source);
       pending_entry_gap = 0;
     }
 
+    /* Handle M3U header */
     if (m3u_is_header(line)) {
       char *tvg_url = extract_tvg_url(line);
       if (tvg_url) {
@@ -1184,17 +1177,19 @@ while (*content_ptr) {
       continue;
     }
 
+    /* Handle other comments (not EXTINF) */
     if (line[0] == '#' && strncmp(line, "#EXTINF:", 8) != 0) {
       append_to_transformed_m3u(line, service_source);
       append_to_transformed_m3u("\n", service_source);
       continue;
     }
 
-    /* 处理 #EXTINF 行 */
+    /* Parse EXTINF line */
     if (strncmp(line, "#EXTINF:", 8) == 0) {
       memset(&current_extinf, 0, sizeof(current_extinf));
-      current_extinf.force_bypass = line_has_bypass; /* 记录 #EXTINF 行是否有 ! */
+      current_extinf.force_bypass = line_has_bypass; /* 保存 #EXTINF 的感叹号标记 */
 
+      /* Extract service name */
       char base_name[MAX_SERVICE_NAME];
       if (extract_service_name(line, base_name, sizeof(base_name)) != 0) {
         logger(LOG_WARN, "Failed to extract service name from EXTINF line");
@@ -1203,14 +1198,32 @@ while (*content_ptr) {
         continue;
       }
 
+      /* Extract group-title if present */
       if (extract_attribute(line, "group-title", current_extinf.group_title, sizeof(current_extinf.group_title)) == 0 &&
           current_extinf.group_title[0] != '\0') {
-        snprintf(current_extinf.name, sizeof(current_extinf.name), "%s/%s", current_extinf.group_title, base_name);
+        size_t group_len = strlen(current_extinf.group_title);
+        size_t base_len = strlen(base_name);
+        size_t total_len = group_len + 1 + base_len;
+
+        if (total_len >= sizeof(current_extinf.name)) {
+          size_t max_group_len = sizeof(current_extinf.name) - base_len - 2;
+          current_extinf.group_title[max_group_len] = '\0';
+          logger(LOG_WARN, "Group title truncated for service: %s", base_name);
+        }
+
+        int written =
+            snprintf(current_extinf.name, sizeof(current_extinf.name), "%s/%s", current_extinf.group_title, base_name);
+        if (written < 0 || (size_t)written >= sizeof(current_extinf.name)) {
+          logger(LOG_ERROR, "Failed to format service name, using base name only");
+          strncpy(current_extinf.name, base_name, sizeof(current_extinf.name) - 1);
+          current_extinf.name[sizeof(current_extinf.name) - 1] = '\0';
+        }
       } else {
         strncpy(current_extinf.name, base_name, sizeof(current_extinf.name) - 1);
         current_extinf.name[sizeof(current_extinf.name) - 1] = '\0';
       }
 
+      /* Extract catchup-source if present */
       if (extract_attribute(line, "catchup-source", current_extinf.catchup_source,
                             sizeof(current_extinf.catchup_source)) == 0) {
         current_extinf.has_catchup = 1;
@@ -1224,94 +1237,23 @@ while (*content_ptr) {
       continue;
     }
 
-    /* 处理 URL 行 */
+    /* Process URL line (follows EXTINF) */
     if (in_entry && line[0] != '#' && (!entry_has_url || m3u_line_looks_like_url(line))) {
       int first_url = !entry_has_url;
 
-      /* 解耦 1：仅根据 #EXTINF 行自身的标记判断是否转换 catchup-source */
-      if (first_url) {
-        char *unique_catchup_name = NULL;
-        int catchup_is_recognizable = 0;
-        char line_without_label[MAX_M3U_LINE];
-        char appended_catchup_url[MAX_URL_LENGTH];
-        const char *catchup_service_url = current_extinf.catchup_source;
-
-        strncpy(line_without_label, line, sizeof(line_without_label) - 1);
-        line_without_label[sizeof(line_without_label) - 1] = '\0';
-        http_strip_url_label(line_without_label);
-
-        /* 如果 #EXTINF 没有 ! 标记，且包含 catchup，才创建回看代理服务 */
-        if (!current_extinf.force_bypass && current_extinf.has_catchup && strlen(current_extinf.catchup_source) > 0) {
-          catchup_is_recognizable = is_url_recognizable(current_extinf.catchup_source);
-
-          if (!catchup_is_recognizable && is_url_recognizable(line_without_label) &&
-              build_appended_catchup_url(line_without_label, current_extinf.catchup_source, appended_catchup_url,
-                                         sizeof(appended_catchup_url)) == 0) {
-            catchup_service_url = appended_catchup_url;
-            catchup_is_recognizable = 1;
-          }
-
-          if (catchup_is_recognizable) {
-            char catchup_name[MAX_SERVICE_NAME + 20];
-            snprintf(catchup_name, sizeof(catchup_name), "%s/catchup", current_extinf.name);
-            unique_catchup_name = create_service_from_url(catchup_name, catchup_service_url, service_source, 0);
-          }
-        }
-
-        /* 输出 #EXTINF 行（若成功创建回看代理则替换地址，否则原样输出） */
-        if (unique_catchup_name && catchup_is_recognizable) {
-          char *catchup_query = extract_catchup_template_query(catchup_service_url);
-          char catchup_proxy_url[MAX_URL_LENGTH];
-          char rewritten_extinf[MAX_M3U_LINE];
-
-          rewrite_catchup_mode_for_proxy(transformed_line, rewritten_extinf, sizeof(rewritten_extinf));
-
-          if (build_service_url(unique_catchup_name, catchup_query, catchup_proxy_url, sizeof(catchup_proxy_url)) == 0) {
-            char *catchup_start = strstr(rewritten_extinf, "catchup-source=\"");
-            if (catchup_start) {
-              catchup_start += 16;
-              char *catchup_end = strchr(catchup_start, '"');
-              if (catchup_end) {
-                size_t prefix_len = catchup_start - rewritten_extinf;
-                char final_extinf[MAX_M3U_LINE];
-                snprintf(final_extinf, sizeof(final_extinf), "%.*s%s%s", (int)prefix_len, rewritten_extinf,
-                         catchup_proxy_url, catchup_end);
-                append_to_transformed_m3u(final_extinf, service_source);
-                append_to_transformed_m3u("\n", service_source);
-              } else {
-                append_to_transformed_m3u(rewritten_extinf, service_source);
-                append_to_transformed_m3u("\n", service_source);
-              }
-            } else {
-              append_to_transformed_m3u(rewritten_extinf, service_source);
-              append_to_transformed_m3u("\n", service_source);
-            }
-          } else {
-            append_to_transformed_m3u(rewritten_extinf, service_source);
-            append_to_transformed_m3u("\n", service_source);
-          }
-
-          if (catchup_query) free(catchup_query);
-          free(unique_catchup_name);
-        } else {
-          append_to_transformed_m3u(transformed_line, service_source);
-          append_to_transformed_m3u("\n", service_source);
-        }
+      const char *url_label = http_find_url_label(line);
+      char url_label_copy[MAX_SERVICE_NAME];
+      if (url_label) {
+        strncpy(url_label_copy, url_label, sizeof(url_label_copy) - 1);
+        url_label_copy[sizeof(url_label_copy) - 1] = '\0';
+      } else {
+        url_label_copy[0] = '\0';
       }
 
-      /* 解耦 2：仅根据 URL 行自身的 ! 标记判断是否转换播放源地址 */
+      /* 当前 URL 行若带 ! 则强制判定为不可识别（即直通不代理） */
       int is_recognizable = is_url_recognizable(line) && !line_has_bypass;
 
       if (is_recognizable) {
-        const char *url_label = http_find_url_label(line);
-        char url_label_copy[MAX_SERVICE_NAME];
-        if (url_label) {
-          strncpy(url_label_copy, url_label, sizeof(url_label_copy) - 1);
-          url_label_copy[sizeof(url_label_copy) - 1] = '\0';
-        } else {
-          url_label_copy[0] = '\0';
-        }
-
         char name_with_label[MAX_SERVICE_NAME];
         if (url_label_copy[0] == '$' && url_label_copy[1] != '\0') {
           snprintf(name_with_label, sizeof(name_with_label), "%s/%s", current_extinf.name, url_label_copy + 1);
@@ -1321,13 +1263,39 @@ while (*content_ptr) {
         }
 
         char *unique_service_name = create_service_from_url(name_with_label, line, service_source, 1);
+
         if (unique_service_name) {
+          char *unique_catchup_name = NULL;
+          int catchup_is_recognizable = 0;
           char line_without_label[MAX_M3U_LINE];
+          char appended_catchup_url[MAX_URL_LENGTH];
+          const char *catchup_service_url = current_extinf.catchup_source;
+
           strncpy(line_without_label, line, sizeof(line_without_label) - 1);
           line_without_label[sizeof(line_without_label) - 1] = '\0';
           http_strip_url_label(line_without_label);
 
+          /* 仅在 #EXTINF 行未加 ! 标记时，才对 catchup-source 进行代理转换 */
+          if (first_url && !current_extinf.force_bypass && current_extinf.has_catchup &&
+              strlen(current_extinf.catchup_source) > 0) {
+            catchup_is_recognizable = is_url_recognizable(current_extinf.catchup_source);
+
+            if (!catchup_is_recognizable && is_url_recognizable(line_without_label) &&
+                build_appended_catchup_url(line_without_label, current_extinf.catchup_source, appended_catchup_url,
+                                           sizeof(appended_catchup_url)) == 0) {
+              catchup_service_url = appended_catchup_url;
+              catchup_is_recognizable = 1;
+            }
+
+            if (catchup_is_recognizable) {
+              char catchup_name[MAX_SERVICE_NAME + 20];
+              snprintf(catchup_name, sizeof(catchup_name), "%s/catchup", unique_service_name);
+              unique_catchup_name = create_service_from_url(catchup_name, catchup_service_url, service_source, 0);
+            }
+          }
+
           char *main_query = extract_dynamic_params(line_without_label);
+
           if (build_service_url(unique_service_name, main_query, proxy_url, sizeof(proxy_url)) == 0) {
             if (url_label_copy[0] != '\0') {
               size_t purl_len = strlen(proxy_url);
@@ -1338,6 +1306,49 @@ while (*content_ptr) {
             }
           }
 
+          /* 写入 #EXTINF 行 */
+          if (!first_url) {
+            /* EXTINF already written */
+          } else if (unique_catchup_name && catchup_is_recognizable) {
+            char *catchup_query = extract_catchup_template_query(catchup_service_url);
+            char catchup_proxy_url[MAX_URL_LENGTH];
+            char rewritten_extinf[MAX_M3U_LINE];
+
+            rewrite_catchup_mode_for_proxy(transformed_line, rewritten_extinf, sizeof(rewritten_extinf));
+
+            if (build_service_url(unique_catchup_name, catchup_query, catchup_proxy_url, sizeof(catchup_proxy_url)) == 0) {
+              char *catchup_start = strstr(rewritten_extinf, "catchup-source=\"");
+              if (catchup_start) {
+                catchup_start += 16;
+                char *catchup_end = strchr(catchup_start, '"');
+                if (catchup_end) {
+                  size_t prefix_len = catchup_start - rewritten_extinf;
+                  char final_extinf[MAX_M3U_LINE];
+                  snprintf(final_extinf, sizeof(final_extinf), "%.*s%s%s", (int)prefix_len, rewritten_extinf,
+                           catchup_proxy_url, catchup_end);
+                  append_to_transformed_m3u(final_extinf, service_source);
+                  append_to_transformed_m3u("\n", service_source);
+                } else {
+                  append_to_transformed_m3u(rewritten_extinf, service_source);
+                  append_to_transformed_m3u("\n", service_source);
+                }
+              } else {
+                append_to_transformed_m3u(rewritten_extinf, service_source);
+                append_to_transformed_m3u("\n", service_source);
+              }
+            } else {
+              append_to_transformed_m3u(rewritten_extinf, service_source);
+              append_to_transformed_m3u("\n", service_source);
+            }
+
+            if (catchup_query)
+              free(catchup_query);
+          } else {
+            append_to_transformed_m3u(transformed_line, service_source);
+            append_to_transformed_m3u("\n", service_source);
+          }
+
+          /* 写入主频道地址 */
           if (proxy_url[0] != '\0') {
             append_to_transformed_m3u(proxy_url, service_source);
           } else {
@@ -1345,19 +1356,150 @@ while (*content_ptr) {
           }
           append_to_transformed_m3u("\n", service_source);
 
-          if (main_query) free(main_query);
+          if (main_query)
+            free(main_query);
+          if (unique_catchup_name)
+            free(unique_catchup_name);
           free(unique_service_name);
         } else {
+          if (first_url) {
+            append_to_transformed_m3u(transformed_line, service_source);
+            append_to_transformed_m3u("\n", service_source);
+          }
           append_to_transformed_m3u(line, service_source);
           append_to_transformed_m3u("\n", service_source);
         }
       } else {
-        /* URL 带有 ! 标记，或者无法识别：直通输出原始 URL */
+        /* 不可识别或带有 ! 标记的行：完全原样输出 */
+        if (first_url) {
+          append_to_transformed_m3u(transformed_line, service_source);
+          append_to_transformed_m3u("\n", service_source);
+        }
         append_to_transformed_m3u(line, service_source);
         append_to_transformed_m3u("\n", service_source);
+        logger(LOG_DEBUG, "Preserving URL: %s", line);
       }
 
       pending_entry_gap = 1;
+      entry_count++;
+      entry_has_url = 1;
+    }
+  }
+
+  if (pending_entry_gap) {
+    append_to_transformed_m3u("\n", service_source);
+  }
+
+  if (service_source == SERVICE_SOURCE_INLINE) {
+    m3u_cache.transformed_m3u_inline_end = m3u_cache.transformed_m3u_used;
+  }
+
+  logger(LOG_INFO, "Parsed %d M3U entries, generated transformed playlist (%zu bytes)", entry_count,
+         m3u_cache.transformed_m3u_used);
+
+  return 0;
+}
+          /* Extract dynamic params from URL without $label to avoid
+           * $label causing static params (like fcc) to be treated as dynamic */
+          char *main_query = extract_dynamic_params(line_without_label);
+
+          /* Build service URL using the actual unique service name for
+           * transformed M3U */
+          if (build_service_url(unique_service_name, main_query, proxy_url, sizeof(proxy_url)) == 0) {
+            /* Append raw $label to the very end of proxy URL (after any query
+             * params) so that it always appears as the last part of the URL */
+            if (url_label_copy[0] != '\0') {
+              size_t purl_len = strlen(proxy_url);
+              size_t lbl_len = strlen(url_label_copy);
+              if (purl_len + lbl_len < sizeof(proxy_url)) {
+                memcpy(proxy_url + purl_len, url_label_copy, lbl_len + 1);
+              }
+            }
+          }
+
+          /* Now generate the transformed EXTINF line with unique names */
+          if (!first_url) {
+            /* EXTINF already written with the first URL of this entry */
+          } else if (unique_catchup_name && catchup_is_recognizable) {
+            /* Replace catchup-source URL in EXTINF line */
+            char *catchup_query = extract_catchup_template_query(catchup_service_url);
+            char catchup_proxy_url[MAX_URL_LENGTH];
+            char rewritten_extinf[MAX_M3U_LINE];
+
+            rewrite_catchup_mode_for_proxy(transformed_line, rewritten_extinf, sizeof(rewritten_extinf));
+
+            if (build_service_url(unique_catchup_name, catchup_query, catchup_proxy_url, sizeof(catchup_proxy_url)) ==
+                0) {
+              /* Find and replace catchup-source in line */
+              char *catchup_start = strstr(rewritten_extinf, "catchup-source=\"");
+              if (catchup_start) {
+                catchup_start += 16; /* Skip 'catchup-source="' */
+                char *catchup_end = strchr(catchup_start, '"');
+                if (catchup_end) {
+                  /* Build transformed EXTINF line */
+                  size_t prefix_len = catchup_start - rewritten_extinf;
+                  char final_extinf[MAX_M3U_LINE];
+                  snprintf(final_extinf, sizeof(final_extinf), "%.*s%s%s", (int)prefix_len, rewritten_extinf,
+                           catchup_proxy_url, catchup_end);
+                  append_to_transformed_m3u(final_extinf, service_source);
+                  append_to_transformed_m3u("\n", service_source);
+                } else {
+                  append_to_transformed_m3u(rewritten_extinf, service_source);
+                  append_to_transformed_m3u("\n", service_source);
+                }
+              } else {
+                append_to_transformed_m3u(rewritten_extinf, service_source);
+                append_to_transformed_m3u("\n", service_source);
+              }
+            } else {
+              append_to_transformed_m3u(rewritten_extinf, service_source);
+              append_to_transformed_m3u("\n", service_source);
+            }
+
+            if (catchup_query)
+              free(catchup_query);
+          } else {
+            /* No catchup or unrecognizable catchup URL, use original EXTINF */
+            append_to_transformed_m3u(transformed_line, service_source);
+            append_to_transformed_m3u("\n", service_source);
+          }
+
+          /* Append the main service URL */
+          if (proxy_url[0] != '\0') {
+            append_to_transformed_m3u(proxy_url, service_source);
+          } else {
+            append_to_transformed_m3u(line, service_source);
+          }
+          append_to_transformed_m3u("\n", service_source);
+
+          if (main_query)
+            free(main_query);
+          if (unique_catchup_name)
+            free(unique_catchup_name);
+          free(unique_service_name);
+        } else {
+          /* Failed to create service, preserve original EXTINF and URL */
+          if (first_url) {
+            append_to_transformed_m3u(transformed_line, service_source);
+            append_to_transformed_m3u("\n", service_source);
+          }
+          append_to_transformed_m3u(line, service_source);
+          append_to_transformed_m3u("\n", service_source);
+        }
+      } else {
+        /* Unrecognizable URL: preserve original EXTINF and URL completely */
+        if (first_url) {
+          append_to_transformed_m3u(transformed_line, service_source);
+          append_to_transformed_m3u("\n", service_source);
+        }
+        append_to_transformed_m3u(line, service_source);
+        append_to_transformed_m3u("\n", service_source);
+        logger(LOG_DEBUG, "Preserving unrecognizable URL: %s", line);
+      }
+
+      /* Blank line after the entry is deferred: more URLs may follow */
+      pending_entry_gap = 1;
+
       entry_count++;
       entry_has_url = 1;
     }
