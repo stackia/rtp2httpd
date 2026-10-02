@@ -4,7 +4,7 @@ set -e
 RELEASE_VERSION=${RELEASE_VERSION:-"1.0.0-snapshot"}
 
 # Download source tarball and compute PKG_HASH
-PKG_SOURCE_URL="https://codeload.github.com/stackia/rtp2httpd/tar.gz/v${RELEASE_VERSION}"
+PKG_SOURCE_URL="https://codeload.github.com/walkmanlive/rtp2httpd/tar.gz/v${RELEASE_VERSION}"
 TARBALL=$(mktemp)
 trap 'rm -f "$TARBALL"' EXIT
 curl -fsSL -o "$TARBALL" "$PKG_SOURCE_URL"
