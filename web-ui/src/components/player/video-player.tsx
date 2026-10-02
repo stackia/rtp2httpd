@@ -22,6 +22,7 @@ import {
   isPictureInPictureSupported,
   setupDocumentPiPWindow,
 } from "../../lib/document-picture-in-picture";
+import { isEditableKeyboardTarget } from "../../lib/keyboard";
 import type { Locale } from "../../lib/locale";
 import { buildCatchupSegments } from "../../lib/m3u-parser";
 import { isVolumeControlSupported } from "../../lib/platform";
@@ -176,17 +177,6 @@ function getEventDocument(event: Event): Document {
     return target as Document;
   }
   return document;
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-  if (!target || !("tagName" in target)) return false;
-  const tagName = String((target as { tagName?: unknown }).tagName).toUpperCase();
-  return (
-    tagName === "INPUT" ||
-    tagName === "TEXTAREA" ||
-    tagName === "SELECT" ||
-    !!(target as { isContentEditable?: boolean }).isContentEditable
-  );
 }
 
 function isDocumentBodyActive(targetDocument: Document): boolean {

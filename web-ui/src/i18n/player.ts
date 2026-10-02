@@ -35,15 +35,13 @@ const base: TranslationDict = {
 
   // EPG timeline band
   epgTimelineLabel: "Program timeline",
-  epgPanEarlier: "Earlier 30 minutes",
-  epgPanLater: "Later 30 minutes",
-  epgFollowPlayback: "Follow playback",
+  epgPanEarlier: "Earlier",
+  epgPanLater: "Later",
+  epgBackToPlayback: "Back to playback",
   epgNotAiredYet: "This program has not started yet",
   epgCatchupUnsupported: "This channel has no catch-up source",
-  epgCatchupConfirmTitle: "Replay from catch-up?",
-  epgCatchupConfirmBody: "The upstream catch-up source may not cover this period, so playback can fail.",
-  epgConfirm: "Continue",
-  epgCancel: "Cancel",
+  epgNoCatchup: "No catch-up",
+  epgPlayFromStart: "Play from start",
 
   // Video player
   selectChannelToWatch: "Select a channel to start watching",
@@ -179,15 +177,13 @@ const zhHans: TranslationDict = {
 
   // EPG timeline band
   epgTimelineLabel: "节目时间轴",
-  epgPanEarlier: "向前 30 分钟",
-  epgPanLater: "向后 30 分钟",
-  epgFollowPlayback: "跟随播放",
+  epgPanEarlier: "向前",
+  epgPanLater: "向后",
+  epgBackToPlayback: "回到播放位置",
   epgNotAiredYet: "该节目尚未播出",
   epgCatchupUnsupported: "该频道没有回看源",
-  epgCatchupConfirmTitle: "从回看播放？",
-  epgCatchupConfirmBody: "上游回看源可能不包含该时段，播放可能失败。",
-  epgConfirm: "继续",
-  epgCancel: "取消",
+  epgNoCatchup: "无回看",
+  epgPlayFromStart: "从头播放",
 
   // 视频播放器
   selectChannelToWatch: "选择一个频道开始观看",
@@ -323,15 +319,13 @@ const zhHant: TranslationDict = {
 
   // EPG timeline band
   epgTimelineLabel: "節目時間軸",
-  epgPanEarlier: "向前 30 分鐘",
-  epgPanLater: "向後 30 分鐘",
-  epgFollowPlayback: "跟隨播放",
+  epgPanEarlier: "向前",
+  epgPanLater: "向後",
+  epgBackToPlayback: "回到播放位置",
   epgNotAiredYet: "該節目尚未播出",
   epgCatchupUnsupported: "此頻道沒有回看來源",
-  epgCatchupConfirmTitle: "從回看播放？",
-  epgCatchupConfirmBody: "上游回看來源可能不包含該時段，播放可能失敗。",
-  epgConfirm: "繼續",
-  epgCancel: "取消",
+  epgNoCatchup: "無回看",
+  epgPlayFromStart: "從頭播放",
 
   // 視訊播放器
   selectChannelToWatch: "選擇一個頻道開始觀看",

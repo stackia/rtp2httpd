@@ -9,8 +9,8 @@ import { PlayerEpgTimeline } from "./player-epg-timeline";
  * but what it puts on screen — which programmes survive the window, and how each is classified —
  * is decided during render and can be asserted from the server renderer without a DOM.
  *
- * Pointer and keyboard paths are covered by the pure decision table in `lib/epg-timeline.test.ts`
- * (tap targets, pan clamping, wheel travel); this file only checks what render decides.
+ * Pointer and keyboard handling is not exercised here; only the pure policy behind it (tap
+ * targets, pan clamping, wheel travel) is, in `lib/epg-timeline.test.ts`.
  */
 
 const MINUTE = 60_000;
@@ -27,7 +27,7 @@ function program(startOffsetMs: number, endOffsetMs: number, title: string): EPG
  * The band's layout effects have no meaning on the server, so React warns about them. Only that
  * one warning is dropped — anything else still reaches the test output and fails loudly.
  */
-function render(programs: readonly EPGProgram[], supportsCatchup = true): string {
+function render(programs: readonly EPGProgram[], supportsCatchup = true, isLive = true): string {
   const originalError = console.error;
   const forwarded: unknown[][] = [];
   console.error = (...args: unknown[]) => {
@@ -41,6 +41,7 @@ function render(programs: readonly EPGProgram[], supportsCatchup = true): string
       createElement(PlayerEpgTimeline, {
         programs,
         locale: "en",
+        isLive,
         liveSessionAnchor: null,
         onScrubbingChange: noop,
         onSeek: noop,
@@ -85,13 +86,13 @@ describe("PlayerEpgTimeline", () => {
   });
 
   it("marks a finished programme as replayable only when the source can replay", () => {
-    // The catch-up marker is the only icon a block carries.
+    // A replayable programme is underlined.
     const withCatchup = block(render(programmes), "past-show");
-    expect(withCatchup).toContain("<svg");
+    expect(withCatchup).toContain("border-b-blue-400");
     expect(withCatchup).not.toContain("disabled");
 
     const withoutCatchup = block(render(programmes, false), "past-show");
-    expect(withoutCatchup).not.toContain("<svg");
+    expect(withoutCatchup).not.toContain("border-b-blue-400");
     expect(withoutCatchup).toContain("disabled");
     // The live block stays playable: returning to the live edge never needs catch-up.
     expect(block(render(programmes, false), "live-show")).not.toContain("disabled");
@@ -117,13 +118,39 @@ describe("PlayerEpgTimeline", () => {
     expect(html).toMatch(/aria-valuetext="[^"]+"/);
   });
 
-  it("renders the hour grid, pan controls and current-time clock", () => {
+  it("renders the hour grid and pan controls, but no clock of its own", () => {
     const html = render(programmes);
-    expect(html).toContain("--epg-hour-width");
-    expect(html).toContain('title="Earlier 30 minutes"');
-    expect(html).toContain('title="Later 30 minutes"');
-    // The toolbar clock carries seconds; the ruler and blocks only name minutes.
-    expect(html).toMatch(/title="\d{1,2}:\d{2}:\d{2}[^"]*"/);
+    // A three-hour window always crosses at least two whole hours.
+    expect(html.match(/data-epg-hour-line=""/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(html).toContain('title="Earlier"');
+    expect(html).toContain('title="Later"');
+    // The player's top-left overlay already shows the wall clock.
+    expect(html).not.toMatch(/title="\d{1,2}:\d{2}:\d{2}[^"]*"/);
+  });
+
+  it("frames the programme being watched", () => {
+    // Without a media clock the playhead sits at the stream start, inside the live programme.
+    expect(render(programmes)).toContain("inset_0_0_0_1px_rgba(255,255,255,0.72)");
+    expect(render(programmes, false)).toContain("inset_0_0_0_1px_rgba(255,255,255,0.72)");
+  });
+
+  it("offers play-from-start on every programme that has started and can be replayed", () => {
+    const html = render(programmes);
+    expect(html).toContain('aria-label="Play from start: past-show"');
+    expect(html).toContain('aria-label="Play from start: live-show"');
+    expect(html).not.toContain('aria-label="Play from start: future-show"');
+    // Without a catch-up source there is no start to go back to.
+    expect(render(programmes, false)).not.toContain("Play from start");
+  });
+
+  it("gives the playhead a grab handle only when there is catch-up to scrub through", () => {
+    expect(render(programmes)).toContain("data-epg-playhead-handle");
+    expect(render(programmes, false)).not.toContain("data-epg-playhead-handle");
+  });
+
+  it("draws the live edge only while playback is behind it", () => {
+    expect(render(programmes, true, true)).not.toContain("#f43f5e");
+    expect(render(programmes, true, false)).toContain("#f43f5e");
   });
 
   it("renders nothing but the empty band without guide data", () => {

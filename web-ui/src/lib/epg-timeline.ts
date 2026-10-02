@@ -5,9 +5,7 @@ import type { EPGProgram } from "../types/player";
  *
  * The timeline is a bounded, pannable window rather than a scroll container: every programme
  * block and tick is positioned as a percentage of `[startMs, endMs]`, so a whole day of guide
- * data can be reached by panning without ever growing the DOM. The fine grid is drawn with a
- * repeating gradient, so the only nodes in the band are the programmes that intersect the
- * window — typically a handful, never the full guide.
+ * data can be reached by panning while the DOM only ever holds what intersects the window.
  */
 
 export const MINUTE_MS = 60_000;
@@ -18,6 +16,12 @@ export const EPG_TICK_MINUTE_OPTIONS = [5, 10, 15, 30, 60] as const;
 /** Default window: 90 minutes either side of the anchor. */
 export const EPG_WINDOW_MINUTES_BEFORE = 90;
 export const EPG_WINDOW_MINUTES_AFTER = 90;
+
+/** Ruler widths (px) below which the window narrows, and the minutes either side it keeps. */
+const EPG_NARROW_WINDOWS: ReadonlyArray<{ maxWidthPx: number; halfSpanMinutes: number }> = [
+  { maxWidthPx: 480, halfSpanMinutes: 45 },
+  { maxWidthPx: 720, halfSpanMinutes: 60 },
+];
 
 /** Step used by the pan buttons and the mouse wheel. */
 export const EPG_PAN_MINUTES = 30;
@@ -58,6 +62,20 @@ export interface EpgTimelineBlock {
   playable: boolean;
 }
 
+/**
+ * Minutes either side of the anchor for a ruler this wide. The band is the seek bar, so a narrow
+ * ruler gets a shorter window and one pixel keeps covering a usable slice of time (about 10-15 s)
+ * instead of half a minute. An unmeasured ruler (width 0) keeps the default.
+ */
+export function chooseEpgWindowHalfMinutes(widthPx: number): number {
+  if (widthPx > 0) {
+    for (const { maxWidthPx, halfSpanMinutes } of EPG_NARROW_WINDOWS) {
+      if (widthPx < maxWidthPx) return halfSpanMinutes;
+    }
+  }
+  return EPG_WINDOW_MINUTES_BEFORE;
+}
+
 /** Floor `timeMs` to the previous `tickMinutes` boundary of the local wall clock. */
 export function snapToTick(timeMs: number, tickMinutes: number): number {
   if (!Number.isFinite(timeMs) || tickMinutes <= 0) return timeMs;
@@ -78,7 +96,8 @@ export function chooseEpgTickMinutes(spanMinutes: number, maxTicks: number = TAR
 
 /**
  * Window centred on `anchorMs`, with its start snapped to a tick boundary so ticks stay put
- * while the window follows playback between boundaries.
+ * while the window follows playback between boundaries. A `tickMinutes` of 0 skips the snap and
+ * centres the window exactly, for a window that moves continuously (a glide or a drag).
  */
 export function createEpgTimelineWindow(
   anchorMs: number,
@@ -110,15 +129,18 @@ export function isTimeInWindow(window: EpgTimelineWindow, timeMs: number): boole
 }
 
 /**
- * Ticks across the window, one every `tickMinutes`, tiered by wall-clock minute so the hour
- * lines can be drawn longer and brighter than the rest.
+ * Ticks across the window, one on every `tickMinutes` boundary of the wall clock, tiered by
+ * minute so the hour lines can be drawn longer and brighter than the rest. A window that does not
+ * start on a boundary (one mid-slide after a drag) still gets its ticks on the boundaries.
  */
 export function createEpgTicks(window: EpgTimelineWindow, tickMinutes: number): EpgTick[] {
   const ticks: EpgTick[] = [];
   if (window.spanMs <= 0 || tickMinutes <= 0) return ticks;
 
   const tickMs = tickMinutes * MINUTE_MS;
-  for (let timeMs = window.startMs; timeMs <= window.endMs; timeMs += tickMs) {
+  let firstMs = snapToTick(window.startMs, tickMinutes);
+  if (firstMs < window.startMs) firstMs += tickMs;
+  for (let timeMs = firstMs; timeMs <= window.endMs; timeMs += tickMs) {
     const date = new Date(timeMs);
     const minute = date.getMinutes();
     ticks.push({
@@ -340,23 +362,26 @@ export function normalizeWheelDelta(deltaX: number, deltaY: number, deltaMode: n
 /** Wheel travel (px) that pans the window by one step. */
 export const EPG_WHEEL_STEP_PX = 48;
 
+export type EpgNoticeReason = "not-aired" | "catchup-unsupported";
+
 export type EpgTapAction =
-  /** Landed in a gap, or after a scrub: play from that moment. */
+  /** Play from the moment under the pointer. */
   | { kind: "seek"; timeMs: number }
-  /** The programme on air: return to the live edge. */
+  /** At or past the live edge: return to it. */
   | { kind: "go-live" }
   /** A click that cannot play anything, with the reason to show. */
-  | { kind: "notice"; reason: "not-aired" | "catchup-unsupported" }
-  /** A finished programme: ask before reaching for the catch-up source. */
-  | { kind: "confirm-catchup"; program: EPGProgram };
+  | { kind: "notice"; reason: EpgNoticeReason };
 
 /**
  * What a click on the band should do, kept pure so the whole decision table is testable without
  * a DOM. `timeMs` is the moment under the pointer, `nowMs` the current wall clock.
  *
- * A source without catch-up can only ever play the live edge, so every tap that would land in
- * the past is answered with the reason instead of a seek the player cannot serve — including a
- * tap in a gap between programmes, which has no row to classify.
+ * The band is the player's seek bar, so a click always plays from where it lands — in any finished
+ * programme, in the one on air, or in a gap; playing a programme from its start is the job of the
+ * block's own play-from-start control. A source without catch-up can only ever play the live
+ * edge, so every tap that would land in the past is answered with the reason instead of a seek
+ * the player cannot serve — except on the programme on air, where staying live is the honest
+ * answer.
  */
 export function resolveEpgTapAction(
   programs: readonly EPGProgram[],
@@ -365,14 +390,9 @@ export function resolveEpgTapAction(
   supportsCatchup: boolean,
 ): EpgTapAction {
   const program = findEpgProgramAt(programs, timeMs);
-  if (!program) {
-    if (supportsCatchup) return { kind: "seek", timeMs };
-    return timeMs < nowMs ? { kind: "notice", reason: "catchup-unsupported" } : { kind: "go-live" };
-  }
-
-  const state = getEpgProgramState(program, nowMs);
+  const state = program ? getEpgProgramState(program, nowMs) : null;
   if (state === "future") return { kind: "notice", reason: "not-aired" };
-  if (state === "live") return { kind: "go-live" };
-  if (!supportsCatchup) return { kind: "notice", reason: "catchup-unsupported" };
-  return { kind: "confirm-catchup", program };
+  if (timeMs >= nowMs) return { kind: "go-live" };
+  if (supportsCatchup) return { kind: "seek", timeMs };
+  return state === "live" ? { kind: "go-live" } : { kind: "notice", reason: "catchup-unsupported" };
 }

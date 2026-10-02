@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EPGProgram } from "../types/player";
 import {
   chooseEpgTickMinutes,
+  chooseEpgWindowHalfMinutes,
   clampEpgPan,
   clampPercent,
   clampToRange,
@@ -73,6 +74,18 @@ describe("chooseEpgTickMinutes", () => {
   });
 });
 
+describe("chooseEpgWindowHalfMinutes", () => {
+  it("narrows the window on narrow rulers so a pixel stays a usable seek step", () => {
+    expect(chooseEpgWindowHalfMinutes(360)).toBe(45);
+    expect(chooseEpgWindowHalfMinutes(600)).toBe(60);
+    expect(chooseEpgWindowHalfMinutes(1100)).toBe(90);
+  });
+
+  it("keeps the default window before the ruler has been measured", () => {
+    expect(chooseEpgWindowHalfMinutes(0)).toBe(90);
+  });
+});
+
 describe("createEpgTimelineWindow", () => {
   it("spans the configured minutes either side of the anchor", () => {
     expect(window.spanMs).toBe(180 * MINUTE_MS);
@@ -91,6 +104,13 @@ describe("createEpgTimelineWindow", () => {
     const later = createEpgTimelineWindow(local(12, 14, 59).getTime(), 15);
     expect(later.startMs).toBe(early.startMs);
     expect(createEpgTimelineWindow(local(12, 15).getTime(), 15).startMs).toBe(early.startMs + 15 * MINUTE_MS);
+  });
+
+  it("centres exactly on the anchor without a tick base", () => {
+    const anchorMs = local(12, 7, 31).getTime();
+    const exact = createEpgTimelineWindow(anchorMs, 0, 45, 45);
+    expect(exact.startMs).toBe(anchorMs - 45 * MINUTE_MS);
+    expect(exact.endMs).toBe(anchorMs + 45 * MINUTE_MS);
   });
 });
 
@@ -130,6 +150,19 @@ describe("createEpgTicks", () => {
     // the window opens at 10:30, so the minor ticks are the :45 / :15 quarter hours
     const minor = createEpgTicks(window, 15).filter((tick) => tick.tier === "minor");
     expect(minor.map((tick) => tick.minute)).toEqual([45, 15, 45, 15, 45, 15]);
+  });
+
+  it("keeps ticks on the wall-clock boundaries when the window starts between them", () => {
+    const startMs = local(10, 37).getTime();
+    const shifted = { startMs, endMs: startMs + 60 * MINUTE_MS, spanMs: 60 * MINUTE_MS };
+    const ticks = createEpgTicks(shifted, 15);
+    expect(ticks.map((tick) => [tick.hour, tick.minute])).toEqual([
+      [10, 45],
+      [11, 0],
+      [11, 15],
+      [11, 30],
+    ]);
+    expect(ticks[0].percent).toBeCloseTo((8 / 60) * 100);
   });
 
   it("returns nothing for an empty window", () => {
@@ -361,33 +394,40 @@ describe("normalizeWheelDelta", () => {
 });
 
 describe("resolveEpgTapAction", () => {
-  const now = local(12).getTime();
+  const now = local(12, 30).getTime();
   const past = program(11, 0, 12, 0);
   const live = program(12, 0, 13, 0);
   const future = program(13, 0, 14, 0);
   const programs = [past, live, future];
+
+  it("seeks to the exact moment inside the programme on air", () => {
+    const tapMs = local(12, 10).getTime();
+    expect(resolveEpgTapAction(programs, tapMs, now, true)).toEqual({ kind: "seek", timeMs: tapMs });
+  });
+
+  it("seeks to the exact moment inside a finished programme, without asking", () => {
+    const tapMs = local(11, 40).getTime();
+    expect(resolveEpgTapAction(programs, tapMs, now, true)).toEqual({ kind: "seek", timeMs: tapMs });
+  });
 
   it("seeks to the exact moment when the click lands in a gap", () => {
     const gapMs = local(12, 0).getTime() + 30_000;
     expect(resolveEpgTapAction([past], gapMs, now, true)).toEqual({ kind: "seek", timeMs: gapMs });
   });
 
-  it("returns to the live edge for the programme on air", () => {
-    expect(resolveEpgTapAction(programs, local(12, 30).getTime(), now, true)).toEqual({ kind: "go-live" });
-    expect(resolveEpgTapAction(programs, local(12, 30).getTime(), now, false)).toEqual({ kind: "go-live" });
+  it("returns to the live edge for a click at or after now", () => {
+    expect(resolveEpgTapAction(programs, local(12, 45).getTime(), now, true)).toEqual({ kind: "go-live" });
+    expect(resolveEpgTapAction(programs, now, now, true)).toEqual({ kind: "go-live" });
+  });
+
+  it("stays live on the programme on air when the source cannot replay", () => {
+    expect(resolveEpgTapAction(programs, local(12, 10).getTime(), now, false)).toEqual({ kind: "go-live" });
   });
 
   it("refuses future programmes", () => {
     expect(resolveEpgTapAction(programs, local(13, 30).getTime(), now, true)).toEqual({
       kind: "notice",
       reason: "not-aired",
-    });
-  });
-
-  it("asks before replaying a finished programme", () => {
-    expect(resolveEpgTapAction(programs, local(11, 30).getTime(), now, true)).toEqual({
-      kind: "confirm-catchup",
-      program: past,
     });
   });
 
