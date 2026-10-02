@@ -16,9 +16,8 @@ Use the user's target tag or release type. If neither the request nor context de
 
 ## Invariants
 
-- Notes are cumulative within one base-version series, Chinese first and English second, with one canonical donation block. Preserve user corrections and still-relevant inherited changes.
+- Notes are cumulative within one base-version series, Chinese first and English second. Preserve user corrections and still-relevant inherited changes.
 - Publish from an up-to-date, clean `main` release checkout. An authorized release includes regenerating and committing `src/embedded_web_data.h` if changed.
-- Only the newest published release retains the donation block. After publication, remove it from the immediately previous published release.
 - Formal releases also collapse same-series prerelease notes and update `stable` after the versioned Makefiles job succeeds. Prereleases leave `stable` and earlier prerelease visibility unchanged.
 - Never force-push `main`/`stable`, move an existing release tag, or delete/recreate a published release to recover from a later failure.
 

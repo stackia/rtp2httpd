@@ -13,7 +13,6 @@ gh release list --exclude-drafts --limit 100 --json tagName,isPrerelease,publish
 
 Increase the limit if the relevant history is truncated. Record:
 
-- The immediately previous release: the most recently **published** non-draft release, including prereleases. This is the donation-cleanup target, not necessarily the previous formal version.
 - The previous formal release: the highest lower non-prerelease SemVer tag that is an ancestor of `origin/main`.
 - All published prereleases with exactly the target's base version after stripping its suffix, and the latest by publication time.
 
@@ -32,7 +31,7 @@ git log <source-tag>..origin/main --no-merges --format='%s (%h)'
 
 If a source tag is not an ancestor, resolve the intended release branch/range before using that diff. Commit subjects identify work; write notes for end users, preserving accurate existing wording. Deduplicate equivalent items. Remove an inherited item only when reverted, superseded, demonstrably inaccurate, or explicitly removed by the user. Flag uncertainty without silently dropping content.
 
-Normalize source bodies before merging: unwrap an outer `<details>` accordion, remove its summary, remove the whole donation table using the image URL below as the marker, and split languages at the standalone `---` (not the table row `| --- |`). Merge Chinese/English item pairs together so corrections remain aligned.
+Normalize source bodies before merging: unwrap an outer `<details>` accordion, remove its summary, and split languages at the standalone `---`. Merge Chinese/English item pairs together so corrections remain aligned.
 
 ## Canonical format
 
@@ -47,10 +46,6 @@ Keep user-provided wording and add the missing language if only one is supplied.
 
 - 中文修复说明
 
-| 如果这个项目对你有帮助，不妨请作者喝一杯咖啡 ☕️ |
-| --- |
-| <img width="360" src="https://github.com/user-attachments/assets/fc5c3498-40e9-43b9-93a3-6a5a7917847b" /> |
-
 ---
 
 ## New Features
@@ -62,6 +57,6 @@ Keep user-provided wording and add the missing language if only one is supplied.
 - English fix description
 ```
 
-For patch releases, omit the feature/fix headings and use one bullet list per language. Every release, including prereleases, has exactly one donation table after the Chinese content and before the separator. Reuse/move an existing block rather than duplicating it.
+For patch releases, omit the feature/fix headings and use one bullet list per language.
 
 Keep notes concise and user-facing, naming player/OpenWrt/Docker areas when useful. Omit internal refactors, dependency churn without user impact, and `Closes`/`Fixes #...` bookkeeping. Check bilingual coverage and final formatting, then show the complete notes for review when drafting or seeking publication approval. A draft-only request needs no build, tag, or GitHub mutation.

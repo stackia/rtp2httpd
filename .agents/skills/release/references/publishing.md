@@ -38,12 +38,6 @@ For a prerelease, add `--prerelease` to the last command. From an isolated relea
 
 Publishing triggers `.github/workflows/release.yaml` on `release.published`. If a call fails or its result is uncertain, inspect the remote tag and release state before retrying. A matching existing tag may be reused for an interrupted publication; a tag pointing at a different commit requires resolution, never retagging.
 
-## Remove the previous donation block
-
-After publication, fetch the current body of the immediately previous release recorded during preparation. Remove only its canonical donation table, detecting it by the image URL in [notes.md](notes.md). Preserve all other text; use a temporary file and `gh release edit <previous-tag> --notes-file ...`.
-
-Do not scan older releases for donation cleanup. Verify that the new release contains exactly one donation asset URL and the immediately previous release contains none. If this step fails, keep the new release and report the specific cleanup still needed.
-
 ## Collapse superseded prereleases after GA
 
 Skip this step for a prerelease. For a formal release, use the same-base-version prerelease list collected for its notes. Fetch each current body and skip one already wrapped in a top-level `<details>` accordion. Otherwise preserve its body exactly inside:
@@ -57,7 +51,7 @@ Skip this step for a prerelease. For a formal release, use the same-base-version
 </details>
 ```
 
-Substitute the formal tag in the summary. Leave the blank line after the summary and omit the `open` attribute. Edit through `--notes-file`; do not change donation blocks during this step. Verify the default-hidden wrapper and preservation of the inner bilingual notes. Never wrap the new formal release or a different version series.
+Substitute the formal tag in the summary. Leave the blank line after the summary and omit the `open` attribute. Edit through `--notes-file`. Verify the default-hidden wrapper and preservation of the inner bilingual notes. Never wrap the new formal release or a different version series.
 
 For transient API failures, re-read current state and make a bounded retry. Report any remaining tags/cleanup without deleting the new release. Run any Python helper with `uv run`.
 
@@ -92,4 +86,4 @@ git switch main
 
 For an isolated release worktree, equivalent verified ref updates can avoid disturbing another checkout. If stable diverged, report the blocker; never force-push. Inspect any unrelated main advances before including them in stable.
 
-Finish with the release URL, pushed tag, donation/prerelease cleanup results, stable result or deliberate prerelease skip, and actual CI status/run URL. If the user requested ready artifacts, continue through the relevant build/upload jobs. Clean up task-owned worktrees and temporary files when no longer needed, retaining notes/recovery files that are the requested deliverable or needed to resolve a failure.
+Finish with the release URL, pushed tag, prerelease cleanup results, stable result or deliberate prerelease skip, and actual CI status/run URL. If the user requested ready artifacts, continue through the relevant build/upload jobs. Clean up task-owned worktrees and temporary files when no longer needed, retaining notes/recovery files that are the requested deliverable or needed to resolve a failure.
