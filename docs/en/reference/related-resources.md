@@ -39,6 +39,7 @@ If you are new to setting up IPTV multicast forwarding services and unfamiliar w
 #### mytv-android
 
 - Project: <https://github.com/mytv-android/mytv-android>
+- Setup guide for use with rtp2httpd (Chinese): <https://mytv-android.github.io/mytv-doc/rtp2httpd>
 
 Android IPTV player with support for M3U playlists, FCC fast channel switching, EPG electronic program guide, time-shift playback, rtp2httpd [video snapshots](../guide/video-snapshot.md), and more.
 

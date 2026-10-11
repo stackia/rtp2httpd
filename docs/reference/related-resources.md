@@ -39,6 +39,7 @@
 #### 电视直播TV mytv-android
 
 - 项目地址：<https://github.com/mytv-android/mytv-android>
+- 配合 rtp2httpd 使用教程：<https://mytv-android.github.io/mytv-doc/rtp2httpd>
 
 Android 平台 IPTV 播放器，支持 M3U 播放列表、FCC 快速换台、EPG 电子节目单、时移回看、rtp2httpd [视频快照](../guide/video-snapshot.md) 等功能。
 
