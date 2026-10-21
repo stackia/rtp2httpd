@@ -1255,6 +1255,30 @@ function VideoPlayerComponent({
     }
   });
 
+  // Watchdog asked for a recovery. Do exactly what tapping a channel does: load
+  // into the hidden slot and hard-switch when it is ready, which also releases
+  // the wedged connection instead of stacking a retry on top of it.
+  useEffect(() => {
+    const onStallRestart = (event: Event) => {
+      // Cancel the default "no listener" behaviour: we handled it.
+      event.preventDefault?.();
+      if (playMode !== "live") {
+        return;
+      }
+      const segments = getRetrySegments();
+      if (!segments.length) {
+        return;
+      }
+      // Pretend the stream just changed so handleLoadSegments takes the seamless
+      // switch branch (hidden slot + hard switch) instead of reloading in place.
+      prevStreamRef.current = { channelId: "__r2h_restall__", sourceIndex: -1 };
+      shouldAutoPlayRef.current = true;
+      handleLoadSegments(segments);
+    };
+    window.addEventListener("r2h-playback-stall", onStallRestart);
+    return () => window.removeEventListener("r2h-playback-stall", onStallRestart);
+  }, [playMode]);
+
   const handleVideoEnterPiP = useEffectEvent((slotId: SlotId) => {
     if (slotId !== getActiveSlotId()) return;
     setIsPiP(true);

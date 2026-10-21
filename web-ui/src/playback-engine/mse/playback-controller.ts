@@ -580,16 +580,26 @@ export function createMSEPlaybackController(
     stallLastMoveAt = now;
     stallSteady = false;
     stallArmedPos = -1;
-    // Close our own stream BEFORE asking for a retry. The player keeps dual slots
-    // for seamless switching, so the frozen connection would otherwise stay open
-    // and hold a server slot (maxclients) — each reconnect then gets slower and
-    // eventually 503s. Killing it first makes the retry a clean new request.
-    impl.suspend();
-    impl.onError?.({
-      category: "media",
-      detail: PlayerErrors.MEDIA_MSE_ERROR,
-      info: "Playback stalled without progress (watchdog)",
-    });
+    // Let the page recover on a FRESH slot. Reloading segments inside the wedged
+    // slot is slow (it keeps the same video element, worker and audio context);
+    // loading into the hidden slot and hard-switching — the channel-tap path —
+    // recovers noticeably faster. onError stays as a fallback if nobody listens.
+    let handled = false;
+    try {
+      // dispatchEvent() returns false when a listener called preventDefault(),
+      // i.e. the page took over the recovery.
+      handled = !window.dispatchEvent(new CustomEvent("r2h-playback-stall", { cancelable: true }));
+    } catch {
+      handled = false;
+    }
+    if (!handled) {
+      impl.suspend();
+      impl.onError?.({
+        category: "media",
+        detail: PlayerErrors.MEDIA_MSE_ERROR,
+        info: "Playback stalled without progress (watchdog)",
+      });
+    }
   }
 
   function startStallWatchdog(): void {
