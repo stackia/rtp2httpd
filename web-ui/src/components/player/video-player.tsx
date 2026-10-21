@@ -101,7 +101,10 @@ interface PlaybackErrorDisplay {
   suggestion?: string;
 }
 
-const MAX_RETRIES = 3;
+// [local patch] A freeze retries immediately now, so the budget must not run out
+// after a few hiccups. The stock player resets the baseline after 30s of stable
+// playback, so this only bounds a truly hopeless stream.
+const MAX_RETRIES = 100;
 const INACTIVE_RENDER_STATE: PlayerRenderState = { active: false, deinterlacing: false };
 
 type SlotId = "a" | "b";

@@ -49,6 +49,27 @@ export function createMSEPlaybackController(
   let watermarkPaused = false;
   let bufferFullPaused = false;
 
+  // ---- [local patch] playback stall watchdog -------------------------------
+  // Mobile browsers can stop consuming frames while the network keeps flowing
+  // (no error event fires), so the session looks alive but the picture freezes.
+  // Poll the media clock and recover instead of waiting for a user channel switch.
+  const STALL_TICK_MS = 1000;
+  const STALL_DETECT_SEC = 1;
+  let stallTimer: number | null = null;
+  let stallLastPos = -1;
+  let stallLastMoveAt = 0;
+  let stallJumpCount = 0;
+  /** Seconds of continuous playback required before stall judgement is allowed at all. */
+  const STALL_STEADY_SEC = 8;
+  let stallSteady = false;
+  /** Position where this session's playback started, to measure continuous progress. */
+  let stallArmedPos = -1;
+  /** Last seen end of the buffered range, to tell "clock stuck" from "pipeline dead". */
+  let stallBufferedEnd = -1;
+  let stallBufferedEndAt = 0;
+  /** When the watchdog armed for this session (startup grace window). */
+  let stallArmedAt = 0;
+
   // PCM audio player for software-decoded audio (MP2)
   let pcmPlayer: PCMAudioPlayer | null = null;
   let pcmPlayerInitPromise: Promise<void> | null = null;
@@ -450,6 +471,132 @@ export function createMSEPlaybackController(
     }
   }
 
+  function clearStallWatchdog(): void {
+    if (stallTimer !== null) {
+      window.clearInterval(stallTimer);
+      stallTimer = null;
+    }
+    stallLastPos = -1;
+    stallLastMoveAt = 0;
+    stallJumpCount = 0;
+    stallSteady = false;
+    stallArmedPos = -1;
+    stallArmedAt = 0;
+    stallBufferedEnd = -1;
+    stallBufferedEndAt = 0;
+  }
+
+  function stallTick(): void {
+    if (!mse) {
+      return;
+    }
+    const now = performance.now();
+    const pos = video.currentTime;
+
+    // A slot that is no longer on screen must never be judged. Seamless channel
+    // switching (dual slots A/B) keeps the previous element alive in the DOM, so
+    // its clock freezes while it is detached — judging it would raise an error
+    // for the *player page*, interrupting the channel that is actually playing.
+    if (!video.isConnected || video.getClientRects().length === 0) {
+      stallLastPos = pos;
+      stallLastMoveAt = now;
+      stallArmedPos = pos;
+      stallSteady = false;
+      return;
+    }
+
+    // Paused / hidden / still aligning audio: nothing to judge, and every
+    // startup attempt restarts the steady-playback measurement.
+    if (
+      video.paused ||
+      video.ended ||
+      document.visibilityState !== "visible" ||
+      startupRateControlActive
+    ) {
+      stallLastPos = pos;
+      stallLastMoveAt = now;
+      stallArmedPos = pos;
+      stallSteady = false;
+      return;
+    }
+
+    if (stallArmedPos < 0) {
+      stallArmedPos = pos;
+    }
+
+    if (Math.abs(pos - stallLastPos) > 0.05) {
+      stallLastPos = pos;
+      stallLastMoveAt = now;
+      stallJumpCount = 0;
+      // The stock startup path is left completely alone: only after this session
+      // has really played STALL_STEADY_SEC of media do we start watching for
+      // freezes. Startup retries reset currentTime to ~0, which keeps this false.
+      if (!stallSteady && pos - stallArmedPos >= STALL_STEADY_SEC) {
+        stallSteady = true;
+        stallArmedAt = now;
+      }
+      return;
+    }
+
+    if (!stallSteady) {
+      // Still starting up (or starting over): never interfere.
+      stallLastMoveAt = now;
+      return;
+    }
+    if (stallLastMoveAt === 0) {
+      stallLastMoveAt = now;
+      return;
+    }
+    // Track whether the buffered range is still growing: if it is frozen, the
+    // append pipeline is dead and seeking inside the buffer cannot help.
+    {
+      const range = getLastBufferedRange();
+      if (range && range.end > stallBufferedEnd + 0.05) {
+        stallBufferedEnd = range.end;
+        stallBufferedEndAt = now;
+      } else if (stallBufferedEndAt === 0) {
+        stallBufferedEndAt = now;
+      }
+    }
+
+    const stalledSec = (now - stallLastMoveAt) / 1000;
+    if (stalledSec < STALL_DETECT_SEC) {
+      return;
+    }
+
+    // During the first seconds after arming a thin buffer is normal (startup,
+    // channel change, post-seek refill) and must not be judged. Later on, a thin
+    // buffer is exactly what a dead pipeline looks like — judge it, just slower.
+    const aheadRange = getLastBufferedRange();
+    const aheadSec = aheadRange ? aheadRange.end - pos : 0;
+    if (aheadSec < 2 && stalledSec < STALL_DETECT_SEC * 2) {
+      return;
+    }
+
+    // A silent freeze is turned into the SAME error the stock player already
+    // retries on, so the built-in retry path issues a brand new request
+    // (identical to tapping the channel again). No cooldown, no downgrade.
+    console.warn(`[r2h-watchdog] stall ${stalledSec.toFixed(1)}s at ${pos.toFixed(2)} -> stock retry`);
+    stallLastMoveAt = now;
+    stallSteady = false;
+    stallArmedPos = -1;
+    // Close our own stream BEFORE asking for a retry. The player keeps dual slots
+    // for seamless switching, so the frozen connection would otherwise stay open
+    // and hold a server slot (maxclients) — each reconnect then gets slower and
+    // eventually 503s. Killing it first makes the retry a clean new request.
+    impl.suspend();
+    impl.onError?.({
+      category: "media",
+      detail: PlayerErrors.MEDIA_MSE_ERROR,
+      info: "Playback stalled without progress (watchdog)",
+    });
+  }
+
+  function startStallWatchdog(): void {
+    clearStallWatchdog();
+    stallTimer = window.setInterval(stallTick, STALL_TICK_MS);
+  }
+
   const onVideoPlay = () => {
     markPlaybackUnlocked();
     updateLiveState();
@@ -479,6 +626,7 @@ export function createMSEPlaybackController(
       destroyPCMPlayer();
       initMSE();
       initLiveHelpers();
+      startStallWatchdog();
     },
 
     setLiveSync(enabled: boolean) {
@@ -525,6 +673,7 @@ export function createMSEPlaybackController(
       destroyPCMPlayer();
       destroyLiveSync?.();
       destroyLiveSync = null;
+      clearStallWatchdog();
     },
 
     destroy() {
