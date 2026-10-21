@@ -61,9 +61,13 @@ export function createMSEPlaybackController(
   let stallJumpCount = 0;
   /** Seconds of continuous playback required before stall judgement is allowed at all. */
   const STALL_STEADY_SEC = 8;
+  /** If nothing has played at all this long after loading, the stream never comes up. */
+  const STALL_STARTUP_LIMIT_MS = 12000;
   let stallSteady = false;
   /** Position where this session's playback started, to measure continuous progress. */
   let stallArmedPos = -1;
+  /** When the current load started (reset while the slot is off screen). */
+  let stallLoadAt = 0;
   /** Last seen end of the buffered range, to tell "clock stuck" from "pipeline dead". */
   let stallBufferedEnd = -1;
   let stallBufferedEndAt = 0;
@@ -502,6 +506,8 @@ export function createMSEPlaybackController(
       stallLastMoveAt = now;
       stallArmedPos = pos;
       stallSteady = false;
+      // Start the "never came up" clock when this slot becomes visible.
+      stallLoadAt = now;
       return;
     }
 
@@ -539,7 +545,29 @@ export function createMSEPlaybackController(
     }
 
     if (!stallSteady) {
-      // Still starting up (or starting over): never interfere.
+      // Still starting up. Do not touch the stock startup path — but if nothing has
+      // played at all within the limit, the stream will never come up, so recover
+      // instead of sitting on "buffering" forever.
+      if (stallLoadAt > 0 && now - stallLoadAt > STALL_STARTUP_LIMIT_MS && pos < 1) {
+        stallLoadAt = now;
+        stallLastMoveAt = now;
+        console.warn(`[r2h-watchdog] startup produced no video for ${STALL_STARTUP_LIMIT_MS}ms -> recover`);
+        let handled = false;
+        try {
+          handled = !window.dispatchEvent(new CustomEvent("r2h-playback-stall", { cancelable: true }));
+        } catch {
+          handled = false;
+        }
+        if (!handled) {
+          impl.suspend();
+          impl.onError?.({
+            category: "media",
+            detail: PlayerErrors.MEDIA_MSE_ERROR,
+            info: "Startup stalled without producing video (watchdog)",
+          });
+        }
+        return;
+      }
       stallLastMoveAt = now;
       return;
     }
@@ -604,6 +632,7 @@ export function createMSEPlaybackController(
 
   function startStallWatchdog(): void {
     clearStallWatchdog();
+    stallLoadAt = performance.now();
     stallTimer = window.setInterval(stallTick, STALL_TICK_MS);
   }
 
