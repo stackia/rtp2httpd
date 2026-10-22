@@ -6,7 +6,10 @@ const TAG = "LiveSync";
 /** Each live-edge underrun raises the latency floor by this much (seconds). */
 const UNDERRUN_BACKOFF_STEP = 1;
 /** Upper bound for the adaptive latency increase (seconds). */
-const UNDERRUN_BACKOFF_MAX = 6;
+// [local patch] Was 6: every live-edge underrun added 1s of tolerated latency
+// and only cleared below the target, so latency (and with it the jump on a
+// recovery) crept up to several seconds and never came back down.
+const UNDERRUN_BACKOFF_MAX = 1;
 
 /** Forward buffer seconds ahead of currentTime within the containing range. */
 function forwardBufferAhead(video: HTMLMediaElement): number {

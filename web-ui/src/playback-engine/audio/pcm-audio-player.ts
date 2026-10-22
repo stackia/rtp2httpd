@@ -90,7 +90,14 @@ const STARTUP_MINIMUM_LEAD_SEC = 0.096;
  *  Chromium rejects positive playback rates below 1/16, so use that portable lower bound. */
 const STARTUP_VIDEO_PLAYBACK_RATE = 0.0625;
 /** Do not leave a stream silently waiting forever when startup cannot be aligned. */
-const STARTUP_SYNC_TIMEOUT_MS = 4000;
+// [local patch] 4000 -> 1200: startup used to slow the video to 1/16 while
+// waiting up to 4s for the PCM chain. On a recovery/channel switch that wait
+// is pure frozen picture; 1.2s lets video start and the drift controller
+// pulls the audio in afterwards.
+// [local patch] 1200 -> 500: while this wait runs the video is throttled to
+// 1/16 speed, so every recovery/channel switch shows ~1s of frozen picture.
+// 500ms lets the picture start and the drift controller pulls audio in.
+const STARTUP_SYNC_TIMEOUT_MS = 500;
 
 /**
  * Lifecycle-driven sync state. The drift control loop and hard resync only run

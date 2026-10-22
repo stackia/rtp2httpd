@@ -101,7 +101,10 @@ interface PlaybackErrorDisplay {
   suggestion?: string;
 }
 
-const MAX_RETRIES = 3;
+// [local patch] A freeze retries immediately now, so the budget must not run out
+// after a few hiccups. The stock player resets the baseline after 30s of stable
+// playback, so this only bounds a truly hopeless stream.
+const MAX_RETRIES = 100;
 const INACTIVE_RENDER_STATE: PlayerRenderState = { active: false, deinterlacing: false };
 
 type SlotId = "a" | "b";
@@ -303,6 +306,9 @@ function VideoPlayerComponent({
   const pendingTransitionRef = useRef<PendingTransition | null>(null);
   const hasStartedPlaybackRef = useRef(false);
   const prevStreamRef = useRef<{ channelId: string; sourceIndex: number } | null>(null);
+  // [local patch] Set while a watchdog-driven recovery is loading a hidden slot:
+  // that slot's buffering must not paint "buffering" over the live picture.
+  const silentRecoveryRef = useRef(false);
   /** Skip one segments effect after inline retry reload (parent may emit same URL). */
   const skipNextSegmentsLoadRef = useRef(false);
 
@@ -571,6 +577,20 @@ function VideoPlayerComponent({
     };
   }, [playerPortalHost]);
 
+  // [local patch] Report the swap itself (the frontend owns the A/B slots), so
+  // the server log shows how long the replacement took to come up.
+  function reportSwap(ev: string, fields: Record<string, string | number> = {}): void {
+    try {
+      const q = new URLSearchParams({ ev });
+      for (const [k, v] of Object.entries(fields)) {
+        q.set(k, typeof v === "number" ? v.toFixed(1) : String(v));
+      }
+      void fetch(`/__r2h/recovery?${q.toString()}`, { cache: "no-store", keepalive: true }).catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  }
+
   const cancelPendingTransition = useEffectEvent(() => {
     pendingTransitionRef.current = null;
   });
@@ -615,7 +635,14 @@ function VideoPlayerComponent({
     }
 
     // Hard switch: reveal new stream first, then tear down the old slot
+    {
+      const pending = pendingTransitionRef.current;
+      if (pending) {
+        reportSwap("swap", { cost: (performance.now() - pending.startedAt) / 1000, from: oldActiveId, to: newActiveId });
+      }
+    }
     activeSlotIdRef.current = newActiveId;
+    silentRecoveryRef.current = false;
     setVisibleSlotId(newActiveId);
     setIsLive(slotLiveStateRef.current[newActiveId]);
     setIsLoading(false);
@@ -1056,7 +1083,8 @@ function VideoPlayerComponent({
   );
 
   // Load segments whenever they change (channel/source switch, seek, retry — all go through here)
-  const handleLoadSegments = useEffectEvent((newSegments: PlayerSegment[], forceHardSwitch = false) => {
+  const handleLoadSegments = useEffectEvent(
+    (newSegments: PlayerSegment[], forceHardSwitch = false, silent = false) => {
     if (!newSegments.length) return;
 
     const activeId = getActiveSlotId();
@@ -1070,8 +1098,12 @@ function VideoPlayerComponent({
       stablePlaybackTimeoutRef.current = 0;
     }
 
-    showControlsImmediately();
-    setIsLoading(true);
+    // [local patch] A silent recovery must not pop the control bar or the
+    // loading veil over the picture the user is still looking at.
+    if (!silent) {
+      showControlsImmediately();
+      setIsLoading(true);
+    }
     setError(null);
     setWarning(null);
 
@@ -1190,7 +1222,12 @@ function VideoPlayerComponent({
   });
 
   const handleVideoWaiting = useEffectEvent((slotId: SlotId) => {
-    if (slotId !== getActiveSlotId() && pendingTransitionRef.current?.slotId !== slotId) return;
+    const isPending = pendingTransitionRef.current?.slotId === slotId;
+    if (slotId !== getActiveSlotId() && !isPending) return;
+    if (isPending && silentRecoveryRef.current) {
+      // Invisible recovery: the user is still watching the old picture.
+      return;
+    }
     setIsLoading(true);
     if (stablePlaybackTimeoutRef.current) {
       window.clearTimeout(stablePlaybackTimeoutRef.current);
@@ -1251,6 +1288,87 @@ function VideoPlayerComponent({
       onSeek(seekTime, isNearLiveWallClock(seekTime, liveSessionAnchor, streamStartTime));
     }
   });
+
+  // [local patch] Two-stage recovery. The watchdog fires "prefetch" as soon as
+  // the clock stalls ~0.5s and "stall" at ~1s. Prefetching into the hidden slot
+  // means the hard switch (identical to tapping the channel) happens with the
+  // replacement already buffered, and the wedged connection is released at the
+  // switch instead of stacking a retry on top of it.
+  const recoverOnHiddenSlot = useEffectEvent((): boolean => {
+    if (playMode !== "live") {
+      return false;
+    }
+    const segments = getRetrySegments();
+    if (!segments.length) {
+      return false;
+    }
+    // Pretend the stream just changed so handleLoadSegments takes the seamless
+    // switch branch (hidden slot + hard switch) instead of reloading in place.
+    prevStreamRef.current = { channelId: "__r2h_restall__", sourceIndex: -1 };
+    shouldAutoPlayRef.current = true;
+    silentRecoveryRef.current = true;
+    handleLoadSegments(segments, false, true);
+    return true;
+  });
+
+  useEffect(() => {
+    const onPrefetch = () => {
+      // A replacement is already loading; never stack a second one.
+      if (pendingTransitionRef.current) {
+        return;
+      }
+      recoverOnHiddenSlot();
+    };
+    const onRecover = () => {
+      // The frozen slot started moving again: throw the spare connection away so
+      // it does not steal a server slot or bandwidth.
+      const pending = pendingTransitionRef.current;
+      if (!pending) return;
+      // [local patch] Minimum lifetime for the spare slot. The data path goes
+      // quiet for 0.3-0.6s between segments, which used to fire a prefetch and
+      // drop it 20-40ms later, before the request had even reached the server
+      // (37 prefetch events vs 10 real /IPTV requests). Give the replacement a
+      // full second to either commit or prove itself useless.
+      const elapsed = performance.now() - pending.startedAt;
+      if (elapsed < 1000) {
+        window.setTimeout(() => {
+          if (pendingTransitionRef.current !== pending) return;
+          stopPendingTransition();
+          silentRecoveryRef.current = false;
+          reportSwap("drop_spare_ui");
+        }, 1000 - elapsed);
+        return;
+      }
+      stopPendingTransition();
+      silentRecoveryRef.current = false;
+      reportSwap("drop_spare_ui");
+    };
+    const onStallRestart = (event: Event) => {
+      // Cancel the default "no listener" behaviour: we handled it.
+      event.preventDefault?.();
+      if (playMode !== "live") {
+        return;
+      }
+      const pending = pendingTransitionRef.current;
+      if (pending) {
+        // The prefetched slot is still coming up; let it commit. Only fall back
+        // to a cold rebuild if it never produces video.
+        if (performance.now() - pending.startedAt < 3000) {
+          return;
+        }
+        stopPendingTransition();
+      }
+      recoverOnHiddenSlot();
+    };
+    window.addEventListener("r2h-playback-prefetch", onPrefetch);
+    window.addEventListener("r2h-playback-recover", onRecover);
+    window.addEventListener("r2h-playback-stall", onStallRestart);
+    return () => {
+      window.removeEventListener("r2h-playback-prefetch", onPrefetch);
+      window.removeEventListener("r2h-playback-recover", onRecover);
+      window.removeEventListener("r2h-playback-stall", onStallRestart);
+    };
+  }, [playMode]);
 
   const handleVideoEnterPiP = useEffectEvent((slotId: SlotId) => {
     if (slotId !== getActiveSlotId()) return;

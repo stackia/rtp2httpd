@@ -49,6 +49,79 @@ export function createMSEPlaybackController(
   let watermarkPaused = false;
   let bufferFullPaused = false;
 
+  // ---- [local patch] playback stall watchdog -------------------------------
+  // Mobile browsers can stop consuming frames while the network keeps flowing
+  // (no error event fires), so the session looks alive but the picture freezes.
+  // Poll the media clock and recover instead of waiting for a user channel switch.
+  // [local patch] 1000 -> 100: the prefetch thresholds below are sub-second, so
+  // the tick must be finer than them. 10Hz of currentTime compares is cheap.
+  const STALL_TICK_MS = 100;
+  const STALL_DETECT_SEC = 1;
+  let stallTimer: number | null = null;
+  let watchdogWorker: Worker | null = null;
+  let stallLastPos = -1;
+  let stallLastMoveAt = 0;
+  let stallJumpCount = 0;
+  /** Seconds of continuous playback required before stall judgement is allowed at all. */
+  const STALL_STEADY_SEC = 8;
+  /** If nothing has played at all this long after loading, the stream never comes up. */
+  let stallSteady = false;
+  /** Position where this session's playback started, to measure continuous progress. */
+  let stallArmedPos = -1;
+  /** When the current load started (reset while the slot is off screen). */
+  let stallLoadAt = 0;
+  /** Last seen end of the buffered range, to tell "clock stuck" from "pipeline dead". */
+  let stallBufferedEnd = -1;
+  let stallBufferedEndAt = 0;
+  /** When the watchdog armed for this session (startup grace window). */
+  let stallArmedAt = 0;
+
+  // ---- [local patch] gap jump ---------------------------------------------
+  // Application-level drops leave holes in the TS timeline; MSE parks the clock
+  // on the hole and the picture freezes while data keeps arriving. Jump to the
+  // next buffered range instead of waiting for a keyframe that never comes.
+  const GAP_HOLD_MS = 500;
+  const GAP_MIN_SEC = 0.15;
+  const GAP_COOLDOWN_MS = 1000;
+  let gapSince = 0;
+  let prefetchFired = false;
+  // [local patch] Diagnostics: report WHY the watchdog tick bailed out, at most
+  // once per 5s. A real stall showed zero ticks for 5s, and these guards are the
+  // only silent exits, so we need to know which one is responsible.
+  let tickSkipCode = 0;
+  let tickSkipAt = 0;
+  // [local patch] Debounce the silence rebuild: without this the same stall
+  // fired rebuild_silence every 100ms (six identical rebuilds in one second).
+  let lastSilenceRebuildAt = 0;
+  const noteTickSkip = (code: number): void => {
+    const t = performance.now();
+    if (code === tickSkipCode && t - tickSkipAt < 5000) return;
+    tickSkipCode = code;
+    tickSkipAt = t;
+    reportRecovery("tick_skip", { code, data: lastDataAt > 0 ? (t - lastDataAt) / 1000 : -1 });
+  };
+  // [local patch] Forward-buffer trend: prefetch BEFORE the picture freezes by
+  // noticing the buffer being eaten (peak 1.5s -> 0.6s) while the data path is
+  // quiet. Prefetching during a normal 0.2-0.4s segment gap was pure waste.
+  let aheadPeak = 0;
+  let aheadPeakAt = 0;
+  // [local patch] Judgement basis: "how long since the worker last handed us
+  // bytes", not "how long the picture has been frozen". The freeze is a later
+  // symptom - data stops ~0.3-0.8s before the buffered frames run out, so this
+  // reacts earlier and still catches a dead decode pipeline (data flowing but
+  // no picture) through the currentTime path below.
+  const DATA_PREFETCH_SEC = 0.2;
+  const DATA_SWITCH_SEC = 2.5;
+  let lastDataAt = 0;
+  // [local patch] A session that never delivers a single segment is a dead
+  // connection (the switch committed onto a session that never came up).
+  let everGotData = false;
+  // Back-to-back recoveries get a longer fuse so a genuinely dead source cannot
+  // spin rebuilds every 1.5s.
+  let lastRecoverAt = 0;
+  let gapLastJumpAt = 0;
+  let gapJumpCount = 0;
+
   // PCM audio player for software-decoded audio (MP2)
   let pcmPlayer: PCMAudioPlayer | null = null;
   let pcmPlayerInitPromise: Promise<void> | null = null;
@@ -117,6 +190,12 @@ export function createMSEPlaybackController(
     if (msg.type === "destroyed") return;
     // Discard stale messages from a previous load generation
     if (msg.gen !== mseGeneration) return;
+    // [local patch] Any payload from the demux worker proves the read side is
+    // still alive; the watchdog keys off this timestamp.
+    if (msg.type === "media-segment" || msg.type === "init-segment" || msg.type === "pcm-audio-data") {
+      lastDataAt = performance.now();
+      everGotData = true;
+    }
     // media-info can be posted right before an init-segment; flushing on it would
     // split the batched init appends (see comment above pendingInits)
     if (msg.type !== "init-segment" && msg.type !== "media-info") {
@@ -450,6 +529,434 @@ export function createMSEPlaybackController(
     }
   }
 
+  function clearStallWatchdog(): void {
+    if (stallTimer !== null) {
+      window.clearInterval(stallTimer);
+      stallTimer = null;
+    }
+    if (watchdogWorker) {
+      try {
+        watchdogWorker.postMessage("stop");
+        watchdogWorker.terminate();
+      } catch {
+        /* ignore */
+      }
+      watchdogWorker = null;
+    }
+    stallLastPos = -1;
+    stallLastMoveAt = 0;
+    stallJumpCount = 0;
+    stallSteady = false;
+    stallArmedPos = -1;
+    stallArmedAt = 0;
+    stallBufferedEnd = -1;
+    stallBufferedEndAt = 0;
+  }
+
+  /** Make every jump observable: on-screen badge + a server-side trace line. */
+  function reportGapJump(from: number, to: number, heldMs: number): void {
+    const jumped = to - from;
+    try {
+      const doc = video.ownerDocument || document;
+      let el = doc.getElementById("r2h-gap-toast") as HTMLDivElement | null;
+      if (!el) {
+        el = doc.createElement("div");
+        el.id = "r2h-gap-toast";
+        el.style.cssText = [
+          "position:fixed",
+          "right:12px",
+          "bottom:72px",
+          "z-index:2147483647",
+          "background:rgba(0,0,0,0.72)",
+          "color:#fff",
+          "font:600 13px/1.5 system-ui,-apple-system,sans-serif",
+          "padding:6px 10px",
+          "border-radius:8px",
+          "pointer-events:none",
+          "transition:opacity 0.4s ease",
+          "white-space:nowrap",
+        ].join(";");
+        (doc.body || doc.documentElement).appendChild(el);
+      }
+      el.textContent = `\u23ed \u8df3\u8fc7 ${jumped.toFixed(2)}s\uff08\u7b2c ${gapJumpCount} \u6b21\uff09`;
+      el.style.opacity = "1";
+      window.setTimeout(() => {
+        if (el) el.style.opacity = "0";
+      }, 1800);
+    } catch {
+      /* the badge must never break playback */
+    }
+    // Server-side trace: rtp2httpd logs every requested URL, so this line shows up
+    // in /status logs as "/__r2h/gapjump?...". Never blocks playback.
+    try {
+      const q =
+        `/__r2h/gapjump?n=${gapJumpCount}` +
+        `&gap=${jumped.toFixed(2)}` +
+        `&held=${(heldMs / 1000).toFixed(1)}` +
+        `&pos=${from.toFixed(1)}`;
+      void fetch(q, { cache: "no-store", keepalive: true }).catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // [local patch] Every recovery decision is reported as a GET so it lands in the
+  // server log (rtp2httpd logs each request URL) and can be analysed afterwards:
+  //   logread | grep __r2h/recovery
+  function reportRecovery(ev: string, fields: Record<string, string | number> = {}): void {
+    try {
+      const q = new URLSearchParams({ ev });
+      for (const [k, v] of Object.entries(fields)) {
+        q.set(k, typeof v === "number" ? v.toFixed(1) : String(v));
+      }
+      void fetch(`/__r2h/recovery?${q.toString()}`, { cache: "no-store", keepalive: true }).catch(() => {});
+    } catch {
+      /* never let diagnostics break playback */
+    }
+  }
+
+  function tryJumpOverGap(now: number): boolean {
+    const buffered = video.buffered;
+    if (buffered.length === 0) {
+      gapSince = 0;
+      return false;
+    }
+    const pos = video.currentTime;
+    let inRange = false;
+    let nextStart = -1;
+    for (let i = 0; i < buffered.length; i++) {
+      const start = buffered.start(i);
+      const end = buffered.end(i);
+      if (pos >= start && pos <= end) {
+        inRange = true;
+      } else if (start > pos + GAP_MIN_SEC && (nextStart < 0 || start < nextStart)) {
+        nextStart = start;
+      }
+    }
+    // A real hole: the clock is outside every range, or sits at the tail of its
+    // range with a clearly separated range ahead. No range ahead means the feed
+    // itself stopped -> leave that to the stall watchdog.
+    const forward = inRange ? getForwardBufferAhead() : 0;
+    const hole = nextStart > 0 && (!inRange || forward <= 0.05);
+    if (!hole) {
+      gapSince = 0;
+      return false;
+    }
+    if (gapSince === 0) {
+      gapSince = now;
+      return false;
+    }
+    if (now - gapSince < GAP_HOLD_MS) return false;
+    if (now - gapLastJumpAt < GAP_COOLDOWN_MS) return false;
+    const target = nextStart + 0.05;
+    const heldMs = now - gapSince;
+    gapLastJumpAt = now;
+    gapSince = 0;
+    gapJumpCount++;
+    console.warn(`[r2h-gapjump] #${gapJumpCount} ${pos.toFixed(2)} -> ${target.toFixed(2)}`);
+    try {
+      video.currentTime = target;
+    } catch {
+      return false;
+    }
+    reportGapJump(pos, target, heldMs);
+    return true;
+  }
+
+  function stallTick(): void {
+    if (!mse) {
+      return;
+    }
+    const now = performance.now();
+    const pos = video.currentTime;
+
+    // A slot that is no longer on screen must never be judged. Seamless channel
+    // switching (dual slots A/B) keeps the previous element alive in the DOM, so
+    // its clock freezes while it is detached — judging it would raise an error
+    // for the *player page*, interrupting the channel that is actually playing.
+    if (!video.isConnected || video.getClientRects().length === 0) {
+      noteTickSkip(1);
+      stallLastPos = pos;
+      stallLastMoveAt = now;
+      stallArmedPos = pos;
+      stallSteady = false;
+      // Start the "never came up" clock when this slot becomes visible.
+      stallLoadAt = now;
+      return;
+    }
+
+    // Paused / hidden / still aligning audio: nothing to judge, and every
+    // startup attempt restarts the steady-playback measurement.
+    if (video.ended || startupRateControlActive) {
+      noteTickSkip(startupRateControlActive ? 5 : 3);
+      stallLastPos = pos;
+      stallLastMoveAt = now;
+      stallArmedPos = pos;
+      stallSteady = false;
+      prefetchFired = false;
+      return;
+    }
+    // [local patch] A stalled MSE session flips `paused` to true by itself. Field
+    // evidence: a 5s blackhole produced tick_skip code=2 for its entire duration,
+    // so the watchdog never ran and the stall never healed. Honour `paused` only
+    // while bytes are still flowing; if the data path has also been dry for 3s,
+    // this is a dead session and must be handed to the watchdog below.
+    if (video.paused) {
+      const drySec = lastDataAt > 0 ? (now - lastDataAt) / 1000 : 0;
+      if (!(everGotData && drySec >= 0.5)) {
+        noteTickSkip(2);
+        stallLastPos = pos;
+        stallLastMoveAt = now;
+        stallArmedPos = pos;
+        stallSteady = false;
+        prefetchFired = false;
+        return;
+      }
+    }
+
+    // [local patch] Prefetch as soon as the DATA path goes quiet, not when the
+    // picture freezes. The picture keeps running from buffer for ~1s after the
+    // bytes stop, so this is the only moment a replacement can be built without
+    // the viewer seeing anything. Deliberately independent of stallSteady: a
+    // session that dies right after a recovery is still inside the 8s grace, and
+    // gating on it made the whole prefetch path unreachable.
+    if (everGotData) {
+      const idleEarly = lastDataAt > 0 ? (now - lastDataAt) / 1000 : 0;
+      const aheadNow = getForwardBufferAhead();
+      if (aheadPeakAt === 0 || now - aheadPeakAt > 10000 || aheadNow >= aheadPeak) {
+        aheadPeak = aheadNow;
+        aheadPeakAt = now;
+      }
+      // Buffer falling apart (peak minus now >= 0.5s) and already thin (<1.0s)
+      // while bytes stop arriving -> the freeze is ~0.5s away. Opening the
+      // replacement here is invisible: the old picture is still running.
+      const starving = aheadNow <= 1.0 && aheadPeak - aheadNow >= 0.5 && idleEarly >= DATA_PREFETCH_SEC;
+      if (!prefetchFired && (starving || idleEarly >= 1.0)) {
+        prefetchFired = true;
+        const frozenSec = (now - stallLastMoveAt) / 1000;
+        console.warn(
+          `[r2h-watchdog] prefetch replacement slot (no data ${idleEarly.toFixed(1)}s, frozen ${frozenSec.toFixed(1)}s)`,
+        );
+        reportRecovery("prefetch", { frozen: frozenSec, data: idleEarly, ahead: getForwardBufferAhead() });
+        try {
+          window.dispatchEvent(new CustomEvent("r2h-playback-prefetch"));
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    if (stallArmedPos < 0) {
+      stallArmedPos = pos;
+    }
+
+    if (Math.abs(pos - stallLastPos) > 0.05) {
+      stallLastPos = pos;
+      stallLastMoveAt = now;
+      stallJumpCount = 0;
+      if (prefetchFired) {
+        // [local patch] Drop the spare only when DATA actually resumed, never
+        // because the clock moved. A starved session keeps advancing on its
+        // remaining buffer (observed: ahead 0.8 -> 0.4 while data idle grew
+        // 0.4 -> 0.8), so the old clock-based test discarded a perfectly good
+        // replacement 20-40ms after opening it, five times in one second.
+        const idleNow = lastDataAt > 0 ? (now - lastDataAt) / 1000 : 999;
+        if (idleNow <= 0.3) {
+          prefetchFired = false;
+          console.warn(`[r2h-watchdog] data resumed (${idleNow.toFixed(1)}s) -> drop prefetched slot`);
+          reportRecovery("drop_spare", { pos, data: idleNow });
+          try {
+            window.dispatchEvent(new CustomEvent("r2h-playback-recover"));
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+      // The stock startup path is left completely alone: only after this session
+      // has really played STALL_STEADY_SEC of media do we start watching for
+      // freezes. Startup retries reset currentTime to ~0, which keeps this false.
+      if (!stallSteady && pos - stallArmedPos >= STALL_STEADY_SEC) {
+        stallSteady = true;
+        stallArmedAt = now;
+      }
+      return;
+    }
+
+    // [local patch] Data-supply watchdog. It runs even during the 8s steady
+    // grace, because a healthy session keeps handing us segments: prolonged
+    // silence means the read side is dead. Without this, a session that stalls
+    // right after a recovery commit sits on "loading" for the whole grace.
+    if (everGotData) {
+      const idleSec = lastDataAt > 0 ? (now - lastDataAt) / 1000 : 0;
+      const backoff = lastRecoverAt > 0 && now - lastRecoverAt < 10000;
+      const limitSec = backoff ? 5 : 3;
+      if (idleSec >= limitSec && now - lastSilenceRebuildAt > 3000) {
+        lastSilenceRebuildAt = now;
+        lastRecoverAt = now;
+        prefetchFired = false;
+        stallSteady = false;
+        stallArmedPos = -1;
+        console.warn(`[r2h-watchdog] no data for ${idleSec.toFixed(1)}s -> rebuild (backoff=${backoff})`);
+        reportRecovery("rebuild_silence", { idle: idleSec, backoff: backoff ? 1 : 0, limit: limitSec });
+        let recovered = false;
+        try {
+          recovered = !window.dispatchEvent(new CustomEvent("r2h-playback-stall", { cancelable: true }));
+        } catch {
+          recovered = false;
+        }
+        if (!recovered) {
+          impl.suspend();
+          impl.onError?.({
+            category: "media",
+            detail: PlayerErrors.MEDIA_MSE_ERROR,
+            info: "No data arriving (watchdog)",
+          });
+        }
+        return;
+      }
+    }
+
+    if (!stallSteady) {
+      // A committed switch that never delivers bytes cannot be saved by waiting.
+      if (stallLoadAt > 0 && !everGotData && now - stallLoadAt > 8000) {
+        stallLoadAt = now;
+        lastRecoverAt = now;
+        console.warn("[r2h-watchdog] session produced no data at all in 8s -> rebuild");
+        reportRecovery("rebuild_dead_session", { sinceLoad: (now - stallLoadAt) / 1000 });
+        let recovered = false;
+        try {
+          recovered = !window.dispatchEvent(new CustomEvent("r2h-playback-stall", { cancelable: true }));
+        } catch {
+          recovered = false;
+        }
+        if (!recovered) {
+          impl.suspend();
+          impl.onError?.({
+            category: "media",
+            detail: PlayerErrors.MEDIA_MSE_ERROR,
+            info: "Session never delivered data (watchdog)",
+          });
+        }
+        return;
+      }
+      // Startup that never delivers bytes is handled above by the 5s
+      // dead-session rule; anything else here is still legitimate buffering and
+      // must be left to the stock startup path.
+      stallLastMoveAt = now;
+      return;
+    }
+    if (stallLastMoveAt === 0) {
+      stallLastMoveAt = now;
+      return;
+    }
+    // Track whether the buffered range is still growing: if it is frozen, the
+    // append pipeline is dead and seeking inside the buffer cannot help.
+    {
+      const range = getLastBufferedRange();
+      if (range && range.end > stallBufferedEnd + 0.05) {
+        stallBufferedEnd = range.end;
+        stallBufferedEndAt = now;
+      } else if (stallBufferedEndAt === 0) {
+        stallBufferedEndAt = now;
+      }
+    }
+
+    // [local patch] Prefer jumping the hole over rebuilding the whole session.
+    if (tryJumpOverGap(now)) {
+      stallLastPos = video.currentTime;
+      stallLastMoveAt = now;
+      return;
+    }
+
+    const stalledSec = (now - stallLastMoveAt) / 1000;
+
+    const dataIdleSec = lastDataAt > 0 ? (now - lastDataAt) / 1000 : 0;
+
+    // Swap as soon as the buffer runs dry after a prefetch was issued: the
+    // spare session needs ~0.5-1s to come up, so waiting for the silence
+    // thresholds would let the picture freeze first.
+    const draining = prefetchFired && aheadSec >= 0 && aheadSec < 0.3;
+    if (stalledSec < STALL_DETECT_SEC && dataIdleSec < DATA_SWITCH_SEC && !draining) {
+      return;
+    }
+
+    // During the first seconds after arming a thin buffer is normal (startup,
+    // channel change, post-seek refill) and must not be judged. Later on, a thin
+    // buffer is exactly what a dead pipeline looks like — judge it, just slower.
+    const aheadRange = getLastBufferedRange();
+    const aheadSec = aheadRange ? aheadRange.end - pos : 0;
+    if (aheadSec < 2 && stalledSec < STALL_DETECT_SEC * 2) {
+      return;
+    }
+
+    // A silent freeze is turned into the SAME error the stock player already
+    // retries on, so the built-in retry path issues a brand new request
+    // (identical to tapping the channel again). No cooldown, no downgrade.
+    console.warn(
+      `[r2h-watchdog] stall ${stalledSec.toFixed(1)}s (no data ${dataIdleSec.toFixed(1)}s) at ${pos.toFixed(2)} -> stock retry`,
+    );
+    reportRecovery("rebuild_stall", {
+      frozen: stalledSec,
+      data: dataIdleSec,
+      ahead: aheadSec,
+      draining: draining ? 1 : 0,
+    });
+    lastRecoverAt = now;
+    prefetchFired = false;
+    stallLastMoveAt = now;
+    stallSteady = false;
+    stallArmedPos = -1;
+    // Let the page recover on a FRESH slot. Reloading segments inside the wedged
+    // slot is slow (it keeps the same video element, worker and audio context);
+    // loading into the hidden slot and hard-switching — the channel-tap path —
+    // recovers noticeably faster. onError stays as a fallback if nobody listens.
+    let handled = false;
+    try {
+      // dispatchEvent() returns false when a listener called preventDefault(),
+      // i.e. the page took over the recovery.
+      handled = !window.dispatchEvent(new CustomEvent("r2h-playback-stall", { cancelable: true }));
+    } catch {
+      handled = false;
+    }
+    if (!handled) {
+      impl.suspend();
+      impl.onError?.({
+        category: "media",
+        detail: PlayerErrors.MEDIA_MSE_ERROR,
+        info: "Playback stalled without progress (watchdog)",
+      });
+    }
+  }
+
+  function startStallWatchdog(): void {
+    clearStallWatchdog();
+    lastDataAt = performance.now();
+    everGotData = false;
+    stallLoadAt = performance.now();
+    // [local patch] Prefer a Worker heartbeat: a wedged MSE session blocks the
+    // main thread, where plain setInterval silently stops running. Fall back to
+    // the old timer only if Workers are unavailable.
+    try {
+      watchdogWorker = new Worker(new URL("./watchdog-worker.ts", import.meta.url), { type: "module" });
+      watchdogWorker.onmessage = () => stallTick();
+      watchdogWorker.onerror = () => {
+        if (watchdogWorker) {
+          try {
+            watchdogWorker.terminate();
+          } catch {
+            /* ignore */
+          }
+          watchdogWorker = null;
+        }
+        if (stallTimer === null) stallTimer = window.setInterval(stallTick, STALL_TICK_MS);
+      };
+      watchdogWorker.postMessage("start");
+    } catch {
+      watchdogWorker = null;
+      stallTimer = window.setInterval(stallTick, STALL_TICK_MS);
+    }
+  }
+
   const onVideoPlay = () => {
     markPlaybackUnlocked();
     updateLiveState();
@@ -479,6 +986,7 @@ export function createMSEPlaybackController(
       destroyPCMPlayer();
       initMSE();
       initLiveHelpers();
+      startStallWatchdog();
     },
 
     setLiveSync(enabled: boolean) {
@@ -525,6 +1033,7 @@ export function createMSEPlaybackController(
       destroyPCMPlayer();
       destroyLiveSync?.();
       destroyLiveSync = null;
+      clearStallWatchdog();
     },
 
     destroy() {

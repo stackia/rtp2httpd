@@ -37,8 +37,12 @@ export interface PlayerConfig {
 
 export const defaultConfig: PlayerConfig = {
   liveSync: true,
-  liveSyncMaxLatency: 3,
-  liveSyncTargetLatency: 1.5,
+  // [local patch] Was max 3 / target 1.5: the player sat 1.5-3s behind the live
+  // edge, which is exactly how far the replacement session (starting at the
+  // newest IDR) jumped ahead on every recovery. Keep a small safety margin,
+  // large enough to hide the rebuild, small enough that the swap is invisible.
+  liveSyncMaxLatency: 2,
+  liveSyncTargetLatency: 1,
   liveSyncPlaybackRate: 1.2,
 
   wasmDecoders: {},
