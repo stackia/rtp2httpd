@@ -41,8 +41,8 @@ export const defaultConfig: PlayerConfig = {
   // edge, which is exactly how far the replacement session (starting at the
   // newest IDR) jumped ahead on every recovery. Keep a small safety margin,
   // large enough to hide the rebuild, small enough that the swap is invisible.
-  liveSyncMaxLatency: 2,
-  liveSyncTargetLatency: 1,
+  liveSyncMaxLatency: 3.5,
+  liveSyncTargetLatency: 2,
   liveSyncPlaybackRate: 1.2,
 
   wasmDecoders: {},

@@ -88,6 +88,10 @@ export interface PlaybackBackend {
   seek(seconds: number): void;
   /** Seek to session live edge (continuous since tune-in) minus target latency, as MSE seconds. */
   goLive(targetMseSeconds: number): void;
+  /** Seek to (own buffered edge - latency); used when a slot is handed over. */
+  alignToLiveLatency?(seconds: number): void;
+  /** Skip this much audio on the next alignment (slot handoff). */
+  skipAudioAhead?(seconds: number): void;
   /** Anchor for session live edge (continuous live playback since tune-in). */
   setLiveSessionAnchor(anchor: LiveSessionAnchor): void;
   setLiveSync(enabled: boolean): void;
@@ -111,6 +115,8 @@ export interface MSEPlaybackController {
   loadSegments(segments: PlayerSegment[]): void;
   seek(seconds: number): void;
   goLive(targetMseSeconds: number): void;
+  alignToLiveLatency(seconds: number): void;
+  skipAudioAhead(seconds: number): void;
   setLiveSessionAnchor(anchor: LiveSessionAnchor): void;
   setLiveSync(enabled: boolean): void;
   /** Release the video element (stop feeding, detach source) but keep reusable resources (worker) alive. */

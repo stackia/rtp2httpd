@@ -157,6 +157,10 @@ export class PCMAudioPlayer {
   // Input-side state: stream time of the next sample to feed the stretcher.
   // null = not anchored (anchors at the next chunk's time).
   private inputCursor: number | null = null;
+  /** Furthest stream position handed to the stretcher (seconds). */
+  private furthestPlayedTime = 0;
+  /** One-shot forward skip consumed by the next alignment (seconds). */
+  private pendingSkipAhead = 0;
   /** Stream time corresponding to stretcher input position 0. */
   private stretcherBase = 0;
   /** Stream time of the end of all output scheduled so far. */
@@ -587,6 +591,9 @@ export class PCMAudioPlayer {
       this.pendingChunks.shift();
       this.feedStretcher(stretcher, samples, chunk.sampleRate);
       this.inputCursor = chunkEndTime;
+      if (chunkEndTime > this.furthestPlayedTime) {
+        this.furthestPlayedTime = chunkEndTime;
+      }
     }
   }
 
@@ -1287,7 +1294,54 @@ export class PCMAudioPlayer {
    * (used for seeks, resume after pause/suspend, and hard resyncs).
    * Returns false when the target is not covered by the buffer.
    */
+  /**
+   * Skip this much audio on the next alignment. Used after a slot handoff, where
+   * the replacement's PCM timeline trails the video position by a few hundred
+   * milliseconds and aligning alone would schedule already-heard samples.
+   */
+  skipAudioAhead(seconds: number): void {
+    this.pendingSkipAhead = Math.max(0, seconds);
+  }
+
+  /**
+   * Refuse to align behind what is already audible. `furthestPlayedTime` counts
+   * samples handed to the scheduler, which runs up to SCHEDULE_AHEAD ahead of the
+   * speakers, so the audible position is the stream cursor minus the queued tail;
+   * clamping to the former would replay the queue. A jump beyond 5s means a new
+   * timeline (source switch), so the memory is dropped instead.
+   */
+  private clampToAudiblePosition(targetTime: number): number {
+    const ctxNow = this.context?.currentTime ?? 0;
+    const queued = Math.max(0, this.nextStartTime - ctxNow);
+    const audible = this.outputStreamCursor - queued;
+    const reference = Math.max(this.furthestPlayedTime, audible, 0);
+    if (reference <= 0) {
+      return targetTime;
+    }
+    const backward = reference - targetTime;
+    if (backward <= 0.02) {
+      return targetTime;
+    }
+    if (backward > 5) {
+      this.furthestPlayedTime = 0;
+      return targetTime;
+    }
+    const covered = this.audioBuffer.some(
+      (chunk) => chunk.time - 0.05 <= reference && chunk.endTime >= reference - 0.05,
+    );
+    if (!covered) {
+      return targetTime;
+    }
+    Log.v(TAG, `Refusing ${backward.toFixed(3)}s audio rewind (target ${targetTime.toFixed(3)}s)`);
+    return reference - 0.02;
+  }
+
   private resyncFromBuffer(targetTime: number): boolean {
+    if (this.pendingSkipAhead > 0) {
+      targetTime += this.pendingSkipAhead;
+      this.pendingSkipAhead = 0;
+    }
+    targetTime = this.clampToAudiblePosition(targetTime);
     this.cancelChain(true);
     this.pendingChunks = [];
     this.inputCursor = null;
@@ -1310,6 +1364,10 @@ export class PCMAudioPlayer {
       Log.v(TAG, "Resync target not covered by buffer, waiting for new data");
       return false;
     }
+    // Anchor on the requested target: pump() would otherwise anchor on
+    // pendingChunks[0].time, the head of the retained buffer, and replay
+    // everything between that head and the target.
+    this.anchor(targetTime);
     Log.v(TAG, `Resync at ${targetTime.toFixed(3)}s, refilled ${this.pendingChunks.length} chunks`);
     this.pump();
     return true;

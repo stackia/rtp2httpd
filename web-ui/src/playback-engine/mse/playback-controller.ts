@@ -1010,6 +1010,25 @@ export function createMSEPlaybackController(
       goLiveTo(targetMseSeconds);
     },
 
+    // Continuous-live-TS `goLive` ignores its argument and uses the configured
+    // latency. A handed-over slot needs an explicit latency instead, otherwise
+    // it can land on the head of its own backfill.
+    alignToLiveLatency(seconds: number) {
+      const range = getLastBufferedRange();
+      if (!range) return;
+      const span = range.end - range.start;
+      const latency = Math.min(Math.max(seconds, 0), Math.max(span, 0.2));
+      const target = Math.max(range.start, range.end - latency);
+      if (!bufferSeek(target)) {
+        bufferSeek(Math.max(range.start, range.end - 0.5));
+      }
+    },
+
+    /** Drop the given amount of audio on the next alignment (slot handoff). */
+    skipAudioAhead(seconds: number) {
+      pcmPlayer?.skipAudioAhead(seconds);
+    },
+
     setLiveSessionAnchor(anchor: LiveSessionAnchor) {
       liveSessionAnchor = anchor;
       updateLiveState();

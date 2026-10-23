@@ -308,7 +308,16 @@ function VideoPlayerComponent({
   const prevStreamRef = useRef<{ channelId: string; sourceIndex: number } | null>(null);
   // [local patch] Set while a watchdog-driven recovery is loading a hidden slot:
   // that slot's buffering must not paint "buffering" over the live picture.
+  // Slot hand-off tuning: how far behind live the replacement is placed, how
+  // much audio is dropped on the alignment, and how far the picture then jumps
+  // ahead to avoid re-showing content the viewer already watched.
+  const HANDOFF_DEFAULT_LATENCY = 2;
+  const HANDOFF_MAX_LATENCY = 3.5;
+  const HANDOFF_AUDIO_SKIP = 0.9;
+  const HANDOFF_PICTURE_SKIP = 0.9;
   const silentRecoveryRef = useRef(false);
+  /** Slot player that already received its hand-off placement. */
+  const handedOverPlayerRef = useRef<PlaybackBackend | null>(null);
   /** Skip one segments effect after inline retry reload (parent may emit same URL). */
   const skipNextSegmentsLoadRef = useRef(false);
 
@@ -620,18 +629,61 @@ function VideoPlayerComponent({
     player.stop();
   });
 
+  /**
+   * Place a freshly revealed slot. It is aligned a little behind its live edge,
+   * audio is skipped forward because its PCM timeline trails the picture, and the
+   * picture lands slightly ahead so the viewer never re-watches content it has
+   * already seen while the stalled slot was stuck.
+   */
+  const handOffSlot = useEffectEvent((slotId: SlotId, player: PlaybackBackend, latency: number) => {
+    const target = latency > 0 ? Math.min(latency, HANDOFF_MAX_LATENCY) : HANDOFF_DEFAULT_LATENCY;
+    player.alignToLiveLatency?.(target);
+    player.skipAudioAhead?.(HANDOFF_AUDIO_SKIP);
+    const video = slotVideoRef(slotId).current;
+    const ranges = video?.buffered;
+    if (video && ranges && ranges.length > 0) {
+      const edge = ranges.end(ranges.length - 1);
+      const ahead = Math.min(edge, video.currentTime + HANDOFF_PICTURE_SKIP);
+      if (ahead - video.currentTime > 0.05) {
+        player.seek(ahead);
+      }
+    }
+    handedOverPlayerRef.current = player;
+    reportSwap("handoff", { lat: target, was: latency });
+  });
+
   const completeTransition = useEffectEvent((newActiveId: SlotId) => {
     const oldActiveId = getActiveSlotId();
     const oldPlayer = slotPlayerRef(oldActiveId).current;
+    // How far behind its own live edge the replaced slot was playing. The
+    // replacement starts at the same distance so the picture continues instead
+    // of jumping back to the head of its backfill.
+    let replacedLatency = 0;
+    {
+      const replacedVideo = slotVideoRef(oldActiveId).current;
+      const ranges = replacedVideo?.buffered;
+      if (replacedVideo && ranges && ranges.length > 0) {
+        const lat = ranges.end(ranges.length - 1) - replacedVideo.currentTime;
+        if (Number.isFinite(lat) && lat > 0.2) replacedLatency = lat;
+      }
+    }
     const oldState = oldPlayer?.getState();
     const savedVolume = oldState?.volume ?? volume;
     const savedMuted = oldState?.muted ?? isMuted;
+
+    // The replacement must not be audible while the slot it replaces is still
+    // playing: both carry the same programme a few hundred ms apart, which is
+    // heard as the audio repeating itself.
+    if (oldActiveId !== newActiveId && oldPlayer) {
+      oldPlayer.setMuted(true);
+    }
 
     const newPlayer = slotPlayerRef(newActiveId).current;
     if (newPlayer) {
       newPlayer.setVolume(savedVolume);
       newPlayer.setMuted(savedMuted);
       applyPlayerSettings(newPlayer);
+      handOffSlot(newActiveId, newPlayer, replacedLatency);
     }
 
     // Hard switch: reveal new stream first, then tear down the old slot
@@ -1255,6 +1307,15 @@ function VideoPlayerComponent({
     }
 
     if (slotId !== getActiveSlotId()) return;
+
+    {
+      // A recovery replaces the connection, so each new player lands on its own
+      // live edge once, which skips the GOP head it re-sends on connect.
+      const player = slotPlayerRef(slotId).current;
+      if (player && handedOverPlayerRef.current !== player) {
+        handOffSlot(slotId, player, 0);
+      }
+    }
 
     hasStartedPlaybackRef.current = true;
     setIsLoading(false);
