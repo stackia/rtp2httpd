@@ -1113,15 +1113,28 @@ function VideoPlayerComponent({
       (channel.id !== prevStreamRef.current.channelId || activeSourceIndex !== prevStreamRef.current.sourceIndex);
     const activeVideo = slotVideoRef(activeId).current;
     const activeState = activePlayer.getState();
-    const useSeamlessSwitch =
+    // [local patch] A silent recovery must never reload the slot the viewer is
+    // watching: reloading detaches its MSE (media "emptied") and the picture stays
+    // black for the whole rebuild. Prepare the replacement on the hidden slot and
+    // only hard-switch once it is actually playing.
+    const silentRecoverySwitch =
+      silent &&
       !forceHardSwitch &&
-      seamlessSwitch &&
-      !isAnyPictureInPictureActive() &&
-      hasStartedPlaybackRef.current &&
-      isStreamSwitch &&
       playMode === "live" &&
+      hasStartedPlaybackRef.current &&
+      !isAnyPictureInPictureActive() &&
       shouldAutoPlayRef.current &&
       !activeState.paused;
+    const useSeamlessSwitch =
+      silentRecoverySwitch ||
+      (!forceHardSwitch &&
+        seamlessSwitch &&
+        !isAnyPictureInPictureActive() &&
+        hasStartedPlaybackRef.current &&
+        isStreamSwitch &&
+        playMode === "live" &&
+        shouldAutoPlayRef.current &&
+        !activeState.paused);
 
     if (channel) {
       prevStreamRef.current = { channelId: channel.id, sourceIndex: activeSourceIndex };

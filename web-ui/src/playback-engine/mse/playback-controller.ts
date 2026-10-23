@@ -110,7 +110,9 @@ export function createMSEPlaybackController(
   // symptom - data stops ~0.3-0.8s before the buffered frames run out, so this
   // reacts earlier and still catches a dead decode pipeline (data flowing but
   // no picture) through the currentTime path below.
-  const DATA_PREFETCH_SEC = 0.2;
+  // [local patch] 0.2s fired during ordinary 0.2-0.4s segment gaps, so the
+  // player kept opening and discarding FCC unicast sessions while healthy.
+  const DATA_PREFETCH_SEC = 0.5;
   const DATA_SWITCH_SEC = 2.5;
   let lastDataAt = 0;
   // [local patch] A session that never delivers a single segment is a dead
