@@ -56,6 +56,7 @@ export const [getPictureEnhancement, savePictureEnhancement] = createStore("rtp2
 );
 export const [getVolume, saveVolume] = createStore("rtp2httpd-player-volume", 1);
 export const [getMuted, saveMuted] = createStore("rtp2httpd-player-muted", false);
+export const [getVolumeBoost, saveVolumeBoost] = createStore("rtp2httpd-player-volume-boost", 1);
 
 // Per-channel source index uses a JSON object map, so it needs custom logic
 const [getSourceIndexMap, saveSourceIndexMap] = createStore<Record<string, number>>(

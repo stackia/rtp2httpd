@@ -129,6 +129,9 @@ export class PCMAudioPlayer {
   private config: PlayerConfig;
   private context: AudioContext | null = null;
   private gainNode: GainNode | null = null;
+  private limiterNode: DynamicsCompressorNode | null = null;
+  /** Extra gain above unity, 1 = 100%. */
+  private boost = 1;
   private volume: number = 1.0;
   private muted: boolean = false;
 
@@ -222,10 +225,20 @@ export class PCMAudioPlayer {
     this.context = new AudioContext();
     this.gainNode = this.context.createGain();
 
+    // Limiter after the gain stage: anything above unity would clip, and clipping
+    // is audible as crackle on speech, so peaks are compressed instead of clipped.
+    this.limiterNode = this.context.createDynamicsCompressor();
+    this.limiterNode.threshold.value = -6;
+    this.limiterNode.knee.value = 6;
+    this.limiterNode.ratio.value = 12;
+    this.limiterNode.attack.value = 0.003;
+    this.limiterNode.release.value = 0.25;
+    this.gainNode.connect(this.limiterNode);
+
     if (isIOS()) {
       try {
         this.mediaStreamDestination = this.context.createMediaStreamDestination();
-        this.gainNode.connect(this.mediaStreamDestination);
+        this.limiterNode.connect(this.mediaStreamDestination);
 
         this.audioElement = document.createElement("audio");
         this.audioElement.srcObject = this.mediaStreamDestination.stream;
@@ -236,10 +249,10 @@ export class PCMAudioPlayer {
         Log.v(TAG, "iOS detected: using MediaStream bypass for Silent Mode");
       } catch (_e) {
         Log.w(TAG, "Failed to create MediaStream destination, falling back to default output");
-        this.gainNode.connect(this.context.destination);
+        this.limiterNode.connect(this.context.destination);
       }
     } else {
-      this.gainNode.connect(this.context.destination);
+      this.limiterNode.connect(this.context.destination);
     }
 
     this.updateGain();
@@ -1019,7 +1032,7 @@ export class PCMAudioPlayer {
     if (smooth && ctx && this.gainNode && this.scheduledSpans.length > 0 && ctx.state === "running") {
       // Quick gain dip so already-playing audio doesn't click when stopped
       const now = ctx.currentTime;
-      const target = this.muted ? 0 : this.volume;
+      const target = this.currentGain();
       const g = this.gainNode.gain;
       g.cancelScheduledValues(now);
       g.setValueAtTime(target, now);
@@ -1412,14 +1425,28 @@ export class PCMAudioPlayer {
     this.updateGain();
   }
 
+  /** Extra gain above unity: 1 = 100%, up to 6 = 600%. Composes with `volume`. */
+  setBoost(boost: number): void {
+    this.boost = Math.max(1, Math.min(6, boost));
+    this.updateGain();
+  }
+
+  /** Gain actually applied: volume composed with the boost, muted to zero. */
+  private currentGain(): number {
+    return this.muted ? 0 : Math.min(this.volume * this.boost, 6);
+  }
+
   private updateGain(): void {
     if (this.gainNode && this.context) {
       const g = this.gainNode.gain;
+      const level = this.currentGain();
       g.cancelScheduledValues(this.context.currentTime);
-      g.value = this.muted ? 0 : this.volume;
+      g.value = level;
     }
     if (this.audioElement) {
-      this.audioElement.volume = this.muted ? 0 : this.volume;
+      // The element's own volume caps at 1; whatever exceeds it is already applied
+      // upstream by the gain stage.
+      this.audioElement.volume = this.muted ? 0 : Math.min(1, this.volume * this.boost);
     }
   }
 
@@ -1443,6 +1470,10 @@ export class PCMAudioPlayer {
       this.mediaStreamDestination = null;
     }
 
+    if (this.limiterNode) {
+      this.limiterNode.disconnect();
+      this.limiterNode = null;
+    }
     if (this.gainNode) {
       this.gainNode.disconnect();
       this.gainNode = null;

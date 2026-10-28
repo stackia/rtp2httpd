@@ -14,8 +14,15 @@ const ACTIVATION_THRESHOLD_PX = 12;
 const CHANNEL_COMMIT_RATIO = 0.15;
 const CHANNEL_COMMIT_MIN_PX = 48;
 const CHANNEL_COMMIT_MAX_PX = 120;
-/** Vertical travel that spans the whole 0..1 volume range, as a ratio of the surface height. */
+/** Vertical travel that spans the whole volume gesture range, as a ratio of the surface height. */
 const VOLUME_FULL_SWING_RATIO = 0.6;
+/** Highest level the gesture reaches: 0..1 is element volume, above it gain. */
+const VOLUME_LEVEL_MAX = 6;
+/** Travel mapping shared with the control-bar slider: lower half 0..100%, upper half gain. */
+const levelToPos = (level: number): number =>
+  level <= 1 ? level * 0.5 : 0.5 + ((level - 1) / (VOLUME_LEVEL_MAX - 1)) * 0.5;
+const posToLevel = (pos: number): number =>
+  pos <= 0.5 ? pos * 2 : 1 + ((pos - 0.5) / 0.5) * (VOLUME_LEVEL_MAX - 1);
 /** Seconds seeked when dragging across the full surface width. */
 const SEEK_FULL_SWING_SECONDS = 120;
 /** Ignore sub-second seeks so a sloppy tap-drag does not nudge playback. */
@@ -26,7 +33,7 @@ const DOUBLE_TAP_SLOP_PX = 40;
 const INDICATOR_LINGER_MS = 700;
 
 export type PlayerGestureIndicator =
-  | { kind: "volume"; volume: number }
+  | { kind: "volume"; level: number }
   | { kind: "channel"; direction: "prev" | "next"; target: Channel | null }
   | { kind: "seek"; deltaSeconds: number };
 
@@ -43,7 +50,8 @@ interface GestureState {
   startedOnLeftHalf: boolean;
   width: number;
   height: number;
-  startVolume: number;
+  /** Slider position the drag started from (see levelToPos). */
+  startVolumePos: number;
   /** Direction armed by the channel gesture, or null while below the commit threshold. */
   channelDirection: "prev" | "next" | null;
   seekDeltaSeconds: number;
@@ -57,10 +65,13 @@ interface UsePlayerTouchGesturesOptions {
   /** Right-half volume gesture; off where the platform makes volume read-only (iOS). */
   enableVolumeGesture: boolean;
   volume: number;
+  /** Gain above unity, 1 = 100%. The volume gesture continues into this range. */
+  volumeBoost: number;
   isMuted: boolean;
   prevChannel: Channel | null;
   nextChannel: Channel | null;
   onVolumeChange: (volume: number) => void;
+  onVolumeBoostChange: (boost: number) => void;
   onChannelNavigate: ((target: "prev" | "next") => void) | undefined;
   onRelativeSeek: (deltaSeconds: number) => void;
   onTogglePlayPause: () => void;
@@ -85,10 +96,12 @@ export function usePlayerTouchGestures({
   enableSeekGesture,
   enableVolumeGesture,
   volume,
+  volumeBoost,
   isMuted,
   prevChannel,
   nextChannel,
   onVolumeChange,
+  onVolumeBoostChange,
   onChannelNavigate,
   onRelativeSeek,
   onTogglePlayPause,
@@ -180,7 +193,7 @@ export function usePlayerTouchGestures({
       startedOnLeftHalf: event.clientX - rect.left < rect.width / 2,
       width: rect.width,
       height: rect.height,
-      startVolume: isMuted ? 0 : volume,
+      startVolumePos: levelToPos(isMuted ? 0 : volume < 1 ? volume : volumeBoost),
       channelDirection: null,
       seekDeltaSeconds: 0,
     };
@@ -209,10 +222,18 @@ export function usePlayerTouchGestures({
     }
 
     if (gesture.mode === "volume") {
-      // Up is louder, hence the negated dy.
-      const nextVolume = clamp01(gesture.startVolume - dy / (gesture.height * VOLUME_FULL_SWING_RATIO));
-      onVolumeChange(nextVolume);
-      showIndicator({ kind: "volume", volume: nextVolume });
+      // Up is louder, hence the negated dy. Past the midpoint the same drag drives
+      // the gain stage, since element volume cannot exceed 1.
+      const nextPos = clamp01(gesture.startVolumePos - dy / (gesture.height * VOLUME_FULL_SWING_RATIO));
+      const level = posToLevel(nextPos);
+      if (level <= 1) {
+        if (volumeBoost !== 1) onVolumeBoostChange(1);
+        onVolumeChange(level);
+      } else {
+        if (volume < 1) onVolumeChange(1);
+        onVolumeBoostChange(Math.round(level * 10) / 10);
+      }
+      showIndicator({ kind: "volume", level });
       return;
     }
 

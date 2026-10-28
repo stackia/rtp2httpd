@@ -91,6 +91,9 @@ export function createMSEPlaybackBackend(video: HTMLVideoElement, config?: Parti
     setMuted: (muted) => {
       video.muted = muted;
     },
+    setVolumeBoost: (level) => {
+      controller?.setVolumeBoost(level);
+    },
 
     getState: () => ({
       currentTime: video.currentTime,
