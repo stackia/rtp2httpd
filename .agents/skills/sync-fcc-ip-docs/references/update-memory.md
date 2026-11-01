@@ -2,7 +2,7 @@
 
 ## Processing Checkpoint
 
-last_processed_comment_date: 2026-08-14T09:51:16Z
+last_processed_comment_date: 2026-11-01T04:10:32Z
 
 ## Document Paths
 
@@ -44,6 +44,7 @@ annotations.
 
 ## Update Log
 
+- 2026-11-02: Processed 3 new comments after checkpoint. Added Guangdong Shenzhen Telecom `183.59.160.198:8027` (comment ID 5559781464, Sauhun; reaction not added, not authorized). Other comments: Liaoning Fuxin Unicom DHCP xid/Option60 auth discussion quoting documented `218.24.21.133:15970` (comment ID 5827025079, no address change). Pending: Anhui Telecom `117.71.18.200:15970` single timeout report with no city or channel context (comment ID 6553246472, dominicx); entry preserved pending more reports. English doc synced.
 - 2026-08-18: Processed 5 new comments after checkpoint. Added Hebei Cangzhou Unicom `10.7.60.172:8027` (comment ID 5173901434, reaction added). Extended Sichuan Telecom `182.138.3.103:15970` city annotation from Suining to Suining/Nanchong (comment ID 5291949443, reaction added). Other comments: Tianjin Unicom/Shandong Telecom address request; duplicate Qingdao Telecom `150.138.8.132:8027` plus Tai'an regional non-working note (expected locality, not decommission); duplicate Liaoning Unicom `218.24.21.133:15970` with DHCP Option60 screenshot. English doc synced.
 - 2026-07-25: Processed 2 new comments, both actionable. Added Sichuan Suining Telecom `182.138.3.103:15970` (comment ID 5003576424) and Hebei Langfang Unicom `10.7.70.172:8027` plus new Hebei China Mobile entry `192.168.247.9:8027` (comment ID 5058826265). Reactions added to both; English doc synced.
 - 2026-06-24: Processed 4 new comments. Added Hebei Shijiazhuang Unicom `10.7.10.172:8027` (comment ID 4747788138, reaction added). Other comments: one already documented Hubei Enshi Telecom entry, one Heilongjiang packet-capture question with FCC disabled, and one Tianjin Mobile FCC troubleshooting question.
