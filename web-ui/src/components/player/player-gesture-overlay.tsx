@@ -22,13 +22,17 @@ function formatSeekDelta(deltaSeconds: number): string {
   return `${sign}${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function VolumeIndicator({ volume }: { volume: number }) {
-  const percent = Math.round(volume * 100);
+const VOLUME_LEVEL_MAX = 6;
+
+function VolumeIndicator({ level }: { level: number }) {
+  const percent = Math.round(level * 100);
+  // Half the bar is 0..100%, the other half the gain range above it.
+  const fill = level <= 1 ? level * 50 : 50 + ((level - 1) / (VOLUME_LEVEL_MAX - 1)) * 50;
   return (
     <>
-      {volume <= 0 ? (
+      {level <= 0 ? (
         <VolumeX className={ICON_CLASS} />
-      ) : volume < 0.5 ? (
+      ) : level < 0.5 ? (
         <Volume1 className={ICON_CLASS} />
       ) : (
         <Volume2 className={ICON_CLASS} />
@@ -36,7 +40,7 @@ function VolumeIndicator({ volume }: { volume: number }) {
       <div className="h-1.5 w-28 overflow-hidden rounded-full bg-blue-50/15 shadow-[inset_0_1px_3px_rgba(0,0,0,0.45)] ring-1 ring-white/10 md:w-40">
         <div
           className="player-performance-progress-fill h-full rounded-full bg-[linear-gradient(90deg,#3b82f6_0%,#38bdf8_52%,#6366f1_100%)] shadow-[0_0_18px_rgba(59,130,246,0.4)]"
-          style={{ width: `${percent}%` }}
+          style={{ width: `${fill}%` }}
         />
       </div>
       <span className="w-10 shrink-0 text-right font-semibold text-blue-50 text-sm tabular-nums md:text-base">
@@ -109,7 +113,7 @@ export function PlayerGestureIndicatorOverlay({
       >
         <PlayerSelectedGlassLayers />
         <div className="relative z-10 flex min-w-0 items-center gap-2 md:gap-3">
-          {shown?.kind === "volume" && <VolumeIndicator volume={shown.volume} />}
+          {shown?.kind === "volume" && <VolumeIndicator level={shown.level} />}
           {shown?.kind === "channel" && (
             <ChannelIndicator
               indicator={shown}

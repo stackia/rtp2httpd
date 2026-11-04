@@ -83,6 +83,8 @@ export interface PlaybackBackend {
   play(): Promise<void>;
   pause(): void;
   setVolume(volume: number): void;
+  /** Extra gain above unity, 1 = 100% (up to 6). No-op on backends without a gain stage. */
+  setVolumeBoost?(level: number): void;
   setMuted(muted: boolean): void;
   getState(): PlaybackBackendState;
   seek(seconds: number): void;
@@ -111,6 +113,7 @@ export interface MSEPlaybackController {
   loadSegments(segments: PlayerSegment[]): void;
   seek(seconds: number): void;
   goLive(targetMseSeconds: number): void;
+  setVolumeBoost(level: number): void;
   setLiveSessionAnchor(anchor: LiveSessionAnchor): void;
   setLiveSync(enabled: boolean): void;
   /** Release the video element (stop feeding, detach source) but keep reusable resources (worker) alive. */

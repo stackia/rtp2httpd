@@ -26,7 +26,14 @@ import { isEditableKeyboardTarget } from "../../lib/keyboard";
 import type { Locale } from "../../lib/locale";
 import { buildCatchupSegments } from "../../lib/m3u-parser";
 import { isVolumeControlSupported } from "../../lib/platform";
-import { getMuted, getVolume, saveMuted, saveVolume } from "../../lib/player-storage";
+import {
+  getMuted,
+  getVolume,
+  getVolumeBoost,
+  saveMuted,
+  saveVolume,
+  saveVolumeBoost,
+} from "../../lib/player-storage";
 import { createProgramTimeline, programPositionToWallClock } from "../../lib/program-timeline";
 import {
   createPlaybackBackend,
@@ -338,6 +345,7 @@ function VideoPlayerComponent({
   );
   const [warning, setWarning] = useState<PlaybackErrorDisplay | null>(null);
   const [volume, setVolume] = useState(() => getVolume());
+  const [volumeBoost, setVolumeBoost] = useState(() => getVolumeBoost());
   const [isMuted, setIsMuted] = useState(() => getMuted());
   const [isPlaying, setIsPlaying] = useState(false);
   const [liveSessionAnchor, setLiveSessionAnchor] = useState<LiveSessionAnchor | null>(null);
@@ -842,6 +850,7 @@ function VideoPlayerComponent({
       pictureEnhancement,
     });
     p.setVolume(volume);
+    p.setVolumeBoost?.(volumeBoost);
     p.setMuted(isMuted);
     p.on("error", (e) => {
       if (slotPlayerRef(slotId).current === p) {
@@ -1508,6 +1517,18 @@ function VideoPlayerComponent({
     };
   }, [isDocumentPiP]);
 
+  const handleVolumeBoostChange = useEffectEvent((level: number) => {
+    setVolumeBoost(level);
+    saveVolumeBoost(level);
+    getActivePlayer()?.setVolumeBoost?.(level);
+    // The hidden slot carries the same programme and becomes audible on switch,
+    // so it has to follow the same level.
+    for (const sid of ["a", "b"] as SlotId[]) {
+      const player = slotPlayerRef(sid).current;
+      if (player) player.setVolumeBoost?.(level);
+    }
+  });
+
   const handleVolumeChange = useEffectEvent((newVolume: number) => {
     const player = getActivePlayer();
     if (player) {
@@ -1527,10 +1548,12 @@ function VideoPlayerComponent({
     enableSeekGesture: isCatchupSupported,
     enableVolumeGesture: canControlVolume,
     volume,
+    volumeBoost,
     isMuted,
     prevChannel,
     nextChannel,
     onVolumeChange: handleVolumeChange,
+    onVolumeBoostChange: handleVolumeBoostChange,
     onChannelNavigate,
     onRelativeSeek: handleRelativeSeek,
     onTogglePlayPause: togglePlayPause,
@@ -2015,6 +2038,8 @@ function VideoPlayerComponent({
             onPlayPause={togglePlayPause}
             volume={volume}
             onVolumeChange={handleVolumeChange}
+            volumeBoost={volumeBoost}
+            onVolumeBoostChange={handleVolumeBoostChange}
             canControlVolume={canControlVolume}
             isMuted={isMuted}
             onMuteToggle={handleMuteToggle}
