@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "rtp2httpd-docs",
+  "compatibility_date": "2026-11-26",
+  "assets": {
+    "directory": "./docs/.vitepress/dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    { "pattern": "rtp2httpd.com", "custom_domain": true },
+    { "pattern": "www.rtp2httpd.com", "custom_domain": true }
+  ],
+  "workers_dev": true,
+  "preview_urls": true
+}

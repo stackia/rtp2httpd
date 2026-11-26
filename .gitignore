@@ -38,3 +38,6 @@ tools/stress-test/results/
 # iKuai package outputs
 ikuai-support/.staging/
 ikuai-support/dist/
+
+# Cloudflare Wrangler
+.wrangler/

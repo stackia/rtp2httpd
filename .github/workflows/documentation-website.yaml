@@ -5,7 +5,7 @@ on:
     branches:
       - stable
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened]
     branches:
       - main
 
@@ -13,11 +13,19 @@ permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  group: documentation-website-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build_and_deploy_job:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
     runs-on: ubuntu-latest
     name: Build and deploy
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Fork PRs have no access to secrets; they only build.
+      CAN_DEPLOY: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v6.1.0
@@ -27,16 +35,26 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run docs:build
-      - name: Deploy
-        id: builddeploy
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_THANKFUL_WATER_0A297BF00 }}
-          action: "upload"
-          skip_app_build: true
-          app_location: "docs/.vitepress/dist"
+
+      - name: Deploy to production
+        if: github.event_name == 'push'
+        run: pnpm exec wrangler deploy
+
+      - name: Upload preview version
+        id: preview
+        if: github.event_name == 'pull_request' && env.CAN_DEPLOY == 'true'
+        env:
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.ndjson
+          PREVIEW_ALIAS: pr-${{ github.event.pull_request.number }}
+        run: |
+          pnpm exec wrangler versions upload --preview-alias "$PREVIEW_ALIAS" --message "PR #${{ github.event.pull_request.number }} ${GITHUB_SHA::7}"
+          {
+            echo "alias_url=$(jq -r 'select(.type == "version-upload") | .preview_alias_url // empty' "$WRANGLER_OUTPUT_FILE_PATH")"
+            echo "version_url=$(jq -r 'select(.type == "version-upload") | .preview_url // empty' "$WRANGLER_OUTPUT_FILE_PATH")"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Comment PR preview URL
-        if: github.event_name == 'pull_request'
+        if: steps.preview.outcome == 'success'
         uses: marocchino/sticky-pull-request-comment@v3.0.5
         with:
           header: documentation-website-preview
@@ -45,17 +63,6 @@ jobs:
 
             The documentation preview has been deployed for this pull request.
 
-            - Preview: ${{ steps.builddeploy.outputs.static_web_app_url }}
-            - Commit: ${{ github.sha }}
-
-  close_pull_request_job:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    name: Close PR docs preview site
-    steps:
-      - name: Close Pull Request
-        id: closepullrequest
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_THANKFUL_WATER_0A297BF00 }}
-          action: "close"
+            - Preview: ${{ steps.preview.outputs.alias_url }}
+            - This commit: ${{ steps.preview.outputs.version_url }}
+            - Commit: ${{ github.event.pull_request.head.sha }}
