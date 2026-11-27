@@ -52,6 +52,9 @@ export function createMSEPlaybackController(
   // PCM audio player for software-decoded audio (MP2)
   let pcmPlayer: PCMAudioPlayer | null = null;
   let pcmPlayerInitPromise: Promise<void> | null = null;
+  // Kept outside the PCM player: it is created lazily, long after the UI
+  // applies the level, and is rebuilt on every audio recovery.
+  let volumeBoostLevel = 1;
   let startupRateControlActive = false;
 
   function ensurePCMPlayer(): PCMAudioPlayer {
@@ -81,6 +84,7 @@ export function createMSEPlaybackController(
       };
       pcmPlayerInitPromise = pcmPlayer.init();
       pcmPlayer.attachVideo(video);
+      pcmPlayer.setBoost(volumeBoostLevel);
     }
     return pcmPlayer;
   }
@@ -498,6 +502,11 @@ export function createMSEPlaybackController(
 
     goLive(targetMseSeconds: number) {
       goLiveTo(targetMseSeconds);
+    },
+
+    setVolumeBoost(level: number) {
+      volumeBoostLevel = level;
+      pcmPlayer?.setBoost(level);
     },
 
     setLiveSessionAnchor(anchor: LiveSessionAnchor) {

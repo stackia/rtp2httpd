@@ -52,6 +52,9 @@ interface PlayerControlsProps {
   onPlayPause: () => void;
   volume: number;
   onVolumeChange: (volume: number) => void;
+  /** Extra gain above unity, 1 = 100% (up to 3). */
+  volumeBoost: number;
+  onVolumeBoostChange: (boost: number) => void;
   /** False where the platform makes volume read-only (iOS): the slider is hidden, mute stays. */
   canControlVolume: boolean;
   isMuted: boolean;
@@ -405,6 +408,8 @@ function PlayerControlsComponent({
   isPlaying,
   onPlayPause,
   volume,
+  volumeBoost,
+  onVolumeBoostChange,
   onVolumeChange,
   canControlVolume,
   isMuted,
@@ -422,6 +427,39 @@ function PlayerControlsComponent({
 }: PlayerControlsProps) {
   const t = usePlayerTranslation(locale);
   const isEffectivelyMuted = isMuted || volume <= 0;
+
+  // One slider covers both ranges: the lower half is 0..100% element volume, the
+  // upper half is gain above unity up to 6x (+15.6dB) through the PCM gain stage.
+  const VOLUME_BOOST_MAX = 6;
+  const sliderValue = isMuted
+    ? 0
+    : volume < 1
+      ? volume * 0.5
+      : 0.5 + ((Math.max(1, volumeBoost) - 1) / (VOLUME_BOOST_MAX - 1)) * 0.5;
+  // Readout while dragging: element volume below unity, the gain multiplier
+  // above it, so "150%" means 1.5x instead of a level the element cannot hold.
+  const [volumeHint, setVolumeHint] = useState<number | null>(null);
+  const volumeHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showVolumeHint = (percent: number) => {
+    setVolumeHint(percent);
+    if (volumeHintTimerRef.current) clearTimeout(volumeHintTimerRef.current);
+    volumeHintTimerRef.current = setTimeout(() => setVolumeHint(null), 1200);
+  };
+  const handleSliderChange = (pos: number) => {
+    if (isMuted && pos > 0) {
+      onMuteToggle();
+    }
+    if (pos <= 0.5) {
+      if (volumeBoost !== 1) onVolumeBoostChange(1);
+      onVolumeChange(Math.min(1, pos / 0.5));
+      showVolumeHint(Math.round((pos / 0.5) * 100));
+    } else {
+      if (volume < 1) onVolumeChange(1);
+      const boost = 1 + ((pos - 0.5) / 0.5) * (VOLUME_BOOST_MAX - 1);
+      onVolumeBoostChange(Math.round(boost * 10) / 10);
+      showVolumeHint(Math.round(boost * 100));
+    }
+  };
   const isCatchupSupported = channel.sources.some((s) => s.catchup && s.catchupSource);
   const hasEpgTimeline = epgPrograms.length > 0;
   const hasTimeline = isCatchupSupported || Boolean(currentProgram) || hasEpgTimeline;
@@ -486,6 +524,11 @@ function PlayerControlsComponent({
 
           {/* Volume */}
           <div className="group/volume relative flex items-center">
+            {volumeHint !== null && (
+              <div className="pointer-events-none absolute -top-6 left-1/2 z-20 -translate-x-1/2 rounded-md bg-black/75 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white shadow md:-top-7 md:text-xs">
+                {volumeHint}%
+              </div>
+            )}
             <button
               type="button"
               onClick={onMuteToggle}
@@ -516,11 +559,11 @@ function PlayerControlsComponent({
                   min="0"
                   max="1"
                   step="0.01"
-                  value={isMuted ? 0 : volume}
-                  onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
+                  value={sliderValue}
+                  onChange={(e) => handleSliderChange(parseFloat(e.target.value))}
                   className="relative z-10 m-0 block h-16 w-1 cursor-pointer appearance-none bg-transparent [writing-mode:vertical-lr] [direction:rtl] md:h-20"
                   style={{
-                    background: `linear-gradient(to top, #3b82f6 0%, #6366f1 ${(isMuted ? 0 : volume) * 100}%, rgba(219,234,254,0.18) ${(isMuted ? 0 : volume) * 100}%, rgba(219,234,254,0.18) 100%)`,
+                    background: `linear-gradient(to top, #3b82f6 0%, #6366f1 ${sliderValue * 100}%, rgba(219,234,254,0.18) ${sliderValue * 100}%, rgba(219,234,254,0.18) 100%)`,
                   }}
                 />
               </div>
